@@ -245,35 +245,46 @@ theorem resolveFSIAt_no_FSI (cps : Array Nat) (i cp : Nat) :
     Callers run `resolveFSI` first so this driver never sees an FSI
     codepoint; the `.FSI` arm below is retained for total-function
     coverage and mirrors the LRI path it would have resolved to. -/
-def xStep (cp : Nat) (s : XState) : XState :=
+def xStep (paragraphLevel : Level) (cp : Nat) (s : XState) : XState :=
   let bc       := lookupBidiClass cp
   let top      := topEntry s.stack
   let curLevel := top.level
   match bc with
+  -- UAX #9 X2 / X3 / X4 / X5: an explicit-formatting control that
+  -- can't be pushed becomes an overflow-embedding event ONLY when
+  -- there is no outstanding overflow-isolate. If `overflowIsolate > 0`
+  -- the embedding control is silently consumed (no stack effect, no
+  -- counter change) per the BIDI reference behaviour. Without this
+  -- guard, deep-nesting paragraphs miscount overflowEmbed and the
+  -- trailing PDF fails to pop the real-frame stack back down.
   | .RLE =>
     let newLvl := nextOdd curLevel
     if levelInBounds newLvl ∧ s.overflowEmbed = 0 ∧ s.overflowIsolate = 0 then
       { s with stack := s.stack.push { level := newLvl, override := none, isolate := false } }
-    else
+    else if s.overflowIsolate = 0 then
       { s with overflowEmbed := s.overflowEmbed + 1 }
+    else s
   | .LRE =>
     let newLvl := nextEven curLevel
     if levelInBounds newLvl ∧ s.overflowEmbed = 0 ∧ s.overflowIsolate = 0 then
       { s with stack := s.stack.push { level := newLvl, override := none, isolate := false } }
-    else
+    else if s.overflowIsolate = 0 then
       { s with overflowEmbed := s.overflowEmbed + 1 }
+    else s
   | .RLO =>
     let newLvl := nextOdd curLevel
     if levelInBounds newLvl ∧ s.overflowEmbed = 0 ∧ s.overflowIsolate = 0 then
       { s with stack := s.stack.push { level := newLvl, override := some .RTL, isolate := false } }
-    else
+    else if s.overflowIsolate = 0 then
       { s with overflowEmbed := s.overflowEmbed + 1 }
+    else s
   | .LRO =>
     let newLvl := nextEven curLevel
     if levelInBounds newLvl ∧ s.overflowEmbed = 0 ∧ s.overflowIsolate = 0 then
       { s with stack := s.stack.push { level := newLvl, override := some .LTR, isolate := false } }
-    else
+    else if s.overflowIsolate = 0 then
       { s with overflowEmbed := s.overflowEmbed + 1 }
+    else s
   | .RLI =>
     let newLvl := nextOdd curLevel
     -- UAX #9 X5b: when the parent stack frame carries a directional
@@ -352,8 +363,16 @@ def xStep (cp : Nat) (s : XState) : XState :=
   -- handled above. The X-rules state machine treats it as a no-op
   -- so it never appears in the output records array.
   | .BN => s
+  -- UAX #9 X8: the paragraph separator (B) gets the paragraph
+  -- embedding level, NOT the current stack level. Override does
+  -- not apply.
+  | .B =>
+    let rec0 : CharRecord :=
+      { codepoint := cp, origClass := bc, level := paragraphLevel,
+        resolvedClass := bc }
+    { s with records := s.records.push rec0 }
   | .L | .R | .AL | .EN | .ES | .ET | .AN | .CS | .NSM
-  | .B | .S | .WS | .ON =>
+  | .S | .WS | .ON =>
     let resolved := applyOverride bc top
     let rec0 : CharRecord :=
       { codepoint := cp, origClass := bc, level := curLevel, resolvedClass := resolved }
@@ -370,7 +389,7 @@ def assignLevelsAt (cps : Array Nat) (pLevel : Level) : Array CharRecord :=
       overflowIsolate  := 0,
       validIsolates    := 0,
       records          := #[] }
-  (resolved.foldl (fun acc cp => xStep cp acc) seed).records
+  (resolved.foldl (fun acc cp => xStep pLevel cp acc) seed).records
 
 /-- X-rules driver with the paragraph level discovered from P2/P3.
     The paragraph base level is computed on the original array
@@ -1102,7 +1121,12 @@ structure ParagraphResult where
     level of the character immediately preceding the IRS in the post-
     X9 records, or the paragraph embedding level if none) and (the
     level of the first character in the IRS). eos is the symmetric
-    case at the right boundary. -/
+    case at the right boundary, with one important exception: when
+    the IRS ends with an unmatched isolate initiator (LRI / RLI /
+    FSI whose matching PDI is missing in the source), eos uses the
+    paragraph embedding level rather than the level of the next
+    character — the unmatched initiator's "scope" notionally
+    extends to end-of-paragraph for boundary purposes. -/
 def computeIRSBoundaries (records : Array CharRecord) (paragraphLevel : Level)
     (irs : Array Nat) : Direction × Direction :=
   if irs.isEmpty then
@@ -1116,8 +1140,15 @@ def computeIRSBoundaries (records : Array CharRecord) (paragraphLevel : Level)
     let precedingLevel :=
       if firstIdx = 0 then paragraphLevel
       else (records[firstIdx - 1]!).level
+    let lastIsIsolateInit :=
+      match (records[lastIdx]!).resolvedClass with
+      | .LRI | .RLI | .FSI => true
+      | .L | .R | .AL | .EN | .ES | .ET | .AN | .CS | .NSM | .BN
+      | .B | .S | .WS | .ON
+      | .LRE | .LRO | .RLE | .RLO | .PDF | .PDI => false
     let followingLevel :=
-      if lastIdx + 1 = records.size then paragraphLevel
+      if lastIsIsolateInit then paragraphLevel
+      else if lastIdx + 1 = records.size then paragraphLevel
       else (records[lastIdx + 1]!).level
     let sosLevel := max precedingLevel firstInIRSLevel
     let eosLevel := max followingLevel lastInIRSLevel
@@ -1207,6 +1238,35 @@ def levelsAlignedToInput (cps : Array Nat) (result : ParagraphResult) :
       else
         (out.push none, recIdx))
     (#[], 0)
+
+/-- The original input indices retained after X9 stripping. The
+    `i`-th entry is the position in the original `cps` array that
+    corresponds to the `i`-th post-X9 record. -/
+def originalInputIndices (cps : Array Nat) : Array Nat :=
+  Prod.fst <| cps.foldl
+    (fun (acc : Array Nat × Nat) cp =>
+      let (out, idx) := acc
+      let bc := lookupBidiClass cp
+      if isX9Removed bc then (out, idx + 1)
+      else (out.push idx, idx + 1))
+    (#[], 0)
+
+/-- Compute the visual-order reordering of input indices per UAX #9
+    L1 + L2. Returns input indices in display (visual) order; X9-
+    removed input positions are skipped. The implementation re-runs
+    the L1 / L2 reorder logic over a parallel record array whose
+    `codepoint` field is hijacked to carry the original input index;
+    the output `.codepoint` projection reads back the index permuted
+    into visual order. The original `result.records` is unmodified. -/
+def reorderedInputIndices (cps : Array Nat) (result : ParagraphResult) :
+    Array Nat :=
+  let inputIndices := originalInputIndices cps
+  let indexedRecords : Array CharRecord :=
+    result.records.mapIdx (fun i r =>
+      { r with codepoint := inputIndices[i]?.getD 0 })
+  let l1 := applyL1 result.paragraphLevel indexedRecords
+  let l2 := applyL2 l1
+  l2.map (·.codepoint)
 
 /-- L1 + L2 reorder for one line `[lineStart, lineEnd)`. Returns the
     reordered codepoints; the caller may apply `mirrorChar` for L4. -/

@@ -16,6 +16,7 @@ the Unicode Character Database (UCD) version 17.0.0:
   BidiBrackets.txt
   BidiCharacterTest.txt
   BidiMirroring.txt
+  BidiTest.txt
   CaseFolding.txt
   CompositionExclusions.txt
   confusables.txt
@@ -23,15 +24,24 @@ the Unicode Character Database (UCD) version 17.0.0:
   DerivedCoreProperties.txt
   DerivedNormalizationProps.txt
   EastAsianWidth.txt
+  emoji-data.txt
+  GraphemeBreakProperty.txt
+  GraphemeBreakTest.txt
   IdentifierStatus.txt
   IdentifierType.txt
   IdnaMappingTable.txt
+  LineBreak.txt
+  LineBreakTest.txt
   MANIFEST.txt
   NormalizationTest.txt
   PropList.txt
   ScriptExtensions.txt
   Scripts.txt
+  SentenceBreakProperty.txt
+  SentenceBreakTest.txt
   UnicodeData.txt
+  WordBreakProperty.txt
+  WordBreakTest.txt
 
 These files are © 1991–2024 Unicode, Inc. and are redistributed
 under the terms of the Unicode License v3:

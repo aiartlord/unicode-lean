@@ -35,6 +35,22 @@ import Unicode.Conformance.NormalizationTest
 -- bidiParagraph / bidiParagraphAt
 import Unicode.Conformance.BidiCharacterTest
 
+-- UAX #9 conformance — official BidiTest.txt level + L1/L2 reorder
+-- across all paragraph-level settings
+import Unicode.Conformance.BidiTest
+
+-- UAX #29 segmentation — default grapheme cluster, word, and
+-- sentence break algorithms
+import Unicode.Segmentation.GraphemeBreak
+import Unicode.Segmentation.WordBreak
+import Unicode.Segmentation.SentenceBreak
+
+-- UAX #29 conformance — official GraphemeBreakTest.txt,
+-- WordBreakTest.txt, and SentenceBreakTest.txt
+import Unicode.Conformance.GraphemeBreakTest
+import Unicode.Conformance.WordBreakTest
+import Unicode.Conformance.SentenceBreakTest
+
 -- Case-fold commutation and round-trip
 import Unicode.CaseFoldCommutation
 import Unicode.CaseFoldRoundtrip

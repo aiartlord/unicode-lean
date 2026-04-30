@@ -97,4 +97,25 @@ def explicitRanges : Array (Nat × Nat × EastAsianWidthClass) :=
 def defaultRanges : Array (Nat × Nat × EastAsianWidthClass) :=
   ((eastAsianWidthRaw.splitOn "\n").filterMap parseMissingRow).toArray
 
+/-- East_Asian_Width lookup: explicit ranges first, then the latest
+    `@missing:` default range whose interval contains `cp`, then the
+    UAX #11 default of `N` (Neutral). -/
+def lookup (cp : Nat) : EastAsianWidthClass :=
+  match explicitRanges.find? (fun r => r.1 ≤ cp ∧ cp ≤ r.2.1) with
+  | some r => r.2.2
+  | none =>
+    let go : EastAsianWidthClass × Bool → Nat × Nat × EastAsianWidthClass
+           → EastAsianWidthClass × Bool :=
+      fun (current, _) entry =>
+        if entry.1 ≤ cp ∧ cp ≤ entry.2.1 then (entry.2.2, true)
+        else (current, false)
+    (defaultRanges.foldl go (.N, false)).1
+
+/-- True iff `cp` is East_Asian_Width F (Fullwidth), W (Wide), or
+    H (Halfwidth). UAX #14 LB30 excludes these from the
+    `(AL | HL | NU) × OP` and `CP × (AL | HL | NU)` rules. -/
+def isEastAsianFWH (cp : Nat) : Bool :=
+  let w := lookup cp
+  w == .F || w == .W || w == .H
+
 end Unicode.Generated.EastAsianWidth
