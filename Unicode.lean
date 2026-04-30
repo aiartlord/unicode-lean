@@ -77,6 +77,15 @@ import Unicode.Codec.Utf8Roundtrip
 -- UTF-32 codec (BE + LE) with per-codepoint roundtrip
 import Unicode.Codec.Utf32
 
+-- UTF-16 codec (BE + LE) with surrogate-pair encoding
+import Unicode.Codec.Utf16
+
+-- Byte-Order-Mark detection across UTF-8 / UTF-16 BE+LE / UTF-32 BE+LE
+import Unicode.Codec.Bom
+
+-- Noncharacter detection (66 designated noncharacters)
+import Unicode.Codec.Noncharacters
+
 -- Generated UCD-derived tables (UCD 17.0.0)
 import Unicode.Generated.CompatDecomp
 import Unicode.Generated.DerivedCoreProperties
