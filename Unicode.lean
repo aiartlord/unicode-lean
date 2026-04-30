@@ -51,6 +51,10 @@ import Unicode.Conformance.GraphemeBreakTest
 import Unicode.Conformance.WordBreakTest
 import Unicode.Conformance.SentenceBreakTest
 
+-- UAX #14 line breaking + conformance against LineBreakTest.txt
+import Unicode.Segmentation.LineBreak
+import Unicode.Conformance.LineBreakTest
+
 -- Case-fold commutation and round-trip
 import Unicode.CaseFoldCommutation
 import Unicode.CaseFoldRoundtrip
@@ -58,6 +62,14 @@ import Unicode.CaseFoldRoundtrip
 -- Refinement-typed wrappers and invariants
 import Unicode.Refined
 import Unicode.Invariants
+
+-- RFC 3629 strict UTF-8 codec + dual-API reject reasons
+import Unicode.Codec.Strict
+import Unicode.Codec.Utf8
+import Unicode.Codec.ValidatedUtf8
+
+-- UTF-8 ↔ codepoint bridge for byte-level NFC
+import Unicode.Normalization.Utf8Bridge
 
 -- Generated UCD-derived tables (UCD 17.0.0)
 import Unicode.Generated.CompatDecomp
