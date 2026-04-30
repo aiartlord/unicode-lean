@@ -71,6 +71,9 @@ import Unicode.Codec.ValidatedUtf8
 -- UTF-8 ↔ codepoint bridge for byte-level NFC
 import Unicode.Normalization.Utf8Bridge
 
+-- Closed-form per-codepoint encode/decode roundtrip theorem
+import Unicode.Codec.Utf8Roundtrip
+
 -- Generated UCD-derived tables (UCD 17.0.0)
 import Unicode.Generated.CompatDecomp
 import Unicode.Generated.DerivedCoreProperties
