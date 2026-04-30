@@ -273,13 +273,41 @@ theorem decode_encode_codepoint (cp : Nat) (h : IsValidCodepoint cp) :
   · exact decode_encode_4byte cp (by omega) h_max
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- §4 ARRAY-LEVEL ROUNDTRIP — PENDING
+-- §4 FOLD-STEP LEMMAS PER BYTE LENGTH
+-- These say: when fold is in `.expectStart` at position `i` of `bs` and
+-- bytes `bs[i .. i+k]` form a valid k-byte encoding of `cp`, the fold
+-- consumes those bytes, returns to `.expectStart` at `i+k`, and pushes
+-- `cp` onto the accumulator (via `f acc seqStart cp`). Each is proven
+-- by direct unfolding of `foldCodepointsWithOffsetGo` and
+-- `utf8DecodeStep`.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The list-recursive form of `encodeCodepoints`, the shape needed
-    for inductive reasoning. -/
-def encodeCodepointsList : List Nat → ByteArray
-  | []        => ByteArray.empty
-  | cp :: cps => encodeCodepoint cp ++ encodeCodepointsList cps
+/-- Out-of-bounds short-circuit: when `i ≥ bs.size`, fold from
+    `.expectStart` with any positive fuel returns `acc`. -/
+private theorem fold_oob_expectStart
+    (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
+    (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
+    (hi : ¬ i < bs.size) :
+    foldCodepointsWithOffsetGo bs f .expectStart i seqStart acc (fuel + 1) = acc := by
+  unfold foldCodepointsWithOffsetGo
+  simp [hi]
+
+/-- ASCII fold step: when the byte at position `i` is an ASCII
+    codepoint `cp < 0x80`, fold consumes one byte, emits `cp`, and
+    returns to `.expectStart`. -/
+private theorem fold_step_ascii
+    (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
+    (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
+    (cp : Nat) (h_cp : cp < 0x80)
+    (hi : i < bs.size)
+    (h_byte : (bs[i]'hi).toNat = cp) :
+    foldCodepointsWithOffsetGo bs f .expectStart i seqStart acc (fuel + 1)
+      = foldCodepointsWithOffsetGo bs f .expectStart (i + 1) (i + 1)
+          (f acc seqStart cp) fuel := by
+  have hstep : utf8DecodeStep .expectStart (bs[i]'hi) = .emit cp .expectStart := by
+    unfold utf8DecodeStep
+    simp [h_byte, h_cp]
+  conv => lhs; rw [foldCodepointsWithOffsetGo]
+  simp only [hi, ↓reduceDIte, hstep]
 
 end Unicode.Codec.Utf8Roundtrip
