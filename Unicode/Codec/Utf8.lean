@@ -162,7 +162,7 @@ theorem step_cont_with_ascii_rejects :
     always sufficient since we advance `i` by one per step. The `fuel = 0`
     branch is structurally unreachable when entered with `fuel = bs.size` and
     `i ≤ fuel`; it returns `none` defensively. -/
-private def firstInvalidUtf8OffsetGo (bs : ByteArray) : Utf8State → Nat → Nat → Nat
+def firstInvalidUtf8OffsetGo (bs : ByteArray) : Utf8State → Nat → Nat → Nat
     → Option (Nat × Utf8RejectKind)
   | _, _, _, 0 => none
   | st, i, seqStart, f + 1 =>
@@ -257,7 +257,7 @@ theorem beyond_max_rejected :
     Requires `isValidUtf8 bs = true` for semantically meaningful results;
     the function is total (returns `acc` on malformed input) but the
     emitted-codepoint sequence has no specified meaning in that case. -/
-private def foldCodepointsWithOffsetGo {α : Type}
+def foldCodepointsWithOffsetGo {α : Type}
     (bs : ByteArray) (f : α → Nat → Nat → α)
     : Utf8State → Nat → Nat → α → Nat → α
   | _, _, _, acc, 0 => acc
