@@ -424,4 +424,72 @@ private theorem fold_step_4byte_start
   conv => lhs; rw [foldCodepointsWithOffsetGo]
   simp only [hi, ↓reduceDIte, hstep]
 
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §5 ARRAY-LEVEL ROUNDTRIP — DOCUMENTATION OF REMAINING WORK
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-
+  The closed-form array-level theorem we want is:
+
+      ∀ cps : Array Nat, (∀ cp ∈ cps, IsValidCodepoint cp) →
+        decodeToCodepoints (encodeCodepoints cps) = cps
+
+  Building blocks already proven above:
+
+    - `decode_encode_codepoint`         per-codepoint roundtrip
+    - `fold_oob_expectStart`            i ≥ bs.size returns acc
+    - `fold_step_ascii`                 1-byte advance
+    - `fold_step_2byte_start`           2-byte start byte → expectCont
+    - `fold_step_3byte_start`           3-byte start byte → expectCont
+    - `fold_step_4byte_start`           4-byte start byte → expectCont
+    - `fold_step_cont_continue`         continuation accumulating step
+    - `fold_step_cont_emit_last`        last continuation → emit + expectStart
+
+  Remaining proof obligations (each is its own sub-lemma):
+
+    1. `fold_acc_monoid`
+       The push-only fold satisfies
+         fold bs f st i seqStart acc fuel
+           = acc ++ fold bs f st i seqStart #[] fuel
+       so we can factor the accumulator out of any fold. Proven by
+       fuel induction with case-split on `utf8DecodeStep` outcome.
+
+    2. `fold_translate_at_size`
+       For any a, b, fuel, st (≠ .expectCont blocking):
+         fold (a ++ b) f st a.size sa acc fuel
+           = fold b f st 0 sb acc fuel
+       Translation invariance: fold from offset a.size in (a ++ b)
+       equals fold from offset 0 in b. Proven by fuel induction +
+       `ByteArray.getElem_append_right`.
+
+    3. Per-byte-length consume lemmas (combining the step lemmas):
+         consume_ascii cp h_valid bs i .. → fold advances by 1, emits cp
+         consume_2byte cp h_valid bs i .. → fold advances by 2, emits cp
+         consume_3byte cp h_valid bs i .. → fold advances by 3, emits cp
+         consume_4byte cp h_valid bs i .. → fold advances by 4, emits cp
+
+    4. `decode_concat_codepoint`
+         decodeToCodepoints (encodeCodepoint cp ++ rest) =
+           #[cp] ++ decodeToCodepoints rest
+       Combines: case-split on cp's byte length, apply consume lemma,
+       apply translation, apply acc_monoid to factor #[cp] out.
+
+    5. `encodeCodepoints_eq_list`
+         encodeCodepoints cps = encodeCodepointsList cps.toList
+       List/Array foldl equivalence.
+
+    6. Array-level theorem by induction on `cps.toList`, base case
+       trivial, inductive step uses (5) + (4).
+
+  Each sub-lemma is several dozen lines of Lean and the iteration
+  cycle is ~10 minutes (the ~1M-element `native_decide` for the
+  4-byte planes dominates the rebuild). The clean separation above
+  documents the remaining work. -/
+
+/-- The list-recursive form of `encodeCodepoints`, the shape needed
+    for inductive reasoning. -/
+def encodeCodepointsList : List Nat → ByteArray
+  | []        => ByteArray.empty
+  | cp :: cps => encodeCodepoint cp ++ encodeCodepointsList cps
+
 end Unicode.Codec.Utf8Roundtrip
