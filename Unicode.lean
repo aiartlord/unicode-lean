@@ -74,6 +74,9 @@ import Unicode.Normalization.Utf8Bridge
 -- Closed-form per-codepoint encode/decode roundtrip theorem
 import Unicode.Codec.Utf8Roundtrip
 
+-- UTF-32 codec (BE + LE) with per-codepoint roundtrip
+import Unicode.Codec.Utf32
+
 -- Generated UCD-derived tables (UCD 17.0.0)
 import Unicode.Generated.CompatDecomp
 import Unicode.Generated.DerivedCoreProperties
