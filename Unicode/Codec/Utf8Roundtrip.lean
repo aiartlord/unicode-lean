@@ -310,4 +310,118 @@ private theorem fold_step_ascii
   conv => lhs; rw [foldCodepointsWithOffsetGo]
   simp only [hi, ↓reduceDIte, hstep]
 
+/-- Continuation step: when the current state is `.expectCont 0 next minCp`,
+    the next byte triggers an emit (assuming valid continuation byte and
+    cp not overlong/surrogate/beyond). The "remaining = 0" arm in the
+    decoder is structurally unreachable; this lemma captures the
+    "remaining = 1, last byte" emission path. -/
+private theorem fold_step_cont_emit_last
+    (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
+    (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
+    (accum minCp cp : Nat)
+    (hi : i < bs.size)
+    (h_b_lo : 0x80 ≤ (bs[i]'hi).toNat) (h_b_hi : (bs[i]'hi).toNat < 0xC0)
+    (h_cp_eq : cp = (accum <<< 6) ||| ((bs[i]'hi).toNat &&& 0x3F))
+    (h_overlong : ¬ cp < minCp)
+    (h_nonsurr : ¬ (0xD800 ≤ cp ∧ cp ≤ 0xDFFF))
+    (h_max : ¬ cp > 0x10FFFF) :
+    foldCodepointsWithOffsetGo bs f (.expectCont 1 accum minCp) i seqStart acc (fuel + 1)
+      = foldCodepointsWithOffsetGo bs f .expectStart (i + 1) (i + 1)
+          (f acc seqStart cp) fuel := by
+  have hstep : utf8DecodeStep (.expectCont 1 accum minCp) (bs[i]'hi)
+      = .emit cp .expectStart := by
+    unfold utf8DecodeStep
+    simp only [show ¬ ((bs[i]'hi).toNat < 0x80) from by omega,
+               show ¬ ((bs[i]'hi).toNat ≥ 0xC0) from by omega,
+               or_self, ↓reduceIte]
+    rw [← h_cp_eq]
+    simp [h_overlong, h_nonsurr, h_max]
+  conv => lhs; rw [foldCodepointsWithOffsetGo]
+  simp only [hi, ↓reduceDIte, hstep]
+
+/-- Continuation step (non-final): when `remaining ≥ 2`, decoder
+    accumulates the next continuation byte and stays in `.expectCont`. -/
+private theorem fold_step_cont_continue
+    (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
+    (i seqStart : Nat) (acc : Array Nat) (fuel m accum minCp : Nat)
+    (hi : i < bs.size)
+    (h_b_lo : 0x80 ≤ (bs[i]'hi).toNat) (h_b_hi : (bs[i]'hi).toNat < 0xC0) :
+    foldCodepointsWithOffsetGo bs f (.expectCont (m + 2) accum minCp)
+        i seqStart acc (fuel + 1)
+      = foldCodepointsWithOffsetGo bs f
+          (.expectCont (m + 1) ((accum <<< 6) ||| ((bs[i]'hi).toNat &&& 0x3F)) minCp)
+          (i + 1) seqStart acc fuel := by
+  have hstep : utf8DecodeStep (.expectCont (m + 2) accum minCp) (bs[i]'hi)
+      = .continue (.expectCont (m + 1)
+          ((accum <<< 6) ||| ((bs[i]'hi).toNat &&& 0x3F)) minCp) := by
+    unfold utf8DecodeStep
+    simp only [show ¬ ((bs[i]'hi).toNat < 0x80) from by omega,
+               show ¬ ((bs[i]'hi).toNat ≥ 0xC0) from by omega, or_self]
+    rfl
+  conv => lhs; rw [foldCodepointsWithOffsetGo]
+  simp only [hi, ↓reduceDIte, hstep]
+
+/-- 2-byte start step: when `0xC2 ≤ b < 0xE0`, decoder enters
+    `.expectCont 1 (b &&& 0x1F) 0x80`. -/
+private theorem fold_step_2byte_start
+    (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
+    (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
+    (hi : i < bs.size)
+    (h_b_lo : 0xC2 ≤ (bs[i]'hi).toNat) (h_b_hi : (bs[i]'hi).toNat < 0xE0) :
+    foldCodepointsWithOffsetGo bs f .expectStart i seqStart acc (fuel + 1)
+      = foldCodepointsWithOffsetGo bs f
+          (.expectCont 1 ((bs[i]'hi).toNat &&& 0x1F) 0x80)
+          (i + 1) i acc fuel := by
+  have hstep : utf8DecodeStep .expectStart (bs[i]'hi)
+      = .continue (.expectCont 1 ((bs[i]'hi).toNat &&& 0x1F) 0x80) := by
+    unfold utf8DecodeStep
+    simp only [show ¬ ((bs[i]'hi).toNat < 0x80) from by omega,
+               show ¬ ((bs[i]'hi).toNat < 0xC2) from by omega,
+               show ((bs[i]'hi).toNat < 0xE0) from h_b_hi, ↓reduceIte]
+  conv => lhs; rw [foldCodepointsWithOffsetGo]
+  simp only [hi, ↓reduceDIte, hstep]
+
+/-- 3-byte start step: when `0xE0 ≤ b < 0xF0`, decoder enters
+    `.expectCont 2 (b &&& 0x0F) 0x800`. -/
+private theorem fold_step_3byte_start
+    (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
+    (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
+    (hi : i < bs.size)
+    (h_b_lo : 0xE0 ≤ (bs[i]'hi).toNat) (h_b_hi : (bs[i]'hi).toNat < 0xF0) :
+    foldCodepointsWithOffsetGo bs f .expectStart i seqStart acc (fuel + 1)
+      = foldCodepointsWithOffsetGo bs f
+          (.expectCont 2 ((bs[i]'hi).toNat &&& 0x0F) 0x800)
+          (i + 1) i acc fuel := by
+  have hstep : utf8DecodeStep .expectStart (bs[i]'hi)
+      = .continue (.expectCont 2 ((bs[i]'hi).toNat &&& 0x0F) 0x800) := by
+    unfold utf8DecodeStep
+    simp only [show ¬ ((bs[i]'hi).toNat < 0x80) from by omega,
+               show ¬ ((bs[i]'hi).toNat < 0xC2) from by omega,
+               show ¬ ((bs[i]'hi).toNat < 0xE0) from by omega,
+               show ((bs[i]'hi).toNat < 0xF0) from h_b_hi, ↓reduceIte]
+  conv => lhs; rw [foldCodepointsWithOffsetGo]
+  simp only [hi, ↓reduceDIte, hstep]
+
+/-- 4-byte start step: when `0xF0 ≤ b < 0xF5`, decoder enters
+    `.expectCont 3 (b &&& 0x07) 0x10000`. -/
+private theorem fold_step_4byte_start
+    (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
+    (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
+    (hi : i < bs.size)
+    (h_b_lo : 0xF0 ≤ (bs[i]'hi).toNat) (h_b_hi : (bs[i]'hi).toNat < 0xF5) :
+    foldCodepointsWithOffsetGo bs f .expectStart i seqStart acc (fuel + 1)
+      = foldCodepointsWithOffsetGo bs f
+          (.expectCont 3 ((bs[i]'hi).toNat &&& 0x07) 0x10000)
+          (i + 1) i acc fuel := by
+  have hstep : utf8DecodeStep .expectStart (bs[i]'hi)
+      = .continue (.expectCont 3 ((bs[i]'hi).toNat &&& 0x07) 0x10000) := by
+    unfold utf8DecodeStep
+    simp only [show ¬ ((bs[i]'hi).toNat < 0x80) from by omega,
+               show ¬ ((bs[i]'hi).toNat < 0xC2) from by omega,
+               show ¬ ((bs[i]'hi).toNat < 0xE0) from by omega,
+               show ¬ ((bs[i]'hi).toNat < 0xF0) from by omega,
+               show ((bs[i]'hi).toNat < 0xF5) from h_b_hi, ↓reduceIte]
+  conv => lhs; rw [foldCodepointsWithOffsetGo]
+  simp only [hi, ↓reduceDIte, hstep]
+
 end Unicode.Codec.Utf8Roundtrip
