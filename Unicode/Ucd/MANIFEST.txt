@@ -14,3 +14,6 @@ PropList.txt                    	  145465	130dcddcaadaf071008bdfce1e7743e04fdfbc
 IdnaMappingTable.txt            	  780543	6db2ef4ed35f3b3de74ebc2e00404a9607f76d499f576b8d4043cf14f1ed175c
 BidiBrackets.txt                	    8891	dadbaf38a0d0246e5b805bf8725cb81b7c621f93d030595635f5ba2c2f179428
 BidiMirroring.txt               	   26827	a2f16fb873ab4fcdf3221cb1a8a85a134ddd6ed03603181823ff5206af3741ce
+allkeys.txt                     	 2285767	7b47769f4a95615ada83b6812dea1d2a76d74580b1e4d7af48d383eb902017f0
+CollationTest_NON_IGNORABLE_SHORT.txt	 2244523	484371915173d06fe4f0d52d4295cfa9c0a9e35b440dec3d1c762e69a5c4f46a
+CollationTest_SHIFTED_SHORT.txt 	 2481430	9a9ef9ac6daffd8558ba68cf1abf0ff7313927ec4ee413719ad304fcd1828ab9
