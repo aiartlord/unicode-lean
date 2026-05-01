@@ -89,6 +89,12 @@ import Unicode.Codec.Noncharacters
 -- RFC 3492 Punycode encoding (foundation for UTS #46 IDNA processing)
 import Unicode.Idna.Punycode
 
+-- UTS #46 IDNA Compatible Preprocessing — disposition lookup, mapping pass,
+-- ToUnicode / ToASCII pipeline
+import Unicode.Idna.Disposition
+import Unicode.Idna.Map
+import Unicode.Idna.Process
+
 -- Generated UCD-derived tables (UCD 17.0.0)
 import Unicode.Generated.CompatDecomp
 import Unicode.Generated.DerivedCoreProperties
