@@ -19,6 +19,7 @@ import Unicode.Idna.Map
 import Unicode.Idna.Punycode
 import Unicode.Normalization.NFC
 import Unicode.Normalization.Lookup
+import Unicode.Precis.BidiRule
 
 namespace Unicode.Idna.Process
 
@@ -110,6 +111,14 @@ def isValidLabel (label : Array Nat) : Bool :=
     && ! violatesLeadTrailHyphen label
     && ! decide (violatesLeadingCombiner label)
 
+/-- UTS #46 §4.2 step 4 (CheckBidi). A domain is "bidi" if any of its
+    labels contains an RTL or AL codepoint. For a bidi domain, every
+    label must satisfy RFC 5893 §2 (the per-label Bidi Rule). For a
+    non-bidi domain, the check is vacuously satisfied. -/
+def checkBidi (labels : Array (Array Nat)) : Bool :=
+  let isBidiDomain := labels.any Unicode.Precis.BidiRule.isBidiLabel
+  ! isBidiDomain || labels.all Unicode.Precis.BidiRule.satisfiesBidiRule
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 TOUNICODE  (UTS #46 §4.2)
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -126,13 +135,15 @@ def decodeLabel (label : Array Nat) : Option (Array Nat) :=
 
 /-- Apply the UTS #46 ToUnicode algorithm under non-transitional
     processing. The result is the Unicode form of the input — every
-    `xn--` label is decoded back into its original codepoint sequence. -/
+    `xn--` label is decoded back into its original codepoint sequence.
+    Per UTS #46 §4.2 the pipeline includes the per-label validity
+    checks plus the domain-level CheckBidi guard. -/
 def toUnicode (input : Array Nat) : Option (Array Nat) := do
   let mapped     ← Map.mapNonTransitional input
   let normalized := Unicode.Normalization.NFC.toNFC mapped
   let labels     := splitLabels normalized
   let decoded    ← labels.mapM decodeLabel
-  if decoded.all isValidLabel then
+  if decoded.all isValidLabel ∧ checkBidi decoded then
     some (joinLabels decoded)
   else
     none
@@ -171,7 +182,7 @@ def toAsciiTransitional (input : Array Nat) : Option (Array Nat) := do
   let normalized := Unicode.Normalization.NFC.toNFC mapped
   let labels     := splitLabels normalized
   let decoded    ← labels.mapM decodeLabel
-  if decoded.all isValidLabel then
+  if decoded.all isValidLabel ∧ checkBidi decoded then
     let encoded ← decoded.mapM encodeLabel
     some (joinLabels encoded)
   else
