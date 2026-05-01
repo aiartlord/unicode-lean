@@ -90,10 +90,14 @@ import Unicode.Codec.Noncharacters
 import Unicode.Idna.Punycode
 
 -- UTS #46 IDNA Compatible Preprocessing — disposition lookup, mapping pass,
--- ToUnicode / ToASCII pipeline
+-- ToUnicode / ToASCII pipeline, CONTEXTJ joiners check
 import Unicode.Idna.Disposition
 import Unicode.Idna.Map
+import Unicode.Idna.CheckJoiners
 import Unicode.Idna.Process
+
+-- DerivedJoiningType table — Joining_Type lookup for CONTEXTJ rules
+import Unicode.Generated.DerivedJoiningType
 
 -- UTS #46 conformance — official IdnaTestV2.txt against
 -- toUnicode / toAscii / toAsciiTransitional (strict subset)
