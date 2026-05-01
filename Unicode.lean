@@ -99,6 +99,9 @@ import Unicode.Idna.Process
 -- DerivedJoiningType table — Joining_Type lookup for CONTEXTJ rules
 import Unicode.Generated.DerivedJoiningType
 
+-- UCA 16.0.0 DUCET — parsed table of collation elements
+import Unicode.Generated.Allkeys
+
 -- UTS #46 conformance — official IdnaTestV2.txt against
 -- toUnicode / toAscii / toAsciiTransitional (strict subset)
 import Unicode.Conformance.IdnaTestV2
