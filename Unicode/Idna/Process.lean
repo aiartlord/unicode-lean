@@ -162,6 +162,21 @@ def toAscii (input : Array Nat) : Option (Array Nat) := do
   let encoded ← labels.mapM encodeLabel
   some (joinLabels encoded)
 
+/-- Apply the UTS #46 ToASCII algorithm under transitional processing.
+    Transitional processing maps the four UTS #46 §2.3 deviations
+    (matching IDNA2003 behaviour). For a non-deviation input, the
+    output equals `toAscii input`. -/
+def toAsciiTransitional (input : Array Nat) : Option (Array Nat) := do
+  let mapped     ← Map.mapTransitional input
+  let normalized := Unicode.Normalization.NFC.toNFC mapped
+  let labels     := splitLabels normalized
+  let decoded    ← labels.mapM decodeLabel
+  if decoded.all isValidLabel then
+    let encoded ← decoded.mapM encodeLabel
+    some (joinLabels encoded)
+  else
+    none
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 SAMPLE DOMAINS
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -198,6 +213,12 @@ theorem toAscii_faß :
 theorem toUnicode_Faß :
     toUnicode (#[0x0046, 0x0061, 0x00DF, 0x002E, 0x0064, 0x0065])
       = some (#[0x0066, 0x0061, 0x00DF, 0x002E, 0x0064, 0x0065]) := by native_decide
+
+/-- IdnaTestV2 vector: "faß.de" → "fass.de" under transitional ToASCII
+    (sharp s is mapped to "ss"). -/
+theorem toAsciiTransitional_faß :
+    toAsciiTransitional (#[0x0066, 0x0061, 0x00DF, 0x002E, 0x0064, 0x0065])
+      = some (stringToCps "fass.de") := by native_decide
 
 /-- A pre-encoded "xn--" label round-trips back to the original
     Unicode codepoints under ToUnicode. -/
