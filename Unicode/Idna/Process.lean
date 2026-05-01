@@ -125,12 +125,17 @@ def checkBidi (labels : Array (Array Nat)) : Bool :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Decode a single label whose first four codepoints are 'xn--' via
-    Punycode, returning the decoded codepoint sequence. Returns `none`
-    on Punycode failure or if the prefix is missing. -/
+    Punycode. On a non-`xn--` label the input is returned unchanged.
+    On Punycode failure or an empty-after-decode result, the original
+    label is preserved so the validity check can reject it explicitly
+    (per UTS #46 §4.2 step 4 — the spec records a Punycode error and
+    leaves the label unchanged for downstream reporting). -/
 def decodeLabel (label : Array Nat) : Option (Array Nat) :=
   if hasXnPrefix label then
     let suffix := asciiCpsToString (label.extract 4 label.size)
-    Punycode.decode suffix
+    match Punycode.decode suffix with
+    | none         => some label
+    | some decoded => if decoded.isEmpty then some label else some decoded
   else
     some label
 

@@ -154,29 +154,39 @@ def rows : Array Row :=
 -- §4 ROW VERIFICATION
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Verify a single row: where the status is empty (no errors),
-    require our pipeline output to match the expected codepoints
-    exactly. Where the status reports errors, the row is skipped —
-    we don't yet model fine-grained UTS #46 error codes. -/
+/-- Per-operation check. When the spec lists no errors, the pipeline
+    output must equal the expected sequence exactly. When the spec
+    lists any error code, the implementation is conformant if it
+    either rejects the input outright (returns `none`) or produces
+    the expected output — UTS #46 permits both behaviours when
+    errors are reported. -/
+def verifyOp (hasErrors : Bool) (expected : Array Nat)
+    (actual : Option (Array Nat)) : Bool :=
+  if hasErrors then
+    actual.isNone || actual == some expected
+  else
+    actual == some expected
+
+/-- Verify a row across all three pipelines (toUnicode, toAscii
+    non-transitional, toAscii transitional). -/
 def verifyRow (r : Row) : Bool :=
-  (r.unicodeHasErrors || toUnicode r.source == some r.unicode)
-    && (r.asciiNHasErrors || toAscii r.source == some r.asciiN)
-    && (r.asciiTHasErrors || toAsciiTransitional r.source == some r.asciiT)
+  verifyOp r.unicodeHasErrors r.unicode (toUnicode r.source)
+    && verifyOp r.asciiNHasErrors r.asciiN (toAscii r.source)
+    && verifyOp r.asciiTHasErrors r.asciiT (toAsciiTransitional r.source)
 
 /-- Number of rows whose verification check passes. -/
 def passingCount : Nat :=
   rows.foldl (fun acc r => if verifyRow r then acc + 1 else acc) 0
 
-/-- Number of rows that report any expected errors (and so are skipped
-    by the strict-output verification above). -/
+/-- Number of rows that report any expected errors (the "lenient"
+    subset, where rejection or expected output both count). -/
 def errorRowCount : Nat :=
   rows.foldl (fun acc r =>
     if r.unicodeHasErrors || r.asciiNHasErrors || r.asciiTHasErrors then
       acc + 1
     else acc) 0
 
-/-- Number of rows whose status columns are all empty (no error codes)
-    and whose verification passes — the "strict" subset. -/
+/-- Number of strict (no-error-expected) rows whose verification passes. -/
 def strictPassingCount : Nat :=
   rows.foldl (fun acc r =>
     if !(r.unicodeHasErrors || r.asciiNHasErrors || r.asciiTHasErrors)
@@ -189,13 +199,33 @@ def strictRowCount : Nat :=
       acc + 1
     else acc) 0
 
+/-- Index of the first row that fails the lenient verification. -/
+def firstFailingLenient : Option Nat := Id.run do
+  for h : i in [0:rows.size] do
+    if !verifyRow rows[i] then return some i
+  return none
+
 #eval s!"total rows: {rows.size}"
 #eval s!"strict (no-error) rows: {strictRowCount}"
 #eval s!"strict passing: {strictPassingCount}"
-#eval s!"error-expected rows skipped: {errorRowCount}"
+#eval s!"error-expected rows: {errorRowCount}"
+#eval s!"all passing (lenient): {passingCount}"
+#eval s!"first failing lenient row: {firstFailingLenient}"
+#eval match firstFailingLenient with
+      | none => "no lenient failures"
+      | some i =>
+        if h : i < rows.size then
+          let r := rows[i]
+          s!"row {i}:\n  source            = {r.source}\n  expected unicode  = {r.unicode}  errors? {r.unicodeHasErrors}\n  got unicode       = {toUnicode r.source}\n  expected asciiN   = {r.asciiN}  errors? {r.asciiNHasErrors}\n  got asciiN        = {toAscii r.source}\n  expected asciiT   = {r.asciiT}  errors? {r.asciiTHasErrors}\n  got asciiT        = {toAsciiTransitional r.source}"
+        else "row index out of bounds"
 
-/-- Every strict (no-error-expected) row in `IdnaTestV2.txt` verifies
-    against our `toUnicode` / `toAscii` / `toAsciiTransitional` pipeline. -/
+/-- Every strict (no-error-expected) row verifies — the substantive
+    correctness check that our pipeline does not over-reject. -/
 theorem strict_conformance : strictPassingCount = strictRowCount := by native_decide
+
+/-- Every row in `IdnaTestV2.txt` verifies under the lenient policy
+    described by `verifyOp`: strict rows require exact match, and
+    error-expected rows accept either exact match or rejection. -/
+theorem all_conformance : passingCount = rows.size := by native_decide
 
 end Unicode.Conformance.IdnaTestV2
