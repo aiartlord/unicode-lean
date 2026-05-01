@@ -86,6 +86,9 @@ import Unicode.Codec.Bom
 -- Noncharacter detection (66 designated noncharacters)
 import Unicode.Codec.Noncharacters
 
+-- RFC 3492 Punycode encoding (foundation for UTS #46 IDNA processing)
+import Unicode.Idna.Punycode
+
 -- Generated UCD-derived tables (UCD 17.0.0)
 import Unicode.Generated.CompatDecomp
 import Unicode.Generated.DerivedCoreProperties
