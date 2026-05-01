@@ -95,6 +95,10 @@ import Unicode.Idna.Disposition
 import Unicode.Idna.Map
 import Unicode.Idna.Process
 
+-- UTS #46 conformance — official IdnaTestV2.txt against
+-- toUnicode / toAscii / toAsciiTransitional (strict subset)
+import Unicode.Conformance.IdnaTestV2
+
 -- Generated UCD-derived tables (UCD 17.0.0)
 import Unicode.Generated.CompatDecomp
 import Unicode.Generated.DerivedCoreProperties

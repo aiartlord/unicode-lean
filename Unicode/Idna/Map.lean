@@ -42,8 +42,13 @@ def mapNonTransitional (input : Array Nat) : Option (Array Nat) := Id.run do
   return if ok then some acc else none
 
 /-- Apply the UTS #46 mapping pass to `input` under transitional
-    processing. Identical to `mapNonTransitional` except Deviation
-    codepoints are mapped (matching IDNA2003 behaviour). -/
+    processing. Identical to `mapNonTransitional` for the first pass,
+    plus a second pass that resolves any Deviation codepoint in the
+    intermediate output to its mapping target. The second pass is
+    needed because the IDNA table records `Mapped` rows whose target
+    is itself a Deviation codepoint (e.g. U+1E9E LATIN CAPITAL
+    LETTER SHARP S maps to U+00DF, which is itself a Deviation): the
+    transitional caller expects the chain to fully resolve. -/
 def mapTransitional (input : Array Nat) : Option (Array Nat) := Id.run do
   let mut acc : Array Nat := #[]
   let mut ok  : Bool      := true
@@ -57,7 +62,20 @@ def mapTransitional (input : Array Nat) : Option (Array Nat) := Id.run do
       | .Deviation  => acc := acc ++ row.mapping
       | .Ignored    => pure ()
       | .Disallowed => ok := false
-  return if ok then some acc else none
+  if !ok then
+    return none
+  let mut result : Array Nat := #[]
+  for cp in acc do
+    match lookupRow? cp with
+    | none     => result := result.push cp
+    | some row =>
+      match row.disposition with
+      | .Valid      => result := result.push cp
+      | .Mapped     => result := result.push cp
+      | .Deviation  => result := result ++ row.mapping
+      | .Ignored    => result := result.push cp
+      | .Disallowed => result := result.push cp
+  return some result
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 EXAMPLES — the four UTS #46 §2.3 deviations + ASCII case folding
@@ -71,6 +89,12 @@ theorem mapNT_faß :
 /-- "Faß" → "fass" transitionally (capital F mapped to f, sharp s → ss). -/
 theorem mapTr_fass :
     mapTransitional #[0x0046, 0x0061, 0x00DF]
+      = some #[0x0066, 0x0061, 0x0073, 0x0073] := by native_decide
+
+/-- "FAẞ" → "fass" transitionally — exercises the chain
+    U+1E9E → U+00DF → "ss" through the two-pass deviation resolution. -/
+theorem mapTr_capital_sharp_s_chain :
+    mapTransitional #[0x0046, 0x0041, 0x1E9E]
       = some #[0x0066, 0x0061, 0x0073, 0x0073] := by native_decide
 
 /-- "EXAMPLE" → "example" (mapped) — pure case folding under either mode. -/
