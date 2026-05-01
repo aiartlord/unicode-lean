@@ -17,6 +17,7 @@
 
 import Unicode.Idna.Map
 import Unicode.Idna.Punycode
+import Unicode.Idna.CheckJoiners
 import Unicode.Normalization.NFC
 import Unicode.Normalization.Lookup
 import Unicode.Precis.BidiRule
@@ -143,7 +144,9 @@ def toUnicode (input : Array Nat) : Option (Array Nat) := do
   let normalized := Unicode.Normalization.NFC.toNFC mapped
   let labels     := splitLabels normalized
   let decoded    ← labels.mapM decodeLabel
-  if decoded.all isValidLabel ∧ checkBidi decoded then
+  if decoded.all isValidLabel
+      ∧ decoded.all CheckJoiners.checkJoiners
+      ∧ checkBidi decoded then
     some (joinLabels decoded)
   else
     none
@@ -182,7 +185,9 @@ def toAsciiTransitional (input : Array Nat) : Option (Array Nat) := do
   let normalized := Unicode.Normalization.NFC.toNFC mapped
   let labels     := splitLabels normalized
   let decoded    ← labels.mapM decodeLabel
-  if decoded.all isValidLabel ∧ checkBidi decoded then
+  if decoded.all isValidLabel
+      ∧ decoded.all CheckJoiners.checkJoiners
+      ∧ checkBidi decoded then
     let encoded ← decoded.mapM encodeLabel
     some (joinLabels encoded)
   else
