@@ -47,13 +47,14 @@ inductive VariableHandling where
     against DUCET (with implicit-weight fallback) and accumulating
     every emitted collation element. -/
 def collateGo : Nat → Array Nat → Nat → Array CollationElement → Array CollationElement
-  | 0,        _cps, _i, acc => acc
-  | _fuel+1,  cps,  i,  acc =>
+  | 0,      cps, i, acc =>
+    Function.const (Array Nat) (Function.const Nat acc i) cps
+  | fuel+1, cps, i, acc =>
     if i ≥ cps.size then acc
     else
       let (entry, consumed) := resolveAt cps i
       let step              := if consumed = 0 then 1 else consumed
-      collateGo _fuel cps (i + step) (acc ++ entry.ces)
+      collateGo fuel cps (i + step) (acc ++ entry.ces)
 
 /-- Compute the collation-element array for an NFD-normalised input. -/
 def collationElementsOf (cps : Array Nat) : Array CollationElement :=
@@ -149,16 +150,19 @@ def sortKey (handling : VariableHandling) (cps : Array Nat) : Array Nat :=
 /-- Lexicographic comparison of two `Array Nat` keys. Shorter is
     less than longer when one is a prefix of the other. -/
 def compareLexAux : Nat → Array Nat → Array Nat → Nat → Ordering
-  | 0,        _xs, _ys, _i => .eq
-  | _fuel+1,  xs,  ys,  i  =>
+  | 0,      xs, ys, i =>
+    Function.const (Array Nat)
+      (Function.const (Array Nat)
+        (Function.const Nat (.eq : Ordering) i) ys) xs
+  | fuel+1, xs, ys, i =>
     match xs[i]?, ys[i]? with
-    | none,    none    => .eq
-    | none,    some _y => .lt
-    | some _x, none    => .gt
-    | some x,  some y  =>
+    | none,   none   => .eq
+    | none,   some y => Function.const Nat (.lt : Ordering) y
+    | some x, none   => Function.const Nat (.gt : Ordering) x
+    | some x, some y =>
       if x < y then .lt
       else if x > y then .gt
-      else compareLexAux _fuel xs ys (i + 1)
+      else compareLexAux fuel xs ys (i + 1)
 
 /-- Lexicographic comparison of two sort keys. -/
 def compareLex (xs ys : Array Nat) : Ordering :=

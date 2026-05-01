@@ -106,6 +106,12 @@ import Unicode.Generated.Allkeys
 import Unicode.Uca.Lookup
 import Unicode.Uca.SortKey
 
+-- UCA conformance — official CollationTest_*_SHORT.txt against
+-- sortKey under both NON_IGNORABLE and SHIFTED variable handling
+-- (currently diagnostic only; theorem follows once the algorithm
+-- correctly handles UCA §4.4 variable-handling carry edge cases)
+import Unicode.Conformance.CollationTest
+
 -- UTS #46 conformance — official IdnaTestV2.txt against
 -- toUnicode / toAscii / toAsciiTransitional (strict subset)
 import Unicode.Conformance.IdnaTestV2
