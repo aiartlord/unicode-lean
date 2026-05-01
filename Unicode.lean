@@ -102,6 +102,10 @@ import Unicode.Generated.DerivedJoiningType
 -- UCA 16.0.0 DUCET — parsed table of collation elements
 import Unicode.Generated.Allkeys
 
+-- UTS #10 UCA — DUCET lookup, sort-key construction, comparison
+import Unicode.Uca.Lookup
+import Unicode.Uca.SortKey
+
 -- UTS #46 conformance — official IdnaTestV2.txt against
 -- toUnicode / toAscii / toAsciiTransitional (strict subset)
 import Unicode.Conformance.IdnaTestV2
