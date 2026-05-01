@@ -58,8 +58,8 @@ def parseHexChars : List Char → Nat → Nat
     through by their `Char.toNat`. The `fuel` parameter is bounded
     by the input length and supplied by the caller. -/
 def decodeEscapesGo : Nat → List Char → Array Nat → Array Nat
-  | 0, _xs, acc => acc
-  | _fuel+1, [], acc => acc
+  | 0,      xs,        acc => Function.const (List Char) acc xs
+  | fuel+1, [],        acc => Function.const Nat acc fuel
   | fuel+1, '\\' :: 'u' :: a :: b :: c :: d :: rest, acc =>
     decodeEscapesGo fuel rest (acc.push (parseHexChars [a, b, c, d] 0))
   | fuel+1, '\\' :: 'x' :: '{' :: rest, acc =>

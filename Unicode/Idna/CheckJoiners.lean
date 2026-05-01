@@ -38,8 +38,9 @@ def isVirama (cp : Nat) : Bool :=
     character encountered. Returns `none` if the walk runs off the
     start of the label or all preceding characters are Transparent. -/
 def firstNonTransparentDown : Nat → Array Nat → Nat → Option JoiningType
-  | 0,        _label, _j => none
-  | _fuel+1,  label,  j  =>
+  | 0,        label, j  =>
+    Function.const Nat (Function.const (Array Nat) (none : Option JoiningType) label) j
+  | fuel+1,   label, j  =>
     match label[j]? with
     | none    => none
     | some cp =>
@@ -47,7 +48,7 @@ def firstNonTransparentDown : Nat → Array Nat → Nat → Option JoiningType
       match jt with
       | .Transparent =>
         if j = 0 then none
-        else firstNonTransparentDown _fuel label (j - 1)
+        else firstNonTransparentDown fuel label (j - 1)
       | .RightJoining => some .RightJoining
       | .LeftJoining  => some .LeftJoining
       | .DualJoining  => some .DualJoining
@@ -59,14 +60,15 @@ def firstNonTransparentDown : Nat → Array Nat → Nat → Option JoiningType
     character encountered. Returns `none` if the walk runs off the
     end of the label or all following characters are Transparent. -/
 def firstNonTransparentUp : Nat → Array Nat → Nat → Option JoiningType
-  | 0,        _label, _j => none
-  | _fuel+1,  label,  j  =>
+  | 0,        label, j  =>
+    Function.const Nat (Function.const (Array Nat) (none : Option JoiningType) label) j
+  | fuel+1,   label, j  =>
     match label[j]? with
     | none    => none
     | some cp =>
       let jt := joiningType cp
       match jt with
-      | .Transparent  => firstNonTransparentUp _fuel label (j + 1)
+      | .Transparent  => firstNonTransparentUp fuel label (j + 1)
       | .RightJoining => some .RightJoining
       | .LeftJoining  => some .LeftJoining
       | .DualJoining  => some .DualJoining
