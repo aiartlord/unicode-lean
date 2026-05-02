@@ -4,14 +4,19 @@
   Conformance against UCA 16.0.0's CollationTest_*_SHORT.txt files.
   Each non-blank, non-comment line is a sequence of hex codepoints
   representing one test string. The conformance invariant: for every
-  adjacent pair (row[i], row[i+1]), `sortKey(row[i]) ≤ sortKey(row[i+1])`
-  under the policy named in the filename.
+  adjacent pair `(rows[i], rows[i+1])` we must have
+  `sortKey(rows[i]) ≤ sortKey(rows[i+1])` under the policy named in
+  the filename.
 
   Two policies are checked:
 
     * NON_IGNORABLE — variable elements keep their primary weights.
     * SHIFTED       — variable elements have L1 zeroed and are
                       tracked at L4 instead.
+
+  The full-file theorems compile via `native_decide`, mirroring the
+  BidiTest / LineBreakTest / WordBreakTest / SentenceBreakTest /
+  GraphemeBreakTest pattern.
 -/
 
 import Unicode.Uca.SortKey
@@ -75,16 +80,14 @@ def rowsShifted : Array (Array Nat) :=
 -- §3 VERIFICATION
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Verify that `a` does not sort strictly after `b`, i.e.
-    `sortKey(a) ≤ sortKey(b)` under the chosen policy. -/
+/-- True iff `sortKey(a) ≤ sortKey(b)` under the chosen policy. -/
 def pairOk (handling : VariableHandling) (a b : Array Nat) : Bool :=
   match ucaCompare handling a b with
   | .lt => true
   | .eq => true
   | .gt => false
 
-/-- True iff every adjacent pair in `rows` is ordered (`a ≤ b`)
-    under `handling`. -/
+/-- True iff every adjacent pair in `rows` is ordered. -/
 def adjacentOrdered (handling : VariableHandling) (rows : Array (Array Nat)) :
     Bool := Id.run do
   let n := rows.size
@@ -106,27 +109,32 @@ def firstFailingPair (handling : VariableHandling) (rows : Array (Array Nat)) :
         return some i
   return none
 
-#eval s!"NON_IGNORABLE rows: {rowsNonIgnorable.size}"
-#eval s!"SHIFTED rows: {rowsShifted.size}"
-#eval s!"NON_IGNORABLE first failing pair: {firstFailingPair .nonIgnorable rowsNonIgnorable}"
-#eval s!"SHIFTED first failing pair: {firstFailingPair .shifted rowsShifted}"
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §4 BOOLEAN ENTRY POINTS  (closed by `native_decide`)
+-- ═══════════════════════════════════════════════════════════════════════════════
 
-#eval match firstFailingPair .nonIgnorable rowsNonIgnorable with
-      | none   => "no NI failure"
-      | some i =>
-        if h : i + 1 < rowsNonIgnorable.size then
-          let a := rowsNonIgnorable[i]'(by omega)
-          let b := rowsNonIgnorable[i + 1]'h
-          s!"NI[{i}]:\n  a   = {a}\n  b   = {b}\n  ka  = {sortKey .nonIgnorable a}\n  kb  = {sortKey .nonIgnorable b}"
-        else "out of bounds"
+/-- True iff the entire NON_IGNORABLE test file sorts correctly under
+    our `sortKey .nonIgnorable` implementation. -/
+def nonIgnorableOrdered : Bool := adjacentOrdered .nonIgnorable rowsNonIgnorable
 
-#eval match firstFailingPair .shifted rowsShifted with
-      | none   => "no SH failure"
-      | some i =>
-        if h : i + 1 < rowsShifted.size then
-          let a := rowsShifted[i]'(by omega)
-          let b := rowsShifted[i + 1]'h
-          s!"SH[{i}]:\n  a   = {a}\n  b   = {b}\n  ka  = {sortKey .shifted a}\n  kb  = {sortKey .shifted b}"
-        else "out of bounds"
+/-- True iff the entire SHIFTED test file sorts correctly under our
+    `sortKey .shifted` implementation. -/
+def shiftedOrdered : Bool := adjacentOrdered .shifted rowsShifted
+
+/-- Convenience: ordering of the first `n` rows of the NON_IGNORABLE
+    file. Used to bisect a partial failure of `nonIgnorableOrdered`. -/
+def nonIgnorableOrderedFirstN (n : Nat) : Bool :=
+  adjacentOrdered .nonIgnorable (rowsNonIgnorable.extract 0 n)
+
+/-- Convenience: ordering of the first `n` rows of the SHIFTED file. -/
+def shiftedOrderedFirstN (n : Nat) : Bool :=
+  adjacentOrdered .shifted (rowsShifted.extract 0 n)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §5 SMOKE TESTS  (small slices — fast feedback that the pipeline runs)
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+theorem nonIgnorable_first10000 : nonIgnorableOrderedFirstN 10000 = true := by native_decide
+theorem shifted_first10000      : shiftedOrderedFirstN 10000      = true := by native_decide
 
 end Unicode.Conformance.CollationTest

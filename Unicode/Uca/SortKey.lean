@@ -65,13 +65,21 @@ def collationElementsOf (cps : Array Nat) : Array CollationElement :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Adjust collation elements per the chosen variable-handling
-    policy. Under `NonIgnorable` the elements are returned
-    unchanged. Under `Shifted` each variable element's L1/L2/L3
-    are zeroed and its original L1 is recorded as the L4 marker;
-    every following ignorable element (`primary = 0`) inherits a
-    zero L4 until the next non-ignorable, non-variable element
-    resets the marker. The L4 marker for non-variable elements is
-    `0xFFFF` so they sort after any shifted weight at L4. -/
+    policy (UTS #10 §4.4). Under `NonIgnorable` every element keeps
+    its weights with L4 = 0xFFFF. Under `Shifted`:
+
+      * a variable element becomes ⟨0,0,0⟩ at L1/L2/L3 with its
+        original L1 demoted to L4, and the "shifted carry" flag
+        is set;
+      * a completely-ignorable element (L1 = L2 = L3 = 0) is
+        suppressed at every level including L4 = 0, regardless of
+        carry — these contribute nothing to the sort key;
+      * a primary-ignorable but not completely-ignorable element
+        (`primary = 0`, secondary or tertiary ≠ 0) inherits the
+        carry: under carry it is fully suppressed (L4 = 0), else
+        it is kept unchanged with L4 = 0xFFFF;
+      * a non-variable element with `primary ≠ 0` is kept unchanged
+        with L4 = 0xFFFF and clears the carry. -/
 def applyVariable (handling : VariableHandling)
     (ces : Array CollationElement) : Array (CollationElement × Nat) := Id.run do
   let mut acc : Array (CollationElement × Nat) := #[]
@@ -86,9 +94,12 @@ def applyVariable (handling : VariableHandling)
         acc := acc.push (zeroed, ce.primary)
         shiftedCarry := true
       else if ce.primary = 0 ∧ ce.secondary = 0 ∧ ce.tertiary = 0 then
-        -- completely ignorable: inherits whatever carry is in effect
+        let zeroed : CollationElement := ⟨0, 0, 0, false⟩
+        acc := acc.push (zeroed, 0)
+      else if ce.primary = 0 then
         if shiftedCarry then
-          acc := acc.push (ce, 0)
+          let zeroed : CollationElement := ⟨0, 0, 0, false⟩
+          acc := acc.push (zeroed, 0)
         else
           acc := acc.push (ce, 0xFFFF)
       else
@@ -119,9 +130,13 @@ def tertiaries (xs : Array (CollationElement × Nat)) : Array Nat :=
     let ce := cew.fst
     if ce.tertiary = 0 then a else a.push ce.tertiary) #[]
 
-/-- Build the L4 (quaternary) sequence — the variable-shift marker. -/
+/-- Build the L4 (quaternary) sequence. Entries with L4 = 0 are
+    skipped — those mark either completely-ignorable elements or
+    ignorable-after-variable elements, both of which UCA omits from
+    the sort key at L4. -/
 def quaternaries (xs : Array (CollationElement × Nat)) : Array Nat :=
-  xs.foldl (fun a (cew : CollationElement × Nat) => a.push cew.snd) #[]
+  xs.foldl (fun a (cew : CollationElement × Nat) =>
+    if cew.snd = 0 then a else a.push cew.snd) #[]
 
 /-- The level separator between L1, L2, L3, (L4) sections. -/
 def sep : Nat := 0

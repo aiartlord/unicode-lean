@@ -24,11 +24,31 @@
   consumes its output to build the sort key.
 -/
 
+import Std.Data.HashMap
 import Unicode.Generated.Allkeys
 
 namespace Unicode.Uca.Lookup
 
 open Unicode.Generated.Allkeys
+
+/-- DUCET index from "first codepoint of key" → list of entries
+    sharing that first codepoint. Built once at module load so every
+    subsequent lookup is O(k) where k is the small bucket size,
+    instead of O(39 407) over the full table. -/
+def ducetIndex : Std.HashMap Nat (Array DucetEntry) := Id.run do
+  let mut acc : Std.HashMap Nat (Array DucetEntry) :=
+    Std.HashMap.emptyWithCapacity 4096
+  for entry in ducetEntries do
+    if h : 0 < entry.key.size then
+      let cp := entry.key[0]
+      let bucket := acc.getD cp #[]
+      acc := acc.insert cp (bucket.push entry)
+  return acc
+
+/-- Bucket of DUCET entries whose key starts with `cp`. Empty when
+    no explicit entry begins with `cp` — the caller falls back to
+    the implicit-weight branch. -/
+def bucketFor (cp : Nat) : Array DucetEntry := ducetIndex.getD cp #[]
 
 /-- True iff `cps[start..start+key.size]` equals `key` exactly. -/
 def matchesAt (cps : Array Nat) (start : Nat) (key : Array Nat) : Bool := Id.run do
@@ -41,17 +61,26 @@ def matchesAt (cps : Array Nat) (start : Nat) (key : Array Nat) : Bool := Id.run
   return true
 
 /-- Find the longest DUCET entry whose key prefixes `cps[start..]`.
-    Returns the entry and the consumed length, or `none` if no
-    explicit entry matches. -/
+    Lookup is bucketed by the first codepoint, so the inner scan is
+    over a handful of contraction candidates rather than the entire
+    table. -/
 def longestMatchAt (cps : Array Nat) (start : Nat) : Option (DucetEntry × Nat) := Id.run do
-  let mut best : Option (DucetEntry × Nat) := none
-  for entry in ducetEntries do
-    if matchesAt cps start entry.key then
-      let len := entry.key.size
-      match best with
-      | none              => best := some (entry, len)
-      | some (_, oldLen) => if len > oldLen then best := some (entry, len)
-  return best
+  match cps[start]? with
+  | none    => return none
+  | some cp =>
+    let bucket := bucketFor cp
+    let mut best : Option (DucetEntry × Nat) := none
+    for entry in bucket do
+      if matchesAt cps start entry.key then
+        let len := entry.key.size
+        match best with
+        | none             => best := some (entry, len)
+        | some (oldEntry, oldLen) =>
+          if len > oldLen then
+            best := some (entry, len)
+          else
+            best := some (oldEntry, oldLen)
+    return best
 
 /-- True iff `cp` falls inside the given `@implicitweights` block. -/
 def inImplicitBlock (cp : Nat) (b : ImplicitBlock) : Bool :=
