@@ -107,14 +107,15 @@ import Unicode.Uca.Lookup
 import Unicode.Uca.SortKey
 
 -- UCA conformance — official CollationTest_*_SHORT.txt against
--- sortKey under both NON_IGNORABLE and SHIFTED variable handling
--- (currently diagnostic only; theorem follows once the algorithm
--- correctly handles UCA §4.4 variable-handling carry edge cases)
+-- sortKey under both NON_IGNORABLE and SHIFTED variable handling.
 import Unicode.Conformance.CollationTest
 
 -- UTS #46 conformance — official IdnaTestV2.txt against
 -- toUnicode / toAscii / toAsciiTransitional (strict subset)
 import Unicode.Conformance.IdnaTestV2
+
+-- UAX #31 — default identifier (R1-D1) + UTS #39 allowed-status profile
+import Unicode.Identifier
 
 -- Generated UCD-derived tables (UCD 17.0.0)
 import Unicode.Generated.CompatDecomp
