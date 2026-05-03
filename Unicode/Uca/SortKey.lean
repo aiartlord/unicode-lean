@@ -43,22 +43,35 @@ inductive VariableHandling where
 -- §1 COLLATION-ELEMENT WALK
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Greedily walk `cps` from index `i`, looking up each prefix
-    against DUCET (with implicit-weight fallback) and accumulating
-    every emitted collation element. -/
-def collateGo : Nat → Array Nat → Nat → Array CollationElement → Array CollationElement
-  | 0,      cps, i, acc =>
-    Function.const (Array Nat) (Function.const Nat acc i) cps
-  | fuel+1, cps, i, acc =>
+/-- Walk `cps` from index `i`, performing one (possibly discontiguous)
+    DUCET match per unconsumed position. The `consumed` array tracks
+    which input positions a previous match has already absorbed via
+    discontiguous contraction; those positions are skipped on
+    subsequent visits. The fuel parameter bounds recursion at
+    `cps.size + 1`, which suffices because every iteration either
+    advances `i` by one or terminates. -/
+def collateGo : Nat → Array Nat → Array Bool → Nat → Array CollationElement →
+    Array CollationElement
+  | 0,      cps, consumed, i, acc =>
+    Function.const (Array Nat) (Function.const (Array Bool)
+      (Function.const Nat acc i) consumed) cps
+  | fuel+1, cps, consumed, i, acc =>
     if i ≥ cps.size then acc
+    else if (consumed[i]?.getD true) then
+      collateGo fuel cps consumed (i + 1) acc
     else
-      let (entry, consumed) := resolveAt cps i
-      let step              := if consumed = 0 then 1 else consumed
-      collateGo fuel cps (i + step) (acc ++ entry.ces)
+      let step := matchAt cps consumed i
+      let consumed' := step.consumed.foldl
+        (fun c k => if hk : k < c.size then c.set k true else c)
+        consumed
+      collateGo fuel cps consumed' (i + 1) (acc ++ step.ces)
 
-/-- Compute the collation-element array for an NFD-normalised input. -/
+/-- Compute the collation-element array for an NFD-normalised input.
+    Initialises the `consumed` tracker to all `false` (no positions
+    yet absorbed by a contraction). -/
 def collationElementsOf (cps : Array Nat) : Array CollationElement :=
-  collateGo (cps.size + 1) cps 0 #[]
+  let consumed : Array Bool := Array.replicate cps.size false
+  collateGo (cps.size + 1) cps consumed 0 #[]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 VARIABLE HANDLING  (UTS #10 §4.4)

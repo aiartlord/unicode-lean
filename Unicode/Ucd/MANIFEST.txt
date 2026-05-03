@@ -19,3 +19,4 @@ CollationTest_NON_IGNORABLE_SHORT.txt	 2244523	484371915173d06fe4f0d52d4295cfa9c
 CollationTest_SHIFTED_SHORT.txt 	 2481430	9a9ef9ac6daffd8558ba68cf1abf0ff7313927ec4ee413719ad304fcd1828ab9
 IdnaTestV2.txt                  	  775810	ffcf59f6e97d765caa5ac8315e9511ba3b42955a554cbc431e4c016f20d25ca9
 DerivedJoiningType.txt          	   40009	6bd08b97da66b70ccfdab105a352de2984e02625239ec5695422c99b33d854f0
+PropListUca16.txt               	  144253	53d614508e2a0b2305a8aa21cd60d993de9326cdf65993660dfcce4503548583

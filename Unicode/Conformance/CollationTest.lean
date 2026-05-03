@@ -134,7 +134,12 @@ def shiftedOrderedFirstN (n : Nat) : Bool :=
 -- §5 SMOKE TESTS  (small slices — fast feedback that the pipeline runs)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-theorem nonIgnorable_first10000 : nonIgnorableOrderedFirstN 10000 = true := by native_decide
-theorem shifted_first10000      : shiftedOrderedFirstN 10000      = true := by native_decide
+/-- Every adjacent pair in the official UCA NON_IGNORABLE conformance
+    file sorts correctly under our `sortKey .nonIgnorable`. -/
+theorem nonIgnorable_conformance : nonIgnorableOrdered = true := by native_decide
+
+/-- Every adjacent pair in the official UCA SHIFTED conformance file
+    sorts correctly under our `sortKey .shifted`. -/
+theorem shifted_conformance : shiftedOrdered = true := by native_decide
 
 end Unicode.Conformance.CollationTest

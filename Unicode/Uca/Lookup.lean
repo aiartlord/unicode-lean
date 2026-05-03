@@ -26,6 +26,8 @@
 
 import Std.Data.HashMap
 import Unicode.Generated.Allkeys
+import Unicode.Generated.PropListUca16
+import Unicode.Normalization.Lookup
 
 namespace Unicode.Uca.Lookup
 
@@ -86,24 +88,34 @@ def longestMatchAt (cps : Array Nat) (start : Nat) : Option (DucetEntry × Nat) 
 def inImplicitBlock (cp : Nat) (b : ImplicitBlock) : Bool :=
   decide (b.min ≤ cp ∧ cp ≤ b.max)
 
-/-- Implicit-weight base AAAA for `cp`, per UTS #10 §10.1.3. The
-    explicit `@implicitweights` directives in `allkeys.txt` override
-    the default for the Tangut, Nushu, and Khitan blocks. -/
+/-- True iff `cp` lies in the CJK Unified Ideographs block
+    (U+4E00..U+9FFF) or the CJK Compatibility Ideographs block
+    (U+F900..U+FAFF). Used to split the Han Core tier from the
+    Han Other tier in `implicitBaseFor`. -/
+def inHanCoreBlock (cp : Nat) : Bool :=
+  decide ((0x4E00 ≤ cp ∧ cp ≤ 0x9FFF) ∨ (0xF900 ≤ cp ∧ cp ≤ 0xFAFF))
+
+/-- Implicit-weight base AAAA for `cp`, per UTS #10 §10.1.3 / Table 16.
+    Four cases, evaluated in order:
+
+      * `@implicitweights` blocks (Tangut, Nushu, Khitan, Jurchen,
+        Seal in 16.0) — explicit directives in `allkeys.txt`.
+      * Han Core (FB40): `Unified_Ideograph = Yes` AND in CJK
+        Unified Ideographs OR CJK Compatibility Ideographs blocks.
+      * Han Other (FB80): `Unified_Ideograph = Yes` AND NOT in those
+        blocks (CJK Extensions A..I, restricted to assigned
+        ideographs only).
+      * Everything else (FBC0): unassigned codepoints, including
+        the reserved gaps between consecutive CJK extension blocks. -/
 def implicitBaseFor (cp : Nat) : Nat :=
   match implicitBlocks.findSome? (fun b =>
     if inImplicitBlock cp b then some b.base else none) with
   | some base => base
   | none =>
-    -- CJK Unified Ideographs (the "common" block) → 0xFB40
-    if (0x4E00 ≤ cp ∧ cp ≤ 0x9FFF) ∨
-       (0xF900 ≤ cp ∧ cp ≤ 0xFAFF) then 0xFB40
-    -- CJK Unified Ideographs Extensions A..H → 0xFB80
-    else if (0x3400 ≤ cp ∧ cp ≤ 0x4DBF) ∨
-            (0x20000 ≤ cp ∧ cp ≤ 0x2A6DF) ∨
-            (0x2A700 ≤ cp ∧ cp ≤ 0x2EE5F) ∨
-            (0x30000 ≤ cp ∧ cp ≤ 0x323AF) then 0xFB80
-    -- Default for any other unassigned codepoint
-    else 0xFBC0
+    if Unicode.Generated.PropListUca16.isUnifiedIdeograph cp then
+      if inHanCoreBlock cp then 0xFB40 else 0xFB80
+    else
+      0xFBC0
 
 /-- Implicit collation elements for `cp`, returned as a pair of
     elements per UTS #10 §10.1. -/
@@ -130,6 +142,92 @@ def resolveAt (cps : Array Nat) (start : Nat) : DucetEntry × Nat :=
     match cps[start]? with
     | some cp => (implicitEntry cp, 1)
     | none    => (implicitEntry 0, 0)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §X DISCONTIGUOUS MATCHING  (UTS #10 §6.1 / S2.1)
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- One step's match result: the collation elements to emit, plus the
+    sorted ascending list of input positions consumed by this step.
+    Position `start` is always in `consumed`; additional positions
+    appear when a discontiguous contraction match has skipped over
+    blocked-class non-starters to find a longer key. -/
+structure MatchStep where
+  ces      : Array CollationElement
+  consumed : Array Nat
+  deriving Inhabited
+
+/-- Look up a DUCET entry whose key exactly equals `target` within a
+    bucket already filtered on the first codepoint. -/
+def findInBucket (bucket : Array DucetEntry) (target : Array Nat) :
+    Option DucetEntry :=
+  bucket.findSome? (fun e => if e.key = target then some e else none)
+
+/-- One walk step. Find the longest contiguous DUCET entry starting
+    at `start`, then attempt to extend it discontiguously by
+    appending unblocked non-starters that lie further along the
+    input. Per UTS #10 §S2.1, a non-starter `c` at position `j` can
+    be appended only when no unconsumed non-starter between the
+    current end of the matched key and `j` has CCC ≥ CCC(c) — after
+    NFD reordering, this is equivalent to requiring that the
+    most-recently-skipped non-starter has strictly lower CCC than
+    `c`. Successful extensions reset the skipped-CCC tracker. -/
+def matchAt (cps : Array Nat) (consumed : Array Bool) (start : Nat) :
+    MatchStep := Id.run do
+  match cps[start]? with
+  | none    => return ⟨#[], #[start]⟩
+  | some cp =>
+    let bucket := bucketFor cp
+    -- Phase 1: longest contiguous prefix match. The `gotMatch` flag
+    -- distinguishes "no DUCET hit so use implicit fallback" from
+    -- "single-cp DUCET hit", since both have key length 1.
+    let mut bestEntry : DucetEntry := implicitEntry cp
+    let mut bestKey   : Array Nat   := #[cp]
+    let mut bestLen   : Nat         := 1
+    let mut gotMatch  : Bool        := false
+    for entry in bucket do
+      if matchesAt cps start entry.key then
+        if !gotMatch ∨ entry.key.size > bestLen then
+          bestEntry := entry
+          bestKey   := entry.key
+          bestLen   := entry.key.size
+          gotMatch  := true
+    let mut consumedHere : Array Nat :=
+      (Array.range bestLen).map (fun k => start + k)
+    -- Phase 2: discontiguous extension per UTS #10 §7.2 S2.1.1–S2.1.3.
+    -- Walk forward from the end of the contiguous match. For each
+    -- non-starter C at position j: if C is unblocked w.r.t. S
+    -- (`CCC(C) > maxSkippedCCC`), try `bestKey ++ #[C]` against the
+    -- bucket; on success extend the match and reset `maxSkippedCCC`,
+    -- on failure record C as skipped (`maxSkippedCCC := max …`). If C
+    -- is blocked (`CCC(C) ≤ maxSkippedCCC`), advance past C without
+    -- trying to extend; C's CCC is already covered by the running max.
+    -- The scan terminates on a starter (CCC = 0) or end of input.
+    -- Bound the loop by `cps.size` so totality is structural.
+    let mut j              : Nat := start + bestLen
+    let mut maxSkippedCCC  : Nat := 0
+    let n := cps.size
+    for _step in [0:n] do
+      if j ≥ n then break
+      if (consumed[j]?.getD true) then
+        j := j + 1
+      else
+        let c := cps[j]!
+        let cCCC := Unicode.Normalization.Lookup.canonicalCombiningClass c
+        if cCCC = 0 then
+          break
+        if cCCC > maxSkippedCCC then
+          let candidateKey := bestKey.push c
+          match findInBucket bucket candidateKey with
+          | some entry =>
+            bestEntry     := entry
+            bestKey       := candidateKey
+            consumedHere  := consumedHere.push j
+            maxSkippedCCC := 0
+          | none =>
+            maxSkippedCCC := cCCC
+        j := j + 1
+    return ⟨bestEntry.ces, consumedHere⟩
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 SPOT CHECKS
