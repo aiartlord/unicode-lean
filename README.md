@@ -1,10 +1,15 @@
 # unicode-lean
 
-Unicode normalization (UAX #15), the bidirectional algorithm
-(UAX #9), PRECIS identifier preparation (RFC 8264 / 8265), and
-confusable-skeleton equivalence (UTS #39 §4) — machine-checked in
-Lean 4.28.0 against UCD 17.0.0. Lean core only — no Mathlib, no
-external dependencies. Zero `sorry`, zero `admit`, zero
+Unicode standard's algorithms — normalization (UAX #15), the
+bidirectional algorithm (UAX #9), line / grapheme / word /
+sentence segmentation (UAX #14, #29), the collation algorithm
+(UTS #10), IDNA compatibility processing (UTS #46), the default
+identifier rule (UAX #31), PRECIS identifier preparation
+(RFC 8264 / 8265), Punycode (RFC 3492), strict UTF-8 / UTF-16 /
+UTF-32 codecs, BOM detection, and noncharacter detection —
+machine-checked in Lean 4.28.0 against UCD 17.0.0 (UCA 16.0.0
+where the UCA shipped behind UCD). Lean core only — no Mathlib,
+no external dependencies. Zero `sorry`, zero `admit`, zero
 project-local `axiom`, zero runtime escape.
 
 ## Pillars
@@ -12,9 +17,18 @@ project-local `axiom`, zero runtime escape.
 | Pillar | Reference | Headline theorem |
 |---|---|---|
 | Normalization | UAX #15 | `Normalization.QuickCheckSoundnessTheorem.quickCheck_sound` — `isNFCQuickCheck cps = true → toNFC cps = cps` |
+| Bidirectional Algorithm | UAX #9 | `Bidi.Algorithm.bidiParagraph` — P / X / W / N / I / L1 / L4 phases; full `BidiTest.txt` + `BidiCharacterTest.txt` conformance |
+| Line / Grapheme / Word / Sentence breaks | UAX #14 / #29 | `Conformance.{LineBreak,GraphemeBreak,WordBreak,SentenceBreak}Test.all_pass` — every published row passes |
+| Collation | UTS #10 (UCA 16.0) | `Conformance.CollationTest.{nonIgnorable,shifted}_conformance` — every adjacent pair in `CollationTest_*_SHORT.txt` orders correctly under both variable-handling policies |
+| IDNA | UTS #46 | `Conformance.IdnaTestV2.{strict,all}_conformance` — 546/546 strict + 6389/6389 lenient against `IdnaTestV2.txt` |
+| Identifiers | UAX #31 + UTS #39 | `Identifier.isDefaultIdentifier` (R1-D1) + `isAllowedIdentifier` (general security profile) |
 | PRECIS | RFC 8264 / 8265 | `Precis.Preparation.precis_idempotent` — preparation pipeline is idempotent on its image |
-| Bidirectional Algorithm | UAX #9 | `Bidi.Algorithm.bidiParagraph` — P / X / W / N / I / L1 / L4 phases |
 | Confusables | UTS #39 §4 | `Confusables.areConfusable_trans` — confusable-skeleton equivalence relation |
+| Punycode | RFC 3492 | `Idna.Punycode.{encode,decode}` — RFC §7.1 sample-string conformance |
+| UTF-8 codec | RFC 3629 | `Codec.Utf8Roundtrip.decode_encode_codepoint` — closed-form per-codepoint roundtrip across every valid scalar codepoint |
+| UTF-16 / UTF-32 codecs | UAX #44 §3 | `Codec.{Utf16,Utf32}.decodeOne{BE,LE}_encodeOne{BE,LE}` — closed-form per-codepoint roundtrip with surrogate-pair handling |
+| BOM detection | UAX #41 | `Codec.Bom.detect` — UTF-8 / UTF-16 BE+LE / UTF-32 BE+LE precedence |
+| Noncharacters | UAX #44 §5.6 | `Codec.Noncharacters.{count_noncharacters,all_are_noncharacters,all_are_valid_codepoints}` — exactly the 66 designated noncharacters, all in the valid scalar range |
 
 ## Workflow
 
@@ -44,13 +58,19 @@ unicode-lean/
 │   ├── Bidi/Algorithm.lean      # UAX #9
 │   ├── CaseFoldCommutation.lean # UAX #15 + UAX #44 §5.18
 │   ├── CaseFoldRoundtrip.lean
+│   ├── Codec/                   # UTF-8 / UTF-16 / UTF-32 codecs, BOM, noncharacters
 │   ├── Confusables.lean         # UTS #39 §4
-│   ├── Generated/               # 19 files — UCD-derived tables
+│   ├── Conformance/             # CollationTest / IdnaTestV2 / Bidi*Test / *BreakTest
+│   ├── Generated/               # 25 files — UCD- and UCA-derived tables
+│   ├── Identifier.lean          # UAX #31 + UTS #39 general security profile
+│   ├── Idna/                    # UTS #46 (Map/Punycode/CheckJoiners/Process)
 │   ├── Invariants.lean
 │   ├── Normalization/           # 29 files — NFC/NFKC/NFD/NFKD + soundness kernel
 │   ├── Precis/                  # 8 files — RFC 8264 / 8265
 │   ├── Refined.lean
-│   └── Ucd/                     # UCD 17.0.0 source data + SHA256SUMS
+│   ├── Segmentation/            # UAX #14 line breaks, UAX #29 grapheme/word/sentence
+│   ├── Uca/                     # UTS #10 collation — Lookup + SortKey
+│   └── Ucd/                     # UCD 17.0.0 + UCA 16.0.0 source data + SHA256SUMS
 ├── scripts/                     # CI hardening (see Guarantees)
 └── .github/                     # CI workflows + governance
 ```
@@ -108,17 +128,27 @@ derived, open the corresponding `Unicode/Generated/*.lean` file.
 
 ## Use it from another Lake project
 
+Pin to a tagged release in your `lakefile.lean`:
+
 ```lean
 require unicode from git
-  "https://github.com/jpyxal-straylight/unicode-lean" @ "v0.1.0"
+  "https://github.com/jpyxal-straylight/unicode-lean" @ "v0.2.0"
 ```
+
+Then `lake update` and import the namespaces you need:
 
 ```lean
 import Unicode
 
--- or pin to a specific theorem
+-- or pin to specific modules
 import Unicode.Normalization.QuickCheckSoundnessTheorem
+import Unicode.Uca.SortKey
+import Unicode.Idna.Process
 ```
+
+Each tagged release reflects a state where every committed
+theorem closes; downstream projects can bump their pin
+deliberately rather than tracking moving `main`.
 
 ## License
 
