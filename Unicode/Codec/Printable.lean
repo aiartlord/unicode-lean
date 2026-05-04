@@ -37,12 +37,14 @@
   refinement type, and the constructor.
 -/
 
+import Unicode.Codec.Strict
 import Unicode.Codec.Utf8
 import Unicode.Generated.DerivedCoreProperties
 import Unicode.Normalization.Utf8Bridge
 
 namespace Unicode.Codec.Printable
 
+open Unicode.Codec.Strict (ForbiddenCategory)
 open Unicode.Codec.Utf8 (firstInvalidUtf8Offset foldCodepointsWithOffset)
 open Unicode.Generated
 open Unicode.Normalization
@@ -84,25 +86,14 @@ def firstForbiddenControl (bs : ByteArray) : Option (Nat × UInt8) :=
   firstForbiddenControlFrom bs 0
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- §3 FORBIDDEN-CODEPOINT CATEGORIES
+-- §3 FORBIDDEN-CODEPOINT CLASSIFICATION
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Categorical label for the curated CVE-flagged blocklist of
-    invisibility-attack codepoints. The names track the Unicode
-    standardisation term for each class; downstream consumers map
-    these onto their own reject-reason vocabularies. -/
-inductive ForbiddenCategory where
-  | bidiOverride            -- CVE-2021-42574 — U+202A..U+202E
-  | bidiIsolate             -- U+2066..U+2069
-  | zeroWidth               -- U+200B..U+200F
-  | bom                     -- U+FEFF
-  | tagCharacter            -- "Glassworm" / "ASCII Smuggler" — U+E0000..U+E007F
-  | variationSelector       -- VS 1..16 + VS supplement 17..256
-  | hangulFiller            -- U+FFA0, U+3164
-  | softHyphen              -- U+00AD
-  | interlinearAnnotation   -- U+FFF9..U+FFFB
-  | mongolianVowelSeparator -- U+180E
-  deriving Repr, DecidableEq, Inhabited
+-- The categorical label for the curated CVE-flagged blocklist is
+-- `Unicode.Codec.Strict.ForbiddenCategory`. It is shared with every
+-- strict text codec under `Unicode.Codec.*` so reject paths agree on a
+-- single vocabulary; the `open Unicode.Codec.Strict (ForbiddenCategory)`
+-- above pulls it into the local namespace.
 
 /-- Outcome of classifying a codepoint against the printable-text
     rejection rules. Two tiers: `narrow` for the curated CVE-flagged
