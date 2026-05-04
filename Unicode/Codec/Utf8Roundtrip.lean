@@ -783,6 +783,29 @@ private theorem encode_2byte_form (cp : Nat) (h_lo : 0x80 ≤ cp) (h_hi : cp < 0
   unfold encodeCodepoint
   simp [show ¬ (cp < 0x80) from by omega, h_hi]
 
+/-- Closed form of `encodeCodepoint cp` on the 3-byte bracket. -/
+private theorem encode_3byte_form (cp : Nat) (h_lo : 0x800 ≤ cp) (h_hi : cp < 0x10000) :
+    encodeCodepoint cp = ByteArray.mk #[
+      UInt8.ofNat (0xE0 ||| (cp >>> 12)),
+      UInt8.ofNat (0x80 ||| ((cp >>> 6) &&& 0x3F)),
+      UInt8.ofNat (0x80 ||| (cp &&& 0x3F))] := by
+  unfold encodeCodepoint
+  simp [show ¬ (cp < 0x80) from by omega,
+        show ¬ (cp < 0x800) from by omega, h_hi]
+
+/-- Closed form of `encodeCodepoint cp` on the 4-byte bracket. -/
+private theorem encode_4byte_form (cp : Nat) (h_lo : 0x10000 ≤ cp)
+    (h_hi : cp < 0x110000) :
+    encodeCodepoint cp = ByteArray.mk #[
+      UInt8.ofNat (0xF0 ||| (cp >>> 18)),
+      UInt8.ofNat (0x80 ||| ((cp >>> 12) &&& 0x3F)),
+      UInt8.ofNat (0x80 ||| ((cp >>> 6) &&& 0x3F)),
+      UInt8.ofNat (0x80 ||| (cp &&& 0x3F))] := by
+  unfold encodeCodepoint
+  simp [show ¬ (cp < 0x80) from by omega,
+        show ¬ (cp < 0x800) from by omega,
+        show ¬ (cp < 0x10000) from by omega]
+
 -- ────────────────────────────────────────────────────────────────────────────
 -- Bit-identity bridges: each byte's `&&& mask` collapses to the matching
 -- shift of `cp`. These hold for all `cp` (no upper bound on the shift
@@ -1136,6 +1159,191 @@ private theorem decode_concat_2byte (cp : Nat) (h_lo : 0x80 ≤ cp) (h_hi : cp <
         0 0 #[] (rest.size + 1) cp h_idx0 h_idx1
         h_b0_lo h_b0_hi h_b1_lo h_b1_hi h_cp_eq h_overlong h_nonsurr h_max]
   rw [show (0 : Nat) + 2 = pfxBytes.size + 0 from by rw [h_pfx_size]]
+  rw [fold_concat_translate pfxBytes rest
+        (fun a o c => Function.const Nat (a.push c) o)
+        decode_fn_push_eq
+        Utf8State.expectStart 0 (pfxBytes.size + 0) 0
+        (Function.const Nat ((#[] : Array Nat).push cp) 0) (rest.size + 1)]
+  rw [fold_push_acc_factor rest
+        (fun a o c => Function.const Nat (a.push c) o)
+        decode_fn_push_eq
+        Utf8State.expectStart 0 0
+        (Function.const Nat ((#[] : Array Nat).push cp) 0) (rest.size + 1)]
+  rfl
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- 3-byte
+-- ────────────────────────────────────────────────────────────────────────────
+
+/-- The shared continuation-byte form `0x80 ||| (x &&& 0x3F)` is reused
+    at byte positions 1, 2, 3 across the 2-, 3-, 4-byte cases — the
+    byte-1 lemma generalises across them. -/
+private theorem encode_continuation_bounds (x : Nat) :
+    (UInt8.ofNat (0x80 ||| (x &&& 0x3F))).toNat = 0x80 ||| (x &&& 0x3F) ∧
+    0x80 ≤ 0x80 ||| (x &&& 0x3F) ∧
+    0x80 ||| (x &&& 0x3F) < 0xC0 :=
+  encode_2byte_byte1 x
+
+/-- Prepending a 3-byte-encoded codepoint to `rest` decodes to
+    `#[cp] ++ decodeToCodepoints rest`. -/
+private theorem decode_concat_3byte (cp : Nat) (h_lo : 0x800 ≤ cp) (h_hi : cp < 0x10000)
+    (h_nonsurr : ¬ (0xD800 ≤ cp ∧ cp ≤ 0xDFFF))
+    (rest : ByteArray) :
+    decodeToCodepoints (encodeCodepoint cp ++ rest)
+      = #[cp] ++ decodeToCodepoints rest := by
+  rw [encode_3byte_form cp h_lo h_hi]
+  let pfxBytes : ByteArray := ByteArray.mk #[
+    UInt8.ofNat (0xE0 ||| (cp >>> 12)),
+    UInt8.ofNat (0x80 ||| ((cp >>> 6) &&& 0x3F)),
+    UInt8.ofNat (0x80 ||| (cp &&& 0x3F))]
+  have h_pfx_size : pfxBytes.size = 3 := rfl
+  have h_pfx_pos0 : 0 < pfxBytes.size := by rw [h_pfx_size]; omega
+  have h_pfx_pos1 : 1 < pfxBytes.size := by rw [h_pfx_size]; omega
+  have h_pfx_pos2 : 2 < pfxBytes.size := by rw [h_pfx_size]; omega
+  have h_total : (pfxBytes ++ rest).size = rest.size + 3 := by
+    rw [ByteArray.size_append, h_pfx_size]; omega
+  have h_idx0 : 0 < (pfxBytes ++ rest).size := by rw [h_total]; omega
+  have h_idx1 : 0 + 1 < (pfxBytes ++ rest).size := by rw [h_total]; omega
+  have h_idx2 : 0 + 2 < (pfxBytes ++ rest).size := by rw [h_total]; omega
+  have h_byte0_eq :
+      ((pfxBytes ++ rest)[0]'h_idx0).toNat = 0xE0 ||| (cp >>> 12) := by
+    rw [ByteArray.getElem_append_left h_pfx_pos0]
+    show (UInt8.ofNat (0xE0 ||| (cp >>> 12))).toNat = 0xE0 ||| (cp >>> 12)
+    exact (encode_3byte_byte0 cp h_lo h_hi).left
+  have h_byte1_eq :
+      ((pfxBytes ++ rest)[0 + 1]'h_idx1).toNat = 0x80 ||| ((cp >>> 6) &&& 0x3F) := by
+    rw [ByteArray.getElem_append_left h_pfx_pos1]
+    show (UInt8.ofNat (0x80 ||| ((cp >>> 6) &&& 0x3F))).toNat
+        = 0x80 ||| ((cp >>> 6) &&& 0x3F)
+    exact (encode_continuation_bounds (cp >>> 6)).left
+  have h_byte2_eq :
+      ((pfxBytes ++ rest)[0 + 2]'h_idx2).toNat = 0x80 ||| (cp &&& 0x3F) := by
+    rw [ByteArray.getElem_append_left h_pfx_pos2]
+    show (UInt8.ofNat (0x80 ||| (cp &&& 0x3F))).toNat = 0x80 ||| (cp &&& 0x3F)
+    exact (encode_continuation_bounds cp).left
+  have h_b0_lo : 0xE0 ≤ ((pfxBytes ++ rest)[0]'h_idx0).toNat := by
+    rw [h_byte0_eq]; exact (encode_3byte_byte0 cp h_lo h_hi).right.left
+  have h_b0_hi : ((pfxBytes ++ rest)[0]'h_idx0).toNat < 0xF0 := by
+    rw [h_byte0_eq]; exact (encode_3byte_byte0 cp h_lo h_hi).right.right
+  have h_b1_lo : 0x80 ≤ ((pfxBytes ++ rest)[0 + 1]'h_idx1).toNat := by
+    rw [h_byte1_eq]; exact (encode_continuation_bounds (cp >>> 6)).right.left
+  have h_b1_hi : ((pfxBytes ++ rest)[0 + 1]'h_idx1).toNat < 0xC0 := by
+    rw [h_byte1_eq]; exact (encode_continuation_bounds (cp >>> 6)).right.right
+  have h_b2_lo : 0x80 ≤ ((pfxBytes ++ rest)[0 + 2]'h_idx2).toNat := by
+    rw [h_byte2_eq]; exact (encode_continuation_bounds cp).right.left
+  have h_b2_hi : ((pfxBytes ++ rest)[0 + 2]'h_idx2).toNat < 0xC0 := by
+    rw [h_byte2_eq]; exact (encode_continuation_bounds cp).right.right
+  have h_cp_eq : cp =
+      ((((((pfxBytes ++ rest)[0]'h_idx0).toNat &&& 0x0F) <<< 6)
+            ||| (((pfxBytes ++ rest)[0 + 1]'h_idx1).toNat &&& 0x3F)) <<< 6)
+        ||| (((pfxBytes ++ rest)[0 + 2]'h_idx2).toNat &&& 0x3F) := by
+    rw [h_byte0_eq, h_byte1_eq, h_byte2_eq]
+    exact encode_3byte_bit_identity cp h_hi
+  have h_overlong : ¬ cp < 0x800 := by omega
+  have h_max : ¬ cp > 0x10FFFF := by omega
+  unfold decodeToCodepoints foldCodepointsWithOffset
+  rw [show (pfxBytes ++ rest).size + 1 = (rest.size + 1) + 3 from by rw [h_total]]
+  rw [fold_consume_3byte (pfxBytes ++ rest)
+        (fun a o c => Function.const Nat (a.push c) o)
+        0 0 #[] (rest.size + 1) cp h_idx0 h_idx1 h_idx2
+        h_b0_lo h_b0_hi h_b1_lo h_b1_hi h_b2_lo h_b2_hi
+        h_cp_eq h_overlong h_nonsurr h_max]
+  rw [show (0 : Nat) + 3 = pfxBytes.size + 0 from by rw [h_pfx_size]]
+  rw [fold_concat_translate pfxBytes rest
+        (fun a o c => Function.const Nat (a.push c) o)
+        decode_fn_push_eq
+        Utf8State.expectStart 0 (pfxBytes.size + 0) 0
+        (Function.const Nat ((#[] : Array Nat).push cp) 0) (rest.size + 1)]
+  rw [fold_push_acc_factor rest
+        (fun a o c => Function.const Nat (a.push c) o)
+        decode_fn_push_eq
+        Utf8State.expectStart 0 0
+        (Function.const Nat ((#[] : Array Nat).push cp) 0) (rest.size + 1)]
+  rfl
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- 4-byte
+-- ────────────────────────────────────────────────────────────────────────────
+
+/-- Prepending a 4-byte-encoded codepoint to `rest` decodes to
+    `#[cp] ++ decodeToCodepoints rest`. -/
+private theorem decode_concat_4byte (cp : Nat) (h_lo : 0x10000 ≤ cp) (h_hi : cp < 0x110000)
+    (rest : ByteArray) :
+    decodeToCodepoints (encodeCodepoint cp ++ rest)
+      = #[cp] ++ decodeToCodepoints rest := by
+  rw [encode_4byte_form cp h_lo h_hi]
+  let pfxBytes : ByteArray := ByteArray.mk #[
+    UInt8.ofNat (0xF0 ||| (cp >>> 18)),
+    UInt8.ofNat (0x80 ||| ((cp >>> 12) &&& 0x3F)),
+    UInt8.ofNat (0x80 ||| ((cp >>> 6) &&& 0x3F)),
+    UInt8.ofNat (0x80 ||| (cp &&& 0x3F))]
+  have h_pfx_size : pfxBytes.size = 4 := rfl
+  have h_pfx_pos0 : 0 < pfxBytes.size := by rw [h_pfx_size]; omega
+  have h_pfx_pos1 : 1 < pfxBytes.size := by rw [h_pfx_size]; omega
+  have h_pfx_pos2 : 2 < pfxBytes.size := by rw [h_pfx_size]; omega
+  have h_pfx_pos3 : 3 < pfxBytes.size := by rw [h_pfx_size]; omega
+  have h_total : (pfxBytes ++ rest).size = rest.size + 4 := by
+    rw [ByteArray.size_append, h_pfx_size]; omega
+  have h_idx0 : 0 < (pfxBytes ++ rest).size := by rw [h_total]; omega
+  have h_idx1 : 0 + 1 < (pfxBytes ++ rest).size := by rw [h_total]; omega
+  have h_idx2 : 0 + 2 < (pfxBytes ++ rest).size := by rw [h_total]; omega
+  have h_idx3 : 0 + 3 < (pfxBytes ++ rest).size := by rw [h_total]; omega
+  have h_byte0_eq :
+      ((pfxBytes ++ rest)[0]'h_idx0).toNat = 0xF0 ||| (cp >>> 18) := by
+    rw [ByteArray.getElem_append_left h_pfx_pos0]
+    show (UInt8.ofNat (0xF0 ||| (cp >>> 18))).toNat = 0xF0 ||| (cp >>> 18)
+    exact (encode_4byte_byte0 cp h_lo h_hi).left
+  have h_byte1_eq :
+      ((pfxBytes ++ rest)[0 + 1]'h_idx1).toNat = 0x80 ||| ((cp >>> 12) &&& 0x3F) := by
+    rw [ByteArray.getElem_append_left h_pfx_pos1]
+    show (UInt8.ofNat (0x80 ||| ((cp >>> 12) &&& 0x3F))).toNat
+        = 0x80 ||| ((cp >>> 12) &&& 0x3F)
+    exact (encode_continuation_bounds (cp >>> 12)).left
+  have h_byte2_eq :
+      ((pfxBytes ++ rest)[0 + 2]'h_idx2).toNat = 0x80 ||| ((cp >>> 6) &&& 0x3F) := by
+    rw [ByteArray.getElem_append_left h_pfx_pos2]
+    show (UInt8.ofNat (0x80 ||| ((cp >>> 6) &&& 0x3F))).toNat
+        = 0x80 ||| ((cp >>> 6) &&& 0x3F)
+    exact (encode_continuation_bounds (cp >>> 6)).left
+  have h_byte3_eq :
+      ((pfxBytes ++ rest)[0 + 3]'h_idx3).toNat = 0x80 ||| (cp &&& 0x3F) := by
+    rw [ByteArray.getElem_append_left h_pfx_pos3]
+    show (UInt8.ofNat (0x80 ||| (cp &&& 0x3F))).toNat = 0x80 ||| (cp &&& 0x3F)
+    exact (encode_continuation_bounds cp).left
+  have h_b0_lo : 0xF0 ≤ ((pfxBytes ++ rest)[0]'h_idx0).toNat := by
+    rw [h_byte0_eq]; exact (encode_4byte_byte0 cp h_lo h_hi).right.left
+  have h_b0_hi : ((pfxBytes ++ rest)[0]'h_idx0).toNat < 0xF5 := by
+    rw [h_byte0_eq]; exact (encode_4byte_byte0 cp h_lo h_hi).right.right
+  have h_b1_lo : 0x80 ≤ ((pfxBytes ++ rest)[0 + 1]'h_idx1).toNat := by
+    rw [h_byte1_eq]; exact (encode_continuation_bounds (cp >>> 12)).right.left
+  have h_b1_hi : ((pfxBytes ++ rest)[0 + 1]'h_idx1).toNat < 0xC0 := by
+    rw [h_byte1_eq]; exact (encode_continuation_bounds (cp >>> 12)).right.right
+  have h_b2_lo : 0x80 ≤ ((pfxBytes ++ rest)[0 + 2]'h_idx2).toNat := by
+    rw [h_byte2_eq]; exact (encode_continuation_bounds (cp >>> 6)).right.left
+  have h_b2_hi : ((pfxBytes ++ rest)[0 + 2]'h_idx2).toNat < 0xC0 := by
+    rw [h_byte2_eq]; exact (encode_continuation_bounds (cp >>> 6)).right.right
+  have h_b3_lo : 0x80 ≤ ((pfxBytes ++ rest)[0 + 3]'h_idx3).toNat := by
+    rw [h_byte3_eq]; exact (encode_continuation_bounds cp).right.left
+  have h_b3_hi : ((pfxBytes ++ rest)[0 + 3]'h_idx3).toNat < 0xC0 := by
+    rw [h_byte3_eq]; exact (encode_continuation_bounds cp).right.right
+  have h_cp_eq : cp =
+      (((((((pfxBytes ++ rest)[0]'h_idx0).toNat &&& 0x07) <<< 6)
+              ||| (((pfxBytes ++ rest)[0 + 1]'h_idx1).toNat &&& 0x3F)) <<< 6)
+            ||| (((pfxBytes ++ rest)[0 + 2]'h_idx2).toNat &&& 0x3F)) <<< 6
+        ||| (((pfxBytes ++ rest)[0 + 3]'h_idx3).toNat &&& 0x3F) := by
+    rw [h_byte0_eq, h_byte1_eq, h_byte2_eq, h_byte3_eq]
+    exact encode_4byte_bit_identity cp h_hi
+  have h_overlong : ¬ cp < 0x10000 := by omega
+  have h_nonsurr : ¬ (0xD800 ≤ cp ∧ cp ≤ 0xDFFF) := by omega
+  have h_max : ¬ cp > 0x10FFFF := by omega
+  unfold decodeToCodepoints foldCodepointsWithOffset
+  rw [show (pfxBytes ++ rest).size + 1 = (rest.size + 1) + 4 from by rw [h_total]]
+  rw [fold_consume_4byte (pfxBytes ++ rest)
+        (fun a o c => Function.const Nat (a.push c) o)
+        0 0 #[] (rest.size + 1) cp h_idx0 h_idx1 h_idx2 h_idx3
+        h_b0_lo h_b0_hi h_b1_lo h_b1_hi h_b2_lo h_b2_hi h_b3_lo h_b3_hi
+        h_cp_eq h_overlong h_nonsurr h_max]
+  rw [show (0 : Nat) + 4 = pfxBytes.size + 0 from by rw [h_pfx_size]]
   rw [fold_concat_translate pfxBytes rest
         (fun a o c => Function.const Nat (a.push c) o)
         decode_fn_push_eq
