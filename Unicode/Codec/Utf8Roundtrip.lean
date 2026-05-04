@@ -1356,4 +1356,58 @@ private theorem decode_concat_4byte (cp : Nat) (h_lo : 0x10000 ≤ cp) (h_hi : c
         (Function.const Nat ((#[] : Array Nat).push cp) 0) (rest.size + 1)]
   rfl
 
+-- ────────────────────────────────────────────────────────────────────────────
+-- Dispatcher
+-- ────────────────────────────────────────────────────────────────────────────
+
+/-- Append distribution for any valid codepoint. The case split on
+    `cp`'s UTF-8 byte length picks the matching per-length helper. -/
+private theorem decode_concat_codepoint (cp : Nat) (h : IsValidCodepoint cp)
+    (rest : ByteArray) :
+    decodeToCodepoints (encodeCodepoint cp ++ rest)
+      = #[cp] ++ decodeToCodepoints rest := by
+  obtain ⟨h_max, h_nonsurr⟩ := h
+  by_cases h1 : cp < 0x80
+  · exact decode_concat_ascii cp h1 rest
+  · by_cases h2 : cp < 0x800
+    · exact decode_concat_2byte cp (Nat.le_of_not_lt h1) h2 rest
+    · by_cases h3 : cp < 0x10000
+      · exact decode_concat_3byte cp (Nat.le_of_not_lt h2) h3 h_nonsurr rest
+      · exact decode_concat_4byte cp (Nat.le_of_not_lt h3) h_max rest
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §13 ARRAY-LEVEL ROUNDTRIP
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- The list-form analogue of `decode_encode_codepoints`: decoding the
+    concatenation of UTF-8 encodings of a list of valid codepoints
+    yields back the list as an `Array`. Proven by structural induction
+    on the codepoint list using `decode_concat_codepoint`. -/
+private theorem decode_encodeList (cps : List Nat)
+    (h_all : ∀ cp ∈ cps, IsValidCodepoint cp) :
+    decodeToCodepoints (encodeCodepointsList cps) = cps.toArray := by
+  induction cps with
+  | nil =>
+    show decodeToCodepoints ByteArray.empty = (#[] : Array Nat)
+    unfold decodeToCodepoints foldCodepointsWithOffset foldCodepointsWithOffsetGo
+    rfl
+  | cons cp tail ih =>
+    have h_cp : IsValidCodepoint cp := h_all cp List.mem_cons_self
+    have h_tail : ∀ cp' ∈ tail, IsValidCodepoint cp' := fun cp' h_mem =>
+      h_all cp' (List.mem_cons_of_mem cp h_mem)
+    show decodeToCodepoints (encodeCodepoint cp ++ encodeCodepointsList tail)
+        = (cp :: tail).toArray
+    rw [decode_concat_codepoint cp h_cp (encodeCodepointsList tail), ih h_tail]
+    exact (List.toArray_cons cp tail).symm
+
+/-- **Array-level UTF-8 roundtrip.** Decoding the UTF-8 encoding of an
+    array of valid codepoints yields the array back. The inductive
+    step is `decode_concat_codepoint`; the base case is the empty
+    fold's identity behaviour. -/
+theorem decode_encode_codepoints (cps : Array Nat)
+    (h_all : ∀ cp ∈ cps, IsValidCodepoint cp) :
+    decodeToCodepoints (encodeCodepoints cps) = cps := by
+  rw [encodeCodepoints_eq_list cps]
+  rw [decode_encodeList cps.toList (fun cp h_mem => h_all cp (Array.mem_def.mpr h_mem))]
+
 end Unicode.Codec.Utf8Roundtrip
