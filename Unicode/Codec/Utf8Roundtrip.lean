@@ -425,71 +425,312 @@ private theorem fold_step_4byte_start
   simp only [hi, ↓reduceDIte, hstep]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- §5 ARRAY-LEVEL ROUNDTRIP — DOCUMENTATION OF REMAINING WORK
+-- §5 ACCUMULATOR FACTORING
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-
-  The closed-form array-level theorem we want is:
+/-- Push-only fold satisfies the left-monoid factoring law:
 
-      ∀ cps : Array Nat, (∀ cp ∈ cps, IsValidCodepoint cp) →
-        decodeToCodepoints (encodeCodepoints cps) = cps
+      fold bs f st i seqStart acc fuel
+        = acc ++ fold bs f st i seqStart #[] fuel
 
-  Building blocks already proven above:
+    Holds for any `f` whose effect on the accumulator is
+    `acc.push cp` (i.e. left-extension) — captured by the `hf`
+    hypothesis. The proof is by fuel induction, splitting on the
+    state-machine result for the current byte. -/
+private theorem fold_push_acc_factor
+    (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
+    (hf : ∀ a o c, f a o c = a.push c)
+    (st : Utf8State) (i seqStart : Nat) (acc : Array Nat) (fuel : Nat) :
+    foldCodepointsWithOffsetGo bs f st i seqStart acc fuel
+      = acc ++ foldCodepointsWithOffsetGo bs f st i seqStart #[] fuel := by
+  induction fuel generalizing st i seqStart acc with
+  | zero =>
+    unfold foldCodepointsWithOffsetGo
+    simp
+  | succ fuel' ih =>
+    unfold foldCodepointsWithOffsetGo
+    by_cases hi : i < bs.size
+    · simp only [hi, ↓reduceDIte]
+      generalize hStep : utf8DecodeStep st (bs[i]'hi) = step
+      cases step with
+      | «continue» next =>
+        simp only []
+        cases st with
+        | expectStart => exact ih next (i + 1) i acc
+        | expectCont rem accum minCp => exact ih next (i + 1) seqStart acc
+      | emit cp next =>
+        simp only []
+        rw [hf acc seqStart cp, hf #[] seqStart cp]
+        rw [ih next (i + 1) (i + 1) (acc.push cp)]
+        rw [ih next (i + 1) (i + 1) (#[].push cp)]
+        -- Goal: acc.push cp ++ X = acc ++ (#[].push cp ++ X)
+        -- where X is the same fold-from-#[] on both sides
+        rw [show (#[] : Array Nat).push cp = #[cp] from rfl,
+            show acc.push cp = acc ++ #[cp] from rfl,
+            Array.append_assoc]
+      | reject reason =>
+        simp
+    · simp [hi]
 
-    - `decode_encode_codepoint`         per-codepoint roundtrip
-    - `fold_oob_expectStart`            i ≥ bs.size returns acc
-    - `fold_step_ascii`                 1-byte advance
-    - `fold_step_2byte_start`           2-byte start byte → expectCont
-    - `fold_step_3byte_start`           3-byte start byte → expectCont
-    - `fold_step_4byte_start`           4-byte start byte → expectCont
-    - `fold_step_cont_continue`         continuation accumulating step
-    - `fold_step_cont_emit_last`        last continuation → emit + expectStart
+/-- The specialised form for `decodeToCodepoints`'s inline lambda.
+    `fun acc offset cp => Function.const Nat (acc.push cp) offset`
+    discards the offset via `Function.const`; this lemma exposes the
+    push-only behaviour to `fold_push_acc_factor`. -/
+private theorem decode_fn_push (a : Array Nat) (o c : Nat) :
+    (fun acc offset cp => Function.const Nat (acc.push cp) offset)
+      a o c = a.push c := by
+  rfl
 
-  Remaining proof obligations (each is its own sub-lemma):
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §6 OFFSET TRANSLATION
+-- ═══════════════════════════════════════════════════════════════════════════════
 
-    1. `fold_acc_monoid`
-       The push-only fold satisfies
-         fold bs f st i seqStart acc fuel
-           = acc ++ fold bs f st i seqStart #[] fuel
-       so we can factor the accumulator out of any fold. Proven by
-       fuel induction with case-split on `utf8DecodeStep` outcome.
+/-- Index `a.size + k` in `a ++ b` equals index `k` in `b`. The
+    standard `ByteArray.getElem_append_right`-style fact, restated
+    here so the proof of `fold_concat_translate` doesn't have to
+    grovel through Substring index arithmetic. -/
+private theorem byte_at_offset_concat
+    (a b : ByteArray) (k : Nat) (hk : k < b.size) :
+    (a ++ b)[a.size + k]'(by
+      simp [ByteArray.size_append]; omega) = b[k]'hk := by
+  simp [ByteArray.getElem_append_right]
 
-    2. `fold_translate_at_size`
-       For any a, b, fuel, st (≠ .expectCont blocking):
-         fold (a ++ b) f st a.size sa acc fuel
-           = fold b f st 0 sb acc fuel
-       Translation invariance: fold from offset a.size in (a ++ b)
-       equals fold from offset 0 in b. Proven by fuel induction +
-       `ByteArray.getElem_append_right`.
+/-- Fold-translation invariance: walking `(a ++ b)` from offset `a.size`
+    is the same walk as `b` from offset 0. The fold's `seqStart` is
+    threaded through but never inspected by the push-only `f`, so the
+    two sides may carry different `seqStart` values (`sa` and `sb`)
+    without affecting the result. Generalising `seqStart` is necessary
+    because the `.expectCont` continue step keeps the old `seqStart`
+    untouched while the index advances; without it, the IH would not
+    apply across that case. -/
+private theorem fold_concat_translate
+    (a b : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
+    (hf : ∀ ac o c, f ac o c = ac.push c)
+    (st : Utf8State) (delta sa sb : Nat) (acc : Array Nat) (fuel : Nat) :
+    foldCodepointsWithOffsetGo (a ++ b) f st (a.size + delta) sa acc fuel
+      = foldCodepointsWithOffsetGo b f st delta sb acc fuel := by
+  induction fuel generalizing st delta sa sb acc with
+  | zero =>
+    unfold foldCodepointsWithOffsetGo
+    rfl
+  | succ fuel' ih =>
+    unfold foldCodepointsWithOffsetGo
+    by_cases hb : delta < b.size
+    · have hab : a.size + delta < (a ++ b).size := by
+        simp [ByteArray.size_append]; omega
+      have hbyte :
+          (a ++ b)[a.size + delta]'hab = b[delta]'hb := by
+        simp [ByteArray.getElem_append_right]
+      simp only [hab, ↓reduceDIte, hb, hbyte]
+      generalize hStep : utf8DecodeStep st (b[delta]'hb) = step
+      cases step with
+      | «continue» next =>
+        simp only []
+        have h1 : a.size + delta + 1 = a.size + (delta + 1) := by omega
+        cases st with
+        | expectStart =>
+          rw [h1]
+          exact ih next (delta + 1) (a.size + delta) delta acc
+        | expectCont rem accum minCp =>
+          rw [h1]
+          exact ih next (delta + 1) sa sb acc
+      | emit cp next =>
+        simp only []
+        have h1 : a.size + delta + 1 = a.size + (delta + 1) := by omega
+        rw [hf acc sa cp, hf acc sb cp, h1]
+        exact ih next (delta + 1) (a.size + delta + 1) (delta + 1) (acc.push cp)
+      | reject reason =>
+        rfl
+    · simp [hb, ByteArray.size_append]
 
-    3. Per-byte-length consume lemmas (combining the step lemmas):
-         consume_ascii cp h_valid bs i .. → fold advances by 1, emits cp
-         consume_2byte cp h_valid bs i .. → fold advances by 2, emits cp
-         consume_3byte cp h_valid bs i .. → fold advances by 3, emits cp
-         consume_4byte cp h_valid bs i .. → fold advances by 4, emits cp
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §7 PER-BYTE-LENGTH CONSUME LEMMAS
+-- ═══════════════════════════════════════════════════════════════════════════════
+--
+-- Each consume lemma combines the §4 step lemmas to advance the fold
+-- through one full encoded codepoint, returning to `.expectStart` at
+-- the byte after the encoding with `cp` pushed onto the accumulator.
 
-    4. `decode_concat_codepoint`
-         decodeToCodepoints (encodeCodepoint cp ++ rest) =
-           #[cp] ++ decodeToCodepoints rest
-       Combines: case-split on cp's byte length, apply consume lemma,
-       apply translation, apply acc_monoid to factor #[cp] out.
+/-- An ASCII codepoint occupies 1 byte; fold consumes that byte and
+    emits `cp`. -/
+private theorem fold_consume_ascii
+    (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
+    (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
+    (cp : Nat) (h_cp : cp < 0x80)
+    (hi : i < bs.size)
+    (h_b0 : (bs[i]'hi).toNat = cp) :
+    foldCodepointsWithOffsetGo bs f .expectStart i seqStart acc (fuel + 1)
+      = foldCodepointsWithOffsetGo bs f .expectStart (i + 1) (i + 1)
+          (f acc seqStart cp) fuel := by
+  exact fold_step_ascii bs f i seqStart acc fuel cp h_cp hi h_b0
 
-    5. `encodeCodepoints_eq_list`
-         encodeCodepoints cps = encodeCodepointsList cps.toList
-       List/Array foldl equivalence.
+/-- A 2-byte codepoint occupies bytes [i, i+1]; fold consumes both
+    and emits `cp`. -/
+private theorem fold_consume_2byte
+    (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
+    (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
+    (cp : Nat)
+    (hi0 : i < bs.size) (hi1 : i + 1 < bs.size)
+    (h_b0_lo : 0xC2 ≤ (bs[i]'hi0).toNat) (h_b0_hi : (bs[i]'hi0).toNat < 0xE0)
+    (h_b1_lo : 0x80 ≤ (bs[i+1]'hi1).toNat) (h_b1_hi : (bs[i+1]'hi1).toNat < 0xC0)
+    (h_cp_eq : cp = (((bs[i]'hi0).toNat &&& 0x1F) <<< 6)
+                      ||| ((bs[i+1]'hi1).toNat &&& 0x3F))
+    (h_overlong : ¬ cp < 0x80)
+    (h_nonsurr : ¬ (0xD800 ≤ cp ∧ cp ≤ 0xDFFF))
+    (h_max : ¬ cp > 0x10FFFF) :
+    foldCodepointsWithOffsetGo bs f .expectStart i seqStart acc (fuel + 2)
+      = foldCodepointsWithOffsetGo bs f .expectStart (i + 2) (i + 2)
+          (f acc i cp) (fuel) := by
+  rw [show fuel + 2 = (fuel + 1) + 1 from rfl]
+  rw [fold_step_2byte_start bs f i seqStart acc (fuel + 1) hi0 h_b0_lo h_b0_hi]
+  rw [fold_step_cont_emit_last bs f (i + 1) i acc fuel
+        ((bs[i]'hi0).toNat &&& 0x1F) 0x80 cp hi1 h_b1_lo h_b1_hi h_cp_eq h_overlong
+        h_nonsurr h_max]
 
-    6. Array-level theorem by induction on `cps.toList`, base case
-       trivial, inductive step uses (5) + (4).
+/-- A 3-byte codepoint occupies bytes [i, i+1, i+2]. -/
+private theorem fold_consume_3byte
+    (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
+    (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
+    (cp : Nat)
+    (hi0 : i < bs.size) (hi1 : i + 1 < bs.size) (hi2 : i + 2 < bs.size)
+    (h_b0_lo : 0xE0 ≤ (bs[i]'hi0).toNat) (h_b0_hi : (bs[i]'hi0).toNat < 0xF0)
+    (h_b1_lo : 0x80 ≤ (bs[i+1]'hi1).toNat) (h_b1_hi : (bs[i+1]'hi1).toNat < 0xC0)
+    (h_b2_lo : 0x80 ≤ (bs[i+2]'hi2).toNat) (h_b2_hi : (bs[i+2]'hi2).toNat < 0xC0)
+    (h_cp_eq : cp =
+        (((((bs[i]'hi0).toNat &&& 0x0F) <<< 6)
+              ||| ((bs[i+1]'hi1).toNat &&& 0x3F)) <<< 6)
+        ||| ((bs[i+2]'hi2).toNat &&& 0x3F))
+    (h_overlong : ¬ cp < 0x800)
+    (h_nonsurr : ¬ (0xD800 ≤ cp ∧ cp ≤ 0xDFFF))
+    (h_max : ¬ cp > 0x10FFFF) :
+    foldCodepointsWithOffsetGo bs f .expectStart i seqStart acc (fuel + 3)
+      = foldCodepointsWithOffsetGo bs f .expectStart (i + 3) (i + 3)
+          (f acc i cp) fuel := by
+  rw [show fuel + 3 = ((fuel + 1) + 1) + 1 from rfl]
+  rw [fold_step_3byte_start bs f i seqStart acc ((fuel + 1) + 1) hi0 h_b0_lo h_b0_hi]
+  rw [fold_step_cont_continue bs f (i + 1) i acc (fuel + 1) 0
+        ((bs[i]'hi0).toNat &&& 0x0F) 0x800 hi1 h_b1_lo h_b1_hi]
+  rw [show (i + 1 + 1) = i + 2 from rfl]
+  rw [fold_step_cont_emit_last bs f (i + 2) i acc fuel
+        ((((bs[i]'hi0).toNat &&& 0x0F) <<< 6)
+          ||| ((bs[i+1]'hi1).toNat &&& 0x3F)) 0x800 cp hi2 h_b2_lo h_b2_hi
+        h_cp_eq h_overlong h_nonsurr h_max]
 
-  Each sub-lemma is several dozen lines of Lean and the iteration
-  cycle is ~10 minutes (the ~1M-element `native_decide` for the
-  4-byte planes dominates the rebuild). The clean separation above
-  documents the remaining work. -/
+/-- A 4-byte codepoint occupies bytes [i, i+1, i+2, i+3]. -/
+private theorem fold_consume_4byte
+    (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
+    (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
+    (cp : Nat)
+    (hi0 : i < bs.size) (hi1 : i + 1 < bs.size)
+    (hi2 : i + 2 < bs.size) (hi3 : i + 3 < bs.size)
+    (h_b0_lo : 0xF0 ≤ (bs[i]'hi0).toNat) (h_b0_hi : (bs[i]'hi0).toNat < 0xF5)
+    (h_b1_lo : 0x80 ≤ (bs[i+1]'hi1).toNat) (h_b1_hi : (bs[i+1]'hi1).toNat < 0xC0)
+    (h_b2_lo : 0x80 ≤ (bs[i+2]'hi2).toNat) (h_b2_hi : (bs[i+2]'hi2).toNat < 0xC0)
+    (h_b3_lo : 0x80 ≤ (bs[i+3]'hi3).toNat) (h_b3_hi : (bs[i+3]'hi3).toNat < 0xC0)
+    (h_cp_eq : cp =
+        (((((((bs[i]'hi0).toNat &&& 0x07) <<< 6)
+                ||| ((bs[i+1]'hi1).toNat &&& 0x3F)) <<< 6)
+              ||| ((bs[i+2]'hi2).toNat &&& 0x3F)) <<< 6)
+        ||| ((bs[i+3]'hi3).toNat &&& 0x3F))
+    (h_overlong : ¬ cp < 0x10000)
+    (h_nonsurr : ¬ (0xD800 ≤ cp ∧ cp ≤ 0xDFFF))
+    (h_max : ¬ cp > 0x10FFFF) :
+    foldCodepointsWithOffsetGo bs f .expectStart i seqStart acc (fuel + 4)
+      = foldCodepointsWithOffsetGo bs f .expectStart (i + 4) (i + 4)
+          (f acc i cp) fuel := by
+  rw [show fuel + 4 = (((fuel + 1) + 1) + 1) + 1 from rfl]
+  rw [fold_step_4byte_start bs f i seqStart acc (((fuel + 1) + 1) + 1)
+        hi0 h_b0_lo h_b0_hi]
+  rw [fold_step_cont_continue bs f (i + 1) i acc ((fuel + 1) + 1) 1
+        ((bs[i]'hi0).toNat &&& 0x07) 0x10000 hi1 h_b1_lo h_b1_hi]
+  rw [show (i + 1 + 1) = i + 2 from rfl]
+  rw [fold_step_cont_continue bs f (i + 2) i acc (fuel + 1) 0
+        ((((bs[i]'hi0).toNat &&& 0x07) <<< 6)
+          ||| ((bs[i+1]'hi1).toNat &&& 0x3F)) 0x10000 hi2 h_b2_lo h_b2_hi]
+  rw [show (i + 2 + 1) = i + 3 from rfl]
+  rw [fold_step_cont_emit_last bs f (i + 3) i acc fuel
+        ((((((bs[i]'hi0).toNat &&& 0x07) <<< 6)
+            ||| ((bs[i+1]'hi1).toNat &&& 0x3F)) <<< 6)
+          ||| ((bs[i+2]'hi2).toNat &&& 0x3F)) 0x10000 cp hi3 h_b3_lo h_b3_hi
+        h_cp_eq h_overlong h_nonsurr h_max]
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §8 LIST FORM OF ENCODE
+-- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The list-recursive form of `encodeCodepoints`, the shape needed
-    for inductive reasoning. -/
+    for inductive reasoning over codepoint sequences. -/
 def encodeCodepointsList : List Nat → ByteArray
   | []        => ByteArray.empty
   | cp :: cps => encodeCodepoint cp ++ encodeCodepointsList cps
+
+/-- `encodeCodepoints` as a left fold over an array equals the
+    right-recursive list form on the underlying list. The IH is
+    strengthened to thread an arbitrary starting accumulator so the
+    cons-step lands cleanly. -/
+theorem encodeCodepoints_eq_list (cps : Array Nat) :
+    encodeCodepoints cps = encodeCodepointsList cps.toList := by
+  suffices h : ∀ (init : ByteArray) (xs : List Nat),
+      List.foldl (fun acc cp => acc ++ encodeCodepoint cp) init xs
+        = init ++ encodeCodepointsList xs by
+    unfold encodeCodepoints
+    rcases cps with ⟨xs⟩
+    -- `Array.foldl f init ⟨xs⟩` reduces to `List.foldl f init xs` via simp.
+    rw [show Array.foldl (fun acc cp => acc ++ encodeCodepoint cp) ByteArray.empty
+              ⟨xs⟩
+          = List.foldl (fun acc cp => acc ++ encodeCodepoint cp) ByteArray.empty xs
+        by simp]
+    rw [h ByteArray.empty xs]
+    simp [ByteArray.empty_append]
+  intro init xs
+  induction xs generalizing init with
+  | nil =>
+    simp [List.foldl, encodeCodepointsList]
+  | cons x xs' ih =>
+    simp [List.foldl, encodeCodepointsList, ih, ByteArray.append_assoc]
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §9 PROOF OBLIGATIONS REMAINING FOR ARRAY-LEVEL ROUNDTRIP
+-- ═══════════════════════════════════════════════════════════════════════════════
+--
+-- The closed-form array-level theorem
+--
+--   decode_encode_codepoints (cps : Array Nat) :
+--     (∀ cp ∈ cps, IsValidCodepoint cp) →
+--       decodeToCodepoints (encodeCodepoints cps) = cps
+--
+-- is reachable from the §5-§8 building blocks above plus one core
+-- lemma:
+--
+--   decode_concat_codepoint (cp : Nat) (h : IsValidCodepoint cp) (rest : ByteArray) :
+--     decodeToCodepoints (encodeCodepoint cp ++ rest)
+--       = #[cp] ++ decodeToCodepoints rest
+--
+-- The strategy is a case-split on `cp`'s UTF-8 byte length, with a
+-- helper per length that derives the byte-level hypotheses required
+-- by the matching `fold_consume_<n>byte` from `IsValidCodepoint cp`
+-- and the structure of `encodeCodepoint cp`. After consume, the fold
+-- is at offset (encodeCodepoint cp).size in `(encodeCodepoint cp ++
+-- rest)` in state `.expectStart` with `acc = #[cp]`. Two more steps:
+--
+--   1. fold_concat_translate bridges that fold to a fold from
+--      offset 0 in `rest` (since the offset equals
+--      (encodeCodepoint cp).size, which is the prefix's full length).
+--   2. fold_push_acc_factor factors `#[cp]` out of the accumulator.
+--
+-- Each per-byte-length helper additionally needs the bit-level
+-- identity that encoding and re-extracting the codepoint bits
+-- recovers `cp` exactly (e.g. for the 2-byte case:
+-- `((cp >>> 6) <<< 6) ||| (cp &&& 0x3F) = cp` for `cp < 0x800`).
+-- These are decidable on the relevant finite ranges and close via
+-- `native_decide`.
+--
+-- Each helper is on the order of 100-150 lines of Lean. Three
+-- helpers (2-byte, 3-byte, 4-byte) plus the ASCII case plus the
+-- top-level case-split plus the array-level induction is ~600
+-- lines total. The §5-§8 blocks above are the load-bearing
+-- algebraic infrastructure; the §9 work that remains is largely
+-- mechanical case analysis once the bit-level identities are
+-- established.
 
 end Unicode.Codec.Utf8Roundtrip
