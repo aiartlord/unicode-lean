@@ -1,18 +1,17 @@
 /-
   Unicode.Idna.Process
 
-  UTS #46 §4 — IDNA Compatible Preprocessing. Implements the
-  full ToUnicode and ToASCII algorithms by composing:
+  UTS #46 §4 — IDNA Compatible Preprocessing. Implements the full
+  ToUnicode and ToASCII algorithms by composing:
 
       mapping pass  →  NFC  →  label split  →  per-label Punycode  →  rejoin
 
-  The optional CheckHyphens, CheckBidi, CheckJoiners, and
-  Use_STD3_ASCII_Rules flags from UTS #46 are exposed via the
-  `Options` record. CheckBidi requires the `Precis.BidiRule` machinery
-  to be wired in; CheckJoiners (CONTEXTJ) requires Joining_Type which
-  is not yet vendored — those flags currently default to `false` and
-  are documented as TODO at the field level rather than silently
-  ignored when set.
+  The per-label validity checks, CheckJoiners (CONTEXTJ via the
+  `DerivedJoiningType` table), and the domain-level CheckBidi guard
+  are applied unconditionally in `toUnicode`, `toAscii`, and
+  `toAsciiTransitional`. The CheckHyphens and Use_STD3_ASCII_Rules
+  flags are not exposed; the algorithms behave as if both are
+  disabled.
 -/
 
 import Unicode.Idna.Map
