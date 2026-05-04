@@ -117,6 +117,11 @@ import Unicode.Conformance.IdnaTestV2
 -- UAX #31 — default identifier (R1-D1) + UTS #39 allowed-status profile
 import Unicode.Identifier
 
+-- Programmatic UCD digest manifest — exposes the SHA-256 pins for
+-- downstream tools that want Lean-level verification rather than
+-- shelling out to `scripts/check-ucd-hashes.sh`.
+import Unicode.UCD
+
 -- Generated UCD-derived tables (UCD 17.0.0)
 import Unicode.Generated.CompatDecomp
 import Unicode.Generated.DerivedCoreProperties
