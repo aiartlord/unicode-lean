@@ -1007,17 +1007,72 @@ private theorem encode_4byte_byte0 (cp : Nat) (h_lo : 0x10000 ≤ cp) (h_hi : cp
   exact ⟨h_uint, h_lo_bnd, h_hi_bnd⟩
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- §12 DECODE_CONCAT (per-byte-length helpers — pending)
+-- §12 PER-BYTE-LENGTH DECODE_CONCAT
 -- ═══════════════════════════════════════════════════════════════════════════════
 --
--- For each byte length, prepending an encoded codepoint to a byte array
--- prepends `#[cp]` to the decoded codepoint array. The strategy applies
--- `fold_consume_<n>byte` to advance the fold past the encoding's bytes,
--- then `fold_concat_translate` to switch to a fold over the suffix, then
--- `fold_push_acc_factor` to lift the leading `#[cp]` out of the
--- accumulator. The composition needs careful term shaping (numeric
--- normalisation between `0 + 1` and `(encodeCodepoint cp).size + 0`,
--- and post-β reduction of `Function.const`-based accumulators) — left
--- as the next step.
+-- Prepending an encoded codepoint to `rest` decodes to `#[cp] ++
+-- decodeToCodepoints rest`. Each helper advances the fold past the
+-- encoding's bytes via `fold_consume_<n>byte`, translates the suffix
+-- fold via `fold_concat_translate`, and lifts the leading `#[cp]` out
+-- of the accumulator via `fold_push_acc_factor`.
+
+/-- The decode-fold's update function lifts to `acc.push c` after β.
+    Used as the `hf` hypothesis for `fold_concat_translate` and
+    `fold_push_acc_factor`. -/
+private theorem decode_fn_push_eq
+    (acc : Array Nat) (offset c : Nat) :
+    (fun (a : Array Nat) (o c : Nat) => Function.const Nat (a.push c) o) acc offset c
+      = acc.push c := rfl
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- 1-byte (ASCII)
+-- ────────────────────────────────────────────────────────────────────────────
+
+/-- Prepending an ASCII-encoded codepoint to `rest` decodes to
+    `#[cp] ++ decodeToCodepoints rest`. -/
+private theorem decode_concat_ascii (cp : Nat) (h_lt : cp < 0x80) (rest : ByteArray) :
+    decodeToCodepoints (encodeCodepoint cp ++ rest)
+      = #[cp] ++ decodeToCodepoints rest := by
+  -- Substitute encodeCodepoint cp with its closed form so its size
+  -- (= 1) reduces by `rfl` and indexing is direct.
+  rw [encode_ascii_form cp h_lt]
+  have h_pfx_size : (ByteArray.mk #[UInt8.ofNat cp] : ByteArray).size = 1 := rfl
+  have h_pfx_pos : 0 < (ByteArray.mk #[UInt8.ofNat cp] : ByteArray).size := by
+    rw [h_pfx_size]; omega
+  have h_total : (ByteArray.mk #[UInt8.ofNat cp] ++ rest).size = rest.size + 1 := by
+    rw [ByteArray.size_append, h_pfx_size]; omega
+  have h_idx : 0 < (ByteArray.mk #[UInt8.ofNat cp] ++ rest).size := by
+    rw [h_total]; omega
+  have h_byte0 : ((ByteArray.mk #[UInt8.ofNat cp] ++ rest)[0]'h_idx).toNat = cp := by
+    rw [ByteArray.getElem_append_left h_pfx_pos]
+    show (UInt8.ofNat cp).toNat = cp
+    exact uint8_ofNat_toNat cp (by omega)
+  -- Unfold both sides to fold-Go form.
+  unfold decodeToCodepoints foldCodepointsWithOffset
+  -- Massage the LHS fuel `(pfx ++ rest).size + 1` into `(rest.size + 1) + 1`
+  -- so `fold_consume_ascii` can fire its `fuel + 1` pattern.
+  rw [show (ByteArray.mk #[UInt8.ofNat cp] ++ rest).size + 1
+        = (rest.size + 1) + 1 from by rw [h_total]]
+  rw [fold_consume_ascii (ByteArray.mk #[UInt8.ofNat cp] ++ rest)
+        (fun a o c => Function.const Nat (a.push c) o)
+        0 0 #[] (rest.size + 1) cp h_lt h_idx h_byte0]
+  -- After consume: index `0 + 1`, seqStart `0 + 1`, accumulator
+  -- `Function.const Nat (#[].push cp) 0`. Bridge index to
+  -- `pfx.size + 0` so `fold_concat_translate` matches.
+  rw [show (0 : Nat) + 1
+        = (ByteArray.mk #[UInt8.ofNat cp] : ByteArray).size + 0 from by
+    rw [h_pfx_size]]
+  rw [fold_concat_translate (ByteArray.mk #[UInt8.ofNat cp]) rest
+        (fun a o c => Function.const Nat (a.push c) o)
+        decode_fn_push_eq
+        Utf8State.expectStart 0
+        ((ByteArray.mk #[UInt8.ofNat cp] : ByteArray).size + 0) 0
+        (Function.const Nat ((#[] : Array Nat).push cp) 0) (rest.size + 1)]
+  rw [fold_push_acc_factor rest
+        (fun a o c => Function.const Nat (a.push c) o)
+        decode_fn_push_eq
+        Utf8State.expectStart 0 0
+        (Function.const Nat ((#[] : Array Nat).push cp) 0) (rest.size + 1)]
+  rfl
 
 end Unicode.Codec.Utf8Roundtrip
