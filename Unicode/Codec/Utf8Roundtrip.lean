@@ -690,47 +690,184 @@ theorem encodeCodepoints_eq_list (cps : Array Nat) :
     simp [List.foldl, encodeCodepointsList, ih, ByteArray.append_assoc]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- §9 PROOF OBLIGATIONS REMAINING FOR ARRAY-LEVEL ROUNDTRIP
+-- §9 BIT-TWIDDLING UTILITIES
 -- ═══════════════════════════════════════════════════════════════════════════════
 --
--- The closed-form array-level theorem
+-- The per-byte-length consume witnesses below establish:
 --
---   decode_encode_codepoints (cps : Array Nat) :
---     (∀ cp ∈ cps, IsValidCodepoint cp) →
---       decodeToCodepoints (encodeCodepoints cps) = cps
+--   1. Each encoded byte lies in the byte-class range expected by the
+--      matching `fold_consume_<n>byte` (start byte, continuation byte).
+--   2. Re-extracting the codepoint bits from those bytes yields `cp`.
 --
--- is reachable from the §5-§8 building blocks above plus one core
--- lemma:
---
---   decode_concat_codepoint (cp : Nat) (h : IsValidCodepoint cp) (rest : ByteArray) :
---     decodeToCodepoints (encodeCodepoint cp ++ rest)
---       = #[cp] ++ decodeToCodepoints rest
---
--- The strategy is a case-split on `cp`'s UTF-8 byte length, with a
--- helper per length that derives the byte-level hypotheses required
--- by the matching `fold_consume_<n>byte` from `IsValidCodepoint cp`
--- and the structure of `encodeCodepoint cp`. After consume, the fold
--- is at offset (encodeCodepoint cp).size in `(encodeCodepoint cp ++
--- rest)` in state `.expectStart` with `acc = #[cp]`. Two more steps:
---
---   1. fold_concat_translate bridges that fold to a fold from
---      offset 0 in `rest` (since the offset equals
---      (encodeCodepoint cp).size, which is the prefix's full length).
---   2. fold_push_acc_factor factors `#[cp]` out of the accumulator.
---
--- Each per-byte-length helper additionally needs the bit-level
--- identity that encoding and re-extracting the codepoint bits
--- recovers `cp` exactly (e.g. for the 2-byte case:
--- `((cp >>> 6) <<< 6) ||| (cp &&& 0x3F) = cp` for `cp < 0x800`).
--- These are decidable on the relevant finite ranges and close via
--- `native_decide`.
---
--- Each helper is on the order of 100-150 lines of Lean. Three
--- helpers (2-byte, 3-byte, 4-byte) plus the ASCII case plus the
--- top-level case-split plus the array-level induction is ~600
--- lines total. The §5-§8 blocks above are the load-bearing
--- algebraic infrastructure; the §9 work that remains is largely
--- mechanical case analysis once the bit-level identities are
--- established.
+-- Both facts rely on a small set of `Nat.testBit` identities that hold
+-- for all natural numbers (no upper bound). The proofs go through
+-- `Nat.eq_of_testBit_eq` so we never enumerate codepoints — the
+-- algebraic structure does the work uniformly across all four byte
+-- lengths.
+
+/-- AND-OR distributivity over Nat: `(a ||| b) &&& c = (a &&& c) ||| (b &&& c)`. -/
+private theorem nat_land_lor_distrib_right (a b c : Nat) :
+    (a ||| b) &&& c = (a &&& c) ||| (b &&& c) := by
+  apply Nat.eq_of_testBit_eq
+  intro i
+  rw [Nat.testBit_and, Nat.testBit_or, Nat.testBit_or, Nat.testBit_and, Nat.testBit_and]
+  cases a.testBit i <;> cases b.testBit i <;> cases c.testBit i <;> rfl
+
+/-- `n &&& (2^k - 1) = n % 2^k`. The low-`k`-bit projection in two
+    forms; converting between them lets `omega` pick up the residue
+    after we have isolated the AND. -/
+private theorem nat_and_two_pow_sub_one_eq_mod (n k : Nat) :
+    n &&& (2^k - 1) = n % 2^k := by
+  apply Nat.eq_of_testBit_eq
+  intro i
+  rw [Nat.testBit_and, Nat.testBit_two_pow_sub_one, Nat.testBit_mod_two_pow]
+  by_cases h : i < k
+  · simp [h]
+  · simp [h]
+
+/-- A natural number bounded by `2^k` is its own `2^k`-modulus. -/
+private theorem nat_mod_two_pow_self (n k : Nat) (h : n < 2^k) :
+    n % 2^k = n := Nat.mod_eq_of_lt h
+
+/-- Composite: AND-with-`2^k - 1` is the identity on values bounded by `2^k`. -/
+private theorem nat_and_two_pow_sub_one_self (n k : Nat) (h : n < 2^k) :
+    n &&& (2^k - 1) = n := by
+  rw [nat_and_two_pow_sub_one_eq_mod, nat_mod_two_pow_self n k h]
+
+/-- High-low split at bit `k`: `x = (x >>> k) <<< k ||| (x &&& (2^k - 1))`. -/
+private theorem nat_split_at (x k : Nat) :
+    x = ((x >>> k) <<< k) ||| (x &&& (2^k - 1)) := by
+  apply Nat.eq_of_testBit_eq
+  intro i
+  rw [Nat.testBit_or, Nat.testBit_shiftLeft, Nat.testBit_shiftRight,
+      Nat.testBit_and, Nat.testBit_two_pow_sub_one]
+  by_cases h : i < k
+  · have hge : ¬ k ≤ i := Nat.not_le_of_lt h
+    simp [hge, h]
+  · have hge : k ≤ i := Nat.le_of_not_lt h
+    have hadd : k + (i - k) = i := by omega
+    simp [hge, h, hadd]
+
+/-- Disjoint-mask AND: when `mask` and `flag` have no bits in common
+    (i.e. `flag &&& mask = 0`), OR'ing `flag` in then masking with
+    `mask` recovers `x &&& mask`. Concrete instance: byte-class
+    high-bit prefixes (`0xC0`, `0xE0`, `0xF0`, `0x80`) are disjoint
+    from the low-3- and low-6-bit masks (`0x07`, `0x3F`). -/
+private theorem nat_lor_flag_and_mask (flag x mask : Nat)
+    (h_disjoint : flag &&& mask = 0) :
+    (flag ||| x) &&& mask = x &&& mask := by
+  rw [nat_land_lor_distrib_right, h_disjoint, Nat.zero_or]
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §10 PER-BYTE-LENGTH ENCODE FORM + CONSUME WITNESS
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- 1-byte (ASCII)
+-- ────────────────────────────────────────────────────────────────────────────
+
+/-- Closed form of `encodeCodepoint cp` on the ASCII bracket. -/
+private theorem encode_ascii_form (cp : Nat) (h : cp < 0x80) :
+    encodeCodepoint cp = ByteArray.mk #[UInt8.ofNat cp] := by
+  unfold encodeCodepoint; simp [h]
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- 2-byte
+-- ────────────────────────────────────────────────────────────────────────────
+
+/-- Closed form of `encodeCodepoint cp` on the 2-byte bracket. -/
+private theorem encode_2byte_form (cp : Nat) (h_lo : 0x80 ≤ cp) (h_hi : cp < 0x800) :
+    encodeCodepoint cp = ByteArray.mk #[
+      UInt8.ofNat (0xC0 ||| (cp >>> 6)),
+      UInt8.ofNat (0x80 ||| (cp &&& 0x3F))] := by
+  unfold encodeCodepoint
+  simp [show ¬ (cp < 0x80) from by omega, h_hi]
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- Bit-identity bridges: each byte's `&&& mask` collapses to the matching
+-- shift of `cp`. These hold for all `cp` (no upper bound on the shift
+-- counts; the high-bit prefixes `0xF0` / `0x80` are mask-disjoint
+-- regardless of the codepoint's magnitude). The 4-byte case additionally
+-- needs `(cp >>> 18) &&& 0x07 = cp >>> 18`, which requires `cp < 2^21`.
+-- ────────────────────────────────────────────────────────────────────────────
+
+/-- The low 6 bits of a 0x80-flagged byte equal the masked input. -/
+private theorem byte_lor_80_and_3F (x : Nat) :
+    (0x80 ||| (x &&& 0x3F)) &&& 0x3F = x &&& 0x3F := by
+  rw [nat_lor_flag_and_mask 0x80 (x &&& 0x3F) 0x3F (by decide)]
+  rw [Nat.and_assoc, Nat.and_self]
+
+/-- The low 3 bits of a 0xF0-flagged byte equal the masked input. -/
+private theorem byte_lor_F0_and_07 (x : Nat) :
+    (0xF0 ||| x) &&& 0x07 = x &&& 0x07 :=
+  nat_lor_flag_and_mask 0xF0 x 0x07 (by decide)
+
+/-- The low 4 bits of a 0xE0-flagged byte equal the masked input. -/
+private theorem byte_lor_E0_and_0F (x : Nat) :
+    (0xE0 ||| x) &&& 0x0F = x &&& 0x0F :=
+  nat_lor_flag_and_mask 0xE0 x 0x0F (by decide)
+
+/-- The low 5 bits of a 0xC0-flagged byte equal the masked input. -/
+private theorem byte_lor_C0_and_1F (x : Nat) :
+    (0xC0 ||| x) &&& 0x1F = x &&& 0x1F :=
+  nat_lor_flag_and_mask 0xC0 x 0x1F (by decide)
+
+/-- The 4-byte UTF-8 reconstruction: assembling `cp` from its
+    encoded bytes recovers `cp` exactly, when `cp < 2^21` (which
+    covers the entire `[0, 0x110000)` codepoint space). -/
+private theorem encode_4byte_bit_identity (cp : Nat) (h : cp < 0x110000) :
+    cp = (((((((0xF0 ||| (cp >>> 18)) &&& 0x07) <<< 6)
+            ||| ((0x80 ||| ((cp >>> 12) &&& 0x3F)) &&& 0x3F)) <<< 6)
+          ||| ((0x80 ||| ((cp >>> 6) &&& 0x3F)) &&& 0x3F)) <<< 6)
+        ||| ((0x80 ||| (cp &&& 0x3F)) &&& 0x3F) := by
+  -- Collapse each byte's `&&& mask` to the relevant shift-and-mask of `cp`.
+  rw [byte_lor_F0_and_07, byte_lor_80_and_3F, byte_lor_80_and_3F, byte_lor_80_and_3F]
+  -- Eliminate `(cp >>> 18) &&& 0x07` using the bound `cp >>> 18 < 8`.
+  have h_shr18 : cp >>> 18 < 2^3 := by
+    rw [Nat.shiftRight_eq_div_pow]; omega
+  rw [show (0x07 : Nat) = 2^3 - 1 from rfl,
+      nat_and_two_pow_sub_one_self (cp >>> 18) 3 h_shr18]
+  -- Three iterated splits at bit 6, bottom-up.
+  rw [show (0x3F : Nat) = 2^6 - 1 from rfl]
+  have h12 : cp >>> 12 = (cp >>> 18) <<< 6 ||| ((cp >>> 12) &&& (2^6 - 1)) := by
+    rw [show cp >>> 18 = (cp >>> 12) >>> 6 from by
+      rw [show (18 : Nat) = 12 + 6 from rfl, Nat.shiftRight_add]]
+    exact nat_split_at (cp >>> 12) 6
+  have h6 : cp >>> 6 = (cp >>> 12) <<< 6 ||| ((cp >>> 6) &&& (2^6 - 1)) := by
+    rw [show cp >>> 12 = (cp >>> 6) >>> 6 from by
+      rw [show (12 : Nat) = 6 + 6 from rfl, Nat.shiftRight_add]]
+    exact nat_split_at (cp >>> 6) 6
+  have hcp : cp = (cp >>> 6) <<< 6 ||| (cp &&& (2^6 - 1)) := nat_split_at cp 6
+  rw [← h12, ← h6, ← hcp]
+
+/-- The 3-byte UTF-8 reconstruction. -/
+private theorem encode_3byte_bit_identity (cp : Nat) (h : cp < 0x10000) :
+    cp = ((((0xE0 ||| (cp >>> 12)) &&& 0x0F) <<< 6)
+          ||| ((0x80 ||| ((cp >>> 6) &&& 0x3F)) &&& 0x3F)) <<< 6
+        ||| ((0x80 ||| (cp &&& 0x3F)) &&& 0x3F) := by
+  rw [byte_lor_E0_and_0F, byte_lor_80_and_3F, byte_lor_80_and_3F]
+  have h_shr12 : cp >>> 12 < 2^4 := by
+    rw [Nat.shiftRight_eq_div_pow]; omega
+  rw [show (0x0F : Nat) = 2^4 - 1 from rfl,
+      nat_and_two_pow_sub_one_self (cp >>> 12) 4 h_shr12]
+  rw [show (0x3F : Nat) = 2^6 - 1 from rfl]
+  have h6 : cp >>> 6 = (cp >>> 12) <<< 6 ||| ((cp >>> 6) &&& (2^6 - 1)) := by
+    rw [show cp >>> 12 = (cp >>> 6) >>> 6 from by
+      rw [show (12 : Nat) = 6 + 6 from rfl, Nat.shiftRight_add]]
+    exact nat_split_at (cp >>> 6) 6
+  have hcp : cp = (cp >>> 6) <<< 6 ||| (cp &&& (2^6 - 1)) := nat_split_at cp 6
+  rw [← h6, ← hcp]
+
+/-- The 2-byte UTF-8 reconstruction. -/
+private theorem encode_2byte_bit_identity (cp : Nat) (h : cp < 0x800) :
+    cp = (((0xC0 ||| (cp >>> 6)) &&& 0x1F) <<< 6)
+        ||| ((0x80 ||| (cp &&& 0x3F)) &&& 0x3F) := by
+  rw [byte_lor_C0_and_1F, byte_lor_80_and_3F]
+  have h_shr6 : cp >>> 6 < 2^5 := by
+    rw [Nat.shiftRight_eq_div_pow]; omega
+  rw [show (0x1F : Nat) = 2^5 - 1 from rfl,
+      nat_and_two_pow_sub_one_self (cp >>> 6) 5 h_shr6]
+  rw [show (0x3F : Nat) = 2^6 - 1 from rfl]
+  exact nat_split_at cp 6
 
 end Unicode.Codec.Utf8Roundtrip
