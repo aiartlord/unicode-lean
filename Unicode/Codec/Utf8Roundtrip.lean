@@ -870,4 +870,154 @@ private theorem encode_2byte_bit_identity (cp : Nat) (h : cp < 0x800) :
   rw [show (0x3F : Nat) = 2^6 - 1 from rfl]
   exact nat_split_at cp 6
 
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §11 PER-BYTE-LENGTH ENCODED-BYTE VALUE LEMMAS
+-- ═══════════════════════════════════════════════════════════════════════════════
+--
+-- For each byte length, the byte-class start and continuation bytes
+-- emitted by `encodeCodepoint` lie in the ranges that the matching
+-- `fold_consume_<n>byte` expects, and `(UInt8.ofNat ...).toNat` is
+-- the identity (the encoded-byte values are all `< 256`). The lower
+-- bounds come from the disjoint OR-add bridge below and the codepoint
+-- bracket; the upper bounds combine the same bridge with the
+-- shifted-codepoint bound.
+
+/-- Disjoint OR-add bridge: when `y < 2^k`, OR'ing `y` into a value
+    shifted left by `k` is the same as adding (the low `k` bits don't
+    overlap). Proven by reducing to the unique-base-`2^k` decomposition
+    via `nat_split_at`. -/
+private theorem nat_lor_shiftLeft_eq_add (high y k : Nat) (h_y : y < 2^k) :
+    (high <<< k) ||| y = high * 2^k + y := by
+  -- Apply the split-at-k decomposition to (high * 2^k + y), compute its
+  -- quotient (= high) and residue (= y) under div by 2^k, then rewrite
+  -- the goal's RHS through the resulting OR form.
+  have h2k_pos : 0 < 2^k := Nat.two_pow_pos k
+  have h_div : (high * 2^k + y) >>> k = high := by
+    rw [Nat.shiftRight_eq_div_pow, Nat.mul_comm,
+        Nat.mul_add_div h2k_pos, Nat.div_eq_of_lt h_y, Nat.add_zero]
+  have h_mod : (high * 2^k + y) &&& (2^k - 1) = y := by
+    rw [nat_and_two_pow_sub_one_eq_mod, Nat.mul_comm,
+        Nat.mul_add_mod, Nat.mod_eq_of_lt h_y]
+  have hsplit : high * 2^k + y
+      = ((high * 2^k + y) >>> k) <<< k ||| ((high * 2^k + y) &&& (2^k - 1)) :=
+    nat_split_at (high * 2^k + y) k
+  rw [h_div, h_mod] at hsplit
+  rw [Nat.shiftLeft_eq] at hsplit
+  rw [Nat.shiftLeft_eq]
+  exact hsplit.symm
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- 1-byte (ASCII)
+-- ────────────────────────────────────────────────────────────────────────────
+
+/-- ASCII byte 0 — the encoded byte equals `cp` after `toNat`. -/
+private theorem encode_ascii_byte0 (cp : Nat) (h : cp < 0x80) :
+    (UInt8.ofNat cp).toNat = cp :=
+  uint8_ofNat_toNat cp (by omega)
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- 2-byte
+-- ────────────────────────────────────────────────────────────────────────────
+
+/-- 2-byte byte 0 lies in `[0xC2, 0xE0)` and round-trips through `UInt8`. -/
+private theorem encode_2byte_byte0 (cp : Nat) (h_lo : 0x80 ≤ cp) (h_hi : cp < 0x800) :
+    (UInt8.ofNat (0xC0 ||| (cp >>> 6))).toNat = 0xC0 ||| (cp >>> 6) ∧
+    0xC2 ≤ 0xC0 ||| (cp >>> 6) ∧
+    0xC0 ||| (cp >>> 6) < 0xE0 := by
+  have h_shr_lt : cp >>> 6 < 2^5 := by rw [Nat.shiftRight_eq_div_pow]; omega
+  have h_shr_ge : 2 ≤ cp >>> 6 := by rw [Nat.shiftRight_eq_div_pow]; omega
+  have h_eq : (0xC0 : Nat) ||| (cp >>> 6) = 0xC0 + (cp >>> 6) := by
+    rw [show (0xC0 : Nat) = 6 <<< 5 from rfl,
+        nat_lor_shiftLeft_eq_add 6 (cp >>> 6) 5 h_shr_lt]
+    rfl
+  have h_lt256 : 0xC0 + (cp >>> 6) < 256 := by omega
+  have h_uint : (UInt8.ofNat (0xC0 + (cp >>> 6))).toNat = 0xC0 + (cp >>> 6) :=
+    uint8_ofNat_toNat (0xC0 + (cp >>> 6)) h_lt256
+  have h_lo_bnd : 0xC2 ≤ 0xC0 + (cp >>> 6) := by omega
+  have h_hi_bnd : 0xC0 + (cp >>> 6) < 0xE0 := by omega
+  rw [h_eq]
+  exact ⟨h_uint, h_lo_bnd, h_hi_bnd⟩
+
+/-- 2-byte byte 1 lies in `[0x80, 0xC0)` and round-trips through `UInt8`. -/
+private theorem encode_2byte_byte1 (cp : Nat) :
+    (UInt8.ofNat (0x80 ||| (cp &&& 0x3F))).toNat = 0x80 ||| (cp &&& 0x3F) ∧
+    0x80 ≤ 0x80 ||| (cp &&& 0x3F) ∧
+    0x80 ||| (cp &&& 0x3F) < 0xC0 := by
+  have h_and_lt : cp &&& 0x3F < 2^6 := by
+    rw [show (0x3F : Nat) = 2^6 - 1 from rfl, nat_and_two_pow_sub_one_eq_mod]
+    exact Nat.mod_lt cp (Nat.two_pow_pos 6)
+  have h_eq : (0x80 : Nat) ||| (cp &&& 0x3F) = 0x80 + (cp &&& 0x3F) := by
+    rw [show (0x80 : Nat) = 2 <<< 6 from rfl,
+        nat_lor_shiftLeft_eq_add 2 (cp &&& 0x3F) 6 h_and_lt]
+    rfl
+  have h_lt256 : 0x80 + (cp &&& 0x3F) < 256 := by omega
+  have h_uint : (UInt8.ofNat (0x80 + (cp &&& 0x3F))).toNat = 0x80 + (cp &&& 0x3F) :=
+    uint8_ofNat_toNat (0x80 + (cp &&& 0x3F)) h_lt256
+  have h_lo_bnd : 0x80 ≤ 0x80 + (cp &&& 0x3F) := by omega
+  have h_hi_bnd : 0x80 + (cp &&& 0x3F) < 0xC0 := by omega
+  rw [h_eq]
+  exact ⟨h_uint, h_lo_bnd, h_hi_bnd⟩
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- 3-byte
+-- ────────────────────────────────────────────────────────────────────────────
+
+/-- 3-byte byte 0 lies in `[0xE0, 0xF0)`. -/
+private theorem encode_3byte_byte0 (cp : Nat) (h_lo : 0x800 ≤ cp) (h_hi : cp < 0x10000) :
+    (UInt8.ofNat (0xE0 ||| (cp >>> 12))).toNat = 0xE0 ||| (cp >>> 12) ∧
+    0xE0 ≤ 0xE0 ||| (cp >>> 12) ∧
+    0xE0 ||| (cp >>> 12) < 0xF0 := by
+  have h_shr_lt : cp >>> 12 < 2^4 := by rw [Nat.shiftRight_eq_div_pow]; omega
+  have h_eq : (0xE0 : Nat) ||| (cp >>> 12) = 0xE0 + (cp >>> 12) := by
+    rw [show (0xE0 : Nat) = 14 <<< 4 from rfl,
+        nat_lor_shiftLeft_eq_add 14 (cp >>> 12) 4 h_shr_lt]
+    rfl
+  have h_lt256 : 0xE0 + (cp >>> 12) < 256 := by omega
+  have h_uint : (UInt8.ofNat (0xE0 + (cp >>> 12))).toNat = 0xE0 + (cp >>> 12) :=
+    uint8_ofNat_toNat (0xE0 + (cp >>> 12)) h_lt256
+  have h_lo_bnd : 0xE0 ≤ 0xE0 + (cp >>> 12) := by omega
+  have h_hi_bnd : 0xE0 + (cp >>> 12) < 0xF0 := by omega
+  rw [h_eq]
+  exact ⟨h_uint, h_lo_bnd, h_hi_bnd⟩
+
+-- (3-byte bytes 1 and 2 share the byte1 lemma above — the form
+--  `0x80 ||| (x &&& 0x3F)` is identical, only the input shift changes.)
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- 4-byte
+-- ────────────────────────────────────────────────────────────────────────────
+
+/-- 4-byte byte 0 lies in `[0xF0, 0xF5)`. -/
+private theorem encode_4byte_byte0 (cp : Nat) (h_lo : 0x10000 ≤ cp) (h_hi : cp < 0x110000) :
+    (UInt8.ofNat (0xF0 ||| (cp >>> 18))).toNat = 0xF0 ||| (cp >>> 18) ∧
+    0xF0 ≤ 0xF0 ||| (cp >>> 18) ∧
+    0xF0 ||| (cp >>> 18) < 0xF5 := by
+  have h_shr_lt : cp >>> 18 < 2^4 := by rw [Nat.shiftRight_eq_div_pow]; omega
+  have h_shr_lt5 : cp >>> 18 < 5 := by rw [Nat.shiftRight_eq_div_pow]; omega
+  have h_eq : (0xF0 : Nat) ||| (cp >>> 18) = 0xF0 + (cp >>> 18) := by
+    rw [show (0xF0 : Nat) = 15 <<< 4 from rfl,
+        nat_lor_shiftLeft_eq_add 15 (cp >>> 18) 4 h_shr_lt]
+    rfl
+  have h_lt256 : 0xF0 + (cp >>> 18) < 256 := by omega
+  have h_uint : (UInt8.ofNat (0xF0 + (cp >>> 18))).toNat = 0xF0 + (cp >>> 18) :=
+    uint8_ofNat_toNat (0xF0 + (cp >>> 18)) h_lt256
+  have h_lo_bnd : 0xF0 ≤ 0xF0 + (cp >>> 18) := by omega
+  have h_hi_bnd : 0xF0 + (cp >>> 18) < 0xF5 := by omega
+  rw [h_eq]
+  exact ⟨h_uint, h_lo_bnd, h_hi_bnd⟩
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §12 DECODE_CONCAT (per-byte-length helpers — pending)
+-- ═══════════════════════════════════════════════════════════════════════════════
+--
+-- For each byte length, prepending an encoded codepoint to a byte array
+-- prepends `#[cp]` to the decoded codepoint array. The strategy applies
+-- `fold_consume_<n>byte` to advance the fold past the encoding's bytes,
+-- then `fold_concat_translate` to switch to a fold over the suffix, then
+-- `fold_push_acc_factor` to lift the leading `#[cp]` out of the
+-- accumulator. The composition needs careful term shaping (numeric
+-- normalisation between `0 + 1` and `(encodeCodepoint cp).size + 0`,
+-- and post-β reduction of `Function.const`-based accumulators) — left
+-- as the next step.
+
 end Unicode.Codec.Utf8Roundtrip
