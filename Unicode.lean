@@ -122,6 +122,13 @@ import Unicode.Identifier
 -- shelling out to `scripts/check-ucd-hashes.sh`.
 import Unicode.UCD
 
+-- Spec-core text-codec predicates and refinement types (RFC 8264 PRECIS
+-- profiles + structural UTF-8 opaque blob). Strict-cohesion wrappers
+-- (StrictBox + RejectReason + wire-format framing) are downstream.
+import Unicode.Codec.OpaqueBlob
+import Unicode.Codec.Printable
+import Unicode.Codec.Identifier
+
 -- Generated UCD-derived tables (UCD 17.0.0)
 import Unicode.Generated.CompatDecomp
 import Unicode.Generated.DerivedCoreProperties
