@@ -259,6 +259,24 @@ def satisfiesBidiRule (cps : Array Nat) : Bool :=
     cps.all (fun cp => allowedInLtrLabel (lookupBidiClass cp)) &&
     ltrEndValid cps
 
+/-- The RFC 5893 Bidi Rule evaluated unconditionally — it does not
+    short-circuit when the label has no RTL characters. RFC 5893 §1.4
+    specifies that in a Bidi *domain* (any label contains R/AL/AN),
+    every label — including non-RTL labels — must satisfy the full
+    rule. Used by IDNA's domain-level `CheckBidi`. The empty label
+    is treated as vacuously valid (later validity checks reject it
+    on length grounds). -/
+def satisfiesBidiRuleStrict (cps : Array Nat) : Bool :=
+  if cps.size = 0 then true
+  else if !firstCharValid cps then false
+  else if isRtlLabel cps then
+    cps.all (fun cp => allowedInRtlLabel (lookupBidiClass cp)) &&
+    noMixedEnAnInRtl cps &&
+    rtlEndValid cps
+  else
+    cps.all (fun cp => allowedInLtrLabel (lookupBidiClass cp)) &&
+    ltrEndValid cps
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- IDEMPOTENCE (trivial)
 --
