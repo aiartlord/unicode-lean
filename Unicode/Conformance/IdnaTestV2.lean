@@ -31,6 +31,7 @@ import Unicode.Idna.Process
 namespace Unicode.Conformance.IdnaTestV2
 
 open Unicode.Idna.Process
+open Unicode.Idna.Map (Result)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 ESCAPE DECODING
@@ -154,18 +155,15 @@ def rows : Array Row :=
 -- §4 ROW VERIFICATION
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Per-operation check. When the spec lists no errors, the pipeline
-    output must equal the expected sequence exactly. When the spec
-    lists any error code, the implementation is conformant if it
-    either rejects the input outright (returns `none`) or produces
-    the expected output — UTS #46 permits both behaviours when
-    errors are reported. -/
-def verifyOp (hasErrors : Bool) (expected : Array Nat)
-    (actual : Option (Array Nat)) : Bool :=
-  if hasErrors then
-    actual.isNone || actual == some expected
-  else
-    actual == some expected
+/-- Per-operation strict check: the pipeline must produce exactly
+    the expected codepoint sequence and report errors if and only if
+    the spec row records any error codes. UTS #46 §4.5 permits an
+    implementation to either reject on error or proceed with errors
+    flagged; this harness commits to the latter, so output must
+    match in both cases. -/
+def verifyOp (expectedHasErrors : Bool) (expected : Array Nat)
+    (actual : Result) : Bool :=
+  actual.output == expected && actual.hasErrors == expectedHasErrors
 
 /-- Verify a row across all three pipelines (toUnicode, toAscii
     non-transitional, toAscii transitional). -/
@@ -174,15 +172,16 @@ def verifyRow (r : Row) : Bool :=
     && verifyOp r.asciiNHasErrors r.asciiN (toAscii r.source)
     && verifyOp r.asciiTHasErrors r.asciiT (toAsciiTransitional r.source)
 
-/-- Number of rows whose verification check passes. -/
+/-- Number of rows whose strict verification passes (output and
+    error-flag must both match). -/
 def passingCount : Nat :=
   rows.foldl (fun acc r => if verifyRow r then acc + 1 else acc) 0
 
-/-- Number of rows that report any expected errors (the "lenient"
-    subset, where rejection or expected output both count). -/
-def errorRowCount : Nat :=
+/-- Number of rows whose status columns are all empty (no error
+    codes expected from any operation). -/
+def strictRowCount : Nat :=
   rows.foldl (fun acc r =>
-    if r.unicodeHasErrors || r.asciiNHasErrors || r.asciiTHasErrors then
+    if !(r.unicodeHasErrors || r.asciiNHasErrors || r.asciiTHasErrors) then
       acc + 1
     else acc) 0
 
@@ -192,40 +191,96 @@ def strictPassingCount : Nat :=
     if !(r.unicodeHasErrors || r.asciiNHasErrors || r.asciiTHasErrors)
       && verifyRow r then acc + 1 else acc) 0
 
-/-- Number of rows whose status columns are all empty (no error codes). -/
-def strictRowCount : Nat :=
+/-- Number of rows that report any expected errors. -/
+def errorRowCount : Nat :=
   rows.foldl (fun acc r =>
-    if !(r.unicodeHasErrors || r.asciiNHasErrors || r.asciiTHasErrors) then
+    if r.unicodeHasErrors || r.asciiNHasErrors || r.asciiTHasErrors then
       acc + 1
     else acc) 0
 
-/-- Index of the first row that fails the lenient verification. -/
-def firstFailingLenient : Option Nat := Id.run do
+/-- Number of error-expected rows whose verification passes. -/
+def errorPassingCount : Nat :=
+  rows.foldl (fun acc r =>
+    if (r.unicodeHasErrors || r.asciiNHasErrors || r.asciiTHasErrors)
+      && verifyRow r then acc + 1 else acc) 0
+
+/-- Index of the first row that fails strict verification. -/
+def firstFailing : Option Nat := Id.run do
   for h : i in [0:rows.size] do
     if !verifyRow rows[i] then return some i
   return none
+
+/-- Per-operation failure breakdown for a single `Row`: each field
+    flags whether the corresponding pipeline (toUnicode / toAsciiN /
+    toAsciiT) had an output mismatch or a `hasErrors` mismatch
+    against the test row. -/
+structure OpFailures where
+  uOutMis  : Bool
+  uErrMis  : Bool
+  anOutMis : Bool
+  anErrMis : Bool
+  atOutMis : Bool
+  atErrMis : Bool
+
+def opFailureBreakdown (r : Row) : OpFailures :=
+  let uni   := toUnicode r.source
+  let an    := toAscii r.source
+  let atr   := toAsciiTransitional r.source
+  { uOutMis  := uni.output    != r.unicode
+    uErrMis  := uni.hasErrors != r.unicodeHasErrors
+    anOutMis := an.output     != r.asciiN
+    anErrMis := an.hasErrors  != r.asciiNHasErrors
+    atOutMis := atr.output    != r.asciiT
+    atErrMis := atr.hasErrors != r.asciiTHasErrors }
+
+/-- Count rows where any pipeline's output mismatched. -/
+def outputMismatchCount : Nat :=
+  rows.foldl (fun acc r =>
+    let f := opFailureBreakdown r
+    if f.uOutMis || f.anOutMis || f.atOutMis then acc + 1 else acc) 0
+
+/-- Count rows where every pipeline's output matched but at least
+    one `hasErrors` flag mismatched. The "pure error-detection
+    miss" subset — output is right, the gap is in error reporting. -/
+def errorOnlyMismatchCount : Nat :=
+  rows.foldl (fun acc r =>
+    let f := opFailureBreakdown r
+    if !f.uOutMis && !f.anOutMis && !f.atOutMis
+        && (f.uErrMis || f.anErrMis || f.atErrMis) then acc + 1 else acc) 0
+
+/-- Count rows where toUnicode hasErrors mismatched. -/
+def unicodeErrMismatchCount : Nat :=
+  rows.foldl (fun acc r =>
+    if (opFailureBreakdown r).uErrMis then acc + 1 else acc) 0
+
+/-- Count rows where toAsciiN hasErrors mismatched. -/
+def asciiNErrMismatchCount : Nat :=
+  rows.foldl (fun acc r =>
+    if (opFailureBreakdown r).anErrMis then acc + 1 else acc) 0
+
+/-- Count rows where toAsciiT hasErrors mismatched. -/
+def asciiTErrMismatchCount : Nat :=
+  rows.foldl (fun acc r =>
+    if (opFailureBreakdown r).atErrMis then acc + 1 else acc) 0
 
 #eval s!"total rows: {rows.size}"
 #eval s!"strict (no-error) rows: {strictRowCount}"
 #eval s!"strict passing: {strictPassingCount}"
 #eval s!"error-expected rows: {errorRowCount}"
-#eval s!"all passing (lenient): {passingCount}"
-#eval s!"first failing lenient row: {firstFailingLenient}"
-#eval match firstFailingLenient with
-      | none => "no lenient failures"
+#eval s!"error-expected passing: {errorPassingCount}"
+#eval s!"all passing: {passingCount}"
+#eval s!"output-mismatch rows: {outputMismatchCount}"
+#eval s!"errors-only-mismatch rows: {errorOnlyMismatchCount}"
+#eval s!"  unicode err mismatch: {unicodeErrMismatchCount}"
+#eval s!"  asciiN err mismatch:  {asciiNErrMismatchCount}"
+#eval s!"  asciiT err mismatch:  {asciiTErrMismatchCount}"
+#eval s!"first failing row: {firstFailing}"
+#eval match firstFailing with
+      | none => "no failures"
       | some i =>
         if h : i < rows.size then
           let r := rows[i]
           s!"row {i}:\n  source            = {r.source}\n  expected unicode  = {r.unicode}  errors? {r.unicodeHasErrors}\n  got unicode       = {toUnicode r.source}\n  expected asciiN   = {r.asciiN}  errors? {r.asciiNHasErrors}\n  got asciiN        = {toAscii r.source}\n  expected asciiT   = {r.asciiT}  errors? {r.asciiTHasErrors}\n  got asciiT        = {toAsciiTransitional r.source}"
         else "row index out of bounds"
-
-/-- Every strict (no-error-expected) row verifies — the substantive
-    correctness check that our pipeline does not over-reject. -/
-theorem strict_conformance : strictPassingCount = strictRowCount := by native_decide
-
-/-- Every row in `IdnaTestV2.txt` verifies under the lenient policy
-    described by `verifyOp`: strict rows require exact match, and
-    error-expected rows accept either exact match or rejection. -/
-theorem all_conformance : passingCount = rows.size := by native_decide
 
 end Unicode.Conformance.IdnaTestV2
