@@ -126,6 +126,10 @@ import Unicode.Vertical
 -- (canonical, accounting/banking, script-specific)
 import Unicode.Unihan
 
+-- UAX #44 §5.10 — property and property-value alias resolution
+-- with strict and loose-match (LM3 / LM4) lookups
+import Unicode.PropertyNames
+
 -- RFC 3492 Punycode encoding (foundation for UTS #46 IDNA processing)
 import Unicode.Idna.Punycode
 
