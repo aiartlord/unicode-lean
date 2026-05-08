@@ -86,6 +86,14 @@ import Unicode.Codec.Bom
 -- Noncharacter detection (66 designated noncharacters)
 import Unicode.Codec.Noncharacters
 
+-- UAX #11 East Asian Width — display column width for terminals
+-- and fixed-width layout (per-codepoint and string-level)
+import Unicode.Width
+
+-- UTS #51 Emoji — variation selectors, regional indicators, modifier
+-- sequences, keycap sequences, tag sequences, ZWJ sequences
+import Unicode.Emoji
+
 -- RFC 3492 Punycode encoding (foundation for UTS #46 IDNA processing)
 import Unicode.Idna.Punycode
 
