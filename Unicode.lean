@@ -117,6 +117,15 @@ import Unicode.Restriction
 -- combining the strict-bidi reject with a restriction-level threshold
 import Unicode.TrojanSource
 
+-- UAX #50 Vertical Text Layout — `Vo` property and per-codepoint
+-- vertical glyph orientation (Upright / Rotated)
+import Unicode.Vertical
+
+-- UAX #38 Unihan Database — variant relationships (Simplified ↔
+-- Traditional, semantic, spoofing, Z-axis) and numeric values
+-- (canonical, accounting/banking, script-specific)
+import Unicode.Unihan
+
 -- RFC 3492 Punycode encoding (foundation for UTS #46 IDNA processing)
 import Unicode.Idna.Punycode
 
