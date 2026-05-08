@@ -415,4 +415,13 @@ def scriptRanges : Array (Nat × Nat × Script) :=
     codepoints not covered by `scriptRanges`. -/
 def defaultScript : Script := .Unknown
 
+/-- Look up the Script property of `cp`. Returns `defaultScript`
+    (`.Unknown`) for codepoints not covered by any explicit range
+    (the UAX #44 default for the Script property). -/
+def lookupScript (cp : Nat) : Script :=
+  match scriptRanges.findSome? (fun ⟨lo, hi, s⟩ =>
+          if lo ≤ cp ∧ cp ≤ hi then some s else none) with
+  | some s => s
+  | none   => defaultScript
+
 end Unicode.Generated.Scripts
