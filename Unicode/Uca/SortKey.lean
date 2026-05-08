@@ -33,10 +33,28 @@ namespace Unicode.Uca.SortKey
 open Unicode.Generated.Allkeys
 open Unicode.Uca.Lookup
 
-/-- Variable-weighting policy from UTS #10 §4.4. -/
+/-- Variable-weighting policy from UTS #10 §4.4. The four policies
+    differ in how variable collation elements (most punctuation
+    and whitespace) are treated:
+
+      * `nonIgnorable` — variable elements keep their full weights
+                         and participate in primary-level comparison.
+      * `blanked`      — variable elements are zeroed out at every
+                         level (no L4 emitted); ignorable-after-
+                         variable elements are also zeroed.
+      * `shifted`      — variable elements have L1/L2/L3 zeroed
+                         and their primary demoted to L4; the sort
+                         key includes L4.
+      * `shiftTrimmed` — same as `shifted`, but trailing 0xFFFF
+                         L4 weights (from non-variable trailing
+                         elements) are trimmed from the L4 sequence.
+                         Standard for Unicode-collation key
+                         generation in CLDR. -/
 inductive VariableHandling where
   | nonIgnorable
+  | blanked
   | shifted
+  | shiftTrimmed
   deriving Repr, DecidableEq, Inhabited
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -101,7 +119,27 @@ def applyVariable (handling : VariableHandling)
     match handling with
     | .nonIgnorable =>
       acc := acc.push (ce, 0xFFFF)
-    | .shifted =>
+    | .blanked =>
+      -- Variable elements zeroed completely; ignorable-after-variable
+      -- elements also zeroed. No L4 emitted (every entry's quaternary
+      -- weight is 0 so `quaternaries` filters them all out).
+      if ce.isVariable then
+        let zeroed : CollationElement := ⟨0, 0, 0, false⟩
+        acc := acc.push (zeroed, 0)
+        shiftedCarry := true
+      else if ce.primary = 0 ∧ ce.secondary = 0 ∧ ce.tertiary = 0 then
+        let zeroed : CollationElement := ⟨0, 0, 0, false⟩
+        acc := acc.push (zeroed, 0)
+      else if ce.primary = 0 then
+        if shiftedCarry then
+          let zeroed : CollationElement := ⟨0, 0, 0, false⟩
+          acc := acc.push (zeroed, 0)
+        else
+          acc := acc.push (ce, 0)
+      else
+        acc := acc.push (ce, 0)
+        shiftedCarry := false
+    | .shifted | .shiftTrimmed =>
       if ce.isVariable then
         let zeroed : CollationElement := ⟨0, 0, 0, true⟩
         acc := acc.push (zeroed, ce.primary)
@@ -154,6 +192,14 @@ def quaternaries (xs : Array (CollationElement × Nat)) : Array Nat :=
 /-- The level separator between L1, L2, L3, (L4) sections. -/
 def sep : Nat := 0
 
+/-- Drop trailing 0xFFFF entries from the L4 sequence per the
+    Shift-Trimmed policy (UTS #10 §4.4.4). -/
+def trimTrailingFFFF (xs : Array Nat) : Array Nat := Id.run do
+  let mut last : Nat := xs.size
+  while last > 0 ∧ xs[last - 1]? = some 0xFFFF do
+    last := last - 1
+  return xs.extract 0 last
+
 /-- Assemble the full sort key from a codepoint sequence under the
     given variable-handling policy. The pipeline normalises to NFD
     first, walks the DUCET, applies variable handling, then
@@ -166,9 +212,13 @@ def sortKey (handling : VariableHandling) (cps : Array Nat) : Array Nat :=
   let l2  := secondaries xs
   let l3  := tertiaries xs
   match handling with
-  | .nonIgnorable => l1.push sep ++ l2.push sep ++ l3
-  | .shifted      =>
+  | .nonIgnorable | .blanked =>
+    l1.push sep ++ l2.push sep ++ l3
+  | .shifted =>
     let l4 := quaternaries xs
+    l1.push sep ++ l2.push sep ++ l3.push sep ++ l4
+  | .shiftTrimmed =>
+    let l4 := trimTrailingFFFF (quaternaries xs)
     l1.push sep ++ l2.push sep ++ l3.push sep ++ l4
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -222,5 +272,41 @@ theorem ucaCompare_a_A :
     invariant promised by UCA §1.4. -/
 theorem ucaCompare_canonical_equivalence :
     ucaCompare .nonIgnorable #[0x00E0] #[0x0061, 0x0300] = .eq := by native_decide
+
+/-- "a" < "b" under blanked policy too. -/
+theorem ucaCompare_a_b_blanked :
+    ucaCompare .blanked #[0x0061] #[0x0062] = .lt := by native_decide
+
+/-- "a" < "b" under shift-trimmed policy. -/
+theorem ucaCompare_a_b_shiftTrimmed :
+    ucaCompare .shiftTrimmed #[0x0061] #[0x0062] = .lt := by native_decide
+
+/-- Under `blanked`, `"a-b"` and `"ab"` collate equally because the
+    hyphen is a variable element zeroed at every level. Under
+    `nonIgnorable`, the hyphen contributes a primary weight that
+    makes the two strings unequal. -/
+theorem blanked_collapses_punctuation :
+    ucaCompare .blanked #[0x0061, 0x002D, 0x0062] #[0x0061, 0x0062]
+      = .eq := by native_decide
+
+theorem nonIgnorable_distinguishes_punctuation :
+    ucaCompare .nonIgnorable #[0x0061, 0x002D, 0x0062] #[0x0061, 0x0062]
+      ≠ .eq := by native_decide
+
+/-- `trimTrailingFFFF` drops the trailing run; `shiftTrimmed`
+    differs from `shifted` only in producing the trimmed L4. -/
+theorem trimTrailingFFFF_drops_trailing :
+    trimTrailingFFFF #[0x10, 0x20, 0xFFFF, 0xFFFF] = #[0x10, 0x20] := by
+  native_decide
+
+theorem trimTrailingFFFF_keeps_internal :
+    trimTrailingFFFF #[0x10, 0xFFFF, 0x20] = #[0x10, 0xFFFF, 0x20] := by
+  native_decide
+
+theorem trimTrailingFFFF_empty :
+    trimTrailingFFFF #[] = #[] := by native_decide
+
+theorem trimTrailingFFFF_all_FFFF :
+    trimTrailingFFFF #[0xFFFF, 0xFFFF, 0xFFFF] = #[] := by native_decide
 
 end Unicode.Uca.SortKey
