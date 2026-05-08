@@ -99,6 +99,11 @@ import Unicode.Emoji
 -- `isRgiEmoji` for every fully-qualified row
 import Unicode.Conformance.EmojiTest
 
+-- UAX #15 § 13 Stream-Safe Text Format — caps combining-mark runs
+-- at 30 to bound normalization buffers and prevent DoS via long
+-- combining-mark sequences
+import Unicode.StreamSafe
+
 -- RFC 3492 Punycode encoding (foundation for UTS #46 IDNA processing)
 import Unicode.Idna.Punycode
 
