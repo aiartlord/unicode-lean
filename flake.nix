@@ -65,10 +65,10 @@
         # that fails on any proof gap.
         checks.no-sorry = pkgs.runCommand "unicode-no-sorry" {
           src = ./.;
+          buildInputs = [ pkgs.bash ];
         } ''
           cp -r $src/* .
-          chmod +x scripts/check-sorry.sh
-          ./scripts/check-sorry.sh
+          ${pkgs.bash}/bin/bash scripts/check-sorry.sh
           mkdir -p $out
           touch $out/result
         '';
