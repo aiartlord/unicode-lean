@@ -86,4 +86,16 @@ def defaultIgnorable : Array (Nat × Nat) :=
   parsedRows.filterMap (fun r =>
     if r.prop = "Default_Ignorable_Code_Point" then some (r.lo, r.hi) else none)
 
+/-! Soft_Dotted ranges (UAX #44 contributory property; needed by
+    UAX #21 After_Soft_Dotted casing context). -/
+def softDotted : Array (Nat × Nat) :=
+  parsedRows.filterMap (fun r =>
+    if r.prop = "Soft_Dotted" then some (r.lo, r.hi) else none)
+
+/-! Cased ranges (UAX #44 contributory property; needed by UAX #21
+    Final_Sigma casing context). -/
+def cased : Array (Nat × Nat) :=
+  parsedRows.filterMap (fun r =>
+    if r.prop = "Cased" then some (r.lo, r.hi) else none)
+
 end Unicode.Generated.DerivedCoreProperties
