@@ -1,0 +1,191 @@
+/-
+  Unicode.Generated.EmojiSequences
+
+  RGI (Recommended for General Interchange) emoji sequence tables
+  parsed from `emoji-sequences.txt` and `emoji-zwj-sequences.txt`
+  (UTS #51 Emoji 16.0). The two files together enumerate every
+  fully-qualified emoji sequence the Unicode Consortium recommends
+  for keyboards and pickers; downstream renderers should produce a
+  single emoji glyph for any sequence in this set.
+
+  The five sequence types in `emoji-sequences.txt`:
+
+    * Basic_Emoji                  — single codepoints (and
+                                     codepoint + VS16 pairs) that
+                                     are emoji on their own.
+    * Emoji_Keycap_Sequence        — base + U+FE0F + U+20E3.
+    * RGI_Emoji_Flag_Sequence      — two regional indicators that
+                                     name a registered country/region.
+    * RGI_Emoji_Modifier_Sequence  — base + skin-tone modifier.
+    * RGI_Emoji_Tag_Sequence       — base + tag-spec* + cancel-tag,
+                                     covering the registered
+                                     subdivision flags (e.g. England,
+                                     Scotland, Wales).
+
+  Plus the ZWJ-sequence file's single type:
+
+    * RGI_Emoji_ZWJ_Sequence       — base sequences joined by U+200D
+                                     ZERO WIDTH JOINER. Includes
+                                     family/couple sequences,
+                                     profession sequences, gender
+                                     variants, hair-component bases,
+                                     and direction variants.
+
+  Basic_Emoji rows often use a `lo..hi` range; every other type
+  carries an explicit codepoint sequence. The parser below treats
+  ranges as a special case alongside fixed-length sequences.
+-/
+
+namespace Unicode.Generated.EmojiSequences
+
+inductive RgiSequenceType where
+  | Basic_Emoji
+  | Emoji_Keycap_Sequence
+  | RGI_Emoji_Flag_Sequence
+  | RGI_Emoji_Modifier_Sequence
+  | RGI_Emoji_Tag_Sequence
+  | RGI_Emoji_ZWJ_Sequence
+  deriving DecidableEq, Repr, Inhabited
+
+@[inline]
+def trimS (s : String) : String := (String.trimAscii s).toString
+
+def hexDigitVal (c : Char) : Nat :=
+  let n := c.toNat
+  if n ≥ 0x30 ∧ n ≤ 0x39 then n - 0x30
+  else if n ≥ 0x61 ∧ n ≤ 0x66 then n - 0x61 + 10
+  else if n ≥ 0x41 ∧ n ≤ 0x46 then n - 0x41 + 10
+  else 0
+
+def parseHex (s : String) : Nat :=
+  s.foldl (fun acc c => acc * 16 + hexDigitVal c) 0
+
+def parseType? : String → Option RgiSequenceType
+  | "Basic_Emoji"                 => some .Basic_Emoji
+  | "Emoji_Keycap_Sequence"       => some .Emoji_Keycap_Sequence
+  | "RGI_Emoji_Flag_Sequence"     => some .RGI_Emoji_Flag_Sequence
+  | "RGI_Emoji_Modifier_Sequence" => some .RGI_Emoji_Modifier_Sequence
+  | "RGI_Emoji_Tag_Sequence"      => some .RGI_Emoji_Tag_Sequence
+  | "RGI_Emoji_ZWJ_Sequence"      => some .RGI_Emoji_ZWJ_Sequence
+  | unknown                       => Function.const String none unknown
+
+/-- Parse a whitespace-separated list of hex codepoints into an
+    `Array Nat`. Empty tokens are skipped. -/
+def parseCodepointList (s : String) : Array Nat :=
+  ((s.splitOn " ").filterMap (fun tok =>
+    let t := trimS tok
+    if t.isEmpty then none else some (parseHex t))).toArray
+
+/-- One parsed row: either a single codepoint (or a range, encoded
+    by both `lo` and `hi`) carrying a Basic_Emoji classification, or
+    an explicit sequence of codepoints. The `seq` array is the full
+    canonical form including any variation selectors. -/
+structure SequenceRow where
+  seq  : Array Nat
+  type : RgiSequenceType
+  -- For Basic_Emoji range rows, `seq.size = 1` and `rangeMax`
+  -- carries the upper bound of the range; otherwise `rangeMax = 0`.
+  rangeMax : Nat
+  deriving Repr, Inhabited
+
+/-- Parse one sequence-file row. Returns `none` for blank or
+    comment lines, or for rows whose type field is unrecognised. -/
+def parseRow (rawLine : String) : Option SequenceRow :=
+  let stripped : String := (rawLine.takeWhile (· != '#')).toString
+  let line := trimS stripped
+  if line.isEmpty then none else
+  match String.splitOn line ";" with
+  | cpField :: typeField :: _ =>
+    match parseType? (trimS typeField) with
+    | none => none
+    | some t =>
+      let trimmedCp := trimS cpField
+      match String.splitOn trimmedCp ".." with
+      | [single] =>
+        -- Either one codepoint or a space-separated sequence.
+        some ⟨parseCodepointList single, t, 0⟩
+      | [lo, hi] =>
+        let loN := parseHex (trimS lo)
+        let hiN := parseHex (trimS hi)
+        some ⟨#[loN], t, hiN⟩
+      | irregularSplit =>
+        Function.const (List String) none irregularSplit
+  | irregularSplit => Function.const (List String) none irregularSplit
+
+/-- Raw text of `emoji-sequences.txt`, embedded at compile time. -/
+def emojiSequencesRaw : String := include_str "../Ucd/emoji-sequences.txt"
+
+/-- Raw text of `emoji-zwj-sequences.txt`, embedded at compile time. -/
+def emojiZwjSequencesRaw : String := include_str "../Ucd/emoji-zwj-sequences.txt"
+
+/-- All parsed rows from both sequence files, in source order. -/
+def parsedRows : Array SequenceRow :=
+  ((emojiSequencesRaw.splitOn "\n").filterMap parseRow).toArray
+    ++ ((emojiZwjSequencesRaw.splitOn "\n").filterMap parseRow).toArray
+
+/-- Filter rows by type. -/
+def rowsOfType (t : RgiSequenceType) : Array SequenceRow :=
+  parsedRows.filter (fun r => r.type = t)
+
+/-- Basic_Emoji rows. -/
+def basicEmojiRows : Array SequenceRow := rowsOfType .Basic_Emoji
+
+/-- Keycap sequences. -/
+def keycapSequences : Array (Array Nat) :=
+  (rowsOfType .Emoji_Keycap_Sequence).map (·.seq)
+
+/-- Flag sequences. -/
+def flagSequences : Array (Array Nat) :=
+  (rowsOfType .RGI_Emoji_Flag_Sequence).map (·.seq)
+
+/-- Modifier sequences. -/
+def modifierSequences : Array (Array Nat) :=
+  (rowsOfType .RGI_Emoji_Modifier_Sequence).map (·.seq)
+
+/-- Tag sequences (subdivision flags). -/
+def tagSequences : Array (Array Nat) :=
+  (rowsOfType .RGI_Emoji_Tag_Sequence).map (·.seq)
+
+/-- ZWJ sequences. -/
+def zwjSequences : Array (Array Nat) :=
+  (rowsOfType .RGI_Emoji_ZWJ_Sequence).map (·.seq)
+
+/-- True iff `cp` matches a Basic_Emoji single-codepoint or range
+    row. Sequences that include a variation selector (`cp + VS16`)
+    count as Basic_Emoji at the codepoint level — the VS16 follow-up
+    is handled by `isBasicEmojiSequence`. -/
+def isBasicEmojiCodepoint (cp : Nat) : Bool :=
+  basicEmojiRows.any (fun r =>
+    if r.rangeMax > 0 then
+      (match r.seq[0]? with
+       | some lo => lo ≤ cp ∧ cp ≤ r.rangeMax
+       | none    => false)
+    else
+      r.seq = #[cp])
+
+/-- True iff `cps` matches some Basic_Emoji multi-codepoint row
+    (e.g. `cp + U+FE0F`). -/
+def isBasicEmojiSequence (cps : Array Nat) : Bool :=
+  basicEmojiRows.any (fun r => r.rangeMax = 0 ∧ r.seq = cps)
+
+/-- True iff `cps` is exactly a registered RGI keycap sequence. -/
+def isRegisteredKeycapSequence (cps : Array Nat) : Bool :=
+  keycapSequences.any (fun s => s = cps)
+
+/-- True iff `cps` is exactly a registered RGI flag (region) sequence. -/
+def isRegisteredFlagSequence (cps : Array Nat) : Bool :=
+  flagSequences.any (fun s => s = cps)
+
+/-- True iff `cps` is exactly a registered RGI modifier sequence. -/
+def isRegisteredModifierSequence (cps : Array Nat) : Bool :=
+  modifierSequences.any (fun s => s = cps)
+
+/-- True iff `cps` is exactly a registered RGI tag (subdivision) sequence. -/
+def isRegisteredTagSequence (cps : Array Nat) : Bool :=
+  tagSequences.any (fun s => s = cps)
+
+/-- True iff `cps` is exactly a registered RGI ZWJ sequence. -/
+def isRegisteredZwjSequence (cps : Array Nat) : Bool :=
+  zwjSequences.any (fun s => s = cps)
+
+end Unicode.Generated.EmojiSequences

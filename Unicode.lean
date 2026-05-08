@@ -91,8 +91,13 @@ import Unicode.Codec.Noncharacters
 import Unicode.Width
 
 -- UTS #51 Emoji — variation selectors, regional indicators, modifier
--- sequences, keycap sequences, tag sequences, ZWJ sequences
+-- sequences, keycap sequences, tag sequences, ZWJ sequences,
+-- and the RGI (Recommended for General Interchange) sequence set
 import Unicode.Emoji
+
+-- UTS #51 conformance — official `emoji-test.txt` against
+-- `isRgiEmoji` for every fully-qualified row
+import Unicode.Conformance.EmojiTest
 
 -- RFC 3492 Punycode encoding (foundation for UTS #46 IDNA processing)
 import Unicode.Idna.Punycode
