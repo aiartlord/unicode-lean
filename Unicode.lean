@@ -104,6 +104,14 @@ import Unicode.Conformance.EmojiTest
 -- combining-mark sequences
 import Unicode.StreamSafe
 
+-- Per-codepoint resolved Script_Extensions (UAX #44 § 5.10) plus
+-- the Script ↔ ScriptAbbrev bridge needed by UTS #39 restriction-
+-- level computation
+import Unicode.ResolvedScripts
+
+-- UTS #39 § 5 Restriction Levels and Mixed-Number Detection
+import Unicode.Restriction
+
 -- RFC 3492 Punycode encoding (foundation for UTS #46 IDNA processing)
 import Unicode.Idna.Punycode
 
