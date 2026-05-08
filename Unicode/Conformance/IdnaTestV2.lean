@@ -155,15 +155,33 @@ def rows : Array Row :=
 -- §4 ROW VERIFICATION
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Per-operation strict check: the pipeline must produce exactly
-    the expected codepoint sequence and report errors if and only if
-    the spec row records any error codes. UTS #46 §4.5 permits an
-    implementation to either reject on error or proceed with errors
-    flagged; this harness commits to the latter, so output must
-    match in both cases. -/
+/-- U+FFFD-aware codepoint comparison per the IdnaTestV2.txt
+    header convention: "If the implementation converts illegal
+    code points into U+FFFD ... then the string comparisons need
+    to account for that by treating U+FFFD in the actual value as
+    a wildcard." Two arrays match iff they have the same length
+    and at each position either the codepoints are equal or the
+    actual codepoint is U+FFFD. -/
+def matchesWithReplacementWildcard
+    (actual expected : Array Nat) : Bool :=
+  if actual.size ≠ expected.size then false
+  else Id.run do
+    for h : i in [0:actual.size] do
+      let a := actual[i]
+      let e := expected[i]!
+      if a ≠ e ∧ a ≠ 0xFFFD then return false
+    return true
+
+/-- Per-operation strict check: the pipeline must produce the
+    expected codepoint sequence (modulo U+FFFD-as-wildcard per the
+    test-file convention) and report errors if and only if the
+    spec row records any error codes. UTS #46 §4.5 permits an
+    implementation to either reject on error or proceed with
+    errors flagged; this harness commits to the latter. -/
 def verifyOp (expectedHasErrors : Bool) (expected : Array Nat)
     (actual : Result) : Bool :=
-  actual.output == expected && actual.hasErrors == expectedHasErrors
+  matchesWithReplacementWildcard actual.output expected
+    && actual.hasErrors == expectedHasErrors
 
 /-- Verify a row across all three pipelines (toUnicode, toAscii
     non-transitional, toAscii transitional). -/
