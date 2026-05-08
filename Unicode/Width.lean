@@ -28,6 +28,8 @@
 
 import Unicode.Generated.EastAsianWidth
 import Unicode.Generated.DerivedGeneralCategory
+import Unicode.Generated.EmojiData
+import Unicode.Segmentation.GraphemeBreak
 
 namespace Unicode.Width
 
@@ -203,5 +205,117 @@ theorem dw_controls :
 /-- Mixed ASCII + CJK: "hi 你好" is width 7 (h, i, space, 你=2, 好=2). -/
 theorem dw_mixed :
     displayWidth .narrow #[0x68, 0x69, 0x20, 0x4F60, 0x597D] = 7 := by native_decide
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §3 GRAPHEME-CLUSTER-AWARE DISPLAY WIDTH
+--
+-- The per-codepoint `displayWidth` over-counts emoji ZWJ sequences:
+-- a family `👨‍👩‍👧` (5 codepoints — three emoji bases at width 2 each,
+-- two ZWJs at width 0) sums to 6, but renders as a single width-2
+-- glyph in any compliant renderer. The grapheme-cluster-aware
+-- variant chunks codepoints via UAX #29 grapheme breaks, then takes
+-- the max per-codepoint width within each cluster (combining marks
+-- and ZWJs contribute 0, the emoji base contributes 2, so cluster
+-- max is 2 — the rendered width). This matches terminal-column
+-- behaviour and `wcswidth`-style libraries.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- True iff `cp` is a regional indicator symbol letter
+    (U+1F1E6..U+1F1FF). Two consecutive regional indicators form
+    a flag sequence which is rendered as a single width-2 glyph. -/
+def isRegionalIndicator (cp : Nat) : Bool :=
+  Nat.ble 0x1F1E6 cp && Nat.ble cp 0x1F1FF
+
+/-- True iff a single grapheme cluster renders as an emoji glyph
+    rather than as plain text. The render-as-emoji conditions per
+    UTS #51 / EastAsianWidth common practice:
+
+      * any codepoint has Emoji_Presentation,
+      * the cluster contains U+FE0F (emoji variation selector),
+      * the cluster contains a regional indicator (flag),
+      * any codepoint has Extended_Pictographic (catches the
+        ZWJ-joined family / profession / hair sequences whose
+        bases all have Extended_Pictographic).
+
+    Emoji clusters are rendered at width 2 regardless of their
+    constituent codepoints' East_Asian_Width values. -/
+def isEmojiCluster (cluster : Array Nat) : Bool :=
+  cluster.any (fun cp =>
+    Unicode.Generated.EmojiData.isEmojiPresentation cp
+      || cp = 0xFE0F
+      || isRegionalIndicator cp
+      || Unicode.Generated.EmojiData.isExtendedPictographic cp)
+
+/-- Display width of a single grapheme cluster. Emoji clusters
+    render at width 2 (per UTS #51 / common terminal behaviour);
+    text clusters take the max per-codepoint width within the
+    cluster (combining marks contribute 0, so a base + combining
+    cluster has the base's width). -/
+def clusterWidth (mode : AmbiguousMode) (cluster : Array Nat) : Nat :=
+  if isEmojiCluster cluster then 2
+  else
+    cluster.foldl (fun acc cp =>
+      let w := codepointWidth mode cp
+      if Nat.ble acc w then w else acc) 0
+
+/-- Slice `cps` into grapheme clusters using UAX #29 break positions. -/
+def graphemeClusters (cps : Array Nat) : Array (Array Nat) := Id.run do
+  let breaks := Unicode.Segmentation.GraphemeBreak.graphemeBreaks cps
+  let mut clusters : Array (Array Nat) := #[]
+  let mut current  : Array Nat         := #[]
+  for h : i in [0:cps.size] do
+    if breaks[i]! ∧ ! current.isEmpty then
+      clusters := clusters.push current
+      current  := #[]
+    current := current.push cps[i]
+  if ! current.isEmpty then
+    clusters := clusters.push current
+  return clusters
+
+/-- The display width of `cps` computed cluster-wise: chunk via
+    UAX #29 grapheme breaks, take the max codepoint-width within
+    each cluster, sum across clusters. This is the correct width
+    for emoji ZWJ sequences (a family is one width-2 cluster
+    rather than the codepoint-summed width 6) and for combining-
+    mark clusters (`a + ̈` is one width-1 cluster, not 1 + 0). -/
+def displayWidthClusters (mode : AmbiguousMode) (cps : Array Nat) : Nat :=
+  (graphemeClusters cps).foldl
+    (fun acc cluster => acc + clusterWidth mode cluster) 0
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §4 GRAPHEME-AWARE TEST VECTORS
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- "ä" decomposed (a + COMBINING DIAERESIS) is one cluster of
+    width 1 — same as the precomposed form. -/
+theorem dwc_a_diaeresis :
+    displayWidthClusters .narrow #[0x61, 0x0308] = 1 := by native_decide
+
+/-- A family ZWJ sequence `👨‍👩‍👧` (man + ZWJ + woman + ZWJ + girl)
+    is ONE cluster of width 2, not 6. -/
+theorem dwc_family_zwj :
+    displayWidthClusters .narrow
+      #[0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467] = 2 := by native_decide
+
+/-- A waving hand with skin tone modifier `👋🏽` is ONE cluster
+    of width 2, not 4. -/
+theorem dwc_wave_modifier :
+    displayWidthClusters .narrow #[0x1F44B, 0x1F3FD] = 2 := by native_decide
+
+/-- A flag sequence `🇺🇸` is ONE cluster of width 2, not 4. -/
+theorem dwc_flag_us :
+    displayWidthClusters .narrow #[0x1F1FA, 0x1F1F8] = 2 := by native_decide
+
+/-- "hi" is two clusters of width 1 each, total 2. -/
+theorem dwc_hi :
+    displayWidthClusters .narrow #[0x68, 0x69] = 2 := by native_decide
+
+/-- The empty array is width 0. -/
+theorem dwc_empty :
+    displayWidthClusters .narrow #[] = 0 := by native_decide
+
+/-- "你好" is two CJK clusters of width 2 each, total 4. -/
+theorem dwc_nihao :
+    displayWidthClusters .narrow #[0x4F60, 0x597D] = 4 := by native_decide
 
 end Unicode.Width
