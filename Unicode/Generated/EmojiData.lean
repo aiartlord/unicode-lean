@@ -85,8 +85,60 @@ def extendedPictographic : Array (Nat × Nat) :=
   parsedRows.filterMap (fun r =>
     if r.2.2 = .Extended_Pictographic then some (r.1, r.2.1) else none)
 
+/-- Emoji ranges. -/
+def emoji : Array (Nat × Nat) :=
+  parsedRows.filterMap (fun r =>
+    if r.2.2 = .Emoji then some (r.1, r.2.1) else none)
+
+/-- Emoji_Presentation ranges. -/
+def emojiPresentation : Array (Nat × Nat) :=
+  parsedRows.filterMap (fun r =>
+    if r.2.2 = .Emoji_Presentation then some (r.1, r.2.1) else none)
+
+/-- Emoji_Modifier ranges (the five skin-tone modifiers). -/
+def emojiModifier : Array (Nat × Nat) :=
+  parsedRows.filterMap (fun r =>
+    if r.2.2 = .Emoji_Modifier then some (r.1, r.2.1) else none)
+
+/-- Emoji_Modifier_Base ranges (codepoints accepting a skin-tone modifier). -/
+def emojiModifierBase : Array (Nat × Nat) :=
+  parsedRows.filterMap (fun r =>
+    if r.2.2 = .Emoji_Modifier_Base then some (r.1, r.2.1) else none)
+
+/-- Emoji_Component ranges (regional indicators, modifiers, joiners,
+    keycap-eligible digits/symbols). -/
+def emojiComponent : Array (Nat × Nat) :=
+  parsedRows.filterMap (fun r =>
+    if r.2.2 = .Emoji_Component then some (r.1, r.2.1) else none)
+
 /-- True iff `cp` has the Extended_Pictographic property. -/
 def isExtendedPictographic (cp : Nat) : Bool :=
   extendedPictographic.any (fun r => r.1 ≤ cp ∧ cp ≤ r.2)
+
+/-- True iff `cp` has the Emoji property (rendered as emoji by default). -/
+def isEmoji (cp : Nat) : Bool :=
+  emoji.any (fun r => r.1 ≤ cp ∧ cp ≤ r.2)
+
+/-- True iff `cp` has the Emoji_Presentation property (defaults to
+    emoji rather than text presentation absent a variation selector). -/
+def isEmojiPresentation (cp : Nat) : Bool :=
+  emojiPresentation.any (fun r => r.1 ≤ cp ∧ cp ≤ r.2)
+
+/-- True iff `cp` is one of the five Emoji_Modifier skin-tone codepoints
+    U+1F3FB..U+1F3FF. -/
+def isEmojiModifier (cp : Nat) : Bool :=
+  emojiModifier.any (fun r => r.1 ≤ cp ∧ cp ≤ r.2)
+
+/-- True iff `cp` is an Emoji_Modifier_Base — a codepoint that accepts
+    a skin-tone modifier immediately following it. -/
+def isEmojiModifierBase (cp : Nat) : Bool :=
+  emojiModifierBase.any (fun r => r.1 ≤ cp ∧ cp ≤ r.2)
+
+/-- True iff `cp` has the Emoji_Component property — a codepoint
+    permitted to appear as a non-leading component of an emoji
+    sequence (regional indicators, modifiers, hair-style joiners,
+    keycap-eligible digits and symbols). -/
+def isEmojiComponent (cp : Nat) : Bool :=
+  emojiComponent.any (fun r => r.1 ≤ cp ∧ cp ≤ r.2)
 
 end Unicode.Generated.EmojiData
