@@ -215,15 +215,30 @@ def labelsPass (opts : Options) (decoded : Array (Array Nat)) : Bool :=
 -- §5 TOUNICODE  (UTS #46 §4.2)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+/-- True iff every codepoint of `cps` has IDNA disposition Valid
+    or Deviation. UTS #46 §4.1 V6 (Nontransitional Processing):
+    each code point in the (decoded) label must be either Valid
+    or Deviation; Mapped / Ignored / Disallowed codepoints fail.
+    The mapping pass earlier in `toUnicode` already handles these
+    on the input side, but Punycode-decoded forms have not been
+    through mapping and must be checked separately. -/
+def decodedLabelValidV6 (cps : Array Nat) : Bool :=
+  cps.all (fun cp =>
+    match Unicode.Idna.Disposition.disposition cp with
+    | .Valid | .Deviation => true
+    | .Mapped | .Ignored | .Disallowed => false)
+
 /-- Decode a single label whose first four codepoints are 'xn--' via
     Punycode. Returns the decoded sequence with `hasErrors = false`
     on success. On Punycode failure or an empty-after-decode result,
     the original label is preserved with `hasErrors = true` per
     UTS #46 §4.2 step 4 (record a Punycode error and continue with
     the original label). UTS #46 §4.1 step 5 additionally requires
-    that the decoded label be in NFC; a violation flips `hasErrors`
-    while the (non-NFC) decoded form is still returned. On a
-    non-`xn--` label the input is returned unchanged with no error. -/
+    that the decoded label be in NFC; § 4.1 V6 requires every
+    codepoint of the decoded label have disposition Valid or
+    Deviation. Either violation flips `hasErrors` while the
+    decoded form is still returned. On a non-`xn--` label the
+    input is returned unchanged with no error. -/
 def decodeLabel (label : Array Nat) : Map.Result :=
   if hasXnPrefix label then
     let suffix := asciiCpsToString (label.extract 4 label.size)
@@ -233,7 +248,8 @@ def decodeLabel (label : Array Nat) : Map.Result :=
       if decoded.isEmpty then { output := label, hasErrors := true }
       else
         let nfcOk := Unicode.Normalization.NFC.toNFC decoded == decoded
-        { output := decoded, hasErrors := ! nfcOk }
+        let v6Ok  := decodedLabelValidV6 decoded
+        { output := decoded, hasErrors := ! (nfcOk && v6Ok) }
   else
     { output := label, hasErrors := false }
 
