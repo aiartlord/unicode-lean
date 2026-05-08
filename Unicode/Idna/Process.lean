@@ -116,14 +116,17 @@ def defaultOptions : Options :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- A label fails the hyphen-position rule when both characters at
-    positions 3 and 4 (1-indexed; 2 and 3 zero-indexed) are '-'. The
-    rule is suspended for labels that start with 'xn--' since those
-    are produced by the Punycode encoder by design. -/
+    positions 3 and 4 (1-indexed; 2 and 3 zero-indexed) are '-'.
+    Per UTS #46 §4.1 V2 the rule applies to the *decoded* label
+    form; legitimate Punycode labels (e.g. `xn--fa-hia` for `faß`)
+    decode to Unicode with no hyphens at those positions and so
+    pass naturally, while a label whose decoded form happens to
+    have ASCII hyphens at 3+4 (e.g. a maliciously-chained
+    `xn--xn--a--gua`) is rejected. -/
 def violatesHyphenRule (label : Array Nat) : Bool :=
   Nat.ble 4 label.size
     && label[2]? == some 0x2D
     && label[3]? == some 0x2D
-    && !hasXnPrefix label
 
 /-- A label fails the leading/trailing-hyphen rule when its first or
     last character is '-'. -/
