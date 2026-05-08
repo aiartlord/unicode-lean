@@ -130,6 +130,11 @@ import Unicode.Unihan
 -- with strict and loose-match (LM3 / LM4) lookups
 import Unicode.PropertyNames
 
+-- UAX #21 / SpecialCasing — locale- and context-aware uppercase /
+-- lowercase / titlecase mappings, including Turkish dotted/dotless I,
+-- Lithuanian dot above, and Greek final sigma
+import Unicode.Casing
+
 -- RFC 3492 Punycode encoding (foundation for UTS #46 IDNA processing)
 import Unicode.Idna.Punycode
 
