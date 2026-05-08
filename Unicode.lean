@@ -112,6 +112,11 @@ import Unicode.ResolvedScripts
 -- UTS #39 § 5 Restriction Levels and Mixed-Number Detection
 import Unicode.Restriction
 
+-- Trojan Source defense (CVE-2021-42574 / 2021-42694) — bidi
+-- format-control detection, balance check, and `safeForCodeContext`
+-- combining the strict-bidi reject with a restriction-level threshold
+import Unicode.TrojanSource
+
 -- RFC 3492 Punycode encoding (foundation for UTS #46 IDNA processing)
 import Unicode.Idna.Punycode
 

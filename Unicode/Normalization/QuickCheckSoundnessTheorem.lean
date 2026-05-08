@@ -34,7 +34,7 @@ namespace Unicode.Normalization.QuickCheckSoundnessTheorem
 
 open Unicode.Normalization
 open Unicode.Normalization.NFC
-  (toNFC isNFCQuickCheck nfcQCValue)
+  (toNFC toNFCQuick isNFCQuickCheck nfcQCValue)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 PER-CODEPOINT QC EXTRACTOR
@@ -118,5 +118,18 @@ theorem quickCheck_sound
       qcY_of_mem hSnocQC (mem_snoc_self xs.toArray cp)
     exact QuickCheckSoundnessSnocClosure.nfc_snoc_qcY
       xs.toArray cp hCpQC hPrefixNFC hSnocQC
+
+/-- The fast-path `toNFCQuick` is observably equal to the full
+    `toNFC` pipeline. When `isNFCQuickCheck` returns `true` the
+    quick-check soundness theorem closes by `quickCheck_sound`;
+    when it returns `false` the function definitionally falls
+    through to `toNFC`. -/
+theorem toNFCQuick_eq_toNFC (cps : Array Nat) :
+    toNFCQuick cps = toNFC cps := by
+  unfold toNFCQuick
+  by_cases hQC : isNFCQuickCheck cps = true
+  · rw [if_pos hQC]
+    exact (quickCheck_sound cps hQC).symm
+  · rw [if_neg hQC]
 
 end Unicode.Normalization.QuickCheckSoundnessTheorem

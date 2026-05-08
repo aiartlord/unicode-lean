@@ -123,6 +123,16 @@ def isNFCQuickCheck (cps : Array Nat) : Bool :=
 def isNFC (cps : Array Nat) : Bool :=
   toNFC cps = cps
 
+/-- Fast-path NFC normalisation: probes `isNFCQuickCheck` first and
+    returns `cps` unchanged when the cheap check passes (the master
+    soundness theorem `Unicode.Normalization.QuickCheckSoundnessTheorem.quickCheck_sound`
+    proves this is equal to running the full pipeline). Falls back
+    to the full `toNFC` only when QC fails. For input that is
+    already in NFC — the dominant case in production text — this
+    avoids the decompose / reorder / compose traversal entirely. -/
+def toNFCQuick (cps : Array Nat) : Array Nat :=
+  if isNFCQuickCheck cps then cps else toNFC cps
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- TEST VECTORS
 -- ═══════════════════════════════════════════════════════════════════════════════
