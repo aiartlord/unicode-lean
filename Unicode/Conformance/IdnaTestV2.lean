@@ -155,83 +155,16 @@ def rows : Array Row :=
 -- §4 ROW VERIFICATION
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- U+FFFD-aware codepoint comparison per the IdnaTestV2.txt
-    header convention: "If the implementation converts illegal
-    code points into U+FFFD ... then the string comparisons need
-    to account for that by treating U+FFFD in the actual value as
-    a wildcard." Two arrays match iff they have the same length
-    and at each position either the codepoints are equal or the
-    actual codepoint is U+FFFD. -/
-def matchesWithReplacementWildcard
-    (actual expected : Array Nat) : Bool :=
-  if actual.size ≠ expected.size then false
-  else Id.run do
-    for h : i in [0:actual.size] do
-      let a := actual[i]
-      let e := expected[i]!
-      if a ≠ e ∧ a ≠ 0xFFFD then return false
-    return true
-
-/-- Per-operation strict check: the pipeline must produce the
-    expected codepoint sequence (modulo U+FFFD-as-wildcard per the
-    test-file convention) and report errors if and only if the
+/-- Per-operation strict check: the pipeline must produce exactly
+    the expected codepoint sequence and report errors iff the
     spec row records any error codes. UTS #46 §4.5 permits an
     implementation to either reject on error or proceed with
     errors flagged; this harness commits to the latter. -/
 def verifyOp (expectedHasErrors : Bool) (expected : Array Nat)
     (actual : Result) : Bool :=
-  matchesWithReplacementWildcard actual.output expected
-    && actual.hasErrors == expectedHasErrors
+  actual.output == expected && actual.hasErrors == expectedHasErrors
 
-/-- Verify a row across all three pipelines (toUnicode, toAscii
-    non-transitional, toAscii transitional). -/
-def verifyRow (r : Row) : Bool :=
-  verifyOp r.unicodeHasErrors r.unicode (toUnicode r.source)
-    && verifyOp r.asciiNHasErrors r.asciiN (toAscii r.source)
-    && verifyOp r.asciiTHasErrors r.asciiT (toAsciiTransitional r.source)
-
-/-- Number of rows whose strict verification passes (output and
-    error-flag must both match). -/
-def passingCount : Nat :=
-  rows.foldl (fun acc r => if verifyRow r then acc + 1 else acc) 0
-
-/-- Number of rows whose status columns are all empty (no error
-    codes expected from any operation). -/
-def strictRowCount : Nat :=
-  rows.foldl (fun acc r =>
-    if !(r.unicodeHasErrors || r.asciiNHasErrors || r.asciiTHasErrors) then
-      acc + 1
-    else acc) 0
-
-/-- Number of strict (no-error-expected) rows whose verification passes. -/
-def strictPassingCount : Nat :=
-  rows.foldl (fun acc r =>
-    if !(r.unicodeHasErrors || r.asciiNHasErrors || r.asciiTHasErrors)
-      && verifyRow r then acc + 1 else acc) 0
-
-/-- Number of rows that report any expected errors. -/
-def errorRowCount : Nat :=
-  rows.foldl (fun acc r =>
-    if r.unicodeHasErrors || r.asciiNHasErrors || r.asciiTHasErrors then
-      acc + 1
-    else acc) 0
-
-/-- Number of error-expected rows whose verification passes. -/
-def errorPassingCount : Nat :=
-  rows.foldl (fun acc r =>
-    if (r.unicodeHasErrors || r.asciiNHasErrors || r.asciiTHasErrors)
-      && verifyRow r then acc + 1 else acc) 0
-
-/-- Index of the first row that fails strict verification. -/
-def firstFailing : Option Nat := Id.run do
-  for h : i in [0:rows.size] do
-    if !verifyRow rows[i] then return some i
-  return none
-
-/-- Per-operation failure breakdown for a single `Row`: each field
-    flags whether the corresponding pipeline (toUnicode / toAsciiN /
-    toAsciiT) had an output mismatch or a `hasErrors` mismatch
-    against the test row. -/
+/-- Per-operation failure breakdown for a single `Row`. -/
 structure OpFailures where
   uOutMis  : Bool
   uErrMis  : Bool
@@ -251,54 +184,118 @@ def opFailureBreakdown (r : Row) : OpFailures :=
     atOutMis := atr.output    != r.asciiT
     atErrMis := atr.hasErrors != r.asciiTHasErrors }
 
-/-- Count rows where any pipeline's output mismatched. -/
-def outputMismatchCount : Nat :=
-  rows.foldl (fun acc r =>
+/-- Aggregated metrics across all rows. Computed in a single fold
+    so the conformance build avoids re-running the per-row
+    pipeline-trio nine times (once per metric). -/
+structure Summary where
+  total                    : Nat
+  strictRowCount           : Nat
+  strictPassingCount       : Nat
+  errorRowCount            : Nat
+  errorPassingCount        : Nat
+  passingCount             : Nat
+  outputMismatchCount      : Nat
+  errorOnlyMismatchCount   : Nat
+  unicodeErrMismatchCount  : Nat
+  asciiNErrMismatchCount   : Nat
+  asciiTErrMismatchCount   : Nat
+  /-- Indices of the first 10 failing rows in source order. -/
+  firstTenFailingRows      : Array Nat
+  /-- Indices of the first 10 rows where output mismatched
+      (subset of `firstTenFailingRows`). -/
+  firstTenOutputMismatches : Array Nat
+  deriving Repr, Inhabited
+
+/-- Compute every summary metric in a single fold over `rows`. -/
+def computeSummary : Summary := Id.run do
+  let mut total                  : Nat := rows.size
+  let mut strictTotal            : Nat := 0
+  let mut strictPass             : Nat := 0
+  let mut errorTotal             : Nat := 0
+  let mut errorPass              : Nat := 0
+  let mut totalPass              : Nat := 0
+  let mut outputMis              : Nat := 0
+  let mut errorOnlyMis           : Nat := 0
+  let mut uniErrMis              : Nat := 0
+  let mut anErrMis               : Nat := 0
+  let mut atErrMis               : Nat := 0
+  let mut firstTen               : Array Nat := #[]
+  let mut firstTenOut            : Array Nat := #[]
+  for h : i in [0:rows.size] do
+    let r := rows[i]
+    let isStrict :=
+      ! (r.unicodeHasErrors || r.asciiNHasErrors || r.asciiTHasErrors)
+    if isStrict then strictTotal := strictTotal + 1
+    else errorTotal := errorTotal + 1
     let f := opFailureBreakdown r
-    if f.uOutMis || f.anOutMis || f.atOutMis then acc + 1 else acc) 0
+    let outBad := f.uOutMis || f.anOutMis || f.atOutMis
+    let errBad := f.uErrMis || f.anErrMis || f.atErrMis
+    let rowBad := outBad || errBad
+    if ! rowBad then
+      totalPass := totalPass + 1
+      if isStrict then strictPass := strictPass + 1
+      else errorPass := errorPass + 1
+    else
+      if firstTen.size < 10 then firstTen := firstTen.push i
+    if outBad then
+      outputMis := outputMis + 1
+      if firstTenOut.size < 10 then firstTenOut := firstTenOut.push i
+    else if errBad then
+      errorOnlyMis := errorOnlyMis + 1
+    if f.uErrMis  then uniErrMis := uniErrMis + 1
+    if f.anErrMis then anErrMis := anErrMis + 1
+    if f.atErrMis then atErrMis := atErrMis + 1
+  return
+    { total                    := total
+      strictRowCount           := strictTotal
+      strictPassingCount       := strictPass
+      errorRowCount            := errorTotal
+      errorPassingCount        := errorPass
+      passingCount             := totalPass
+      outputMismatchCount      := outputMis
+      errorOnlyMismatchCount   := errorOnlyMis
+      unicodeErrMismatchCount  := uniErrMis
+      asciiNErrMismatchCount   := anErrMis
+      asciiTErrMismatchCount   := atErrMis
+      firstTenFailingRows      := firstTen
+      firstTenOutputMismatches := firstTenOut }
 
-/-- Count rows where every pipeline's output matched but at least
-    one `hasErrors` flag mismatched. The "pure error-detection
-    miss" subset — output is right, the gap is in error reporting. -/
-def errorOnlyMismatchCount : Nat :=
-  rows.foldl (fun acc r =>
-    let f := opFailureBreakdown r
-    if !f.uOutMis && !f.anOutMis && !f.atOutMis
-        && (f.uErrMis || f.anErrMis || f.atErrMis) then acc + 1 else acc) 0
+/-- The single shared computation; downstream `#eval`s project from
+    here so the heavy fold runs once. -/
+def summary : Summary := computeSummary
 
-/-- Count rows where toUnicode hasErrors mismatched. -/
-def unicodeErrMismatchCount : Nat :=
-  rows.foldl (fun acc r =>
-    if (opFailureBreakdown r).uErrMis then acc + 1 else acc) 0
+/-- Pretty-print one failing row's diagnostic info. -/
+def diagnosticFor (i : Nat) : String :=
+  if h : i < rows.size then
+    let r := rows[i]
+    let uni := toUnicode r.source
+    let an  := toAscii r.source
+    let atr := toAsciiTransitional r.source
+    s!"row {i}: src={r.source}\n" ++
+    s!"  toU exp={r.unicode} err?{r.unicodeHasErrors}  got out={uni.output} err?{uni.hasErrors}\n" ++
+    s!"  toAN exp={r.asciiN} err?{r.asciiNHasErrors}  got out={an.output} err?{an.hasErrors}\n" ++
+    s!"  toAT exp={r.asciiT} err?{r.asciiTHasErrors}  got out={atr.output} err?{atr.hasErrors}"
+  else
+    s!"row {i}: out of bounds"
 
-/-- Count rows where toAsciiN hasErrors mismatched. -/
-def asciiNErrMismatchCount : Nat :=
-  rows.foldl (fun acc r =>
-    if (opFailureBreakdown r).anErrMis then acc + 1 else acc) 0
+#eval s!"total rows: {summary.total}"
+#eval s!"strict (no-error) rows: {summary.strictRowCount}"
+#eval s!"strict passing: {summary.strictPassingCount}"
+#eval s!"error-expected rows: {summary.errorRowCount}"
+#eval s!"error-expected passing: {summary.errorPassingCount}"
+#eval s!"all passing: {summary.passingCount}"
+#eval s!"output-mismatch rows: {summary.outputMismatchCount}"
+#eval s!"errors-only-mismatch rows: {summary.errorOnlyMismatchCount}"
+#eval s!"  unicode err mismatch: {summary.unicodeErrMismatchCount}"
+#eval s!"  asciiN err mismatch:  {summary.asciiNErrMismatchCount}"
+#eval s!"  asciiT err mismatch:  {summary.asciiTErrMismatchCount}"
 
-/-- Count rows where toAsciiT hasErrors mismatched. -/
-def asciiTErrMismatchCount : Nat :=
-  rows.foldl (fun acc r =>
-    if (opFailureBreakdown r).atErrMis then acc + 1 else acc) 0
+#eval s!"first 10 output mismatches: {summary.firstTenOutputMismatches}"
+#eval String.intercalate "\n"
+        (summary.firstTenOutputMismatches.toList.map diagnosticFor)
 
-#eval s!"total rows: {rows.size}"
-#eval s!"strict (no-error) rows: {strictRowCount}"
-#eval s!"strict passing: {strictPassingCount}"
-#eval s!"error-expected rows: {errorRowCount}"
-#eval s!"error-expected passing: {errorPassingCount}"
-#eval s!"all passing: {passingCount}"
-#eval s!"output-mismatch rows: {outputMismatchCount}"
-#eval s!"errors-only-mismatch rows: {errorOnlyMismatchCount}"
-#eval s!"  unicode err mismatch: {unicodeErrMismatchCount}"
-#eval s!"  asciiN err mismatch:  {asciiNErrMismatchCount}"
-#eval s!"  asciiT err mismatch:  {asciiTErrMismatchCount}"
-#eval s!"first failing row: {firstFailing}"
-#eval match firstFailing with
-      | none => "no failures"
-      | some i =>
-        if h : i < rows.size then
-          let r := rows[i]
-          s!"row {i}:\n  source            = {r.source}\n  expected unicode  = {r.unicode}  errors? {r.unicodeHasErrors}\n  got unicode       = {toUnicode r.source}\n  expected asciiN   = {r.asciiN}  errors? {r.asciiNHasErrors}\n  got asciiN        = {toAscii r.source}\n  expected asciiT   = {r.asciiT}  errors? {r.asciiTHasErrors}\n  got asciiT        = {toAsciiTransitional r.source}"
-        else "row index out of bounds"
+#eval s!"first 10 failing rows: {summary.firstTenFailingRows}"
+#eval String.intercalate "\n"
+        (summary.firstTenFailingRows.toList.map diagnosticFor)
 
 end Unicode.Conformance.IdnaTestV2
