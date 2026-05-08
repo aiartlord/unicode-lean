@@ -20,6 +20,7 @@
 -/
 
 import Unicode.Generated.EmojiData
+import Unicode.Generated.EmojiSequences
 
 namespace Unicode.Emoji
 
@@ -290,5 +291,100 @@ theorem isEmojiSequence_family :
 /-- Plain ASCII text is NOT an emoji sequence. -/
 theorem isEmojiSequence_ascii :
     isEmojiSequence #[0x68, 0x69] = false := by native_decide
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §10 RGI VALIDATION — registered sequences only
+--
+-- The structural predicates above accept any well-shaped sequence;
+-- the predicates below additionally require the sequence to appear
+-- in `emoji-sequences.txt` or `emoji-zwj-sequences.txt`. RGI =
+-- Recommended for General Interchange (UTS #51 ED-27). Renderers,
+-- keyboards, and pickers should match against the RGI set rather
+-- than the structural set, because a structurally-valid ZWJ chain
+-- like `🚀‍🦒` (rocket + ZWJ + giraffe) has no agreed-upon glyph.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- True iff `cps` is exactly a registered RGI keycap sequence
+    (`emoji-sequences.txt` row of type `Emoji_Keycap_Sequence`). -/
+def isRgiKeycapSequence (cps : Array Nat) : Bool :=
+  Unicode.Generated.EmojiSequences.isRegisteredKeycapSequence cps
+
+/-- True iff `cps` is a registered RGI flag (region) sequence. -/
+def isRgiFlagSequence (cps : Array Nat) : Bool :=
+  Unicode.Generated.EmojiSequences.isRegisteredFlagSequence cps
+
+/-- True iff `cps` is a registered RGI modifier (skin-tone) sequence. -/
+def isRgiModifierSequence (cps : Array Nat) : Bool :=
+  Unicode.Generated.EmojiSequences.isRegisteredModifierSequence cps
+
+/-- True iff `cps` is a registered RGI subdivision-flag tag sequence
+    (England, Scotland, Wales — the three RGI tag sequences in
+    Emoji 16.0). -/
+def isRgiTagSequence (cps : Array Nat) : Bool :=
+  Unicode.Generated.EmojiSequences.isRegisteredTagSequence cps
+
+/-- True iff `cps` is a registered RGI ZWJ sequence (family,
+    profession, gender variant, hair component, direction). -/
+def isRgiZwjSequence (cps : Array Nat) : Bool :=
+  Unicode.Generated.EmojiSequences.isRegisteredZwjSequence cps
+
+/-- True iff `cps` is in the RGI_Emoji set per UTS #51 ED-27: a
+    Basic_Emoji codepoint or sequence, a registered keycap, flag,
+    modifier, tag, or ZWJ sequence. -/
+def isRgiEmoji (cps : Array Nat) : Bool :=
+  -- Bare Basic_Emoji codepoint.
+  (cps.size = 1 && (match cps[0]? with
+                     | some cp => Unicode.Generated.EmojiSequences.isBasicEmojiCodepoint cp
+                     | none    => false))
+  || Unicode.Generated.EmojiSequences.isBasicEmojiSequence cps
+  || isRgiKeycapSequence cps
+  || isRgiFlagSequence cps
+  || isRgiModifierSequence cps
+  || isRgiTagSequence cps
+  || isRgiZwjSequence cps
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §11 RGI TEST VECTORS
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- 👋 (waving hand, U+1F44B) is a registered Basic_Emoji codepoint. -/
+theorem isRgiEmoji_wave : isRgiEmoji #[0x1F44B] = true := by native_decide
+
+/-- 🇺🇸 (U+1F1FA U+1F1F8) is a registered RGI flag sequence. -/
+theorem isRgiFlagSequence_us :
+    isRgiFlagSequence #[0x1F1FA, 0x1F1F8] = true := by native_decide
+
+/-- Two arbitrary regional indicators with no registered region are
+    NOT a registered RGI flag. -/
+theorem isRgiFlagSequence_unregistered :
+    isRgiFlagSequence #[0x1F1E6, 0x1F1E6] = false := by native_decide
+
+/-- 1️⃣ (digit + VS16 + keycap) is a registered RGI keycap sequence. -/
+theorem isRgiKeycapSequence_one :
+    isRgiKeycapSequence #[0x31, 0xFE0F, 0x20E3] = true := by native_decide
+
+/-- 👋🏽 (waving hand + medium skin) is a registered RGI modifier sequence. -/
+theorem isRgiModifierSequence_wave_med :
+    isRgiModifierSequence #[0x1F44B, 0x1F3FD] = true := by native_decide
+
+/-- 👨‍👩‍👧 (family: man, woman, girl) is a registered RGI ZWJ sequence. -/
+theorem isRgiZwjSequence_family :
+    isRgiZwjSequence #[0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467] = true := by
+  native_decide
+
+/-- A structurally-valid ZWJ chain that is NOT registered (rocket +
+    ZWJ + giraffe) is rejected by `isRgiZwjSequence` but accepted
+    by the structural `isZwjSequence`. -/
+theorem isRgiZwjSequence_unregistered :
+    isRgiZwjSequence #[0x1F680, 0x200D, 0x1F992] = false := by native_decide
+
+theorem isZwjSequence_unregistered_structural_passes :
+    isZwjSequence #[0x1F680, 0x200D, 0x1F992] = true := by native_decide
+
+/-- 🏴󠁧󠁢󠁥󠁮󠁧󠁿 (England subdivision flag) is a registered RGI tag sequence. -/
+theorem isRgiTagSequence_england :
+    isRgiTagSequence #[0x1F3F4, 0xE0067, 0xE0062, 0xE0065, 0xE006E,
+                       0xE0067, 0xE007F] = true := by
+  native_decide
 
 end Unicode.Emoji
