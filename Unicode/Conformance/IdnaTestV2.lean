@@ -303,24 +303,31 @@ def diagnosticFor (i : Nat) : String :=
   else
     s!"row {i}: out of bounds"
 
-#eval s!"total rows: {summary.total}"
-#eval s!"strict (no-error) rows: {summary.strictRowCount}"
-#eval s!"strict passing: {summary.strictPassingCount}"
-#eval s!"error-expected rows: {summary.errorRowCount}"
-#eval s!"error-expected passing: {summary.errorPassingCount}"
-#eval s!"all passing: {summary.passingCount}"
-#eval s!"output-mismatch rows: {summary.outputMismatchCount}"
-#eval s!"errors-only-mismatch rows: {summary.errorOnlyMismatchCount}"
-#eval s!"  unicode err mismatch: {summary.unicodeErrMismatchCount}"
-#eval s!"  asciiN err mismatch:  {summary.asciiNErrMismatchCount}"
-#eval s!"  asciiT err mismatch:  {summary.asciiTErrMismatchCount}"
-
-#eval s!"all output mismatches ({summary.allOutputMismatches.size}): {summary.allOutputMismatches}"
-#eval String.intercalate "\n"
-        (summary.allOutputMismatches.toList.map diagnosticFor)
-
-#eval s!"all failing rows ({summary.allFailingRows.size}): {summary.allFailingRows}"
-#eval String.intercalate "\n"
-        (summary.allFailingRows.toList.map diagnosticFor)
+/-- Render the full summary as a multi-line string. Used by the
+    out-of-band conformance reporter (`scripts/idna-conformance.sh`)
+    so the build itself stays cheap — `summary` is a single fold
+    over 6389 rows × 3 pipelines and runs to completion only when
+    callers explicitly request the report, not on every CI build. -/
+def report : String :=
+  let s := summary
+  let head :=
+    s!"total rows: {s.total}\n" ++
+    s!"strict (no-error) rows: {s.strictRowCount}\n" ++
+    s!"strict passing: {s.strictPassingCount}\n" ++
+    s!"error-expected rows: {s.errorRowCount}\n" ++
+    s!"error-expected passing: {s.errorPassingCount}\n" ++
+    s!"all passing: {s.passingCount}\n" ++
+    s!"output-mismatch rows: {s.outputMismatchCount}\n" ++
+    s!"errors-only-mismatch rows: {s.errorOnlyMismatchCount}\n" ++
+    s!"  unicode err mismatch: {s.unicodeErrMismatchCount}\n" ++
+    s!"  asciiN err mismatch:  {s.asciiNErrMismatchCount}\n" ++
+    s!"  asciiT err mismatch:  {s.asciiTErrMismatchCount}\n"
+  let outBlock :=
+    s!"\nall output mismatches ({s.allOutputMismatches.size}): {s.allOutputMismatches}\n" ++
+    String.intercalate "\n" (s.allOutputMismatches.toList.map diagnosticFor)
+  let failBlock :=
+    s!"\n\nall failing rows ({s.allFailingRows.size}): {s.allFailingRows}\n" ++
+    String.intercalate "\n" (s.allFailingRows.toList.map diagnosticFor)
+  head ++ outBlock ++ failBlock
 
 end Unicode.Conformance.IdnaTestV2
