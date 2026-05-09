@@ -330,4 +330,10 @@ def report : String :=
     String.intercalate "\n" (s.allFailingRows.toList.map diagnosticFor)
   head ++ outBlock ++ failBlock
 
+/-- The vendored test file's expected row count. Catches
+    accidental truncation of `IdnaTestV2.txt` or parser
+    regressions; cheap to check at build time (the parse cost is
+    paid by the data definitions above regardless). -/
+theorem row_count : rows.size = 6389 := by native_decide
+
 end Unicode.Conformance.IdnaTestV2
