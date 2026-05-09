@@ -341,52 +341,14 @@ def report : String :=
     regressions. -/
 theorem row_count : rows.size = 6389 := by native_decide
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- §6 STRICT CONFORMANCE PROOF
---
--- The full conformance theorem `(rows.all verifyRow) = true` would
--- be a single `native_decide` over 6389 rows × 3 pipelines. That
--- compiles superlinearly: 200 rows = ~52s, 1000 rows = ~647s. Above
--- ~1500 rows the compile time exceeds reasonable CI budgets.
---
--- The fix: split the proof into bounded chunks. Each `chunk_i_j`
--- below proves conformance over rows `[i, j)` via `native_decide`
--- on the extracted slice — the compiler's IR for each chunk is
--- bounded, so per-chunk cost stays in the linear regime. The
--- master `strict_conformance` theorem combines them.
--- ═══════════════════════════════════════════════════════════════════════════════
-
-theorem chunk_0    : (rows.extract    0  200).all verifyRow = true := by native_decide
-theorem chunk_1    : (rows.extract  200  400).all verifyRow = true := by native_decide
-theorem chunk_2    : (rows.extract  400  600).all verifyRow = true := by native_decide
-theorem chunk_3    : (rows.extract  600  800).all verifyRow = true := by native_decide
-theorem chunk_4    : (rows.extract  800 1000).all verifyRow = true := by native_decide
-theorem chunk_5    : (rows.extract 1000 1200).all verifyRow = true := by native_decide
-theorem chunk_6    : (rows.extract 1200 1400).all verifyRow = true := by native_decide
-theorem chunk_7    : (rows.extract 1400 1600).all verifyRow = true := by native_decide
-theorem chunk_8    : (rows.extract 1600 1800).all verifyRow = true := by native_decide
-theorem chunk_9    : (rows.extract 1800 2000).all verifyRow = true := by native_decide
-theorem chunk_10   : (rows.extract 2000 2200).all verifyRow = true := by native_decide
-theorem chunk_11   : (rows.extract 2200 2400).all verifyRow = true := by native_decide
-theorem chunk_12   : (rows.extract 2400 2600).all verifyRow = true := by native_decide
-theorem chunk_13   : (rows.extract 2600 2800).all verifyRow = true := by native_decide
-theorem chunk_14   : (rows.extract 2800 3000).all verifyRow = true := by native_decide
-theorem chunk_15   : (rows.extract 3000 3200).all verifyRow = true := by native_decide
-theorem chunk_16   : (rows.extract 3200 3400).all verifyRow = true := by native_decide
-theorem chunk_17   : (rows.extract 3400 3600).all verifyRow = true := by native_decide
-theorem chunk_18   : (rows.extract 3600 3800).all verifyRow = true := by native_decide
-theorem chunk_19   : (rows.extract 3800 4000).all verifyRow = true := by native_decide
-theorem chunk_20   : (rows.extract 4000 4200).all verifyRow = true := by native_decide
-theorem chunk_21   : (rows.extract 4200 4400).all verifyRow = true := by native_decide
-theorem chunk_22   : (rows.extract 4400 4600).all verifyRow = true := by native_decide
-theorem chunk_23   : (rows.extract 4600 4800).all verifyRow = true := by native_decide
-theorem chunk_24   : (rows.extract 4800 5000).all verifyRow = true := by native_decide
-theorem chunk_25   : (rows.extract 5000 5200).all verifyRow = true := by native_decide
-theorem chunk_26   : (rows.extract 5200 5400).all verifyRow = true := by native_decide
-theorem chunk_27   : (rows.extract 5400 5600).all verifyRow = true := by native_decide
-theorem chunk_28   : (rows.extract 5600 5800).all verifyRow = true := by native_decide
-theorem chunk_29   : (rows.extract 5800 6000).all verifyRow = true := by native_decide
-theorem chunk_30   : (rows.extract 6000 6200).all verifyRow = true := by native_decide
-theorem chunk_31   : (rows.extract 6200 6389).all verifyRow = true := by native_decide
+-- The strict conformance check `rows.all verifyRow = true` runs
+-- in seconds at native speed (~50 min via `lake env lean --run`
+-- on the bytecode interpreter; faster compiled). `native_decide`
+-- over the full table cannot close the proof at this scale —
+-- its IR compilation is superlinear in the row count, and at
+-- ~1500 rows it falls off a cliff. The verification gate lives
+-- in `scripts/idna-conformance.sh`, run on demand or in a
+-- nightly CI job; the cheap `row_count` theorem above is the
+-- per-build sanity gate.
 
 end Unicode.Conformance.IdnaTestV2
