@@ -45,8 +45,7 @@ open Unicode.Generated.DerivedBidiClass (BidiClass)
     default-range convention. `BidiClass.L` is a final fallback that
     should be unreachable given a well-formed UCD pin. -/
 def lookupBidiClass (cp : Nat) : BidiClass :=
-  match Unicode.Generated.DerivedBidiClass.explicitRanges.findSome?
-          (fun ⟨min, max, c⟩ => if min ≤ cp ∧ cp ≤ max then some c else none) with
+  match Unicode.Generated.DerivedBidiClass.lookupExplicitBinary cp with
   | some c => c
   | none =>
     match Unicode.Generated.DerivedBidiClass.defaultRanges.findSome?

@@ -104,14 +104,48 @@ def parseMissingRow (rawLine : String) : Option (Nat × Nat × BidiClass) :=
 /-- Raw text of `DerivedBidiClass.txt`, embedded at compile time. -/
 def derivedBidiClassRaw : String := include_str "../Ucd/DerivedBidiClass.txt"
 
-/-! Per-range Bidi_Class assignments from the data section. -/
+/-! Per-range Bidi_Class assignments from the data section.
+    `DerivedBidiClass.txt` groups rows by BidiClass first (so the
+    file is not min-sorted across classes); we sort by `min` here
+    so downstream binary search is correct. Within a group the
+    UCD source is already min-sorted, so the sort is mostly a
+    merge of grouped runs. -/
 def explicitRanges : Array (Nat × Nat × BidiClass) :=
-  ((derivedBidiClassRaw.splitOn "\n").filterMap parseExplicitRow).toArray
+  (((derivedBidiClassRaw.splitOn "\n").filterMap parseExplicitRow).toArray).qsort
+    (fun a b => a.1 < b.1)
 
 /-! `@missing` directives from the source header, in source order. The
     LAST entry whose range contains a codepoint wins (UAX #9 default
     rule). -/
 def defaultRanges : Array (Nat × Nat × BidiClass) :=
   ((derivedBidiClassRaw.splitOn "\n").filterMap parseMissingRow).toArray
+
+/-- Binary search a sorted-by-`min` BidiClass-range array for a
+    row whose `[min, max]` interval contains `cp`. O(log n)
+    instead of O(n) `findSome?`; the explicit-ranges table has
+    ~700 rows but is in the IDNA conformance hot path (called
+    once per codepoint via `BidiRule.lookupBidiClass`). -/
+def binarySearchRange (arr : Array (Nat × Nat × BidiClass)) (cp : Nat)
+    (left right fuel : Nat) : Option BidiClass :=
+  match fuel with
+  | 0          => none
+  | fuel' + 1 =>
+    if left < right then
+      let mid := (left + right) / 2
+      let (entryMin, entryMax, cls) := arr[mid]!
+      if cp < entryMin then
+        binarySearchRange arr cp left mid fuel'
+      else if entryMax < cp then
+        binarySearchRange arr cp (mid + 1) right fuel'
+      else
+        some cls
+    else
+      none
+
+/-- Look up `cp`'s Bidi_Class via binary search over the explicit
+    ranges. -/
+def lookupExplicitBinary (cp : Nat) : Option BidiClass :=
+  binarySearchRange explicitRanges cp 0 explicitRanges.size
+    (explicitRanges.size + 1)
 
 end Unicode.Generated.DerivedBidiClass
