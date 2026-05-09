@@ -19,6 +19,7 @@ import Unicode.Idna.CheckJoiners
 import Unicode.Normalization.NFC
 import Unicode.Normalization.Lookup
 import Unicode.Precis.BidiRule
+import Unicode.Generated.DerivedGeneralCategory
 
 namespace Unicode.Idna.Process
 
@@ -133,12 +134,24 @@ def violatesHyphenRule (label : Array Nat) : Bool :=
 def violatesLeadTrailHyphen (label : Array Nat) : Bool :=
   (label[0]? == some 0x2D) || (label[label.size - 1]? == some 0x2D)
 
-/-- A label fails the leading-combining-mark rule when its first
-    codepoint has nonzero canonical combining class. -/
+/-- A label fails the leading-combining-mark rule (UTS #46 §4.1
+    V5) when its first codepoint has General_Category in
+    `{Mn, Mc, Me}`. The General_Category check catches spacing
+    combining marks (Mc) that have canonical_combining_class = 0
+    — a class of codepoint that the older `ccc ≠ 0` heuristic
+    silently admitted. -/
 def violatesLeadingCombiner (label : Array Nat) : Bool :=
   match label[0]? with
   | none    => false
-  | some cp => Unicode.Normalization.Lookup.canonicalCombiningClass cp ≠ 0
+  | some cp =>
+    match Unicode.Generated.DerivedGeneralCategory.lookup cp with
+    | .Mn | .Mc | .Me => true
+    | .Lu | .Ll | .Lt | .Lm | .Lo
+    | .Nd | .Nl | .No
+    | .Pc | .Pd | .Ps | .Pe | .Pi | .Pf | .Po
+    | .Sm | .Sc | .Sk | .So
+    | .Zs | .Zl | .Zp
+    | .Cc | .Cf | .Cs | .Co | .Cn => false
 
 /-- The STD3 LDH set: lowercase ASCII letter, ASCII digit, or
     hyphen-minus. Uppercase ASCII letters are excluded because the
@@ -228,28 +241,65 @@ def decodedLabelValidV6 (cps : Array Nat) : Bool :=
     | .Valid | .Deviation => true
     | .Mapped | .Ignored | .Disallowed => false)
 
+/-- True iff every codepoint of `cps` is in the ASCII range
+    (< 0x80). An xn-- label whose decoded form is all-ASCII is
+    invalid per UTS #46 §4.2 step 4: re-encoding the decoded
+    pure-ASCII content as Punycode would not produce the
+    original `xn--` form, so the input was a malformed
+    Punycode wrapper around content that needed no encoding. -/
+def isAllAsciiCps (cps : Array Nat) : Bool :=
+  cps.all (fun cp => Nat.ble cp 0x7F)
+
 /-- Decode a single label whose first four codepoints are 'xn--' via
-    Punycode. Returns the decoded sequence with `hasErrors = false`
-    on success. On Punycode failure or an empty-after-decode result,
-    the original label is preserved with `hasErrors = true` per
-    UTS #46 §4.2 step 4 (record a Punycode error and continue with
-    the original label). UTS #46 §4.1 step 5 additionally requires
-    that the decoded label be in NFC; § 4.1 V6 requires every
-    codepoint of the decoded label have disposition Valid or
-    Deviation. Either violation flips `hasErrors` while the
-    decoded form is still returned. On a non-`xn--` label the
-    input is returned unchanged with no error. -/
+    Punycode. Validity tied to UTS #46 §4.2 step 4 + §4.1 step 5
+    + §4.1 V6:
+
+      * Punycode decode failure  → output is the original label
+                                    preserved, hasErrors=true (the
+                                    spec requires the implementation
+                                    to "record an error and not
+                                    transform" on a malformed
+                                    Punycode body — the original
+                                    bytes carry forward unchanged).
+      * Empty Punycode body      → output empty, hasErrors=true
+                                    (`xn--` alone decodes to the
+                                    empty sequence, which is itself
+                                    a validity violation downstream).
+      * Decoded all-ASCII        → output decoded, hasErrors=true
+                                    (the xn-- wrapper is redundant /
+                                    malformed; re-encoding pure
+                                    ASCII produces a different
+                                    Punycode result than the input).
+      * Decoded not in NFC       → output decoded, hasErrors=true
+                                    (UTS #46 §4.1 step 5).
+      * Decoded contains a
+        non-Valid /
+        non-Deviation cp         → output decoded, hasErrors=true
+                                    (V6).
+      * Otherwise                → output decoded, hasErrors=false.
+
+    On a non-`xn--` label the input is returned unchanged with
+    no error. -/
 def decodeLabel (label : Array Nat) : Map.Result :=
   if hasXnPrefix label then
+    let suffixSize := label.size - 4
     let suffix := asciiCpsToString (label.extract 4 label.size)
     match Punycode.decode suffix with
     | none         => { output := label, hasErrors := true }
     | some decoded =>
-      if decoded.isEmpty then { output := label, hasErrors := true }
+      if decoded.isEmpty then
+        -- `xn--` exactly (empty suffix) decodes to the empty
+        -- sequence; an `xn--` with non-empty suffix that
+        -- nevertheless yields an empty decoded form is malformed,
+        -- and the spec preserves the original bytes for downstream
+        -- validity checks.
+        if suffixSize = 0 then { output := #[], hasErrors := true }
+        else { output := label, hasErrors := true }
       else
+        let asciiOnly := isAllAsciiCps decoded
         let nfcOk := Unicode.Normalization.NFC.toNFC decoded == decoded
         let v6Ok  := decodedLabelValidV6 decoded
-        { output := decoded, hasErrors := ! (nfcOk && v6Ok) }
+        { output := decoded, hasErrors := asciiOnly || ! (nfcOk && v6Ok) }
   else
     { output := label, hasErrors := false }
 
@@ -266,11 +316,11 @@ def decodeLabels (labels : Array (Array Nat)) :
 
 /-- Apply the UTS #46 ToUnicode algorithm under non-transitional
     processing with the given `opts`. The algorithm runs to
-    completion — disallowed codepoints, Punycode failures, failed
-    validity checks, and the total-length constraint (`X4_2`) each
-    contribute to `hasErrors` while the output is produced as if
-    the recovery path was taken. The per-label length check
-    (`A4_1`) does not apply to toUnicode output. -/
+    completion — disallowed codepoints, Punycode failures, and
+    failed validity checks each contribute to `hasErrors` while
+    the output is produced as if the recovery path was taken.
+    UTS #46 §4.4's `VerifyDnsLength` flag controls only A4_1 and
+    A4_2 on the toAscii side; toUnicode has no length check. -/
 def toUnicode (input : Array Nat) (opts : Options := defaultOptions) :
     Map.Result :=
   let mapped              := Map.mapNonTransitional input
@@ -279,22 +329,41 @@ def toUnicode (input : Array Nat) (opts : Options := defaultOptions) :
   let (decoded, decErr)   := decodeLabels labels
   let labelErr            := ! labelsPass opts decoded
   let joined              := joinLabels decoded
-  let lenErr              := opts.verifyDnsLength && ! totalLengthOk joined
+  -- An empty domain is invalid per RFC 5891 / UTS #46 — the
+  -- domain must have at least one non-empty label.
+  let emptyErr            := joined.isEmpty
   { output    := joined
-    hasErrors := mapped.hasErrors || decErr || labelErr || lenErr }
+    hasErrors := mapped.hasErrors || decErr || labelErr || emptyErr }
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 TOASCII  (UTS #46 §4.3)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Encode a single label into its ASCII form. All-ASCII labels pass
-    through unchanged. Otherwise the label is Punycode-encoded and
-    prefixed with 'xn--'; on Punycode encoding failure (UTS #46 §4.3
-    step 3, error A3) the original label is preserved and
-    `hasErrors = true` is reported. -/
+/-- True iff `cp` is a valid Unicode scalar — outside the
+    UTF-16 surrogate range (U+D800..U+DFFF) and not above the
+    Unicode maximum U+10FFFF. Punycode is only defined for
+    sequences of valid scalars; codepoints outside this set
+    cannot be Punycode-encoded. -/
+def isValidScalar (cp : Nat) : Bool :=
+  Nat.ble cp 0x10FFFF
+    && ! (Nat.ble 0xD800 cp && Nat.ble cp 0xDFFF)
+
+/-- Encode a single label into its ASCII form. Three cases:
+
+      * All-ASCII label → output is the label unchanged,
+        hasErrors=false.
+      * Label contains a non-scalar codepoint (surrogate or
+        beyond U+10FFFF) → Punycode is undefined on the input;
+        the output is the original sequence preserved with
+        hasErrors=true (UTS #46 §4.3 step 3 / RFC 3492 §3.1).
+      * Otherwise → Punycode-encode and prefix with `xn--`. A
+        Punycode failure on a valid-scalar input falls back to
+        preserving the label with hasErrors=true. -/
 def encodeLabel (label : Array Nat) : Map.Result :=
   if allAscii label then
     { output := label, hasErrors := false }
+  else if ! label.all isValidScalar then
+    { output := label, hasErrors := true }
   else
     match Punycode.encode label with
     | none     => { output := label, hasErrors := true }
