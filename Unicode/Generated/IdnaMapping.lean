@@ -117,8 +117,42 @@ def parseIdnaRow (rawLine : String) : Option IdnaRow := Id.run do
 /-- Raw text of `IdnaMappingTable.txt`, embedded at compile time. -/
 def idnaMappingRaw : String := include_str "../Ucd/IdnaMappingTable.txt"
 
-/-- Range table mapping codepoint ranges to their IDNA disposition. -/
+/-- Range table mapping codepoint ranges to their IDNA disposition.
+    Stored in source order (already sorted by `min` per the UCD
+    file convention), so binary search by `min` is correct. -/
 def idnaMappingRanges : Array IdnaRow :=
   ((idnaMappingRaw.splitOn "\n").filterMap parseIdnaRow).toArray
+
+/-- Binary search the sorted-by-`min` `idnaMappingRanges` for a row
+    whose `[min, max]` interval contains `cp`. Fuel-bounded for
+    `native_decide` evaluability; `arr.size` is always a sufficient
+    bound and a strict overestimate of the actual ⌈log₂ n⌉ steps.
+    Returns `none` for codepoints outside every range (caller maps
+    that to the table's "Disallowed" default). -/
+def binarySearchRange (arr : Array IdnaRow) (cp : Nat)
+    (lo hi fuel : Nat) : Option IdnaRow :=
+  match fuel with
+  | 0          => none
+  | fuel' + 1 =>
+    if lo < hi then
+      let mid   := (lo + hi) / 2
+      let entry := arr[mid]!
+      if cp < entry.min then
+        binarySearchRange arr cp lo mid fuel'
+      else if entry.max < cp then
+        binarySearchRange arr cp (mid + 1) hi fuel'
+      else
+        some entry
+    else
+      none
+
+/-- Look up `cp`'s row via binary search. O(log n) instead of the
+    O(n) linear `findSome?`; the table has ~9185 entries so this
+    is a ~600× speedup on the dominant IDNA hot path
+    (`mapNonTransitional` / `mapTransitional` /
+    `decodedLabelValidV6` all call it once per codepoint). -/
+def lookupRowBinary (cp : Nat) : Option IdnaRow :=
+  binarySearchRange idnaMappingRanges cp 0 idnaMappingRanges.size
+    (idnaMappingRanges.size + 1)
 
 end Unicode.Generated.IdnaMapping

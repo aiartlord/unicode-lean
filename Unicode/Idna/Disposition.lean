@@ -23,8 +23,7 @@ open Unicode.Generated.IdnaMapping
     only for codepoints outside the IDNA mapping table coverage
     (e.g. some reserved blocks beyond the published ranges). -/
 def lookupRow? (cp : Nat) : Option IdnaRow :=
-  idnaMappingRanges.findSome? (fun row =>
-    if row.min ≤ cp ∧ cp ≤ row.max then some row else none)
+  Unicode.Generated.IdnaMapping.lookupRowBinary cp
 
 /-- Disposition of `cp`, defaulting to `Disallowed` for codepoints
     outside the table. -/

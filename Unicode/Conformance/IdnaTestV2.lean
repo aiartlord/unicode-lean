@@ -199,66 +199,91 @@ structure Summary where
   unicodeErrMismatchCount  : Nat
   asciiNErrMismatchCount   : Nat
   asciiTErrMismatchCount   : Nat
-  /-- Indices of the first 10 failing rows in source order. -/
-  firstTenFailingRows      : Array Nat
-  /-- Indices of the first 10 rows where output mismatched
-      (subset of `firstTenFailingRows`). -/
-  firstTenOutputMismatches : Array Nat
+  /-- All failing-row indices in source order. -/
+  allFailingRows           : Array Nat
+  /-- All rows where output mismatched (subset of allFailingRows). -/
+  allOutputMismatches      : Array Nat
   deriving Repr, Inhabited
 
+/-- Mutable accumulator state for the single-pass summary fold. -/
+private structure Acc where
+  index             : Nat
+  total             : Nat
+  strictTotal       : Nat
+  strictPass        : Nat
+  errorTotal        : Nat
+  errorPass         : Nat
+  totalPass         : Nat
+  outputMis         : Nat
+  errorOnlyMis      : Nat
+  uniErrMis         : Nat
+  anErrMis          : Nat
+  atErrMis          : Nat
+  allFailing        : Array Nat
+  allOutput         : Array Nat
+  deriving Inhabited
+
+/-- Step the accumulator through one row. -/
+private def stepAcc (acc : Acc) (r : Row) : Acc :=
+  let i := acc.index
+  let isStrict :=
+    ! (r.unicodeHasErrors || r.asciiNHasErrors || r.asciiTHasErrors)
+  let strictTotal' := if isStrict then acc.strictTotal + 1 else acc.strictTotal
+  let errorTotal'  := if isStrict then acc.errorTotal else acc.errorTotal + 1
+  let f := opFailureBreakdown r
+  let outBad := f.uOutMis || f.anOutMis || f.atOutMis
+  let errBad := f.uErrMis || f.anErrMis || f.atErrMis
+  let rowBad := outBad || errBad
+  let totalPass'  := if rowBad then acc.totalPass else acc.totalPass + 1
+  let strictPass' := if !rowBad ∧ isStrict
+                      then acc.strictPass + 1 else acc.strictPass
+  let errorPass'  := if !rowBad ∧ !isStrict
+                      then acc.errorPass + 1 else acc.errorPass
+  let allFailing' := if rowBad then acc.allFailing.push i else acc.allFailing
+  let outputMis'  := if outBad then acc.outputMis + 1 else acc.outputMis
+  let allOutput'  := if outBad then acc.allOutput.push i else acc.allOutput
+  let errorOnlyMis' := if !outBad ∧ errBad
+                        then acc.errorOnlyMis + 1 else acc.errorOnlyMis
+  let uniErrMis' := if f.uErrMis then acc.uniErrMis + 1 else acc.uniErrMis
+  let anErrMis'  := if f.anErrMis then acc.anErrMis + 1 else acc.anErrMis
+  let atErrMis'  := if f.atErrMis then acc.atErrMis + 1 else acc.atErrMis
+  { index        := i + 1
+    total        := acc.total + 1
+    strictTotal  := strictTotal'
+    strictPass   := strictPass'
+    errorTotal   := errorTotal'
+    errorPass    := errorPass'
+    totalPass    := totalPass'
+    outputMis    := outputMis'
+    errorOnlyMis := errorOnlyMis'
+    uniErrMis    := uniErrMis'
+    anErrMis     := anErrMis'
+    atErrMis     := atErrMis'
+    allFailing   := allFailing'
+    allOutput    := allOutput' }
+
 /-- Compute every summary metric in a single fold over `rows`. -/
-def computeSummary : Summary := Id.run do
-  let mut total                  : Nat := rows.size
-  let mut strictTotal            : Nat := 0
-  let mut strictPass             : Nat := 0
-  let mut errorTotal             : Nat := 0
-  let mut errorPass              : Nat := 0
-  let mut totalPass              : Nat := 0
-  let mut outputMis              : Nat := 0
-  let mut errorOnlyMis           : Nat := 0
-  let mut uniErrMis              : Nat := 0
-  let mut anErrMis               : Nat := 0
-  let mut atErrMis               : Nat := 0
-  let mut firstTen               : Array Nat := #[]
-  let mut firstTenOut            : Array Nat := #[]
-  for h : i in [0:rows.size] do
-    let r := rows[i]
-    let isStrict :=
-      ! (r.unicodeHasErrors || r.asciiNHasErrors || r.asciiTHasErrors)
-    if isStrict then strictTotal := strictTotal + 1
-    else errorTotal := errorTotal + 1
-    let f := opFailureBreakdown r
-    let outBad := f.uOutMis || f.anOutMis || f.atOutMis
-    let errBad := f.uErrMis || f.anErrMis || f.atErrMis
-    let rowBad := outBad || errBad
-    if ! rowBad then
-      totalPass := totalPass + 1
-      if isStrict then strictPass := strictPass + 1
-      else errorPass := errorPass + 1
-    else
-      if firstTen.size < 10 then firstTen := firstTen.push i
-    if outBad then
-      outputMis := outputMis + 1
-      if firstTenOut.size < 10 then firstTenOut := firstTenOut.push i
-    else if errBad then
-      errorOnlyMis := errorOnlyMis + 1
-    if f.uErrMis  then uniErrMis := uniErrMis + 1
-    if f.anErrMis then anErrMis := anErrMis + 1
-    if f.atErrMis then atErrMis := atErrMis + 1
-  return
-    { total                    := total
-      strictRowCount           := strictTotal
-      strictPassingCount       := strictPass
-      errorRowCount            := errorTotal
-      errorPassingCount        := errorPass
-      passingCount             := totalPass
-      outputMismatchCount      := outputMis
-      errorOnlyMismatchCount   := errorOnlyMis
-      unicodeErrMismatchCount  := uniErrMis
-      asciiNErrMismatchCount   := anErrMis
-      asciiTErrMismatchCount   := atErrMis
-      firstTenFailingRows      := firstTen
-      firstTenOutputMismatches := firstTenOut }
+def computeSummary : Summary :=
+  let initial : Acc :=
+    { index := 0, total := 0, strictTotal := 0, strictPass := 0
+      errorTotal := 0, errorPass := 0, totalPass := 0
+      outputMis := 0, errorOnlyMis := 0
+      uniErrMis := 0, anErrMis := 0, atErrMis := 0
+      allFailing := #[], allOutput := #[] }
+  let final := rows.foldl stepAcc initial
+  { total                    := final.total
+    strictRowCount           := final.strictTotal
+    strictPassingCount       := final.strictPass
+    errorRowCount            := final.errorTotal
+    errorPassingCount        := final.errorPass
+    passingCount             := final.totalPass
+    outputMismatchCount      := final.outputMis
+    errorOnlyMismatchCount   := final.errorOnlyMis
+    unicodeErrMismatchCount  := final.uniErrMis
+    asciiNErrMismatchCount   := final.anErrMis
+    asciiTErrMismatchCount   := final.atErrMis
+    allFailingRows           := final.allFailing
+    allOutputMismatches      := final.allOutput }
 
 /-- The single shared computation; downstream `#eval`s project from
     here so the heavy fold runs once. -/
@@ -290,12 +315,12 @@ def diagnosticFor (i : Nat) : String :=
 #eval s!"  asciiN err mismatch:  {summary.asciiNErrMismatchCount}"
 #eval s!"  asciiT err mismatch:  {summary.asciiTErrMismatchCount}"
 
-#eval s!"first 10 output mismatches: {summary.firstTenOutputMismatches}"
+#eval s!"all output mismatches ({summary.allOutputMismatches.size}): {summary.allOutputMismatches}"
 #eval String.intercalate "\n"
-        (summary.firstTenOutputMismatches.toList.map diagnosticFor)
+        (summary.allOutputMismatches.toList.map diagnosticFor)
 
-#eval s!"first 10 failing rows: {summary.firstTenFailingRows}"
+#eval s!"all failing rows ({summary.allFailingRows.size}): {summary.allFailingRows}"
 #eval String.intercalate "\n"
-        (summary.firstTenFailingRows.toList.map diagnosticFor)
+        (summary.allFailingRows.toList.map diagnosticFor)
 
 end Unicode.Conformance.IdnaTestV2
