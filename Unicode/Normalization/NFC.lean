@@ -48,8 +48,7 @@ def toNFC (cps : Array Nat) : Array Nat :=
     source file's `@missing` default (`Y`) when the codepoint is not
     covered by any explicit range. -/
 def nfcQCValue (cp : Nat) : DerivedNormalizationProps.NFC_QC :=
-  match DerivedNormalizationProps.nfcQC.findSome?
-          (fun ⟨min, max, v⟩ => if min ≤ cp ∧ cp ≤ max then some v else none) with
+  match DerivedNormalizationProps.lookupNfcQCBinary cp with
   | some v => v
   | none   => DerivedNormalizationProps.defaultNfcQC
 

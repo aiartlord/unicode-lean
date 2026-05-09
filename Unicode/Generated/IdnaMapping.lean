@@ -130,17 +130,17 @@ def idnaMappingRanges : Array IdnaRow :=
     Returns `none` for codepoints outside every range (caller maps
     that to the table's "Disallowed" default). -/
 def binarySearchRange (arr : Array IdnaRow) (cp : Nat)
-    (lo hi fuel : Nat) : Option IdnaRow :=
+    (left right fuel : Nat) : Option IdnaRow :=
   match fuel with
   | 0          => none
   | fuel' + 1 =>
-    if lo < hi then
-      let mid   := (lo + hi) / 2
+    if left < right then
+      let mid   := (left + right) / 2
       let entry := arr[mid]!
       if cp < entry.min then
-        binarySearchRange arr cp lo mid fuel'
+        binarySearchRange arr cp left mid fuel'
       else if entry.max < cp then
-        binarySearchRange arr cp (mid + 1) hi fuel'
+        binarySearchRange arr cp (mid + 1) right fuel'
       else
         some entry
     else

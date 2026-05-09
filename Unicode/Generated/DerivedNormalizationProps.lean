@@ -93,12 +93,37 @@ def parsedRows : Array RawRow :=
 /-! NFC_QC explicit ranges from the data section. Codepoints not
     covered have `defaultNfcQC`. -/
 def nfcQC : Array (Nat × Nat × NFC_QC) :=
-  parsedRows.filterMap (fun r =>
+  (parsedRows.filterMap (fun r =>
     if r.prop = "NFC_QC" then
       (parseQC? r.value).map (fun v => (r.lo, r.hi, v))
-    else none)
+    else none)).qsort (fun a b => a.1 < b.1)
 
 def defaultNfcQC : NFC_QC := .Y
+
+/-- Binary search over a sorted-by-`min` NFC_QC range table.
+    O(log n) instead of `findSome?`'s O(n). The `nfcQC` table is
+    in the IDNA conformance hot path via the
+    `isNFCQuickCheck`-driven NFC fast-path. -/
+def binarySearchNfcQC (arr : Array (Nat × Nat × NFC_QC)) (cp : Nat)
+    (left right fuel : Nat) : Option NFC_QC :=
+  match fuel with
+  | 0          => none
+  | fuel' + 1 =>
+    if left < right then
+      let mid := (left + right) / 2
+      let (entryMin, entryMax, v) := arr[mid]!
+      if cp < entryMin then
+        binarySearchNfcQC arr cp left mid fuel'
+      else if entryMax < cp then
+        binarySearchNfcQC arr cp (mid + 1) right fuel'
+      else
+        some v
+    else
+      none
+
+/-- Look up the NFC_QC value for `cp` via binary search. -/
+def lookupNfcQCBinary (cp : Nat) : Option NFC_QC :=
+  binarySearchNfcQC nfcQC cp 0 nfcQC.size (nfcQC.size + 1)
 
 /-! Full_Composition_Exclusion ranges. -/
 def fullCompositionExclusion : Array (Nat × Nat) :=
