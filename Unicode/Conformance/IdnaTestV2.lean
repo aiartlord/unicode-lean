@@ -291,8 +291,8 @@ def computeSummary : Summary :=
     allFailingRows           := final.allFailing
     allOutputMismatches      := final.allOutput }
 
-/-- The single shared computation; downstream `#eval`s project from
-    here so the heavy fold runs once. -/
+/-- The single shared computation; the `diagnosticFor` helper below
+    projects from here so the heavy fold runs once. -/
 def summary : Summary := computeSummary
 
 /-- Pretty-print one failing row's diagnostic info. -/
