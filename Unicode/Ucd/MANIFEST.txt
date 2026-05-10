@@ -16,7 +16,9 @@ BidiBrackets.txt                	    8891	dadbaf38a0d0246e5b805bf8725cb81b7c621f
 BidiMirroring.txt               	   26827	a2f16fb873ab4fcdf3221cb1a8a85a134ddd6ed03603181823ff5206af3741ce
 allkeys.txt                     	 2285767	7b47769f4a95615ada83b6812dea1d2a76d74580b1e4d7af48d383eb902017f0
 CollationTest_NON_IGNORABLE_SHORT.txt	 2244523	484371915173d06fe4f0d52d4295cfa9c0a9e35b440dec3d1c762e69a5c4f46a
+CollationTest_NON_IGNORABLE.txt 	18407846	76fc8955cfafe4efdccc773b2b6713d56ffd5d13403e1603920854c4c11388b0
 CollationTest_SHIFTED_SHORT.txt 	 2481430	9a9ef9ac6daffd8558ba68cf1abf0ff7313927ec4ee413719ad304fcd1828ab9
+CollationTest_SHIFTED.txt       	21031843	36ae2c2705ca164e35eae70a6d409f3ce5727905e2780928eacd0c039268d8f3
 IdnaTestV2.txt                  	  775810	ffcf59f6e97d765caa5ac8315e9511ba3b42955a554cbc431e4c016f20d25ca9
 DerivedJoiningType.txt          	   40009	6bd08b97da66b70ccfdab105a352de2984e02625239ec5695422c99b33d854f0
 PropListUca16.txt               	  144253	53d614508e2a0b2305a8aa21cd60d993de9326cdf65993660dfcce4503548583
