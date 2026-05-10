@@ -18,12 +18,22 @@
                               modifier or hair-style joiner) listed
                               for keyboard / picker completeness.
 
-  This harness verifies our `isRgiEmoji` against the
-  `fully-qualified` rows: every row in that subset must be classified
-  as RGI by our implementation. The other three statuses are tracked
-  but not required to match — `minimally-qualified` and `unqualified`
-  rows by definition lack the variation selectors that
-  `emoji-sequences.txt` records for the RGI form.
+  This harness verifies our `isRgiEmoji` against every row of
+  `emoji-test.txt`:
+
+    * Every `fully-qualified` row IS classified as RGI.
+    * No `minimally-qualified` row is — the elided required VS16
+      removes the row from the registered RGI sequence set.
+    * No `unqualified` row is — same reason as above.
+    * Every `component` row IS — the 9 component rows are exactly
+      the 5 skin-tone modifiers (U+1F3FB..U+1F3FF) and the 4 hair
+      components (U+1F9B0..U+1F9B3), all of which are listed as
+      Basic_Emoji codepoints in `emoji-sequences.txt`. The
+      "component" status in `emoji-test.txt` flags a *usage*
+      category (keyboard / picker context), not an RGI exclusion.
+
+  All four directions are closed by `native_decide` over the bundled
+  fixture, giving full UTS #51 ED-27 conformance.
 -/
 
 import Unicode.Emoji
@@ -115,31 +125,50 @@ def fullyQualifiedPassingCount : Nat :=
   rows.foldl (fun acc r =>
     if r.status = .fullyQualified ∧ isRgiEmoji r.cps then acc + 1 else acc) 0
 
-/-- Index of the first fully-qualified row that fails `isRgiEmoji`. -/
-def firstFullyQualifiedFailing : Option Nat := Id.run do
-  for h : i in [0:rows.size] do
-    let r := rows[i]
-    if r.status = .fullyQualified ∧ ! isRgiEmoji r.cps then return some i
-  return none
+/-- Number of minimally-qualified rows that pass `isRgiEmoji`. The
+    correct value is 0: a minimally-qualified row by definition has
+    one or more required VS16s elided, removing it from the
+    registered RGI sequence set. -/
+def minimallyQualifiedPassingCount : Nat :=
+  rows.foldl (fun acc r =>
+    if r.status = .minimallyQualified ∧ isRgiEmoji r.cps then acc + 1 else acc) 0
 
-#eval s!"total rows: {rowCount}"
-#eval s!"fully-qualified rows: {fullyQualifiedRowCount}"
-#eval s!"fully-qualified passing: {fullyQualifiedPassingCount}"
-#eval s!"minimally-qualified rows: {minimallyQualifiedRowCount}"
-#eval s!"unqualified rows: {unqualifiedRowCount}"
-#eval s!"component rows: {componentRowCount}"
-#eval s!"first fully-qualified failing row: {firstFullyQualifiedFailing}"
-#eval match firstFullyQualifiedFailing with
-      | none => "no fully-qualified failures"
-      | some i =>
-        if h : i < rows.size then
-          let r := rows[i]
-          s!"row {i}: {r.cps}"
-        else "row index out of bounds"
+/-- Number of unqualified rows that pass `isRgiEmoji`. The correct
+    value is 0 for the same reason as `minimallyQualifiedPassingCount`. -/
+def unqualifiedPassingCount : Nat :=
+  rows.foldl (fun acc r =>
+    if r.status = .unqualified ∧ isRgiEmoji r.cps then acc + 1 else acc) 0
+
+/-- Number of component rows that pass `isRgiEmoji`. The correct
+    value equals `componentRowCount`: the 9 component rows are the
+    5 skin-tone modifiers (U+1F3FB..U+1F3FF) and the 4 hair
+    components (U+1F9B0..U+1F9B3), all of which are Basic_Emoji
+    codepoints. The `component` status here is a usage category,
+    not an RGI exclusion. -/
+def componentPassingCount : Nat :=
+  rows.foldl (fun acc r =>
+    if r.status = .component ∧ isRgiEmoji r.cps then acc + 1 else acc) 0
 
 /-- Every fully-qualified row in `emoji-test.txt` is classified as
     RGI by our implementation. -/
 theorem fully_qualified_conformance :
     fullyQualifiedPassingCount = fullyQualifiedRowCount := by native_decide
+
+/-- No minimally-qualified row is classified as RGI: every such row
+    has one or more required VS16s elided, removing it from the
+    registered RGI sequence set. -/
+theorem minimally_qualified_not_rgi :
+    minimallyQualifiedPassingCount = 0 := by native_decide
+
+/-- No unqualified row is classified as RGI: every such row has one
+    or more required VS16s elided. -/
+theorem unqualified_not_rgi :
+    unqualifiedPassingCount = 0 := by native_decide
+
+/-- Every component row is classified as RGI: the 9 component rows
+    are the skin-tone modifiers and hair components, all of which
+    are Basic_Emoji codepoints in `emoji-sequences.txt`. -/
+theorem component_all_rgi :
+    componentPassingCount = componentRowCount := by native_decide
 
 end Unicode.Conformance.EmojiTest
