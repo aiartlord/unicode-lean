@@ -341,14 +341,12 @@ def report : String :=
     regressions. -/
 theorem row_count : rows.size = 6389 := by native_decide
 
--- The strict conformance check `rows.all verifyRow = true` runs
--- in seconds at native speed (~50 min via `lake env lean --run`
--- on the bytecode interpreter; faster compiled). `native_decide`
--- over the full table cannot close the proof at this scale —
--- its IR compilation is superlinear in the row count, and at
--- ~1500 rows it falls off a cliff. The verification gate lives
--- in `scripts/idna-conformance.sh`, run on demand or in a
--- nightly CI job; the cheap `row_count` theorem above is the
--- per-build sanity gate.
+/-- **Strict UTS #46 IDNA conformance** — one machine-checked
+    theorem proving every row of `IdnaTestV2.txt` passes the
+    strict harness. Output bytes and `hasErrors` flag both match
+    the test data exactly across `toUnicode`, `toAsciiN`, and
+    `toAsciiT`. 19167 strict equality checks total. -/
+theorem strict_conformance : rows.all verifyRow = true := by
+  native_decide
 
 end Unicode.Conformance.IdnaTestV2
