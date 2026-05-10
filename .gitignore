@@ -6,3 +6,12 @@
 .direnv/
 result
 result-*
+
+# Internal planning docs and working artifacts — not for public repo
+docs/
+*.draft.md
+*.notes.md
+Probe.lean
+Unicode/**/Probe*.lean
+.local/
+.planning/
