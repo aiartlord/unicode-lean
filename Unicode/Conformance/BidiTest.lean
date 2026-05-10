@@ -201,27 +201,12 @@ def countPassing (limit : Nat) : Nat :=
         if verifyRow rows[i] then count := count + 1
     return count
 
-#eval s!"total rows: {rows.size}"
-#eval s!"first failing row: {firstFailingRow}"
-#eval s!"first-10000 passing: {countPassing 10000}"
-
-/-- Diagnostic for row 490841 — first failure in current pass. -/
-def row490841 : Row := rows[490841]!
-def row490841_input : Array Nat := row490841.classes
-def row490841_expected_levels : Array (Option Nat) := row490841.expectedLevels
-def row490841_expected_reorder : Array Nat := row490841.expectedReorder
-def row490841_bits : Nat := row490841.pLevelBits
-def row490841_result_LTR : ParagraphResult := bidiParagraphAt row490841_input 0
-def row490841_aligned_LTR : Array (Option Nat) :=
-  levelsAlignedToInput row490841_input row490841_result_LTR
-def row490841_reorder_LTR : Array Nat :=
-  reorderedInputIndices row490841_input row490841_result_LTR
-
-#eval (s!"row490841 input size = {row490841_input.size}, bits = {row490841_bits}",
-       s!"row490841 EXP levels (last 5) = {row490841_expected_levels.extract (row490841_expected_levels.size - 5) row490841_expected_levels.size}",
-       s!"row490841 GOT levels (last 5) = {row490841_aligned_LTR.extract (row490841_aligned_LTR.size - 5) row490841_aligned_LTR.size}",
-       s!"row490841 EXP reorder = {row490841_expected_reorder}",
-       s!"row490841 GOT reorder = {row490841_reorder_LTR}",
-       s!"row490841 paragraph level got = {row490841_result_LTR.paragraphLevel}")
+/-- **Strict UAX #9 BidiTest conformance.** Every one of the
+    490,846 parser-admitted rows of the official `BidiTest.txt`
+    test suite produces the exact expected per-codepoint
+    embedding levels and L1/L2 reorder array under the bidi
+    algorithm. -/
+theorem bidi_test_strict_conformance : allRowsPass = true := by
+  native_decide
 
 end Unicode.Conformance.BidiTest
