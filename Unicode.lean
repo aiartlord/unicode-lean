@@ -187,3 +187,10 @@ import Unicode.Generated.IdnaMapping
 import Unicode.Generated.PropList
 import Unicode.Generated.ScriptExtensions
 import Unicode.Generated.Scripts
+
+-- Security Conformance Layer — adversarial-threat-model verdicts
+-- sitting below the UAX/UTS algorithm-correctness proof base above.
+-- 26 fixture families across 6 layers (Covert / Identity / Display /
+-- Form / Boundary / Crypto). v1: foundation calculus only; family
+-- modules land incrementally.
+import Unicode.Security
