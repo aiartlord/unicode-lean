@@ -154,7 +154,15 @@ def applyVariable (handling : VariableHandling)
         else
           acc := acc.push (ce, 0xFFFF)
       else
-        acc := acc.push (ce, 0xFFFF)
+        -- A non-variable CE with primary ≠ 0 normally gets L4 = FFFF.
+        -- The exception: a "primary-only trail" (S = T = 0) — the
+        -- second CE of an implicit-weight pair (UTS #10 §10.1.3) or
+        -- of an explicit DUCET expansion like U+3358's third CE
+        -- `[F0B9.0000.0000]`. Such CEs are suppressed at L4 (=0) so
+        -- the L4 sequence carries one weight per "real" CE rather
+        -- than one per element of the expansion.
+        let l4 := if ce.secondary = 0 ∧ ce.tertiary = 0 then 0 else 0xFFFF
+        acc := acc.push (ce, l4)
         shiftedCarry := false
   return acc
 

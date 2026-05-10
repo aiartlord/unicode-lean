@@ -117,14 +117,51 @@ def implicitBaseFor (cp : Nat) : Nat :=
     else
       0xFBC0
 
-/-- Implicit collation elements for `cp`, returned as a pair of
-    elements per UTS #10 §10.1. -/
+/-- Implicit collation elements for `cp`, returned as a pair per
+    UTS #10 §10.1. Two formulas:
+
+      * `@implicitweights` blocks (Tangut, Nushu, Khitan, Jurchen,
+        Seal — declared in `allkeys.txt`):
+            AAAA = block.base                    -- literal, no shift
+            BBBB = (cp - block.min) | 0x8000     -- offset within block
+
+      * Han Core / Han Other / unassigned (UTS #10 Table 16):
+            AAAA = base + (cp >>> 15)
+            BBBB = (cp & 0x7FFF) | 0x8000
+
+    The two formulas are NOT interchangeable: a Tangut codepoint
+    given the standard formula yields `FB00 + 2 = FB02` and a BBBB
+    that includes high-bit fragments of the codepoint, instead of
+    `FB00 | 0x8000 + offset` as the spec demands. -/
 def implicitElements (cp : Nat) : Array CollationElement :=
-  let base := implicitBaseFor cp
-  let aaaa := base + (cp >>> 15)
-  let bbbb := (cp &&& 0x7FFF) ||| 0x8000
-  #[⟨aaaa, 0x0020, 0x0002, false⟩,
-    ⟨bbbb, 0x0000, 0x0000, false⟩]
+  match implicitBlocks.findSome? (fun b =>
+    if inImplicitBlock cp b then some b else none) with
+  | some block =>
+    -- The X for the BBBB formula is the `.min` of the FIRST
+    -- @implicitweights block (in source order) sharing this block's
+    -- base. When two directives share a base — like
+    --   @implicitweights 17000..18AFF; FB00  # Tangut
+    --   @implicitweights 18D00..18D7F; FB00  # Tangut Supplement
+    -- — UTS #10 §10.1.3 specifies a single X (= 0x17000 here) for
+    -- both ranges, so the BBBB encodings stay non-overlapping.
+    let xStart : Nat := match implicitBlocks.findSome? (fun b' =>
+        if b'.base = block.base then some b'.min else none) with
+      | some m => m
+      | none   => block.min
+    let aaaa := block.base
+    let bbbb := (cp - xStart) ||| 0x8000
+    #[⟨aaaa, 0x0020, 0x0002, false⟩,
+      ⟨bbbb, 0x0000, 0x0000, false⟩]
+  | none =>
+    let base :=
+      if Unicode.Generated.PropListUca16.isUnifiedIdeograph cp then
+        if inHanCoreBlock cp then 0xFB40 else 0xFB80
+      else
+        0xFBC0
+    let aaaa := base + (cp >>> 15)
+    let bbbb := (cp &&& 0x7FFF) ||| 0x8000
+    #[⟨aaaa, 0x0020, 0x0002, false⟩,
+      ⟨bbbb, 0x0000, 0x0000, false⟩]
 
 /-- Synthesize a default DUCET entry for `cp` when no explicit
     table entry covers it. -/
@@ -180,14 +217,24 @@ def matchAt (cps : Array Nat) (consumed : Array Bool) (start : Nat) :
     let bucket := bucketFor cp
     -- Phase 1: longest contiguous prefix match. The `gotMatch` flag
     -- distinguishes "no DUCET hit so use implicit fallback" from
-    -- "single-cp DUCET hit", since both have key length 1.
+    -- "single-cp DUCET hit", since both have key length 1. A
+    -- candidate is rejected if any of the input positions it would
+    -- cover is already in `consumed` — the position has been
+    -- absorbed by an earlier discontiguous contraction and may not
+    -- be re-matched. Without this check, sequences like
+    -- `0FB2 0334 0F71 0F80` produce a phantom second match of
+    -- `0F71 0F80` at i=2 even though i=3 was already consumed by
+    -- the previous discontiguous match of `0FB2 0F80`.
     let mut bestEntry : DucetEntry := implicitEntry cp
     let mut bestKey   : Array Nat   := #[cp]
     let mut bestLen   : Nat         := 1
     let mut gotMatch  : Bool        := false
     for entry in bucket do
       if matchesAt cps start entry.key then
-        if !gotMatch ∨ entry.key.size > bestLen then
+        let mut clear : Bool := true
+        for k in [0:entry.key.size] do
+          if (consumed[start + k]?.getD false) then clear := false
+        if clear ∧ (!gotMatch ∨ entry.key.size > bestLen) then
           bestEntry := entry
           bestKey   := entry.key
           bestLen   := entry.key.size
