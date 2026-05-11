@@ -36,3 +36,6 @@ import Unicode.Security.Display.SourceDisplayDivergence
 import Unicode.Security.Display.FilenameDisguise
 import Unicode.Security.Display.RtlInjection
 import Unicode.Security.Display.RendererDivergence
+
+-- Layer 4 — Form Stability (normalization / DoS / locale)
+import Unicode.Security.Form.NormalizationBomb

@@ -1,0 +1,64 @@
+# NormalizationBombTest.txt
+# UCD version: 16.0.0
+# Security-spec version: 0.1.0
+# Family: F1 — Normalization Expansion Bomb (UAX #15)
+# License: Apache-2.0
+#
+# Threat model: an attacker submits a small input that explodes
+# in size under NFD or NFKD normalization at the receiver, with
+# the classical shapes being Arabic compatibility ligatures
+# (U+FDFA decomposes to 18 codepoints), parenthesized digits,
+# circled letters, and fractions.
+#
+# Detection (priority order):
+#   1. SingleCpBlowup     — any single codepoint whose NFKD
+#                           expansion exceeds 4.
+#   2. NfkdHighExpansion  — overall NFKD ratio > 400% (4×).
+#   3. NfdHighExpansion   — overall NFD ratio > 300% (3×).
+#
+# Sub-threats (2) and (3) are reserved defensive backups; in
+# v1 with `maxNfkdPerCp = 4` they are subsumed in practice by
+# (1) for every published bomb shape we have measured.
+#
+# Format:
+#   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
+#
+# Classifications produced by the F1 detector:
+#   Clear (= within bounds)
+#   Hazard:SingleCpBlowup
+#   Hazard:NfkdHighExpansion
+#   Hazard:NfdHighExpansion
+
+# @section Clear
+# @level basic
+
+# ASCII Hello — no decomposition at all.
+0048 0065 006C 006C 006F; Clear; ; # Hello
+
+# Plain Han — no decomposition.
+4E2D 6587; Clear; ; # 中文
+
+# Korean Hangul syllable 한 (U+D55C) — NFKD = 3 jamos, at
+# the per-cp threshold (> 4 fires, so 3 stays clear).
+D55C; Clear; ; # 한
+
+# Korean Hangul 한글 — each syllable expands to 3 jamos under
+# NFKD; overall ratio = 6/2 = 300%, exactly at the NFD ratio
+# threshold (> 300 fires, so 300 stays clear).
+D55C AE00; Clear; ; # 한글
+
+# Circled digit ① (U+2460) — NFKD = "1" (1 cp → 1 cp).
+2460; Clear; ; # ①
+
+# Plain ASCII digits — no decomposition.
+0030 0031 0032 0033; Clear; ; # 0123
+
+# @section SingleCpBlowup
+# @level basic
+
+# Arabic ligature SALLALLAHOU ALAYHE WASALLAM (U+FDFA) — the
+# canonical normalization-bomb shape: 1 cp → 18 cps under NFKD.
+FDFA; Hazard:SingleCpBlowup; 0; # 1 cp → 18 cps NFKD
+
+# Arabic ligature JALLAJALALOUHOU (U+FDFB) — 1 cp → 8 cps NFKD.
+FDFB; Hazard:SingleCpBlowup; 0; # 1 cp → 8 cps NFKD
