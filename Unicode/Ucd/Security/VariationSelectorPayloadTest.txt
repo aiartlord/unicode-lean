@@ -1,0 +1,96 @@
+# VariationSelectorPayloadTest.txt
+# UCD version: 16.0.0
+# Security-spec version: 0.1.0
+# Family: C2 — Variation-Selector Payload Detection
+# License: Apache-2.0
+#
+# Threat model: GlassWorm-class invisible payloads encoded in
+# variation selectors that pass through string-processing
+# pipelines as no-op glyph variants but decode pair-wise back
+# into arbitrary bytes.
+#
+# Format:
+#   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
+#
+# Classifications produced by the C2 detector:
+#   Clear
+#   Hazard:DirectPayload     Hazard:IllegalTarget
+#   Hazard:RepeatedBase      Hazard:EmbeddedAfterRegistered
+#
+# Attribution conventions (key="value" pairs joined with ";"):
+#   decoded="..."           recovered ASCII payload (DirectPayload)
+#   nibble_count=N          number of nibbles decoded
+#   exec_hint=...           ascii / javascript / shell / binary / empty
+#   target_cp=0xNN          base codepoint receiving the illegal VS
+#   vs_cp=0xNN              the VS that was illegally placed
+#   registered_vs=N         count of legitimate registered VS in input
+#   suspicious_vs=N         count of suspicious VS in input
+
+# @section RegisteredClear
+# @level basic
+
+# Pure ASCII — no VS, vacuously clear.
+0048 0065 006C 006C 006F; Clear; ; registered_vs=0; suspicious_vs=0; # ASCII "Hello"
+
+# Plain Han — no VS.
+4E2D 6587; Clear; ; registered_vs=0; suspicious_vs=0; # Han "中文"
+
+# Plain emoji with no presentation selector — clear.
+1F600; Clear; ; registered_vs=0; suspicious_vs=0; # Grinning face, no VS
+
+# Emoji + VS16 — registered emoji presentation, clear.
+1F600 FE0F; Clear; ; registered_vs=1; suspicious_vs=0; # Grinning face, emoji presentation [UTS #51]
+
+# Mongolian Letter A + FVS1 — registered standardized variation (180B, not FE-range).
+1820 180B; Clear; ; registered_vs=1; suspicious_vs=0; # Mongolian LETTER A second-isolate-form [UCD StandardizedVariants]
+
+# Egyptian Hieroglyph F051 + FE02 — registered 270° rotation variant.
+13139 FE02; Clear; ; registered_vs=1; suspicious_vs=0; # Egyptian Hieroglyph F051, 270° rotation [UCD StandardizedVariants]
+
+# Digit 0 + FE00 — first row of StandardizedVariants.txt, "short diagonal stroke form".
+0030 FE00; Clear; ; registered_vs=1; suspicious_vs=0; # ASCII digit 0, slashed-zero variant [UCD StandardizedVariants]
+
+# @section DirectPayload
+# @level basic
+
+# Latin 'a' + FE04 + FE01 — two nibbles decode to byte 0x41 = 'A'.
+0061 FE04 FE01; Hazard:DirectPayload; 1,2; decoded="A"; nibble_count=2; exec_hint=ascii; registered_vs=0; suspicious_vs=2; # GlassWorm minimal 1-byte payload
+
+# Latin 'a' + four VS chars decoding to bytes 0x41 0x42 = "AB".
+0061 FE04 FE01 FE04 FE02; Hazard:DirectPayload; 1,2,3,4; decoded="AB"; nibble_count=4; exec_hint=ascii; registered_vs=0; suspicious_vs=4; # 2-byte ASCII payload "AB"
+
+# @section IllegalTarget
+# @level basic
+
+# VS16 on Latin A — no registered variation sequence for Latin codepoints.
+0041 FE0F; Hazard:IllegalTarget; 1; target_cp=0x0041; vs_cp=0xFE0F; registered_vs=0; suspicious_vs=1; # VS16 on Latin A
+
+# VS15 on Latin A — same logic, text-presentation selector misused.
+0041 FE0E; Hazard:IllegalTarget; 1; target_cp=0x0041; vs_cp=0xFE0E; registered_vs=0; suspicious_vs=1; # VS15 on Latin A
+
+# Supplementary VS17 on Latin A — top of the E0100..E01EF alphabet.
+0041 E0100; Hazard:IllegalTarget; 1; target_cp=0x0041; vs_cp=0xE0100; registered_vs=0; suspicious_vs=1; # Supplementary VS on Latin A
+
+# @section RepeatedBase
+# @level strict
+
+# Latin 'a' + 8 copies of FE04 — anomalous single-VS repetition.
+0061 FE04 FE04 FE04 FE04 FE04 FE04 FE04 FE04; Hazard:RepeatedBase; 1,2,3,4,5,6,7,8; vs_count=8; unique_vs=1; registered_vs=0; suspicious_vs=8; # 8-fold FE04 repetition on Latin a
+
+# Latin 'a' + 6 copies of FE0F — anomalous VS16 repetition (Latin is not emoji).
+0061 FE0F FE0F FE0F FE0F FE0F FE0F; Hazard:RepeatedBase; 1,2,3,4,5,6; vs_count=6; unique_vs=1; registered_vs=0; suspicious_vs=6; # 6-fold FE0F on Latin a
+
+# @section EmbeddedAfterRegistered
+# @level strict
+
+# Grinning face + VS16 (registered) + Latin 'a' + 2 payload VS — embedded after registered.
+1F600 FE0F 0061 FE06 FE05; Hazard:EmbeddedAfterRegistered; 3,4; registered_vs=1; suspicious_vs=2; # Smiley followed by a suspicious-VS payload run
+
+# Digit 0 + FE00 (registered standardized) + Latin 'a' + 2 payload VS.
+0030 FE00 0061 FE04 FE01; Hazard:EmbeddedAfterRegistered; 3,4; registered_vs=1; suspicious_vs=2; # Slashed-zero variant then ASCII payload
+
+# @section LeadingVS
+# @level full
+
+# A leading VS with no preceding base codepoint — suspicious.
+FE04; Hazard:IllegalTarget; 0; target_cp=0x0000; vs_cp=0xFE04; registered_vs=0; suspicious_vs=1; # Leading bare VS, no base
