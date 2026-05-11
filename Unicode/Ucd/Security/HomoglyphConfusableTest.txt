@@ -86,3 +86,103 @@ FF30 FF41 FF59 FF50 FF41 FF4C; Hazard:WidthClass; 0; first_width_cp=0xFF30; # Fu
 
 # Fullwidth digit 5 (５, U+FF15).
 FF15; Hazard:WidthClass; 0; first_width_cp=0xFF15; # Fullwidth digit 5
+
+# @section TargetMatch
+# @level strict
+
+# "ethereum" with leading Cyrillic 'е' (U+0435) — crypto-package typosquat.
+0435 0074 0068 0065 0072 0065 0075 006D; Hazard:TargetMatch; ; target="ethereum"; # ethereum / Cyrillic е at pos 0
+
+# "openai" with leading Cyrillic 'о' (U+043E).
+043E 0070 0065 006E 0061 0069; Hazard:TargetMatch; ; target="openai"; # openai / Cyrillic о at pos 0
+
+# "google" with Cyrillic 'о' (U+043E) at position 2.
+0067 006F 043E 0067 006C 0065; Hazard:TargetMatch; ; target="google"; # google / Cyrillic о at pos 2
+
+# "claude" with Cyrillic 'а' (U+0430) at position 2.
+0063 006C 0430 0075 0064 0065; Hazard:TargetMatch; ; target="claude"; # claude / Cyrillic а at pos 2
+
+# "github" with Cyrillic 'і' (U+0456) at position 1.
+0067 0456 0074 0068 0075 0062; Hazard:TargetMatch; ; target="github"; # github / Cyrillic і at pos 1
+
+# "react" with Cyrillic 'е' (U+0435) at position 1.
+0072 0435 0061 0063 0074; Hazard:TargetMatch; ; target="react"; # react / Cyrillic е at pos 1
+
+# @section MathAlpha
+# @level strict
+
+# Math Sans-Serif Capital A (𝖠, U+1D5A0).
+1D5A0; Hazard:MathAlpha; 0; first_math_cp=0x1D5A0; # Math Sans-Serif A
+
+# Math Double-Struck Capital A (𝔸, U+1D538).
+1D538; Hazard:MathAlpha; 0; first_math_cp=0x1D538; # Math Double-Struck A
+
+# Math Monospace Capital A (𝙰, U+1D670).
+1D670; Hazard:MathAlpha; 0; first_math_cp=0x1D670; # Math Monospace A
+
+# @section WidthClass
+# @level strict
+
+# Halfwidth Katakana 'ｱ' (U+FF71) — fullwidth-block fall-back surface.
+FF71; Hazard:WidthClass; 0; first_width_cp=0xFF71; # Halfwidth Katakana ア
+
+# Fullwidth "Github" — every codepoint U+FF21..U+FF7A.
+FF27 FF49 FF54 FF48 FF55 FF42; Hazard:WidthClass; 0; first_width_cp=0xFF27; # Fullwidth Github
+
+# @section DecompositionSwap
+# @level basic
+
+# e + combining acute — NFC = #[U+00E9].  Single decomposed letter,
+# no Latin/non-Latin mix, no target.
+0065 0301; Hazard:DecompositionSwap; 0; # e + combining acute → é
+
+# o + combining diaeresis — NFC = #[U+00F6].
+006F 0308; Hazard:DecompositionSwap; 0; # o + diaeresis → ö
+
+# a + combining grave — NFC = #[U+00E0].
+0061 0300; Hazard:DecompositionSwap; 0; # a + grave → à
+
+# Two decomposed letters in sequence — NFC folds both.
+0065 0301 0061 0300; Hazard:DecompositionSwap; 0; # decomposed é + à
+
+# @section RestrictionLow
+# @level basic
+#
+# RestrictionLow is the fall-back tier: an input that doesn't match a
+# canonical target, isn't math-alpha or fullwidth, has no NFC drift,
+# but whose UTS #39 §5 restriction level lands at Minimally-
+# Restrictive or Unrestricted.  Near-typosquats whose iterated
+# skeleton doesn't quite fold to a canonical target also land here
+# (microsoft / solana / metamask / binance below).  This is a useful
+# catch-all hazard surface for "looks plausibly suspicious but no
+# specific upstream attribution matches".
+#
+# (CrossScriptMix is not currently reachable through `detect` — the
+# detector's `crossScriptCount` is computed off
+# `stringResolvedScripts` which returns the per-codepoint script-set
+# intersection, never ≥ 2 for any non-empty identifier.  Documented
+# here so future iterations can re-route the sub-threat against a
+# union-based primitive.)
+
+# "microsoft" with Cyrillic 'о' (U+043E) at position 1 — iteratedSkeleton
+# doesn't quite fold to "microsoft" but the input lands at Unrestricted.
+006D 043E 0063 0072 006F 0073 006F 0066 0074; Hazard:RestrictionLow; ; restriction=MinimallyRestrictive; # microsoft / Cyrillic о — near-typosquat
+
+# "solana" with Cyrillic 'о' (U+043E) at position 2.
+0073 006F 043E 0061 006E 0061; Hazard:RestrictionLow; ; restriction=MinimallyRestrictive; # solana near-typosquat
+
+# "metamask" with Cyrillic 'а' (U+0430) at position 2.
+006D 0065 0430 0061 006D 0061 0073 006B; Hazard:RestrictionLow; ; restriction=MinimallyRestrictive; # metamask near-typosquat
+
+# "binance" with Cyrillic 'а' (U+0430) at position 2.
+0062 0069 0430 006E 0061 006E 0063 0065; Hazard:RestrictionLow; ; restriction=MinimallyRestrictive; # binance near-typosquat
+
+# Latin + Greek mix — `ab αβ`.  Two scripts, neither covered by
+# Highly-Restrictive (Latin + Greek isn't in the recommended pair list).
+0061 0062 03B1 03B2; Hazard:RestrictionLow; ; restriction=MinimallyRestrictive; # Latin+Greek mix
+
+# Latin + Cyrillic mix — `xy фф` (Cyrillic ф ф).
+0078 0079 0444 0444; Hazard:RestrictionLow; ; restriction=MinimallyRestrictive; # Latin+Cyrillic mix
+
+# Greek + Cyrillic mix — αβ + Cyrillic ф х.
+03B1 03B2 0444 0445; Hazard:RestrictionLow; ; restriction=MinimallyRestrictive; # Greek+Cyrillic mix
