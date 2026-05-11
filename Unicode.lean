@@ -224,3 +224,4 @@ import Unicode.Conformance.Security.RtlInjectionTest
 import Unicode.Conformance.Security.RendererDivergenceTest
 import Unicode.Conformance.Security.NormalizationBombTest
 import Unicode.Conformance.Security.StreamSafeViolationTest
+import Unicode.Conformance.Security.LocaleCaseInversionTest
