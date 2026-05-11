@@ -23,10 +23,7 @@
     * D3 alone catches the bidi controls but cannot tell
       whether the input is also carrying a covert payload.
 
-  X2 catches the simultaneous occurrence and is the right
-  verdict for source-code commits, package metadata, IDN
-  labels, and filename fields where visual review is the last
-  line of defence.
+  X2 reports the simultaneous occurrence.
 
   Sub-threats (priority order, both reachable):
 
@@ -166,13 +163,13 @@ theorem detect_ascii_clear :
     (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
   native_decide
 
-/-- Bidi-only (RLO alone) is clear under X2 — D3 is the right
-    detector for the bidi-only case.  X2 requires the compound. -/
+/-- Bidi-only (RLO alone) is clear under X2; the compound is
+    not present. -/
 theorem detect_bidi_only_clear :
     (detect #[0x202E]).classify.isClear = true := by native_decide
 
-/-- VS-only (ASCII + VS1) is clear under X2 — C2 is the right
-    detector for the covert-only case. -/
+/-- VS-only (ASCII + VS1) is clear under X2; the compound is
+    not present. -/
 theorem detect_vs_only_clear :
     (detect #[0x0041, 0xFE00]).classify.isClear = true := by native_decide
 
