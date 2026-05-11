@@ -65,23 +65,23 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by native_decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 14 := by native_decide
+theorem row_count : rows.size = 22 := by native_decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 5 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by native_decide
 
 theorem covers_double_zwj :
-    (rows.filter (·.sectionName = "DoubleZWJ")).size ≥ 2 := by native_decide
+    (rows.filter (·.sectionName = "DoubleZWJ")).size ≥ 3 := by native_decide
 
 theorem covers_non_emoji_injection :
-    (rows.filter (·.sectionName = "NonEmojiInjection")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "NonEmojiInjection")).size ≥ 5 := by
   native_decide
 
 theorem covers_over_length :
-    (rows.filter (·.sectionName = "OverLength")).size ≥ 1 := by native_decide
+    (rows.filter (·.sectionName = "OverLength")).size ≥ 2 := by native_decide
 
 theorem covers_skin_tone_overflow :
-    (rows.filter (·.sectionName = "SkinToneOverflow")).size ≥ 2 := by
+    (rows.filter (·.sectionName = "SkinToneOverflow")).size ≥ 3 := by
   native_decide
 
 end Unicode.Conformance.Security.EmojiZwjIntegrityTest
