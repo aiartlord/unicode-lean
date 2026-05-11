@@ -87,21 +87,29 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by native_decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 16 := by native_decide
+theorem row_count : rows.size = 38 := by native_decide
 
 /-- Section coverage gates. -/
 theorem covers_clear :
     (rows.filter (·.sectionName = "Clear")).size ≥ 5 := by native_decide
 
 theorem covers_target_match :
-    (rows.filter (·.sectionName = "TargetMatch")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "TargetMatch")).size ≥ 8 := by
   native_decide
 
 theorem covers_math_alpha :
-    (rows.filter (·.sectionName = "MathAlpha")).size ≥ 5 := by native_decide
+    (rows.filter (·.sectionName = "MathAlpha")).size ≥ 8 := by native_decide
 
 theorem covers_width_class :
-    (rows.filter (·.sectionName = "WidthClass")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "WidthClass")).size ≥ 5 := by
+  native_decide
+
+theorem covers_decomposition_swap :
+    (rows.filter (·.sectionName = "DecompositionSwap")).size ≥ 4 := by
+  native_decide
+
+theorem covers_restriction_low :
+    (rows.filter (·.sectionName = "RestrictionLow")).size ≥ 7 := by
   native_decide
 
 /-- Regression: the Nethereum Oct-2025 typosquat fires `TargetMatch`. -/
