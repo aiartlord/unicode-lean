@@ -210,3 +210,4 @@ import Unicode.Conformance.Security.ZeroWidthPayloadTest
 import Unicode.Conformance.Security.SurrogateReassemblyTest
 import Unicode.Conformance.Security.HomoglyphConfusableTest
 import Unicode.Conformance.Security.SourceDisplayDivergenceTest
+import Unicode.Conformance.Security.MixedScriptAdmissibilityTest
