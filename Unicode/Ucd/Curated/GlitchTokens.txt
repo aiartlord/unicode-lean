@@ -1,0 +1,59 @@
+# GlitchTokens.txt
+# Curated inventory of "glitch tokens" — tokenizer-encoded
+# strings that trigger anomalous behaviour in published LLMs.
+# Source: Rumbelow & Watkins 2023 "SolidGoldMagikarp" and the
+# extended catalog in their follow-up posts.
+#
+# Each token is the raw UTF-8 byte sequence as it appears in the
+# tokenizer's vocabulary; the leading whitespace and unusual
+# capitalisation are part of the token identity and must be
+# preserved byte-exactly.
+#
+# Format: one token per line, blank lines and `#` lines ignored.
+# Quotation marks are NOT used; the token IS the line content
+# verbatim, modulo the trailing newline.
+
+# GPT-2 / GPT-3 BPE glitch tokens (Rumbelow & Watkins 2023)
+ SolidGoldMagikarp
+ StreamerBot
+ davidjl
+ RandomRedditor
+ RandomRedditorWithNo
+ attRot
+ newcom
+ cloneembedreportprint
+ rawdownload
+ rawdownloadcloneembedreportprint
+ SpaceEngineers
+ externalToEVA
+ externalToEVAOnly
+ reportprint
+ embedreportprint
+ cloneembedreportprintRAW
+ 龍喚士
+
+# Follow-up extended catalog (community + Watkins-curated)
+ TheNitrome
+ TheNitromeFan
+ GoldMagikarp
+ DragonMagazine
+ Skydragon
+ Adinida
+ Mechdragon
+ iHUD
+ PsyNetMessage
+ strutConnector
+ srfN
+ largeDownload
+ InstoreAndOnline
+ BuyableInstoreAndOnline
+ Mechdragon
+ quickShip
+ quickShipAvailable
+ oreAndOnline
+
+# DALL-E text encoder glitch tokens (visual generators)
+ petertodd
+ disclaim
+ inentional
+ reportedlydeclared
