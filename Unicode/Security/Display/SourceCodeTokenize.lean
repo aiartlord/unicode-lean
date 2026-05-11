@@ -54,11 +54,29 @@ structure TokenRegion where
   deriving DecidableEq, Repr, Inhabited
 
 /-- The languages D1 dispatches on.  `none` is the v1
-    language-agnostic fallback. -/
+    language-agnostic fallback.
+
+    Grammar coverage:
+    * `cStyleGeneric` — `"..."`, `'...'`, `// ...`, `/* ... */`
+      non-nestable.  Suitable for C, C++, Java, JavaScript-ES5,
+      Objective-C, Go.
+    * `rust` — adds nestable block comments and raw string
+      literals `r"..."`, `r#"..."#`.
+    * `python` — adds triple-quoted strings `"""..."""` and
+      `'''...'''` spanning multiple lines; uses `# ...` for line
+      comments; no block comments.
+    * `typescript` — `cStyleGeneric` plus template literals
+      `` `...` ``.  Template-literal interpolation `${...}` is
+      treated conservatively (the whole template literal stays
+      a single string region), since accurately tracking nested
+      expression scopes would require a full parser.  JSX
+      content is out of scope. -/
 inductive Language where
   | none
   | cStyleGeneric
   | rust
+  | python
+  | typescript
   deriving DecidableEq, Repr, Inhabited
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -68,26 +86,34 @@ inductive Language where
 /-- Internal scanner state.  Carries the current region kind plus
     whatever auxiliary data the kind needs:
 
-    * `inCode`             — no aux data
-    * `inStringLit delim`  — closing delimiter (`"` or `'`)
-    * `inRawString hashes` — number of trailing `#` required to
-                              close the Rust raw string
-    * `inLineComment`      — no aux data; ends at next `\n`
+    * `inCode`               — no aux data
+    * `inStringLit delim`    — closing delimiter (`"` or `'`)
+    * `inRawString hashes`   — number of trailing `#` required to
+                                close the Rust raw string
+    * `inTripleString delim` — Python triple-quoted; `delim` is
+                                the single-character `"` or `'`
+                                whose triple closes the region
+    * `inTemplateLit`        — TypeScript template literal `…`
+    * `inLineComment`        — no aux data; ends at next `\n`
     * `inBlockComment depth` — Rust nestable comments increment /
-                                decrement depth; cStyleGeneric
-                                holds depth at 1. -/
+                                decrement depth; cStyleGeneric /
+                                TypeScript hold depth at 1. -/
 private inductive ScanState where
   | inCode
   | inStringLit    (delim : Nat)
   | inRawString    (hashes : Nat)
+  | inTripleString (delim : Nat)
+  | inTemplateLit
   | inLineComment
   | inBlockComment (depth : Nat)
   deriving DecidableEq, Repr, Inhabited
 
 private def ScanState.toKind : ScanState → TokenKind
   | .inCode                => .code
-  | .inStringLit  delim    => Function.const Nat .stringLiteral delim
-  | .inRawString  hashes   => Function.const Nat .stringLiteral hashes
+  | .inStringLit   delim   => Function.const Nat .stringLiteral delim
+  | .inRawString   hashes  => Function.const Nat .stringLiteral hashes
+  | .inTripleString delim  => Function.const Nat .stringLiteral delim
+  | .inTemplateLit         => .stringLiteral
   | .inLineComment         => .lineComment
   | .inBlockComment depth  => Function.const Nat .blockComment depth
 
@@ -107,6 +133,16 @@ private def look2 (input : Array Nat) (pos : Nat) (a b : Nat) : Bool :=
   | some x, some y => decide (x = a ∧ y = b)
   | look2A, look2B =>
     Function.const (Option Nat × Option Nat) false (look2A, look2B)
+
+/-- True iff `input[pos..pos+2]` are all equal to `c`.  Used for
+    Python triple-quote detection. -/
+@[inline]
+private def look3eq (input : Array Nat) (pos : Nat) (c : Nat) : Bool :=
+  match at? input pos, at? input (pos + 1), at? input (pos + 2) with
+  | some x, some y, some z => decide (x = c ∧ y = c ∧ z = c)
+  | look3A, look3B, look3C =>
+    Function.const (Option Nat × Option Nat × Option Nat) false
+      (look3A, look3B, look3C)
 
 /-- Count consecutive `#` characters starting at `pos`. -/
 private def countHashesGo (input : Array Nat) (pos : Nat) (acc : Nat)
@@ -167,6 +203,10 @@ private def stepCStyle (input : Array Nat) (pos : Nat)
       Function.const Nat (.inBlockComment 1, 1) depth
   | .inRawString hashes =>
     Function.const Nat (.inRawString hashes, 1) hashes
+  | .inTripleString delim =>
+    Function.const Nat (.inTripleString delim, 1) delim
+  | .inTemplateLit =>
+    (.inTemplateLit, 1)
 
 /-- Rust step rules — extend cStyleGeneric with nestable block
     comments and raw strings.  Falls through to `stepCStyle` for
@@ -205,12 +245,124 @@ private def stepRust (input : Array Nat) (pos : Nat)
       Function.const (Option Nat) (.inRawString hashes, 1) rawContentOther
   | otherState => stepCStyle input pos otherState
 
+/-- Python step rules.
+
+    Strings: `"..."`, `'...'` (newline-bounded by convention but
+    we close at matching delim — Python's actual rule is that
+    unescaped newlines are syntax errors, so closing at delim is
+    the correct conservative choice).  Triple-quoted strings
+    `"""..."""` and `'''...'''` span newlines.  Line comments
+    start with `#` and end at `\n`.  No block comments.
+
+    Note: prefixed string literals (`r"..."`, `b"..."`, `f"..."`,
+    `rb"..."`, etc.) are not specially recognized — the leading
+    letter is consumed in code and the opening quote is then
+    seen as a regular string opener.  This is correct for
+    region-tracking purposes since the contents are still a
+    string region regardless of prefix; what differs is how
+    Python interprets the contents at runtime, which is not the
+    detector's concern. -/
+private def stepPython (input : Array Nat) (pos : Nat)
+    (state : ScanState) : ScanState × Nat :=
+  match state with
+  | .inCode =>
+    -- `#` line comment
+    match at? input pos with
+    | some 0x23 => (.inLineComment, 1)
+    | some 0x22 =>
+      if look3eq input pos 0x22 then (.inTripleString 0x22, 3)
+      else (.inStringLit 0x22, 1)
+    | some 0x27 =>
+      if look3eq input pos 0x27 then (.inTripleString 0x27, 3)
+      else (.inStringLit 0x27, 1)
+    | otherInCodePy =>
+      Function.const (Option Nat) (.inCode, 1) otherInCodePy
+  | .inStringLit delim =>
+    -- Python strings: `\` escape, end at delim, otherwise consume 1.
+    match at? input pos with
+    | some 0x5C =>
+      match at? input (pos + 1) with
+      | some followingCp =>
+        Function.const Nat (.inStringLit delim, 2) followingCp
+      | none             => (.inStringLit delim, 1)
+    | some c =>
+      if c = delim then (.inCode, 1) else (.inStringLit delim, 1)
+    | none      => (.inStringLit delim, 0)
+  | .inTripleString delim =>
+    -- Triple-string ends at three consecutive `delim` chars.
+    -- Backslash escapes still apply to one following char.
+    match at? input pos with
+    | some 0x5C =>
+      match at? input (pos + 1) with
+      | some followingCp =>
+        Function.const Nat (.inTripleString delim, 2) followingCp
+      | none             => (.inTripleString delim, 1)
+    | some c =>
+      if c = delim ∧ look3eq input pos delim then (.inCode, 3)
+      else (.inTripleString delim, 1)
+    | none      => (.inTripleString delim, 0)
+  | .inLineComment =>
+    match at? input pos with
+    | some 0x0A         => (.inCode, 1)
+    | otherInLineCmtPy  =>
+      Function.const (Option Nat) (.inLineComment, 1) otherInLineCmtPy
+  | otherStatePy =>
+    -- inRawString / inTemplateLit / inBlockComment shouldn't
+    -- appear under Python — but fall through safely to a
+    -- code-step so the tokenizer can't deadlock.
+    Function.const ScanState (.inCode, 1) otherStatePy
+
+/-- TypeScript step rules.
+
+    Same as cStyleGeneric plus template literals `` `...` ``.
+    Block comments are NOT nestable (matches the ECMAScript and
+    TypeScript specs).  Template-literal interpolation
+    `${...}` is intentionally NOT tracked — the entire template
+    literal stays a single string region.  This is conservative
+    in the right direction: a bidi codepoint inside `${expr}`
+    will be treated as in-string and filtered out, which may
+    under-report some attacks but never over-report. -/
+private def stepTypeScript (input : Array Nat) (pos : Nat)
+    (state : ScanState) : ScanState × Nat :=
+  match state with
+  | .inCode =>
+    if look2 input pos 0x2F 0x2F then       -- "//"
+      (.inLineComment, 2)
+    else if look2 input pos 0x2F 0x2A then  -- "/*"
+      (.inBlockComment 1, 2)
+    else
+      match at? input pos with
+      | some 0x22  => (.inStringLit 0x22, 1)
+      | some 0x27  => (.inStringLit 0x27, 1)
+      | some 0x60  => (.inTemplateLit, 1)   -- backtick
+      | otherInCodeTs =>
+        Function.const (Option Nat) (.inCode, 1) otherInCodeTs
+  | .inTemplateLit =>
+    match at? input pos with
+    | some 0x5C =>
+      match at? input (pos + 1) with
+      | some followingCp =>
+        Function.const Nat (.inTemplateLit, 2) followingCp
+      | none             => (.inTemplateLit, 1)
+    | some 0x60 => (.inCode, 1)
+    | otherInTemplate =>
+      Function.const (Option Nat) (.inTemplateLit, 1) otherInTemplate
+  | .inBlockComment depth =>
+    -- Non-nestable.  Treat as cStyleGeneric.
+    if look2 input pos 0x2A 0x2F then (.inCode, 2)
+    else Function.const Nat (.inBlockComment 1, 1) depth
+  | otherStateTs => stepCStyle input pos otherStateTs
+
 private def step (lang : Language) (input : Array Nat) (pos : Nat)
     (state : ScanState) : ScanState × Nat :=
   match lang with
-  | .none          => Function.const (Array Nat × Nat × ScanState) (.inCode, 1) (input, pos, state)
+  | .none          =>
+    Function.const (Array Nat × Nat × ScanState) (.inCode, 1)
+      (input, pos, state)
   | .cStyleGeneric => stepCStyle input pos state
   | .rust          => stepRust input pos state
+  | .python        => stepPython input pos state
+  | .typescript    => stepTypeScript input pos state
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Scanner driver
@@ -403,6 +555,94 @@ theorem positionInCode_sandwich :
     positionInCode .cStyleGeneric input 0 = true ∧
     positionInCode .cStyleGeneric input 3 = false ∧
     positionInCode .cStyleGeneric input 6 = true := by
+  native_decide
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §7 Python spot checks
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- Empty Python input tokenizes to no regions. -/
+theorem tokenize_empty_python :
+    tokenize .python #[] = #[] := by native_decide
+
+/-- A plain ASCII expression `x = 1` under Python is one code
+    region. -/
+theorem tokenize_python_assign :
+    tokenize .python #[0x78, 0x20, 0x3D, 0x20, 0x31] =
+      #[{ kind := .code, startPos := 0, endPos := 5 }] := by native_decide
+
+/-- Python `"A"` (a 3-codepoint string literal) tokenizes to
+    one string region spanning the whole input. -/
+theorem tokenize_python_single_quote :
+    tokenize .python #[0x22, 0x41, 0x22] =
+      #[{ kind := .stringLiteral, startPos := 0, endPos := 3 }] := by
+  native_decide
+
+/-- Python `# comment` line.  The `\n` would close it; without
+    a trailing newline the comment runs to end-of-input. -/
+theorem tokenize_python_line_comment :
+    tokenize .python #[0x23, 0x20, 0x41] =
+      #[{ kind := .lineComment, startPos := 0, endPos := 3 }] := by
+  native_decide
+
+/-- Python triple-quoted string `"""A"""` — 7 codepoints, one
+    string region of length 7. -/
+theorem tokenize_python_triple_string :
+    tokenize .python #[0x22, 0x22, 0x22, 0x41, 0x22, 0x22, 0x22] =
+      #[{ kind := .stringLiteral, startPos := 0, endPos := 7 }] := by
+  native_decide
+
+/-- Python triple-quoted string with embedded RLO — the RLO is
+    inside the string region (position 3 of 7). -/
+theorem positionInCode_python_triple_rlo :
+    let input : Array Nat := #[0x22, 0x22, 0x22, 0x202E, 0x22, 0x22, 0x22]
+    positionInCode .python input 3 = false := by native_decide
+
+/-- A Python `#`-style comment containing an RLO filters it out. -/
+theorem positionInCode_python_comment_rlo :
+    let input : Array Nat := #[0x23, 0x202E]
+    positionInCode .python input 1 = false := by native_decide
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §8 TypeScript spot checks
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- Empty TypeScript input tokenizes to no regions. -/
+theorem tokenize_empty_typescript :
+    tokenize .typescript #[] = #[] := by native_decide
+
+/-- TypeScript template literal `` `A` `` — 3 codepoints, one
+    string region. -/
+theorem tokenize_typescript_template :
+    tokenize .typescript #[0x60, 0x41, 0x60] =
+      #[{ kind := .stringLiteral, startPos := 0, endPos := 3 }] := by
+  native_decide
+
+/-- A TypeScript template literal containing an RLO filters it. -/
+theorem positionInCode_typescript_template_rlo :
+    let input : Array Nat := #[0x60, 0x41, 0x202E, 0x42, 0x60]
+    positionInCode .typescript input 2 = false := by native_decide
+
+/-- TypeScript line and block comments behave the same as
+    cStyleGeneric. -/
+theorem positionInCode_typescript_line_comment_rlo :
+    let input : Array Nat := #[0x2F, 0x2F, 0x202E]
+    positionInCode .typescript input 2 = false := by native_decide
+
+theorem positionInCode_typescript_block_comment_rlo :
+    let input : Array Nat := #[0x2F, 0x2A, 0x202E, 0x2A, 0x2F]
+    positionInCode .typescript input 2 = false := by native_decide
+
+/-- TypeScript block comments are NOT nestable.  An inner `/*`
+    inside an existing block comment does NOT change region
+    state — the comment closes at the first `*/`.  Pinning this
+    distinguishes TypeScript from Rust, where nested block
+    comments DO require depth tracking. -/
+theorem tokenize_typescript_block_comments_not_nested :
+    tokenize .typescript
+        #[0x2F, 0x2A, 0x2F, 0x2A, 0x2A, 0x2F, 0x41] =
+      #[{ kind := .blockComment, startPos := 0, endPos := 6 },
+        { kind := .code, startPos := 6, endPos := 7 }] := by
   native_decide
 
 end Unicode.Security.Display.SourceCodeTokenize
