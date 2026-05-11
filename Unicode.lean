@@ -227,3 +227,4 @@ import Unicode.Conformance.Security.StreamSafeViolationTest
 import Unicode.Conformance.Security.LocaleCaseInversionTest
 import Unicode.Conformance.Security.CaseExpansionMismatchTest
 import Unicode.Conformance.Security.WidthClassConfusionTest
+import Unicode.Conformance.Security.NfcIdempotenceWitnessTest
