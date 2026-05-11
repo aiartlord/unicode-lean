@@ -118,9 +118,10 @@ theorem detect_fi_ligature_drift :
   native_decide
 
 /-- Decomposed Hangul jamos #[0x1112, 0x1161, 0x11AB] — each jamo
-    is Restricted (input not admissible), NFKC composes to U+D55C
-    (admissible Hangul syllable).  This is the canonical case
-    that X1 misses by construction. -/
+    has identity NFKD and `Identifier_Status = Restricted` (so
+    X1's per-cp scan reports no shift), but NFKC composes the
+    sequence to U+D55C 한 (Allowed), flipping the whole-string
+    admissibility verdict. -/
 theorem detect_jamo_sequence_drift :
     (detect #[0x1112, 0x1161, 0x11AB]).classify.tag =
       some "AdmissibilityFormDrift" := by

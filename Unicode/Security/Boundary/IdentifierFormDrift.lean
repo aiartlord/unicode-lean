@@ -27,15 +27,12 @@
     * U+FB01 'ﬁ' ligature             Restricted → Allowed (f)
     * U+2163 Roman Numeral IV         Restricted → Allowed (I)
 
-  Pure Hangul also fires X1.  Precomposed Hangul syllables
-  (e.g. U+D55C 한) are Allowed but their NFKD-head jamos (e.g.
-  U+1112 HANGUL CHOSEONG HIEUH) are Restricted in UTS #39
-  IdentifierStatus.txt.  This is a genuine finding for Korean
-  identifier handling: a pre-normalisation check against the
-  decomposed form rejects, while a post-normalisation check
-  against the composed form accepts.  The remediation is to
-  NFC-normalise before validating, which the X1 verdict
-  documents at every site that consumes Korean text.
+  Note on Hangul: precomposed syllables (e.g. U+D55C 한) are
+  Allowed under UTS #39 IdentifierStatus.txt while their
+  NFKD-head jamos (e.g. U+1112 HANGUL CHOSEONG HIEUH) are
+  Restricted.  Pure Korean text therefore fires X1.  Callers
+  intending to accept Korean identifiers should apply NFC
+  before evaluating admissibility.
 
   Distinct from Layer 2 family detectors (I1 HomoglyphConfusable,
   I2 MixedScriptAdmissibility, I3/I4 emoji-side identity

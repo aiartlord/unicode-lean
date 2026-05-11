@@ -23,9 +23,9 @@ open Unicode.Security.Boundary.AdmissibilityFormDrift
       Greek αβγ, x0, leading-digit "012" (both sides false —
       form-stable), Cyrillic привет.
     * AdmissibilityFormDrift (6): ﬁ ligature, Math Italic admin,
-      Fullwidth Ａ, decomposed jamos for 한 (the canonical
-      X1/X4 complementarity case), decomposed jamos for 한국,
-      Roman numeral Ⅳ. -/
+      Fullwidth Ａ, decomposed jamos for 한 (passes X1, fires X4
+      because the whole-string verdict flips under NFKC
+      composition), decomposed jamos for 한국, Roman numeral Ⅳ. -/
 def rawFixture : String :=
   include_str "../../Ucd/Security/AdmissibilityFormDriftTest.txt"
 

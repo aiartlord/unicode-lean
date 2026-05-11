@@ -18,11 +18,8 @@
 
   Distinct from I1 alone (which catches the confusable cp but
   misses the visual reorder) and D3 alone (which catches the
-  bidi but misses the script confusion).  X3 is the
-  simultaneity verdict — the right output for source-code
-  commits, IDN labels, package metadata, filename fields, and
-  any other domain where both visual review and string
-  comparison gate access.
+  bidi but misses the script confusion).  X3 reports the
+  simultaneous occurrence.
 
   Note on the confusables table: confusables.txt v16 maps
   U+006D 'm' to the sequence U+0072 U+006E ('rn').  Plain
