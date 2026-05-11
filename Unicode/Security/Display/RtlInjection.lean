@@ -14,11 +14,11 @@
   pop in source-code context.
 
   v1 scope: the input is treated as a declared-LTR string.  Pure
-  Hebrew / Arabic / Persian text would naturally trip strong-RTL
-  detection in this mode, which is the right behavior in an
-  LTR-declared form field but the wrong behavior for a Hebrew-
-  language UI string — callers must distinguish those contexts
-  themselves.
+  Hebrew / Arabic / Persian text fires strong-RTL detection in
+  this mode.  Callers handling Hebrew / Arabic / Persian UI
+  strings must declare the field as RTL and dispatch to a
+  separate detector; this module does not auto-detect declared
+  direction from the input.
 
   Sub-threats (priority order):
 

@@ -21,8 +21,8 @@
   Distinct from D4 `FullwidthVariance`, which fires on F-class
   codepoints for *renderer-cohort* divergence reasons (Chrome
   vs. Safari rendering of fullwidth glyphs).  F5 is the
-  NFKC-fold-driven verdict.  The two detectors can both fire on
-  the same input — that is the layered model.
+  NFKC-fold-driven verdict.  The two detectors can fire on the
+  same input independently.
 
   Detection is per-input-position and uses NFKD because every
   compatibility decomposition path goes through it; we compare
