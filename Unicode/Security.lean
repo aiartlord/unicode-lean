@@ -24,3 +24,6 @@ import Unicode.Security.Covert.TagBlockPayload
 import Unicode.Security.Covert.BidiControlBalance
 import Unicode.Security.Covert.ZeroWidthPayload
 import Unicode.Security.Covert.SurrogateReassembly
+
+-- Layer 2 — Identity Spoofing
+import Unicode.Security.Identity.HomoglyphConfusable
