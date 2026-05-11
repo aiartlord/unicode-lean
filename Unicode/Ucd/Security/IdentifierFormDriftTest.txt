@@ -1,0 +1,102 @@
+# IdentifierFormDriftTest.txt
+# UCD version: 16.0.0
+# Security-spec version: 0.1.0
+# Family: X1 — Cross-Layer Identifier × Form Drift (UTS #39 + UAX #15)
+# License: Apache-2.0
+#
+# Threat model: an attacker submits an input containing a
+# codepoint whose UTS #39 Identifier_Status differs from the
+# Identifier_Status of its NFKD-head.  Validators that run
+# `isAllowedIdentifier` before normalisation reach a different
+# verdict from peers that normalise first — the canonical
+# two-stage bypass for usernames, package names, IDN labels,
+# and DNS labels.
+#
+# Detection (single sub-threat in v1, direction-agnostic):
+#   IdentifierStatusShift (basePos, cp) — first input position
+#     whose `isAllowedStatus` differs from the NFKD-head's
+#     `isAllowedStatus`.
+#
+# Distinct from neighbouring detectors:
+#   I1 HomoglyphConfusable     — single-form skeleton matching
+#   I2 MixedScriptAdmissibility — single-form script set
+#   F5 WidthClassConfusion     — EAW class change under NFKD
+#   F6 NfcIdempotenceWitness    — any NFC/NFKC change
+# X1 fires on the *identifier-verdict transition* itself, which
+# the single-form Identity detectors miss by construction and
+# which the Form detectors don't translate into an identity
+# claim.
+#
+# Format:
+#   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
+#
+# Classifications produced by the X1 detector:
+#   Clear (= identifier status is form-stable)
+#   Hazard:IdentifierStatusShift
+
+# @section Clear
+# @level basic
+
+# ASCII Hello — every cp Allowed with identity NFKD.
+0048 0065 006C 006C 006F; Clear; ; # Hello
+
+# Plain ASCII admin — the canonical credential.
+0061 0064 006D 0069 006E; Clear; ; # admin
+
+# Plain Han 中文 — both cps Allowed, identity NFKD.
+4E2D 6587; Clear; ; # 中文
+
+# Greek lowercase αβγ — all Allowed, identity NFKD.
+03B1 03B2 03B3; Clear; ; # αβγ
+
+# Note: precomposed Hangul syllables (e.g. U+D55C 한) are
+# Allowed but their NFKD-head jamos (e.g. U+1112) are Restricted
+# in UTS #39, so pure Hangul fires X1.  This is a real
+# cross-layer finding — Korean text genuinely drifts under
+# pre- vs. post-normalisation identity checks — and is covered
+# in the IdentifierStatusShift section below.
+
+# Cyrillic привет — every cp Allowed.
+041F 0440 0438 0432 0435 0442; Clear; ; # привет (Russian)
+
+# @section IdentifierStatusShift
+# @level basic
+
+# Mathematical Italic Small A (U+1D44E) — Restricted (math
+# alphanumeric block).  NFKD-head = U+0061 'a' (Allowed).  The
+# canonical X1 attack: bypass an `isAllowedIdentifier` check by
+# routing through a normalising stage.
+1D44E; Hazard:IdentifierStatusShift; 0; # 𝑎 (math italic a)
+
+# Mathematical Italic "admin" — five-cp math identifier whose
+# NFKD folds to "admin".  Shift fires at position 0.
+1D44E 1D451 1D45A 1D456 1D45B; Hazard:IdentifierStatusShift; 0; # 𝑎𝑑𝑚𝑖𝑛
+
+# Fullwidth Ａ (U+FF21) — Restricted compatibility form, NFKD-head
+# U+0041 'A' Allowed.  Same threat shape as the Math Italic case
+# but via the F-class fold.
+FF21; Hazard:IdentifierStatusShift; 0; # Ａ
+
+# Circled A (U+24B6) — Restricted (Default_Ignorable / enclosed
+# alphanumeric).  NFKD-head U+0041 Allowed.
+24B6; Hazard:IdentifierStatusShift; 0; # Ⓐ
+
+# ﬁ ligature (U+FB01) — Restricted compatibility form, NFKD-head
+# U+0066 'f' Allowed.  EAW=N so F5 misses this; F6 catches the
+# form change but not the identity claim shift; X1 is the
+# identity-side detector for this codepoint class.
+FB01; Hazard:IdentifierStatusShift; 0; # ﬁ
+
+# Roman numeral Ⅳ (U+2163) — Restricted, NFKD-head U+0049 'I'
+# Allowed.  Letter-like-symbols-as-identifier attack.
+2163; Hazard:IdentifierStatusShift; 0; # Ⅳ
+
+# ASCII prefix + math italic letter at position 3 — shift at
+# position 3, not 0.
+0061 0062 0063 1D44E; Hazard:IdentifierStatusShift; 3; # abc𝑎
+
+# Precomposed Korean syllable 한 (U+D55C, Allowed) whose NFKD-head
+# is U+1112 HANGUL CHOSEONG HIEUH (Restricted in UTS #39
+# IdentifierStatus.txt).  Pure Korean text fires X1 at position 0.
+# Remediation: NFKC-normalise (or NFC-normalise) before validating.
+D55C; Hazard:IdentifierStatusShift; 0; # 한 (precomposed → jamo Restricted)
