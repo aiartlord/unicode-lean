@@ -17,3 +17,6 @@
 import Unicode.Security.Calculus
 import Unicode.Security.Verdict
 import Unicode.Security.Fixture
+
+-- Layer 1 — Covert Channels
+import Unicode.Security.Covert.VariationSelectorPayload

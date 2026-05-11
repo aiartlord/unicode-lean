@@ -148,6 +148,12 @@ import Unicode.Idna.Process
 -- DerivedJoiningType table — Joining_Type lookup for CONTEXTJ rules
 import Unicode.Generated.DerivedJoiningType
 
+-- UCD 16.0.0 StandardizedVariants.txt — 1,306 sanctioned variation
+-- sequences (math, Mongolian, Egyptian, CJK Compat, etc.). Used by
+-- the C2 covert-channel detector to bipartition VS occurrences into
+-- registered vs. suspicious.
+import Unicode.Generated.StandardizedVariants
+
 -- UCA 16.0.0 DUCET — parsed table of collation elements
 import Unicode.Generated.Allkeys
 
