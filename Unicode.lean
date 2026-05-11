@@ -200,6 +200,11 @@ import Unicode.Generated.PropList
 import Unicode.Generated.ScriptExtensions
 import Unicode.Generated.Scripts
 
+-- BIP-39 wordlists (ten languages × 2,048 words each), pinned by
+-- SHA-256 in `Unicode/Ucd/BIP39/SHA256SUMS`.  Pre-staged for the
+-- deferred Layer-6 K1 mnemonic-canonical-form family.
+import Unicode.Generated.BIP39
+
 -- Security Conformance Layer — adversarial-threat-model verdicts
 -- sitting below the UAX/UTS algorithm-correctness proof base above.
 -- 23 detector families across five layers (Covert / Identity /
