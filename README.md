@@ -29,6 +29,7 @@ project-local `axiom`, zero runtime escape.
 | UTF-16 / UTF-32 codecs | UAX #44 §3 | `Codec.{Utf16,Utf32}.decodeOne{BE,LE}_encodeOne{BE,LE}` — closed-form per-codepoint roundtrip with surrogate-pair handling |
 | BOM detection | UAX #41 | `Codec.Bom.detect` — UTF-8 / UTF-16 BE+LE / UTF-32 BE+LE precedence |
 | Noncharacters | UAX #44 §5.6 | `Codec.Noncharacters.{count_noncharacters,all_are_noncharacters,all_are_valid_codepoints}` — exactly the 66 designated noncharacters, all in the valid scalar range |
+| Security Conformance Layer | UTS #39 + UAX #9 + UAX #15 (composed) | `Conformance.Security.<Family>Test.all_rows_pass` — every hand-curated fixture row's verdict closes for each of the 23 detector families |
 
 ## Workflow
 
@@ -68,6 +69,10 @@ unicode-lean/
 │   ├── Normalization/           # 29 files — NFC/NFKC/NFD/NFKD + soundness kernel
 │   ├── Precis/                  # 8 files — RFC 8264 / 8265
 │   ├── Refined.lean
+│   ├── Security/                # Security Conformance Layer — 23 detector
+│   │                            #   families across Covert / Identity / Display /
+│   │                            #   Form / Boundary; per-family fixtures under
+│   │                            #   Ucd/Security/ with their own SHA256SUMS
 │   ├── Segmentation/            # UAX #14 line breaks, UAX #29 grapheme/word/sentence
 │   ├── Uca/                     # UTS #10 collation — Lookup + SortKey
 │   └── Ucd/                     # UCD 17.0.0 + UCA 16.0.0 source data + SHA256SUMS
@@ -100,7 +105,65 @@ unicode-lean/
 The four source-level guards (`check-sorry.sh`, `check-no-axiom.sh`,
 `check-orphan-files.sh`, `check-ucd-hashes.sh`) live under `scripts/`
 and run on every push and pull request via the `ci / hardening`
-workflow.
+workflow.  Two additional guards specific to the Security
+Conformance Layer (`check-security-coverage.sh`,
+`check-security-hashes.sh`) verify that every detector module has a
+paired fixture-driven harness and that every fixture matches its
+SHA-256 pin.  `security-perf-report.sh` produces the per-family
+build-time wall clock.
+
+## Security Conformance Layer
+
+The `Unicode.Security.*` tree sits below the UAX / UTS conformance
+proof base.  Where the existing `Unicode.Conformance.*` modules pin
+*algorithm correctness* against published Unicode test fixtures, the
+Security layer pins *security verdicts* against an adversarial threat
+model that the Unicode Consortium has declined to extend its scope to
+cover (UTS #39 §5.4, §6).
+
+Every family ships three artefacts:
+
+1. A detector module under `Unicode/Security/<Layer>/<Family>.lean`
+   that exports `detect : Array Nat → <Family>Verdict`.  The verdict
+   carries the input, a `<Family>Classification` (a sum of `clear`
+   and one or more `hazard` sub-threats), and optional per-family
+   metadata.
+2. A hand-curated fixture under `Unicode/Ucd/Security/<Family>Test.txt`
+   in the universal five-column format documented in
+   `Unicode/Security/Fixture.lean`.
+3. A conformance harness under
+   `Unicode/Conformance/Security/<Family>Test.lean` that folds the
+   universal fixture parser and closes
+   `theorem all_rows_pass : rows.all verifyRow = true` via
+   `native_decide`, plus row-count and per-section coverage gates.
+
+The 23 families ship across five layers:
+
+| Layer | Families |
+|---|---|
+| 1 — Covert Channels | C1 TagBlockPayload · C2 VariationSelectorPayload · C3 ZeroWidthPayload · C4 SurrogateReassembly · C5 BidiControlBalance |
+| 2 — Identity Spoofing | I1 HomoglyphConfusable · I2 MixedScriptAdmissibility · I3 EmojiZwjIntegrity · I4 SkinToneVariationForgery |
+| 3 — Display Integrity | D1 SourceDisplayDivergence · D2 FilenameDisguise · D3 RtlInjection · D4 RendererDivergence |
+| 4 — Form Stability | F1 NormalizationBomb · F2 StreamSafeViolation · F3 LocaleCaseInversion · F4 CaseExpansionMismatch · F5 WidthClassConfusion · F6 NfcIdempotenceWitness |
+| 5 — Cross-Layer Boundaries | X1 IdentifierFormDrift · X2 CovertDisplayCompound · X3 ConfusableBidiCompound · X4 AdmissibilityFormDrift |
+
+Layer 6 (Cryptographic Stability — K1..K3) is reserved.  The
+opaque-axiomatized hash foundation it would build on lives upstream
+in the `Continuity.Crypto` vocabulary; integrating it cross-repo is
+deferred.
+
+The shared vocabulary lives in `Unicode/Security/Calculus.lean`:
+
+* `ClassificationKind` — `clear` · `hazard` · `compound` · `informational`.
+* `ConformanceLevel`   — `basic` · `strict` · `full`.
+* `KeyValueAttribution` — the per-row attribution dictionary parsed
+  from column 4 of the fixture format.
+
+A downstream consumer that wants every detector's verdict on a
+single input imports `Unicode.Security` and folds over the families
+it cares about; the per-family modules are exposed under stable
+namespaces so individual detectors can be wired into custom
+pipelines.
 
 ## Generated tables — provenance
 

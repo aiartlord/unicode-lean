@@ -11,16 +11,29 @@ The artifacts that downstream consumers rely on are:
   SHA-256 in `Unicode/Ucd/SHA256SUMS` and verified in CI.
 - The Generated tables under `Unicode/Generated/`, which are derived
   deterministically from the UCD source files at build time.
+- The Security Conformance Layer fixtures under
+  `Unicode/Ucd/Security/`, which are pinned by SHA-256 in
+  `Unicode/Ucd/Security/SHA256SUMS` and verified in CI.  Each fixture
+  drives a `native_decide`-closed `all_rows_pass` theorem in
+  `Unicode/Conformance/Security/`, so a byte change to a fixture
+  changes the verdict the conformance harness commits to.
 
 A security-relevant defect is anything that allows the headline
 theorems (NFC quick-check soundness, PRECIS preparation idempotence,
 Bidirectional Algorithm pipeline shape, confusable-skeleton
-equivalence) to be subverted without the build failing. Examples:
+equivalence) or the Security Conformance Layer verdicts to be
+subverted without the build failing. Examples:
 
 - A proof gap in a load-bearing module not caught by the `sorry` /
   `admit` guards.
 - A drift between a UCD `.txt` file and its pinned SHA-256 not
   caught by `scripts/check-ucd-hashes.sh`.
+- A drift between a Security fixture under `Unicode/Ucd/Security/`
+  and its pinned SHA-256 not caught by
+  `scripts/check-security-hashes.sh`.
+- A detector module under `Unicode/Security/` with no matching
+  `*Test.lean` harness, slipping past
+  `scripts/check-security-coverage.sh`.
 - A project-local `axiom` introduced under a name not recognised
   by `scripts/check-no-axiom.sh`.
 - An orphan `.lean` file present on disk but not transitively
@@ -32,6 +45,37 @@ equivalence) to be subverted without the build failing. Examples:
 Build reproducibility — two consecutive `lake build` runs producing
 byte-identical `.olean` artifacts — is verified by the nightly
 reproducibility workflow.
+
+## Security Conformance Layer
+
+The 23 detector families under `Unicode/Security/` extend the
+machine-checked surface to threats that the Unicode Consortium has
+declined to bring inside the scope of UAX / UTS conformance
+(UTS #39 §5.4, §6).  Each family is a Tier-A₁..A₃ adversary
+verdict — local injector, pipeline injector, or supply-chain
+compromise — over an input codepoint sequence.
+
+The families ship across five layers:
+
+| Layer | Concern | Families |
+|---|---|---|
+| 1 — Covert Channels | bytes hidden in plain sight (variation selectors, tag block, zero-width, surrogates, bidi balance) | C1..C5 |
+| 2 — Identity Spoofing | identifier confusables and emoji-sequence forgery | I1..I4 |
+| 3 — Display Integrity | source vs execute divergence, filename disguise, RTL injection, renderer-cohort variance | D1..D4 |
+| 4 — Form Stability | normalization bombs, locale-sensitive case folds, NFC / NFKC idempotence | F1..F6 |
+| 5 — Cross-Layer Boundaries | per-cp identifier × form, covert × display, identity × display, string-level admissibility × form | X1..X4 |
+
+Layer 6 (Cryptographic Stability — K1..K3) is reserved.  The
+opaque-axiomatized hash foundation it would build on lives upstream
+in the `Continuity.Crypto` vocabulary; integrating cross-repo is
+deferred.
+
+The shared verdict vocabulary lives in
+`Unicode/Security/Calculus.lean` (`ClassificationKind` ∈ {`clear`,
+`hazard`, `compound`, `informational`}; `ConformanceLevel` ∈
+{`basic`, `strict`, `full`}).  Each family refines the calculus
+into its own `<F>SubThreat`, `<F>Classification`, and `<F>Verdict`
+types and emits a `detect : Array Nat → <F>Verdict` function.
 
 ## Reporting a Vulnerability
 
