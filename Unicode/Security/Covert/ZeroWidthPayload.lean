@@ -47,6 +47,7 @@
 
 import Unicode.Security.Calculus
 import Unicode.Emoji
+import Unicode.Generated.EmojiSequences
 
 namespace Unicode.Security.Covert.ZeroWidthPayload
 
@@ -123,15 +124,20 @@ def isZeroWidthChar (cp : Nat) : Bool :=
   0xFFF9 ≤ cp ∧ cp ≤ 0xFFFB
 
 /-- True iff a ZWJ at position `p` in `input` is flanked by two
-    emoji codepoints — a sanctioned RGI-emoji-ZWJ-sequence
-    context.  Coarse but conservative: we treat any "emoji on
-    both sides of a ZWJ" as a legitimate use even if the exact
-    sequence is not in `emoji-zwj-sequences.txt`.  A
-    sequence-level RGI check is a v2 refinement. -/
+    codepoints that *actually* participate in some registered RGI
+    ZWJ sequence — `Unicode.Generated.EmojiSequences.isInZwjAlphabet`
+    is the membership predicate derived from
+    `emoji-zwj-sequences.txt` itself.
+
+    Tighter than the earlier `isEmoji`-based check, which counted
+    keycap-eligible ASCII digits and other Emoji-property
+    codepoints that never appear in any registered ZWJ sequence
+    as "legitimate" ZWJ neighbors.  The structural predicate
+    closes that gap by construction. -/
 def isLegitimateZwjContext (input : Array Nat) (p : Nat) : Bool :=
   if p > 0 ∧ p + 1 < input.size then
-    Unicode.Emoji.isEmoji input[p - 1]! ∧
-    Unicode.Emoji.isEmoji input[p + 1]!
+    Unicode.Generated.EmojiSequences.isInZwjAlphabet input[p - 1]! ∧
+    Unicode.Generated.EmojiSequences.isInZwjAlphabet input[p + 1]!
   else
     false
 
