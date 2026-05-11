@@ -35,6 +35,15 @@
 # Plain ASCII URL.
 0068 0074 0074 0070 003A 002F 002F 0061 002E 0063 006F 006D; Clear; ; strong_rtl=0; strong_ltr=8; bidi_count=0; longest_run=0; # http://a.com
 
+# HTTPS URL prefix.
+0068 0074 0074 0070 0073 003A 002F 002F 0065 0078; Clear; ; strong_rtl=0; strong_ltr=7; bidi_count=0; longest_run=0; # https://ex
+
+# Greek text — strong-LTR script.
+03B1 03B2 03B3; Clear; ; strong_rtl=0; strong_ltr=3; bidi_count=0; longest_run=0; # αβγ Greek
+
+# Mixed letters + digits — both LTR.
+0068 0065 006C 006C 006F 0031 0032 0033; Clear; ; strong_rtl=0; strong_ltr=5; bidi_count=0; longest_run=0; # hello123
+
 # @section RloInLTRField
 # @level basic
 
@@ -46,6 +55,12 @@
 
 # RLE injection.
 0041 202B 0042 0043 202C; Hazard:RloInLTRField; 1; strong_rtl=0; strong_ltr=3; bidi_count=2; longest_run=0; # A<RLE>BC<PDF>
+
+# LRO override in LTR field — flip mechanic still trips the detector.
+0041 202D 0042; Hazard:RloInLTRField; 1; strong_rtl=0; strong_ltr=2; bidi_count=1; longest_run=0; # A<LRO>B
+
+# Two RLO injections — A<RLO>B<RLO>C.
+0041 202E 0042 202E 0043; Hazard:RloInLTRField; 1; strong_rtl=0; strong_ltr=3; bidi_count=2; longest_run=0; # A<RLO>B<RLO>C
 
 # @section FieldTakeover
 # @level basic
@@ -59,6 +74,12 @@
 # Leading Hebrew word.
 05D0 05D1 05D2 0020 0041 0042; Hazard:FieldTakeover; 0; strong_rtl=3; strong_ltr=2; bidi_count=0; longest_run=3; # אבג AB
 
+# Long Hebrew prefix.
+05D0 05D1 05D2 05D3 05D4 0020 0041; Hazard:FieldTakeover; 0; strong_rtl=5; strong_ltr=1; bidi_count=0; longest_run=5; # אבגדה A
+
+# Long Arabic prefix.
+0627 0628 0629 062A 062B 0020 0041; Hazard:FieldTakeover; 0; strong_rtl=5; strong_ltr=1; bidi_count=0; longest_run=5; # ابتثج A
+
 # @section StrongRTLInLTR
 # @level basic
 
@@ -71,6 +92,12 @@
 # Two Hebrew letters consecutively (run = 2, still < 4).
 0041 0042 05D0 05D1 0043; Hazard:StrongRTLInLTR; 2; strong_rtl=2; strong_ltr=3; bidi_count=0; longest_run=2; # AB<alef><bet>C
 
+# Three Hebrew letters in a row (run = 3, still < 4).
+0041 0042 05D0 05D1 05D2 0043; Hazard:StrongRTLInLTR; 2; strong_rtl=3; strong_ltr=3; bidi_count=0; longest_run=3; # AB+3 Hebrew+C
+
+# Arabic letter then Hebrew letter (mixed RTL scripts, run = 2).
+0041 0042 0627 05D0 0043; Hazard:StrongRTLInLTR; 2; strong_rtl=2; strong_ltr=3; bidi_count=0; longest_run=2; # AB<arabic-alef><hebrew-alef>C
+
 # @section MixedOverflow
 # @level strict
 
@@ -79,3 +106,9 @@
 
 # Five-char Arabic run.
 0066 006F 0627 0628 062A 062B 062C 0065; Hazard:MixedOverflow; 2; strong_rtl=5; strong_ltr=3; bidi_count=0; longest_run=5; # fo+5 Arabic+e
+
+# Six-char Hebrew run.
+0041 05D0 05D1 05D2 05D3 05D4 05D5 0042; Hazard:MixedOverflow; 1; strong_rtl=6; strong_ltr=2; bidi_count=0; longest_run=6; # A+6 Hebrew+B
+
+# Eight-char Arabic run — substantial RTL takeover mid-string.
+0041 0627 0628 0629 062A 062B 062C 062D 062E 0042; Hazard:MixedOverflow; 1; strong_rtl=8; strong_ltr=2; bidi_count=0; longest_run=8; # A+8 Arabic+B
