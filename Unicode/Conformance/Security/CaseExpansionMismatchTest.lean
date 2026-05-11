@@ -1,0 +1,70 @@
+/-
+  Unicode.Conformance.Security.CaseExpansionMismatchTest
+
+  Conformance proof for the F4 family.  Folds the universal
+  `Unicode.Security.Fixture` parser over the hand-curated
+  `CaseExpansionMismatchTest.txt` fixture and `native_decide`-closes
+  the predicate that every row's expected verdict matches what
+  `Unicode.Security.Form.CaseExpansionMismatch.detect` produces.
+-/
+
+import Unicode.Security.Fixture
+import Unicode.Security.Form.CaseExpansionMismatch
+
+namespace Unicode.Conformance.Security.CaseExpansionMismatchTest
+
+open Unicode.Security.Calculus
+open Unicode.Security.Fixture
+open Unicode.Security.Form.CaseExpansionMismatch
+
+/-- Hand-curated v1 fixture for F4 — 12 rows across 3 sections.
+
+    * Clear (6): ASCII Hello, capital ABC, Han 中文, Greek αβγ,
+      Cyrillic привет, Korean 한.
+    * UpperExpansion (4): bare ß, bare ﬁ ligature, bare ﬃ ligature
+      (1 → 3), "Straße" (expansion at position 4).
+    * LowerExpansion (2): bare İ (no upper expansion, falls
+      through), aİa (expansion at position 1). -/
+def rawFixture : String :=
+  include_str "../../Ucd/Security/CaseExpansionMismatchTest.txt"
+
+def rows : Array Row := parseFixture rawFixture
+
+/-- Project an `F4Classification` to `(ClassificationKind, sub-threat-tag)`. -/
+def projectClassify
+    (c : F4Classification) : ClassificationKind × Option String :=
+  if c.isClear then (.clear, none) else (.hazard, c.tag)
+
+/-- Project an `F4Classification` to the positions array. -/
+def projectPositions (c : F4Classification) : Array Nat :=
+  c.positions
+
+/-- Run `detect` on the row's input and check the verdict against
+    the fixture's expected classification, sub-threat name, and
+    hazard positions. -/
+def verifyRow (r : Row) : Bool :=
+  let v := detect r.input
+  let (kind, subTag) := projectClassify v.classify
+  let pos := projectPositions v.classify
+  decide (kind = r.expectedKind) &&
+  decide (subTag = r.expectedSubThreat) &&
+  decide (pos = r.expectedPositions)
+
+/-- Every fixture row's detector verdict matches its expected verdict. -/
+theorem all_rows_pass : rows.all verifyRow = true := by native_decide
+
+/-- Row-count gate. -/
+theorem row_count : rows.size = 12 := by native_decide
+
+theorem covers_clear :
+    (rows.filter (·.sectionName = "Clear")).size ≥ 5 := by native_decide
+
+theorem covers_upper :
+    (rows.filter (·.sectionName = "UpperExpansion")).size ≥ 3 := by
+  native_decide
+
+theorem covers_lower :
+    (rows.filter (·.sectionName = "LowerExpansion")).size ≥ 2 := by
+  native_decide
+
+end Unicode.Conformance.Security.CaseExpansionMismatchTest

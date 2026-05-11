@@ -1,0 +1,78 @@
+# CaseExpansionMismatchTest.txt
+# UCD version: 16.0.0
+# Security-spec version: 0.1.0
+# Family: F4 — Case-mapping Expansion Mismatch (UAX #21)
+# License: Apache-2.0
+#
+# Threat model: an attacker submits text whose case mapping
+# under the default locale changes the codepoint count, breaking
+# fixed-width buffers, length-based credential comparison, and
+# database column bounds.  Classical shapes: ß → "SS" upper,
+# ﬁ → "FI" upper, İ → "i + dot above" lower.
+#
+# Distinct from F3 `LocaleCaseInversion`, which fires on shapes
+# whose case mapping diverges across locales.  F4 fires on shapes
+# whose case mapping is locale-stable but length-changing under
+# the default locale.
+#
+# Detection (priority order):
+#   1. UpperExpansion (basePos, cp, expansionLen)
+#   2. LowerExpansion (basePos, cp, expansionLen)
+#
+# Format:
+#   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
+#
+# Classifications produced by the F4 detector:
+#   Clear (= every cp case-maps to a single cp)
+#   Hazard:UpperExpansion
+#   Hazard:LowerExpansion
+
+# @section Clear
+# @level basic
+
+# ASCII Hello — H → h and h → H, both 1-cp.  No expansion.
+0048 0065 006C 006C 006F; Clear; ; # Hello
+
+# All-caps ABC — A → a, etc.  No expansion.
+0041 0042 0043; Clear; ; # ABC
+
+# Han 中文 — no case mappings at all.
+4E2D 6587; Clear; ; # 中文
+
+# Greek lowercase αβγ — Α/Β/Γ all 1-cp upper.
+03B1 03B2 03B3; Clear; ; # αβγ
+
+# Cyrillic привет — 6 cps, all 1-cp upper.
+041F 0440 0438 0432 0435 0442; Clear; ; # привет
+
+# Korean Hangul 한 — caseless.
+D55C; Clear; ; # 한
+
+# @section UpperExpansion
+# @level basic
+
+# ß alone — toUpper → "SS" (1 → 2).  The canonical sharp-s
+# expansion attack.
+00DF; Hazard:UpperExpansion; 0; # ß → SS
+
+# Latin small ligature fi (U+FB01) — toUpper → "FI" (1 → 2).
+FB01; Hazard:UpperExpansion; 0; # ﬁ → FI
+
+# Latin small ligature ffi (U+FB03) — toUpper → "FFI" (1 → 3).
+FB03; Hazard:UpperExpansion; 0; # ﬃ → FFI
+
+# "Straße" — six-cp German word with ß at position 4.  toUpper
+# expansion fires at position 4.
+0053 0074 0072 0061 00DF 0065; Hazard:UpperExpansion; 4; # Straße
+
+# @section LowerExpansion
+# @level basic
+
+# İ alone — toLower under default → "i + 0307" (1 → 2).  No
+# upper expansion (İ stays İ), so the detector falls through
+# to the lower scan.
+0130; Hazard:LowerExpansion; 0; # İ → i+0307
+
+# aİa — İ at position 1.  Surrounding 'a' has no expansion in
+# either direction, so the detector fires at position 1.
+0061 0130 0061; Hazard:LowerExpansion; 1; # aİa
