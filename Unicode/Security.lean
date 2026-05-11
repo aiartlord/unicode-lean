@@ -42,3 +42,4 @@ import Unicode.Security.Form.NormalizationBomb
 import Unicode.Security.Form.StreamSafeViolation
 import Unicode.Security.Form.LocaleCaseInversion
 import Unicode.Security.Form.CaseExpansionMismatch
+import Unicode.Security.Form.WidthClassConfusion
