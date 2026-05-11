@@ -1,0 +1,92 @@
+# BidiControlBalanceTest.txt
+# UCD version: 16.0.0
+# Security-spec version: 0.1.0
+# Family: C5 — Bidi Control Balance + Trojan Source defense
+# License: Apache-2.0
+#
+# Threat model: Boucher-Anderson Trojan Source (CVE-2021-42574
+# embedding controls + CVE-2021-42694 isolate controls) and the
+# UAX #9 §3.3.2 deep-nesting attack class.  Detects bidi-control
+# imbalance, orphan pops, and depth-cap exceedance.
+#
+# Format:
+#   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
+#
+# Classifications produced by the C5 detector:
+#   Clear
+#   Hazard:UnbalancedEmbedding    Hazard:UnbalancedIsolate
+#   Hazard:OrphanPop              Hazard:DepthExceeded
+#
+# Attribution conventions (key="value" pairs joined with ";"):
+#   emb_open=N            count of LRE/RLE/LRO/RLO encountered
+#   emb_pop=N             count of PDF encountered
+#   iso_open=N            count of LRI/RLI/FSI encountered
+#   iso_pop=N             count of PDI encountered
+#   max_depth=N           peak nesting depth observed
+#   orphans=N             count of unmatched pop positions
+
+# @section Clear
+# @level basic
+
+# Pure ASCII — no bidi.
+0048 0065 006C 006C 006F; Clear; ; emb_open=0; emb_pop=0; iso_open=0; iso_pop=0; max_depth=0; # ASCII "Hello"
+
+# Han text — no bidi controls.
+4E2D 6587; Clear; ; emb_open=0; emb_pop=0; iso_open=0; iso_pop=0; max_depth=0; # Han "中文"
+
+# Balanced LRE + PDF — legitimate inline embedding.
+202A 0041 202C; Clear; ; emb_open=1; emb_pop=1; iso_open=0; iso_pop=0; max_depth=1; # LRE … PDF
+
+# Balanced LRI + PDI — legitimate inline isolate.
+2066 0041 2069; Clear; ; emb_open=0; emb_pop=0; iso_open=1; iso_pop=1; max_depth=1; # LRI … PDI
+
+# Balanced FSI + PDI — first-strong isolate.
+2068 0041 2069; Clear; ; emb_open=0; emb_pop=0; iso_open=1; iso_pop=1; max_depth=1; # FSI … PDI
+
+# Balanced RLO + PDF — legitimate (rare but allowed) override.
+202E 0041 202C; Clear; ; emb_open=1; emb_pop=1; iso_open=0; iso_pop=0; max_depth=1; # RLO … PDF balanced
+
+# Nested LRE > LRE > PDF > PDF — balanced 2-deep.
+202A 202A 0041 202C 202C; Clear; ; emb_open=2; emb_pop=2; iso_open=0; iso_pop=0; max_depth=2; # 2-deep balanced LRE nest
+
+# @section UnbalancedEmbedding
+# @level basic
+
+# Lone LRE — Trojan Source CVE-2021-42574 shape (missing PDF).
+202A 0041; Hazard:UnbalancedEmbedding; 0; emb_open=1; emb_pop=0; iso_open=0; iso_pop=0; max_depth=1; # Lone LRE
+
+# Lone RLO — the actual Trojan Source attack codepoint.
+202E 0041; Hazard:UnbalancedEmbedding; 0; emb_open=1; emb_pop=0; iso_open=0; iso_pop=0; max_depth=1; # Lone RLO
+
+# Lone LRO — left-to-right override without close.
+202D 0041; Hazard:UnbalancedEmbedding; 0; emb_open=1; emb_pop=0; iso_open=0; iso_pop=0; max_depth=1; # Lone LRO
+
+# "if RLO ) {" — minimal Boucher-Anderson commenting-out shape.
+0069 0066 0020 202E 0029 007B; Hazard:UnbalancedEmbedding; 3; emb_open=1; emb_pop=0; iso_open=0; iso_pop=0; max_depth=1; # if RLO ) { — minimal Trojan Source
+
+# @section UnbalancedIsolate
+# @level basic
+
+# Lone LRI — CVE-2021-42694 shape.
+2066 0041; Hazard:UnbalancedIsolate; 0; emb_open=0; emb_pop=0; iso_open=1; iso_pop=0; max_depth=1; # Lone LRI
+
+# Lone RLI — right-to-left isolate without close.
+2067 0041; Hazard:UnbalancedIsolate; 0; emb_open=0; emb_pop=0; iso_open=1; iso_pop=0; max_depth=1; # Lone RLI
+
+# Lone FSI — first-strong isolate without close.
+2068 0041; Hazard:UnbalancedIsolate; 0; emb_open=0; emb_pop=0; iso_open=1; iso_pop=0; max_depth=1; # Lone FSI
+
+# @section OrphanPop
+# @level basic
+
+# Lone PDF — pop without preceding open.
+202C; Hazard:OrphanPop; 0; emb_open=0; emb_pop=1; iso_open=0; iso_pop=0; max_depth=0; orphans=1; # Lone PDF
+
+# Lone PDI — pop isolate without preceding open.
+2069; Hazard:OrphanPop; 0; emb_open=0; emb_pop=0; iso_open=0; iso_pop=1; max_depth=0; orphans=1; # Lone PDI
+
+# Two PDFs in a row, no openers.
+202C 202C; Hazard:OrphanPop; 0,1; emb_open=0; emb_pop=2; iso_open=0; iso_pop=0; max_depth=0; orphans=2; # Double orphan PDF
+
+# Letter then PDF then letter — mid-stream orphan.
+0041 202C 0042; Hazard:OrphanPop; 1; emb_open=0; emb_pop=1; iso_open=0; iso_pop=0; max_depth=0; orphans=1; # Mid-stream orphan PDF
