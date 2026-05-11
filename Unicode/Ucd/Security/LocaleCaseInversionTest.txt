@@ -1,0 +1,84 @@
+# LocaleCaseInversionTest.txt
+# UCD version: 16.0.0
+# Security-spec version: 0.1.0
+# Family: F3 — Locale-sensitive Case-Fold Inversion (UAX #21)
+# License: Apache-2.0
+#
+# Threat model: an attacker submits text whose case-fold result
+# inverts across locales — the canonical homograph-via-locale
+# attack class (CVE-2007-6692, CVE-2021-30245).  A receiver folds
+# the input under one locale to compare against a stored
+# credential, while another stage folds the same input under a
+# different locale; the two folds diverge, and the attacker
+# controls which fold is used at each stage.
+#
+# Detection (priority order):
+#   1. TurkishCaseDivergence    — toLower under turkish differs
+#                                  from default at some position.
+#                                  Covers Azeri (identical rules).
+#   2. LithuanianCaseDivergence — toLower under lithuanian differs
+#                                  from default at some position.
+#
+# Reachability: every sub-threat has at least one row.
+#
+# Format:
+#   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
+#
+# Classifications produced by the F3 detector:
+#   Clear (= same case-fold under every supported locale)
+#   Hazard:TurkishCaseDivergence
+#   Hazard:LithuanianCaseDivergence
+
+# @section Clear
+# @level basic
+
+# ASCII Hello — H is the only cased letter, no I.
+0048 0065 006C 006C 006F; Clear; ; # Hello
+
+# Plain Han — no Latin script at all.
+4E2D 6587; Clear; ; # 中文
+
+# Cyrillic Hello — Cyrillic 'I' (U+0418) has no Turkish rule.
+041F 0440 0438 0432 0435 0442; Clear; ; # привет (Russian)
+
+# Greek lowercase alpha-beta-gamma — no locale rules.
+03B1 03B2 03B3; Clear; ; # αβγ
+
+# Plain ASCII digits.
+0030 0031 0032 0033; Clear; ; # 0123
+
+# Capital "ASCII" without I — Turkish doesn't touch A/B/C/D.
+0041 0042 0043 0044; Clear; ; # ABCD
+
+# @section TurkishCaseDivergence
+# @level basic
+
+# Capital I alone — the canonical Turkish-I attack.  toLower
+# default = 'i' (0x69), toLower turkish = 'ı' (0x131).  Divergence
+# at position 0.
+0049; Hazard:TurkishCaseDivergence; 0; # I
+
+# "ISTANBUL" — I appears at positions 0 and 5.  Detector reports
+# the first.
+0049 0053 0054 0041 004E 0042 0055 004C; Hazard:TurkishCaseDivergence; 0; # ISTANBUL
+
+# Dotted İ (U+0130) — toLower default = "i + dot above", toLower
+# turkish = "i".  Divergence at position 0.
+0130; Hazard:TurkishCaseDivergence; 0; # İ
+
+# Mixed dotted İ in the middle of a word — fires at position 1.
+0061 0130 0061; Hazard:TurkishCaseDivergence; 1; # aİa
+
+# @section LithuanianCaseDivergence
+# @level basic
+
+# J + combining grave (ccc = 230) — MoreAbove condition triggers
+# the Lithuanian "insert dot above before lowering" rule.  J has
+# no Turkish-conditional row, so this falls through past the
+# Turkish check and lands on Lithuanian.  Divergence at input
+# position 0 where the J lives.
+004A 0300; Hazard:LithuanianCaseDivergence; 0; # J + combining grave
+
+# J + combining acute — same Lithuanian path with a different
+# ccc = 230 mark.
+004A 0301; Hazard:LithuanianCaseDivergence; 0; # J + combining acute
