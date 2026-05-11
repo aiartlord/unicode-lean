@@ -24,12 +24,23 @@
 
   Sub-threats (priority order):
 
-    1. `singleCpBlowup`  — any single codepoint whose NFD form
-                          has size > `maxNfdPerCp` (4).
+    1. `singleCpBlowup`  — any single codepoint whose NFKD form
+                          has size > `maxNfkdPerCp` (8). Catches
+                          FDFA (18) and any future ligature whose
+                          compatibility decomposition exceeds 8 cps.
     2. `nfkdHighExpansion` — overall NFKD ratio > `nfkdRatioPct`
-                          (400 = 4×).
+                          (400 = 4×). Catches FDFB-class shapes
+                          (per-cp NFKD = 8, ratio 800%) that pass
+                          the per-cp scan but dominate the sequence.
     3. `nfdHighExpansion`  — overall NFD ratio > `nfdRatioPct`
-                          (300 = 3×).
+                          (300 = 3×). Catches sequences of Greek
+                          extended forms `U+1F82..1FA7` whose
+                          canonical decomposition is 4 codepoints
+                          each (ratio 400%). Pure Hangul stays clear
+                          at exactly 300% under strict `>`.
+
+  Threshold reachability is verified by the F1 fixture: each
+  sub-threat has at least one row that fires it.
 -/
 
 import Unicode.Security.Calculus
@@ -45,21 +56,28 @@ open Unicode.Security.Calculus
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Maximum allowed NFKD expansion per single codepoint.
-    Korean Hangul syllables decompose to ≤ 3 jamos under NFKD;
-    most other codepoints stay within 4.  Anything > 4 is
-    flagged.  NFKD is checked rather than NFD because Arabic
-    ligatures like U+FDFA carry a *compatibility* decomposition
-    (18 codepoints) — they do not decompose at all under pure
-    NFD, but their NFKD form is the canonical bomb shape. -/
-def maxNfkdPerCp : Nat := 4
+    Korean Hangul syllables decompose to ≤ 3 jamos; Greek
+    extended forms with smooth/rough + varia/oxia + ypogegrammeni
+    expand to 4; the largest non-FDFA Arabic ligature (FDFB)
+    expands to 8.  Anything > 8 is flagged.  NFKD is checked
+    rather than NFD because Arabic ligatures like U+FDFA carry a
+    *compatibility* decomposition (18 codepoints) — they do not
+    decompose at all under pure NFD, but their NFKD form is the
+    canonical bomb shape.  Chosen so FDFB (8 NFKD) passes the
+    per-cp gate and falls through to the NFKD ratio check. -/
+def maxNfkdPerCp : Nat := 8
 
 /-- Overall-sequence NFD expansion ratio threshold, expressed
     in hundredths.  `300` means the NFD form may be at most 3×
-    the input length before firing the hazard. -/
+    the input length before firing the hazard.  Pure Hangul has
+    NFD ratio = exactly 300 and stays clear under strict `>`. -/
 def nfdRatioPct : Nat := 300
 
 /-- Overall-sequence NFKD expansion ratio threshold, in
-    hundredths.  `400` = 4× input length. -/
+    hundredths.  `400` = 4× input length.  Greek-only sequences
+    of `1F82..1FA7` family (NFKD = 4) sit at exactly 400 and
+    stay clear under strict `>` — they are picked up instead by
+    `nfdHighExpansion`, since NFD = NFKD for these codepoints. -/
 def nfkdRatioPct : Nat := 400
 
 -- ═══════════════════════════════════════════════════════════════════════════════

@@ -8,17 +8,20 @@
 # in size under NFD or NFKD normalization at the receiver, with
 # the classical shapes being Arabic compatibility ligatures
 # (U+FDFA decomposes to 18 codepoints), parenthesized digits,
-# circled letters, and fractions.
+# circled letters, and pre-composed Greek diacritic stacks.
 #
 # Detection (priority order):
 #   1. SingleCpBlowup     — any single codepoint whose NFKD
-#                           expansion exceeds 4.
+#                           expansion exceeds 8.
 #   2. NfkdHighExpansion  — overall NFKD ratio > 400% (4×).
 #   3. NfdHighExpansion   — overall NFD ratio > 300% (3×).
 #
-# Sub-threats (2) and (3) are reserved defensive backups; in
-# v1 with `maxNfkdPerCp = 4` they are subsumed in practice by
-# (1) for every published bomb shape we have measured.
+# Thresholds are chosen so each sub-threat is reachable by some
+# input: FDFA (NFKD=18) fires (1); FDFB (NFKD=8, ratio 800%)
+# fires (2); pure sequences of Greek-extended pre-composed forms
+# 1F82..1FA7 (NFD=NFKD=4, ratio 400%) fire (3) since 400 > 300
+# but 400 is not strictly > 400 so NFKD ratio passes. Pure
+# Hangul (NFD=NFKD=3, ratio 300%) stays clear under strict `>`.
 #
 # Format:
 #   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
@@ -38,13 +41,13 @@
 # Plain Han — no decomposition.
 4E2D 6587; Clear; ; # 中文
 
-# Korean Hangul syllable 한 (U+D55C) — NFKD = 3 jamos, at
-# the per-cp threshold (> 4 fires, so 3 stays clear).
+# Korean Hangul syllable 한 (U+D55C) — NFKD = 3 jamos, below
+# the per-cp threshold of 8 and at the NFD ratio threshold of
+# 300 (strict > so 300 stays clear).
 D55C; Clear; ; # 한
 
-# Korean Hangul 한글 — each syllable expands to 3 jamos under
-# NFKD; overall ratio = 6/2 = 300%, exactly at the NFD ratio
-# threshold (> 300 fires, so 300 stays clear).
+# Korean Hangul 한글 — two syllables, each NFKD = 3; overall
+# NFD = NFKD = 300%, at the threshold (clear under strict `>`).
 D55C AE00; Clear; ; # 한글
 
 # Circled digit ① (U+2460) — NFKD = "1" (1 cp → 1 cp).
@@ -60,5 +63,25 @@ D55C AE00; Clear; ; # 한글
 # canonical normalization-bomb shape: 1 cp → 18 cps under NFKD.
 FDFA; Hazard:SingleCpBlowup; 0; # 1 cp → 18 cps NFKD
 
+# @section NfkdHighExpansion
+# @level basic
+
 # Arabic ligature JALLAJALALOUHOU (U+FDFB) — 1 cp → 8 cps NFKD.
-FDFB; Hazard:SingleCpBlowup; 0; # 1 cp → 8 cps NFKD
+# Per-cp scan lets it pass (8 is not strictly > 8), then the
+# NFKD ratio of 800% fires the bulk-expansion sub-threat.
+FDFB; Hazard:NfkdHighExpansion; ; # 1 cp → 8 cps NFKD, ratio 800%
+
+# Doubled FDFB — 2 cp → 16 cp NFKD, ratio still 800%.
+FDFB FDFB; Hazard:NfkdHighExpansion; ; # 2× FDFB
+
+# @section NfdHighExpansion
+# @level basic
+
+# Greek ALPHA WITH PSILI AND VARIA AND YPOGEGRAMMENI (U+1F82) —
+# 1 cp → 4 cps under NFD (canonical), no compatibility expansion
+# beyond that.  NFKD ratio 400% does not fire (strict `>`), NFD
+# ratio 400% > 300% fires.
+1F82; Hazard:NfdHighExpansion; ; # 1F82 NFD=4 ratio 400%
+
+# Two Greek pre-composed: 2 cps → 8 cps NFD, ratio still 400%.
+1F82 1F83; Hazard:NfdHighExpansion; ; # paired 1F82+1F83
