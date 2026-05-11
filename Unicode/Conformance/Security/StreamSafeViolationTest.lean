@@ -66,13 +66,13 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by native_decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 8 := by native_decide
+theorem row_count : rows.size = 15 := by native_decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 4 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 7 := by native_decide
 
 theorem covers_overrun :
-    (rows.filter (·.sectionName = "StreamSafeOverrun")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "StreamSafeOverrun")).size ≥ 7 := by
   native_decide
 
 end Unicode.Conformance.Security.StreamSafeViolationTest
