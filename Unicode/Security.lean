@@ -48,3 +48,4 @@ import Unicode.Security.Form.NfcIdempotenceWitness
 -- Layer 5 — Cross-Layer Boundaries
 import Unicode.Security.Boundary.IdentifierFormDrift
 import Unicode.Security.Boundary.CovertDisplayCompound
+import Unicode.Security.Boundary.ConfusableBidiCompound

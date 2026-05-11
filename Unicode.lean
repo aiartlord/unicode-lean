@@ -230,3 +230,4 @@ import Unicode.Conformance.Security.WidthClassConfusionTest
 import Unicode.Conformance.Security.NfcIdempotenceWitnessTest
 import Unicode.Conformance.Security.IdentifierFormDriftTest
 import Unicode.Conformance.Security.CovertDisplayCompoundTest
+import Unicode.Conformance.Security.ConfusableBidiCompoundTest
