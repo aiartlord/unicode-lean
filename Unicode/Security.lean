@@ -33,3 +33,6 @@ import Unicode.Security.Identity.SkinToneVariationForgery
 
 -- Layer 3 — Display Integrity (compound detectors)
 import Unicode.Security.Display.SourceDisplayDivergence
+import Unicode.Security.Display.FilenameDisguise
+import Unicode.Security.Display.RtlInjection
+import Unicode.Security.Display.RendererDivergence

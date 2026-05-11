@@ -1,0 +1,78 @@
+# FilenameDisguiseTest.txt
+# UCD version: 16.0.0
+# Security-spec version: 0.1.0
+# Family: D2 — Filename / Extension Disguise
+# License: Apache-2.0
+#
+# Threat model: filename byte streams whose rendered glyph
+# stream exposes a different extension than the bytes carry.
+# Detects RLO/RLI extension-flip, fullwidth extension disguise,
+# combining-mark hiding, and 3+ dot multi-extension patterns.
+#
+# Format:
+#   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
+#
+# Classifications produced by the D2 detector:
+#   Clear
+#   Hazard:RloFlip               Hazard:WidthClassExt
+#   Hazard:CombiningInExt        Hazard:MultipleExtensions
+
+# @section Clear
+# @level basic
+
+# Plain ASCII text file.
+0064 006F 0063 0075 006D 0065 006E 0074 002E 0074 0078 0074; Clear; ; # document.txt
+
+# Plain PDF.
+0066 0069 006C 0065 002E 0070 0064 0066; Clear; ; # file.pdf
+
+# No extension.
+0066 006F 006F; Clear; ; # foo
+
+# Two segments: tar.gz.
+0061 002E 0074 0061 0072 002E 0067 0007A; Clear; ; # a.tar.gz
+
+# Native Hebrew filename — no bidi controls, clear.
+05D0 05D1 05D2 002E 0074 0078 0074; Clear; ; # אבג.txt
+
+# Native Arabic filename — no bidi controls, clear.
+0641 0644 062F 002E 0070 0064 0066; Clear; ; # فلد.pdf
+
+# @section RloFlip
+# @level basic
+
+# Classic Trojan filename: document<RLO>txt.exe.
+0064 006F 0063 0075 006D 0065 006E 0074 202E 0074 0078 0074 002E 0065 0078 0065; Hazard:RloFlip; 8; # document<RLO>txt.exe
+
+# Same shape with RLI (isolate variant) — CVE-2021-42694-shape.
+0064 006F 0063 2067 0074 0078 0074 002E 0065 0078 0065 2069; Hazard:RloFlip; 3; # doc<RLI>txt.exe<PDI>
+
+# RLE in filename.
+0070 0068 006F 0074 006F 202B 0074 0078 0074 002E 0073 0063 0072; Hazard:RloFlip; 5; # photo<RLE>txt.scr
+
+# @section WidthClassExt
+# @level basic
+
+# Fullwidth `.ＥＸＥ` (the full-stop is ASCII but the extension is fullwidth).
+0066 0069 006C 0065 002E FF25 FF38 FF25; Hazard:WidthClassExt; 5; # file.ＥＸＥ
+
+# Single fullwidth letter at start of extension.
+0070 0068 006F 0074 006F 002E FF30 0064 0066; Hazard:WidthClassExt; 6; # photo.Ｐdf
+
+# @section CombiningInExt
+# @level strict
+
+# Combining acute (U+0301) inside the extension after 'e'.
+0066 0069 006C 0065 002E 0065 0301 0078 0065; Hazard:CombiningInExt; 6; # file.éxe
+
+# Combining diaeresis in extension.
+0061 002E 0070 0308 0064 0066; Hazard:CombiningInExt; 3; # a.p̈df
+
+# @section MultipleExtensions
+# @level full
+
+# Three dots — advisory.
+0073 0065 0074 0075 0070 002E 0074 0061 0072 002E 0067 007A 002E 0073 0069 0067; Hazard:MultipleExtensions; 5,9,12; # setup.tar.gz.sig
+
+# Four dots.
+0061 002E 0062 002E 0063 002E 0064 002E 0065; Hazard:MultipleExtensions; 1,3,5,7; # a.b.c.d.e

@@ -1,0 +1,86 @@
+# RendererDivergenceTest.txt
+# UCD version: 16.0.0
+# Security-spec version: 0.1.0
+# Family: D4 — Cross-Renderer Fingerprint Stability
+# License: Apache-2.0
+#
+# Threat model: input shapes known to render differently across
+# the Chrome / Firefox / Safari / iTerm / Windows Terminal /
+# common-font-fallback cohort.  Distinct from D1 (compound source-
+# code divergence) — D4 specifically covers renderer-cohort
+# variance regardless of whether other sub-detectors fire.
+#
+# Format:
+#   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
+#
+# Classifications produced by the D4 detector:
+#   Clear (= stable)
+#   Hazard:CombiningStackOverflow     Hazard:VariationSelectorVariance
+#   Hazard:UnregisteredZwjVariance    Hazard:FullwidthVariance
+#   Hazard:MixedDirectionVariance
+
+# @section Clear
+# @level basic
+
+# ASCII Hello.
+0048 0065 006C 006C 006F; Clear; ; # Hello
+
+# Plain Han.
+4E2D 6587; Clear; ; # 中文
+
+# Plain Cyrillic.
+043F 0440 0438 0432 0435 0442; Clear; ; # привет
+
+# Plain Hebrew (pure RTL, stable in any RTL-aware renderer).
+05D0 05D1 05D2; Clear; ; # אבג
+
+# Registered RGI family ZWJ — stable.
+1F468 200D 1F469 200D 1F467 200D 1F466; Clear; ; # 👨‍👩‍👧‍👦
+
+# @section VariationSelectorVariance
+# @level basic
+
+# 1F600 + VS16.
+1F600 FE0F; Hazard:VariationSelectorVariance; 1; # 😀 + VS16
+
+# Heart + VS16.
+2764 FE0F; Hazard:VariationSelectorVariance; 1; # ❤ + VS16
+
+# Standardized variation: digit 0 + FE00.
+0030 FE00; Hazard:VariationSelectorVariance; 1; # 0 + FE00 (slashed zero)
+
+# @section UnregisteredZwjVariance
+# @level strict
+
+# MAN + ZWJ + WOMAN (not registered as standalone).
+1F468 200D 1F469; Hazard:UnregisteredZwjVariance; 1; # 👨‍👩 unregistered
+
+# WOMAN + ZWJ + WOMAN.
+1F469 200D 1F469; Hazard:UnregisteredZwjVariance; 1; # 👩‍👩 unregistered
+
+# @section CombiningStackOverflow
+# @level strict
+
+# 4 combining marks on 'a' — Zalgo-shape.
+0061 0301 0302 0303 0304; Hazard:CombiningStackOverflow; 0; # a + 4 combining
+
+# 5 combining marks.
+0061 0301 0302 0303 0304 0305; Hazard:CombiningStackOverflow; 0; # a + 5 combining
+
+# @section FullwidthVariance
+# @level basic
+
+# Fullwidth A.
+FF21; Hazard:FullwidthVariance; 0; # Ａ
+
+# Fullwidth quotation mark.
+FF02; Hazard:FullwidthVariance; 0; # fullwidth "
+
+# @section MixedDirectionVariance
+# @level strict
+
+# Latin + Hebrew mix.
+0041 0042 05D0 05D1; Hazard:MixedDirectionVariance; ; # AB + אב
+
+# Han + Arabic mix.
+4E2D 0627; Hazard:MixedDirectionVariance; ; # 中 + alef
