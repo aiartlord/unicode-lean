@@ -26,10 +26,19 @@ missing_harness="$tmpdir/missing_harness"
 missing_theorem="$tmpdir/missing_theorem"
 
 # List of every detector base name (e.g. `NormalizationBomb`).
+# A file under a layer subdirectory counts as a detector iff it
+# defines a `def detect` function — support modules such as
+# Display/SourceCodeTokenize.lean live in the same tree but are
+# not detectors and so are not required to have a harness.
 find Unicode/Security/Covert Unicode/Security/Identity \
      Unicode/Security/Display Unicode/Security/Form \
      Unicode/Security/Boundary \
   -maxdepth 1 -name '*.lean' -type f 2>/dev/null \
+  | while IFS= read -r path; do
+      if grep -qE '^def detect\b' "$path"; then
+        echo "$path"
+      fi
+    done \
   | sed -e 's|.*/||' -e 's|\.lean$||' \
   | LC_ALL=C sort -u > "$detectors"
 

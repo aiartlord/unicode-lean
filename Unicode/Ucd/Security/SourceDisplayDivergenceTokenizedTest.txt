@@ -1,0 +1,67 @@
+# SourceDisplayDivergenceTokenizedTest.txt
+# UCD version: 16.0.0
+# Security-spec version: 0.1.0
+# Family: D1 (v1.5 region-aware tokenization)
+# Grammar: Rust (`Language.rust`)
+# License: Apache-2.0
+#
+# Companion fixture to SourceDisplayDivergenceTest.txt that
+# exercises D1's v1.5 region-aware behaviour.  Every row is
+# evaluated with `detect input .rust`, so the verdicts here may
+# differ from the v1 fixture's verdicts on the same byte sequence
+# whenever a sub-detector's hit lands inside a string literal,
+# line comment, or block comment.
+#
+# Format:
+#   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
+#
+# Classifications produced by the D1 detector are unchanged from
+# the v1 fixture — only the filtering changes.
+
+# @section Clear
+# @level basic
+
+# ASCII Hello — no payload, all code.
+0048 0065 006C 006C 006F; Clear; ; # Hello
+
+# VS payload INSIDE a Rust string literal.  Under .none the C2
+# hit would fire D1; under .rust the position is inside the
+# string region, so the hit is filtered out.
+0022 0041 FE00 0022; Clear; ; # "A + VS1" — VS in string
+
+# Bidi format-control INSIDE a Rust line comment.  Under .none
+# the C5 hit would fire D1; under .rust the comment runs to
+# end-of-input and the RLO sits inside it.
+002F 002F 202E; Clear; ; # // + RLO
+
+# Tag-block character INSIDE a Rust block comment.
+002F 002A E0001 002A 002F; Clear; ; # /* + TAG + */
+
+# VS payload INSIDE a Rust raw string `r#"..."#`.
+0072 0023 0022 0041 FE00 0022 0023; Clear; ; # r#"A+VS1"#
+
+# Latin "react" identifier in a normal Rust string literal — no
+# I1 confusable hit because all letters are ASCII.
+0022 0072 0065 0061 0063 0074 0022; Clear; ; # "react"
+
+# @section Hazard
+# @level basic
+
+# RLO BEFORE a Rust string literal — RLO sits in the leading
+# code region, so the C5 hit is in code and D1 fires.
+202E 0022 0041 0022; Hazard:BidiControl; ; # RLO + "A"
+
+# VS attached to a letter immediately AFTER the closing quote —
+# the VS position is in code (the string region ends at the
+# closing quote).
+0022 0041 0022 FE00; Hazard:VariationSelector; ; # "A" + VS1
+
+# Tag-block character BEFORE a Rust block comment.
+E0001 002F 002A 002A 002F; Hazard:TagBlock; ; # TAG + /**/
+
+# Pure code: VS attached to letter, no string or comment
+# anywhere — same verdict as v1.
+0041 FE00; Hazard:VariationSelector; ; # A + VS1
+
+# Zero-width joiner outside any RGI ZWJ sequence, in code.
+0041 200D 0042; Hazard:ZeroWidth; ; # A ZWJ B (in code)
