@@ -132,25 +132,19 @@ def positionsForScript
     else none)
 
 /-- True iff `input` contains at least one codepoint whose
-    resolved script set contains `target`.  This is the
-    union-side question — distinct from
-    `stringResolvedScripts`, which computes the intersection
-    per UTS #39 § 5.1.2. -/
+    resolved script set contains `target`.  Re-export of
+    `Unicode.Restriction.hasScript` (the union-side question,
+    distinct from the intersection-based
+    `stringResolvedScripts`). -/
+@[inline]
 def hasScript (input : Array Nat) (target : ScriptAbbrev) : Bool :=
-  input.any (fun cp =>
-    (Unicode.ResolvedScripts.resolveScripts cp).contains target)
+  Unicode.Restriction.hasScript input target
 
 /-- Union of resolved scripts over all non-ignored codepoints in
-    `input`.  Distinct from `stringResolvedScripts` (which is
-    the intersection).  Used to count the number of distinct
-    script families present. -/
-def unionOfScripts (input : Array Nat) : Array ScriptAbbrev := Id.run do
-  let mut acc : Array ScriptAbbrev := #[]
-  for cp in input do
-    if ¬ Unicode.Restriction.isIgnoredForIntersection cp then
-      for s in Unicode.ResolvedScripts.resolveScripts cp do
-        if ¬ acc.contains s then acc := acc.push s
-  pure acc
+    `input`.  Re-export of `Unicode.Restriction.stringScriptUnion`. -/
+@[inline]
+def unionOfScripts (input : Array Nat) : Array ScriptAbbrev :=
+  Unicode.Restriction.stringScriptUnion input
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 Top-level detection

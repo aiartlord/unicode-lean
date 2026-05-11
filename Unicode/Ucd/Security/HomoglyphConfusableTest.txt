@@ -145,44 +145,59 @@ FF27 FF49 FF54 FF48 FF55 FF42; Hazard:WidthClass; 0; first_width_cp=0xFF27; # Fu
 # Two decomposed letters in sequence — NFC folds both.
 0065 0301 0061 0300; Hazard:DecompositionSwap; 0; # decomposed é + à
 
+# @section CrossScriptMix
+# @level basic
+#
+# Two or more script families resolved in the same identifier
+# without the Highly-Restrictive covered-script combination.  The
+# union-side primitive `stringScriptUnion` answers "how many
+# distinct script families appear here"; the historical
+# intersection-based `stringResolvedScripts` was the wrong tool
+# (Latin ∩ Cyrillic = ∅ ⇒ size 0).  CrossScriptMix fires whenever
+# the union is ≥ 2 and the identifier is not Highly-Restrictive.
+#
+# Near-typosquats whose iterated skeleton doesn't quite fold to a
+# canonical target also land here when the substitution dragged in
+# a Cyrillic / Greek codepoint (microsoft / solana / metamask /
+# binance — their iteratedSkeleton differs from the canonical by
+# one bit, so TargetMatch doesn't fire, but the script-mix signal
+# is unambiguous).
+
+# "microsoft" with Cyrillic 'о' (U+043E) — Latin + Cyrillic mix.
+006D 043E 0063 0072 006F 0073 006F 0066 0074; Hazard:CrossScriptMix; ; restriction=MinimallyRestrictive; # microsoft / Cyrillic о — near-typosquat
+
+# "solana" with Cyrillic 'о' (U+043E).
+0073 006F 043E 0061 006E 0061; Hazard:CrossScriptMix; ; restriction=MinimallyRestrictive; # solana near-typosquat
+
+# "metamask" with Cyrillic 'а' (U+0430).
+006D 0065 0430 0061 006D 0061 0073 006B; Hazard:CrossScriptMix; ; restriction=MinimallyRestrictive; # metamask near-typosquat
+
+# "binance" with Cyrillic 'а' (U+0430).
+0062 0069 0430 006E 0061 006E 0063 0065; Hazard:CrossScriptMix; ; restriction=MinimallyRestrictive; # binance near-typosquat
+
+# Latin + Greek mix — `ab αβ`.
+0061 0062 03B1 03B2; Hazard:CrossScriptMix; ; restriction=MinimallyRestrictive; # Latin+Greek mix
+
+# Latin + Cyrillic mix — `xy фф`.
+0078 0079 0444 0444; Hazard:CrossScriptMix; ; restriction=MinimallyRestrictive; # Latin+Cyrillic mix
+
+# Greek + Cyrillic mix — αβ + Cyrillic ф х.
+03B1 03B2 0444 0445; Hazard:CrossScriptMix; ; restriction=MinimallyRestrictive; # Greek+Cyrillic mix
+
 # @section RestrictionLow
 # @level basic
 #
-# RestrictionLow is the fall-back tier: an input that doesn't match a
-# canonical target, isn't math-alpha or fullwidth, has no NFC drift,
-# but whose UTS #39 §5 restriction level lands at Minimally-
-# Restrictive or Unrestricted.  Near-typosquats whose iterated
-# skeleton doesn't quite fold to a canonical target also land here
-# (microsoft / solana / metamask / binance below).  This is a useful
-# catch-all hazard surface for "looks plausibly suspicious but no
-# specific upstream attribution matches".
-#
-# (CrossScriptMix is not currently reachable through `detect` — the
-# detector's `crossScriptCount` is computed off
-# `stringResolvedScripts` which returns the per-codepoint script-set
-# intersection, never ≥ 2 for any non-empty identifier.  Documented
-# here so future iterations can re-route the sub-threat against a
-# union-based primitive.)
+# Single-script inputs whose UTS #39 Identifier_Status is
+# Restricted for at least one codepoint, pushing the restriction
+# level to Unrestricted.  CrossScriptMix doesn't fire because the
+# script union is size 1; the hazard is the restricted-status
+# coverage of obscure / historical scripts.
 
-# "microsoft" with Cyrillic 'о' (U+043E) at position 1 — iteratedSkeleton
-# doesn't quite fold to "microsoft" but the input lands at Unrestricted.
-006D 043E 0063 0072 006F 0073 006F 0066 0074; Hazard:RestrictionLow; ; restriction=MinimallyRestrictive; # microsoft / Cyrillic о — near-typosquat
+# Ahom letter A (U+11700) — Restricted-status historical script.
+11700; Hazard:RestrictionLow; ; restriction=Unrestricted; # Ahom letter A — historical script
 
-# "solana" with Cyrillic 'о' (U+043E) at position 2.
-0073 006F 043E 0061 006E 0061; Hazard:RestrictionLow; ; restriction=MinimallyRestrictive; # solana near-typosquat
+# Cuneiform sign A (U+12000) — Restricted-status.
+12000; Hazard:RestrictionLow; ; restriction=Unrestricted; # Cuneiform sign A
 
-# "metamask" with Cyrillic 'а' (U+0430) at position 2.
-006D 0065 0430 0061 006D 0061 0073 006B; Hazard:RestrictionLow; ; restriction=MinimallyRestrictive; # metamask near-typosquat
-
-# "binance" with Cyrillic 'а' (U+0430) at position 2.
-0062 0069 0430 006E 0061 006E 0063 0065; Hazard:RestrictionLow; ; restriction=MinimallyRestrictive; # binance near-typosquat
-
-# Latin + Greek mix — `ab αβ`.  Two scripts, neither covered by
-# Highly-Restrictive (Latin + Greek isn't in the recommended pair list).
-0061 0062 03B1 03B2; Hazard:RestrictionLow; ; restriction=MinimallyRestrictive; # Latin+Greek mix
-
-# Latin + Cyrillic mix — `xy фф` (Cyrillic ф ф).
-0078 0079 0444 0444; Hazard:RestrictionLow; ; restriction=MinimallyRestrictive; # Latin+Cyrillic mix
-
-# Greek + Cyrillic mix — αβ + Cyrillic ф х.
-03B1 03B2 0444 0445; Hazard:RestrictionLow; ; restriction=MinimallyRestrictive; # Greek+Cyrillic mix
+# Egyptian Hieroglyph A001 (U+13000) — Restricted-status.
+13000; Hazard:RestrictionLow; ; restriction=Unrestricted; # Egyptian Hieroglyph A001
