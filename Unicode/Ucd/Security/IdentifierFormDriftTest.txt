@@ -59,6 +59,15 @@
 # Cyrillic привет — every cp Allowed.
 041F 0440 0438 0432 0435 0442; Clear; ; shift_count=0; # привет (Russian)
 
+# Arabic word — all Allowed, identity NFKD.
+0641 0644 062F; Clear; ; shift_count=0; # Arabic word
+
+# Hiragana word — Allowed, identity NFKD.
+3042 3044 3046; Clear; ; shift_count=0; # あいう
+
+# Mixed ASCII identifier with underscore.
+0066 006F 006F 005F 0062 0061 0072; Clear; ; shift_count=0; # foo_bar
+
 # @section IdentifierStatusShift
 # @level basic
 
@@ -99,4 +108,33 @@ FB01; Hazard:IdentifierStatusShift; 0; shift_count=1; # ﬁ
 # is U+1112 HANGUL CHOSEONG HIEUH (Restricted in UTS #39
 # IdentifierStatus.txt).  Pure Korean text fires X1 at position 0.
 # Remediation: NFKC-normalise (or NFC-normalise) before validating.
-D55C; Hazard:IdentifierStatusShift; 0; shift_count=1; # 한 (precomposed → jamo Restricted)
+D55C; Hazard:IdentifierStatusShift; 0; shift_count=1; # Korean precomposed → jamo Restricted
+
+# Math Bold Capital A (U+1D400) — Restricted, NFKD-head U+0041.
+1D400; Hazard:IdentifierStatusShift; 0; shift_count=1; # math bold A
+
+# Math Sans-Serif lowercase 'a' (U+1D5BA) — Restricted, NFKD-head U+0061.
+1D5BA; Hazard:IdentifierStatusShift; 0; shift_count=1; # math sans-serif a
+
+# Math Fraktur Capital A (U+1D504) — Restricted, NFKD-head U+0041.
+1D504; Hazard:IdentifierStatusShift; 0; shift_count=1; # math fraktur A
+
+# Roman numeral C (U+216D) — Restricted, NFKD-head U+0043 Allowed.
+216D; Hazard:IdentifierStatusShift; 0; shift_count=1; # roman C
+
+# Circled digit 1 (U+2460) — Restricted, NFKD-head U+0031 Allowed.
+2460; Hazard:IdentifierStatusShift; 0; shift_count=1; # circled 1
+
+# Fullwidth lowercase ｐａｓｓ — every cp Restricted, NFKD-head
+# Allowed.  Password-validator bypass shape.
+FF50 FF41 FF53 FF53; Hazard:IdentifierStatusShift; 0; shift_count=4; # fullwidth pass
+
+# Fullwidth digits — every cp shifts.
+FF10 FF11 FF12 FF13; Hazard:IdentifierStatusShift; 0; shift_count=4; # fullwidth 0123
+
+# ASCII "user" with fullwidth digit at position 4 — single shift.
+0075 0073 0065 0072 FF11; Hazard:IdentifierStatusShift; 4; shift_count=1; # user + fullwidth 1
+
+# Math Italic "password" — eight-cp math identifier whose NFKD
+# folds to "password".
+1D45D 1D44E 1D460 1D460 1D464 1D45C 1D45F 1D451; Hazard:IdentifierStatusShift; 0; shift_count=8; # math italic password
