@@ -92,27 +92,27 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by native_decide
 
 /-- Row-count gate (catches fixture corruption / accidental rewrites). -/
-theorem row_count : rows.size = 17 := by native_decide
+theorem row_count : rows.size = 30 := by native_decide
 
 /-- Section coverage gate — every named section is represented. -/
 theorem covers_registered_clear :
-    (rows.filter (·.sectionName = "RegisteredClear")).size ≥ 5 := by
+    (rows.filter (·.sectionName = "RegisteredClear")).size ≥ 10 := by
   native_decide
 
 theorem covers_direct_payload :
-    (rows.filter (·.sectionName = "DirectPayload")).size ≥ 2 := by
+    (rows.filter (·.sectionName = "DirectPayload")).size ≥ 6 := by
   native_decide
 
 theorem covers_illegal_target :
-    (rows.filter (·.sectionName = "IllegalTarget")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "IllegalTarget")).size ≥ 7 := by
   native_decide
 
 theorem covers_repeated_base :
-    (rows.filter (·.sectionName = "RepeatedBase")).size ≥ 2 := by
+    (rows.filter (·.sectionName = "RepeatedBase")).size ≥ 3 := by
   native_decide
 
 theorem covers_embedded_after_reg :
-    (rows.filter (·.sectionName = "EmbeddedAfterRegistered")).size ≥ 2 := by
+    (rows.filter (·.sectionName = "EmbeddedAfterRegistered")).size ≥ 3 := by
   native_decide
 
 theorem covers_leading_vs :
