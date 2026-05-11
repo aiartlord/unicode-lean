@@ -195,7 +195,7 @@ Pin to a tagged release in your `lakefile.lean`:
 
 ```lean
 require unicode from git
-  "https://github.com/jpyxal-straylight/unicode-lean" @ "v0.9.0"
+  "https://github.com/jpyxal-straylight/unicode-lean" @ "v0.10.0"
 ```
 
 Then `lake update` and import the namespaces you need:
