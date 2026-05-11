@@ -44,3 +44,6 @@ import Unicode.Security.Form.LocaleCaseInversion
 import Unicode.Security.Form.CaseExpansionMismatch
 import Unicode.Security.Form.WidthClassConfusion
 import Unicode.Security.Form.NfcIdempotenceWitness
+
+-- Layer 5 — Cross-Layer Boundaries
+import Unicode.Security.Boundary.IdentifierFormDrift
