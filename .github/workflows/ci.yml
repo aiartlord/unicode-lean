@@ -42,6 +42,12 @@ jobs:
       - name: UCD source files match pinned SHA-256
         run: bash scripts/check-ucd-hashes.sh
 
+      - name: every Security detector has a paired *Test.lean harness
+        run: bash scripts/check-security-coverage.sh
+
+      - name: Security fixtures match pinned SHA-256
+        run: bash scripts/check-security-hashes.sh
+
   build:
     # Lake build via the canonical Lean action. Toolchain version comes
     # from the `lean-toolchain` file; the action handles install, cache,
