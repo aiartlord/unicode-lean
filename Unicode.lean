@@ -154,6 +154,12 @@ import Unicode.Generated.DerivedJoiningType
 -- registered vs. suspicious.
 import Unicode.Generated.StandardizedVariants
 
+-- UCD 16.0.0 emoji-variation-sequences.txt — 371 base codepoints
+-- × 2 VS each (FE0E text, FE0F emoji). Used by the C2 detector
+-- to recognise sanctioned emoji-presentation vs text-presentation
+-- VS uses without approximating via the wider Emoji property bit.
+import Unicode.Generated.EmojiVariationSequences
+
 -- UCA 16.0.0 DUCET — parsed table of collation elements
 import Unicode.Generated.Allkeys
 

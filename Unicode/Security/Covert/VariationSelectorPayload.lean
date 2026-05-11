@@ -215,10 +215,26 @@ def classifyExecutableHint (bytes : ByteArray) : ExecutableHint :=
 
     A VS is `.registeredStandardized` iff `StandardizedVariants.txt`
     sanctions the (base, VS) pair.  A VS16 (`FE0F`) is
-    `.registeredEmojiPresentation` iff the immediately preceding
-    codepoint has the Emoji property.  A VS15 (`FE0E`) is
-    `.registeredTextPresentation` under the same condition.
-    Everything else that is a VS is `.suspicious`. -/
+    `.registeredEmojiPresentation` iff the base has the `Emoji`
+    property — equivalently, iff base ∈ emoji-data.txt's
+    Emoji-property set, which is the union of:
+
+      * `Emoji_Presentation = Yes` codepoints (default-emoji,
+        FE0F is a no-op flip), and
+      * `emoji-variation-sequences.txt` member codepoints
+        (default-text, FE0F flips to emoji style).
+
+    A VS15 (`FE0E`) is `.registeredTextPresentation` under the
+    symmetric condition.  Everything else that is a VS is
+    `.suspicious`.
+
+    `Unicode.Emoji.isEmoji` is the structural (file-derived)
+    predicate for "this codepoint can legitimately carry a
+    presentation VS", so it is the correct check here.  Detectors
+    that need to distinguish "FE0F changes the rendering style"
+    from "FE0F is a no-op" should consult
+    `Unicode.Generated.EmojiVariationSequences.hasRegisteredEmojiPresentation`
+    directly. -/
 def classifyVSPosition (input : Array Nat) (p : Nat) : VSUseClass :=
   match input[p]? with
   | none      => .nonVS
