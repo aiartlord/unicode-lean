@@ -49,3 +49,4 @@ import Unicode.Security.Form.NfcIdempotenceWitness
 import Unicode.Security.Boundary.IdentifierFormDrift
 import Unicode.Security.Boundary.CovertDisplayCompound
 import Unicode.Security.Boundary.ConfusableBidiCompound
+import Unicode.Security.Boundary.AdmissibilityFormDrift

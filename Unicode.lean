@@ -231,3 +231,4 @@ import Unicode.Conformance.Security.NfcIdempotenceWitnessTest
 import Unicode.Conformance.Security.IdentifierFormDriftTest
 import Unicode.Conformance.Security.CovertDisplayCompoundTest
 import Unicode.Conformance.Security.ConfusableBidiCompoundTest
+import Unicode.Conformance.Security.AdmissibilityFormDriftTest

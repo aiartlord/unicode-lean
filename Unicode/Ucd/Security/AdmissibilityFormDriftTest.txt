@@ -1,0 +1,86 @@
+# AdmissibilityFormDriftTest.txt
+# UCD version: 16.0.0
+# Security-spec version: 0.1.0
+# Family: X4 — Cross-Layer Identifier-Admissibility × Form Drift
+#         (UTS #39 + UAX #15)
+# License: Apache-2.0
+#
+# Threat model: a single input's whole-string admissibility
+# verdict differs between the input and its NFKC form.  A
+# pre-normalisation `isAllowedIdentifier` check reaches one
+# verdict; a post-normalisation check on the same input reaches
+# the other.  Attacker controls which check guards which stage.
+#
+# X4 complements X1.  X1 is per-codepoint and compares
+# Identifier_Status against the NFKD-head.  X4 is whole-string
+# and compares isAllowedIdentifier across the NFKC boundary.
+# The two detectors are not redundant: decomposed Hangul jamos
+# satisfy X1 cleanly (identity NFKD, Restricted on both sides)
+# but fire X4 because the jamo sequence composes under NFKC into
+# a precomposed Allowed Hangul syllable.
+#
+# Detection (single sub-threat, direction-agnostic):
+#   AdmissibilityFormDrift (inputAdmissible, nfkcAdmissible) —
+#     the two booleans differ.  No position is reported because
+#     the predicate is whole-string.
+#
+# Format:
+#   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
+#
+# Classifications produced by the X4 detector:
+#   Clear (= same admissibility on both sides of NFKC)
+#   Hazard:AdmissibilityFormDrift
+
+# @section Clear
+# @level basic
+
+# ASCII admin — admissible on both sides, NFKC = input.
+0061 0064 006D 0069 006E; Clear; ; # admin
+
+# ASCII Hello — XID_Start ✓, all Allowed, identity NFKC.
+0048 0065 006C 006C 006F; Clear; ; # Hello
+
+# Precomposed Hangul 한 — Allowed and stable under NFKC.
+D55C; Clear; ; # 한 (precomposed)
+
+# Greek lowercase αβγ — Allowed identifiers, identity NFKC.
+03B1 03B2 03B3; Clear; ; # αβγ
+
+# ASCII letter + digit — admissible on both sides.
+0078 0030; Clear; ; # x0
+
+# A leading digit — not a valid identifier on either side.
+# Both isAllowedIdentifier calls return false, so the verdict
+# is form-stable and X4 stays clear.
+0030 0031 0032; Clear; ; # 012 (leading-digit, both false)
+
+# Cyrillic privet — admissible on both sides under UTS #39.
+041F 0440 0438 0432 0435 0442; Clear; ; # привет
+
+# @section AdmissibilityFormDrift
+# @level basic
+
+# ﬁ ligature (U+FB01) — Restricted (input not admissible), NFKC
+# decomposes to "fi" which is admissible.
+FB01; Hazard:AdmissibilityFormDrift; ; # ﬁ → fi
+
+# Mathematical Italic "admin" — Math Italic letters are Restricted
+# in IdentifierStatus.txt; NFKC folds them to ASCII admin.
+1D44E 1D451 1D45A 1D456 1D45B; Hazard:AdmissibilityFormDrift; ; # 𝑎𝑑𝑚𝑖𝑛
+
+# Fullwidth Ａ — Restricted, NFKC folds to ASCII A.
+FF21; Hazard:AdmissibilityFormDrift; ; # Ａ
+
+# Decomposed Hangul jamos for 한 — every jamo is Restricted
+# (input not admissible), NFKC composes them to U+D55C which is
+# Allowed.  This row is the canonical X1/X4 complementarity case:
+# X1 sees no per-cp shift (jamos have identity NFKD), X4 sees
+# the whole-string verdict flip.
+1112 1161 11AB; Hazard:AdmissibilityFormDrift; ; # decomposed 한
+
+# Decomposed Hangul jamos for two syllables — same shape, larger
+# input.  Composes under NFKC to 한국 (admissible).
+1112 1161 11AB 1100 116E 11A8; Hazard:AdmissibilityFormDrift; ; # decomposed 한국
+
+# Roman numeral Ⅳ (U+2163) — Restricted, NFKC folds to "IV".
+2163; Hazard:AdmissibilityFormDrift; ; # Ⅳ → IV
