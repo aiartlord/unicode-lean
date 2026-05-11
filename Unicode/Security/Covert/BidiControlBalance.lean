@@ -216,8 +216,13 @@ def detect (input : Array Nat) : C5Verdict :=
     | some sub =>
       let positions : Array Nat :=
         match sub with
-        | .orphanPop ps => ps
-        | _             => st.bidiPositions
+        | .orphanPop ps                        => ps
+        | .depthExceeded maxDepth              =>
+            Function.const Nat st.bidiPositions maxDepth
+        | .unbalancedEmbedding openCount popCount =>
+            Function.const (Nat × Nat) st.bidiPositions (openCount, popCount)
+        | .unbalancedIsolate openCount popCount =>
+            Function.const (Nat × Nat) st.bidiPositions (openCount, popCount)
       { input := input,
         classify := .hazard sub positions ByteArray.empty,
         bidiPositions := st.bidiPositions,
@@ -226,93 +231,114 @@ def detect (input : Array Nat) : C5Verdict :=
         maxDepth := st.maxDepth, orphans := st.orphans }
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- §4 Spot checks
+-- §4 Projection helpers
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- Fixture-row tag string for each `C5SubThreat` constructor. -/
+def C5SubThreat.tag : C5SubThreat → String
+  | .depthExceeded       maxDepth               =>
+      Function.const Nat "DepthExceeded" maxDepth
+  | .orphanPop           orphanPositions        =>
+      Function.const (Array Nat) "OrphanPop" orphanPositions
+  | .unbalancedEmbedding openCount popCount     =>
+      Function.const (Nat × Nat) "UnbalancedEmbedding" (openCount, popCount)
+  | .unbalancedIsolate   openCount popCount     =>
+      Function.const (Nat × Nat) "UnbalancedIsolate" (openCount, popCount)
+
+/-- True iff the classification is `.clear`. -/
+def C5Classification.isClear : C5Classification → Bool
+  | .clear                     => true
+  | .hazard sub positions decoded =>
+      Function.const (C5SubThreat × Array Nat × ByteArray) false
+        (sub, positions, decoded)
+
+/-- Tag string of a classification (`none` for `.clear`). -/
+def C5Classification.tag : C5Classification → Option String
+  | .clear                     => none
+  | .hazard sub positions decoded =>
+      Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
+
+/-- Positions array of a classification (empty for `.clear`). -/
+def C5Classification.positions : C5Classification → Array Nat
+  | .clear                     => #[]
+  | .hazard sub positions decoded =>
+      Function.const (C5SubThreat × ByteArray) positions (sub, decoded)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §5 Spot checks
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Empty input is clear. -/
-theorem detect_empty_clear : (detect #[]).classify matches .clear := by
+theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
   native_decide
 
 /-- Plain ASCII is clear (no bidi controls). -/
 theorem detect_ascii_clear :
-    (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify matches .clear := by
+    (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
   native_decide
 
 /-- Balanced LRE … PDF is clear (legitimate left-to-right embedding). -/
 theorem detect_balanced_embedding_clear :
-    (detect #[0x202A, 0x41, 0x202C]).classify matches .clear := by
+    (detect #[0x202A, 0x41, 0x202C]).classify.isClear = true := by
   native_decide
 
 /-- Balanced LRI … PDI is clear (legitimate left-to-right isolate). -/
 theorem detect_balanced_isolate_clear :
-    (detect #[0x2066, 0x41, 0x2069]).classify matches .clear := by
+    (detect #[0x2066, 0x41, 0x2069]).classify.isClear = true := by
   native_decide
 
 /-- Lone LRE (no PDF) — unbalanced embedding (Trojan Source CVE-2021-42574). -/
 theorem detect_lone_lre :
-    (detect #[0x202A, 0x41]).classify matches
-      .hazard (.unbalancedEmbedding 1 0) _ _ := by
+    (detect #[0x202A, 0x41]).classify.tag = some "UnbalancedEmbedding" := by
   native_decide
 
 /-- Lone RLO (no PDF) — unbalanced embedding override. -/
 theorem detect_lone_rlo :
-    (detect #[0x202E, 0x41]).classify matches
-      .hazard (.unbalancedEmbedding 1 0) _ _ := by
+    (detect #[0x202E, 0x41]).classify.tag = some "UnbalancedEmbedding" := by
   native_decide
 
 /-- Lone PDF (no preceding opener) — orphan pop. -/
 theorem detect_lone_pdf :
-    (detect #[0x202C]).classify matches
-      .hazard (.orphanPop _) _ _ := by
+    (detect #[0x202C]).classify.tag = some "OrphanPop" := by
   native_decide
 
 /-- Lone PDI (no preceding isolate) — orphan pop. -/
 theorem detect_lone_pdi :
-    (detect #[0x2069]).classify matches
-      .hazard (.orphanPop _) _ _ := by
+    (detect #[0x2069]).classify.tag = some "OrphanPop" := by
   native_decide
 
 /-- Lone LRI (no PDI) — unbalanced isolate (CVE-2021-42694). -/
 theorem detect_lone_lri :
-    (detect #[0x2067, 0x41]).classify matches
-      .hazard (.unbalancedIsolate 1 0) _ _ := by
+    (detect #[0x2067, 0x41]).classify.tag = some "UnbalancedIsolate" := by
   native_decide
 
-/-- The Boucher-Anderson 2021 canonical "commenting-out" attack:
-    `if access_level != "user"` with `"user"` interpolated through
-    an RLO + PDF dance so the visible text reads differently from
-    the byte order.  The bytes here are the minimal repro of the
-    bidi-control shape (the surrounding text is omitted). -/
+/-- The Boucher-Anderson 2021 canonical "commenting-out" attack
+    minimum shape — balanced (one RLO + one PDF), so this particular
+    repro is `.clear`.  The actual hazard surfaces when the PDF is
+    elided (next theorem). -/
 theorem detect_trojan_source_shape :
     (detect #[0x69, 0x66, 0x20, 0x202E, 0x29, 0x202C,
-              0x7B]).classify matches .clear := by
-  -- This particular minimal shape happens to be balanced
-  -- (one RLO opener + one PDF closer).  The hazard would
-  -- surface if the closer were elided — the real Trojan
-  -- Source attacks rely on a missing PDF to keep the
-  -- reordering "leaking" past the intended scope.
+              0x7B]).classify.isClear = true := by
   native_decide
 
 /-- Same shape with the closing PDF removed — the actual
     Trojan-Source attack class. -/
 theorem detect_trojan_source_unbalanced :
-    (detect #[0x69, 0x66, 0x20, 0x202E, 0x29, 0x7B]).classify matches
-      .hazard (.unbalancedEmbedding _ _) _ _ := by
-  native_decide
+    (detect #[0x69, 0x66, 0x20, 0x202E, 0x29, 0x7B]).classify.tag
+      = some "UnbalancedEmbedding" := by native_decide
 
 /-- Deep-nesting attack — 126 nested LRE's exceed UAX #9 §3.3.2's 125 cap. -/
 theorem detect_depth_exceeded :
     let deepInput : Array Nat :=
       Array.replicate 126 0x202A ++ Array.replicate 126 0x202C
-    (detect deepInput).classify matches
-      .hazard (.depthExceeded _) _ _ := by
+    (detect deepInput).classify.tag = some "DepthExceeded" := by
   native_decide
 
 /-- Exactly 125-deep nesting is within the UAX #9 cap. -/
 theorem detect_depth_at_limit_clear :
     let okInput : Array Nat :=
       Array.replicate 125 0x202A ++ Array.replicate 125 0x202C
-    (detect okInput).classify matches .clear := by
+    (detect okInput).classify.isClear = true := by
   native_decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════

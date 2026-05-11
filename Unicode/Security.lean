@@ -23,3 +23,4 @@ import Unicode.Security.Covert.VariationSelectorPayload
 import Unicode.Security.Covert.TagBlockPayload
 import Unicode.Security.Covert.BidiControlBalance
 import Unicode.Security.Covert.ZeroWidthPayload
+import Unicode.Security.Covert.SurrogateReassembly

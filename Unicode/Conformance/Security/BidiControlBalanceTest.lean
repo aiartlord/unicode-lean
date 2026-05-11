@@ -38,21 +38,11 @@ def rows : Array Row := parseFixture rawFixture
 /-- Project a `C5Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
     (c : C5Classification) : ClassificationKind × Option String :=
-  match c with
-  | .clear => (.clear, none)
-  | .hazard sub _ _ =>
-    let tag : String := match sub with
-      | .depthExceeded       _      => "DepthExceeded"
-      | .orphanPop           _      => "OrphanPop"
-      | .unbalancedEmbedding _ _    => "UnbalancedEmbedding"
-      | .unbalancedIsolate   _ _    => "UnbalancedIsolate"
-    (.hazard, some tag)
+  if c.isClear then (.clear, none) else (.hazard, c.tag)
 
 /-- Project a `C5Classification` to the positions array. -/
 def projectPositions (c : C5Classification) : Array Nat :=
-  match c with
-  | .clear           => #[]
-  | .hazard _ pos _  => pos
+  c.positions
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 Per-row verifier
@@ -99,8 +89,7 @@ theorem covers_orphan_pop :
     was discovered and fixed during C5 development
     (Unicode.TrojanSource.opensEmbedding originally omitted RLO). -/
 theorem detect_rlo_attack :
-    (detect #[0x69, 0x66, 0x20, 0x202E, 0x29, 0x7B]).classify matches
-      .hazard (.unbalancedEmbedding _ _) _ _ := by
-  native_decide
+    (detect #[0x69, 0x66, 0x20, 0x202E, 0x29, 0x7B]).classify.tag
+      = some "UnbalancedEmbedding" := by native_decide
 
 end Unicode.Conformance.Security.BidiControlBalanceTest

@@ -1,46 +1,36 @@
 /-
-  Unicode.Conformance.Security.VariationSelectorPayloadTest
+  Unicode.Conformance.Security.SurrogateReassemblyTest
 
-  Conformance proof for the C2 family.  Folds the universal
+  Conformance proof for the C4 family.  Folds the universal
   `Unicode.Security.Fixture` parser over the hand-curated
-  `VariationSelectorPayloadTest.txt` fixture and `native_decide`-closes
+  `SurrogateReassemblyTest.txt` fixture and `native_decide`-closes
   the predicate that every row's expected verdict matches what
-  `Unicode.Security.Covert.VariationSelectorPayload.detect` produces.
+  `Unicode.Security.Covert.SurrogateReassembly.detect` produces.
 
-  This is the template-by-example for per-family conformance harnesses.
-  Every other family harness (C / I / D / F / X / K) will follow
-  the same shape:
-
-    1. Embed the fixture via `include_str`
-    2. Parse rows via `Unicode.Security.Fixture.parseFixture`
-    3. Define `verifyRow : Row → Bool` that runs the family `detect`
-       and compares against the fixture row's expected classification
-    4. Close a single headline theorem `all_rows_pass` via `native_decide`
-    5. Close a row-count gate via `native_decide`
+  Input bytes are encoded in column 1 of the fixture as single-byte
+  hex values (each `0x00..0xFF`).  The fixture parser stores them
+  in `r.input : Array Nat`; the C4 detector converts to `ByteArray`
+  via `Unicode.Security.Covert.SurrogateReassembly.toByteArray`.
 -/
 
 import Unicode.Security.Fixture
-import Unicode.Security.Covert.VariationSelectorPayload
+import Unicode.Security.Covert.SurrogateReassembly
 
-namespace Unicode.Conformance.Security.VariationSelectorPayloadTest
+namespace Unicode.Conformance.Security.SurrogateReassemblyTest
 
 open Unicode.Security.Calculus
 open Unicode.Security.Fixture
-open Unicode.Security.Covert.VariationSelectorPayload
+open Unicode.Security.Covert.SurrogateReassembly
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 Raw fixture + parsed rows
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Hand-curated v1 fixture — 18 rows across 5 sections covering
-    every C2 sub-threat and the registered-clear cases.
-
-    A future revision will expand this to ~6,000 rows by walking
-    every entry of `StandardizedVariants.txt` and
-    `emoji-variation-sequences.txt` for the registered-clear
-    section, plus per-byte-length sweeps of synthesized payloads. -/
+/-- Hand-curated v1 fixture for C4 — 17 rows across 5 sections
+    covering the valid-UTF-8 cases plus every Utf8RejectKind
+    category surfaced by `Unicode.Codec.Utf8.firstInvalidUtf8Offset`. -/
 def rawFixture : String :=
-  include_str "../../Ucd/Security/VariationSelectorPayloadTest.txt"
+  include_str "../../Ucd/Security/SurrogateReassemblyTest.txt"
 
 /-- All parsed rows from the bundled fixture. -/
 def rows : Array Row := parseFixture rawFixture
@@ -49,15 +39,13 @@ def rows : Array Row := parseFixture rawFixture
 -- §2 Per-family classification-name mapping
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Project a `C2Classification` to its `ClassificationKind` and
-    sub-threat name.  Delegates to `C2Classification.tag` /
-    `C2Classification.isClear`. -/
+/-- Project a `C4Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
-    (c : C2Classification) : ClassificationKind × Option String :=
+    (c : C4Classification) : ClassificationKind × Option String :=
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
-/-- Project a `C2Classification` to its positions array. -/
-def projectPositions (c : C2Classification) : Array Nat :=
+/-- Project a `C4Classification` to the positions array. -/
+def projectPositions (c : C4Classification) : Array Nat :=
   c.positions
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -82,32 +70,24 @@ def verifyRow (r : Row) : Bool :=
 /-- Every fixture row's detector verdict matches its expected verdict. -/
 theorem all_rows_pass : rows.all verifyRow = true := by native_decide
 
-/-- Row-count gate (catches fixture corruption / accidental rewrites). -/
+/-- Row-count gate. -/
 theorem row_count : rows.size = 17 := by native_decide
 
-/-- Section coverage gate — every named section is represented. -/
-theorem covers_registered_clear :
-    (rows.filter (·.sectionName = "RegisteredClear")).size ≥ 5 := by
+/-- Section coverage gates. -/
+theorem covers_clear :
+    (rows.filter (·.sectionName = "Clear")).size ≥ 4 := by native_decide
+
+theorem covers_invalid_start_byte :
+    (rows.filter (·.sectionName = "InvalidStartByte")).size ≥ 5 := by
   native_decide
 
-theorem covers_direct_payload :
-    (rows.filter (·.sectionName = "DirectPayload")).size ≥ 2 := by
-  native_decide
+theorem covers_overlong :
+    (rows.filter (·.sectionName = "Overlong")).size ≥ 2 := by native_decide
 
-theorem covers_illegal_target :
-    (rows.filter (·.sectionName = "IllegalTarget")).size ≥ 3 := by
-  native_decide
+theorem covers_cesu8 :
+    (rows.filter (·.sectionName = "Cesu8")).size ≥ 3 := by native_decide
 
-theorem covers_repeated_base :
-    (rows.filter (·.sectionName = "RepeatedBase")).size ≥ 2 := by
-  native_decide
+theorem covers_truncated :
+    (rows.filter (·.sectionName = "Truncated")).size ≥ 3 := by native_decide
 
-theorem covers_embedded_after_reg :
-    (rows.filter (·.sectionName = "EmbeddedAfterRegistered")).size ≥ 2 := by
-  native_decide
-
-theorem covers_leading_vs :
-    (rows.filter (·.sectionName = "LeadingVS")).size ≥ 1 := by
-  native_decide
-
-end Unicode.Conformance.Security.VariationSelectorPayloadTest
+end Unicode.Conformance.Security.SurrogateReassemblyTest

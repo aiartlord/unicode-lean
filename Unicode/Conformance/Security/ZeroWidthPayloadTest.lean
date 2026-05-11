@@ -39,22 +39,11 @@ def rows : Array Row := parseFixture rawFixture
 /-- Project a `C3Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
     (c : C3Classification) : ClassificationKind × Option String :=
-  match c with
-  | .clear => (.clear, none)
-  | .hazard sub _ _ =>
-    let tag : String := match sub with
-      | .annotationMisuse    _ _ _ => "AnnotationMisuse"
-      | .wordJoinerInjection _     => "WordJoinerInjection"
-      | .aiWatermarkNNBSP    _     => "AIWatermarkNNBSP"
-      | .binaryPayload       _ _   => "BinaryPayload"
-      | .bareZeroWidth       _     => "BareZeroWidth"
-    (.hazard, some tag)
+  if c.isClear then (.clear, none) else (.hazard, c.tag)
 
 /-- Project a `C3Classification` to the positions array. -/
 def projectPositions (c : C3Classification) : Array Nat :=
-  match c with
-  | .clear           => #[]
-  | .hazard _ pos _  => pos
+  c.positions
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 Per-row verifier

@@ -107,7 +107,7 @@ def parseKeyValue (tok : String) : Option (String × String) :=
                  then (val.drop 1).dropEnd 1
                  else val
       some (key, val.toString)
-  | _ => none
+  | [] => none
 
 /-- Parse the attribution column. Format: `key1="v1"; key2="v2"; ...`.
     Trailing semicolons and empty tokens are tolerated. -/
@@ -157,12 +157,12 @@ def parseDirective (line : String) : Option Directive :=
     let lvl := (t.drop 8).trimAscii.toString
     match lvl with
     | "basic"  => some (.levelDir .basic)
-    | "strict" => some (.levelDir .strict)
-    | "full"   => some (.levelDir .full)
-    | "1"      => some (.levelDir .basic)
-    | "2"      => some (.levelDir .strict)
-    | "3"      => some (.levelDir .full)
-    | _        => none
+    | "strict"     => some (.levelDir .strict)
+    | "full"       => some (.levelDir .full)
+    | "1"          => some (.levelDir .basic)
+    | "2"          => some (.levelDir .strict)
+    | "3"          => some (.levelDir .full)
+    | unknownLevel => Function.const String none unknownLevel
   else if t.startsWith "#" then some .comment
   else none
 
@@ -209,7 +209,7 @@ def parseRow (currentSection : String) (currentLevel : ConformanceLevel)
           sectionName := currentSection,
           conformanceLevel := currentLevel
         }
-    | _ => none
+    | tooFewColumns => Function.const (List String) none tooFewColumns
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 Fold-parse — applies directives + parses rows
