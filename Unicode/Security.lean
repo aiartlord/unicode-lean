@@ -39,3 +39,4 @@ import Unicode.Security.Display.RendererDivergence
 
 -- Layer 4 — Form Stability (normalization / DoS / locale)
 import Unicode.Security.Form.NormalizationBomb
+import Unicode.Security.Form.StreamSafeViolation

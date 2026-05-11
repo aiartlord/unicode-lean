@@ -1,0 +1,62 @@
+# StreamSafeViolationTest.txt
+# UCD version: 16.0.0
+# Security-spec version: 0.1.0
+# Family: F2 — Stream-Safe Text Format violation (UAX #15 § 13)
+# License: Apache-2.0
+#
+# Threat model: an attacker submits an input with a long
+# combining-mark run ("Zalgo" shape) that forces an unbounded
+# normalization buffer at the receiver.  UAX #15 § 13 caps the
+# run length at 30 non-starters and prescribes U+034F COMBINING
+# GRAPHEME JOINER as the canonical breaker.  F2 flags inputs
+# whose maximum non-starter run exceeds the cap.
+#
+# Detection (single sub-threat in v1):
+#   * StreamSafeOverrun (basePos, runLen) — first contiguous
+#     non-starter run with length > 30.
+#
+# Distinct from D4 `combiningStackOverflow`, which fires at the
+# cosmetic Zalgo threshold of 4 marks per base for renderer-
+# divergence reasons.  F2 is the spec-mandated DoS bound.
+#
+# Format:
+#   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
+#
+# Classifications produced by the F2 detector:
+#   Clear (= within the Stream-Safe bound)
+#   Hazard:StreamSafeOverrun
+
+# @section Clear
+# @level basic
+
+# ASCII Hello — zero non-starters.
+0048 0065 006C 006C 006F; Clear; ; # Hello
+
+# Korean Hangul 한 — a precomposed starter, zero non-starters.
+D55C; Clear; ; # 한
+
+# Single combining mark after a base — within bound.
+0061 0301; Clear; ; # a + combining acute
+
+# Exactly 30 combining marks after a base — boundary case.  Strict
+# `>` so a run of length 30 stays clear; 31 is the first violator.
+0061 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301; Clear; ; # a + 30 combining marks (boundary)
+
+# Two separate 30-mark runs split by a CGJ (the canonical
+# remediation).  Both runs are at the boundary; clear.
+0061 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 034F 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301; Clear; ; # a + 30 + CGJ + 30 (stream-safe)
+
+# @section StreamSafeOverrun
+# @level basic
+
+# Thirty-one combining marks — the minimum overrun.  Run starts
+# at position 1; length 31.
+0061 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301; Hazard:StreamSafeOverrun; 1; # a + 31 combining marks
+
+# Fifty combining marks — clearly intentional Zalgo.  Run starts
+# at position 1; length 50.
+0061 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301; Hazard:StreamSafeOverrun; 1; # a + 50 combining marks
+
+# Two consecutive overruns separated by a starter — the first
+# (length 31, starting at position 1) is the one reported.
+0061 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0062 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301; Hazard:StreamSafeOverrun; 1; # a+31, b+34 — first fires
