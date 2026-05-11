@@ -1,0 +1,87 @@
+# NfcIdempotenceWitnessTest.txt
+# UCD version: 16.0.0
+# Security-spec version: 0.1.0
+# Family: F6 — NFC / NFKC Form-Mismatch Witness (UAX #15)
+# License: Apache-2.0
+#
+# Threat model: an attacker submits text in a non-canonical form
+# that passes one stage of validation (which doesn't normalise)
+# but matches a stored canonical value at another stage (which
+# does).  The two-system bypass shape applies to any field that
+# is compared after being normalised on one side but not the
+# other — usernames, file paths, content hashes, cache keys.
+#
+# Detection (priority order, both reachable):
+#   1. NonNfcForm        — input != NFC(input).  The input is
+#                          not in canonical composition; combining
+#                          marks are decomposed or wrongly
+#                          ordered.
+#   2. NonNfkcCompatForm — input == NFC(input) but input
+#                          != NFKC(input).  Compatibility-only
+#                          form (ligatures, etc.).  Reached
+#                          when NonNfcForm doesn't fire first.
+#
+# Distinct from neighbouring Layer 4 detectors:
+#   F4 CaseExpansionMismatch — length change under case
+#   F5 WidthClassConfusion   — EAW class change under NFKD
+# F6 is the residual catch-all for shapes that change under NFC
+# or NFKC but don't fit the more specific F-family detectors.
+# In particular F6 fires on U+FB01 ﬁ (EAW = N, missed by F5).
+#
+# Format:
+#   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
+#
+# Classifications produced by the F6 detector:
+#   Clear
+#   Hazard:NonNfcForm
+#   Hazard:NonNfkcCompatForm
+
+# @section Clear
+# @level basic
+
+# ASCII Hello — in NFC and NFKC.
+0048 0065 006C 006C 006F; Clear; ; # Hello
+
+# Pre-composed é (U+00E9) — canonical NFC = #[00E9] = input.
+00E9; Clear; ; # é precomposed
+
+# Plain Han 中文 — identity under NFC/NFKC.
+4E2D 6587; Clear; ; # 中文
+
+# Korean Hangul 한 — canonical NFC composition.
+D55C; Clear; ; # 한 (precomposed)
+
+# Cyrillic привет — identity under NFC/NFKC.
+041F 0440 0438 0432 0435 0442; Clear; ; # привет
+
+# @section NonNfcForm
+# @level basic
+
+# e + combining acute (decomposed é) — NFC folds to #[00E9], so
+# input differs from NFC at position 0.  The canonical
+# decomposed-vs-precomposed mismatch.
+0065 0301; Hazard:NonNfcForm; 0; # e + combining acute → é
+
+# Two decomposed combining vowels — a + combining acute, e +
+# combining grave.  First decomp at position 0.
+0061 0301 0065 0300; Hazard:NonNfcForm; 0; # á + è decomposed
+
+# Decomposed o + combining diaeresis — NFC = #[00F6].
+006F 0308; Hazard:NonNfcForm; 0; # o + diaeresis → ö
+
+# Decomposed Hangul jamos — toNFC composes them back to D55C.
+1112 1161 11AB; Hazard:NonNfcForm; 0; # 한 jamos → 한
+
+# @section NonNfkcCompatForm
+# @level basic
+
+# ﬁ ligature (U+FB01) — canonical NFC = #[FB01] = input, but
+# NFKC = #[0066, 0069] differs.  EAW = N so F5 doesn't see this
+# as a width-class fold; F6 is the right detector.
+FB01; Hazard:NonNfkcCompatForm; 0; # ﬁ → fi compat
+
+# ﬃ ligature (U+FB03) — NFC stable, NFKC = #[0066, 0066, 0069].
+FB03; Hazard:NonNfkcCompatForm; 0; # ﬃ → ffi compat
+
+# Roman numeral Ⅳ (U+2163) — NFC stable, NFKC = #[0049, 0056] "IV".
+2163; Hazard:NonNfkcCompatForm; 0; # Ⅳ → IV compat
