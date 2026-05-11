@@ -48,6 +48,9 @@ jobs:
       - name: Security fixtures match pinned SHA-256
         run: bash scripts/check-security-hashes.sh
 
+      - name: BIP-39 wordlists match pinned SHA-256
+        run: bash scripts/check-bip39-hashes.sh
+
   build:
     # Lake build via the canonical Lean action. Toolchain version comes
     # from the `lean-toolchain` file; the action handles install, cache,
