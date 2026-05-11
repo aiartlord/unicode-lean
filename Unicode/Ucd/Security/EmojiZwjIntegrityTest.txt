@@ -1,0 +1,77 @@
+# EmojiZwjIntegrityTest.txt
+# UCD version: 16.0.0
+# Security-spec version: 0.1.0
+# Family: I3 — Emoji ZWJ-Sequence Integrity
+# License: Apache-2.0
+#
+# Threat model: malformed or unsanctioned emoji ZWJ-sequence
+# shapes that render differently across libraries (UTS #51).
+# Detects double-ZWJ, non-emoji injection, over-length chains,
+# skin-tone overflow, and unregistered ZWJ-joined sequences.
+#
+# Format:
+#   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
+#
+# Classifications produced by the I3 detector:
+#   Clear
+#   Hazard:DoubleZWJ              Hazard:NonEmojiInjection
+#   Hazard:OverLength             Hazard:SkinToneOverflow
+#   Hazard:UnregisteredSequence
+
+# @section Clear
+# @level basic
+
+# ASCII — no ZWJ.
+0048 0065 006C 006C 006F; Clear; ; # ASCII Hello
+
+# Plain emoji — no ZWJ.
+1F600; Clear; ; # Grinning face solo
+
+# Plain Han — no emoji structure.
+4E2D 6587; Clear; ; # Han 中文
+
+# Single skin-tone modifier on a wave emoji — count=1, clear.
+1F44B 1F3FB; Clear; ; # Waving hand, light skin tone
+
+# Registered RGI family (man + ZWJ + woman + ZWJ + girl + ZWJ + boy).
+1F468 200D 1F469 200D 1F467 200D 1F466; Clear; ; # 👨‍👩‍👧‍👦 family ZWJ sequence
+
+# Registered RGI couple-with-heart (man + ZWJ + heart + VS16 + ZWJ + man).
+# Note: actual emoji uses VS16, but for v1 we test the plain ZWJ form.
+1F468 200D 2764 FE0F 200D 1F468; Clear; ; # 👨‍❤️‍👨 couple RGI
+
+# @section DoubleZWJ
+# @level basic
+
+# Two ZWJs in a row between emojis.
+1F600 200D 200D 1F4BB; Hazard:DoubleZWJ; 1; # Grinning face + ZWJ ZWJ + laptop
+
+# Three adjacent ZWJs.
+1F600 200D 200D 200D 1F600; Hazard:DoubleZWJ; 1,2; # Triple ZWJ
+
+# @section NonEmojiInjection
+# @level basic
+
+# ZWJ joining ASCII 'a' (non-emoji).
+1F600 200D 0061; Hazard:NonEmojiInjection; 1; # Smiley + ZWJ + a
+
+# ZWJ joining ASCII digit '0'.
+0030 200D 1F600; Hazard:NonEmojiInjection; 1; # 0 + ZWJ + smiley
+
+# ZWJ joining a Han codepoint.
+1F600 200D 4E2D; Hazard:NonEmojiInjection; 1; # Smiley + ZWJ + Han 中
+
+# @section OverLength
+# @level strict
+
+# Pure-ZWJ chain longer than the 16-codepoint RGI cap.
+1F600 200D 1F600 200D 1F600 200D 1F600 200D 1F600 200D 1F600 200D 1F600 200D 1F600 200D 1F600; Hazard:OverLength; ; # 17-cp ZWJ chain
+
+# @section SkinToneOverflow
+# @level strict
+
+# Five distinct skin-tone modifiers on a single base.
+1F44B 1F3FB 1F3FC 1F3FD 1F3FE 1F3FF; Hazard:SkinToneOverflow; ; # 5 skin tones
+
+# Six skin-tone modifiers.
+1F44B 1F3FB 1F3FC 1F3FD 1F3FE 1F3FF 1F3FB; Hazard:SkinToneOverflow; ; # 6 skin tones
