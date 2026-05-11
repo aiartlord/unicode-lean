@@ -40,6 +40,15 @@
 # Note: actual emoji uses VS16, but for v1 we test the plain ZWJ form.
 1F468 200D 2764 FE0F 200D 1F468; Clear; ; chain_len=6; zwj_count=2; skin_tone_count=0; is_rgi=true; # 👨‍❤️‍👨 couple RGI
 
+# Registered RGI kiss couple (woman + heart + kiss + woman).
+1F469 200D 2764 FE0F 200D 1F48B 200D 1F469; Clear; ; chain_len=8; zwj_count=3; skin_tone_count=0; is_rgi=true; # 👩‍❤️‍💋‍👩 kiss RGI
+
+# Registered RGI family three-person.
+1F468 200D 1F469 200D 1F466; Clear; ; chain_len=5; zwj_count=2; skin_tone_count=0; is_rgi=true; # 👨‍👩‍👦 family-three
+
+# Skin-tone modifier alone (no base emoji) — no ZWJ, single tone.
+1F3FB; Clear; ; chain_len=0; zwj_count=0; skin_tone_count=1; is_rgi=false; # skin tone alone
+
 # @section DoubleZWJ
 # @level basic
 
@@ -48,6 +57,9 @@
 
 # Three adjacent ZWJs.
 1F600 200D 200D 200D 1F600; Hazard:DoubleZWJ; 1,2; chain_len=5; zwj_count=3; skin_tone_count=0; is_rgi=false; # Triple ZWJ
+
+# Double ZWJ in a family-shape chain (man + ZWJ + ZWJ + woman + ZWJ + girl).
+1F468 200D 200D 1F469 200D 1F467; Hazard:DoubleZWJ; 1; chain_len=6; zwj_count=3; skin_tone_count=0; is_rgi=false; # Family with double ZWJ
 
 # @section NonEmojiInjection
 # @level basic
@@ -59,7 +71,13 @@
 0030 200D 1F600; Hazard:NonEmojiInjection; 1; chain_len=3; zwj_count=1; skin_tone_count=0; is_rgi=false; # 0 + ZWJ + smiley
 
 # ZWJ joining a Han codepoint.
-1F600 200D 4E2D; Hazard:NonEmojiInjection; 1; chain_len=3; zwj_count=1; skin_tone_count=0; is_rgi=false; # Smiley + ZWJ + Han 中
+1F600 200D 4E2D; Hazard:NonEmojiInjection; 1; chain_len=3; zwj_count=1; skin_tone_count=0; is_rgi=false; # Smiley + ZWJ + Han
+
+# ZWJ joining Cyrillic letter.
+1F600 200D 0430; Hazard:NonEmojiInjection; 1; chain_len=3; zwj_count=1; skin_tone_count=0; is_rgi=false; # Smiley + ZWJ + Cyrillic а
+
+# ZWJ joining Arabic letter.
+1F600 200D 0627; Hazard:NonEmojiInjection; 1; chain_len=3; zwj_count=1; skin_tone_count=0; is_rgi=false; # Smiley + ZWJ + Arabic alef
 
 # @section OverLength
 # @level strict
@@ -69,7 +87,10 @@
 # participates in family / couple / profession sequences) —
 # so the chain passes the non-emoji-injection check but trips
 # the length cap.
-1F468 200D 1F468 200D 1F468 200D 1F468 200D 1F468 200D 1F468 200D 1F468 200D 1F468 200D 1F468; Hazard:OverLength; ; chain_len=17; zwj_count=8; skin_tone_count=0; is_rgi=false; # 9x MAN, 8x ZWJ — 17-cp chain
+1F468 200D 1F468 200D 1F468 200D 1F468 200D 1F468 200D 1F468 200D 1F468 200D 1F468 200D 1F468; Hazard:OverLength; ; chain_len=17; zwj_count=8; skin_tone_count=0; is_rgi=false; # 9 MAN 8 ZWJ — 17-cp chain
+
+# Longer 21-cp chain (11x MAN + 10x ZWJ).
+1F468 200D 1F468 200D 1F468 200D 1F468 200D 1F468 200D 1F468 200D 1F468 200D 1F468 200D 1F468 200D 1F468 200D 1F468; Hazard:OverLength; ; chain_len=21; zwj_count=10; skin_tone_count=0; is_rgi=false; # 21-cp chain
 
 # @section SkinToneOverflow
 # @level strict
@@ -79,3 +100,6 @@
 
 # Six skin-tone modifiers.
 1F44B 1F3FB 1F3FC 1F3FD 1F3FE 1F3FF 1F3FB; Hazard:SkinToneOverflow; ; chain_len=0; zwj_count=0; skin_tone_count=6; is_rgi=false; # 6 skin tones
+
+# Seven skin-tone modifiers (extreme overflow).
+1F44B 1F3FB 1F3FC 1F3FD 1F3FE 1F3FF 1F3FB 1F3FC; Hazard:SkinToneOverflow; ; chain_len=0; zwj_count=0; skin_tone_count=7; is_rgi=false; # 7 skin tones

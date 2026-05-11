@@ -35,6 +35,18 @@
 # Man emoji + medium-light skin tone.
 1F468 1F3FC; Clear; ; skin_tone_count=1; vs15_count=0; vs16_count=0; # Man, medium-light skin tone
 
+# Woman emoji + medium skin tone.
+1F469 1F3FD; Clear; ; skin_tone_count=1; vs15_count=0; vs16_count=0; # Woman, medium skin tone
+
+# Plain Han 中文.
+4E2D 6587; Clear; ; skin_tone_count=0; vs15_count=0; vs16_count=0; # Han
+
+# Wave-hand + VS16 (emoji-presentation, sanctioned).
+1F44B FE0F; Clear; ; skin_tone_count=0; vs15_count=0; vs16_count=1; # Wave + VS16 (emoji-presentation)
+
+# Heart + VS16 (sanctioned text-to-emoji conversion).
+2764 FE0F; Clear; ; skin_tone_count=0; vs15_count=0; vs16_count=1; # ❤ + VS16 emoji style
+
 # @section StackedSkinTones
 # @level basic
 
@@ -62,6 +74,12 @@
 # Skin tone on digit 5.
 0035 1F3FB; Hazard:InvalidSkinToneTarget; 1; skin_tone_count=1; vs15_count=0; vs16_count=0; # 5 + light skin tone
 
+# Skin tone on red heart (not a modifier base).
+2764 1F3FB; Hazard:InvalidSkinToneTarget; 1; skin_tone_count=1; vs15_count=0; vs16_count=0; # heart + light skin tone
+
+# Skin tone on Cyrillic letter.
+0430 1F3FB; Hazard:InvalidSkinToneTarget; 1; skin_tone_count=1; vs15_count=0; vs16_count=0; # Cyrillic а + skin tone
+
 # @section ForcedTextStyle
 # @level strict
 
@@ -73,3 +91,12 @@
 
 # VS15 on red heart (emoji-default).
 1F495 FE0E; Hazard:ForcedTextStyle; 1; skin_tone_count=0; vs15_count=1; vs16_count=0; # Two hearts + VS15
+
+# VS15 on woman.
+1F469 FE0E; Hazard:ForcedTextStyle; 1; skin_tone_count=0; vs15_count=1; vs16_count=0; # Woman + VS15
+
+# VS15 on man.
+1F468 FE0E; Hazard:ForcedTextStyle; 1; skin_tone_count=0; vs15_count=1; vs16_count=0; # Man + VS15
+
+# VS15 on laptop emoji.
+1F4BB FE0E; Hazard:ForcedTextStyle; 1; skin_tone_count=0; vs15_count=1; vs16_count=0; # Laptop + VS15
