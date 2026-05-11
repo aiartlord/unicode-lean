@@ -20,3 +20,4 @@ import Unicode.Security.Fixture
 
 -- Layer 1 — Covert Channels
 import Unicode.Security.Covert.VariationSelectorPayload
+import Unicode.Security.Covert.TagBlockPayload

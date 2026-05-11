@@ -204,3 +204,4 @@ import Unicode.Security
 -- Security Conformance Layer — per-family fixture-conformance proofs
 -- (parallel structure to Unicode.Conformance.* for the UAX/UTS base).
 import Unicode.Conformance.Security.VariationSelectorPayloadTest
+import Unicode.Conformance.Security.TagBlockPayloadTest
