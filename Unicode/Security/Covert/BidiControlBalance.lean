@@ -214,14 +214,23 @@ def detect (input : Array Nat) : C5Verdict :=
         isoOpenCount := st.isoOpenCount, isoPopCount := st.isoPopCount,
         maxDepth := st.maxDepth, orphans := #[] }
     | some sub =>
+      -- Positions semantics: orphan-pop is per-codepoint (one
+      -- entry per stray PDF/PDI).  Depth-exceeded is a
+      -- whole-string verdict — the stack-of-stacks is the
+      -- problem, not any single codepoint — so we report an
+      -- empty positions array and let the `max_depth` metadata
+      -- field carry the quantitative signal.  Unbalanced
+      -- embedding / isolate likewise report all detected bidi
+      -- positions; the diagnostic is "look at these controls,
+      -- something is missing a partner".
       let positions : Array Nat :=
         match sub with
-        | .orphanPop ps                        => ps
-        | .depthExceeded maxDepth              =>
-            Function.const Nat st.bidiPositions maxDepth
-        | .unbalancedEmbedding openCount popCount =>
+        | .orphanPop ps                            => ps
+        | .depthExceeded maxDepth                  =>
+            Function.const Nat (#[] : Array Nat) maxDepth
+        | .unbalancedEmbedding openCount popCount  =>
             Function.const (Nat × Nat) st.bidiPositions (openCount, popCount)
-        | .unbalancedIsolate openCount popCount =>
+        | .unbalancedIsolate openCount popCount    =>
             Function.const (Nat × Nat) st.bidiPositions (openCount, popCount)
       { input := input,
         classify := .hazard sub positions ByteArray.empty,

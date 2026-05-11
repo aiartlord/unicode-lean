@@ -79,22 +79,26 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by native_decide
 
 /-- Row-count gate (catches fixture corruption / accidental rewrites). -/
-theorem row_count : rows.size = 18 := by native_decide
+theorem row_count : rows.size = 27 := by native_decide
 
 /-- Section coverage gates. -/
 theorem covers_clear :
     (rows.filter (·.sectionName = "Clear")).size ≥ 7 := by native_decide
 
 theorem covers_unbalanced_embedding :
-    (rows.filter (·.sectionName = "UnbalancedEmbedding")).size ≥ 4 := by
+    (rows.filter (·.sectionName = "UnbalancedEmbedding")).size ≥ 7 := by
   native_decide
 
 theorem covers_unbalanced_isolate :
-    (rows.filter (·.sectionName = "UnbalancedIsolate")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "UnbalancedIsolate")).size ≥ 6 := by
   native_decide
 
 theorem covers_orphan_pop :
-    (rows.filter (·.sectionName = "OrphanPop")).size ≥ 4 := by native_decide
+    (rows.filter (·.sectionName = "OrphanPop")).size ≥ 6 := by native_decide
+
+theorem covers_depth_exceeded :
+    (rows.filter (·.sectionName = "DepthExceeded")).size ≥ 1 := by
+  native_decide
 
 /-- The actual Trojan Source attack codepoint (RLO) is caught
     by the detector — regression check against the bug that

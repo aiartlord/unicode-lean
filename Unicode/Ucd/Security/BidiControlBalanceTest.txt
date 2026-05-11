@@ -90,3 +90,43 @@
 
 # Letter then PDF then letter — mid-stream orphan.
 0041 202C 0042; Hazard:OrphanPop; 1; emb_open=0; emb_pop=1; iso_open=0; iso_pop=0; max_depth=0; orphans=1; # Mid-stream orphan PDF
+
+# Mid-stream orphan PDI after a balanced LRE region.
+202A 0041 202C 2069; Hazard:OrphanPop; 3; emb_open=1; emb_pop=1; iso_open=0; iso_pop=1; max_depth=1; orphans=1; # balanced LRE … then orphan PDI
+
+# Three orphans in a row — emb pop, iso pop, emb pop.
+202C 2069 202C; Hazard:OrphanPop; 0,1,2; emb_open=0; emb_pop=2; iso_open=0; iso_pop=1; max_depth=0; orphans=3; # PDF + PDI + PDF triple orphan
+
+# @section UnbalancedEmbedding
+# @level strict
+
+# Boucher–Anderson CVE-2021-42574 "stretched-string" canonical payload —
+# the `return` and the user-visible IF/ELSE swap.
+0069 0066 0020 0028 0061 0064 006D 0069 006E 0020 202E 0029 0020 007B 0020 002F 0073 0061 0066 0065 002F 007D; Hazard:UnbalancedEmbedding; 10; emb_open=1; emb_pop=0; iso_open=0; iso_pop=0; max_depth=1; # if (admin RLO ) { /safe/ } — stretched
+
+# Nested LRE + LRE + PDF — one PDF missing.
+202A 202A 0041 202C; Hazard:UnbalancedEmbedding; 0,1,3; emb_open=2; emb_pop=1; iso_open=0; iso_pop=0; max_depth=2; # LRE LRE PDF — one short
+
+# Trailing LRO after a balanced region (sneaks into a later token).
+202A 0041 202C 202D; Hazard:UnbalancedEmbedding; 0,2,3; emb_open=2; emb_pop=1; iso_open=0; iso_pop=0; max_depth=1; # balanced LRE then trailing LRO
+
+# @section UnbalancedIsolate
+# @level strict
+
+# CVE-2021-42694 isolate variant — LRI commenting-out trick.
+0072 0065 0074 0075 0072 006E 0020 2066 0066 0072 006F 006D 0020 0061 0064 006D 0069 006E; Hazard:UnbalancedIsolate; 7; emb_open=0; emb_pop=0; iso_open=1; iso_pop=0; max_depth=1; # return LRI from admin — isolate variant
+
+# Three isolates opened, only one PDI.
+2066 2067 2068 0041 2069; Hazard:UnbalancedIsolate; 0,1,2,4; emb_open=0; emb_pop=0; iso_open=3; iso_pop=1; max_depth=3; # LRI RLI FSI A PDI — two short
+
+# Mixed-stack isolate left open after embedding pops.
+202A 2066 0041 202C; Hazard:UnbalancedIsolate; 0,1,3; emb_open=1; emb_pop=1; iso_open=1; iso_pop=0; max_depth=2; # LRE LRI A PDF — LRI dangling
+
+# @section DepthExceeded
+# @level strict
+
+# UAX #9 §3.3.2 cap is 125; 126 nested LRIs trip the limit.  This is a
+# whole-string verdict (no per-codepoint pointer) — the stack-of-stacks
+# itself is the problem, not any single codepoint.  The `max_depth`
+# attribution field carries the quantitative signal.
+2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066 2066; Hazard:DepthExceeded; ; emb_open=0; emb_pop=0; iso_open=126; iso_pop=0; max_depth=126; # 126 nested LRIs trip UAX#9 §3.3.2 depth cap (whole-string)
