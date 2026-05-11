@@ -66,29 +66,29 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by native_decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 16 := by native_decide
+theorem row_count : rows.size = 27 := by native_decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 5 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by native_decide
 
 theorem covers_vs :
-    (rows.filter (·.sectionName = "VariationSelectorVariance")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "VariationSelectorVariance")).size ≥ 5 := by
   native_decide
 
 theorem covers_unregistered_zwj :
-    (rows.filter (·.sectionName = "UnregisteredZwjVariance")).size ≥ 2 := by
+    (rows.filter (·.sectionName = "UnregisteredZwjVariance")).size ≥ 3 := by
   native_decide
 
 theorem covers_combining_overflow :
-    (rows.filter (·.sectionName = "CombiningStackOverflow")).size ≥ 2 := by
+    (rows.filter (·.sectionName = "CombiningStackOverflow")).size ≥ 4 := by
   native_decide
 
 theorem covers_fullwidth :
-    (rows.filter (·.sectionName = "FullwidthVariance")).size ≥ 2 := by
+    (rows.filter (·.sectionName = "FullwidthVariance")).size ≥ 4 := by
   native_decide
 
 theorem covers_mixed_direction :
-    (rows.filter (·.sectionName = "MixedDirectionVariance")).size ≥ 2 := by
+    (rows.filter (·.sectionName = "MixedDirectionVariance")).size ≥ 3 := by
   native_decide
 
 end Unicode.Conformance.Security.RendererDivergenceTest

@@ -37,6 +37,15 @@
 # Registered RGI family ZWJ — stable.
 1F468 200D 1F469 200D 1F467 200D 1F466; Clear; ; vs_count=0; comb_count=0; fw_count=0; has_zwj=true; ltr_count=0; rtl_count=0; # 👨‍👩‍👧‍👦
 
+# Single emoji with no variation selector — stable.
+1F600; Clear; ; vs_count=0; comb_count=0; fw_count=0; has_zwj=false; ltr_count=0; rtl_count=0; # 😀 no VS
+
+# Plain Greek (strong-LTR script).
+03B1 03B2 03B3; Clear; ; vs_count=0; comb_count=0; fw_count=0; has_zwj=false; ltr_count=3; rtl_count=0; # αβγ
+
+# Plain Arabic (strong-RTL).
+0628 062A 062B; Clear; ; vs_count=0; comb_count=0; fw_count=0; has_zwj=false; ltr_count=0; rtl_count=3; # بتث
+
 # @section VariationSelectorVariance
 # @level basic
 
@@ -49,6 +58,13 @@
 # Standardized variation: digit 0 + FE00.
 0030 FE00; Hazard:VariationSelectorVariance; 1; vs_count=1; comb_count=1; fw_count=0; has_zwj=false; ltr_count=0; rtl_count=0; # 0 + FE00 (slashed zero)
 
+# VS15 text-presentation variant.
+1F600 FE0E; Hazard:VariationSelectorVariance; 1; vs_count=1; comb_count=1; fw_count=0; has_zwj=false; ltr_count=0; rtl_count=0; # 😀 + VS15 text presentation
+
+# Supplementary VS17 — IVS region cohort.  VS17 has gc=Mn so
+# it also tallies as a combining mark (vs_count=1 + comb_count=1).
+4E2D E0100; Hazard:VariationSelectorVariance; 1; vs_count=1; comb_count=1; fw_count=0; has_zwj=false; ltr_count=1; rtl_count=0; # 中 + VS17 supplementary
+
 # @section UnregisteredZwjVariance
 # @level strict
 
@@ -57,6 +73,9 @@
 
 # WOMAN + ZWJ + WOMAN.
 1F469 200D 1F469; Hazard:UnregisteredZwjVariance; 1; vs_count=0; comb_count=0; fw_count=0; has_zwj=true; ltr_count=0; rtl_count=0; # 👩‍👩 unregistered
+
+# Generic faces ZWJ — unregistered triple.
+1F600 200D 1F601 200D 1F602; Hazard:UnregisteredZwjVariance; 1; vs_count=0; comb_count=0; fw_count=0; has_zwj=true; ltr_count=0; rtl_count=0; # 😀‍😁‍😂 unregistered chain
 
 # @section CombiningStackOverflow
 # @level strict
@@ -67,6 +86,12 @@
 # 5 combining marks.
 0061 0301 0302 0303 0304 0305; Hazard:CombiningStackOverflow; 0; vs_count=0; comb_count=5; fw_count=0; has_zwj=false; ltr_count=1; rtl_count=0; # a + 5 combining
 
+# 6 combining marks — full Zalgo overflow.
+0061 0301 0302 0303 0304 0305 0306; Hazard:CombiningStackOverflow; 0; vs_count=0; comb_count=6; fw_count=0; has_zwj=false; ltr_count=1; rtl_count=0; # a + 6 combining
+
+# 4 combining marks on Han.
+4E2D 0301 0302 0303 0304; Hazard:CombiningStackOverflow; 0; vs_count=0; comb_count=4; fw_count=0; has_zwj=false; ltr_count=1; rtl_count=0; # 中 + 4 combining
+
 # @section FullwidthVariance
 # @level basic
 
@@ -76,6 +101,12 @@ FF21; Hazard:FullwidthVariance; 0; vs_count=0; comb_count=0; fw_count=1; has_zwj
 # Fullwidth quotation mark.
 FF02; Hazard:FullwidthVariance; 0; vs_count=0; comb_count=0; fw_count=1; has_zwj=false; ltr_count=0; rtl_count=0; # fullwidth "
 
+# Fullwidth digit zero.
+FF10; Hazard:FullwidthVariance; 0; vs_count=0; comb_count=0; fw_count=1; has_zwj=false; ltr_count=0; rtl_count=0; # ０
+
+# Halfwidth katakana 'ｱ'.  Katakana is bidi-class L → ltr_count=1.
+FF71; Hazard:FullwidthVariance; 0; vs_count=0; comb_count=0; fw_count=1; has_zwj=false; ltr_count=1; rtl_count=0; # ｱ halfwidth
+
 # @section MixedDirectionVariance
 # @level strict
 
@@ -84,3 +115,6 @@ FF02; Hazard:FullwidthVariance; 0; vs_count=0; comb_count=0; fw_count=1; has_zwj
 
 # Han + Arabic mix.
 4E2D 0627; Hazard:MixedDirectionVariance; ; vs_count=0; comb_count=0; fw_count=0; has_zwj=false; ltr_count=1; rtl_count=1; # 中 + alef
+
+# Cyrillic + Hebrew mix.
+043F 05D0 05D1; Hazard:MixedDirectionVariance; ; vs_count=0; comb_count=0; fw_count=0; has_zwj=false; ltr_count=1; rtl_count=2; # п + אב
