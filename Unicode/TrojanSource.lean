@@ -82,9 +82,14 @@ def containsBidiFormatControl (cps : Array Nat) : Bool :=
 -- control is matched by a "close" control of the same kind.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- True iff `cp` opens an embedding context: LRE, RLE, LRO. -/
+/-- True iff `cp` opens an embedding-or-override context: LRE,
+    RLE, LRO, or RLO.  Per UAX #9 §3.3.2 all four push a new
+    bidi level onto the formatting stack and are closed by a
+    single matching PDF.  RLO (`U+202E`) is the primary attack
+    vector for Trojan Source (CVE-2021-42574), so its inclusion
+    here is load-bearing for the balance check below. -/
 def opensEmbedding (cp : Nat) : Bool :=
-  cp = 0x202A || cp = 0x202B || cp = 0x202D
+  cp = 0x202A || cp = 0x202B || cp = 0x202D || cp = 0x202E
 
 /-- U+202C POP DIRECTIONAL FORMATTING. -/
 def isPDF (cp : Nat) : Bool := cp = 0x202C
