@@ -57,17 +57,17 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by native_decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 12 := by native_decide
+theorem row_count : rows.size = 21 := by native_decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 5 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by native_decide
 
 theorem covers_turkish :
-    (rows.filter (·.sectionName = "TurkishCaseDivergence")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "TurkishCaseDivergence")).size ≥ 6 := by
   native_decide
 
 theorem covers_lithuanian :
-    (rows.filter (·.sectionName = "LithuanianCaseDivergence")).size ≥ 2 := by
+    (rows.filter (·.sectionName = "LithuanianCaseDivergence")).size ≥ 5 := by
   native_decide
 
 end Unicode.Conformance.Security.LocaleCaseInversionTest

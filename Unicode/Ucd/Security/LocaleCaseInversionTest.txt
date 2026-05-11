@@ -50,6 +50,16 @@
 # Capital "ASCII" without I — Turkish doesn't touch A/B/C/D.
 0041 0042 0043 0044; Clear; ; # ABCD
 
+# Arabic letters — no Latin / case rules.
+0627 0628 0629; Clear; ; # Arabic
+
+# Lowercase 'i' alone — Turkish toUpper differs, but the detector
+# scans toLower; toLower('i') is 'i' under both locales.  Clear.
+0069; Clear; ; # i lowercase
+
+# Plain ASCII URL — no I/J in lowercase.
+0068 0074 0074 0070 003A 002F 002F; Clear; ; # http://
+
 # @section TurkishCaseDivergence
 # @level basic
 
@@ -69,6 +79,16 @@
 # Mixed dotted İ in the middle of a word — fires at position 1.
 0061 0130 0061; Hazard:TurkishCaseDivergence; 1; # aİa
 
+# Lowercase 'I' chain — every I diverges.  Detector reports the
+# first.
+0049 0049 0049; Hazard:TurkishCaseDivergence; 0; # III
+
+# "ADMIN" with capital I at position 3.
+0041 0044 004D 0049 004E; Hazard:TurkishCaseDivergence; 3; # ADMIN
+
+# Capital "INDEX.HTML" — I at position 0.
+0049 004E 0044 0045 0058 002E 0048 0054 004D 004C; Hazard:TurkishCaseDivergence; 0; # INDEX.HTML
+
 # @section LithuanianCaseDivergence
 # @level basic
 
@@ -82,3 +102,12 @@
 # J + combining acute — same Lithuanian path with a different
 # ccc = 230 mark.
 004A 0301; Hazard:LithuanianCaseDivergence; 0; # J + combining acute
+
+# J + combining circumflex (ccc = 230) — another above-mark.
+004A 0302; Hazard:LithuanianCaseDivergence; 0; # J + combining circumflex
+
+# J + combining diaeresis — yet another above-mark.
+004A 0308; Hazard:LithuanianCaseDivergence; 0; # J + combining diaeresis
+
+# Two Js with above-marks — both diverge, first reported.
+004A 0300 004A 0301; Hazard:LithuanianCaseDivergence; 0; # JJ both with above-marks
