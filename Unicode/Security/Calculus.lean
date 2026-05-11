@@ -264,6 +264,20 @@ def checkStringKey (kv : KeyValueAttribution) (key : String) (actual : String) :
   | none           => true
   | some expected  => decide (actual = expected)
 
+/-- Validate a `Bool`-valued attribution key.  The fixture writes
+    the literal strings `true` / `false`; any other value present
+    is a parse error and fails the check.  Missing key passes. -/
+@[inline]
+def checkBoolKey (kv : KeyValueAttribution) (key : String) (actual : Bool) :
+    Bool :=
+  match kv.get? key with
+  | none      => true
+  | some raw  =>
+    match raw with
+    | "true"  => actual
+    | "false" => !actual
+    | other   => Function.const String false other
+
 end KeyValueAttribution
 
 -- ═══════════════════════════════════════════════════════════════════════════════

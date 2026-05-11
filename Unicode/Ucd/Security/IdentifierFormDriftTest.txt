@@ -38,16 +38,16 @@
 # @level basic
 
 # ASCII Hello — every cp Allowed with identity NFKD.
-0048 0065 006C 006C 006F; Clear; ; # Hello
+0048 0065 006C 006C 006F; Clear; ; shift_count=0; # Hello
 
 # Plain ASCII admin — the canonical credential.
-0061 0064 006D 0069 006E; Clear; ; # admin
+0061 0064 006D 0069 006E; Clear; ; shift_count=0; # admin
 
 # Plain Han 中文 — both cps Allowed, identity NFKD.
-4E2D 6587; Clear; ; # 中文
+4E2D 6587; Clear; ; shift_count=0; # 中文
 
 # Greek lowercase αβγ — all Allowed, identity NFKD.
-03B1 03B2 03B3; Clear; ; # αβγ
+03B1 03B2 03B3; Clear; ; shift_count=0; # αβγ
 
 # Note: precomposed Hangul syllables (e.g. U+D55C 한) are
 # Allowed but their NFKD-head jamos (e.g. U+1112) are Restricted
@@ -57,7 +57,7 @@
 # in the IdentifierStatusShift section below.
 
 # Cyrillic привет — every cp Allowed.
-041F 0440 0438 0432 0435 0442; Clear; ; # привет (Russian)
+041F 0440 0438 0432 0435 0442; Clear; ; shift_count=0; # привет (Russian)
 
 # @section IdentifierStatusShift
 # @level basic
@@ -66,37 +66,37 @@
 # alphanumeric block).  NFKD-head = U+0061 'a' (Allowed).  The
 # canonical X1 attack: bypass an `isAllowedIdentifier` check by
 # routing through a normalising stage.
-1D44E; Hazard:IdentifierStatusShift; 0; # 𝑎 (math italic a)
+1D44E; Hazard:IdentifierStatusShift; 0; shift_count=1; # 𝑎 (math italic a)
 
 # Mathematical Italic "admin" — five-cp math identifier whose
 # NFKD folds to "admin".  Shift fires at position 0.
-1D44E 1D451 1D45A 1D456 1D45B; Hazard:IdentifierStatusShift; 0; # 𝑎𝑑𝑚𝑖𝑛
+1D44E 1D451 1D45A 1D456 1D45B; Hazard:IdentifierStatusShift; 0; shift_count=5; # 𝑎𝑑𝑚𝑖𝑛
 
 # Fullwidth Ａ (U+FF21) — Restricted compatibility form, NFKD-head
 # U+0041 'A' Allowed.  Same threat shape as the Math Italic case
 # but via the F-class fold.
-FF21; Hazard:IdentifierStatusShift; 0; # Ａ
+FF21; Hazard:IdentifierStatusShift; 0; shift_count=1; # Ａ
 
 # Circled A (U+24B6) — Restricted (Default_Ignorable / enclosed
 # alphanumeric).  NFKD-head U+0041 Allowed.
-24B6; Hazard:IdentifierStatusShift; 0; # Ⓐ
+24B6; Hazard:IdentifierStatusShift; 0; shift_count=1; # Ⓐ
 
 # ﬁ ligature (U+FB01) — Restricted compatibility form, NFKD-head
 # U+0066 'f' Allowed.  EAW=N so F5 misses this; F6 catches the
 # form change but not the identity claim shift; X1 is the
 # identity-side detector for this codepoint class.
-FB01; Hazard:IdentifierStatusShift; 0; # ﬁ
+FB01; Hazard:IdentifierStatusShift; 0; shift_count=1; # ﬁ
 
 # Roman numeral Ⅳ (U+2163) — Restricted, NFKD-head U+0049 'I'
 # Allowed.  Letter-like-symbols-as-identifier attack.
-2163; Hazard:IdentifierStatusShift; 0; # Ⅳ
+2163; Hazard:IdentifierStatusShift; 0; shift_count=1; # Ⅳ
 
 # ASCII prefix + math italic letter at position 3 — shift at
 # position 3, not 0.
-0061 0062 0063 1D44E; Hazard:IdentifierStatusShift; 3; # abc𝑎
+0061 0062 0063 1D44E; Hazard:IdentifierStatusShift; 3; shift_count=1; # abc𝑎
 
 # Precomposed Korean syllable 한 (U+D55C, Allowed) whose NFKD-head
 # is U+1112 HANGUL CHOSEONG HIEUH (Restricted in UTS #39
 # IdentifierStatus.txt).  Pure Korean text fires X1 at position 0.
 # Remediation: NFKC-normalise (or NFC-normalise) before validating.
-D55C; Hazard:IdentifierStatusShift; 0; # 한 (precomposed → jamo Restricted)
+D55C; Hazard:IdentifierStatusShift; 0; shift_count=1; # 한 (precomposed → jamo Restricted)

@@ -37,13 +37,26 @@ def projectClassify
 def projectPositions (c : I3Classification) : Array Nat :=
   c.positions
 
+/-- Validate the I3 verdict's metadata fields against the row's
+    column-4 attribution.  Recognised keys: `chain_len` (the ZWJ
+    chain length), `vs_count` (placeholder for future emoji
+    variation-selector counts — currently `zwjPositions.size`),
+    `skin_tone_count`, and `is_rgi` (registered RGI flag). -/
+private def metadataMatches (v : I3Verdict)
+    (attr : KeyValueAttribution) : Bool :=
+  attr.checkNatKey   "chain_len"       v.chainLength &&
+  attr.checkNatKey   "zwj_count"       v.zwjPositions.size &&
+  attr.checkNatKey   "skin_tone_count" v.skinToneCount &&
+  attr.checkBoolKey  "is_rgi"          v.isRegisteredRGI
+
 /-- Run `detect` on the row's input and check the verdict against
-    the fixture's expected classification, sub-threat name, and
-    hazard positions. -/
+    the fixture's expected classification, sub-threat name, hazard
+    positions, AND the column-4 attribution metadata. -/
 def verifyRow (r : Row) : Bool :=
   let v := detect r.input
   let (kind, subTag) := projectClassify v.classify
   let pos := projectPositions v.classify
+  metadataMatches v r.attribution &&
   decide (kind = r.expectedKind) &&
   decide (subTag = r.expectedSubThreat) &&
   decide (pos = r.expectedPositions)

@@ -43,64 +43,64 @@
 # @level basic
 
 # ASCII Hello — no confusable, no bidi.
-0048 0065 006C 006C 006F; Clear; ; # Hello
+0048 0065 006C 006C 006F; Clear; ; conf_count=0; # Hello
 
 # Plain Latin admin — no confusable, no bidi.
-0061 0064 006D 0069 006E; Clear; ; # admin
+0061 0064 006D 0069 006E; Clear; ; conf_count=1; # admin
 
 # Cyrillic а alone — I1 case, not X3.  No bidi → no compound.
-0430; Clear; ; # а (Cyrillic alone)
+0430; Clear; ; conf_count=1; # а (Cyrillic alone)
 
 # RLO + plain ASCII without confusable letters — D3 case, not
 # X3.  Avoid 'admin' here because 'm' (U+006D) is itself a
 # confusable source (maps to rn) per confusables.txt, which
 # would make "RLO + admin" an actual X3 compound rather than
 # a D3-only case.
-202E 0041 0042 0043; Clear; ; # RLO + ABC (D3 case)
+202E 0041 0042 0043; Clear; ; conf_count=0; # RLO + ABC (D3 case)
 
 # Plain Greek text without bidi — αβγ.  Greek alpha (U+03B1) is
 # itself a confusable target row mapping to Latin a, but with
 # no bidi this is I1 territory only.
-03B1 03B2 03B3; Clear; ; # αβγ (no bidi)
+03B1 03B2 03B3; Clear; ; conf_count=3; # αβγ (no bidi)
 
 # Han 中文 — no confusable in confusables.txt, no bidi.
-4E2D 6587; Clear; ; # 中文
+4E2D 6587; Clear; ; conf_count=0; # 中文
 
 # @section ConfusableInOverride
 # @level strict
 
 # RLO + Cyrillic а — the canonical compound at positions 1, 0.
-202E 0430; Hazard:ConfusableInOverride; 1,0; # RLO + Cyrillic а
+202E 0430; Hazard:ConfusableInOverride; 1,0; conf_count=1; # RLO + Cyrillic а
 
 # Cyrillic "аdmin" + RLO — confusable at 0, bidi at 5.
-0430 0064 006D 0069 006E 202E; Hazard:ConfusableInOverride; 0,5; # аdmin + RLO
+0430 0064 006D 0069 006E 202E; Hazard:ConfusableInOverride; 0,5; conf_count=2; # аdmin + RLO
 
 # RLO + Greek omicron at position 1 — Greek ο folds to Latin o.
-202E 03BF; Hazard:ConfusableInOverride; 1,0; # RLO + Greek ο
+202E 03BF; Hazard:ConfusableInOverride; 1,0; conf_count=1; # RLO + Greek ο
 
 # LRO + Cyrillic А (capital) — embedding-class control + capital
 # homoglyph for Latin A.
-202D 0410; Hazard:ConfusableInOverride; 1,0; # LRO + Cyrillic А
+202D 0410; Hazard:ConfusableInOverride; 1,0; conf_count=1; # LRO + Cyrillic А
 
 # Plain ASCII + Cyrillic а + PDF (terminator-only override) —
 # PDF is in the embedding class.  Confusable at 1, bidi at 2.
-0078 0430 202C; Hazard:ConfusableInOverride; 1,2; # x + а + PDF
+0078 0430 202C; Hazard:ConfusableInOverride; 1,2; conf_count=1; # x + а + PDF
 
 # Plain ASCII "admin" + RLO.  confusables.txt v16 maps U+006D
 # 'm' to U+0072 U+006E ('rn'), so the m at position 2 is the
 # confusable source; bidi at position 5.
-0061 0064 006D 0069 006E 202E; Hazard:ConfusableInOverride; 2,5; # admin + RLO (m → rn)
+0061 0064 006D 0069 006E 202E; Hazard:ConfusableInOverride; 2,5; conf_count=1; # admin + RLO (m → rn)
 
 # @section ConfusableInIsolate
 # @level strict
 
 # LRI + Cyrillic а — isolate-class compound.  No override
 # present so the detector falls through to isolate-class scan.
-2066 0430; Hazard:ConfusableInIsolate; 1,0; # LRI + Cyrillic а
+2066 0430; Hazard:ConfusableInIsolate; 1,0; conf_count=1; # LRI + Cyrillic а
 
 # RLI + Greek capital alpha (U+0391 → Latin A) — confusable at
 # position 1, isolate at 0.
-2067 0391; Hazard:ConfusableInIsolate; 1,0; # RLI + Greek Α
+2067 0391; Hazard:ConfusableInIsolate; 1,0; conf_count=1; # RLI + Greek Α
 
 # FSI + Cyrillic а + PDI — full isolate wrapping.  Confusable at 1.
-2068 0430 2069; Hazard:ConfusableInIsolate; 1,0; # FSI + а + PDI
+2068 0430 2069; Hazard:ConfusableInIsolate; 1,0; conf_count=1; # FSI + а + PDI

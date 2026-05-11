@@ -37,13 +37,25 @@ def projectClassify
 def projectPositions (c : D3Classification) : Array Nat :=
   c.positions
 
+/-- Validate the D3 verdict's metadata fields against the row's
+    column-4 attribution.  Recognised keys: `strong_rtl`,
+    `strong_ltr`, `bidi_count`, `longest_run` (longest contiguous
+    RTL run length). -/
+private def metadataMatches (v : D3Verdict)
+    (attr : KeyValueAttribution) : Bool :=
+  attr.checkNatKey "strong_rtl"  v.strongRTLCount &&
+  attr.checkNatKey "strong_ltr"  v.strongLTRCount &&
+  attr.checkNatKey "bidi_count"  v.bidiControlCount &&
+  attr.checkNatKey "longest_run" v.longestRtlRunLen
+
 /-- Run `detect` on the row's input and check the verdict against
-    the fixture's expected classification, sub-threat name, and
-    hazard positions. -/
+    the fixture's expected classification, sub-threat name, hazard
+    positions, AND the column-4 attribution metadata. -/
 def verifyRow (r : Row) : Bool :=
   let v := detect r.input
   let (kind, subTag) := projectClassify v.classify
   let pos := projectPositions v.classify
+  metadataMatches v r.attribution &&
   decide (kind = r.expectedKind) &&
   decide (subTag = r.expectedSubThreat) &&
   decide (pos = r.expectedPositions)

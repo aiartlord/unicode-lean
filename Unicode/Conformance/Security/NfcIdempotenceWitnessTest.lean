@@ -39,13 +39,23 @@ def projectClassify
 def projectPositions (c : F6Classification) : Array Nat :=
   c.positions
 
+/-- Validate the F6 verdict's metadata fields against the row's
+    column-4 attribution.  Recognised keys: `nfc_len`, `nfkc_len`
+    (the NFC and NFKC normal-form lengths produced by the
+    underlying normalizer). -/
+private def metadataMatches (v : F6Verdict)
+    (attr : KeyValueAttribution) : Bool :=
+  attr.checkNatKey "nfc_len"  v.nfcLen &&
+  attr.checkNatKey "nfkc_len" v.nfkcLen
+
 /-- Run `detect` on the row's input and check the verdict against
-    the fixture's expected classification, sub-threat name, and
-    hazard positions. -/
+    the fixture's expected classification, sub-threat name, hazard
+    positions, AND the column-4 attribution metadata. -/
 def verifyRow (r : Row) : Bool :=
   let v := detect r.input
   let (kind, subTag) := projectClassify v.classify
   let pos := projectPositions v.classify
+  metadataMatches v r.attribution &&
   decide (kind = r.expectedKind) &&
   decide (subTag = r.expectedSubThreat) &&
   decide (pos = r.expectedPositions)

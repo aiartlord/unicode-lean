@@ -39,13 +39,24 @@ def projectClassify
 def projectPositions (c : I4Classification) : Array Nat :=
   c.positions
 
+/-- Validate the I4 verdict's metadata fields against the row's
+    column-4 attribution.  Recognised keys: `skin_tone_count`,
+    `vs15_count` (text-presentation VS-15 occurrences),
+    `vs16_count` (emoji-presentation VS-16 occurrences). -/
+private def metadataMatches (v : I4Verdict)
+    (attr : KeyValueAttribution) : Bool :=
+  attr.checkNatKey "skin_tone_count" v.skinToneCount &&
+  attr.checkNatKey "vs15_count"      v.variationSelector15Count &&
+  attr.checkNatKey "vs16_count"      v.variationSelector16Count
+
 /-- Run `detect` on the row's input and check the verdict against
-    the fixture's expected classification, sub-threat name, and
-    hazard positions. -/
+    the fixture's expected classification, sub-threat name, hazard
+    positions, AND the column-4 attribution metadata. -/
 def verifyRow (r : Row) : Bool :=
   let v := detect r.input
   let (kind, subTag) := projectClassify v.classify
   let pos := projectPositions v.classify
+  metadataMatches v r.attribution &&
   decide (kind = r.expectedKind) &&
   decide (subTag = r.expectedSubThreat) &&
   decide (pos = r.expectedPositions)

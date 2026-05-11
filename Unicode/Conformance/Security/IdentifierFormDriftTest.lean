@@ -44,13 +44,23 @@ def projectClassify
 def projectPositions (c : X1Classification) : Array Nat :=
   c.positions
 
+/-- Validate the X1 verdict's metadata fields against the row's
+    column-4 attribution.  Recognised key: `shift_count` (the
+    number of codepoints whose UTS #39 Identifier_Status / Type
+    classification shifts between the raw input and its NFKC
+    normalization). -/
+private def metadataMatches (v : X1Verdict)
+    (attr : KeyValueAttribution) : Bool :=
+  attr.checkNatKey "shift_count" v.shiftCount
+
 /-- Run `detect` on the row's input and check the verdict against
-    the fixture's expected classification, sub-threat name, and
-    hazard positions. -/
+    the fixture's expected classification, sub-threat name, hazard
+    positions, AND the column-4 attribution metadata. -/
 def verifyRow (r : Row) : Bool :=
   let v := detect r.input
   let (kind, subTag) := projectClassify v.classify
   let pos := projectPositions v.classify
+  metadataMatches v r.attribution &&
   decide (kind = r.expectedKind) &&
   decide (subTag = r.expectedSubThreat) &&
   decide (pos = r.expectedPositions)
