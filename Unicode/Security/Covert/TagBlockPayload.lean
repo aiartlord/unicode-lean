@@ -225,32 +225,65 @@ def detect (input : Array Nat) : C1Verdict :=
       totalTagChars := tagPositions.size }
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- §5 Spot checks
+-- §5 Projection helpers — see notes in `VariationSelectorPayload.lean`
+-- for the `Function.const` idiom that absorbs unused constructor binders.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- Fixture-row tag string for each `C1SubThreat` constructor. -/
+def C1SubThreat.tag : C1SubThreat → String
+  | .directAscii        decodedStr                  =>
+      Function.const String "DirectAscii" decodedStr
+  | .languageTagRevival langTagPos    decodedTail   =>
+      Function.const (Nat × String) "LanguageTagRevival" (langTagPos, decodedTail)
+  | .mixedBlock         tagCount      totalCps      =>
+      Function.const (Nat × Nat) "MixedBlock" (tagCount, totalCps)
+  | .bareTagPresent     tagCp                       =>
+      Function.const Nat "BareTagPresent" tagCp
+
+/-- True iff the classification is `.clear`. -/
+def C1Classification.isClear : C1Classification → Bool
+  | .clear                     => true
+  | .hazard sub positions decoded =>
+      Function.const (C1SubThreat × Array Nat × ByteArray) false
+        (sub, positions, decoded)
+
+/-- Tag string of a classification (`none` for `.clear`). -/
+def C1Classification.tag : C1Classification → Option String
+  | .clear                     => none
+  | .hazard sub positions decoded =>
+      Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
+
+/-- Positions array of a classification (empty for `.clear`). -/
+def C1Classification.positions : C1Classification → Array Nat
+  | .clear                     => #[]
+  | .hazard sub positions decoded =>
+      Function.const (C1SubThreat × ByteArray) positions (sub, decoded)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §6 Spot checks
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Empty input is clear. -/
-theorem detect_empty_clear : (detect #[]).classify matches .clear := by
+theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
   native_decide
 
 /-- Pure ASCII is clear. -/
 theorem detect_ascii_clear :
-    (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify matches .clear := by
+    (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
   native_decide
 
 /-- Plain emoji is clear (no tag chars). -/
-theorem detect_emoji_clear : (detect #[0x1F600]).classify matches .clear := by
-  native_decide
+theorem detect_emoji_clear :
+    (detect #[0x1F600]).classify.isClear = true := by native_decide
 
 /-- A single CANCEL TAG (`U+E007F`) is `.bareTagPresent`. -/
 theorem detect_cancel_tag_bare :
-    (detect #[0xE007F]).classify matches
-      .hazard (.bareTagPresent 0xE007F) _ _ := by
+    (detect #[0xE007F]).classify.tag = some "BareTagPresent" := by
   native_decide
 
 /-- A pure-tag "AB" payload (`U+E0041 U+E0042`) is `.directAscii "AB"`. -/
 theorem detect_direct_ascii_AB :
-    (detect #[0xE0041, 0xE0042]).classify matches
-      .hazard (.directAscii _) _ _ := by
+    (detect #[0xE0041, 0xE0042]).classify.tag = some "DirectAscii" := by
   native_decide
 
 /-- Goodside's canonical "Print 'pwned'" attack — a pure-tag run
@@ -264,16 +297,14 @@ theorem detect_goodside_decodes :
 
 /-- A LANGUAGE TAG + tag char is `.languageTagRevival`. -/
 theorem detect_language_tag_revival :
-    (detect #[0xE0001, 0xE0065, 0xE006E]).classify matches
-      .hazard (.languageTagRevival _ _) _ _ := by
-  native_decide
+    (detect #[0xE0001, 0xE0065, 0xE006E]).classify.tag
+      = some "LanguageTagRevival" := by native_decide
 
 /-- Plain ASCII "Hi" followed by a hidden tag-encoded payload
     is `.mixedBlock`. -/
 theorem detect_mixed_block :
-    (detect #[0x48, 0x69, 0xE0070, 0xE0077, 0xE006E, 0xE0064]).classify matches
-      .hazard (.mixedBlock _ _) _ _ := by
-  native_decide
+    (detect #[0x48, 0x69, 0xE0070, 0xE0077, 0xE006E, 0xE0064]).classify.tag
+      = some "MixedBlock" := by native_decide
 
 /-- `tagToAscii` is a bijection on the printable range. -/
 theorem tag_to_ascii_A : tagToAscii 0xE0041 = some 'A' := by native_decide

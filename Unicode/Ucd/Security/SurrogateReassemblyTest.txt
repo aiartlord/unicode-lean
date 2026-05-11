@@ -1,0 +1,94 @@
+# SurrogateReassemblyTest.txt
+# UCD version: 16.0.0
+# Security-spec version: 0.1.0
+# Family: C4 — Surrogate-Reassembly / UTF-8 byte-stream anomaly
+# License: Apache-2.0
+#
+# Threat model: byte streams that survive a non-strict decoder
+# (CESU-8 surrogate pairs, Java modified-UTF-8 NUL, overlong
+# encoding, truncated multi-byte sequences) and inconsistent
+# error-recovery across pipeline stages.  Input is interpreted
+# as a raw byte stream — every hex value in column 1 must fit
+# in a single octet [0x00, 0xFF].
+#
+# Format:
+#   <hex bytes>; <classification>; <positions>; <attribution>; # <name>
+#
+# Classifications produced by the C4 detector:
+#   Clear
+#   Hazard:Overlong              Hazard:Cesu8
+#   Hazard:Truncated             Hazard:InvalidStartByte
+#   Hazard:InvalidContinuation   Hazard:CodepointBeyondMax
+#
+# Attribution conventions:
+#   offset=N             byte offset of first invalid byte
+#   reject_kind=KIND     Utf8RejectKind variant name
+
+# @section Clear
+# @level basic
+
+# Pure ASCII bytes — valid 1-byte UTF-8.
+0048 0065 006C 006C 006F; Clear; ; reject_kind=none; # "Hello" as bytes
+
+# `é` (U+00E9) as 2-byte UTF-8.
+00C3 00A9; Clear; ; reject_kind=none; # é = C3 A9
+
+# `中` (U+4E2D) as 3-byte UTF-8.
+00E4 00B8 00AD; Clear; ; reject_kind=none; # 中 = E4 B8 AD
+
+# `😀` (U+1F600) as 4-byte UTF-8.
+00F0 009F 0098 0080; Clear; ; reject_kind=none; # 😀 = F0 9F 98 80
+
+# @section InvalidStartByte
+# @level basic
+
+# `0xC0 0x80` Java modified-UTF-8 NUL — RFC 3629 §4 forbids 0xC0 as a start byte.
+00C0 0080; Hazard:InvalidStartByte; 0; offset=0; reject_kind=invalidStartByte; # Modified-UTF-8 NUL
+
+# `0xC0 0xAF` overlong slash, 2-byte form — same start-byte rejection.
+00C0 00AF; Hazard:InvalidStartByte; 0; offset=0; reject_kind=invalidStartByte; # Overlong slash, 2-byte
+
+# Lone continuation byte `0x80`.
+0080; Hazard:InvalidStartByte; 0; offset=0; reject_kind=invalidStartByte; # Lone continuation
+
+# `0xFE` is never a valid start byte.
+00FE; Hazard:InvalidStartByte; 0; offset=0; reject_kind=invalidStartByte; # Byte 0xFE
+
+# `0xFF` is never a valid start byte.
+00FF; Hazard:InvalidStartByte; 0; offset=0; reject_kind=invalidStartByte; # Byte 0xFF
+
+# @section Overlong
+# @level basic
+
+# Overlong slash, 3-byte form `0xE0 0x80 0xAF`.
+00E0 0080 00AF; Hazard:Overlong; 0; offset=0; reject_kind=overlongEncoding; # 3-byte overlong slash
+
+# Overlong slash, 4-byte form `0xF0 0x80 0x80 0xAF`.
+00F0 0080 0080 00AF; Hazard:Overlong; 0; offset=0; reject_kind=overlongEncoding; # 4-byte overlong slash
+
+# @section Cesu8
+# @level basic
+
+# High-surrogate U+D800 encoded as `0xED 0xA0 0x80` — CESU-8 indicator.
+# Detection fires at offset 2 (the byte where the surrogate range becomes apparent).
+00ED 00A0 0080; Hazard:Cesu8; 2; offset=2; reject_kind=surrogateCodepoint; # CESU-8 surrogate U+D800
+
+# High-surrogate U+DBFF encoded as `0xED 0xAF 0xBF`.
+00ED 00AF 00BF; Hazard:Cesu8; 2; offset=2; reject_kind=surrogateCodepoint; # CESU-8 surrogate U+DBFF
+
+# Low-surrogate U+DC00 encoded as `0xED 0xB0 0x80`.
+00ED 00B0 0080; Hazard:Cesu8; 2; offset=2; reject_kind=surrogateCodepoint; # CESU-8 surrogate U+DC00
+
+# @section Truncated
+# @level basic
+
+# Leading 2-byte start `0xC3` with no continuation.  Detection fires at
+# offset 1 = past-end of the (1-byte) input.
+00C3; Hazard:Truncated; 1; offset=1; reject_kind=truncatedSequence; # Truncated 2-byte
+
+# Leading 3-byte start `0xE4` with no continuation.
+00E4; Hazard:Truncated; 1; offset=1; reject_kind=truncatedSequence; # Truncated 3-byte
+
+# Leading 4-byte start `0xF0` with only two of three continuation bytes —
+# detection at offset 3 = past-end.
+00F0 009F 0098; Hazard:Truncated; 3; offset=3; reject_kind=truncatedSequence; # Truncated 4-byte

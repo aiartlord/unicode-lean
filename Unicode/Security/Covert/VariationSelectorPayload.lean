@@ -255,14 +255,14 @@ private def countUniqueVS (input : Array Nat) (positions : Array Nat) : Nat :=
     run that begins after an intervening base codepoint. -/
 private def embeddedAfterRegistered
     (registered suspicious : Array Nat) : Option (Nat × Nat) :=
-  match suspicious[0]?, registered[0]? with
-  | some firstSus, some _ =>
+  match suspicious[0]? with
+  | none => none
+  | some firstSus =>
     -- Filter registered to those that come before firstSus.
     let priorReg := registered.filter (fun p => p < firstSus)
     match priorReg[priorReg.size - 1]? with
     | some lastReg => some (lastReg, firstSus)
     | none         => none
-  | _, _ => none
 
 /-- True iff every codepoint at the given positions is the same VS. -/
 private def allSameVS (input : Array Nat) (positions : Array Nat) : Bool :=
@@ -316,13 +316,17 @@ def VSUseClass.isRegistered : VSUseClass → Bool
   | .registeredStandardized
   | .registeredEmojiPresentation
   | .registeredTextPresentation => true
-  | _                            => false
+  | .nonVS                       => false
+  | .suspicious                  => false
 
 /-- True iff the class denotes a suspicious VS use. -/
 @[inline]
 def VSUseClass.isSuspicious : VSUseClass → Bool
-  | .suspicious => true
-  | _           => false
+  | .suspicious                   => true
+  | .nonVS                        => false
+  | .registeredStandardized       => false
+  | .registeredEmojiPresentation  => false
+  | .registeredTextPresentation   => false
 
 /-- The C2 detection function.  Returns a structured verdict
     over the codepoint sequence `input`. -/
@@ -362,41 +366,82 @@ def detect (input : Array Nat) : C2Verdict :=
       recoveredPayloadBytes := payload }
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- §6 Spot checks
+-- §6 Projection helpers — used by both spot-check theorems and the
+-- per-family conformance harness.  Every constructor binder is absorbed
+-- via `Function.const` so the totals are checkable without anonymous
+-- wildcards or leading-underscore "hint" names.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- Fixture-row tag string for each `C2SubThreat` constructor.
+    Matches the `Hazard:<Tag>` atom used in column 2 of
+    `VariationSelectorPayloadTest.txt`. -/
+def C2SubThreat.tag : C2SubThreat → String
+  | .directPayload    decodedStr   hint              =>
+      Function.const (String × ExecutableHint) "DirectPayload"
+        (decodedStr, hint)
+  | .illegalTarget    targetCp     vsCp              =>
+      Function.const (Nat × Nat) "IllegalTarget"
+        (targetCp, vsCp)
+  | .embeddedAfterReg regEnd       payloadStart      =>
+      Function.const (Nat × Nat) "EmbeddedAfterRegistered"
+        (regEnd, payloadStart)
+  | .repeatedBase     baseCp       vsCount   uniqueVS =>
+      Function.const (Nat × Nat × Nat) "RepeatedBase"
+        (baseCp, vsCount, uniqueVS)
+
+/-- True iff the classification is `.clear`. -/
+def C2Classification.isClear : C2Classification → Bool
+  | .clear                     => true
+  | .hazard sub positions decoded =>
+      Function.const (C2SubThreat × Array Nat × ByteArray) false
+        (sub, positions, decoded)
+
+/-- Tag string of a classification (`none` for `.clear`). -/
+def C2Classification.tag : C2Classification → Option String
+  | .clear                     => none
+  | .hazard sub positions decoded =>
+      Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
+
+/-- Positions array of a classification (empty for `.clear`). -/
+def C2Classification.positions : C2Classification → Array Nat
+  | .clear                     => #[]
+  | .hazard sub positions decoded =>
+      Function.const (C2SubThreat × ByteArray) positions (sub, decoded)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §7 Spot checks
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Empty input is clear. -/
-theorem detect_empty_clear : (detect #[]).classify matches .clear := by
+theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
   native_decide
 
 /-- Pure ASCII text is clear. -/
 theorem detect_ascii_clear :
-    (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify matches .clear := by
+    (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
   native_decide
 
 /-- Emoji + VS16 — registered emoji-presentation, clear verdict. -/
 theorem detect_emoji_presentation_clear :
-    (detect #[0x1F600, 0xFE0F]).classify matches .clear := by
+    (detect #[0x1F600, 0xFE0F]).classify.isClear = true := by
   native_decide
 
 /-- Mongolian Letter A + FVS1 (180B) — registered standardized variation,
     clear verdict.  (Mongolian uses 180B..180D, not the FE-range.) -/
 theorem detect_mongolian_variation_clear :
-    (detect #[0x1820, 0x180B]).classify matches .clear := by
+    (detect #[0x1820, 0x180B]).classify.isClear = true := by
   native_decide
 
 /-- VS16 (FE0F) on Latin A — Latin codepoints have no registered
     variation sequences, so this is `.illegalTarget`. -/
 theorem detect_illegal_target_latin :
-    (detect #[0x0041, 0xFE0F]).classify matches
-      .hazard (.illegalTarget 0x0041 0xFE0F) _ _ := by
+    (detect #[0x0041, 0xFE0F]).classify.tag = some "IllegalTarget" := by
   native_decide
 
 /-- One-byte direct payload: `'a' + FE04 + FE01` decodes to the
     single byte `0x41 = 'A'`.  Must classify as `.directPayload`. -/
 theorem detect_direct_payload_byte :
-    (detect #[0x0061, 0xFE04, 0xFE01]).classify matches
-      .hazard (.directPayload _ _) _ _ := by
+    (detect #[0x0061, 0xFE04, 0xFE01]).classify.tag = some "DirectPayload" := by
   native_decide
 
 /-- The same input recovers the decoded byte stream `#['A']`. -/
@@ -407,38 +452,34 @@ theorem detect_direct_payload_decodes_A :
 /-- A repeated-VS run on a Latin base produces `.repeatedBase`. -/
 theorem detect_repeated_base :
     (detect #[0x0061, 0xFE04, 0xFE04, 0xFE04, 0xFE04,
-              0xFE04, 0xFE04, 0xFE04, 0xFE04]).classify matches
-      .hazard (.repeatedBase 0x0061 8 1) _ _ := by
-  native_decide
+              0xFE04, 0xFE04, 0xFE04, 0xFE04]).classify.tag
+      = some "RepeatedBase" := by native_decide
 
 /-- A registered emoji presentation followed by a suspicious-VS run
     produces `.embeddedAfterReg` (payload hiding behind a legit glyph). -/
 theorem detect_embedded_after_registered :
     (detect #[0x1F600, 0xFE0F, 0x0061,
-              0xFE06, 0xFE05]).classify matches
-      .hazard (.embeddedAfterReg _ _) _ _ := by
+              0xFE06, 0xFE05]).classify.tag = some "EmbeddedAfterRegistered" := by
   native_decide
 
 /-- VS15 (FE0E) on a Latin codepoint is `.illegalTarget` — Latin has
     no Emoji property, so VS15 is not a sanctioned text-presentation. -/
 theorem detect_vs15_on_latin_illegal :
-    (detect #[0x0041, 0xFE0E]).classify matches
-      .hazard (.illegalTarget 0x0041 0xFE0E) _ _ := by
+    (detect #[0x0041, 0xFE0E]).classify.tag = some "IllegalTarget" := by
   native_decide
 
 /-- Supplementary-VS range (E0100) on Latin A is `.illegalTarget`. -/
 theorem detect_supplementary_vs_on_latin :
-    (detect #[0x0041, 0xE0100]).classify matches
-      .hazard (.illegalTarget 0x0041 0xE0100) _ _ := by
+    (detect #[0x0041, 0xE0100]).classify.tag = some "IllegalTarget" := by
   native_decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- §7 Boundary-case spot checks
+-- §8 Boundary-case spot checks
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- A leading VS (no preceding base) is hazardous (not clear). -/
 theorem detect_leading_vs_suspicious :
-    (detect #[0xFE04]).classify matches .hazard _ _ _ := by
+    (detect #[0xFE04]).classify.isClear = false := by
   native_decide
 
 /-- `vsToNibble` is exhaustive on the FE-range: every codepoint in

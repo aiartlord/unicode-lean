@@ -39,25 +39,14 @@ def rows : Array Row := parseFixture rawFixture
 -- §2 Per-family classification-name mapping
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Project a `C1Classification` to `(ClassificationKind, sub-threat-tag)`.
-    Tag strings match the fixture's column 2 atom after `Hazard:`. -/
+/-- Project a `C1Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
     (c : C1Classification) : ClassificationKind × Option String :=
-  match c with
-  | .clear => (.clear, none)
-  | .hazard sub _ _ =>
-    let tag : String := match sub with
-      | .directAscii        _      => "DirectAscii"
-      | .languageTagRevival _ _    => "LanguageTagRevival"
-      | .mixedBlock         _ _    => "MixedBlock"
-      | .bareTagPresent     _      => "BareTagPresent"
-    (.hazard, some tag)
+  if c.isClear then (.clear, none) else (.hazard, c.tag)
 
 /-- Project a `C1Classification` to the positions array. -/
 def projectPositions (c : C1Classification) : Array Nat :=
-  match c with
-  | .clear           => #[]
-  | .hazard _ pos _  => pos
+  c.positions
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 Per-row verifier

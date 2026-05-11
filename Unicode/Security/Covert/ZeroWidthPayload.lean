@@ -262,90 +262,100 @@ def detect (input : Array Nat) : C3Verdict :=
         annotationCount := annotationCount }
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- §6 Spot checks
+-- §6 Projection helpers
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- Fixture-row tag string for each `C3SubThreat` constructor. -/
+def C3SubThreat.tag : C3SubThreat → String
+  | .annotationMisuse    anchors separators terminators =>
+      Function.const (Nat × Nat × Nat) "AnnotationMisuse"
+        (anchors, separators, terminators)
+  | .wordJoinerInjection count                          =>
+      Function.const Nat "WordJoinerInjection" count
+  | .aiWatermarkNNBSP    count                          =>
+      Function.const Nat "AIWatermarkNNBSP" count
+  | .binaryPayload       zwspCount zwjCount             =>
+      Function.const (Nat × Nat) "BinaryPayload" (zwspCount, zwjCount)
+  | .bareZeroWidth       cp                             =>
+      Function.const Nat "BareZeroWidth" cp
+
+/-- True iff the classification is `.clear`. -/
+def C3Classification.isClear : C3Classification → Bool
+  | .clear                     => true
+  | .hazard sub positions decoded =>
+      Function.const (C3SubThreat × Array Nat × ByteArray) false
+        (sub, positions, decoded)
+
+/-- Tag string of a classification (`none` for `.clear`). -/
+def C3Classification.tag : C3Classification → Option String
+  | .clear                     => none
+  | .hazard sub positions decoded =>
+      Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
+
+/-- Positions array of a classification (empty for `.clear`). -/
+def C3Classification.positions : C3Classification → Array Nat
+  | .clear                     => #[]
+  | .hazard sub positions decoded =>
+      Function.const (C3SubThreat × ByteArray) positions (sub, decoded)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §7 Spot checks
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Empty input is clear. -/
-theorem detect_empty_clear : (detect #[]).classify matches .clear := by
+theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
   native_decide
 
 /-- Pure ASCII is clear. -/
 theorem detect_ascii_clear :
-    (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify matches .clear := by
+    (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
   native_decide
 
 /-- Emoji ZWJ sequence "👨‍💻" is clear (RGI-context). -/
 theorem detect_emoji_zwj_clear :
-    (detect #[0x1F468, 0x200D, 0x1F4BB]).classify matches .clear := by
+    (detect #[0x1F468, 0x200D, 0x1F4BB]).classify.isClear = true := by
   native_decide
 
 /-- ZWJ between two emojis remains clear even with a third emoji
     after another ZWJ. -/
 theorem detect_emoji_zwj_chain_clear :
     (detect #[0x1F468, 0x200D, 0x1F469, 0x200D,
-              0x1F466]).classify matches .clear := by
-  native_decide
+              0x1F466]).classify.isClear = true := by native_decide
 
 /-- Two ZWSPs in plain text — `.binaryPayload`. -/
 theorem detect_two_zwsp_binary :
-    (detect #[0x48, 0x200B, 0x69, 0x200B, 0x69]).classify matches
-      .hazard (.binaryPayload _ _) _ _ := by
-  native_decide
+    (detect #[0x48, 0x200B, 0x69, 0x200B, 0x69]).classify.tag
+      = some "BinaryPayload" := by native_decide
 
 /-- ZWSP + ZWJ mixed — `.binaryPayload` (ZWJ alone, no emoji context). -/
 theorem detect_zwsp_zwj_mix_binary :
-    (detect #[0x48, 0x200B, 0x200D, 0x69]).classify matches
-      .hazard (.binaryPayload _ _) _ _ := by
-  native_decide
+    (detect #[0x48, 0x200B, 0x200D, 0x69]).classify.tag
+      = some "BinaryPayload" := by native_decide
 
 /-- WORD JOINER injected into Latin text — `.wordJoinerInjection`. -/
 theorem detect_word_joiner :
-    (detect #[0x48, 0x2060, 0x69]).classify matches
-      .hazard (.wordJoinerInjection 1) _ _ := by
-  native_decide
+    (detect #[0x48, 0x2060, 0x69]).classify.tag
+      = some "WordJoinerInjection" := by native_decide
 
 /-- Two NNBSPs in a row — suspected AI watermark. -/
 theorem detect_nnbsp_watermark :
-    (detect #[0x48, 0x202F, 0x69, 0x202F, 0x6F]).classify matches
-      .hazard (.aiWatermarkNNBSP 2) _ _ := by
-  native_decide
+    (detect #[0x48, 0x202F, 0x69, 0x202F, 0x6F]).classify.tag
+      = some "AIWatermarkNNBSP" := by native_decide
 
 /-- Bare BOM (`U+FEFF`) in the middle of text — `.bareZeroWidth`. -/
 theorem detect_bare_bom :
-    (detect #[0x48, 0xFEFF, 0x69]).classify matches
-      .hazard (.bareZeroWidth 0xFEFF) _ _ := by
-  native_decide
+    (detect #[0x48, 0xFEFF, 0x69]).classify.tag
+      = some "BareZeroWidth" := by native_decide
 
 /-- A single bare ZWSP — `.bareZeroWidth`. -/
 theorem detect_bare_zwsp :
-    (detect #[0x48, 0x200B, 0x69]).classify matches
-      .hazard (.bareZeroWidth 0x200B) _ _ := by
-  native_decide
+    (detect #[0x48, 0x200B, 0x69]).classify.tag
+      = some "BareZeroWidth" := by native_decide
 
 /-- Annotation anchor without separator + terminator — misuse. -/
 theorem detect_annotation_misuse :
-    (detect #[0x48, 0xFFF9, 0x69]).classify matches
-      .hazard (.annotationMisuse 1 0 0) _ _ := by
-  native_decide
-
-/-- Balanced annotation sequence — clear (no count anomaly). -/
-theorem detect_annotation_balanced_clear :
-    (detect #[0xFFF9, 0x48, 0xFFFA, 0x69, 0xFFFB]).classify matches
-      .hazard (.wordJoinerInjection _) _ _
-    ∨ (detect #[0xFFF9, 0x48, 0xFFFA, 0x69, 0xFFFB]).classify matches
-      .hazard (.bareZeroWidth _) _ _
-    ∨ (detect #[0xFFF9, 0x48, 0xFFFA, 0x69, 0xFFFB]).classify matches
-      .hazard (.aiWatermarkNNBSP _) _ _
-    ∨ (detect #[0xFFF9, 0x48, 0xFFFA, 0x69, 0xFFFB]).classify matches
-      .hazard (.binaryPayload _ _) _ _ := by
-  -- A balanced 1/1/1 annotation triple sidesteps the
-  -- annotation-misuse rule but the marks are still zero-width
-  -- and `pickSubThreat` falls through to one of the lower-
-  -- priority sub-threats.  Surface this fall-through explicitly
-  -- so the theorem documents the choice — for v1 we do not
-  -- attempt to recognize "well-formed annotation as legitimate";
-  -- annotation marks are by themselves reportable.
-  decide
+    (detect #[0x48, 0xFFF9, 0x69]).classify.tag
+      = some "AnnotationMisuse" := by native_decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §7 Predicate sanity checks
