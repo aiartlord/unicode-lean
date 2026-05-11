@@ -27,6 +27,7 @@ import Unicode.Security.Covert.SurrogateReassembly
 
 -- Layer 2 — Identity Spoofing
 import Unicode.Security.Identity.HomoglyphConfusable
+import Unicode.Security.Identity.MixedScriptAdmissibility
 
 -- Layer 3 — Display Integrity (compound detectors)
 import Unicode.Security.Display.SourceDisplayDivergence

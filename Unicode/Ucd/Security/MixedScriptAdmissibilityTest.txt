@@ -1,0 +1,83 @@
+# MixedScriptAdmissibilityTest.txt
+# UCD version: 16.0.0
+# Security-spec version: 0.1.0
+# Family: I2 — Mixed-Script Identifier Admissibility
+# License: Apache-2.0
+#
+# Threat model: identifiers whose script composition violates
+# UTS #39 §5 restriction-level rules.  Detects Latin-Cyrillic
+# mixing (IDN homograph class), Latin-Greek mixing, Restricted-
+# Identifier-Status codepoints, and unrestricted-level fall-throughs.
+#
+# Format:
+#   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
+#
+# Classifications produced by the I2 detector:
+#   Clear
+#   Hazard:RestrictedStatusCp    Hazard:LatinCyrillic
+#   Hazard:LatinGreek            Hazard:CjkMix
+#   Hazard:ScriptMixOther        Hazard:UnrestrictedLevel
+#
+# Attribution conventions:
+#   level=LEVEL                 reported restriction level
+#   scripts="X,Y,..."           union of script families present
+
+# @section Clear
+# @level basic
+
+# ASCII identifier — ASCIIOnly.
+0048 0065 006C 006C 006F; Clear; ; level=ASCIIOnly; scripts="Latn"; # ASCII Hello
+
+# Pure Cyrillic identifier — SingleScript clear.
+043F 0440 0438 0432 0435 0442; Clear; ; level=SingleScript; scripts="Cyrl"; # Cyrillic привет
+
+# Pure Greek identifier — SingleScript clear.
+03B1 03BB 03C6 03B1; Clear; ; level=SingleScript; scripts="Grek"; # Greek αλφα
+
+# Pure Han — SingleScript clear.
+4E2D 6587; Clear; ; level=SingleScript; scripts="Hani"; # Han 中文
+
+# Pure Hangul — SingleScript clear.
+D55C AE00; Clear; ; level=SingleScript; scripts="Hang"; # Hangul 한글
+
+# @section LatinCyrillic
+# @level basic
+
+# Single Cyrillic letter in Latin identifier — IDN homograph class.
+0061 0440 0061; Hazard:LatinCyrillic; 1; level=MinimallyRestrictive; scripts="Latn,Cyrl"; # a + р + a
+
+# Mid-string Cyrillic mix.
+0070 0430 0079; Hazard:LatinCyrillic; 1; level=MinimallyRestrictive; scripts="Latn,Cyrl"; # p + а + y
+
+# Two Cyrillic substitutions in Latin context.
+0070 0430 0070 0430 006C; Hazard:LatinCyrillic; 1,3; level=MinimallyRestrictive; scripts="Latn,Cyrl"; # paypal-shape Cyrillic mix
+
+# @section LatinGreek
+# @level basic
+
+# Greek alpha in Latin context.
+0061 03B1 0061; Hazard:LatinGreek; 1; level=MinimallyRestrictive; scripts="Latn,Grek"; # a + α + a
+
+# Greek omicron in Latin context.
+006F 03BF 0070; Hazard:LatinGreek; 1; level=MinimallyRestrictive; scripts="Latn,Grek"; # o + ο + p
+
+# @section RestrictedStatusCp
+# @level basic
+
+# Hangul Choseong Filler U+115F — Identifier_Status = Restricted.
+115F; Hazard:RestrictedStatusCp; 0; # Hangul Choseong Filler
+
+# Hangul Jungseong Filler U+1160 — also Restricted.
+1160; Hazard:RestrictedStatusCp; 0; # Hangul Jungseong Filler
+
+# Greek lunate epsilon U+03F5 - confusable Greek letter, Restricted in some profiles.
+0048 03F5 006C; Hazard:RestrictedStatusCp; 1; # H + lunate ε + l
+
+# @section ScriptMixOther
+# @level strict
+
+# Latin + Hebrew mix — not Latin-Cyrillic, not Latin-Greek.
+0048 05D0 0069; Hazard:ScriptMixOther; ; scripts="Latn,Hebr"; # H + alef + i
+
+# Cyrillic + Greek mix.
+03B1 0430; Hazard:ScriptMixOther; ; scripts="Grek,Cyrl"; # alpha + а
