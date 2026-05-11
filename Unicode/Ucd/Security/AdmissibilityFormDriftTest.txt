@@ -57,6 +57,15 @@ D55C; Clear; ; input_adm=true; nfkc_adm=true; # 한 (precomposed)
 # Cyrillic privet — admissible on both sides under UTS #39.
 041F 0440 0438 0432 0435 0442; Clear; ; input_adm=true; nfkc_adm=true; # привет
 
+# Plain Han text — admissible on both sides.
+4E2D 6587; Clear; ; input_adm=true; nfkc_adm=true; # Han
+
+# Arabic word — admissible identifier on both sides.
+0641 0644 062F; Clear; ; input_adm=true; nfkc_adm=true; # Arabic
+
+# Leading bidi control alone — not a valid identifier on either side.
+202E; Clear; ; input_adm=false; nfkc_adm=false; # RLO alone (form-stable false)
+
 # @section AdmissibilityFormDrift
 # @level basic
 
@@ -83,4 +92,32 @@ FF21; Hazard:AdmissibilityFormDrift; ; input_adm=false; nfkc_adm=true; # Ａ
 1112 1161 11AB 1100 116E 11A8; Hazard:AdmissibilityFormDrift; ; input_adm=false; nfkc_adm=true; # decomposed 한국
 
 # Roman numeral Ⅳ (U+2163) — Restricted, NFKC folds to "IV".
-2163; Hazard:AdmissibilityFormDrift; ; input_adm=false; nfkc_adm=true; # Ⅳ → IV
+2163; Hazard:AdmissibilityFormDrift; ; input_adm=false; nfkc_adm=true; # Roman IV
+
+# Math Italic "password" — eight-cp identifier folding to ASCII.
+1D45D 1D44E 1D460 1D460 1D464 1D45C 1D45F 1D451; Hazard:AdmissibilityFormDrift; ; input_adm=false; nfkc_adm=true; # math italic password
+
+# Fullwidth ｐａｓｓｗｏｒｄ — Restricted-fold to ASCII admin
+# credential.
+FF50 FF41 FF53 FF53 FF57 FF4F FF52 FF44; Hazard:AdmissibilityFormDrift; ; input_adm=false; nfkc_adm=true; # fullwidth password
+
+# Circled digit ① — Restricted, NFKC = "1" Allowed (but digits
+# alone aren't valid identifiers either, so this is a flip in
+# the OTHER direction: input admissible? No — Restricted.  NFKC
+# admissible? No — leading digit.  Both false, X4 stays clear).
+# To make this row a true X4 case, prefix with an Allowed letter
+# so NFKC = "a1" which IS a valid identifier.
+0061 2460; Hazard:AdmissibilityFormDrift; ; input_adm=false; nfkc_adm=true; # a + circled-1 → a1
+
+# Square HV (U+33CD) — Restricted, NFKC = "HV" admissible.
+33CD; Hazard:AdmissibilityFormDrift; ; input_adm=false; nfkc_adm=true; # square HV
+
+# Long compatibility chain — ﬃ ligature followed by Roman III.
+FB03 2162; Hazard:AdmissibilityFormDrift; ; input_adm=false; nfkc_adm=true; # ﬃ + Roman III
+
+# Math Fraktur "data" — four-cp math identifier folding to "data".
+1D521 1D51E 1D531 1D51E; Hazard:AdmissibilityFormDrift; ; input_adm=false; nfkc_adm=true; # math fraktur data
+
+# Halfwidth katakana 'ｱ' — Restricted compatibility halfwidth, NFKC
+# folds to U+30A2 Allowed katakana.
+FF71; Hazard:AdmissibilityFormDrift; ; input_adm=false; nfkc_adm=true; # halfwidth katakana

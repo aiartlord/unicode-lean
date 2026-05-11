@@ -67,13 +67,13 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by native_decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 13 := by native_decide
+theorem row_count : rows.size = 23 := by native_decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 6 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 9 := by native_decide
 
 theorem covers_drift :
-    (rows.filter (·.sectionName = "AdmissibilityFormDrift")).size ≥ 5 := by
+    (rows.filter (·.sectionName = "AdmissibilityFormDrift")).size ≥ 12 := by
   native_decide
 
 end Unicode.Conformance.Security.AdmissibilityFormDriftTest
