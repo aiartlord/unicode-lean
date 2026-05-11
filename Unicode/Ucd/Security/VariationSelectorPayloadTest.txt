@@ -50,6 +50,15 @@
 # Digit 0 + FE00 — first row of StandardizedVariants.txt, "short diagonal stroke form".
 0030 FE00; Clear; ; registered_vs=1; suspicious_vs=0; # ASCII digit 0, slashed-zero variant [UCD StandardizedVariants]
 
+# Emoji + VS15 — registered text-presentation variant.
+1F600 FE0E; Clear; ; registered_vs=1; suspicious_vs=0; # Grinning face, text presentation [UTS #51]
+
+# Digit 0 + VS16 — registered emoji-style standardized variant.
+0030 FE0F; Clear; ; registered_vs=1; suspicious_vs=0; # Digit 0 + VS16 standardized variant
+
+# Plain emoji-ZWJ family (no VS) — clear, no payload signal.
+1F468 200D 1F469 200D 1F467; Clear; ; registered_vs=0; suspicious_vs=0; # 👨‍👩‍👧 family ZWJ chain
+
 # @section DirectPayload
 # @level basic
 
@@ -58,6 +67,19 @@
 
 # Latin 'a' + four VS chars decoding to bytes 0x41 0x42 = "AB".
 0061 FE04 FE01 FE04 FE02; Hazard:DirectPayload; 1,2,3,4; decoded="AB"; nibble_count=4; exec_hint=ascii; registered_vs=0; suspicious_vs=4; # 2-byte ASCII payload "AB"
+
+# Latin 'a' + 8 nibbles → 4 bytes — the typical GlassWorm chunk size.
+0061 FE00 FE08 FE01 FE0A FE05 FE0F FE03 FE0B; Hazard:DirectPayload; 1,2,3,4,5,6,7,8; nibble_count=8; registered_vs=0; suspicious_vs=8; # 4-byte direct payload
+
+# Latin 'a' + 4 high-nibble VS — decodes to 0x0A 0x0B 0x0C 0x0D pattern.
+0061 FE0A FE0B FE0C FE0D; Hazard:DirectPayload; 1,2,3,4; nibble_count=4; registered_vs=0; suspicious_vs=4; # high-nibble VS chain
+
+# Latin 'a' + 3 VS — odd nibble count is still a payload signal.
+0061 FE04 FE04 FE04; Hazard:DirectPayload; 1,2,3; nibble_count=3; registered_vs=0; suspicious_vs=3; # 3-nibble odd-count payload
+
+# Bare leading payload — two VS with no preceding base; the decoder
+# still recovers one byte and the verdict is DirectPayload.
+FE04 FE01; Hazard:DirectPayload; 0,1; decoded="A"; nibble_count=2; registered_vs=0; suspicious_vs=2; # leading VS-pair, no base
 
 # @section IllegalTarget
 # @level basic
@@ -71,6 +93,18 @@
 # Supplementary VS17 on Latin A — top of the E0100..E01EF alphabet.
 0041 E0100; Hazard:IllegalTarget; 1; target_cp=0x0041; vs_cp=0xE0100; registered_vs=0; suspicious_vs=1; # Supplementary VS on Latin A
 
+# VS17 on digit 0 — supplementary VS misuse on a numeric target.
+0030 E0100; Hazard:IllegalTarget; 1; target_cp=0x0030; vs_cp=0xE0100; registered_vs=0; suspicious_vs=1; # Supplementary VS on digit 0
+
+# VS16 on Han 中 — no registered variation for Han codepoint.
+4E2D FE0F; Hazard:IllegalTarget; 1; target_cp=0x4E2D; vs_cp=0xFE0F; registered_vs=0; suspicious_vs=1; # VS16 on Han 中
+
+# VS00 (FE00) on Cyrillic а — Cyrillic letter has no registered VS.
+0430 FE00; Hazard:IllegalTarget; 1; target_cp=0x0430; vs_cp=0xFE00; registered_vs=0; suspicious_vs=1; # VS00 on Cyrillic а
+
+# Trailing bare VS after an unrelated base sequence.
+0041 0042 FE04; Hazard:IllegalTarget; 2; target_cp=0x0042; vs_cp=0xFE04; registered_vs=0; suspicious_vs=1; # trailing bare VS after AB
+
 # @section RepeatedBase
 # @level strict
 
@@ -80,6 +114,9 @@
 # Latin 'a' + 6 copies of FE0F — anomalous VS16 repetition (Latin is not emoji).
 0061 FE0F FE0F FE0F FE0F FE0F FE0F; Hazard:RepeatedBase; 1,2,3,4,5,6; vs_count=6; unique_vs=1; registered_vs=0; suspicious_vs=6; # 6-fold FE0F on Latin a
 
+# Latin 'a' + 10 copies of FE05 — pure repetition exceeds payload-decode threshold.
+0061 FE05 FE05 FE05 FE05 FE05 FE05 FE05 FE05 FE05 FE05; Hazard:RepeatedBase; 1,2,3,4,5,6,7,8,9,10; vs_count=10; unique_vs=1; registered_vs=0; suspicious_vs=10; # 10-fold FE05
+
 # @section EmbeddedAfterRegistered
 # @level strict
 
@@ -88,6 +125,9 @@
 
 # Digit 0 + FE00 (registered standardized) + Latin 'a' + 2 payload VS.
 0030 FE00 0061 FE04 FE01; Hazard:EmbeddedAfterRegistered; 3,4; registered_vs=1; suspicious_vs=2; # Slashed-zero variant then ASCII payload
+
+# Emoji + VS16 (registered) followed by a 3-VS payload run on Latin 'a'.
+1F600 FE0F 0061 FE07 FE08 FE09; Hazard:EmbeddedAfterRegistered; 3,4,5; registered_vs=1; suspicious_vs=3; # registered emoji presentation + 3-byte payload
 
 # @section LeadingVS
 # @level full
