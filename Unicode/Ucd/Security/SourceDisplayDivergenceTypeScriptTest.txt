@@ -1,0 +1,72 @@
+# SourceDisplayDivergenceTypeScriptTest.txt
+# UCD version: 16.0.0
+# Security-spec version: 0.1.0
+# Family: D1 (v1.5 region-aware tokenization)
+# Grammar: TypeScript (`Language.typescript`)
+# License: Apache-2.0
+#
+# Companion fixture to SourceDisplayDivergenceTokenizedTest.txt
+# (the Rust grammar variant) that exercises D1's v1.5
+# region-aware behaviour under the TypeScript tokenizer.  Every
+# row is evaluated with `detect input .typescript`.  The
+# TypeScript grammar differs from Rust in three observable
+# ways:
+#
+#   * Block comments are non-nestable (an inner `/*` does not
+#     change region state).
+#   * Template literals `` `…` `` form a single string region;
+#     interpolation `${…}` is intentionally NOT tracked (the
+#     whole template stays a string region).
+#   * No raw strings.
+#
+# Format:
+#   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
+
+# @section Clear
+# @level basic
+
+# ASCII Hello — no payload, all code.
+0048 0065 006C 006C 006F; Clear; ; # Hello
+
+# VS payload INSIDE a TypeScript double-quote string.
+0022 0041 FE00 0022; Clear; ; # string with VS
+
+# RLO INSIDE a TypeScript template literal.
+0060 0041 202E 0042 0060; Clear; ; # template literal with RLO
+
+# Bidi control INSIDE a TypeScript line comment.
+002F 002F 202E; Clear; ; # line comment with RLO
+
+# Tag-block char INSIDE a TypeScript block comment.
+002F 002A E0001 002A 002F; Clear; ; # block comment with tag
+
+# Multiple hazards INSIDE a template literal.
+0060 202E 0041 FE00 0060; Clear; ; # template with multi hazards
+
+# Inner /* inside a TypeScript block comment — block comments
+# are NOT nestable, so the comment closes at the first */ and
+# the trailing `*/A` is code.  No hazard codepoints in this
+# row, so clear.
+002F 002A 002F 002A 002A 002F 0041; Clear; ; # non-nestable block + code
+
+# @section Hazard
+# @level basic
+
+# RLO BEFORE a TypeScript template literal — RLO sits in the
+# leading code region.
+202E 0060 0041 0060; Hazard:BidiControl; ; # RLO + template
+
+# VS in code AFTER a template literal closes.
+0060 0041 0060 FE00; Hazard:VariationSelector; ; # template + VS in code
+
+# Pure code: VS attached to letter.
+0041 FE00; Hazard:VariationSelector; ; # A + VS in code
+
+# Cyrillic Nethereum typosquat in code (no string wrapper).
+004E 0065 0074 0068 0065 0072 0435 0075 006D; Hazard:IdentifierHomoglyph; ; # Nethereum typosquat in code
+
+# RLO BEFORE a non-nestable block comment.
+202E 002F 002A 002A 002F; Hazard:BidiControl; ; # RLO + empty block
+
+# Compound: RLO + Cyrillic identifier in code.
+202E 004E 0065 0074 0068 0065 0072 0435 0075 006D; Hazard:Compound; ; # RLO + Nethereum
