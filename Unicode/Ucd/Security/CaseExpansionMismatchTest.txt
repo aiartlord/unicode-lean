@@ -48,6 +48,16 @@
 # Korean Hangul 한 — caseless.
 D55C; Clear; ; upper_exp=0; lower_exp=0; max_exp=1; # 한
 
+# All-lowercase abc — 1-cp upper.
+0061 0062 0063; Clear; ; upper_exp=0; lower_exp=0; max_exp=1; # abc
+
+# Arabic letters — caseless.
+0627 0628 0629; Clear; ; upper_exp=0; lower_exp=0; max_exp=1; # ابة
+
+# ASCII mixed case "HELLO world" — every cp is 1-cp under both
+# directions of case mapping.
+0048 0045 004C 004C 004F 0020 0077 006F 0072 006C 0064; Clear; ; upper_exp=0; lower_exp=0; max_exp=1; # HELLO world
+
 # @section UpperExpansion
 # @level basic
 
@@ -65,6 +75,24 @@ FB03; Hazard:UpperExpansion; 0; upper_exp=1; lower_exp=0; max_exp=3; # ﬃ → F
 # expansion fires at position 4.
 0053 0074 0072 0061 00DF 0065; Hazard:UpperExpansion; 4; upper_exp=1; lower_exp=0; max_exp=2; # Straße
 
+# Latin small ligature ff (U+FB00) — toUpper → "FF" (1 → 2).
+FB00; Hazard:UpperExpansion; 0; upper_exp=1; lower_exp=0; max_exp=2; # ﬀ → FF
+
+# Latin small ligature fl (U+FB02) — toUpper → "FL" (1 → 2).
+FB02; Hazard:UpperExpansion; 0; upper_exp=1; lower_exp=0; max_exp=2; # ﬂ → FL
+
+# Latin small ligature ffl (U+FB04) — toUpper → "FFL" (1 → 3).
+FB04; Hazard:UpperExpansion; 0; upper_exp=1; lower_exp=0; max_exp=3; # ﬄ → FFL
+
+# Greek letter iota with combining marks "ΐ" (U+0390) —
+# toUpper → "Ϊ́" (1 → 3 cps, the precomposed iota with two
+# combining marks decomposing to several uppercase forms).
+0390; Hazard:UpperExpansion; 0; upper_exp=1; lower_exp=0; max_exp=3; # ΐ → 3 cps upper
+
+# Word "Straße" repeated — two ß occurrences, both flagged via
+# `upper_exp=2`, but the detector points at the FIRST.
+0073 0074 0072 0061 00DF 0065 00DF; Hazard:UpperExpansion; 4; upper_exp=2; lower_exp=0; max_exp=2; # straße + ß
+
 # @section LowerExpansion
 # @level basic
 
@@ -76,3 +104,9 @@ FB03; Hazard:UpperExpansion; 0; upper_exp=1; lower_exp=0; max_exp=3; # ﬃ → F
 # aİa — İ at position 1.  Surrounding 'a' has no expansion in
 # either direction, so the detector fires at position 1.
 0061 0130 0061; Hazard:LowerExpansion; 1; upper_exp=0; lower_exp=1; max_exp=2; # aİa
+
+# Word "Istanbul" with capital İ at position 0.
+0130 0073 0074 0061 006E 0062 0075 006C; Hazard:LowerExpansion; 0; upper_exp=0; lower_exp=1; max_exp=2; # İstanbul
+
+# Multi-İ — two capital-with-dot-above letters in a row.
+0130 0130; Hazard:LowerExpansion; 0; upper_exp=0; lower_exp=2; max_exp=2; # İİ — two lower-expanders

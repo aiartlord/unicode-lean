@@ -65,17 +65,17 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by native_decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 13 := by native_decide
+theorem row_count : rows.size = 22 := by native_decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 5 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by native_decide
 
 theorem covers_fullwidth :
-    (rows.filter (·.sectionName = "FullwidthFold")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "FullwidthFold")).size ≥ 7 := by
   native_decide
 
 theorem covers_halfwidth :
-    (rows.filter (·.sectionName = "HalfwidthFold")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "HalfwidthFold")).size ≥ 6 := by
   native_decide
 
 end Unicode.Conformance.Security.WidthClassConfusionTest

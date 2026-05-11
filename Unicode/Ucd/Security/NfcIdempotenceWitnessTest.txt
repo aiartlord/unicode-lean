@@ -54,6 +54,15 @@ D55C; Clear; ; nfc_len=1; nfkc_len=1; # 한 (precomposed)
 # Cyrillic привет — identity under NFC/NFKC.
 041F 0440 0438 0432 0435 0442; Clear; ; nfc_len=6; nfkc_len=6; # привет
 
+# Greek lowercase αβγ — identity under both forms.
+03B1 03B2 03B3; Clear; ; nfc_len=3; nfkc_len=3; # αβγ
+
+# Arabic letters — identity under both forms.
+0627 0628 0629; Clear; ; nfc_len=3; nfkc_len=3; # ابة
+
+# Plain ASCII URL — identity under both forms.
+0068 0074 0074 0070 003A 002F 002F; Clear; ; nfc_len=7; nfkc_len=7; # http://
+
 # @section NonNfcForm
 # @level basic
 
@@ -70,7 +79,22 @@ D55C; Clear; ; nfc_len=1; nfkc_len=1; # 한 (precomposed)
 006F 0308; Hazard:NonNfcForm; 0; nfc_len=1; nfkc_len=1; # o + diaeresis → ö
 
 # Decomposed Hangul jamos — toNFC composes them back to D55C.
-1112 1161 11AB; Hazard:NonNfcForm; 0; nfc_len=1; nfkc_len=1; # 한 jamos → 한
+1112 1161 11AB; Hazard:NonNfcForm; 0; nfc_len=1; nfkc_len=1; # Hangul jamos compose to D55C
+
+# u + combining diaeresis — NFC = precomposed u-with-diaeresis.
+0075 0308; Hazard:NonNfcForm; 0; nfc_len=1; nfkc_len=1; # u + diaeresis decomposed
+
+# n + combining tilde — NFC = precomposed n-with-tilde.
+006E 0303; Hazard:NonNfcForm; 0; nfc_len=1; nfkc_len=1; # n + tilde decomposed
+
+# c + combining cedilla — NFC = precomposed c-with-cedilla.
+0063 0327; Hazard:NonNfcForm; 0; nfc_len=1; nfkc_len=1; # c + cedilla decomposed
+
+# Long Spanish word with the n-with-tilde decomposed at position 2.
+006E 0069 006E 0303 006F; Hazard:NonNfcForm; 2; nfc_len=4; nfkc_len=4; # nino-tilde decomposed at pos 2
+
+# o + combining circumflex — NFC = precomposed o-with-circumflex.
+006F 0302; Hazard:NonNfcForm; 0; nfc_len=1; nfkc_len=1; # 한 jamos → 한
 
 # @section NonNfkcCompatForm
 # @level basic
@@ -85,3 +109,22 @@ FB03; Hazard:NonNfkcCompatForm; 0; nfc_len=1; nfkc_len=3; # ﬃ → ffi compat
 
 # Roman numeral Ⅳ (U+2163) — NFC stable, NFKC = #[0049, 0056] "IV".
 2163; Hazard:NonNfkcCompatForm; 0; nfc_len=1; nfkc_len=2; # Ⅳ → IV compat
+
+# Circled digit ① — NFKC = "1".
+2460; Hazard:NonNfkcCompatForm; 0; nfc_len=1; nfkc_len=1; # circled-1 to ASCII 1 compat
+
+# Superscript ² — NFKC = "2".
+00B2; Hazard:NonNfkcCompatForm; 0; nfc_len=1; nfkc_len=1; # superscript 2 compat
+
+# Vulgar fraction ½ — NFKC = "1⁄2" three cps.
+00BD; Hazard:NonNfkcCompatForm; 0; nfc_len=1; nfkc_len=3; # vulgar half compat
+
+# Arabic ligature SALLALLAHOU ALAYHE WASALLAM (U+FDFA) — NFC stable,
+# NFKC = 18 cps.  The F1 normalization-bomb codepoint also fires F6.
+FDFA; Hazard:NonNfkcCompatForm; 0; nfc_len=1; nfkc_len=18; # FDFA Arabic 18-cp expansion
+
+# Square HV (U+33CD) — NFKC = "HV".
+33CD; Hazard:NonNfkcCompatForm; 0; nfc_len=1; nfkc_len=2; # square HV compat
+
+# Halfwidth katakana 'ｱ' (FF71) — NFKC = the wide form U+30A2.
+FF71; Hazard:NonNfkcCompatForm; 0; nfc_len=1; nfkc_len=1; # halfwidth katakana → wide compat

@@ -66,17 +66,17 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by native_decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 12 := by native_decide
+theorem row_count : rows.size = 22 := by native_decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 5 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 9 := by native_decide
 
 theorem covers_upper :
-    (rows.filter (·.sectionName = "UpperExpansion")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "UpperExpansion")).size ≥ 9 := by
   native_decide
 
 theorem covers_lower :
-    (rows.filter (·.sectionName = "LowerExpansion")).size ≥ 2 := by
+    (rows.filter (·.sectionName = "LowerExpansion")).size ≥ 4 := by
   native_decide
 
 end Unicode.Conformance.Security.CaseExpansionMismatchTest
