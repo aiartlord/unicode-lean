@@ -64,24 +64,24 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by native_decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 15 := by native_decide
+theorem row_count : rows.size = 27 := by native_decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 6 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 9 := by native_decide
 
 theorem covers_rlo_flip :
-    (rows.filter (·.sectionName = "RloFlip")).size ≥ 3 := by native_decide
+    (rows.filter (·.sectionName = "RloFlip")).size ≥ 6 := by native_decide
 
 theorem covers_width_class :
-    (rows.filter (·.sectionName = "WidthClassExt")).size ≥ 2 := by
+    (rows.filter (·.sectionName = "WidthClassExt")).size ≥ 4 := by
   native_decide
 
 theorem covers_combining_in_ext :
-    (rows.filter (·.sectionName = "CombiningInExt")).size ≥ 2 := by
+    (rows.filter (·.sectionName = "CombiningInExt")).size ≥ 4 := by
   native_decide
 
 theorem covers_multiple_extensions :
-    (rows.filter (·.sectionName = "MultipleExtensions")).size ≥ 2 := by
+    (rows.filter (·.sectionName = "MultipleExtensions")).size ≥ 4 := by
   native_decide
 
 end Unicode.Conformance.Security.FilenameDisguiseTest
