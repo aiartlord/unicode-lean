@@ -51,6 +51,15 @@ D55C AE00; Clear; ; fw_fold=0; hw_fold=0; # 한글
 # Plain Cyrillic — every cp is EAW = N, identity NFKD.
 041F 0440 0438 0432 0435 0442; Clear; ; fw_fold=0; hw_fold=0; # привет
 
+# Plain Hiragana (EAW = W) — identity NFKD.
+3042 3044 3046; Clear; ; fw_fold=0; hw_fold=0; # あいう
+
+# Plain fullwidth katakana ア (EAW = W, NOT EAW = F).
+30A2 30A4 30A6; Clear; ; fw_fold=0; hw_fold=0; # アイウ (W not F)
+
+# Greek lowercase — EAW = N, identity NFKD.
+03B1 03B2 03B3; Clear; ; fw_fold=0; hw_fold=0; # αβγ
+
 # @section FullwidthFold
 # @level basic
 
@@ -67,6 +76,16 @@ FF10 FF11 FF12 FF13; Hazard:FullwidthFold; 0; fw_fold=4; hw_fold=0; # ０１２�
 # Mixed ASCII + fullwidth letter at position 4.
 0041 0042 0043 0044 FF25; Hazard:FullwidthFold; 4; fw_fold=1; hw_fold=0; # ABCDＥ
 
+# Fullwidth lowercase ｐａｓｓｗｏｒｄ — the validator-bypass shape
+# for credential checks.  Folds via NFKC to "password".
+FF50 FF41 FF53 FF53 FF57 FF4F FF52 FF44; Hazard:FullwidthFold; 0; fw_fold=8; hw_fold=0; # ｐａｓｓｗｏｒｄ → password
+
+# Fullwidth punctuation, e.g. ！ (U+FF01) → ASCII !
+FF01; Hazard:FullwidthFold; 0; fw_fold=1; hw_fold=0; # ！ → !
+
+# Fullwidth slash ／ (U+FF0F) → /
+FF0F; Hazard:FullwidthFold; 0; fw_fold=1; hw_fold=0; # ／ → /
+
 # @section HalfwidthFold
 # @level basic
 
@@ -81,3 +100,12 @@ FF72 FF73 FF74; Hazard:HalfwidthFold; 0; fw_fold=0; hw_fold=3; # ｲｳｴ → �
 # variant doesn't fire (no F → ≠F fold from W input), so the
 # detector falls through to the halfwidth scan.  H position 1.
 30A2 FF72; Hazard:HalfwidthFold; 1; fw_fold=0; hw_fold=1; # アｲ
+
+# Halfwidth Hangul ｦ (FF66) — NFKD to a wide jamo.
+FF66; Hazard:HalfwidthFold; 0; fw_fold=0; hw_fold=1; # ｦ halfwidth
+
+# Halfwidth Hangul filler ﾞ (FF9E) — voicing mark.
+FF9E; Hazard:HalfwidthFold; 0; fw_fold=0; hw_fold=1; # ﾞ voicing mark
+
+# Mixed halfwidth in ASCII context.
+0041 FF71 0042; Hazard:HalfwidthFold; 1; fw_fold=0; hw_fold=1; # AｱB
