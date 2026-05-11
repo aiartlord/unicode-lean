@@ -65,7 +65,11 @@
 # @level strict
 
 # Pure-ZWJ chain longer than the 16-codepoint RGI cap.
-1F600 200D 1F600 200D 1F600 200D 1F600 200D 1F600 200D 1F600 200D 1F600 200D 1F600 200D 1F600; Hazard:OverLength; ; # 17-cp ZWJ chain
+# Uses MAN (1F468) which IS in the RGI ZWJ alphabet (man
+# participates in family / couple / profession sequences) —
+# so the chain passes the non-emoji-injection check but trips
+# the length cap.
+1F468 200D 1F468 200D 1F468 200D 1F468 200D 1F468 200D 1F468 200D 1F468 200D 1F468 200D 1F468; Hazard:OverLength; ; # 9x MAN, 8x ZWJ — 17-cp chain
 
 # @section SkinToneOverflow
 # @level strict

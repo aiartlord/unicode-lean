@@ -188,4 +188,35 @@ def isRegisteredTagSequence (cps : Array Nat) : Bool :=
 def isRegisteredZwjSequence (cps : Array Nat) : Bool :=
   zwjSequences.any (fun s => s = cps)
 
+/-- The codepoint *alphabet* of the RGI ZWJ-sequence set: every
+    distinct codepoint that occurs at any position of any
+    registered RGI ZWJ sequence, excluding the ZWJ U+200D itself.
+
+    This is the canonical "what can flank a ZWJ?" question
+    answered against the Standard's own data file rather than
+    approximated via the `Emoji_Presentation` property bit.
+    Computed once at module load via a fold-and-dedup over
+    `zwjSequences`.
+
+    Used by `Unicode.Security.Identity.EmojiZwjIntegrity` (the I3
+    detector) to decide whether a non-RGI ZWJ-containing input is
+    a valid sequence shape, distinguishing keycap-eligible ASCII
+    digits / `#` / `*` (which carry the `Emoji` property but do
+    not appear in any registered ZWJ sequence) from legitimate
+    ZWJ participants like `U+2764 HEAVY BLACK HEART` (which
+    appears in registered couple-with-heart sequences but does
+    not carry `Emoji_Presentation`). -/
+def zwjAlphabet : Array Nat :=
+  zwjSequences.foldl (init := (#[] : Array Nat)) (fun acc seq =>
+    seq.foldl (init := acc) (fun a cp =>
+      if cp = 0x200D then a
+      else if a.contains cp then a
+      else a.push cp))
+
+/-- True iff `cp` appears at some position of a registered RGI
+    ZWJ sequence (excluding the ZWJ joiner itself).  Membership
+    against `zwjAlphabet`. -/
+def isInZwjAlphabet (cp : Nat) : Bool :=
+  zwjAlphabet.contains cp
+
 end Unicode.Generated.EmojiSequences
