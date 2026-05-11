@@ -79,18 +79,18 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by native_decide
 
 /-- Row-count gate (catches fixture corruption / accidental rewrites). -/
-theorem row_count : rows.size = 19 := by native_decide
+theorem row_count : rows.size = 28 := by native_decide
 
 /-- Section coverage gates. -/
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 5 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by native_decide
 
 theorem covers_binary_payload :
-    (rows.filter (·.sectionName = "BinaryPayload")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "BinaryPayload")).size ≥ 5 := by
   native_decide
 
 theorem covers_word_joiner :
-    (rows.filter (·.sectionName = "WordJoinerInjection")).size ≥ 2 := by
+    (rows.filter (·.sectionName = "WordJoinerInjection")).size ≥ 4 := by
   native_decide
 
 theorem covers_ai_watermark :
@@ -102,7 +102,7 @@ theorem covers_bare_zero_width :
   native_decide
 
 theorem covers_annotation_misuse :
-    (rows.filter (·.sectionName = "AnnotationMisuse")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "AnnotationMisuse")).size ≥ 5 := by
   native_decide
 
 end Unicode.Conformance.Security.ZeroWidthPayloadTest

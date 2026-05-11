@@ -37,7 +37,19 @@
 00E4 00B8 00AD; Clear; ; reject_kind=none; # 中 = E4 B8 AD
 
 # `😀` (U+1F600) as 4-byte UTF-8.
-00F0 009F 0098 0080; Clear; ; reject_kind=none; # 😀 = F0 9F 98 80
+00F0 009F 0098 0080; Clear; ; reject_kind=none; # smiley as 4 bytes
+
+# ASCII digit '0'.
+0030; Clear; ; reject_kind=none; # digit 0
+
+# Cyrillic а (U+0430) as 2-byte UTF-8.
+00D0 00B0; Clear; ; reject_kind=none; # Cyrillic а = D0 B0
+
+# Hebrew alef (U+05D0) as 2-byte UTF-8.
+00D7 0090; Clear; ; reject_kind=none; # Hebrew alef = D7 90
+
+# Korean 한 (U+D55C) as 3-byte UTF-8.
+00ED 0095 009C; Clear; ; reject_kind=none; # Korean ha = ED 95 9C
 
 # @section InvalidStartByte
 # @level basic
@@ -57,6 +69,12 @@
 # `0xFF` is never a valid start byte.
 00FF; Hazard:InvalidStartByte; 0; offset=0; reject_kind=invalidStartByte; # Byte 0xFF
 
+# Continuation byte 0xBF — not a valid start.
+00BF; Hazard:InvalidStartByte; 0; offset=0; reject_kind=invalidStartByte; # Lone 0xBF
+
+# `0xC1` byte — never valid start (overlong-encoding range for 2-byte).
+00C1; Hazard:InvalidStartByte; 0; offset=0; reject_kind=invalidStartByte; # Byte 0xC1
+
 # @section Overlong
 # @level basic
 
@@ -65,6 +83,12 @@
 
 # Overlong slash, 4-byte form `0xF0 0x80 0x80 0xAF`.
 00F0 0080 0080 00AF; Hazard:Overlong; 0; offset=0; reject_kind=overlongEncoding; # 4-byte overlong slash
+
+# Overlong NUL, 3-byte form `0xE0 0x80 0x80`.
+00E0 0080 0080; Hazard:Overlong; 0; offset=0; reject_kind=overlongEncoding; # 3-byte overlong NUL
+
+# Overlong ASCII `A` (0x41), 3-byte form `0xE0 0x81 0x81`.
+00E0 0081 0081; Hazard:Overlong; 0; offset=0; reject_kind=overlongEncoding; # 3-byte overlong A
 
 # @section Cesu8
 # @level basic
@@ -92,3 +116,12 @@
 # Leading 4-byte start `0xF0` with only two of three continuation bytes —
 # detection at offset 3 = past-end.
 00F0 009F 0098; Hazard:Truncated; 3; offset=3; reject_kind=truncatedSequence; # Truncated 4-byte
+
+# Truncated 2-byte after a valid ASCII byte — `H` + lone `0xC3`.
+0048 00C3; Hazard:Truncated; 2; offset=2; reject_kind=truncatedSequence; # H + truncated 2-byte
+
+# Truncated 3-byte with only one continuation.
+00E4 00B8; Hazard:Truncated; 2; offset=2; reject_kind=truncatedSequence; # 3-byte missing last cont
+
+# Truncated 4-byte with only one continuation.
+00F0 009F; Hazard:Truncated; 2; offset=2; reject_kind=truncatedSequence; # 4-byte only 1 cont
