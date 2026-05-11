@@ -17,11 +17,17 @@ open Unicode.Security.Calculus
 open Unicode.Security.Fixture
 open Unicode.Security.Form.NormalizationBomb
 
-/-- Hand-curated v1 fixture for F1 — 8 rows across 2 sections.
-    Clear: ASCII, Han, single Korean syllable 한, two Korean
-    syllables 한글 (at the 300% NFD threshold), circled digit ①,
-    ASCII digits.  SingleCpBlowup: U+FDFA (18-cp NFKD) and
-    U+FDFB (8-cp NFKD), both Arabic compatibility ligatures. -/
+/-- Hand-curated v1 fixture for F1 — 11 rows across 4 sections.
+    Every sub-threat is reachable by at least one row.
+
+    * Clear (6): ASCII, Han, 한, 한글 (at 300% NFD threshold),
+      ① circled-one, ASCII digits.
+    * SingleCpBlowup (1): U+FDFA — Arabic ligature SALLALLAHOU
+      ALAYHE WASALLAM (1 cp → 18 cps NFKD).
+    * NfkdHighExpansion (2): U+FDFB (1 cp → 8 cps NFKD ratio
+      800%) and doubled FDFB.
+    * NfdHighExpansion (2): Greek extended U+1F82 (NFD=4
+      ratio 400%) and a Greek pair 1F82+1F83. -/
 def rawFixture : String :=
   include_str "../../Ucd/Security/NormalizationBombTest.txt"
 
@@ -51,13 +57,21 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by native_decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 8 := by native_decide
+theorem row_count : rows.size = 11 := by native_decide
 
 theorem covers_clear :
     (rows.filter (·.sectionName = "Clear")).size ≥ 5 := by native_decide
 
 theorem covers_single_cp_blowup :
-    (rows.filter (·.sectionName = "SingleCpBlowup")).size ≥ 2 := by
+    (rows.filter (·.sectionName = "SingleCpBlowup")).size ≥ 1 := by
+  native_decide
+
+theorem covers_nfkd_high :
+    (rows.filter (·.sectionName = "NfkdHighExpansion")).size ≥ 2 := by
+  native_decide
+
+theorem covers_nfd_high :
+    (rows.filter (·.sectionName = "NfdHighExpansion")).size ≥ 2 := by
   native_decide
 
 end Unicode.Conformance.Security.NormalizationBombTest
