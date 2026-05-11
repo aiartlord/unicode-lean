@@ -1,0 +1,102 @@
+# ZeroWidthPayloadTest.txt
+# UCD version: 16.0.0
+# Security-spec version: 0.1.0
+# Family: C3 — Zero-Width Payload Detection
+# License: Apache-2.0
+#
+# Threat model: invisible payloads encoded in zero-width or
+# near-zero-width codepoints (ZWSP / ZWNJ / ZWJ / LRM / RLM /
+# WORD JOINER / invisible math operators / NNBSP / BOM /
+# INTERLINEAR ANNOTATION marks).
+#
+# Format:
+#   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
+#
+# Classifications produced by the C3 detector:
+#   Clear
+#   Hazard:AnnotationMisuse      Hazard:WordJoinerInjection
+#   Hazard:AIWatermarkNNBSP      Hazard:BinaryPayload
+#   Hazard:BareZeroWidth
+#
+# Attribution conventions (key="value" pairs joined with ";"):
+#   zwsp_count=N              count of U+200B
+#   zwj_count=N               count of U+200D
+#   wj_count=N                count of U+2060 WORD JOINER
+#   nnbsp_count=N             count of U+202F NNBSP
+#   anchor=N separator=N terminator=N   annotation-mark counts
+#   bare_cp=0xNNNN            surfaced bare zero-width codepoint
+
+# @section Clear
+# @level basic
+
+# Pure ASCII — no zero-width.
+0048 0065 006C 006C 006F; Clear; ; zwsp_count=0; zwj_count=0; wj_count=0; nnbsp_count=0; # ASCII "Hello"
+
+# Plain Han — no zero-width.
+4E2D 6587; Clear; ; zwsp_count=0; zwj_count=0; wj_count=0; nnbsp_count=0; # Han "中文"
+
+# Emoji + VS16 — no zero-width.
+1F600 FE0F; Clear; ; zwsp_count=0; zwj_count=0; wj_count=0; nnbsp_count=0; # Grinning face emoji presentation
+
+# Emoji ZWJ sequence "man + ZWJ + laptop" — sanctioned RGI ZWJ context.
+1F468 200D 1F4BB; Clear; ; zwsp_count=0; zwj_count=1; wj_count=0; nnbsp_count=0; # 👨‍💻 RGI emoji ZWJ sequence
+
+# 3-emoji ZWJ chain "man + ZWJ + woman + ZWJ + boy" — every ZWJ in RGI context.
+1F468 200D 1F469 200D 1F466; Clear; ; zwsp_count=0; zwj_count=2; wj_count=0; nnbsp_count=0; # 👨‍👩‍👦 family RGI ZWJ chain
+
+# @section BinaryPayload
+# @level basic
+
+# Two ZWSPs encoding the bit-pair "00" between ASCII characters.
+0048 200B 0069 200B 0069; Hazard:BinaryPayload; 1,3; zwsp_count=2; zwj_count=0; wj_count=0; nnbsp_count=0; # 2-bit ZWSP binary payload
+
+# ZWSP + ZWJ pair encoding "01" — non-emoji-context ZWJ.
+0048 200B 200D 0069; Hazard:BinaryPayload; 1,2; zwsp_count=1; zwj_count=1; wj_count=0; nnbsp_count=0; # ZWSP+ZWJ binary, no emoji context
+
+# Three ZWSPs in a row — clear binary-encoding intent.
+0061 200B 200B 200B 0062; Hazard:BinaryPayload; 1,2,3; zwsp_count=3; zwj_count=0; wj_count=0; nnbsp_count=0; # 3-bit ZWSP payload
+
+# @section WordJoinerInjection
+# @level basic
+
+# Single WORD JOINER injected between Latin chars.
+0048 2060 0069; Hazard:WordJoinerInjection; 1; zwsp_count=0; zwj_count=0; wj_count=1; nnbsp_count=0; # WJ between H and i
+
+# Two WORD JOINERs in a row.
+0061 2060 2060 0062; Hazard:WordJoinerInjection; 1,2; zwsp_count=0; zwj_count=0; wj_count=2; nnbsp_count=0; # Double WJ injection
+
+# @section AIWatermarkNNBSP
+# @level strict
+
+# Two NNBSPs between Latin words — suspected GPT-4 watermark pattern.
+0048 202F 0069 202F 0021; Hazard:AIWatermarkNNBSP; 1,3; zwsp_count=0; zwj_count=0; wj_count=0; nnbsp_count=2; # NNBSP burst, GPT-class watermark heuristic
+
+# Three NNBSPs at boundary positions.
+0061 202F 0062 202F 0063 202F 0064; Hazard:AIWatermarkNNBSP; 1,3,5; zwsp_count=0; zwj_count=0; wj_count=0; nnbsp_count=3; # 3-NNBSP boundary watermark
+
+# @section BareZeroWidth
+# @level basic
+
+# Single ZWSP — bareZeroWidth (too few for binary payload heuristic).
+0048 200B 0069; Hazard:BareZeroWidth; 1; bare_cp=0x200B; zwsp_count=1; zwj_count=0; wj_count=0; nnbsp_count=0; # Single ZWSP in Latin
+
+# Single BOM (U+FEFF) mid-stream.
+0048 FEFF 0069; Hazard:BareZeroWidth; 1; bare_cp=0xFEFF; zwsp_count=0; zwj_count=0; wj_count=0; nnbsp_count=0; # BOM mid-stream
+
+# Single ZWJ with no emoji context.
+0048 200D 0069; Hazard:BareZeroWidth; 1; bare_cp=0x200D; zwsp_count=0; zwj_count=1; wj_count=0; nnbsp_count=0; # ZWJ between Latin chars (no emoji)
+
+# Single NNBSP — too few for AI-watermark heuristic.
+0048 202F 0069; Hazard:BareZeroWidth; 1; bare_cp=0x202F; zwsp_count=0; zwj_count=0; wj_count=0; nnbsp_count=1; # Single NNBSP
+
+# @section AnnotationMisuse
+# @level strict
+
+# ANCHOR without SEPARATOR or TERMINATOR.
+0048 FFF9 0069; Hazard:AnnotationMisuse; 1; anchor=1; separator=0; terminator=0; # Lone annotation anchor
+
+# Two ANCHORs without a single SEPARATOR.
+FFF9 0041 FFF9 0042; Hazard:AnnotationMisuse; 0,2; anchor=2; separator=0; terminator=0; # Double anchor, no closes
+
+# ANCHOR + SEPARATOR but no TERMINATOR.
+FFF9 0041 FFFA 0042; Hazard:AnnotationMisuse; 0,2; anchor=1; separator=1; terminator=0; # Missing terminator

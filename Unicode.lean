@@ -206,3 +206,4 @@ import Unicode.Security
 import Unicode.Conformance.Security.VariationSelectorPayloadTest
 import Unicode.Conformance.Security.TagBlockPayloadTest
 import Unicode.Conformance.Security.BidiControlBalanceTest
+import Unicode.Conformance.Security.ZeroWidthPayloadTest
