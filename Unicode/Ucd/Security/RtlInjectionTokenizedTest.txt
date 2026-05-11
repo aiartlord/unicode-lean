@@ -1,0 +1,92 @@
+# RtlInjectionTokenizedTest.txt
+# UCD version: 16.0.0
+# Security-spec version: 0.1.0
+# Family: D3 (v1.5 region-aware tokenization)
+# Grammar: Rust (`Language.rust`)
+# License: Apache-2.0
+#
+# Companion fixture to RtlInjectionTest.txt that exercises D3's
+# v1.5 region-aware behaviour.  Every row is evaluated with
+# `detect input .rust`, so the verdicts here may differ from the
+# v1 fixture's verdicts on the same byte sequence whenever a
+# sub-detector's hit lands inside a string literal, line
+# comment, or block comment.
+#
+# Mirrors the SourceDisplayDivergenceTokenizedTest fixture's
+# shape one-for-one — same Clear/Hazard sections, same Rust
+# tokenizer grammar, same filter semantics.
+#
+# Format:
+#   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
+#
+# Classifications produced by the D3 detector are unchanged from
+# the v1 fixture — only the filtering changes.
+
+# @section Clear
+# @level basic
+
+# ASCII Hello — no payload, all code, no bidi.
+0048 0065 006C 006C 006F; Clear; ; # Hello
+
+# RLO INSIDE a Rust string literal.  Under .none the C5-style
+# hit would fire `RloInLTRField`; under .rust the position is
+# inside the string region, so the hit is filtered out.
+0022 0041 202E 0042 0022; Clear; ; # string with RLO inside
+
+# RLO INSIDE a Rust line comment.
+002F 002F 202E; Clear; ; # line comment with RLO
+
+# RLO INSIDE a Rust block comment.
+002F 002A 202E 002A 002F; Clear; ; # block comment with RLO
+
+# Hebrew text INSIDE a Rust string literal — no field-takeover
+# claim against a string that happens to contain Hebrew.
+0022 05D0 05D1 05D2 0022; Clear; ; # Hebrew in string
+
+# 5-char Hebrew run INSIDE a string — would be MixedOverflow
+# under .none, stays clear under .rust.
+0022 05D0 05D1 05D2 05D3 05D4 0022; Clear; ; # 5-Hebrew in string
+
+# Pure ASCII Rust expression — no bidi anywhere.
+006C 0065 0074 0020 0078 0020 003D 0020 0031 003B; Clear; ; # let x = 1;
+
+# Arabic word INSIDE a string literal.
+0022 0627 0628 0629 0022; Clear; ; # Arabic in string
+
+# @section Hazard
+# @level basic
+
+# RLO BEFORE a Rust string literal — RLO sits in the leading
+# code region, so the C5-style hit is in code and D3 fires.
+202E 0022 0041 0022; Hazard:RloInLTRField; 0; # RLO + A-in-string
+
+# RLO at end of code AFTER a string literal closes.
+0022 0048 0069 0022 202E; Hazard:RloInLTRField; 4; # Hi-in-string + trailing RLO
+
+# Leading Hebrew BEFORE a Rust string literal — field takeover
+# detected in code prefix.
+05D0 0022 0041 0022; Hazard:FieldTakeover; 0; # Hebrew + A-in-string
+
+# Mid-stream Hebrew letter in pure code (no string wrapper).
+0041 0042 05D0 0044; Hazard:StrongRTLInLTR; 2; # AB + Hebrew + D in code
+
+# 5-char Hebrew run in code (no string wrapper).
+0041 0042 05D0 05D1 05D2 05D3 05D4 0044; Hazard:MixedOverflow; 2; # AB + 5-Hebrew + D in code
+
+# Mixed: Hebrew run AFTER a string literal closes.  The first
+# in-code strong character is the leading Hebrew at position 4
+# (everything in positions 0..3 is the string `"Hi"` and its
+# quotes — none of those are strong-LTR by themselves in code
+# region terms).  So this fires `FieldTakeover` on the post-
+# string code region, not `MixedOverflow`.  Pinning this row
+# documents the semantics: D3's first-strong scan walks the
+# whole input filtered by `inCode`, not per-region.
+0022 0048 0069 0022 05D0 05D1 05D2 05D3; Hazard:FieldTakeover; 4; # Hi-in-string + 4-Hebrew trailing
+
+# RLE override in code, followed by a string literal containing
+# Hebrew — the RLE-in-code is the hit, the in-string Hebrew is
+# data.
+202B 0022 05D0 05D1 0022; Hazard:RloInLTRField; 0; # RLE + Hebrew-in-string
+
+# Code BEFORE a comment: RLO at position 0, then comment opens.
+202E 002F 002F 0041; Hazard:RloInLTRField; 0; # RLO + line comment

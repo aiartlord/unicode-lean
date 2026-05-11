@@ -20,6 +20,21 @@
   separate detector; this module does not auto-detect declared
   direction from the input.
 
+  v1.5 region-aware tokenization (this revision).  The
+  `detect` function takes an optional `Language` parameter that
+  dispatches to the shared `Unicode.Security.Display.SourceCode
+  Tokenize` state machine.  Under `Language.cStyleGeneric` or
+  `Language.rust`, sub-detector hits whose position sits inside
+  a string literal, line comment, or block comment are filtered
+  out — the bidi codepoint is data or documentation, not
+  display deception in the surrounding code.  Under
+  `Language.none` the whole input is treated as one code
+  region, preserving v1 behaviour exactly.
+
+  Mirrors the v1.5 plumbing in
+  `Unicode.Security.Display.SourceDisplayDivergence` and uses
+  the same `positionInCode` predicate.
+
   Sub-threats (priority order):
 
     1. `rloInLTRField`    any bidi format-control codepoint
@@ -36,12 +51,14 @@
 -/
 
 import Unicode.Security.Calculus
+import Unicode.Security.Display.SourceCodeTokenize
 import Unicode.TrojanSource
 import Unicode.Bidi.Algorithm
 
 namespace Unicode.Security.Display.RtlInjection
 
 open Unicode.Security.Calculus
+open Unicode.Security.Display.SourceCodeTokenize (Language positionInCode)
 open Unicode.Generated.DerivedBidiClass (BidiClass)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -159,39 +176,100 @@ def longestRtlRun (input : Array Nat) : Nat × Nat := Id.run do
 -- §4 Top-level detection
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The D3 detection function.  Assumes LTR-declared context. -/
-def detect (input : Array Nat) : D3Verdict :=
+/-- The D3 detection function.  Assumes LTR-declared context.
+
+    `lang` defaults to `Language.none`, which treats the whole
+    input as one code region — equivalent to the v1
+    language-agnostic behaviour.  Callers passing
+    `Language.cStyleGeneric` or `Language.rust` get region-aware
+    filtering: a sub-detector that would fire on a bidi
+    codepoint sitting inside a string literal, line comment, or
+    block comment is suppressed, because the codepoint is data
+    or documentation, not display deception in the surrounding
+    code.
+
+    The aggregate counters (`strongRTLCount`, `strongLTRCount`,
+    `bidiControlCount`, `longestRtlRunLen`) on the returned
+    Verdict are computed against the whole input — they
+    describe what the input contains, not what the detector
+    decided to fire on.  Only `classify` is region-aware. -/
+def detect (input : Array Nat) (lang : Language := .none) : D3Verdict :=
   let strongRTL := countStrongRTL input
   let strongLTR := countStrongLTR input
   let bidiCtl := countBidiControl input
   let (runLen, runStart) := longestRtlRun input
+  let inCode (p : Nat) : Bool := positionInCode lang input p
   let classification : D3Classification :=
-    -- Phase 1: bidi format-control trumps all.
-    match firstBidiControlPos input with
+    -- Phase 1: bidi format-control trumps all, but only if the
+    -- offending codepoint sits in code.  We walk the input to
+    -- find the first in-code bidi control; if every bidi
+    -- control is in string / comment context, we fall through
+    -- to Phase 2 as if there were no bidi controls.
+    let firstInCodeBidi : Option (Nat × Nat) :=
+      (Array.range input.size).findSome? (fun i =>
+        if h : i < input.size then
+          if isBidiControl input[i] ∧ inCode i then
+            some (i, input[i])
+          else none
+        else none)
+    match firstInCodeBidi with
     | some (pos, ctlCp) =>
       .hazard (.rloInLTRField pos ctlCp) #[pos] ByteArray.empty
     | none =>
-      -- Phase 2: leading-RTL field-direction takeover.
-      match firstStrongCharPos input with
+      -- Phase 2: leading-RTL field-direction takeover.  Same
+      -- region-aware shift: we want the first STRONG character
+      -- that's in code, since a leading RTL letter inside a
+      -- string literal is a data point, not a field takeover.
+      let firstInCodeStrong : Option (Nat × Nat × Bool) :=
+        (Array.range input.size).findSome? (fun i =>
+          if h : i < input.size then
+            if ¬ inCode i then none
+            else
+              let cp := input[i]
+              if isStrongRTL cp then some (i, cp, true)
+              else if isStrongLTR cp then some (i, cp, false)
+              else none
+          else none)
+      match firstInCodeStrong with
       | some (pos, cp, true) =>
-        -- First strong char is RTL — field takeover.
         .hazard (.fieldTakeover pos cp) #[pos] ByteArray.empty
       | _ =>
-        -- Phase 3: mid-stream strong-RTL.
-        if strongRTL > 0 then
-          -- Decide between mixedOverflow (long run) and the
-          -- generic strongRTLInLTR.
-          if runLen ≥ 4 then
-            .hazard (.mixedOverflow runLen runStart)
-              #[runStart] ByteArray.empty
+        -- Phase 3: mid-stream strong-RTL.  Filter the run /
+        -- count machinery through `inCode` to avoid firing on
+        -- bidi text safely tucked inside a string literal.
+        let inCodeRtlPositions : Array Nat :=
+          (Array.range input.size).filterMap (fun i =>
+            if h : i < input.size then
+              if isStrongRTL input[i] ∧ inCode i then some i else none
+            else none)
+        let inCodeRtlCount : Nat := inCodeRtlPositions.size
+        let inCodeRunLen : Nat := Id.run do
+          let mut longest : Nat := 0
+          let mut current : Nat := 0
+          for i in Array.range input.size do
+            if h : i < input.size then
+              if isStrongRTL input[i] ∧ inCode i then
+                current := current + 1
+                if current > longest then longest := current
+              else
+                current := 0
+          pure longest
+        if inCodeRtlCount > 0 then
+          if inCodeRunLen ≥ 4 then
+            -- Find start of the longest in-code run.
+            let firstInRun : Nat :=
+              if h : inCodeRtlPositions.size > 0 then
+                inCodeRtlPositions[0]'h
+              else 0
+            .hazard (.mixedOverflow inCodeRunLen firstInRun)
+              #[firstInRun] ByteArray.empty
           else
-            match firstStrongRTLPos input with
-            | some (firstRtlPos, _firstRtlCp) =>
-              .hazard (.strongRTLInLTR strongRTL firstRtlPos)
-                #[firstRtlPos] ByteArray.empty
-            | none =>
-              -- Unreachable when strongRTL > 0.
-              .clear
+            let firstRtlPos : Nat :=
+              if h : inCodeRtlPositions.size > 0 then
+                inCodeRtlPositions[0]'h
+              else 0
+            .hazard (.strongRTLInLTR inCodeRtlCount firstRtlPos)
+              #[firstRtlPos] ByteArray.empty
         else
           .clear
   { input := input,
@@ -287,5 +365,63 @@ theorem detect_mid_stream_hebrew :
 theorem detect_overflow_hebrew :
     (detect #[0x41, 0x42, 0x05D0, 0x05D1, 0x05D2, 0x05D3, 0x44]).classify.tag
       = some "MixedOverflow" := by native_decide
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §7 v1.5 region-aware spot checks
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- Under `Language.none`, the behaviour matches v1 — the whole
+    input is one code region.  An RLO mid-input fires
+    `RloInLTRField`. -/
+theorem detect_none_rlo_fires :
+    (detect #[0x41, 0x202E, 0x42] .none).classify.tag
+      = some "RloInLTRField" := by native_decide
+
+/-- Under `Language.rust`, an RLO inside a string literal is
+    filtered out — the C-style tokenizer routes the position
+    into the in-string region.  The whole-input scan returns
+    Clear. -/
+theorem detect_rust_rlo_in_string_clear :
+    (detect #[0x22, 0x41, 0x202E, 0x42, 0x22] .rust).classify.isClear
+      = true := by native_decide
+
+/-- Under `Language.rust`, an RLO inside a Rust line comment is
+    filtered out. -/
+theorem detect_rust_rlo_in_line_comment_clear :
+    (detect #[0x2F, 0x2F, 0x202E] .rust).classify.isClear
+      = true := by native_decide
+
+/-- Under `Language.rust`, an RLO inside a Rust block comment is
+    filtered out. -/
+theorem detect_rust_rlo_in_block_comment_clear :
+    (detect #[0x2F, 0x2A, 0x202E, 0x2A, 0x2F] .rust).classify.isClear
+      = true := by native_decide
+
+/-- Under `Language.rust`, an RLO in code BEFORE a string
+    literal still fires — the code-region prefix carries the
+    hit. -/
+theorem detect_rust_rlo_in_code_fires :
+    (detect #[0x202E, 0x22, 0x41, 0x22] .rust).classify.tag
+      = some "RloInLTRField" := by native_decide
+
+/-- Under `Language.rust`, Hebrew text inside a string literal is
+    filtered out — no field takeover claim against a string
+    literal that happens to contain Hebrew. -/
+theorem detect_rust_hebrew_in_string_clear :
+    (detect #[0x22, 0x05D0, 0x05D1, 0x05D2, 0x22] .rust).classify.isClear
+      = true := by native_decide
+
+/-- Under `Language.rust`, a 5-char Hebrew run inside a string
+    literal stays clear (would have been MixedOverflow under
+    .none). -/
+theorem detect_rust_hebrew_run_in_string_clear :
+    (detect #[0x22, 0x05D0, 0x05D1, 0x05D2, 0x05D3, 0x05D4, 0x22]
+        .rust).classify.isClear = true := by native_decide
+
+/-- Under `Language.rust`, a mid-stream Hebrew letter outside
+    any string / comment still fires `StrongRTLInLTR`. -/
+theorem detect_rust_hebrew_in_code_fires :
+    (detect #[0x41, 0x42, 0x05D0, 0x44] .rust).classify.tag
+      = some "StrongRTLInLTR" := by native_decide
 
 end Unicode.Security.Display.RtlInjection
