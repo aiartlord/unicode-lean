@@ -102,16 +102,21 @@ structure I3Verdict where
 @[inline]
 def isZwj (cp : Nat) : Bool := cp = zwj
 
-/-- True iff `cp` is a valid ZWJ-sequence target — has the
-    `Emoji_Presentation` property OR is the heart symbol U+2764
-    (frequently used in registered RGI couple-with-heart
-    sequences).  Distinguished from the wider `Emoji` property
-    so that keycap-eligible ASCII digits / `#` / `*` (which are
-    Emoji but NOT a ZWJ-join target) correctly flag as
-    `.nonEmojiInjection`. -/
+/-- True iff `cp` is a sanctioned ZWJ-sequence target — i.e.
+    `cp` appears at some position of a registered RGI ZWJ
+    sequence in `emoji-zwj-sequences.txt`.  Membership is the
+    canonical "what can flank a ZWJ?" predicate; the older
+    approximation via `Emoji_Presentation` either misclassified
+    keycap-eligible ASCII digits as targets (because they
+    inherit the wider `Emoji` property) or required an explicit
+    `U+2764` exception (because `HEAVY BLACK HEART` is itself
+    not `Emoji_Presentation`).  Reusing the Standard's own
+    membership data avoids both.
+
+    Delegates to `Unicode.Generated.EmojiSequences.isInZwjAlphabet`. -/
 @[inline]
 def isEmojiTarget (cp : Nat) : Bool :=
-  Unicode.Emoji.isEmojiPresentation cp || cp = 0x2764
+  Unicode.Generated.EmojiSequences.isInZwjAlphabet cp
 
 /-- Collect ZWJ positions in `input`. -/
 def zwjPositions (input : Array Nat) : Array Nat :=
@@ -278,12 +283,29 @@ theorem detect_skin_tone_overflow :
     (detect #[0x1F44B, 0x1F3FB, 0x1F3FC, 0x1F3FD, 0x1F3FE, 0x1F3FF]).classify.tag
       = some "SkinToneOverflow" := by native_decide
 
-/-- ZWJ between two emoji but the combined sequence is not in
-    `emoji-zwj-sequences.txt` — `.unregisteredSequence`.
-    (Grinning face + ZWJ + Laptop is not in the registered RGI
-    ZWJ-sequence set.) -/
+/-- `MAN + ZWJ + LAPTOP` is registered (`👨‍💻` = man technologist) —
+    must be clear. -/
+theorem detect_man_laptop_registered_clear :
+    (detect #[0x1F468, 0x200D, 0x1F4BB]).classify.isClear = true := by
+  native_decide
+
+/-- `MAN + ZWJ + WOMAN` is a sequence where both sides ARE in the
+    RGI ZWJ alphabet (they appear in registered family and couple
+    sequences) but the joined sequence `man + ZWJ + woman` itself
+    is NOT a registered RGI entry.  Surfaces as
+    `.unregisteredSequence`. -/
 theorem detect_unregistered :
-    (detect #[0x1F600, 0x200D, 0x1F4BB]).classify.tag
+    (detect #[0x1F468, 0x200D, 0x1F469]).classify.tag
       = some "UnregisteredSequence" := by native_decide
+
+/-- `GRINNING FACE + ZWJ + LAPTOP` — the grinning face does NOT
+    appear in any registered RGI ZWJ sequence, so it is not a
+    valid ZWJ-join target.  This now correctly surfaces as
+    `.nonEmojiInjection` rather than the looser
+    `.unregisteredSequence` we got before adopting the
+    structural `zwjAlphabet` predicate. -/
+theorem detect_grinning_laptop_non_emoji_injection :
+    (detect #[0x1F600, 0x200D, 0x1F4BB]).classify.tag
+      = some "NonEmojiInjection" := by native_decide
 
 end Unicode.Security.Identity.EmojiZwjIntegrity
