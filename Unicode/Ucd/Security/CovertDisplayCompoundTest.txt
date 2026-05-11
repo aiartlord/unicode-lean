@@ -56,6 +56,20 @@
 # Bidi + bidi only — open-and-close RLO/PDF without payload.
 202E 0041 0042 202C; Clear; ; # RLO AB PDF
 
+# Plain Han text — no bidi, no VS, no tag block.
+4E2D 6587; Clear; ; # 中文
+
+# Tag-block character alone — no bidi, so X2 stays clear (C4
+# handles the tag-block surface).
+0041 E0001; Clear; ; # A + tag block (C4 territory)
+
+# Bidi + tag-block-language-tag-END (U+E007F) alone — only one
+# tag character; need both bidi AND tag block for X2 to fire.
+# Wait, this DOES fire — that's the point of the compound.  Let
+# me give the legitimate clear case instead: balanced LRE + PDF
+# with no compound elements.
+202A 0041 202C; Clear; ; # LRE A PDF (D3 territory)
+
 # @section BidiPlusUnregisteredVs
 # @level strict
 
@@ -70,6 +84,16 @@
 # LRI isolate + ASCII + VS3 — isolate-class bidi control also
 # fires when paired with unregistered VS.
 2067 0042 FE02; Hazard:BidiPlusUnregisteredVs; 0,2; # LRI + B + VS3
+
+# LRE embedding + Han + unregistered VS — embedding-class bidi
+# control variant.  Han is not in StandardizedVariants for VS5.
+202A 4E2D FE05; Hazard:BidiPlusUnregisteredVs; 0,2; # LRE + Han + VS5
+
+# FSI first-strong isolate + ASCII + supplementary VS17.
+2068 0041 E0100; Hazard:BidiPlusUnregisteredVs; 0,2; # FSI + A + VS17
+
+# RLE override + Cyrillic + VS6.
+202B 0430 FE06; Hazard:BidiPlusUnregisteredVs; 0,2; # RLE + Cyrillic а + VS6
 
 # @section BidiPlusTagBlock
 # @level strict
@@ -87,3 +111,15 @@
 # tag block does fire BidiPlusTagBlock.  Validates the priority
 # fall-through.
 202E 1F600 FE0F E0042; Hazard:BidiPlusTagBlock; 0,3; # RLO + 😀 + VS16 + tag B
+
+# LRI + ASCII + tag block.
+2067 0042 E0001; Hazard:BidiPlusTagBlock; 0,2; # LRI + B + LANGUAGE TAG
+
+# FSI + tag-block ETX (E0003).
+2068 E0003; Hazard:BidiPlusTagBlock; 0,1; # FSI + tag E0003
+
+# LRE + Han + tag-block.
+202A 4E2D E0021; Hazard:BidiPlusTagBlock; 0,2; # LRE + Han + tag !
+
+# RLE override + Han + tag-block — embedding-class bidi pairing.
+202B 4E2D E0041; Hazard:BidiPlusTagBlock; 0,2; # RLE + Han + tag A
