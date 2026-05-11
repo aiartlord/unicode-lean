@@ -1,0 +1,75 @@
+# SkinToneVariationForgeryTest.txt
+# UCD version: 16.0.0
+# Security-spec version: 0.1.0
+# Family: I4 — Skin-tone / Variation Forgery
+# License: Apache-2.0
+#
+# Threat model: skin-tone modifier or VS15/VS16 placed on an
+# inappropriate target codepoint per UTS #51.  Catches stacked
+# skin-tones, skin-tones on non-modifier-base codepoints, and
+# forced-text-style flips of emoji-default codepoints.
+#
+# Format:
+#   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
+#
+# Classifications produced by the I4 detector:
+#   Clear
+#   Hazard:StackedSkinTones      Hazard:InvalidSkinToneTarget
+#   Hazard:ForcedTextStyle
+
+# @section Clear
+# @level basic
+
+# ASCII — no modifier / VS structure.
+0048 0065; Clear; ; # ASCII He
+
+# Plain emoji — no modifier.
+1F600; Clear; ; # Grinning face solo
+
+# Wave-hand + single light skin tone — sanctioned.
+1F44B 1F3FB; Clear; ; # Waving hand, light skin tone
+
+# Wave-hand + dark skin tone.
+1F44B 1F3FF; Clear; ; # Waving hand, dark skin tone
+
+# Man emoji + medium-light skin tone.
+1F468 1F3FC; Clear; ; # Man, medium-light skin tone
+
+# @section StackedSkinTones
+# @level basic
+
+# Wave-hand + two skin tones in a row.
+1F44B 1F3FB 1F3FC; Hazard:StackedSkinTones; 1,2; # Wave + light + medium-light
+
+# Man + three skin tones stacked.
+1F468 1F3FB 1F3FC 1F3FD; Hazard:StackedSkinTones; 1,2; # Man + three stacked
+
+# Wave-hand + two skin tones (different pair).
+1F44B 1F3FF 1F3FE; Hazard:StackedSkinTones; 1,2; # Wave + dark + medium-dark
+
+# @section InvalidSkinToneTarget
+# @level basic
+
+# Skin tone on ASCII 'A'.
+0041 1F3FB; Hazard:InvalidSkinToneTarget; 1; # A + light skin tone
+
+# Skin tone on grinning face (not a modifier-base).
+1F600 1F3FB; Hazard:InvalidSkinToneTarget; 1; # 😀 + light skin tone
+
+# Skin tone on Han codepoint.
+4E2D 1F3FB; Hazard:InvalidSkinToneTarget; 1; # 中 + light skin tone
+
+# Skin tone on digit 5.
+0035 1F3FB; Hazard:InvalidSkinToneTarget; 1; # 5 + light skin tone
+
+# @section ForcedTextStyle
+# @level strict
+
+# VS15 on grinning face (emoji-default codepoint).
+1F600 FE0E; Hazard:ForcedTextStyle; 1; # Grinning face + VS15
+
+# VS15 on waving hand.
+1F44B FE0E; Hazard:ForcedTextStyle; 1; # Waving hand + VS15
+
+# VS15 on red heart (emoji-default).
+1F495 FE0E; Hazard:ForcedTextStyle; 1; # Two hearts + VS15

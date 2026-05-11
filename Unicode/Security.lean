@@ -29,6 +29,7 @@ import Unicode.Security.Covert.SurrogateReassembly
 import Unicode.Security.Identity.HomoglyphConfusable
 import Unicode.Security.Identity.MixedScriptAdmissibility
 import Unicode.Security.Identity.EmojiZwjIntegrity
+import Unicode.Security.Identity.SkinToneVariationForgery
 
 -- Layer 3 — Display Integrity (compound detectors)
 import Unicode.Security.Display.SourceDisplayDivergence
