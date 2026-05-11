@@ -56,12 +56,32 @@ D55C AE00; Clear; ; nfd_len=6; nfkd_len=6; input_len=2; max_per_cp=3; # 한글
 # Plain ASCII digits — no decomposition.
 0030 0031 0032 0033; Clear; ; nfd_len=4; nfkd_len=4; input_len=4; max_per_cp=1; # 0123
 
+# Hangul triple — NFD=8 / input=3 ≈ 267%, clear.
+D55C AE00 C774; Clear; ; nfd_len=8; nfkd_len=8; input_len=3; max_per_cp=3; # 한글이
+
+# Vulgar fraction trio — 3+3+3 / 3 = 300% NFKD ratio, at strict boundary.
+215B 215C 215D; Clear; ; nfd_len=3; nfkd_len=9; input_len=3; max_per_cp=3; # ⅛⅜⅝ at 300% boundary
+
+# Roman numeral Ⅻ — 1 cp → 3 cps NFKD ("XII"), max_per_cp 3.
+216B; Clear; ; nfd_len=1; nfkd_len=3; input_len=1; max_per_cp=3; # Ⅻ NFKD=XII
+
+# CJK compatibility ideograph — identity decomposition.
+F900; Clear; ; nfd_len=1; nfkd_len=1; input_len=1; max_per_cp=1; # 豈 compat ideograph
+
 # @section SingleCpBlowup
 # @level basic
 
 # Arabic ligature SALLALLAHOU ALAYHE WASALLAM (U+FDFA) — the
 # canonical normalization-bomb shape: 1 cp → 18 cps under NFKD.
 FDFA; Hazard:SingleCpBlowup; 0; nfd_len=1; nfkd_len=18; input_len=1; max_per_cp=18; # 1 cp → 18 cps NFKD
+
+# FDFA embedded in a longer input — detector flags the offending
+# codepoint by position.  Mirrors how a normalization-bomb payload
+# typically arrives: smuggled into otherwise innocent text.
+0048 0069 FDFA; Hazard:SingleCpBlowup; 2; nfd_len=3; nfkd_len=20; input_len=3; max_per_cp=18; # Hi + FDFA
+
+# FDFA in 7-byte ASCII context "Hello " + FDFA — position 6.
+0048 0065 006C 006C 006F 0020 FDFA; Hazard:SingleCpBlowup; 6; nfd_len=7; nfkd_len=24; input_len=7; max_per_cp=18; # Hello + FDFA
 
 # @section NfkdHighExpansion
 # @level basic
@@ -74,6 +94,9 @@ FDFB; Hazard:NfkdHighExpansion; ; nfd_len=1; nfkd_len=8; input_len=1; max_per_cp
 # Doubled FDFB — 2 cp → 16 cp NFKD, ratio still 800%.
 FDFB FDFB; Hazard:NfkdHighExpansion; ; nfd_len=2; nfkd_len=16; input_len=2; max_per_cp=8; # 2× FDFB
 
+# Tripled FDFB — 3 cp → 24 cp NFKD, ratio 800%.
+FDFB FDFB FDFB; Hazard:NfkdHighExpansion; ; nfd_len=3; nfkd_len=24; input_len=3; max_per_cp=8; # 3× FDFB
+
 # @section NfdHighExpansion
 # @level basic
 
@@ -85,3 +108,27 @@ FDFB FDFB; Hazard:NfkdHighExpansion; ; nfd_len=2; nfkd_len=16; input_len=2; max_
 
 # Two Greek pre-composed: 2 cps → 8 cps NFD, ratio still 400%.
 1F82 1F83; Hazard:NfdHighExpansion; ; nfd_len=8; nfkd_len=8; input_len=2; max_per_cp=4; # paired 1F82+1F83
+
+# 1F86 — α with three combining marks.
+1F86; Hazard:NfdHighExpansion; ; nfd_len=4; nfkd_len=4; input_len=1; max_per_cp=4; # 1F86 α-triple
+
+# 1F87 — α-triple variant.
+1F87; Hazard:NfdHighExpansion; ; nfd_len=4; nfkd_len=4; input_len=1; max_per_cp=4; # 1F87 α-triple
+
+# 1F8E — Α (capital) with three marks.
+1F8E; Hazard:NfdHighExpansion; ; nfd_len=4; nfkd_len=4; input_len=1; max_per_cp=4; # 1F8E Α-triple
+
+# 1F96 — η with three marks.
+1F96; Hazard:NfdHighExpansion; ; nfd_len=4; nfkd_len=4; input_len=1; max_per_cp=4; # 1F96 η-triple
+
+# 1F9E — Η with three marks.
+1F9E; Hazard:NfdHighExpansion; ; nfd_len=4; nfkd_len=4; input_len=1; max_per_cp=4; # 1F9E Η-triple
+
+# 1FA6 — ω with three marks.
+1FA6; Hazard:NfdHighExpansion; ; nfd_len=4; nfkd_len=4; input_len=1; max_per_cp=4; # 1FA6 ω-triple
+
+# 1FAE — Ω with three marks.
+1FAE; Hazard:NfdHighExpansion; ; nfd_len=4; nfkd_len=4; input_len=1; max_per_cp=4; # 1FAE Ω-triple
+
+# Greek polytonic quartet — 4 cps → 16 cps NFD, ratio 400%.
+1F86 1F87 1F96 1FA6; Hazard:NfdHighExpansion; ; nfd_len=16; nfkd_len=16; input_len=4; max_per_cp=4; # α η ω polytonic quartet
