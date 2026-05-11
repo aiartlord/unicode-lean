@@ -69,21 +69,21 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by native_decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 11 := by native_decide
+theorem row_count : rows.size = 26 := by native_decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 5 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 10 := by native_decide
 
 theorem covers_single_cp_blowup :
-    (rows.filter (·.sectionName = "SingleCpBlowup")).size ≥ 1 := by
+    (rows.filter (·.sectionName = "SingleCpBlowup")).size ≥ 3 := by
   native_decide
 
 theorem covers_nfkd_high :
-    (rows.filter (·.sectionName = "NfkdHighExpansion")).size ≥ 2 := by
+    (rows.filter (·.sectionName = "NfkdHighExpansion")).size ≥ 3 := by
   native_decide
 
 theorem covers_nfd_high :
-    (rows.filter (·.sectionName = "NfdHighExpansion")).size ≥ 2 := by
+    (rows.filter (·.sectionName = "NfdHighExpansion")).size ≥ 9 := by
   native_decide
 
 end Unicode.Conformance.Security.NormalizationBombTest
