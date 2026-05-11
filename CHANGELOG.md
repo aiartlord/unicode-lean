@@ -7,6 +7,107 @@ on the public surface (a major-version bump signals that a
 theorem name or statement changed in a way downstream consumers
 might depend on).
 
+## v0.10.0 — 2026-05-11
+
+The "harness depth" release.  v0.9.0 shipped the 23-family
+Security Conformance Layer with one row-pass theorem per family
+checking classification + sub-threat + positions.  v0.10.0
+deepens every harness's assertion surface and the fixture row
+volume it folds against, plus fixes two detector flaws surfaced
+by that deeper scrutiny.
+
+### Fixed — detector reachability + position semantics
+
+- **I1 `CrossScriptMix` reachability**.  The sub-threat was
+  structurally unreachable in v0.9.0: `crossScriptCount` was
+  computed off `Unicode.Restriction.stringResolvedScripts`, the
+  UTS #39 §5.1.2 intersection-based primitive (Latin ∩ Cyrillic
+  = ∅ ⇒ size 0 ⇒ `sc ≥ 2` never trips).  Introduces a
+  union-side companion `stringScriptUnion` in
+  `Unicode.Restriction` and routes `crossScriptCount` through
+  it.  Inputs that previously fell through to RestrictionLow
+  because intersection-size was 0 now correctly trip
+  CrossScriptMix when union-size ≥ 2.  Verdict surface
+  unchanged; behavioural delta is a new sub-threat now firing
+  on appropriate inputs.
+
+- **C5 `DepthExceeded` position semantics**.  Previously
+  projected `bidiPositions` (every bidi control encountered)
+  into the hazard's positions array — for a 126-cap-exceedance
+  this was a 126-entry firehose with no diagnostic value.  The
+  stack-of-stacks is the problem, not any single codepoint, so
+  DepthExceeded is now a whole-string verdict with `positions =
+  #[]`, mirroring the X4 AdmissibilityFormDrift convention.
+  Callers that want the bidi-event firehose still get it via
+  `v.bidiPositions` on the C5Verdict struct.
+
+### Added — verdict-metadata gates
+
+Every Security harness whose Verdict carries Nat / Bool / String
+metadata fields (counters, lengths, restriction levels,
+admissibility flags) now folds a `metadataMatches` predicate
+into `verifyRow`, validating those fields against fixture
+column-4 attribution — not just classification + sub-threat +
+positions.  21 of 23 families gated; the remaining 2 (F3
+LocaleCaseInversion, X2 CovertDisplayCompound) are classify-only
+by Verdict structure.
+
+`Unicode.Security.Calculus.KeyValueAttribution` gains three
+shared helpers (`checkNatKey`, `checkStringKey`, `checkBoolKey`)
+all with lenient-on-missing / strict-on-present semantics so
+fixture column-4 can be populated incrementally without ever
+breaking the row-pass theorem.
+
+A reusable, idempotent script
+`scripts/internal/populate_security_metadata.lean` regenerates
+column 4 from detector output whenever any of the 13 newly-gated
+detectors changes shape — re-running on a fully-populated
+fixture is a no-op.
+
+### Added — fixture row expansion
+
+Every Security fixture expanded with CVE-anchored / incident-
+anchored cases.  Aggregate: ~580 rows across 24 harnesses, up
+from ~340.  Per-family deltas (selected):
+
+- C5 BidiControlBalance: 18 → 27 rows; adds Boucher-Anderson
+  CVE-2021-42574 stretched-string payload, CVE-2021-42694
+  isolate variant, UAX #9 §3.3.2 depth-cap exceedance.
+- I1 HomoglyphConfusable: 16 → 41 rows; every sub-threat now
+  reachable and exercised (was 3 of 6); adds DecompositionSwap,
+  CrossScriptMix (newly reachable), RestrictionLow sections;
+  6 new Cyrillic-substitution typosquats (ethereum, openai,
+  google, claude, github, react), 3 new MathAlpha witnesses,
+  2 new WidthClass.
+- F1 NormalizationBomb: 11 → 26 rows; adds 8 Greek-polytonic
+  NfdHighExpansion witnesses covering every triple-diacritic
+  base letter; pinned 300% strict-`>` boundary case via
+  vulgar-fraction trio.
+- D1 SourceDisplayDivergence: 16 → 32 rows; every inner-tag
+  variant of all 5 constituent layers (C1, C2, C3, C5, I1) now
+  exercised.
+- C2 VariationSelectorPayload: 17 → 30 rows; adds typical
+  GlassWorm 4-byte chunk size, bare-leading-VS payloads,
+  trailing-VS edge cases.
+- D2 FilenameDisguise: 15 → 27 rows; adds LRO override variant,
+  FSI + PDI isolate, photo<RLO>gpj.exe Trojan, multi-combining
+  stack in extension.
+- D1-Tokenized (region-aware): 11 → 20 rows; pins TargetMatch's
+  whole-string region-filter bypass via dedicated row +
+  inline-comment documentation.
+
+The CrossScriptMix reachability fix lifted the I1
+`covers_cross_script_mix ≥ 7` gate from 0 (previously absent)
+into the harness; the DepthExceeded fix added `covers_depth_
+exceeded ≥ 1` to C5.
+
+### Documentation
+
+- Each family's `docs/specs/security/per-family/<F>.md` retained
+  unchanged in shape (still 23 files) — the row expansion is
+  documented through the fixture-comment surface, which is the
+  primary spec discoverability layer.
+
 ## v0.9.0 — 2026-05-11
 
 ### Added — Security Conformance Layer
