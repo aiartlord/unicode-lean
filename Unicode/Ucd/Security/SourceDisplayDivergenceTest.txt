@@ -38,6 +38,15 @@
 # Han text — single script, clear.
 4E2D 6587; Clear; ; # Han 中文
 
+# Clean code: "function foo() { return 42; }"
+0066 0075 006E 0063 0074 0069 006F 006E 0020 0066 006F 006F 0028 0029 0020 007B 0020 0072 0065 0074 0075 0072 006E 0020 0034 0032 003B 0020 007D; Clear; ; # function foo
+
+# Clean code: "x++"
+0078 002B 002B; Clear; ; # x++
+
+# Plain Cyrillic identifier — single script, no D1 trigger.
+043F 0440 0438 0432 0435 0442; Clear; ; # привет
+
 # @section TagBlock
 # @level basic
 
@@ -46,6 +55,12 @@ E0050 E0072 E0069 E006E E0074 E0020 E0027 E0070 E0077 E006E E0065 E0064 E0027; H
 
 # CANCEL TAG by itself.
 E007F; Hazard:TagBlock; ; inner_tag="BareTagPresent"; # CANCEL TAG
+
+# Visible "Hi" + tag-encoded "pwnd" — MixedBlock variant.
+0048 0069 E0070 E0077 E006E E0064; Hazard:TagBlock; ; inner_tag="MixedBlock"; # mixed-block payload
+
+# LANGUAGE TAG + "en" — LanguageTagRevival variant.
+E0001 E0065 E006E; Hazard:TagBlock; ; inner_tag="LanguageTagRevival"; # language-tag revival
 
 # @section VariationSelector
 # @level basic
@@ -56,6 +71,12 @@ E007F; Hazard:TagBlock; ; inner_tag="BareTagPresent"; # CANCEL TAG
 # Latin a + 8 repeated VS04 — repeated-base anomaly.
 0061 FE04 FE04 FE04 FE04 FE04 FE04 FE04 FE04; Hazard:VariationSelector; ; inner_tag="RepeatedBase"; # 8-fold VS04 repetition
 
+# Latin a + 4 VS — direct payload.
+0061 FE04 FE01 FE04 FE02; Hazard:VariationSelector; ; inner_tag="DirectPayload"; # 2-byte VS payload
+
+# Han + VS16 — illegal target.
+4E2D FE0F; Hazard:VariationSelector; ; inner_tag="IllegalTarget"; # VS16 on Han
+
 # @section ZeroWidth
 # @level basic
 
@@ -64,6 +85,12 @@ E007F; Hazard:TagBlock; ; inner_tag="BareTagPresent"; # CANCEL TAG
 
 # Two ZWSPs — binary payload.
 0048 200B 0069 200B 0069; Hazard:ZeroWidth; ; inner_tag="BinaryPayload"; # Two-ZWSP binary
+
+# Word joiner injection.
+0048 2060 2060 0069; Hazard:ZeroWidth; ; inner_tag="WordJoinerInjection"; # WJ injection
+
+# Two NNBSPs — AI watermark heuristic.
+0048 202F 0069 202F 0021; Hazard:ZeroWidth; ; inner_tag="AIWatermarkNNBSP"; # NNBSP AI-watermark
 
 # @section BidiControl
 # @level basic
@@ -74,6 +101,12 @@ E007F; Hazard:TagBlock; ; inner_tag="BareTagPresent"; # CANCEL TAG
 # Lone PDF — orphan pop.
 202C; Hazard:BidiControl; ; inner_tag="OrphanPop"; # Lone PDF
 
+# Lone LRI — unbalanced isolate.
+2066 0041; Hazard:BidiControl; ; inner_tag="UnbalancedIsolate"; # Lone LRI
+
+# Boucher-Anderson stretched payload — UnbalancedEmbedding.
+0069 0066 0020 0028 0061 0064 006D 0069 006E 0020 202E 0029 0020 007B 0020 002F 0073 0061 0066 0065 002F 007D; Hazard:BidiControl; ; inner_tag="UnbalancedEmbedding"; # Boucher-Anderson stretched
+
 # @section IdentifierHomoglyph
 # @level basic
 
@@ -83,6 +116,15 @@ E007F; Hazard:TagBlock; ; inner_tag="BareTagPresent"; # CANCEL TAG
 # IDN homograph "apple" with Cyrillic а.
 0430 0070 0070 006C 0065; Hazard:IdentifierHomoglyph; ; inner_tag="TargetMatch"; # IDN apple
 
+# Math Italic Capital A.
+1D400; Hazard:IdentifierHomoglyph; ; inner_tag="MathAlpha"; # Math Bold A
+
+# Fullwidth Latin Ａ — WidthClass.
+FF21; Hazard:IdentifierHomoglyph; ; inner_tag="WidthClass"; # Fullwidth A
+
+# Decomposed é (e + combining acute) — DecompositionSwap.
+0065 0301; Hazard:IdentifierHomoglyph; ; inner_tag="DecompositionSwap"; # decomposed é
+
 # @section Compound
 # @level strict
 
@@ -91,3 +133,9 @@ E007F; Hazard:TagBlock; ; inner_tag="BareTagPresent"; # CANCEL TAG
 
 # Compound — tag-encoded payload + ZWSP.
 E0041 E0042 200B; Hazard:Compound; ; constituents="C1,C3"; # Tag + ZW
+
+# Compound — RLO + Cyrillic typosquat — D3 + I1 simultaneous.
+202E 004E 0065 0074 0068 0065 0072 0435 0075 006D; Hazard:Compound; ; constituents="C5,I1"; # RLO + Nethereum typosquat
+
+# Compound — VS payload + bidi.
+202E 0061 FE04 FE01; Hazard:Compound; ; constituents="C2,C5"; # RLO + VS payload

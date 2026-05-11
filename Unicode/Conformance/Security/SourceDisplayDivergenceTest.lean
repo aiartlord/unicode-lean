@@ -91,31 +91,31 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by native_decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 16 := by native_decide
+theorem row_count : rows.size = 32 := by native_decide
 
 /-- Section coverage gates. -/
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 4 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 7 := by native_decide
 
 theorem covers_tag_block :
-    (rows.filter (·.sectionName = "TagBlock")).size ≥ 2 := by native_decide
+    (rows.filter (·.sectionName = "TagBlock")).size ≥ 4 := by native_decide
 
 theorem covers_variation_selector :
-    (rows.filter (·.sectionName = "VariationSelector")).size ≥ 2 := by
+    (rows.filter (·.sectionName = "VariationSelector")).size ≥ 4 := by
   native_decide
 
 theorem covers_zero_width :
-    (rows.filter (·.sectionName = "ZeroWidth")).size ≥ 2 := by native_decide
+    (rows.filter (·.sectionName = "ZeroWidth")).size ≥ 4 := by native_decide
 
 theorem covers_bidi_control :
-    (rows.filter (·.sectionName = "BidiControl")).size ≥ 2 := by native_decide
+    (rows.filter (·.sectionName = "BidiControl")).size ≥ 4 := by native_decide
 
 theorem covers_identifier_homoglyph :
-    (rows.filter (·.sectionName = "IdentifierHomoglyph")).size ≥ 2 := by
+    (rows.filter (·.sectionName = "IdentifierHomoglyph")).size ≥ 5 := by
   native_decide
 
 theorem covers_compound :
-    (rows.filter (·.sectionName = "Compound")).size ≥ 2 := by native_decide
+    (rows.filter (·.sectionName = "Compound")).size ≥ 4 := by native_decide
 
 /-- Cross-family regression: the Nethereum typosquat IS caught even
     in the D1 compound aggregation. -/
