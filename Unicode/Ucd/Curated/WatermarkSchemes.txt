@@ -1,0 +1,25 @@
+# WatermarkSchemes.txt
+# Inventory of published AI-text-watermark schemes that a
+# deferred K3 detector would need to recognise.  Each row is one
+# scheme with its identifying tag, the cue class the detector
+# would look for, and a citation.
+#
+# Format (semicolon-separated):
+#   <tag>; <cue_class>; <citation>
+#
+# Tags are stable opaque identifiers (do not depend on the
+# citation rendering).  Cue classes are coarse:
+#   green_list_bias  — token distribution biased toward a
+#                       pseudorandom green-list per context
+#   pseudorandom_seq — output token sequence follows a
+#                       pseudorandom function of the prefix
+#                       (cryptographically private)
+#   semantic_drift   — paragraph-level distributional skew
+#                       under a chosen embedding
+#
+# Citation is informal short-form; the spec doc carries the
+# canonical citation.
+
+KGW;             green_list_bias;  Kirchenbauer-Geipel-Wen 2023 — A Watermark for Large Language Models
+Aaronson;        pseudorandom_seq; Aaronson 2022 — semi-private blog scheme, OpenAI internal
+ChristGunnZamir; pseudorandom_seq; Christ-Gunn-Zamir 2023 — Undetectable Watermarks for Language Models

@@ -51,6 +51,9 @@ jobs:
       - name: BIP-39 wordlists match pinned SHA-256
         run: bash scripts/check-bip39-hashes.sh
 
+      - name: curated baseline tables match pinned SHA-256
+        run: bash scripts/check-curated-hashes.sh
+
   build:
     # Lake build via the canonical Lean action. Toolchain version comes
     # from the `lean-toolchain` file; the action handles install, cache,

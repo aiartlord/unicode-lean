@@ -1,0 +1,74 @@
+# KnownAttackTargets.txt
+# Curated inventory of canonical names that have been the target
+# of typosquat / homoglyph / supply-chain impersonation attempts
+# in published security incidents.  Each row is one canonical
+# name, in lower-case ASCII; the I1 HomoglyphConfusable detector
+# uses these as the "ground truth" set its confusable-skeleton
+# match should hit.
+#
+# Curation policy: include only names with a published CVE,
+# vendor advisory, or peer-reviewed-paper citation.  No
+# heuristic top-N "popular packages" inclusion — those would
+# bloat the table without anchoring to a documented incident.
+#
+# Format: one canonical name per line, blank lines and `#` lines
+# ignored.  Per-name attribution lives in the spec doc, not the
+# data file.
+
+# npm — JavaScript / TypeScript ecosystem
+react
+react-dom
+next
+vue
+angular
+lodash
+express
+electron
+typescript
+webpack
+node-fetch
+discord.js
+nethereum
+ethers
+web3
+crypto-js
+
+# PyPI — Python ecosystem
+django
+requests
+flask
+numpy
+pandas
+tensorflow
+pytorch
+matplotlib
+scipy
+beautifulsoup4
+pyyaml
+cryptography
+
+# Crates — Rust ecosystem
+serde
+tokio
+clap
+reqwest
+rand
+anyhow
+
+# RubyGems — Ruby ecosystem
+rails
+rspec
+devise
+nokogiri
+
+# Brand / domain — non-package targets
+google
+amazon
+microsoft
+apple
+github
+gitlab
+bitbucket
+cloudflare
+stripe
+twilio

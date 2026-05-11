@@ -205,6 +205,14 @@ import Unicode.Generated.Scripts
 -- deferred Layer-6 K1 mnemonic-canonical-form family.
 import Unicode.Generated.BIP39
 
+-- Curated baseline inventories pinned in
+-- `Unicode/Ucd/Curated/SHA256SUMS`.  Pre-staged for future I1
+-- expansions, the deferred Layer-6 K3 family, and future X-family
+-- compositions involving model-tokenizer edge cases.
+import Unicode.Generated.KnownAttackTargets
+import Unicode.Generated.WatermarkSchemes
+import Unicode.Generated.GlitchTokens
+
 -- Security Conformance Layer — adversarial-threat-model verdicts
 -- sitting below the UAX/UTS algorithm-correctness proof base above.
 -- 23 detector families across five layers (Covert / Identity /
