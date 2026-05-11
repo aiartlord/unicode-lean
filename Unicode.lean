@@ -222,3 +222,4 @@ import Unicode.Conformance.Security.SkinToneVariationForgeryTest
 import Unicode.Conformance.Security.FilenameDisguiseTest
 import Unicode.Conformance.Security.RtlInjectionTest
 import Unicode.Conformance.Security.RendererDivergenceTest
+import Unicode.Conformance.Security.NormalizationBombTest
