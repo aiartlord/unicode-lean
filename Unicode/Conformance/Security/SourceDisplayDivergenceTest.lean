@@ -55,13 +55,30 @@ def projectPositions (c : D1Classification) : Array Nat :=
 -- §3 Per-row verifier
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+/-- Validate the D1 verdict's metadata fields against the row's
+    column-4 attribution.  Key recognised: `inner_tag`, which for
+    a single-constituent-firing row should equal that family's
+    sub-threat tag.  For compound (two or more firing) and clear
+    rows the inner tag is ambiguous and the check is lenient. -/
+private def metadataMatches (v : D1Verdict)
+    (attr : KeyValueAttribution) : Bool :=
+  match attr.get? "inner_tag" with
+  | none           => true
+  | some expected  =>
+    let fires : Array String :=
+      #[v.c1Tag, v.c2Tag, v.c3Tag, v.c5Tag, v.i1Tag].filterMap id
+    match fires.size with
+    | 1 => decide (fires[0]! = expected)
+    | otherCount => Function.const Nat true otherCount
+
 /-- Run `detect` on the row's input and check the verdict against
-    the fixture's expected classification, sub-threat name, and
-    hazard positions. -/
+    the fixture's expected classification, sub-threat name,
+    hazard positions, AND the column-4 attribution metadata. -/
 def verifyRow (r : Row) : Bool :=
   let v := detect r.input
   let (kind, subTag) := projectClassify v.classify
   let pos := projectPositions v.classify
+  metadataMatches v r.attribution &&
   decide (kind = r.expectedKind) &&
   decide (subTag = r.expectedSubThreat) &&
   decide (pos = r.expectedPositions)

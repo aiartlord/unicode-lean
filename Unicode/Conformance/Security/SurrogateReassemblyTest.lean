@@ -52,13 +52,32 @@ def projectPositions (c : C4Classification) : Array Nat :=
 -- §3 Per-row verifier
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+/-- Validate the C4 verdict's metadata fields against the row's
+    column-4 attribution.  The `reject_kind` key is redundant
+    with the sub-threat tag (already checked) so the interesting
+    metadata is `offset` — the byte offset of the first invalid
+    byte the strict decoder rejected.  Compared against
+    `v.firstInvalidOffset`. -/
+private def metadataMatches (v : C4Verdict)
+    (attr : KeyValueAttribution) : Bool :=
+  match attr.get? "offset" with
+  | none      => true
+  | some raw  =>
+    match raw.toNat? with
+    | none           => Function.const String false raw
+    | some expected  =>
+      match v.firstInvalidOffset with
+      | none           => false
+      | some actual    => decide (actual = expected)
+
 /-- Run `detect` on the row's input and check the verdict against
-    the fixture's expected classification, sub-threat name, and
-    hazard positions. -/
+    the fixture's expected classification, sub-threat name,
+    hazard positions, AND the column-4 attribution metadata. -/
 def verifyRow (r : Row) : Bool :=
   let v := detect r.input
   let (kind, subTag) := projectClassify v.classify
   let pos := projectPositions v.classify
+  metadataMatches v r.attribution &&
   decide (kind = r.expectedKind) &&
   decide (subTag = r.expectedSubThreat) &&
   decide (pos = r.expectedPositions)

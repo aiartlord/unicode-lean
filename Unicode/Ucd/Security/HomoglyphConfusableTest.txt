@@ -42,7 +42,7 @@
 006F 0070 0065 006E 0061 0069; Clear; ; restriction=ASCIIOnly; target="openai"; # Legitimate openai
 
 # Plain Han — single-script, no Latin lookalike — clear.
-4E2D 6587; Clear; ; restriction=HighlyRestrictive; # Han 中文
+4E2D 6587; Clear; ; restriction=SingleScript; # Han 中文
 
 # @section TargetMatch
 # @level basic
