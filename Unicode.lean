@@ -202,10 +202,15 @@ import Unicode.Generated.Scripts
 
 -- Security Conformance Layer — adversarial-threat-model verdicts
 -- sitting below the UAX/UTS algorithm-correctness proof base above.
--- 26 fixture families across 6 layers (Covert / Identity / Display /
--- Form / Boundary / Crypto). v1: foundation calculus + C2 pilot;
--- remaining family modules land incrementally.
+-- 23 detector families across five layers (Covert / Identity /
+-- Display / Form / Boundary).  Layer 6 (Crypto) is reserved; the
+-- opaque-axiomatized hash foundation lives upstream in
+-- `Continuity.Crypto` and is not integrated cross-repo.
 import Unicode.Security
+
+-- Single-call aggregator: runs every Security detector on one
+-- input and returns a flat per-family inventory of verdicts.
+import Unicode.Security.RunAll
 
 -- Security Conformance Layer — per-family fixture-conformance proofs
 -- (parallel structure to Unicode.Conformance.* for the UAX/UTS base).
