@@ -57,17 +57,17 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by native_decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 11 := by native_decide
+theorem row_count : rows.size = 21 := by native_decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 4 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 7 := by native_decide
 
 theorem covers_unregistered_vs :
-    (rows.filter (·.sectionName = "BidiPlusUnregisteredVs")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "BidiPlusUnregisteredVs")).size ≥ 6 := by
   native_decide
 
 theorem covers_tag_block :
-    (rows.filter (·.sectionName = "BidiPlusTagBlock")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "BidiPlusTagBlock")).size ≥ 7 := by
   native_decide
 
 end Unicode.Conformance.Security.CovertDisplayCompoundTest
