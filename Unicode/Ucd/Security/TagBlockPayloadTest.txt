@@ -43,6 +43,15 @@
 # Flag emoji (regional indicator pair) — NOT tag-block; clear.
 1F1FA 1F1F8; Clear; ; tag_count=0; total_cps=2; # US flag, RGI regional-indicator pair
 
+# Cyrillic text — no tag chars.
+041F 0440 0438 0432; Clear; ; tag_count=0; total_cps=4; # Cyrillic
+
+# Arabic word — no tag chars.
+0627 0628 0629; Clear; ; tag_count=0; total_cps=3; # Arabic
+
+# Plain ASCII URL — no tag chars.
+0068 0074 0074 0070 003A 002F 002F; Clear; ; tag_count=0; total_cps=7; # http://
+
 # @section DirectAscii
 # @level basic
 
@@ -54,7 +63,16 @@ E0050 E0072 E0069 E006E E0074 E0020 E0027 E0070 E0077 E006E E0065 E0064 E0027; H
 E0041 E0042; Hazard:DirectAscii; 0,1; decoded="AB"; tag_count=2; total_cps=2; # Two-char pure tag payload
 
 # Tag-encoded "hi" (lowercase).
-E0068 E0069; Hazard:DirectAscii; 0,1; decoded="hi"; tag_count=2; total_cps=2; # Tag-encoded "hi"
+E0068 E0069; Hazard:DirectAscii; 0,1; decoded="hi"; tag_count=2; total_cps=2; # Tag-encoded hi
+
+# Tag-encoded all-digits "12345".
+E0031 E0032 E0033 E0034 E0035; Hazard:DirectAscii; 0,1,2,3,4; decoded="12345"; tag_count=5; total_cps=5; # tag digits
+
+# Tag-encoded "DROP TABLE" — the SQL-injection shape.
+E0044 E0052 E004F E0050 E0020 E0054 E0041 E0042 E004C E0045; Hazard:DirectAscii; 0,1,2,3,4,5,6,7,8,9; decoded="DROP TABLE"; tag_count=10; total_cps=10; # tag-encoded SQL DROP
+
+# Tag-encoded shell-injection shape "; rm -rf /".
+E003B E0020 E0072 E006D E0020 E002D E0072 E0066 E0020 E002F; Hazard:DirectAscii; 0,1,2,3,4,5,6,7,8,9; decoded="; rm -rf /"; tag_count=10; total_cps=10; # tag-encoded shell danger
 
 # @section LanguageTagRevival
 # @level strict
@@ -75,7 +93,13 @@ E0001 E0066 E0072; Hazard:LanguageTagRevival; 0,1,2; decoded="fr"; lang_tag_pos=
 0048 0065 006C 006C 006F 0020 E0077 E006F E0072 E006C E0064; Hazard:MixedBlock; 6,7,8,9,10; tag_count=5; total_cps=11; # "Hello " + hidden tag-encoded "world"
 
 # Single tag char interleaved with text — also MixedBlock.
-0048 E0041 0069; Hazard:MixedBlock; 1; tag_count=1; total_cps=3; # "H" + tag-A + "i"
+0048 E0041 0069; Hazard:MixedBlock; 1; tag_count=1; total_cps=3; # H tag-A i
+
+# Tag-encoded payload sandwiched between visible word boundaries.
+0066 006F 006F E0070 E0077 E006E E0064 0062 0061 0072; Hazard:MixedBlock; 3,4,5,6; tag_count=4; total_cps=10; # foo + tag-pwnd + bar
+
+# Tag-chars scattered through ASCII — Mixed signal.
+0048 E0061 0065 E0062 006C 006C 006F; Hazard:MixedBlock; 1,3; tag_count=2; total_cps=7; # Hello with tag chars interleaved
 
 # @section BareTagPresent
 # @level full

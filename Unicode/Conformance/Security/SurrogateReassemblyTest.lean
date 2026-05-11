@@ -90,23 +90,23 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by native_decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 17 := by native_decide
+theorem row_count : rows.size = 28 := by native_decide
 
 /-- Section coverage gates. -/
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 4 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by native_decide
 
 theorem covers_invalid_start_byte :
-    (rows.filter (·.sectionName = "InvalidStartByte")).size ≥ 5 := by
+    (rows.filter (·.sectionName = "InvalidStartByte")).size ≥ 7 := by
   native_decide
 
 theorem covers_overlong :
-    (rows.filter (·.sectionName = "Overlong")).size ≥ 2 := by native_decide
+    (rows.filter (·.sectionName = "Overlong")).size ≥ 4 := by native_decide
 
 theorem covers_cesu8 :
     (rows.filter (·.sectionName = "Cesu8")).size ≥ 3 := by native_decide
 
 theorem covers_truncated :
-    (rows.filter (·.sectionName = "Truncated")).size ≥ 3 := by native_decide
+    (rows.filter (·.sectionName = "Truncated")).size ≥ 6 := by native_decide
 
 end Unicode.Conformance.Security.SurrogateReassemblyTest

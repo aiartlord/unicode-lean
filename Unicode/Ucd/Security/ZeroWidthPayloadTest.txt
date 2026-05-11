@@ -44,6 +44,15 @@
 # 3-emoji ZWJ chain "man + ZWJ + woman + ZWJ + boy" — every ZWJ in RGI context.
 1F468 200D 1F469 200D 1F466; Clear; ; zwsp_count=0; zwj_count=2; wj_count=0; nnbsp_count=0; # 👨‍👩‍👦 family RGI ZWJ chain
 
+# Cyrillic text — no zero-width.
+041F 0440 0438 0432 0435 0442; Clear; ; zwsp_count=0; zwj_count=0; wj_count=0; nnbsp_count=0; # Cyrillic privet
+
+# Plain Hindi (Devanagari) — no zero-width.
+0915 0916 0917; Clear; ; zwsp_count=0; zwj_count=0; wj_count=0; nnbsp_count=0; # Hindi
+
+# Greek lowercase — no zero-width.
+03B1 03B2 03B3; Clear; ; zwsp_count=0; zwj_count=0; wj_count=0; nnbsp_count=0; # Greek
+
 # @section BinaryPayload
 # @level basic
 
@@ -56,6 +65,12 @@
 # Three ZWSPs in a row — clear binary-encoding intent.
 0061 200B 200B 200B 0062; Hazard:BinaryPayload; 1,2,3; zwsp_count=3; zwj_count=0; wj_count=0; nnbsp_count=0; # 3-bit ZWSP payload
 
+# Eight zero-width chars — full byte payload.
+0061 200B 200B 200D 200D 200B 200B 200D 200D 0062; Hazard:BinaryPayload; 1,2,3,4,5,6,7,8; zwsp_count=4; zwj_count=4; wj_count=0; nnbsp_count=0; # 8-bit zero-width payload
+
+# Long binary payload in long ASCII context.
+0066 006F 006F 200B 200B 200B 200B 200B 200B 200B 200B 0062 0061 0072; Hazard:BinaryPayload; 3,4,5,6,7,8,9,10; zwsp_count=8; zwj_count=0; wj_count=0; nnbsp_count=0; # foo + 8 ZWSP + bar
+
 # @section WordJoinerInjection
 # @level basic
 
@@ -64,6 +79,12 @@
 
 # Two WORD JOINERs in a row.
 0061 2060 2060 0062; Hazard:WordJoinerInjection; 1,2; zwsp_count=0; zwj_count=0; wj_count=2; nnbsp_count=0; # Double WJ injection
+
+# WJ injection between Han codepoints.
+4E2D 2060 6587; Hazard:WordJoinerInjection; 1; zwsp_count=0; zwj_count=0; wj_count=1; nnbsp_count=0; # WJ between Han 中 and 文
+
+# Three WJ in a row scattered through a word.
+0061 2060 0062 2060 0063 2060 0064; Hazard:WordJoinerInjection; 1,3,5; zwsp_count=0; zwj_count=0; wj_count=3; nnbsp_count=0; # 3x WJ scattered
 
 # @section AIWatermarkNNBSP
 # @level strict
@@ -100,3 +121,9 @@ FFF9 0041 FFF9 0042; Hazard:AnnotationMisuse; 0,2; anchor=2; separator=0; termin
 
 # ANCHOR + SEPARATOR but no TERMINATOR.
 FFF9 0041 FFFA 0042; Hazard:AnnotationMisuse; 0,2; anchor=1; separator=1; terminator=0; # Missing terminator
+
+# Lone TERMINATOR with no anchor / separator.
+0041 FFFB 0042; Hazard:AnnotationMisuse; 1; anchor=0; separator=0; terminator=1; # Lone terminator
+
+# Lone SEPARATOR.
+0041 FFFA 0042; Hazard:AnnotationMisuse; 1; anchor=0; separator=1; terminator=0; # Lone separator

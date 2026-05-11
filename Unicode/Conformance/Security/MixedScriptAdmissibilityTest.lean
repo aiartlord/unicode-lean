@@ -73,13 +73,13 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by native_decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 15 := by native_decide
+theorem row_count : rows.size = 24 := by native_decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 5 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by native_decide
 
 theorem covers_latin_cyrillic :
-    (rows.filter (·.sectionName = "LatinCyrillic")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "LatinCyrillic")).size ≥ 6 := by
   native_decide
 
 theorem covers_latin_greek :
@@ -91,7 +91,7 @@ theorem covers_restricted_status_cp :
   native_decide
 
 theorem covers_script_mix_other :
-    (rows.filter (·.sectionName = "ScriptMixOther")).size ≥ 2 := by
+    (rows.filter (·.sectionName = "ScriptMixOther")).size ≥ 5 := by
   native_decide
 
 end Unicode.Conformance.Security.MixedScriptAdmissibilityTest

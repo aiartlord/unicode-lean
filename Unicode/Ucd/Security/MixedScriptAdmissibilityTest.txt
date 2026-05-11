@@ -40,6 +40,15 @@
 # Pure Hangul — SingleScript clear.
 D55C AE00; Clear; ; level=SingleScript; scripts="Hang"; # Hangul 한글
 
+# Pure Hiragana — SingleScript clear.
+3042 3044 3046; Clear; ; level=SingleScript; scripts="Hira"; # Hiragana
+
+# Pure Arabic — SingleScript clear.
+0627 0628 0629; Clear; ; level=SingleScript; scripts="Arab"; # Arabic
+
+# Pure Hebrew — SingleScript clear.
+05D0 05D1 05D2; Clear; ; level=SingleScript; scripts="Hebr"; # Hebrew
+
 # @section LatinCyrillic
 # @level basic
 
@@ -51,6 +60,15 @@ D55C AE00; Clear; ; level=SingleScript; scripts="Hang"; # Hangul 한글
 
 # Two Cyrillic substitutions in Latin context.
 0070 0430 0070 0430 006C; Hazard:LatinCyrillic; 1,3; level=MinimallyRestrictive; scripts="Latn,Cyrl"; # paypal-shape Cyrillic mix
+
+# Cyrillic 'о' between Latin "o" and Latin "p".
+006F 043E 0070; Hazard:LatinCyrillic; 1; level=MinimallyRestrictive; scripts="Latn,Cyrl"; # o + Cyrillic о + p
+
+# Long Cyrillic substitution chain in Latin word "openai".
+006F 043E 0065 006E 0430 0069; Hazard:LatinCyrillic; 1,4; level=MinimallyRestrictive; scripts="Latn,Cyrl"; # openai mixed-script
+
+# Capital Cyrillic 'А' (U+0410) in Latin "ADMIN" position 0.
+0410 0044 004D 0049 004E; Hazard:LatinCyrillic; 0; level=MinimallyRestrictive; scripts="Latn,Cyrl"; # А-Cyrillic + DMIN
 
 # @section LatinGreek
 # @level basic
@@ -81,3 +99,13 @@ D55C AE00; Clear; ; level=SingleScript; scripts="Hang"; # Hangul 한글
 
 # Cyrillic + Greek mix.
 03B1 0430; Hazard:ScriptMixOther; ; scripts="Grek,Cyrl"; # alpha + а
+
+# Latin + Arabic mix.
+0061 0627 0062; Hazard:ScriptMixOther; ; scripts="Latn,Arab"; # a + alef + b
+
+# Latin + Tibetan mix — Tibetan is not in any covered-script set
+# with Latin, so this falls through to ScriptMixOther.
+0061 0F40 0062; Hazard:ScriptMixOther; ; scripts="Latn,Tibt"; # a + Tibetan ka + b
+
+# Cyrillic + Hebrew mix.
+0430 05D0 0431; Hazard:ScriptMixOther; ; scripts="Cyrl,Hebr"; # а + alef + б
