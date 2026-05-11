@@ -1,0 +1,66 @@
+# SourceDisplayDivergencePythonTest.txt
+# UCD version: 16.0.0
+# Security-spec version: 0.1.0
+# Family: D1 (v1.5 region-aware tokenization)
+# Grammar: Python (`Language.python`)
+# License: Apache-2.0
+#
+# Companion fixture to SourceDisplayDivergenceTokenizedTest.txt
+# (the Rust grammar variant) that exercises D1's v1.5
+# region-aware behaviour under the Python tokenizer.  Every row
+# is evaluated with `detect input .python`.  The Python grammar
+# differs from Rust in three observable ways:
+#
+#   * Line comments start with `#`, not `//`.
+#   * No block comments.
+#   * Triple-quoted strings `"""..."""` and `'''...'''` span
+#     multiple lines and form a single string region.
+#
+# Format:
+#   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
+
+# @section Clear
+# @level basic
+
+# ASCII Hello — no payload, all code.
+0048 0065 006C 006C 006F; Clear; ; # Hello
+
+# VS payload INSIDE a Python single-quote string.
+0027 0041 FE00 0027; Clear; ; # 'A' + VS1 single-quote
+
+# RLO INSIDE a Python double-quote string.
+0022 0041 202E 0022; Clear; ; # double-quote with RLO
+
+# Bidi format-control INSIDE a Python `#` line comment.
+0023 0020 202E; Clear; ; # Python comment with RLO
+
+# Tag-block char INSIDE a Python triple-quoted string.
+0022 0022 0022 E0001 0022 0022 0022; Clear; ; # triple-string with tag
+
+# RLO INSIDE a Python triple-quoted single-quote string.
+0027 0027 0027 202E 0027 0027 0027; Clear; ; # triple-single with RLO
+
+# Multiple hazards INSIDE a Python triple-quoted string.
+0022 0022 0022 202E 0041 FE00 0022 0022 0022; Clear; ; # triple with multi hazards
+
+# @section Hazard
+# @level basic
+
+# RLO BEFORE a Python string literal — RLO sits in the leading
+# code region.
+202E 0022 0041 0022; Hazard:BidiControl; ; # RLO + string
+
+# VS in code AFTER a Python string closes.
+0022 0041 0022 FE00; Hazard:VariationSelector; ; # string + VS in code
+
+# Pure code: VS attached to letter.
+0041 FE00; Hazard:VariationSelector; ; # A + VS in code
+
+# Tag-block char in code BEFORE a Python triple-string.
+E0001 0022 0022 0022 0041 0022 0022 0022; Hazard:TagBlock; ; # tag in code prefix
+
+# Cyrillic Nethereum typosquat in code.
+004E 0065 0074 0068 0065 0072 0435 0075 006D; Hazard:IdentifierHomoglyph; ; # Nethereum typosquat in code
+
+# Compound: RLO + Cyrillic identifier in code.
+202E 004E 0065 0074 0068 0065 0072 0435 0075 006D; Hazard:Compound; ; # RLO + Nethereum
