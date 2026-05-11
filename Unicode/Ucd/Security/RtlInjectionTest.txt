@@ -1,0 +1,81 @@
+# RtlInjectionTest.txt
+# UCD version: 16.0.0
+# Security-spec version: 0.1.0
+# Family: D3 — RTL Injection Into LTR Contexts
+# License: Apache-2.0
+#
+# Threat model: nominally-LTR fields (form fields, URLs, logs)
+# into which strong-RTL codepoints or bidi format-controls are
+# injected, causing surrounding display to reorder.  Distinct
+# from C5 — D3 flags strong-RTL regardless of bidi balance.
+#
+# Format:
+#   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
+#
+# Classifications produced by the D3 detector:
+#   Clear
+#   Hazard:RloInLTRField         Hazard:FieldTakeover
+#   Hazard:StrongRTLInLTR        Hazard:MixedOverflow
+
+# @section Clear
+# @level basic
+
+# ASCII Hello.
+0048 0065 006C 006C 006F; Clear; ; # Hello
+
+# ASCII digits.
+0030 0031 0032 0033; Clear; ; # 0123
+
+# Cyrillic (strong-LTR script — bidi class L).
+043F 0440 0438 0432; Clear; ; # прив
+
+# Han ideographs (strong-LTR).
+4E2D 6587; Clear; ; # 中文
+
+# Plain ASCII URL.
+0068 0074 0074 0070 003A 002F 002F 0061 002E 0063 006F 006D; Clear; ; # http://a.com
+
+# @section RloInLTRField
+# @level basic
+
+# Single RLO injection.
+0041 202E 0042; Hazard:RloInLTRField; 1; # A<RLO>B
+
+# RLI (isolate) variant.
+0041 2067 0042 2069; Hazard:RloInLTRField; 1; # A<RLI>B<PDI>
+
+# RLE injection.
+0041 202B 0042 0043 202C; Hazard:RloInLTRField; 1; # A<RLE>BC<PDF>
+
+# @section FieldTakeover
+# @level basic
+
+# Leading Hebrew letter (alef).
+05D0 0042 0043; Hazard:FieldTakeover; 0; # אBC
+
+# Leading Arabic letter (alef).
+0627 0042 0043; Hazard:FieldTakeover; 0; # اBC
+
+# Leading Hebrew word.
+05D0 05D1 05D2 0020 0041 0042; Hazard:FieldTakeover; 0; # אבג AB
+
+# @section StrongRTLInLTR
+# @level basic
+
+# Single Hebrew letter mid-stream (run length 1, < 4).
+0041 0042 05D0 0044; Hazard:StrongRTLInLTR; 2; # AB<alef>D
+
+# Single Arabic letter mid-stream.
+0066 006F 006F 0627 0064 0065; Hazard:StrongRTLInLTR; 3; # foo<alef>de
+
+# Two Hebrew letters consecutively (run = 2, still < 4).
+0041 0042 05D0 05D1 0043; Hazard:StrongRTLInLTR; 2; # AB<alef><bet>C
+
+# @section MixedOverflow
+# @level strict
+
+# Four-char Hebrew run mid-stream.
+0041 0042 05D0 05D1 05D2 05D3 0044; Hazard:MixedOverflow; 2; # AB+4 Hebrew+D
+
+# Five-char Arabic run.
+0066 006F 0627 0628 062A 062B 062C 0065; Hazard:MixedOverflow; 2; # fo+5 Arabic+e
