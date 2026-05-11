@@ -66,6 +66,18 @@
 # Han 中文 — no confusable in confusables.txt, no bidi.
 4E2D 6587; Clear; ; conf_count=0; # 中文
 
+# Hebrew text — strong-RTL alone, no compound.
+05D0 05D1 05D2; Clear; ; conf_count=0; # Hebrew
+
+# Arabic text — strong-RTL alone, no compound.  Arabic letter
+# tah marbuta (U+0629) sits in confusables.txt so the detector
+# reports `conf_count=1`, but with no bidi present the X3
+# compound predicate stays clear.
+0627 0628 0629; Clear; ; conf_count=1; # Arabic (no bidi)
+
+# Hiragana — single-script LTR, no compound.
+3042 3044 3046; Clear; ; conf_count=0; # Hiragana
+
 # @section ConfusableInOverride
 # @level strict
 
@@ -91,6 +103,17 @@
 # confusable source; bidi at position 5.
 0061 0064 006D 0069 006E 202E; Hazard:ConfusableInOverride; 2,5; conf_count=1; # admin + RLO (m → rn)
 
+# RLE + Cyrillic "openai" (о substituted, plus Cyrillic е at pos 4)
+# — embedding-class control + multi-confusable.
+202B 043E 0070 0065 006E 0430 0069; Hazard:ConfusableInOverride; 1,0; conf_count=2; # RLE + Cyrillic openai
+
+# LRO override + Cyrillic capital А (homoglyph) + word + PDF.
+202D 0410 0042 0043 202C; Hazard:ConfusableInOverride; 1,0; conf_count=1; # LRO + Cyrillic А + BC + PDF
+
+# Cyrillic а in the middle, RLO at the end — confusable at 0,
+# bidi at 3.
+0430 0064 006D 202E; Hazard:ConfusableInOverride; 0,3; conf_count=2; # adm with Cyrillic а + RLO
+
 # @section ConfusableInIsolate
 # @level strict
 
@@ -104,3 +127,12 @@
 
 # FSI + Cyrillic а + PDI — full isolate wrapping.  Confusable at 1.
 2068 0430 2069; Hazard:ConfusableInIsolate; 1,0; conf_count=1; # FSI + а + PDI
+
+# RLI + Cyrillic "admin"-shape (а instead of a) + PDI.
+2067 0430 0064 006D 0069 006E 2069; Hazard:ConfusableInIsolate; 1,0; conf_count=2; # RLI + Cyrillic а dmin + PDI
+
+# FSI + Greek omicron + PDI.
+2068 03BF 2069; Hazard:ConfusableInIsolate; 1,0; conf_count=1; # FSI + Greek ο + PDI
+
+# LRI + Cyrillic "open"-shape (о + p + е + n).
+2066 043E 0070 0435 006E 2069; Hazard:ConfusableInIsolate; 1,0; conf_count=2; # LRI + Cyrillic ореn + PDI

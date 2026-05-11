@@ -70,17 +70,17 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by native_decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 15 := by native_decide
+theorem row_count : rows.size = 24 := by native_decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 5 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by native_decide
 
 theorem covers_override :
-    (rows.filter (·.sectionName = "ConfusableInOverride")).size ≥ 5 := by
+    (rows.filter (·.sectionName = "ConfusableInOverride")).size ≥ 8 := by
   native_decide
 
 theorem covers_isolate :
-    (rows.filter (·.sectionName = "ConfusableInIsolate")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "ConfusableInIsolate")).size ≥ 6 := by
   native_decide
 
 end Unicode.Conformance.Security.ConfusableBidiCompoundTest
