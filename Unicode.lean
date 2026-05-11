@@ -208,3 +208,4 @@ import Unicode.Conformance.Security.TagBlockPayloadTest
 import Unicode.Conformance.Security.BidiControlBalanceTest
 import Unicode.Conformance.Security.ZeroWidthPayloadTest
 import Unicode.Conformance.Security.SurrogateReassemblyTest
+import Unicode.Conformance.Security.HomoglyphConfusableTest

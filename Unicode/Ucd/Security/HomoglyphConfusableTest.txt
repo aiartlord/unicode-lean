@@ -1,0 +1,88 @@
+# HomoglyphConfusableTest.txt
+# UCD version: 16.0.0
+# Security-spec version: 0.1.0
+# Family: I1 — Homoglyph / Confusable Identifier Substitution
+# License: Apache-2.0
+#
+# Threat model: identifiers whose visible glyph stream matches a
+# canonical target's but whose byte stream differs by Cyrillic /
+# Greek / Math-Alpha / Fullwidth / decomposition substitutions.
+# Detects the Oct 2025 NuGet Nethereum typosquat class + IDN
+# homograph + Math-Alpha posing + Fullwidth disguise.
+#
+# Format:
+#   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
+#
+# Classifications produced by the I1 detector:
+#   Clear
+#   Hazard:TargetMatch          Hazard:MathAlpha
+#   Hazard:WidthClass           Hazard:DecompositionSwap
+#   Hazard:CrossScriptMix       Hazard:RestrictionLow
+#
+# Attribution conventions:
+#   target="..."                matched canonical target name
+#   first_math_cp=0xNNNN        first math-alpha codepoint
+#   first_width_cp=0xNNNN       first fullwidth codepoint
+#   script_count=N              distinct script families
+#   restriction=LEVEL           UTS #39 restriction level
+
+# @section Clear
+# @level basic
+
+# Plain ASCII "Hello" — no confusable pattern.
+0048 0065 006C 006C 006F; Clear; ; restriction=ASCIIOnly; # ASCII Hello
+
+# Legitimate "Nethereum" (pure Latin) — clear.
+004E 0065 0074 0068 0065 0072 0065 0075 006D; Clear; ; restriction=ASCIIOnly; target="Nethereum"; # Legitimate Nethereum
+
+# Legitimate "apple" — clear.
+0061 0070 0070 006C 0065; Clear; ; restriction=ASCIIOnly; target="apple"; # Legitimate apple
+
+# Legitimate "openai" — clear.
+006F 0070 0065 006E 0061 0069; Clear; ; restriction=ASCIIOnly; target="openai"; # Legitimate openai
+
+# Plain Han — single-script, no Latin lookalike — clear.
+4E2D 6587; Clear; ; restriction=HighlyRestrictive; # Han 中文
+
+# @section TargetMatch
+# @level basic
+
+# Nethereum Oct-2025 typosquat — final Cyrillic 'е' (U+0435) at position 6.
+# Skeleton matches the canonical "Nethereum".
+004E 0065 0074 0068 0065 0072 0435 0075 006D; Hazard:TargetMatch; ; target="Nethereum"; # Oct 2025 NuGet typosquat
+
+# IDN homograph "apple" with Cyrillic 'а' (U+0430) at position 0.
+0430 0070 0070 006C 0065; Hazard:TargetMatch; ; target="apple"; # IDN homograph apple, Cyrillic а
+
+# IDN homograph "paypal" with Cyrillic 'а' (U+0430) at positions 1 and 4.
+0070 0430 0079 0070 0430 006C; Hazard:TargetMatch; ; target="paypal"; # IDN homograph paypal
+
+# @section MathAlpha
+# @level basic
+
+# Single Mathematical Bold Capital A (𝐀, U+1D400) — flagged.
+1D400; Hazard:MathAlpha; 0; first_math_cp=0x1D400; # Math Bold A solo
+
+# "𝐀𝐩𝐩𝐥𝐞" — every codepoint is Math Alphanumeric (Bold).
+1D400 1D429 1D429 1D425 1D41E; Hazard:MathAlpha; 0; first_math_cp=0x1D400; # Math Bold "Apple"
+
+# Math Italic Capital A (𝐴, U+1D434).
+1D434; Hazard:MathAlpha; 0; first_math_cp=0x1D434; # Math Italic A
+
+# Math Script Capital A (𝒜, U+1D49C).
+1D49C; Hazard:MathAlpha; 0; first_math_cp=0x1D49C; # Math Script A
+
+# Math Fraktur Capital A (𝔄, U+1D504).
+1D504; Hazard:MathAlpha; 0; first_math_cp=0x1D504; # Math Fraktur A
+
+# @section WidthClass
+# @level basic
+
+# Fullwidth A (Ａ, U+FF21) — flagged.
+FF21; Hazard:WidthClass; 0; first_width_cp=0xFF21; # Fullwidth A
+
+# "Ｐａｙｐａｌ" — every codepoint is fullwidth Latin.
+FF30 FF41 FF59 FF50 FF41 FF4C; Hazard:WidthClass; 0; first_width_cp=0xFF30; # Fullwidth Paypal
+
+# Fullwidth digit 5 (５, U+FF15).
+FF15; Hazard:WidthClass; 0; first_width_cp=0xFF15; # Fullwidth digit 5
