@@ -34,11 +34,12 @@
     .codepointBeyondMax        →  .codepointBeyondMax
 
   Input convention.  C4 acts on a *byte stream*, but to keep the
-  shared `Unicode.Security.Fixture` row format usable we accept
-  `Array Nat` where every value must fit in `UInt8`.  Values
-  outside `[0, 255]` are silently clamped to `255`, which never
-  decodes as a valid UTF-8 byte and therefore surfaces the
-  malformed-stream case correctly.
+  shared `Unicode.Security.Fixture` row format usable the
+  detector accepts `Array Nat` where every value must fit in
+  `UInt8`.  Values outside `[0, 255]` are clamped to `255`, a
+  byte the strict decoder always rejects, so out-of-range values
+  produce a malformed-stream verdict rather than being silently
+  dropped.
 -/
 
 import Unicode.Security.Calculus
@@ -84,9 +85,9 @@ structure C4Verdict where
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Convert an `Array Nat` to a `ByteArray`.  Values outside the
-    byte range `[0, 255]` are clamped to `255`.  Clamping always
-    surfaces the malformed-stream case (`0xFF` is never a valid
-    UTF-8 start byte). -/
+    byte range `[0, 255]` are clamped to `255`, which is never a
+    valid UTF-8 start byte, so any out-of-range input reaches the
+    malformed-stream branch of the decoder. -/
 def toByteArray (input : Array Nat) : ByteArray := Id.run do
   let mut bytes : ByteArray := ByteArray.empty
   for n in input do

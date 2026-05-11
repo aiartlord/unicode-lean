@@ -25,11 +25,11 @@
        (combining marks etc.) in the extension region.
 
   Out of v1 scope: a full bidi-resolution → display-order
-  extraction pass would let us pin "displayed extension ≠ byte
-  extension" exactly.  For v1 the structural detection above
-  catches all of the variants D2.a–D2.g except the "native RTL"
-  legitimate-use case (D2.e).  Native-RTL inputs that contain
-  no bidi format-control codepoints simply clear.
+  extraction pass would pin "displayed extension ≠ byte
+  extension" directly.  For v1 the structural detection above
+  catches variants D2.a–D2.g except the native-RTL legitimate-
+  use case (D2.e).  Native-RTL inputs that contain no bidi
+  format-control codepoints clear.
 -/
 
 import Unicode.Security.Calculus
