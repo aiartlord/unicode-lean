@@ -102,6 +102,31 @@ def stringResolvedScripts (cps : Array Nat) : Array ScriptAbbrev :=
     let sets := nonIgnored.map resolveScripts
     intersectMany sets
 
+/-- The resolved-scripts union over all non-Common, non-Inherited
+    codepoints of `cps`.  Counts every distinct script family
+    that appears in at least one codepoint's resolved-script set.
+
+    Distinct from `stringResolvedScripts` (which intersects):
+    `stringResolvedScripts {a, α} = ∅` because Latin ∩ Greek is
+    empty, but `stringScriptUnion {a, α} = {Latn, Grek}`.  The
+    union is the right primitive for "how many scripts are
+    present in this identifier" questions; the intersection
+    answers "is there a single script every codepoint could
+    belong to". -/
+def stringScriptUnion (cps : Array Nat) : Array ScriptAbbrev := Id.run do
+  let mut acc : Array ScriptAbbrev := #[]
+  for cp in cps do
+    if ¬ isIgnoredForIntersection cp then
+      for s in resolveScripts cp do
+        if ¬ acc.contains s then acc := acc.push s
+  pure acc
+
+/-- True iff `input` contains at least one codepoint whose
+    resolved script set contains `target`.  Union-side question,
+    distinct from `stringResolvedScripts`. -/
+def hasScript (input : Array Nat) (target : ScriptAbbrev) : Bool :=
+  input.any (fun cp => (resolveScripts cp).contains target)
+
 /-- True iff `cps` is Single-Script per UTS #39 § 5.1.2: not
     ASCII-Only and `stringResolvedScripts` is non-empty. -/
 def isSingleScript (cps : Array Nat) : Bool :=

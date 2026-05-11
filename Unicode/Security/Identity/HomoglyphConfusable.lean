@@ -218,9 +218,19 @@ def firstDecompositionDiffPos (input : Array Nat) : Option Nat :=
       false)
 
 /-- Number of distinct non-Common, non-Inherited script families
-    represented in `input`.  ≥ 2 indicates cross-script mixing. -/
+    represented in `input`.  ≥ 2 indicates cross-script mixing.
+
+    Uses `stringScriptUnion`, NOT `stringResolvedScripts`: the
+    UTS #39 § 5.1.2 resolved-scripts intersection is empty
+    whenever two codepoints' script-extension sets disagree
+    (Latin ∩ Cyrillic = ∅), so it answers "could every codepoint
+    share one script" rather than "how many scripts appear."
+    For CrossScriptMix the union is the right primitive — we
+    want to fire whenever the identifier mixes Latin with
+    Cyrillic, Latin with Greek, etc., even when the
+    intersection collapses to ∅. -/
 def crossScriptCount (input : Array Nat) : Nat :=
-  let scripts := Unicode.Restriction.stringResolvedScripts input
+  let scripts := Unicode.Restriction.stringScriptUnion input
   scripts.size
 
 -- ═══════════════════════════════════════════════════════════════════════════════

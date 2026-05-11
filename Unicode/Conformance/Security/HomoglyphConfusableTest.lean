@@ -87,7 +87,7 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by native_decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 38 := by native_decide
+theorem row_count : rows.size = 41 := by native_decide
 
 /-- Section coverage gates. -/
 theorem covers_clear :
@@ -108,8 +108,12 @@ theorem covers_decomposition_swap :
     (rows.filter (·.sectionName = "DecompositionSwap")).size ≥ 4 := by
   native_decide
 
+theorem covers_cross_script_mix :
+    (rows.filter (·.sectionName = "CrossScriptMix")).size ≥ 7 := by
+  native_decide
+
 theorem covers_restriction_low :
-    (rows.filter (·.sectionName = "RestrictionLow")).size ≥ 7 := by
+    (rows.filter (·.sectionName = "RestrictionLow")).size ≥ 3 := by
   native_decide
 
 /-- Regression: the Nethereum Oct-2025 typosquat fires `TargetMatch`. -/
