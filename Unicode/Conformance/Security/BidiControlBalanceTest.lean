@@ -48,13 +48,25 @@ def projectPositions (c : C5Classification) : Array Nat :=
 -- §3 Per-row verifier
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+/-- Validate the C5 verdict's metadata fields against the row's
+    column-4 attribution.  Keys recognised: `emb_open`, `emb_pop`,
+    `iso_open`, `iso_pop`, `max_depth`. -/
+private def metadataMatches (v : C5Verdict)
+    (attr : KeyValueAttribution) : Bool :=
+  attr.checkNatKey "emb_open"   v.embOpenCount &&
+  attr.checkNatKey "emb_pop"    v.embPopCount &&
+  attr.checkNatKey "iso_open"   v.isoOpenCount &&
+  attr.checkNatKey "iso_pop"    v.isoPopCount &&
+  attr.checkNatKey "max_depth"  v.maxDepth
+
 /-- Run `detect` on the row's input and check the verdict against
-    the fixture's expected classification, sub-threat name, and
-    hazard positions. -/
+    the fixture's expected classification, sub-threat name,
+    hazard positions, AND the column-4 attribution metadata. -/
 def verifyRow (r : Row) : Bool :=
   let v := detect r.input
   let (kind, subTag) := projectClassify v.classify
   let pos := projectPositions v.classify
+  metadataMatches v r.attribution &&
   decide (kind = r.expectedKind) &&
   decide (subTag = r.expectedSubThreat) &&
   decide (pos = r.expectedPositions)

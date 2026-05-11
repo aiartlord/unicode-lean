@@ -240,6 +240,30 @@ def get? (kv : KeyValueAttribution) (key : String) : Option String :=
 def push (kv : KeyValueAttribution) (key value : String) : KeyValueAttribution :=
   ⟨kv.entries ++ [(key, value)]⟩
 
+/-- Validate a `Nat`-valued attribution key against an actual
+    value.  Missing key passes leniently (the fixture row didn't
+    pin this field).  Present-but-malformed key fails (the
+    fixture claims a value the parser can't read as `Nat`).
+    Present and well-formed: equality with `actual`. -/
+@[inline]
+def checkNatKey (kv : KeyValueAttribution) (key : String) (actual : Nat) : Bool :=
+  match kv.get? key with
+  | none      => true
+  | some raw  =>
+    match raw.toNat? with
+    | some expected => decide (actual = expected)
+    | none          => Function.const String false raw
+
+/-- Validate a `String`-valued attribution key against an actual
+    value.  Same lenient-on-missing, strict-on-present semantics
+    as `checkNatKey`. -/
+@[inline]
+def checkStringKey (kv : KeyValueAttribution) (key : String) (actual : String) :
+    Bool :=
+  match kv.get? key with
+  | none           => true
+  | some expected  => decide (actual = expected)
+
 end KeyValueAttribution
 
 -- ═══════════════════════════════════════════════════════════════════════════════

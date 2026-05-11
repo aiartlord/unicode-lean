@@ -52,16 +52,25 @@ def projectPositions (c : C1Classification) : Array Nat :=
 -- §3 Per-row verifier
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+/-- Validate the C1 verdict's metadata fields against the row's
+    column-4 attribution.  Keys recognised: `tag_count` (vs
+    `v.totalTagChars`) and `total_cps` (vs `v.input.size`). -/
+private def metadataMatches (v : C1Verdict)
+    (attr : KeyValueAttribution) : Bool :=
+  attr.checkNatKey "tag_count" v.totalTagChars &&
+  attr.checkNatKey "total_cps" v.input.size
+
 /-- Run `detect` on the row's input and check the verdict against
-    the fixture's expected classification, sub-threat name, and
-    hazard positions. -/
+    the fixture's expected classification, sub-threat name,
+    hazard positions, AND the column-4 attribution metadata. -/
 def verifyRow (r : Row) : Bool :=
   let v := detect r.input
   let (kind, subTag) := projectClassify v.classify
   let pos := projectPositions v.classify
   decide (kind = r.expectedKind) &&
   decide (subTag = r.expectedSubThreat) &&
-  decide (pos = r.expectedPositions)
+  decide (pos = r.expectedPositions) &&
+  metadataMatches v r.attribution
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 Headline conformance theorem + row-count gate

@@ -39,13 +39,32 @@ def projectClassify
 def projectPositions (c : I2Classification) : Array Nat :=
   c.positions
 
+/-- Render a `RestrictionLevel` as the bare constructor name used
+    in fixture column-4 attribution. -/
+@[inline]
+private def levelString : Unicode.Restriction.RestrictionLevel → String
+  | .ASCIIOnly             => "ASCIIOnly"
+  | .SingleScript          => "SingleScript"
+  | .HighlyRestrictive     => "HighlyRestrictive"
+  | .ModeratelyRestrictive => "ModeratelyRestrictive"
+  | .MinimallyRestrictive  => "MinimallyRestrictive"
+  | .Unrestricted          => "Unrestricted"
+
+/-- Validate the I2 verdict's metadata fields against the row's
+    column-4 attribution.  Key recognised: `level` (the row's
+    UTS #39 §5 restriction level). -/
+private def metadataMatches (v : I2Verdict)
+    (attr : KeyValueAttribution) : Bool :=
+  attr.checkStringKey "level" (levelString v.level)
+
 /-- Run `detect` on the row's input and check the verdict against
-    the fixture's expected classification, sub-threat name, and
-    hazard positions. -/
+    the fixture's expected classification, sub-threat name,
+    hazard positions, AND the column-4 attribution metadata. -/
 def verifyRow (r : Row) : Bool :=
   let v := detect r.input
   let (kind, subTag) := projectClassify v.classify
   let pos := projectPositions v.classify
+  metadataMatches v r.attribution &&
   decide (kind = r.expectedKind) &&
   decide (subTag = r.expectedSubThreat) &&
   decide (pos = r.expectedPositions)
