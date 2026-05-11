@@ -38,6 +38,18 @@
 # Native Arabic filename — no bidi controls, clear.
 0641 0644 062F 002E 0070 0064 0066; Clear; ; dot_count=1; bidi_count=0; fw_in_ext=0; comb_in_ext=0; # فلد.pdf
 
+# Hidden Unix dotfile — single leading dot, no extension.
+002E 0062 0061 0073 0068 0072 0063; Clear; ; dot_count=1; bidi_count=0; fw_in_ext=0; comb_in_ext=0; # .bashrc
+
+# Hyphen/underscore in filename — no security signal.
+006D 0079 002D 0066 0069 006C 0065 005F 0076 0032 002E 006D 0064; Clear; ; dot_count=1; bidi_count=0; fw_in_ext=0; comb_in_ext=0; # my-file_v2.md
+
+# Fullwidth U+FF0E full-stop is NOT counted as a filename
+# extension separator — the detector only counts ASCII U+002E.
+# This row pins that behaviour as intentional (rendering may
+# treat the glyph as a dot but the byte stream is unambiguous).
+0066 0069 006C 0065 FF0E FF25 FF38 FF25; Clear; ; dot_count=0; bidi_count=0; fw_in_ext=0; comb_in_ext=0; # file<FW dot>ＥＸＥ (no ASCII dot)
+
 # @section RloFlip
 # @level basic
 
@@ -50,6 +62,15 @@
 # RLE in filename.
 0070 0068 006F 0074 006F 202B 0074 0078 0074 002E 0073 0063 0072; Hazard:RloFlip; 5; dot_count=1; bidi_count=1; fw_in_ext=0; comb_in_ext=0; # photo<RLE>txt.scr
 
+# LRO override variant — `file<LRO>txt.ps1` shows the same flip mechanic.
+0066 0069 006C 0065 202D 0074 0078 0074 002E 0070 0073 0031; Hazard:RloFlip; 4; dot_count=1; bidi_count=1; fw_in_ext=0; comb_in_ext=0; # file<LRO>txt.ps1
+
+# FSI (first-strong isolate) + PDI variant.
+0066 0069 006C 0065 2068 0074 0078 0074 002E 0070 0073 0031 2069; Hazard:RloFlip; 4; dot_count=1; bidi_count=2; fw_in_ext=0; comb_in_ext=0; # file<FSI>txt.ps1<PDI>
+
+# Photo RLO before "jpg.exe" suffix — the file shows .jpg but is .exe.
+0070 0068 006F 0074 006F 202E 0067 0070 006A 002E 0065 0078 0065; Hazard:RloFlip; 5; dot_count=1; bidi_count=1; fw_in_ext=0; comb_in_ext=0; # photo<RLO>gpj.exe
+
 # @section WidthClassExt
 # @level basic
 
@@ -58,6 +79,12 @@
 
 # Single fullwidth letter at start of extension.
 0070 0068 006F 0074 006F 002E FF30 0064 0066; Hazard:WidthClassExt; 6; dot_count=1; bidi_count=0; fw_in_ext=1; comb_in_ext=0; # photo.Ｐdf
+
+# All-fullwidth `.ｐｄｆ` lowercase extension.
+0070 002E FF50 FF44 FF46; Hazard:WidthClassExt; 2; dot_count=1; bidi_count=0; fw_in_ext=3; comb_in_ext=0; # p.ｐｄｆ all-FW
+
+# Halfwidth katakana in extension — `f.ｱpg`.
+0066 002E FF71 0070 0067; Hazard:WidthClassExt; 2; dot_count=1; bidi_count=0; fw_in_ext=1; comb_in_ext=0; # f.ｱpg halfwidth ア
 
 # @section CombiningInExt
 # @level strict
@@ -68,6 +95,12 @@
 # Combining diaeresis in extension.
 0061 002E 0070 0308 0064 0066; Hazard:CombiningInExt; 3; dot_count=1; bidi_count=0; fw_in_ext=0; comb_in_ext=1; # a.p̈df
 
+# Combining grave in extension.
+0061 002E 0070 0300 0064 0066; Hazard:CombiningInExt; 3; dot_count=1; bidi_count=0; fw_in_ext=0; comb_in_ext=1; # a.p̀df
+
+# Two combining marks stacked inside extension.
+0066 002E 0065 0301 0303 0078 0065; Hazard:CombiningInExt; 3; dot_count=1; bidi_count=0; fw_in_ext=0; comb_in_ext=2; # f.e<acute><tilde>xe
+
 # @section MultipleExtensions
 # @level full
 
@@ -76,3 +109,9 @@
 
 # Four dots.
 0061 002E 0062 002E 0063 002E 0064 002E 0065; Hazard:MultipleExtensions; 1,3,5,7; dot_count=4; bidi_count=0; fw_in_ext=0; comb_in_ext=0; # a.b.c.d.e
+
+# Five dots — increasingly anomalous.
+0061 002E 0062 002E 0063 002E 0064 002E 0065 002E 0066; Hazard:MultipleExtensions; 1,3,5,7,9; dot_count=5; bidi_count=0; fw_in_ext=0; comb_in_ext=0; # a.b.c.d.e.f
+
+# Three-dot backup shape `file.tar.gz.bak`.
+0066 0069 006C 0065 002E 0074 0061 0072 002E 0067 007A 002E 0062 0061 006B; Hazard:MultipleExtensions; 4,8,11; dot_count=3; bidi_count=0; fw_in_ext=0; comb_in_ext=0; # file.tar.gz.bak
