@@ -38,6 +38,15 @@ D55C; Clear; ; max_run=0; overruns=0; total_ns=0; # 한
 # Single combining mark after a base — within bound.
 0061 0301; Clear; ; max_run=1; overruns=0; total_ns=1; # a + combining acute
 
+# Five combining marks on `a` — well within the cap.
+0061 0301 0301 0301 0301 0301; Clear; ; max_run=5; overruns=0; total_ns=5; # a + 5 combining
+
+# Fifteen combining marks — mid-range Zalgo, still within the cap.
+0061 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301; Clear; ; max_run=15; overruns=0; total_ns=15; # a + 15 combining
+
+# Twenty-nine combining marks — one short of the boundary (cap − 1).
+0061 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301; Clear; ; max_run=29; overruns=0; total_ns=29; # a + 29 combining (cap-1)
+
 # Exactly 30 combining marks after a base — boundary case.  Strict
 # `>` so a run of length 30 stays clear; 31 is the first violator.
 0061 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301; Clear; ; max_run=30; overruns=0; total_ns=30; # a + 30 combining marks (boundary)
@@ -60,3 +69,18 @@ D55C; Clear; ; max_run=0; overruns=0; total_ns=0; # 한
 # Two consecutive overruns separated by a starter — the first
 # (length 31, starting at position 1) is the one reported.
 0061 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0062 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301; Hazard:StreamSafeOverrun; 1; max_run=34; overruns=2; total_ns=65; # a+31, b+34 — first fires
+
+# Han base + 31 combining marks — non-Latin starter, same overrun.
+4E2D 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301; Hazard:StreamSafeOverrun; 1; max_run=31; overruns=1; total_ns=31; # 中 + 31 combining marks
+
+# Mixed combining-mark variety after `a` — 31 distinct marks
+# alternating acute / circumflex / tilde, ensuring the run-length
+# bound isn't sensitive to a single mark identity.
+0061 0301 0302 0303 0301 0302 0303 0301 0302 0303 0301 0302 0303 0301 0302 0303 0301 0302 0303 0301 0302 0303 0301 0302 0303 0301 0302 0303 0301 0302 0303 0301; Hazard:StreamSafeOverrun; 1; max_run=31; overruns=1; total_ns=31; # a + 31 alternating combining
+
+# Fourty combining marks on `a` — comfortably above the cap.
+0061 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301; Hazard:StreamSafeOverrun; 1; max_run=40; overruns=1; total_ns=40; # a + 40 combining
+
+# Three runs of 32 separated by starter codepoints — every run
+# exceeds the cap.  First overrun reported; overruns counter = 3.
+0061 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0062 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0063 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301 0301; Hazard:StreamSafeOverrun; 1; max_run=32; overruns=3; total_ns=94; # a+31 b+31 c+32 — three runs
