@@ -64,25 +64,25 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by native_decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 16 := by native_decide
+theorem row_count : rows.size = 27 := by native_decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 5 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by native_decide
 
 theorem covers_rlo :
-    (rows.filter (·.sectionName = "RloInLTRField")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "RloInLTRField")).size ≥ 5 := by
   native_decide
 
 theorem covers_field_takeover :
-    (rows.filter (·.sectionName = "FieldTakeover")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "FieldTakeover")).size ≥ 5 := by
   native_decide
 
 theorem covers_strong_rtl_in_ltr :
-    (rows.filter (·.sectionName = "StrongRTLInLTR")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "StrongRTLInLTR")).size ≥ 5 := by
   native_decide
 
 theorem covers_mixed_overflow :
-    (rows.filter (·.sectionName = "MixedOverflow")).size ≥ 2 := by
+    (rows.filter (·.sectionName = "MixedOverflow")).size ≥ 4 := by
   native_decide
 
 end Unicode.Conformance.Security.RtlInjectionTest
