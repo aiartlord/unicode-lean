@@ -39,13 +39,25 @@ def projectClassify
 def projectPositions (c : F2Classification) : Array Nat :=
   c.positions
 
+/-- Validate the F2 verdict's metadata fields against the row's
+    column-4 attribution.  Recognised keys: `max_run` (longest
+    non-starter run length), `overruns` (number of runs that
+    breached the UAX #15 §9 Stream-Safe ceiling of 30),
+    `total_ns` (total non-starters in input). -/
+private def metadataMatches (v : F2Verdict)
+    (attr : KeyValueAttribution) : Bool :=
+  attr.checkNatKey "max_run"  v.maxRunLen &&
+  attr.checkNatKey "overruns" v.overrunCount &&
+  attr.checkNatKey "total_ns" v.totalNonStarters
+
 /-- Run `detect` on the row's input and check the verdict against
-    the fixture's expected classification, sub-threat name, and
-    hazard positions. -/
+    the fixture's expected classification, sub-threat name, hazard
+    positions, AND the column-4 attribution metadata. -/
 def verifyRow (r : Row) : Bool :=
   let v := detect r.input
   let (kind, subTag) := projectClassify v.classify
   let pos := projectPositions v.classify
+  metadataMatches v r.attribution &&
   decide (kind = r.expectedKind) &&
   decide (subTag = r.expectedSubThreat) &&
   decide (pos = r.expectedPositions)

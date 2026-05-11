@@ -39,13 +39,25 @@ def projectClassify
 def projectPositions (c : F4Classification) : Array Nat :=
   c.positions
 
+/-- Validate the F4 verdict's metadata fields against the row's
+    column-4 attribution.  Recognised keys: `upper_exp` /
+    `lower_exp` (number of codepoints whose Special_Casing mapping
+    expands under upper / lower casing), `max_exp` (the worst
+    single-codepoint case-expansion length). -/
+private def metadataMatches (v : F4Verdict)
+    (attr : KeyValueAttribution) : Bool :=
+  attr.checkNatKey "upper_exp" v.upperExpansionCount &&
+  attr.checkNatKey "lower_exp" v.lowerExpansionCount &&
+  attr.checkNatKey "max_exp"   v.maxExpansionLen
+
 /-- Run `detect` on the row's input and check the verdict against
-    the fixture's expected classification, sub-threat name, and
-    hazard positions. -/
+    the fixture's expected classification, sub-threat name, hazard
+    positions, AND the column-4 attribution metadata. -/
 def verifyRow (r : Row) : Bool :=
   let v := detect r.input
   let (kind, subTag) := projectClassify v.classify
   let pos := projectPositions v.classify
+  metadataMatches v r.attribution &&
   decide (kind = r.expectedKind) &&
   decide (subTag = r.expectedSubThreat) &&
   decide (pos = r.expectedPositions)

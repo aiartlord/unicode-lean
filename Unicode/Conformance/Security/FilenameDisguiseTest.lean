@@ -36,13 +36,26 @@ def projectClassify
 def projectPositions (c : D2Classification) : Array Nat :=
   c.positions
 
+/-- Validate the D2 verdict's metadata fields against the row's
+    column-4 attribution.  Recognised keys: `dot_count` (number of
+    `.` separators), `bidi_count` (bidi-control characters present),
+    `fw_in_ext`, `comb_in_ext` (fullwidth / combining characters
+    inside the extension). -/
+private def metadataMatches (v : D2Verdict)
+    (attr : KeyValueAttribution) : Bool :=
+  attr.checkNatKey "dot_count"   v.dotPositions.size &&
+  attr.checkNatKey "bidi_count"  v.bidiControlCount &&
+  attr.checkNatKey "fw_in_ext"   v.fullwidthInExt &&
+  attr.checkNatKey "comb_in_ext" v.combiningInExt
+
 /-- Run `detect` on the row's input and check the verdict against
-    the fixture's expected classification, sub-threat name, and
-    hazard positions. -/
+    the fixture's expected classification, sub-threat name, hazard
+    positions, AND the column-4 attribution metadata. -/
 def verifyRow (r : Row) : Bool :=
   let v := detect r.input
   let (kind, subTag) := projectClassify v.classify
   let pos := projectPositions v.classify
+  metadataMatches v r.attribution &&
   decide (kind = r.expectedKind) &&
   decide (subTag = r.expectedSubThreat) &&
   decide (pos = r.expectedPositions)

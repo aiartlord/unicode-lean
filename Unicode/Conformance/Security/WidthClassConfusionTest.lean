@@ -40,13 +40,23 @@ def projectClassify
 def projectPositions (c : F5Classification) : Array Nat :=
   c.positions
 
+/-- Validate the F5 verdict's metadata fields against the row's
+    column-4 attribution.  Recognised keys: `fw_fold` (fullwidth
+    codepoints whose NFKC fold drops the East-Asian width class),
+    `hw_fold` (halfwidth analogue). -/
+private def metadataMatches (v : F5Verdict)
+    (attr : KeyValueAttribution) : Bool :=
+  attr.checkNatKey "fw_fold" v.fullwidthFoldCount &&
+  attr.checkNatKey "hw_fold" v.halfwidthFoldCount
+
 /-- Run `detect` on the row's input and check the verdict against
-    the fixture's expected classification, sub-threat name, and
-    hazard positions. -/
+    the fixture's expected classification, sub-threat name, hazard
+    positions, AND the column-4 attribution metadata. -/
 def verifyRow (r : Row) : Bool :=
   let v := detect r.input
   let (kind, subTag) := projectClassify v.classify
   let pos := projectPositions v.classify
+  metadataMatches v r.attribution &&
   decide (kind = r.expectedKind) &&
   decide (subTag = r.expectedSubThreat) &&
   decide (pos = r.expectedPositions)

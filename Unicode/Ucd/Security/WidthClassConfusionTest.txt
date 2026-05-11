@@ -33,51 +33,51 @@
 # @level basic
 
 # ASCII Hello — every cp is EAW = Na, identity NFKD.
-0048 0065 006C 006C 006F; Clear; ; # Hello
+0048 0065 006C 006C 006F; Clear; ; fw_fold=0; hw_fold=0; # Hello
 
 # Capital ASCII — EAW = Na.
-0041 0044 004D 0049 004E; Clear; ; # ADMIN (plain ASCII)
+0041 0044 004D 0049 004E; Clear; ; fw_fold=0; hw_fold=0; # ADMIN (plain ASCII)
 
 # Plain Han 中文 — EAW = W with identity NFKD.
-4E2D 6587; Clear; ; # 中文
+4E2D 6587; Clear; ; fw_fold=0; hw_fold=0; # 中文
 
 # Korean Hangul 한 — EAW = W; NFKD = three jamos, all EAW = W,
 # so no width-class change.  Pure Hangul must stay clear.
-D55C; Clear; ; # 한
+D55C; Clear; ; fw_fold=0; hw_fold=0; # 한
 
 # Korean 한글 — two syllables, both jamos-of-jamos still W.
-D55C AE00; Clear; ; # 한글
+D55C AE00; Clear; ; fw_fold=0; hw_fold=0; # 한글
 
 # Plain Cyrillic — every cp is EAW = N, identity NFKD.
-041F 0440 0438 0432 0435 0442; Clear; ; # привет
+041F 0440 0438 0432 0435 0442; Clear; ; fw_fold=0; hw_fold=0; # привет
 
 # @section FullwidthFold
 # @level basic
 
 # Fullwidth Ａ (U+FF21) — EAW = F, NFKD = U+0041 (EAW = Na).
 # The canonical Latin-impersonation attack at position 0.
-FF21; Hazard:FullwidthFold; 0; # Ａ → A
+FF21; Hazard:FullwidthFold; 0; fw_fold=1; hw_fold=0; # Ａ → A
 
 # Fullwidth ＡＤＭＩＮ — first fold at position 0.
-FF21 FF24 FF2D FF29 FF2E; Hazard:FullwidthFold; 0; # ＡＤＭＩＮ → ADMIN
+FF21 FF24 FF2D FF29 FF2E; Hazard:FullwidthFold; 0; fw_fold=5; hw_fold=0; # ＡＤＭＩＮ → ADMIN
 
 # Fullwidth digits ０１２３ — NFKD to ASCII digits.
-FF10 FF11 FF12 FF13; Hazard:FullwidthFold; 0; # ０１２３ → 0123
+FF10 FF11 FF12 FF13; Hazard:FullwidthFold; 0; fw_fold=4; hw_fold=0; # ０１２３ → 0123
 
 # Mixed ASCII + fullwidth letter at position 4.
-0041 0042 0043 0044 FF25; Hazard:FullwidthFold; 4; # ABCDＥ
+0041 0042 0043 0044 FF25; Hazard:FullwidthFold; 4; fw_fold=1; hw_fold=0; # ABCDＥ
 
 # @section HalfwidthFold
 # @level basic
 
 # Halfwidth katakana ｱ (U+FF71) — EAW = H, NFKD = U+30A2
 # (EAW = W).  The halfwidth katakana attack at position 0.
-FF71; Hazard:HalfwidthFold; 0; # ｱ → ア
+FF71; Hazard:HalfwidthFold; 0; fw_fold=0; hw_fold=1; # ｱ → ア
 
 # Halfwidth ｲｳｴ (FF72..FF74) sequence — all H → W.
-FF72 FF73 FF74; Hazard:HalfwidthFold; 0; # ｲｳｴ → イウエ
+FF72 FF73 FF74; Hazard:HalfwidthFold; 0; fw_fold=0; hw_fold=3; # ｲｳｴ → イウエ
 
 # Halfwidth katakana following a fullwidth katakana — fullwidth
 # variant doesn't fire (no F → ≠F fold from W input), so the
 # detector falls through to the halfwidth scan.  H position 1.
-30A2 FF72; Hazard:HalfwidthFold; 1; # アｲ
+30A2 FF72; Hazard:HalfwidthFold; 1; fw_fold=0; hw_fold=1; # アｲ

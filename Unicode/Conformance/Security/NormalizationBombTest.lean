@@ -42,13 +42,25 @@ def projectClassify
 def projectPositions (c : F1Classification) : Array Nat :=
   c.positions
 
+/-- Validate the F1 verdict's metadata fields against the row's
+    column-4 attribution.  Recognised keys: `nfd_len`, `nfkd_len`,
+    `input_len`, `max_per_cp` (the worst single-codepoint NFKD
+    expansion). -/
+private def metadataMatches (v : F1Verdict)
+    (attr : KeyValueAttribution) : Bool :=
+  attr.checkNatKey "nfd_len"    v.nfdLen &&
+  attr.checkNatKey "nfkd_len"   v.nfkdLen &&
+  attr.checkNatKey "input_len"  v.inputLen &&
+  attr.checkNatKey "max_per_cp" v.maxPerCpExpansion
+
 /-- Run `detect` on the row's input and check the verdict against
-    the fixture's expected classification, sub-threat name, and
-    hazard positions. -/
+    the fixture's expected classification, sub-threat name, hazard
+    positions, AND the column-4 attribution metadata. -/
 def verifyRow (r : Row) : Bool :=
   let v := detect r.input
   let (kind, subTag) := projectClassify v.classify
   let pos := projectPositions v.classify
+  metadataMatches v r.attribution &&
   decide (kind = r.expectedKind) &&
   decide (subTag = r.expectedSubThreat) &&
   decide (pos = r.expectedPositions)

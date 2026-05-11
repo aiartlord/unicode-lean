@@ -36,32 +36,32 @@
 # @level basic
 
 # ASCII Hello — no decomposition at all.
-0048 0065 006C 006C 006F; Clear; ; # Hello
+0048 0065 006C 006C 006F; Clear; ; nfd_len=5; nfkd_len=5; input_len=5; max_per_cp=1; # Hello
 
 # Plain Han — no decomposition.
-4E2D 6587; Clear; ; # 中文
+4E2D 6587; Clear; ; nfd_len=2; nfkd_len=2; input_len=2; max_per_cp=1; # 中文
 
 # Korean Hangul syllable 한 (U+D55C) — NFKD = 3 jamos, below
 # the per-cp threshold of 8 and at the NFD ratio threshold of
 # 300 (strict > so 300 stays clear).
-D55C; Clear; ; # 한
+D55C; Clear; ; nfd_len=3; nfkd_len=3; input_len=1; max_per_cp=3; # 한
 
 # Korean Hangul 한글 — two syllables, each NFKD = 3; overall
 # NFD = NFKD = 300%, at the threshold (clear under strict `>`).
-D55C AE00; Clear; ; # 한글
+D55C AE00; Clear; ; nfd_len=6; nfkd_len=6; input_len=2; max_per_cp=3; # 한글
 
 # Circled digit ① (U+2460) — NFKD = "1" (1 cp → 1 cp).
-2460; Clear; ; # ①
+2460; Clear; ; nfd_len=1; nfkd_len=1; input_len=1; max_per_cp=1; # ①
 
 # Plain ASCII digits — no decomposition.
-0030 0031 0032 0033; Clear; ; # 0123
+0030 0031 0032 0033; Clear; ; nfd_len=4; nfkd_len=4; input_len=4; max_per_cp=1; # 0123
 
 # @section SingleCpBlowup
 # @level basic
 
 # Arabic ligature SALLALLAHOU ALAYHE WASALLAM (U+FDFA) — the
 # canonical normalization-bomb shape: 1 cp → 18 cps under NFKD.
-FDFA; Hazard:SingleCpBlowup; 0; # 1 cp → 18 cps NFKD
+FDFA; Hazard:SingleCpBlowup; 0; nfd_len=1; nfkd_len=18; input_len=1; max_per_cp=18; # 1 cp → 18 cps NFKD
 
 # @section NfkdHighExpansion
 # @level basic
@@ -69,10 +69,10 @@ FDFA; Hazard:SingleCpBlowup; 0; # 1 cp → 18 cps NFKD
 # Arabic ligature JALLAJALALOUHOU (U+FDFB) — 1 cp → 8 cps NFKD.
 # Per-cp scan lets it pass (8 is not strictly > 8), then the
 # NFKD ratio of 800% fires the bulk-expansion sub-threat.
-FDFB; Hazard:NfkdHighExpansion; ; # 1 cp → 8 cps NFKD, ratio 800%
+FDFB; Hazard:NfkdHighExpansion; ; nfd_len=1; nfkd_len=8; input_len=1; max_per_cp=8; # 1 cp → 8 cps NFKD, ratio 800%
 
 # Doubled FDFB — 2 cp → 16 cp NFKD, ratio still 800%.
-FDFB FDFB; Hazard:NfkdHighExpansion; ; # 2× FDFB
+FDFB FDFB; Hazard:NfkdHighExpansion; ; nfd_len=2; nfkd_len=16; input_len=2; max_per_cp=8; # 2× FDFB
 
 # @section NfdHighExpansion
 # @level basic
@@ -81,7 +81,7 @@ FDFB FDFB; Hazard:NfkdHighExpansion; ; # 2× FDFB
 # 1 cp → 4 cps under NFD (canonical), no compatibility expansion
 # beyond that.  NFKD ratio 400% does not fire (strict `>`), NFD
 # ratio 400% > 300% fires.
-1F82; Hazard:NfdHighExpansion; ; # 1F82 NFD=4 ratio 400%
+1F82; Hazard:NfdHighExpansion; ; nfd_len=4; nfkd_len=4; input_len=1; max_per_cp=4; # 1F82 NFD=4 ratio 400%
 
 # Two Greek pre-composed: 2 cps → 8 cps NFD, ratio still 400%.
-1F82 1F83; Hazard:NfdHighExpansion; ; # paired 1F82+1F83
+1F82 1F83; Hazard:NfdHighExpansion; ; nfd_len=8; nfkd_len=8; input_len=2; max_per_cp=4; # paired 1F82+1F83

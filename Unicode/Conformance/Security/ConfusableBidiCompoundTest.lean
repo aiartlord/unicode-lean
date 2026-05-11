@@ -46,13 +46,22 @@ def projectClassify
 def projectPositions (c : X3Classification) : Array Nat :=
   c.positions
 
+/-- Validate the X3 verdict's metadata fields against the row's
+    column-4 attribution.  Recognised key: `conf_count` (number of
+    confusable-skeleton codepoints encountered in the same input
+    as a bidi-control / isolate). -/
+private def metadataMatches (v : X3Verdict)
+    (attr : KeyValueAttribution) : Bool :=
+  attr.checkNatKey "conf_count" v.confusableCount
+
 /-- Run `detect` on the row's input and check the verdict against
-    the fixture's expected classification, sub-threat name, and
-    hazard positions. -/
+    the fixture's expected classification, sub-threat name, hazard
+    positions, AND the column-4 attribution metadata. -/
 def verifyRow (r : Row) : Bool :=
   let v := detect r.input
   let (kind, subTag) := projectClassify v.classify
   let pos := projectPositions v.classify
+  metadataMatches v r.attribution &&
   decide (kind = r.expectedKind) &&
   decide (subTag = r.expectedSubThreat) &&
   decide (pos = r.expectedPositions)

@@ -41,13 +41,24 @@ def projectClassify
 def projectPositions (c : X4Classification) : Array Nat :=
   c.positions
 
+/-- Validate the X4 verdict's metadata fields against the row's
+    column-4 attribution.  Recognised keys: `input_adm` /
+    `nfkc_adm` (booleans recording whether the raw input and its
+    NFKC form respectively are UTS #39 §5 admissible at the
+    Moderately-Restrictive level). -/
+private def metadataMatches (v : X4Verdict)
+    (attr : KeyValueAttribution) : Bool :=
+  attr.checkBoolKey "input_adm" v.inputAdmissible &&
+  attr.checkBoolKey "nfkc_adm"  v.nfkcAdmissible
+
 /-- Run `detect` on the row's input and check the verdict against
-    the fixture's expected classification, sub-threat name, and
-    hazard positions. -/
+    the fixture's expected classification, sub-threat name, hazard
+    positions, AND the column-4 attribution metadata. -/
 def verifyRow (r : Row) : Bool :=
   let v := detect r.input
   let (kind, subTag) := projectClassify v.classify
   let pos := projectPositions v.classify
+  metadataMatches v r.attribution &&
   decide (kind = r.expectedKind) &&
   decide (subTag = r.expectedSubThreat) &&
   decide (pos = r.expectedPositions)
