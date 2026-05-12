@@ -50,3 +50,6 @@ import Unicode.Security.Boundary.IdentifierFormDrift
 import Unicode.Security.Boundary.CovertDisplayCompound
 import Unicode.Security.Boundary.ConfusableBidiCompound
 import Unicode.Security.Boundary.AdmissibilityFormDrift
+
+-- Layer 6 — Cryptographic Stability
+import Unicode.Security.Crypto.Bip39Canonical

@@ -7,6 +7,95 @@ on the public surface (a major-version bump signals that a
 theorem name or statement changed in a way downstream consumers
 might depend on).
 
+## v0.13.0 — 2026-05-12
+
+The "K1 BIP-39 canonical form" release.  First family in
+Layer 6 — Cryptographic Stability.  Moves the Security
+Conformance Layer from 23 to 24 of the 26 planned families.
+
+### Added — Layer 6, family K1
+
+- `Unicode.Security.Crypto.Bip39Canonical` detector module.
+  Implements the BIP-39 canonical-form check: input is passed
+  through `NFKD → toLower (default locale) → collapse U+0020
+  + U+3000 whitespace runs → trim leading/trailing U+0020`,
+  then each canonical word is looked up against the ten
+  pinned BIP-39 wordlists in `Unicode.Generated.BIP39`.
+- Seven K1 sub-threats, fired in priority order:
+  `trailingWhitespace`, `mixedCase`, `whitespaceAnomaly`,
+  `nonNFKD`, `wordlistMismatch`, `languageAmbiguous`,
+  `nonCanonicalForm` (catch-all).
+- `Unicode/Ucd/Security/Bip39CanonicalTest.txt` — 20 hand-
+  curated rows across 9 sections (Clear for English, Spanish,
+  Italian, French, Czech, Portuguese, Japanese; hazards for
+  NFC-instead-of-NFKD, FB01 ligature, NBSP, U+3000 separator,
+  trailing/leading/double whitespace, title/all-caps,
+  nonsense, mixed real+nonsense, Spanish-Italian collision).
+- `Unicode.Conformance.Security.Bip39CanonicalTest` —
+  `theorem all_rows_pass : rows.all verifyRow = true := by
+  native_decide` plus per-section coverage gates.
+
+### Threat model
+
+A user types a BIP-39 recovery mnemonic; if the typed bytes
+are not in NFKD form and the wallet hashes the bytes directly,
+the derived seed differs from the seed produced by canonical
+input.  Wallet recovery silently fails or derives a different
+wallet.  K1 is the witness that an input satisfies BIP-39's
+canonical-form contract.
+
+### Behaviour — RunAll aggregator
+
+- `Unicode.Security.RunAll.runAll` now returns 24 entries; K1
+  is the 24th, at layer 6.
+- `runAll_size` theorem bumped 23 → 24.
+- `runAll_layer_6_count = 1` added.
+- The pure-ASCII baseline theorem was reformulated:
+  `ascii_hello_no_hazards` → `ascii_hello_no_unicode_hazards`
+  filtered to `layer ≤ 5`.  K1 (correctly) fires `mixedCase`
+  on the capital H in "Hello"; the renamed theorem makes
+  explicit that the baseline is "no Unicode-layer detector
+  fires", not "no detector fires anywhere".
+
+### Behaviour — Level admission predicate
+
+- K1 is **deliberately excluded** from every Level rejection
+  set (`restrictive` / `moderate` / `minimal`).
+- Rationale (per `L6-cryptographic-stability.md`): K-family is
+  highly context-dependent — applicable only when the input is
+  intended as a BIP-39 mnemonic.  Applying K1 to general
+  Unicode input would constant-reject anything not coincidentally
+  in the BIP-39 vocabulary.
+- `restrictive_rejection_size = 23` and the eight
+  monotonicity-witness theorems (`monotone_ascii_hello`,
+  `monotone_lone_rlo`, `monotone_nethereum`,
+  `monotone_math_italic_admin`, `monotone_greek_polytonic`,
+  `monotone_fdfa`, `monotone_modified_utf8_nul`,
+  `monotone_mixed_high_codepoint`) all close unchanged.
+- File-level `set_option maxHeartbeats 4000000` added to
+  `Level.lean` — `native_decide` on `admissibleAt` now
+  elaborates against K1's 10 × 2,048-word wordlist tables,
+  pushing isDefEq past the default heartbeat budget.
+
+### Module / fixture / harness counts (post-K1)
+
+- 24 detector modules (23 Unicode + 1 K-family).
+- 24 conformance harnesses.
+- 24 SHA-pinned base fixtures.
+
+Coverage and hash gates report clean at these counts.  The
+`scripts/check-security-coverage.sh` find list now includes
+`Unicode/Security/Crypto/`.
+
+### Documentation
+
+- README updated: family count bumped 23 → 24; the Layer table
+  gains a Layer-6 row showing K1 shipped; the Layer-6 reserved
+  paragraph rewritten to "K1 shipped; K2 / K3 reserved".
+- Internal docs under `docs/specs/security/` (gitignored
+  planning materials) gain a per-family K1 spec doc and the
+  Phase 0 checkbox flips for K1.
+
 ## v0.12.0 — 2026-05-11
 
 The "v1.5 retraction" release.  Removes the entire language-aware
