@@ -225,6 +225,11 @@ import Unicode.Security
 -- input and returns a flat per-family inventory of verdicts.
 import Unicode.Security.RunAll
 
+-- Strictness-level admission predicate over the aggregator
+-- (UTS #39 §5-style restriction-level shape lifted to the full
+-- 24-family detector layer).
+import Unicode.Security.Level
+
 -- Security Conformance Layer — per-family fixture-conformance proofs
 -- (parallel structure to Unicode.Conformance.* for the UAX/UTS base).
 import Unicode.Conformance.Security.VariationSelectorPayloadTest
@@ -234,7 +239,6 @@ import Unicode.Conformance.Security.ZeroWidthPayloadTest
 import Unicode.Conformance.Security.SurrogateReassemblyTest
 import Unicode.Conformance.Security.HomoglyphConfusableTest
 import Unicode.Conformance.Security.SourceDisplayDivergenceTest
-import Unicode.Conformance.Security.SourceDisplayDivergenceTokenizedTest
 import Unicode.Conformance.Security.MixedScriptAdmissibilityTest
 import Unicode.Conformance.Security.EmojiZwjIntegrityTest
 import Unicode.Conformance.Security.SkinToneVariationForgeryTest
@@ -251,3 +255,4 @@ import Unicode.Conformance.Security.IdentifierFormDriftTest
 import Unicode.Conformance.Security.CovertDisplayCompoundTest
 import Unicode.Conformance.Security.ConfusableBidiCompoundTest
 import Unicode.Conformance.Security.AdmissibilityFormDriftTest
+import Unicode.Conformance.Security.Bip39CanonicalTest

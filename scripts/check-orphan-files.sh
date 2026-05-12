@@ -56,7 +56,9 @@ done
 LC_ALL=C sort -u "$seen" > "$reached"
 
 # Set difference: modules on disk that the import graph never reached.
-orphans="$(comm -23 "$all_modules" "$reached")"
+# `LC_ALL=C` matches the locale used by the upstream `sort -u` calls
+# so `comm` sees both files as sorted under the same collation.
+orphans="$(LC_ALL=C comm -23 "$all_modules" "$reached")"
 
 if [ -n "$orphans" ]; then
   count="$(printf '%s\n' "$orphans" | wc -l | tr -d ' ')"
