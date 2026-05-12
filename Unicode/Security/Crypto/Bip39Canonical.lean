@@ -95,7 +95,7 @@ inductive K1SubThreat where
 inductive K1Classification where
   | clear  (lang : Language)
   | hazard (sub : K1SubThreat) (positions : Array Nat)
-  deriving Inhabited
+  deriving DecidableEq, Repr, Inhabited
 
 /-- K1 verdict — the structured output of `detect`. -/
 structure K1Verdict where
@@ -314,5 +314,204 @@ theorem uniqueLanguage_abandon :
 /-- Empty word-list is vacuously unique (defaults to English). -/
 theorem uniqueLanguage_empty :
     uniqueLanguage #[] = some .english := by native_decide
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §7 Hazard probes (per-priority position-finders)
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- Count the trailing BIP-39 whitespace codepoints in `input`. -/
+def countTrailingWhitespace (input : Array Nat) : Nat :=
+  (input.reverse.takeWhile isBip39Whitespace).size
+
+/-- First position of an uppercase ASCII letter in `input`, if any. -/
+def firstUppercasePos (input : Array Nat) : Option Nat :=
+  (Array.range input.size).findSome? (fun i =>
+    if hi : i < input.size then
+      let cp := input[i]
+      if 0x41 ≤ cp ∧ cp ≤ 0x5A then some i else none
+    else none)
+
+/-- First position of a leading-or-consecutive whitespace run in
+    `input`.  Fires when `input[i]` is BIP-39 whitespace AND either
+    `i = 0` (leading) OR `input[i + 1]` is also BIP-39 whitespace
+    (consecutive run).  Single internal separators do not fire. -/
+def firstWhitespaceRunPos (input : Array Nat) : Option Nat :=
+  (Array.range input.size).findSome? (fun i =>
+    if hi : i < input.size then
+      if isBip39Whitespace input[i] then
+        if i = 0 then some i
+        else if hj : i + 1 < input.size then
+          if isBip39Whitespace input[i + 1] then some i else none
+        else none
+      else none
+    else none)
+
+/-- First position at which two `Array Nat`s diverge (differ in
+    element or one ends).  Returns `none` when they are identical. -/
+def firstArrayDivergence (a b : Array Nat) : Option Nat :=
+  let n := if a.size ≤ b.size then a.size else b.size
+  match (Array.range n).findSome? (fun i =>
+    if ha : i < a.size then
+      if hb : i < b.size then
+        if a[i] != b[i] then some i else none
+      else none
+    else none) with
+  | some i => some i
+  | none   => if a.size = b.size then none else some n
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §8 Top-level detection
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- The K1 detection function.
+
+    Composes the six probes in priority order; first hit wins.
+    See module header §"Sub-threats" for the rationale on each
+    position in the order. -/
+def detect (input : Array Nat) : K1Verdict :=
+  let canonical := bip39Canonical input
+  let words     := splitWords canonical
+  let wordCount := words.size
+
+  let trailingCount := countTrailingWhitespace input
+  let uppercasePos  := firstUppercasePos input
+  let whitespacePos := firstWhitespaceRunPos input
+
+  let nfkd       := Unicode.Normalization.NFKD.toNFKD input
+  let nonNfkdPos :=
+    if input == nfkd then none else firstArrayDivergence input nfkd
+
+  let wordlistsPerWord := words.map wordlistsContaining
+  let firstUnknownIdx  := wordlistsPerWord.findIdx? (fun langs => langs.isEmpty)
+  let unique           := uniqueLanguage words
+
+  let classification : K1Classification :=
+    if trailingCount > 0 then
+      let p := input.size - trailingCount
+      .hazard (.trailingWhitespace trailingCount) #[p]
+    else match uppercasePos with
+    | some p => .hazard (.mixedCase p) #[p]
+    | none   => match whitespacePos with
+    | some p => .hazard (.whitespaceAnomaly p) #[p]
+    | none   => match nonNfkdPos with
+    | some p => .hazard (.nonNFKD p) #[p]
+    | none   => match firstUnknownIdx with
+    | some idx => .hazard (.wordlistMismatch idx) #[idx]
+    | none     => match unique with
+    | some lang => .clear lang
+    | none      =>
+      -- Every word in some wordlist, no single language covers
+      -- all — collect the union for the verdict.
+      let allPossible := wordlistsPerWord.foldl
+        (init := (#[] : Array Language))
+        (fun acc langs =>
+          langs.foldl (init := acc) (fun a l =>
+            if a.contains l then a else a.push l))
+      .hazard (.languageAmbiguous allPossible) #[]
+
+  { input := input,
+    classify := classification,
+    canonicalForm := canonical,
+    wordCount := wordCount }
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §9 Spot-check theorems
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- Empty input is clear (and defaults to English). -/
+theorem detect_empty_clear :
+    (detect #[]).classify = .clear .english := by native_decide
+
+/-- The canonical BIP-39 English test vector — 11×"abandon" +
+    "about" — is clear and English. -/
+theorem detect_canonical_english_12word :
+    let mnemonic : Array Nat :=
+      #[0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20,
+        0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20,
+        0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20,
+        0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20,
+        0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20,
+        0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20,
+        0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20,
+        0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20,
+        0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20,
+        0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20,
+        0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20,
+        0x61, 0x62, 0x6F, 0x75, 0x74]
+    (detect mnemonic).classify = .clear .english := by native_decide
+
+/-- Trailing single space fires `trailingWhitespace`. -/
+theorem detect_trailing_space :
+    let input : Array Nat :=
+      #[0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20]
+    (detect input).classify.tag = some "TrailingWhitespace" := by
+  native_decide
+
+/-- Title-case "Abandon" fires `mixedCase`. -/
+theorem detect_mixed_case :
+    let input : Array Nat := #[0x41, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E]
+    (detect input).classify.tag = some "MixedCase" := by native_decide
+
+/-- Double-space between words fires `whitespaceAnomaly`. -/
+theorem detect_double_space :
+    let input : Array Nat :=
+      #[0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20, 0x20,
+        0x61, 0x62, 0x6F, 0x75, 0x74]
+    (detect input).classify.tag = some "WhitespaceAnomaly" := by
+  native_decide
+
+/-- Leading space fires `whitespaceAnomaly`. -/
+theorem detect_leading_space :
+    let input : Array Nat := #[0x20, 0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E]
+    (detect input).classify.tag = some "WhitespaceAnomaly" := by
+  native_decide
+
+/-- Compatibility ligature U+FB00 ("ﬀ") decomposes under NFKD;
+    fires `nonNFKD`. -/
+theorem detect_non_nfkd_ligature :
+    let input : Array Nat := #[0xFB00]
+    (detect input).classify.tag = some "NonNFKD" := by native_decide
+
+/-- No-break space U+00A0 decomposes under NFKD to U+0020;
+    fires `nonNFKD`. -/
+theorem detect_non_nfkd_nbsp :
+    let input : Array Nat := #[0x61, 0x00A0, 0x62]
+    (detect input).classify.tag = some "NonNFKD" := by native_decide
+
+/-- A made-up word fires `wordlistMismatch`. -/
+theorem detect_wordlist_mismatch :
+    let input : Array Nat := #[0x71, 0x7A, 0x71, 0x7A]  -- "qzqz"
+    (detect input).classify.tag = some "WordlistMismatch" := by
+  native_decide
+
+/-- Position is reported correctly: trailing space at index 7
+    (after the 7-codepoint "abandon"). -/
+theorem detect_trailing_space_position :
+    let input : Array Nat :=
+      #[0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20]
+    (detect input).classify.positions = #[7] := by native_decide
+
+/-- Position is reported correctly: uppercase A at index 0. -/
+theorem detect_mixed_case_position :
+    let input : Array Nat := #[0x41, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E]
+    (detect input).classify.positions = #[0] := by native_decide
+
+/-- The verdict's word-count metadata matches the canonical
+    word-count on a 12-word mnemonic. -/
+theorem detect_wordcount_12 :
+    let mnemonic : Array Nat :=
+      #[0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20,
+        0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20,
+        0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20,
+        0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20,
+        0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20,
+        0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20,
+        0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20,
+        0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20,
+        0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20,
+        0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20,
+        0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20,
+        0x61, 0x62, 0x6F, 0x75, 0x74]
+    (detect mnemonic).wordCount = 12 := by native_decide
 
 end Unicode.Security.Crypto.Bip39Canonical
