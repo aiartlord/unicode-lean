@@ -1,0 +1,123 @@
+# HashInputStabilityTest.txt
+# UCD version: 16.0.0
+# Security-spec version: 0.1.0
+# Family: K2 — Hash-input Unicode Stability (UAX #15 + RFC 8785)
+# License: Apache-2.0
+#
+# Threat model: an input hashed by a signer must be byte-identical
+# to the input hashed by the verifier.  If the two ends pick
+# different canonical forms (NFC vs NFD, trim convention, line
+# ending) the hashes diverge silently — yet both sides believe
+# they signed the same content.  Concrete pipelines:
+#
+#   * PGP signed messages (RFC 4880 / 9580)
+#   * RFC 8785 JSON canonicalization (NFC requirement)
+#   * Audit-log entries (line-ending normalisation on disk write)
+#   * Webhook signatures (client vs server byte conventions)
+#
+# Canonical form:
+#   hashStable input = trimTrailing (NFC input)
+#
+# `trimTrailing` strips ASCII whitespace only — U+0020, U+0009,
+# U+000A, U+000D.  Unicode whitespace (U+00A0 NBSP, U+3000
+# IDEOGRAPHIC SPACE) is content, not framing.
+#
+# Detection priority (first hit wins):
+#   1. TrailingWhitespace  — input has trailing ASCII whitespace
+#   2. NormalizationDrift  — input != NFC(input)
+#
+# The remaining four spec sub-threats (EncodingMismatch,
+# SignedMessageRule, AuditLogReinterpretation,
+# WebhookSignatureDrift) require context the codepoint-only
+# detector cannot access; declared in K2SubThreat but never
+# emitted by the v1 detector.
+#
+# Format:
+#   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
+#
+# Attribution keys recognised by the K2 conformance harness:
+#   stableSize=<N>  — codepoint count of the canonical (NFC + trim) form
+#
+# Classifications produced by the K2 detector:
+#   Clear
+#   Hazard:TrailingWhitespace
+#   Hazard:NormalizationDrift
+
+# @section Clear
+# @level basic
+
+# Empty input is hash-stable (vacuous fixed-point).
+; Clear; ; stableSize=0; # empty input
+
+# Pure ASCII "abc" — no NFC change, no trailing whitespace.
+61 62 63; Clear; ; stableSize=3; # ASCII "abc"
+
+# Precomposed é (NFC form) — already canonical.
+00E9; Clear; ; stableSize=1; # precomposed é
+
+# Han "中文" — CJK with no canonical decomposition.
+4E2D 6587; Clear; ; stableSize=2; # 中文
+
+# Mixed ASCII + precomposed accent + internal space.
+48 65 6C 6C 6F 20 00E9; Clear; ; stableSize=7; # "Hello é"
+
+# @section Clear
+# @level strict
+
+# Internal-only ASCII space between content — only TRAILING
+# whitespace is framing.  Pinned to prevent a future refactor
+# from accidentally stripping internal whitespace.
+61 20 62; Clear; ; stableSize=3; # "a b" internal space
+
+# Trailing U+3000 ideographic space — Unicode whitespace is
+# content under K2's threat model and NOT stripped.  Pinned to
+# distinguish K2's ASCII-only trim from K1's BIP-39
+# {U+0020, U+3000} inventory.
+61 3000; Clear; ; stableSize=2; # trailing U+3000 (content not framing)
+
+# @section TrailingWhitespace
+# @level basic
+
+# Single trailing U+0020 SPACE.
+61 20; Hazard:TrailingWhitespace; 1; stableSize=1; # trailing space
+
+# Trailing U+0009 TAB.
+61 09; Hazard:TrailingWhitespace; 1; stableSize=1; # trailing tab
+
+# Trailing U+000A LF.
+61 0A; Hazard:TrailingWhitespace; 1; stableSize=1; # trailing LF
+
+# Trailing CRLF — the windows-line-ending shape.  Count = 2,
+# both stripped.
+61 0D 0A; Hazard:TrailingWhitespace; 1; stableSize=1; # trailing CRLF
+
+# @section NormalizationDrift
+# @level basic
+
+# Decomposed é (a + combining acute) — NFC composes to U+00E9.
+0065 0301; Hazard:NormalizationDrift; 0; stableSize=1; # decomposed é
+
+# Decomposed á (a + combining acute) — same shape as decomposed é
+# but on a different base letter; pins that the detector doesn't
+# special-case any specific accent.
+0061 0301; Hazard:NormalizationDrift; 0; stableSize=1; # decomposed á
+
+# Decomposed Hangul jamos U+1112 U+1161 U+11AB — NFC composes
+# the Choseong + Jungseong + Jongseong triple to the single
+# precomposed syllable U+D55C (한).
+1112 1161 11AB; Hazard:NormalizationDrift; 0; stableSize=1; # Hangul jamos compose to 한
+
+# Mid-string decomposition: "Hello " + decomposed é + "world".
+# Detector reports first divergence position (6, where the
+# combining acute sits) and stableSize accounts for the NFC
+# collapse.
+48 65 6C 6C 6F 20 0065 0301 20 77 6F 72 6C 64; Hazard:NormalizationDrift; 6; stableSize=13; # "Hello é world" mid-string decomposition
+
+# @section TrailingWhitespace
+# @level strict
+
+# Combined NFC drift AND trailing whitespace — priority order
+# says TrailingWhitespace fires first even though
+# NormalizationDrift also applies.  Pins the priority decision
+# point in detect.
+0065 0301 20; Hazard:TrailingWhitespace; 2; stableSize=1; # decomposed é + trailing space (trailing wins)
