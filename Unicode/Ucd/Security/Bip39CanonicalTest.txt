@@ -1,0 +1,155 @@
+# Bip39CanonicalTest.txt
+# UCD version: 16.0.0
+# Security-spec version: 0.1.0
+# Family: K1 — BIP-39 Mnemonic Canonical Form (BIP-39 + UAX #15)
+# License: Apache-2.0
+#
+# Threat model: a user types a BIP-39 recovery mnemonic.  If the
+# typed bytes are not in UTF-8 NFKD form (per BIP-39 spec) AND the
+# wallet hashes those bytes directly, the derived seed differs
+# from the seed derived from the same words typed in canonical
+# form.  Wallet recovery silently fails or derives a different
+# wallet; funds become irrecoverable.
+#
+# Canonical form (BIP-39 §"From mnemonic to seed"):
+#   1. NFKD
+#   2. toLower (default locale)
+#   3. collapse maximal whitespace runs to single U+0020
+#   4. trim leading and trailing U+0020
+#
+# Detection (priority order, first hit wins):
+#   1. TrailingWhitespace — input ends with U+0020 or U+3000
+#   2. MixedCase          — input contains uppercase ASCII A–Z
+#   3. WhitespaceAnomaly  — leading or consecutive whitespace
+#   4. NonNFKD            — input != NFKD(input)
+#   5. WordlistMismatch   — at least one canonical word not in
+#                           any of the 10 BIP-39 wordlists
+#   6. LanguageAmbiguous  — every canonical word is in some
+#                           wordlist but no single wordlist
+#                           contains all words
+#   7. NonCanonicalForm   — catch-all (currently dominated; kept
+#                           in the enum for future-extension)
+#
+# Format:
+#   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
+#
+# Attribution keys recognised by the K1 conformance harness:
+#   language=<lang>     — for clear verdicts only
+#   wordCount=<N>       — present on every row
+#
+# Classifications produced by the K1 detector:
+#   Clear:<language>      (handled as Clear with language=<lang> attribution)
+#   Hazard:TrailingWhitespace
+#   Hazard:MixedCase
+#   Hazard:WhitespaceAnomaly
+#   Hazard:NonNFKD
+#   Hazard:WordlistMismatch
+#   Hazard:LanguageAmbiguous
+#   Hazard:NonCanonicalForm
+
+# @section Clear
+# @level basic
+
+# The canonical BIP-39 English test vector — 11×"abandon" + "about".
+# Listed in the BIP-39 reference test vectors as the all-zeros entropy
+# 12-word mnemonic.  Clear and English.
+61 62 61 6E 64 6F 6E 20 61 62 61 6E 64 6F 6E 20 61 62 61 6E 64 6F 6E 20 61 62 61 6E 64 6F 6E 20 61 62 61 6E 64 6F 6E 20 61 62 61 6E 64 6F 6E 20 61 62 61 6E 64 6F 6E 20 61 62 61 6E 64 6F 6E 20 61 62 61 6E 64 6F 6E 20 61 62 61 6E 64 6F 6E 20 61 62 61 6E 64 6F 6E 20 61 62 6F 75 74; Clear; ; language=english; wordCount=12; # 11x"abandon" + "about" — BIP-39 test vector
+
+# Spanish 3-word mnemonic in NFKD form: "ábaco abdomen abeja".
+# Each Spanish accented vowel decomposes to base + combining mark.
+61 0301 62 61 63 6F 20 61 62 64 6F 6D 65 6E 20 61 62 65 6A 61; Clear; ; language=spanish; wordCount=3; # "ábaco abdomen abeja" — first 3 Spanish words
+
+# Italian 3-word mnemonic: "abaco abbaglio abbinato" — pure ASCII.
+61 62 61 63 6F 20 61 62 62 61 67 6C 69 6F 20 61 62 62 69 6E 61 74 6F; Clear; ; language=italian; wordCount=3; # "abaco abbaglio abbinato" — first 3 Italian words
+
+# French 3-word: "abaisser abandon abdiquer".  Note "abandon" is in
+# both English and French wordlists, but "abaisser" + "abdiquer" pin
+# the unique language to French.
+61 62 61 69 73 73 65 72 20 61 62 61 6E 64 6F 6E 20 61 62 64 69 71 75 65 72; Clear; ; language=french; wordCount=3; # "abaisser abandon abdiquer" — first 3 French words
+
+# Czech 3-word: "abdikace abeceda adresa" — pure ASCII.
+61 62 64 69 6B 61 63 65 20 61 62 65 63 65 64 61 20 61 64 72 65 73 61; Clear; ; language=czech; wordCount=3; # "abdikace abeceda adresa" — first 3 Czech words
+
+# Portuguese 3-word: "abacate abaixo abalar" — pure ASCII.
+61 62 61 63 61 74 65 20 61 62 61 69 78 6F 20 61 62 61 6C 61 72; Clear; ; language=portuguese; wordCount=3; # "abacate abaixo abalar" — first 3 Portuguese words
+
+# @section Clear
+# @level strict
+
+# Japanese 3-word mnemonic with U+0020 separators (canonical form).
+# Words: あいこくしん / あいさつ / あいだ.
+3042 3044 3053 304F 3057 3093 20 3042 3044 3055 3064 20 3042 3044 3060; Clear; ; language=japanese; wordCount=3; # "あいこくしん あいさつ あいだ" canonical separator
+
+# @section NonNFKD
+# @level basic
+
+# NFC Spanish "ábaco" (precomposed U+00E1) — typed without
+# decomposition.  NFKD canonicalises U+00E1 to U+0061 U+0301; the
+# typed input differs at position 0.  Fires NonNFKD.
+00E1 62 61 63 6F; Hazard:NonNFKD; 0; wordCount=1; # "ábaco" NFC-instead-of-NFKD
+
+# U+FB01 (fi ligature) decomposes under NFKD to U+0066 U+0069.
+# Single-codepoint input fires NonNFKD at position 0.
+FB01; Hazard:NonNFKD; 0; wordCount=1; # U+FB01 ﬁ ligature
+
+# U+00A0 (no-break space) decomposes under NFKD to U+0020.  Input
+# uses it between two ASCII chars; fires NonNFKD at position 1.
+61 00A0 62; Hazard:NonNFKD; 1; wordCount=1; # U+00A0 NBSP between letters
+
+# @section NonNFKD
+# @level strict
+
+# Japanese mnemonic with U+3000 (ideographic space) separator.
+# Per BIP-39 NFKD requirement, U+3000 must decompose to U+0020 in the
+# canonical form; the user-typed U+3000 input is NOT canonical.
+# Position 6: the first U+3000 separator after "あいこくしん".
+3042 3044 3053 304F 3057 3093 3000 3042 3044 3055 3064 3000 3042 3044 3060; Hazard:NonNFKD; 6; wordCount=1; # Japanese U+3000 separator — pre-NFKD
+
+# @section TrailingWhitespace
+# @level basic
+
+# Single trailing ASCII space after "abandon".
+61 62 61 6E 64 6F 6E 20; Hazard:TrailingWhitespace; 7; wordCount=1; # "abandon " trailing space
+
+# Trailing U+3000 ideographic space after Japanese word.
+3042 3044 3053 304F 3057 3093 3000; Hazard:TrailingWhitespace; 6; wordCount=1; # Japanese trailing U+3000
+
+# @section WhitespaceAnomaly
+# @level basic
+
+# Double ASCII space between "abandon" and "about".  First
+# consecutive-whitespace position is index 7 (start of double-space run).
+61 62 61 6E 64 6F 6E 20 20 61 62 6F 75 74; Hazard:WhitespaceAnomaly; 7; wordCount=2; # double space between words
+
+# Leading single space before "abandon" — leading whitespace fires
+# the same sub-threat as consecutive whitespace per spec.
+20 61 62 61 6E 64 6F 6E; Hazard:WhitespaceAnomaly; 0; wordCount=1; # leading space
+
+# @section MixedCase
+# @level basic
+
+# Title-case "Abandon" — uppercase A at position 0.
+41 62 61 6E 64 6F 6E; Hazard:MixedCase; 0; wordCount=1; # "Abandon" title-case
+
+# All-caps "ABANDON" — first uppercase at position 0.
+41 42 41 4E 44 4F 4E; Hazard:MixedCase; 0; wordCount=1; # "ABANDON" all-caps
+
+# @section WordlistMismatch
+# @level basic
+
+# Pure nonsense "qzqz" — not in any wordlist.  First unknown word
+# index is 0.
+71 7A 71 7A; Hazard:WordlistMismatch; 0; wordCount=1; # nonsense "qzqz"
+
+# Mixed real "abandon" + nonsense "qzqz".  First unknown word index
+# is 1 (the second word).
+61 62 61 6E 64 6F 6E 20 71 7A 71 7A; Hazard:WordlistMismatch; 1; wordCount=2; # "abandon qzqz" — second word unknown
+
+# @section LanguageAmbiguous
+# @level strict
+
+# Spanish "ábaco" (NFKD: a + 0x0301 + baco) + Italian "abaco" (no
+# accent) — neither word is in the other language's wordlist, but
+# both are valid in their own.  No single wordlist covers both →
+# LanguageAmbiguous.
+61 0301 62 61 63 6F 20 61 62 61 63 6F; Hazard:LanguageAmbiguous; ; wordCount=2; # Spanish "ábaco" + Italian "abaco" collision
