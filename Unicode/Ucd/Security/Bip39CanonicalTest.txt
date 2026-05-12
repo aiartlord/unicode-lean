@@ -76,9 +76,13 @@
 # @section Clear
 # @level strict
 
-# Japanese 3-word mnemonic with U+0020 separators (canonical form).
-# Words: あいこくしん / あいさつ / あいだ.
-3042 3044 3053 304F 3057 3093 20 3042 3044 3055 3064 20 3042 3044 3060; Clear; ; language=japanese; wordCount=3; # "あいこくしん あいさつ あいだ" canonical separator
+# Japanese 3-word mnemonic in BIP-39 canonical form.  Words:
+# あいこくしん / あいさつ / あいだ.  The third word's だ MUST be
+# stored as the NFKD-decomposed pair [305F, 3099] (た +
+# COMBINING VOICED SOUND MARK), not the precomposed [3060],
+# because BIP-39's canonical-form rule requires NFKD.  Likewise
+# the separator is U+0020 (post-NFKD-of-U+3000), not U+3000.
+3042 3044 3053 304F 3057 3093 20 3042 3044 3055 3064 20 3042 3044 305F 3099; Clear; ; language=japanese; wordCount=3; # "あいこくしん あいさつ あいだ" NFKD form
 
 # @section NonNFKD
 # @level basic
@@ -94,7 +98,9 @@ FB01; Hazard:NonNFKD; 0; wordCount=1; # U+FB01 ﬁ ligature
 
 # U+00A0 (no-break space) decomposes under NFKD to U+0020.  Input
 # uses it between two ASCII chars; fires NonNFKD at position 1.
-61 00A0 62; Hazard:NonNFKD; 1; wordCount=1; # U+00A0 NBSP between letters
+# Word count is 2 because splitWords runs on the canonical form
+# (where U+00A0 has become U+0020), regardless of which probe fires.
+61 00A0 62; Hazard:NonNFKD; 1; wordCount=2; # U+00A0 NBSP between letters
 
 # @section NonNFKD
 # @level strict
@@ -102,8 +108,10 @@ FB01; Hazard:NonNFKD; 0; wordCount=1; # U+FB01 ﬁ ligature
 # Japanese mnemonic with U+3000 (ideographic space) separator.
 # Per BIP-39 NFKD requirement, U+3000 must decompose to U+0020 in the
 # canonical form; the user-typed U+3000 input is NOT canonical.
-# Position 6: the first U+3000 separator after "あいこくしん".
-3042 3044 3053 304F 3057 3093 3000 3042 3044 3055 3064 3000 3042 3044 3060; Hazard:NonNFKD; 6; wordCount=1; # Japanese U+3000 separator — pre-NFKD
+# Position 6: the first U+3000 separator after "あいこくしん".  Word
+# count is 3 because canonical-form splitWords sees three Japanese
+# words separated by post-NFKD U+0020.
+3042 3044 3053 304F 3057 3093 3000 3042 3044 3055 3064 3000 3042 3044 3060; Hazard:NonNFKD; 6; wordCount=3; # Japanese U+3000 separator — pre-NFKD
 
 # @section TrailingWhitespace
 # @level basic
