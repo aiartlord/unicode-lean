@@ -220,25 +220,81 @@ def CryptoContext.toFamilies : CryptoContext → Array String
   | .hashInput      => #["K2"]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- §2 Admission predicate
+-- §2 Factored admission predicates (Level ⊥ Crypto)
+--
+-- Admission has two ORTHOGONAL dimensions:
+--
+--   * `levelAdmissible level input` — does the Unicode-layer
+--     family set declared by `level` admit `input`?  Answer is
+--     INDEPENDENT of any cryptographic context.
+--
+--   * `cryptoAdmissible ctx input` — does the K-family set
+--     declared by `ctx` admit `input`?  Answer is INDEPENDENT
+--     of any Level.
+--
+-- The composite `admissibleAt level ctx input` is the AND of
+-- the two — both factors must admit.  Factoring them this way
+-- makes the K-family's distinguishing power directly observable
+-- as a difference in `cryptoAdmissible`, even on inputs that
+-- `levelAdmissible level input` already rejects.  Without this
+-- factoring, the K-family's contribution would be masked by the
+-- union whenever any L1–L5 family also flags the same input —
+-- e.g. decomposed é, which K2 flags as NormalizationDrift AND
+-- F6 NfcIdempotenceWitness rejects at `.restrictive`/`.moderate`,
+-- so a naive `admissibleAt`-only test would show both contexts
+-- rejecting and miss that K2 is independently contributing.
+--
+-- Mathematical equivalence to the union-based form:
+--   ¬ any (haz ∧ r ∈ (L ++ K))
+--     ↔ ¬ any (haz ∧ (r ∈ L ∨ r ∈ K))
+--     ↔ ¬ (any (haz ∧ r ∈ L) ∨ any (haz ∧ r ∈ K))
+--     ↔ ¬ any (haz ∧ r ∈ L) ∧ ¬ any (haz ∧ r ∈ K)
+--     ↔ levelAdmissible level input ∧ cryptoAdmissible ctx input
+--
+-- So no behaviour of `admissibleAt` changes; what changes is
+-- that callers and theorems can now inspect each factor
+-- independently.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- Does the Unicode-layer family set declared by `level` admit
+    `input`?  Independent of any cryptographic context.  Used as
+    the Level-only factor of the composite `admissibleAt`. -/
+def levelAdmissible (level : Level) (input : Array Nat) : Bool :=
+  let results  := runAll input
+  let effective := rejectionSet level
+  ¬ results.any (fun r => isHazard r ∧ effective.contains r.family)
+
+/-- Does the K-family set declared by `cryptoCtx` admit `input`?
+    Independent of any Level.  Used as the Crypto-only factor of
+    the composite `admissibleAt`.  Captures the K-family's
+    distinguishing power directly, without union-masking by
+    L1–L5 detectors. -/
+def cryptoAdmissible (cryptoCtx : CryptoContext)
+    (input : Array Nat) : Bool :=
+  let results  := runAll input
+  let effective := cryptoCtx.toFamilies
+  ¬ results.any (fun r => isHazard r ∧ effective.contains r.family)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §3 Composite admission predicate
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- True iff `input` is admissible at the declared `level` under
-    the declared `cryptoCtx`.
-
-    The effective rejection set is the union of `level`'s
-    Unicode-layer rejection set and the K-family tags added by
-    `cryptoCtx`.  Hazards from families in this set fail
-    admission; hazards from other families are reported by
+    the declared `cryptoCtx`.  Defined as the AND of the two
+    orthogonal factors — both must admit.  Hazards from
+    families in the union (Level ∪ Crypto) cause admission
+    failure; hazards from other families are reported by
     `runAll` but do not gate admission at this surface.
 
-    Callers who need the per-family detail should call `runAll
-    input` directly and inspect each `FamilyResult`. -/
+    Callers who need to see WHICH factor rejected should call
+    `levelAdmissible` and `cryptoAdmissible` separately.  See
+    `crypto_admissible_gates_decomposed_e_acute` for a worked
+    example of K-family's distinguishing power being visible
+    in `cryptoAdmissible` even on inputs where `admissibleAt`
+    would mask the contribution behind an L1–L5 rejection. -/
 def admissibleAt (level : Level) (cryptoCtx : CryptoContext)
     (input : Array Nat) : Bool :=
-  let results  := runAll input
-  let effective := rejectionSet level ++ cryptoCtx.toFamilies
-  ¬ results.any (fun r => isHazard r ∧ effective.contains r.family)
+  levelAdmissible level input && cryptoAdmissible cryptoCtx input
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 Rejection-set monotonicity
@@ -433,19 +489,52 @@ theorem crypto_ctx_single_word_passes_both :
     ∧ admissibleAt .restrictive .bip39Mnemonic input = true := by
   native_decide
 
-/-- Decomposed é (U+0065 U+0301) fires F6 NfcIdempotenceWitness
-    in both `restrictive` and `moderate` rejection sets, so the
-    cleanest demonstration of K2's `hashInput` context-gating
-    has to drop to `minimal` (where F6 is excluded — minimal
-    gates only on the structural-violation set
-    `{C4, C5, F2}`).  At `.minimal`, decomposed é admits under
-    `nonCrypto` (no structural-violation family fires) but
-    rejects under `hashInput` because K2's
-    `normalizationDrift` is added to the effective set. -/
-theorem crypto_ctx_gates_decomposed_e_acute :
+/-- K2's `hashInput` context-gating, measured directly via
+    `cryptoAdmissible` — Level-independent.  Decomposed é
+    (U+0065 U+0301) admits under `.nonCrypto` (no K-family in
+    the effective set) and rejects under `.hashInput` because
+    K2's `NormalizationDrift` fires.  This is the architectural
+    pin for K-family's distinguishing power: the contribution
+    is observable at every Level via `cryptoAdmissible`, NOT
+    only at `.minimal` via `admissibleAt`.  Pinning this here
+    matters because F6 NfcIdempotenceWitness rejects the same
+    input under `levelAdmissible .restrictive` and
+    `levelAdmissible .moderate`, so a naive `admissibleAt`-only
+    test would show both contexts rejecting and miss that K2
+    is independently contributing.  See
+    `crypto_ctx_gates_decomposed_e_acute_at_minimal` below for
+    the composite-form co-witness. -/
+theorem crypto_admissible_gates_decomposed_e_acute :
+    let input : Array Nat := #[0x0065, 0x0301]
+    cryptoAdmissible .nonCrypto input = true
+    ∧ cryptoAdmissible .hashInput input = false := by
+  native_decide
+
+/-- Composite-form co-witness for the K2 gating: at `.minimal`
+    (where F6 is excluded from the Level set), `admissibleAt`
+    flips between `.nonCrypto` and `.hashInput`.  At `.restrictive`
+    and `.moderate`, F6 NfcIdempotenceWitness also rejects
+    decomposed é, so `admissibleAt` returns `false` under BOTH
+    contexts — that's the Level ∧ Crypto union, NOT a suppression
+    of K2.  The `crypto_admissible_gates_decomposed_e_acute` pin
+    above shows K2's contribution explicitly without the masking. -/
+theorem crypto_ctx_gates_decomposed_e_acute_at_minimal :
     let input : Array Nat := #[0x0065, 0x0301]
     admissibleAt .minimal .nonCrypto input = true
     ∧ admissibleAt .minimal .hashInput input = false := by
+  native_decide
+
+/-- Co-witness that under `.restrictive` and `.moderate`, the
+    composite `admissibleAt` rejects decomposed é under BOTH
+    `.nonCrypto` and `.hashInput` — the Level factor rejects
+    independently via F6 NfcIdempotenceWitness, so the Crypto
+    factor's flip is masked at the composite surface.  The
+    factored predicates above show K2's contribution is still
+    present in `cryptoAdmissible`. -/
+theorem level_admissible_rejects_decomposed_e_at_restrictive :
+    let input : Array Nat := #[0x0065, 0x0301]
+    levelAdmissible .restrictive input = false
+    ∧ levelAdmissible .moderate    input = false := by
   native_decide
 
 end Unicode.Security.Level
