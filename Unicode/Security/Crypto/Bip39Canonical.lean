@@ -240,4 +240,79 @@ theorem canonical_normalises_ideographic_space :
     let cps : Array Nat := #[0x61, 0x3000, 0x62]  -- "a<3000>b"
     bip39Canonical cps = #[0x61, 0x20, 0x62] := by native_decide
 
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §5 Wordlist lookup
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- Split a canonical-form input into words at `U+0020` boundaries.
+    Returns the word slices as `Array Nat` (codepoint arrays). -/
+def splitWords (canonical : Array Nat) : Array (Array Nat) := Id.run do
+  let mut out : Array (Array Nat) := #[]
+  let mut wordStart : Nat := 0
+  let mut i : Nat := 0
+  while hi : i < canonical.size do
+    if canonical[i] = 0x0020 then
+      if i > wordStart then
+        out := out.push (canonical.extract wordStart i)
+      wordStart := i + 1
+    i := i + 1
+  if canonical.size > wordStart then
+    out := out.push (canonical.extract wordStart canonical.size)
+  pure out
+
+/-- Convert a `String` to its codepoint array.  Used to pre-decode
+    each wordlist exactly once at module load. -/
+@[inline] def stringToCodepoints (s : String) : Array Nat :=
+  s.toList.toArray.map (·.toNat)
+
+/-- Codepoint-array form of every wordlist, dispatched per
+    language.  Each per-language array is `(wordlist lang).map
+    stringToCodepoints` — a top-level constant that Lean's
+    reducer caches after first evaluation. -/
+def wordlistCps (lang : Language) : Array (Array Nat) :=
+  (wordlist lang).map stringToCodepoints
+
+/-- True iff `word` (as codepoints) appears in `lang`'s wordlist. -/
+def isInWordlist (lang : Language) (word : Array Nat) : Bool :=
+  (wordlistCps lang).any (fun entry => entry == word)
+
+/-- Every language whose wordlist contains `word`.  Empty if
+    `word` is not in any BIP-39 wordlist. -/
+def wordlistsContaining (word : Array Nat) : Array Language :=
+  allLanguages.filter (fun lang => isInWordlist lang word)
+
+/-- The single language whose wordlist contains every word in
+    `words`, if such a language exists; otherwise `none`.
+
+    On empty `words`, returns `some .english` because
+    `Array.all` on the empty array is `true` for every predicate;
+    `findSome?` returns the first match (English). -/
+def uniqueLanguage (words : Array (Array Nat)) : Option Language :=
+  allLanguages.findSome? (fun lang =>
+    if words.all (fun w => isInWordlist lang w) then some lang else none)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §6 Wordlist spot checks
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- The English wordlist contains "abandon" — every BIP-39
+    mnemonic test vector starts with it. -/
+theorem english_contains_abandon :
+    isInWordlist .english #[0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E] = true := by
+  native_decide
+
+/-- A made-up word is in no wordlist. -/
+theorem nonsense_in_no_wordlist :
+    wordlistsContaining #[0x71, 0x7A, 0x71, 0x7A, 0x71, 0x7A] = #[] := by
+  native_decide
+
+/-- Single-word "abandon" is unambiguously English. -/
+theorem uniqueLanguage_abandon :
+    uniqueLanguage #[#[0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E]] = some .english := by
+  native_decide
+
+/-- Empty word-list is vacuously unique (defaults to English). -/
+theorem uniqueLanguage_empty :
+    uniqueLanguage #[] = some .english := by native_decide
+
 end Unicode.Security.Crypto.Bip39Canonical
