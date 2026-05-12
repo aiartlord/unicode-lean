@@ -7,6 +7,123 @@ on the public surface (a major-version bump signals that a
 theorem name or statement changed in a way downstream consumers
 might depend on).
 
+## v0.11.0 — 2026-05-11
+
+The "v1.5 grammar coverage + admission predicate" release.
+Three additive surfaces, no behavioural change to anything
+v0.10.0 already pinned.
+
+### Added — D3 v1.5 region-aware tokenization
+
+`Unicode.Security.Display.RtlInjection.detect` gains an
+optional `Language` parameter, mirroring v0.9.0's D1 v1.5
+refactor.  Sub-detector hits whose position sits inside a
+string literal, line comment, or block comment under the
+supplied language grammar are filtered out.  Under
+`Language.none` (the default) the whole input is treated as
+one code region, so v1 behaviour is preserved exactly — the
+existing `RtlInjectionTest.lean` conformance harness closes
+unchanged.
+
+The Phase-1 (RloInLTRField), Phase-2 (FieldTakeover), and
+Phase-3 (StrongRTLInLTR / MixedOverflow) scans are all
+re-routed through the shared `positionInCode` predicate.  A
+5-character Hebrew run inside a Rust string literal no longer
+trips MixedOverflow under `Language.rust`.  Aggregate counters
+(`strongRTLCount`, `strongLTRCount`, `bidiControlCount`,
+`longestRtlRunLen`) intentionally stay region-unaware — they
+describe what the input contains, not what the detector fired
+on.
+
+Companion fixture `Ucd/Security/RtlInjectionTokenizedTest.txt`
+(16 rows, 7 clear / 7 hazard) folded by a new conformance
+harness `RtlInjectionTokenizedTest.lean`.  Pins a pedagogical
+post-string-Hebrew row that documents the whole-input
+first-strong-in-code semantics.
+
+### Added — wider D1 v1.5 language coverage (Python, TypeScript)
+
+`Unicode.Security.Display.SourceCodeTokenize.Language` gains
+two new constructors:
+
+- `python` — `"..."` / `'...'` newline-bounded strings;
+  triple-quoted `"""..."""` and `'''..."''` spanning newlines;
+  `#` line comments; no block comments.  Prefixed literals
+  (r/b/f/rb/...) tokenize the leading letter as code with the
+  contents staying a single string region regardless of
+  prefix.
+- `typescript` — `cStyleGeneric` plus template literals
+  `` `...` ``.  Block comments are non-nestable (matches the
+  ECMAScript/TypeScript specs, distinct from Rust).
+  Template-literal interpolation `${...}` is intentionally
+  NOT tracked — the entire template literal stays a single
+  string region.  Conservative direction: a bidi codepoint
+  inside `${expr}` is filtered out as in-string.
+
+`ScanState` surface gains `inTripleString delim` and
+`inTemplateLit`.  Both flow safely through the existing
+`stepCStyle` / `stepRust` paths.
+
+Two new D1 conformance fixtures with paired harnesses:
+
+- `SourceDisplayDivergencePythonTest.txt` (13 rows) and
+  `SourceDisplayDivergencePythonTest.lean`.
+- `SourceDisplayDivergenceTypeScriptTest.txt` (13 rows) and
+  `SourceDisplayDivergenceTypeScriptTest.lean`.
+
+Together with the existing Rust-grammar fixture, D1 now has
+end-to-end conformance under three concrete language
+grammars (Rust, Python, TypeScript) plus `Language.none`.
+
+### Added — `Unicode.Security.Level` admission predicate
+
+UTS #39 §5-style monotone strictness levels lifted to the
+23-family detector layer.  Three totally-ordered levels
+(`restrictive ⊑ moderate ⊑ minimal`); each defines an
+admission predicate `admissibleAt : Level → Array Nat → Bool`
+that callers use to gate input acceptance for their
+specific context.
+
+Key non-negotiable design properties:
+
+* No detector is ever suppressed.  `runAll` runs all 23
+  families on every input; every hazard reported by `runAll`
+  remains in the result regardless of the declared level.
+* `admissibleAt` is purely an admission predicate over the
+  whole `runAll` result.  It answers "is this input
+  acceptable at the declared strictness?", not "which
+  detectors should I run?".
+* Levels are totally ordered.  Rejection sets nest:
+  `minimal.rejectionSet ⊆ moderate.rejectionSet ⊆
+  restrictive.rejectionSet`.  Admission is monotone in the
+  laxer direction.
+
+Per-level rejection sets:
+
+* `restrictive` — all 23 families.  Any hazard rejects.
+* `moderate`    — drops F1 / D3 / D4 / I3 (the heuristic /
+                  high-FP-risk detectors).  Keeps every
+                  targeted-attack detector.
+* `minimal`     — only C5 (Trojan Source class) and F2 (UAX
+                  #15 §13 stream-safe DoS class).  Outer
+                  network-edge floor.
+
+C4 SurrogateReassembly is documented as intentionally absent
+from every rejection set because `runAll` feeds codepoint
+arrays and C4's predicate treats each codepoint as a byte —
+giving spurious hits on any input with a codepoint > 0xFF.
+
+Theorems pin rejection-set sizes (23 / 19 / 2), rejection-set
+nesting, and admission witnesses across six canonical attack
+vectors (pure ASCII, lone RLO, Nethereum Cyrillic typosquat,
+Math Italic admin, Greek polytonic, FDFA normalization
+bomb).
+
+Mirrors UTS #39 §5 in tone and contract: declare-which-level,
+detectors-stay-on, monotone-superset-relation.  No
+suppression knob; no way for the API to silence a real
+hazard.
+
 ## v0.10.0 — 2026-05-11
 
 The "harness depth" release.  v0.9.0 shipped the 23-family
