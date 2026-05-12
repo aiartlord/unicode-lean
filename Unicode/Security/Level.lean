@@ -119,8 +119,8 @@ private def isHazard (r : FamilyResult) : Bool :=
   match r.classification with
   | .clear         => false
   | .informational => false
-  | _otherHaz      =>
-    Function.const ClassificationKind true _otherHaz
+  | unknownHaz     =>
+    Function.const ClassificationKind true unknownHaz
 
 /-- The family-tag set whose hazards cause admission failure
     at `level`.  Note this is a REJECTION set, not an allow-
