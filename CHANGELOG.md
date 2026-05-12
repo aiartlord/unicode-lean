@@ -7,6 +7,87 @@ on the public surface (a major-version bump signals that a
 theorem name or statement changed in a way downstream consumers
 might depend on).
 
+## v0.14.0 — 2026-05-12
+
+The "K2 hash-input Unicode stability" release.  Second Layer-6
+family.  Moves the Security Conformance Layer from 24 to 25 of
+the 26 planned families.
+
+### Added — Layer 6, family K2
+
+- `Unicode.Security.Crypto.HashInputStability` detector module.
+  Implements the K2 canonical hash-input form:
+  `hashStable input = trimTrailing (NFC input)`, where
+  `trimTrailing` strips ASCII whitespace
+  `{U+0020 SPACE, U+0009 TAB, U+000A LF, U+000D CR}`.  Unicode
+  whitespace (`U+00A0`, `U+3000`, etc.) is content, not framing,
+  and NOT stripped — distinguishes K2's ASCII-only trim from
+  K1's BIP-39 `{U+0020, U+3000}` inventory.
+- Six K2 sub-threats, two emitted by the v1 detector:
+  `trailingWhitespace` (priority 1) and `normalizationDrift`
+  (priority 2).  The other four (`encodingMismatch`,
+  `signedMessageRule`, `auditLogReinterpretation`,
+  `webhookSignatureDrift`) require context the codepoint-only
+  detector cannot access; declared in `K2SubThreat` for spec
+  consistency, never emitted in v1.
+- `Unicode/Ucd/Security/HashInputStabilityTest.txt` — 16 hand-
+  curated rows across 4 sections (Clear: empty / ASCII / NFC-
+  é / 中文 / mixed / internal-space / trailing-U+3000;
+  TrailingWhitespace: SPACE / TAB / LF / CRLF; NormalizationDrift:
+  decomposed é / decomposed á / Hangul jamos / mid-string;
+  priority pin: NFC drift + trailing space → TrailingWhitespace
+  wins).
+- `Unicode.Conformance.Security.HashInputStabilityTest` —
+  `theorem all_rows_pass : rows.all verifyRow = true := by
+  native_decide` plus three per-section coverage gates.
+
+### Threat model
+
+PGP signed messages (RFC 4880 / 9580), RFC 8785 JSON
+canonicalization, audit-log entries read after disk write, and
+webhook signatures all hash an input that the signer thinks is
+canonical and the verifier independently re-canonicalises.  If
+the two sides pick different conventions (NFC vs NFD, trim
+convention, line-ending) the hashes diverge silently.  K2 is
+the witness that an input satisfies the hash-input canonical-
+form contract.
+
+### Behaviour — RunAll aggregator
+
+- `runAll` now returns 25 entries; K2 is at index 24, layer 6.
+- `runAll_size` bumped 24 → 25.
+- `runAll_layer_6_count = 2` (K1 + K2).
+
+### Behaviour — Level admission predicate
+
+- `CryptoContext` extended with `hashInput` constructor.
+  `toFamilies .hashInput = #["K2"]`.  When K3 ships, a fourth
+  constructor `aiAttribution` will add K3 to the family list.
+- New theorem `crypto_ctx_gates_decomposed_e_acute` demonstrates
+  K2's context-gating: decomposed é admits at `.minimal`
+  `.nonCrypto` (no structural-violation family fires) but
+  rejects at `.minimal` `.hashInput` (K2 fires
+  `normalizationDrift`).  The demonstration drops to `.minimal`
+  rather than `.restrictive` because F6 NfcIdempotenceWitness
+  sits in both restrictive's and moderate's rejection sets —
+  context-gating's distinguishing power is only visible at the
+  level where F6 isn't already rejecting the input.
+
+### Module / fixture / harness counts (post-K2)
+
+- 25 detector modules (23 Unicode + 2 K-family).
+- 25 conformance harnesses.
+- 25 SHA-pinned base fixtures.
+
+All six gates clean.
+
+### Documentation
+
+- README: family count 24 → 25; Layer-6 row gains K2; pin bumps
+  to v0.14.0.
+- Internal `docs/specs/security/per-family/K2-hash-input-stability.md`
+  written (gitignored).
+
 ## v0.13.0 — 2026-05-12
 
 The "K1 BIP-39 canonical form" release.  First family in

@@ -256,3 +256,4 @@ import Unicode.Conformance.Security.CovertDisplayCompoundTest
 import Unicode.Conformance.Security.ConfusableBidiCompoundTest
 import Unicode.Conformance.Security.AdmissibilityFormDriftTest
 import Unicode.Conformance.Security.Bip39CanonicalTest
+import Unicode.Conformance.Security.HashInputStabilityTest
