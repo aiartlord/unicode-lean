@@ -496,6 +496,18 @@ theorem detect_mixed_case_position :
     let input : Array Nat := #[0x41, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E]
     (detect input).classify.positions = #[0] := by native_decide
 
+/-- Japanese 3-word canonical mnemonic in NFKD form.
+    あいこくしん / あいさつ / あいだ — the third word's だ decomposes
+    to た + COMBINING VOICED SOUND MARK under NFKD per BIP-39's
+    canonical-form requirement, so the input bytes use the
+    decomposed pair [305F, 3099] not the precomposed [3060]. -/
+theorem detect_japanese_3word_clear :
+    let mnemonic : Array Nat :=
+      #[0x3042, 0x3044, 0x3053, 0x304F, 0x3057, 0x3093, 0x20,
+        0x3042, 0x3044, 0x3055, 0x3064, 0x20,
+        0x3042, 0x3044, 0x305F, 0x3099]
+    (detect mnemonic).classify = .clear .japanese := by native_decide
+
 /-- The verdict's word-count metadata matches the canonical
     word-count on a 12-word mnemonic. -/
 theorem detect_wordcount_12 :

@@ -32,7 +32,7 @@ missing_theorem="$tmpdir/missing_theorem"
 # not detectors and so are not required to have a harness.
 find Unicode/Security/Covert Unicode/Security/Identity \
      Unicode/Security/Display Unicode/Security/Form \
-     Unicode/Security/Boundary \
+     Unicode/Security/Boundary Unicode/Security/Crypto \
   -maxdepth 1 -name '*.lean' -type f 2>/dev/null \
   | while IFS= read -r path; do
       if grep -qE '^def detect\b' "$path"; then
