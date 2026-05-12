@@ -25,6 +25,7 @@
 -/
 
 import Unicode.Security
+import Unicode.Security.Crypto.Bip39Canonical
 
 namespace Unicode.Security.RunAll
 
@@ -111,6 +112,7 @@ def runAll (input : Array Nat) : Array FamilyResult :=
   let x2 := Unicode.Security.Boundary.CovertDisplayCompound.detect   input
   let x3 := Unicode.Security.Boundary.ConfusableBidiCompound.detect  input
   let x4 := Unicode.Security.Boundary.AdmissibilityFormDrift.detect  input
+  let k1 := Unicode.Security.Crypto.Bip39Canonical.detect            input
   #[ mkResult "C1" "TagBlockPayload"          1 c1.classify.isClear c1.classify.tag c1.classify.positions,
      mkResult "C2" "VariationSelectorPayload" 1 c2.classify.isClear c2.classify.tag c2.classify.positions,
      mkResult "C3" "ZeroWidthPayload"         1 c3.classify.isClear c3.classify.tag c3.classify.positions,
@@ -133,7 +135,8 @@ def runAll (input : Array Nat) : Array FamilyResult :=
      mkResult "X1" "IdentifierFormDrift"      5 x1.classify.isClear x1.classify.tag x1.classify.positions,
      mkResult "X2" "CovertDisplayCompound"    5 x2.classify.isClear x2.classify.tag x2.classify.positions,
      mkResult "X3" "ConfusableBidiCompound"   5 x3.classify.isClear x3.classify.tag x3.classify.positions,
-     mkResult "X4" "AdmissibilityFormDrift"   5 x4.classify.isClear x4.classify.tag x4.classify.positions ]
+     mkResult "X4" "AdmissibilityFormDrift"   5 x4.classify.isClear x4.classify.tag x4.classify.positions,
+     mkResult "K1" "Bip39Canonical"           6 k1.classify.isClear k1.classify.tag k1.classify.positions ]
 
 /-- Subset of `runAll` containing only the families whose verdict is
     `.hazard`.  Empty when the input passes every detector. -/
@@ -158,8 +161,8 @@ def anyHazard (input : Array Nat) : Bool :=
 -- §1 Shape invariants
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- `runAll` always returns exactly 23 entries, one per family. -/
-theorem runAll_size (input : Array Nat) : (runAll input).size = 23 := by
+/-- `runAll` always returns exactly 24 entries, one per family. -/
+theorem runAll_size (input : Array Nat) : (runAll input).size = 24 := by
   unfold runAll
   rfl
 
@@ -186,18 +189,29 @@ theorem runAll_layer_5_count :
     ((runAll #[]).filter (fun r => r.layer = 5)).size = 4 := by
   native_decide
 
+theorem runAll_layer_6_count :
+    ((runAll #[]).filter (fun r => r.layer = 6)).size = 1 := by
+  native_decide
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 Spot checks
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Pure ASCII fires no detector.  The Layer-1 covert channels see
-    no special bytes, the Layer-2 identity detectors see no
-    confusables / mixed scripts / emoji, the Layer-3 display
-    detectors see no bidi controls or combining stacks, the Layer-4
-    form detectors see no normalisation drift, and the Layer-5
-    cross-layer compounds therefore stay clear too. -/
-theorem ascii_hello_no_hazards :
-    anyHazard #[0x48, 0x65, 0x6C, 0x6C, 0x6F] = false := by native_decide
+/-- Pure ASCII "Hello" fires no Layer 1–5 detector.  K1 (Layer 6,
+    BIP-39 canonical form) does fire on the capital H via its
+    `mixedCase` sub-threat — that is the correct context-dependent
+    behaviour for a BIP-39 mnemonic context.  K1 is excluded from
+    this Unicode-layer baseline by filtering on `layer ≤ 5`,
+    consistent with the calculus's L6 = "highly context-dependent"
+    characterisation. -/
+theorem ascii_hello_no_unicode_hazards :
+    ((runAll #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).filter
+      (fun r => r.layer ≤ 5)).all (fun r =>
+        match r.classification with
+        | .clear         => true
+        | .informational => true
+        | .hazard        => false
+        | .compound      => false) = true := by native_decide
 
 /-- The Arabic ligature U+FDFA fires at least one detector
     (F1 NormalizationBomb, at minimum). -/

@@ -74,9 +74,27 @@
   IS in every rejection set (including `minimal`, since UTF-8
   byte validity per RFC 3629 is exactly the structural
   invariant `minimal` exists to enforce).
+
+  Note on K-family (Layer 6, Cryptographic Stability): K1
+  (BIP-39 canonical form), and the planned K2 / K3, are *highly
+  context-dependent* per `docs/specs/security/L6-cryptographic-
+  stability.md`.  K1 fires `mixedCase` on any ASCII text with
+  capital letters; `wordlistMismatch` on any ASCII text whose
+  words aren't BIP-39 vocabulary.  Those verdicts are correct
+  only in a BIP-39 mnemonic *context*; for general Unicode
+  input they would produce constant rejection.  Accordingly,
+  the K-family is **excluded from every rejection set** —
+  `restrictive` / `moderate` / `minimal` each gate exclusively
+  on the 23 Unicode-as-attack-surface families (Layers 1–5).
+  Callers who need K-family gating should call
+  `Unicode.Security.Crypto.Bip39Canonical.detect` (or `runAll`
+  and filter on `family = "K1"`) directly inside the BIP-39
+  context, alongside the Level admission predicate.
 -/
 
 import Unicode.Security.RunAll
+
+set_option maxHeartbeats 4000000
 
 namespace Unicode.Security.Level
 
