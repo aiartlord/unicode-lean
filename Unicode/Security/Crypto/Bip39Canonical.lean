@@ -113,24 +113,34 @@ structure K1Verdict where
 namespace K1Classification
 
 @[inline] def isClear : K1Classification → Bool
-  | .clear _lang        => true
-  | .hazard _sub _ps    => false
+  | .clear lang        => Function.const Language true lang
+  | .hazard sub ps     =>
+    Function.const (K1SubThreat × Array Nat) false (sub, ps)
 
 @[inline] def tag : K1Classification → Option String
-  | .clear _lang                  => none
-  | .hazard sub _ps               =>
-    match sub with
-    | .nonCanonicalForm _pre _post  => some "NonCanonicalForm"
-    | .wordlistMismatch _idx        => some "WordlistMismatch"
-    | .languageAmbiguous _langs     => some "LanguageAmbiguous"
-    | .whitespaceAnomaly _pos       => some "WhitespaceAnomaly"
-    | .trailingWhitespace _count    => some "TrailingWhitespace"
-    | .nonNFKD _pos                 => some "NonNFKD"
-    | .mixedCase _pos               => some "MixedCase"
+  | .clear lang                   => Function.const Language none lang
+  | .hazard sub ps                =>
+    Function.const (Array Nat) (
+      match sub with
+      | .nonCanonicalForm pre post =>
+        Function.const (Nat × Nat) (some "NonCanonicalForm") (pre, post)
+      | .wordlistMismatch idx      =>
+        Function.const Nat (some "WordlistMismatch") idx
+      | .languageAmbiguous langs   =>
+        Function.const (Array Language) (some "LanguageAmbiguous") langs
+      | .whitespaceAnomaly pos     =>
+        Function.const Nat (some "WhitespaceAnomaly") pos
+      | .trailingWhitespace count  =>
+        Function.const Nat (some "TrailingWhitespace") count
+      | .nonNFKD pos               =>
+        Function.const Nat (some "NonNFKD") pos
+      | .mixedCase pos             =>
+        Function.const Nat (some "MixedCase") pos
+    ) ps
 
 @[inline] def positions : K1Classification → Array Nat
-  | .clear _lang        => #[]
-  | .hazard _sub ps     => ps
+  | .clear lang        => Function.const Language #[] lang
+  | .hazard sub ps     => Function.const K1SubThreat ps sub
 
 end K1Classification
 
