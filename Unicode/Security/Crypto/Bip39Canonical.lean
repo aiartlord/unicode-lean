@@ -134,4 +134,110 @@ namespace K1Classification
 
 end K1Classification
 
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §3 Canonicalisation pipeline
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- True iff `cp` is a whitespace codepoint that BIP-39 treats as
+    a word separator.  Two members:
+
+      * `U+0020` SPACE         — default separator for Latin /
+                                  Cyrillic / Greek wordlists.
+      * `U+3000` IDEOGRAPHIC SPACE — Japanese mnemonic separator
+                                  per BIP-39 §"Wordlist".
+
+    The wordlist source files themselves are line-separated; the
+    separator question is only about user-typed mnemonic input
+    that the canonicalisation pipeline must accept. -/
+@[inline] def isBip39Whitespace (cp : Nat) : Bool :=
+  decide (cp = 0x0020) || decide (cp = 0x3000)
+
+/-- Replace every maximal run of BIP-39 whitespace with a single
+    `U+0020` SPACE.  Preserves non-whitespace codepoints
+    byte-for-byte.  Idempotent on any input that already has
+    single-space separation. -/
+def collapseWhitespaceToSingle (input : Array Nat) : Array Nat := Id.run do
+  let mut out : Array Nat := #[]
+  let mut prevWasSpace : Bool := false
+  for cp in input do
+    if isBip39Whitespace cp then
+      if !prevWasSpace then
+        out := out.push 0x0020
+      prevWasSpace := true
+    else
+      out := out.push cp
+      prevWasSpace := false
+  pure out
+
+/-- Strip leading and trailing `U+0020` SPACE.  Assumes
+    `collapseWhitespaceToSingle` has already run so the only
+    whitespace codepoint remaining is `U+0020`. -/
+def trimLeadingTrailing (input : Array Nat) : Array Nat :=
+  let firstNonSpace :=
+    (Array.range input.size).findSome? (fun i =>
+      if hi : i < input.size then
+        if input[i] ≠ 0x0020 then some i else none
+      else none)
+  match firstNonSpace with
+  | none    => #[]
+  | some s  =>
+    let lastNonSpace :=
+      (Array.range input.size).findSome? (fun i =>
+        let j := input.size - 1 - i
+        if hj : j < input.size then
+          if input[j] ≠ 0x0020 then some j else none
+        else none)
+    match lastNonSpace with
+    | none      => #[]
+    | some last => input.extract s (last + 1)
+
+/-- The BIP-39 canonical form of a codepoint sequence.  Composes
+    the four pipeline stages in spec order: NFKD → toLower
+    (default locale) → collapse whitespace → trim leading /
+    trailing. -/
+def bip39Canonical (input : Array Nat) : Array Nat :=
+  let nfkd      := Unicode.Normalization.NFKD.toNFKD input
+  let lowered   := Unicode.Casing.toLower .default nfkd
+  let collapsed := collapseWhitespaceToSingle lowered
+  trimLeadingTrailing collapsed
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §4 Canonicalisation spot checks
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- Empty input canonicalises to empty. -/
+theorem canonical_empty :
+    bip39Canonical #[] = #[] := by native_decide
+
+/-- An already-canonical lowercase ASCII input is a fixed point. -/
+theorem canonical_idempotent_ascii :
+    let cps : Array Nat := #[0x61, 0x62, 0x63]  -- "abc"
+    bip39Canonical (bip39Canonical cps) = bip39Canonical cps := by
+  native_decide
+
+/-- Double space between non-space content collapses to single. -/
+theorem canonical_collapses_double_space :
+    let cps : Array Nat := #[0x61, 0x20, 0x20, 0x62]  -- "a  b"
+    bip39Canonical cps = #[0x61, 0x20, 0x62] := by native_decide
+
+/-- Trailing single space is stripped. -/
+theorem canonical_strips_trailing :
+    let cps : Array Nat := #[0x61, 0x20]
+    bip39Canonical cps = #[0x61] := by native_decide
+
+/-- Leading single space is stripped. -/
+theorem canonical_strips_leading :
+    let cps : Array Nat := #[0x20, 0x61]
+    bip39Canonical cps = #[0x61] := by native_decide
+
+/-- Uppercase ASCII lowercases. -/
+theorem canonical_lowercases_ascii :
+    let cps : Array Nat := #[0x41]  -- "A"
+    bip39Canonical cps = #[0x61] := by native_decide
+
+/-- Japanese ideographic space U+3000 canonicalises to U+0020. -/
+theorem canonical_normalises_ideographic_space :
+    let cps : Array Nat := #[0x61, 0x3000, 0x62]  -- "a<3000>b"
+    bip39Canonical cps = #[0x61, 0x20, 0x62] := by native_decide
+
 end Unicode.Security.Crypto.Bip39Canonical
