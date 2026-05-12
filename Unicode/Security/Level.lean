@@ -65,12 +65,17 @@
     suitable as a network-edge gate before more specific
     policy-layer filtering downstream.
 
-  Note: C4 SurrogateReassembly is NOT in any structural set
-  because `runAll` feeds codepoint arrays, and C4's predicate
-  treats every codepoint as a byte — giving spurious hits on
-  any input with a codepoint > 0xFF.  Callers with a real byte
-  stream should invoke `Unicode.Security.Covert.SurrogateReassembly.detect`
-  directly.
+  Note: C4 SurrogateReassembly is NOT in any rejection set —
+  including the restrictive one — because `runAll` feeds
+  codepoint arrays, and C4's predicate treats every codepoint
+  as a byte (giving spurious hits on any input with a
+  codepoint > 0xFF).  Including C4 would make `restrictive`
+  effectively ASCII-Only and `moderate` reject every
+  non-ASCII pipeline input, neither of which matches the
+  intent.  Callers with a real byte stream should invoke
+  `Unicode.Security.Covert.SurrogateReassembly.detect`
+  directly before encoding to codepoints, and only then pass
+  the resulting codepoint array to `admissibleAt`.
 -/
 
 import Unicode.Security.RunAll
@@ -110,18 +115,48 @@ private def isHazard (r : FamilyResult) : Bool :=
     ⊆ restrictive.rejectionSet`.  Proven below. -/
 def rejectionSet : Level → Array String
   | .restrictive =>
-    #[ "C1", "C2", "C3", "C4", "C5"
+    -- All 22 codepoint-array-meaningful families.  C4
+    -- SurrogateReassembly is intentionally absent (see module
+    -- header): `runAll` feeds codepoint arrays, and C4's
+    -- predicate treats every codepoint as a byte — giving
+    -- spurious hits on any codepoint > 0xFF.  Including C4
+    -- here would make `restrictive` reject every non-ASCII
+    -- input, which is not the intent.  Callers with a real
+    -- byte stream should invoke
+    -- `Unicode.Security.Covert.SurrogateReassembly.detect`
+    -- directly before encoding to codepoints.
+    #[ "C1", "C2", "C3", "C5"
      , "I1", "I2", "I3", "I4"
      , "D1", "D2", "D3", "D4"
      , "F1", "F2", "F3", "F4", "F5", "F6"
      , "X1", "X2", "X3", "X4" ]
   | .moderate =>
-    -- Drops the heuristic / FP-prone detectors: F1 (ratio-
-    -- based), D3 (single-letter Hebrew triggers on legitimate
-    -- multilingual text), D4 (Zalgo heuristic), I3 (novel
-    -- emoji ZWJ sequences).  Keeps every targeted-attack
-    -- detector intact.
-    #[ "C1", "C2", "C3", "C4", "C5"
+    -- Drops the heuristic / FP-prone detectors that don't
+    -- need to gate "default-safe for multilingual text"
+    -- pipelines:
+    --
+    --   F1 — ratio-based NfdHighExpansion / NfkdHighExpansion
+    --        fire on legitimate Greek polytonic text.  F1's
+    --        precise SingleCpBlowup sub-threat (FDFA 1→18) is
+    --        backstopped by X1 IdentifierFormDrift since FDFA
+    --        is Restricted-Allowed in identifier-status terms.
+    --   D3 — StrongRTLInLTR / FieldTakeover fire on legitimate
+    --        Hebrew / Arabic UI strings (D3 assumes an
+    --        LTR-declared field).  Callers handling RTL UI
+    --        text must declare the field direction and bypass
+    --        D3 anyway.
+    --   D4 — Zalgo / fullwidth / emoji variance heuristic;
+    --        high FP on legitimate emoji-heavy or
+    --        multilingual content.
+    --   I3 — Novel emoji ZWJ sequences not yet in RGI fire
+    --        UnregisteredSequence / NonEmojiInjection.
+    --        Routine in modern social / chat content.
+    --
+    -- C4 also absent for the same reason as in restrictive
+    -- (codepoint-array-meaningless).  Keeps every targeted-
+    -- attack detector and every UTS #39 spec-compliance
+    -- signal intact.
+    #[ "C1", "C2", "C3", "C5"
      , "I1", "I2", "I4"
      , "D1", "D2"
      , "F2", "F3", "F4", "F5", "F6"
@@ -157,14 +192,16 @@ def admissibleAt (level : Level) (input : Array Nat) : Bool :=
 -- §2 Rejection-set monotonicity
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The restrictive rejection set is all 23 families. -/
+/-- The restrictive rejection set covers all 22 codepoint-
+    array-meaningful families (the 23 total minus C4
+    SurrogateReassembly, see module header). -/
 theorem restrictive_rejection_size :
-    (rejectionSet .restrictive).size = 23 := by native_decide
+    (rejectionSet .restrictive).size = 22 := by native_decide
 
-/-- The moderate rejection set drops 4 high-FP-risk families,
-    keeping 19. -/
+/-- The moderate rejection set drops the 4 heuristic / FP-prone
+    detectors (F1, D3, D4, I3) from restrictive, keeping 18. -/
 theorem moderate_rejection_size :
-    (rejectionSet .moderate).size = 19 := by native_decide
+    (rejectionSet .moderate).size = 18 := by native_decide
 
 /-- The minimal rejection set covers the 2 structural-violation
     families (C5 bidi-control balance, F2 stream-safe overflow). -/
