@@ -54,15 +54,44 @@ private def mkResult (family fullName : String) (layer : Nat)
     subThreat      := tag,
     positions      := positions }
 
+/-- True iff every element of `input` fits in a single octet.
+    Used to gate C4 SurrogateReassembly in `runAll`: C4's
+    predicate is byte-stream-oriented, so feeding it a
+    codepoint array containing any codepoint > 0xFF gives
+    spurious `InvalidStartByte` hits.  Skipping C4 on
+    non-byte-stream inputs makes `runAll` semantically clean
+    on both byte-array and codepoint-array inputs without
+    requiring callers to choose. -/
+@[inline]
+private def looksLikeByteStream (input : Array Nat) : Bool :=
+  input.all (fun cp => cp < 0x100)
+
 /-- Run every Security Conformance Layer detector on `input` and
     return a `FamilyResult` per family.  The output array has exactly
     23 entries, one per family, in declaration order grouped by
-    layer. -/
+    layer.
+
+    C4 SurrogateReassembly is only invoked when `input` looks
+    like a byte stream (every codepoint ≤ 0xFF).  For
+    codepoint-array inputs the C4 entry reports clear, since
+    C4's predicate is meaningless on those.  Callers who
+    specifically want C4 on a byte stream should either use
+    `runAll` directly with a `[0..0xFF]`-bounded input or
+    invoke `Unicode.Security.Covert.SurrogateReassembly.detect`
+    on their byte input separately. -/
 def runAll (input : Array Nat) : Array FamilyResult :=
   let c1 := Unicode.Security.Covert.TagBlockPayload.detect           input
   let c2 := Unicode.Security.Covert.VariationSelectorPayload.detect  input
   let c3 := Unicode.Security.Covert.ZeroWidthPayload.detect          input
-  let c4 := Unicode.Security.Covert.SurrogateReassembly.detect       input
+  let c4 :=
+    if looksLikeByteStream input then
+      Unicode.Security.Covert.SurrogateReassembly.detect input
+    else
+      ({ input              := input,
+         classify           := .clear,
+         byteCount          := input.size,
+         firstInvalidOffset := none }
+        : Unicode.Security.Covert.SurrogateReassembly.C4Verdict)
   let c5 := Unicode.Security.Covert.BidiControlBalance.detect        input
   let i1 := Unicode.Security.Identity.HomoglyphConfusable.detect     input
   let i2 := Unicode.Security.Identity.MixedScriptAdmissibility.detect input
