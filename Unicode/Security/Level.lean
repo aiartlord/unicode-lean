@@ -65,17 +65,15 @@
     suitable as a network-edge gate before more specific
     policy-layer filtering downstream.
 
-  Note: C4 SurrogateReassembly is NOT in any rejection set —
-  including the restrictive one — because `runAll` feeds
-  codepoint arrays, and C4's predicate treats every codepoint
-  as a byte (giving spurious hits on any input with a
-  codepoint > 0xFF).  Including C4 would make `restrictive`
-  effectively ASCII-Only and `moderate` reject every
-  non-ASCII pipeline input, neither of which matches the
-  intent.  Callers with a real byte stream should invoke
-  `Unicode.Security.Covert.SurrogateReassembly.detect`
-  directly before encoding to codepoints, and only then pass
-  the resulting codepoint array to `admissibleAt`.
+  Note on C4 SurrogateReassembly: as of `Unicode.Security.RunAll`
+  v0.12.0, `runAll` only invokes C4 when the input "looks like
+  a byte stream" (every codepoint ≤ 0xFF); otherwise C4 emits
+  a clear verdict.  This means C4 contributes to admission
+  rejection only on actual byte-stream inputs, never spuriously
+  on codepoint arrays with non-ASCII content.  Accordingly, C4
+  IS in every rejection set (including `minimal`, since UTF-8
+  byte validity per RFC 3629 is exactly the structural
+  invariant `minimal` exists to enforce).
 -/
 
 import Unicode.Security.RunAll
@@ -115,17 +113,13 @@ private def isHazard (r : FamilyResult) : Bool :=
     ⊆ restrictive.rejectionSet`.  Proven below. -/
 def rejectionSet : Level → Array String
   | .restrictive =>
-    -- All 22 codepoint-array-meaningful families.  C4
-    -- SurrogateReassembly is intentionally absent (see module
-    -- header): `runAll` feeds codepoint arrays, and C4's
-    -- predicate treats every codepoint as a byte — giving
-    -- spurious hits on any codepoint > 0xFF.  Including C4
-    -- here would make `restrictive` reject every non-ASCII
-    -- input, which is not the intent.  Callers with a real
-    -- byte stream should invoke
-    -- `Unicode.Security.Covert.SurrogateReassembly.detect`
-    -- directly before encoding to codepoints.
-    #[ "C1", "C2", "C3", "C5"
+    -- All 23 families.  C4 SurrogateReassembly is included
+    -- because `runAll` gates C4 on `looksLikeByteStream`
+    -- (every codepoint ≤ 0xFF), so C4 only contributes
+    -- rejection on actual byte-stream inputs.  For codepoint
+    -- arrays with any non-ASCII content, C4 emits clear and
+    -- doesn't reject.
+    #[ "C1", "C2", "C3", "C4", "C5"
      , "I1", "I2", "I3", "I4"
      , "D1", "D2", "D3", "D4"
      , "F1", "F2", "F3", "F4", "F5", "F6"
@@ -152,20 +146,23 @@ def rejectionSet : Level → Array String
     --        UnregisteredSequence / NonEmojiInjection.
     --        Routine in modern social / chat content.
     --
-    -- C4 also absent for the same reason as in restrictive
-    -- (codepoint-array-meaningless).  Keeps every targeted-
-    -- attack detector and every UTS #39 spec-compliance
-    -- signal intact.
-    #[ "C1", "C2", "C3", "C5"
+    -- C4 is retained because `runAll` gates it on
+    -- `looksLikeByteStream`, so it never spuriously fires on
+    -- multilingual codepoint inputs.  Every other targeted-
+    -- attack detector and UTS #39 spec-compliance signal is
+    -- intact.
+    #[ "C1", "C2", "C3", "C4", "C5"
      , "I1", "I2", "I4"
      , "D1", "D2"
      , "F2", "F3", "F4", "F5", "F6"
      , "X1", "X2", "X3", "X4" ]
   | .minimal =>
-    -- Only structural / RFC-violation families.  C5
-    -- (bidi-control imbalance, Trojan Source class) and F2
-    -- (stream-safe overflow, UAX #15 §13 DoS class).
-    #[ "C5", "F2" ]
+    -- Structural / RFC-violation families.  C4
+    -- SurrogateReassembly (RFC 3629 UTF-8 byte validity,
+    -- via runAll's byte-stream gate), C5 (bidi-control
+    -- imbalance, Trojan Source class), F2 (stream-safe
+    -- overflow, UAX #15 §13 DoS class).
+    #[ "C4", "C5", "F2" ]
 
 /-- True iff `family` is in `level`'s rejection set. -/
 @[inline]
@@ -192,21 +189,22 @@ def admissibleAt (level : Level) (input : Array Nat) : Bool :=
 -- §2 Rejection-set monotonicity
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The restrictive rejection set covers all 22 codepoint-
-    array-meaningful families (the 23 total minus C4
-    SurrogateReassembly, see module header). -/
+/-- The restrictive rejection set covers all 23 families.
+    `runAll`'s byte-stream gate makes C4 contribution
+    well-behaved on codepoint inputs. -/
 theorem restrictive_rejection_size :
-    (rejectionSet .restrictive).size = 22 := by native_decide
+    (rejectionSet .restrictive).size = 23 := by native_decide
 
 /-- The moderate rejection set drops the 4 heuristic / FP-prone
-    detectors (F1, D3, D4, I3) from restrictive, keeping 18. -/
+    detectors (F1, D3, D4, I3) from restrictive, keeping 19. -/
 theorem moderate_rejection_size :
-    (rejectionSet .moderate).size = 18 := by native_decide
+    (rejectionSet .moderate).size = 19 := by native_decide
 
-/-- The minimal rejection set covers the 2 structural-violation
-    families (C5 bidi-control balance, F2 stream-safe overflow). -/
+/-- The minimal rejection set covers the 3 structural / RFC-
+    violation families (C4 UTF-8 byte validity, C5 bidi-control
+    balance, F2 stream-safe overflow). -/
 theorem minimal_rejection_size :
-    (rejectionSet .minimal).size = 2 := by native_decide
+    (rejectionSet .minimal).size = 3 := by native_decide
 
 /-- Every family in `moderate.rejectionSet` is also in
     `restrictive.rejectionSet`. -/
@@ -312,12 +310,36 @@ theorem monotone_greek_polytonic :
     Inadmissible at restrictive (F1 fires).  Also inadmissible
     at moderate (X1 IdentifierFormDrift fires — the codepoint's
     NFKD-head Identifier_Status differs from its own).
-    Admissible at minimal — neither C5 nor F2 fires on the
-    single codepoint. -/
+    Admissible at minimal — neither C4, C5, nor F2 fires on
+    the single codepoint (FDFA > 0xFF so C4's byte-stream
+    gate skips it). -/
 theorem monotone_fdfa :
     let input : Array Nat := #[0xFDFA]
     admissibleAt .restrictive input = false
     ∧ admissibleAt .moderate input = false
     ∧ admissibleAt .minimal input = true := by native_decide
+
+/-- Monotonicity witness, Java modified-UTF-8 NUL `0xC0 0x80`.
+    Pure byte-stream input (every codepoint ≤ 0xFF), so
+    runAll's byte-stream gate runs C4, which fires
+    InvalidStartByte at offset 0.  Inadmissible at every
+    level — C4 is in every rejection set including `minimal`. -/
+theorem monotone_modified_utf8_nul :
+    let input : Array Nat := #[0xC0, 0x80]
+    admissibleAt .restrictive input = false
+    ∧ admissibleAt .moderate input = false
+    ∧ admissibleAt .minimal input = false := by native_decide
+
+/-- Monotonicity witness, mixed input with a non-ASCII codepoint
+    `#[0xC0, 0x80, 0x4E2D]`.  The Han codepoint 0x4E2D > 0xFF
+    so runAll's byte-stream gate skips C4 entirely.  Without
+    C4 firing, the input is admissible at minimal (no other
+    family fires on this short non-bidi codepoint sequence).
+    This pins the byte-stream gate's intended behaviour:
+    mixing high codepoints into the input flips C4 off,
+    preventing spurious rejection. -/
+theorem monotone_mixed_high_codepoint :
+    let input : Array Nat := #[0xC0, 0x80, 0x4E2D]
+    admissibleAt .minimal input = true := by native_decide
 
 end Unicode.Security.Level
