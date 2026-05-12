@@ -7,6 +7,90 @@ on the public surface (a major-version bump signals that a
 theorem name or statement changed in a way downstream consumers
 might depend on).
 
+## v0.12.0 — 2026-05-11
+
+The "v1.5 retraction" release.  Removes the entire language-aware
+region-filtering surface added in v0.11.0 because it embedded a
+threat-model error that the broader ecosystem evidence
+contradicts.
+
+### Threat-model correction
+
+v0.11.0 introduced a `Language` parameter on D1 / D3 `detect`
+functions that filtered detector hits by source-region grammar:
+hits inside string literals, line comments, and block comments
+under `Language.rust` / `.python` / `.typescript` were treated
+as "data or documentation, not display deception in code" and
+suppressed from the verdict.
+
+That filtering is wrong for our threat model.  Source bytes are
+uniformly suspect regardless of which source-region a tokenizer
+would assign them to.  The evidence:
+
+- **tj-actions/changed-files supply-chain attack, March 2025** —
+  malicious payload hidden in source that downstream GitHub
+  Actions consumed without distinguishing source regions.
+- **CVE-2025-29927 Next.js middleware bypass** — framework
+  parsing logic that treated certain source regions as
+  "trusted" got exploited by payloads not respecting that
+  boundary.
+- **McKinsey Lilli / internal-AI prompt injection** — LLM code
+  assistants read comments and docstrings as instructions.
+  Bidi or hidden bytes in comments become prompt-injection
+  vectors when an agent processes the source.
+- **General npm / React / Python / CSS / JS ecosystem
+  surface** — strings get `eval`'d, rendered into HTML via
+  `innerHTML`, interpolated into SQL/shell, serialized as
+  package metadata.  Comments are read by JSDoc generators,
+  ESLint pragma parsers, IDE renderers, CI grep matchers,
+  AI assistants.  None of these treat one source region as
+  "safer" than another.
+
+### Removed
+
+- `Unicode.Security.Display.SourceCodeTokenize` module —
+  entirely deleted.  Its state-machine region tokenization was
+  only used by the filtering surface that is being retracted.
+- `Language` parameter on `Unicode.Security.Display.SourceDisplayDivergence.detect`
+  and `Unicode.Security.Display.RtlInjection.detect`.  Both
+  functions revert to `(input : Array Nat) → <F>Verdict`.
+- Six tokenized fixtures and their conformance harnesses:
+  `SourceDisplayDivergenceTokenizedTest`,
+  `SourceDisplayDivergencePythonTest`,
+  `SourceDisplayDivergenceTypeScriptTest`,
+  `RtlInjectionTokenizedTest`,
+  `RtlInjectionPythonTest`,
+  `RtlInjectionTypeScriptTest`.  Their behaviour was wrong by
+  construction; the v1 conformance harnesses cover the same
+  inputs without filtering.
+
+### Behaviour
+
+Every D1 and D3 sub-detector hit now fires unconditionally
+regardless of source region.  Bidi in strings fires.  Bidi in
+comments fires.  VS payloads in string literals fire.  Tag-block
+chars in JSDoc fire.  The v1 conformance harnesses
+(`SourceDisplayDivergenceTest.lean`, `RtlInjectionTest.lean`)
+are unchanged in shape but the underlying detector is now
+v1-equivalent on every input.
+
+### Module / fixture / harness counts (post-retraction)
+
+- 23 detector modules.
+- 23 conformance harnesses.
+- 23 SHA-pinned base fixtures.
+
+Coverage and hash gates report clean at these counts.
+
+### Documentation
+
+- README's Security Conformance Layer section adds a
+  "Region-agnosticism" paragraph documenting the retraction
+  with the threat-model rationale.
+- README's `Unicode.Security.Level` introduction stays — that
+  module is unchanged.  Its monotone admission contract was
+  always correct; the underlying detectors were the issue.
+
 ## v0.11.0 — 2026-05-11
 
 The "v1.5 grammar coverage + admission predicate" release.

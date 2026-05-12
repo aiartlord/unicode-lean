@@ -165,6 +165,32 @@ it cares about; the per-family modules are exposed under stable
 namespaces so individual detectors can be wired into custom
 pipelines.
 
+Callers who want a single admission predicate per UTS #39 §5
+style — "is this input acceptable at the declared strictness?"
+— import `Unicode.Security.Level`.  It defines three totally-
+ordered strictness levels (`restrictive ⊑ moderate ⊑ minimal`)
+and exposes `admissibleAt : Level → Array Nat → Bool` with a
+monotone admission relation.  No level ever suppresses a
+hazard — every detector still runs through `runAll`; the level
+only answers "does this input meet my context's bar?".
+
+### Region-agnosticism
+
+The Security layer's detectors fire on hazardous codepoints
+**unconditionally**, regardless of which source-region a
+language tokenizer would assign them to.  Earlier prereleases
+(v0.11.0) experimented with a `Language` parameter that filtered
+detector hits by grammar — strings, comments, code regions
+treated differently.  That surface was retracted in v0.12.0
+because it conflates "where a parser puts the bytes" with
+"whether the bytes are an attack surface".  The ecosystem
+evidence (tj-actions/changed-files supply-chain attack March
+2025; CVE-2025-29927 Next.js middleware bypass; LLM
+code-assistant prompt injection via JSDoc/docstring comments;
+npm-metadata-string supply-chain backdoors) is uniform: source
+bytes are uniformly suspect.  No grammar partition makes them
+safer.
+
 ## Generated tables — provenance
 
 Every file under `Unicode/Generated/` is self-contained and
@@ -195,7 +221,7 @@ Pin to a tagged release in your `lakefile.lean`:
 
 ```lean
 require unicode from git
-  "https://github.com/jpyxal-straylight/unicode-lean" @ "v0.11.0"
+  "https://github.com/jpyxal-straylight/unicode-lean" @ "v0.12.0"
 ```
 
 Then `lake update` and import the namespaces you need:
