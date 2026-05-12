@@ -26,6 +26,7 @@
 
 import Unicode.Security
 import Unicode.Security.Crypto.Bip39Canonical
+import Unicode.Security.Crypto.HashInputStability
 
 namespace Unicode.Security.RunAll
 
@@ -113,6 +114,7 @@ def runAll (input : Array Nat) : Array FamilyResult :=
   let x3 := Unicode.Security.Boundary.ConfusableBidiCompound.detect  input
   let x4 := Unicode.Security.Boundary.AdmissibilityFormDrift.detect  input
   let k1 := Unicode.Security.Crypto.Bip39Canonical.detect            input
+  let k2 := Unicode.Security.Crypto.HashInputStability.detect        input
   #[ mkResult "C1" "TagBlockPayload"          1 c1.classify.isClear c1.classify.tag c1.classify.positions,
      mkResult "C2" "VariationSelectorPayload" 1 c2.classify.isClear c2.classify.tag c2.classify.positions,
      mkResult "C3" "ZeroWidthPayload"         1 c3.classify.isClear c3.classify.tag c3.classify.positions,
@@ -136,7 +138,8 @@ def runAll (input : Array Nat) : Array FamilyResult :=
      mkResult "X2" "CovertDisplayCompound"    5 x2.classify.isClear x2.classify.tag x2.classify.positions,
      mkResult "X3" "ConfusableBidiCompound"   5 x3.classify.isClear x3.classify.tag x3.classify.positions,
      mkResult "X4" "AdmissibilityFormDrift"   5 x4.classify.isClear x4.classify.tag x4.classify.positions,
-     mkResult "K1" "Bip39Canonical"           6 k1.classify.isClear k1.classify.tag k1.classify.positions ]
+     mkResult "K1" "Bip39Canonical"           6 k1.classify.isClear k1.classify.tag k1.classify.positions,
+     mkResult "K2" "HashInputStability"       6 k2.classify.isClear k2.classify.tag k2.classify.positions ]
 
 /-- Subset of `runAll` containing only the families whose verdict is
     `.hazard`.  Empty when the input passes every detector. -/
@@ -161,8 +164,8 @@ def anyHazard (input : Array Nat) : Bool :=
 -- §1 Shape invariants
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- `runAll` always returns exactly 24 entries, one per family. -/
-theorem runAll_size (input : Array Nat) : (runAll input).size = 24 := by
+/-- `runAll` always returns exactly 25 entries, one per family. -/
+theorem runAll_size (input : Array Nat) : (runAll input).size = 25 := by
   unfold runAll
   rfl
 
@@ -190,7 +193,7 @@ theorem runAll_layer_5_count :
   native_decide
 
 theorem runAll_layer_6_count :
-    ((runAll #[]).filter (fun r => r.layer = 6)).size = 1 := by
+    ((runAll #[]).filter (fun r => r.layer = 6)).size = 2 := by
   native_decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════

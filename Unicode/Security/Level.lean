@@ -206,15 +206,18 @@ def Level.rejects (level : Level) (family : String) : Bool :=
 inductive CryptoContext where
   | nonCrypto
   | bip39Mnemonic
+  | hashInput
   deriving DecidableEq, Repr, Inhabited
 
 /-- The K-family tag(s) added to the effective rejection set
     under each context.  `nonCrypto` adds none; `bip39Mnemonic`
-    adds K1. -/
+    adds K1; `hashInput` adds K2.  When K3 (AI watermark) ships,
+    a fourth constructor `aiAttribution` will add K3. -/
 @[inline]
 def CryptoContext.toFamilies : CryptoContext → Array String
   | .nonCrypto      => #[]
   | .bip39Mnemonic  => #["K1"]
+  | .hashInput      => #["K2"]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 Admission predicate
@@ -428,6 +431,21 @@ theorem crypto_ctx_single_word_passes_both :
     let input : Array Nat := #[0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E]
     admissibleAt .restrictive .nonCrypto     input = true
     ∧ admissibleAt .restrictive .bip39Mnemonic input = true := by
+  native_decide
+
+/-- Decomposed é (U+0065 U+0301) fires F6 NfcIdempotenceWitness
+    in both `restrictive` and `moderate` rejection sets, so the
+    cleanest demonstration of K2's `hashInput` context-gating
+    has to drop to `minimal` (where F6 is excluded — minimal
+    gates only on the structural-violation set
+    `{C4, C5, F2}`).  At `.minimal`, decomposed é admits under
+    `nonCrypto` (no structural-violation family fires) but
+    rejects under `hashInput` because K2's
+    `normalizationDrift` is added to the effective set. -/
+theorem crypto_ctx_gates_decomposed_e_acute :
+    let input : Array Nat := #[0x0065, 0x0301]
+    admissibleAt .minimal .nonCrypto input = true
+    ∧ admissibleAt .minimal .hashInput input = false := by
   native_decide
 
 end Unicode.Security.Level
