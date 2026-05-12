@@ -57,21 +57,41 @@ canonical-form contract.
   explicit that the baseline is "no Unicode-layer detector
   fires", not "no detector fires anywhere".
 
-### Behaviour — Level admission predicate
+### Behaviour — Level admission predicate (BREAKING CHANGE)
 
-- K1 is **deliberately excluded** from every Level rejection
-  set (`restrictive` / `moderate` / `minimal`).
+- `admissibleAt` now takes a `CryptoContext` parameter:
+  ```
+  def admissibleAt
+    (level : Level) (cryptoCtx : CryptoContext) (input : Array Nat) : Bool
+  ```
+  The `CryptoContext` inductive has two constructors at v0.13.0:
+  `nonCrypto` (general Unicode admission; K-family ignored) and
+  `bip39Mnemonic` (adds K1 to the effective rejection set).  K2
+  / K3 will extend the enum when those families ship.
+- Existing callers must pass `.nonCrypto` to preserve v0.12.0
+  semantics: `admissibleAt .restrictive #[..]` → `admissibleAt
+  .restrictive .nonCrypto #[..]`.
 - Rationale (per `L6-cryptographic-stability.md`): K-family is
   highly context-dependent — applicable only when the input is
-  intended as a BIP-39 mnemonic.  Applying K1 to general
-  Unicode input would constant-reject anything not coincidentally
-  in the BIP-39 vocabulary.
-- `restrictive_rejection_size = 23` and the eight
-  monotonicity-witness theorems (`monotone_ascii_hello`,
+  declared as a crypto-shaped input.  Without the context
+  parameter, callers had two bad options: include K1 in
+  rejection sets (constant-rejects general Unicode input that
+  isn't BIP-39 vocabulary) OR silently exclude K1 (footgun for
+  callers actually verifying mnemonics).  The parameter makes
+  the choice explicit at the call site.
+- The seven existing monotonicity theorems (`monotone_ascii_hello`,
   `monotone_lone_rlo`, `monotone_nethereum`,
   `monotone_math_italic_admin`, `monotone_greek_polytonic`,
   `monotone_fdfa`, `monotone_modified_utf8_nul`,
-  `monotone_mixed_high_codepoint`) all close unchanged.
+  `monotone_mixed_high_codepoint`) all close unchanged after
+  threading `.nonCrypto` through.
+- Two new theorems pin the context-gating behaviour:
+  `crypto_ctx_gates_mixed_case` shows "Hello" admits under
+  `nonCrypto` but rejects under `bip39Mnemonic` (K1's
+  `mixedCase` fires on the capital H);
+  `crypto_ctx_single_word_passes_both` shows that a single
+  canonical-form BIP-39 word "abandon" admits under both
+  contexts.
 - File-level `set_option maxHeartbeats 4000000` added to
   `Level.lean` — `native_decide` on `admissibleAt` now
   elaborates against K1's 10 × 2,048-word wordlist tables,
