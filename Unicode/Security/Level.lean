@@ -398,6 +398,18 @@ theorem monotone_mixed_high_codepoint :
 -- §4 CryptoContext gating — K1 only fires under .bip39Mnemonic
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+/-- Single ASCII U+0020 SPACE alone fires I2 `restrictedStatusCp` —
+    UTS #39 IdentifierStatus.txt classifies U+0020 as Restricted
+    because spaces aren't valid in any identifier.  This documents
+    the design point: any input containing whitespace will be
+    rejected at restrictive (and moderate), regardless of context.
+    Multi-word mnemonics, sentences, and other space-bearing text
+    are not "identifier admissible" by design. -/
+theorem space_alone_fires_I2 :
+    (Unicode.Security.Identity.MixedScriptAdmissibility.detect
+      #[0x20]).classify.isClear = false := by
+  native_decide
+
 /-- Pure ASCII "Hello" is admissible at every level under
     `nonCrypto` — no Unicode-layer hazard fires.  Under
     `bip39Mnemonic` the verdict flips: K1's `mixedCase` fires on
