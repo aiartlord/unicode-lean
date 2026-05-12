@@ -29,7 +29,7 @@ project-local `axiom`, zero runtime escape.
 | UTF-16 / UTF-32 codecs | UAX #44 §3 | `Codec.{Utf16,Utf32}.decodeOne{BE,LE}_encodeOne{BE,LE}` — closed-form per-codepoint roundtrip with surrogate-pair handling |
 | BOM detection | UAX #41 | `Codec.Bom.detect` — UTF-8 / UTF-16 BE+LE / UTF-32 BE+LE precedence |
 | Noncharacters | UAX #44 §5.6 | `Codec.Noncharacters.{count_noncharacters,all_are_noncharacters,all_are_valid_codepoints}` — exactly the 66 designated noncharacters, all in the valid scalar range |
-| Security Conformance Layer | UTS #39 + UAX #9 + UAX #15 (composed) + BIP-39 | `Conformance.Security.<Family>Test.all_rows_pass` — every hand-curated fixture row's verdict closes for each of the 24 detector families |
+| Security Conformance Layer | UTS #39 + UAX #9 + UAX #15 (composed) + BIP-39 + RFC 8785 | `Conformance.Security.<Family>Test.all_rows_pass` — every hand-curated fixture row's verdict closes for each of the 25 detector families |
 
 ## Workflow
 
@@ -69,7 +69,7 @@ unicode-lean/
 │   ├── Normalization/           # 29 files — NFC/NFKC/NFD/NFKD + soundness kernel
 │   ├── Precis/                  # 8 files — RFC 8264 / 8265
 │   ├── Refined.lean
-│   ├── Security/                # Security Conformance Layer — 24 detector
+│   ├── Security/                # Security Conformance Layer — 25 detector
 │   │                            #   families across Covert / Identity / Display /
 │   │                            #   Form / Boundary / Crypto; per-family fixtures
 │   │                            #   under Ucd/Security/ with their own SHA256SUMS
@@ -137,7 +137,7 @@ Every family ships three artefacts:
    `theorem all_rows_pass : rows.all verifyRow = true` via
    `native_decide`, plus row-count and per-section coverage gates.
 
-The 24 families ship across six layers:
+The 25 families ship across six layers:
 
 | Layer | Families |
 |---|---|
@@ -146,13 +146,13 @@ The 24 families ship across six layers:
 | 3 — Display Integrity | D1 SourceDisplayDivergence · D2 FilenameDisguise · D3 RtlInjection · D4 RendererDivergence |
 | 4 — Form Stability | F1 NormalizationBomb · F2 StreamSafeViolation · F3 LocaleCaseInversion · F4 CaseExpansionMismatch · F5 WidthClassConfusion · F6 NfcIdempotenceWitness |
 | 5 — Cross-Layer Boundaries | X1 IdentifierFormDrift · X2 CovertDisplayCompound · X3 ConfusableBidiCompound · X4 AdmissibilityFormDrift |
-| 6 — Cryptographic Stability | K1 Bip39Canonical |
+| 6 — Cryptographic Stability | K1 Bip39Canonical · K2 HashInputStability |
 
 Layer 6 covers Unicode representation drift in cryptographic
 contexts — wallet recovery, signed messages, audit-trail
-provenance.  K1 BIP-39 canonical form has shipped (v0.13.0);
-K2 hash-input Unicode stability and K3 AI watermark
-detectability remain reserved.
+provenance.  K1 BIP-39 canonical form shipped in v0.13.0;
+K2 hash-input Unicode stability shipped in v0.14.0; K3 AI
+watermark detectability remains reserved.
 
 The shared vocabulary lives in `Unicode/Security/Calculus.lean`:
 
@@ -223,7 +223,7 @@ Pin to a tagged release in your `lakefile.lean`:
 
 ```lean
 require unicode from git
-  "https://github.com/jpyxal-straylight/unicode-lean" @ "v0.13.0"
+  "https://github.com/jpyxal-straylight/unicode-lean" @ "v0.14.0"
 ```
 
 Then `lake update` and import the namespaces you need:
