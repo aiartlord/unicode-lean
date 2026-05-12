@@ -128,4 +128,77 @@ namespace K2Classification
 
 end K2Classification
 
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §3 Canonicalisation pipeline
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- True iff `cp` is an ASCII whitespace codepoint that
+    line-oriented hash-input protocols treat as framing rather
+    than content.  Covers U+0020 SPACE, U+0009 TAB, U+000A LF,
+    U+000D CR.  Unicode whitespace (U+00A0, U+2000-U+200A,
+    U+3000) is *content* under K2's threat model and not
+    stripped. -/
+@[inline] def isAsciiWhitespace (cp : Nat) : Bool :=
+  decide (cp = 0x0020) || decide (cp = 0x0009)
+    || decide (cp = 0x000A) || decide (cp = 0x000D)
+
+/-- Count of trailing ASCII whitespace codepoints in `input`. -/
+def countTrailingWhitespace (input : Array Nat) : Nat :=
+  (input.reverse.takeWhile isAsciiWhitespace).size
+
+/-- Strip trailing ASCII whitespace. -/
+def trimTrailing (input : Array Nat) : Array Nat :=
+  input.extract 0 (input.size - countTrailingWhitespace input)
+
+/-- The K2 hash-stable form of an input.  Composes the two
+    canonicalisation stages in spec order: NFC then trim. -/
+def hashStable (input : Array Nat) : Array Nat :=
+  trimTrailing (Unicode.Normalization.NFC.toNFC input)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §4 Canonicalisation spot checks
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- Empty input has empty stable form. -/
+theorem stable_empty :
+    hashStable #[] = #[] := by native_decide
+
+/-- Already-canonical ASCII is a fixed point. -/
+theorem stable_ascii_idempotent :
+    let cps : Array Nat := #[0x61, 0x62, 0x63]
+    hashStable (hashStable cps) = hashStable cps := by native_decide
+
+/-- Trailing U+0020 is stripped. -/
+theorem stable_strips_trailing_space :
+    hashStable #[0x61, 0x20] = #[0x61] := by native_decide
+
+/-- Trailing U+0009 TAB is stripped. -/
+theorem stable_strips_trailing_tab :
+    hashStable #[0x61, 0x09] = #[0x61] := by native_decide
+
+/-- Trailing U+000A LF is stripped. -/
+theorem stable_strips_trailing_lf :
+    hashStable #[0x61, 0x0A] = #[0x61] := by native_decide
+
+/-- Trailing CRLF is stripped. -/
+theorem stable_strips_trailing_crlf :
+    hashStable #[0x61, 0x0D, 0x0A] = #[0x61] := by native_decide
+
+/-- Internal U+0020 between non-whitespace content is
+    preserved — only TRAILING whitespace is framing. -/
+theorem stable_preserves_internal_space :
+    hashStable #[0x61, 0x20, 0x62] = #[0x61, 0x20, 0x62] := by
+  native_decide
+
+/-- Decomposed é (a + combining acute) NFC-composes to U+00E9. -/
+theorem stable_composes_nfc :
+    let cps : Array Nat := #[0x0065, 0x0301]
+    hashStable cps = #[0x00E9] := by native_decide
+
+/-- Unicode whitespace U+00A0 NBSP is content, not framing —
+    trailing NBSP is NOT stripped. -/
+theorem stable_preserves_trailing_nbsp :
+    hashStable #[0x61, 0x00A0] = #[0x61, 0x00A0] := by
+  native_decide
+
 end Unicode.Security.Crypto.HashInputStability
