@@ -201,4 +201,104 @@ theorem stable_preserves_trailing_nbsp :
     hashStable #[0x61, 0x00A0] = #[0x61, 0x00A0] := by
   native_decide
 
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §5 Hazard probes (per-priority position-finders)
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- First position at which `a` and `b` diverge.  Returns
+    `none` when they are identical. -/
+def firstArrayDivergence (a b : Array Nat) : Option Nat :=
+  let n := if a.size ≤ b.size then a.size else b.size
+  match (Array.range n).findSome? (fun i =>
+    if ha : i < a.size then
+      if hb : i < b.size then
+        if a[i] != b[i] then some i else none
+      else none
+    else none) with
+  | some i => some i
+  | none   => if a.size = b.size then none else some n
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §6 Top-level detection
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- The K2 detection function.
+
+    Priority order (first hit wins):
+      1. `trailingWhitespace` — input has trailing ASCII
+         whitespace; canonical form differs by the trim.
+      2. `normalizationDrift` — input != NFC(input); canonical
+         form differs by the NFC normalisation.
+      3. clear                — input is already hash-stable.
+-/
+def detect (input : Array Nat) : K2Verdict :=
+  let stable        := hashStable input
+  let trailingCount := countTrailingWhitespace input
+
+  let nfc       := Unicode.Normalization.NFC.toNFC input
+  let nonNfcPos :=
+    if input == nfc then none else firstArrayDivergence input nfc
+
+  let classification : K2Classification :=
+    if trailingCount > 0 then
+      let p := input.size - trailingCount
+      .hazard (.trailingWhitespace trailingCount) #[p]
+    else match nonNfcPos with
+    | some p => .hazard (.normalizationDrift p) #[p]
+    | none   => .clear
+
+  { input := input,
+    classify := classification,
+    stableForm := stable,
+    stableSize := stable.size }
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §7 Spot-check theorems
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- Empty input is clear. -/
+theorem detect_empty_clear :
+    (detect #[]).classify = .clear := by native_decide
+
+/-- ASCII "abc" is already hash-stable. -/
+theorem detect_ascii_idempotent :
+    (detect #[0x61, 0x62, 0x63]).classify = .clear := by native_decide
+
+/-- Single trailing space fires `trailingWhitespace` at index
+    after the content. -/
+theorem detect_trailing_space :
+    let v := detect #[0x61, 0x20]
+    v.classify.tag = some "TrailingWhitespace"
+    ∧ v.stableSize = 1
+    ∧ v.classify.positions = #[1] := by native_decide
+
+/-- Trailing CRLF fires `trailingWhitespace` with count = 2. -/
+theorem detect_trailing_crlf :
+    let v := detect #[0x61, 0x0D, 0x0A]
+    v.classify.tag = some "TrailingWhitespace"
+    ∧ v.stableSize = 1 := by native_decide
+
+/-- Decomposed é fires `normalizationDrift` at position 0. -/
+theorem detect_decomposed_e_acute :
+    let v := detect #[0x0065, 0x0301]
+    v.classify.tag = some "NormalizationDrift"
+    ∧ v.classify.positions = #[0] := by native_decide
+
+/-- Precomposed é is clear. -/
+theorem detect_precomposed_e_acute_clear :
+    (detect #[0x00E9]).classify = .clear := by native_decide
+
+/-- Priority: trailing whitespace fires before normalization
+    drift when both apply.  Input is decomposed "é " — fires
+    TrailingWhitespace at position 2, not NormalizationDrift
+    at position 0. -/
+theorem detect_priority_trailing_over_nfc :
+    let v := detect #[0x0065, 0x0301, 0x20]
+    v.classify.tag = some "TrailingWhitespace" := by
+  native_decide
+
+/-- Internal-only whitespace passes — only TRAILING fires. -/
+theorem detect_internal_space_clear :
+    (detect #[0x61, 0x20, 0x62]).classify = .clear := by native_decide
+
 end Unicode.Security.Crypto.HashInputStability
