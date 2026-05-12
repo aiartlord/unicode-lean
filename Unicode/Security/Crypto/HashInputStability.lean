@@ -1,0 +1,131 @@
+/-
+  Unicode.Security.Crypto.HashInputStability
+
+  K2 — Detection of inputs that are not in canonical hash-input
+  form.  Per UTS #39 §6.1 + RFC 4880 / 9580 + RFC 8785, an
+  input hashed by a signer must be byte-identical to the input
+  hashed by the verifier; if the two ends pick different
+  canonical forms (NFC vs NFD, trim policy, line-ending
+  convention) the resulting hashes diverge silently — yet both
+  sides believe they signed the same content.
+
+  Threat model.  Tier A₂ (pipeline injector).  Adversary
+  submits text whose canonical form differs across stages of a
+  signing pipeline:
+
+    * PGP signed messages (RFC 4880 / 9580) — body
+      canonicalisation rules vary by signature mode.
+    * RFC 8785 JSON canonicalization — strings must be in NFC
+      before serialisation.
+    * Audit-log entries read back after disk write — line
+      endings normalised by editors.
+    * Webhook signatures — client computes HMAC over UTF-8
+      bytes; server re-encodes and recomputes.
+
+  Canonical form (K2-INV-1):
+
+      hashStable input = trimTrailing (NFC input)
+
+  where `trimTrailing` strips ASCII whitespace
+  `{U+0020 SPACE, U+0009 TAB, U+000A LF, U+000D CR}`.  Unicode
+  whitespace categories (`U+00A0` NBSP, `U+2000..U+200A`,
+  `U+3000` IDEOGRAPHIC SPACE) are NOT stripped — those are
+  content, not framing.
+
+  Sub-threats (priority order, first hit wins):
+
+    1. `trailingWhitespace` — input has trailing ASCII
+       whitespace; the trim step changes byte-length.
+    2. `normalizationDrift` — input != NFC(input); the NFC step
+       changes codepoint content.
+
+  The other four sub-threats listed in
+  `docs/specs/security/L6-cryptographic-stability.md` §K2.3
+  (`encodingMismatch`, `signedMessageRule`,
+  `auditLogReinterpretation`, `webhookSignatureDrift`) require
+  context that a codepoint-only detector cannot access:
+  declared encoding string, RFC profile choice, persistence-
+  boundary state, network-actor identity.  They are declared
+  in `K2SubThreat` for future-extension consistency with the
+  spec; the v1 detector never emits them.
+-/
+
+import Unicode.Security.Calculus
+import Unicode.Normalization.NFC
+
+namespace Unicode.Security.Crypto.HashInputStability
+
+open Unicode.Security.Calculus
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §1 Types
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- Sub-threats K2 can fire.  Names + arguments follow
+    `L6-cryptographic-stability.md` §K2.3.  Only the first two
+    are emitted by the v1 detector; the remaining four require
+    context the codepoint-only API doesn't carry. -/
+inductive K2SubThreat where
+  | normalizationDrift       (firstDivergentPos : Nat)
+  | trailingWhitespace       (count : Nat)
+  | encodingMismatch         (declaredEnc : String) (detectedEnc : String)
+  | signedMessageRule        (rfcRule : String) (firstPos : Nat)
+  | auditLogReinterpretation (firstDivergentPos : Nat)
+  | webhookSignatureDrift    (firstPos : Nat)
+  deriving DecidableEq, Repr, Inhabited
+
+/-- Top-level K2 classification. -/
+inductive K2Classification where
+  | clear
+  | hazard (sub : K2SubThreat) (positions : Array Nat)
+  deriving DecidableEq, Repr, Inhabited
+
+/-- K2 verdict — the structured output of `detect`.
+    `stableSize` is the codepoint count of the hash-stable
+    canonical form; downstream callers compare it against
+    `input.size` to size the byte-drift their hash would see. -/
+structure K2Verdict where
+  input        : Array Nat
+  classify     : K2Classification
+  stableForm   : Array Nat
+  stableSize   : Nat
+  deriving Inhabited
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §2 Universal projections (isClear / tag / positions)
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+namespace K2Classification
+
+@[inline] def isClear : K2Classification → Bool
+  | .clear              => true
+  | .hazard sub ps      =>
+    Function.const (K2SubThreat × Array Nat) false (sub, ps)
+
+@[inline] def tag : K2Classification → Option String
+  | .clear              => none
+  | .hazard sub ps      =>
+    Function.const (Array Nat) (
+      match sub with
+      | .normalizationDrift pos =>
+        Function.const Nat (some "NormalizationDrift") pos
+      | .trailingWhitespace count =>
+        Function.const Nat (some "TrailingWhitespace") count
+      | .encodingMismatch declared detected =>
+        Function.const (String × String) (some "EncodingMismatch")
+          (declared, detected)
+      | .signedMessageRule rfc pos =>
+        Function.const (String × Nat) (some "SignedMessageRule") (rfc, pos)
+      | .auditLogReinterpretation pos =>
+        Function.const Nat (some "AuditLogReinterpretation") pos
+      | .webhookSignatureDrift pos =>
+        Function.const Nat (some "WebhookSignatureDrift") pos
+    ) ps
+
+@[inline] def positions : K2Classification → Array Nat
+  | .clear              => #[]
+  | .hazard sub ps      => Function.const K2SubThreat ps sub
+
+end K2Classification
+
+end Unicode.Security.Crypto.HashInputStability
