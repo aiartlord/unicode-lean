@@ -101,7 +101,7 @@ open Unicode.Security.Calculus
     has a corresponding probe in `detect` and at least one
     fixture row exercising its emission path (pinned by
     `every_subthreat_has_fixture_row` in the conformance
-    harness).  Names follow `L6-cryptographic-stability.md`
+    harness).  Names follow `cryptographic-stability.md`
     §K3.1; arguments carry the position payload the
     harness's attribution column reads back. -/
 inductive SubThreat where
@@ -207,7 +207,8 @@ end Classification
 /-- True iff `cp` is U+202F NARROW NO-BREAK SPACE.  Per UCD this
     is `gc=Zs` (space separator), NOT default-ignorable; the
     K3 detector treats it as a watermark marker on its own
-    inventory because no L1–L5 family classifies it under the
+    inventory because no general-Unicode detector classifies
+    it under the
     same lens. -/
 @[inline] def isNnbsp (cp : Nat) : Bool := decide (cp = 0x202F)
 

@@ -1,7 +1,7 @@
 # AiWatermarkDetectabilityTest.txt
 # UCD version: 16.0.0
 # Security-spec version: 0.1.0
-# Family: K3 — AI Watermark Detectability (character-level v1)
+# Family: AiWatermarkDetectability (character-level)
 # License: Apache-2.0
 #
 # Threat model: an input may carry character-level markers
@@ -17,32 +17,27 @@
 #     provider P's scheme injected to discredit human-written
 #     text as AI-generated.
 #
-# v1 is a character-level detector.  Statistical / token-
-# distribution watermarks (K3.f), per-segment integrity (K3.g),
-# and the genuine-vs-adversarial distinction (K3.c) are
-# deferred.
-#
-# Detection priority (first hit wins):
-#   1. NnbspBoundary            — any U+202F NARROW NO-BREAK SPACE
-#   2. VariationSelectorCarrier — VS NOT adjacent to emoji
-#   3. ZwjNonEmoji              — ZWJ NOT adjacent to emoji
-#   4. DefaultIgnorableCarrier  — residual Default_Ignorable_Code_Point
-#
-# Six additional spec sub-threats (Gpt5ZwspModulo,
-# EmDashPattern, SmartQuoteAlternation, StatisticalTokenChoice,
-# Adversarial, Unknown) are declared in SubThreat for
-# spec consistency but require analytical context (statistical
-# regularity, per-provider modulo schedules) that the
-# codepoint-only detector cannot supply.  v1 never emits them.
+# Detection priority (first match wins):
+#   1.  Adversarial             — NNBSP arithmetic ≥ 3 markers
+#   2.  Gpt5ZwspModulo          — ZWSP arithmetic ≥ 3 markers
+#   3.  Unknown                 — ≥ 2 distinct invisible categories
+#   4.  NnbspBoundary           — single-category NNBSP
+#   5.  VariationSelectorCarrier — VS NOT adjacent to emoji
+#   6.  ZwjNonEmoji              — ZWJ NOT adjacent to emoji
+#   7.  SmartQuoteAlternation   — paired curly quotes, no straights
+#   8.  EmDashPattern           — em-dashes, no hyphen-minus
+#   9.  StatisticalTokenChoice  — input contains AI-favored vocab
+#   10. DefaultIgnorableCarrier — single-category residual DI
 #
 # Format:
 #   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
 #
-# Attribution keys recognised by the K3 conformance harness:
+# Attribution keys recognised by the AiWatermarkDetectability
+# conformance harness:
 #   markerCount=<N>  — codepoint count of the fired scheme's markers
 #                      (0 when clear)
 #
-# Classifications produced by the K3 detector:
+# Classifications produced by the AiWatermarkDetectability detector:
 #   Clear
 #   Hazard:NnbspBoundary
 #   Hazard:VariationSelectorCarrier
@@ -66,14 +61,14 @@
 
 # Emoji-ZWJ sequence 👩‍🔬 (woman + ZWJ + microscope = woman-
 # scientist).  The ZWJ is adjacent to emoji bases on BOTH
-# sides — legitimate emoji-ZWJ sequence, K3 stays clear.
+# sides — legitimate emoji-ZWJ sequence, the detector stays clear.
 1F469 200D 1F52C; Clear; ; markerCount=0; # 👩‍🔬 emoji-ZWJ sequence
 
 # @section Clear
 # @level strict
 
 # Emoji + VS16 — explicit emoji-presentation selector after
-# an emoji base.  Legitimate UTS #51 usage; K3 stays clear.
+# an emoji base.  Legitimate UTS #51 usage; the detector stays clear.
 # Pins the VS emoji-adjacency exclusion.
 1F600 FE0F; Clear; ; markerCount=0; # 😀 + VS16 emoji presentation
 
@@ -115,8 +110,9 @@
 61 00AD 62; Hazard:DefaultIgnorableCarrier; 1; markerCount=1; # "a SOFT-HYPHEN b"
 
 # ZWSP (U+200B) — default-ignorable, not ZWJ, not VS, not
-# NNBSP.  Fires DefaultIgnorableCarrier.  C3 BareZeroWidth
-# also fires on the same byte (covert-channel lens); K3 is
+# NNBSP.  Fires DefaultIgnorableCarrier.  ZeroWidthPayload's
+# BareZeroWidth also fires on the same byte (covert-channel
+# lens); AiWatermarkDetectability is
 # the watermark-attribution lens.  Composite rejection at
 # higher Levels.
 61 200B 62; Hazard:DefaultIgnorableCarrier; 1; markerCount=1; # "a ZWSP b"
@@ -149,7 +145,7 @@
 # Three NNBSPs at arithmetic-progression positions (1, 3, 5 —
 # gap 2) — too-regular placement, fires Adversarial.  This is
 # the v1 character-level heuristic for "fake watermark
-# injection" per K3-INV-3.
+# injection" per the L6 spec's invariant 3.
 61 202F 62 202F 63 202F 64; Hazard:Adversarial; 1, 3, 5; markerCount=3; # NNBSP every 2 cps — too regular
 
 # @section Gpt5ZwspModulo

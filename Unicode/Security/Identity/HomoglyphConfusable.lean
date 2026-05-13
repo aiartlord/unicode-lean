@@ -24,7 +24,7 @@
 
   Scope.
 
-    * 8 sub-threats per the L2 identity-spoofing spec.
+    * 8 sub-threats per the identity-spoofing spec.
     * Canonical-target list of ~30 commonly-targeted brand and
       crypto-package names.  The list is the maintenance
       surface for new attack targets; expansion is mechanical
@@ -285,7 +285,7 @@ def detect (input : Array Nat) : Verdict :=
     matchedTargets := matchedNames }
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- §6 Projection helpers (mirrors L1 pattern)
+-- §6 Projection helpers (mirrors the covert-channel pattern)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Fixture-row tag string for each `SubThreat` constructor. -/

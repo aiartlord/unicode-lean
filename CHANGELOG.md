@@ -9,13 +9,14 @@ might depend on).
 
 ## v0.17.0 — 2026-05-13
 
-Productionization pass over the K-family detectors.  Expands
-the AI-favored vocabulary catalog, adds three new RFC profiles
-to the K2 signed-message-rule probe, and introduces a K3
-`Context` type carrying tolerance parameters for the modulo
-probes.
+Productionization pass over the Layer-6 (Cryptographic
+Stability) detectors.  Expands the AI-favored vocabulary
+catalog, adds three new RFC profiles to
+HashInputStability's signed-message-rule probe, and
+introduces an AiWatermarkDetectability `Context` type
+carrying tolerance parameters for the modulo probes.
 
-### Added — K3 (AiWatermarkDetectability)
+### Added — AiWatermarkDetectability
 
 - `Context` structure with two tolerance fields:
   `zwspModuloTolerance` (parameter for the
@@ -41,7 +42,7 @@ probes.
   medium / phrase-fragment) with curation notes in the data
   file.
 
-### Added — K2 (HashInputStability)
+### Added — HashInputStability
 
 - Three new RFC profiles in `RfcRule`:
   `rfc7515JwsBase64Url` (JWS compact-serialisation alphabet
@@ -59,9 +60,10 @@ probes.
 
 ### Module header
 
-K2 header updated to list seven RFC rules (not four).  K3
-header is unchanged from v0.16.1 — the new `Context` is
-appended without disturbing the existing probe inventory.
+HashInputStability header updated to list seven RFC rules
+(not four).  AiWatermarkDetectability header is unchanged
+from v0.16.1 — the new `Context` is appended without
+disturbing the existing probe inventory.
 
 Full repo build: 200/200 jobs.  All six gates clean.
 
@@ -78,26 +80,28 @@ behavioural regression, all six gates clean.
     = levelAdmissible level input && cryptoAdmissible ctx input`.
   Closes by `rfl`; spells out the architectural invariant on the
   public surface.
-- `theorem every_subthreat_has_fixture_row` in both K2 and K3
-  conformance harnesses — checks at build time that every
-  declared `SubThreat` constructor has at least one fixture row
+- `theorem every_subthreat_has_fixture_row` in both
+  HashInputStability and AiWatermarkDetectability conformance
+  harnesses — checks at build time that every declared
+  `SubThreat` constructor has at least one fixture row
   exercising its emission path.  Catches the "structurally
-  reachable but no fixture" failure mode that prompted the K3
-  `unknown` redefinition in v0.16.0.
-- `Unicode/Ucd/Security/AiFavoredVocabulary.txt` — extracts the
-  K3 `statisticalTokenChoice` catalog from a hardcoded array
-  into a hash-pinned data file (3 entries: "delve", "tapestry",
-  "moreover").  Loaded via `include_str`; SHA-256 pinned in the
-  Security manifest.  Establishes the maintenance path the
-  module docstring already names.
+  reachable but no fixture" failure mode that prompted the
+  AiWatermarkDetectability `unknown` redefinition in v0.16.0.
+- `Unicode/Ucd/Security/AiFavoredVocabulary.txt` — extracts
+  the `statisticalTokenChoice` catalog from a hardcoded
+  array into a hash-pinned data file (3 entries: "delve",
+  "tapestry", "moreover").  Loaded via `include_str`;
+  SHA-256 pinned in the Security manifest.  Establishes the
+  maintenance path the module docstring already names.
 
 ### Changed
 
-- K2's `encodingMismatch` probe now does a real Unicode-scalar
-  validity check.  When the input contains a codepoint that is
-  not a valid scalar (out-of-range or surrogate), the probe
-  fires with `detectedEnc = "invalid"` and the position of the
-  first invalid scalar — regardless of the declared encoding.
+- HashInputStability's `encodingMismatch` probe now does a
+  real Unicode-scalar validity check.  When the input
+  contains a codepoint that is not a valid scalar (out-of-
+  range or surrogate), the probe fires with
+  `detectedEnc = "invalid"` and the position of the first
+  invalid scalar — regardless of the declared encoding.
   Two new spot-check theorems pin the new firing path:
   `detect_encoding_invalid_surrogate` (U+D800 in input) and
   `detect_encoding_invalid_out_of_range` (U+110000 in input).
@@ -111,12 +115,13 @@ behavioural regression, all six gates clean.
 
 ### Documentation (gitignored, internal)
 
-- Per-family submission docs renamed `<Code>-*.md` → `*.md`
-  (drops the C/I/D/F/X/K prefix from filenames).  Index README
-  updated accordingly with explanatory paragraph.
-- K2 and K3 per-family specs retract their "deferred to v2"
-  framing; the variant tables now reflect v0.16.0 firing paths.
-- `L6-cryptographic-stability.md` code blocks updated to use
+- Per-family submission docs renamed to drop the project-
+  internal layer-letter prefixes from the filenames.  Index
+  README updated accordingly with explanatory paragraph.
+- HashInputStability and AiWatermarkDetectability per-family
+  specs retract their "deferred to v2" framing; the variant
+  tables now reflect v0.16.0 firing paths.
+- `cryptographic-stability.md` code blocks updated to use
   `<Family>.Classification` / `<Family>.SubThreat` /
   `<Family>.Verdict` (namespace-qualified long names) instead
   of the prefixed short forms.
@@ -124,29 +129,33 @@ behavioural regression, all six gates clean.
 ## v0.16.0 — 2026-05-13
 
 The "no deferred variants" release.  Retracts the "deferred to
-v2" framing of v0.14.0 (K2 four context-bearing variants) and
-v0.15.0 (K3 six refinement variants); both sets are now
-implemented and emit on real inputs.  Drops the project-
-internal C/I/D/F/X/K + ordinal short-code taxonomy from the
-public surface: types, FamilyResult fields, rejectionSet
-strings, and the Family inductive constructors all use long
-descriptive names exclusively.  README adds an explicit
-disclaimer that the short codes were project-internal, never
-Unicode-standard nomenclature.
+v2" framing of v0.14.0 (HashInputStability's four context-
+bearing variants) and v0.15.0 (AiWatermarkDetectability's six
+refinement variants); both sets are now implemented and emit
+on real inputs.  Drops the project-internal layer-letter +
+ordinal short-code taxonomy from the public surface: types,
+FamilyResult fields, rejectionSet entries, and the Family
+inductive constructors all use long descriptive names
+exclusively.  README adds an explicit disclaimer that the
+short codes were project-internal, never Unicode-standard
+nomenclature.
 
 ### Breaking API changes
 
-The detector type names lose their letter-prefix:
+The detector type names lose their letter-prefix.  For
+example:
 
   Before                          After
   ------------------------------  ------------------------
   TagBlockPayload.C1Verdict       TagBlockPayload.Verdict
   TagBlockPayload.C1Classification TagBlockPayload.Classification
   TagBlockPayload.C1SubThreat     TagBlockPayload.SubThreat
-  HashInputStability.K2Verdict    HashInputStability.Verdict
-  ...
 
-Calculus.Family inductive constructors:
+(Every detector module in `Unicode/Security/*` follows the
+same shape — the prefix is dropped uniformly.)
+
+Calculus.Family inductive constructors rename to long-form
+lowerCamelCase.  Examples:
 
   Before        After
   ------------  -----------------------------
@@ -155,7 +164,6 @@ Calculus.Family inductive constructors:
   .K1           .bip39Canonical
   .K2           .hashInputStability
   .K3           .aiWatermarkDetectability
-  ...
 
 RunAll.FamilyResult drops the short-code `family : String`
 field; the previous `fullName : String` is renamed to
@@ -167,7 +175,7 @@ Level.rejectionSet arrays now hold long names ("TagBlockPayload",
 CryptoContext.toFamilies returns long names ("Bip39Canonical",
 "HashInputStability", "AiWatermarkDetectability").
 
-### Implemented — K2 (HashInputStability) four previously-deferred variants
+### Implemented — HashInputStability's four previously-deferred variants
 
 New `Context` + `RfcRule` types and a `detectWithContext` entry
 point.  The bare `detect input` wrapper is preserved; calling
@@ -188,7 +196,7 @@ trailingWhitespace / normalizationDrift.
 HashInputStabilityTest.txt: 16 → 26 rows.  Four new
 coverage gates.
 
-### Implemented — K3 (AiWatermarkDetectability) six previously-deferred variants
+### Implemented — AiWatermarkDetectability's six previously-deferred variants
 
 All six implementable at the character level — no token-stream
 API, no statistical baseline required.
@@ -221,21 +229,23 @@ new `unknown` priority above single-category probes.
 
 `admissibleAt` is now defined as `levelAdmissible level input
 && cryptoAdmissible cryptoCtx input` — two orthogonal
-predicates.  This makes the K-family's distinguishing power
-directly observable as a difference in `cryptoAdmissible`,
-even on inputs that L1–L5 already rejects.  Mathematically
-equivalent to the prior union-based form; all existing
-native_decide theorems close unchanged.
+predicates.  This makes a cryptographic-context detector's
+distinguishing contribution directly observable as a
+difference in `cryptoAdmissible`, even on inputs that the
+Covert / Identity / Display / Form / Boundary detectors already
+reject.  Mathematically equivalent
+to the prior union-based form; all existing native_decide
+theorems close unchanged.
 
 ### README — family naming disclaimer
 
-New "A note on family naming" subsection: the C/I/D/F/X/K
-codes are project-internal taxonomy invented to organise the
-26-family layered roadmap, not Unicode-standard nomenclature.
-UAX/UTS uses sequential document numbers (UAX #9, UTS #39)
-plus spelled-out property names.  Any upstream submission of
-this material to the Unicode Consortium would land under the
-long-form names only.
+New "A note on family naming" subsection: the layer-letter +
+ordinal short codes are project-internal taxonomy invented to
+organise the 26-family layered roadmap, not Unicode-standard
+nomenclature.  UAX/UTS uses sequential document numbers (UAX
+#9, UTS #39) plus spelled-out property names.  Any upstream
+submission of this material to the Unicode Consortium would
+land under the long-form names only.
 
 ### Module / fixture / harness counts (unchanged)
 
@@ -243,32 +253,46 @@ long-form names only.
 - 26 conformance harnesses.
 - 26 SHA-pinned base fixtures.
 
-K2 fixture: 16 → 26 rows.  K3 fixture: 16 → 27 rows.  All
-other fixtures unchanged.
+HashInputStability fixture: 16 → 26 rows.
+AiWatermarkDetectability fixture: 16 → 27 rows.  All other
+fixtures unchanged.
 
 All six gates clean.  Full repo: 200/200 jobs.
 
 ### Migration
 
-Downstream consumers using:
+The migration shape for downstream consumers is purely a
+type-name rename.  Where prior code held a string short code
+or a short-prefixed type, the new code holds the long-form
+module name.  Examples:
 
-  `r.family = "K1"`  →  `r.family = "Bip39Canonical"`
-  `Family.K3`        →  `Family.aiWatermarkDetectability`
-  `K2Verdict`        →  `HashInputStability.Verdict`
+  Before                  After
+  ----------------------  -----------------------------------
+  r.family = "K1"         r.family = .bip39Canonical
+                          (the field is now an enum, not a String)
+  Family.K3               Family.aiWatermarkDetectability
+  HashInputStability.K2Verdict  HashInputStability.Verdict
+  AiWatermarkDetectability.K3Classification
+                          AiWatermarkDetectability.Classification
 
-The bare `Bip39Canonical.detect input` / `HashInputStability.detect
-input` / `AiWatermarkDetectability.detect input` APIs are
-unchanged in shape; only the type-name prefix is dropped.  K2's
-extended surface adds `detectWithContext` as a new entry point.
+The bare `Bip39Canonical.detect input`,
+`HashInputStability.detect input`, and
+`AiWatermarkDetectability.detect input` entry-point names are
+unchanged in shape; only the qualified TYPE names lose the
+prefix.  HashInputStability's extended surface adds
+`detectWithContext` as a new entry point.
 
 ## v0.15.0 — 2026-05-12
 
-The "K3 AI watermark detectability" release.  Third and final
-Layer-6 family in the 26-family roadmap.  Moves the Security
-Conformance Layer from 25/26 to **26/26** families — the
-character-level Unicode security scope is now complete.
+The "AiWatermarkDetectability" release.  Third and final
+family in the 26-family roadmap; ships the character-level
+AI-watermark detector under
+`Unicode.Security.Crypto.AiWatermarkDetectability` and moves
+the Security Conformance Layer from 25/26 to **26/26**
+families — the character-level Unicode security scope is now
+complete.
 
-### Added — Layer 6, family K3 (v1, character-level)
+### Added — AiWatermarkDetectability (character-level)
 
 - `Unicode.Security.Crypto.AiWatermarkDetectability` detector
   module.  Implements four priority-ordered codepoint probes
@@ -283,20 +307,14 @@ character-level Unicode security scope is now complete.
 - Six additional spec sub-threats (`gpt5ZwspModulo`,
   `emDashPattern`, `smartQuoteAlternation`,
   `statisticalTokenChoice`, `adversarial`, `unknown`) are
-  declared in `K3SubThreat` for spec consistency with
-  `L6-cryptographic-stability.md` §K3.1 but require analytical
+  declared in `SubThreat` for spec consistency with
+  `cryptographic-stability.md` but require analytical
   context the codepoint-only detector cannot supply (per-
   provider modulo schedule, statistical regularity over the
   document, externally-trained classifier).  v1 never emits
-  them.
+  them.  (They are implemented in v0.16.0.)
 - `Unicode/Ucd/Security/AiWatermarkDetectabilityTest.txt` —
-  16 hand-curated rows across 5 sub-threat sections (Clear:
-  empty / ASCII / CJK / emoji-alone / legitimate emoji-ZWJ
-  sequence / emoji+VS16 emoji-presentation; NnbspBoundary:
-  single / aggregated multi-NNBSP / priority pin with
-  default-ignorable; VariationSelectorCarrier: VS1 / VS16-not-
-  after-emoji / IVS1; ZwjNonEmoji: ZWJ in ASCII;
-  DefaultIgnorableCarrier: SOFT HYPHEN / ZWSP / CGJ).
+  16 hand-curated rows across 5 sub-threat sections.
 - `Unicode.Conformance.Security.AiWatermarkDetectabilityTest`
   — `theorem all_rows_pass : rows.all verifyRow = true := by
   native_decide` plus five per-section coverage gates.
@@ -310,35 +328,38 @@ Attackers may strip the markers via normalisation, or
 adversarially inject fake markers to discredit human-written
 text.  A character-level detector cannot distinguish a
 genuine provenance marker from an adversarial injection
-without statistical protocol-consistency analysis (K3-OQ-2,
-deferred), so v1 emits `suspectedWatermark` for both shapes
-and leaves the genuine-vs-adversarial decision to downstream
-provider-specific verification.
+without statistical protocol-consistency analysis (deferred
+at this release), so v1 emits `suspectedWatermark` for both
+shapes and leaves the genuine-vs-adversarial decision to
+downstream provider-specific verification.
 
 ### v1 scope explicitly deferred to v2
 
-- **Statistical / token-distribution watermarks** (spec K3.f) —
+- **Statistical / token-distribution watermarks** —
   distribution-based markers require token-stream access and a
   per-provider distribution baseline.  Not a character-level
   test.
-- **Per-segment integrity** (spec K3.g) — multi-paragraph text
-  with per-segment markers introduces segment-boundary
-  ambiguity (K3-OQ-3).  v1 is whole-input only.
-- **Genuine-vs-adversarial distinction** (spec K3.c) — requires
+- **Per-segment integrity** — multi-paragraph text with per-
+  segment markers introduces segment-boundary ambiguity.
+  v1 is whole-input only.
+- **Genuine-vs-adversarial distinction** — requires
   statistical protocol-consistency.  v1 reports the matched
   scheme without authentication.
 
 ### Behaviour — RunAll aggregator
 
-- `runAll` now returns 26 entries; K3 is at index 25, layer 6.
+- `runAll` now returns 26 entries; AiWatermarkDetectability is
+  at index 25, layer 6.
 - `runAll_size` bumped 25 → 26.
-- `runAll_layer_6_count = 3` (K1 + K2 + K3).
+- `runAll_layer_6_count = 3` (Bip39Canonical,
+  HashInputStability, AiWatermarkDetectability).
 
 ### Behaviour — Level admission predicate
 
 This release **factors `admissibleAt` into two orthogonal
 predicates** to fix an architectural defect identified during
-K3 design.  The fix lands one commit before the K3 ship.
+AiWatermarkDetectability design.  The fix lands one commit
+before the family ships.
 
 - New `levelAdmissible : Level → Array Nat → Bool` — Level-only
   admission, independent of CryptoContext.
@@ -349,37 +370,45 @@ K3 design.  The fix lands one commit before the K3 ship.
   Mathematical equivalence to the prior union-based form is
   immediate by distribution of `any` over disjunction; all
   existing `native_decide` theorems close unchanged.
-- Why: the prior union-based shape masked K-family
-  contributions whenever an L1–L5 family also rejected the
-  same input.  E.g. F6 NfcIdempotenceWitness rejects every
-  non-NFC input at `.restrictive`/`.moderate`, so the K2
+- Why: the prior union-based shape masked a cryptographic-
+  context detector's contribution whenever a Covert /
+  Identity / Display / Form / Boundary detector also
+  rejected the same input.  E.g.
+  NfcIdempotenceWitness rejects every non-NFC input at
+  `.restrictive`/`.moderate`, so the HashInputStability
   `.hashInput` gating demonstration was forced to `.minimal`.
-  The same shadowing would have made K3's `.aiAttribution`
-  gating invisible at `.restrictive` (where C3 / I2 / D1 / F6
-  / K1 all flag U+202F).  Factoring the predicate exposes the
-  K-family's distinguishing power at every Level.
+  The same shadowing would have made AiWatermarkDetectability's
+  `.aiAttribution` gating invisible at `.restrictive` (where
+  ZeroWidthPayload / MixedScriptAdmissibility /
+  SourceDisplayDivergence / NfcIdempotenceWitness /
+  Bip39Canonical all flag U+202F).  Factoring the predicate
+  exposes the cryptographic-context distinguishing
+  contribution at every Level.
 
 - New `CryptoContext` constructor `aiAttribution`.  Family
-  map: `nonCrypto → ∅`, `bip39Mnemonic → {K1}`,
-  `hashInput → {K2}`, `aiAttribution → {K3}`.
+  map: `nonCrypto → ∅`, `bip39Mnemonic → {Bip39Canonical}`,
+  `hashInput → {HashInputStability}`,
+  `aiAttribution → {AiWatermarkDetectability}`.
 - New theorem `crypto_admissible_gates_nnbsp_under_aiAttribution`
-  demonstrates K3's context-gating: `#[0x61, 0x202F, 0x62]`
-  ("a NNBSP b") admits under `cryptoAdmissible .nonCrypto`
-  and rejects under `cryptoAdmissible .aiAttribution`,
-  Level-independent.  Companion
-  `level_admissible_rejects_nnbsp_at_restrictive` pins that
-  the L1–L5 set also rejects the same input at `.restrictive`,
-  documenting the masking effect on the composite surface.
-- K2's gating demonstration upgraded analogously:
-  `crypto_admissible_gates_decomposed_e_acute` is the new
-  level-independent primary witness; the previous
+  demonstrates AiWatermarkDetectability's context-gating:
+  `#[0x61, 0x202F, 0x62]` ("a NNBSP b") admits under
+  `cryptoAdmissible .nonCrypto` and rejects under
+  `cryptoAdmissible .aiAttribution`, Level-independent.
+  Companion `level_admissible_rejects_nnbsp_at_restrictive`
+  pins that the Covert / Identity / Display / Form /
+  Boundary set also rejects the same input at
+  `.restrictive`, documenting the masking effect on the
+  composite surface.
+- HashInputStability's gating demonstration upgraded
+  analogously: `crypto_admissible_gates_decomposed_e_acute`
+  is the new level-independent primary witness; the previous
   `.minimal`-only `admissibleAt`-based shape is retained as
   `crypto_ctx_gates_decomposed_e_acute_at_minimal` for the
   composite-form co-witness.
 
-### Module / fixture / harness counts (post-K3)
+### Module / fixture / harness counts
 
-- 26 detector modules (23 Unicode + 3 K-family).
+- 26 detector modules (23 Unicode + 3 cryptographic-stability).
 - 26 conformance harnesses.
 - 26 SHA-pinned base fixtures.
 
@@ -387,27 +416,29 @@ All six gates clean.
 
 ## v0.14.0 — 2026-05-12
 
-The "K2 hash-input Unicode stability" release.  Second Layer-6
-family.  Moves the Security Conformance Layer from 24 to 25 of
-the 26 planned families.
+The "HashInputStability" release.  Second family under
+Cryptographic Stability.  Moves the Security Conformance Layer
+from 24 to 25 of the 26 planned families.
 
-### Added — Layer 6, family K2
+### Added — HashInputStability
 
 - `Unicode.Security.Crypto.HashInputStability` detector module.
-  Implements the K2 canonical hash-input form:
+  Implements the canonical hash-input form:
   `hashStable input = trimTrailing (NFC input)`, where
   `trimTrailing` strips ASCII whitespace
   `{U+0020 SPACE, U+0009 TAB, U+000A LF, U+000D CR}`.  Unicode
   whitespace (`U+00A0`, `U+3000`, etc.) is content, not framing,
-  and NOT stripped — distinguishes K2's ASCII-only trim from
-  K1's BIP-39 `{U+0020, U+3000}` inventory.
-- Six K2 sub-threats, two emitted by the v1 detector:
+  and NOT stripped — distinguishes this detector's ASCII-only
+  trim from Bip39Canonical's BIP-39 `{U+0020, U+3000}`
+  inventory.
+- Six sub-threats, two emitted by the bare-input detector:
   `trailingWhitespace` (priority 1) and `normalizationDrift`
   (priority 2).  The other four (`encodingMismatch`,
   `signedMessageRule`, `auditLogReinterpretation`,
   `webhookSignatureDrift`) require context the codepoint-only
-  detector cannot access; declared in `K2SubThreat` for spec
-  consistency, never emitted in v1.
+  detector cannot access; declared in `SubThreat` for spec
+  consistency, not emitted at this release.  (They become
+  emittable in v0.16.0.)
 - `Unicode/Ucd/Security/HashInputStabilityTest.txt` — 16 hand-
   curated rows across 4 sections (Clear: empty / ASCII / NFC-
   é / 中文 / mixed / internal-space / trailing-U+3000;
@@ -426,34 +457,40 @@ canonicalization, audit-log entries read after disk write, and
 webhook signatures all hash an input that the signer thinks is
 canonical and the verifier independently re-canonicalises.  If
 the two sides pick different conventions (NFC vs NFD, trim
-convention, line-ending) the hashes diverge silently.  K2 is
-the witness that an input satisfies the hash-input canonical-
-form contract.
+convention, line-ending) the hashes diverge silently.
+HashInputStability is the witness that an input satisfies the
+hash-input canonical-form contract.
 
 ### Behaviour — RunAll aggregator
 
-- `runAll` now returns 25 entries; K2 is at index 24, layer 6.
+- `runAll` now returns 25 entries; HashInputStability is at
+  index 24, layer 6.
 - `runAll_size` bumped 24 → 25.
-- `runAll_layer_6_count = 2` (K1 + K2).
+- `runAll_layer_6_count = 2` (Bip39Canonical and
+  HashInputStability).
 
 ### Behaviour — Level admission predicate
 
 - `CryptoContext` extended with `hashInput` constructor.
-  `toFamilies .hashInput = #["K2"]`.  When K3 ships, a fourth
-  constructor `aiAttribution` will add K3 to the family list.
+  `toFamilies .hashInput = #["HashInputStability"]`.  A fourth
+  constructor (`aiAttribution`) lands in v0.15.0 alongside
+  AiWatermarkDetectability.
 - New theorem `crypto_ctx_gates_decomposed_e_acute` demonstrates
-  K2's context-gating: decomposed é admits at `.minimal`
-  `.nonCrypto` (no structural-violation family fires) but
-  rejects at `.minimal` `.hashInput` (K2 fires
-  `normalizationDrift`).  The demonstration drops to `.minimal`
-  rather than `.restrictive` because F6 NfcIdempotenceWitness
-  sits in both restrictive's and moderate's rejection sets —
-  context-gating's distinguishing power is only visible at the
-  level where F6 isn't already rejecting the input.
+  HashInputStability's context-gating: decomposed é admits at
+  `.minimal` `.nonCrypto` (no structural-violation family
+  fires) but rejects at `.minimal` `.hashInput` (the detector
+  fires `normalizationDrift`).  The demonstration drops to
+  `.minimal` rather than `.restrictive` because
+  NfcIdempotenceWitness sits in both restrictive's and
+  moderate's rejection sets — context-gating's distinguishing
+  contribution is only visible at the level where
+  NfcIdempotenceWitness isn't already rejecting the input.
+  (v0.15.0 factors `admissibleAt` to make the contribution
+  visible at every Level.)
 
-### Module / fixture / harness counts (post-K2)
+### Module / fixture / harness counts
 
-- 25 detector modules (23 Unicode + 2 K-family).
+- 25 detector modules (23 Unicode + 2 cryptographic-stability).
 - 25 conformance harnesses.
 - 25 SHA-pinned base fixtures.
 
@@ -461,18 +498,17 @@ All six gates clean.
 
 ### Documentation
 
-- README: family count 24 → 25; Layer-6 row gains K2; pin bumps
-  to v0.14.0.
-- Internal `docs/specs/security/per-family/K2-hash-input-stability.md`
-  written (gitignored).
+- README: family count 24 → 25; Layer-6 row gains
+  HashInputStability; pin bumps to v0.14.0.
+- Internal per-family submission doc written (gitignored).
 
 ## v0.13.0 — 2026-05-12
 
-The "K1 BIP-39 canonical form" release.  First family in
-Layer 6 — Cryptographic Stability.  Moves the Security
-Conformance Layer from 23 to 24 of the 26 planned families.
+The "Bip39Canonical" release.  First family under
+Cryptographic Stability.  Moves the Security Conformance
+Layer from 23 to 24 of the 26 planned families.
 
-### Added — Layer 6, family K1
+### Added — Bip39Canonical
 
 - `Unicode.Security.Crypto.Bip39Canonical` detector module.
   Implements the BIP-39 canonical-form check: input is passed
@@ -480,7 +516,7 @@ Conformance Layer from 23 to 24 of the 26 planned families.
   + U+3000 whitespace runs → trim leading/trailing U+0020`,
   then each canonical word is looked up against the ten
   pinned BIP-39 wordlists in `Unicode.Generated.BIP39`.
-- Seven K1 sub-threats, fired in priority order:
+- Seven sub-threats, fired in priority order:
   `trailingWhitespace`, `mixedCase`, `whitespaceAnomaly`,
   `nonNFKD`, `wordlistMismatch`, `languageAmbiguous`,
   `nonCanonicalForm` (catch-all).
@@ -500,21 +536,21 @@ A user types a BIP-39 recovery mnemonic; if the typed bytes
 are not in NFKD form and the wallet hashes the bytes directly,
 the derived seed differs from the seed produced by canonical
 input.  Wallet recovery silently fails or derives a different
-wallet.  K1 is the witness that an input satisfies BIP-39's
-canonical-form contract.
+wallet.  Bip39Canonical is the witness that an input satisfies
+BIP-39's canonical-form contract.
 
 ### Behaviour — RunAll aggregator
 
-- `Unicode.Security.RunAll.runAll` now returns 24 entries; K1
-  is the 24th, at layer 6.
+- `Unicode.Security.RunAll.runAll` now returns 24 entries;
+  Bip39Canonical is the 24th, at layer 6.
 - `runAll_size` theorem bumped 23 → 24.
 - `runAll_layer_6_count = 1` added.
 - The pure-ASCII baseline theorem was reformulated:
   `ascii_hello_no_hazards` → `ascii_hello_no_unicode_hazards`
-  filtered to `layer ≤ 5`.  K1 (correctly) fires `mixedCase`
-  on the capital H in "Hello"; the renamed theorem makes
-  explicit that the baseline is "no Unicode-layer detector
-  fires", not "no detector fires anywhere".
+  filtered to `layer ≤ 5`.  Bip39Canonical (correctly) fires
+  `mixedCase` on the capital H in "Hello"; the renamed theorem
+  makes explicit that the baseline is "no Unicode-layer
+  detector fires", not "no detector fires anywhere".
 
 ### Behaviour — Level admission predicate (BREAKING CHANGE)
 
@@ -523,42 +559,49 @@ canonical-form contract.
   def admissibleAt
     (level : Level) (cryptoCtx : CryptoContext) (input : Array Nat) : Bool
   ```
-  The `CryptoContext` inductive has two constructors at v0.13.0:
-  `nonCrypto` (general Unicode admission; K-family ignored) and
-  `bip39Mnemonic` (adds K1 to the effective rejection set).  K2
-  / K3 will extend the enum when those families ship.
+  The `CryptoContext` inductive has two constructors at this
+  release: `nonCrypto` (general Unicode admission; Layer-6
+  detectors ignored) and `bip39Mnemonic` (adds Bip39Canonical
+  to the effective rejection set).  The remaining Layer-6
+  constructors land alongside HashInputStability (v0.14.0
+  adds `hashInput`) and AiWatermarkDetectability (v0.15.0
+  adds `aiAttribution`).
 - Existing callers must pass `.nonCrypto` to preserve v0.12.0
   semantics: `admissibleAt .restrictive #[..]` → `admissibleAt
   .restrictive .nonCrypto #[..]`.
-- Rationale (per `L6-cryptographic-stability.md`): K-family is
-  highly context-dependent — applicable only when the input is
+- Rationale (per `cryptographic-stability.md`): the
+  cryptographic-stability detectors are highly context-
+  dependent — applicable only when the input is
   declared as a crypto-shaped input.  Without the context
-  parameter, callers had two bad options: include K1 in
-  rejection sets (constant-rejects general Unicode input that
-  isn't BIP-39 vocabulary) OR silently exclude K1 (footgun for
-  callers actually verifying mnemonics).  The parameter makes
-  the choice explicit at the call site.
-- The seven existing monotonicity theorems (`monotone_ascii_hello`,
-  `monotone_lone_rlo`, `monotone_nethereum`,
-  `monotone_math_italic_admin`, `monotone_greek_polytonic`,
-  `monotone_fdfa`, `monotone_modified_utf8_nul`,
+  parameter, callers had two bad options: include
+  Bip39Canonical in rejection sets (constant-rejects general
+  Unicode input that isn't BIP-39 vocabulary) OR silently
+  exclude it (footgun for callers actually verifying
+  mnemonics).  The parameter makes the choice explicit at
+  the call site.
+- The seven existing monotonicity theorems
+  (`monotone_ascii_hello`, `monotone_lone_rlo`,
+  `monotone_nethereum`, `monotone_math_italic_admin`,
+  `monotone_greek_polytonic`, `monotone_fdfa`,
+  `monotone_modified_utf8_nul`,
   `monotone_mixed_high_codepoint`) all close unchanged after
   threading `.nonCrypto` through.
 - Two new theorems pin the context-gating behaviour:
   `crypto_ctx_gates_mixed_case` shows "Hello" admits under
-  `nonCrypto` but rejects under `bip39Mnemonic` (K1's
-  `mixedCase` fires on the capital H);
+  `nonCrypto` but rejects under `bip39Mnemonic`
+  (Bip39Canonical's `mixedCase` fires on the capital H);
   `crypto_ctx_single_word_passes_both` shows that a single
   canonical-form BIP-39 word "abandon" admits under both
   contexts.
 - File-level `set_option maxHeartbeats 4000000` added to
   `Level.lean` — `native_decide` on `admissibleAt` now
-  elaborates against K1's 10 × 2,048-word wordlist tables,
-  pushing isDefEq past the default heartbeat budget.
+  elaborates against Bip39Canonical's 10 × 2,048-word
+  wordlist tables, pushing isDefEq past the default
+  heartbeat budget.
 
-### Module / fixture / harness counts (post-K1)
+### Module / fixture / harness counts
 
-- 24 detector modules (23 Unicode + 1 K-family).
+- 24 detector modules (23 Unicode + 1 cryptographic-stability).
 - 24 conformance harnesses.
 - 24 SHA-pinned base fixtures.
 
@@ -568,12 +611,14 @@ Coverage and hash gates report clean at these counts.  The
 
 ### Documentation
 
-- README updated: family count bumped 23 → 24; the Layer table
-  gains a Layer-6 row showing K1 shipped; the Layer-6 reserved
-  paragraph rewritten to "K1 shipped; K2 / K3 reserved".
+- README updated: family count bumped 23 → 24; the Layer
+  table gains a Layer-6 row showing Bip39Canonical shipped;
+  the Layer-6 reserved paragraph rewritten to "Bip39Canonical
+  shipped; HashInputStability and AiWatermarkDetectability
+  reserved".
 - Internal docs under `docs/specs/security/` (gitignored
-  planning materials) gain a per-family K1 spec doc and the
-  Phase 0 checkbox flips for K1.
+  planning materials) gain a per-family Bip39Canonical spec
+  doc and the Phase 0 checkbox flips.
 
 ## v0.12.0 — 2026-05-11
 

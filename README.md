@@ -136,39 +136,48 @@ Every family ships three artefacts:
    `theorem all_rows_pass : rows.all verifyRow = true` via
    `native_decide`, plus row-count and per-section coverage gates.
 
-The 26 families ship across six layers:
+The 26 detectors:
 
-| Layer | Families |
-|---|---|
-| 1 — Covert Channels | TagBlockPayload · VariationSelectorPayload · ZeroWidthPayload · SurrogateReassembly · BidiControlBalance |
-| 2 — Identity Spoofing | HomoglyphConfusable · MixedScriptAdmissibility · EmojiZwjIntegrity · SkinToneVariationForgery |
-| 3 — Display Integrity | SourceDisplayDivergence · FilenameDisguise · RtlInjection · RendererDivergence |
-| 4 — Form Stability | NormalizationBomb · StreamSafeViolation · LocaleCaseInversion · CaseExpansionMismatch · WidthClassConfusion · NfcIdempotenceWitness |
-| 5 — Cross-Layer Boundaries | IdentifierFormDrift · CovertDisplayCompound · ConfusableBidiCompound · AdmissibilityFormDrift |
-| 6 — Cryptographic Stability | Bip39Canonical · HashInputStability · AiWatermarkDetectability |
+**Covert-channel detectors** — TagBlockPayload,
+VariationSelectorPayload, ZeroWidthPayload, SurrogateReassembly,
+BidiControlBalance.
+
+**Identity-spoofing detectors** — HomoglyphConfusable,
+MixedScriptAdmissibility, EmojiZwjIntegrity,
+SkinToneVariationForgery.
+
+**Display-integrity detectors** — SourceDisplayDivergence,
+FilenameDisguise, RtlInjection, RendererDivergence.
+
+**Form-stability detectors** — NormalizationBomb,
+StreamSafeViolation, LocaleCaseInversion, CaseExpansionMismatch,
+WidthClassConfusion, NfcIdempotenceWitness.
+
+**Cross-detector boundary checks** — IdentifierFormDrift,
+CovertDisplayCompound, ConfusableBidiCompound,
+AdmissibilityFormDrift.
+
+**Cryptographic-stability detectors** — Bip39Canonical,
+HashInputStability, AiWatermarkDetectability.
 
 ### A note on family naming
 
-The canonical identifier for every detector is its long-form module
-name (e.g. `AiWatermarkDetectability`, `Bip39Canonical`).  Inside the
-codebase you will occasionally see the short codes `C1`–`C5`,
-`I1`–`I4`, `D1`–`D4`, `F1`–`F6`, `X1`–`X4`, `K1`–`K3` in inline
-comments — those are pre-rename historical references that are
-being phased out.  **The codes are project-internal taxonomy and
-are NOT Unicode-standard nomenclature.**  UAX/UTS uses sequential
-document numbers (UAX #9 Bidi, UAX #15 Normalization, UTS #39
-Security Mechanisms, UTS #51 Emoji) plus spelled-out property names
-(`XID_Start`, `Default_Ignorable_Code_Point`, `Identifier_Status`).
-The Unicode Consortium does not maintain a numbered threat-family
-catalogue at all, so any submission of this material upstream would
+The canonical identifier for every detector is its long-form
+module name.  UAX/UTS uses sequential document numbers (UAX #9
+Bidi, UAX #15 Normalization, UTS #39 Security Mechanisms,
+UTS #51 Emoji) plus spelled-out property names (`XID_Start`,
+`Default_Ignorable_Code_Point`, `Identifier_Status`).  The
+Unicode Consortium does not maintain a numbered threat-family
+catalogue, so any submission of this material upstream would
 land under the long-form names only.
 
-Layer 6 covers Unicode representation drift in cryptographic
-contexts — wallet recovery, signed messages, audit-trail
-provenance, AI provenance attribution.  Bip39Canonical shipped
-in v0.13.0; HashInputStability shipped in v0.14.0;
+The cryptographic-stability detectors cover Unicode
+representation drift in cryptographic contexts — wallet
+recovery, signed messages, audit-trail provenance, AI
+provenance attribution.  Bip39Canonical shipped in v0.13.0;
+HashInputStability shipped in v0.14.0;
 AiWatermarkDetectability (character-level v1) shipped in
-v0.15.0.  All 26 planned families now ship.
+v0.15.0.  All 26 planned detectors now ship.
 
 The shared vocabulary lives in `Unicode/Security/Calculus.lean`:
 

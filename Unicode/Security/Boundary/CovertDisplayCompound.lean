@@ -1,12 +1,11 @@
 /-
   Unicode.Security.Boundary.CovertDisplayCompound
 
-  Cross-Layer Covert × Display Compound.  Layer-5 boundary
-  detector that fires on inputs which combine a Layer-1 covert
-  channel (unregistered variation selectors per
+  Boundary detector that fires on inputs which combine a
+  covert channel (unregistered variation selectors per
   VariationSelectorPayload, or tag-block characters per
-  TagBlockPayload) with a Layer-3 display-deception channel
-  (UAX #9 bidi format controls per RtlInjection).
+  TagBlockPayload) with a display-deception channel (UAX #9
+  bidi format controls per RtlInjection).
 
   Threat model.  Tier A₂..A₃.  A single payload simultaneously
   carries:
@@ -73,7 +72,7 @@ def firstSuspiciousVsPos (input : Array Nat) : Option Nat :=
 
 /-- True iff `cp` is in the tag-block range U+E0000..U+E007F.
     Tag characters are the second covert-channel class detected
-    by Layer 1 (SurrogateReassembly). -/
+    by SurrogateReassembly. -/
 @[inline]
 def isTagBlockChar (cp : Nat) : Bool :=
   Nat.ble 0xE0000 cp && Nat.ble cp 0xE007F

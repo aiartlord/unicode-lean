@@ -155,7 +155,7 @@ def fromTag : String → Option RfcRule
 end RfcRule
 
 /-- Sub-threats this detector can fire.  Names + arguments
-    follow `L6-cryptographic-stability.md` §K2.3; each
+    follow `cryptographic-stability.md`; each
     constructor has at least one fixture row exercising its
     emission path (pinned by `every_subthreat_has_fixture_row`
     in the conformance harness).

@@ -14,8 +14,7 @@
 
   ## What this file defines
 
-    * `Family`            — enumeration of the 26 fixture families
-    * `Layer`             — six-layer grouping over `Family`
+    * `Family`            — enumeration of the 26 detector modules
     * `Severity`          — ordered severity vocabulary
     * `AdversaryTier`     — five-tier adversary capability hierarchy
     * `ClassificationKind` — verdict shape sans family-specific payload
@@ -36,78 +35,39 @@ namespace Unicode.Security.Calculus
 -- §1 Family enumeration
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Enumeration of the 26 fixture families across six layers. Layer
-    membership is given by `Layer.of` below. Each family is a separate
-    sub-project; this enum gives them a single shared name. -/
+/-- Enumeration of the 26 detector modules.  Each constructor
+    names one detector; the order is the order in which
+    `Unicode.Security.RunAll.runAll` walks them, and it is also
+    the priority order callers can rely on when composing
+    verdicts across modules. -/
 inductive Family where
-  -- Layer 1 — Covert Channels
   | tagBlockPayload
-  | variationSelectorPayload    -- GlassWorm class
+  | variationSelectorPayload
   | zeroWidthPayload
-  | surrogateReassembly         -- byte-stream bypass
+  | surrogateReassembly
   | bidiControlBalance
-  -- Layer 2 — Identity Spoofing
-  | homoglyphConfusable         -- Nethereum class
+  | homoglyphConfusable
   | mixedScriptAdmissibility
   | emojiZwjIntegrity
   | skinToneVariationForgery
-  -- Layer 3 — Display Integrity
   | sourceDisplayDivergence
   | filenameDisguise
   | rtlInjection
   | rendererDivergence
-  -- Layer 4 — Form Stability
   | normalizationBomb
   | streamSafeViolation
   | localeCaseInversion
   | caseExpansionMismatch
   | widthClassConfusion
   | nfcIdempotenceWitness
-  -- Layer 5 — Cross-Layer Boundaries
   | identifierFormDrift
   | covertDisplayCompound
   | confusableBidiCompound
   | admissibilityFormDrift
-  -- Layer 6 — Cryptographic Stability
   | bip39Canonical
   | hashInputStability
   | aiWatermarkDetectability
   deriving DecidableEq, Repr, Inhabited
-
-/-- Six-layer grouping over the 26 families. -/
-inductive Layer where
-  | covert        -- L1: TagBlockPayload .. BidiControlBalance (5)
-  | identity      -- L2: HomoglyphConfusable .. SkinToneVariationForgery (4)
-  | display       -- L3: SourceDisplayDivergence .. RendererDivergence (4)
-  | form          -- L4: NormalizationBomb .. NfcIdempotenceWitness (6)
-  | boundary      -- L5: IdentifierFormDrift .. AdmissibilityFormDrift (4)
-  | crypto        -- L6: Bip39Canonical .. AiWatermarkDetectability (3)
-  deriving DecidableEq, Repr, Inhabited
-
-namespace Layer
-
-/-- The layer a family belongs to. Total function. -/
-def of : Family → Layer
-  | .tagBlockPayload | .variationSelectorPayload | .zeroWidthPayload
-  | .surrogateReassembly | .bidiControlBalance
-    => .covert
-  | .homoglyphConfusable | .mixedScriptAdmissibility
-  | .emojiZwjIntegrity | .skinToneVariationForgery
-    => .identity
-  | .sourceDisplayDivergence | .filenameDisguise
-  | .rtlInjection | .rendererDivergence
-    => .display
-  | .normalizationBomb | .streamSafeViolation | .localeCaseInversion
-  | .caseExpansionMismatch | .widthClassConfusion
-  | .nfcIdempotenceWitness
-    => .form
-  | .identifierFormDrift | .covertDisplayCompound
-  | .confusableBidiCompound | .admissibilityFormDrift
-    => .boundary
-  | .bip39Canonical | .hashInputStability | .aiWatermarkDetectability
-    => .crypto
-
-end Layer
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 Severity, adversary tier, conformance level
@@ -291,24 +251,6 @@ def checkBoolKey (kv : KeyValueAttribution) (key : String) (actual : Bool) :
     | other   => Function.const String false other
 
 end KeyValueAttribution
-
--- ═══════════════════════════════════════════════════════════════════════════════
--- §5 Spot checks (sanity for the deriving instances)
--- ═══════════════════════════════════════════════════════════════════════════════
-
-/-- Every family belongs to exactly one layer; layer assignment is total. -/
-theorem layer_of_tagBlockPayload :
-    Layer.of .tagBlockPayload = .covert := rfl
-theorem layer_of_homoglyphConfusable :
-    Layer.of .homoglyphConfusable = .identity := rfl
-theorem layer_of_sourceDisplayDivergence :
-    Layer.of .sourceDisplayDivergence = .display := rfl
-theorem layer_of_normalizationBomb :
-    Layer.of .normalizationBomb = .form := rfl
-theorem layer_of_identifierFormDrift :
-    Layer.of .identifierFormDrift = .boundary := rfl
-theorem layer_of_bip39Canonical :
-    Layer.of .bip39Canonical = .crypto := rfl
 
 /-- Severity ordering is well-defined. -/
 theorem severity_informational_lt_critical :
