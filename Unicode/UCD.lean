@@ -64,10 +64,15 @@ def expectedUcdFiles : List String :=
 -- §1 SHAPE CHECKS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The manifest currently pins 35 files. The exact count is a useful
-    invariant; bumping the count here is the gate for adding a new
-    UCD source file to the distribution. -/
-theorem ucdFileDigests_count : ucdFileDigests.length = 35 := by native_decide
+/-- The trusted base pins 48 UCD source files — one entry per
+    vendored file under `Unicode/Ucd/`, each carrying the
+    SHA-256 of its bytes as written at release time.
+
+    The cardinality is itself proof-relevant: it forces every
+    addition or removal in `Ucd/SHA256SUMS` through this
+    constant, so the trusted base cannot grow or shrink without
+    a visible diff.  Equivalent to a length-indexed manifest. -/
+theorem ucdFileDigests_count : ucdFileDigests.length = 48 := by native_decide
 
 /-- Every digest entry has the expected 64-hex-character SHA-256
     payload. -/
