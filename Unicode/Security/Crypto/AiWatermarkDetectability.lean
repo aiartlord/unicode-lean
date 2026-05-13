@@ -366,29 +366,33 @@ theorem isAdjacentToEmoji_before_smiley :
        2. `gpt5ZwspModulo`          — ZWSP count ≥ 3 AND
                                       positions form an
                                       arithmetic progression.
-       3. `nnbspBoundary`           — any U+202F NNBSP present
-                                      (not caught by
-                                      adversarial).
-       4. `variationSelectorCarrier` — VS NOT adjacent to emoji.
-       5. `zwjNonEmoji`             — ZWJ NOT adjacent to emoji.
-       6. `smartQuoteAlternation`   — paired curly quotes (count
+       3. `unknown`                 — invisible markers from
+                                      ≥ 2 distinct categories
+                                      (NNBSP / VS / ZWJ /
+                                      residual-DI) co-occur in
+                                      the same input.  Means
+                                      "we see watermark markers
+                                      but cannot attribute them
+                                      to a single scheme."
+       4. `nnbspBoundary`           — any U+202F NNBSP present
+                                      (single-category input).
+       5. `variationSelectorCarrier` — VS NOT adjacent to emoji.
+       6. `zwjNonEmoji`             — ZWJ NOT adjacent to emoji.
+       7. `smartQuoteAlternation`   — paired curly quotes (count
                                       ≥ 2) AND no ASCII straight
                                       quotes (the "AI prefers
                                       curly quotes" stylistic
                                       signature).
-       7. `emDashPattern`           — em-dash count ≥ 2 AND no
+       8. `emDashPattern`           — em-dash count ≥ 2 AND no
                                       ASCII hyphen-minus (the
                                       "AI prefers em-dashes"
                                       stylistic signature).
-       8. `statisticalTokenChoice`  — input contains a known
+       9. `statisticalTokenChoice`  — input contains a known
                                       AI-favored lexical pattern
                                       from `aiFavoredVocabulary`.
-       9. `defaultIgnorableCarrier` — residual Default_Ignorable
-                                      codepoint (not already
-                                      classified above).
-      10. `unknown`                 — invisible-character density
-                                      ≥ 5% of input length but
-                                      no specific scheme matched.
+      10. `defaultIgnorableCarrier` — residual Default_Ignorable
+                                      codepoint (single-category
+                                      DI input).
       11. clear                     — no watermark marker.
 
     The `markerCount` field carries the count of codepoints
@@ -453,13 +457,20 @@ def detect (input : Array Nat) : Verdict :=
   let diPositions := allPositions isResidualDI input
   let diCount := diPositions.size
 
-  -- Probe 10: unknown — high invisible-density catch-all.
+  -- Probe 3: unknown — invisible markers from multiple
+  -- categories.  Means the input mixes scheme-relevant
+  -- codepoints in a way that prevents single-scheme
+  -- attribution.  Counts how many of the four invisible
+  -- categories (NNBSP / VS-non-emoji / ZWJ-non-emoji /
+  -- residual-DI) have any markers; if ≥ 2, fire.
+  let categoryCount : Nat :=
+    (if nnbspCount > 0 then 1 else 0)
+    + (if vsNonEmojiCount > 0 then 1 else 0)
+    + (if zwjNonEmojiCount > 0 then 1 else 0)
+    + (if diCount > 0 then 1 else 0)
+  let unknownFires := decide (categoryCount ≥ 2)
   let totalInvisibleCount :=
     nnbspCount + vsNonEmojiCount + zwjNonEmojiCount + diCount
-  let unknownFires :=
-    decide (input.size > 0)
-    ∧ decide (totalInvisibleCount > 0)
-    ∧ decide (totalInvisibleCount * 20 ≥ input.size)
 
   let (classification, firedCount) : Classification × Nat :=
     if adversarialFires then
@@ -469,6 +480,15 @@ def detect (input : Array Nat) : Verdict :=
     else if zwspModuloFires then
       let firstPos := zwspPositions.getD 0 0
       (.hazard (.gpt5ZwspModulo firstPos) zwspPositions, zwspCount)
+    else if unknownFires then
+      let allInvisiblePos :=
+        (Array.range input.size).filterMap (fun i =>
+          let cp := input.getD i 0
+          if isNnbsp cp || isVariationSelector cp
+             || isZwj cp || isDefaultIgnorable cp
+          then some i else none)
+      (.hazard (.unknown totalInvisibleCount) allInvisiblePos,
+       totalInvisibleCount)
     else if nnbspCount > 0 then
       (.hazard (.nnbspBoundary nnbspCount) nnbspPositions, nnbspCount)
     else if vsNonEmojiCount > 0 then
@@ -489,15 +509,6 @@ def detect (input : Array Nat) : Verdict :=
     | none =>
       if diCount > 0 then
         (.hazard (.defaultIgnorableCarrier diCount) diPositions, diCount)
-      else if unknownFires then
-        let firstInvisiblePos :=
-          ((Array.range input.size).findSome? (fun i =>
-            let cp := input.getD i 0
-            if isNnbsp cp || isVariationSelector cp
-               || isZwj cp || isDefaultIgnorable cp
-            then some i else none)).getD 0
-        (.hazard (.unknown totalInvisibleCount) #[firstInvisiblePos],
-         totalInvisibleCount)
       else (.clear, 0)
 
   { input := input,
@@ -571,19 +582,20 @@ theorem detect_zwsp_fires :
     v.classify.tag = some "DefaultIgnorableCarrier"
     ∧ v.markerCount = 1 := by native_decide
 
-/-- Priority pin: when BOTH NNBSP and a default-ignorable fire,
-    NnbspBoundary wins (priority 1 over priority 4).  Pinned by
-    NNBSP + SOFT HYPHEN co-occurring. -/
-theorem detect_priority_nnbsp_over_di :
+/-- Priority pin: when NNBSP AND a default-ignorable co-occur,
+    `Unknown` fires (priority 3) — the input mixes two
+    invisible-marker categories and cannot be attributed to a
+    single scheme.  Pinned by NNBSP + SOFT HYPHEN. -/
+theorem detect_priority_unknown_over_nnbsp_with_di :
     let v := detect #[0x61, 0x202F, 0x00AD, 0x62]
-    v.classify.tag = some "NnbspBoundary" := by native_decide
+    v.classify.tag = some "Unknown" := by native_decide
 
 /-- Priority pin: when BOTH VS-non-emoji and ZWJ-non-emoji
-    apply, VariationSelectorCarrier wins (priority 2 over
-    priority 3). -/
-theorem detect_priority_vs_over_zwj :
+    apply, `Unknown` fires (priority 3) — same multi-category
+    semantic as above. -/
+theorem detect_priority_unknown_over_vs_with_zwj :
     let v := detect #[0x61, 0xFE0F, 0x200D, 0x62]
-    v.classify.tag = some "VariationSelectorCarrier" := by
+    v.classify.tag = some "Unknown" := by
   native_decide
 
 /-- Multiple NNBSPs are aggregated into a single
@@ -680,35 +692,33 @@ theorem detect_statistical_token_moreover_embedded :
     v.classify.tag = some "StatisticalTokenChoice"
     ∧ v.classify.positions = #[2] := by native_decide
 
-/-- `unknown` fires when invisible-character density ≥ 5% of
-    input AND no specific scheme matched.  Constructed input:
-    two ZWSPs in a short input (below the modulo threshold of 3,
-    not classifiable by any specific probe).  ZWSPs are
-    default-ignorable so `defaultIgnorableCarrier` fires first
-    — we need a case where defaultIgnorableCarrier does NOT
-    fire.  Use a single MONGOLIAN VOWEL SEPARATOR (U+180E,
-    default-ignorable but in a high-density input).  Density
-    = 1/2 = 50% > 5%.  Wait — `defaultIgnorableCarrier` fires
-    on count ≥ 1; we need `unknown` to be reachable too.
+/-- `unknown` fires on multi-category invisible-marker mixing:
+    NNBSP + DI co-occur — two distinct categories, cannot be
+    attributed to a single scheme. -/
+theorem detect_unknown_nnbsp_plus_di :
+    let v := detect #[0x61, 0x202F, 0x00AD, 0x62]
+    v.classify.tag = some "Unknown"
+    ∧ v.markerCount = 2 := by native_decide
 
-    Per the priority order, `unknown` is only reachable when
-    `diCount = 0` AND total invisibles > 0.  Total invisibles
-    = NNBSP + VS + ZWJ + DI counts; if DI = 0 then total =
-    NNBSP + VS + ZWJ, which would have triggered probes 3/4/5.
-    So `unknown` is currently unreachable for non-empty inputs
-    given the priority order — it's a phantom catch-all.  This
-    is acceptable: the variant exists in the type system and
-    the dispatch path is verified, but the priority structure
-    of the other probes ensures specific verdicts always win.
+/-- `unknown` fires on VS + ZWJ co-occurring (both in plain
+    non-emoji context). -/
+theorem detect_unknown_vs_plus_zwj :
+    let v := detect #[0x61, 0xFE0F, 0x200D, 0x62]
+    v.classify.tag = some "Unknown"
+    ∧ v.markerCount = 2 := by native_decide
 
-    The theorem below pins the structural pattern: the
-    constructor IS reachable on its dispatch arm; what gates
-    it is the conjunction of "no specific scheme fired" AND
-    "high invisible density".  Spot-checked by constructing
-    `(.unknown 0)` directly and pinning its tag projection. -/
-theorem unknown_tag_projects :
-    (Classification.hazard (.unknown 5) #[7]).tag = some "Unknown" := by
-  native_decide
+/-- `unknown` fires on NNBSP + ZWJ co-occurring. -/
+theorem detect_unknown_nnbsp_plus_zwj :
+    let v := detect #[0x61, 0x202F, 0x200D, 0x62]
+    v.classify.tag = some "Unknown"
+    ∧ v.markerCount = 2 := by native_decide
+
+/-- Single-category invisible-marker inputs DO NOT fire
+    `unknown` — they fall through to the specific probe.
+    Pin: single NNBSP fires nnbspBoundary (not unknown). -/
+theorem detect_single_category_skips_unknown :
+    (detect #[0x61, 0x202F, 0x62]).classify.tag
+      = some "NnbspBoundary" := by native_decide
 
 /-- Priority pin: `adversarial` fires before `nnbspBoundary`
     when both apply. -/
