@@ -54,3 +54,4 @@ import Unicode.Security.Boundary.AdmissibilityFormDrift
 -- Layer 6 — Cryptographic Stability
 import Unicode.Security.Crypto.Bip39Canonical
 import Unicode.Security.Crypto.HashInputStability
+import Unicode.Security.Crypto.AiWatermarkDetectability

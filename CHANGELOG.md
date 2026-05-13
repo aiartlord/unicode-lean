@@ -7,6 +7,130 @@ on the public surface (a major-version bump signals that a
 theorem name or statement changed in a way downstream consumers
 might depend on).
 
+## v0.15.0 — 2026-05-12
+
+The "K3 AI watermark detectability" release.  Third and final
+Layer-6 family in the 26-family roadmap.  Moves the Security
+Conformance Layer from 25/26 to **26/26** families — the
+character-level Unicode security scope is now complete.
+
+### Added — Layer 6, family K3 (v1, character-level)
+
+- `Unicode.Security.Crypto.AiWatermarkDetectability` detector
+  module.  Implements four priority-ordered codepoint probes
+  for AI-watermark scheme detection at the character level:
+  1. `nnbspBoundary`            — any U+202F NNBSP.
+  2. `variationSelectorCarrier` — VS (U+FE00..U+FE0F or
+     U+E0100..U+E01EF) NOT adjacent to an emoji codepoint.
+  3. `zwjNonEmoji`              — U+200D ZWJ NOT adjacent to
+     an emoji codepoint.
+  4. `defaultIgnorableCarrier`  — residual Default_Ignorable_
+     Code_Point not classified by the three probes above.
+- Six additional spec sub-threats (`gpt5ZwspModulo`,
+  `emDashPattern`, `smartQuoteAlternation`,
+  `statisticalTokenChoice`, `adversarial`, `unknown`) are
+  declared in `K3SubThreat` for spec consistency with
+  `L6-cryptographic-stability.md` §K3.1 but require analytical
+  context the codepoint-only detector cannot supply (per-
+  provider modulo schedule, statistical regularity over the
+  document, externally-trained classifier).  v1 never emits
+  them.
+- `Unicode/Ucd/Security/AiWatermarkDetectabilityTest.txt` —
+  16 hand-curated rows across 5 sub-threat sections (Clear:
+  empty / ASCII / CJK / emoji-alone / legitimate emoji-ZWJ
+  sequence / emoji+VS16 emoji-presentation; NnbspBoundary:
+  single / aggregated multi-NNBSP / priority pin with
+  default-ignorable; VariationSelectorCarrier: VS1 / VS16-not-
+  after-emoji / IVS1; ZwjNonEmoji: ZWJ in ASCII;
+  DefaultIgnorableCarrier: SOFT HYPHEN / ZWSP / CGJ).
+- `Unicode.Conformance.Security.AiWatermarkDetectabilityTest`
+  — `theorem all_rows_pass : rows.all verifyRow = true := by
+  native_decide` plus five per-section coverage gates.
+
+### Threat model
+
+AI providers deposit invisible markers (NNBSP at word
+boundaries, Variation Selectors in plain text, default-
+ignorable carriers) for downstream provenance attribution.
+Attackers may strip the markers via normalisation, or
+adversarially inject fake markers to discredit human-written
+text.  A character-level detector cannot distinguish a
+genuine provenance marker from an adversarial injection
+without statistical protocol-consistency analysis (K3-OQ-2,
+deferred), so v1 emits `suspectedWatermark` for both shapes
+and leaves the genuine-vs-adversarial decision to downstream
+provider-specific verification.
+
+### v1 scope explicitly deferred to v2
+
+- **Statistical / token-distribution watermarks** (spec K3.f) —
+  distribution-based markers require token-stream access and a
+  per-provider distribution baseline.  Not a character-level
+  test.
+- **Per-segment integrity** (spec K3.g) — multi-paragraph text
+  with per-segment markers introduces segment-boundary
+  ambiguity (K3-OQ-3).  v1 is whole-input only.
+- **Genuine-vs-adversarial distinction** (spec K3.c) — requires
+  statistical protocol-consistency.  v1 reports the matched
+  scheme without authentication.
+
+### Behaviour — RunAll aggregator
+
+- `runAll` now returns 26 entries; K3 is at index 25, layer 6.
+- `runAll_size` bumped 25 → 26.
+- `runAll_layer_6_count = 3` (K1 + K2 + K3).
+
+### Behaviour — Level admission predicate
+
+This release **factors `admissibleAt` into two orthogonal
+predicates** to fix an architectural defect identified during
+K3 design.  The fix lands one commit before the K3 ship.
+
+- New `levelAdmissible : Level → Array Nat → Bool` — Level-only
+  admission, independent of CryptoContext.
+- New `cryptoAdmissible : CryptoContext → Array Nat → Bool` —
+  Crypto-only admission, independent of Level.
+- `admissibleAt level ctx input` is now defined as
+  `levelAdmissible level input && cryptoAdmissible ctx input`.
+  Mathematical equivalence to the prior union-based form is
+  immediate by distribution of `any` over disjunction; all
+  existing `native_decide` theorems close unchanged.
+- Why: the prior union-based shape masked K-family
+  contributions whenever an L1–L5 family also rejected the
+  same input.  E.g. F6 NfcIdempotenceWitness rejects every
+  non-NFC input at `.restrictive`/`.moderate`, so the K2
+  `.hashInput` gating demonstration was forced to `.minimal`.
+  The same shadowing would have made K3's `.aiAttribution`
+  gating invisible at `.restrictive` (where C3 / I2 / D1 / F6
+  / K1 all flag U+202F).  Factoring the predicate exposes the
+  K-family's distinguishing power at every Level.
+
+- New `CryptoContext` constructor `aiAttribution`.  Family
+  map: `nonCrypto → ∅`, `bip39Mnemonic → {K1}`,
+  `hashInput → {K2}`, `aiAttribution → {K3}`.
+- New theorem `crypto_admissible_gates_nnbsp_under_aiAttribution`
+  demonstrates K3's context-gating: `#[0x61, 0x202F, 0x62]`
+  ("a NNBSP b") admits under `cryptoAdmissible .nonCrypto`
+  and rejects under `cryptoAdmissible .aiAttribution`,
+  Level-independent.  Companion
+  `level_admissible_rejects_nnbsp_at_restrictive` pins that
+  the L1–L5 set also rejects the same input at `.restrictive`,
+  documenting the masking effect on the composite surface.
+- K2's gating demonstration upgraded analogously:
+  `crypto_admissible_gates_decomposed_e_acute` is the new
+  level-independent primary witness; the previous
+  `.minimal`-only `admissibleAt`-based shape is retained as
+  `crypto_ctx_gates_decomposed_e_acute_at_minimal` for the
+  composite-form co-witness.
+
+### Module / fixture / harness counts (post-K3)
+
+- 26 detector modules (23 Unicode + 3 K-family).
+- 26 conformance harnesses.
+- 26 SHA-pinned base fixtures.
+
+All six gates clean.
+
 ## v0.14.0 — 2026-05-12
 
 The "K2 hash-input Unicode stability" release.  Second Layer-6
