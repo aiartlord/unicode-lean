@@ -46,10 +46,12 @@
        necessarily a label-drift; codepoints outside the valid
        scalar range fire `detectedEnc = "invalid"`.
     4. `signedMessageRule` — `ctx.rfcRule` is set and the input
-       violates the named RFC's canonicalisation rule.  Four
-       rules currently emitted: PGP 4880 trailing-whitespace,
-       PGP 9580 line-ending CRLF, RFC 8785 NFC requirement,
-       RFC 8259 JSON unescaped control characters.
+       violates the named RFC's canonicalisation rule.  Seven
+       rules emitted: PGP 4880 trailing-whitespace, PGP 9580
+       and RFC 5751 (S/MIME) line-ending CRLF, RFC 8785 JSON
+       NFC requirement, RFC 8259 JSON unescaped control
+       characters, RFC 7515 JWS Base64URL alphabet, RFC 6376
+       DKIM relaxed body whitespace.
     5. `auditLogReinterpretation` — `ctx.asWritten` is set and
        differs from the (re-read) `input` at some position.
     6. `webhookSignatureDrift` — `ctx.serverBytes` is set and
@@ -108,6 +110,20 @@ inductive RfcRule where
       characters (U+0000..U+001F).  Unescaped control bytes
       in a string literal violate the canonicalisation. -/
   | rfc8259ControlChar
+  /-- RFC 7515 §2 — JWS Base64URL encoding.  The compact
+      serialisation parts are Base64URL strings; any character
+      outside `[A-Za-z0-9_-]` is a canonicalisation violation. -/
+  | rfc7515JwsBase64Url
+  /-- RFC 6376 §3.4.4 — DKIM relaxed body canonicalization.
+      Internal whitespace runs (sequences of SPACE / HTAB
+      longer than one) collapse to a single SP; presence of a
+      multi-char internal whitespace run in the input
+      indicates the canonicalisation hasn't been applied. -/
+  | rfc6376DkimRelaxed
+  /-- RFC 5751 §3.1.1 — S/MIME canonical text representation.
+      Like PGP 9580 but for cryptographic message syntax: bare
+      LF or bare CR (not part of a CRLF pair) violates. -/
+  | rfc5751SmimeLineEnding
   deriving DecidableEq, Repr, Inhabited
 
 namespace RfcRule
@@ -120,6 +136,9 @@ namespace RfcRule
   | .pgp9580LineEnding         => "pgp9580LineEnding"
   | .rfc8785NfcRequirement     => "rfc8785NfcRequirement"
   | .rfc8259ControlChar        => "rfc8259ControlChar"
+  | .rfc7515JwsBase64Url       => "rfc7515JwsBase64Url"
+  | .rfc6376DkimRelaxed        => "rfc6376DkimRelaxed"
+  | .rfc5751SmimeLineEnding    => "rfc5751SmimeLineEnding"
 
 /-- Inverse of `tag`.  Returns `none` for unrecognised strings. -/
 def fromTag : String → Option RfcRule
@@ -127,6 +146,9 @@ def fromTag : String → Option RfcRule
   | "pgp9580LineEnding"         => some .pgp9580LineEnding
   | "rfc8785NfcRequirement"     => some .rfc8785NfcRequirement
   | "rfc8259ControlChar"        => some .rfc8259ControlChar
+  | "rfc7515JwsBase64Url"       => some .rfc7515JwsBase64Url
+  | "rfc6376DkimRelaxed"        => some .rfc6376DkimRelaxed
+  | "rfc5751SmimeLineEnding"    => some .rfc5751SmimeLineEnding
   | other                       =>
     Function.const String none other
 
@@ -446,6 +468,48 @@ def rfc8259Violation (input : Array Nat) : Option Nat :=
       if cp ≤ 0x1F then some i else none
     else none)
 
+/-- Probe: `signedMessageRule` for `rfc7515JwsBase64Url`.  The
+    JWS compact-serialisation alphabet is `[A-Za-z0-9_-]`.
+    Returns the position of the first codepoint outside that
+    alphabet. -/
+def rfc7515Violation (input : Array Nat) : Option Nat :=
+  let isBase64Url (cp : Nat) : Bool :=
+    (decide (0x41 ≤ cp) && decide (cp ≤ 0x5A))       -- A-Z
+    || (decide (0x61 ≤ cp) && decide (cp ≤ 0x7A))    -- a-z
+    || (decide (0x30 ≤ cp) && decide (cp ≤ 0x39))    -- 0-9
+    || decide (cp = 0x2D)                             -- '-'
+    || decide (cp = 0x5F)                             -- '_'
+  (Array.range input.size).findSome? (fun i =>
+    if h : i < input.size then
+      if isBase64Url input[i] then none else some i
+    else none)
+
+/-- Probe: `signedMessageRule` for `rfc6376DkimRelaxed`.  DKIM
+    relaxed body canonicalisation collapses runs of SP / HTAB
+    to a single SP.  Returns the position of the second
+    whitespace codepoint in the first run that is longer than
+    one. -/
+def rfc6376Violation (input : Array Nat) : Option Nat :=
+  let isDkimWhitespace (cp : Nat) : Bool :=
+    decide (cp = 0x20) || decide (cp = 0x09)
+  (Array.range input.size).findSome? (fun i =>
+    if h0 : 0 < i then
+      if hLt : i < input.size then
+        if isDkimWhitespace input[i] then
+          if hPrev : i - 1 < input.size then
+            if isDkimWhitespace input[i - 1] then some i else none
+          else none
+        else none
+      else none
+    else none)
+
+/-- Probe: `signedMessageRule` for `rfc5751SmimeLineEnding`.
+    S/MIME canonical text matches the PGP 9580 rule on line
+    endings (bare LF or bare CR violates).  Reuses
+    `pgp9580Violation`. -/
+def rfc5751Violation (input : Array Nat) : Option Nat :=
+  pgp9580Violation input
+
 /-- Dispatch the RFC-rule probe.  Returns the position of the
     first violation when the rule is violated, `none` when the
     input is clean per the rule. -/
@@ -455,6 +519,9 @@ def rfcRuleViolation (rule : RfcRule) (input : Array Nat) : Option Nat :=
   | .pgp9580LineEnding         => pgp9580Violation input
   | .rfc8785NfcRequirement     => rfc8785Violation input
   | .rfc8259ControlChar        => rfc8259Violation input
+  | .rfc7515JwsBase64Url       => rfc7515Violation input
+  | .rfc6376DkimRelaxed        => rfc6376Violation input
+  | .rfc5751SmimeLineEnding    => rfc5751Violation input
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §7 Top-level detection
@@ -695,6 +762,48 @@ theorem detect_signed_message_rfc8259_control :
     let ctx : Context := { rfcRule := some .rfc8259ControlChar }
     -- "a" + U+0001 (Start of Heading) + "b"
     let v := detectWithContext ctx #[0x61, 0x01, 0x62]
+    v.classify.tag = some "SignedMessageRule"
+    ∧ v.classify.positions = #[1] := by native_decide
+
+/-- `signedMessageRule` fires for `rfc7515JwsBase64Url` on a
+    codepoint outside the Base64URL alphabet.  ASCII `+` (0x2B)
+    is allowed in standard Base64 but NOT in Base64URL — fires. -/
+theorem detect_signed_message_rfc7515_plus_char :
+    let ctx : Context := { rfcRule := some .rfc7515JwsBase64Url }
+    let v := detectWithContext ctx #[0x41, 0x2B, 0x42]
+    v.classify.tag = some "SignedMessageRule"
+    ∧ v.classify.positions = #[1] := by native_decide
+
+/-- `signedMessageRule` for RFC 7515 stays clear on a pure
+    Base64URL string. -/
+theorem detect_signed_message_rfc7515_clean_clear :
+    let ctx : Context := { rfcRule := some .rfc7515JwsBase64Url }
+    -- "Aa0-_zZ9"
+    let cps : Array Nat := #[0x41, 0x61, 0x30, 0x2D, 0x5F, 0x7A, 0x5A, 0x39]
+    (detectWithContext ctx cps).classify = .clear := by native_decide
+
+/-- `signedMessageRule` fires for `rfc6376DkimRelaxed` on a
+    multi-codepoint internal whitespace run.  Position points
+    at the second whitespace codepoint. -/
+theorem detect_signed_message_rfc6376_double_space :
+    let ctx : Context := { rfcRule := some .rfc6376DkimRelaxed }
+    -- "a" + SP + SP + "b"
+    let v := detectWithContext ctx #[0x61, 0x20, 0x20, 0x62]
+    v.classify.tag = some "SignedMessageRule"
+    ∧ v.classify.positions = #[2] := by native_decide
+
+/-- `signedMessageRule` for `rfc6376DkimRelaxed` stays clear on
+    a single internal space — the canonical form. -/
+theorem detect_signed_message_rfc6376_single_space_clear :
+    let ctx : Context := { rfcRule := some .rfc6376DkimRelaxed }
+    (detectWithContext ctx #[0x61, 0x20, 0x62]).classify = .clear := by
+  native_decide
+
+/-- `signedMessageRule` for `rfc5751SmimeLineEnding` matches
+    the PGP 9580 rule: bare LF (no preceding CR) violates. -/
+theorem detect_signed_message_rfc5751_bare_lf :
+    let ctx : Context := { rfcRule := some .rfc5751SmimeLineEnding }
+    let v := detectWithContext ctx #[0x61, 0x0A, 0x62]
     v.classify.tag = some "SignedMessageRule"
     ∧ v.classify.positions = #[1] := by native_decide
 

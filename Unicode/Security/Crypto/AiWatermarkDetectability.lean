@@ -36,8 +36,8 @@
                                     attribution fails.
     4. `nnbspBoundary`            — single-category NNBSP.
                                     Reported as the GPT-4-class
-                                    boundary marker.  v1 flags
-                                    any NNBSP; the legitimate
+                                    boundary marker.  Any
+                                    NNBSP fires; the legitimate
                                     Mongolian / French Canadian
                                     / Polish typographic uses
                                     of U+202F register as
@@ -134,6 +134,26 @@ structure Verdict where
   input        : Array Nat
   classify     : Classification
   markerCount  : Nat
+  deriving Inhabited
+
+/-- Optional context for the modulo-probe tolerances.  Each
+    field controls how strictly the corresponding probe checks
+    its arithmetic-progression condition; the defaults of `0`
+    require exact equality of consecutive gaps.  Mirrors
+    `HashInputStability.Context` in shape — opt-in extension
+    of the bare-input detector. -/
+structure Context where
+  /-- ZWSP-modulo tolerance.  `0` requires the ZWSP-position
+      arithmetic progression to be exact.  `k > 0` accepts
+      position gaps within ±k of the first gap, catching
+      modulo schedules with light jitter (e.g. word-boundary-
+      aligned ZWSP that drifts ±1 codepoint per insertion). -/
+  zwspModuloTolerance : Nat := 0
+  /-- NNBSP-arithmetic tolerance (the `adversarial` probe).
+      Same semantic as `zwspModuloTolerance` but for the NNBSP
+      positions checked by the `adversarial` (over-regular
+      NNBSP placement) probe. -/
+  adversarialTolerance : Nat := 0
   deriving Inhabited
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -268,12 +288,17 @@ def allPositions (p : Nat → Bool) (input : Array Nat) : Array Nat :=
 @[inline] def isStraightQuote (cp : Nat) : Bool :=
   decide (cp = 0x0022) || decide (cp = 0x0027)
 
-/-- True iff `positions` forms an arithmetic progression
-    (all consecutive gaps equal).  Empty + singleton arrays
-    are vacuously arithmetic.  Used by the `adversarial`
-    (NNBSP-too-regular) and `gpt5ZwspModulo` (ZWSP-modulo)
-    probes to detect over-regular marker placement. -/
-def positionsAreArithmetic (positions : Array Nat) : Bool :=
+/-- True iff `positions` forms an arithmetic progression with
+    all consecutive gaps within `tolerance` of the first gap.
+    Empty + singleton arrays are vacuously arithmetic.
+    `tolerance = 0` (the default) requires exact equality;
+    `tolerance = 1` accepts ±1 jitter per gap, etc.  Used by
+    the `adversarial` (NNBSP-too-regular) and `gpt5ZwspModulo`
+    (ZWSP-modulo) probes to detect over-regular marker
+    placement; tolerance allows catching modulo schedules with
+    light position jitter. -/
+def positionsAreArithmeticWithin
+    (positions : Array Nat) (tolerance : Nat) : Bool :=
   if positions.size < 2 then true
   else
     let p0 := positions.getD 0 0
@@ -282,7 +307,17 @@ def positionsAreArithmetic (positions : Array Nat) : Bool :=
     (Array.range (positions.size - 1)).all (fun i =>
       let curr := positions.getD i 0
       let next := positions.getD (i + 1) 0
-      decide (next - curr = firstGap))
+      let gap := next - curr
+      -- |gap - firstGap| ≤ tolerance, expressed in Nat
+      decide (gap ≤ firstGap + tolerance)
+        && decide (firstGap ≤ gap + tolerance))
+
+/-- Exact-equality variant.  Kept as a thin wrapper around
+    `positionsAreArithmeticWithin _ 0` so existing callers and
+    theorems that don't carry a tolerance parameter continue to
+    work unchanged. -/
+@[inline] def positionsAreArithmetic (positions : Array Nat) : Bool :=
+  positionsAreArithmeticWithin positions 0
 
 /-- First start-position at which `pattern` appears as a
     contiguous subarray of `input`, or `none` if absent.  Used
@@ -427,19 +462,21 @@ theorem isAdjacentToEmoji_before_smiley :
     signatures.  Ordering them most-specific-first ensures the
     verdict names the most-informative attribution available.
 -/
-def detect (input : Array Nat) : Verdict :=
+def detectWithContext (ctx : Context) (input : Array Nat) : Verdict :=
   let nnbspPositions := allPositions isNnbsp input
   let nnbspCount := nnbspPositions.size
 
   -- Probe 1: adversarial — NNBSP too-regular.
   let adversarialFires :=
-    decide (nnbspCount ≥ 3) ∧ positionsAreArithmetic nnbspPositions
+    decide (nnbspCount ≥ 3)
+      ∧ positionsAreArithmeticWithin nnbspPositions ctx.adversarialTolerance
 
   -- Probe 2: gpt5ZwspModulo — ZWSP arithmetic progression.
   let zwspPositions := allPositions isZwsp input
   let zwspCount := zwspPositions.size
   let zwspModuloFires :=
-    decide (zwspCount ≥ 3) ∧ positionsAreArithmetic zwspPositions
+    decide (zwspCount ≥ 3)
+      ∧ positionsAreArithmeticWithin zwspPositions ctx.zwspModuloTolerance
 
   let vsAllPos := allPositions isVariationSelector input
   let vsNonEmojiPos := vsAllPos.filter
@@ -535,6 +572,14 @@ def detect (input : Array Nat) : Verdict :=
   { input := input,
     classify := classification,
     markerCount := firedCount }
+
+/-- Convenience wrapper over `detectWithContext` with the empty
+    context — equivalent to running every probe with the v1
+    exact-arithmetic settings.  Used by
+    `Unicode.Security.RunAll` and by callers who don't have a
+    tolerance preference. -/
+def detect (input : Array Nat) : Verdict :=
+  detectWithContext {} input
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 Detect spot-check theorems
@@ -754,5 +799,32 @@ theorem detect_priority_adversarial_over_nnbsp :
 theorem detect_priority_zwsp_modulo_over_di :
     let v := detect #[0x61, 0x200B, 0x62, 0x200B, 0x63, 0x200B, 0x64]
     v.classify.tag = some "Gpt5ZwspModulo" := by native_decide
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §8 Tolerance-parameterised probes (Context-aware spot checks)
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- ZWSPs at positions 1, 3, 6 (gaps 2 and 3 — jittered by 1).
+    Exact-arithmetic check (`tolerance=0`) does NOT fire
+    `gpt5ZwspModulo` because gaps differ.  Fixed-tolerance
+    check (`tolerance=1`) DOES fire — the jittered modulo
+    schedule still looks deliberate. -/
+theorem detect_zwsp_jittered_strict_clear :
+    let input := #[0x61, 0x200B, 0x62, 0x200B, 0x63, 0x64, 0x200B, 0x65]
+    let v := detect input  -- bare detect: tolerance=0
+    v.classify.tag = some "DefaultIgnorableCarrier" := by native_decide
+
+/-- Same input, tolerance=1: `gpt5ZwspModulo` now fires. -/
+theorem detect_zwsp_jittered_tolerant_fires :
+    let input := #[0x61, 0x200B, 0x62, 0x200B, 0x63, 0x64, 0x200B, 0x65]
+    let ctx : Context := { zwspModuloTolerance := 1 }
+    let v := detectWithContext ctx input
+    v.classify.tag = some "Gpt5ZwspModulo" := by native_decide
+
+/-- The default `Context` reproduces the bare-detect behaviour.
+    Pinned to confirm the wrapper-equivalence semantic. -/
+theorem detectWithContext_default_matches_detect :
+    (detectWithContext {} #[0x61, 0x202F, 0x62]).classify
+      = (detect #[0x61, 0x202F, 0x62]).classify := by native_decide
 
 end Unicode.Security.Crypto.AiWatermarkDetectability
