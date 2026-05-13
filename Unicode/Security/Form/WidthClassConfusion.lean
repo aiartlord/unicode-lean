@@ -127,19 +127,19 @@ def halfwidthFoldCount (input : Array Nat) : Nat :=
 -- §2 Types
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-inductive F5SubThreat where
+inductive SubThreat where
   | fullwidthFold (basePos : Nat) (cp : Nat) (foldedCp : Nat)
   | halfwidthFold (basePos : Nat) (cp : Nat) (foldedCp : Nat)
   deriving DecidableEq, Repr, Inhabited
 
-inductive F5Classification where
+inductive Classification where
   | clear
-  | hazard (sub : F5SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
-structure F5Verdict where
+structure Verdict where
   input              : Array Nat
-  classify           : F5Classification
+  classify           : Classification
   fullwidthFoldCount : Nat
   halfwidthFoldCount : Nat
   deriving Inhabited
@@ -149,8 +149,8 @@ structure F5Verdict where
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The F5 detection function. -/
-def detect (input : Array Nat) : F5Verdict :=
-  let classification : F5Classification :=
+def detect (input : Array Nat) : Verdict :=
+  let classification : Classification :=
     match firstFullwidthFold input with
     | some (pos, cp, folded) =>
       .hazard (.fullwidthFold pos cp folded) #[pos] ByteArray.empty
@@ -168,27 +168,27 @@ def detect (input : Array Nat) : F5Verdict :=
 -- §4 Projection helpers
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-def F5SubThreat.tag : F5SubThreat → String
+def SubThreat.tag : SubThreat → String
   | .fullwidthFold basePos cp foldedCp =>
     Function.const (Nat × Nat × Nat) "FullwidthFold" (basePos, cp, foldedCp)
   | .halfwidthFold basePos cp foldedCp =>
     Function.const (Nat × Nat × Nat) "HalfwidthFold" (basePos, cp, foldedCp)
 
-def F5Classification.isClear : F5Classification → Bool
+def Classification.isClear : Classification → Bool
   | .clear                       => true
   | .hazard sub positions decoded =>
-    Function.const (F5SubThreat × Array Nat × ByteArray) false
+    Function.const (SubThreat × Array Nat × ByteArray) false
       (sub, positions, decoded)
 
-def F5Classification.tag : F5Classification → Option String
+def Classification.tag : Classification → Option String
   | .clear                       => none
   | .hazard sub positions decoded =>
     Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
 
-def F5Classification.positions : F5Classification → Array Nat
+def Classification.positions : Classification → Array Nat
   | .clear                       => #[]
   | .hazard sub positions decoded =>
-    Function.const (F5SubThreat × ByteArray) positions (sub, decoded)
+    Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Spot checks

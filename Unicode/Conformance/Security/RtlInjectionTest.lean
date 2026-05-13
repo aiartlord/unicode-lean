@@ -28,20 +28,20 @@ def rawFixture : String :=
 
 def rows : Array Row := parseFixture rawFixture
 
-/-- Project a `D3Classification` to `(ClassificationKind, sub-threat-tag)`. -/
+/-- Project a `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
-    (c : D3Classification) : ClassificationKind × Option String :=
+    (c : Classification) : ClassificationKind × Option String :=
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
-/-- Project a `D3Classification` to the positions array. -/
-def projectPositions (c : D3Classification) : Array Nat :=
+/-- Project a `Classification` to the positions array. -/
+def projectPositions (c : Classification) : Array Nat :=
   c.positions
 
 /-- Validate the D3 verdict's metadata fields against the row's
     column-4 attribution.  Recognised keys: `strong_rtl`,
     `strong_ltr`, `bidi_count`, `longest_run` (longest contiguous
     RTL run length). -/
-private def metadataMatches (v : D3Verdict)
+private def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey "strong_rtl"  v.strongRTLCount &&
   attr.checkNatKey "strong_ltr"  v.strongLTRCount &&

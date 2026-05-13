@@ -30,20 +30,20 @@ def rawFixture : String :=
 
 def rows : Array Row := parseFixture rawFixture
 
-/-- Project an `F6Classification` to `(ClassificationKind, sub-threat-tag)`. -/
+/-- Project an `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
-    (c : F6Classification) : ClassificationKind × Option String :=
+    (c : Classification) : ClassificationKind × Option String :=
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
-/-- Project an `F6Classification` to the positions array. -/
-def projectPositions (c : F6Classification) : Array Nat :=
+/-- Project an `Classification` to the positions array. -/
+def projectPositions (c : Classification) : Array Nat :=
   c.positions
 
 /-- Validate the F6 verdict's metadata fields against the row's
     column-4 attribution.  Recognised keys: `nfc_len`, `nfkc_len`
     (the NFC and NFKC normal-form lengths produced by the
     underlying normalizer). -/
-private def metadataMatches (v : F6Verdict)
+private def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey "nfc_len"  v.nfcLen &&
   attr.checkNatKey "nfkc_len" v.nfkcLen

@@ -38,19 +38,19 @@ open Unicode.Identifier (isAllowedIdentifier)
 -- §1 Types
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-inductive X4SubThreat where
+inductive SubThreat where
   | admissibilityFormDrift
       (inputAdmissible : Bool) (nfkcAdmissible : Bool)
   deriving DecidableEq, Repr, Inhabited
 
-inductive X4Classification where
+inductive Classification where
   | clear
-  | hazard (sub : X4SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
-structure X4Verdict where
+structure Verdict where
   input            : Array Nat
-  classify         : X4Classification
+  classify         : Classification
   inputAdmissible  : Bool
   nfkcAdmissible   : Bool
   deriving Inhabited
@@ -60,11 +60,11 @@ structure X4Verdict where
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The X4 detection function. -/
-def detect (input : Array Nat) : X4Verdict :=
+def detect (input : Array Nat) : Verdict :=
   let nfkc   := Unicode.Normalization.NFKC.toNFKC input
   let inOk   := isAllowedIdentifier input
   let nfkcOk := isAllowedIdentifier nfkc
-  let classification : X4Classification :=
+  let classification : Classification :=
     if inOk = nfkcOk then .clear
     else .hazard (.admissibilityFormDrift inOk nfkcOk) #[] ByteArray.empty
   { input := input,
@@ -76,25 +76,25 @@ def detect (input : Array Nat) : X4Verdict :=
 -- §3 Projection helpers
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-def X4SubThreat.tag : X4SubThreat → String
+def SubThreat.tag : SubThreat → String
   | .admissibilityFormDrift inOk nfkcOk =>
     Function.const (Bool × Bool) "AdmissibilityFormDrift" (inOk, nfkcOk)
 
-def X4Classification.isClear : X4Classification → Bool
+def Classification.isClear : Classification → Bool
   | .clear                       => true
   | .hazard sub positions decoded =>
-    Function.const (X4SubThreat × Array Nat × ByteArray) false
+    Function.const (SubThreat × Array Nat × ByteArray) false
       (sub, positions, decoded)
 
-def X4Classification.tag : X4Classification → Option String
+def Classification.tag : Classification → Option String
   | .clear                       => none
   | .hazard sub positions decoded =>
     Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
 
-def X4Classification.positions : X4Classification → Array Nat
+def Classification.positions : Classification → Array Nat
   | .clear                       => #[]
   | .hazard sub positions decoded =>
-    Function.const (X4SubThreat × ByteArray) positions (sub, decoded)
+    Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 Spot checks

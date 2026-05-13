@@ -73,7 +73,7 @@ inductive ExecutableHint where
 /-- Sub-threat enumeration for C2.  Each variant carries the
     attribution payload needed to populate the fixture-row
     `attribution` column. -/
-inductive C2SubThreat where
+inductive SubThreat where
   /-- A pair-aligned VS run on a single base whose decoded bytes
       look like an actual payload (typical GlassWorm shape). -/
   | directPayload      (decoded : String) (hint : ExecutableHint)
@@ -92,15 +92,15 @@ inductive C2SubThreat where
 
     The `decoded` field carries the recovered byte stream when the
     classifier fired; for the clear case it is implicitly empty. -/
-inductive C2Classification where
+inductive Classification where
   | clear
-  | hazard (sub : C2SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
 /-- C2 verdict — the structured output of `detect`. -/
-structure C2Verdict where
+structure Verdict where
   input                  : Array Nat
-  classify               : C2Classification
+  classify               : Classification
   registeredPositions    : Array Nat               -- indices of registered VS
   suspiciousPositions    : Array Nat               -- indices of suspicious VS
   perPositionClass       : Array VSUseClass        -- one entry per input position
@@ -302,7 +302,7 @@ private def allSameVS (input : Array Nat) (positions : Array Nat) : Bool :=
 def pickSubThreat
     (input : Array Nat)
     (registered suspicious : Array Nat)
-    (payload : ByteArray) : C2SubThreat :=
+    (payload : ByteArray) : SubThreat :=
   -- Phase 1: embedded-after-registered takes priority.
   match embeddedAfterRegistered registered suspicious with
   | some (regEnd, payloadStart) =>
@@ -346,7 +346,7 @@ def VSUseClass.isSuspicious : VSUseClass → Bool
 
 /-- The C2 detection function.  Returns a structured verdict
     over the codepoint sequence `input`. -/
-def detect (input : Array Nat) : C2Verdict :=
+def detect (input : Array Nat) : Verdict :=
   -- Phase 1: per-position classification.
   let perPos : Array VSUseClass :=
     (Array.range input.size).map (classifyVSPosition input)
@@ -373,7 +373,7 @@ def detect (input : Array Nat) : C2Verdict :=
     -- Phase 4: decode payload bytes from the suspicious-VS run.
     let payload : ByteArray := decodeVSRun (susSet.map (fun p => input[p]!))
     -- Phase 5: pick sub-threat.
-    let sub : C2SubThreat := pickSubThreat input regSet susSet payload
+    let sub : SubThreat := pickSubThreat input regSet susSet payload
     { input := input,
       classify := .hazard sub susSet payload,
       registeredPositions := regSet,
@@ -388,10 +388,10 @@ def detect (input : Array Nat) : C2Verdict :=
 -- wildcards or leading-underscore "hint" names.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Fixture-row tag string for each `C2SubThreat` constructor.
+/-- Fixture-row tag string for each `SubThreat` constructor.
     Matches the `Hazard:<Tag>` atom used in column 2 of
     `VariationSelectorPayloadTest.txt`. -/
-def C2SubThreat.tag : C2SubThreat → String
+def SubThreat.tag : SubThreat → String
   | .directPayload    decodedStr   hint              =>
       Function.const (String × ExecutableHint) "DirectPayload"
         (decodedStr, hint)
@@ -406,23 +406,23 @@ def C2SubThreat.tag : C2SubThreat → String
         (baseCp, vsCount, uniqueVS)
 
 /-- True iff the classification is `.clear`. -/
-def C2Classification.isClear : C2Classification → Bool
+def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (C2SubThreat × Array Nat × ByteArray) false
+      Function.const (SubThreat × Array Nat × ByteArray) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification (`none` for `.clear`). -/
-def C2Classification.tag : C2Classification → Option String
+def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
       Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
 
 /-- Positions array of a classification (empty for `.clear`). -/
-def C2Classification.positions : C2Classification → Array Nat
+def Classification.positions : Classification → Array Nat
   | .clear                     => #[]
   | .hazard sub positions decoded =>
-      Function.const (C2SubThreat × ByteArray) positions (sub, decoded)
+      Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §7 Spot checks

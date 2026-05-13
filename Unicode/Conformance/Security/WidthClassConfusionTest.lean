@@ -31,20 +31,20 @@ def rawFixture : String :=
 
 def rows : Array Row := parseFixture rawFixture
 
-/-- Project an `F5Classification` to `(ClassificationKind, sub-threat-tag)`. -/
+/-- Project an `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
-    (c : F5Classification) : ClassificationKind × Option String :=
+    (c : Classification) : ClassificationKind × Option String :=
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
-/-- Project an `F5Classification` to the positions array. -/
-def projectPositions (c : F5Classification) : Array Nat :=
+/-- Project an `Classification` to the positions array. -/
+def projectPositions (c : Classification) : Array Nat :=
   c.positions
 
 /-- Validate the F5 verdict's metadata fields against the row's
     column-4 attribution.  Recognised keys: `fw_fold` (fullwidth
     codepoints whose NFKC fold drops the East-Asian width class),
     `hw_fold` (halfwidth analogue). -/
-private def metadataMatches (v : F5Verdict)
+private def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey "fw_fold" v.fullwidthFoldCount &&
   attr.checkNatKey "hw_fold" v.halfwidthFoldCount

@@ -94,7 +94,7 @@ def runAll (input : Array Nat) : Array FamilyResult :=
          classify           := .clear,
          byteCount          := input.size,
          firstInvalidOffset := none }
-        : Unicode.Security.Covert.SurrogateReassembly.C4Verdict)
+        : Unicode.Security.Covert.SurrogateReassembly.Verdict)
   let c5 := Unicode.Security.Covert.BidiControlBalance.detect        input
   let i1 := Unicode.Security.Identity.HomoglyphConfusable.detect     input
   let i2 := Unicode.Security.Identity.MixedScriptAdmissibility.detect input

@@ -52,7 +52,7 @@ open Unicode.TrojanSource (isBidiFormatControl opensEmbedding isPDF opensIsolate
       3. `unbalancedEmbedding`  Trojan Source CVE-2021-42574 shape
       4. `unbalancedIsolate`    Trojan Source CVE-2021-42694 shape
 -/
-inductive C5SubThreat where
+inductive SubThreat where
   | depthExceeded       (maxDepth : Nat)
   | orphanPop           (positions : Array Nat)
   | unbalancedEmbedding (openCount : Nat) (popCount : Nat)
@@ -60,18 +60,18 @@ inductive C5SubThreat where
   deriving DecidableEq, Repr, Inhabited
 
 /-- Top-level classification for C5. -/
-inductive C5Classification where
+inductive Classification where
   | clear
-  | hazard (sub : C5SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
 /-- The depth bound from UAX #9 §3.3.2. -/
 def uaxDepthLimit : Nat := 125
 
 /-- C5 verdict — the structured output of `detect`. -/
-structure C5Verdict where
+structure Verdict where
   input          : Array Nat
-  classify       : C5Classification
+  classify       : Classification
   bidiPositions  : Array Nat                       -- every bidi format-control position
   embOpenCount   : Nat                              -- LRE+RLE+LRO occurrences
   embPopCount    : Nat                              -- PDF occurrences
@@ -180,7 +180,7 @@ private def runWalk (input : Array Nat) : WalkState :=
     bidi controls are properly balanced and within depth — in
     which case the verdict is `.clear` even though bidi
     controls are present. -/
-private def pickSubThreat (st : WalkState) : Option C5SubThreat :=
+private def pickSubThreat (st : WalkState) : Option SubThreat :=
   if st.maxDepth > uaxDepthLimit then
     some (.depthExceeded st.maxDepth)
   else if st.orphans.size > 0 then
@@ -194,7 +194,7 @@ private def pickSubThreat (st : WalkState) : Option C5SubThreat :=
 
 /-- The C5 detection function.  Returns a structured verdict
     over the codepoint sequence `input`. -/
-def detect (input : Array Nat) : C5Verdict :=
+def detect (input : Array Nat) : Verdict :=
   let st := runWalk input
   if st.bidiPositions.isEmpty then
     { input := input,
@@ -243,8 +243,8 @@ def detect (input : Array Nat) : C5Verdict :=
 -- §4 Projection helpers
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Fixture-row tag string for each `C5SubThreat` constructor. -/
-def C5SubThreat.tag : C5SubThreat → String
+/-- Fixture-row tag string for each `SubThreat` constructor. -/
+def SubThreat.tag : SubThreat → String
   | .depthExceeded       maxDepth               =>
       Function.const Nat "DepthExceeded" maxDepth
   | .orphanPop           orphanPositions        =>
@@ -255,23 +255,23 @@ def C5SubThreat.tag : C5SubThreat → String
       Function.const (Nat × Nat) "UnbalancedIsolate" (openCount, popCount)
 
 /-- True iff the classification is `.clear`. -/
-def C5Classification.isClear : C5Classification → Bool
+def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (C5SubThreat × Array Nat × ByteArray) false
+      Function.const (SubThreat × Array Nat × ByteArray) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification (`none` for `.clear`). -/
-def C5Classification.tag : C5Classification → Option String
+def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
       Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
 
 /-- Positions array of a classification (empty for `.clear`). -/
-def C5Classification.positions : C5Classification → Array Nat
+def Classification.positions : Classification → Array Nat
   | .clear                     => #[]
   | .hazard sub positions decoded =>
-      Function.const (C5SubThreat × ByteArray) positions (sub, decoded)
+      Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Spot checks

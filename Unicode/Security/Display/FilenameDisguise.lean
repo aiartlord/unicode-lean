@@ -54,7 +54,7 @@ open Unicode.Security.Calculus
       4. `multipleExtensions`   ≥ 3 dots (advisory; could be
                                 legitimate `.tar.gz.sig`)
 -/
-inductive D2SubThreat where
+inductive SubThreat where
   | rloFlip            (position : Nat) (controlCp : Nat)
   | widthClassExt      (position : Nat) (cp : Nat)
   | combiningInExt     (position : Nat) (cp : Nat)
@@ -62,15 +62,15 @@ inductive D2SubThreat where
   deriving DecidableEq, Repr, Inhabited
 
 /-- Top-level classification for D2. -/
-inductive D2Classification where
+inductive Classification where
   | clear
-  | hazard (sub : D2SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
 /-- D2 verdict — the structured output of `detect`. -/
-structure D2Verdict where
+structure Verdict where
   input              : Array Nat
-  classify           : D2Classification
+  classify           : Classification
   dotPositions       : Array Nat
   lastDotPos         : Option Nat
   bidiControlCount   : Nat
@@ -159,7 +159,7 @@ def countExtendFrom (input : Array Nat) (start : Nat) : Nat :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The D2 detection function. -/
-def detect (input : Array Nat) : D2Verdict :=
+def detect (input : Array Nat) : Verdict :=
   let dots := dotPositions input
   let lastDot := dots[dots.size - 1]?
   let extStart : Nat :=
@@ -173,7 +173,7 @@ def detect (input : Array Nat) : D2Verdict :=
   let extInExt := countExtendFrom input extStart
   -- Priority: bidi control → fullwidth-in-ext → combining-in-ext
   --           → multi-ext.
-  let classification : D2Classification :=
+  let classification : Classification :=
     match firstBidiControl input with
     | some (pos, ctlCp) =>
       .hazard (.rloFlip pos ctlCp) #[pos] ByteArray.empty
@@ -202,8 +202,8 @@ def detect (input : Array Nat) : D2Verdict :=
 -- §5 Projection helpers
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Fixture-row tag string for each `D2SubThreat` constructor. -/
-def D2SubThreat.tag : D2SubThreat → String
+/-- Fixture-row tag string for each `SubThreat` constructor. -/
+def SubThreat.tag : SubThreat → String
   | .rloFlip            position controlCp =>
       Function.const (Nat × Nat) "RloFlip" (position, controlCp)
   | .widthClassExt      position cp        =>
@@ -214,23 +214,23 @@ def D2SubThreat.tag : D2SubThreat → String
       Function.const Nat "MultipleExtensions" dotCount
 
 /-- True iff the classification is `.clear`. -/
-def D2Classification.isClear : D2Classification → Bool
+def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (D2SubThreat × Array Nat × ByteArray) false
+      Function.const (SubThreat × Array Nat × ByteArray) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification. -/
-def D2Classification.tag : D2Classification → Option String
+def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
       Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
 
 /-- Positions array of a classification. -/
-def D2Classification.positions : D2Classification → Array Nat
+def Classification.positions : Classification → Array Nat
   | .clear                     => #[]
   | .hazard sub positions decoded =>
-      Function.const (D2SubThreat × ByteArray) positions (sub, decoded)
+      Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 Spot checks

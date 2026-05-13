@@ -36,20 +36,20 @@ def rawFixture : String :=
 
 def rows : Array Row := parseFixture rawFixture
 
-/-- Project a `K2Classification` to `(ClassificationKind,
+/-- Project a `Classification` to `(ClassificationKind,
     sub-threat-tag)`. -/
 def projectClassify
-    (c : K2Classification) : ClassificationKind × Option String :=
+    (c : Classification) : ClassificationKind × Option String :=
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
-/-- Project a `K2Classification` to the positions array. -/
-def projectPositions (c : K2Classification) : Array Nat :=
+/-- Project a `Classification` to the positions array. -/
+def projectPositions (c : Classification) : Array Nat :=
   c.positions
 
 /-- Validate the K2 verdict's metadata fields against the row's
     column-4 attribution.  Recognised key: `stableSize` (the
     codepoint count of the canonical NFC + trim form). -/
-private def metadataMatches (v : K2Verdict)
+private def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey "stableSize" v.stableSize
 

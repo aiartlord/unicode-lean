@@ -71,7 +71,7 @@ open Unicode.Generated.ScriptExtensions (ScriptAbbrev)
       6. `unrestrictedLevel`  catch-all when `restrictionLevel`
                               resolves to `.Unrestricted`
 -/
-inductive I2SubThreat where
+inductive SubThreat where
   | restrictedStatusCp  (firstPos : Nat) (firstCp : Nat)
   | latinCyrillic       (cyrillicPositions : Array Nat)
   | latinGreek          (greekPositions : Array Nat)
@@ -82,16 +82,16 @@ inductive I2SubThreat where
 
 /-- Top-level classification for I2.  The clear case is just
     `.clear`; the input's restriction level is reported via the
-    `I2Verdict.level` field for downstream audit. -/
-inductive I2Classification where
+    `Verdict.level` field for downstream audit. -/
+inductive Classification where
   | clear
-  | hazard (sub : I2SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
 /-- I2 verdict — the structured output of `detect`. -/
-structure I2Verdict where
+structure Verdict where
   input            : Array Nat
-  classify         : I2Classification
+  classify         : Classification
   scripts          : Array ScriptAbbrev
   level            : RestrictionLevel
   restrictedCps    : Array Nat
@@ -151,7 +151,7 @@ def unionOfScripts (input : Array Nat) : Array ScriptAbbrev :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The I2 detection function. -/
-def detect (input : Array Nat) : I2Verdict :=
+def detect (input : Array Nat) : Verdict :=
   let scriptsIntersect := Unicode.Restriction.stringResolvedScripts input
   let scriptsUnion := unionOfScripts input
   let level := Unicode.Restriction.restrictionLevel input
@@ -160,7 +160,7 @@ def detect (input : Array Nat) : I2Verdict :=
   let hasLatn := hasScript input .Latn
   let hasCyrl := hasScript input .Cyrl
   let hasGrek := hasScript input .Grek
-  let classification : I2Classification :=
+  let classification : Classification :=
     if h : restrictedPositions.size > 0 then
       let p0 := restrictedPositions[0]'h
       let cp0 := if hp : p0 < input.size then input[p0]'hp else 0
@@ -204,8 +204,8 @@ def detect (input : Array Nat) : I2Verdict :=
 -- §4 Projection helpers
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Fixture-row tag string for each `I2SubThreat` constructor. -/
-def I2SubThreat.tag : I2SubThreat → String
+/-- Fixture-row tag string for each `SubThreat` constructor. -/
+def SubThreat.tag : SubThreat → String
   | .restrictedStatusCp firstPos firstCp =>
       Function.const (Nat × Nat) "RestrictedStatusCp" (firstPos, firstCp)
   | .latinCyrillic      cyrPositions    =>
@@ -219,23 +219,23 @@ def I2SubThreat.tag : I2SubThreat → String
   | .unrestrictedLevel                  => "UnrestrictedLevel"
 
 /-- True iff the classification is `.clear`. -/
-def I2Classification.isClear : I2Classification → Bool
+def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (I2SubThreat × Array Nat × ByteArray) false
+      Function.const (SubThreat × Array Nat × ByteArray) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification. -/
-def I2Classification.tag : I2Classification → Option String
+def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
       Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
 
 /-- Positions array of a classification. -/
-def I2Classification.positions : I2Classification → Array Nat
+def Classification.positions : Classification → Array Nat
   | .clear                     => #[]
   | .hazard sub positions decoded =>
-      Function.const (I2SubThreat × ByteArray) positions (sub, decoded)
+      Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Spot checks

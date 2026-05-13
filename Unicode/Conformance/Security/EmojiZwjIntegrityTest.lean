@@ -28,13 +28,13 @@ def rawFixture : String :=
 
 def rows : Array Row := parseFixture rawFixture
 
-/-- Project an `I3Classification` to `(ClassificationKind, sub-threat-tag)`. -/
+/-- Project an `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
-    (c : I3Classification) : ClassificationKind × Option String :=
+    (c : Classification) : ClassificationKind × Option String :=
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
-/-- Project an `I3Classification` to the positions array. -/
-def projectPositions (c : I3Classification) : Array Nat :=
+/-- Project an `Classification` to the positions array. -/
+def projectPositions (c : Classification) : Array Nat :=
   c.positions
 
 /-- Validate the I3 verdict's metadata fields against the row's
@@ -42,7 +42,7 @@ def projectPositions (c : I3Classification) : Array Nat :=
     chain length), `vs_count` (placeholder for future emoji
     variation-selector counts — currently `zwjPositions.size`),
     `skin_tone_count`, and `is_rgi` (registered RGI flag). -/
-private def metadataMatches (v : I3Verdict)
+private def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey   "chain_len"       v.chainLength &&
   attr.checkNatKey   "zwj_count"       v.zwjPositions.size &&

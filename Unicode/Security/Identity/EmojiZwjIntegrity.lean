@@ -70,7 +70,7 @@ def zwj : Nat := 0x200D
       5. `unregisteredSequence` ZWJ present, not in RGI set,
                                 no other sub-threat matched
 -/
-inductive I3SubThreat where
+inductive SubThreat where
   | doubleZWJ            (positions : Array Nat)
   | nonEmojiInjection    (zwjPos : Nat) (nonEmojiCp : Nat)
   | overLength           (length : Nat) (maxLength : Nat)
@@ -79,15 +79,15 @@ inductive I3SubThreat where
   deriving DecidableEq, Repr, Inhabited
 
 /-- Top-level classification for I3. -/
-inductive I3Classification where
+inductive Classification where
   | clear
-  | hazard (sub : I3SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
 /-- I3 verdict — the structured output of `detect`. -/
-structure I3Verdict where
+structure Verdict where
   input             : Array Nat
-  classify          : I3Classification
+  classify          : Classification
   zwjPositions      : Array Nat
   chainLength       : Nat
   isRegisteredRGI   : Bool
@@ -160,7 +160,7 @@ def skinToneCount (input : Array Nat) : Nat :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The I3 detection function. -/
-def detect (input : Array Nat) : I3Verdict :=
+def detect (input : Array Nat) : Verdict :=
   let zwjs := zwjPositions input
   let stCount := skinToneCount input
   let isRgi := Unicode.Generated.EmojiSequences.isRegisteredZwjSequence input
@@ -173,7 +173,7 @@ def detect (input : Array Nat) : I3Verdict :=
       isRegisteredRGI := isRgi,
       skinToneCount := stCount }
   else
-    let classification : I3Classification :=
+    let classification : Classification :=
       -- Phase 1: registered RGI sequence is always clear.
       if isRgi then .clear
       else
@@ -210,8 +210,8 @@ def detect (input : Array Nat) : I3Verdict :=
 -- §4 Projection helpers
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Fixture-row tag string for each `I3SubThreat` constructor. -/
-def I3SubThreat.tag : I3SubThreat → String
+/-- Fixture-row tag string for each `SubThreat` constructor. -/
+def SubThreat.tag : SubThreat → String
   | .doubleZWJ            positions             =>
       Function.const (Array Nat) "DoubleZWJ" positions
   | .nonEmojiInjection    zwjPos nonEmojiCp     =>
@@ -224,23 +224,23 @@ def I3SubThreat.tag : I3SubThreat → String
       Function.const Nat "UnregisteredSequence" chainLen
 
 /-- True iff the classification is `.clear`. -/
-def I3Classification.isClear : I3Classification → Bool
+def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (I3SubThreat × Array Nat × ByteArray) false
+      Function.const (SubThreat × Array Nat × ByteArray) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification. -/
-def I3Classification.tag : I3Classification → Option String
+def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
       Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
 
 /-- Positions array of a classification. -/
-def I3Classification.positions : I3Classification → Array Nat
+def Classification.positions : Classification → Array Nat
   | .clear                     => #[]
   | .hazard sub positions decoded =>
-      Function.const (I3SubThreat × ByteArray) positions (sub, decoded)
+      Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Spot checks

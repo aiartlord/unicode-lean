@@ -87,19 +87,19 @@ def firstTagBlockPos (input : Array Nat) : Option Nat :=
 -- §2 Types
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-inductive X2SubThreat where
+inductive SubThreat where
   | bidiPlusUnregisteredVs (bidiPos : Nat) (vsPos : Nat)
   | bidiPlusTagBlock       (bidiPos : Nat) (tagPos : Nat)
   deriving DecidableEq, Repr, Inhabited
 
-inductive X2Classification where
+inductive Classification where
   | clear
-  | hazard (sub : X2SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
-structure X2Verdict where
+structure Verdict where
   input    : Array Nat
-  classify : X2Classification
+  classify : Classification
   deriving Inhabited
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -107,8 +107,8 @@ structure X2Verdict where
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The X2 detection function. -/
-def detect (input : Array Nat) : X2Verdict :=
-  let classification : X2Classification :=
+def detect (input : Array Nat) : Verdict :=
+  let classification : Classification :=
     match firstBidiPos input with
     | none => .clear
     | some bidiPos =>
@@ -128,27 +128,27 @@ def detect (input : Array Nat) : X2Verdict :=
 -- §4 Projection helpers
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-def X2SubThreat.tag : X2SubThreat → String
+def SubThreat.tag : SubThreat → String
   | .bidiPlusUnregisteredVs bidiPos vsPos =>
     Function.const (Nat × Nat) "BidiPlusUnregisteredVs" (bidiPos, vsPos)
   | .bidiPlusTagBlock       bidiPos tagPos =>
     Function.const (Nat × Nat) "BidiPlusTagBlock"       (bidiPos, tagPos)
 
-def X2Classification.isClear : X2Classification → Bool
+def Classification.isClear : Classification → Bool
   | .clear                       => true
   | .hazard sub positions decoded =>
-    Function.const (X2SubThreat × Array Nat × ByteArray) false
+    Function.const (SubThreat × Array Nat × ByteArray) false
       (sub, positions, decoded)
 
-def X2Classification.tag : X2Classification → Option String
+def Classification.tag : Classification → Option String
   | .clear                       => none
   | .hazard sub positions decoded =>
     Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
 
-def X2Classification.positions : X2Classification → Array Nat
+def Classification.positions : Classification → Array Nat
   | .clear                       => #[]
   | .hazard sub positions decoded =>
-    Function.const (X2SubThreat × ByteArray) positions (sub, decoded)
+    Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Spot checks

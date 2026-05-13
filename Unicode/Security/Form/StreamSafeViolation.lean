@@ -98,18 +98,18 @@ def totalNonStarters (input : Array Nat) : Nat :=
 -- §2 Types
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-inductive F2SubThreat where
+inductive SubThreat where
   | streamSafeOverrun (basePos : Nat) (runLen : Nat)
   deriving DecidableEq, Repr, Inhabited
 
-inductive F2Classification where
+inductive Classification where
   | clear
-  | hazard (sub : F2SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
-structure F2Verdict where
+structure Verdict where
   input            : Array Nat
-  classify         : F2Classification
+  classify         : Classification
   maxRunLen        : Nat
   overrunCount     : Nat
   totalNonStarters : Nat
@@ -120,8 +120,8 @@ structure F2Verdict where
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The F2 detection function. -/
-def detect (input : Array Nat) : F2Verdict :=
-  let classification : F2Classification :=
+def detect (input : Array Nat) : Verdict :=
+  let classification : Classification :=
     match firstOverrun input with
     | some (basePos, runLen) =>
       .hazard (.streamSafeOverrun basePos runLen) #[basePos] ByteArray.empty
@@ -136,25 +136,25 @@ def detect (input : Array Nat) : F2Verdict :=
 -- §4 Projection helpers
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-def F2SubThreat.tag : F2SubThreat → String
+def SubThreat.tag : SubThreat → String
   | .streamSafeOverrun basePos runLen =>
     Function.const (Nat × Nat) "StreamSafeOverrun" (basePos, runLen)
 
-def F2Classification.isClear : F2Classification → Bool
+def Classification.isClear : Classification → Bool
   | .clear                       => true
   | .hazard sub positions decoded =>
-    Function.const (F2SubThreat × Array Nat × ByteArray) false
+    Function.const (SubThreat × Array Nat × ByteArray) false
       (sub, positions, decoded)
 
-def F2Classification.tag : F2Classification → Option String
+def Classification.tag : Classification → Option String
   | .clear                       => none
   | .hazard sub positions decoded =>
     Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
 
-def F2Classification.positions : F2Classification → Array Nat
+def Classification.positions : Classification → Array Nat
   | .clear                       => #[]
   | .hazard sub positions decoded =>
-    Function.const (F2SubThreat × ByteArray) positions (sub, decoded)
+    Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Spot checks

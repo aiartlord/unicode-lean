@@ -46,7 +46,7 @@
   context that a codepoint-only detector cannot access:
   declared encoding string, RFC profile choice, persistence-
   boundary state, network-actor identity.  They are declared
-  in `K2SubThreat` for future-extension consistency with the
+  in `SubThreat` for future-extension consistency with the
   spec; the v1 detector never emits them.
 -/
 
@@ -65,7 +65,7 @@ open Unicode.Security.Calculus
     `L6-cryptographic-stability.md` §K2.3.  Only the first two
     are emitted by the v1 detector; the remaining four require
     context the codepoint-only API doesn't carry. -/
-inductive K2SubThreat where
+inductive SubThreat where
   | normalizationDrift       (firstDivergentPos : Nat)
   | trailingWhitespace       (count : Nat)
   | encodingMismatch         (declaredEnc : String) (detectedEnc : String)
@@ -75,18 +75,18 @@ inductive K2SubThreat where
   deriving DecidableEq, Repr, Inhabited
 
 /-- Top-level K2 classification. -/
-inductive K2Classification where
+inductive Classification where
   | clear
-  | hazard (sub : K2SubThreat) (positions : Array Nat)
+  | hazard (sub : SubThreat) (positions : Array Nat)
   deriving DecidableEq, Repr, Inhabited
 
 /-- K2 verdict — the structured output of `detect`.
     `stableSize` is the codepoint count of the hash-stable
     canonical form; downstream callers compare it against
     `input.size` to size the byte-drift their hash would see. -/
-structure K2Verdict where
+structure Verdict where
   input        : Array Nat
-  classify     : K2Classification
+  classify     : Classification
   stableForm   : Array Nat
   stableSize   : Nat
   deriving Inhabited
@@ -95,14 +95,14 @@ structure K2Verdict where
 -- §2 Universal projections (isClear / tag / positions)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-namespace K2Classification
+namespace Classification
 
-@[inline] def isClear : K2Classification → Bool
+@[inline] def isClear : Classification → Bool
   | .clear              => true
   | .hazard sub ps      =>
-    Function.const (K2SubThreat × Array Nat) false (sub, ps)
+    Function.const (SubThreat × Array Nat) false (sub, ps)
 
-@[inline] def tag : K2Classification → Option String
+@[inline] def tag : Classification → Option String
   | .clear              => none
   | .hazard sub ps      =>
     Function.const (Array Nat) (
@@ -122,11 +122,11 @@ namespace K2Classification
         Function.const Nat (some "WebhookSignatureDrift") pos
     ) ps
 
-@[inline] def positions : K2Classification → Array Nat
+@[inline] def positions : Classification → Array Nat
   | .clear              => #[]
-  | .hazard sub ps      => Function.const K2SubThreat ps sub
+  | .hazard sub ps      => Function.const SubThreat ps sub
 
-end K2Classification
+end Classification
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 Canonicalisation pipeline
@@ -231,7 +231,7 @@ def firstArrayDivergence (a b : Array Nat) : Option Nat :=
          form differs by the NFC normalisation.
       3. clear                — input is already hash-stable.
 -/
-def detect (input : Array Nat) : K2Verdict :=
+def detect (input : Array Nat) : Verdict :=
   let stable        := hashStable input
   let trailingCount := countTrailingWhitespace input
 
@@ -239,7 +239,7 @@ def detect (input : Array Nat) : K2Verdict :=
   let nonNfcPos :=
     if input == nfc then none else firstArrayDivergence input nfc
 
-  let classification : K2Classification :=
+  let classification : Classification :=
     if trailingCount > 0 then
       let p := input.size - trailingCount
       .hazard (.trailingWhitespace trailingCount) #[p]

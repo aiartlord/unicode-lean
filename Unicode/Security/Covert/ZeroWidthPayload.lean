@@ -66,7 +66,7 @@ open Unicode.Security.Calculus
       4. `binaryPayload`        ZWSP/ZWJ binary alphabet present
       5. `bareZeroWidth`        single isolated zero-width fallback
 -/
-inductive C3SubThreat where
+inductive SubThreat where
   | annotationMisuse    (anchors separators terminators : Nat)
   | wordJoinerInjection (count : Nat)
   | aiWatermarkNNBSP    (count : Nat)
@@ -75,15 +75,15 @@ inductive C3SubThreat where
   deriving DecidableEq, Repr, Inhabited
 
 /-- Top-level classification for C3. -/
-inductive C3Classification where
+inductive Classification where
   | clear
-  | hazard (sub : C3SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
 /-- C3 verdict — the structured output of `detect`. -/
-structure C3Verdict where
+structure Verdict where
   input              : Array Nat
-  classify           : C3Classification
+  classify           : Classification
   zwPositions        : Array Nat                  -- every zero-width position
   suspiciousPositions: Array Nat                  -- minus RGI-context ZWJ
   totalZeroWidth     : Nat
@@ -193,7 +193,7 @@ private def annotationIllFormed (c : ZWCounts) : Bool :=
     no zero-width suspicion remains after legitimacy filtering. -/
 private def pickSubThreat
     (suspicious : Array Nat) (input : Array Nat) (c : ZWCounts) :
-    Option C3SubThreat :=
+    Option SubThreat :=
   if suspicious.isEmpty then
     none
   else if annotationIllFormed c then
@@ -217,7 +217,7 @@ private def pickSubThreat
 
 /-- The C3 detection function.  Returns a structured verdict
     over the codepoint sequence `input`. -/
-def detect (input : Array Nat) : C3Verdict :=
+def detect (input : Array Nat) : Verdict :=
   -- Phase 1: collect every zero-width position.
   let zwPositions : Array Nat :=
     (Array.range input.size).filterMap (fun i =>
@@ -271,8 +271,8 @@ def detect (input : Array Nat) : C3Verdict :=
 -- §6 Projection helpers
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Fixture-row tag string for each `C3SubThreat` constructor. -/
-def C3SubThreat.tag : C3SubThreat → String
+/-- Fixture-row tag string for each `SubThreat` constructor. -/
+def SubThreat.tag : SubThreat → String
   | .annotationMisuse    anchors separators terminators =>
       Function.const (Nat × Nat × Nat) "AnnotationMisuse"
         (anchors, separators, terminators)
@@ -286,23 +286,23 @@ def C3SubThreat.tag : C3SubThreat → String
       Function.const Nat "BareZeroWidth" cp
 
 /-- True iff the classification is `.clear`. -/
-def C3Classification.isClear : C3Classification → Bool
+def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (C3SubThreat × Array Nat × ByteArray) false
+      Function.const (SubThreat × Array Nat × ByteArray) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification (`none` for `.clear`). -/
-def C3Classification.tag : C3Classification → Option String
+def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
       Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
 
 /-- Positions array of a classification (empty for `.clear`). -/
-def C3Classification.positions : C3Classification → Array Nat
+def Classification.positions : Classification → Array Nat
   | .clear                     => #[]
   | .hazard sub positions decoded =>
-      Function.const (C3SubThreat × ByteArray) positions (sub, decoded)
+      Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §7 Spot checks

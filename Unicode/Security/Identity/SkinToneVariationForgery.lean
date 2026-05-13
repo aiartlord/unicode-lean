@@ -41,22 +41,22 @@ open Unicode.Security.Calculus
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Sub-threat enumeration for I4. -/
-inductive I4SubThreat where
+inductive SubThreat where
   | stackedSkinTones       (basePos : Nat) (modifiers : Array Nat)
   | invalidSkinToneTarget  (basePos : Nat) (baseCp : Nat) (modifierCp : Nat)
   | forcedTextStyle        (basePos : Nat) (baseCp : Nat)
   deriving DecidableEq, Repr, Inhabited
 
 /-- Top-level classification for I4. -/
-inductive I4Classification where
+inductive Classification where
   | clear
-  | hazard (sub : I4SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
 /-- I4 verdict — the structured output of `detect`. -/
-structure I4Verdict where
+structure Verdict where
   input              : Array Nat
-  classify           : I4Classification
+  classify           : Classification
   skinToneCount      : Nat
   variationSelector15Count : Nat
   variationSelector16Count : Nat
@@ -147,11 +147,11 @@ def vs16Count (input : Array Nat) : Nat :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The I4 detection function. -/
-def detect (input : Array Nat) : I4Verdict :=
+def detect (input : Array Nat) : Verdict :=
   let stc := skinToneCount input
   let v15 := vs15Count input
   let v16 := vs16Count input
-  let classification : I4Classification :=
+  let classification : Classification :=
     match firstStackedSkinTones input with
     | some (basePos, mods) =>
       let modPositions :=
@@ -179,8 +179,8 @@ def detect (input : Array Nat) : I4Verdict :=
 -- §5 Projection helpers
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Fixture-row tag string for each `I4SubThreat` constructor. -/
-def I4SubThreat.tag : I4SubThreat → String
+/-- Fixture-row tag string for each `SubThreat` constructor. -/
+def SubThreat.tag : SubThreat → String
   | .stackedSkinTones      basePos modifiers     =>
       Function.const (Nat × Array Nat) "StackedSkinTones" (basePos, modifiers)
   | .invalidSkinToneTarget basePos baseCp modCp  =>
@@ -190,23 +190,23 @@ def I4SubThreat.tag : I4SubThreat → String
       Function.const (Nat × Nat) "ForcedTextStyle" (basePos, baseCp)
 
 /-- True iff the classification is `.clear`. -/
-def I4Classification.isClear : I4Classification → Bool
+def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (I4SubThreat × Array Nat × ByteArray) false
+      Function.const (SubThreat × Array Nat × ByteArray) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification. -/
-def I4Classification.tag : I4Classification → Option String
+def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
       Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
 
 /-- Positions array of a classification. -/
-def I4Classification.positions : I4Classification → Array Nat
+def Classification.positions : Classification → Array Nat
   | .clear                     => #[]
   | .hazard sub positions decoded =>
-      Function.const (I4SubThreat × ByteArray) positions (sub, decoded)
+      Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 Spot checks

@@ -30,7 +30,7 @@
 #
 # Six additional spec sub-threats (Gpt5ZwspModulo,
 # EmDashPattern, SmartQuoteAlternation, StatisticalTokenChoice,
-# Adversarial, Unknown) are declared in K3SubThreat for
+# Adversarial, Unknown) are declared in SubThreat for
 # spec consistency but require analytical context (statistical
 # regularity, per-provider modulo schedules) that the
 # codepoint-only detector cannot supply.  v1 never emits them.

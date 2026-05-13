@@ -27,13 +27,13 @@ def rawFixture : String :=
 
 def rows : Array Row := parseFixture rawFixture
 
-/-- Project a `D2Classification` to `(ClassificationKind, sub-threat-tag)`. -/
+/-- Project a `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
-    (c : D2Classification) : ClassificationKind × Option String :=
+    (c : Classification) : ClassificationKind × Option String :=
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
-/-- Project a `D2Classification` to the positions array. -/
-def projectPositions (c : D2Classification) : Array Nat :=
+/-- Project a `Classification` to the positions array. -/
+def projectPositions (c : Classification) : Array Nat :=
   c.positions
 
 /-- Validate the D2 verdict's metadata fields against the row's
@@ -41,7 +41,7 @@ def projectPositions (c : D2Classification) : Array Nat :=
     `.` separators), `bidi_count` (bidi-control characters present),
     `fw_in_ext`, `comb_in_ext` (fullwidth / combining characters
     inside the extension). -/
-private def metadataMatches (v : D2Verdict)
+private def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey "dot_count"   v.dotPositions.size &&
   attr.checkNatKey "bidi_count"  v.bidiControlCount &&

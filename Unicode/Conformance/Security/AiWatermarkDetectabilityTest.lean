@@ -41,20 +41,20 @@ def rawFixture : String :=
 
 def rows : Array Row := parseFixture rawFixture
 
-/-- Project a `K3Classification` to `(ClassificationKind,
+/-- Project a `Classification` to `(ClassificationKind,
     sub-threat-tag)`. -/
 def projectClassify
-    (c : K3Classification) : ClassificationKind × Option String :=
+    (c : Classification) : ClassificationKind × Option String :=
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
-/-- Project a `K3Classification` to the positions array. -/
-def projectPositions (c : K3Classification) : Array Nat :=
+/-- Project a `Classification` to the positions array. -/
+def projectPositions (c : Classification) : Array Nat :=
   c.positions
 
 /-- Validate the K3 verdict's metadata fields against the row's
     column-4 attribution.  Recognised key: `markerCount` (count
     of codepoints matching the fired scheme; 0 when clear). -/
-private def metadataMatches (v : K3Verdict)
+private def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey "markerCount" v.markerCount
 

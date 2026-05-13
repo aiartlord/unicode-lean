@@ -35,13 +35,13 @@ def rawFixture : String :=
 
 def rows : Array Row := parseFixture rawFixture
 
-/-- Project an `X1Classification` to `(ClassificationKind, sub-threat-tag)`. -/
+/-- Project an `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
-    (c : X1Classification) : ClassificationKind × Option String :=
+    (c : Classification) : ClassificationKind × Option String :=
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
-/-- Project an `X1Classification` to the positions array. -/
-def projectPositions (c : X1Classification) : Array Nat :=
+/-- Project an `Classification` to the positions array. -/
+def projectPositions (c : Classification) : Array Nat :=
   c.positions
 
 /-- Validate the X1 verdict's metadata fields against the row's
@@ -49,7 +49,7 @@ def projectPositions (c : X1Classification) : Array Nat :=
     number of codepoints whose UTS #39 Identifier_Status / Type
     classification shifts between the raw input and its NFKC
     normalization). -/
-private def metadataMatches (v : X1Verdict)
+private def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey "shift_count" v.shiftCount
 

@@ -62,7 +62,7 @@
   detector cannot supply: a per-provider modulo schedule,
   statistical regularity over the document, or a comparison
   against an externally-trained classifier.  They are declared
-  in `K3SubThreat` for future-extension consistency but never
+  in `SubThreat` for future-extension consistency but never
   emitted by the v1 detector.
 
   Note on overlap with C2 and C3.  A VS payload fires BOTH C2
@@ -95,7 +95,7 @@ open Unicode.Security.Calculus
     require context (statistical regularity, per-provider
     modulo schedules, per-document distribution baselines) that
     the codepoint-only API does not carry. -/
-inductive K3SubThreat where
+inductive SubThreat where
   | nnbspBoundary             (markerCount : Nat)
   | variationSelectorCarrier  (markerCount : Nat)
   | zwjNonEmoji               (markerCount : Nat)
@@ -112,9 +112,9 @@ inductive K3SubThreat where
 /-- Top-level K3 classification.  `.clear` = no watermark
     marker detected (semantically `noWatermark`); `.hazard`
     carries the fired sub-threat plus the marker positions. -/
-inductive K3Classification where
+inductive Classification where
   | clear
-  | hazard (sub : K3SubThreat) (positions : Array Nat)
+  | hazard (sub : SubThreat) (positions : Array Nat)
   deriving DecidableEq, Repr, Inhabited
 
 /-- K3 verdict — the structured output of `detect`.
@@ -122,9 +122,9 @@ inductive K3Classification where
     scheme's probe (0 when clear).  Mirrors K2's `stableSize`
     in shape — a single scalar the harness can pin on every
     fixture row. -/
-structure K3Verdict where
+structure Verdict where
   input        : Array Nat
-  classify     : K3Classification
+  classify     : Classification
   markerCount  : Nat
   deriving Inhabited
 
@@ -132,14 +132,14 @@ structure K3Verdict where
 -- §2 Universal projections (isClear / tag / positions)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-namespace K3Classification
+namespace Classification
 
-@[inline] def isClear : K3Classification → Bool
+@[inline] def isClear : Classification → Bool
   | .clear              => true
   | .hazard sub ps      =>
-    Function.const (K3SubThreat × Array Nat) false (sub, ps)
+    Function.const (SubThreat × Array Nat) false (sub, ps)
 
-@[inline] def tag : K3Classification → Option String
+@[inline] def tag : Classification → Option String
   | .clear              => none
   | .hazard sub ps      =>
     Function.const (Array Nat) (
@@ -166,11 +166,11 @@ namespace K3Classification
         Function.const Nat (some "Unknown") anomaly
     ) ps
 
-@[inline] def positions : K3Classification → Array Nat
+@[inline] def positions : Classification → Array Nat
   | .clear              => #[]
-  | .hazard sub ps      => Function.const K3SubThreat ps sub
+  | .hazard sub ps      => Function.const SubThreat ps sub
 
-end K3Classification
+end Classification
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 Codepoint probes
@@ -297,7 +297,7 @@ theorem isAdjacentToEmoji_before_smiley :
     matching the fired scheme (0 when clear).  Positions array
     holds every position matching the fired scheme.
 -/
-def detect (input : Array Nat) : K3Verdict :=
+def detect (input : Array Nat) : Verdict :=
   let nnbspPositions := allPositions isNnbsp input
   let nnbspCount := nnbspPositions.size
 
@@ -321,7 +321,7 @@ def detect (input : Array Nat) : K3Verdict :=
   let diPositions := allPositions isResidualDI input
   let diCount := diPositions.size
 
-  let (classification, firedCount) : K3Classification × Nat :=
+  let (classification, firedCount) : Classification × Nat :=
     if nnbspCount > 0 then
       (.hazard (.nnbspBoundary nnbspCount) nnbspPositions, nnbspCount)
     else if vsNonEmojiCount > 0 then

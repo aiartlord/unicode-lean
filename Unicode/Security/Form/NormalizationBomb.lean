@@ -84,20 +84,20 @@ def nfkdRatioPct : Nat := 400
 -- §2 Types
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-inductive F1SubThreat where
+inductive SubThreat where
   | singleCpBlowup    (basePos : Nat) (cp : Nat) (expandsTo : Nat)
   | nfkdHighExpansion (nfkdLen : Nat) (inputLen : Nat)
   | nfdHighExpansion  (nfdLen : Nat) (inputLen : Nat)
   deriving DecidableEq, Repr, Inhabited
 
-inductive F1Classification where
+inductive Classification where
   | clear
-  | hazard (sub : F1SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
-structure F1Verdict where
+structure Verdict where
   input              : Array Nat
-  classify           : F1Classification
+  classify           : Classification
   nfdLen             : Nat
   nfkdLen            : Nat
   inputLen           : Nat
@@ -144,12 +144,12 @@ def nfkdRatioPctOf (input : Array Nat) : Nat :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The F1 detection function. -/
-def detect (input : Array Nat) : F1Verdict :=
+def detect (input : Array Nat) : Verdict :=
   let nfdLen := (Unicode.Normalization.NFC.toNFD input).size
   let nfkdLen := (Unicode.Normalization.NFKD.toNFKD input).size
   let inputLen := input.size
   let maxPer := maxPerCpExpansion input
-  let classification : F1Classification :=
+  let classification : Classification :=
     -- Priority 1: per-codepoint blow-up.
     match firstBlowupCp input with
     | some (pos, cp, expand) =>
@@ -175,7 +175,7 @@ def detect (input : Array Nat) : F1Verdict :=
 -- §5 Projection helpers
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-def F1SubThreat.tag : F1SubThreat → String
+def SubThreat.tag : SubThreat → String
   | .singleCpBlowup     basePos cp expand =>
       Function.const (Nat × Nat × Nat) "SingleCpBlowup" (basePos, cp, expand)
   | .nfkdHighExpansion  nfkdLen inputLen =>
@@ -183,21 +183,21 @@ def F1SubThreat.tag : F1SubThreat → String
   | .nfdHighExpansion   nfdLen inputLen =>
       Function.const (Nat × Nat) "NfdHighExpansion" (nfdLen, inputLen)
 
-def F1Classification.isClear : F1Classification → Bool
+def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (F1SubThreat × Array Nat × ByteArray) false
+      Function.const (SubThreat × Array Nat × ByteArray) false
         (sub, positions, decoded)
 
-def F1Classification.tag : F1Classification → Option String
+def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
       Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
 
-def F1Classification.positions : F1Classification → Array Nat
+def Classification.positions : Classification → Array Nat
   | .clear                     => #[]
   | .hazard sub positions decoded =>
-      Function.const (F1SubThreat × ByteArray) positions (sub, decoded)
+      Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 Spot checks
