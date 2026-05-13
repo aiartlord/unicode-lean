@@ -30,20 +30,20 @@ def rawFixture : String :=
 
 def rows : Array Row := parseFixture rawFixture
 
-/-- Project an `I4Classification` to `(ClassificationKind, sub-threat-tag)`. -/
+/-- Project an `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
-    (c : I4Classification) : ClassificationKind × Option String :=
+    (c : Classification) : ClassificationKind × Option String :=
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
-/-- Project an `I4Classification` to the positions array. -/
-def projectPositions (c : I4Classification) : Array Nat :=
+/-- Project an `Classification` to the positions array. -/
+def projectPositions (c : Classification) : Array Nat :=
   c.positions
 
 /-- Validate the I4 verdict's metadata fields against the row's
     column-4 attribution.  Recognised keys: `skin_tone_count`,
     `vs15_count` (text-presentation VS-15 occurrences),
     `vs16_count` (emoji-presentation VS-16 occurrences). -/
-private def metadataMatches (v : I4Verdict)
+private def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey "skin_tone_count" v.skinToneCount &&
   attr.checkNatKey "vs15_count"      v.variationSelector15Count &&

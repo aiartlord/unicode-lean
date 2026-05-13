@@ -30,13 +30,13 @@ def rawFixture : String :=
 
 def rows : Array Row := parseFixture rawFixture
 
-/-- Project an `F2Classification` to `(ClassificationKind, sub-threat-tag)`. -/
+/-- Project an `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
-    (c : F2Classification) : ClassificationKind × Option String :=
+    (c : Classification) : ClassificationKind × Option String :=
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
-/-- Project an `F2Classification` to the positions array. -/
-def projectPositions (c : F2Classification) : Array Nat :=
+/-- Project an `Classification` to the positions array. -/
+def projectPositions (c : Classification) : Array Nat :=
   c.positions
 
 /-- Validate the F2 verdict's metadata fields against the row's
@@ -44,7 +44,7 @@ def projectPositions (c : F2Classification) : Array Nat :=
     non-starter run length), `overruns` (number of runs that
     breached the UAX #15 §9 Stream-Safe ceiling of 30),
     `total_ns` (total non-starters in input). -/
-private def metadataMatches (v : F2Verdict)
+private def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey "max_run"  v.maxRunLen &&
   attr.checkNatKey "overruns" v.overrunCount &&

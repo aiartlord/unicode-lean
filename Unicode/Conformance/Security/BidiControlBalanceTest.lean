@@ -35,13 +35,13 @@ def rows : Array Row := parseFixture rawFixture
 -- §2 Per-family classification-name mapping
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Project a `C5Classification` to `(ClassificationKind, sub-threat-tag)`. -/
+/-- Project a `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
-    (c : C5Classification) : ClassificationKind × Option String :=
+    (c : Classification) : ClassificationKind × Option String :=
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
-/-- Project a `C5Classification` to the positions array. -/
-def projectPositions (c : C5Classification) : Array Nat :=
+/-- Project a `Classification` to the positions array. -/
+def projectPositions (c : Classification) : Array Nat :=
   c.positions
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -51,7 +51,7 @@ def projectPositions (c : C5Classification) : Array Nat :=
 /-- Validate the C5 verdict's metadata fields against the row's
     column-4 attribution.  Keys recognised: `emb_open`, `emb_pop`,
     `iso_open`, `iso_pop`, `max_depth`. -/
-private def metadataMatches (v : C5Verdict)
+private def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey "emb_open"   v.embOpenCount &&
   attr.checkNatKey "emb_pop"    v.embPopCount &&

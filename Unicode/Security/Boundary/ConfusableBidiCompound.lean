@@ -96,19 +96,19 @@ def confusableCount (input : Array Nat) : Nat :=
 -- §2 Types
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-inductive X3SubThreat where
+inductive SubThreat where
   | confusableInOverride (confusablePos : Nat) (bidiPos : Nat)
   | confusableInIsolate  (confusablePos : Nat) (bidiPos : Nat)
   deriving DecidableEq, Repr, Inhabited
 
-inductive X3Classification where
+inductive Classification where
   | clear
-  | hazard (sub : X3SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
-structure X3Verdict where
+structure Verdict where
   input           : Array Nat
-  classify        : X3Classification
+  classify        : Classification
   confusableCount : Nat
   deriving Inhabited
 
@@ -117,8 +117,8 @@ structure X3Verdict where
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The X3 detection function. -/
-def detect (input : Array Nat) : X3Verdict :=
-  let classification : X3Classification :=
+def detect (input : Array Nat) : Verdict :=
+  let classification : Classification :=
     match firstConfusablePos input with
     | none => .clear
     | some confusablePos =>
@@ -140,27 +140,27 @@ def detect (input : Array Nat) : X3Verdict :=
 -- §4 Projection helpers
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-def X3SubThreat.tag : X3SubThreat → String
+def SubThreat.tag : SubThreat → String
   | .confusableInOverride confusablePos bidiPos =>
     Function.const (Nat × Nat) "ConfusableInOverride" (confusablePos, bidiPos)
   | .confusableInIsolate  confusablePos bidiPos =>
     Function.const (Nat × Nat) "ConfusableInIsolate"  (confusablePos, bidiPos)
 
-def X3Classification.isClear : X3Classification → Bool
+def Classification.isClear : Classification → Bool
   | .clear                       => true
   | .hazard sub positions decoded =>
-    Function.const (X3SubThreat × Array Nat × ByteArray) false
+    Function.const (SubThreat × Array Nat × ByteArray) false
       (sub, positions, decoded)
 
-def X3Classification.tag : X3Classification → Option String
+def Classification.tag : Classification → Option String
   | .clear                       => none
   | .hazard sub positions decoded =>
     Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
 
-def X3Classification.positions : X3Classification → Array Nat
+def Classification.positions : Classification → Array Nat
   | .clear                       => #[]
   | .hazard sub positions decoded =>
-    Function.const (X3SubThreat × ByteArray) positions (sub, decoded)
+    Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Spot checks

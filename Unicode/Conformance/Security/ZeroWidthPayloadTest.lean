@@ -36,13 +36,13 @@ def rows : Array Row := parseFixture rawFixture
 -- §2 Per-family classification-name mapping
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Project a `C3Classification` to `(ClassificationKind, sub-threat-tag)`. -/
+/-- Project a `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
-    (c : C3Classification) : ClassificationKind × Option String :=
+    (c : Classification) : ClassificationKind × Option String :=
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
-/-- Project a `C3Classification` to the positions array. -/
-def projectPositions (c : C3Classification) : Array Nat :=
+/-- Project a `Classification` to the positions array. -/
+def projectPositions (c : Classification) : Array Nat :=
   c.positions
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -52,7 +52,7 @@ def projectPositions (c : C3Classification) : Array Nat :=
 /-- Validate the C3 verdict's metadata fields against the row's
     column-4 attribution.  Keys recognised: `zwsp_count`,
     `zwj_count`, `wj_count`, `nnbsp_count`. -/
-private def metadataMatches (v : C3Verdict)
+private def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey "zwsp_count"  v.zwspCount &&
   attr.checkNatKey "zwj_count"   v.zwjCount &&

@@ -20,7 +20,7 @@
 
   Sub-threat alignment with `Utf8RejectKind`:
 
-    Utf8RejectKind             →  C4SubThreat
+    Utf8RejectKind             →  SubThreat
     ────────────────────────────────────────────────────────────
     .overlongEncoding          →  .overlong
     .surrogateCodepoint        →  .cesu8                (CESU-8
@@ -57,7 +57,7 @@ open Unicode.Codec.Strict (Utf8RejectKind)
 
 /-- Sub-threat enumeration for C4.  Each variant carries the
     byte offset at which the malformation was first detected. -/
-inductive C4SubThreat where
+inductive SubThreat where
   | overlong            (offset : Nat)
   | cesu8               (offset : Nat)   -- surrogate codepoint in UTF-8 stream
   | truncated           (offset : Nat)
@@ -67,15 +67,15 @@ inductive C4SubThreat where
   deriving DecidableEq, Repr, Inhabited
 
 /-- Top-level classification for C4. -/
-inductive C4Classification where
+inductive Classification where
   | clear
-  | hazard (sub : C4SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
 /-- C4 verdict — the structured output of `detect`. -/
-structure C4Verdict where
+structure Verdict where
   input               : Array Nat
-  classify            : C4Classification
+  classify            : Classification
   byteCount           : Nat
   firstInvalidOffset  : Option Nat
   deriving Inhabited
@@ -99,8 +99,8 @@ def toByteArray (input : Array Nat) : ByteArray := Id.run do
 -- §3 Reject-kind → sub-threat projection
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Project a `Utf8RejectKind` to the corresponding `C4SubThreat`. -/
-def subThreatOfRejectKind (offset : Nat) : Utf8RejectKind → C4SubThreat
+/-- Project a `Utf8RejectKind` to the corresponding `SubThreat`. -/
+def subThreatOfRejectKind (offset : Nat) : Utf8RejectKind → SubThreat
   | .overlongEncoding         => .overlong offset
   | .surrogateCodepoint       => .cesu8 offset
   | .truncatedSequence        => .truncated offset
@@ -115,7 +115,7 @@ def subThreatOfRejectKind (offset : Nat) : Utf8RejectKind → C4SubThreat
 /-- The C4 detection function.  Treats `input` as a byte stream
     (one byte per entry, clamped to `0xFF`) and produces a
     structured verdict over the first detected UTF-8 violation. -/
-def detect (input : Array Nat) : C4Verdict :=
+def detect (input : Array Nat) : Verdict :=
   let bytes := toByteArray input
   match Unicode.Codec.Utf8.firstInvalidUtf8Offset bytes with
   | none =>
@@ -134,8 +134,8 @@ def detect (input : Array Nat) : C4Verdict :=
 -- §5 Projection helpers
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Fixture-row tag string for each `C4SubThreat` constructor. -/
-def C4SubThreat.tag : C4SubThreat → String
+/-- Fixture-row tag string for each `SubThreat` constructor. -/
+def SubThreat.tag : SubThreat → String
   | .overlong            offset => Function.const Nat "Overlong"            offset
   | .cesu8               offset => Function.const Nat "Cesu8"               offset
   | .truncated           offset => Function.const Nat "Truncated"           offset
@@ -144,23 +144,23 @@ def C4SubThreat.tag : C4SubThreat → String
   | .codepointBeyondMax  offset => Function.const Nat "CodepointBeyondMax"  offset
 
 /-- True iff the classification is `.clear`. -/
-def C4Classification.isClear : C4Classification → Bool
+def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (C4SubThreat × Array Nat × ByteArray) false
+      Function.const (SubThreat × Array Nat × ByteArray) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification (`none` for `.clear`). -/
-def C4Classification.tag : C4Classification → Option String
+def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
       Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
 
 /-- Positions array of a classification (empty for `.clear`). -/
-def C4Classification.positions : C4Classification → Array Nat
+def Classification.positions : Classification → Array Nat
   | .clear                     => #[]
   | .hazard sub positions decoded =>
-      Function.const (C4SubThreat × ByteArray) positions (sub, decoded)
+      Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 Spot checks

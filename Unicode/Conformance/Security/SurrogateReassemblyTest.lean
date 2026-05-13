@@ -39,13 +39,13 @@ def rows : Array Row := parseFixture rawFixture
 -- §2 Per-family classification-name mapping
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Project a `C4Classification` to `(ClassificationKind, sub-threat-tag)`. -/
+/-- Project a `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
-    (c : C4Classification) : ClassificationKind × Option String :=
+    (c : Classification) : ClassificationKind × Option String :=
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
-/-- Project a `C4Classification` to the positions array. -/
-def projectPositions (c : C4Classification) : Array Nat :=
+/-- Project a `Classification` to the positions array. -/
+def projectPositions (c : Classification) : Array Nat :=
   c.positions
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -58,7 +58,7 @@ def projectPositions (c : C4Classification) : Array Nat :=
     metadata is `offset` — the byte offset of the first invalid
     byte the strict decoder rejected.  Compared against
     `v.firstInvalidOffset`. -/
-private def metadataMatches (v : C4Verdict)
+private def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   match attr.get? "offset" with
   | none      => true

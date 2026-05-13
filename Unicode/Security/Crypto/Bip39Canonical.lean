@@ -79,7 +79,7 @@ open Unicode.Generated.BIP39 (Language wordlist allLanguages)
 
 /-- The seven K1 sub-threats.  Names + arguments follow
     `L6-cryptographic-stability.md` §K1.3. -/
-inductive K1SubThreat where
+inductive SubThreat where
   | nonCanonicalForm    (preCanonLen : Nat) (postCanonLen : Nat)
   | wordlistMismatch    (firstUnknownWordIdx : Nat)
   | languageAmbiguous   (possibleLanguages : Array Language)
@@ -92,15 +92,15 @@ inductive K1SubThreat where
 /-- Top-level K1 classification.  The clear case carries the
     unique language whose wordlist covers every canonical word
     (vacuously English on empty input). -/
-inductive K1Classification where
+inductive Classification where
   | clear  (lang : Language)
-  | hazard (sub : K1SubThreat) (positions : Array Nat)
+  | hazard (sub : SubThreat) (positions : Array Nat)
   deriving DecidableEq, Repr, Inhabited
 
 /-- K1 verdict — the structured output of `detect`. -/
-structure K1Verdict where
+structure Verdict where
   input          : Array Nat
-  classify       : K1Classification
+  classify       : Classification
   canonicalForm  : Array Nat
   wordCount      : Nat
   deriving Inhabited
@@ -110,14 +110,14 @@ structure K1Verdict where
 -- `Unicode.Security.RunAll.runAll` can register the family uniformly)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-namespace K1Classification
+namespace Classification
 
-@[inline] def isClear : K1Classification → Bool
+@[inline] def isClear : Classification → Bool
   | .clear lang        => Function.const Language true lang
   | .hazard sub ps     =>
-    Function.const (K1SubThreat × Array Nat) false (sub, ps)
+    Function.const (SubThreat × Array Nat) false (sub, ps)
 
-@[inline] def tag : K1Classification → Option String
+@[inline] def tag : Classification → Option String
   | .clear lang                   => Function.const Language none lang
   | .hazard sub ps                =>
     Function.const (Array Nat) (
@@ -138,11 +138,11 @@ namespace K1Classification
         Function.const Nat (some "MixedCase") pos
     ) ps
 
-@[inline] def positions : K1Classification → Array Nat
+@[inline] def positions : Classification → Array Nat
   | .clear lang        => Function.const Language #[] lang
-  | .hazard sub ps     => Function.const K1SubThreat ps sub
+  | .hazard sub ps     => Function.const SubThreat ps sub
 
-end K1Classification
+end Classification
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 Canonicalisation pipeline
@@ -378,7 +378,7 @@ def firstArrayDivergence (a b : Array Nat) : Option Nat :=
     Composes the six probes in priority order; first hit wins.
     See module header §"Sub-threats" for the rationale on each
     position in the order. -/
-def detect (input : Array Nat) : K1Verdict :=
+def detect (input : Array Nat) : Verdict :=
   let canonical := bip39Canonical input
   let words     := splitWords canonical
   let wordCount := words.size
@@ -395,7 +395,7 @@ def detect (input : Array Nat) : K1Verdict :=
   let firstUnknownIdx  := wordlistsPerWord.findIdx? (fun langs => langs.isEmpty)
   let unique           := uniqueLanguage words
 
-  let classification : K1Classification :=
+  let classification : Classification :=
     if trailingCount > 0 then
       let p := input.size - trailingCount
       .hazard (.trailingWhitespace trailingCount) #[p]

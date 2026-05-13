@@ -57,21 +57,21 @@ open Unicode.Generated.DerivedBidiClass (BidiClass)
 -- §1 Types
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-inductive D3SubThreat where
+inductive SubThreat where
   | rloInLTRField   (controlPos : Nat) (controlCp : Nat)
   | fieldTakeover   (firstRtlPos : Nat) (firstRtlCp : Nat)
   | strongRTLInLTR  (rtlCount : Nat) (firstPos : Nat)
   | mixedOverflow   (runLength : Nat) (runStart : Nat)
   deriving DecidableEq, Repr, Inhabited
 
-inductive D3Classification where
+inductive Classification where
   | clear
-  | hazard (sub : D3SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
-structure D3Verdict where
+structure Verdict where
   input              : Array Nat
-  classify           : D3Classification
+  classify           : Classification
   strongRTLCount     : Nat
   strongLTRCount     : Nat
   bidiControlCount   : Nat
@@ -175,12 +175,12 @@ def longestRtlRun (input : Array Nat) : Nat × Nat := Id.run do
     unconditionally regardless of where in the source the
     offending codepoint sits.  See module header for the
     region-agnostic-by-design rationale. -/
-def detect (input : Array Nat) : D3Verdict :=
+def detect (input : Array Nat) : Verdict :=
   let strongRTL := countStrongRTL input
   let strongLTR := countStrongLTR input
   let bidiCtl := countBidiControl input
   let (runLen, runStart) := longestRtlRun input
-  let classification : D3Classification :=
+  let classification : Classification :=
     -- Phase 1: bidi format-control trumps all.
     match firstBidiControlPos input with
     | some (pos, ctlCp) =>
@@ -217,8 +217,8 @@ def detect (input : Array Nat) : D3Verdict :=
 -- §5 Projection helpers
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Fixture-row tag string for each `D3SubThreat` constructor. -/
-def D3SubThreat.tag : D3SubThreat → String
+/-- Fixture-row tag string for each `SubThreat` constructor. -/
+def SubThreat.tag : SubThreat → String
   | .rloInLTRField  controlPos controlCp =>
       Function.const (Nat × Nat) "RloInLTRField" (controlPos, controlCp)
   | .fieldTakeover  firstRtlPos firstRtlCp =>
@@ -229,23 +229,23 @@ def D3SubThreat.tag : D3SubThreat → String
       Function.const (Nat × Nat) "MixedOverflow" (runLength, runStart)
 
 /-- True iff the classification is `.clear`. -/
-def D3Classification.isClear : D3Classification → Bool
+def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (D3SubThreat × Array Nat × ByteArray) false
+      Function.const (SubThreat × Array Nat × ByteArray) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification. -/
-def D3Classification.tag : D3Classification → Option String
+def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
       Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
 
 /-- Positions array of a classification. -/
-def D3Classification.positions : D3Classification → Array Nat
+def Classification.positions : Classification → Array Nat
   | .clear                     => #[]
   | .hazard sub positions decoded =>
-      Function.const (D3SubThreat × ByteArray) positions (sub, decoded)
+      Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 Spot checks

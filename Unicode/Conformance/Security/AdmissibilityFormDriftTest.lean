@@ -31,14 +31,14 @@ def rawFixture : String :=
 
 def rows : Array Row := parseFixture rawFixture
 
-/-- Project an `X4Classification` to `(ClassificationKind, sub-threat-tag)`. -/
+/-- Project an `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
-    (c : X4Classification) : ClassificationKind × Option String :=
+    (c : Classification) : ClassificationKind × Option String :=
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
-/-- Project an `X4Classification` to the positions array.
+/-- Project an `Classification` to the positions array.
     X4 reports no positions because the predicate is whole-string. -/
-def projectPositions (c : X4Classification) : Array Nat :=
+def projectPositions (c : Classification) : Array Nat :=
   c.positions
 
 /-- Validate the X4 verdict's metadata fields against the row's
@@ -46,7 +46,7 @@ def projectPositions (c : X4Classification) : Array Nat :=
     `nfkc_adm` (booleans recording whether the raw input and its
     NFKC form respectively are UTS #39 §5 admissible at the
     Moderately-Restrictive level). -/
-private def metadataMatches (v : X4Verdict)
+private def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkBoolKey "input_adm" v.inputAdmissible &&
   attr.checkBoolKey "nfkc_adm"  v.nfkcAdmissible

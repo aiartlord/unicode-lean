@@ -53,21 +53,21 @@ def langToString : Language → String
   | .czech               => "czech"
   | .portuguese          => "portuguese"
 
-/-- Project a `K1Classification` to `(ClassificationKind,
+/-- Project a `Classification` to `(ClassificationKind,
     sub-threat-tag)`. -/
 def projectClassify
-    (c : K1Classification) : ClassificationKind × Option String :=
+    (c : Classification) : ClassificationKind × Option String :=
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
-/-- Project a `K1Classification` to the positions array. -/
-def projectPositions (c : K1Classification) : Array Nat :=
+/-- Project a `Classification` to the positions array. -/
+def projectPositions (c : Classification) : Array Nat :=
   c.positions
 
 /-- Validate the K1 verdict's metadata fields against the row's
     column-4 attribution.  Recognised keys: `wordCount` (always
     present), `language` (present only for clear verdicts; on
     hazard verdicts the attribution must not assert a language). -/
-private def metadataMatches (v : K1Verdict)
+private def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   let languageStr :=
     match v.classify with

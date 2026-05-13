@@ -63,7 +63,7 @@ open Unicode.Restriction (RestrictionLevel)
       6. `restrictionLow`   input's UTS #39 restriction level is
                             below `.highlyRestrictive`.
 -/
-inductive I1SubThreat where
+inductive SubThreat where
   | targetMatch        (target : String)
   | mathAlpha          (firstCp : Nat) (count : Nat)
   | widthClass         (firstCp : Nat) (count : Nat)
@@ -73,15 +73,15 @@ inductive I1SubThreat where
   deriving DecidableEq, Repr, Inhabited
 
 /-- Top-level classification for I1. -/
-inductive I1Classification where
+inductive Classification where
   | clear
-  | hazard (sub : I1SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
 /-- I1 verdict — the structured output of `detect`. -/
-structure I1Verdict where
+structure Verdict where
   input              : Array Nat
-  classify           : I1Classification
+  classify           : Classification
   skeleton           : Array Nat
   iteratedSkeleton   : Array Nat
   restrictionLevel   : RestrictionLevel
@@ -238,7 +238,7 @@ def crossScriptCount (input : Array Nat) : Nat :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The I1 detection function. -/
-def detect (input : Array Nat) : I1Verdict :=
+def detect (input : Array Nat) : Verdict :=
   let skel := Unicode.Confusables.skeleton input
   let iSkel := Unicode.Confusables.iteratedSkeleton input
   let rl := Unicode.Restriction.restrictionLevel input
@@ -249,7 +249,7 @@ def detect (input : Array Nat) : I1Verdict :=
     | none   => #[]
   -- Priority order: targetMatch → mathAlpha → widthClass →
   -- decompositionSwap → crossScriptMix → restrictionLow → clear.
-  let classification : I1Classification :=
+  let classification : Classification :=
     match matched with
     | some t => .hazard (.targetMatch t.name) #[] ByteArray.empty
     | none =>
@@ -288,8 +288,8 @@ def detect (input : Array Nat) : I1Verdict :=
 -- §6 Projection helpers (mirrors L1 pattern)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Fixture-row tag string for each `I1SubThreat` constructor. -/
-def I1SubThreat.tag : I1SubThreat → String
+/-- Fixture-row tag string for each `SubThreat` constructor. -/
+def SubThreat.tag : SubThreat → String
   | .targetMatch       target                =>
       Function.const String "TargetMatch" target
   | .mathAlpha         firstCp count         =>
@@ -304,23 +304,23 @@ def I1SubThreat.tag : I1SubThreat → String
       Function.const RestrictionLevel "RestrictionLow" level
 
 /-- True iff the classification is `.clear`. -/
-def I1Classification.isClear : I1Classification → Bool
+def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (I1SubThreat × Array Nat × ByteArray) false
+      Function.const (SubThreat × Array Nat × ByteArray) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification. -/
-def I1Classification.tag : I1Classification → Option String
+def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
       Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
 
 /-- Positions array of a classification. -/
-def I1Classification.positions : I1Classification → Array Nat
+def Classification.positions : Classification → Array Nat
   | .clear                     => #[]
   | .hazard sub positions decoded =>
-      Function.const (I1SubThreat × ByteArray) positions (sub, decoded)
+      Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §7 Spot checks

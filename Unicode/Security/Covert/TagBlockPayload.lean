@@ -61,7 +61,7 @@ open Unicode.Security.Calculus
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Sub-threat enumeration for C1. -/
-inductive C1SubThreat where
+inductive SubThreat where
   /-- A run of tag chars whose decoder produces printable ASCII. -/
   | directAscii         (decoded : String)
   /-- LANGUAGE TAG (`U+E0001`) followed by ≥ 1 tag char. -/
@@ -77,15 +77,15 @@ inductive C1SubThreat where
 
     The `decoded` field carries the recovered byte stream when the
     classifier fired; for the clear case it is implicitly empty. -/
-inductive C1Classification where
+inductive Classification where
   | clear
-  | hazard (sub : C1SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
 /-- C1 verdict — the structured output of `detect`. -/
-structure C1Verdict where
+structure Verdict where
   input            : Array Nat
-  classify         : C1Classification
+  classify         : Classification
   tagPositions     : Array Nat                  -- indices of every tag-block char
   recoveredAscii   : String                     -- decoded payload (may be "")
   totalTagChars    : Nat                        -- |tagPositions|
@@ -174,7 +174,7 @@ private def hasLanguageTagPrefix
 -/
 def pickSubThreat
     (input : Array Nat) (tagPositions : Array Nat) (decoded : String) :
-    C1SubThreat :=
+    SubThreat :=
   match hasLanguageTagPrefix input tagPositions with
   | some langPos =>
     -- Decode the tail (skip the LANGUAGE TAG itself).
@@ -198,7 +198,7 @@ def pickSubThreat
 
 /-- The C1 detection function.  Returns a structured verdict over
     the codepoint sequence `input`. -/
-def detect (input : Array Nat) : C1Verdict :=
+def detect (input : Array Nat) : Verdict :=
   -- Phase 1: collect tag positions.
   let tagPositions : Array Nat :=
     (Array.range input.size).filterMap (fun i =>
@@ -229,8 +229,8 @@ def detect (input : Array Nat) : C1Verdict :=
 -- for the `Function.const` idiom that absorbs unused constructor binders.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Fixture-row tag string for each `C1SubThreat` constructor. -/
-def C1SubThreat.tag : C1SubThreat → String
+/-- Fixture-row tag string for each `SubThreat` constructor. -/
+def SubThreat.tag : SubThreat → String
   | .directAscii        decodedStr                  =>
       Function.const String "DirectAscii" decodedStr
   | .languageTagRevival langTagPos    decodedTail   =>
@@ -241,23 +241,23 @@ def C1SubThreat.tag : C1SubThreat → String
       Function.const Nat "BareTagPresent" tagCp
 
 /-- True iff the classification is `.clear`. -/
-def C1Classification.isClear : C1Classification → Bool
+def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (C1SubThreat × Array Nat × ByteArray) false
+      Function.const (SubThreat × Array Nat × ByteArray) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification (`none` for `.clear`). -/
-def C1Classification.tag : C1Classification → Option String
+def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
       Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
 
 /-- Positions array of a classification (empty for `.clear`). -/
-def C1Classification.positions : C1Classification → Array Nat
+def Classification.positions : Classification → Array Nat
   | .clear                     => #[]
   | .hazard sub positions decoded =>
-      Function.const (C1SubThreat × ByteArray) positions (sub, decoded)
+      Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 Spot checks

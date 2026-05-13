@@ -73,19 +73,19 @@ def firstLocaleDivergence (loc : Locale) (input : Array Nat) :
 -- §2 Types
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-inductive F3SubThreat where
+inductive SubThreat where
   | turkishCaseDivergence    (basePos : Nat) (cp : Nat)
   | lithuanianCaseDivergence (basePos : Nat) (cp : Nat)
   deriving DecidableEq, Repr, Inhabited
 
-inductive F3Classification where
+inductive Classification where
   | clear
-  | hazard (sub : F3SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
-structure F3Verdict where
+structure Verdict where
   input    : Array Nat
-  classify : F3Classification
+  classify : Classification
   deriving Inhabited
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -93,8 +93,8 @@ structure F3Verdict where
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The F3 detection function. -/
-def detect (input : Array Nat) : F3Verdict :=
-  let classification : F3Classification :=
+def detect (input : Array Nat) : Verdict :=
+  let classification : Classification :=
     match firstLocaleDivergence .turkish input with
     | some (pos, cp) =>
       .hazard (.turkishCaseDivergence pos cp) #[pos] ByteArray.empty
@@ -109,27 +109,27 @@ def detect (input : Array Nat) : F3Verdict :=
 -- §4 Projection helpers
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-def F3SubThreat.tag : F3SubThreat → String
+def SubThreat.tag : SubThreat → String
   | .turkishCaseDivergence    basePos cp =>
     Function.const (Nat × Nat) "TurkishCaseDivergence"    (basePos, cp)
   | .lithuanianCaseDivergence basePos cp =>
     Function.const (Nat × Nat) "LithuanianCaseDivergence" (basePos, cp)
 
-def F3Classification.isClear : F3Classification → Bool
+def Classification.isClear : Classification → Bool
   | .clear                       => true
   | .hazard sub positions decoded =>
-    Function.const (F3SubThreat × Array Nat × ByteArray) false
+    Function.const (SubThreat × Array Nat × ByteArray) false
       (sub, positions, decoded)
 
-def F3Classification.tag : F3Classification → Option String
+def Classification.tag : Classification → Option String
   | .clear                       => none
   | .hazard sub positions decoded =>
     Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
 
-def F3Classification.positions : F3Classification → Array Nat
+def Classification.positions : Classification → Array Nat
   | .clear                       => #[]
   | .hazard sub positions decoded =>
-    Function.const (F3SubThreat × ByteArray) positions (sub, decoded)
+    Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Spot checks

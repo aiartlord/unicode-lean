@@ -80,19 +80,19 @@ def firstDivergence (a b : Array Nat) : Option Nat :=
 -- §2 Types
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-inductive F6SubThreat where
+inductive SubThreat where
   | nonNfcForm        (basePos : Nat)
   | nonNfkcCompatForm (basePos : Nat)
   deriving DecidableEq, Repr, Inhabited
 
-inductive F6Classification where
+inductive Classification where
   | clear
-  | hazard (sub : F6SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
-structure F6Verdict where
+structure Verdict where
   input    : Array Nat
-  classify : F6Classification
+  classify : Classification
   nfcLen   : Nat
   nfkcLen  : Nat
   deriving Inhabited
@@ -102,10 +102,10 @@ structure F6Verdict where
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The F6 detection function. -/
-def detect (input : Array Nat) : F6Verdict :=
+def detect (input : Array Nat) : Verdict :=
   let nfc  := Unicode.Normalization.NFC.toNFC input
   let nfkc := Unicode.Normalization.NFKC.toNFKC input
-  let classification : F6Classification :=
+  let classification : Classification :=
     match firstDivergence input nfc with
     | some pos =>
       .hazard (.nonNfcForm pos) #[pos] ByteArray.empty
@@ -123,27 +123,27 @@ def detect (input : Array Nat) : F6Verdict :=
 -- §4 Projection helpers
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-def F6SubThreat.tag : F6SubThreat → String
+def SubThreat.tag : SubThreat → String
   | .nonNfcForm        basePos =>
     Function.const Nat "NonNfcForm" basePos
   | .nonNfkcCompatForm basePos =>
     Function.const Nat "NonNfkcCompatForm" basePos
 
-def F6Classification.isClear : F6Classification → Bool
+def Classification.isClear : Classification → Bool
   | .clear                       => true
   | .hazard sub positions decoded =>
-    Function.const (F6SubThreat × Array Nat × ByteArray) false
+    Function.const (SubThreat × Array Nat × ByteArray) false
       (sub, positions, decoded)
 
-def F6Classification.tag : F6Classification → Option String
+def Classification.tag : Classification → Option String
   | .clear                       => none
   | .hazard sub positions decoded =>
     Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
 
-def F6Classification.positions : F6Classification → Array Nat
+def Classification.positions : Classification → Array Nat
   | .clear                       => #[]
   | .hazard sub positions decoded =>
-    Function.const (F6SubThreat × ByteArray) positions (sub, decoded)
+    Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Spot checks

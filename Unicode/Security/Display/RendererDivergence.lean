@@ -62,7 +62,7 @@ open Unicode.Security.Calculus
 -- §1 Types
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-inductive D4SubThreat where
+inductive SubThreat where
   | combiningStackOverflow   (basePos : Nat) (stackLen : Nat)
   | variationSelectorVariance (firstVsPos : Nat) (firstVsCp : Nat)
   | unregisteredZwjVariance  (firstZwjPos : Nat)
@@ -70,14 +70,14 @@ inductive D4SubThreat where
   | mixedDirectionVariance   (ltrCount : Nat) (rtlCount : Nat)
   deriving DecidableEq, Repr, Inhabited
 
-inductive D4Classification where
+inductive Classification where
   | clear
-  | hazard (sub : D4SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
-structure D4Verdict where
+structure Verdict where
   input              : Array Nat
-  classify           : D4Classification
+  classify           : Classification
   vsCount            : Nat
   combiningCount     : Nat
   fullwidthCount     : Nat
@@ -176,14 +176,14 @@ def firstCombiningStack
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The D4 detection function. -/
-def detect (input : Array Nat) : D4Verdict :=
+def detect (input : Array Nat) : Verdict :=
   let vsCount := countVS input
   let combCount := countCombining input
   let fwCount := countFullwidth input
   let zwjPresent := hasZwj input
   let ltrCount := Unicode.Security.Display.RtlInjection.countStrongLTR input
   let rtlCount := Unicode.Security.Display.RtlInjection.countStrongRTL input
-  let classification : D4Classification :=
+  let classification : Classification :=
     -- Priority 1: combining-mark stack overflow (Zalgo).
     match firstCombiningStack input 4 with
     | some (basePos, stackLen) =>
@@ -227,8 +227,8 @@ def detect (input : Array Nat) : D4Verdict :=
 -- §5 Projection helpers
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Fixture-row tag string for each `D4SubThreat` constructor. -/
-def D4SubThreat.tag : D4SubThreat → String
+/-- Fixture-row tag string for each `SubThreat` constructor. -/
+def SubThreat.tag : SubThreat → String
   | .combiningStackOverflow    basePos stackLen =>
       Function.const (Nat × Nat) "CombiningStackOverflow" (basePos, stackLen)
   | .variationSelectorVariance firstVsPos firstVsCp =>
@@ -242,23 +242,23 @@ def D4SubThreat.tag : D4SubThreat → String
       Function.const (Nat × Nat) "MixedDirectionVariance" (ltrCount, rtlCount)
 
 /-- True iff the classification is `.clear` (i.e. stable). -/
-def D4Classification.isClear : D4Classification → Bool
+def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (D4SubThreat × Array Nat × ByteArray) false
+      Function.const (SubThreat × Array Nat × ByteArray) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification. -/
-def D4Classification.tag : D4Classification → Option String
+def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
       Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
 
 /-- Positions array of a classification. -/
-def D4Classification.positions : D4Classification → Array Nat
+def Classification.positions : Classification → Array Nat
   | .clear                     => #[]
   | .hazard sub positions decoded =>
-      Function.const (D4SubThreat × ByteArray) positions (sub, decoded)
+      Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 Spot checks

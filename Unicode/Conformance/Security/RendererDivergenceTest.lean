@@ -28,20 +28,20 @@ def rawFixture : String :=
 
 def rows : Array Row := parseFixture rawFixture
 
-/-- Project a `D4Classification` to `(ClassificationKind, sub-threat-tag)`. -/
+/-- Project a `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
-    (c : D4Classification) : ClassificationKind × Option String :=
+    (c : Classification) : ClassificationKind × Option String :=
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
-/-- Project a `D4Classification` to the positions array. -/
-def projectPositions (c : D4Classification) : Array Nat :=
+/-- Project a `Classification` to the positions array. -/
+def projectPositions (c : Classification) : Array Nat :=
   c.positions
 
 /-- Validate the D4 verdict's metadata fields against the row's
     column-4 attribution.  Recognised keys: `vs_count`,
     `comb_count`, `fw_count` (fullwidth characters), `has_zwj`
     (any ZWJ present), `ltr_count`, `rtl_count`. -/
-private def metadataMatches (v : D4Verdict)
+private def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey  "vs_count"   v.vsCount &&
   attr.checkNatKey  "comb_count" v.combiningCount &&

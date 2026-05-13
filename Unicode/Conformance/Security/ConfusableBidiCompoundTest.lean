@@ -37,20 +37,20 @@ def rawFixture : String :=
 
 def rows : Array Row := parseFixture rawFixture
 
-/-- Project an `X3Classification` to `(ClassificationKind, sub-threat-tag)`. -/
+/-- Project an `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
-    (c : X3Classification) : ClassificationKind × Option String :=
+    (c : Classification) : ClassificationKind × Option String :=
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
-/-- Project an `X3Classification` to the positions array. -/
-def projectPositions (c : X3Classification) : Array Nat :=
+/-- Project an `Classification` to the positions array. -/
+def projectPositions (c : Classification) : Array Nat :=
   c.positions
 
 /-- Validate the X3 verdict's metadata fields against the row's
     column-4 attribution.  Recognised key: `conf_count` (number of
     confusable-skeleton codepoints encountered in the same input
     as a bidi-control / isolate). -/
-private def metadataMatches (v : X3Verdict)
+private def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey "conf_count" v.confusableCount
 

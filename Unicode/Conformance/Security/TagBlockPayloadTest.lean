@@ -39,13 +39,13 @@ def rows : Array Row := parseFixture rawFixture
 -- §2 Per-family classification-name mapping
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Project a `C1Classification` to `(ClassificationKind, sub-threat-tag)`. -/
+/-- Project a `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
-    (c : C1Classification) : ClassificationKind × Option String :=
+    (c : Classification) : ClassificationKind × Option String :=
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
-/-- Project a `C1Classification` to the positions array. -/
-def projectPositions (c : C1Classification) : Array Nat :=
+/-- Project a `Classification` to the positions array. -/
+def projectPositions (c : Classification) : Array Nat :=
   c.positions
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -55,7 +55,7 @@ def projectPositions (c : C1Classification) : Array Nat :=
 /-- Validate the C1 verdict's metadata fields against the row's
     column-4 attribution.  Keys recognised: `tag_count` (vs
     `v.totalTagChars`) and `total_cps` (vs `v.input.size`). -/
-private def metadataMatches (v : C1Verdict)
+private def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey "tag_count" v.totalTagChars &&
   attr.checkNatKey "total_cps" v.input.size

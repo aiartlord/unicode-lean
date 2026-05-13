@@ -33,20 +33,20 @@ def rawFixture : String :=
 
 def rows : Array Row := parseFixture rawFixture
 
-/-- Project an `F1Classification` to `(ClassificationKind, sub-threat-tag)`. -/
+/-- Project an `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
-    (c : F1Classification) : ClassificationKind × Option String :=
+    (c : Classification) : ClassificationKind × Option String :=
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
-/-- Project an `F1Classification` to the positions array. -/
-def projectPositions (c : F1Classification) : Array Nat :=
+/-- Project an `Classification` to the positions array. -/
+def projectPositions (c : Classification) : Array Nat :=
   c.positions
 
 /-- Validate the F1 verdict's metadata fields against the row's
     column-4 attribution.  Recognised keys: `nfd_len`, `nfkd_len`,
     `input_len`, `max_per_cp` (the worst single-codepoint NFKD
     expansion). -/
-private def metadataMatches (v : F1Verdict)
+private def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey "nfd_len"    v.nfdLen &&
   attr.checkNatKey "nfkd_len"   v.nfkdLen &&

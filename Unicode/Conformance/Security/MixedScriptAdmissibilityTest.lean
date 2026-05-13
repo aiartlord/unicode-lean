@@ -30,13 +30,13 @@ def rawFixture : String :=
 
 def rows : Array Row := parseFixture rawFixture
 
-/-- Project a `I2Classification` to `(ClassificationKind, sub-threat-tag)`. -/
+/-- Project a `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
-    (c : I2Classification) : ClassificationKind × Option String :=
+    (c : Classification) : ClassificationKind × Option String :=
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
-/-- Project a `I2Classification` to the positions array. -/
-def projectPositions (c : I2Classification) : Array Nat :=
+/-- Project a `Classification` to the positions array. -/
+def projectPositions (c : Classification) : Array Nat :=
   c.positions
 
 /-- Render a `RestrictionLevel` as the bare constructor name used
@@ -53,7 +53,7 @@ private def levelString : Unicode.Restriction.RestrictionLevel → String
 /-- Validate the I2 verdict's metadata fields against the row's
     column-4 attribution.  Key recognised: `level` (the row's
     UTS #39 §5 restriction level). -/
-private def metadataMatches (v : I2Verdict)
+private def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkStringKey "level" (levelString v.level)
 

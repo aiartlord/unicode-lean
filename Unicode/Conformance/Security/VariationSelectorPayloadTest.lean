@@ -49,15 +49,15 @@ def rows : Array Row := parseFixture rawFixture
 -- §2 Per-family classification-name mapping
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Project a `C2Classification` to its `ClassificationKind` and
-    sub-threat name.  Delegates to `C2Classification.tag` /
-    `C2Classification.isClear`. -/
+/-- Project a `Classification` to its `ClassificationKind` and
+    sub-threat name.  Delegates to `Classification.tag` /
+    `Classification.isClear`. -/
 def projectClassify
-    (c : C2Classification) : ClassificationKind × Option String :=
+    (c : Classification) : ClassificationKind × Option String :=
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
-/-- Project a `C2Classification` to its positions array. -/
-def projectPositions (c : C2Classification) : Array Nat :=
+/-- Project a `Classification` to its positions array. -/
+def projectPositions (c : Classification) : Array Nat :=
   c.positions
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -67,7 +67,7 @@ def projectPositions (c : C2Classification) : Array Nat :=
 /-- Validate the C2 verdict's metadata fields against the row's
     column-4 attribution.  Keys recognised: `registered_vs` and
     `suspicious_vs` against the corresponding `positions.size`. -/
-private def metadataMatches (v : C2Verdict)
+private def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey "registered_vs" v.registeredPositions.size &&
   attr.checkNatKey "suspicious_vs" v.suspiciousPositions.size

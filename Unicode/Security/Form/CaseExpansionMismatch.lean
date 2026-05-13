@@ -105,19 +105,19 @@ def maxExpansionLen (input : Array Nat) : Nat :=
 -- §2 Types
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-inductive F4SubThreat where
+inductive SubThreat where
   | upperExpansion (basePos : Nat) (cp : Nat) (expansionLen : Nat)
   | lowerExpansion (basePos : Nat) (cp : Nat) (expansionLen : Nat)
   deriving DecidableEq, Repr, Inhabited
 
-inductive F4Classification where
+inductive Classification where
   | clear
-  | hazard (sub : F4SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
-structure F4Verdict where
+structure Verdict where
   input               : Array Nat
-  classify            : F4Classification
+  classify            : Classification
   upperExpansionCount : Nat
   lowerExpansionCount : Nat
   maxExpansionLen     : Nat
@@ -128,8 +128,8 @@ structure F4Verdict where
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The F4 detection function. -/
-def detect (input : Array Nat) : F4Verdict :=
-  let classification : F4Classification :=
+def detect (input : Array Nat) : Verdict :=
+  let classification : Classification :=
     match firstUpperExpansion input with
     | some (pos, cp, len) =>
       .hazard (.upperExpansion pos cp len) #[pos] ByteArray.empty
@@ -148,7 +148,7 @@ def detect (input : Array Nat) : F4Verdict :=
 -- §4 Projection helpers
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-def F4SubThreat.tag : F4SubThreat → String
+def SubThreat.tag : SubThreat → String
   | .upperExpansion basePos cp expansionLen =>
     Function.const (Nat × Nat × Nat) "UpperExpansion"
       (basePos, cp, expansionLen)
@@ -156,21 +156,21 @@ def F4SubThreat.tag : F4SubThreat → String
     Function.const (Nat × Nat × Nat) "LowerExpansion"
       (basePos, cp, expansionLen)
 
-def F4Classification.isClear : F4Classification → Bool
+def Classification.isClear : Classification → Bool
   | .clear                       => true
   | .hazard sub positions decoded =>
-    Function.const (F4SubThreat × Array Nat × ByteArray) false
+    Function.const (SubThreat × Array Nat × ByteArray) false
       (sub, positions, decoded)
 
-def F4Classification.tag : F4Classification → Option String
+def Classification.tag : Classification → Option String
   | .clear                       => none
   | .hazard sub positions decoded =>
     Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
 
-def F4Classification.positions : F4Classification → Array Nat
+def Classification.positions : Classification → Array Nat
   | .clear                       => #[]
   | .hazard sub positions decoded =>
-    Function.const (F4SubThreat × ByteArray) positions (sub, decoded)
+    Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Spot checks

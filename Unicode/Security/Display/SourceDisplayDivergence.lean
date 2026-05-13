@@ -65,7 +65,7 @@ open Unicode.Security.Calculus
 
 /-- D1 sub-threats — one per constituent family plus a `compound`
     variant for the multi-mechanism attack class. -/
-inductive D1SubThreat where
+inductive SubThreat where
   | tagBlock            (innerTag : String)
   | variationSelector   (innerTag : String)
   | zeroWidth           (innerTag : String)
@@ -75,16 +75,16 @@ inductive D1SubThreat where
   deriving DecidableEq, Repr, Inhabited
 
 /-- Top-level classification for D1. -/
-inductive D1Classification where
+inductive Classification where
   | clear
-  | hazard (sub : D1SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
 /-- D1 verdict — carries all five sub-detector verdicts so a
     reviewer can drill into any specific family if interested. -/
-structure D1Verdict where
+structure Verdict where
   input              : Array Nat
-  classify           : D1Classification
+  classify           : Classification
   c1Tag              : Option String        -- TagBlockPayload
   c2Tag              : Option String        -- VariationSelectorPayload
   c3Tag              : Option String        -- ZeroWidthPayload
@@ -103,7 +103,7 @@ structure D1Verdict where
     so a downstream reviewer can see *which* family fired without
     cross-referencing the per-family verdicts. -/
 private def buildClassification
-    (c1Tag c2Tag c3Tag c5Tag i1Tag : Option String) : D1Classification :=
+    (c1Tag c2Tag c3Tag c5Tag i1Tag : Option String) : Classification :=
   let fires : Array (String × String) :=
     #[("C1", c1Tag.getD ""), ("C2", c2Tag.getD ""), ("C3", c3Tag.getD ""),
       ("C5", c5Tag.getD ""), ("I1", i1Tag.getD "")]
@@ -112,7 +112,7 @@ private def buildClassification
   | 0 => .clear
   | 1 =>
     let pair := fires[0]!
-    let sub : D1SubThreat := match pair.1 with
+    let sub : SubThreat := match pair.1 with
       | "C1" => .tagBlock pair.2
       | "C2" => .variationSelector pair.2
       | "C3" => .zeroWidth pair.2
@@ -136,7 +136,7 @@ private def buildClassification
     prereleases tried to filter hits by source-region grammar
     (strings, comments) but that surface has been retracted —
     see module header for the threat-model rationale. -/
-def detect (input : Array Nat) : D1Verdict :=
+def detect (input : Array Nat) : Verdict :=
   let c1 := Unicode.Security.Covert.TagBlockPayload.detect input
   let c2 := Unicode.Security.Covert.VariationSelectorPayload.detect input
   let c3 := Unicode.Security.Covert.ZeroWidthPayload.detect input
@@ -165,8 +165,8 @@ def detect (input : Array Nat) : D1Verdict :=
 -- §4 Projection helpers
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Fixture-row tag string for each `D1SubThreat` constructor. -/
-def D1SubThreat.tag : D1SubThreat → String
+/-- Fixture-row tag string for each `SubThreat` constructor. -/
+def SubThreat.tag : SubThreat → String
   | .tagBlock            innerTag      =>
       Function.const String "TagBlock" innerTag
   | .variationSelector   innerTag      =>
@@ -181,23 +181,23 @@ def D1SubThreat.tag : D1SubThreat → String
       Function.const (Array String) "Compound" constituents
 
 /-- True iff the classification is `.clear`. -/
-def D1Classification.isClear : D1Classification → Bool
+def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (D1SubThreat × Array Nat × ByteArray) false
+      Function.const (SubThreat × Array Nat × ByteArray) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification. -/
-def D1Classification.tag : D1Classification → Option String
+def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
       Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
 
 /-- Positions array of a classification. -/
-def D1Classification.positions : D1Classification → Array Nat
+def Classification.positions : Classification → Array Nat
   | .clear                     => #[]
   | .hazard sub positions decoded =>
-      Function.const (D1SubThreat × ByteArray) positions (sub, decoded)
+      Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Spot checks

@@ -42,13 +42,13 @@ def rows : Array Row := parseFixture rawFixture
 -- §2 Per-family classification-name mapping
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Project a `D1Classification` to `(ClassificationKind, sub-threat-tag)`. -/
+/-- Project a `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
-    (c : D1Classification) : ClassificationKind × Option String :=
+    (c : Classification) : ClassificationKind × Option String :=
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
-/-- Project a `D1Classification` to the positions array. -/
-def projectPositions (c : D1Classification) : Array Nat :=
+/-- Project a `Classification` to the positions array. -/
+def projectPositions (c : Classification) : Array Nat :=
   c.positions
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -60,7 +60,7 @@ def projectPositions (c : D1Classification) : Array Nat :=
     a single-constituent-firing row should equal that family's
     sub-threat tag.  For compound (two or more firing) and clear
     rows the inner tag is ambiguous and the check is lenient. -/
-private def metadataMatches (v : D1Verdict)
+private def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   match attr.get? "inner_tag" with
   | none           => true

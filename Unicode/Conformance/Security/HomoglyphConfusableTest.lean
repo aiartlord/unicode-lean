@@ -36,13 +36,13 @@ def rows : Array Row := parseFixture rawFixture
 -- §2 Per-family classification-name mapping
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Project an `I1Classification` to `(ClassificationKind, sub-threat-tag)`. -/
+/-- Project an `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
-    (c : I1Classification) : ClassificationKind × Option String :=
+    (c : Classification) : ClassificationKind × Option String :=
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
-/-- Project an `I1Classification` to the positions array. -/
-def projectPositions (c : I1Classification) : Array Nat :=
+/-- Project an `Classification` to the positions array. -/
+def projectPositions (c : Classification) : Array Nat :=
   c.positions
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -63,7 +63,7 @@ private def restrictionString : Unicode.Restriction.RestrictionLevel → String
 /-- Validate the I1 verdict's metadata fields against the row's
     column-4 attribution.  Key recognised: `restriction` against
     the UTS #39 §5 restriction level of the row's input. -/
-private def metadataMatches (v : I1Verdict)
+private def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkStringKey "restriction" (restrictionString v.restrictionLevel)
 

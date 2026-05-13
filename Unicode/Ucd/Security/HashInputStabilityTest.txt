@@ -29,7 +29,7 @@
 # The remaining four spec sub-threats (EncodingMismatch,
 # SignedMessageRule, AuditLogReinterpretation,
 # WebhookSignatureDrift) require context the codepoint-only
-# detector cannot access; declared in K2SubThreat but never
+# detector cannot access; declared in SubThreat but never
 # emitted by the v1 detector.
 #
 # Format:

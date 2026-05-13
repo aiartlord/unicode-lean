@@ -98,18 +98,18 @@ def statusShiftCount (input : Array Nat) : Nat :=
 -- §2 Types
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-inductive X1SubThreat where
+inductive SubThreat where
   | identifierStatusShift (basePos : Nat) (cp : Nat)
   deriving DecidableEq, Repr, Inhabited
 
-inductive X1Classification where
+inductive Classification where
   | clear
-  | hazard (sub : X1SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
-structure X1Verdict where
+structure Verdict where
   input      : Array Nat
-  classify   : X1Classification
+  classify   : Classification
   shiftCount : Nat
   deriving Inhabited
 
@@ -118,8 +118,8 @@ structure X1Verdict where
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The X1 detection function. -/
-def detect (input : Array Nat) : X1Verdict :=
-  let classification : X1Classification :=
+def detect (input : Array Nat) : Verdict :=
+  let classification : Classification :=
     match firstStatusShift input with
     | some (pos, cp) =>
       .hazard (.identifierStatusShift pos cp) #[pos] ByteArray.empty
@@ -132,25 +132,25 @@ def detect (input : Array Nat) : X1Verdict :=
 -- §4 Projection helpers
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-def X1SubThreat.tag : X1SubThreat → String
+def SubThreat.tag : SubThreat → String
   | .identifierStatusShift basePos cp =>
     Function.const (Nat × Nat) "IdentifierStatusShift" (basePos, cp)
 
-def X1Classification.isClear : X1Classification → Bool
+def Classification.isClear : Classification → Bool
   | .clear                       => true
   | .hazard sub positions decoded =>
-    Function.const (X1SubThreat × Array Nat × ByteArray) false
+    Function.const (SubThreat × Array Nat × ByteArray) false
       (sub, positions, decoded)
 
-def X1Classification.tag : X1Classification → Option String
+def Classification.tag : Classification → Option String
   | .clear                       => none
   | .hazard sub positions decoded =>
     Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
 
-def X1Classification.positions : X1Classification → Array Nat
+def Classification.positions : Classification → Array Nat
   | .clear                       => #[]
   | .hazard sub positions decoded =>
-    Function.const (X1SubThreat × ByteArray) positions (sub, decoded)
+    Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Spot checks
