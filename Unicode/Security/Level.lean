@@ -87,10 +87,12 @@
   Accordingly, K-family gating is **opt-in via a
   `CryptoContext` parameter** passed to `admissibleAt`.  Callers
   doing general identifier / display gating pass
-  `CryptoContext.nonCrypto` (K1 ignored).  Callers verifying a
-  BIP-39 mnemonic pass `CryptoContext.bip39Mnemonic` (K1
-  gated).  When K2 / K3 ship, new `CryptoContext` constructors
-  will extend the surface compositionally.
+  `CryptoContext.nonCrypto` (K-family ignored).  Callers
+  verifying a BIP-39 mnemonic pass `.bip39Mnemonic` (K1
+  gated); callers hashing the input pass `.hashInput` (K2
+  gated); callers attributing AI provenance pass
+  `.aiAttribution` (K3 gated).  A single input is one crypto-
+  shape at a time.
 -/
 
 import Unicode.Security.RunAll
@@ -196,28 +198,32 @@ def Level.rejects (level : Level) (family : String) : Bool :=
     treated as admission-relevant.  Defaults to `nonCrypto` —
     general Unicode-only admission with K-family ignored.
 
-    Callers verifying a BIP-39 mnemonic pass `bip39Mnemonic` to
-    add K1 to the effective rejection set.  When K2 / K3 ship,
-    new constructors will extend this enum compositionally
-    (e.g. `hashInput`, `aiAttribution`).  Per
-    `L6-cryptographic-stability.md`, a single input is typically
-    one crypto-shape at a time, so a sum-of-constructors fits
-    the current calling pattern. -/
+    Constructor map:
+      * `nonCrypto`     — K-family ignored
+      * `bip39Mnemonic` — adds K1 (Bip39Canonical) to rejection set
+      * `hashInput`     — adds K2 (HashInputStability)
+      * `aiAttribution` — adds K3 (AiWatermarkDetectability)
+
+    Per `L6-cryptographic-stability.md`, a single input is one
+    crypto-shape at a time, so a sum-of-constructors fits the
+    current calling pattern. -/
 inductive CryptoContext where
   | nonCrypto
   | bip39Mnemonic
   | hashInput
+  | aiAttribution
   deriving DecidableEq, Repr, Inhabited
 
 /-- The K-family tag(s) added to the effective rejection set
     under each context.  `nonCrypto` adds none; `bip39Mnemonic`
-    adds K1; `hashInput` adds K2.  When K3 (AI watermark) ships,
-    a fourth constructor `aiAttribution` will add K3. -/
+    adds K1; `hashInput` adds K2; `aiAttribution` adds K3.
+    Each crypto-shape is exactly one K-family. -/
 @[inline]
 def CryptoContext.toFamilies : CryptoContext → Array String
   | .nonCrypto      => #[]
   | .bip39Mnemonic  => #["K1"]
   | .hashInput      => #["K2"]
+  | .aiAttribution  => #["K3"]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 Factored admission predicates (Level ⊥ Crypto)
@@ -256,9 +262,10 @@ def CryptoContext.toFamilies : CryptoContext → Array String
 -- independently.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Does the Unicode-layer family set declared by `level` admit
-    `input`?  Independent of any cryptographic context.  Used as
-    the Level-only factor of the composite `admissibleAt`. -/
+/-- True iff the Unicode-layer family set declared by `level`
+    admits `input`.  Independent of any cryptographic context.
+    Used as the Level-only factor of the composite
+    `admissibleAt`. -/
 def levelAdmissible (level : Level) (input : Array Nat) : Bool :=
   let results  := runAll input
   let effective := rejectionSet level
@@ -535,6 +542,39 @@ theorem level_admissible_rejects_decomposed_e_at_restrictive :
     let input : Array Nat := #[0x0065, 0x0301]
     levelAdmissible .restrictive input = false
     ∧ levelAdmissible .moderate    input = false := by
+  native_decide
+
+/-- K3's `aiAttribution` context-gating, measured directly via
+    `cryptoAdmissible` — Level-independent.  Plain ASCII
+    `a NNBSP b` (#[0x61, 0x202F, 0x62]) admits under
+    `.nonCrypto` (no K-family in the effective set) and rejects
+    under `.aiAttribution` because K3's `NnbspBoundary` fires.
+    This is the architectural pin for K3's distinguishing power:
+    the contribution is observable at every Level via
+    `cryptoAdmissible`, even though five L1–L5 families
+    (C3 BareZeroWidth, I2 RestrictedStatusCp, D1 ZeroWidth,
+    F6 NonNfkcCompatForm, K1 NonNFKD under .bip39Mnemonic) also
+    flag U+202F at `.restrictive`.  Those overlaps mask the
+    contribution at the `admissibleAt` composite surface but
+    do NOT suppress K3's verdict — `cryptoAdmissible` shows the
+    K3-specific decision directly.  Follows the same shape as
+    `crypto_admissible_gates_decomposed_e_acute` for K2. -/
+theorem crypto_admissible_gates_nnbsp_under_aiAttribution :
+    let input : Array Nat := #[0x61, 0x202F, 0x62]
+    cryptoAdmissible .nonCrypto     input = true
+    ∧ cryptoAdmissible .aiAttribution input = false := by
+  native_decide
+
+/-- Co-witness of the masking effect: at `.restrictive`,
+    `levelAdmissible` rejects `a NNBSP b` independently of any
+    crypto context (C3 / I2 / D1 / F6 all fire on U+202F at
+    that Level).  Pins that the K3 contribution above is a
+    distinct verdict from the Level rejection, not a duplicate.
+    See `crypto_admissible_gates_nnbsp_under_aiAttribution`
+    for the K3-specific gating pin. -/
+theorem level_admissible_rejects_nnbsp_at_restrictive :
+    let input : Array Nat := #[0x61, 0x202F, 0x62]
+    levelAdmissible .restrictive input = false := by
   native_decide
 
 end Unicode.Security.Level
