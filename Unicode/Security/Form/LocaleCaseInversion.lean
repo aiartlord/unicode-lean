@@ -14,7 +14,7 @@
   two folds diverge, and the attacker controls which fold is
   used at each stage.
 
-  Examples driving the v1 detector:
+  Examples the detector covers:
 
     * U+0049 LATIN CAPITAL LETTER I
         toLower default  → U+0069 (i)

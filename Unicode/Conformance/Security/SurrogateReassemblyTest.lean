@@ -26,7 +26,7 @@ open Unicode.Security.Covert.SurrogateReassembly
 -- §1 Raw fixture + parsed rows
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Hand-curated v1 fixture for C4 — 17 rows across 5 sections
+/-- Hand-curated fixture — 17 rows across 5 sections
     covering the valid-UTF-8 cases plus every Utf8RejectKind
     category surfaced by `Unicode.Codec.Utf8.firstInvalidUtf8Offset`. -/
 def rawFixture : String :=

@@ -17,7 +17,7 @@ open Unicode.Security.Calculus
 open Unicode.Security.Fixture
 open Unicode.Security.Form.NfcIdempotenceWitness
 
-/-- Hand-curated v1 fixture for F6 — 12 rows across 3 sections.
+/-- Hand-curated fixture — 12 rows across 3 sections.
 
     * Clear (5): ASCII Hello, precomposed é, Han 中文, Hangul 한,
       Cyrillic привет.

@@ -17,7 +17,7 @@ open Unicode.Security.Calculus
 open Unicode.Security.Fixture
 open Unicode.Security.Form.CaseExpansionMismatch
 
-/-- Hand-curated v1 fixture for F4 — 12 rows across 3 sections.
+/-- Hand-curated fixture — 12 rows across 3 sections.
 
     * Clear (6): ASCII Hello, capital ABC, Han 中文, Greek αβγ,
       Cyrillic привет, Korean 한.

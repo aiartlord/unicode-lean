@@ -19,7 +19,7 @@ open Unicode.Security.Calculus
 open Unicode.Security.Fixture
 open Unicode.Security.Identity.MixedScriptAdmissibility
 
-/-- Hand-curated v1 fixture for I2 — 15 rows across 5 sections
+/-- Hand-curated fixture — 15 rows across 5 sections
     covering: pure-script clear cases (ASCII, Cyrillic, Greek,
     Han, Hangul), Latin/Cyrillic IDN-homograph patterns,
     Latin/Greek mixing, Restricted-Identifier-Status codepoints

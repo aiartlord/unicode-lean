@@ -17,7 +17,7 @@ open Unicode.Security.Calculus
 open Unicode.Security.Fixture
 open Unicode.Security.Display.RtlInjection
 
-/-- Hand-curated v1 fixture for D3 — 15 rows across 5 sections
+/-- Hand-curated fixture — 15 rows across 5 sections
     covering: plain-ASCII / digits / Cyrillic / Han / URL clear
     cases, bidi-format-control injections (RLO, RLI+PDI, RLE+PDF),
     leading-Hebrew / leading-Arabic field-direction takeovers,

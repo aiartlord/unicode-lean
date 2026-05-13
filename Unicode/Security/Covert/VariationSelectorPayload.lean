@@ -196,8 +196,10 @@ def looksLikeShell (s : String) : Bool :=
   s.startsWith "wget " ∨
   s.startsWith "/bin/sh"
 
-/-- Classify the recovered bytes by surface-level pattern.  Prefix-only
-    in v1; recursive base64/hex re-decoding is a v2 refinement. -/
+/-- Classify the recovered bytes by surface-level pattern.
+    Matches a literal byte prefix (`bash `, `curl `, `wget `,
+    `/bin/sh`) — recursive base64/hex re-decoding is a
+    downstream sanitiser's responsibility, not this layer's. -/
 def classifyExecutableHint (bytes : ByteArray) : ExecutableHint :=
   if bytes.size = 0 then .empty
   else if ¬ allPrintableAscii bytes then .binary

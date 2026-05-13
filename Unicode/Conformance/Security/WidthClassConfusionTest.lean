@@ -17,7 +17,7 @@ open Unicode.Security.Calculus
 open Unicode.Security.Fixture
 open Unicode.Security.Form.WidthClassConfusion
 
-/-- Hand-curated v1 fixture for F5 — 13 rows across 3 sections.
+/-- Hand-curated fixture — 13 rows across 3 sections.
 
     * Clear (6): ASCII Hello, plain ASCII "ADMIN", Han 中文,
       Hangul 한 (W-class-stable), Hangul 한글, Cyrillic привет.

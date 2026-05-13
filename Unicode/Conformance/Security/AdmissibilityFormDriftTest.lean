@@ -17,7 +17,7 @@ open Unicode.Security.Calculus
 open Unicode.Security.Fixture
 open Unicode.Security.Boundary.AdmissibilityFormDrift
 
-/-- Hand-curated v1 fixture for X4 — 13 rows across 2 sections.
+/-- Hand-curated fixture — 13 rows across 2 sections.
 
     * Clear (7): ASCII admin, ASCII Hello, precomposed Hangul 한,
       Greek αβγ, x0, leading-digit "012" (both sides false —

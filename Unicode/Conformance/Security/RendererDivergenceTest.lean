@@ -17,7 +17,7 @@ open Unicode.Security.Calculus
 open Unicode.Security.Fixture
 open Unicode.Security.Display.RendererDivergence
 
-/-- Hand-curated v1 fixture for D4 — 16 rows across 6 sections
+/-- Hand-curated fixture — 16 rows across 6 sections
     covering: stable clear cases (ASCII, Han, Cyrillic, Hebrew,
     registered RGI family ZWJ), VS-presence variance (emoji,
     heart, standardized variation), unregistered ZWJ variance,

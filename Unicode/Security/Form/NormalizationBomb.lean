@@ -225,8 +225,8 @@ theorem detect_arabic_ligature_blowup :
   native_decide
 
 /-- Parenthesized digit `①` (U+2460) expands under NFKD to `1`
-    (1 cp → 1 cp), so it does NOT trigger NFD blow-up.  Under
-    pure NFD it stays as-is.  v1 detector classifies as clear. -/
+    (1 cp → 1 cp), so it does not trigger NFD blow-up.  Under
+    pure NFD it stays as-is.  The detector classifies as clear. -/
 theorem detect_circled_one_clear :
     (detect #[0x2460]).classify.isClear = true := by native_decide
 

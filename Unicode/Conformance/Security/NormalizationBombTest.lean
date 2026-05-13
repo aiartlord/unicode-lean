@@ -17,7 +17,7 @@ open Unicode.Security.Calculus
 open Unicode.Security.Fixture
 open Unicode.Security.Form.NormalizationBomb
 
-/-- Hand-curated v1 fixture for F1 — 11 rows across 4 sections.
+/-- Hand-curated fixture — 11 rows across 4 sections.
     Every sub-threat is reachable by at least one row.
 
     * Clear (6): ASCII, Han, 한, 한글 (at 300% NFD threshold),

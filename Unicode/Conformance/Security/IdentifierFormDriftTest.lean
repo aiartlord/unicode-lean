@@ -17,7 +17,7 @@ open Unicode.Security.Calculus
 open Unicode.Security.Fixture
 open Unicode.Security.Boundary.IdentifierFormDrift
 
-/-- Hand-curated v1 fixture for X1 — 13 rows across 2 sections.
+/-- Hand-curated fixture — 13 rows across 2 sections.
 
     * Clear (5): ASCII Hello, plain ASCII admin, Han 中文, Greek
       αβγ, Cyrillic привет.  Each row's per-cp Identifier_Status

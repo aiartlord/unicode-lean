@@ -21,7 +21,7 @@ open Unicode.Security.Covert.ZeroWidthPayload
 -- §1 Raw fixture + parsed rows
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Hand-curated v1 fixture for C3 — 18 rows across 5 sections
+/-- Hand-curated fixture — 18 rows across 5 sections
     covering RGI-legitimate ZWJ emoji sequences (sanctioned
     `.clear`), binary payloads, WORD JOINER injection,
     suspected NNBSP AI-watermark patterns, bare zero-widths

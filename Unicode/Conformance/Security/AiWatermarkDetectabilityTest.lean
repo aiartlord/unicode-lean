@@ -19,23 +19,28 @@ open Unicode.Security.Calculus
 open Unicode.Security.Fixture
 open Unicode.Security.Crypto.AiWatermarkDetectability
 
-/-- Hand-curated v1 fixture for K3 — 16 rows across 7 sections.
+/-- Hand-curated fixture — 27 rows exercising every probe in
+    `AiWatermarkDetectability.detect`.  Section structure:
 
-    * Clear basic (5): empty, ASCII "abc", CJK 中文, lone 😀,
-      legitimate emoji-ZWJ sequence 👩‍🔬.
-    * Clear strict (1): 😀 + VS16 — legitimate emoji-
-      presentation selector, K3 stays clear.  Pins the VS
-      emoji-adjacency exclusion.
-    * NnbspBoundary basic (2): single NNBSP, two NNBSPs
-      aggregated under a single verdict.
-    * VariationSelectorCarrier basic (3): VS1, VS16, IVS1 each
-      in plain (non-emoji-adjacent) context.
-    * ZwjNonEmoji basic (1): single ZWJ between ASCII letters.
-    * DefaultIgnorableCarrier basic (3): SOFT HYPHEN, ZWSP,
-      COMBINING GRAPHEME JOINER each in plain text.
-    * NnbspBoundary strict (1): priority pin — NNBSP + SOFT
-      HYPHEN co-occurring, NnbspBoundary wins (priority 1 over
-      priority 4). -/
+    * Clear (6) — empty, ASCII, CJK, lone emoji, legitimate
+      emoji-ZWJ sequence, emoji + VS16 presentation selector.
+    * NnbspBoundary (2) — single NNBSP, multi-NNBSP aggregate.
+    * VariationSelectorCarrier (3) — VS1 / VS16 / IVS1 in
+      plain (non-emoji-adjacent) context.
+    * ZwjNonEmoji (1) — single ZWJ between ASCII letters.
+    * DefaultIgnorableCarrier (3) — SOFT HYPHEN, ZWSP,
+      COMBINING GRAPHEME JOINER.
+    * Adversarial (2) — NNBSP at arithmetic positions, with
+      a strict priority-pin row.
+    * Gpt5ZwspModulo (2) — ZWSP at arithmetic positions, with
+      a strict priority-pin row.
+    * SmartQuoteAlternation (2) — curly double-quote pair and
+      curly single-quote pair.
+    * EmDashPattern (1) — two em-dashes with no hyphen-minus.
+    * StatisticalTokenChoice (2) — vocabulary hit "delve"
+      alone and "moreover" embedded.
+    * Unknown (3) — multi-category mixing (NNBSP + DI, VS +
+      ZWJ, NNBSP + VS + DI). -/
 def rawFixture : String :=
   include_str "../../Ucd/Security/AiWatermarkDetectabilityTest.txt"
 

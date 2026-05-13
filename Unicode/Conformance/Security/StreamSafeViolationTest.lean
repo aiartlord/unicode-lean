@@ -17,7 +17,7 @@ open Unicode.Security.Calculus
 open Unicode.Security.Fixture
 open Unicode.Security.Form.StreamSafeViolation
 
-/-- Hand-curated v1 fixture for F2 — 8 rows across 2 sections.
+/-- Hand-curated fixture — 8 rows across 2 sections.
 
     * Clear (5): ASCII, Korean precomposed, a + 1 combining mark,
       a + 30 combining marks (the strict-`>` boundary), and the

@@ -28,12 +28,13 @@
                           stable / non-stable answer through
                           the universal Classification carrier.
 
-  v1 scope.  Heuristic-driven detection of empirically-known
-  variance triggers.  The v2 readiness item is a renderer-cohort
-  membership table (Chrome / Firefox / Safari / iTerm /
-  Windows Terminal / common font-fallback chains) that pins
-  variance to specific (renderer-id, codepoint-or-sequence)
-  pairs.
+  Scope.  Heuristic-driven detection of empirically-known
+  variance triggers, without a renderer-cohort membership
+  table.  Downstream consumers that need (renderer-id,
+  codepoint) precision should pair this detector's verdict
+  with their own renderer inventory; the heuristic verdict
+  here is sufficient to flag the variance class without
+  asserting which specific renderer pair will diverge.
 
   Sub-threats (priority order):
 

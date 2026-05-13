@@ -17,7 +17,7 @@ open Unicode.Security.Calculus
 open Unicode.Security.Fixture
 open Unicode.Security.Boundary.CovertDisplayCompound
 
-/-- Hand-curated v1 fixture for X2 — 11 rows across 3 sections.
+/-- Hand-curated fixture — 11 rows across 3 sections.
 
     * Clear (5): ASCII Hello, bidi-only RLO (D3's job), VS-only
       A+VS1 (C2's job), bidi + registered emoji VS (sanctioned),

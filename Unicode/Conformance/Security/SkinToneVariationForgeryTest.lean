@@ -19,7 +19,7 @@ open Unicode.Security.Calculus
 open Unicode.Security.Fixture
 open Unicode.Security.Identity.SkinToneVariationForgery
 
-/-- Hand-curated v1 fixture for I4 — 15 rows across 4 sections
+/-- Hand-curated fixture — 15 rows across 4 sections
     covering: legitimate single-skin-tone uses on
     modifier-base codepoints (wave-hand, man), stacked
     skin-tones, skin-tone on non-modifier-base targets (ASCII,

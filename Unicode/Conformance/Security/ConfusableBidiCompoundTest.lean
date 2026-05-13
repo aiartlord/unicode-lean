@@ -17,7 +17,7 @@ open Unicode.Security.Calculus
 open Unicode.Security.Fixture
 open Unicode.Security.Boundary.ConfusableBidiCompound
 
-/-- Hand-curated v1 fixture for X3 — 15 rows across 3 sections.
+/-- Hand-curated fixture — 15 rows across 3 sections.
 
     * Clear (6): ASCII Hello, ASCII admin (no bidi → clear even
       though m is a confusable), Cyrillic а alone (I1 case),

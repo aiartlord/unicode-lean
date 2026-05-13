@@ -17,7 +17,7 @@ open Unicode.Security.Calculus
 open Unicode.Security.Fixture
 open Unicode.Security.Form.LocaleCaseInversion
 
-/-- Hand-curated v1 fixture for F3 — 12 rows across 3 sections.
+/-- Hand-curated fixture — 12 rows across 3 sections.
 
     * Clear (6): ASCII Hello (no I), Han 中文, Cyrillic Russian,
       Greek lowercase, ASCII digits, capital ABCD (no I).

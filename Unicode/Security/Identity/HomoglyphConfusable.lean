@@ -22,13 +22,13 @@
     * Cross-script mixing via the project's `Unicode.Restriction`
       machinery.
 
-  v1 scope.
+  Scope.
 
     * 8 sub-threats per the L2 identity-spoofing spec.
-    * Canonical-target list seeded with ~30 commonly-targeted
-      brand and crypto-package names.  Expansion to the
-      ~1,000-entry top-N list is a v2 readiness item per
-      `docs/specs/security/Phase0-readiness.md` §5.3.
+    * Canonical-target list of ~30 commonly-targeted brand and
+      crypto-package names.  The list is the maintenance
+      surface for new attack targets; expansion is mechanical
+      (one entry per row plus an expected-skeleton column).
 -/
 
 import Unicode.Security.Calculus
