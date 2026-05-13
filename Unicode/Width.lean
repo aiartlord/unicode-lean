@@ -17,9 +17,19 @@
   Codepoints with East_Asian_Width = A take their width from the
   `AmbiguousMode` parameter: `narrow` (the Western default,
   matching POSIX `wcwidth`) maps A to 1; `wide` (the CJK default)
-  maps A to 2. The string-level `displayWidth` sums the
-  per-codepoint widths; it does not yet collapse emoji ZWJ
-  sequences (those land with UTS #51 wiring).
+  maps A to 2.
+
+  Two string-level widths are provided:
+
+    * `displayWidth` — sum of per-codepoint widths.  Over-counts
+      emoji ZWJ sequences (a family `👨‍👩‍👧` sums to 6 even though
+      it renders as a single width-2 glyph) and is the right
+      primitive for plain-text or pre-tokenised input.
+    * `displayWidthClusters` — UTS #51 / UAX #29 cluster-aware.
+      Chunks codepoints into grapheme clusters, classifies each
+      as emoji or text, and assigns width 2 to every emoji
+      cluster regardless of its constituent codepoint count.
+      Matches `wcswidth`-style terminal column behaviour.
 
   Variation selectors U+FE0E (text presentation) and U+FE0F (emoji
   presentation) are width 0 — they modify the *previous* codepoint's
@@ -98,15 +108,13 @@ def codepointWidth (mode : AmbiguousMode) (cp : Nat) : Nat :=
 
 /-- The total display width of a codepoint sequence under `mode`,
     obtained by summing per-codepoint widths. ZWJ / variation
-    selectors / combining marks contribute 0; this implementation
-    does not yet apply the UTS #51 emoji-ZWJ-sequence collapse,
-    which would treat an entire `base + ZWJ + ... + ZWJ + base`
-    chain as a single width-2 cluster rather than summing widths
-    of the leading base alone (currently width 2) plus the trailing
-    bases (width 2 each, but they're rendered as zero-width
-    overlays in a real ZWJ sequence). For non-emoji text and for
-    individual emoji codepoints the sum agrees with the
-    grapheme-level result. -/
+    selectors / combining marks contribute 0.  Sums per-codepoint
+    widths without grapheme-cluster awareness: an emoji ZWJ
+    sequence `base + ZWJ + ... + ZWJ + base` sums to twice the
+    base count rather than the rendered width 2.  Use
+    `displayWidthClusters` for the UTS #51-aware variant that
+    collapses ZWJ chains to a single cluster.  For non-emoji text
+    and for individual emoji codepoints the two agree. -/
 def displayWidth (mode : AmbiguousMode) (cps : Array Nat) : Nat :=
   cps.foldl (fun acc cp => acc + codepointWidth mode cp) 0
 

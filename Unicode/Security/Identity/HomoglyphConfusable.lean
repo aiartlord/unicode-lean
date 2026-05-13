@@ -24,11 +24,14 @@
 
   Scope.
 
-    * 8 sub-threats per the identity-spoofing spec.
-    * Canonical-target list of ~30 commonly-targeted brand and
-      crypto-package names.  The list is the maintenance
-      surface for new attack targets; expansion is mechanical
-      (one entry per row plus an expected-skeleton column).
+    * Six sub-threats covering the identity-spoofing class.
+    * Canonical-target list sourced from
+      `Unicode.Generated.KnownAttackTargets`, which embeds the
+      SHA-pinned curated text file
+      `Unicode/Ucd/Curated/KnownAttackTargets.txt`.  The text
+      file is the maintenance surface for new attack targets;
+      adding a target is a one-line edit followed by a SHA pin
+      refresh.
 -/
 
 import Unicode.Security.Calculus
@@ -36,6 +39,7 @@ import Unicode.Confusables
 import Unicode.ResolvedScripts
 import Unicode.Restriction
 import Unicode.Normalization.NFC
+import Unicode.Generated.KnownAttackTargets
 
 namespace Unicode.Security.Identity.HomoglyphConfusable
 
@@ -94,62 +98,23 @@ structure Verdict where
 
 /-- A canonical attack target — the legitimate name (e.g.
     "Nethereum") plus its byte-for-byte codepoint sequence as
-    typed by a developer.  v1 list seeded from the Oct 2025
-    NuGet / npm / PyPI typosquatting reports plus the UTS #39
-    confusable-detection illustrative example set. -/
+    typed by a developer. -/
 structure CanonicalTarget where
   name : String
   cps  : Array Nat
   deriving Repr, Inhabited
 
-/-- Construct a target from a literal ASCII string. -/
+/-- Construct a target from an ASCII name string. -/
 private def mkAscii (s : String) : CanonicalTarget :=
   { name := s, cps := (s.toList.map Char.toNat).toArray }
 
-/-- v1 canonical-target dictionary. -/
-def canonicalTargets : Array CanonicalTarget := #[
-  -- Crypto / Web3 (Oct 2025 NuGet typosquat campaign + adjacent).
-  mkAscii "Nethereum",
-  mkAscii "ethereum",
-  mkAscii "ethers",
-  mkAscii "web3",
-  mkAscii "bitcoin",
-  mkAscii "uniswap",
-  mkAscii "metamask",
-  mkAscii "binance",
-  mkAscii "coinbase",
-  mkAscii "solana",
-  -- Major package ecosystems / repos.
-  mkAscii "react",
-  mkAscii "express",
-  mkAscii "lodash",
-  mkAscii "django",
-  mkAscii "flask",
-  mkAscii "numpy",
-  mkAscii "pandas",
-  mkAscii "pytorch",
-  mkAscii "tensorflow",
-  -- IDN-targeted brand names (Secuarden KB Issue 10 plus general).
-  mkAscii "apple",
-  mkAscii "google",
-  mkAscii "amazon",
-  mkAscii "microsoft",
-  mkAscii "github",
-  mkAscii "paypal",
-  mkAscii "stripe",
-  mkAscii "openai",
-  mkAscii "anthropic",
-  mkAscii "claude",
-  mkAscii "chatgpt",
-  mkAscii "tesla",
-  -- Social.
-  mkAscii "twitter",
-  mkAscii "facebook",
-  mkAscii "instagram",
-  mkAscii "tiktok",
-  mkAscii "telegram",
-  mkAscii "discord"
-]
+/-- Canonical-target dictionary, derived from the SHA-pinned
+    `Unicode/Ucd/Curated/KnownAttackTargets.txt` data file via
+    `Unicode.Generated.KnownAttackTargets.targets`.  The data
+    file is the single maintenance surface for the target set;
+    this definition is its in-detector projection. -/
+def canonicalTargets : Array CanonicalTarget :=
+  Unicode.Generated.KnownAttackTargets.targets.map mkAscii
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 Block predicates

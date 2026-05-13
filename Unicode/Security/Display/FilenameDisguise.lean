@@ -13,9 +13,9 @@
       document<RLO>txt.exe   bytes
       document   exe.txt     rendered
 
-  Detection strategy.  v1 is presentation-agnostic and
-  language-agnostic — it surfaces every codepoint that could
-  cause display-vs-byte divergence in the filename context:
+  Detection strategy.  Presentation-agnostic and
+  language-agnostic — surfaces every codepoint that could cause
+  display-vs-byte divergence in the filename context:
 
     1. Any bidi format-control codepoint
        (LRE/RLE/LRO/RLO/PDF/LRI/RLI/FSI/PDI).

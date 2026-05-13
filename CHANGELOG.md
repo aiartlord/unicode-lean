@@ -7,6 +7,86 @@ on the public surface (a major-version bump signals that a
 theorem name or statement changed in a way downstream consumers
 might depend on).
 
+## v0.18.0 — 2026-05-13
+
+Wires two SHA-pinned curated data tables to their detector
+consumers and retires every "v1" / future-tense marker from the
+security-source surface.
+
+### Changed — HomoglyphConfusable now consumes the curated target table
+
+- `Unicode.Security.Identity.HomoglyphConfusable.canonicalTargets`
+  is now derived from `Unicode.Generated.KnownAttackTargets.targets`
+  rather than maintained as a hardcoded `#[mkAscii "...", ...]`
+  literal.  The SHA-pinned text file is the single maintenance
+  surface; adding a target is a one-line edit to
+  `Unicode/Ucd/Curated/KnownAttackTargets.txt` followed by a
+  `check-curated-hashes` pin refresh.
+- `Unicode/Ucd/Curated/KnownAttackTargets.txt` expanded from 48
+  to 67 entries (union with the previous hardcoded set;
+  case-as-attacked, including capital "Nethereum" for the
+  Oct 2025 NuGet typosquat case).  Curation-policy header
+  updated to "case preserved as the legitimate package / brand
+  publishes it".
+- `Unicode.Generated.KnownAttackTargets`: `targets_count`
+  updated to `67`; new spot-check theorems `Nethereum_present`,
+  `paypal_present`, `openai_present` pin the
+  case-sensitivity-preserving rows.  The previous
+  `nethereum_present` (lowercase) theorem is renamed to
+  `Nethereum_present` — minor-version-bump because a theorem
+  identifier changed.
+
+### Added — AiWatermarkDetectability now consumes WatermarkSchemes
+
+- `subThreatCueClass : SubThreat → Option CueClass` maps each
+  implementation-level sub-threat onto the conceptual cue class
+  drawn from `Unicode.Generated.WatermarkSchemes.CueClass`.
+  Marker-encoded sub-threats route to `pseudorandomSeq`,
+  vocabulary-bias to `greenListBias`, stylistic-distribution to
+  `semanticDrift`, multi-category `unknown` to `none`.
+- `every_cueClass_is_probed` proves every cue class published in
+  the curated `WatermarkSchemes.txt` table is implicated by at
+  least one detector sub-threat — pins the conceptual coverage
+  of the publication set against silent regression.
+- `Unicode.Generated.WatermarkSchemes` docstring updated:
+  retracts "Pre-staging table — no current detector consumes
+  it" and names AiWatermarkDetectability as the consumer.
+- `Unicode/Ucd/Curated/WatermarkSchemes.txt` header updated:
+  drops "deferred K3 detector" framing.
+
+### Cleaned — "v1" / future-tense markers in security source
+
+Six sites that implicitly deferred behaviour to a future version
+rewritten to describe the implemented semantic directly:
+
+- `VariationSelectorPayload.ExecutableHint` docstring — drop "at v1"
+- `FilenameDisguise` detection strategy — drop "v1 is"
+- `RendererDivergence.unknown` constructor — drop "for v1 we treat"
+- `NormalizationBomb` detection strategy — drop "v1 detection"
+- `AiWatermarkDetectability.detect` wrapper docstring — name the
+  default tolerance values inline instead of pointing at "v1"
+- `EmojiZwjIntegrityTest.metadataMatches` — drop the `vs_count`
+  "placeholder for future emoji variation-selector counts"
+  reference (no fixture row or detector field exposes it; the
+  remaining `chain_len`, `zwj_count`, `skin_tone_count`, `is_rgi`
+  are real keys)
+
+Plus: `AdmissibilityFormDrift` / `IdentifierFormDrift` /
+`StreamSafeViolation` "(v1, single)" sub-threat framing dropped;
+`Security.lean` "Layer N — <Category>" import-block section
+comments deleted; `Width.lean` `displayWidth` docstring rewritten
+to describe `displayWidthClusters` as the UTS #51 / UAX #29
+cluster-aware sibling rather than claim the per-codepoint sum
+"does not yet" collapse emoji ZWJ sequences (the cluster
+function exists and the `dwc_family_zwj` theorem pins it).
+
+### Build / gates
+
+- 200/200 jobs clean under `lake build`.
+- `check-security-hashes`, `check-security-coverage`,
+  `check-sorry`, `check-no-axiom`, `check-orphan-files`,
+  `check-ucd-hashes`, `check-curated-hashes` all green.
+
 ## v0.17.0 — 2026-05-13
 
 Productionization pass over the Layer-6 (Cryptographic

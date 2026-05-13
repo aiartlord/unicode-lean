@@ -15,8 +15,8 @@
     * Parenthesized digits (`①` → `1`, `⓪` → `0`) and circled
       letters expand under NFKD/NFKC.
 
-  v1 detection strategy.  Pure-functional, no normalization
-  loop required: we compute `(NFD.toNFD input).size` and
+  Detection strategy.  Pure-functional, no normalization loop
+  required: compute `(NFD.toNFD input).size` and
   `(NFKD.toNFKD input).size`, then test against two
   whole-sequence thresholds plus a per-codepoint scan.
 

@@ -37,11 +37,11 @@ def projectClassify
 def projectPositions (c : Classification) : Array Nat :=
   c.positions
 
-/-- Validate the I3 verdict's metadata fields against the row's
-    column-4 attribution.  Recognised keys: `chain_len` (the ZWJ
-    chain length), `vs_count` (placeholder for future emoji
-    variation-selector counts — currently `zwjPositions.size`),
-    `skin_tone_count`, and `is_rgi` (registered RGI flag). -/
+/-- Validate the EmojiZwjIntegrity verdict's metadata fields
+    against the row's column-4 attribution.  Recognised keys:
+    `chain_len` (the ZWJ chain length), `zwj_count` (the size of
+    `zwjPositions`), `skin_tone_count`, and `is_rgi` (registered
+    RGI flag). -/
 private def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey   "chain_len"       v.chainLength &&

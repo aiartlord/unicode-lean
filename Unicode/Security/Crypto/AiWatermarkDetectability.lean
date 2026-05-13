@@ -87,11 +87,13 @@
 import Unicode.Security.Calculus
 import Unicode.Generated.DerivedCoreProperties
 import Unicode.Generated.EmojiData
+import Unicode.Generated.WatermarkSchemes
 import Unicode.Identifier
 
 namespace Unicode.Security.Crypto.AiWatermarkDetectability
 
 open Unicode.Security.Calculus
+open Unicode.Generated.WatermarkSchemes (CueClass)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 Types
@@ -117,19 +119,41 @@ inductive SubThreat where
   | unknown                   (anomalyMarker : Nat)
   deriving DecidableEq, Repr, Inhabited
 
-/-- Top-level K3 classification.  `.clear` = no watermark
-    marker detected (semantically `noWatermark`); `.hazard`
-    carries the fired sub-threat plus the marker positions. -/
+/-- Map each implementation-level sub-threat to the conceptual
+    watermark cue class it probes for, drawn from the fixed
+    vocabulary in `Unicode.Generated.WatermarkSchemes.CueClass`.
+    Marker-encoded sub-threats route to `pseudorandomSeq` (a
+    fixed-period or carrier-byte channel is the structural
+    surfacing of a pseudorandom function); vocabulary-bias
+    sub-threats route to `greenListBias`; stylistic-distribution
+    sub-threats route to `semanticDrift`.  `unknown` (multi-
+    category mixing) does not implicate a single scheme. -/
+def subThreatCueClass : SubThreat → Option CueClass
+  | .nnbspBoundary             _ => some .pseudorandomSeq
+  | .variationSelectorCarrier  _ => some .pseudorandomSeq
+  | .zwjNonEmoji               _ => some .pseudorandomSeq
+  | .defaultIgnorableCarrier   _ => some .pseudorandomSeq
+  | .gpt5ZwspModulo            _ => some .pseudorandomSeq
+  | .emDashPattern             _ => some .semanticDrift
+  | .smartQuoteAlternation     _ => some .semanticDrift
+  | .statisticalTokenChoice    _ => some .greenListBias
+  | .adversarial             _ _ => some .pseudorandomSeq
+  | .unknown                   _ => none
+
+/-- Top-level AiWatermarkDetectability classification.  `.clear`
+    = no watermark marker detected (semantically `noWatermark`);
+    `.hazard` carries the fired sub-threat plus the marker
+    positions. -/
 inductive Classification where
   | clear
   | hazard (sub : SubThreat) (positions : Array Nat)
   deriving DecidableEq, Repr, Inhabited
 
-/-- K3 verdict — the structured output of `detect`.
-    `markerCount` is the count of codepoints matching the fired
-    scheme's probe (0 when clear).  Mirrors K2's `stableSize`
-    in shape — a single scalar the harness can pin on every
-    fixture row. -/
+/-- AiWatermarkDetectability verdict — the structured output of
+    `detect`.  `markerCount` is the count of codepoints matching
+    the fired scheme's probe (0 when clear).  Mirrors
+    HashInputStability's `stableSize` in shape — a single scalar
+    the harness can pin on every fixture row. -/
 structure Verdict where
   input        : Array Nat
   classify     : Classification
@@ -575,8 +599,9 @@ def detectWithContext (ctx : Context) (input : Array Nat) : Verdict :=
     markerCount := firedCount }
 
 /-- Convenience wrapper over `detectWithContext` with the empty
-    context — equivalent to running every probe with the v1
-    exact-arithmetic settings.  Used by
+    context — equivalent to running every probe with the
+    exact-arithmetic settings (`zwspModuloTolerance = 0`,
+    `adversarialTolerance = 0`).  Used by
     `Unicode.Security.RunAll` and by callers who don't have a
     tolerance preference. -/
 def detect (input : Array Nat) : Verdict :=
@@ -827,5 +852,25 @@ theorem detect_zwsp_jittered_tolerant_fires :
 theorem detectWithContext_default_matches_detect :
     (detectWithContext {} #[0x61, 0x202F, 0x62]).classify
       = (detect #[0x61, 0x202F, 0x62]).classify := by native_decide
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §7 Cue-class coverage
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- Every cue class published in
+    `Unicode.Generated.WatermarkSchemes` is implicated by at
+    least one of this detector's sub-threats.  Pinned so future
+    edits to the SubThreat enumeration cannot silently drop
+    coverage of a published scheme. -/
+theorem every_cueClass_is_probed :
+    [CueClass.greenListBias, CueClass.pseudorandomSeq, CueClass.semanticDrift].all
+      (fun cls =>
+        [SubThreat.nnbspBoundary 0, SubThreat.variationSelectorCarrier 0,
+         SubThreat.zwjNonEmoji 0, SubThreat.defaultIgnorableCarrier 0,
+         SubThreat.gpt5ZwspModulo 0, SubThreat.emDashPattern 0,
+         SubThreat.smartQuoteAlternation 0, SubThreat.statisticalTokenChoice 0,
+         SubThreat.adversarial "" 0].any
+          (fun st => subThreatCueClass st = some cls)) := by
+  native_decide
 
 end Unicode.Security.Crypto.AiWatermarkDetectability

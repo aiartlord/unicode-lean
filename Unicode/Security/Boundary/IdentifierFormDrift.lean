@@ -47,13 +47,12 @@
   verdict change under normalisation?", which is a stronger
   statement than "does any output bit change".
 
-  Sub-threat (v1, single):
+  Sub-threat (direction-agnostic):
 
-    1. `identifierStatusShift (basePos, cp)` — first input
-       position whose `Identifier_Status` differs from the
-       `Identifier_Status` of its NFKD-head.  Direction-agnostic;
-       the verdict carries the shift count for downstream
-       policy.
+    `identifierStatusShift (basePos, cp)` — first input position
+    whose `Identifier_Status` differs from the `Identifier_Status`
+    of its NFKD-head.  The verdict carries the shift count for
+    downstream policy.
 -/
 
 import Unicode.Security.Calculus

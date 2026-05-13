@@ -18,13 +18,13 @@
   `isAllowedIdentifier`, while its NFKC composition into a
   precomposed Hangul syllable is accepted).
 
-  Sub-threat (v1, single, direction-agnostic):
+  Sub-threat (direction-agnostic):
 
-    1. `admissibilityFormDrift (inputAdmissible, nfkcAdmissible)` —
-       `isAllowedIdentifier input ≠ isAllowedIdentifier (toNFKC input)`.
-       The pair of booleans is carried so the verdict records
-       which direction the drift goes.  No position is reported
-       because the predicate is whole-string.
+    `admissibilityFormDrift (inputAdmissible, nfkcAdmissible)` —
+    `isAllowedIdentifier input ≠ isAllowedIdentifier (toNFKC input)`.
+    The pair of booleans is carried so the verdict records which
+    direction the drift goes.  No position is reported because
+    the predicate is whole-string.
 -/
 
 import Unicode.Security.Calculus
