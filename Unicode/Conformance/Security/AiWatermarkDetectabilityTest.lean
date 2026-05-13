@@ -76,7 +76,7 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by native_decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 25 := by native_decide
+theorem row_count : rows.size = 27 := by native_decide
 
 theorem covers_clear :
     (rows.filter (fun r => r.expectedKind = .clear)).size ≥ 5 := by
@@ -125,6 +125,11 @@ theorem covers_em_dash_pattern :
 theorem covers_statistical_token_choice :
     (rows.filter (fun r =>
       r.expectedSubThreat = some "StatisticalTokenChoice")).size ≥ 2 := by
+  native_decide
+
+theorem covers_unknown :
+    (rows.filter (fun r =>
+      r.expectedSubThreat = some "Unknown")).size ≥ 3 := by
   native_decide
 
 end Unicode.Conformance.Security.AiWatermarkDetectabilityTest

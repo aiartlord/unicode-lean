@@ -125,14 +125,23 @@
 # combining mark.  Fires DefaultIgnorableCarrier.
 61 034F 62; Hazard:DefaultIgnorableCarrier; 1; markerCount=1; # "a CGJ b"
 
-# @section NnbspBoundary
+# @section Unknown
+# @level basic
+
+# Multi-category mixing: NNBSP + SOFT HYPHEN co-occur in the
+# same input.  Cannot attribute to a single scheme; fires
+# Unknown (priority 3).  Positions list both invisible
+# codepoints; markerCount = 2 (NNBSP count 1 + DI count 1).
+61 202F 00AD 62; Hazard:Unknown; 1, 2; markerCount=2; # NNBSP + DI: two categories mixed
+
+# Multi-category mixing: VS-non-emoji + ZWJ-non-emoji.
+61 FE0F 200D 62; Hazard:Unknown; 1, 2; markerCount=2; # VS + ZWJ: two categories mixed
+
+# @section Unknown
 # @level strict
 
-# Priority pin: NNBSP and SOFT HYPHEN co-occur.  NnbspBoundary
-# wins (priority 3) over DefaultIgnorableCarrier (priority 9).
-# markerCount carries the FIRED scheme's count (NNBSP only =
-# 1), not the total marker density.
-61 202F 00AD 62; Hazard:NnbspBoundary; 1; markerCount=1; # priority: NNBSP wins over DI
+# Three-category mixing: NNBSP + VS + DI.  markerCount = 3.
+61 202F 62 FE0F 63 00AD 64; Hazard:Unknown; 1, 3, 5; markerCount=3; # NNBSP + VS + DI: three categories
 
 # @section Adversarial
 # @level basic
