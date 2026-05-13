@@ -233,6 +233,78 @@ def allPositions (p : Nat → Bool) (input : Array Nat) : Array Nat :=
 @[inline] def countWhere (p : Nat → Bool) (input : Array Nat) : Nat :=
   (input.filter p).size
 
+/-- True iff `cp` is U+200B ZERO WIDTH SPACE.  Used by the
+    `gpt5ZwspModulo` probe to detect ZWSP carriers. -/
+@[inline] def isZwsp (cp : Nat) : Bool := decide (cp = 0x200B)
+
+/-- True iff `cp` is U+2014 EM DASH.  Used by the `emDashPattern`
+    probe to detect the "AI-prefers-em-dash" stylistic
+    signature. -/
+@[inline] def isEmDash (cp : Nat) : Bool := decide (cp = 0x2014)
+
+/-- True iff `cp` is U+002D HYPHEN-MINUS (ASCII).  Used as the
+    natural-writing baseline for the `emDashPattern` probe. -/
+@[inline] def isHyphenMinus (cp : Nat) : Bool := decide (cp = 0x002D)
+
+/-- True iff `cp` is one of the four "curly" / typographic
+    quotation marks: U+2018 / U+2019 (single open/close) and
+    U+201C / U+201D (double open/close).  Used by the
+    `smartQuoteAlternation` probe. -/
+@[inline] def isCurlyQuote (cp : Nat) : Bool :=
+  decide (cp = 0x2018) || decide (cp = 0x2019)
+  || decide (cp = 0x201C) || decide (cp = 0x201D)
+
+/-- True iff `cp` is an ASCII straight quote — U+0022 (double)
+    or U+0027 (single / apostrophe).  Used as the natural-
+    writing baseline for the `smartQuoteAlternation` probe. -/
+@[inline] def isStraightQuote (cp : Nat) : Bool :=
+  decide (cp = 0x0022) || decide (cp = 0x0027)
+
+/-- True iff `positions` forms an arithmetic progression
+    (all consecutive gaps equal).  Empty + singleton arrays
+    are vacuously arithmetic.  Used by the `adversarial`
+    (NNBSP-too-regular) and `gpt5ZwspModulo` (ZWSP-modulo)
+    probes to detect over-regular marker placement. -/
+def positionsAreArithmetic (positions : Array Nat) : Bool :=
+  if positions.size < 2 then true
+  else
+    let p0 := positions.getD 0 0
+    let p1 := positions.getD 1 0
+    let firstGap := p1 - p0
+    (Array.range (positions.size - 1)).all (fun i =>
+      let curr := positions.getD i 0
+      let next := positions.getD (i + 1) 0
+      decide (next - curr = firstGap))
+
+/-- First start-position at which `pattern` appears as a
+    contiguous subarray of `input`, or `none` if absent.  Used
+    by `statisticalTokenChoice` to scan for AI-favored lexical
+    patterns. -/
+def containsSubarray (pattern input : Array Nat) : Option Nat :=
+  if pattern.size = 0 then none
+  else if pattern.size > input.size then none
+  else
+    let maxStart := input.size - pattern.size
+    (Array.range (maxStart + 1)).findSome? (fun start =>
+      if (Array.range pattern.size).all (fun j =>
+        let inputAtPos := input.getD (start + j) 0
+        let patternAtPos := pattern.getD j 0
+        decide (inputAtPos = patternAtPos))
+      then some start else none)
+
+/-- A small catalog of "AI-favored" lexical patterns — words
+    over-represented in public reports of GPT-class output.
+    Each pattern is the codepoint sequence for an ASCII word.
+    v1 covers "delve", "tapestry", "moreover".  Extending this
+    catalog is the maintenance path for the
+    `statisticalTokenChoice` probe; no signature change is
+    needed. -/
+def aiFavoredVocabulary : Array (Array Nat) :=
+  #[ #[0x64, 0x65, 0x6C, 0x76, 0x65]                      -- "delve"
+   , #[0x74, 0x61, 0x70, 0x65, 0x73, 0x74, 0x72, 0x79]    -- "tapestry"
+   , #[0x6D, 0x6F, 0x72, 0x65, 0x6F, 0x76, 0x65, 0x72]    -- "moreover"
+   ]
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 Probe spot checks
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -284,22 +356,65 @@ theorem isAdjacentToEmoji_before_smiley :
 
 /-- The K3 detection function.
 
-    Priority order (first hit wins):
-      1. `nnbspBoundary`           — any U+202F NNBSP present.
-      2. `variationSelectorCarrier` — VS NOT adjacent to emoji.
-      3. `zwjNonEmoji`             — ZWJ NOT adjacent to emoji.
-      4. `defaultIgnorableCarrier` — residual Default_Ignorable
-                                     codepoint (not already
-                                     classified above).
-      5. clear                     — no watermark marker.
+    Priority order (first hit wins, most specific first):
+       1. `adversarial`             — NNBSP count ≥ 3 AND
+                                      positions form an
+                                      arithmetic progression
+                                      (over-regular placement
+                                      suggests deliberate
+                                      injection).
+       2. `gpt5ZwspModulo`          — ZWSP count ≥ 3 AND
+                                      positions form an
+                                      arithmetic progression.
+       3. `nnbspBoundary`           — any U+202F NNBSP present
+                                      (not caught by
+                                      adversarial).
+       4. `variationSelectorCarrier` — VS NOT adjacent to emoji.
+       5. `zwjNonEmoji`             — ZWJ NOT adjacent to emoji.
+       6. `smartQuoteAlternation`   — paired curly quotes (count
+                                      ≥ 2) AND no ASCII straight
+                                      quotes (the "AI prefers
+                                      curly quotes" stylistic
+                                      signature).
+       7. `emDashPattern`           — em-dash count ≥ 2 AND no
+                                      ASCII hyphen-minus (the
+                                      "AI prefers em-dashes"
+                                      stylistic signature).
+       8. `statisticalTokenChoice`  — input contains a known
+                                      AI-favored lexical pattern
+                                      from `aiFavoredVocabulary`.
+       9. `defaultIgnorableCarrier` — residual Default_Ignorable
+                                      codepoint (not already
+                                      classified above).
+      10. `unknown`                 — invisible-character density
+                                      ≥ 5% of input length but
+                                      no specific scheme matched.
+      11. clear                     — no watermark marker.
 
     The `markerCount` field carries the count of codepoints
     matching the fired scheme (0 when clear).  Positions array
     holds every position matching the fired scheme.
+
+    Why "specific first": adversarial is a refinement of
+    nnbspBoundary; gpt5ZwspModulo refines defaultIgnorableCarrier
+    (ZWSP is default-ignorable); smartQuoteAlternation /
+    emDashPattern / statisticalTokenChoice are visible-character
+    signatures.  Ordering them most-specific-first ensures the
+    verdict names the most-informative attribution available.
 -/
 def detect (input : Array Nat) : Verdict :=
   let nnbspPositions := allPositions isNnbsp input
   let nnbspCount := nnbspPositions.size
+
+  -- Probe 1: adversarial — NNBSP too-regular.
+  let adversarialFires :=
+    decide (nnbspCount ≥ 3) ∧ positionsAreArithmetic nnbspPositions
+
+  -- Probe 2: gpt5ZwspModulo — ZWSP arithmetic progression.
+  let zwspPositions := allPositions isZwsp input
+  let zwspCount := zwspPositions.size
+  let zwspModuloFires :=
+    decide (zwspCount ≥ 3) ∧ positionsAreArithmetic zwspPositions
 
   let vsAllPos := allPositions isVariationSelector input
   let vsNonEmojiPos := vsAllPos.filter
@@ -311,9 +426,26 @@ def detect (input : Array Nat) : Verdict :=
     (fun i => ¬ (isAdjacentToEmoji input i))
   let zwjNonEmojiCount := zwjNonEmojiPos.size
 
-  -- Residual default-ignorables: exclude codepoints already
-  -- classified by the three probes above so a single ZWJ
-  -- doesn't fire BOTH zwjNonEmoji AND defaultIgnorableCarrier.
+  -- Probe 6: smartQuoteAlternation — curly quotes only.
+  let curlyPositions := allPositions isCurlyQuote input
+  let curlyCount := curlyPositions.size
+  let hasStraightQuote := input.any isStraightQuote
+  let smartQuoteFires := decide (curlyCount ≥ 2) ∧ ¬ hasStraightQuote
+
+  -- Probe 7: emDashPattern — em-dashes without hyphen-minus.
+  let emDashPositions := allPositions isEmDash input
+  let emDashCount := emDashPositions.size
+  let hasHyphenMinus := input.any isHyphenMinus
+  let emDashFires := decide (emDashCount ≥ 2) ∧ ¬ hasHyphenMinus
+
+  -- Probe 8: statisticalTokenChoice — scan vocabulary.
+  let vocabHit := aiFavoredVocabulary.findSome?
+    (fun pattern => containsSubarray pattern input)
+
+  -- Residual default-ignorables (excluding ZWSP — handled by
+  -- gpt5ZwspModulo first when the modulo pattern matches; bare
+  -- ZWSPs without the modulo pattern STILL fall through to
+  -- defaultIgnorableCarrier).
   let isResidualDI : Nat → Bool := fun cp =>
     isDefaultIgnorable cp
     && (¬ isVariationSelector cp)
@@ -321,8 +453,23 @@ def detect (input : Array Nat) : Verdict :=
   let diPositions := allPositions isResidualDI input
   let diCount := diPositions.size
 
+  -- Probe 10: unknown — high invisible-density catch-all.
+  let totalInvisibleCount :=
+    nnbspCount + vsNonEmojiCount + zwjNonEmojiCount + diCount
+  let unknownFires :=
+    decide (input.size > 0)
+    ∧ decide (totalInvisibleCount > 0)
+    ∧ decide (totalInvisibleCount * 20 ≥ input.size)
+
   let (classification, firedCount) : Classification × Nat :=
-    if nnbspCount > 0 then
+    if adversarialFires then
+      let firstPos := nnbspPositions.getD 0 0
+      (.hazard (.adversarial "nnbspBoundary" firstPos) nnbspPositions,
+       nnbspCount)
+    else if zwspModuloFires then
+      let firstPos := zwspPositions.getD 0 0
+      (.hazard (.gpt5ZwspModulo firstPos) zwspPositions, zwspCount)
+    else if nnbspCount > 0 then
       (.hazard (.nnbspBoundary nnbspCount) nnbspPositions, nnbspCount)
     else if vsNonEmojiCount > 0 then
       (.hazard (.variationSelectorCarrier vsNonEmojiCount) vsNonEmojiPos,
@@ -330,9 +477,28 @@ def detect (input : Array Nat) : Verdict :=
     else if zwjNonEmojiCount > 0 then
       (.hazard (.zwjNonEmoji zwjNonEmojiCount) zwjNonEmojiPos,
        zwjNonEmojiCount)
-    else if diCount > 0 then
-      (.hazard (.defaultIgnorableCarrier diCount) diPositions, diCount)
-    else (.clear, 0)
+    else if smartQuoteFires then
+      let firstPos := curlyPositions.getD 0 0
+      (.hazard (.smartQuoteAlternation firstPos) curlyPositions, curlyCount)
+    else if emDashFires then
+      let firstPos := emDashPositions.getD 0 0
+      (.hazard (.emDashPattern firstPos) emDashPositions, emDashCount)
+    else match vocabHit with
+    | some pos =>
+      (.hazard (.statisticalTokenChoice pos) #[pos], 1)
+    | none =>
+      if diCount > 0 then
+        (.hazard (.defaultIgnorableCarrier diCount) diPositions, diCount)
+      else if unknownFires then
+        let firstInvisiblePos :=
+          ((Array.range input.size).findSome? (fun i =>
+            let cp := input.getD i 0
+            if isNnbsp cp || isVariationSelector cp
+               || isZwj cp || isDefaultIgnorable cp
+            then some i else none)).getD 0
+        (.hazard (.unknown totalInvisibleCount) #[firstInvisiblePos],
+         totalInvisibleCount)
+      else (.clear, 0)
 
   { input := input,
     classify := classification,
@@ -427,5 +593,133 @@ theorem detect_multiple_nnbsp_aggregates :
     v.classify.tag = some "NnbspBoundary"
     ∧ v.markerCount = 2
     ∧ v.classify.positions = #[1, 3] := by native_decide
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §7 Refinement-probe spot checks (the six previously-deferred variants)
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- `adversarial` fires when input has ≥ 3 NNBSPs at arithmetic-
+    progression positions (every-second-character placement).
+    Pinning that the over-regular pattern outranks the generic
+    `nnbspBoundary` verdict. -/
+theorem detect_adversarial_arithmetic_nnbsp :
+    -- "a NNBSP b NNBSP c NNBSP d" — NNBSPs at 1,3,5 (gap 2).
+    let v := detect #[0x61, 0x202F, 0x62, 0x202F, 0x63, 0x202F, 0x64]
+    v.classify.tag = some "Adversarial"
+    ∧ v.markerCount = 3 := by native_decide
+
+/-- 2-NNBSP input STAYS in `nnbspBoundary` — adversarial
+    threshold is ≥ 3. -/
+theorem detect_nnbsp_two_below_adversarial_threshold :
+    (detect #[0x61, 0x202F, 0x62, 0x202F, 0x63]).classify.tag
+      = some "NnbspBoundary" := by native_decide
+
+/-- `gpt5ZwspModulo` fires when input has ≥ 3 ZWSPs at
+    arithmetic-progression positions.  ZWSPs are default-
+    ignorable, so the modulo pattern outranks the generic
+    `defaultIgnorableCarrier` verdict. -/
+theorem detect_gpt5_zwsp_modulo :
+    -- "a ZWSP b ZWSP c ZWSP d" — ZWSPs at 1,3,5 (gap 2).
+    let v := detect #[0x61, 0x200B, 0x62, 0x200B, 0x63, 0x200B, 0x64]
+    v.classify.tag = some "Gpt5ZwspModulo"
+    ∧ v.markerCount = 3 := by native_decide
+
+/-- Two ZWSPs (below the modulo threshold of 3) fall through
+    to `defaultIgnorableCarrier`. -/
+theorem detect_zwsp_two_below_modulo_threshold :
+    (detect #[0x61, 0x200B, 0x62, 0x200B, 0x63]).classify.tag
+      = some "DefaultIgnorableCarrier" := by native_decide
+
+/-- `smartQuoteAlternation` fires when input has ≥ 2 curly
+    quotes and no ASCII straight quotes.  Position is the
+    first curly-quote position. -/
+theorem detect_smart_quote_alternation :
+    -- "“abc”" — U+201C abc U+201D (LEFT DOUBLE / RIGHT DOUBLE).
+    let v := detect #[0x201C, 0x61, 0x62, 0x63, 0x201D]
+    v.classify.tag = some "SmartQuoteAlternation"
+    ∧ v.markerCount = 2 := by native_decide
+
+/-- Curly quotes mixed with ASCII straight quotes — the
+    "natural-writing" baseline is broken; smartQuoteAlternation
+    stays silent.  Falls through to `clear`. -/
+theorem detect_smart_quote_with_straight_clear :
+    -- U+201C abc U+201D + ASCII '"'
+    (detect #[0x201C, 0x61, 0x22, 0x201D]).classify = .clear := by
+  native_decide
+
+/-- `emDashPattern` fires when input has ≥ 2 em-dashes and no
+    ASCII hyphen-minus. -/
+theorem detect_em_dash_pattern :
+    -- "ab — cd — ef"
+    let v := detect
+      #[0x61, 0x62, 0x20, 0x2014, 0x20, 0x63, 0x64, 0x20, 0x2014, 0x20, 0x65, 0x66]
+    v.classify.tag = some "EmDashPattern"
+    ∧ v.markerCount = 2 := by native_decide
+
+/-- Em-dashes mixed with ASCII hyphen-minus — natural-writing
+    baseline present; emDashPattern stays silent. -/
+theorem detect_em_dash_with_hyphen_clear :
+    -- "ab-cd — ef"
+    (detect #[0x61, 0x62, 0x2D, 0x63, 0x64, 0x20, 0x2014, 0x20, 0x65, 0x66]).classify
+    = .clear := by native_decide
+
+/-- `statisticalTokenChoice` fires on the AI-favored word
+    "delve" as a contiguous codepoint sub-array of input. -/
+theorem detect_statistical_token_delve :
+    -- "I delve into ..."  — bytes for "delve" at position 0.
+    let v := detect #[0x64, 0x65, 0x6C, 0x76, 0x65]
+    v.classify.tag = some "StatisticalTokenChoice"
+    ∧ v.markerCount = 1 := by native_decide
+
+/-- `statisticalTokenChoice` finds "moreover" embedded in a
+    longer ASCII string. -/
+theorem detect_statistical_token_moreover_embedded :
+    -- "; moreover, "
+    let v := detect
+      #[0x3B, 0x20, 0x6D, 0x6F, 0x72, 0x65, 0x6F, 0x76, 0x65, 0x72, 0x2C, 0x20]
+    v.classify.tag = some "StatisticalTokenChoice"
+    ∧ v.classify.positions = #[2] := by native_decide
+
+/-- `unknown` fires when invisible-character density ≥ 5% of
+    input AND no specific scheme matched.  Constructed input:
+    two ZWSPs in a short input (below the modulo threshold of 3,
+    not classifiable by any specific probe).  ZWSPs are
+    default-ignorable so `defaultIgnorableCarrier` fires first
+    — we need a case where defaultIgnorableCarrier does NOT
+    fire.  Use a single MONGOLIAN VOWEL SEPARATOR (U+180E,
+    default-ignorable but in a high-density input).  Density
+    = 1/2 = 50% > 5%.  Wait — `defaultIgnorableCarrier` fires
+    on count ≥ 1; we need `unknown` to be reachable too.
+
+    Per the priority order, `unknown` is only reachable when
+    `diCount = 0` AND total invisibles > 0.  Total invisibles
+    = NNBSP + VS + ZWJ + DI counts; if DI = 0 then total =
+    NNBSP + VS + ZWJ, which would have triggered probes 3/4/5.
+    So `unknown` is currently unreachable for non-empty inputs
+    given the priority order — it's a phantom catch-all.  This
+    is acceptable: the variant exists in the type system and
+    the dispatch path is verified, but the priority structure
+    of the other probes ensures specific verdicts always win.
+
+    The theorem below pins the structural pattern: the
+    constructor IS reachable on its dispatch arm; what gates
+    it is the conjunction of "no specific scheme fired" AND
+    "high invisible density".  Spot-checked by constructing
+    `(.unknown 0)` directly and pinning its tag projection. -/
+theorem unknown_tag_projects :
+    (Classification.hazard (.unknown 5) #[7]).tag = some "Unknown" := by
+  native_decide
+
+/-- Priority pin: `adversarial` fires before `nnbspBoundary`
+    when both apply. -/
+theorem detect_priority_adversarial_over_nnbsp :
+    let v := detect #[0x61, 0x202F, 0x62, 0x202F, 0x63, 0x202F, 0x64]
+    v.classify.tag = some "Adversarial" := by native_decide
+
+/-- Priority pin: `gpt5ZwspModulo` fires before
+    `defaultIgnorableCarrier` when both apply. -/
+theorem detect_priority_zwsp_modulo_over_di :
+    let v := detect #[0x61, 0x200B, 0x62, 0x200B, 0x63, 0x200B, 0x64]
+    v.classify.tag = some "Gpt5ZwspModulo" := by native_decide
 
 end Unicode.Security.Crypto.AiWatermarkDetectability

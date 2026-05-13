@@ -76,7 +76,7 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by native_decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 16 := by native_decide
+theorem row_count : rows.size = 25 := by native_decide
 
 theorem covers_clear :
     (rows.filter (fun r => r.expectedKind = .clear)).size ≥ 5 := by
@@ -100,6 +100,31 @@ theorem covers_zwj_non_emoji :
 theorem covers_default_ignorable_carrier :
     (rows.filter (fun r =>
       r.expectedSubThreat = some "DefaultIgnorableCarrier")).size ≥ 3 := by
+  native_decide
+
+theorem covers_adversarial :
+    (rows.filter (fun r =>
+      r.expectedSubThreat = some "Adversarial")).size ≥ 2 := by
+  native_decide
+
+theorem covers_gpt5_zwsp_modulo :
+    (rows.filter (fun r =>
+      r.expectedSubThreat = some "Gpt5ZwspModulo")).size ≥ 2 := by
+  native_decide
+
+theorem covers_smart_quote_alternation :
+    (rows.filter (fun r =>
+      r.expectedSubThreat = some "SmartQuoteAlternation")).size ≥ 2 := by
+  native_decide
+
+theorem covers_em_dash_pattern :
+    (rows.filter (fun r =>
+      r.expectedSubThreat = some "EmDashPattern")).size ≥ 1 := by
+  native_decide
+
+theorem covers_statistical_token_choice :
+    (rows.filter (fun r =>
+      r.expectedSubThreat = some "StatisticalTokenChoice")).size ≥ 2 := by
   native_decide
 
 end Unicode.Conformance.Security.AiWatermarkDetectabilityTest

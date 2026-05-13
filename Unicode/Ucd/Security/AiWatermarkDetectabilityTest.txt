@@ -129,7 +129,71 @@
 # @level strict
 
 # Priority pin: NNBSP and SOFT HYPHEN co-occur.  NnbspBoundary
-# wins (priority 1) over DefaultIgnorableCarrier (priority 4).
+# wins (priority 3) over DefaultIgnorableCarrier (priority 9).
 # markerCount carries the FIRED scheme's count (NNBSP only =
 # 1), not the total marker density.
 61 202F 00AD 62; Hazard:NnbspBoundary; 1; markerCount=1; # priority: NNBSP wins over DI
+
+# @section Adversarial
+# @level basic
+
+# Three NNBSPs at arithmetic-progression positions (1, 3, 5 —
+# gap 2) — too-regular placement, fires Adversarial.  This is
+# the v1 character-level heuristic for "fake watermark
+# injection" per K3-INV-3.
+61 202F 62 202F 63 202F 64; Hazard:Adversarial; 1, 3, 5; markerCount=3; # NNBSP every 2 cps — too regular
+
+# @section Gpt5ZwspModulo
+# @level basic
+
+# Three ZWSPs at arithmetic-progression positions (1, 3, 5).
+# Fires Gpt5ZwspModulo — the hypothetical GPT-5 per-provider
+# modulo schedule, character-level heuristic.
+61 200B 62 200B 63 200B 64; Hazard:Gpt5ZwspModulo; 1, 3, 5; markerCount=3; # ZWSP every 2 cps — modulo pattern
+
+# @section SmartQuoteAlternation
+# @level basic
+
+# Paired curly quotes (U+201C ... U+201D) wrapping ASCII
+# content, with NO ASCII straight quotes.  Stylistic AI
+# signature: "AI prefers typographic quotes."
+201C 61 62 63 201D; Hazard:SmartQuoteAlternation; 0, 4; markerCount=2; # "abc" with curly double quotes
+
+# Paired single curly quotes (U+2018 ... U+2019).
+2018 78 79 2019; Hazard:SmartQuoteAlternation; 0, 3; markerCount=2; # 'xy' with curly single quotes
+
+# @section EmDashPattern
+# @level basic
+
+# Two em-dashes (U+2014) with no ASCII hyphen-minus.
+# Stylistic AI signature: "AI prefers em-dashes."
+# Input: "ab — cd — ef" using em-dash + spaces.
+61 62 20 2014 20 63 64 20 2014 20 65 66; Hazard:EmDashPattern; 3, 8; markerCount=2; # two em-dashes, no hyphen
+
+# @section StatisticalTokenChoice
+# @level basic
+
+# Input contains the AI-favored word "delve" — fires
+# statisticalTokenChoice at position 0.
+64 65 6C 76 65; Hazard:StatisticalTokenChoice; 0; markerCount=1; # the word "delve" alone
+
+# "moreover" embedded inside a larger ASCII string.
+3B 20 6D 6F 72 65 6F 76 65 72 2C 20; Hazard:StatisticalTokenChoice; 2; markerCount=1; # "; moreover, "
+
+# @section Adversarial
+# @level strict
+
+# Priority pin: Adversarial outranks NnbspBoundary when the
+# NNBSP count >= 3 AND positions are arithmetic.  Same input
+# as the basic Adversarial row, repeated here under strict to
+# document the priority decision point.
+61 202F 62 202F 63 202F 64; Hazard:Adversarial; 1, 3, 5; markerCount=3; # priority: Adversarial outranks NnbspBoundary
+
+# @section Gpt5ZwspModulo
+# @level strict
+
+# Priority pin: Gpt5ZwspModulo outranks DefaultIgnorableCarrier
+# when the ZWSP count >= 3 AND positions are arithmetic.  Same
+# input as the basic row, repeated here under strict to
+# document the priority.
+61 200B 62 200B 63 200B 64; Hazard:Gpt5ZwspModulo; 1, 3, 5; markerCount=3; # priority: Gpt5ZwspModulo outranks DI
