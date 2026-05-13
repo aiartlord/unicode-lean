@@ -1,0 +1,135 @@
+# AiWatermarkDetectabilityTest.txt
+# UCD version: 16.0.0
+# Security-spec version: 0.1.0
+# Family: K3 — AI Watermark Detectability (character-level v1)
+# License: Apache-2.0
+#
+# Threat model: an input may carry character-level markers
+# consistent with a known AI provider's watermark scheme.
+# Two adversarial shapes are in scope:
+#
+#   * Provenance-preserving watermark — invisible markers
+#     (NNBSP at word boundaries, Variation Selectors in plain
+#     text, default-ignorable carriers) injected for
+#     downstream attribution.  An attacker may attempt
+#     removal via normalisation.
+#   * Adversarial injection — fake markers consistent with
+#     provider P's scheme injected to discredit human-written
+#     text as AI-generated.
+#
+# v1 is a character-level detector.  Statistical / token-
+# distribution watermarks (K3.f), per-segment integrity (K3.g),
+# and the genuine-vs-adversarial distinction (K3.c) are
+# deferred.
+#
+# Detection priority (first hit wins):
+#   1. NnbspBoundary            — any U+202F NARROW NO-BREAK SPACE
+#   2. VariationSelectorCarrier — VS NOT adjacent to emoji
+#   3. ZwjNonEmoji              — ZWJ NOT adjacent to emoji
+#   4. DefaultIgnorableCarrier  — residual Default_Ignorable_Code_Point
+#
+# Six additional spec sub-threats (Gpt5ZwspModulo,
+# EmDashPattern, SmartQuoteAlternation, StatisticalTokenChoice,
+# Adversarial, Unknown) are declared in K3SubThreat for
+# spec consistency but require analytical context (statistical
+# regularity, per-provider modulo schedules) that the
+# codepoint-only detector cannot supply.  v1 never emits them.
+#
+# Format:
+#   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
+#
+# Attribution keys recognised by the K3 conformance harness:
+#   markerCount=<N>  — codepoint count of the fired scheme's markers
+#                      (0 when clear)
+#
+# Classifications produced by the K3 detector:
+#   Clear
+#   Hazard:NnbspBoundary
+#   Hazard:VariationSelectorCarrier
+#   Hazard:ZwjNonEmoji
+#   Hazard:DefaultIgnorableCarrier
+
+# @section Clear
+# @level basic
+
+# Empty input — vacuous no-watermark.
+; Clear; ; markerCount=0; # empty input
+
+# Pure ASCII "abc" — no markers.
+61 62 63; Clear; ; markerCount=0; # ASCII "abc"
+
+# Han "中文" — CJK content with no marker codepoints.
+4E2D 6587; Clear; ; markerCount=0; # 中文
+
+# Pure emoji 😀 — emoji on its own is not a watermark.
+1F600; Clear; ; markerCount=0; # 😀 alone
+
+# Emoji-ZWJ sequence 👩‍🔬 (woman + ZWJ + microscope = woman-
+# scientist).  The ZWJ is adjacent to emoji bases on BOTH
+# sides — legitimate emoji-ZWJ sequence, K3 stays clear.
+1F469 200D 1F52C; Clear; ; markerCount=0; # 👩‍🔬 emoji-ZWJ sequence
+
+# @section Clear
+# @level strict
+
+# Emoji + VS16 — explicit emoji-presentation selector after
+# an emoji base.  Legitimate UTS #51 usage; K3 stays clear.
+# Pins the VS emoji-adjacency exclusion.
+1F600 FE0F; Clear; ; markerCount=0; # 😀 + VS16 emoji presentation
+
+# @section NnbspBoundary
+# @level basic
+
+# Single U+202F NNBSP between ASCII letters.
+61 202F 62; Hazard:NnbspBoundary; 1; markerCount=1; # "a NNBSP b"
+
+# Two NNBSPs at distinct positions — aggregated under a
+# single NnbspBoundary verdict, positions list both.
+61 202F 62 202F 63; Hazard:NnbspBoundary; 1, 3; markerCount=2; # "a NNBSP b NNBSP c"
+
+# @section VariationSelectorCarrier
+# @level basic
+
+# VS1 (U+FE00) in plain text — not adjacent to any emoji.
+61 FE00 62; Hazard:VariationSelectorCarrier; 1; markerCount=1; # "a VS1 b"
+
+# VS16 (U+FE0F) in plain text — NOT after an emoji, so the
+# emoji-adjacency exclusion does not apply; fires.
+61 FE0F 62; Hazard:VariationSelectorCarrier; 1; markerCount=1; # "a VS16 b" plain text
+
+# Plane-14 IVS1 (U+E0100) in plain text — same shape, fires.
+61 E0100 62; Hazard:VariationSelectorCarrier; 1; markerCount=1; # "a IVS1 b"
+
+# @section ZwjNonEmoji
+# @level basic
+
+# Single ZWJ between ASCII letters — not adjacent to any
+# emoji.  Fires ZwjNonEmoji.
+61 200D 62; Hazard:ZwjNonEmoji; 1; markerCount=1; # "a ZWJ b"
+
+# @section DefaultIgnorableCarrier
+# @level basic
+
+# SOFT HYPHEN (U+00AD) — default-ignorable, not classified by
+# the three higher-priority probes.  Fires the catch-all.
+61 00AD 62; Hazard:DefaultIgnorableCarrier; 1; markerCount=1; # "a SOFT-HYPHEN b"
+
+# ZWSP (U+200B) — default-ignorable, not ZWJ, not VS, not
+# NNBSP.  Fires DefaultIgnorableCarrier.  C3 BareZeroWidth
+# also fires on the same byte (covert-channel lens); K3 is
+# the watermark-attribution lens.  Composite rejection at
+# higher Levels.
+61 200B 62; Hazard:DefaultIgnorableCarrier; 1; markerCount=1; # "a ZWSP b"
+
+# COMBINING GRAPHEME JOINER (U+034F) — default-ignorable
+# combining mark.  Fires DefaultIgnorableCarrier.
+61 034F 62; Hazard:DefaultIgnorableCarrier; 1; markerCount=1; # "a CGJ b"
+
+# @section NnbspBoundary
+# @level strict
+
+# Priority pin: NNBSP and SOFT HYPHEN co-occur.  NnbspBoundary
+# wins (priority 1) over DefaultIgnorableCarrier (priority 4).
+# markerCount carries the FIRED scheme's count (NNBSP only =
+# 1), not the total marker density.
+61 202F 00AD 62; Hazard:NnbspBoundary; 1; markerCount=1; # priority: NNBSP wins over DI
