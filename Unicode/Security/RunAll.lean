@@ -34,10 +34,13 @@ namespace Unicode.Security.RunAll
 
 open Unicode.Security.Calculus
 
-/-- Flat per-family result.  See module header for field semantics. -/
+/-- Flat per-family result.  See module header for field semantics.
+    `family` carries the `Calculus.Family` enum value rather than a
+    String tag — pattern-matching is exhaustive and there is no
+    risk of a typo in the family name silently bypassing a
+    rejection-set check. -/
 structure FamilyResult where
-  family         : String
-  layer          : Nat
+  family         : Family
   classification : ClassificationKind
   subThreat      : Option String
   positions      : Array Nat
@@ -47,11 +50,10 @@ structure FamilyResult where
     projection helpers (`isClear`, `tag`, `positions`).  Every family
     in `Unicode/Security/` exposes those three by convention. -/
 @[inline]
-private def mkResult (family : String) (layer : Nat)
+private def mkResult (family : Family)
     (isClear : Bool) (tag : Option String) (positions : Array Nat) :
     FamilyResult :=
   { family         := family,
-    layer          := layer,
     classification := if isClear then .clear else .hazard,
     subThreat      := tag,
     positions      := positions }
@@ -117,32 +119,32 @@ def runAll (input : Array Nat) : Array FamilyResult :=
   let k1 := Unicode.Security.Crypto.Bip39Canonical.detect            input
   let k2 := Unicode.Security.Crypto.HashInputStability.detect        input
   let k3 := Unicode.Security.Crypto.AiWatermarkDetectability.detect  input
-  #[ mkResult "TagBlockPayload"          1 c1.classify.isClear c1.classify.tag c1.classify.positions,
-     mkResult "VariationSelectorPayload" 1 c2.classify.isClear c2.classify.tag c2.classify.positions,
-     mkResult "ZeroWidthPayload"         1 c3.classify.isClear c3.classify.tag c3.classify.positions,
-     mkResult "SurrogateReassembly"      1 c4.classify.isClear c4.classify.tag c4.classify.positions,
-     mkResult "BidiControlBalance"       1 c5.classify.isClear c5.classify.tag c5.classify.positions,
-     mkResult "HomoglyphConfusable"      2 i1.classify.isClear i1.classify.tag i1.classify.positions,
-     mkResult "MixedScriptAdmissibility" 2 i2.classify.isClear i2.classify.tag i2.classify.positions,
-     mkResult "EmojiZwjIntegrity"        2 i3.classify.isClear i3.classify.tag i3.classify.positions,
-     mkResult "SkinToneVariationForgery" 2 i4.classify.isClear i4.classify.tag i4.classify.positions,
-     mkResult "SourceDisplayDivergence"  3 d1.classify.isClear d1.classify.tag d1.classify.positions,
-     mkResult "FilenameDisguise"         3 d2.classify.isClear d2.classify.tag d2.classify.positions,
-     mkResult "RtlInjection"             3 d3.classify.isClear d3.classify.tag d3.classify.positions,
-     mkResult "RendererDivergence"       3 d4.classify.isClear d4.classify.tag d4.classify.positions,
-     mkResult "NormalizationBomb"        4 f1.classify.isClear f1.classify.tag f1.classify.positions,
-     mkResult "StreamSafeViolation"      4 f2.classify.isClear f2.classify.tag f2.classify.positions,
-     mkResult "LocaleCaseInversion"      4 f3.classify.isClear f3.classify.tag f3.classify.positions,
-     mkResult "CaseExpansionMismatch"    4 f4.classify.isClear f4.classify.tag f4.classify.positions,
-     mkResult "WidthClassConfusion"      4 f5.classify.isClear f5.classify.tag f5.classify.positions,
-     mkResult "NfcIdempotenceWitness"    4 f6.classify.isClear f6.classify.tag f6.classify.positions,
-     mkResult "IdentifierFormDrift"      5 x1.classify.isClear x1.classify.tag x1.classify.positions,
-     mkResult "CovertDisplayCompound"    5 x2.classify.isClear x2.classify.tag x2.classify.positions,
-     mkResult "ConfusableBidiCompound"   5 x3.classify.isClear x3.classify.tag x3.classify.positions,
-     mkResult "AdmissibilityFormDrift"   5 x4.classify.isClear x4.classify.tag x4.classify.positions,
-     mkResult "Bip39Canonical"           6 k1.classify.isClear k1.classify.tag k1.classify.positions,
-     mkResult "HashInputStability"       6 k2.classify.isClear k2.classify.tag k2.classify.positions,
-     mkResult "AiWatermarkDetectability" 6 k3.classify.isClear k3.classify.tag k3.classify.positions ]
+  #[ mkResult .tagBlockPayload          c1.classify.isClear c1.classify.tag c1.classify.positions,
+     mkResult .variationSelectorPayload c2.classify.isClear c2.classify.tag c2.classify.positions,
+     mkResult .zeroWidthPayload         c3.classify.isClear c3.classify.tag c3.classify.positions,
+     mkResult .surrogateReassembly      c4.classify.isClear c4.classify.tag c4.classify.positions,
+     mkResult .bidiControlBalance       c5.classify.isClear c5.classify.tag c5.classify.positions,
+     mkResult .homoglyphConfusable      i1.classify.isClear i1.classify.tag i1.classify.positions,
+     mkResult .mixedScriptAdmissibility i2.classify.isClear i2.classify.tag i2.classify.positions,
+     mkResult .emojiZwjIntegrity        i3.classify.isClear i3.classify.tag i3.classify.positions,
+     mkResult .skinToneVariationForgery i4.classify.isClear i4.classify.tag i4.classify.positions,
+     mkResult .sourceDisplayDivergence  d1.classify.isClear d1.classify.tag d1.classify.positions,
+     mkResult .filenameDisguise         d2.classify.isClear d2.classify.tag d2.classify.positions,
+     mkResult .rtlInjection             d3.classify.isClear d3.classify.tag d3.classify.positions,
+     mkResult .rendererDivergence       d4.classify.isClear d4.classify.tag d4.classify.positions,
+     mkResult .normalizationBomb        f1.classify.isClear f1.classify.tag f1.classify.positions,
+     mkResult .streamSafeViolation      f2.classify.isClear f2.classify.tag f2.classify.positions,
+     mkResult .localeCaseInversion      f3.classify.isClear f3.classify.tag f3.classify.positions,
+     mkResult .caseExpansionMismatch    f4.classify.isClear f4.classify.tag f4.classify.positions,
+     mkResult .widthClassConfusion      f5.classify.isClear f5.classify.tag f5.classify.positions,
+     mkResult .nfcIdempotenceWitness    f6.classify.isClear f6.classify.tag f6.classify.positions,
+     mkResult .identifierFormDrift      x1.classify.isClear x1.classify.tag x1.classify.positions,
+     mkResult .covertDisplayCompound    x2.classify.isClear x2.classify.tag x2.classify.positions,
+     mkResult .confusableBidiCompound   x3.classify.isClear x3.classify.tag x3.classify.positions,
+     mkResult .admissibilityFormDrift   x4.classify.isClear x4.classify.tag x4.classify.positions,
+     mkResult .bip39Canonical           k1.classify.isClear k1.classify.tag k1.classify.positions,
+     mkResult .hashInputStability       k2.classify.isClear k2.classify.tag k2.classify.positions,
+     mkResult .aiWatermarkDetectability k3.classify.isClear k3.classify.tag k3.classify.positions ]
 
 /-- Subset of `runAll` containing only the families whose verdict is
     `.hazard`.  Empty when the input passes every detector. -/
@@ -172,47 +174,23 @@ theorem runAll_size (input : Array Nat) : (runAll input).size = 26 := by
   unfold runAll
   rfl
 
-/-- The Layer-1 (Covert Channels) families appear at indices 0..4.
-    Layer counts are structural — independent of `input` — so we
-    pin them via the empty-input instance. -/
-theorem runAll_layer_1_count :
-    ((runAll #[]).filter (fun r => r.layer = 1)).size = 5 := by
-  native_decide
-
-theorem runAll_layer_2_count :
-    ((runAll #[]).filter (fun r => r.layer = 2)).size = 4 := by
-  native_decide
-
-theorem runAll_layer_3_count :
-    ((runAll #[]).filter (fun r => r.layer = 3)).size = 4 := by
-  native_decide
-
-theorem runAll_layer_4_count :
-    ((runAll #[]).filter (fun r => r.layer = 4)).size = 6 := by
-  native_decide
-
-theorem runAll_layer_5_count :
-    ((runAll #[]).filter (fun r => r.layer = 5)).size = 4 := by
-  native_decide
-
-theorem runAll_layer_6_count :
-    ((runAll #[]).filter (fun r => r.layer = 6)).size = 3 := by
-  native_decide
-
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 Spot checks
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Pure ASCII "Hello" fires no Layer 1–5 detector.  Bip39Canonical
-    (Layer 6) does fire on the capital H via its `mixedCase` sub-
-    threat — that is the correct context-dependent behaviour for a
-    BIP-39 mnemonic context.  The L6 K-family is excluded from this
-    Unicode-layer baseline by filtering on `layer ≤ 5`, consistent
-    with the calculus's L6 = "highly context-dependent"
-    characterisation. -/
+/-- Pure ASCII "Hello" fires no general-Unicode detector.  The
+    cryptographic-stability detectors are filtered out of this
+    baseline because they are context-dependent — Bip39Canonical
+    fires on the capital H via its `mixedCase` sub-threat, which
+    is correct behaviour for a BIP-39 mnemonic context but not a
+    general-Unicode hazard. -/
 theorem ascii_hello_no_unicode_hazards :
     ((runAll #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).filter
-      (fun r => r.layer ≤ 5)).all (fun r =>
+      (fun r =>
+        ¬ (r.family = .bip39Canonical
+           ∨ r.family = .hashInputStability
+           ∨ r.family = .aiWatermarkDetectability))).all
+      (fun r =>
         match r.classification with
         | .clear         => true
         | .informational => true

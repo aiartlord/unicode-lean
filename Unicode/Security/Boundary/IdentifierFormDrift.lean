@@ -9,7 +9,7 @@
   normalizer disagreement surface.
 
   Threat model.  Tier A₂.  Two-system bypass shape spanning
-  Layer 2 (Identity) and Layer 4 (Form):
+  identity-spoofing detectors and form-stability detectors:
 
     * stage A runs `isAllowedIdentifier` before normalisation —
       rejects U+1D44E 'Mathematical Italic Small A' because its
@@ -34,7 +34,8 @@
   Callers intending to accept Korean identifiers should apply
   NFC before evaluating admissibility.
 
-  Distinct from Layer 2 family detectors (HomoglyphConfusable,
+  Distinct from the identity-spoofing detectors
+  (HomoglyphConfusable,
   MixedScriptAdmissibility, EmojiZwjIntegrity /
   SkinToneVariationForgery) which examine the input under a
   single form.  This detector fires on the *form transition*

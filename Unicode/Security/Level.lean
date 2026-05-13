@@ -78,20 +78,20 @@
   per RFC 3629 is exactly the structural invariant `minimal`
   exists to enforce).
 
-  Note on K-family (Layer 6, Cryptographic Stability): the
-  Bip39Canonical, HashInputStability, and AiWatermarkDetectability
+  Note on Bip39Canonical / HashInputStability /
+  AiWatermarkDetectability: the cryptographic-stability
   detectors are *highly context-dependent* per
-  `docs/specs/security/L6-cryptographic-stability.md`.
+  `docs/specs/security/cryptographic-stability.md`.
   Bip39Canonical fires `mixedCase` on any ASCII text with
   capital letters; `wordlistMismatch` on any ASCII text whose
   words aren't BIP-39 vocabulary.  Those verdicts are correct
   only in a BIP-39 mnemonic *context*; for general Unicode
   input they would produce constant rejection.
 
-  Accordingly, K-family gating is **opt-in via a
+  Accordingly, cryptographic-stability gating is **opt-in via a
   `CryptoContext` parameter** passed to `admissibleAt`.  Callers
   doing general identifier / display gating pass
-  `CryptoContext.nonCrypto` (K-family ignored).  Callers
+  `CryptoContext.nonCrypto` (cryptographic-stability detectors ignored).  Callers
   verifying a BIP-39 mnemonic pass `.bip39Mnemonic`
   (Bip39Canonical gated); callers hashing the input pass
   `.hashInput` (HashInputStability gated); callers attributing
@@ -136,92 +136,94 @@ private def isHazard (r : FamilyResult) : Bool :=
 
     Monotonicity: `minimal.rejectionSet ⊆ moderate.rejectionSet
     ⊆ restrictive.rejectionSet`.  Proven below. -/
-def rejectionSet : Level → Array String
+def rejectionSet : Level → Array Family
   | .restrictive =>
-    -- All 23 families.  C4 SurrogateReassembly is included
-    -- because `runAll` gates C4 on `looksLikeByteStream`
-    -- (every codepoint ≤ 0xFF), so C4 only contributes
-    -- rejection on actual byte-stream inputs.  For codepoint
-    -- arrays with any non-ASCII content, C4 emits clear and
-    -- doesn't reject.
-    #[ "TagBlockPayload", "VariationSelectorPayload"
-     , "ZeroWidthPayload", "SurrogateReassembly"
-     , "BidiControlBalance"
-     , "HomoglyphConfusable", "MixedScriptAdmissibility"
-     , "EmojiZwjIntegrity", "SkinToneVariationForgery"
-     , "SourceDisplayDivergence", "FilenameDisguise"
-     , "RtlInjection", "RendererDivergence"
-     , "NormalizationBomb", "StreamSafeViolation"
-     , "LocaleCaseInversion", "CaseExpansionMismatch"
-     , "WidthClassConfusion", "NfcIdempotenceWitness"
-     , "IdentifierFormDrift", "CovertDisplayCompound"
-     , "ConfusableBidiCompound", "AdmissibilityFormDrift" ]
+    -- All 23 non-K families.  SurrogateReassembly is included
+    -- because `runAll` gates it on `looksLikeByteStream`
+    -- (every codepoint ≤ 0xFF); on codepoint arrays with any
+    -- non-ASCII content the detector emits clear and does not
+    -- reject.
+    #[ .tagBlockPayload, .variationSelectorPayload
+     , .zeroWidthPayload, .surrogateReassembly
+     , .bidiControlBalance
+     , .homoglyphConfusable, .mixedScriptAdmissibility
+     , .emojiZwjIntegrity, .skinToneVariationForgery
+     , .sourceDisplayDivergence, .filenameDisguise
+     , .rtlInjection, .rendererDivergence
+     , .normalizationBomb, .streamSafeViolation
+     , .localeCaseInversion, .caseExpansionMismatch
+     , .widthClassConfusion, .nfcIdempotenceWitness
+     , .identifierFormDrift, .covertDisplayCompound
+     , .confusableBidiCompound, .admissibilityFormDrift ]
   | .moderate =>
     -- Drops the heuristic / FP-prone detectors that don't
     -- need to gate "default-safe for multilingual text"
     -- pipelines:
     --
-    --   F1 — ratio-based NfdHighExpansion / NfkdHighExpansion
-    --        fire on legitimate Greek polytonic text.  F1's
-    --        precise SingleCpBlowup sub-threat (FDFA 1→18) is
-    --        backstopped by X1 IdentifierFormDrift since FDFA
-    --        is Restricted-Allowed in identifier-status terms.
-    --   D3 — StrongRTLInLTR / FieldTakeover fire on legitimate
-    --        Hebrew / Arabic UI strings (D3 assumes an
-    --        LTR-declared field).  Callers handling RTL UI
-    --        text must declare the field direction and bypass
-    --        D3 anyway.
-    --   D4 — Zalgo / fullwidth / emoji variance heuristic;
-    --        high FP on legitimate emoji-heavy or
-    --        multilingual content.
-    --   I3 — Novel emoji ZWJ sequences not yet in RGI fire
-    --        UnregisteredSequence / NonEmojiInjection.
-    --        Routine in modern social / chat content.
+    --   NormalizationBomb — ratio-based NfdHighExpansion /
+    --     NfkdHighExpansion fire on legitimate Greek
+    --     polytonic text.  The precise SingleCpBlowup sub-
+    --     threat (FDFA 1→18) is backstopped by
+    --     IdentifierFormDrift since FDFA is Restricted-Allowed
+    --     in identifier-status terms.
+    --   RtlInjection — StrongRTLInLTR / FieldTakeover fire on
+    --     legitimate Hebrew / Arabic UI strings (the detector
+    --     assumes an LTR-declared field).  Callers handling
+    --     RTL UI text must declare the field direction and
+    --     bypass the detector anyway.
+    --   RendererDivergence — Zalgo / fullwidth / emoji
+    --     variance heuristic; high FP on legitimate
+    --     emoji-heavy or multilingual content.
+    --   EmojiZwjIntegrity — novel emoji ZWJ sequences not yet
+    --     in RGI fire UnregisteredSequence / NonEmojiInjection.
+    --     Routine in modern social / chat content.
     --
-    -- C4 is retained because `runAll` gates it on
-    -- `looksLikeByteStream`, so it never spuriously fires on
-    -- multilingual codepoint inputs.  Every other targeted-
-    -- attack detector and UTS #39 spec-compliance signal is
-    -- intact.
-    #[ "TagBlockPayload", "VariationSelectorPayload"
-     , "ZeroWidthPayload", "SurrogateReassembly"
-     , "BidiControlBalance"
-     , "HomoglyphConfusable", "MixedScriptAdmissibility"
-     , "SkinToneVariationForgery"
-     , "SourceDisplayDivergence", "FilenameDisguise"
-     , "StreamSafeViolation", "LocaleCaseInversion"
-     , "CaseExpansionMismatch", "WidthClassConfusion"
-     , "NfcIdempotenceWitness"
-     , "IdentifierFormDrift", "CovertDisplayCompound"
-     , "ConfusableBidiCompound", "AdmissibilityFormDrift" ]
+    -- SurrogateReassembly is retained because `runAll` gates
+    -- it on `looksLikeByteStream`, so it never spuriously
+    -- fires on multilingual codepoint inputs.  Every other
+    -- targeted-attack detector and UTS #39 spec-compliance
+    -- signal is intact.
+    #[ .tagBlockPayload, .variationSelectorPayload
+     , .zeroWidthPayload, .surrogateReassembly
+     , .bidiControlBalance
+     , .homoglyphConfusable, .mixedScriptAdmissibility
+     , .skinToneVariationForgery
+     , .sourceDisplayDivergence, .filenameDisguise
+     , .streamSafeViolation, .localeCaseInversion
+     , .caseExpansionMismatch, .widthClassConfusion
+     , .nfcIdempotenceWitness
+     , .identifierFormDrift, .covertDisplayCompound
+     , .confusableBidiCompound, .admissibilityFormDrift ]
   | .minimal =>
-    -- Structural / RFC-violation families.  C4
-    -- SurrogateReassembly (RFC 3629 UTF-8 byte validity,
-    -- via runAll's byte-stream gate), C5 (bidi-control
-    -- imbalance, Trojan Source class), F2 (stream-safe
-    -- overflow, UAX #15 §13 DoS class).
-    #[ "SurrogateReassembly", "BidiControlBalance", "StreamSafeViolation" ]
+    -- Structural / RFC-violation families: UTF-8 byte
+    -- validity (RFC 3629, via runAll's byte-stream gate),
+    -- bidi-control imbalance (Trojan Source class), stream-
+    -- safe overflow (UAX #15 §13 DoS class).
+    #[ .surrogateReassembly, .bidiControlBalance, .streamSafeViolation ]
 
 /-- True iff `family` is in `level`'s rejection set. -/
 @[inline]
-def Level.rejects (level : Level) (family : String) : Bool :=
+def Level.rejects (level : Level) (family : Family) : Bool :=
   (rejectionSet level).contains family
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- §1 CryptoContext — opt-in K-family gating
+-- §1 CryptoContext — opt-in cryptographic-stability gating
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The context under which K-family (Layer 6) detectors are
-    treated as admission-relevant.  Defaults to `nonCrypto` —
-    general Unicode-only admission with K-family ignored.
+/-- The context under which the cryptographic-stability
+    detectors (Bip39Canonical, HashInputStability,
+    AiWatermarkDetectability) are treated as admission-
+    relevant.  Defaults to `nonCrypto` — general Unicode-only
+    admission with the cryptographic-stability detectors
+    ignored.
 
     Constructor map:
-      * `nonCrypto`     — K-family ignored
+      * `nonCrypto`     — cryptographic-stability detectors ignored
       * `bip39Mnemonic` — adds Bip39Canonical to rejection set
       * `hashInput`     — adds HashInputStability
       * `aiAttribution` — adds AiWatermarkDetectability
 
-    Per `L6-cryptographic-stability.md`, a single input is one
+    Per `cryptographic-stability.md`, a single input is one
     crypto-shape at a time, so a sum-of-constructors fits the
     current calling pattern. -/
 inductive CryptoContext where
@@ -231,17 +233,17 @@ inductive CryptoContext where
   | aiAttribution
   deriving DecidableEq, Repr, Inhabited
 
-/-- The K-family tag(s) added to the effective rejection set
+/-- The cryptographic-stability detector tag added to the effective rejection set
     under each context.  `nonCrypto` adds none; `bip39Mnemonic`
     adds Bip39Canonical; `hashInput` adds HashInputStability;
     `aiAttribution` adds AiWatermarkDetectability.  Each
-    crypto-shape is exactly one K-family. -/
+    crypto-shape is exactly one cryptographic-stability detector. -/
 @[inline]
-def CryptoContext.toFamilies : CryptoContext → Array String
+def CryptoContext.toFamilies : CryptoContext → Array Family
   | .nonCrypto      => #[]
-  | .bip39Mnemonic  => #["Bip39Canonical"]
-  | .hashInput      => #["HashInputStability"]
-  | .aiAttribution  => #["AiWatermarkDetectability"]
+  | .bip39Mnemonic  => #[.bip39Canonical]
+  | .hashInput      => #[.hashInputStability]
+  | .aiAttribution  => #[.aiWatermarkDetectability]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 Factored admission predicates (Level ⊥ Crypto)
@@ -252,17 +254,18 @@ def CryptoContext.toFamilies : CryptoContext → Array String
 --     family set declared by `level` admit `input`?  Answer is
 --     INDEPENDENT of any cryptographic context.
 --
---   * `cryptoAdmissible ctx input` — does the K-family set
+--   * `cryptoAdmissible ctx input` — does the cryptographic-stability detector set
 --     declared by `ctx` admit `input`?  Answer is INDEPENDENT
 --     of any Level.
 --
 -- The composite `admissibleAt level ctx input` is the AND of
 -- the two — both factors must admit.  Factoring them this way
--- makes the K-family's distinguishing power directly observable
+-- makes the the cryptographic-stability detectors' distinguishing power directly observable
 -- as a difference in `cryptoAdmissible`, even on inputs that
 -- `levelAdmissible level input` already rejects.  Without this
--- factoring, the K-family's contribution would be masked by the
--- union whenever any L1–L5 family also flags the same input —
+-- factoring, the cryptographic-stability contribution would be masked by the
+-- union whenever any general-Unicode detector also flags the
+-- same input —
 -- e.g. decomposed é, which HashInputStability flags as
 -- NormalizationDrift AND NfcIdempotenceWitness rejects at
 -- `.restrictive`/`.moderate`, so a naive `admissibleAt`-only test
@@ -290,11 +293,11 @@ def levelAdmissible (level : Level) (input : Array Nat) : Bool :=
   let effective := rejectionSet level
   ¬ results.any (fun r => isHazard r ∧ effective.contains r.family)
 
-/-- Does the K-family set declared by `cryptoCtx` admit `input`?
+/-- Does the cryptographic-stability detector set declared by `cryptoCtx` admit `input`?
     Independent of any Level.  Used as the Crypto-only factor of
-    the composite `admissibleAt`.  Captures the K-family's
+    the composite `admissibleAt`.  Captures the cryptographic-stability's
     distinguishing power directly, without union-masking by
-    L1–L5 detectors. -/
+    general-Unicode detectors. -/
 def cryptoAdmissible (cryptoCtx : CryptoContext)
     (input : Array Nat) : Bool :=
   let results  := runAll input
@@ -315,9 +318,10 @@ def cryptoAdmissible (cryptoCtx : CryptoContext)
     Callers who need to see WHICH factor rejected should call
     `levelAdmissible` and `cryptoAdmissible` separately.  See
     `crypto_admissible_gates_decomposed_e_acute` for a worked
-    example of K-family's distinguishing power being visible
+    example of the cryptographic-stability detectors' distinguishing power being visible
     in `cryptoAdmissible` even on inputs where `admissibleAt`
-    would mask the contribution behind an L1–L5 rejection. -/
+    would mask the contribution behind a general-Unicode
+    rejection. -/
 def admissibleAt (level : Level) (cryptoCtx : CryptoContext)
     (input : Array Nat) : Bool :=
   levelAdmissible level input && cryptoAdmissible cryptoCtx input
@@ -530,10 +534,10 @@ theorem crypto_ctx_single_word_passes_both :
 
 /-- K2's `hashInput` context-gating, measured directly via
     `cryptoAdmissible` — Level-independent.  Decomposed é
-    (U+0065 U+0301) admits under `.nonCrypto` (no K-family in
+    (U+0065 U+0301) admits under `.nonCrypto` (no cryptographic-stability detector in
     the effective set) and rejects under `.hashInput` because
     K2's `NormalizationDrift` fires.  This is the architectural
-    pin for K-family's distinguishing power: the contribution
+    pin for the cryptographic-stability detectors' distinguishing power: the contribution
     is observable at every Level via `cryptoAdmissible`, NOT
     only at `.minimal` via `admissibleAt`.  Pinning this here
     matters because F6 NfcIdempotenceWitness rejects the same
@@ -579,11 +583,12 @@ theorem level_admissible_rejects_decomposed_e_at_restrictive :
 /-- K3's `aiAttribution` context-gating, measured directly via
     `cryptoAdmissible` — Level-independent.  Plain ASCII
     `a NNBSP b` (#[0x61, 0x202F, 0x62]) admits under
-    `.nonCrypto` (no K-family in the effective set) and rejects
+    `.nonCrypto` (no cryptographic-stability detector in the effective set) and rejects
     under `.aiAttribution` because K3's `NnbspBoundary` fires.
     This is the architectural pin for K3's distinguishing power:
     the contribution is observable at every Level via
-    `cryptoAdmissible`, even though five L1–L5 families
+    `cryptoAdmissible`, even though five general-Unicode
+    detectors
     (C3 BareZeroWidth, I2 RestrictedStatusCp, D1 ZeroWidth,
     F6 NonNfkcCompatForm, K1 NonNFKD under .bip39Mnemonic) also
     flag U+202F at `.restrictive`.  Those overlaps mask the

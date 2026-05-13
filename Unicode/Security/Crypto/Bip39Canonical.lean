@@ -58,8 +58,8 @@
     8. clear(language)        — every canonical word is in
        `language`'s wordlist and no anomaly fired.
 
-  Spec reference: `docs/specs/security/L6-cryptographic-stability.md`
-  the BIP-39 section of the L6 cryptographic-stability spec.
+  Spec reference: `docs/specs/security/cryptographic-stability.md`
+  the BIP-39 section of the cryptographic-stability spec.
   Verdict shape, sub-threat enumeration, and the threat-variant
   taxonomy (.a–.g) are taken verbatim from the spec.
 -/
@@ -79,7 +79,8 @@ open Unicode.Generated.BIP39 (Language wordlist allLanguages)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The seven Bip39Canonical sub-threats.  Names + arguments
-    follow `L6-cryptographic-stability.md`'s K1 section. -/
+    follow the BIP-39 section of
+    `cryptographic-stability.md`. -/
 inductive SubThreat where
   | nonCanonicalForm    (preCanonLen : Nat) (postCanonLen : Nat)
   | wordlistMismatch    (firstUnknownWordIdx : Nat)
