@@ -1,79 +1,87 @@
 /-
   Unicode.Security.Crypto.AiWatermarkDetectability
 
-  K3 — Detection of inputs carrying character-level markers
-  consistent with a known AI watermark scheme.  Per
-  `docs/specs/security/L6-cryptographic-stability.md` §K3, this
-  family answers the question: does this input contain codepoint
-  patterns that are signatures of a known watermark scheme?
-
-  v1 scope is **character-level only**.  Statistical / token-
-  distribution watermarks, per-segment integrity, and the
-  genuine-vs-adversarial distinction are deferred:
-
-    * Statistical watermarks (token-choice biasing) require
-      access to the token stream and a per-provider distribution
-      catalog — not a character-level test.
-    * Per-segment integrity introduces segment-boundary
-      ambiguity (K3-OQ-3); v1 is whole-input only.
-    * Genuine-vs-adversarial distinction requires statistical
-      protocol-consistency checks (K3-OQ-2); v1 reports
-      `suspectedWatermark` only, never claims `genuine`.
+  Character-level detector for inputs carrying codepoint
+  patterns consistent with a known AI watermark scheme.
+  Answers the question: does this input contain markers
+  attributable to a watermarking protocol?
 
   Threat model.  Tier A₁ (provenance-attribution attacker).
-  Adversary submits text that either (a) carries an AI provider's
-  watermark codepoints (legitimate provenance marker) or (b)
-  carries injected fake markers to discredit the content as AI-
-  generated.  A character-level detector cannot distinguish (a)
-  from (b) — protocol-consistency is statistical — so v1 emits
-  `suspectedWatermark` for both cases and lets downstream code
-  apply provider-specific verification.
+  An input either (a) carries an AI provider's watermark
+  codepoints — a legitimate provenance marker the provider
+  emits — or (b) carries injected markers that impersonate a
+  provider's scheme to discredit the content as AI-generated.
+  Character-level detection alone cannot distinguish (a) from
+  (b); the detector reports the matched scheme and leaves
+  provider-specific authentication to downstream code.
 
-  Detection (priority order, first hit wins):
+  Probe inventory (priority order, first match wins):
 
-    1. `nnbspBoundary` — input contains U+202F NARROW NO-BREAK
-       SPACE.  Reported as the GPT-4-class boundary marker.
-       NNBSP has legitimate use in Mongolian, French Canadian,
-       and some Polish typography; v1 flags ANY NNBSP because
-       distinguishing legitimate use from watermark use requires
-       a language tagger that this layer does not have.
+    1. `adversarial`              — NNBSP count ≥ 3 at
+                                    arithmetic-progression
+                                    positions.  Over-regular
+                                    placement is a heuristic
+                                    proxy for protocol-
+                                    inconsistent injection.
+    2. `gpt5ZwspModulo`           — ZWSP count ≥ 3 at
+                                    arithmetic-progression
+                                    positions (or within
+                                    `Context.zwspModuloTolerance`
+                                    of arithmetic).
+    3. `unknown`                  — invisible markers from ≥ 2
+                                    distinct categories
+                                    (NNBSP / VS / ZWJ /
+                                    residual default-ignorable)
+                                    co-occur — single-scheme
+                                    attribution fails.
+    4. `nnbspBoundary`            — single-category NNBSP.
+                                    Reported as the GPT-4-class
+                                    boundary marker.  v1 flags
+                                    any NNBSP; the legitimate
+                                    Mongolian / French Canadian
+                                    / Polish typographic uses
+                                    of U+202F register as
+                                    false positives in those
+                                    locales.
+    5. `variationSelectorCarrier` — VS (U+FE00..U+FE0F or
+                                    U+E0100..U+E01EF) NOT
+                                    adjacent to an emoji
+                                    codepoint.  Emoji-adjacent
+                                    VS is a legitimate
+                                    presentation selector per
+                                    UTS #51.
+    6. `zwjNonEmoji`              — U+200D ZWJ NOT adjacent to
+                                    an emoji codepoint.
+    7. `smartQuoteAlternation`    — paired curly quotes
+                                    (U+2018/U+2019 or
+                                    U+201C/U+201D) with no
+                                    ASCII straight quotes in
+                                    the input.
+    8. `emDashPattern`            — em-dashes (U+2014) with no
+                                    ASCII hyphen-minus
+                                    (U+002D) in the input.
+    9. `statisticalTokenChoice`   — input contains an
+                                    AI-favored lexical pattern
+                                    from `aiFavoredVocabulary`
+                                    (hash-pinned at
+                                    `Ucd/Security/AiFavoredVocabulary.txt`).
+   10. `defaultIgnorableCarrier`  — single-category residual
+                                    Default_Ignorable_Code_Point.
 
-    2. `variationSelectorCarrier` — input contains a Variation
-       Selector (U+FE00..U+FE0F or U+E0100..U+E01EF) that is
-       NOT adjacent to an emoji codepoint.  VS-after-emoji is
-       legitimate (text / emoji presentation selectors, per
-       UTS #51); VS in plain text is a payload-carrier signal.
-
-    3. `zwjNonEmoji` — input contains U+200D ZERO WIDTH JOINER
-       that is NOT adjacent to an emoji codepoint.  ZWJ in
-       emoji-ZWJ sequences is legitimate; ZWJ in plain text is
-       a payload-carrier signal.
-
-    4. `defaultIgnorableCarrier` — input contains a
-       Default_Ignorable_Code_Point that is none of the above
-       three categories.  Catch-all for invisible-codepoint
-       carriers (SOFT HYPHEN, COMBINING GRAPHEME JOINER, etc.).
-
-  Six additional spec sub-threats (K3-INV-1's `gpt5_zwsp_modulo`,
-  `claude_em_dash_pattern`, `gemini_smart_quote_alternation`,
-  the `statisticalTokenChoice` distribution probe, the
-  `adversarial` injection witness, and the `unknown` anomaly
-  bucket) require analytical context this character-level
-  detector cannot supply: a per-provider modulo schedule,
-  statistical regularity over the document, or a comparison
-  against an externally-trained classifier.  They are declared
-  in `SubThreat` for future-extension consistency but never
-  emitted by the v1 detector.
-
-  Note on overlap with C2 and C3.  A VS payload fires BOTH C2
+  Cross-family lensing.  A VS payload fires BOTH
   VariationSelectorPayload (covert-channel lens — "does this
-  input smuggle data?") AND K3 here (watermark-attribution
-  lens — "was this input produced by an AI with marker scheme
-  S?").  A ZWJ in plain text similarly fires both C3
-  ZeroWidthPayload and K3.  This is intentional: the two lenses
-  ask different questions about the same byte.  An input that
-  fires both gets composite rejection at higher Levels and
-  isolated rejection at `cryptoAdmissible .aiAttribution`.
+  input smuggle data?") AND this detector (watermark-
+  attribution lens — "was this input produced by a watermarking
+  protocol?").  A ZWJ in plain text similarly fires both
+  ZeroWidthPayload and this detector.  The two lenses ask
+  different questions about the same byte and the composite
+  verdict carries both signals.
+
+  Context.  `detectWithContext` accepts an optional `Context`
+  that tightens or relaxes specific probes.  The bare
+  `detect input` is definitionally `detectWithContext {}
+  input`; runAll uses the bare entry point so every
+  downstream consumer sees the same priority order.
 -/
 
 import Unicode.Security.Calculus
@@ -89,18 +97,18 @@ open Unicode.Security.Calculus
 -- §1 Types
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Sub-threats K3 can fire.  The first four are emitted by the
-    v1 detector; the remaining six are declared for spec-
-    consistency with `L6-cryptographic-stability.md` §K3.1 but
-    require context (statistical regularity, per-provider
-    modulo schedules, per-document distribution baselines) that
-    the codepoint-only API does not carry. -/
+/-- Sub-threats this detector can fire.  Each constructor
+    has a corresponding probe in `detect` and at least one
+    fixture row exercising its emission path (pinned by
+    `every_subthreat_has_fixture_row` in the conformance
+    harness).  Names follow `L6-cryptographic-stability.md`
+    §K3.1; arguments carry the position payload the
+    harness's attribution column reads back. -/
 inductive SubThreat where
   | nnbspBoundary             (markerCount : Nat)
   | variationSelectorCarrier  (markerCount : Nat)
   | zwjNonEmoji               (markerCount : Nat)
   | defaultIgnorableCarrier   (markerCount : Nat)
-  -- Declared but never emitted in v1:
   | gpt5ZwspModulo            (firstPos : Nat)
   | emDashPattern             (firstPos : Nat)
   | smartQuoteAlternation     (firstPos : Nat)
@@ -620,7 +628,9 @@ theorem detect_multiple_nnbsp_aggregates :
     ∧ v.classify.positions = #[1, 3] := by native_decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- §7 Refinement-probe spot checks (the six previously-deferred variants)
+-- §7 Refinement-probe spot checks (adversarial / gpt5ZwspModulo /
+--                                   smartQuoteAlternation / emDashPattern /
+--                                   statisticalTokenChoice / unknown)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- `adversarial` fires when input has ≥ 3 NNBSPs at arithmetic-

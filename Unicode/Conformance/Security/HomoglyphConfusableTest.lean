@@ -21,7 +21,7 @@ open Unicode.Security.Identity.HomoglyphConfusable
 -- §1 Raw fixture + parsed rows
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Hand-curated v1 fixture for I1 — 16 rows across 4 sections
+/-- Hand-curated fixture — 16 rows across 4 sections
     covering: legitimate-Latin clear cases, the Oct 2025 NuGet
     Nethereum typosquat shape, IDN homograph attacks against
     `apple` / `paypal`, Math-Alpha posing variants (Bold /

@@ -40,9 +40,11 @@
     2. `normalizationDrift` — input != NFC(input); the NFC step
        changes codepoint content.  Always active.
     3. `encodingMismatch` — `ctx.declaredEncoding` is set and
-       the declared label disagrees with the actual codepoint
-       array (v1 treats the codepoint array as UTF-8-decoded;
-       any non-"utf-8" declaration fires the variant).
+       the declared label disagrees with the codepoint array.
+       The codepoint array IS the UTF-8-decoded representation
+       by construction, so any non-"utf-8" declaration is
+       necessarily a label-drift; codepoints outside the valid
+       scalar range fire `detectedEnc = "invalid"`.
     4. `signedMessageRule` — `ctx.rfcRule` is set and the input
        violates the named RFC's canonicalisation rule.  Four
        rules currently emitted: PGP 4880 trailing-whitespace,
@@ -130,12 +132,18 @@ def fromTag : String → Option RfcRule
 
 end RfcRule
 
-/-- Sub-threats K2 can fire.  Names + arguments follow
-    `L6-cryptographic-stability.md` §K2.3.  All six are now
-    emitted by the v1 detector.  The first two
-    (`trailingWhitespace`, `normalizationDrift`) fire from the
-    raw input alone.  The other four require fields on the
-    `Context` argument to `detectWithContext` to be set. -/
+/-- Sub-threats this detector can fire.  Names + arguments
+    follow `L6-cryptographic-stability.md` §K2.3; each
+    constructor has at least one fixture row exercising its
+    emission path (pinned by `every_subthreat_has_fixture_row`
+    in the conformance harness).
+
+    Two probes fire from the raw input alone
+    (`trailingWhitespace`, `normalizationDrift`).  The other
+    four require the corresponding field on the `Context`
+    argument to `detectWithContext` to be set: encoding label,
+    RFC profile, paired as-written bytes, or paired server
+    bytes. -/
 inductive SubThreat where
   | normalizationDrift       (firstDivergentPos : Nat)
   | trailingWhitespace       (count : Nat)
@@ -149,9 +157,9 @@ inductive SubThreat where
     context-bearing probes (`encodingMismatch`,
     `signedMessageRule`, `auditLogReinterpretation`,
     `webhookSignatureDrift`).  Each field is optional — when
-    none is set, only the bare-input probes fire.  Default
-    `{}` produces the legacy behaviour identical to the bare
-    `detect input` entry point. -/
+    none is set, only the bare-input probes fire.  The empty
+    context `{}` is the identity case: `detectWithContext {}
+    input = detect input` definitionally. -/
 structure Context where
   /-- The encoding label the caller claims their input is in.
       When provided and not equal to "utf-8", K2 fires

@@ -28,7 +28,7 @@ open Unicode.Security.Display.SourceDisplayDivergence
 -- §1 Raw fixture + parsed rows
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Hand-curated v1 fixture for D1 — 16 rows across 7 sections
+/-- Hand-curated fixture — 16 rows across 7 sections
     exercising Clear, every single-family pass-through (TagBlock,
     VariationSelector, ZeroWidth, BidiControl, IdentifierHomoglyph),
     and the compound multi-family case. -/

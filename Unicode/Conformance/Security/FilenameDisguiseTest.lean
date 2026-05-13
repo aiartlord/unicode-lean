@@ -17,7 +17,7 @@ open Unicode.Security.Calculus
 open Unicode.Security.Fixture
 open Unicode.Security.Display.FilenameDisguise
 
-/-- Hand-curated v1 fixture for D2 — 15 rows across 5 sections
+/-- Hand-curated fixture — 15 rows across 5 sections
     covering: plain-ASCII clear cases (txt, pdf, no-ext, two-seg
     tar.gz, native Hebrew, native Arabic), the classic RLO/RLI/RLE
     extension flip shapes, fullwidth-letter extensions, combining

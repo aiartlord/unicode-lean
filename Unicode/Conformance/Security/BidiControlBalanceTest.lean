@@ -21,7 +21,7 @@ open Unicode.Security.Covert.BidiControlBalance
 -- §1 Raw fixture + parsed rows
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Hand-curated v1 fixture for C5 — 18 rows across 4 sections
+/-- Hand-curated fixture — 18 rows across 4 sections
     covering the Boucher-Anderson 2021 Trojan-Source shape (lone
     RLO, lone LRE), the CVE-2021-42694 isolate variants, orphan
     pops, and the legitimate-RTL balanced cases. -/

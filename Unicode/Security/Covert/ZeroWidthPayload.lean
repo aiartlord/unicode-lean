@@ -129,11 +129,12 @@ def isZeroWidthChar (cp : Nat) : Bool :=
     is the membership predicate derived from
     `emoji-zwj-sequences.txt` itself.
 
-    Tighter than the earlier `isEmoji`-based check, which counted
-    keycap-eligible ASCII digits and other Emoji-property
-    codepoints that never appear in any registered ZWJ sequence
-    as "legitimate" ZWJ neighbors.  The structural predicate
-    closes that gap by construction. -/
+    The structural membership predicate is strictly narrower
+    than `Unicode.Emoji.isEmoji`: keycap-eligible ASCII digits
+    and other Emoji-property codepoints that never appear in
+    any registered ZWJ sequence are excluded, so a ZWJ between
+    two such codepoints is correctly classified as suspicious
+    rather than legitimate. -/
 def isLegitimateZwjContext (input : Array Nat) (p : Nat) : Bool :=
   if p > 0 ∧ p + 1 < input.size then
     Unicode.Generated.EmojiSequences.isInZwjAlphabet input[p - 1]! ∧

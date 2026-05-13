@@ -32,7 +32,7 @@ open Unicode.Security.Covert.VariationSelectorPayload
 -- §1 Raw fixture + parsed rows
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Hand-curated v1 fixture — 18 rows across 5 sections covering
+/-- Hand-curated fixture — 18 rows across 5 sections covering
     every C2 sub-threat and the registered-clear cases.
 
     A future revision will expand this to ~6,000 rows by walking

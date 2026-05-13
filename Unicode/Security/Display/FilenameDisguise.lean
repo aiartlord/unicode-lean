@@ -24,12 +24,13 @@
     3. Any Grapheme_Cluster_Break = Extend codepoint
        (combining marks etc.) in the extension region.
 
-  Out of v1 scope: a full bidi-resolution → display-order
-  extraction pass would pin "displayed extension ≠ byte
-  extension" directly.  For v1 the structural detection above
-  catches variants .a–.g except the native-RTL legitimate-
-  use case (.e).  Native-RTL inputs that contain no bidi
-  format-control codepoints clear.
+  The structural detection above catches variants .a–.g
+  except the native-RTL legitimate-use case (.e); native-RTL
+  inputs that contain no bidi format-control codepoints clear.
+  A full bidi-resolution → display-order extraction pass would
+  pin "displayed extension ≠ byte extension" directly and
+  subsume the structural check, but is not part of the
+  character-only charter this module inhabits.
 -/
 
 import Unicode.Security.Calculus

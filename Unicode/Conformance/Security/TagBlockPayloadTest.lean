@@ -26,7 +26,7 @@ open Unicode.Security.Covert.TagBlockPayload
 -- §1 Raw fixture + parsed rows
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Hand-curated v1 fixture for C1 — 16 rows across 5 sections
+/-- Hand-curated fixture — 16 rows across 5 sections
     covering Clear / DirectAscii / LanguageTagRevival / MixedBlock /
     BareTagPresent, including Goodside's canonical Jan 2024 attack. -/
 def rawFixture : String :=

@@ -17,7 +17,7 @@ open Unicode.Security.Calculus
 open Unicode.Security.Fixture
 open Unicode.Security.Identity.EmojiZwjIntegrity
 
-/-- Hand-curated v1 fixture for I3 — 14 rows across 5 sections
+/-- Hand-curated fixture — 14 rows across 5 sections
     covering: pure-emoji clear cases (Hello, single 😀, single
     skin-tone, registered family ZWJ, registered couple ZWJ),
     Double-ZWJ adjacency, ZWJ adjacent to non-emoji (Latin, digit,

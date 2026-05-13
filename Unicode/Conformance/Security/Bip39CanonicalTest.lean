@@ -18,7 +18,7 @@ open Unicode.Security.Fixture
 open Unicode.Security.Crypto.Bip39Canonical
 open Unicode.Generated.BIP39 (Language)
 
-/-- Hand-curated v1 fixture for K1 — 20 rows across 9 sections.
+/-- Hand-curated fixture — 20 rows across 9 sections.
 
     * Clear basic (6): English 12-word test vector, Spanish,
       Italian, French, Czech, Portuguese 3-word mnemonics.
