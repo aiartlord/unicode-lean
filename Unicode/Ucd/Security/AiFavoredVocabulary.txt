@@ -4,15 +4,77 @@
 # output.  Consumed by Unicode.Security.Crypto.AiWatermarkDetectability's
 # `statisticalTokenChoice` probe via `include_str`.
 #
-# Format: one word per line, ASCII only.  Lines beginning with
-# `#` are comments; blank lines are ignored.  Words are matched
-# as contiguous codepoint subarrays of the input (not whole-
-# word matched), so substrings of larger words also fire.
+# Format: one word per line, ASCII only, lowercase.  Lines
+# beginning with `#` are comments; blank lines are ignored.
+# Words are matched as contiguous codepoint subarrays of the
+# input (not whole-word matched), so substrings of larger
+# words also fire — "delving" fires "delve", "tapestries"
+# fires "tapestry", "moreover," fires "moreover".
 #
 # Curation: the catalog should grow as public reports identify
-# new AI-favored vocabulary.  Each addition should cite the
-# report's URL in a `# source: ...` comment line.
+# new AI-favored vocabulary.  Each addition should ideally
+# cite a public source in a `# source: ...` comment line.
+#
+# False-positive cost: every entry will fire on legitimate
+# human-written prose containing the word.  This is acceptable
+# because K3 is informational under `.aiAttribution` context;
+# at other contexts the probe is silent.
 
+# Tier 1: very high signal (strongly associated with AI output)
 delve
+delving
 tapestry
+intricate
+nuanced
+
+# Tier 2: high signal
 moreover
+furthermore
+realm
+elucidate
+showcasing
+underscores
+underscored
+pivotal
+bolster
+multifaceted
+testament
+foster
+holistic
+paradigm
+transformative
+spearhead
+
+# Tier 3: medium signal — common in formal writing but
+# over-represented in AI output
+meticulous
+meticulously
+empower
+empowering
+profound
+profoundly
+compelling
+comprehensive
+crucial
+daunting
+robust
+streamline
+enrich
+exemplify
+captivating
+discerning
+mesmerize
+intricately
+imbue
+
+# Tier 4: phrase-fragment signals
+plays a crucial role
+plays a pivotal role
+it is important to note
+it is worth noting
+in conclusion
+in essence
+delve into
+delving into
+tapestry of
+realm of

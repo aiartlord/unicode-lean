@@ -7,6 +7,64 @@ on the public surface (a major-version bump signals that a
 theorem name or statement changed in a way downstream consumers
 might depend on).
 
+## v0.17.0 — 2026-05-13
+
+Productionization pass over the K-family detectors.  Expands
+the AI-favored vocabulary catalog, adds three new RFC profiles
+to the K2 signed-message-rule probe, and introduces a K3
+`Context` type carrying tolerance parameters for the modulo
+probes.
+
+### Added — K3 (AiWatermarkDetectability)
+
+- `Context` structure with two tolerance fields:
+  `zwspModuloTolerance` (parameter for the
+  `gpt5ZwspModulo` probe — accepts position-gap jitter within
+  ±k of the first gap) and `adversarialTolerance` (same
+  semantic for the `adversarial` probe's NNBSP positions).
+  Defaults of `0` reproduce the exact-arithmetic behaviour.
+- `detectWithContext (ctx : Context) (input : Array Nat) :
+  Verdict` entry point.  The bare `detect input` is
+  definitionally `detectWithContext {} input`; `runAll` uses
+  the bare entry point so every downstream consumer sees the
+  same priority order.
+- `positionsAreArithmeticWithin (positions : Array Nat)
+  (tolerance : Nat) : Bool` — generalised arithmetic-
+  progression check.  `positionsAreArithmetic` becomes a thin
+  wrapper at `tolerance = 0`.
+- Three spot-check theorems pin the tolerance behaviour:
+  jittered ZWSP positions stay clear under exact arithmetic
+  but fire `Gpt5ZwspModulo` under `tolerance = 1`, and the
+  empty-context wrapper agrees with the bare `detect`.
+- `aiFavoredVocabulary` expanded from 3 entries to ~50,
+  organised into four signal tiers (very high / high /
+  medium / phrase-fragment) with curation notes in the data
+  file.
+
+### Added — K2 (HashInputStability)
+
+- Three new RFC profiles in `RfcRule`:
+  `rfc7515JwsBase64Url` (JWS compact-serialisation alphabet
+  `[A-Za-z0-9_-]`), `rfc6376DkimRelaxed` (DKIM relaxed body
+  canonicalisation — multi-codepoint internal whitespace
+  runs), `rfc5751SmimeLineEnding` (S/MIME canonical text;
+  bare LF / CR violates).
+- Three new violation probes wired into `rfcRuleViolation`:
+  `rfc7515Violation`, `rfc6376Violation`, `rfc5751Violation`.
+  `rfcRuleViolation` is now exhaustive over all seven
+  `RfcRule` constructors.
+- Five spot-check theorems pin the new probes — positive
+  case (violation) and negative case (clean input) for each
+  rule where applicable.
+
+### Module header
+
+K2 header updated to list seven RFC rules (not four).  K3
+header is unchanged from v0.16.1 — the new `Context` is
+appended without disturbing the existing probe inventory.
+
+Full repo build: 200/200 jobs.  All six gates clean.
+
 ## v0.16.1 — 2026-05-13
 
 Tightening pass over v0.16.0 — no breaking API changes, no
