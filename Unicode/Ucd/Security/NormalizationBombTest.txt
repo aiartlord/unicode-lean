@@ -1,7 +1,7 @@
 # NormalizationBombTest.txt
 # UCD version: 16.0.0
 # Security-spec version: 0.1.0
-# Family: F1 — Normalization Expansion Bomb (UAX #15)
+# Family: NormalizationBomb (UAX #15)
 # License: Apache-2.0
 #
 # Threat model: an attacker submits a small input that explodes
@@ -26,7 +26,7 @@
 # Format:
 #   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
 #
-# Classifications produced by the F1 detector:
+# Classifications produced by the detector:
 #   Clear (= within bounds)
 #   Hazard:SingleCpBlowup
 #   Hazard:NfkdHighExpansion

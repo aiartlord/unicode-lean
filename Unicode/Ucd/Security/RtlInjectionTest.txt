@@ -1,18 +1,19 @@
 # RtlInjectionTest.txt
 # UCD version: 16.0.0
 # Security-spec version: 0.1.0
-# Family: D3 — RTL Injection Into LTR Contexts
+# Family: RtlInjection
 # License: Apache-2.0
 #
 # Threat model: nominally-LTR fields (form fields, URLs, logs)
 # into which strong-RTL codepoints or bidi format-controls are
 # injected, causing surrounding display to reorder.  Distinct
-# from C5 — D3 flags strong-RTL regardless of bidi balance.
+# from BidiControlBalance — this detector flags strong-RTL
+# regardless of bidi balance.
 #
 # Format:
 #   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
 #
-# Classifications produced by the D3 detector:
+# Classifications produced by the detector:
 #   Clear
 #   Hazard:RloInLTRField         Hazard:FieldTakeover
 #   Hazard:StrongRTLInLTR        Hazard:MixedOverflow

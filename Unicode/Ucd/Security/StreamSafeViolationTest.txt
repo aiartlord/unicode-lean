@@ -1,28 +1,29 @@
 # StreamSafeViolationTest.txt
 # UCD version: 16.0.0
 # Security-spec version: 0.1.0
-# Family: F2 — Stream-Safe Text Format violation (UAX #15 § 13)
+# Family: StreamSafeViolation (UAX #15 § 13)
 # License: Apache-2.0
 #
 # Threat model: an attacker submits an input with a long
 # combining-mark run ("Zalgo" shape) that forces an unbounded
 # normalization buffer at the receiver.  UAX #15 § 13 caps the
 # run length at 30 non-starters and prescribes U+034F COMBINING
-# GRAPHEME JOINER as the canonical breaker.  F2 flags inputs
-# whose maximum non-starter run exceeds the cap.
+# GRAPHEME JOINER as the canonical breaker.  StreamSafeViolation
+# flags inputs whose maximum non-starter run exceeds the cap.
 #
 # Detection (single sub-threat in v1):
 #   * StreamSafeOverrun (basePos, runLen) — first contiguous
 #     non-starter run with length > 30.
 #
-# Distinct from D4 `combiningStackOverflow`, which fires at the
-# cosmetic Zalgo threshold of 4 marks per base for renderer-
-# divergence reasons.  F2 is the spec-mandated DoS bound.
+# Distinct from RendererDivergence's `combiningStackOverflow`,
+# which fires at the cosmetic Zalgo threshold of 4 marks per base
+# for renderer-divergence reasons.  StreamSafeViolation is the
+# spec-mandated DoS bound.
 #
 # Format:
 #   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
 #
-# Classifications produced by the F2 detector:
+# Classifications produced by the detector:
 #   Clear (= within the Stream-Safe bound)
 #   Hazard:StreamSafeOverrun
 

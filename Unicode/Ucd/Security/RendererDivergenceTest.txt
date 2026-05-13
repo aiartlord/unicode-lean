@@ -1,19 +1,20 @@
 # RendererDivergenceTest.txt
 # UCD version: 16.0.0
 # Security-spec version: 0.1.0
-# Family: D4 — Cross-Renderer Fingerprint Stability
+# Family: RendererDivergence
 # License: Apache-2.0
 #
 # Threat model: input shapes known to render differently across
 # the Chrome / Firefox / Safari / iTerm / Windows Terminal /
-# common-font-fallback cohort.  Distinct from D1 (compound source-
-# code divergence) — D4 specifically covers renderer-cohort
-# variance regardless of whether other sub-detectors fire.
+# common-font-fallback cohort.  Distinct from
+# SourceDisplayDivergence (compound source-code divergence) —
+# RendererDivergence specifically covers renderer-cohort variance
+# regardless of whether other detectors fire.
 #
 # Format:
 #   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
 #
-# Classifications produced by the D4 detector:
+# Classifications produced by the detector:
 #   Clear (= stable)
 #   Hazard:CombiningStackOverflow     Hazard:VariationSelectorVariance
 #   Hazard:UnregisteredZwjVariance    Hazard:FullwidthVariance

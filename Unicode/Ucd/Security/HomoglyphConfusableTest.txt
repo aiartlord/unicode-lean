@@ -1,7 +1,7 @@
 # HomoglyphConfusableTest.txt
 # UCD version: 16.0.0
 # Security-spec version: 0.1.0
-# Family: I1 — Homoglyph / Confusable Identifier Substitution
+# Family: HomoglyphConfusable
 # License: Apache-2.0
 #
 # Threat model: identifiers whose visible glyph stream matches a
@@ -13,7 +13,7 @@
 # Format:
 #   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
 #
-# Classifications produced by the I1 detector:
+# Classifications produced by the detector:
 #   Clear
 #   Hazard:TargetMatch          Hazard:MathAlpha
 #   Hazard:WidthClass           Hazard:DecompositionSwap

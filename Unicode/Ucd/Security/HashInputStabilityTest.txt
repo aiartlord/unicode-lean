@@ -1,7 +1,7 @@
 # HashInputStabilityTest.txt
 # UCD version: 16.0.0
 # Security-spec version: 0.1.0
-# Family: K2 — Hash-input Unicode Stability (UAX #15 + RFC 8785)
+# Family: HashInputStability (UAX #15 + RFC 8785)
 # License: Apache-2.0
 #
 # Threat model: an input hashed by a signer must be byte-identical
@@ -35,10 +35,10 @@
 # Format:
 #   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
 #
-# Attribution keys recognised by the K2 conformance harness:
+# Attribution keys recognised by the conformance harness:
 #   stableSize=<N>  — codepoint count of the canonical (NFC + trim) form
 #
-# Classifications produced by the K2 detector:
+# Classifications produced by the detector:
 #   Clear
 #   Hazard:TrailingWhitespace
 #   Hazard:NormalizationDrift
@@ -70,8 +70,9 @@
 61 20 62; Clear; ; stableSize=3; # "a b" internal space
 
 # Trailing U+3000 ideographic space — Unicode whitespace is
-# content under K2's threat model and NOT stripped.  Pinned to
-# distinguish K2's ASCII-only trim from K1's BIP-39
+# content under this detector's threat model and NOT stripped.
+# Pinned to distinguish HashInputStability's ASCII-only trim
+# from Bip39Canonical's BIP-39
 # {U+0020, U+3000} inventory.
 61 3000; Clear; ; stableSize=2; # trailing U+3000 (content not framing)
 

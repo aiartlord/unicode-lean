@@ -1,7 +1,7 @@
 # EmojiZwjIntegrityTest.txt
 # UCD version: 16.0.0
 # Security-spec version: 0.1.0
-# Family: I3 — Emoji ZWJ-Sequence Integrity
+# Family: EmojiZwjIntegrity
 # License: Apache-2.0
 #
 # Threat model: malformed or unsanctioned emoji ZWJ-sequence
@@ -12,7 +12,7 @@
 # Format:
 #   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
 #
-# Classifications produced by the I3 detector:
+# Classifications produced by the detector:
 #   Clear
 #   Hazard:DoubleZWJ              Hazard:NonEmojiInjection
 #   Hazard:OverLength             Hazard:SkinToneOverflow

@@ -1,7 +1,7 @@
 # WidthClassConfusionTest.txt
 # UCD version: 16.0.0
 # Security-spec version: 0.1.0
-# Family: F5 — Width Class Confusion (UAX #11)
+# Family: WidthClassConfusion (UAX #11)
 # License: Apache-2.0
 #
 # Threat model: an attacker submits text containing Fullwidth
@@ -11,11 +11,11 @@
 # (or fails it but evades the check), then NFKC-normalises to
 # `ADMIN` at storage / comparison, yielding two-system bypass.
 #
-# Distinct from D4 `FullwidthVariance`, which fires on the same
-# input shapes for renderer-cohort divergence reasons.  Both
-# detectors can fire on the same input — that is the layered
-# model.  Pure Hangul stays clear because its NFKD output jamos
-# are themselves EAW = W (no class change).
+# Distinct from RendererDivergence's `FullwidthVariance`, which
+# fires on the same input shapes for renderer-cohort divergence
+# reasons.  Both detectors can fire on the same input — that is
+# the composed-detector model.  Pure Hangul stays clear because
+# its NFKD output jamos are themselves EAW = W (no class change).
 #
 # Detection (priority order, both reachable):
 #   1. FullwidthFold (basePos, cp, foldedCp) — EAW = F → ≠ F
@@ -24,7 +24,7 @@
 # Format:
 #   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
 #
-# Classifications produced by the F5 detector:
+# Classifications produced by the detector:
 #   Clear (= no width-class fold)
 #   Hazard:FullwidthFold
 #   Hazard:HalfwidthFold

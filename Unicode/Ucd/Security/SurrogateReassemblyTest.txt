@@ -1,7 +1,7 @@
 # SurrogateReassemblyTest.txt
 # UCD version: 16.0.0
 # Security-spec version: 0.1.0
-# Family: C4 — Surrogate-Reassembly / UTF-8 byte-stream anomaly
+# Family: SurrogateReassembly (UTF-8 byte-stream anomaly)
 # License: Apache-2.0
 #
 # Threat model: byte streams that survive a non-strict decoder
@@ -14,7 +14,7 @@
 # Format:
 #   <hex bytes>; <classification>; <positions>; <attribution>; # <name>
 #
-# Classifications produced by the C4 detector:
+# Classifications produced by the detector:
 #   Clear
 #   Hazard:Overlong              Hazard:Cesu8
 #   Hazard:Truncated             Hazard:InvalidStartByte

@@ -1,7 +1,7 @@
 # AdmissibilityFormDriftTest.txt
 # UCD version: 16.0.0
 # Security-spec version: 0.1.0
-# Family: X4 — Cross-Layer Identifier-Admissibility × Form Drift
+# Family: AdmissibilityFormDrift
 #         (UTS #39 + UAX #15)
 # License: Apache-2.0
 #
@@ -11,13 +11,16 @@
 # verdict; a post-normalisation check on the same input reaches
 # the other.  Attacker controls which check guards which stage.
 #
-# X4 complements X1.  X1 is per-codepoint and compares
-# Identifier_Status against the NFKD-head.  X4 is whole-string
-# and compares isAllowedIdentifier across the NFKC boundary.
-# The two detectors are not redundant: decomposed Hangul jamos
-# satisfy X1 cleanly (identity NFKD, Restricted on both sides)
-# but fire X4 because the jamo sequence composes under NFKC into
-# a precomposed Allowed Hangul syllable.
+# AdmissibilityFormDrift complements IdentifierFormDrift.
+# IdentifierFormDrift is per-codepoint and compares
+# Identifier_Status against the NFKD-head.
+# AdmissibilityFormDrift is whole-string and compares
+# isAllowedIdentifier across the NFKC boundary.  The two
+# detectors are not redundant: decomposed Hangul jamos satisfy
+# IdentifierFormDrift cleanly (identity NFKD, Restricted on both
+# sides) but fire AdmissibilityFormDrift because the jamo
+# sequence composes under NFKC into a precomposed Allowed Hangul
+# syllable.
 #
 # Detection (single sub-threat, direction-agnostic):
 #   AdmissibilityFormDrift (inputAdmissible, nfkcAdmissible) —
@@ -27,7 +30,7 @@
 # Format:
 #   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
 #
-# Classifications produced by the X4 detector:
+# Classifications produced by the detector:
 #   Clear (= same admissibility on both sides of NFKC)
 #   Hazard:AdmissibilityFormDrift
 
@@ -51,7 +54,7 @@ D55C; Clear; ; input_adm=true; nfkc_adm=true; # 한 (precomposed)
 
 # A leading digit — not a valid identifier on either side.
 # Both isAllowedIdentifier calls return false, so the verdict
-# is form-stable and X4 stays clear.
+# is form-stable and this detector stays clear.
 0030 0031 0032; Clear; ; input_adm=false; nfkc_adm=false; # 012 (leading-digit, both false)
 
 # Cyrillic privet — admissible on both sides under UTS #39.
@@ -82,9 +85,10 @@ FF21; Hazard:AdmissibilityFormDrift; ; input_adm=false; nfkc_adm=true; # Ａ
 
 # Decomposed Hangul jamos for 한 — every jamo is Restricted
 # (input not admissible), NFKC composes them to U+D55C which is
-# Allowed.  This row is the canonical X1/X4 complementarity case:
-# X1 sees no per-cp shift (jamos have identity NFKD), X4 sees
-# the whole-string verdict flip.
+# Allowed.  This row is the canonical complementarity case
+# between IdentifierFormDrift and AdmissibilityFormDrift:
+# IdentifierFormDrift sees no per-cp shift (jamos have identity
+# NFKD), AdmissibilityFormDrift sees the whole-string verdict flip.
 1112 1161 11AB; Hazard:AdmissibilityFormDrift; ; input_adm=false; nfkc_adm=true; # decomposed 한
 
 # Decomposed Hangul jamos for two syllables — same shape, larger
@@ -104,9 +108,10 @@ FF50 FF41 FF53 FF53 FF57 FF4F FF52 FF44; Hazard:AdmissibilityFormDrift; ; input_
 # Circled digit ① — Restricted, NFKC = "1" Allowed (but digits
 # alone aren't valid identifiers either, so this is a flip in
 # the OTHER direction: input admissible? No — Restricted.  NFKC
-# admissible? No — leading digit.  Both false, X4 stays clear).
-# To make this row a true X4 case, prefix with an Allowed letter
-# so NFKC = "a1" which IS a valid identifier.
+# admissible? No — leading digit.  Both false, the detector
+# stays clear).  To make this row a true AdmissibilityFormDrift
+# case, prefix with an Allowed letter so NFKC = "a1" which IS a
+# valid identifier.
 0061 2460; Hazard:AdmissibilityFormDrift; ; input_adm=false; nfkc_adm=true; # a + circled-1 → a1
 
 # Square HV (U+33CD) — Restricted, NFKC = "HV" admissible.
