@@ -121,3 +121,64 @@
 # NormalizationDrift also applies.  Pins the priority decision
 # point in detect.
 0065 0301 20; Hazard:TrailingWhitespace; 2; stableSize=1; # decomposed é + trailing space (trailing wins)
+
+# @section EncodingMismatch
+# @level basic
+
+# ASCII "abc" labeled with a non-UTF-8 encoding fires
+# encodingMismatch.  The codepoint array IS the UTF-8 decode
+# by construction; any non-UTF-8 declaration is label drift.
+# Context: declaredEnc=utf-16.
+61 62 63; Hazard:EncodingMismatch; 0; stableSize=3; declaredEnc=utf-16; # ASCII labeled utf-16
+
+# Same input labeled "latin-1" — fires the same way.
+61 62 63; Hazard:EncodingMismatch; 0; stableSize=3; declaredEnc=latin-1; # ASCII labeled latin-1
+
+# @section SignedMessageRule
+# @level basic
+
+# RFC 4880 trailing-whitespace rule: input has trailing space
+# AND ctx.rfcRule = pgp4880TrailingWhitespace.  The RFC-
+# specific verdict outranks the generic trailingWhitespace.
+61 20; Hazard:SignedMessageRule; 1; stableSize=1; rfcRule=pgp4880TrailingWhitespace; # trailing space under PGP 4880
+
+# RFC 9580 line-ending rule: input has bare LF (no preceding
+# CR) — violates CRLF-only canonicalisation.
+61 0A 62; Hazard:SignedMessageRule; 1; stableSize=3; rfcRule=pgp9580LineEnding; # bare LF under PGP 9580
+
+# RFC 8785 NFC requirement: input is decomposed é AND ctx
+# selects JSON canonicalisation.  Same condition as
+# normalizationDrift, reported under the JSON-specific tag.
+0065 0301; Hazard:SignedMessageRule; 0; stableSize=1; rfcRule=rfc8785NfcRequirement; # decomposed é under RFC 8785
+
+# RFC 8259 control-character rule: input has unescaped U+0001
+# (Start of Heading) inside a string.  JSON strings must
+# escape C0 controls per §7.
+61 01 62; Hazard:SignedMessageRule; 1; stableSize=3; rfcRule=rfc8259ControlChar; # unescaped C0 control under RFC 8259
+
+# @section AuditLogReinterpretation
+# @level basic
+
+# Audit-log re-read diverges from the as-written form at
+# position 2 ("abc" → "abd").  Context carries the original
+# written bytes.
+61 62 64; Hazard:AuditLogReinterpretation; 2; stableSize=3; asWritten=61 62 63; # written "abc", read "abd"
+
+# Length-mismatch divergence: written is shorter than re-read.
+61 62 63 64; Hazard:AuditLogReinterpretation; 3; stableSize=4; asWritten=61 62 63; # written "abc", read "abcd"
+
+# @section WebhookSignatureDrift
+# @level basic
+
+# Client bytes "abc" differ from server-recomputed "abd" at
+# position 2.  Context carries the server bytes.
+61 62 63; Hazard:WebhookSignatureDrift; 2; stableSize=3; serverBytes=61 62 64; # client "abc", server "abd"
+
+# @section EncodingMismatch
+# @level strict
+
+# Priority pin: encodingMismatch (priority 1) fires before
+# RFC-rule (priority 4) even when both apply.  Input has
+# decomposed é AND ctx selects both a non-UTF-8 declared
+# encoding AND the RFC 8785 NFC rule.  encodingMismatch wins.
+0065 0301; Hazard:EncodingMismatch; 0; stableSize=1; declaredEnc=utf-16; rfcRule=rfc8785NfcRequirement; # priority pin
