@@ -341,16 +341,47 @@ private def isUtf8Label (label : String) : Bool :=
   let l := normaliseEncodingLabel label
   decide (l = "utf-8") || decide (l = "utf8")
 
-/-- Probe: `encodingMismatch`.  Fires when the caller declares
-    a non-UTF-8 encoding label.  The codepoint array passed to
-    K2 IS the UTF-8-decoded representation by construction, so
-    any non-UTF-8 declaration is necessarily a label-drift.
+/-- True iff `cp` is a valid Unicode scalar value — i.e. in
+    `[0, 0x10FFFF]` and not in the surrogate range
+    `[0xD800, 0xDFFF]`.  Surrogates are reserved for UTF-16
+    encoding and are explicitly NOT valid scalar values per
+    UAX #44 §4.2.9. -/
+@[inline] def isValidScalar (cp : Nat) : Bool :=
+  decide (cp ≤ 0x10FFFF)
+    && ¬ (decide (0xD800 ≤ cp) && decide (cp ≤ 0xDFFF))
+
+/-- First position in `input` containing a codepoint that is not
+    a valid Unicode scalar value, or `none` if every codepoint
+    is valid. -/
+def firstInvalidScalar (input : Array Nat) : Option Nat :=
+  (Array.range input.size).findSome? (fun i =>
+    if h : i < input.size then
+      if isValidScalar input[i] then none else some i
+    else none)
+
+/-- Probe: `encodingMismatch`.  Two firing paths, with input
+    validity dispatched first:
+
+      1. Input contains a codepoint that is not a valid Unicode
+         scalar (out-of-range or surrogate).  Fires with
+         `detectedEnc = "invalid"` and position pointing at the
+         first invalid scalar — regardless of what the caller
+         declared.
+      2. Input is valid Unicode AND the declared encoding label
+         is not "utf-8".  Fires with `detectedEnc = "utf-8"` and
+         position 0 — the codepoint array IS the UTF-8 decoded
+         representation by construction, so any non-UTF-8
+         declaration is a label-drift.
+
     Returns `(declaredEnc, detectedEnc, firstPos)` triple when
-    firing, `none` otherwise. -/
-def encodingMismatchProbe (declared : String) :
+    firing, `none` when valid Unicode + UTF-8 label. -/
+def encodingMismatchProbe (declared : String) (input : Array Nat) :
     Option (String × String × Nat) :=
-  if isUtf8Label declared then none
-  else some (declared, "utf-8", 0)
+  match firstInvalidScalar input with
+  | some pos => some (declared, "invalid", pos)
+  | none =>
+    if isUtf8Label declared then none
+    else some (declared, "utf-8", 0)
 
 /-- Probe: `signedMessageRule` for `pgp4880TrailingWhitespace`.
     Same condition as `trailingWhitespace` but reported under
@@ -440,7 +471,7 @@ def detectWithContext (ctx : Context) (input : Array Nat) : Verdict :=
   -- Probe 1: encodingMismatch.
   let encodingHit : Option (String × String × Nat) :=
     match ctx.declaredEncoding with
-    | some lbl => encodingMismatchProbe lbl
+    | some lbl => encodingMismatchProbe lbl input
     | none     => none
 
   -- Probe 2: webhookSignatureDrift.
@@ -580,6 +611,26 @@ theorem detect_encoding_mismatch_utf16_label :
     let v := detectWithContext ctx #[0x61, 0x62, 0x63]
     v.classify.tag = some "EncodingMismatch"
     ∧ v.classify.positions = #[0] := by native_decide
+
+/-- `encodingMismatch` fires with detectedEnc="invalid" when
+    the input contains a high-surrogate codepoint (U+D800),
+    regardless of the declared encoding.  Pinning the
+    validity-first dispatch arm — invalid scalars take priority
+    over label-drift. -/
+theorem detect_encoding_invalid_surrogate :
+    let ctx : Context := { declaredEncoding := some "utf-8" }
+    -- ASCII 'a' + lone high surrogate + ASCII 'b'.
+    let v := detectWithContext ctx #[0x61, 0xD800, 0x62]
+    v.classify.tag = some "EncodingMismatch"
+    ∧ v.classify.positions = #[1] := by native_decide
+
+/-- `encodingMismatch` fires with detectedEnc="invalid" on a
+    codepoint beyond the Unicode max (U+110000 and up). -/
+theorem detect_encoding_invalid_out_of_range :
+    let ctx : Context := { declaredEncoding := some "utf-8" }
+    let v := detectWithContext ctx #[0x61, 0x110000, 0x62]
+    v.classify.tag = some "EncodingMismatch"
+    ∧ v.classify.positions = #[1] := by native_decide
 
 /-- `encodingMismatch` is case-insensitive on the UTF-8 label —
     "UTF-8" / "UTF8" / "utf-8" / "utf8" all match. -/

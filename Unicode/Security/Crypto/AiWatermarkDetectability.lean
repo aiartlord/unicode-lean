@@ -292,18 +292,31 @@ def containsSubarray (pattern input : Array Nat) : Option Nat :=
         decide (inputAtPos = patternAtPos))
       then some start else none)
 
-/-- A small catalog of "AI-favored" lexical patterns — words
-    over-represented in public reports of GPT-class output.
-    Each pattern is the codepoint sequence for an ASCII word.
-    v1 covers "delve", "tapestry", "moreover".  Extending this
-    catalog is the maintenance path for the
-    `statisticalTokenChoice` probe; no signature change is
-    needed. -/
+/-- The raw catalog bytes loaded from the hash-pinned data
+    file `Unicode/Ucd/Security/AiFavoredVocabulary.txt`.  Pinned
+    via SHA-256 in `Unicode/Ucd/Security/SHA256SUMS` and
+    embedded at build time via `include_str`.  Edits to the
+    file invalidate the pin and force a rebuild + manifest
+    update, providing tamper-evidence for the vocabulary
+    catalog. -/
+def aiFavoredVocabularyRaw : String :=
+  include_str "../../Ucd/Security/AiFavoredVocabulary.txt"
+
+/-- Parse the vocabulary file: one ASCII word per non-comment,
+    non-blank line.  Comments start with `#`. -/
+def parseAiFavoredVocabulary (raw : String) : Array (Array Nat) :=
+  (raw.splitOn "\n").foldl (init := #[]) (fun acc line =>
+    let trimmed := line.trimAscii.toString
+    if trimmed.isEmpty then acc
+    else if trimmed.startsWith "#" then acc
+    else acc.push (trimmed.toList.toArray.map Char.toNat))
+
+/-- The "AI-favored" lexical-pattern catalog parsed from the
+    hash-pinned data file.  Words over-represented in public
+    reports of GPT-class output; consumed by the
+    `statisticalTokenChoice` probe via `containsSubarray`. -/
 def aiFavoredVocabulary : Array (Array Nat) :=
-  #[ #[0x64, 0x65, 0x6C, 0x76, 0x65]                      -- "delve"
-   , #[0x74, 0x61, 0x70, 0x65, 0x73, 0x74, 0x72, 0x79]    -- "tapestry"
-   , #[0x6D, 0x6F, 0x72, 0x65, 0x6F, 0x76, 0x65, 0x72]    -- "moreover"
-   ]
+  parseAiFavoredVocabulary aiFavoredVocabularyRaw
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 Probe spot checks

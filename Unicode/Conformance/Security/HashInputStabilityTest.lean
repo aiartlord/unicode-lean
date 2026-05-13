@@ -142,4 +142,22 @@ theorem covers_webhook_signature_drift :
       r.expectedSubThreat = some "WebhookSignatureDrift")).size ≥ 1 := by
   native_decide
 
+/-- Every constructor of `SubThreat` has at least one fixture
+    row.  Catches the "structurally reachable but no fixture
+    exercising it" failure mode where a sub-threat name exists
+    in the type system but no input drives the detector to emit
+    it.  Each entry is the string returned by
+    `Classification.tag` for the corresponding constructor. -/
+theorem every_subthreat_has_fixture_row :
+    let expectedSubThreats : Array String :=
+      #[ "NormalizationDrift"
+       , "TrailingWhitespace"
+       , "EncodingMismatch"
+       , "SignedMessageRule"
+       , "AuditLogReinterpretation"
+       , "WebhookSignatureDrift" ]
+    expectedSubThreats.all (fun name =>
+      rows.any (fun r => r.expectedSubThreat = some name)) = true := by
+  native_decide
+
 end Unicode.Conformance.Security.HashInputStabilityTest
