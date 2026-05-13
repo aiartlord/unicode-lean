@@ -124,10 +124,9 @@ cover (UTS #39 §5.4, §6).
 Every family ships three artefacts:
 
 1. A detector module under `Unicode/Security/<Layer>/<Family>.lean`
-   that exports `detect : Array Nat → <Family>Verdict`.  The verdict
-   carries the input, a `<Family>Classification` (a sum of `clear`
-   and one or more `hazard` sub-threats), and optional per-family
-   metadata.
+   that exports `detect : Array Nat → Verdict`.  The verdict
+   carries the input, a `Classification` (a sum of `clear` and one
+   or more `hazard` sub-threats), and optional per-family metadata.
 2. A hand-curated fixture under `Unicode/Ucd/Security/<Family>Test.txt`
    in the universal five-column format documented in
    `Unicode/Security/Fixture.lean`.
@@ -141,21 +140,35 @@ The 26 families ship across six layers:
 
 | Layer | Families |
 |---|---|
-| 1 — Covert Channels | C1 TagBlockPayload · C2 VariationSelectorPayload · C3 ZeroWidthPayload · C4 SurrogateReassembly · C5 BidiControlBalance |
-| 2 — Identity Spoofing | I1 HomoglyphConfusable · I2 MixedScriptAdmissibility · I3 EmojiZwjIntegrity · I4 SkinToneVariationForgery |
-| 3 — Display Integrity | D1 SourceDisplayDivergence · D2 FilenameDisguise · D3 RtlInjection · D4 RendererDivergence |
-| 4 — Form Stability | F1 NormalizationBomb · F2 StreamSafeViolation · F3 LocaleCaseInversion · F4 CaseExpansionMismatch · F5 WidthClassConfusion · F6 NfcIdempotenceWitness |
-| 5 — Cross-Layer Boundaries | X1 IdentifierFormDrift · X2 CovertDisplayCompound · X3 ConfusableBidiCompound · X4 AdmissibilityFormDrift |
-| 6 — Cryptographic Stability | K1 Bip39Canonical · K2 HashInputStability · K3 AiWatermarkDetectability |
+| 1 — Covert Channels | TagBlockPayload · VariationSelectorPayload · ZeroWidthPayload · SurrogateReassembly · BidiControlBalance |
+| 2 — Identity Spoofing | HomoglyphConfusable · MixedScriptAdmissibility · EmojiZwjIntegrity · SkinToneVariationForgery |
+| 3 — Display Integrity | SourceDisplayDivergence · FilenameDisguise · RtlInjection · RendererDivergence |
+| 4 — Form Stability | NormalizationBomb · StreamSafeViolation · LocaleCaseInversion · CaseExpansionMismatch · WidthClassConfusion · NfcIdempotenceWitness |
+| 5 — Cross-Layer Boundaries | IdentifierFormDrift · CovertDisplayCompound · ConfusableBidiCompound · AdmissibilityFormDrift |
+| 6 — Cryptographic Stability | Bip39Canonical · HashInputStability · AiWatermarkDetectability |
+
+### A note on family naming
+
+The canonical identifier for every detector is its long-form module
+name (e.g. `AiWatermarkDetectability`, `Bip39Canonical`).  Inside the
+codebase you will occasionally see the short codes `C1`–`C5`,
+`I1`–`I4`, `D1`–`D4`, `F1`–`F6`, `X1`–`X4`, `K1`–`K3` in inline
+comments — those are pre-rename historical references that are
+being phased out.  **The codes are project-internal taxonomy and
+are NOT Unicode-standard nomenclature.**  UAX/UTS uses sequential
+document numbers (UAX #9 Bidi, UAX #15 Normalization, UTS #39
+Security Mechanisms, UTS #51 Emoji) plus spelled-out property names
+(`XID_Start`, `Default_Ignorable_Code_Point`, `Identifier_Status`).
+The Unicode Consortium does not maintain a numbered threat-family
+catalogue at all, so any submission of this material upstream would
+land under the long-form names only.
 
 Layer 6 covers Unicode representation drift in cryptographic
 contexts — wallet recovery, signed messages, audit-trail
-provenance, AI provenance attribution.  K1 BIP-39 canonical
-form shipped in v0.13.0; K2 hash-input Unicode stability
-shipped in v0.14.0; K3 AI watermark detectability (character-
-level v1) shipped in v0.15.0.  All 26 planned families now
-ship; statistical / per-segment / genuine-vs-adversarial AI
-watermark detectability remains reserved.
+provenance, AI provenance attribution.  Bip39Canonical shipped
+in v0.13.0; HashInputStability shipped in v0.14.0;
+AiWatermarkDetectability (character-level v1) shipped in
+v0.15.0.  All 26 planned families now ship.
 
 The shared vocabulary lives in `Unicode/Security/Calculus.lean`:
 
