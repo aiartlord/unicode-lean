@@ -19,4 +19,4 @@ fi
 sha256sum -c --strict --quiet SHA256SUMS
 
 count="$(wc -l < SHA256SUMS | tr -d ' ')"
-echo "clean: $count Security fixture(s) match SHA-256 manifest"
+echo "clean: $count Security UCD-pinned file(s) match SHA-256 manifest"

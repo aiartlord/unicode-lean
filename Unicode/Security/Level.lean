@@ -322,6 +322,19 @@ def admissibleAt (level : Level) (cryptoCtx : CryptoContext)
     (input : Array Nat) : Bool :=
   levelAdmissible level input && cryptoAdmissible cryptoCtx input
 
+/-- The architectural invariant: `admissibleAt` is exactly the
+    conjunction of its two orthogonal factors.  True by
+    construction (the definition of `admissibleAt` is the
+    body), so the theorem closes by `rfl`.  Spelled out
+    explicitly here to document the invariant on the public
+    surface — downstream consumers and proof obligations can
+    rely on this equality without reading the definition. -/
+theorem admissibleAt_factors
+    (level : Level) (cryptoCtx : CryptoContext) (input : Array Nat) :
+    admissibleAt level cryptoCtx input
+      = (levelAdmissible level input && cryptoAdmissible cryptoCtx input) :=
+  rfl
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 Rejection-set monotonicity
 -- ═══════════════════════════════════════════════════════════════════════════════

@@ -1,0 +1,18 @@
+# AiFavoredVocabulary.txt
+# Project-curated catalog of "AI-favored" lexical patterns —
+# ASCII words over-represented in public reports of GPT-class
+# output.  Consumed by Unicode.Security.Crypto.AiWatermarkDetectability's
+# `statisticalTokenChoice` probe via `include_str`.
+#
+# Format: one word per line, ASCII only.  Lines beginning with
+# `#` are comments; blank lines are ignored.  Words are matched
+# as contiguous codepoint subarrays of the input (not whole-
+# word matched), so substrings of larger words also fire.
+#
+# Curation: the catalog should grow as public reports identify
+# new AI-favored vocabulary.  Each addition should cite the
+# report's URL in a `# source: ...` comment line.
+
+delve
+tapestry
+moreover

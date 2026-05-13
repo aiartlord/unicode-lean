@@ -7,6 +7,62 @@ on the public surface (a major-version bump signals that a
 theorem name or statement changed in a way downstream consumers
 might depend on).
 
+## v0.16.1 — 2026-05-13
+
+Tightening pass over v0.16.0 — no breaking API changes, no
+behavioural regression, all six gates clean.
+
+### Added
+
+- `theorem admissibleAt_factors` in `Unicode/Security/Level.lean`
+  — explicitly documents that
+  `admissibleAt level ctx input
+    = levelAdmissible level input && cryptoAdmissible ctx input`.
+  Closes by `rfl`; spells out the architectural invariant on the
+  public surface.
+- `theorem every_subthreat_has_fixture_row` in both K2 and K3
+  conformance harnesses — checks at build time that every
+  declared `SubThreat` constructor has at least one fixture row
+  exercising its emission path.  Catches the "structurally
+  reachable but no fixture" failure mode that prompted the K3
+  `unknown` redefinition in v0.16.0.
+- `Unicode/Ucd/Security/AiFavoredVocabulary.txt` — extracts the
+  K3 `statisticalTokenChoice` catalog from a hardcoded array
+  into a hash-pinned data file (3 entries: "delve", "tapestry",
+  "moreover").  Loaded via `include_str`; SHA-256 pinned in the
+  Security manifest.  Establishes the maintenance path the
+  module docstring already names.
+
+### Changed
+
+- K2's `encodingMismatch` probe now does a real Unicode-scalar
+  validity check.  When the input contains a codepoint that is
+  not a valid scalar (out-of-range or surrogate), the probe
+  fires with `detectedEnc = "invalid"` and the position of the
+  first invalid scalar — regardless of the declared encoding.
+  Two new spot-check theorems pin the new firing path:
+  `detect_encoding_invalid_surrogate` (U+D800 in input) and
+  `detect_encoding_invalid_out_of_range` (U+110000 in input).
+  Existing tests still pass (the label-drift firing path is
+  unchanged for valid Unicode inputs).
+- `scripts/check-security-hashes.sh` label tweaked from
+  "Security fixture(s)" to "Security UCD-pinned file(s)" —
+  reflects that the manifest now covers both `*Test.txt`
+  fixtures (26) and the new vocabulary catalog (1) for 27
+  total pinned files.
+
+### Documentation (gitignored, internal)
+
+- Per-family submission docs renamed `<Code>-*.md` → `*.md`
+  (drops the C/I/D/F/X/K prefix from filenames).  Index README
+  updated accordingly with explanatory paragraph.
+- K2 and K3 per-family specs retract their "deferred to v2"
+  framing; the variant tables now reflect v0.16.0 firing paths.
+- `L6-cryptographic-stability.md` code blocks updated to use
+  `<Family>.Classification` / `<Family>.SubThreat` /
+  `<Family>.Verdict` (namespace-qualified long names) instead
+  of the prefixed short forms.
+
 ## v0.16.0 — 2026-05-13
 
 The "no deferred variants" release.  Retracts the "deferred to
