@@ -257,3 +257,4 @@ import Unicode.Conformance.Security.ConfusableBidiCompoundTest
 import Unicode.Conformance.Security.AdmissibilityFormDriftTest
 import Unicode.Conformance.Security.Bip39CanonicalTest
 import Unicode.Conformance.Security.HashInputStabilityTest
+import Unicode.Conformance.Security.AiWatermarkDetectabilityTest
