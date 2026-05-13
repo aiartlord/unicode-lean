@@ -7,6 +7,146 @@ on the public surface (a major-version bump signals that a
 theorem name or statement changed in a way downstream consumers
 might depend on).
 
+## v0.16.0 — 2026-05-13
+
+The "no deferred variants" release.  Retracts the "deferred to
+v2" framing of v0.14.0 (K2 four context-bearing variants) and
+v0.15.0 (K3 six refinement variants); both sets are now
+implemented and emit on real inputs.  Drops the project-
+internal C/I/D/F/X/K + ordinal short-code taxonomy from the
+public surface: types, FamilyResult fields, rejectionSet
+strings, and the Family inductive constructors all use long
+descriptive names exclusively.  README adds an explicit
+disclaimer that the short codes were project-internal, never
+Unicode-standard nomenclature.
+
+### Breaking API changes
+
+The detector type names lose their letter-prefix:
+
+  Before                          After
+  ------------------------------  ------------------------
+  TagBlockPayload.C1Verdict       TagBlockPayload.Verdict
+  TagBlockPayload.C1Classification TagBlockPayload.Classification
+  TagBlockPayload.C1SubThreat     TagBlockPayload.SubThreat
+  HashInputStability.K2Verdict    HashInputStability.Verdict
+  ...
+
+Calculus.Family inductive constructors:
+
+  Before        After
+  ------------  -----------------------------
+  .C1           .tagBlockPayload
+  .C2           .variationSelectorPayload
+  .K1           .bip39Canonical
+  .K2           .hashInputStability
+  .K3           .aiWatermarkDetectability
+  ...
+
+RunAll.FamilyResult drops the short-code `family : String`
+field; the previous `fullName : String` is renamed to
+`family : String` (the long name is now the canonical
+identifier).  mkResult signature drops one argument.
+
+Level.rejectionSet arrays now hold long names ("TagBlockPayload",
+"NfcIdempotenceWitness", "BidiControlBalance", etc.).
+CryptoContext.toFamilies returns long names ("Bip39Canonical",
+"HashInputStability", "AiWatermarkDetectability").
+
+### Implemented — K2 (HashInputStability) four previously-deferred variants
+
+New `Context` + `RfcRule` types and a `detectWithContext` entry
+point.  The bare `detect input` wrapper is preserved; calling
+`detectWithContext ctx input` opts in to the new probes.
+
+Probes that fire when context fields are set:
+
+  encodingMismatch         — ctx.declaredEncoding non-utf-8
+  signedMessageRule        — ctx.rfcRule = one of four RFC profiles
+                              (PGP 4880 / PGP 9580 / RFC 8785 /
+                              RFC 8259)
+  auditLogReinterpretation — ctx.asWritten ≠ input
+  webhookSignatureDrift    — ctx.serverBytes ≠ input
+
+Priority: context-specific probes outrank the generic
+trailingWhitespace / normalizationDrift.
+
+HashInputStabilityTest.txt: 16 → 26 rows.  Four new
+coverage gates.
+
+### Implemented — K3 (AiWatermarkDetectability) six previously-deferred variants
+
+All six implementable at the character level — no token-stream
+API, no statistical baseline required.
+
+New probes (priority order):
+
+  adversarial             — NNBSP count ≥ 3 AND positions form
+                            an arithmetic progression (over-
+                            regular placement)
+  gpt5ZwspModulo          — ZWSP count ≥ 3 AND positions form
+                            an arithmetic progression
+  unknown                 — invisible markers from ≥ 2 distinct
+                            categories (NNBSP / VS / ZWJ /
+                            residual-DI) co-occur — single-
+                            scheme attribution fails
+  smartQuoteAlternation   — paired curly quotes (≥ 2) AND no
+                            ASCII straight quotes
+  emDashPattern           — em-dashes (≥ 2) AND no ASCII
+                            hyphen-minus
+  statisticalTokenChoice  — input contains an AI-favored
+                            lexical pattern from a small
+                            built-in vocabulary ("delve",
+                            "tapestry", "moreover")
+
+AiWatermarkDetectabilityTest.txt: 16 → 27 rows.  Six new
+coverage gates.  Multi-category mixing fixture rows pin the
+new `unknown` priority above single-category probes.
+
+### Behaviour — Level admissibleAt factored
+
+`admissibleAt` is now defined as `levelAdmissible level input
+&& cryptoAdmissible cryptoCtx input` — two orthogonal
+predicates.  This makes the K-family's distinguishing power
+directly observable as a difference in `cryptoAdmissible`,
+even on inputs that L1–L5 already rejects.  Mathematically
+equivalent to the prior union-based form; all existing
+native_decide theorems close unchanged.
+
+### README — family naming disclaimer
+
+New "A note on family naming" subsection: the C/I/D/F/X/K
+codes are project-internal taxonomy invented to organise the
+26-family layered roadmap, not Unicode-standard nomenclature.
+UAX/UTS uses sequential document numbers (UAX #9, UTS #39)
+plus spelled-out property names.  Any upstream submission of
+this material to the Unicode Consortium would land under the
+long-form names only.
+
+### Module / fixture / harness counts (unchanged)
+
+- 26 detector modules.
+- 26 conformance harnesses.
+- 26 SHA-pinned base fixtures.
+
+K2 fixture: 16 → 26 rows.  K3 fixture: 16 → 27 rows.  All
+other fixtures unchanged.
+
+All six gates clean.  Full repo: 200/200 jobs.
+
+### Migration
+
+Downstream consumers using:
+
+  `r.family = "K1"`  →  `r.family = "Bip39Canonical"`
+  `Family.K3`        →  `Family.aiWatermarkDetectability`
+  `K2Verdict`        →  `HashInputStability.Verdict`
+
+The bare `Bip39Canonical.detect input` / `HashInputStability.detect
+input` / `AiWatermarkDetectability.detect input` APIs are
+unchanged in shape; only the type-name prefix is dropped.  K2's
+extended surface adds `detectWithContext` as a new entry point.
+
 ## v0.15.0 — 2026-05-12
 
 The "K3 AI watermark detectability" release.  Third and final

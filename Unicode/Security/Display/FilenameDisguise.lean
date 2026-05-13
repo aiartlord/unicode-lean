@@ -1,7 +1,7 @@
 /-
   Unicode.Security.Display.FilenameDisguise
 
-  D2 — Detection of filename / extension disguise attacks where
+  Detection of filename / extension disguise attacks where
   the visible extension differs from the byte extension.
 
   Threat model.  Tier A₁..A₂.  Adversary delivers a file whose
@@ -27,8 +27,8 @@
   Out of v1 scope: a full bidi-resolution → display-order
   extraction pass would pin "displayed extension ≠ byte
   extension" directly.  For v1 the structural detection above
-  catches variants D2.a–D2.g except the native-RTL legitimate-
-  use case (D2.e).  Native-RTL inputs that contain no bidi
+  catches variants .a–.g except the native-RTL legitimate-
+  use case (.e).  Native-RTL inputs that contain no bidi
   format-control codepoints clear.
 -/
 
@@ -44,7 +44,7 @@ open Unicode.Security.Calculus
 -- §1 Types
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Sub-threat enumeration for D2.
+/-- Sub-threat enumeration for FilenameDisguise.
 
     Priority order (highest first):
       1. `rloFlip`              any bidi format-control in input
@@ -61,13 +61,13 @@ inductive SubThreat where
   | multipleExtensions (dotCount : Nat)
   deriving DecidableEq, Repr, Inhabited
 
-/-- Top-level classification for D2. -/
+/-- Top-level classification for FilenameDisguise. -/
 inductive Classification where
   | clear
   | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
-/-- D2 verdict — the structured output of `detect`. -/
+/-- Verdict — the structured output of `detect`. -/
 structure Verdict where
   input              : Array Nat
   classify           : Classification
@@ -158,7 +158,7 @@ def countExtendFrom (input : Array Nat) (start : Nat) : Nat :=
 -- §4 Top-level detection
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The D2 detection function. -/
+/-- The FilenameDisguise detection function. -/
 def detect (input : Array Nat) : Verdict :=
   let dots := dotPositions input
   let lastDot := dots[dots.size - 1]?
@@ -287,7 +287,7 @@ theorem detect_triple_extension :
     (detect cps).classify.tag = some "MultipleExtensions" := by native_decide
 
 /-- Native Hebrew filename (no bidi controls) is clear — the
-    D2.e legitimate-RTL-language case. -/
+    legitimate-RTL-language case. -/
 theorem detect_hebrew_clear :
     let cps := #[0x05D0, 0x05D1, 0x05D2, 0x2E, 0x74, 0x78, 0x74]
                 -- אבג.txt

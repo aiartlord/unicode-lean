@@ -1,7 +1,7 @@
 /-
   Unicode.Security.Form.LocaleCaseInversion
 
-  F3 — Detection of inputs whose case-fold result inverts across
+  Detection of inputs whose case-fold result inverts across
   locales, the canonical homograph-via-locale attack vector
   (CVE-2007-6692, CVE-2021-30245, the Spotify "İSTANBUL" /
   "iSTANBUL" incident class).
@@ -92,7 +92,7 @@ structure Verdict where
 -- §3 Top-level detection
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The F3 detection function. -/
+/-- The LocaleCaseInversion detection function. -/
 def detect (input : Array Nat) : Verdict :=
   let classification : Classification :=
     match firstLocaleDivergence .turkish input with

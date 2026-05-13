@@ -1,7 +1,7 @@
 /-
   Unicode.Security.Covert.TagBlockPayload
 
-  C1 — Detection of Goodside / Cisco / AWS-class invisible payloads
+  Detection of Goodside / Cisco / AWS-class invisible payloads
   encoded in the Unicode tag block `U+E0000..U+E007F`.
 
   Threat model.  Tier A₁ (local injector).  Adversary crafts an
@@ -60,7 +60,7 @@ open Unicode.Security.Calculus
 -- §1 Types
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Sub-threat enumeration for C1. -/
+/-- Sub-threat enumeration for TagBlockPayload. -/
 inductive SubThreat where
   /-- A run of tag chars whose decoder produces printable ASCII. -/
   | directAscii         (decoded : String)
@@ -73,7 +73,7 @@ inductive SubThreat where
   | bareTagPresent      (tagCp : Nat)
   deriving DecidableEq, Repr, Inhabited
 
-/-- Top-level classification for C1.
+/-- Top-level classification for TagBlockPayload.
 
     The `decoded` field carries the recovered byte stream when the
     classifier fired; for the clear case it is implicitly empty. -/
@@ -82,7 +82,7 @@ inductive Classification where
   | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
-/-- C1 verdict — the structured output of `detect`. -/
+/-- Verdict — the structured output of `detect`. -/
 structure Verdict where
   input            : Array Nat
   classify         : Classification
@@ -196,8 +196,8 @@ def pickSubThreat
 -- §4 Top-level detection
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The C1 detection function.  Returns a structured verdict over
-    the codepoint sequence `input`. -/
+/-- The TagBlockPayload detection function.  Returns a
+    structured verdict over the codepoint sequence `input`. -/
 def detect (input : Array Nat) : Verdict :=
   -- Phase 1: collect tag positions.
   let tagPositions : Array Nat :=

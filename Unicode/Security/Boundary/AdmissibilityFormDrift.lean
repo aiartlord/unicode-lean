@@ -1,18 +1,20 @@
 /-
   Unicode.Security.Boundary.AdmissibilityFormDrift
 
-  X4 — Cross-Layer Identifier-Admissibility × Form Drift.  Fires
+  Cross-Layer Identifier-Admissibility × Form Drift.  Fires
   on inputs whose UTS #39 `isAllowedIdentifier` verdict differs
   between the input and its NFKC form.
 
-  X4 is the string-level complement of X1: X1 scans per-codepoint
-  `Identifier_Status` against the NFKD-head, while X4 evaluates
-  the whole-string `isAllowedIdentifier` predicate twice — once
-  on the input and once on `toNFKC(input)`.  The two detectors
-  are not redundant.  In particular, an input consisting entirely
-  of decomposed Hangul jamos passes X1 cleanly (each jamo has
+  This is the string-level complement of
+  `IdentifierFormDrift`: the per-codepoint detector scans
+  `Identifier_Status` against the NFKD-head, while this
+  detector evaluates the whole-string `isAllowedIdentifier`
+  predicate twice — once on the input and once on
+  `toNFKC(input)`.  The two are not redundant.  In particular,
+  an input consisting entirely of decomposed Hangul jamos
+  passes the per-codepoint scan cleanly (each jamo has
   identity NFKD and `Identifier_Status = Restricted` on both
-  sides) but fires X4 (the jamo sequence is rejected by
+  sides) but fires here (the jamo sequence is rejected by
   `isAllowedIdentifier`, while its NFKC composition into a
   precomposed Hangul syllable is accepted).
 
@@ -59,7 +61,7 @@ structure Verdict where
 -- §2 Top-level detection
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The X4 detection function. -/
+/-- The AdmissibilityFormDrift detection function. -/
 def detect (input : Array Nat) : Verdict :=
   let nfkc   := Unicode.Normalization.NFKC.toNFKC input
   let inOk   := isAllowedIdentifier input

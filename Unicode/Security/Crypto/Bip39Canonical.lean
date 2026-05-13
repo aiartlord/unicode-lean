@@ -1,7 +1,7 @@
 /-
   Unicode.Security.Crypto.Bip39Canonical
 
-  K1 — Detection of BIP-39 mnemonic inputs that are not in
+  Detection of BIP-39 mnemonic inputs that are not in
   canonical form or whose words do not all belong to a single
   BIP-39 wordlist.
 
@@ -59,8 +59,9 @@
        `language`'s wordlist and no anomaly fired.
 
   Spec reference: `docs/specs/security/L6-cryptographic-stability.md`
-  §K1.  Verdict shape, sub-threat enumeration, and threat-variant
-  taxonomy K1.a–K1.g are taken verbatim from §K1.3.
+  the BIP-39 section of the L6 cryptographic-stability spec.
+  Verdict shape, sub-threat enumeration, and the threat-variant
+  taxonomy (.a–.g) are taken verbatim from the spec.
 -/
 
 import Unicode.Security.Calculus
@@ -77,8 +78,8 @@ open Unicode.Generated.BIP39 (Language wordlist allLanguages)
 -- §1 Types
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The seven K1 sub-threats.  Names + arguments follow
-    `L6-cryptographic-stability.md` §K1.3. -/
+/-- The seven Bip39Canonical sub-threats.  Names + arguments
+    follow `L6-cryptographic-stability.md`'s K1 section. -/
 inductive SubThreat where
   | nonCanonicalForm    (preCanonLen : Nat) (postCanonLen : Nat)
   | wordlistMismatch    (firstUnknownWordIdx : Nat)
@@ -89,15 +90,15 @@ inductive SubThreat where
   | mixedCase           (firstUppercasePos : Nat)
   deriving DecidableEq, Repr, Inhabited
 
-/-- Top-level K1 classification.  The clear case carries the
-    unique language whose wordlist covers every canonical word
-    (vacuously English on empty input). -/
+/-- Top-level Bip39Canonical classification.  The clear case
+    carries the unique language whose wordlist covers every
+    canonical word (vacuously English on empty input). -/
 inductive Classification where
   | clear  (lang : Language)
   | hazard (sub : SubThreat) (positions : Array Nat)
   deriving DecidableEq, Repr, Inhabited
 
-/-- K1 verdict — the structured output of `detect`. -/
+/-- Verdict — the structured output of `detect`. -/
 structure Verdict where
   input          : Array Nat
   classify       : Classification
@@ -373,7 +374,7 @@ def firstArrayDivergence (a b : Array Nat) : Option Nat :=
 -- §8 Top-level detection
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The K1 detection function.
+/-- The Bip39Canonical detection function.
 
     Composes the six probes in priority order; first hit wins.
     See module header §"Sub-threats" for the rationale on each

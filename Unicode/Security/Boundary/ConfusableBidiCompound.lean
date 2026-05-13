@@ -1,24 +1,28 @@
 /-
   Unicode.Security.Boundary.ConfusableBidiCompound
 
-  X3 — Cross-Layer Identity × Display Compound.  Layer-5 boundary
+  Cross-Layer Identity × Display Compound.  Layer-5 boundary
   detector that fires on inputs which combine a Layer-2 identity
-  hazard (confusable codepoint per I1, UTS #39 §4) with a Layer-3
-  display-deception channel (UAX #9 bidi format control per D3).
+  hazard (confusable codepoint per HomoglyphConfusable, UTS #39
+  §4) with a Layer-3 display-deception channel (UAX #9 bidi
+  format control per RtlInjection).
 
   Threat model.  Tier A₂..A₃.  The canonical IDN homograph plus
   Trojan Source compound:
 
     * attacker registers a domain or username using Cyrillic
-      'а' (U+0430) in place of Latin 'a' (the I1 layer);
+      'а' (U+0430) in place of Latin 'a' (the
+      HomoglyphConfusable layer);
     * AND wraps the visible string in RLO/PDF so the rendered
-      text matches a legitimate identifier (the D3 layer);
+      text matches a legitimate identifier (the RtlInjection
+      layer);
     * the receiver sees `admin`, the resolver / comparator sees
       a different identifier.
 
-  Distinct from I1 alone (which catches the confusable cp but
-  misses the visual reorder) and D3 alone (which catches the
-  bidi but misses the script confusion).  X3 reports the
+  Distinct from HomoglyphConfusable alone (which catches the
+  confusable cp but misses the visual reorder) and RtlInjection
+  alone (which catches the bidi but misses the script
+  confusion).  ConfusableBidiCompound reports the
   simultaneous occurrence.
 
   Note on the confusables table: confusables.txt v16 maps
@@ -116,7 +120,7 @@ structure Verdict where
 -- §3 Top-level detection
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The X3 detection function. -/
+/-- The ConfusableBidiCompound detection function. -/
 def detect (input : Array Nat) : Verdict :=
   let classification : Classification :=
     match firstConfusablePos input with
@@ -175,7 +179,7 @@ theorem detect_ascii_clear :
     (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
   native_decide
 
-/-- ASCII + override bidi is clear under X3 — D3 covers the
+/-- ASCII + override bidi is clear here — RtlInjection covers the
     bidi-only case.  No confusable, no compound. -/
 theorem detect_ascii_plus_override_clear :
     (detect #[0x202E, 0x0041, 0x0042, 0x0043]).classify.isClear = true := by

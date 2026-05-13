@@ -1,14 +1,14 @@
 /-
   Unicode.Security.Display.RendererDivergence
 
-  D4 — Detection of codepoint / sequence shapes known to render
+  Detection of codepoint / sequence shapes known to render
   differently across font + terminal + browser stacks.
 
   Threat model.  Tier A₁..A₂.  Adversary crafts content that
   renders one way in the auditor's renderer (a benign glyph or
   an empty span) and a different way in the consumer's renderer
   (a misleading glyph, a wider glyph, or a different sequence).
-  D4 is the "fingerprint stability" family — D4-clear inputs
+  This is the "fingerprint stability" family — clear inputs
   render the same across the renderer cohort the Standard
   documents as stable.
 
@@ -175,7 +175,7 @@ def firstCombiningStack
 -- §4 Top-level detection
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The D4 detection function. -/
+/-- The RendererDivergence detection function. -/
 def detect (input : Array Nat) : Verdict :=
   let vsCount := countVS input
   let combCount := countCombining input

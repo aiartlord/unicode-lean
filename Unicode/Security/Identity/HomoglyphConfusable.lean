@@ -1,7 +1,7 @@
 /-
   Unicode.Security.Identity.HomoglyphConfusable
 
-  I1 — Detection of homoglyph / confusable identifier substitution
+  Detection of homoglyph / confusable identifier substitution
   attacks (Nethereum Oct 2025, IDN homograph, Math-Alpha posing,
   Fullwidth disguise, decomposition swap, cross-script mixing).
 
@@ -24,7 +24,7 @@
 
   v1 scope.
 
-    * 8 sub-threats per L2-identity-spoofing.md §I1.1.
+    * 8 sub-threats per the L2 identity-spoofing spec.
     * Canonical-target list seeded with ~30 commonly-targeted
       brand and crypto-package names.  Expansion to the
       ~1,000-entry top-N list is a v2 readiness item per
@@ -46,7 +46,7 @@ open Unicode.Restriction (RestrictionLevel)
 -- §1 Types
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Sub-threat enumeration for I1.
+/-- Sub-threat enumeration for HomoglyphConfusable.
 
     Priority order (highest first):
       1. `targetMatch`      input skeleton-equals a known canonical
@@ -72,13 +72,13 @@ inductive SubThreat where
   | restrictionLow     (level : RestrictionLevel)
   deriving DecidableEq, Repr, Inhabited
 
-/-- Top-level classification for I1. -/
+/-- Top-level classification for HomoglyphConfusable. -/
 inductive Classification where
   | clear
   | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
-/-- I1 verdict — the structured output of `detect`. -/
+/-- Verdict — the structured output of `detect`. -/
 structure Verdict where
   input              : Array Nat
   classify           : Classification
@@ -237,7 +237,7 @@ def crossScriptCount (input : Array Nat) : Nat :=
 -- §5 Top-level detection
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The I1 detection function. -/
+/-- The HomoglyphConfusable detection function. -/
 def detect (input : Array Nat) : Verdict :=
   let skel := Unicode.Confusables.skeleton input
   let iSkel := Unicode.Confusables.iteratedSkeleton input

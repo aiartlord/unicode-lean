@@ -1,7 +1,7 @@
 /-
   Unicode.Security.Form.WidthClassConfusion
 
-  F5 — Detection of UAX #11 East Asian Width class confusion.
+  Detection of UAX #11 East Asian Width class confusion.
   Inputs that contain Fullwidth (EAW = F) or Halfwidth (EAW = H)
   codepoints whose NFKD form has a different EAW class are
   flagged.  These are the canonical compatibility-fold homograph
@@ -18,11 +18,11 @@
   username `ADMIN` against a system that did not normalise
   before whitelisting.
 
-  Distinct from D4 `FullwidthVariance`, which fires on F-class
-  codepoints for *renderer-cohort* divergence reasons (Chrome
-  vs. Safari rendering of fullwidth glyphs).  F5 is the
-  NFKC-fold-driven verdict.  The two detectors can fire on the
-  same input independently.
+  Distinct from RendererDivergence's `FullwidthVariance`, which
+  fires on F-class codepoints for *renderer-cohort* divergence
+  reasons (Chrome vs. Safari rendering of fullwidth glyphs).
+  This detector is the NFKC-fold-driven verdict.  The two
+  detectors can fire on the same input independently.
 
   Detection is per-input-position and uses NFKD because every
   compatibility decomposition path goes through it; we compare
@@ -148,7 +148,7 @@ structure Verdict where
 -- §3 Top-level detection
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The F5 detection function. -/
+/-- The WidthClassConfusion detection function. -/
 def detect (input : Array Nat) : Verdict :=
   let classification : Classification :=
     match firstFullwidthFold input with
