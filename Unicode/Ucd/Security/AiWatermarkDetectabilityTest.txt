@@ -145,7 +145,8 @@
 # Three NNBSPs at arithmetic-progression positions (1, 3, 5 —
 # gap 2) — too-regular placement, fires Adversarial.  This is
 # the v1 character-level heuristic for "fake watermark
-# injection" per the L6 spec's invariant 3.
+# injection" per the AiWatermarkDetectability spec's
+# invariant 3.
 61 202F 62 202F 63 202F 64; Hazard:Adversarial; 1, 3, 5; markerCount=3; # NNBSP every 2 cps — too regular
 
 # @section Gpt5ZwspModulo

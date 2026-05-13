@@ -1,7 +1,7 @@
 # NfcIdempotenceWitnessTest.txt
 # UCD version: 16.0.0
 # Security-spec version: 0.1.0
-# Family: F6 — NFC / NFKC Form-Mismatch Witness (UAX #15)
+# Family: NfcIdempotenceWitness (UAX #15)
 # License: Apache-2.0
 #
 # Threat model: an attacker submits text in a non-canonical form
@@ -21,17 +21,18 @@
 #                          form (ligatures, etc.).  Reached
 #                          when NonNfcForm doesn't fire first.
 #
-# Distinct from neighbouring Layer 4 detectors:
-#   F4 CaseExpansionMismatch — length change under case
-#   F5 WidthClassConfusion   — EAW class change under NFKD
-# F6 is the residual catch-all for shapes that change under NFC
-# or NFKC but don't fit the more specific F-family detectors.
-# In particular F6 fires on U+FB01 ﬁ (EAW = N, missed by F5).
+# Distinct from neighbouring form-stability detectors:
+#   CaseExpansionMismatch — length change under case folding
+#   WidthClassConfusion   — EAW class change under NFKD
+# NfcIdempotenceWitness is the residual catch-all for shapes
+# that change under NFC or NFKC but don't fit the more specific
+# form-stability detectors.  In particular it fires on U+FB01 ﬁ
+# (EAW = N, missed by WidthClassConfusion).
 #
 # Format:
 #   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
 #
-# Classifications produced by the F6 detector:
+# Classifications produced by the detector:
 #   Clear
 #   Hazard:NonNfcForm
 #   Hazard:NonNfkcCompatForm
@@ -100,8 +101,9 @@ D55C; Clear; ; nfc_len=1; nfkc_len=1; # 한 (precomposed)
 # @level basic
 
 # ﬁ ligature (U+FB01) — canonical NFC = #[FB01] = input, but
-# NFKC = #[0066, 0069] differs.  EAW = N so F5 doesn't see this
-# as a width-class fold; F6 is the right detector.
+# NFKC = #[0066, 0069] differs.  EAW = N so WidthClassConfusion
+# doesn't see this as a width-class fold; NfcIdempotenceWitness
+# is the right detector.
 FB01; Hazard:NonNfkcCompatForm; 0; nfc_len=1; nfkc_len=2; # ﬁ → fi compat
 
 # ﬃ ligature (U+FB03) — NFC stable, NFKC = #[0066, 0066, 0069].
@@ -120,7 +122,8 @@ FB03; Hazard:NonNfkcCompatForm; 0; nfc_len=1; nfkc_len=3; # ﬃ → ffi compat
 00BD; Hazard:NonNfkcCompatForm; 0; nfc_len=1; nfkc_len=3; # vulgar half compat
 
 # Arabic ligature SALLALLAHOU ALAYHE WASALLAM (U+FDFA) — NFC stable,
-# NFKC = 18 cps.  The F1 normalization-bomb codepoint also fires F6.
+# NFKC = 18 cps.  The same codepoint also fires NormalizationBomb;
+# this fixture pins the residual-form-stability finding.
 FDFA; Hazard:NonNfkcCompatForm; 0; nfc_len=1; nfkc_len=18; # FDFA Arabic 18-cp expansion
 
 # Square HV (U+33CD) — NFKC = "HV".

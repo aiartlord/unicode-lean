@@ -1,7 +1,7 @@
 # CaseExpansionMismatchTest.txt
 # UCD version: 16.0.0
 # Security-spec version: 0.1.0
-# Family: F4 — Case-mapping Expansion Mismatch (UAX #21)
+# Family: CaseExpansionMismatch (UAX #21)
 # License: Apache-2.0
 #
 # Threat model: an attacker submits text whose case mapping
@@ -10,10 +10,10 @@
 # database column bounds.  Classical shapes: ß → "SS" upper,
 # ﬁ → "FI" upper, İ → "i + dot above" lower.
 #
-# Distinct from F3 `LocaleCaseInversion`, which fires on shapes
-# whose case mapping diverges across locales.  F4 fires on shapes
-# whose case mapping is locale-stable but length-changing under
-# the default locale.
+# Distinct from `LocaleCaseInversion`, which fires on shapes whose
+# case mapping diverges across locales.  CaseExpansionMismatch
+# fires on shapes whose case mapping is locale-stable but
+# length-changing under the default locale.
 #
 # Detection (priority order):
 #   1. UpperExpansion (basePos, cp, expansionLen)
@@ -22,7 +22,7 @@
 # Format:
 #   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
 #
-# Classifications produced by the F4 detector:
+# Classifications produced by the detector:
 #   Clear (= every cp case-maps to a single cp)
 #   Hazard:UpperExpansion
 #   Hazard:LowerExpansion

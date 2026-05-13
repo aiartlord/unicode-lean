@@ -17,8 +17,9 @@
 #
 # False-positive cost: every entry will fire on legitimate
 # human-written prose containing the word.  This is acceptable
-# because K3 is informational under `.aiAttribution` context;
-# at other contexts the probe is silent.
+# because AiWatermarkDetectability is informational under
+# `.aiAttribution` context; at other contexts the probe is
+# silent.
 
 # Tier 1: very high signal (strongly associated with AI output)
 delve

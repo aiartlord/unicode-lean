@@ -1,7 +1,7 @@
 # MixedScriptAdmissibilityTest.txt
 # UCD version: 16.0.0
 # Security-spec version: 0.1.0
-# Family: I2 — Mixed-Script Identifier Admissibility
+# Family: MixedScriptAdmissibility
 # License: Apache-2.0
 #
 # Threat model: identifiers whose script composition violates
@@ -12,7 +12,7 @@
 # Format:
 #   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
 #
-# Classifications produced by the I2 detector:
+# Classifications produced by the detector:
 #   Clear
 #   Hazard:RestrictedStatusCp    Hazard:LatinCyrillic
 #   Hazard:LatinGreek            Hazard:CjkMix

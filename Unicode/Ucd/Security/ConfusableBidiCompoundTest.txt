@@ -1,14 +1,14 @@
 # ConfusableBidiCompoundTest.txt
 # UCD version: 16.0.0
 # Security-spec version: 0.1.0
-# Family: X3 — Cross-Layer Identity × Display Compound (UTS #39 + UAX #9)
+# Family: ConfusableBidiCompound (UTS #39 + UAX #9)
 # License: Apache-2.0
 #
-# Threat model: a single input combines a Layer-2 identity
-# hazard (confusable codepoint per UTS #39 §4 — Cyrillic / Greek /
-# Math homoglyph) with a Layer-3 display-deception channel
-# (UAX #9 bidi format control).  The compound is the canonical
-# IDN-homograph + Trojan-Source attack:
+# Threat model: a single input combines an identity hazard
+# (confusable codepoint per UTS #39 §4 — Cyrillic / Greek / Math
+# homoglyph) with a display-deception channel (UAX #9 bidi format
+# control).  The compound is the canonical IDN-homograph +
+# Trojan-Source attack:
 #
 #   attacker registers `admin` using Cyrillic 'а' (U+0430), then
 #   wraps the rendered string in RLO/PDF so visual review sees
@@ -16,9 +16,10 @@
 #   comparator sees the Cyrillic-script identifier and routes
 #   differently from where review thought traffic would go.
 #
-# I1 alone catches the confusable cp but misses the visual
-# reorder; D3 alone catches the bidi but misses the script
-# confusion.  X3 catches the simultaneity.
+# HomoglyphConfusable alone catches the confusable cp but misses
+# the visual reorder; BidiControlBalance alone catches the bidi
+# but misses the script confusion.  ConfusableBidiCompound
+# catches the simultaneity.
 #
 # Detection (priority order, both reachable):
 #   1. ConfusableInOverride (confusablePos, bidiPos) — confusable
@@ -28,13 +29,13 @@
 #        cp + isolate-class bidi (LRI / RLI / FSI / PDI).
 #        Reached when no override control fires first.
 #
-# Confusable-only inputs stay clear under X3 (I1 covers them).
-# Bidi-only inputs stay clear under X3 (D3 covers them).
+# Confusable-only inputs stay clear here (HomoglyphConfusable covers them).
+# Bidi-only inputs stay clear here (BidiControlBalance covers them).
 #
 # Format:
 #   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
 #
-# Classifications produced by the X3 detector:
+# Classifications produced by the detector:
 #   Clear (= no compound)
 #   Hazard:ConfusableInOverride
 #   Hazard:ConfusableInIsolate
@@ -48,19 +49,20 @@
 # Plain Latin admin — no confusable, no bidi.
 0061 0064 006D 0069 006E; Clear; ; conf_count=1; # admin
 
-# Cyrillic а alone — I1 case, not X3.  No bidi → no compound.
+# Cyrillic а alone — HomoglyphConfusable case, not a compound.
+# No bidi → no compound.
 0430; Clear; ; conf_count=1; # а (Cyrillic alone)
 
-# RLO + plain ASCII without confusable letters — D3 case, not
-# X3.  Avoid 'admin' here because 'm' (U+006D) is itself a
-# confusable source (maps to rn) per confusables.txt, which
-# would make "RLO + admin" an actual X3 compound rather than
-# a D3-only case.
-202E 0041 0042 0043; Clear; ; conf_count=0; # RLO + ABC (D3 case)
+# RLO + plain ASCII without confusable letters — pure
+# BidiControlBalance case, not a compound.  Avoid 'admin' here
+# because 'm' (U+006D) is itself a confusable source (maps to
+# rn) per confusables.txt, which would make "RLO + admin" an
+# actual ConfusableBidiCompound rather than a bidi-only case.
+202E 0041 0042 0043; Clear; ; conf_count=0; # RLO + ABC (BidiControlBalance case)
 
 # Plain Greek text without bidi — αβγ.  Greek alpha (U+03B1) is
 # itself a confusable target row mapping to Latin a, but with
-# no bidi this is I1 territory only.
+# no bidi this is HomoglyphConfusable territory only.
 03B1 03B2 03B3; Clear; ; conf_count=3; # αβγ (no bidi)
 
 # Han 中文 — no confusable in confusables.txt, no bidi.
@@ -71,8 +73,8 @@
 
 # Arabic text — strong-RTL alone, no compound.  Arabic letter
 # tah marbuta (U+0629) sits in confusables.txt so the detector
-# reports `conf_count=1`, but with no bidi present the X3
-# compound predicate stays clear.
+# reports `conf_count=1`, but with no bidi present the compound
+# predicate stays clear.
 0627 0628 0629; Clear; ; conf_count=1; # Arabic (no bidi)
 
 # Hiragana — single-script LTR, no compound.

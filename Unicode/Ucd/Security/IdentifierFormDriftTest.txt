@@ -1,7 +1,7 @@
 # IdentifierFormDriftTest.txt
 # UCD version: 16.0.0
 # Security-spec version: 0.1.0
-# Family: X1 — Cross-Layer Identifier × Form Drift (UTS #39 + UAX #15)
+# Family: IdentifierFormDrift (UTS #39 + UAX #15)
 # License: Apache-2.0
 #
 # Threat model: an attacker submits an input containing a
@@ -18,19 +18,19 @@
 #     `isAllowedStatus`.
 #
 # Distinct from neighbouring detectors:
-#   I1 HomoglyphConfusable     — single-form skeleton matching
-#   I2 MixedScriptAdmissibility — single-form script set
-#   F5 WidthClassConfusion     — EAW class change under NFKD
-#   F6 NfcIdempotenceWitness    — any NFC/NFKC change
-# X1 fires on the *identifier-verdict transition* itself, which
-# the single-form Identity detectors miss by construction and
-# which the Form detectors don't translate into an identity
-# claim.
+#   HomoglyphConfusable     — single-form skeleton matching
+#   MixedScriptAdmissibility — single-form script set
+#   WidthClassConfusion     — EAW class change under NFKD
+#   NfcIdempotenceWitness    — any NFC/NFKC change
+# IdentifierFormDrift fires on the *identifier-verdict
+# transition* itself, which the single-form identity-spoofing
+# detectors miss by construction and which the form-stability
+# detectors don't translate into an identity claim.
 #
 # Format:
 #   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
 #
-# Classifications produced by the X1 detector:
+# Classifications produced by the detector:
 #   Clear (= identifier status is form-stable)
 #   Hazard:IdentifierStatusShift
 
@@ -51,7 +51,8 @@
 
 # Note: precomposed Hangul syllables (e.g. U+D55C 한) are
 # Allowed but their NFKD-head jamos (e.g. U+1112) are Restricted
-# in UTS #39, so pure Hangul fires X1.  This is a real
+# in UTS #39, so pure Hangul fires this detector.  This is a
+# real
 # cross-layer finding — Korean text genuinely drifts under
 # pre- vs. post-normalisation identity checks — and is covered
 # in the IdentifierStatusShift section below.
@@ -73,7 +74,8 @@
 
 # Mathematical Italic Small A (U+1D44E) — Restricted (math
 # alphanumeric block).  NFKD-head = U+0061 'a' (Allowed).  The
-# canonical X1 attack: bypass an `isAllowedIdentifier` check by
+# canonical IdentifierFormDrift attack: bypass an
+# `isAllowedIdentifier` check by
 # routing through a normalising stage.
 1D44E; Hazard:IdentifierStatusShift; 0; shift_count=1; # 𝑎 (math italic a)
 
@@ -91,9 +93,10 @@ FF21; Hazard:IdentifierStatusShift; 0; shift_count=1; # Ａ
 24B6; Hazard:IdentifierStatusShift; 0; shift_count=1; # Ⓐ
 
 # ﬁ ligature (U+FB01) — Restricted compatibility form, NFKD-head
-# U+0066 'f' Allowed.  EAW=N so F5 misses this; F6 catches the
-# form change but not the identity claim shift; X1 is the
-# identity-side detector for this codepoint class.
+# U+0066 'f' Allowed.  EAW=N so WidthClassConfusion misses this;
+# NfcIdempotenceWitness catches the form change but not the
+# identity claim shift; IdentifierFormDrift is the identity-side
+# detector for this codepoint class.
 FB01; Hazard:IdentifierStatusShift; 0; shift_count=1; # ﬁ
 
 # Roman numeral Ⅳ (U+2163) — Restricted, NFKD-head U+0049 'I'
@@ -106,7 +109,8 @@ FB01; Hazard:IdentifierStatusShift; 0; shift_count=1; # ﬁ
 
 # Precomposed Korean syllable 한 (U+D55C, Allowed) whose NFKD-head
 # is U+1112 HANGUL CHOSEONG HIEUH (Restricted in UTS #39
-# IdentifierStatus.txt).  Pure Korean text fires X1 at position 0.
+# IdentifierStatus.txt).  Pure Korean text fires this detector
+# at position 0.
 # Remediation: NFKC-normalise (or NFC-normalise) before validating.
 D55C; Hazard:IdentifierStatusShift; 0; shift_count=1; # Korean precomposed → jamo Restricted
 

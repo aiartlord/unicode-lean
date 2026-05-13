@@ -1,16 +1,18 @@
 # CovertDisplayCompoundTest.txt
 # UCD version: 16.0.0
 # Security-spec version: 0.1.0
-# Family: X2 — Cross-Layer Covert × Display Compound (UAX #9 + UTS #51)
+# Family: CovertDisplayCompound (UAX #9 + UTS #51)
 # License: Apache-2.0
 #
-# Threat model: a single input simultaneously carries a Layer-1
-# covert channel (unregistered VS bytes per C2, or tag-block
-# characters per C4) AND a Layer-3 display-deception channel
-# (UAX #9 bidi format controls per D3).  The compound is
-# strictly worse than the sum: C2/C4 alone catch the payload
-# but miss the visual deception; D3 alone catches the bidi but
-# misses the payload.  X2 catches the simultaneity.
+# Threat model: a single input simultaneously carries a covert
+# byte-stream channel (unregistered VS bytes per
+# VariationSelectorPayload, or tag-block characters per
+# TagBlockPayload) AND a display-deception channel (UAX #9 bidi
+# format controls per BidiControlBalance).  The compound is
+# strictly worse than the sum: the byte-stream detectors alone
+# catch the payload but miss the visual deception;
+# BidiControlBalance alone catches the bidi but misses the
+# payload.  CovertDisplayCompound catches the simultaneity.
 #
 # Detection (priority order, both reachable):
 #   1. BidiPlusUnregisteredVs (bidiPos, vsPos) — bidi format
@@ -21,15 +23,15 @@
 #        control + a tag-block character (U+E0000..U+E007F).
 #        Reached when no unregistered VS fires first.
 #
-# Bidi-only inputs stay clear under X2 (D3 covers them).
-# VS-only inputs stay clear under X2 (C2 covers them).
+# Bidi-only inputs stay clear here (BidiControlBalance covers them).
+# VS-only inputs stay clear here (VariationSelectorPayload covers them).
 # Standardized VS sequences (e.g. emoji + FE0F) do not fire even
 # when paired with a bidi control because they are registered.
 #
 # Format:
 #   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
 #
-# Classifications produced by the X2 detector:
+# Classifications produced by the detector:
 #   Clear (= no compound)
 #   Hazard:BidiPlusUnregisteredVs
 #   Hazard:BidiPlusTagBlock
@@ -40,17 +42,19 @@
 # ASCII Hello — no bidi, no VS, no tag block.
 0048 0065 006C 006C 006F; Clear; ; # Hello
 
-# Bidi-only — RLO alone is a D3 case, not an X2 case.
+# Bidi-only — RLO alone is a BidiControlBalance case, not a
+# CovertDisplayCompound case.
 202E; Clear; ; # RLO alone
 
-# VS-only — ASCII A + VS1 is a C2 case (suspicious VS), but no
-# bidi control so X2 stays clear.
-0041 FE00; Clear; ; # A + VS1 (C2 territory, not X2)
+# VS-only — ASCII A + VS1 is a VariationSelectorPayload case
+# (suspicious VS), but no bidi control so this detector stays clear.
+0041 FE00; Clear; ; # A + VS1 (VariationSelectorPayload territory)
 
 # Bidi + registered VS — RLO followed by emoji 😀 + FE0F.  The
 # VS is sanctioned (emoji-variation-sequences.txt row), so
 # classifyVSPosition is `.registeredEmojiPresentation`, NOT
-# `.suspicious`.  X2 stays clear; D3 alone handles the bidi.
+# `.suspicious`.  CovertDisplayCompound stays clear;
+# BidiControlBalance alone handles the bidi.
 202E 1F600 FE0F; Clear; ; # RLO + grinning face + VS16 (registered)
 
 # Bidi + bidi only — open-and-close RLO/PDF without payload.
@@ -59,16 +63,13 @@
 # Plain Han text — no bidi, no VS, no tag block.
 4E2D 6587; Clear; ; # 中文
 
-# Tag-block character alone — no bidi, so X2 stays clear (C4
-# handles the tag-block surface).
-0041 E0001; Clear; ; # A + tag block (C4 territory)
+# Tag-block character alone — no bidi, so this detector stays
+# clear (TagBlockPayload handles the tag-block surface).
+0041 E0001; Clear; ; # A + tag block (TagBlockPayload territory)
 
-# Bidi + tag-block-language-tag-END (U+E007F) alone — only one
-# tag character; need both bidi AND tag block for X2 to fire.
-# Wait, this DOES fire — that's the point of the compound.  Let
-# me give the legitimate clear case instead: balanced LRE + PDF
-# with no compound elements.
-202A 0041 202C; Clear; ; # LRE A PDF (D3 territory)
+# Balanced LRE + PDF with no compound elements — pure
+# BidiControlBalance territory, no payload channel.
+202A 0041 202C; Clear; ; # LRE A PDF (BidiControlBalance territory)
 
 # @section BidiPlusUnregisteredVs
 # @level strict

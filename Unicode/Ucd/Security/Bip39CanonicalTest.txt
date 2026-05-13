@@ -1,7 +1,7 @@
 # Bip39CanonicalTest.txt
 # UCD version: 16.0.0
 # Security-spec version: 0.1.0
-# Family: K1 — BIP-39 Mnemonic Canonical Form (BIP-39 + UAX #15)
+# Family: Bip39Canonical (BIP-39 + UAX #15)
 # License: Apache-2.0
 #
 # Threat model: a user types a BIP-39 recovery mnemonic.  If the
@@ -33,11 +33,11 @@
 # Format:
 #   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
 #
-# Attribution keys recognised by the K1 conformance harness:
+# Attribution keys recognised by the conformance harness:
 #   language=<lang>     — for clear verdicts only
 #   wordCount=<N>       — present on every row
 #
-# Classifications produced by the K1 detector:
+# Classifications produced by the detector:
 #   Clear:<language>      (handled as Clear with language=<lang> attribution)
 #   Hazard:TrailingWhitespace
 #   Hazard:MixedCase

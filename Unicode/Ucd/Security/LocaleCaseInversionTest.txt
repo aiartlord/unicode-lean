@@ -1,7 +1,7 @@
 # LocaleCaseInversionTest.txt
 # UCD version: 16.0.0
 # Security-spec version: 0.1.0
-# Family: F3 — Locale-sensitive Case-Fold Inversion (UAX #21)
+# Family: LocaleCaseInversion (UAX #21)
 # License: Apache-2.0
 #
 # Threat model: an attacker submits text whose case-fold result
@@ -24,7 +24,7 @@
 # Format:
 #   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
 #
-# Classifications produced by the F3 detector:
+# Classifications produced by the detector:
 #   Clear (= same case-fold under every supported locale)
 #   Hazard:TurkishCaseDivergence
 #   Hazard:LithuanianCaseDivergence
