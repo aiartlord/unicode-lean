@@ -2,23 +2,24 @@
   Unicode.Generated.WatermarkSchemes
 
   Inventory of published AI-text-watermark schemes that the
-  deferred Layer-6 K3 detector would need to recognise.  Source
-  data lives in `Unicode/Ucd/Curated/WatermarkSchemes.txt` and is
+  `AiWatermarkDetectability` detector probes for.  Source data
+  lives in `Unicode/Ucd/Curated/WatermarkSchemes.txt` and is
   pinned in `Unicode/Ucd/Curated/SHA256SUMS`.
 
   Each entry has a stable opaque tag, a cue-class tag drawn from
-  a fixed inductive vocabulary, and an informal citation.  The
-  cue-class tag is what a future K3 detector would dispatch on;
-  the citation is for human auditing.
-
-  Pre-staging table — no current detector consumes it; reserved
-  for the deferred Layer-6 K3 family.
+  a fixed inductive vocabulary, and an informal citation.
+  `AiWatermarkDetectability.subThreatCueClass` maps each
+  implementation-level sub-threat to the cue class it probes
+  for, exposing the conceptual link between the published scheme
+  and the codepoint-level heuristic that surfaces it.
 -/
 
 namespace Unicode.Generated.WatermarkSchemes
 
-/-- The fixed inductive vocabulary of watermark cue classes.  A
-    future K3 detector dispatches on this enum. -/
+/-- The fixed inductive vocabulary of watermark cue classes.
+    `AiWatermarkDetectability` maps each of its sub-threats onto
+    a member of this enum so callers can report which conceptual
+    scheme a codepoint-level heuristic implicates. -/
 inductive CueClass where
   /-- Token-distribution biased toward a pseudorandom green-list
       per context (Kirchenbauer-Geipel-Wen 2023 style). -/

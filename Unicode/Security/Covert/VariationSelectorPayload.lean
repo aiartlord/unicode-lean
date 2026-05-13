@@ -60,8 +60,9 @@ inductive VSUseClass where
   deriving DecidableEq, Repr, Inhabited
 
 /-- Coarse classifier for the recovered byte stream.  Used to drive
-    the `DirectPayload` sub-threat verdict; deliberately conservative
-    (prefix-only) at v1, with no recursive base64/hex re-decoding. -/
+    the `DirectPayload` sub-threat verdict; deliberately
+    conservative (prefix-only), with no recursive base64/hex
+    re-decoding. -/
 inductive ExecutableHint where
   | empty                          -- no recovered payload
   | ascii                          -- entirely printable ASCII, no exec marker

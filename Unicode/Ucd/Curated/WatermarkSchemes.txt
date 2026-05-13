@@ -1,6 +1,6 @@
 # WatermarkSchemes.txt
-# Inventory of published AI-text-watermark schemes that a
-# deferred K3 detector would need to recognise.  Each row is one
+# Inventory of published AI-text-watermark schemes that the
+# AiWatermarkDetectability detector probes for.  Each row is one
 # scheme with its identifying tag, the cue class the detector
 # would look for, and a citation.
 #

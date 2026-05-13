@@ -21,12 +21,12 @@
                           stack overflow, unregistered ZWJ
                           shape, fullwidth display, mixed
                           direction.
-    * `.unknown`          we cannot decide — for v1 we treat
-                          this conservatively as `.knownVariance`
-                          with the `.unknown` sub-threat tag,
-                          so callers always get a binary
-                          stable / non-stable answer through
-                          the universal Classification carrier.
+    * `.unknown`          we cannot decide — treat conservatively
+                          as `.knownVariance` with the `.unknown`
+                          sub-threat tag, so callers always get a
+                          binary stable / non-stable answer
+                          through the universal Classification
+                          carrier.
 
   Scope.  Heuristic-driven detection of empirically-known
   variance triggers, without a renderer-cohort membership

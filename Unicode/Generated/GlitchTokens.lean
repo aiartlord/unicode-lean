@@ -11,8 +11,8 @@
   are part of the token identity and are preserved byte-exactly.
 
   Pre-staging table — no current detector consumes it; reserved
-  for future X-family compositions involving model-tokenizer
-  edge cases.
+  for future cross-boundary compositions involving
+  model-tokenizer edge cases.
 -/
 
 namespace Unicode.Generated.GlitchTokens

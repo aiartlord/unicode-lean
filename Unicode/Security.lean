@@ -18,40 +18,29 @@ import Unicode.Security.Calculus
 import Unicode.Security.Verdict
 import Unicode.Security.Fixture
 
--- Layer 1 — Covert Channels
 import Unicode.Security.Covert.VariationSelectorPayload
 import Unicode.Security.Covert.TagBlockPayload
 import Unicode.Security.Covert.BidiControlBalance
 import Unicode.Security.Covert.ZeroWidthPayload
 import Unicode.Security.Covert.SurrogateReassembly
-
--- Layer 2 — Identity Spoofing
 import Unicode.Security.Identity.HomoglyphConfusable
 import Unicode.Security.Identity.MixedScriptAdmissibility
 import Unicode.Security.Identity.EmojiZwjIntegrity
 import Unicode.Security.Identity.SkinToneVariationForgery
-
--- Layer 3 — Display Integrity (compound detectors)
 import Unicode.Security.Display.SourceDisplayDivergence
 import Unicode.Security.Display.FilenameDisguise
 import Unicode.Security.Display.RtlInjection
 import Unicode.Security.Display.RendererDivergence
-
--- Layer 4 — Form Stability (normalization / DoS / locale)
 import Unicode.Security.Form.NormalizationBomb
 import Unicode.Security.Form.StreamSafeViolation
 import Unicode.Security.Form.LocaleCaseInversion
 import Unicode.Security.Form.CaseExpansionMismatch
 import Unicode.Security.Form.WidthClassConfusion
 import Unicode.Security.Form.NfcIdempotenceWitness
-
--- Layer 5 — Cross-Layer Boundaries
 import Unicode.Security.Boundary.IdentifierFormDrift
 import Unicode.Security.Boundary.CovertDisplayCompound
 import Unicode.Security.Boundary.ConfusableBidiCompound
 import Unicode.Security.Boundary.AdmissibilityFormDrift
-
--- Layer 6 — Cryptographic Stability
 import Unicode.Security.Crypto.Bip39Canonical
 import Unicode.Security.Crypto.HashInputStability
 import Unicode.Security.Crypto.AiWatermarkDetectability

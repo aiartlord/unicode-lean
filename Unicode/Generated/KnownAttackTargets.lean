@@ -7,14 +7,11 @@
   `Unicode/Ucd/Curated/KnownAttackTargets.txt` and is pinned in
   `Unicode/Ucd/Curated/SHA256SUMS`.
 
-  The I1 HomoglyphConfusable detector consumes this set as the
-  "ground truth" canonical-name list its skeleton-match should
-  hit.  Curation policy and the per-name attribution live in
-  `docs/specs/security/L2-identity-spoofing.md`.
-
-  Pre-staging table — no current detector consumes it directly;
-  reserved for future expansions of I1 and for the deferred
-  Layer-6 K1 family.
+  The `HomoglyphConfusable` detector consumes this set as the
+  "ground truth" canonical-name list its UTS #39 §4
+  skeleton-match should hit.  Each row's case is preserved as the
+  legitimate package / brand publishes it; the per-name
+  attribution lives in the spec doc, not the data file.
 -/
 
 namespace Unicode.Generated.KnownAttackTargets
@@ -31,16 +28,19 @@ private def parseLine (line : String) : Option String :=
   else if t.startsWith "#" then none
   else some t
 
-/-- The canonical attack-target names, lower-case ASCII, in
-    source-file order. -/
+/-- The canonical attack-target names in source-file order. -/
 def targets : Array String :=
   ((rawText.splitOn "\n").filterMap parseLine).toArray
 
-theorem targets_count : targets.size = 48 := by native_decide
+theorem targets_count : targets.size = 67 := by native_decide
 
 theorem react_present : targets.contains "react" = true := by native_decide
 
-theorem nethereum_present : targets.contains "nethereum" = true := by
+theorem Nethereum_present : targets.contains "Nethereum" = true := by
   native_decide
+
+theorem paypal_present : targets.contains "paypal" = true := by native_decide
+
+theorem openai_present : targets.contains "openai" = true := by native_decide
 
 end Unicode.Generated.KnownAttackTargets

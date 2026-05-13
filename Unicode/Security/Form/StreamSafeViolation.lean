@@ -22,15 +22,16 @@
   bounds the normalization buffer by `O(input.size)` plus a fixed
   constant.
 
-  F2 is the security verdict over the same property.  Distinct
-  from D4 `combiningStackOverflow` (which fires at the cosmetic
-  Zalgo threshold of 4 marks per base for renderer-divergence
-  reasons) — F2 is the spec-mandated DoS-prevention bound.
+  StreamSafeViolation is the security verdict over the same
+  property.  Distinct from RendererDivergence's
+  `combiningStackOverflow` (which fires at the cosmetic Zalgo
+  threshold of 4 marks per base for renderer-divergence reasons)
+  — StreamSafeViolation is the spec-mandated DoS-prevention bound.
 
-  Sub-threats (v1):
+  Sub-threat:
 
-    1. `streamSafeOverrun (basePos, runLen)` — first non-starter
-       run whose length exceeds `streamSafeLimit`.
+    `streamSafeOverrun (basePos, runLen)` — first non-starter
+    run whose length exceeds `streamSafeLimit`.
 -/
 
 import Unicode.Security.Calculus
