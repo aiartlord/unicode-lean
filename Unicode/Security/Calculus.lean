@@ -41,59 +41,71 @@ namespace Unicode.Security.Calculus
     sub-project; this enum gives them a single shared name. -/
 inductive Family where
   -- Layer 1 — Covert Channels
-  | C1  -- Tag-block payload
-  | C2  -- Variation-Selector payload (GlassWorm)
-  | C3  -- Zero-width payload
-  | C4  -- Surrogate-reassembly bypass
-  | C5  -- Bidi-control balance + payload
+  | tagBlockPayload
+  | variationSelectorPayload    -- GlassWorm class
+  | zeroWidthPayload
+  | surrogateReassembly         -- byte-stream bypass
+  | bidiControlBalance
   -- Layer 2 — Identity Spoofing
-  | I1  -- Homoglyph confusable (Nethereum)
-  | I2  -- Mixed-script identifier admissibility
-  | I3  -- Emoji ZWJ-sequence integrity
-  | I4  -- Skin-tone / variation forgery
+  | homoglyphConfusable         -- Nethereum class
+  | mixedScriptAdmissibility
+  | emojiZwjIntegrity
+  | skinToneVariationForgery
   -- Layer 3 — Display Integrity
-  | D1  -- Source-code display vs execute divergence
-  | D2  -- Filename / extension disguise
-  | D3  -- RTL injection into LTR contexts
-  | D4  -- Cross-renderer fingerprint stability
+  | sourceDisplayDivergence
+  | filenameDisguise
+  | rtlInjection
+  | rendererDivergence
   -- Layer 4 — Form Stability
-  | F1  -- Normalization expansion-bomb bounds
-  | F2  -- Combining-mark stack DoS
-  | F3  -- NFKC compatibility-collapse safety
-  | F4  -- Locale-dependent case-fold divergence
-  | F5  -- Stream-restart resilience
-  | F6  -- Cross-encoding agreement
+  | normalizationBomb
+  | streamSafeViolation
+  | localeCaseInversion
+  | caseExpansionMismatch
+  | widthClassConfusion
+  | nfcIdempotenceWitness
   -- Layer 5 — Cross-Layer Boundaries
-  | X1  -- Tokenizer-boundary stability
-  | X2  -- JSON/SQL/regex/shell injection via Unicode
-  | X3  -- IDNA disposition edge cases
-  | X4  -- Chain-of-custody / provenance preservation
+  | identifierFormDrift
+  | covertDisplayCompound
+  | confusableBidiCompound
+  | admissibilityFormDrift
   -- Layer 6 — Cryptographic Stability
-  | K1  -- BIP-39 / mnemonic canonical form
-  | K2  -- Hash-input Unicode stability
-  | K3  -- AI watermark detectability under transform
+  | bip39Canonical
+  | hashInputStability
+  | aiWatermarkDetectability
   deriving DecidableEq, Repr, Inhabited
 
 /-- Six-layer grouping over the 26 families. -/
 inductive Layer where
-  | covert        -- L1: C1..C5
-  | identity      -- L2: I1..I4
-  | display       -- L3: D1..D4
-  | form          -- L4: F1..F6
-  | boundary      -- L5: X1..X4
-  | crypto        -- L6: K1..K3
+  | covert        -- L1: TagBlockPayload .. BidiControlBalance (5)
+  | identity      -- L2: HomoglyphConfusable .. SkinToneVariationForgery (4)
+  | display       -- L3: SourceDisplayDivergence .. RendererDivergence (4)
+  | form          -- L4: NormalizationBomb .. NfcIdempotenceWitness (6)
+  | boundary      -- L5: IdentifierFormDrift .. AdmissibilityFormDrift (4)
+  | crypto        -- L6: Bip39Canonical .. AiWatermarkDetectability (3)
   deriving DecidableEq, Repr, Inhabited
 
 namespace Layer
 
 /-- The layer a family belongs to. Total function. -/
 def of : Family → Layer
-  | .C1 | .C2 | .C3 | .C4 | .C5             => .covert
-  | .I1 | .I2 | .I3 | .I4                   => .identity
-  | .D1 | .D2 | .D3 | .D4                   => .display
-  | .F1 | .F2 | .F3 | .F4 | .F5 | .F6       => .form
-  | .X1 | .X2 | .X3 | .X4                   => .boundary
-  | .K1 | .K2 | .K3                         => .crypto
+  | .tagBlockPayload | .variationSelectorPayload | .zeroWidthPayload
+  | .surrogateReassembly | .bidiControlBalance
+    => .covert
+  | .homoglyphConfusable | .mixedScriptAdmissibility
+  | .emojiZwjIntegrity | .skinToneVariationForgery
+    => .identity
+  | .sourceDisplayDivergence | .filenameDisguise
+  | .rtlInjection | .rendererDivergence
+    => .display
+  | .normalizationBomb | .streamSafeViolation | .localeCaseInversion
+  | .caseExpansionMismatch | .widthClassConfusion
+  | .nfcIdempotenceWitness
+    => .form
+  | .identifierFormDrift | .covertDisplayCompound
+  | .confusableBidiCompound | .admissibilityFormDrift
+    => .boundary
+  | .bip39Canonical | .hashInputStability | .aiWatermarkDetectability
+    => .crypto
 
 end Layer
 
@@ -192,7 +204,7 @@ inductive ClassificationKind where
   | clear                           -- input passes the family's predicate
   | hazard                          -- single-sub-threat hazard
   | compound                        -- multiple sub-threats fired
-  | informational                   -- advisory / report-only (e.g., X1)
+  | informational                   -- advisory / report-only (e.g. IdentifierFormDrift)
   deriving DecidableEq, Repr, Inhabited
 
 namespace ClassificationKind
@@ -285,12 +297,18 @@ end KeyValueAttribution
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Every family belongs to exactly one layer; layer assignment is total. -/
-theorem layer_of_C1 : Layer.of .C1 = .covert := rfl
-theorem layer_of_I1 : Layer.of .I1 = .identity := rfl
-theorem layer_of_D1 : Layer.of .D1 = .display := rfl
-theorem layer_of_F1 : Layer.of .F1 = .form := rfl
-theorem layer_of_X1 : Layer.of .X1 = .boundary := rfl
-theorem layer_of_K1 : Layer.of .K1 = .crypto := rfl
+theorem layer_of_tagBlockPayload :
+    Layer.of .tagBlockPayload = .covert := rfl
+theorem layer_of_homoglyphConfusable :
+    Layer.of .homoglyphConfusable = .identity := rfl
+theorem layer_of_sourceDisplayDivergence :
+    Layer.of .sourceDisplayDivergence = .display := rfl
+theorem layer_of_normalizationBomb :
+    Layer.of .normalizationBomb = .form := rfl
+theorem layer_of_identifierFormDrift :
+    Layer.of .identifierFormDrift = .boundary := rfl
+theorem layer_of_bip39Canonical :
+    Layer.of .bip39Canonical = .crypto := rfl
 
 /-- Severity ordering is well-defined. -/
 theorem severity_informational_lt_critical :

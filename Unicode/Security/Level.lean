@@ -51,34 +51,38 @@
     audit pipelines).
   * `moderate`    — admit iff no family in the moderate-set
     fires.  The moderate-set drops the heuristic / high-false-
-    positive-risk detectors (F1 NfdHighExpansion-class ratio
-    hits on legitimate Greek polytonic text, D3
-    StrongRTLInLTR on user-supplied multilingual content, D4
-    RendererDivergence on emoji ZWJ chains, I3
-    UnregisteredZwjVariance on novel emoji sequences).  Keeps
-    every targeted-attack detector intact.
+    positive-risk detectors (NormalizationBomb's
+    NfdHighExpansion-class ratio hits on legitimate Greek
+    polytonic text, RtlInjection's StrongRTLInLTR on user-
+    supplied multilingual content, RendererDivergence on emoji
+    ZWJ chains, EmojiZwjIntegrity's UnregisteredZwjVariance on
+    novel emoji sequences).  Keeps every targeted-attack
+    detector intact.
   * `minimal`     — admit iff no family in the structural-
-    violation set fires.  The structural set is `{C5, F2}` —
-    bidi-control imbalance (Trojan Source class) and stream-
-    safe-format overflow (UAX #15 §13 DoS class).  Largest
-    admit set; this is the floor below which we never go,
-    suitable as a network-edge gate before more specific
-    policy-layer filtering downstream.
+    violation set fires.  The structural set is
+    `{SurrogateReassembly, BidiControlBalance, StreamSafeViolation}`
+    — UTF-8 byte validity (RFC 3629), bidi-control imbalance
+    (Trojan Source class), and stream-safe-format overflow
+    (UAX #15 §13 DoS class).  Largest admit set; this is the
+    floor below which we never go, suitable as a network-edge
+    gate before more specific policy-layer filtering downstream.
 
-  Note on C4 SurrogateReassembly: as of `Unicode.Security.RunAll`
-  v0.12.0, `runAll` only invokes C4 when the input "looks like
-  a byte stream" (every codepoint ≤ 0xFF); otherwise C4 emits
-  a clear verdict.  This means C4 contributes to admission
-  rejection only on actual byte-stream inputs, never spuriously
-  on codepoint arrays with non-ASCII content.  Accordingly, C4
-  IS in every rejection set (including `minimal`, since UTF-8
-  byte validity per RFC 3629 is exactly the structural
-  invariant `minimal` exists to enforce).
+  Note on SurrogateReassembly: as of `Unicode.Security.RunAll`
+  v0.12.0, `runAll` only invokes the detector when the input
+  "looks like a byte stream" (every codepoint ≤ 0xFF);
+  otherwise it emits a clear verdict.  This means the detector
+  contributes to admission rejection only on actual byte-stream
+  inputs, never spuriously on codepoint arrays with non-ASCII
+  content.  Accordingly, SurrogateReassembly IS in every
+  rejection set (including `minimal`, since UTF-8 byte validity
+  per RFC 3629 is exactly the structural invariant `minimal`
+  exists to enforce).
 
-  Note on K-family (Layer 6, Cryptographic Stability): K1
-  (BIP-39 canonical form), and the planned K2 / K3, are *highly
-  context-dependent* per `docs/specs/security/L6-cryptographic-
-  stability.md`.  K1 fires `mixedCase` on any ASCII text with
+  Note on K-family (Layer 6, Cryptographic Stability): the
+  Bip39Canonical, HashInputStability, and AiWatermarkDetectability
+  detectors are *highly context-dependent* per
+  `docs/specs/security/L6-cryptographic-stability.md`.
+  Bip39Canonical fires `mixedCase` on any ASCII text with
   capital letters; `wordlistMismatch` on any ASCII text whose
   words aren't BIP-39 vocabulary.  Those verdicts are correct
   only in a BIP-39 mnemonic *context*; for general Unicode
@@ -88,11 +92,11 @@
   `CryptoContext` parameter** passed to `admissibleAt`.  Callers
   doing general identifier / display gating pass
   `CryptoContext.nonCrypto` (K-family ignored).  Callers
-  verifying a BIP-39 mnemonic pass `.bip39Mnemonic` (K1
-  gated); callers hashing the input pass `.hashInput` (K2
-  gated); callers attributing AI provenance pass
-  `.aiAttribution` (K3 gated).  A single input is one crypto-
-  shape at a time.
+  verifying a BIP-39 mnemonic pass `.bip39Mnemonic`
+  (Bip39Canonical gated); callers hashing the input pass
+  `.hashInput` (HashInputStability gated); callers attributing
+  AI provenance pass `.aiAttribution` (AiWatermarkDetectability
+  gated).  A single input is one crypto-shape at a time.
 -/
 
 import Unicode.Security.RunAll
@@ -140,11 +144,18 @@ def rejectionSet : Level → Array String
     -- rejection on actual byte-stream inputs.  For codepoint
     -- arrays with any non-ASCII content, C4 emits clear and
     -- doesn't reject.
-    #[ "C1", "C2", "C3", "C4", "C5"
-     , "I1", "I2", "I3", "I4"
-     , "D1", "D2", "D3", "D4"
-     , "F1", "F2", "F3", "F4", "F5", "F6"
-     , "X1", "X2", "X3", "X4" ]
+    #[ "TagBlockPayload", "VariationSelectorPayload"
+     , "ZeroWidthPayload", "SurrogateReassembly"
+     , "BidiControlBalance"
+     , "HomoglyphConfusable", "MixedScriptAdmissibility"
+     , "EmojiZwjIntegrity", "SkinToneVariationForgery"
+     , "SourceDisplayDivergence", "FilenameDisguise"
+     , "RtlInjection", "RendererDivergence"
+     , "NormalizationBomb", "StreamSafeViolation"
+     , "LocaleCaseInversion", "CaseExpansionMismatch"
+     , "WidthClassConfusion", "NfcIdempotenceWitness"
+     , "IdentifierFormDrift", "CovertDisplayCompound"
+     , "ConfusableBidiCompound", "AdmissibilityFormDrift" ]
   | .moderate =>
     -- Drops the heuristic / FP-prone detectors that don't
     -- need to gate "default-safe for multilingual text"
@@ -172,18 +183,24 @@ def rejectionSet : Level → Array String
     -- multilingual codepoint inputs.  Every other targeted-
     -- attack detector and UTS #39 spec-compliance signal is
     -- intact.
-    #[ "C1", "C2", "C3", "C4", "C5"
-     , "I1", "I2", "I4"
-     , "D1", "D2"
-     , "F2", "F3", "F4", "F5", "F6"
-     , "X1", "X2", "X3", "X4" ]
+    #[ "TagBlockPayload", "VariationSelectorPayload"
+     , "ZeroWidthPayload", "SurrogateReassembly"
+     , "BidiControlBalance"
+     , "HomoglyphConfusable", "MixedScriptAdmissibility"
+     , "SkinToneVariationForgery"
+     , "SourceDisplayDivergence", "FilenameDisguise"
+     , "StreamSafeViolation", "LocaleCaseInversion"
+     , "CaseExpansionMismatch", "WidthClassConfusion"
+     , "NfcIdempotenceWitness"
+     , "IdentifierFormDrift", "CovertDisplayCompound"
+     , "ConfusableBidiCompound", "AdmissibilityFormDrift" ]
   | .minimal =>
     -- Structural / RFC-violation families.  C4
     -- SurrogateReassembly (RFC 3629 UTF-8 byte validity,
     -- via runAll's byte-stream gate), C5 (bidi-control
     -- imbalance, Trojan Source class), F2 (stream-safe
     -- overflow, UAX #15 §13 DoS class).
-    #[ "C4", "C5", "F2" ]
+    #[ "SurrogateReassembly", "BidiControlBalance", "StreamSafeViolation" ]
 
 /-- True iff `family` is in `level`'s rejection set. -/
 @[inline]
@@ -200,9 +217,9 @@ def Level.rejects (level : Level) (family : String) : Bool :=
 
     Constructor map:
       * `nonCrypto`     — K-family ignored
-      * `bip39Mnemonic` — adds K1 (Bip39Canonical) to rejection set
-      * `hashInput`     — adds K2 (HashInputStability)
-      * `aiAttribution` — adds K3 (AiWatermarkDetectability)
+      * `bip39Mnemonic` — adds Bip39Canonical to rejection set
+      * `hashInput`     — adds HashInputStability
+      * `aiAttribution` — adds AiWatermarkDetectability
 
     Per `L6-cryptographic-stability.md`, a single input is one
     crypto-shape at a time, so a sum-of-constructors fits the
@@ -216,14 +233,15 @@ inductive CryptoContext where
 
 /-- The K-family tag(s) added to the effective rejection set
     under each context.  `nonCrypto` adds none; `bip39Mnemonic`
-    adds K1; `hashInput` adds K2; `aiAttribution` adds K3.
-    Each crypto-shape is exactly one K-family. -/
+    adds Bip39Canonical; `hashInput` adds HashInputStability;
+    `aiAttribution` adds AiWatermarkDetectability.  Each
+    crypto-shape is exactly one K-family. -/
 @[inline]
 def CryptoContext.toFamilies : CryptoContext → Array String
   | .nonCrypto      => #[]
-  | .bip39Mnemonic  => #["K1"]
-  | .hashInput      => #["K2"]
-  | .aiAttribution  => #["K3"]
+  | .bip39Mnemonic  => #["Bip39Canonical"]
+  | .hashInput      => #["HashInputStability"]
+  | .aiAttribution  => #["AiWatermarkDetectability"]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 Factored admission predicates (Level ⊥ Crypto)
@@ -245,10 +263,11 @@ def CryptoContext.toFamilies : CryptoContext → Array String
 -- `levelAdmissible level input` already rejects.  Without this
 -- factoring, the K-family's contribution would be masked by the
 -- union whenever any L1–L5 family also flags the same input —
--- e.g. decomposed é, which K2 flags as NormalizationDrift AND
--- F6 NfcIdempotenceWitness rejects at `.restrictive`/`.moderate`,
--- so a naive `admissibleAt`-only test would show both contexts
--- rejecting and miss that K2 is independently contributing.
+-- e.g. decomposed é, which HashInputStability flags as
+-- NormalizationDrift AND NfcIdempotenceWitness rejects at
+-- `.restrictive`/`.moderate`, so a naive `admissibleAt`-only test
+-- would show both contexts rejecting and miss that
+-- HashInputStability is independently contributing.
 --
 -- Mathematical equivalence to the union-based form:
 --   ¬ any (haz ∧ r ∈ (L ++ K))
