@@ -81,52 +81,52 @@ def rewriteDataPrefix (pre : String) (attrStr : String) : String :=
 /-- Lookup the per-family attribution string for a row. -/
 def metaFor (family : String) (input : Array Nat) : String :=
   match family with
-  | "I3" =>
+  | "EmojiZwjIntegrity" =>
     let v := Unicode.Security.Identity.EmojiZwjIntegrity.detect input
     s!"chain_len={v.chainLength}; zwj_count={v.zwjPositions.size}; \
        skin_tone_count={v.skinToneCount}; is_rgi={boolStr v.isRegisteredRGI};"
-  | "I4" =>
+  | "SkinToneVariationForgery" =>
     let v := Unicode.Security.Identity.SkinToneVariationForgery.detect input
     s!"skin_tone_count={v.skinToneCount}; vs15_count={v.variationSelector15Count}; \
        vs16_count={v.variationSelector16Count};"
-  | "D2" =>
+  | "FilenameDisguise" =>
     let v := Unicode.Security.Display.FilenameDisguise.detect input
     s!"dot_count={v.dotPositions.size}; bidi_count={v.bidiControlCount}; \
        fw_in_ext={v.fullwidthInExt}; comb_in_ext={v.combiningInExt};"
-  | "D3" =>
+  | "RtlInjection" =>
     let v := Unicode.Security.Display.RtlInjection.detect input
     s!"strong_rtl={v.strongRTLCount}; strong_ltr={v.strongLTRCount}; \
        bidi_count={v.bidiControlCount}; longest_run={v.longestRtlRunLen};"
-  | "D4" =>
+  | "RendererDivergence" =>
     let v := Unicode.Security.Display.RendererDivergence.detect input
     s!"vs_count={v.vsCount}; comb_count={v.combiningCount}; \
        fw_count={v.fullwidthCount}; has_zwj={boolStr v.hasZwj}; \
        ltr_count={v.strongLTRCount}; rtl_count={v.strongRTLCount};"
-  | "F1" =>
+  | "NormalizationBomb" =>
     let v := Unicode.Security.Form.NormalizationBomb.detect input
     s!"nfd_len={v.nfdLen}; nfkd_len={v.nfkdLen}; \
        input_len={v.inputLen}; max_per_cp={v.maxPerCpExpansion};"
-  | "F2" =>
+  | "StreamSafeViolation" =>
     let v := Unicode.Security.Form.StreamSafeViolation.detect input
     s!"max_run={v.maxRunLen}; overruns={v.overrunCount}; \
        total_ns={v.totalNonStarters};"
-  | "F4" =>
+  | "CaseExpansionMismatch" =>
     let v := Unicode.Security.Form.CaseExpansionMismatch.detect input
     s!"upper_exp={v.upperExpansionCount}; lower_exp={v.lowerExpansionCount}; \
        max_exp={v.maxExpansionLen};"
-  | "F5" =>
+  | "WidthClassConfusion" =>
     let v := Unicode.Security.Form.WidthClassConfusion.detect input
     s!"fw_fold={v.fullwidthFoldCount}; hw_fold={v.halfwidthFoldCount};"
-  | "F6" =>
+  | "NfcIdempotenceWitness" =>
     let v := Unicode.Security.Form.NfcIdempotenceWitness.detect input
     s!"nfc_len={v.nfcLen}; nfkc_len={v.nfkcLen};"
-  | "X1" =>
+  | "IdentifierFormDrift" =>
     let v := Unicode.Security.Boundary.IdentifierFormDrift.detect input
     s!"shift_count={v.shiftCount};"
-  | "X3" =>
+  | "ConfusableBidiCompound" =>
     let v := Unicode.Security.Boundary.ConfusableBidiCompound.detect input
     s!"conf_count={v.confusableCount};"
-  | "X4" =>
+  | "AdmissibilityFormDrift" =>
     let v := Unicode.Security.Boundary.AdmissibilityFormDrift.detect input
     s!"input_adm={boolStr v.inputAdmissible}; nfkc_adm={boolStr v.nfkcAdmissible};"
   | other => Function.const String "" other
@@ -159,19 +159,19 @@ def rewriteFile (family : String) (path : String) : IO Unit := do
   IO.FS.writeFile path out
 
 def families : List (String × String) :=
-  [ ("I3", "Unicode/Ucd/Security/EmojiZwjIntegrityTest.txt")
-  , ("I4", "Unicode/Ucd/Security/SkinToneVariationForgeryTest.txt")
-  , ("D2", "Unicode/Ucd/Security/FilenameDisguiseTest.txt")
-  , ("D3", "Unicode/Ucd/Security/RtlInjectionTest.txt")
-  , ("D4", "Unicode/Ucd/Security/RendererDivergenceTest.txt")
-  , ("F1", "Unicode/Ucd/Security/NormalizationBombTest.txt")
-  , ("F2", "Unicode/Ucd/Security/StreamSafeViolationTest.txt")
-  , ("F4", "Unicode/Ucd/Security/CaseExpansionMismatchTest.txt")
-  , ("F5", "Unicode/Ucd/Security/WidthClassConfusionTest.txt")
-  , ("F6", "Unicode/Ucd/Security/NfcIdempotenceWitnessTest.txt")
-  , ("X1", "Unicode/Ucd/Security/IdentifierFormDriftTest.txt")
-  , ("X3", "Unicode/Ucd/Security/ConfusableBidiCompoundTest.txt")
-  , ("X4", "Unicode/Ucd/Security/AdmissibilityFormDriftTest.txt")
+  [ ("EmojiZwjIntegrity",        "Unicode/Ucd/Security/EmojiZwjIntegrityTest.txt")
+  , ("SkinToneVariationForgery", "Unicode/Ucd/Security/SkinToneVariationForgeryTest.txt")
+  , ("FilenameDisguise",         "Unicode/Ucd/Security/FilenameDisguiseTest.txt")
+  , ("RtlInjection",             "Unicode/Ucd/Security/RtlInjectionTest.txt")
+  , ("RendererDivergence",       "Unicode/Ucd/Security/RendererDivergenceTest.txt")
+  , ("NormalizationBomb",        "Unicode/Ucd/Security/NormalizationBombTest.txt")
+  , ("StreamSafeViolation",      "Unicode/Ucd/Security/StreamSafeViolationTest.txt")
+  , ("CaseExpansionMismatch",    "Unicode/Ucd/Security/CaseExpansionMismatchTest.txt")
+  , ("WidthClassConfusion",      "Unicode/Ucd/Security/WidthClassConfusionTest.txt")
+  , ("NfcIdempotenceWitness",    "Unicode/Ucd/Security/NfcIdempotenceWitnessTest.txt")
+  , ("IdentifierFormDrift",      "Unicode/Ucd/Security/IdentifierFormDriftTest.txt")
+  , ("ConfusableBidiCompound",   "Unicode/Ucd/Security/ConfusableBidiCompoundTest.txt")
+  , ("AdmissibilityFormDrift",   "Unicode/Ucd/Security/AdmissibilityFormDriftTest.txt")
   ]
 
 end PopulateSecurityMetadata

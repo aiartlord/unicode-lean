@@ -6,17 +6,19 @@
     * `HazardSite` — a single attributable hazard occurrence (family,
       position, attribution map)
     * `CompositeVerdict` — the universal verdict carrier used by
-      cross-family composition (D1 layers C1..C5+I1; the top-level
+      cross-family composition (e.g. SourceDisplayDivergence layers
+      every Covert family + HomoglyphConfusable; the top-level
       `securityVerdict` layers all 6 L-views)
     * Composition operators: `clear`, `singleHazard`, `compose`,
       `concat`
     * `severity` rollup over a composite
     * Severity-lattice operations + propagation laws
 
-  Family modules each define their own `<F>Verdict` structure with
-  family-specific payload fields, plus a `toComposite : <F>Verdict →
-  CompositeVerdict` adapter. The CompositeVerdict here is the
-  shared carrier that crosses family boundaries.
+  Family modules each define their own `Verdict` structure (under
+  the family's namespace) with family-specific payload fields, plus
+  a `toComposite : Verdict → CompositeVerdict` adapter.  The
+  CompositeVerdict here is the shared carrier that crosses family
+  boundaries.
 
   Modelled on `Unicode.Codec.Strict.StrictParseResult` (parametric
   result-monad with `map` / `bind` / propagation lemmas) and
@@ -193,7 +195,7 @@ theorem severity_min_right (a b : Severity) :
 
 /-- Build a sample hazard site for the `decide`-based sanity proofs. -/
 private def sampleSite : HazardSite :=
-  HazardSite.mk' .C2 #[1, 2, 3] "DirectPayload"
+  HazardSite.mk' .variationSelectorPayload #[1, 2, 3] "DirectPayload"
 
 private def sampleClear : CompositeVerdict :=
   CompositeVerdict.clear #[0x61, 0x62, 0x63]
