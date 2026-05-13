@@ -1,7 +1,7 @@
 /-
   Unicode.Security.Covert.VariationSelectorPayload
 
-  C2 — Detection of GlassWorm-class invisible payloads encoded in
+  Detection of GlassWorm-class invisible payloads encoded in
   Unicode variation selectors.
 
   Threat model.  Tier A₁ (local injector).  Adversary crafts an input
@@ -70,9 +70,9 @@ inductive ExecutableHint where
   | binary                         -- contains non-printable bytes
   deriving DecidableEq, Repr, Inhabited
 
-/-- Sub-threat enumeration for C2.  Each variant carries the
-    attribution payload needed to populate the fixture-row
-    `attribution` column. -/
+/-- Sub-threat enumeration for VariationSelectorPayload.  Each
+    variant carries the attribution payload needed to populate
+    the fixture-row `attribution` column. -/
 inductive SubThreat where
   /-- A pair-aligned VS run on a single base whose decoded bytes
       look like an actual payload (typical GlassWorm shape). -/
@@ -88,7 +88,7 @@ inductive SubThreat where
   | repeatedBase       (baseCp : Nat) (vsCount : Nat) (uniqueVS : Nat)
   deriving DecidableEq, Repr, Inhabited
 
-/-- Top-level classification for C2.
+/-- Top-level classification for VariationSelectorPayload.
 
     The `decoded` field carries the recovered byte stream when the
     classifier fired; for the clear case it is implicitly empty. -/
@@ -97,7 +97,7 @@ inductive Classification where
   | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
-/-- C2 verdict — the structured output of `detect`. -/
+/-- Verdict — the structured output of `detect`. -/
 structure Verdict where
   input                  : Array Nat
   classify               : Classification
@@ -344,8 +344,8 @@ def VSUseClass.isSuspicious : VSUseClass → Bool
   | .registeredEmojiPresentation  => false
   | .registeredTextPresentation   => false
 
-/-- The C2 detection function.  Returns a structured verdict
-    over the codepoint sequence `input`. -/
+/-- The VariationSelectorPayload detection function.  Returns
+    a structured verdict over the codepoint sequence `input`. -/
 def detect (input : Array Nat) : Verdict :=
   -- Phase 1: per-position classification.
   let perPos : Array VSUseClass :=

@@ -1,7 +1,7 @@
 /-
   Unicode.Security.Boundary.IdentifierFormDrift
 
-  X1 — Cross-Layer Identifier × Form Drift.  Layer-5 boundary
+  Cross-Layer Identifier × Form Drift.  Layer-5 boundary
   detector that fires on inputs where the UTS #39
   `Identifier_Status` (Allowed / Restricted) of any codepoint
   differs from the `Identifier_Status` of that codepoint's NFKD
@@ -30,21 +30,21 @@
   Note on Hangul: precomposed syllables (e.g. U+D55C 한) are
   Allowed under UTS #39 IdentifierStatus.txt while their
   NFKD-head jamos (e.g. U+1112 HANGUL CHOSEONG HIEUH) are
-  Restricted.  Pure Korean text therefore fires X1.  Callers
-  intending to accept Korean identifiers should apply NFC
-  before evaluating admissibility.
+  Restricted.  Pure Korean text therefore fires the detector.
+  Callers intending to accept Korean identifiers should apply
+  NFC before evaluating admissibility.
 
-  Distinct from Layer 2 family detectors (I1 HomoglyphConfusable,
-  I2 MixedScriptAdmissibility, I3/I4 emoji-side identity
-  detectors) which examine the input under a single form.  X1
-  fires on the *form transition* itself, which the single-form
-  detectors miss by construction.
+  Distinct from Layer 2 family detectors (HomoglyphConfusable,
+  MixedScriptAdmissibility, EmojiZwjIntegrity /
+  SkinToneVariationForgery) which examine the input under a
+  single form.  This detector fires on the *form transition*
+  itself, which the single-form detectors miss by construction.
 
-  Distinct also from F5 WidthClassConfusion (UAX #11 EAW class
-  fold) and F6 NfcIdempotenceWitness (form-of-input fold): X1
-  asks the orthogonal question "does the identifier verdict
-  change under normalisation?", which is a stronger statement
-  than "does any output bit change".
+  Distinct also from WidthClassConfusion (UAX #11 EAW class
+  fold) and NfcIdempotenceWitness (form-of-input fold): this
+  detector asks the orthogonal question "does the identifier
+  verdict change under normalisation?", which is a stronger
+  statement than "does any output bit change".
 
   Sub-threat (v1, single):
 
@@ -117,7 +117,7 @@ structure Verdict where
 -- §3 Top-level detection
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The X1 detection function. -/
+/-- The IdentifierFormDrift detection function. -/
 def detect (input : Array Nat) : Verdict :=
   let classification : Classification :=
     match firstStatusShift input with
@@ -170,7 +170,7 @@ theorem detect_greek_alpha_clear :
     (detect #[0x03B1]).classify.isClear = true := by native_decide
 
 /-- Math Italic Small A (U+1D44E) is Restricted; NFKD head U+0061
-    is Allowed.  The canonical X1 case. -/
+    is Allowed.  The canonical IdentifierFormDrift case. -/
 theorem detect_math_italic_a_shift :
     (detect #[0x1D44E]).classify.tag = some "IdentifierStatusShift" := by
   native_decide

@@ -1,7 +1,7 @@
 /-
   Unicode.Security.Identity.MixedScriptAdmissibility
 
-  I2 — Detection of mixed-script identifier admissibility hazards
+  Detection of mixed-script identifier admissibility hazards
   per UTS #39 §5 (Restriction Levels) + UTS #39 General Security
   Profile (Identifier_Status).
 
@@ -12,16 +12,18 @@
   Latin/Cyrillic or Latin/Greek mix where the visible glyph
   collapses to a popular Latin target.
 
-  Distinction from I1 (homoglyph).
+  Distinction from HomoglyphConfusable.
 
-    * I1 answers "does this LOOK like a known canonical target?"
-      via skeleton-equivalence to a curated brand list.
-    * I2 answers "is this identifier admissible under the
-      Standard's restriction-level rules?" — no target list, just
-      script-composition rules.
+    * HomoglyphConfusable answers "does this LOOK like a known
+      canonical target?" via skeleton-equivalence to a curated
+      brand list.
+    * This detector answers "is this identifier admissible
+      under the Standard's restriction-level rules?" — no
+      target list, just script-composition rules.
 
-    The two compose: an I2-clear identifier may still be an I1
-    hazard (and vice versa).  D1 already aggregates both.
+    The two compose: an admissibility-clear identifier may
+    still be a confusable hazard (and vice versa).
+    SourceDisplayDivergence already aggregates both.
 
   Algorithm shape (one pass over `input`).
 
@@ -56,7 +58,7 @@ open Unicode.Generated.ScriptExtensions (ScriptAbbrev)
 -- §1 Types
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Sub-threat enumeration for I2.
+/-- Sub-threat enumeration for MixedScriptAdmissibility.
 
     Priority order (highest first):
       1. `restrictedStatusCp` Identifier_Status = Restricted found
@@ -80,15 +82,16 @@ inductive SubThreat where
   | unrestrictedLevel
   deriving DecidableEq, Repr, Inhabited
 
-/-- Top-level classification for I2.  The clear case is just
-    `.clear`; the input's restriction level is reported via the
-    `Verdict.level` field for downstream audit. -/
+/-- Top-level classification for MixedScriptAdmissibility.
+    The clear case is just `.clear`; the input's restriction
+    level is reported via the `Verdict.level` field for
+    downstream audit. -/
 inductive Classification where
   | clear
   | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
-/-- I2 verdict — the structured output of `detect`. -/
+/-- Verdict — the structured output of `detect`. -/
 structure Verdict where
   input            : Array Nat
   classify         : Classification
@@ -150,7 +153,7 @@ def unionOfScripts (input : Array Nat) : Array ScriptAbbrev :=
 -- §3 Top-level detection
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The I2 detection function. -/
+/-- The MixedScriptAdmissibility detection function. -/
 def detect (input : Array Nat) : Verdict :=
   let scriptsIntersect := Unicode.Restriction.stringResolvedScripts input
   let scriptsUnion := unionOfScripts input

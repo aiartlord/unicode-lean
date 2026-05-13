@@ -1,15 +1,16 @@
 /-
   Unicode.Security.Display.RtlInjection
 
-  D3 — Detection of right-to-left content injected into nominally
+  Detection of right-to-left content injected into nominally
   left-to-right contexts (form fields, URLs, log lines,
   identifier-bearing UI text declared LTR).
 
   Threat model.  Tier A₁..A₂.  Adversary inserts strong-RTL
   codepoints or RTL bidi format-controls into a field whose
   declared display direction is LTR, causing the surrounding
-  display to reorder.  Distinct from C5 (Trojan Source) — D3
-  flags strong-RTL content regardless of bidi-balance, while C5
+  display to reorder.  Distinct from BidiControlBalance (Trojan
+  Source class) — RtlInjection flags strong-RTL content
+  regardless of bidi-balance, while BidiControlBalance
   is specifically about unbalanced embedding / isolate / orphan
   pop in source-code context.
 
@@ -168,7 +169,8 @@ def longestRtlRun (input : Array Nat) : Nat × Nat := Id.run do
 -- §4 Top-level detection
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The D3 detection function.  Assumes LTR-declared context.
+/-- The RtlInjection detection function.  Assumes LTR-declared
+    context.
 
     Every finding (bidi format-control, leading-RTL field
     takeover, mid-stream strong-RTL, mixed-overflow run) fires
@@ -303,10 +305,10 @@ theorem detect_overflow_hebrew :
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §7 Region-agnosticism spot checks
 --
--- Pinning that D3 fires regardless of which source region the
--- offending codepoint sits in.  Earlier prereleases filtered
--- these out under `Language.rust`; the filter has been
--- retracted (see module header).
+-- Pinning that RtlInjection fires regardless of which source
+-- region the offending codepoint sits in.  Earlier prereleases
+-- filtered these out under `Language.rust`; the filter has
+-- been retracted (see module header).
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- RLO "inside a string literal" still fires `RloInLTRField`.

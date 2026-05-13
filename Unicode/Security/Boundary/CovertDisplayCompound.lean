@@ -1,11 +1,12 @@
 /-
   Unicode.Security.Boundary.CovertDisplayCompound
 
-  X2 — Cross-Layer Covert × Display Compound.  Layer-5 boundary
+  Cross-Layer Covert × Display Compound.  Layer-5 boundary
   detector that fires on inputs which combine a Layer-1 covert
-  channel (unregistered variation selectors per C2, or tag-block
-  characters per C4) with a Layer-3 display-deception channel
-  (UAX #9 bidi format controls per D3).
+  channel (unregistered variation selectors per
+  VariationSelectorPayload, or tag-block characters per
+  TagBlockPayload) with a Layer-3 display-deception channel
+  (UAX #9 bidi format controls per RtlInjection).
 
   Threat model.  Tier A₂..A₃.  A single payload simultaneously
   carries:
@@ -18,12 +19,13 @@
 
   The compound is strictly worse than the sum:
 
-    * C2/C4 alone catch the covert payload but cannot tell
-      whether the visible-text context has been re-ordered.
-    * D3 alone catches the bidi controls but cannot tell
-      whether the input is also carrying a covert payload.
+    * VariationSelectorPayload / TagBlockPayload alone catch
+      the covert payload but cannot tell whether the visible-
+      text context has been re-ordered.
+    * RtlInjection alone catches the bidi controls but cannot
+      tell whether the input is also carrying a covert payload.
 
-  X2 reports the simultaneous occurrence.
+  CovertDisplayCompound reports the simultaneous occurrence.
 
   Sub-threats (priority order, both reachable):
 
@@ -71,7 +73,7 @@ def firstSuspiciousVsPos (input : Array Nat) : Option Nat :=
 
 /-- True iff `cp` is in the tag-block range U+E0000..U+E007F.
     Tag characters are the second covert-channel class detected
-    by Layer 1 (C4). -/
+    by Layer 1 (SurrogateReassembly). -/
 @[inline]
 def isTagBlockChar (cp : Nat) : Bool :=
   Nat.ble 0xE0000 cp && Nat.ble cp 0xE007F
@@ -106,7 +108,7 @@ structure Verdict where
 -- §3 Top-level detection
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The X2 detection function. -/
+/-- The CovertDisplayCompound detection function. -/
 def detect (input : Array Nat) : Verdict :=
   let classification : Classification :=
     match firstBidiPos input with
@@ -163,12 +165,12 @@ theorem detect_ascii_clear :
     (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
   native_decide
 
-/-- Bidi-only (RLO alone) is clear under X2; the compound is
+/-- Bidi-only (RLO alone) is clear here; the compound is
     not present. -/
 theorem detect_bidi_only_clear :
     (detect #[0x202E]).classify.isClear = true := by native_decide
 
-/-- VS-only (ASCII + VS1) is clear under X2; the compound is
+/-- VS-only (ASCII + VS1) is clear here; the compound is
     not present. -/
 theorem detect_vs_only_clear :
     (detect #[0x0041, 0xFE00]).classify.isClear = true := by native_decide

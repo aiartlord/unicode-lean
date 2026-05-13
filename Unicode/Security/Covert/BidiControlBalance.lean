@@ -1,7 +1,7 @@
 /-
   Unicode.Security.Covert.BidiControlBalance
 
-  C5 — Detection of Trojan-Source-class attacks and related
+  Detection of Trojan-Source-class attacks and related
   bidi-control hazards (CVE-2021-42574 / CVE-2021-42694).
 
   Threat model.  Tier A₁ (local injector).  Adversary embeds
@@ -44,7 +44,7 @@ open Unicode.TrojanSource (isBidiFormatControl opensEmbedding isPDF opensIsolate
 -- §1 Types
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Sub-threat enumeration for C5.
+/-- Sub-threat enumeration for BidiControlBalance.
 
     Priority order (highest first):
       1. `depthExceeded`        DoS-class nesting beyond UAX #9 §3.3.2
@@ -59,7 +59,7 @@ inductive SubThreat where
   | unbalancedIsolate   (openCount : Nat) (popCount : Nat)
   deriving DecidableEq, Repr, Inhabited
 
-/-- Top-level classification for C5. -/
+/-- Top-level classification for BidiControlBalance. -/
 inductive Classification where
   | clear
   | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
@@ -68,7 +68,7 @@ inductive Classification where
 /-- The depth bound from UAX #9 §3.3.2. -/
 def uaxDepthLimit : Nat := 125
 
-/-- C5 verdict — the structured output of `detect`. -/
+/-- Verdict — the structured output of `detect`. -/
 structure Verdict where
   input          : Array Nat
   classify       : Classification
@@ -192,8 +192,8 @@ private def pickSubThreat (st : WalkState) : Option SubThreat :=
   else
     none
 
-/-- The C5 detection function.  Returns a structured verdict
-    over the codepoint sequence `input`. -/
+/-- The BidiControlBalance detection function.  Returns a
+    structured verdict over the codepoint sequence `input`. -/
 def detect (input : Array Nat) : Verdict :=
   let st := runWalk input
   if st.bidiPositions.isEmpty then

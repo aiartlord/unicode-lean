@@ -1,7 +1,7 @@
 /-
   Unicode.Security.Identity.EmojiZwjIntegrity
 
-  I3 — Detection of malformed / unsanctioned emoji ZWJ-sequence
+  Detection of malformed / unsanctioned emoji ZWJ-sequence
   shapes per UTS #51.
 
   Threat model.  Tier A₁..A₂.  Adversary crafts an emoji-shaped
@@ -17,7 +17,7 @@
   glyph chain (showing each component plus a small "joiner"
   glyph), others as a single ad-hoc glyph, others as a default-
   rendering fallback.  This renderer-divergence is the attack
-  surface I3 closes.
+  surface EmojiZwjIntegrity closes.
 
   Algorithm shape (one pass over `input`).
 
@@ -60,7 +60,7 @@ def maxRgiLength : Nat := 16
 /-- The ZERO WIDTH JOINER codepoint. -/
 def zwj : Nat := 0x200D
 
-/-- Sub-threat enumeration for I3.
+/-- Sub-threat enumeration for EmojiZwjIntegrity.
 
     Priority order (highest first):
       1. `doubleZWJ`            ZWJ-ZWJ adjacency
@@ -78,13 +78,13 @@ inductive SubThreat where
   | unregisteredSequence (chainLen : Nat)
   deriving DecidableEq, Repr, Inhabited
 
-/-- Top-level classification for I3. -/
+/-- Top-level classification for EmojiZwjIntegrity. -/
 inductive Classification where
   | clear
   | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
-/-- I3 verdict — the structured output of `detect`. -/
+/-- Verdict — the structured output of `detect`. -/
 structure Verdict where
   input             : Array Nat
   classify          : Classification
@@ -159,7 +159,7 @@ def skinToneCount (input : Array Nat) : Nat :=
 -- §3 Top-level detection
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The I3 detection function. -/
+/-- The EmojiZwjIntegrity detection function. -/
 def detect (input : Array Nat) : Verdict :=
   let zwjs := zwjPositions input
   let stCount := skinToneCount input

@@ -1,7 +1,7 @@
 /-
   Unicode.Security.Identity.SkinToneVariationForgery
 
-  I4 — Detection of skin-tone modifier and variation-selector
+  Detection of skin-tone modifier and variation-selector
   abuse on emoji bases per UTS #51 (Unicode Emoji).
 
   Threat model.  Tier A₁.  Adversary places a skin-tone modifier
@@ -11,12 +11,13 @@
   the `U+FE0E` variation selector (sometimes used to hide a
   payload-bearing glyph in plain sight).
 
-  Distinction from C2 (variation-selector payload).
-    C2 detects pair-aligned VS *runs* that decode to bytes,
-    plus illegal-VS-on-non-emoji-base.  I4 catches the orthogonal
+  Distinction from VariationSelectorPayload.
+    VariationSelectorPayload detects pair-aligned VS *runs* that
+    decode to bytes, plus illegal-VS-on-non-emoji-base.
+    SkinToneVariationForgery catches the orthogonal
     case of *semantic* VS / skin-tone misuse on a single base
     that doesn't fit the payload-shaped pattern.  Both can fire
-    on the same input; D1 aggregates.
+    on the same input; SourceDisplayDivergence aggregates.
 
   Sub-threats (priority order).
 
@@ -40,20 +41,20 @@ open Unicode.Security.Calculus
 -- §1 Types
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Sub-threat enumeration for I4. -/
+/-- Sub-threat enumeration for SkinToneVariationForgery. -/
 inductive SubThreat where
   | stackedSkinTones       (basePos : Nat) (modifiers : Array Nat)
   | invalidSkinToneTarget  (basePos : Nat) (baseCp : Nat) (modifierCp : Nat)
   | forcedTextStyle        (basePos : Nat) (baseCp : Nat)
   deriving DecidableEq, Repr, Inhabited
 
-/-- Top-level classification for I4. -/
+/-- Top-level classification for SkinToneVariationForgery. -/
 inductive Classification where
   | clear
   | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
   deriving Inhabited
 
-/-- I4 verdict — the structured output of `detect`. -/
+/-- Verdict — the structured output of `detect`. -/
 structure Verdict where
   input              : Array Nat
   classify           : Classification
@@ -146,7 +147,7 @@ def vs16Count (input : Array Nat) : Nat :=
 -- §4 Top-level detection
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The I4 detection function. -/
+/-- The SkinToneVariationForgery detection function. -/
 def detect (input : Array Nat) : Verdict :=
   let stc := skinToneCount input
   let v15 := vs15Count input
