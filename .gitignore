@@ -15,3 +15,4 @@ Probe.lean
 Unicode/**/Probe*.lean
 .local/
 .planning/
+.claude/
