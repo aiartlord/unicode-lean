@@ -104,7 +104,16 @@ jobs:
 
       - uses: leanprover/lean-action@v1
         with:
-          build-args: ""
+          use-github-cache: false
+          use-mathlib-cache: false
+          build: false
+          test: false
+          lint: false
+
+      - name: clean build pass-1
+        run: |
+          lake clean
+          lake build
 
       - name: snapshot pass-1 oleans
         run: |
@@ -114,7 +123,7 @@ jobs:
             > /tmp/oleans-pass1.sha256
           wc -l /tmp/oleans-pass1.sha256
 
-      - name: clean and rebuild
+      - name: clean build pass-2
         run: |
           lake clean
           lake build
