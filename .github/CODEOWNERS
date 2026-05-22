@@ -9,18 +9,18 @@
 # See `CONTRIBUTING.md` § Branch Protection for the `gh api` command
 # that applies these settings.
 
-*                                       @jpyxal-straylight
+*                                       @aiartlord
 
 # Source-of-truth artifacts. Tampering with these would silently
 # weaken the formal-verification claims, so they get an explicit
 # entry to make the audit trail obvious in `git blame`.
-/Unicode/Ucd/                           @jpyxal-straylight
-/Unicode/Ucd/SHA256SUMS                 @jpyxal-straylight
-/lean-toolchain                         @jpyxal-straylight
-/lakefile.lean                          @jpyxal-straylight
-/flake.nix                              @jpyxal-straylight
-/flake.lock                             @jpyxal-straylight
-/scripts/                               @jpyxal-straylight
-/.github/                               @jpyxal-straylight
-/LICENSE                                @jpyxal-straylight
-/NOTICE                                 @jpyxal-straylight
+/Unicode/Ucd/                           @aiartlord
+/Unicode/Ucd/SHA256SUMS                 @aiartlord
+/lean-toolchain                         @aiartlord
+/lakefile.lean                          @aiartlord
+/flake.nix                              @aiartlord
+/flake.lock                             @aiartlord
+/scripts/                               @aiartlord
+/.github/                               @aiartlord
+/LICENSE                                @aiartlord
+/NOTICE                                 @aiartlord
