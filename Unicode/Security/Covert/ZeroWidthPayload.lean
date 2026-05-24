@@ -48,6 +48,7 @@
 import Unicode.Security.Calculus
 import Unicode.Emoji
 import Unicode.Generated.EmojiSequences
+import Unicode.Generated.DerivedCoreProperties
 
 namespace Unicode.Security.Covert.ZeroWidthPayload
 
@@ -98,20 +99,69 @@ structure Verdict where
 -- §2 Core predicates
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- True iff `cp` is one of the tracked zero-width / no-glyph
-    codepoints. -/
+/-- True iff `cp` is a Unicode codepoint that renders as nothing
+    OR is in the explicit "tracked zero-width" set (ZWSP, ZWNJ,
+    ZWJ, LRM, RLM, WJ, NNBSP, BOM, annotations).
+
+    Built on top of UCD `Default_Ignorable_Code_Point` plus the
+    explicit list — `Default_Ignorable` catches every invisible
+    codepoint per UAX #44 (soft hyphen, CGJ, ALM, Hangul fillers,
+    Mongolian VS / vowel separator, INHIBIT/ACTIVATE controls,
+    shorthand format, music format, etc.) while the explicit list
+    preserves the existing sub-threat dispatch (NNBSP / WordJoiner /
+    Annotation / BareZeroWidth).
+
+    Sibling-detector codepoints are NOT re-handled here:
+      - U+FE00..U+FE0F (VS1..VS16)        — VariationSelectorPayload
+      - U+E0100..U+E01EF (VS17..VS256)    — VariationSelectorPayload
+      - U+E0000..U+E007F (Tag block)      — TagBlockPayload
+      - U+202A..U+202E (LRE/RLE/PDF/LRO/RLO) — BidiControlBalance
+      - U+2066..U+2069 (LRI/RLI/FSI/PDI)   — BidiControlBalance
+    These ARE Default_Ignorable per UCD but are dispatched to
+    their own family detector for richer payload-decoding /
+    bidi-stack tracking, so we EXCLUDE them from the ZW set to
+    avoid double-counting.  LRM / RLM (U+200E / U+200F) are NOT
+    excluded — they're direction markers, not push/pop bidi
+    controls, and BidiControlBalance doesn't track them. -/
+@[inline]
+def isVariationSelectorRange (cp : Nat) : Bool :=
+  (0xFE00 ≤ cp ∧ cp ≤ 0xFE0F) ∨
+  (0xE0100 ≤ cp ∧ cp ≤ 0xE01EF)
+
+@[inline]
+def isTagBlockRange (cp : Nat) : Bool :=
+  0xE0000 ≤ cp ∧ cp ≤ 0xE007F
+
+@[inline]
+def isBidiFormattingRange (cp : Nat) : Bool :=
+  (0x202A ≤ cp ∧ cp ≤ 0x202E) ∨
+  (0x2066 ≤ cp ∧ cp ≤ 0x2069)
+
 @[inline]
 def isZeroWidthChar (cp : Nat) : Bool :=
-  -- U+200B..U+200F  ZWSP / ZWNJ / ZWJ / LRM / RLM
+  -- The explicit historical set — preserved so the existing
+  -- sub-threat dispatch (NNBSP / WordJoiner / Annotation /
+  -- BareZeroWidth) reads exactly as before for these codepoints.
+  --   U+200B..U+200F  ZWSP / ZWNJ / ZWJ / LRM / RLM
+  --   U+2060..U+2064  WORD JOINER + invisible math operators
+  --   U+202F          NARROW NO-BREAK SPACE  (AI watermark)
+  --   U+FEFF          ZERO WIDTH NO-BREAK SPACE / BOM
+  --   U+FFF9..U+FFFB  INTERLINEAR ANNOTATION marks
   (0x200B ≤ cp ∧ cp ≤ 0x200F) ∨
-  -- U+2060..U+2064  WORD JOINER + invisible math operators
   (0x2060 ≤ cp ∧ cp ≤ 0x2064) ∨
-  -- U+202F  NARROW NO-BREAK SPACE  (suspected AI watermark)
   cp = 0x202F ∨
-  -- U+FEFF  ZERO WIDTH NO-BREAK SPACE / BOM
   cp = 0xFEFF ∨
-  -- U+FFF9..U+FFFB  INTERLINEAR ANNOTATION marks
-  (0xFFF9 ≤ cp ∧ cp ≤ 0xFFFB)
+  (0xFFF9 ≤ cp ∧ cp ≤ 0xFFFB) ∨
+  -- UAX #44 Default_Ignorable_Code_Point — catches every other
+  -- invisible codepoint (soft hyphen, CGJ, ALM, Hangul fillers,
+  -- Mongolian VS / vowel separator, INHIBIT/ACTIVATE controls,
+  -- shorthand-format, music-format, …).  Excluded: ranges
+  -- handled by VariationSelectorPayload and TagBlockPayload.
+  (Generated.DerivedCoreProperties.defaultIgnorable.any
+    (fun lh => decide (lh.fst ≤ cp ∧ cp ≤ lh.snd))
+    ∧ ¬ isVariationSelectorRange cp
+    ∧ ¬ isTagBlockRange cp
+    ∧ ¬ isBidiFormattingRange cp)
 
 @[inline] def isZwsp (cp : Nat) : Bool := cp = 0x200B
 @[inline] def isZwj  (cp : Nat) : Bool := cp = 0x200D
