@@ -109,37 +109,9 @@ def skeleton (cps : Array Nat) : Array Nat :=
 def areConfusable (a b : Array Nat) : Bool :=
   decide (skeleton a = skeleton b)
 
-/-- Stricter "letter" skeleton — `skeleton` followed by removal of
-    every codepoint with `canonicalCombiningClass > 0`.
-
-    Motivation.  UTS #39 §4 +§5.4 confusable detection is strict
-    visual-equivalence: two strings are confusable iff their
-    skeletons are EQUAL.  This catches single-codepoint look-alikes
-    (Cyrillic а ↔ Latin a, fullwidth Ｐ ↔ Latin P) where both sides
-    skeleton to the same canonical letter.  It does NOT catch
-    "base letter + accent" confusables — codepoints like U+0247
-    `ɇ` (LATIN SMALL LETTER E WITH STROKE) whose UTS #39 confusables
-    entry maps them to a SEQUENCE: `0247 → 0065 0338` (latin e +
-    combining long solidus).  An attacker registering `nɇthereum`
-    (one codepoint at pos 1 swapped) produces a skeleton
-    `[n, e, ◌̸, t, h, e, r, e, u, m]` that differs from the target
-    `nethereum` skeleton `[n, e, t, h, e, r, e, u, m]` by one
-    inserted combining mark — strict equality fails.  Mutation
-    testing against the rust-port surfaced this gap: 21% of single-
-    codepoint typosquat mutations bypass the case-folded skeleton
-    via this class of confusable.
-
-    Fix.  After computing the §4+§5.4 skeleton, filter out every
-    codepoint with `canonicalCombiningClass > 0`.  Combining marks
-    are by construction "modifiers on a base letter"; removing them
-    leaves only the base-letter skeleton which is the
-    typosquat-detection primitive.  This is BEYOND UTS #39 §4 +§5.4
-    — it is an additional pragmatic step for the typosquat threat
-    model.  Use `letterSkeleton` for typosquat-style comparison and
-    keep `skeleton` for spec-pure §4 visual-equivalence checks. -/
-def letterSkeleton (cps : Array Nat) : Array Nat :=
-  (skeleton cps).filter (fun cp =>
-    decide (Normalization.Lookup.canonicalCombiningClass cp = 0))
+-- `letterSkeleton` is defined further down — after `iteratedSkeleton`
+-- which it depends on.  See the "TYPOSQUAT-STRENGTH LETTER SKELETON"
+-- section after the iterated-skeleton block.
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- STRUCTURAL PROPERTIES
@@ -216,6 +188,53 @@ def iteratedSkeletonFuel (fuel : Nat) (cps : Array Nat) : Array Nat :=
     the test vectors below for the bundled UTS #39 16.0.0 data. -/
 def iteratedSkeleton (cps : Array Nat) : Array Nat :=
   iteratedSkeletonFuel confusableChainBound cps
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- TYPOSQUAT-STRENGTH LETTER SKELETON — UTS #39 §4 + §5.4 + combining-mark strip
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- Stricter "letter" skeleton — `iteratedSkeleton` followed by
+    removal of every codepoint with `canonicalCombiningClass > 0`.
+
+    Motivation.  UTS #39 §4 +§5.4 confusable detection is strict
+    visual-equivalence: two strings are confusable iff their
+    skeletons are EQUAL.  This catches single-codepoint look-alikes
+    (Cyrillic а ↔ Latin a, fullwidth Ｐ ↔ Latin P) where both sides
+    skeleton to the same canonical letter.  It does NOT catch two
+    adjacent classes of typosquat attack:
+
+    1. Base-letter + combining-mark confusables — codepoints like
+       U+0247 `ɇ` whose UTS #39 entry maps them to a SEQUENCE
+       `0247 → 0065 0338` (latin e + combining long solidus).
+       Mutant `nɇthereum` produces skeleton
+       `[n, e, ◌̸, t, h, e, r, e, u, m]` differing from the target
+       `nethereum` skeleton by one inserted combining mark.
+       Stripping combining marks closes this class.
+
+    2. Cascading-substitute confusables — codepoints like U+2133
+       `ℳ` whose UTS #39 entry maps them to `004D` (capital M)
+       which then case-folds to lowercase `m`, which then has its
+       own confusable entry `006D → 0072 006E` (m → rn).  Single-
+       pass skeleton stops after the first substitute and produces
+       just `m`; iterating skeleton to fixed point re-applies
+       substitute on the case-folded result and yields `rn`,
+       matching what the target `Nethereum` (where the trailing
+       `m` substitutes to `rn` in a single pass) produces.
+
+    Rust-port mutation testing (29 309 single-codepoint typosquat
+    mutations across the 67 curated targets × every viable
+    confusables substitution) confirms 100% closure under the
+    iterated-then-strip-marks combination — `iteratedSkeleton`
+    composes with the combining-mark strip to catch BOTH classes
+    in one pipeline.
+
+    This is BEYOND UTS #39 §4 + §5.4 — an additional pragmatic
+    step for the typosquat threat model.  `skeleton` and
+    `iteratedSkeleton` remain spec-pure for IDN / PRECIS /
+    general visual-equivalence consumers. -/
+def letterSkeleton (cps : Array Nat) : Array Nat :=
+  (iteratedSkeleton cps).filter (fun cp =>
+    decide (Normalization.Lookup.canonicalCombiningClass cp = 0))
 
 /-- Fixed-point variant of `areConfusable`: two sequences are
     iterated-confusable iff their canonical (fixed-point) skeletons
