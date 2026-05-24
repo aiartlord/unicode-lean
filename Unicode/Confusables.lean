@@ -377,63 +377,48 @@ theorem areConfusableIterated_0343_0315 :
     areConfusableIterated #[0x0343] #[0x0315] = true := by native_decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- §6 PERFORMANCE BOUNDS — empirical max-expansion on the bundled
--- UCD 17.0 data, proven via `native_decide` over every source
--- codepoint in the confusables table.  Used by the state-level
--- "no DoS via skeleton expansion" credibility claim.
+-- §6 PERFORMANCE BOUNDS — empirical finding, kernel-`decide` infeasible.
+--
+-- Tested 2026-05-24: pure kernel `decide` on the witness
+-- `maxConfusableExpansion ≤ 18` got stuck after 171 seconds with
+-- the kernel unable to reduce `maxConfusableExpansion.ble 18`.
+-- The root cause is that `Confusables.mappings` is a 6 355-entry
+-- `Array (Nat × Array Nat)` parsed at elaboration time from an
+-- `include_str`'d 722 KB `confusables.txt`; the Lean kernel
+-- cannot reduce a `foldl` over that value structure in any
+-- practical time budget.
+--
+-- Implication for the kernel-only proof effort: the cap-witness
+-- cannot be discharged by `decide` at this table size.  The three
+-- remaining options for proving `maxConfusableExpansion ≤ 18`
+-- without `native_decide` are:
+--
+--   (1) Hand-enumerate the bound via structural induction over
+--       the 6 355 table entries — multi-month mechanical work.
+--   (2) Architectural shift: extract the witness ahead of the
+--       Lean build, ship as a signed manifest, reduce the
+--       in-Lean theorem to "this signature matches the content
+--       hash of the input" — trust shifts from native_decide
+--       to the offline extractor + signature scheme.  Weeks of
+--       architecture work.
+--   (3) Hybrid: accept `native_decide` ONLY at the table-fact
+--       leaves, keep kernel-only via the
+--       `Unicode.NatListBounds` substrate for everything that
+--       composes on top.  This is the spec-pure shape the
+--       perf-bound theorems will take once the architectural
+--       decision is made.
+--
+-- This section deliberately ships no perf-bound theorem until
+-- the path is chosen — committing a partial proof would be
+-- worse than no proof.  The definitions remain so consumers can
+-- reason about `maxConfusableExpansion` informally.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The maximum target sequence length across every entry in
     `Confusables.mappings`.  Bounds the per-call expansion factor
-    of `substitute`: `substitute(cps).size ≤ maxConfusableExpansion * cps.size`.
-    Computed by walking the bundled UTS #39 16.0.0 confusables
-    data; the result is a small constant the proof can
-    `native_decide` on. -/
+    of `substitute`.  No bound theorem currently — see §6 comment
+    for the empirical-finding rationale. -/
 def maxConfusableExpansion : Nat :=
   Confusables.mappings.foldl (fun m e => max m e.2.size) 0
-
-/-- The maximum target sequence length is bounded.  Concrete value
-    `native_decide`-proved against the UCD 17.0 confusables data.
-    Per UTS #39 §4, target sequences are short — most are length 1,
-    a small minority are length 2..3 (compound confusables like
-    U+0247 ɇ → e + ◌̸).  This theorem replaces the hand-waved "small
-    constant" with a verified concrete bound. -/
-theorem maxConfusableExpansion_concrete :
-    maxConfusableExpansion ≤ 18 := by native_decide
-
-/-- Per-pass `substitute` expansion factor: every codepoint
-    expands by at most `maxConfusableExpansion`.  Combined with
-    the chain-convergence bound (32 iterations), gives the
-    `iteratedSkeleton` output-size bound:
-
-      |iteratedSkeleton(cps)| ≤ maxConfusableExpansion^32 × |cps|
-
-    For practical inputs (length n < 100), this is tight enough
-    to rule out skeleton-driven DoS.  The bundled UCD-17 data has
-    maxConfusableExpansion ≤ 18, so the bound is finite for any
-    finite input — `letterSkeleton` is total. -/
-theorem letterSkeleton_terminates (cps : Array Nat) :
-    letterSkeleton cps = (iteratedSkeleton cps).filter (fun cp =>
-      decide (Normalization.Lookup.canonicalCombiningClass cp = 0)
-        && ¬ isDefaultIgnorable cp) := by
-  rfl
-
-/-- Spot-check: empty input gives empty letter skeleton. -/
-theorem letterSkeleton_empty : letterSkeleton #[] = #[] := by native_decide
-
-/-- Spot-check: ASCII inputs stay length-bounded by their input
-    length (no expansion on pure ASCII because ASCII letters have
-    no confusable expansion). -/
-theorem letterSkeleton_ascii_size :
-    (letterSkeleton #[0x68, 0x65, 0x6C, 0x6C, 0x6F]).size = 5
-    := by native_decide
-
-/-- Spot-check: even a 5-letter input expanding through one
-    chained confusable (U+05AD → U+0596 → fixed point) stays
-    bounded.  Demonstrates the empirical tightness of the
-    expansion bound on the bundled data. -/
-theorem letterSkeleton_hebrew_size :
-    (letterSkeleton #[0x05AD, 0x05AD, 0x05AD, 0x05AD, 0x05AD]).size ≤
-      5 * maxConfusableExpansion * 32 := by native_decide
 
 end Unicode.Confusables
