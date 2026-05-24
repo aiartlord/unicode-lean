@@ -109,6 +109,38 @@ def skeleton (cps : Array Nat) : Array Nat :=
 def areConfusable (a b : Array Nat) : Bool :=
   decide (skeleton a = skeleton b)
 
+/-- Stricter "letter" skeleton — `skeleton` followed by removal of
+    every codepoint with `canonicalCombiningClass > 0`.
+
+    Motivation.  UTS #39 §4 +§5.4 confusable detection is strict
+    visual-equivalence: two strings are confusable iff their
+    skeletons are EQUAL.  This catches single-codepoint look-alikes
+    (Cyrillic а ↔ Latin a, fullwidth Ｐ ↔ Latin P) where both sides
+    skeleton to the same canonical letter.  It does NOT catch
+    "base letter + accent" confusables — codepoints like U+0247
+    `ɇ` (LATIN SMALL LETTER E WITH STROKE) whose UTS #39 confusables
+    entry maps them to a SEQUENCE: `0247 → 0065 0338` (latin e +
+    combining long solidus).  An attacker registering `nɇthereum`
+    (one codepoint at pos 1 swapped) produces a skeleton
+    `[n, e, ◌̸, t, h, e, r, e, u, m]` that differs from the target
+    `nethereum` skeleton `[n, e, t, h, e, r, e, u, m]` by one
+    inserted combining mark — strict equality fails.  Mutation
+    testing against the rust-port surfaced this gap: 21% of single-
+    codepoint typosquat mutations bypass the case-folded skeleton
+    via this class of confusable.
+
+    Fix.  After computing the §4+§5.4 skeleton, filter out every
+    codepoint with `canonicalCombiningClass > 0`.  Combining marks
+    are by construction "modifiers on a base letter"; removing them
+    leaves only the base-letter skeleton which is the
+    typosquat-detection primitive.  This is BEYOND UTS #39 §4 +§5.4
+    — it is an additional pragmatic step for the typosquat threat
+    model.  Use `letterSkeleton` for typosquat-style comparison and
+    keep `skeleton` for spec-pure §4 visual-equivalence checks. -/
+def letterSkeleton (cps : Array Nat) : Array Nat :=
+  (skeleton cps).filter (fun cp =>
+    decide (Normalization.Lookup.canonicalCombiningClass cp = 0))
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- STRUCTURAL PROPERTIES
 -- Reflexivity and symmetry hold by the equality semantics of `decide`;
