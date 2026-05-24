@@ -141,14 +141,26 @@ def isFullwidthHalfwidth (cp : Nat) : Bool :=
 -- §4 Sub-threat detectors (each takes `input` + precomputed fields)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Find the first canonical target whose iterated skeleton matches
-    the input's iterated skeleton, modulo the input being literally
-    that target (no self-match). -/
+/-- Find the first canonical target whose **letter** skeleton
+    matches the input's letter skeleton, modulo the input being
+    literally that target (no self-match).
+
+    Uses `letterSkeleton` (which strips combining marks from the
+    §4+§5.4 skeleton) rather than `iteratedSkeleton` so that
+    base-letter+combining-mark confusables — e.g. U+0247 `ɇ` →
+    `e + ◌̸`, U+0266 `ɦ` → `h + ◌̔`, U+0127 `ħ` → `h + ◌̵` —
+    collapse to the bare-letter target.  Mutation testing against
+    the rust-port surfaced that 21% of single-codepoint typosquat
+    mutations against curated targets bypass `iteratedSkeleton`
+    via this class of confusable; `letterSkeleton` closes the
+    gap by treating "letter + accent" and the bare letter as
+    typosquat-equivalent. -/
 def findTargetMatch
-    (input : Array Nat) (iSkel : Array Nat) : Option CanonicalTarget :=
+    (input : Array Nat) (_iSkel : Array Nat) : Option CanonicalTarget :=
+  let inputLetters := Unicode.Confusables.letterSkeleton input
   canonicalTargets.find? (fun t =>
     decide (t.cps ≠ input) ∧
-    decide (Unicode.Confusables.iteratedSkeleton t.cps = iSkel))
+    decide (Unicode.Confusables.letterSkeleton t.cps = inputLetters))
 
 /-- Position of the first math-alphanumeric codepoint in `input`. -/
 def firstMathAlphaPos (input : Array Nat) : Option Nat :=
@@ -335,6 +347,30 @@ theorem detect_nethereum_lowercase_attack :
 theorem detect_nethereum_uppercase_attack :
     let cps : Array Nat :=
       #[0x4E, 0x45, 0x54, 0x48, 0x45, 0x52, 0x0415, 0x55, 0x4D]
+    (detect cps).classify.tag = some "TargetMatch" := by native_decide
+
+/-- Base-letter + combining-mark confusable — `nɇthereum`, where the
+    second letter is U+0247 LATIN SMALL LETTER E WITH STROKE whose
+    UTS #39 confusable maps to the SEQUENCE `e + combining long
+    solidus overlay`.  The §4+§5.4 skeleton (without combining-mark
+    stripping) does NOT match the bare-letter `nethereum` target
+    because of the inserted combining mark.  `letterSkeleton`
+    (which strips combining marks from the skeleton output) catches
+    it.  Mutation testing surfaced this class — 21% of single-
+    codepoint mutations across the curated target set bypassed
+    `iteratedSkeleton` via similar "letter + accent" entries. -/
+theorem detect_nethereum_stroked_e_attack :
+    let cps : Array Nat :=
+      #[0x6E, 0x0247, 0x74, 0x68, 0x65, 0x72, 0x65, 0x75, 0x6D]
+    (detect cps).classify.tag = some "TargetMatch" := by native_decide
+
+/-- Base-letter + combining-mark confusable — `nehterħeum`, U+0127
+    LATIN SMALL LETTER H WITH STROKE whose confusable maps to
+    `h + combining short stroke overlay`.  Confirms `letterSkeleton`
+    catches the H-variant of the same class. -/
+theorem detect_nethereum_stroked_h_attack :
+    let cps : Array Nat :=
+      #[0x6E, 0x65, 0x74, 0x0127, 0x65, 0x72, 0x65, 0x75, 0x6D]
     (detect cps).classify.tag = some "TargetMatch" := by native_decide
 
 /-- Math-Alpha posing — `𝐀` (Mathematical Bold Capital A,
