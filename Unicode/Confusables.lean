@@ -40,6 +40,7 @@
 
 import Unicode.Normalization.NFC
 import Unicode.Generated.Confusables
+import Unicode.Generated.DerivedCoreProperties
 import Unicode.Precis.CaseMapping
 
 namespace Unicode.Confusables
@@ -193,15 +194,29 @@ def iteratedSkeleton (cps : Array Nat) : Array Nat :=
 -- TYPOSQUAT-STRENGTH LETTER SKELETON — UTS #39 §4 + §5.4 + combining-mark strip
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+/-- True iff `cp` has the `Default_Ignorable_Code_Point` derived
+    property per UAX #44 — codepoints that should render as nothing
+    in the absence of explicit support (zero-widths, soft hyphen,
+    Mongolian variation selectors, the bidi format controls, the
+    Unicode tag block, BOM, etc.).  Used by `letterSkeleton` to
+    strip invisibility-class codepoints that would otherwise let
+    an attacker insert an invisible marker into a target name and
+    bypass strict-equality target matching. -/
+def isDefaultIgnorable (cp : Nat) : Bool :=
+  Generated.DerivedCoreProperties.defaultIgnorable.any
+    (fun lh => decide (lh.fst ≤ cp ∧ cp ≤ lh.snd))
+
 /-- Stricter "letter" skeleton — `iteratedSkeleton` followed by
-    removal of every codepoint with `canonicalCombiningClass > 0`.
+    removal of (a) every codepoint with `canonicalCombiningClass > 0`
+    AND (b) every codepoint with the `Default_Ignorable_Code_Point`
+    derived property.
 
     Motivation.  UTS #39 §4 +§5.4 confusable detection is strict
     visual-equivalence: two strings are confusable iff their
     skeletons are EQUAL.  This catches single-codepoint look-alikes
     (Cyrillic а ↔ Latin a, fullwidth Ｐ ↔ Latin P) where both sides
-    skeleton to the same canonical letter.  It does NOT catch two
-    adjacent classes of typosquat attack:
+    skeleton to the same canonical letter.  It does NOT catch three
+    adjacent classes of typosquat attack on its own:
 
     1. Base-letter + combining-mark confusables — codepoints like
        U+0247 `ɇ` whose UTS #39 entry maps them to a SEQUENCE
@@ -221,12 +236,26 @@ def iteratedSkeleton (cps : Array Nat) : Array Nat :=
        matching what the target `Nethereum` (where the trailing
        `m` substitutes to `rn` in a single pass) produces.
 
+    3. Invisible-codepoint insertion — codepoints in
+       `Default_Ignorable_Code_Point` (zero-width joiner,
+       zero-width non-joiner, zero-width space, byte-order mark,
+       Mongolian / variation selectors, soft hyphen, the bidi
+       embedding / isolate controls, tag block, …) have CCC = 0
+       and survive the combining-mark strip, but render invisibly
+       so an attacker can insert one between any two letters of a
+       target without changing the visible glyph stream.  The
+       inserted codepoint disrupts strict-equality skeleton
+       comparison; stripping `Default_Ignorable_Code_Point`
+       codepoints closes the class.  Rust-port red-team testing
+       confirmed all six of {ZWSP, ZWNJ, ZWJ, WJ, BOM, NNBSP}
+       inserted into `nethereum` bypassed the prior `letterSkeleton`
+       (verdict was `Clear`).
+
     Rust-port mutation testing (29 309 single-codepoint typosquat
     mutations across the 67 curated targets × every viable
-    confusables substitution) confirms 100% closure under the
-    iterated-then-strip-marks combination — `iteratedSkeleton`
-    composes with the combining-mark strip to catch BOTH classes
-    in one pipeline.
+    confusables substitution) confirms 100% closure for classes 1
+    and 2 under the iterated-then-strip-marks combination.  The
+    Default_Ignorable filter closes class 3.
 
     This is BEYOND UTS #39 §4 + §5.4 — an additional pragmatic
     step for the typosquat threat model.  `skeleton` and
@@ -234,7 +263,8 @@ def iteratedSkeleton (cps : Array Nat) : Array Nat :=
     general visual-equivalence consumers. -/
 def letterSkeleton (cps : Array Nat) : Array Nat :=
   (iteratedSkeleton cps).filter (fun cp =>
-    decide (Normalization.Lookup.canonicalCombiningClass cp = 0))
+    decide (Normalization.Lookup.canonicalCombiningClass cp = 0)
+      && ¬ isDefaultIgnorable cp)
 
 /-- Fixed-point variant of `areConfusable`: two sequences are
     iterated-confusable iff their canonical (fixed-point) skeletons
