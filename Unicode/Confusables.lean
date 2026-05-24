@@ -1,27 +1,46 @@
 /-
   Unicode.Confusables
 
-  UTS #39 §4 confusable-skeleton computation and the
+  UTS #39 §4 + §5.4 confusable-skeleton computation and the
   derived `areConfusable` relation.
 
-  The skeleton of a codepoint sequence is defined (UTS #39 Definition
-  12) as:
+  The case-insensitive skeleton of a codepoint sequence is defined
+  per UTS #39 §5.4 ("Confusable Detection — Optional Case Folding")
+  as the canonical-NFD form bracketed with default full case
+  folding around the substitution step:
 
-    skeleton(X) = toNFD(substitute(toNFD(X)))
+    skeleton(X) = toNFD(caseFold(substitute(caseFold(toNFD(X)))))
 
-  where `substitute` replaces each codepoint that appears as a source
-  in the confusables table with its target sequence, and codepoints
-  not in the table are kept unchanged.
+  where `substitute` replaces each codepoint that appears as a
+  source in the confusables table with its target sequence
+  (codepoints not in the table are kept unchanged), and `caseFold`
+  is the UCD default full case folding (RFC 8265 § 5.2.4,
+  CaseFolding.txt status C ∪ F).
+
+  Case folding is bracketed inside the existing NFD passes because
+  the case-folding table is keyed on canonically-decomposed input
+  and the canonical representative of a confusability class on
+  case-insensitive registries (npm / PyPI / NuGet package IDs, IDN
+  labels) must be the same regardless of case variant or
+  composition form an adversary chooses.  The §4-only single-pass
+  form (without case folding) under-classifies case-variant
+  typosquats: the October 2025 NuGet supply-chain Nethereum
+  campaign published lowercase and ALL-CAPS variants with Cyrillic
+  letter substitution, none of which a case-sensitive single-pass
+  §4 skeleton would identify as a target match.
 
   Two sequences are "confusable" (visually mistakable to a reader
-  under generic rendering) iff their skeletons are equal. This is the
-  primary test downstream identifier codecs (B-4 PRECIS, C-2
-  PrecisIdentifier) use to reject IDN-class homograph attacks before
-  they reach the identifier layer.
+  under generic rendering) iff their skeletons are equal.  This is
+  the primary test downstream identifier codecs (B-4 PRECIS, C-2
+  PrecisIdentifier) and the Security Conformance Layer's
+  HomoglyphConfusable detector use to reject IDN-class homograph
+  and supply-chain typosquat attacks before they reach the
+  identifier layer.
 -/
 
 import Unicode.Normalization.NFC
 import Unicode.Generated.Confusables
+import Unicode.Precis.CaseMapping
 
 namespace Unicode.Confusables
 
@@ -70,9 +89,21 @@ def substitute (cps : Array Nat) : Array Nat :=
     | some tgt => acc ++ tgt
     | none     => acc.push cp) #[]
 
-/-- The confusables skeleton of a codepoint sequence per UTS #39 §4. -/
+/-- The case-insensitive confusables skeleton of a codepoint
+    sequence per UTS #39 §4 + §5.4.  Bracketed:
+
+      toNFD(caseFold(substitute(caseFold(toNFD(cps)))))
+
+    The outer `toNFD` keeps the result in NFD; the inner `caseFold`
+    canonicalises case before substitution-table lookup so that
+    upper-case and lower-case lookups agree and registry-style
+    case-variant typosquats collapse to a single representative. -/
 def skeleton (cps : Array Nat) : Array Nat :=
-  Normalization.NFC.toNFD (substitute (Normalization.NFC.toNFD cps))
+  Normalization.NFC.toNFD
+    (Precis.CaseMapping.caseFold
+      (substitute
+        (Precis.CaseMapping.caseFold
+          (Normalization.NFC.toNFD cps))))
 
 /-- Two sequences are confusable iff their skeletons are equal. -/
 def areConfusable (a b : Array Nat) : Bool :=

@@ -314,17 +314,46 @@ theorem detect_nethereum_attack :
       #[0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D]
     (detect cps).classify.tag = some "TargetMatch" := by native_decide
 
+/-- Lower-case variant of the Nethereum typosquat — `nethereum`
+    with Cyrillic SMALL LETTER IE (U+0435) at position 6.  NuGet
+    package IDs are case-insensitive, so this is the same
+    threat-class as the title-case variant.  Under UTS #39 §5.4
+    case folding (added to `Unicode.Confusables.skeleton`), the
+    title-case target `Nethereum` and this lower-case attack both
+    fold to lower-case `nethereum`, their skeletons agree, and
+    `TargetMatch` fires with target attribution preserved. -/
+theorem detect_nethereum_lowercase_attack :
+    let cps : Array Nat :=
+      #[0x6E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D]
+    (detect cps).classify.tag = some "TargetMatch" := by native_decide
+
+/-- ALL-CAPS variant of the Nethereum typosquat — `NETHEREUM`
+    with Cyrillic CAPITAL LETTER IE (U+0415) at position 6.  Same
+    case-insensitivity argument as `detect_nethereum_lowercase_attack`;
+    under §5.4 case folding the all-caps attack also folds to
+    lower-case `nethereum` and fires `TargetMatch`. -/
+theorem detect_nethereum_uppercase_attack :
+    let cps : Array Nat :=
+      #[0x4E, 0x45, 0x54, 0x48, 0x45, 0x52, 0x0415, 0x55, 0x4D]
+    (detect cps).classify.tag = some "TargetMatch" := by native_decide
+
 /-- Math-Alpha posing — `𝐀` (Mathematical Bold Capital A,
     U+1D400) by itself is flagged. -/
 theorem detect_math_alpha :
     (detect #[0x1D400]).classify.tag = some "MathAlpha" := by
   native_decide
 
-/-- Fullwidth disguise — `Ｐａｙｐａｌ` (FF30 FF41 FF59 FF50 FF41 FF4C). -/
+/-- Fullwidth disguise — `Ｐａｙｐａｌ` (FF30 FF41 FF59 FF50 FF41 FF4C).
+    With UTS #39 §5.4 case-folded skeleton the input case-folds and
+    confusable-substitutes to lowercase ASCII `paypal`, which matches
+    the curated `paypal` attack target; the higher-priority
+    `TargetMatch` sub-threat fires before `WidthClass`, producing
+    the strictly more informative classification (attacker is
+    impersonating PayPal, not merely "input has fullwidth chars"). -/
 theorem detect_fullwidth_paypal :
     let cps : Array Nat :=
       #[0xFF30, 0xFF41, 0xFF59, 0xFF50, 0xFF41, 0xFF4C]
-    (detect cps).classify.tag = some "WidthClass" := by native_decide
+    (detect cps).classify.tag = some "TargetMatch" := by native_decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §8 Predicate sanity checks

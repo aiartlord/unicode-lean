@@ -63,8 +63,14 @@
 # Single Mathematical Bold Capital A (𝐀, U+1D400) — flagged.
 1D400; Hazard:MathAlpha; 0; first_math_cp=0x1D400; # Math Bold A solo
 
-# "𝐀𝐩𝐩𝐥𝐞" — every codepoint is Math Alphanumeric (Bold).
-1D400 1D429 1D429 1D425 1D41E; Hazard:MathAlpha; 0; first_math_cp=0x1D400; # Math Bold "Apple"
+# "𝐀𝐩𝐩𝐥𝐞" — every codepoint is Math Alphanumeric (Bold).  Under
+# UTS #39 §5.4 case folding the bold-capital A folds to bold-small a
+# (U+1D41A), the confusables map then projects each math-bold letter
+# to its plain-ASCII counterpart, and the iterated skeleton matches
+# the curated "apple" target; the higher-priority TargetMatch
+# sub-threat fires before MathAlpha and the verdict identifies the
+# specific brand being impersonated instead of generic math-alpha use.
+1D400 1D429 1D429 1D425 1D41E; Hazard:TargetMatch; ; target="apple"; # Math Bold "Apple" → TargetMatch
 
 # Math Italic Capital A (𝐴, U+1D434).
 1D434; Hazard:MathAlpha; 0; first_math_cp=0x1D434; # Math Italic A
@@ -81,8 +87,13 @@
 # Fullwidth A (Ａ, U+FF21) — flagged.
 FF21; Hazard:WidthClass; 0; first_width_cp=0xFF21; # Fullwidth A
 
-# "Ｐａｙｐａｌ" — every codepoint is fullwidth Latin.
-FF30 FF41 FF59 FF50 FF41 FF4C; Hazard:WidthClass; 0; first_width_cp=0xFF30; # Fullwidth Paypal
+# "Ｐａｙｐａｌ" — every codepoint is fullwidth Latin.  Under UTS #39
+# §5.4 case folding the fullwidth capitals fold to fullwidth small,
+# the confusables map projects each fullwidth letter to its
+# plain-ASCII counterpart, and the iterated skeleton matches the
+# curated "paypal" target; higher-priority TargetMatch fires before
+# WidthClass and the verdict identifies the spoofed brand.
+FF30 FF41 FF59 FF50 FF41 FF4C; Hazard:TargetMatch; ; target="paypal"; # Fullwidth Paypal → TargetMatch
 
 # Fullwidth digit 5 (５, U+FF15).
 FF15; Hazard:WidthClass; 0; first_width_cp=0xFF15; # Fullwidth digit 5
@@ -126,8 +137,15 @@ FF15; Hazard:WidthClass; 0; first_width_cp=0xFF15; # Fullwidth digit 5
 # Halfwidth Katakana 'ｱ' (U+FF71) — fullwidth-block fall-back surface.
 FF71; Hazard:WidthClass; 0; first_width_cp=0xFF71; # Halfwidth Katakana ア
 
-# Fullwidth "Github" — every codepoint U+FF21..U+FF7A.
-FF27 FF49 FF54 FF48 FF55 FF42; Hazard:WidthClass; 0; first_width_cp=0xFF27; # Fullwidth Github
+# Fullwidth "Github" — every codepoint U+FF21..U+FF7A.  Stays
+# WidthClass under §5.4 case folding: only `g`, `i`, `h`, `p`
+# fullwidth-small variants are in the confusables table; the
+# fullwidth-small `t`, `u`, `b` codepoints (FF54, FF55, FF42)
+# have no skeleton entry, so the case-folded substituted form
+# remains mixed-fullwidth and does not match the ASCII "github"
+# target.  The detector falls through to the WidthClass
+# attribution path, which still flags the input.
+FF27 FF49 FF54 FF48 FF55 FF42; Hazard:WidthClass; 0; first_width_cp=0xFF27; # Fullwidth Github → WidthClass
 
 # @section DecompositionSwap
 # @level basic
