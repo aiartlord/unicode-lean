@@ -373,6 +373,27 @@ theorem detect_nethereum_stroked_h_attack :
       #[0x6E, 0x65, 0x74, 0x0127, 0x65, 0x72, 0x65, 0x75, 0x6D]
     (detect cps).classify.tag = some "TargetMatch" := by native_decide
 
+/-- Zero-width insertion bypass — `net` + ZWSP (U+200B) + `hereum`.
+    Without the `Default_Ignorable_Code_Point` filter in
+    `letterSkeleton`, the inserted ZWSP survives into the
+    comparison and breaks strict-equality match with the
+    `nethereum` target.  Rust-port red-team confirmed: all six of
+    {ZWSP, ZWNJ, ZWJ, WJ, BOM, NNBSP} inserted bypassed the prior
+    detector (`Clear` verdict).  The default-ignorable filter
+    closes the class. -/
+theorem detect_nethereum_zwsp_insertion_attack :
+    let cps : Array Nat :=
+      #[0x6E, 0x65, 0x74, 0x200B, 0x68, 0x65, 0x72, 0x65, 0x75, 0x6D]
+    (detect cps).classify.tag = some "TargetMatch" := by native_decide
+
+/-- Zero-width-joiner insertion variant — same class as
+    `detect_nethereum_zwsp_insertion_attack` but with U+200D
+    (ZWJ) which has CCC = 0 and is `Default_Ignorable`. -/
+theorem detect_nethereum_zwj_insertion_attack :
+    let cps : Array Nat :=
+      #[0x6E, 0x65, 0x74, 0x200D, 0x68, 0x65, 0x72, 0x65, 0x75, 0x6D]
+    (detect cps).classify.tag = some "TargetMatch" := by native_decide
+
 /-- Math-Alpha posing — `𝐀` (Mathematical Bold Capital A,
     U+1D400) by itself is flagged. -/
 theorem detect_math_alpha :
