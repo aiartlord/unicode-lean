@@ -1,0 +1,98 @@
+name: release-evidence
+
+# Builds auditable release evidence for version tags. This workflow
+# publishes source evidence artifacts to the matching GitHub Release
+# and attaches GitHub artifact attestations.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  evidence:
+    name: release evidence
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: validate version tag
+        run: |
+          case "${GITHUB_REF_NAME}" in
+            v[0-9]*)
+              ;;
+            *)
+              echo "FATAL: release evidence may only publish for version tags matching v*."
+              exit 1
+              ;;
+          esac
+
+      - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1
+        with:
+          # Build via lake; toolchain auto-detected from `lean-toolchain`.
+          build-args: ""
+
+      - name: hardening checks
+        run: |
+          bash scripts/check-sorry.sh
+          bash scripts/check-no-axiom.sh
+          bash scripts/check-orphan-files.sh
+          bash scripts/check-ucd-hashes.sh
+          bash scripts/check-security-coverage.sh
+          bash scripts/check-security-hashes.sh
+          bash scripts/check-bip39-hashes.sh
+          bash scripts/check-curated-hashes.sh
+          bash scripts/check-actions-pinned.sh
+
+      - name: smoke-check headline theorems
+        run: |
+          lake build Unicode.Normalization.QuickCheckSoundnessTheorem
+          lake build Unicode.Precis.Preparation
+          lake build Unicode.Bidi.Algorithm
+          lake build Unicode.Confusables
+
+      - name: full official conformance evidence
+        run: lake build UnicodeFullConformance
+
+      - name: generate release evidence
+        run: bash scripts/release-evidence.sh "${GITHUB_REF_NAME}" dist
+
+      - name: publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release create "${GITHUB_REF_NAME}" \
+              --verify-tag \
+              --title "${GITHUB_REF_NAME}" \
+              --notes "Automated release evidence for ${GITHUB_REF_NAME}."
+          fi
+          gh release upload "${GITHUB_REF_NAME}" dist/* --clobber
+
+      - name: upload release evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-evidence-${{ github.ref_name }}
+          path: dist/
+          retention-days: 90
+
+      - name: attest release evidence
+        uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
+        with:
+          subject-path: |
+            dist/*.source.tar.gz
+            dist/*.sbom.cdx.json
+            dist/SHA256SUMS
