@@ -6,7 +6,11 @@
 -/
 
 -- Normalization (UAX #15)
-import Unicode.Normalization.QuickCheckSoundnessTheorem
+--
+-- The default audited root imports the normalization algorithms. The old
+-- NFC quick-check soundness proof stack has been retired from active source;
+-- `isNFCQuickCheck` remains an executable prefilter, not a kernel dependency.
+import Unicode.Normalization.NFC
 import Unicode.Normalization.NFKC
 import Unicode.Normalization.NFKD
 import Unicode.Normalization.CompatDecompose
