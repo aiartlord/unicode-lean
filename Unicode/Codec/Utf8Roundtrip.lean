@@ -73,7 +73,7 @@ theorem decode_encode_ascii (cp : Nat) (h : cp < 0x80) :
 theorem decode_encode_2byte_fin :
     ∀ cp : Fin 0x800,
       decodeToCodepoints (encodeCodepoint cp.val) = #[cp.val] := by
-  native_decide
+  decide +kernel
 
 /-- 2-byte codepoint roundtrip (covers `cp < 0x800` — overlaps with
     ASCII at `cp < 0x80`, both branches sound). -/
