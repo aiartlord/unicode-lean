@@ -53,18 +53,29 @@ theorem uint8_ofNat_toNat (n : Nat) (h : n < 256) :
   unfold UInt8.toNat UInt8.ofNat
   simp [BitVec.toNat_ofNat, Nat.mod_eq_of_lt h]
 
-/-- Bounded enumeration over `Fin 0x80`: every ASCII codepoint encodes-then-
-    decodes to itself. Closes by exhaustive `native_decide` over the
-    128-element finite domain. -/
+/-- ASCII (1-byte) codepoint roundtrip — structural, no enumeration.
+    `encodeCodepoint` takes the `cp < 0x80` branch to the single byte
+    `UInt8.ofNat cp`; the decode fold runs one `utf8DecodeStep` in
+    `.expectStart`, whose `n < 0x80` branch emits `cp`, then terminates. -/
+theorem decode_encode_ascii (cp : Nat) (h : cp < 0x80) :
+    decodeToCodepoints (encodeCodepoint cp) = #[cp] := by
+  have h256 : cp < 256 := by omega
+  have hb : (UInt8.ofNat cp).toNat = cp := by
+    simp [Nat.mod_eq_of_lt h256]
+  unfold decodeToCodepoints encodeCodepoint
+  rw [if_pos h]
+  simp [Unicode.Codec.Utf8.foldCodepointsWithOffset,
+    Unicode.Codec.Utf8.foldCodepointsWithOffsetGo,
+    Unicode.Codec.Utf8.utf8DecodeStep,
+    ByteArray.getElem_eq_getElem_data,
+    show (⟨#[UInt8.ofNat cp]⟩ : ByteArray).size = 1 from rfl,
+    hb, h, Function.const]
+
+/-- Bounded `Fin 0x80` restatement of `decode_encode_ascii`. -/
 theorem decode_encode_ascii_fin :
     ∀ cp : Fin 0x80,
-      decodeToCodepoints (encodeCodepoint cp.val) = #[cp.val] := by
-  native_decide
-
-/-- ASCII (1-byte) codepoint roundtrip. -/
-theorem decode_encode_ascii (cp : Nat) (h : cp < 0x80) :
-    decodeToCodepoints (encodeCodepoint cp) = #[cp] :=
-  decode_encode_ascii_fin ⟨cp, h⟩
+      decodeToCodepoints (encodeCodepoint cp.val) = #[cp.val] :=
+  fun cp => decode_encode_ascii cp.val cp.isLt
 
 /-- Bounded enumeration over `Fin 0x800`: every codepoint in the
     2-byte UTF-8 length bracket encodes-then-decodes to itself.
