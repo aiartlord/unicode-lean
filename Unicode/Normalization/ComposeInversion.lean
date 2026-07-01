@@ -816,6 +816,7 @@ def FullCanonicalDecomposeFactoringHangul : Prop :=
       = Decompose.fullCanonicalDecompose d
         ++ Decompose.fullCanonicalDecompose c
 
+set_option maxRecDepth 100000 in
 /-- **Unconditional closure of the Hangul factorization hypothesis**
     via the `native_decide` tables. Dispatches on `composePair?`'s
     L+V and LV+T branches. -/
