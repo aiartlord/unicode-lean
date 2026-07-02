@@ -77,20 +77,79 @@ theorem decode_encode_ascii_fin :
       decodeToCodepoints (encodeCodepoint cp.val) = #[cp.val] :=
   fun cp => decode_encode_ascii cp.val cp.isLt
 
-/-- Bounded enumeration over `Fin 0x800`: every codepoint in the
-    2-byte UTF-8 length bracket encodes-then-decodes to itself.
-    Closes by exhaustive `native_decide` over the 2048-element domain
-    (including the ASCII subset, which is also a 1-byte roundtrip). -/
+-- Bit-reassembly helpers shared by the multi-byte roundtrip proofs. Each
+-- recovers the payload bits a UTF-8 byte carries once the byte is written in
+-- `const + payload` arithmetic form (the decoder masks with `0x1F`/`0x3F`).
+
+/-- Recover the 5 payload bits of a 2-byte lead byte: `(0xC0 + x) &&& 0x1F = x`. -/
+private theorem mask5 (x : Nat) (hx : x < 32) : (192 + x) &&& 0x1F = x := by
+  have hxor : 192 + x = 0xC0 ||| x := by
+    rw [show (0xC0 : Nat) = 3 <<< 6 from by decide,
+      ← Nat.shiftLeft_add_eq_or_of_lt (show x < 2 ^ 6 by omega), Nat.shiftLeft_eq]
+  rw [hxor, Nat.and_or_distrib_right, show (0xC0 &&& 0x1F : Nat) = 0 from by decide, Nat.zero_or]
+  exact Nat.and_two_pow_sub_one_of_lt_two_pow (n := 5) hx
+
+/-- Recover the 6 payload bits of a continuation byte: `(0x80 + y) &&& 0x3F = y`. -/
+private theorem mask6 (y : Nat) (hy : y < 64) : (128 + y) &&& 0x3F = y := by
+  have hyor : 128 + y = 0x80 ||| y := by
+    rw [show (0x80 : Nat) = 2 <<< 6 from by decide,
+      ← Nat.shiftLeft_add_eq_or_of_lt (show y < 2 ^ 6 by omega), Nat.shiftLeft_eq]
+  rw [hyor, Nat.and_or_distrib_right, show (0x80 &&& 0x3F : Nat) = 0 from by decide, Nat.zero_or]
+  exact Nat.and_two_pow_sub_one_of_lt_two_pow (n := 6) hy
+
+/-- Reassemble a 6-bit split back into `cp`: `(cp / 64) <<< 6 ||| cp % 64 = cp`. -/
+private theorem reassemble2 (cp : Nat) : ((cp / 64) <<< 6) ||| (cp % 64) = cp := by
+  rw [← Nat.shiftLeft_add_eq_or_of_lt (show cp % 64 < 2 ^ 6 by omega), Nat.shiftLeft_eq]
+  omega
+
+/-- 2-byte codepoint roundtrip (covers `cp < 0x800`) — structural, no
+    enumeration. For `cp < 0x80` this is the 1-byte roundtrip; for
+    `0x80 ≤ cp` the encoder emits a `110xxxxx 10xxxxxx` pair and the decode
+    fold reassembles it via `mask5`/`mask6`/`reassemble2`. -/
+theorem decode_encode_2byte (cp : Nat) (h : cp < 0x800) :
+    decodeToCodepoints (encodeCodepoint cp) = #[cp] := by
+  by_cases h80 : cp < 0x80
+  · exact decode_encode_ascii cp h80
+  · have ha : cp >>> 6 = cp / 64 := Nat.shiftRight_eq_div_pow cp 6
+    have hb : cp &&& 0x3F = cp % 64 := Nat.and_two_pow_sub_one_eq_mod cp 6
+    have hor0 : (0xC0 ||| (cp >>> 6)) = 192 + cp / 64 := by
+      rw [ha, show (0xC0 : Nat) = 3 <<< 6 from by decide,
+        ← Nat.shiftLeft_add_eq_or_of_lt (show cp / 64 < 2 ^ 6 by omega), Nat.shiftLeft_eq]
+    have hor1 : (0x80 ||| (cp &&& 0x3F)) = 128 + cp % 64 := by
+      rw [hb, show (0x80 : Nat) = 2 <<< 6 from by decide,
+        ← Nat.shiftLeft_add_eq_or_of_lt (show cp % 64 < 2 ^ 6 by omega), Nat.shiftLeft_eq]
+    have hb0 : (UInt8.ofNat (0xC0 ||| (cp >>> 6))).toNat = 192 + cp / 64 := by
+      rw [hor0]; simp [Nat.mod_eq_of_lt (show 192 + cp / 64 < 256 by omega)]
+    have hb1 : (UInt8.ofNat (0x80 ||| (cp &&& 0x3F))).toNat = 128 + cp % 64 := by
+      rw [hor1]; simp [Nat.mod_eq_of_lt (show 128 + cp % 64 < 256 by omega)]
+    unfold decodeToCodepoints encodeCodepoint
+    rw [if_neg h80, if_pos h]
+    simp only [Unicode.Codec.Utf8.foldCodepointsWithOffset,
+      Unicode.Codec.Utf8.foldCodepointsWithOffsetGo,
+      Unicode.Codec.Utf8.utf8DecodeStep,
+      ByteArray.getElem_eq_getElem_data,
+      show (⟨#[UInt8.ofNat (0xC0 ||| (cp >>> 6)), UInt8.ofNat (0x80 ||| (cp &&& 0x3F))]⟩ : ByteArray).size = 2 from rfl,
+      List.getElem_toArray, List.getElem_cons_zero, List.getElem_cons_succ,
+      if_true, if_false, or_self,
+      hb0, hb1,
+      show ¬ (192 + cp / 64 < 128) from by omega,
+      show ¬ (192 + cp / 64 < 194) from by omega,
+      show (192 + cp / 64 < 224) from by omega,
+      show ¬ (128 + cp % 64 < 128) from by omega,
+      show ¬ (0xC0 ≤ 128 + cp % 64) from by omega,
+      mask5 (cp / 64) (by omega), mask6 (cp % 64) (by omega),
+      reassemble2 cp,
+      show ¬ (cp < 128) from by omega,
+      show ¬ (0xD800 ≤ cp ∧ cp ≤ 0xDFFF) from by omega,
+      show ¬ (cp > 0x10FFFF) from by omega,
+      Function.const]
+    rfl
+
+/-- Bounded `Fin 0x800` restatement of `decode_encode_2byte`. -/
 theorem decode_encode_2byte_fin :
     ∀ cp : Fin 0x800,
-      decodeToCodepoints (encodeCodepoint cp.val) = #[cp.val] := by
-  decide +kernel
-
-/-- 2-byte codepoint roundtrip (covers `cp < 0x800` — overlaps with
-    ASCII at `cp < 0x80`, both branches sound). -/
-theorem decode_encode_2byte (cp : Nat) (h : cp < 0x800) :
-    decodeToCodepoints (encodeCodepoint cp) = #[cp] :=
-  decode_encode_2byte_fin ⟨cp, h⟩
+      decodeToCodepoints (encodeCodepoint cp.val) = #[cp.val] :=
+  fun cp => decode_encode_2byte cp.val cp.isLt
 
 /-- Bounded enumeration over `Fin 0x10000` excluding the surrogate
     range [U+D800, U+DFFF]: every non-surrogate Basic Multilingual
