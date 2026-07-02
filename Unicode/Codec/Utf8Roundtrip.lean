@@ -6,9 +6,6 @@
   array-level codepoint sequences round-trip across the encoder /
   decoder boundary.
 
-  Proven structurally — no `native_decide`, no `bv_decide`,
-  no Mathlib. Lean 4 core only.
-
   Layout:
 
     §1  IsValidCodepoint — the scalar codepoint range minus surrogates.
@@ -53,10 +50,10 @@ theorem uint8_ofNat_toNat (n : Nat) (h : n < 256) :
   unfold UInt8.toNat UInt8.ofNat
   simp [BitVec.toNat_ofNat, Nat.mod_eq_of_lt h]
 
-/-- ASCII (1-byte) codepoint roundtrip — structural, no enumeration.
-    `encodeCodepoint` takes the `cp < 0x80` branch to the single byte
-    `UInt8.ofNat cp`; the decode fold runs one `utf8DecodeStep` in
-    `.expectStart`, whose `n < 0x80` branch emits `cp`, then terminates. -/
+/-- ASCII (1-byte) codepoint roundtrip. `encodeCodepoint` takes the
+    `cp < 0x80` branch to the single byte `UInt8.ofNat cp`; the decode
+    fold runs one `utf8DecodeStep` in `.expectStart`, whose `n < 0x80`
+    branch emits `cp`, then terminates. -/
 theorem decode_encode_ascii (cp : Nat) (h : cp < 0x80) :
     decodeToCodepoints (encodeCodepoint cp) = #[cp] := by
   have h256 : cp < 256 := by omega
@@ -135,10 +132,10 @@ private theorem reassemble4 (cp : Nat) :
     Nat.shiftLeft_eq, Nat.shiftLeft_eq, Nat.shiftLeft_eq]
   omega
 
-/-- 2-byte codepoint roundtrip (covers `cp < 0x800`) — structural, no
-    enumeration. For `cp < 0x80` this is the 1-byte roundtrip; for
-    `0x80 ≤ cp` the encoder emits a `110xxxxx 10xxxxxx` pair and the decode
-    fold reassembles it via `mask5`/`mask6`/`reassemble2`. -/
+/-- 2-byte codepoint roundtrip (covers `cp < 0x800`). For `cp < 0x80`
+    this is the 1-byte roundtrip; for `0x80 ≤ cp` the encoder emits a
+    `110xxxxx 10xxxxxx` pair and the decode fold reassembles it via
+    `mask5`/`mask6`/`reassemble2`. -/
 theorem decode_encode_2byte (cp : Nat) (h : cp < 0x800) :
     decodeToCodepoints (encodeCodepoint cp) = #[cp] := by
   by_cases h80 : cp < 0x80
@@ -184,10 +181,10 @@ theorem decode_encode_2byte_fin :
       decodeToCodepoints (encodeCodepoint cp.val) = #[cp.val] :=
   fun cp => decode_encode_2byte cp.val cp.isLt
 
-/-- BMP codepoint roundtrip (covers `cp < 0x10000` minus surrogates) —
-    structural, no enumeration. For `cp < 0x800` reduces to the 1/2-byte
-    roundtrip; for `0x800 ≤ cp` the encoder emits `1110xxxx 10xxxxxx 10xxxxxx`
-    which the decode fold reassembles via `mask4`/`mask6`/`reassemble3`. -/
+/-- BMP codepoint roundtrip (covers `cp < 0x10000` minus surrogates).
+    For `cp < 0x800` reduces to the 1/2-byte roundtrip; for `0x800 ≤ cp`
+    the encoder emits `1110xxxx 10xxxxxx 10xxxxxx` which the decode fold
+    reassembles via `mask4`/`mask6`/`reassemble3`. -/
 theorem decode_encode_3byte (cp : Nat) (h : cp < 0x10000)
     (h_nonsurr : ¬ (0xD800 ≤ cp ∧ cp ≤ 0xDFFF)) :
     decodeToCodepoints (encodeCodepoint cp) = #[cp] := by
@@ -246,10 +243,9 @@ theorem decode_encode_3byte_fin :
       decodeToCodepoints (encodeCodepoint cp.val) = #[cp.val] :=
   fun cp hns => decode_encode_3byte cp.val cp.isLt hns
 
-/-- 4-byte codepoint roundtrip (covers `0x10000 ≤ cp < 0x110000`) —
-    structural, no enumeration. The encoder emits
-    `11110xxx 10xxxxxx 10xxxxxx 10xxxxxx`; the decode fold reassembles it
-    via `mask3`/`mask6`/`reassemble4`. -/
+/-- 4-byte codepoint roundtrip (covers `0x10000 ≤ cp < 0x110000`). The
+    encoder emits `11110xxx 10xxxxxx 10xxxxxx 10xxxxxx`; the decode fold
+    reassembles it via `mask3`/`mask6`/`reassemble4`. -/
 theorem decode_encode_4byte (cp : Nat) (h_lo : 0x10000 ≤ cp) (h_hi : cp < 0x110000) :
     decodeToCodepoints (encodeCodepoint cp) = #[cp] := by
   have ha18 : cp >>> 18 = cp / 262144 := Nat.shiftRight_eq_div_pow cp 18

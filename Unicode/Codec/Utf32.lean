@@ -17,13 +17,11 @@
   Closed-form per-codepoint roundtrip:
     `decodeOne_encodeOne (cp : Nat) (h : IsValidCodepoint cp) :
        decodeOneBE (encodeOneBE cp) = some cp`
-  proven STRUCTURALLY over the whole scalar range: the four encoded
-  bytes are `(cp / 2^k) % 256` (via `Nat.and_two_pow_sub_one_eq_mod`
-  and `Nat.shiftRight_eq_div_pow`), and the decoder's `|||`/`<<<`
-  reassembly recombines them to `cp` (`reassembleBE32` / `reassembleLE32`,
-  each a disjoint-OR chain discharged by `Nat.shiftLeft_add_eq_or_of_lt`
-  plus `omega`). No enumeration, no `native_decide`; no Mathlib;
-  Lean 4 core only.
+  The four encoded bytes are `(cp / 2^k) % 256` (via
+  `Nat.and_two_pow_sub_one_eq_mod` and `Nat.shiftRight_eq_div_pow`), and
+  the decoder's `|||`/`<<<` reassembly recombines them to `cp`
+  (`reassembleBE32` / `reassembleLE32`, each a disjoint-OR chain
+  discharged by `Nat.shiftLeft_add_eq_or_of_lt` and `omega`).
 -/
 
 import Unicode.Codec.Utf8Roundtrip
@@ -141,8 +139,8 @@ private theorem reassembleLE32 (cp : Nat) (h : cp < 0x110000) :
   have dd2 : (cp / 65536) / 256 = cp / 16777216 := Nat.div_div_eq_div_mul cp 65536 256
   omega
 
-/-- HEADLINE per-codepoint UTF-32 BE roundtrip: every valid scalar codepoint
-    encodes-then-decodes back to itself — structural, no enumeration. -/
+/-- Per-codepoint UTF-32 BE roundtrip: every valid scalar codepoint
+    encodes-then-decodes back to itself. -/
 theorem decodeOneBE_encodeOneBE (cp : Nat) (h : IsValidCodepoint cp) :
     decodeOneBE (encodeOneBE cp) = some cp := by
   obtain ⟨h_max, h_nonsurr⟩ := h
@@ -172,8 +170,8 @@ theorem decodeOneBE_encodeOneBE (cp : Nat) (h : IsValidCodepoint cp) :
 -- §4 PER-CODEPOINT ROUNDTRIP — LITTLE-ENDIAN VARIANT
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- HEADLINE per-codepoint UTF-32 LE roundtrip: every valid scalar codepoint
-    encodes-then-decodes back to itself — structural, no enumeration. -/
+/-- Per-codepoint UTF-32 LE roundtrip: every valid scalar codepoint
+    encodes-then-decodes back to itself. -/
 theorem decodeOneLE_encodeOneLE (cp : Nat) (h : IsValidCodepoint cp) :
     decodeOneLE (encodeOneLE cp) = some cp := by
   obtain ⟨h_max, h_nonsurr⟩ := h
