@@ -102,6 +102,39 @@ private theorem reassemble2 (cp : Nat) : ((cp / 64) <<< 6) ||| (cp % 64) = cp :=
   rw [← Nat.shiftLeft_add_eq_or_of_lt (show cp % 64 < 2 ^ 6 by omega), Nat.shiftLeft_eq]
   omega
 
+/-- Recover the 4 payload bits of a 3-byte lead byte: `(0xE0 + x) &&& 0x0F = x`. -/
+private theorem mask4 (x : Nat) (hx : x < 16) : (224 + x) &&& 0x0F = x := by
+  have hxor : 224 + x = 0xE0 ||| x := by
+    rw [show (0xE0 : Nat) = 7 <<< 5 from by decide,
+      ← Nat.shiftLeft_add_eq_or_of_lt (show x < 2 ^ 5 by omega), Nat.shiftLeft_eq]
+  rw [hxor, Nat.and_or_distrib_right, show (0xE0 &&& 0x0F : Nat) = 0 from by decide, Nat.zero_or]
+  exact Nat.and_two_pow_sub_one_of_lt_two_pow (n := 4) hx
+
+/-- Recover the 3 payload bits of a 4-byte lead byte: `(0xF0 + x) &&& 0x07 = x`. -/
+private theorem mask3 (x : Nat) (hx : x < 8) : (240 + x) &&& 0x07 = x := by
+  have hxor : 240 + x = 0xF0 ||| x := by
+    rw [show (0xF0 : Nat) = 15 <<< 4 from by decide,
+      ← Nat.shiftLeft_add_eq_or_of_lt (show x < 2 ^ 4 by omega), Nat.shiftLeft_eq]
+  rw [hxor, Nat.and_or_distrib_right, show (0xF0 &&& 0x07 : Nat) = 0 from by decide, Nat.zero_or]
+  exact Nat.and_two_pow_sub_one_of_lt_two_pow (n := 3) hx
+
+/-- Reassemble a three-part (4/6/6-bit) split back into `cp`. -/
+private theorem reassemble3 (cp : Nat) :
+    ((((cp / 4096) <<< 6) ||| ((cp / 64) % 64)) <<< 6) ||| (cp % 64) = cp := by
+  rw [← Nat.shiftLeft_add_eq_or_of_lt (show cp % 64 < 2 ^ 6 by omega),
+    ← Nat.shiftLeft_add_eq_or_of_lt (show (cp / 64) % 64 < 2 ^ 6 by omega),
+    Nat.shiftLeft_eq, Nat.shiftLeft_eq]
+  omega
+
+/-- Reassemble a four-part (3/6/6/6-bit) split back into `cp`. -/
+private theorem reassemble4 (cp : Nat) :
+    ((((((cp / 262144) <<< 6) ||| ((cp / 4096) % 64)) <<< 6) ||| ((cp / 64) % 64)) <<< 6) ||| (cp % 64) = cp := by
+  rw [← Nat.shiftLeft_add_eq_or_of_lt (show cp % 64 < 2 ^ 6 by omega),
+    ← Nat.shiftLeft_add_eq_or_of_lt (show (cp / 64) % 64 < 2 ^ 6 by omega),
+    ← Nat.shiftLeft_add_eq_or_of_lt (show (cp / 4096) % 64 < 2 ^ 6 by omega),
+    Nat.shiftLeft_eq, Nat.shiftLeft_eq, Nat.shiftLeft_eq]
+  omega
+
 /-- 2-byte codepoint roundtrip (covers `cp < 0x800`) — structural, no
     enumeration. For `cp < 0x80` this is the 1-byte roundtrip; for
     `0x80 ≤ cp` the encoder emits a `110xxxxx 10xxxxxx` pair and the decode
@@ -151,178 +184,130 @@ theorem decode_encode_2byte_fin :
       decodeToCodepoints (encodeCodepoint cp.val) = #[cp.val] :=
   fun cp => decode_encode_2byte cp.val cp.isLt
 
-/-- Bounded enumeration over `Fin 0x10000` excluding the surrogate
-    range [U+D800, U+DFFF]: every non-surrogate Basic Multilingual
-    Plane codepoint encodes-then-decodes to itself. Closes by
-    exhaustive `native_decide` over the 65,536-element domain. -/
+/-- BMP codepoint roundtrip (covers `cp < 0x10000` minus surrogates) —
+    structural, no enumeration. For `cp < 0x800` reduces to the 1/2-byte
+    roundtrip; for `0x800 ≤ cp` the encoder emits `1110xxxx 10xxxxxx 10xxxxxx`
+    which the decode fold reassembles via `mask4`/`mask6`/`reassemble3`. -/
+theorem decode_encode_3byte (cp : Nat) (h : cp < 0x10000)
+    (h_nonsurr : ¬ (0xD800 ≤ cp ∧ cp ≤ 0xDFFF)) :
+    decodeToCodepoints (encodeCodepoint cp) = #[cp] := by
+  by_cases h800 : cp < 0x800
+  · exact decode_encode_2byte cp h800
+  · have ha12 : cp >>> 12 = cp / 4096 := Nat.shiftRight_eq_div_pow cp 12
+    have hm6 : (cp >>> 6) &&& 0x3F = (cp / 64) % 64 := by
+      rw [Nat.and_two_pow_sub_one_eq_mod (cp >>> 6) 6, Nat.shiftRight_eq_div_pow cp 6]
+    have hb2 : cp &&& 0x3F = cp % 64 := Nat.and_two_pow_sub_one_eq_mod cp 6
+    have hor0 : (0xE0 ||| (cp >>> 12)) = 224 + cp / 4096 := by
+      rw [ha12, show (0xE0 : Nat) = 7 <<< 5 from by decide,
+        ← Nat.shiftLeft_add_eq_or_of_lt (show cp / 4096 < 2 ^ 5 by omega), Nat.shiftLeft_eq]
+    have hor1 : (0x80 ||| ((cp >>> 6) &&& 0x3F)) = 128 + (cp / 64) % 64 := by
+      rw [hm6, show (0x80 : Nat) = 2 <<< 6 from by decide,
+        ← Nat.shiftLeft_add_eq_or_of_lt (show (cp / 64) % 64 < 2 ^ 6 by omega), Nat.shiftLeft_eq]
+    have hor2 : (0x80 ||| (cp &&& 0x3F)) = 128 + cp % 64 := by
+      rw [hb2, show (0x80 : Nat) = 2 <<< 6 from by decide,
+        ← Nat.shiftLeft_add_eq_or_of_lt (show cp % 64 < 2 ^ 6 by omega), Nat.shiftLeft_eq]
+    have hb0 : (UInt8.ofNat (0xE0 ||| (cp >>> 12))).toNat = 224 + cp / 4096 := by
+      rw [hor0]; simp [Nat.mod_eq_of_lt (show 224 + cp / 4096 < 256 by omega)]
+    have hb1 : (UInt8.ofNat (0x80 ||| ((cp >>> 6) &&& 0x3F))).toNat = 128 + (cp / 64) % 64 := by
+      rw [hor1]; simp [Nat.mod_eq_of_lt (show 128 + (cp / 64) % 64 < 256 by omega)]
+    have hb2t : (UInt8.ofNat (0x80 ||| (cp &&& 0x3F))).toNat = 128 + cp % 64 := by
+      rw [hor2]; simp [Nat.mod_eq_of_lt (show 128 + cp % 64 < 256 by omega)]
+    unfold decodeToCodepoints encodeCodepoint
+    rw [if_neg (by omega : ¬ cp < 0x80), if_neg h800, if_pos h]
+    simp only [Unicode.Codec.Utf8.foldCodepointsWithOffset,
+      Unicode.Codec.Utf8.foldCodepointsWithOffsetGo,
+      Unicode.Codec.Utf8.utf8DecodeStep,
+      ByteArray.getElem_eq_getElem_data,
+      show (⟨#[UInt8.ofNat (0xE0 ||| (cp >>> 12)), UInt8.ofNat (0x80 ||| ((cp >>> 6) &&& 0x3F)), UInt8.ofNat (0x80 ||| (cp &&& 0x3F))]⟩ : ByteArray).size = 3 from rfl,
+      List.getElem_toArray, List.getElem_cons_zero, List.getElem_cons_succ,
+      if_true, if_false, or_self,
+      hb0, hb1, hb2t,
+      show ¬ (224 + cp / 4096 < 128) from by omega,
+      show ¬ (224 + cp / 4096 < 194) from by omega,
+      show ¬ (224 + cp / 4096 < 224) from by omega,
+      show (224 + cp / 4096 < 240) from by omega,
+      show ¬ (128 + (cp / 64) % 64 < 128) from by omega,
+      show ¬ (0xC0 ≤ 128 + (cp / 64) % 64) from by omega,
+      show ¬ (128 + cp % 64 < 128) from by omega,
+      show ¬ (0xC0 ≤ 128 + cp % 64) from by omega,
+      mask4 (cp / 4096) (by omega), mask6 ((cp / 64) % 64) (by omega),
+      mask6 (cp % 64) (by omega),
+      reassemble3 cp,
+      show ¬ (cp < 0x800) from by omega,
+      show ¬ (0xD800 ≤ cp ∧ cp ≤ 0xDFFF) from h_nonsurr,
+      show ¬ (cp > 0x10FFFF) from by omega,
+      Function.const]
+    rfl
+
+/-- Bounded `Fin 0x10000` (non-surrogate) restatement of `decode_encode_3byte`. -/
 theorem decode_encode_3byte_fin :
     ∀ cp : Fin 0x10000,
       ¬ (0xD800 ≤ cp.val ∧ cp.val ≤ 0xDFFF) →
-      decodeToCodepoints (encodeCodepoint cp.val) = #[cp.val] := by
-  native_decide
+      decodeToCodepoints (encodeCodepoint cp.val) = #[cp.val] :=
+  fun cp hns => decode_encode_3byte cp.val cp.isLt hns
 
-/-- BMP codepoint roundtrip (covers `cp < 0x10000` minus surrogates —
-    overlaps with the 1-byte and 2-byte cases, all branches sound). -/
-theorem decode_encode_3byte (cp : Nat) (h : cp < 0x10000)
-    (h_nonsurr : ¬ (0xD800 ≤ cp ∧ cp ≤ 0xDFFF)) :
-    decodeToCodepoints (encodeCodepoint cp) = #[cp] :=
-  decode_encode_3byte_fin ⟨cp, h⟩ h_nonsurr
-
-/-- 4-byte plane-`k` enumeration: every codepoint in
-    `[k·0x10000, (k+1)·0x10000)` encodes-then-decodes to itself.
-    Closes by exhaustive `native_decide` over the 65,536-element
-    domain per plane; each plane is a separate theorem so
-    `native_decide` doesn't blow its stack on the full 1M-element
-    range. The supplementary planes (k = 1..16) contain no
-    surrogates by construction. -/
-theorem decode_encode_4byte_plane_1 :
-    ∀ cp : Fin 0x10000,
-      decodeToCodepoints (encodeCodepoint (0x10000 + cp.val))
-        = #[0x10000 + cp.val] := by native_decide
-
-theorem decode_encode_4byte_plane_2 :
-    ∀ cp : Fin 0x10000,
-      decodeToCodepoints (encodeCodepoint (0x20000 + cp.val))
-        = #[0x20000 + cp.val] := by native_decide
-
-theorem decode_encode_4byte_plane_3 :
-    ∀ cp : Fin 0x10000,
-      decodeToCodepoints (encodeCodepoint (0x30000 + cp.val))
-        = #[0x30000 + cp.val] := by native_decide
-
-theorem decode_encode_4byte_plane_4 :
-    ∀ cp : Fin 0x10000,
-      decodeToCodepoints (encodeCodepoint (0x40000 + cp.val))
-        = #[0x40000 + cp.val] := by native_decide
-
-theorem decode_encode_4byte_plane_5 :
-    ∀ cp : Fin 0x10000,
-      decodeToCodepoints (encodeCodepoint (0x50000 + cp.val))
-        = #[0x50000 + cp.val] := by native_decide
-
-theorem decode_encode_4byte_plane_6 :
-    ∀ cp : Fin 0x10000,
-      decodeToCodepoints (encodeCodepoint (0x60000 + cp.val))
-        = #[0x60000 + cp.val] := by native_decide
-
-theorem decode_encode_4byte_plane_7 :
-    ∀ cp : Fin 0x10000,
-      decodeToCodepoints (encodeCodepoint (0x70000 + cp.val))
-        = #[0x70000 + cp.val] := by native_decide
-
-theorem decode_encode_4byte_plane_8 :
-    ∀ cp : Fin 0x10000,
-      decodeToCodepoints (encodeCodepoint (0x80000 + cp.val))
-        = #[0x80000 + cp.val] := by native_decide
-
-theorem decode_encode_4byte_plane_9 :
-    ∀ cp : Fin 0x10000,
-      decodeToCodepoints (encodeCodepoint (0x90000 + cp.val))
-        = #[0x90000 + cp.val] := by native_decide
-
-theorem decode_encode_4byte_plane_10 :
-    ∀ cp : Fin 0x10000,
-      decodeToCodepoints (encodeCodepoint (0xA0000 + cp.val))
-        = #[0xA0000 + cp.val] := by native_decide
-
-theorem decode_encode_4byte_plane_11 :
-    ∀ cp : Fin 0x10000,
-      decodeToCodepoints (encodeCodepoint (0xB0000 + cp.val))
-        = #[0xB0000 + cp.val] := by native_decide
-
-theorem decode_encode_4byte_plane_12 :
-    ∀ cp : Fin 0x10000,
-      decodeToCodepoints (encodeCodepoint (0xC0000 + cp.val))
-        = #[0xC0000 + cp.val] := by native_decide
-
-theorem decode_encode_4byte_plane_13 :
-    ∀ cp : Fin 0x10000,
-      decodeToCodepoints (encodeCodepoint (0xD0000 + cp.val))
-        = #[0xD0000 + cp.val] := by native_decide
-
-theorem decode_encode_4byte_plane_14 :
-    ∀ cp : Fin 0x10000,
-      decodeToCodepoints (encodeCodepoint (0xE0000 + cp.val))
-        = #[0xE0000 + cp.val] := by native_decide
-
-theorem decode_encode_4byte_plane_15 :
-    ∀ cp : Fin 0x10000,
-      decodeToCodepoints (encodeCodepoint (0xF0000 + cp.val))
-        = #[0xF0000 + cp.val] := by native_decide
-
-theorem decode_encode_4byte_plane_16 :
-    ∀ cp : Fin 0x10000,
-      decodeToCodepoints (encodeCodepoint (0x100000 + cp.val))
-        = #[0x100000 + cp.val] := by native_decide
-
-/-- 4-byte codepoint roundtrip (covers `0x10000 ≤ cp < 0x110000`).
-    Combines the per-plane enumerations by case-splitting on which
-    of the 16 supplementary planes `cp` falls into. -/
+/-- 4-byte codepoint roundtrip (covers `0x10000 ≤ cp < 0x110000`) —
+    structural, no enumeration. The encoder emits
+    `11110xxx 10xxxxxx 10xxxxxx 10xxxxxx`; the decode fold reassembles it
+    via `mask3`/`mask6`/`reassemble4`. -/
 theorem decode_encode_4byte (cp : Nat) (h_lo : 0x10000 ≤ cp) (h_hi : cp < 0x110000) :
     decodeToCodepoints (encodeCodepoint cp) = #[cp] := by
-  by_cases h1 : cp < 0x20000
-  · have plane := decode_encode_4byte_plane_1 ⟨cp - 0x10000, by omega⟩
-    have heq : 0x10000 + (cp - 0x10000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h2 : cp < 0x30000
-  · have plane := decode_encode_4byte_plane_2 ⟨cp - 0x20000, by omega⟩
-    have heq : 0x20000 + (cp - 0x20000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h3 : cp < 0x40000
-  · have plane := decode_encode_4byte_plane_3 ⟨cp - 0x30000, by omega⟩
-    have heq : 0x30000 + (cp - 0x30000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h4 : cp < 0x50000
-  · have plane := decode_encode_4byte_plane_4 ⟨cp - 0x40000, by omega⟩
-    have heq : 0x40000 + (cp - 0x40000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h5 : cp < 0x60000
-  · have plane := decode_encode_4byte_plane_5 ⟨cp - 0x50000, by omega⟩
-    have heq : 0x50000 + (cp - 0x50000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h6 : cp < 0x70000
-  · have plane := decode_encode_4byte_plane_6 ⟨cp - 0x60000, by omega⟩
-    have heq : 0x60000 + (cp - 0x60000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h7 : cp < 0x80000
-  · have plane := decode_encode_4byte_plane_7 ⟨cp - 0x70000, by omega⟩
-    have heq : 0x70000 + (cp - 0x70000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h8 : cp < 0x90000
-  · have plane := decode_encode_4byte_plane_8 ⟨cp - 0x80000, by omega⟩
-    have heq : 0x80000 + (cp - 0x80000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h9 : cp < 0xA0000
-  · have plane := decode_encode_4byte_plane_9 ⟨cp - 0x90000, by omega⟩
-    have heq : 0x90000 + (cp - 0x90000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h10 : cp < 0xB0000
-  · have plane := decode_encode_4byte_plane_10 ⟨cp - 0xA0000, by omega⟩
-    have heq : 0xA0000 + (cp - 0xA0000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h11 : cp < 0xC0000
-  · have plane := decode_encode_4byte_plane_11 ⟨cp - 0xB0000, by omega⟩
-    have heq : 0xB0000 + (cp - 0xB0000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h12 : cp < 0xD0000
-  · have plane := decode_encode_4byte_plane_12 ⟨cp - 0xC0000, by omega⟩
-    have heq : 0xC0000 + (cp - 0xC0000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h13 : cp < 0xE0000
-  · have plane := decode_encode_4byte_plane_13 ⟨cp - 0xD0000, by omega⟩
-    have heq : 0xD0000 + (cp - 0xD0000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h14 : cp < 0xF0000
-  · have plane := decode_encode_4byte_plane_14 ⟨cp - 0xE0000, by omega⟩
-    have heq : 0xE0000 + (cp - 0xE0000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h15 : cp < 0x100000
-  · have plane := decode_encode_4byte_plane_15 ⟨cp - 0xF0000, by omega⟩
-    have heq : 0xF0000 + (cp - 0xF0000) = cp := by omega
-    rw [heq] at plane; exact plane
-  · have plane := decode_encode_4byte_plane_16 ⟨cp - 0x100000, by omega⟩
-    have heq : 0x100000 + (cp - 0x100000) = cp := by omega
-    rw [heq] at plane; exact plane
+  have ha18 : cp >>> 18 = cp / 262144 := Nat.shiftRight_eq_div_pow cp 18
+  have hm12 : (cp >>> 12) &&& 0x3F = (cp / 4096) % 64 := by
+    rw [Nat.and_two_pow_sub_one_eq_mod (cp >>> 12) 6, Nat.shiftRight_eq_div_pow cp 12]
+  have hm6 : (cp >>> 6) &&& 0x3F = (cp / 64) % 64 := by
+    rw [Nat.and_two_pow_sub_one_eq_mod (cp >>> 6) 6, Nat.shiftRight_eq_div_pow cp 6]
+  have hb3 : cp &&& 0x3F = cp % 64 := Nat.and_two_pow_sub_one_eq_mod cp 6
+  have hor0 : (0xF0 ||| (cp >>> 18)) = 240 + cp / 262144 := by
+    rw [ha18, show (0xF0 : Nat) = 15 <<< 4 from by decide,
+      ← Nat.shiftLeft_add_eq_or_of_lt (show cp / 262144 < 2 ^ 4 by omega), Nat.shiftLeft_eq]
+  have hor1 : (0x80 ||| ((cp >>> 12) &&& 0x3F)) = 128 + (cp / 4096) % 64 := by
+    rw [hm12, show (0x80 : Nat) = 2 <<< 6 from by decide,
+      ← Nat.shiftLeft_add_eq_or_of_lt (show (cp / 4096) % 64 < 2 ^ 6 by omega), Nat.shiftLeft_eq]
+  have hor2 : (0x80 ||| ((cp >>> 6) &&& 0x3F)) = 128 + (cp / 64) % 64 := by
+    rw [hm6, show (0x80 : Nat) = 2 <<< 6 from by decide,
+      ← Nat.shiftLeft_add_eq_or_of_lt (show (cp / 64) % 64 < 2 ^ 6 by omega), Nat.shiftLeft_eq]
+  have hor3 : (0x80 ||| (cp &&& 0x3F)) = 128 + cp % 64 := by
+    rw [hb3, show (0x80 : Nat) = 2 <<< 6 from by decide,
+      ← Nat.shiftLeft_add_eq_or_of_lt (show cp % 64 < 2 ^ 6 by omega), Nat.shiftLeft_eq]
+  have hb0 : (UInt8.ofNat (0xF0 ||| (cp >>> 18))).toNat = 240 + cp / 262144 := by
+    rw [hor0]; simp [Nat.mod_eq_of_lt (show 240 + cp / 262144 < 256 by omega)]
+  have hb1 : (UInt8.ofNat (0x80 ||| ((cp >>> 12) &&& 0x3F))).toNat = 128 + (cp / 4096) % 64 := by
+    rw [hor1]; simp [Nat.mod_eq_of_lt (show 128 + (cp / 4096) % 64 < 256 by omega)]
+  have hb2 : (UInt8.ofNat (0x80 ||| ((cp >>> 6) &&& 0x3F))).toNat = 128 + (cp / 64) % 64 := by
+    rw [hor2]; simp [Nat.mod_eq_of_lt (show 128 + (cp / 64) % 64 < 256 by omega)]
+  have hb3t : (UInt8.ofNat (0x80 ||| (cp &&& 0x3F))).toNat = 128 + cp % 64 := by
+    rw [hor3]; simp [Nat.mod_eq_of_lt (show 128 + cp % 64 < 256 by omega)]
+  unfold decodeToCodepoints encodeCodepoint
+  rw [if_neg (by omega : ¬ cp < 0x80), if_neg (by omega : ¬ cp < 0x800),
+    if_neg (by omega : ¬ cp < 0x10000)]
+  simp only [Unicode.Codec.Utf8.foldCodepointsWithOffset,
+    Unicode.Codec.Utf8.foldCodepointsWithOffsetGo,
+    Unicode.Codec.Utf8.utf8DecodeStep,
+    ByteArray.getElem_eq_getElem_data,
+    show (⟨#[UInt8.ofNat (0xF0 ||| (cp >>> 18)), UInt8.ofNat (0x80 ||| ((cp >>> 12) &&& 0x3F)), UInt8.ofNat (0x80 ||| ((cp >>> 6) &&& 0x3F)), UInt8.ofNat (0x80 ||| (cp &&& 0x3F))]⟩ : ByteArray).size = 4 from rfl,
+    List.getElem_toArray, List.getElem_cons_zero, List.getElem_cons_succ,
+    if_true, if_false, or_self,
+    hb0, hb1, hb2, hb3t,
+    show ¬ (240 + cp / 262144 < 128) from by omega,
+    show ¬ (240 + cp / 262144 < 194) from by omega,
+    show ¬ (240 + cp / 262144 < 224) from by omega,
+    show ¬ (240 + cp / 262144 < 240) from by omega,
+    show (240 + cp / 262144 < 245) from by omega,
+    show ¬ (128 + (cp / 4096) % 64 < 128) from by omega,
+    show ¬ (0xC0 ≤ 128 + (cp / 4096) % 64) from by omega,
+    show ¬ (128 + (cp / 64) % 64 < 128) from by omega,
+    show ¬ (0xC0 ≤ 128 + (cp / 64) % 64) from by omega,
+    show ¬ (128 + cp % 64 < 128) from by omega,
+    show ¬ (0xC0 ≤ 128 + cp % 64) from by omega,
+    mask3 (cp / 262144) (by omega), mask6 ((cp / 4096) % 64) (by omega),
+    mask6 ((cp / 64) % 64) (by omega), mask6 (cp % 64) (by omega),
+    reassemble4 cp,
+    show ¬ (cp < 0x10000) from by omega,
+    show ¬ (0xD800 ≤ cp ∧ cp ≤ 0xDFFF) from by omega,
+    show ¬ (cp > 0x10FFFF) from by omega,
+    Function.const]
+  rfl
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 PER-CODEPOINT ROUNDTRIP
