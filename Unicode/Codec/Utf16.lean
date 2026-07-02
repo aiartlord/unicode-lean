@@ -20,8 +20,10 @@
   Closed-form per-codepoint roundtrip:
     decodeOneBE_encodeOneBE (cp : Nat) (h : IsValidCodepoint cp) :
        decodeOneBE (encodeOneBE cp) = some cp
-  proven by case-splitting on cp's BMP / supplementary status and
-  discharging each via exhaustive `native_decide` per plane.
+  Case-split on cp's BMP / supplementary status. In the BMP case the single
+  code unit reassembles from its two bytes (`unit16BE` / `unit16LE`); in the
+  supplementary case each surrogate reassembles the same way, and
+  `0x10000 + (high - 0xD800) <<< 10 + (low - 0xDC00)` inverts the split.
 -/
 
 import Unicode.Codec.Utf8Roundtrip
@@ -126,288 +128,198 @@ def decodeOneLE (bs : ByteArray) : Option Nat :=
   else none
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- §3 PER-CODEPOINT ROUNDTRIP — BIG ENDIAN
+-- §3 BIT-REASSEMBLY HELPERS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- BMP plane (excluding surrogates): every non-surrogate BMP
-    codepoint encodes-then-decodes back to itself in UTF-16 BE. -/
-theorem decodeBE_encodeBE_plane_0 :
-    ∀ cp : Fin 0x10000,
-      ¬ (0xD800 ≤ cp.val ∧ cp.val ≤ 0xDFFF) →
-      decodeOneBE (encodeOneBE cp.val) = some cp.val := by native_decide
+/-- Disjoint OR with a high shift: `a ||| b <<< i = a + b <<< i` when `a < 2^i`. -/
+private theorem or_lo {a b : Nat} (i : Nat) (ha : a < 2 ^ i) :
+    a ||| (b <<< i) = a + b <<< i := by
+  rw [Nat.or_comm, ← Nat.shiftLeft_add_eq_or_of_lt ha]; omega
 
-theorem decodeBE_encodeBE_plane_1 : ∀ cp : Fin 0x10000,
-    decodeOneBE (encodeOneBE (0x10000 + cp.val)) = some (0x10000 + cp.val) := by
-  native_decide
-theorem decodeBE_encodeBE_plane_2 : ∀ cp : Fin 0x10000,
-    decodeOneBE (encodeOneBE (0x20000 + cp.val)) = some (0x20000 + cp.val) := by
-  native_decide
-theorem decodeBE_encodeBE_plane_3 : ∀ cp : Fin 0x10000,
-    decodeOneBE (encodeOneBE (0x30000 + cp.val)) = some (0x30000 + cp.val) := by
-  native_decide
-theorem decodeBE_encodeBE_plane_4 : ∀ cp : Fin 0x10000,
-    decodeOneBE (encodeOneBE (0x40000 + cp.val)) = some (0x40000 + cp.val) := by
-  native_decide
-theorem decodeBE_encodeBE_plane_5 : ∀ cp : Fin 0x10000,
-    decodeOneBE (encodeOneBE (0x50000 + cp.val)) = some (0x50000 + cp.val) := by
-  native_decide
-theorem decodeBE_encodeBE_plane_6 : ∀ cp : Fin 0x10000,
-    decodeOneBE (encodeOneBE (0x60000 + cp.val)) = some (0x60000 + cp.val) := by
-  native_decide
-theorem decodeBE_encodeBE_plane_7 : ∀ cp : Fin 0x10000,
-    decodeOneBE (encodeOneBE (0x70000 + cp.val)) = some (0x70000 + cp.val) := by
-  native_decide
-theorem decodeBE_encodeBE_plane_8 : ∀ cp : Fin 0x10000,
-    decodeOneBE (encodeOneBE (0x80000 + cp.val)) = some (0x80000 + cp.val) := by
-  native_decide
-theorem decodeBE_encodeBE_plane_9 : ∀ cp : Fin 0x10000,
-    decodeOneBE (encodeOneBE (0x90000 + cp.val)) = some (0x90000 + cp.val) := by
-  native_decide
-theorem decodeBE_encodeBE_plane_10 : ∀ cp : Fin 0x10000,
-    decodeOneBE (encodeOneBE (0xA0000 + cp.val)) = some (0xA0000 + cp.val) := by
-  native_decide
-theorem decodeBE_encodeBE_plane_11 : ∀ cp : Fin 0x10000,
-    decodeOneBE (encodeOneBE (0xB0000 + cp.val)) = some (0xB0000 + cp.val) := by
-  native_decide
-theorem decodeBE_encodeBE_plane_12 : ∀ cp : Fin 0x10000,
-    decodeOneBE (encodeOneBE (0xC0000 + cp.val)) = some (0xC0000 + cp.val) := by
-  native_decide
-theorem decodeBE_encodeBE_plane_13 : ∀ cp : Fin 0x10000,
-    decodeOneBE (encodeOneBE (0xD0000 + cp.val)) = some (0xD0000 + cp.val) := by
-  native_decide
-theorem decodeBE_encodeBE_plane_14 : ∀ cp : Fin 0x10000,
-    decodeOneBE (encodeOneBE (0xE0000 + cp.val)) = some (0xE0000 + cp.val) := by
-  native_decide
-theorem decodeBE_encodeBE_plane_15 : ∀ cp : Fin 0x10000,
-    decodeOneBE (encodeOneBE (0xF0000 + cp.val)) = some (0xF0000 + cp.val) := by
-  native_decide
-theorem decodeBE_encodeBE_plane_16 : ∀ cp : Fin 0x10000,
-    decodeOneBE (encodeOneBE (0x100000 + cp.val)) = some (0x100000 + cp.val) := by
-  native_decide
+/-- `toNat` of the encoded byte carrying bits `[8k, 8k+8)` of a value. -/
+private theorem encByte (k u : Nat) :
+    (UInt8.ofNat ((u >>> k) &&& 0xFF)).toNat = (u / 2 ^ k) % 256 := by
+  rw [Nat.and_two_pow_sub_one_eq_mod (u >>> k) 8, Nat.shiftRight_eq_div_pow u k]
+  simp [Nat.mod_eq_of_lt (show (u / 2 ^ k) % 256 < 256 by omega)]
 
-/-- HEADLINE per-codepoint UTF-16 BE roundtrip. -/
+/-- `toNat` of the encoded low byte of a value. -/
+private theorem encByte0 (u : Nat) : (UInt8.ofNat (u &&& 0xFF)).toNat = u % 256 := by
+  rw [Nat.and_two_pow_sub_one_eq_mod u 8]
+  simp [Nat.mod_eq_of_lt (show u % 256 < 256 by omega)]
+
+/-- A 16-bit code unit reassembles from its two big-endian bytes. -/
+private theorem unit16BE (u : Nat) (h : u < 0x10000) :
+    ((u / 256) % 256) <<< 8 ||| u % 256 = u := by
+  rw [← Nat.shiftLeft_add_eq_or_of_lt (show u % 256 < 2 ^ 8 by omega), Nat.shiftLeft_eq]
+  have : (u / 256) % 256 = u / 256 := Nat.mod_eq_of_lt (by omega)
+  omega
+
+/-- A 16-bit code unit reassembles from its two little-endian bytes. -/
+private theorem unit16LE (u : Nat) (h : u < 0x10000) :
+    u % 256 ||| ((u / 256) % 256) <<< 8 = u := by
+  rw [or_lo 8 (show u % 256 < 2 ^ 8 by omega), Nat.shiftLeft_eq]
+  have : (u / 256) % 256 = u / 256 := Nat.mod_eq_of_lt (by omega)
+  omega
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §4 PER-CODEPOINT ROUNDTRIP — BIG ENDIAN
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- BMP roundtrip (BE): a non-surrogate code point below U+10000 is a single
+    16-bit unit, reassembled from its two bytes by `unit16BE`. -/
+private theorem bmpBE (cp : Nat) (hbmp : cp < 0x10000)
+    (h_nonsurr : ¬ (0xD800 ≤ cp ∧ cp ≤ 0xDFFF)) :
+    decodeOneBE (encodeOneBE cp) = some cp := by
+  unfold encodeOneBE
+  rw [if_pos hbmp]
+  unfold decodeOneBE
+  simp only [
+    show (⟨#[UInt8.ofNat ((cp >>> 8) &&& 0xFF), UInt8.ofNat (cp &&& 0xFF)]⟩ : ByteArray).size = 2 from rfl,
+    ByteArray.getElem_eq_getElem_data, List.getElem_toArray,
+    List.getElem_cons_zero, List.getElem_cons_succ, dif_pos,
+    encByte 8 cp, encByte0 cp, unit16BE cp hbmp,
+    show ¬ (0xD800 ≤ cp ∧ cp ≤ 0xDFFF) from h_nonsurr, if_false]
+
+set_option maxRecDepth 8192 in
+/-- Supplementary roundtrip (BE): U+10000..U+10FFFF encodes as a high/low
+    surrogate pair; each surrogate is a 16-bit unit, and
+    `0x10000 + (high - 0xD800) <<< 10 + (low - 0xDC00)` inverts the split. -/
+private theorem suppBE (cp : Nat) (h1 : 0x10000 ≤ cp) (h2 : cp < 0x110000) :
+    decodeOneBE (encodeOneBE cp) = some cp := by
+  have hmr : (cp - 0x10000) &&& 0x3FF = (cp - 0x10000) % 1024 :=
+    Nat.and_two_pow_sub_one_eq_mod (cp - 0x10000) 10
+  have hxr : (cp - 0x10000) >>> 10 = (cp - 0x10000) / 1024 :=
+    Nat.shiftRight_eq_div_pow (cp - 0x10000) 10
+  have hhi : 0xD800 + (cp - 0x10000) >>> 10 < 0x10000 := by rw [hxr]; omega
+  have hlo : 0xDC00 + ((cp - 0x10000) &&& 0x3FF) < 0x10000 := by rw [hmr]; omega
+  have hrange : 0xD800 ≤ 0xD800 + (cp - 0x10000) >>> 10 ∧
+      0xD800 + (cp - 0x10000) >>> 10 ≤ 0xDBFF ∧
+      0xDC00 ≤ 0xDC00 + ((cp - 0x10000) &&& 0x3FF) ∧
+      0xDC00 + ((cp - 0x10000) &&& 0x3FF) ≤ 0xDFFF :=
+    ⟨by omega, by rw [hxr]; omega, by omega, by rw [hmr]; omega⟩
+  unfold encodeOneBE
+  rw [if_neg (by omega : ¬ cp < 0x10000)]
+  unfold decodeOneBE
+  simp only [
+    show (⟨#[UInt8.ofNat ((0xD800 + (cp - 0x10000) >>> 10) >>> 8 &&& 0xFF),
+      UInt8.ofNat ((0xD800 + (cp - 0x10000) >>> 10) &&& 0xFF),
+      UInt8.ofNat ((0xDC00 + ((cp - 0x10000) &&& 0x3FF)) >>> 8 &&& 0xFF),
+      UInt8.ofNat ((0xDC00 + ((cp - 0x10000) &&& 0x3FF)) &&& 0xFF)]⟩ : ByteArray).size = 4 from rfl,
+    ByteArray.getElem_eq_getElem_data, List.getElem_toArray,
+    List.getElem_cons_zero, List.getElem_cons_succ, dif_pos,
+    encByte 8 (0xD800 + (cp - 0x10000) >>> 10), encByte0 (0xD800 + (cp - 0x10000) >>> 10),
+    encByte 8 (0xDC00 + ((cp - 0x10000) &&& 0x3FF)), encByte0 (0xDC00 + ((cp - 0x10000) &&& 0x3FF)),
+    unit16BE (0xD800 + (cp - 0x10000) >>> 10) hhi,
+    unit16BE (0xDC00 + ((cp - 0x10000) &&& 0x3FF)) hlo,
+    show (0xD800 ≤ 0xD800 + (cp - 0x10000) >>> 10 ∧
+      0xD800 + (cp - 0x10000) >>> 10 ≤ 0xDBFF ∧
+      0xDC00 ≤ 0xDC00 + ((cp - 0x10000) &&& 0x3FF) ∧
+      0xDC00 + ((cp - 0x10000) &&& 0x3FF) ≤ 0xDFFF) = True from eq_true hrange,
+    if_true]
+  split
+  · exact absurd (by assumption : (4 : Nat) = 2) (by decide)
+  · rw [Option.some.injEq, Nat.shiftLeft_eq, hxr, hmr]
+    omega
+
+/-- Per-codepoint UTF-16 BE roundtrip. -/
 theorem decodeOneBE_encodeOneBE (cp : Nat) (h : IsValidCodepoint cp) :
     decodeOneBE (encodeOneBE cp) = some cp := by
   obtain ⟨h_max, h_nonsurr⟩ := h
-  by_cases h0 : cp < 0x10000
-  · exact decodeBE_encodeBE_plane_0 ⟨cp, h0⟩ h_nonsurr
-  by_cases h1 : cp < 0x20000
-  · have plane := decodeBE_encodeBE_plane_1 ⟨cp - 0x10000, by omega⟩
-    have heq : 0x10000 + (cp - 0x10000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h2 : cp < 0x30000
-  · have plane := decodeBE_encodeBE_plane_2 ⟨cp - 0x20000, by omega⟩
-    have heq : 0x20000 + (cp - 0x20000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h3 : cp < 0x40000
-  · have plane := decodeBE_encodeBE_plane_3 ⟨cp - 0x30000, by omega⟩
-    have heq : 0x30000 + (cp - 0x30000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h4 : cp < 0x50000
-  · have plane := decodeBE_encodeBE_plane_4 ⟨cp - 0x40000, by omega⟩
-    have heq : 0x40000 + (cp - 0x40000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h5 : cp < 0x60000
-  · have plane := decodeBE_encodeBE_plane_5 ⟨cp - 0x50000, by omega⟩
-    have heq : 0x50000 + (cp - 0x50000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h6 : cp < 0x70000
-  · have plane := decodeBE_encodeBE_plane_6 ⟨cp - 0x60000, by omega⟩
-    have heq : 0x60000 + (cp - 0x60000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h7 : cp < 0x80000
-  · have plane := decodeBE_encodeBE_plane_7 ⟨cp - 0x70000, by omega⟩
-    have heq : 0x70000 + (cp - 0x70000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h8 : cp < 0x90000
-  · have plane := decodeBE_encodeBE_plane_8 ⟨cp - 0x80000, by omega⟩
-    have heq : 0x80000 + (cp - 0x80000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h9 : cp < 0xA0000
-  · have plane := decodeBE_encodeBE_plane_9 ⟨cp - 0x90000, by omega⟩
-    have heq : 0x90000 + (cp - 0x90000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h10 : cp < 0xB0000
-  · have plane := decodeBE_encodeBE_plane_10 ⟨cp - 0xA0000, by omega⟩
-    have heq : 0xA0000 + (cp - 0xA0000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h11 : cp < 0xC0000
-  · have plane := decodeBE_encodeBE_plane_11 ⟨cp - 0xB0000, by omega⟩
-    have heq : 0xB0000 + (cp - 0xB0000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h12 : cp < 0xD0000
-  · have plane := decodeBE_encodeBE_plane_12 ⟨cp - 0xC0000, by omega⟩
-    have heq : 0xC0000 + (cp - 0xC0000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h13 : cp < 0xE0000
-  · have plane := decodeBE_encodeBE_plane_13 ⟨cp - 0xD0000, by omega⟩
-    have heq : 0xD0000 + (cp - 0xD0000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h14 : cp < 0xF0000
-  · have plane := decodeBE_encodeBE_plane_14 ⟨cp - 0xE0000, by omega⟩
-    have heq : 0xE0000 + (cp - 0xE0000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h15 : cp < 0x100000
-  · have plane := decodeBE_encodeBE_plane_15 ⟨cp - 0xF0000, by omega⟩
-    have heq : 0xF0000 + (cp - 0xF0000) = cp := by omega
-    rw [heq] at plane; exact plane
-  · have plane := decodeBE_encodeBE_plane_16 ⟨cp - 0x100000, by omega⟩
-    have heq : 0x100000 + (cp - 0x100000) = cp := by omega
-    rw [heq] at plane; exact plane
+  by_cases hbmp : cp < 0x10000
+  · exact bmpBE cp hbmp h_nonsurr
+  · exact suppBE cp (by omega) h_max
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- §4 PER-CODEPOINT ROUNDTRIP — LITTLE ENDIAN
+-- §5 PER-CODEPOINT ROUNDTRIP — LITTLE ENDIAN
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-theorem decodeLE_encodeLE_plane_0 :
-    ∀ cp : Fin 0x10000,
-      ¬ (0xD800 ≤ cp.val ∧ cp.val ≤ 0xDFFF) →
-      decodeOneLE (encodeOneLE cp.val) = some cp.val := by native_decide
+/-- BMP roundtrip (LE): a non-surrogate code point below U+10000 is a single
+    16-bit unit, reassembled from its two bytes by `unit16LE`. -/
+private theorem bmpLE (cp : Nat) (hbmp : cp < 0x10000)
+    (h_nonsurr : ¬ (0xD800 ≤ cp ∧ cp ≤ 0xDFFF)) :
+    decodeOneLE (encodeOneLE cp) = some cp := by
+  unfold encodeOneLE
+  rw [if_pos hbmp]
+  unfold decodeOneLE
+  simp only [
+    show (⟨#[UInt8.ofNat (cp &&& 0xFF), UInt8.ofNat ((cp >>> 8) &&& 0xFF)]⟩ : ByteArray).size = 2 from rfl,
+    ByteArray.getElem_eq_getElem_data, List.getElem_toArray,
+    List.getElem_cons_zero, List.getElem_cons_succ, dif_pos,
+    encByte0 cp, encByte 8 cp, unit16LE cp hbmp,
+    show ¬ (0xD800 ≤ cp ∧ cp ≤ 0xDFFF) from h_nonsurr, if_false]
 
-theorem decodeLE_encodeLE_plane_1 : ∀ cp : Fin 0x10000,
-    decodeOneLE (encodeOneLE (0x10000 + cp.val)) = some (0x10000 + cp.val) := by
-  native_decide
-theorem decodeLE_encodeLE_plane_2 : ∀ cp : Fin 0x10000,
-    decodeOneLE (encodeOneLE (0x20000 + cp.val)) = some (0x20000 + cp.val) := by
-  native_decide
-theorem decodeLE_encodeLE_plane_3 : ∀ cp : Fin 0x10000,
-    decodeOneLE (encodeOneLE (0x30000 + cp.val)) = some (0x30000 + cp.val) := by
-  native_decide
-theorem decodeLE_encodeLE_plane_4 : ∀ cp : Fin 0x10000,
-    decodeOneLE (encodeOneLE (0x40000 + cp.val)) = some (0x40000 + cp.val) := by
-  native_decide
-theorem decodeLE_encodeLE_plane_5 : ∀ cp : Fin 0x10000,
-    decodeOneLE (encodeOneLE (0x50000 + cp.val)) = some (0x50000 + cp.val) := by
-  native_decide
-theorem decodeLE_encodeLE_plane_6 : ∀ cp : Fin 0x10000,
-    decodeOneLE (encodeOneLE (0x60000 + cp.val)) = some (0x60000 + cp.val) := by
-  native_decide
-theorem decodeLE_encodeLE_plane_7 : ∀ cp : Fin 0x10000,
-    decodeOneLE (encodeOneLE (0x70000 + cp.val)) = some (0x70000 + cp.val) := by
-  native_decide
-theorem decodeLE_encodeLE_plane_8 : ∀ cp : Fin 0x10000,
-    decodeOneLE (encodeOneLE (0x80000 + cp.val)) = some (0x80000 + cp.val) := by
-  native_decide
-theorem decodeLE_encodeLE_plane_9 : ∀ cp : Fin 0x10000,
-    decodeOneLE (encodeOneLE (0x90000 + cp.val)) = some (0x90000 + cp.val) := by
-  native_decide
-theorem decodeLE_encodeLE_plane_10 : ∀ cp : Fin 0x10000,
-    decodeOneLE (encodeOneLE (0xA0000 + cp.val)) = some (0xA0000 + cp.val) := by
-  native_decide
-theorem decodeLE_encodeLE_plane_11 : ∀ cp : Fin 0x10000,
-    decodeOneLE (encodeOneLE (0xB0000 + cp.val)) = some (0xB0000 + cp.val) := by
-  native_decide
-theorem decodeLE_encodeLE_plane_12 : ∀ cp : Fin 0x10000,
-    decodeOneLE (encodeOneLE (0xC0000 + cp.val)) = some (0xC0000 + cp.val) := by
-  native_decide
-theorem decodeLE_encodeLE_plane_13 : ∀ cp : Fin 0x10000,
-    decodeOneLE (encodeOneLE (0xD0000 + cp.val)) = some (0xD0000 + cp.val) := by
-  native_decide
-theorem decodeLE_encodeLE_plane_14 : ∀ cp : Fin 0x10000,
-    decodeOneLE (encodeOneLE (0xE0000 + cp.val)) = some (0xE0000 + cp.val) := by
-  native_decide
-theorem decodeLE_encodeLE_plane_15 : ∀ cp : Fin 0x10000,
-    decodeOneLE (encodeOneLE (0xF0000 + cp.val)) = some (0xF0000 + cp.val) := by
-  native_decide
-theorem decodeLE_encodeLE_plane_16 : ∀ cp : Fin 0x10000,
-    decodeOneLE (encodeOneLE (0x100000 + cp.val)) = some (0x100000 + cp.val) := by
-  native_decide
+set_option maxRecDepth 8192 in
+/-- Supplementary roundtrip (LE): the high/low surrogate pair, little-endian. -/
+private theorem suppLE (cp : Nat) (h1 : 0x10000 ≤ cp) (h2 : cp < 0x110000) :
+    decodeOneLE (encodeOneLE cp) = some cp := by
+  have hmr : (cp - 0x10000) &&& 0x3FF = (cp - 0x10000) % 1024 :=
+    Nat.and_two_pow_sub_one_eq_mod (cp - 0x10000) 10
+  have hxr : (cp - 0x10000) >>> 10 = (cp - 0x10000) / 1024 :=
+    Nat.shiftRight_eq_div_pow (cp - 0x10000) 10
+  have hhi : 0xD800 + (cp - 0x10000) >>> 10 < 0x10000 := by rw [hxr]; omega
+  have hlo : 0xDC00 + ((cp - 0x10000) &&& 0x3FF) < 0x10000 := by rw [hmr]; omega
+  have hrange : 0xD800 ≤ 0xD800 + (cp - 0x10000) >>> 10 ∧
+      0xD800 + (cp - 0x10000) >>> 10 ≤ 0xDBFF ∧
+      0xDC00 ≤ 0xDC00 + ((cp - 0x10000) &&& 0x3FF) ∧
+      0xDC00 + ((cp - 0x10000) &&& 0x3FF) ≤ 0xDFFF :=
+    ⟨by omega, by rw [hxr]; omega, by omega, by rw [hmr]; omega⟩
+  unfold encodeOneLE
+  rw [if_neg (by omega : ¬ cp < 0x10000)]
+  unfold decodeOneLE
+  simp only [
+    show (⟨#[UInt8.ofNat ((0xD800 + (cp - 0x10000) >>> 10) &&& 0xFF),
+      UInt8.ofNat ((0xD800 + (cp - 0x10000) >>> 10) >>> 8 &&& 0xFF),
+      UInt8.ofNat ((0xDC00 + ((cp - 0x10000) &&& 0x3FF)) &&& 0xFF),
+      UInt8.ofNat ((0xDC00 + ((cp - 0x10000) &&& 0x3FF)) >>> 8 &&& 0xFF)]⟩ : ByteArray).size = 4 from rfl,
+    ByteArray.getElem_eq_getElem_data, List.getElem_toArray,
+    List.getElem_cons_zero, List.getElem_cons_succ, dif_pos,
+    encByte0 (0xD800 + (cp - 0x10000) >>> 10), encByte 8 (0xD800 + (cp - 0x10000) >>> 10),
+    encByte0 (0xDC00 + ((cp - 0x10000) &&& 0x3FF)), encByte 8 (0xDC00 + ((cp - 0x10000) &&& 0x3FF)),
+    unit16LE (0xD800 + (cp - 0x10000) >>> 10) hhi,
+    unit16LE (0xDC00 + ((cp - 0x10000) &&& 0x3FF)) hlo,
+    show (0xD800 ≤ 0xD800 + (cp - 0x10000) >>> 10 ∧
+      0xD800 + (cp - 0x10000) >>> 10 ≤ 0xDBFF ∧
+      0xDC00 ≤ 0xDC00 + ((cp - 0x10000) &&& 0x3FF) ∧
+      0xDC00 + ((cp - 0x10000) &&& 0x3FF) ≤ 0xDFFF) = True from eq_true hrange,
+    if_true]
+  split
+  · exact absurd (by assumption : (4 : Nat) = 2) (by decide)
+  · rw [Option.some.injEq, Nat.shiftLeft_eq, hxr, hmr]
+    omega
 
-/-- HEADLINE per-codepoint UTF-16 LE roundtrip. -/
+/-- Per-codepoint UTF-16 LE roundtrip. -/
 theorem decodeOneLE_encodeOneLE (cp : Nat) (h : IsValidCodepoint cp) :
     decodeOneLE (encodeOneLE cp) = some cp := by
   obtain ⟨h_max, h_nonsurr⟩ := h
-  by_cases h0 : cp < 0x10000
-  · exact decodeLE_encodeLE_plane_0 ⟨cp, h0⟩ h_nonsurr
-  by_cases h1 : cp < 0x20000
-  · have plane := decodeLE_encodeLE_plane_1 ⟨cp - 0x10000, by omega⟩
-    have heq : 0x10000 + (cp - 0x10000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h2 : cp < 0x30000
-  · have plane := decodeLE_encodeLE_plane_2 ⟨cp - 0x20000, by omega⟩
-    have heq : 0x20000 + (cp - 0x20000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h3 : cp < 0x40000
-  · have plane := decodeLE_encodeLE_plane_3 ⟨cp - 0x30000, by omega⟩
-    have heq : 0x30000 + (cp - 0x30000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h4 : cp < 0x50000
-  · have plane := decodeLE_encodeLE_plane_4 ⟨cp - 0x40000, by omega⟩
-    have heq : 0x40000 + (cp - 0x40000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h5 : cp < 0x60000
-  · have plane := decodeLE_encodeLE_plane_5 ⟨cp - 0x50000, by omega⟩
-    have heq : 0x50000 + (cp - 0x50000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h6 : cp < 0x70000
-  · have plane := decodeLE_encodeLE_plane_6 ⟨cp - 0x60000, by omega⟩
-    have heq : 0x60000 + (cp - 0x60000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h7 : cp < 0x80000
-  · have plane := decodeLE_encodeLE_plane_7 ⟨cp - 0x70000, by omega⟩
-    have heq : 0x70000 + (cp - 0x70000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h8 : cp < 0x90000
-  · have plane := decodeLE_encodeLE_plane_8 ⟨cp - 0x80000, by omega⟩
-    have heq : 0x80000 + (cp - 0x80000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h9 : cp < 0xA0000
-  · have plane := decodeLE_encodeLE_plane_9 ⟨cp - 0x90000, by omega⟩
-    have heq : 0x90000 + (cp - 0x90000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h10 : cp < 0xB0000
-  · have plane := decodeLE_encodeLE_plane_10 ⟨cp - 0xA0000, by omega⟩
-    have heq : 0xA0000 + (cp - 0xA0000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h11 : cp < 0xC0000
-  · have plane := decodeLE_encodeLE_plane_11 ⟨cp - 0xB0000, by omega⟩
-    have heq : 0xB0000 + (cp - 0xB0000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h12 : cp < 0xD0000
-  · have plane := decodeLE_encodeLE_plane_12 ⟨cp - 0xC0000, by omega⟩
-    have heq : 0xC0000 + (cp - 0xC0000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h13 : cp < 0xE0000
-  · have plane := decodeLE_encodeLE_plane_13 ⟨cp - 0xD0000, by omega⟩
-    have heq : 0xD0000 + (cp - 0xD0000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h14 : cp < 0xF0000
-  · have plane := decodeLE_encodeLE_plane_14 ⟨cp - 0xE0000, by omega⟩
-    have heq : 0xE0000 + (cp - 0xE0000) = cp := by omega
-    rw [heq] at plane; exact plane
-  by_cases h15 : cp < 0x100000
-  · have plane := decodeLE_encodeLE_plane_15 ⟨cp - 0xF0000, by omega⟩
-    have heq : 0xF0000 + (cp - 0xF0000) = cp := by omega
-    rw [heq] at plane; exact plane
-  · have plane := decodeLE_encodeLE_plane_16 ⟨cp - 0x100000, by omega⟩
-    have heq : 0x100000 + (cp - 0x100000) = cp := by omega
-    rw [heq] at plane; exact plane
+  by_cases hbmp : cp < 0x10000
+  · exact bmpLE cp hbmp h_nonsurr
+  · exact suppLE cp (by omega) h_max
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- §5 ILL-FORMED REJECTION
+-- §6 ILL-FORMED REJECTION
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Lone high surrogate (no following low surrogate) is rejected. -/
 theorem decodeOneBE_lone_high_surrogate :
-    decodeOneBE (ByteArray.mk #[0xD8, 0x00]) = none := by native_decide
+    decodeOneBE (ByteArray.mk #[0xD8, 0x00]) = none := by decide
 
 /-- Lone low surrogate (no preceding high surrogate) is rejected. -/
 theorem decodeOneBE_lone_low_surrogate :
-    decodeOneBE (ByteArray.mk #[0xDC, 0x00]) = none := by native_decide
+    decodeOneBE (ByteArray.mk #[0xDC, 0x00]) = none := by decide
 
 /-- High surrogate followed by a non-low-surrogate is rejected. -/
 theorem decodeOneBE_high_then_not_low :
-    decodeOneBE (ByteArray.mk #[0xD8, 0x00, 0x00, 0x41]) = none := by native_decide
+    decodeOneBE (ByteArray.mk #[0xD8, 0x00, 0x00, 0x41]) = none := by decide
 
 /-- Length not in {2, 4} is rejected. -/
 theorem decodeOneBE_length_3 :
-    decodeOneBE (ByteArray.mk #[0x00, 0x00, 0x00]) = none := by native_decide
+    decodeOneBE (ByteArray.mk #[0x00, 0x00, 0x00]) = none := by decide
 theorem decodeOneBE_length_5 :
-    decodeOneBE (ByteArray.mk #[0x00, 0x00, 0x00, 0x00, 0x00]) = none := by native_decide
+    decodeOneBE (ByteArray.mk #[0x00, 0x00, 0x00, 0x00, 0x00]) = none := by decide
 
 theorem decodeOneLE_lone_high_surrogate :
-    decodeOneLE (ByteArray.mk #[0x00, 0xD8]) = none := by native_decide
+    decodeOneLE (ByteArray.mk #[0x00, 0xD8]) = none := by decide
 theorem decodeOneLE_lone_low_surrogate :
-    decodeOneLE (ByteArray.mk #[0x00, 0xDC]) = none := by native_decide
+    decodeOneLE (ByteArray.mk #[0x00, 0xDC]) = none := by decide
 
 end Unicode.Codec.Utf16
