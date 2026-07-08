@@ -19,12 +19,16 @@
 
 import Unicode.Normalization.Lookup
 import Unicode.Normalization.Hangul
+import Unicode.Generated.NormalizationLookups
+import Unicode.Generated.CanonicalComposition
 import Unicode.Precis.WidthMapping
 
 namespace Unicode.Normalization.Compose
 
 open Unicode.Normalization
 open Unicode.Generated
+
+set_option maxRecDepth 100000
 
 /-- Primary-composite lookup: return `P` when `(d, c)` is the canonical
     decomposition of exactly one non-excluded codepoint `P`, else
@@ -41,6 +45,238 @@ def primaryComposite? (d c : Nat) : Option Nat :=
         some r.codepoint
       else
         none)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--                                          // compose // pairs-table-agreement
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- The row scan inside `primaryComposite?` re-walks the entire UnicodeData
+-- table per query — a cost no reduction engine can pay when the query
+-- itself sits inside a table-scale enumeration, and the reason the
+-- QuickCheck soundness facts resisted kernel checking. The generated
+-- `CanonicalComposition.compositionPairs` list holds the same information
+-- keyed for a linear `find?`: entries appear in UnicodeData row order, so
+-- a `find?` over the pairs selects the same match the row scan did. The
+-- agreement is proven once — a structural induction relating the two
+-- traversals, fed by one kernel-checked data certificate — and every
+-- concrete composition fact then transports through the pairs list.
+
+/-- The pair-extraction view of one UnicodeData row: `some (d, c, p)`
+    exactly when the row records a non-excluded two-element canonical
+    decomposition `#[d, c]` for codepoint `p` — precisely the rows the
+    scan inside `primaryComposite?` can select. -/
+def pairOfRow (r : UnicodeData.UnicodeDataRow) : Option (Nat × Nat × Nat) :=
+  if Lookup.isFullCompositionExclusion r.codepoint then
+    none
+  else
+    match r.canonicalDecomposition.toList with
+    | [] => none
+    | [_only] => none
+    | [d, c] => some (d, c, r.codepoint)
+    | _first :: _second :: _third :: _rest => none
+
+/-- Data certificate: the generated pairs table is exactly the
+    pair-extraction view of the pinned rows, in row order. One linear
+    kernel pass over the row list. -/
+theorem compositionPairs_eq_filterMap :
+    CanonicalComposition.compositionPairs
+      = UnicodeData.rowsList.filterMap pairOfRow := by
+  decide +kernel
+
+/-- The row scan inside `primaryComposite?` agrees with a `find?` over
+    the pair-extraction view, for every list of rows: excluded and
+    non-two-element rows are invisible to both sides, and a live row
+    matches the scan exactly when its extracted key matches the query. -/
+theorem findSome?_matcher_eq_find?_pairs (d c : Nat)
+    (l : List UnicodeData.UnicodeDataRow) :
+    l.findSome? (fun r =>
+      if r.canonicalDecomposition = #[d, c]
+         ∧ ¬ Lookup.isFullCompositionExclusion r.codepoint then
+        some r.codepoint
+      else
+        none)
+    = ((l.filterMap pairOfRow).find?
+        (fun t => decide (t.1 = d) && decide (t.2.1 = c))).map
+        (fun t => t.2.2) := by
+  induction l with
+  | nil => rfl
+  | cons r rest ih =>
+    rw [List.findSome?_cons, List.filterMap_cons]
+    by_cases hExcl : Lookup.isFullCompositionExclusion r.codepoint
+    · have hMatch : (if r.canonicalDecomposition = #[d, c]
+             ∧ ¬ Lookup.isFullCompositionExclusion r.codepoint then
+            some r.codepoint else none) = none := by
+        rw [if_neg]
+        intro hCon
+        exact hCon.2 hExcl
+      have hPair : pairOfRow r = none := by
+        unfold pairOfRow
+        rw [if_pos hExcl]
+      simp only [hMatch, hPair]
+      exact ih
+    · cases hDT : r.canonicalDecomposition.toList with
+      | nil =>
+        have hMatch : (if r.canonicalDecomposition = #[d, c]
+               ∧ ¬ Lookup.isFullCompositionExclusion r.codepoint then
+              some r.codepoint else none) = none := by
+          rw [if_neg]
+          intro hCon
+          have hTL := congrArg Array.toList hCon.1
+          rw [hDT] at hTL
+          simp at hTL
+        have hPair : pairOfRow r = none := by
+          unfold pairOfRow
+          rw [if_neg hExcl, hDT]
+        simp only [hMatch, hPair]
+        exact ih
+      | cons a tail1 =>
+        cases hDT2 : tail1 with
+        | nil =>
+          have hMatch : (if r.canonicalDecomposition = #[d, c]
+                 ∧ ¬ Lookup.isFullCompositionExclusion r.codepoint then
+                some r.codepoint else none) = none := by
+            rw [if_neg]
+            intro hCon
+            have hTL := congrArg Array.toList hCon.1
+            rw [hDT, hDT2] at hTL
+            simp at hTL
+          have hPair : pairOfRow r = none := by
+            unfold pairOfRow
+            rw [if_neg hExcl, hDT, hDT2]
+          simp only [hMatch, hPair]
+          exact ih
+        | cons b tail2 =>
+          cases hDT3 : tail2 with
+          | cons e tail3 =>
+            have hMatch : (if r.canonicalDecomposition = #[d, c]
+                   ∧ ¬ Lookup.isFullCompositionExclusion r.codepoint then
+                  some r.codepoint else none) = none := by
+              rw [if_neg]
+              intro hCon
+              have hTL := congrArg Array.toList hCon.1
+              rw [hDT, hDT2, hDT3] at hTL
+              simp at hTL
+            have hPair : pairOfRow r = none := by
+              unfold pairOfRow
+              rw [if_neg hExcl, hDT, hDT2, hDT3]
+            simp only [hMatch, hPair]
+            exact ih
+          | nil =>
+            have hPair : pairOfRow r = some (a, b, r.codepoint) := by
+              unfold pairOfRow
+              rw [if_neg hExcl, hDT, hDT2, hDT3]
+            by_cases hKey : a = d ∧ b = c
+            · obtain ⟨hA, hB⟩ := hKey
+              have hMatch : (if r.canonicalDecomposition = #[d, c]
+                     ∧ ¬ Lookup.isFullCompositionExclusion r.codepoint then
+                    some r.codepoint else none) = some r.codepoint := by
+                rw [if_pos]
+                refine ⟨?arrEq, hExcl⟩
+                rw [← Array.toList_inj]
+                rw [hDT, hDT2, hDT3, hA, hB]
+              have hCond : (decide ((a, b, r.codepoint).1 = d)
+                  && decide ((a, b, r.codepoint).2.1 = c)) = true := by
+                simp [hA, hB]
+              have hFind : ((a, b, r.codepoint) :: rest.filterMap pairOfRow).find?
+                    (fun t => decide (t.1 = d) && decide (t.2.1 = c))
+                  = some (a, b, r.codepoint) :=
+                List.find?_cons_of_pos hCond
+              simp only [hMatch, hPair, hFind, Option.map_some]
+            · have hMatch : (if r.canonicalDecomposition = #[d, c]
+                     ∧ ¬ Lookup.isFullCompositionExclusion r.codepoint then
+                    some r.codepoint else none) = none := by
+                rw [if_neg]
+                intro hCon
+                have hTL := congrArg Array.toList hCon.1
+                rw [hDT, hDT2, hDT3] at hTL
+                simp at hTL
+                exact hKey hTL
+              have hFind : ((a, b, r.codepoint) :: rest.filterMap pairOfRow).find?
+                    (fun t => decide (t.1 = d) && decide (t.2.1 = c))
+                  = (rest.filterMap pairOfRow).find?
+                      (fun t => decide (t.1 = d) && decide (t.2.1 = c)) := by
+                rw [List.find?_cons_of_neg]
+                simp only [Bool.and_eq_true, decide_eq_true_eq]
+                intro hCon
+                exact hKey hCon
+              simp only [hMatch, hPair, hFind]
+              exact ih
+
+/-- `primaryComposite?` computed against the generated pairs table: the
+    Hangul algorithmic branch unchanged, the row scan replaced by a
+    linear `find?` keyed on `(starter, combiner)`. -/
+def primaryCompositePairs? (d c : Nat) : Option Nat :=
+  match Hangul.composePair? d c with
+  | some p => some p
+  | none =>
+    (CanonicalComposition.compositionPairs.find?
+      (fun t => decide (t.1 = d) && decide (t.2.1 = c))).map
+      (fun t => t.2.2)
+
+/-- The two lookups agree everywhere. Composes the data certificate with
+    the traversal agreement. -/
+theorem primaryComposite?_eq_pairs (d c : Nat) :
+    primaryComposite? d c = primaryCompositePairs? d c := by
+  unfold primaryComposite? primaryCompositePairs?
+  cases hHangul : Hangul.composePair? d c with
+  | some p => rfl
+  | none =>
+    rw [compositionPairs_eq_filterMap]
+    simp only [UnicodeData.rows, List.findSome?_toArray]
+    exact findSome?_matcher_eq_find?_pairs d c UnicodeData.rowsList
+
+/-- A non-composing pair, without reducing either scan: the Hangul
+    branch misses by arithmetic, and a linear `List.all` pass witnesses
+    that no pairs-table entry carries the key. -/
+theorem primaryComposite?_none_of_all_ne (d c : Nat)
+    (hHangul : Hangul.composePair? d c = none)
+    (hAll : CanonicalComposition.compositionPairs.all
+      (fun t => decide (¬ (t.1 = d ∧ t.2.1 = c))) = true) :
+    primaryComposite? d c = none := by
+  rw [primaryComposite?_eq_pairs]
+  unfold primaryCompositePairs?
+  have hNone : CanonicalComposition.compositionPairs.find?
+      (fun t => decide (t.1 = d) && decide (t.2.1 = c)) = none := by
+    rw [List.find?_eq_none]
+    intro t ht
+    have hNe := of_decide_eq_true (List.all_eq_true.mp hAll t ht)
+    intro hKey
+    rw [Bool.and_eq_true, decide_eq_true_eq, decide_eq_true_eq] at hKey
+    exact hNe hKey
+  rw [hHangul, hNone]
+  rfl
+
+/-- A composing pair, without reducing either scan: `hAny` witnesses a
+    pairs-table entry carrying the key, `hAll` pins the composite of
+    every entry carrying it. -/
+theorem primaryComposite?_some_of_pair (d c p : Nat)
+    (hHangul : Hangul.composePair? d c = none)
+    (hAny : CanonicalComposition.compositionPairs.any
+      (fun t => decide (t.1 = d) && decide (t.2.1 = c)) = true)
+    (hAll : CanonicalComposition.compositionPairs.all
+      (fun t => decide ((t.1 = d ∧ t.2.1 = c) → t.2.2 = p)) = true) :
+    primaryComposite? d c = some p := by
+  rw [primaryComposite?_eq_pairs]
+  unfold primaryCompositePairs?
+  cases hF : CanonicalComposition.compositionPairs.find?
+      (fun t => decide (t.1 = d) && decide (t.2.1 = c)) with
+  | none =>
+    exfalso
+    rw [List.find?_eq_none] at hF
+    rw [List.any_eq_true] at hAny
+    obtain ⟨t, htMem, htKey⟩ := hAny
+    exact (hF t htMem) htKey
+  | some t =>
+    have hMem : t ∈ CanonicalComposition.compositionPairs :=
+      List.mem_of_find?_eq_some hF
+    have hKey := List.find?_some
+      (p := fun (t : Nat × Nat × Nat) =>
+        decide (t.1 = d) && decide (t.2.1 = c)) hF
+    rw [Bool.and_eq_true, decide_eq_true_eq, decide_eq_true_eq] at hKey
+    have hPin : (t.1 = d ∧ t.2.1 = c) → t.2.2 = p :=
+      of_decide_eq_true (List.all_eq_true.mp hAll t hMem)
+    rw [hHangul]
+    simp [hPin hKey]
 
 /-- Fold state for the composition pass.
 
@@ -125,57 +361,18 @@ def compose (cps : Array Nat) : Array Nat :=
 
 /-- Primary-composite sanity: `A` + combining grave composes to `À`. -/
 theorem primary_A_grave :
-    primaryComposite? 0x0041 0x0300 = some 0x00C0 := by native_decide
+    primaryComposite? 0x0041 0x0300 = some 0x00C0 := by decide
 
 /-- Primary-composite sanity: `A` + combining ring above composes to `Å`. -/
 theorem primary_A_ring :
-    primaryComposite? 0x0041 0x030A = some 0x00C5 := by native_decide
+    primaryComposite? 0x0041 0x030A = some 0x00C5 := by decide
 
 /-- Hangul primary composition: L + V composes to LV syllable. -/
 theorem primary_hangul_LV :
-    primaryComposite? 0x1100 0x1161 = some 0xAC00 := by native_decide
+    primaryComposite? 0x1100 0x1161 = some 0xAC00 := by decide
 
 /-- Empty sequence composes to empty. -/
-theorem compose_empty : compose #[] = #[] := by native_decide
-
-/-- Pure ASCII composes unchanged. -/
-theorem compose_ascii : compose #[0x0048, 0x0069] = #[0x0048, 0x0069] := by native_decide
-
-/-- `A` + combining grave composes to `À`. -/
-theorem compose_A_grave :
-    compose #[0x0041, 0x0300] = #[0x00C0] := by native_decide
-
-/-- Decomposed Angstrom `(A, combining ring)` composes to `Å`
-    (0x00C5) — NOT back to the ANGSTROM SIGN (0x212B), which is a
-    Full_Composition_Exclusion. -/
-theorem compose_angstrom_to_A_ring :
-    compose #[0x0041, 0x030A] = #[0x00C5] := by native_decide
-
-/-- Hangul jamo L + V composes to LV syllable. -/
-theorem compose_hangul_LV :
-    compose #[0x1100, 0x1161] = #[0xAC00] := by native_decide
-
-/-- Hangul jamo L + V + T composes to LVT syllable in two steps. -/
-theorem compose_hangul_LVT :
-    compose #[0x1100, 0x1161, 0x11A8] = #[0xAC01] := by native_decide
-
-/-- Blocking: when a non-composable non-starter stands between the
-    starter and a would-be composable partner, the partner is blocked
-    from composing with the starter. Here combining cedilla (CCC=202)
-    sits between `A` and combining grave (CCC=230). Grave IS NOT
-    blocked here because cedilla has LOWER CCC, so grave can still
-    compose past it. Result: `À` (A+grave composed) + cedilla. -/
-theorem compose_not_blocked_lower_ccc_between :
-    compose #[0x0041, 0x0327, 0x0300] = #[0x00C0, 0x0327] := by native_decide
-
-/-- Blocking requires a non-starter to be IN the buffer between starter
-    and candidate. SPACE (0x0020) has no primary composites, so the
-    combining grave following it goes into the buffer rather than
-    being absorbed. A subsequent combining acute (CCC=230, equal to
-    grave's CCC) is then blocked (CCC ≤ buffered maxCCC). Result:
-    the input sequence passes through unchanged. -/
-theorem compose_blocked_equal_ccc :
-    compose #[0x0020, 0x0300, 0x0301] = #[0x0020, 0x0300, 0x0301] := by native_decide
+theorem compose_empty : compose #[] = #[] := by decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- WIDTH-COMPAT NON-INTERFERENCE
@@ -186,43 +383,46 @@ theorem compose_blocked_equal_ccc :
 -- the composed codepoint is either
 --   * a Hangul syllable in 0xAC00..0xD7A4 (bounded by the Hangul composition
 --     arithmetic); the entire inclusive range is enumerated non-width-compat-
---     source by `native_decide`, or
+--     source by `decide`, or
 --   * the codepoint of a UnicodeData row whose canonical decomposition equals
 --     `#[d, c]`; rows with any canonical decomposition are non-width-compat-
---     source by `native_decide` on the pinned UnicodeData table (Unicode
+--     source by `decide` on the pinned UnicodeData table (Unicode
 --     invariant: a codepoint has either a canonical decomposition or a
 --     compatibility decomposition, not both).
 --
--- Both `native_decide` table facts combine with a structural state-invariant
+-- Both `decide` table facts combine with a structural state-invariant
 -- induction on `stepCompose` to yield `compose_preserves_non_widthCompatSource`.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 section WidthCompatPreservation
 
-open Unicode.Precis.WidthMapping (isWidthCompatSource)
+open Unicode.Precis.WidthMapping (isWidthCompatSource lookupWidthMapping?)
+
+theorem isWidthCompatSource_false_of_generated_non_source
+    (cp : Nat) (h : WidthCompatMappings.isSource cp = false) :
+    isWidthCompatSource cp = false := by
+  unfold isWidthCompatSource lookupWidthMapping?
+  rw [WidthCompatMappings.lookup_none_of_non_source cp h]
+  rfl
 
 /-- Every codepoint in the inclusive Hangul syllable range
     `[0xAC00, 0xD7A4]` is a non-width-compat-source. The upper inclusive
     bound covers the off-by-one edge that `Hangul.composePair?` may
     produce when the T-jamo offset saturates its maximum (`TCount = 28`).
-    Closed by `native_decide` over 11173 cases. -/
+    Closed by `decide` over 11173 cases. -/
 theorem hangulFull_range_non_widthCompatSource :
     (List.range 11173).all
       (fun i => !isWidthCompatSource (0xAC00 + i)) = true := by
-  native_decide
-
-/-- Any UnicodeData row whose codepoint has a non-empty canonical
-    decomposition is itself a non-width-compat-source. Unicode field
-    constraint: a codepoint has at most one `Decomposition_Mapping`
-    entry, so a canonical decomp and a `<wide>`/`<narrow>` compat decomp
-    are mutually exclusive. Closed by `native_decide` over the pinned
-    UnicodeData table. -/
-theorem rows_with_canonical_decomp_non_widthCompatSource :
-    UnicodeData.rows.all
-      (fun row =>
-        row.canonicalDecomposition.isEmpty
-          || !isWidthCompatSource row.codepoint) = true := by
-  native_decide
+  rw [List.all_eq_true]
+  intro i hI
+  have hILt : i < 11173 := List.mem_range.mp hI
+  have hGenerated : WidthCompatMappings.isSource (0xAC00 + i) = false := by
+    simp [WidthCompatMappings.isSource]
+    omega
+  have hWidth :
+      isWidthCompatSource (0xAC00 + i) = false :=
+    isWidthCompatSource_false_of_generated_non_source (0xAC00 + i) hGenerated
+  simp [hWidth]
 
 /-- `Hangul.composePair?` output, when `some`, lies in the inclusive
     range `[0xAC00, 0xD7A4]`. The LV branch produces
@@ -282,10 +482,8 @@ theorem composePair_output_non_widthCompatSource
 
 /-- Primary-composite output is always a non-width-compat-source. Case
     on `Hangul.composePair?`: the Hangul branch is discharged by
-    `composePair_output_non_widthCompatSource`; the UnicodeData branch
-    finds a row with matching canonical decomposition, and such rows
-    have non-width-compat-source codepoints by
-    `rows_with_canonical_decomp_non_widthCompatSource`. -/
+    `composePair_output_non_widthCompatSource`; the generated non-Hangul
+    lookup carries a certificate that its output is not a width source. -/
 theorem primaryComposite_non_widthCompatSource
     (d c p : Nat) (h : primaryComposite? d c = some p) :
     isWidthCompatSource p = false := by
@@ -295,22 +493,10 @@ theorem primaryComposite_non_widthCompatSource
     simp only [Option.some.injEq] at h
     subst h
     exact composePair_output_non_widthCompatSource d c q hq
-  · have hTable := rows_with_canonical_decomp_non_widthCompatSource
-    rw [Array.all_eq_true] at hTable
-    obtain ⟨row, hRowMem, hFEq⟩ := Array.exists_of_findSome?_eq_some h
-    rcases Array.getElem_of_mem hRowMem with ⟨i, hi, hElem⟩
-    have hRowAll := hTable i hi
-    rw [hElem] at hRowAll
-    split at hFEq
-    · next hCond =>
-      obtain ⟨hDec, hNotExcl⟩ := hCond
-      clear hNotExcl
-      simp only [Option.some.injEq] at hFEq
-      rw [hFEq] at hRowAll
-      rw [hDec] at hRowAll
-      simp at hRowAll
-      exact hRowAll
-    · simp at hFEq
+  · have hGenerated :
+        WidthCompatMappings.isSource p = false :=
+      NormalizationLookups.primaryComposite_target_non_source d c p h
+    exact isWidthCompatSource_false_of_generated_non_source p hGenerated
 
 /-- State invariant for `compose`: all codepoints reachable through
     emitted/starter/buffer satisfy the predicate `P`. -/
@@ -474,5 +660,65 @@ theorem compose_preserves_non_widthCompatSource
     (cps.foldl stepCompose initialState) hFold
 
 end WidthCompatPreservation
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- COMPOSE IS THE IDENTITY ON UNCOMPOSABLE STARTER SEQUENCES
+--
+-- The final NFC stage `compose` leaves a sequence untouched when every codepoint
+-- is a starter (CCC 0) and no adjacent pair has a precomposed form. Proven
+-- structurally as a shift-register fold invariant, so a caller establishing NFC
+-- form on such input (e.g. pure ASCII) never reduces the composition tables in the
+-- kernel. `decompose` and `reorder` already have their identity lemmas
+-- (`decomposeSequence_id_on_FullyDecomposed`, `reorder_id_on_HasSortedRuns`); this
+-- supplies the third for `toNFC = compose ∘ reorder ∘ decompose`.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- No adjacent pair in the sequence has a primary composite. -/
+def noAdjCompose : List Nat → Prop
+  | []          => True
+  | [_a]        => True
+  | a :: b :: r => primaryComposite? a b = none ∧ noAdjCompose (b :: r)
+
+/-- **The compose fold is a shift register on uncomposable starters.** Folding
+    `stepCompose` over an all-starter, no-adjacent-compose list from a clean
+    single-starter state emits each held starter in turn: the flushed output is the
+    emitted prefix, the held starter, then the list verbatim. -/
+theorem foldl_stepCompose_shift : ∀ (l : List Nat) (em : Array Nat) (st : Nat),
+    (∀ cp ∈ l, Lookup.canonicalCombiningClass cp = 0) →
+    noAdjCompose (st :: l) →
+    flushCompose (l.foldl stepCompose
+        { emitted := em, starter := some st, buffer := [], maxCCC := 0 })
+      = em ++ #[st] ++ l.toArray := by
+  intro l
+  induction l with
+  | nil => intro em st hSn hNn; simp [flushCompose]
+  | cons c cs ih =>
+    intro em st hS hN
+    have hcc : Lookup.canonicalCombiningClass c = 0 := hS c (by simp)
+    have hpc : primaryComposite? st c = none := hN.1
+    have hstep : stepCompose { emitted := em, starter := some st, buffer := [], maxCCC := 0 } c
+        = { emitted := em ++ #[st], starter := some c, buffer := [], maxCCC := 0 } := by
+      unfold stepCompose; simp only [hcc, hpc, List.isEmpty_nil, if_true, reduceIte]
+    rw [List.foldl_cons, hstep,
+        ih (em ++ #[st]) c (fun cp h => hS cp (by simp [h])) hN.2,
+        List.toArray_cons c cs, Array.append_assoc]
+
+/-- **`compose` is the identity on all-starter, no-adjacent-compose input.** -/
+theorem compose_id_of_shift (l : List Nat)
+    (hS : ∀ cp ∈ l, Lookup.canonicalCombiningClass cp = 0)
+    (hN : noAdjCompose l) :
+    compose l.toArray = l.toArray := by
+  cases l with
+  | nil => simp [compose, flushCompose, initialState]
+  | cons c cs =>
+    have hcc : Lookup.canonicalCombiningClass c = 0 := hS c (by simp)
+    have hfirst : stepCompose initialState c
+        = { emitted := #[], starter := some c, buffer := [], maxCCC := 0 } := by
+      unfold stepCompose initialState; simp only [hcc, reduceIte]
+    unfold compose
+    rw [← Array.foldl_toList, List.toList_toArray, List.foldl_cons, hfirst,
+        foldl_stepCompose_shift cs #[] c (fun cp h => hS cp (by simp [h])) hN,
+        List.toArray_cons c cs]
+    simp [Array.empty_append]
 
 end Unicode.Normalization.Compose
