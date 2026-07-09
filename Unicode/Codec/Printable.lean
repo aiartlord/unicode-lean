@@ -279,6 +279,57 @@ theorem printable_true_of (bs : ByteArray)
   rw [hc]
   simp [hv, hf, hn]
 
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- The precomposed "é" composition, for the two vectors that exercise it. `é`
+-- (U+00E9) decomposes to `e` + combining acute (U+0301) and recomposes; this is the
+-- one canonical composition the printable vectors touch, established structurally
+-- via the composition-pairs table rather than by reducing it whole.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+theorem primaryComposite_e_acute : Compose.primaryComposite? 0x65 0x301 = some 0xE9 :=
+  Compose.primaryComposite?_some_of_pair 0x65 0x301 0xE9 (by decide)
+    (by unfold CanonicalComposition.compositionPairs; decide +kernel)
+    (by unfold CanonicalComposition.compositionPairs; decide +kernel)
+
+theorem stepCompose_init_e : Compose.stepCompose Compose.initialState 0x65
+    = { emitted := #[], starter := some 0x65, buffer := [], maxCCC := 0 } := by
+  rw [Compose.stepCompose.eq_def]
+  simp [Compose.initialState, LowCodepointNfc.cccz 0x65 (by decide)]
+
+theorem stepCompose_e_acute : Compose.stepCompose
+    { emitted := #[], starter := some 0x65, buffer := [], maxCCC := 0 } 0x301
+    = { emitted := #[], starter := some 0xE9, buffer := [], maxCCC := 0 } := by
+  rw [Compose.stepCompose.eq_def]
+  simp [Reorder.ccc_combining_acute, primaryComposite_e_acute]
+
+theorem compose_e_acute : Compose.compose #[0x65, 0x301] = #[0xE9] := by
+  rewrite [Compose.compose.eq_def, ← Array.foldl_toList, List.toList_toArray,
+           List.foldl_cons, List.foldl_cons, List.foldl_nil, stepCompose_init_e,
+           stepCompose_e_acute]
+  rfl
+
+theorem canonicalDecomposition_acute : Lookup.canonicalDecomposition 0x301 = #[] :=
+  Lookup.canonicalDecomposition_of_hit 0x301 #[]
+    (by unfold UnicodeData.rowsList; simp only [List.any_append]; decide +kernel)
+    (by unfold UnicodeData.rowsList; simp only [List.all_append]; decide +kernel)
+
+theorem isFullyDecomposed_e_acute :
+    Unicode.Invariants.IsFullyDecomposed #[0x65, 0x301] := by
+  intro cp hMem; simp at hMem
+  rcases hMem with rfl | rfl
+  · exact ⟨LowCodepointNfc.dec_lt 0x65 (by decide), by decide⟩
+  · exact ⟨canonicalDecomposition_acute, by decide⟩
+
+theorem hasSortedRuns_e_acute : Reorder.HasSortedRuns [0x65, 0x301] := by
+  simp [Reorder.HasSortedRuns, LowCodepointNfc.cccz 0x65 (by decide),
+        Reorder.ccc_combining_acute]
+
+theorem toNFC_e_acute : NFC.toNFC #[0x65, 0x301] = #[0xE9] := by
+  unfold NFC.toNFC NFC.toNFD
+  rw [NFD.decomposeSequence_id_on_FullyDecomposed #[0x65, 0x301] isFullyDecomposed_e_acute,
+      Reorder.reorder_id_on_HasSortedRuns #[0x65, 0x301] hasSortedRuns_e_acute,
+      compose_e_acute]
+
 theorem empty_is_printable :
     isPrintableUtf8Bytes ByteArray.empty = true :=
   printable_true_of ByteArray.empty (by decide)
@@ -346,7 +397,19 @@ theorem dicp_cgj_not_printable :
     codepoints, but it is not in NFC — the precomposed "é" is the NFC
     form. The aggregate predicate rejects. -/
 theorem non_nfc_decomposed_e_not_printable :
-    isPrintableUtf8Bytes (ByteArray.mk #[0x65, 0xCC, 0x81]) = false := by native_decide
+    isPrintableUtf8Bytes (ByteArray.mk #[0x65, 0xCC, 0x81]) = false := by
+  have hn : Unicode.Normalization.Utf8Bridge.isNFCBytes (ByteArray.mk #[0x65, 0xCC, 0x81]) = false := by
+    unfold Unicode.Normalization.Utf8Bridge.isNFCBytes Unicode.Normalization.Utf8Bridge.toNFCBytes
+    rw [show Unicode.Codec.Utf8.isValidUtf8 (ByteArray.mk #[0x65, 0xCC, 0x81]) = true from by decide,
+        show Unicode.Normalization.Utf8Bridge.decodeToCodepoints (ByteArray.mk #[0x65, 0xCC, 0x81])
+               = #[0x65, 0x301] from by decide,
+        toNFC_e_acute,
+        show Unicode.Normalization.Utf8Bridge.encodeCodepoints #[0xE9]
+               = ByteArray.mk #[0xC3, 0xA9] from by decide]
+    decide
+  unfold isPrintableUtf8Bytes
+  rw [firstForbiddenControl_none (ByteArray.mk #[0x65, 0xCC, 0x81]) (by decide), hn]
+  simp
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 REFINEMENT TYPE
