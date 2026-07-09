@@ -28,7 +28,7 @@
 
   # Structure
 
-    1. UCD native_decide facts:
+    1. UCD decide facts:
        - Hangul jamo are non-case-fold-source.
        - For every UnicodeData row, non-source codepoint ⇒ all
          canonical-decomposition targets are non-source.
@@ -70,14 +70,14 @@ open Unicode.Precis.CaseMapping
    caseFold_id_of_all_non_source caseFold_output_all_non_source)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- UCD NATIVE_DECIDE FACTS
+-- CASE-FOLD SOURCE COVERAGE FACTS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Every Hangul jamo codepoint (the L+V+T range `0x1100..0x11C2`) is a
     non-case-fold-source. Jamo have no case. -/
 theorem hangulJamo_non_caseFoldSource :
     ((List.range 195).map (fun i => 0x1100 + i)).all
-      (fun cp => !isCaseFoldSource cp) = true := by native_decide
+      (fun cp => !isCaseFoldSource cp) = true := by decide
 
 /-- For every row in `UnicodeData.rows`, if the row's codepoint is not a
     case-fold source, every codepoint in its canonical decomposition is
@@ -88,16 +88,16 @@ theorem nonCaseFoldSource_decomp_all_nonSource :
     UnicodeData.rows.all (fun row =>
       isCaseFoldSource row.codepoint ||
       row.canonicalDecomposition.all (fun d => !isCaseFoldSource d)) = true := by
-  native_decide
+  decide
 
 /-- Every Hangul precomposed syllable in `0xAC00..0xD7A3` decomposes to
-    a sequence of non-case-fold-sources. Closed by `native_decide` over
+    a sequence of non-case-fold-sources. Closed by `decide` over
     the entire 11172-syllable range. -/
 theorem hangulSyllable_decompose_output_non_caseFoldSource :
     (List.range 11172).all
       (fun i => match Hangul.decomposeSyllable? (0xAC00 + i) with
                 | some arr => arr.all (fun j => !isCaseFoldSource j)
-                | none     => true) = true := by native_decide
+                | none     => true) = true := by decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- POINTWISE LIFTS FROM UCD FACTS TO STRUCTURAL HYPOTHESES
@@ -291,7 +291,8 @@ theorem caseFold_append (a b : Array Nat) :
        a.foldl (fun acc cp => acc ++ caseFoldCodepoint cp) #[] ++
        b.foldl (fun acc cp => acc ++ caseFoldCodepoint cp) #[]
   rw [Array.foldl_append]
-  exact foldl_caseFold_init_distrib b _
+  exact foldl_caseFold_init_distrib b
+    (a.foldl (fun acc cp => acc ++ caseFoldCodepoint cp) #[])
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- REORDER MEMBERSHIP (IN → OUT)
