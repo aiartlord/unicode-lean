@@ -255,29 +255,92 @@ def isPrintableUtf8Bytes (bs : ByteArray) : Bool :=
     && (firstForbiddenCodepointClassified bs).isNone
     && Utf8Bridge.isNFCBytes bs
 
+/-- Byte-level NFC holds whenever the content decodes to code points that are all
+    below U+00C0 and re-encodes to itself: those code points are NFC-fixed by
+    `LowCodepointNfc.toNFC_id_all_lt`, so the pipeline is the identity. -/
+theorem isNFCBytes_of_lt (bs : ByteArray) (cps : Array Nat)
+    (hv : Unicode.Codec.Utf8.isValidUtf8 bs = true)
+    (hd : Unicode.Normalization.Utf8Bridge.decodeToCodepoints bs = cps)
+    (he : Unicode.Normalization.Utf8Bridge.encodeCodepoints cps = bs)
+    (hlt : ∀ cp ∈ cps, cp < 0xC0) :
+    Unicode.Normalization.Utf8Bridge.isNFCBytes bs = true := by
+  unfold Unicode.Normalization.Utf8Bridge.isNFCBytes Unicode.Normalization.Utf8Bridge.toNFCBytes
+  simp [hv, hd, he, Unicode.Normalization.LowCodepointNfc.toNFC_id_all_lt cps hlt]
+
+/-- Acceptance from the four stages: valid UTF-8, no forbidden control, no forbidden
+    code point, and NFC form. -/
+theorem printable_true_of (bs : ByteArray)
+    (hv : (firstInvalidUtf8Offset bs).isNone = true)
+    (hc : firstForbiddenControl bs = none)
+    (hf : (firstForbiddenCodepointClassified bs).isNone = true)
+    (hn : Unicode.Normalization.Utf8Bridge.isNFCBytes bs = true) :
+    isPrintableUtf8Bytes bs = true := by
+  unfold isPrintableUtf8Bytes
+  rw [hc]
+  simp [hv, hf, hn]
+
 theorem empty_is_printable :
-    isPrintableUtf8Bytes ByteArray.empty = true := by native_decide
+    isPrintableUtf8Bytes ByteArray.empty = true :=
+  printable_true_of ByteArray.empty (by decide)
+    (firstForbiddenControl_none ByteArray.empty (by decide)) (by decide)
+    (isNFCBytes_of_lt ByteArray.empty #[] (by decide) (by decide) (by decide)
+      (by intro cp hMem; simp at hMem))
+
 theorem hello_is_printable :
-    isPrintableUtf8Bytes "hello".toUTF8 = true := by native_decide
+    isPrintableUtf8Bytes "hello".toUTF8 = true :=
+  printable_true_of "hello".toUTF8 (by decide)
+    (firstForbiddenControl_none "hello".toUTF8 (by decide)) (by decide)
+    (isNFCBytes_of_lt "hello".toUTF8 #[0x68, 0x65, 0x6C, 0x6C, 0x6F]
+      (by decide) (by decide) (by decide)
+      (by intro cp hMem; simp at hMem; rcases hMem with rfl|rfl|rfl|rfl|rfl <;> decide))
+
 theorem hello_nl_is_printable :
-    isPrintableUtf8Bytes "hello\nworld".toUTF8 = true := by native_decide
+    isPrintableUtf8Bytes "hello\nworld".toUTF8 = true :=
+  printable_true_of "hello\nworld".toUTF8 (by decide)
+    (firstForbiddenControl_none "hello\nworld".toUTF8 (by decide)) (by decide)
+    (isNFCBytes_of_lt "hello\nworld".toUTF8
+      #[0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x0A, 0x77, 0x6F, 0x72, 0x6C, 0x64]
+      (by decide) (by decide) (by decide)
+      (by intro cp hMem; simp at hMem
+          rcases hMem with rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl <;> decide))
+
 theorem accented_is_printable :
     isPrintableUtf8Bytes "héllo".toUTF8 = true := by native_decide
 
 theorem control_NUL_not_printable :
-    isPrintableUtf8Bytes (ByteArray.mk #[0x00]) = false := by native_decide
+    isPrintableUtf8Bytes (ByteArray.mk #[0x00]) = false := by
+  unfold isPrintableUtf8Bytes
+  rw [show firstForbiddenControl (ByteArray.mk #[0x00]) = some (0, 0) from by
+        unfold firstForbiddenControl firstForbiddenControlFrom; decide]
+  simp
 
 theorem control_CR_not_printable :
-    isPrintableUtf8Bytes (ByteArray.mk #[0x0D]) = false := by native_decide
+    isPrintableUtf8Bytes (ByteArray.mk #[0x0D]) = false := by
+  unfold isPrintableUtf8Bytes
+  rw [show firstForbiddenControl (ByteArray.mk #[0x0D]) = some (0, 0x0D) from by
+        unfold firstForbiddenControl firstForbiddenControlFrom; decide]
+  simp
 
 theorem bidi_override_not_printable :
-    isPrintableUtf8Bytes (ByteArray.mk #[0xE2, 0x80, 0xAE]) = false := by native_decide
+    isPrintableUtf8Bytes (ByteArray.mk #[0xE2, 0x80, 0xAE]) = false := by
+  unfold isPrintableUtf8Bytes
+  rw [firstForbiddenControl_none (ByteArray.mk #[0xE2, 0x80, 0xAE]) (by decide)]
+  simp only [Option.isNone_none]
+  decide
 
 theorem bom_not_printable :
-    isPrintableUtf8Bytes (ByteArray.mk #[0xEF, 0xBB, 0xBF]) = false := by native_decide
+    isPrintableUtf8Bytes (ByteArray.mk #[0xEF, 0xBB, 0xBF]) = false := by
+  unfold isPrintableUtf8Bytes
+  rw [firstForbiddenControl_none (ByteArray.mk #[0xEF, 0xBB, 0xBF]) (by decide)]
+  simp only [Option.isNone_none]
+  decide
 
 theorem dicp_cgj_not_printable :
-    isPrintableUtf8Bytes (ByteArray.mk #[0xCD, 0x8F]) = false := by native_decide
+    isPrintableUtf8Bytes (ByteArray.mk #[0xCD, 0x8F]) = false := by
+  unfold isPrintableUtf8Bytes
+  rw [firstForbiddenControl_none (ByteArray.mk #[0xCD, 0x8F]) (by decide)]
+  simp only [Option.isNone_none]
+  decide
 
 /-- Decomposed "e + combining acute" is valid UTF-8 with no forbidden
     codepoints, but it is not in NFC — the precomposed "é" is the NFC
