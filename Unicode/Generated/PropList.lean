@@ -13,48 +13,12 @@
   Counts: 38 properties, 1744 ranges.
 -/
 
+import Unicode.Generated.PropListData
+
 namespace Unicode.Generated.PropList
 
-inductive BinaryProperty where
-  | ASCII_Hex_Digit
-  | Bidi_Control
-  | Dash
-  | Deprecated
-  | Diacritic
-  | Extender
-  | Hex_Digit
-  | Hyphen
-  | ID_Compat_Math_Continue
-  | ID_Compat_Math_Start
-  | Ideographic
-  | IDS_Binary_Operator
-  | IDS_Trinary_Operator
-  | IDS_Unary_Operator
-  | Join_Control
-  | Logical_Order_Exception
-  | Modifier_Combining_Mark
-  | Noncharacter_Code_Point
-  | Other_Alphabetic
-  | Other_Default_Ignorable_Code_Point
-  | Other_Grapheme_Extend
-  | Other_ID_Continue
-  | Other_ID_Start
-  | Other_Lowercase
-  | Other_Math
-  | Other_Uppercase
-  | Pattern_Syntax
-  | Pattern_White_Space
-  | Prepended_Concatenation_Mark
-  | Quotation_Mark
-  | Radical
-  | Regional_Indicator
-  | Sentence_Terminal
-  | Soft_Dotted
-  | Terminal_Punctuation
-  | Unified_Ideograph
-  | Variation_Selector
-  | White_Space
-  deriving DecidableEq, Repr, Inhabited
+set_option maxRecDepth 100000
+
 
 /-- Map a property-name string from `PropList.txt` to its enum
     constructor. Returns `none` for unrecognised names; the caller
@@ -145,9 +109,75 @@ def propListRaw : String := include_str "../Ucd/PropList.txt"
 
 /-- Range table mapping codepoint ranges to binary properties from
     PropList.txt. Inclusive on both ends. -/
-def propRanges : Array (Nat × Nat × BinaryProperty) :=
+def propRangesParsed : Array (Nat × Nat × BinaryProperty) :=
   ((String.splitOn propListRaw "\n").filterMap parsePropListRow).toArray
 
-theorem propRanges_count : propRanges.size = 1744 := by native_decide
+/-- The materialized range table, consumed downstream. -/
+def propRanges : List (Nat × Nat × BinaryProperty) := propRangesList
+
+theorem propRanges_count : propRangesList.length = 1744 := by decide +kernel
+
+-- Build-time drift gate.
+#eval do
+  unless propRangesList.toArray == propRangesParsed do
+    throw (IO.userError "PropList drift: list ≠ parsed")
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- UNIFIED_IDEOGRAPH SUBSET (UCA implicit-weight input)
+--
+-- The UCA implicit-weight rule (UTS #10 §10.1.3 / Table 16) gates the Han Core
+-- (FB40) and Han Other (FB80) tiers on the `Unified_Ideograph` property. Held here
+-- as its own small `List` literal — the 16 `Unified_Ideograph` ranges of UCD 17.0.0,
+-- the same version as `allkeys.txt` and the `CollationTest_*` files — so
+-- `isUnifiedIdeograph` reduces in the kernel without scanning the full 1744-entry
+-- property table. The drift gate ties it to the SHA-gated `propRangesList`.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- The `Unified_Ideograph` ranges of UCD 17.0.0, in source order. -/
+def unifiedIdeographRangesList : List (Nat × Nat) := [
+  (13312, 19903),
+  (19968, 40959),
+  (64014, 64015),
+  (64017, 64017),
+  (64019, 64020),
+  (64031, 64031),
+  (64033, 64033),
+  (64035, 64036),
+  (64039, 64041),
+  (131072, 173791),
+  (173824, 178205),
+  (178208, 183981),
+  (183984, 191456),
+  (191472, 192093),
+  (196608, 201546),
+  (201552, 210041)
+]
+
+/-- True iff `cp` has `Unified_Ideograph = Yes` per UCD 17.0.0. -/
+def isUnifiedIdeograph (cp : Nat) : Bool :=
+  unifiedIdeographRangesList.any (fun r => decide (r.1 ≤ cp ∧ cp ≤ r.2))
+
+/-- U+2B73A is `Unified_Ideograph` in UCD 17.0.0 — the CJK Extension C range was
+    extended to `2A700..2B81D`, merging the gap that left it unassigned in 16.0. -/
+theorem isUnifiedIdeograph_2B73A : isUnifiedIdeograph 0x2B73A = true := by decide +kernel
+
+/-- U+2B739 is `Unified_Ideograph` in both 16.0 and 17.0. -/
+theorem isUnifiedIdeograph_2B739 : isUnifiedIdeograph 0x2B739 = true := by decide +kernel
+
+/-- U+33479 (top of CJK Extension J) is `Unified_Ideograph` in UCD 17.0.0. -/
+theorem isUnifiedIdeograph_33479 : isUnifiedIdeograph 0x33479 = true := by decide +kernel
+
+theorem isUnifiedIdeograph_4E00 : isUnifiedIdeograph 0x4E00 = true := by decide +kernel
+
+/-- U+2A6E0 lies in the gap between `20000..2A6DF` and `2A700..2B81D`. -/
+theorem isUnifiedIdeograph_2A6E0 : isUnifiedIdeograph 0x2A6E0 = false := by decide +kernel
+
+-- Drift gate: the small list mirrors the `Unified_Ideograph` rows of `propRangesList`.
+#eval do
+  let derived := (propRangesList.filter
+      (fun (r : Nat × Nat × BinaryProperty) => decide (r.2.2 = BinaryProperty.Unified_Ideograph))).map
+      (fun (r : Nat × Nat × BinaryProperty) => (r.1, r.2.1))
+  unless unifiedIdeographRangesList == derived do
+    throw (IO.userError "unifiedIdeographRangesList drift vs propRangesList")
 
 end Unicode.Generated.PropList
