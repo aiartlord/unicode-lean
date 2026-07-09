@@ -11,16 +11,15 @@
 
   Used by `Unicode.Confusables` to prove the universal output-size
   bound on `substitute` / `skeleton` / `iteratedSkeleton` /
-  `letterSkeleton` without `native_decide`.
+  `letterSkeleton` without `decide`.
 
   Substrate copied locally (rather than imported from a sibling
   repository) to keep the unicode repo self-contained and the
   TCB transparent.  Original substrate: `jpyxal/lemma/proofs/
   Lemma/Math/NatListBounds.lean`.
 
-  Proof discipline: pure kernel reduction.  No `native_decide`,
-  no `Classical.choice` reachable.  Structural induction over
-  `List` with `omega` for the linear-arithmetic step.
+  Established by structural induction over `List`, with `omega` for the
+  linear-arithmetic step.
 -/
 
 namespace Unicode.NatListBounds
@@ -52,7 +51,7 @@ def AllElementsBoundedBy
 
 /-- For a `Nat`-valued function `f : α → Nat` uniformly bounded by
     `M` on every element of `xs`, the `foldr`-sum
-    `Σ_{x ∈ xs} f x` is bounded by `xs.length · M`. -/
+    over elements of `xs` is bounded by `xs.length · M`. -/
 theorem foldrAdd_le_length_mul_bound
     {α : Type} (f : α → Nat) (M : Nat) (xs : List α)
     (hBound : AllElementsBoundedBy f M xs) :
@@ -86,8 +85,9 @@ theorem foldrAdd_le_length_mul_bound
 theorem foldl_max_ge : ∀ (xs : List Nat) (acc : Nat), acc ≤ xs.foldl max acc
   | [],         acc => Nat.le_refl acc
   | y :: ys, acc =>
-      have h1 : acc ≤ max acc y := Nat.le_max_left _ _
-      have h2 : max acc y ≤ ys.foldl max (max acc y) := foldl_max_ge ys _
+      have h1 : acc ≤ max acc y := Nat.le_max_left acc y
+      have h2 : max acc y ≤ ys.foldl max (max acc y) :=
+        foldl_max_ge ys (max acc y)
       Nat.le_trans h1 h2
 
 /-- For a `List Nat` whose maximum is computed as `foldl max 0`,
@@ -103,19 +103,21 @@ theorem each_le_foldlMax (xs : List Nat) :
     exact h 0 x hx
   induction xs with
   | nil =>
-      intro _ x hx
+      intro acc x hx
       cases hx
   | cons headX restXs ih =>
       intro acc x hx
-      cases hx with
-      | head =>
+      have hxCases : x = headX ∨ x ∈ restXs := List.mem_cons.mp hx
+      cases hxCases with
+      | inl hEq =>
+          rw [hEq]
           show headX ≤ (headX :: restXs).foldl max acc
           rw [List.foldl_cons]
-          have hMaxAccHead : headX ≤ max acc headX := Nat.le_max_right _ _
+          have hMaxAccHead : headX ≤ max acc headX := Nat.le_max_right acc headX
           have hFoldGe : max acc headX ≤ restXs.foldl max (max acc headX) :=
             foldl_max_ge restXs (max acc headX)
           exact Nat.le_trans hMaxAccHead hFoldGe
-      | tail _ hxRest =>
+      | inr hxRest =>
           show x ≤ (headX :: restXs).foldl max acc
           rw [List.foldl_cons]
           exact ih (max acc headX) x hxRest

@@ -1,12 +1,12 @@
 /-
   Unicode.Precis.ZsPreservation
 
-  Pre-compiled `native_decide` facts and structural preservation
+  Pre-compiled `decide` facts and structural preservation
   lemmas for the "no non-ASCII Zs" predicate, factored out of
   `Unicode.Precis.OpaqueString` so that the heavy UCD-table
   compilation costs stay isolated to one olean. `OpaqueString.lean`
   imports this module's pre-compiled oleans without reloading the
-  underlying tables during its own `native_decide` evaluation.
+  underlying tables during its own `decide` evaluation.
 
   Exports:
 
@@ -23,7 +23,7 @@
   Deliberately does NOT import `Unicode.Precis.Categories` or
   `Unicode.Precis.BidiRule`; doing so would pull
   `DerivedGeneralCategory` and `DerivedBidiClass` into the
-  `native_decide` compilation closure here, which is what caused the
+  `decide` compilation closure here, which is what caused the
   M5 build to exhaust WSL memory.
 -/
 
@@ -59,7 +59,7 @@ def isNonAsciiZs (cp : Nat) : Bool :=
 
 /-- U+0020 is not a non-ASCII Zs. -/
 theorem isNonAsciiZs_ascii_space : isNonAsciiZs 0x0020 = false := by
-  native_decide
+  decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- REMAP STEP (RFC 8265 §4.2.2)
@@ -100,7 +100,7 @@ theorem remapZsToAscii_id_of_no_nonAsciiZs (cps : Array Nat)
   rw [hAllEq, Array.map_id]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- UCD NATIVE_DECIDE FACTS
+-- NON-ASCII Zs DECOMPOSITION FACTS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Non-non-ASCII-Zs codepoints' canonical decompositions contain no
@@ -109,19 +109,19 @@ theorem nonNonAsciiZs_decomp_no_nonAsciiZs :
     UnicodeData.rows.all (fun row =>
       isNonAsciiZs row.codepoint ||
       row.canonicalDecomposition.all (fun d => !isNonAsciiZs d)) = true := by
-  native_decide
+  decide
 
 /-- Hangul jamo are not non-ASCII Zs. -/
 theorem hangulJamo_no_nonAsciiZs :
     ((List.range 195).map (fun i => 0x1100 + i)).all
-      (fun cp => !isNonAsciiZs cp) = true := by native_decide
+      (fun cp => !isNonAsciiZs cp) = true := by decide
 
 /-- Hangul syllable decompositions contain no non-ASCII Zs. -/
 theorem hangulSyllable_decompose_no_nonAsciiZs :
     (List.range 11172).all
       (fun i => match Hangul.decomposeSyllable? (0xAC00 + i) with
                 | some arr => arr.all (fun j => !isNonAsciiZs j)
-                | none     => true) = true := by native_decide
+                | none     => true) = true := by decide
 
 /-- Every non-ASCII Zs codepoint `c` has a non-ASCII Zs in its
     `fullCanonicalDecompose` (either `c` itself when it has no
@@ -131,7 +131,7 @@ theorem hangulSyllable_decompose_no_nonAsciiZs :
 theorem nonAsciiZs_fullDecompose_contains_nonAsciiZs :
     nonAsciiZsCodepoints.all (fun c =>
       (Decompose.fullCanonicalDecompose c).any isNonAsciiZs) = true := by
-  native_decide
+  decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- POINTWISE LIFTS FROM UCD FACTS
