@@ -41,6 +41,7 @@ import Unicode.Codec.Strict
 import Unicode.Codec.Utf8
 import Unicode.Generated.DerivedCoreProperties
 import Unicode.Normalization.Utf8Bridge
+import Unicode.Normalization.LowCodepointNfc
 
 namespace Unicode.Codec.Printable
 
@@ -84,6 +85,26 @@ termination_by bs.size - i
 
 def firstForbiddenControl (bs : ByteArray) : Option (Nat × UInt8) :=
   firstForbiddenControlFrom bs 0
+
+/-- The forbidden-control walker returns `none` exactly when no byte is a forbidden
+    control. Proven by well-founded recursion mirroring `firstForbiddenControlFrom`;
+    that recursion does not reduce definitionally, so the fact is established
+    structurally rather than by evaluation. -/
+theorem firstForbiddenControlFrom_none (bs : ByteArray) (i : Nat)
+    (h : ∀ (j : Nat) (hj : j < bs.size), isForbiddenControlByte (bs[j]'hj) = false) :
+    firstForbiddenControlFrom bs i = none := by
+  unfold firstForbiddenControlFrom
+  split
+  · next hi =>
+    rw [if_neg (by rw [h i hi]; simp)]
+    exact firstForbiddenControlFrom_none bs (i + 1) h
+  · rfl
+termination_by bs.size - i
+
+theorem firstForbiddenControl_none (bs : ByteArray)
+    (h : ∀ (j : Nat) (hj : j < bs.size), isForbiddenControlByte (bs[j]'hj) = false) :
+    firstForbiddenControl bs = none :=
+  firstForbiddenControlFrom_none bs 0 h
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 FORBIDDEN-CODEPOINT CLASSIFICATION
@@ -139,41 +160,41 @@ def isForbiddenCodepoint (cp : Nat) : Bool :=
   (classifyCodepointIfForbidden cp).isSome
 
 theorem classify_U202E :
-    classifyCodepointIfForbidden 0x202E = some (.narrow .bidiOverride) := by native_decide
+    classifyCodepointIfForbidden 0x202E = some (.narrow .bidiOverride) := by decide
 theorem classify_U2067 :
-    classifyCodepointIfForbidden 0x2067 = some (.narrow .bidiIsolate) := by native_decide
+    classifyCodepointIfForbidden 0x2067 = some (.narrow .bidiIsolate) := by decide
 theorem classify_U200B :
-    classifyCodepointIfForbidden 0x200B = some (.narrow .zeroWidth) := by native_decide
+    classifyCodepointIfForbidden 0x200B = some (.narrow .zeroWidth) := by decide
 theorem classify_UFEFF :
-    classifyCodepointIfForbidden 0xFEFF = some (.narrow .bom) := by native_decide
+    classifyCodepointIfForbidden 0xFEFF = some (.narrow .bom) := by decide
 theorem classify_UE0041 :
-    classifyCodepointIfForbidden 0xE0041 = some (.narrow .tagCharacter) := by native_decide
+    classifyCodepointIfForbidden 0xE0041 = some (.narrow .tagCharacter) := by decide
 theorem classify_UFE00 :
-    classifyCodepointIfForbidden 0xFE00 = some (.narrow .variationSelector) := by native_decide
+    classifyCodepointIfForbidden 0xFE00 = some (.narrow .variationSelector) := by decide
 theorem classify_U3164 :
-    classifyCodepointIfForbidden 0x3164 = some (.narrow .hangulFiller) := by native_decide
+    classifyCodepointIfForbidden 0x3164 = some (.narrow .hangulFiller) := by decide
 theorem classify_U00AD :
-    classifyCodepointIfForbidden 0x00AD = some (.narrow .softHyphen) := by native_decide
+    classifyCodepointIfForbidden 0x00AD = some (.narrow .softHyphen) := by decide
 theorem classify_UFFF9 :
     classifyCodepointIfForbidden 0xFFF9 = some (.narrow .interlinearAnnotation) := by
-  native_decide
+  decide
 theorem classify_U180E :
     classifyCodepointIfForbidden 0x180E = some (.narrow .mongolianVowelSeparator) := by
-  native_decide
+  decide
 
 /-- COMBINING GRAPHEME JOINER U+034F is DICP but not in any narrow
     category — exercises the `defaultIgnorable` residual tier. -/
 theorem classify_U034F_dicp :
-    classifyCodepointIfForbidden 0x034F = some .defaultIgnorable := by native_decide
+    classifyCodepointIfForbidden 0x034F = some .defaultIgnorable := by decide
 
 /-- WORD JOINER U+2060 is DICP but not in any narrow category. -/
 theorem classify_U2060_dicp :
-    classifyCodepointIfForbidden 0x2060 = some .defaultIgnorable := by native_decide
+    classifyCodepointIfForbidden 0x2060 = some .defaultIgnorable := by decide
 
 theorem classify_hello_letter_none :
-    classifyCodepointIfForbidden 0x68 = none := by native_decide
+    classifyCodepointIfForbidden 0x68 = none := by decide
 theorem classify_digit_none :
-    classifyCodepointIfForbidden 0x30 = none := by native_decide
+    classifyCodepointIfForbidden 0x30 = none := by decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 CLASSIFIED-FORBIDDEN WALKER
@@ -196,23 +217,23 @@ def firstForbiddenCodepointClassified (bs : ByteArray) :
                   | none      => none)
 
 theorem firstForbidden_hello_none :
-    firstForbiddenCodepointClassified "hello".toUTF8 = none := by native_decide
+    firstForbiddenCodepointClassified "hello".toUTF8 = none := by decide
 
 theorem firstForbidden_bidi :
     firstForbiddenCodepointClassified (ByteArray.mk #[0x61, 0xE2, 0x80, 0xAE, 0x62])
-      = some (1, 0x202E, .narrow .bidiOverride) := by native_decide
+      = some (1, 0x202E, .narrow .bidiOverride) := by decide
 
 theorem firstForbidden_bom :
     firstForbiddenCodepointClassified (ByteArray.mk #[0xEF, 0xBB, 0xBF])
-      = some (0, 0xFEFF, .narrow .bom) := by native_decide
+      = some (0, 0xFEFF, .narrow .bom) := by decide
 
 theorem firstForbidden_cgj :
     firstForbiddenCodepointClassified (ByteArray.mk #[0xCD, 0x8F])
-      = some (0, 0x034F, .defaultIgnorable) := by native_decide
+      = some (0, 0x034F, .defaultIgnorable) := by decide
 
 theorem firstForbidden_word_joiner :
     firstForbiddenCodepointClassified (ByteArray.mk #[0xE2, 0x81, 0xA0])
-      = some (0, 0x2060, .defaultIgnorable) := by native_decide
+      = some (0, 0x2060, .defaultIgnorable) := by decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 AGGREGATE PRINTABLE PREDICATE
