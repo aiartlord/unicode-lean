@@ -44,7 +44,7 @@ open Unicode.Generated
 -- ZS IDENTIFICATION
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The 16 Zs (space-separator) codepoints defined by Unicode 16.0,
+/-- The 16 Zs (space-separator) codepoints defined by Unicode 17.0,
     excluding U+0020 SPACE. Stable across Unicode releases since 1.1
     (1993). -/
 def nonAsciiZsCodepoints : Array Nat := #[

@@ -44,6 +44,8 @@ import Unicode.Generated.EmojiSequences
 
 namespace Unicode.Security.Identity.EmojiZwjIntegrity
 
+set_option maxRecDepth 1000000
+
 open Unicode.Security.Calculus
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -51,7 +53,7 @@ open Unicode.Security.Calculus
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Conservative cap on the length of a sanctioned RGI ZWJ
-    sequence in `emoji-zwj-sequences.txt` (UCD 16.0.0).  The
+    sequence in `emoji-zwj-sequences.txt` (UCD 17.0.0).  The
     longest current entry is the four-person-with-skin-tones
     family which can reach ~13-14 codepoints; we use 16 as a
     safe upper bound. -/
@@ -248,46 +250,46 @@ def Classification.positions : Classification → Array Nat
 
 /-- Empty input is clear. -/
 theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Pure ASCII is clear. -/
 theorem detect_ascii_clear :
     (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Plain emoji (no ZWJ) is clear. -/
 theorem detect_plain_emoji_clear :
-    (detect #[0x1F600]).classify.isClear = true := by native_decide
+    (detect #[0x1F600]).classify.isClear = true := by decide +kernel
 
 /-- Single skin-tone modifier on a base — clear (count = 1). -/
 theorem detect_one_skintone_clear :
-    (detect #[0x1F44B, 0x1F3FB]).classify.isClear = true := by native_decide
+    (detect #[0x1F44B, 0x1F3FB]).classify.isClear = true := by decide +kernel
 
 /-- Family of four (man + woman + girl + boy via ZWJs) — registered RGI. -/
 theorem detect_family_rgi_clear :
     (detect #[0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467,
-              0x200D, 0x1F466]).classify.isClear = true := by native_decide
+              0x200D, 0x1F466]).classify.isClear = true := by decide +kernel
 
 /-- ZWJ + ZWJ adjacency — `.doubleZWJ`. -/
 theorem detect_double_zwj :
     (detect #[0x1F600, 0x200D, 0x200D, 0x1F600]).classify.tag
-      = some "DoubleZWJ" := by native_decide
+      = some "DoubleZWJ" := by decide +kernel
 
 /-- ZWJ joining ASCII 'a' — `.nonEmojiInjection`. -/
 theorem detect_non_emoji_injection :
     (detect #[0x1F600, 0x200D, 0x0061]).classify.tag
-      = some "NonEmojiInjection" := by native_decide
+      = some "NonEmojiInjection" := by decide +kernel
 
 /-- Five skin-tone modifiers — `.skinToneOverflow`. -/
 theorem detect_skin_tone_overflow :
     (detect #[0x1F44B, 0x1F3FB, 0x1F3FC, 0x1F3FD, 0x1F3FE, 0x1F3FF]).classify.tag
-      = some "SkinToneOverflow" := by native_decide
+      = some "SkinToneOverflow" := by decide +kernel
 
 /-- `MAN + ZWJ + LAPTOP` is registered (`👨‍💻` = man technologist) —
     must be clear. -/
 theorem detect_man_laptop_registered_clear :
     (detect #[0x1F468, 0x200D, 0x1F4BB]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- `MAN + ZWJ + WOMAN` is a sequence where both sides ARE in the
     RGI ZWJ alphabet (they appear in registered family and couple
@@ -296,7 +298,7 @@ theorem detect_man_laptop_registered_clear :
     `.unregisteredSequence`. -/
 theorem detect_unregistered :
     (detect #[0x1F468, 0x200D, 0x1F469]).classify.tag
-      = some "UnregisteredSequence" := by native_decide
+      = some "UnregisteredSequence" := by decide +kernel
 
 /-- `GRINNING FACE + ZWJ + LAPTOP` — the grinning face does NOT
     appear in any registered RGI ZWJ sequence, so it is not a
@@ -306,6 +308,6 @@ theorem detect_unregistered :
     structural `zwjAlphabet` predicate. -/
 theorem detect_grinning_laptop_non_emoji_injection :
     (detect #[0x1F600, 0x200D, 0x1F4BB]).classify.tag
-      = some "NonEmojiInjection" := by native_decide
+      = some "NonEmojiInjection" := by decide +kernel
 
 end Unicode.Security.Identity.EmojiZwjIntegrity

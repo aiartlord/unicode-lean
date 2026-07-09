@@ -24,6 +24,12 @@ import Unicode.Generated.EmojiSequences
 
 namespace Unicode.Emoji
 
+-- The test vectors below reduce emoji-property lookups over the
+-- materialized `EmojiData` List tables. `decide +kernel` walks them
+-- linearly in the kernel (plain `decide` exhausts the elaborator); the
+-- raised recursion limit covers the deeper codepoints.
+set_option maxRecDepth 100000
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 SINGLE-CODEPOINT PREDICATES (re-exported for ergonomics)
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -84,9 +90,12 @@ def isRegionalIndicator (cp : Nat) : Bool :=
     every well-formed pair, leaving region-validity to callers. -/
 def isFlagSequence (cps : Array Nat) : Bool :=
   cps.size = 2
-    && (match cps[0]?, cps[1]? with
-        | some a, some b => isRegionalIndicator a && isRegionalIndicator b
-        | _, _ => false)
+    && (match cps[0]? with
+        | some a =>
+          match cps[1]? with
+          | some b => isRegionalIndicator a && isRegionalIndicator b
+          | none => false
+        | none => false)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 EMOJI MODIFIER SEQUENCE  (UTS #51 §1.4.6 ED-13)
@@ -96,9 +105,12 @@ def isFlagSequence (cps : Array Nat) : Bool :=
     an Emoji_Modifier_Base followed by an Emoji_Modifier. -/
 def isEmojiModifierSequence (cps : Array Nat) : Bool :=
   cps.size = 2
-    && (match cps[0]?, cps[1]? with
-        | some a, some b => isEmojiModifierBase a && isEmojiModifier b
-        | _, _ => false)
+    && (match cps[0]? with
+        | some a =>
+          match cps[1]? with
+          | some b => isEmojiModifierBase a && isEmojiModifier b
+          | none => false
+        | none => false)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 KEYCAP SEQUENCE  (UTS #51 §1.4.6 ED-14a)
@@ -116,12 +128,18 @@ def combiningEnclosingKeycap : Nat := 0x20E3
     base codepoint (digit / '#' / '*'). -/
 def isKeycapSequence (cps : Array Nat) : Bool :=
   cps.size = 3
-    && (match cps[0]?, cps[1]?, cps[2]? with
-        | some a, some b, some c =>
-          isKeycapBase a
-            && b = emojiPresentationSelector
-            && c = combiningEnclosingKeycap
-        | _, _, _ => false)
+    && (match cps[0]? with
+        | some a =>
+          match cps[1]? with
+          | some b =>
+            match cps[2]? with
+            | some c =>
+              isKeycapBase a
+                && b = emojiPresentationSelector
+                && c = combiningEnclosingKeycap
+            | none => false
+          | none => false
+        | none => false)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 TAG SEQUENCE  (UTS #51 §1.4.6 ED-14c — subdivision flags)
@@ -141,12 +159,15 @@ def cancelTag : Nat := 0xE007F
 def isTagSequence (cps : Array Nat) : Bool :=
   if cps.size < 3 then false
   else
-    match cps[0]?, cps[cps.size - 1]? with
-    | some base, some last =>
-      isEmoji base
-        && last = cancelTag
-        && (cps.extract 1 (cps.size - 1)).all isTagSpecChar
-    | _, _ => false
+    match cps[0]? with
+    | some base =>
+      match cps[cps.size - 1]? with
+      | some last =>
+        isEmoji base
+          && last = cancelTag
+          && (cps.extract 1 (cps.size - 1)).all isTagSpecChar
+      | none => false
+    | none => false
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §7 ZWJ SEQUENCE  (UTS #51 §1.4.7)
@@ -195,11 +216,14 @@ def isEmojiSequence (cps : Array Nat) : Bool :=
                      | some cp => isEmoji cp
                      | none    => false))
   -- Emoji codepoint with explicit presentation selector.
-  || (cps.size = 2 && (match cps[0]?, cps[1]? with
-                         | some a, some b =>
-                           isEmoji a && (b = emojiPresentationSelector
-                                          || b = textPresentationSelector)
-                         | _, _ => false))
+  || (cps.size = 2 && (match cps[0]? with
+                         | some a =>
+                           match cps[1]? with
+                           | some b =>
+                             isEmoji a && (b = emojiPresentationSelector
+                                            || b = textPresentationSelector)
+                           | none => false
+                         | none => false))
   || isFlagSequence cps
   || isEmojiModifierSequence cps
   || isKeycapSequence cps
@@ -211,86 +235,86 @@ def isEmojiSequence (cps : Array Nat) : Bool :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- U+1F600 GRINNING FACE has Emoji and Emoji_Presentation. -/
-theorem isEmoji_grinning : isEmoji 0x1F600 = true := by native_decide
+theorem isEmoji_grinning : isEmoji 0x1F600 = true := by decide +kernel
 theorem isEmojiPresentation_grinning :
-    isEmojiPresentation 0x1F600 = true := by native_decide
+    isEmojiPresentation 0x1F600 = true := by decide +kernel
 
 /-- ASCII '0' has Emoji (the keycap base) but NOT Emoji_Presentation
     (which means it defaults to text — only `0 + VS16 + U+20E3`
     forms a keycap). -/
-theorem isEmoji_zero : isEmoji 0x30 = true := by native_decide
-theorem isEmojiPresentation_zero : isEmojiPresentation 0x30 = false := by native_decide
+theorem isEmoji_zero : isEmoji 0x30 = true := by decide +kernel
+theorem isEmojiPresentation_zero : isEmojiPresentation 0x30 = false := by decide +kernel
 
 /-- U+1F3FB EMOJI MODIFIER FITZPATRICK TYPE-1-2 is an Emoji_Modifier. -/
-theorem isEmojiModifier_fitz12 : isEmojiModifier 0x1F3FB = true := by native_decide
+theorem isEmojiModifier_fitz12 : isEmojiModifier 0x1F3FB = true := by decide +kernel
 
 /-- U+1F44B WAVING HAND SIGN is an Emoji_Modifier_Base. -/
 theorem isEmojiModifierBase_wave :
-    isEmojiModifierBase 0x1F44B = true := by native_decide
+    isEmojiModifierBase 0x1F44B = true := by decide +kernel
 
 /-- U+1F1FA REGIONAL INDICATOR SYMBOL LETTER U is a regional indicator. -/
-theorem isRegionalIndicator_U : isRegionalIndicator 0x1F1FA = true := by native_decide
+theorem isRegionalIndicator_U : isRegionalIndicator 0x1F1FA = true := by decide +kernel
 
 /-- ASCII 'A' is NOT a regional indicator. -/
-theorem isRegionalIndicator_A : isRegionalIndicator 0x41 = false := by native_decide
+theorem isRegionalIndicator_A : isRegionalIndicator 0x41 = false := by decide +kernel
 
 /-- 🇺🇸 (U+1F1FA U+1F1F8) is a flag sequence. -/
 theorem isFlagSequence_us :
-    isFlagSequence #[0x1F1FA, 0x1F1F8] = true := by native_decide
+    isFlagSequence #[0x1F1FA, 0x1F1F8] = true := by decide +kernel
 
 /-- A single regional indicator alone is NOT a flag sequence. -/
 theorem isFlagSequence_single :
-    isFlagSequence #[0x1F1FA] = false := by native_decide
+    isFlagSequence #[0x1F1FA] = false := by decide +kernel
 
 /-- 👋🏽 (waving hand + medium skin) is an emoji modifier sequence. -/
 theorem isEmojiModifierSequence_wave_med :
-    isEmojiModifierSequence #[0x1F44B, 0x1F3FD] = true := by native_decide
+    isEmojiModifierSequence #[0x1F44B, 0x1F3FD] = true := by decide +kernel
 
 /-- A skin-tone applied to a non-base codepoint is NOT a modifier sequence. -/
 theorem isEmojiModifierSequence_invalid :
-    isEmojiModifierSequence #[0x1F600, 0x1F3FD] = false := by native_decide
+    isEmojiModifierSequence #[0x1F600, 0x1F3FD] = false := by decide +kernel
 
 /-- 1️⃣ (digit + VS16 + keycap) is a keycap sequence. -/
 theorem isKeycapSequence_one :
-    isKeycapSequence #[0x31, 0xFE0F, 0x20E3] = true := by native_decide
+    isKeycapSequence #[0x31, 0xFE0F, 0x20E3] = true := by decide +kernel
 
 /-- A keycap base without VS16 is NOT a keycap sequence. -/
 theorem isKeycapSequence_no_vs16 :
-    isKeycapSequence #[0x31, 0x20E3] = false := by native_decide
+    isKeycapSequence #[0x31, 0x20E3] = false := by decide +kernel
 
 /-- 👨‍👩‍👧 (father + ZWJ + mother + ZWJ + daughter) is a ZWJ sequence. -/
 theorem isZwjSequence_family :
     isZwjSequence #[0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467] = true := by
-  native_decide
+  decide +kernel
 
 /-- A leading ZWJ is rejected. -/
 theorem isZwjSequence_leading :
-    isZwjSequence #[0x200D, 0x1F468] = false := by native_decide
+    isZwjSequence #[0x200D, 0x1F468] = false := by decide +kernel
 
 /-- A trailing ZWJ is rejected. -/
 theorem isZwjSequence_trailing :
-    isZwjSequence #[0x1F468, 0x200D] = false := by native_decide
+    isZwjSequence #[0x1F468, 0x200D] = false := by decide +kernel
 
 /-- Doubled ZWJ is rejected. -/
 theorem isZwjSequence_doubled :
-    isZwjSequence #[0x1F468, 0x200D, 0x200D, 0x1F469] = false := by native_decide
+    isZwjSequence #[0x1F468, 0x200D, 0x200D, 0x1F469] = false := by decide +kernel
 
 /-- A bare emoji codepoint is an emoji sequence. -/
 theorem isEmojiSequence_grinning :
-    isEmojiSequence #[0x1F600] = true := by native_decide
+    isEmojiSequence #[0x1F600] = true := by decide +kernel
 
 /-- A flag is an emoji sequence. -/
 theorem isEmojiSequence_flag :
-    isEmojiSequence #[0x1F1FA, 0x1F1F8] = true := by native_decide
+    isEmojiSequence #[0x1F1FA, 0x1F1F8] = true := by decide +kernel
 
 /-- A ZWJ family is an emoji sequence. -/
 theorem isEmojiSequence_family :
     isEmojiSequence #[0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467] = true := by
-  native_decide
+  decide +kernel
 
 /-- Plain ASCII text is NOT an emoji sequence. -/
 theorem isEmojiSequence_ascii :
-    isEmojiSequence #[0x68, 0x69] = false := by native_decide
+    isEmojiSequence #[0x68, 0x69] = false := by decide +kernel
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §10 RGI VALIDATION — registered sequences only
@@ -319,7 +343,7 @@ def isRgiModifierSequence (cps : Array Nat) : Bool :=
 
 /-- True iff `cps` is a registered RGI subdivision-flag tag sequence
     (England, Scotland, Wales — the three RGI tag sequences in
-    Emoji 16.0). -/
+    Emoji 17.0). -/
 def isRgiTagSequence (cps : Array Nat) : Bool :=
   Unicode.Generated.EmojiSequences.isRegisteredTagSequence cps
 
@@ -348,43 +372,43 @@ def isRgiEmoji (cps : Array Nat) : Bool :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- 👋 (waving hand, U+1F44B) is a registered Basic_Emoji codepoint. -/
-theorem isRgiEmoji_wave : isRgiEmoji #[0x1F44B] = true := by native_decide
+theorem isRgiEmoji_wave : isRgiEmoji #[0x1F44B] = true := by decide +kernel
 
 /-- 🇺🇸 (U+1F1FA U+1F1F8) is a registered RGI flag sequence. -/
 theorem isRgiFlagSequence_us :
-    isRgiFlagSequence #[0x1F1FA, 0x1F1F8] = true := by native_decide
+    isRgiFlagSequence #[0x1F1FA, 0x1F1F8] = true := by decide +kernel
 
 /-- Two arbitrary regional indicators with no registered region are
     NOT a registered RGI flag. -/
 theorem isRgiFlagSequence_unregistered :
-    isRgiFlagSequence #[0x1F1E6, 0x1F1E6] = false := by native_decide
+    isRgiFlagSequence #[0x1F1E6, 0x1F1E6] = false := by decide +kernel
 
 /-- 1️⃣ (digit + VS16 + keycap) is a registered RGI keycap sequence. -/
 theorem isRgiKeycapSequence_one :
-    isRgiKeycapSequence #[0x31, 0xFE0F, 0x20E3] = true := by native_decide
+    isRgiKeycapSequence #[0x31, 0xFE0F, 0x20E3] = true := by decide +kernel
 
 /-- 👋🏽 (waving hand + medium skin) is a registered RGI modifier sequence. -/
 theorem isRgiModifierSequence_wave_med :
-    isRgiModifierSequence #[0x1F44B, 0x1F3FD] = true := by native_decide
+    isRgiModifierSequence #[0x1F44B, 0x1F3FD] = true := by decide +kernel
 
 /-- 👨‍👩‍👧 (family: man, woman, girl) is a registered RGI ZWJ sequence. -/
 theorem isRgiZwjSequence_family :
     isRgiZwjSequence #[0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467] = true := by
-  native_decide
+  decide +kernel
 
 /-- A structurally-valid ZWJ chain that is NOT registered (rocket +
     ZWJ + giraffe) is rejected by `isRgiZwjSequence` but accepted
     by the structural `isZwjSequence`. -/
 theorem isRgiZwjSequence_unregistered :
-    isRgiZwjSequence #[0x1F680, 0x200D, 0x1F992] = false := by native_decide
+    isRgiZwjSequence #[0x1F680, 0x200D, 0x1F992] = false := by decide +kernel
 
 theorem isZwjSequence_unregistered_structural_passes :
-    isZwjSequence #[0x1F680, 0x200D, 0x1F992] = true := by native_decide
+    isZwjSequence #[0x1F680, 0x200D, 0x1F992] = true := by decide +kernel
 
 /-- 🏴󠁧󠁢󠁥󠁮󠁧󠁿 (England subdivision flag) is a registered RGI tag sequence. -/
 theorem isRgiTagSequence_england :
     isRgiTagSequence #[0x1F3F4, 0xE0067, 0xE0062, 0xE0065, 0xE006E,
                        0xE0067, 0xE007F] = true := by
-  native_decide
+  decide +kernel
 
 end Unicode.Emoji

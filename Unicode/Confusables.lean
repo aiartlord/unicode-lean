@@ -158,14 +158,14 @@ theorem areConfusable_trans (a b c : Array Nat)
 -- reached. Termination is guaranteed by the acyclic structure of the
 -- UTS #39 confusables data: every chain `cp ⟶ skeleton({cp}) ⟶ …`
 -- reaches a fixed point in a small number of steps (≤ 5 for the
--- UTS #39 16.0.0 data set). The `confusableChainBound` constant
+-- UTS #39 17.0.0 data set). The `confusableChainBound` constant
 -- below is the iteration cap; `iteratedSkeleton_idempotent` proves
 -- that applying `skeleton` to the result of `iteratedSkeleton` is
 -- the identity for every test vector under the bundled data.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Iteration cap for `iteratedSkeleton`. The longest substitution
-    chain in the UTS #39 16.0.0 confusables data is shorter than this
+    chain in the UTS #39 17.0.0 confusables data is shorter than this
     bound; the cap is therefore a safe over-approximation that
     guarantees the iteration reaches a fixed point in production. -/
 def confusableChainBound : Nat := 32
@@ -186,7 +186,7 @@ def iteratedSkeletonFuel (fuel : Nat) (cps : Array Nat) : Array Nat :=
     For every input `cps`, the result satisfies
     `skeleton (iteratedSkeleton cps) = iteratedSkeleton cps` whenever
     the chain depth is at most `confusableChainBound` — verified by
-    the test vectors below for the bundled UTS #39 16.0.0 data. -/
+    the test vectors below for the bundled UTS #39 17.0.0 data. -/
 def iteratedSkeleton (cps : Array Nat) : Array Nat :=
   iteratedSkeletonFuel confusableChainBound cps
 
@@ -301,37 +301,37 @@ theorem areConfusableIterated_trans (a b c : Array Nat)
 
 /-- Every string is confusable with itself. -/
 theorem areConfusable_self_ascii :
-    areConfusable #[0x0068, 0x0069] #[0x0068, 0x0069] = true := by native_decide
+    areConfusable #[0x0068, 0x0069] #[0x0068, 0x0069] = true := by decide
 
 /-- COMBINING GREEK KORONIS (0x0343) and COMBINING COMMA ABOVE RIGHT
     (0x0315) are both listed in the confusables table mapping to
     COMBINING COMMA ABOVE (0x0313). Their skeletons are therefore
     equal. -/
 theorem areConfusable_0343_0315 :
-    areConfusable #[0x0343] #[0x0315] = true := by native_decide
+    areConfusable #[0x0343] #[0x0315] = true := by decide
 
 /-- COMBINING TRIPLE DOT (0x1AB4) and COMBINING THREE DOTS ABOVE
     (0x20DB) both map to ARABIC SMALL HIGH THREE DOTS (0x06DB). -/
 theorem areConfusable_1AB4_20DB :
-    areConfusable #[0x1AB4] #[0x20DB] = true := by native_decide
+    areConfusable #[0x1AB4] #[0x20DB] = true := by decide
 
 /-- Two distinct ASCII letters are NOT confusable. -/
 theorem areConfusable_distinct_ascii :
-    areConfusable #[0x0041] #[0x0042] = false := by native_decide
+    areConfusable #[0x0041] #[0x0042] = false := by decide
 
 /-- The skeleton of a simple ASCII identifier is the identifier
     itself, NFD-normalized (and ASCII has no non-trivial NFD). -/
 theorem skeleton_ascii :
-    skeleton #[0x0068, 0x0069] = #[0x0068, 0x0069] := by native_decide
+    skeleton #[0x0068, 0x0069] = #[0x0068, 0x0069] := by decide
 
 /-- The skeleton maps HEBREW ACCENT DEHI (0x05AD) to HEBREW ACCENT
     TIPEHA (0x0596) per the confusables table. -/
 theorem skeleton_hebrew_dehi :
-    skeleton #[0x05AD] = #[0x0596] := by native_decide
+    skeleton #[0x05AD] = #[0x0596] := by decide
 
 /-- Every source codepoint in `Confusables.mappings` reaches a
     `skeleton` fixed point within `confusableChainBound` iterations.
-    Verified by `native_decide` over the bundled UTS #39 16.0.0 data.
+    Verified by `decide` over the bundled UTS #39 17.0.0 data.
     Replaces the prior asserted-only "chain depth ≤ 32" claim with
     a proven invariant. -/
 def chainConvergesUnderBound : Bool :=
@@ -340,66 +340,65 @@ def chainConvergesUnderBound : Bool :=
       iteratedSkeletonFuel confusableChainBound #[entry.1])
 
 theorem confusable_chain_within_bound :
-    chainConvergesUnderBound = true := by native_decide
+    chainConvergesUnderBound = true := by decide
 
 /-- `iteratedSkeleton` reaches a fixed point on ASCII (which is
     fixed under `skeleton` on the first pass). -/
 theorem iteratedSkeleton_ascii_idempotent :
     skeleton (iteratedSkeleton #[0x0068, 0x0069]) = iteratedSkeleton #[0x0068, 0x0069]
-    := by native_decide
+    := by decide
 
 /-- `iteratedSkeleton` reaches a fixed point on the chained
     HEBREW DEHI mapping. -/
 theorem iteratedSkeleton_hebrew_idempotent :
     skeleton (iteratedSkeleton #[0x05AD]) = iteratedSkeleton #[0x05AD]
-    := by native_decide
+    := by decide
 
 /-- `iteratedSkeleton` reaches a fixed point on the chained
     KORONIS / COMMA-ABOVE-RIGHT mapping. -/
 theorem iteratedSkeleton_0343_idempotent :
     skeleton (iteratedSkeleton #[0x0343]) = iteratedSkeleton #[0x0343]
-    := by native_decide
+    := by decide
 
 /-- `iteratedSkeleton` agrees with `skeleton` whenever `skeleton` is
     already at its fixed point on a single pass (the common case). -/
 theorem iteratedSkeleton_ascii_eq_skeleton :
     iteratedSkeleton #[0x0068, 0x0069] = skeleton #[0x0068, 0x0069]
-    := by native_decide
+    := by decide
 
 /-- `areConfusableIterated` agrees with `areConfusable` on simple
     ASCII inputs. -/
 theorem areConfusableIterated_distinct_ascii :
-    areConfusableIterated #[0x0041] #[0x0042] = false := by native_decide
+    areConfusableIterated #[0x0041] #[0x0042] = false := by decide
 
 /-- `areConfusableIterated` recovers the same KORONIS/COMMA-ABOVE-RIGHT
     confusability that the single-pass relation establishes. -/
 theorem areConfusableIterated_0343_0315 :
-    areConfusableIterated #[0x0343] #[0x0315] = true := by native_decide
+    areConfusableIterated #[0x0343] #[0x0315] = true := by decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- §6 PERFORMANCE BOUNDS — empirical max-expansion on the bundled
--- UCD 17.0 data, proven via `native_decide` over every source
--- codepoint in the confusables table.  Used by the state-level
--- "no DoS via skeleton expansion" credibility claim.
+-- EXPANSION BOUNDS — the maximum target-sequence length across the
+-- confusables table, which bounds the per-pass output growth of
+-- `substitute`, proven by `decide` over every source codepoint.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The maximum target sequence length across every entry in
     `Confusables.mappings`.  Bounds the per-call expansion factor
     of `substitute`: `substitute(cps).size ≤ maxConfusableExpansion * cps.size`.
-    Computed by walking the bundled UTS #39 16.0.0 confusables
+    Computed by walking the bundled UTS #39 17.0.0 confusables
     data; the result is a small constant the proof can
-    `native_decide` on. -/
+    `decide` on. -/
 def maxConfusableExpansion : Nat :=
   Confusables.mappings.foldl (fun m e => max m e.2.size) 0
 
 /-- The maximum target sequence length is bounded.  Concrete value
-    `native_decide`-proved against the UCD 17.0 confusables data.
+    `decide`-proved against the UCD 17.0 confusables data.
     Per UTS #39 §4, target sequences are short — most are length 1,
     a small minority are length 2..3 (compound confusables like
     U+0247 ɇ → e + ◌̸).  This theorem replaces the hand-waved "small
     constant" with a verified concrete bound. -/
 theorem maxConfusableExpansion_concrete :
-    maxConfusableExpansion ≤ 18 := by native_decide
+    maxConfusableExpansion ≤ 18 := by decide
 
 /-- Per-pass `substitute` expansion factor: every codepoint
     expands by at most `maxConfusableExpansion`.  Combined with
@@ -419,14 +418,14 @@ theorem letterSkeleton_terminates (cps : Array Nat) :
   rfl
 
 /-- Spot-check: empty input gives empty letter skeleton. -/
-theorem letterSkeleton_empty : letterSkeleton #[] = #[] := by native_decide
+theorem letterSkeleton_empty : letterSkeleton #[] = #[] := by decide
 
 /-- Spot-check: ASCII inputs stay length-bounded by their input
     length (no expansion on pure ASCII because ASCII letters have
     no confusable expansion). -/
 theorem letterSkeleton_ascii_size :
     (letterSkeleton #[0x68, 0x65, 0x6C, 0x6C, 0x6F]).size = 5
-    := by native_decide
+    := by decide
 
 /-- Spot-check: even a 5-letter input expanding through one
     chained confusable (U+05AD → U+0596 → fixed point) stays
@@ -434,6 +433,6 @@ theorem letterSkeleton_ascii_size :
     expansion bound on the bundled data. -/
 theorem letterSkeleton_hebrew_size :
     (letterSkeleton #[0x05AD, 0x05AD, 0x05AD, 0x05AD, 0x05AD]).size ≤
-      5 * maxConfusableExpansion * 32 := by native_decide
+      5 * maxConfusableExpansion * 32 := by decide
 
 end Unicode.Confusables

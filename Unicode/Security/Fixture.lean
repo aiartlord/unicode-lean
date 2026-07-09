@@ -5,7 +5,7 @@
   files. Every per-family conformance harness (e.g.
   `Unicode/Conformance/Security/VariationSelectorPayloadTest.lean`)
   embeds a `*Test.txt` fixture via `include_str`, splits on newlines,
-  filterMaps over `parseRow`, and folds via `native_decide`.
+  filterMaps over `parseRow`, and folds via `decide`.
 
   ## Fixture row format
 
@@ -250,7 +250,7 @@ def parseFixture (rawText : String) : Array Row :=
     sections, both conformance levels exercised. -/
 private def syntheticFixture : String :=
 "# Synthetic fixture for parser validation
-# UCD version: 16.0.0
+# UCD version: 17.0.0
 # Security-spec version: 0.1.0
 
 # @section Clear
@@ -280,66 +280,66 @@ private def syntheticFixture : String :=
 
 /-- The synthetic parses cleanly, with five rows. -/
 theorem synthetic_parses_5_rows :
-    (parseFixture syntheticFixture).size = 5 := by native_decide
+    (parseFixture syntheticFixture).size = 5 := by decide
 
 /-- Row 0 is in the "Clear" section at basic level. -/
 theorem synthetic_row0_section :
-    (parseFixture syntheticFixture)[0]!.sectionName = "Clear" := by native_decide
+    (parseFixture syntheticFixture)[0]!.sectionName = "Clear" := by decide
 
 theorem synthetic_row0_level :
-    (parseFixture syntheticFixture)[0]!.conformanceLevel = .basic := by native_decide
+    (parseFixture syntheticFixture)[0]!.conformanceLevel = .basic := by decide
 
 theorem synthetic_row0_kind :
-    (parseFixture syntheticFixture)[0]!.expectedKind = .clear := by native_decide
+    (parseFixture syntheticFixture)[0]!.expectedKind = .clear := by decide
 
 theorem synthetic_row0_input :
     (parseFixture syntheticFixture)[0]!.input = #[0x48, 0x65, 0x6C, 0x6C, 0x6F] := by
-  native_decide
+  decide
 
 /-- Row 1 is in the "Hazard" section, basic level, DirectPayload sub-threat. -/
 theorem synthetic_row1_section :
-    (parseFixture syntheticFixture)[1]!.sectionName = "Hazard" := by native_decide
+    (parseFixture syntheticFixture)[1]!.sectionName = "Hazard" := by decide
 
 theorem synthetic_row1_kind :
-    (parseFixture syntheticFixture)[1]!.expectedKind = .hazard := by native_decide
+    (parseFixture syntheticFixture)[1]!.expectedKind = .hazard := by decide
 
 theorem synthetic_row1_sub :
     (parseFixture syntheticFixture)[1]!.expectedSubThreat = some "DirectPayload" := by
-  native_decide
+  decide
 
 theorem synthetic_row1_positions :
-    (parseFixture syntheticFixture)[1]!.expectedPositions = #[1, 2] := by native_decide
+    (parseFixture syntheticFixture)[1]!.expectedPositions = #[1, 2] := by decide
 
 theorem synthetic_row1_decoded :
     (parseFixture syntheticFixture)[1]!.attribution.get? "decoded" = some "A" := by
-  native_decide
+  decide
 
 /-- Row 2 is the Nethereum compound case (strict level). -/
 theorem synthetic_row2_level :
-    (parseFixture syntheticFixture)[2]!.conformanceLevel = .strict := by native_decide
+    (parseFixture syntheticFixture)[2]!.conformanceLevel = .strict := by decide
 
 theorem synthetic_row2_matched_target :
     (parseFixture syntheticFixture)[2]!.attribution.get? "matched_target"
       = some "Nethereum" := by
-  native_decide
+  decide
 
 /-- Row 3 inherits the "Compound" section but level=full from the
     interim @level directive. -/
 theorem synthetic_row3_section :
-    (parseFixture syntheticFixture)[3]!.sectionName = "Compound" := by native_decide
+    (parseFixture syntheticFixture)[3]!.sectionName = "Compound" := by decide
 
 theorem synthetic_row3_level :
-    (parseFixture syntheticFixture)[3]!.conformanceLevel = .full := by native_decide
+    (parseFixture syntheticFixture)[3]!.conformanceLevel = .full := by decide
 
 /-- Row 4 is in the CleanNegatives section, back to basic. -/
 theorem synthetic_row4_section :
     (parseFixture syntheticFixture)[4]!.sectionName = "CleanNegatives" := by
-  native_decide
+  decide
 
 theorem synthetic_row4_level :
-    (parseFixture syntheticFixture)[4]!.conformanceLevel = .basic := by native_decide
+    (parseFixture syntheticFixture)[4]!.conformanceLevel = .basic := by decide
 
 theorem synthetic_row4_kind :
-    (parseFixture syntheticFixture)[4]!.expectedKind = .clear := by native_decide
+    (parseFixture syntheticFixture)[4]!.expectedKind = .clear := by decide
 
 end Unicode.Security.Fixture

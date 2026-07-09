@@ -2,7 +2,7 @@
   Unicode.Generated.Confusables
 
   Confusable-skeleton mappings from `lemma/lean/Unicode/Ucd/confusables.txt`
-  (UTS #39 16.0.0), embedded as a String constant via `include_str`
+  (UTS #39 17.0.0), embedded as a String constant via `include_str`
   and parsed once at module load. Pattern follows
   `fgdorais/lean4-unicode-basic`.
 

@@ -15,7 +15,7 @@
   Sanctioning model.  Three classes of variation sequence are
   sanctioned by the Standard:
 
-    1. Standardized (`StandardizedVariants.txt`, UCD 16.0.0) —
+    1. Standardized (`StandardizedVariants.txt`, UCD 17.0.0) —
        math symbols, Mongolian, Egyptian hieroglyphs, CJK Compat.
     2. Emoji presentation — `Basic_Emoji` codepoint + `U+FE0F`
        (registered in `emoji-sequences.txt`).
@@ -43,6 +43,8 @@ import Unicode.Generated.StandardizedVariants
 import Unicode.Generated.EmojiData
 
 namespace Unicode.Security.Covert.VariationSelectorPayload
+
+set_option maxRecDepth 1000000
 
 open Unicode.Security.Calculus
 
@@ -433,64 +435,64 @@ def Classification.positions : Classification → Array Nat
 
 /-- Empty input is clear. -/
 theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
-  native_decide
+  decide +kernel
 
 /-- Pure ASCII text is clear. -/
 theorem detect_ascii_clear :
     (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
-  native_decide
+  decide +kernel
 
 /-- Emoji + VS16 — registered emoji-presentation, clear verdict. -/
 theorem detect_emoji_presentation_clear :
     (detect #[0x1F600, 0xFE0F]).classify.isClear = true := by
-  native_decide
+  decide +kernel
 
 /-- Mongolian Letter A + FVS1 (180B) — registered standardized variation,
     clear verdict.  (Mongolian uses 180B..180D, not the FE-range.) -/
 theorem detect_mongolian_variation_clear :
     (detect #[0x1820, 0x180B]).classify.isClear = true := by
-  native_decide
+  decide +kernel
 
 /-- VS16 (FE0F) on Latin A — Latin codepoints have no registered
     variation sequences, so this is `.illegalTarget`. -/
 theorem detect_illegal_target_latin :
     (detect #[0x0041, 0xFE0F]).classify.tag = some "IllegalTarget" := by
-  native_decide
+  decide +kernel
 
 /-- One-byte direct payload: `'a' + FE04 + FE01` decodes to the
     single byte `0x41 = 'A'`.  Must classify as `.directPayload`. -/
 theorem detect_direct_payload_byte :
     (detect #[0x0061, 0xFE04, 0xFE01]).classify.tag = some "DirectPayload" := by
-  native_decide
+  decide +kernel
 
 /-- The same input recovers the decoded byte stream `#['A']`. -/
 theorem detect_direct_payload_decodes_A :
     (detect #[0x0061, 0xFE04, 0xFE01]).recoveredPayloadBytes.toList = [0x41] := by
-  native_decide
+  decide +kernel
 
 /-- A repeated-VS run on a Latin base produces `.repeatedBase`. -/
 theorem detect_repeated_base :
     (detect #[0x0061, 0xFE04, 0xFE04, 0xFE04, 0xFE04,
               0xFE04, 0xFE04, 0xFE04, 0xFE04]).classify.tag
-      = some "RepeatedBase" := by native_decide
+      = some "RepeatedBase" := by decide +kernel
 
 /-- A registered emoji presentation followed by a suspicious-VS run
     produces `.embeddedAfterReg` (payload hiding behind a legit glyph). -/
 theorem detect_embedded_after_registered :
     (detect #[0x1F600, 0xFE0F, 0x0061,
               0xFE06, 0xFE05]).classify.tag = some "EmbeddedAfterRegistered" := by
-  native_decide
+  decide +kernel
 
 /-- VS15 (FE0E) on a Latin codepoint is `.illegalTarget` — Latin has
     no Emoji property, so VS15 is not a sanctioned text-presentation. -/
 theorem detect_vs15_on_latin_illegal :
     (detect #[0x0041, 0xFE0E]).classify.tag = some "IllegalTarget" := by
-  native_decide
+  decide +kernel
 
 /-- Supplementary-VS range (E0100) on Latin A is `.illegalTarget`. -/
 theorem detect_supplementary_vs_on_latin :
     (detect #[0x0041, 0xE0100]).classify.tag = some "IllegalTarget" := by
-  native_decide
+  decide +kernel
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §8 Boundary-case spot checks
@@ -499,16 +501,16 @@ theorem detect_supplementary_vs_on_latin :
 /-- A leading VS (no preceding base) is hazardous (not clear). -/
 theorem detect_leading_vs_suspicious :
     (detect #[0xFE04]).classify.isClear = false := by
-  native_decide
+  decide +kernel
 
 /-- `vsToNibble` is exhaustive on the FE-range: every codepoint in
     `0xFE00..0xFE0F` returns a `some` in `[0, 15]`. -/
-theorem vsToNibble_fe00 : vsToNibble 0xFE00 = some 0   := by native_decide
-theorem vsToNibble_fe0f : vsToNibble 0xFE0F = some 15  := by native_decide
-theorem vsToNibble_e0100 : vsToNibble 0xE0100 = some 16 := by native_decide
-theorem vsToNibble_e01ef : vsToNibble 0xE01EF = some 255 := by native_decide
+theorem vsToNibble_fe00 : vsToNibble 0xFE00 = some 0   := by decide +kernel
+theorem vsToNibble_fe0f : vsToNibble 0xFE0F = some 15  := by decide +kernel
+theorem vsToNibble_e0100 : vsToNibble 0xE0100 = some 16 := by decide +kernel
+theorem vsToNibble_e01ef : vsToNibble 0xE01EF = some 255 := by decide +kernel
 
 /-- `vsToNibble` returns `none` outside its two sanctioned ranges. -/
-theorem vsToNibble_outside : vsToNibble 0x0041 = none := by native_decide
+theorem vsToNibble_outside : vsToNibble 0x0041 = none := by decide +kernel
 
 end Unicode.Security.Covert.VariationSelectorPayload
