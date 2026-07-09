@@ -1,7 +1,7 @@
 /-
   Unicode.Conformance.CollationTest
 
-  Conformance against UCA 16.0.0's `CollationTest_NON_IGNORABLE*.txt`
+  Conformance against UCA 17.0.0's `CollationTest_NON_IGNORABLE*.txt`
   and `CollationTest_SHIFTED*.txt` files. Upstream ships each test in
   two forms with identical row content but different annotation:
 
@@ -21,7 +21,7 @@
     * SHIFTED       — variable elements have L1/L2/L3 zeroed and
                       their primary demoted to L4.
 
-  Four theorems close the file via `native_decide`:
+  Four theorems close the file via `decide`:
 
     1. `nonIgnorable_conformance` — adjacent ordering on the SHORT
        NON_IGNORABLE file (every adjacent pair `(rows[i], rows[i+1])`
@@ -132,7 +132,7 @@ def firstFailingPair (handling : VariableHandling) (rows : Array (Array Nat)) :
   return none
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- §4 BOOLEAN ENTRY POINTS  (closed by `native_decide`)
+-- §4 BOOLEAN ENTRY POINTS  (closed by `decide`)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- True iff the entire NON_IGNORABLE test file sorts correctly under
@@ -158,11 +158,11 @@ def shiftedOrderedFirstN (n : Nat) : Bool :=
 
 /-- Every adjacent pair in the official UCA NON_IGNORABLE conformance
     file sorts correctly under our `sortKey .nonIgnorable`. -/
-theorem nonIgnorable_conformance : nonIgnorableOrdered = true := by native_decide
+theorem nonIgnorable_conformance : nonIgnorableOrdered = true := by decide
 
 /-- Every adjacent pair in the official UCA SHIFTED conformance file
     sorts correctly under our `sortKey .shifted`. -/
-theorem shifted_conformance : shiftedOrdered = true := by native_decide
+theorem shifted_conformance : shiftedOrdered = true := by decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 FULL-FORMAT BYTE-EQUAL CONFORMANCE
@@ -251,13 +251,13 @@ def shiftedSortKeyMatches : Bool :=
     (FULL form) produces a sort key byte-equal to the expected
     `[L1 ‖ 0 ‖ L2 ‖ 0 ‖ L3]` weights given inline in the spec. -/
 theorem nonIgnorable_sortkey_full_conformance :
-    nonIgnorableSortKeyMatches = true := by native_decide
+    nonIgnorableSortKeyMatches = true := by decide
 
 /-- Every row of the official UCA SHIFTED conformance file (FULL
     form) produces a sort key byte-equal to the expected
     `[L1 ‖ 0 ‖ L2 ‖ 0 ‖ L3 ‖ 0 ‖ L4]` weights given inline in the
     spec. -/
 theorem shifted_sortkey_full_conformance :
-    shiftedSortKeyMatches = true := by native_decide
+    shiftedSortKeyMatches = true := by decide
 
 end Unicode.Conformance.CollationTest

@@ -3,7 +3,7 @@
 
   RGI (Recommended for General Interchange) emoji sequence tables
   parsed from `emoji-sequences.txt` and `emoji-zwj-sequences.txt`
-  (UTS #51 Emoji 16.0). The two files together enumerate every
+  (UTS #51 Emoji 17.0). The two files together enumerate every
   fully-qualified emoji sequence the Unicode Consortium recommends
   for keyboards and pickers; downstream renderers should produce a
   single emoji glyph for any sequence in this set.
@@ -34,18 +34,19 @@
   Basic_Emoji rows often use a `lo..hi` range; every other type
   carries an explicit codepoint sequence. The parser below treats
   ranges as a special case alongside fixed-length sequences.
+
+  The property types, the `SequenceRow` structure, and the pinned `List`
+  of parsed rows (`parsedRowsList`) live in
+  `Unicode.Generated.EmojiSequencesData`; the per-type sequence tables
+  derive from that `List` and the membership tests reduce in the kernel.
+  This module keeps the `include_str` sources and the parsers, and a
+  build-time drift gate (`#eval`) proves the materialized rows match a
+  fresh parse.
 -/
 
-namespace Unicode.Generated.EmojiSequences
+import Unicode.Generated.EmojiSequencesData
 
-inductive RgiSequenceType where
-  | Basic_Emoji
-  | Emoji_Keycap_Sequence
-  | RGI_Emoji_Flag_Sequence
-  | RGI_Emoji_Modifier_Sequence
-  | RGI_Emoji_Tag_Sequence
-  | RGI_Emoji_ZWJ_Sequence
-  deriving DecidableEq, Repr, Inhabited
+namespace Unicode.Generated.EmojiSequences
 
 @[inline]
 def trimS (s : String) : String := (String.trimAscii s).toString
@@ -76,17 +77,6 @@ def parseCodepointList (s : String) : Array Nat :=
     let t := trimS tok
     if t.isEmpty then none else some (parseHex t))).toArray
 
-/-- One parsed row: either a single codepoint (or a range, encoded
-    by both `lo` and `hi`) carrying a Basic_Emoji classification, or
-    an explicit sequence of codepoints. The `seq` array is the full
-    canonical form including any variation selectors. -/
-structure SequenceRow where
-  seq  : Array Nat
-  type : RgiSequenceType
-  -- For Basic_Emoji range rows, `seq.size = 1` and `rangeMax`
-  -- carries the upper bound of the range; otherwise `rangeMax = 0`.
-  rangeMax : Nat
-  deriving Repr, Inhabited
 
 /-- Parse one sequence-file row. Returns `none` for blank or
     comment lines, or for rows whose type field is unrecognised. -/
@@ -94,23 +84,26 @@ def parseRow (rawLine : String) : Option SequenceRow :=
   let stripped : String := (rawLine.takeWhile (· != '#')).toString
   let line := trimS stripped
   if line.isEmpty then none else
-  match String.splitOn line ";" with
-  | cpField :: typeField :: _ =>
+  let fields : Array String := (String.splitOn line ";").toArray
+  if fields.size ≥ 2 then
+    let cpField := fields[0]!
+    let typeField := fields[1]!
     match parseType? (trimS typeField) with
     | none => none
     | some t =>
       let trimmedCp := trimS cpField
-      match String.splitOn trimmedCp ".." with
-      | [single] =>
+      let rangeParts : Array String := (String.splitOn trimmedCp "..").toArray
+      if rangeParts.size = 1 then
         -- Either one codepoint or a space-separated sequence.
-        some ⟨parseCodepointList single, t, 0⟩
-      | [lo, hi] =>
-        let loN := parseHex (trimS lo)
-        let hiN := parseHex (trimS hi)
+        some ⟨parseCodepointList rangeParts[0]!, t, 0⟩
+      else if rangeParts.size = 2 then
+        let loN := parseHex (trimS rangeParts[0]!)
+        let hiN := parseHex (trimS rangeParts[1]!)
         some ⟨#[loN], t, hiN⟩
-      | irregularSplit =>
-        Function.const (List String) none irregularSplit
-  | irregularSplit => Function.const (List String) none irregularSplit
+      else
+        none
+  else
+    none
 
 /-- Raw text of `emoji-sequences.txt`, embedded at compile time. -/
 def emojiSequencesRaw : String := include_str "../Ucd/emoji-sequences.txt"
@@ -123,31 +116,32 @@ def parsedRows : Array SequenceRow :=
   ((emojiSequencesRaw.splitOn "\n").filterMap parseRow).toArray
     ++ ((emojiZwjSequencesRaw.splitOn "\n").filterMap parseRow).toArray
 
-/-- Filter rows by type. -/
-def rowsOfType (t : RgiSequenceType) : Array SequenceRow :=
-  parsedRows.filter (fun r => r.type = t)
+/-- Filter rows by type, over the materialized `List` so downstream
+    membership tests reduce linearly in the kernel. -/
+def rowsOfType (t : RgiSequenceType) : List SequenceRow :=
+  parsedRowsList.filter (fun r => r.type = t)
 
 /-- Basic_Emoji rows. -/
-def basicEmojiRows : Array SequenceRow := rowsOfType .Basic_Emoji
+def basicEmojiRows : List SequenceRow := rowsOfType .Basic_Emoji
 
 /-- Keycap sequences. -/
-def keycapSequences : Array (Array Nat) :=
+def keycapSequences : List (Array Nat) :=
   (rowsOfType .Emoji_Keycap_Sequence).map (·.seq)
 
 /-- Flag sequences. -/
-def flagSequences : Array (Array Nat) :=
+def flagSequences : List (Array Nat) :=
   (rowsOfType .RGI_Emoji_Flag_Sequence).map (·.seq)
 
 /-- Modifier sequences. -/
-def modifierSequences : Array (Array Nat) :=
+def modifierSequences : List (Array Nat) :=
   (rowsOfType .RGI_Emoji_Modifier_Sequence).map (·.seq)
 
 /-- Tag sequences (subdivision flags). -/
-def tagSequences : Array (Array Nat) :=
+def tagSequences : List (Array Nat) :=
   (rowsOfType .RGI_Emoji_Tag_Sequence).map (·.seq)
 
 /-- ZWJ sequences. -/
-def zwjSequences : Array (Array Nat) :=
+def zwjSequences : List (Array Nat) :=
   (rowsOfType .RGI_Emoji_ZWJ_Sequence).map (·.seq)
 
 /-- True iff `cp` matches a Basic_Emoji single-codepoint or range
@@ -215,8 +209,27 @@ def zwjAlphabet : Array Nat :=
 
 /-- True iff `cp` appears at some position of a registered RGI
     ZWJ sequence (excluding the ZWJ joiner itself).  Membership
-    against `zwjAlphabet`. -/
+    against the pinned `zwjAlphabetList` (kernel-reducible; the
+    build-time gate below proves it equals `zwjAlphabet`). -/
 def isInZwjAlphabet (cp : Nat) : Bool :=
-  zwjAlphabet.contains cp
+  zwjAlphabetList.contains cp
+
+-- Build-time gate: the pinned ZWJ alphabet equals the fold-and-dedup.
+#eval do
+  unless zwjAlphabetList.toArray == zwjAlphabet do
+    throw (IO.userError "EmojiSequences drift: zwjAlphabetList ≠ zwjAlphabet fold")
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- DRIFT GATE
+--
+-- Build-time assertion (compiled `#eval`) that the materialized
+-- `parsedRowsList` agrees exactly with a fresh parse of the pinned
+-- `emoji-sequences.txt` + `emoji-zwj-sequences.txt`. A mismatch aborts
+-- the build.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+#eval do
+  unless parsedRowsList.toArray == parsedRows do
+    throw (IO.userError "EmojiSequences drift: parsedRowsList ≠ parsed parsedRows")
 
 end Unicode.Generated.EmojiSequences

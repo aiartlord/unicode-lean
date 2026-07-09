@@ -2,7 +2,7 @@
   Unicode.Generated.IdnaMapping
 
   IDNA mapping table from `lemma/lean/Unicode/Ucd/IdnaMappingTable.txt`
-  (UTS #46 16.0.0 — IDNA Compatibility Processing), embedded as a
+  (UTS #46 17.0.0 — IDNA Compatibility Processing), embedded as a
   String constant via `include_str` and parsed once at module load.
   Pattern follows `fgdorais/lean4-unicode-basic`.
 
@@ -26,32 +26,12 @@
   Counts: 9185 ranges.
 -/
 
+import Unicode.Generated.IdnaMappingData
+
 namespace Unicode.Generated.IdnaMapping
 
-inductive IdnaDisposition where
-  | Valid
-  | Mapped
-  | Ignored
-  | Deviation
-  | Disallowed
-  deriving DecidableEq, Repr, Inhabited
 
-inductive IdnaIdna2008Status where
-  | NV8
-  | XV8
-  deriving DecidableEq, Repr, Inhabited
 
-/-- One row of the IDNA mapping table. `mapping` is empty when the row
-    has no mapping target (e.g. for `Valid`, `Ignored`, `Disallowed`),
-    and carries one or more codepoints for `Mapped` and the
-    transitional case of `Deviation`. -/
-structure IdnaRow where
-  min          : Nat
-  max          : Nat
-  disposition  : IdnaDisposition
-  mapping      : Array Nat
-  idna2008     : Option IdnaIdna2008Status
-  deriving Repr, Inhabited
 
 @[inline]
 def trimS (s : String) : String := (String.trimAscii s).toString
@@ -120,12 +100,15 @@ def idnaMappingRaw : String := include_str "../Ucd/IdnaMappingTable.txt"
 /-- Range table mapping codepoint ranges to their IDNA disposition.
     Stored in source order (already sorted by `min` per the UCD
     file convention), so binary search by `min` is correct. -/
-def idnaMappingRanges : Array IdnaRow :=
+def idnaMappingRangesParsed : Array IdnaRow :=
   ((idnaMappingRaw.splitOn "\n").filterMap parseIdnaRow).toArray
+
+/-- The materialized range table (runtime Array view of the pinned List). -/
+def idnaMappingRanges : Array IdnaRow := idnaMappingRangesList.toArray
 
 /-- Binary search the sorted-by-`min` `idnaMappingRanges` for a row
     whose `[min, max]` interval contains `cp`. Fuel-bounded for
-    `native_decide` evaluability; `arr.size` is always a sufficient
+    `decide` evaluability; `arr.size` is always a sufficient
     bound and a strict overestimate of the actual ⌈log₂ n⌉ steps.
     Returns `none` for codepoints outside every range (caller maps
     that to the table's "Disallowed" default). -/
@@ -154,5 +137,15 @@ def binarySearchRange (arr : Array IdnaRow) (cp : Nat)
 def lookupRowBinary (cp : Nat) : Option IdnaRow :=
   binarySearchRange idnaMappingRanges cp 0 idnaMappingRanges.size
     (idnaMappingRanges.size + 1)
+
+/-- Kernel-reducible linear lookup over the pinned `List` (the Array
+    binary search is the runtime path; this is for `decide` proofs). -/
+def lookupRowList? (cp : Nat) : Option IdnaRow :=
+  idnaMappingRangesList.find? (fun r => decide (r.min ≤ cp ∧ cp ≤ r.max))
+
+-- Build-time drift gate.
+#eval do
+  unless idnaMappingRangesList.toArray == idnaMappingRangesParsed do
+    throw (IO.userError "IdnaMapping drift: list ≠ parsed")
 
 end Unicode.Generated.IdnaMapping

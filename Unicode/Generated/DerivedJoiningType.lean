@@ -2,7 +2,7 @@
   Unicode.Generated.DerivedJoiningType
 
   Derived `Joining_Type` table from
-  `Unicode/Ucd/extracted/DerivedJoiningType.txt` (Unicode 16.0.0),
+  `Unicode/Ucd/extracted/DerivedJoiningType.txt` (Unicode 17.0.0),
   embedded as a String constant via `include_str` and parsed once at
   module load. Pattern follows `fgdorais/lean4-unicode-basic`.
 
@@ -14,22 +14,12 @@
   Joining_Type of characters around U+200C.
 -/
 
+import Unicode.Generated.DerivedJoiningTypeData
+
 namespace Unicode.Generated.DerivedJoiningType
 
-inductive JoiningType where
-  | RightJoining   -- R
-  | LeftJoining    -- L
-  | DualJoining    -- D
-  | JoinCausing    -- C
-  | Transparent    -- T
-  | NonJoining     -- U  (the default for unlisted codepoints)
-  deriving DecidableEq, Repr, Inhabited
+set_option maxRecDepth 100000
 
-structure JoiningRow where
-  min          : Nat
-  max          : Nat
-  joiningType  : JoiningType
-  deriving Repr, Inhabited
 
 @[inline]
 def trimS (s : String) : String := (String.trimAscii s).toString
@@ -79,13 +69,13 @@ def derivedJoiningTypeRaw : String := include_str "../Ucd/DerivedJoiningType.txt
 
 /-- All Joining_Type rows from the derived table. Codepoints not
     covered default to `NonJoining` per the file's `@missing` directive. -/
-def joiningRanges : Array JoiningRow :=
+def joiningRangesParsed : Array JoiningRow :=
   ((derivedJoiningTypeRaw.splitOn "\n").filterMap parseRow).toArray
 
 /-- Look up the Joining_Type of `cp`, returning `NonJoining` for
     codepoints outside the table coverage (the @missing default). -/
 def joiningType (cp : Nat) : JoiningType :=
-  match joiningRanges.findSome? (fun row =>
+  match joiningRangesList.findSome? (fun row =>
       if row.min ≤ cp ∧ cp ≤ row.max then some row.joiningType else none) with
   | some jt => jt
   | none    => .NonJoining
@@ -95,18 +85,23 @@ def joiningType (cp : Nat) : JoiningType :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- ARABIC TATWEEL is the canonical Joining_Causing character. -/
-theorem joiningType_tatweel : joiningType 0x0640 = .JoinCausing := by native_decide
+theorem joiningType_tatweel : joiningType 0x0640 = .JoinCausing := by decide +kernel
 
 /-- ZERO WIDTH JOINER is Joining_Causing. -/
-theorem joiningType_zwj : joiningType 0x200D = .JoinCausing := by native_decide
+theorem joiningType_zwj : joiningType 0x200D = .JoinCausing := by decide +kernel
 
 /-- KASHMIRI YEH is Dual_Joining. -/
-theorem joiningType_kashmiri_yeh : joiningType 0x0620 = .DualJoining := by native_decide
+theorem joiningType_kashmiri_yeh : joiningType 0x0620 = .DualJoining := by decide +kernel
 
 /-- HEBREW LETTER ALEF is the default — Non_Joining (despite being RTL). -/
-theorem joiningType_hebrew_alef : joiningType 0x05D0 = .NonJoining := by native_decide
+theorem joiningType_hebrew_alef : joiningType 0x05D0 = .NonJoining := by decide +kernel
 
 /-- LATIN CAPITAL A is the default — Non_Joining. -/
-theorem joiningType_A : joiningType 0x0041 = .NonJoining := by native_decide
+theorem joiningType_A : joiningType 0x0041 = .NonJoining := by decide +kernel
+
+-- Build-time drift gate.
+#eval do
+  unless joiningRangesList.toArray == joiningRangesParsed do
+    throw (IO.userError "DerivedJoiningType drift: list ≠ parsed")
 
 end Unicode.Generated.DerivedJoiningType
