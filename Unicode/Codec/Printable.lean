@@ -330,6 +330,96 @@ theorem toNFC_e_acute : NFC.toNFC #[0x65, 0x301] = #[0xE9] := by
       Reorder.reorder_id_on_HasSortedRuns #[0x65, 0x301] hasSortedRuns_e_acute,
       compose_e_acute]
 
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- "héllo" round-trips through NFC: the precomposed é (U+00E9) decomposes to
+-- e + combining acute, reorders (identity — already canonically ordered), then
+-- recomposes to é. The compose stage is a six-step shift/compose fold; the
+-- decompose stage expands é and leaves h/l/o terminal.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- A compose step on a starter that does not compose with the active starter:
+    emit the active starter, hold the new one. -/
+theorem stepCompose_shift (em : Array Nat) (s c : Nat)
+    (hc : Lookup.canonicalCombiningClass c = 0)
+    (hpc : Compose.primaryComposite? s c = none) :
+    Compose.stepCompose { emitted := em, starter := some s, buffer := [], maxCCC := 0 } c
+      = { emitted := em ++ #[s], starter := some c, buffer := [], maxCCC := 0 } := by
+  rw [Compose.stepCompose.eq_def]
+  simp [hc, hpc]
+
+/-- The e + combining acute compose step, from any emitted prefix. -/
+theorem stepCompose_e_acute_gen (em : Array Nat) :
+    Compose.stepCompose { emitted := em, starter := some 0x65, buffer := [], maxCCC := 0 } 0x301
+      = { emitted := em, starter := some 0xE9, buffer := [], maxCCC := 0 } := by
+  rw [Compose.stepCompose.eq_def]
+  simp [Reorder.ccc_combining_acute, primaryComposite_e_acute]
+
+theorem stepCompose_init_h : Compose.stepCompose Compose.initialState 0x68
+    = { emitted := #[], starter := some 0x68, buffer := [], maxCCC := 0 } := by
+  rw [Compose.stepCompose.eq_def]
+  simp [Compose.initialState, LowCodepointNfc.cccz 0x68 (by decide)]
+
+theorem compose_héllo :
+    Compose.compose #[0x68, 0x65, 0x301, 0x6C, 0x6C, 0x6F] = #[0x68, 0xE9, 0x6C, 0x6C, 0x6F] := by
+  rewrite [Compose.compose.eq_def, ← Array.foldl_toList, List.toList_toArray,
+           List.foldl_cons, List.foldl_cons, List.foldl_cons, List.foldl_cons,
+           List.foldl_cons, List.foldl_cons, List.foldl_nil, stepCompose_init_h,
+           stepCompose_shift #[] 0x68 0x65 (LowCodepointNfc.cccz 0x65 (by decide))
+             (LowCodepointNfc.nc_lt 0x68 0x65 (by decide)
+               (LowCodepointNfc.hang_none_lt 0x68 0x65 (by decide))),
+           stepCompose_e_acute_gen (#[] ++ #[0x68]),
+           stepCompose_shift (#[] ++ #[0x68]) 0xE9 0x6C (LowCodepointNfc.cccz 0x6C (by decide))
+             (LowCodepointNfc.nc_lt 0xE9 0x6C (by decide) (by decide)),
+           stepCompose_shift ((#[] ++ #[0x68]) ++ #[0xE9]) 0x6C 0x6C
+             (LowCodepointNfc.cccz 0x6C (by decide))
+             (LowCodepointNfc.nc_lt 0x6C 0x6C (by decide)
+               (LowCodepointNfc.hang_none_lt 0x6C 0x6C (by decide))),
+           stepCompose_shift (((#[] ++ #[0x68]) ++ #[0xE9]) ++ #[0x6C]) 0x6C 0x6F
+             (LowCodepointNfc.cccz 0x6F (by decide))
+             (LowCodepointNfc.nc_lt 0x6C 0x6F (by decide)
+               (LowCodepointNfc.hang_none_lt 0x6C 0x6F (by decide)))]
+  rfl
+
+theorem canonicalDecomposition_eacute : Lookup.canonicalDecomposition 0xE9 = #[0x65, 0x301] :=
+  Lookup.canonicalDecomposition_of_hit 0xE9 #[0x65, 0x301]
+    (by unfold UnicodeData.rowsList; simp only [List.any_append]; decide +kernel)
+    (by unfold UnicodeData.rowsList; simp only [List.all_append]; decide +kernel)
+
+theorem fcdf_acute (fuel : Nat) :
+    Decompose.fullCanonicalDecomposeFuel (fuel + 1) 0x0301 = #[0x0301] := by
+  rw [Decompose.fullCanonicalDecomposeFuel.eq_def]
+  simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
+        Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
+        canonicalDecomposition_acute]
+
+theorem fcdf_eacute (fuel : Nat) :
+    Decompose.fullCanonicalDecomposeFuel (fuel + 2) 0x00E9 = #[0x0065, 0x0301] := by
+  rw [Decompose.fullCanonicalDecomposeFuel.eq_def]
+  simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
+        Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
+        canonicalDecomposition_eacute, Decompose.fcdf_latin_e, fcdf_acute]
+
+theorem decomposeSequence_héllo :
+    Decompose.decomposeSequence #[0x68, 0xE9, 0x6C, 0x6C, 0x6F]
+      = #[0x68, 0x65, 0x301, 0x6C, 0x6C, 0x6F] := by
+  simp only [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose, Decompose.maxDepth]
+  simp [Decompose.fcdf_latin_h 31, fcdf_eacute 30, Decompose.fcdf_latin_l 31,
+        Decompose.fcdf_latin_o 31]
+
+theorem hasSortedRuns_decomposed_héllo :
+    Reorder.HasSortedRuns [0x68, 0x65, 0x301, 0x6C, 0x6C, 0x6F] := by
+  simp [Reorder.HasSortedRuns, LowCodepointNfc.cccz 0x68 (by decide),
+        LowCodepointNfc.cccz 0x65 (by decide), Reorder.ccc_combining_acute,
+        LowCodepointNfc.cccz 0x6C (by decide), LowCodepointNfc.cccz 0x6F (by decide)]
+
+theorem toNFC_héllo :
+    NFC.toNFC #[0x68, 0xE9, 0x6C, 0x6C, 0x6F] = #[0x68, 0xE9, 0x6C, 0x6C, 0x6F] := by
+  unfold NFC.toNFC NFC.toNFD
+  rw [decomposeSequence_héllo,
+      Reorder.reorder_id_on_HasSortedRuns #[0x68, 0x65, 0x301, 0x6C, 0x6C, 0x6F]
+        hasSortedRuns_decomposed_héllo,
+      compose_héllo]
+
 theorem empty_is_printable :
     isPrintableUtf8Bytes ByteArray.empty = true :=
   printable_true_of ByteArray.empty (by decide)
@@ -356,7 +446,18 @@ theorem hello_nl_is_printable :
           rcases hMem with rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl <;> decide))
 
 theorem accented_is_printable :
-    isPrintableUtf8Bytes "héllo".toUTF8 = true := by native_decide
+    isPrintableUtf8Bytes "héllo".toUTF8 = true := by
+  have hn : Unicode.Normalization.Utf8Bridge.isNFCBytes "héllo".toUTF8 = true := by
+    have hv : Unicode.Codec.Utf8.isValidUtf8 "héllo".toUTF8 = true := by decide
+    have hd : Unicode.Normalization.Utf8Bridge.decodeToCodepoints "héllo".toUTF8
+        = #[0x68, 0xE9, 0x6C, 0x6C, 0x6F] := by decide
+    have he : Unicode.Normalization.Utf8Bridge.encodeCodepoints #[0x68, 0xE9, 0x6C, 0x6C, 0x6F]
+        = "héllo".toUTF8 := by decide
+    unfold Unicode.Normalization.Utf8Bridge.isNFCBytes Unicode.Normalization.Utf8Bridge.toNFCBytes
+    simp only [String.toUTF8] at hv hd he
+    simp [hv, hd, toNFC_héllo, he]
+  exact printable_true_of "héllo".toUTF8 (by decide)
+    (firstForbiddenControl_none "héllo".toUTF8 (by decide)) (by decide) hn
 
 theorem control_NUL_not_printable :
     isPrintableUtf8Bytes (ByteArray.mk #[0x00]) = false := by
