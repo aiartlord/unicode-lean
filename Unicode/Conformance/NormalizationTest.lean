@@ -4,7 +4,7 @@
   UAX #15 conformance harness against the official
   `NormalizationTest.txt` published with UCD 17.0.0. Embeds the test
   file via `include_str`, parses each data row at module load, and
-  verifies every UAX #15 §5 conformance property with `native_decide`
+  verifies every UAX #15 §5 conformance property with `decide`
   theorems split per `@Part` section.
 
   Conformance test format (UAX #15 §5):
@@ -26,7 +26,7 @@
       NFKD(c1) = NFKD(c2) = NFKD(c3) = NFKD(c4) = NFKD(c5) = c5
 
   Six theorems below — one per `@Part` section — exercise the full
-  conformance suite via `native_decide` against the bundled
+  conformance suite via `decide` against the bundled
   `Unicode/Ucd/NormalizationTest.txt`.
 -/
 
@@ -151,21 +151,21 @@ def partPasses (p : Nat) : Bool :=
   (taggedRows.filter (fun t => t.part = p)).all (fun t => verifyRow t.row)
 
 /-- Part 0 — UAX #15 specific cases (45 rows). -/
-theorem part0_conformance : partPasses 0 = true := by native_decide
+theorem part0_conformance : partPasses 0 = true := by decide
 
 /-- Part 5 — Chained primary composites (38 rows). -/
-theorem part5_conformance : partPasses 5 = true := by native_decide
+theorem part5_conformance : partPasses 5 = true := by decide
 
 /-- Part 3 — PRI #29 test (194 rows). -/
-theorem part3_conformance : partPasses 3 = true := by native_decide
+theorem part3_conformance : partPasses 3 = true := by decide
 
 /-- Part 4 — Canonical closures, excluding Hangul (735 rows). -/
-theorem part4_conformance : partPasses 4 = true := by native_decide
+theorem part4_conformance : partPasses 4 = true := by decide
 
 /-- Part 2 — Canonical Order Test (1936 rows). -/
-theorem part2_conformance : partPasses 2 = true := by native_decide
+theorem part2_conformance : partPasses 2 = true := by decide
 
 /-- Part 1 — Character-by-character test (17086 rows). -/
-theorem part1_conformance : partPasses 1 = true := by native_decide
+theorem part1_conformance : partPasses 1 = true := by decide
 
 end Unicode.Conformance.NormalizationTest

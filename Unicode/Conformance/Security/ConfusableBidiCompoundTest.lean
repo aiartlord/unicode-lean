@@ -3,7 +3,7 @@
 
   Conformance proof for the X3 family.  Folds the universal
   `Unicode.Security.Fixture` parser over the hand-curated
-  `ConfusableBidiCompoundTest.txt` fixture and `native_decide`-closes
+  `ConfusableBidiCompoundTest.txt` fixture and `decide`-closes
   the predicate that every row's expected verdict matches what
   `Unicode.Security.Boundary.ConfusableBidiCompound.detect` produces.
 -/
@@ -50,7 +50,7 @@ def projectPositions (c : Classification) : Array Nat :=
     column-4 attribution.  Recognised key: `conf_count` (number of
     confusable-skeleton codepoints encountered in the same input
     as a bidi-control / isolate). -/
-private def metadataMatches (v : Verdict)
+def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey "conf_count" v.confusableCount
 
@@ -67,20 +67,20 @@ def verifyRow (r : Row) : Bool :=
   decide (pos = r.expectedPositions)
 
 /-- Every fixture row's detector verdict matches its expected verdict. -/
-theorem all_rows_pass : rows.all verifyRow = true := by native_decide
+theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 24 := by native_decide
+theorem row_count : rows.size = 24 := by decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by decide
 
 theorem covers_override :
     (rows.filter (·.sectionName = "ConfusableInOverride")).size ≥ 8 := by
-  native_decide
+  decide
 
 theorem covers_isolate :
     (rows.filter (·.sectionName = "ConfusableInIsolate")).size ≥ 6 := by
-  native_decide
+  decide
 
 end Unicode.Conformance.Security.ConfusableBidiCompoundTest

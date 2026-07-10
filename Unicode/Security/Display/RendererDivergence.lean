@@ -110,7 +110,8 @@ def isFullwidthHalfwidth (cp : Nat) : Bool :=
 def isGraphemeExtend (cp : Nat) : Bool :=
   match Unicode.Generated.GraphemeBreakProperty.lookupGCB cp with
   | .Extend => true
-  | other   => Function.const _ false other
+  | other   =>
+    Function.const Unicode.Generated.GraphemeBreakProperty.GCBClass false other
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 Sub-detectors
@@ -267,45 +268,45 @@ def Classification.positions : Classification → Array Nat
 
 /-- Empty input is stable. -/
 theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Plain ASCII is stable. -/
 theorem detect_ascii_clear :
     (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Plain Han is stable. -/
 theorem detect_han_clear :
-    (detect #[0x4E2D, 0x6587]).classify.isClear = true := by native_decide
+    (detect #[0x4E2D, 0x6587]).classify.isClear = true := by decide
 
 /-- A single VS (FE0F) — variance. -/
 theorem detect_vs_variance :
     (detect #[0x1F600, 0xFE0F]).classify.tag
-      = some "VariationSelectorVariance" := by native_decide
+      = some "VariationSelectorVariance" := by decide
 
 /-- Registered RGI family ZWJ sequence — stable. -/
 theorem detect_rgi_family_clear :
     (detect #[0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467,
-              0x200D, 0x1F466]).classify.isClear = true := by native_decide
+              0x200D, 0x1F466]).classify.isClear = true := by decide
 
 /-- Unregistered ZWJ chain (man + ZWJ + woman, not in RGI) — variance. -/
 theorem detect_unregistered_zwj_variance :
     (detect #[0x1F468, 0x200D, 0x1F469]).classify.tag
-      = some "UnregisteredZwjVariance" := by native_decide
+      = some "UnregisteredZwjVariance" := by decide
 
 /-- 4-deep combining stack (Zalgo-shape) — variance. -/
 theorem detect_zalgo_variance :
     (detect #[0x0061, 0x0301, 0x0302, 0x0303, 0x0304]).classify.tag
-      = some "CombiningStackOverflow" := by native_decide
+      = some "CombiningStackOverflow" := by decide
 
 /-- Fullwidth A — variance. -/
 theorem detect_fullwidth_variance :
     (detect #[0xFF21]).classify.tag = some "FullwidthVariance" := by
-  native_decide
+  decide
 
 /-- Mixed Latin + Hebrew — variance. -/
 theorem detect_mixed_direction :
     (detect #[0x41, 0x42, 0x05D0, 0x05D1]).classify.tag
-      = some "MixedDirectionVariance" := by native_decide
+      = some "MixedDirectionVariance" := by decide
 
 end Unicode.Security.Display.RendererDivergence

@@ -54,6 +54,10 @@ open Unicode.Security.Calculus
 open Unicode.Restriction (RestrictionLevel)
 open Unicode.Generated.ScriptExtensions (ScriptAbbrev)
 
+-- The `detect` spot-checks reduce through the script/identifier tables;
+-- kernel reduction of those lookups exceeds the default recursion limit.
+set_option maxRecDepth 1000000
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 Types
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -246,37 +250,37 @@ def Classification.positions : Classification → Array Nat
 
 /-- Empty input is clear. -/
 theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
-  native_decide
+  decide +kernel
 
 /-- Pure ASCII is clear at `.ASCIIOnly`. -/
 theorem detect_ascii_clear :
     (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
-  native_decide
+  decide +kernel
 
 /-- Pure Cyrillic "привет" is single-script-clear. -/
 theorem detect_cyrillic_single_clear :
     (detect #[0x043F, 0x0440, 0x0438, 0x0432, 0x0435, 0x0442]).classify.isClear
-      = true := by native_decide
+      = true := by decide +kernel
 
 /-- Pure Greek "αλφα" is single-script-clear. -/
 theorem detect_greek_single_clear :
     (detect #[0x03B1, 0x03BB, 0x03C6, 0x03B1]).classify.isClear = true := by
-  native_decide
+  decide +kernel
 
 /-- Latin + Cyrillic mix — fires `.latinCyrillic`. -/
 theorem detect_latin_cyrillic :
     (detect #[0x0061, 0x0440, 0x0061]).classify.tag = some "LatinCyrillic" := by
-  native_decide
+  decide +kernel
 
 /-- Latin + Greek mix — fires `.latinGreek`. -/
 theorem detect_latin_greek :
     (detect #[0x0061, 0x03B1, 0x0061]).classify.tag = some "LatinGreek" := by
-  native_decide
+  decide +kernel
 
 /-- Hangul filler U+115F is Identifier_Status = Restricted — fires
     `.restrictedStatusCp`. -/
 theorem detect_restricted_hangul_filler :
     (detect #[0x115F]).classify.tag = some "RestrictedStatusCp" := by
-  native_decide
+  decide +kernel
 
 end Unicode.Security.Identity.MixedScriptAdmissibility

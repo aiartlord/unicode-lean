@@ -22,6 +22,8 @@ import Unicode.Idna.Disposition
 
 namespace Unicode.Idna.Map
 
+set_option maxRecDepth 1000000
+
 open Unicode.Generated.IdnaMapping
 open Unicode.Idna.Disposition
 
@@ -105,20 +107,20 @@ def mapTransitional (input : Array Nat) : Result := Id.run do
 theorem mapNT_faß :
     mapNonTransitional #[0x0046, 0x0061, 0x00DF]
       = { output := #[0x0066, 0x0061, 0x00DF], hasErrors := false } := by
-  native_decide
+  decide +kernel
 
 /-- "Faß" → "fass" transitionally (capital F mapped to f, sharp s → ss). -/
 theorem mapTr_fass :
     mapTransitional #[0x0046, 0x0061, 0x00DF]
       = { output := #[0x0066, 0x0061, 0x0073, 0x0073], hasErrors := false } := by
-  native_decide
+  decide +kernel
 
 /-- "FAẞ" → "fass" transitionally — exercises the chain
     U+1E9E → U+00DF → "ss" through the two-pass deviation resolution. -/
 theorem mapTr_capital_sharp_s_chain :
     mapTransitional #[0x0046, 0x0041, 0x1E9E]
       = { output := #[0x0066, 0x0061, 0x0073, 0x0073], hasErrors := false } := by
-  native_decide
+  decide +kernel
 
 /-- "EXAMPLE" → "example" (mapped) — pure case folding under either mode. -/
 theorem mapNT_EXAMPLE :
@@ -126,27 +128,27 @@ theorem mapNT_EXAMPLE :
       #[0x0045, 0x0058, 0x0041, 0x004D, 0x0050, 0x004C, 0x0045]
       = { output := #[0x0065, 0x0078, 0x0061, 0x006D, 0x0070, 0x006C, 0x0065],
           hasErrors := false } := by
-  native_decide
+  decide +kernel
 
 /-- Soft hyphen U+00AD is dropped between letters. -/
 theorem mapNT_soft_hyphen :
     mapNonTransitional #[0x0061, 0x00AD, 0x0062]
       = { output := #[0x0061, 0x0062], hasErrors := false } := by
-  native_decide
+  decide +kernel
 
 /-- A Disallowed codepoint (C1 control U+0080) is preserved in the
     output with `hasErrors = true`. -/
 theorem mapNT_flags_C1 :
     mapNonTransitional #[0x0061, 0x0080, 0x0062]
       = { output := #[0x0061, 0x0080, 0x0062], hasErrors := true } := by
-  native_decide
+  decide +kernel
 
 /-- The empty string maps to the empty string under either mode. -/
 theorem mapNT_empty :
     mapNonTransitional #[] = { output := #[], hasErrors := false } := by
-  native_decide
+  decide +kernel
 theorem mapTr_empty :
     mapTransitional   #[] = { output := #[], hasErrors := false } := by
-  native_decide
+  decide +kernel
 
 end Unicode.Idna.Map

@@ -13,6 +13,8 @@
   NFC-relevant row struct that file exposes.
 -/
 
+import Unicode.Generated.SimpleCaseMappingsData
+
 namespace Unicode.Generated.SimpleCaseMappings
 
 @[inline]
@@ -33,13 +35,6 @@ def parseHexOrZero (s : String) : Nat :=
   let t := trimS s
   if t.isEmpty then 0 else parseHex t
 
-/-- One row of simple case mappings — fields 12 / 13 / 14. -/
-structure CaseRow where
-  codepoint : Nat
-  upper     : Nat  -- 0 = identity (no mapping)
-  lower     : Nat
-  title     : Nat
-  deriving Repr, Inhabited
 
 /-- Parse one UnicodeData.txt row's case-mapping fields. Returns
     `none` for blank lines and for rows where all three case fields
@@ -62,26 +57,34 @@ def parseRow (rawLine : String) : Option CaseRow :=
 def unicodeDataRaw : String := include_str "../Ucd/UnicodeData.txt"
 
 /-- All parsed simple-case rows. -/
-def rows : Array CaseRow :=
+def rowsParsed : Array CaseRow :=
   ((unicodeDataRaw.splitOn "\n").filterMap parseRow).toArray
+
+/-- All parsed simple-case rows — the materialized view. -/
+def rows : Array CaseRow := rowsList.toArray
 
 /-- Look up the simple-uppercase mapping of `cp`. Returns `cp`
     itself when no mapping exists. -/
 def simpleUppercase (cp : Nat) : Nat :=
-  match rows.findSome? (fun r => if r.codepoint = cp then some r else none) with
+  match rowsList.findSome? (fun r => if r.codepoint = cp then some r else none) with
   | some r => if r.upper = 0 then cp else r.upper
   | none   => cp
 
 /-- Look up the simple-lowercase mapping of `cp`. -/
 def simpleLowercase (cp : Nat) : Nat :=
-  match rows.findSome? (fun r => if r.codepoint = cp then some r else none) with
+  match rowsList.findSome? (fun r => if r.codepoint = cp then some r else none) with
   | some r => if r.lower = 0 then cp else r.lower
   | none   => cp
 
 /-- Look up the simple-titlecase mapping of `cp`. -/
 def simpleTitlecase (cp : Nat) : Nat :=
-  match rows.findSome? (fun r => if r.codepoint = cp then some r else none) with
+  match rowsList.findSome? (fun r => if r.codepoint = cp then some r else none) with
   | some r => if r.title = 0 then cp else r.title
   | none   => cp
+
+-- Build-time drift gate.
+#eval do
+  unless rowsList.toArray == rowsParsed do
+    throw (IO.userError "SimpleCaseMappings drift: list ≠ parsed")
 
 end Unicode.Generated.SimpleCaseMappings

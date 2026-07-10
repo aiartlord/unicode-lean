@@ -3,7 +3,7 @@
 
   Conformance proof for the C4 family.  Folds the universal
   `Unicode.Security.Fixture` parser over the hand-curated
-  `SurrogateReassemblyTest.txt` fixture and `native_decide`-closes
+  `SurrogateReassemblyTest.txt` fixture and `decide`-closes
   the predicate that every row's expected verdict matches what
   `Unicode.Security.Covert.SurrogateReassembly.detect` produces.
 
@@ -58,7 +58,7 @@ def projectPositions (c : Classification) : Array Nat :=
     metadata is `offset` — the byte offset of the first invalid
     byte the strict decoder rejected.  Compared against
     `v.firstInvalidOffset`. -/
-private def metadataMatches (v : Verdict)
+def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   match attr.get? "offset" with
   | none      => true
@@ -87,26 +87,26 @@ def verifyRow (r : Row) : Bool :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Every fixture row's detector verdict matches its expected verdict. -/
-theorem all_rows_pass : rows.all verifyRow = true := by native_decide
+theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 28 := by native_decide
+theorem row_count : rows.size = 28 := by decide
 
 /-- Section coverage gates. -/
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by decide
 
 theorem covers_invalid_start_byte :
     (rows.filter (·.sectionName = "InvalidStartByte")).size ≥ 7 := by
-  native_decide
+  decide
 
 theorem covers_overlong :
-    (rows.filter (·.sectionName = "Overlong")).size ≥ 4 := by native_decide
+    (rows.filter (·.sectionName = "Overlong")).size ≥ 4 := by decide
 
 theorem covers_cesu8 :
-    (rows.filter (·.sectionName = "Cesu8")).size ≥ 3 := by native_decide
+    (rows.filter (·.sectionName = "Cesu8")).size ≥ 3 := by decide
 
 theorem covers_truncated :
-    (rows.filter (·.sectionName = "Truncated")).size ≥ 6 := by native_decide
+    (rows.filter (·.sectionName = "Truncated")).size ≥ 6 := by decide
 
 end Unicode.Conformance.Security.SurrogateReassemblyTest

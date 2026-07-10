@@ -151,28 +151,28 @@ def Classification.positions : Classification → Array Nat
 
 /-- Empty input is clear. -/
 theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Pure ASCII is in NFC and NFKC. -/
 theorem detect_ascii_clear :
     (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Pre-composed é (U+00E9) is canonical NFC; NFKC = NFC for this cp. -/
 theorem detect_precomposed_e_clear :
-    (detect #[0x00E9]).classify.isClear = true := by native_decide
+    (detect #[0x00E9]).classify.isClear = true := by decide
 
 /-- e + combining acute (decomposed é) fires `nonNfcForm` — NFC
     folds the pair into U+00E9, so `input != NFC(input)` at position 0. -/
 theorem detect_decomposed_e_nfc :
     (detect #[0x0065, 0x0301]).classify.tag = some "NonNfcForm" := by
-  native_decide
+  decide
 
 /-- ﬁ ligature (U+FB01) is canonical NFC (no canonical decomp),
     but NFKC = "fi" so `input != NFKC(input)` — fires
     `nonNfkcCompatForm`.  EAW = N so F5 doesn't catch this. -/
 theorem detect_fi_ligature_nfkc :
     (detect #[0xFB01]).classify.tag = some "NonNfkcCompatForm" := by
-  native_decide
+  decide
 
 end Unicode.Security.Form.NfcIdempotenceWitness

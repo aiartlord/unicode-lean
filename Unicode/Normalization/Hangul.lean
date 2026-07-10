@@ -105,31 +105,31 @@ def composePair? (first second : Nat) : Option Nat :=
 /-- HANGUL SYLLABLE GA (U+AC00) is `L + V` with no trailing consonant:
     LBase + VBase. -/
 theorem decompose_GA :
-    decomposeSyllable? 0xAC00 = some #[0x1100, 0x1161] := by native_decide
+    decomposeSyllable? 0xAC00 = some #[0x1100, 0x1161] := by decide
 
 /-- HANGUL SYLLABLE GAG (U+AC01) is `L + V + T`: KIYEOK + A + KIYEOK. -/
 theorem decompose_GAG :
-    decomposeSyllable? 0xAC01 = some #[0x1100, 0x1161, 0x11A8] := by native_decide
+    decomposeSyllable? 0xAC01 = some #[0x1100, 0x1161, 0x11A8] := by decide
 
 /-- HANGUL SYLLABLE HIH (U+D7A3 = last syllable) is `L + V + T`. -/
 theorem decompose_last :
-    decomposeSyllable? 0xD7A3 = some #[0x1112, 0x1175, 0x11C2] := by native_decide
+    decomposeSyllable? 0xD7A3 = some #[0x1112, 0x1175, 0x11C2] := by decide
 
 /-- Non-syllable codepoints return `none`. -/
-theorem decompose_latin_A : decomposeSyllable? 0x0041 = none := by native_decide
+theorem decompose_latin_A : decomposeSyllable? 0x0041 = none := by decide
 
 /-- Composing KIYEOK + A recovers HANGUL SYLLABLE GA. -/
-theorem compose_GA : composePair? 0x1100 0x1161 = some 0xAC00 := by native_decide
+theorem compose_GA : composePair? 0x1100 0x1161 = some 0xAC00 := by decide
 
 /-- Composing HANGUL SYLLABLE GA + KIYEOK recovers HANGUL SYLLABLE GAG. -/
-theorem compose_GAG : composePair? 0xAC00 0x11A8 = some 0xAC01 := by native_decide
+theorem compose_GAG : composePair? 0xAC00 0x11A8 = some 0xAC01 := by decide
 
 /-- Non-Hangul pairs do not compose. -/
-theorem compose_latin_pair : composePair? 0x0041 0x0300 = none := by native_decide
+theorem compose_latin_pair : composePair? 0x0041 0x0300 = none := by decide
 
 /-- `isHangulSyllable` boundary sanity. -/
-theorem range_low  : isHangulSyllable 0xAC00 = true  := by native_decide
-theorem range_high : isHangulSyllable 0xD7A3 = true  := by native_decide
-theorem range_out  : isHangulSyllable 0xD7A4 = false := by native_decide
+theorem range_low  : isHangulSyllable 0xAC00 = true  := by decide
+theorem range_high : isHangulSyllable 0xD7A3 = true  := by decide
+theorem range_out  : isHangulSyllable 0xD7A4 = false := by decide
 
 end Unicode.Normalization.Hangul

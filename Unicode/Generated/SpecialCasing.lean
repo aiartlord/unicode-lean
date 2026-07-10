@@ -19,6 +19,8 @@
   particular locales or surrounding contexts.
 -/
 
+import Unicode.Generated.SpecialCasingData
+
 namespace Unicode.Generated.SpecialCasing
 
 @[inline]
@@ -41,22 +43,9 @@ def parseCodepoints (s : String) : Array Nat :=
     let t := trimS tok
     if t.isEmpty then none else some (parseHex t))).toArray
 
-/-- The recognised condition tokens from the SpecialCasing.txt
-    `condition_list` field. Locale tokens are 2-letter language
+/-- Parse a `condition_list` token into a `Condition` (the type is
+    defined in `SpecialCasingData`). Locale tokens are 2-letter language
     codes; context tokens describe the surrounding characters. -/
-inductive Condition where
-  | LangTr
-  | LangAz
-  | LangLt
-  | FinalSigma
-  | NotFinalSigma
-  | AfterSoftDotted
-  | MoreAbove
-  | NotBeforeDot
-  | AfterI
-  | Other (token : String)
-  deriving Repr, Inhabited
-
 def parseCondition : String → Condition
   | "tr"                => .LangTr
   | "az"                => .LangAz
@@ -69,14 +58,6 @@ def parseCondition : String → Condition
   | "After_I"           => .AfterI
   | other               => .Other other
 
-/-- One row from SpecialCasing.txt. -/
-structure Row where
-  code       : Nat
-  lower      : Array Nat
-  title      : Array Nat
-  upper      : Array Nat
-  conditions : Array Condition
-  deriving Repr, Inhabited
 
 /-- Parse one row of SpecialCasing.txt. Returns `none` for blank,
     comment-only, or malformed lines. -/
@@ -102,11 +83,19 @@ def parseRow (rawLine : String) : Option Row :=
 def specialCasingRaw : String := include_str "../Ucd/SpecialCasing.txt"
 
 /-- All parsed SpecialCasing rows. -/
-def parsedRows : Array Row :=
+def parsedRowsParsed : Array Row :=
   ((specialCasingRaw.splitOn "\n").filterMap parseRow).toArray
+
+/-- All parsed SpecialCasing rows — the materialized view. -/
+def parsedRows : Array Row := parsedRowsList.toArray
 
 /-- Rows applicable unconditionally (no `condition_list`). -/
 def unconditionalRows : Array Row :=
   parsedRows.filter (fun r => r.conditions.isEmpty)
+
+-- Build-time drift gate.
+#eval do
+  unless parsedRowsList.toArray == parsedRowsParsed do
+    throw (IO.userError "SpecialCasing drift: list ≠ parsed")
 
 end Unicode.Generated.SpecialCasing

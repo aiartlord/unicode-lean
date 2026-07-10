@@ -3,7 +3,7 @@
 
   Conformance proof for the F1 family.  Folds the universal
   `Unicode.Security.Fixture` parser over the hand-curated
-  `NormalizationBombTest.txt` fixture and `native_decide`-closes
+  `NormalizationBombTest.txt` fixture and `decide`-closes
   the predicate that every row's expected verdict matches what
   `Unicode.Security.Form.NormalizationBomb.detect` produces.
 -/
@@ -46,7 +46,7 @@ def projectPositions (c : Classification) : Array Nat :=
     column-4 attribution.  Recognised keys: `nfd_len`, `nfkd_len`,
     `input_len`, `max_per_cp` (the worst single-codepoint NFKD
     expansion). -/
-private def metadataMatches (v : Verdict)
+def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey "nfd_len"    v.nfdLen &&
   attr.checkNatKey "nfkd_len"   v.nfkdLen &&
@@ -66,24 +66,24 @@ def verifyRow (r : Row) : Bool :=
   decide (pos = r.expectedPositions)
 
 /-- Every fixture row's detector verdict matches its expected verdict. -/
-theorem all_rows_pass : rows.all verifyRow = true := by native_decide
+theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 26 := by native_decide
+theorem row_count : rows.size = 26 := by decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 10 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 10 := by decide
 
 theorem covers_single_cp_blowup :
     (rows.filter (·.sectionName = "SingleCpBlowup")).size ≥ 3 := by
-  native_decide
+  decide
 
 theorem covers_nfkd_high :
     (rows.filter (·.sectionName = "NfkdHighExpansion")).size ≥ 3 := by
-  native_decide
+  decide
 
 theorem covers_nfd_high :
     (rows.filter (·.sectionName = "NfdHighExpansion")).size ≥ 9 := by
-  native_decide
+  decide
 
 end Unicode.Conformance.Security.NormalizationBombTest

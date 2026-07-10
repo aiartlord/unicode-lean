@@ -2,8 +2,10 @@
   Unicode.Generated.Allkeys
 
   Default Unicode Collation Element Table (DUCET) from
-  `Unicode/Ucd/allkeys.txt` (UCA 16.0.0), embedded as a String
-  constant via `include_str` and parsed once at module load.
+  `Unicode/Ucd/allkeys.txt` (UCA 17.0.0). The rows are materialized as
+  chunked `List` literals in `Unicode.Generated.AllkeysData` (so the table
+  reduces in the kernel); this module keeps the `include_str` parser as the
+  drift-gate reference and exposes the lookups.
 
   Each non-comment, non-directive row of `allkeys.txt` has the form
 
@@ -24,33 +26,9 @@
   implicit-weight formula in `Unicode.Uca.Algorithm`.
 -/
 
+import Unicode.Generated.AllkeysData
+
 namespace Unicode.Generated.Allkeys
-
-/-- One UCA collation element. The `variable` flag distinguishes
-    `[*…]` elements (variable, often punctuation) from `[.…]` ones. -/
-structure CollationElement where
-  primary   : Nat
-  secondary : Nat
-  tertiary  : Nat
-  isVariable : Bool
-  deriving Repr, Inhabited, DecidableEq
-
-/-- One DUCET row: a key sequence (one or more codepoints) and the
-    collation elements it expands to. Single-codepoint rows have
-    `key.size = 1`; contractions have `key.size ≥ 2`. -/
-structure DucetEntry where
-  key : Array Nat
-  ces : Array CollationElement
-  deriving Repr, Inhabited, DecidableEq
-
-/-- An `@implicitweights` directive block. Codepoints `min..max`
-    inclusive get the implicit primary weight starting from `base`,
-    computed per UCA §10.1.3. -/
-structure ImplicitBlock where
-  min  : Nat
-  max  : Nat
-  base : Nat
-  deriving Repr, Inhabited
 
 @[inline]
 def trimS (s : String) : String := (String.trimAscii s).toString
@@ -137,12 +115,18 @@ def parseImplicit (rawLine : String) : Option ImplicitBlock :=
 def allkeysRaw : String := include_str "../Ucd/allkeys.txt"
 
 /-- All explicit DUCET rows. -/
-def ducetEntries : Array DucetEntry :=
+def ducetEntriesParsed : Array DucetEntry :=
   ((allkeysRaw.splitOn "\n").filterMap parseRow).toArray
 
+/-- All explicit DUCET rows (materialized view). -/
+def ducetEntries : Array DucetEntry := ducetEntriesList.toArray
+
 /-- All `@implicitweights` directive blocks. -/
-def implicitBlocks : Array ImplicitBlock :=
+def implicitBlocksParsed : Array ImplicitBlock :=
   ((allkeysRaw.splitOn "\n").filterMap parseImplicit).toArray
+
+/-- All @implicitweights blocks (materialized view). -/
+def implicitBlocks : Array ImplicitBlock := implicitBlocksList.toArray
 
 /-- Look up the DUCET entry whose key is a single codepoint `cp`,
     or `none` if `cp` is not in the explicit table. Multi-codepoint
@@ -152,48 +136,61 @@ def lookupSingle (cp : Nat) : Option DucetEntry :=
   ducetEntries.findSome? (fun e =>
     if e.key.size = 1 ∧ e.key[0]? = some cp then some e else none)
 
+/-- Kernel-reducible single-codepoint lookup over the pinned `List` (the
+    Array `lookupSingle` is the runtime path; this is for `decide` proofs;
+    linear over the small prefix that the spot-checks touch). -/
+def lookupSingleList (cp : Nat) : Option DucetEntry :=
+  ducetEntriesList.findSome? (fun e =>
+    if e.key.size = 1 ∧ e.key[0]? = some cp then some e else none)
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 SHAPE CHECKS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The DUCET parses to many thousands of rows. The exact count is
-    a useful invariant: `allkeys-16.0.0` ships 39407 explicit rows. -/
-theorem ducetEntries_count : ducetEntries.size = 39407 := by native_decide
+/-- The DUCET parses to many thousands of rows. `allkeys-17.0.0` ships
+    39749 explicit rows. -/
+theorem ducetEntries_count : ducetEntriesList.length = 39749 := by decide +kernel
 
-/-- The 16.0.0 file declares four `@implicitweights` blocks. -/
-theorem implicitBlocks_count : implicitBlocks.size = 4 := by native_decide
+/-- The 17.0.0 file declares six `@implicitweights` blocks. -/
+theorem implicitBlocks_count : implicitBlocksList.length = 6 := by decide +kernel
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 KNOWN-ENTRY SPOT CHECKS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- LATIN SMALL LETTER A: `[.2380.0020.0002]`. -/
+/-- LATIN SMALL LETTER A: `[.23EC.0020.0002]` (UCA 17.0). -/
 theorem lookup_a :
-    lookupSingle 0x0061 = some
-      ⟨#[0x0061], #[⟨0x2380, 0x0020, 0x0002, false⟩]⟩ := by native_decide
+    lookupSingleList 0x0061 = some
+      ⟨#[0x0061], #[⟨0x23EC, 0x0020, 0x0002, false⟩]⟩ := by decide +kernel
 
 /-- LATIN CAPITAL A shares the primary with 'a' but uses a different
     tertiary weight (`0x0008`) — this is how UCA encodes case at L3. -/
 theorem lookup_A :
-    lookupSingle 0x0041 = some
-      ⟨#[0x0041], #[⟨0x2380, 0x0020, 0x0008, false⟩]⟩ := by native_decide
+    lookupSingleList 0x0041 = some
+      ⟨#[0x0041], #[⟨0x23EC, 0x0020, 0x0008, false⟩]⟩ := by decide +kernel
 
 /-- SPACE U+0020 is variable-weighted (the asterisk in the source
     file). -/
 theorem lookup_space :
-    lookupSingle 0x0020 = some
-      ⟨#[0x0020], #[⟨0x0209, 0x0020, 0x0002, true⟩]⟩ := by native_decide
+    lookupSingleList 0x0020 = some
+      ⟨#[0x0020], #[⟨0x0209, 0x0020, 0x0002, true⟩]⟩ := by decide +kernel
 
 /-- LATIN SMALL LETTER A WITH GRAVE expands to two collation
     elements — the base 'a' weight followed by an accent secondary. -/
 theorem lookup_agrave :
-    lookupSingle 0x00E0 = some
+    lookupSingleList 0x00E0 = some
       ⟨#[0x00E0],
-       #[⟨0x2380, 0x0020, 0x0002, false⟩,
-         ⟨0x0000, 0x0025, 0x0002, false⟩]⟩ := by native_decide
+       #[⟨0x23EC, 0x0020, 0x0002, false⟩,
+         ⟨0x0000, 0x0025, 0x0002, false⟩]⟩ := by decide +kernel
 
-/-- A contraction is parsed with `key.size = 2`. -/
 theorem ducet_has_contractions :
-    (ducetEntries.filter (fun e => e.key.size ≥ 2)).size = 964 := by native_decide
+    (ducetEntriesList.filter (fun e => e.key.size ≥ 2)).length = 964 := by decide +kernel
+
+-- Build-time drift gate.
+#eval do
+  unless ducetEntriesList.toArray == ducetEntriesParsed do
+    throw (IO.userError "Allkeys drift: ducet list ≠ parsed")
+  unless implicitBlocksList.toArray == implicitBlocksParsed do
+    throw (IO.userError "Allkeys drift: blocks list ≠ parsed")
 
 end Unicode.Generated.Allkeys

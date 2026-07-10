@@ -38,7 +38,7 @@
   in `Precis.WidthMapping.widthMap_idempotent` and
   `Precis.CaseMapping.caseFold_idempotent`; the NFC step is
   `Unicode.Normalization.ComposeInversion.toNFC_idempotent`. Concrete
-  test-vector idempotence is also established here via `native_decide`.
+  test-vector idempotence is also established here via `decide`.
 -/
 
 import Unicode.Normalization.NFC
@@ -91,33 +91,33 @@ def precisPreparation (cps : Array Nat) : Option (Array Nat) :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Empty input passes preparation (no codepoints to classify). -/
-theorem prep_empty : precisPreparation #[] = some #[] := by native_decide
+theorem prep_empty : precisPreparation #[] = some #[] := by decide
 
 /-- Pure-lowercase ASCII identifier is unchanged. -/
 theorem prep_alice :
     precisPreparation #[0x61, 0x6C, 0x69, 0x63, 0x65]
-      = some #[0x61, 0x6C, 0x69, 0x63, 0x65] := by native_decide
+      = some #[0x61, 0x6C, 0x69, 0x63, 0x65] := by decide
 
 /-- Pure-uppercase ASCII identifier folds to lowercase. -/
 theorem prep_uppercase_ALICE :
     precisPreparation #[0x41, 0x4C, 0x49, 0x43, 0x45]
-      = some #[0x61, 0x6C, 0x69, 0x63, 0x65] := by native_decide
+      = some #[0x61, 0x6C, 0x69, 0x63, 0x65] := by decide
 
 /-- Fullwidth ASCII identifier is width-mapped to ASCII then
     case-folded. `Ａｌｉｃｅ` (U+FF21 U+FF4C U+FF49 U+FF43 U+FF45)
     prepares to `alice`. -/
 theorem prep_fullwidth_Alice :
     precisPreparation #[0xFF21, 0xFF4C, 0xFF49, 0xFF43, 0xFF45]
-      = some #[0x61, 0x6C, 0x69, 0x63, 0x65] := by native_decide
+      = some #[0x61, 0x6C, 0x69, 0x63, 0x65] := by decide
 
 /-- SHARP S prepares to `ss` via the case-folding step. -/
 theorem prep_sharp_s :
-    precisPreparation #[0x00DF] = some #[0x0073, 0x0073] := by native_decide
+    precisPreparation #[0x00DF] = some #[0x0073, 0x0073] := by decide
 
 /-- Underscore and digit both admit. -/
 theorem prep_underscore_digits :
     precisPreparation #[0x005F, 0x0030, 0x0031]
-      = some #[0x005F, 0x0030, 0x0031] := by native_decide
+      = some #[0x005F, 0x0030, 0x0031] := by decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- TEST VECTORS — REJECTED
@@ -125,21 +125,21 @@ theorem prep_underscore_digits :
 
 /-- ASCII SPACE is rejected (not admissible in IdentifierClass). -/
 theorem prep_rejects_space :
-    precisPreparation #[0x0020] = none := by native_decide
+    precisPreparation #[0x0020] = none := by decide
 
 /-- RIGHT-TO-LEFT OVERRIDE is rejected (Trojan Source vector). -/
 theorem prep_rejects_bidi_override :
-    precisPreparation #[0x202E] = none := by native_decide
+    precisPreparation #[0x202E] = none := by decide
 
 /-- ZERO WIDTH SPACE is rejected (invisible content). -/
 theorem prep_rejects_zwsp :
-    precisPreparation #[0x200B] = none := by native_decide
+    precisPreparation #[0x200B] = none := by decide
 
 /-- An otherwise-valid identifier containing a disallowed codepoint
     is rejected — the category check fails on the disallowed byte
     even though the surrounding ASCII would admit. -/
 theorem prep_rejects_mixed :
-    precisPreparation #[0x61, 0x202E, 0x62] = none := by native_decide
+    precisPreparation #[0x61, 0x202E, 0x62] = none := by decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- IDEMPOTENCE — CONCRETE VECTORS
@@ -153,29 +153,29 @@ theorem prep_rejects_mixed :
 
 /-- Empty input is idempotent under preparation. -/
 theorem prep_idempotent_empty :
-    precisPreparation #[] >>= precisPreparation = some #[] := by native_decide
+    precisPreparation #[] >>= precisPreparation = some #[] := by decide
 
 /-- Already-lowercase ASCII is idempotent under preparation. -/
 theorem prep_idempotent_alice :
     (precisPreparation #[0x61, 0x6C, 0x69, 0x63, 0x65]).bind precisPreparation
-      = some #[0x61, 0x6C, 0x69, 0x63, 0x65] := by native_decide
+      = some #[0x61, 0x6C, 0x69, 0x63, 0x65] := by decide
 
 /-- Applying preparation to the already-folded `alice` output
     equals `some alice`. -/
 theorem prep_idempotent_alice_from_fullwidth :
     (precisPreparation #[0xFF21, 0xFF4C, 0xFF49, 0xFF43, 0xFF45]).bind precisPreparation
-      = some #[0x61, 0x6C, 0x69, 0x63, 0x65] := by native_decide
+      = some #[0x61, 0x6C, 0x69, 0x63, 0x65] := by decide
 
 /-- Sharp-s's output `ss` is a fixed point of preparation. -/
 theorem prep_idempotent_sharp_s :
     (precisPreparation #[0x00DF]).bind precisPreparation
-      = some #[0x0073, 0x0073] := by native_decide
+      = some #[0x0073, 0x0073] := by decide
 
 /-- Capital ALICE folds to alice; re-applying preparation leaves it
     unchanged. -/
 theorem prep_idempotent_uppercase_ALICE :
     (precisPreparation #[0x41, 0x4C, 0x49, 0x43, 0x45]).bind precisPreparation
-      = some #[0x61, 0x6C, 0x69, 0x63, 0x65] := by native_decide
+      = some #[0x61, 0x6C, 0x69, 0x63, 0x65] := by decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- CONDITIONAL UNIVERSAL IDEMPOTENCE
@@ -460,37 +460,37 @@ theorem precis_idempotent_preserved
 
 /-- Empty input passes preparation. -/
 theorem prepPreserved_empty : precisPreparationPreserved #[] = some #[] := by
-  native_decide
+  decide
 
 /-- Pure-lowercase ASCII is unchanged — case preserved, no mapping. -/
 theorem prepPreserved_alice :
     precisPreparationPreserved #[0x61, 0x6C, 0x69, 0x63, 0x65]
-      = some #[0x61, 0x6C, 0x69, 0x63, 0x65] := by native_decide
+      = some #[0x61, 0x6C, 0x69, 0x63, 0x65] := by decide
 
 /-- Pure-uppercase ASCII is preserved (unlike UsernameCaseMapped which
     folds to lowercase). -/
 theorem prepPreserved_uppercase_ALICE :
     precisPreparationPreserved #[0x41, 0x4C, 0x49, 0x43, 0x45]
-      = some #[0x41, 0x4C, 0x49, 0x43, 0x45] := by native_decide
+      = some #[0x41, 0x4C, 0x49, 0x43, 0x45] := by decide
 
 /-- Mixed-case identifier is preserved. -/
 theorem prepPreserved_mixed_Alice :
     precisPreparationPreserved #[0x41, 0x6C, 0x69, 0x63, 0x65]
-      = some #[0x41, 0x6C, 0x69, 0x63, 0x65] := by native_decide
+      = some #[0x41, 0x6C, 0x69, 0x63, 0x65] := by decide
 
 /-- Fullwidth ASCII is width-mapped but not case-folded. `Ａｌｉｃｅ`
     prepares to `Alice`, preserving case. -/
 theorem prepPreserved_fullwidth_Alice :
     precisPreparationPreserved #[0xFF21, 0xFF4C, 0xFF49, 0xFF43, 0xFF45]
-      = some #[0x41, 0x6C, 0x69, 0x63, 0x65] := by native_decide
+      = some #[0x41, 0x6C, 0x69, 0x63, 0x65] := by decide
 
 /-- Space is still disallowed under IdentifierClass. -/
 theorem prepPreserved_rejects_space :
-    precisPreparationPreserved #[0x0020] = none := by native_decide
+    precisPreparationPreserved #[0x0020] = none := by decide
 
 /-- Bidi override is still disallowed (Trojan Source protection). -/
 theorem prepPreserved_rejects_bidi_override :
-    precisPreparationPreserved #[0x202E] = none := by native_decide
+    precisPreparationPreserved #[0x202E] = none := by decide
 
 -- Note: the RFC-complete OpaqueString profile (for passwords / secrets,
 -- RFC 8265 §4, with non-ASCII Zs → U+0020 remap and admittance of
@@ -523,7 +523,8 @@ theorem precis_output_in_NFC_mapped
       exact (Option.some.inj hRaw).symm
     rw [hOut]
     unfold precisMap
-    exact Unicode.Normalization.ComposeInversion.toNFC_idempotent _
+    exact Unicode.Normalization.ComposeInversion.toNFC_idempotent
+      (caseFold (widthMap cps))
   · have hNone : (if isGatePass (precisMap cps) then some (precisMap cps)
                   else none) = some out := h
     rw [if_neg hAdm] at hNone
@@ -541,7 +542,8 @@ theorem precis_output_in_NFC_preserved
       exact (Option.some.inj hRaw).symm
     rw [hOut]
     unfold precisMapPreserved
-    exact Unicode.Normalization.ComposeInversion.toNFC_idempotent _
+    exact Unicode.Normalization.ComposeInversion.toNFC_idempotent
+      (WidthMapping.widthMap cps)
   · have hNone : (if isGatePass (precisMapPreserved cps) then some (precisMapPreserved cps)
                   else none) = some out := h
     rw [if_neg hAdm] at hNone

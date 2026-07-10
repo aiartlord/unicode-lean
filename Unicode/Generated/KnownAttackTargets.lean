@@ -14,7 +14,11 @@
   attribution lives in the spec doc, not the data file.
 -/
 
+import Unicode.Generated.KnownAttackTargetsData
+
 namespace Unicode.Generated.KnownAttackTargets
+
+set_option maxRecDepth 100000
 
 /-- Raw text embedded at compile time. -/
 def rawText : String := include_str "../Ucd/Curated/KnownAttackTargets.txt"
@@ -22,25 +26,33 @@ def rawText : String := include_str "../Ucd/Curated/KnownAttackTargets.txt"
 /-- Parse one line.  Returns `none` for blank or comment lines,
     `some name` for an entry line. -/
 @[inline]
-private def parseLine (line : String) : Option String :=
+def parseLine (line : String) : Option String :=
   let t := (String.trimAscii line).toString
   if t.isEmpty then none
   else if t.startsWith "#" then none
   else some t
 
 /-- The canonical attack-target names in source-file order. -/
-def targets : Array String :=
+def targetsParsed : Array String :=
   ((rawText.splitOn "\n").filterMap parseLine).toArray
 
-theorem targets_count : targets.size = 67 := by native_decide
+/-- The materialized catalog, consumed downstream. -/
+def targets : List String := targetsList
 
-theorem react_present : targets.contains "react" = true := by native_decide
+theorem targets_count : targets.length = 67 := by decide +kernel
+
+-- Build-time drift gate.
+#eval do
+  unless targetsList.toArray == targetsParsed do
+    throw (IO.userError "KnownAttackTargets drift: list ≠ parsed")
+
+theorem react_present : targets.contains "react" = true := by decide +kernel
 
 theorem Nethereum_present : targets.contains "Nethereum" = true := by
-  native_decide
+  decide +kernel
 
-theorem paypal_present : targets.contains "paypal" = true := by native_decide
+theorem paypal_present : targets.contains "paypal" = true := by decide +kernel
 
-theorem openai_present : targets.contains "openai" = true := by native_decide
+theorem openai_present : targets.contains "openai" = true := by decide +kernel
 
 end Unicode.Generated.KnownAttackTargets

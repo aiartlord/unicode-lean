@@ -92,6 +92,8 @@ import Unicode.Identifier
 
 namespace Unicode.Security.Crypto.AiWatermarkDetectability
 
+set_option maxRecDepth 1000000
+
 open Unicode.Security.Calculus
 open Unicode.Generated.WatermarkSchemes (CueClass)
 
@@ -129,16 +131,28 @@ inductive SubThreat where
     sub-threats route to `semanticDrift`.  `unknown` (multi-
     category mixing) does not implicate a single scheme. -/
 def subThreatCueClass : SubThreat → Option CueClass
-  | .nnbspBoundary             _ => some .pseudorandomSeq
-  | .variationSelectorCarrier  _ => some .pseudorandomSeq
-  | .zwjNonEmoji               _ => some .pseudorandomSeq
-  | .defaultIgnorableCarrier   _ => some .pseudorandomSeq
-  | .gpt5ZwspModulo            _ => some .pseudorandomSeq
-  | .emDashPattern             _ => some .semanticDrift
-  | .smartQuoteAlternation     _ => some .semanticDrift
-  | .statisticalTokenChoice    _ => some .greenListBias
-  | .adversarial             _ _ => some .pseudorandomSeq
-  | .unknown                   _ => none
+  | .nnbspBoundary markerCount =>
+      Function.const Nat (some .pseudorandomSeq) markerCount
+  | .variationSelectorCarrier markerCount =>
+      Function.const Nat (some .pseudorandomSeq) markerCount
+  | .zwjNonEmoji markerCount =>
+      Function.const Nat (some .pseudorandomSeq) markerCount
+  | .defaultIgnorableCarrier markerCount =>
+      Function.const Nat (some .pseudorandomSeq) markerCount
+  | .gpt5ZwspModulo firstPos =>
+      Function.const Nat (some .pseudorandomSeq) firstPos
+  | .emDashPattern firstPos =>
+      Function.const Nat (some .semanticDrift) firstPos
+  | .smartQuoteAlternation firstPos =>
+      Function.const Nat (some .semanticDrift) firstPos
+  | .statisticalTokenChoice firstPos =>
+      Function.const Nat (some .greenListBias) firstPos
+  | .adversarial impersonatedScheme firstPos =>
+      Function.const String
+        (Function.const Nat (some .pseudorandomSeq) firstPos)
+        impersonatedScheme
+  | .unknown anomalyMarker =>
+      Function.const Nat none anomalyMarker
 
 /-- Top-level AiWatermarkDetectability classification.  `.clear`
     = no watermark marker detected (semantically `noWatermark`);
@@ -337,8 +351,8 @@ def positionsAreArithmeticWithin
       decide (gap ≤ firstGap + tolerance)
         && decide (firstGap ≤ gap + tolerance))
 
-/-- Exact-equality variant.  Kept as a thin wrapper around
-    `positionsAreArithmeticWithin _ 0` so existing callers and
+/-- Exact-equality variant. Kept as a thin wrapper around the
+    zero-tolerance `positionsAreArithmeticWithin` call so existing callers and
     theorems that don't carry a tolerance parameter continue to
     work unchanged. -/
 @[inline] def positionsAreArithmetic (positions : Array Nat) : Bool :=
@@ -383,53 +397,115 @@ def parseAiFavoredVocabulary (raw : String) : Array (Array Nat) :=
     hash-pinned data file.  Words over-represented in public
     reports of GPT-class output; consumed by the
     `statisticalTokenChoice` probe via `containsSubarray`. -/
-def aiFavoredVocabulary : Array (Array Nat) :=
+def aiFavoredVocabularyParsed : Array (Array Nat) :=
   parseAiFavoredVocabulary aiFavoredVocabularyRaw
+
+/-- Materialized AI-favored vocabulary (each word as its code-point
+    sequence), pinned so the `statisticalTokenChoice` probe's `findSome?`
+    reduces in the kernel. The build-time gate below proves this equals a
+    fresh parse of the pinned source file. -/
+def aiFavoredVocabulary : Array (Array Nat) := #[
+  #[100, 101, 108, 118, 101],
+  #[100, 101, 108, 118, 105, 110, 103],
+  #[116, 97, 112, 101, 115, 116, 114, 121],
+  #[105, 110, 116, 114, 105, 99, 97, 116, 101],
+  #[110, 117, 97, 110, 99, 101, 100],
+  #[109, 111, 114, 101, 111, 118, 101, 114],
+  #[102, 117, 114, 116, 104, 101, 114, 109, 111, 114, 101],
+  #[114, 101, 97, 108, 109],
+  #[101, 108, 117, 99, 105, 100, 97, 116, 101],
+  #[115, 104, 111, 119, 99, 97, 115, 105, 110, 103],
+  #[117, 110, 100, 101, 114, 115, 99, 111, 114, 101, 115],
+  #[117, 110, 100, 101, 114, 115, 99, 111, 114, 101, 100],
+  #[112, 105, 118, 111, 116, 97, 108],
+  #[98, 111, 108, 115, 116, 101, 114],
+  #[109, 117, 108, 116, 105, 102, 97, 99, 101, 116, 101, 100],
+  #[116, 101, 115, 116, 97, 109, 101, 110, 116],
+  #[102, 111, 115, 116, 101, 114],
+  #[104, 111, 108, 105, 115, 116, 105, 99],
+  #[112, 97, 114, 97, 100, 105, 103, 109],
+  #[116, 114, 97, 110, 115, 102, 111, 114, 109, 97, 116, 105, 118, 101],
+  #[115, 112, 101, 97, 114, 104, 101, 97, 100],
+  #[109, 101, 116, 105, 99, 117, 108, 111, 117, 115],
+  #[109, 101, 116, 105, 99, 117, 108, 111, 117, 115, 108, 121],
+  #[101, 109, 112, 111, 119, 101, 114],
+  #[101, 109, 112, 111, 119, 101, 114, 105, 110, 103],
+  #[112, 114, 111, 102, 111, 117, 110, 100],
+  #[112, 114, 111, 102, 111, 117, 110, 100, 108, 121],
+  #[99, 111, 109, 112, 101, 108, 108, 105, 110, 103],
+  #[99, 111, 109, 112, 114, 101, 104, 101, 110, 115, 105, 118, 101],
+  #[99, 114, 117, 99, 105, 97, 108],
+  #[100, 97, 117, 110, 116, 105, 110, 103],
+  #[114, 111, 98, 117, 115, 116],
+  #[115, 116, 114, 101, 97, 109, 108, 105, 110, 101],
+  #[101, 110, 114, 105, 99, 104],
+  #[101, 120, 101, 109, 112, 108, 105, 102, 121],
+  #[99, 97, 112, 116, 105, 118, 97, 116, 105, 110, 103],
+  #[100, 105, 115, 99, 101, 114, 110, 105, 110, 103],
+  #[109, 101, 115, 109, 101, 114, 105, 122, 101],
+  #[105, 110, 116, 114, 105, 99, 97, 116, 101, 108, 121],
+  #[105, 109, 98, 117, 101],
+  #[112, 108, 97, 121, 115, 32, 97, 32, 99, 114, 117, 99, 105, 97, 108, 32, 114, 111, 108, 101],
+  #[112, 108, 97, 121, 115, 32, 97, 32, 112, 105, 118, 111, 116, 97, 108, 32, 114, 111, 108, 101],
+  #[105, 116, 32, 105, 115, 32, 105, 109, 112, 111, 114, 116, 97, 110, 116, 32, 116, 111, 32, 110, 111, 116, 101],
+  #[105, 116, 32, 105, 115, 32, 119, 111, 114, 116, 104, 32, 110, 111, 116, 105, 110, 103],
+  #[105, 110, 32, 99, 111, 110, 99, 108, 117, 115, 105, 111, 110],
+  #[105, 110, 32, 101, 115, 115, 101, 110, 99, 101],
+  #[100, 101, 108, 118, 101, 32, 105, 110, 116, 111],
+  #[100, 101, 108, 118, 105, 110, 103, 32, 105, 110, 116, 111],
+  #[116, 97, 112, 101, 115, 116, 114, 121, 32, 111, 102],
+  #[114, 101, 97, 108, 109, 32, 111, 102]
+]
+
+-- Build-time drift gate: the pinned vocabulary equals a fresh parse.
+#eval do
+  unless aiFavoredVocabulary == aiFavoredVocabularyParsed do
+    throw (IO.userError "AiFavoredVocabulary drift: literal ≠ parsed source")
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 Probe spot checks
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-theorem isNnbsp_positive : isNnbsp 0x202F = true := by native_decide
-theorem isNnbsp_negative_space : isNnbsp 0x20 = false := by native_decide
-theorem isNnbsp_negative_ideographic : isNnbsp 0x3000 = false := by native_decide
+theorem isNnbsp_positive : isNnbsp 0x202F = true := by decide +kernel
+theorem isNnbsp_negative_space : isNnbsp 0x20 = false := by decide +kernel
+theorem isNnbsp_negative_ideographic : isNnbsp 0x3000 = false := by decide +kernel
 
-theorem isZwj_positive : isZwj 0x200D = true := by native_decide
-theorem isZwj_negative_zwsp : isZwj 0x200B = false := by native_decide
-theorem isZwj_negative_zwnj : isZwj 0x200C = false := by native_decide
+theorem isZwj_positive : isZwj 0x200D = true := by decide +kernel
+theorem isZwj_negative_zwsp : isZwj 0x200B = false := by decide +kernel
+theorem isZwj_negative_zwnj : isZwj 0x200C = false := by decide +kernel
 
-theorem isVS_positive_VS1 : isVariationSelector 0xFE00 = true := by native_decide
-theorem isVS_positive_VS16 : isVariationSelector 0xFE0F = true := by native_decide
-theorem isVS_positive_IVS1 : isVariationSelector 0xE0100 = true := by native_decide
-theorem isVS_negative_ascii : isVariationSelector 0x61 = false := by native_decide
-theorem isVS_negative_zwj : isVariationSelector 0x200D = false := by native_decide
+theorem isVS_positive_VS1 : isVariationSelector 0xFE00 = true := by decide +kernel
+theorem isVS_positive_VS16 : isVariationSelector 0xFE0F = true := by decide +kernel
+theorem isVS_positive_IVS1 : isVariationSelector 0xE0100 = true := by decide +kernel
+theorem isVS_negative_ascii : isVariationSelector 0x61 = false := by decide +kernel
+theorem isVS_negative_zwj : isVariationSelector 0x200D = false := by decide +kernel
 
 theorem isDefaultIgnorable_zwsp :
-    isDefaultIgnorable 0x200B = true := by native_decide
+    isDefaultIgnorable 0x200B = true := by decide +kernel
 theorem isDefaultIgnorable_zwj :
-    isDefaultIgnorable 0x200D = true := by native_decide
+    isDefaultIgnorable 0x200D = true := by decide +kernel
 theorem isDefaultIgnorable_softHyphen :
-    isDefaultIgnorable 0x00AD = true := by native_decide
+    isDefaultIgnorable 0x00AD = true := by decide +kernel
 theorem isDefaultIgnorable_nnbsp_false :
-    isDefaultIgnorable 0x202F = false := by native_decide
+    isDefaultIgnorable 0x202F = false := by decide +kernel
 theorem isDefaultIgnorable_ascii_false :
-    isDefaultIgnorable 0x61 = false := by native_decide
+    isDefaultIgnorable 0x61 = false := by decide +kernel
 
-theorem isEmoji_smiley : isEmoji 0x1F600 = true := by native_decide
-theorem isEmoji_zwj_false : isEmoji 0x200D = false := by native_decide
-theorem isEmoji_ascii_false : isEmoji 0x61 = false := by native_decide
+theorem isEmoji_smiley : isEmoji 0x1F600 = true := by decide +kernel
+theorem isEmoji_zwj_false : isEmoji 0x200D = false := by decide +kernel
+theorem isEmoji_ascii_false : isEmoji 0x61 = false := by decide +kernel
 
 /-- VS16 sitting between 'a' and 'b' (no emoji adjacent) — flagged. -/
 theorem isAdjacentToEmoji_negative :
-    isAdjacentToEmoji #[0x61, 0xFE0F, 0x62] 1 = false := by native_decide
+    isAdjacentToEmoji #[0x61, 0xFE0F, 0x62] 1 = false := by decide +kernel
 
 /-- VS16 sitting after 😀 — adjacent to emoji, excluded. -/
 theorem isAdjacentToEmoji_after_smiley :
-    isAdjacentToEmoji #[0x1F600, 0xFE0F] 1 = true := by native_decide
+    isAdjacentToEmoji #[0x1F600, 0xFE0F] 1 = true := by decide +kernel
 
 /-- VS16 sitting before 😀 — adjacent to emoji, excluded. -/
 theorem isAdjacentToEmoji_before_smiley :
-    isAdjacentToEmoji #[0xFE0F, 0x1F600] 0 = true := by native_decide
+    isAdjacentToEmoji #[0xFE0F, 0x1F600] 0 = true := by decide +kernel
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Top-level detection
@@ -613,54 +689,54 @@ def detect (input : Array Nat) : Verdict :=
 
 /-- Empty input is clear (vacuous no-watermark). -/
 theorem detect_empty_clear :
-    (detect #[]).classify = .clear := by native_decide
+    (detect #[]).classify = .clear := by decide +kernel
 
 /-- Pure ASCII is clear — no markers. -/
 theorem detect_ascii_clear :
-    (detect #[0x61, 0x62, 0x63]).classify = .clear := by native_decide
+    (detect #[0x61, 0x62, 0x63]).classify = .clear := by decide +kernel
 
 /-- CJK Han is clear — no markers. -/
 theorem detect_han_clear :
-    (detect #[0x4E2D, 0x6587]).classify = .clear := by native_decide
+    (detect #[0x4E2D, 0x6587]).classify = .clear := by decide +kernel
 
 /-- Single U+202F NNBSP fires NnbspBoundary at position 1. -/
 theorem detect_nnbsp_fires :
     let v := detect #[0x61, 0x202F, 0x62]
     v.classify.tag = some "NnbspBoundary"
     ∧ v.classify.positions = #[1]
-    ∧ v.markerCount = 1 := by native_decide
+    ∧ v.markerCount = 1 := by decide +kernel
 
 /-- VS16 between ASCII letters (no emoji adjacent) fires
     VariationSelectorCarrier. -/
 theorem detect_vs_in_plain_text_fires :
     let v := detect #[0x61, 0xFE0F, 0x62]
     v.classify.tag = some "VariationSelectorCarrier"
-    ∧ v.markerCount = 1 := by native_decide
+    ∧ v.markerCount = 1 := by decide +kernel
 
 /-- VS16 after 😀 is legitimate emoji-presentation selector —
     K3 stays clear.  Pins the emoji-adjacency exclusion. -/
 theorem detect_vs_after_emoji_clear :
-    (detect #[0x1F600, 0xFE0F]).classify = .clear := by native_decide
+    (detect #[0x1F600, 0xFE0F]).classify = .clear := by decide +kernel
 
 /-- ZWJ between ASCII letters fires ZwjNonEmoji. -/
 theorem detect_zwj_in_plain_text_fires :
     let v := detect #[0x61, 0x200D, 0x62]
     v.classify.tag = some "ZwjNonEmoji"
-    ∧ v.markerCount = 1 := by native_decide
+    ∧ v.markerCount = 1 := by decide +kernel
 
 /-- ZWJ between two emoji bases is legitimate emoji-ZWJ
     sequence — K3 stays clear.  The "woman + ZWJ + scientist"
     sequence base 👩 (U+1F469) + ZWJ + 🔬 (U+1F52C) shape. -/
 theorem detect_zwj_emoji_sequence_clear :
     (detect #[0x1F469, 0x200D, 0x1F52C]).classify = .clear := by
-  native_decide
+  decide +kernel
 
 /-- SOFT HYPHEN (U+00AD) fires DefaultIgnorableCarrier — it's
     default-ignorable, not NNBSP, not VS, not ZWJ. -/
 theorem detect_soft_hyphen_fires :
     let v := detect #[0x61, 0x00AD, 0x62]
     v.classify.tag = some "DefaultIgnorableCarrier"
-    ∧ v.markerCount = 1 := by native_decide
+    ∧ v.markerCount = 1 := by decide +kernel
 
 /-- ZWSP (U+200B) fires DefaultIgnorableCarrier — it's
     default-ignorable but not classified by the three probes
@@ -672,7 +748,7 @@ theorem detect_soft_hyphen_fires :
 theorem detect_zwsp_fires :
     let v := detect #[0x61, 0x200B, 0x62]
     v.classify.tag = some "DefaultIgnorableCarrier"
-    ∧ v.markerCount = 1 := by native_decide
+    ∧ v.markerCount = 1 := by decide +kernel
 
 /-- Priority pin: when NNBSP AND a default-ignorable co-occur,
     `Unknown` fires (priority 3) — the input mixes two
@@ -680,7 +756,7 @@ theorem detect_zwsp_fires :
     single scheme.  Pinned by NNBSP + SOFT HYPHEN. -/
 theorem detect_priority_unknown_over_nnbsp_with_di :
     let v := detect #[0x61, 0x202F, 0x00AD, 0x62]
-    v.classify.tag = some "Unknown" := by native_decide
+    v.classify.tag = some "Unknown" := by decide +kernel
 
 /-- Priority pin: when BOTH VS-non-emoji and ZWJ-non-emoji
     apply, `Unknown` fires (priority 3) — same multi-category
@@ -688,7 +764,7 @@ theorem detect_priority_unknown_over_nnbsp_with_di :
 theorem detect_priority_unknown_over_vs_with_zwj :
     let v := detect #[0x61, 0xFE0F, 0x200D, 0x62]
     v.classify.tag = some "Unknown" := by
-  native_decide
+  decide +kernel
 
 /-- Multiple NNBSPs are aggregated into a single
     NnbspBoundary verdict with markerCount = total. -/
@@ -696,7 +772,7 @@ theorem detect_multiple_nnbsp_aggregates :
     let v := detect #[0x61, 0x202F, 0x62, 0x202F, 0x63]
     v.classify.tag = some "NnbspBoundary"
     ∧ v.markerCount = 2
-    ∧ v.classify.positions = #[1, 3] := by native_decide
+    ∧ v.classify.positions = #[1, 3] := by decide +kernel
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §7 Refinement-probe spot checks (adversarial / gpt5ZwspModulo /
@@ -712,13 +788,13 @@ theorem detect_adversarial_arithmetic_nnbsp :
     -- "a NNBSP b NNBSP c NNBSP d" — NNBSPs at 1,3,5 (gap 2).
     let v := detect #[0x61, 0x202F, 0x62, 0x202F, 0x63, 0x202F, 0x64]
     v.classify.tag = some "Adversarial"
-    ∧ v.markerCount = 3 := by native_decide
+    ∧ v.markerCount = 3 := by decide +kernel
 
 /-- 2-NNBSP input STAYS in `nnbspBoundary` — adversarial
     threshold is ≥ 3. -/
 theorem detect_nnbsp_two_below_adversarial_threshold :
     (detect #[0x61, 0x202F, 0x62, 0x202F, 0x63]).classify.tag
-      = some "NnbspBoundary" := by native_decide
+      = some "NnbspBoundary" := by decide +kernel
 
 /-- `gpt5ZwspModulo` fires when input has ≥ 3 ZWSPs at
     arithmetic-progression positions.  ZWSPs are default-
@@ -728,13 +804,13 @@ theorem detect_gpt5_zwsp_modulo :
     -- "a ZWSP b ZWSP c ZWSP d" — ZWSPs at 1,3,5 (gap 2).
     let v := detect #[0x61, 0x200B, 0x62, 0x200B, 0x63, 0x200B, 0x64]
     v.classify.tag = some "Gpt5ZwspModulo"
-    ∧ v.markerCount = 3 := by native_decide
+    ∧ v.markerCount = 3 := by decide +kernel
 
 /-- Two ZWSPs (below the modulo threshold of 3) fall through
     to `defaultIgnorableCarrier`. -/
 theorem detect_zwsp_two_below_modulo_threshold :
     (detect #[0x61, 0x200B, 0x62, 0x200B, 0x63]).classify.tag
-      = some "DefaultIgnorableCarrier" := by native_decide
+      = some "DefaultIgnorableCarrier" := by decide +kernel
 
 /-- `smartQuoteAlternation` fires when input has ≥ 2 curly
     quotes and no ASCII straight quotes.  Position is the
@@ -743,7 +819,7 @@ theorem detect_smart_quote_alternation :
     -- "“abc”" — U+201C abc U+201D (LEFT DOUBLE / RIGHT DOUBLE).
     let v := detect #[0x201C, 0x61, 0x62, 0x63, 0x201D]
     v.classify.tag = some "SmartQuoteAlternation"
-    ∧ v.markerCount = 2 := by native_decide
+    ∧ v.markerCount = 2 := by decide +kernel
 
 /-- Curly quotes mixed with ASCII straight quotes — the
     "natural-writing" baseline is broken; smartQuoteAlternation
@@ -751,7 +827,7 @@ theorem detect_smart_quote_alternation :
 theorem detect_smart_quote_with_straight_clear :
     -- U+201C abc U+201D + ASCII '"'
     (detect #[0x201C, 0x61, 0x22, 0x201D]).classify = .clear := by
-  native_decide
+  decide +kernel
 
 /-- `emDashPattern` fires when input has ≥ 2 em-dashes and no
     ASCII hyphen-minus. -/
@@ -760,14 +836,14 @@ theorem detect_em_dash_pattern :
     let v := detect
       #[0x61, 0x62, 0x20, 0x2014, 0x20, 0x63, 0x64, 0x20, 0x2014, 0x20, 0x65, 0x66]
     v.classify.tag = some "EmDashPattern"
-    ∧ v.markerCount = 2 := by native_decide
+    ∧ v.markerCount = 2 := by decide +kernel
 
 /-- Em-dashes mixed with ASCII hyphen-minus — natural-writing
     baseline present; emDashPattern stays silent. -/
 theorem detect_em_dash_with_hyphen_clear :
     -- "ab-cd — ef"
     (detect #[0x61, 0x62, 0x2D, 0x63, 0x64, 0x20, 0x2014, 0x20, 0x65, 0x66]).classify
-    = .clear := by native_decide
+    = .clear := by decide +kernel
 
 /-- `statisticalTokenChoice` fires on the AI-favored word
     "delve" as a contiguous codepoint sub-array of input. -/
@@ -775,7 +851,7 @@ theorem detect_statistical_token_delve :
     -- "I delve into ..."  — bytes for "delve" at position 0.
     let v := detect #[0x64, 0x65, 0x6C, 0x76, 0x65]
     v.classify.tag = some "StatisticalTokenChoice"
-    ∧ v.markerCount = 1 := by native_decide
+    ∧ v.markerCount = 1 := by decide +kernel
 
 /-- `statisticalTokenChoice` finds "moreover" embedded in a
     longer ASCII string. -/
@@ -784,7 +860,7 @@ theorem detect_statistical_token_moreover_embedded :
     let v := detect
       #[0x3B, 0x20, 0x6D, 0x6F, 0x72, 0x65, 0x6F, 0x76, 0x65, 0x72, 0x2C, 0x20]
     v.classify.tag = some "StatisticalTokenChoice"
-    ∧ v.classify.positions = #[2] := by native_decide
+    ∧ v.classify.positions = #[2] := by decide +kernel
 
 /-- `unknown` fires on multi-category invisible-marker mixing:
     NNBSP + DI co-occur — two distinct categories, cannot be
@@ -792,39 +868,39 @@ theorem detect_statistical_token_moreover_embedded :
 theorem detect_unknown_nnbsp_plus_di :
     let v := detect #[0x61, 0x202F, 0x00AD, 0x62]
     v.classify.tag = some "Unknown"
-    ∧ v.markerCount = 2 := by native_decide
+    ∧ v.markerCount = 2 := by decide +kernel
 
 /-- `unknown` fires on VS + ZWJ co-occurring (both in plain
     non-emoji context). -/
 theorem detect_unknown_vs_plus_zwj :
     let v := detect #[0x61, 0xFE0F, 0x200D, 0x62]
     v.classify.tag = some "Unknown"
-    ∧ v.markerCount = 2 := by native_decide
+    ∧ v.markerCount = 2 := by decide +kernel
 
 /-- `unknown` fires on NNBSP + ZWJ co-occurring. -/
 theorem detect_unknown_nnbsp_plus_zwj :
     let v := detect #[0x61, 0x202F, 0x200D, 0x62]
     v.classify.tag = some "Unknown"
-    ∧ v.markerCount = 2 := by native_decide
+    ∧ v.markerCount = 2 := by decide +kernel
 
 /-- Single-category invisible-marker inputs DO NOT fire
     `unknown` — they fall through to the specific probe.
     Pin: single NNBSP fires nnbspBoundary (not unknown). -/
 theorem detect_single_category_skips_unknown :
     (detect #[0x61, 0x202F, 0x62]).classify.tag
-      = some "NnbspBoundary" := by native_decide
+      = some "NnbspBoundary" := by decide +kernel
 
 /-- Priority pin: `adversarial` fires before `nnbspBoundary`
     when both apply. -/
 theorem detect_priority_adversarial_over_nnbsp :
     let v := detect #[0x61, 0x202F, 0x62, 0x202F, 0x63, 0x202F, 0x64]
-    v.classify.tag = some "Adversarial" := by native_decide
+    v.classify.tag = some "Adversarial" := by decide +kernel
 
 /-- Priority pin: `gpt5ZwspModulo` fires before
     `defaultIgnorableCarrier` when both apply. -/
 theorem detect_priority_zwsp_modulo_over_di :
     let v := detect #[0x61, 0x200B, 0x62, 0x200B, 0x63, 0x200B, 0x64]
-    v.classify.tag = some "Gpt5ZwspModulo" := by native_decide
+    v.classify.tag = some "Gpt5ZwspModulo" := by decide +kernel
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §8 Tolerance-parameterised probes (Context-aware spot checks)
@@ -838,20 +914,20 @@ theorem detect_priority_zwsp_modulo_over_di :
 theorem detect_zwsp_jittered_strict_clear :
     let input := #[0x61, 0x200B, 0x62, 0x200B, 0x63, 0x64, 0x200B, 0x65]
     let v := detect input  -- bare detect: tolerance=0
-    v.classify.tag = some "DefaultIgnorableCarrier" := by native_decide
+    v.classify.tag = some "DefaultIgnorableCarrier" := by decide +kernel
 
 /-- Same input, tolerance=1: `gpt5ZwspModulo` now fires. -/
 theorem detect_zwsp_jittered_tolerant_fires :
     let input := #[0x61, 0x200B, 0x62, 0x200B, 0x63, 0x64, 0x200B, 0x65]
     let ctx : Context := { zwspModuloTolerance := 1 }
     let v := detectWithContext ctx input
-    v.classify.tag = some "Gpt5ZwspModulo" := by native_decide
+    v.classify.tag = some "Gpt5ZwspModulo" := by decide +kernel
 
 /-- The default `Context` reproduces the bare-detect behaviour.
     Pinned to confirm the wrapper-equivalence semantic. -/
 theorem detectWithContext_default_matches_detect :
     (detectWithContext {} #[0x61, 0x202F, 0x62]).classify
-      = (detect #[0x61, 0x202F, 0x62]).classify := by native_decide
+      = (detect #[0x61, 0x202F, 0x62]).classify := by decide +kernel
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §7 Cue-class coverage
@@ -871,6 +947,6 @@ theorem every_cueClass_is_probed :
          SubThreat.smartQuoteAlternation 0, SubThreat.statisticalTokenChoice 0,
          SubThreat.adversarial "" 0].any
           (fun st => subThreatCueClass st = some cls)) := by
-  native_decide
+  decide +kernel
 
 end Unicode.Security.Crypto.AiWatermarkDetectability

@@ -2,28 +2,24 @@
   Unicode.Generated.EastAsianWidth
 
   East_Asian_Width ranges from `lemma/lean/Unicode/Ucd/EastAsianWidth.txt`
-  (UCD 17.0.0), embedded as a String constant via `include_str` and
-  parsed once at module load. Pattern follows
-  `fgdorais/lean4-unicode-basic`.
+  (UCD 17.0.0). The property values and the pinned `List` range tables
+  (`explicitRangesList` / `defaultRangesList`) live in
+  `Unicode.Generated.EastAsianWidthData`; per-codepoint `lookup` consults
+  those `List`s so it reduces in the kernel. This module keeps the
+  `include_str` source and the parser, and a build-time drift gate
+  (`#eval`) proves the materialized tables match a fresh parse of the
+  source file.
 
   Semantics (UAX #11): each explicit range assigns an East_Asian_Width
   property value to a closed codepoint interval. Codepoints not covered
-  by `explicitRanges` fall back to the LAST `defaultRanges` entry whose
-  range contains them, matching the `@missing` header in the source
+  by the explicit ranges fall back to the LAST default range whose
+  interval contains them, matching the `@missing` header in the source
   file.
 -/
 
-namespace Unicode.Generated.EastAsianWidth
+import Unicode.Generated.EastAsianWidthData
 
-/-- The six East_Asian_Width property values per UAX #11. -/
-inductive EastAsianWidthClass where
-  | A
-  | F
-  | H
-  | N
-  | Na
-  | W
-  deriving DecidableEq, Repr, Inhabited
+namespace Unicode.Generated.EastAsianWidth
 
 @[inline]
 def trimS (s : String) : String := (String.trimAscii s).toString
@@ -99,17 +95,33 @@ def defaultRanges : Array (Nat × Nat × EastAsianWidthClass) :=
 
 /-- East_Asian_Width lookup: explicit ranges first, then the latest
     `@missing:` default range whose interval contains `cp`, then the
-    UAX #11 default of `N` (Neutral). -/
+    UAX #11 default of `N` (Neutral). Consults the materialized `List`
+    tables so a per-codepoint query reduces linearly in the kernel. -/
 def lookup (cp : Nat) : EastAsianWidthClass :=
-  match explicitRanges.find? (fun r => r.1 ≤ cp ∧ cp ≤ r.2.1) with
+  match explicitRangesList.find? (fun r => decide (r.1 ≤ cp ∧ cp ≤ r.2.1)) with
   | some r => r.2.2
   | none =>
-    let go : EastAsianWidthClass × Bool → Nat × Nat × EastAsianWidthClass
-           → EastAsianWidthClass × Bool :=
-      fun (current, _) entry =>
-        if entry.1 ≤ cp ∧ cp ≤ entry.2.1 then (entry.2.2, true)
-        else (current, false)
-    (defaultRanges.foldl go (.N, false)).1
+    let go : EastAsianWidthClass → Nat × Nat × EastAsianWidthClass
+           → EastAsianWidthClass :=
+      fun current entry =>
+        if entry.1 ≤ cp ∧ cp ≤ entry.2.1 then entry.2.2
+        else current
+    defaultRangesList.foldl go .N
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- DRIFT GATE
+--
+-- Build-time assertion (compiled `#eval`, not a kernel proof) that the
+-- materialized `List` tables in `EastAsianWidthData` agree exactly with a
+-- fresh parse of the pinned `EastAsianWidth.txt`. A mismatch — an
+-- unintended edit to the literal or a source-file swap — aborts the build.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+#eval do
+  unless explicitRangesList.toArray == explicitRanges do
+    throw (IO.userError "EastAsianWidth drift: explicitRangesList ≠ parsed explicitRanges")
+  unless defaultRangesList.toArray == defaultRanges do
+    throw (IO.userError "EastAsianWidth drift: defaultRangesList ≠ parsed defaultRanges")
 
 /-- True iff `cp` is East_Asian_Width F (Fullwidth), W (Wide), or
     H (Halfwidth). UAX #14 LB30 excludes these from the

@@ -3,7 +3,7 @@
 
   Conformance proof for the F2 family.  Folds the universal
   `Unicode.Security.Fixture` parser over the hand-curated
-  `StreamSafeViolationTest.txt` fixture and `native_decide`-closes
+  `StreamSafeViolationTest.txt` fixture and `decide`-closes
   the predicate that every row's expected verdict matches what
   `Unicode.Security.Form.StreamSafeViolation.detect` produces.
 -/
@@ -44,7 +44,7 @@ def projectPositions (c : Classification) : Array Nat :=
     non-starter run length), `overruns` (number of runs that
     breached the UAX #15 §9 Stream-Safe ceiling of 30),
     `total_ns` (total non-starters in input). -/
-private def metadataMatches (v : Verdict)
+def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey "max_run"  v.maxRunLen &&
   attr.checkNatKey "overruns" v.overrunCount &&
@@ -63,16 +63,16 @@ def verifyRow (r : Row) : Bool :=
   decide (pos = r.expectedPositions)
 
 /-- Every fixture row's detector verdict matches its expected verdict. -/
-theorem all_rows_pass : rows.all verifyRow = true := by native_decide
+theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 15 := by native_decide
+theorem row_count : rows.size = 15 := by decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 7 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 7 := by decide
 
 theorem covers_overrun :
     (rows.filter (·.sectionName = "StreamSafeOverrun")).size ≥ 7 := by
-  native_decide
+  decide
 
 end Unicode.Conformance.Security.StreamSafeViolationTest

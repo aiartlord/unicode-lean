@@ -31,7 +31,7 @@
 
   The single theorem at the bottom of this file proves all 91 707
   rows in the bundled `BidiCharacterTest.txt` pass via
-  `native_decide`. Cold builds elaborate the full table-scale
+  `decide`. Cold builds elaborate the full table-scale
   proof in a single pass.
 -/
 
@@ -144,8 +144,8 @@ def allRowsPass : Bool := rows.all verifyRow
 /-- Every row in the bundled UCD 17.0.0 `BidiCharacterTest.txt`
     (91 707 rows) is passed by the `bidiParagraph` /
     `bidiParagraphAt` pipeline. Verified at compile time via
-    `native_decide`. -/
+    `decide`. -/
 theorem bidiCharacterTest_full_conformance :
-    allRowsPass = true := by native_decide
+    allRowsPass = true := by decide
 
 end Unicode.Conformance.BidiCharacterTest

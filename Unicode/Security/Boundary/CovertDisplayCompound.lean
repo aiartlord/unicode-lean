@@ -68,7 +68,7 @@ def firstSuspiciousVsPos (input : Array Nat) : Option Nat :=
   (Array.range input.size).findSome? (fun i =>
     match classifyVSPosition input i with
     | .suspicious => some i
-    | _           => none)
+    | .emojiStyle | .standardized | .missingBase | .notVS => none)
 
 /-- True iff `cp` is in the tag-block range U+E0000..U+E007F.
     Tag characters are the second covert-channel class detected
@@ -157,22 +157,22 @@ def Classification.positions : Classification → Array Nat
 
 /-- Empty input is clear. -/
 theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Pure ASCII is clear; no bidi, no VS, no tag block. -/
 theorem detect_ascii_clear :
     (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Bidi-only (RLO alone) is clear here; the compound is
     not present. -/
 theorem detect_bidi_only_clear :
-    (detect #[0x202E]).classify.isClear = true := by native_decide
+    (detect #[0x202E]).classify.isClear = true := by decide
 
 /-- VS-only (ASCII + VS1) is clear here; the compound is
     not present. -/
 theorem detect_vs_only_clear :
-    (detect #[0x0041, 0xFE00]).classify.isClear = true := by native_decide
+    (detect #[0x0041, 0xFE00]).classify.isClear = true := by decide
 
 /-- Compound RLO + ASCII + VS1 fires `bidiPlusUnregisteredVs`.
     VS1 attached to ASCII A is not in any standardized table, so
@@ -180,13 +180,13 @@ theorem detect_vs_only_clear :
 theorem detect_compound_bidi_vs :
     (detect #[0x202E, 0x0041, 0xFE00]).classify.tag =
       some "BidiPlusUnregisteredVs" := by
-  native_decide
+  decide
 
 /-- Compound RLO + ASCII + tag block (no suspicious VS) fires
     `bidiPlusTagBlock`. -/
 theorem detect_compound_bidi_tag :
     (detect #[0x202E, 0x0041, 0xE0001]).classify.tag =
       some "BidiPlusTagBlock" := by
-  native_decide
+  decide
 
 end Unicode.Security.Boundary.CovertDisplayCompound

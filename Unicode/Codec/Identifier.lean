@@ -1,9 +1,10 @@
 /-
   Unicode.Codec.Identifier
 
-  Strict ASCII identifier predicate: `[a-zA-Z_][a-zA-Z0-9_]*`.
+  Strict ASCII identifier predicate: ASCII letter or low-line first,
+  followed by ASCII letters, decimal digits, or low-line.
 
-    * First byte MUST be in 0x41..0x5A (A–Z), 0x61..0x7A (a–z), or 0x5F (_).
+    * First byte MUST be in 0x41..0x5A (A–Z), 0x61..0x7A (a–z), or 0x5F.
     * Subsequent bytes MUST be in the first-byte set OR 0x30..0x39 (0–9).
     * Empty byte arrays are REJECTED.
 
@@ -34,7 +35,7 @@ namespace Unicode.Codec.Identifier
 -- §1 BYTE-CLASS PREDICATES
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- A byte starts an ASCII identifier when it is `A..Z`, `a..z`, or `_`. -/
+/-- A byte starts an ASCII identifier when it is `A..Z`, `a..z`, or low-line. -/
 def isIdentifierStartByte (b : UInt8) : Bool :=
   decide (
     (0x41 ≤ b.toNat ∧ b.toNat ≤ 0x5A)
@@ -65,21 +66,24 @@ theorem isContinue_space : isIdentifierContinueByte 0x20 = false := by decide
 -- §2 CONTINUE-BYTE WALKER
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+def firstInvalidIdentifierContinueList :
+    Nat → List UInt8 → Option (Nat × UInt8)
+  | offset, bytes =>
+    match bytes with
+    | [] => none
+    | b :: rest =>
+      if isIdentifierContinueByte b then
+        firstInvalidIdentifierContinueList (offset + 1) rest
+      else
+        some (offset, b)
+
 /-- Walk the continuation positions of `bs` starting at `i`, returning
     the offset and value of the first byte that fails
     `isIdentifierContinueByte`. Returns `none` when every position from
     `i` onward is a valid continuation byte. -/
 def firstInvalidIdentifierContinueFrom (bs : ByteArray) (i : Nat) :
     Option (Nat × UInt8) :=
-  if hi : i < bs.size then
-    let b := bs[i]'hi
-    if isIdentifierContinueByte b then
-      firstInvalidIdentifierContinueFrom bs (i + 1)
-    else
-      some (i, b)
-  else
-    none
-termination_by bs.size - i
+  firstInvalidIdentifierContinueList i (bs.data.toList.drop i)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 AGGREGATE PREDICATE
@@ -95,19 +99,26 @@ def isValidIdentifierBytes (bs : ByteArray) : Bool :=
     false
 
 theorem hello_is_identifier :
-    isValidIdentifierBytes "hello".toUTF8 = true := by native_decide
+    isValidIdentifierBytes (ByteArray.mk #[0x68, 0x65, 0x6C, 0x6C, 0x6F]) = true := by
+  rfl
 theorem var_1_is_identifier :
-    isValidIdentifierBytes "var_1".toUTF8 = true := by native_decide
+    isValidIdentifierBytes (ByteArray.mk #[0x76, 0x61, 0x72, 0x5F, 0x31]) = true := by
+  rfl
 theorem underscore_start :
-    isValidIdentifierBytes "_".toUTF8 = true := by native_decide
+    isValidIdentifierBytes (ByteArray.mk #[0x5F]) = true := by
+  rfl
 theorem empty_not_identifier :
-    isValidIdentifierBytes ByteArray.empty = false := by native_decide
+    isValidIdentifierBytes ByteArray.empty = false := by
+  rfl
 theorem leading_digit_not :
-    isValidIdentifierBytes "1var".toUTF8 = false := by native_decide
+    isValidIdentifierBytes (ByteArray.mk #[0x31, 0x76, 0x61, 0x72]) = false := by
+  rfl
 theorem embedded_space_not :
-    isValidIdentifierBytes "a b".toUTF8 = false := by native_decide
+    isValidIdentifierBytes (ByteArray.mk #[0x61, 0x20, 0x62]) = false := by
+  rfl
 theorem high_bit_not :
-    isValidIdentifierBytes (ByteArray.mk #[0x41, 0xFF]) = false := by native_decide
+    isValidIdentifierBytes (ByteArray.mk #[0x41, 0xFF]) = false := by
+  rfl
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 REFINEMENT TYPE

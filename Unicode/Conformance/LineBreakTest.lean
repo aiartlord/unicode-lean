@@ -6,7 +6,7 @@
   into a (codepoints, expected breaks) pair, then
   `Unicode.Segmentation.LineBreak.lineBreaks` is invoked on the
   codepoints and compared against the expected breaks. The bundled
-  `theorem all_pass` is closed by `native_decide` over every row.
+  `theorem all_pass` is closed by `decide` over every row.
 -/
 
 import Unicode.Segmentation.LineBreak
@@ -47,9 +47,10 @@ def parseRow (rawLine : String) : Option Row :=
         else (cps, bs, expectingMarker, false)
       else
         (cps.push (parseHex tok), bs, true, true)
-  let (cps, bs, _, ok) := tokens.foldl go (#[], #[], true, true)
+  let (cps, bs, expectingMarkerFinal, ok) := tokens.foldl go (#[], #[], true, true)
   if ! ok then none
-  else if bs.size = cps.size + 1 then some { codepoints := cps, breaks := bs }
+  else if !expectingMarkerFinal && bs.size = cps.size + 1 then
+    some { codepoints := cps, breaks := bs }
   else none
 
 def lineBreakTestRaw : String :=
@@ -65,6 +66,6 @@ def firstFailIdx : Option Nat :=
   rows.findIdx? (fun r => ! verifyRow r)
 
 /-- HEADLINE: every row in `LineBreakTest.txt` passes. -/
-theorem all_pass : rows.all verifyRow = true := by native_decide
+theorem all_pass : rows.all verifyRow = true := by decide
 
 end Unicode.Conformance.LineBreakTest

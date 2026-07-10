@@ -219,38 +219,38 @@ def bip39Canonical (input : Array Nat) : Array Nat :=
 
 /-- Empty input canonicalises to empty. -/
 theorem canonical_empty :
-    bip39Canonical #[] = #[] := by native_decide
+    bip39Canonical #[] = #[] := by decide
 
 /-- An already-canonical lowercase ASCII input is a fixed point. -/
 theorem canonical_idempotent_ascii :
     let cps : Array Nat := #[0x61, 0x62, 0x63]  -- "abc"
     bip39Canonical (bip39Canonical cps) = bip39Canonical cps := by
-  native_decide
+  decide
 
 /-- Double space between non-space content collapses to single. -/
 theorem canonical_collapses_double_space :
     let cps : Array Nat := #[0x61, 0x20, 0x20, 0x62]  -- "a  b"
-    bip39Canonical cps = #[0x61, 0x20, 0x62] := by native_decide
+    bip39Canonical cps = #[0x61, 0x20, 0x62] := by decide
 
 /-- Trailing single space is stripped. -/
 theorem canonical_strips_trailing :
     let cps : Array Nat := #[0x61, 0x20]
-    bip39Canonical cps = #[0x61] := by native_decide
+    bip39Canonical cps = #[0x61] := by decide
 
 /-- Leading single space is stripped. -/
 theorem canonical_strips_leading :
     let cps : Array Nat := #[0x20, 0x61]
-    bip39Canonical cps = #[0x61] := by native_decide
+    bip39Canonical cps = #[0x61] := by decide
 
 /-- Uppercase ASCII lowercases. -/
 theorem canonical_lowercases_ascii :
     let cps : Array Nat := #[0x41]  -- "A"
-    bip39Canonical cps = #[0x61] := by native_decide
+    bip39Canonical cps = #[0x61] := by decide
 
 /-- Japanese ideographic space U+3000 canonicalises to U+0020. -/
 theorem canonical_normalises_ideographic_space :
     let cps : Array Nat := #[0x61, 0x3000, 0x62]  -- "a<3000>b"
-    bip39Canonical cps = #[0x61, 0x20, 0x62] := by native_decide
+    bip39Canonical cps = #[0x61, 0x20, 0x62] := by decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Wordlist lookup
@@ -311,21 +311,21 @@ def uniqueLanguage (words : Array (Array Nat)) : Option Language :=
     mnemonic test vector starts with it. -/
 theorem english_contains_abandon :
     isInWordlist .english #[0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E] = true := by
-  native_decide
+  decide
 
 /-- A made-up word is in no wordlist. -/
 theorem nonsense_in_no_wordlist :
     wordlistsContaining #[0x71, 0x7A, 0x71, 0x7A, 0x71, 0x7A] = #[] := by
-  native_decide
+  decide
 
 /-- Single-word "abandon" is unambiguously English. -/
 theorem uniqueLanguage_abandon :
     uniqueLanguage #[#[0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E]] = some .english := by
-  native_decide
+  decide
 
 /-- Empty word-list is vacuously unique (defaults to English). -/
 theorem uniqueLanguage_empty :
-    uniqueLanguage #[] = some .english := by native_decide
+    uniqueLanguage #[] = some .english := by decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §7 Hazard probes (per-priority position-finders)
@@ -432,7 +432,7 @@ def detect (input : Array Nat) : Verdict :=
 
 /-- Empty input is clear (and defaults to English). -/
 theorem detect_empty_clear :
-    (detect #[]).classify = .clear .english := by native_decide
+    (detect #[]).classify = .clear .english := by decide
 
 /-- The canonical BIP-39 English test vector — 11×"abandon" +
     "about" — is clear and English. -/
@@ -450,19 +450,19 @@ theorem detect_canonical_english_12word :
         0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20,
         0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20,
         0x61, 0x62, 0x6F, 0x75, 0x74]
-    (detect mnemonic).classify = .clear .english := by native_decide
+    (detect mnemonic).classify = .clear .english := by decide
 
 /-- Trailing single space fires `trailingWhitespace`. -/
 theorem detect_trailing_space :
     let input : Array Nat :=
       #[0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20]
     (detect input).classify.tag = some "TrailingWhitespace" := by
-  native_decide
+  decide
 
 /-- Title-case "Abandon" fires `mixedCase`. -/
 theorem detect_mixed_case :
     let input : Array Nat := #[0x41, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E]
-    (detect input).classify.tag = some "MixedCase" := by native_decide
+    (detect input).classify.tag = some "MixedCase" := by decide
 
 /-- Double-space between words fires `whitespaceAnomaly`. -/
 theorem detect_double_space :
@@ -470,43 +470,43 @@ theorem detect_double_space :
       #[0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20, 0x20,
         0x61, 0x62, 0x6F, 0x75, 0x74]
     (detect input).classify.tag = some "WhitespaceAnomaly" := by
-  native_decide
+  decide
 
 /-- Leading space fires `whitespaceAnomaly`. -/
 theorem detect_leading_space :
     let input : Array Nat := #[0x20, 0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E]
     (detect input).classify.tag = some "WhitespaceAnomaly" := by
-  native_decide
+  decide
 
 /-- Compatibility ligature U+FB00 ("ﬀ") decomposes under NFKD;
     fires `nonNFKD`. -/
 theorem detect_non_nfkd_ligature :
     let input : Array Nat := #[0xFB00]
-    (detect input).classify.tag = some "NonNFKD" := by native_decide
+    (detect input).classify.tag = some "NonNFKD" := by decide
 
 /-- No-break space U+00A0 decomposes under NFKD to U+0020;
     fires `nonNFKD`. -/
 theorem detect_non_nfkd_nbsp :
     let input : Array Nat := #[0x61, 0x00A0, 0x62]
-    (detect input).classify.tag = some "NonNFKD" := by native_decide
+    (detect input).classify.tag = some "NonNFKD" := by decide
 
 /-- A made-up word fires `wordlistMismatch`. -/
 theorem detect_wordlist_mismatch :
     let input : Array Nat := #[0x71, 0x7A, 0x71, 0x7A]  -- "qzqz"
     (detect input).classify.tag = some "WordlistMismatch" := by
-  native_decide
+  decide
 
 /-- Position is reported correctly: trailing space at index 7
     (after the 7-codepoint "abandon"). -/
 theorem detect_trailing_space_position :
     let input : Array Nat :=
       #[0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20]
-    (detect input).classify.positions = #[7] := by native_decide
+    (detect input).classify.positions = #[7] := by decide
 
 /-- Position is reported correctly: uppercase A at index 0. -/
 theorem detect_mixed_case_position :
     let input : Array Nat := #[0x41, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E]
-    (detect input).classify.positions = #[0] := by native_decide
+    (detect input).classify.positions = #[0] := by decide
 
 /-- Japanese 3-word canonical mnemonic in NFKD form.
     あいこくしん / あいさつ / あいだ — the third word's だ decomposes
@@ -518,7 +518,7 @@ theorem detect_japanese_3word_clear :
       #[0x3042, 0x3044, 0x3053, 0x304F, 0x3057, 0x3093, 0x20,
         0x3042, 0x3044, 0x3055, 0x3064, 0x20,
         0x3042, 0x3044, 0x305F, 0x3099]
-    (detect mnemonic).classify = .clear .japanese := by native_decide
+    (detect mnemonic).classify = .clear .japanese := by decide
 
 /-- The verdict's word-count metadata matches the canonical
     word-count on a 12-word mnemonic. -/
@@ -536,6 +536,6 @@ theorem detect_wordcount_12 :
         0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20,
         0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E, 0x20,
         0x61, 0x62, 0x6F, 0x75, 0x74]
-    (detect mnemonic).wordCount = 12 := by native_decide
+    (detect mnemonic).wordCount = 12 := by decide
 
 end Unicode.Security.Crypto.Bip39Canonical

@@ -158,27 +158,27 @@ def Classification.positions : Classification → Array Nat
 
 /-- Empty input is clear. -/
 theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Pure ASCII is clear; every ASCII letter is Allowed, identity NFKD. -/
 theorem detect_ascii_clear :
     (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Greek lowercase α is Allowed with identity NFKD — clear. -/
 theorem detect_greek_alpha_clear :
-    (detect #[0x03B1]).classify.isClear = true := by native_decide
+    (detect #[0x03B1]).classify.isClear = true := by decide
 
 /-- Math Italic Small A (U+1D44E) is Restricted; NFKD head U+0061
     is Allowed.  The canonical IdentifierFormDrift case. -/
 theorem detect_math_italic_a_shift :
     (detect #[0x1D44E]).classify.tag = some "IdentifierStatusShift" := by
-  native_decide
+  decide
 
 /-- Fullwidth A (U+FF21) is Restricted (compatibility form); NFKD head
     U+0041 is Allowed. -/
 theorem detect_fullwidth_A_shift :
     (detect #[0xFF21]).classify.tag = some "IdentifierStatusShift" := by
-  native_decide
+  decide
 
 end Unicode.Security.Boundary.IdentifierFormDrift

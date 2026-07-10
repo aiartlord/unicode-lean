@@ -88,7 +88,7 @@ structure Verdict where
 /-- Per-iteration walk state.  Each opener pushes; each popper
     pops or records an orphan position.  `maxDepth` tracks the
     peak combined embedding-plus-isolate stack height. -/
-private structure WalkState where
+structure WalkState where
   pos            : Nat
   embStack       : Nat
   isoStack       : Nat
@@ -101,7 +101,7 @@ private structure WalkState where
   bidiPositions  : Array Nat
   deriving Inhabited
 
-private def WalkState.initial : WalkState :=
+def WalkState.initial : WalkState :=
   { pos := 0,
     embStack := 0, isoStack := 0,
     embOpenCount := 0, embPopCount := 0,
@@ -111,7 +111,7 @@ private def WalkState.initial : WalkState :=
     bidiPositions := #[] }
 
 /-- Single-step transition for the walk. -/
-private def WalkState.step (st : WalkState) (cp : Nat) : WalkState :=
+def WalkState.step (st : WalkState) (cp : Nat) : WalkState :=
   if ¬ isBidiFormatControl cp then
     { st with pos := st.pos + 1 }
   else
@@ -166,7 +166,7 @@ private def WalkState.step (st : WalkState) (cp : Nat) : WalkState :=
       { st with pos := st.pos + 1, bidiPositions := bidiPositions' }
 
 /-- Run the walk over the entire `input`. -/
-private def runWalk (input : Array Nat) : WalkState :=
+def runWalk (input : Array Nat) : WalkState :=
   input.foldl (init := WalkState.initial) WalkState.step
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -180,7 +180,7 @@ private def runWalk (input : Array Nat) : WalkState :=
     bidi controls are properly balanced and within depth — in
     which case the verdict is `.clear` even though bidi
     controls are present. -/
-private def pickSubThreat (st : WalkState) : Option SubThreat :=
+def pickSubThreat (st : WalkState) : Option SubThreat :=
   if st.maxDepth > uaxDepthLimit then
     some (.depthExceeded st.maxDepth)
   else if st.orphans.size > 0 then
@@ -279,47 +279,47 @@ def Classification.positions : Classification → Array Nat
 
 /-- Empty input is clear. -/
 theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Plain ASCII is clear (no bidi controls). -/
 theorem detect_ascii_clear :
     (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Balanced LRE … PDF is clear (legitimate left-to-right embedding). -/
 theorem detect_balanced_embedding_clear :
     (detect #[0x202A, 0x41, 0x202C]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Balanced LRI … PDI is clear (legitimate left-to-right isolate). -/
 theorem detect_balanced_isolate_clear :
     (detect #[0x2066, 0x41, 0x2069]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Lone LRE (no PDF) — unbalanced embedding (Trojan Source CVE-2021-42574). -/
 theorem detect_lone_lre :
     (detect #[0x202A, 0x41]).classify.tag = some "UnbalancedEmbedding" := by
-  native_decide
+  decide
 
 /-- Lone RLO (no PDF) — unbalanced embedding override. -/
 theorem detect_lone_rlo :
     (detect #[0x202E, 0x41]).classify.tag = some "UnbalancedEmbedding" := by
-  native_decide
+  decide
 
 /-- Lone PDF (no preceding opener) — orphan pop. -/
 theorem detect_lone_pdf :
     (detect #[0x202C]).classify.tag = some "OrphanPop" := by
-  native_decide
+  decide
 
 /-- Lone PDI (no preceding isolate) — orphan pop. -/
 theorem detect_lone_pdi :
     (detect #[0x2069]).classify.tag = some "OrphanPop" := by
-  native_decide
+  decide
 
 /-- Lone LRI (no PDI) — unbalanced isolate (CVE-2021-42694). -/
 theorem detect_lone_lri :
     (detect #[0x2067, 0x41]).classify.tag = some "UnbalancedIsolate" := by
-  native_decide
+  decide
 
 /-- The Boucher-Anderson 2021 canonical "commenting-out" attack
     minimum shape — balanced (one RLO + one PDF), so this particular
@@ -328,50 +328,50 @@ theorem detect_lone_lri :
 theorem detect_trojan_source_shape :
     (detect #[0x69, 0x66, 0x20, 0x202E, 0x29, 0x202C,
               0x7B]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Same shape with the closing PDF removed — the actual
     Trojan-Source attack class. -/
 theorem detect_trojan_source_unbalanced :
     (detect #[0x69, 0x66, 0x20, 0x202E, 0x29, 0x7B]).classify.tag
-      = some "UnbalancedEmbedding" := by native_decide
+      = some "UnbalancedEmbedding" := by decide
 
 /-- Deep-nesting attack — 126 nested LRE's exceed UAX #9 §3.3.2's 125 cap. -/
 theorem detect_depth_exceeded :
     let deepInput : Array Nat :=
       Array.replicate 126 0x202A ++ Array.replicate 126 0x202C
     (detect deepInput).classify.tag = some "DepthExceeded" := by
-  native_decide
+  decide
 
 /-- Exactly 125-deep nesting is within the UAX #9 cap. -/
 theorem detect_depth_at_limit_clear :
     let okInput : Array Nat :=
       Array.replicate 125 0x202A ++ Array.replicate 125 0x202C
     (detect okInput).classify.isClear = true := by
-  native_decide
+  decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Predicate sanity checks
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The four embedding-opener controls. -/
-theorem is_bidi_lre : isBidiFormatControl 0x202A = true := by native_decide
-theorem is_bidi_rle : isBidiFormatControl 0x202B = true := by native_decide
-theorem is_bidi_lro : isBidiFormatControl 0x202D = true := by native_decide
-theorem is_bidi_rlo : isBidiFormatControl 0x202E = true := by native_decide
+theorem is_bidi_lre : isBidiFormatControl 0x202A = true := by decide
+theorem is_bidi_rle : isBidiFormatControl 0x202B = true := by decide
+theorem is_bidi_lro : isBidiFormatControl 0x202D = true := by decide
+theorem is_bidi_rlo : isBidiFormatControl 0x202E = true := by decide
 
 /-- PDF is the embedding pop. -/
-theorem is_bidi_pdf : isBidiFormatControl 0x202C = true := by native_decide
+theorem is_bidi_pdf : isBidiFormatControl 0x202C = true := by decide
 
 /-- The three isolate-opener controls. -/
-theorem is_bidi_lri : isBidiFormatControl 0x2066 = true := by native_decide
-theorem is_bidi_rli : isBidiFormatControl 0x2067 = true := by native_decide
-theorem is_bidi_fsi : isBidiFormatControl 0x2068 = true := by native_decide
+theorem is_bidi_lri : isBidiFormatControl 0x2066 = true := by decide
+theorem is_bidi_rli : isBidiFormatControl 0x2067 = true := by decide
+theorem is_bidi_fsi : isBidiFormatControl 0x2068 = true := by decide
 
 /-- PDI is the isolate pop. -/
-theorem is_bidi_pdi : isBidiFormatControl 0x2069 = true := by native_decide
+theorem is_bidi_pdi : isBidiFormatControl 0x2069 = true := by decide
 
 /-- ASCII is not bidi. -/
-theorem is_bidi_ascii : isBidiFormatControl 0x41 = false := by native_decide
+theorem is_bidi_ascii : isBidiFormatControl 0x41 = false := by decide
 
 end Unicode.Security.Covert.BidiControlBalance

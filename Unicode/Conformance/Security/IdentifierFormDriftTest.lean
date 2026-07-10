@@ -3,7 +3,7 @@
 
   Conformance proof for the X1 family.  Folds the universal
   `Unicode.Security.Fixture` parser over the hand-curated
-  `IdentifierFormDriftTest.txt` fixture and `native_decide`-closes
+  `IdentifierFormDriftTest.txt` fixture and `decide`-closes
   the predicate that every row's expected verdict matches what
   `Unicode.Security.Boundary.IdentifierFormDrift.detect` produces.
 -/
@@ -49,7 +49,7 @@ def projectPositions (c : Classification) : Array Nat :=
     number of codepoints whose UTS #39 Identifier_Status / Type
     classification shifts between the raw input and its NFKC
     normalization). -/
-private def metadataMatches (v : Verdict)
+def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey "shift_count" v.shiftCount
 
@@ -66,16 +66,16 @@ def verifyRow (r : Row) : Bool :=
   decide (pos = r.expectedPositions)
 
 /-- Every fixture row's detector verdict matches its expected verdict. -/
-theorem all_rows_pass : rows.all verifyRow = true := by native_decide
+theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 25 := by native_decide
+theorem row_count : rows.size = 25 := by decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 7 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 7 := by decide
 
 theorem covers_shift :
     (rows.filter (·.sectionName = "IdentifierStatusShift")).size ≥ 15 := by
-  native_decide
+  decide
 
 end Unicode.Conformance.Security.IdentifierFormDriftTest

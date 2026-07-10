@@ -197,7 +197,7 @@ def isLegitimateZwjContext (input : Array Nat) (p : Nat) : Bool :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Tally tracked zero-width codepoint counts in a single pass. -/
-private structure ZWCounts where
+structure ZWCounts where
   zwspCount       : Nat
   zwjCount        : Nat
   wordJoinerCount : Nat
@@ -207,9 +207,9 @@ private structure ZWCounts where
   terminatorCount : Nat
   deriving Inhabited
 
-private def ZWCounts.zero : ZWCounts := default
+def ZWCounts.zero : ZWCounts := default
 
-private def tally (input : Array Nat) : ZWCounts := Id.run do
+def tally (input : Array Nat) : ZWCounts := Id.run do
   let mut c : ZWCounts := .zero
   for cp in input do
     if isZwsp cp then c := { c with zwspCount := c.zwspCount + 1 }
@@ -233,7 +233,7 @@ private def tally (input : Array Nat) : ZWCounts := Id.run do
     ANCHOR ... SEPARATOR ... TERMINATOR structural invariant.
     Strictly: every well-formed annotation has exactly equal
     counts of all three marks.  Anything else is a violation. -/
-private def annotationIllFormed (c : ZWCounts) : Bool :=
+def annotationIllFormed (c : ZWCounts) : Bool :=
   let totalAnnotation := c.anchorCount + c.separatorCount + c.terminatorCount
   if totalAnnotation = 0 then false
   else
@@ -242,7 +242,7 @@ private def annotationIllFormed (c : ZWCounts) : Bool :=
 
 /-- Pick the sub-threat from the tallies.  Returns `none` when
     no zero-width suspicion remains after legitimacy filtering. -/
-private def pickSubThreat
+def pickSubThreat
     (suspicious : Array Nat) (input : Array Nat) (c : ZWCounts) :
     Option SubThreat :=
   if suspicious.isEmpty then
@@ -361,71 +361,71 @@ def Classification.positions : Classification → Array Nat
 
 /-- Empty input is clear. -/
 theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Pure ASCII is clear. -/
 theorem detect_ascii_clear :
     (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Emoji ZWJ sequence "👨‍💻" is clear (RGI-context). -/
 theorem detect_emoji_zwj_clear :
     (detect #[0x1F468, 0x200D, 0x1F4BB]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- ZWJ between two emojis remains clear even with a third emoji
     after another ZWJ. -/
 theorem detect_emoji_zwj_chain_clear :
     (detect #[0x1F468, 0x200D, 0x1F469, 0x200D,
-              0x1F466]).classify.isClear = true := by native_decide
+              0x1F466]).classify.isClear = true := by decide
 
 /-- Two ZWSPs in plain text — `.binaryPayload`. -/
 theorem detect_two_zwsp_binary :
     (detect #[0x48, 0x200B, 0x69, 0x200B, 0x69]).classify.tag
-      = some "BinaryPayload" := by native_decide
+      = some "BinaryPayload" := by decide
 
 /-- ZWSP + ZWJ mixed — `.binaryPayload` (ZWJ alone, no emoji context). -/
 theorem detect_zwsp_zwj_mix_binary :
     (detect #[0x48, 0x200B, 0x200D, 0x69]).classify.tag
-      = some "BinaryPayload" := by native_decide
+      = some "BinaryPayload" := by decide
 
 /-- WORD JOINER injected into Latin text — `.wordJoinerInjection`. -/
 theorem detect_word_joiner :
     (detect #[0x48, 0x2060, 0x69]).classify.tag
-      = some "WordJoinerInjection" := by native_decide
+      = some "WordJoinerInjection" := by decide
 
 /-- Two NNBSPs in a row — suspected AI watermark. -/
 theorem detect_nnbsp_watermark :
     (detect #[0x48, 0x202F, 0x69, 0x202F, 0x6F]).classify.tag
-      = some "AIWatermarkNNBSP" := by native_decide
+      = some "AIWatermarkNNBSP" := by decide
 
 /-- Bare BOM (`U+FEFF`) in the middle of text — `.bareZeroWidth`. -/
 theorem detect_bare_bom :
     (detect #[0x48, 0xFEFF, 0x69]).classify.tag
-      = some "BareZeroWidth" := by native_decide
+      = some "BareZeroWidth" := by decide
 
 /-- A single bare ZWSP — `.bareZeroWidth`. -/
 theorem detect_bare_zwsp :
     (detect #[0x48, 0x200B, 0x69]).classify.tag
-      = some "BareZeroWidth" := by native_decide
+      = some "BareZeroWidth" := by decide
 
 /-- Annotation anchor without separator + terminator — misuse. -/
 theorem detect_annotation_misuse :
     (detect #[0x48, 0xFFF9, 0x69]).classify.tag
-      = some "AnnotationMisuse" := by native_decide
+      = some "AnnotationMisuse" := by decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §7 Predicate sanity checks
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-theorem is_zw_zwsp : isZeroWidthChar 0x200B = true := by native_decide
-theorem is_zw_zwj : isZeroWidthChar 0x200D = true := by native_decide
-theorem is_zw_wj : isZeroWidthChar 0x2060 = true := by native_decide
-theorem is_zw_nnbsp : isZeroWidthChar 0x202F = true := by native_decide
-theorem is_zw_bom : isZeroWidthChar 0xFEFF = true := by native_decide
-theorem is_zw_anchor : isZeroWidthChar 0xFFF9 = true := by native_decide
-theorem is_zw_terminator : isZeroWidthChar 0xFFFB = true := by native_decide
-theorem is_zw_ascii : isZeroWidthChar 0x41 = false := by native_decide
-theorem is_zw_emoji : isZeroWidthChar 0x1F600 = false := by native_decide
+theorem is_zw_zwsp : isZeroWidthChar 0x200B = true := by decide
+theorem is_zw_zwj : isZeroWidthChar 0x200D = true := by decide
+theorem is_zw_wj : isZeroWidthChar 0x2060 = true := by decide
+theorem is_zw_nnbsp : isZeroWidthChar 0x202F = true := by decide
+theorem is_zw_bom : isZeroWidthChar 0xFEFF = true := by decide
+theorem is_zw_anchor : isZeroWidthChar 0xFFF9 = true := by decide
+theorem is_zw_terminator : isZeroWidthChar 0xFFFB = true := by decide
+theorem is_zw_ascii : isZeroWidthChar 0x41 = false := by decide
+theorem is_zw_emoji : isZeroWidthChar 0x1F600 = false := by decide
 
 end Unicode.Security.Covert.ZeroWidthPayload

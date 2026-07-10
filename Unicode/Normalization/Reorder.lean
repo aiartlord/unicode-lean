@@ -19,6 +19,9 @@ import Unicode.Normalization.Lookup
 namespace Unicode.Normalization.Reorder
 
 open Unicode.Normalization
+open Unicode.Generated
+
+set_option maxRecDepth 100000
 
 /-- Stable insertion of a codepoint into a list already sorted by CCC.
     Places `x` immediately before the first element whose CCC is
@@ -62,6 +65,106 @@ def reorder (cps : Array Nat) : Array Nat :=
   final.emitted ++ flushRun final
 
 -- ─────────────────────────────────────────────────────────────────────────────
+--                                          // reorder // concrete-ccc-evaluation
+-- ─────────────────────────────────────────────────────────────────────────────
+
+-- The test vectors at the end of this module evaluate `reorder` on small
+-- concrete inputs, which requires the CCC of every involved codepoint as a
+-- rewrite. Every fact is witnessed by linear `List.all` / `List.any`
+-- passes over the row list and transported through the fact-transport
+-- lemmas in `Unicode.Normalization.Lookup` — the row scan itself is never
+-- reduced.
+
+/-- LATIN CAPITAL LETTER A has `CCC = 0` and no canonical decomposition,
+    so the pinned NFC-relevant subset omits its row. -/
+theorem rows_omit_latin_A :
+    UnicodeData.rowsList.all (fun r => decide (r.codepoint ≠ 0x0041)) = true := by
+  decide +kernel
+
+/-- LATIN CAPITAL LETTER B is likewise outside the pinned subset. -/
+theorem rows_omit_latin_B :
+    UnicodeData.rowsList.all (fun r => decide (r.codepoint ≠ 0x0042)) = true := by
+  decide +kernel
+
+/-- LATIN CAPITAL LETTER H is likewise outside the pinned subset. -/
+theorem rows_omit_latin_H :
+    UnicodeData.rowsList.all (fun r => decide (r.codepoint ≠ 0x0048)) = true := by
+  decide +kernel
+
+/-- LATIN SMALL LETTER I is likewise outside the pinned subset. -/
+theorem rows_omit_latin_i :
+    UnicodeData.rowsList.all (fun r => decide (r.codepoint ≠ 0x0069)) = true := by
+  decide +kernel
+
+/-- `CCC(U+0041) = 0` — LATIN CAPITAL LETTER A is a starter. -/
+theorem ccc_latin_A : Lookup.canonicalCombiningClass 0x0041 = 0 :=
+  Lookup.canonicalCombiningClass_of_lookupRow_none 0x0041
+    (Lookup.lookupRow_none_of_all_ne 0x0041 rows_omit_latin_A)
+
+/-- `CCC(U+0042) = 0` — LATIN CAPITAL LETTER B is a starter. -/
+theorem ccc_latin_B : Lookup.canonicalCombiningClass 0x0042 = 0 :=
+  Lookup.canonicalCombiningClass_of_lookupRow_none 0x0042
+    (Lookup.lookupRow_none_of_all_ne 0x0042 rows_omit_latin_B)
+
+/-- `CCC(U+0048) = 0` — LATIN CAPITAL LETTER H is a starter. -/
+theorem ccc_latin_H : Lookup.canonicalCombiningClass 0x0048 = 0 :=
+  Lookup.canonicalCombiningClass_of_lookupRow_none 0x0048
+    (Lookup.lookupRow_none_of_all_ne 0x0048 rows_omit_latin_H)
+
+/-- `CCC(U+0069) = 0` — LATIN SMALL LETTER I is a starter. -/
+theorem ccc_latin_i : Lookup.canonicalCombiningClass 0x0069 = 0 :=
+  Lookup.canonicalCombiningClass_of_lookupRow_none 0x0069
+    (Lookup.lookupRow_none_of_all_ne 0x0069 rows_omit_latin_i)
+
+/-- The pinned table carries a row for COMBINING GRAVE ACCENT. -/
+theorem rows_hit_grave :
+    UnicodeData.rowsList.any (fun r => decide (r.codepoint = 0x0300)) = true := by
+  decide +kernel
+
+/-- Every row carrying U+0300 records `CCC = 230`. -/
+theorem rows_ccc_grave :
+    UnicodeData.rowsList.all (fun r =>
+      decide (r.codepoint = 0x0300 →
+        r.canonicalCombiningClass = 230)) = true := by
+  decide +kernel
+
+/-- `CCC(U+0300) = 230` — COMBINING GRAVE ACCENT. -/
+theorem ccc_combining_grave : Lookup.canonicalCombiningClass 0x0300 = 230 :=
+  Lookup.canonicalCombiningClass_of_hit 0x0300 230 rows_hit_grave rows_ccc_grave
+
+/-- The pinned table carries a row for COMBINING ACUTE ACCENT. -/
+theorem rows_hit_acute :
+    UnicodeData.rowsList.any (fun r => decide (r.codepoint = 0x0301)) = true := by
+  decide +kernel
+
+/-- Every row carrying U+0301 records `CCC = 230`. -/
+theorem rows_ccc_acute :
+    UnicodeData.rowsList.all (fun r =>
+      decide (r.codepoint = 0x0301 →
+        r.canonicalCombiningClass = 230)) = true := by
+  decide +kernel
+
+/-- `CCC(U+0301) = 230` — COMBINING ACUTE ACCENT. -/
+theorem ccc_combining_acute : Lookup.canonicalCombiningClass 0x0301 = 230 :=
+  Lookup.canonicalCombiningClass_of_hit 0x0301 230 rows_hit_acute rows_ccc_acute
+
+/-- The pinned table carries a row for COMBINING CEDILLA. -/
+theorem rows_hit_cedilla :
+    UnicodeData.rowsList.any (fun r => decide (r.codepoint = 0x0327)) = true := by
+  decide +kernel
+
+/-- Every row carrying U+0327 records `CCC = 202`. -/
+theorem rows_ccc_cedilla :
+    UnicodeData.rowsList.all (fun r =>
+      decide (r.codepoint = 0x0327 →
+        r.canonicalCombiningClass = 202)) = true := by
+  decide +kernel
+
+/-- `CCC(U+0327) = 202` — COMBINING CEDILLA. -/
+theorem ccc_combining_cedilla : Lookup.canonicalCombiningClass 0x0327 = 202 :=
+  Lookup.canonicalCombiningClass_of_hit 0x0327 202 rows_hit_cedilla rows_ccc_cedilla
+
+-- ─────────────────────────────────────────────────────────────────────────────
 --                                        // reorder // insertion-sort-stability
 -- ─────────────────────────────────────────────────────────────────────────────
 
@@ -71,7 +174,7 @@ def reorder (cps : Array Nat) : Array Nat :=
     non-starter run. -/
 def IsCCCSorted : List Nat → Prop
   | []          => True
-  | [_]         => True
+  | [single]    => Function.const Nat True single
   | x :: y :: t =>
     Lookup.canonicalCombiningClass x ≤ Lookup.canonicalCombiningClass y
       ∧ IsCCCSorted (y :: t)
@@ -211,7 +314,7 @@ theorem insertByCCC_foldl_append (pre suf : List Nat)
       have heq : (pre ++ [x]) ++ rest = pre ++ (x :: rest) := by
         rw [List.append_assoc]; rfl
       rw [heq]; exact hbridge
-    -- Goal: foldl _ (pre ++ [x]) rest = pre ++ (x :: rest)
+    -- Goal: the fold from `pre ++ [x]` across `rest` equals `pre ++ (x :: rest)`.
     -- IH gives: ... = (pre ++ [x]) ++ rest, which equals pre ++ (x :: rest).
     have := ih (pre ++ [x]) hpre' hbridge'
     rw [List.append_assoc] at this
@@ -323,7 +426,7 @@ theorem sortNonStarterRun_sorted (run : List Nat) :
     i.e. each non-starter run is sorted. -/
 def HasSortedRuns : List Nat → Prop
   | []          => True
-  | [_]         => True
+  | [single]    => Function.const Nat True single
   | x :: y :: t =>
     (0 < Lookup.canonicalCombiningClass y →
       Lookup.canonicalCombiningClass x ≤ Lookup.canonicalCombiningClass y)
@@ -829,37 +932,48 @@ theorem reorder_idempotent (cps : Array Nat) :
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Empty input reorders to empty. -/
-theorem reorder_empty : reorder #[] = #[] := by native_decide
+theorem reorder_empty : reorder #[] = #[] := by decide
 
 /-- Pure-starter input passes through unchanged (no non-starter runs). -/
 theorem reorder_ascii :
-    reorder #[0x0048, 0x0069] = #[0x0048, 0x0069] := by native_decide  -- "Hi"
+    reorder #[0x0048, 0x0069] = #[0x0048, 0x0069] := by
+  simp [reorder, stepReorder, flushRun, sortNonStarterRun,
+        ccc_latin_H, ccc_latin_i]  -- "Hi"
 
 /-- Already-sorted non-starter run is unchanged. COMBINING CEDILLA
     (CCC = 202) followed by COMBINING GRAVE ACCENT (CCC = 230) is
     canonical order. -/
 theorem reorder_already_sorted :
     reorder #[0x0041, 0x0327, 0x0300]
-      = #[0x0041, 0x0327, 0x0300] := by native_decide
+      = #[0x0041, 0x0327, 0x0300] := by
+  simp [reorder, stepReorder, flushRun, sortNonStarterRun, insertByCCC,
+        ccc_latin_A, ccc_combining_cedilla, ccc_combining_grave]
 
 /-- Out-of-order non-starters get swapped. GRAVE (230) then CEDILLA
     (202) should reorder to CEDILLA then GRAVE. -/
 theorem reorder_swap :
     reorder #[0x0041, 0x0300, 0x0327]
-      = #[0x0041, 0x0327, 0x0300] := by native_decide
+      = #[0x0041, 0x0327, 0x0300] := by
+  simp [reorder, stepReorder, flushRun, sortNonStarterRun, insertByCCC,
+        ccc_latin_A, ccc_combining_grave, ccc_combining_cedilla]
 
 /-- Stability: GRAVE (230) and ACUTE (230) both have CCC = 230. Their
     relative scan order must be preserved even after reorder passes
     against a lower-CCC mark. -/
 theorem reorder_stable_equal_ccc :
     reorder #[0x0041, 0x0300, 0x0301, 0x0327]
-      = #[0x0041, 0x0327, 0x0300, 0x0301] := by native_decide
+      = #[0x0041, 0x0327, 0x0300, 0x0301] := by
+  simp [reorder, stepReorder, flushRun, sortNonStarterRun, insertByCCC,
+        ccc_latin_A, ccc_combining_grave, ccc_combining_acute,
+        ccc_combining_cedilla]
 
 /-- Starter boundary: a starter between two non-starter runs partitions
     the sort; runs are sorted independently. -/
 theorem reorder_starter_partition :
     reorder #[0x0041, 0x0300, 0x0327, 0x0042, 0x0300, 0x0327]
-      = #[0x0041, 0x0327, 0x0300, 0x0042, 0x0327, 0x0300] := by native_decide
+      = #[0x0041, 0x0327, 0x0300, 0x0042, 0x0327, 0x0300] := by
+  simp [reorder, stepReorder, flushRun, sortNonStarterRun, insertByCCC,
+        ccc_latin_A, ccc_latin_B, ccc_combining_grave, ccc_combining_cedilla]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- MEMBERSHIP PRESERVATION

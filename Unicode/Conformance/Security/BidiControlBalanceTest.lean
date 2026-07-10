@@ -3,7 +3,7 @@
 
   Conformance proof for the C5 family.  Folds the universal
   `Unicode.Security.Fixture` parser over the hand-curated
-  `BidiControlBalanceTest.txt` fixture and `native_decide`-closes
+  `BidiControlBalanceTest.txt` fixture and `decide`-closes
   the predicate that every row's expected verdict matches what
   `Unicode.Security.Covert.BidiControlBalance.detect` produces.
 -/
@@ -51,7 +51,7 @@ def projectPositions (c : Classification) : Array Nat :=
 /-- Validate the C5 verdict's metadata fields against the row's
     column-4 attribution.  Keys recognised: `emb_open`, `emb_pop`,
     `iso_open`, `iso_pop`, `max_depth`. -/
-private def metadataMatches (v : Verdict)
+def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey "emb_open"   v.embOpenCount &&
   attr.checkNatKey "emb_pop"    v.embPopCount &&
@@ -76,29 +76,29 @@ def verifyRow (r : Row) : Bool :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Every fixture row's detector verdict matches its expected verdict. -/
-theorem all_rows_pass : rows.all verifyRow = true := by native_decide
+theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate (catches fixture corruption / accidental rewrites). -/
-theorem row_count : rows.size = 27 := by native_decide
+theorem row_count : rows.size = 27 := by decide
 
 /-- Section coverage gates. -/
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 7 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 7 := by decide
 
 theorem covers_unbalanced_embedding :
     (rows.filter (·.sectionName = "UnbalancedEmbedding")).size ≥ 7 := by
-  native_decide
+  decide
 
 theorem covers_unbalanced_isolate :
     (rows.filter (·.sectionName = "UnbalancedIsolate")).size ≥ 6 := by
-  native_decide
+  decide
 
 theorem covers_orphan_pop :
-    (rows.filter (·.sectionName = "OrphanPop")).size ≥ 6 := by native_decide
+    (rows.filter (·.sectionName = "OrphanPop")).size ≥ 6 := by decide
 
 theorem covers_depth_exceeded :
     (rows.filter (·.sectionName = "DepthExceeded")).size ≥ 1 := by
-  native_decide
+  decide
 
 /-- The actual Trojan Source attack codepoint (RLO) is caught
     by the detector — regression check against the bug that
@@ -106,6 +106,6 @@ theorem covers_depth_exceeded :
     (Unicode.TrojanSource.opensEmbedding originally omitted RLO). -/
 theorem detect_rlo_attack :
     (detect #[0x69, 0x66, 0x20, 0x202E, 0x29, 0x7B]).classify.tag
-      = some "UnbalancedEmbedding" := by native_decide
+      = some "UnbalancedEmbedding" := by decide
 
 end Unicode.Conformance.Security.BidiControlBalanceTest

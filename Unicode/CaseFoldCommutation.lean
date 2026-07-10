@@ -8,7 +8,7 @@
       toNFD (caseFold x) = toNFD (caseFold (toNFD x))
 
   for every codepoint sequence x, where `toNFD = reorder ∘
-  decomposeSequence`. The pointwise version is a `native_decide` check
+  decomposeSequence`. The pointwise version is a `decide` check
   over the 1585 case-fold entries in CaseFolding.txt; the sequence-level
   lift chains through the fold-foldl pattern.
 
@@ -47,7 +47,7 @@ open Unicode.Precis.CaseMapping
 --
 --   toNFD tgt = toNFD (caseFold (toNFD #[src]))
 --
--- Checked by `native_decide`. If this closes, the sequence-level lift
+-- Checked by `decide`. If this closes, the sequence-level lift
 -- follows by a standard structural argument mirroring the width-compat
 -- preservation chain.
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -63,18 +63,18 @@ theorem caseFold_commutes_with_NFD_pointwise :
     CaseFolding.foldings.all (fun entry =>
       decide (NFC.toNFD entry.2 =
               NFC.toNFD (caseFold (NFC.toNFD #[entry.1])))) = true := by
-  native_decide
+  decide
 
 /-- Decomposed-form case-fold targets: for every fold entry, applying
     `toNFD` to the target is its own NFD form (idempotent restriction).
     This is the structural property that makes the pointwise commutation
-    `native_decide`-able uniformly. Slightly weaker than "targets are
+    `decide`-able uniformly. Slightly weaker than "targets are
     fully decomposed" — some fold targets contain codepoints with
     non-trivial canonical decomposition, so the stronger claim fails. -/
 theorem caseFoldTargets_NFD_idempotent :
     CaseFolding.foldings.all (fun entry =>
       decide (NFC.toNFD (NFC.toNFD entry.2) = NFC.toNFD entry.2)) = true := by
-  native_decide
+  decide
 
 /-- **Per-codepoint commutation over CaseFolding sources, direct form.**
     Parallel to `caseFold_commutes_with_NFD_pointwise` but states the
@@ -87,7 +87,7 @@ theorem caseFold_commutes_with_NFD_sources :
     CaseFolding.foldings.all (fun entry =>
       decide (NFC.toNFD (caseFold #[entry.1]) =
               NFC.toNFD (caseFold (NFC.toNFD #[entry.1])))) = true := by
-  native_decide
+  decide
 
 /-- **Per-codepoint commutation over UnicodeData rows.** Every codepoint
     with a canonical decomposition (`UnicodeData.rows`) satisfies the
@@ -99,18 +99,18 @@ theorem caseFold_commutes_with_NFD_UnicodeData_rows :
     UnicodeData.rows.all (fun row =>
       decide (NFC.toNFD (caseFold #[row.codepoint]) =
               NFC.toNFD (caseFold (NFC.toNFD #[row.codepoint])))) = true := by
-  native_decide
+  decide
 
 /-- **Per-codepoint commutation over Hangul syllables.** Every Hangul
     precomposed syllable in `[0xAC00, 0xD7A3]` satisfies the singleton
-    commutation. Algorithmic rather than table-driven; `native_decide`
+    commutation. Algorithmic rather than table-driven; `decide`
     evaluates `fullCanonicalDecompose` and `caseFold` concretely on
     each of the 11172 syllables. -/
 theorem caseFold_commutes_with_NFD_Hangul_range :
     (List.range 11172).all (fun i =>
       decide (NFC.toNFD (caseFold #[0xAC00 + i]) =
               NFC.toNFD (caseFold (NFC.toNFD #[0xAC00 + i])))) = true := by
-  native_decide
+  decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- UNIFIED PER-CODEPOINT LIFT

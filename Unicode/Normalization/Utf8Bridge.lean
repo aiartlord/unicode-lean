@@ -30,6 +30,8 @@ namespace Unicode.Normalization.Utf8Bridge
 open Unicode.Codec.Utf8 (foldCodepointsWithOffset isValidUtf8)
 open Unicode.Normalization
 
+set_option maxRecDepth 100000
+
 /-- Decode a UTF-8 byte array to a codepoint array. Semantically
     meaningful only when `isValidUtf8 bs = true`; on malformed input
     the fold yields the longest valid prefix and stops. Callers that
@@ -88,74 +90,95 @@ def isNFCBytes (bs : ByteArray) : Bool :=
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- TEST VECTORS
--- Each closes by native_decide against the pinned tables.
+-- Codec-only vectors close by decide — encode/decode is pure arithmetic.
+-- Pipeline vectors rewrite the normalization stage through the NFC value
+-- lemmas first, so the row tables are never reduced; the codec residue
+-- then closes by decide.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Single-byte ASCII encodes to one byte. -/
-theorem encode_A : encodeCodepoint 0x0041 = ByteArray.mk #[0x41] := by native_decide
+theorem encode_A : encodeCodepoint 0x0041 = ByteArray.mk #[0x41] := by decide
 
 /-- LATIN CAPITAL LETTER A WITH GRAVE (`À`, U+00C0) encodes to two bytes:
     0xC3 0x80. -/
 theorem encode_A_grave :
-    encodeCodepoint 0x00C0 = ByteArray.mk #[0xC3, 0x80] := by native_decide
+    encodeCodepoint 0x00C0 = ByteArray.mk #[0xC3, 0x80] := by decide
 
 /-- `é` (U+00E9) encodes to 0xC3 0xA9. -/
 theorem encode_eacute :
-    encodeCodepoint 0x00E9 = ByteArray.mk #[0xC3, 0xA9] := by native_decide
+    encodeCodepoint 0x00E9 = ByteArray.mk #[0xC3, 0xA9] := by decide
 
 /-- HIRAGANA LETTER A (`あ`, U+3042) encodes to three bytes:
     0xE3 0x81 0x82. -/
 theorem encode_hiragana_a :
-    encodeCodepoint 0x3042 = ByteArray.mk #[0xE3, 0x81, 0x82] := by native_decide
+    encodeCodepoint 0x3042 = ByteArray.mk #[0xE3, 0x81, 0x82] := by decide
 
 /-- GRINNING FACE (`😀`, U+1F600) encodes to four bytes:
     0xF0 0x9F 0x98 0x80. -/
 theorem encode_emoji :
-    encodeCodepoint 0x1F600 = ByteArray.mk #[0xF0, 0x9F, 0x98, 0x80] := by native_decide
+    encodeCodepoint 0x1F600 = ByteArray.mk #[0xF0, 0x9F, 0x98, 0x80] := by decide
 
 /-- Decoding "Hi" (pure ASCII) yields the codepoint array. -/
 theorem decode_ascii :
-    decodeToCodepoints (ByteArray.mk #[0x48, 0x69]) = #[0x48, 0x69] := by native_decide
+    decodeToCodepoints (ByteArray.mk #[0x48, 0x69]) = #[0x48, 0x69] := by decide
 
 /-- Decoding the UTF-8 bytes of `À` yields `#[0x00C0]`. -/
 theorem decode_A_grave :
-    decodeToCodepoints (ByteArray.mk #[0xC3, 0x80]) = #[0x00C0] := by native_decide
+    decodeToCodepoints (ByteArray.mk #[0xC3, 0x80]) = #[0x00C0] := by decide
 
 /-- Encode-then-decode round-trip for a single `A`. -/
 theorem roundtrip_A :
-    decodeToCodepoints (encodeCodepoint 0x0041) = #[0x0041] := by native_decide
+    decodeToCodepoints (encodeCodepoint 0x0041) = #[0x0041] := by decide
 
 /-- Encode-then-decode round-trip for HIRAGANA A. -/
 theorem roundtrip_hiragana_a :
-    decodeToCodepoints (encodeCodepoint 0x3042) = #[0x3042] := by native_decide
+    decodeToCodepoints (encodeCodepoint 0x3042) = #[0x3042] := by decide
 
 /-- NFC on the ASCII bytes of "Hi" is a no-op. -/
 theorem toNFCBytes_ascii :
     toNFCBytes (ByteArray.mk #[0x48, 0x69]) = some (ByteArray.mk #[0x48, 0x69]) := by
-  native_decide
+  rewrite [toNFCBytes.eq_def,
+    show decodeToCodepoints (ByteArray.mk #[0x48, 0x69]) = #[0x0048, 0x0069]
+      from by decide,
+    NFC.toNFC_ascii]
+  decide
 
 theorem isNFCBytes_ascii :
-    isNFCBytes (ByteArray.mk #[0x48, 0x69]) = true := by native_decide
+    isNFCBytes (ByteArray.mk #[0x48, 0x69]) = true := by
+  rewrite [isNFCBytes.eq_def, toNFCBytes_ascii]
+  decide
 
 /-- Decomposed `A` + combining grave (0x41, 0xCC, 0x80) normalizes to
     precomposed `À` (0xC3, 0x80). -/
 theorem toNFCBytes_composes :
     toNFCBytes (ByteArray.mk #[0x41, 0xCC, 0x80])
-      = some (ByteArray.mk #[0xC3, 0x80]) := by native_decide
+      = some (ByteArray.mk #[0xC3, 0x80]) := by
+  rewrite [toNFCBytes.eq_def,
+    show decodeToCodepoints (ByteArray.mk #[0x41, 0xCC, 0x80])
+        = #[0x0041, 0x0300] from by decide,
+    NFC.toNFC_composes_A_grave]
+  decide
 
 /-- Precomposed `À` (0xC3, 0x80) is already in NFC. -/
 theorem isNFCBytes_A_grave :
-    isNFCBytes (ByteArray.mk #[0xC3, 0x80]) = true := by native_decide
+    isNFCBytes (ByteArray.mk #[0xC3, 0x80]) = true := by
+  rewrite [isNFCBytes.eq_def, toNFCBytes.eq_def,
+    show decodeToCodepoints (ByteArray.mk #[0xC3, 0x80]) = #[0x00C0]
+      from by decide,
+    NFC.toNFC_idempotent_on_A_grave]
+  decide
 
 /-- Decomposed form is NOT in NFC at the byte level. -/
 theorem isNFCBytes_decomposed :
-    isNFCBytes (ByteArray.mk #[0x41, 0xCC, 0x80]) = false := by native_decide
+    isNFCBytes (ByteArray.mk #[0x41, 0xCC, 0x80]) = false := by
+  rewrite [isNFCBytes.eq_def, toNFCBytes_composes]
+  decide
 
 /-- Invalid UTF-8 (lone continuation byte) returns none. -/
 theorem toNFCBytes_invalid :
-    toNFCBytes (ByteArray.mk #[0x80]) = none := by native_decide
+    toNFCBytes (ByteArray.mk #[0x80]) = none := by decide
 
 theorem isNFCBytes_invalid :
-    isNFCBytes (ByteArray.mk #[0x80]) = false := by native_decide
+    isNFCBytes (ByteArray.mk #[0x80]) = false := by decide
 
 end Unicode.Normalization.Utf8Bridge

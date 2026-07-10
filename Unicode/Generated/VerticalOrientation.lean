@@ -17,14 +17,10 @@
   individually in the file.
 -/
 
+import Unicode.Generated.VerticalOrientationData
+
 namespace Unicode.Generated.VerticalOrientation
 
-inductive Vo where
-  | U
-  | R
-  | Tu
-  | Tr
-  deriving DecidableEq, Repr, Inhabited
 
 @[inline]
 def trimS (s : String) : String := (String.trimAscii s).toString
@@ -80,9 +76,14 @@ def defaultVo : Vo := .R
 /-- Look up the Vertical_Orientation of `cp`. Returns the matching
     range's value, or `defaultVo` (`.R`) when no range covers `cp`. -/
 def lookupVo (cp : Nat) : Vo :=
-  match verticalOrientationRanges.findSome? (fun ⟨lo, hi, v⟩ =>
+  match verticalOrientationRangesList.findSome? (fun ⟨lo, hi, v⟩ =>
           if lo ≤ cp ∧ cp ≤ hi then some v else none) with
   | some v => v
   | none   => defaultVo
+
+-- Build-time drift gate.
+#eval do
+  unless verticalOrientationRangesList.toArray == verticalOrientationRanges do
+    throw (IO.userError "VerticalOrientation drift: list ≠ parsed")
 
 end Unicode.Generated.VerticalOrientation

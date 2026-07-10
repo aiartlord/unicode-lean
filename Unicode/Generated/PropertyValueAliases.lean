@@ -13,21 +13,13 @@
   pair via this table.
 -/
 
+import Unicode.Generated.PropertyValueAliasesData
+
 namespace Unicode.Generated.PropertyValueAliases
 
 @[inline]
 def trimS (s : String) : String := (String.trimAscii s).toString
 
-structure PropertyValueRow where
-  /-- The short name of the property (e.g. "bc" for Bidi_Class). -/
-  property : String
-  /-- The short name of the value (e.g. "AL" for Arabic_Letter). -/
-  short    : String
-  /-- The long name of the value (e.g. "Arabic_Letter"). -/
-  long     : String
-  /-- Any additional aliases for the value. -/
-  others   : Array String
-  deriving Repr, Inhabited
 
 /-- Parse one row of `PropertyValueAliases.txt`. Returns `none`
     for blank or comment-only lines, and for the special
@@ -54,14 +46,17 @@ def propertyValueAliasesRaw : String :=
   include_str "../Ucd/PropertyValueAliases.txt"
 
 /-- All parsed property-value-alias rows, in source order. -/
-def parsedRows : Array PropertyValueRow :=
+def parsedRowsParsed : Array PropertyValueRow :=
   ((propertyValueAliasesRaw.splitOn "\n").filterMap parseRow).toArray
+
+/-- All parsed property-value-alias rows — the materialized view. -/
+def parsedRows : Array PropertyValueRow := parsedRowsList.toArray
 
 /-- Look up the canonical short value name for a (property,
     value-alias) pair. Returns `none` if the alias is not in the
     table for that property. -/
 def shortValueOf? (property valueAlias : String) : Option String :=
-  parsedRows.findSome? (fun r =>
+  parsedRowsList.findSome? (fun r =>
     if r.property ≠ property then none
     else if r.short = valueAlias ∨ r.long = valueAlias
             ∨ r.others.contains valueAlias then some r.short
@@ -69,10 +64,15 @@ def shortValueOf? (property valueAlias : String) : Option String :=
 
 /-- Look up the canonical long value name. -/
 def longValueOf? (property valueAlias : String) : Option String :=
-  parsedRows.findSome? (fun r =>
+  parsedRowsList.findSome? (fun r =>
     if r.property ≠ property then none
     else if r.short = valueAlias ∨ r.long = valueAlias
             ∨ r.others.contains valueAlias then some r.long
     else none)
+
+-- Build-time drift gate.
+#eval do
+  unless parsedRowsList.toArray == parsedRowsParsed do
+    throw (IO.userError "PropertyValueAliases drift: list ≠ parsed")
 
 end Unicode.Generated.PropertyValueAliases

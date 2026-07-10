@@ -39,19 +39,35 @@ namespace Unicode.Precis.BidiRule
 
 open Unicode.Generated.DerivedBidiClass (BidiClass)
 
+set_option maxRecDepth 100000
+
+attribute [local simp]
+  Unicode.Generated.DerivedBidiClass.lookup_u0030
+  Unicode.Generated.DerivedBidiClass.lookup_u0031
+  Unicode.Generated.DerivedBidiClass.lookup_u0041
+  Unicode.Generated.DerivedBidiClass.lookup_u0061
+  Unicode.Generated.DerivedBidiClass.lookup_u0062
+  Unicode.Generated.DerivedBidiClass.lookup_u0063
+  Unicode.Generated.DerivedBidiClass.lookup_u0065
+  Unicode.Generated.DerivedBidiClass.lookup_u0069
+  Unicode.Generated.DerivedBidiClass.lookup_u006C
+  Unicode.Generated.DerivedBidiClass.lookup_u05D0
+  Unicode.Generated.DerivedBidiClass.lookup_u05D1
+  Unicode.Generated.DerivedBidiClass.lookup_u05D2
+  Unicode.Generated.DerivedBidiClass.lookup_u0627
+  Unicode.Generated.DerivedBidiClass.lookup_u0628
+  Unicode.Generated.DerivedBidiClass.lookup_u0631
+  Unicode.Generated.DerivedBidiClass.lookup_u0639
+  Unicode.Generated.DerivedBidiClass.lookup_u0644
+  Unicode.Generated.DerivedBidiClass.lookup_u0660
+
 /-- Look up a codepoint's `Bidi_Class` using the pinned
     `DerivedBidiClass` tables. Consults `explicitRanges` first; falls
     through to `defaultRanges` which cover every codepoint per UAX #9's
     default-range convention. `BidiClass.L` is a final fallback that
     should be unreachable given a well-formed UCD pin. -/
 def lookupBidiClass (cp : Nat) : BidiClass :=
-  match Unicode.Generated.DerivedBidiClass.lookupExplicitBinary cp with
-  | some c => c
-  | none =>
-    match Unicode.Generated.DerivedBidiClass.defaultRanges.findSome?
-            (fun ⟨min, max, c⟩ => if min ≤ cp ∧ cp ≤ max then some c else none) with
-    | some c => c
-    | none   => BidiClass.L
+  Unicode.Generated.DerivedBidiClass.lookup cp
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- ALLOWED-CLASS PREDICATES
@@ -297,45 +313,62 @@ theorem satisfiesBidiRule_deterministic (cps : Array Nat) :
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Empty label is vacuously valid. -/
-theorem bidi_empty : satisfiesBidiRule #[] = true := by native_decide
+theorem bidi_empty : satisfiesBidiRule #[] = true := by
+  simp [satisfiesBidiRule, isBidiLabel, lookupBidiClass, isRtlBidiClass]
 
 /-- Pure-ASCII LTR label passes. -/
 theorem bidi_alice : satisfiesBidiRule #[0x61, 0x6C, 0x69, 0x63, 0x65] = true := by
-  native_decide
+  simp [satisfiesBidiRule, isBidiLabel, lookupBidiClass, isRtlBidiClass]
 
 /-- Mixed-case ASCII passes (all L class). -/
 theorem bidi_Alice : satisfiesBidiRule #[0x41, 0x6C, 0x69, 0x63, 0x65] = true := by
-  native_decide
+  simp [satisfiesBidiRule, isBidiLabel, lookupBidiClass, isRtlBidiClass]
 
 /-- ASCII with digit passes (L followed by EN). Ends with EN which is
     valid for an LTR label. -/
 theorem bidi_alice1 :
-    satisfiesBidiRule #[0x61, 0x6C, 0x69, 0x63, 0x65, 0x31] = true := by native_decide
+    satisfiesBidiRule #[0x61, 0x6C, 0x69, 0x63, 0x65, 0x31] = true := by
+  simp [satisfiesBidiRule, isBidiLabel, lookupBidiClass, isRtlBidiClass]
 
 /-- Label starting with a digit + LTR chars, no RTL characters: NOT a
     Bidi label per RFC 5893 §1.4, so passes unconditionally. -/
 theorem bidi_digit_start :
     satisfiesBidiRule #[0x30, 0x61, 0x6C, 0x69, 0x63, 0x65] = true := by
-  native_decide
+  simp [satisfiesBidiRule, isBidiLabel, lookupBidiClass, isRtlBidiClass]
 
 /-- RTL label starting with a digit (EN) FAILS rule 1 — first char must
     be L, R, or AL. (Example: Arabic digit + Arabic letter.) -/
 theorem bidi_rtl_digit_start :
-    satisfiesBidiRule #[0x0660, 0x0627] = false := by native_decide
+    satisfiesBidiRule #[0x0660, 0x0627] = false := by
+  simp [satisfiesBidiRule, isBidiLabel, firstCharValid, lookupBidiClass,
+    isRtlBidiClass, isFirstCharBidiClass]
 
 /-- Pure Arabic identifier (RTL label). `ا` U+0627, Arabic letter alef.
     Starts and ends with AL. -/
 theorem bidi_arabic :
     satisfiesBidiRule #[0x0627, 0x0644, 0x0639, 0x0631, 0x0628] = true := by
-  native_decide
+  simp [satisfiesBidiRule, isBidiLabel, firstCharValid, isRtlLabel,
+    noMixedEnAnInRtl, rtlEndValid, dropTrailingNSM, dropTrailingNSMFuel,
+    lookupBidiClass, isRtlBidiClass, isFirstCharBidiClass, isRAlBidiClass,
+    allowedInRtlLabel, validRtlEndClass, isEnBidiClass, isAnBidiClass,
+    isNsmBidiClass]
 
 /-- Pure Hebrew identifier (RTL label), starts and ends with R. -/
 theorem bidi_hebrew :
-    satisfiesBidiRule #[0x05D0, 0x05D1, 0x05D2] = true := by native_decide
+    satisfiesBidiRule #[0x05D0, 0x05D1, 0x05D2] = true := by
+  simp [satisfiesBidiRule, isBidiLabel, firstCharValid, isRtlLabel,
+    noMixedEnAnInRtl, rtlEndValid, dropTrailingNSM, dropTrailingNSMFuel,
+    lookupBidiClass, isRtlBidiClass, isFirstCharBidiClass, isRAlBidiClass,
+    allowedInRtlLabel, validRtlEndClass, isEnBidiClass, isAnBidiClass,
+    isNsmBidiClass]
 
 /-- Rejects: Latin start + Arabic middle + Latin end. The Arabic
     codepoint (AL) is not allowed in an LTR label. -/
 theorem bidi_reject_mixed :
-    satisfiesBidiRule #[0x61, 0x0627, 0x62] = false := by native_decide
+    satisfiesBidiRule #[0x61, 0x0627, 0x62] = false := by
+  simp [satisfiesBidiRule, isBidiLabel, firstCharValid, isRtlLabel,
+    ltrEndValid, dropTrailingNSM, dropTrailingNSMFuel, lookupBidiClass,
+    isRtlBidiClass, isFirstCharBidiClass, isRAlBidiClass,
+    allowedInLtrLabel, validLtrEndClass, isNsmBidiClass]
 
 end Unicode.Precis.BidiRule

@@ -96,35 +96,35 @@ def strip (bs : ByteArray) : Option BomKind × ByteArray :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 theorem detect_utf8_bom :
-    detect (ByteArray.mk #[0xEF, 0xBB, 0xBF]) = some (.utf8, 3) := by native_decide
+    detect (ByteArray.mk #[0xEF, 0xBB, 0xBF]) = some (.utf8, 3) := by decide
 
 theorem detect_utf8_bom_with_content :
-    detect (ByteArray.mk #[0xEF, 0xBB, 0xBF, 0x41]) = some (.utf8, 3) := by native_decide
+    detect (ByteArray.mk #[0xEF, 0xBB, 0xBF, 0x41]) = some (.utf8, 3) := by decide
 
 theorem detect_utf16_be_bom :
-    detect (ByteArray.mk #[0xFE, 0xFF]) = some (.utf16BE, 2) := by native_decide
+    detect (ByteArray.mk #[0xFE, 0xFF]) = some (.utf16BE, 2) := by decide
 
 theorem detect_utf16_le_bom :
-    detect (ByteArray.mk #[0xFF, 0xFE]) = some (.utf16LE, 2) := by native_decide
+    detect (ByteArray.mk #[0xFF, 0xFE]) = some (.utf16LE, 2) := by decide
 
 theorem detect_utf32_be_bom :
-    detect (ByteArray.mk #[0x00, 0x00, 0xFE, 0xFF]) = some (.utf32BE, 4) := by native_decide
+    detect (ByteArray.mk #[0x00, 0x00, 0xFE, 0xFF]) = some (.utf32BE, 4) := by decide
 
 theorem detect_utf32_le_bom :
-    detect (ByteArray.mk #[0xFF, 0xFE, 0x00, 0x00]) = some (.utf32LE, 4) := by native_decide
+    detect (ByteArray.mk #[0xFF, 0xFE, 0x00, 0x00]) = some (.utf32LE, 4) := by decide
 
 /-- Critical: UTF-32LE BOM (FF FE 00 00) is detected as UTF-32LE,
     not as UTF-16LE followed by two NUL bytes. -/
 theorem detect_prefers_utf32_over_utf16 :
     detect (ByteArray.mk #[0xFF, 0xFE, 0x00, 0x00]) = some (.utf32LE, 4) := by
-  native_decide
+  decide
 
 /-- Empty input has no BOM. -/
 theorem detect_empty :
-    detect ByteArray.empty = none := by native_decide
+    detect ByteArray.empty = none := by decide
 
 /-- Non-BOM content returns none. -/
 theorem detect_ascii :
-    detect (ByteArray.mk #[0x48, 0x65, 0x6C, 0x6C, 0x6F]) = none := by native_decide
+    detect (ByteArray.mk #[0x48, 0x65, 0x6C, 0x6C, 0x6F]) = none := by decide
 
 end Unicode.Codec.Bom

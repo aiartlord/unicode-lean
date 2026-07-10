@@ -17,13 +17,15 @@ import Unicode.Generated.IdnaMapping
 
 namespace Unicode.Idna.Disposition
 
+set_option maxRecDepth 1000000
+
 open Unicode.Generated.IdnaMapping
 
 /-- Look up the disposition row for codepoint `cp`. Returns `none`
     only for codepoints outside the IDNA mapping table coverage
     (e.g. some reserved blocks beyond the published ranges). -/
 def lookupRow? (cp : Nat) : Option IdnaRow :=
-  Unicode.Generated.IdnaMapping.lookupRowBinary cp
+  Unicode.Generated.IdnaMapping.lookupRowList? cp
 
 /-- Disposition of `cp`, defaulting to `Disallowed` for codepoints
     outside the table. -/
@@ -72,45 +74,45 @@ def mapTransitional (cp : Nat) : Array Nat :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Lowercase ASCII letters are valid. -/
-theorem disposition_a   : disposition 0x0061 = .Valid := by native_decide
-theorem disposition_z   : disposition 0x007A = .Valid := by native_decide
-theorem disposition_d0  : disposition 0x0030 = .Valid := by native_decide
-theorem disposition_d9  : disposition 0x0039 = .Valid := by native_decide
+theorem disposition_a   : disposition 0x0061 = .Valid := by decide +kernel
+theorem disposition_z   : disposition 0x007A = .Valid := by decide +kernel
+theorem disposition_d0  : disposition 0x0030 = .Valid := by decide +kernel
+theorem disposition_d9  : disposition 0x0039 = .Valid := by decide +kernel
 
 /-- Hyphen-minus and full stop are valid (the latter is the label separator). -/
-theorem disposition_hyphen : disposition 0x002D = .Valid := by native_decide
-theorem disposition_dot    : disposition 0x002E = .Valid := by native_decide
+theorem disposition_hyphen : disposition 0x002D = .Valid := by decide +kernel
+theorem disposition_dot    : disposition 0x002E = .Valid := by decide +kernel
 
 /-- Uppercase ASCII letters are mapped to lowercase. -/
-theorem disposition_A : disposition 0x0041 = .Mapped := by native_decide
-theorem disposition_Z : disposition 0x005A = .Mapped := by native_decide
+theorem disposition_A : disposition 0x0041 = .Mapped := by decide +kernel
+theorem disposition_Z : disposition 0x005A = .Mapped := by decide +kernel
 
-theorem mapNT_A : mapNonTransitional 0x0041 = #[0x0061] := by native_decide
-theorem mapNT_Z : mapNonTransitional 0x005A = #[0x007A] := by native_decide
+theorem mapNT_A : mapNonTransitional 0x0041 = #[0x0061] := by decide +kernel
+theorem mapNT_Z : mapNonTransitional 0x005A = #[0x007A] := by decide +kernel
 
 /-- Soft hyphen U+00AD is ignored (dropped from the processed string). -/
-theorem disposition_softhyphen : disposition 0x00AD = .Ignored := by native_decide
-theorem mapNT_softhyphen       : mapNonTransitional 0x00AD = #[] := by native_decide
+theorem disposition_softhyphen : disposition 0x00AD = .Ignored := by decide +kernel
+theorem mapNT_softhyphen       : mapNonTransitional 0x00AD = #[] := by decide +kernel
 
 /-- The four Deviation codepoints from UTS #46 §2.3. -/
-theorem disposition_sharp_s : disposition 0x00DF = .Deviation := by native_decide
-theorem disposition_finalσ  : disposition 0x03C2 = .Deviation := by native_decide
-theorem disposition_zwnj    : disposition 0x200C = .Deviation := by native_decide
-theorem disposition_zwj     : disposition 0x200D = .Deviation := by native_decide
+theorem disposition_sharp_s : disposition 0x00DF = .Deviation := by decide +kernel
+theorem disposition_finalσ  : disposition 0x03C2 = .Deviation := by decide +kernel
+theorem disposition_zwnj    : disposition 0x200C = .Deviation := by decide +kernel
+theorem disposition_zwj     : disposition 0x200D = .Deviation := by decide +kernel
 
 /-- SHARP S is kept as-is non-transitionally; mapped to "ss" transitionally. -/
-theorem mapNT_sharp_s : mapNonTransitional 0x00DF = #[0x00DF]         := by native_decide
-theorem mapTr_sharp_s : mapTransitional   0x00DF = #[0x0073, 0x0073] := by native_decide
+theorem mapNT_sharp_s : mapNonTransitional 0x00DF = #[0x00DF]         := by decide +kernel
+theorem mapTr_sharp_s : mapTransitional   0x00DF = #[0x0073, 0x0073] := by decide +kernel
 
 /-- GREEK SMALL LETTER FINAL SIGMA is kept as-is non-transitionally;
     mapped to σ (U+03C3) transitionally. -/
-theorem mapNT_finalσ : mapNonTransitional 0x03C2 = #[0x03C2] := by native_decide
-theorem mapTr_finalσ : mapTransitional   0x03C2 = #[0x03C3] := by native_decide
+theorem mapNT_finalσ : mapNonTransitional 0x03C2 = #[0x03C2] := by decide +kernel
+theorem mapTr_finalσ : mapTransitional   0x03C2 = #[0x03C3] := by decide +kernel
 
 /-- C1 controls U+0080..U+009F are disallowed. -/
-theorem disposition_C1 : disposition 0x0080 = .Disallowed := by native_decide
+theorem disposition_C1 : disposition 0x0080 = .Disallowed := by decide +kernel
 
 /-- Disallowed codepoints map to the empty sequence (caller must reject). -/
-theorem mapNT_C1 : mapNonTransitional 0x0080 = #[] := by native_decide
+theorem mapNT_C1 : mapNonTransitional 0x0080 = #[] := by decide +kernel
 
 end Unicode.Idna.Disposition

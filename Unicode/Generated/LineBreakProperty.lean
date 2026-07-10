@@ -36,21 +36,16 @@
 
 import Unicode.Generated.DerivedGeneralCategory
 import Unicode.Generated.EastAsianWidth
+import Unicode.Generated.LineBreakPropertyData
 
 namespace Unicode.Generated.LineBreakProperty
 
 open Unicode.Generated.DerivedGeneralCategory
 
-/-- The 49 explicit Line_Break property values per UAX #14 §6
-    plus the implicit `XX` default. UCD 17.0 adds `HH` for
-    explicit hyphens distinguished from `HY`. -/
-inductive LBClass where
-  | AI | AK | AL | AP | AS | B2 | BA | BB | BK | CB | CJ
-  | CL | CM | CP | CR | EB | EM | EX | GL | H2 | H3 | HH
-  | HL | HY | ID | IN | IS | JL | JT | JV | LF | NL | NS
-  | NU | OP | PO | PR | QU | RI | SA | SG | SP | SY | VF
-  | VI | WJ | XX | ZW | ZWJ
-  deriving DecidableEq, Repr, Inhabited
+-- `LBClass` and the materialized `rangesList` are defined in
+-- `Unicode.Generated.LineBreakPropertyData`; the parser below is retained only to
+-- audit that list against a fresh parse of the embedded fixture (the drift gate),
+-- keeping per-codepoint lookup free of the String parser's axioms.
 
 @[inline]
 def trimS (s : String) : String := (String.trimAscii s).toString
@@ -95,25 +90,34 @@ def parseRow (rawLine : String) : Option (Nat × Nat × LBClass) :=
   let stripped : String := (rawLine.takeWhile (· != '#')).toString
   let line := trimS stripped
   if line.isEmpty then none else
-  match String.splitOn line ";" with
-  | rngField :: clsField :: _ =>
+  let fields : Array String := (String.splitOn line ";").toArray
+  if fields.size ≥ 2 then
+    let rngField := fields[0]!
+    let clsField := fields[1]!
     let (lo, hi) := parseRange (trimS rngField)
     match parseLB? (trimS clsField) with
     | some c => some (lo, hi, c)
     | none   => none
-  | irregularSplit => Function.const (List String) none irregularSplit
+  else
+    none
 
 def lineBreakRaw : String :=
   include_str "../Ucd/LineBreak.txt"
 
-def ranges : Array (Nat × Nat × LBClass) :=
+/-- A fresh parse of the embedded fixture. Uses the String primitives (hence
+    `Classical.choice` in its trusted base); consumed only by the drift gate,
+    never by `lookupRaw`. -/
+def rangesParsed : Array (Nat × Nat × LBClass) :=
   ((lineBreakRaw.splitOn "\n").filterMap parseRow).toArray
+
+/-- The Line_Break range table used by lookup: the materialized `rangesList`. -/
+def ranges : Array (Nat × Nat × LBClass) := rangesList.toArray
 
 /-- Raw Line_Break class for `cp`, returning `XX` for codepoints
     not covered by any explicit range (per the source's
     `@missing: 0000..10FFFF; XX`). -/
 def lookupRaw (cp : Nat) : LBClass :=
-  match ranges.find? (fun r => r.1 ≤ cp ∧ cp ≤ r.2.1) with
+  match rangesList.find? (fun r => r.1 ≤ cp ∧ cp ≤ r.2.1) with
   | some r => r.2.2
   | none   => .XX
 
@@ -141,5 +145,11 @@ def resolve (cp : Nat) (raw : LBClass) : LBClass :=
 /-- LB1-resolved Line_Break class for `cp`. -/
 def lookupResolved (cp : Nat) : LBClass :=
   resolve cp (lookupRaw cp)
+
+-- Drift gate: the materialized `rangesList` mirrors a fresh parse of the
+-- embedded fixture, checked at build time (not a kernel theorem).
+#eval do
+  unless rangesList.toArray == rangesParsed do
+    throw (IO.userError "LineBreakProperty drift: rangesList ≠ rangesParsed")
 
 end Unicode.Generated.LineBreakProperty

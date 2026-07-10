@@ -105,7 +105,7 @@ structure CanonicalTarget where
   deriving Repr, Inhabited
 
 /-- Construct a target from an ASCII name string. -/
-private def mkAscii (s : String) : CanonicalTarget :=
+def mkAscii (s : String) : CanonicalTarget :=
   { name := s, cps := (s.toList.map Char.toNat).toArray }
 
 /-- Canonical-target dictionary, derived from the SHA-pinned
@@ -156,11 +156,13 @@ def isFullwidthHalfwidth (cp : Nat) : Bool :=
     gap by treating "letter + accent" and the bare letter as
     typosquat-equivalent. -/
 def findTargetMatch
-    (input : Array Nat) (_iSkel : Array Nat) : Option CanonicalTarget :=
-  let inputLetters := Unicode.Confusables.letterSkeleton input
-  canonicalTargets.find? (fun t =>
-    decide (t.cps ≠ input) ∧
-    decide (Unicode.Confusables.letterSkeleton t.cps = inputLetters))
+    (input : Array Nat) (iSkel : Array Nat) : Option CanonicalTarget :=
+  Function.const (Array Nat)
+    (let inputLetters := Unicode.Confusables.letterSkeleton input
+     canonicalTargets.find? (fun t =>
+       decide (t.cps ≠ input) ∧
+       decide (Unicode.Confusables.letterSkeleton t.cps = inputLetters)))
+    iSkel
 
 /-- Position of the first math-alphanumeric codepoint in `input`. -/
 def firstMathAlphaPos (input : Array Nat) : Option Nat :=
@@ -305,18 +307,18 @@ def Classification.positions : Classification → Array Nat
 
 /-- Empty input is clear. -/
 theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Pure ASCII "Hello" is clear (no confusable structure). -/
 theorem detect_ascii_clear :
     (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- The legitimate "Nethereum" (pure Latin) is clear. -/
 theorem detect_nethereum_legit_clear :
     let cps : Array Nat :=
       #[0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x65, 0x75, 0x6D]
-    (detect cps).classify.isClear = true := by native_decide
+    (detect cps).classify.isClear = true := by decide
 
 /-- The Nethereum Oct-2025 typosquat — final `е` (Cyrillic
     U+0435) replacing `e` (Latin U+0065) at position 6.  Iterated
@@ -324,7 +326,7 @@ theorem detect_nethereum_legit_clear :
 theorem detect_nethereum_attack :
     let cps : Array Nat :=
       #[0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D]
-    (detect cps).classify.tag = some "TargetMatch" := by native_decide
+    (detect cps).classify.tag = some "TargetMatch" := by decide
 
 /-- Lower-case variant of the Nethereum typosquat — `nethereum`
     with Cyrillic SMALL LETTER IE (U+0435) at position 6.  NuGet
@@ -337,7 +339,7 @@ theorem detect_nethereum_attack :
 theorem detect_nethereum_lowercase_attack :
     let cps : Array Nat :=
       #[0x6E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D]
-    (detect cps).classify.tag = some "TargetMatch" := by native_decide
+    (detect cps).classify.tag = some "TargetMatch" := by decide
 
 /-- ALL-CAPS variant of the Nethereum typosquat — `NETHEREUM`
     with Cyrillic CAPITAL LETTER IE (U+0415) at position 6.  Same
@@ -347,7 +349,7 @@ theorem detect_nethereum_lowercase_attack :
 theorem detect_nethereum_uppercase_attack :
     let cps : Array Nat :=
       #[0x4E, 0x45, 0x54, 0x48, 0x45, 0x52, 0x0415, 0x55, 0x4D]
-    (detect cps).classify.tag = some "TargetMatch" := by native_decide
+    (detect cps).classify.tag = some "TargetMatch" := by decide
 
 /-- Base-letter + combining-mark confusable — `nɇthereum`, where the
     second letter is U+0247 LATIN SMALL LETTER E WITH STROKE whose
@@ -362,7 +364,7 @@ theorem detect_nethereum_uppercase_attack :
 theorem detect_nethereum_stroked_e_attack :
     let cps : Array Nat :=
       #[0x6E, 0x0247, 0x74, 0x68, 0x65, 0x72, 0x65, 0x75, 0x6D]
-    (detect cps).classify.tag = some "TargetMatch" := by native_decide
+    (detect cps).classify.tag = some "TargetMatch" := by decide
 
 /-- Base-letter + combining-mark confusable — `nehterħeum`, U+0127
     LATIN SMALL LETTER H WITH STROKE whose confusable maps to
@@ -371,7 +373,7 @@ theorem detect_nethereum_stroked_e_attack :
 theorem detect_nethereum_stroked_h_attack :
     let cps : Array Nat :=
       #[0x6E, 0x65, 0x74, 0x0127, 0x65, 0x72, 0x65, 0x75, 0x6D]
-    (detect cps).classify.tag = some "TargetMatch" := by native_decide
+    (detect cps).classify.tag = some "TargetMatch" := by decide
 
 /-- Zero-width insertion bypass — `net` + ZWSP (U+200B) + `hereum`.
     Without the `Default_Ignorable_Code_Point` filter in
@@ -384,7 +386,7 @@ theorem detect_nethereum_stroked_h_attack :
 theorem detect_nethereum_zwsp_insertion_attack :
     let cps : Array Nat :=
       #[0x6E, 0x65, 0x74, 0x200B, 0x68, 0x65, 0x72, 0x65, 0x75, 0x6D]
-    (detect cps).classify.tag = some "TargetMatch" := by native_decide
+    (detect cps).classify.tag = some "TargetMatch" := by decide
 
 /-- Zero-width-joiner insertion variant — same class as
     `detect_nethereum_zwsp_insertion_attack` but with U+200D
@@ -392,13 +394,13 @@ theorem detect_nethereum_zwsp_insertion_attack :
 theorem detect_nethereum_zwj_insertion_attack :
     let cps : Array Nat :=
       #[0x6E, 0x65, 0x74, 0x200D, 0x68, 0x65, 0x72, 0x65, 0x75, 0x6D]
-    (detect cps).classify.tag = some "TargetMatch" := by native_decide
+    (detect cps).classify.tag = some "TargetMatch" := by decide
 
 /-- Math-Alpha posing — `𝐀` (Mathematical Bold Capital A,
     U+1D400) by itself is flagged. -/
 theorem detect_math_alpha :
     (detect #[0x1D400]).classify.tag = some "MathAlpha" := by
-  native_decide
+  decide
 
 /-- Fullwidth disguise — `Ｐａｙｐａｌ` (FF30 FF41 FF59 FF50 FF41 FF4C).
     With UTS #39 §5.4 case-folded skeleton the input case-folds and
@@ -410,31 +412,31 @@ theorem detect_math_alpha :
 theorem detect_fullwidth_paypal :
     let cps : Array Nat :=
       #[0xFF30, 0xFF41, 0xFF59, 0xFF50, 0xFF41, 0xFF4C]
-    (detect cps).classify.tag = some "TargetMatch" := by native_decide
+    (detect cps).classify.tag = some "TargetMatch" := by decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §8 Predicate sanity checks
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 theorem is_math_alpha_bold_A : isMathAlphanumeric 0x1D400 = true := by
-  native_decide
+  decide
 
 theorem is_math_alpha_last : isMathAlphanumeric 0x1D7FF = true := by
-  native_decide
+  decide
 
 theorem is_math_alpha_below : isMathAlphanumeric 0x1D3FF = false := by
-  native_decide
+  decide
 
 theorem is_math_alpha_above : isMathAlphanumeric 0x1D800 = false := by
-  native_decide
+  decide
 
 theorem is_fullwidth_A : isFullwidthHalfwidth 0xFF21 = true := by
-  native_decide
+  decide
 
 theorem is_fullwidth_above : isFullwidthHalfwidth 0xFFF0 = false := by
-  native_decide
+  decide
 
 theorem is_fullwidth_below : isFullwidthHalfwidth 0xFF00 = false := by
-  native_decide
+  decide
 
 end Unicode.Security.Identity.HomoglyphConfusable

@@ -86,9 +86,8 @@ def shouldBreakBefore
     (riR  : Array Nat)
     (i : Nat) : Bool :=
   if i = 0 then true                        -- WB1: sot ÷
-  else if h : i ≥ cps.size then true        -- WB2: ÷ eot (caller adds eot)
+  else if i ≥ cps.size then true            -- WB2: ÷ eot (caller adds eot)
   else
-    let _ := h
     let lp := lits[i-1]!
     let lc := lits[i]!
     let isEPCurr := eps[i]!

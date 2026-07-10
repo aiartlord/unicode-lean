@@ -2,33 +2,21 @@
   Unicode.Generated.EmojiData
 
   Emoji property ranges from `lemma/lean/Unicode/Ucd/emoji-data.txt`
-  (UTS #51 17.0.0), embedded as a String constant via `include_str`
-  and parsed once at module load. Pattern follows
-  `fgdorais/lean4-unicode-basic`.
+  (UTS #51 17.0.0). The property values and the pinned `List` of parsed
+  rows (`parsedRowsList`) live in `Unicode.Generated.EmojiDataRows`; the
+  per-property range tables `filterMap` over that `List` and the `is*`
+  membership tests reduce in the kernel. This module keeps the
+  `include_str` source and the parser, and a build-time drift gate
+  (`#eval`) proves the materialized rows match a fresh parse.
 
   Semantics (UTS #51): each row assigns one emoji boolean property
   to one closed codepoint interval. Codepoints not covered by any
   row default to absence of the property.
-
-  Only the property values needed by UAX #29 segmentation rules
-  (Extended_Pictographic) are exported here. The remaining
-  properties (Emoji, Emoji_Component, Emoji_Modifier,
-  Emoji_Modifier_Base, Emoji_Presentation) are parsed but not
-  re-exported, in line with the project's import-only-what-you-use
-  convention.
 -/
 
-namespace Unicode.Generated.EmojiData
+import Unicode.Generated.EmojiDataRows
 
-/-- The six emoji boolean properties per UTS #51. -/
-inductive EmojiProp where
-  | Emoji
-  | Emoji_Presentation
-  | Emoji_Modifier
-  | Emoji_Modifier_Base
-  | Emoji_Component
-  | Extended_Pictographic
-  deriving DecidableEq, Repr, Inhabited
+namespace Unicode.Generated.EmojiData
 
 @[inline]
 def trimS (s : String) : String := (String.trimAscii s).toString
@@ -64,13 +52,16 @@ def parseRow (rawLine : String) : Option (Nat × Nat × EmojiProp) :=
   let stripped : String := (rawLine.takeWhile (· != '#')).toString
   let line := trimS stripped
   if line.isEmpty then none else
-  match String.splitOn line ";" with
-  | rngField :: propField :: _ =>
+  let fields : Array String := (String.splitOn line ";").toArray
+  if fields.size ≥ 2 then
+    let rngField := fields[0]!
+    let propField := fields[1]!
     let (lo, hi) := parseRange (trimS rngField)
     match parseEmojiProp? (trimS propField) with
     | some p => some (lo, hi, p)
     | none   => none
-  | irregularSplit => Function.const (List String) none irregularSplit
+  else
+    none
 
 /-- Raw text of `emoji-data.txt`, embedded at compile time. -/
 def emojiDataRaw : String :=
@@ -80,35 +71,37 @@ def emojiDataRaw : String :=
 def parsedRows : Array (Nat × Nat × EmojiProp) :=
   ((emojiDataRaw.splitOn "\n").filterMap parseRow).toArray
 
-/-- Extended_Pictographic ranges (UAX #29 §3 dependency for GB11). -/
-def extendedPictographic : Array (Nat × Nat) :=
-  parsedRows.filterMap (fun r =>
+/-- Extended_Pictographic ranges (UAX #29 §3 dependency for GB11).
+    Filtered from the materialized `parsedRowsList` so kernel reduction
+    stays linear. -/
+def extendedPictographic : List (Nat × Nat) :=
+  parsedRowsList.filterMap (fun r =>
     if r.2.2 = .Extended_Pictographic then some (r.1, r.2.1) else none)
 
 /-- Emoji ranges. -/
-def emoji : Array (Nat × Nat) :=
-  parsedRows.filterMap (fun r =>
+def emoji : List (Nat × Nat) :=
+  parsedRowsList.filterMap (fun r =>
     if r.2.2 = .Emoji then some (r.1, r.2.1) else none)
 
 /-- Emoji_Presentation ranges. -/
-def emojiPresentation : Array (Nat × Nat) :=
-  parsedRows.filterMap (fun r =>
+def emojiPresentation : List (Nat × Nat) :=
+  parsedRowsList.filterMap (fun r =>
     if r.2.2 = .Emoji_Presentation then some (r.1, r.2.1) else none)
 
 /-- Emoji_Modifier ranges (the five skin-tone modifiers). -/
-def emojiModifier : Array (Nat × Nat) :=
-  parsedRows.filterMap (fun r =>
+def emojiModifier : List (Nat × Nat) :=
+  parsedRowsList.filterMap (fun r =>
     if r.2.2 = .Emoji_Modifier then some (r.1, r.2.1) else none)
 
 /-- Emoji_Modifier_Base ranges (codepoints accepting a skin-tone modifier). -/
-def emojiModifierBase : Array (Nat × Nat) :=
-  parsedRows.filterMap (fun r =>
+def emojiModifierBase : List (Nat × Nat) :=
+  parsedRowsList.filterMap (fun r =>
     if r.2.2 = .Emoji_Modifier_Base then some (r.1, r.2.1) else none)
 
 /-- Emoji_Component ranges (regional indicators, modifiers, joiners,
     keycap-eligible digits/symbols). -/
-def emojiComponent : Array (Nat × Nat) :=
-  parsedRows.filterMap (fun r =>
+def emojiComponent : List (Nat × Nat) :=
+  parsedRowsList.filterMap (fun r =>
     if r.2.2 = .Emoji_Component then some (r.1, r.2.1) else none)
 
 /-- True iff `cp` has the Extended_Pictographic property. -/
@@ -140,5 +133,17 @@ def isEmojiModifierBase (cp : Nat) : Bool :=
     keycap-eligible digits and symbols). -/
 def isEmojiComponent (cp : Nat) : Bool :=
   emojiComponent.any (fun r => r.1 ≤ cp ∧ cp ≤ r.2)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- DRIFT GATE
+--
+-- Build-time assertion (compiled `#eval`) that the materialized
+-- `parsedRowsList` agrees exactly with a fresh parse of the pinned
+-- `emoji-data.txt`. A mismatch aborts the build.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+#eval do
+  unless parsedRowsList.toArray == parsedRows do
+    throw (IO.userError "EmojiData drift: parsedRowsList ≠ parsed parsedRows")
 
 end Unicode.Generated.EmojiData

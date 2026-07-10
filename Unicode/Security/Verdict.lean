@@ -194,13 +194,13 @@ theorem severity_min_right (a b : Severity) :
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Build a sample hazard site for the `decide`-based sanity proofs. -/
-private def sampleSite : HazardSite :=
+def sampleSite : HazardSite :=
   HazardSite.mk' .variationSelectorPayload #[1, 2, 3] "DirectPayload"
 
-private def sampleClear : CompositeVerdict :=
+def sampleClear : CompositeVerdict :=
   CompositeVerdict.clear #[0x61, 0x62, 0x63]
 
-private def sampleHazardous : CompositeVerdict :=
+def sampleHazardous : CompositeVerdict :=
   CompositeVerdict.singleHazard #[0x61, 0x62, 0x63] sampleSite
 
 /-- Clear sample is isClear. -/

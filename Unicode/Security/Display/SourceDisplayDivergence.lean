@@ -102,7 +102,7 @@ structure Verdict where
     The single-fire case threads the inner sub-threat tag through
     so a downstream reviewer can see *which* family fired without
     cross-referencing the per-family verdicts. -/
-private def buildClassification
+def buildClassification
     (c1Tag c2Tag c3Tag c5Tag i1Tag : Option String) : Classification :=
   let fires : Array (String × String) :=
     #[("C1", c1Tag.getD ""), ("C2", c2Tag.getD ""), ("C3", c3Tag.getD ""),
@@ -120,8 +120,10 @@ private def buildClassification
       | "I1" => .identifierHomoglyph pair.2
       | other => Function.const String (.compound #[other]) other
     .hazard sub #[] ByteArray.empty
-  | _ =>
-    .hazard (.compound (fires.map (fun pair => pair.1))) #[] ByteArray.empty
+  | otherCount =>
+    Function.const Nat
+      (.hazard (.compound (fires.map (fun pair => pair.1))) #[] ByteArray.empty)
+      otherCount
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 Top-level detection
@@ -205,59 +207,59 @@ def Classification.positions : Classification → Array Nat
 
 /-- Empty input is clear (every sub-detector clears). -/
 theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Pure ASCII "Hello world" is clear. -/
 theorem detect_ascii_clear :
     (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64]).classify.isClear
-      = true := by native_decide
+      = true := by decide
 
 /-- A pure-C1 attack — tag-encoded "AB" — fires `.tagBlock`. -/
 theorem detect_tag_only :
     (detect #[0xE0041, 0xE0042]).classify.tag = some "TagBlock" := by
-  native_decide
+  decide
 
 /-- A pure-C2 attack — Latin A + VS16 — fires `.variationSelector`. -/
 theorem detect_vs_only :
     (detect #[0x0041, 0xFE0F]).classify.tag = some "VariationSelector" := by
-  native_decide
+  decide
 
 /-- A pure-C3 attack — Latin H + ZWSP + i — fires `.zeroWidth`. -/
 theorem detect_zw_only :
     (detect #[0x0048, 0x200B, 0x69]).classify.tag = some "ZeroWidth" := by
-  native_decide
+  decide
 
 /-- A pure-C5 attack — lone RLO — fires `.bidiControl`. -/
 theorem detect_bidi_only :
     (detect #[0x202E, 0x41]).classify.tag = some "BidiControl" := by
-  native_decide
+  decide
 
 /-- A pure-I1 attack — Nethereum typosquat — fires `.identifierHomoglyph`. -/
 theorem detect_homoglyph_only :
     (detect #[0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D]).classify.tag
-      = some "IdentifierHomoglyph" := by native_decide
+      = some "IdentifierHomoglyph" := by decide
 
 /-- A compound attack — Latin A + VS16 + ZWSP — fires `.compound`. -/
 theorem detect_compound_vs_plus_zw :
     (detect #[0x0041, 0xFE0F, 0x200B]).classify.tag = some "Compound" := by
-  native_decide
+  decide
 
 /-- Tag + zero-width — also `.compound`. -/
 theorem detect_compound_tag_plus_zw :
     (detect #[0xE0041, 0xE0042, 0x200B]).classify.tag = some "Compound" := by
-  native_decide
+  decide
 
 /-- A clean code snippet "let x = 1;" is clear. -/
 theorem detect_clean_code :
     (detect #[0x6C, 0x65, 0x74, 0x20, 0x78, 0x20, 0x3D, 0x20, 0x31, 0x3B]).classify.isClear
-      = true := by native_decide
+      = true := by decide
 
 /-- `safeForReview` mirrors `isClear`. -/
 theorem safeForReview_matches_clear_empty :
-    (detect #[]).safeForReview = true := by native_decide
+    (detect #[]).safeForReview = true := by decide
 
 theorem safeForReview_matches_hazard_VS :
-    (detect #[0x0041, 0xFE0F]).safeForReview = false := by native_decide
+    (detect #[0x0041, 0xFE0F]).safeForReview = false := by decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 Region-agnosticism spot checks
@@ -275,7 +277,7 @@ theorem safeForReview_matches_hazard_VS :
     a tokenizer says about the region. -/
 theorem detect_vs_inside_quote_pair_fires :
     (detect #[0x22, 0x41, 0xFE00, 0x22]).classify.tag
-      = some "VariationSelector" := by native_decide
+      = some "VariationSelector" := by decide
 
 /-- RLO "inside a line comment" — fires D1 for the same
     reason.  Source-display divergence in a comment still
@@ -284,11 +286,11 @@ theorem detect_vs_inside_quote_pair_fires :
     matchers). -/
 theorem detect_rlo_inside_line_comment_marker_fires :
     (detect #[0x2F, 0x2F, 0x202E]).classify.tag
-      = some "BidiControl" := by native_decide
+      = some "BidiControl" := by decide
 
 /-- RLO "inside a block comment" — fires D1. -/
 theorem detect_rlo_inside_block_comment_fires :
     (detect #[0x2F, 0x2A, 0x202E, 0x2A, 0x2F]).classify.tag
-      = some "BidiControl" := by native_decide
+      = some "BidiControl" := by decide
 
 end Unicode.Security.Display.SourceDisplayDivergence

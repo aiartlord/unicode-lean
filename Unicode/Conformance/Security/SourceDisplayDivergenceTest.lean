@@ -3,7 +3,7 @@
 
   Conformance proof for the D1 family.  Folds the universal
   `Unicode.Security.Fixture` parser over the hand-curated
-  `SourceDisplayDivergenceTest.txt` fixture and `native_decide`-
+  `SourceDisplayDivergenceTest.txt` fixture and `decide`-
   closes the predicate that every row's expected verdict matches
   what `Unicode.Security.Display.SourceDisplayDivergence.detect`
   produces.
@@ -60,7 +60,7 @@ def projectPositions (c : Classification) : Array Nat :=
     a single-constituent-firing row should equal that family's
     sub-threat tag.  For compound (two or more firing) and clear
     rows the inner tag is ambiguous and the check is lenient. -/
-private def metadataMatches (v : Verdict)
+def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   match attr.get? "inner_tag" with
   | none           => true
@@ -88,50 +88,50 @@ def verifyRow (r : Row) : Bool :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Every fixture row's detector verdict matches its expected verdict. -/
-theorem all_rows_pass : rows.all verifyRow = true := by native_decide
+theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 32 := by native_decide
+theorem row_count : rows.size = 32 := by decide
 
 /-- Section coverage gates. -/
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 7 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 7 := by decide
 
 theorem covers_tag_block :
-    (rows.filter (·.sectionName = "TagBlock")).size ≥ 4 := by native_decide
+    (rows.filter (·.sectionName = "TagBlock")).size ≥ 4 := by decide
 
 theorem covers_variation_selector :
     (rows.filter (·.sectionName = "VariationSelector")).size ≥ 4 := by
-  native_decide
+  decide
 
 theorem covers_zero_width :
-    (rows.filter (·.sectionName = "ZeroWidth")).size ≥ 4 := by native_decide
+    (rows.filter (·.sectionName = "ZeroWidth")).size ≥ 4 := by decide
 
 theorem covers_bidi_control :
-    (rows.filter (·.sectionName = "BidiControl")).size ≥ 4 := by native_decide
+    (rows.filter (·.sectionName = "BidiControl")).size ≥ 4 := by decide
 
 theorem covers_identifier_homoglyph :
     (rows.filter (·.sectionName = "IdentifierHomoglyph")).size ≥ 5 := by
-  native_decide
+  decide
 
 theorem covers_compound :
-    (rows.filter (·.sectionName = "Compound")).size ≥ 4 := by native_decide
+    (rows.filter (·.sectionName = "Compound")).size ≥ 4 := by decide
 
 /-- Cross-family regression: the Nethereum typosquat IS caught even
     in the D1 compound aggregation. -/
 theorem nethereum_caught_via_d1 :
     (detect #[0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75,
               0x6D]).classify.tag = some "IdentifierHomoglyph" := by
-  native_decide
+  decide
 
 /-- Cross-family regression: GlassWorm-shape pure-VS payload IS caught. -/
 theorem vs_payload_caught_via_d1 :
     (detect #[0x0061, 0xFE04, 0xFE01]).classify.tag
-      = some "VariationSelector" := by native_decide
+      = some "VariationSelector" := by decide
 
 /-- Cross-family regression: Trojan Source lone RLO IS caught. -/
 theorem rlo_caught_via_d1 :
     (detect #[0x202E, 0x41]).classify.tag = some "BidiControl" := by
-  native_decide
+  decide
 
 end Unicode.Conformance.Security.SourceDisplayDivergenceTest

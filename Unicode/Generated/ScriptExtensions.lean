@@ -18,109 +18,10 @@
   Counts: 99 abbreviations, 206 ranges.
 -/
 
+import Unicode.Generated.ScriptExtensionsData
+
 namespace Unicode.Generated.ScriptExtensions
 
-inductive ScriptAbbrev where
-  | Adlm
-  | Aghb
-  | Arab
-  | Armn
-  | Avst
-  | Beng
-  | Bopo
-  | Bugi
-  | Buhd
-  | Cakm
-  | Cari
-  | Cher
-  | Copt
-  | Cpmn
-  | Cprt
-  | Cyrl
-  | Deva
-  | Dogr
-  | Dupl
-  | Elba
-  | Ethi
-  | Gara
-  | Geor
-  | Glag
-  | Gong
-  | Gonm
-  | Goth
-  | Gran
-  | Grek
-  | Gujr
-  | Gukh
-  | Guru
-  | Hang
-  | Hani
-  | Hano
-  | Hebr
-  | Hira
-  | Hung
-  | Java
-  | Kali
-  | Kana
-  | Khoj
-  | Knda
-  | Kthi
-  | Latn
-  | Limb
-  | Lina
-  | Linb
-  | Lisu
-  | Lyci
-  | Lydi
-  | Mahj
-  | Mand
-  | Mani
-  | Mero
-  | Mlym
-  | Modi
-  | Mong
-  | Mult
-  | Mymr
-  | Nand
-  | Newa
-  | Nkoo
-  | Onao
-  | Orkh
-  | Orya
-  | Osge
-  | Ougr
-  | Perm
-  | Phag
-  | Phlp
-  | Rohg
-  | Runr
-  | Samr
-  | Shaw
-  | Shrd
-  | Sind
-  | Sinh
-  | Sogd
-  | Sunu
-  | Sylo
-  | Syrc
-  | Tagb
-  | Takr
-  | Tale
-  | Taml
-  | Tang
-  | Telu
-  | Tfng
-  | Tglg
-  | Thaa
-  | Thai
-  | Tibt
-  | Tirh
-  | Todr
-  | Toto
-  | Tutg
-  | Yezi
-  | Yiii
-  deriving DecidableEq, Repr, Inhabited
 
 @[inline]
 def trimS (s : String) : String := (String.trimAscii s).toString
@@ -264,7 +165,13 @@ def scriptExtensionsRaw : String := include_str "../Ucd/ScriptExtensions.txt"
 
 /-- Range table from ScriptExtensions.txt. Each row carries the set of
     Script_Extensions for one inclusive codepoint range. -/
-def scriptExtensionRanges : Array (Nat × Nat × Array ScriptAbbrev) :=
+def scriptExtensionRangesParsed : Array (Nat × Nat × Array ScriptAbbrev) :=
   ((scriptExtensionsRaw.splitOn "\n").filterMap parseScriptExtensionRow).toArray
+
+-- Build-time drift gate: materialized `scriptExtensionRanges` (List, from
+-- ScriptExtensionsData) must match a fresh parse.
+#eval do
+  unless scriptExtensionRanges.toArray == scriptExtensionRangesParsed do
+    throw (IO.userError "ScriptExtensions drift: scriptExtensionRanges ≠ parsed")
 
 end Unicode.Generated.ScriptExtensions

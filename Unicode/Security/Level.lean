@@ -3,8 +3,9 @@
 
   Strictness-level admission predicate for the Security
   Conformance Layer.  Lifts the UTS #39 §5 restriction-level
-  shape from the identifier-admissibility surface to the full
-  23-family detector layer.
+  shape from the identifier-admissibility surface to the
+  general-Unicode detector set, with opt-in gating for the
+  cryptographic-stability families.
 
   ## Why this shape
 
@@ -24,14 +25,16 @@
   never a suppression knob: there is no way to mark an input
   "safe" while a detector says hazard.
 
-  This module lifts that pattern to the 23-family detector
+  This module lifts that pattern to the detector
   layer.  The same invariants hold:
 
-    1. Every detector always runs and reports its own verdict
-       (`Unicode.Security.RunAll.runAll` is unchanged).
+    1. Every detector remains available through
+       `Unicode.Security.RunAll.runAll`, whose reporting surface is
+       unchanged.
     2. A `Level` declares an *admission predicate* on the
-       input.  `admissibleAt level input = true` iff the
-       declared level admits this input.
+       input.  `admissibleAt level cryptoCtx input = true`
+       iff both the declared level and cryptographic context
+       admit this input.
     3. The levels are totally ordered: `restrictive ⊑ moderate
        ⊑ minimal`.  Admission is monotone in the laxer
        direction: `admissibleAt restrictive ⇒ admissibleAt
@@ -43,9 +46,10 @@
 
   ## What each level admits
 
-  * `restrictive` — admit iff every one of the 23 families'
-    verdicts is `.clear`.  Any hazard from any family rejects
-    the input.  Strictest level; smallest admit set.  This is
+  * `restrictive` — admit iff every general-Unicode family in
+    the restrictive rejection set reports `.clear`.  Any hazard
+    from that set rejects the input.  Strictest level; smallest
+    admit set.  This is
     the natural choice for highly sensitive contexts (e.g.
     DNS-label gating, package-registry submission, security-
     audit pipelines).
@@ -80,8 +84,8 @@
 
   Note on Bip39Canonical / HashInputStability /
   AiWatermarkDetectability: the cryptographic-stability
-  detectors are *highly context-dependent* per
-  `docs/specs/security/cryptographic-stability.md`.
+  detectors are *highly context-dependent* by their family
+  threat models.
   Bip39Canonical fires `mixedCase` on any ASCII text with
   capital letters; `wordlistMismatch` on any ASCII text whose
   words aren't BIP-39 vocabulary.  Those verdicts are correct
@@ -106,7 +110,7 @@ set_option maxHeartbeats 4000000
 namespace Unicode.Security.Level
 
 open Unicode.Security.Calculus
-open Unicode.Security.RunAll (FamilyResult runAll)
+open Unicode.Security.RunAll (runAll)
 
 /-- The three canonical strictness levels, ordered from
     strictest to laxest.  See module header for what each
@@ -116,17 +120,6 @@ inductive Level where
   | moderate
   | minimal
   deriving DecidableEq, Repr, Inhabited
-
-/-- True iff the result is a hazard-class verdict (hazard or
-    compound).  Clear and informational results never cause
-    admission failure at any level. -/
-@[inline]
-private def isHazard (r : FamilyResult) : Bool :=
-  match r.classification with
-  | .clear         => false
-  | .informational => false
-  | unknownHaz     =>
-    Function.const ClassificationKind true unknownHaz
 
 /-- The family-tag set whose hazards cause admission failure
     at `level`.  Note this is a REJECTION set, not an allow-
@@ -205,6 +198,80 @@ def rejectionSet : Level → Array Family
 @[inline]
 def Level.rejects (level : Level) (family : Family) : Bool :=
   (rejectionSet level).contains family
+
+/-- True iff every element of `input` fits in a single octet.
+    Mirrors `Unicode.Security.RunAll`'s SurrogateReassembly gate:
+    C4 is byte-stream-oriented and must not reject codepoint arrays
+    merely because they contain non-ASCII scalar values. -/
+@[inline]
+def looksLikeByteStream (input : Array Nat) : Bool :=
+  input.all (fun cp => cp < 0x100)
+
+/-- Admission-relevant hazard bit for one detector family.
+
+    This is deliberately factored per family instead of computing
+    `runAll input` and filtering its 26 results.  The public reporting
+    surface remains `runAll`; the admission predicate only needs the
+    hazards in the declared rejection set, so evaluating unrelated
+    detectors is avoidable proof-engineering cost. -/
+@[inline]
+def familyHazard (family : Family) (input : Array Nat) : Bool :=
+  match family with
+  | .tagBlockPayload =>
+      !(Unicode.Security.Covert.TagBlockPayload.detect input).classify.isClear
+  | .variationSelectorPayload =>
+      !(Unicode.Security.Covert.VariationSelectorPayload.detect input).classify.isClear
+  | .zeroWidthPayload =>
+      !(Unicode.Security.Covert.ZeroWidthPayload.detect input).classify.isClear
+  | .surrogateReassembly =>
+      if looksLikeByteStream input then
+        !(Unicode.Security.Covert.SurrogateReassembly.detect input).classify.isClear
+      else
+        false
+  | .bidiControlBalance =>
+      !(Unicode.Security.Covert.BidiControlBalance.detect input).classify.isClear
+  | .homoglyphConfusable =>
+      !(Unicode.Security.Identity.HomoglyphConfusable.detect input).classify.isClear
+  | .mixedScriptAdmissibility =>
+      !(Unicode.Security.Identity.MixedScriptAdmissibility.detect input).classify.isClear
+  | .emojiZwjIntegrity =>
+      !(Unicode.Security.Identity.EmojiZwjIntegrity.detect input).classify.isClear
+  | .skinToneVariationForgery =>
+      !(Unicode.Security.Identity.SkinToneVariationForgery.detect input).classify.isClear
+  | .sourceDisplayDivergence =>
+      !(Unicode.Security.Display.SourceDisplayDivergence.detect input).classify.isClear
+  | .filenameDisguise =>
+      !(Unicode.Security.Display.FilenameDisguise.detect input).classify.isClear
+  | .rtlInjection =>
+      !(Unicode.Security.Display.RtlInjection.detect input).classify.isClear
+  | .rendererDivergence =>
+      !(Unicode.Security.Display.RendererDivergence.detect input).classify.isClear
+  | .normalizationBomb =>
+      !(Unicode.Security.Form.NormalizationBomb.detect input).classify.isClear
+  | .streamSafeViolation =>
+      !(Unicode.Security.Form.StreamSafeViolation.detect input).classify.isClear
+  | .localeCaseInversion =>
+      !(Unicode.Security.Form.LocaleCaseInversion.detect input).classify.isClear
+  | .caseExpansionMismatch =>
+      !(Unicode.Security.Form.CaseExpansionMismatch.detect input).classify.isClear
+  | .widthClassConfusion =>
+      !(Unicode.Security.Form.WidthClassConfusion.detect input).classify.isClear
+  | .nfcIdempotenceWitness =>
+      !(Unicode.Security.Form.NfcIdempotenceWitness.detect input).classify.isClear
+  | .identifierFormDrift =>
+      !(Unicode.Security.Boundary.IdentifierFormDrift.detect input).classify.isClear
+  | .covertDisplayCompound =>
+      !(Unicode.Security.Boundary.CovertDisplayCompound.detect input).classify.isClear
+  | .confusableBidiCompound =>
+      !(Unicode.Security.Boundary.ConfusableBidiCompound.detect input).classify.isClear
+  | .admissibilityFormDrift =>
+      !(Unicode.Security.Boundary.AdmissibilityFormDrift.detect input).classify.isClear
+  | .bip39Canonical =>
+      !(Unicode.Security.Crypto.Bip39Canonical.detect input).classify.isClear
+  | .hashInputStability =>
+      !(Unicode.Security.Crypto.HashInputStability.detect input).classify.isClear
+  | .aiWatermarkDetectability =>
+      !(Unicode.Security.Crypto.AiWatermarkDetectability.detect input).classify.isClear
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 CryptoContext — opt-in cryptographic-stability gating
@@ -289,9 +356,8 @@ def CryptoContext.toFamilies : CryptoContext → Array Family
     Used as the Level-only factor of the composite
     `admissibleAt`. -/
 def levelAdmissible (level : Level) (input : Array Nat) : Bool :=
-  let results  := runAll input
   let effective := rejectionSet level
-  ¬ results.any (fun r => isHazard r ∧ effective.contains r.family)
+  ¬ effective.any (fun family => familyHazard family input)
 
 /-- Does the cryptographic-stability detector set declared by `cryptoCtx` admit `input`?
     Independent of any Level.  Used as the Crypto-only factor of
@@ -300,9 +366,8 @@ def levelAdmissible (level : Level) (input : Array Nat) : Bool :=
     general-Unicode detectors. -/
 def cryptoAdmissible (cryptoCtx : CryptoContext)
     (input : Array Nat) : Bool :=
-  let results  := runAll input
   let effective := cryptoCtx.toFamilies
-  ¬ results.any (fun r => isHazard r ∧ effective.contains r.family)
+  ¬ effective.any (fun family => familyHazard family input)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 Composite admission predicate
@@ -343,43 +408,43 @@ theorem admissibleAt_factors
 -- §2 Rejection-set monotonicity
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The restrictive rejection set covers all 23 families.
+/-- The restrictive rejection set covers all 23 non-K families.
     `runAll`'s byte-stream gate makes C4 contribution
     well-behaved on codepoint inputs. -/
 theorem restrictive_rejection_size :
-    (rejectionSet .restrictive).size = 23 := by native_decide
+    (rejectionSet .restrictive).size = 23 := by decide
 
 /-- The moderate rejection set drops the 4 heuristic / FP-prone
     detectors (F1, D3, D4, I3) from restrictive, keeping 19. -/
 theorem moderate_rejection_size :
-    (rejectionSet .moderate).size = 19 := by native_decide
+    (rejectionSet .moderate).size = 19 := by decide
 
 /-- The minimal rejection set covers the 3 structural / RFC-
     violation families (C4 UTF-8 byte validity, C5 bidi-control
     balance, F2 stream-safe overflow). -/
 theorem minimal_rejection_size :
-    (rejectionSet .minimal).size = 3 := by native_decide
+    (rejectionSet .minimal).size = 3 := by decide
 
 /-- Every family in `moderate.rejectionSet` is also in
     `restrictive.rejectionSet`. -/
 theorem moderate_rejection_subset_restrictive :
     (rejectionSet .moderate).all (fun fam =>
       (rejectionSet .restrictive).contains fam) = true := by
-  native_decide
+  decide
 
 /-- Every family in `minimal.rejectionSet` is also in
     `moderate.rejectionSet`. -/
 theorem minimal_rejection_subset_moderate :
     (rejectionSet .minimal).all (fun fam =>
       (rejectionSet .moderate).contains fam) = true := by
-  native_decide
+  decide
 
 /-- Every family in `minimal.rejectionSet` is also in
     `restrictive.rejectionSet` (transitive). -/
 theorem minimal_rejection_subset_restrictive :
     (rejectionSet .minimal).all (fun fam =>
       (rejectionSet .restrictive).contains fam) = true := by
-  native_decide
+  decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 Admission monotonicity
@@ -402,7 +467,7 @@ theorem minimal_rejection_subset_restrictive :
 -- `S₁ ⊆ S₂`.  We pin the invariant via spot-checks on every
 -- canonical attack vector below — any monotonicity violation
 -- in a future refactor would surface as a failed
--- `native_decide`.
+-- `decide`.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Monotonicity witness, pure ASCII.  Admissible at all three
@@ -411,7 +476,7 @@ theorem monotone_ascii_hello :
     let input : Array Nat := #[0x48, 0x65, 0x6C, 0x6C, 0x6F]
     admissibleAt .restrictive .nonCrypto input = true
     ∧ admissibleAt .moderate .nonCrypto input = true
-    ∧ admissibleAt .minimal .nonCrypto input = true := by native_decide
+    ∧ admissibleAt .minimal .nonCrypto input = true := by decide
 
 /-- Monotonicity witness, lone RLO.  Inadmissible at every
     level (C5 is in every rejection set). -/
@@ -419,7 +484,7 @@ theorem monotone_lone_rlo :
     let input : Array Nat := #[0x202E]
     admissibleAt .restrictive .nonCrypto input = false
     ∧ admissibleAt .moderate .nonCrypto input = false
-    ∧ admissibleAt .minimal .nonCrypto input = false := by native_decide
+    ∧ admissibleAt .minimal .nonCrypto input = false := by decide
 
 /-- Monotonicity witness, Cyrillic Nethereum typosquat.
     Inadmissible at restrictive + moderate (I1 fires there),
@@ -429,7 +494,7 @@ theorem monotone_nethereum :
                                 0x0435, 0x75, 0x6D]
     admissibleAt .restrictive .nonCrypto input = false
     ∧ admissibleAt .moderate .nonCrypto input = false
-    ∧ admissibleAt .minimal .nonCrypto input = true := by native_decide
+    ∧ admissibleAt .minimal .nonCrypto input = true := by decide
 
 /-- Monotonicity witness, Math Italic admin.  Same shape as
     Nethereum — identifier-side attack, inadmissible at
@@ -438,7 +503,7 @@ theorem monotone_math_italic_admin :
     let input : Array Nat := #[0x1D44E, 0x1D451, 0x1D45A, 0x1D456, 0x1D45B]
     admissibleAt .restrictive .nonCrypto input = false
     ∧ admissibleAt .moderate .nonCrypto input = false
-    ∧ admissibleAt .minimal .nonCrypto input = true := by native_decide
+    ∧ admissibleAt .minimal .nonCrypto input = true := by decide
 
 /-- Monotonicity witness, Greek polytonic.  Inadmissible at
     restrictive (F1 NfdHighExpansion fires there), admissible
@@ -457,7 +522,7 @@ theorem monotone_greek_polytonic :
     let input : Array Nat := #[0x1F86]
     admissibleAt .restrictive .nonCrypto input = false
     ∧ admissibleAt .moderate .nonCrypto input = false
-    ∧ admissibleAt .minimal .nonCrypto input = true := by native_decide
+    ∧ admissibleAt .minimal .nonCrypto input = true := by decide
 
 /-- Monotonicity witness, Arabic ligature FDFA (1→18 NFKD
     expansion — the canonical normalization bomb).
@@ -471,7 +536,7 @@ theorem monotone_fdfa :
     let input : Array Nat := #[0xFDFA]
     admissibleAt .restrictive .nonCrypto input = false
     ∧ admissibleAt .moderate .nonCrypto input = false
-    ∧ admissibleAt .minimal .nonCrypto input = true := by native_decide
+    ∧ admissibleAt .minimal .nonCrypto input = true := by decide
 
 /-- Monotonicity witness, Java modified-UTF-8 NUL `0xC0 0x80`.
     Pure byte-stream input (every codepoint ≤ 0xFF), so
@@ -482,7 +547,7 @@ theorem monotone_modified_utf8_nul :
     let input : Array Nat := #[0xC0, 0x80]
     admissibleAt .restrictive .nonCrypto input = false
     ∧ admissibleAt .moderate .nonCrypto input = false
-    ∧ admissibleAt .minimal .nonCrypto input = false := by native_decide
+    ∧ admissibleAt .minimal .nonCrypto input = false := by decide
 
 /-- Monotonicity witness, mixed input with a non-ASCII codepoint
     `#[0xC0, 0x80, 0x4E2D]`.  The Han codepoint 0x4E2D > 0xFF
@@ -494,7 +559,7 @@ theorem monotone_modified_utf8_nul :
     preventing spurious rejection. -/
 theorem monotone_mixed_high_codepoint :
     let input : Array Nat := #[0xC0, 0x80, 0x4E2D]
-    admissibleAt .minimal .nonCrypto input = true := by native_decide
+    admissibleAt .minimal .nonCrypto input = true := by decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 CryptoContext gating — K1 only fires under .bip39Mnemonic
@@ -510,7 +575,7 @@ theorem monotone_mixed_high_codepoint :
 theorem space_alone_fires_I2 :
     (Unicode.Security.Identity.MixedScriptAdmissibility.detect
       #[0x20]).classify.isClear = false := by
-  native_decide
+  decide
 
 /-- Pure ASCII "Hello" is admissible at every level under
     `nonCrypto` — no Unicode-layer hazard fires.  Under
@@ -520,7 +585,7 @@ theorem crypto_ctx_gates_mixed_case :
     let input : Array Nat := #[0x48, 0x65, 0x6C, 0x6C, 0x6F]
     admissibleAt .restrictive .nonCrypto     input = true
     ∧ admissibleAt .restrictive .bip39Mnemonic input = false := by
-  native_decide
+  decide
 
 /-- Single BIP-39 word "abandon" (pure lowercase ASCII, valid
     English wordlist entry) is admissible under both contexts.
@@ -530,7 +595,7 @@ theorem crypto_ctx_single_word_passes_both :
     let input : Array Nat := #[0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E]
     admissibleAt .restrictive .nonCrypto     input = true
     ∧ admissibleAt .restrictive .bip39Mnemonic input = true := by
-  native_decide
+  decide
 
 /-- K2's `hashInput` context-gating, measured directly via
     `cryptoAdmissible` — Level-independent.  Decomposed é
@@ -551,7 +616,7 @@ theorem crypto_admissible_gates_decomposed_e_acute :
     let input : Array Nat := #[0x0065, 0x0301]
     cryptoAdmissible .nonCrypto input = true
     ∧ cryptoAdmissible .hashInput input = false := by
-  native_decide
+  decide
 
 /-- Composite-form co-witness for the K2 gating: at `.minimal`
     (where F6 is excluded from the Level set), `admissibleAt`
@@ -565,7 +630,7 @@ theorem crypto_ctx_gates_decomposed_e_acute_at_minimal :
     let input : Array Nat := #[0x0065, 0x0301]
     admissibleAt .minimal .nonCrypto input = true
     ∧ admissibleAt .minimal .hashInput input = false := by
-  native_decide
+  decide
 
 /-- Co-witness that under `.restrictive` and `.moderate`, the
     composite `admissibleAt` rejects decomposed é under BOTH
@@ -578,7 +643,7 @@ theorem level_admissible_rejects_decomposed_e_at_restrictive :
     let input : Array Nat := #[0x0065, 0x0301]
     levelAdmissible .restrictive input = false
     ∧ levelAdmissible .moderate    input = false := by
-  native_decide
+  decide
 
 /-- K3's `aiAttribution` context-gating, measured directly via
     `cryptoAdmissible` — Level-independent.  Plain ASCII
@@ -600,7 +665,7 @@ theorem crypto_admissible_gates_nnbsp_under_aiAttribution :
     let input : Array Nat := #[0x61, 0x202F, 0x62]
     cryptoAdmissible .nonCrypto     input = true
     ∧ cryptoAdmissible .aiAttribution input = false := by
-  native_decide
+  decide
 
 /-- Co-witness of the masking effect: at `.restrictive`,
     `levelAdmissible` rejects `a NNBSP b` independently of any
@@ -612,6 +677,6 @@ theorem crypto_admissible_gates_nnbsp_under_aiAttribution :
 theorem level_admissible_rejects_nnbsp_at_restrictive :
     let input : Array Nat := #[0x61, 0x202F, 0x62]
     levelAdmissible .restrictive input = false := by
-  native_decide
+  decide
 
 end Unicode.Security.Level

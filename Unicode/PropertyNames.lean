@@ -28,6 +28,8 @@ import Unicode.Generated.PropertyValueAliases
 
 namespace Unicode.PropertyNames
 
+set_option maxRecDepth 1000000
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 LOOSE MATCH NORMALISER  (UAX #44 § LM3 / LM4)
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -36,14 +38,19 @@ namespace Unicode.PropertyNames
     case-insensitive, drop ASCII whitespace, drop underscores,
     drop hyphens. Preserves the leading "is" prefix that some
     aliases carry. -/
-def looseNormalize (s : String) : String :=
-  let lowered := s.toLower
-  let folded := lowered.foldl (fun acc c =>
-    let n := c.toNat
+def looseNormalize (s : String) : List Char :=
+  -- Over `String.toList` (kernel-reducible) rather than `String.toLower`/
+  -- `String.foldl` (which traverse via the byte iterator and do not reduce
+  -- under `decide`). Lowercase each char, drop ASCII whitespace / underscore
+  -- / hyphen; the result is a `List Char` so loose comparisons reduce in the
+  -- kernel. `toLower` leaves the stripped set unchanged, so checking the
+  -- lowered code point is equivalent to checking the original.
+  s.toList.filterMap (fun c =>
+    let l := c.toLower
+    let n := l.toNat
     if n = 0x20 ∨ n = 0x09 ∨ n = 0x0A ∨ n = 0x0D
-        ∨ n = 0x5F ∨ n = 0x2D then acc
-    else acc.push c) ""
-  folded
+        ∨ n = 0x5F ∨ n = 0x2D then none
+    else some l)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 PROPERTY NAME LOOKUPS
@@ -60,7 +67,7 @@ def propertyLong? (alias : String) : Option String :=
 /-- Loose-match lookup of the canonical short property name. -/
 def propertyShortLoose? (alias : String) : Option String :=
   let target := looseNormalize alias
-  Unicode.Generated.PropertyAliases.parsedRows.findSome? (fun r =>
+  Unicode.Generated.PropertyAliases.parsedRowsList.findSome? (fun r =>
     if looseNormalize r.short = target
         ∨ looseNormalize r.long = target
         ∨ r.others.any (fun a => looseNormalize a = target)
@@ -83,7 +90,7 @@ def valueLong? (property valueAlias : String) : Option String :=
     canonical); the value alias is loose-matched. -/
 def valueShortLoose? (property valueAlias : String) : Option String :=
   let target := looseNormalize valueAlias
-  Unicode.Generated.PropertyValueAliases.parsedRows.findSome? (fun r =>
+  Unicode.Generated.PropertyValueAliases.parsedRowsList.findSome? (fun r =>
     if r.property ≠ property then none
     else if looseNormalize r.short = target
             ∨ looseNormalize r.long = target
@@ -95,34 +102,34 @@ def valueShortLoose? (property valueAlias : String) : Option String :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- "bc" is the short name of Bidi_Class. -/
-theorem propertyShort_bc : propertyShort? "bc" = some "bc" := by native_decide
+theorem propertyShort_bc : propertyShort? "bc" = some "bc" := by decide +kernel
 
 /-- "Bidi_Class" resolves to short name "bc". -/
 theorem propertyShort_BidiClass : propertyShort? "Bidi_Class" = some "bc" := by
-  native_decide
+  decide +kernel
 
 /-- Loose match: "bidiclass" (no underscore) → "bc". -/
 theorem propertyShortLoose_BidiClass :
-    propertyShortLoose? "bidiclass" = some "bc" := by native_decide
+    propertyShortLoose? "bidiclass" = some "bc" := by decide +kernel
 
 /-- Loose match: " Bidi-Class " (whitespace + hyphen) → "bc". -/
 theorem propertyShortLoose_messy :
-    propertyShortLoose? " Bidi-Class " = some "bc" := by native_decide
+    propertyShortLoose? " Bidi-Class " = some "bc" := by decide +kernel
 
 /-- "AL" is the short name of Bidi_Class=Arabic_Letter. -/
 theorem valueShort_AL :
-    valueShort? "bc" "AL" = some "AL" := by native_decide
+    valueShort? "bc" "AL" = some "AL" := by decide +kernel
 
 /-- "Arabic_Letter" resolves to "AL". -/
 theorem valueShort_ArabicLetter :
-    valueShort? "bc" "Arabic_Letter" = some "AL" := by native_decide
+    valueShort? "bc" "Arabic_Letter" = some "AL" := by decide +kernel
 
 /-- Loose match for value name. -/
 theorem valueShortLoose_arabicletter :
-    valueShortLoose? "bc" "arabicletter" = some "AL" := by native_decide
+    valueShortLoose? "bc" "arabicletter" = some "AL" := by decide +kernel
 
 /-- An unknown alias returns `none`. -/
 theorem propertyShort_unknown :
-    propertyShort? "definitely-not-a-property" = none := by native_decide
+    propertyShort? "definitely-not-a-property" = none := by decide +kernel
 
 end Unicode.PropertyNames

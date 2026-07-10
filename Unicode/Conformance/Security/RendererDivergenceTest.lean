@@ -3,7 +3,7 @@
 
   Conformance proof for the D4 family.  Folds the universal
   `Unicode.Security.Fixture` parser over the hand-curated
-  `RendererDivergenceTest.txt` fixture and `native_decide`-closes
+  `RendererDivergenceTest.txt` fixture and `decide`-closes
   the predicate that every row's expected verdict matches what
   `Unicode.Security.Display.RendererDivergence.detect` produces.
 -/
@@ -41,7 +41,7 @@ def projectPositions (c : Classification) : Array Nat :=
     column-4 attribution.  Recognised keys: `vs_count`,
     `comb_count`, `fw_count` (fullwidth characters), `has_zwj`
     (any ZWJ present), `ltr_count`, `rtl_count`. -/
-private def metadataMatches (v : Verdict)
+def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey  "vs_count"   v.vsCount &&
   attr.checkNatKey  "comb_count" v.combiningCount &&
@@ -63,32 +63,32 @@ def verifyRow (r : Row) : Bool :=
   decide (pos = r.expectedPositions)
 
 /-- Every fixture row's detector verdict matches its expected verdict. -/
-theorem all_rows_pass : rows.all verifyRow = true := by native_decide
+theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 27 := by native_decide
+theorem row_count : rows.size = 27 := by decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by decide
 
 theorem covers_vs :
     (rows.filter (·.sectionName = "VariationSelectorVariance")).size ≥ 5 := by
-  native_decide
+  decide
 
 theorem covers_unregistered_zwj :
     (rows.filter (·.sectionName = "UnregisteredZwjVariance")).size ≥ 3 := by
-  native_decide
+  decide
 
 theorem covers_combining_overflow :
     (rows.filter (·.sectionName = "CombiningStackOverflow")).size ≥ 4 := by
-  native_decide
+  decide
 
 theorem covers_fullwidth :
     (rows.filter (·.sectionName = "FullwidthVariance")).size ≥ 4 := by
-  native_decide
+  decide
 
 theorem covers_mixed_direction :
     (rows.filter (·.sectionName = "MixedDirectionVariance")).size ≥ 3 := by
-  native_decide
+  decide
 
 end Unicode.Conformance.Security.RendererDivergenceTest

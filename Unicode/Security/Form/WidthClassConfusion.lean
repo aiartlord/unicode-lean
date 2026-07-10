@@ -73,12 +73,11 @@ def firstFullwidthFold (input : Array Nat) : Option (Nat × Nat × Nat) :=
   (Array.range input.size).findSome? (fun i =>
     if h : i < input.size then
       let cp := input[i]
-      match widthClass cp with
-      | .F =>
+      if widthClass cp = .F then
         match hasWidthFold cp with
         | some folded => some (i, cp, folded)
         | none        => none
-      | _  => none
+      else none
     else none)
 
 /-- First input position whose cp has EAW = H and folds to a
@@ -87,12 +86,11 @@ def firstHalfwidthFold (input : Array Nat) : Option (Nat × Nat × Nat) :=
   (Array.range input.size).findSome? (fun i =>
     if h : i < input.size then
       let cp := input[i]
-      match widthClass cp with
-      | .H =>
+      if widthClass cp = .H then
         match hasWidthFold cp with
         | some folded => some (i, cp, folded)
         | none        => none
-      | _  => none
+      else none
     else none)
 
 /-- Count of input positions whose cp has EAW = F and folds to
@@ -101,12 +99,9 @@ def fullwidthFoldCount (input : Array Nat) : Nat :=
   (Array.range input.size).foldl (init := 0) (fun acc i =>
     if h : i < input.size then
       let cp := input[i]
-      match widthClass cp with
-      | .F =>
-        match hasWidthFold cp with
-        | some _ => acc + 1
-        | none   => acc
-      | _  => acc
+      if widthClass cp = .F then
+        if (hasWidthFold cp).isSome then acc + 1 else acc
+      else acc
     else acc)
 
 /-- Count of input positions whose cp has EAW = H and folds to
@@ -115,12 +110,9 @@ def halfwidthFoldCount (input : Array Nat) : Nat :=
   (Array.range input.size).foldl (init := 0) (fun acc i =>
     if h : i < input.size then
       let cp := input[i]
-      match widthClass cp with
-      | .H =>
-        match hasWidthFold cp with
-        | some _ => acc + 1
-        | none   => acc
-      | _  => acc
+      if widthClass cp = .H then
+        if (hasWidthFold cp).isSome then acc + 1 else acc
+      else acc
     else acc)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -196,29 +188,29 @@ def Classification.positions : Classification → Array Nat
 
 /-- Empty input is clear. -/
 theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Pure ASCII is clear; every ASCII cp is EAW = Na with identity NFKD. -/
 theorem detect_ascii_clear :
     (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Korean Hangul 한 stays clear: NFKD = three jamos, all EAW = W. -/
 theorem detect_hangul_clear :
-    (detect #[0xD55C]).classify.isClear = true := by native_decide
+    (detect #[0xD55C]).classify.isClear = true := by decide
 
 /-- Han 中文 stays clear: both cps are EAW = W with identity NFKD. -/
 theorem detect_han_clear :
-    (detect #[0x4E2D, 0x6587]).classify.isClear = true := by native_decide
+    (detect #[0x4E2D, 0x6587]).classify.isClear = true := by decide
 
 /-- Fullwidth A (U+FF21) fires `fullwidthFold` at position 0 — folds to 'A'. -/
 theorem detect_fullwidth_A :
     (detect #[0xFF21]).classify.tag = some "FullwidthFold" := by
-  native_decide
+  decide
 
 /-- Halfwidth katakana A (U+FF71) fires `halfwidthFold` at position 0. -/
 theorem detect_halfwidth_ka_A :
     (detect #[0xFF71]).classify.tag = some "HalfwidthFold" := by
-  native_decide
+  decide
 
 end Unicode.Security.Form.WidthClassConfusion

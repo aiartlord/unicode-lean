@@ -86,24 +86,27 @@ def transition (phase : ChainPhase) (c : SBClass)
   else if c == .ATerm then
     let elig :=
       match effPrev with
-      | some .Upper | some .Lower => true
-      | _                          => false
+      | some previous => previous == .Upper || previous == .Lower
+      | none => false
     (.aterm, elig)
   else if c == .Close then
-    match phase with
-    | .aterm | .atermClose => (.atermClose, sb7Elig)
-    | .sterm | .stermClose => (.stermClose, sb7Elig)
-    | _                    => (.none, sb7Elig)
+    if phase == .aterm || phase == .atermClose then (.atermClose, sb7Elig)
+    else if phase == .sterm || phase == .stermClose then (.stermClose, sb7Elig)
+    else (.none, sb7Elig)
   else if c == .Sp then
-    match phase with
-    | .aterm | .atermClose | .atermSp => (.atermSp, sb7Elig)
-    | .sterm | .stermClose | .stermSp => (.stermSp, sb7Elig)
-    | _                                => (.none, sb7Elig)
+    if phase == .aterm || phase == .atermClose || phase == .atermSp then
+      (.atermSp, sb7Elig)
+    else if phase == .sterm || phase == .stermClose || phase == .stermSp then
+      (.stermSp, sb7Elig)
+    else
+      (.none, sb7Elig)
   else if c == .Sep || c == .CR || c == .LF then
-    match phase with
-    | .aterm | .atermClose | .atermSp => (.atermSep, sb7Elig)
-    | .sterm | .stermClose | .stermSp => (.stermSep, sb7Elig)
-    | _                                => (.none, sb7Elig)
+    if phase == .aterm || phase == .atermClose || phase == .atermSp then
+      (.atermSep, sb7Elig)
+    else if phase == .sterm || phase == .stermClose || phase == .stermSp then
+      (.stermSep, sb7Elig)
+    else
+      (.none, sb7Elig)
   else
     (.none, sb7Elig)
 

@@ -3,7 +3,7 @@
 
   Conformance proof for the K3 family.  Folds the universal
   `Unicode.Security.Fixture` parser over the hand-curated
-  `AiWatermarkDetectabilityTest.txt` fixture and `native_decide`-
+  `AiWatermarkDetectabilityTest.txt` fixture and `decide`-
   closes the predicate that every row's expected verdict
   matches what
   `Unicode.Security.Crypto.AiWatermarkDetectability.detect`
@@ -59,7 +59,7 @@ def projectPositions (c : Classification) : Array Nat :=
 /-- Validate the K3 verdict's metadata fields against the row's
     column-4 attribution.  Recognised key: `markerCount` (count
     of codepoints matching the fired scheme; 0 when clear). -/
-private def metadataMatches (v : Verdict)
+def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey "markerCount" v.markerCount
 
@@ -78,64 +78,64 @@ def verifyRow (r : Row) : Bool :=
 
 /-- Every fixture row's detector verdict matches its expected
     verdict. -/
-theorem all_rows_pass : rows.all verifyRow = true := by native_decide
+theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 27 := by native_decide
+theorem row_count : rows.size = 27 := by decide
 
 theorem covers_clear :
     (rows.filter (fun r => r.expectedKind = .clear)).size ≥ 5 := by
-  native_decide
+  decide
 
 theorem covers_nnbsp_boundary :
     (rows.filter (fun r =>
       r.expectedSubThreat = some "NnbspBoundary")).size ≥ 2 := by
-  native_decide
+  decide
 
 theorem covers_variation_selector_carrier :
     (rows.filter (fun r =>
       r.expectedSubThreat = some "VariationSelectorCarrier")).size ≥ 3 := by
-  native_decide
+  decide
 
 theorem covers_zwj_non_emoji :
     (rows.filter (fun r =>
       r.expectedSubThreat = some "ZwjNonEmoji")).size ≥ 1 := by
-  native_decide
+  decide
 
 theorem covers_default_ignorable_carrier :
     (rows.filter (fun r =>
       r.expectedSubThreat = some "DefaultIgnorableCarrier")).size ≥ 3 := by
-  native_decide
+  decide
 
 theorem covers_adversarial :
     (rows.filter (fun r =>
       r.expectedSubThreat = some "Adversarial")).size ≥ 2 := by
-  native_decide
+  decide
 
 theorem covers_gpt5_zwsp_modulo :
     (rows.filter (fun r =>
       r.expectedSubThreat = some "Gpt5ZwspModulo")).size ≥ 2 := by
-  native_decide
+  decide
 
 theorem covers_smart_quote_alternation :
     (rows.filter (fun r =>
       r.expectedSubThreat = some "SmartQuoteAlternation")).size ≥ 2 := by
-  native_decide
+  decide
 
 theorem covers_em_dash_pattern :
     (rows.filter (fun r =>
       r.expectedSubThreat = some "EmDashPattern")).size ≥ 1 := by
-  native_decide
+  decide
 
 theorem covers_statistical_token_choice :
     (rows.filter (fun r =>
       r.expectedSubThreat = some "StatisticalTokenChoice")).size ≥ 2 := by
-  native_decide
+  decide
 
 theorem covers_unknown :
     (rows.filter (fun r =>
       r.expectedSubThreat = some "Unknown")).size ≥ 3 := by
-  native_decide
+  decide
 
 /-- Every constructor of `SubThreat` has at least one fixture
     row.  Catches the "structurally reachable but no fixture
@@ -157,6 +157,6 @@ theorem every_subthreat_has_fixture_row :
        , "Unknown" ]
     expectedSubThreats.all (fun name =>
       rows.any (fun r => r.expectedSubThreat = some name)) = true := by
-  native_decide
+  decide
 
 end Unicode.Conformance.Security.AiWatermarkDetectabilityTest

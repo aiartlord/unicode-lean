@@ -3,7 +3,7 @@
 
   Conformance proof for the F3 family.  Folds the universal
   `Unicode.Security.Fixture` parser over the hand-curated
-  `LocaleCaseInversionTest.txt` fixture and `native_decide`-closes
+  `LocaleCaseInversionTest.txt` fixture and `decide`-closes
   the predicate that every row's expected verdict matches what
   `Unicode.Security.Form.LocaleCaseInversion.detect` produces.
 -/
@@ -54,20 +54,20 @@ def verifyRow (r : Row) : Bool :=
   decide (pos = r.expectedPositions)
 
 /-- Every fixture row's detector verdict matches its expected verdict. -/
-theorem all_rows_pass : rows.all verifyRow = true := by native_decide
+theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 21 := by native_decide
+theorem row_count : rows.size = 21 := by decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by decide
 
 theorem covers_turkish :
     (rows.filter (·.sectionName = "TurkishCaseDivergence")).size ≥ 6 := by
-  native_decide
+  decide
 
 theorem covers_lithuanian :
     (rows.filter (·.sectionName = "LithuanianCaseDivergence")).size ≥ 5 := by
-  native_decide
+  decide
 
 end Unicode.Conformance.Security.LocaleCaseInversionTest

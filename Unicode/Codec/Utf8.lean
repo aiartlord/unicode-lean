@@ -164,18 +164,25 @@ theorem step_cont_with_ascii_rejects :
     `i ≤ fuel`; it returns `none` defensively. -/
 def firstInvalidUtf8OffsetGo (bs : ByteArray) : Utf8State → Nat → Nat → Nat
     → Option (Nat × Utf8RejectKind)
-  | _, _, _, 0 => none
-  | st, i, seqStart, f + 1 =>
+  | st, i, seqStart, fuel =>
+    match fuel with
+    | 0 => none
+    | f + 1 =>
     if hi : i < bs.size then
       let b := bs[i]'hi
       match utf8DecodeStep st b with
       | .continue next =>
           let newSeqStart := match st with
             | .expectStart => i
-            | .expectCont _ _ _ => seqStart
+            | .expectCont needed acc minCp =>
+                Function.const Nat
+                  (Function.const Nat (Function.const Nat seqStart minCp) acc)
+                  needed
           firstInvalidUtf8OffsetGo bs next (i + 1) newSeqStart f
-      | .emit _ next =>
-          firstInvalidUtf8OffsetGo bs next (i + 1) (i + 1) f
+      | .emit emittedCp next =>
+          Function.const Nat
+            (firstInvalidUtf8OffsetGo bs next (i + 1) (i + 1) f)
+            emittedCp
       | .reject kind =>
           match kind with
           | .overlongEncoding => some (seqStart, kind)
@@ -183,7 +190,10 @@ def firstInvalidUtf8OffsetGo (bs : ByteArray) : Utf8State → Nat → Nat → Na
     else
       match st with
       | .expectStart       => none
-      | .expectCont _ _ _  => some (i, .truncatedSequence)
+      | .expectCont needed acc minCp =>
+          Function.const Nat
+            (Function.const Nat (Function.const Nat (some (i, .truncatedSequence)) minCp) acc)
+            needed
 
 /-- Returns `some (offset, kind)` at the first byte where the UTF-8 state
     machine transitions to a reject state, or `none` if the whole array is
@@ -206,42 +216,42 @@ theorem firstInvalidUtf8Offset_none_iff (bs : ByteArray) :
 -- §4 CONCRETE VALIDATION THEOREMS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-theorem empty_is_valid : isValidUtf8 ByteArray.empty = true := by native_decide
+theorem empty_is_valid : isValidUtf8 ByteArray.empty = true := by decide
 
-theorem hello_is_valid : isValidUtf8 "hello".toUTF8 = true := by native_decide
+theorem hello_is_valid : isValidUtf8 "hello".toUTF8 = true := by decide
 
-theorem ascii_digits_valid : isValidUtf8 "0123456789".toUTF8 = true := by native_decide
+theorem ascii_digits_valid : isValidUtf8 "0123456789".toUTF8 = true := by decide
 
-theorem accented_is_valid : isValidUtf8 "héllo".toUTF8 = true := by native_decide
+theorem accented_is_valid : isValidUtf8 "héllo".toUTF8 = true := by decide
 
-theorem cjk_is_valid : isValidUtf8 "日本".toUTF8 = true := by native_decide
+theorem cjk_is_valid : isValidUtf8 "日本".toUTF8 = true := by decide
 
 theorem bare_continuation_rejected :
     firstInvalidUtf8Offset (ByteArray.mk #[0x80]) = some (0, .invalidStartByte) := by
-  native_decide
+  decide
 
 theorem overlong_nul_rejected :
     firstInvalidUtf8Offset (ByteArray.mk #[0xC0, 0x80]) = some (0, .invalidStartByte) := by
   -- 0xC0 itself is pre-rejected as invalid start (it would be overlong 2-byte).
-  native_decide
+  decide
 
 theorem overlong_3byte_rejected :
     firstInvalidUtf8Offset (ByteArray.mk #[0xE0, 0x80, 0x80]) = some (0, .overlongEncoding) := by
   -- 0xE0 0x80 0x80 decodes to U+0000, minCp for 3-byte is 0x800 → overlongEncoding.
-  native_decide
+  decide
 
 theorem truncated_3byte_rejected :
     firstInvalidUtf8Offset (ByteArray.mk #[0xE2, 0x80]) = some (2, .truncatedSequence) := by
-  native_decide
+  decide
 
 theorem surrogate_rejected :
     firstInvalidUtf8Offset (ByteArray.mk #[0xED, 0xA0, 0x80]) = some (2, .surrogateCodepoint) := by
-  native_decide
+  decide
 
 theorem beyond_max_rejected :
     firstInvalidUtf8Offset (ByteArray.mk #[0xF4, 0x90, 0x80, 0x80])
       = some (3, .codepointBeyondMax) := by
-  native_decide
+  decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 CODEPOINT ITERATION (requires valid UTF-8 for meaningful results)
@@ -260,19 +270,24 @@ theorem beyond_max_rejected :
 def foldCodepointsWithOffsetGo {α : Type}
     (bs : ByteArray) (f : α → Nat → Nat → α)
     : Utf8State → Nat → Nat → α → Nat → α
-  | _, _, _, acc, 0 => acc
-  | st, i, seqStart, acc, fuel + 1 =>
+  | st, i, seqStart, acc, fuel =>
+    match fuel with
+    | 0 => acc
+    | fuel' + 1 =>
     if hi : i < bs.size then
       let b := bs[i]'hi
       match utf8DecodeStep st b with
       | .continue next =>
           let newSeqStart := match st with
             | .expectStart => i
-            | .expectCont _ _ _ => seqStart
-          foldCodepointsWithOffsetGo bs f next (i + 1) newSeqStart acc fuel
+            | .expectCont needed accumulated minCp =>
+                Function.const Nat
+                  (Function.const Nat (Function.const Nat seqStart minCp) accumulated)
+                  needed
+          foldCodepointsWithOffsetGo bs f next (i + 1) newSeqStart acc fuel'
       | .emit cp next =>
-          foldCodepointsWithOffsetGo bs f next (i + 1) (i + 1) (f acc seqStart cp) fuel
-      | .reject _ => acc
+          foldCodepointsWithOffsetGo bs f next (i + 1) (i + 1) (f acc seqStart cp) fuel'
+      | .reject kind => Function.const Utf8RejectKind acc kind
     else acc
 
 def foldCodepointsWithOffset {α : Type} (bs : ByteArray) (init : α)
@@ -296,19 +311,19 @@ theorem fold_empty_identity {α : Type} (init : α) (f : α → Nat → Nat → 
 theorem no_bidi_in_hello :
     firstCodepointWhere "hello".toUTF8
         (fun cp => (0x202A ≤ cp && cp ≤ 0x202E) || (0x2066 ≤ cp && cp ≤ 0x2069)) = none := by
-  native_decide
+  decide
 
 theorem find_bidi_override_in_input :
     -- "a" (0x61) + U+202E (0xE2 0x80 0xAE) + "b" (0x62)
     firstCodepointWhere (ByteArray.mk #[0x61, 0xE2, 0x80, 0xAE, 0x62])
         (fun cp => 0x202A ≤ cp && cp ≤ 0x202E) = some (1, 0x202E) := by
-  native_decide
+  decide
 
 theorem find_bom_in_input :
     -- BOM is 0xEF 0xBB 0xBF
     firstCodepointWhere (ByteArray.mk #[0xEF, 0xBB, 0xBF, 0x61])
         (fun cp => cp == 0xFEFF) = some (0, 0xFEFF) := by
-  native_decide
+  decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 BYTES → STRING (with validity proof)
@@ -320,23 +335,26 @@ theorem find_bom_in_input :
     keeps String production consistent with the validator semantics: if
     the validator accepts `bs`, this function produces the exact String that
     corresponds to the codepoints the decoder emits. The validity hypothesis
-    `_h` is not used in the body because the fold falls back to the
+    The validity proof is carried at the type level because the fold falls back to the
     accumulator on reject (which cannot fire under valid input); the proof
     documents the intended precondition at the type level.
 
     Every codepoint the validator emits is in the Unicode scalar range
     (excluding surrogates, ≤ U+10FFFF), so `Char.ofNat cp` always produces
     a valid Char (no silent fallback). -/
-def toStringFromValid (bs : ByteArray) (_h : isValidUtf8 bs = true) : String :=
-  foldCodepointsWithOffset bs "" (fun acc _ cp => acc.push (Char.ofNat cp))
+def toStringFromValid (bs : ByteArray) (hValid : isValidUtf8 bs = true) : String :=
+  Function.const (isValidUtf8 bs = true)
+    (foldCodepointsWithOffset bs "" (fun acc offset cp =>
+      Function.const Nat (acc.push (Char.ofNat cp)) offset))
+    hValid
 
 theorem hello_decodes_to_hello :
-    toStringFromValid "hello".toUTF8 (by native_decide) = "hello" := by native_decide
+    toStringFromValid "hello".toUTF8 (by decide) = "hello" := by decide
 
 theorem empty_decodes_to_empty :
-    toStringFromValid ByteArray.empty (by native_decide) = "" := by native_decide
+    toStringFromValid ByteArray.empty (by decide) = "" := by decide
 
 theorem accented_decodes :
-    toStringFromValid "héllo".toUTF8 (by native_decide) = "héllo" := by native_decide
+    toStringFromValid "héllo".toUTF8 (by decide) = "héllo" := by decide
 
 end Unicode.Codec.Utf8

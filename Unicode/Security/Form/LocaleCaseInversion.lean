@@ -49,6 +49,8 @@ import Unicode.Casing
 
 namespace Unicode.Security.Form.LocaleCaseInversion
 
+set_option maxRecDepth 1000000
+
 open Unicode.Security.Calculus
 open Unicode.Casing (Locale lowerCodepoint)
 
@@ -137,22 +139,22 @@ def Classification.positions : Classification → Array Nat
 
 /-- Empty input is clear. -/
 theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
-  native_decide
+  decide +kernel
 
 /-- Pure ASCII without I/i is clear. -/
 theorem detect_ascii_clear :
     (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
-  native_decide
+  decide +kernel
 
 /-- Capital I alone fires `turkishCaseDivergence` at position 0. -/
 theorem detect_capital_I_turkish :
     (detect #[0x0049]).classify.tag = some "TurkishCaseDivergence" := by
-  native_decide
+  decide +kernel
 
 /-- Dotted İ (U+0130) fires `turkishCaseDivergence` at position 0. -/
 theorem detect_dotted_I_turkish :
     (detect #[0x0130]).classify.tag = some "TurkishCaseDivergence" := by
-  native_decide
+  decide +kernel
 
 /-- "I" + combining grave above (ccc = 230) fires `lithuanianCaseDivergence`
     only if Turkish divergence isn't already firing.  Since "I" alone
@@ -160,7 +162,7 @@ theorem detect_dotted_I_turkish :
     Turkish, not Lithuanian.  Demonstrates priority order. -/
 theorem detect_I_with_grave_picks_turkish_first :
     (detect #[0x0049, 0x0300]).classify.tag = some "TurkishCaseDivergence" := by
-  native_decide
+  decide +kernel
 
 /-- "J" + combining grave above (ccc = 230) — Lithuanian-only divergence.
     J has no Turkish-conditional row, so `firstLocaleDivergence .turkish`
@@ -168,6 +170,6 @@ theorem detect_I_with_grave_picks_turkish_first :
 theorem detect_J_with_grave_lithuanian :
     (detect #[0x004A, 0x0300]).classify.tag =
       some "LithuanianCaseDivergence" := by
-  native_decide
+  decide +kernel
 
 end Unicode.Security.Form.LocaleCaseInversion

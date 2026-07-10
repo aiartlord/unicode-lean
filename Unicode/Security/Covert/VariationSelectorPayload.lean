@@ -261,7 +261,7 @@ def classifyVSPosition (input : Array Nat) (p : Nat) : VSUseClass :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Number of distinct VS codepoints occurring at the given positions. -/
-private def countUniqueVS (input : Array Nat) (positions : Array Nat) : Nat :=
+def countUniqueVS (input : Array Nat) (positions : Array Nat) : Nat :=
   let cps := positions.map (fun p => input[p]!)
   cps.foldl (init := (#[] : Array Nat)) (fun acc cp =>
     if acc.contains cp then acc else acc.push cp) |>.size
@@ -274,7 +274,7 @@ private def countUniqueVS (input : Array Nat) (positions : Array Nat) : Nat :=
     not "adjacent": the typical pattern is `EMOJI VS16 BASE SUS+`,
     where the registered VS at position 1 precedes the suspicious
     run that begins after an intervening base codepoint. -/
-private def embeddedAfterRegistered
+def embeddedAfterRegistered
     (registered suspicious : Array Nat) : Option (Nat × Nat) :=
   match suspicious[0]? with
   | none => none
@@ -286,7 +286,7 @@ private def embeddedAfterRegistered
     | none         => none
 
 /-- True iff every codepoint at the given positions is the same VS. -/
-private def allSameVS (input : Array Nat) (positions : Array Nat) : Bool :=
+def allSameVS (input : Array Nat) (positions : Array Nat) : Bool :=
   match positions[0]? with
   | none => true
   | some p0 =>

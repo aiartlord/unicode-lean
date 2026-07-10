@@ -27,6 +27,8 @@ import Unicode.Normalization.Lookup
 
 namespace Unicode.Idna.CheckJoiners
 
+set_option maxRecDepth 100000
+
 open Unicode.Generated.DerivedJoiningType (JoiningType joiningType)
 
 /-- True iff `cp` has Canonical_Combining_Class = 9 (Virama). -/
@@ -128,17 +130,28 @@ def checkContextJZwj (label : Array Nat) (i : Nat) : Bool :=
     | none      => false
     | some prev => isVirama prev
 
-/-- Apply the CONTEXTJ rules to every ZWNJ / ZWJ in `label`.
-    Returns `true` iff every occurrence is contextually valid (a
-    label with no ZWNJ / ZWJ trivially passes). -/
-def checkJoiners (label : Array Nat) : Bool := Id.run do
-  for h : i in [0:label.size] do
-    let cp := label[i]
-    if cp = 0x200C then
-      if !checkContextJZwnj label i then return false
-    else if cp = 0x200D then
-      if !checkContextJZwj label i then return false
-  return true
+/-- Check every ZWNJ / ZWJ occurrence from index `i` onward, `AND`-ing
+    each position's contextual validity (non-joiner positions contribute
+    `true`). `fuel` bounds the recursion structurally so the predicate
+    reduces in the kernel; callers pass `label.size`. Equivalent to a
+    short-circuiting scan: the result is `false` iff some joiner in the
+    label has an invalid context. -/
+def checkJoinersFrom (label : Array Nat) (fuel : Nat) (i : Nat) : Bool :=
+  match fuel with
+  | 0 => true
+  | fuel + 1 =>
+    if h : i < label.size then
+      let cp := label[i]
+      let ok :=
+        if cp = 0x200C then checkContextJZwnj label i
+        else if cp = 0x200D then checkContextJZwj label i
+        else true
+      ok && checkJoinersFrom label fuel (i + 1)
+    else
+      true
+
+def checkJoiners (label : Array Nat) : Bool :=
+  checkJoinersFrom label label.size 0
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 SAMPLE CHECKS
@@ -146,24 +159,24 @@ def checkJoiners (label : Array Nat) : Bool := Id.run do
 
 /-- A label with no ZWNJ / ZWJ trivially passes. -/
 theorem checkJoiners_pure_ascii :
-    checkJoiners #[0x0061, 0x0062, 0x0063] = true := by native_decide
+    checkJoiners #[0x0061, 0x0062, 0x0063] = true := by decide +kernel
 
 /-- A bare ZWJ at the start of a label fails A.2 (no preceding Virama). -/
 theorem checkJoiners_bare_zwj :
-    checkJoiners #[0x200D] = false := by native_decide
+    checkJoiners #[0x200D] = false := by decide +kernel
 
 /-- A bare ZWNJ at the start of a label fails A.1 (no preceding Virama
     and no joining-type context to its left). -/
 theorem checkJoiners_bare_zwnj :
-    checkJoiners #[0x200C] = false := by native_decide
+    checkJoiners #[0x200C] = false := by decide +kernel
 
 /-- ZWJ after Devanagari Virama (U+094D) followed by another consonant
     is valid — the canonical use case for the explicit-join request. -/
 theorem checkJoiners_zwj_after_virama :
-    checkJoiners #[0x0915, 0x094D, 0x200D, 0x0937] = true := by native_decide
+    checkJoiners #[0x0915, 0x094D, 0x200D, 0x0937] = true := by decide +kernel
 
 /-- ZWNJ after Devanagari Virama is valid (Virama rule of A.1). -/
 theorem checkJoiners_zwnj_after_virama :
-    checkJoiners #[0x0915, 0x094D, 0x200C, 0x0937] = true := by native_decide
+    checkJoiners #[0x0915, 0x094D, 0x200C, 0x0937] = true := by decide +kernel
 
 end Unicode.Idna.CheckJoiners

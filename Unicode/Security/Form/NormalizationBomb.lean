@@ -205,29 +205,29 @@ def Classification.positions : Classification → Array Nat
 
 /-- Empty input is clear. -/
 theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Pure ASCII is clear (no expansion). -/
 theorem detect_ascii_clear :
     (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Korean Hangul `한` (U+D55C) decomposes to 3 jamos under NFD —
     within the per-cp bound of 4, so this stays clear. -/
 theorem detect_korean_within_bound :
-    (detect #[0xD55C]).classify.isClear = true := by native_decide
+    (detect #[0xD55C]).classify.isClear = true := by decide
 
 /-- The Arabic ligature `U+FDFA SALLALLAHOU ALAYHE WASALLAM`
     decomposes to 18 codepoints under NFKD — fires
     `.singleCpBlowup` because NFD alone exceeds 4. -/
 theorem detect_arabic_ligature_blowup :
     (detect #[0xFDFA]).classify.tag = some "SingleCpBlowup" := by
-  native_decide
+  decide
 
 /-- Parenthesized digit `①` (U+2460) expands under NFKD to `1`
     (1 cp → 1 cp), so it does not trigger NFD blow-up.  Under
     pure NFD it stays as-is.  The detector classifies as clear. -/
 theorem detect_circled_one_clear :
-    (detect #[0x2460]).classify.isClear = true := by native_decide
+    (detect #[0x2460]).classify.isClear = true := by decide
 
 end Unicode.Security.Form.NormalizationBomb
