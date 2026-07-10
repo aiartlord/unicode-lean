@@ -39,6 +39,8 @@ open Unicode.Precis.CaseMapping
   (caseFold caseFoldCodepoint lookupCaseFolding? isCaseFoldSource
    caseFold_id_of_all_non_source)
 
+set_option maxRecDepth 1000000
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- TABLE-LEVEL WITNESS
 --
@@ -110,7 +112,7 @@ theorem caseFold_commutes_with_NFD_Hangul_range :
     (List.range 11172).all (fun i =>
       decide (NFC.toNFD (caseFold #[0xAC00 + i]) =
               NFC.toNFD (caseFold (NFC.toNFD #[0xAC00 + i])))) = true := by
-  decide
+  decide +kernel
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- UNIFIED PER-CODEPOINT LIFT

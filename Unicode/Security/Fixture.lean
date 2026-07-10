@@ -42,8 +42,39 @@ open Unicode.Security.Calculus
 -- §1 Low-level lexing utilities (mirrors EmojiTest/CollationTest pattern)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-@[inline]
-def trimS (s : String) : String := (String.trimAscii s).toString
+/-- ASCII whitespace test used for trimming: space, tab, LF, CR. -/
+def isSpaceC (c : Char) : Bool :=
+  c == ' ' || c == '\t' || c == '\n' || c == '\r'
+
+/-- Drop leading and trailing ASCII whitespace from a char list — the
+    `List Char` analogue of `String.trimAscii`.  Every lexing step is
+    kept on the char list because the `String` iterators (`splitOn`,
+    `foldl`, `trimAscii`, `startsWith`, …) do not reduce under the
+    kernel, whereas `String.toList` and the `List Char` combinators do.
+    That is what lets the spot-check theorems close by `decide +kernel`
+    instead of getting stuck on an unreduced `parseFixture`. -/
+def trimC (cs : List Char) : List Char :=
+  ((cs.dropWhile isSpaceC).reverse.dropWhile isSpaceC).reverse
+
+/-- Split a char list on a single delimiter, matching `String.splitOn`
+    semantics for a one-character separator: empty segments between
+    consecutive delimiters and at the ends are retained, and the result
+    is always non-empty. -/
+def splitOnC (d : Char) : List Char → List (List Char)
+  | []        => [[]]
+  | c :: rest =>
+    let rs := splitOnC d rest
+    if c == d then [] :: rs
+    else match rs with
+      | []          => [[c]]
+      | seg :: segs => (c :: seg) :: segs
+
+/-- Join char-list segments with a single separator — the inverse of
+    `splitOnC`, matching `String.intercalate` for a one-character sep. -/
+def intercalateC (d : Char) : List (List Char) → List Char
+  | []             => []
+  | [x]            => x
+  | x :: y :: rest => x ++ (d :: intercalateC d (y :: rest))
 
 def hexDigitVal (c : Char) : Nat :=
   let n := c.toNat
@@ -52,70 +83,113 @@ def hexDigitVal (c : Char) : Nat :=
   else if n ≥ 0x41 ∧ n ≤ 0x46 then n - 0x41 + 10
   else 0
 
-def parseHex (s : String) : Nat :=
-  s.foldl (fun acc c => acc * 16 + hexDigitVal c) 0
+/-- Parse a hex codepoint from its char list. -/
+def parseHexC (cs : List Char) : Nat :=
+  cs.foldl (fun acc c => acc * 16 + hexDigitVal c) 0
+
+/-- Decimal digit value, or `none` for a non-digit character. -/
+def decDigitVal? (c : Char) : Option Nat :=
+  let n := c.toNat
+  if n ≥ 0x30 ∧ n ≤ 0x39 then some (n - 0x30) else none
+
+/-- Parse a decimal `Nat` from a char list, matching `String.toNat?`:
+    `none` for an empty list or on any non-digit character. -/
+def parseDecC : List Char → Option Nat
+  | []        => none
+  | c :: rest =>
+    (c :: rest).foldl (fun acc d =>
+      match acc with
+      | none   => none
+      | some n => match decDigitVal? d with
+                  | none   => none
+                  | some v => some (n * 10 + v)) (some 0)
+
+/-- Parse a space-separated hex codepoint list (char-list worker).
+    Empty tokens are ignored. -/
+def parseCodepointListC (cs : List Char) : Array Nat :=
+  ((splitOnC ' ' cs).filterMap (fun tok =>
+    let t := trimC tok
+    if t.isEmpty then none else some (parseHexC t))).toArray
 
 /-- Parse a space-separated hex codepoint list. Empty tokens are ignored. -/
 def parseCodepointList (s : String) : Array Nat :=
-  ((s.splitOn " ").filterMap (fun tok =>
-    let t := trimS tok
-    if t.isEmpty then none else some (parseHex t))).toArray
+  parseCodepointListC s.toList
 
-/-- Parse a comma-separated decimal-Nat list. Empty tokens are ignored. -/
+/-- Parse a comma-separated decimal-`Nat` list (char-list worker).
+    Empty tokens are ignored. -/
+def parseDecimalListC (cs : List Char) : Array Nat :=
+  ((splitOnC ',' cs).filterMap (fun tok =>
+    let t := trimC tok
+    if t.isEmpty then none else parseDecC t)).toArray
+
+/-- Parse a comma-separated decimal-`Nat` list. Empty tokens are ignored. -/
 def parseDecimalList (s : String) : Array Nat :=
-  ((s.splitOn ",").filterMap (fun tok =>
-    let t := trimS tok
-    if t.isEmpty then none else String.toNat? t)).toArray
+  parseDecimalListC s.toList
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 Classification + sub-threat parsing
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+/-- Parse the classification atom in column 2 (char-list worker).
+    Returns the `ClassificationKind` and an optional sub-threat tag. -/
+def parseClassificationC (cs : List Char) : Option (ClassificationKind × Option String) :=
+  let t := trimC cs
+  if t = "Clear".toList then some (.clear, none)
+  else if "Hazard:".toList.isPrefixOf t then
+    let sub := trimC (t.drop 7)
+    if sub.isEmpty then none
+    else some (.hazard, some (String.ofList sub))
+  else if t = "Compound".toList then some (.compound, none)
+  else if "Compound:".toList.isPrefixOf t then
+    let sub := trimC (t.drop 9)
+    some (.compound, if sub.isEmpty then none else some (String.ofList sub))
+  else if t = "Informational".toList then some (.informational, none)
+  else none
+
 /-- Parse the classification atom in column 2. Returns the
     `ClassificationKind` and an optional sub-threat tag. -/
 def parseClassification (s : String) : Option (ClassificationKind × Option String) :=
-  let t := trimS s
-  if t = "Clear" then some (.clear, none)
-  else if t.startsWith "Hazard:" then
-    let sub := (t.drop 7).trimAscii.toString
-    if sub.isEmpty then none
-    else some (.hazard, some sub)
-  else if t = "Compound" then some (.compound, none)
-  else if t.startsWith "Compound:" then
-    let sub := (t.drop 9).trimAscii.toString
-    some (.compound, if sub.isEmpty then none else some sub)
-  else if t = "Informational" then some (.informational, none)
-  else none
+  parseClassificationC s.toList
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 Attribution parsing (column 4 — key=value; key=value; ...)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+/-- Parse one `key="value"` token (char-list worker). Quotes around the
+    value are optional but typical. Returns `(key, value)` on success. -/
+def parseKeyValueC (cs : List Char) : Option (String × String) :=
+  let t := trimC cs
+  match splitOnC '=' t with
+  | k :: rest =>
+    let key := trimC k
+    if key.isEmpty then none
+    else
+      let val := trimC (intercalateC '=' rest)
+      -- Strip optional surrounding double quotes.
+      let val := if ['"'].isPrefixOf val ∧ ['"'].isSuffixOf val ∧ val.length ≥ 2
+                 then (val.drop 1).dropLast
+                 else val
+      some (String.ofList key, String.ofList val)
+  | [] => none
+
 /-- Parse one `key="value"` token. Quotes around value are optional but
     typical. Returns `(key, value)` on success. -/
 def parseKeyValue (tok : String) : Option (String × String) :=
-  let t := trimS tok
-  match t.splitOn "=" with
-  | k :: rest =>
-    let key := trimS k
-    if key.isEmpty then none
-    else
-      let valRaw := "=".intercalate rest
-      let val := trimS valRaw
-      -- Strip optional surrounding double quotes.
-      let val := if val.startsWith "\"" ∧ val.endsWith "\"" ∧ val.length ≥ 2
-                 then (val.drop 1).dropEnd 1
-                 else val
-      some (key, val.toString)
-  | [] => none
+  parseKeyValueC tok.toList
+
+/-- Parse the attribution column (char-list worker). Format:
+    `key1="v1"; key2="v2"; ...`.  Trailing semicolons and empty tokens
+    are tolerated. -/
+def parseAttributionC (cs : List Char) : KeyValueAttribution :=
+  let entries := (splitOnC ';' cs).filterMap (fun tok =>
+    let t := trimC tok
+    if t.isEmpty then none else parseKeyValueC t)
+  ⟨entries⟩
 
 /-- Parse the attribution column. Format: `key1="v1"; key2="v2"; ...`.
     Trailing semicolons and empty tokens are tolerated. -/
 def parseAttribution (s : String) : KeyValueAttribution :=
-  let entries := (s.splitOn ";").filterMap (fun tok =>
-    let t := trimS tok
-    if t.isEmpty then none else parseKeyValue t)
-  ⟨entries⟩
+  parseAttributionC s.toList
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 Row + Directive types
@@ -145,60 +219,66 @@ inductive Directive where
   | blank
   deriving Repr, DecidableEq
 
-/-- Parse a directive line. Returns `.comment` for ordinary `#` lines
-    (non-directive comments) and `.blank` for blank lines. -/
-def parseDirective (line : String) : Option Directive :=
-  let t := trimS line
+/-- Parse a directive line (char-list worker). Returns `.comment` for
+    ordinary `#` lines (non-directive comments) and `.blank` for blank
+    lines. -/
+def parseDirectiveC (cs : List Char) : Option Directive :=
+  let t := trimC cs
   if t.isEmpty then some .blank
-  else if t.startsWith "# @section" then
-    let name := (t.drop 10).trimAscii.toString
-    some (.sectionDir name)
-  else if t.startsWith "# @level" then
-    let lvl := (t.drop 8).trimAscii.toString
+  else if "# @section".toList.isPrefixOf t then
+    let name := trimC (t.drop 10)
+    some (.sectionDir (String.ofList name))
+  else if "# @level".toList.isPrefixOf t then
+    let lvl := String.ofList (trimC (t.drop 8))
     match lvl with
-    | "basic"  => some (.levelDir .basic)
+    | "basic"      => some (.levelDir .basic)
     | "strict"     => some (.levelDir .strict)
     | "full"       => some (.levelDir .full)
     | "1"          => some (.levelDir .basic)
     | "2"          => some (.levelDir .strict)
     | "3"          => some (.levelDir .full)
     | unknownLevel => Function.const String none unknownLevel
-  else if t.startsWith "#" then some .comment
+  else if ['#'].isPrefixOf t then some .comment
   else none
+
+/-- Parse a directive line. Returns `.comment` for ordinary `#` lines
+    (non-directive comments) and `.blank` for blank lines. -/
+def parseDirective (line : String) : Option Directive :=
+  parseDirectiveC line.toList
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Row parsing
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Parse one fixture row given the carried `section` and `level`
-    context. Returns `none` for blank, comment, or unparseable lines.
+    context (char-list worker). Returns `none` for blank, comment, or
+    unparseable lines.
 
     The first three semicolon-separated columns are scalar (input,
     classification, positions). Everything from the fourth column
     onwards is rejoined with `;` and parsed as the attribution dict,
     so attribution entries are free to embed `;` themselves. -/
-def parseRow (currentSection : String) (currentLevel : ConformanceLevel)
-    (line : String) : Option Row :=
-  let trimmed := trimS line
+def parseRowC (currentSection : String) (currentLevel : ConformanceLevel)
+    (cs : List Char) : Option Row :=
+  let trimmed := trimC cs
   if trimmed.isEmpty then none
-  else if trimmed.startsWith "#" then none
+  else if ['#'].isPrefixOf trimmed then none
   else
     -- Strip trailing `# <citation>` comment from the row.
-    let preComment := (line.takeWhile (· ≠ '#')).toString
+    let preComment := cs.takeWhile (· ≠ '#')
     let citation :=
-      if line.contains '#' then
-        let after := ((line.dropWhile (· ≠ '#')).drop 1).toString
-        trimS after
+      if cs.contains '#' then
+        String.ofList (trimC ((cs.dropWhile (· ≠ '#')).drop 1))
       else ""
-    match (preComment.splitOn ";").map trimS with
+    match (splitOnC ';' preComment).map trimC with
     | c1 :: c2 :: c3 :: rest =>
-      let attrStr := ";".intercalate rest
-      let input := parseCodepointList c1
-      match parseClassification c2 with
+      let attrStr := intercalateC ';' rest
+      let input := parseCodepointListC c1
+      match parseClassificationC c2 with
       | none => none
       | some (kind, sub) =>
-        let positions := parseDecimalList c3
-        let attribution := parseAttribution attrStr
+        let positions := parseDecimalListC c3
+        let attribution := parseAttributionC attrStr
         some {
           input := input,
           expectedKind := kind,
@@ -209,7 +289,13 @@ def parseRow (currentSection : String) (currentLevel : ConformanceLevel)
           sectionName := currentSection,
           conformanceLevel := currentLevel
         }
-    | tooFewColumns => Function.const (List String) none tooFewColumns
+    | tooFewColumns => Function.const (List (List Char)) none tooFewColumns
+
+/-- Parse one fixture row given the carried `section` and `level`
+    context. Returns `none` for blank, comment, or unparseable lines. -/
+def parseRow (currentSection : String) (currentLevel : ConformanceLevel)
+    (line : String) : Option Row :=
+  parseRowC currentSection currentLevel line.toList
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 Fold-parse — applies directives + parses rows
@@ -230,14 +316,14 @@ def parseFixture (rawText : String) : Array Row :=
     currentSection := "<unspecified>",
     currentLevel := .basic
   }
-  let final := (rawText.splitOn "\n").foldl (init := initial) (fun st line =>
-    match parseDirective line with
+  let final := (splitOnC '\n' rawText.toList).foldl (init := initial) (fun st lineC =>
+    match parseDirectiveC lineC with
     | some .blank         => st
     | some .comment       => st
     | some (.sectionDir s) => { st with currentSection := s }
     | some (.levelDir l)   => { st with currentLevel := l }
     | none =>
-      match parseRow st.currentSection st.currentLevel line with
+      match parseRowC st.currentSection st.currentLevel lineC with
       | some r => { st with rows := st.rows.push r }
       | none   => st)
   final.rows
@@ -280,66 +366,66 @@ def syntheticFixture : String :=
 
 /-- The synthetic parses cleanly, with five rows. -/
 theorem synthetic_parses_5_rows :
-    (parseFixture syntheticFixture).size = 5 := by decide
+    (parseFixture syntheticFixture).size = 5 := by decide +kernel
 
 /-- Row 0 is in the "Clear" section at basic level. -/
 theorem synthetic_row0_section :
-    (parseFixture syntheticFixture)[0]!.sectionName = "Clear" := by decide
+    (parseFixture syntheticFixture)[0]!.sectionName = "Clear" := by decide +kernel
 
 theorem synthetic_row0_level :
-    (parseFixture syntheticFixture)[0]!.conformanceLevel = .basic := by decide
+    (parseFixture syntheticFixture)[0]!.conformanceLevel = .basic := by decide +kernel
 
 theorem synthetic_row0_kind :
-    (parseFixture syntheticFixture)[0]!.expectedKind = .clear := by decide
+    (parseFixture syntheticFixture)[0]!.expectedKind = .clear := by decide +kernel
 
 theorem synthetic_row0_input :
     (parseFixture syntheticFixture)[0]!.input = #[0x48, 0x65, 0x6C, 0x6C, 0x6F] := by
-  decide
+  decide +kernel
 
 /-- Row 1 is in the "Hazard" section, basic level, DirectPayload sub-threat. -/
 theorem synthetic_row1_section :
-    (parseFixture syntheticFixture)[1]!.sectionName = "Hazard" := by decide
+    (parseFixture syntheticFixture)[1]!.sectionName = "Hazard" := by decide +kernel
 
 theorem synthetic_row1_kind :
-    (parseFixture syntheticFixture)[1]!.expectedKind = .hazard := by decide
+    (parseFixture syntheticFixture)[1]!.expectedKind = .hazard := by decide +kernel
 
 theorem synthetic_row1_sub :
     (parseFixture syntheticFixture)[1]!.expectedSubThreat = some "DirectPayload" := by
-  decide
+  decide +kernel
 
 theorem synthetic_row1_positions :
-    (parseFixture syntheticFixture)[1]!.expectedPositions = #[1, 2] := by decide
+    (parseFixture syntheticFixture)[1]!.expectedPositions = #[1, 2] := by decide +kernel
 
 theorem synthetic_row1_decoded :
     (parseFixture syntheticFixture)[1]!.attribution.get? "decoded" = some "A" := by
-  decide
+  decide +kernel
 
 /-- Row 2 is the Nethereum compound case (strict level). -/
 theorem synthetic_row2_level :
-    (parseFixture syntheticFixture)[2]!.conformanceLevel = .strict := by decide
+    (parseFixture syntheticFixture)[2]!.conformanceLevel = .strict := by decide +kernel
 
 theorem synthetic_row2_matched_target :
     (parseFixture syntheticFixture)[2]!.attribution.get? "matched_target"
       = some "Nethereum" := by
-  decide
+  decide +kernel
 
 /-- Row 3 inherits the "Compound" section but level=full from the
     interim @level directive. -/
 theorem synthetic_row3_section :
-    (parseFixture syntheticFixture)[3]!.sectionName = "Compound" := by decide
+    (parseFixture syntheticFixture)[3]!.sectionName = "Compound" := by decide +kernel
 
 theorem synthetic_row3_level :
-    (parseFixture syntheticFixture)[3]!.conformanceLevel = .full := by decide
+    (parseFixture syntheticFixture)[3]!.conformanceLevel = .full := by decide +kernel
 
 /-- Row 4 is in the CleanNegatives section, back to basic. -/
 theorem synthetic_row4_section :
     (parseFixture syntheticFixture)[4]!.sectionName = "CleanNegatives" := by
-  decide
+  decide +kernel
 
 theorem synthetic_row4_level :
-    (parseFixture syntheticFixture)[4]!.conformanceLevel = .basic := by decide
+    (parseFixture syntheticFixture)[4]!.conformanceLevel = .basic := by decide +kernel
 
 theorem synthetic_row4_kind :
-    (parseFixture syntheticFixture)[4]!.expectedKind = .clear := by decide
+    (parseFixture syntheticFixture)[4]!.expectedKind = .clear := by decide +kernel
 
 end Unicode.Security.Fixture

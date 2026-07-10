@@ -86,6 +86,8 @@ namespace Unicode.Security.Crypto.HashInputStability
 
 open Unicode.Security.Calculus
 
+set_option maxRecDepth 1000000
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 Types
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -293,45 +295,45 @@ def hashStable (input : Array Nat) : Array Nat :=
 
 /-- Empty input has empty stable form. -/
 theorem stable_empty :
-    hashStable #[] = #[] := by decide
+    hashStable #[] = #[] := by decide +kernel
 
 /-- Already-canonical ASCII is a fixed point. -/
 theorem stable_ascii_idempotent :
     let cps : Array Nat := #[0x61, 0x62, 0x63]
-    hashStable (hashStable cps) = hashStable cps := by decide
+    hashStable (hashStable cps) = hashStable cps := by decide +kernel
 
 /-- Trailing U+0020 is stripped. -/
 theorem stable_strips_trailing_space :
-    hashStable #[0x61, 0x20] = #[0x61] := by decide
+    hashStable #[0x61, 0x20] = #[0x61] := by decide +kernel
 
 /-- Trailing U+0009 TAB is stripped. -/
 theorem stable_strips_trailing_tab :
-    hashStable #[0x61, 0x09] = #[0x61] := by decide
+    hashStable #[0x61, 0x09] = #[0x61] := by decide +kernel
 
 /-- Trailing U+000A LF is stripped. -/
 theorem stable_strips_trailing_lf :
-    hashStable #[0x61, 0x0A] = #[0x61] := by decide
+    hashStable #[0x61, 0x0A] = #[0x61] := by decide +kernel
 
 /-- Trailing CRLF is stripped. -/
 theorem stable_strips_trailing_crlf :
-    hashStable #[0x61, 0x0D, 0x0A] = #[0x61] := by decide
+    hashStable #[0x61, 0x0D, 0x0A] = #[0x61] := by decide +kernel
 
 /-- Internal U+0020 between non-whitespace content is
     preserved — only TRAILING whitespace is framing. -/
 theorem stable_preserves_internal_space :
     hashStable #[0x61, 0x20, 0x62] = #[0x61, 0x20, 0x62] := by
-  decide
+  decide +kernel
 
 /-- Decomposed é (a + combining acute) NFC-composes to U+00E9. -/
 theorem stable_composes_nfc :
     let cps : Array Nat := #[0x0065, 0x0301]
-    hashStable cps = #[0x00E9] := by decide
+    hashStable cps = #[0x00E9] := by decide +kernel
 
 /-- Unicode whitespace U+00A0 NBSP is content, not framing —
     trailing NBSP is NOT stripped. -/
 theorem stable_preserves_trailing_nbsp :
     hashStable #[0x61, 0x00A0] = #[0x61, 0x00A0] := by
-  decide
+  decide +kernel
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Hazard probes (per-priority position-finders)
@@ -619,11 +621,11 @@ def detect (input : Array Nat) : Verdict :=
 
 /-- Empty input is clear. -/
 theorem detect_empty_clear :
-    (detect #[]).classify = .clear := by decide
+    (detect #[]).classify = .clear := by decide +kernel
 
 /-- ASCII "abc" is already hash-stable. -/
 theorem detect_ascii_idempotent :
-    (detect #[0x61, 0x62, 0x63]).classify = .clear := by decide
+    (detect #[0x61, 0x62, 0x63]).classify = .clear := by decide +kernel
 
 /-- Single trailing space fires `trailingWhitespace` at index
     after the content. -/
@@ -631,23 +633,23 @@ theorem detect_trailing_space :
     let v := detect #[0x61, 0x20]
     v.classify.tag = some "TrailingWhitespace"
     ∧ v.stableSize = 1
-    ∧ v.classify.positions = #[1] := by decide
+    ∧ v.classify.positions = #[1] := by decide +kernel
 
 /-- Trailing CRLF fires `trailingWhitespace` with count = 2. -/
 theorem detect_trailing_crlf :
     let v := detect #[0x61, 0x0D, 0x0A]
     v.classify.tag = some "TrailingWhitespace"
-    ∧ v.stableSize = 1 := by decide
+    ∧ v.stableSize = 1 := by decide +kernel
 
 /-- Decomposed é fires `normalizationDrift` at position 0. -/
 theorem detect_decomposed_e_acute :
     let v := detect #[0x0065, 0x0301]
     v.classify.tag = some "NormalizationDrift"
-    ∧ v.classify.positions = #[0] := by decide
+    ∧ v.classify.positions = #[0] := by decide +kernel
 
 /-- Precomposed é is clear. -/
 theorem detect_precomposed_e_acute_clear :
-    (detect #[0x00E9]).classify = .clear := by decide
+    (detect #[0x00E9]).classify = .clear := by decide +kernel
 
 /-- Priority: trailing whitespace fires before normalization
     drift when both apply.  Input is decomposed "é " — fires
@@ -656,11 +658,11 @@ theorem detect_precomposed_e_acute_clear :
 theorem detect_priority_trailing_over_nfc :
     let v := detect #[0x0065, 0x0301, 0x20]
     v.classify.tag = some "TrailingWhitespace" := by
-  decide
+  decide +kernel
 
 /-- Internal-only whitespace passes — only TRAILING fires. -/
 theorem detect_internal_space_clear :
-    (detect #[0x61, 0x20, 0x62]).classify = .clear := by decide
+    (detect #[0x61, 0x20, 0x62]).classify = .clear := by decide +kernel
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §9 Context-bearing probe spot checks
@@ -676,7 +678,7 @@ theorem detectWithContext_default_matches_detect :
       = (detect #[0x61, 0x62, 0x63]).classify
     ∧ (detectWithContext {} #[0x61, 0x62, 0x63]).stableSize
       = (detect #[0x61, 0x62, 0x63]).stableSize
-    := by decide
+    := by decide +kernel
 
 /-- `encodingMismatch` fires when declared encoding is not UTF-8.
     Pure-ASCII "abc" labeled "utf-16" reports the mismatch with
@@ -685,7 +687,7 @@ theorem detect_encoding_mismatch_utf16_label :
     let ctx : Context := { declaredEncoding := some "utf-16" }
     let v := detectWithContext ctx #[0x61, 0x62, 0x63]
     v.classify.tag = some "EncodingMismatch"
-    ∧ v.classify.positions = #[0] := by decide
+    ∧ v.classify.positions = #[0] := by decide +kernel
 
 /-- `encodingMismatch` fires with detectedEnc="invalid" when
     the input contains a high-surrogate codepoint (U+D800),
@@ -697,7 +699,7 @@ theorem detect_encoding_invalid_surrogate :
     -- ASCII 'a' + lone high surrogate + ASCII 'b'.
     let v := detectWithContext ctx #[0x61, 0xD800, 0x62]
     v.classify.tag = some "EncodingMismatch"
-    ∧ v.classify.positions = #[1] := by decide
+    ∧ v.classify.positions = #[1] := by decide +kernel
 
 /-- `encodingMismatch` fires with detectedEnc="invalid" on a
     codepoint beyond the Unicode max (U+110000 and up). -/
@@ -705,7 +707,7 @@ theorem detect_encoding_invalid_out_of_range :
     let ctx : Context := { declaredEncoding := some "utf-8" }
     let v := detectWithContext ctx #[0x61, 0x110000, 0x62]
     v.classify.tag = some "EncodingMismatch"
-    ∧ v.classify.positions = #[1] := by decide
+    ∧ v.classify.positions = #[1] := by decide +kernel
 
 /-- `encodingMismatch` is case-insensitive on the UTF-8 label —
     "UTF-8" / "UTF8" / "utf-8" / "utf8" all match. -/
@@ -716,7 +718,7 @@ theorem detect_encoding_utf8_label_case_insensitive :
     (detectWithContext ctxUpper #[0x61, 0x62, 0x63]).classify = .clear
     ∧ (detectWithContext ctxLower #[0x61, 0x62, 0x63]).classify = .clear
     ∧ (detectWithContext ctxNoDash #[0x61, 0x62, 0x63]).classify = .clear
-    := by decide
+    := by decide +kernel
 
 /-- `signedMessageRule` fires for `pgp4880TrailingWhitespace` on
     a trailing-space input — same condition as
@@ -727,7 +729,7 @@ theorem detect_signed_message_pgp4880 :
     let ctx : Context := { rfcRule := some .pgp4880TrailingWhitespace }
     let v := detectWithContext ctx #[0x61, 0x20]
     v.classify.tag = some "SignedMessageRule"
-    ∧ v.classify.positions = #[1] := by decide
+    ∧ v.classify.positions = #[1] := by decide +kernel
 
 /-- `signedMessageRule` fires for `pgp9580LineEnding` on a bare
     LF (no preceding CR).  Position points at the LF. -/
@@ -735,7 +737,7 @@ theorem detect_signed_message_pgp9580_bare_lf :
     let ctx : Context := { rfcRule := some .pgp9580LineEnding }
     let v := detectWithContext ctx #[0x61, 0x0A, 0x62]
     v.classify.tag = some "SignedMessageRule"
-    ∧ v.classify.positions = #[1] := by decide
+    ∧ v.classify.positions = #[1] := by decide +kernel
 
 /-- `signedMessageRule` with `pgp9580LineEnding` stays clear on
     proper CRLF. -/
@@ -744,7 +746,7 @@ theorem detect_signed_message_pgp9580_crlf_clear_internal :
     -- "abc" CRLF "def" — CRLF is the canonical line ending.
     (detectWithContext ctx
       #[0x61, 0x62, 0x63, 0x0D, 0x0A, 0x64, 0x65, 0x66]).classify
-    = .clear := by decide
+    = .clear := by decide +kernel
 
 /-- `signedMessageRule` fires for `rfc8785NfcRequirement` on
     decomposed é — same condition as `normalizationDrift` but
@@ -753,7 +755,7 @@ theorem detect_signed_message_rfc8785_decomposed :
     let ctx : Context := { rfcRule := some .rfc8785NfcRequirement }
     let v := detectWithContext ctx #[0x0065, 0x0301]
     v.classify.tag = some "SignedMessageRule"
-    ∧ v.classify.positions = #[0] := by decide
+    ∧ v.classify.positions = #[0] := by decide +kernel
 
 /-- `signedMessageRule` fires for `rfc8259ControlChar` on an
     unescaped control codepoint inside the input.  Position
@@ -763,7 +765,7 @@ theorem detect_signed_message_rfc8259_control :
     -- "a" + U+0001 (Start of Heading) + "b"
     let v := detectWithContext ctx #[0x61, 0x01, 0x62]
     v.classify.tag = some "SignedMessageRule"
-    ∧ v.classify.positions = #[1] := by decide
+    ∧ v.classify.positions = #[1] := by decide +kernel
 
 /-- `signedMessageRule` fires for `rfc7515JwsBase64Url` on a
     codepoint outside the Base64URL alphabet.  ASCII `+` (0x2B)
@@ -772,7 +774,7 @@ theorem detect_signed_message_rfc7515_plus_char :
     let ctx : Context := { rfcRule := some .rfc7515JwsBase64Url }
     let v := detectWithContext ctx #[0x41, 0x2B, 0x42]
     v.classify.tag = some "SignedMessageRule"
-    ∧ v.classify.positions = #[1] := by decide
+    ∧ v.classify.positions = #[1] := by decide +kernel
 
 /-- `signedMessageRule` for RFC 7515 stays clear on a pure
     Base64URL string. -/
@@ -780,7 +782,7 @@ theorem detect_signed_message_rfc7515_clean_clear :
     let ctx : Context := { rfcRule := some .rfc7515JwsBase64Url }
     -- "Aa0-_zZ9"
     let cps : Array Nat := #[0x41, 0x61, 0x30, 0x2D, 0x5F, 0x7A, 0x5A, 0x39]
-    (detectWithContext ctx cps).classify = .clear := by decide
+    (detectWithContext ctx cps).classify = .clear := by decide +kernel
 
 /-- `signedMessageRule` fires for `rfc6376DkimRelaxed` on a
     multi-codepoint internal whitespace run.  Position points
@@ -790,14 +792,14 @@ theorem detect_signed_message_rfc6376_double_space :
     -- "a" + SP + SP + "b"
     let v := detectWithContext ctx #[0x61, 0x20, 0x20, 0x62]
     v.classify.tag = some "SignedMessageRule"
-    ∧ v.classify.positions = #[2] := by decide
+    ∧ v.classify.positions = #[2] := by decide +kernel
 
 /-- `signedMessageRule` for `rfc6376DkimRelaxed` stays clear on
     a single internal space — the canonical form. -/
 theorem detect_signed_message_rfc6376_single_space_clear :
     let ctx : Context := { rfcRule := some .rfc6376DkimRelaxed }
     (detectWithContext ctx #[0x61, 0x20, 0x62]).classify = .clear := by
-  decide
+  decide +kernel
 
 /-- `signedMessageRule` for `rfc5751SmimeLineEnding` matches
     the PGP 9580 rule: bare LF (no preceding CR) violates. -/
@@ -805,7 +807,7 @@ theorem detect_signed_message_rfc5751_bare_lf :
     let ctx : Context := { rfcRule := some .rfc5751SmimeLineEnding }
     let v := detectWithContext ctx #[0x61, 0x0A, 0x62]
     v.classify.tag = some "SignedMessageRule"
-    ∧ v.classify.positions = #[1] := by decide
+    ∧ v.classify.positions = #[1] := by decide +kernel
 
 /-- `auditLogReinterpretation` fires when `ctx.asWritten`
     differs from `input` at a known position. -/
@@ -815,14 +817,14 @@ theorem detect_audit_log_divergence :
     let ctx : Context := { asWritten := some written }
     let v := detectWithContext ctx asRead
     v.classify.tag = some "AuditLogReinterpretation"
-    ∧ v.classify.positions = #[2] := by decide
+    ∧ v.classify.positions = #[2] := by decide +kernel
 
 /-- `auditLogReinterpretation` stays silent when written and
     read are identical. -/
 theorem detect_audit_log_identical_clear :
     let bytes : Array Nat := #[0x61, 0x62, 0x63]
     let ctx : Context := { asWritten := some bytes }
-    (detectWithContext ctx bytes).classify = .clear := by decide
+    (detectWithContext ctx bytes).classify = .clear := by decide +kernel
 
 /-- `webhookSignatureDrift` fires when `ctx.serverBytes` differs
     from the client `input`.  Position is the first divergent
@@ -833,14 +835,14 @@ theorem detect_webhook_signature_drift :
     let ctx : Context := { serverBytes := some server }
     let v := detectWithContext ctx client
     v.classify.tag = some "WebhookSignatureDrift"
-    ∧ v.classify.positions = #[2] := by decide
+    ∧ v.classify.positions = #[2] := by decide +kernel
 
 /-- `webhookSignatureDrift` stays silent when client and server
     bytes are identical. -/
 theorem detect_webhook_signature_match_clear :
     let bytes : Array Nat := #[0x61, 0x62, 0x63]
     let ctx : Context := { serverBytes := some bytes }
-    (detectWithContext ctx bytes).classify = .clear := by decide
+    (detectWithContext ctx bytes).classify = .clear := by decide +kernel
 
 /-- Priority pin: `encodingMismatch` fires before all other
     context-bearing probes.  An input with bare LF (would fire
@@ -852,7 +854,7 @@ theorem detect_priority_encoding_over_rfc :
       rfcRule := some .pgp9580LineEnding
     }
     let v := detectWithContext ctx #[0x0065, 0x0301, 0x0A]
-    v.classify.tag = some "EncodingMismatch" := by decide
+    v.classify.tag = some "EncodingMismatch" := by decide +kernel
 
 /-- Priority pin: `webhookSignatureDrift` fires before
     `auditLogReinterpretation` when both diverge.  Pinned by
@@ -866,7 +868,7 @@ theorem detect_priority_webhook_over_audit :
       asWritten := some written
     }
     let v := detectWithContext ctx client
-    v.classify.tag = some "WebhookSignatureDrift" := by decide
+    v.classify.tag = some "WebhookSignatureDrift" := by decide +kernel
 
 /-- Priority pin: context-bearing `signedMessageRule` (priority 4)
     fires before generic `trailingWhitespace` (priority 5) when
@@ -876,6 +878,6 @@ theorem detect_priority_webhook_over_audit :
 theorem detect_priority_rfc_over_trailing :
     let ctx : Context := { rfcRule := some .pgp4880TrailingWhitespace }
     let v := detectWithContext ctx #[0x61, 0x20]
-    v.classify.tag = some "SignedMessageRule" := by decide
+    v.classify.tag = some "SignedMessageRule" := by decide +kernel
 
 end Unicode.Security.Crypto.HashInputStability
