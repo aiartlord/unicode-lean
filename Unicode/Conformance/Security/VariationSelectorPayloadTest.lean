@@ -3,7 +3,7 @@
 
   Conformance proof for the C2 family.  Folds the universal
   `Unicode.Security.Fixture` parser over the hand-curated
-  `VariationSelectorPayloadTest.txt` fixture and `native_decide`-closes
+  `VariationSelectorPayloadTest.txt` fixture and `decide`-closes
   the predicate that every row's expected verdict matches what
   `Unicode.Security.Covert.VariationSelectorPayload.detect` produces.
 
@@ -15,8 +15,8 @@
     2. Parse rows via `Unicode.Security.Fixture.parseFixture`
     3. Define `verifyRow : Row → Bool` that runs the family `detect`
        and compares against the fixture row's expected classification
-    4. Close a single headline theorem `all_rows_pass` via `native_decide`
-    5. Close a row-count gate via `native_decide`
+    4. Close a single headline theorem `all_rows_pass` via `decide`
+    5. Close a row-count gate via `decide`
 -/
 
 import Unicode.Security.Fixture
@@ -67,7 +67,7 @@ def projectPositions (c : Classification) : Array Nat :=
 /-- Validate the C2 verdict's metadata fields against the row's
     column-4 attribution.  Keys recognised: `registered_vs` and
     `suspicious_vs` against the corresponding `positions.size`. -/
-private def metadataMatches (v : Verdict)
+def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey "registered_vs" v.registeredPositions.size &&
   attr.checkNatKey "suspicious_vs" v.suspiciousPositions.size
@@ -89,34 +89,34 @@ def verifyRow (r : Row) : Bool :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Every fixture row's detector verdict matches its expected verdict. -/
-theorem all_rows_pass : rows.all verifyRow = true := by native_decide
+theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate (catches fixture corruption / accidental rewrites). -/
-theorem row_count : rows.size = 30 := by native_decide
+theorem row_count : rows.size = 30 := by decide
 
 /-- Section coverage gate — every named section is represented. -/
 theorem covers_registered_clear :
     (rows.filter (·.sectionName = "RegisteredClear")).size ≥ 10 := by
-  native_decide
+  decide
 
 theorem covers_direct_payload :
     (rows.filter (·.sectionName = "DirectPayload")).size ≥ 6 := by
-  native_decide
+  decide
 
 theorem covers_illegal_target :
     (rows.filter (·.sectionName = "IllegalTarget")).size ≥ 7 := by
-  native_decide
+  decide
 
 theorem covers_repeated_base :
     (rows.filter (·.sectionName = "RepeatedBase")).size ≥ 3 := by
-  native_decide
+  decide
 
 theorem covers_embedded_after_reg :
     (rows.filter (·.sectionName = "EmbeddedAfterRegistered")).size ≥ 3 := by
-  native_decide
+  decide
 
 theorem covers_leading_vs :
     (rows.filter (·.sectionName = "LeadingVS")).size ≥ 1 := by
-  native_decide
+  decide
 
 end Unicode.Conformance.Security.VariationSelectorPayloadTest

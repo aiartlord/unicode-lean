@@ -71,7 +71,7 @@ theorem uint8_ofNat_toNat (n : Nat) (h : n < 256) :
 
 /-- Out-of-bounds short-circuit: when `i ≥ bs.size`, fold from
     `.expectStart` with any positive fuel returns `acc`. -/
-private theorem fold_oob_expectStart
+theorem fold_oob_expectStart
     (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
     (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
     (hi : ¬ i < bs.size) :
@@ -82,7 +82,7 @@ private theorem fold_oob_expectStart
 /-- ASCII fold step: when the byte at position `i` is an ASCII
     codepoint `cp < 0x80`, fold consumes one byte, emits `cp`, and
     returns to `.expectStart`. -/
-private theorem fold_step_ascii
+theorem fold_step_ascii
     (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
     (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
     (cp : Nat) (h_cp : cp < 0x80)
@@ -102,7 +102,7 @@ private theorem fold_step_ascii
     cp not overlong/surrogate/beyond). The "remaining = 0" arm in the
     decoder is structurally unreachable; this lemma captures the
     "remaining = 1, last byte" emission path. -/
-private theorem fold_step_cont_emit_last
+theorem fold_step_cont_emit_last
     (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
     (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
     (accum minCp cp : Nat)
@@ -128,7 +128,7 @@ private theorem fold_step_cont_emit_last
 
 /-- Continuation step (non-final): when `remaining ≥ 2`, decoder
     accumulates the next continuation byte and stays in `.expectCont`. -/
-private theorem fold_step_cont_continue
+theorem fold_step_cont_continue
     (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
     (i seqStart : Nat) (acc : Array Nat) (fuel m accum minCp : Nat)
     (hi : i < bs.size)
@@ -151,7 +151,7 @@ private theorem fold_step_cont_continue
 
 /-- 2-byte start step: when `0xC2 ≤ b < 0xE0`, decoder enters
     `.expectCont 1 (b &&& 0x1F) 0x80`. -/
-private theorem fold_step_2byte_start
+theorem fold_step_2byte_start
     (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
     (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
     (hi : i < bs.size)
@@ -171,7 +171,7 @@ private theorem fold_step_2byte_start
 
 /-- 3-byte start step: when `0xE0 ≤ b < 0xF0`, decoder enters
     `.expectCont 2 (b &&& 0x0F) 0x800`. -/
-private theorem fold_step_3byte_start
+theorem fold_step_3byte_start
     (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
     (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
     (hi : i < bs.size)
@@ -192,7 +192,7 @@ private theorem fold_step_3byte_start
 
 /-- 4-byte start step: when `0xF0 ≤ b < 0xF5`, decoder enters
     `.expectCont 3 (b &&& 0x07) 0x10000`. -/
-private theorem fold_step_4byte_start
+theorem fold_step_4byte_start
     (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
     (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
     (hi : i < bs.size)
@@ -225,7 +225,7 @@ private theorem fold_step_4byte_start
     `acc.push cp` (i.e. left-extension) — captured by the `hf`
     hypothesis. The proof is by fuel induction, splitting on the
     state-machine result for the current byte. -/
-private theorem fold_push_acc_factor
+theorem fold_push_acc_factor
     (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
     (hf : ∀ a o c, f a o c = a.push c)
     (st : Utf8State) (i seqStart : Nat) (acc : Array Nat) (fuel : Nat) :
@@ -264,7 +264,7 @@ private theorem fold_push_acc_factor
     `fun acc offset cp => Function.const Nat (acc.push cp) offset`
     discards the offset via `Function.const`; this lemma exposes the
     push-only behaviour to `fold_push_acc_factor`. -/
-private theorem decode_fn_push (a : Array Nat) (o c : Nat) :
+theorem decode_fn_push (a : Array Nat) (o c : Nat) :
     (fun acc offset cp => Function.const Nat (acc.push cp) offset)
       a o c = a.push c := by
   rfl
@@ -277,7 +277,7 @@ private theorem decode_fn_push (a : Array Nat) (o c : Nat) :
     standard `ByteArray.getElem_append_right`-style fact, restated
     here so the proof of `fold_concat_translate` doesn't have to
     grovel through Substring index arithmetic. -/
-private theorem byte_at_offset_concat
+theorem byte_at_offset_concat
     (a b : ByteArray) (k : Nat) (hk : k < b.size) :
     (a ++ b)[a.size + k]'(by
       simp [ByteArray.size_append]; omega) = b[k]'hk := by
@@ -291,7 +291,7 @@ private theorem byte_at_offset_concat
     because the `.expectCont` continue step keeps the old `seqStart`
     untouched while the index advances; without it, the IH would not
     apply across that case. -/
-private theorem fold_concat_translate
+theorem fold_concat_translate
     (a b : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
     (hf : ∀ ac o c, f ac o c = ac.push c)
     (st : Utf8State) (delta sa sb : Nat) (acc : Array Nat) (fuel : Nat) :
@@ -341,7 +341,7 @@ private theorem fold_concat_translate
 
 /-- An ASCII codepoint occupies 1 byte; fold consumes that byte and
     emits `cp`. -/
-private theorem fold_consume_ascii
+theorem fold_consume_ascii
     (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
     (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
     (cp : Nat) (h_cp : cp < 0x80)
@@ -354,7 +354,7 @@ private theorem fold_consume_ascii
 
 /-- A 2-byte codepoint occupies bytes [i, i+1]; fold consumes both
     and emits `cp`. -/
-private theorem fold_consume_2byte
+theorem fold_consume_2byte
     (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
     (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
     (cp : Nat)
@@ -376,7 +376,7 @@ private theorem fold_consume_2byte
         h_nonsurr h_max]
 
 /-- A 3-byte codepoint occupies bytes [i, i+1, i+2]. -/
-private theorem fold_consume_3byte
+theorem fold_consume_3byte
     (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
     (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
     (cp : Nat)
@@ -405,7 +405,7 @@ private theorem fold_consume_3byte
         h_cp_eq h_overlong h_nonsurr h_max]
 
 /-- A 4-byte codepoint occupies bytes [i, i+1, i+2, i+3]. -/
-private theorem fold_consume_4byte
+theorem fold_consume_4byte
     (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
     (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
     (cp : Nat)
@@ -494,7 +494,7 @@ theorem encodeCodepoints_eq_list (cps : Array Nat) :
 -- lengths.
 
 /-- AND-OR distributivity over Nat: `(a ||| b) &&& c = (a &&& c) ||| (b &&& c)`. -/
-private theorem nat_land_lor_distrib_right (a b c : Nat) :
+theorem nat_land_lor_distrib_right (a b c : Nat) :
     (a ||| b) &&& c = (a &&& c) ||| (b &&& c) := by
   apply Nat.eq_of_testBit_eq
   intro i
@@ -504,7 +504,7 @@ private theorem nat_land_lor_distrib_right (a b c : Nat) :
 /-- `n &&& (2^k - 1) = n % 2^k`. The low-`k`-bit projection in two
     forms; converting between them lets `omega` pick up the residue
     after we have isolated the AND. -/
-private theorem nat_and_two_pow_sub_one_eq_mod (n k : Nat) :
+theorem nat_and_two_pow_sub_one_eq_mod (n k : Nat) :
     n &&& (2^k - 1) = n % 2^k := by
   apply Nat.eq_of_testBit_eq
   intro i
@@ -514,16 +514,16 @@ private theorem nat_and_two_pow_sub_one_eq_mod (n k : Nat) :
   · simp [h]
 
 /-- A natural number bounded by `2^k` is its own `2^k`-modulus. -/
-private theorem nat_mod_two_pow_self (n k : Nat) (h : n < 2^k) :
+theorem nat_mod_two_pow_self (n k : Nat) (h : n < 2^k) :
     n % 2^k = n := Nat.mod_eq_of_lt h
 
 /-- Composite: AND-with-`2^k - 1` is the identity on values bounded by `2^k`. -/
-private theorem nat_and_two_pow_sub_one_self (n k : Nat) (h : n < 2^k) :
+theorem nat_and_two_pow_sub_one_self (n k : Nat) (h : n < 2^k) :
     n &&& (2^k - 1) = n := by
   rw [nat_and_two_pow_sub_one_eq_mod, nat_mod_two_pow_self n k h]
 
 /-- High-low split at bit `k`: `x = (x >>> k) <<< k ||| (x &&& (2^k - 1))`. -/
-private theorem nat_split_at (x k : Nat) :
+theorem nat_split_at (x k : Nat) :
     x = ((x >>> k) <<< k) ||| (x &&& (2^k - 1)) := by
   apply Nat.eq_of_testBit_eq
   intro i
@@ -541,7 +541,7 @@ private theorem nat_split_at (x k : Nat) :
     `mask` recovers `x &&& mask`. Concrete instance: byte-class
     high-bit prefixes (`0xC0`, `0xE0`, `0xF0`, `0x80`) are disjoint
     from the low-3- and low-6-bit masks (`0x07`, `0x3F`). -/
-private theorem nat_lor_flag_and_mask (flag x mask : Nat)
+theorem nat_lor_flag_and_mask (flag x mask : Nat)
     (h_disjoint : flag &&& mask = 0) :
     (flag ||| x) &&& mask = x &&& mask := by
   rw [nat_land_lor_distrib_right, h_disjoint, Nat.zero_or]
@@ -555,7 +555,7 @@ private theorem nat_lor_flag_and_mask (flag x mask : Nat)
 -- ────────────────────────────────────────────────────────────────────────────
 
 /-- Closed form of `encodeCodepoint cp` on the ASCII bracket. -/
-private theorem encode_ascii_form (cp : Nat) (h : cp < 0x80) :
+theorem encode_ascii_form (cp : Nat) (h : cp < 0x80) :
     encodeCodepoint cp = ByteArray.mk #[UInt8.ofNat cp] := by
   unfold encodeCodepoint; simp [h]
 
@@ -564,7 +564,7 @@ private theorem encode_ascii_form (cp : Nat) (h : cp < 0x80) :
 -- ────────────────────────────────────────────────────────────────────────────
 
 /-- Closed form of `encodeCodepoint cp` on the 2-byte bracket. -/
-private theorem encode_2byte_form (cp : Nat) (h_lo : 0x80 ≤ cp) (h_hi : cp < 0x800) :
+theorem encode_2byte_form (cp : Nat) (h_lo : 0x80 ≤ cp) (h_hi : cp < 0x800) :
     encodeCodepoint cp = ByteArray.mk #[
       UInt8.ofNat (0xC0 ||| (cp >>> 6)),
       UInt8.ofNat (0x80 ||| (cp &&& 0x3F))] := by
@@ -572,7 +572,7 @@ private theorem encode_2byte_form (cp : Nat) (h_lo : 0x80 ≤ cp) (h_hi : cp < 0
   simp [show ¬ (cp < 0x80) from by omega, h_hi]
 
 /-- Closed form of `encodeCodepoint cp` on the 3-byte bracket. -/
-private theorem encode_3byte_form (cp : Nat) (h_lo : 0x800 ≤ cp) (h_hi : cp < 0x10000) :
+theorem encode_3byte_form (cp : Nat) (h_lo : 0x800 ≤ cp) (h_hi : cp < 0x10000) :
     encodeCodepoint cp = ByteArray.mk #[
       UInt8.ofNat (0xE0 ||| (cp >>> 12)),
       UInt8.ofNat (0x80 ||| ((cp >>> 6) &&& 0x3F)),
@@ -582,7 +582,7 @@ private theorem encode_3byte_form (cp : Nat) (h_lo : 0x800 ≤ cp) (h_hi : cp < 
         show ¬ (cp < 0x800) from by omega, h_hi]
 
 /-- Closed form of `encodeCodepoint cp` on the 4-byte bracket. -/
-private theorem encode_4byte_form (cp : Nat) (h_lo : 0x10000 ≤ cp)
+theorem encode_4byte_form (cp : Nat) (h_lo : 0x10000 ≤ cp)
     (h_hi : cp < 0x110000) :
     encodeCodepoint cp = ByteArray.mk #[
       UInt8.ofNat (0xF0 ||| (cp >>> 18)),
@@ -603,30 +603,30 @@ private theorem encode_4byte_form (cp : Nat) (h_lo : 0x10000 ≤ cp)
 -- ────────────────────────────────────────────────────────────────────────────
 
 /-- The low 6 bits of a 0x80-flagged byte equal the masked input. -/
-private theorem byte_lor_80_and_3F (x : Nat) :
+theorem byte_lor_80_and_3F (x : Nat) :
     (0x80 ||| (x &&& 0x3F)) &&& 0x3F = x &&& 0x3F := by
   rw [nat_lor_flag_and_mask 0x80 (x &&& 0x3F) 0x3F (by decide)]
   rw [Nat.and_assoc, Nat.and_self]
 
 /-- The low 3 bits of a 0xF0-flagged byte equal the masked input. -/
-private theorem byte_lor_F0_and_07 (x : Nat) :
+theorem byte_lor_F0_and_07 (x : Nat) :
     (0xF0 ||| x) &&& 0x07 = x &&& 0x07 :=
   nat_lor_flag_and_mask 0xF0 x 0x07 (by decide)
 
 /-- The low 4 bits of a 0xE0-flagged byte equal the masked input. -/
-private theorem byte_lor_E0_and_0F (x : Nat) :
+theorem byte_lor_E0_and_0F (x : Nat) :
     (0xE0 ||| x) &&& 0x0F = x &&& 0x0F :=
   nat_lor_flag_and_mask 0xE0 x 0x0F (by decide)
 
 /-- The low 5 bits of a 0xC0-flagged byte equal the masked input. -/
-private theorem byte_lor_C0_and_1F (x : Nat) :
+theorem byte_lor_C0_and_1F (x : Nat) :
     (0xC0 ||| x) &&& 0x1F = x &&& 0x1F :=
   nat_lor_flag_and_mask 0xC0 x 0x1F (by decide)
 
 /-- The 4-byte UTF-8 reconstruction: assembling `cp` from its
     encoded bytes recovers `cp` exactly, when `cp < 2^21` (which
     covers the entire `[0, 0x110000)` codepoint space). -/
-private theorem encode_4byte_bit_identity (cp : Nat) (h : cp < 0x110000) :
+theorem encode_4byte_bit_identity (cp : Nat) (h : cp < 0x110000) :
     cp = (((((((0xF0 ||| (cp >>> 18)) &&& 0x07) <<< 6)
             ||| ((0x80 ||| ((cp >>> 12) &&& 0x3F)) &&& 0x3F)) <<< 6)
           ||| ((0x80 ||| ((cp >>> 6) &&& 0x3F)) &&& 0x3F)) <<< 6)
@@ -652,7 +652,7 @@ private theorem encode_4byte_bit_identity (cp : Nat) (h : cp < 0x110000) :
   rw [← h12, ← h6, ← hcp]
 
 /-- The 3-byte UTF-8 reconstruction. -/
-private theorem encode_3byte_bit_identity (cp : Nat) (h : cp < 0x10000) :
+theorem encode_3byte_bit_identity (cp : Nat) (h : cp < 0x10000) :
     cp = ((((0xE0 ||| (cp >>> 12)) &&& 0x0F) <<< 6)
           ||| ((0x80 ||| ((cp >>> 6) &&& 0x3F)) &&& 0x3F)) <<< 6
         ||| ((0x80 ||| (cp &&& 0x3F)) &&& 0x3F) := by
@@ -670,7 +670,7 @@ private theorem encode_3byte_bit_identity (cp : Nat) (h : cp < 0x10000) :
   rw [← h6, ← hcp]
 
 /-- The 2-byte UTF-8 reconstruction. -/
-private theorem encode_2byte_bit_identity (cp : Nat) (h : cp < 0x800) :
+theorem encode_2byte_bit_identity (cp : Nat) (h : cp < 0x800) :
     cp = (((0xC0 ||| (cp >>> 6)) &&& 0x1F) <<< 6)
         ||| ((0x80 ||| (cp &&& 0x3F)) &&& 0x3F) := by
   rw [byte_lor_C0_and_1F, byte_lor_80_and_3F]
@@ -697,7 +697,7 @@ private theorem encode_2byte_bit_identity (cp : Nat) (h : cp < 0x800) :
     shifted left by `k` is the same as adding (the low `k` bits don't
     overlap). Proven by reducing to the unique-base-`2^k` decomposition
     via `nat_split_at`. -/
-private theorem nat_lor_shiftLeft_eq_add (high y k : Nat) (h_y : y < 2^k) :
+theorem nat_lor_shiftLeft_eq_add (high y k : Nat) (h_y : y < 2^k) :
     (high <<< k) ||| y = high * 2^k + y := by
   -- Apply the split-at-k decomposition to (high * 2^k + y), compute its
   -- quotient (= high) and residue (= y) under div by 2^k, then rewrite
@@ -722,7 +722,7 @@ private theorem nat_lor_shiftLeft_eq_add (high y k : Nat) (h_y : y < 2^k) :
 -- ────────────────────────────────────────────────────────────────────────────
 
 /-- ASCII byte 0 — the encoded byte equals `cp` after `toNat`. -/
-private theorem encode_ascii_byte0 (cp : Nat) (h : cp < 0x80) :
+theorem encode_ascii_byte0 (cp : Nat) (h : cp < 0x80) :
     (UInt8.ofNat cp).toNat = cp :=
   uint8_ofNat_toNat cp (by omega)
 
@@ -731,7 +731,7 @@ private theorem encode_ascii_byte0 (cp : Nat) (h : cp < 0x80) :
 -- ────────────────────────────────────────────────────────────────────────────
 
 /-- 2-byte byte 0 lies in `[0xC2, 0xE0)` and round-trips through `UInt8`. -/
-private theorem encode_2byte_byte0 (cp : Nat) (h_lo : 0x80 ≤ cp) (h_hi : cp < 0x800) :
+theorem encode_2byte_byte0 (cp : Nat) (h_lo : 0x80 ≤ cp) (h_hi : cp < 0x800) :
     (UInt8.ofNat (0xC0 ||| (cp >>> 6))).toNat = 0xC0 ||| (cp >>> 6) ∧
     0xC2 ≤ 0xC0 ||| (cp >>> 6) ∧
     0xC0 ||| (cp >>> 6) < 0xE0 := by
@@ -750,7 +750,7 @@ private theorem encode_2byte_byte0 (cp : Nat) (h_lo : 0x80 ≤ cp) (h_hi : cp < 
   exact ⟨h_uint, h_lo_bnd, h_hi_bnd⟩
 
 /-- 2-byte byte 1 lies in `[0x80, 0xC0)` and round-trips through `UInt8`. -/
-private theorem encode_2byte_byte1 (cp : Nat) :
+theorem encode_2byte_byte1 (cp : Nat) :
     (UInt8.ofNat (0x80 ||| (cp &&& 0x3F))).toNat = 0x80 ||| (cp &&& 0x3F) ∧
     0x80 ≤ 0x80 ||| (cp &&& 0x3F) ∧
     0x80 ||| (cp &&& 0x3F) < 0xC0 := by
@@ -774,7 +774,7 @@ private theorem encode_2byte_byte1 (cp : Nat) :
 -- ────────────────────────────────────────────────────────────────────────────
 
 /-- 3-byte byte 0 lies in `[0xE0, 0xF0)`. -/
-private theorem encode_3byte_byte0 (cp : Nat) (h_lo : 0x800 ≤ cp) (h_hi : cp < 0x10000) :
+theorem encode_3byte_byte0 (cp : Nat) (h_lo : 0x800 ≤ cp) (h_hi : cp < 0x10000) :
     (UInt8.ofNat (0xE0 ||| (cp >>> 12))).toNat = 0xE0 ||| (cp >>> 12) ∧
     0xE0 ≤ 0xE0 ||| (cp >>> 12) ∧
     0xE0 ||| (cp >>> 12) < 0xF0 := by
@@ -799,7 +799,7 @@ private theorem encode_3byte_byte0 (cp : Nat) (h_lo : 0x800 ≤ cp) (h_hi : cp <
 -- ────────────────────────────────────────────────────────────────────────────
 
 /-- 4-byte byte 0 lies in `[0xF0, 0xF5)`. -/
-private theorem encode_4byte_byte0 (cp : Nat) (h_lo : 0x10000 ≤ cp) (h_hi : cp < 0x110000) :
+theorem encode_4byte_byte0 (cp : Nat) (h_lo : 0x10000 ≤ cp) (h_hi : cp < 0x110000) :
     (UInt8.ofNat (0xF0 ||| (cp >>> 18))).toNat = 0xF0 ||| (cp >>> 18) ∧
     0xF0 ≤ 0xF0 ||| (cp >>> 18) ∧
     0xF0 ||| (cp >>> 18) < 0xF5 := by
@@ -830,7 +830,7 @@ private theorem encode_4byte_byte0 (cp : Nat) (h_lo : 0x10000 ≤ cp) (h_hi : cp
 /-- The decode-fold's update function lifts to `acc.push c` after β.
     Used as the `hf` hypothesis for `fold_concat_translate` and
     `fold_push_acc_factor`. -/
-private theorem decode_fn_push_eq
+theorem decode_fn_push_eq
     (acc : Array Nat) (offset c : Nat) :
     (fun (a : Array Nat) (o c : Nat) => Function.const Nat (a.push c) o) acc offset c
       = acc.push c := rfl
@@ -841,7 +841,7 @@ private theorem decode_fn_push_eq
 
 /-- Prepending an ASCII-encoded codepoint to `rest` decodes to
     `#[cp] ++ decodeToCodepoints rest`. -/
-private theorem decode_concat_ascii (cp : Nat) (h_lt : cp < 0x80) (rest : ByteArray) :
+theorem decode_concat_ascii (cp : Nat) (h_lt : cp < 0x80) (rest : ByteArray) :
     decodeToCodepoints (encodeCodepoint cp ++ rest)
       = #[cp] ++ decodeToCodepoints rest := by
   -- Substitute encodeCodepoint cp with its closed form so its size
@@ -892,7 +892,7 @@ private theorem decode_concat_ascii (cp : Nat) (h_lt : cp < 0x80) (rest : ByteAr
 
 /-- Prepending a 2-byte-encoded codepoint to `rest` decodes to
     `#[cp] ++ decodeToCodepoints rest`. -/
-private theorem decode_concat_2byte (cp : Nat) (h_lo : 0x80 ≤ cp) (h_hi : cp < 0x800)
+theorem decode_concat_2byte (cp : Nat) (h_lo : 0x80 ≤ cp) (h_hi : cp < 0x800)
     (rest : ByteArray) :
     decodeToCodepoints (encodeCodepoint cp ++ rest)
       = #[cp] ++ decodeToCodepoints rest := by
@@ -966,7 +966,7 @@ private theorem decode_concat_2byte (cp : Nat) (h_lo : 0x80 ≤ cp) (h_hi : cp <
 /-- The shared continuation-byte form `0x80 ||| (x &&& 0x3F)` is reused
     at byte positions 1, 2, 3 across the 2-, 3-, 4-byte cases — the
     byte-1 lemma generalises across them. -/
-private theorem encode_continuation_bounds (x : Nat) :
+theorem encode_continuation_bounds (x : Nat) :
     (UInt8.ofNat (0x80 ||| (x &&& 0x3F))).toNat = 0x80 ||| (x &&& 0x3F) ∧
     0x80 ≤ 0x80 ||| (x &&& 0x3F) ∧
     0x80 ||| (x &&& 0x3F) < 0xC0 :=
@@ -974,7 +974,7 @@ private theorem encode_continuation_bounds (x : Nat) :
 
 /-- Prepending a 3-byte-encoded codepoint to `rest` decodes to
     `#[cp] ++ decodeToCodepoints rest`. -/
-private theorem decode_concat_3byte (cp : Nat) (h_lo : 0x800 ≤ cp) (h_hi : cp < 0x10000)
+theorem decode_concat_3byte (cp : Nat) (h_lo : 0x800 ≤ cp) (h_hi : cp < 0x10000)
     (h_nonsurr : ¬ (0xD800 ≤ cp ∧ cp ≤ 0xDFFF))
     (rest : ByteArray) :
     decodeToCodepoints (encodeCodepoint cp ++ rest)
@@ -1055,7 +1055,7 @@ private theorem decode_concat_3byte (cp : Nat) (h_lo : 0x800 ≤ cp) (h_hi : cp 
 
 /-- Prepending a 4-byte-encoded codepoint to `rest` decodes to
     `#[cp] ++ decodeToCodepoints rest`. -/
-private theorem decode_concat_4byte (cp : Nat) (h_lo : 0x10000 ≤ cp) (h_hi : cp < 0x110000)
+theorem decode_concat_4byte (cp : Nat) (h_lo : 0x10000 ≤ cp) (h_hi : cp < 0x110000)
     (rest : ByteArray) :
     decodeToCodepoints (encodeCodepoint cp ++ rest)
       = #[cp] ++ decodeToCodepoints rest := by
@@ -1150,7 +1150,7 @@ private theorem decode_concat_4byte (cp : Nat) (h_lo : 0x10000 ≤ cp) (h_hi : c
 
 /-- Append distribution for any valid codepoint. The case split on
     `cp`'s UTF-8 byte length picks the matching per-length helper. -/
-private theorem decode_concat_codepoint (cp : Nat) (h : IsValidCodepoint cp)
+theorem decode_concat_codepoint (cp : Nat) (h : IsValidCodepoint cp)
     (rest : ByteArray) :
     decodeToCodepoints (encodeCodepoint cp ++ rest)
       = #[cp] ++ decodeToCodepoints rest := by
@@ -1340,7 +1340,7 @@ theorem decode_encode_4byte_plane_16 :
     concatenation of UTF-8 encodings of a list of valid codepoints
     yields back the list as an `Array`. Proven by structural induction
     on the codepoint list using `decode_concat_codepoint`. -/
-private theorem decode_encodeList (cps : List Nat)
+theorem decode_encodeList (cps : List Nat)
     (h_all : ∀ cp ∈ cps, IsValidCodepoint cp) :
     decodeToCodepoints (encodeCodepointsList cps) = cps.toArray := by
   induction cps with

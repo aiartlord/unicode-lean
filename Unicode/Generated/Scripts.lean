@@ -12,185 +12,10 @@
   Counts: 174 scripts in the data + `Unknown` default, 2287 ranges.
 -/
 
+import Unicode.Generated.ScriptsData
+
 namespace Unicode.Generated.Scripts
 
-inductive Script where
-  | Unknown
-  | Adlam
-  | Ahom
-  | Anatolian_Hieroglyphs
-  | Arabic
-  | Armenian
-  | Avestan
-  | Balinese
-  | Bamum
-  | Bassa_Vah
-  | Batak
-  | Bengali
-  | Beria_Erfe
-  | Bhaiksuki
-  | Bopomofo
-  | Brahmi
-  | Braille
-  | Buginese
-  | Buhid
-  | Canadian_Aboriginal
-  | Carian
-  | Caucasian_Albanian
-  | Chakma
-  | Cham
-  | Cherokee
-  | Chorasmian
-  | Common
-  | Coptic
-  | Cuneiform
-  | Cypriot
-  | Cypro_Minoan
-  | Cyrillic
-  | Deseret
-  | Devanagari
-  | Dives_Akuru
-  | Dogra
-  | Duployan
-  | Egyptian_Hieroglyphs
-  | Elbasan
-  | Elymaic
-  | Ethiopic
-  | Garay
-  | Georgian
-  | Glagolitic
-  | Gothic
-  | Grantha
-  | Greek
-  | Gujarati
-  | Gunjala_Gondi
-  | Gurmukhi
-  | Gurung_Khema
-  | Han
-  | Hangul
-  | Hanifi_Rohingya
-  | Hanunoo
-  | Hatran
-  | Hebrew
-  | Hiragana
-  | Imperial_Aramaic
-  | Inherited
-  | Inscriptional_Pahlavi
-  | Inscriptional_Parthian
-  | Javanese
-  | Kaithi
-  | Kannada
-  | Katakana
-  | Kawi
-  | Kayah_Li
-  | Kharoshthi
-  | Khitan_Small_Script
-  | Khmer
-  | Khojki
-  | Khudawadi
-  | Kirat_Rai
-  | Lao
-  | Latin
-  | Lepcha
-  | Limbu
-  | Linear_A
-  | Linear_B
-  | Lisu
-  | Lycian
-  | Lydian
-  | Mahajani
-  | Makasar
-  | Malayalam
-  | Mandaic
-  | Manichaean
-  | Marchen
-  | Masaram_Gondi
-  | Medefaidrin
-  | Meetei_Mayek
-  | Mende_Kikakui
-  | Meroitic_Cursive
-  | Meroitic_Hieroglyphs
-  | Miao
-  | Modi
-  | Mongolian
-  | Mro
-  | Multani
-  | Myanmar
-  | Nabataean
-  | Nag_Mundari
-  | Nandinagari
-  | Newa
-  | New_Tai_Lue
-  | Nko
-  | Nushu
-  | Nyiakeng_Puachue_Hmong
-  | Ogham
-  | Ol_Chiki
-  | Old_Hungarian
-  | Old_Italic
-  | Old_North_Arabian
-  | Old_Permic
-  | Old_Persian
-  | Old_Sogdian
-  | Old_South_Arabian
-  | Old_Turkic
-  | Old_Uyghur
-  | Ol_Onal
-  | Oriya
-  | Osage
-  | Osmanya
-  | Pahawh_Hmong
-  | Palmyrene
-  | Pau_Cin_Hau
-  | Phags_Pa
-  | Phoenician
-  | Psalter_Pahlavi
-  | Rejang
-  | Runic
-  | Samaritan
-  | Saurashtra
-  | Sharada
-  | Shavian
-  | Siddham
-  | Sidetic
-  | SignWriting
-  | Sinhala
-  | Sogdian
-  | Sora_Sompeng
-  | Soyombo
-  | Sundanese
-  | Sunuwar
-  | Syloti_Nagri
-  | Syriac
-  | Tagalog
-  | Tagbanwa
-  | Tai_Le
-  | Tai_Tham
-  | Tai_Viet
-  | Tai_Yo
-  | Takri
-  | Tamil
-  | Tangsa
-  | Tangut
-  | Telugu
-  | Thaana
-  | Thai
-  | Tibetan
-  | Tifinagh
-  | Tirhuta
-  | Todhri
-  | Tolong_Siki
-  | Toto
-  | Tulu_Tigalari
-  | Ugaritic
-  | Vai
-  | Vithkuqi
-  | Wancho
-  | Warang_Citi
-  | Yezidi
-  | Yi
-  | Zanabazar_Square
-  deriving DecidableEq, Repr, Inhabited
 
 @[inline]
 def trimS (s : String) : String := (String.trimAscii s).toString
@@ -419,9 +244,15 @@ def defaultScript : Script := .Unknown
     (`.Unknown`) for codepoints not covered by any explicit range
     (the UAX #44 default for the Script property). -/
 def lookupScript (cp : Nat) : Script :=
-  match scriptRanges.findSome? (fun ⟨lo, hi, s⟩ =>
+  match scriptRangesList.findSome? (fun ⟨lo, hi, s⟩ =>
           if lo ≤ cp ∧ cp ≤ hi then some s else none) with
   | some s => s
   | none   => defaultScript
+
+-- Build-time drift gate: materialized `scriptRangesList` must match a
+-- fresh parse of Scripts.txt.
+#eval do
+  unless scriptRangesList.toArray == scriptRanges do
+    throw (IO.userError "Scripts drift: scriptRangesList ≠ parsed scriptRanges")
 
 end Unicode.Generated.Scripts

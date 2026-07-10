@@ -7,7 +7,7 @@
   `IsFullyDecomposed` on `decomposeSequence` output, the key precondition
   for feeding `compose` (pillar 2 of NFC idempotence).
 
-  Architecture: the two `native_decide` table facts here cover the
+  Architecture: the two `decide` table facts here cover the
   interesting codepoints — rows of `UnicodeData` (3045 cases) and Hangul
   syllables (11172 cases). Codepoints outside both sets decompose
   trivially to themselves, and the non-decomposability of the trivial
@@ -21,118 +21,100 @@ namespace Unicode.Normalization.Decomposability
 open Unicode.Normalization
 open Unicode.Generated
 
+set_option maxRecDepth 100000
 -- ═══════════════════════════════════════════════════════════════════════════════
--- TABLE-LEVEL WITNESSES
--- ═══════════════════════════════════════════════════════════════════════════════
-
-/-- For every row in `UnicodeData.rows`, the full canonical decomposition
-    of its codepoint produces output codepoints that all have no further
-    canonical decomposition and are not Hangul syllables. Closed by
-    `native_decide` over the 3045 rows with fuel = 32 (well above the
-    maximum canonical chain depth of 4 in UCD 17.0). -/
-theorem rows_decompose_fullyDecomposed :
-    UnicodeData.rows.all (fun row =>
-      (Decompose.fullCanonicalDecompose row.codepoint).all (fun cp =>
-        decide (Lookup.canonicalDecomposition cp = #[]
-                ∧ Hangul.isHangulSyllable cp = false))) = true := by
-  native_decide
-
-/-- Every Hangul syllable's canonical decomposition produces only jamo
-    codepoints that have no canonical decomposition and are not Hangul
-    syllables themselves. Closed by `native_decide` over the 11172-
-    syllable range. -/
-theorem hangul_decompose_fullyDecomposed :
-    (List.range 11172).all (fun i =>
-      (Decompose.fullCanonicalDecompose (0xAC00 + i)).all (fun cp =>
-        decide (Lookup.canonicalDecomposition cp = #[]
-                ∧ Hangul.isHangulSyllable cp = false))) = true := by
-  native_decide
-
--- ═══════════════════════════════════════════════════════════════════════════════
--- POINTWISE WITNESS
+-- SMALL TERMINAL WITNESSES
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Pointwise: for any codepoint `cp`, every element of
-    `fullCanonicalDecompose cp` has no further canonical decomposition
-    and is not a Hangul syllable. Case analysis:
+/-- No pinned row carries a codepoint in the Hangul jamo band used by
+    the algorithmic decomposition. One linear kernel pass witnesses
+    absence for the whole band at once. -/
+theorem rows_omit_hangulJamo :
+    UnicodeData.rowsList.all (fun r =>
+      decide (¬ (0x1100 ≤ r.codepoint ∧ r.codepoint ≤ 0x11C2))) = true := by
+  decide +kernel
 
-    * Hangul syllable (`isHangulSyllable cp = true`): output is a jamo
-      sequence; covered by `hangul_decompose_fullyDecomposed`.
-    * Non-Hangul with empty canonical decomposition: output is `#[cp]`
-      itself; the conjunction holds trivially from the case hypothesis.
-    * Non-Hangul with non-empty canonical decomposition: `cp` must be a
-      row in `UnicodeData.rows` (only rows carry non-empty
-      decompositions); covered by `rows_decompose_fullyDecomposed`. -/
-theorem fullCanonicalDecompose_fullyDecomposed (cp : Nat) :
-    ∀ j ∈ Decompose.fullCanonicalDecompose cp,
-      Lookup.canonicalDecomposition j = #[] ∧ Hangul.isHangulSyllable j = false := by
-  intro j hj
-  by_cases hHangul : Hangul.isHangulSyllable cp = true
-  · -- Hangul case: use the Hangul table fact.
+/-- Hangul jamo used by the algorithmic decomposition are terminal for
+    canonical decomposition. This is the small Hangul atom: 195 jamo
+    codepoints, not 11172 syllables. -/
+theorem hangulJamo_terminal
+    (j : Nat) (hLo : 0x1100 ≤ j) (hHi : j < 0x1100 + 195) :
+    Lookup.canonicalDecomposition j = #[] ∧ Hangul.isHangulSyllable j = false := by
+  constructor
+  · exact Lookup.canonicalDecomposition_of_lookupRow_none j
+      (Lookup.lookupRow_none_of_all_outside 0x1100 0x11C2 j
+        rows_omit_hangulJamo hLo (by omega))
+  · have hNot : ¬ (Hangul.SBase ≤ j ∧ j < Hangul.SBase + Hangul.SCount) := by
+      simp only [Hangul.SBase, Hangul.SCount, Hangul.LCount, Hangul.NCount,
+                 Hangul.VCount, Hangul.TCount]
+      omega
+    unfold Hangul.isHangulSyllable
+    exact decide_eq_false hNot
+
+/-- The enumerated form of `hangulJamo_terminal`, index-driven over the
+    195-codepoint band. -/
+theorem hangulJamo_terminal_checked :
+    (List.range 195).all (fun i =>
+      decide (Lookup.canonicalDecomposition (0x1100 + i) = #[]
+              ∧ Hangul.isHangulSyllable (0x1100 + i) = false)) = true := by
+  rw [List.all_eq_true]
+  intro i hi
+  have hiLt : i < 195 := List.mem_range.mp hi
+  exact decide_eq_true (hangulJamo_terminal (0x1100 + i) (by omega) (by omega))
+
+theorem decomposeSyllable_output_terminal
+    (cp : Nat) (arr : Array Nat)
+    (h : Hangul.decomposeSyllable? cp = some arr) (j : Nat) (hj : j ∈ arr) :
+    Lookup.canonicalDecomposition j = #[] ∧ Hangul.isHangulSyllable j = false := by
+  unfold Hangul.decomposeSyllable? at h
+  split at h
+  · next hSyl =>
     have hRange : 0xAC00 ≤ cp ∧ cp < 0xAC00 + 11172 := by
       unfold Hangul.isHangulSyllable Hangul.SBase Hangul.SCount
-             Hangul.LCount Hangul.NCount Hangul.VCount Hangul.TCount at hHangul
-      exact of_decide_eq_true hHangul
-    have hTable := hangul_decompose_fullyDecomposed
-    rw [List.all_eq_true] at hTable
-    have hiLt : cp - 0xAC00 < 11172 := by omega
-    have hCpEq : 0xAC00 + (cp - 0xAC00) = cp := by omega
-    have hIdx : (cp - 0xAC00) ∈ List.range 11172 := List.mem_range.mpr hiLt
-    have hAt := hTable (cp - 0xAC00) hIdx
-    rw [hCpEq] at hAt
-    rw [Array.all_eq_true] at hAt
-    rcases Array.getElem_of_mem hj with ⟨i, hi, hElem⟩
-    have hJProp := hAt i hi
-    rw [hElem] at hJProp
-    exact of_decide_eq_true hJProp
-  · -- Non-Hangul case: use the UnicodeData rows fact or triviality.
-    -- Either cp is in rows (then rows table fact applies) or not (then
-    -- fullCanonicalDecompose cp = #[cp] and the property reduces to
-    -- canonicalDecomposition cp = #[] ∧ isHangulSyllable cp = false).
-    by_cases hRow : ∃ row, row ∈ UnicodeData.rows ∧ row.codepoint = cp
-    · -- cp is a row codepoint.
-      obtain ⟨row, hRowMem, hRowEq⟩ := hRow
-      have hTable := rows_decompose_fullyDecomposed
-      rw [Array.all_eq_true] at hTable
-      rcases Array.getElem_of_mem hRowMem with ⟨i, hi, hElem⟩
-      have hAt := hTable i hi
-      rw [hElem] at hAt
-      rw [Array.all_eq_true] at hAt
-      rw [hRowEq] at hAt
-      rcases Array.getElem_of_mem hj with ⟨k, hk, hElemJ⟩
-      have hJProp := hAt k hk
-      rw [hElemJ] at hJProp
-      exact of_decide_eq_true hJProp
-    · -- cp is not in rows: fullCanonicalDecompose cp = #[cp].
-      have hRowNone : ∀ row ∈ UnicodeData.rows, row.codepoint ≠ cp := by
-        intro row hMem heq
-        exact hRow ⟨row, hMem, heq⟩
-      have hLookup : Lookup.lookupRow cp = none := by
-        unfold Lookup.lookupRow
-        rw [Array.find?_eq_none]
-        intro row hMem
-        have hNe : row.codepoint ≠ cp := hRowNone row hMem
-        simp [hNe]
-      have hDecomp : Lookup.canonicalDecomposition cp = #[] := by
-        unfold Lookup.canonicalDecomposition
-        rw [hLookup]
-      have hNotHangul : Hangul.isHangulSyllable cp = false :=
-        Bool.not_eq_true (Hangul.isHangulSyllable cp) |>.mp hHangul
-      have hDsyl : Hangul.decomposeSyllable? cp = none := by
-        unfold Hangul.decomposeSyllable?
-        rw [hNotHangul]
-        simp
-      -- fullCanonicalDecompose cp reduces to #[cp].
-      have hFCD : Decompose.fullCanonicalDecompose cp = #[cp] := by
-        show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth cp = #[cp]
-        unfold Decompose.maxDepth
-        unfold Decompose.fullCanonicalDecomposeFuel
-        rw [hDsyl]
-        simp [hDecomp]
-      rw [hFCD] at hj
-      simp at hj
-      rw [hj]
-      exact ⟨hDecomp, hNotHangul⟩
+             Hangul.LCount Hangul.NCount Hangul.VCount Hangul.TCount
+        at hSyl
+      exact of_decide_eq_true hSyl
+    have hsLt : cp - 0xAC00 < 11172 := by omega
+    have hNPos : 0 < 588 := by decide
+    have hTPos : 0 < 28 := by decide
+    have hLIndexLt : (cp - 0xAC00) / 588 < 19 := by
+      exact (Nat.div_lt_iff_lt_mul hNPos).2 (by omega)
+    have hModNLt : (cp - 0xAC00) % 588 < 588 :=
+      Nat.mod_lt (cp - 0xAC00) hNPos
+    have hVIndexLt : ((cp - 0xAC00) % 588) / 28 < 21 := by
+      exact (Nat.div_lt_iff_lt_mul hTPos).2 (by omega)
+    have hTIndexLt : (cp - 0xAC00) % 28 < 28 :=
+      Nat.mod_lt (cp - 0xAC00) hTPos
+    simp only [Hangul.SBase, Hangul.LBase, Hangul.VBase, Hangul.TBase,
+      Hangul.VCount, Hangul.TCount, Hangul.NCount] at h
+    split at h
+    · next hTZero =>
+      simp only [Option.some.injEq] at h
+      rw [← h] at hj
+      simp only [Array.mem_def, List.mem_cons] at hj
+      rcases hj with hJL | hRest
+      · rw [hJL]
+        apply hangulJamo_terminal <;> omega
+      · rcases hRest with hJV | hEmpty
+        · rw [hJV]
+          apply hangulJamo_terminal <;> omega
+        · cases hEmpty
+    · next hTNonzero =>
+      simp only [Option.some.injEq] at h
+      rw [← h] at hj
+      simp only [Array.mem_def, List.mem_cons] at hj
+      have hTIndexPos : 0 < (cp - 0xAC00) % 28 := by omega
+      rcases hj with hJL | hRest
+      · rw [hJL]
+        apply hangulJamo_terminal <;> omega
+      · rcases hRest with hJV | hRest
+        · rw [hJV]
+          apply hangulJamo_terminal <;> omega
+        · rcases hRest with hJT | hEmpty
+          · rw [hJT]
+            apply hangulJamo_terminal <;> omega
+          · cases hEmpty
+  · cases h
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- SEQUENCE-LEVEL WITNESS
@@ -162,6 +144,72 @@ theorem mem_foldl_append (f : Nat → Array Nat) (cps : Array Nat) (cp : Nat)
   rcases key cps.toList #[] hMem with hEmpty | ⟨x, hxM, hxF⟩
   · simp at hEmpty
   · exact ⟨x, by simpa using hxM, hxF⟩
+
+theorem array_eq_empty_of_isEmpty_true
+    (a : Array Nat) (h : a.isEmpty = true) : a = #[] := by
+  cases a with
+  | mk xs =>
+    cases xs with
+    | nil => rfl
+    | cons _ _ =>
+      simp [Array.isEmpty] at h
+
+theorem not_hangul_of_decomposeSyllable_none
+    (cp : Nat) (h : Hangul.decomposeSyllable? cp = none) :
+    Hangul.isHangulSyllable cp = false := by
+  by_cases hHangul : Hangul.isHangulSyllable cp = true
+  · unfold Hangul.decomposeSyllable? at h
+    by_cases hT : (cp - Hangul.SBase) % Hangul.TCount = 0
+    · simp [hHangul, hT] at h
+    · simp [hHangul, hT] at h
+  · exact Bool.not_eq_true (Hangul.isHangulSyllable cp) |>.mp hHangul
+
+/-- Fuel-bounded decomposition output is fully decomposed. The proof is
+    structural in the fuel because the exhausted-fuel branch in
+    `fullCanonicalDecomposeFuel` emits no codepoints. -/
+theorem fullCanonicalDecomposeFuel_fullyDecomposed (fuel : Nat) :
+    ∀ cp, ∀ j ∈ Decompose.fullCanonicalDecomposeFuel fuel cp,
+      Lookup.canonicalDecomposition j = #[] ∧ Hangul.isHangulSyllable j = false := by
+  induction fuel with
+  | zero =>
+    intro cp j hj
+    unfold Decompose.fullCanonicalDecomposeFuel at hj
+    simp at hj
+  | succ fuel ih =>
+    intro cp j hj
+    unfold Decompose.fullCanonicalDecomposeFuel at hj
+    split at hj
+    · next arr hSome =>
+      exact decomposeSyllable_output_terminal cp arr hSome j hj
+    · next hNone =>
+      generalize hStep : Lookup.canonicalDecomposition cp = step at hj
+      change j ∈ (if step.isEmpty then #[cp]
+                  else step.foldl
+                    (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel fuel cp')
+                    #[]) at hj
+      split at hj
+      · next hEmpty =>
+        have hDecomp : Lookup.canonicalDecomposition cp = #[] := by
+          rw [hStep]
+          exact array_eq_empty_of_isEmpty_true step hEmpty
+        have hNotHangul : Hangul.isHangulSyllable cp = false :=
+          not_hangul_of_decomposeSyllable_none cp hNone
+        simp at hj
+        rw [hj]
+        exact ⟨hDecomp, hNotHangul⟩
+      · next _hNotEmpty =>
+        obtain ⟨x, _hxIn, hxF⟩ :=
+          mem_foldl_append (Decompose.fullCanonicalDecomposeFuel fuel) step j hj
+        exact ih x j hxF
+
+/-- Pointwise: for any codepoint `cp`, every element of
+    `fullCanonicalDecompose cp` has no further canonical decomposition
+    and is not a Hangul syllable. -/
+theorem fullCanonicalDecompose_fullyDecomposed (cp : Nat) :
+    ∀ j ∈ Decompose.fullCanonicalDecompose cp,
+      Lookup.canonicalDecomposition j = #[] ∧ Hangul.isHangulSyllable j = false := by
+  unfold Decompose.fullCanonicalDecompose
+  exact fullCanonicalDecomposeFuel_fullyDecomposed Decompose.maxDepth cp
 
 /-- `decomposeSequence` output is fully decomposed. Lifted from the
     per-codepoint witness via `mem_foldl_append`. -/

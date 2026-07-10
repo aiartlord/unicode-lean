@@ -207,7 +207,7 @@ structure TextCodecFamilyRegistryEntry where
   wireFormat      : String
   deriving Repr
 
-private def sampleRegistry : TextCodecFamilyRegistryEntry where
+def sampleRegistry : TextCodecFamilyRegistryEntry where
   name := "sample"
   owner := "Unicode.Codec"
   basis := ["Unicode.Codec.Strict.StrictBox"]

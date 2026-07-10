@@ -168,88 +168,88 @@ def Classification.positions : Classification → Array Nat
 
 /-- Empty byte stream is clear. -/
 theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Pure ASCII (one byte per char) is valid UTF-8 → clear. -/
 theorem detect_ascii_clear :
     (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- The standard UTF-8 encoding of `é` (U+00E9 = `0xC3 0xA9`)
     is valid → clear. -/
 theorem detect_e_acute_clear :
-    (detect #[0xC3, 0xA9]).classify.isClear = true := by native_decide
+    (detect #[0xC3, 0xA9]).classify.isClear = true := by decide
 
 /-- The standard UTF-8 encoding of `中` (U+4E2D = `0xE4 0xB8 0xAD`)
     is valid → clear. -/
 theorem detect_han_clear :
-    (detect #[0xE4, 0xB8, 0xAD]).classify.isClear = true := by native_decide
+    (detect #[0xE4, 0xB8, 0xAD]).classify.isClear = true := by decide
 
 /-- The standard UTF-8 encoding of `😀` (U+1F600 = `0xF0 0x9F 0x98 0x80`)
     is valid → clear. -/
 theorem detect_emoji_clear :
     (detect #[0xF0, 0x9F, 0x98, 0x80]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- The 2-byte sequence `0xC0 0x80` (Java modified-UTF-8 NUL)
     is rejected at the start byte — RFC 3629 §4 forbids
     `0xC0`/`0xC1` outright, before the overlong check can fire. -/
 theorem detect_modified_utf8_null :
     (detect #[0xC0, 0x80]).classify.tag = some "InvalidStartByte" := by
-  native_decide
+  decide
 
 /-- The 2-byte sequence `0xC0 0xAF` (overlong slash, 2-byte form)
     is similarly rejected at the start byte. -/
 theorem detect_modified_utf8_slash :
     (detect #[0xC0, 0xAF]).classify.tag = some "InvalidStartByte" := by
-  native_decide
+  decide
 
 /-- The 3-byte overlong encoding of `/` (U+002F) as
     `0xE0 0x80 0xAF` — `0xE0` is a valid start byte but the
     encoded value is overlong. -/
 theorem detect_overlong_slash_3byte :
     (detect #[0xE0, 0x80, 0xAF]).classify.tag = some "Overlong" := by
-  native_decide
+  decide
 
 /-- The 4-byte overlong encoding of `/` as `0xF0 0x80 0x80 0xAF`. -/
 theorem detect_overlong_slash_4byte :
     (detect #[0xF0, 0x80, 0x80, 0xAF]).classify.tag = some "Overlong" := by
-  native_decide
+  decide
 
 /-- Surrogate codepoint U+D800 encoded as `0xED 0xA0 0x80` —
     CESU-8 / Java-modified-UTF-8 indicator. -/
 theorem detect_cesu8_surrogate :
     (detect #[0xED, 0xA0, 0x80]).classify.tag = some "Cesu8" := by
-  native_decide
+  decide
 
 /-- High surrogate U+DBFF encoded as `0xED 0xAF 0xBF`. -/
 theorem detect_cesu8_surrogate_high :
     (detect #[0xED, 0xAF, 0xBF]).classify.tag = some "Cesu8" := by
-  native_decide
+  decide
 
 /-- Truncated 2-byte sequence (leading `0xC3` with no continuation). -/
 theorem detect_truncated_2byte :
-    (detect #[0xC3]).classify.tag = some "Truncated" := by native_decide
+    (detect #[0xC3]).classify.tag = some "Truncated" := by decide
 
 /-- Truncated 4-byte sequence (leading `0xF0` with only two
     continuation bytes). -/
 theorem detect_truncated_4byte :
     (detect #[0xF0, 0x9F, 0x98]).classify.tag = some "Truncated" := by
-  native_decide
+  decide
 
 /-- Invalid start byte `0xFE`. -/
 theorem detect_invalid_start :
     (detect #[0xFE]).classify.tag = some "InvalidStartByte" := by
-  native_decide
+  decide
 
 /-- Lone continuation byte `0x80` — `.invalidStartByte`. -/
 theorem detect_lone_continuation :
     (detect #[0x80]).classify.tag = some "InvalidStartByte" := by
-  native_decide
+  decide
 
 /-- A `0xFF` byte never appears in valid UTF-8. -/
 theorem detect_byte_ff :
     (detect #[0xFF]).classify.tag = some "InvalidStartByte" := by
-  native_decide
+  decide
 
 end Unicode.Security.Covert.SurrogateReassembly

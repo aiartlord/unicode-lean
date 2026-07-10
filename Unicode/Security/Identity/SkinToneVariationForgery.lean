@@ -35,6 +35,8 @@ import Unicode.Emoji
 
 namespace Unicode.Security.Identity.SkinToneVariationForgery
 
+set_option maxRecDepth 1000000
+
 open Unicode.Security.Calculus
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -215,38 +217,38 @@ def Classification.positions : Classification → Array Nat
 
 /-- Empty input is clear. -/
 theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Pure ASCII is clear. -/
 theorem detect_ascii_clear :
-    (detect #[0x48, 0x65]).classify.isClear = true := by native_decide
+    (detect #[0x48, 0x65]).classify.isClear = true := by decide +kernel
 
 /-- Plain emoji is clear. -/
 theorem detect_plain_emoji_clear :
-    (detect #[0x1F600]).classify.isClear = true := by native_decide
+    (detect #[0x1F600]).classify.isClear = true := by decide +kernel
 
 /-- Single skin-tone modifier on a modifier-base — clear. -/
 theorem detect_wave_skin_tone_clear :
-    (detect #[0x1F44B, 0x1F3FB]).classify.isClear = true := by native_decide
+    (detect #[0x1F44B, 0x1F3FB]).classify.isClear = true := by decide +kernel
 
 /-- Two skin-tones in a row on a modifier-base — `.stackedSkinTones`. -/
 theorem detect_stacked_skin_tones :
     (detect #[0x1F44B, 0x1F3FB, 0x1F3FC]).classify.tag
-      = some "StackedSkinTones" := by native_decide
+      = some "StackedSkinTones" := by decide +kernel
 
 /-- Skin-tone on ASCII letter — `.invalidSkinToneTarget`. -/
 theorem detect_invalid_target_ascii :
     (detect #[0x0041, 0x1F3FB]).classify.tag
-      = some "InvalidSkinToneTarget" := by native_decide
+      = some "InvalidSkinToneTarget" := by decide +kernel
 
 /-- Skin-tone on smiley-face (not a modifier-base) — `.invalidSkinToneTarget`. -/
 theorem detect_invalid_target_smiley :
     (detect #[0x1F600, 0x1F3FB]).classify.tag
-      = some "InvalidSkinToneTarget" := by native_decide
+      = some "InvalidSkinToneTarget" := by decide +kernel
 
 /-- VS15 on Emoji_Presentation codepoint (smiley) — `.forcedTextStyle`. -/
 theorem detect_forced_text_style :
     (detect #[0x1F600, 0xFE0E]).classify.tag
-      = some "ForcedTextStyle" := by native_decide
+      = some "ForcedTextStyle" := by decide +kernel
 
 end Unicode.Security.Identity.SkinToneVariationForgery

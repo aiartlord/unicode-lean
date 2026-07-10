@@ -90,32 +90,41 @@ def otherNumeric (cp : Nat) : Option Nat :=
 
 /-- 漢 (U+6F22, traditional) maps to 汉 (U+6C49, simplified). -/
 theorem simplified_han :
-    simplifiedVariants 0x6F22 = #[0x6C49] := by native_decide
+    simplifiedVariants 0x6F22 = #[0x6C49] := by
+  simp [simplifiedVariants, Unicode.Generated.UnihanVariants.lookup_u6F22_simplified]
 
 /-- 汉 (U+6C49, simplified) maps to 漢 (U+6F22, traditional). -/
 theorem traditional_han :
-    traditionalVariants 0x6C49 = #[0x6F22] := by native_decide
+    traditionalVariants 0x6C49 = #[0x6F22] := by
+  simp [traditionalVariants, Unicode.Generated.UnihanVariants.lookup_u6C49_traditional]
 
 /-- 国 (U+56FD, simplified country) → 國 (U+570B, traditional). -/
 theorem traditional_guo :
-    traditionalVariants 0x56FD = #[0x570B] := by native_decide
+    traditionalVariants 0x56FD = #[0x570B] := by
+  simp [traditionalVariants, Unicode.Generated.UnihanVariants.lookup_u56FD_traditional]
 
 /-- 一 (U+4E00) is the canonical CJK numeric 1. -/
-theorem primary_yi : primaryNumeric 0x4E00 = some 1 := by native_decide
+theorem primary_yi : primaryNumeric 0x4E00 = some 1 := by
+  simp [primaryNumeric, Unicode.Generated.UnihanNumeric.lookup_u4E00_primary]
 
 /-- 二 (U+4E8C) is 2. -/
-theorem primary_er : primaryNumeric 0x4E8C = some 2 := by native_decide
+theorem primary_er : primaryNumeric 0x4E8C = some 2 := by
+  simp [primaryNumeric, Unicode.Generated.UnihanNumeric.lookup_u4E8C_primary]
 
 /-- 十 (U+5341) is 10. -/
-theorem primary_shi : primaryNumeric 0x5341 = some 10 := by native_decide
+theorem primary_shi : primaryNumeric 0x5341 = some 10 := by
+  simp [primaryNumeric, Unicode.Generated.UnihanNumeric.lookup_u5341_primary]
 
 /-- 百 (U+767E) is 100. -/
-theorem primary_bai : primaryNumeric 0x767E = some 100 := by native_decide
+theorem primary_bai : primaryNumeric 0x767E = some 100 := by
+  simp [primaryNumeric, Unicode.Generated.UnihanNumeric.lookup_u767E_primary]
 
 /-- 壹 (U+58F9) is the banking form of 1. -/
-theorem accounting_yi : accountingNumeric 0x58F9 = some 1 := by native_decide
+theorem accounting_yi : accountingNumeric 0x58F9 = some 1 := by
+  simp [accountingNumeric, Unicode.Generated.UnihanNumeric.lookup_u58F9_accounting]
 
 /-- A character with no numeric meaning returns `none`. -/
-theorem primary_letter_none : primaryNumeric 0x6F22 = none := by native_decide
+theorem primary_letter_none : primaryNumeric 0x6F22 = none := by
+  simp [primaryNumeric, Unicode.Generated.UnihanNumeric.lookup_u6F22_primary]
 
 end Unicode.Unihan

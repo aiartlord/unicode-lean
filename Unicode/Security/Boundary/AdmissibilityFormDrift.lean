@@ -106,18 +106,18 @@ def Classification.positions : Classification → Array Nat
     `false` (the empty sequence is not a default identifier), so
     the booleans agree. -/
 theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Pure ASCII admissible identifier — clear on both sides. -/
 theorem detect_ascii_clear :
     (detect #[0x61, 0x64, 0x6D, 0x69, 0x6E]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- ﬁ ligature (U+FB01) — not admissible (Restricted), but NFKC
     decomposes it to "fi" (admissible).  Fires drift. -/
 theorem detect_fi_ligature_drift :
     (detect #[0xFB01]).classify.tag = some "AdmissibilityFormDrift" := by
-  native_decide
+  decide
 
 /-- Decomposed Hangul jamos #[0x1112, 0x1161, 0x11AB] — each jamo
     has identity NFKD and `Identifier_Status = Restricted` (so
@@ -127,6 +127,6 @@ theorem detect_fi_ligature_drift :
 theorem detect_jamo_sequence_drift :
     (detect #[0x1112, 0x1161, 0x11AB]).classify.tag =
       some "AdmissibilityFormDrift" := by
-  native_decide
+  decide
 
 end Unicode.Security.Boundary.AdmissibilityFormDrift

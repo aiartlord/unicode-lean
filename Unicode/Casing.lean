@@ -29,6 +29,8 @@ import Unicode.Generated.DerivedCoreProperties
 
 namespace Unicode.Casing
 
+set_option maxRecDepth 100000
+
 open Unicode.Generated.SpecialCasing (Row Condition)
 
 /-- The locales that SpecialCasing.txt distinguishes. `default`
@@ -49,15 +51,19 @@ def localeMatches (loc : Locale) (conds : Array Condition) : Bool :=
   let hasLocaleCondition := conds.any (fun c =>
     match c with
     | .LangTr | .LangAz | .LangLt => true
-    | _ => false)
+    | .FinalSigma | .NotFinalSigma | .AfterSoftDotted | .MoreAbove |
+      .NotBeforeDot | .AfterI => false
+    | .Other token => Function.const String false token)
   if ! hasLocaleCondition then true
   else
     conds.any (fun c =>
-      match loc, c with
-      | .turkish,    .LangTr => true
-      | .azeri,      .LangAz => true
-      | .lithuanian, .LangLt => true
-      | _, _ => false)
+      match c with
+      | .LangTr => loc == .turkish
+      | .LangAz => loc == .azeri
+      | .LangLt => loc == .lithuanian
+      | .FinalSigma | .NotFinalSigma | .AfterSoftDotted | .MoreAbove |
+        .NotBeforeDot | .AfterI => false
+      | .Other token => Function.const String false token)
 
 /-- Get the canonical combining class of `cp`. Wraps the
     `Normalization.Lookup` helper so callers don't import its
@@ -83,15 +89,16 @@ def ccc (cp : Nat) : Nat :=
 
 /-- Walk forward from `start` looking for a ccc=230 codepoint
     before the next ccc=0 codepoint. Fuel-bounded for
-    `native_decide` evaluability. -/
-def moreAboveGo : Nat → Array Nat → Nat → Bool
-  | 0, _, _ => false
-  | fuel + 1, cps, i =>
+    `decide` evaluability. -/
+def moreAboveGo (fuel : Nat) (cps : Array Nat) (i : Nat) : Bool :=
+  match fuel with
+  | 0 => false
+  | fuel' + 1 =>
     if h : i < cps.size then
       let c := ccc cps[i]
       if c = 230 then true
       else if c = 0 then false
-      else moreAboveGo fuel cps (i + 1)
+      else moreAboveGo fuel' cps (i + 1)
     else false
 
 def moreAboveAfter (cps : Array Nat) (idx : Nat) : Bool :=
@@ -99,9 +106,10 @@ def moreAboveAfter (cps : Array Nat) (idx : Nat) : Bool :=
 
 /-- Walk backward from `start` looking for a Soft_Dotted base
     before the next ccc=0 or ccc=230 break. -/
-def afterSoftDottedGo : Nat → Array Nat → Nat → Bool
-  | 0, _, _ => false
-  | fuel + 1, cps, i =>
+def afterSoftDottedGo (fuel : Nat) (cps : Array Nat) (i : Nat) : Bool :=
+  match fuel with
+  | 0 => false
+  | fuel' + 1 =>
     if i = 0 then false
     else
       let j := i - 1
@@ -112,16 +120,17 @@ def afterSoftDottedGo : Nat → Array Nat → Nat → Bool
       else
         let c := ccc cp
         if c = 230 ∨ c = 0 then false
-        else afterSoftDottedGo fuel cps j
+        else afterSoftDottedGo fuel' cps j
 
 def afterSoftDotted (cps : Array Nat) (idx : Nat) : Bool :=
   afterSoftDottedGo cps.size cps idx
 
 /-- Walk backward looking for U+0049 'I' before the next ccc=0
     or ccc=230 break. -/
-def afterIGo : Nat → Array Nat → Nat → Bool
-  | 0, _, _ => false
-  | fuel + 1, cps, i =>
+def afterIGo (fuel : Nat) (cps : Array Nat) (i : Nat) : Bool :=
+  match fuel with
+  | 0 => false
+  | fuel' + 1 =>
     if i = 0 then false
     else
       let j := i - 1
@@ -130,22 +139,23 @@ def afterIGo : Nat → Array Nat → Nat → Bool
       else
         let c := ccc cp
         if c = 230 ∨ c = 0 then false
-        else afterIGo fuel cps j
+        else afterIGo fuel' cps j
 
 def afterI (cps : Array Nat) (idx : Nat) : Bool :=
   afterIGo cps.size cps idx
 
 /-- Walk forward looking for U+0307 before the next ccc=0 break. -/
-def beforeDotGo : Nat → Array Nat → Nat → Bool
-  | 0, _, _ => false
-  | fuel + 1, cps, i =>
+def beforeDotGo (fuel : Nat) (cps : Array Nat) (i : Nat) : Bool :=
+  match fuel with
+  | 0 => false
+  | fuel' + 1 =>
     if h : i < cps.size then
       let cp := cps[i]
       if cp = 0x0307 then true
       else
         let c := ccc cp
         if c = 0 then false
-        else beforeDotGo fuel cps (i + 1)
+        else beforeDotGo fuel' cps (i + 1)
     else false
 
 def beforeDot (cps : Array Nat) (idx : Nat) : Bool :=
@@ -158,9 +168,10 @@ def isCased (cp : Nat) : Bool :=
 
 /-- Walk backward looking for the most-recent Cased character
     before the current position, skipping over combining marks. -/
-def hasCasedBeforeGo : Nat → Array Nat → Nat → Bool
-  | 0, _, _ => false
-  | fuel + 1, cps, i =>
+def hasCasedBeforeGo (fuel : Nat) (cps : Array Nat) (i : Nat) : Bool :=
+  match fuel with
+  | 0 => false
+  | fuel' + 1 =>
     if i = 0 then false
     else
       let j := i - 1
@@ -169,20 +180,21 @@ def hasCasedBeforeGo : Nat → Array Nat → Nat → Bool
       else
         let c := ccc cp
         if c = 0 then false
-        else hasCasedBeforeGo fuel cps j
+        else hasCasedBeforeGo fuel' cps j
 
 /-- Walk forward looking for the next non-combining character;
     returns `true` if it's Cased. -/
-def hasCasedAfterGo : Nat → Array Nat → Nat → Bool
-  | 0, _, _ => false
-  | fuel + 1, cps, i =>
+def hasCasedAfterGo (fuel : Nat) (cps : Array Nat) (i : Nat) : Bool :=
+  match fuel with
+  | 0 => false
+  | fuel' + 1 =>
     if h : i < cps.size then
       let cp := cps[i]
       if isCased cp then true
       else
         let c := ccc cp
         if c = 0 then false
-        else hasCasedAfterGo fuel cps (i + 1)
+        else hasCasedAfterGo fuel' cps (i + 1)
     else false
 
 /-- Final_Sigma: the position is between a Cased prefix and a
@@ -204,7 +216,7 @@ def conditionsHold (loc : Locale) (cps : Array Nat) (idx : Nat)
       | .MoreAbove          => moreAboveAfter cps idx
       | .NotBeforeDot       => ! beforeDot cps idx
       | .AfterI             => afterI cps idx
-      | .Other _            => false)
+      | .Other token        => Function.const String false token)
 
 /-- Find the most-specific applicable SpecialCasing row for `cp`
     at position `idx`. UAX #21 semantics: a conditional row whose
@@ -254,19 +266,36 @@ def titleCodepoint (loc : Locale) (cps : Array Nat) (idx : Nat)
 -- §3 STRING-LEVEL OPERATIONS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+/-- Lowercase codepoints from index `i` onward, concatenating each
+    codepoint's (possibly multi-element) mapping. `fuel` bounds the
+    recursion structurally so the result reduces in the kernel; callers
+    pass `cps.size`. Equivalent to the left append-fold `#[] ++ m₀ ++ …`. -/
+def toLowerFrom (loc : Locale) (cps : Array Nat) (fuel : Nat) (i : Nat) : Array Nat :=
+  match fuel with
+  | 0 => #[]
+  | fuel + 1 =>
+    if h : i < cps.size then
+      lowerCodepoint loc cps i cps[i] ++ toLowerFrom loc cps fuel (i + 1)
+    else
+      #[]
+
 /-- Lowercase a codepoint sequence under the given locale. -/
-def toLower (loc : Locale) (cps : Array Nat) : Array Nat := Id.run do
-  let mut acc : Array Nat := #[]
-  for h : i in [0:cps.size] do
-    acc := acc ++ lowerCodepoint loc cps i cps[i]
-  return acc
+def toLower (loc : Locale) (cps : Array Nat) : Array Nat :=
+  toLowerFrom loc cps cps.size 0
+
+/-- Uppercase codepoints from index `i` onward; see `toLowerFrom`. -/
+def toUpperFrom (loc : Locale) (cps : Array Nat) (fuel : Nat) (i : Nat) : Array Nat :=
+  match fuel with
+  | 0 => #[]
+  | fuel + 1 =>
+    if h : i < cps.size then
+      upperCodepoint loc cps i cps[i] ++ toUpperFrom loc cps fuel (i + 1)
+    else
+      #[]
 
 /-- Uppercase a codepoint sequence under the given locale. -/
-def toUpper (loc : Locale) (cps : Array Nat) : Array Nat := Id.run do
-  let mut acc : Array Nat := #[]
-  for h : i in [0:cps.size] do
-    acc := acc ++ upperCodepoint loc cps i cps[i]
-  return acc
+def toUpper (loc : Locale) (cps : Array Nat) : Array Nat :=
+  toUpperFrom loc cps cps.size 0
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 SAMPLE STRINGS
@@ -275,34 +304,34 @@ def toUpper (loc : Locale) (cps : Array Nat) : Array Nat := Id.run do
 /-- "Hello" lowercases to "hello" under the default locale. -/
 theorem toLower_hello :
     toLower .default #[0x48, 0x65, 0x6C, 0x6C, 0x6F] =
-      #[0x68, 0x65, 0x6C, 0x6C, 0x6F] := by native_decide
+      #[0x68, 0x65, 0x6C, 0x6C, 0x6F] := by decide +kernel
 
 /-- "hello" uppercases to "HELLO". -/
 theorem toUpper_hello :
     toUpper .default #[0x68, 0x65, 0x6C, 0x6C, 0x6F] =
-      #[0x48, 0x45, 0x4C, 0x4C, 0x4F] := by native_decide
+      #[0x48, 0x45, 0x4C, 0x4C, 0x4F] := by decide +kernel
 
 /-- ß (U+00DF) uppercases to "SS" (full case mapping). -/
 theorem toUpper_sharp_s :
-    toUpper .default #[0x00DF] = #[0x0053, 0x0053] := by native_decide
+    toUpper .default #[0x00DF] = #[0x0053, 0x0053] := by decide +kernel
 
 /-- Turkish I (U+0049) lowercases to dotless ı (U+0131) under tr/az,
     but to dotted i (U+0069) under default. -/
 theorem toLower_I_default :
-    toLower .default #[0x0049] = #[0x0069] := by native_decide
+    toLower .default #[0x0049] = #[0x0069] := by decide +kernel
 
 theorem toLower_I_turkish :
-    toLower .turkish #[0x0049] = #[0x0131] := by native_decide
+    toLower .turkish #[0x0049] = #[0x0131] := by decide +kernel
 
 theorem toLower_I_azeri :
-    toLower .azeri #[0x0049] = #[0x0131] := by native_decide
+    toLower .azeri #[0x0049] = #[0x0131] := by decide +kernel
 
 /-- Turkish dotted İ (U+0130) lowercases to plain `i` under tr/az;
     under default it lowercases to `i + COMBINING DOT ABOVE`. -/
 theorem toLower_dotted_I_turkish :
-    toLower .turkish #[0x0130] = #[0x0069] := by native_decide
+    toLower .turkish #[0x0130] = #[0x0069] := by decide +kernel
 
 theorem toLower_dotted_I_default :
-    toLower .default #[0x0130] = #[0x0069, 0x0307] := by native_decide
+    toLower .default #[0x0130] = #[0x0069, 0x0307] := by decide +kernel
 
 end Unicode.Casing

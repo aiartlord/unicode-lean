@@ -26,6 +26,8 @@ import Unicode.Generated.VerticalOrientation
 
 namespace Unicode.Vertical
 
+set_option maxRecDepth 100000
+
 open Unicode.Generated.VerticalOrientation
 
 /-- The two practical orientations for vertical text rendering
@@ -73,29 +75,29 @@ def stringOrientations (cps : Array Nat) : Array Orientation :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- ASCII letter 'A' (Latin, horizontal) rotates 90° clockwise. -/
-theorem isRotated_ascii_A : isRotated 0x0041 = true := by native_decide
+theorem isRotated_ascii_A : isRotated 0x0041 = true := by decide +kernel
 
 /-- ASCII digit rotates 90° clockwise. -/
-theorem isRotated_ascii_0 : isRotated 0x0030 = true := by native_decide
+theorem isRotated_ascii_0 : isRotated 0x0030 = true := by decide +kernel
 
 /-- CJK ideograph (U+4E00) renders upright in vertical text. -/
-theorem isUpright_cjk_yi : isUpright 0x4E00 = true := by native_decide
+theorem isUpright_cjk_yi : isUpright 0x4E00 = true := by decide +kernel
 
 /-- Hiragana (U+3041 SMALL A) is upright in vertical text. -/
-theorem isUpright_hiragana : isUpright 0x3041 = true := by native_decide
+theorem isUpright_hiragana : isUpright 0x3041 = true := by decide +kernel
 
 /-- Hangul syllable (U+AC00 GA) is upright. -/
-theorem isUpright_hangul : isUpright 0xAC00 = true := by native_decide
+theorem isUpright_hangul : isUpright 0xAC00 = true := by decide +kernel
 
 /-- Fullwidth Latin A (U+FF21) is upright. -/
-theorem isUpright_fullwidth_A : isUpright 0xFF21 = true := by native_decide
+theorem isUpright_fullwidth_A : isUpright 0xFF21 = true := by decide +kernel
 
 /-- Latin small letter from the basic Latin block — rotates. -/
-theorem isRotated_latin_small_a : isRotated 0x0061 = true := by native_decide
+theorem isRotated_latin_small_a : isRotated 0x0061 = true := by decide +kernel
 
 /-- A handful of mixed codepoints' orientations. -/
 theorem stringOrientations_mixed :
     stringOrientations #[0x0041, 0x0042, 0x4E00, 0x4E8C]
-      = #[.Rotated, .Rotated, .Upright, .Upright] := by native_decide
+      = #[.Rotated, .Rotated, .Upright, .Upright] := by decide +kernel
 
 end Unicode.Vertical

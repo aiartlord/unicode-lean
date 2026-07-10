@@ -30,9 +30,7 @@ open Unicode.Generated
     the `allowedRanges` array, falling back to `.Restricted` otherwise
     (the `defaultStatus` declared in the source file's `@missing`). -/
 def identifierStatus (cp : Nat) : IdentifierStatus.IdentifierStatus :=
-  if IdentifierStatus.allowedRanges.any (fun ⟨min, max⟩ => decide (min ≤ cp ∧ cp ≤ max))
-  then .Allowed
-  else IdentifierStatus.defaultStatus
+  IdentifierStatus.lookup cp
 
 /-- PRECIS IdentifierClass membership: a codepoint is allowed in an
     IDN-safe identifier iff its UTS #39 `Identifier_Status` is
@@ -49,28 +47,35 @@ def isAllowedInIdentifierClass (cp : Nat) : Bool :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- `A` is in an allowed identifier range. -/
-theorem allowed_latin_A : isAllowedInIdentifierClass 0x0041 = true := by native_decide
+theorem allowed_latin_A : isAllowedInIdentifierClass 0x0041 = true := by
+  simp [isAllowedInIdentifierClass, identifierStatus, IdentifierStatus.lookup_u0041]
 
-/-- `_` is allowed (common programming-identifier character). -/
-theorem allowed_underscore : isAllowedInIdentifierClass 0x005F := by native_decide
+/-- LOW LINE is allowed as a common programming-identifier character. -/
+theorem allowed_underscore : isAllowedInIdentifierClass 0x005F := by
+  simp [isAllowedInIdentifierClass, identifierStatus, IdentifierStatus.lookup_u005F]
 
 /-- A digit is allowed (permitted inside identifiers; leading-digit
     rules are a separate concern at the identifier-codec layer). -/
-theorem allowed_digit : isAllowedInIdentifierClass 0x0030 = true := by native_decide
+theorem allowed_digit : isAllowedInIdentifierClass 0x0030 = true := by
+  simp [isAllowedInIdentifierClass, identifierStatus, IdentifierStatus.lookup_u0030]
 
 /-- SPACE is NOT allowed in identifiers — explicit in the source's
     `@missing: Restricted` default, no Allowed range covers it. -/
-theorem disallowed_space : isAllowedInIdentifierClass 0x0020 = false := by native_decide
+theorem disallowed_space : isAllowedInIdentifierClass 0x0020 = false := by
+  simp [isAllowedInIdentifierClass, identifierStatus, IdentifierStatus.lookup_u0020]
 
 /-- RIGHT-TO-LEFT OVERRIDE (bidi override, Trojan Source vector) is
     NOT allowed. -/
-theorem disallowed_bidi_override : isAllowedInIdentifierClass 0x202E = false := by native_decide
+theorem disallowed_bidi_override : isAllowedInIdentifierClass 0x202E = false := by
+  simp [isAllowedInIdentifierClass, identifierStatus, IdentifierStatus.lookup_u202E]
 
 /-- ZERO WIDTH SPACE is NOT allowed. -/
-theorem disallowed_zero_width_space : isAllowedInIdentifierClass 0x200B = false := by native_decide
+theorem disallowed_zero_width_space : isAllowedInIdentifierClass 0x200B = false := by
+  simp [isAllowedInIdentifierClass, identifierStatus, IdentifierStatus.lookup_u200B]
 
 /-- TAG LATIN CAPITAL LETTER A (Glassworm/ASCII-smuggler class) is NOT
     allowed. -/
-theorem disallowed_tag_char : isAllowedInIdentifierClass 0xE0041 = false := by native_decide
+theorem disallowed_tag_char : isAllowedInIdentifierClass 0xE0041 = false := by
+  simp [isAllowedInIdentifierClass, identifierStatus, IdentifierStatus.lookup_uE0041]
 
 end Unicode.Precis.IdentifierClass

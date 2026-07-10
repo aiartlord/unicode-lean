@@ -41,19 +41,19 @@ open Unicode.Codec.Utf8 (firstInvalidUtf8Offset)
 def isUtf8Blob (bs : ByteArray) : Bool :=
   (firstInvalidUtf8Offset bs).isNone
 
-theorem empty_is_blob : isUtf8Blob ByteArray.empty = true := by native_decide
-theorem hello_is_blob : isUtf8Blob "hello".toUTF8 = true := by native_decide
-theorem accented_is_blob : isUtf8Blob "héllo".toUTF8 = true := by native_decide
-theorem cjk_is_blob : isUtf8Blob "日本".toUTF8 = true := by native_decide
+theorem empty_is_blob : isUtf8Blob ByteArray.empty = true := by decide
+theorem hello_is_blob : isUtf8Blob "hello".toUTF8 = true := by decide
+theorem accented_is_blob : isUtf8Blob "héllo".toUTF8 = true := by decide
+theorem cjk_is_blob : isUtf8Blob "日本".toUTF8 = true := by decide
 
 /-- The opaque blob predicate accepts content the printable profile
     rejects (e.g. bidi-override controls). Hardened callers must
     therefore use the printable profile instead of this predicate. -/
 theorem bidi_override_is_blob :
-    isUtf8Blob (ByteArray.mk #[0xE2, 0x80, 0xAE]) = true := by native_decide
+    isUtf8Blob (ByteArray.mk #[0xE2, 0x80, 0xAE]) = true := by decide
 
 theorem invalid_start_not_blob :
-    isUtf8Blob (ByteArray.mk #[0x80]) = false := by native_decide
+    isUtf8Blob (ByteArray.mk #[0x80]) = false := by decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 REFINEMENT TYPE

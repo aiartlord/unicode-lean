@@ -17,19 +17,21 @@
   receive the original codepoint as a singleton sequence.
 -/
 
-import Unicode.Generated.CaseFolding
+import Unicode.Generated.CaseFoldingTargetFacts
 import Unicode.Precis.WidthMapping
+import Unicode.Precis.CaseMappingWidthFacts
 
 namespace Unicode.Precis.CaseMapping
 
 open Unicode.Generated
 
+set_option maxRecDepth 100000
+
 /-- Look up a codepoint's default-full case-folded target. Returns
     `some target` when the codepoint has a status-C or status-F
     entry in CaseFolding.txt, otherwise `none`. -/
 def lookupCaseFolding? (cp : Nat) : Option (Array Nat) :=
-  CaseFolding.foldings.findSome?
-    (fun entry => if entry.1 = cp then some entry.2 else none)
+  CaseFolding.lookup? cp
 
 /-- Apply default full case folding to a single codepoint,
     substituting with the fold target if one exists, otherwise
@@ -55,38 +57,63 @@ def caseFold (cps : Array Nat) : Array Nat :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- LATIN CAPITAL LETTER A folds to LATIN SMALL LETTER A. -/
-theorem caseFold_latin_A : caseFoldCodepoint 0x0041 = #[0x0061] := by native_decide
+theorem caseFold_latin_A : caseFoldCodepoint 0x0041 = #[0x0061] := by
+  unfold caseFoldCodepoint lookupCaseFolding?
+  rw [CaseFolding.lookup_u0041]
 
 /-- LATIN CAPITAL LETTER Z folds to LATIN SMALL LETTER Z. -/
-theorem caseFold_latin_Z : caseFoldCodepoint 0x005A = #[0x007A] := by native_decide
+theorem caseFold_latin_Z : caseFoldCodepoint 0x005A = #[0x007A] := by
+  unfold caseFoldCodepoint lookupCaseFolding?
+  rw [CaseFolding.lookup_u005A]
 
 /-- LATIN SMALL LETTER SHARP S (ß) folds to "ss" — the length-growing
     status-F case RFC 8265 requires. -/
 theorem caseFold_sharp_s :
-    caseFoldCodepoint 0x00DF = #[0x0073, 0x0073] := by native_decide
+    caseFoldCodepoint 0x00DF = #[0x0073, 0x0073] := by
+  unfold caseFoldCodepoint lookupCaseFolding?
+  rw [CaseFolding.lookup_u00DF]
 
 /-- LATIN CAPITAL LETTER I folds to LATIN SMALL LETTER I (non-Turkic
     default path — status C). -/
-theorem caseFold_capital_I : caseFoldCodepoint 0x0049 = #[0x0069] := by native_decide
+theorem caseFold_capital_I : caseFoldCodepoint 0x0049 = #[0x0069] := by
+  unfold caseFoldCodepoint lookupCaseFolding?
+  rw [CaseFolding.lookup_u0049]
 
 /-- LATIN CAPITAL LETTER I WITH DOT ABOVE folds to LATIN SMALL
     LETTER I + COMBINING DOT ABOVE per the status-F entry. -/
 theorem caseFold_I_with_dot_above :
-    caseFoldCodepoint 0x0130 = #[0x0069, 0x0307] := by native_decide
+    caseFoldCodepoint 0x0130 = #[0x0069, 0x0307] := by
+  unfold caseFoldCodepoint lookupCaseFolding?
+  rw [CaseFolding.lookup_u0130]
 
 /-- Already-lowercase ASCII is unchanged. -/
-theorem caseFold_lowercase_a : caseFoldCodepoint 0x0061 = #[0x0061] := by native_decide
+theorem caseFold_lowercase_a : caseFoldCodepoint 0x0061 = #[0x0061] := by
+  unfold caseFoldCodepoint lookupCaseFolding?
+  rw [CaseFolding.lookup_u0061]
 
 /-- Digit has no case mapping. -/
-theorem caseFold_digit : caseFoldCodepoint 0x0030 = #[0x0030] := by native_decide
+theorem caseFold_digit : caseFoldCodepoint 0x0030 = #[0x0030] := by
+  unfold caseFoldCodepoint lookupCaseFolding?
+  rw [CaseFolding.lookup_u0030]
 
 /-- Sequence-level fold lowercases each ASCII letter. -/
 theorem caseFold_ascii_word :
-    caseFold #[0x0041, 0x0042, 0x0043] = #[0x0061, 0x0062, 0x0063] := by native_decide
+    caseFold #[0x0041, 0x0042, 0x0043] = #[0x0061, 0x0062, 0x0063] := by
+  have hB : caseFoldCodepoint 0x0042 = #[0x0062] := by
+    unfold caseFoldCodepoint lookupCaseFolding?
+    rw [CaseFolding.lookup_u0042]
+  have hC : caseFoldCodepoint 0x0043 = #[0x0063] := by
+    unfold caseFoldCodepoint lookupCaseFolding?
+    rw [CaseFolding.lookup_u0043]
+  simp [caseFold, caseFold_latin_A, hB, hC]
 
 /-- The sharp-s substitution grows a 1-codepoint input into a 2-codepoint output. -/
 theorem caseFold_straße_style :
-    caseFold #[0x0073, 0x00DF] = #[0x0073, 0x0073, 0x0073] := by native_decide
+    caseFold #[0x0073, 0x00DF] = #[0x0073, 0x0073, 0x0073] := by
+  have hS : caseFoldCodepoint 0x0073 = #[0x0073] := by
+    unfold caseFoldCodepoint lookupCaseFolding?
+    rw [CaseFolding.lookup_u0073]
+  simp [caseFold, hS, caseFold_sharp_s]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- IDEMPOTENCE
@@ -98,7 +125,7 @@ theorem caseFold_straße_style :
 -- sequence of codepoints on which `lookupCaseFolding?` returns
 -- `none`, and `caseFold` of such a sequence is the identity.
 --
--- The "targets absent from source" fact is closed by `native_decide`
+-- The "targets absent from source" fact is closed by `decide`
 -- over the pinned table below. The concrete-vector idempotence
 -- theorems that follow anchor the testable surface.
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -107,37 +134,24 @@ theorem caseFold_straße_style :
     folding entry, i.e. `lookupCaseFolding?` would return a `Some`
     value on it. -/
 def isCaseFoldSource (cp : Nat) : Bool :=
-  CaseFolding.foldings.any (fun entry => decide (entry.1 = cp))
+  CaseFolding.isSource cp
 
-/-- Every target codepoint of `foldings` is itself absent from the
-    source column — the table is a one-step substitution that
-    produces a fixed point. Closed by `native_decide` over the
-    pinned 1,585-entry table. -/
-theorem caseFoldTargets_not_in_source :
-    CaseFolding.foldings.all
-      (fun entry => entry.2.all (fun cp => !isCaseFoldSource cp)) = true := by
-  native_decide
+/-- Every target codepoint of a successful case-fold lookup is itself
+    absent from the source column — the table is a one-step
+    substitution that produces a fixed point. -/
+theorem caseFoldTargets_not_in_source (source cp : Nat) (target : Array Nat)
+    (hLookup : lookupCaseFolding? source = some target) (hMem : cp ∈ target) :
+    isCaseFoldSource cp = false := by
+  unfold lookupCaseFolding? isCaseFoldSource at *
+  exact CaseFolding.lookup_target_non_source source cp target hLookup hMem
 
 /-- A codepoint that is not a case-fold source has no
     `lookupCaseFolding?` result. -/
 theorem lookupCaseFolding_none_of_non_source (cp : Nat)
     (h : isCaseFoldSource cp = false) :
     lookupCaseFolding? cp = none := by
-  unfold lookupCaseFolding?
-  apply Array.findSome?_eq_none_iff.mpr
-  intro entry hMem
-  obtain ⟨src, tgt⟩ := entry
-  have hNotEq : src ≠ cp := by
-    intro hEq
-    have hAny : CaseFolding.foldings.any
-                  (fun e => decide (e.1 = cp)) = true := by
-      rw [Array.any_eq_true]
-      rcases Array.getElem_of_mem hMem with ⟨i, hi, hElem⟩
-      refine ⟨i, hi, by rw [hElem]; exact decide_eq_true hEq⟩
-    unfold isCaseFoldSource at h
-    rw [hAny] at h
-    exact Bool.noConfusion h
-  simp only [hNotEq, if_false]
+  unfold lookupCaseFolding? isCaseFoldSource at *
+  exact CaseFolding.lookup_none_of_non_source cp h
 
 /-- A codepoint that is not a case-fold source maps to its own
     singleton under `caseFoldCodepoint`. -/
@@ -186,17 +200,8 @@ theorem caseFold_id_of_all_non_source (cps : Array Nat)
 theorem non_source_of_lookupCaseFolding_none (cp : Nat)
     (h : lookupCaseFolding? cp = none) :
     isCaseFoldSource cp = false := by
-  unfold lookupCaseFolding? at h
-  unfold isCaseFoldSource
-  rw [Array.findSome?_eq_none_iff] at h
-  rw [Array.any_eq_false]
-  intro i hi hDec
-  have hSrcEq : CaseFolding.foldings[i].1 = cp := of_decide_eq_true hDec
-  have hEntry := h CaseFolding.foldings[i] (Array.getElem_mem hi)
-  obtain ⟨src, tgt⟩ := CaseFolding.foldings[i]
-  simp at hSrcEq
-  subst hSrcEq
-  simp at hEntry
+  unfold lookupCaseFolding? isCaseFoldSource at *
+  exact CaseFolding.non_source_of_lookup_none cp h
 
 /-- Membership decomposition: a codepoint in `caseFold cps` comes
     from `caseFoldCodepoint x` for some `x ∈ cps`. -/
@@ -223,28 +228,6 @@ theorem mem_caseFold_iff (cps : Array Nat) (cp : Nat)
   · simp at hEmpty
   · exact ⟨x, by simpa using hxM, hxF⟩
 
-/-- Recover the source codepoint of a successful case-fold lookup. -/
-theorem caseFold_exists_entry_of_lookup
-    (x : Nat) (tgt : Array Nat)
-    (h : lookupCaseFolding? x = some tgt) :
-    ∃ (src : Nat), (src, tgt) ∈ CaseFolding.foldings ∧ src = x := by
-  unfold lookupCaseFolding? at h
-  rw [Array.findSome?_eq_some_iff] at h
-  obtain ⟨ys, entry, zs, hShape, hIfSome, hNoneInYs⟩ := h
-  obtain ⟨src, tgt'⟩ := entry
-  simp only at hIfSome
-  split at hIfSome
-  · next hEq =>
-    have hTgtEq : tgt = tgt' := by
-      have hExtract := hIfSome
-      simp at hExtract
-      exact hExtract.symm
-    subst hTgtEq
-    refine ⟨src, ?membership, hEq⟩
-    rw [hShape]
-    simp
-  · exact absurd hIfSome (by simp)
-
 /-- Every codepoint in the output of `caseFold` is a non-source. -/
 theorem caseFold_output_all_non_source (cps : Array Nat) :
     ∀ cp ∈ caseFold cps, isCaseFoldSource cp = false := by
@@ -261,19 +244,7 @@ theorem caseFold_output_all_non_source (cps : Array Nat) :
     exact non_source_of_lookupCaseFolding_none x hLook
   | some tgt =>
     rw [hLook] at hxF
-    obtain ⟨src, hEntryMem, hSrcEqX⟩ :=
-      caseFold_exists_entry_of_lookup x tgt hLook
-    clear hSrcEqX
-    have hTable := caseFoldTargets_not_in_source
-    rw [Array.all_eq_true] at hTable
-    rcases Array.getElem_of_mem hEntryMem with ⟨i, hi, hElem⟩
-    have hEntryAll := hTable i hi
-    rw [hElem] at hEntryAll
-    rw [Array.all_eq_true] at hEntryAll
-    rcases Array.getElem_of_mem hxF with ⟨j, hj, hElemCp⟩
-    have hCp := hEntryAll j hj
-    rw [hElemCp] at hCp
-    simpa using hCp
+    exact caseFoldTargets_not_in_source x cp tgt hLook hxF
 
 /-- **`caseFold` is idempotent.** For every codepoint sequence,
     applying RFC 8265 §5.2.4 default full case folding twice
@@ -292,17 +263,16 @@ theorem caseFold_idempotent (cps : Array Nat) :
 -- case-folded output is still all non-width-compat-sources.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Table-level fact: for every case-fold entry whose source is not
-    a width-compat source, every target codepoint is also not a
-    width-compat source. Closed by `native_decide` over the pinned
-    1,585-entry CaseFolding table × the 226-entry WidthCompatMappings
-    table. -/
-theorem caseFold_preserves_non_widthCompatSource :
-    CaseFolding.foldings.all
-      (fun entry => WidthMapping.isWidthCompatSource entry.1
-                    || entry.2.all
-                         (fun cp => !WidthMapping.isWidthCompatSource cp)) = true := by
-  native_decide
+/-- A successful case-fold lookup from a non-width-compat source
+    cannot produce a width-compat source. -/
+theorem caseFold_preserves_non_widthCompatSource
+    (source cp : Nat) (target : Array Nat)
+    (hSourceNonWidth : WidthMapping.isWidthCompatSource source = false)
+    (hLookup : lookupCaseFolding? source = some target) (hMem : cp ∈ target) :
+    WidthMapping.isWidthCompatSource cp = false := by
+  unfold lookupCaseFolding? at hLookup
+  exact CaseFolding.lookup_target_non_width_of_source_non_width
+    source cp target hSourceNonWidth hLookup hMem
 
 /-- Structural lift: on any sequence whose codepoints are all
     non-width-compat-sources, the case-folded output is still all
@@ -323,41 +293,23 @@ theorem caseFold_output_non_widthCompatSource (cps : Array Nat)
     rw [hCpEqX]
     exact hxNonWidth
   | some tgt =>
-    -- caseFoldCodepoint x = tgt. Use the table-level preservation fact:
-    -- since x is not a width-source, x's fold target tgt has no width-sources.
+    -- caseFoldCodepoint x = tgt. Since x is not a width source, the
+    -- generated cross-table certificate says tgt has no width sources.
     rw [hLook] at hxF
-    obtain ⟨src, hEntryMem, hSrcEqX⟩ :=
-      caseFold_exists_entry_of_lookup x tgt hLook
-    have hTable := caseFold_preserves_non_widthCompatSource
-    rw [Array.all_eq_true] at hTable
-    rcases Array.getElem_of_mem hEntryMem with ⟨i, hi, hElem⟩
-    have hEntry := hTable i hi
-    rw [hElem] at hEntry
-    simp only [Bool.or_eq_true] at hEntry
-    rcases hEntry with hSrcIsWidth | hTgtAllNonWidth
-    · -- src is width-source, but src = x and x is non-width-source: contradiction.
-      subst hSrcEqX
-      rw [hxNonWidth] at hSrcIsWidth
-      exact Bool.noConfusion hSrcIsWidth
-    · -- All targets are non-width-sources.
-      rw [Array.all_eq_true] at hTgtAllNonWidth
-      rcases Array.getElem_of_mem hxF with ⟨j, hj, hElemCp⟩
-      have hCp := hTgtAllNonWidth j hj
-      rw [hElemCp] at hCp
-      simpa using hCp
+    exact caseFold_preserves_non_widthCompatSource x cp tgt hxNonWidth hLook hxF
 
 
 /-- Double case-fold on capital A equals single case-fold. -/
 theorem caseFold_idempotent_A :
-    caseFold (caseFold #[0x0041]) = caseFold #[0x0041] := by native_decide
+    caseFold (caseFold #[0x0041]) = caseFold #[0x0041] := by decide
 
 /-- Double case-fold on sharp-s equals single case-fold. -/
 theorem caseFold_idempotent_sharp_s :
-    caseFold (caseFold #[0x00DF]) = caseFold #[0x00DF] := by native_decide
+    caseFold (caseFold #[0x00DF]) = caseFold #[0x00DF] := by decide
 
 /-- Double case-fold on a mixed ASCII word equals single case-fold. -/
 theorem caseFold_idempotent_ascii_word :
     caseFold (caseFold #[0x0041, 0x0062, 0x0043])
-      = caseFold #[0x0041, 0x0062, 0x0043] := by native_decide
+      = caseFold #[0x0041, 0x0062, 0x0043] := by decide
 
 end Unicode.Precis.CaseMapping

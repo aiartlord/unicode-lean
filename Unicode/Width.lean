@@ -46,6 +46,13 @@ namespace Unicode.Width
 open Unicode.Generated.EastAsianWidth (EastAsianWidthClass)
 open Unicode.Generated.DerivedGeneralCategory (GC)
 
+-- The per-codepoint test vectors below reduce `codepointWidth`, which
+-- consults the materialized East_Asian_Width `List` table and the
+-- General_Category range table. `decide +kernel` walks those tables
+-- linearly in the kernel (plain `decide` exhausts the elaborator);
+-- the deep-codepoint vectors need the raised recursion limit.
+set_option maxRecDepth 100000
+
 /-- How to classify codepoints with East_Asian_Width = A (Ambiguous).
     `narrow` matches POSIX `wcwidth` and Western terminals;
     `wide` matches CJK terminals and `wcwidth-cjk`. -/
@@ -123,64 +130,64 @@ def displayWidth (mode : AmbiguousMode) (cps : Array Nat) : Nat :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- ASCII letters are width 1. -/
-theorem width_ascii_a_narrow : codepointWidth .narrow 0x0061 = 1 := by native_decide
-theorem width_ascii_a_wide   : codepointWidth .wide   0x0061 = 1 := by native_decide
+theorem width_ascii_a_narrow : codepointWidth .narrow 0x0061 = 1 := by decide +kernel
+theorem width_ascii_a_wide   : codepointWidth .wide   0x0061 = 1 := by decide +kernel
 
 /-- ASCII digits are width 1. -/
-theorem width_ascii_0 : codepointWidth .narrow 0x0030 = 1 := by native_decide
+theorem width_ascii_0 : codepointWidth .narrow 0x0030 = 1 := by decide +kernel
 
 /-- ASCII space is width 1 (general category Zs, EAW = N). -/
-theorem width_ascii_space : codepointWidth .narrow 0x0020 = 1 := by native_decide
+theorem width_ascii_space : codepointWidth .narrow 0x0020 = 1 := by decide +kernel
 
 /-- ASCII NUL is width 0 (control). -/
-theorem width_ascii_nul : codepointWidth .narrow 0x0000 = 0 := by native_decide
+theorem width_ascii_nul : codepointWidth .narrow 0x0000 = 0 := by decide +kernel
 
 /-- ASCII DEL is width 0 (control). -/
-theorem width_ascii_del : codepointWidth .narrow 0x007F = 0 := by native_decide
+theorem width_ascii_del : codepointWidth .narrow 0x007F = 0 := by decide +kernel
 
 /-- C1 control U+0080 is width 0. -/
-theorem width_c1_80 : codepointWidth .narrow 0x0080 = 0 := by native_decide
+theorem width_c1_80 : codepointWidth .narrow 0x0080 = 0 := by decide +kernel
 
 /-- COMBINING ACUTE ACCENT (U+0301) is width 0. -/
-theorem width_combining_acute : codepointWidth .narrow 0x0301 = 0 := by native_decide
+theorem width_combining_acute : codepointWidth .narrow 0x0301 = 0 := by decide +kernel
 
 /-- COMBINING DIAERESIS (U+0308) is width 0. -/
-theorem width_combining_diaeresis : codepointWidth .narrow 0x0308 = 0 := by native_decide
+theorem width_combining_diaeresis : codepointWidth .narrow 0x0308 = 0 := by decide +kernel
 
 /-- ENCLOSING CIRCLE (U+20DD) is width 0 (Me). -/
-theorem width_enclosing_circle : codepointWidth .narrow 0x20DD = 0 := by native_decide
+theorem width_enclosing_circle : codepointWidth .narrow 0x20DD = 0 := by decide +kernel
 
 /-- ZERO WIDTH JOINER is width 0. -/
-theorem width_zwj : codepointWidth .narrow 0x200D = 0 := by native_decide
+theorem width_zwj : codepointWidth .narrow 0x200D = 0 := by decide +kernel
 
 /-- ZERO WIDTH NON-JOINER is width 0. -/
-theorem width_zwnj : codepointWidth .narrow 0x200C = 0 := by native_decide
+theorem width_zwnj : codepointWidth .narrow 0x200C = 0 := by decide +kernel
 
 /-- VARIATION SELECTOR-15 (text presentation) is width 0. -/
-theorem width_vs15 : codepointWidth .narrow 0xFE0E = 0 := by native_decide
+theorem width_vs15 : codepointWidth .narrow 0xFE0E = 0 := by decide +kernel
 
 /-- VARIATION SELECTOR-16 (emoji presentation) is width 0. -/
-theorem width_vs16 : codepointWidth .narrow 0xFE0F = 0 := by native_decide
+theorem width_vs16 : codepointWidth .narrow 0xFE0F = 0 := by decide +kernel
 
 /-- CJK ideograph U+4E00 (一) is width 2 (EAW = W). -/
-theorem width_cjk_yi : codepointWidth .narrow 0x4E00 = 2 := by native_decide
+theorem width_cjk_yi : codepointWidth .narrow 0x4E00 = 2 := by decide +kernel
 
 /-- HIRAGANA SMALL A (U+3041) is width 2 (EAW = W). -/
-theorem width_hiragana_a : codepointWidth .narrow 0x3041 = 2 := by native_decide
+theorem width_hiragana_a : codepointWidth .narrow 0x3041 = 2 := by decide +kernel
 
 /-- FULLWIDTH LATIN A (U+FF21) is width 2 (EAW = F). -/
-theorem width_fullwidth_A : codepointWidth .narrow 0xFF21 = 2 := by native_decide
+theorem width_fullwidth_A : codepointWidth .narrow 0xFF21 = 2 := by decide +kernel
 
 /-- HALFWIDTH KATAKANA A (U+FF71) is width 1 (EAW = H). -/
-theorem width_halfwidth_a : codepointWidth .narrow 0xFF71 = 1 := by native_decide
+theorem width_halfwidth_a : codepointWidth .narrow 0xFF71 = 1 := by decide +kernel
 
 /-- INVERTED EXCLAMATION MARK (U+00A1, EAW = A) is width 1 under
     narrow, width 2 under wide. -/
-theorem width_inverted_excl_narrow : codepointWidth .narrow 0x00A1 = 1 := by native_decide
-theorem width_inverted_excl_wide   : codepointWidth .wide   0x00A1 = 2 := by native_decide
+theorem width_inverted_excl_narrow : codepointWidth .narrow 0x00A1 = 1 := by decide +kernel
+theorem width_inverted_excl_wide   : codepointWidth .wide   0x00A1 = 2 := by decide +kernel
 
 /-- WAVING HAND SIGN (U+1F44B, EAW = W) is width 2. -/
-theorem width_emoji_wave : codepointWidth .narrow 0x1F44B = 2 := by native_decide
+theorem width_emoji_wave : codepointWidth .narrow 0x1F44B = 2 := by decide +kernel
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 STRING-LEVEL TEST VECTORS
@@ -188,31 +195,31 @@ theorem width_emoji_wave : codepointWidth .narrow 0x1F44B = 2 := by native_decid
 
 /-- "hello" is width 5. -/
 theorem dw_hello :
-    displayWidth .narrow #[0x68, 0x65, 0x6C, 0x6C, 0x6F] = 5 := by native_decide
+    displayWidth .narrow #[0x68, 0x65, 0x6C, 0x6C, 0x6F] = 5 := by decide +kernel
 
 /-- The empty array is width 0. -/
-theorem dw_empty : displayWidth .narrow #[] = 0 := by native_decide
+theorem dw_empty : displayWidth .narrow #[] = 0 := by decide +kernel
 
 /-- "café" with COMBINING ACUTE ACCENT renders as 4 columns
     (the combining mark contributes 0). -/
 theorem dw_cafe_decomposed :
-    displayWidth .narrow #[0x63, 0x61, 0x66, 0x65, 0x0301] = 4 := by native_decide
+    displayWidth .narrow #[0x63, 0x61, 0x66, 0x65, 0x0301] = 4 := by decide +kernel
 
 /-- "café" with precomposed é (U+00E9) also renders as 4 columns. -/
 theorem dw_cafe_precomposed :
-    displayWidth .narrow #[0x63, 0x61, 0x66, 0x00E9] = 4 := by native_decide
+    displayWidth .narrow #[0x63, 0x61, 0x66, 0x00E9] = 4 := by decide +kernel
 
 /-- "你好" — two CJK ideographs render as 4 columns. -/
 theorem dw_nihao :
-    displayWidth .narrow #[0x4F60, 0x597D] = 4 := by native_decide
+    displayWidth .narrow #[0x4F60, 0x597D] = 4 := by decide +kernel
 
 /-- A control-only string is width 0. -/
 theorem dw_controls :
-    displayWidth .narrow #[0x0000, 0x0001, 0x0009, 0x000A] = 0 := by native_decide
+    displayWidth .narrow #[0x0000, 0x0001, 0x0009, 0x000A] = 0 := by decide +kernel
 
 /-- Mixed ASCII + CJK: "hi 你好" is width 7 (h, i, space, 你=2, 好=2). -/
 theorem dw_mixed :
-    displayWidth .narrow #[0x68, 0x69, 0x20, 0x4F60, 0x597D] = 7 := by native_decide
+    displayWidth .narrow #[0x68, 0x69, 0x20, 0x4F60, 0x597D] = 7 := by decide +kernel
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 GRAPHEME-CLUSTER-AWARE DISPLAY WIDTH
@@ -297,33 +304,33 @@ def displayWidthClusters (mode : AmbiguousMode) (cps : Array Nat) : Nat :=
 /-- "ä" decomposed (a + COMBINING DIAERESIS) is one cluster of
     width 1 — same as the precomposed form. -/
 theorem dwc_a_diaeresis :
-    displayWidthClusters .narrow #[0x61, 0x0308] = 1 := by native_decide
+    displayWidthClusters .narrow #[0x61, 0x0308] = 1 := by decide +kernel
 
 /-- A family ZWJ sequence `👨‍👩‍👧` (man + ZWJ + woman + ZWJ + girl)
     is ONE cluster of width 2, not 6. -/
 theorem dwc_family_zwj :
     displayWidthClusters .narrow
-      #[0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467] = 2 := by native_decide
+      #[0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467] = 2 := by decide +kernel
 
 /-- A waving hand with skin tone modifier `👋🏽` is ONE cluster
     of width 2, not 4. -/
 theorem dwc_wave_modifier :
-    displayWidthClusters .narrow #[0x1F44B, 0x1F3FD] = 2 := by native_decide
+    displayWidthClusters .narrow #[0x1F44B, 0x1F3FD] = 2 := by decide +kernel
 
 /-- A flag sequence `🇺🇸` is ONE cluster of width 2, not 4. -/
 theorem dwc_flag_us :
-    displayWidthClusters .narrow #[0x1F1FA, 0x1F1F8] = 2 := by native_decide
+    displayWidthClusters .narrow #[0x1F1FA, 0x1F1F8] = 2 := by decide +kernel
 
 /-- "hi" is two clusters of width 1 each, total 2. -/
 theorem dwc_hi :
-    displayWidthClusters .narrow #[0x68, 0x69] = 2 := by native_decide
+    displayWidthClusters .narrow #[0x68, 0x69] = 2 := by decide +kernel
 
 /-- The empty array is width 0. -/
 theorem dwc_empty :
-    displayWidthClusters .narrow #[] = 0 := by native_decide
+    displayWidthClusters .narrow #[] = 0 := by decide +kernel
 
 /-- "你好" is two CJK clusters of width 2 each, total 4. -/
 theorem dwc_nihao :
-    displayWidthClusters .narrow #[0x4F60, 0x597D] = 4 := by native_decide
+    displayWidthClusters .narrow #[0x4F60, 0x597D] = 4 := by decide +kernel
 
 end Unicode.Width

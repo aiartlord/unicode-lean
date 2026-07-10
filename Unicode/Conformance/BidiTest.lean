@@ -207,6 +207,6 @@ def countPassing (limit : Nat) : Nat :=
     embedding levels and L1/L2 reorder array under the bidi
     algorithm. -/
 theorem bidi_test_strict_conformance : allRowsPass = true := by
-  native_decide
+  decide
 
 end Unicode.Conformance.BidiTest

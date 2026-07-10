@@ -3,7 +3,7 @@
 
   Conformance proof for the I3 family.  Folds the universal
   `Unicode.Security.Fixture` parser over the hand-curated
-  `EmojiZwjIntegrityTest.txt` fixture and `native_decide`-closes
+  `EmojiZwjIntegrityTest.txt` fixture and `decide`-closes
   the predicate that every row's expected verdict matches what
   `Unicode.Security.Identity.EmojiZwjIntegrity.detect` produces.
 -/
@@ -42,7 +42,7 @@ def projectPositions (c : Classification) : Array Nat :=
     `chain_len` (the ZWJ chain length), `zwj_count` (the size of
     `zwjPositions`), `skin_tone_count`, and `is_rgi` (registered
     RGI flag). -/
-private def metadataMatches (v : Verdict)
+def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey   "chain_len"       v.chainLength &&
   attr.checkNatKey   "zwj_count"       v.zwjPositions.size &&
@@ -62,26 +62,26 @@ def verifyRow (r : Row) : Bool :=
   decide (pos = r.expectedPositions)
 
 /-- Every fixture row's detector verdict matches its expected verdict. -/
-theorem all_rows_pass : rows.all verifyRow = true := by native_decide
+theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 22 := by native_decide
+theorem row_count : rows.size = 22 := by decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by decide
 
 theorem covers_double_zwj :
-    (rows.filter (·.sectionName = "DoubleZWJ")).size ≥ 3 := by native_decide
+    (rows.filter (·.sectionName = "DoubleZWJ")).size ≥ 3 := by decide
 
 theorem covers_non_emoji_injection :
     (rows.filter (·.sectionName = "NonEmojiInjection")).size ≥ 5 := by
-  native_decide
+  decide
 
 theorem covers_over_length :
-    (rows.filter (·.sectionName = "OverLength")).size ≥ 2 := by native_decide
+    (rows.filter (·.sectionName = "OverLength")).size ≥ 2 := by decide
 
 theorem covers_skin_tone_overflow :
     (rows.filter (·.sectionName = "SkinToneOverflow")).size ≥ 3 := by
-  native_decide
+  decide
 
 end Unicode.Conformance.Security.EmojiZwjIntegrityTest

@@ -2,9 +2,12 @@
   Unicode.Generated.GraphemeBreakProperty
 
   Grapheme_Cluster_Break ranges from
-  `lemma/lean/Unicode/Ucd/GraphemeBreakProperty.txt` (UCD 17.0.0),
-  embedded as a String constant via `include_str` and parsed once at
-  module load. Pattern follows `fgdorais/lean4-unicode-basic`.
+  `lemma/lean/Unicode/Ucd/GraphemeBreakProperty.txt` (UCD 17.0.0). The
+  property values and the pinned `List` range table (`rangesList`) live
+  in `Unicode.Generated.GraphemeBreakPropertyData`; `lookupGCB` consults
+  that `List` so it reduces in the kernel. This module keeps the
+  `include_str` source and the parser, and a build-time drift gate
+  (`#eval`) proves the materialized table matches a fresh parse.
 
   Semantics (UAX #29 §3): each row assigns a Grapheme_Cluster_Break
   property value to one closed codepoint interval. Codepoints not
@@ -12,26 +15,9 @@
   `@missing: 0000..10FFFF; Other` header.
 -/
 
-namespace Unicode.Generated.GraphemeBreakProperty
+import Unicode.Generated.GraphemeBreakPropertyData
 
-/-- The 13 Grapheme_Cluster_Break property values per UAX #29
-    plus the implicit `Other` default. -/
-inductive GCBClass where
-  | Other
-  | CR
-  | LF
-  | Control
-  | Extend
-  | ZWJ
-  | Regional_Indicator
-  | Prepend
-  | SpacingMark
-  | L
-  | V
-  | T
-  | LV
-  | LVT
-  deriving DecidableEq, Repr, Inhabited
+namespace Unicode.Generated.GraphemeBreakProperty
 
 @[inline]
 def trimS (s : String) : String := (String.trimAscii s).toString
@@ -74,13 +60,16 @@ def parseRow (rawLine : String) : Option (Nat × Nat × GCBClass) :=
   let stripped : String := (rawLine.takeWhile (· != '#')).toString
   let line := trimS stripped
   if line.isEmpty then none else
-  match String.splitOn line ";" with
-  | rngField :: clsField :: _ =>
+  let fields : Array String := (String.splitOn line ";").toArray
+  if fields.size ≥ 2 then
+    let rngField := fields[0]!
+    let clsField := fields[1]!
     let (lo, hi) := parseRange (trimS rngField)
     match parseGCB? (trimS clsField) with
     | some c => some (lo, hi, c)
     | none   => none
-  | irregularSplit => Function.const (List String) none irregularSplit
+  else
+    none
 
 /-- Raw text of `GraphemeBreakProperty.txt`, embedded at compile time. -/
 def graphemeBreakPropertyRaw : String :=
@@ -91,10 +80,24 @@ def ranges : Array (Nat × Nat × GCBClass) :=
   ((graphemeBreakPropertyRaw.splitOn "\n").filterMap parseRow).toArray
 
 /-- Look up the Grapheme_Cluster_Break class for a codepoint, returning
-    `Other` for codepoints not covered by any explicit range. -/
+    `Other` for codepoints not covered by any explicit range. Consults
+    the materialized `List` so a per-codepoint query reduces linearly in
+    the kernel. -/
 def lookupGCB (cp : Nat) : GCBClass :=
-  match ranges.find? (fun r => r.1 ≤ cp ∧ cp ≤ r.2.1) with
+  match rangesList.find? (fun r => decide (r.1 ≤ cp ∧ cp ≤ r.2.1)) with
   | some r => r.2.2
   | none   => .Other
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- DRIFT GATE
+--
+-- Build-time assertion (compiled `#eval`) that the materialized
+-- `rangesList` agrees exactly with a fresh parse of the pinned
+-- `GraphemeBreakProperty.txt`. A mismatch aborts the build.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+#eval do
+  unless rangesList.toArray == ranges do
+    throw (IO.userError "GraphemeBreakProperty drift: rangesList ≠ parsed ranges")
 
 end Unicode.Generated.GraphemeBreakProperty

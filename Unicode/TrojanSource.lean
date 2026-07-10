@@ -46,6 +46,10 @@ namespace Unicode.TrojanSource
 
 open Unicode.Restriction (RestrictionLevel restrictionLevel)
 
+-- The `safeForCodeContext` spot-checks reduce through the restriction and
+-- script tables; kernel reduction of those lookups exceeds the default limit.
+set_option maxRecDepth 1000000
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 BIDI FORMAT-CONTROL DETECTION
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -156,50 +160,50 @@ def safeForCodeContext (cps : Array Nat) : Bool :=
 /-- A pure ASCII identifier passes. -/
 theorem safe_ascii :
     safeForCodeContext #[0x69, 0x66, 0x20, 0x78, 0x20, 0x3D, 0x3D, 0x20, 0x31]
-      = true := by native_decide
+      = true := by decide +kernel
 
 /-- The classic Trojan Source CVE-2021-42574 fragment uses U+202E
     RLO. With it present the input is rejected. -/
 theorem reject_rlo :
-    safeForCodeContext #[0x69, 0x66, 0x202E, 0x78] = false := by native_decide
+    safeForCodeContext #[0x69, 0x66, 0x202E, 0x78] = false := by decide +kernel
 
 /-- LRI (U+2066) alone is also rejected. -/
 theorem reject_lri :
-    safeForCodeContext #[0x69, 0x66, 0x2066, 0x78] = false := by native_decide
+    safeForCodeContext #[0x69, 0x66, 0x2066, 0x78] = false := by decide +kernel
 
 /-- containsBidiFormatControl flags the nine bidi controls. -/
-theorem detect_lre  : isBidiFormatControl 0x202A = true := by native_decide
-theorem detect_rle  : isBidiFormatControl 0x202B = true := by native_decide
-theorem detect_pdf  : isBidiFormatControl 0x202C = true := by native_decide
-theorem detect_lro  : isBidiFormatControl 0x202D = true := by native_decide
-theorem detect_rlo  : isBidiFormatControl 0x202E = true := by native_decide
-theorem detect_lri  : isBidiFormatControl 0x2066 = true := by native_decide
-theorem detect_rli  : isBidiFormatControl 0x2067 = true := by native_decide
-theorem detect_fsi  : isBidiFormatControl 0x2068 = true := by native_decide
-theorem detect_pdi  : isBidiFormatControl 0x2069 = true := by native_decide
+theorem detect_lre  : isBidiFormatControl 0x202A = true := by decide +kernel
+theorem detect_rle  : isBidiFormatControl 0x202B = true := by decide +kernel
+theorem detect_pdf  : isBidiFormatControl 0x202C = true := by decide +kernel
+theorem detect_lro  : isBidiFormatControl 0x202D = true := by decide +kernel
+theorem detect_rlo  : isBidiFormatControl 0x202E = true := by decide +kernel
+theorem detect_lri  : isBidiFormatControl 0x2066 = true := by decide +kernel
+theorem detect_rli  : isBidiFormatControl 0x2067 = true := by decide +kernel
+theorem detect_fsi  : isBidiFormatControl 0x2068 = true := by decide +kernel
+theorem detect_pdi  : isBidiFormatControl 0x2069 = true := by decide +kernel
 
 /-- Plain ASCII has no bidi format-controls. -/
 theorem no_bidi_ascii :
-    containsBidiFormatControl #[0x61, 0x62, 0x63] = false := by native_decide
+    containsBidiFormatControl #[0x61, 0x62, 0x63] = false := by decide +kernel
 
 /-- Balanced LRE…PDF passes the balance check. -/
 theorem balanced_lre_pdf :
-    hasUnbalancedBidi #[0x202A, 0x61, 0x202C] = false := by native_decide
+    hasUnbalancedBidi #[0x202A, 0x61, 0x202C] = false := by decide +kernel
 
 /-- LRE without matching PDF is unbalanced. -/
 theorem unbalanced_open_lre :
-    hasUnbalancedBidi #[0x202A, 0x61] = true := by native_decide
+    hasUnbalancedBidi #[0x202A, 0x61] = true := by decide +kernel
 
 /-- PDF without preceding LRE/RLE/LRO is unbalanced. -/
 theorem unbalanced_lone_pdf :
-    hasUnbalancedBidi #[0x61, 0x202C] = true := by native_decide
+    hasUnbalancedBidi #[0x61, 0x202C] = true := by decide +kernel
 
 /-- A Cyrillic-letter identifier that passes Single-Script also
     passes `safeForCodeContext` — there are no bidi controls and
     the level meets the threshold. -/
 theorem safe_cyrillic :
     safeForCodeContext #[0x043F, 0x0440, 0x0438, 0x0432, 0x0435, 0x0442]
-      = true := by native_decide
+      = true := by decide +kernel
 
 /-- The Cyrillic IDN-homograph form of `apple` is Single-Script
     (purely Cyrillic) and contains no bidi controls — it passes
@@ -208,12 +212,12 @@ theorem safe_cyrillic :
     restriction level. -/
 theorem safe_apple_cyrillic_passes :
     safeForCodeContext #[0x0430, 0x0440, 0x0440, 0x04CF, 0x0435]
-      = true := by native_decide
+      = true := by decide +kernel
 
 /-- A Latin/Cyrillic mix is MinimallyRestrictive (below the
     Highly threshold) so `safeForCodeContext` rejects it even
     without bidi controls. -/
 theorem reject_latin_cyrillic_mix :
-    safeForCodeContext #[0x0061, 0x0440, 0x0061] = false := by native_decide
+    safeForCodeContext #[0x0061, 0x0440, 0x0061] = false := by decide +kernel
 
 end Unicode.TrojanSource

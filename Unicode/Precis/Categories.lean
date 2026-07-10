@@ -61,8 +61,7 @@ inductive PrecisCategory where
 /-- Identifier_Status membership check: `true` when the codepoint is
     covered by the pinned `allowedRanges` table. -/
 def hasIdentifierStatusAllowed (cp : Nat) : Bool :=
-  IdentifierStatus.allowedRanges.any
-    (fun ⟨min, max⟩ => decide (min ≤ cp ∧ cp ≤ max))
+  IdentifierStatus.isAllowed cp
 
 /-- The PRECIS category for a codepoint per RFC 8264 §9 / RFC 5892.
 
@@ -115,47 +114,64 @@ def isPrecisAdmissible (cp : Nat) : Bool :=
 
 /-- LATIN CAPITAL A is IdentifierClass. -/
 theorem category_latin_A :
-    precisCategory 0x0041 = .IdentifierClass := by native_decide
+    precisCategory 0x0041 = .IdentifierClass := by
+  simp [precisCategory, hasIdentifierStatusAllowed, IdentifierStatus.isAllowed_u0041]
 
 /-- A digit is IdentifierClass. -/
 theorem category_digit :
-    precisCategory 0x0030 = .IdentifierClass := by native_decide
+    precisCategory 0x0030 = .IdentifierClass := by
+  simp [precisCategory, hasIdentifierStatusAllowed, IdentifierStatus.isAllowed_u0030]
 
 /-- Underscore is IdentifierClass (admitted in programming-identifier
     profiles). -/
 theorem category_underscore :
-    precisCategory 0x005F = .IdentifierClass := by native_decide
+    precisCategory 0x005F = .IdentifierClass := by
+  simp [precisCategory, hasIdentifierStatusAllowed, IdentifierStatus.isAllowed_u005F]
 
 /-- ASCII SPACE is Disallowed. -/
 theorem category_space :
-    precisCategory 0x0020 = .Disallowed := by native_decide
+    precisCategory 0x0020 = .Disallowed := by
+  simp [precisCategory, hasIdentifierStatusAllowed,
+    IdentifierStatus.isAllowed_u0020, DerivedGeneralCategory.lookup_u0020]
 
 /-- RIGHT-TO-LEFT OVERRIDE is Disallowed. -/
 theorem category_bidi_override :
-    precisCategory 0x202E = .Disallowed := by native_decide
+    precisCategory 0x202E = .Disallowed := by
+  simp [precisCategory, hasIdentifierStatusAllowed,
+    IdentifierStatus.isAllowed_u202E, DerivedGeneralCategory.lookup_u202E]
 
 /-- ZERO WIDTH SPACE is Disallowed. -/
 theorem category_zwsp :
-    precisCategory 0x200B = .Disallowed := by native_decide
+    precisCategory 0x200B = .Disallowed := by
+  simp [precisCategory, hasIdentifierStatusAllowed,
+    IdentifierStatus.isAllowed_u200B, DerivedGeneralCategory.lookup_u200B]
 
 /-- ZERO WIDTH NON-JOINER (U+200C) is ContextJ per RFC 5892 §G. -/
 theorem category_zwnj :
-    precisCategory 0x200C = .ContextJ := by native_decide
+    precisCategory 0x200C = .ContextJ := by
+  simp [precisCategory]
 
 /-- ZERO WIDTH JOINER (U+200D) is ContextJ per RFC 5892 §G. -/
 theorem category_zwj :
-    precisCategory 0x200D = .ContextJ := by native_decide
+    precisCategory 0x200D = .ContextJ := by
+  simp [precisCategory]
 
 /-- An unassigned codepoint (U+0378, in the Greek block, GC = Cn) is
     classified as `Unassigned`. -/
 theorem category_unassigned_0378 :
-    precisCategory 0x0378 = .Unassigned := by native_decide
+    precisCategory 0x0378 = .Unassigned := by
+  simp [precisCategory, hasIdentifierStatusAllowed,
+    IdentifierStatus.isAllowed_u0378, DerivedGeneralCategory.lookup_u0378]
 
 /-- `isPrecisAdmissible` agrees with category on the admissible side. -/
-theorem admissible_latin_A : isPrecisAdmissible 0x0041 = true := by native_decide
+theorem admissible_latin_A : isPrecisAdmissible 0x0041 = true := by
+  simp [isPrecisAdmissible, precisCategory, hasIdentifierStatusAllowed,
+    IdentifierStatus.isAllowed_u0041]
 
 /-- `isPrecisAdmissible` rejects disallowed codepoints. -/
-theorem not_admissible_space : isPrecisAdmissible 0x0020 = false := by native_decide
+theorem not_admissible_space : isPrecisAdmissible 0x0020 = false := by
+  simp [isPrecisAdmissible, precisCategory, hasIdentifierStatusAllowed,
+    IdentifierStatus.isAllowed_u0020, DerivedGeneralCategory.lookup_u0020]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- FREEFORMCLASS ADMISSIBILITY via GENERAL_CATEGORY (RFC 8264 §4.3)
@@ -191,24 +207,65 @@ def isFreeformClassAdmissibleGC (cp : Nat) : Bool :=
 -- FREEFORMCLASS TEST VECTORS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-theorem freeform_latin_A : isFreeformClassAdmissibleGC 0x0041 = true := by native_decide
-theorem freeform_digit : isFreeformClassAdmissibleGC 0x0030 = true := by native_decide
-theorem freeform_ascii_space : isFreeformClassAdmissibleGC 0x0020 = true := by native_decide
-theorem freeform_nbsp : isFreeformClassAdmissibleGC 0x00A0 = true := by native_decide
-theorem freeform_plus : isFreeformClassAdmissibleGC 0x002B = true := by native_decide
-theorem freeform_dash : isFreeformClassAdmissibleGC 0x002D = true := by native_decide
-theorem freeform_dollar : isFreeformClassAdmissibleGC 0x0024 = true := by native_decide
-theorem freeform_paren_open : isFreeformClassAdmissibleGC 0x0028 = true := by native_decide
-theorem freeform_rejects_null : isFreeformClassAdmissibleGC 0x0000 = false := by native_decide
+theorem freeform_latin_A : isFreeformClassAdmissibleGC 0x0041 = true := by
+  unfold isFreeformClassAdmissibleGC
+  rw [DerivedGeneralCategory.lookup_u0041]
+
+theorem freeform_digit : isFreeformClassAdmissibleGC 0x0030 = true := by
+  unfold isFreeformClassAdmissibleGC
+  rw [DerivedGeneralCategory.lookup_u0030]
+
+theorem freeform_ascii_space : isFreeformClassAdmissibleGC 0x0020 = true := by
+  unfold isFreeformClassAdmissibleGC
+  rw [DerivedGeneralCategory.lookup_u0020]
+
+theorem freeform_nbsp : isFreeformClassAdmissibleGC 0x00A0 = true := by
+  unfold isFreeformClassAdmissibleGC
+  rw [DerivedGeneralCategory.lookup_u00A0]
+
+theorem freeform_plus : isFreeformClassAdmissibleGC 0x002B = true := by
+  unfold isFreeformClassAdmissibleGC
+  rw [DerivedGeneralCategory.lookup_u002B]
+
+theorem freeform_dash : isFreeformClassAdmissibleGC 0x002D = true := by
+  unfold isFreeformClassAdmissibleGC
+  rw [DerivedGeneralCategory.lookup_u002D]
+
+theorem freeform_dollar : isFreeformClassAdmissibleGC 0x0024 = true := by
+  unfold isFreeformClassAdmissibleGC
+  rw [DerivedGeneralCategory.lookup_u0024]
+
+theorem freeform_paren_open : isFreeformClassAdmissibleGC 0x0028 = true := by
+  unfold isFreeformClassAdmissibleGC
+  rw [DerivedGeneralCategory.lookup_u0028]
+
+theorem freeform_rejects_null : isFreeformClassAdmissibleGC 0x0000 = false := by
+  unfold isFreeformClassAdmissibleGC
+  rw [DerivedGeneralCategory.lookup_u0000]
+
 theorem freeform_rejects_bidi_override :
-    isFreeformClassAdmissibleGC 0x202E = false := by native_decide
+    isFreeformClassAdmissibleGC 0x202E = false := by
+  unfold isFreeformClassAdmissibleGC
+  rw [DerivedGeneralCategory.lookup_u202E]
+
 theorem freeform_rejects_zwsp :
-    isFreeformClassAdmissibleGC 0x200B = false := by native_decide
+    isFreeformClassAdmissibleGC 0x200B = false := by
+  unfold isFreeformClassAdmissibleGC
+  rw [DerivedGeneralCategory.lookup_u200B]
+
 theorem freeform_rejects_line_sep :
-    isFreeformClassAdmissibleGC 0x2028 = false := by native_decide
+    isFreeformClassAdmissibleGC 0x2028 = false := by
+  unfold isFreeformClassAdmissibleGC
+  rw [DerivedGeneralCategory.lookup_u2028]
+
 theorem freeform_rejects_para_sep :
-    isFreeformClassAdmissibleGC 0x2029 = false := by native_decide
+    isFreeformClassAdmissibleGC 0x2029 = false := by
+  unfold isFreeformClassAdmissibleGC
+  rw [DerivedGeneralCategory.lookup_u2029]
+
 theorem freeform_rejects_bom :
-    isFreeformClassAdmissibleGC 0xFEFF = false := by native_decide
+    isFreeformClassAdmissibleGC 0xFEFF = false := by
+  unfold isFreeformClassAdmissibleGC
+  rw [DerivedGeneralCategory.lookup_uFEFF]
 
 end Unicode.Precis.Categories

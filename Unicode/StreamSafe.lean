@@ -27,10 +27,15 @@
 -/
 
 import Unicode.Normalization.Lookup
+import Unicode.Normalization.Reorder
 
 namespace Unicode.StreamSafe
 
-open Unicode.Normalization.Lookup (canonicalCombiningClass)
+open Unicode.Normalization.Lookup (canonicalCombiningClass
+  canonicalCombiningClass_of_lookupRow_none lookupRow_none_of_all_ne
+  lookupRow_none_of_all_outside)
+open Unicode.Normalization.Reorder (ccc_combining_acute)
+open Unicode.Generated.UnicodeData (rowsList)
 
 /-- UAX #15 § 13 limit: the maximum number of non-starter
     codepoints that may appear in a row before a stream-safe
@@ -99,17 +104,62 @@ def toStreamSafe (cps : Array Nat) : Array Nat :=
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 BASIC TEST VECTORS
+--
+-- The scan consults `canonicalCombiningClass` per element, which must
+-- never be reduced against the row table (see the fact-transport section
+-- of `Unicode.Normalization.Lookup`). Each involved codepoint's CCC is
+-- witnessed once — the a..c band by a single interval pass — and the
+-- fuel loops then evaluate by simp at concrete arguments only.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+/-- No pinned row carries a codepoint in the `a`..`c` band. -/
+theorem rows_omit_ascii_abc :
+    rowsList.all (fun r =>
+      decide (¬ (0x0061 ≤ r.codepoint ∧ r.codepoint ≤ 0x0063))) = true := by
+  decide +kernel
+
+/-- `CCC(U+0061) = 0` — LATIN SMALL LETTER A is a starter. -/
+theorem ccc_ascii_a : canonicalCombiningClass 0x0061 = 0 :=
+  canonicalCombiningClass_of_lookupRow_none 0x0061
+    (lookupRow_none_of_all_outside 0x0061 0x0063 0x0061
+      rows_omit_ascii_abc (by omega) (by omega))
+
+/-- `CCC(U+0062) = 0` — LATIN SMALL LETTER B is a starter. -/
+theorem ccc_ascii_b : canonicalCombiningClass 0x0062 = 0 :=
+  canonicalCombiningClass_of_lookupRow_none 0x0062
+    (lookupRow_none_of_all_outside 0x0061 0x0063 0x0062
+      rows_omit_ascii_abc (by omega) (by omega))
+
+/-- `CCC(U+0063) = 0` — LATIN SMALL LETTER C is a starter. -/
+theorem ccc_ascii_c : canonicalCombiningClass 0x0063 = 0 :=
+  canonicalCombiningClass_of_lookupRow_none 0x0063
+    (lookupRow_none_of_all_outside 0x0061 0x0063 0x0063
+      rows_omit_ascii_abc (by omega) (by omega))
+
+/-- COMBINING GRAPHEME JOINER has no UnicodeData row: it is the
+    starter the transformation inserts to split over-long runs. -/
+theorem rows_omit_cgj :
+    rowsList.all (fun r => decide (r.codepoint ≠ 0x034F)) = true := by
+  decide +kernel
+
+/-- `CCC(U+034F) = 0` — COMBINING GRAPHEME JOINER is a starter. -/
+theorem ccc_cgj : canonicalCombiningClass 0x034F = 0 :=
+  canonicalCombiningClass_of_lookupRow_none 0x034F
+    (lookupRow_none_of_all_ne 0x034F rows_omit_cgj)
+
 /-- ASCII letters are starters; the empty array is trivially Stream-Safe. -/
-theorem isStreamSafe_empty : isStreamSafe #[] = true := by native_decide
+theorem isStreamSafe_empty : isStreamSafe #[] = true := by decide
 
 theorem isStreamSafe_ascii :
-    isStreamSafe #[0x61, 0x62, 0x63] = true := by native_decide
+    isStreamSafe #[0x61, 0x62, 0x63] = true := by
+  simp [isStreamSafe, isStreamSafeGo, isNonStarter,
+        ccc_ascii_a, ccc_ascii_b, ccc_ascii_c]
 
 /-- A single combining mark following a starter is Stream-Safe. -/
 theorem isStreamSafe_one_combine :
-    isStreamSafe #[0x61, 0x0301] = true := by native_decide
+    isStreamSafe #[0x61, 0x0301] = true := by
+  simp [isStreamSafe, isStreamSafeGo, isNonStarter, streamSafeLimit,
+        ccc_ascii_a, ccc_combining_acute]
 
 /-- Thirty combining marks in a row are still Stream-Safe (boundary case). -/
 theorem isStreamSafe_thirty_marks :
@@ -120,7 +170,8 @@ theorem isStreamSafe_thirty_marks :
       0x0301, 0x0301, 0x0301, 0x0301, 0x0301,
       0x0301, 0x0301, 0x0301, 0x0301, 0x0301,
       0x0301, 0x0301, 0x0301, 0x0301, 0x0301] = true := by
-  native_decide
+  simp [isStreamSafe, isStreamSafeGo, isNonStarter, streamSafeLimit,
+        ccc_ascii_a, ccc_combining_acute]
 
 /-- Thirty-one combining marks in a row are NOT Stream-Safe. -/
 theorem isStreamSafe_thirtyone_marks :
@@ -132,7 +183,8 @@ theorem isStreamSafe_thirtyone_marks :
       0x0301, 0x0301, 0x0301, 0x0301, 0x0301,
       0x0301, 0x0301, 0x0301, 0x0301, 0x0301,
       0x0301] = false := by
-  native_decide
+  simp [isStreamSafe, isStreamSafeGo, isNonStarter, streamSafeLimit,
+        ccc_ascii_a, ccc_combining_acute]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 toStreamSafe IS A FIXPOINT FOR ALREADY-STREAM-SAFE INPUT
@@ -140,11 +192,15 @@ theorem isStreamSafe_thirtyone_marks :
 
 /-- The transformation is a no-op on ASCII text. -/
 theorem toStreamSafe_ascii :
-    toStreamSafe #[0x61, 0x62, 0x63] = #[0x61, 0x62, 0x63] := by native_decide
+    toStreamSafe #[0x61, 0x62, 0x63] = #[0x61, 0x62, 0x63] := by
+  simp [toStreamSafe, toStreamSafeGo, isNonStarter,
+        ccc_ascii_a, ccc_ascii_b, ccc_ascii_c]
 
 /-- The transformation is a no-op on a single combining mark. -/
 theorem toStreamSafe_one_combine :
-    toStreamSafe #[0x61, 0x0301] = #[0x61, 0x0301] := by native_decide
+    toStreamSafe #[0x61, 0x0301] = #[0x61, 0x0301] := by
+  simp [toStreamSafe, toStreamSafeGo, isNonStarter, streamSafeLimit,
+        ccc_ascii_a, ccc_combining_acute]
 
 /-- The transformation inserts a CGJ after the 30th non-starter
     in a 31-run, splitting the run. -/
@@ -166,7 +222,9 @@ theorem toStreamSafe_thirtyone_marks :
       0x0301, 0x0301, 0x0301, 0x0301, 0x0301,
       0x034F,
       0x0301]
-    toStreamSafe input = expected := by native_decide
+    toStreamSafe input = expected := by
+  simp [toStreamSafe, toStreamSafeGo, isNonStarter, streamSafeLimit, cgj,
+        ccc_ascii_a, ccc_combining_acute]
 
 /-- A run of 31 marks transforms into a Stream-Safe form. -/
 theorem toStreamSafe_makes_safe :
@@ -177,6 +235,9 @@ theorem toStreamSafe_makes_safe :
       0x0301, 0x0301, 0x0301, 0x0301, 0x0301,
       0x0301, 0x0301, 0x0301, 0x0301, 0x0301,
       0x0301, 0x0301, 0x0301, 0x0301, 0x0301,
-      0x0301]) = true := by native_decide
+      0x0301]) = true := by
+  simp [toStreamSafe, toStreamSafeGo, isStreamSafe, isStreamSafeGo,
+        isNonStarter, streamSafeLimit, cgj,
+        ccc_ascii_a, ccc_combining_acute, ccc_cgj]
 
 end Unicode.StreamSafe

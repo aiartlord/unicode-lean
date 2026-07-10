@@ -35,6 +35,12 @@ namespace Unicode.ResolvedScripts
 open Unicode.Generated.Scripts (Script lookupScript)
 open Unicode.Generated.ScriptExtensions (ScriptAbbrev scriptExtensionRanges)
 
+-- The test vectors below reduce `resolveScripts`, which consults the
+-- materialized `Scripts` and `ScriptExtensions` `List` tables.
+-- `decide +kernel` walks them linearly in the kernel; the raised
+-- recursion limit covers the deeper codepoints.
+set_option maxRecDepth 100000
+
 /-- Map a `Script` enum value to its 4-letter ISO-15924 abbreviation,
     when the abbreviation is in the `ScriptAbbrev` enum. Scripts
     without an entry (Common, Inherited, Unknown, and the rare
@@ -149,7 +155,7 @@ def scriptToAbbrev : Script → Option ScriptAbbrev
 def isCommonScript (cp : Nat) : Bool :=
   match lookupScript cp with
   | .Common => true
-  | _       => false
+  | otherScript => Function.const Script false otherScript
 
 /-- True iff the codepoint's Script is Inherited (Zinh).
     Inherited-script codepoints are combining marks that take their
@@ -157,7 +163,7 @@ def isCommonScript (cp : Nat) : Bool :=
 def isInheritedScript (cp : Nat) : Bool :=
   match lookupScript cp with
   | .Inherited => true
-  | _          => false
+  | otherScript => Function.const Script false otherScript
 
 /-- The resolved Script_Extensions of `cp`, returned as a list of
     abbreviations. If `cp` appears in `scriptExtensionRanges`, the
@@ -179,7 +185,7 @@ def resolveScripts (cp : Nat) : Array ScriptAbbrev :=
 
 /-- ASCII letter 'a' resolves to {Latn}. -/
 theorem resolve_ascii_a :
-    resolveScripts 0x0061 = #[.Latn] := by native_decide
+    resolveScripts 0x0061 = #[.Latn] := by decide +kernel
 
 /-- ASCII digit '0' has Script = Common, which has no
     `ScriptAbbrev` entry, so it resolves to the empty set.
@@ -187,26 +193,26 @@ theorem resolve_ascii_a :
     Single-Script intersection (they don't contribute and they
     don't fail). -/
 theorem resolve_ascii_0 :
-    resolveScripts 0x0030 = #[] := by native_decide
+    resolveScripts 0x0030 = #[] := by decide +kernel
 
 /-- Common-script detection: ASCII digit is Common. -/
-theorem isCommon_ascii_0 : isCommonScript 0x0030 = true := by native_decide
+theorem isCommon_ascii_0 : isCommonScript 0x0030 = true := by decide +kernel
 
 /-- Cyrillic small letter а (U+0430) resolves to {Cyrl}. -/
 theorem resolve_cyrillic_a :
-    resolveScripts 0x0430 = #[.Cyrl] := by native_decide
+    resolveScripts 0x0430 = #[.Cyrl] := by decide +kernel
 
 /-- Greek small letter alpha resolves to {Grek}. -/
 theorem resolve_greek_alpha :
-    resolveScripts 0x03B1 = #[.Grek] := by native_decide
+    resolveScripts 0x03B1 = #[.Grek] := by decide +kernel
 
 /-- Hebrew letter alef resolves to {Hebr}. -/
 theorem resolve_hebrew_alef :
-    resolveScripts 0x05D0 = #[.Hebr] := by native_decide
+    resolveScripts 0x05D0 = #[.Hebr] := by decide +kernel
 
 /-- A Han ideograph resolves to a non-empty SCX (typically several
     East-Asian scripts share a Han codepoint via Script_Extensions). -/
 theorem resolve_han_yi_nonempty :
-    (resolveScripts 0x4E00).size > 0 := by native_decide
+    (resolveScripts 0x4E00).size > 0 := by decide +kernel
 
 end Unicode.ResolvedScripts

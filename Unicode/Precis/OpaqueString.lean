@@ -25,7 +25,7 @@
   Idempotence is unconditional. The structural backbone — `toNFC`
   preserves the "no non-ASCII Zs" invariant — is proven in
   `Unicode.Precis.ZsPreservation` as a separate module to keep the
-  heavy UCD-table `native_decide` compilation costs out of this
+  heavy UCD-table `decide` compilation costs out of this
   module's build graph.
 -/
 

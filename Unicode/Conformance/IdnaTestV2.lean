@@ -212,7 +212,7 @@ structure Summary where
   deriving Repr, Inhabited
 
 /-- Mutable accumulator state for the single-pass summary fold. -/
-private structure Acc where
+structure Acc where
   index             : Nat
   total             : Nat
   strictTotal       : Nat
@@ -230,7 +230,7 @@ private structure Acc where
   deriving Inhabited
 
 /-- Step the accumulator through one row. -/
-private def stepAcc (acc : Acc) (r : Row) : Acc :=
+def stepAcc (acc : Acc) (r : Row) : Acc :=
   let i := acc.index
   let isStrict :=
     ! (r.unicodeHasErrors || r.asciiNHasErrors || r.asciiTHasErrors)
@@ -310,10 +310,9 @@ def diagnosticFor (i : Nat) : String :=
     s!"row {i}: out of bounds"
 
 /-- Render the full summary as a multi-line string. Used by the
-    out-of-band conformance reporter (`scripts/idna-conformance.sh`)
-    so the build itself stays cheap — `summary` is a single fold
-    over 6389 rows × 3 pipelines and runs to completion only when
-    callers explicitly request the report, not on every CI build. -/
+    out-of-band conformance reporter (`scripts/idna-conformance.sh`).
+    The theorem below remains build-time evidence; this report exists
+    for diagnostics when the IDNA conformance root is built explicitly. -/
 def report : String :=
   let s := summary
   let head :=
@@ -339,7 +338,7 @@ def report : String :=
 /-- The vendored test file's expected row count. Catches
     accidental truncation of `IdnaTestV2.txt` or parser
     regressions. -/
-theorem row_count : rows.size = 6389 := by native_decide
+theorem row_count : rows.size = 6389 := by decide
 
 /-- **Strict UTS #46 IDNA conformance** — one machine-checked
     theorem proving every row of `IdnaTestV2.txt` passes the
@@ -347,6 +346,6 @@ theorem row_count : rows.size = 6389 := by native_decide
     the test data exactly across `toUnicode`, `toAsciiN`, and
     `toAsciiT`. 19167 strict equality checks total. -/
 theorem strict_conformance : rows.all verifyRow = true := by
-  native_decide
+  decide
 
 end Unicode.Conformance.IdnaTestV2

@@ -21,18 +21,16 @@
   `Unicode.Generated.DerivedCoreProperties`; the two parsers are
   independent so adding InCB does not perturb the existing
   identifier-property exports.
+
+  The property values and the pinned `List` range table (`rangesList`)
+  live in `Unicode.Generated.IndicConjunctBreakData`; `lookupInCB`
+  consults that `List` so it reduces in the kernel. A build-time drift
+  gate (`#eval`) proves the materialized table matches a fresh parse.
 -/
 
-namespace Unicode.Generated.IndicConjunctBreak
+import Unicode.Generated.IndicConjunctBreakData
 
-/-- The three explicit InCB values per UAX #29; codepoints absent
-    from the source file have value `None`. -/
-inductive InCBClass where
-  | None
-  | Linker
-  | Extend
-  | Consonant
-  deriving DecidableEq, Repr, Inhabited
+namespace Unicode.Generated.IndicConjunctBreak
 
 @[inline]
 def trimS (s : String) : String := (String.trimAscii s).toString
@@ -67,15 +65,19 @@ def parseRow (rawLine : String) : Option (Nat × Nat × InCBClass) :=
   let stripped : String := (rawLine.takeWhile (· != '#')).toString
   let line := trimS stripped
   if line.isEmpty then none else
-  match String.splitOn line ";" with
-  | rngField :: tagField :: valField :: _ =>
+  let fields : Array String := (String.splitOn line ";").toArray
+  if fields.size ≥ 3 then
+    let rngField := fields[0]!
+    let tagField := fields[1]!
+    let valField := fields[2]!
     if trimS tagField = "InCB" then
       let (lo, hi) := parseRange (trimS rngField)
       match parseInCB? (trimS valField) with
       | some v => some (lo, hi, v)
       | none   => none
     else none
-  | irregularSplit => Function.const (List String) none irregularSplit
+  else
+    none
 
 /-- Raw text of `DerivedCoreProperties.txt`, embedded at compile time. -/
 def derivedCorePropertiesRaw : String :=
@@ -86,10 +88,23 @@ def ranges : Array (Nat × Nat × InCBClass) :=
   ((derivedCorePropertiesRaw.splitOn "\n").filterMap parseRow).toArray
 
 /-- Look up the InCB class for a codepoint. Returns `None` for
-    codepoints not listed in the source file. -/
+    codepoints not listed in the source file. Consults the materialized
+    `List` so a per-codepoint query reduces linearly in the kernel. -/
 def lookupInCB (cp : Nat) : InCBClass :=
-  match ranges.find? (fun r => r.1 ≤ cp ∧ cp ≤ r.2.1) with
+  match rangesList.find? (fun r => decide (r.1 ≤ cp ∧ cp ≤ r.2.1)) with
   | some r => r.2.2
   | none   => .None
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- DRIFT GATE
+--
+-- Build-time assertion (compiled `#eval`) that the materialized
+-- `rangesList` agrees exactly with a fresh parse of the pinned
+-- `DerivedCoreProperties.txt`. A mismatch aborts the build.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+#eval do
+  unless rangesList.toArray == ranges do
+    throw (IO.userError "IndicConjunctBreak drift: rangesList ≠ parsed ranges")
 
 end Unicode.Generated.IndicConjunctBreak

@@ -12,31 +12,10 @@
   `@missing: 0000..10FFFF; Other` header.
 -/
 
+import Unicode.Generated.WordBreakPropertyData
+
 namespace Unicode.Generated.WordBreakProperty
 
-/-- The 18 explicit Word_Break values per UAX #29 plus the implicit
-    `Other` default. -/
-inductive WBClass where
-  | Other
-  | CR
-  | LF
-  | Newline
-  | Extend
-  | ZWJ
-  | Regional_Indicator
-  | Format
-  | Katakana
-  | Hebrew_Letter
-  | ALetter
-  | Single_Quote
-  | Double_Quote
-  | MidNumLet
-  | MidLetter
-  | MidNum
-  | Numeric
-  | ExtendNumLet
-  | WSegSpace
-  deriving DecidableEq, Repr, Inhabited
 
 @[inline]
 def trimS (s : String) : String := (String.trimAscii s).toString
@@ -84,27 +63,38 @@ def parseRow (rawLine : String) : Option (Nat × Nat × WBClass) :=
   let stripped : String := (rawLine.takeWhile (· != '#')).toString
   let line := trimS stripped
   if line.isEmpty then none else
-  match String.splitOn line ";" with
-  | rngField :: clsField :: _ =>
+  let fields : Array String := (String.splitOn line ";").toArray
+  if fields.size ≥ 2 then
+    let rngField := fields[0]!
+    let clsField := fields[1]!
     let (lo, hi) := parseRange (trimS rngField)
     match parseWB? (trimS clsField) with
     | some c => some (lo, hi, c)
     | none   => none
-  | irregularSplit => Function.const (List String) none irregularSplit
+  else
+    none
 
 /-- Raw text of `WordBreakProperty.txt`, embedded at compile time. -/
 def wordBreakPropertyRaw : String :=
   include_str "../Ucd/WordBreakProperty.txt"
 
 /-- Parsed (lo, hi, class) ranges from the source file. -/
-def ranges : Array (Nat × Nat × WBClass) :=
+def rangesParsed : Array (Nat × Nat × WBClass) :=
   ((wordBreakPropertyRaw.splitOn "\n").filterMap parseRow).toArray
+
+/-- The materialized Word_Break range table. -/
+def ranges : Array (Nat × Nat × WBClass) := rangesList.toArray
 
 /-- Look up the Word_Break class for a codepoint. Returns `Other`
     for codepoints not covered by any explicit range. -/
 def lookupWB (cp : Nat) : WBClass :=
-  match ranges.find? (fun r => r.1 ≤ cp ∧ cp ≤ r.2.1) with
+  match rangesList.find? (fun r => r.1 ≤ cp ∧ cp ≤ r.2.1) with
   | some r => r.2.2
   | none   => .Other
+
+-- `rangesList` mirrors a fresh parse of the fixture, checked at build time.
+#eval do
+  unless rangesList.toArray == rangesParsed do
+    throw (IO.userError "WordBreakProperty drift: list ≠ parsed")
 
 end Unicode.Generated.WordBreakProperty

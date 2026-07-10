@@ -33,6 +33,8 @@ namespace Unicode.Normalization.NFC
 open Unicode.Normalization
 open Unicode.Generated
 
+set_option maxRecDepth 100000
+
 /-- Apply the canonical decomposition and reorder stages only — NFD.
     Available here alongside `toNFC` because downstream security
     algorithms (UTS #39 Confusables skeleton) use NFD, not NFC, as
@@ -44,13 +46,79 @@ def toNFD (cps : Array Nat) : Array Nat :=
 def toNFC (cps : Array Nat) : Array Nat :=
   Compose.compose (toNFD cps)
 
-/-- Look up a codepoint's `NFC_QuickCheck` value. Falls back to the
-    source file's `@missing` default (`Y`) when the codepoint is not
-    covered by any explicit range. -/
+/-- Look up a codepoint's `NFC_QuickCheck` value: the first pinned range
+    containing `cp` decides, and codepoints covered by no range fall
+    back to the source file's `@missing` default (`Y`). A linear scan
+    of the pinned ranges — they are pairwise disjoint, so scan order
+    cannot change the answer. -/
 def nfcQCValue (cp : Nat) : DerivedNormalizationProps.NFC_QC :=
-  match DerivedNormalizationProps.lookupNfcQCBinary cp with
-  | some v => v
-  | none   => DerivedNormalizationProps.defaultNfcQC
+  match DerivedNormalizationProps.nfcQC.toList.find?
+      (fun t => decide (t.1 ≤ cp ∧ cp ≤ t.2.1)) with
+  | some t => t.2.2
+  | none => DerivedNormalizationProps.defaultNfcQC
+
+/-- Every pinned NFC_QC range begins at or above U+0300. One linear
+    kernel pass over the range table. -/
+theorem nfcQC_ranges_above_0x0300 :
+    DerivedNormalizationProps.nfcQC.toList.all
+      (fun t => decide (0x0300 ≤ t.1)) = true := by
+  decide +kernel
+
+theorem nfcQCValue_below_first_range (cp : Nat) (h : cp < 0x0300) :
+    nfcQCValue cp = DerivedNormalizationProps.defaultNfcQC := by
+  unfold nfcQCValue
+  have hNone : DerivedNormalizationProps.nfcQC.toList.find?
+      (fun t => decide (t.1 ≤ cp ∧ cp ≤ t.2.1)) = none := by
+    rw [List.find?_eq_none]
+    intro t ht
+    have hGe : 0x0300 ≤ t.1 :=
+      of_decide_eq_true (List.all_eq_true.mp nfcQC_ranges_above_0x0300 t ht)
+    intro hIn
+    have hIn' := of_decide_eq_true hIn
+    omega
+  rw [hNone]
+
+theorem nfcQCValue_first_range_N (cp : Nat)
+    (hLo : 0x0340 ≤ cp) (hHi : cp ≤ 0x0341) :
+    nfcQCValue cp = .N := by
+  unfold nfcQCValue
+  have hHead : DerivedNormalizationProps.nfcQC.toList.find?
+      (fun t => decide (t.1 ≤ cp ∧ cp ≤ t.2.1))
+      = some (0x0340, 0x0341, DerivedNormalizationProps.NFC_QC.N) := by
+    have hCons : DerivedNormalizationProps.nfcQC.toList
+        = (0x0340, 0x0341, DerivedNormalizationProps.NFC_QC.N)
+            :: DerivedNormalizationProps.nfcQC.toList.tail := rfl
+    rewrite [hCons]
+    exact List.find?_cons_of_pos (decide_eq_true ⟨hLo, hHi⟩)
+  rw [hHead]
+
+/-- Every pinned row below U+0300 records `CCC = 0` — the sub-U+0300
+    rows exist only for their canonical decompositions. One linear
+    kernel pass over the row list. -/
+theorem rows_ccc_zero_below_0x0300 :
+    UnicodeData.rowsList.all (fun r =>
+      decide (r.codepoint < 0x0300 →
+        r.canonicalCombiningClass = 0)) = true := by
+  decide +kernel
+
+theorem ccc_below_first_nonzero_range (cp : Nat) (h : cp < 0x0300) :
+    Lookup.canonicalCombiningClass cp = 0 := by
+  unfold Lookup.canonicalCombiningClass
+  cases hL : Lookup.lookupRow cp with
+  | none => rfl
+  | some row =>
+    unfold Lookup.lookupRow at hL
+    simp only [UnicodeData.rows, List.find?_toArray] at hL
+    have hMem : row ∈ UnicodeData.rowsList := List.mem_of_find?_eq_some hL
+    have hCp : row.codepoint = cp :=
+      of_decide_eq_true
+        (List.find?_some
+          (p := fun (r : UnicodeData.UnicodeDataRow) =>
+            decide (r.codepoint = cp)) hL)
+    have hImp : row.codepoint < 0x0300 → row.canonicalCombiningClass = 0 :=
+      of_decide_eq_true
+        (List.all_eq_true.mp rows_ccc_zero_below_0x0300 row hMem)
+    exact hImp (by omega)
 
 /-- Decidable Bool analog of `Reorder.HasSortedRuns`: `true` iff every
     adjacent pair `(x, y)` with `y` a non-starter (CCC > 0) satisfies
@@ -134,31 +202,433 @@ def toNFCQuick (cps : Array Nat) : Array Nat :=
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- TEST VECTORS
+--
+-- Each `toNFC` vector is evaluated stage by stage — decompose, reorder,
+-- compose — through per-stage value lemmas, never by reducing the pipeline
+-- whole: the decompose and compose stages consult the row and pairs tables
+-- per codepoint, and those scans must only ever be witnessed by the
+-- linear-pass transports (`Unicode.Normalization.Lookup`,
+-- `Compose.primaryComposite?_none_of_all_ne` / `_some_of_pair`), never
+-- reduced. Codepoint facts already witnessed by `Reorder` / `Decompose`
+-- are reused; only the codepoints and pairs new to these vectors get
+-- fresh witnesses here.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+/-- LATIN CAPITAL LETTER H has no UnicodeData row (`CCC = 0`, no
+    decomposition), so it decomposes to its own singleton. -/
+theorem canonicalDecomposition_latin_H :
+    Lookup.canonicalDecomposition 0x0048 = #[] :=
+  Lookup.canonicalDecomposition_of_lookupRow_none 0x0048
+    (Lookup.lookupRow_none_of_all_ne 0x0048 Reorder.rows_omit_latin_H)
+
+/-- LATIN SMALL LETTER I likewise decomposes to its own singleton. -/
+theorem canonicalDecomposition_latin_i :
+    Lookup.canonicalDecomposition 0x0069 = #[] :=
+  Lookup.canonicalDecomposition_of_lookupRow_none 0x0069
+    (Lookup.lookupRow_none_of_all_ne 0x0069 Reorder.rows_omit_latin_i)
+
+/-- Every row carrying U+0327 records an empty canonical decomposition. -/
+theorem rows_decomp_cedilla :
+    UnicodeData.rowsList.all (fun r =>
+      decide (r.codepoint = 0x0327 →
+        r.canonicalDecomposition = #[])) = true := by
+  decide +kernel
+
+/-- COMBINING CEDILLA has no canonical decomposition. -/
+theorem canonicalDecomposition_cedilla :
+    Lookup.canonicalDecomposition 0x0327 = #[] :=
+  Lookup.canonicalDecomposition_of_hit 0x0327 #[]
+    Reorder.rows_hit_cedilla rows_decomp_cedilla
+
+/-- Every row carrying U+030A records `CCC = 230`. -/
+theorem rows_ccc_ring :
+    UnicodeData.rowsList.all (fun r =>
+      decide (r.codepoint = 0x030A →
+        r.canonicalCombiningClass = 230)) = true := by
+  decide +kernel
+
+/-- `CCC(U+030A) = 230` — COMBINING RING ABOVE. -/
+theorem ccc_combining_ring : Lookup.canonicalCombiningClass 0x030A = 230 :=
+  Lookup.canonicalCombiningClass_of_hit 0x030A 230
+    Decompose.rows_hit_ring rows_ccc_ring
+
+/-- HANGUL CHOSEONG KIYEOK has no UnicodeData row: jamo are starters
+    with algorithmic composition only. -/
+theorem rows_omit_choseong_kiyeok :
+    UnicodeData.rowsList.all (fun r => decide (r.codepoint ≠ 0x1100)) = true := by
+  decide +kernel
+
+/-- HANGUL JUNGSEONG A likewise has no UnicodeData row. -/
+theorem rows_omit_jungseong_a :
+    UnicodeData.rowsList.all (fun r => decide (r.codepoint ≠ 0x1161)) = true := by
+  decide +kernel
+
+/-- `CCC(U+1100) = 0` — HANGUL CHOSEONG KIYEOK is a starter. -/
+theorem ccc_choseong_kiyeok : Lookup.canonicalCombiningClass 0x1100 = 0 :=
+  Lookup.canonicalCombiningClass_of_lookupRow_none 0x1100
+    (Lookup.lookupRow_none_of_all_ne 0x1100 rows_omit_choseong_kiyeok)
+
+/-- `CCC(U+1161) = 0` — HANGUL JUNGSEONG A is a starter. -/
+theorem ccc_jungseong_a : Lookup.canonicalCombiningClass 0x1161 = 0 :=
+  Lookup.canonicalCombiningClass_of_lookupRow_none 0x1161
+    (Lookup.lookupRow_none_of_all_ne 0x1161 rows_omit_jungseong_a)
+
+/-- U+1100 has no canonical decomposition. -/
+theorem canonicalDecomposition_choseong_kiyeok :
+    Lookup.canonicalDecomposition 0x1100 = #[] :=
+  Lookup.canonicalDecomposition_of_lookupRow_none 0x1100
+    (Lookup.lookupRow_none_of_all_ne 0x1100 rows_omit_choseong_kiyeok)
+
+/-- U+1161 has no canonical decomposition. -/
+theorem canonicalDecomposition_jungseong_a :
+    Lookup.canonicalDecomposition 0x1161 = #[] :=
+  Lookup.canonicalDecomposition_of_lookupRow_none 0x1161
+    (Lookup.lookupRow_none_of_all_ne 0x1161 rows_omit_jungseong_a)
+
+/-- One fuel step on `H`: no decomposition, so its own singleton. -/
+theorem fcdf_latin_H (fuel : Nat) :
+    Decompose.fullCanonicalDecomposeFuel (fuel + 1) 0x0048 = #[0x0048] := by
+  rw [Decompose.fullCanonicalDecomposeFuel.eq_def]
+  simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
+        Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
+        canonicalDecomposition_latin_H]
+
+/-- One fuel step on `i`: no decomposition, so its own singleton. -/
+theorem fcdf_latin_i (fuel : Nat) :
+    Decompose.fullCanonicalDecomposeFuel (fuel + 1) 0x0069 = #[0x0069] := by
+  rw [Decompose.fullCanonicalDecomposeFuel.eq_def]
+  simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
+        Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
+        canonicalDecomposition_latin_i]
+
+/-- One fuel step on COMBINING CEDILLA: no decomposition, so its own
+    singleton. -/
+theorem fcdf_cedilla (fuel : Nat) :
+    Decompose.fullCanonicalDecomposeFuel (fuel + 1) 0x0327 = #[0x0327] := by
+  rw [Decompose.fullCanonicalDecomposeFuel.eq_def]
+  simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
+        Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
+        canonicalDecomposition_cedilla]
+
+/-- One fuel step on HANGUL CHOSEONG KIYEOK: its own singleton. -/
+theorem fcdf_choseong_kiyeok (fuel : Nat) :
+    Decompose.fullCanonicalDecomposeFuel (fuel + 1) 0x1100 = #[0x1100] := by
+  rw [Decompose.fullCanonicalDecomposeFuel.eq_def]
+  simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
+        Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
+        canonicalDecomposition_choseong_kiyeok]
+
+/-- One fuel step on HANGUL JUNGSEONG A: its own singleton. -/
+theorem fcdf_jungseong_a (fuel : Nat) :
+    Decompose.fullCanonicalDecomposeFuel (fuel + 1) 0x1161 = #[0x1161] := by
+  rw [Decompose.fullCanonicalDecomposeFuel.eq_def]
+  simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
+        Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
+        canonicalDecomposition_jungseong_a]
+
+/-- One fuel step on HANGUL SYLLABLE GA: the algorithmic LV expansion,
+    no table involved. -/
+theorem fcdf_hangul_GA (fuel : Nat) :
+    Decompose.fullCanonicalDecomposeFuel (fuel + 1) 0xAC00
+      = #[0x1100, 0x1161] := by
+  rw [Decompose.fullCanonicalDecomposeFuel.eq_def]
+  simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
+        Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
+        Hangul.LBase, Hangul.VBase, Hangul.LCount, Hangul.VCount]
+
+/-- No pairs-table entry composes `(H, i)`. -/
+theorem pairs_no_H_i :
+    CanonicalComposition.compositionPairs.all
+      (fun t => decide (¬ (t.1 = 0x0048 ∧ t.2.1 = 0x0069))) = true := by
+  decide +kernel
+
+/-- `(H, i)` does not primary-compose. -/
+theorem primaryComposite_H_i :
+    Compose.primaryComposite? 0x0048 0x0069 = none :=
+  Compose.primaryComposite?_none_of_all_ne 0x0048 0x0069 (by decide) pairs_no_H_i
+
+/-- No pairs-table entry composes `(A, cedilla)`. -/
+theorem pairs_no_A_cedilla :
+    CanonicalComposition.compositionPairs.all
+      (fun t => decide (¬ (t.1 = 0x0041 ∧ t.2.1 = 0x0327))) = true := by
+  decide +kernel
+
+/-- `(A, cedilla)` does not primary-compose. -/
+theorem primaryComposite_A_cedilla :
+    Compose.primaryComposite? 0x0041 0x0327 = none :=
+  Compose.primaryComposite?_none_of_all_ne 0x0041 0x0327 (by decide)
+    pairs_no_A_cedilla
+
+/-- The pairs table carries the `(A, grave)` composition. -/
+theorem pairs_hit_A_grave :
+    CanonicalComposition.compositionPairs.any
+      (fun t => decide (t.1 = 0x0041) && decide (t.2.1 = 0x0300)) = true := by
+  decide +kernel
+
+/-- Every pairs-table entry keyed `(A, grave)` composes to U+00C0. -/
+theorem pairs_pin_A_grave :
+    CanonicalComposition.compositionPairs.all
+      (fun t => decide ((t.1 = 0x0041 ∧ t.2.1 = 0x0300) →
+        t.2.2 = 0x00C0)) = true := by
+  decide +kernel
+
+/-- `(A, grave)` primary-composes to LATIN CAPITAL LETTER A WITH GRAVE. -/
+theorem primaryComposite_A_grave :
+    Compose.primaryComposite? 0x0041 0x0300 = some 0x00C0 :=
+  Compose.primaryComposite?_some_of_pair 0x0041 0x0300 0x00C0 (by decide)
+    pairs_hit_A_grave pairs_pin_A_grave
+
+/-- The pairs table carries the `(A, ring above)` composition. -/
+theorem pairs_hit_A_ring :
+    CanonicalComposition.compositionPairs.any
+      (fun t => decide (t.1 = 0x0041) && decide (t.2.1 = 0x030A)) = true := by
+  decide +kernel
+
+/-- Every pairs-table entry keyed `(A, ring above)` composes to U+00C5. -/
+theorem pairs_pin_A_ring :
+    CanonicalComposition.compositionPairs.all
+      (fun t => decide ((t.1 = 0x0041 ∧ t.2.1 = 0x030A) →
+        t.2.2 = 0x00C5)) = true := by
+  decide +kernel
+
+/-- `(A, ring above)` primary-composes to LATIN CAPITAL LETTER A WITH
+    RING ABOVE. -/
+theorem primaryComposite_A_ring :
+    Compose.primaryComposite? 0x0041 0x030A = some 0x00C5 :=
+  Compose.primaryComposite?_some_of_pair 0x0041 0x030A 0x00C5 (by decide)
+    pairs_hit_A_ring pairs_pin_A_ring
+
+/-- Decompose stage on "Hi": both terminal. -/
+theorem decomposeSequence_ascii :
+    Decompose.decomposeSequence #[0x0048, 0x0069] = #[0x0048, 0x0069] := by
+  simp only [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose,
+             Decompose.maxDepth]
+  simp [fcdf_latin_H 31, fcdf_latin_i 31]
+
+/-- Decompose stage on `A + grave`: both terminal. -/
+theorem decomposeSequence_A_grave_pair :
+    Decompose.decomposeSequence #[0x0041, 0x0300] = #[0x0041, 0x0300] := by
+  simp only [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose,
+             Decompose.maxDepth]
+  simp [Decompose.fcdf_latin_A 31, Decompose.fcdf_grave 31]
+
+/-- Decompose stage on `À`: one expansion step. -/
+theorem decomposeSequence_A_grave_precomposed :
+    Decompose.decomposeSequence #[0x00C0] = #[0x0041, 0x0300] := by
+  simp only [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose,
+             Decompose.maxDepth]
+  simp [Decompose.fcdf_A_grave 30]
+
+/-- Decompose stage on ANGSTROM SIGN: the recursive two-step expansion. -/
+theorem decomposeSequence_angstrom :
+    Decompose.decomposeSequence #[0x212B] = #[0x0041, 0x030A] := by
+  simp only [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose,
+             Decompose.maxDepth]
+  simp [Decompose.fcdf_angstrom 29]
+
+/-- Decompose stage on `A + grave + cedilla`: all terminal. -/
+theorem decomposeSequence_A_grave_cedilla :
+    Decompose.decomposeSequence #[0x0041, 0x0300, 0x0327]
+      = #[0x0041, 0x0300, 0x0327] := by
+  simp only [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose,
+             Decompose.maxDepth]
+  simp [Decompose.fcdf_latin_A 31, Decompose.fcdf_grave 31, fcdf_cedilla 31]
+
+/-- Decompose stage on the L+V jamo pair: both terminal. -/
+theorem decomposeSequence_jamo_LV :
+    Decompose.decomposeSequence #[0x1100, 0x1161] = #[0x1100, 0x1161] := by
+  simp only [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose,
+             Decompose.maxDepth]
+  simp [fcdf_choseong_kiyeok 31, fcdf_jungseong_a 31]
+
+/-- Decompose stage on HANGUL SYLLABLE GA: the algorithmic expansion. -/
+theorem decomposeSequence_hangul_GA :
+    Decompose.decomposeSequence #[0xAC00] = #[0x1100, 0x1161] := by
+  simp only [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose,
+             Decompose.maxDepth]
+  simp [fcdf_hangul_GA 31]
+
+/-- Reorder stage on `A + grave`: already in canonical order. -/
+theorem reorder_A_grave :
+    Reorder.reorder #[0x0041, 0x0300] = #[0x0041, 0x0300] := by
+  simp [Reorder.reorder, Reorder.stepReorder, Reorder.flushRun,
+        Reorder.sortNonStarterRun, Reorder.insertByCCC,
+        Reorder.ccc_latin_A, Reorder.ccc_combining_grave]
+
+/-- Reorder stage on `A + ring above`: already in canonical order. -/
+theorem reorder_A_ring :
+    Reorder.reorder #[0x0041, 0x030A] = #[0x0041, 0x030A] := by
+  simp [Reorder.reorder, Reorder.stepReorder, Reorder.flushRun,
+        Reorder.sortNonStarterRun, Reorder.insertByCCC,
+        Reorder.ccc_latin_A, ccc_combining_ring]
+
+/-- Reorder stage on the L+V jamo pair: starters pass through. -/
+theorem reorder_jamo_LV :
+    Reorder.reorder #[0x1100, 0x1161] = #[0x1100, 0x1161] := by
+  simp [Reorder.reorder, Reorder.stepReorder, Reorder.flushRun,
+        Reorder.sortNonStarterRun, ccc_choseong_kiyeok, ccc_jungseong_a]
+
+/-- One compose step: `H` registers as the active starter. -/
+theorem stepCompose_init_H :
+    Compose.stepCompose Compose.initialState 0x0048
+      = { emitted := #[], starter := some 0x0048, buffer := [], maxCCC := 0 } := by
+  rw [Compose.stepCompose.eq_def]
+  simp [Compose.initialState, Reorder.ccc_latin_H]
+
+/-- One compose step: `i` after `H` — no composition, `H` emits and `i`
+    takes over as starter. -/
+theorem stepCompose_H_i :
+    Compose.stepCompose
+      { emitted := #[], starter := some 0x0048, buffer := [], maxCCC := 0 } 0x0069
+      = { emitted := #[0x0048], starter := some 0x0069, buffer := [],
+          maxCCC := 0 } := by
+  rw [Compose.stepCompose.eq_def]
+  simp [Reorder.ccc_latin_i, primaryComposite_H_i]
+
+/-- One compose step: `A` registers as the active starter. -/
+theorem stepCompose_init_A :
+    Compose.stepCompose Compose.initialState 0x0041
+      = { emitted := #[], starter := some 0x0041, buffer := [], maxCCC := 0 } := by
+  rw [Compose.stepCompose.eq_def]
+  simp [Compose.initialState, Reorder.ccc_latin_A]
+
+/-- One compose step: grave after `A` primary-composes to `À`. -/
+theorem stepCompose_A_grave :
+    Compose.stepCompose
+      { emitted := #[], starter := some 0x0041, buffer := [], maxCCC := 0 } 0x0300
+      = { emitted := #[], starter := some 0x00C0, buffer := [], maxCCC := 0 } := by
+  rw [Compose.stepCompose.eq_def]
+  simp [Reorder.ccc_combining_grave, primaryComposite_A_grave]
+
+/-- One compose step: ring above after `A` primary-composes to `Å`. -/
+theorem stepCompose_A_ring :
+    Compose.stepCompose
+      { emitted := #[], starter := some 0x0041, buffer := [], maxCCC := 0 } 0x030A
+      = { emitted := #[], starter := some 0x00C5, buffer := [], maxCCC := 0 } := by
+  rw [Compose.stepCompose.eq_def]
+  simp [ccc_combining_ring, primaryComposite_A_ring]
+
+/-- One compose step: cedilla after `A` — no `A+cedilla` form, so it
+    buffers. -/
+theorem stepCompose_A_cedilla :
+    Compose.stepCompose
+      { emitted := #[], starter := some 0x0041, buffer := [], maxCCC := 0 } 0x0327
+      = { emitted := #[], starter := some 0x0041, buffer := [0x0327],
+          maxCCC := 202 } := by
+  rw [Compose.stepCompose.eq_def]
+  simp [Reorder.ccc_combining_cedilla, primaryComposite_A_cedilla]
+
+/-- One compose step: grave past the buffered cedilla (CCC 230 > 202)
+    still reaches the starter and composes to `À`. -/
+theorem stepCompose_A_cedilla_grave :
+    Compose.stepCompose
+      { emitted := #[], starter := some 0x0041, buffer := [0x0327],
+        maxCCC := 202 } 0x0300
+      = { emitted := #[], starter := some 0x00C0, buffer := [0x0327],
+          maxCCC := 202 } := by
+  rw [Compose.stepCompose.eq_def]
+  simp [Reorder.ccc_combining_grave, primaryComposite_A_grave]
+
+/-- One compose step: HANGUL CHOSEONG KIYEOK registers as starter. -/
+theorem stepCompose_init_choseong :
+    Compose.stepCompose Compose.initialState 0x1100
+      = { emitted := #[], starter := some 0x1100, buffer := [], maxCCC := 0 } := by
+  rw [Compose.stepCompose.eq_def]
+  simp [Compose.initialState, ccc_choseong_kiyeok]
+
+/-- One compose step: JUNGSEONG A after CHOSEONG KIYEOK composes
+    algorithmically to HANGUL SYLLABLE GA. -/
+theorem stepCompose_LV :
+    Compose.stepCompose
+      { emitted := #[], starter := some 0x1100, buffer := [], maxCCC := 0 } 0x1161
+      = { emitted := #[], starter := some 0xAC00, buffer := [], maxCCC := 0 } := by
+  rw [Compose.stepCompose.eq_def]
+  simp [ccc_jungseong_a, Compose.primary_hangul_LV]
+
+/-- Compose stage on "Hi": nothing composes. -/
+theorem compose_ascii :
+    Compose.compose #[0x0048, 0x0069] = #[0x0048, 0x0069] := by
+  rewrite [Compose.compose.eq_def]
+  rewrite [← Array.foldl_toList, List.toList_toArray]
+  rewrite [List.foldl_cons, List.foldl_cons, List.foldl_nil]
+  rewrite [stepCompose_init_H, stepCompose_H_i]
+  rfl
+
+/-- Compose stage on `A + grave`: the pair composes to `À`. -/
+theorem compose_A_grave :
+    Compose.compose #[0x0041, 0x0300] = #[0x00C0] := by
+  rewrite [Compose.compose.eq_def]
+  rewrite [← Array.foldl_toList, List.toList_toArray]
+  rewrite [List.foldl_cons, List.foldl_cons, List.foldl_nil]
+  rewrite [stepCompose_init_A, stepCompose_A_grave]
+  rfl
+
+/-- Compose stage on `A + ring above`: the pair composes to `Å`. -/
+theorem compose_A_ring :
+    Compose.compose #[0x0041, 0x030A] = #[0x00C5] := by
+  rewrite [Compose.compose.eq_def]
+  rewrite [← Array.foldl_toList, List.toList_toArray]
+  rewrite [List.foldl_cons, List.foldl_cons, List.foldl_nil]
+  rewrite [stepCompose_init_A, stepCompose_A_ring]
+  rfl
+
+/-- Compose stage on `A + cedilla + grave`: cedilla buffers (no
+    `A+cedilla` form), grave still reaches the starter and composes. -/
+theorem compose_A_cedilla_grave :
+    Compose.compose #[0x0041, 0x0327, 0x0300] = #[0x00C0, 0x0327] := by
+  rewrite [Compose.compose.eq_def]
+  rewrite [← Array.foldl_toList, List.toList_toArray]
+  rewrite [List.foldl_cons, List.foldl_cons, List.foldl_cons, List.foldl_nil]
+  rewrite [stepCompose_init_A, stepCompose_A_cedilla,
+           stepCompose_A_cedilla_grave]
+  rfl
+
+/-- Compose stage on the L+V jamo pair: algorithmic composition to GA. -/
+theorem compose_jamo_LV :
+    Compose.compose #[0x1100, 0x1161] = #[0xAC00] := by
+  rewrite [Compose.compose.eq_def]
+  rewrite [← Array.foldl_toList, List.toList_toArray]
+  rewrite [List.foldl_cons, List.foldl_cons, List.foldl_nil]
+  rewrite [stepCompose_init_choseong, stepCompose_LV]
+  rfl
+
 /-- Empty sequence. -/
-theorem toNFC_empty : toNFC #[] = #[] := by native_decide
-theorem isNFC_empty : isNFC #[] = true := by native_decide
+theorem toNFC_empty : toNFC #[] = #[] := by decide
+theorem isNFC_empty : isNFC #[] = true := by decide
 
 /-- Pure ASCII is always in NFC. -/
 theorem toNFC_ascii :
-    toNFC #[0x0048, 0x0069] = #[0x0048, 0x0069] := by native_decide  -- "Hi"
-theorem isNFC_ascii : isNFC #[0x0048, 0x0069] = true := by native_decide
+    toNFC #[0x0048, 0x0069] = #[0x0048, 0x0069] := by  -- "Hi"
+  rewrite [toNFC.eq_def, toNFD.eq_def]
+  rw [decomposeSequence_ascii, Reorder.reorder_ascii, compose_ascii]
+theorem isNFC_ascii : isNFC #[0x0048, 0x0069] = true := by
+  rewrite [isNFC.eq_def]
+  rewrite [toNFC_ascii]
+  decide
 
 /-- Decomposed form reduces to precomposed under NFC. -/
 theorem toNFC_composes_A_grave :
-    toNFC #[0x0041, 0x0300] = #[0x00C0] := by native_decide
+    toNFC #[0x0041, 0x0300] = #[0x00C0] := by
+  rewrite [toNFC.eq_def, toNFD.eq_def]
+  rw [decomposeSequence_A_grave_pair, reorder_A_grave, compose_A_grave]
 
 /-- Precomposed form is already in NFC (decomposes then recomposes). -/
 theorem toNFC_idempotent_on_A_grave :
-    toNFC #[0x00C0] = #[0x00C0] := by native_decide
-theorem isNFC_A_grave : isNFC #[0x00C0] = true := by native_decide
+    toNFC #[0x00C0] = #[0x00C0] := by
+  rewrite [toNFC.eq_def, toNFD.eq_def]
+  rw [decomposeSequence_A_grave_precomposed, reorder_A_grave, compose_A_grave]
+theorem isNFC_A_grave : isNFC #[0x00C0] = true := by
+  rewrite [isNFC.eq_def]
+  rewrite [toNFC_idempotent_on_A_grave]
+  decide
 
 /-- ANGSTROM SIGN is NOT in NFC — its canonical decomposition recomposes
     to `LATIN CAPITAL A WITH RING ABOVE` (0x00C5), not back to ANGSTROM
     (0x212B is a Full_Composition_Exclusion). -/
 theorem toNFC_angstrom_to_A_ring :
-    toNFC #[0x212B] = #[0x00C5] := by native_decide
+    toNFC #[0x212B] = #[0x00C5] := by
+  rewrite [toNFC.eq_def, toNFD.eq_def]
+  rw [decomposeSequence_angstrom, reorder_A_ring, compose_A_ring]
 
 /-- Out-of-order combining marks get reordered during the NFC pipeline. -/
 theorem toNFC_reorders_then_composes :
@@ -170,34 +640,60 @@ theorem toNFC_reorders_then_composes :
     --              then grave (CCC=230 > 202 buffered) — can it compose?
     --              primaryComposite?(A, grave) = À; starter := À
     --   output: À + cedilla
-    toNFC #[0x0041, 0x0300, 0x0327] = #[0x00C0, 0x0327] := by native_decide
+    toNFC #[0x0041, 0x0300, 0x0327] = #[0x00C0, 0x0327] := by
+  rewrite [toNFC.eq_def, toNFD.eq_def]
+  rw [decomposeSequence_A_grave_cedilla, Reorder.reorder_swap,
+      compose_A_cedilla_grave]
 
 /-- Hangul: decomposed jamo LV compose to the precomposed syllable. -/
 theorem toNFC_hangul_compose :
-    toNFC #[0x1100, 0x1161] = #[0xAC00] := by native_decide
+    toNFC #[0x1100, 0x1161] = #[0xAC00] := by
+  rewrite [toNFC.eq_def, toNFD.eq_def]
+  rw [decomposeSequence_jamo_LV, reorder_jamo_LV, compose_jamo_LV]
 
 /-- Hangul: precomposed syllable is already in NFC. Decomposes to jamo,
     reorders (no-op for starters), recomposes back. -/
 theorem toNFC_hangul_idempotent :
-    toNFC #[0xAC00] = #[0xAC00] := by native_decide
-theorem isNFC_hangul : isNFC #[0xAC00] = true := by native_decide
+    toNFC #[0xAC00] = #[0xAC00] := by
+  rewrite [toNFC.eq_def, toNFD.eq_def]
+  rw [decomposeSequence_hangul_GA, reorder_jamo_LV, compose_jamo_LV]
+theorem isNFC_hangul : isNFC #[0xAC00] = true := by
+  rewrite [isNFC.eq_def]
+  rewrite [toNFC_hangul_idempotent]
+  decide
 
 /-- `isNFCQuickCheck` is conservative: pure ASCII and standalone
     precomposed `À` both have `NFC_QC = Y` and the quick check
     returns `true`. -/
-theorem quickCheck_ascii : isNFCQuickCheck #[0x0048, 0x0069] = true := by native_decide
+theorem quickCheck_ascii : isNFCQuickCheck #[0x0048, 0x0069] = true := by
+  have hH : nfcQCValue 0x0048 = .Y :=
+    nfcQCValue_below_first_range 0x0048 (by decide)
+  have hI : nfcQCValue 0x0069 = .Y :=
+    nfcQCValue_below_first_range 0x0069 (by decide)
+  have hHccc : Lookup.canonicalCombiningClass 0x0048 = 0 :=
+    ccc_below_first_nonzero_range 0x0048 (by decide)
+  have hIccc : Lookup.canonicalCombiningClass 0x0069 = 0 :=
+    ccc_below_first_nonzero_range 0x0069 (by decide)
+  have hSorted : hasSortedRunsBool [0x0048, 0x0069] = true := by
+    unfold hasSortedRunsBool
+    simp [hHccc, hIccc]
+  unfold isNFCQuickCheck
+  simp [hH, hI, hSorted]
 
 /-- `isNFCQuickCheck` returns `false` for `NFC_QC = N` input — a
     codepoint that definitely needs normalization. COMBINING GRAVE
     TONE MARK (U+0340) has `NFC_QC = N` per the pinned tables. -/
-theorem quickCheck_nfc_N : isNFCQuickCheck #[0x0340] = false := by native_decide
+theorem quickCheck_nfc_N : isNFCQuickCheck #[0x0340] = false := by
+  have hN : nfcQCValue 0x0340 = .N :=
+    nfcQCValue_first_range_N 0x0340 (by decide) (by decide)
+  simp [isNFCQuickCheck, hN]
 
 /-- `nfcQCValue` default: `A` has `NFC_QC = Y` (not listed in the
     pinned table; falls back to the `defaultNfcQC`). -/
-theorem nfcQC_default_ascii : nfcQCValue 0x0041 = .Y := by native_decide
+theorem nfcQC_default_ascii : nfcQCValue 0x0041 = .Y := by decide
 
 /-- `nfcQCValue` explicit: U+0340 is listed with `NFC_QC = N`. -/
-theorem nfcQC_explicit_N : nfcQCValue 0x0340 = .N := by native_decide
+theorem nfcQC_explicit_N : nfcQCValue 0x0340 = .N := by decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- WIDTH-COMPAT NON-INTERFERENCE

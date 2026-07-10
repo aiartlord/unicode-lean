@@ -91,19 +91,19 @@ theorem unwrap_valid (v : ValidatedUtf8) :
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 theorem empty_validates : (validateUtf8 ByteArray.empty).isSome = true := by
-  native_decide
+  decide
 
 theorem hello_validates : (validateUtf8 "hello".toUTF8).isSome = true := by
-  native_decide
+  decide
 
 theorem accented_validates : (validateUtf8 "héllo".toUTF8).isSome = true := by
-  native_decide
+  decide
 
 theorem cjk_validates : (validateUtf8 "日本".toUTF8).isSome = true := by
-  native_decide
+  decide
 
 theorem bare_continuation_rejected :
     validateUtf8 (ByteArray.mk #[0x80]) = none := by
-  native_decide
+  decide
 
 end Unicode.Codec.ValidatedUtf8

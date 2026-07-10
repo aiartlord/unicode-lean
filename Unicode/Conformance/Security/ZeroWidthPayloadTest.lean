@@ -3,7 +3,7 @@
 
   Conformance proof for the C3 family.  Folds the universal
   `Unicode.Security.Fixture` parser over the hand-curated
-  `ZeroWidthPayloadTest.txt` fixture and `native_decide`-closes
+  `ZeroWidthPayloadTest.txt` fixture and `decide`-closes
   the predicate that every row's expected verdict matches what
   `Unicode.Security.Covert.ZeroWidthPayload.detect` produces.
 -/
@@ -52,7 +52,7 @@ def projectPositions (c : Classification) : Array Nat :=
 /-- Validate the C3 verdict's metadata fields against the row's
     column-4 attribution.  Keys recognised: `zwsp_count`,
     `zwj_count`, `wj_count`, `nnbsp_count`. -/
-private def metadataMatches (v : Verdict)
+def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey "zwsp_count"  v.zwspCount &&
   attr.checkNatKey "zwj_count"   v.zwjCount &&
@@ -76,33 +76,33 @@ def verifyRow (r : Row) : Bool :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Every fixture row's detector verdict matches its expected verdict. -/
-theorem all_rows_pass : rows.all verifyRow = true := by native_decide
+theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate (catches fixture corruption / accidental rewrites). -/
-theorem row_count : rows.size = 28 := by native_decide
+theorem row_count : rows.size = 28 := by decide
 
 /-- Section coverage gates. -/
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by decide
 
 theorem covers_binary_payload :
     (rows.filter (·.sectionName = "BinaryPayload")).size ≥ 5 := by
-  native_decide
+  decide
 
 theorem covers_word_joiner :
     (rows.filter (·.sectionName = "WordJoinerInjection")).size ≥ 4 := by
-  native_decide
+  decide
 
 theorem covers_ai_watermark :
     (rows.filter (·.sectionName = "AIWatermarkNNBSP")).size ≥ 2 := by
-  native_decide
+  decide
 
 theorem covers_bare_zero_width :
     (rows.filter (·.sectionName = "BareZeroWidth")).size ≥ 4 := by
-  native_decide
+  decide
 
 theorem covers_annotation_misuse :
     (rows.filter (·.sectionName = "AnnotationMisuse")).size ≥ 5 := by
-  native_decide
+  decide
 
 end Unicode.Conformance.Security.ZeroWidthPayloadTest

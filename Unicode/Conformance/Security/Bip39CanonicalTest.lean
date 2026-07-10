@@ -3,7 +3,7 @@
 
   Conformance proof for the K1 family.  Folds the universal
   `Unicode.Security.Fixture` parser over the hand-curated
-  `Bip39CanonicalTest.txt` fixture and `native_decide`-closes
+  `Bip39CanonicalTest.txt` fixture and `decide`-closes
   the predicate that every row's expected verdict matches what
   `Unicode.Security.Crypto.Bip39Canonical.detect` produces.
 -/
@@ -67,12 +67,15 @@ def projectPositions (c : Classification) : Array Nat :=
     column-4 attribution.  Recognised keys: `wordCount` (always
     present), `language` (present only for clear verdicts; on
     hazard verdicts the attribution must not assert a language). -/
-private def metadataMatches (v : Verdict)
+def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   let languageStr :=
     match v.classify with
     | .clear lang        => langToString lang
-    | .hazard _sub _ps   => ""
+    | .hazard sub positions =>
+      Function.const SubThreat
+        (Function.const (Array Nat) "" positions)
+        sub
   attr.checkNatKey    "wordCount" v.wordCount &&
   attr.checkStringKey "language"  languageStr
 
@@ -90,43 +93,43 @@ def verifyRow (r : Row) : Bool :=
 
 /-- Every fixture row's detector verdict matches its expected
     verdict. -/
-theorem all_rows_pass : rows.all verifyRow = true := by native_decide
+theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 20 := by native_decide
+theorem row_count : rows.size = 20 := by decide
 
 theorem covers_clear :
     (rows.filter (fun r => r.expectedKind = .clear)).size ≥ 7 := by
-  native_decide
+  decide
 
 theorem covers_non_nfkd :
     (rows.filter (fun r =>
       r.expectedSubThreat = some "NonNFKD")).size ≥ 4 := by
-  native_decide
+  decide
 
 theorem covers_trailing_whitespace :
     (rows.filter (fun r =>
       r.expectedSubThreat = some "TrailingWhitespace")).size ≥ 2 := by
-  native_decide
+  decide
 
 theorem covers_whitespace_anomaly :
     (rows.filter (fun r =>
       r.expectedSubThreat = some "WhitespaceAnomaly")).size ≥ 2 := by
-  native_decide
+  decide
 
 theorem covers_mixed_case :
     (rows.filter (fun r =>
       r.expectedSubThreat = some "MixedCase")).size ≥ 2 := by
-  native_decide
+  decide
 
 theorem covers_wordlist_mismatch :
     (rows.filter (fun r =>
       r.expectedSubThreat = some "WordlistMismatch")).size ≥ 2 := by
-  native_decide
+  decide
 
 theorem covers_language_ambiguous :
     (rows.filter (fun r =>
       r.expectedSubThreat = some "LanguageAmbiguous")).size ≥ 1 := by
-  native_decide
+  decide
 
 end Unicode.Conformance.Security.Bip39CanonicalTest

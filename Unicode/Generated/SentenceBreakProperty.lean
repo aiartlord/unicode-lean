@@ -12,27 +12,10 @@
   `@missing: 0000..10FFFF; Other` header.
 -/
 
+import Unicode.Generated.SentenceBreakPropertyData
+
 namespace Unicode.Generated.SentenceBreakProperty
 
-/-- The 14 explicit Sentence_Break values per UAX #29 plus the
-    implicit `Other` default. -/
-inductive SBClass where
-  | Other
-  | CR
-  | LF
-  | Extend
-  | Sep
-  | Format
-  | Sp
-  | Lower
-  | Upper
-  | OLetter
-  | Numeric
-  | ATerm
-  | SContinue
-  | STerm
-  | Close
-  deriving DecidableEq, Repr, Inhabited
 
 @[inline]
 def trimS (s : String) : String := (String.trimAscii s).toString
@@ -74,23 +57,34 @@ def parseRow (rawLine : String) : Option (Nat × Nat × SBClass) :=
   let stripped : String := (rawLine.takeWhile (· != '#')).toString
   let line := trimS stripped
   if line.isEmpty then none else
-  match String.splitOn line ";" with
-  | rngField :: clsField :: _ =>
+  let fields : Array String := (String.splitOn line ";").toArray
+  if fields.size ≥ 2 then
+    let rngField := fields[0]!
+    let clsField := fields[1]!
     let (lo, hi) := parseRange (trimS rngField)
     match parseSB? (trimS clsField) with
     | some c => some (lo, hi, c)
     | none   => none
-  | irregularSplit => Function.const (List String) none irregularSplit
+  else
+    none
 
 def sentenceBreakPropertyRaw : String :=
   include_str "../Ucd/SentenceBreakProperty.txt"
 
-def ranges : Array (Nat × Nat × SBClass) :=
+def rangesParsed : Array (Nat × Nat × SBClass) :=
   ((sentenceBreakPropertyRaw.splitOn "\n").filterMap parseRow).toArray
 
+/-- The materialized Sentence_Break range table. -/
+def ranges : Array (Nat × Nat × SBClass) := rangesList.toArray
+
 def lookupSB (cp : Nat) : SBClass :=
-  match ranges.find? (fun r => r.1 ≤ cp ∧ cp ≤ r.2.1) with
+  match rangesList.find? (fun r => r.1 ≤ cp ∧ cp ≤ r.2.1) with
   | some r => r.2.2
   | none   => .Other
+
+-- `rangesList` mirrors a fresh parse of the fixture, checked at build time.
+#eval do
+  unless rangesList.toArray == rangesParsed do
+    throw (IO.userError "SentenceBreakProperty drift: list ≠ parsed")
 
 end Unicode.Generated.SentenceBreakProperty

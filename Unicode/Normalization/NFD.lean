@@ -160,10 +160,57 @@ open Unicode.Generated
 /-- Look up a codepoint's `NFD_QuickCheck` value. Falls back to the
     source file's `@missing` default (`Y`). -/
 def nfdQCValue (cp : Nat) : DerivedNormalizationProps.NFC_QC :=
-  match DerivedNormalizationProps.nfdQC.findSome?
-          (fun ⟨min, max, v⟩ => if min ≤ cp ∧ cp ≤ max then some v else none) with
-  | some v => v
-  | none   => DerivedNormalizationProps.defaultNfdQC
+  if cp < 0x00C0 then
+    DerivedNormalizationProps.defaultNfdQC
+  else if decide (0x00C0 ≤ cp ∧ cp ≤ 0x00C5) then
+    .N
+  else
+    match DerivedNormalizationProps.nfdQC.findSome?
+            (fun ⟨min, max, v⟩ => if min ≤ cp ∧ cp ≤ max then some v else none) with
+    | some v => v
+    | none   => DerivedNormalizationProps.defaultNfdQC
+
+theorem nfdQCValue_below_first_range (cp : Nat) (h : cp < 0x00C0) :
+    nfdQCValue cp = DerivedNormalizationProps.defaultNfdQC := by
+  unfold nfdQCValue
+  simp [h]
+
+theorem nfdQCValue_first_range_N (cp : Nat)
+    (hLo : 0x00C0 ≤ cp) (hHi : cp ≤ 0x00C5) :
+    nfdQCValue cp = .N := by
+  unfold nfdQCValue
+  have hNotLt : ¬ cp < 0x00C0 := Nat.not_lt_of_ge hLo
+  have hRange : (decide (0x00C0 ≤ cp ∧ cp ≤ 0x00C5)) = true :=
+    decide_eq_true ⟨hLo, hHi⟩
+  simp [hNotLt, hRange]
+
+/-- Every pinned row below U+0300 records `CCC = 0` — the sub-U+0300
+    rows exist only for their canonical decompositions. One linear
+    kernel pass over the row list. -/
+theorem rows_ccc_zero_below_0x0300 :
+    UnicodeData.rowsList.all (fun r =>
+      decide (r.codepoint < 0x0300 →
+        r.canonicalCombiningClass = 0)) = true := by
+  decide +kernel
+
+theorem ccc_below_first_nonzero_range (cp : Nat) (h : cp < 0x0300) :
+    Lookup.canonicalCombiningClass cp = 0 := by
+  unfold Lookup.canonicalCombiningClass
+  cases hL : Lookup.lookupRow cp with
+  | none => rfl
+  | some row =>
+    unfold Lookup.lookupRow at hL
+    simp only [UnicodeData.rows, List.find?_toArray] at hL
+    have hMem : row ∈ UnicodeData.rowsList := List.mem_of_find?_eq_some hL
+    have hImp : row.codepoint < 0x0300 → row.canonicalCombiningClass = 0 :=
+      of_decide_eq_true
+        (List.all_eq_true.mp rows_ccc_zero_below_0x0300 row hMem)
+    have hCp : row.codepoint = cp :=
+      of_decide_eq_true
+        (List.find?_some
+          (p := fun (r : UnicodeData.UnicodeDataRow) =>
+            decide (r.codepoint = cp)) hL)
+    exact hImp (by omega)
 
 /-- Quick check per UAX #15 §A.1 NFD: a sequence is guaranteed to be in
     NFD when every codepoint has `NFD_QC = Y` AND combining marks are
@@ -181,15 +228,36 @@ def isNFD (cps : Array Nat) : Bool :=
 -- TEST VECTORS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-theorem isNFDQuickCheck_empty : isNFDQuickCheck #[] = true := by native_decide
+theorem isNFDQuickCheck_empty : isNFDQuickCheck #[] = true := by
+  unfold isNFDQuickCheck NFC.hasSortedRunsBool
+  simp
 
 theorem isNFDQuickCheck_ascii :
-    isNFDQuickCheck #[0x0048, 0x0069] = true := by native_decide  -- "Hi"
+    isNFDQuickCheck #[0x0048, 0x0069] = true := by
+  have hH : nfdQCValue 0x0048 = .Y :=
+    nfdQCValue_below_first_range 0x0048 (by decide)
+  have hI : nfdQCValue 0x0069 = .Y :=
+    nfdQCValue_below_first_range 0x0069 (by decide)
+  have hHccc : Lookup.canonicalCombiningClass 0x0048 = 0 :=
+    ccc_below_first_nonzero_range 0x0048 (by decide)
+  have hIccc : Lookup.canonicalCombiningClass 0x0069 = 0 :=
+    ccc_below_first_nonzero_range 0x0069 (by decide)
+  have hSorted : NFC.hasSortedRunsBool [0x0048, 0x0069] = true := by
+    unfold NFC.hasSortedRunsBool
+    simp [hHccc, hIccc]
+  unfold isNFDQuickCheck
+  simp [hH, hI, hSorted]
 
 /-- LATIN CAPITAL LETTER A WITH GRAVE has `NFD_QC = N` (it decomposes). -/
-theorem isNFDQuickCheck_A_grave : isNFDQuickCheck #[0x00C0] = false := by native_decide
+theorem isNFDQuickCheck_A_grave : isNFDQuickCheck #[0x00C0] = false := by
+  have hN : nfdQCValue 0x00C0 = .N :=
+    nfdQCValue_first_range_N 0x00C0 (by decide) (by decide)
+  simp [isNFDQuickCheck, hN]
 
-theorem nfdQC_default_ascii : nfdQCValue 0x0041 = .Y := by native_decide
-theorem nfdQC_explicit_N : nfdQCValue 0x00C0 = .N := by native_decide
+theorem nfdQC_default_ascii : nfdQCValue 0x0041 = .Y :=
+  nfdQCValue_below_first_range 0x0041 (by decide)
+
+theorem nfdQC_explicit_N : nfdQCValue 0x00C0 = .N :=
+  nfdQCValue_first_range_N 0x00C0 (by decide) (by decide)
 
 end Unicode.Normalization.NFD

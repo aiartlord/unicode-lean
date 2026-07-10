@@ -4,7 +4,7 @@
   Conformance proof for the I2 family.  Folds the universal
   `Unicode.Security.Fixture` parser over the hand-curated
   `MixedScriptAdmissibilityTest.txt` fixture and
-  `native_decide`-closes the predicate that every row's expected
+  `decide`-closes the predicate that every row's expected
   verdict matches what
   `Unicode.Security.Identity.MixedScriptAdmissibility.detect`
   produces.
@@ -42,7 +42,7 @@ def projectPositions (c : Classification) : Array Nat :=
 /-- Render a `RestrictionLevel` as the bare constructor name used
     in fixture column-4 attribution. -/
 @[inline]
-private def levelString : Unicode.Restriction.RestrictionLevel → String
+def levelString : Unicode.Restriction.RestrictionLevel → String
   | .ASCIIOnly             => "ASCIIOnly"
   | .SingleScript          => "SingleScript"
   | .HighlyRestrictive     => "HighlyRestrictive"
@@ -53,7 +53,7 @@ private def levelString : Unicode.Restriction.RestrictionLevel → String
 /-- Validate the I2 verdict's metadata fields against the row's
     column-4 attribution.  Key recognised: `level` (the row's
     UTS #39 §5 restriction level). -/
-private def metadataMatches (v : Verdict)
+def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkStringKey "level" (levelString v.level)
 
@@ -70,28 +70,28 @@ def verifyRow (r : Row) : Bool :=
   decide (pos = r.expectedPositions)
 
 /-- Every fixture row's detector verdict matches its expected verdict. -/
-theorem all_rows_pass : rows.all verifyRow = true := by native_decide
+theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 24 := by native_decide
+theorem row_count : rows.size = 24 := by decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by decide
 
 theorem covers_latin_cyrillic :
     (rows.filter (·.sectionName = "LatinCyrillic")).size ≥ 6 := by
-  native_decide
+  decide
 
 theorem covers_latin_greek :
     (rows.filter (·.sectionName = "LatinGreek")).size ≥ 2 := by
-  native_decide
+  decide
 
 theorem covers_restricted_status_cp :
     (rows.filter (·.sectionName = "RestrictedStatusCp")).size ≥ 3 := by
-  native_decide
+  decide
 
 theorem covers_script_mix_other :
     (rows.filter (·.sectionName = "ScriptMixOther")).size ≥ 5 := by
-  native_decide
+  decide
 
 end Unicode.Conformance.Security.MixedScriptAdmissibilityTest

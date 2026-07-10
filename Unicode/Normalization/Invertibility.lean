@@ -9,7 +9,7 @@
   primary composites and their canonical decompositions that UCD defines.
 
   Requires `UnicodeData.rows` to have distinct codepoints — established by
-  a strict-monotone adjacent-pair `native_decide` + transitive induction
+  a strict-monotone adjacent-pair `decide` + transitive induction
   on the index difference. The inductive step is parametrized over an
   abstract array `rows` to avoid triggering Lean's reducer on the 3045-row
   pinned UCD table (which exhausts `maxRecDepth`).
@@ -30,9 +30,9 @@ open Unicode.Generated
     induction. -/
 theorem array_codepoints_StrictMono_of_adjacent
     (rows : Array UnicodeData.UnicodeDataRow)
-    (hAdj : ∀ i (_hi : i + 1 < rows.size),
+    (hAdj : ∀ i (hi : i + 1 < rows.size),
               rows[i].codepoint < rows[i + 1].codepoint) :
-    ∀ d (i : Nat) (_hd : i + d + 1 < rows.size),
+    ∀ d (i : Nat) (hd : i + d + 1 < rows.size),
       rows[i].codepoint < rows[i + d + 1].codepoint := by
   intro d
   induction d with
@@ -58,7 +58,7 @@ theorem array_codepoints_StrictMono_of_adjacent
     Parametric for the same reason as the mono lemma. -/
 theorem array_codepoint_NoDup_of_StrictMono
     (rows : Array UnicodeData.UnicodeDataRow)
-    (hMono : ∀ i j (_hi : i < rows.size) (_hj : j < rows.size), i < j →
+    (hMono : ∀ i j (hi : i < rows.size) (hj : j < rows.size), i < j →
               rows[i].codepoint < rows[j].codepoint)
     (i j : Nat) (hi : i < rows.size) (hj : j < rows.size)
     (hEq : rows[i].codepoint = rows[j].codepoint) : i = j := by
@@ -75,7 +75,7 @@ theorem array_codepoint_NoDup_of_StrictMono
     `i < j → rows[i] < rows[j]` form. Parametric. -/
 theorem array_codepoints_StrictMono_gap
     (rows : Array UnicodeData.UnicodeDataRow)
-    (hOffset : ∀ d (i : Nat) (_hd : i + d + 1 < rows.size),
+    (hOffset : ∀ d (i : Nat) (hd : i + d + 1 < rows.size),
                 rows[i].codepoint < rows[i + d + 1].codepoint)
     (i j : Nat) (hi : i < rows.size) (hj : j < rows.size) (hLt : i < j) :
     rows[i].codepoint < rows[j].codepoint := by
@@ -87,15 +87,39 @@ theorem array_codepoints_StrictMono_gap
   rw [hRowEq] at hMono
   exact hMono
 
+/-- The adjacent-pair view of the strict-monotonicity fact: one linear
+    kernel pass over the zip of the row list with its own tail. -/
+theorem rowsList_adjacent_lt :
+    (UnicodeData.rowsList.zip UnicodeData.rowsList.tail).all
+      (fun p => decide (p.1.codepoint < p.2.codepoint)) = true := by
+  decide +kernel
+
 /-- The codepoints of `UnicodeData.rows` are strictly increasing between
-    adjacent entries. Closed by `native_decide` over the 3044 adjacent
-    pairs of the pinned UCD table. -/
+    adjacent entries. The index-driven form, transported from the
+    zip-with-tail pass — the indexed enumeration itself is never
+    reduced. -/
 theorem UnicodeData_rows_adjacent_StrictMono :
     (List.range (UnicodeData.rows.size - 1)).all (fun i =>
       if h : i + 1 < UnicodeData.rows.size then
         decide (UnicodeData.rows[i].codepoint < UnicodeData.rows[i + 1].codepoint)
       else true) = true := by
-  native_decide
+  rw [List.all_eq_true]
+  intro i hiMem
+  have hiLt : i < UnicodeData.rows.size - 1 := List.mem_range.mp hiMem
+  have hi1 : i + 1 < UnicodeData.rows.size := by omega
+  have hLen : UnicodeData.rows.size = UnicodeData.rowsList.length := by
+    simp [UnicodeData.rows]
+  have hiZip : i < (UnicodeData.rowsList.zip UnicodeData.rowsList.tail).length := by
+    rw [List.length_zip, List.length_tail]
+    omega
+  have hPair := of_decide_eq_true
+    (List.all_eq_true.mp rowsList_adjacent_lt
+      ((UnicodeData.rowsList.zip UnicodeData.rowsList.tail)[i]'hiZip)
+      (List.getElem_mem hiZip))
+  rw [List.getElem_zip, List.getElem_tail] at hPair
+  rw [dif_pos hi1]
+  simp only [UnicodeData.rows, List.getElem_toArray]
+  exact decide_eq_true hPair
 
 /-- Pointwise: the immediate successor index has strictly greater codepoint. -/
 theorem UnicodeData_rows_codepoint_lt_succ

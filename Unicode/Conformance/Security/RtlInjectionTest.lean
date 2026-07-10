@@ -3,7 +3,7 @@
 
   Conformance proof for the D3 family.  Folds the universal
   `Unicode.Security.Fixture` parser over the hand-curated
-  `RtlInjectionTest.txt` fixture and `native_decide`-closes the
+  `RtlInjectionTest.txt` fixture and `decide`-closes the
   predicate that every row's expected verdict matches what
   `Unicode.Security.Display.RtlInjection.detect` produces.
 -/
@@ -41,7 +41,7 @@ def projectPositions (c : Classification) : Array Nat :=
     column-4 attribution.  Recognised keys: `strong_rtl`,
     `strong_ltr`, `bidi_count`, `longest_run` (longest contiguous
     RTL run length). -/
-private def metadataMatches (v : Verdict)
+def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey "strong_rtl"  v.strongRTLCount &&
   attr.checkNatKey "strong_ltr"  v.strongLTRCount &&
@@ -61,28 +61,28 @@ def verifyRow (r : Row) : Bool :=
   decide (pos = r.expectedPositions)
 
 /-- Every fixture row's detector verdict matches its expected verdict. -/
-theorem all_rows_pass : rows.all verifyRow = true := by native_decide
+theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 27 := by native_decide
+theorem row_count : rows.size = 27 := by decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by native_decide
+    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by decide
 
 theorem covers_rlo :
     (rows.filter (·.sectionName = "RloInLTRField")).size ≥ 5 := by
-  native_decide
+  decide
 
 theorem covers_field_takeover :
     (rows.filter (·.sectionName = "FieldTakeover")).size ≥ 5 := by
-  native_decide
+  decide
 
 theorem covers_strong_rtl_in_ltr :
     (rows.filter (·.sectionName = "StrongRTLInLTR")).size ≥ 5 := by
-  native_decide
+  decide
 
 theorem covers_mixed_overflow :
     (rows.filter (·.sectionName = "MixedOverflow")).size ≥ 4 := by
-  native_decide
+  decide
 
 end Unicode.Conformance.Security.RtlInjectionTest

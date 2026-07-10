@@ -38,6 +38,8 @@ namespace Unicode.Bidi.Algorithm
 open Unicode.Generated.DerivedBidiClass (BidiClass)
 open Unicode.Generated
 
+set_option maxRecDepth 100000
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 TYPES
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -84,14 +86,7 @@ structure CharRecord where
     table. `explicitRanges` first, then `defaultRanges` (which cover
     every codepoint per the UAX #44 default-range convention). -/
 def lookupBidiClass (cp : Nat) : BidiClass :=
-  match Unicode.Generated.DerivedBidiClass.explicitRanges.findSome?
-          (fun ⟨min, max, c⟩ => if min ≤ cp ∧ cp ≤ max then some c else none) with
-  | some c => c
-  | none =>
-    match Unicode.Generated.DerivedBidiClass.defaultRanges.findSome?
-            (fun ⟨min, max, c⟩ => if min ≤ cp ∧ cp ≤ max then some c else none) with
-    | some c => c
-    | none   => BidiClass.L
+  Unicode.Generated.DerivedBidiClass.lookup cp
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 PARAGRAPH LEVEL — P2 / P3
@@ -238,7 +233,7 @@ theorem resolveFSIAt_no_FSI (cps : Array Nat) (i cp : Nat) :
     lookupBidiClass (resolveFSIAt cps i cp) ≠ .FSI := by
   unfold resolveFSIAt
   split
-  · split <;> native_decide
+  · split <;> decide
   · next hcp => exact hcp
 
 /-- One iteration of the X-rules per UAX #9 §3.3.2, processing one cp.
@@ -660,7 +655,7 @@ def applyWeakRules (sosClass : BidiClass) (records : Array CharRecord) : Array C
 
 /-- Look up a codepoint's bracket entry, if any. -/
 def lookupBracket (cp : Nat) : Option BidiBrackets.BidiBracketRow :=
-  BidiBrackets.bidiBracketRows.find? (fun r => r.codepoint = cp)
+  BidiBrackets.lookup? cp
 
 /-- Internal state for bracket pair scanning. -/
 structure BracketPairState where
@@ -1101,8 +1096,7 @@ def applyL2 (records : Array CharRecord) : Array CharRecord :=
 /-- L4: mirror lookup. Returns the mirror codepoint when the input has
     a `Bidi_Mirroring_Glyph` entry; the input unchanged otherwise. -/
 def mirrorChar (cp : Nat) : Nat :=
-  match BidiMirroring.bidiMirrorPairs.findSome?
-          (fun ⟨a, b⟩ => if a = cp then some b else none) with
+  match BidiMirroring.lookup? cp with
   | some m => m
   | none   => cp
 
@@ -1282,68 +1276,68 @@ def reorderLine (result : ParagraphResult) (lineStart lineEnd : Nat) : Array Nat
 
 /-- Pure ASCII paragraph has level 0. -/
 theorem paragraphLevel_ascii :
-    paragraphLevel #[0x0048, 0x0069] = 0 := by native_decide  -- "Hi"
+    paragraphLevel #[0x0048, 0x0069] = 0 := by decide  -- "Hi"
 
 /-- Pure Hebrew paragraph (R class on first char) has level 1. -/
 theorem paragraphLevel_hebrew :
-    paragraphLevel #[0x05D0, 0x05D1] = 1 := by native_decide
+    paragraphLevel #[0x05D0, 0x05D1] = 1 := by decide
 
 /-- Empty paragraph defaults to level 0. -/
 theorem paragraphLevel_empty :
-    paragraphLevel #[] = 0 := by native_decide
+    paragraphLevel #[] = 0 := by decide
 
 /-- Bracket lookup finds LEFT PARENTHESIS as Open with pair RIGHT PAREN. -/
 theorem bracket_lookup_lparen :
     (lookupBracket 0x0028).map (fun r => (r.pair, r.bracketType))
-      = some (0x0029, .Open) := by native_decide
+      = some (0x0029, .Open) := by decide
 
 /-- Mirror lookup: LEFT PAREN ↔ RIGHT PAREN. -/
-theorem mirror_lparen : mirrorChar 0x0028 = 0x0029 := by native_decide
+theorem mirror_lparen : mirrorChar 0x0028 = 0x0029 := by decide
 
 /-- Mirror returns input unchanged for non-mirroring codepoints. -/
-theorem mirror_letter_a : mirrorChar 0x0041 = 0x0041 := by native_decide
+theorem mirror_letter_a : mirrorChar 0x0041 = 0x0041 := by decide
 
 /-- Pure-ASCII paragraph after the full pipeline: paragraph level 0. -/
 theorem bidiParagraph_ascii :
-    (bidiParagraph #[0x0048, 0x0069]).paragraphLevel = 0 := by native_decide
+    (bidiParagraph #[0x0048, 0x0069]).paragraphLevel = 0 := by decide
 
 /-- X5c — FSI followed by Hebrew (RTL strong) inside scope resolves to RLI. -/
 theorem resolveFSI_hebrew_inner :
     resolveFSI #[0x2068, 0x05D0, 0x05D1, 0x2069] = #[0x2067, 0x05D0, 0x05D1, 0x2069]
-    := by native_decide
+    := by decide
 
 /-- X5c — FSI followed by ASCII (LTR strong) inside scope resolves to LRI. -/
 theorem resolveFSI_ascii_inner :
     resolveFSI #[0x2068, 0x0048, 0x0069, 0x2069] = #[0x2066, 0x0048, 0x0069, 0x2069]
-    := by native_decide
+    := by decide
 
 /-- X5c — FSI with no strong character in scope defaults to LRI. -/
 theorem resolveFSI_neutral_inner :
     resolveFSI #[0x2068, 0x0020, 0x2069] = #[0x2066, 0x0020, 0x2069]
-    := by native_decide
+    := by decide
 
 /-- X5c — empty FSI scope (immediate matching PDI) defaults to LRI. -/
 theorem resolveFSI_empty_inner :
     resolveFSI #[0x2068, 0x2069] = #[0x2066, 0x2069]
-    := by native_decide
+    := by decide
 
 /-- X5c — nested isolate's interior is ignored when scanning the outer FSI's
     scope. Outer FSI sees only "L" outside the inner LRI...PDI scope. -/
 theorem resolveFSI_nested_isolate_skipped :
     resolveFSI #[0x2068, 0x2066, 0x05D0, 0x2069, 0x0041, 0x2069]
       = #[0x2066, 0x2066, 0x05D0, 0x2069, 0x0041, 0x2069]
-    := by native_decide
+    := by decide
 
 /-- X5c — FSI with no matching PDI scans to end of array; first strong
     character (Hebrew here) selects RLI. -/
 theorem resolveFSI_unmatched_pdi :
     resolveFSI #[0x2068, 0x05D0] = #[0x2067, 0x05D0]
-    := by native_decide
+    := by decide
 
 /-- `resolveFSI` is the identity on arrays containing no FSI. -/
 theorem resolveFSI_identity_no_fsi :
     resolveFSI #[0x0048, 0x0069, 0x2066, 0x05D0, 0x2069] =
       #[0x0048, 0x0069, 0x2066, 0x05D0, 0x2069]
-    := by native_decide
+    := by decide
 
 end Unicode.Bidi.Algorithm

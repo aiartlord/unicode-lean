@@ -10,4 +10,7 @@ package unicode where
 lean_lib Unicode where
   srcDir := "."
   roots := #[`Unicode]
-  globs := #[.submodules `Unicode]
+
+lean_lib UnicodeFullConformance where
+  srcDir := "."
+  roots := #[`Unicode.FullConformance]

@@ -46,6 +46,8 @@ import Unicode.Casing
 
 namespace Unicode.Security.Form.CaseExpansionMismatch
 
+set_option maxRecDepth 1000000
+
 open Unicode.Security.Calculus
 open Unicode.Casing (lowerCodepoint upperCodepoint)
 
@@ -178,28 +180,28 @@ def Classification.positions : Classification → Array Nat
 
 /-- Empty input is clear. -/
 theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
-  native_decide
+  decide +kernel
 
 /-- Pure ASCII is clear; every ASCII cp case-maps to a single cp. -/
 theorem detect_ascii_clear :
     (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
-  native_decide
+  decide +kernel
 
 /-- ß (U+00DF) fires `upperExpansion` at position 0 — toUpper → "SS". -/
 theorem detect_sharp_s_upper :
     (detect #[0x00DF]).classify.tag = some "UpperExpansion" := by
-  native_decide
+  decide +kernel
 
 /-- ﬁ ligature (U+FB01) fires `upperExpansion` at position 0 — toUpper → "FI". -/
 theorem detect_fi_ligature_upper :
     (detect #[0xFB01]).classify.tag = some "UpperExpansion" := by
-  native_decide
+  decide +kernel
 
 /-- İ (U+0130) fires `lowerExpansion` at position 0 — toLower under
     default → "i + 0307".  No upper expansion (İ stays İ), so the
     detector falls through to the lower scan. -/
 theorem detect_dotted_I_lower :
     (detect #[0x0130]).classify.tag = some "LowerExpansion" := by
-  native_decide
+  decide +kernel
 
 end Unicode.Security.Form.CaseExpansionMismatch

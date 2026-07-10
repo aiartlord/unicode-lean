@@ -15,7 +15,11 @@
   model-tokenizer edge cases.
 -/
 
+import Unicode.Generated.GlitchTokensData
+
 namespace Unicode.Generated.GlitchTokens
+
+set_option maxRecDepth 100000
 
 /-- Raw text embedded at compile time. -/
 def rawText : String := include_str "../Ucd/Curated/GlitchTokens.txt"
@@ -29,22 +33,30 @@ def rawText : String := include_str "../Ucd/Curated/GlitchTokens.txt"
     because that whitespace IS part of the token identity for
     most BPE vocabularies. -/
 @[inline]
-private def parseLine (line : String) : Option String :=
+def parseLine (line : String) : Option String :=
   let trimmed := (String.trimAscii line).toString
   if trimmed.isEmpty then none
   else if trimmed.startsWith "#" then none
   else some line
 
 /-- The catalog of glitch tokens, in source-file order. -/
-def tokens : Array String :=
+def tokensParsed : Array String :=
   ((rawText.splitOn "\n").filterMap parseLine).toArray
 
-theorem tokens_count : tokens.size = 39 := by native_decide
+/-- The materialized catalog, consumed downstream. -/
+def tokens : List String := tokensList
+
+theorem tokens_count : tokens.length = 39 := by decide +kernel
+
+-- Build-time drift gate.
+#eval do
+  unless tokensList.toArray == tokensParsed do
+    throw (IO.userError "GlitchTokens drift: list ≠ parsed")
 
 theorem solid_gold_present :
-    tokens.contains " SolidGoldMagikarp" = true := by native_decide
+    tokens.contains " SolidGoldMagikarp" = true := by decide +kernel
 
 theorem petertodd_present :
-    tokens.contains " petertodd" = true := by native_decide
+    tokens.contains " petertodd" = true := by decide +kernel
 
 end Unicode.Generated.GlitchTokens

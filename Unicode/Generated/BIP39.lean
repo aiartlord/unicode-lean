@@ -2,9 +2,8 @@
   Unicode.Generated.BIP39
 
   Aggregate over the 10 BIP-39 wordlists.  Each per-language
-  module under `Unicode/Generated/BIP39/<Lang>.lean` parses its
-  byte-identical upstream `.txt` file once at module load and
-  exposes `wordlist : Array String` with 2,048 entries.
+  module under `Unicode/Generated/BIP39/<Lang>.lean` exposes a
+  literal `wordlist : Array String` with 2,048 entries.
 
   This module wraps them in a `Language` enum + `wordlist`
   dispatch so callers that work with mnemonics across languages
@@ -61,6 +60,16 @@ def allLanguages : Array Language :=
 /-- Every language's wordlist has exactly 2,048 entries. -/
 theorem every_wordlist_2048 :
     allLanguages.all (fun lang => (wordlist lang).size = 2048) = true := by
-  native_decide
+  simp [allLanguages, wordlist,
+    English.wordlist_count,
+    Japanese.wordlist_count,
+    Korean.wordlist_count,
+    Spanish.wordlist_count,
+    ChineseSimplified.wordlist_count,
+    ChineseTraditional.wordlist_count,
+    French.wordlist_count,
+    Italian.wordlist_count,
+    Czech.wordlist_count,
+    Portuguese.wordlist_count]
 
 end Unicode.Generated.BIP39

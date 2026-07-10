@@ -264,30 +264,30 @@ def ucaCompare (handling : VariableHandling) (a b : Array Nat) : Ordering :=
 
 /-- "a" < "b" under either policy. -/
 theorem ucaCompare_a_b_nonIgnorable :
-    ucaCompare .nonIgnorable #[0x0061] #[0x0062] = .lt := by native_decide
+    ucaCompare .nonIgnorable #[0x0061] #[0x0062] = .lt := by decide
 
 theorem ucaCompare_a_b_shifted :
-    ucaCompare .shifted #[0x0061] #[0x0062] = .lt := by native_decide
+    ucaCompare .shifted #[0x0061] #[0x0062] = .lt := by decide
 
 /-- "a" = "A" at primary level, but "a" < "A" lexicographically because
     of the L3 (case) tiebreak: 'a' has tertiary 0x0002, 'A' has 0x0008,
     so "a" sorts before "A". -/
 theorem ucaCompare_a_A :
-    ucaCompare .nonIgnorable #[0x0061] #[0x0041] = .lt := by native_decide
+    ucaCompare .nonIgnorable #[0x0061] #[0x0041] = .lt := by decide
 
 /-- "à" (U+00E0) and "à" (U+0061 U+0300) produce equal sort keys
     after NFD normalisation — that is the canonical-equivalence
     invariant promised by UCA §1.4. -/
 theorem ucaCompare_canonical_equivalence :
-    ucaCompare .nonIgnorable #[0x00E0] #[0x0061, 0x0300] = .eq := by native_decide
+    ucaCompare .nonIgnorable #[0x00E0] #[0x0061, 0x0300] = .eq := by decide
 
 /-- "a" < "b" under blanked policy too. -/
 theorem ucaCompare_a_b_blanked :
-    ucaCompare .blanked #[0x0061] #[0x0062] = .lt := by native_decide
+    ucaCompare .blanked #[0x0061] #[0x0062] = .lt := by decide
 
 /-- "a" < "b" under shift-trimmed policy. -/
 theorem ucaCompare_a_b_shiftTrimmed :
-    ucaCompare .shiftTrimmed #[0x0061] #[0x0062] = .lt := by native_decide
+    ucaCompare .shiftTrimmed #[0x0061] #[0x0062] = .lt := by decide
 
 /-- Under `blanked`, `"a-b"` and `"ab"` collate equally because the
     hyphen is a variable element zeroed at every level. Under
@@ -295,26 +295,26 @@ theorem ucaCompare_a_b_shiftTrimmed :
     makes the two strings unequal. -/
 theorem blanked_collapses_punctuation :
     ucaCompare .blanked #[0x0061, 0x002D, 0x0062] #[0x0061, 0x0062]
-      = .eq := by native_decide
+      = .eq := by decide
 
 theorem nonIgnorable_distinguishes_punctuation :
     ucaCompare .nonIgnorable #[0x0061, 0x002D, 0x0062] #[0x0061, 0x0062]
-      ≠ .eq := by native_decide
+      ≠ .eq := by decide
 
 /-- `trimTrailingFFFF` drops the trailing run; `shiftTrimmed`
     differs from `shifted` only in producing the trimmed L4. -/
 theorem trimTrailingFFFF_drops_trailing :
     trimTrailingFFFF #[0x10, 0x20, 0xFFFF, 0xFFFF] = #[0x10, 0x20] := by
-  native_decide
+  decide
 
 theorem trimTrailingFFFF_keeps_internal :
     trimTrailingFFFF #[0x10, 0xFFFF, 0x20] = #[0x10, 0xFFFF, 0x20] := by
-  native_decide
+  decide
 
 theorem trimTrailingFFFF_empty :
-    trimTrailingFFFF #[] = #[] := by native_decide
+    trimTrailingFFFF #[] = #[] := by decide
 
 theorem trimTrailingFFFF_all_FFFF :
-    trimTrailingFFFF #[0xFFFF, 0xFFFF, 0xFFFF] = #[] := by native_decide
+    trimTrailingFFFF #[0xFFFF, 0xFFFF, 0xFFFF] = #[] := by decide
 
 end Unicode.Uca.SortKey

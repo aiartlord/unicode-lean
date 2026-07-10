@@ -172,34 +172,34 @@ def Classification.positions : Classification → Array Nat
 
 /-- Empty input is clear. -/
 theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Pure ASCII is clear; no confusables, no bidi. -/
 theorem detect_ascii_clear :
     (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- ASCII + override bidi is clear here — RtlInjection covers the
     bidi-only case.  No confusable, no compound. -/
 theorem detect_ascii_plus_override_clear :
     (detect #[0x202E, 0x0041, 0x0042, 0x0043]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Cyrillic а alone is clear under X3 — I1 covers the
     confusable-only case.  No bidi, no compound. -/
 theorem detect_cyrillic_a_alone_clear :
-    (detect #[0x0430]).classify.isClear = true := by native_decide
+    (detect #[0x0430]).classify.isClear = true := by decide
 
 /-- RLO + Cyrillic а fires `confusableInOverride` — the canonical
     Trojan-Source + IDN-homograph compound. -/
 theorem detect_rlo_cyrillic_compound :
     (detect #[0x202E, 0x0430]).classify.tag = some "ConfusableInOverride" := by
-  native_decide
+  decide
 
 /-- LRI + Greek ο fires `confusableInIsolate` — the isolate-class
     soft compound. -/
 theorem detect_lri_greek_compound :
     (detect #[0x2066, 0x03BF]).classify.tag = some "ConfusableInIsolate" := by
-  native_decide
+  decide
 
 end Unicode.Security.Boundary.ConfusableBidiCompound

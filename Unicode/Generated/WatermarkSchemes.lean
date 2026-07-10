@@ -14,38 +14,18 @@
   and the codepoint-level heuristic that surfaces it.
 -/
 
+import Unicode.Generated.WatermarkSchemesData
+
 namespace Unicode.Generated.WatermarkSchemes
 
-/-- The fixed inductive vocabulary of watermark cue classes.
-    `AiWatermarkDetectability` maps each of its sub-threats onto
-    a member of this enum so callers can report which conceptual
-    scheme a codepoint-level heuristic implicates. -/
-inductive CueClass where
-  /-- Token-distribution biased toward a pseudorandom green-list
-      per context (Kirchenbauer-Geipel-Wen 2023 style). -/
-  | greenListBias
-  /-- Output token sequence follows a pseudorandom function of
-      the prefix; cryptographically private (Aaronson 2022,
-      Christ-Gunn-Zamir 2023). -/
-  | pseudorandomSeq
-  /-- Paragraph-level distributional skew under a chosen
-      embedding. -/
-  | semanticDrift
-  deriving DecidableEq, Repr, Inhabited
-
-/-- A single watermark-scheme entry. -/
-structure Entry where
-  tag      : String
-  cue      : CueClass
-  citation : String
-  deriving Repr, Inhabited
+set_option maxRecDepth 100000
 
 /-- Raw text embedded at compile time. -/
 def rawText : String := include_str "../Ucd/Curated/WatermarkSchemes.txt"
 
 /-- Parse the cue-class token. -/
 @[inline]
-private def parseCue? : String → Option CueClass
+def parseCue? : String → Option CueClass
   | "green_list_bias"  => some .greenListBias
   | "pseudorandom_seq" => some .pseudorandomSeq
   | "semantic_drift"   => some .semanticDrift
@@ -53,11 +33,11 @@ private def parseCue? : String → Option CueClass
 
 /-- Trim ASCII whitespace, returning a plain `String`. -/
 @[inline]
-private def trimS (s : String) : String := (String.trimAscii s).toString
+def trimS (s : String) : String := (String.trimAscii s).toString
 
 /-- Parse one row.  Format: `<tag>; <cue>; <citation>`. -/
 @[inline]
-private def parseLine (line : String) : Option Entry :=
+def parseLine (line : String) : Option Entry :=
   let t := trimS line
   if t.isEmpty then none
   else if t.startsWith "#" then none
@@ -71,12 +51,20 @@ private def parseLine (line : String) : Option Entry :=
     | tooFew => Function.const (List String) none tooFew
 
 /-- Catalog of published watermark schemes. -/
-def entries : Array Entry :=
+def entriesParsed : Array Entry :=
   ((rawText.splitOn "\n").filterMap parseLine).toArray
 
-theorem entries_count : entries.size = 3 := by native_decide
+/-- The materialized catalog, consumed downstream. -/
+def entries : List Entry := entriesList
+
+theorem entries_count : entries.length = 3 := by decide +kernel
+
+-- Build-time drift gate.
+#eval do
+  unless entriesList.toArray == entriesParsed do
+    throw (IO.userError "WatermarkSchemes drift: list ≠ parsed")
 
 theorem kgw_present : entries.any (fun e => e.tag = "KGW") = true := by
-  native_decide
+  decide +kernel
 
 end Unicode.Generated.WatermarkSchemes

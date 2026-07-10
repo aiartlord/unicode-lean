@@ -4,12 +4,12 @@
   UAX #38 Unihan variant relationships parsed from
   `Unihan_Variants.txt`. Six variant properties:
 
-    * kSimplifiedVariant         — the Simplified Chinese form.
-    * kTraditionalVariant        — the Traditional Chinese form.
-    * kSemanticVariant           — semantically equivalent variant.
+    * kSimplifiedVariant          — the Simplified Chinese form.
+    * kTraditionalVariant         — the Traditional Chinese form.
+    * kSemanticVariant            — semantically equivalent variant.
     * kSpecializedSemanticVariant — restricted-context variant.
-    * kSpoofingVariant           — confusable variant.
-    * kZVariant                  — graphical (z-axis) variant.
+    * kSpoofingVariant            — confusable variant.
+    * kZVariant                   — graphical (z-axis) variant.
 
   The Variants file format is tab-separated:
 
@@ -22,16 +22,12 @@
   and returns each cited codepoint.
 -/
 
+import Unicode.Generated.UnihanVariantTypes
+import Unicode.Generated.UnihanVariantsData
+
 namespace Unicode.Generated.UnihanVariants
 
-inductive VariantProperty where
-  | SimplifiedVariant
-  | TraditionalVariant
-  | SemanticVariant
-  | SpecializedSemanticVariant
-  | SpoofingVariant
-  | ZVariant
-  deriving DecidableEq, Repr, Inhabited
+set_option maxRecDepth 100000
 
 @[inline]
 def trimS (s : String) : String := (String.trimAscii s).toString
@@ -73,12 +69,6 @@ def parseProperty? : String → Option VariantProperty
   | "kZVariant"                   => some .ZVariant
   | unknownProperty               => Function.const String none unknownProperty
 
-structure Row where
-  source   : Nat
-  property : VariantProperty
-  targets  : Array Nat
-  deriving Repr, Inhabited
-
 /-- Parse one tab-separated row of `Unihan_Variants.txt`. Returns
     `none` for blank, comment, or unrecognised-property lines. -/
 def parseRow (rawLine : String) : Option Row :=
@@ -92,20 +82,46 @@ def parseRow (rawLine : String) : Option Row :=
     | some src, some prop =>
       let tgts := parseCodepointList (trimS fields[2]!)
       if tgts.isEmpty then none else some ⟨src, prop, tgts⟩
-    | _, _ => none
+    | some srcOnly, none => Function.const Nat none srcOnly
+    | none, propOnly => Function.const (Option VariantProperty) none propOnly
 
 /-- Raw text of `Unihan_Variants.txt`, embedded at compile time. -/
 def variantsRaw : String := include_str "../Ucd/Unihan_Variants.txt"
 
-/-- All parsed Unihan variant rows, in source order. -/
+/-- All Unihan variant rows as re-derived from the embedded source
+    text at every build. `rowsList` (the literal table in
+    `UnihanVariantsData`) is what proofs and the lookup consume; this
+    parse exists so the drift gate below can compare the two. -/
 def parsedRows : Array Row :=
   ((variantsRaw.splitOn "\n").filterMap parseRow).toArray
 
 /-- Look up the targets for a given (source codepoint, variant
-    property) pair. Returns the parsed target codepoints, or
-    `#[]` if no row matches. -/
+    property) pair over the literal row table. Returns `#[]` if no
+    row matches. -/
 def lookup (cp : Nat) (prop : VariantProperty) : Array Nat :=
-  parsedRows.foldl (fun acc r =>
+  rowsList.foldl (fun acc r =>
     if r.source = cp ∧ r.property = prop then acc ++ r.targets else acc) #[]
+
+/- Drift gate: the literal table equals the parse of the SHA-pinned
+   source. Elaboration of this module fails on any mismatch. -/
+#eval show IO Unit from do
+  unless rowsList == parsedRows.toList do
+    throw <| IO.userError
+      "Unicode.Generated.UnihanVariants: literal rows differ from parsed Unihan_Variants.txt"
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- TEST VECTORS
+-- Anchor lookups in both directions of the simplified/traditional
+-- relationship, at codepoints with a single target each way.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+theorem lookup_u6F22_simplified :
+    lookup 0x6F22 .SimplifiedVariant = #[0x6C49] := by decide +kernel
+
+theorem lookup_u6C49_traditional :
+    lookup 0x6C49 .TraditionalVariant = #[0x6F22] := by decide +kernel
+
+theorem lookup_u56FD_traditional :
+    lookup 0x56FD .TraditionalVariant = #[0x570B] := by decide +kernel
 
 end Unicode.Generated.UnihanVariants

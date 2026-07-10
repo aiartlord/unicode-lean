@@ -13,6 +13,8 @@
   deliberately not extracted here.
 -/
 
+import Unicode.Generated.DerivedCorePropertiesData
+
 namespace Unicode.Generated.DerivedCoreProperties
 
 @[inline]
@@ -36,11 +38,6 @@ def parseRange (s : String) : Nat × Nat :=
 
 /-- Intermediate parsed row: range plus property name. We then filter
     by name into the per-property arrays below. -/
-structure RawRow where
-  lo   : Nat
-  hi   : Nat
-  prop : String
-  deriving Inhabited
 
 def parseRawRow (rawLine : String) : Option RawRow :=
   let stripped : String := (rawLine.takeWhile (· != '#')).toString
@@ -58,44 +55,13 @@ def derivedCorePropertiesRaw : String :=
 
 /-- All parsed rows, retained as the intermediate form for the
     per-property derived definitions below. -/
-def parsedRows : Array RawRow :=
+def parsedRowsParsed : Array RawRow :=
   ((derivedCorePropertiesRaw.splitOn "\n").filterMap parseRawRow).toArray
 
-/-! ID_Start ranges (UAX #44 §5.7.5). -/
-def idStart : Array (Nat × Nat) :=
-  parsedRows.filterMap (fun r =>
-    if r.prop = "ID_Start" then some (r.lo, r.hi) else none)
-
-/-! ID_Continue ranges. -/
-def idContinue : Array (Nat × Nat) :=
-  parsedRows.filterMap (fun r =>
-    if r.prop = "ID_Continue" then some (r.lo, r.hi) else none)
-
-/-! XID_Start ranges. -/
-def xidStart : Array (Nat × Nat) :=
-  parsedRows.filterMap (fun r =>
-    if r.prop = "XID_Start" then some (r.lo, r.hi) else none)
-
-/-! XID_Continue ranges. -/
-def xidContinue : Array (Nat × Nat) :=
-  parsedRows.filterMap (fun r =>
-    if r.prop = "XID_Continue" then some (r.lo, r.hi) else none)
-
-/-! Default_Ignorable_Code_Point ranges. -/
-def defaultIgnorable : Array (Nat × Nat) :=
-  parsedRows.filterMap (fun r =>
-    if r.prop = "Default_Ignorable_Code_Point" then some (r.lo, r.hi) else none)
-
-/-! Soft_Dotted ranges (UAX #44 contributory property; needed by
-    UAX #21 After_Soft_Dotted casing context). -/
-def softDotted : Array (Nat × Nat) :=
-  parsedRows.filterMap (fun r =>
-    if r.prop = "Soft_Dotted" then some (r.lo, r.hi) else none)
-
-/-! Cased ranges (UAX #44 contributory property; needed by UAX #21
-    Final_Sigma casing context). -/
-def cased : Array (Nat × Nat) :=
-  parsedRows.filterMap (fun r =>
-    if r.prop = "Cased" then some (r.lo, r.hi) else none)
+-- Build-time drift gate: materialized `parsedRowsList` must match a
+-- fresh parse of DerivedCoreProperties.txt.
+#eval do
+  unless parsedRowsList.toArray == parsedRowsParsed do
+    throw (IO.userError "DerivedCoreProperties drift: parsedRowsList ≠ parsed")
 
 end Unicode.Generated.DerivedCoreProperties

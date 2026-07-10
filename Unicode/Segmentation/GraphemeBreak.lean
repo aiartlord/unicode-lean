@@ -105,21 +105,16 @@ def advance (cp : Nat) (s : State) : State :=
   let isEP  := isExtendedPictographic cp
   let epicState' :=
     if isEP then EPicState.afterEP
-    else
-      match s.epicState, bc with
-      | .afterEP,    .Extend => .afterEP
-      | .afterEP,    .ZWJ    => .afterEPZWJ
-      | .afterEPZWJ, _       => .none
-      | _,           _       => .none
+    else if s.epicState = .afterEP && bc = .Extend then EPicState.afterEP
+    else if s.epicState = .afterEP && bc = .ZWJ then EPicState.afterEPZWJ
+    else EPicState.none
   let inCBState' :=
     if inCB = .Consonant then InCBState.consonant
-    else
-      match s.inCBState, inCB with
-      | .consonant, .Linker => .linker
-      | .consonant, .Extend => .consonant
-      | .linker,    .Linker => .linker
-      | .linker,    .Extend => .linker
-      | _,          _       => .none
+    else if s.inCBState = .consonant && inCB = .Linker then InCBState.linker
+    else if s.inCBState = .consonant && inCB = .Extend then InCBState.consonant
+    else if s.inCBState = .linker && inCB = .Linker then InCBState.linker
+    else if s.inCBState = .linker && inCB = .Extend then InCBState.linker
+    else InCBState.none
   let riRun' :=
     if bc = .Regional_Indicator then s.riRun + 1 else 0
   { prevClass := some bc
@@ -133,7 +128,7 @@ def advance (cp : Nat) (s : State) : State :=
     eot break, both always `true`). -/
 def graphemeBreaks (cps : Array Nat) : Array Bool :=
   let init : Array Bool × State := (#[], State.initial)
-  let (bs, _) := cps.foldl
+  let (bs, finalState) := cps.foldl
     (fun (acc : Array Bool × State) cp =>
       let (bs, s) := acc
       let breakHere := shouldBreakBefore cp s
@@ -142,6 +137,6 @@ def graphemeBreaks (cps : Array Nat) : Array Bool :=
       (bs', s'))
     init
   -- GB2: eot break is always true.
-  bs.push true
+  Function.const State (bs.push true) finalState
 
 end Unicode.Segmentation.GraphemeBreak

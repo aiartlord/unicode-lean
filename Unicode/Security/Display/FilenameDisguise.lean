@@ -98,7 +98,8 @@ def isFullwidthHalfwidth (cp : Nat) : Bool :=
 def isGraphemeExtend (cp : Nat) : Bool :=
   match Unicode.Generated.GraphemeBreakProperty.lookupGCB cp with
   | .Extend => true
-  | _other  => Function.const _ false _other
+  | otherClass =>
+    Function.const Unicode.Generated.GraphemeBreakProperty.GCBClass false otherClass
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 Sub-detectors
@@ -239,36 +240,36 @@ def Classification.positions : Classification → Array Nat
 
 /-- Empty filename is clear. -/
 theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
-  native_decide
+  decide
 
 /-- Plain ASCII filename `document.txt` is clear. -/
 theorem detect_plain_txt_clear :
     let cps := #[0x64, 0x6F, 0x63, 0x75, 0x6D, 0x65, 0x6E, 0x74,
                  0x2E, 0x74, 0x78, 0x74]  -- "document.txt"
-    (detect cps).classify.isClear = true := by native_decide
+    (detect cps).classify.isClear = true := by decide
 
 /-- ASCII filename with no extension is clear. -/
 theorem detect_no_extension_clear :
-    (detect #[0x66, 0x6F, 0x6F]).classify.isClear = true := by native_decide
+    (detect #[0x66, 0x6F, 0x6F]).classify.isClear = true := by decide
 
 /-- Two-segment filename `archive.tar.gz` is clear. -/
 theorem detect_tar_gz_clear :
     let cps := #[0x61, 0x72, 0x63, 0x68, 0x69, 0x76, 0x65,
                  0x2E, 0x74, 0x61, 0x72, 0x2E, 0x67, 0x7A]
-    (detect cps).classify.isClear = true := by native_decide
+    (detect cps).classify.isClear = true := by decide
 
 /-- The classic Trojan filename `document<RLO>txt.exe` fires
     `.rloFlip` at the RLO position. -/
 theorem detect_rlo_flip :
     let cps := #[0x64, 0x6F, 0x63, 0x75, 0x6D, 0x65, 0x6E, 0x74,
                  0x202E, 0x74, 0x78, 0x74, 0x2E, 0x65, 0x78, 0x65]
-    (detect cps).classify.tag = some "RloFlip" := by native_decide
+    (detect cps).classify.tag = some "RloFlip" := by decide
 
 /-- Fullwidth `.ＥＸＥ` extension fires `.widthClassExt`. -/
 theorem detect_fullwidth_exe :
     let cps := #[0x66, 0x69, 0x6C, 0x65,
                  0x2E, 0xFF25, 0xFF38, 0xFF25]  -- "file.ＥＸＥ"
-    (detect cps).classify.tag = some "WidthClassExt" := by native_decide
+    (detect cps).classify.tag = some "WidthClassExt" := by decide
 
 /-- A combining mark in the extension fires `.combiningInExt`.
     `.e<combining acute>xe` — the combining acute (U+0301) is
@@ -276,7 +277,7 @@ theorem detect_fullwidth_exe :
 theorem detect_combining_in_ext :
     let cps := #[0x66, 0x69, 0x6C, 0x65,
                  0x2E, 0x65, 0x0301, 0x78, 0x65]  -- "file.éxe"
-    (detect cps).classify.tag = some "CombiningInExt" := by native_decide
+    (detect cps).classify.tag = some "CombiningInExt" := by decide
 
 /-- Triple-extension `setup.tar.gz.sig` fires `.multipleExtensions`
     (advisory).  Could be a legitimate detached-signature file. -/
@@ -285,20 +286,20 @@ theorem detect_triple_extension :
                  0x2E, 0x74, 0x61, 0x72,
                  0x2E, 0x67, 0x7A,
                  0x2E, 0x73, 0x69, 0x67]
-    (detect cps).classify.tag = some "MultipleExtensions" := by native_decide
+    (detect cps).classify.tag = some "MultipleExtensions" := by decide
 
 /-- Native Hebrew filename (no bidi controls) is clear — the
     legitimate-RTL-language case. -/
 theorem detect_hebrew_clear :
     let cps := #[0x05D0, 0x05D1, 0x05D2, 0x2E, 0x74, 0x78, 0x74]
                 -- אבג.txt
-    (detect cps).classify.isClear = true := by native_decide
+    (detect cps).classify.isClear = true := by decide
 
 /-- RLI/PDI isolate variant of the flip — also `.rloFlip`
     (any bidi control triggers it). -/
 theorem detect_isolate_flip :
     let cps := #[0x64, 0x6F, 0x63, 0x2067,  -- doc + RLI
                  0x74, 0x78, 0x74, 0x2E, 0x65, 0x78, 0x65, 0x2069]
-    (detect cps).classify.tag = some "RloFlip" := by native_decide
+    (detect cps).classify.tag = some "RloFlip" := by decide
 
 end Unicode.Security.Display.FilenameDisguise

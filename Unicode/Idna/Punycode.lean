@@ -143,7 +143,7 @@ def encode (input : Array Nat) : Option String := Id.run do
       b   := b + 1
   if 0 < b ∧ b < input.size then
     acc := acc.push '-'
-  return encodeOuter 0x110001 input initialN b 0 initialBias b acc
+  return encodeOuter (input.size + 1) input initialN b 0 initialBias b acc
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 DECODE  (RFC 3492 §6.2)
@@ -216,30 +216,30 @@ def decode (input : String) : Option (Array Nat) :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Empty input round-trips trivially. -/
-theorem encode_empty : encode #[] = some "" := by native_decide
-theorem decode_empty : decode "" = some #[] := by native_decide
+theorem encode_empty : encode #[] = some "" := by decide
+theorem decode_empty : decode "" = some #[] := by decide
 
 /-- (B) Chinese (simplified). All-non-basic input. -/
 theorem encode_sample_B :
     encode #[0x4ED6, 0x4EEC, 0x4E3A, 0x4EC0, 0x4E48,
              0x4E0D, 0x8BF4, 0x4E2D, 0x6587]
-      = some "ihqwcrb4cv8a8dqg056pqjye" := by native_decide
+      = some "ihqwcrb4cv8a8dqg056pqjye" := by decide
 
 theorem decode_sample_B :
     decode "ihqwcrb4cv8a8dqg056pqjye"
       = some #[0x4ED6, 0x4EEC, 0x4E3A, 0x4EC0, 0x4E48,
-               0x4E0D, 0x8BF4, 0x4E2D, 0x6587] := by native_decide
+               0x4E0D, 0x8BF4, 0x4E2D, 0x6587] := by decide
 
 /-- (C) Chinese (traditional). -/
 theorem encode_sample_C :
     encode #[0x4ED6, 0x5011, 0x7232, 0x4EC0, 0x9EBD,
              0x4E0D, 0x8AAA, 0x4E2D, 0x6587]
-      = some "ihqwctvzc91f659drss3x8bo0yb" := by native_decide
+      = some "ihqwctvzc91f659drss3x8bo0yb" := by decide
 
 theorem decode_sample_C :
     decode "ihqwctvzc91f659drss3x8bo0yb"
       = some #[0x4ED6, 0x5011, 0x7232, 0x4EC0, 0x9EBD,
-               0x4E0D, 0x8AAA, 0x4E2D, 0x6587] := by native_decide
+               0x4E0D, 0x8AAA, 0x4E2D, 0x6587] := by decide
 
 /-- (J) Spanish: mixed basic and non-basic codepoints. -/
 theorem encode_sample_J :
@@ -248,7 +248,7 @@ theorem encode_sample_J :
              0x6D, 0x70, 0x6C, 0x65, 0x6D, 0x65, 0x6E, 0x74,
              0x65, 0x68, 0x61, 0x62, 0x6C, 0x61, 0x72, 0x65,
              0x6E, 0x45, 0x73, 0x70, 0x61, 0xF1, 0x6F, 0x6C]
-      = some "PorqunopuedensimplementehablarenEspaol-fmd56a" := by native_decide
+      = some "PorqunopuedensimplementehablarenEspaol-fmd56a" := by decide
 
 theorem decode_sample_J :
     decode "PorqunopuedensimplementehablarenEspaol-fmd56a"
@@ -256,6 +256,6 @@ theorem decode_sample_J :
                0x70, 0x75, 0x65, 0x64, 0x65, 0x6E, 0x73, 0x69,
                0x6D, 0x70, 0x6C, 0x65, 0x6D, 0x65, 0x6E, 0x74,
                0x65, 0x68, 0x61, 0x62, 0x6C, 0x61, 0x72, 0x65,
-               0x6E, 0x45, 0x73, 0x70, 0x61, 0xF1, 0x6F, 0x6C] := by native_decide
+               0x6E, 0x45, 0x73, 0x70, 0x61, 0xF1, 0x6F, 0x6C] := by decide
 
 end Unicode.Idna.Punycode

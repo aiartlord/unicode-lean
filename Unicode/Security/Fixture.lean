@@ -216,7 +216,7 @@ def parseRow (currentSection : String) (currentLevel : ConformanceLevel)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Carry-state during fold-parse. -/
-private structure ParseState where
+structure ParseState where
   rows           : Array Row
   currentSection : String
   currentLevel   : ConformanceLevel
@@ -248,7 +248,7 @@ def parseFixture (rawText : String) : Array Row :=
 
 /-- A synthetic fixture used to validate the parser. Five rows, four
     sections, both conformance levels exercised. -/
-private def syntheticFixture : String :=
+def syntheticFixture : String :=
 "# Synthetic fixture for parser validation
 # UCD version: 17.0.0
 # Security-spec version: 0.1.0

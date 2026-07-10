@@ -2,7 +2,7 @@
   Unicode.Security.RunAll
 
   Aggregator over every Security Conformance Layer detector.  Folds
-  the 23 per-family `detect` functions into a uniform
+  the 26 per-family `detect` functions into a uniform
   `Array FamilyResult` shape so downstream consumers can call once
   and receive a structured per-family inventory of verdicts on a
   single input.
@@ -50,7 +50,7 @@ structure FamilyResult where
     projection helpers (`isClear`, `tag`, `positions`).  Every family
     in `Unicode/Security/` exposes those three by convention. -/
 @[inline]
-private def mkResult (family : Family)
+def mkResult (family : Family)
     (isClear : Bool) (tag : Option String) (positions : Array Nat) :
     FamilyResult :=
   { family         := family,
@@ -67,12 +67,12 @@ private def mkResult (family : Family)
     on both byte-array and codepoint-array inputs without
     requiring callers to choose. -/
 @[inline]
-private def looksLikeByteStream (input : Array Nat) : Bool :=
+def looksLikeByteStream (input : Array Nat) : Bool :=
   input.all (fun cp => cp < 0x100)
 
 /-- Run every Security Conformance Layer detector on `input` and
     return a `FamilyResult` per family.  The output array has exactly
-    23 entries, one per family, in declaration order grouped by
+    26 entries, one per family, in declaration order grouped by
     layer.
 
     SurrogateReassembly is only invoked when `input` looks
@@ -195,12 +195,12 @@ theorem ascii_hello_no_unicode_hazards :
         | .clear         => true
         | .informational => true
         | .hazard        => false
-        | .compound      => false) = true := by native_decide
+        | .compound      => false) = true := by decide
 
 /-- The Arabic ligature U+FDFA fires at least one detector
     (NormalizationBomb, at minimum). -/
 theorem arabic_ligature_hazardous :
-    anyHazard #[0xFDFA] = true := by native_decide
+    anyHazard #[0xFDFA] = true := by decide
 
 /-- The Math Italic identifier fires multiple detectors at once —
     at minimum HomoglyphConfusable, IdentifierFormDrift (per-cp
@@ -208,6 +208,6 @@ theorem arabic_ligature_hazardous :
     string admissibility drift). -/
 theorem math_italic_admin_multiple_hazards :
     (hazardsOnly #[0x1D44E, 0x1D451, 0x1D45A, 0x1D456, 0x1D45B]).size ≥ 3 := by
-  native_decide
+  decide
 
 end Unicode.Security.RunAll

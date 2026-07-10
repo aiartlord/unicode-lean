@@ -3,7 +3,7 @@
 
   Conformance proof for the K2 family.  Folds the universal
   `Unicode.Security.Fixture` parser over the hand-curated
-  `HashInputStabilityTest.txt` fixture and `native_decide`-
+  `HashInputStabilityTest.txt` fixture and `decide`-
   closes the predicate that every row's expected verdict
   matches what
   `Unicode.Security.Crypto.HashInputStability.detect` produces.
@@ -52,13 +52,13 @@ def projectPositions (c : Classification) : Array Nat :=
 /-- Validate the K2 verdict's metadata fields against the row's
     column-4 attribution.  Recognised key: `stableSize` (the
     codepoint count of the canonical NFC + trim form). -/
-private def metadataMatches (v : Verdict)
+def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey "stableSize" v.stableSize
 
 /-- Parse a space-separated hex codepoint list (mirrors
     `Unicode.Security.Fixture.parseCodepointList`). -/
-private def parseHexList (s : String) : Array Nat :=
+def parseHexList (s : String) : Array Nat :=
   ((s.splitOn " ").filterMap (fun tok =>
     let t := tok.trimAscii.toString
     if t.isEmpty then none
@@ -103,44 +103,44 @@ def verifyRow (r : Row) : Bool :=
 
 /-- Every fixture row's detector verdict matches its expected
     verdict. -/
-theorem all_rows_pass : rows.all verifyRow = true := by native_decide
+theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 26 := by native_decide
+theorem row_count : rows.size = 26 := by decide
 
 theorem covers_clear :
     (rows.filter (fun r => r.expectedKind = .clear)).size ≥ 7 := by
-  native_decide
+  decide
 
 theorem covers_trailing_whitespace :
     (rows.filter (fun r =>
       r.expectedSubThreat = some "TrailingWhitespace")).size ≥ 5 := by
-  native_decide
+  decide
 
 theorem covers_normalization_drift :
     (rows.filter (fun r =>
       r.expectedSubThreat = some "NormalizationDrift")).size ≥ 4 := by
-  native_decide
+  decide
 
 theorem covers_encoding_mismatch :
     (rows.filter (fun r =>
       r.expectedSubThreat = some "EncodingMismatch")).size ≥ 3 := by
-  native_decide
+  decide
 
 theorem covers_signed_message_rule :
     (rows.filter (fun r =>
       r.expectedSubThreat = some "SignedMessageRule")).size ≥ 4 := by
-  native_decide
+  decide
 
 theorem covers_audit_log_reinterpretation :
     (rows.filter (fun r =>
       r.expectedSubThreat = some "AuditLogReinterpretation")).size ≥ 2 := by
-  native_decide
+  decide
 
 theorem covers_webhook_signature_drift :
     (rows.filter (fun r =>
       r.expectedSubThreat = some "WebhookSignatureDrift")).size ≥ 1 := by
-  native_decide
+  decide
 
 /-- Every constructor of `SubThreat` has at least one fixture
     row.  Catches the "structurally reachable but no fixture
@@ -158,6 +158,6 @@ theorem every_subthreat_has_fixture_row :
        , "WebhookSignatureDrift" ]
     expectedSubThreats.all (fun name =>
       rows.any (fun r => r.expectedSubThreat = some name)) = true := by
-  native_decide
+  decide
 
 end Unicode.Conformance.Security.HashInputStabilityTest
