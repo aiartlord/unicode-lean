@@ -185,7 +185,7 @@ theorem stepCompose_starter_none_output
   simp only []
 
 /-- When `s.starter = some st`, every `stepCompose` branch produces a
-    state whose `starter` is `some _`. This drives the "contradict
+    state whose `starter` is populated. This drives the "contradict
     `hNone`" side of the validity-preservation proof. -/
 theorem stepCompose_starter_some_isSome
     (s : Compose.ComposeState) (cp : Nat) (st : Nat) (hS : s.starter = some st) :
@@ -214,7 +214,7 @@ set_option maxRecDepth 8192 in
     conjuncts are discharged branch-by-branch:
 
     * First conjunct (starter/buffer implication): `stepCompose`'s
-      non-starter branches either keep `starter = some _` (so the
+      non-starter branches either keep `starter` populated (so the
       implication is vacuous) or only run when the input started with
       `none` + valid, in which case `s.buffer = []` carries through.
 
@@ -224,7 +224,7 @@ set_option maxRecDepth 8192 in
       - buffer cleared to `[]` (Cases 4, 5): vacuous membership.
       - `cp :: buffer` prepended, `maxCCC := max maxCCC (ccc cp)`
         (Cases 6, 8): `cp` has `ccc cp > 0` by the branch guard and
-        `ccc cp ≤ max _ (ccc cp)` by `Nat.le_max_right`; old buffer
+        `ccc cp ≤ max s.maxCCC (ccc cp)` by `Nat.le_max_right`; old buffer
         elements have `ccc y ≤ s.maxCCC ≤ max s.maxCCC (ccc cp)` by
         `Nat.le_max_left`.
 
@@ -657,7 +657,7 @@ theorem stepPreserves_case_starter_flush
 --
 -- **Non-Hangul half: CLOSED UNCONDITIONALLY.** `primaryComposite?`'s
 -- non-Hangul path resolves through `UnicodeData.rows.findSome?`. The
--- `ucd_twoEltDecomp_factoring` `native_decide` table directly verifies
+-- `ucd_twoEltDecomp_factoring` `decide` table directly verifies
 -- the factorization for every UCD row with a 2-element canonical
 -- decomposition. Combined with
 -- `Invertibility.primaryComposite_canonicalDecomposition_nonHangul`,
@@ -674,14 +674,95 @@ theorem stepPreserves_case_starter_flush
 -- infrastructure work to `reorder_absorbing_left`.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
--- ── UCD factoring table ───────────────────────────────────────────────────────
+-- ── UCD factoring table (structural, via ToNFDAppend's List mirror) ───────────
+--
+-- The two 3045-row facts below (`ucd_twoEltDecomp_factoring` and the decomposition
+-- shared-CCC fact) call `fullCanonicalDecompose`, whose `Array.find?` lookups are
+-- O(n²) in the kernel and cannot reduce the whole table. A single combined
+-- predicate `combP` restates both over `ToNFDAppend.fcdFuelL` (the proven-equal
+-- List mirror, linear lookups); it reduces per 64-row chunk and combines to the
+-- whole `rowsList`. Each original theorem then projects out its conjunct and
+-- rewrites the mirror back to the real decomposition.
+
+section CombPClosure
+set_option maxRecDepth 1000000
+
+def combP (row : UnicodeData.UnicodeDataRow) : Bool :=
+  (if row.canonicalDecomposition.size = 2 then
+    decide (ToNFDAppend.fcdFuelL Decompose.maxDepth row.codepoint
+            = ToNFDAppend.fcdFuelL Decompose.maxDepth (row.canonicalDecomposition.getD 0 0)
+              ++ ToNFDAppend.fcdFuelL Decompose.maxDepth (row.canonicalDecomposition.getD 1 0))
+   else true)
+  && (decide (row.canonicalCombiningClass = 0)
+      || (ToNFDAppend.fcdFuelL Decompose.maxDepth row.codepoint).all
+          (fun cp' => decide (ToNFDAppend.canonicalCombiningClassL cp' = row.canonicalCombiningClass)))
+
+theorem combP_c0 : UnicodeData.rowsChunk0.all combP = true := by decide +kernel
+theorem combP_c1 : UnicodeData.rowsChunk1.all combP = true := by decide +kernel
+theorem combP_c2 : UnicodeData.rowsChunk2.all combP = true := by decide +kernel
+theorem combP_c3 : UnicodeData.rowsChunk3.all combP = true := by decide +kernel
+theorem combP_c4 : UnicodeData.rowsChunk4.all combP = true := by decide +kernel
+theorem combP_c5 : UnicodeData.rowsChunk5.all combP = true := by decide +kernel
+theorem combP_c6 : UnicodeData.rowsChunk6.all combP = true := by decide +kernel
+theorem combP_c7 : UnicodeData.rowsChunk7.all combP = true := by decide +kernel
+theorem combP_c8 : UnicodeData.rowsChunk8.all combP = true := by decide +kernel
+theorem combP_c9 : UnicodeData.rowsChunk9.all combP = true := by decide +kernel
+theorem combP_c10 : UnicodeData.rowsChunk10.all combP = true := by decide +kernel
+theorem combP_c11 : UnicodeData.rowsChunk11.all combP = true := by decide +kernel
+theorem combP_c12 : UnicodeData.rowsChunk12.all combP = true := by decide +kernel
+theorem combP_c13 : UnicodeData.rowsChunk13.all combP = true := by decide +kernel
+theorem combP_c14 : UnicodeData.rowsChunk14.all combP = true := by decide +kernel
+theorem combP_c15 : UnicodeData.rowsChunk15.all combP = true := by decide +kernel
+theorem combP_c16 : UnicodeData.rowsChunk16.all combP = true := by decide +kernel
+theorem combP_c17 : UnicodeData.rowsChunk17.all combP = true := by decide +kernel
+theorem combP_c18 : UnicodeData.rowsChunk18.all combP = true := by decide +kernel
+theorem combP_c19 : UnicodeData.rowsChunk19.all combP = true := by decide +kernel
+theorem combP_c20 : UnicodeData.rowsChunk20.all combP = true := by decide +kernel
+theorem combP_c21 : UnicodeData.rowsChunk21.all combP = true := by decide +kernel
+theorem combP_c22 : UnicodeData.rowsChunk22.all combP = true := by decide +kernel
+theorem combP_c23 : UnicodeData.rowsChunk23.all combP = true := by decide +kernel
+theorem combP_c24 : UnicodeData.rowsChunk24.all combP = true := by decide +kernel
+theorem combP_c25 : UnicodeData.rowsChunk25.all combP = true := by decide +kernel
+theorem combP_c26 : UnicodeData.rowsChunk26.all combP = true := by decide +kernel
+theorem combP_c27 : UnicodeData.rowsChunk27.all combP = true := by decide +kernel
+theorem combP_c28 : UnicodeData.rowsChunk28.all combP = true := by decide +kernel
+theorem combP_c29 : UnicodeData.rowsChunk29.all combP = true := by decide +kernel
+theorem combP_c30 : UnicodeData.rowsChunk30.all combP = true := by decide +kernel
+theorem combP_c31 : UnicodeData.rowsChunk31.all combP = true := by decide +kernel
+theorem combP_c32 : UnicodeData.rowsChunk32.all combP = true := by decide +kernel
+theorem combP_c33 : UnicodeData.rowsChunk33.all combP = true := by decide +kernel
+theorem combP_c34 : UnicodeData.rowsChunk34.all combP = true := by decide +kernel
+theorem combP_c35 : UnicodeData.rowsChunk35.all combP = true := by decide +kernel
+theorem combP_c36 : UnicodeData.rowsChunk36.all combP = true := by decide +kernel
+theorem combP_c37 : UnicodeData.rowsChunk37.all combP = true := by decide +kernel
+theorem combP_c38 : UnicodeData.rowsChunk38.all combP = true := by decide +kernel
+theorem combP_c39 : UnicodeData.rowsChunk39.all combP = true := by decide +kernel
+theorem combP_c40 : UnicodeData.rowsChunk40.all combP = true := by decide +kernel
+theorem combP_c41 : UnicodeData.rowsChunk41.all combP = true := by decide +kernel
+theorem combP_c42 : UnicodeData.rowsChunk42.all combP = true := by decide +kernel
+theorem combP_c43 : UnicodeData.rowsChunk43.all combP = true := by decide +kernel
+theorem combP_c44 : UnicodeData.rowsChunk44.all combP = true := by decide +kernel
+theorem combP_c45 : UnicodeData.rowsChunk45.all combP = true := by decide +kernel
+theorem combP_c46 : UnicodeData.rowsChunk46.all combP = true := by decide +kernel
+theorem combP_c47 : UnicodeData.rowsChunk47.all combP = true := by decide +kernel
+
+theorem rowsList_all_combP : UnicodeData.rowsList.all combP = true := by
+  unfold UnicodeData.rowsList
+  simp only [List.all_append, combP_c0, combP_c1, combP_c2, combP_c3, combP_c4, combP_c5,
+    combP_c6, combP_c7, combP_c8, combP_c9, combP_c10, combP_c11, combP_c12, combP_c13,
+    combP_c14, combP_c15, combP_c16, combP_c17, combP_c18, combP_c19, combP_c20, combP_c21,
+    combP_c22, combP_c23, combP_c24, combP_c25, combP_c26, combP_c27, combP_c28, combP_c29,
+    combP_c30, combP_c31, combP_c32, combP_c33, combP_c34, combP_c35, combP_c36, combP_c37,
+    combP_c38, combP_c39, combP_c40, combP_c41, combP_c42, combP_c43, combP_c44, combP_c45,
+    combP_c46, combP_c47, Bool.and_self]
+
+end CombPClosure
 
 /-- **UCD factorization table.** For every UCD row with a 2-element
     canonical decomposition, the full canonical decomposition of the
     row's codepoint equals the concatenation of the decompositions of
-    the two elements. Closed by `native_decide` over the pinned 3045-row
-    table. Uses `Array.getD` to avoid pattern-matching on array literals
-    (which Lean 4 cannot synthesize equation theorems for). -/
+    the two elements. Proven via the `combP` List-mirror closure over the
+    pinned 3045-row table. -/
 theorem ucd_twoEltDecomp_factoring :
     UnicodeData.rows.all (fun row =>
       if row.canonicalDecomposition.size = 2 then
@@ -692,7 +773,14 @@ theorem ucd_twoEltDecomp_factoring :
                     (row.canonicalDecomposition.getD 1 0))
       else
         true) = true := by
-  native_decide
+  unfold UnicodeData.rows
+  rw [List.all_toArray, List.all_eq_true]
+  intro row hrow
+  have hcomb := List.all_eq_true.mp rowsList_all_combP row hrow
+  unfold combP at hcomb
+  rw [Bool.and_eq_true] at hcomb
+  simp only [ToNFDAppend.fullCanonicalDecompose_eq]
+  exact hcomb.1
 
 -- ── pointwise extraction (non-Hangul) ─────────────────────────────────────────
 
@@ -701,7 +789,7 @@ theorem ucd_twoEltDecomp_factoring :
     array, the full decomposition factors across the two elements.
 
     Uses `Lookup.lookupRow` to identify the UCD row backing `p`, then
-    applies the native_decide table. -/
+    applies the decide table. -/
 theorem fullCanonicalDecompose_of_twoElt_decomp
     (p d c : Nat) (h : Lookup.canonicalDecomposition p = #[d, c]) :
     Decompose.fullCanonicalDecompose p
@@ -763,7 +851,7 @@ theorem fullCanonicalDecompose_of_nonHangul_primaryComposite
 /-- **Hangul L+V factorization table.** For every valid `(L, V)` jamo
     pair, the full canonical decomposition of the composed LV syllable
     equals the concatenation of the decompositions of L and V. Closed
-    by `native_decide` over the 19×21=399 valid pairs. -/
+    by `decide` over the 19×21=399 valid pairs. -/
 theorem hangul_LV_factoring :
     (List.range 19).all (fun lIdx =>
       (List.range 21).all (fun vIdx =>
@@ -775,13 +863,13 @@ theorem hangul_LV_factoring :
                   = Decompose.fullCanonicalDecompose L
                     ++ Decompose.fullCanonicalDecompose V)
         | none => true)) = true := by
-  native_decide
+  decide +kernel
 
 /-- **Hangul LV+T factorization table.** For every `(LV, T)` pair where
     LV is an LV-only Hangul syllable and T is a valid T jamo (T in
     `[TBase+1, TBase+TCount-1]` = `[0x11A8, 0x11C2]`, excluding the
     `isTJamo` off-by-one at `0x11C3`), the factorization holds. Closed
-    by `native_decide` over 399×27=10773 valid pairs. -/
+    by `decide` over 399×27=10773 valid pairs. -/
 theorem hangul_LVT_factoring :
     (List.range (19 * 21)).all (fun lvIdx =>
       (List.range 27).all (fun tIdx =>
@@ -793,7 +881,7 @@ theorem hangul_LVT_factoring :
                   = Decompose.fullCanonicalDecompose LV
                     ++ Decompose.fullCanonicalDecompose T)
         | none => true)) = true := by
-  native_decide
+  decide +kernel
 
 -- ── remaining Hangul hypothesis (narrowed) ────────────────────────────────────
 
@@ -807,7 +895,7 @@ theorem hangul_LVT_factoring :
     `c < TBase + TCount` (i.e., c is NOT the off-by-one edge), the
     factorization holds. Closure path: extract via case analysis on the
     `composePair?` branch (L+V or LV+T) into the respective
-    `native_decide` table. -/
+    `decide` table. -/
 def FullCanonicalDecomposeFactoringHangul : Prop :=
   ∀ (d c p : Nat),
     Hangul.composePair? d c = some p →
@@ -818,7 +906,7 @@ def FullCanonicalDecomposeFactoringHangul : Prop :=
 
 set_option maxRecDepth 100000 in
 /-- **Unconditional closure of the Hangul factorization hypothesis**
-    via the `native_decide` tables. Dispatches on `composePair?`'s
+    via the kernel-decide tables. Dispatches on `composePair?`'s
     L+V and LV+T branches. -/
 theorem fullCanonicalDecomposeFactoringHangul_holds :
     FullCanonicalDecomposeFactoringHangul := by
@@ -838,7 +926,8 @@ theorem fullCanonicalDecomposeFactoringHangul_holds :
       simp only [Hangul.LBase, Hangul.LCount] at hLLo hLHi
       simp only [Hangul.VBase, Hangul.VCount] at hVLo hVHi
       have hLIdxRange : d - 0x1100 < 19 := by omega
-      have hVIdxRange : c - 0x1161 < 21 := by omega
+      have hVIdxRange : c - 0x1161 < 21 :=
+        Nat.sub_lt_left_of_lt_add hVLo hVHi
       have hDEq : 0x1100 + (d - 0x1100) = d := by omega
       have hCEq : 0x1161 + (c - 0x1161) = c := by omega
       have hTable := hangul_LV_factoring
@@ -983,7 +1072,7 @@ theorem toNFD_primaryComposite_expand_nonHangul
   rw [Array.append_assoc]
 
 /-- **Hangul composePair? second-argument bound**. When
-    `Hangul.composePair? first second = some _`, the second argument
+    `Hangul.composePair? first second` succeeds, the second argument
     is strictly less than `TBase + TCount = 0x11C3`. Derived from the
     V-jamo range on the `L+V` path (second ∈ [0x1161, 0x1175]) and
     the strict T-jamo range on the `LV+T` path (second ∈ [0x11A8,
@@ -1014,23 +1103,25 @@ theorem composePair?_second_lt_TBase_plus_TCount
     · simp at h
 
 /-- **V jamos are starters.** Every codepoint in the V jamo range
-    `[0x1161, 0x1176)` has `ccc = 0`. Closed by `native_decide` over
+    `[0x1161, 0x1176)` has `ccc = 0`. Closed by `decide` over
     the 21 V jamos. -/
 theorem vJamo_ccc_zero :
     (List.range 21).all (fun i =>
       decide (Lookup.canonicalCombiningClass (0x1161 + i) = 0)) = true := by
-  native_decide
+  simp only [ToNFDAppend.canonicalCombiningClass_eq]
+  decide +kernel
 
 /-- **T jamos are starters.** Every codepoint in the T jamo range
     `[0x11A8, 0x11C3)` (post-isTJamo-fix) has `ccc = 0`. Closed by
-    `native_decide` over the 27 valid T jamos. -/
+    `decide` over the 27 valid T jamos. -/
 theorem tJamo_ccc_zero :
     (List.range 27).all (fun i =>
       decide (Lookup.canonicalCombiningClass (0x11A8 + i) = 0)) = true := by
-  native_decide
+  simp only [ToNFDAppend.canonicalCombiningClass_eq]
+  decide +kernel
 
 /-- **Hangul.composePair? second-argument is a starter.** When
-    `Hangul.composePair? first second = some _`, the second argument
+    `Hangul.composePair? first second` succeeds, the second argument
     has `ccc = 0`. Derived from the V-jamo and T-jamo ccc-is-zero
     tables above. Contrapositive: `ccc second ≠ 0 → Hangul.composePair?
     first second = none`. -/
@@ -1087,7 +1178,7 @@ theorem composePair?_none_of_nonStarter_second
 /-- **Case 3** closure, conditional on `cp` not being the `0x11C3`
     off-by-one edge: primary-composite absorb at starter boundary
     (empty buffer). The non-Hangul sub-case is handled unconditionally;
-    the Hangul sub-case uses the `native_decide`-backed
+    the Hangul sub-case uses the `decide`-backed
     `fullCanonicalDecomposeFactoringHangul_holds`. -/
 theorem stepPreserves_case_primary_absorb_starter
     (s : Compose.ComposeState) (cp : Nat) (pre : Array Nat)
@@ -1387,14 +1478,21 @@ theorem toNFD_toNFC_eq_toNFD_given
 /-- **UCD invariant: non-starter rows preserve CCC under full canonical
     decomposition.** For every row with `ccc > 0`, every codepoint in
     its `fullCanonicalDecompose` output has the same CCC. Closed by
-    `native_decide` over the 3045-row pinned UnicodeData table. -/
+    `decide` over the 3045-row pinned UnicodeData table. -/
 theorem nonStarter_fullCanonicalDecompose_preserves_ccc :
     UnicodeData.rows.all (fun row =>
       decide (row.canonicalCombiningClass = 0)
       || (Decompose.fullCanonicalDecompose row.codepoint).all
           (fun cp' => decide (Lookup.canonicalCombiningClass cp'
                                 = row.canonicalCombiningClass))) = true := by
-  native_decide
+  unfold UnicodeData.rows
+  rw [List.all_toArray, List.all_eq_true]
+  intro row hrow
+  have hcomb := List.all_eq_true.mp rowsList_all_combP row hrow
+  unfold combP at hcomb
+  rw [Bool.and_eq_true] at hcomb
+  simp only [ToNFDAppend.fullCanonicalDecompose_eq, ToNFDAppend.canonicalCombiningClass_eq]
+  exact hcomb.2
 
 /-- **Pointwise CCC preservation.** For any non-starter codepoint `cp`,
     every element of `fullCanonicalDecompose cp` has CCC equal to
@@ -1543,14 +1641,8 @@ theorem reorderCommutesStrictMax_holds : ReorderCommutesStrictMax := by
   have hExpandP : NFC.toNFD (emitted ++ #[p]) = NFC.toNFD (emitted ++ #[st] ++ #[cp]) :=
     toNFD_primaryComposite_expand_nonHangul emitted st cp p hHangul hPrim
   have hExpandFull : NFC.toNFD (emitted ++ #[p] ++ buffer.reverse.toArray)
-                   = NFC.toNFD (emitted ++ #[st] ++ #[cp] ++ buffer.reverse.toArray) := by
-    calc NFC.toNFD (emitted ++ #[p] ++ buffer.reverse.toArray)
-        _ = NFC.toNFD ((emitted ++ #[p]) ++ buffer.reverse.toArray) := by
-            rw [Array.append_assoc]
-        _ = NFC.toNFD ((emitted ++ #[st] ++ #[cp]) ++ buffer.reverse.toArray) :=
-            ToNFDAppend.toNFD_congr_append buffer.reverse.toArray hExpandP
-        _ = NFC.toNFD (emitted ++ #[st] ++ #[cp] ++ buffer.reverse.toArray) := by
-            rw [Array.append_assoc]
+                   = NFC.toNFD (emitted ++ #[st] ++ #[cp] ++ buffer.reverse.toArray) :=
+    ToNFDAppend.toNFD_congr_append buffer.reverse.toArray hExpandP
   rw [hExpandFull]
   -- Step 3: Prove toNFD (emitted ++ [st] ++ [cp] ++ buf.rev) = toNFD (emitted ++ [st] ++ buf.rev ++ [cp])
   -- Unfold toNFD, distribute decomposeSequence, apply reorder_commutes_strict_max_multi.
