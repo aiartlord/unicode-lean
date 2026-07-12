@@ -59,6 +59,8 @@ namespace Unicode.Security.Display.RendererDivergence
 
 open Unicode.Security.Calculus
 
+set_option maxRecDepth 1000000
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 Types
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -268,45 +270,45 @@ def Classification.positions : Classification → Array Nat
 
 /-- Empty input is stable. -/
 theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
-  decide
+  decide +kernel
 
 /-- Plain ASCII is stable. -/
 theorem detect_ascii_clear :
     (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
-  decide
+  decide +kernel
 
 /-- Plain Han is stable. -/
 theorem detect_han_clear :
-    (detect #[0x4E2D, 0x6587]).classify.isClear = true := by decide
+    (detect #[0x4E2D, 0x6587]).classify.isClear = true := by decide +kernel
 
 /-- A single VS (FE0F) — variance. -/
 theorem detect_vs_variance :
     (detect #[0x1F600, 0xFE0F]).classify.tag
-      = some "VariationSelectorVariance" := by decide
+      = some "VariationSelectorVariance" := by decide +kernel
 
 /-- Registered RGI family ZWJ sequence — stable. -/
 theorem detect_rgi_family_clear :
     (detect #[0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467,
-              0x200D, 0x1F466]).classify.isClear = true := by decide
+              0x200D, 0x1F466]).classify.isClear = true := by decide +kernel
 
 /-- Unregistered ZWJ chain (man + ZWJ + woman, not in RGI) — variance. -/
 theorem detect_unregistered_zwj_variance :
     (detect #[0x1F468, 0x200D, 0x1F469]).classify.tag
-      = some "UnregisteredZwjVariance" := by decide
+      = some "UnregisteredZwjVariance" := by decide +kernel
 
 /-- 4-deep combining stack (Zalgo-shape) — variance. -/
 theorem detect_zalgo_variance :
     (detect #[0x0061, 0x0301, 0x0302, 0x0303, 0x0304]).classify.tag
-      = some "CombiningStackOverflow" := by decide
+      = some "CombiningStackOverflow" := by decide +kernel
 
 /-- Fullwidth A — variance. -/
 theorem detect_fullwidth_variance :
     (detect #[0xFF21]).classify.tag = some "FullwidthVariance" := by
-  decide
+  decide +kernel
 
 /-- Mixed Latin + Hebrew — variance. -/
 theorem detect_mixed_direction :
     (detect #[0x41, 0x42, 0x05D0, 0x05D1]).classify.tag
-      = some "MixedDirectionVariance" := by decide
+      = some "MixedDirectionVariance" := by decide +kernel
 
 end Unicode.Security.Display.RendererDivergence

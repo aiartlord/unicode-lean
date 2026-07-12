@@ -40,6 +40,8 @@ namespace Unicode.Security.Covert.BidiControlBalance
 open Unicode.Security.Calculus
 open Unicode.TrojanSource (isBidiFormatControl opensEmbedding isPDF opensIsolate isPDI)
 
+set_option maxRecDepth 1000000
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 Types
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -279,47 +281,47 @@ def Classification.positions : Classification → Array Nat
 
 /-- Empty input is clear. -/
 theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
-  decide
+  decide +kernel
 
 /-- Plain ASCII is clear (no bidi controls). -/
 theorem detect_ascii_clear :
     (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
-  decide
+  decide +kernel
 
 /-- Balanced LRE … PDF is clear (legitimate left-to-right embedding). -/
 theorem detect_balanced_embedding_clear :
     (detect #[0x202A, 0x41, 0x202C]).classify.isClear = true := by
-  decide
+  decide +kernel
 
 /-- Balanced LRI … PDI is clear (legitimate left-to-right isolate). -/
 theorem detect_balanced_isolate_clear :
     (detect #[0x2066, 0x41, 0x2069]).classify.isClear = true := by
-  decide
+  decide +kernel
 
 /-- Lone LRE (no PDF) — unbalanced embedding (Trojan Source CVE-2021-42574). -/
 theorem detect_lone_lre :
     (detect #[0x202A, 0x41]).classify.tag = some "UnbalancedEmbedding" := by
-  decide
+  decide +kernel
 
 /-- Lone RLO (no PDF) — unbalanced embedding override. -/
 theorem detect_lone_rlo :
     (detect #[0x202E, 0x41]).classify.tag = some "UnbalancedEmbedding" := by
-  decide
+  decide +kernel
 
 /-- Lone PDF (no preceding opener) — orphan pop. -/
 theorem detect_lone_pdf :
     (detect #[0x202C]).classify.tag = some "OrphanPop" := by
-  decide
+  decide +kernel
 
 /-- Lone PDI (no preceding isolate) — orphan pop. -/
 theorem detect_lone_pdi :
     (detect #[0x2069]).classify.tag = some "OrphanPop" := by
-  decide
+  decide +kernel
 
 /-- Lone LRI (no PDI) — unbalanced isolate (CVE-2021-42694). -/
 theorem detect_lone_lri :
     (detect #[0x2067, 0x41]).classify.tag = some "UnbalancedIsolate" := by
-  decide
+  decide +kernel
 
 /-- The Boucher-Anderson 2021 canonical "commenting-out" attack
     minimum shape — balanced (one RLO + one PDF), so this particular
@@ -328,50 +330,50 @@ theorem detect_lone_lri :
 theorem detect_trojan_source_shape :
     (detect #[0x69, 0x66, 0x20, 0x202E, 0x29, 0x202C,
               0x7B]).classify.isClear = true := by
-  decide
+  decide +kernel
 
 /-- Same shape with the closing PDF removed — the actual
     Trojan-Source attack class. -/
 theorem detect_trojan_source_unbalanced :
     (detect #[0x69, 0x66, 0x20, 0x202E, 0x29, 0x7B]).classify.tag
-      = some "UnbalancedEmbedding" := by decide
+      = some "UnbalancedEmbedding" := by decide +kernel
 
 /-- Deep-nesting attack — 126 nested LRE's exceed UAX #9 §3.3.2's 125 cap. -/
 theorem detect_depth_exceeded :
     let deepInput : Array Nat :=
       Array.replicate 126 0x202A ++ Array.replicate 126 0x202C
     (detect deepInput).classify.tag = some "DepthExceeded" := by
-  decide
+  decide +kernel
 
 /-- Exactly 125-deep nesting is within the UAX #9 cap. -/
 theorem detect_depth_at_limit_clear :
     let okInput : Array Nat :=
       Array.replicate 125 0x202A ++ Array.replicate 125 0x202C
     (detect okInput).classify.isClear = true := by
-  decide
+  decide +kernel
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Predicate sanity checks
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The four embedding-opener controls. -/
-theorem is_bidi_lre : isBidiFormatControl 0x202A = true := by decide
-theorem is_bidi_rle : isBidiFormatControl 0x202B = true := by decide
-theorem is_bidi_lro : isBidiFormatControl 0x202D = true := by decide
-theorem is_bidi_rlo : isBidiFormatControl 0x202E = true := by decide
+theorem is_bidi_lre : isBidiFormatControl 0x202A = true := by decide +kernel
+theorem is_bidi_rle : isBidiFormatControl 0x202B = true := by decide +kernel
+theorem is_bidi_lro : isBidiFormatControl 0x202D = true := by decide +kernel
+theorem is_bidi_rlo : isBidiFormatControl 0x202E = true := by decide +kernel
 
 /-- PDF is the embedding pop. -/
-theorem is_bidi_pdf : isBidiFormatControl 0x202C = true := by decide
+theorem is_bidi_pdf : isBidiFormatControl 0x202C = true := by decide +kernel
 
 /-- The three isolate-opener controls. -/
-theorem is_bidi_lri : isBidiFormatControl 0x2066 = true := by decide
-theorem is_bidi_rli : isBidiFormatControl 0x2067 = true := by decide
-theorem is_bidi_fsi : isBidiFormatControl 0x2068 = true := by decide
+theorem is_bidi_lri : isBidiFormatControl 0x2066 = true := by decide +kernel
+theorem is_bidi_rli : isBidiFormatControl 0x2067 = true := by decide +kernel
+theorem is_bidi_fsi : isBidiFormatControl 0x2068 = true := by decide +kernel
 
 /-- PDI is the isolate pop. -/
-theorem is_bidi_pdi : isBidiFormatControl 0x2069 = true := by decide
+theorem is_bidi_pdi : isBidiFormatControl 0x2069 = true := by decide +kernel
 
 /-- ASCII is not bidi. -/
-theorem is_bidi_ascii : isBidiFormatControl 0x41 = false := by decide
+theorem is_bidi_ascii : isBidiFormatControl 0x41 = false := by decide +kernel
 
 end Unicode.Security.Covert.BidiControlBalance
