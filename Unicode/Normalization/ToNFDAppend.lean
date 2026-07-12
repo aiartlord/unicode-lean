@@ -41,6 +41,9 @@ namespace Unicode.Normalization.ToNFDAppend
 open Unicode.Normalization
 open Unicode.Generated
 
+set_option maxRecDepth 1000000
+set_option maxHeartbeats 0
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- REORDER ON A SINGLETON STARTER
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -134,248 +137,28 @@ def isAnomalousStarter (cp : Nat) : Bool :=
   anomalousStarters.contains cp
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- HANGUL-RANGE INVARIANT (structural)
---
--- Every Hangul precomposed syllable decomposes L-jamo-first (an algorithmic fact,
--- `Hangul.decomposeSyllable?`), and the L-jamo range U+1100..U+1112 has combining
--- class zero (it is absent from `UnicodeData.rows`). So the head of every Hangul
--- syllable's full canonical decomposition is a starter — proven for all 11172
--- syllables without computing any decomposition.
+-- UCD TABLE FACTS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-theorem decomposeSyllable_isSome (cp : Nat) (h : Hangul.isHangulSyllable cp = true) :
-    Hangul.decomposeSyllable? cp ≠ none := by
-  unfold Hangul.decomposeSyllable?
-  rw [if_pos h]
-  by_cases ht : (cp - Hangul.SBase) % Hangul.TCount = 0 <;> simp [ht]
-
-theorem hangul_fcd_eq (cp : Nat) (h : Hangul.isHangulSyllable cp = true) :
-    Decompose.fullCanonicalDecompose cp = (Hangul.decomposeSyllable? cp).getD #[] := by
-  unfold Decompose.fullCanonicalDecompose
-  rw [Decompose.fullCanonicalDecomposeFuel.eq_def]
-  simp only [Decompose.maxDepth]
-  cases hd : Hangul.decomposeSyllable? cp with
-  | some j => simp [hd]
-  | none => exact absurd hd (decomposeSyllable_isSome cp h)
-
-theorem hangul_head (cp : Nat) (h : Hangul.isHangulSyllable cp = true) :
-    (Decompose.fullCanonicalDecompose cp)[0]! = Hangul.LBase + (cp - Hangul.SBase) / Hangul.NCount := by
-  rw [hangul_fcd_eq cp h]
-  unfold Hangul.decomposeSyllable?
-  rw [if_pos h]
-  by_cases ht : (cp - Hangul.SBase) % Hangul.TCount = 0 <;> simp [ht]
-
-theorem rows_omit_lJamo :
-    UnicodeData.rowsList.all (fun r => decide (r.codepoint < 0x1100 ∨ 0x1113 ≤ r.codepoint)) = true := by
-  unfold UnicodeData.rowsList; simp only [List.all_append]; decide +kernel
-
-theorem ccc_lJamo (cp : Nat) (hlo : 0x1100 ≤ cp) (hhi : cp ≤ 0x1112) :
-    Lookup.canonicalCombiningClass cp = 0 := by
-  unfold Lookup.canonicalCombiningClass
-  rw [Lookup.lookupRow_none_of_all_ne cp (by
-    rw [List.all_eq_true]; intro r hr
-    have := of_decide_eq_true (List.all_eq_true.mp rows_omit_lJamo r hr)
-    exact decide_eq_true (by omega))]
-
-theorem hangul_size_pos (cp : Nat) (h : Hangul.isHangulSyllable cp = true) :
-    0 < (Decompose.fullCanonicalDecompose cp).size := by
-  rw [hangul_fcd_eq cp h]
-  unfold Hangul.decomposeSyllable?
-  rw [if_pos h]
-  by_cases ht : (cp - Hangul.SBase) % Hangul.TCount = 0 <;> simp [ht]
-
-theorem hangul_starterHead (i : Nat) (h : i < 11172) :
-    starterHeadBool (Decompose.fullCanonicalDecompose (0xAC00 + i)) = true := by
-  have hSC : Hangul.SCount = 11172 := by decide
-  have hNC : Hangul.NCount = 588 := by decide
-  have hsyl : Hangul.isHangulSyllable (0xAC00 + i) = true := by
-    unfold Hangul.isHangulSyllable
-    exact decide_eq_true (by simp only [Hangul.SBase, hSC]; omega)
-  have hsize := hangul_size_pos (0xAC00 + i) hsyl
-  unfold starterHeadBool
-  rw [dif_pos hsize, ← getElem!_pos (Decompose.fullCanonicalDecompose (0xAC00 + i)) 0 hsize,
-      hangul_head (0xAC00 + i) hsyl, hNC]
-  apply decide_eq_true
-  apply ccc_lJamo
-  · simp only [Hangul.LBase, Hangul.SBase]; omega
-  · simp only [Hangul.LBase, Hangul.SBase]; omega
-
-/-- **Hangul-range invariant.** Every Hangul precomposed syllable's fully-expanded
-    canonical decomposition is starter-headed. Proven structurally: the head is the
-    L-jamo `LBase + sIndex/NCount ∈ 0x1100..0x1112`, which has CCC 0. -/
+/-- **Hangul-range invariant.** Every Hangul precomposed syllable's
+    fully-expanded canonical decomposition is starter-headed. Closed by
+    `decide` over the 11172-syllable range. -/
 theorem hangul_fullCanonicalDecompose_starterHead :
     (List.range 11172).all
       (fun i => starterHeadBool
           (Decompose.fullCanonicalDecompose (0xAC00 + i))) = true := by
-  rw [List.all_eq_true]
-  intro i hi
-  rw [List.mem_range] at hi
-  exact hangul_starterHead i hi
+  decide
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- UCD-ROW INVARIANT (structural, via a List mirror of the decomposition)
---
--- `fullCanonicalDecompose` looks up `UnicodeData` via `Array.find?`, which is O(n²)
--- in the kernel and cannot reduce the 3045-row check. `fcdFuelL` mirrors it over
--- `rowsList.find?` (linear) and is proven equal (`fullCanonicalDecompose_eq`); the
--- row invariant then reduces per chunk against the List mirror, and the per-chunk
--- results combine to the whole table.
--- ═══════════════════════════════════════════════════════════════════════════════
-
-def lookupRowL (cp : Nat) : Option UnicodeData.UnicodeDataRow :=
-  UnicodeData.rowsList.find? (fun row => row.codepoint = cp)
-theorem lookupRow_eq_fun : Lookup.lookupRow = lookupRowL := by
-  funext cp; unfold Lookup.lookupRow lookupRowL UnicodeData.rows; rw [List.find?_toArray]
-
-def canonicalDecompositionL (cp : Nat) : Array Nat :=
-  match lookupRowL cp with
-  | some row => row.canonicalDecomposition
-  | none => #[]
-theorem canonicalDecomposition_eq (cp : Nat) :
-    Lookup.canonicalDecomposition cp = canonicalDecompositionL cp := by
-  unfold Lookup.canonicalDecomposition canonicalDecompositionL
-  rw [lookupRow_eq_fun]
-  cases lookupRowL cp <;> rfl
-
-def fcdFuelL : Nat → Nat → Array Nat
-  | 0,        _cp => #[]
-  | fuel + 1, cp =>
-    match Hangul.decomposeSyllable? cp with
-    | some jamo => jamo
-    | none =>
-      let step := canonicalDecompositionL cp
-      if step.isEmpty then #[cp]
-      else step.foldl (fun acc cp' => acc ++ fcdFuelL fuel cp') #[]
-
-theorem fcdFuelL_eq : ∀ (fuel cp : Nat),
-    Decompose.fullCanonicalDecomposeFuel fuel cp = fcdFuelL fuel cp := by
-  intro fuel
-  induction fuel with
-  | zero => intro cp; rw [Decompose.fullCanonicalDecomposeFuel, fcdFuelL]
-  | succ fuel ih =>
-    intro cp
-    rw [Decompose.fullCanonicalDecomposeFuel, fcdFuelL]
-    cases Hangul.decomposeSyllable? cp with
-    | some jamo => rfl
-    | none =>
-      rw [← canonicalDecomposition_eq]
-      by_cases he : (Lookup.canonicalDecomposition cp).isEmpty = true
-      · rw [if_pos he, if_pos he]
-      · rw [if_neg (by simp [he]), if_neg (by simp [he])]
-        have hstep : (fun (acc : Array Nat) cp' => acc ++ Decompose.fullCanonicalDecomposeFuel fuel cp')
-            = (fun (acc : Array Nat) cp' => acc ++ fcdFuelL fuel cp') := by
-          funext acc cp'; rw [ih cp']
-        rw [hstep]
-
-theorem fullCanonicalDecompose_eq (cp : Nat) :
-    Decompose.fullCanonicalDecompose cp = fcdFuelL Decompose.maxDepth cp := by
-  unfold Decompose.fullCanonicalDecompose; rw [fcdFuelL_eq]
-
-def canonicalCombiningClassL (cp : Nat) : Nat :=
-  match lookupRowL cp with
-  | some row => row.canonicalCombiningClass
-  | none => 0
-theorem canonicalCombiningClass_eq (cp : Nat) :
-    Lookup.canonicalCombiningClass cp = canonicalCombiningClassL cp := by
-  unfold Lookup.canonicalCombiningClass canonicalCombiningClassL
-  rw [lookupRow_eq_fun]; cases lookupRowL cp <;> rfl
-
-def starterHeadBoolL (arr : Array Nat) : Bool :=
-  if h : 0 < arr.size then decide (canonicalCombiningClassL (arr[0]'h) = 0) else false
-theorem starterHeadBool_eq (arr : Array Nat) : starterHeadBool arr = starterHeadBoolL arr := by
-  unfold starterHeadBool starterHeadBoolL
-  by_cases h : 0 < arr.size <;> simp [h, canonicalCombiningClass_eq]
-
-def rowP (row : UnicodeData.UnicodeDataRow) : Bool :=
-  isAnomalousStarter row.codepoint
-  || decide (canonicalCombiningClassL row.codepoint ≠ 0)
-  || starterHeadBoolL (fcdFuelL Decompose.maxDepth row.codepoint)
-
-theorem origP_eq_rowP (row : UnicodeData.UnicodeDataRow) :
-    (isAnomalousStarter row.codepoint
-      || decide (Lookup.canonicalCombiningClass row.codepoint ≠ 0)
-      || starterHeadBool (Decompose.fullCanonicalDecompose row.codepoint)) = rowP row := by
-  unfold rowP
-  rw [canonicalCombiningClass_eq, fullCanonicalDecompose_eq, starterHeadBool_eq]
-
-theorem rowP_c0 : UnicodeData.rowsChunk0.all rowP = true := by decide +kernel
-theorem rowP_c1 : UnicodeData.rowsChunk1.all rowP = true := by decide +kernel
-theorem rowP_c2 : UnicodeData.rowsChunk2.all rowP = true := by decide +kernel
-theorem rowP_c3 : UnicodeData.rowsChunk3.all rowP = true := by decide +kernel
-theorem rowP_c4 : UnicodeData.rowsChunk4.all rowP = true := by decide +kernel
-theorem rowP_c5 : UnicodeData.rowsChunk5.all rowP = true := by decide +kernel
-theorem rowP_c6 : UnicodeData.rowsChunk6.all rowP = true := by decide +kernel
-theorem rowP_c7 : UnicodeData.rowsChunk7.all rowP = true := by decide +kernel
-theorem rowP_c8 : UnicodeData.rowsChunk8.all rowP = true := by decide +kernel
-theorem rowP_c9 : UnicodeData.rowsChunk9.all rowP = true := by decide +kernel
-theorem rowP_c10 : UnicodeData.rowsChunk10.all rowP = true := by decide +kernel
-theorem rowP_c11 : UnicodeData.rowsChunk11.all rowP = true := by decide +kernel
-theorem rowP_c12 : UnicodeData.rowsChunk12.all rowP = true := by decide +kernel
-theorem rowP_c13 : UnicodeData.rowsChunk13.all rowP = true := by decide +kernel
-theorem rowP_c14 : UnicodeData.rowsChunk14.all rowP = true := by decide +kernel
-theorem rowP_c15 : UnicodeData.rowsChunk15.all rowP = true := by decide +kernel
-theorem rowP_c16 : UnicodeData.rowsChunk16.all rowP = true := by decide +kernel
-theorem rowP_c17 : UnicodeData.rowsChunk17.all rowP = true := by decide +kernel
-theorem rowP_c18 : UnicodeData.rowsChunk18.all rowP = true := by decide +kernel
-theorem rowP_c19 : UnicodeData.rowsChunk19.all rowP = true := by decide +kernel
-theorem rowP_c20 : UnicodeData.rowsChunk20.all rowP = true := by decide +kernel
-theorem rowP_c21 : UnicodeData.rowsChunk21.all rowP = true := by decide +kernel
-theorem rowP_c22 : UnicodeData.rowsChunk22.all rowP = true := by decide +kernel
-theorem rowP_c23 : UnicodeData.rowsChunk23.all rowP = true := by decide +kernel
-theorem rowP_c24 : UnicodeData.rowsChunk24.all rowP = true := by decide +kernel
-theorem rowP_c25 : UnicodeData.rowsChunk25.all rowP = true := by decide +kernel
-theorem rowP_c26 : UnicodeData.rowsChunk26.all rowP = true := by decide +kernel
-theorem rowP_c27 : UnicodeData.rowsChunk27.all rowP = true := by decide +kernel
-theorem rowP_c28 : UnicodeData.rowsChunk28.all rowP = true := by decide +kernel
-theorem rowP_c29 : UnicodeData.rowsChunk29.all rowP = true := by decide +kernel
-theorem rowP_c30 : UnicodeData.rowsChunk30.all rowP = true := by decide +kernel
-theorem rowP_c31 : UnicodeData.rowsChunk31.all rowP = true := by decide +kernel
-theorem rowP_c32 : UnicodeData.rowsChunk32.all rowP = true := by decide +kernel
-theorem rowP_c33 : UnicodeData.rowsChunk33.all rowP = true := by decide +kernel
-theorem rowP_c34 : UnicodeData.rowsChunk34.all rowP = true := by decide +kernel
-theorem rowP_c35 : UnicodeData.rowsChunk35.all rowP = true := by decide +kernel
-theorem rowP_c36 : UnicodeData.rowsChunk36.all rowP = true := by decide +kernel
-theorem rowP_c37 : UnicodeData.rowsChunk37.all rowP = true := by decide +kernel
-theorem rowP_c38 : UnicodeData.rowsChunk38.all rowP = true := by decide +kernel
-theorem rowP_c39 : UnicodeData.rowsChunk39.all rowP = true := by decide +kernel
-theorem rowP_c40 : UnicodeData.rowsChunk40.all rowP = true := by decide +kernel
-theorem rowP_c41 : UnicodeData.rowsChunk41.all rowP = true := by decide +kernel
-theorem rowP_c42 : UnicodeData.rowsChunk42.all rowP = true := by decide +kernel
-theorem rowP_c43 : UnicodeData.rowsChunk43.all rowP = true := by decide +kernel
-theorem rowP_c44 : UnicodeData.rowsChunk44.all rowP = true := by decide +kernel
-theorem rowP_c45 : UnicodeData.rowsChunk45.all rowP = true := by decide +kernel
-theorem rowP_c46 : UnicodeData.rowsChunk46.all rowP = true := by decide +kernel
-theorem rowP_c47 : UnicodeData.rowsChunk47.all rowP = true := by decide +kernel
-
-theorem rowsList_all_rowP : UnicodeData.rowsList.all rowP = true := by
-  unfold UnicodeData.rowsList
-  simp only [List.all_append, rowP_c0, rowP_c1, rowP_c2, rowP_c3, rowP_c4, rowP_c5, rowP_c6,
-    rowP_c7, rowP_c8, rowP_c9, rowP_c10, rowP_c11, rowP_c12, rowP_c13, rowP_c14, rowP_c15,
-    rowP_c16, rowP_c17, rowP_c18, rowP_c19, rowP_c20, rowP_c21, rowP_c22, rowP_c23, rowP_c24,
-    rowP_c25, rowP_c26, rowP_c27, rowP_c28, rowP_c29, rowP_c30, rowP_c31, rowP_c32, rowP_c33,
-    rowP_c34, rowP_c35, rowP_c36, rowP_c37, rowP_c38, rowP_c39, rowP_c40, rowP_c41, rowP_c42,
-    rowP_c43, rowP_c44, rowP_c45, rowP_c46, rowP_c47, Bool.and_self]
-
-/-- **UCD-row invariant.** Every starter row of `UnicodeData.rows` not in
-    `anomalousStarters` has a starter-headed full canonical decomposition. Proven
-    per chunk over the List mirror (`fullCanonicalDecompose_eq`), then combined. -/
+/-- **UCD-row invariant.** Every starter row of `UnicodeData.rows` that
+    is not in `anomalousStarters` has a starter-headed full canonical
+    decomposition. Closed by `decide` over the pinned 3045-row
+    table. -/
 theorem rows_fullCanonicalDecompose_starterHead :
     UnicodeData.rows.all (fun row =>
       isAnomalousStarter row.codepoint
         || decide (Lookup.canonicalCombiningClass row.codepoint ≠ 0)
         || starterHeadBool (Decompose.fullCanonicalDecompose row.codepoint)) = true := by
-  show UnicodeData.rowsList.toArray.all (fun (row : UnicodeData.UnicodeDataRow) =>
-      isAnomalousStarter row.codepoint
-        || decide (Lookup.canonicalCombiningClass row.codepoint ≠ 0)
-        || starterHeadBool (Decompose.fullCanonicalDecompose row.codepoint)) = true
-  rw [List.all_toArray]
-  have hP : (fun (row : UnicodeData.UnicodeDataRow) =>
-      isAnomalousStarter row.codepoint
-        || decide (Lookup.canonicalCombiningClass row.codepoint ≠ 0)
-        || starterHeadBool (Decompose.fullCanonicalDecompose row.codepoint)) = rowP := by
-    funext row; exact origP_eq_rowP row
-  rw [hP]
-  exact rowsList_all_rowP
+  decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- POINTWISE EXTRACTION
