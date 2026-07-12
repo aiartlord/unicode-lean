@@ -40,6 +40,9 @@ namespace Unicode.Security.Covert.BidiControlBalance
 open Unicode.Security.Calculus
 open Unicode.TrojanSource (isBidiFormatControl opensEmbedding isPDF opensIsolate isPDI)
 
+set_option maxRecDepth 1000000
+set_option maxHeartbeats 10000000
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 Types
 -- ═══════════════════════════════════════════════════════════════════════════════

@@ -41,6 +41,8 @@ namespace Unicode.Security.Display.FilenameDisguise
 
 open Unicode.Security.Calculus
 
+set_option maxRecDepth 1000000
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 Types
 -- ═══════════════════════════════════════════════════════════════════════════════

@@ -54,6 +54,8 @@ namespace Unicode.Security.Display.RtlInjection
 open Unicode.Security.Calculus
 open Unicode.Generated.DerivedBidiClass (BidiClass)
 
+set_option maxRecDepth 1000000
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 Types
 -- ═══════════════════════════════════════════════════════════════════════════════
