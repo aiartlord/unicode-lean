@@ -1,0 +1,674 @@
+package com.unicodesecurity;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+
+public final class Security {
+  public static final class Action {
+    public static final String ALLOW = "allow";
+    public static final String REJECT = "reject";
+    public static final String QUARANTINE = "quarantine";
+    public static final String REWRITE = "rewrite";
+    public static final String OBSERVE = "observe";
+    private Action() {}
+  }
+
+  public static final class Mode {
+    public static final String OBSERVE = "observe";
+    public static final String WARN = "warn";
+    public static final String ENFORCE = "enforce";
+    public static final String STRICT = "strict";
+    private Mode() {}
+  }
+
+  public static final class Profile {
+    public static final String GATEWAY_HEADER = "gateway-header";
+    public static final String DOMAIN_NAME = "domain-name";
+    public static final String DNS_LABEL = "dns-label";
+    public static final String URL = "url";
+    public static final String USERNAME = "username";
+    public static final String DISPLAY_NAME = "display-name";
+    public static final String CHAT_MESSAGE = "chat-message";
+    public static final String SOURCE_CODE = "source-code";
+    public static final String OPAQUE_SECRET = "opaque-secret";
+    public static final String BINARY_BLOB = "binary-blob";
+    private Profile() {}
+  }
+
+  public static final class Family {
+    public static final String MALFORMED_UTF8 = "malformed-utf8";
+    public static final String MALFORMED_UTF16 = "malformed-utf16";
+    public static final String MALFORMED_UTF32 = "malformed-utf32";
+    public static final String TAG_BLOCK_PAYLOAD = "tag-block-payload";
+    public static final String VARIATION_SELECTOR_PAYLOAD = "variation-selector-payload";
+    public static final String ZERO_WIDTH_PAYLOAD = "zero-width-payload";
+    public static final String BIDI_CONTROL_BALANCE = "bidi-control-balance";
+    public static final String NONCHARACTER_CONTROL = "noncharacter-control";
+    public static final String HOMOGLYPH_CONFUSABLE = "homoglyph-confusable";
+    public static final String MIXED_SCRIPT_ADMISSIBILITY = "mixed-script-admissibility";
+    private Family() {}
+  }
+
+  public record Finding(String code, String family, int severity, List<Integer> positions, String subThreat, String detail) {}
+
+  public record Verdict(String action, String profile, String mode, List<Integer> input, List<Finding> findings, List<Integer> normalized) {}
+
+  private enum PolicyLevel { RESTRICTIVE, MODERATE, MINIMAL }
+
+  private record ProfilePolicy(PolicyLevel level, boolean quarantine) {}
+
+  private record DecodeFailure(String subThreat, int offset) {}
+
+  private record DecodeResult(List<Integer> codepoints, DecodeFailure failure) {}
+
+  private record Utf8State(boolean inSequence, int remaining, int accum, int minCp) {}
+
+  private record Utf8Step(Utf8State state, int emitted, String kind, boolean rejected) {}
+
+  private enum ByteOrder { BIG, LITTLE }
+
+  private static Map<Integer, List<Integer>> confusablesMap;
+  private static List<String> knownTargets;
+
+  private Security() {}
+
+  public static Verdict scan(String profile, String mode, List<Integer> input) {
+    List<Integer> codepoints = input.stream().map(Security::ensureCodepoint).toList();
+    List<Finding> findings = detect(codepoints);
+    return new Verdict(decide(profile, mode, findings), profile, mode, codepoints, findings, null);
+  }
+
+  public static Verdict scanUtf8(String profile, String mode, byte[] input) {
+    DecodeFailure failure = firstInvalidUtf8(input);
+    if (failure != null) {
+      return malformedDecodeVerdict(profile, mode, Family.MALFORMED_UTF8, failure.subThreat(), failure.offset());
+    }
+    return scan(profile, mode, decodeUtf8ToCodepoints(input));
+  }
+
+  public static Verdict scanUtf16BE(String profile, String mode, byte[] input) {
+    return scanUtf16(profile, mode, input, ByteOrder.BIG);
+  }
+
+  public static Verdict scanUtf16LE(String profile, String mode, byte[] input) {
+    return scanUtf16(profile, mode, input, ByteOrder.LITTLE);
+  }
+
+  public static Verdict scanUtf32BE(String profile, String mode, byte[] input) {
+    return scanUtf32(profile, mode, input, ByteOrder.BIG);
+  }
+
+  public static Verdict scanUtf32LE(String profile, String mode, byte[] input) {
+    return scanUtf32(profile, mode, input, ByteOrder.LITTLE);
+  }
+
+  public static String verdictJson(Verdict verdict) {
+    StringBuilder out = new StringBuilder();
+    out.append('{');
+    jsonField(out, "action", verdict.action());
+    out.append(',');
+    jsonField(out, "profile", verdict.profile());
+    out.append(',');
+    jsonField(out, "mode", verdict.mode());
+    out.append(',');
+    out.append("\"input\":");
+    appendIntArray(out, verdict.input());
+    out.append(',');
+    out.append("\"findings\":[");
+    for (int i = 0; i < verdict.findings().size(); i++) {
+      if (i > 0) out.append(',');
+      appendFinding(out, verdict.findings().get(i));
+    }
+    out.append("],");
+    out.append("\"normalized\":");
+    if (verdict.normalized() == null) {
+      out.append("null");
+    } else {
+      appendIntArray(out, verdict.normalized());
+    }
+    out.append('}');
+    return out.toString();
+  }
+
+  private static List<Finding> detect(List<Integer> input) {
+    List<Finding> findings = new ArrayList<>();
+    List<Integer> tags = positionsWhere(input, Security::isTagBlockAsciiPayload);
+    if (!tags.isEmpty()) findings.add(makeFinding(Family.TAG_BLOCK_PAYLOAD, "DirectAscii", tags));
+    Finding variation = variationSelectorFinding(input);
+    if (variation != null) findings.add(variation);
+    List<Integer> zeroWidth = positionsWhere(input, Security::isZeroWidthPayload);
+    if (!zeroWidth.isEmpty()) findings.add(makeFinding(Family.ZERO_WIDTH_PAYLOAD, "BareZeroWidth", zeroWidth));
+    List<Integer> bidi = positionsWhere(input, Security::isBidiEmbeddingControl);
+    if (!bidi.isEmpty()) findings.add(makeFinding(Family.BIDI_CONTROL_BALANCE, "UnbalancedEmbedding", bidi));
+    findings.addAll(noncharacterControlFindings(input));
+    Finding homoglyph = homoglyphConfusableFinding(input);
+    if (homoglyph != null) findings.add(homoglyph);
+    Finding mixedScript = mixedScriptAdmissibilityFinding(input);
+    if (mixedScript != null) findings.add(mixedScript);
+    return findings;
+  }
+
+  private static String decide(String profile, String mode, List<Finding> findings) {
+    if (findings.isEmpty()) return Action.ALLOW;
+    if (Objects.equals(mode, Mode.OBSERVE) || Objects.equals(mode, Mode.WARN)) return Action.OBSERVE;
+    if (Objects.equals(mode, Mode.STRICT)) return Action.REJECT;
+    ProfilePolicy policy = policyOfProfile(profile);
+    for (Finding finding : findings) {
+      if (blocks(policy.level(), finding.family())) {
+        return policy.quarantine() ? Action.QUARANTINE : Action.REJECT;
+      }
+    }
+    return Action.ALLOW;
+  }
+
+  private static ProfilePolicy policyOfProfile(String profile) {
+    return switch (profile) {
+      case Profile.GATEWAY_HEADER, Profile.DOMAIN_NAME, Profile.DNS_LABEL, Profile.SOURCE_CODE ->
+          new ProfilePolicy(PolicyLevel.RESTRICTIVE, false);
+      case Profile.URL -> new ProfilePolicy(PolicyLevel.MODERATE, false);
+      case Profile.USERNAME -> new ProfilePolicy(PolicyLevel.MODERATE, true);
+      case Profile.DISPLAY_NAME, Profile.CHAT_MESSAGE -> new ProfilePolicy(PolicyLevel.MINIMAL, true);
+      case Profile.OPAQUE_SECRET, Profile.BINARY_BLOB -> new ProfilePolicy(PolicyLevel.MINIMAL, false);
+      default -> new ProfilePolicy(PolicyLevel.RESTRICTIVE, false);
+    };
+  }
+
+  private static boolean blocks(PolicyLevel level, String family) {
+    if (level == PolicyLevel.MINIMAL) {
+      return family.equals(Family.MALFORMED_UTF8) || family.equals(Family.MALFORMED_UTF16) ||
+          family.equals(Family.MALFORMED_UTF32) || family.equals(Family.BIDI_CONTROL_BALANCE) ||
+          family.equals(Family.NONCHARACTER_CONTROL);
+    }
+    return family.equals(Family.MALFORMED_UTF8) || family.equals(Family.MALFORMED_UTF16) ||
+        family.equals(Family.MALFORMED_UTF32) || family.equals(Family.TAG_BLOCK_PAYLOAD) ||
+        family.equals(Family.VARIATION_SELECTOR_PAYLOAD) || family.equals(Family.ZERO_WIDTH_PAYLOAD) ||
+        family.equals(Family.BIDI_CONTROL_BALANCE) || family.equals(Family.NONCHARACTER_CONTROL) ||
+        family.equals(Family.HOMOGLYPH_CONFUSABLE) ||
+        family.equals(Family.MIXED_SCRIPT_ADMISSIBILITY);
+  }
+
+  private static Verdict malformedDecodeVerdict(String profile, String mode, String family, String subThreat, int offset) {
+    List<Finding> findings = List.of(makeFinding(family, subThreat, List.of(offset)));
+    return new Verdict(decide(profile, mode, findings), profile, mode, List.of(), findings, null);
+  }
+
+  private static Finding makeFinding(String family, String subThreat, List<Integer> positions) {
+    return new Finding(reasonCode(family, subThreat), family, 2, List.copyOf(positions), subThreat, family);
+  }
+
+  private static String reasonCode(String family, String subThreat) {
+    return "unicode.security." + layer(family) + "." + family + "." + subThreat;
+  }
+
+  private static String layer(String family) {
+    return family.equals(Family.HOMOGLYPH_CONFUSABLE) ||
+        family.equals(Family.MIXED_SCRIPT_ADMISSIBILITY) ? "I" : "C";
+  }
+
+  private static List<Integer> positionsWhere(List<Integer> input, IntPredicate predicate) {
+    List<Integer> positions = new ArrayList<>();
+    for (int i = 0; i < input.size(); i++) {
+      if (predicate.test(input.get(i))) positions.add(i);
+    }
+    return positions;
+  }
+
+  private static boolean isTagBlockAsciiPayload(int cp) {
+    return cp >= 0xE0020 && cp <= 0xE007E;
+  }
+
+  private static Finding variationSelectorFinding(List<Integer> input) {
+    List<Integer> positions = positionsWhere(input, Security::isVariationSelector);
+    if (positions.isEmpty()) return null;
+    String subThreat = "IllegalTarget";
+    if (positions.size() >= 4 && allSameAt(input, positions)) {
+      subThreat = "RepeatedBase";
+    } else if (!decodeVariationSelectorRun(input, positions).isEmpty()) {
+      subThreat = "DirectPayload";
+    }
+    return makeFinding(Family.VARIATION_SELECTOR_PAYLOAD, subThreat, positions);
+  }
+
+  private static boolean isVariationSelector(int cp) {
+    return (cp >= 0xFE00 && cp <= 0xFE0F) || (cp >= 0xE0100 && cp <= 0xE01EF) || (cp >= 0x180B && cp <= 0x180D);
+  }
+
+  private static Integer variationSelectorNibble(int cp) {
+    if (cp >= 0xFE00 && cp <= 0xFE0F) return cp - 0xFE00;
+    if (cp >= 0xE0100 && cp <= 0xE01EF) return cp - 0xE0100 + 16;
+    return null;
+  }
+
+  private static List<Integer> decodeVariationSelectorRun(List<Integer> input, List<Integer> positions) {
+    List<Integer> out = new ArrayList<>();
+    int high = 0;
+    boolean haveHigh = false;
+    for (int position : positions) {
+      Integer nibble = variationSelectorNibble(input.get(position));
+      if (nibble == null) continue;
+      if (!haveHigh) {
+        high = nibble;
+        haveHigh = true;
+      } else {
+        out.add((high << 4) | nibble);
+        haveHigh = false;
+      }
+    }
+    return out;
+  }
+
+  private static boolean allSameAt(List<Integer> input, List<Integer> positions) {
+    if (positions.isEmpty()) return true;
+    int first = input.get(positions.get(0));
+    for (int position : positions) {
+      if (input.get(position) != first) return false;
+    }
+    return true;
+  }
+
+  private static boolean isZeroWidthPayload(int cp) {
+    return cp == 0x200B || cp == 0x200C || cp == 0x200D || cp == 0x2060 || cp == 0xFEFF;
+  }
+
+  private static boolean isBidiEmbeddingControl(int cp) {
+    return cp >= 0x202A && cp <= 0x202E;
+  }
+
+  private static List<Finding> noncharacterControlFindings(List<Integer> input) {
+    List<Finding> findings = new ArrayList<>();
+    List<Integer> noncharacters = positionsWhere(input, Security::isNoncharacter);
+    if (!noncharacters.isEmpty()) findings.add(makeFinding(Family.NONCHARACTER_CONTROL, "Noncharacter", noncharacters));
+    List<Integer> c0 = positionsWhere(input, Security::isC0Control);
+    if (!c0.isEmpty()) findings.add(makeFinding(Family.NONCHARACTER_CONTROL, "C0Control", c0));
+    List<Integer> c1 = positionsWhere(input, Security::isC1Control);
+    if (!c1.isEmpty()) findings.add(makeFinding(Family.NONCHARACTER_CONTROL, "C1Control", c1));
+    return findings;
+  }
+
+  private static Finding homoglyphConfusableFinding(List<Integer> input) {
+    String subThreat = "";
+    if (homoglyphTargetMatch(input) != null) subThreat = "TargetMatch";
+    else if (input.stream().anyMatch(Security::isMathAlphanumeric)) subThreat = "MathAlpha";
+    else if (input.stream().anyMatch(Security::isFullwidthHalfwidth)) subThreat = "WidthClass";
+    else if (hasDecompositionSwap(input)) subThreat = "DecompositionSwap";
+    if (subThreat.isEmpty()) return null;
+    return makeFinding(Family.HOMOGLYPH_CONFUSABLE, subThreat, fullSpanPositions(input));
+  }
+
+  private static Finding mixedScriptAdmissibilityFinding(List<Integer> input) {
+    if (!hasCrossScriptMix(input)) return null;
+    return makeFinding(Family.MIXED_SCRIPT_ADMISSIBILITY, "CrossScriptMix", fullSpanPositions(input));
+  }
+
+  private static String homoglyphTargetMatch(List<Integer> input) {
+    List<Integer> inputLetters = letterSkeleton(input);
+    for (String target : knownTargets()) {
+      List<Integer> targetCps = codepointsFromString(target);
+      if (!targetCps.equals(input) && letterSkeleton(targetCps).equals(inputLetters)) return target;
+    }
+    return null;
+  }
+
+  private static List<Integer> letterSkeleton(List<Integer> input) {
+    List<Integer> out = new ArrayList<>();
+    for (int cp : iteratedSkeleton(input)) {
+      if (!isCombiningMark(cp) && !isDefaultIgnorableCodepoint(cp) && !isWhiteSpaceCodepoint(cp)) out.add(cp);
+    }
+    return out;
+  }
+
+  private static List<Integer> iteratedSkeleton(List<Integer> input) {
+    List<Integer> current = new ArrayList<>(input);
+    for (int i = 0; i < 8; i++) {
+      List<Integer> next = skeleton(current);
+      if (next.equals(current)) return current;
+      current = next;
+    }
+    return current;
+  }
+
+  private static List<Integer> skeleton(List<Integer> input) {
+    return caseFoldCodepoints(substituteConfusables(caseFoldCodepoints(input)));
+  }
+
+  private static List<Integer> substituteConfusables(List<Integer> input) {
+    Map<Integer, List<Integer>> table = confusablesMap();
+    List<Integer> out = new ArrayList<>();
+    for (int cp : input) out.addAll(table.getOrDefault(cp, List.of(cp)));
+    return out;
+  }
+
+  private static List<Integer> caseFoldCodepoints(List<Integer> input) {
+    List<Integer> out = new ArrayList<>();
+    for (int cp : input) out.addAll(codepointsFromString(new String(Character.toChars(cp)).toLowerCase(Locale.ROOT)));
+    return out;
+  }
+
+  private static synchronized Map<Integer, List<Integer>> confusablesMap() {
+    if (confusablesMap == null) confusablesMap = parseConfusables(readResource("confusables.txt"));
+    return confusablesMap;
+  }
+
+  private static synchronized List<String> knownTargets() {
+    if (knownTargets == null) knownTargets = parseKnownTargets(readResource("KnownAttackTargets.txt"));
+    return knownTargets;
+  }
+
+  private static Map<Integer, List<Integer>> parseConfusables(String raw) {
+    Map<Integer, List<Integer>> out = new HashMap<>();
+    for (String rawLine : raw.split("\n")) {
+      String body = rawLine.split("#", 2)[0].trim();
+      if (body.isEmpty()) continue;
+      String[] fields = body.split(";");
+      if (fields.length < 2) continue;
+      Integer src = parseHex(fields[0]);
+      List<Integer> target = parseCodepointField(fields[1]);
+      if (src != null && !target.isEmpty()) out.put(src, target);
+    }
+    return out;
+  }
+
+  private static List<String> parseKnownTargets(String raw) {
+    List<String> out = new ArrayList<>();
+    for (String line : raw.split("\n")) {
+      String trimmed = line.trim();
+      if (!trimmed.isEmpty() && !trimmed.startsWith("#")) out.add(trimmed);
+    }
+    return out;
+  }
+
+  private static List<Integer> parseCodepointField(String field) {
+    List<Integer> out = new ArrayList<>();
+    for (String token : field.trim().split("\\s+")) {
+      Integer cp = parseHex(token);
+      if (cp != null) out.add(cp);
+    }
+    return out;
+  }
+
+  private static Integer parseHex(String field) {
+    try {
+      return Integer.parseUnsignedInt(field.trim(), 16);
+    } catch (NumberFormatException e) {
+      return null;
+    }
+  }
+
+  private static String readResource(String name) {
+    String path = "/com/unicodesecurity/data/" + name;
+    try (InputStream in = Security.class.getResourceAsStream(path)) {
+      if (in == null) throw new IllegalStateException("missing resource: " + path);
+      return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+    } catch (IOException e) {
+      throw new IllegalStateException("cannot read resource: " + path, e);
+    }
+  }
+
+  private static List<Integer> fullSpanPositions(List<Integer> input) {
+    List<Integer> out = new ArrayList<>();
+    for (int i = 0; i < input.size(); i++) out.add(i);
+    return out;
+  }
+
+  private static boolean isMathAlphanumeric(int cp) {
+    return cp >= 0x1D400 && cp <= 0x1D7FF;
+  }
+
+  private static boolean isFullwidthHalfwidth(int cp) {
+    return cp >= 0xFF01 && cp <= 0xFFEF;
+  }
+
+  private static boolean isNoncharacter(int cp) {
+    if (cp >= 0xFDD0 && cp <= 0xFDEF) return true;
+    if (cp > 0x10FFFF) return false;
+    int low16 = cp & 0xFFFF;
+    return low16 == 0xFFFE || low16 == 0xFFFF;
+  }
+
+  private static boolean isC0Control(int cp) {
+    return (cp <= 0x1F && cp != 0x09 && cp != 0x0A && cp != 0x0D) || cp == 0x7F;
+  }
+
+  private static boolean isC1Control(int cp) {
+    return cp >= 0x80 && cp <= 0x9F;
+  }
+
+  private static boolean isCombiningMark(int cp) {
+    return (cp >= 0x0300 && cp <= 0x036F) || (cp >= 0x1AB0 && cp <= 0x1AFF) ||
+        (cp >= 0x1DC0 && cp <= 0x1DFF) || (cp >= 0x20D0 && cp <= 0x20FF) ||
+        (cp >= 0xFE20 && cp <= 0xFE2F);
+  }
+
+  private static boolean hasDecompositionSwap(List<Integer> input) {
+    for (int i = 1; i < input.size(); i++) {
+      int previous = input.get(i - 1);
+      int current = input.get(i);
+      if (isCombiningMark(current) && !isCombiningMark(previous)) return true;
+      if (isCombiningMark(previous) && isCombiningMark(current) && previous > current) return true;
+      if (composeHangulPair(previous, current)) return true;
+    }
+    return false;
+  }
+
+  private static boolean composeHangulPair(int first, int second) {
+    int sBase = 0xAC00, lBase = 0x1100, vBase = 0x1161, tBase = 0x11A7;
+    int lCount = 19, vCount = 21, tCount = 28, nCount = vCount * tCount, sCount = lCount * nCount;
+    boolean isL = first >= lBase && first < lBase + lCount;
+    boolean isV = second >= vBase && second < vBase + vCount;
+    if (isL && isV) return true;
+    boolean isLV = first >= sBase && first < sBase + sCount && (first - sBase) % tCount == 0;
+    boolean isT = second > tBase && second < tBase + tCount;
+    return isLV && isT;
+  }
+
+  private static boolean hasCrossScriptMix(List<Integer> input) {
+    Set<String> seen = new HashSet<>();
+    for (int cp : input) {
+      String script = scriptClass(cp);
+      if (script != null) seen.add(script);
+    }
+    return seen.size() >= 2;
+  }
+
+  private static String scriptClass(int cp) {
+    if ((cp >= 0x0041 && cp <= 0x005A) || (cp >= 0x0061 && cp <= 0x007A) || (cp >= 0x00C0 && cp <= 0x024F)) return "Latn";
+    if ((cp >= 0x0370 && cp <= 0x03FF) || (cp >= 0x1F00 && cp <= 0x1FFF)) return "Grek";
+    if (cp >= 0x0400 && cp <= 0x052F) return "Cyrl";
+    return null;
+  }
+
+  private static boolean isDefaultIgnorableCodepoint(int cp) {
+    return cp == 0x00AD || cp == 0x034F || cp == 0x061C ||
+        (cp >= 0x115F && cp <= 0x1160) || (cp >= 0x17B4 && cp <= 0x17B5) ||
+        (cp >= 0x180B && cp <= 0x180F) || (cp >= 0x200B && cp <= 0x200F) ||
+        (cp >= 0x202A && cp <= 0x202E) || (cp >= 0x2060 && cp <= 0x206F) ||
+        (cp >= 0xFE00 && cp <= 0xFE0F) || cp == 0xFEFF ||
+        (cp >= 0xFFF0 && cp <= 0xFFF8) || (cp >= 0xE0000 && cp <= 0xE0FFF);
+  }
+
+  private static boolean isWhiteSpaceCodepoint(int cp) {
+    return cp == 0x0009 || cp == 0x000A || cp == 0x000B || cp == 0x000C ||
+        cp == 0x000D || cp == 0x0020 || cp == 0x0085 || cp == 0x00A0 ||
+        cp == 0x1680 || (cp >= 0x2000 && cp <= 0x200A) || cp == 0x2028 ||
+        cp == 0x2029 || cp == 0x202F || cp == 0x205F || cp == 0x3000;
+  }
+
+  private static Verdict scanUtf16(String profile, String mode, byte[] input, ByteOrder order) {
+    DecodeResult result = decodeUtf16ToCodepoints(input, order);
+    if (result.failure() != null) return malformedDecodeVerdict(profile, mode, Family.MALFORMED_UTF16, result.failure().subThreat(), result.failure().offset());
+    return scan(profile, mode, result.codepoints());
+  }
+
+  private static DecodeResult decodeUtf16ToCodepoints(byte[] input, ByteOrder order) {
+    List<Integer> out = new ArrayList<>();
+    int offset = 0;
+    while (offset < input.length) {
+      if (offset + 2 > input.length) return new DecodeResult(List.of(), new DecodeFailure("TruncatedCodeUnit", input.length));
+      int unitOffset = offset;
+      int unit = readUint16(input, offset, order);
+      offset += 2;
+      if (unit >= 0xD800 && unit <= 0xDBFF) {
+        if (offset + 2 > input.length) return new DecodeResult(List.of(), new DecodeFailure("TruncatedSurrogatePair", input.length));
+        int low = readUint16(input, offset, order);
+        if (low < 0xDC00 || low > 0xDFFF) return new DecodeResult(List.of(), new DecodeFailure("InvalidSurrogatePair", offset));
+        out.add(0x10000 + ((unit - 0xD800) << 10) + (low - 0xDC00));
+        offset += 2;
+      } else if (unit >= 0xDC00 && unit <= 0xDFFF) {
+        return new DecodeResult(List.of(), new DecodeFailure("LoneSurrogate", unitOffset));
+      } else {
+        out.add(unit);
+      }
+    }
+    return new DecodeResult(out, null);
+  }
+
+  private static Verdict scanUtf32(String profile, String mode, byte[] input, ByteOrder order) {
+    DecodeResult result = decodeUtf32ToCodepoints(input, order);
+    if (result.failure() != null) return malformedDecodeVerdict(profile, mode, Family.MALFORMED_UTF32, result.failure().subThreat(), result.failure().offset());
+    return scan(profile, mode, result.codepoints());
+  }
+
+  private static DecodeResult decodeUtf32ToCodepoints(byte[] input, ByteOrder order) {
+    if (input.length % 4 != 0) return new DecodeResult(List.of(), new DecodeFailure("TruncatedCodeUnit", input.length));
+    List<Integer> out = new ArrayList<>();
+    for (int offset = 0; offset < input.length; offset += 4) {
+      int cp = readUint32(input, offset, order);
+      if (cp >= 0xD800 && cp <= 0xDFFF) return new DecodeResult(List.of(), new DecodeFailure("SurrogateCodepoint", offset));
+      if (Integer.compareUnsigned(cp, 0x10FFFF) > 0) return new DecodeResult(List.of(), new DecodeFailure("CodepointBeyondMax", offset));
+      out.add(cp);
+    }
+    return new DecodeResult(out, null);
+  }
+
+  private static DecodeFailure firstInvalidUtf8(byte[] input) {
+    Utf8State state = new Utf8State(false, 0, 0, 0);
+    int seqStart = 0;
+    for (int index = 0; index < input.length; index++) {
+      if (!state.inSequence()) seqStart = index;
+      Utf8Step step = utf8DecodeStep(state, input[index] & 0xFF);
+      if (step.rejected()) return new DecodeFailure(step.kind(), step.kind().equals("OverlongEncoding") ? seqStart : index);
+      state = step.state();
+    }
+    if (state.inSequence()) return new DecodeFailure("TruncatedSequence", input.length);
+    return null;
+  }
+
+  private static List<Integer> decodeUtf8ToCodepoints(byte[] input) {
+    List<Integer> out = new ArrayList<>();
+    Utf8State state = new Utf8State(false, 0, 0, 0);
+    for (byte raw : input) {
+      int b = raw & 0xFF;
+      Utf8Step step = utf8DecodeStep(state, b);
+      if (step.rejected()) return out;
+      if (!step.state().inSequence() && (state.inSequence() || b < 0x80)) out.add(step.emitted());
+      state = step.state();
+    }
+    return out;
+  }
+
+  private static Utf8Step utf8DecodeStep(Utf8State state, int n) {
+    if (!state.inSequence()) {
+      if (n < 0x80) return new Utf8Step(new Utf8State(false, 0, 0, 0), n, "", false);
+      if (n < 0xC2) return new Utf8Step(state, 0, "InvalidStartByte", true);
+      if (n < 0xE0) return new Utf8Step(new Utf8State(true, 1, n & 0x1F, 0x80), 0, "", false);
+      if (n < 0xF0) return new Utf8Step(new Utf8State(true, 2, n & 0x0F, 0x800), 0, "", false);
+      if (n < 0xF5) return new Utf8Step(new Utf8State(true, 3, n & 0x07, 0x10000), 0, "", false);
+      return new Utf8Step(state, 0, "InvalidStartByte", true);
+    }
+    if (n < 0x80 || n >= 0xC0) return new Utf8Step(state, 0, "InvalidContinuationByte", true);
+    int next = (state.accum() << 6) | (n & 0x3F);
+    if (state.remaining() == 1) {
+      if (next < state.minCp()) return new Utf8Step(state, 0, "OverlongEncoding", true);
+      if (next >= 0xD800 && next <= 0xDFFF) return new Utf8Step(state, 0, "SurrogateCodepoint", true);
+      if (next > 0x10FFFF) return new Utf8Step(state, 0, "CodepointBeyondMax", true);
+      return new Utf8Step(new Utf8State(false, 0, 0, 0), next, "", false);
+    }
+    return new Utf8Step(new Utf8State(true, state.remaining() - 1, next, state.minCp()), 0, "", false);
+  }
+
+  private static int readUint16(byte[] input, int offset, ByteOrder order) {
+    if (order == ByteOrder.BIG) return ((input[offset] & 0xFF) << 8) | (input[offset + 1] & 0xFF);
+    return (input[offset] & 0xFF) | ((input[offset + 1] & 0xFF) << 8);
+  }
+
+  private static int readUint32(byte[] input, int offset, ByteOrder order) {
+    if (order == ByteOrder.BIG) {
+      return ((input[offset] & 0xFF) << 24) | ((input[offset + 1] & 0xFF) << 16) | ((input[offset + 2] & 0xFF) << 8) | (input[offset + 3] & 0xFF);
+    }
+    return (input[offset] & 0xFF) | ((input[offset + 1] & 0xFF) << 8) | ((input[offset + 2] & 0xFF) << 16) | ((input[offset + 3] & 0xFF) << 24);
+  }
+
+  private static List<Integer> codepointsFromString(String value) {
+    return value.codePoints().boxed().toList();
+  }
+
+  private static int ensureCodepoint(int value) {
+    if (value < 0 || value > 0x10FFFF) throw new IllegalArgumentException("invalid codepoint: " + value);
+    return value;
+  }
+
+  private static void jsonField(StringBuilder out, String name, String value) {
+    out.append('"').append(name).append("\":");
+    appendJsonString(out, value);
+  }
+
+  private static void appendFinding(StringBuilder out, Finding finding) {
+    out.append('{');
+    jsonField(out, "code", finding.code());
+    out.append(',');
+    jsonField(out, "family", finding.family());
+    out.append(',');
+    out.append("\"severity\":").append(finding.severity()).append(',');
+    out.append("\"positions\":");
+    appendIntArray(out, finding.positions());
+    out.append(',');
+    jsonField(out, "sub_threat", finding.subThreat());
+    out.append(',');
+    jsonField(out, "detail", finding.detail());
+    out.append('}');
+  }
+
+  private static void appendIntArray(StringBuilder out, List<Integer> values) {
+    out.append('[');
+    for (int i = 0; i < values.size(); i++) {
+      if (i > 0) out.append(',');
+      out.append(values.get(i));
+    }
+    out.append(']');
+  }
+
+  private static void appendJsonString(StringBuilder out, String value) {
+    out.append('"');
+    for (int i = 0; i < value.length(); i++) {
+      char ch = value.charAt(i);
+      switch (ch) {
+        case '"' -> out.append("\\\"");
+        case '\\' -> out.append("\\\\");
+        case '\b' -> out.append("\\b");
+        case '\f' -> out.append("\\f");
+        case '\n' -> out.append("\\n");
+        case '\r' -> out.append("\\r");
+        case '\t' -> out.append("\\t");
+        default -> {
+          if (ch < 0x20) out.append(String.format("\\u%04x", (int) ch));
+          else out.append(ch);
+        }
+      }
+    }
+    out.append('"');
+  }
+
+  @FunctionalInterface
+  private interface IntPredicate {
+    boolean test(int value);
+  }
+}
