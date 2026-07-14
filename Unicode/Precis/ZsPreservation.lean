@@ -33,6 +33,7 @@ import Unicode.Normalization.Decomposability
 import Unicode.Normalization.Hangul
 import Unicode.Normalization.ComposeInversion
 import Unicode.CaseFoldRoundtrip
+import Unicode.Precis.ZsMapping
 
 namespace Unicode.Precis.ZsPreservation
 
@@ -40,34 +41,8 @@ open Unicode.Normalization
 open Unicode.Normalization.NFC (toNFC)
 open Unicode.Generated
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- ZS IDENTIFICATION
--- ═══════════════════════════════════════════════════════════════════════════════
-
-/-- The 16 Zs (space-separator) codepoints defined by Unicode 17.0,
-    excluding U+0020 SPACE. Stable across Unicode releases since 1.1
-    (1993). -/
-def nonAsciiZsCodepoints : Array Nat := #[
-  0x00A0, 0x1680, 0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005,
-  0x2006, 0x2007, 0x2008, 0x2009, 0x200A, 0x202F, 0x205F, 0x3000
-]
-
-/-- `isNonAsciiZs cp` iff `cp` is a Zs category codepoint other than
-    U+0020. -/
-def isNonAsciiZs (cp : Nat) : Bool :=
-  nonAsciiZsCodepoints.contains cp
-
-/-- U+0020 is not a non-ASCII Zs. -/
-theorem isNonAsciiZs_ascii_space : isNonAsciiZs 0x0020 = false := by
-  decide
-
--- ═══════════════════════════════════════════════════════════════════════════════
--- REMAP STEP (RFC 8265 §4.2.2)
--- ═══════════════════════════════════════════════════════════════════════════════
-
-/-- RFC 8265 §4.2.2: remap every non-ASCII Zs codepoint to U+0020 SPACE. -/
-def remapZsToAscii (cps : Array Nat) : Array Nat :=
-  cps.map (fun cp => if isNonAsciiZs cp then 0x0020 else cp)
+-- Runtime definitions (`nonAsciiZsCodepoints`, `isNonAsciiZs`,
+-- `remapZsToAscii`) live in `ZsMapping`.
 
 /-- `remapZsToAscii` output contains no non-ASCII Zs codepoints. -/
 theorem remapZsToAscii_output_no_nonAsciiZs (cps : Array Nat) :

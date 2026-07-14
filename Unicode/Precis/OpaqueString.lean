@@ -30,6 +30,7 @@
 -/
 
 import Unicode.Normalization.ComposeInversion
+import Unicode.Precis.OpaqueStringCore
 import Unicode.Precis.ZsPreservation
 import Unicode.Precis.BidiRule
 import Unicode.Precis.Categories
@@ -49,34 +50,15 @@ open Unicode.Precis.BidiRule (satisfiesBidiRule)
 -- ADMISSIBILITY + BIDI GATE
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- OpaqueString admissibility per RFC 8264 §4.3 FreeformClass: admits
-    letters, marks, numbers, punctuation, symbols, and Zs space
-    separators. Rejects Cc / Cf / Cs / Co / Cn and Zl / Zp. Uses the
-    `DerivedGeneralCategory` pin from M3. -/
-def isOpaqueStringAdmissible (cp : Nat) : Bool :=
-  Unicode.Precis.Categories.isFreeformClassAdmissibleGC cp
-
-def allOpaqueAdmissible (cps : Array Nat) : Bool :=
-  cps.all isOpaqueStringAdmissible
-
-/-- Combined gate for OpaqueString: FreeformClass admissibility AND
-    RFC 5893 §2 Bidi Rule (mandated by RFC 8265 §5.5). -/
-def isOpaqueGatePass (cps : Array Nat) : Bool :=
-  allOpaqueAdmissible cps && satisfiesBidiRule cps
+-- Executable OpaqueString definitions live in `OpaqueStringCore`; this module
+-- contains the proof/invariant layer.
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- THE PROFILE
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- OpaqueString mapping: non-ASCII-space remap to U+0020, then NFC. -/
-def precisMapOpaque (cps : Array Nat) : Array Nat :=
-  toNFC (remapZsToAscii cps)
-
-/-- OpaqueString preparation: apply the mapping stages, then reject if
-    the result fails `isOpaqueGatePass`. -/
-def precisPreparationOpaque (cps : Array Nat) : Option (Array Nat) :=
-  let mapped := precisMapOpaque cps
-  if isOpaqueGatePass mapped then some mapped else none
+-- `precisMapOpaque` and `precisPreparationOpaque` are defined in
+-- `OpaqueStringCore`.
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- UNCONDITIONAL IDEMPOTENCE
