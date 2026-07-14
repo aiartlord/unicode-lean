@@ -15,11 +15,15 @@ class Family(Enum):
     aggregator walks them and the priority order callers can rely on
     when composing verdicts across modules."""
 
+    MALFORMED_UTF8 = "MalformedUtf8"
+    MALFORMED_UTF16 = "MalformedUtf16"
+    MALFORMED_UTF32 = "MalformedUtf32"
     TAG_BLOCK_PAYLOAD = "TagBlockPayload"
     VARIATION_SELECTOR_PAYLOAD = "VariationSelectorPayload"
     ZERO_WIDTH_PAYLOAD = "ZeroWidthPayload"
     SURROGATE_REASSEMBLY = "SurrogateReassembly"
     BIDI_CONTROL_BALANCE = "BidiControlBalance"
+    NONCHARACTER_CONTROL = "NoncharacterControl"
     HOMOGLYPH_CONFUSABLE = "HomoglyphConfusable"
     MIXED_SCRIPT_ADMISSIBILITY = "MixedScriptAdmissibility"
     EMOJI_ZWJ_INTEGRITY = "EmojiZwjIntegrity"
