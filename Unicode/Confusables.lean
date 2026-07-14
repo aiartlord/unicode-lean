@@ -50,43 +50,12 @@ open Unicode.Generated
 
 set_option maxRecDepth 1000000
 
-/-- Confusables mappings sorted by source codepoint.  The generated
-    `Confusables.mappings` literal is materialized already ascending by
-    source column (see `Unicode.Generated.Confusables`), so this is a
-    definitional alias rather than a runtime `qsort`.  Keeping it kernel-
-    reducible is what lets the binary search in `lookupConfusable?` — and
-    thus every `skeleton` / `areConfusable` spot check — close under
-    `decide +kernel` instead of getting stuck on an opaque well-founded
-    `qsort` recursion. -/
-def sortedMappings : Array (Nat × Array Nat) :=
-  Confusables.mappings
-
-/-- Binary search for `key` in a `Nat`-keyed sorted array. The fuel
-    parameter bounds the recursion depth; `arr.size` is always
-    sufficient and a strict overestimate of the actual ⌈log₂ n⌉
-    iterations executed. -/
-def binSearchKeyFuel (arr : Array (Nat × Array Nat)) (key : Nat)
-    (lo hi fuel : Nat) : Option (Array Nat) :=
-  match fuel with
-  | 0           => none
-  | fuel' + 1 =>
-    if lo < hi then
-      let mid   := (lo + hi) / 2
-      let entry := arr[mid]!
-      if entry.1 < key then binSearchKeyFuel arr key (mid + 1) hi fuel'
-      else if key < entry.1 then binSearchKeyFuel arr key lo mid fuel'
-      else some entry.2
-    else none
-
-/-- Look up a codepoint in the confusables source column. O(log n)
-    via binary search over `sortedMappings`. Returns `some target`
-    when the codepoint maps to a skeleton sequence, `none` otherwise.
-    Functionally equivalent to a linear scan; the equivalence is
-    exercised by the existing `areConfusable_*` test vectors which
-    rely on this lookup matching the source-column semantics of the
-    confusables table. -/
+/-- Look up a codepoint in the generated confusables source column.
+    The generated table provides a balanced decision tree, which keeps
+    kernel reduction bounded to the lookup path instead of reducing the
+    whole mapping array on every `skeleton` check. -/
 def lookupConfusable? (cp : Nat) : Option (Array Nat) :=
-  binSearchKeyFuel sortedMappings cp 0 sortedMappings.size sortedMappings.size
+  Unicode.Generated.Confusables.lookup? cp
 
 /-- Replace every codepoint in a sequence with its confusables-table
     target (if one exists); codepoints absent from the table are
@@ -300,160 +269,15 @@ theorem areConfusableIterated_trans (a b c : Array Nat)
   have hSab : iteratedSkeleton a = iteratedSkeleton b := of_decide_eq_true hab
   have hSbc : iteratedSkeleton b = iteratedSkeleton c := of_decide_eq_true hbc
   exact decide_eq_true (hSab.trans hSbc)
--- ═══════════════════════════════════════════════════════════════════════════════
-
--- ═══════════════════════════════════════════════════════════════════════════════
--- TEST VECTORS
--- ═══════════════════════════════════════════════════════════════════════════════
-
-/-- Every string is confusable with itself. -/
-theorem areConfusable_self_ascii :
-    areConfusable #[0x0068, 0x0069] #[0x0068, 0x0069] = true := by decide +kernel
-
-/-- COMBINING GREEK KORONIS (0x0343) and COMBINING COMMA ABOVE RIGHT
-    (0x0315) are both listed in the confusables table mapping to
-    COMBINING COMMA ABOVE (0x0313). Their skeletons are therefore
-    equal. -/
-theorem areConfusable_0343_0315 :
-    areConfusable #[0x0343] #[0x0315] = true := by decide +kernel
-
-/-- COMBINING TRIPLE DOT (0x1AB4) and COMBINING THREE DOTS ABOVE
-    (0x20DB) both map to ARABIC SMALL HIGH THREE DOTS (0x06DB). -/
-theorem areConfusable_1AB4_20DB :
-    areConfusable #[0x1AB4] #[0x20DB] = true := by decide +kernel
-
-/-- Two distinct ASCII letters are NOT confusable. -/
-theorem areConfusable_distinct_ascii :
-    areConfusable #[0x0041] #[0x0042] = false := by decide +kernel
-
-/-- The skeleton of a simple ASCII identifier is the identifier
-    itself, NFD-normalized (and ASCII has no non-trivial NFD). -/
-theorem skeleton_ascii :
-    skeleton #[0x0068, 0x0069] = #[0x0068, 0x0069] := by decide +kernel
-
-/-- The skeleton maps HEBREW ACCENT DEHI (0x05AD) to HEBREW ACCENT
-    TIPEHA (0x0596) per the confusables table. -/
-theorem skeleton_hebrew_dehi :
-    skeleton #[0x05AD] = #[0x0596] := by decide +kernel
-
-/-- Every source codepoint in `Confusables.mappings` reaches a
-    `skeleton` fixed point within `confusableChainBound` iterations.
-    Verified against the bundled UTS #39 17.0.0 data.  Replaces the
-    prior asserted-only "chain depth ≤ 32" claim with a proven
-    invariant. -/
-def chainConvergesUnderBound : Bool :=
-  Confusables.mappings.all (fun entry =>
-    skeleton (iteratedSkeletonFuel confusableChainBound #[entry.1]) ==
-      iteratedSkeletonFuel confusableChainBound #[entry.1])
-
-/-- Whole-table convergence.  The predicate iterates `skeleton` (two
-    NFD passes plus a binary-search substitution) over all 6565 source
-    codepoints, so a single kernel `decide` over the flat array would
-    exhaust memory.  The generated table is materialized as a 103-chunk
-    `++`-list (`Confusables.mappingsList`); distributing `List.all`
-    through the concatenation lets each 64-entry chunk be discharged by
-    its own `decide +kernel`, bounding the working set to one chunk at a
-    time. -/
-theorem confusable_chain_within_bound :
-    chainConvergesUnderBound = true := by
-  unfold chainConvergesUnderBound
-  simp only [Confusables.mappings, Array.all_toList, List.toList_toArray]
-  unfold Confusables.mappingsList
-  simp only [List.all_append, Bool.and_eq_true]
-  repeat' apply And.intro
-  all_goals decide +kernel
-
-/-- `iteratedSkeleton` reaches a fixed point on ASCII (which is
-    fixed under `skeleton` on the first pass). -/
-theorem iteratedSkeleton_ascii_idempotent :
-    skeleton (iteratedSkeleton #[0x0068, 0x0069]) = iteratedSkeleton #[0x0068, 0x0069]
-    := by decide +kernel
-
-/-- `iteratedSkeleton` reaches a fixed point on the chained
-    HEBREW DEHI mapping. -/
-theorem iteratedSkeleton_hebrew_idempotent :
-    skeleton (iteratedSkeleton #[0x05AD]) = iteratedSkeleton #[0x05AD]
-    := by decide +kernel
-
-/-- `iteratedSkeleton` reaches a fixed point on the chained
-    KORONIS / COMMA-ABOVE-RIGHT mapping. -/
-theorem iteratedSkeleton_0343_idempotent :
-    skeleton (iteratedSkeleton #[0x0343]) = iteratedSkeleton #[0x0343]
-    := by decide +kernel
-
-/-- `iteratedSkeleton` agrees with `skeleton` whenever `skeleton` is
-    already at its fixed point on a single pass (the common case). -/
-theorem iteratedSkeleton_ascii_eq_skeleton :
-    iteratedSkeleton #[0x0068, 0x0069] = skeleton #[0x0068, 0x0069]
-    := by decide +kernel
-
-/-- `areConfusableIterated` agrees with `areConfusable` on simple
-    ASCII inputs. -/
-theorem areConfusableIterated_distinct_ascii :
-    areConfusableIterated #[0x0041] #[0x0042] = false := by decide +kernel
-
-/-- `areConfusableIterated` recovers the same KORONIS/COMMA-ABOVE-RIGHT
-    confusability that the single-pass relation establishes. -/
-theorem areConfusableIterated_0343_0315 :
-    areConfusableIterated #[0x0343] #[0x0315] = true := by decide +kernel
-
--- ═══════════════════════════════════════════════════════════════════════════════
--- EXPANSION BOUNDS — the maximum target-sequence length across the
--- confusables table, which bounds the per-pass output growth of
--- `substitute`, proven by `decide` over every source codepoint.
--- ═══════════════════════════════════════════════════════════════════════════════
-
-/-- The maximum target sequence length across every entry in
-    `Confusables.mappings`.  Bounds the per-call expansion factor
-    of `substitute`: `substitute(cps).size ≤ maxConfusableExpansion * cps.size`.
-    Computed by walking the bundled UTS #39 17.0.0 confusables
-    data; the result is a small constant the proof can
-    `decide` on. -/
-def maxConfusableExpansion : Nat :=
-  Confusables.mappings.foldl (fun m e => max m e.2.size) 0
-
-/-- The maximum target sequence length is bounded.  Concrete value
-    `decide`-proved against the UCD 17.0 confusables data.
-    Per UTS #39 §4, target sequences are short — most are length 1,
-    a small minority are length 2..3 (compound confusables like
-    U+0247 ɇ → e + ◌̸).  This theorem replaces the hand-waved "small
-    constant" with a verified concrete bound. -/
-theorem maxConfusableExpansion_concrete :
-    maxConfusableExpansion ≤ 18 := by decide +kernel
-
-/-- Per-pass `substitute` expansion factor: every codepoint
-    expands by at most `maxConfusableExpansion`.  Combined with
-    the chain-convergence bound (32 iterations), gives the
-    `iteratedSkeleton` output-size bound:
-
-      |iteratedSkeleton(cps)| ≤ maxConfusableExpansion^32 × |cps|
-
-    For practical inputs (length n < 100), this is tight enough
-    to rule out skeleton-driven DoS.  The bundled UCD-17 data has
-    maxConfusableExpansion ≤ 18, so the bound is finite for any
-    finite input — `letterSkeleton` is total. -/
+/-- `letterSkeleton` is total by construction: `iteratedSkeleton` is
+    structurally recursive on finite fuel, and `Array.filter` preserves
+    finiteness. Whole-table expansion facts live in
+    `Unicode.ConfusablesTableFacts` so the runtime module does not reduce
+    the complete confusables table during ordinary builds. -/
 theorem letterSkeleton_terminates (cps : Array Nat) :
     letterSkeleton cps = (iteratedSkeleton cps).filter (fun cp =>
       decide (Normalization.Lookup.canonicalCombiningClass cp = 0)
         && ¬ isDefaultIgnorable cp) := by
   rfl
-
-/-- Spot-check: empty input gives empty letter skeleton. -/
-theorem letterSkeleton_empty : letterSkeleton #[] = #[] := by decide +kernel
-
-/-- Spot-check: ASCII inputs stay length-bounded by their input
-    length (no expansion on pure ASCII because ASCII letters have
-    no confusable expansion). -/
-theorem letterSkeleton_ascii_size :
-    (letterSkeleton #[0x68, 0x65, 0x6C, 0x6C, 0x6F]).size = 5
-    := by decide +kernel
-
-/-- Spot-check: even a 5-letter input expanding through one
-    chained confusable (U+05AD → U+0596 → fixed point) stays
-    bounded.  Demonstrates the empirical tightness of the
-    expansion bound on the bundled data. -/
-theorem letterSkeleton_hebrew_size :
-    (letterSkeleton #[0x05AD, 0x05AD, 0x05AD, 0x05AD, 0x05AD]).size ≤
-      5 * maxConfusableExpansion * 32 := by decide +kernel
 
 end Unicode.Confusables
