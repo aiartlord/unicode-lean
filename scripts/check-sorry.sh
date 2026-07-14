@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# Fail if any `.lean` file under `Unicode/` contains a `sorry` or `admit`
-# tactic invocation. Match only at tactic boundaries (end-of-line,
-# `;`, `,`, `)`, `}`) so English uses (`admits`, `admissibility`, `to
-# admit`) and identifiers like `sorry_msg` do not false-positive.
+# Fail if any `.lean` file under `Unicode/` contains unfinished-proof tactic
+# invocations. Match only at tactic boundaries so prose and identifiers do not
+# false-positive.
 
 set -euo pipefail
 

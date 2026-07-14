@@ -191,7 +191,13 @@ EOF
 
 (
   cd "$out_dir"
-  sha256sum "$(basename "$archive")" "$(basename "$sbom")" > "$(basename "$manifest")"
+  mapfile -t release_files < <(
+    find . -maxdepth 1 -type f \
+      ! -name "$(basename "$manifest")" \
+      -printf '%P\n' \
+      | sort
+  )
+  sha256sum "${release_files[@]}" > "$(basename "$manifest")"
 )
 
 echo "wrote $archive"

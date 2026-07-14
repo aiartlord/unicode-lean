@@ -8,7 +8,7 @@
 # must have a paired
 #   Unicode/Conformance/Security/XTest.lean
 # whose body closes `theorem all_rows_pass : rows.all verifyRow = true`
-# via `native_decide`.  This guard prevents shipping a detector with no
+# via kernel checks.  This guard prevents shipping a detector with no
 # fixture-driven verification.
 #
 # Portable to bash 3.x — no associative arrays, plain temp files.

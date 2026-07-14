@@ -46,11 +46,11 @@ jobs:
     name: flake.lock covers every input in flake.nix
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
 
-      - uses: cachix/install-nix-action@v27
+      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
@@ -75,11 +75,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: flake-lock-shape
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
 
-      - uses: cachix/install-nix-action@v27
+      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
@@ -98,11 +98,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: flake-lock-shape
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
 
-      - uses: leanprover/lean-action@v1
+      - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1
         with:
           use-github-cache: false
           use-mathlib-cache: false
@@ -149,7 +149,7 @@ jobs:
         # against this manifest to confirm their build matches the
         # canonical build. Retained for 90 days per the default
         # actions/upload-artifact policy.
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: oleans-sha256-${{ github.sha }}
           path: /tmp/oleans-pass2.sha256

@@ -10,13 +10,201 @@
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+        hsPkgs = pkgs.haskell.packages.ghc912;
+        hsPortGhc = hsPkgs.ghcWithPackages (hpkgs: [
+          hpkgs.QuickCheck
+          hpkgs.tasty
+          hpkgs.tasty-hunit
+          hpkgs.tasty-quickcheck
+        ]);
+        runtimeVersion = "0.1.0";
+        runtimePackages = [
+          pkgs.git
+          pkgs.cacert
+          pkgs.cmake
+          pkgs.ninja
+          pkgs.gcc
+          pkgs.clang-tools
+          pkgs.shellcheck
+          pkgs.rustc
+          pkgs.cargo
+          pkgs.rustfmt
+          pkgs.uv
+          pkgs.python3
+          pkgs.python3Packages.build
+          pkgs.python3Packages.hatchling
+          pkgs.python3Packages.pip
+          pkgs.python3Packages.pytest
+          hsPortGhc
+          pkgs.cabal-install
+          pkgs.go
+          pkgs.jdk
+          pkgs.nodejs
+          pkgs.dotnet-sdk_8
+          pkgs.swift
+          pkgs.swiftpm
+          pkgs.zig
+        ];
+
+        unicodeSecurity = pkgs.rustPlatform.buildRustPackage {
+          pname = "unicode-security";
+          version = runtimeVersion;
+          src = ./.;
+          cargoLock.lockFile = ./Cargo.lock;
+          cargoBuildFlags = [ "--bin" "unicode-security" ];
+          doCheck = false;
+        };
+
+        unicodePython = pkgs.python3Packages.buildPythonPackage {
+          pname = "unicode-python";
+          version = runtimeVersion;
+          pyproject = true;
+          src = ./.;
+          build-system = [ pkgs.python3Packages.hatchling ];
+          doCheck = false;
+          pythonImportsCheck = [ "unicode_python" ];
+        };
+
+        unicodeCpp = pkgs.stdenv.mkDerivation {
+          pname = "unicode-cpp";
+          version = runtimeVersion;
+          src = ./.;
+          nativeBuildInputs = [ pkgs.cmake ];
+          cmakeFlags = [ "-DUNICODE_CPP_BUILD_TESTS=OFF" ];
+        };
+
+        unicodeHaskell = hsPkgs.callCabal2nix "unicode-haskell" ./ports/haskell {};
+
+        unicodeJvm = pkgs.stdenv.mkDerivation {
+          pname = "unicode-jvm";
+          version = runtimeVersion;
+          src = ./ports/jvm;
+          nativeBuildInputs = [ pkgs.jdk ];
+          dontConfigure = true;
+          buildPhase = ''
+            runHook preBuild
+            bash scripts/test.sh
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/share/unicode-jvm
+            cp -R README.md scripts src testdata $out/share/unicode-jvm/
+            runHook postInstall
+          '';
+        };
+
+        unicodeGo = pkgs.stdenv.mkDerivation {
+          pname = "unicode-go";
+          version = runtimeVersion;
+          src = ./ports/go;
+          nativeBuildInputs = [ pkgs.go ];
+          dontConfigure = true;
+          buildPhase = ''
+            runHook preBuild
+            export HOME=$TMPDIR/home
+            export GOCACHE=$TMPDIR/go-build
+            export GOMODCACHE=$TMPDIR/go-mod
+            mkdir -p "$HOME" "$GOCACHE" "$GOMODCACHE"
+            go test ./...
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/share/unicode-go
+            cp -R README.md go.mod security $out/share/unicode-go/
+            runHook postInstall
+          '';
+        };
+
+        unicodeTypescript = pkgs.stdenv.mkDerivation {
+          pname = "unicode-typescript";
+          version = runtimeVersion;
+          src = ./ports/typescript;
+          nativeBuildInputs = [ pkgs.nodejs ];
+          dontConfigure = true;
+          buildPhase = ''
+            runHook preBuild
+            node --test test/*.test.js
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/share/unicode-typescript
+            cp -R README.md package.json src test testdata $out/share/unicode-typescript/
+            runHook postInstall
+          '';
+        };
+
+        unicodeDotnet = pkgs.stdenv.mkDerivation {
+          pname = "unicode-dotnet";
+          version = runtimeVersion;
+          src = ./ports/dotnet;
+          nativeBuildInputs = [ pkgs.dotnet-sdk_8 ];
+          dontConfigure = true;
+          buildPhase = ''
+            runHook preBuild
+            export DOTNET_CLI_HOME=$TMPDIR/dotnet-home
+            export DOTNET_SKIP_FIRST_TIME_EXPERIENCE=1
+            export DOTNET_NOLOGO=1
+            dotnet run --project test/UnicodeSecurity.Tests/UnicodeSecurity.Tests.csproj
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/share/unicode-dotnet
+            cp -R README.md Data src test testdata $out/share/unicode-dotnet/
+            find $out/share/unicode-dotnet -type d \( -name bin -o -name obj \) -prune -exec rm -rf {} +
+            runHook postInstall
+          '';
+        };
+
+        unicodeSwift = pkgs.stdenv.mkDerivation {
+          pname = "unicode-swift";
+          version = runtimeVersion;
+          src = ./ports/swift;
+          nativeBuildInputs = [ pkgs.swift pkgs.swiftpm ];
+          dontConfigure = true;
+          buildPhase = ''
+            runHook preBuild
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/share/unicode-swift
+            cp -R README.md Package.swift scripts Sources ContractTests $out/share/unicode-swift/
+            find $out/share/unicode-swift -type d -name .build -prune -exec rm -rf {} +
+            runHook postInstall
+          '';
+        };
+
+        unicodeZig = pkgs.stdenv.mkDerivation {
+          pname = "unicode-zig";
+          version = runtimeVersion;
+          src = ./.;
+          nativeBuildInputs = [ pkgs.zig ];
+          dontConfigure = true;
+          buildPhase = ''
+            runHook preBuild
+            cd ports/zig
+            export ZIG_GLOBAL_CACHE_DIR=$TMPDIR/zig-global
+            zig build install --prefix $out
+            mkdir -p $out/share/unicode-zig
+            cp -R README.md build.zig src testdata $out/share/unicode-zig/
+            runHook postBuild
+          '';
+          installPhase = "true";
+        };
 
         # Lean 4.28.0 toolchain pinned via elan; fetched at build time
         # because no Lean 4.28.0 derivation exists in nixpkgs yet.
+        runtimeShell = pkgs.mkShell {
+          packages = runtimePackages;
+        };
+
         leanShell = pkgs.mkShell {
-          packages = [
+          packages = runtimePackages ++ [
             pkgs.elan
-            pkgs.git
           ];
           shellHook = ''
             export ELAN_HOME="$PWD/.elan"
@@ -60,9 +248,21 @@
           '';
         };
 
+        packages.unicode-lean = self.packages.${system}.default;
+        packages.unicode-security = unicodeSecurity;
+        packages.unicode-rust = unicodeSecurity;
+        packages.unicode-python = unicodePython;
+        packages.unicode-cpp = unicodeCpp;
+        packages.unicode-haskell = unicodeHaskell;
+        packages.unicode-jvm = unicodeJvm;
+        packages.unicode-go = unicodeGo;
+        packages.unicode-typescript = unicodeTypescript;
+        packages.unicode-dotnet = unicodeDotnet;
+        packages.unicode-swift = unicodeSwift;
+        packages.unicode-zig = unicodeZig;
+
         # ── nix flake check ───────────────────────────────────────
-        # Two checks: the build itself, plus a sorry / admit scan
-        # that fails on any proof gap.
+        # Two checks: the build itself, plus the proof-gap scan.
         checks.no-sorry = pkgs.runCommand "unicode-no-sorry" {
           src = ./.;
           buildInputs = [ pkgs.bash ];
@@ -73,11 +273,21 @@
           touch $out/result
         '';
 
+        checks.runtime-boundary = pkgs.runCommand "unicode-runtime-boundary" {
+          src = ./.;
+          buildInputs = [ pkgs.bash pkgs.gnugrep pkgs.gawk pkgs.coreutils ];
+        } ''
+          cp -r $src/* .
+          ${pkgs.bash}/bin/bash scripts/check-runtime-import-boundary.sh
+          mkdir -p $out
+          touch $out/result
+        '';
+
         checks.build = self.packages.${system}.default;
 
         # ── nix run ────────────────────────────────────────────────
-        # Status report: file count, theorem count, sorry count,
-        # per-pillar progress.
+        # Status report: file count, theorem count, proof-gap count, per-pillar
+        # progress.
         apps.default = {
           type = "app";
           program = toString (pkgs.writeShellScript "unicode-status" ''
@@ -136,10 +346,16 @@
           '');
         };
 
+        apps.unicode-security = {
+          type = "app";
+          program = "${unicodeSecurity}/bin/unicode-security";
+        };
+
         # ── nix develop ────────────────────────────────────────────
         # Dev shell with elan + lake + git. First entry installs the
         # pinned toolchain via elan.
         devShells.default = leanShell;
+        devShells.runtime = runtimeShell;
       }
     );
 }

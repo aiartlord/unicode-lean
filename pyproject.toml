@@ -27,6 +27,15 @@ Repository = "https://github.com/aiartlord/unicode-lean"
 [tool.hatch.build.targets.wheel]
 packages = ["src/unicode_python"]
 
+[tool.hatch.build.targets.sdist]
+include = [
+    "/fixtures/security",
+    "/LICENSE",
+    "/pyproject.toml",
+    "/README.md",
+    "/src/unicode_python",
+]
+
 [tool.ruff]
 line-length = 79
 target-version = "py311"
