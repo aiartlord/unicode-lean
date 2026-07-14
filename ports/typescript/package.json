@@ -1,0 +1,31 @@
+{
+  "name": "@unicode-security/runtime",
+  "version": "0.1.0",
+  "description": "Dependency-free TypeScript/JavaScript runtime port for the Unicode security policy contract",
+  "type": "module",
+  "main": "./src/security.js",
+  "types": "./src/security.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/security.d.ts",
+      "default": "./src/security.js"
+    },
+    "./edge": {
+      "types": "./src/edge.d.ts",
+      "default": "./src/edge.js"
+    },
+    "./wasm": {
+      "types": "./src/wasm.d.ts",
+      "default": "./src/wasm.js"
+    }
+  },
+  "files": [
+    "src",
+    "testdata",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "license": "MIT"
+}
