@@ -1,4 +1,9 @@
 include(FetchContent)
+
+# doctest v2.4.11 declares an older CMake minimum; CMake 4 requires an
+# explicit policy floor for vendored projects that still build cleanly.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+
 FetchContent_Declare(
     doctest
     GIT_REPOSITORY https://github.com/doctest/doctest.git

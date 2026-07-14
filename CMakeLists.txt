@@ -35,3 +35,22 @@ endif()
 include(GNUInstallDirs)
 install(DIRECTORY include/unicode_cpp
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+foreach(UNICODE_CPP_DATA_FILE IN ITEMS
+    CaseFolding.txt
+    CompositionExclusions.txt
+    DerivedCoreProperties.txt
+    IdentifierStatus.txt
+    KnownAttackTargets.txt
+    PropertyValueAliases.txt
+    ScriptExtensions.txt
+    Scripts.txt
+    UnicodeData.txt
+    confusables.txt)
+    file(REAL_PATH
+        "${CMAKE_CURRENT_SOURCE_DIR}/data/${UNICODE_CPP_DATA_FILE}"
+        UNICODE_CPP_DATA_REAL)
+    install(FILES "${UNICODE_CPP_DATA_REAL}"
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/unicode_cpp/data
+        RENAME "${UNICODE_CPP_DATA_FILE}")
+endforeach()
