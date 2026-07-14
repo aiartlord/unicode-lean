@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Verify the Security Conformance Layer fixtures match the SHA-256
 # hashes pinned in `Unicode/Ucd/Security/SHA256SUMS`.  Tampering with a
-# fixture would let a `native_decide` over those bytes claim a
+# fixture would let a kernel checks over those bytes claim a
 # verdict that disagrees with the published threat model, so the
 # guard enforces byte-exact equality with the publication that was
 # committed at release time.

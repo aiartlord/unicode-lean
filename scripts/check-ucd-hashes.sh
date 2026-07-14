@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Verify the bundled UCD source files match the SHA-256 hashes pinned
 # in `Unicode/Ucd/SHA256SUMS`. Tampering with a UCD `.txt` file would
-# allow a `native_decide` over those bytes to lie, so the guard
+# allow a kernel checks over those bytes to lie, so the guard
 # enforces byte-exact equality with the publication that was committed
 # at release time.
 

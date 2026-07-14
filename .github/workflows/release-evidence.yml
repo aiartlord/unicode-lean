@@ -45,10 +45,18 @@ jobs:
           # Build via lake; toolchain auto-detected from `lean-toolchain`.
           build-args: ""
 
+      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
       - name: hardening checks
         run: |
           bash scripts/check-sorry.sh
           bash scripts/check-no-axiom.sh
+          bash scripts/check-runtime-import-boundary.sh
+          bash scripts/check-policy-contract.sh
+          bash scripts/check-port-self-contained.sh
           bash scripts/check-orphan-files.sh
           bash scripts/check-ucd-hashes.sh
           bash scripts/check-security-coverage.sh
@@ -66,6 +74,27 @@ jobs:
 
       - name: full official conformance evidence
         run: lake build UnicodeFullConformance
+
+      - name: runtime package smoke evidence
+        run: |
+          timeout 1200s nix develop .#runtime -c env \
+            JOBS=1 \
+            UNICODE_RUNTIME_DIST=/tmp/unicode-runtime-package-release \
+            scripts/check-release-runtime-preflight.sh \
+              --dist-dir /tmp/unicode-runtime-package-release
+
+      - name: bundle runtime package evidence
+        run: |
+          mkdir -p dist
+          tar \
+            --sort=name \
+            --mtime='UTC 1970-01-01' \
+            --owner=0 \
+            --group=0 \
+            --numeric-owner \
+            -C /tmp \
+            -czf "dist/unicode-runtime-${GITHUB_REF_NAME}.tar.gz" \
+            unicode-runtime-package-release
 
       - name: generate release evidence
         run: bash scripts/release-evidence.sh "${GITHUB_REF_NAME}" dist
@@ -94,5 +123,6 @@ jobs:
         with:
           subject-path: |
             dist/*.source.tar.gz
+            dist/unicode-runtime-*.tar.gz
             dist/*.sbom.cdx.json
             dist/SHA256SUMS

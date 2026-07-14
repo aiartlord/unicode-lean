@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Report per-family build wall-clock for the Security Conformance Layer
 # harnesses.  Each `Unicode.Conformance.Security.<X>Test` module folds
-# its fixture and closes `all_rows_pass` via `native_decide`, so the
-# elapsed time is dominated by `native_decide` evaluation cost.
+# its fixture and closes `all_rows_pass` via kernel checks, so the
+# elapsed time is dominated by decide +kernel evaluation cost.
 #
 # The script does a clean rebuild of each harness in isolation so
 # numbers are comparable across runs.  Output is two columns:
