@@ -1,0 +1,307 @@
+package security
+
+import (
+	_ "embed"
+	"strconv"
+	"strings"
+	"sync"
+	"unicode"
+	"unicode/utf8"
+)
+
+//go:embed data/confusables.txt
+var confusablesRaw string
+
+//go:embed data/KnownAttackTargets.txt
+var knownAttackTargetsRaw string
+
+var (
+	confusablesOnce sync.Once
+	confusablesData map[uint32][]uint32
+	targetsOnce     sync.Once
+	targetsData     []string
+)
+
+func homoglyphTargetMatch(input []uint32) (string, bool) {
+	inputLetters := letterSkeleton(input)
+	matchIndex := -1
+	targets := knownAttackTargets()
+	for index, target := range targets {
+		targetCps := asciiCodepoints(target)
+		targetLetters := letterSkeleton(targetCps)
+		matches := !equalUint32Slices(targetCps, input) && ctUint32SlicesEqual(targetLetters, inputLetters)
+		if matches && matchIndex < 0 {
+			matchIndex = index
+		}
+	}
+	if matchIndex < 0 {
+		return "", false
+	}
+	return targets[matchIndex], true
+}
+
+func letterSkeleton(input []uint32) []uint32 {
+	iterated := iteratedSkeleton(input)
+	out := make([]uint32, 0, len(iterated))
+	for _, cp := range iterated {
+		if !isCombiningMark(cp) && !isDefaultIgnorableCodepoint(cp) && !isWhiteSpaceCodepoint(cp) {
+			out = append(out, cp)
+		}
+	}
+	return out
+}
+
+func iteratedSkeleton(input []uint32) []uint32 {
+	current := append([]uint32(nil), input...)
+	for range 8 {
+		next := skeleton(current)
+		if equalUint32Slices(next, current) {
+			return current
+		}
+		current = next
+	}
+	return current
+}
+
+func skeleton(input []uint32) []uint32 {
+	step1 := caseFoldCodepoints(input)
+	step2 := substituteConfusables(step1)
+	return caseFoldCodepoints(step2)
+}
+
+func substituteConfusables(input []uint32) []uint32 {
+	table := confusablesMap()
+	out := make([]uint32, 0, len(input))
+	for _, cp := range input {
+		if replacement, ok := table[cp]; ok {
+			out = append(out, replacement...)
+		} else {
+			out = append(out, cp)
+		}
+	}
+	return out
+}
+
+func caseFoldCodepoints(input []uint32) []uint32 {
+	out := make([]uint32, len(input))
+	for index, cp := range input {
+		out[index] = caseFoldCodepoint(cp)
+	}
+	return out
+}
+
+func caseFoldCodepoint(cp uint32) uint32 {
+	if cp > utf8.MaxRune {
+		return cp
+	}
+	return uint32(unicode.ToLower(rune(cp)))
+}
+
+func confusablesMap() map[uint32][]uint32 {
+	confusablesOnce.Do(func() {
+		confusablesData = parseConfusables(confusablesRaw)
+	})
+	return confusablesData
+}
+
+func knownAttackTargets() []string {
+	targetsOnce.Do(func() {
+		targetsData = parseKnownAttackTargets(knownAttackTargetsRaw)
+	})
+	return targetsData
+}
+
+func parseConfusables(raw string) map[uint32][]uint32 {
+	out := make(map[uint32][]uint32)
+	for _, rawLine := range strings.Split(raw, "\n") {
+		body, _, _ := strings.Cut(rawLine, "#")
+		body = strings.TrimSpace(body)
+		if body == "" {
+			continue
+		}
+		fields := strings.Split(body, ";")
+		if len(fields) < 2 {
+			continue
+		}
+		src, ok := parseHexUint32(fields[0])
+		if !ok {
+			continue
+		}
+		target := parseCodepointField(fields[1])
+		if len(target) == 0 {
+			continue
+		}
+		out[src] = target
+	}
+	return out
+}
+
+func parseKnownAttackTargets(raw string) []string {
+	var out []string
+	for _, rawLine := range strings.Split(raw, "\n") {
+		trimmed := strings.TrimSpace(rawLine)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		out = append(out, trimmed)
+	}
+	return out
+}
+
+func parseCodepointField(field string) []uint32 {
+	var out []uint32
+	for _, token := range strings.Fields(field) {
+		if cp, ok := parseHexUint32(token); ok {
+			out = append(out, cp)
+		}
+	}
+	return out
+}
+
+func parseHexUint32(field string) (uint32, bool) {
+	value, err := strconv.ParseUint(strings.TrimSpace(field), 16, 32)
+	if err != nil {
+		return 0, false
+	}
+	return uint32(value), true
+}
+
+func asciiCodepoints(value string) []uint32 {
+	out := make([]uint32, 0, len(value))
+	for _, b := range []byte(value) {
+		out = append(out, uint32(b))
+	}
+	return out
+}
+
+func equalUint32Slices(a []uint32, b []uint32) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for index := range a {
+		if a[index] != b[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func ctUint32SlicesEqual(a []uint32, b []uint32) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	var acc uint32
+	for index := range a {
+		acc |= a[index] ^ b[index]
+	}
+	return acc == 0
+}
+
+func isCombiningMark(cp uint32) bool {
+	return (cp >= 0x0300 && cp <= 0x036F) ||
+		(cp >= 0x1AB0 && cp <= 0x1AFF) ||
+		(cp >= 0x1DC0 && cp <= 0x1DFF) ||
+		(cp >= 0x20D0 && cp <= 0x20FF) ||
+		(cp >= 0xFE20 && cp <= 0xFE2F)
+}
+
+func hasDecompositionSwap(input []uint32) bool {
+	for index := 1; index < len(input); index++ {
+		previous := input[index-1]
+		current := input[index]
+		if isCombiningMark(current) && !isCombiningMark(previous) {
+			return true
+		}
+		if isCombiningMark(previous) && isCombiningMark(current) && previous > current {
+			return true
+		}
+		if composeHangulPair(previous, current) {
+			return true
+		}
+	}
+	return false
+}
+
+func composeHangulPair(first uint32, second uint32) bool {
+	const (
+		sBase  = 0xAC00
+		lBase  = 0x1100
+		vBase  = 0x1161
+		tBase  = 0x11A7
+		lCount = 19
+		vCount = 21
+		tCount = 28
+		nCount = vCount * tCount
+		sCount = lCount * nCount
+	)
+	isL := first >= lBase && first < lBase+lCount
+	isV := second >= vBase && second < vBase+vCount
+	if isL && isV {
+		return true
+	}
+	isLV := first >= sBase && first < sBase+sCount && (first-sBase)%tCount == 0
+	isT := second > tBase && second < tBase+tCount
+	return isLV && isT
+}
+
+func hasCrossScriptMix(input []uint32) bool {
+	seen := map[string]bool{}
+	for _, cp := range input {
+		script, ok := scriptClass(cp)
+		if ok {
+			seen[script] = true
+		}
+	}
+	return len(seen) >= 2
+}
+
+func scriptClass(cp uint32) (string, bool) {
+	if cp > utf8.MaxRune {
+		return "", false
+	}
+	r := rune(cp)
+	switch {
+	case unicode.In(r, unicode.Latin):
+		return "Latn", true
+	case unicode.In(r, unicode.Greek):
+		return "Grek", true
+	case unicode.In(r, unicode.Cyrillic):
+		return "Cyrl", true
+	default:
+		return "", false
+	}
+}
+
+func isDefaultIgnorableCodepoint(cp uint32) bool {
+	return cp == 0x00AD ||
+		cp == 0x034F ||
+		cp == 0x061C ||
+		(cp >= 0x115F && cp <= 0x1160) ||
+		(cp >= 0x17B4 && cp <= 0x17B5) ||
+		(cp >= 0x180B && cp <= 0x180F) ||
+		(cp >= 0x200B && cp <= 0x200F) ||
+		(cp >= 0x202A && cp <= 0x202E) ||
+		(cp >= 0x2060 && cp <= 0x206F) ||
+		(cp >= 0xFE00 && cp <= 0xFE0F) ||
+		cp == 0xFEFF ||
+		(cp >= 0xFFF0 && cp <= 0xFFF8) ||
+		(cp >= 0xE0000 && cp <= 0xE0FFF)
+}
+
+func isWhiteSpaceCodepoint(cp uint32) bool {
+	return cp == 0x0009 ||
+		cp == 0x000A ||
+		cp == 0x000B ||
+		cp == 0x000C ||
+		cp == 0x000D ||
+		cp == 0x0020 ||
+		cp == 0x0085 ||
+		cp == 0x00A0 ||
+		cp == 0x1680 ||
+		(cp >= 0x2000 && cp <= 0x200A) ||
+		cp == 0x2028 ||
+		cp == 0x2029 ||
+		cp == 0x202F ||
+		cp == 0x205F ||
+		cp == 0x3000
+}
