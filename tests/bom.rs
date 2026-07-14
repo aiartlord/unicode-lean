@@ -43,10 +43,7 @@ fn detects_utf32_le_precedence_over_utf16_le() {
 
 #[test]
 fn detects_utf16_le_when_followed_by_nonzero() {
-    assert_eq!(
-        detect(&[0xFF, 0xFE, 0x41]),
-        Some((BomKind::Utf16LE, 2))
-    );
+    assert_eq!(detect(&[0xFF, 0xFE, 0x41]), Some((BomKind::Utf16LE, 2)));
 }
 
 #[test]

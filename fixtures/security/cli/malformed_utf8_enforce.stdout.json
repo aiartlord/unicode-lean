@@ -1,0 +1,1 @@
+{"action":"reject","profile":"gateway-header","mode":"enforce","input":[],"findings":[{"code":"unicode.security.C.malformed-utf8.InvalidStartByte","family":"malformed-utf8","severity":2,"positions":[0],"byte_spans":[{"cp_offset":null,"start_byte":0,"end_byte":1,"line":1,"column":1}],"sub_threat":"InvalidStartByte","detail":"malformed-utf8"}],"normalized":null}

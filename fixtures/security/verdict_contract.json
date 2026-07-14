@@ -1,0 +1,304 @@
+{
+  "schema": 1,
+  "contract": "unicode-security-verdict-v0",
+  "cases": [
+    {
+      "name": "ascii-gateway-enforce",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input": [72, 101, 108, 108, 111],
+      "verdict": {
+        "action": "allow",
+        "profile": "gateway-header",
+        "mode": "enforce",
+        "input": [72, 101, 108, 108, 111],
+        "findings": [],
+        "normalized": null
+      }
+    },
+    {
+      "name": "noncharacter-gateway-reject",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input": [64976],
+      "verdict": {
+        "action": "reject",
+        "profile": "gateway-header",
+        "mode": "enforce",
+        "input": [64976],
+        "findings": [
+          {
+            "code": "unicode.security.C.noncharacter-control.Noncharacter",
+            "family": "noncharacter-control",
+            "severity": 2,
+            "positions": [0],
+            "sub_threat": "Noncharacter",
+            "detail": "noncharacter-control"
+          }
+        ],
+        "normalized": null
+      }
+    },
+    {
+      "name": "tag-block-gateway-reject",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input": [917569, 917570],
+      "verdict": {
+        "action": "reject",
+        "profile": "gateway-header",
+        "mode": "enforce",
+        "input": [917569, 917570],
+        "findings": [
+          {
+            "code": "unicode.security.C.tag-block-payload.DirectAscii",
+            "family": "tag-block-payload",
+            "severity": 2,
+            "positions": [0, 1],
+            "sub_threat": "DirectAscii",
+            "detail": "tag-block-payload"
+          }
+        ],
+        "normalized": null
+      }
+    },
+    {
+      "name": "tag-block-gateway-observe",
+      "profile": "gateway-header",
+      "mode": "observe",
+      "input": [917569, 917570],
+      "verdict": {
+        "action": "observe",
+        "profile": "gateway-header",
+        "mode": "observe",
+        "input": [917569, 917570],
+        "findings": [
+          {
+            "code": "unicode.security.C.tag-block-payload.DirectAscii",
+            "family": "tag-block-payload",
+            "severity": 2,
+            "positions": [0, 1],
+            "sub_threat": "DirectAscii",
+            "detail": "tag-block-payload"
+          }
+        ],
+        "normalized": null
+      }
+    },
+    {
+      "name": "tag-block-username-quarantine",
+      "profile": "username",
+      "mode": "enforce",
+      "input": [917569, 917570],
+      "verdict": {
+        "action": "quarantine",
+        "profile": "username",
+        "mode": "enforce",
+        "input": [917569, 917570],
+        "findings": [
+          {
+            "code": "unicode.security.C.tag-block-payload.DirectAscii",
+            "family": "tag-block-payload",
+            "severity": 2,
+            "positions": [0, 1],
+            "sub_threat": "DirectAscii",
+            "detail": "tag-block-payload"
+          }
+        ],
+        "normalized": null
+      }
+    },
+    {
+      "name": "zero-width-display-name-report-only",
+      "profile": "display-name",
+      "mode": "enforce",
+      "input": [97, 8203, 98],
+      "verdict": {
+        "action": "allow",
+        "profile": "display-name",
+        "mode": "enforce",
+        "input": [97, 8203, 98],
+        "findings": [
+          {
+            "code": "unicode.security.C.zero-width-payload.BareZeroWidth",
+            "family": "zero-width-payload",
+            "severity": 2,
+            "positions": [1],
+            "sub_threat": "BareZeroWidth",
+            "detail": "zero-width-payload"
+          }
+        ],
+        "normalized": null
+      }
+    },
+    {
+      "name": "variation-selector-gateway-reject",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input": [65, 65039],
+      "verdict": {
+        "action": "reject",
+        "profile": "gateway-header",
+        "mode": "enforce",
+        "input": [65, 65039],
+        "findings": [
+          {
+            "code": "unicode.security.C.variation-selector-payload.IllegalTarget",
+            "family": "variation-selector-payload",
+            "severity": 2,
+            "positions": [1],
+            "sub_threat": "IllegalTarget",
+            "detail": "variation-selector-payload"
+          }
+        ],
+        "normalized": null
+      }
+    },
+    {
+      "name": "zero-width-source-strict-reject",
+      "profile": "source-code",
+      "mode": "strict",
+      "input": [97, 8203, 98],
+      "verdict": {
+        "action": "reject",
+        "profile": "source-code",
+        "mode": "strict",
+        "input": [97, 8203, 98],
+        "findings": [
+          {
+            "code": "unicode.security.C.zero-width-payload.BareZeroWidth",
+            "family": "zero-width-payload",
+            "severity": 2,
+            "positions": [1],
+            "sub_threat": "BareZeroWidth",
+            "detail": "zero-width-payload"
+          }
+        ],
+        "normalized": null
+      }
+    },
+    {
+      "name": "bidi-source-reject",
+      "profile": "source-code",
+      "mode": "enforce",
+      "input": [105, 102, 32, 8238, 41, 123],
+      "verdict": {
+        "action": "reject",
+        "profile": "source-code",
+        "mode": "enforce",
+        "input": [105, 102, 32, 8238, 41, 123],
+        "findings": [
+          {
+            "code": "unicode.security.C.bidi-control-balance.UnbalancedEmbedding",
+            "family": "bidi-control-balance",
+            "severity": 2,
+            "positions": [3],
+            "sub_threat": "UnbalancedEmbedding",
+            "detail": "bidi-control-balance"
+          }
+        ],
+        "normalized": null
+      }
+    },
+    {
+      "name": "math-alpha-gateway-reject",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input": [119808],
+      "verdict": {
+        "action": "reject",
+        "profile": "gateway-header",
+        "mode": "enforce",
+        "input": [119808],
+        "findings": [
+          {
+            "code": "unicode.security.I.homoglyph-confusable.MathAlpha",
+            "family": "homoglyph-confusable",
+            "severity": 2,
+            "positions": [0],
+            "sub_threat": "MathAlpha",
+            "detail": "homoglyph-confusable"
+          }
+        ],
+        "normalized": null
+      }
+    },
+    {
+      "name": "nethereum-targetmatch-gateway-reject",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input": [78, 101, 116, 104, 101, 114, 1077, 117, 109],
+      "verdict": {
+        "action": "reject",
+        "profile": "gateway-header",
+        "mode": "enforce",
+        "input": [78, 101, 116, 104, 101, 114, 1077, 117, 109],
+        "findings": [
+          {
+            "code": "unicode.security.I.homoglyph-confusable.TargetMatch",
+            "family": "homoglyph-confusable",
+            "severity": 2,
+            "positions": [0, 1, 2, 3, 4, 5, 6, 7, 8],
+            "sub_threat": "TargetMatch",
+            "detail": "homoglyph-confusable"
+          },
+          {
+            "code": "unicode.security.I.mixed-script-admissibility.CrossScriptMix",
+            "family": "mixed-script-admissibility",
+            "severity": 2,
+            "positions": [0, 1, 2, 3, 4, 5, 6, 7, 8],
+            "sub_threat": "CrossScriptMix",
+            "detail": "mixed-script-admissibility"
+          }
+        ],
+        "normalized": null
+      }
+    },
+    {
+      "name": "decomposition-swap-gateway-reject",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input": [101, 769],
+      "verdict": {
+        "action": "reject",
+        "profile": "gateway-header",
+        "mode": "enforce",
+        "input": [101, 769],
+        "findings": [
+          {
+            "code": "unicode.security.I.homoglyph-confusable.DecompositionSwap",
+            "family": "homoglyph-confusable",
+            "severity": 2,
+            "positions": [0, 1],
+            "sub_threat": "DecompositionSwap",
+            "detail": "homoglyph-confusable"
+          }
+        ],
+        "normalized": null
+      }
+    },
+    {
+      "name": "cross-script-gateway-reject",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input": [97, 98, 945, 946],
+      "verdict": {
+        "action": "reject",
+        "profile": "gateway-header",
+        "mode": "enforce",
+        "input": [97, 98, 945, 946],
+        "findings": [
+          {
+            "code": "unicode.security.I.mixed-script-admissibility.CrossScriptMix",
+            "family": "mixed-script-admissibility",
+            "severity": 2,
+            "positions": [0, 1, 2, 3],
+            "sub_threat": "CrossScriptMix",
+            "detail": "mixed-script-admissibility"
+          }
+        ],
+        "normalized": null
+      }
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "family": "homoglyph-confusable",
+  "scope": "identity-subthreat-v0",
+  "cases": [
+    {
+      "name": "ascii-clear",
+      "input": [72, 101, 108, 108, 111],
+      "required_findings": []
+    },
+    {
+      "name": "nethereum-cyrillic-e-target",
+      "input": [78, 101, 116, 104, 101, 114, 1077, 117, 109],
+      "required_findings": [
+        "unicode.security.I.homoglyph-confusable.TargetMatch"
+      ]
+    },
+    {
+      "name": "apple-cyrillic-a-target",
+      "input": [1072, 112, 112, 108, 101],
+      "required_findings": [
+        "unicode.security.I.homoglyph-confusable.TargetMatch"
+      ]
+    },
+    {
+      "name": "math-bold-apple-target-priority",
+      "input": [119808, 119849, 119849, 119845, 119838],
+      "required_findings": [
+        "unicode.security.I.homoglyph-confusable.TargetMatch"
+      ]
+    },
+    {
+      "name": "fullwidth-paypal-target-priority",
+      "input": [65328, 65345, 65369, 65360, 65345, 65356],
+      "required_findings": [
+        "unicode.security.I.homoglyph-confusable.TargetMatch"
+      ]
+    },
+    {
+      "name": "decomposed-e-acute",
+      "input": [101, 769],
+      "required_findings": [
+        "unicode.security.I.homoglyph-confusable.DecompositionSwap"
+      ]
+    },
+    {
+      "name": "math-bold-a",
+      "input": [119808],
+      "required_findings": [
+        "unicode.security.I.homoglyph-confusable.MathAlpha"
+      ]
+    },
+    {
+      "name": "fullwidth-a",
+      "input": [65313],
+      "required_findings": [
+        "unicode.security.I.homoglyph-confusable.WidthClass"
+      ]
+    }
+  ]
+}

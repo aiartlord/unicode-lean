@@ -1,6 +1,5 @@
 use unicode_rust::utf16::{
-    decode_one_be, decode_one_le, encode_be, encode_le,
-    encode_one_be, encode_one_le,
+    decode_one_be, decode_one_le, encode_be, encode_le, encode_one_be, encode_one_le,
 };
 
 #[test]
@@ -11,22 +10,13 @@ fn encodes_ascii_bmp_be_le() {
 
 #[test]
 fn encodes_supplementary_plane() {
-    assert_eq!(
-        encode_one_be(0x1F600),
-        vec![0xD8, 0x3D, 0xDE, 0x00],
-    );
-    assert_eq!(
-        encode_one_le(0x1F600),
-        vec![0x3D, 0xD8, 0x00, 0xDE],
-    );
+    assert_eq!(encode_one_be(0x1F600), vec![0xD8, 0x3D, 0xDE, 0x00],);
+    assert_eq!(encode_one_le(0x1F600), vec![0x3D, 0xD8, 0x00, 0xDE],);
 }
 
 #[test]
 fn encodes_u10ffff_as_maximal_pair() {
-    assert_eq!(
-        encode_one_be(0x10FFFF),
-        vec![0xDB, 0xFF, 0xDF, 0xFF],
-    );
+    assert_eq!(encode_one_be(0x10FFFF), vec![0xDB, 0xFF, 0xDF, 0xFF],);
 }
 
 #[test]
@@ -37,14 +27,8 @@ fn decodes_bmp_be_le() {
 
 #[test]
 fn decodes_supplementary_pair() {
-    assert_eq!(
-        decode_one_be(&[0xD8, 0x3D, 0xDE, 0x00]),
-        Some(0x1F600)
-    );
-    assert_eq!(
-        decode_one_le(&[0x3D, 0xD8, 0x00, 0xDE]),
-        Some(0x1F600)
-    );
+    assert_eq!(decode_one_be(&[0xD8, 0x3D, 0xDE, 0x00]), Some(0x1F600));
+    assert_eq!(decode_one_le(&[0x3D, 0xD8, 0x00, 0xDE]), Some(0x1F600));
 }
 
 #[test]
@@ -60,10 +44,7 @@ fn rejects_lone_low_surrogate() {
 
 #[test]
 fn rejects_high_followed_by_non_low() {
-    assert_eq!(
-        decode_one_be(&[0xD8, 0x00, 0x00, 0x42]),
-        None
-    );
+    assert_eq!(decode_one_be(&[0xD8, 0x00, 0x00, 0x42]), None);
 }
 
 #[test]
@@ -77,8 +58,7 @@ fn rejects_invalid_lengths() {
 #[test]
 fn roundtrips_boundaries() {
     for cp in [
-        0x0000u32, 0x007F, 0x0080, 0xD7FF, 0xE000, 0xFFFD,
-        0x10000, 0x1F600, 0x10FFFD, 0x10FFFF,
+        0x0000u32, 0x007F, 0x0080, 0xD7FF, 0xE000, 0xFFFD, 0x10000, 0x1F600, 0x10FFFD, 0x10FFFF,
     ] {
         assert_eq!(decode_one_be(&encode_one_be(cp)), Some(cp));
         assert_eq!(decode_one_le(&encode_one_le(cp)), Some(cp));

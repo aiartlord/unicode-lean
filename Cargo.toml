@@ -13,6 +13,10 @@ categories = ["text-processing", "encoding", "no-std"]
 name = "unicode_rust"
 path = "src/lib.rs"
 
+[[bin]]
+name = "unicode-security"
+path = "src/bin/unicode-security.rs"
+
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"

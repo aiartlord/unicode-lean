@@ -1,10 +1,6 @@
 use unicode_rust::{
-    Utf8RejectKind,
-    decode_to_codepoints,
-    encode_codepoint,
-    encode_codepoints,
-    first_invalid_utf8_offset,
-    is_valid_utf8,
+    decode_to_codepoints, encode_codepoint, encode_codepoints, first_invalid_utf8_offset,
+    is_valid_utf8, Utf8RejectKind,
 };
 
 // ─────────────────────────────────────────────────────────────────────
@@ -188,11 +184,11 @@ fn roundtrips_mixed_codepoint_sequence() {
 #[test]
 fn roundtrips_byte_class_boundaries() {
     let boundaries: [u32; 10] = [
-        0x00, 0x7F,         // 1-byte
-        0x80, 0x7FF,        // 2-byte
-        0x800, 0xD7FF,      // 3-byte just below surrogates
-        0xE000, 0xFFFF,     // 3-byte just above surrogates
-        0x10000, 0x10FFFF,  // 4-byte
+        0x00, 0x7F, // 1-byte
+        0x80, 0x7FF, // 2-byte
+        0x800, 0xD7FF, // 3-byte just below surrogates
+        0xE000, 0xFFFF, // 3-byte just above surrogates
+        0x10000, 0x10FFFF, // 4-byte
     ];
     for cp in boundaries {
         let encoded = encode_codepoint(cp);

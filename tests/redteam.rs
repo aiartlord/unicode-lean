@@ -4,9 +4,9 @@
 //! A test PASSING means the detector caught me.  A test FAILING
 //! means I found a hole.
 
-use unicode_rust::security::ClassificationKind;
 use unicode_rust::security::identity::homoglyph_confusable;
 use unicode_rust::security::identity::ucd;
+use unicode_rust::security::ClassificationKind;
 
 fn caught(input: &[u32], expected_tag: &str) -> bool {
     let v = homoglyph_confusable::detect(input);
@@ -35,10 +35,7 @@ fn caught(input: &[u32], expected_tag: &str) -> bool {
 fn caught_any(input: &[u32]) -> bool {
     let v = homoglyph_confusable::detect(input);
     if v.kind != ClassificationKind::Hazard {
-        eprintln!(
-            "MISS: input {:X?} not flagged at all",
-            input,
-        );
+        eprintln!("MISS: input {:X?} not flagged at all", input,);
         return false;
     }
     true
@@ -55,7 +52,10 @@ fn caught_any(input: &[u32]) -> bool {
 fn attack_1_lowercase_canonical_with_cyrillic() {
     // "nethereum" with Cyrillic SMALL LETTER IE at pos 6.
     let input = [0x6E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D];
-    assert!(caught_any(&input), "ATTACK 1: lowercase NuGet-style typosquat");
+    assert!(
+        caught_any(&input),
+        "ATTACK 1: lowercase NuGet-style typosquat"
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -66,7 +66,10 @@ fn attack_1_lowercase_canonical_with_cyrillic() {
 fn attack_2_uppercase_canonical_with_cyrillic() {
     // "NETHEREUM" with Cyrillic CAPITAL IE at pos 6.
     let input = [0x4E, 0x45, 0x54, 0x48, 0x45, 0x52, 0x0415, 0x55, 0x4D];
-    assert!(caught_any(&input), "ATTACK 2: all-caps NuGet-style typosquat");
+    assert!(
+        caught_any(&input),
+        "ATTACK 2: all-caps NuGet-style typosquat"
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -98,8 +101,7 @@ fn attack_4_cherokee_letter_lookalike() {
     // Cherokee LETTER MV (U+13DB) looks like Latin O.  Test:
     // "Nethereum" → "NethereuO" with M+V substitution?  Wait this
     // doesn't match a known target.  Try: target list includes "OpenAI"?
-    let targets = unicode_rust::security::identity::homoglyph_confusable
-        ::iterated_skeleton(&[]);
+    let targets = unicode_rust::security::identity::homoglyph_confusable::iterated_skeleton(&[]);
     // Force the skeleton to be loaded so we don't measure miss as
     // a load failure.
     drop(targets);
@@ -135,7 +137,10 @@ fn attack_5_precomposed_form_already_nfc() {
     // Decomposed form: c + a + f + e + combining-acute
     let decomposed = [0x63u32, 0x61, 0x66, 0x65, 0x0301];
     let nfc2 = ucd::to_nfc(&decomposed);
-    eprintln!("NFC of decomposed café: {:X?} (expected [63,61,66,E9])", nfc2);
+    eprintln!(
+        "NFC of decomposed café: {:X?} (expected [63,61,66,E9])",
+        nfc2
+    );
     assert_eq!(
         nfc2,
         vec![0x63, 0x61, 0x66, 0xE9],
@@ -156,13 +161,12 @@ fn attack_6_iterated_skeleton_terminates() {
     use std::time::Instant;
     // Load lazily initialized confusable tables before measuring the
     // steady-state skeleton walk.
-    let warmup_skeleton =
-        homoglyph_confusable::iterated_skeleton(&[0x0400, 0x0401, 0x0435]);
+    let warmup_skeleton = homoglyph_confusable::iterated_skeleton(&[0x0400, 0x0401, 0x0435]);
     std::hint::black_box(&warmup_skeleton);
     // 1024 random-ish codepoints chosen to stress confusables.
     let mut input = Vec::with_capacity(1024);
     for i in 0..1024 {
-        input.push((0x0400 + (i % 0x80)) as u32);  // Cyrillic block
+        input.push((0x0400 + (i % 0x80)) as u32); // Cyrillic block
     }
     let start = Instant::now();
     let stress_skeleton = homoglyph_confusable::iterated_skeleton(&input);
@@ -187,14 +191,10 @@ fn attack_6_iterated_skeleton_terminates() {
 fn attack_7_zwsp_inside_identifier() {
     // "Nethere" + ZWSP + Cyrillic-е + "um"
     let input = [
-        0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x65, 0x200B,
-        0x0435, 0x75, 0x6D,
+        0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x65, 0x200B, 0x0435, 0x75, 0x6D,
     ];
     let v = homoglyph_confusable::detect(&input);
-    eprintln!(
-        "Cyrillic+ZWSP attack: kind={:?} sub={:?}",
-        v.kind, v.sub
-    );
+    eprintln!("Cyrillic+ZWSP attack: kind={:?} sub={:?}", v.kind, v.sub);
     // HomoglyphConfusable doesn't check ZWSP, so this might be
     // CrossScriptMix (because ZWSP is Common+ignored, Cyrillic 'е'
     // remains as the only non-Latin, but no Latin needs Latin to be
@@ -224,14 +224,15 @@ fn attack_8_bidi_wrapped_confusable() {
     // RLO + Nethereum with Cyrillic + PDF
     let input = [
         0x202E, // RLO
-        0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D,
-        0x202C, // PDF
+        0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D, 0x202C, // PDF
     ];
     let bidi = bidi_control_balance::detect(&input);
     eprintln!("Bidi verdict on RLO-wrapped: kind={:?}", bidi.kind);
     let homo = homoglyph_confusable::detect(&input);
-    eprintln!("Homoglyph verdict on RLO-wrapped: kind={:?} sub={:?}",
-              homo.kind, homo.sub);
+    eprintln!(
+        "Homoglyph verdict on RLO-wrapped: kind={:?} sub={:?}",
+        homo.kind, homo.sub
+    );
     // The Cyrillic + RLO + PDF doesn't break homoglyph TargetMatch
     // because bidi controls are Common-script (ignored) and don't
     // appear in skeleton output... but they DO appear in input, so
@@ -283,7 +284,7 @@ fn attack_10_degenerate_no_panic() {
         &[0x10FFFF],
         &[0x110000],
         &[0xD800],
-        &[0xFFFFFFFF],  // beyond all
+        &[0xFFFFFFFF], // beyond all
     ];
     for input in inputs {
         let verdict = homoglyph_confusable::detect(input);
@@ -307,7 +308,9 @@ fn attack_11_nfc_decomposition_bomb() {
     let elapsed = start.elapsed();
     eprintln!(
         "NFC of 10k U+FDFA: input_len={} output_len={} in {:?}",
-        input.len(), nfc.len(), elapsed,
+        input.len(),
+        nfc.len(),
+        elapsed,
     );
     assert!(elapsed.as_secs() < 5, "NFC bomb DoS");
 }
@@ -320,22 +323,19 @@ fn attack_11_nfc_decomposition_bomb() {
 #[test]
 fn attack_12_combining_mark_stack() {
     use std::time::Instant;
-    let mut input = vec![0x0041u32];  // 'A'
+    let mut input = vec![0x0041u32]; // 'A'
     let mut mark_batches = 0;
     while mark_batches < 1000 {
-        input.push(0x0300);  // combining grave
-        input.push(0x0301);  // combining acute
-        input.push(0x0327);  // combining cedilla
+        input.push(0x0300); // combining grave
+        input.push(0x0301); // combining acute
+        input.push(0x0327); // combining cedilla
         mark_batches += 1;
     }
     let start = Instant::now();
     let normalized = ucd::to_nfc(&input);
     std::hint::black_box(&normalized);
     let elapsed = start.elapsed();
-    eprintln!(
-        "NFC of A + 3000 combining marks: {:?}",
-        elapsed,
-    );
+    eprintln!("NFC of A + 3000 combining marks: {:?}", elapsed,);
     assert!(elapsed.as_secs() < 5, "Combining mark DoS");
 }
 
@@ -353,7 +353,9 @@ fn attack_13_bidi_depth_boundary() {
         let v = bidi_control_balance::detect(&input);
         eprintln!(
             "Bidi depth={}: kind={:?} sub={:?}",
-            n, v.kind, v.sub.as_ref().map(|s| s.tag()),
+            n,
+            v.kind,
+            v.sub.as_ref().map(|s| s.tag()),
         );
     }
 }

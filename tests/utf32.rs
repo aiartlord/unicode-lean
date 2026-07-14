@@ -1,6 +1,5 @@
 use unicode_rust::utf32::{
-    decode_one_be, decode_one_le, encode_be, encode_le,
-    encode_one_be, encode_one_le,
+    decode_one_be, decode_one_le, encode_be, encode_le, encode_one_be, encode_one_le,
 };
 
 #[test]

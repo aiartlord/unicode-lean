@@ -9,19 +9,13 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
-const UNICODE_DATA_RAW: &str =
-    include_str!("../../../data/UnicodeData.txt");
-const COMPOSITION_EXCLUSIONS_RAW: &str =
-    include_str!("../../../data/CompositionExclusions.txt");
+const UNICODE_DATA_RAW: &str = include_str!("../../../data/UnicodeData.txt");
+const COMPOSITION_EXCLUSIONS_RAW: &str = include_str!("../../../data/CompositionExclusions.txt");
 const SCRIPTS_RAW: &str = include_str!("../../../data/Scripts.txt");
-const SCRIPT_EXTENSIONS_RAW: &str =
-    include_str!("../../../data/ScriptExtensions.txt");
-const IDENTIFIER_STATUS_RAW: &str =
-    include_str!("../../../data/IdentifierStatus.txt");
-const PROPERTY_VALUE_ALIASES_RAW: &str =
-    include_str!("../../../data/PropertyValueAliases.txt");
-const DERIVED_CORE_PROPERTIES_RAW: &str =
-    include_str!("../../../data/DerivedCoreProperties.txt");
+const SCRIPT_EXTENSIONS_RAW: &str = include_str!("../../../data/ScriptExtensions.txt");
+const IDENTIFIER_STATUS_RAW: &str = include_str!("../../../data/IdentifierStatus.txt");
+const PROPERTY_VALUE_ALIASES_RAW: &str = include_str!("../../../data/PropertyValueAliases.txt");
+const DERIVED_CORE_PROPERTIES_RAW: &str = include_str!("../../../data/DerivedCoreProperties.txt");
 
 fn parse_hex(s: &str) -> Option<u32> {
     u32::from_str_radix(s.trim(), 16).ok()
@@ -77,15 +71,23 @@ fn parse_unicode_data() -> HashMap<u32, UcdEntry> {
             // Compatibility decomposition — skip for NFC.
             None
         } else {
-            let parts: Vec<u32> =
-                decomp_field.split_whitespace().filter_map(parse_hex).collect();
+            let parts: Vec<u32> = decomp_field
+                .split_whitespace()
+                .filter_map(parse_hex)
+                .collect();
             if parts.is_empty() {
                 None
             } else {
                 Some(parts)
             }
         };
-        out.insert(cp, UcdEntry { ccc, canonical_decomp });
+        out.insert(
+            cp,
+            UcdEntry {
+                ccc,
+                canonical_decomp,
+            },
+        );
     }
     out
 }
@@ -195,9 +197,7 @@ fn hangul_compose(a: u32, b: u32) -> Option<u32> {
     {
         let l_index = a - HANGUL_L_BASE;
         let v_index = b - HANGUL_V_BASE;
-        return Some(
-            HANGUL_S_BASE + (l_index * HANGUL_V_COUNT + v_index) * HANGUL_T_COUNT,
-        );
+        return Some(HANGUL_S_BASE + (l_index * HANGUL_V_COUNT + v_index) * HANGUL_T_COUNT);
     }
     // LV + T
     if (HANGUL_S_BASE..HANGUL_S_BASE + HANGUL_S_COUNT).contains(&a)
@@ -279,14 +279,12 @@ fn canonical_compose(seq: &[u32]) -> Vec<u32> {
         if let Some(si) = starter_idx {
             let starter = out[si];
             // Try hangul, then composition table.
-            let composed = hangul_compose(starter, cp)
-                .or_else(|| comp.get(&(starter, cp)).copied());
+            let composed =
+                hangul_compose(starter, cp).or_else(|| comp.get(&(starter, cp)).copied());
 
             // Blocked check: if last_ccc != 0 and last_ccc >= cp_ccc,
             // the candidate is blocked from composition with starter.
-            let blocked = cp_ccc != 0
-                && last_ccc != 0
-                && last_ccc >= cp_ccc as i32;
+            let blocked = cp_ccc != 0 && last_ccc != 0 && last_ccc >= cp_ccc as i32;
 
             if !blocked {
                 if let Some(c) = composed {
@@ -329,8 +327,7 @@ pub fn to_nfd(input: &[u32]) -> Vec<u32> {
 // CaseFolding.txt — default full case folding (RFC 8265 § 5.2.4)
 // ─────────────────────────────────────────────────────────────────────
 
-const CASE_FOLDING_RAW: &str =
-    include_str!("../../../data/CaseFolding.txt");
+const CASE_FOLDING_RAW: &str = include_str!("../../../data/CaseFolding.txt");
 
 fn parse_case_folding() -> HashMap<u32, Vec<u32>> {
     let mut out = HashMap::new();
@@ -355,8 +352,7 @@ fn parse_case_folding() -> HashMap<u32, Vec<u32>> {
             Some(s) => s,
             None => continue,
         };
-        let tgt: Vec<u32> =
-            parts[2].split_whitespace().filter_map(parse_hex).collect();
+        let tgt: Vec<u32> = parts[2].split_whitespace().filter_map(parse_hex).collect();
         if tgt.is_empty() {
             continue;
         }
@@ -736,8 +732,7 @@ pub fn string_resolved_scripts(cps: &[u32]) -> Vec<String> {
     if non_ignored.is_empty() {
         return Vec::new();
     }
-    let sets: Vec<Vec<String>> =
-        non_ignored.iter().map(|&cp| resolve_scripts(cp)).collect();
+    let sets: Vec<Vec<String>> = non_ignored.iter().map(|&cp| resolve_scripts(cp)).collect();
     intersect_many(&sets)
 }
 

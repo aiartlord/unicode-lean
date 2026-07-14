@@ -22,8 +22,8 @@
 //!      the documented attack shape.
 
 use std::time::Instant;
-use unicode_rust::security::ClassificationKind;
 use unicode_rust::security::covert::bidi_control_balance as bidi;
+use unicode_rust::security::ClassificationKind;
 
 // ════════════════════════════════════════════════════════════════════
 // CATEGORY 1: depth boundary regression
@@ -32,7 +32,7 @@ use unicode_rust::security::covert::bidi_control_balance as bidi;
 #[test]
 fn bidi_depth_boundary_regression() {
     for n in [0usize, 1, 50, 124, 125, 126, 200, 1_000] {
-        let mut input = vec![0x202Au32; n];   // n LRE pushes
+        let mut input = vec![0x202Au32; n]; // n LRE pushes
         input.extend(std::iter::repeat(0x202Cu32).take(n)); // n PDF pops
         let v = bidi::detect(&input);
         let tag = v.sub.as_ref().map(|s| s.tag());
@@ -42,11 +42,19 @@ fn bidi_depth_boundary_regression() {
         );
         // Per UAX #9 §3.3.2, depth ≤ 125 is allowed.
         if n <= 125 {
-            assert_eq!(v.kind, ClassificationKind::Clear,
-                "balanced depth {} must be Clear", n);
+            assert_eq!(
+                v.kind,
+                ClassificationKind::Clear,
+                "balanced depth {} must be Clear",
+                n
+            );
         } else {
-            assert_eq!(v.kind, ClassificationKind::Hazard,
-                "depth {} > 125 must be Hazard", n);
+            assert_eq!(
+                v.kind,
+                ClassificationKind::Hazard,
+                "depth {} > 125 must be Hazard",
+                n
+            );
             assert_eq!(tag, Some("DepthExceeded"));
         }
     }
@@ -63,26 +71,27 @@ fn bidi_embedding_and_isolate_are_independent_stacks() {
     // §3.3.4, embedding and isolate run on independent stacks.
     // After: emb_stack=0, iso_stack=1.
     let input = [
-        0x202A,  // LRE (push emb, emb=1)
-        0x2066,  // LRI (push iso, iso=1)
-        0x202C,  // PDF (pop emb, emb=0)
-        0x2069,  // PDI (pop iso, iso=0)
+        0x202A, // LRE (push emb, emb=1)
+        0x2066, // LRI (push iso, iso=1)
+        0x202C, // PDF (pop emb, emb=0)
+        0x2069, // PDI (pop iso, iso=0)
     ];
     let v = bidi::detect(&input);
-    assert_eq!(v.kind, ClassificationKind::Clear,
-        "interleaved emb/iso balanced should be Clear");
+    assert_eq!(
+        v.kind,
+        ClassificationKind::Clear,
+        "interleaved emb/iso balanced should be Clear"
+    );
 
     // Same but leave isolate dangling: emb closes ok, iso stays open.
     let input = [0x202A, 0x2066, 0x202C];
     let v = bidi::detect(&input);
-    assert_eq!(v.sub.as_ref().map(|s| s.tag()),
-        Some("UnbalancedIsolate"));
+    assert_eq!(v.sub.as_ref().map(|s| s.tag()), Some("UnbalancedIsolate"));
 
     // Same but leave embedding dangling: iso closes ok, emb stays open.
     let input = [0x2066, 0x202A, 0x2069];
     let v = bidi::detect(&input);
-    assert_eq!(v.sub.as_ref().map(|s| s.tag()),
-        Some("UnbalancedEmbedding"));
+    assert_eq!(v.sub.as_ref().map(|s| s.tag()), Some("UnbalancedEmbedding"));
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -123,8 +132,11 @@ fn bidi_mass_nesting_at_cap() {
     let mut input = vec![0x202Au32; 125];
     input.extend(std::iter::repeat(0x202Cu32).take(125));
     let v = bidi::detect(&input);
-    assert_eq!(v.kind, ClassificationKind::Clear,
-        "depth-125 balanced should be Clear");
+    assert_eq!(
+        v.kind,
+        ClassificationKind::Clear,
+        "depth-125 balanced should be Clear"
+    );
     assert_eq!(v.max_depth, 125);
 }
 
@@ -143,14 +155,14 @@ fn bidi_trojan_source_early_return_poc() {
     // Codepoints: ... + RLO (U+202E) + ... + PDI (U+2069) + PDF (U+202C)
     // Unbalanced — both RLO push and PDI pop without prior LRI.
     let input = [
-        0x69, 0x66, 0x20, 0x61, 0x63, 0x63, 0x65, 0x73, 0x73, 0x20,
-        0x21, 0x3D, 0x20, 0x22, 0x75, 0x73, 0x65, 0x72, 0x202E, 0x20,
-        0x61, 0x64, 0x6D, 0x69, 0x6E, 0x2069, 0x202C, 0x7B,
+        0x69, 0x66, 0x20, 0x61, 0x63, 0x63, 0x65, 0x73, 0x73, 0x20, 0x21, 0x3D, 0x20, 0x22, 0x75,
+        0x73, 0x65, 0x72, 0x202E, 0x20, 0x61, 0x64, 0x6D, 0x69, 0x6E, 0x2069, 0x202C, 0x7B,
     ];
     let v = bidi::detect(&input);
     eprintln!(
         "  Trojan-Source early-return: kind={:?} sub={:?}",
-        v.kind, v.sub.as_ref().map(|s| s.tag()),
+        v.kind,
+        v.sub.as_ref().map(|s| s.tag()),
     );
     // Either OrphanPop (PDI without prior LRI) or UnbalancedEmbedding
     // (RLO without matching PDF inside the run).
@@ -175,13 +187,15 @@ fn bidi_trojan_source_commenting_out_poc_is_balanced() {
     // NOT fire on this input (it's a SourceDisplayDivergence
     // hazard, caught by the sibling detector).
     let input = [
-        0x2F, 0x2A, 0x202E, 0x20, 0x7D, 0x20, 0x69, 0x66, 0x20,
-        0x28, 0x74, 0x72, 0x75, 0x65, 0x29, 0x20, 0x7B, 0x20, 0x2F,
-        0x2A, 0x202C, 0x2A, 0x2F,
+        0x2F, 0x2A, 0x202E, 0x20, 0x7D, 0x20, 0x69, 0x66, 0x20, 0x28, 0x74, 0x72, 0x75, 0x65, 0x29,
+        0x20, 0x7B, 0x20, 0x2F, 0x2A, 0x202C, 0x2A, 0x2F,
     ];
     let v = bidi::detect(&input);
-    assert_eq!(v.kind, ClassificationKind::Clear,
-        "bidi-balanced Trojan Source comment is SourceDisplayDivergence's job");
+    assert_eq!(
+        v.kind,
+        ClassificationKind::Clear,
+        "bidi-balanced Trojan Source comment is SourceDisplayDivergence's job"
+    );
 }
 
 #[test]
@@ -191,8 +205,8 @@ fn bidi_trojan_source_stretched_string_poc() {
     // string render as empty visually.
     //   access = "«RLO»user«PDF»"
     let input = [
-        0x61, 0x63, 0x63, 0x65, 0x73, 0x73, 0x20, 0x3D, 0x20, 0x22,
-        0x202E, 0x75, 0x73, 0x65, 0x72, 0x202C, 0x22,
+        0x61, 0x63, 0x63, 0x65, 0x73, 0x73, 0x20, 0x3D, 0x20, 0x22, 0x202E, 0x75, 0x73, 0x65, 0x72,
+        0x202C, 0x22,
     ];
     let v = bidi::detect(&input);
     assert_eq!(v.kind, ClassificationKind::Clear,
@@ -214,8 +228,11 @@ fn bidi_alm_not_a_push_pop_control() {
     // NOT fire on it.  ZeroWidthPayload catches it instead.
     let input = [0x061C];
     let v = bidi::detect(&input);
-    assert_eq!(v.kind, ClassificationKind::Clear,
-        "ALM alone must not trigger BidiControlBalance");
+    assert_eq!(
+        v.kind,
+        ClassificationKind::Clear,
+        "ALM alone must not trigger BidiControlBalance"
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -235,8 +252,7 @@ fn bidi_pdi_does_not_pop_embedding() {
     // After PDI, iso_stack=0, emb_stack=1 (still).  Unbalanced.
     let input = [0x202A, 0x2066, 0x2069];
     let v = bidi::detect(&input);
-    assert_eq!(v.sub.as_ref().map(|s| s.tag()),
-        Some("UnbalancedEmbedding"));
+    assert_eq!(v.sub.as_ref().map(|s| s.tag()), Some("UnbalancedEmbedding"));
 }
 
 #[test]
@@ -247,9 +263,11 @@ fn bidi_pdf_does_not_pop_isolate() {
     // First-fire is OrphanPop (priority order is depth, then
     // orphan, then unbalanced).
     let tag = v.sub.as_ref().map(|s| s.tag());
-    assert!(tag == Some("OrphanPop")
-        || tag == Some("UnbalancedIsolate"),
-        "got tag={:?}", tag);
+    assert!(
+        tag == Some("OrphanPop") || tag == Some("UnbalancedIsolate"),
+        "got tag={:?}",
+        tag
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -308,8 +326,9 @@ fn bidi_max_depth_with_isolates() {
 fn bidi_fuzz_random_controls() {
     // Random sequences of bidi controls.  Detector must classify
     // every input without panic or hang.
-    let bidi_cps = [0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
-                    0x2066, 0x2067, 0x2068, 0x2069];
+    let bidi_cps = [
+        0x202A, 0x202B, 0x202C, 0x202D, 0x202E, 0x2066, 0x2067, 0x2068, 0x2069,
+    ];
     let mut state: u64 = 0xBEEF_BABE_CAFE_F00D;
     let mut fuzz_cases_run = 0;
     while fuzz_cases_run < 10_000 {

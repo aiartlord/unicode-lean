@@ -12,9 +12,9 @@
 //! can splice the invisible codepoint into an identifier
 //! and the ZeroWidthPayload detector won't see it.
 
-use unicode_rust::security::ClassificationKind;
 use unicode_rust::security::covert::zero_width_payload as zw;
 use unicode_rust::security::identity::ucd;
+use unicode_rust::security::ClassificationKind;
 
 // All Default_Ignorable_Code_Point ranges per UAX #44, MINUS the
 // ranges that are explicitly handled by OTHER detectors:
@@ -79,10 +79,7 @@ fn zw_bypass_via_unhandled_invisibles() {
         let tag = v.sub.as_ref().map(|s| s.tag());
         if v.kind == ClassificationKind::Hazard {
             caught += 1;
-            eprintln!(
-                "  U+{:04X} {}: caught (sub={:?})",
-                cp, name, tag,
-            );
+            eprintln!("  U+{:04X} {}: caught (sub={:?})", cp, name, tag,);
         } else {
             breaks.push(format!(
                 "U+{:04X} {} (is_default_ignorable={}): {:?}",

@@ -23,9 +23,9 @@
 
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
-use unicode_rust::security::ClassificationKind;
 use unicode_rust::security::identity::homoglyph_confusable as h;
 use unicode_rust::security::identity::homoglyph_confusable::SubThreat;
+use unicode_rust::security::ClassificationKind;
 
 const CORPUS_PATH: &str = "/tmp/diff_corpus.jsonl";
 
@@ -79,12 +79,10 @@ fn gen_input(rng: &mut Xorshift) -> Vec<u32> {
         } else if class <= 5 {
             // Latin + Cyrillic look-alikes
             const LATIN_CYRILLIC_LOOKALIKES: [u32; 14] = [
-                0x61, 0x65, 0x6F, 0x70, 0x63, 0x79, 0x78,
-                0x0430, 0x0435, 0x043E, 0x0440, 0x0441, 0x0443,
-                0x0445,
+                0x61, 0x65, 0x6F, 0x70, 0x63, 0x79, 0x78, 0x0430, 0x0435, 0x043E, 0x0440, 0x0441,
+                0x0443, 0x0445,
             ];
-            let r = (rng.next_u64() % LATIN_CYRILLIC_LOOKALIKES.len() as u64)
-                as usize;
+            let r = (rng.next_u64() % LATIN_CYRILLIC_LOOKALIKES.len() as u64) as usize;
             LATIN_CYRILLIC_LOOKALIKES[r]
         } else if class == 6 {
             // Math-alpha + fullwidth
@@ -105,11 +103,9 @@ fn gen_input(rng: &mut Xorshift) -> Vec<u32> {
             }
         } else if class == 8 {
             // Default-ignorable + whitespace
-            const DEFAULT_IGNORABLE_OR_SPACE: [u32; 6] = [
-                0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF, 0x202F,
-            ];
-            let r = (rng.next_u64() % DEFAULT_IGNORABLE_OR_SPACE.len() as u64)
-                as usize;
+            const DEFAULT_IGNORABLE_OR_SPACE: [u32; 6] =
+                [0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF, 0x202F];
+            let r = (rng.next_u64() % DEFAULT_IGNORABLE_OR_SPACE.len() as u64) as usize;
             DEFAULT_IGNORABLE_OR_SPACE[r]
         } else {
             debug_assert_eq!(class, 9);
@@ -203,13 +199,8 @@ fn diff_gen_corpus() {
     let mut rng = Xorshift::new();
     for id in 0..N_INPUTS {
         let input = gen_input(&mut rng);
-        writeln!(
-            f,
-            "{{\"id\":{},\"cps\":{}}}",
-            id,
-            cps_to_json_array(&input),
-        )
-        .expect("write corpus");
+        writeln!(f, "{{\"id\":{},\"cps\":{}}}", id, cps_to_json_array(&input),)
+            .expect("write corpus");
     }
     eprintln!("wrote {} entries to {}", N_INPUTS, CORPUS_PATH);
 }
@@ -217,9 +208,8 @@ fn diff_gen_corpus() {
 #[test]
 fn diff_run_against_corpus() {
     // Mode 2 — read corpus, run detect, emit JSONL to stdout.
-    let f = File::open(CORPUS_PATH).expect(
-        "/tmp/diff_corpus.jsonl missing — run diff_gen_corpus first",
-    );
+    let f = File::open(CORPUS_PATH)
+        .expect("/tmp/diff_corpus.jsonl missing — run diff_gen_corpus first");
     let reader = BufReader::new(f);
     let stdout = std::io::stdout();
     let mut lock = stdout.lock();

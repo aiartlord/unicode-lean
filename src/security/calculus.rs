@@ -8,11 +8,18 @@
 /// on when composing verdicts across modules.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Family {
+    /// Strict UTF-8 decoder rejection before codepoint-level scanning.
+    MalformedUtf8,
+    /// Strict UTF-16 decoder rejection before codepoint-level scanning.
+    MalformedUtf16,
+    /// Strict UTF-32 decoder rejection before codepoint-level scanning.
+    MalformedUtf32,
     TagBlockPayload,
     VariationSelectorPayload,
     ZeroWidthPayload,
     SurrogateReassembly,
     BidiControlBalance,
+    NoncharacterControl,
     HomoglyphConfusable,
     MixedScriptAdmissibility,
     EmojiZwjIntegrity,

@@ -28,12 +28,8 @@ const ITERATIONS_PER_INPUT: u32 = if cfg!(debug_assertions) {
 } else {
     50_000
 };
-const WARMUP_ROUNDS: u32 = if cfg!(debug_assertions) {
-    100
-} else {
-    1000
-};
-const VARIANCE_THRESHOLD: f64 = 0.20;  // 20% — generous for noisy benchmarks
+const WARMUP_ROUNDS: u32 = if cfg!(debug_assertions) { 100 } else { 1000 };
+const VARIANCE_THRESHOLD: f64 = 0.20; // 20% — generous for noisy benchmarks
 
 fn time_ns_per_call(input: &[u32]) -> f64 {
     let start = Instant::now();
@@ -56,15 +52,13 @@ fn timing_constant_across_match_positions() {
 
     // 1. First target literally — self-match guard fires on first
     //    iteration in the variable-time version.
-    let first_target_self = [0x4E, 0x65, 0x74, 0x68, 0x65, 0x72,
-                              0x65, 0x75, 0x6D]; // "Nethereum"
-    // 2. First target with Cyrillic — match fires on first
-    //    iteration in the variable-time version.
-    let first_target_match = [0x4E, 0x65, 0x74, 0x68, 0x65, 0x72,
-                               0x0435, 0x75, 0x6D];
+    let first_target_self = [0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x65, 0x75, 0x6D]; // "Nethereum"
+                                                                                    // 2. First target with Cyrillic — match fires on first
+                                                                                    //    iteration in the variable-time version.
+    let first_target_match = [0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D];
     // 3. No match — variable-time walks the full list looking.
-    let no_match = [0x78, 0x79, 0x7A, 0x77, 0x76];  // "xyzwv"
-    // 4. Random Cyrillic + Latin mix — fires CrossScriptMix.
+    let no_match = [0x78, 0x79, 0x7A, 0x77, 0x76]; // "xyzwv"
+                                                   // 4. Random Cyrillic + Latin mix — fires CrossScriptMix.
     let cross_mix = [0x61, 0x0430, 0x62, 0x0431, 0x63, 0x0432];
 
     // Warm up to stabilize cache + branch predictor.
@@ -83,11 +77,9 @@ fn timing_constant_across_match_positions() {
     let t4 = time_ns_per_call(&cross_mix);
 
     let mean = (t1 + t2 + t3 + t4) / 4.0;
-    let variance = ((t1 - mean).powi(2)
-        + (t2 - mean).powi(2)
-        + (t3 - mean).powi(2)
-        + (t4 - mean).powi(2))
-        / 4.0;
+    let variance =
+        ((t1 - mean).powi(2) + (t2 - mean).powi(2) + (t3 - mean).powi(2) + (t4 - mean).powi(2))
+            / 4.0;
     let stddev = variance.sqrt();
     let cv = stddev / mean;
 

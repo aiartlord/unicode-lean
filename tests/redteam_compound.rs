@@ -14,14 +14,12 @@
 //! attack class is missed.  This file proves no such masking
 //! occurs.
 
-use unicode_rust::security::ClassificationKind;
 use unicode_rust::security::covert::{
-    bidi_control_balance as bidi,
-    tag_block_payload as tag,
-    variation_selector_payload as vs,
+    bidi_control_balance as bidi, tag_block_payload as tag, variation_selector_payload as vs,
     zero_width_payload as zw,
 };
 use unicode_rust::security::identity::homoglyph_confusable as h;
+use unicode_rust::security::ClassificationKind;
 
 // Helper: assert ALL of the listed detectors fire Hazard on the
 // given input.  Reports which ones missed so debugging is easy.
@@ -47,15 +45,18 @@ fn assert_all_fire(input: &[u32], detectors: &[(&str, bool)]) {
 fn compound_tag_plus_vs() {
     // CJK base + VS payload, followed by tag-block payload.
     let input = [
-        0x4E00, 0xFE04, 0xFE01,        // CJK + VS pair → VS DirectPayload
-        0xE0041, 0xE0042,              // Tag block AB → Tag DirectAscii
+        0x4E00, 0xFE04, 0xFE01, // CJK + VS pair → VS DirectPayload
+        0xE0041, 0xE0042, // Tag block AB → Tag DirectAscii
     ];
     let v_tag = tag::detect(&input);
     let v_vs = vs::detect(&input);
-    assert_all_fire(&input, &[
-        ("Tag",  v_tag.kind == ClassificationKind::Hazard),
-        ("VS",   v_vs.kind  == ClassificationKind::Hazard),
-    ]);
+    assert_all_fire(
+        &input,
+        &[
+            ("Tag", v_tag.kind == ClassificationKind::Hazard),
+            ("VS", v_vs.kind == ClassificationKind::Hazard),
+        ],
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -65,15 +66,18 @@ fn compound_tag_plus_vs() {
 #[test]
 fn compound_tag_plus_zw() {
     let input = [
-        0xE0041, 0xE0042,              // Tag block AB
-        0x200B,                        // ZWSP
+        0xE0041, 0xE0042, // Tag block AB
+        0x200B,  // ZWSP
     ];
     let v_tag = tag::detect(&input);
     let v_zw = zw::detect(&input);
-    assert_all_fire(&input, &[
-        ("Tag", v_tag.kind == ClassificationKind::Hazard),
-        ("ZW",  v_zw.kind  == ClassificationKind::Hazard),
-    ]);
+    assert_all_fire(
+        &input,
+        &[
+            ("Tag", v_tag.kind == ClassificationKind::Hazard),
+            ("ZW", v_zw.kind == ClassificationKind::Hazard),
+        ],
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -83,15 +87,18 @@ fn compound_tag_plus_zw() {
 #[test]
 fn compound_tag_plus_bidi() {
     let input = [
-        0xE0041, 0xE0042,              // Tag block AB
-        0x202E,                        // RLO (unbalanced)
+        0xE0041, 0xE0042, // Tag block AB
+        0x202E,  // RLO (unbalanced)
     ];
     let v_tag = tag::detect(&input);
     let v_bidi = bidi::detect(&input);
-    assert_all_fire(&input, &[
-        ("Tag",  v_tag.kind  == ClassificationKind::Hazard),
-        ("Bidi", v_bidi.kind == ClassificationKind::Hazard),
-    ]);
+    assert_all_fire(
+        &input,
+        &[
+            ("Tag", v_tag.kind == ClassificationKind::Hazard),
+            ("Bidi", v_bidi.kind == ClassificationKind::Hazard),
+        ],
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -102,19 +109,20 @@ fn compound_tag_plus_bidi() {
 fn compound_tag_plus_homoglyph() {
     // "Nethereum" + Cyrillic-е typosquat + invisible tag-block
     // payload after.
-    let mut input: Vec<u32> = vec![
-        0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D,
-    ];
+    let mut input: Vec<u32> = vec![0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D];
     // Append tag-block payload "pwn" hidden after the visible name.
     input.push(0xE0070);
     input.push(0xE0077);
     input.push(0xE006E);
     let v_tag = tag::detect(&input);
     let v_h = h::detect(&input);
-    assert_all_fire(&input, &[
-        ("Tag",       v_tag.kind == ClassificationKind::Hazard),
-        ("Homoglyph", v_h.kind   == ClassificationKind::Hazard),
-    ]);
+    assert_all_fire(
+        &input,
+        &[
+            ("Tag", v_tag.kind == ClassificationKind::Hazard),
+            ("Homoglyph", v_h.kind == ClassificationKind::Hazard),
+        ],
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -124,15 +132,18 @@ fn compound_tag_plus_homoglyph() {
 #[test]
 fn compound_vs_plus_zw() {
     let input = [
-        0x4E00, 0xFE04, 0xFE01,        // CJK + VS DirectPayload
-        0x200B,                        // ZWSP
+        0x4E00, 0xFE04, 0xFE01, // CJK + VS DirectPayload
+        0x200B, // ZWSP
     ];
     let v_vs = vs::detect(&input);
     let v_zw = zw::detect(&input);
-    assert_all_fire(&input, &[
-        ("VS", v_vs.kind == ClassificationKind::Hazard),
-        ("ZW", v_zw.kind == ClassificationKind::Hazard),
-    ]);
+    assert_all_fire(
+        &input,
+        &[
+            ("VS", v_vs.kind == ClassificationKind::Hazard),
+            ("ZW", v_zw.kind == ClassificationKind::Hazard),
+        ],
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -142,15 +153,18 @@ fn compound_vs_plus_zw() {
 #[test]
 fn compound_vs_plus_bidi() {
     let input = [
-        0x4E00, 0xFE04, 0xFE01,        // CJK + VS DirectPayload
-        0x202E,                        // RLO (unbalanced)
+        0x4E00, 0xFE04, 0xFE01, // CJK + VS DirectPayload
+        0x202E, // RLO (unbalanced)
     ];
     let v_vs = vs::detect(&input);
     let v_bidi = bidi::detect(&input);
-    assert_all_fire(&input, &[
-        ("VS",   v_vs.kind   == ClassificationKind::Hazard),
-        ("Bidi", v_bidi.kind == ClassificationKind::Hazard),
-    ]);
+    assert_all_fire(
+        &input,
+        &[
+            ("VS", v_vs.kind == ClassificationKind::Hazard),
+            ("Bidi", v_bidi.kind == ClassificationKind::Hazard),
+        ],
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -161,15 +175,17 @@ fn compound_vs_plus_bidi() {
 fn compound_vs_plus_homoglyph() {
     // Nethereum typosquat + a trailing CJK base with VS payload.
     let input = [
-        0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D,
-        0x4E00, 0xFE04, 0xFE01,
+        0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D, 0x4E00, 0xFE04, 0xFE01,
     ];
     let v_vs = vs::detect(&input);
     let v_h = h::detect(&input);
-    assert_all_fire(&input, &[
-        ("VS",        v_vs.kind == ClassificationKind::Hazard),
-        ("Homoglyph", v_h.kind  == ClassificationKind::Hazard),
-    ]);
+    assert_all_fire(
+        &input,
+        &[
+            ("VS", v_vs.kind == ClassificationKind::Hazard),
+            ("Homoglyph", v_h.kind == ClassificationKind::Hazard),
+        ],
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -178,13 +194,16 @@ fn compound_vs_plus_homoglyph() {
 
 #[test]
 fn compound_zw_plus_bidi() {
-    let input = [0x200B, 0x202E];      // ZWSP + lone RLO
+    let input = [0x200B, 0x202E]; // ZWSP + lone RLO
     let v_zw = zw::detect(&input);
     let v_bidi = bidi::detect(&input);
-    assert_all_fire(&input, &[
-        ("ZW",   v_zw.kind   == ClassificationKind::Hazard),
-        ("Bidi", v_bidi.kind == ClassificationKind::Hazard),
-    ]);
+    assert_all_fire(
+        &input,
+        &[
+            ("ZW", v_zw.kind == ClassificationKind::Hazard),
+            ("Bidi", v_bidi.kind == ClassificationKind::Hazard),
+        ],
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -199,10 +218,13 @@ fn compound_zw_plus_homoglyph() {
     ];
     let v_zw = zw::detect(&input);
     let v_h = h::detect(&input);
-    assert_all_fire(&input, &[
-        ("ZW",        v_zw.kind == ClassificationKind::Hazard),
-        ("Homoglyph", v_h.kind  == ClassificationKind::Hazard),
-    ]);
+    assert_all_fire(
+        &input,
+        &[
+            ("ZW", v_zw.kind == ClassificationKind::Hazard),
+            ("Homoglyph", v_h.kind == ClassificationKind::Hazard),
+        ],
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -215,15 +237,17 @@ fn compound_bidi_plus_homoglyph() {
     // would let Bidi pass Clear — use a LONE RLO to force Bidi
     // hazard fire on the unbalanced control).
     let input = [
-        0x202E,
-        0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D,
+        0x202E, 0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D,
     ];
     let v_bidi = bidi::detect(&input);
     let v_h = h::detect(&input);
-    assert_all_fire(&input, &[
-        ("Bidi",      v_bidi.kind == ClassificationKind::Hazard),
-        ("Homoglyph", v_h.kind    == ClassificationKind::Hazard),
-    ]);
+    assert_all_fire(
+        &input,
+        &[
+            ("Bidi", v_bidi.kind == ClassificationKind::Hazard),
+            ("Homoglyph", v_h.kind == ClassificationKind::Hazard),
+        ],
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -233,18 +257,20 @@ fn compound_bidi_plus_homoglyph() {
 #[test]
 fn compound_tag_plus_zw_plus_homoglyph() {
     let input = [
-        0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D,
-        0x200B,                            // ZWSP
-        0xE0070, 0xE0077, 0xE006E,         // Tag block "pwn"
+        0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D, 0x200B, // ZWSP
+        0xE0070, 0xE0077, 0xE006E, // Tag block "pwn"
     ];
     let v_tag = tag::detect(&input);
     let v_zw = zw::detect(&input);
     let v_h = h::detect(&input);
-    assert_all_fire(&input, &[
-        ("Tag",       v_tag.kind == ClassificationKind::Hazard),
-        ("ZW",        v_zw.kind  == ClassificationKind::Hazard),
-        ("Homoglyph", v_h.kind   == ClassificationKind::Hazard),
-    ]);
+    assert_all_fire(
+        &input,
+        &[
+            ("Tag", v_tag.kind == ClassificationKind::Hazard),
+            ("ZW", v_zw.kind == ClassificationKind::Hazard),
+            ("Homoglyph", v_h.kind == ClassificationKind::Hazard),
+        ],
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -254,21 +280,24 @@ fn compound_tag_plus_zw_plus_homoglyph() {
 #[test]
 fn compound_tag_vs_zw_bidi_full_stack() {
     let input = [
-        0x4E00, 0xFE04, 0xFE01,            // CJK + VS payload
-        0x200B,                            // ZWSP
-        0x202E,                            // lone RLO
-        0xE0041, 0xE0042,                  // Tag block AB
+        0x4E00, 0xFE04, 0xFE01, // CJK + VS payload
+        0x200B, // ZWSP
+        0x202E, // lone RLO
+        0xE0041, 0xE0042, // Tag block AB
     ];
     let v_tag = tag::detect(&input);
     let v_vs = vs::detect(&input);
     let v_zw = zw::detect(&input);
     let v_bidi = bidi::detect(&input);
-    assert_all_fire(&input, &[
-        ("Tag",  v_tag.kind  == ClassificationKind::Hazard),
-        ("VS",   v_vs.kind   == ClassificationKind::Hazard),
-        ("ZW",   v_zw.kind   == ClassificationKind::Hazard),
-        ("Bidi", v_bidi.kind == ClassificationKind::Hazard),
-    ]);
+    assert_all_fire(
+        &input,
+        &[
+            ("Tag", v_tag.kind == ClassificationKind::Hazard),
+            ("VS", v_vs.kind == ClassificationKind::Hazard),
+            ("ZW", v_zw.kind == ClassificationKind::Hazard),
+            ("Bidi", v_bidi.kind == ClassificationKind::Hazard),
+        ],
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -281,12 +310,9 @@ fn compound_all_five_detectors_fire() {
         // HomoglyphConfusable: Nethereum + Cyrillic-е
         0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D,
         // VariationSelectorPayload: CJK + VS payload
-        0x4E00, 0xFE04, 0xFE01,
-        // ZeroWidthPayload: ZWSP
-        0x200B,
-        // BidiControlBalance: lone RLO
-        0x202E,
-        // TagBlockPayload: tag chars
+        0x4E00, 0xFE04, 0xFE01, // ZeroWidthPayload: ZWSP
+        0x200B, // BidiControlBalance: lone RLO
+        0x202E, // TagBlockPayload: tag chars
         0xE0041, 0xE0042,
     ];
     let v_tag = tag::detect(&input);
@@ -294,11 +320,14 @@ fn compound_all_five_detectors_fire() {
     let v_zw = zw::detect(&input);
     let v_bidi = bidi::detect(&input);
     let v_h = h::detect(&input);
-    assert_all_fire(&input, &[
-        ("Tag",       v_tag.kind  == ClassificationKind::Hazard),
-        ("VS",        v_vs.kind   == ClassificationKind::Hazard),
-        ("ZW",        v_zw.kind   == ClassificationKind::Hazard),
-        ("Bidi",      v_bidi.kind == ClassificationKind::Hazard),
-        ("Homoglyph", v_h.kind    == ClassificationKind::Hazard),
-    ]);
+    assert_all_fire(
+        &input,
+        &[
+            ("Tag", v_tag.kind == ClassificationKind::Hazard),
+            ("VS", v_vs.kind == ClassificationKind::Hazard),
+            ("ZW", v_zw.kind == ClassificationKind::Hazard),
+            ("Bidi", v_bidi.kind == ClassificationKind::Hazard),
+            ("Homoglyph", v_h.kind == ClassificationKind::Hazard),
+        ],
+    );
 }

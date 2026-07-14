@@ -19,8 +19,8 @@
 //!      isn't masked by sibling-detector dispatch.
 
 use std::time::Instant;
-use unicode_rust::security::ClassificationKind;
 use unicode_rust::security::covert::tag_block_payload as tag;
+use unicode_rust::security::ClassificationKind;
 
 // ════════════════════════════════════════════════════════════════════
 // 1. Direct ASCII payload
@@ -50,7 +50,7 @@ fn tag_long_payload_decodes_full_string() {
 
 #[test]
 fn tag_language_tag_revival_en() {
-    let input = [0xE0001, 0xE0065, 0xE006E];  // LANG + "en"
+    let input = [0xE0001, 0xE0065, 0xE006E]; // LANG + "en"
     let v = tag::detect(&input);
     assert_eq!(v.sub.as_ref().unwrap().tag(), "LanguageTagRevival");
 }
@@ -73,7 +73,7 @@ fn tag_mixed_block_in_identifier() {
 
 #[test]
 fn tag_bare_tag_present() {
-    let input = [0xE007F];   // CANCEL TAG alone
+    let input = [0xE007F]; // CANCEL TAG alone
     let v = tag::detect(&input);
     assert_eq!(v.sub.as_ref().unwrap().tag(), "BareTagPresent");
 }
@@ -147,7 +147,9 @@ fn tag_massive_payload_no_dos() {
     let e = t.elapsed();
     eprintln!(
         "  50k tag payload: kind={:?} recovered_ascii.len()={} elapsed={:?}",
-        v.kind, v.recovered_ascii.len(), e,
+        v.kind,
+        v.recovered_ascii.len(),
+        e,
     );
     assert_eq!(v.kind, ClassificationKind::Hazard);
     assert!(e.as_secs() < 5);
@@ -186,8 +188,8 @@ fn tag_goodside_llm_prompt_injection() {
 
 #[test]
 fn tag_compound_with_zw_and_bidi() {
-    use unicode_rust::security::covert::zero_width_payload as zw;
     use unicode_rust::security::covert::bidi_control_balance as bidi;
+    use unicode_rust::security::covert::zero_width_payload as zw;
     // Input contains tag-block payload + ZWSP + lone RLO.
     let input = [0xE0041, 0xE0042, 0x200B, 0x202E];
     // TagBlockPayload sees the tag chars.
@@ -217,7 +219,7 @@ fn tag_degenerate_no_panic() {
         &[0xE007F],
         &repeated_cancel_tags,
         &[0xFFFFFFFF],
-        &[0xD800],  // raw surrogate
+        &[0xD800], // raw surrogate
     ];
     for input in inputs {
         let verdict = tag::detect(input);
@@ -270,7 +272,7 @@ fn tag_just_outside_block_is_not_tag() {
     let v = tag::detect(&just_above);
     assert_eq!(v.kind, ClassificationKind::Clear);
 
-    let just_below = [0xDFFFFu32];  // BMP-supplement boundary
+    let just_below = [0xDFFFFu32]; // BMP-supplement boundary
     let v = tag::detect(&just_below);
     assert_eq!(v.kind, ClassificationKind::Clear);
 }
