@@ -458,3 +458,9 @@ def detect(input_cps: list[int]) -> Verdict:
         iterated_skeleton=iskel,
         restriction_level=rl,
     )
+
+
+def has_mixed_script_admissibility(input_cps: list[int]) -> bool:
+    """Return True when the input violates the mixed-script policy."""
+    union = ucd.string_script_union(input_cps)
+    return len(union) >= 2 and not ucd.is_highly_restrictive(input_cps)

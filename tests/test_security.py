@@ -257,6 +257,25 @@ def test_homoglyph_cross_script_latin_hebrew() -> None:
     assert homoglyph_confusable.sub_threat_tag(v.sub) == "CrossScriptMix"
 
 
+def test_homoglyph_restriction_low_is_preempted_by_cross_script_mix() -> None:
+    minimally_restrictive = homoglyph_confusable.detect([0x03B1, 0x05D0])
+    assert (
+        minimally_restrictive.restriction_level
+        is homoglyph_confusable.RestrictionLevel.MINIMALLY_RESTRICTIVE
+    )
+    assert (
+        homoglyph_confusable.sub_threat_tag(minimally_restrictive.sub)
+        == "CrossScriptMix"
+    )
+
+    unrestricted = homoglyph_confusable.detect([0x0375, 0xE000])
+    assert (
+        unrestricted.restriction_level
+        is homoglyph_confusable.RestrictionLevel.UNRESTRICTED
+    )
+    assert homoglyph_confusable.sub_threat_tag(unrestricted.sub) == "CrossScriptMix"
+
+
 def test_homoglyph_pure_greek_clear() -> None:
     # "λόγος" — single-script Greek.
     v = homoglyph_confusable.detect(
