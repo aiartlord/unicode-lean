@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "family": "bidi-control-balance",
+  "cases": [
+    {
+      "name": "ascii-clear",
+      "input": [105, 102, 32, 41, 123],
+      "required_findings": []
+    },
+    {
+      "name": "unbalanced-embedding",
+      "input": [105, 102, 32, 8238, 41, 123],
+      "required_findings": [
+        "unicode.security.C.bidi-control-balance.UnbalancedEmbedding"
+      ]
+    }
+  ]
+}
