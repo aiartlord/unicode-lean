@@ -1,0 +1,14 @@
+UCD=17.0.0
+UCA=16.0.0
+PINNED=2026-05-16
+
+# The Haskell port pins to the same UCD release as the Lean spec and
+# every runtime port. Bumping this version is a repository-wide
+# operation:
+#
+#   1. Update the Lean generated modules and conformance fixtures.
+#   2. Update this file and data/SHA256SUMS to the new bytes.
+#   3. Regenerate any Haskell table modules and run the runtime port
+#      test gate.
+#
+# Lean and all runtime ports MUST be on the same UCD release at all times.

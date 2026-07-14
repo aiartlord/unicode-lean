@@ -1,0 +1,7 @@
+# Unicode data files are vendored byte-for-byte from upstream sources.
+# Do not normalize or flag upstream trailing whitespace in these inputs.
+data/*.txt -whitespace
+ports/haskell/data/*.txt -whitespace
+src/unicode_python/data/*.txt -whitespace
+Unicode/Ucd/*.txt -whitespace
+Unicode/Ucd/Curated/*.txt -whitespace
