@@ -1,34 +1,32 @@
 /-
   Unicode
 
-  Default root for the Unicode standard's machine-checked algorithms and
-  proof-bearing sanitizer surface, pinned at UCD 17.0.0.
+  Default root for the Unicode standard's executable algorithms and runtime API
+  surface, pinned at UCD 17.0.0.
 
-  This root intentionally excludes row-backed conformance fixtures. Build
-  `UnicodeFullConformance` when the official UAX/UTS evidence suites are
+  This root intentionally excludes proof-heavy normalization/idempotence
+  assurance modules and row-backed conformance fixtures. Build
+  `UnicodeAssurance` or `UnicodeFullConformance` when those evidence suites are
   required.
 -/
 
--- Normalization (UAX #15): algorithms and structural proof surface.
+-- Normalization (UAX #15): executable algorithms.
 import Unicode.Normalization.NFD
 import Unicode.Normalization.NFC
 import Unicode.Normalization.NFKC
 import Unicode.Normalization.NFKD
 import Unicode.Normalization.CompatDecompose
-import Unicode.Normalization.ComposeInversion
 import Unicode.Normalization.Reorder
-import Unicode.Normalization.ReorderAppend
-import Unicode.Normalization.ToNFDAppend
 
--- PRECIS (RFC 8264 / 8265): preparation, profiles, and stability theorems.
-import Unicode.Precis.Preparation
+-- PRECIS (RFC 8264 / 8265): runtime preparation/profile APIs.
+import Unicode.Precis.PreparationCore
 import Unicode.Precis.IdentifierClass
-import Unicode.Precis.OpaqueString
+import Unicode.Precis.OpaqueStringCore
 import Unicode.Precis.BidiRule
 import Unicode.Precis.Categories
 import Unicode.Precis.WidthMapping
 import Unicode.Precis.CaseMapping
-import Unicode.Precis.ZsPreservation
+import Unicode.Precis.ZsMapping
 
 -- Bidirectional Algorithm (UAX #9).
 import Unicode.Bidi.Algorithm
@@ -45,10 +43,6 @@ import Unicode.Segmentation.SentenceBreak
 import Unicode.Segmentation.LineBreak
 import Unicode.Segmentation.LineBreakSpec
 import Unicode.Segmentation.PrefixScan
-
--- Case-fold commutation and round-trip.
-import Unicode.CaseFoldCommutation
-import Unicode.CaseFoldRoundtrip
 
 -- Refinement-typed wrappers and invariants.
 import Unicode.Refined
@@ -119,6 +113,7 @@ import Unicode.Generated.GlitchTokens
 import Unicode.Security
 import Unicode.Security.RunAll
 import Unicode.Security.Level
+import Unicode.Security.Policy
 
 -- Small arithmetic/list support modules used by downstream proofs.
 import Unicode.NatListBounds
