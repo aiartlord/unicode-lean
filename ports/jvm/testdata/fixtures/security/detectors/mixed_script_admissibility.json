@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "family": "mixed-script-admissibility",
+  "scope": "identity-admissibility-v0",
+  "cases": [
+    {
+      "name": "ascii-clear",
+      "input": [72, 101, 108, 108, 111],
+      "required_findings": []
+    },
+    {
+      "name": "latin-greek-script-mix",
+      "input": [97, 98, 945, 946],
+      "required_findings": [
+        "unicode.security.I.mixed-script-admissibility.CrossScriptMix"
+      ]
+    },
+    {
+      "name": "latin-cyrillic-target-match-also-mixed",
+      "input": [78, 101, 116, 104, 101, 114, 1077, 117, 109],
+      "required_findings": [
+        "unicode.security.I.mixed-script-admissibility.CrossScriptMix"
+      ]
+    }
+  ]
+}
