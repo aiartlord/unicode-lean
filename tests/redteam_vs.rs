@@ -18,8 +18,8 @@
 //!  10. Fuzz — random VS-heavy input, no panic.
 
 use std::time::Instant;
-use unicode_rust::security::ClassificationKind;
 use unicode_rust::security::covert::variation_selector_payload as vs;
+use unicode_rust::security::ClassificationKind;
 
 // ════════════════════════════════════════════════════════════════════
 // 1. Pair-aligned payload — should fire DirectPayload
@@ -71,10 +71,7 @@ fn vs_on_cjk_compatibility_ideograph() {
     let input = [0xF900, 0xFE00];
     let v = vs::detect(&input);
     let tag = v.sub.as_ref().map(|s| s.tag());
-    eprintln!(
-        "  VS on CJK Compat F900: kind={:?} sub={:?}",
-        v.kind, tag,
-    );
+    eprintln!("  VS on CJK Compat F900: kind={:?} sub={:?}", v.kind, tag,);
     // Documents the false-positive: detector flags a legitimate VS
     // target as IllegalTarget.  This is a real gap if banks /
     // governments process East Asian text with VS — they'd see
@@ -94,7 +91,8 @@ fn vs_on_cjk_extension_h() {
     let v = vs::detect(&input);
     eprintln!(
         "  VS on CJK Ext H (31350): kind={:?} sub={:?}",
-        v.kind, v.sub.as_ref().map(|s| s.tag()),
+        v.kind,
+        v.sub.as_ref().map(|s| s.tag()),
     );
 }
 
@@ -119,8 +117,11 @@ fn vs_orphan_at_start() {
     let input = [0xFE00];
     let v = vs::detect(&input);
     let tag = v.sub.as_ref().map(|s| s.tag());
-    assert!(tag == Some("OrphanSelector") || tag == Some("IllegalTarget"),
-        "got tag={:?}", tag);
+    assert!(
+        tag == Some("OrphanSelector") || tag == Some("IllegalTarget"),
+        "got tag={:?}",
+        tag
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -132,9 +133,9 @@ fn vs_glassworm_covert_payload_print_pwned() {
     // Encode "Print 'pwned'" as VS nibbles attached to a CJK base.
     // Each ASCII byte = 2 nibbles = 2 VSes.
     let target = b"Print 'pwned'";
-    let mut input = vec![0x4E00u32];  // CJK base
+    let mut input = vec![0x4E00u32]; // CJK base
     for byte in target {
-        let hi = (byte >> 4) & 0xF;  // 0..15 → VS1..16 = FE00 + hi
+        let hi = (byte >> 4) & 0xF; // 0..15 → VS1..16 = FE00 + hi
         let lo = byte & 0xF;
         input.push(0xFE00 + hi as u32);
         input.push(0xFE00 + lo as u32);
@@ -149,8 +150,11 @@ fn vs_glassworm_covert_payload_print_pwned() {
     );
     // The detector reports DirectPayload but the recovered_bytes
     // should contain the actual decoded payload.
-    assert!(v.recovered_bytes.len() >= target.len(),
-        "expected >= {} decoded bytes", target.len());
+    assert!(
+        v.recovered_bytes.len() >= target.len(),
+        "expected >= {} decoded bytes",
+        target.len()
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -191,7 +195,9 @@ fn vs_mixed_low_high_range_payload() {
     let v = vs::detect(&input);
     eprintln!(
         "  Mixed VS1+VS18: kind={:?} sub={:?} bytes={:?}",
-        v.kind, v.sub.as_ref().map(|s| s.tag()), v.recovered_bytes,
+        v.kind,
+        v.sub.as_ref().map(|s| s.tag()),
+        v.recovered_bytes,
     );
 }
 
@@ -267,7 +273,9 @@ fn vs_massive_payload_no_dos() {
     let e = t.elapsed();
     eprintln!(
         "  50k VS payload: kind={:?} bytes={} elapsed={:?}",
-        v.kind, v.recovered_bytes.len(), e,
+        v.kind,
+        v.recovered_bytes.len(),
+        e,
     );
     assert!(e.as_secs() < 5);
 }

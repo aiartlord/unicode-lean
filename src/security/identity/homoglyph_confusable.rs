@@ -34,26 +34,28 @@
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use crate::security::ClassificationKind;
 use crate::security::identity::ucd;
 use crate::security::identity::ucd::RestrictionLevel;
+use crate::security::ClassificationKind;
 
 /// UTS #39 confusables data — raw text embedded at compile time.
 const CONFUSABLES_RAW: &str = include_str!("../../../data/confusables.txt");
 
 /// Curated attack-target list — raw text embedded at compile time.
-const KNOWN_ATTACK_TARGETS_RAW: &str =
-    include_str!("../../../data/KnownAttackTargets.txt");
+const KNOWN_ATTACK_TARGETS_RAW: &str = include_str!("../../../data/KnownAttackTargets.txt");
 
 fn parse_hex(s: &str) -> Option<u32> {
     u32::from_str_radix(s.trim(), 16).ok()
 }
 
+/// True when the input violates the mixed-script admissibility policy.
+pub fn has_mixed_script_admissibility(input: &[u32]) -> bool {
+    let union = ucd::string_script_union(input);
+    union.len() >= 2 && !ucd::is_highly_restrictive(input)
+}
+
 fn parse_codepoints(field: &str) -> Vec<u32> {
-    field
-        .split_whitespace()
-        .filter_map(parse_hex)
-        .collect()
+    field.split_whitespace().filter_map(parse_hex).collect()
 }
 
 fn confusables_map() -> &'static HashMap<u32, Vec<u32>> {
@@ -120,7 +122,9 @@ fn substitute(input: &[u32]) -> Vec<u32> {
 
 /// The case-insensitive confusables skeleton per UTS #39 §4 + §5.4:
 ///
-///     skeleton(X) = toNFD(caseFold(substitute(caseFold(toNFD(X)))))
+/// ```text
+/// skeleton(X) = toNFD(caseFold(substitute(caseFold(toNFD(X)))))
+/// ```
 ///
 /// Bracketing case folding inside the NFD passes lets the detector
 /// collapse case-variant typosquats on case-insensitive registries
@@ -177,9 +181,7 @@ fn letter_skeleton_from_iterated(iterated: &[u32]) -> Vec<u32> {
         .iter()
         .copied()
         .filter(|&cp| {
-            ucd::ccc(cp) == 0
-                && !ucd::is_default_ignorable(cp)
-                && !ucd::is_white_space(cp)
+            ucd::ccc(cp) == 0 && !ucd::is_default_ignorable(cp) && !ucd::is_white_space(cp)
         })
         .collect()
 }
@@ -359,8 +361,10 @@ pub fn detect(input: &[u32]) -> Verdict {
     }
 
     // Priority 2: Math Alphanumeric.
-    if let Some(first_cp) =
-        input.iter().copied().find(|cp_ref| is_math_alphanumeric(*cp_ref))
+    if let Some(first_cp) = input
+        .iter()
+        .copied()
+        .find(|cp_ref| is_math_alphanumeric(*cp_ref))
     {
         let count = input
             .iter()
@@ -372,8 +376,10 @@ pub fn detect(input: &[u32]) -> Verdict {
     }
 
     // Priority 3: Fullwidth/Halfwidth.
-    if let Some(first_cp) =
-        input.iter().copied().find(|cp_ref| is_fullwidth_halfwidth(*cp_ref))
+    if let Some(first_cp) = input
+        .iter()
+        .copied()
+        .find(|cp_ref| is_fullwidth_halfwidth(*cp_ref))
     {
         let count = input
             .iter()
@@ -405,8 +411,7 @@ pub fn detect(input: &[u32]) -> Verdict {
 
     // Priority 6: RestrictionLow.
     match rl {
-        RestrictionLevel::MinimallyRestrictive
-        | RestrictionLevel::Unrestricted => {
+        RestrictionLevel::MinimallyRestrictive | RestrictionLevel::Unrestricted => {
             v.kind = ClassificationKind::Hazard;
             v.sub = Some(SubThreat::RestrictionLow { level: rl });
             v

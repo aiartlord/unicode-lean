@@ -1,9 +1,6 @@
 use unicode_rust::identifier::{
-    first_invalid_identifier_continue_from,
-    is_identifier_continue_byte,
-    is_identifier_start_byte,
-    is_valid_identifier_bytes,
-    IdentifierUtf8,
+    first_invalid_identifier_continue_from, is_identifier_continue_byte, is_identifier_start_byte,
+    is_valid_identifier_bytes, IdentifierUtf8,
 };
 
 #[test]
@@ -71,10 +68,7 @@ fn rejects_non_ascii_bytes() {
 
 #[test]
 fn walker_returns_none_on_all_valid() {
-    assert_eq!(
-        first_invalid_identifier_continue_from(b"abc123", 1),
-        None
-    );
+    assert_eq!(first_invalid_identifier_continue_from(b"abc123", 1), None);
 }
 
 #[test]

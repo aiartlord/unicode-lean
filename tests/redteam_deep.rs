@@ -29,9 +29,9 @@
 //!      must flag every documented incident.
 
 use std::time::Instant;
-use unicode_rust::security::ClassificationKind;
 use unicode_rust::security::identity::homoglyph_confusable;
 use unicode_rust::security::identity::homoglyph_confusable::SubThreat;
+use unicode_rust::security::ClassificationKind;
 
 // ════════════════════════════════════════════════════════════════════
 // MUTATION SUITE
@@ -42,10 +42,8 @@ use unicode_rust::security::identity::homoglyph_confusable::SubThreat;
 // sub-threat.  A MISS counts as a real hole.
 // ════════════════════════════════════════════════════════════════════
 
-const CURATED_TARGETS_RAW: &str =
-    include_str!("../data/KnownAttackTargets.txt");
-const CONFUSABLES_RAW: &str =
-    include_str!("../data/confusables.txt");
+const CURATED_TARGETS_RAW: &str = include_str!("../data/KnownAttackTargets.txt");
+const CONFUSABLES_RAW: &str = include_str!("../data/confusables.txt");
 
 fn load_targets() -> Vec<String> {
     CURATED_TARGETS_RAW
@@ -168,9 +166,7 @@ fn mutation_typosquat_coverage() {
                         // makes attribution case-insensitive, so the
                         // matched target name may differ in case from
                         // our `target` string.  Compare case-folded.
-                        if case_fold_ascii_target(t)
-                            == case_fold_ascii_target(target)
-                        {
+                        if case_fold_ascii_target(t) == case_fold_ascii_target(target) {
                             caught_target += 1;
                         } else {
                             // Matched a DIFFERENT target — also OK
@@ -189,10 +185,7 @@ fn mutation_typosquat_coverage() {
         }
     }
 
-    eprintln!(
-        "MUTATION: {} mutants tested",
-        total,
-    );
+    eprintln!("MUTATION: {} mutants tested", total,);
     eprintln!(
         "  caught as TargetMatch (same target):     {} ({:.1}%)",
         caught_target,
@@ -203,10 +196,7 @@ fn mutation_typosquat_coverage() {
         caught_other,
         100.0 * caught_other as f64 / total as f64,
     );
-    eprintln!(
-        "  MISSED (verdict was Clear): {}",
-        missed.len(),
-    );
+    eprintln!("  MISSED (verdict was Clear): {}", missed.len(),);
     if !missed.is_empty() {
         eprintln!("  First 20 misses with skeleton diagnosis:");
         for (t, i, src) in missed.iter().take(20) {
@@ -216,7 +206,9 @@ fn mutation_typosquat_coverage() {
             let v = homoglyph_confusable::detect(&mutant);
             eprintln!(
                 "    target={} pos={} src=U+{:04X} input_letters={:X?} kind={:?}",
-                t, i, src,
+                t,
+                i,
+                src,
                 homoglyph_confusable::letter_skeleton(&mutant),
                 v.kind,
             );
@@ -264,9 +256,8 @@ fn fuzz_100k_no_panic_no_hang() {
     let mut hazard_count = 0usize;
     let mut clear_count = 0usize;
     // Load the lazily parsed UCD tables before per-input timing.
-    let warmup_verdict = homoglyph_confusable::detect(&[
-        0x0041, 0x0300, 0x0435, 0x1D400, 0xFF21, 0x05D0,
-    ]);
+    let warmup_verdict =
+        homoglyph_confusable::detect(&[0x0041, 0x0300, 0x0435, 0x1D400, 0xFF21, 0x05D0]);
     std::hint::black_box(&warmup_verdict);
     let start = Instant::now();
     let max_per_input = std::time::Duration::from_millis(100);
@@ -289,7 +280,9 @@ fn fuzz_100k_no_panic_no_hang() {
         assert!(
             elapsed < max_per_input,
             "FUZZ: input took {:?} > {:?} (len={})",
-            elapsed, max_per_input, input.len(),
+            elapsed,
+            max_per_input,
+            input.len(),
         );
         // Well-shaped verdict.
         match v.kind {
@@ -307,11 +300,7 @@ fn fuzz_100k_no_panic_no_hang() {
         }
         total += 1;
     }
-    eprintln!(
-        "FUZZ: {} inputs in {:?}",
-        total,
-        start.elapsed(),
-    );
+    eprintln!("FUZZ: {} inputs in {:?}", total, start.elapsed(),);
     eprintln!(
         "  Clear: {} ({:.1}%) | Hazard: {} ({:.1}%)",
         clear_count,
@@ -372,7 +361,7 @@ fn compound_math_alpha_beats_cross_script() {
 
 #[test]
 fn perf_huge_input_under_1s() {
-    let input = vec![0x61u32; 10_000];  // 10k 'a's
+    let input = vec![0x61u32; 10_000]; // 10k 'a's
     let t = Instant::now();
     let verdict = homoglyph_confusable::detect(&input);
     std::hint::black_box(&verdict);
@@ -402,7 +391,8 @@ fn perf_nfc_bomb_50k() {
     let e = t.elapsed();
     eprintln!(
         "NFC bomb 50k×U+FDFA → output skel len={} in {:?}",
-        v.iterated_skeleton.len(), e,
+        v.iterated_skeleton.len(),
+        e,
     );
     assert!(e.as_secs() < 30, "NFC bomb at 50k took too long");
 }
@@ -435,16 +425,14 @@ fn corpus_nethereum_oct2025_full_campaign() {
     for (i, attack) in attacks.iter().enumerate() {
         let v = homoglyph_confusable::detect(attack);
         assert_eq!(
-            v.kind, ClassificationKind::Hazard,
+            v.kind,
+            ClassificationKind::Hazard,
             "NETHEREUM corpus #{}: missed",
             i,
         );
         match &v.sub {
             Some(SubThreat::TargetMatch { target }) => {
-                eprintln!(
-                    "  Nethereum attack #{}: TargetMatch{{{}}}",
-                    i, target
-                );
+                eprintln!("  Nethereum attack #{}: TargetMatch{{{}}}", i, target);
             }
             None => {
                 panic!(
@@ -493,9 +481,19 @@ fn corpus_brand_impersonation_all_curated() {
     // a / e / o position.  Each substitution should fire TargetMatch
     // pointing at the same brand.
     let brands = [
-        "openai", "anthropic", "claude", "google", "amazon",
-        "microsoft", "github", "paypal", "react", "ethereum",
-        "metamask", "binance", "solana",
+        "openai",
+        "anthropic",
+        "claude",
+        "google",
+        "amazon",
+        "microsoft",
+        "github",
+        "paypal",
+        "react",
+        "ethereum",
+        "metamask",
+        "binance",
+        "solana",
     ];
     let mut total = 0;
     let mut caught = 0;
@@ -529,10 +527,7 @@ fn corpus_brand_impersonation_all_curated() {
                     if target.to_lowercase() == *brand {
                         caught += 1;
                     } else {
-                        eprintln!(
-                            "  WRONG TARGET: {} mutated → {:?}",
-                            brand, target
-                        );
+                        eprintln!("  WRONG TARGET: {} mutated → {:?}", brand, target);
                     }
                 }
                 None => {

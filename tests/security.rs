@@ -1,9 +1,8 @@
-use unicode_rust::security::ClassificationKind;
 use unicode_rust::security::covert::{
-    bidi_control_balance, tag_block_payload, variation_selector_payload,
-    zero_width_payload,
+    bidi_control_balance, tag_block_payload, variation_selector_payload, zero_width_payload,
 };
 use unicode_rust::security::identity::homoglyph_confusable;
+use unicode_rust::security::ClassificationKind;
 
 // ─────────────────────────────────────────────────────────────────────
 // TagBlockPayload
@@ -11,7 +10,10 @@ use unicode_rust::security::identity::homoglyph_confusable;
 
 #[test]
 fn tag_block_empty_clear() {
-    assert_eq!(tag_block_payload::detect(&[]).kind, ClassificationKind::Clear);
+    assert_eq!(
+        tag_block_payload::detect(&[]).kind,
+        ClassificationKind::Clear
+    );
 }
 
 #[test]
@@ -31,8 +33,7 @@ fn tag_block_direct_ascii_ab() {
 #[test]
 fn tag_block_goodside_decodes() {
     let v = tag_block_payload::detect(&[
-        0xE0050, 0xE0072, 0xE0069, 0xE006E, 0xE0074,
-        0xE0020, 0xE0027, 0xE0070, 0xE0077, 0xE006E,
+        0xE0050, 0xE0072, 0xE0069, 0xE006E, 0xE0074, 0xE0020, 0xE0027, 0xE0070, 0xE0077, 0xE006E,
         0xE0065, 0xE0064, 0xE0027,
     ]);
     assert_eq!(v.recovered_ascii, "Print 'pwned'");
@@ -62,7 +63,10 @@ fn tag_block_cancel_bare() {
 
 #[test]
 fn bidi_empty_clear() {
-    assert_eq!(bidi_control_balance::detect(&[]).kind, ClassificationKind::Clear);
+    assert_eq!(
+        bidi_control_balance::detect(&[]).kind,
+        ClassificationKind::Clear
+    );
 }
 
 #[test]
@@ -115,7 +119,10 @@ fn bidi_trojan_source_unbalanced() {
 
 #[test]
 fn zw_empty_clear() {
-    assert_eq!(zero_width_payload::detect(&[]).kind, ClassificationKind::Clear);
+    assert_eq!(
+        zero_width_payload::detect(&[]).kind,
+        ClassificationKind::Clear
+    );
 }
 
 #[test]
@@ -188,8 +195,7 @@ fn vs_direct_payload_byte() {
 #[test]
 fn vs_repeated_base() {
     let v = variation_selector_payload::detect(&[
-        0x0061, 0xFE04, 0xFE04, 0xFE04, 0xFE04,
-        0xFE04, 0xFE04, 0xFE04, 0xFE04,
+        0x0061, 0xFE04, 0xFE04, 0xFE04, 0xFE04, 0xFE04, 0xFE04, 0xFE04, 0xFE04,
     ]);
     assert_eq!(v.sub.unwrap().tag(), "RepeatedBase");
 }
@@ -312,10 +318,28 @@ fn homoglyph_cross_script_latin_hebrew() {
 }
 
 #[test]
+fn homoglyph_restriction_low_is_preempted_by_cross_script_mix() {
+    let minimally_restrictive = homoglyph_confusable::detect(&[0x03B1, 0x05D0]);
+    assert_eq!(
+        minimally_restrictive.restriction_level,
+        unicode_rust::security::identity::ucd::RestrictionLevel::MinimallyRestrictive
+    );
+    assert_eq!(
+        minimally_restrictive.sub.as_ref().unwrap().tag(),
+        "CrossScriptMix"
+    );
+
+    let unrestricted = homoglyph_confusable::detect(&[0x0375, 0xE000]);
+    assert_eq!(
+        unrestricted.restriction_level,
+        unicode_rust::security::identity::ucd::RestrictionLevel::Unrestricted
+    );
+    assert_eq!(unrestricted.sub.as_ref().unwrap().tag(), "CrossScriptMix");
+}
+
+#[test]
 fn homoglyph_pure_greek_clear() {
     // "λόγος" — single-script Greek, no spoofing structure.
-    let v = homoglyph_confusable::detect(&[
-        0x03BB, 0x03CC, 0x03B3, 0x03BF, 0x03C2,
-    ]);
+    let v = homoglyph_confusable::detect(&[0x03BB, 0x03CC, 0x03B3, 0x03BF, 0x03C2]);
     assert_eq!(v.kind, ClassificationKind::Clear);
 }

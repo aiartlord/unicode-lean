@@ -11,8 +11,8 @@
 //! codepoints (RGI-context legitimate emoji-ZWJ sequence) — that
 //! exemption requires the UCD emoji-data table.
 
-use crate::security::ClassificationKind;
 use crate::security::identity::ucd;
+use crate::security::ClassificationKind;
 
 /// Sibling-detector codepoint ranges — these ARE Default_Ignorable
 /// per UAX #44 but are dispatched by their own family detector

@@ -27,8 +27,7 @@ use crate::security::ClassificationKind;
 // Authoritative legal (base, VS) pair set
 // ──────────────────────────────────────────────────────────────────────
 
-const STANDARDIZED_VARIANTS_RAW: &str =
-    include_str!("../../../data/StandardizedVariants.txt");
+const STANDARDIZED_VARIANTS_RAW: &str = include_str!("../../../data/StandardizedVariants.txt");
 const EMOJI_VARIATION_SEQUENCES_RAW: &str =
     include_str!("../../../data/emoji-variation-sequences.txt");
 
@@ -54,13 +53,10 @@ fn parse_legal_pairs() -> HashSet<(u32, u32)> {
             let semi_idx = stripped.find(';').unwrap_or(stripped.len());
             let pair_part = &stripped[..semi_idx];
             let mut tokens = pair_part.split_whitespace();
-            let (Some(base_str), Some(vs_str)) = (tokens.next(), tokens.next())
-            else {
+            let (Some(base_str), Some(vs_str)) = (tokens.next(), tokens.next()) else {
                 continue;
             };
-            let (Some(base), Some(vs)) =
-                (parse_hex_u32(base_str), parse_hex_u32(vs_str))
-            else {
+            let (Some(base), Some(vs)) = (parse_hex_u32(base_str), parse_hex_u32(vs_str)) else {
                 continue;
             };
             out.insert((base, vs));
@@ -181,7 +177,13 @@ pub fn detect(input: &[u32]) -> Verdict {
     v.vs_positions = input
         .iter()
         .enumerate()
-        .filter_map(|(i, &cp)| if is_variation_selector(cp) { Some(i) } else { None })
+        .filter_map(|(i, &cp)| {
+            if is_variation_selector(cp) {
+                Some(i)
+            } else {
+                None
+            }
+        })
         .collect();
 
     if v.vs_positions.is_empty() {

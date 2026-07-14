@@ -101,11 +101,13 @@ pub fn utf8_decode_step(state: Utf8State, byte: u8) -> Utf8StepResult {
                 Utf8StepResult::Reject(Utf8RejectKind::InvalidStartByte)
             }
         }
-        Utf8State::ExpectCont { remaining, accum, min_cp } => {
+        Utf8State::ExpectCont {
+            remaining,
+            accum,
+            min_cp,
+        } => {
             if n < 0x80 || n >= 0xC0 {
-                return Utf8StepResult::Reject(
-                    Utf8RejectKind::InvalidContinuationByte,
-                );
+                return Utf8StepResult::Reject(Utf8RejectKind::InvalidContinuationByte);
             }
             let next = (accum << 6) | (n & 0x3F);
             if remaining == 1 {
@@ -142,9 +144,7 @@ pub fn utf8_decode_step(state: Utf8State, byte: u8) -> Utf8StepResult {
 /// triggered detection.  Every other reject kind reports the byte
 /// that caused the rejection.  `TruncatedSequence` reports an
 /// offset equal to the input length.
-pub fn first_invalid_utf8_offset(
-    bytes: &[u8],
-) -> Option<(usize, Utf8RejectKind)> {
+pub fn first_invalid_utf8_offset(bytes: &[u8]) -> Option<(usize, Utf8RejectKind)> {
     let mut state = Utf8State::ExpectStart;
     let mut seq_start = 0;
     for (i, &b) in bytes.iter().enumerate() {
@@ -202,10 +202,7 @@ pub fn encode_codepoint(cp: u32) -> Vec<u8> {
     if cp < 0x80 {
         vec![cp as u8]
     } else if cp < 0x800 {
-        vec![
-            (0xC0 | (cp >> 6)) as u8,
-            (0x80 | (cp & 0x3F)) as u8,
-        ]
+        vec![(0xC0 | (cp >> 6)) as u8, (0x80 | (cp & 0x3F)) as u8]
     } else if cp < 0x10000 {
         vec![
             (0xE0 | (cp >> 12)) as u8,

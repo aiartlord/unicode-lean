@@ -23,23 +23,14 @@ pub mod validated_utf8;
 
 pub use crate::bom::BomKind;
 pub use crate::identifier::{
-    first_invalid_identifier_continue_from,
-    is_identifier_continue_byte,
-    is_identifier_start_byte,
-    is_valid_identifier_bytes,
-    IdentifierUtf8,
+    first_invalid_identifier_continue_from, is_identifier_continue_byte, is_identifier_start_byte,
+    is_valid_identifier_bytes, IdentifierUtf8,
 };
 pub use crate::noncharacters::{all_noncharacters, is_noncharacter};
 pub use crate::opaque_blob::{is_utf8_blob, Utf8Blob};
 pub use crate::strict::Utf8RejectKind;
 pub use crate::utf8::{
-    decode_to_codepoints,
-    encode_codepoint,
-    encode_codepoints,
-    first_invalid_utf8_offset,
-    is_valid_utf8,
-    utf8_decode_step,
-    Utf8State,
-    Utf8StepResult,
+    decode_to_codepoints, encode_codepoint, encode_codepoints, first_invalid_utf8_offset,
+    is_valid_utf8, utf8_decode_step, Utf8State, Utf8StepResult,
 };
 pub use crate::validated_utf8::ValidatedUtf8;

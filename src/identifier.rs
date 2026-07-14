@@ -26,10 +26,7 @@ pub fn is_identifier_continue_byte(b: u8) -> bool {
 /// returning the offset and value of the first byte that fails
 /// `is_identifier_continue_byte`.  Returns `None` when every
 /// position from `from` onward is a valid continuation byte.
-pub fn first_invalid_identifier_continue_from(
-    bytes: &[u8],
-    from: usize,
-) -> Option<(usize, u8)> {
+pub fn first_invalid_identifier_continue_from(bytes: &[u8], from: usize) -> Option<(usize, u8)> {
     for (idx, &b) in bytes.iter().enumerate().skip(from) {
         if !is_identifier_continue_byte(b) {
             return Some((idx, b));

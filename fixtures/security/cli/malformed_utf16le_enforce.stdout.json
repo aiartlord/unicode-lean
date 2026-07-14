@@ -1,0 +1,1 @@
+{"action":"reject","profile":"gateway-header","mode":"enforce","input":[],"findings":[{"code":"unicode.security.C.malformed-utf16.TruncatedCodeUnit","family":"malformed-utf16","severity":2,"positions":[1],"byte_spans":[{"cp_offset":null,"start_byte":1,"end_byte":1,"line":1,"column":1}],"sub_threat":"TruncatedCodeUnit","detail":"malformed-utf16"}],"normalized":null}

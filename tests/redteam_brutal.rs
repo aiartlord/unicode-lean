@@ -46,9 +46,9 @@
 //!  11. Cascade nesting.  Triple-substitution chains.
 
 use std::time::Instant;
-use unicode_rust::security::ClassificationKind;
 use unicode_rust::security::identity::homoglyph_confusable as h;
 use unicode_rust::security::identity::homoglyph_confusable::SubThreat;
+use unicode_rust::security::ClassificationKind;
 
 // ════════════════════════════════════════════════════════════════════
 // CATEGORY 1: zero-width insertion bypass
@@ -62,12 +62,12 @@ fn brutal_1_zero_width_insertion_in_target() {
     // invisible ZW + Cyrillic-е) — but our letter_skeleton keeps
     // the ZW codepoint because its CCC is 0.
     let zw_candidates = [
-        ("ZWSP",   0x200Bu32),
-        ("ZWNJ",   0x200C),
-        ("ZWJ",    0x200D),
-        ("WJ",     0x2060),
-        ("BOM",    0xFEFF),
-        ("NNBSP",  0x202F),
+        ("ZWSP", 0x200Bu32),
+        ("ZWNJ", 0x200C),
+        ("ZWJ", 0x200D),
+        ("WJ", 0x2060),
+        ("BOM", 0xFEFF),
+        ("NNBSP", 0x202F),
     ];
     let mut breaks: Vec<String> = Vec::new();
     for (name, zw) in &zw_candidates {
@@ -114,13 +114,19 @@ fn brutal_2_pure_cyrillic_brand_spoof() {
         // Cyrillic ӏ U+04CF maps to Latin 'i' per confusables — so
         // skel = "appie", target "apple" skel = "apple".  Mismatch.
         // This documents the curation/algorithmic gap.
-        ("apple-cyr",    &[0x0430, 0x0440, 0x0440, 0x04CF, 0x0435]),
+        ("apple-cyr", &[0x0430, 0x0440, 0x0440, 0x04CF, 0x0435]),
         // "openai" pure Cyrillic: о р е и а і
-        ("openai-cyr",   &[0x043E, 0x0440, 0x0435, 0x043D, 0x0430, 0x0456]),
+        (
+            "openai-cyr",
+            &[0x043E, 0x0440, 0x0435, 0x043D, 0x0430, 0x0456],
+        ),
         // "google" pure Cyrillic: g cyrillic doesn't exist, use ɡ U+0261 + о о gle
-        ("google-cyr",   &[0x0261, 0x043E, 0x043E, 0x0261, 0x006C, 0x0435]),
+        (
+            "google-cyr",
+            &[0x0261, 0x043E, 0x043E, 0x0261, 0x006C, 0x0435],
+        ),
         // "react" pure Cyrillic: р е а с т
-        ("react-cyr",    &[0x0440, 0x0435, 0x0430, 0x0441, 0x0442]),
+        ("react-cyr", &[0x0440, 0x0435, 0x0430, 0x0441, 0x0442]),
     ];
     let mut caught = 0;
     let mut missed: Vec<String> = Vec::new();
@@ -130,10 +136,7 @@ fn brutal_2_pure_cyrillic_brand_spoof() {
         match v.kind {
             ClassificationKind::Hazard => {
                 caught += 1;
-                eprintln!(
-                    "    caught: {:?}",
-                    v.sub.as_ref().map(|s| s.tag()),
-                );
+                eprintln!("    caught: {:?}", v.sub.as_ref().map(|s| s.tag()),);
             }
             ClassificationKind::Clear
             | ClassificationKind::Compound
@@ -144,7 +147,8 @@ fn brutal_2_pure_cyrillic_brand_spoof() {
     }
     eprintln!(
         "BRUTAL 2 (pure-script Hole 3): {}/{} caught",
-        caught, attacks.len(),
+        caught,
+        attacks.len(),
     );
     // This test DOCUMENTS the gap — does not assert closure (Hole 3
     // requires curation expansion to close).
@@ -161,12 +165,18 @@ fn brutal_3_multi_position_substitution() {
     // case-folded skeleton resolves to ASCII 'e'.  Target match
     // must fire for all of these.
     let attacks: &[(&str, &[u32])] = &[
-        ("2-pos cyr e+e",
-         &[0x4E, 0x0435, 0x74, 0x68, 0x0435, 0x72, 0x65, 0x75, 0x6D]),
-        ("3-pos cyr e+e+e",
-         &[0x4E, 0x0435, 0x74, 0x68, 0x0435, 0x72, 0x0435, 0x75, 0x6D]),
-        ("4-pos all-cyr-e (same as 3 — only 3 e's in nethereum)",
-         &[0x4E, 0x0435, 0x74, 0x68, 0x0435, 0x72, 0x0435, 0x75, 0x6D]),
+        (
+            "2-pos cyr e+e",
+            &[0x4E, 0x0435, 0x74, 0x68, 0x0435, 0x72, 0x65, 0x75, 0x6D],
+        ),
+        (
+            "3-pos cyr e+e+e",
+            &[0x4E, 0x0435, 0x74, 0x68, 0x0435, 0x72, 0x0435, 0x75, 0x6D],
+        ),
+        (
+            "4-pos all-cyr-e (same as 3 — only 3 e's in nethereum)",
+            &[0x4E, 0x0435, 0x74, 0x68, 0x0435, 0x72, 0x0435, 0x75, 0x6D],
+        ),
     ];
     // Note: substituting Cyrillic-р (U+0440 → Latin p) for 'r' is
     // NOT a valid Nethereum typosquat — the resulting visible name
@@ -200,7 +210,7 @@ fn brutal_4_visible_insertion_should_not_match_target() {
     // (it's a different string with different length).
     // But it might fire CrossScriptMix or some other detector if
     // the inserted char triggers it.
-    let v = h::detect(&[0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x65, 0x75, 0x6D, 0x73]);  // "nethereums"
+    let v = h::detect(&[0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x65, 0x75, 0x6D, 0x73]); // "nethereums"
     let tag = v.sub.as_ref().map(|s| s.tag());
     eprintln!("  nethereums (extra s): kind={:?} sub={:?}", v.kind, tag);
     // Acceptable outcomes: Clear, or any non-TargetMatch hazard.
@@ -222,9 +232,7 @@ fn brutal_4_visible_insertion_should_not_match_target() {
 fn brutal_5_variation_selector_appendage() {
     // Append VS16 (U+FE0F) to "nethereum".  CCC=0, doesn't get stripped.
     // Will TargetMatch fire?
-    let input = [
-        0x6E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x65, 0x75, 0x6D, 0xFE0F,
-    ];
+    let input = [0x6E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x65, 0x75, 0x6D, 0xFE0F];
     let v = h::detect(&input);
     let tag = v.sub.as_ref().map(|s| s.tag());
     eprintln!("  nethereum + VS16: kind={:?} sub={:?}", v.kind, tag);
@@ -240,9 +248,7 @@ fn brutal_5_variation_selector_appendage() {
 #[test]
 fn brutal_6_rtl_override_inside_target() {
     // Insert RLO (U+202E) into "nethereum" at position 5.
-    let input = [
-        0x6E, 0x65, 0x74, 0x68, 0x65, 0x202E, 0x72, 0x65, 0x75, 0x6D,
-    ];
+    let input = [0x6E, 0x65, 0x74, 0x68, 0x65, 0x202E, 0x72, 0x65, 0x75, 0x6D];
     let v = h::detect(&input);
     let tag = v.sub.as_ref().map(|s| s.tag());
     eprintln!("  RLO inside nethereum: kind={:?} sub={:?}", v.kind, tag);
@@ -258,18 +264,18 @@ fn brutal_6_rtl_override_inside_target() {
 #[test]
 fn brutal_7_pathological_codepoints_no_panic() {
     let inputs: &[&[u32]] = &[
-        &[0xD800],                    // raw high surrogate
-        &[0xDC00],                    // raw low surrogate
-        &[0xD800, 0xDC00],            // valid surrogate pair (raw)
-        &[0xFDD0],                    // first noncharacter range
-        &[0xFDEF],                    // last in first noncharacter range
-        &[0xFFFE],                    // BMP noncharacter
-        &[0xFFFF],                    // BMP noncharacter
-        &[0xE000],                    // PUA start
-        &[0xF8FF],                    // PUA end
-        &[0xF0000],                   // Supplementary PUA-A start
-        &[0x10FFFE, 0x10FFFF],        // supplementary noncharacters
-        &[0xFFFFFFFF],                // beyond Unicode
+        &[0xD800],             // raw high surrogate
+        &[0xDC00],             // raw low surrogate
+        &[0xD800, 0xDC00],     // valid surrogate pair (raw)
+        &[0xFDD0],             // first noncharacter range
+        &[0xFDEF],             // last in first noncharacter range
+        &[0xFFFE],             // BMP noncharacter
+        &[0xFFFF],             // BMP noncharacter
+        &[0xE000],             // PUA start
+        &[0xF8FF],             // PUA end
+        &[0xF0000],            // Supplementary PUA-A start
+        &[0x10FFFE, 0x10FFFF], // supplementary noncharacters
+        &[0xFFFFFFFF],         // beyond Unicode
     ];
     for input in inputs {
         let verdict = h::detect(input);
@@ -285,8 +291,11 @@ fn brutal_7_pathological_codepoints_no_panic() {
 fn brutal_8_self_match_guard_holds_for_legit() {
     // Legitimate "Nethereum" (curated target itself) MUST be Clear.
     let v = h::detect(&[0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x65, 0x75, 0x6D]);
-    assert_eq!(v.kind, ClassificationKind::Clear,
-        "legitimate Nethereum must not flag itself");
+    assert_eq!(
+        v.kind,
+        ClassificationKind::Clear,
+        "legitimate Nethereum must not flag itself"
+    );
     // Case-folded equivalent (lowercase) should also be Clear since
     // "nethereum" lowercase is the case-folded form of a target.
     // But we don't have "nethereum" in lowercase as a separate target,
@@ -294,7 +303,10 @@ fn brutal_8_self_match_guard_holds_for_legit() {
     // "Nethereum" which is the target — the input differs from target
     // by case, so the t.cps != input guard skips correctly... or fires?
     let v = h::detect(&[0x6E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x65, 0x75, 0x6D]);
-    eprintln!("  pure lowercase nethereum: {:?}", v.sub.as_ref().map(|s| s.tag()));
+    eprintln!(
+        "  pure lowercase nethereum: {:?}",
+        v.sub.as_ref().map(|s| s.tag())
+    );
     // EXPECTED: TargetMatch{Nethereum} because input != Nethereum literally
     // but iterated letter_skeleton matches.  This is the case-insensitive
     // intent — lowercase nethereum should match the Nethereum target.
@@ -310,14 +322,15 @@ fn brutal_9_rn_for_m_symmetric() {
     // with 'rn').  After substitute, target's m → rn, so target letter
     // skeleton = "rnetarnask".  Input is already "rnetarnask".
     // letter_skeletons should match → TargetMatch{metamask}.
-    let input = [
-        0x72, 0x6E, 0x65, 0x74, 0x61, 0x72, 0x6E, 0x61, 0x73, 0x6B,
-    ];
+    let input = [0x72, 0x6E, 0x65, 0x74, 0x61, 0x72, 0x6E, 0x61, 0x73, 0x6B];
     let v = h::detect(&input);
     let tag = v.sub.as_ref().map(|s| s.tag());
     eprintln!("  rnetarnask (rn-for-m metamask): {:?}", tag);
-    assert_eq!(tag, Some("TargetMatch"),
-        "rn-for-m symmetric attack must fire TargetMatch");
+    assert_eq!(
+        tag,
+        Some("TargetMatch"),
+        "rn-for-m symmetric attack must fire TargetMatch"
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -349,10 +362,14 @@ fn brutal_11_hangul_input_no_false_positive() {
     let v = h::detect(&input);
     eprintln!(
         "  Pure Hangul 안녕하세요: kind={:?} sub={:?}",
-        v.kind, v.sub.as_ref().map(|s| s.tag()),
+        v.kind,
+        v.sub.as_ref().map(|s| s.tag()),
     );
-    assert_eq!(v.kind, ClassificationKind::Clear,
-        "Pure Hangul must not flag");
+    assert_eq!(
+        v.kind,
+        ClassificationKind::Clear,
+        "Pure Hangul must not flag"
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -370,7 +387,8 @@ fn brutal_12_logical_order_attack() {
     let v = h::detect(&input);
     eprintln!(
         "  Reversed react 'tcaer': kind={:?} sub={:?}",
-        v.kind, v.sub.as_ref().map(|s| s.tag()),
+        v.kind,
+        v.sub.as_ref().map(|s| s.tag()),
     );
     // Acceptable for HomoglyphConfusable to miss this (no bidi).
 }
@@ -420,7 +438,7 @@ fn brutal_14_react_dom_with_cyrillic() {
 fn brutal_15_massive_input_dos() {
     // 1 MB worth of confusable codepoints — every byte goes through
     // the full skeleton pipeline.
-    let input = vec![0x0435u32; 200_000];  // 200k Cyrillic е
+    let input = vec![0x0435u32; 200_000]; // 200k Cyrillic е
     let t = Instant::now();
     let verdict = h::detect(&input);
     std::hint::black_box(&verdict);
@@ -445,13 +463,19 @@ fn brutal_16_every_confusable_at_once() {
             None => line,
         };
         let stripped = body.trim();
-        if stripped.is_empty() { continue; }
+        if stripped.is_empty() {
+            continue;
+        }
         let parts: Vec<&str> = stripped.splitn(2, ';').collect();
-        if parts.len() < 2 { continue; }
+        if parts.len() < 2 {
+            continue;
+        }
         if let Ok(cp) = u32::from_str_radix(parts[0].trim(), 16) {
             input.push(cp);
         }
-        if input.len() >= 1000 { break; }
+        if input.len() >= 1000 {
+            break;
+        }
     }
     let t = Instant::now();
     let verdict = h::detect(&input);
@@ -468,19 +492,16 @@ fn brutal_16_every_confusable_at_once() {
 #[test]
 fn brutal_17_whitespace_only() {
     let inputs: &[&[u32]] = &[
-        &[],                                  // empty
-        &[0x20],                              // single space
-        &[0x20, 0x20, 0x20],                  // three spaces
-        &[0x09, 0x0A, 0x0D],                  // tab newline cr
-        &[0xA0],                              // NBSP
-        &[0x3000],                            // Ideographic space
+        &[],                 // empty
+        &[0x20],             // single space
+        &[0x20, 0x20, 0x20], // three spaces
+        &[0x09, 0x0A, 0x0D], // tab newline cr
+        &[0xA0],             // NBSP
+        &[0x3000],           // Ideographic space
     ];
     for input in inputs {
         let v = h::detect(input);
-        eprintln!(
-            "  whitespace input {:X?}: kind={:?}",
-            input, v.kind,
-        );
+        eprintln!("  whitespace input {:X?}: kind={:?}", input, v.kind,);
         // Empty / pure-whitespace shouldn't trigger TargetMatch.
         if let Some(SubThreat::TargetMatch { target }) = &v.sub {
             panic!(
@@ -504,13 +525,15 @@ fn brutal_18_nfc_quick_check_edge() {
         &[0x0340u32][..],
         &[0x0344u32][..],
         &[0x212Bu32][..],
-        &[0x4Eu32, 0x65, 0x74, 0x212B][..],  // "Net" + angstrom
+        &[0x4Eu32, 0x65, 0x74, 0x212B][..], // "Net" + angstrom
     ];
     for input in inputs {
         let v = h::detect(input);
         eprintln!(
             "  NFC-edge input {:X?}: kind={:?} sub={:?}",
-            input, v.kind, v.sub.as_ref().map(|s| s.tag()),
+            input,
+            v.kind,
+            v.sub.as_ref().map(|s| s.tag()),
         );
         // No panic, well-shaped verdict.
         match v.kind {
@@ -554,9 +577,7 @@ fn brutal_19_skeleton_collision_between_targets() {
 #[test]
 fn brutal_20_fullwidth_hyphen_in_react_dom() {
     // "react-dom" with FULLWIDTH HYPHEN-MINUS (U+FF0D) replacing -.
-    let input = [
-        0x72, 0x65, 0x61, 0x63, 0x74, 0xFF0D, 0x64, 0x6F, 0x6D,
-    ];
+    let input = [0x72, 0x65, 0x61, 0x63, 0x74, 0xFF0D, 0x64, 0x6F, 0x6D];
     let v = h::detect(&input);
     let tag = v.sub.as_ref().map(|s| s.tag());
     eprintln!("  react-dom with fullwidth hyphen: tag={:?}", tag);

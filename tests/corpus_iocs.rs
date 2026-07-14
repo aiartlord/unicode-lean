@@ -7,13 +7,11 @@
 //! Each test names the public-disclosure source so an auditor can
 //! verify the attack-sample provenance.
 
-use unicode_rust::security::ClassificationKind;
 use unicode_rust::security::covert::{
-    bidi_control_balance as bidi,
-    tag_block_payload as tag,
-    variation_selector_payload as vs,
+    bidi_control_balance as bidi, tag_block_payload as tag, variation_selector_payload as vs,
 };
 use unicode_rust::security::identity::homoglyph_confusable as h;
+use unicode_rust::security::ClassificationKind;
 
 // ════════════════════════════════════════════════════════════════════
 // CVE-2021-42574 / CVE-2021-42694 — Trojan Source
@@ -27,14 +25,16 @@ fn ioc_trojan_source_cve_2021_42574_early_return_c() {
     // Source approximation:
     //   if (access_level != "user«RLO» admin»");
     let input = [
-        0x69, 0x66, 0x20, 0x28, 0x61, 0x63, 0x63, 0x65, 0x73, 0x73,
-        0x5F, 0x6C, 0x65, 0x76, 0x65, 0x6C, 0x20, 0x21, 0x3D, 0x20,
-        0x22, 0x75, 0x73, 0x65, 0x72, 0x202E, 0x20, 0x61, 0x64, 0x6D,
+        0x69, 0x66, 0x20, 0x28, 0x61, 0x63, 0x63, 0x65, 0x73, 0x73, 0x5F, 0x6C, 0x65, 0x76, 0x65,
+        0x6C, 0x20, 0x21, 0x3D, 0x20, 0x22, 0x75, 0x73, 0x65, 0x72, 0x202E, 0x20, 0x61, 0x64, 0x6D,
         0x69, 0x6E, 0x22, 0x29, 0x3B,
     ];
     let v = bidi::detect(&input);
-    assert_eq!(v.kind, ClassificationKind::Hazard,
-        "TROJAN SOURCE — early-return C must fire Bidi Hazard");
+    assert_eq!(
+        v.kind,
+        ClassificationKind::Hazard,
+        "TROJAN SOURCE — early-return C must fire Bidi Hazard"
+    );
 }
 
 #[test]
@@ -56,8 +56,8 @@ fn ioc_trojan_source_cve_2021_42574_commenting_out_python_is_balanced() {
     // input.  When SourceDisplayDivergence ports to rust the
     // assertion should ALSO fire that detector with Hazard.
     let input = [
-        0x23, 0x20, 0x202E, 0x20, 0x66, 0x72, 0x6F, 0x6D, 0x20,
-        0x2066, 0x20, 0x70, 0x77, 0x6E, 0x65, 0x64, 0x2069, 0x202C,
+        0x23, 0x20, 0x202E, 0x20, 0x66, 0x72, 0x6F, 0x6D, 0x20, 0x2066, 0x20, 0x70, 0x77, 0x6E,
+        0x65, 0x64, 0x2069, 0x202C,
     ];
     let v = bidi::detect(&input);
     assert_eq!(v.kind, ClassificationKind::Clear,
@@ -75,31 +75,28 @@ fn ioc_trojan_source_cve_2021_42574_commenting_out_python_is_balanced() {
 fn ioc_nethereum_typosquat_cyrillic_e_at_pos_6() {
     // Canonical name: "Nethereum"
     // Attacker name:  "Nether" + Cyrillic-е (U+0435) + "um"
-    let input = [
-        0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D,
-    ];
+    let input = [0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D];
     let v = h::detect(&input);
     assert_eq!(v.kind, ClassificationKind::Hazard);
     let tag = v.sub.as_ref().unwrap().tag();
-    assert_eq!(tag, "TargetMatch",
-        "Nethereum typosquat must fire TargetMatch (currently {})", tag);
+    assert_eq!(
+        tag, "TargetMatch",
+        "Nethereum typosquat must fire TargetMatch (currently {})",
+        tag
+    );
 }
 
 #[test]
 fn ioc_nethereum_typosquat_lowercase_variant() {
     // NuGet IDs are case-insensitive; attacker used lowercase too.
-    let input = [
-        0x6E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D,
-    ];
+    let input = [0x6E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D];
     let v = h::detect(&input);
     assert_eq!(v.sub.as_ref().unwrap().tag(), "TargetMatch");
 }
 
 #[test]
 fn ioc_nethereum_typosquat_allcaps_variant() {
-    let input = [
-        0x4E, 0x45, 0x54, 0x48, 0x45, 0x52, 0x0415, 0x55, 0x4D,
-    ];
+    let input = [0x4E, 0x45, 0x54, 0x48, 0x45, 0x52, 0x0415, 0x55, 0x4D];
     let v = h::detect(&input);
     assert_eq!(v.sub.as_ref().unwrap().tag(), "TargetMatch");
 }
@@ -122,12 +119,17 @@ fn ioc_goodside_tag_block_llm_injection() {
         input.push(0xE0000 + *byte as u32);
     }
     let v = tag::detect(&input);
-    assert_eq!(v.kind, ClassificationKind::Hazard,
-        "GoodSide tag-block LLM injection must fire Tag Hazard");
+    assert_eq!(
+        v.kind,
+        ClassificationKind::Hazard,
+        "GoodSide tag-block LLM injection must fire Tag Hazard"
+    );
     // Detector should recover the full smuggled payload.
-    assert!(v.recovered_ascii.contains("Ignore previous instructions"),
+    assert!(
+        v.recovered_ascii.contains("Ignore previous instructions"),
         "expected smuggled payload to be recovered, got {:?}",
-        v.recovered_ascii);
+        v.recovered_ascii
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -151,12 +153,17 @@ fn ioc_glassworm_variation_selector_payload() {
         input.push(0xFE00 + lo as u32);
     }
     let v = vs::detect(&input);
-    assert_eq!(v.kind, ClassificationKind::Hazard,
-        "GlassWorm VS payload must fire VS Hazard");
+    assert_eq!(
+        v.kind,
+        ClassificationKind::Hazard,
+        "GlassWorm VS payload must fire VS Hazard"
+    );
     assert_eq!(v.sub.as_ref().unwrap().tag(), "DirectPayload");
-    assert!(v.recovered_bytes.starts_with(b"fetch"),
+    assert!(
+        v.recovered_bytes.starts_with(b"fetch"),
         "expected recovered bytes to start with 'fetch', got {:?}",
-        std::str::from_utf8(&v.recovered_bytes).ok());
+        std::str::from_utf8(&v.recovered_bytes).ok()
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -198,8 +205,11 @@ fn ioc_math_alpha_brand_spoofing_apple() {
     assert_eq!(v.kind, ClassificationKind::Hazard);
     // TargetMatch fires before MathAlpha due to priority order.
     let tag = v.sub.as_ref().unwrap().tag();
-    assert!(tag == "TargetMatch" || tag == "MathAlpha",
-        "got tag={}", tag);
+    assert!(
+        tag == "TargetMatch" || tag == "MathAlpha",
+        "got tag={}",
+        tag
+    );
 }
 
 #[test]
@@ -232,8 +242,10 @@ fn ioc_idn_homograph_apple_pure_cyrillic() {
     // Currently Clear (Hole 3 open).  Once closed, this
     // assertion flips to Hazard.
     if v.kind == ClassificationKind::Hazard {
-        eprintln!("  IDN homograph apple-cyrillic: CAUGHT ({:?})",
-                  v.sub.as_ref().map(|s| s.tag()));
+        eprintln!(
+            "  IDN homograph apple-cyrillic: CAUGHT ({:?})",
+            v.sub.as_ref().map(|s| s.tag())
+        );
     } else {
         eprintln!("  IDN homograph apple-cyrillic: Clear (Hole 3 open)");
     }
@@ -262,8 +274,14 @@ fn ioc_pure_cyrillic_typosquat_microsoft() {
         0x0074, // t
     ];
     let v = h::detect(&input);
-    assert_eq!(v.kind, ClassificationKind::Hazard,
-        "Cyrillic-о Microsoft typosquat must fire SOMETHING");
-    eprintln!("  microsoft + Cyr-о: tag={:?} sub={:?}",
-              v.sub.as_ref().map(|s| s.tag()), v.sub);
+    assert_eq!(
+        v.kind,
+        ClassificationKind::Hazard,
+        "Cyrillic-о Microsoft typosquat must fire SOMETHING"
+    );
+    eprintln!(
+        "  microsoft + Cyr-о: tag={:?} sub={:?}",
+        v.sub.as_ref().map(|s| s.tag()),
+        v.sub
+    );
 }

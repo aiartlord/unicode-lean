@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "audit": "homoglyph-restriction-low-priority-v0",
+  "shared_runtime_fixture": false,
+  "reason": "RestrictionLow is present in the Rust/Python reference detector, but current priority order reports CrossScriptMix first for reachable low-restriction inputs.",
+  "cases": [
+    {
+      "name": "minimally-restrictive-preempted-by-cross-script",
+      "input": [945, 1488],
+      "restriction_level": "MinimallyRestrictive",
+      "expected_sub_threat": "CrossScriptMix",
+      "restriction_low_emitted": false,
+      "required_findings": [
+        "unicode.security.I.mixed-script-admissibility.CrossScriptMix"
+      ]
+    },
+    {
+      "name": "unrestricted-preempted-by-cross-script",
+      "input": [885, 57344],
+      "restriction_level": "Unrestricted",
+      "expected_sub_threat": "CrossScriptMix",
+      "restriction_low_emitted": false,
+      "required_findings": [
+        "unicode.security.I.mixed-script-admissibility.CrossScriptMix"
+      ]
+    }
+  ]
+}

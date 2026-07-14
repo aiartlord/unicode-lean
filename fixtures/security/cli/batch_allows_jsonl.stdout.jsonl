@@ -1,0 +1,2 @@
+{"id":"a","action":"allow","profile":"gateway-header","mode":"enforce","input":[72,105],"findings":[],"normalized":null}
+{"id":"b","action":"allow","profile":"gateway-header","mode":"enforce","input":[79,75],"findings":[],"normalized":null}
