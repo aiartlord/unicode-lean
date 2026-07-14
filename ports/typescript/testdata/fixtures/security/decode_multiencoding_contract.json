@@ -1,0 +1,194 @@
+{
+  "schema": 1,
+  "contract": "unicode-security-multiencoding-decode-v0",
+  "cases": [
+    {
+      "name": "utf16le-ascii-gateway-enforce",
+      "encoding": "utf-16le",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input_bytes": [72, 0, 101, 0, 108, 0, 108, 0, 111, 0],
+      "input": [72, 101, 108, 108, 111],
+      "action": "allow",
+      "required_findings": [],
+      "required_positions": []
+    },
+    {
+      "name": "utf16be-ascii-gateway-enforce",
+      "encoding": "utf-16be",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input_bytes": [0, 72, 0, 101, 0, 108, 0, 108, 0, 111],
+      "input": [72, 101, 108, 108, 111],
+      "action": "allow",
+      "required_findings": [],
+      "required_positions": []
+    },
+    {
+      "name": "utf16le-truncated-code-unit-gateway-reject",
+      "encoding": "utf-16le",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input_bytes": [97],
+      "input": [],
+      "action": "reject",
+      "required_findings": [
+        "unicode.security.C.malformed-utf16.TruncatedCodeUnit"
+      ],
+      "required_positions": [
+        {
+          "code": "unicode.security.C.malformed-utf16.TruncatedCodeUnit",
+          "positions": [1]
+        }
+      ]
+    },
+    {
+      "name": "utf16be-lone-surrogate-gateway-reject",
+      "encoding": "utf-16be",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input_bytes": [220, 0],
+      "input": [],
+      "action": "reject",
+      "required_findings": [
+        "unicode.security.C.malformed-utf16.LoneSurrogate"
+      ],
+      "required_positions": [
+        {
+          "code": "unicode.security.C.malformed-utf16.LoneSurrogate",
+          "positions": [0]
+        }
+      ]
+    },
+    {
+      "name": "utf16le-invalid-surrogate-pair-gateway-reject",
+      "encoding": "utf-16le",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input_bytes": [0, 216, 65, 0],
+      "input": [],
+      "action": "reject",
+      "required_findings": [
+        "unicode.security.C.malformed-utf16.InvalidSurrogatePair"
+      ],
+      "required_positions": [
+        {
+          "code": "unicode.security.C.malformed-utf16.InvalidSurrogatePair",
+          "positions": [2]
+        }
+      ]
+    },
+    {
+      "name": "utf16le-truncated-surrogate-pair-gateway-reject",
+      "encoding": "utf-16le",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input_bytes": [0, 216],
+      "input": [],
+      "action": "reject",
+      "required_findings": [
+        "unicode.security.C.malformed-utf16.TruncatedSurrogatePair"
+      ],
+      "required_positions": [
+        {
+          "code": "unicode.security.C.malformed-utf16.TruncatedSurrogatePair",
+          "positions": [2]
+        }
+      ]
+    },
+    {
+      "name": "utf32le-ascii-gateway-enforce",
+      "encoding": "utf-32le",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input_bytes": [72, 0, 0, 0, 101, 0, 0, 0, 108, 0, 0, 0, 108, 0, 0, 0, 111, 0, 0, 0],
+      "input": [72, 101, 108, 108, 111],
+      "action": "allow",
+      "required_findings": [],
+      "required_positions": []
+    },
+    {
+      "name": "utf32be-ascii-gateway-enforce",
+      "encoding": "utf-32be",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input_bytes": [0, 0, 0, 72, 0, 0, 0, 101, 0, 0, 0, 108, 0, 0, 0, 108, 0, 0, 0, 111],
+      "input": [72, 101, 108, 108, 111],
+      "action": "allow",
+      "required_findings": [],
+      "required_positions": []
+    },
+    {
+      "name": "utf32be-truncated-code-unit-gateway-reject",
+      "encoding": "utf-32be",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input_bytes": [0, 0, 0],
+      "input": [],
+      "action": "reject",
+      "required_findings": [
+        "unicode.security.C.malformed-utf32.TruncatedCodeUnit"
+      ],
+      "required_positions": [
+        {
+          "code": "unicode.security.C.malformed-utf32.TruncatedCodeUnit",
+          "positions": [3]
+        }
+      ]
+    },
+    {
+      "name": "utf32le-surrogate-gateway-reject",
+      "encoding": "utf-32le",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input_bytes": [0, 216, 0, 0],
+      "input": [],
+      "action": "reject",
+      "required_findings": [
+        "unicode.security.C.malformed-utf32.SurrogateCodepoint"
+      ],
+      "required_positions": [
+        {
+          "code": "unicode.security.C.malformed-utf32.SurrogateCodepoint",
+          "positions": [0]
+        }
+      ]
+    },
+    {
+      "name": "utf32be-beyond-max-gateway-reject",
+      "encoding": "utf-32be",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input_bytes": [0, 17, 0, 0],
+      "input": [],
+      "action": "reject",
+      "required_findings": [
+        "unicode.security.C.malformed-utf32.CodepointBeyondMax"
+      ],
+      "required_positions": [
+        {
+          "code": "unicode.security.C.malformed-utf32.CodepointBeyondMax",
+          "positions": [0]
+        }
+      ]
+    },
+    {
+      "name": "utf16le-zero-width-source-strict",
+      "encoding": "utf-16le",
+      "profile": "source-code",
+      "mode": "strict",
+      "input_bytes": [97, 0, 11, 32, 98, 0],
+      "input": [97, 8203, 98],
+      "action": "reject",
+      "required_findings": [
+        "unicode.security.C.zero-width-payload.BareZeroWidth"
+      ],
+      "required_positions": [
+        {
+          "code": "unicode.security.C.zero-width-payload.BareZeroWidth",
+          "positions": [1]
+        }
+      ]
+    }
+  ]
+}
