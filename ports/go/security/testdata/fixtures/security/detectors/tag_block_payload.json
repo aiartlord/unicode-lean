@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "family": "tag-block-payload",
+  "cases": [
+    {
+      "name": "ascii-clear",
+      "input": [72, 101, 108, 108, 111],
+      "required_findings": []
+    },
+    {
+      "name": "tag-ascii-payload",
+      "input": [917569, 917570],
+      "required_findings": [
+        "unicode.security.C.tag-block-payload.DirectAscii"
+      ]
+    }
+  ]
+}
