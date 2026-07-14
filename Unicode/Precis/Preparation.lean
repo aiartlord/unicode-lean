@@ -45,6 +45,7 @@ import Unicode.Normalization.NFC
 import Unicode.Normalization.NFD
 import Unicode.Normalization.ComposeInversion
 import Unicode.CaseFoldRoundtrip
+import Unicode.Precis.PreparationCore
 import Unicode.Precis.BidiRule
 import Unicode.Precis.IdentifierClass
 import Unicode.Precis.WidthMapping
@@ -60,31 +61,8 @@ open Unicode.Precis.CaseMapping (caseFold)
 open Unicode.Precis.Categories (isPrecisAdmissible)
 open Unicode.Precis.BidiRule (satisfiesBidiRule)
 
-/-- The RFC 8264/8265 mapping stages: width-map, then case-fold,
-    then NFC. Admissibility is NOT checked here; it is applied to
-    the output by `precisPreparation` below. Exposed as its own
-    function so stage-level theorems can name it. -/
-def precisMap (cps : Array Nat) : Array Nat :=
-  toNFC (caseFold (widthMap cps))
-
-/-- Per-codepoint admissibility check against the post-mapping
-    sequence. -/
-def allAdmissible (cps : Array Nat) : Bool :=
-  cps.all isPrecisAdmissible
-
-/-- Combined gate for UsernameCaseMapped / UsernameCasePreserved:
-    IdentifierClass admissibility (RFC 8264 §5.6) AND RFC 5893 §2
-    Bidi Rule (mandated by RFC 8265 §5.5). -/
-def isGatePass (cps : Array Nat) : Bool :=
-  allAdmissible cps && satisfiesBidiRule cps
-
-/-- The full PRECIS Preparation: apply the mapping stages, then
-    reject if the result fails `isGatePass`.
-
-    Returns `some prepared` on success and `none` on rejection. -/
-def precisPreparation (cps : Array Nat) : Option (Array Nat) :=
-  let mapped := precisMap cps
-  if isGatePass mapped then some mapped else none
+-- Executable preparation definitions live in `PreparationCore`; this module
+-- contains the proof/test-vector layer.
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- TEST VECTORS — ADMISSIBLE (PASS)
@@ -390,16 +368,7 @@ theorem precisMap_idempotent (cps : Array Nat) :
 -- use IdentifierClass).
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Mapping stages for UsernameCasePreserved: width-map then NFC. No
-    case folding. -/
-def precisMapPreserved (cps : Array Nat) : Array Nat :=
-  toNFC (WidthMapping.widthMap cps)
-
-/-- Full UsernameCasePreserved preparation: `precisMapPreserved` then
-    gate (admissibility + Bidi Rule). -/
-def precisPreparationPreserved (cps : Array Nat) : Option (Array Nat) :=
-  let mapped := precisMapPreserved cps
-  if isGatePass mapped then some mapped else none
+-- UsernameCasePreserved executable definitions also live in `PreparationCore`.
 
 /-- **Unconditional UsernameCasePreserved map idempotence.**
 

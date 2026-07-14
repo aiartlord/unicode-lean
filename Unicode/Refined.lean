@@ -21,7 +21,7 @@ import Unicode.Normalization.NFC
 import Unicode.Precis.WidthMapping
 import Unicode.Precis.CaseMapping
 import Unicode.Precis.BidiRule
-import Unicode.Precis.Preparation
+import Unicode.Precis.PreparationCore
 
 namespace Unicode.Refined
 
