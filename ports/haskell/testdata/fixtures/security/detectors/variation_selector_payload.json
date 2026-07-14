@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "family": "variation-selector-payload",
+  "cases": [
+    {
+      "name": "ascii-clear",
+      "input": [65, 66],
+      "required_findings": []
+    },
+    {
+      "name": "vs16-on-latin-illegal-target",
+      "input": [65, 65039],
+      "required_findings": [
+        "unicode.security.C.variation-selector-payload.IllegalTarget"
+      ]
+    },
+    {
+      "name": "pair-aligned-direct-payload",
+      "input": [19968, 65028, 65025],
+      "required_findings": [
+        "unicode.security.C.variation-selector-payload.DirectPayload"
+      ]
+    }
+  ]
+}
