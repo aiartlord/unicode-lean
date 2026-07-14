@@ -6,14 +6,26 @@
 .direnv/
 result
 result-*
+__pycache__/
+*.py[cod]
+.pytest_cache/
 
 # Native-port build output (CMake / Cargo) — never committed
 build/
 build-sanitize/
 target/
+dist/
 
-# Internal planning docs and working artifacts — not for public repo
-docs/
+# Internal planning docs and working artifacts — not for public repo.
+# Keep the public roadmap docs tracked explicitly.
+docs/*
+!docs/
+!docs/CLI.md
+!docs/BUILD_TIERS.md
+!docs/ROADMAP.md
+!docs/PORTS.md
+!docs/DEPLOYMENT.md
+!docs/DAEMON.md
 *.draft.md
 *.notes.md
 Probe.lean
