@@ -115,6 +115,18 @@ def propRangesParsed : Array (Nat × Nat × BinaryProperty) :=
 /-- The materialized range table, consumed downstream. -/
 def propRanges : List (Nat × Nat × BinaryProperty) := propRangesList
 
+/-- True iff `cp` has binary property `prop` in the pinned UCD 17.0
+    `PropList.txt`. -/
+def hasProperty (prop : BinaryProperty) (cp : Nat) : Bool :=
+  propRanges.any (fun row =>
+    match row with
+    | (lo, hi, p) => decide (lo ≤ cp ∧ cp ≤ hi ∧ p = prop))
+
+/-- True iff `cp` has `Unified_Ideograph = Yes` in UCD 17.0. Used by
+    the UCA 17.0 implicit-weight fallback. -/
+def isUnifiedIdeograph (cp : Nat) : Bool :=
+  hasProperty .Unified_Ideograph cp
+
 theorem propRanges_count : propRangesList.length = 1744 := by decide +kernel
 
 -- Build-time drift gate.

@@ -7,8 +7,8 @@ sentence segmentation (UAX #14, #29), the collation algorithm
 identifier rule (UAX #31), PRECIS identifier preparation
 (RFC 8264 / 8265), Punycode (RFC 3492), strict UTF-8 / UTF-16 /
 UTF-32 codecs, BOM detection, and noncharacter detection —
-machine-checked in Lean 4.28.0 against UCD 17.0.0 (UCA 16.0.0
-where the UCA shipped behind UCD). Lean core only: no Mathlib,
+machine-checked in Lean 4.30.0 against UCD 17.0.0 and UCA 17.0.0.
+Lean core only: no Mathlib,
 no external dependencies, no project-local `axiom`, no runtime escape, and no
 intentional incomplete-proof placeholders.
 
@@ -19,7 +19,7 @@ intentional incomplete-proof placeholders.
 | Normalization | UAX #15 | `Normalization.QuickCheckSoundnessTheorem.quickCheck_sound` — `isNFCQuickCheck cps = true → toNFC cps = cps` |
 | Bidirectional Algorithm | UAX #9 | `Bidi.Algorithm.bidiParagraph` — P / X / W / N / I / L1 / L4 phases; full `BidiTest.txt` + `BidiCharacterTest.txt` conformance |
 | Line / Grapheme / Word / Sentence breaks | UAX #14 / #29 | `Conformance.{LineBreak,GraphemeBreak,WordBreak,SentenceBreak}Test.all_pass` — every published row passes |
-| Collation | UTS #10 (UCA 16.0) | `Conformance.CollationTest.{nonIgnorable,shifted}_conformance` — every adjacent pair in `CollationTest_*_SHORT.txt` orders correctly under both variable-handling policies |
+| Collation | UTS #10 (UCA 17.0) | `Conformance.CollationTest.{nonIgnorable,shifted}_conformance` — every adjacent pair in `CollationTest_*_SHORT.txt` orders correctly under both variable-handling policies |
 | IDNA | UTS #46 | `Conformance.IdnaTestV2.{strict,all}_conformance` — 546/546 strict + 6389/6389 lenient against `IdnaTestV2.txt` |
 | Identifiers | UAX #31 + UTS #39 | `Identifier.isDefaultIdentifier` (R1-D1) + `isAllowedIdentifier` (general security profile) |
 | PRECIS | RFC 8264 / 8265 | `Precis.Preparation.precis_idempotent` — preparation pipeline is idempotent on its image |
@@ -75,7 +75,7 @@ unicode-lean/
 │   │                            #   under Ucd/Security/ with their own SHA256SUMS
 │   ├── Segmentation/            # UAX #14 line breaks, UAX #29 grapheme/word/sentence
 │   ├── Uca/                     # UTS #10 collation — Lookup + SortKey
-│   └── Ucd/                     # UCD 17.0.0 + UCA 16.0.0 source data + SHA256SUMS
+│   └── Ucd/                     # UCD 17.0.0 + UCA 17.0.0 source data + SHA256SUMS
 ├── scripts/                     # CI hardening (see Guarantees)
 └── .github/                     # CI workflows + governance
 ```

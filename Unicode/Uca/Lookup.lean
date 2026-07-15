@@ -26,7 +26,7 @@
 
 import Std.Data.HashMap
 import Unicode.Generated.Allkeys
-import Unicode.Generated.PropListUca16
+import Unicode.Generated.PropList
 import Unicode.Normalization.Lookup
 
 namespace Unicode.Uca.Lookup
@@ -102,8 +102,8 @@ def inHanCoreBlock (cp : Nat) : Bool :=
 /-- Implicit-weight base AAAA for `cp`, per UTS #10 §10.1.3 / Table 16.
     Four cases, evaluated in order:
 
-      * `@implicitweights` blocks (Tangut, Nushu, Khitan, Jurchen,
-        Seal in 16.0) — explicit directives in `allkeys.txt`.
+      * `@implicitweights` blocks (Tangut, Nushu, Khitan) —
+        explicit directives in `allkeys.txt`.
       * Han Core (FB40): `Unified_Ideograph = Yes` AND in CJK
         Unified Ideographs OR CJK Compatibility Ideographs blocks.
       * Han Other (FB80): `Unified_Ideograph = Yes` AND NOT in those
@@ -116,7 +116,7 @@ def implicitBaseFor (cp : Nat) : Nat :=
     if inImplicitBlock cp b then some b.base else none) with
   | some base => base
   | none =>
-    if Unicode.Generated.PropListUca16.isUnifiedIdeograph cp then
+    if Unicode.Generated.PropList.isUnifiedIdeograph cp then
       if inHanCoreBlock cp then 0xFB40 else 0xFB80
     else
       0xFBC0
@@ -124,8 +124,8 @@ def implicitBaseFor (cp : Nat) : Nat :=
 /-- Implicit collation elements for `cp`, returned as a pair per
     UTS #10 §10.1. Two formulas:
 
-      * `@implicitweights` blocks (Tangut, Nushu, Khitan, Jurchen,
-        Seal — declared in `allkeys.txt`):
+      * `@implicitweights` blocks (Tangut, Nushu, Khitan) declared
+        in `allkeys.txt`:
             AAAA = block.base                    -- literal, no shift
             BBBB = (cp - block.min) | 0x8000     -- offset within block
 
@@ -158,7 +158,7 @@ def implicitElements (cp : Nat) : Array CollationElement :=
       ⟨bbbb, 0x0000, 0x0000, false⟩]
   | none =>
     let base :=
-      if Unicode.Generated.PropListUca16.isUnifiedIdeograph cp then
+      if Unicode.Generated.PropList.isUnifiedIdeograph cp then
         if inHanCoreBlock cp then 0xFB40 else 0xFB80
       else
         0xFBC0
@@ -338,10 +338,9 @@ theorem resolveAt_pua :
 theorem resolveAt_cjk :
     (resolveAtList #[0x4E2D] 0).fst.ces.size = 2 := by decide +kernel
 
-/-- U+2B73A is assigned as Unified_Ideograph in UCD 17.0, but the
-    shipped DUCET and collation conformance data are UCA 16.0. For UCA
-    lookup it must therefore stay in the unassigned FBC0 tier. -/
-theorem implicitBaseFor_2B73A_uca16 : implicitBaseFor 0x2B73A = 0xFBC0 := by
+/-- U+2B73A is assigned as Unified_Ideograph in UCD 17.0, so UCA 17.0
+    implicit lookup places it in the Han Other FB80 tier. -/
+theorem implicitBaseFor_2B73A_uca17 : implicitBaseFor 0x2B73A = 0xFB80 := by
   decide +kernel
 
 end Unicode.Uca.Lookup
