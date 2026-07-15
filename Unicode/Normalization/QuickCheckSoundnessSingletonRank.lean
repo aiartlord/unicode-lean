@@ -219,4 +219,91 @@ theorem entryRank1_left_toNFD_foldl_singletonState
   exact atomic_starter_toNFD_foldl_singletonState
     entry.left facts.hLeftCcc hLeftEmpty facts.hLeftNotHangul
 
+/-- Rank-1 entries fold through `toNFD` and `stepCompose` to their own active
+    singleton state. -/
+theorem entryRank1_toNFD_foldl_singletonState
+    (entry : QuickCheckSingletonRankData.SingletonRankRow)
+    (h : QuickCheckSingletonRankData.entryRankValid entry = true)
+    (hRank : entry.rank = 1) :
+    (toNFD #[entry.codepoint]).foldl Compose.stepCompose Compose.initialState =
+      singletonState entry.codepoint := by
+  have hCommon := entryRankValid_common entry h
+  have facts := entryCommonValid_facts entry hCommon
+  have hLeftEmpty := entryRankValid_rank1_left_empty entry h hRank
+  have hDsylCp : Hangul.decomposeSyllable? entry.codepoint = none := by
+    unfold Hangul.decomposeSyllable?
+    rw [facts.hNotHangul]
+    simp
+  have hDsylLeft : Hangul.decomposeSyllable? entry.left = none := by
+    unfold Hangul.decomposeSyllable?
+    rw [facts.hLeftNotHangul]
+    simp
+  have hDsylRight : Hangul.decomposeSyllable? entry.right = none := by
+    unfold Hangul.decomposeSyllable?
+    rw [facts.hRightNotHangul]
+    simp
+  have hFCDLeft31 :
+      Decompose.fullCanonicalDecomposeFuel 31 entry.left = #[entry.left] := by
+    unfold Decompose.fullCanonicalDecomposeFuel
+    rw [hDsylLeft]
+    simp [hLeftEmpty]
+  have hFCDRight31 :
+      Decompose.fullCanonicalDecomposeFuel 31 entry.right = #[entry.right] := by
+    unfold Decompose.fullCanonicalDecomposeFuel
+    rw [hDsylRight]
+    simp [facts.hRightDecompEmpty]
+  have hFCD :
+      Decompose.fullCanonicalDecompose entry.codepoint =
+        #[entry.left, entry.right] := by
+    show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth entry.codepoint =
+      #[entry.left, entry.right]
+    unfold Decompose.maxDepth
+    show Decompose.fullCanonicalDecomposeFuel 32 entry.codepoint =
+      #[entry.left, entry.right]
+    unfold Decompose.fullCanonicalDecomposeFuel
+    rw [hDsylCp]
+    simp only []
+    rw [facts.hDecomp]
+    show ((#[entry.left, entry.right] : Array Nat).foldl
+        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') #[])
+      = #[entry.left, entry.right]
+    have hFold :
+        (#[entry.left, entry.right] : Array Nat).foldl
+          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') #[]
+        = (#[] ++ Decompose.fullCanonicalDecomposeFuel 31 entry.left) ++
+            Decompose.fullCanonicalDecomposeFuel 31 entry.right := rfl
+    rw [hFold, hFCDLeft31, hFCDRight31]
+    rfl
+  have hDS :
+      Decompose.decomposeSequence #[entry.codepoint] =
+        #[entry.left, entry.right] := by
+    rw [Distribute.decomposeSequence_singleton]
+    exact hFCD
+  have hR : Reorder.reorder #[entry.left, entry.right] =
+      #[entry.left, entry.right] := by
+    apply Reorder.reorder_id_on_HasSortedRuns
+    show Reorder.HasSortedRuns [entry.left, entry.right]
+    refine ⟨?starterImplication, ?singletonRun⟩
+    · intro _hRightNonstarter
+      rw [facts.hLeftCcc]
+      exact Nat.zero_le (Lookup.canonicalCombiningClass entry.right)
+    · trivial
+  have hToNFD :
+      toNFD #[entry.codepoint] = #[entry.left, entry.right] := by
+    unfold toNFD
+    rw [hDS, hR]
+  rw [hToNFD]
+  rw [← Array.foldl_toList]
+  simp only [List.foldl_cons, List.foldl_nil]
+  have hStepLeft :
+      Compose.stepCompose Compose.initialState entry.left =
+        singletonState entry.left := by
+    change (#[entry.left] : Array Nat).foldl
+        Compose.stepCompose Compose.initialState = singletonState entry.left
+    exact foldl_singleton_starter entry.left facts.hLeftCcc
+  rw [hStepLeft]
+  exact stepCompose_empty_buffer_primary
+    entry.left entry.right entry.codepoint
+    (entryRankValid_primaryComposite entry h)
+
 end Unicode.Normalization.QuickCheckSoundnessSingletonRank

@@ -72,7 +72,7 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 512630,
+      "bytes": 516256,
       "decide_kernel": 107,
       "modules": 28,
       "row_refs": 252,
