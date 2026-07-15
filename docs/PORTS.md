@@ -352,6 +352,7 @@ scripts/test-runtime-ports.sh --all   # exhaustive Rust red-team/diff tier
 cmake -S . -B build -DUNICODE_CPP_BUILD_TESTS=ON
 cmake --build build
 ctest --test-dir build
+scripts/check-cpp-sanitizers.sh
 uv run pytest
 cd ports/go && go test ./...
 cd ports/jvm && scripts/test.sh
@@ -374,6 +375,10 @@ gate.
 
 These are runtime-port checks. They must not require `UnicodeAssurance` or
 `UnicodeFullConformance`.
+
+`scripts/check-cpp-sanitizers.sh` is an optional C++ hardening gate. It builds
+the C++ tests under ASAN/UBSAN and can also run `tools/diff_runner.cpp` over an
+explicitly supplied cross-port differential corpus via `--corpus PATH`.
 
 ## Rust Warning Policy
 
