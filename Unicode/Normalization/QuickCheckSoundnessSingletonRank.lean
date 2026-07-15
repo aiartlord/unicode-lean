@@ -771,4 +771,35 @@ theorem entryRank3_toNFC_singleton
   toNFC_of_toNFD_foldl_singletonState entry.codepoint
     (entryRank3_toNFD_foldl_singletonState entry hMem)
 
+theorem rowsRank1_singletonNFC :
+    QuickCheckSingletonRankData.rowsRank1.all
+      (fun entry => decide (toNFC #[entry.codepoint] = #[entry.codepoint])) = true := by
+  rw [List.all_eq_true]
+  intro entry hMem
+  have hValid :=
+    List.all_eq_true.mp QuickCheckSingletonRankData.rowsRank1_valid entry hMem
+  exact decide_eq_true
+    (entryRank1_toNFC_singleton entry hValid (rowsRank1_member_rank entry hMem))
+
+theorem rowsRank2_singletonNFC :
+    QuickCheckSingletonRankData.rowsRank2.all
+      (fun entry => decide (toNFC #[entry.codepoint] = #[entry.codepoint])) = true := by
+  rw [List.all_eq_true]
+  intro entry hMem
+  exact decide_eq_true (entryRank2_toNFC_singleton entry hMem)
+
+theorem rowsRank3_singletonNFC :
+    QuickCheckSingletonRankData.rowsRank3.all
+      (fun entry => decide (toNFC #[entry.codepoint] = #[entry.codepoint])) = true := by
+  rw [List.all_eq_true]
+  intro entry hMem
+  exact decide_eq_true (entryRank3_toNFC_singleton entry hMem)
+
+/-- Every generated singleton-rank entry is in NFC as a singleton. -/
+theorem rows_singletonNFC :
+    QuickCheckSingletonRankData.rows.all
+      (fun entry => decide (toNFC #[entry.codepoint] = #[entry.codepoint])) = true := by
+  unfold QuickCheckSingletonRankData.rows
+  simp [rowsRank1_singletonNFC, rowsRank2_singletonNFC, rowsRank3_singletonNFC]
+
 end Unicode.Normalization.QuickCheckSoundnessSingletonRank
