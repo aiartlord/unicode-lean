@@ -1,0 +1,115 @@
+{
+  "module_steps": 233,
+  "preset": "evidence",
+  "roots": [
+    {
+      "label": "assurance",
+      "module": "Unicode.Assurance"
+    },
+    {
+      "label": "full-conformance",
+      "module": "Unicode.FullConformance"
+    }
+  ],
+  "stages": [
+    {
+      "budget": {
+        "max_rss_gb": 40,
+        "wall_time_sec": 0
+      },
+      "bytes": 4255834,
+      "decide_kernel": 8,
+      "modules": 51,
+      "row_refs": 104,
+      "stage": "stage-1-generated-base"
+    },
+    {
+      "budget": {
+        "max_rss_gb": 40,
+        "wall_time_sec": 0
+      },
+      "bytes": 392177,
+      "decide_kernel": 67,
+      "modules": 20,
+      "row_refs": 184,
+      "stage": "stage-2-normalization-runtime"
+    },
+    {
+      "budget": {
+        "max_rss_gb": 40,
+        "wall_time_sec": 0
+      },
+      "bytes": 564852,
+      "decide_kernel": 163,
+      "modules": 43,
+      "row_refs": 20,
+      "stage": "stage-3-runtime-property-tables"
+    },
+    {
+      "budget": {
+        "max_rss_gb": 40,
+        "wall_time_sec": 0
+      },
+      "bytes": 2874,
+      "decide_kernel": 0,
+      "modules": 1,
+      "row_refs": 0,
+      "stage": "stage-4-product-default"
+    },
+    {
+      "budget": {
+        "max_rss_gb": 40,
+        "wall_time_sec": 0
+      },
+      "bytes": 3411573,
+      "decide_kernel": 239,
+      "modules": 57,
+      "row_refs": 2,
+      "stage": "stage-5-product-domain"
+    },
+    {
+      "budget": {
+        "max_rss_gb": 40,
+        "wall_time_sec": 0
+      },
+      "bytes": 421942,
+      "decide_kernel": 102,
+      "modules": 23,
+      "row_refs": 243,
+      "stage": "stage-6-assurance-proof-chunk"
+    },
+    {
+      "budget": {
+        "max_rss_gb": 40,
+        "wall_time_sec": 0
+      },
+      "bytes": 1205,
+      "decide_kernel": 0,
+      "modules": 1,
+      "row_refs": 0,
+      "stage": "stage-7-assurance-aggregate"
+    },
+    {
+      "budget": {
+        "max_rss_gb": 40,
+        "wall_time_sec": 0
+      },
+      "bytes": 246338,
+      "decide_kernel": 2,
+      "modules": 36,
+      "row_refs": 80,
+      "stage": "stage-8-conformance-module"
+    },
+    {
+      "budget": {
+        "max_rss_gb": 40,
+        "wall_time_sec": 0
+      },
+      "bytes": 2880,
+      "decide_kernel": 0,
+      "modules": 1,
+      "row_refs": 0,
+      "stage": "stage-9-conformance-aggregate"
+    }
+  ]
+}
