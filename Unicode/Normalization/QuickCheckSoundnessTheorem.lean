@@ -26,7 +26,7 @@
 import Unicode.Normalization.NFC
 import Unicode.Normalization.Reorder
 import Unicode.Normalization.QuickCheckSoundness
-import Unicode.Normalization.QuickCheckSoundnessSnoc
+import Unicode.Normalization.QuickCheckSoundnessPrefix
 import Unicode.Normalization.QuickCheckSoundnessMaster
 import Unicode.Normalization.QuickCheckSoundnessSnocClosure
 
@@ -111,7 +111,7 @@ theorem quickCheck_sound
       (List.append_toArray xs [cp]).symm
     rw [hAppend] at hSnocQC ⊢
     have hPrefixQC : isNFCQuickCheck xs.toArray = true :=
-      QuickCheckSoundnessSnoc.isNFCQuickCheck_dropLast
+      QuickCheckSoundnessPrefix.isNFCQuickCheck_dropLast
         xs.toArray cp hSnocQC
     have hPrefixNFC : toNFC xs.toArray = xs.toArray := ih hPrefixQC
     have hCpQC : nfcQCValue cp = .Y :=
