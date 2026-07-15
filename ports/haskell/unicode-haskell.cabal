@@ -70,6 +70,8 @@ library
       Unicode.Generated.UnicodeData
       Unicode.Normalization.Hangul
       Unicode.Normalization.Lookup
+      Unicode.Segmentation.Grapheme
+      Unicode.Segmentation.GraphemeTables
       Unicode.Security.Policy
   other-modules:
       Paths_unicode_haskell
@@ -86,6 +88,7 @@ test-suite unicode-haskell-test
   other-modules:
       BomSpec
       HangulSpec
+      GraphemeSpec
       IdentifierSpec
       LookupSpec
       NoncharactersSpec

@@ -16,6 +16,7 @@ import qualified Utf8Spec
 import qualified Utf16Spec
 import qualified Utf32Spec
 import qualified BomSpec
+import qualified GraphemeSpec
 import qualified HangulSpec
 import qualified LookupSpec
 import qualified NoncharactersSpec
@@ -31,6 +32,7 @@ main = defaultMain $
     , Utf16Spec.tests
     , Utf32Spec.tests
     , BomSpec.tests
+    , GraphemeSpec.tests
     , HangulSpec.tests
     , LookupSpec.tests
     , NoncharactersSpec.tests

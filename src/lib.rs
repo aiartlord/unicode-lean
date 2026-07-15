@@ -15,6 +15,7 @@ pub mod identifier;
 pub mod noncharacters;
 pub mod opaque_blob;
 pub mod security;
+pub mod segmentation;
 pub mod strict;
 pub mod utf16;
 pub mod utf32;
