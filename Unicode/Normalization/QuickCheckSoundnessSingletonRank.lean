@@ -356,4 +356,73 @@ theorem entryRankValid_rank3_left_parent
     List.all_eq_true.mp QuickCheckSingletonRankData.rowsRank2_valid parent hMem
   exact ⟨parent, hMem, hCodepoint, hParentValid⟩
 
+theorem rowsRank1_member_rank
+    (entry : QuickCheckSingletonRankData.SingletonRankRow)
+    (hMem : entry ∈ QuickCheckSingletonRankData.rowsRank1) :
+    entry.rank = 1 :=
+  of_decide_eq_true
+    (List.all_eq_true.mp QuickCheckSingletonRankData.rowsRank1_rank entry hMem)
+
+theorem rowsRank2_member_rank
+    (entry : QuickCheckSingletonRankData.SingletonRankRow)
+    (hMem : entry ∈ QuickCheckSingletonRankData.rowsRank2) :
+    entry.rank = 2 :=
+  of_decide_eq_true
+    (List.all_eq_true.mp QuickCheckSingletonRankData.rowsRank2_rank entry hMem)
+
+theorem rowsRank3_member_rank
+    (entry : QuickCheckSingletonRankData.SingletonRankRow)
+    (hMem : entry ∈ QuickCheckSingletonRankData.rowsRank3) :
+    entry.rank = 3 :=
+  of_decide_eq_true
+    (List.all_eq_true.mp QuickCheckSingletonRankData.rowsRank3_rank entry hMem)
+
+/-- Rank-2 rows carry the parent/right CCC ordering needed for the
+    three-codepoint full decomposition to already be sorted. -/
+theorem rowsRank2_parent_right_order
+    (entry : QuickCheckSingletonRankData.SingletonRankRow)
+    (hMem : entry ∈ QuickCheckSingletonRankData.rowsRank2) :
+    ∃ parent ∈ QuickCheckSingletonRankData.rowsRank1,
+      parent.codepoint = entry.left ∧
+      parent.rank = 1 ∧
+      QuickCheckSingletonRankData.entryRankValid parent = true ∧
+      (Lookup.canonicalCombiningClass entry.right = 0 ∨
+        Lookup.canonicalCombiningClass parent.right ≤
+          Lookup.canonicalCombiningClass entry.right) := by
+  have hOrder :=
+    List.all_eq_true.mp
+      QuickCheckSingletonRankData.rowsRank2_parentRightOrder_valid entry hMem
+  unfold QuickCheckSingletonRankData.parentRightOrderValid at hOrder
+  rw [List.any_eq_true] at hOrder
+  obtain ⟨parent, hParentMem, hParentFacts⟩ := hOrder
+  obtain ⟨hCodepoint, hOrderRel⟩ := of_decide_eq_true hParentFacts
+  have hParentValid :=
+    List.all_eq_true.mp QuickCheckSingletonRankData.rowsRank1_valid parent hParentMem
+  have hParentRank := rowsRank1_member_rank parent hParentMem
+  exact ⟨parent, hParentMem, hCodepoint, hParentRank, hParentValid, hOrderRel⟩
+
+/-- Rank-3 rows carry the parent/right CCC ordering needed to append the final
+    right component after the rank-2 parent's full decomposition. -/
+theorem rowsRank3_parent_right_order
+    (entry : QuickCheckSingletonRankData.SingletonRankRow)
+    (hMem : entry ∈ QuickCheckSingletonRankData.rowsRank3) :
+    ∃ parent ∈ QuickCheckSingletonRankData.rowsRank2,
+      parent.codepoint = entry.left ∧
+      parent.rank = 2 ∧
+      QuickCheckSingletonRankData.entryRankValid parent = true ∧
+      (Lookup.canonicalCombiningClass entry.right = 0 ∨
+        Lookup.canonicalCombiningClass parent.right ≤
+          Lookup.canonicalCombiningClass entry.right) := by
+  have hOrder :=
+    List.all_eq_true.mp
+      QuickCheckSingletonRankData.rowsRank3_parentRightOrder_valid entry hMem
+  unfold QuickCheckSingletonRankData.parentRightOrderValid at hOrder
+  rw [List.any_eq_true] at hOrder
+  obtain ⟨parent, hParentMem, hParentFacts⟩ := hOrder
+  obtain ⟨hCodepoint, hOrderRel⟩ := of_decide_eq_true hParentFacts
+  have hParentValid :=
+    List.all_eq_true.mp QuickCheckSingletonRankData.rowsRank2_valid parent hParentMem
+  have hParentRank := rowsRank2_member_rank parent hParentMem
+  exact ⟨parent, hParentMem, hCodepoint, hParentRank, hParentValid, hOrderRel⟩
+
 end Unicode.Normalization.QuickCheckSoundnessSingletonRank
