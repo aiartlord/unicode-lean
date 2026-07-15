@@ -55,9 +55,8 @@ theorem uint8_ofNat_toNat (n : Nat) (h : n < 256) :
   unfold UInt8.toNat UInt8.ofNat
   simp [BitVec.toNat_ofNat, Nat.mod_eq_of_lt h]
 
--- The old Lean 4.29-era proof used finite `decide` enumerations here.
--- Lean 4.30 checks the structural fold proof below faster, so the public
--- per-byte-class theorem names are reintroduced after `decode_concat_codepoint`.
+-- The public per-byte-class theorem names are retained, but their proofs now
+-- route through the structural fold theorem below.
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 FOLD-STEP LEMMAS PER BYTE LENGTH
@@ -288,7 +287,7 @@ theorem byte_at_offset_concat
     threaded through but never inspected by the push-only `f`, so the
     two sides may carry different `seqStart` values (`sa` and `sb`)
     without affecting the result. Generalising `seqStart` is necessary
-    because the `.expectCont` continue step keeps the old `seqStart`
+    because the `.expectCont` continue step keeps the prior `seqStart`
     untouched while the index advances; without it, the IH would not
     apply across that case. -/
 theorem fold_concat_translate
@@ -1218,7 +1217,7 @@ theorem decode_encode_3byte_fin :
   intro cp h_nonsurr
   exact decode_encode_3byte cp.val cp.isLt h_nonsurr
 
-/-- 4-byte plane aliases retained for compatibility with the old proof layout. -/
+/-- 4-byte plane aliases retained for compatibility with the public proof layout. -/
 theorem decode_encode_4byte_plane_1 :
     ∀ cp : Fin 0x10000,
       decodeToCodepoints (encodeCodepoint (0x10000 + cp.val))

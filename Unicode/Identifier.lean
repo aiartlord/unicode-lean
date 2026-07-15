@@ -112,7 +112,7 @@ theorem isXIDStart_d0 : isXIDStart 0x0030 = false := by decide +kernel
 theorem isXIDStart_d9 : isXIDStart 0x0039 = false := by decide +kernel
 theorem isXIDContinue_d0 : isXIDContinue 0x0030 = true := by decide +kernel
 
-/-- LOW LINE is NOT XID_Start but is admitted as default-id start by R1-D1. -/
+/-- LOW LINE is NOT XID_Start but is accepted as default-id start by R1-D1. -/
 theorem isXIDStart_underscore        : isXIDStart 0x005F = false := by decide +kernel
 theorem isDefaultIdStart_underscore  : isDefaultIdStart 0x005F = true := by decide +kernel
 theorem isDefaultIdContinue_underscore : isDefaultIdContinue 0x005F = true := by decide +kernel

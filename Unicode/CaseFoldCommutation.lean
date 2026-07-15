@@ -403,28 +403,28 @@ theorem caseFold_commutes_with_NFD_Hangul_range :
   intro i hi
   exact decide_eq_true (caseFold_commutes_with_NFD_singleton (0xAC00 + i))
 
-/-- Compatibility wrapper for the old Hangul branch name. -/
+/-- Compatibility wrapper preserving the Hangul branch entry point. -/
 theorem caseFold_commutes_with_NFD_hangul_case
     (cp : Nat) (_hHangul : Hangul.isHangulSyllable cp = true) :
     NFC.toNFD (caseFold #[cp]) =
     NFC.toNFD (caseFold (NFC.toNFD #[cp])) :=
   caseFold_commutes_with_NFD_singleton cp
 
-/-- Compatibility wrapper for the old UnicodeData-row branch name. -/
+/-- Compatibility wrapper preserving the UnicodeData-row branch entry point. -/
 theorem caseFold_commutes_with_NFD_rows_case
     (cp : Nat) (_hRow : ∃ row, row ∈ UnicodeData.rows ∧ row.codepoint = cp) :
     NFC.toNFD (caseFold #[cp]) =
     NFC.toNFD (caseFold (NFC.toNFD #[cp])) :=
   caseFold_commutes_with_NFD_singleton cp
 
-/-- Compatibility wrapper for the old case-fold-source branch name. -/
+/-- Compatibility wrapper preserving the case-fold-source branch entry point. -/
 theorem caseFold_commutes_with_NFD_cfs_case
     (cp : Nat) (_hCFS : isCaseFoldSource cp = true) :
     NFC.toNFD (caseFold #[cp]) =
     NFC.toNFD (caseFold (NFC.toNFD #[cp])) :=
   caseFold_commutes_with_NFD_singleton cp
 
-/-- Compatibility wrapper for the old trivial branch name. -/
+/-- Compatibility wrapper preserving the trivial branch entry point. -/
 theorem caseFold_commutes_with_NFD_trivial_case
     (cp : Nat)
     (_hNotHangul : Hangul.isHangulSyllable cp = false)

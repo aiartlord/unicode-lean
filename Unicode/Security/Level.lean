@@ -16,8 +16,8 @@
                  ⊑  ModeratelyRestrictive  ⊑  MinimallyRestrictive
                  ⊑  Unrestricted
 
-  Every level admits a *superset* of what stricter levels
-  admit.  Callers declare which level their context requires;
+  Every level accepts a *superset* of what stricter levels
+  accept.  Callers declare which level their context requires;
   the spec hands them the predicate.  Detectors are not turned
   on or off — every codepoint always carries its
   `Identifier_Status`, and the level decides which combinations
@@ -34,7 +34,7 @@
     2. A `Level` declares an *admission predicate* on the
        input.  `admissibleAt level cryptoCtx input = true`
        iff both the declared level and cryptographic context
-       admit this input.
+       accepts this input.
     3. The levels are totally ordered: `restrictive ⊑ moderate
        ⊑ minimal`.  Admission is monotone in the laxer
        direction: `admissibleAt restrictive ⇒ admissibleAt
@@ -44,16 +44,16 @@
        level only answers the boolean question "is this input
        acceptable at the declared strictness?".
 
-  ## What each level admits
+  ## What Each Level Accepts
 
-  * `restrictive` — admit iff every general-Unicode family in
+  * `restrictive` — accept iff every general-Unicode family in
     the restrictive rejection set reports `.clear`.  Any hazard
     from that set rejects the input.  Strictest level; smallest
-    admit set.  This is
+    accept set.  This is
     the natural choice for highly sensitive contexts (e.g.
     DNS-label gating, package-registry submission, security-
     audit pipelines).
-  * `moderate`    — admit iff no family in the moderate-set
+  * `moderate`    — accept iff no family in the moderate-set
     fires.  The moderate-set drops the heuristic / high-false-
     positive-risk detectors (NormalizationBomb's
     NfdHighExpansion-class ratio hits on legitimate Greek
@@ -62,12 +62,12 @@
     ZWJ chains, EmojiZwjIntegrity's UnregisteredZwjVariance on
     novel emoji sequences).  Keeps every targeted-attack
     detector intact.
-  * `minimal`     — admit iff no family in the structural-
+  * `minimal`     — accept iff no family in the structural-
     violation set fires.  The structural set is
     `{SurrogateReassembly, BidiControlBalance, StreamSafeViolation}`
     — UTF-8 byte validity (RFC 3629), bidi-control imbalance
     (Trojan Source class), and stream-safe-format overflow
-    (UAX #15 §13 DoS class).  Largest admit set; this is the
+    (UAX #15 §13 DoS class).  Largest accept set; this is the
     floor below which we never go, suitable as a network-edge
     gate before more specific policy-layer filtering downstream.
 
@@ -114,7 +114,7 @@ open Unicode.Security.RunAll (runAll)
 
 /-- The three canonical strictness levels, ordered from
     strictest to laxest.  See module header for what each
-    admits. -/
+    accepts. -/
 inductive Level where
   | restrictive
   | moderate
@@ -318,16 +318,16 @@ def CryptoContext.toFamilies : CryptoContext → Array Family
 -- Admission has two ORTHOGONAL dimensions:
 --
 --   * `levelAdmissible level input` — does the Unicode-layer
---     family set declared by `level` admit `input`?  Answer is
+--     family set declared by `level` accept `input`?  Answer is
 --     INDEPENDENT of any cryptographic context.
 --
 --   * `cryptoAdmissible ctx input` — does the cryptographic-stability detector set
---     declared by `ctx` admit `input`?  Answer is INDEPENDENT
+--     declared by `ctx` accept `input`?  Answer is INDEPENDENT
 --     of any Level.
 --
 -- The composite `admissibleAt level ctx input` is the AND of
--- the two — both factors must admit.  Factoring them this way
--- makes the the cryptographic-stability detectors' distinguishing power directly observable
+-- the two — both factors must accept.  Factoring them this way
+-- makes the cryptographic-stability detectors' distinguishing power directly observable
 -- as a difference in `cryptoAdmissible`, even on inputs that
 -- `levelAdmissible level input` already rejects.  Without this
 -- factoring, the cryptographic-stability contribution would be masked by the
@@ -352,14 +352,14 @@ def CryptoContext.toFamilies : CryptoContext → Array Family
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- True iff the Unicode-layer family set declared by `level`
-    admits `input`.  Independent of any cryptographic context.
+    accepts `input`.  Independent of any cryptographic context.
     Used as the Level-only factor of the composite
     `admissibleAt`. -/
 def levelAdmissible (level : Level) (input : Array Nat) : Bool :=
   let effective := rejectionSet level
   ¬ effective.any (fun family => familyHazard family input)
 
-/-- Does the cryptographic-stability detector set declared by `cryptoCtx` admit `input`?
+/-- Does the cryptographic-stability detector set declared by `cryptoCtx` accept `input`?
     Independent of any Level.  Used as the Crypto-only factor of
     the composite `admissibleAt`.  Captures the cryptographic-stability's
     distinguishing power directly, without union-masking by
@@ -375,7 +375,7 @@ def cryptoAdmissible (cryptoCtx : CryptoContext)
 
 /-- True iff `input` is admissible at the declared `level` under
     the declared `cryptoCtx`.  Defined as the AND of the two
-    orthogonal factors — both must admit.  Hazards from
+    orthogonal factors — both must accept.  Hazards from
     families in the union (Level ∪ Crypto) cause admission
     failure; hazards from other families are reported by
     `runAll` but do not gate admission at this surface.
@@ -514,9 +514,9 @@ theorem monotone_math_italic_admin :
     Greek polytonic ALSO not trigger I2.  In practice U+1F86
     does trigger I2, so this row pins the actual outcome:
     moderate REJECTS the Greek polytonic, even though F1
-    alone would have admitted it.  Pinning this prevents a
+    alone would have accepted it.  Pinning this prevents a
     future refactor of moderate's rejection set from
-    accidentally admitting Greek polytonic without auditing
+    accidentally accepting Greek polytonic without auditing
     the trade-off. -/
 theorem monotone_greek_polytonic :
     let input : Array Nat := #[0x1F86]
@@ -599,7 +599,7 @@ theorem crypto_ctx_single_word_passes_both :
 
 /-- K2's `hashInput` context-gating, measured directly via
     `cryptoAdmissible` — Level-independent.  Decomposed é
-    (U+0065 U+0301) admits under `.nonCrypto` (no cryptographic-stability detector in
+    (U+0065 U+0301) is accepted under `.nonCrypto` (no cryptographic-stability detector in
     the effective set) and rejects under `.hashInput` because
     K2's `NormalizationDrift` fires.  This is the architectural
     pin for the cryptographic-stability detectors' distinguishing power: the contribution
@@ -647,7 +647,7 @@ theorem level_admissible_rejects_decomposed_e_at_restrictive :
 
 /-- K3's `aiAttribution` context-gating, measured directly via
     `cryptoAdmissible` — Level-independent.  Plain ASCII
-    `a NNBSP b` (#[0x61, 0x202F, 0x62]) admits under
+    `a NNBSP b` (#[0x61, 0x202F, 0x62]) is accepted under
     `.nonCrypto` (no cryptographic-stability detector in the effective set) and rejects
     under `.aiAttribution` because K3's `NnbspBoundary` fires.
     This is the architectural pin for K3's distinguishing power:

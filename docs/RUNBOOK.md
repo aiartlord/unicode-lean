@@ -151,8 +151,8 @@ one module target per Lean process:
 10. `Unicode.Normalization.QuickCheckSoundnessTheorem`
 
 `QuickCheckSoundnessSnoc` is now a compatibility surface over the live split
-modules. It should not reintroduce the old Hangul full-range `toNFC` reducer or
-the old monolithic singleton table reducer.
+modules. It should not reintroduce a full-range Hangul `toNFC` reducer or a
+monolithic singleton table reducer.
 
 Current implemented support:
 

@@ -183,7 +183,7 @@ theorem effSeq_cons (c : WBClass) (cs : List WBClass) :
 
 /-- The `buildEffPrev` carry update: an absorbable class leaves the pair
     unchanged (WB4), any other class becomes the new effective-prev and shifts
-    the old one to effective-prev-prev. -/
+    the previous one to effective-prev-prev. -/
 def effPrevUpdate (acc : Option WBClass × Option WBClass) (c : WBClass) :
     Option WBClass × Option WBClass :=
   if isAbsorbable c then acc else (some c, acc.fst)

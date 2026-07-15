@@ -2,10 +2,9 @@
   Unicode.Normalization.QuickCheckSoundnessHangul
 
   Structural Hangul singleton NFC soundness for the quick-check master proof.
-  This replaces the legacy 11172-row `toNFC` reducer with the UAX #15 Hangul
-  arithmetic: decompose a precomposed syllable into L+V(+T), reorder the
-  starter-only jamo sequence as identity, then compose L+V and optional LV+T
-  back to the original syllable.
+  This proves the full precomposed-syllable range by UAX #15 Hangul arithmetic:
+  decompose a syllable into L+V(+T), reorder the starter-only jamo sequence as
+  identity, then compose L+V and optional LV+T back to the original syllable.
 -/
 
 import Unicode.Normalization.NFC

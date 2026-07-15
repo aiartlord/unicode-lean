@@ -24,9 +24,9 @@ set_option maxRecDepth 100000
 
 /-- **Singleton-NFC table for non-trivial-decomp QC=Y starters.** Every
     QC=Y non-Hangul starter `cp` with non-empty canonical decomposition
-    is in NFC unchanged. The theorem statement is the old table contract, but
-    the proof now routes the relevant rows through the generated rank certificate
-    instead of reducing `toNFC #[row.codepoint]` across the table. -/
+    is in NFC unchanged. The theorem keeps the exported table-shaped contract,
+    while the proof routes the relevant rows through the generated rank
+    certificate instead of reducing `toNFC #[row.codepoint]` across the table. -/
 theorem qcY_starter_nontrivial_singleton_nfc_id_table :
     UnicodeData.rows.all (fun row =>
       decide (Lookup.canonicalCombiningClass row.codepoint ≠ 0) ||

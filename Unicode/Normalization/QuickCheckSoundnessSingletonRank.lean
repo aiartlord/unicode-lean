@@ -1,8 +1,8 @@
 /-
   Unicode.Normalization.QuickCheckSoundnessSingletonRank
 
-  Structural support for replacing the old singleton `toNFC` row-table reducer
-  with the generated canonical-decomposition rank certificate.
+  Structural singleton `toNFC` support backed by the generated
+  canonical-decomposition rank certificate.
 -/
 
 import Unicode.Normalization.NFC
