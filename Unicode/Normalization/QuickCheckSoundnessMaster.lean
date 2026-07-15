@@ -7,16 +7,16 @@
 
   Architecture:
 
-    * §1 — UCD-table atomicity fact for size-2 decomp starters
-      (`qcY_starter_decomp_atomic_table`). Closed by `decide`
-      over `UnicodeData.rows`.
-    * §2 — Per-codepoint lift (`qcY_starter_decomp_atomic`) — packages
-      the table fact as an existential over `(d, e)` for any QC=Y
-      non-Hangul starter `cp` with non-empty canonical decomposition.
-    * §3 — Singleton dispatcher (`singleton_sound`) —
-      4-way case analysis dispatching to the closed singleton
-      soundness lemmas in `QuickCheckSoundness`,
-      `QuickCheckSoundnessSingletonAtomic`, and `QuickCheckSoundnessSnoc`.
+    * §1 — Non-trivial non-Hangul starter singleton lift. The exported table
+      theorem in `QuickCheckSoundnessSingletonTable` keeps the old contract, but
+      its proof routes relevant rows through the generated singleton-rank
+      certificate instead of reducing `toNFC #[row.codepoint]` over the table.
+    * §2 — Singleton dispatcher (`singleton_sound`). The four cases dispatch to:
+      nonstarter support in `QuickCheckSoundness`, structural Hangul support in
+      `QuickCheckSoundnessHangul`, atomic starter support in
+      `QuickCheckSoundnessSingletonAtomic`, and the rank-backed non-trivial
+      starter lift below.
+    * §3 — Per-codepoint QC extraction from a sequence-level quick-check verdict.
 -/
 
 import Unicode.Normalization.NFC
@@ -41,18 +41,6 @@ open Unicode.Generated
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 PER-CODEPOINT LIFT FOR THE NON-TRIVIAL DECOMP CASE
---
--- The table fact (`qcY_starter_nontrivial_singleton_nfc_id_table` in
--- the sibling `QuickCheckSoundnessSingletonTable` module) lifts to:
--- for any QC=Y non-Hangul starter `cp` whose canonical decomposition
--- is non-empty, `toNFC #[cp] = #[cp]`. The lift uses
--- `Lookup.lookupRow cp = some row` (which holds whenever
--- `Lookup.canonicalDecomposition cp ≠ #[]`, since codepoints absent
--- from the table have empty decomposition by the @missing default).
--- ═══════════════════════════════════════════════════════════════════════════════
-
--- ═══════════════════════════════════════════════════════════════════════════════
--- §2 PER-CODEPOINT LIFT FOR THE NON-TRIVIAL DECOMP CASE
 --
 -- The table fact lifts to: for any QC=Y non-Hangul starter `cp` whose
 -- canonical decomposition is non-empty, `toNFC #[cp] = #[cp]`. The
@@ -122,7 +110,7 @@ theorem singleton_sound_nontrivial
   exact of_decide_eq_true hRowFact
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- §3 SINGLETON SOUNDNESS DISPATCHER
+-- §2 SINGLETON SOUNDNESS DISPATCHER
 --
 -- For any QC=Y singleton `#[cp]`, dispatch to the matching singleton
 -- soundness lemma based on `cp`'s structural shape:
@@ -153,7 +141,7 @@ theorem singleton_sound (cp : Nat) (hQC : nfcQCValue cp = .Y) :
     exact QuickCheckSoundness.singleton_sound_nonstarter cp hQC hCccPos
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- §4 PER-CODEPOINT QC EXTRACTOR FROM SEQUENCE-LEVEL CHECK
+-- §3 PER-CODEPOINT QC EXTRACTOR FROM SEQUENCE-LEVEL CHECK
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Every codepoint of an `isNFCQuickCheck`-passing sequence has
