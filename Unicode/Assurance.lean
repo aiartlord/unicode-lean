@@ -31,3 +31,6 @@ import Unicode.CaseFoldRoundtrip
 import Unicode.Precis.Preparation
 import Unicode.Precis.ZsPreservation
 import Unicode.Precis.OpaqueString
+
+-- Runtime-domain example/theorem vectors kept out of the default root.
+import Unicode.WidthExamples
