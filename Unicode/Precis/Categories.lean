@@ -77,8 +77,8 @@ def hasIdentifierStatusAllowed (cp : Nat) : Bool :=
     the latter requires the full GC-driven discrimination per RFC 8264
     §8 and the former requires the RFC 5892 §G CONTEXTO list. The
     current categorization is admissibility-correct (every codepoint
-    rejected by RFC 8264 is rejected here, and every codepoint admitted
-    here is admitted by RFC 8264) and refines `Disallowed` into the
+    rejected by RFC 8264 is rejected here, and every codepoint accepted
+    here is accepted by RFC 8264) and refines `Disallowed` into the
     structurally distinct `Unassigned` and `ContextJ` cases that
     consumers can reason about separately. -/
 def precisCategory (cp : Nat) : PrecisCategory :=
@@ -96,7 +96,7 @@ def precisCategory (cp : Nat) : PrecisCategory :=
     category is one of `LetterDigits`, `FreeformClass`, or
     `IdentifierClass`. Under the current reduced categorization
     this collapses to `category = IdentifierClass`; under the full
-    categorization it widens to admit FreeformClass membership for
+    categorization it widens to allow FreeformClass membership for
     non-IdentifierClass profiles. -/
 def isPrecisAdmissible (cp : Nat) : Bool :=
   match precisCategory cp with
@@ -122,7 +122,7 @@ theorem category_digit :
     precisCategory 0x0030 = .IdentifierClass := by
   simp [precisCategory, hasIdentifierStatusAllowed, IdentifierStatus.isAllowed_u0030]
 
-/-- Underscore is IdentifierClass (admitted in programming-identifier
+/-- Underscore is IdentifierClass (accepted in programming-identifier
     profiles). -/
 theorem category_underscore :
     precisCategory 0x005F = .IdentifierClass := by
@@ -176,13 +176,13 @@ theorem not_admissible_space : isPrecisAdmissible 0x0020 = false := by
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- FREEFORMCLASS ADMISSIBILITY via GENERAL_CATEGORY (RFC 8264 §4.3)
 --
--- FreeformClass (RFC 8264 §4.3) is broader than IdentifierClass — a
--- superset admitting letters, marks, numbers, punctuation, symbols, and
+-- FreeformClass (RFC 8264 §4.3) is broader than IdentifierClass: it allows
+-- letters, marks, numbers, punctuation, symbols, and
 -- space separators (Zs). Line/paragraph separators (Zl/Zp) and the Other
 -- categories (Cc, Cf, Cs, Co, Cn) remain disallowed. The RFC's
 -- Contextual rules (JoinControl §9.8, OldHangulJamo §9.9, Exceptions
 -- §9.7) are not context-checked here; codepoints in those categories
--- that also have an admitting GC are admitted unconditionally. Specific
+-- that also have an allowed GC are accepted unconditionally. Specific
 -- format characters like U+200B ZERO WIDTH SPACE (Cf) and U+202E
 -- RIGHT-TO-LEFT OVERRIDE (Cf) are correctly rejected via the Cf
 -- disallow.

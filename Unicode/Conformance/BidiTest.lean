@@ -202,7 +202,7 @@ def countPassing (limit : Nat) : Nat :=
     return count
 
 /-- **Strict UAX #9 BidiTest conformance.** Every one of the
-    490,846 parser-admitted rows of the official `BidiTest.txt`
+    490,846 parser-accepted rows of the official `BidiTest.txt`
     test suite produces the exact expected per-codepoint
     embedding levels and L1/L2 reorder array under the bidi
     algorithm. -/

@@ -8,9 +8,10 @@
   Architecture:
 
     * §1 — Non-trivial non-Hangul starter singleton lift. The exported table
-      theorem in `QuickCheckSoundnessSingletonTable` keeps the old contract, but
-      its proof routes relevant rows through the generated singleton-rank
-      certificate instead of reducing `toNFC #[row.codepoint]` over the table.
+      theorem in `QuickCheckSoundnessSingletonTable` keeps the public
+      table-shaped contract, while its proof routes relevant rows through the
+      generated singleton-rank certificate instead of reducing
+      `toNFC #[row.codepoint]` over the table.
     * §2 — Singleton dispatcher (`singleton_sound`). The four cases dispatch to:
       nonstarter support in `QuickCheckSoundness`, structural Hangul support in
       `QuickCheckSoundnessHangul`, atomic starter support in

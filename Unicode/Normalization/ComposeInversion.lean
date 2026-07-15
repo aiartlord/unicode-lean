@@ -224,12 +224,12 @@ set_option maxRecDepth 8192 in
       `none` + valid, in which case `s.buffer = []` carries through.
 
     * Second conjunct (buffer CCC bound): each branch is one of:
-      - buffer unchanged + maxCCC unchanged (Cases 1, 2, 3, 7): old
+      - buffer unchanged + maxCCC unchanged (Cases 1, 2, 3, 7): the previous
         invariant carries directly.
       - buffer cleared to `[]` (Cases 4, 5): vacuous membership.
       - `cp :: buffer` prepended, `maxCCC := max maxCCC (ccc cp)`
         (Cases 6, 8): `cp` has `ccc cp > 0` by the branch guard and
-        `ccc cp ≤ max s.maxCCC (ccc cp)` by `Nat.le_max_right`; old buffer
+        `ccc cp ≤ max s.maxCCC (ccc cp)` by `Nat.le_max_right`; previous buffer
         elements have `ccc y ≤ s.maxCCC ≤ max s.maxCCC (ccc cp)` by
         `Nat.le_max_left`.
 

@@ -295,7 +295,7 @@ theorem buildSnapshots_spSinceNoSp (cps : Array Nat) (lits : Array LBClass) (i :
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The `effPrevPrev` component of the snapshot update: on a non-absorbed step it
-    takes the old `effPrev` (shift), otherwise it is unchanged. -/
+    takes the previous `effPrev` (shift), otherwise it is unchanged. -/
 theorem snapUpdate_effPrevPrev (cps : Array Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
     (snapUpdate cps s ic).effPrevPrev =
       if isCMZWJ (cRealOf s.effPrev ic.2) then s.effPrevPrev else s.effPrev := by
@@ -303,9 +303,9 @@ theorem snapUpdate_effPrevPrev (cps : Array Nat) (s : EffSnapshot) (ic : Nat × 
   unfold snapUpdate cRealOf
   rw [apply_ite EffSnapshot.effPrevPrev]
 
-/-- The joint `(effPrev, effPrevPrev)` update: advance `effPrev`, shifting the old
-    value into `effPrevPrev` on a non-absorbed step. Self-contained (reads only the
-    pair), so the pair is a scan in its own right. -/
+/-- The joint `(effPrev, effPrevPrev)` update: advance `effPrev`, shifting the
+    previous value into `effPrevPrev` on a non-absorbed step. Self-contained
+    (reads only the pair), so the pair is a scan in its own right. -/
 def effPrevPairUpdate (p : Option LBClass × Option LBClass) (c : LBClass) :
     Option LBClass × Option LBClass :=
   (effPrevUpdate p.1 c, if isCMZWJ (cRealOf p.1 c) then p.2 else p.1)

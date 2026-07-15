@@ -9,7 +9,7 @@
     * `QuickCheckSoundnessSingletonPair`
     * `QuickCheckSoundnessHangul`
 
-  This file keeps the old namespace/theorem entry points available without
+  This file keeps the public namespace/theorem entry points available without
   carrying the stale local reducer proofs that were replaced by those modules.
 -/
 

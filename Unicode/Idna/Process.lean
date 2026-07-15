@@ -138,8 +138,8 @@ def violatesLeadTrailHyphen (label : Array Nat) : Bool :=
     V5) when its first codepoint has General_Category in
     `{Mn, Mc, Me}`. The General_Category check catches spacing
     combining marks (Mc) that have canonical_combining_class = 0
-    — a class of codepoint that the older `ccc ≠ 0` heuristic
-    silently admitted. -/
+    — a class of codepoint that a `ccc ≠ 0` heuristic would
+    silently accept. -/
 def violatesLeadingCombiner (label : Array Nat) : Bool :=
   match label[0]? with
   | none    => false

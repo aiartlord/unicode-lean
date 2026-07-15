@@ -116,7 +116,7 @@ def isEmojiModifierSequence (cps : Array Nat) : Bool :=
 -- §5 KEYCAP SEQUENCE  (UTS #51 §1.4.6 ED-14a)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The ten ASCII digits, '#', and '*' that admit a keycap form. -/
+/-- The ten ASCII digits, '#', and '*' that can form a keycap sequence. -/
 def isKeycapBase (cp : Nat) : Bool :=
   cp = 0x23 || cp = 0x2A
     || (Nat.ble 0x30 cp && Nat.ble cp 0x39)

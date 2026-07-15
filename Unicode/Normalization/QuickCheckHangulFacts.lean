@@ -14,12 +14,12 @@
     * `hangulSyllable_ccc_zero` — every one of the 11172 precomposed
                                   Hangul syllables has CCC = 0.
 
-  The three tables together discharge "Hangul composition never fires
-  with a nonstarter trailing element" — the lemma the Fact 3 per-codepoint
-  lift in `QuickCheckSoundness` depends on.
+  These CCC facts discharge "Hangul composition never fires with a nonstarter
+  trailing element" — the lemma the Fact 3 per-codepoint lift in
+  `QuickCheckSoundness` depends on.
 
   Placed in its own module so the heavy compilation (especially the
-  11172-element Hangul-syllable scan) isolates cleanly under
+  11172-codepoint Hangul CCC range proof) isolates cleanly under
   `LEAN_NUM_THREADS=1`. Parallel to `QuickCheckFacts`'s split.
 -/
 

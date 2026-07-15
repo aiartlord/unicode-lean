@@ -14,7 +14,7 @@
 
     U+E0000  reserved (Cn)
     U+E0001  LANGUAGE TAG  — deprecated in Unicode 7.0;
-             still emitted by some legacy systems and weaponized
+             still emitted by older deployed systems and weaponized
              by adversaries since 2024 to start tag-prompt-injection
              chains.
     U+E0002..U+E001F  reserved range.

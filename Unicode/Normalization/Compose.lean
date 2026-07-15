@@ -52,14 +52,13 @@ def primaryComposite? (d c : Nat) : Option Nat :=
 
 -- The row scan inside `primaryComposite?` re-walks the entire UnicodeData
 -- table per query — a cost no reduction engine can pay when the query
--- itself sits inside a table-scale enumeration, and the reason the
--- QuickCheck soundness facts resisted kernel checking. The generated
--- `CanonicalComposition.compositionPairs` list holds the same information
--- keyed for a linear `find?`: entries appear in UnicodeData row order, so
--- a `find?` over the pairs selects the same match the row scan did. The
--- agreement is proven once — a structural induction relating the two
--- traversals, fed by one kernel-checked data certificate — and every
--- concrete composition fact then transports through the pairs list.
+-- itself sits inside a table-scale enumeration. The generated
+-- `CanonicalComposition.compositionPairs` list is the checked indexed view
+-- used by table-scale proofs: entries appear in UnicodeData row order, so a
+-- `find?` over the pairs selects the same match the row scan did. The
+-- agreement is proven once by a structural induction relating the two
+-- traversals, fed by one kernel-checked data certificate; concrete
+-- composition facts then transport through the pairs list.
 
 /-- The pair-extraction view of one UnicodeData row: `some (d, c, p)`
     exactly when the row records a non-excluded two-element canonical

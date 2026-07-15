@@ -21,7 +21,7 @@
   The reject-on-disallowed check is applied LAST per RFC 8264 §5.2.4:
   the admissibility verdict is taken over the prepared form so that
   a codepoint mapped into IdentifierClass by width-mapping or
-  case-folding still admits even when its source codepoint was
+  case-folding can still be accepted even when its source codepoint was
   categorized differently.
 
   # Idempotence
@@ -92,7 +92,7 @@ theorem prep_fullwidth_Alice :
 theorem prep_sharp_s :
     precisPreparation #[0x00DF] = some #[0x0073, 0x0073] := by decide
 
-/-- Underscore and digit both admit. -/
+/-- Underscore and digits are accepted. -/
 theorem prep_underscore_digits :
     precisPreparation #[0x005F, 0x0030, 0x0031]
       = some #[0x005F, 0x0030, 0x0031] := by decide
@@ -115,7 +115,7 @@ theorem prep_rejects_zwsp :
 
 /-- An otherwise-valid identifier containing a disallowed codepoint
     is rejected — the category check fails on the disallowed byte
-    even though the surrounding ASCII would admit. -/
+    even though the surrounding ASCII would be accepted. -/
 theorem prep_rejects_mixed :
     precisPreparation #[0x61, 0x202E, 0x62] = none := by decide
 
