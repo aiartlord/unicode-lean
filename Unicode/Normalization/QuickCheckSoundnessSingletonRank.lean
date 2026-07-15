@@ -62,6 +62,19 @@ theorem toNFC_of_toNFD_foldl_singletonState
   rw [hFold]
   exact flush_singletonState cp
 
+/-- Raw composition over a singleton starter produces the active singleton
+    state. -/
+theorem foldl_singleton_starter
+    (cp : Nat)
+    (hCcc : Lookup.canonicalCombiningClass cp = 0) :
+    (#[cp] : Array Nat).foldl Compose.stepCompose Compose.initialState =
+      singletonState cp := by
+  rw [← Array.foldl_toList]
+  simp only [List.foldl_cons, List.foldl_nil]
+  rw [Compose.stepCompose.eq_def]
+  unfold Compose.initialState singletonState
+  simp [hCcc]
+
 /-- A QC=Y starter row with two-element canonical decomposition primary-composes
     from its generated rank-entry components back to its codepoint. -/
 theorem entry_primaryComposite
@@ -140,5 +153,18 @@ theorem entryRankValid_primaryComposite
   have hCommon := entryRankValid_common entry h
   have facts := entryCommonValid_facts entry hCommon
   exact entry_primaryComposite entry facts.hQC facts.hCcc facts.hDecomp
+
+/-- For rank-1 entries, rank validity certifies that the left component is
+    atomic. -/
+theorem entryRankValid_rank1_left_empty
+    (entry : QuickCheckSingletonRankData.SingletonRankRow)
+    (h : QuickCheckSingletonRankData.entryRankValid entry = true)
+    (hRank : entry.rank = 1) :
+    Lookup.canonicalDecomposition entry.left = #[] := by
+  unfold QuickCheckSingletonRankData.entryRankValid at h
+  rw [Bool.and_eq_true] at h
+  have hRankBranch := h.2
+  rw [hRank] at hRankBranch
+  exact of_decide_eq_true hRankBranch
 
 end Unicode.Normalization.QuickCheckSoundnessSingletonRank
