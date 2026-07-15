@@ -698,7 +698,7 @@ theorem foldl_stepCompose_shift : ∀ (l : List Nat) (em : Array Nat) (st : Nat)
     have hpc : primaryComposite? st c = none := hN.1
     have hstep : stepCompose { emitted := em, starter := some st, buffer := [], maxCCC := 0 } c
         = { emitted := em ++ #[st], starter := some c, buffer := [], maxCCC := 0 } := by
-      unfold stepCompose; simp only [hcc, hpc, List.isEmpty_nil, if_true, reduceIte]
+      unfold stepCompose; simp only [hcc, hpc, List.isEmpty_nil, if_true]
     rw [List.foldl_cons, hstep,
         ih (em ++ #[st]) c (fun cp h => hS cp (by simp [h])) hN.2,
         List.toArray_cons c cs, Array.append_assoc]
@@ -719,6 +719,6 @@ theorem compose_id_of_shift (l : List Nat)
     rw [← Array.foldl_toList, List.toList_toArray, List.foldl_cons, hfirst,
         foldl_stepCompose_shift cs #[] c (fun cp h => hS cp (by simp [h])) hN,
         List.toArray_cons c cs]
-    simp [Array.empty_append]
+    simp
 
 end Unicode.Normalization.Compose

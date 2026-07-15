@@ -487,7 +487,11 @@ theorem canonicalDecomposition_target_non_source
         unfold Lookup.canonicalDecomposition
         rw [hrow]
       rw [hcd] at hj
-      have hmem : row ∈ UnicodeData.rows := Array.mem_of_find?_eq_some hrow
+      obtain ⟨src, hSrcMem, _hSrcCp, _hSrcCcc, hSrcDecomp⟩ :=
+        Unicode.Generated.UnicodeDataIndex.lookupRow?_supported_rowsList hrow
+      rw [← hSrcDecomp] at hj
+      have hmem : src ∈ UnicodeData.rows := by
+        simpa [UnicodeData.rows] using hSrcMem
       have hAll := rows_decompositionTargets_nonSource
       rw [Array.all_eq_true] at hAll
       rcases Array.getElem_of_mem hmem with ⟨i, hi, hiEq⟩

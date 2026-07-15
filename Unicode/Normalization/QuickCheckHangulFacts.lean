@@ -46,6 +46,13 @@ theorem tJamo_ccc_zero :
       (fun i => Lookup.canonicalCombiningClass (Hangul.TBase + 1 + i) = 0) = true := by
   decide
 
+/-- The pinned NFC-relevant UnicodeData rows omit precomposed Hangul syllables;
+    those decompose algorithmically instead of via the row table. -/
+theorem rows_omit_hangul_syllables :
+    Unicode.Generated.UnicodeData.rowsList.all (fun r =>
+      decide (¬ (Hangul.SBase ≤ r.codepoint ∧ r.codepoint ≤ Hangul.SBase + Hangul.SCount - 1))) = true := by
+  decide +kernel
+
 /-- Every precomposed Hangul syllable (range `0xAC00..0xD7A3`) has
     CCC = 0. Table-scale `decide` over 11172 codepoints. -/
 theorem hangulSyllable_ccc_zero :
@@ -59,10 +66,10 @@ theorem hangulSyllable_ccc_zero :
   have hRange : 0xAC00 ≤ Hangul.SBase + i ∧ Hangul.SBase + i < 0xAC00 + 11172 := by
     simp [Hangul.SBase]
     omega
-  have hCcc :=
-    Unicode.Generated.NormalizationLookups.canonicalCombiningClass_hangul_syllable
-      (Hangul.SBase + i) hRange
-  exact decide_eq_true (by
-    simpa [Lookup.canonicalCombiningClass] using hCcc)
+  have hNone : Lookup.lookupRow (Hangul.SBase + i) = none :=
+    Lookup.lookupRow_none_of_all_outside Hangul.SBase (Hangul.SBase + Hangul.SCount - 1)
+      (Hangul.SBase + i) rows_omit_hangul_syllables (by omega) (by omega)
+  exact decide_eq_true
+    (Lookup.canonicalCombiningClass_of_lookupRow_none (Hangul.SBase + i) hNone)
 
 end Unicode.Normalization.QuickCheckHangulFacts

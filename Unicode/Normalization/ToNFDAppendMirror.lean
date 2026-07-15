@@ -1,11 +1,10 @@
 /-
   Unicode.Normalization.ToNFDAppendMirror
 
-  The linear List mirror of canonical decomposition used to discharge the
-  UCD-row starter-head invariant.  `fullCanonicalDecompose` looks up
-  `UnicodeData` via `Array.find?`, which is O(n²) in the kernel and cannot
-  reduce the 3045-row check; `fcdFuelL` mirrors it over `rowsList.find?`
-  (linear) and `rowP` is the per-row predicate.
+  The reducer-friendly mirror of canonical decomposition used to discharge the
+  UCD-row starter-head invariant. `fullCanonicalDecompose` and this mirror both
+  use the generated low-byte UnicodeData index, so concrete lookups scan a small
+  collision bucket instead of the whole 3045-row table.
 
   This module holds only the DEFINITIONS.  The per-chunk `rowP_c*` facts live
   in `ToNFDAppendRows0..3` (split across files so each `decide +kernel` batch is
@@ -15,6 +14,7 @@
 -/
 
 import Unicode.Generated.UnicodeData
+import Unicode.Generated.UnicodeDataIndex
 import Unicode.Normalization.Hangul
 import Unicode.Normalization.Decompose
 
@@ -29,9 +29,9 @@ def anomalousStarters : Array Nat := #[0x0F73, 0x0F75, 0x0F81]
 def isAnomalousStarter (cp : Nat) : Bool :=
   anomalousStarters.contains cp
 
-/-- Linear row lookup over the List form of `UnicodeData`. -/
+/-- Row lookup through the generated low-byte UnicodeData index. -/
 def lookupRowL (cp : Nat) : Option UnicodeData.UnicodeDataRow :=
-  UnicodeData.rowsList.find? (fun row => row.codepoint = cp)
+  UnicodeDataIndex.lookupRow? cp
 
 def canonicalDecompositionL (cp : Nat) : Array Nat :=
   match lookupRowL cp with

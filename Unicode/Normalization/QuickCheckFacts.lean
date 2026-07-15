@@ -111,10 +111,7 @@ theorem lookupRow_codepoint
     (cp : Nat) (row : UnicodeData.UnicodeDataRow)
     (hLookup : Lookup.lookupRow cp = some row) :
     row.codepoint = cp := by
-  unfold Lookup.lookupRow at hLookup
-  have hFind := Array.find?_eq_some_iff_getElem.mp hLookup
-  obtain ⟨hPred, _hIdxLt, _hAllPriorFalse⟩ := hFind
-  exact of_decide_eq_true hPred
+  exact Unicode.Generated.UnicodeDataIndex.lookupRow?_codepoint hLookup
 
 theorem lookupRow_generated_fields
     (cp : Nat) (row : UnicodeData.UnicodeDataRow)
@@ -130,12 +127,12 @@ theorem lookupRow_generated_fields
 theorem no_row_of_lookupRow_none
     (cp : Nat) (hLookup : Lookup.lookupRow cp = none) :
     ¬ ∃ row, row ∈ UnicodeData.rows ∧ row.codepoint = cp := by
-  unfold Lookup.lookupRow at hLookup
-  rw [Array.find?_eq_none] at hLookup
   intro hRow
   rcases hRow with ⟨row, hMem, hCp⟩
-  have hFalse := hLookup row hMem
-  simp [hCp] at hFalse
+  have hList : row ∈ UnicodeData.rowsList := by
+    simpa [UnicodeData.rows] using hMem
+  exact Unicode.Generated.UnicodeDataIndex.lookupRow?_none_no_rowsList_codepoint
+    hLookup hList hCp
 
 theorem canonicalDecomposition_empty_of_lookupRow_none
     (cp : Nat) (hLookup : Lookup.lookupRow cp = none) :
@@ -163,11 +160,15 @@ theorem qcY_nonstarter_cp_no_decomp
   | some r =>
     have hRowCp : r.codepoint = cp := lookupRow_codepoint cp r hLookup
     have hFields := lookupRow_generated_fields cp r hLookup
-    have hRccc : r.canonicalCombiningClass > 0 := by
-      rw [← hFields.1]
+    obtain ⟨src, hSrcMem, hSrcCp, hSrcCcc, hSrcDecomp⟩ :=
+      Unicode.Generated.UnicodeDataIndex.lookupRow?_supported_rowsList hLookup
+    have hSrcCpEq : src.codepoint = cp := hSrcCp.trans hRowCp
+    have hRccc : src.canonicalCombiningClass > 0 := by
+      rw [hSrcCcc, ← hFields.1]
       exact hCcc
-    have hRQC : NFC.nfcQCValue r.codepoint = .Y := by rw [hRowCp]; exact hQC
-    have hMem : r ∈ UnicodeData.rows := Array.mem_of_find?_eq_some hLookup
+    have hRQC : NFC.nfcQCValue src.codepoint = .Y := by rw [hSrcCpEq]; exact hQC
+    have hMem : src ∈ UnicodeData.rows := by
+      simpa [UnicodeData.rows] using hSrcMem
     have hAll : UnicodeData.rows.all (fun r =>
       (! (decide (NFC.nfcQCValue r.codepoint = .Y) &&
           decide (r.canonicalCombiningClass > 0))) ||
@@ -181,15 +182,15 @@ theorem qcY_nonstarter_cp_no_decomp
     rcases hThis with hNot | hEmpty
     · -- hNot contradicts the QC=Y and nonstarter premises.
       exfalso
-      have h1 : decide (NFC.nfcQCValue r.codepoint = .Y) = true :=
+      have h1 : decide (NFC.nfcQCValue src.codepoint = .Y) = true :=
         decide_eq_true hRQC
-      have h2 : decide (r.canonicalCombiningClass > 0) = true :=
+      have h2 : decide (src.canonicalCombiningClass > 0) = true :=
         decide_eq_true hRccc
       rw [h1, h2] at hNot
       exact Bool.noConfusion hNot
     ·
       rw [hFields.2]
-      exact of_decide_eq_true hEmpty
+      exact hSrcDecomp.symm.trans (of_decide_eq_true hEmpty)
 
 /-- Per-codepoint fact 2: QC=Y starters with a two-element canonical
     decomposition `[d, e]` satisfy `primaryComposite? d e = some cp`.
@@ -210,11 +211,18 @@ theorem qcY_starter_2decomp_cp_composes
     have hFields := lookupRow_generated_fields cp r hLookup
     rw [hFields.2] at hSize ⊢
     have hRowCp : r.codepoint = cp := lookupRow_codepoint cp r hLookup
-    have hRccc : r.canonicalCombiningClass = 0 := by
-      rw [← hFields.1]
+    obtain ⟨src, hSrcMem, hSrcCp, hSrcCcc, hSrcDecomp⟩ :=
+      Unicode.Generated.UnicodeDataIndex.lookupRow?_supported_rowsList hLookup
+    have hSrcCpEq : src.codepoint = cp := hSrcCp.trans hRowCp
+    have hRccc : src.canonicalCombiningClass = 0 := by
+      rw [hSrcCcc, ← hFields.1]
       exact hCcc
-    have hRQC : NFC.nfcQCValue r.codepoint = .Y := by rw [hRowCp]; exact hQC
-    have hMem : r ∈ UnicodeData.rows := Array.mem_of_find?_eq_some hLookup
+    have hRQC : NFC.nfcQCValue src.codepoint = .Y := by rw [hSrcCpEq]; exact hQC
+    have hSrcSize : src.canonicalDecomposition.size = 2 := by
+      rw [hSrcDecomp]
+      exact hSize
+    have hMem : src ∈ UnicodeData.rows := by
+      simpa [UnicodeData.rows] using hSrcMem
     have hAll : UnicodeData.rows.all (fun r =>
       (! (decide (NFC.nfcQCValue r.codepoint = .Y) &&
           decide (r.canonicalCombiningClass = 0) &&
@@ -232,15 +240,15 @@ theorem qcY_starter_2decomp_cp_composes
     · -- hNot is the negated conjunction; derive contradiction directly
       -- by rewriting each decide-arm to `true` via the proofs at hand.
       exfalso
-      have h1 : decide (NFC.nfcQCValue r.codepoint = .Y) = true :=
+      have h1 : decide (NFC.nfcQCValue src.codepoint = .Y) = true :=
         decide_eq_true hRQC
-      have h2 : decide (r.canonicalCombiningClass = 0) = true :=
+      have h2 : decide (src.canonicalCombiningClass = 0) = true :=
         decide_eq_true hRccc
-      have h3 : decide (r.canonicalDecomposition.size = 2) = true :=
-        decide_eq_true hSize
+      have h3 : decide (src.canonicalDecomposition.size = 2) = true :=
+        decide_eq_true hSrcSize
       rw [h1, h2, h3] at hNot
       exact Bool.noConfusion hNot
-    · rw [hRowCp] at hGood
+    · rw [hSrcDecomp, hSrcCpEq] at hGood
       exact of_decide_eq_true hGood
 
 end Unicode.Normalization.QuickCheckFacts

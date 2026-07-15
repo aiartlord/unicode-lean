@@ -65,47 +65,8 @@ open Unicode.Generated
 theorem qcY_nonstarter_cp_no_decomp
     (cp : Nat) (hQC : NFC.nfcQCValue cp = .Y)
     (hCcc : Lookup.canonicalCombiningClass cp > 0) :
-    Lookup.canonicalDecomposition cp = #[] := by
-  unfold Lookup.canonicalDecomposition
-  match hLookup : Lookup.lookupRow cp with
-  | none   => rfl
-  | some r =>
-    have hRowCp : r.codepoint = cp := by
-      unfold Lookup.lookupRow at hLookup
-      have hFind := Array.find?_eq_some_iff_getElem.mp hLookup
-      obtain ⟨hPred, hIdxLt, hAllPriorFalse⟩ := hFind
-      clear hIdxLt hAllPriorFalse
-      exact of_decide_eq_true hPred
-    have hCccEq : r.canonicalCombiningClass = Lookup.canonicalCombiningClass cp := by
-      unfold Lookup.canonicalCombiningClass
-      rw [hLookup]
-    have hRccc : r.canonicalCombiningClass > 0 := by rw [hCccEq]; exact hCcc
-    have hRQC : NFC.nfcQCValue r.codepoint = .Y := by rw [hRowCp]; exact hQC
-    have hMem : r ∈ UnicodeData.rows := by
-      unfold Lookup.lookupRow at hLookup
-      exact Array.mem_of_find?_eq_some hLookup
-    have hAll : UnicodeData.rows.all (fun r =>
-      (! (decide (NFC.nfcQCValue r.codepoint = .Y) &&
-          decide (r.canonicalCombiningClass > 0))) ||
-      decide (r.canonicalDecomposition = #[])) = true :=
-      qcY_nonstarter_rows_no_decomp
-    rw [Array.all_eq_true] at hAll
-    rcases Array.getElem_of_mem hMem with ⟨i, hi, hIEq⟩
-    have hThis := hAll i hi
-    rw [hIEq] at hThis
-    simp only [Bool.or_eq_true] at hThis
-    rcases hThis with hNot | hEmpty
-    · -- hNot : (! (decide qcY && decide cccPos)) = true. Both decides are
-      -- true (by hRQC and hRccc), so the inner conjunction is `true`,
-      -- making `! true = false` — contradicting hNot.
-      exfalso
-      have h1 : decide (NFC.nfcQCValue r.codepoint = .Y) = true :=
-        decide_eq_true hRQC
-      have h2 : decide (r.canonicalCombiningClass > 0) = true :=
-        decide_eq_true hRccc
-      rw [h1, h2] at hNot
-      exact Bool.noConfusion hNot
-    · exact of_decide_eq_true hEmpty
+    Lookup.canonicalDecomposition cp = #[] :=
+  QuickCheckFacts.qcY_nonstarter_cp_no_decomp cp hQC hCcc
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 HANGUL HELPERS FOR FACT 3 PER-CODEPOINT LIFT
@@ -321,8 +282,12 @@ theorem singleton_sound_nonstarter
   -- hypothesis selects the nonstarter branch of the `starter=none` case:
   -- emit cp, state becomes { emitted := #[cp], starter := none, ... }.
   -- flushCompose with starter=none returns emitted ++ buffer.reverse = #[cp].
-  unfold Compose.compose Compose.flushCompose Compose.stepCompose Compose.initialState
   have hCccNe : ¬ Lookup.canonicalCombiningClass cp = 0 := by omega
+  change Compose.flushCompose ((#[cp] : Array Nat).foldl Compose.stepCompose Compose.initialState) = #[cp]
+  rw [← Array.foldl_toList]
+  simp only [List.foldl_cons, List.foldl_nil]
+  rw [Compose.stepCompose.eq_def]
+  unfold Compose.flushCompose Compose.initialState
   simp [hCccNe]
 
 end Unicode.Normalization.QuickCheckSoundness

@@ -148,7 +148,7 @@ theorem hangul_fcd_eq (cp : Nat) (h : Hangul.isHangulSyllable cp = true) :
   rw [Decompose.fullCanonicalDecomposeFuel.eq_def]
   simp only [Decompose.maxDepth]
   cases hd : Hangul.decomposeSyllable? cp with
-  | some j => simp [hd]
+  | some j => simp
   | none => exact absurd hd (decomposeSyllable_isSome cp h)
 
 theorem hangul_head (cp : Nat) (h : Hangul.isHangulSyllable cp = true) :
@@ -208,18 +208,17 @@ theorem hangul_fullCanonicalDecompose_starterHead :
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- UCD-ROW INVARIANT (structural, via a List mirror of the decomposition)
 --
--- `fullCanonicalDecompose` looks up `UnicodeData` via `Array.find?`, which is O(n²)
--- in the kernel and cannot reduce the 3045-row check. `fcdFuelL` mirrors it over
--- `rowsList.find?` (linear) and is proven equal (`fullCanonicalDecompose_eq`); the
--- row invariant then reduces per chunk against the List mirror, and the per-chunk
--- results combine to the whole table.
+-- `fullCanonicalDecompose` and `fcdFuelL` both use the generated low-byte
+-- UnicodeData index. Concrete row lookups reduce over one small collision bucket
+-- instead of the whole table; the row invariant still reduces per chunk and the
+-- per-chunk results combine to the whole table.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 -- Mirror defs (`lookupRowL`, `canonicalDecompositionL`, `fcdFuelL`,
 -- `canonicalCombiningClassL`, `starterHeadBoolL`, `rowP`) are in
 -- `ToNFDAppendMirror`; here we tie them back to `Lookup`/`Decompose`.
 theorem lookupRow_eq_fun : Lookup.lookupRow = lookupRowL := by
-  funext cp; unfold Lookup.lookupRow lookupRowL UnicodeData.rows; rw [List.find?_toArray]
+  funext cp; rfl
 
 theorem canonicalDecomposition_eq (cp : Nat) :
     Lookup.canonicalDecomposition cp = canonicalDecompositionL cp := by
@@ -353,20 +352,15 @@ theorem fullCanonicalDecompose_starterHead
       rw [hAccess]
       exact hCp
     | some row =>
-      -- cp is in the table: use rows table fact
-      have hRowMem : row ∈ UnicodeData.rows :=
-        Array.mem_of_find?_eq_some hLookup
-      have hTable := rows_fullCanonicalDecompose_starterHead
-      rw [Array.all_eq_true] at hTable
-      rcases Array.getElem_of_mem hRowMem with ⟨i, hi, hElem⟩
-      have hRowProp := hTable i hi
-      rw [hElem] at hRowProp
-      have hFindProp := Array.find?_eq_some_iff_getElem.mp hLookup
-      obtain ⟨hCodeDecide, hExistsAfter⟩ := hFindProp
-      have hExistsAfterUnused := hExistsAfter
-      clear hExistsAfterUnused
-      have hCodepointEq : row.codepoint = cp := of_decide_eq_true hCodeDecide
-      rw [hCodepointEq] at hRowProp
+      -- cp is in the indexed table: use the backed rowsList source row.
+      obtain ⟨src, hSrcMem, hSrcCp, _hSrcCcc, _hSrcDecomp⟩ :=
+        Unicode.Generated.UnicodeDataIndex.lookupRow?_supported_rowsList hLookup
+      have hRowProp := List.all_eq_true.mp rowsList_all_rowP src hSrcMem
+      rw [← origP_eq_rowP src] at hRowProp
+      have hCodepointEq : row.codepoint = cp :=
+        Unicode.Generated.UnicodeDataIndex.lookupRow?_codepoint hLookup
+      have hSrcCodepointEq : src.codepoint = cp := hSrcCp.trans hCodepointEq
+      rw [hSrcCodepointEq] at hRowProp
       simp only [Bool.or_eq_true, decide_eq_true_eq, hCp, ne_eq] at hRowProp
       rcases hRowProp with hLeft | hSH
       · rcases hLeft with hAnom | hNeCcc

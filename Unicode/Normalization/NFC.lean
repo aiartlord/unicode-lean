@@ -107,18 +107,14 @@ theorem ccc_below_first_nonzero_range (cp : Nat) (h : cp < 0x0300) :
   cases hL : Lookup.lookupRow cp with
   | none => rfl
   | some row =>
-    unfold Lookup.lookupRow at hL
-    simp only [UnicodeData.rows, List.find?_toArray] at hL
-    have hMem : row ∈ UnicodeData.rowsList := List.mem_of_find?_eq_some hL
+    obtain ⟨src, hSrcMem, hSrcCp, hSrcCcc, _hSrcDecomp⟩ :=
+      Unicode.Generated.UnicodeDataIndex.lookupRow?_supported_rowsList hL
     have hCp : row.codepoint = cp :=
+      Unicode.Generated.UnicodeDataIndex.lookupRow?_codepoint hL
+    have hImp : src.codepoint < 0x0300 → src.canonicalCombiningClass = 0 :=
       of_decide_eq_true
-        (List.find?_some
-          (p := fun (r : UnicodeData.UnicodeDataRow) =>
-            decide (r.codepoint = cp)) hL)
-    have hImp : row.codepoint < 0x0300 → row.canonicalCombiningClass = 0 :=
-      of_decide_eq_true
-        (List.all_eq_true.mp rows_ccc_zero_below_0x0300 row hMem)
-    exact hImp (by omega)
+        (List.all_eq_true.mp rows_ccc_zero_below_0x0300 src hSrcMem)
+    exact hSrcCcc.symm.trans (hImp (by omega))
 
 /-- Decidable Bool analog of `Reorder.HasSortedRuns`: `true` iff every
     adjacent pair `(x, y)` with `y` a non-starter (CCC > 0) satisfies
