@@ -8,9 +8,9 @@ identifier rule (UAX #31), PRECIS identifier preparation
 (RFC 8264 / 8265), Punycode (RFC 3492), strict UTF-8 / UTF-16 /
 UTF-32 codecs, BOM detection, and noncharacter detection —
 machine-checked in Lean 4.28.0 against UCD 17.0.0 (UCA 16.0.0
-where the UCA shipped behind UCD). Lean core only — no Mathlib,
-no external dependencies. Zero `sorry`, zero `admit`, zero
-project-local `axiom`, zero runtime escape.
+where the UCA shipped behind UCD). Lean core only: no Mathlib,
+no external dependencies, no project-local `axiom`, no runtime escape, and no
+intentional incomplete-proof placeholders.
 
 ## Pillars
 
@@ -33,19 +33,19 @@ project-local `axiom`, zero runtime escape.
 
 ## Workflow
 
-```bash
-nix develop          # dev shell with the pinned Lean toolchain
-nix build            # full library; cold rebuilds elaborate every native_decide table
-nix run              # status report — file / theorem / sorry counts, per pillar
-nix flake check      # build + zero-sorry / zero-admit guard
-```
+Start with the project runbook: [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
 
-Or with `lake` directly inside the dev shell:
+The default product workflow is runtime-only:
 
 ```bash
-lake build
-lake build Unicode.Normalization.QuickCheckSoundnessTheorem
+nix develop .#runtime -c scripts/build-runtime.sh
+nix develop .#runtime -c scripts/test-runtime-ports.sh --smoke
+nix develop .#runtime -c scripts/package-runtime.sh
 ```
+
+Lean assurance and full-conformance roots are opt-in evidence workflows. Do not
+use a broad cold-cache Lean build as the default validation path; use the staged
+cache plan in the runbook.
 
 ## Layout
 
@@ -84,7 +84,7 @@ unicode-lean/
 
 ## Guarantees
 
-* **Zero `sorry`, zero `admit`** — proven, not assumed.
+* **No intentional incomplete-proof placeholders** — proven, not assumed.
 * **Zero project-local `axiom`** — only Lean 4 core's `propext`,
   `Quot.sound`, and `Classical.choice` are in the trusted base.
 * **Zero runtime escape** — no `unsafe`, `unsafePerformIO`,
@@ -102,8 +102,8 @@ unicode-lean/
   `oleans-sha256-<commit-sha>` build artifact for downstream
   auditors.
 
-The four source-level guards (`check-sorry.sh`, `check-no-axiom.sh`,
-`check-orphan-files.sh`, `check-ucd-hashes.sh`) live under `scripts/`
+The source-level guards for proof gaps, project-local axioms, orphan modules,
+and UCD hash drift live under `scripts/`
 and run on every push and pull request via the `ci / hardening`
 workflow.  Two additional guards specific to the Security
 Conformance Layer (`check-security-coverage.sh`,

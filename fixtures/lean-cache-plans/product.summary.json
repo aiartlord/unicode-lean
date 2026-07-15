@@ -1,0 +1,87 @@
+{
+  "module_steps": 181,
+  "preset": "product",
+  "roots": [
+    {
+      "label": "default",
+      "module": "Unicode"
+    },
+    {
+      "label": "security",
+      "module": "Unicode.SecurityRoot"
+    },
+    {
+      "label": "idna",
+      "module": "Unicode.Idna"
+    },
+    {
+      "label": "uca",
+      "module": "Unicode.Uca"
+    },
+    {
+      "label": "unihan",
+      "module": "Unicode.UnihanRoot"
+    },
+    {
+      "label": "segmentation-specs",
+      "module": "Unicode.SegmentationSpecs"
+    }
+  ],
+  "stages": [
+    {
+      "budget": {
+        "max_rss_gb": 40,
+        "wall_time_sec": 0
+      },
+      "bytes": 5135120,
+      "decide_kernel": 11,
+      "modules": 55,
+      "row_refs": 669,
+      "stage": "stage-1-generated-base"
+    },
+    {
+      "budget": {
+        "max_rss_gb": 40,
+        "wall_time_sec": 0
+      },
+      "bytes": 275367,
+      "decide_kernel": 63,
+      "modules": 15,
+      "row_refs": 132,
+      "stage": "stage-2-normalization-runtime"
+    },
+    {
+      "budget": {
+        "max_rss_gb": 40,
+        "wall_time_sec": 0
+      },
+      "bytes": 547621,
+      "decide_kernel": 163,
+      "modules": 41,
+      "row_refs": 20,
+      "stage": "stage-3-runtime-property-tables"
+    },
+    {
+      "budget": {
+        "max_rss_gb": 40,
+        "wall_time_sec": 0
+      },
+      "bytes": 2874,
+      "decide_kernel": 0,
+      "modules": 1,
+      "row_refs": 0,
+      "stage": "stage-4-product-default"
+    },
+    {
+      "budget": {
+        "max_rss_gb": 40,
+        "wall_time_sec": 0
+      },
+      "bytes": 3567831,
+      "decide_kernel": 239,
+      "modules": 69,
+      "row_refs": 2,
+      "stage": "stage-5-product-domain"
+    }
+  ]
+}

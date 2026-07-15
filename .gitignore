@@ -22,7 +22,7 @@ docs/*
 !docs/
 !docs/CLI.md
 !docs/BUILD_TIERS.md
-!docs/ROADMAP.md
+!docs/RUNBOOK.md
 !docs/PORTS.md
 !docs/DEPLOYMENT.md
 !docs/DAEMON.md
@@ -33,3 +33,4 @@ Unicode/**/Probe*.lean
 .local/
 .planning/
 .claude/
+.dev-worktrees/

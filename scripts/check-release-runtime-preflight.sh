@@ -135,6 +135,15 @@ required_paths=(
   scripts/check-deployment-smokes.sh
   scripts/check-rust-warning-policy.sh
   scripts/check-runtime-data.sh
+  scripts/audit-lean-root-boundaries.py
+  scripts/lean-cache-stages.py
+  scripts/check-lean-cache-plan-fixtures.py
+  scripts/check-lean-cache-runner-selftest.py
+  scripts/check-lean-cache-runbook.py
+  scripts/internal/lean_cache_runner_child.py
+  fixtures/lean-cache-plans/default.summary.json
+  fixtures/lean-cache-plans/product.summary.json
+  fixtures/lean-cache-plans/evidence.summary.json
 )
 
 echo "== git release state =="
@@ -156,6 +165,10 @@ scripts/check-policy-contract.sh
 scripts/check-runtime-data.sh
 scripts/check-port-self-contained.sh
 scripts/check-rust-warning-policy.sh
+scripts/check-runtime-import-boundary.sh
+scripts/check-lean-cache-plan-fixtures.py
+scripts/check-lean-cache-runner-selftest.py
+scripts/check-lean-cache-runbook.py
 scripts/audit-launch-cleanup.sh --out /tmp/unicode-launch-cleanup-preflight.txt
 
 if [[ "$run_package" -eq 1 ]]; then

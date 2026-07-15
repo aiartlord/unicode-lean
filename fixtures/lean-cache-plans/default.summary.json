@@ -1,0 +1,56 @@
+{
+  "module_steps": 108,
+  "preset": "default",
+  "roots": [
+    {
+      "label": "default",
+      "module": "Unicode"
+    }
+  ],
+  "stages": [
+    {
+      "budget": {
+        "max_rss_gb": 40,
+        "wall_time_sec": 0
+      },
+      "bytes": 4255834,
+      "decide_kernel": 8,
+      "modules": 51,
+      "row_refs": 104,
+      "stage": "stage-1-generated-base"
+    },
+    {
+      "budget": {
+        "max_rss_gb": 40,
+        "wall_time_sec": 0
+      },
+      "bytes": 275367,
+      "decide_kernel": 63,
+      "modules": 15,
+      "row_refs": 132,
+      "stage": "stage-2-normalization-runtime"
+    },
+    {
+      "budget": {
+        "max_rss_gb": 40,
+        "wall_time_sec": 0
+      },
+      "bytes": 547621,
+      "decide_kernel": 163,
+      "modules": 41,
+      "row_refs": 20,
+      "stage": "stage-3-runtime-property-tables"
+    },
+    {
+      "budget": {
+        "max_rss_gb": 40,
+        "wall_time_sec": 0
+      },
+      "bytes": 2874,
+      "decide_kernel": 0,
+      "modules": 1,
+      "row_refs": 0,
+      "stage": "stage-4-product-default"
+    }
+  ]
+}

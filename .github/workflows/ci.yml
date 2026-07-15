@@ -40,6 +40,15 @@ jobs:
       - name: runtime import boundary
         run: bash scripts/check-runtime-import-boundary.sh
 
+      - name: Lean cache plan fixtures
+        run: scripts/check-lean-cache-plan-fixtures.py
+
+      - name: Lean cache runner selftest
+        run: scripts/check-lean-cache-runner-selftest.py
+
+      - name: Lean cache runbook commands
+        run: scripts/check-lean-cache-runbook.py
+
       - name: shared runtime policy contract
         run: bash scripts/check-policy-contract.sh
 
