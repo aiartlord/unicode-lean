@@ -998,7 +998,12 @@ def entryCommonValid (entry : SingletonRankRow) : Bool :=
   decide (Hangul.isHangulSyllable entry.codepoint = false) &&
   decide (Lookup.canonicalCombiningClass entry.codepoint = 0) &&
   decide (Lookup.canonicalDecomposition entry.codepoint = #[entry.left, entry.right]) &&
-  decide (Lookup.canonicalDecomposition entry.right = #[])
+  decide (Lookup.canonicalCombiningClass entry.left = 0) &&
+  decide (nfcQCValue entry.left = .Y) &&
+  decide (Hangul.isHangulSyllable entry.left = false) &&
+  decide (Lookup.canonicalDecomposition entry.right = #[]) &&
+  decide (Hangul.isHangulSyllable entry.right = false) &&
+  decide (Hangul.composePair? entry.left entry.right = none)
 
 def entryRankValid (entry : SingletonRankRow) : Bool :=
   entryCommonValid entry &&
