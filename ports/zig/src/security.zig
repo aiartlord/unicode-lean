@@ -2,6 +2,8 @@ const std = @import("std");
 const confusables_data = @import("confusables_data.zig");
 
 const known_attack_targets_raw = @embedFile("data/KnownAttackTargets.txt");
+const standardized_variants_raw = @embedFile("data/StandardizedVariants.txt");
+const emoji_variation_sequences_raw = @embedFile("data/emoji-variation-sequences.txt");
 const MaxSkeletonLen = 128;
 
 pub const Action = enum {
@@ -459,6 +461,7 @@ fn isTagBlockAsciiPayload(cp: u32) bool {
 
 fn variationSelectorFinding(input: []const u32) ?Finding {
     const positions = positionsWhere(input, isVariationSelector) orelse return null;
+    if (positions.len == 1 and isRegisteredVariationPosition(input, positions.items[0])) return null;
     const sub_threat = variationSelectorSubThreat(input, positions);
     return .{
         .code = variationSelectorReasonCode(sub_threat),
@@ -481,6 +484,40 @@ fn isVariationSelector(cp: u32) bool {
     return (cp >= 0xFE00 and cp <= 0xFE0F) or
         (cp >= 0xE0100 and cp <= 0xE01EF) or
         (cp >= 0x180B and cp <= 0x180D);
+}
+
+fn isRegisteredVariationPosition(input: []const u32, position: usize) bool {
+    return position > 0 and isRegisteredVariationPair(input[position - 1], input[position]);
+}
+
+fn isRegisteredVariationPair(base: u32, vs: u32) bool {
+    return legalVariationSourceContains(standardized_variants_raw, base, vs) or
+        legalVariationSourceContains(emoji_variation_sequences_raw, base, vs);
+}
+
+fn legalVariationSourceContains(raw: []const u8, base: u32, vs: u32) bool {
+    var offset: usize = 0;
+    while (nextLine(raw, &offset)) |raw_line| {
+        const comment_end = std.mem.indexOfScalar(u8, raw_line, '#') orelse raw_line.len;
+        const body = raw_line[0..comment_end];
+        const pair_end = std.mem.indexOfScalar(u8, body, ';') orelse body.len;
+        const pair_part = trimAscii(body[0..pair_end]);
+        if (pair_part.len == 0) continue;
+
+        var fields = std.mem.tokenizeAny(u8, pair_part, " \t\r\n");
+        const base_token = fields.next() orelse continue;
+        const vs_token = fields.next() orelse continue;
+        if (fields.next() != null) continue;
+
+        const parsed_base = parseHexU32(base_token) orelse continue;
+        const parsed_vs = parseHexU32(vs_token) orelse continue;
+        if (parsed_base == base and parsed_vs == vs) return true;
+    }
+    return false;
+}
+
+fn parseHexU32(field: []const u8) ?u32 {
+    return std.fmt.parseInt(u32, field, 16) catch null;
 }
 
 fn variationSelectorNibble(cp: u32) ?u32 {

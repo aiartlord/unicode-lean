@@ -247,6 +247,9 @@ func variationSelectorFinding(input []uint32) (Finding, bool) {
 	if len(positions) == 0 {
 		return Finding{}, false
 	}
+	if len(positions) == 1 && isRegisteredVariationPosition(input, positions[0]) {
+		return Finding{}, false
+	}
 
 	subThreat := "IllegalTarget"
 	if len(positions) >= 4 && allSameAt(input, positions) {
@@ -269,6 +272,10 @@ func isVariationSelector(cp uint32) bool {
 	return (cp >= 0xFE00 && cp <= 0xFE0F) ||
 		(cp >= 0xE0100 && cp <= 0xE01EF) ||
 		(cp >= 0x180B && cp <= 0x180D)
+}
+
+func isRegisteredVariationPosition(input []uint32, position int) bool {
+	return position > 0 && isRegisteredVariationPair(input[position-1], input[position])
 }
 
 func variationSelectorNibble(cp uint32) (uint32, bool) {

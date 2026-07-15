@@ -35,7 +35,12 @@ export declare const Mode: Readonly<Record<string, Mode>>;
 export declare const Profile: Readonly<Record<string, Profile>>;
 export declare const Family: Readonly<Record<string, string>>;
 
-export declare function configureSecurityData(data: { confusables: string; knownAttackTargets: string }): void;
+export declare function configureSecurityData(data: {
+  confusables: string;
+  knownAttackTargets: string;
+  standardizedVariants?: string;
+  emojiVariationSequences?: string;
+}): void;
 export declare function configureSecurityDataReader(reader: (name: string) => string): void;
 export declare function scan(profile: Profile | string, mode: Mode | string, input: Iterable<number>): Verdict;
 export declare function scanUtf8(profile: Profile | string, mode: Mode | string, input: Iterable<number>): Verdict;

@@ -15,11 +15,19 @@ var confusablesRaw string
 //go:embed data/KnownAttackTargets.txt
 var knownAttackTargetsRaw string
 
+//go:embed data/StandardizedVariants.txt
+var standardizedVariantsRaw string
+
+//go:embed data/emoji-variation-sequences.txt
+var emojiVariationSequencesRaw string
+
 var (
 	confusablesOnce sync.Once
 	confusablesData map[uint32][]uint32
 	targetsOnce     sync.Once
 	targetsData     []string
+	variationOnce   sync.Once
+	variationPairs  map[[2]uint32]struct{}
 )
 
 func homoglyphTargetMatch(input []uint32) (string, bool) {
@@ -111,6 +119,21 @@ func knownAttackTargets() []string {
 	return targetsData
 }
 
+func isRegisteredVariationPair(base uint32, vs uint32) bool {
+	pairs := legalVariationPairs()
+	_, ok := pairs[[2]uint32{base, vs}]
+	return ok
+}
+
+func legalVariationPairs() map[[2]uint32]struct{} {
+	variationOnce.Do(func() {
+		variationPairs = make(map[[2]uint32]struct{})
+		parseLegalVariationPairs(standardizedVariantsRaw, variationPairs)
+		parseLegalVariationPairs(emojiVariationSequencesRaw, variationPairs)
+	})
+	return variationPairs
+}
+
 func parseConfusables(raw string) map[uint32][]uint32 {
 	out := make(map[uint32][]uint32)
 	for _, rawLine := range strings.Split(raw, "\n") {
@@ -146,6 +169,26 @@ func parseKnownAttackTargets(raw string) []string {
 		out = append(out, trimmed)
 	}
 	return out
+}
+
+func parseLegalVariationPairs(raw string, out map[[2]uint32]struct{}) {
+	for _, rawLine := range strings.Split(raw, "\n") {
+		body, _, _ := strings.Cut(rawLine, "#")
+		pairPart, _, _ := strings.Cut(body, ";")
+		fields := strings.Fields(pairPart)
+		if len(fields) != 2 {
+			continue
+		}
+		base, ok := parseHexUint32(fields[0])
+		if !ok {
+			continue
+		}
+		vs, ok := parseHexUint32(fields[1])
+		if !ok {
+			continue
+		}
+		out[[2]uint32{base, vs}] = struct{}{}
+	}
 }
 
 func parseCodepointField(field string) []uint32 {

@@ -39,6 +39,8 @@ import Data.List (dropWhileEnd, intercalate)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Maybe (isJust, mapMaybe)
+import Data.Set (Set)
+import qualified Data.Set as Set
 import Numeric (readHex)
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -383,6 +385,8 @@ variationSelectorFinding :: [Int] -> [Finding]
 variationSelectorFinding input =
   case positionsWhere isVariationSelector input of
     [] -> []
+    [position]
+      | isRegisteredVariationPosition input position -> []
     positions ->
       let subThreat = variationSelectorSubThreat input positions
       in [ Finding
@@ -492,6 +496,35 @@ isVariationSelector cp =
   (cp >= 0xFE00 && cp <= 0xFE0F)
     || (cp >= 0xE0100 && cp <= 0xE01EF)
     || (cp >= 0x180B && cp <= 0x180D)
+
+isRegisteredVariationPosition :: [Int] -> Int -> Bool
+isRegisteredVariationPosition input position =
+  position > 0
+    && Set.member
+      (input !! (position - 1), input !! position)
+      legalVariationPairs
+
+legalVariationPairs :: Set (Int, Int)
+legalVariationPairs = unsafePerformIO $ do
+  standardized <- getDataFileName "data/StandardizedVariants.txt" >>= readFile
+  emoji <- getDataFileName "data/emoji-variation-sequences.txt" >>= readFile
+  pure (parseLegalVariationPairs standardized <> parseLegalVariationPairs emoji)
+{-# NOINLINE legalVariationPairs #-}
+
+parseLegalVariationPairs :: String -> Set (Int, Int)
+parseLegalVariationPairs =
+  Set.fromList . mapMaybe parseLegalVariationPair . lines
+
+parseLegalVariationPair :: String -> Maybe (Int, Int)
+parseLegalVariationPair raw =
+  case words (takeWhile (/= ';') (stripComment raw)) of
+    [baseField, vsField] -> do
+      base <- parseHexInt baseField
+      vs <- parseHexInt vsField
+      pure (base, vs)
+    [] -> Nothing
+    [_baseOnly] -> Nothing
+    _tooManyFields -> Nothing
 
 variationSelectorSubThreat :: [Int] -> [Int] -> String
 variationSelectorSubThreat input positions

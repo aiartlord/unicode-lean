@@ -78,6 +78,7 @@ public static class Security
 
     private static Dictionary<int, List<int>>? confusablesMap;
     private static List<string>? knownTargets;
+    private static HashSet<long>? legalVariationPairs;
 
     public static Verdict Scan(string profile, string mode, IEnumerable<int> input)
     {
@@ -213,6 +214,7 @@ public static class Security
     {
         var positions = PositionsWhere(input, IsVariationSelector);
         if (positions.Count == 0) return null;
+        if (positions.Count == 1 && IsRegisteredVariationPosition(input, positions[0])) return null;
         var subThreat = "IllegalTarget";
         if (positions.Count >= 4 && AllSameAt(input, positions)) subThreat = "RepeatedBase";
         else if (DecodeVariationSelectorRun(input, positions).Count > 0) subThreat = "DirectPayload";
@@ -221,6 +223,9 @@ public static class Security
 
     private static bool IsVariationSelector(int cp) =>
         cp is >= 0xFE00 and <= 0xFE0F || cp is >= 0xE0100 and <= 0xE01EF || cp is >= 0x180B and <= 0x180D;
+
+    private static bool IsRegisteredVariationPosition(List<int> input, int position) =>
+        position > 0 && LegalVariationPairs().Contains(VariationPairKey(input[position - 1], input[position]));
 
     private static int? VariationSelectorNibble(int cp)
     {
@@ -347,6 +352,17 @@ public static class Security
         return knownTargets;
     }
 
+    private static HashSet<long> LegalVariationPairs()
+    {
+        if (legalVariationPairs is null)
+        {
+            legalVariationPairs = new HashSet<long>();
+            ParseLegalVariationPairs(ReadDataFile("StandardizedVariants.txt"), legalVariationPairs);
+            ParseLegalVariationPairs(ReadDataFile("emoji-variation-sequences.txt"), legalVariationPairs);
+        }
+        return legalVariationPairs;
+    }
+
     private static Dictionary<int, List<int>> ParseConfusables(string raw)
     {
         var output = new Dictionary<int, List<int>>();
@@ -365,6 +381,22 @@ public static class Security
 
     private static List<string> ParseKnownTargets(string raw) =>
         raw.Split('\n').Select(line => line.Trim()).Where(line => line != "" && !line.StartsWith('#')).ToList();
+
+    private static void ParseLegalVariationPairs(string raw, HashSet<long> output)
+    {
+        foreach (var rawLine in raw.Split('\n'))
+        {
+            var pairPart = rawLine.Split('#', 2)[0].Split(';', 2)[0].Trim();
+            if (pairPart == "") continue;
+            var fields = pairPart.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            if (fields.Length != 2) continue;
+            var baseCp = ParseHex(fields[0]);
+            var vs = ParseHex(fields[1]);
+            if (baseCp is not null && vs is not null) output.Add(VariationPairKey(baseCp.Value, vs.Value));
+        }
+    }
+
+    private static long VariationPairKey(int baseCp, int vs) => ((long)baseCp << 32) ^ (uint)vs;
 
     private static List<int> ParseCodepointField(string field) =>
         field.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)

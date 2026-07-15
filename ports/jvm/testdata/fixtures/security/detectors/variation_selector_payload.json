@@ -8,6 +8,16 @@
       "required_findings": []
     },
     {
+      "name": "registered-emoji-variation-clear",
+      "input": [169, 65039],
+      "required_findings": []
+    },
+    {
+      "name": "registered-standardized-variation-clear",
+      "input": [48, 65024],
+      "required_findings": []
+    },
+    {
       "name": "vs16-on-latin-illegal-target",
       "input": [65, 65039],
       "required_findings": [

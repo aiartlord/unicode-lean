@@ -47,6 +47,7 @@ export const Family = Object.freeze({
 
 let confusablesMapCache;
 let attackTargetsCache;
+let legalVariationPairsCache;
 let dataReader = null;
 
 export function configureSecurityDataReader(reader) {
@@ -56,17 +57,26 @@ export function configureSecurityDataReader(reader) {
   dataReader = reader;
   confusablesMapCache = undefined;
   attackTargetsCache = undefined;
+  legalVariationPairsCache = undefined;
 }
 
 export function configureSecurityData(data) {
   const confusables = String(data?.confusables ?? "");
   const knownAttackTargets = String(data?.knownAttackTargets ?? "");
+  const standardizedVariants = String(data?.standardizedVariants ?? "");
+  const emojiVariationSequences = String(data?.emojiVariationSequences ?? "");
   configureSecurityDataReader((name) => {
     if (name === "confusables.txt") {
       return confusables;
     }
     if (name === "KnownAttackTargets.txt") {
       return knownAttackTargets;
+    }
+    if (name === "StandardizedVariants.txt") {
+      return standardizedVariants;
+    }
+    if (name === "emoji-variation-sequences.txt") {
+      return emojiVariationSequences;
     }
     throw new Error(`unknown security data file: ${name}`);
   });
@@ -304,6 +314,9 @@ function variationSelectorFinding(input) {
   if (positions.length === 0) {
     return null;
   }
+  if (positions.length === 1 && isRegisteredVariationPosition(input, positions[0])) {
+    return null;
+  }
 
   let subThreat = "IllegalTarget";
   if (positions.length >= 4 && allSameAt(input, positions)) {
@@ -316,6 +329,10 @@ function variationSelectorFinding(input) {
 
 function isVariationSelector(cp) {
   return (cp >= 0xfe00 && cp <= 0xfe0f) || (cp >= 0xe0100 && cp <= 0xe01ef) || (cp >= 0x180b && cp <= 0x180d);
+}
+
+function isRegisteredVariationPosition(input, position) {
+  return position > 0 && legalVariationPairs().has(variationPairKey(input[position - 1], input[position]));
 }
 
 function variationSelectorNibble(cp) {
@@ -486,6 +503,16 @@ function knownAttackTargets() {
   return attackTargetsCache;
 }
 
+function legalVariationPairs() {
+  if (legalVariationPairsCache === undefined) {
+    legalVariationPairsCache = new Set([
+      ...parseLegalVariationPairs(readDataFile("StandardizedVariants.txt")),
+      ...parseLegalVariationPairs(readDataFile("emoji-variation-sequences.txt")),
+    ]);
+  }
+  return legalVariationPairsCache;
+}
+
 function parseConfusables(raw) {
   const out = new Map();
   for (const rawLine of raw.split("\n")) {
@@ -511,6 +538,30 @@ function parseKnownAttackTargets(raw) {
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line !== "" && !line.startsWith("#"));
+}
+
+function parseLegalVariationPairs(raw) {
+  const out = [];
+  for (const rawLine of raw.split("\n")) {
+    const pairPart = rawLine.split("#", 1)[0].split(";", 1)[0].trim();
+    if (pairPart === "") {
+      continue;
+    }
+    const fields = pairPart.split(/\s+/u);
+    if (fields.length !== 2) {
+      continue;
+    }
+    const base = parseHex(fields[0]);
+    const vs = parseHex(fields[1]);
+    if (base !== null && vs !== null) {
+      out.push(variationPairKey(base, vs));
+    }
+  }
+  return out;
+}
+
+function variationPairKey(base, vs) {
+  return `${base}:${vs}`;
 }
 
 function parseCodepointField(field) {

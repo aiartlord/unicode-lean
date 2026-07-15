@@ -78,6 +78,7 @@ public final class Security {
 
   private static Map<Integer, List<Integer>> confusablesMap;
   private static List<String> knownTargets;
+  private static Set<Long> legalVariationPairs;
 
   private Security() {}
 
@@ -229,6 +230,7 @@ public final class Security {
   private static Finding variationSelectorFinding(List<Integer> input) {
     List<Integer> positions = positionsWhere(input, Security::isVariationSelector);
     if (positions.isEmpty()) return null;
+    if (positions.size() == 1 && isRegisteredVariationPosition(input, positions.get(0))) return null;
     String subThreat = "IllegalTarget";
     if (positions.size() >= 4 && allSameAt(input, positions)) {
       subThreat = "RepeatedBase";
@@ -240,6 +242,10 @@ public final class Security {
 
   private static boolean isVariationSelector(int cp) {
     return (cp >= 0xFE00 && cp <= 0xFE0F) || (cp >= 0xE0100 && cp <= 0xE01EF) || (cp >= 0x180B && cp <= 0x180D);
+  }
+
+  private static boolean isRegisteredVariationPosition(List<Integer> input, int position) {
+    return position > 0 && legalVariationPairs().contains(variationPairKey(input.get(position - 1), input.get(position)));
   }
 
   private static Integer variationSelectorNibble(int cp) {
@@ -363,6 +369,15 @@ public final class Security {
     return knownTargets;
   }
 
+  private static synchronized Set<Long> legalVariationPairs() {
+    if (legalVariationPairs == null) {
+      legalVariationPairs = new HashSet<>();
+      parseLegalVariationPairs(readResource("StandardizedVariants.txt"), legalVariationPairs);
+      parseLegalVariationPairs(readResource("emoji-variation-sequences.txt"), legalVariationPairs);
+    }
+    return legalVariationPairs;
+  }
+
   private static Map<Integer, List<Integer>> parseConfusables(String raw) {
     Map<Integer, List<Integer>> out = new HashMap<>();
     for (String rawLine : raw.split("\n")) {
@@ -384,6 +399,23 @@ public final class Security {
       if (!trimmed.isEmpty() && !trimmed.startsWith("#")) out.add(trimmed);
     }
     return out;
+  }
+
+  private static void parseLegalVariationPairs(String raw, Set<Long> out) {
+    for (String rawLine : raw.split("\n")) {
+      String body = rawLine.split("#", 2)[0];
+      String pairPart = body.split(";", 2)[0].trim();
+      if (pairPart.isEmpty()) continue;
+      String[] fields = pairPart.split("\\s+");
+      if (fields.length != 2) continue;
+      Integer base = parseHex(fields[0]);
+      Integer vs = parseHex(fields[1]);
+      if (base != null && vs != null) out.add(variationPairKey(base, vs));
+    }
+  }
+
+  private static long variationPairKey(int base, int vs) {
+    return ((long) base << 32) ^ (vs & 0xffffffffL);
   }
 
   private static List<Integer> parseCodepointField(String field) {
