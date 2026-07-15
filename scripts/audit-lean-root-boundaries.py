@@ -228,7 +228,11 @@ def category(module: str) -> str:
         return "conformance"
     if module.startswith("Unicode.ConfusablesTableFacts"):
         return "assurance-facts"
-    if module.startswith("Unicode.Normalization.QuickCheckSingletonRankData"):
+    if module in {
+        "Unicode.Normalization.QuickCheckFacts",
+        "Unicode.Normalization.QuickCheckHangulFacts",
+        "Unicode.Normalization.QuickCheckSingletonRankData",
+    }:
         return "assurance-facts"
     if (
         module.startswith("Unicode.Normalization.ToNFDAppend")
