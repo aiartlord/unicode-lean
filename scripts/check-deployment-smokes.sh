@@ -573,8 +573,16 @@ if [[ "$run_cpp" -eq 1 ]]; then
   echo "== C++ installed-header consumer smoke =="
   require_file "$dist_abs/cpp/include/unicode_cpp/security/policy.hpp"
   require_file "$dist_abs/cpp/include/unicode_cpp/utf8.hpp"
+  require_file "$dist_abs/cpp/share/unicode_cpp/data/CaseFolding.txt"
+  require_file "$dist_abs/cpp/share/unicode_cpp/data/CompositionExclusions.txt"
+  require_file "$dist_abs/cpp/share/unicode_cpp/data/DerivedCoreProperties.txt"
   require_file "$dist_abs/cpp/share/unicode_cpp/data/confusables.txt"
   require_file "$dist_abs/cpp/share/unicode_cpp/data/KnownAttackTargets.txt"
+  require_file "$dist_abs/cpp/share/unicode_cpp/data/IdentifierStatus.txt"
+  require_file "$dist_abs/cpp/share/unicode_cpp/data/PropertyValueAliases.txt"
+  require_file "$dist_abs/cpp/share/unicode_cpp/data/ScriptExtensions.txt"
+  require_file "$dist_abs/cpp/share/unicode_cpp/data/Scripts.txt"
+  require_file "$dist_abs/cpp/share/unicode_cpp/data/UnicodeData.txt"
 
   cxx="${CXX:-c++}"
   command -v "$cxx" >/dev/null 2>&1 || fail "C++ compiler not found: $cxx"
@@ -666,6 +674,11 @@ if [[ "$run_haskell" -eq 1 ]]; then
   )
   (( ${#haskell_roots[@]} == 1 )) \
     || fail "Haskell source distribution unpacked to ${#haskell_roots[@]} roots"
+  require_file "${haskell_roots[0]}/data/CaseFolding.txt"
+  require_file "${haskell_roots[0]}/data/confusables.txt"
+  require_file "${haskell_roots[0]}/data/KnownAttackTargets.txt"
+  require_file "${haskell_roots[0]}/data/StandardizedVariants.txt"
+  require_file "${haskell_roots[0]}/data/emoji-variation-sequences.txt"
   mkdir -p "$haskell_smoke_dir/smoke/app"
   cat > "$haskell_smoke_dir/cabal.project" <<CABAL_PROJECT
 packages:
@@ -744,6 +757,11 @@ if [[ "$run_jvm" -eq 1 ]]; then
   echo "== JVM package consumer smoke =="
   require_file "$dist_abs/jvm/src/main/java/com/unicodesecurity/Security.java"
   require_dir "$dist_abs/jvm/src/main/resources"
+  require_file "$dist_abs/jvm/src/main/resources/com/unicodesecurity/data/CaseFolding.txt"
+  require_file "$dist_abs/jvm/src/main/resources/com/unicodesecurity/data/confusables.txt"
+  require_file "$dist_abs/jvm/src/main/resources/com/unicodesecurity/data/KnownAttackTargets.txt"
+  require_file "$dist_abs/jvm/src/main/resources/com/unicodesecurity/data/StandardizedVariants.txt"
+  require_file "$dist_abs/jvm/src/main/resources/com/unicodesecurity/data/emoji-variation-sequences.txt"
 
   javac_bin="${JAVAC:-javac}"
   java_bin="${JAVA:-java}"
@@ -807,6 +825,12 @@ if [[ "$run_go" -eq 1 ]]; then
   require_file "$dist_abs/go/go.mod"
   require_file "$dist_abs/go/security/policy.go"
   require_file "$dist_abs/go/security/utf8_policy.go"
+  require_file "$dist_abs/go/security/data/CaseFolding.txt"
+  require_file "$dist_abs/go/security/data/confusables.txt"
+  require_file "$dist_abs/go/security/data/KnownAttackTargets.txt"
+  require_file "$dist_abs/go/security/data/StandardizedVariants.txt"
+  require_file "$dist_abs/go/security/data/emoji-variation-sequences.txt"
+  require_file "$dist_abs/go/security/data/UnicodeData.txt"
 
   go_bin="${GO:-go}"
   command -v "$go_bin" >/dev/null 2>&1 || fail "Go not found: $go_bin"
@@ -893,8 +917,11 @@ if [[ "$run_typescript" -eq 1 ]]; then
   require_dir "$dist_abs/typescript"
   require_file "$dist_abs/typescript/package.json"
   require_file "$dist_abs/typescript/src/edge.js"
+  require_file "$dist_abs/typescript/src/data/CaseFolding.txt"
   require_file "$dist_abs/typescript/src/data/confusables.txt"
   require_file "$dist_abs/typescript/src/data/KnownAttackTargets.txt"
+  require_file "$dist_abs/typescript/src/data/StandardizedVariants.txt"
+  require_file "$dist_abs/typescript/src/data/emoji-variation-sequences.txt"
 
   node_bin="${NODE:-node}"
   command -v "$node_bin" >/dev/null 2>&1 || fail "Node.js not found: $node_bin"
@@ -911,7 +938,10 @@ const dataDir = process.env.UNICODE_TYPESCRIPT_DATA_DIR;
 const security = await instantiateSecurity({
   data: {
     confusables: readFileSync(`${dataDir}/confusables.txt`, "utf8"),
+    caseFolding: readFileSync(`${dataDir}/CaseFolding.txt`, "utf8"),
     knownAttackTargets: readFileSync(`${dataDir}/KnownAttackTargets.txt`, "utf8"),
+    standardizedVariants: readFileSync(`${dataDir}/StandardizedVariants.txt`, "utf8"),
+    emojiVariationSequences: readFileSync(`${dataDir}/emoji-variation-sequences.txt`, "utf8"),
   },
 });
 
@@ -944,8 +974,11 @@ if [[ "$run_dotnet" -eq 1 ]]; then
   echo "== .NET project consumer smoke =="
   require_file "$dist_abs/dotnet/src/UnicodeSecurity/UnicodeSecurity.csproj"
   require_file "$dist_abs/dotnet/src/UnicodeSecurity/Security.cs"
+  require_file "$dist_abs/dotnet/Data/CaseFolding.txt"
   require_file "$dist_abs/dotnet/Data/confusables.txt"
   require_file "$dist_abs/dotnet/Data/KnownAttackTargets.txt"
+  require_file "$dist_abs/dotnet/Data/StandardizedVariants.txt"
+  require_file "$dist_abs/dotnet/Data/emoji-variation-sequences.txt"
 
   dotnet_bin="${DOTNET:-dotnet}"
   command -v "$dotnet_bin" >/dev/null 2>&1 || fail ".NET SDK not found: $dotnet_bin"
@@ -1013,6 +1046,11 @@ if [[ "$run_swift" -eq 1 ]]; then
   require_dir "$dist_abs/swift"
   require_file "$dist_abs/swift/Package.swift"
   require_file "$dist_abs/swift/Sources/UnicodeSecurity/UnicodeSecurity.swift"
+  require_file "$dist_abs/swift/Sources/UnicodeSecurity/Resources/Data/CaseFolding.txt"
+  require_file "$dist_abs/swift/Sources/UnicodeSecurity/Resources/Data/confusables.txt"
+  require_file "$dist_abs/swift/Sources/UnicodeSecurity/Resources/Data/KnownAttackTargets.txt"
+  require_file "$dist_abs/swift/Sources/UnicodeSecurity/Resources/Data/StandardizedVariants.txt"
+  require_file "$dist_abs/swift/Sources/UnicodeSecurity/Resources/Data/emoji-variation-sequences.txt"
 
   swift_bin="${SWIFT:-swift}"
   command -v "$swift_bin" >/dev/null 2>&1 || fail "Swift not found: $swift_bin"
@@ -1093,8 +1131,15 @@ if [[ "$run_zig" -eq 1 ]]; then
   echo "== Zig module consumer smoke =="
   require_file "$dist_abs/zig/lib/libunicode_security.a"
   require_file "$dist_abs/zig/share/unicode-zig/src/security.zig"
+  require_file "$dist_abs/zig/share/unicode-zig/src/case_folding_data.zig"
   require_file "$dist_abs/zig/share/unicode-zig/src/confusables_data.zig"
+  require_file "$dist_abs/zig/share/unicode-zig/src/normalization_data.zig"
+  require_file "$dist_abs/zig/share/unicode-zig/src/data/CaseFolding.txt"
+  require_file "$dist_abs/zig/share/unicode-zig/src/data/confusables.txt"
   require_file "$dist_abs/zig/share/unicode-zig/src/data/KnownAttackTargets.txt"
+  require_file "$dist_abs/zig/share/unicode-zig/src/data/StandardizedVariants.txt"
+  require_file "$dist_abs/zig/share/unicode-zig/src/data/emoji-variation-sequences.txt"
+  require_file "$dist_abs/zig/share/unicode-zig/src/data/UnicodeData.txt"
 
   zig_bin="${ZIG:-zig}"
   command -v "$zig_bin" >/dev/null 2>&1 || fail "Zig not found: $zig_bin"

@@ -293,11 +293,13 @@ The current shared fixture set is:
 - `fixtures/security/detectors/*.json` — per-detector fixture files for the
   shared runtime families, including the data-backed
   `homoglyph-confusable` `identity-subthreat-v0` slice. The lighter ports vendor
-  `confusables.txt` and `KnownAttackTargets.txt`. Haskell, JVM, Go,
-  TypeScript, .NET, and Swift parse the vendored confusables map directly; Zig uses
-  `ports/zig/src/confusables_data.zig`, generated from the vendored UTS #39 file by
-  `ports/zig/tools/generate_confusables_data.py`. Go and Zig also vendor
-  `UnicodeData.txt` for the UTS #39 NFD skeleton bracket; Zig generates
+  `CaseFolding.txt`, `confusables.txt`, `KnownAttackTargets.txt`,
+  `StandardizedVariants.txt`, and `emoji-variation-sequences.txt`. Haskell,
+  JVM, Go, TypeScript, .NET, and Swift parse the vendored maps directly; Zig
+  uses `ports/zig/src/confusables_data.zig` and
+  `ports/zig/src/case_folding_data.zig`, generated from the vendored UTS #39
+  files by `ports/zig/tools/generate_confusables_data.py`. Go and Zig also
+  vendor `UnicodeData.txt` for the UTS #39 NFD skeleton bracket; Zig generates
   `ports/zig/src/normalization_data.zig` from that file for canonical
   decomposition and combining-class lookup. The shared v0 slice also covers
   precomposed/decomposed NFD skeleton equivalence, decomposed combining-sequence
@@ -306,11 +308,14 @@ The current shared fixture set is:
   `src/unicode_python/data`, and `scripts/check-runtime-data.sh` compares those
   files byte-for-byte with the canonical `data/` symlink targets. JVM, Go,
   TypeScript, .NET, Swift, and Zig pin their vendored bytes with port-local
-  `SHA256SUMS` manifests, and Zig checks that its generated lookup tables are
-  reproducible from `confusables.txt` and `UnicodeData.txt`. `RestrictionLow` remains outside the shared detector
-  fixture: Rust/Python can reach low restriction levels internally, but the
-  reference detector currently emits the higher-priority `CrossScriptMix`
-  sub-threat first. The reference-only audit fixture
+  `SHA256SUMS` manifests. Zig checks that its generated lookup tables are
+  reproducible from `confusables.txt`, `CaseFolding.txt`, and
+  `UnicodeData.txt`. Package verifiers require the exact data files each port
+  reads, including full case-folding, known targets, registered variation pairs,
+  and normalization data where applicable. `RestrictionLow` remains outside the
+  shared detector fixture: Rust/Python can reach low restriction levels
+  internally, but the reference detector currently emits the higher-priority
+  `CrossScriptMix` sub-threat first. The reference-only audit fixture
   `fixtures/security/audits/homoglyph_restriction_low.json` pins that behavior.
 
 ## Runtime Data Refresh
@@ -329,8 +334,8 @@ scripts/sync-runtime-data.sh --apply
 That command refreshes `data/SHA256SUMS`, syncs Python vendored data, syncs the
 Haskell/JVM/Go/TypeScript/.NET/Swift/Zig runtime data copies, refreshes their
 `SHA256SUMS` manifests, regenerates Haskell generated normalization tables,
-regenerates Zig `confusables_data.zig` and `normalization_data.zig`, and finishes with
-`scripts/check-runtime-data.sh`.
+regenerates Zig `confusables_data.zig`, `case_folding_data.zig`, and
+`normalization_data.zig`, and finishes with `scripts/check-runtime-data.sh`.
 
 For CI or preflight checks without writing files, run:
 

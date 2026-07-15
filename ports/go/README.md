@@ -19,6 +19,11 @@ Tests consume a vendored copy of the shared policy, verdict, decode, and
 detector fixtures under `security/testdata/fixtures/security/`, so `go test`
 works from a packaged module copy as well as from this checkout.
 
+Runtime data is vendored under `security/data/` and pinned by
+`security/data/SHA256SUMS`: `CaseFolding.txt`, `confusables.txt`,
+`KnownAttackTargets.txt`, `StandardizedVariants.txt`,
+`emoji-variation-sequences.txt`, and `UnicodeData.txt`.
+
 Run from the repository root:
 
 ```sh

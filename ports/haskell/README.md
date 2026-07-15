@@ -72,3 +72,9 @@ The Haskell tier is part of `scripts/test-runtime-ports.sh` by default.
 The port must use this repository's shared fixtures and policy contract. New
 runtime behavior should be added to `fixtures/` first, then implemented across
 Rust, Python, C++, and Haskell against the same expected verdicts.
+
+Runtime data is vendored under `data/` and pinned by `data/SHA256SUMS`.
+The policy layer reads `CaseFolding.txt`, `confusables.txt`,
+`KnownAttackTargets.txt`, `StandardizedVariants.txt`, and
+`emoji-variation-sequences.txt`; generated normalization modules are refreshed
+from the same vendored UCD data by `scripts/sync-runtime-data.sh`.

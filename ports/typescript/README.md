@@ -27,6 +27,11 @@ Tests consume package-local copies of the shared contract fixtures under
 `testdata/fixtures/security/`, so `node --test` works from a packaged module
 copy as well as from this checkout.
 
+Runtime data is vendored under `src/data/` and pinned by
+`src/data/SHA256SUMS`: `CaseFolding.txt`, `confusables.txt`,
+`KnownAttackTargets.txt`, `StandardizedVariants.txt`, and
+`emoji-variation-sequences.txt`.
+
 Run from the repository root:
 
 ```sh
@@ -73,7 +78,10 @@ import { instantiateSecurity } from "@unicode-security/runtime/edge";
 const security = await instantiateSecurity({
   data: {
     confusables,
+    caseFolding,
     knownAttackTargets,
+    standardizedVariants,
+    emojiVariationSequences,
   },
 });
 
