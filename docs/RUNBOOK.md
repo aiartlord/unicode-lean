@@ -97,14 +97,20 @@ The target shape is:
 10. Stage 9: full conformance aggregate
 11. Stage 10: cleanup/report
 
-Quick-check singleton rank evidence belongs in Stage 6. In particular,
-`Unicode.Normalization.QuickCheckSingletonRankData` is a generated assurance
-fact module, not a runtime normalization prerequisite. Cache it first, then
-cache the structural support module
-`Unicode.Normalization.QuickCheckSoundnessSingletonRank`. These are explicit
-one-module targets before rewiring or checking
-`QuickCheckSoundnessSingletonTable`, `QuickCheckSoundnessMaster`,
-`QuickCheckSoundnessSnocClosure`, or `QuickCheckSoundnessTheorem`:
+Quick-check soundness evidence belongs in Stage 6. It is an opt-in assurance
+layer, not a runtime normalization prerequisite and not part of the default
+`Unicode` root. Do not run Lean, Lake, or the staged cache runner while local
+free disk is below the project safety floor; finish source-only cleanup first,
+recover disk, then validate one module at a time.
+
+The root-boundary audit treats `QuickCheckFacts`, `QuickCheckHangulFacts`, and
+`QuickCheckSingletonRankData` as assurance facts, and treats
+`QuickCheckSoundness*` modules as assurance proofs. None of these modules should
+enter the default runtime root.
+
+`Unicode.Normalization.QuickCheckSingletonRankData` is generated assurance fact
+data. Cache it before the structural rank support module
+`Unicode.Normalization.QuickCheckSoundnessSingletonRank`:
 
 ```bash
 scripts/lean-cache-stages.py \
@@ -128,9 +134,25 @@ Measured local reference: these targets built one module at a time with
 `LEAN_NUM_THREADS=1` and `JOBS=1`; `QuickCheckSingletonRankData` built in 417
 seconds after adding lookup-shaped coverage, `QuickCheckSoundnessSingletonRank`
 built in 1.3 s with its dependencies already cached, and
-`QuickCheckSoundnessSingletonTable` built in 345 ms. Do not run the broader
-QuickCheck soundness stack on a cold cache until these rank/table modules are
-cached first.
+`QuickCheckSoundnessSingletonTable` built in 345 ms.
+
+After disk recovery, validate the kept QuickCheck assurance layer in this order,
+one module target per Lean process:
+
+1. `Unicode.Normalization.QuickCheckSoundnessPrefix`
+2. `Unicode.Normalization.QuickCheckSoundnessSingletonAtomic`
+3. `Unicode.Normalization.QuickCheckSoundnessSingletonPair`
+4. `Unicode.Normalization.QuickCheckSoundnessHangul`
+5. `Unicode.Normalization.QuickCheckSoundnessSingletonRank`
+6. `Unicode.Normalization.QuickCheckSoundnessSingletonTable`
+7. `Unicode.Normalization.QuickCheckSoundnessSnoc`
+8. `Unicode.Normalization.QuickCheckSoundnessMaster`
+9. `Unicode.Normalization.QuickCheckSoundnessSnocClosure`
+10. `Unicode.Normalization.QuickCheckSoundnessTheorem`
+
+`QuickCheckSoundnessSnoc` is now a compatibility surface over the live split
+modules. It should not reintroduce the old Hangul full-range `toNFC` reducer or
+the old monolithic singleton table reducer.
 
 Current implemented support:
 
