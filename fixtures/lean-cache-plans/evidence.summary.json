@@ -1,5 +1,5 @@
 {
-  "module_steps": 304,
+  "module_steps": 306,
   "preset": "evidence",
   "roots": [
     {
@@ -72,9 +72,9 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 497353,
+      "bytes": 506342,
       "decide_kernel": 107,
-      "modules": 26,
+      "modules": 28,
       "row_refs": 252,
       "stage": "stage-6-assurance-proof-chunk"
     },

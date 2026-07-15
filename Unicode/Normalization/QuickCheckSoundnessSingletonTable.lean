@@ -11,7 +11,7 @@
 import Unicode.Normalization.NFC
 import Unicode.Normalization.Lookup
 import Unicode.Normalization.Hangul
-import Unicode.Normalization.QuickCheckSingletonRankData
+import Unicode.Normalization.QuickCheckSoundnessSingletonRank
 import Unicode.Generated.UnicodeData
 
 namespace Unicode.Normalization.QuickCheckSoundnessSingletonTable
