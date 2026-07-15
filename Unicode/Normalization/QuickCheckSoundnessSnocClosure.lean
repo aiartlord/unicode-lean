@@ -194,31 +194,31 @@ theorem qcY_starter_toNFD_head
       · rw [hToNFD]; simp
     | some row =>
       have hRowCp : row.codepoint = cp := by
-        have hFind := Array.find?_eq_some_iff_getElem.mp hLookup
-        obtain ⟨hPred, hIdxLt, hAllPriorFalse⟩ := hFind
-        clear hIdxLt hAllPriorFalse
-        exact of_decide_eq_true hPred
+        exact Unicode.Generated.UnicodeDataIndex.lookupRow?_codepoint hLookup
       have hRccc :
           row.canonicalCombiningClass = Lookup.canonicalCombiningClass cp := by
         unfold Lookup.canonicalCombiningClass; rw [hLookup]
-      have hRowMem : row ∈ UnicodeData.rows :=
-        Array.mem_of_find?_eq_some hLookup
+      obtain ⟨src, hSrcMem, hSrcCp, hSrcCcc, _hSrcDecomp⟩ :=
+        Unicode.Generated.UnicodeDataIndex.lookupRow?_supported_rowsList hLookup
+      have hSrcCpEq : src.codepoint = cp := hSrcCp.trans hRowCp
+      have hRowMem : src ∈ UnicodeData.rows := by
+        simpa [UnicodeData.rows] using hSrcMem
       have hTable := qcY_starter_toNFD_head_table
       rw [Array.all_eq_true] at hTable
       rcases Array.getElem_of_mem hRowMem with ⟨i, hi, hElem⟩
       have hRowFact := hTable i hi
       rw [hElem] at hRowFact
-      have hCccDecide : decide (row.canonicalCombiningClass ≠ 0) = false := by
-        rw [hRccc]; simp [hCcc]
-      have hQCDecide : decide (nfcQCValue row.codepoint ≠ .Y) = false := by
-        rw [hRowCp]; simp [hQC]
+      have hCccDecide : decide (src.canonicalCombiningClass ≠ 0) = false := by
+        rw [hSrcCcc, hRccc]; simp [hCcc]
+      have hQCDecide : decide (nfcQCValue src.codepoint ≠ .Y) = false := by
+        rw [hSrcCpEq]; simp [hQC]
       rw [hCccDecide, hQCDecide] at hRowFact
       simp only [Bool.or_self, Bool.false_or] at hRowFact
       rw [Bool.and_eq_true, Bool.and_eq_true, Bool.and_eq_true,
           Bool.and_eq_true] at hRowFact
       obtain ⟨⟨⟨⟨hDsHead, hNfdHead⟩, hNfdQC⟩, hDsNonEmpty⟩, hNfdNonEmpty⟩ :=
         hRowFact
-      rw [hRowCp] at hDsHead hNfdHead hNfdQC hDsNonEmpty hNfdNonEmpty
+      rw [hSrcCpEq] at hDsHead hNfdHead hNfdQC hDsNonEmpty hNfdNonEmpty
       exact ⟨of_decide_eq_true hDsHead, of_decide_eq_true hNfdHead,
              of_decide_eq_true hNfdQC, of_decide_eq_true hDsNonEmpty,
              of_decide_eq_true hNfdNonEmpty⟩

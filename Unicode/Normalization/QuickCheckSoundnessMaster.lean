@@ -80,20 +80,20 @@ theorem singleton_sound_nontrivial
   obtain ⟨row, hLookup⟩ := Option.ne_none_iff_exists'.mp hLookupNotNone
   -- The found row's codepoint equals cp.
   have hRowCp : row.codepoint = cp := by
-    have hFind := Array.find?_eq_some_iff_getElem.mp hLookup
-    obtain ⟨hPred, hIdxLt, hAllPriorFalse⟩ := hFind
-    clear hIdxLt hAllPriorFalse
-    exact of_decide_eq_true hPred
+    exact Unicode.Generated.UnicodeDataIndex.lookupRow?_codepoint hLookup
+  obtain ⟨src, hSrcMem, hSrcCp, _hSrcCcc, hSrcDecomp⟩ :=
+    Unicode.Generated.UnicodeDataIndex.lookupRow?_supported_rowsList hLookup
+  have hSrcCpEq : src.codepoint = cp := hSrcCp.trans hRowCp
   -- The table fact applies to row.
-  have hRowMem : row ∈ UnicodeData.rows :=
-    Array.mem_of_find?_eq_some hLookup
+  have hRowMem : src ∈ UnicodeData.rows := by
+    simpa [UnicodeData.rows] using hSrcMem
   have hTable :=
     QuickCheckSoundnessSingletonTable.qcY_starter_nontrivial_singleton_nfc_id_table
   rw [Array.all_eq_true] at hTable
   rcases Array.getElem_of_mem hRowMem with ⟨i, hi, hElem⟩
   have hRowFact := hTable i hi
   rw [hElem] at hRowFact
-  rw [hRowCp] at hRowFact
+  rw [hSrcCpEq] at hRowFact
   -- The five-disjunct boolean fact reduces. Substitute the per-codepoint
   -- hypotheses to collapse all but the last (toNFC = id) disjunct.
   have hCccDecide : decide (Lookup.canonicalCombiningClass cp ≠ 0) = false := by
@@ -104,9 +104,10 @@ theorem singleton_sound_nontrivial
     simp [hQC]
   -- For the canonicalDecomposition-size disjunct, lift via the fact that
   -- the row's decomp matches the per-cp lookup.
-  have hRowDecomp : row.canonicalDecomposition = Lookup.canonicalDecomposition cp := by
+  have hRowDecomp : src.canonicalDecomposition = Lookup.canonicalDecomposition cp := by
     unfold Lookup.canonicalDecomposition
     rw [hLookup]
+    exact hSrcDecomp
   have hSizeDecide : decide (row.canonicalDecomposition.size = 0) = false := by
     rw [hRowDecomp]
     have hNonEmptyArr : (Lookup.canonicalDecomposition cp).size ≠ 0 := by

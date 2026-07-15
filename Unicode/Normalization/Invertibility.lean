@@ -171,25 +171,38 @@ theorem primaryComposite_canonicalDecomposition_nonHangul
     obtain ⟨hDec, hNotExc⟩ := hCond
     simp only [Option.some.injEq] at hFEq
     rcases Array.getElem_of_mem hRowMem with ⟨idx, hIdx, hRowEq⟩
-    have hLookupRow : Lookup.lookupRow p = some row := by
-      unfold Lookup.lookupRow
-      rw [Array.find?_eq_some_iff_getElem]
-      refine ⟨?headDecide, idx, hIdx, hRowEq, ?priorNotMatch⟩
-      · show decide (row.codepoint = p) = true
-        exact decide_eq_true hFEq
-      · intro j hLt
-        have hJLt : j < UnicodeData.rows.size := Nat.lt_trans hLt hIdx
-        have hNe : UnicodeData.rows[j].codepoint ≠ p := by
-          intro hAbs
-          have hRowAtIdxEq : UnicodeData.rows[idx].codepoint = p := by
-            rw [hRowEq]; exact hFEq
-          have hEqIJ := UnicodeData_rows_codepoint_NoDup j idx hJLt hIdx
-            (hAbs.trans hRowAtIdxEq.symm)
-          omega
-        simp [hNe]
     unfold Lookup.canonicalDecomposition
-    rw [hLookupRow]
-    exact hDec
+    cases hLookup : Lookup.lookupRow p with
+    | none =>
+      exfalso
+      have hRowList : row ∈ UnicodeData.rowsList := by
+        simpa [UnicodeData.rows] using hRowMem
+      exact Unicode.Generated.UnicodeDataIndex.lookupRow?_none_no_rowsList_codepoint
+        hLookup hRowList hFEq
+    | some found =>
+      simp
+      obtain ⟨src, hSrcMem, hSrcCp, _hSrcCcc, hSrcDecomp⟩ :=
+        Unicode.Generated.UnicodeDataIndex.lookupRow?_supported_rowsList hLookup
+      have hFoundCp : found.codepoint = p :=
+        Unicode.Generated.UnicodeDataIndex.lookupRow?_codepoint hLookup
+      have hSrcArray : src ∈ UnicodeData.rows := by
+        simpa [UnicodeData.rows] using hSrcMem
+      rcases Array.getElem_of_mem hSrcArray with ⟨srcIdx, hSrcIdx, hSrcEq⟩
+      have hSrcAtIdxCp : UnicodeData.rows[srcIdx].codepoint = p := by
+        rw [hSrcEq]
+        exact hSrcCp.trans hFoundCp
+      have hRowAtIdxCp : UnicodeData.rows[idx].codepoint = p := by
+        rw [hRowEq]
+        exact hFEq
+      have hIdxEq := UnicodeData_rows_codepoint_NoDup srcIdx idx hSrcIdx hIdx
+        (hSrcAtIdxCp.trans hRowAtIdxCp.symm)
+      have hSrcEqRow : src = row := by
+        subst srcIdx
+        exact hSrcEq.symm.trans hRowEq
+      have hSrcDec : src.canonicalDecomposition = #[d, c] := by
+        rw [hSrcEqRow]
+        exact hDec
+      exact hSrcDecomp.symm.trans hSrcDec
   · cases hFEq
 
 end Unicode.Normalization.Invertibility

@@ -11,6 +11,7 @@
 -/
 
 import Unicode.Generated.UnicodeData
+import Unicode.Generated.UnicodeDataIndexFacts
 import Unicode.Generated.CompositionExclusions
 import Unicode.Generated.DerivedNormalizationProps
 
@@ -24,7 +25,7 @@ set_option maxRecDepth 100000
     pinned NFC-relevant subset. Returns `none` for codepoints that are
     both `CCC = 0` and have no canonical decomposition. -/
 def lookupRow (cp : Nat) : Option UnicodeData.UnicodeDataRow :=
-  UnicodeData.rows.find? (fun row => row.codepoint = cp)
+  UnicodeDataIndex.lookupRow? cp
 
 /-- Canonical_Combining_Class for a codepoint. Unlisted codepoints have
     `CCC = 0` per the UCD's implicit default for the NFC-relevant
@@ -62,15 +63,10 @@ def isFullCompositionExclusion (cp : Nat) : Bool :=
 --                                              // lookup // fact-transport
 -- ─────────────────────────────────────────────────────────────────────────────
 
--- Evaluating an accessor at a concrete codepoint must never happen by
--- reducing the row scan: `List.find?` reduction over the pinned table is
--- catastrophically expensive in every reduction engine, at every scan
--- depth. Concrete-codepoint facts are instead witnessed by linear
--- `List.all` / `List.any` passes over `rowsList` — the only table
--- traversals the kernel checks at flat cost — and transported to the
--- accessors here. The lemmas are parametric in `cp` on purpose: with a
--- variable scrutinee, `unfold` rewrites the accessor's match without
--- evaluating the row scan.
+-- Evaluating an accessor at a concrete codepoint must never reduce a full
+-- row scan. `lookupRow` uses the generated low-byte index; concrete facts are
+-- still witnessed over `rowsList` and transported through the generated
+-- index support/coverage lemmas.
 
 /-- A codepoint no row carries is a `lookupRow` miss. The `List.all`
     hypothesis is the kernel-checkable witness of absence — one linear
@@ -80,13 +76,16 @@ theorem lookupRow_none_of_all_ne (cp : Nat)
       (fun r => decide (r.codepoint ≠ cp)) = true) :
     lookupRow cp = none := by
   unfold lookupRow
-  simp only [UnicodeData.rows, List.find?_toArray]
-  rw [List.find?_eq_none]
-  intro x hx
-  have hNe : x.codepoint ≠ cp :=
-    of_decide_eq_true (List.all_eq_true.mp hAll x hx)
-  intro hEq
-  exact hNe (of_decide_eq_true hEq)
+  cases hL : UnicodeDataIndex.lookupRow? cp with
+  | none => rfl
+  | some row =>
+    exfalso
+    have hCp := UnicodeDataIndex.lookupRow?_codepoint hL
+    obtain ⟨src, hSrcMem, hSrcCp, _hSrcCcc, _hSrcDecomp⟩ :=
+      UnicodeDataIndex.lookupRow?_supported_rowsList hL
+    have hNe : src.codepoint ≠ cp :=
+      of_decide_eq_true (List.all_eq_true.mp hAll src hSrcMem)
+    exact hNe (hSrcCp.trans hCp)
 
 /-- Every codepoint of an interval no row touches is a `lookupRow`
     miss. One linear pass witnesses absence for the WHOLE interval, so
@@ -98,14 +97,17 @@ theorem lookupRow_none_of_all_outside (lo hi cp : Nat)
     (hLo : lo ≤ cp) (hHi : cp ≤ hi) :
     lookupRow cp = none := by
   unfold lookupRow
-  simp only [UnicodeData.rows, List.find?_toArray]
-  rw [List.find?_eq_none]
-  intro x hx
-  have hOut : ¬ (lo ≤ x.codepoint ∧ x.codepoint ≤ hi) :=
-    of_decide_eq_true (List.all_eq_true.mp hAll x hx)
-  intro hEq
-  have hEqCp : x.codepoint = cp := of_decide_eq_true hEq
-  exact hOut (by omega)
+  cases hL : UnicodeDataIndex.lookupRow? cp with
+  | none => rfl
+  | some row =>
+    exfalso
+    have hCp := UnicodeDataIndex.lookupRow?_codepoint hL
+    obtain ⟨src, hSrcMem, hSrcCp, _hSrcCcc, _hSrcDecomp⟩ :=
+      UnicodeDataIndex.lookupRow?_supported_rowsList hL
+    have hOut : ¬ (lo ≤ src.codepoint ∧ src.codepoint ≤ hi) :=
+      of_decide_eq_true (List.all_eq_true.mp hAll src hSrcMem)
+    have hSrcEqCp : src.codepoint = cp := hSrcCp.trans hCp
+    exact hOut (by omega)
 
 /-- A `lookupRow` miss has the CCC default: codepoints outside the
     pinned NFC-relevant subset have `CCC = 0` per the UCD's implicit
@@ -139,24 +141,18 @@ theorem canonicalCombiningClass_of_hit (cp ccc : Nat)
   cases hL : lookupRow cp with
   | none =>
     exfalso
-    unfold lookupRow at hL
-    simp only [UnicodeData.rows, List.find?_toArray] at hL
-    rw [List.find?_eq_none] at hL
     rw [List.any_eq_true] at hAny
     obtain ⟨r, hrMem, hrEq⟩ := hAny
-    exact (hL r hrMem) hrEq
+    exact UnicodeDataIndex.lookupRow?_none_no_rowsList_codepoint hL hrMem
+      (of_decide_eq_true hrEq)
   | some row =>
-    unfold lookupRow at hL
-    simp only [UnicodeData.rows, List.find?_toArray] at hL
-    have hMem : row ∈ UnicodeData.rowsList := List.mem_of_find?_eq_some hL
+    obtain ⟨src, hSrcMem, hSrcCp, hSrcCcc, _hSrcDecomp⟩ :=
+      UnicodeDataIndex.lookupRow?_supported_rowsList hL
     have hCp : row.codepoint = cp :=
-      of_decide_eq_true
-        (List.find?_some
-          (p := fun (r : UnicodeData.UnicodeDataRow) =>
-            decide (r.codepoint = cp)) hL)
-    have hImp : row.codepoint = cp → row.canonicalCombiningClass = ccc :=
-      of_decide_eq_true (List.all_eq_true.mp hAll row hMem)
-    exact hImp hCp
+      UnicodeDataIndex.lookupRow?_codepoint hL
+    have hImp : src.codepoint = cp → src.canonicalCombiningClass = ccc :=
+      of_decide_eq_true (List.all_eq_true.mp hAll src hSrcMem)
+    exact hSrcCcc.symm.trans (hImp (hSrcCp.trans hCp))
 
 /-- Canonical decomposition of a codepoint PRESENT in the table, without
     reducing the scan. Same transport shape as
@@ -172,23 +168,17 @@ theorem canonicalDecomposition_of_hit (cp : Nat) (target : Array Nat)
   cases hL : lookupRow cp with
   | none =>
     exfalso
-    unfold lookupRow at hL
-    simp only [UnicodeData.rows, List.find?_toArray] at hL
-    rw [List.find?_eq_none] at hL
     rw [List.any_eq_true] at hAny
     obtain ⟨r, hrMem, hrEq⟩ := hAny
-    exact (hL r hrMem) hrEq
+    exact UnicodeDataIndex.lookupRow?_none_no_rowsList_codepoint hL hrMem
+      (of_decide_eq_true hrEq)
   | some row =>
-    unfold lookupRow at hL
-    simp only [UnicodeData.rows, List.find?_toArray] at hL
-    have hMem : row ∈ UnicodeData.rowsList := List.mem_of_find?_eq_some hL
+    obtain ⟨src, hSrcMem, hSrcCp, _hSrcCcc, hSrcDecomp⟩ :=
+      UnicodeDataIndex.lookupRow?_supported_rowsList hL
     have hCp : row.codepoint = cp :=
-      of_decide_eq_true
-        (List.find?_some
-          (p := fun (r : UnicodeData.UnicodeDataRow) =>
-            decide (r.codepoint = cp)) hL)
-    have hImp : row.codepoint = cp → row.canonicalDecomposition = target :=
-      of_decide_eq_true (List.all_eq_true.mp hAll row hMem)
-    exact hImp hCp
+      UnicodeDataIndex.lookupRow?_codepoint hL
+    have hImp : src.codepoint = cp → src.canonicalDecomposition = target :=
+      of_decide_eq_true (List.all_eq_true.mp hAll src hSrcMem)
+    exact hSrcDecomp.symm.trans (hImp (hSrcCp.trans hCp))
 
 end Unicode.Normalization.Lookup

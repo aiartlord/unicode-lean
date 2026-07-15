@@ -199,18 +199,14 @@ theorem ccc_below_first_nonzero_range (cp : Nat) (h : cp < 0x0300) :
   cases hL : Lookup.lookupRow cp with
   | none => rfl
   | some row =>
-    unfold Lookup.lookupRow at hL
-    simp only [UnicodeData.rows, List.find?_toArray] at hL
-    have hMem : row ∈ UnicodeData.rowsList := List.mem_of_find?_eq_some hL
-    have hImp : row.codepoint < 0x0300 → row.canonicalCombiningClass = 0 :=
+    obtain ⟨src, hSrcMem, hSrcCp, hSrcCcc, _hSrcDecomp⟩ :=
+      Unicode.Generated.UnicodeDataIndex.lookupRow?_supported_rowsList hL
+    have hImp : src.codepoint < 0x0300 → src.canonicalCombiningClass = 0 :=
       of_decide_eq_true
-        (List.all_eq_true.mp rows_ccc_zero_below_0x0300 row hMem)
+        (List.all_eq_true.mp rows_ccc_zero_below_0x0300 src hSrcMem)
     have hCp : row.codepoint = cp :=
-      of_decide_eq_true
-        (List.find?_some
-          (p := fun (r : UnicodeData.UnicodeDataRow) =>
-            decide (r.codepoint = cp)) hL)
-    exact hImp (by omega)
+      Unicode.Generated.UnicodeDataIndex.lookupRow?_codepoint hL
+    exact hSrcCcc.symm.trans (hImp (by omega))
 
 /-- Quick check per UAX #15 §A.1 NFD: a sequence is guaranteed to be in
     NFD when every codepoint has `NFD_QC = Y` AND combining marks are

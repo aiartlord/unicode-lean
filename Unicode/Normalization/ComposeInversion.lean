@@ -806,28 +806,26 @@ theorem fullCanonicalDecompose_of_twoElt_decomp
       rw [hL] at h
       exact ⟨row, rfl, h⟩
   obtain ⟨row, hRowEq, hRowDecomp⟩ := hLookup
-  have hRowMem : row ∈ UnicodeData.rows :=
-    Array.mem_of_find?_eq_some hRowEq
-  rcases Array.getElem_of_mem hRowMem with ⟨i, hi, hElem⟩
-  have hCodepointEq : row.codepoint = p := by
-    have hFindProp := Array.find?_eq_some_iff_getElem.mp hRowEq
-    obtain ⟨hCodeDecide, hExists⟩ := hFindProp
-    have hExistsUnused := hExists
-    clear hExistsUnused
-    exact of_decide_eq_true hCodeDecide
-  have hSize : row.canonicalDecomposition.size = 2 := by
-    rw [hRowDecomp]; rfl
-  have hGet0 : row.canonicalDecomposition.getD 0 0 = d := by
-    rw [hRowDecomp]; rfl
-  have hGet1 : row.canonicalDecomposition.getD 1 0 = c := by
-    rw [hRowDecomp]; rfl
-  have hTable := ucd_twoEltDecomp_factoring
-  rw [Array.all_eq_true] at hTable
-  have hTCell := hTable i hi
-  rw [hElem] at hTCell
+  obtain ⟨src, hSrcMem, hSrcCp, _hSrcCcc, hSrcDecomp⟩ :=
+    Unicode.Generated.UnicodeDataIndex.lookupRow?_supported_rowsList hRowEq
+  have hCodepointEq : row.codepoint = p :=
+    Unicode.Generated.UnicodeDataIndex.lookupRow?_codepoint hRowEq
+  have hSrcCodepointEq : src.codepoint = p := hSrcCp.trans hCodepointEq
+  have hSrcDecompEq : src.canonicalDecomposition = #[d, c] := by
+    rw [hSrcDecomp, hRowDecomp]
+  have hSize : src.canonicalDecomposition.size = 2 := by
+    rw [hSrcDecompEq]; rfl
+  have hGet0 : src.canonicalDecomposition.getD 0 0 = d := by
+    rw [hSrcDecompEq]; rfl
+  have hGet1 : src.canonicalDecomposition.getD 1 0 = c := by
+    rw [hSrcDecompEq]; rfl
+  have hcomb := List.all_eq_true.mp rowsList_all_combP src hSrcMem
+  unfold combP at hcomb
+  rw [Bool.and_eq_true] at hcomb
+  have hTCell := hcomb.1
   rw [if_pos hSize] at hTCell
   rw [hGet0, hGet1] at hTCell
-  rw [hCodepointEq] at hTCell
+  rw [hSrcCodepointEq] at hTCell
   exact of_decide_eq_true hTCell
 
 /-- **Unconditional non-Hangul primary-composite factorization.**
@@ -1441,6 +1439,8 @@ theorem toNFC_idempotent_given
   unfold NFC.toNFC
   have hNFD : NFC.toNFD (NFC.toNFD x) = NFC.toNFD x :=
     NFD.toNFD_idempotent x
+  change Compose.compose (NFC.toNFD (Compose.compose (NFC.toNFD x)))
+      = Compose.compose (NFC.toNFD x)
   rw [decompose_compose_inversion_given hStep (NFC.toNFD x) hNFD]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -1510,33 +1510,32 @@ theorem fullCanonicalDecompose_preserves_ccc_of_nonStarter
     rw [hL]
   | some row =>
     have hCpEq : row.codepoint = cp := by
-      unfold Lookup.lookupRow at hL
-      have hFind := Array.find?_eq_some_iff_getElem.mp hL
-      obtain ⟨hDec, hRest⟩ := hFind
-      clear hRest
-      exact of_decide_eq_true hDec
+      exact Unicode.Generated.UnicodeDataIndex.lookupRow?_codepoint hL
     have hRowCCC : row.canonicalCombiningClass = Lookup.canonicalCombiningClass cp := by
       unfold Lookup.canonicalCombiningClass
       rw [hL]
-    have hRowMem : row ∈ UnicodeData.rows := Array.mem_of_find?_eq_some hL
-    have hTable := nonStarter_fullCanonicalDecompose_preserves_ccc
-    rw [Array.all_eq_true] at hTable
-    rcases Array.getElem_of_mem hRowMem with ⟨i, hi, hElem⟩
-    have hAt := hTable i hi
-    rw [hElem] at hAt
-    have hRowCCCne : row.canonicalCombiningClass ≠ 0 := by
-      rw [hRowCCC]; exact h
+    obtain ⟨src, hSrcMem, hSrcCp, hSrcCcc, _hSrcDecomp⟩ :=
+      Unicode.Generated.UnicodeDataIndex.lookupRow?_supported_rowsList hL
+    have hSrcCpEq : src.codepoint = cp := hSrcCp.trans hCpEq
+    have hAt := List.all_eq_true.mp rowsList_all_combP src hSrcMem
+    unfold combP at hAt
+    rw [Bool.and_eq_true] at hAt
+    have hAt := hAt.2
+    have hSrcCCCne : src.canonicalCombiningClass ≠ 0 := by
+      rw [hSrcCcc, hRowCCC]; exact h
     -- hAt : (decide (row.ccc = 0) || preserve-bool) = true.
     -- row.ccc ≠ 0, so the first disjunct is false, forcing preserve-bool = true.
-    have hNotZero : decide (row.canonicalCombiningClass = 0) = false :=
-      decide_eq_false hRowCCCne
+    have hNotZero : decide (src.canonicalCombiningClass = 0) = false :=
+      decide_eq_false hSrcCCCne
     rw [hNotZero, Bool.false_or] at hAt
     rw [Array.all_eq_true] at hAt
-    rw [← hCpEq] at hMem
+    rw [← hSrcCpEq] at hMem
+    rw [ToNFDAppend.fullCanonicalDecompose_eq] at hMem
     rcases Array.getElem_of_mem hMem with ⟨j, hj, hJElem⟩
     have hCpcEq := of_decide_eq_true (hAt j hj)
     rw [hJElem] at hCpcEq
-    rw [hCpcEq, hRowCCC]
+    rw [← ToNFDAppend.canonicalCombiningClass_eq cp'] at hCpcEq
+    rw [hCpcEq, hSrcCcc, hRowCCC]
 
 /-- **Generic foldl-append membership lemma.** Local copy of the
     helper from `Decompose.lean`; the private version there is

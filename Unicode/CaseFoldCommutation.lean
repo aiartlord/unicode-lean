@@ -216,11 +216,17 @@ theorem caseFold_commutes_with_NFD_trivial_case
     intro row hMem heq
     exact hNotRow ⟨row, hMem, heq⟩
   have hLookup : Lookup.lookupRow cp = none := by
-    unfold Lookup.lookupRow
-    rw [Array.find?_eq_none]
-    intro row hMem
-    have hNe : row.codepoint ≠ cp := hRowNone row hMem
-    simp [hNe]
+    cases hL : Lookup.lookupRow cp with
+    | none => rfl
+    | some row =>
+      exfalso
+      obtain ⟨src, hSrcMem, hSrcCp, _hSrcCcc, _hSrcDecomp⟩ :=
+        Unicode.Generated.UnicodeDataIndex.lookupRow?_supported_rowsList hL
+      have hRowCp : row.codepoint = cp :=
+        Unicode.Generated.UnicodeDataIndex.lookupRow?_codepoint hL
+      have hSrcRows : src ∈ UnicodeData.rows := by
+        simpa [UnicodeData.rows] using hSrcMem
+      exact hNotRow ⟨src, hSrcRows, hSrcCp.trans hRowCp⟩
   have hDecomp : Lookup.canonicalDecomposition cp = #[] := by
     unfold Lookup.canonicalDecomposition
     rw [hLookup]
