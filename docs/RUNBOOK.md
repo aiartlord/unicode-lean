@@ -99,8 +99,10 @@ The target shape is:
 
 Quick-check singleton rank evidence belongs in Stage 6. In particular,
 `Unicode.Normalization.QuickCheckSingletonRankData` is a generated assurance
-fact module, not a runtime normalization prerequisite. It should be cached as an
-explicit one-module target before rewiring or checking
+fact module, not a runtime normalization prerequisite. Cache it first, then
+cache the structural support module
+`Unicode.Normalization.QuickCheckSoundnessSingletonRank`. These are explicit
+one-module targets before rewiring or checking
 `QuickCheckSoundnessSingletonTable`, `QuickCheckSoundnessMaster`,
 `QuickCheckSoundnessSnocClosure`, or `QuickCheckSoundnessTheorem`:
 
@@ -112,12 +114,22 @@ scripts/lean-cache-stages.py \
   --resume \
   --max-rss-gb 40 \
   --timeout-sec 0
+
+scripts/lean-cache-stages.py \
+  --preset evidence \
+  --only-module Unicode.Normalization.QuickCheckSoundnessSingletonRank \
+  --run \
+  --resume \
+  --max-rss-gb 40 \
+  --timeout-sec 0
 ```
 
 Measured local reference: this target built as one module with
-`LEAN_NUM_THREADS=1` and `JOBS=1` in 278 seconds. Do not run the broader
-QuickCheck soundness stack on a cold cache until the rank proof has replaced the
-old singleton table reducer.
+`LEAN_NUM_THREADS=1` and `JOBS=1`; `QuickCheckSingletonRankData` built in 278
+seconds and `QuickCheckSoundnessSingletonRank` built in 349 ms with its
+dependencies already cached. Do not run the broader QuickCheck soundness stack
+on a cold cache until the rank proof has replaced the old singleton table
+reducer.
 
 Current implemented support:
 
