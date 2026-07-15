@@ -23,6 +23,13 @@
       ]
     },
     {
+      "name": "ethereum-precomposed-accent-target",
+      "input": [233, 116, 104, 101, 114, 101, 117, 109],
+      "required_findings": [
+        "unicode.security.I.homoglyph-confusable.TargetMatch"
+      ]
+    },
+    {
       "name": "math-bold-apple-target-priority",
       "input": [119808, 119849, 119849, 119845, 119838],
       "required_findings": [

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the Zig confusables lookup table from vendored UTS #39 data."""
+"""Generate Zig lookup tables from vendored Unicode runtime data."""
 
 from __future__ import annotations
 
@@ -11,6 +11,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "src" / "data" / "confusables.txt"
 OUTPUT = ROOT / "src" / "confusables_data.zig"
+UNICODE_DATA_SOURCE = ROOT / "src" / "data" / "UnicodeData.txt"
+NORMALIZATION_OUTPUT = ROOT / "src" / "normalization_data.zig"
 
 
 def parse_codepoints(field: str) -> list[int]:
@@ -66,10 +68,59 @@ def render(entries: dict[int, list[int]]) -> str:
     return "\n".join(lines)
 
 
+def parse_unicode_data(text: str) -> dict[int, tuple[int, list[int]]]:
+    entries: dict[int, tuple[int, list[int]]] = {}
+    for raw_line in text.splitlines():
+        fields = raw_line.split(";")
+        if len(fields) < 6:
+            continue
+        try:
+            cp = int(fields[0], 16)
+            ccc = int(fields[3])
+        except ValueError:
+            continue
+        decomp_field = fields[5].strip()
+        decomp: list[int] = []
+        if decomp_field and not decomp_field.startswith("<"):
+            try:
+                decomp = parse_codepoints(decomp_field)
+            except ValueError:
+                decomp = []
+        if ccc != 0 or decomp:
+            entries[cp] = (ccc, decomp)
+    return entries
+
+
+def render_normalization(entries: dict[int, tuple[int, list[int]]]) -> str:
+    lines = [
+        "// GENERATED FILE - DO NOT EDIT.",
+        "// Source: src/data/UnicodeData.txt",
+        "",
+        "pub const Entry = struct {",
+        "    cp: u32,",
+        "    ccc: u8,",
+        "    decomp: []const u32,",
+        "};",
+        "",
+        "pub const entries = [_]Entry{",
+    ]
+    for cp, (ccc, decomp) in sorted(entries.items()):
+        if not decomp:
+            array_literal = "&[_]u32{}"
+        elif len(decomp) == 1:
+            array_literal = f"&[_]u32{{{zig_hex(decomp[0])}}}"
+        else:
+            values = ", ".join(zig_hex(part) for part in decomp)
+            array_literal = f"&[_]u32{{ {values} }}"
+        lines.append(
+            f"    .{{ .cp = {zig_hex(cp)}, .ccc = {ccc}, .decomp = {array_literal} }},"
+        )
+    lines.extend(["};", ""])
+    return "\n".join(lines)
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Generate the Zig confusables lookup table."
-    )
+    parser = argparse.ArgumentParser(description="Generate Zig Unicode lookup tables.")
     parser.add_argument(
         "--check",
         action="store_true",
@@ -79,24 +130,34 @@ def main() -> None:
 
     entries = parse_confusables(SOURCE.read_text(encoding="utf-8"))
     output = render(entries)
+    normalization_entries = parse_unicode_data(
+        UNICODE_DATA_SOURCE.read_text(encoding="utf-8")
+    )
+    normalization_output = render_normalization(normalization_entries)
 
     if args.check:
         actual = OUTPUT.read_text(encoding="utf-8")
-        if actual != output:
+        actual_normalization = NORMALIZATION_OUTPUT.read_text(encoding="utf-8")
+        if actual != output or actual_normalization != normalization_output:
             print(
-                "FATAL: src/confusables_data.zig is stale; "
+                "FATAL: Zig generated data is stale; "
                 "run ports/zig/tools/generate_confusables_data.py",
                 file=sys.stderr,
             )
             sys.exit(1)
         print(
-            "clean: Zig confusables table matches generator output "
-            f"({len(entries)} entries)"
+            "clean: Zig generated Unicode tables match generator output "
+            f"({len(entries)} confusables, {len(normalization_entries)} normalization entries)"
         )
         return
 
     OUTPUT.write_text(output, encoding="utf-8")
+    NORMALIZATION_OUTPUT.write_text(normalization_output, encoding="utf-8")
     print(f"generated {OUTPUT.relative_to(ROOT)} from {len(entries)} entries")
+    print(
+        f"generated {NORMALIZATION_OUTPUT.relative_to(ROOT)} "
+        f"from {len(normalization_entries)} entries"
+    )
 
 
 if __name__ == "__main__":

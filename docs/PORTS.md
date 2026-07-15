@@ -296,14 +296,18 @@ The current shared fixture set is:
   `confusables.txt` and `KnownAttackTargets.txt`. Haskell, JVM, Go,
   TypeScript, .NET, and Swift parse the vendored confusables map directly; Zig uses
   `ports/zig/src/confusables_data.zig`, generated from the vendored UTS #39 file by
-  `ports/zig/tools/generate_confusables_data.py`. The shared v0 slice also
-  covers decomposed combining-sequence swaps and Latin/Greek/Cyrillic script
-  mixing. Python vendors the same UCD/security text inputs under
+  `ports/zig/tools/generate_confusables_data.py`. Go and Zig also vendor
+  `UnicodeData.txt` for the UTS #39 NFD skeleton bracket; Zig generates
+  `ports/zig/src/normalization_data.zig` from that file for canonical
+  decomposition and combining-class lookup. The shared v0 slice also covers
+  precomposed/decomposed NFD skeleton equivalence, decomposed combining-sequence
+  swaps, and Latin/Greek/Cyrillic script mixing. Python vendors the same
+  UCD/security text inputs under
   `src/unicode_python/data`, and `scripts/check-runtime-data.sh` compares those
   files byte-for-byte with the canonical `data/` symlink targets. JVM, Go,
   TypeScript, .NET, Swift, and Zig pin their vendored bytes with port-local
-  `SHA256SUMS` manifests, and Zig checks that its generated lookup table is
-  reproducible from `confusables.txt`. `RestrictionLow` remains outside the shared detector
+  `SHA256SUMS` manifests, and Zig checks that its generated lookup tables are
+  reproducible from `confusables.txt` and `UnicodeData.txt`. `RestrictionLow` remains outside the shared detector
   fixture: Rust/Python can reach low restriction levels internally, but the
   reference detector currently emits the higher-priority `CrossScriptMix`
   sub-threat first. The reference-only audit fixture
@@ -325,7 +329,7 @@ scripts/sync-runtime-data.sh --apply
 That command refreshes `data/SHA256SUMS`, syncs Python vendored data, syncs the
 Haskell/JVM/Go/TypeScript/.NET/Swift/Zig runtime data copies, refreshes their
 `SHA256SUMS` manifests, regenerates Haskell generated normalization tables,
-regenerates Zig `confusables_data.zig`, and finishes with
+regenerates Zig `confusables_data.zig` and `normalization_data.zig`, and finishes with
 `scripts/check-runtime-data.sh`.
 
 For CI or preflight checks without writing files, run:

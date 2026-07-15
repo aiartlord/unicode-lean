@@ -372,9 +372,11 @@ private func iteratedSkeleton(_ input: [Int]) -> [Int] {
 }
 
 private func skeleton(_ input: [Int]) -> [Int] {
-    let step1 = caseFoldCodepoints(input)
-    let step2 = substituteConfusables(step1)
-    return caseFoldCodepoints(step2)
+    let step1 = toNfdCodepoints(input)
+    let step2 = caseFoldCodepoints(step1)
+    let step3 = substituteConfusables(step2)
+    let step4 = caseFoldCodepoints(step3)
+    return toNfdCodepoints(step4)
 }
 
 private func substituteConfusables(_ input: [Int]) -> [Int] {
@@ -397,6 +399,14 @@ private func caseFoldCodepoints(_ input: [Int]) -> [Int] {
 private func caseFoldCodepoint(_ cp: Int) -> [Int] {
     guard let scalar = UnicodeScalar(cp) else { return [cp] }
     return codepointsFromString(String(scalar).lowercased())
+}
+
+private func toNfdCodepoints(_ input: [Int]) -> [Int] {
+    codepointsFromString(stringFromCodepoints(input).decomposedStringWithCanonicalMapping)
+}
+
+private func stringFromCodepoints(_ input: [Int]) -> String {
+    String(String.UnicodeScalarView(input.compactMap(UnicodeScalar.init)))
 }
 
 private func confusablesMap() -> [Int: [Int]] {

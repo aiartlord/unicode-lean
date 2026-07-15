@@ -454,9 +454,11 @@ function iteratedSkeleton(input) {
 }
 
 function skeleton(input) {
-  const step1 = caseFoldCodepoints(input);
-  const step2 = substituteConfusables(step1);
-  return caseFoldCodepoints(step2);
+  const step1 = toNfdCodepoints(input);
+  const step2 = caseFoldCodepoints(step1);
+  const step3 = substituteConfusables(step2);
+  const step4 = caseFoldCodepoints(step3);
+  return toNfdCodepoints(step4);
 }
 
 function substituteConfusables(input) {
@@ -487,6 +489,18 @@ function caseFoldCodepoint(cp) {
   } catch {
     return [cp];
   }
+}
+
+function toNfdCodepoints(input) {
+  return codepointsFromString(stringFromCodepoints(input).normalize("NFD"));
+}
+
+function stringFromCodepoints(input) {
+  let out = "";
+  for (const cp of input) {
+    out += String.fromCodePoint(cp);
+  }
+  return out;
 }
 
 function confusablesMap() {
