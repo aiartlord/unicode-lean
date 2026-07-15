@@ -1,5 +1,6 @@
 const std = @import("std");
 const confusables_data = @import("confusables_data.zig");
+const normalization_data = @import("normalization_data.zig");
 
 const known_attack_targets_raw = @embedFile("data/KnownAttackTargets.txt");
 const standardized_variants_raw = @embedFile("data/StandardizedVariants.txt");
@@ -756,8 +757,10 @@ fn iteratedSkeleton(input: []const u32) ?CpBuffer {
 }
 
 fn skeletonStep(input: []const u32) ?CpBuffer {
+    const nfd1 = toNFD(input) orelse return null;
+
     var folded = CpBuffer{};
-    for (input) |cp| {
+    for (nfd1.slice()) |cp| {
         if (!folded.append(caseFoldCodepoint(cp))) return null;
     }
 
@@ -775,7 +778,99 @@ fn skeletonStep(input: []const u32) ?CpBuffer {
     for (substituted.slice()) |cp| {
         if (!out.append(caseFoldCodepoint(cp))) return null;
     }
+    return toNFD(out.slice());
+}
+
+fn toNFD(input: []const u32) ?CpBuffer {
+    var out = CpBuffer{};
+    for (input) |cp| {
+        if (!appendCanonicalDecomposition(&out, cp)) return null;
+    }
+    canonicalOrder(&out);
     return out;
+}
+
+fn appendCanonicalDecomposition(out: *CpBuffer, cp: u32) bool {
+    if (hangulDecomposition(cp)) |jamo| return out.appendSlice(jamo.slice());
+    if (normalizationEntry(cp)) |entry| {
+        if (entry.decomp.len > 0) {
+            for (entry.decomp) |part| {
+                if (!appendCanonicalDecomposition(out, part)) return false;
+            }
+            return true;
+        }
+    }
+    return out.append(cp);
+}
+
+fn canonicalOrder(buffer: *CpBuffer) void {
+    if (buffer.len < 2) return;
+    var index: usize = 1;
+    while (index < buffer.len) : (index += 1) {
+        const current_ccc = canonicalCombiningClass(buffer.items[index]);
+        if (current_ccc == 0) continue;
+        var j = index;
+        while (j > 0) : (j -= 1) {
+            const previous_ccc = canonicalCombiningClass(buffer.items[j - 1]);
+            if (previous_ccc == 0 or previous_ccc <= current_ccc) break;
+            const tmp = buffer.items[j - 1];
+            buffer.items[j - 1] = buffer.items[j];
+            buffer.items[j] = tmp;
+        }
+    }
+}
+
+fn canonicalCombiningClass(cp: u32) u8 {
+    if (normalizationEntry(cp)) |entry| return entry.ccc;
+    return 0;
+}
+
+fn normalizationEntry(cp: u32) ?normalization_data.Entry {
+    var lo: usize = 0;
+    var hi: usize = normalization_data.entries.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        const entry = normalization_data.entries[mid];
+        if (cp < entry.cp) {
+            hi = mid;
+        } else if (cp > entry.cp) {
+            lo = mid + 1;
+        } else {
+            return entry;
+        }
+    }
+    return null;
+}
+
+const HangulDecomposition = struct {
+    items: [3]u32,
+    len: usize,
+
+    fn slice(self: *const HangulDecomposition) []const u32 {
+        return self.items[0..self.len];
+    }
+};
+
+fn hangulDecomposition(cp: u32) ?HangulDecomposition {
+    const s_base = 0xAC00;
+    const l_base = 0x1100;
+    const v_base = 0x1161;
+    const t_base = 0x11A7;
+    const l_count = 19;
+    const v_count = 21;
+    const t_count = 28;
+    const n_count = v_count * t_count;
+    const s_count = l_count * n_count;
+
+    if (cp < s_base or cp >= s_base + s_count) return null;
+    const s_index = cp - s_base;
+    const l = l_base + s_index / n_count;
+    const v = v_base + (s_index % n_count) / t_count;
+    const t_index = s_index % t_count;
+    if (t_index == 0) {
+        return .{ .items = .{ l, v, 0 }, .len = 2 };
+    }
+    return .{ .items = .{ l, v, t_base + t_index }, .len = 3 };
 }
 
 fn confusableReplacement(cp: u32, out: *CpBuffer) bool {

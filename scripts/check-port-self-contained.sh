@@ -113,6 +113,7 @@ require_file ports/go/security/data/confusables.txt
 require_file ports/go/security/data/KnownAttackTargets.txt
 require_file ports/go/security/data/StandardizedVariants.txt
 require_file ports/go/security/data/emoji-variation-sequences.txt
+require_file ports/go/security/data/UnicodeData.txt
 require_file ports/go/security/data/SHA256SUMS
 require_file ports/go/security/testdata/fixtures/security/policy_contract.json
 require_file ports/go/security/testdata/fixtures/security/detectors/homoglyph_confusable.json
@@ -125,6 +126,8 @@ grep -Fq '//go:embed data/StandardizedVariants.txt' ports/go/security/homoglyph.
   || fail "Go standardized variation data is not embedded"
 grep -Fq '//go:embed data/emoji-variation-sequences.txt' ports/go/security/homoglyph.go \
   || fail "Go emoji variation data is not embedded"
+grep -Fq '//go:embed data/UnicodeData.txt' ports/go/security/homoglyph.go \
+  || fail "Go UnicodeData normalization data is not embedded"
 reject_runtime_pattern \
   "go runtime package" \
   '(\.\./|fixtures/security|os\.ReadFile|ioutil\.ReadFile)' \
@@ -200,10 +203,12 @@ reject_runtime_pattern \
 echo "== zig package =="
 require_file ports/zig/build.zig
 require_file ports/zig/src/confusables_data.zig
+require_file ports/zig/src/normalization_data.zig
 require_file ports/zig/src/data/confusables.txt
 require_file ports/zig/src/data/KnownAttackTargets.txt
 require_file ports/zig/src/data/StandardizedVariants.txt
 require_file ports/zig/src/data/emoji-variation-sequences.txt
+require_file ports/zig/src/data/UnicodeData.txt
 require_file ports/zig/src/data/SHA256SUMS
 require_file ports/zig/testdata/fixtures/security/policy_contract.json
 require_file ports/zig/testdata/fixtures/security/detectors/homoglyph_confusable.json
@@ -214,6 +219,8 @@ grep -Fq '@embedFile("data/StandardizedVariants.txt")' ports/zig/src/security.zi
   || fail "Zig standardized variation data is not embedded"
 grep -Fq '@embedFile("data/emoji-variation-sequences.txt")' ports/zig/src/security.zig \
   || fail "Zig emoji variation data is not embedded"
+grep -Fq '@import("normalization_data.zig")' ports/zig/src/security.zig \
+  || fail "Zig normalization data is not imported"
 reject_runtime_pattern \
   "zig runtime source" \
   '(\.\./|fixtures/security|std\.fs|readFile)' \

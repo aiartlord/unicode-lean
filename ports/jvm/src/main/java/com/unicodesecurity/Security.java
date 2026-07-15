@@ -3,6 +3,7 @@ package com.unicodesecurity;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -343,7 +344,11 @@ public final class Security {
   }
 
   private static List<Integer> skeleton(List<Integer> input) {
-    return caseFoldCodepoints(substituteConfusables(caseFoldCodepoints(input)));
+    List<Integer> step1 = toNfdCodepoints(input);
+    List<Integer> step2 = caseFoldCodepoints(step1);
+    List<Integer> step3 = substituteConfusables(step2);
+    List<Integer> step4 = caseFoldCodepoints(step3);
+    return toNfdCodepoints(step4);
   }
 
   private static List<Integer> substituteConfusables(List<Integer> input) {
@@ -357,6 +362,12 @@ public final class Security {
     List<Integer> out = new ArrayList<>();
     for (int cp : input) out.addAll(codepointsFromString(new String(Character.toChars(cp)).toLowerCase(Locale.ROOT)));
     return out;
+  }
+
+  private static List<Integer> toNfdCodepoints(List<Integer> input) {
+    StringBuilder text = new StringBuilder();
+    for (int cp : input) text.appendCodePoint(cp);
+    return codepointsFromString(Normalizer.normalize(text, Normalizer.Form.NFD));
   }
 
   private static synchronized Map<Integer, List<Integer>> confusablesMap() {

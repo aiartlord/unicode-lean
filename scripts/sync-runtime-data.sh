@@ -68,6 +68,16 @@ homoglyph_files=(
   emoji-variation-sequences.txt
 )
 
+go_files=(
+  "${homoglyph_files[@]}"
+  UnicodeData.txt
+)
+
+zig_files=(
+  "${homoglyph_files[@]}"
+  UnicodeData.txt
+)
+
 usage() {
   cat <<'USAGE'
 Usage: scripts/sync-runtime-data.sh [--check|--apply]
@@ -237,15 +247,15 @@ check_haskell() {
 
 sync_go() {
   local file
-  for file in "${homoglyph_files[@]}"; do
+  for file in "${go_files[@]}"; do
     copy_file "data/$file" "$go_dir/security/data/$file"
   done
-  write_manifest "$go_dir/security/data" "${homoglyph_files[@]}"
+  write_manifest "$go_dir/security/data" "${go_files[@]}"
 }
 
 check_go() {
   local file
-  for file in "${homoglyph_files[@]}"; do
+  for file in "${go_files[@]}"; do
     check_same_file "data/$file" "$go_dir/security/data/$file"
   done
   check_manifest "$go_dir/security/data"
@@ -317,10 +327,10 @@ check_swift() {
 
 sync_zig() {
   local file
-  for file in "${homoglyph_files[@]}"; do
+  for file in "${zig_files[@]}"; do
     copy_file "data/$file" "$zig_dir/src/data/$file"
   done
-  write_manifest "$zig_dir/src/data" "${homoglyph_files[@]}"
+  write_manifest "$zig_dir/src/data" "${zig_files[@]}"
   (
     cd "$zig_dir"
     python3 tools/generate_confusables_data.py
@@ -329,7 +339,7 @@ sync_zig() {
 
 check_zig() {
   local file
-  for file in "${homoglyph_files[@]}"; do
+  for file in "${zig_files[@]}"; do
     check_same_file "data/$file" "$zig_dir/src/data/$file"
   done
   check_manifest "$zig_dir/src/data"

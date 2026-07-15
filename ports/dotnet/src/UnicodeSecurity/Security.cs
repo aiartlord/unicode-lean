@@ -318,8 +318,14 @@ public static class Security
         return current;
     }
 
-    private static List<int> Skeleton(List<int> input) =>
-        CaseFoldCodepoints(SubstituteConfusables(CaseFoldCodepoints(input)));
+    private static List<int> Skeleton(List<int> input)
+    {
+        var step1 = ToNfdCodepoints(input);
+        var step2 = CaseFoldCodepoints(step1);
+        var step3 = SubstituteConfusables(step2);
+        var step4 = CaseFoldCodepoints(step3);
+        return ToNfdCodepoints(step4);
+    }
 
     private static List<int> SubstituteConfusables(List<int> input)
     {
@@ -338,6 +344,16 @@ public static class Security
         var output = new List<int>();
         foreach (var cp in input) output.AddRange(CodepointsFromString(char.ConvertFromUtf32(cp).ToLowerInvariant()));
         return output;
+    }
+
+    private static List<int> ToNfdCodepoints(List<int> input) =>
+        CodepointsFromString(CodepointsToString(input).Normalize(NormalizationForm.FormD));
+
+    private static string CodepointsToString(List<int> input)
+    {
+        var builder = new StringBuilder();
+        foreach (var cp in input) builder.Append(char.ConvertFromUtf32(cp));
+        return builder.ToString();
     }
 
     private static Dictionary<int, List<int>> ConfusablesMap()

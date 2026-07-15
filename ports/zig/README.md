@@ -14,7 +14,9 @@ hazards, the `homoglyph-confusable` `TargetMatch` / `MathAlpha` /
 `WidthClass` / `DecompositionSwap` contract slice, and
 `mixed-script-admissibility` `CrossScriptMix`. The port vendors the UTS #39
 data inputs under `src/data/`; `src/confusables_data.zig` is generated from
-`src/data/confusables.txt` for fast allocation-free lookup.
+`src/data/confusables.txt` for fast allocation-free lookup, and
+`src/normalization_data.zig` is generated from `src/data/UnicodeData.txt` for
+the NFD bracket used by the homoglyph skeleton.
 It is intentionally not a full restriction-level detector port yet.
 
 Tests consume port-local copies of the shared policy, verdict, and detector
@@ -32,7 +34,7 @@ Run from this directory:
 zig build test
 ```
 
-Regenerate the vendored confusables table from the repository root:
+Regenerate the vendored confusables and normalization tables from the repository root:
 
 ```sh
 nix develop -c python ports/zig/tools/generate_confusables_data.py

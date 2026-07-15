@@ -21,6 +21,9 @@ var standardizedVariantsRaw string
 //go:embed data/emoji-variation-sequences.txt
 var emojiVariationSequencesRaw string
 
+//go:embed data/UnicodeData.txt
+var unicodeDataRaw string
+
 var (
 	confusablesOnce sync.Once
 	confusablesData map[uint32][]uint32
@@ -28,7 +31,14 @@ var (
 	targetsData     []string
 	variationOnce   sync.Once
 	variationPairs  map[[2]uint32]struct{}
+	normalOnce      sync.Once
+	normalData      normalizationData
 )
+
+type normalizationData struct {
+	ccc    map[uint32]uint8
+	decomp map[uint32][]uint32
+}
 
 func homoglyphTargetMatch(input []uint32) (string, bool) {
 	inputLetters := letterSkeleton(input)
@@ -72,9 +82,11 @@ func iteratedSkeleton(input []uint32) []uint32 {
 }
 
 func skeleton(input []uint32) []uint32 {
-	step1 := caseFoldCodepoints(input)
-	step2 := substituteConfusables(step1)
-	return caseFoldCodepoints(step2)
+	step1 := toNFD(input)
+	step2 := caseFoldCodepoints(step1)
+	step3 := substituteConfusables(step2)
+	step4 := caseFoldCodepoints(step3)
+	return toNFD(step4)
 }
 
 func substituteConfusables(input []uint32) []uint32 {
@@ -103,6 +115,118 @@ func caseFoldCodepoint(cp uint32) uint32 {
 		return cp
 	}
 	return uint32(unicode.ToLower(rune(cp)))
+}
+
+func toNFD(input []uint32) []uint32 {
+	out := make([]uint32, 0, len(input))
+	for _, cp := range input {
+		appendCanonicalDecomposition(&out, cp)
+	}
+	canonicalOrder(out)
+	return out
+}
+
+func appendCanonicalDecomposition(out *[]uint32, cp uint32) {
+	if jamo, ok := decomposeHangulSyllable(cp); ok {
+		*out = append(*out, jamo...)
+		return
+	}
+	if decomposition, ok := normalizationTables().decomp[cp]; ok {
+		for _, part := range decomposition {
+			appendCanonicalDecomposition(out, part)
+		}
+		return
+	}
+	*out = append(*out, cp)
+}
+
+func canonicalOrder(values []uint32) {
+	for index := 1; index < len(values); index++ {
+		currentCCC := canonicalCombiningClass(values[index])
+		if currentCCC == 0 {
+			continue
+		}
+		for j := index; j > 0; j-- {
+			previousCCC := canonicalCombiningClass(values[j-1])
+			if previousCCC == 0 || previousCCC <= currentCCC {
+				break
+			}
+			values[j-1], values[j] = values[j], values[j-1]
+		}
+	}
+}
+
+func canonicalCombiningClass(cp uint32) uint8 {
+	return normalizationTables().ccc[cp]
+}
+
+func normalizationTables() normalizationData {
+	normalOnce.Do(func() {
+		normalData = parseUnicodeData(unicodeDataRaw)
+	})
+	return normalData
+}
+
+func parseUnicodeData(raw string) normalizationData {
+	out := normalizationData{
+		ccc:    make(map[uint32]uint8),
+		decomp: make(map[uint32][]uint32),
+	}
+	for _, rawLine := range strings.Split(raw, "\n") {
+		fields := strings.Split(rawLine, ";")
+		if len(fields) < 6 {
+			continue
+		}
+		cp, ok := parseHexUint32(fields[0])
+		if !ok {
+			continue
+		}
+		if ccc, ok := parseDecimalUint8(fields[3]); ok && ccc != 0 {
+			out.ccc[cp] = ccc
+		}
+		decompField := strings.TrimSpace(fields[5])
+		if decompField == "" || strings.HasPrefix(decompField, "<") {
+			continue
+		}
+		decomp := parseCodepointField(decompField)
+		if len(decomp) > 0 {
+			out.decomp[cp] = decomp
+		}
+	}
+	return out
+}
+
+func parseDecimalUint8(field string) (uint8, bool) {
+	value, err := strconv.ParseUint(strings.TrimSpace(field), 10, 8)
+	if err != nil {
+		return 0, false
+	}
+	return uint8(value), true
+}
+
+func decomposeHangulSyllable(cp uint32) ([]uint32, bool) {
+	const (
+		sBase  uint32 = 0xAC00
+		lBase  uint32 = 0x1100
+		vBase  uint32 = 0x1161
+		tBase  uint32 = 0x11A7
+		lCount uint32 = 19
+		vCount uint32 = 21
+		tCount uint32 = 28
+		nCount uint32 = vCount * tCount
+		sCount uint32 = lCount * nCount
+	)
+	if cp < sBase || cp >= sBase+sCount {
+		return nil, false
+	}
+	sIndex := cp - sBase
+	l := lBase + sIndex/nCount
+	v := vBase + (sIndex%nCount)/tCount
+	tIndex := sIndex % tCount
+	if tIndex == 0 {
+		return []uint32{l, v}, true
+	}
+	return []uint32{l, v, tBase + tIndex}, true
 }
 
 func confusablesMap() map[uint32][]uint32 {
