@@ -4,8 +4,9 @@
   Hangul / jamo CCC = 0 facts in support of `isNFCQuickCheck` soundness
   (UAX #15 §A.1).
 
-  Three `decide` tables live here:
+  Four `decide` tables live here:
 
+    * `lJamo_ccc_zero`         — 19 L-jamo codepoints have CCC = 0.
     * `vJamo_ccc_zero`         — 21 V-jamo codepoints have CCC = 0.
     * `tJamo_ccc_zero`         — 27 T-jamo codepoints have CCC = 0
                                  (indexed from `TBase + 1`; `TBase + 0`
@@ -30,6 +31,13 @@ namespace Unicode.Normalization.QuickCheckHangulFacts
 open Unicode.Normalization
 
 set_option maxRecDepth 100000
+
+/-- Every L-jamo (leading consonant jamo, range `0x1100..0x1112`) has
+    CCC = 0. Narrow `decide` over 19 codepoints. -/
+theorem lJamo_ccc_zero :
+    (List.range Hangul.LCount).all
+      (fun i => Lookup.canonicalCombiningClass (Hangul.LBase + i) = 0) = true := by
+  decide
 
 /-- Every V-jamo (vowel jamo, range `0x1161..0x1175`) has CCC = 0.
     Narrow `decide` over 21 codepoints. -/

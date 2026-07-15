@@ -26,7 +26,7 @@ import Unicode.Normalization.Hangul
 import Unicode.Normalization.Reorder
 import Unicode.Normalization.ComposeInversion
 import Unicode.Normalization.QuickCheckSoundness
-import Unicode.Normalization.QuickCheckSoundnessSnoc
+import Unicode.Normalization.QuickCheckSoundnessHangul
 import Unicode.Normalization.QuickCheckSoundnessSingletonAtomic
 import Unicode.Normalization.QuickCheckSoundnessSingletonTable
 import Unicode.Normalization.QuickCheckSoundnessFact4
@@ -109,7 +109,7 @@ theorem singleton_sound_nontrivial
     unfold Lookup.canonicalDecomposition
     rw [hLookup]
     exact hSrcDecomp
-  have hSizeDecide : decide (row.canonicalDecomposition.size = 0) = false := by
+  have hSizeDecide : decide (src.canonicalDecomposition.size = 0) = false := by
     rw [hRowDecomp]
     have hNonEmptyArr : (Lookup.canonicalDecomposition cp).size ≠ 0 := by
       intro hZero
@@ -127,7 +127,7 @@ theorem singleton_sound_nontrivial
 -- For any QC=Y singleton `#[cp]`, dispatch to the matching singleton
 -- soundness lemma based on `cp`'s structural shape:
 --   * non-starter      → QuickCheckSoundness.singleton_nonstarter
---   * Hangul syllable  → QuickCheckSoundnessSnoc.singleton_hangul (§4b)
+--   * Hangul syllable  → QuickCheckSoundnessHangul.singleton_hangul
 --   * starter, empty decomp → QuickCheckSoundnessSingletonAtomic
 --   * starter, non-empty decomp, not Hangul → §2 above
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -138,7 +138,7 @@ theorem singleton_sound (cp : Nat) (hQC : nfcQCValue cp = .Y) :
   by_cases hCcc : Lookup.canonicalCombiningClass cp = 0
   · -- Starter
     by_cases hHangul : Hangul.isHangulSyllable cp = true
-    · exact QuickCheckSoundnessSnoc.singleton_sound_hangul cp hHangul
+    · exact QuickCheckSoundnessHangul.singleton_sound_hangul cp hHangul
     · have hNotHangul : Hangul.isHangulSyllable cp = false := by
         cases hH : Hangul.isHangulSyllable cp
         · rfl
