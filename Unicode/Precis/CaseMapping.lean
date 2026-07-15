@@ -134,7 +134,7 @@ theorem caseFold_straße_style :
     folding entry, i.e. `lookupCaseFolding?` would return a `Some`
     value on it. -/
 def isCaseFoldSource (cp : Nat) : Bool :=
-  CaseFolding.isSource cp
+  (lookupCaseFolding? cp).isSome
 
 /-- Every target codepoint of a successful case-fold lookup is itself
     absent from the source column — the table is a one-step
@@ -142,16 +142,24 @@ def isCaseFoldSource (cp : Nat) : Bool :=
 theorem caseFoldTargets_not_in_source (source cp : Nat) (target : Array Nat)
     (hLookup : lookupCaseFolding? source = some target) (hMem : cp ∈ target) :
     isCaseFoldSource cp = false := by
-  unfold lookupCaseFolding? isCaseFoldSource at *
-  exact CaseFolding.lookup_target_non_source source cp target hLookup hMem
+  unfold lookupCaseFolding? at hLookup
+  have hGenerated : CaseFolding.isSource cp = false :=
+    CaseFolding.lookup_target_non_source source cp target hLookup hMem
+  unfold isCaseFoldSource lookupCaseFolding?
+  rw [CaseFolding.lookup_none_of_non_source cp hGenerated]
+  rfl
 
 /-- A codepoint that is not a case-fold source has no
     `lookupCaseFolding?` result. -/
 theorem lookupCaseFolding_none_of_non_source (cp : Nat)
     (h : isCaseFoldSource cp = false) :
     lookupCaseFolding? cp = none := by
-  unfold lookupCaseFolding? isCaseFoldSource at *
-  exact CaseFolding.lookup_none_of_non_source cp h
+  unfold isCaseFoldSource at h
+  cases hLookup : lookupCaseFolding? cp with
+  | none => rfl
+  | some target =>
+      rw [hLookup] at h
+      simp at h
 
 /-- A codepoint that is not a case-fold source maps to its own
     singleton under `caseFoldCodepoint`. -/
@@ -200,8 +208,9 @@ theorem caseFold_id_of_all_non_source (cps : Array Nat)
 theorem non_source_of_lookupCaseFolding_none (cp : Nat)
     (h : lookupCaseFolding? cp = none) :
     isCaseFoldSource cp = false := by
-  unfold lookupCaseFolding? isCaseFoldSource at *
-  exact CaseFolding.non_source_of_lookup_none cp h
+  unfold isCaseFoldSource
+  rw [h]
+  rfl
 
 /-- Membership decomposition: a codepoint in `caseFold cps` comes
     from `caseFoldCodepoint x` for some `x ∈ cps`. -/

@@ -68,8 +68,7 @@ theorem lookupRaw_target_non_width_of_source_non_width
         simpa using hBool
 
 /-- A guarded lookup hit from a non-width-compatibility source yields
-    only non-width-compatibility targets. The miss-with-guard arm
-    returns the empty target, on which membership is vacuous. -/
+    only non-width-compatibility targets. -/
 theorem lookup_target_non_width_of_source_non_width
     (source cp : Nat) (target : Array Nat)
     (hSourceNonWidth :
@@ -87,7 +86,6 @@ theorem lookup_target_non_width_of_source_non_width
     | none =>
         rw [hRaw] at hLookup
         cases hLookup
-        simp at hMem
   · cases hLookup
 
 end Unicode.Generated.CaseFolding

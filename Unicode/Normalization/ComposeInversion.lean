@@ -24,6 +24,11 @@ import Unicode.Normalization.Compose
 import Unicode.Normalization.Invertibility
 import Unicode.Normalization.NFD
 import Unicode.Normalization.ToNFDAppend
+import Unicode.Normalization.ComposeInversionCombP
+import Unicode.Normalization.ComposeInversionRows0
+import Unicode.Normalization.ComposeInversionRows1
+import Unicode.Normalization.ComposeInversionRows2
+import Unicode.Normalization.ComposeInversionRows3
 import Unicode.Invariants
 
 namespace Unicode.Normalization.ComposeInversion
@@ -686,65 +691,6 @@ theorem stepPreserves_case_starter_flush
 
 section CombPClosure
 set_option maxRecDepth 1000000
-
-def combP (row : UnicodeData.UnicodeDataRow) : Bool :=
-  (if row.canonicalDecomposition.size = 2 then
-    decide (ToNFDAppend.fcdFuelL Decompose.maxDepth row.codepoint
-            = ToNFDAppend.fcdFuelL Decompose.maxDepth (row.canonicalDecomposition.getD 0 0)
-              ++ ToNFDAppend.fcdFuelL Decompose.maxDepth (row.canonicalDecomposition.getD 1 0))
-   else true)
-  && (decide (row.canonicalCombiningClass = 0)
-      || (ToNFDAppend.fcdFuelL Decompose.maxDepth row.codepoint).all
-          (fun cp' => decide (ToNFDAppend.canonicalCombiningClassL cp' = row.canonicalCombiningClass)))
-
-theorem combP_c0 : UnicodeData.rowsChunk0.all combP = true := by decide +kernel
-theorem combP_c1 : UnicodeData.rowsChunk1.all combP = true := by decide +kernel
-theorem combP_c2 : UnicodeData.rowsChunk2.all combP = true := by decide +kernel
-theorem combP_c3 : UnicodeData.rowsChunk3.all combP = true := by decide +kernel
-theorem combP_c4 : UnicodeData.rowsChunk4.all combP = true := by decide +kernel
-theorem combP_c5 : UnicodeData.rowsChunk5.all combP = true := by decide +kernel
-theorem combP_c6 : UnicodeData.rowsChunk6.all combP = true := by decide +kernel
-theorem combP_c7 : UnicodeData.rowsChunk7.all combP = true := by decide +kernel
-theorem combP_c8 : UnicodeData.rowsChunk8.all combP = true := by decide +kernel
-theorem combP_c9 : UnicodeData.rowsChunk9.all combP = true := by decide +kernel
-theorem combP_c10 : UnicodeData.rowsChunk10.all combP = true := by decide +kernel
-theorem combP_c11 : UnicodeData.rowsChunk11.all combP = true := by decide +kernel
-theorem combP_c12 : UnicodeData.rowsChunk12.all combP = true := by decide +kernel
-theorem combP_c13 : UnicodeData.rowsChunk13.all combP = true := by decide +kernel
-theorem combP_c14 : UnicodeData.rowsChunk14.all combP = true := by decide +kernel
-theorem combP_c15 : UnicodeData.rowsChunk15.all combP = true := by decide +kernel
-theorem combP_c16 : UnicodeData.rowsChunk16.all combP = true := by decide +kernel
-theorem combP_c17 : UnicodeData.rowsChunk17.all combP = true := by decide +kernel
-theorem combP_c18 : UnicodeData.rowsChunk18.all combP = true := by decide +kernel
-theorem combP_c19 : UnicodeData.rowsChunk19.all combP = true := by decide +kernel
-theorem combP_c20 : UnicodeData.rowsChunk20.all combP = true := by decide +kernel
-theorem combP_c21 : UnicodeData.rowsChunk21.all combP = true := by decide +kernel
-theorem combP_c22 : UnicodeData.rowsChunk22.all combP = true := by decide +kernel
-theorem combP_c23 : UnicodeData.rowsChunk23.all combP = true := by decide +kernel
-theorem combP_c24 : UnicodeData.rowsChunk24.all combP = true := by decide +kernel
-theorem combP_c25 : UnicodeData.rowsChunk25.all combP = true := by decide +kernel
-theorem combP_c26 : UnicodeData.rowsChunk26.all combP = true := by decide +kernel
-theorem combP_c27 : UnicodeData.rowsChunk27.all combP = true := by decide +kernel
-theorem combP_c28 : UnicodeData.rowsChunk28.all combP = true := by decide +kernel
-theorem combP_c29 : UnicodeData.rowsChunk29.all combP = true := by decide +kernel
-theorem combP_c30 : UnicodeData.rowsChunk30.all combP = true := by decide +kernel
-theorem combP_c31 : UnicodeData.rowsChunk31.all combP = true := by decide +kernel
-theorem combP_c32 : UnicodeData.rowsChunk32.all combP = true := by decide +kernel
-theorem combP_c33 : UnicodeData.rowsChunk33.all combP = true := by decide +kernel
-theorem combP_c34 : UnicodeData.rowsChunk34.all combP = true := by decide +kernel
-theorem combP_c35 : UnicodeData.rowsChunk35.all combP = true := by decide +kernel
-theorem combP_c36 : UnicodeData.rowsChunk36.all combP = true := by decide +kernel
-theorem combP_c37 : UnicodeData.rowsChunk37.all combP = true := by decide +kernel
-theorem combP_c38 : UnicodeData.rowsChunk38.all combP = true := by decide +kernel
-theorem combP_c39 : UnicodeData.rowsChunk39.all combP = true := by decide +kernel
-theorem combP_c40 : UnicodeData.rowsChunk40.all combP = true := by decide +kernel
-theorem combP_c41 : UnicodeData.rowsChunk41.all combP = true := by decide +kernel
-theorem combP_c42 : UnicodeData.rowsChunk42.all combP = true := by decide +kernel
-theorem combP_c43 : UnicodeData.rowsChunk43.all combP = true := by decide +kernel
-theorem combP_c44 : UnicodeData.rowsChunk44.all combP = true := by decide +kernel
-theorem combP_c45 : UnicodeData.rowsChunk45.all combP = true := by decide +kernel
-theorem combP_c46 : UnicodeData.rowsChunk46.all combP = true := by decide +kernel
-theorem combP_c47 : UnicodeData.rowsChunk47.all combP = true := by decide +kernel
 
 theorem rowsList_all_combP : UnicodeData.rowsList.all combP = true := by
   unfold UnicodeData.rowsList
