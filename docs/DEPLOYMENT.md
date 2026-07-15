@@ -124,7 +124,9 @@ node --test test/*.test.js
 ```
 
 Use `@unicode-security/runtime/edge` in browser/edge code and call
-`instantiateSecurity` with either injected data or a fetchable package data URL.
+`instantiateSecurity` with either injected package data (`confusables`,
+`caseFolding`, known targets, and variation data) or a fetchable package data
+URL.
 
 ## Release Gate
 

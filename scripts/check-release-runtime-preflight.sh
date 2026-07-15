@@ -91,30 +91,54 @@ required_paths=(
   include/unicode_cpp/security/policy.hpp
   include/unicode_cpp/security/covert/variation_selector_pairs.hpp
   ports/haskell/unicode-haskell.cabal
+  ports/haskell/data/CaseFolding.txt
+  ports/haskell/data/confusables.txt
+  ports/haskell/data/KnownAttackTargets.txt
+  ports/haskell/data/StandardizedVariants.txt
+  ports/haskell/data/emoji-variation-sequences.txt
   ports/haskell/testdata/fixtures/security/policy_contract.json
   ports/haskell/testdata/fixtures/security/detectors/homoglyph_confusable.json
   ports/haskell/testdata/fixtures/security/detectors/mixed_script_admissibility.json
   ports/jvm/scripts/test.sh
   ports/jvm/src/main/java/com/unicodesecurity/Security.java
   ports/jvm/src/main/resources/com/unicodesecurity/data/SHA256SUMS
+  ports/jvm/src/main/resources/com/unicodesecurity/data/CaseFolding.txt
   ports/jvm/src/main/resources/com/unicodesecurity/data/confusables.txt
   ports/jvm/src/main/resources/com/unicodesecurity/data/KnownAttackTargets.txt
+  ports/jvm/src/main/resources/com/unicodesecurity/data/StandardizedVariants.txt
+  ports/jvm/src/main/resources/com/unicodesecurity/data/emoji-variation-sequences.txt
   ports/jvm/src/test/java/com/unicodesecurity/SecurityContractTest.java
   ports/jvm/testdata/fixtures/security/policy_contract.json
   ports/go/go.mod
   ports/go/security/policy.go
+  ports/go/security/data/SHA256SUMS
+  ports/go/security/data/CaseFolding.txt
+  ports/go/security/data/confusables.txt
+  ports/go/security/data/KnownAttackTargets.txt
+  ports/go/security/data/StandardizedVariants.txt
+  ports/go/security/data/emoji-variation-sequences.txt
+  ports/go/security/data/UnicodeData.txt
   ports/go/security/testdata/fixtures/security/policy_contract.json
   ports/typescript/package.json
   ports/typescript/src/security-core.js
   ports/typescript/src/security.js
   ports/typescript/src/edge.js
+  ports/typescript/src/data/SHA256SUMS
+  ports/typescript/src/data/CaseFolding.txt
+  ports/typescript/src/data/confusables.txt
+  ports/typescript/src/data/KnownAttackTargets.txt
+  ports/typescript/src/data/StandardizedVariants.txt
+  ports/typescript/src/data/emoji-variation-sequences.txt
   ports/typescript/test/security.test.js
   ports/typescript/testdata/fixtures/security/policy_contract.json
   ports/dotnet/src/UnicodeSecurity/UnicodeSecurity.csproj
   ports/dotnet/src/UnicodeSecurity/Security.cs
   ports/dotnet/Data/SHA256SUMS
+  ports/dotnet/Data/CaseFolding.txt
   ports/dotnet/Data/confusables.txt
   ports/dotnet/Data/KnownAttackTargets.txt
+  ports/dotnet/Data/StandardizedVariants.txt
+  ports/dotnet/Data/emoji-variation-sequences.txt
   ports/dotnet/test/UnicodeSecurity.Tests/UnicodeSecurity.Tests.csproj
   ports/dotnet/test/UnicodeSecurity.Tests/Program.cs
   ports/dotnet/testdata/fixtures/security/policy_contract.json
@@ -122,11 +146,23 @@ required_paths=(
   ports/swift/scripts/test.sh
   ports/swift/Sources/UnicodeSecurity/UnicodeSecurity.swift
   ports/swift/Sources/UnicodeSecurity/Resources/Data/SHA256SUMS
+  ports/swift/Sources/UnicodeSecurity/Resources/Data/CaseFolding.txt
   ports/swift/Sources/UnicodeSecurity/Resources/Data/confusables.txt
   ports/swift/Sources/UnicodeSecurity/Resources/Data/KnownAttackTargets.txt
+  ports/swift/Sources/UnicodeSecurity/Resources/Data/StandardizedVariants.txt
+  ports/swift/Sources/UnicodeSecurity/Resources/Data/emoji-variation-sequences.txt
   ports/swift/ContractTests/SecurityContractTests.swift
   ports/swift/ContractTests/Resources/fixtures/security/policy_contract.json
   ports/zig/build.zig
+  ports/zig/src/case_folding_data.zig
+  ports/zig/src/confusables_data.zig
+  ports/zig/src/normalization_data.zig
+  ports/zig/src/data/CaseFolding.txt
+  ports/zig/src/data/confusables.txt
+  ports/zig/src/data/KnownAttackTargets.txt
+  ports/zig/src/data/StandardizedVariants.txt
+  ports/zig/src/data/emoji-variation-sequences.txt
+  ports/zig/src/data/UnicodeData.txt
   scripts/cold-start-runtime.sh
   scripts/package-runtime.sh
   scripts/check-runtime-package.sh

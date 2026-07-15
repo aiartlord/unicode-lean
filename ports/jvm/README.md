@@ -28,6 +28,7 @@ Run from the repository root:
 scripts/test-runtime-ports.sh --jvm-only
 ```
 
-The port vendors `confusables.txt`, `KnownAttackTargets.txt`, and local copies
-of the shared contract fixtures so the package can be tested from an installed
-or copied package tree.
+The port vendors `CaseFolding.txt`, `confusables.txt`,
+`KnownAttackTargets.txt`, `StandardizedVariants.txt`,
+`emoji-variation-sequences.txt`, and local copies of the shared contract
+fixtures so the package can be tested from an installed or copied package tree.
