@@ -15,8 +15,8 @@
       non-Hangul starter `cp` with non-empty canonical decomposition.
     * §3 — Singleton dispatcher (`singleton_sound`) —
       4-way case analysis dispatching to the closed singleton
-      soundness lemmas in `QuickCheckSoundness` and
-      `QuickCheckSoundnessSnoc`.
+      soundness lemmas in `QuickCheckSoundness`,
+      `QuickCheckSoundnessSingletonAtomic`, and `QuickCheckSoundnessSnoc`.
 -/
 
 import Unicode.Normalization.NFC
@@ -27,6 +27,7 @@ import Unicode.Normalization.Reorder
 import Unicode.Normalization.ComposeInversion
 import Unicode.Normalization.QuickCheckSoundness
 import Unicode.Normalization.QuickCheckSoundnessSnoc
+import Unicode.Normalization.QuickCheckSoundnessSingletonAtomic
 import Unicode.Normalization.QuickCheckSoundnessSingletonTable
 import Unicode.Normalization.QuickCheckSoundnessFact4
 import Unicode.Generated.UnicodeData
@@ -127,7 +128,7 @@ theorem singleton_sound_nontrivial
 -- soundness lemma based on `cp`'s structural shape:
 --   * non-starter      → QuickCheckSoundness.singleton_nonstarter
 --   * Hangul syllable  → QuickCheckSoundnessSnoc.singleton_hangul (§4b)
---   * starter, empty decomp → QuickCheckSoundnessSnoc.singleton_starter_empty (§3)
+--   * starter, empty decomp → QuickCheckSoundnessSingletonAtomic
 --   * starter, non-empty decomp, not Hangul → §2 above
 -- ═══════════════════════════════════════════════════════════════════════════════
 
@@ -143,7 +144,7 @@ theorem singleton_sound (cp : Nat) (hQC : nfcQCValue cp = .Y) :
         · rfl
         · exact absurd hH hHangul
       by_cases hEmpty : Lookup.canonicalDecomposition cp = #[]
-      · exact QuickCheckSoundnessSnoc.singleton_sound_atomic
+      · exact QuickCheckSoundnessSingletonAtomic.singleton_sound_atomic
           cp hCcc hEmpty hNotHangul
       · exact singleton_sound_nontrivial
           cp hQC hCcc hNotHangul hEmpty

@@ -31,7 +31,6 @@
       `UnicodeData.rows` since their decomposition is algorithmic).
 -/
 
-import Unicode.Normalization.QuickCheckSoundnessSnoc
 import Unicode.Normalization.QuickCheckSoundness
 import Unicode.Normalization.QuickCheckSoundnessMaster
 import Unicode.Normalization.ComposeBlockAdditive
