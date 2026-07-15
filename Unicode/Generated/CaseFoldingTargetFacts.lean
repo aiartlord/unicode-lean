@@ -69,9 +69,25 @@ theorem lookupRaw_target_non_source (source cp : Nat) (target : Array Nat)
       rw [hIEq] at hBool
       simpa using hBool
 
-/-- A guarded lookup hit yields only targets outside the source
-    column. The miss-with-guard arm returns the empty target, on which
-    membership is vacuous. -/
+/-- A raw lookup hit is exactly a member of the generated folding list. -/
+theorem lookupRaw_mem_foldingsList (source : Nat) (target : Array Nat)
+    (hLookup : lookupRaw? source = some target) :
+    (source, target) ∈ foldingsList := by
+  unfold lookupRaw? at hLookup
+  cases hFind : foldingsList.find? (fun e => e.1 == source) with
+  | none =>
+      rw [hFind] at hLookup
+      cases hLookup
+  | some entry =>
+      rw [hFind] at hLookup
+      injection hLookup with hTarget
+      have hKey := List.find?_some hFind
+      have hSourceEq : entry.1 = source := eq_of_beq hKey
+      have hMemList : entry ∈ foldingsList := List.mem_of_find?_eq_some hFind
+      rw [← hSourceEq, ← hTarget]
+      exact hMemList
+
+/-- A guarded lookup hit yields only targets outside the source column. -/
 theorem lookup_target_non_source (source cp : Nat) (target : Array Nat)
     (hLookup : lookup? source = some target) (hMem : cp ∈ target) :
     isSource cp = false := by
@@ -85,7 +101,6 @@ theorem lookup_target_non_source (source cp : Nat) (target : Array Nat)
     | none =>
         rw [hRaw] at hLookup
         cases hLookup
-        simp at hMem
   · cases hLookup
 
 -- ═══════════════════════════════════════════════════════════════════════════════

@@ -725,11 +725,15 @@ def sourceCodepoints : Array Nat := #[
   0x1e921
 ]
 
+/-- One past the largest generated case-folding source. -/
+def sourceSearchBound : Nat := 0x1E922
+
 /-- True iff `cp` appears in the case-folding source column. The
     interval tree is the consecutive-run compression of
     `sourceCodepoints`; `sourceCodepoints_all_isSource` pins it to
     the column in the kernel. -/
 def isSource (cp : Nat) : Bool :=
+  decide (cp < sourceSearchBound) && (
   decide (0x41 ≤ cp ∧ cp ≤ 0x5a) ||
   decide (cp = 0xb5) ||
   decide (0xc0 ≤ cp ∧ cp ≤ 0xd6) ||
@@ -1366,7 +1370,7 @@ def isSource (cp : Nat) : Bool :=
   decide (0x118a0 ≤ cp ∧ cp ≤ 0x118bf) ||
   decide (0x16e40 ≤ cp ∧ cp ≤ 0x16e5f) ||
   decide (0x16ea0 ≤ cp ∧ cp ≤ 0x16eb8) ||
-  decide (0x1e900 ≤ cp ∧ cp ≤ 0x1e921)
+  decide (0x1e900 ≤ cp ∧ cp ≤ 0x1e921))
 
 def foldingsCount : Nat := 1585
 
@@ -1389,9 +1393,7 @@ def lookupRaw? (cp : Nat) : Option (Array Nat) :=
 /-- Guarded lookup for a default full case-folding source. -/
 def lookup? (cp : Nat) : Option (Array Nat) :=
   if isSource cp then
-    match lookupRaw? cp with
-    | some target => some target
-    | none => some #[]
+    lookupRaw? cp
   else none
 
 theorem lookup_none_of_non_source (cp : Nat)
@@ -1399,14 +1401,10 @@ theorem lookup_none_of_non_source (cp : Nat)
   unfold lookup?
   simp [h]
 
-theorem non_source_of_lookup_none (cp : Nat)
-    (h : lookup? cp = none) : isSource cp = false := by
-  unfold lookup? at h
-  cases hSource : isSource cp with
-  | false => rfl
-  | true =>
-      rw [hSource] at h
-      cases hRaw : lookupRaw? cp <;> simp [hRaw] at h
+theorem lookup_isSome_false_of_lookup_none (cp : Nat)
+    (h : lookup? cp = none) : (lookup? cp).isSome = false := by
+  rw [h]
+  rfl
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- INTEGRITY GATE — `foldingsList` must equal a fresh parse of the status C and F

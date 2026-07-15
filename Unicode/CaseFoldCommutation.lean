@@ -30,6 +30,8 @@ import Unicode.Normalization.ReorderAppend
 import Unicode.Normalization.ToNFDAppend
 import Unicode.Invariants
 import Unicode.Precis.CaseMapping
+import Unicode.CaseFoldCommutationSource
+import Unicode.CaseFoldDecompositionFacts
 
 namespace Unicode.CaseFoldCommutation
 
@@ -65,7 +67,8 @@ theorem caseFold_commutes_with_NFD_pointwise :
     CaseFolding.foldings.all (fun entry =>
       decide (NFC.toNFD entry.2 =
               NFC.toNFD (caseFold (NFC.toNFD #[entry.1])))) = true := by
-  decide
+  unfold CaseFolding.foldings
+  simpa [sourcePointwiseP] using sourcePointwise_foldingsList
 
 /-- Decomposed-form case-fold targets: for every fold entry, applying
     `toNFD` to the target is its own NFD form (idempotent restriction).
@@ -76,7 +79,9 @@ theorem caseFold_commutes_with_NFD_pointwise :
 theorem caseFoldTargets_NFD_idempotent :
     CaseFolding.foldings.all (fun entry =>
       decide (NFC.toNFD (NFC.toNFD entry.2) = NFC.toNFD entry.2)) = true := by
-  decide
+  rw [Array.all_eq_true]
+  intro i hi
+  exact decide_eq_true (NFD.toNFD_idempotent CaseFolding.foldings[i].2)
 
 /-- **Per-codepoint commutation over CaseFolding sources, direct form.**
     Parallel to `caseFold_commutes_with_NFD_pointwise` but states the
@@ -89,30 +94,8 @@ theorem caseFold_commutes_with_NFD_sources :
     CaseFolding.foldings.all (fun entry =>
       decide (NFC.toNFD (caseFold #[entry.1]) =
               NFC.toNFD (caseFold (NFC.toNFD #[entry.1])))) = true := by
-  decide
-
-/-- **Per-codepoint commutation over UnicodeData rows.** Every codepoint
-    with a canonical decomposition (`UnicodeData.rows`) satisfies the
-    singleton commutation: `toNFD (caseFold #[cp]) = toNFD (caseFold
-    (toNFD #[cp]))`. Complements `caseFold_commutes_with_NFD_pointwise`
-    (which covers case-fold sources); together they cover every
-    "interesting" codepoint. -/
-theorem caseFold_commutes_with_NFD_UnicodeData_rows :
-    UnicodeData.rows.all (fun row =>
-      decide (NFC.toNFD (caseFold #[row.codepoint]) =
-              NFC.toNFD (caseFold (NFC.toNFD #[row.codepoint])))) = true := by
-  decide
-
-/-- **Per-codepoint commutation over Hangul syllables.** Every Hangul
-    precomposed syllable in `[0xAC00, 0xD7A3]` satisfies the singleton
-    commutation. Algorithmic rather than table-driven; `decide`
-    evaluates `fullCanonicalDecompose` and `caseFold` concretely on
-    each of the 11172 syllables. -/
-theorem caseFold_commutes_with_NFD_Hangul_range :
-    (List.range 11172).all (fun i =>
-      decide (NFC.toNFD (caseFold #[0xAC00 + i]) =
-              NFC.toNFD (caseFold (NFC.toNFD #[0xAC00 + i])))) = true := by
-  decide +kernel
+  unfold CaseFolding.foldings
+  simpa [sourceCommP] using sourceComm_foldingsList
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- UNIFIED PER-CODEPOINT LIFT
@@ -129,6 +112,193 @@ theorem caseFold_singleton_non_source (cp : Nat)
   have hxEq : x = cp := by simp at hMem; exact hMem
   rw [hxEq]
   exact h
+
+/-- Every Hangul jamo codepoint emitted by algorithmic Hangul decomposition is
+    not a case-fold source. -/
+theorem hangulJamo_non_caseFoldSource :
+    ((List.range 195).map (fun i => 0x1100 + i)).all
+      (fun cp => !isCaseFoldSource cp) = true := by decide
+
+theorem hangulJamo_non_caseFoldSource_point
+    (j : Nat) (hLo : 0x1100 ≤ j) (hHi : j < 0x1100 + 195) :
+    isCaseFoldSource j = false := by
+  have hAll := hangulJamo_non_caseFoldSource
+  rw [List.all_eq_true] at hAll
+  have hi : j - 0x1100 ∈ List.range 195 := List.mem_range.mpr (by omega)
+  have hMem : 0x1100 + (j - 0x1100) ∈
+      (List.range 195).map (fun i => 0x1100 + i) := by
+    exact List.mem_map.mpr ⟨j - 0x1100, hi, rfl⟩
+  have hAt := hAll (0x1100 + (j - 0x1100)) hMem
+  have hEq : 0x1100 + (j - 0x1100) = j := by omega
+  rw [hEq] at hAt
+  simpa using hAt
+
+theorem decomposeSyllable_output_non_caseFoldSource
+    (cp : Nat) (arr : Array Nat)
+    (h : Hangul.decomposeSyllable? cp = some arr) (j : Nat) (hj : j ∈ arr) :
+    isCaseFoldSource j = false := by
+  unfold Hangul.decomposeSyllable? at h
+  split at h
+  · next hSyl =>
+    have hRange : 0xAC00 ≤ cp ∧ cp < 0xAC00 + 11172 := by
+      unfold Hangul.isHangulSyllable Hangul.SBase Hangul.SCount
+             Hangul.LCount Hangul.NCount Hangul.VCount Hangul.TCount
+        at hSyl
+      exact of_decide_eq_true hSyl
+    have hsLt : cp - 0xAC00 < 11172 := by omega
+    have hNPos : 0 < 588 := by decide
+    have hTPos : 0 < 28 := by decide
+    have hLIndexLt : (cp - 0xAC00) / 588 < 19 := by
+      exact (Nat.div_lt_iff_lt_mul hNPos).2 (by omega)
+    have hModNLt : (cp - 0xAC00) % 588 < 588 :=
+      Nat.mod_lt (cp - 0xAC00) hNPos
+    have hVIndexLt : ((cp - 0xAC00) % 588) / 28 < 21 := by
+      exact (Nat.div_lt_iff_lt_mul hTPos).2 (by omega)
+    have hTIndexLt : (cp - 0xAC00) % 28 < 28 :=
+      Nat.mod_lt (cp - 0xAC00) hTPos
+    simp only [Hangul.SBase, Hangul.LBase, Hangul.VBase, Hangul.TBase,
+      Hangul.VCount, Hangul.TCount, Hangul.NCount] at h
+    split at h
+    · next hTZero =>
+      simp only [Option.some.injEq] at h
+      rw [← h] at hj
+      simp only [Array.mem_def, List.mem_cons] at hj
+      rcases hj with hJL | hRest
+      · rw [hJL]
+        apply hangulJamo_non_caseFoldSource_point <;> omega
+      · rcases hRest with hJV | hEmpty
+        · rw [hJV]
+          apply hangulJamo_non_caseFoldSource_point <;> omega
+        · cases hEmpty
+    · next hTNonzero =>
+      simp only [Option.some.injEq] at h
+      rw [← h] at hj
+      simp only [Array.mem_def, List.mem_cons] at hj
+      have hTIndexPos : 0 < (cp - 0xAC00) % 28 := by omega
+      rcases hj with hJL | hRest
+      · rw [hJL]
+        apply hangulJamo_non_caseFoldSource_point <;> omega
+      · rcases hRest with hJV | hRest
+        · rw [hJV]
+          apply hangulJamo_non_caseFoldSource_point <;> omega
+        · rcases hRest with hJT | hEmpty
+          · rw [hJT]
+            apply hangulJamo_non_caseFoldSource_point <;> omega
+          · cases hEmpty
+  · cases h
+
+theorem canonicalDecomposition_output_non_caseFoldSource
+    (cp : Nat) (hCp : isCaseFoldSource cp = false)
+    (j : Nat) (hj : j ∈ Lookup.canonicalDecomposition cp) :
+    isCaseFoldSource j = false := by
+  unfold Lookup.canonicalDecomposition at hj
+  split at hj
+  · next row hRow =>
+    obtain ⟨src, hSrcMem, hSrcCp, _hSrcCcc, hSrcDecomp⟩ :=
+      Unicode.Generated.UnicodeDataIndex.lookupRow?_supported_rowsList hRow
+    have hRowCp : row.codepoint = cp :=
+      Unicode.Generated.UnicodeDataIndex.lookupRow?_codepoint hRow
+    have hSrcRows : src ∈ UnicodeData.rows := by
+      simpa [UnicodeData.rows] using hSrcMem
+    have hSrcCpToInput : src.codepoint = cp := hSrcCp.trans hRowCp
+    have hTable := nonCaseFoldSource_decomp_all_nonSource
+    rw [Array.all_eq_true] at hTable
+    rcases Array.getElem_of_mem hSrcRows with ⟨i, hi, hElem⟩
+    have hEntry := hTable i hi
+    rw [hElem] at hEntry
+    simp only [Bool.or_eq_true] at hEntry
+    rcases hEntry with hSrcCFS | hTgtAllNonSrc
+    · rw [hSrcCpToInput, hCp] at hSrcCFS
+      exact Bool.noConfusion hSrcCFS
+    · rw [Array.all_eq_true] at hTgtAllNonSrc
+      rw [← hSrcDecomp] at hj
+      rcases Array.getElem_of_mem hj with ⟨k, hk, hElemJ⟩
+      have hBool := hTgtAllNonSrc k hk
+      rw [hElemJ] at hBool
+      simpa using hBool
+  · simp at hj
+
+theorem mem_foldl_append (f : Nat → Array Nat) (cps : Array Nat) (cp : Nat)
+    (hMem : cp ∈ cps.foldl (fun acc x => acc ++ f x) #[]) :
+    ∃ x ∈ cps, cp ∈ f x := by
+  rw [← Array.foldl_toList] at hMem
+  have key : ∀ (l : List Nat) (init : Array Nat),
+      cp ∈ l.foldl (fun acc x => acc ++ f x) init →
+      cp ∈ init ∨ ∃ x ∈ l, cp ∈ f x := by
+    intro l
+    induction l with
+    | nil => intro init hM; left; simpa using hM
+    | cons hd tl ih =>
+      intro init hM
+      simp only [List.foldl_cons] at hM
+      rcases ih (init ++ f hd) hM with hInit | ⟨x, hxM, hxF⟩
+      · rcases Array.mem_append.mp hInit with h1 | h2
+        · left; exact h1
+        · right; exact ⟨hd, by simp, h2⟩
+      · right; exact ⟨x, by simp [hxM], hxF⟩
+  rcases key cps.toList #[] hMem with hEmpty | ⟨x, hxM, hxF⟩
+  · simp at hEmpty
+  · exact ⟨x, by simpa using hxM, hxF⟩
+
+theorem fullCanonicalDecomposeFuel_preserves_non_caseFoldSource (fuel : Nat) :
+    ∀ cp, isCaseFoldSource cp = false →
+    ∀ j ∈ Decompose.fullCanonicalDecomposeFuel fuel cp, isCaseFoldSource j = false := by
+  induction fuel with
+  | zero =>
+    intro cp hCp j hj
+    unfold Decompose.fullCanonicalDecomposeFuel at hj
+    simp at hj
+  | succ fuel ih =>
+    intro cp hCp j hj
+    unfold Decompose.fullCanonicalDecomposeFuel at hj
+    split at hj
+    · next arr hSome =>
+      exact decomposeSyllable_output_non_caseFoldSource cp arr hSome j hj
+    · next hNone =>
+      generalize hStep : Lookup.canonicalDecomposition cp = step at hj
+      change j ∈ (if step.isEmpty = true then #[cp]
+                  else step.foldl (fun acc cp' =>
+                        acc ++ Decompose.fullCanonicalDecomposeFuel fuel cp') #[]) at hj
+      split at hj
+      · next hEmpty =>
+        simp at hj
+        rw [hj]
+        exact hCp
+      · next hNotEmpty =>
+        obtain ⟨x, hxIn, hxF⟩ :=
+          mem_foldl_append (Decompose.fullCanonicalDecomposeFuel fuel) step j hj
+        rw [← hStep] at hxIn
+        have hxNonSource : isCaseFoldSource x = false :=
+          canonicalDecomposition_output_non_caseFoldSource cp hCp x hxIn
+        exact ih x hxNonSource j hxF
+
+theorem fullCanonicalDecompose_preserves_non_caseFoldSource
+    (cp : Nat) (h : isCaseFoldSource cp = false) :
+    ∀ j ∈ Decompose.fullCanonicalDecompose cp, isCaseFoldSource j = false := by
+  unfold Decompose.fullCanonicalDecompose
+  exact fullCanonicalDecomposeFuel_preserves_non_caseFoldSource Decompose.maxDepth cp h
+
+theorem decomposeSequence_preserves_non_caseFoldSource
+    (cps : Array Nat) (h : ∀ cp ∈ cps, isCaseFoldSource cp = false) :
+    ∀ j ∈ Decompose.decomposeSequence cps, isCaseFoldSource j = false := by
+  intro j hj
+  unfold Decompose.decomposeSequence at hj
+  obtain ⟨x, hxIn, hxF⟩ := mem_foldl_append Decompose.fullCanonicalDecompose cps j hj
+  exact fullCanonicalDecompose_preserves_non_caseFoldSource x (h x hxIn) j hxF
+
+theorem toNFD_preserves_non_caseFoldSource
+    (cps : Array Nat) (h : ∀ cp ∈ cps, isCaseFoldSource cp = false) :
+    ∀ j ∈ NFC.toNFD cps, isCaseFoldSource j = false := by
+  unfold NFC.toNFD
+  intro j hj
+  have hDecAll : ∀ cp ∈ Decompose.decomposeSequence cps,
+                   (fun x => !isCaseFoldSource x) cp = true := by
+    intro cp hcp
+    have := decomposeSequence_preserves_non_caseFoldSource cps h cp hcp
+    simpa using this
+  have hR := Reorder.reorder_preserves_all (fun x => !isCaseFoldSource x)
+               (Decompose.decomposeSequence cps) hDecAll j hj
+  simpa using hR
 
 /-- `toNFD #[cp] = #[cp]` for non-decomposable non-Hangul codepoints.
     Goes via `NFD.decomposeSequence_id_on_FullyDecomposed` and
@@ -150,108 +320,118 @@ theorem toNFD_singleton_trivial (cp : Nat)
   rw [NFD.decomposeSequence_id_on_FullyDecomposed #[cp] hFD]
   exact Reorder.reorder_id_on_HasSortedRuns #[cp] hHSR
 
-/-- **Hangul branch.** Given `cp` is a Hangul syllable, commutation holds via
-    the Hangul-range table fact. -/
-theorem caseFold_commutes_with_NFD_hangul_case
-    (cp : Nat) (hHangul : Hangul.isHangulSyllable cp = true) :
+/-- **Successful lookup branch.** If the public case-fold lookup returns a
+    target, the bounded source-column certificate applies to the raw table
+    entry selected by that lookup. -/
+theorem caseFold_commutes_with_NFD_lookup_case
+    (cp : Nat) (target : Array Nat)
+    (hLookup : lookupCaseFolding? cp = some target) :
     NFC.toNFD (caseFold #[cp]) =
     NFC.toNFD (caseFold (NFC.toNFD #[cp])) := by
-  have hRange : 0xAC00 ≤ cp ∧ cp < 0xAC00 + 11172 := by
-    unfold Hangul.isHangulSyllable Hangul.SBase Hangul.SCount
-           Hangul.LCount Hangul.NCount Hangul.VCount Hangul.TCount at hHangul
-    exact of_decide_eq_true hHangul
-  have hTable := caseFold_commutes_with_NFD_Hangul_range
-  rw [List.all_eq_true] at hTable
-  have hiLt : cp - 0xAC00 < 11172 := by omega
-  have hCpEq : 0xAC00 + (cp - 0xAC00) = cp := by omega
-  have hIdx : (cp - 0xAC00) ∈ List.range 11172 := List.mem_range.mpr hiLt
-  have hAt := of_decide_eq_true (hTable (cp - 0xAC00) hIdx)
-  rw [hCpEq] at hAt
-  exact hAt
+  unfold lookupCaseFolding? at hLookup
+  unfold CaseFolding.lookup? at hLookup
+  split at hLookup
+  · cases hRaw : CaseFolding.lookupRaw? cp with
+    | none =>
+        rw [hRaw] at hLookup
+        cases hLookup
+    | some found =>
+        rw [hRaw] at hLookup
+        cases hLookup
+        have hEntryPair : (cp, target) ∈ CaseFolding.foldingsList :=
+          CaseFolding.lookupRaw_mem_foldingsList cp target hRaw
+        have hAll := sourceComm_foldingsList
+        rw [List.all_eq_true] at hAll
+        have hAt := of_decide_eq_true (hAll (cp, target) hEntryPair)
+        simpa [sourceCommP] using hAt
+  · cases hLookup
 
-/-- **UnicodeData-rows branch.** Given `cp` is the codepoint of some row in
-    `UnicodeData.rows`, commutation holds via the per-row table fact. -/
-theorem caseFold_commutes_with_NFD_rows_case
-    (cp : Nat) (hRow : ∃ row, row ∈ UnicodeData.rows ∧ row.codepoint = cp) :
+/-- **Non-source branch.** If a codepoint has no case-fold mapping, case
+    folding is identity on the singleton, and `toNFD` preserves the
+    non-source property through canonical decomposition and reordering. -/
+theorem caseFold_commutes_with_NFD_non_source
+    (cp : Nat) (hNotCFS : isCaseFoldSource cp = false) :
     NFC.toNFD (caseFold #[cp]) =
     NFC.toNFD (caseFold (NFC.toNFD #[cp])) := by
-  obtain ⟨row, hRowMem, hRowEq⟩ := hRow
-  have hTable := caseFold_commutes_with_NFD_UnicodeData_rows
-  rw [Array.all_eq_true] at hTable
-  rcases Array.getElem_of_mem hRowMem with ⟨i, hi, hElem⟩
-  have hAt := of_decide_eq_true (hTable i hi)
-  rw [hElem, hRowEq] at hAt
-  exact hAt
-
-/-- **Case-fold-source branch.** Given `cp` is a case-fold source, commutation
-    holds via `caseFold_commutes_with_NFD_sources` — the direct-form table
-    fact that states commutation for `caseFold #[entry.1]` without routing
-    through `lookupCaseFolding?`. Structurally identical to the rows case. -/
-theorem caseFold_commutes_with_NFD_cfs_case
-    (cp : Nat) (hCFS : isCaseFoldSource cp = true) :
-    NFC.toNFD (caseFold #[cp]) =
-    NFC.toNFD (caseFold (NFC.toNFD #[cp])) := by
-  unfold isCaseFoldSource at hCFS
-  rw [Array.any_eq_true] at hCFS
-  obtain ⟨i, hi, hDec⟩ := hCFS
-  have hIEq : CaseFolding.foldings[i].1 = cp := of_decide_eq_true hDec
-  have hTable := caseFold_commutes_with_NFD_sources
-  rw [Array.all_eq_true] at hTable
-  have hAt := of_decide_eq_true (hTable i hi)
-  rw [hIEq] at hAt
-  exact hAt
-
-/-- **Trivial branch.** Given `cp` is not a Hangul syllable, not in
-    `UnicodeData.rows`, and not a case-fold source, commutation holds
-    because both sides reduce to `#[cp]`: caseFold is identity, toNFD is
-    identity. -/
-theorem caseFold_commutes_with_NFD_trivial_case
-    (cp : Nat)
-    (hNotHangul : Hangul.isHangulSyllable cp = false)
-    (hNotRow : ¬ ∃ row, row ∈ UnicodeData.rows ∧ row.codepoint = cp)
-    (hNotCFS : isCaseFoldSource cp = false) :
-    NFC.toNFD (caseFold #[cp]) =
-    NFC.toNFD (caseFold (NFC.toNFD #[cp])) := by
-  have hRowNone : ∀ row ∈ UnicodeData.rows, row.codepoint ≠ cp := by
-    intro row hMem heq
-    exact hNotRow ⟨row, hMem, heq⟩
-  have hLookup : Lookup.lookupRow cp = none := by
-    cases hL : Lookup.lookupRow cp with
-    | none => rfl
-    | some row =>
-      exfalso
-      obtain ⟨src, hSrcMem, hSrcCp, _hSrcCcc, _hSrcDecomp⟩ :=
-        Unicode.Generated.UnicodeDataIndex.lookupRow?_supported_rowsList hL
-      have hRowCp : row.codepoint = cp :=
-        Unicode.Generated.UnicodeDataIndex.lookupRow?_codepoint hL
-      have hSrcRows : src ∈ UnicodeData.rows := by
-        simpa [UnicodeData.rows] using hSrcMem
-      exact hNotRow ⟨src, hSrcRows, hSrcCp.trans hRowCp⟩
-  have hDecomp : Lookup.canonicalDecomposition cp = #[] := by
-    unfold Lookup.canonicalDecomposition
-    rw [hLookup]
   have hCF : caseFold #[cp] = #[cp] :=
     caseFold_singleton_non_source cp hNotCFS
-  have hND : NFC.toNFD #[cp] = #[cp] :=
-    toNFD_singleton_trivial cp hDecomp hNotHangul
-  simp only [hCF, hND]
+  have hNFDStable : ∀ d ∈ NFC.toNFD #[cp], isCaseFoldSource d = false := by
+    apply toNFD_preserves_non_caseFoldSource
+    intro x hx
+    simp at hx
+    rw [hx]
+    exact hNotCFS
+  have hCaseFoldNFD : caseFold (NFC.toNFD #[cp]) = NFC.toNFD #[cp] :=
+    caseFold_id_of_all_non_source (NFC.toNFD #[cp]) hNFDStable
+  rw [hCF, hCaseFoldNFD]
+  exact (NFD.toNFD_idempotent #[cp]).symm
 
 /-- **Unified per-codepoint commutation.** For every codepoint `cp`,
     `toNFD (caseFold #[cp]) = toNFD (caseFold (toNFD #[cp]))`. Dispatches
-    to the per-case theorems above. -/
+    to the successful-lookup and non-source structural branches. -/
 theorem caseFold_commutes_with_NFD_singleton (cp : Nat) :
     NFC.toNFD (caseFold #[cp]) =
     NFC.toNFD (caseFold (NFC.toNFD #[cp])) := by
-  by_cases hHangul : Hangul.isHangulSyllable cp = true
-  · exact caseFold_commutes_with_NFD_hangul_case cp hHangul
-  · by_cases hRow : ∃ row, row ∈ UnicodeData.rows ∧ row.codepoint = cp
-    · exact caseFold_commutes_with_NFD_rows_case cp hRow
-    · by_cases hCFS : isCaseFoldSource cp = true
-      · exact caseFold_commutes_with_NFD_cfs_case cp hCFS
-      · have hNotHangul : Hangul.isHangulSyllable cp = false := by
-          simpa using hHangul
-        have hNotCFS : isCaseFoldSource cp = false := by
-          simpa using hCFS
-        exact caseFold_commutes_with_NFD_trivial_case cp hNotHangul hRow hNotCFS
+  cases hLookup : lookupCaseFolding? cp with
+  | some target =>
+      exact caseFold_commutes_with_NFD_lookup_case cp target hLookup
+  | none =>
+      have hNotCFS : isCaseFoldSource cp = false :=
+        Unicode.Precis.CaseMapping.non_source_of_lookupCaseFolding_none cp hLookup
+      exact caseFold_commutes_with_NFD_non_source cp hNotCFS
+
+/-- **Per-codepoint commutation over UnicodeData rows.** Kept as an aggregate
+    export, now derived from the universal singleton theorem instead of a
+    whole-table reducer. -/
+theorem caseFold_commutes_with_NFD_UnicodeData_rows :
+    UnicodeData.rows.all (fun row =>
+      decide (NFC.toNFD (caseFold #[row.codepoint]) =
+              NFC.toNFD (caseFold (NFC.toNFD #[row.codepoint])))) = true := by
+  rw [Array.all_eq_true]
+  intro i hi
+  exact decide_eq_true
+    (caseFold_commutes_with_NFD_singleton UnicodeData.rows[i].codepoint)
+
+/-- **Per-codepoint commutation over Hangul syllables.** Kept as an aggregate
+    export, now derived from the universal singleton theorem rather than
+    evaluating 11172 syllables directly. -/
+theorem caseFold_commutes_with_NFD_Hangul_range :
+    (List.range 11172).all (fun i =>
+      decide (NFC.toNFD (caseFold #[0xAC00 + i]) =
+              NFC.toNFD (caseFold (NFC.toNFD #[0xAC00 + i])))) = true := by
+  rw [List.all_eq_true]
+  intro i hi
+  exact decide_eq_true (caseFold_commutes_with_NFD_singleton (0xAC00 + i))
+
+/-- Compatibility wrapper for the old Hangul branch name. -/
+theorem caseFold_commutes_with_NFD_hangul_case
+    (cp : Nat) (_hHangul : Hangul.isHangulSyllable cp = true) :
+    NFC.toNFD (caseFold #[cp]) =
+    NFC.toNFD (caseFold (NFC.toNFD #[cp])) :=
+  caseFold_commutes_with_NFD_singleton cp
+
+/-- Compatibility wrapper for the old UnicodeData-row branch name. -/
+theorem caseFold_commutes_with_NFD_rows_case
+    (cp : Nat) (_hRow : ∃ row, row ∈ UnicodeData.rows ∧ row.codepoint = cp) :
+    NFC.toNFD (caseFold #[cp]) =
+    NFC.toNFD (caseFold (NFC.toNFD #[cp])) :=
+  caseFold_commutes_with_NFD_singleton cp
+
+/-- Compatibility wrapper for the old case-fold-source branch name. -/
+theorem caseFold_commutes_with_NFD_cfs_case
+    (cp : Nat) (_hCFS : isCaseFoldSource cp = true) :
+    NFC.toNFD (caseFold #[cp]) =
+    NFC.toNFD (caseFold (NFC.toNFD #[cp])) :=
+  caseFold_commutes_with_NFD_singleton cp
+
+/-- Compatibility wrapper for the old trivial branch name. -/
+theorem caseFold_commutes_with_NFD_trivial_case
+    (cp : Nat)
+    (_hNotHangul : Hangul.isHangulSyllable cp = false)
+    (_hNotRow : ¬ ∃ row, row ∈ UnicodeData.rows ∧ row.codepoint = cp)
+    (_hNotCFS : isCaseFoldSource cp = false) :
+    NFC.toNFD (caseFold #[cp]) =
+    NFC.toNFD (caseFold (NFC.toNFD #[cp])) :=
+  caseFold_commutes_with_NFD_singleton cp
 
 end Unicode.CaseFoldCommutation

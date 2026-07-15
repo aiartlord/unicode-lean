@@ -77,7 +77,8 @@ open Unicode.Precis.CaseMapping
     non-case-fold-source. Jamo have no case. -/
 theorem hangulJamo_non_caseFoldSource :
     ((List.range 195).map (fun i => 0x1100 + i)).all
-      (fun cp => !isCaseFoldSource cp) = true := by decide
+      (fun cp => !isCaseFoldSource cp) = true :=
+  Unicode.CaseFoldCommutation.hangulJamo_non_caseFoldSource
 
 /-- For every row in `UnicodeData.rows`, if the row's codepoint is not a
     case-fold source, every codepoint in its canonical decomposition is
@@ -87,8 +88,8 @@ theorem hangulJamo_non_caseFoldSource :
 theorem nonCaseFoldSource_decomp_all_nonSource :
     UnicodeData.rows.all (fun row =>
       isCaseFoldSource row.codepoint ||
-      row.canonicalDecomposition.all (fun d => !isCaseFoldSource d)) = true := by
-  decide
+      row.canonicalDecomposition.all (fun d => !isCaseFoldSource d)) = true :=
+  Unicode.CaseFoldCommutation.nonCaseFoldSource_decomp_all_nonSource
 
 /-- Every Hangul precomposed syllable in `0xAC00..0xD7A3` decomposes to
     a sequence of non-case-fold-sources. Closed by `decide` over
@@ -97,7 +98,19 @@ theorem hangulSyllable_decompose_output_non_caseFoldSource :
     (List.range 11172).all
       (fun i => match Hangul.decomposeSyllable? (0xAC00 + i) with
                 | some arr => arr.all (fun j => !isCaseFoldSource j)
-                | none     => true) = true := by decide
+                | none     => true) = true := by
+  rw [List.all_eq_true]
+  intro i hi
+  cases h : Hangul.decomposeSyllable? (0xAC00 + i) with
+  | none => rfl
+  | some arr =>
+      rw [Array.all_eq_true]
+      intro k hk
+      have hMem : arr[k] ∈ arr := Array.getElem_mem hk
+      have hNon :=
+        Unicode.CaseFoldCommutation.decomposeSyllable_output_non_caseFoldSource
+          (0xAC00 + i) arr h arr[k] hMem
+      simpa using hNon
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- POINTWISE LIFTS FROM UCD FACTS TO STRUCTURAL HYPOTHESES
@@ -110,27 +123,8 @@ theorem decomposeSyllable_output_non_caseFoldSource
     (cp : Nat) (arr : Array Nat)
     (h : Hangul.decomposeSyllable? cp = some arr) (j : Nat) (hj : j ∈ arr) :
     isCaseFoldSource j = false := by
-  have hSyl : Hangul.isHangulSyllable cp = true := by
-    unfold Hangul.decomposeSyllable? at h
-    split at h
-    · next hYes => exact hYes
-    · simp at h
-  have hRange : 0xAC00 ≤ cp ∧ cp < 0xAC00 + 11172 := by
-    unfold Hangul.isHangulSyllable Hangul.SBase Hangul.SCount
-           Hangul.LCount Hangul.NCount Hangul.VCount Hangul.TCount at hSyl
-    exact of_decide_eq_true hSyl
-  have hiLt : cp - 0xAC00 < 11172 := by omega
-  have hCpEq : 0xAC00 + (cp - 0xAC00) = cp := by omega
-  have hTable := hangulSyllable_decompose_output_non_caseFoldSource
-  rw [List.all_eq_true] at hTable
-  have hI : cp - 0xAC00 ∈ List.range 11172 := List.mem_range.mpr hiLt
-  have hAtI := hTable (cp - 0xAC00) hI
-  rw [hCpEq, h] at hAtI
-  rw [Array.all_eq_true] at hAtI
-  rcases Array.getElem_of_mem hj with ⟨k, hk, hElem⟩
-  have hBool := hAtI k hk
-  rw [hElem] at hBool
-  simpa using hBool
+  exact Unicode.CaseFoldCommutation.decomposeSyllable_output_non_caseFoldSource
+    cp arr h j hj
 
 /-- Pointwise consequence of `nonCaseFoldSource_decomp_all_nonSource`:
     for a non-case-fold-source `cp`, every element of
@@ -139,29 +133,8 @@ theorem canonicalDecomposition_output_non_caseFoldSource
     (cp : Nat) (hCp : isCaseFoldSource cp = false)
     (j : Nat) (hj : j ∈ Lookup.canonicalDecomposition cp) :
     isCaseFoldSource j = false := by
-  unfold Lookup.canonicalDecomposition at hj
-  split at hj
-  · next row hRow =>
-    have hRowMem : row ∈ UnicodeData.rows := Array.mem_of_find?_eq_some hRow
-    have hRowCp : row.codepoint = cp := by
-      have hFind : UnicodeData.rows.find? (fun r => r.codepoint = cp) = some row := hRow
-      have hP := Array.find?_some hFind
-      exact of_decide_eq_true hP
-    have hTable := nonCaseFoldSource_decomp_all_nonSource
-    rw [Array.all_eq_true] at hTable
-    rcases Array.getElem_of_mem hRowMem with ⟨i, hi, hElem⟩
-    have hEntry := hTable i hi
-    rw [hElem] at hEntry
-    simp only [Bool.or_eq_true] at hEntry
-    rcases hEntry with hSrcCFS | hTgtAllNonSrc
-    · rw [hRowCp, hCp] at hSrcCFS
-      exact Bool.noConfusion hSrcCFS
-    · rw [Array.all_eq_true] at hTgtAllNonSrc
-      rcases Array.getElem_of_mem hj with ⟨k, hk, hElemJ⟩
-      have hBool := hTgtAllNonSrc k hk
-      rw [hElemJ] at hBool
-      simpa using hBool
-  · simp at hj
+  exact Unicode.CaseFoldCommutation.canonicalDecomposition_output_non_caseFoldSource
+    cp hCp j hj
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- STRUCTURAL LIFT OF CASE-FOLD-STABILITY THROUGH toNFD
@@ -203,8 +176,6 @@ theorem fullCanonicalDecomposeFuel_preserves_non_caseFoldSource (fuel : Nat) :
     intro cp hCp j hj
     unfold Decompose.fullCanonicalDecomposeFuel at hj
     simp at hj
-    rw [hj]
-    exact hCp
   | succ fuel ih =>
     intro cp hCp j hj
     unfold Decompose.fullCanonicalDecomposeFuel at hj
