@@ -1015,6 +1015,13 @@ def entryRankValid (entry : SingletonRankRow) : Bool :=
     rowsRank2.any (fun parent => decide (parent.codepoint = entry.left))
   else false
 
+def parentRightOrderValid (parents : List SingletonRankRow) (entry : SingletonRankRow) : Bool :=
+  parents.any (fun parent =>
+    decide (parent.codepoint = entry.left ∧
+      (Lookup.canonicalCombiningClass entry.right = 0 ∨
+        Lookup.canonicalCombiningClass parent.right ≤
+          Lookup.canonicalCombiningClass entry.right)))
+
 theorem rowsRank1_valid :
     rowsRank1.all entryRankValid = true := by
   decide +kernel
@@ -1025,6 +1032,26 @@ theorem rowsRank2_valid :
 
 theorem rowsRank3_valid :
     rowsRank3.all entryRankValid = true := by
+  decide +kernel
+
+theorem rowsRank1_rank :
+    rowsRank1.all (fun entry => decide (entry.rank = 1)) = true := by
+  decide +kernel
+
+theorem rowsRank2_rank :
+    rowsRank2.all (fun entry => decide (entry.rank = 2)) = true := by
+  decide +kernel
+
+theorem rowsRank3_rank :
+    rowsRank3.all (fun entry => decide (entry.rank = 3)) = true := by
+  decide +kernel
+
+theorem rowsRank2_parentRightOrder_valid :
+    rowsRank2.all (parentRightOrderValid rowsRank1) = true := by
+  decide +kernel
+
+theorem rowsRank3_parentRightOrder_valid :
+    rowsRank3.all (parentRightOrderValid rowsRank2) = true := by
   decide +kernel
 
 theorem relevant_rows_covered :

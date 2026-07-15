@@ -195,6 +195,13 @@ def main() -> None:
             "    rowsRank2.any (fun parent => decide (parent.codepoint = entry.left))",
             "  else false",
             "",
+            "def parentRightOrderValid (parents : List SingletonRankRow) (entry : SingletonRankRow) : Bool :=",
+            "  parents.any (fun parent =>",
+            "    decide (parent.codepoint = entry.left ∧",
+            "      (Lookup.canonicalCombiningClass entry.right = 0 ∨",
+            "        Lookup.canonicalCombiningClass parent.right ≤",
+            "          Lookup.canonicalCombiningClass entry.right)))",
+            "",
         ]
     )
 
@@ -207,6 +214,29 @@ def main() -> None:
                 "",
             ]
         )
+
+    for r in (1, 2, 3):
+        lines.extend(
+            [
+                f"theorem rowsRank{r}_rank :",
+                f"    rowsRank{r}.all (fun entry => decide (entry.rank = {r})) = true := by",
+                "  decide +kernel",
+                "",
+            ]
+        )
+
+    lines.extend(
+        [
+            "theorem rowsRank2_parentRightOrder_valid :",
+            "    rowsRank2.all (parentRightOrderValid rowsRank1) = true := by",
+            "  decide +kernel",
+            "",
+            "theorem rowsRank3_parentRightOrder_valid :",
+            "    rowsRank3.all (parentRightOrderValid rowsRank2) = true := by",
+            "  decide +kernel",
+            "",
+        ]
+    )
 
     lines.extend(
         [
