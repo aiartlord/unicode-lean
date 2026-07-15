@@ -124,12 +124,13 @@ scripts/lean-cache-stages.py \
   --timeout-sec 0
 ```
 
-Measured local reference: this target built as one module with
-`LEAN_NUM_THREADS=1` and `JOBS=1`; `QuickCheckSingletonRankData` built in 305
-seconds and `QuickCheckSoundnessSingletonRank` built in 741 ms with its
-dependencies already cached. Do not run the broader QuickCheck soundness stack
-on a cold cache until the rank proof has replaced the old singleton table
-reducer.
+Measured local reference: these targets built one module at a time with
+`LEAN_NUM_THREADS=1` and `JOBS=1`; `QuickCheckSingletonRankData` built in 417
+seconds after adding lookup-shaped coverage, `QuickCheckSoundnessSingletonRank`
+built in 1.3 s with its dependencies already cached, and
+`QuickCheckSoundnessSingletonTable` built in 345 ms. Do not run the broader
+QuickCheck soundness stack on a cold cache until these rank/table modules are
+cached first.
 
 Current implemented support:
 

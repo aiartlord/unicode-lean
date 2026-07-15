@@ -1063,6 +1063,15 @@ theorem relevant_rows_covered :
       rows.any (fun entry => decide (entry.codepoint = row.codepoint))) = true := by
   decide +kernel
 
+theorem relevant_lookup_rows_covered :
+    UnicodeData.rowsList.all (fun row =>
+      decide (Lookup.canonicalCombiningClass row.codepoint ≠ 0) ||
+      decide (Hangul.isHangulSyllable row.codepoint = true) ||
+      decide (nfcQCValue row.codepoint ≠ .Y) ||
+      decide (row.canonicalDecomposition.size = 0) ||
+      rows.any (fun entry => decide (entry.codepoint = row.codepoint))) = true := by
+  decide +kernel
+
 theorem max_rank_three :
     rows.all (fun entry => decide (1 ≤ entry.rank ∧ entry.rank ≤ 3)) = true := by
   decide +kernel
