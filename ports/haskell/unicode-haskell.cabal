@@ -30,6 +30,8 @@ extra-source-files:
 data-files:
   data/confusables.txt
   data/KnownAttackTargets.txt
+  data/StandardizedVariants.txt
+  data/emoji-variation-sequences.txt
 tested-with:        GHC == 9.12.*
 
 common warnings

@@ -69,6 +69,7 @@ private struct Utf8Step { let state: Utf8State; let emitted: Int; let kind: Stri
 
 private var confusablesMapCache: [Int: [Int]]?
 private var attackTargetsCache: [String]?
+private var legalVariationPairsCache: Set<String>?
 
 public func scan(profile: String, mode: String, input: [Int]) -> Verdict {
     let codepoints = input.map(ensureCodepoint)
@@ -249,6 +250,7 @@ private func isTagBlockAsciiPayload(_ cp: Int) -> Bool {
 private func variationSelectorFinding(_ input: [Int]) -> Finding? {
     let positions = positionsWhere(input, isVariationSelector)
     if positions.isEmpty { return nil }
+    if positions.count == 1 && isRegisteredVariationPosition(input, positions[0]) { return nil }
     var subThreat = "IllegalTarget"
     if positions.count >= 4 && allSameAt(input, positions) {
         subThreat = "RepeatedBase"
@@ -260,6 +262,10 @@ private func variationSelectorFinding(_ input: [Int]) -> Finding? {
 
 private func isVariationSelector(_ cp: Int) -> Bool {
     (cp >= 0xfe00 && cp <= 0xfe0f) || (cp >= 0xe0100 && cp <= 0xe01ef) || (cp >= 0x180b && cp <= 0x180d)
+}
+
+private func isRegisteredVariationPosition(_ input: [Int], _ position: Int) -> Bool {
+    position > 0 && legalVariationPairs().contains(variationPairKey(input[position - 1], input[position]))
 }
 
 private func variationSelectorNibble(_ cp: Int) -> Int? {
@@ -407,6 +413,14 @@ private func knownAttackTargets() -> [String] {
     return parsed
 }
 
+private func legalVariationPairs() -> Set<String> {
+    if let cached = legalVariationPairsCache { return cached }
+    var parsed = parseLegalVariationPairs(readDataFile("StandardizedVariants.txt"))
+    parsed.formUnion(parseLegalVariationPairs(readDataFile("emoji-variation-sequences.txt")))
+    legalVariationPairsCache = parsed
+    return parsed
+}
+
 private func parseConfusables(_ raw: String) -> [Int: [Int]] {
     var out: [Int: [Int]] = [:]
     for rawLine in raw.split(separator: "\n", omittingEmptySubsequences: false) {
@@ -426,6 +440,27 @@ private func parseKnownAttackTargets(_ raw: String) -> [String] {
     raw.split(separator: "\n", omittingEmptySubsequences: false)
         .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         .filter { !$0.isEmpty && !$0.hasPrefix("#") }
+}
+
+private func parseLegalVariationPairs(_ raw: String) -> Set<String> {
+    var out: Set<String> = []
+    for rawLine in raw.split(separator: "\n", omittingEmptySubsequences: false) {
+        let pairPart = rawLine
+            .split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0]
+            .split(separator: ";", maxSplits: 1, omittingEmptySubsequences: false)[0]
+            .trimmingCharacters(in: .whitespaces)
+        if pairPart.isEmpty { continue }
+        let fields = pairPart.split(whereSeparator: { $0 == " " || $0 == "\t" })
+        if fields.count != 2 { continue }
+        if let base = parseHex(String(fields[0])), let vs = parseHex(String(fields[1])) {
+            out.insert(variationPairKey(base, vs))
+        }
+    }
+    return out
+}
+
+private func variationPairKey(_ base: Int, _ vs: Int) -> String {
+    "\(base):\(vs)"
 }
 
 private func parseCodepointField(_ field: String) -> [Int] {

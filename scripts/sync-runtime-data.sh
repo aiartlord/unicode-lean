@@ -57,11 +57,15 @@ haskell_files=(
   DerivedNormalizationProps.txt
   confusables.txt
   KnownAttackTargets.txt
+  StandardizedVariants.txt
+  emoji-variation-sequences.txt
 )
 
 homoglyph_files=(
   confusables.txt
   KnownAttackTargets.txt
+  StandardizedVariants.txt
+  emoji-variation-sequences.txt
 )
 
 usage() {
@@ -208,6 +212,8 @@ sync_haskell() {
   copy_file Unicode/Ucd/DerivedNormalizationProps.txt "$haskell_dir/data/DerivedNormalizationProps.txt"
   copy_file data/confusables.txt "$haskell_dir/data/confusables.txt"
   copy_file data/KnownAttackTargets.txt "$haskell_dir/data/KnownAttackTargets.txt"
+  copy_file data/StandardizedVariants.txt "$haskell_dir/data/StandardizedVariants.txt"
+  copy_file data/emoji-variation-sequences.txt "$haskell_dir/data/emoji-variation-sequences.txt"
   write_manifest "$haskell_dir/data" "${haskell_files[@]}"
   (
     cd "$haskell_dir"
@@ -224,6 +230,8 @@ check_haskell() {
   check_same_file Unicode/Ucd/DerivedNormalizationProps.txt "$haskell_dir/data/DerivedNormalizationProps.txt"
   check_same_file data/confusables.txt "$haskell_dir/data/confusables.txt"
   check_same_file data/KnownAttackTargets.txt "$haskell_dir/data/KnownAttackTargets.txt"
+  check_same_file data/StandardizedVariants.txt "$haskell_dir/data/StandardizedVariants.txt"
+  check_same_file data/emoji-variation-sequences.txt "$haskell_dir/data/emoji-variation-sequences.txt"
   check_manifest "$haskell_dir/data"
 }
 

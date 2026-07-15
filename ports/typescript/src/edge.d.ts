@@ -3,6 +3,8 @@ export * from "./security.js";
 export interface SecurityData {
   confusables: string;
   knownAttackTargets: string;
+  standardizedVariants?: string;
+  emojiVariationSequences?: string;
 }
 
 export interface InstantiateSecurityOptions {
