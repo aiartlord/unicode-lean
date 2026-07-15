@@ -21,4 +21,3 @@ CollationTest_SHIFTED_SHORT.txt 	 2503412	3ede425165f0faf776f8d702a4d65863c347e8
 CollationTest_SHIFTED.txt       	21207459	cbeecf871a3567e8229c869a1f7c36e777c077ee2be6470efe4fb17f01886d4b
 IdnaTestV2.txt                  	  775973	beb5d0be20e896189b03209a82fdc34f06351502bbd4b8e2523583fc2954d9cf
 DerivedJoiningType.txt          	   40635	f39ebe974825d6736aee15582250307aa532b2cfab3caf3f86bd23fddc9c5c4d
-PropListUca16.txt               	  144253	53d614508e2a0b2305a8aa21cd60d993de9326cdf65993660dfcce4503548583
