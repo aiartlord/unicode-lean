@@ -6,28 +6,24 @@
 
       isNFCQuickCheck cps = true  →  toNFC cps = cps
 
-  # Strategy
+  # Role
 
-  Snoc induction on `cps.toList`. `ToNFDAppend.toNFD_absorbing_right`
-  factors `toNFD (xs ++ #[cp])` via `toNFD (xs ++ toNFD #[cp])`,
-  concrete for each shape of `cp` (nonstarter with empty decomp via
-  Fact 1, starter with empty decomp, starter with 2-decomp [d, e]
-  via Fact 2, or Hangul syllable).
+  This module contains the lightweight base facts used by the current
+  quick-check soundness proof. The full snoc induction lives in
+  `QuickCheckSoundnessTheorem`, with the inductive step closed by
+  `QuickCheckSoundnessSnocClosure`.
 
-  The compose-side argument closes per sub-case using:
+  The compose-side facts exposed here are:
     · Fact 1 lift (`qcY_nonstarter_cp_no_decomp`) — QC=Y nonstarters
       have empty canonical decomposition, so they pass through
       decompose unchanged.
-    · Fact 2 lift (`qcY_starter_2decomp_cp_composes`) — QC=Y starters
-      with 2-decomp `[d, e]` recompose via `primaryComposite?(d, e)
-      = some cp`.
     · Fact 3 lift (`primaryComposite_none_of_qcY_nonstarter`, proven
       below) — no primary composition fires with a QC=Y nonstarter as
       the trailing element.
 
-  Fact 3's per-codepoint lift sits in this module; the other two
-  come from `QuickCheckFacts`. The row-level `decide` of
-  Fact 3 sits in `QuickCheckFacts.qcY_nonstarter_not_decomp_target`.
+  Fact 2's per-codepoint lift sits in `QuickCheckFacts` and is consumed by the
+  singleton-pair/rank support modules. The row-level `decide` of Fact 3 sits in
+  `QuickCheckFacts.qcY_nonstarter_not_decomp_target`.
 -/
 
 import Unicode.Normalization.NFC
