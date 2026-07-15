@@ -306,4 +306,13 @@ theorem entryRank1_toNFD_foldl_singletonState
     entry.left entry.right entry.codepoint
     (entryRankValid_primaryComposite entry h)
 
+/-- Rank-1 entries are singleton-NFC identities. -/
+theorem entryRank1_toNFC_singleton
+    (entry : QuickCheckSingletonRankData.SingletonRankRow)
+    (h : QuickCheckSingletonRankData.entryRankValid entry = true)
+    (hRank : entry.rank = 1) :
+    toNFC #[entry.codepoint] = #[entry.codepoint] :=
+  toNFC_of_toNFD_foldl_singletonState entry.codepoint
+    (entryRank1_toNFD_foldl_singletonState entry h hRank)
+
 end Unicode.Normalization.QuickCheckSoundnessSingletonRank
