@@ -52,6 +52,7 @@ python_files=(
 )
 
 haskell_files=(
+  CaseFolding.txt
   UnicodeData.txt
   CompositionExclusions.txt
   DerivedNormalizationProps.txt
@@ -62,6 +63,7 @@ haskell_files=(
 )
 
 homoglyph_files=(
+  CaseFolding.txt
   confusables.txt
   KnownAttackTargets.txt
   StandardizedVariants.txt
@@ -218,6 +220,7 @@ check_python() {
 sync_haskell() {
   sync_haskell_version
   copy_file data/UnicodeData.txt "$haskell_dir/data/UnicodeData.txt"
+  copy_file data/CaseFolding.txt "$haskell_dir/data/CaseFolding.txt"
   copy_file data/CompositionExclusions.txt "$haskell_dir/data/CompositionExclusions.txt"
   copy_file Unicode/Ucd/DerivedNormalizationProps.txt "$haskell_dir/data/DerivedNormalizationProps.txt"
   copy_file data/confusables.txt "$haskell_dir/data/confusables.txt"
@@ -236,6 +239,7 @@ sync_haskell() {
 check_haskell() {
   check_same_version_keys data/UCD-VERSION "$haskell_dir/data/UCD-VERSION"
   check_same_file data/UnicodeData.txt "$haskell_dir/data/UnicodeData.txt"
+  check_same_file data/CaseFolding.txt "$haskell_dir/data/CaseFolding.txt"
   check_same_file data/CompositionExclusions.txt "$haskell_dir/data/CompositionExclusions.txt"
   check_same_file Unicode/Ucd/DerivedNormalizationProps.txt "$haskell_dir/data/DerivedNormalizationProps.txt"
   check_same_file data/confusables.txt "$haskell_dir/data/confusables.txt"

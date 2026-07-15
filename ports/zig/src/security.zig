@@ -1,5 +1,6 @@
 const std = @import("std");
 const confusables_data = @import("confusables_data.zig");
+const case_folding_data = @import("case_folding_data.zig");
 const normalization_data = @import("normalization_data.zig");
 
 const known_attack_targets_raw = @embedFile("data/KnownAttackTargets.txt");
@@ -758,11 +759,7 @@ fn iteratedSkeleton(input: []const u32) ?CpBuffer {
 
 fn skeletonStep(input: []const u32) ?CpBuffer {
     const nfd1 = toNFD(input) orelse return null;
-
-    var folded = CpBuffer{};
-    for (nfd1.slice()) |cp| {
-        if (!folded.append(caseFoldCodepoint(cp))) return null;
-    }
+    const folded = caseFoldCodepoints(nfd1.slice()) orelse return null;
 
     var substituted = CpBuffer{};
     for (folded.slice()) |cp| {
@@ -774,10 +771,7 @@ fn skeletonStep(input: []const u32) ?CpBuffer {
         }
     }
 
-    var out = CpBuffer{};
-    for (substituted.slice()) |cp| {
-        if (!out.append(caseFoldCodepoint(cp))) return null;
-    }
+    const out = caseFoldCodepoints(substituted.slice()) orelse return null;
     return toNFD(out.slice());
 }
 
@@ -890,6 +884,35 @@ fn confusableReplacement(cp: u32, out: *CpBuffer) bool {
     return false;
 }
 
+fn caseFoldCodepoints(input: []const u32) ?CpBuffer {
+    var out = CpBuffer{};
+    for (input) |cp| {
+        if (caseFoldingEntry(cp)) |entry| {
+            if (!out.appendSlice(entry.mapping)) return null;
+        } else {
+            if (!out.append(cp)) return null;
+        }
+    }
+    return out;
+}
+
+fn caseFoldingEntry(cp: u32) ?case_folding_data.Entry {
+    var lo: usize = 0;
+    var hi: usize = case_folding_data.entries.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        const entry = case_folding_data.entries[mid];
+        if (cp < entry.cp) {
+            hi = mid;
+        } else if (cp > entry.cp) {
+            lo = mid + 1;
+        } else {
+            return entry;
+        }
+    }
+    return null;
+}
+
 fn asciiCodepoints(target: []const u8) ?CpBuffer {
     if (target.len > MaxSkeletonLen) return null;
     var out = CpBuffer{};
@@ -897,11 +920,6 @@ fn asciiCodepoints(target: []const u8) ?CpBuffer {
         if (!out.append(@as(u32, byte))) return null;
     }
     return out;
-}
-
-fn caseFoldCodepoint(cp: u32) u32 {
-    if (cp >= 'A' and cp <= 'Z') return cp + 32;
-    return cp;
 }
 
 fn cpSlicesEqual(a: []const u32, b: []const u32) bool {

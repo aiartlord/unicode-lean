@@ -2,6 +2,7 @@ export * from "./security.js";
 
 export interface SecurityData {
   confusables: string;
+  caseFolding: string;
   knownAttackTargets: string;
   standardizedVariants?: string;
   emojiVariationSequences?: string;

@@ -8,7 +8,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -78,6 +77,7 @@ public final class Security {
   private enum ByteOrder { BIG, LITTLE }
 
   private static Map<Integer, List<Integer>> confusablesMap;
+  private static Map<Integer, List<Integer>> caseFoldingMap;
   private static List<String> knownTargets;
   private static Set<Long> legalVariationPairs;
 
@@ -359,8 +359,9 @@ public final class Security {
   }
 
   private static List<Integer> caseFoldCodepoints(List<Integer> input) {
+    Map<Integer, List<Integer>> table = caseFoldingMap();
     List<Integer> out = new ArrayList<>();
-    for (int cp : input) out.addAll(codepointsFromString(new String(Character.toChars(cp)).toLowerCase(Locale.ROOT)));
+    for (int cp : input) out.addAll(table.getOrDefault(cp, List.of(cp)));
     return out;
   }
 
@@ -373,6 +374,11 @@ public final class Security {
   private static synchronized Map<Integer, List<Integer>> confusablesMap() {
     if (confusablesMap == null) confusablesMap = parseConfusables(readResource("confusables.txt"));
     return confusablesMap;
+  }
+
+  private static synchronized Map<Integer, List<Integer>> caseFoldingMap() {
+    if (caseFoldingMap == null) caseFoldingMap = parseCaseFolding(readResource("CaseFolding.txt"));
+    return caseFoldingMap;
   }
 
   private static synchronized List<String> knownTargets() {
@@ -399,6 +405,22 @@ public final class Security {
       Integer src = parseHex(fields[0]);
       List<Integer> target = parseCodepointField(fields[1]);
       if (src != null && !target.isEmpty()) out.put(src, target);
+    }
+    return out;
+  }
+
+  private static Map<Integer, List<Integer>> parseCaseFolding(String raw) {
+    Map<Integer, List<Integer>> out = new HashMap<>();
+    for (String rawLine : raw.split("\n")) {
+      String body = rawLine.split("#", 2)[0].trim();
+      if (body.isEmpty()) continue;
+      String[] fields = body.split(";");
+      if (fields.length < 3) continue;
+      String status = fields[1].trim();
+      if (!status.equals("C") && !status.equals("F")) continue;
+      Integer cp = parseHex(fields[0]);
+      List<Integer> mapping = parseCodepointField(fields[2]);
+      if (cp != null && !mapping.isEmpty()) out.put(cp, mapping);
     }
     return out;
   }

@@ -68,6 +68,7 @@ private struct Utf8State { let inSequence: Bool; let remaining: Int; let accum: 
 private struct Utf8Step { let state: Utf8State; let emitted: Int; let kind: String; let rejected: Bool }
 
 private var confusablesMapCache: [Int: [Int]]?
+private var caseFoldingCache: [Int: [Int]]?
 private var attackTargetsCache: [String]?
 private var legalVariationPairsCache: Set<String>?
 
@@ -393,12 +394,16 @@ private func substituteConfusables(_ input: [Int]) -> [Int] {
 }
 
 private func caseFoldCodepoints(_ input: [Int]) -> [Int] {
-    input.flatMap(caseFoldCodepoint)
-}
-
-private func caseFoldCodepoint(_ cp: Int) -> [Int] {
-    guard let scalar = UnicodeScalar(cp) else { return [cp] }
-    return codepointsFromString(String(scalar).lowercased())
+    let table = caseFoldingMap()
+    var out: [Int] = []
+    for cp in input {
+        if let replacement = table[cp] {
+            out.append(contentsOf: replacement)
+        } else {
+            out.append(cp)
+        }
+    }
+    return out
 }
 
 private func toNfdCodepoints(_ input: [Int]) -> [Int] {
@@ -413,6 +418,13 @@ private func confusablesMap() -> [Int: [Int]] {
     if let cached = confusablesMapCache { return cached }
     let parsed = parseConfusables(readDataFile("confusables.txt"))
     confusablesMapCache = parsed
+    return parsed
+}
+
+private func caseFoldingMap() -> [Int: [Int]] {
+    if let cached = caseFoldingCache { return cached }
+    let parsed = parseCaseFolding(readDataFile("CaseFolding.txt"))
+    caseFoldingCache = parsed
     return parsed
 }
 
@@ -441,6 +453,23 @@ private func parseConfusables(_ raw: String) -> [Int: [Int]] {
         if let src = parseHex(String(fields[0])) {
             let target = parseCodepointField(String(fields[1]))
             if !target.isEmpty { out[src] = target }
+        }
+    }
+    return out
+}
+
+private func parseCaseFolding(_ raw: String) -> [Int: [Int]] {
+    var out: [Int: [Int]] = [:]
+    for rawLine in raw.split(separator: "\n", omittingEmptySubsequences: false) {
+        let body = rawLine.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0].trimmingCharacters(in: .whitespaces)
+        if body.isEmpty { continue }
+        let fields = body.split(separator: ";", omittingEmptySubsequences: false)
+        if fields.count < 3 { continue }
+        let status = fields[1].trimmingCharacters(in: .whitespaces)
+        if status != "C" && status != "F" { continue }
+        if let cp = parseHex(String(fields[0])) {
+            let mapping = parseCodepointField(String(fields[2]))
+            if !mapping.isEmpty { out[cp] = mapping }
         }
     }
     return out

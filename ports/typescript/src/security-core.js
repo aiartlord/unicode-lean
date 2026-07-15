@@ -46,6 +46,7 @@ export const Family = Object.freeze({
 });
 
 let confusablesMapCache;
+let caseFoldingMapCache;
 let attackTargetsCache;
 let legalVariationPairsCache;
 let dataReader = null;
@@ -56,18 +57,23 @@ export function configureSecurityDataReader(reader) {
   }
   dataReader = reader;
   confusablesMapCache = undefined;
+  caseFoldingMapCache = undefined;
   attackTargetsCache = undefined;
   legalVariationPairsCache = undefined;
 }
 
 export function configureSecurityData(data) {
-  const confusables = String(data?.confusables ?? "");
-  const knownAttackTargets = String(data?.knownAttackTargets ?? "");
+  const confusables = requiredSecurityData(data, "confusables");
+  const caseFolding = requiredSecurityData(data, "caseFolding");
+  const knownAttackTargets = requiredSecurityData(data, "knownAttackTargets");
   const standardizedVariants = String(data?.standardizedVariants ?? "");
   const emojiVariationSequences = String(data?.emojiVariationSequences ?? "");
   configureSecurityDataReader((name) => {
     if (name === "confusables.txt") {
       return confusables;
+    }
+    if (name === "CaseFolding.txt") {
+      return caseFolding;
     }
     if (name === "KnownAttackTargets.txt") {
       return knownAttackTargets;
@@ -80,6 +86,13 @@ export function configureSecurityData(data) {
     }
     throw new Error(`unknown security data file: ${name}`);
   });
+}
+
+function requiredSecurityData(data, name) {
+  if (data == null || data[name] == null) {
+    throw new TypeError(`missing required security data: ${name}`);
+  }
+  return String(data[name]);
 }
 
 export function scan(profile, mode, input) {
@@ -476,19 +489,17 @@ function substituteConfusables(input) {
 }
 
 function caseFoldCodepoints(input) {
+  const table = caseFoldingMap();
   const out = [];
   for (const cp of input) {
-    out.push(...caseFoldCodepoint(cp));
+    const replacement = table.get(cp);
+    if (replacement !== undefined) {
+      out.push(...replacement);
+    } else {
+      out.push(cp);
+    }
   }
   return out;
-}
-
-function caseFoldCodepoint(cp) {
-  try {
-    return codepointsFromString(String.fromCodePoint(cp).toLowerCase());
-  } catch {
-    return [cp];
-  }
 }
 
 function toNfdCodepoints(input) {
@@ -508,6 +519,13 @@ function confusablesMap() {
     confusablesMapCache = parseConfusables(readDataFile("confusables.txt"));
   }
   return confusablesMapCache;
+}
+
+function caseFoldingMap() {
+  if (caseFoldingMapCache === undefined) {
+    caseFoldingMapCache = parseCaseFolding(readDataFile("CaseFolding.txt"));
+  }
+  return caseFoldingMapCache;
 }
 
 function knownAttackTargets() {
@@ -542,6 +560,30 @@ function parseConfusables(raw) {
     const target = parseCodepointField(fields[1]);
     if (src !== null && target.length > 0) {
       out.set(src, target);
+    }
+  }
+  return out;
+}
+
+function parseCaseFolding(raw) {
+  const out = new Map();
+  for (const rawLine of raw.split("\n")) {
+    const body = rawLine.split("#", 1)[0].trim();
+    if (body === "") {
+      continue;
+    }
+    const fields = body.split(";");
+    if (fields.length < 3) {
+      continue;
+    }
+    const status = fields[1].trim();
+    if (status !== "C" && status !== "F") {
+      continue;
+    }
+    const cp = parseHex(fields[0]);
+    const mapping = parseCodepointField(fields[2]);
+    if (cp !== null && mapping.length > 0) {
+      out.set(cp, mapping);
     }
   }
   return out;

@@ -37,6 +37,7 @@ export declare const Family: Readonly<Record<string, string>>;
 
 export declare function configureSecurityData(data: {
   confusables: string;
+  caseFolding: string;
   knownAttackTargets: string;
   standardizedVariants?: string;
   emojiVariationSequences?: string;

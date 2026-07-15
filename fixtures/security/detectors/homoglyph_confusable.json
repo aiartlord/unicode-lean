@@ -44,6 +44,20 @@
       ]
     },
     {
+      "name": "express-sharp-s-full-casefold-target",
+      "input": [101, 120, 112, 114, 101, 223],
+      "required_findings": [
+        "unicode.security.I.homoglyph-confusable.TargetMatch"
+      ]
+    },
+    {
+      "name": "express-beta-confusable-full-casefold-target",
+      "input": [101, 120, 112, 114, 101, 946],
+      "required_findings": [
+        "unicode.security.I.homoglyph-confusable.TargetMatch"
+      ]
+    },
+    {
       "name": "decomposed-e-acute",
       "input": [101, 769],
       "required_findings": [
