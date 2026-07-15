@@ -6,6 +6,7 @@
 -/
 
 import Unicode.Normalization.NFC
+import Unicode.Normalization.Distribute
 import Unicode.Normalization.QuickCheckSingletonRankData
 import Unicode.Normalization.QuickCheckSoundnessSingletonPair
 
@@ -74,6 +75,43 @@ theorem foldl_singleton_starter
   rw [Compose.stepCompose.eq_def]
   unfold Compose.initialState singletonState
   simp [hCcc]
+
+/-- Atomic non-Hangul starters are unchanged by `toNFD`. -/
+theorem atomic_starter_toNFD_singleton
+    (cp : Nat)
+    (hDecomp : Lookup.canonicalDecomposition cp = #[])
+    (hNotHangul : Hangul.isHangulSyllable cp = false) :
+    toNFD #[cp] = #[cp] := by
+  have hDsyl : Hangul.decomposeSyllable? cp = none := by
+    unfold Hangul.decomposeSyllable?
+    rw [hNotHangul]
+    simp
+  have hFCD : Decompose.fullCanonicalDecompose cp = #[cp] := by
+    show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth cp = #[cp]
+    unfold Decompose.maxDepth Decompose.fullCanonicalDecomposeFuel
+    rw [hDsyl]
+    simp [hDecomp]
+  have hDS : Decompose.decomposeSequence #[cp] = #[cp] := by
+    rw [Distribute.decomposeSequence_singleton]
+    exact hFCD
+  have hR : Reorder.reorder #[cp] = #[cp] := by
+    apply Reorder.reorder_id_on_HasSortedRuns
+    show Reorder.HasSortedRuns [cp]
+    trivial
+  unfold toNFD
+  rw [hDS, hR]
+
+/-- Atomic non-Hangul starters fold through `toNFD` and `stepCompose` to an
+    active singleton starter state. -/
+theorem atomic_starter_toNFD_foldl_singletonState
+    (cp : Nat)
+    (hCcc : Lookup.canonicalCombiningClass cp = 0)
+    (hDecomp : Lookup.canonicalDecomposition cp = #[])
+    (hNotHangul : Hangul.isHangulSyllable cp = false) :
+    (toNFD #[cp]).foldl Compose.stepCompose Compose.initialState =
+      singletonState cp := by
+  rw [atomic_starter_toNFD_singleton cp hDecomp hNotHangul]
+  exact foldl_singleton_starter cp hCcc
 
 /-- A QC=Y starter row with two-element canonical decomposition primary-composes
     from its generated rank-entry components back to its codepoint. -/
@@ -166,5 +204,19 @@ theorem entryRankValid_rank1_left_empty
   have hRankBranch := h.2
   rw [hRank] at hRankBranch
   exact of_decide_eq_true hRankBranch
+
+/-- Rank-1 entries have a structurally proven singleton state for their left
+    component. -/
+theorem entryRank1_left_toNFD_foldl_singletonState
+    (entry : QuickCheckSingletonRankData.SingletonRankRow)
+    (h : QuickCheckSingletonRankData.entryRankValid entry = true)
+    (hRank : entry.rank = 1) :
+    (toNFD #[entry.left]).foldl Compose.stepCompose Compose.initialState =
+      singletonState entry.left := by
+  have hCommon := entryRankValid_common entry h
+  have facts := entryCommonValid_facts entry hCommon
+  have hLeftEmpty := entryRankValid_rank1_left_empty entry h hRank
+  exact atomic_starter_toNFD_foldl_singletonState
+    entry.left facts.hLeftCcc hLeftEmpty facts.hLeftNotHangul
 
 end Unicode.Normalization.QuickCheckSoundnessSingletonRank
