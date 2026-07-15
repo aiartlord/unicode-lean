@@ -315,4 +315,45 @@ theorem entryRank1_toNFC_singleton
   toNFC_of_toNFD_foldl_singletonState entry.codepoint
     (entryRank1_toNFD_foldl_singletonState entry h hRank)
 
+/-- For rank-2 entries, rank validity points the left component at a valid
+    rank-1 parent entry. -/
+theorem entryRankValid_rank2_left_parent
+    (entry : QuickCheckSingletonRankData.SingletonRankRow)
+    (h : QuickCheckSingletonRankData.entryRankValid entry = true)
+    (hRank : entry.rank = 2) :
+    ∃ parent ∈ QuickCheckSingletonRankData.rowsRank1,
+      parent.codepoint = entry.left ∧
+      QuickCheckSingletonRankData.entryRankValid parent = true := by
+  unfold QuickCheckSingletonRankData.entryRankValid at h
+  rw [Bool.and_eq_true] at h
+  have hRankBranch := h.2
+  rw [hRank] at hRankBranch
+  have h21 : ¬ (2 : Nat) = 1 := by decide
+  simp [h21] at hRankBranch
+  obtain ⟨parent, hMem, hCodepoint⟩ := hRankBranch
+  have hParentValid :=
+    List.all_eq_true.mp QuickCheckSingletonRankData.rowsRank1_valid parent hMem
+  exact ⟨parent, hMem, hCodepoint, hParentValid⟩
+
+/-- For rank-3 entries, rank validity points the left component at a valid
+    rank-2 parent entry. -/
+theorem entryRankValid_rank3_left_parent
+    (entry : QuickCheckSingletonRankData.SingletonRankRow)
+    (h : QuickCheckSingletonRankData.entryRankValid entry = true)
+    (hRank : entry.rank = 3) :
+    ∃ parent ∈ QuickCheckSingletonRankData.rowsRank2,
+      parent.codepoint = entry.left ∧
+      QuickCheckSingletonRankData.entryRankValid parent = true := by
+  unfold QuickCheckSingletonRankData.entryRankValid at h
+  rw [Bool.and_eq_true] at h
+  have hRankBranch := h.2
+  rw [hRank] at hRankBranch
+  have h31 : ¬ (3 : Nat) = 1 := by decide
+  have h32 : ¬ (3 : Nat) = 2 := by decide
+  simp [h31, h32] at hRankBranch
+  obtain ⟨parent, hMem, hCodepoint⟩ := hRankBranch
+  have hParentValid :=
+    List.all_eq_true.mp QuickCheckSingletonRankData.rowsRank2_valid parent hMem
+  exact ⟨parent, hMem, hCodepoint, hParentValid⟩
+
 end Unicode.Normalization.QuickCheckSoundnessSingletonRank
