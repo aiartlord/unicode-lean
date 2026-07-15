@@ -1,5 +1,5 @@
 {
-  "module_steps": 183,
+  "module_steps": 249,
   "preset": "product",
   "roots": [
     {
@@ -33,10 +33,10 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 5141038,
-      "decide_kernel": 15,
-      "modules": 57,
-      "row_refs": 669,
+      "bytes": 5483607,
+      "decide_kernel": 527,
+      "modules": 123,
+      "row_refs": 2739,
       "stage": "stage-1-generated-base"
     },
     {
@@ -44,10 +44,10 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 275367,
+      "bytes": 275197,
       "decide_kernel": 63,
       "modules": 15,
-      "row_refs": 132,
+      "row_refs": 127,
       "stage": "stage-2-normalization-runtime"
     },
     {
@@ -55,10 +55,10 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 547621,
+      "bytes": 547529,
       "decide_kernel": 163,
       "modules": 41,
-      "row_refs": 20,
+      "row_refs": 18,
       "stage": "stage-3-runtime-property-tables"
     },
     {

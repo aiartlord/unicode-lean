@@ -97,6 +97,28 @@ The target shape is:
 10. Stage 9: full conformance aggregate
 11. Stage 10: cleanup/report
 
+Quick-check singleton rank evidence belongs in Stage 6. In particular,
+`Unicode.Normalization.QuickCheckSingletonRankData` is a generated assurance
+fact module, not a runtime normalization prerequisite. It should be cached as an
+explicit one-module target before rewiring or checking
+`QuickCheckSoundnessSingletonTable`, `QuickCheckSoundnessMaster`,
+`QuickCheckSoundnessSnocClosure`, or `QuickCheckSoundnessTheorem`:
+
+```bash
+scripts/lean-cache-stages.py \
+  --preset evidence \
+  --only-module Unicode.Normalization.QuickCheckSingletonRankData \
+  --run \
+  --resume \
+  --max-rss-gb 40 \
+  --timeout-sec 0
+```
+
+Measured local reference: this target built as one module with
+`LEAN_NUM_THREADS=1` and `JOBS=1` in 278 seconds. Do not run the broader
+QuickCheck soundness stack on a cold cache until the rank proof has replaced the
+old singleton table reducer.
+
 Current implemented support:
 
 - `scripts/audit-lean-root-boundaries.py` derives root closures and a

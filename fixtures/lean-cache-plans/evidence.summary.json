@@ -1,5 +1,5 @@
 {
-  "module_steps": 235,
+  "module_steps": 304,
   "preset": "evidence",
   "roots": [
     {
@@ -17,10 +17,10 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 4261752,
-      "decide_kernel": 12,
-      "modules": 53,
-      "row_refs": 104,
+      "bytes": 4604321,
+      "decide_kernel": 524,
+      "modules": 119,
+      "row_refs": 2174,
       "stage": "stage-1-generated-base"
     },
     {
@@ -28,10 +28,10 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 392177,
-      "decide_kernel": 67,
+      "bytes": 393689,
+      "decide_kernel": 68,
       "modules": 20,
-      "row_refs": 184,
+      "row_refs": 195,
       "stage": "stage-2-normalization-runtime"
     },
     {
@@ -39,10 +39,10 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 564852,
+      "bytes": 564760,
       "decide_kernel": 163,
       "modules": 43,
-      "row_refs": 20,
+      "row_refs": 18,
       "stage": "stage-3-runtime-property-tables"
     },
     {
@@ -72,10 +72,10 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 421942,
-      "decide_kernel": 102,
-      "modules": 23,
-      "row_refs": 243,
+      "bytes": 497353,
+      "decide_kernel": 107,
+      "modules": 26,
+      "row_refs": 252,
       "stage": "stage-6-assurance-proof-chunk"
     },
     {
