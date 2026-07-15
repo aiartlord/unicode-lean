@@ -802,4 +802,20 @@ theorem rows_singletonNFC :
   unfold QuickCheckSingletonRankData.rows
   simp [rowsRank1_singletonNFC, rowsRank2_singletonNFC, rowsRank3_singletonNFC]
 
+/-- Any row codepoint covered by the generated singleton-rank table inherits the
+    singleton NFC identity. -/
+theorem singletonNFC_of_rank_rows_any
+    (cp : Nat)
+    (hAny : QuickCheckSingletonRankData.rows.any
+      (fun entry => decide (entry.codepoint = cp)) = true) :
+    toNFC #[cp] = #[cp] := by
+  rw [List.any_eq_true] at hAny
+  obtain ⟨entry, hMem, hCodepoint⟩ := hAny
+  have hEntry :=
+    List.all_eq_true.mp rows_singletonNFC entry hMem
+  have hSingleton := of_decide_eq_true hEntry
+  have hCp := of_decide_eq_true hCodepoint
+  rw [hCp] at hSingleton
+  exact hSingleton
+
 end Unicode.Normalization.QuickCheckSoundnessSingletonRank
