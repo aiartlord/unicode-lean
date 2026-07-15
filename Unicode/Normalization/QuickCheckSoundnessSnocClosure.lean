@@ -20,19 +20,17 @@
       `chain_fires_via_buffer_bound` come from
       `ComposeBufferStructure`.
 
-  Two `decide` UCD tables establish the structural premise
-  that for any QC=Y starter `cp`, the head of `decomposeSequence
-  #[cp]` is a starter and the head of `toNFD #[cp]` is a QC=Y
-  starter — the precondition of `compose_qcY_starter_block_additive`:
-
-    * `qcY_starter_toNFD_head_table` covers explicit UCD rows.
-    * `hangul_singleton_toNFD_head_table` covers the 11172
-      precomposed Hangul syllables (which are filtered out of
-      `UnicodeData.rows` since their decomposition is algorithmic).
+  The starter branch needs a structural premise: for any QC=Y starter
+  `cp`, the head of `decomposeSequence #[cp]` is a starter and the head of
+  `toNFD #[cp]` is a QC=Y starter.  This module proves that premise by
+  dispatching over the same semantic cases as singleton soundness:
+  atomic, Hangul, and generated rank-certificate rows.
 -/
 
 import Unicode.Normalization.QuickCheckSoundness
 import Unicode.Normalization.QuickCheckSoundnessMaster
+import Unicode.Normalization.QuickCheckSoundnessHangul
+import Unicode.Normalization.QuickCheckSoundnessSingletonRank
 import Unicode.Normalization.ComposeBlockAdditive
 import Unicode.Normalization.ComposeNonstarterSlide
 import Unicode.Normalization.ComposeBufferStructure
@@ -75,62 +73,14 @@ open Unicode.Normalization.ComposeKernelSupport
 open Unicode.Generated
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- §1 UCD TABLE: NON-HANGUL toNFD HEAD IS QC=Y STARTER
--- ═══════════════════════════════════════════════════════════════════════════════
-
-/-- For every QC=Y starter row in `UnicodeData.rows`, the head of
-    `decomposeSequence #[cp]` is a starter and the head of `toNFD
-    #[cp]` is a QC=Y starter. Closed by `decide`; the two
-    early-exit disjuncts skip rows outside the QC=Y starter sub-class. -/
-theorem qcY_starter_toNFD_head_table :
-    UnicodeData.rows.all (fun row =>
-      decide (row.canonicalCombiningClass ≠ 0) ||
-      decide (nfcQCValue row.codepoint ≠ .Y) ||
-      (decide (Lookup.canonicalCombiningClass
-                  (Decompose.decomposeSequence #[row.codepoint])[0]! = 0) &&
-       decide (Lookup.canonicalCombiningClass
-                  (toNFD #[row.codepoint])[0]! = 0) &&
-       decide (nfcQCValue (toNFD #[row.codepoint])[0]! = .Y) &&
-       decide ((Decompose.decomposeSequence #[row.codepoint]).size > 0) &&
-       decide ((toNFD #[row.codepoint]).size > 0))) = true := by
-  decide
-
--- ═══════════════════════════════════════════════════════════════════════════════
--- §2 HANGUL TABLE: PRECOMPOSED-SYLLABLE toNFD HEAD IS QC=Y STARTER
--- ═══════════════════════════════════════════════════════════════════════════════
-
-/-- For every Hangul precomposed syllable `cp` in `[SBase, SBase +
-    SCount)`, the head of `decomposeSequence #[cp]` is a starter
-    (the L jamo) and the head of `toNFD #[cp]` is a QC=Y starter.
-    Hangul syllables are excluded from `UnicodeData.rows` (their
-    decomposition is algorithmic, handled via `decomposeSyllable?`),
-    so this table covers the dispatcher's Hangul branch. -/
-theorem hangul_singleton_toNFD_head_table :
-    (List.range Hangul.SCount).all (fun i =>
-      decide (Lookup.canonicalCombiningClass
-                (Decompose.decomposeSequence #[Hangul.SBase + i])[0]! = 0) &&
-      decide (Lookup.canonicalCombiningClass
-                (toNFD #[Hangul.SBase + i])[0]! = 0) &&
-      decide (nfcQCValue (toNFD #[Hangul.SBase + i])[0]! = .Y) &&
-      decide ((Decompose.decomposeSequence #[Hangul.SBase + i]).size > 0) &&
-      decide ((toNFD #[Hangul.SBase + i]).size > 0))
-    = true := by
-  decide
-
--- ═══════════════════════════════════════════════════════════════════════════════
--- §3 PER-CODEPOINT LIFT
+-- §1 PER-CODEPOINT STARTER-HEAD LIFT
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- For any QC=Y starter `cp`, `decomposeSequence #[cp]` is non-empty
-    and starter-led, and `toNFD #[cp]` is non-empty with a QC=Y
-    starter head. Three sources cover the cases:
-
-      * Hangul precomposed syllables — `hangul_singleton_toNFD_head_table`.
-      * Non-Hangul starters in `UnicodeData.rows` —
-        `qcY_starter_toNFD_head_table`.
-      * Non-Hangul atomic starters (codepoints absent from the pinned
-        UCD subset, with implicit empty canonical decomposition) —
-        direct: `decomposeSequence #[cp] = #[cp] = toNFD #[cp]`. -/
+    and starter-led, and `toNFD #[cp]` is non-empty with a QC=Y starter
+    head. Atomic rows reduce directly, Hangul syllables use Hangul
+    arithmetic, and non-empty non-Hangul row decompositions route through
+    the generated singleton-rank certificate. -/
 theorem qcY_starter_toNFD_head
     (cp : Nat)
     (hQC : nfcQCValue cp = .Y)
@@ -142,23 +92,7 @@ theorem qcY_starter_toNFD_head
     (Decompose.decomposeSequence #[cp]).size > 0 ∧
     (toNFD #[cp]).size > 0 := by
   by_cases hHangul : Hangul.isHangulSyllable cp = true
-  · have hRange : Hangul.SBase ≤ cp ∧ cp < Hangul.SBase + Hangul.SCount := by
-      unfold Hangul.isHangulSyllable at hHangul
-      exact of_decide_eq_true hHangul
-    have hIdxLt : cp - Hangul.SBase < Hangul.SCount := by omega
-    have hCpEq : Hangul.SBase + (cp - Hangul.SBase) = cp := by omega
-    have hTable := hangul_singleton_toNFD_head_table
-    rw [List.all_eq_true] at hTable
-    have hMem : cp - Hangul.SBase ∈ List.range Hangul.SCount :=
-      List.mem_range.mpr hIdxLt
-    have hAt := hTable (cp - Hangul.SBase) hMem
-    rw [hCpEq] at hAt
-    rw [Bool.and_eq_true, Bool.and_eq_true, Bool.and_eq_true,
-        Bool.and_eq_true] at hAt
-    obtain ⟨⟨⟨⟨hDsHead, hNfdHead⟩, hNfdQC⟩, hDsNonEmpty⟩, hNfdNonEmpty⟩ := hAt
-    exact ⟨of_decide_eq_true hDsHead, of_decide_eq_true hNfdHead,
-           of_decide_eq_true hNfdQC, of_decide_eq_true hDsNonEmpty,
-           of_decide_eq_true hNfdNonEmpty⟩
+  · exact QuickCheckSoundnessHangul.hangul_singleton_toNFD_head cp hHangul
   · have hNotHangul : Hangul.isHangulSyllable cp = false := by
       cases hH : Hangul.isHangulSyllable cp
       · rfl
@@ -185,42 +119,100 @@ theorem qcY_starter_toNFD_head
         apply Reorder.reorder_id_on_HasSortedRuns
         show Reorder.HasSortedRuns [cp]
         trivial
-      refine ⟨?h1, ?h2, ?h3, ?h4, ?h5⟩
-      · rw [hDS]; simp; exact hCcc
-      · rw [hToNFD]; simp; exact hCcc
-      · rw [hToNFD]; simp; exact hQC
-      · rw [hDS]; simp
-      · rw [hToNFD]; simp
+      have hDsHead :
+          Lookup.canonicalCombiningClass
+            (Decompose.decomposeSequence #[cp])[0]! = 0 := by
+        rw [hDS]; simp; exact hCcc
+      have hNfdHead :
+          Lookup.canonicalCombiningClass (toNFD #[cp])[0]! = 0 := by
+        rw [hToNFD]; simp; exact hCcc
+      have hNfdQC : nfcQCValue (toNFD #[cp])[0]! = .Y := by
+        rw [hToNFD]; simp; exact hQC
+      have hDsNonEmpty : (Decompose.decomposeSequence #[cp]).size > 0 := by
+        rw [hDS]; simp
+      have hNfdNonEmpty : (toNFD #[cp]).size > 0 := by
+        rw [hToNFD]; simp
+      exact And.intro hDsHead
+        (And.intro hNfdHead
+          (And.intro hNfdQC
+            (And.intro hDsNonEmpty hNfdNonEmpty)))
     | some row =>
       have hRowCp : row.codepoint = cp := by
         exact Unicode.Generated.UnicodeDataIndex.lookupRow?_codepoint hLookup
-      have hRccc :
-          row.canonicalCombiningClass = Lookup.canonicalCombiningClass cp := by
-        unfold Lookup.canonicalCombiningClass; rw [hLookup]
-      obtain ⟨src, hSrcMem, hSrcCp, hSrcCcc, _hSrcDecomp⟩ :=
+      obtain ⟨src, hSrcMem, hSrcCp, _hSrcCcc, hSrcDecomp⟩ :=
         Unicode.Generated.UnicodeDataIndex.lookupRow?_supported_rowsList hLookup
       have hSrcCpEq : src.codepoint = cp := hSrcCp.trans hRowCp
-      have hRowMem : src ∈ UnicodeData.rows := by
-        simpa [UnicodeData.rows] using hSrcMem
-      have hTable := qcY_starter_toNFD_head_table
-      rw [Array.all_eq_true] at hTable
-      rcases Array.getElem_of_mem hRowMem with ⟨i, hi, hElem⟩
-      have hRowFact := hTable i hi
-      rw [hElem] at hRowFact
-      have hCccDecide : decide (src.canonicalCombiningClass ≠ 0) = false := by
-        rw [hSrcCcc, hRccc]; simp [hCcc]
-      have hQCDecide : decide (nfcQCValue src.codepoint ≠ .Y) = false := by
-        rw [hSrcCpEq]; simp [hQC]
-      rw [hCccDecide, hQCDecide] at hRowFact
-      simp only [Bool.or_self, Bool.false_or] at hRowFact
-      rw [Bool.and_eq_true, Bool.and_eq_true, Bool.and_eq_true,
-          Bool.and_eq_true] at hRowFact
-      obtain ⟨⟨⟨⟨hDsHead, hNfdHead⟩, hNfdQC⟩, hDsNonEmpty⟩, hNfdNonEmpty⟩ :=
-        hRowFact
-      rw [hSrcCpEq] at hDsHead hNfdHead hNfdQC hDsNonEmpty hNfdNonEmpty
-      exact ⟨of_decide_eq_true hDsHead, of_decide_eq_true hNfdHead,
-             of_decide_eq_true hNfdQC, of_decide_eq_true hDsNonEmpty,
-             of_decide_eq_true hNfdNonEmpty⟩
+      by_cases hEmpty : Lookup.canonicalDecomposition cp = #[]
+      · have hDsyl : Hangul.decomposeSyllable? cp = none := by
+          unfold Hangul.decomposeSyllable?
+          rw [hNotHangul]
+          simp
+        have hFCD : Decompose.fullCanonicalDecompose cp = #[cp] := by
+          show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth cp = #[cp]
+          unfold Decompose.maxDepth Decompose.fullCanonicalDecomposeFuel
+          rw [hDsyl]
+          simp [hEmpty]
+        have hDS : Decompose.decomposeSequence #[cp] = #[cp] := by
+          rw [Distribute.decomposeSequence_singleton]
+          exact hFCD
+        have hToNFD : toNFD #[cp] = #[cp] := by
+          unfold toNFD
+          rw [hDS]
+          apply Reorder.reorder_id_on_HasSortedRuns
+          show Reorder.HasSortedRuns [cp]
+          trivial
+        have hDsHead :
+            Lookup.canonicalCombiningClass
+              (Decompose.decomposeSequence #[cp])[0]! = 0 := by
+          rw [hDS]; simp; exact hCcc
+        have hNfdHead :
+            Lookup.canonicalCombiningClass (toNFD #[cp])[0]! = 0 := by
+          rw [hToNFD]; simp; exact hCcc
+        have hNfdQC : nfcQCValue (toNFD #[cp])[0]! = .Y := by
+          rw [hToNFD]; simp; exact hQC
+        have hDsNonEmpty : (Decompose.decomposeSequence #[cp]).size > 0 := by
+          rw [hDS]; simp
+        have hNfdNonEmpty : (toNFD #[cp]).size > 0 := by
+          rw [hToNFD]; simp
+        exact And.intro hDsHead
+          (And.intro hNfdHead
+            (And.intro hNfdQC
+              (And.intro hDsNonEmpty hNfdNonEmpty)))
+      · have hCovered :=
+          List.all_eq_true.mp
+            QuickCheckSingletonRankData.relevant_lookup_rows_covered src hSrcMem
+        have hCccDecide :
+            decide (Lookup.canonicalCombiningClass src.codepoint ≠ 0) = false := by
+          rw [hSrcCpEq]
+          simp [hCcc]
+        have hHangulDecide :
+            decide (Hangul.isHangulSyllable src.codepoint = true) = false := by
+          rw [hSrcCpEq]
+          simp [hNotHangul]
+        have hQCDecide : decide (nfcQCValue src.codepoint ≠ .Y) = false := by
+          rw [hSrcCpEq]
+          simp [hQC]
+        have hRowDecomp :
+            src.canonicalDecomposition = Lookup.canonicalDecomposition cp := by
+          unfold Lookup.canonicalDecomposition
+          rw [hLookup]
+          exact hSrcDecomp
+        have hSizeDecide :
+            decide (src.canonicalDecomposition.size = 0) = false := by
+          rw [hRowDecomp]
+          have hSizeNonzero : (Lookup.canonicalDecomposition cp).size ≠ 0 := by
+            intro hZero
+            apply hEmpty
+            exact Array.eq_empty_of_size_eq_zero hZero
+          simp [hSizeNonzero]
+        have hAny :
+            QuickCheckSingletonRankData.rows.any
+              (fun entry => decide (entry.codepoint = cp)) = true := by
+          rw [hCccDecide, hHangulDecide, hQCDecide, hSizeDecide] at hCovered
+          simp only [Bool.false_or] at hCovered
+          rw [hSrcCpEq] at hCovered
+          exact hCovered
+        exact QuickCheckSoundnessSingletonRank.toNFD_head_of_rank_rows_any cp hAny
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 REORDER FACTORS OVER A STARTER-LED RIGHT BLOCK

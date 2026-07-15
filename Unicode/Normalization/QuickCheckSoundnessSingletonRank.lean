@@ -306,6 +306,102 @@ theorem entryRank1_toNFD_foldl_singletonState
     entry.left entry.right entry.codepoint
     (entryRankValid_primaryComposite entry h)
 
+/-- Rank-1 entries have `decomposeSequence` and `toNFD` headed by the
+    generated left component, a QC=Y starter. -/
+theorem entryRank1_toNFD_head
+    (entry : QuickCheckSingletonRankData.SingletonRankRow)
+    (h : QuickCheckSingletonRankData.entryRankValid entry = true)
+    (hRank : entry.rank = 1) :
+    Lookup.canonicalCombiningClass
+        (Decompose.decomposeSequence #[entry.codepoint])[0]! = 0 ∧
+    Lookup.canonicalCombiningClass (toNFD #[entry.codepoint])[0]! = 0 ∧
+    nfcQCValue (toNFD #[entry.codepoint])[0]! = .Y ∧
+    (Decompose.decomposeSequence #[entry.codepoint]).size > 0 ∧
+    (toNFD #[entry.codepoint]).size > 0 := by
+  have hCommon := entryRankValid_common entry h
+  have facts := entryCommonValid_facts entry hCommon
+  have hLeftEmpty := entryRankValid_rank1_left_empty entry h hRank
+  have hDsylCp : Hangul.decomposeSyllable? entry.codepoint = none := by
+    unfold Hangul.decomposeSyllable?
+    rw [facts.hNotHangul]
+    simp
+  have hDsylLeft : Hangul.decomposeSyllable? entry.left = none := by
+    unfold Hangul.decomposeSyllable?
+    rw [facts.hLeftNotHangul]
+    simp
+  have hDsylRight : Hangul.decomposeSyllable? entry.right = none := by
+    unfold Hangul.decomposeSyllable?
+    rw [facts.hRightNotHangul]
+    simp
+  have hFCDLeft31 :
+      Decompose.fullCanonicalDecomposeFuel 31 entry.left = #[entry.left] := by
+    unfold Decompose.fullCanonicalDecomposeFuel
+    rw [hDsylLeft]
+    simp [hLeftEmpty]
+  have hFCDRight31 :
+      Decompose.fullCanonicalDecomposeFuel 31 entry.right = #[entry.right] := by
+    unfold Decompose.fullCanonicalDecomposeFuel
+    rw [hDsylRight]
+    simp [facts.hRightDecompEmpty]
+  have hFCD :
+      Decompose.fullCanonicalDecompose entry.codepoint =
+        #[entry.left, entry.right] := by
+    show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth entry.codepoint =
+      #[entry.left, entry.right]
+    unfold Decompose.maxDepth
+    show Decompose.fullCanonicalDecomposeFuel 32 entry.codepoint =
+      #[entry.left, entry.right]
+    unfold Decompose.fullCanonicalDecomposeFuel
+    rw [hDsylCp]
+    simp only []
+    rw [facts.hDecomp]
+    show ((#[entry.left, entry.right] : Array Nat).foldl
+        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') #[])
+      = #[entry.left, entry.right]
+    have hFold :
+        (#[entry.left, entry.right] : Array Nat).foldl
+          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') #[]
+        = (#[] ++ Decompose.fullCanonicalDecomposeFuel 31 entry.left) ++
+            Decompose.fullCanonicalDecomposeFuel 31 entry.right := rfl
+    rw [hFold, hFCDLeft31, hFCDRight31]
+    rfl
+  have hDS :
+      Decompose.decomposeSequence #[entry.codepoint] =
+        #[entry.left, entry.right] := by
+    rw [Distribute.decomposeSequence_singleton]
+    exact hFCD
+  have hR : Reorder.reorder #[entry.left, entry.right] =
+      #[entry.left, entry.right] := by
+    apply Reorder.reorder_id_on_HasSortedRuns
+    show Reorder.HasSortedRuns [entry.left, entry.right]
+    refine ⟨?starterImplication, ?singletonRun⟩
+    · intro _hRightNonstarter
+      rw [facts.hLeftCcc]
+      exact Nat.zero_le (Lookup.canonicalCombiningClass entry.right)
+    · trivial
+  have hToNFD :
+      toNFD #[entry.codepoint] = #[entry.left, entry.right] := by
+    unfold toNFD
+    rw [hDS, hR]
+  have hDsHead :
+      Lookup.canonicalCombiningClass
+        (Decompose.decomposeSequence #[entry.codepoint])[0]! = 0 := by
+    rw [hDS]; simp [facts.hLeftCcc]
+  have hNfdHead :
+      Lookup.canonicalCombiningClass (toNFD #[entry.codepoint])[0]! = 0 := by
+    rw [hToNFD]; simp [facts.hLeftCcc]
+  have hNfdQC :
+      nfcQCValue (toNFD #[entry.codepoint])[0]! = .Y := by
+    rw [hToNFD]; simp [facts.hLeftQC]
+  have hDsNonEmpty : (Decompose.decomposeSequence #[entry.codepoint]).size > 0 := by
+    rw [hDS]; simp
+  have hNfdNonEmpty : (toNFD #[entry.codepoint]).size > 0 := by
+    rw [hToNFD]; simp
+  exact And.intro hDsHead
+    (And.intro hNfdHead
+      (And.intro hNfdQC
+        (And.intro hDsNonEmpty hNfdNonEmpty)))
+
 /-- Rank-1 entries are singleton-NFC identities. -/
 theorem entryRank1_toNFC_singleton
     (entry : QuickCheckSingletonRankData.SingletonRankRow)
@@ -565,6 +661,151 @@ theorem entryRank2_toNFD_foldl_singletonState
     entry.left entry.right entry.codepoint
     (entryRankValid_primaryComposite entry hValid)
 
+/-- Rank-2 entries have `decomposeSequence` and `toNFD` headed by the
+    rank-1 parent's left component, a QC=Y starter. -/
+theorem entryRank2_toNFD_head
+    (entry : QuickCheckSingletonRankData.SingletonRankRow)
+    (hMem : entry ∈ QuickCheckSingletonRankData.rowsRank2) :
+    Lookup.canonicalCombiningClass
+        (Decompose.decomposeSequence #[entry.codepoint])[0]! = 0 ∧
+    Lookup.canonicalCombiningClass (toNFD #[entry.codepoint])[0]! = 0 ∧
+    nfcQCValue (toNFD #[entry.codepoint])[0]! = .Y ∧
+    (Decompose.decomposeSequence #[entry.codepoint]).size > 0 ∧
+    (toNFD #[entry.codepoint]).size > 0 := by
+  have hValid :=
+    List.all_eq_true.mp QuickCheckSingletonRankData.rowsRank2_valid entry hMem
+  have facts := entryCommonValid_facts entry (entryRankValid_common entry hValid)
+  obtain ⟨parent, _hParentMem, hParentCp, hParentRank, hParentValid, hOrderRel⟩ :=
+    rowsRank2_parent_right_order entry hMem
+  have parentFacts := entryCommonValid_facts parent
+    (entryRankValid_common parent hParentValid)
+  have hParentLeftEmpty :=
+    entryRankValid_rank1_left_empty parent hParentValid hParentRank
+  have hDsylCp : Hangul.decomposeSyllable? entry.codepoint = none := by
+    unfold Hangul.decomposeSyllable?
+    rw [facts.hNotHangul]
+    simp
+  have hDsylParentCp : Hangul.decomposeSyllable? parent.codepoint = none := by
+    unfold Hangul.decomposeSyllable?
+    rw [parentFacts.hNotHangul]
+    simp
+  have hDsylParentLeft : Hangul.decomposeSyllable? parent.left = none := by
+    unfold Hangul.decomposeSyllable?
+    rw [parentFacts.hLeftNotHangul]
+    simp
+  have hDsylParentRight : Hangul.decomposeSyllable? parent.right = none := by
+    unfold Hangul.decomposeSyllable?
+    rw [parentFacts.hRightNotHangul]
+    simp
+  have hDsylRight : Hangul.decomposeSyllable? entry.right = none := by
+    unfold Hangul.decomposeSyllable?
+    rw [facts.hRightNotHangul]
+    simp
+  have hFCDParentLeft30 :
+      Decompose.fullCanonicalDecomposeFuel 30 parent.left = #[parent.left] := by
+    unfold Decompose.fullCanonicalDecomposeFuel
+    rw [hDsylParentLeft]
+    simp [hParentLeftEmpty]
+  have hFCDParentRight30 :
+      Decompose.fullCanonicalDecomposeFuel 30 parent.right = #[parent.right] := by
+    unfold Decompose.fullCanonicalDecomposeFuel
+    rw [hDsylParentRight]
+    simp [parentFacts.hRightDecompEmpty]
+  have hFCDParent31AtParent :
+      Decompose.fullCanonicalDecomposeFuel 31 parent.codepoint =
+        #[parent.left, parent.right] := by
+    unfold Decompose.fullCanonicalDecomposeFuel
+    rw [hDsylParentCp]
+    simp only []
+    rw [parentFacts.hDecomp]
+    show ((#[parent.left, parent.right] : Array Nat).foldl
+        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 30 cp') #[])
+      = #[parent.left, parent.right]
+    have hFold :
+        (#[parent.left, parent.right] : Array Nat).foldl
+          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 30 cp') #[]
+        = (#[] ++ Decompose.fullCanonicalDecomposeFuel 30 parent.left) ++
+            Decompose.fullCanonicalDecomposeFuel 30 parent.right := rfl
+    rw [hFold, hFCDParentLeft30, hFCDParentRight30]
+    rfl
+  have hFCDLeft31 :
+      Decompose.fullCanonicalDecomposeFuel 31 entry.left =
+        #[parent.left, parent.right] := by
+    rw [← hParentCp]
+    exact hFCDParent31AtParent
+  have hFCDRight31 :
+      Decompose.fullCanonicalDecomposeFuel 31 entry.right = #[entry.right] := by
+    unfold Decompose.fullCanonicalDecomposeFuel
+    rw [hDsylRight]
+    simp [facts.hRightDecompEmpty]
+  have hFCD :
+      Decompose.fullCanonicalDecompose entry.codepoint =
+        #[parent.left, parent.right, entry.right] := by
+    show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth entry.codepoint =
+      #[parent.left, parent.right, entry.right]
+    unfold Decompose.maxDepth
+    show Decompose.fullCanonicalDecomposeFuel 32 entry.codepoint =
+      #[parent.left, parent.right, entry.right]
+    unfold Decompose.fullCanonicalDecomposeFuel
+    rw [hDsylCp]
+    simp only []
+    rw [facts.hDecomp]
+    show ((#[entry.left, entry.right] : Array Nat).foldl
+        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') #[])
+      = #[parent.left, parent.right, entry.right]
+    have hFold :
+        (#[entry.left, entry.right] : Array Nat).foldl
+          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') #[]
+        = (#[] ++ Decompose.fullCanonicalDecomposeFuel 31 entry.left) ++
+            Decompose.fullCanonicalDecomposeFuel 31 entry.right := rfl
+    rw [hFold, hFCDLeft31, hFCDRight31]
+    rfl
+  have hDS :
+      Decompose.decomposeSequence #[entry.codepoint] =
+        #[parent.left, parent.right, entry.right] := by
+    rw [Distribute.decomposeSequence_singleton]
+    exact hFCD
+  have hR :
+      Reorder.reorder #[parent.left, parent.right, entry.right] =
+        #[parent.left, parent.right, entry.right] := by
+    apply Reorder.reorder_id_on_HasSortedRuns
+    show Reorder.HasSortedRuns [parent.left, parent.right, entry.right]
+    refine ⟨?leftToParentRight, ?tailSorted⟩
+    · intro _hParentRightNonstarter
+      rw [parentFacts.hLeftCcc]
+      exact Nat.zero_le (Lookup.canonicalCombiningClass parent.right)
+    · refine ⟨?parentRightToEntryRight, ?single⟩
+      · intro hEntryRightNonstarter
+        cases hOrderRel with
+        | inl hEntryRightStarter =>
+            omega
+        | inr hLe =>
+            exact hLe
+      · trivial
+  have hToNFD :
+      toNFD #[entry.codepoint] =
+        #[parent.left, parent.right, entry.right] := by
+    unfold toNFD
+    rw [hDS, hR]
+  have hDsHead :
+      Lookup.canonicalCombiningClass
+        (Decompose.decomposeSequence #[entry.codepoint])[0]! = 0 := by
+    rw [hDS]; simp [parentFacts.hLeftCcc]
+  have hNfdHead :
+      Lookup.canonicalCombiningClass (toNFD #[entry.codepoint])[0]! = 0 := by
+    rw [hToNFD]; simp [parentFacts.hLeftCcc]
+  have hNfdQC :
+      nfcQCValue (toNFD #[entry.codepoint])[0]! = .Y := by
+    rw [hToNFD]; simp [parentFacts.hLeftQC]
+  have hDsNonEmpty : (Decompose.decomposeSequence #[entry.codepoint]).size > 0 := by
+    rw [hDS]; simp
+  have hNfdNonEmpty : (toNFD #[entry.codepoint]).size > 0 := by
+    rw [hToNFD]; simp
+  exact And.intro hDsHead
+    (And.intro hNfdHead
+      (And.intro hNfdQC
+        (And.intro hDsNonEmpty hNfdNonEmpty)))
+
 /-- Rank-2 entries are singleton-NFC identities. -/
 theorem entryRank2_toNFC_singleton
     (entry : QuickCheckSingletonRankData.SingletonRankRow)
@@ -763,6 +1004,197 @@ theorem entryRank3_toNFD_foldl_singletonState
     entry.left entry.right entry.codepoint
     (entryRankValid_primaryComposite entry hValid)
 
+/-- Rank-3 entries have `decomposeSequence` and `toNFD` headed by the
+    rank-1 grandparent's left component, a QC=Y starter. -/
+theorem entryRank3_toNFD_head
+    (entry : QuickCheckSingletonRankData.SingletonRankRow)
+    (hMem : entry ∈ QuickCheckSingletonRankData.rowsRank3) :
+    Lookup.canonicalCombiningClass
+        (Decompose.decomposeSequence #[entry.codepoint])[0]! = 0 ∧
+    Lookup.canonicalCombiningClass (toNFD #[entry.codepoint])[0]! = 0 ∧
+    nfcQCValue (toNFD #[entry.codepoint])[0]! = .Y ∧
+    (Decompose.decomposeSequence #[entry.codepoint]).size > 0 ∧
+    (toNFD #[entry.codepoint]).size > 0 := by
+  have hValid :=
+    List.all_eq_true.mp QuickCheckSingletonRankData.rowsRank3_valid entry hMem
+  have facts := entryCommonValid_facts entry (entryRankValid_common entry hValid)
+  obtain ⟨parent, hParentMem, hParentCp, _hParentRank, hParentValid, hParentOrderRel⟩ :=
+    rowsRank3_parent_right_order entry hMem
+  have parentFacts := entryCommonValid_facts parent
+    (entryRankValid_common parent hParentValid)
+  obtain ⟨grand, _hGrandMem, hGrandCp, hGrandRank, hGrandValid, hGrandOrderRel⟩ :=
+    rowsRank2_parent_right_order parent hParentMem
+  have grandFacts := entryCommonValid_facts grand
+    (entryRankValid_common grand hGrandValid)
+  have hGrandLeftEmpty :=
+    entryRankValid_rank1_left_empty grand hGrandValid hGrandRank
+  have hDsylCp : Hangul.decomposeSyllable? entry.codepoint = none := by
+    unfold Hangul.decomposeSyllable?
+    rw [facts.hNotHangul]
+    simp
+  have hDsylParentCp : Hangul.decomposeSyllable? parent.codepoint = none := by
+    unfold Hangul.decomposeSyllable?
+    rw [parentFacts.hNotHangul]
+    simp
+  have hDsylGrandCp : Hangul.decomposeSyllable? grand.codepoint = none := by
+    unfold Hangul.decomposeSyllable?
+    rw [grandFacts.hNotHangul]
+    simp
+  have hDsylGrandLeft : Hangul.decomposeSyllable? grand.left = none := by
+    unfold Hangul.decomposeSyllable?
+    rw [grandFacts.hLeftNotHangul]
+    simp
+  have hDsylGrandRight : Hangul.decomposeSyllable? grand.right = none := by
+    unfold Hangul.decomposeSyllable?
+    rw [grandFacts.hRightNotHangul]
+    simp
+  have hDsylParentRight : Hangul.decomposeSyllable? parent.right = none := by
+    unfold Hangul.decomposeSyllable?
+    rw [parentFacts.hRightNotHangul]
+    simp
+  have hDsylRight : Hangul.decomposeSyllable? entry.right = none := by
+    unfold Hangul.decomposeSyllable?
+    rw [facts.hRightNotHangul]
+    simp
+  have hFCDGrandLeft29 :
+      Decompose.fullCanonicalDecomposeFuel 29 grand.left = #[grand.left] := by
+    unfold Decompose.fullCanonicalDecomposeFuel
+    rw [hDsylGrandLeft]
+    simp [hGrandLeftEmpty]
+  have hFCDGrandRight29 :
+      Decompose.fullCanonicalDecomposeFuel 29 grand.right = #[grand.right] := by
+    unfold Decompose.fullCanonicalDecomposeFuel
+    rw [hDsylGrandRight]
+    simp [grandFacts.hRightDecompEmpty]
+  have hFCDGrand30AtGrand :
+      Decompose.fullCanonicalDecomposeFuel 30 grand.codepoint =
+        #[grand.left, grand.right] := by
+    unfold Decompose.fullCanonicalDecomposeFuel
+    rw [hDsylGrandCp]
+    simp only []
+    rw [grandFacts.hDecomp]
+    show ((#[grand.left, grand.right] : Array Nat).foldl
+        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 29 cp') #[])
+      = #[grand.left, grand.right]
+    have hFold :
+        (#[grand.left, grand.right] : Array Nat).foldl
+          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 29 cp') #[]
+        = (#[] ++ Decompose.fullCanonicalDecomposeFuel 29 grand.left) ++
+            Decompose.fullCanonicalDecomposeFuel 29 grand.right := rfl
+    rw [hFold, hFCDGrandLeft29, hFCDGrandRight29]
+    rfl
+  have hFCDParentLeft30 :
+      Decompose.fullCanonicalDecomposeFuel 30 parent.left =
+        #[grand.left, grand.right] := by
+    rw [← hGrandCp]
+    exact hFCDGrand30AtGrand
+  have hFCDParentRight30 :
+      Decompose.fullCanonicalDecomposeFuel 30 parent.right = #[parent.right] := by
+    unfold Decompose.fullCanonicalDecomposeFuel
+    rw [hDsylParentRight]
+    simp [parentFacts.hRightDecompEmpty]
+  have hFCDParent31AtParent :
+      Decompose.fullCanonicalDecomposeFuel 31 parent.codepoint =
+        #[grand.left, grand.right, parent.right] := by
+    unfold Decompose.fullCanonicalDecomposeFuel
+    rw [hDsylParentCp]
+    simp only []
+    rw [parentFacts.hDecomp]
+    show ((#[parent.left, parent.right] : Array Nat).foldl
+        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 30 cp') #[])
+      = #[grand.left, grand.right, parent.right]
+    have hFold :
+        (#[parent.left, parent.right] : Array Nat).foldl
+          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 30 cp') #[]
+        = (#[] ++ Decompose.fullCanonicalDecomposeFuel 30 parent.left) ++
+            Decompose.fullCanonicalDecomposeFuel 30 parent.right := rfl
+    rw [hFold, hFCDParentLeft30, hFCDParentRight30]
+    rfl
+  have hFCDLeft31 :
+      Decompose.fullCanonicalDecomposeFuel 31 entry.left =
+        #[grand.left, grand.right, parent.right] := by
+    rw [← hParentCp]
+    exact hFCDParent31AtParent
+  have hFCDRight31 :
+      Decompose.fullCanonicalDecomposeFuel 31 entry.right = #[entry.right] := by
+    unfold Decompose.fullCanonicalDecomposeFuel
+    rw [hDsylRight]
+    simp [facts.hRightDecompEmpty]
+  have hFCD :
+      Decompose.fullCanonicalDecompose entry.codepoint =
+        #[grand.left, grand.right, parent.right, entry.right] := by
+    show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth entry.codepoint =
+      #[grand.left, grand.right, parent.right, entry.right]
+    unfold Decompose.maxDepth
+    show Decompose.fullCanonicalDecomposeFuel 32 entry.codepoint =
+      #[grand.left, grand.right, parent.right, entry.right]
+    unfold Decompose.fullCanonicalDecomposeFuel
+    rw [hDsylCp]
+    simp only []
+    rw [facts.hDecomp]
+    show ((#[entry.left, entry.right] : Array Nat).foldl
+        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') #[])
+      = #[grand.left, grand.right, parent.right, entry.right]
+    have hFold :
+        (#[entry.left, entry.right] : Array Nat).foldl
+          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') #[]
+        = (#[] ++ Decompose.fullCanonicalDecomposeFuel 31 entry.left) ++
+            Decompose.fullCanonicalDecomposeFuel 31 entry.right := rfl
+    rw [hFold, hFCDLeft31, hFCDRight31]
+    rfl
+  have hDS :
+      Decompose.decomposeSequence #[entry.codepoint] =
+        #[grand.left, grand.right, parent.right, entry.right] := by
+    rw [Distribute.decomposeSequence_singleton]
+    exact hFCD
+  have hR :
+      Reorder.reorder #[grand.left, grand.right, parent.right, entry.right] =
+        #[grand.left, grand.right, parent.right, entry.right] := by
+    apply Reorder.reorder_id_on_HasSortedRuns
+    show Reorder.HasSortedRuns [grand.left, grand.right, parent.right, entry.right]
+    refine ⟨?leftToGrandRight, ?tailSorted⟩
+    · intro _hGrandRightNonstarter
+      rw [grandFacts.hLeftCcc]
+      exact Nat.zero_le (Lookup.canonicalCombiningClass grand.right)
+    · refine ⟨?grandRightToParentRight, ?tailTailSorted⟩
+      · intro hParentRightNonstarter
+        cases hGrandOrderRel with
+        | inl hParentRightStarter =>
+            omega
+        | inr hLe =>
+            exact hLe
+      · refine ⟨?parentRightToEntryRight, ?single⟩
+        · intro hEntryRightNonstarter
+          cases hParentOrderRel with
+          | inl hEntryRightStarter =>
+              omega
+          | inr hLe =>
+              exact hLe
+        · trivial
+  have hToNFD :
+      toNFD #[entry.codepoint] =
+        #[grand.left, grand.right, parent.right, entry.right] := by
+    unfold toNFD
+    rw [hDS, hR]
+  have hDsHead :
+      Lookup.canonicalCombiningClass
+        (Decompose.decomposeSequence #[entry.codepoint])[0]! = 0 := by
+    rw [hDS]; simp [grandFacts.hLeftCcc]
+  have hNfdHead :
+      Lookup.canonicalCombiningClass (toNFD #[entry.codepoint])[0]! = 0 := by
+    rw [hToNFD]; simp [grandFacts.hLeftCcc]
+  have hNfdQC :
+      nfcQCValue (toNFD #[entry.codepoint])[0]! = .Y := by
+    rw [hToNFD]; simp [grandFacts.hLeftQC]
+  have hDsNonEmpty : (Decompose.decomposeSequence #[entry.codepoint]).size > 0 := by
+    rw [hDS]; simp
+  have hNfdNonEmpty : (toNFD #[entry.codepoint]).size > 0 := by
+    rw [hToNFD]; simp
+  exact And.intro hDsHead
+    (And.intro hNfdHead
+      (And.intro hNfdQC
+        (And.intro hDsNonEmpty hNfdNonEmpty)))
+
 /-- Rank-3 entries are singleton-NFC identities. -/
 theorem entryRank3_toNFC_singleton
     (entry : QuickCheckSingletonRankData.SingletonRankRow)
@@ -817,5 +1249,44 @@ theorem singletonNFC_of_rank_rows_any
   have hCp := of_decide_eq_true hCodepoint
   rw [hCp] at hSingleton
   exact hSingleton
+
+/-- Any row codepoint covered by the generated singleton-rank table has a
+    non-empty `decomposeSequence` and `toNFD`, both headed by a QC=Y starter. -/
+theorem toNFD_head_of_rank_rows_any
+    (cp : Nat)
+    (hAny : QuickCheckSingletonRankData.rows.any
+      (fun entry => decide (entry.codepoint = cp)) = true) :
+    Lookup.canonicalCombiningClass
+        (Decompose.decomposeSequence #[cp])[0]! = 0 ∧
+    Lookup.canonicalCombiningClass (toNFD #[cp])[0]! = 0 ∧
+    nfcQCValue (toNFD #[cp])[0]! = .Y ∧
+    (Decompose.decomposeSequence #[cp]).size > 0 ∧
+    (toNFD #[cp]).size > 0 := by
+  rw [List.any_eq_true] at hAny
+  obtain ⟨entry, hMem, hCodepoint⟩ := hAny
+  have hCp : entry.codepoint = cp := of_decide_eq_true hCodepoint
+  unfold QuickCheckSingletonRankData.rows at hMem
+  rw [List.mem_append] at hMem
+  cases hMem with
+  | inl hRank12 =>
+      rw [List.mem_append] at hRank12
+      cases hRank12 with
+      | inl hRank1 =>
+          have hValid :=
+            List.all_eq_true.mp
+              QuickCheckSingletonRankData.rowsRank1_valid entry hRank1
+          have hFacts :=
+            entryRank1_toNFD_head entry hValid
+              (rowsRank1_member_rank entry hRank1)
+          rw [hCp] at hFacts
+          exact hFacts
+      | inr hRank2 =>
+          have hFacts := entryRank2_toNFD_head entry hRank2
+          rw [hCp] at hFacts
+          exact hFacts
+  | inr hRank3 =>
+      have hFacts := entryRank3_toNFD_head entry hRank3
+      rw [hCp] at hFacts
+      exact hFacts
 
 end Unicode.Normalization.QuickCheckSoundnessSingletonRank
