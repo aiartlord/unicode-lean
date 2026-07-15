@@ -1,5 +1,5 @@
 {
-  "module_steps": 108,
+  "module_steps": 174,
   "preset": "default",
   "roots": [
     {
@@ -13,10 +13,10 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 4255834,
-      "decide_kernel": 8,
-      "modules": 51,
-      "row_refs": 104,
+      "bytes": 4598403,
+      "decide_kernel": 520,
+      "modules": 117,
+      "row_refs": 2174,
       "stage": "stage-1-generated-base"
     },
     {
@@ -24,10 +24,10 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 275367,
+      "bytes": 275197,
       "decide_kernel": 63,
       "modules": 15,
-      "row_refs": 132,
+      "row_refs": 127,
       "stage": "stage-2-normalization-runtime"
     },
     {
@@ -35,10 +35,10 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 547621,
+      "bytes": 547529,
       "decide_kernel": 163,
       "modules": 41,
-      "row_refs": 20,
+      "row_refs": 18,
       "stage": "stage-3-runtime-property-tables"
     },
     {
