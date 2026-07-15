@@ -51,13 +51,14 @@ export async function instantiateSecurity(options = {}) {
     configureSecurityDataReader(options.reader);
   } else {
     const baseUrl = options.baseUrl ?? import.meta.url;
-    const [confusables, knownAttackTargets, standardizedVariants, emojiVariationSequences] = await Promise.all([
+    const [confusables, caseFolding, knownAttackTargets, standardizedVariants, emojiVariationSequences] = await Promise.all([
       fetchText(new URL("./data/confusables.txt", baseUrl)),
+      fetchText(new URL("./data/CaseFolding.txt", baseUrl)),
       fetchText(new URL("./data/KnownAttackTargets.txt", baseUrl)),
       fetchText(new URL("./data/StandardizedVariants.txt", baseUrl)),
       fetchText(new URL("./data/emoji-variation-sequences.txt", baseUrl)),
     ]);
-    configureSecurityData({ confusables, knownAttackTargets, standardizedVariants, emojiVariationSequences });
+    configureSecurityData({ confusables, caseFolding, knownAttackTargets, standardizedVariants, emojiVariationSequences });
   }
 
   return {

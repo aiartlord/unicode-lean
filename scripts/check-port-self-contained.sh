@@ -32,6 +32,7 @@ echo "== rust crate =="
 require_file Cargo.toml
 require_file Cargo.lock
 require_file data/confusables.txt
+require_file data/CaseFolding.txt
 require_file data/KnownAttackTargets.txt
 require_file data/StandardizedVariants.txt
 require_file data/emoji-variation-sequences.txt
@@ -39,6 +40,7 @@ require_file data/emoji-variation-sequences.txt
 echo "== python package =="
 require_file pyproject.toml
 require_file src/unicode_python/data/confusables.txt
+require_file src/unicode_python/data/CaseFolding.txt
 require_file src/unicode_python/data/KnownAttackTargets.txt
 require_file src/unicode_python/data/StandardizedVariants.txt
 require_file src/unicode_python/data/emoji-variation-sequences.txt
@@ -64,6 +66,7 @@ reject_runtime_pattern \
 echo "== haskell package =="
 require_file ports/haskell/unicode-haskell.cabal
 require_file ports/haskell/data/confusables.txt
+require_file ports/haskell/data/CaseFolding.txt
 require_file ports/haskell/data/KnownAttackTargets.txt
 require_file ports/haskell/data/StandardizedVariants.txt
 require_file ports/haskell/data/emoji-variation-sequences.txt
@@ -73,6 +76,8 @@ require_file ports/haskell/testdata/fixtures/security/detectors/homoglyph_confus
 require_file ports/haskell/testdata/fixtures/security/detectors/mixed_script_admissibility.json
 grep -Fqx '  data/confusables.txt' ports/haskell/unicode-haskell.cabal \
   || fail "Haskell cabal data-files missing data/confusables.txt"
+grep -Fqx '  data/CaseFolding.txt' ports/haskell/unicode-haskell.cabal \
+  || fail "Haskell cabal data-files missing data/CaseFolding.txt"
 grep -Fqx '  data/KnownAttackTargets.txt' ports/haskell/unicode-haskell.cabal \
   || fail "Haskell cabal data-files missing data/KnownAttackTargets.txt"
 grep -Fqx '  data/StandardizedVariants.txt' ports/haskell/unicode-haskell.cabal \
@@ -95,6 +100,7 @@ require_file ports/jvm/README.md
 require_file ports/jvm/scripts/test.sh
 require_file ports/jvm/src/main/java/com/unicodesecurity/Security.java
 require_file ports/jvm/src/main/resources/com/unicodesecurity/data/confusables.txt
+require_file ports/jvm/src/main/resources/com/unicodesecurity/data/CaseFolding.txt
 require_file ports/jvm/src/main/resources/com/unicodesecurity/data/KnownAttackTargets.txt
 require_file ports/jvm/src/main/resources/com/unicodesecurity/data/StandardizedVariants.txt
 require_file ports/jvm/src/main/resources/com/unicodesecurity/data/emoji-variation-sequences.txt
@@ -110,6 +116,7 @@ reject_runtime_pattern \
 echo "== go module =="
 require_file ports/go/go.mod
 require_file ports/go/security/data/confusables.txt
+require_file ports/go/security/data/CaseFolding.txt
 require_file ports/go/security/data/KnownAttackTargets.txt
 require_file ports/go/security/data/StandardizedVariants.txt
 require_file ports/go/security/data/emoji-variation-sequences.txt
@@ -120,6 +127,8 @@ require_file ports/go/security/testdata/fixtures/security/detectors/homoglyph_co
 require_file ports/go/security/testdata/fixtures/security/detectors/mixed_script_admissibility.json
 grep -Fq '//go:embed data/confusables.txt' ports/go/security/homoglyph.go \
   || fail "Go homoglyph data is not embedded"
+grep -Fq '//go:embed data/CaseFolding.txt' ports/go/security/homoglyph.go \
+  || fail "Go case folding data is not embedded"
 grep -Fq '//go:embed data/KnownAttackTargets.txt' ports/go/security/homoglyph.go \
   || fail "Go target data is not embedded"
 grep -Fq '//go:embed data/StandardizedVariants.txt' ports/go/security/homoglyph.go \
@@ -145,6 +154,7 @@ require_file ports/typescript/src/edge.js
 require_file ports/typescript/src/security.d.ts
 require_file ports/typescript/src/edge.d.ts
 require_file ports/typescript/src/data/confusables.txt
+require_file ports/typescript/src/data/CaseFolding.txt
 require_file ports/typescript/src/data/KnownAttackTargets.txt
 require_file ports/typescript/src/data/StandardizedVariants.txt
 require_file ports/typescript/src/data/emoji-variation-sequences.txt
@@ -168,6 +178,7 @@ require_file ports/dotnet/README.md
 require_file ports/dotnet/src/UnicodeSecurity/UnicodeSecurity.csproj
 require_file ports/dotnet/src/UnicodeSecurity/Security.cs
 require_file ports/dotnet/Data/confusables.txt
+require_file ports/dotnet/Data/CaseFolding.txt
 require_file ports/dotnet/Data/KnownAttackTargets.txt
 require_file ports/dotnet/Data/StandardizedVariants.txt
 require_file ports/dotnet/Data/emoji-variation-sequences.txt
@@ -188,6 +199,7 @@ require_file ports/swift/Package.swift
 require_file ports/swift/scripts/test.sh
 require_file ports/swift/Sources/UnicodeSecurity/UnicodeSecurity.swift
 require_file ports/swift/Sources/UnicodeSecurity/Resources/Data/confusables.txt
+require_file ports/swift/Sources/UnicodeSecurity/Resources/Data/CaseFolding.txt
 require_file ports/swift/Sources/UnicodeSecurity/Resources/Data/KnownAttackTargets.txt
 require_file ports/swift/Sources/UnicodeSecurity/Resources/Data/StandardizedVariants.txt
 require_file ports/swift/Sources/UnicodeSecurity/Resources/Data/emoji-variation-sequences.txt
@@ -203,8 +215,10 @@ reject_runtime_pattern \
 echo "== zig package =="
 require_file ports/zig/build.zig
 require_file ports/zig/src/confusables_data.zig
+require_file ports/zig/src/case_folding_data.zig
 require_file ports/zig/src/normalization_data.zig
 require_file ports/zig/src/data/confusables.txt
+require_file ports/zig/src/data/CaseFolding.txt
 require_file ports/zig/src/data/KnownAttackTargets.txt
 require_file ports/zig/src/data/StandardizedVariants.txt
 require_file ports/zig/src/data/emoji-variation-sequences.txt
@@ -221,6 +235,8 @@ grep -Fq '@embedFile("data/emoji-variation-sequences.txt")' ports/zig/src/securi
   || fail "Zig emoji variation data is not embedded"
 grep -Fq '@import("normalization_data.zig")' ports/zig/src/security.zig \
   || fail "Zig normalization data is not imported"
+grep -Fq '@import("case_folding_data.zig")' ports/zig/src/security.zig \
+  || fail "Zig case folding data is not imported"
 reject_runtime_pattern \
   "zig runtime source" \
   '(\.\./|fixtures/security|std\.fs|readFile)' \

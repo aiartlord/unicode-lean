@@ -94,6 +94,7 @@ test("edge entry works with injected data", async () => {
   const security = await instantiateEdgeSecurity({
     data: {
       confusables: readFileSync(new URL("../src/data/confusables.txt", import.meta.url), "utf8"),
+      caseFolding: readFileSync(new URL("../src/data/CaseFolding.txt", import.meta.url), "utf8"),
       knownAttackTargets: readFileSync(new URL("../src/data/KnownAttackTargets.txt", import.meta.url), "utf8"),
     },
   });

@@ -12,6 +12,9 @@ import (
 //go:embed data/confusables.txt
 var confusablesRaw string
 
+//go:embed data/CaseFolding.txt
+var caseFoldingRaw string
+
 //go:embed data/KnownAttackTargets.txt
 var knownAttackTargetsRaw string
 
@@ -27,6 +30,8 @@ var unicodeDataRaw string
 var (
 	confusablesOnce sync.Once
 	confusablesData map[uint32][]uint32
+	caseFoldOnce    sync.Once
+	caseFoldData    map[uint32][]uint32
 	targetsOnce     sync.Once
 	targetsData     []string
 	variationOnce   sync.Once
@@ -103,18 +108,16 @@ func substituteConfusables(input []uint32) []uint32 {
 }
 
 func caseFoldCodepoints(input []uint32) []uint32 {
-	out := make([]uint32, len(input))
-	for index, cp := range input {
-		out[index] = caseFoldCodepoint(cp)
+	table := caseFoldingMap()
+	out := make([]uint32, 0, len(input))
+	for _, cp := range input {
+		if replacement, ok := table[cp]; ok {
+			out = append(out, replacement...)
+		} else {
+			out = append(out, cp)
+		}
 	}
 	return out
-}
-
-func caseFoldCodepoint(cp uint32) uint32 {
-	if cp > utf8.MaxRune {
-		return cp
-	}
-	return uint32(unicode.ToLower(rune(cp)))
 }
 
 func toNFD(input []uint32) []uint32 {
@@ -236,6 +239,13 @@ func confusablesMap() map[uint32][]uint32 {
 	return confusablesData
 }
 
+func caseFoldingMap() map[uint32][]uint32 {
+	caseFoldOnce.Do(func() {
+		caseFoldData = parseCaseFolding(caseFoldingRaw)
+	})
+	return caseFoldData
+}
+
 func knownAttackTargets() []string {
 	targetsOnce.Do(func() {
 		targetsData = parseKnownAttackTargets(knownAttackTargetsRaw)
@@ -279,6 +289,35 @@ func parseConfusables(raw string) map[uint32][]uint32 {
 			continue
 		}
 		out[src] = target
+	}
+	return out
+}
+
+func parseCaseFolding(raw string) map[uint32][]uint32 {
+	out := make(map[uint32][]uint32)
+	for _, rawLine := range strings.Split(raw, "\n") {
+		body, _, _ := strings.Cut(rawLine, "#")
+		body = strings.TrimSpace(body)
+		if body == "" {
+			continue
+		}
+		fields := strings.Split(body, ";")
+		if len(fields) < 3 {
+			continue
+		}
+		status := strings.TrimSpace(fields[1])
+		if status != "C" && status != "F" {
+			continue
+		}
+		cp, ok := parseHexUint32(fields[0])
+		if !ok {
+			continue
+		}
+		mapping := parseCodepointField(fields[2])
+		if len(mapping) == 0 {
+			continue
+		}
+		out[cp] = mapping
 	}
 	return out
 }

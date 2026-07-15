@@ -34,7 +34,7 @@ module Unicode.Security.Policy
 import Data.Bits (shiftL, xor, (.|.))
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import Data.Char (chr, isSpace, ord, toLower)
+import Data.Char (isSpace, ord)
 import Data.List (dropWhileEnd, intercalate)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
@@ -710,9 +710,9 @@ iteratedSkeleton = go (8 :: Int)
 skeleton :: [Int] -> [Int]
 skeleton =
   toNfdCodepoints
-    . map caseFoldCodepoint
+    . caseFoldCodepoints
     . substituteConfusables
-    . map caseFoldCodepoint
+    . caseFoldCodepoints
     . toNfdCodepoints
 
 toNfdCodepoints :: [Int] -> [Int]
@@ -727,10 +727,9 @@ substituteConfusables :: [Int] -> [Int]
 substituteConfusables =
   concatMap (\cp -> Map.findWithDefault [cp] cp confusablesMap)
 
-caseFoldCodepoint :: Int -> Int
-caseFoldCodepoint cp
-  | cp < 0 || cp > 0x10FFFF = cp
-  | otherwise = ord (toLower (chr cp))
+caseFoldCodepoints :: [Int] -> [Int]
+caseFoldCodepoints =
+  concatMap (\cp -> Map.findWithDefault [cp] cp caseFoldingMap)
 
 asciiCodepoints :: String -> [Int]
 asciiCodepoints = map ord
@@ -782,6 +781,12 @@ confusablesMap = unsafePerformIO $ do
   parseConfusables <$> readFile path
 {-# NOINLINE confusablesMap #-}
 
+caseFoldingMap :: Map Int [Int]
+caseFoldingMap = unsafePerformIO $ do
+  path <- getDataFileName "data/CaseFolding.txt"
+  parseCaseFolding <$> readFile path
+{-# NOINLINE caseFoldingMap #-}
+
 knownAttackTargets :: [String]
 knownAttackTargets = unsafePerformIO $ do
   path <- getDataFileName "data/KnownAttackTargets.txt"
@@ -800,6 +805,29 @@ parseConfusableLine raw =
       let tgt = mapMaybe parseHexInt (words tgtField)
       if null tgt then Nothing else Just (src, tgt)
 
+parseCaseFolding :: String -> Map Int [Int]
+parseCaseFolding =
+  Map.fromList . mapMaybe parseCaseFoldingLine . lines
+
+parseCaseFoldingLine :: String -> Maybe (Int, [Int])
+parseCaseFoldingLine raw = do
+  (cpField, statusField, mappingField) <- firstThreeSemicolonFields (stripComment raw)
+  if trim statusField == "C" || trim statusField == "F"
+    then do
+      cp <- parseHexInt (trim cpField)
+      let mapping = mapMaybe parseHexInt (words mappingField)
+      if null mapping then Nothing else Just (cp, mapping)
+    else Nothing
+
+firstThreeSemicolonFields :: String -> Maybe (String, String, String)
+firstThreeSemicolonFields text =
+  case splitAllSemicolonFields text of
+    cpField:statusField:mappingField:_remainingFields ->
+      Just (cpField, statusField, mappingField)
+    [] -> Nothing
+    [_cpField] -> Nothing
+    [_cpField, _statusField] -> Nothing
+
 splitSemicolonFields :: String -> (String, String)
 splitSemicolonFields text =
   let (srcField, rest) = break (== ';') text
@@ -808,6 +836,12 @@ splitSemicolonFields text =
        (_:afterFirst) ->
          let (targetField, _) = break (== ';') afterFirst
          in (srcField, targetField)
+
+splitAllSemicolonFields :: String -> [String]
+splitAllSemicolonFields text =
+  case break (== ';') text of
+    (field, []) -> [field]
+    (field, _semicolon:rest) -> field : splitAllSemicolonFields rest
 
 parseTargetLine :: String -> Maybe String
 parseTargetLine raw =

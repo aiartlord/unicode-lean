@@ -77,6 +77,7 @@ public static class Security
     private sealed record Utf8Step(Utf8State State, int Emitted, string Kind, bool Rejected);
 
     private static Dictionary<int, List<int>>? confusablesMap;
+    private static Dictionary<int, List<int>>? caseFoldingMap;
     private static List<string>? knownTargets;
     private static HashSet<long>? legalVariationPairs;
 
@@ -341,8 +342,13 @@ public static class Security
 
     private static List<int> CaseFoldCodepoints(List<int> input)
     {
+        var table = CaseFoldingMap();
         var output = new List<int>();
-        foreach (var cp in input) output.AddRange(CodepointsFromString(char.ConvertFromUtf32(cp).ToLowerInvariant()));
+        foreach (var cp in input)
+        {
+            if (table.TryGetValue(cp, out var replacement)) output.AddRange(replacement);
+            else output.Add(cp);
+        }
         return output;
     }
 
@@ -360,6 +366,12 @@ public static class Security
     {
         if (confusablesMap is null) confusablesMap = ParseConfusables(ReadDataFile("confusables.txt"));
         return confusablesMap;
+    }
+
+    private static Dictionary<int, List<int>> CaseFoldingMap()
+    {
+        if (caseFoldingMap is null) caseFoldingMap = ParseCaseFolding(ReadDataFile("CaseFolding.txt"));
+        return caseFoldingMap;
     }
 
     private static List<string> KnownTargets()
@@ -391,6 +403,24 @@ public static class Security
             var source = ParseHex(fields[0]);
             var target = ParseCodepointField(fields[1]);
             if (source is not null && target.Count > 0) output[source.Value] = target;
+        }
+        return output;
+    }
+
+    private static Dictionary<int, List<int>> ParseCaseFolding(string raw)
+    {
+        var output = new Dictionary<int, List<int>>();
+        foreach (var rawLine in raw.Split('\n'))
+        {
+            var body = rawLine.Split('#', 2)[0].Trim();
+            if (body == "") continue;
+            var fields = body.Split(';');
+            if (fields.Length < 3) continue;
+            var status = fields[1].Trim();
+            if (status != "C" && status != "F") continue;
+            var codepoint = ParseHex(fields[0]);
+            var mapping = ParseCodepointField(fields[2]);
+            if (codepoint is not null && mapping.Count > 0) output[codepoint.Value] = mapping;
         }
         return output;
     }

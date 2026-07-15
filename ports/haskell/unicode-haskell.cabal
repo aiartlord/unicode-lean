@@ -28,6 +28,7 @@ extra-source-files:
   testdata/fixtures/security/*.json
   testdata/fixtures/security/detectors/*.json
 data-files:
+  data/CaseFolding.txt
   data/confusables.txt
   data/KnownAttackTargets.txt
   data/StandardizedVariants.txt
