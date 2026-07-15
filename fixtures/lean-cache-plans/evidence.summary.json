@@ -72,10 +72,10 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 533531,
+      "bytes": 557861,
       "decide_kernel": 113,
       "modules": 28,
-      "row_refs": 255,
+      "row_refs": 252,
       "stage": "stage-6-assurance-proof-chunk"
     },
     {

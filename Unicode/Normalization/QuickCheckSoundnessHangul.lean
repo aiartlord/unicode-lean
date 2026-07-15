@@ -19,11 +19,24 @@ import Unicode.Normalization.QuickCheckHangulFacts
 namespace Unicode.Normalization.QuickCheckSoundnessHangul
 
 open Unicode.Normalization
-open Unicode.Normalization.NFC (toNFC toNFD)
+open Unicode.Normalization.NFC (toNFC toNFD nfcQCValue)
 
 theorem lJamo_ccc_zero_at (i : Nat) (hi : i < Hangul.LCount) :
     Lookup.canonicalCombiningClass (Hangul.LBase + i) = 0 := by
   have hAll := QuickCheckHangulFacts.lJamo_ccc_zero
+  rw [List.all_eq_true] at hAll
+  exact of_decide_eq_true (hAll i (List.mem_range.mpr hi))
+
+/-- Every L-jamo emitted at the head of a Hangul syllable decomposition has
+    NFC_QC=Y. Narrow `decide` over the 19 leading-consonant jamo. -/
+theorem lJamo_qcY :
+    (List.range Hangul.LCount).all
+      (fun i => nfcQCValue (Hangul.LBase + i) = .Y) = true := by
+  decide
+
+theorem lJamo_qcY_at (i : Nat) (hi : i < Hangul.LCount) :
+    nfcQCValue (Hangul.LBase + i) = .Y := by
+  have hAll := lJamo_qcY
   rw [List.all_eq_true] at hAll
   exact of_decide_eq_true (hAll i (List.mem_range.mpr hi))
 
@@ -221,6 +234,137 @@ theorem compose_LVT_array
   rw [hStep1, hStep2, hStep3]
   unfold Compose.flushCompose
   rfl
+
+/-- For every precomposed Hangul syllable, both `decomposeSequence #[cp]` and
+    `toNFD #[cp]` are non-empty and headed by the L-jamo, which is a QC=Y
+    starter. -/
+theorem hangul_singleton_toNFD_head
+    (cp : Nat) (hHangul : Hangul.isHangulSyllable cp = true) :
+    Lookup.canonicalCombiningClass
+        (Decompose.decomposeSequence #[cp])[0]! = 0 ∧
+    Lookup.canonicalCombiningClass (toNFD #[cp])[0]! = 0 ∧
+    nfcQCValue (toNFD #[cp])[0]! = .Y ∧
+    (Decompose.decomposeSequence #[cp]).size > 0 ∧
+    (toNFD #[cp]).size > 0 := by
+  have hRange : Hangul.SBase ≤ cp ∧ cp < Hangul.SBase + Hangul.SCount := by
+    unfold Hangul.isHangulSyllable at hHangul
+    exact of_decide_eq_true hHangul
+  have hsLt : cp - Hangul.SBase < Hangul.SCount := by omega
+  have hNPos : 0 < Hangul.NCount := by
+    decide
+  have hTPos : 0 < Hangul.TCount := by
+    decide
+  let sIndex := cp - Hangul.SBase
+  let li := sIndex / Hangul.NCount
+  let vi := (sIndex % Hangul.NCount) / Hangul.TCount
+  let ti := sIndex % Hangul.TCount
+  have hli : li < Hangul.LCount := by
+    exact (Nat.div_lt_iff_lt_mul hNPos).2 (by
+      simp only [sIndex, Hangul.SCount, Hangul.NCount] at hsLt ⊢
+      omega)
+  have hModNLt : sIndex % Hangul.NCount < Hangul.NCount :=
+    Nat.mod_lt sIndex hNPos
+  have hvi : vi < Hangul.VCount := by
+    exact (Nat.div_lt_iff_lt_mul hTPos).2 (by
+      simp only [Hangul.NCount, Hangul.VCount, Hangul.TCount] at hModNLt ⊢
+      omega)
+  have hti : ti < Hangul.TCount := by
+    exact Nat.mod_lt sIndex hTPos
+  have hDecompSyllable :
+      Hangul.decomposeSyllable? cp =
+        if ti = 0 then
+          some #[Hangul.LBase + li, Hangul.VBase + vi]
+        else
+          some #[Hangul.LBase + li, Hangul.VBase + vi, Hangul.TBase + ti] := by
+    unfold Hangul.decomposeSyllable?
+    rw [hHangul]
+    simp [sIndex, li, vi, ti]
+  have hLcc := lJamo_ccc_zero_at li hli
+  have hLqc := lJamo_qcY_at li hli
+  by_cases htiZero : ti = 0
+  · have hFCD :
+        Decompose.fullCanonicalDecompose cp =
+          #[Hangul.LBase + li, Hangul.VBase + vi] := by
+      show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth cp =
+        #[Hangul.LBase + li, Hangul.VBase + vi]
+      simp [Decompose.maxDepth, Decompose.fullCanonicalDecomposeFuel,
+        hDecompSyllable, htiZero]
+    have hDS :
+        Decompose.decomposeSequence #[cp] =
+          #[Hangul.LBase + li, Hangul.VBase + vi] := by
+      rw [Distribute.decomposeSequence_singleton]
+      exact hFCD
+    have hVcc := vJamo_ccc_zero_at vi hvi
+    have hR :
+        Reorder.reorder #[Hangul.LBase + li, Hangul.VBase + vi] =
+          #[Hangul.LBase + li, Hangul.VBase + vi] := by
+      apply Reorder.reorder_id_on_HasSortedRuns
+      exact hangul_jamo_HasSortedRuns _ _ hLcc hVcc
+    have hToNFD :
+        toNFD #[cp] = #[Hangul.LBase + li, Hangul.VBase + vi] := by
+      unfold toNFD
+      rw [hDS, hR]
+    have hDsHead :
+        Lookup.canonicalCombiningClass
+          (Decompose.decomposeSequence #[cp])[0]! = 0 := by
+      rw [hDS]; simp [hLcc]
+    have hNfdHead :
+        Lookup.canonicalCombiningClass (toNFD #[cp])[0]! = 0 := by
+      rw [hToNFD]; simp [hLcc]
+    have hNfdQC :
+        nfcQCValue (toNFD #[cp])[0]! = .Y := by
+      rw [hToNFD]; simp [hLqc]
+    have hDsNonEmpty : (Decompose.decomposeSequence #[cp]).size > 0 := by
+      rw [hDS]; simp
+    have hNfdNonEmpty : (toNFD #[cp]).size > 0 := by
+      rw [hToNFD]; simp
+    exact And.intro hDsHead
+      (And.intro hNfdHead
+        (And.intro hNfdQC
+          (And.intro hDsNonEmpty hNfdNonEmpty)))
+  · have htiPos : 0 < ti := by omega
+    have hFCD :
+        Decompose.fullCanonicalDecompose cp =
+          #[Hangul.LBase + li, Hangul.VBase + vi, Hangul.TBase + ti] := by
+      show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth cp =
+        #[Hangul.LBase + li, Hangul.VBase + vi, Hangul.TBase + ti]
+      simp [Decompose.maxDepth, Decompose.fullCanonicalDecomposeFuel,
+        hDecompSyllable, htiZero]
+    have hDS :
+        Decompose.decomposeSequence #[cp] =
+          #[Hangul.LBase + li, Hangul.VBase + vi, Hangul.TBase + ti] := by
+      rw [Distribute.decomposeSequence_singleton]
+      exact hFCD
+    have hVcc := vJamo_ccc_zero_at vi hvi
+    have hTcc := tJamo_ccc_zero_at ti htiPos hti
+    have hR :
+        Reorder.reorder #[Hangul.LBase + li, Hangul.VBase + vi, Hangul.TBase + ti] =
+          #[Hangul.LBase + li, Hangul.VBase + vi, Hangul.TBase + ti] := by
+      apply Reorder.reorder_id_on_HasSortedRuns
+      exact hangul_jamo3_HasSortedRuns _ _ _ hLcc hVcc hTcc
+    have hToNFD :
+        toNFD #[cp] =
+          #[Hangul.LBase + li, Hangul.VBase + vi, Hangul.TBase + ti] := by
+      unfold toNFD
+      rw [hDS, hR]
+    have hDsHead :
+        Lookup.canonicalCombiningClass
+          (Decompose.decomposeSequence #[cp])[0]! = 0 := by
+      rw [hDS]; simp [hLcc]
+    have hNfdHead :
+        Lookup.canonicalCombiningClass (toNFD #[cp])[0]! = 0 := by
+      rw [hToNFD]; simp [hLcc]
+    have hNfdQC :
+        nfcQCValue (toNFD #[cp])[0]! = .Y := by
+      rw [hToNFD]; simp [hLqc]
+    have hDsNonEmpty : (Decompose.decomposeSequence #[cp]).size > 0 := by
+      rw [hDS]; simp
+    have hNfdNonEmpty : (toNFD #[cp]).size > 0 := by
+      rw [hToNFD]; simp
+    exact And.intro hDsHead
+      (And.intro hNfdHead
+        (And.intro hNfdQC
+          (And.intro hDsNonEmpty hNfdNonEmpty)))
 
 /-- Every precomposed Hangul syllable is unchanged by the NFC singleton
     pipeline. -/
