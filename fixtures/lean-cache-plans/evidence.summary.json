@@ -1,5 +1,5 @@
 {
-  "module_steps": 233,
+  "module_steps": 235,
   "preset": "evidence",
   "roots": [
     {
@@ -17,9 +17,9 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 4255834,
-      "decide_kernel": 8,
-      "modules": 51,
+      "bytes": 4261752,
+      "decide_kernel": 12,
+      "modules": 53,
       "row_refs": 104,
       "stage": "stage-1-generated-base"
     },
@@ -61,8 +61,8 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 3411573,
-      "decide_kernel": 239,
+      "bytes": 3411886,
+      "decide_kernel": 240,
       "modules": 57,
       "row_refs": 2,
       "stage": "stage-5-product-domain"

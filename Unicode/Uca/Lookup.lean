@@ -26,7 +26,7 @@
 
 import Std.Data.HashMap
 import Unicode.Generated.Allkeys
-import Unicode.Generated.PropList
+import Unicode.Generated.PropListUca16
 import Unicode.Normalization.Lookup
 
 namespace Unicode.Uca.Lookup
@@ -116,7 +116,7 @@ def implicitBaseFor (cp : Nat) : Nat :=
     if inImplicitBlock cp b then some b.base else none) with
   | some base => base
   | none =>
-    if Unicode.Generated.PropList.isUnifiedIdeograph cp then
+    if Unicode.Generated.PropListUca16.isUnifiedIdeograph cp then
       if inHanCoreBlock cp then 0xFB40 else 0xFB80
     else
       0xFBC0
@@ -158,7 +158,7 @@ def implicitElements (cp : Nat) : Array CollationElement :=
       ⟨bbbb, 0x0000, 0x0000, false⟩]
   | none =>
     let base :=
-      if Unicode.Generated.PropList.isUnifiedIdeograph cp then
+      if Unicode.Generated.PropListUca16.isUnifiedIdeograph cp then
         if inHanCoreBlock cp then 0xFB40 else 0xFB80
       else
         0xFBC0
@@ -337,5 +337,11 @@ theorem resolveAt_pua :
     range and produces an implicit entry. -/
 theorem resolveAt_cjk :
     (resolveAtList #[0x4E2D] 0).fst.ces.size = 2 := by decide +kernel
+
+/-- U+2B73A is assigned as Unified_Ideograph in UCD 17.0, but the
+    shipped DUCET and collation conformance data are UCA 16.0. For UCA
+    lookup it must therefore stay in the unassigned FBC0 tier. -/
+theorem implicitBaseFor_2B73A_uca16 : implicitBaseFor 0x2B73A = 0xFBC0 := by
+  decide +kernel
 
 end Unicode.Uca.Lookup
