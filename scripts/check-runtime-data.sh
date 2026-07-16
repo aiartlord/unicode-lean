@@ -284,4 +284,7 @@ if [[ "$run_zig" -eq 1 ]]; then
   "$zig_dir/scripts/check-generated-confusables.sh"
 fi
 
+echo "== embedded port digest sync =="
+scripts/check-port-pinned-digests.sh
+
 echo "clean: runtime-port data guards pass"
