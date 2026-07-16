@@ -34,3 +34,9 @@ import Unicode.Precis.OpaqueString
 
 -- Runtime-domain example/theorem vectors kept out of the default root.
 import Unicode.WidthExamples
+
+-- Confusable-skeleton table soundness. Extracted from the runtime `Confusables`
+-- module so the default root does not reduce the full UCD 17.0 confusables
+-- table; the aggregate gathers the per-chunk `decide +kernel` facts here so the
+-- evidence root actually verifies them.
+import Unicode.ConfusablesTableFacts
