@@ -26,12 +26,20 @@ find Unicode.lean Unicode/ -name '*.lean' -type f \
   | sed -e 's|\.lean$||' -e 's|/|.|g' \
   | LC_ALL=C sort -u > "$all_modules"
 
-# BFS over imports starting from the audited roots.
+# BFS over imports starting from the audited roots. This set must stay in sync
+# with the `lean_lib` roots declared in `lakefile.lean`: a module reachable from
+# any declared library target is covered by that target's build, so seeding only
+# a subset produces false-positive orphans for the optional roots' subtrees.
 : > "$seen"
 {
   echo "Unicode"
   echo "Unicode.Assurance"
   echo "Unicode.FullConformance"
+  echo "Unicode.SecurityRoot"
+  echo "Unicode.Idna"
+  echo "Unicode.Uca"
+  echo "Unicode.UnihanRoot"
+  echo "Unicode.SegmentationSpecs"
 } > "$queue"
 while [ -s "$queue" ]; do
   current="$(head -n 1 "$queue")"
@@ -67,7 +75,7 @@ orphans="$(LC_ALL=C comm -23 "$all_modules" "$reached")"
 if [ -n "$orphans" ]; then
   count="$(printf '%s\n' "$orphans" | wc -l | tr -d ' ')"
   echo "FATAL: $count orphan file(s) — present on disk but not transitively imported from an audited root:"
-  printf '  %s\n' "$orphans"
+  printf '%s\n' "$orphans" | sed 's/^/  /'
   exit 1
 fi
 
