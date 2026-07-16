@@ -468,11 +468,47 @@ public final class Security {
     }
   }
 
+  // Pinned SHA-256 digests of the vendored UCD-derived tables, embedded as code
+  // constants so the code — not the co-located, swappable SHA256SUMS — is the
+  // trust anchor. readResource hashes each table's raw bytes at load and refuses
+  // to serve (throws) on any mismatch or unpinned table, so a rolled-back,
+  // corrupted, or tampered resource on a deployed node fails closed instead of
+  // silently mis-classifying. Keep in sync with the port resources' SHA256SUMS
+  // and the canonical data/SHA256SUMS.
+  private static final Map<String, String> PINNED_TABLE_DIGESTS = Map.of(
+      "CaseFolding.txt", "ff8d8fefbf123574205085d6714c36149eb946d717a0c585c27f0f4ef58c4183",
+      "confusables.txt", "091c7f82fc39ef208faf8f94d29c244de99254675e09de163160c810d13ef22a",
+      "KnownAttackTargets.txt", "47acf87f48e23c2e3ddfb5aed877965fbe29142e61f6f85c4ee7db90c0684947",
+      "StandardizedVariants.txt", "f55100b2fb11d3d75a37b8c1ab752192dbd1c4b12328c5ec6b38e3807c0ca597",
+      "emoji-variation-sequences.txt", "bb3d09ef03f206012c7532dd52dc0a21c9efddba0135ea4cf0d9201b8b9bba7e");
+
+  private static String sha256Hex(byte[] bytes) {
+    try {
+      byte[] digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes);
+      StringBuilder sb = new StringBuilder(digest.length * 2);
+      for (byte b : digest) sb.append(String.format("%02x", b));
+      return sb.toString();
+    } catch (java.security.NoSuchAlgorithmException e) {
+      throw new IllegalStateException("SHA-256 unavailable", e);
+    }
+  }
+
   private static String readResource(String name) {
+    String expected = PINNED_TABLE_DIGESTS.get(name);
+    if (expected == null) {
+      throw new IllegalStateException("refusing to load unpinned data table: " + name + " (fail closed)");
+    }
     String path = "/com/unicodesecurity/data/" + name;
     try (InputStream in = Security.class.getResourceAsStream(path)) {
       if (in == null) throw new IllegalStateException("missing resource: " + path);
-      return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+      byte[] bytes = in.readAllBytes();
+      String actual = sha256Hex(bytes);
+      if (!actual.equals(expected)) {
+        throw new IllegalStateException(
+            "data table " + name + " failed integrity check (expected " + expected
+                + ", got " + actual + "); refusing to load (fail closed)");
+      }
+      return new String(bytes, StandardCharsets.UTF_8);
     } catch (IOException e) {
       throw new IllegalStateException("cannot read resource: " + path, e);
     }
