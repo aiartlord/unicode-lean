@@ -8,6 +8,11 @@
 
 import Unicode
 
+-- Reusable state-machine proof machinery: lets a scanning detector or
+-- normalization pass be proven correct for every input (a state-machine
+-- invariant via `feedThrough_append`) instead of witness-tested on a corpus.
+import Unicode.Machine
+
 -- Generated/support modules that are not part of the default runtime surface.
 import Unicode.Generated.NormalizationTypes
 import Unicode.NatIntervalUnion
