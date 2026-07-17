@@ -63,3 +63,9 @@ import Unicode.Security.Identity.SkinToneVariationForgerySound
 -- Universal bounds for the WidthClassConfusion position-scan tallies: fullwidth
 -- and halfwidth fold counts are each at most the input size for every input.
 import Unicode.Security.Form.WidthClassConfusionSound
+
+-- Consumers of the previously unwired generated tables: the emoji
+-- variation-sequence registry (forged-presentation predicates) and the
+-- glitch-token inventory scan.
+import Unicode.Security.Identity.EmojiPresentationRegistry
+import Unicode.Security.Crypto.GlitchTokenScan
