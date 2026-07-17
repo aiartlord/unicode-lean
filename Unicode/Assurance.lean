@@ -55,3 +55,7 @@ import Unicode.Security.Covert.BidiControlBalanceSound
 -- bidi-control count is at most the input size for every input, via the
 -- reusable `Unicode.Machine.foldl_count_le`.
 import Unicode.Security.Display.RtlInjectionSound
+
+-- Universal bounds for the SkinToneVariationForgery tallies: skin-tone and
+-- variation-selector counts are each at most the input size for every input.
+import Unicode.Security.Identity.SkinToneVariationForgerySound
