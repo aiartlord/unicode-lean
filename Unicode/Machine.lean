@@ -10,8 +10,8 @@
   The point for this repo: a scanning detector or normalization pass is a fold
   over the input, i.e. an `accumulate` machine. `feedThrough_append` lets a
   property of the final state be lifted over the input's `++` structure by
-  induction — so a detector can be proven correct for *every* input (a
-  state-machine invariant) instead of being witness-tested against a corpus.
+  induction, proving a detector correct for *every* input as a state-machine
+  invariant.
 
   Composition (`⋙`) is a homomorphism on the stream function
   (`outputs_compose`), so the Category/Arrow laws are theorems; a compound
@@ -166,8 +166,8 @@ theorem foldl_invariant {S : Type} (f : S → I → S) (P : S → Prop)
 
 /-- The universal state-machine invariant principle. If a hazard/safety property
     `P` holds initially and is preserved by every step, then it holds on the
-    final state for *every* input — no corpus, no witnesses. This is the tool
-    that turns a detector's per-step reasoning into a proof over all inputs. -/
+    final state for *every* input. This turns a detector's per-step reasoning
+    into a proof over all inputs. -/
 theorem accumulate_invariant {S : Type} (f : S → I → S) (init : S) (P : S → Prop)
     (h0 : P init) (hstep : ∀ (s : S) (i : I), P s → P (f s i)) (inputs : List I) :
     P (finalState (accumulate f init) inputs) := by

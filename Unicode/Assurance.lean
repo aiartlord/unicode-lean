@@ -8,9 +8,9 @@
 
 import Unicode
 
--- Reusable state-machine proof machinery: lets a scanning detector or
--- normalization pass be proven correct for every input (a state-machine
--- invariant via `feedThrough_append`) instead of witness-tested on a corpus.
+-- Reusable state-machine proof machinery: proves a scanning detector or
+-- normalization pass correct for every input, as a state-machine invariant
+-- via `feedThrough_append`.
 import Unicode.Machine
 
 -- Generated/support modules that are not part of the default runtime surface.
@@ -45,3 +45,8 @@ import Unicode.WidthExamples
 -- table; the aggregate gathers the per-chunk `decide +kernel` facts here so the
 -- evidence root actually verifies them.
 import Unicode.ConfusablesTableFacts
+
+-- Universal detector soundness via the state-machine invariant principle: the
+-- BidiControlBalance walk's depth accounting is proven correct for every input
+-- using `Unicode.Machine.accumulate_invariant`.
+import Unicode.Security.Covert.BidiControlBalanceSound
