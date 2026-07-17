@@ -174,6 +174,20 @@ theorem accumulate_invariant {S : Type} (f : S → I → S) (init : S) (P : S �
   rw [accumulate_finalState]
   exact foldl_invariant f P hstep init h0 inputs
 
+/-- A fold whose step increases the accumulator by at most one is bounded by the
+    number of steps: from `n` over `l` it is at most `n + l.length`. -/
+theorem foldl_step_le {α : Type} (g : Nat → α → Nat)
+    (hg : ∀ (m : Nat) (x : α), g m x ≤ m + 1) :
+    ∀ (n : Nat) (l : List α), l.foldl g n ≤ n + l.length := by
+  intro n l
+  induction l generalizing n with
+  | nil => simp
+  | cons x xs ih =>
+    simp only [List.foldl_cons, List.length_cons]
+    have h := ih (g n x)
+    have hstep := hg n x
+    omega
+
 /-- A counting fold (`+1` on match, unchanged otherwise) is bounded by the number
     of steps: from `n` over `l` it is at most `n + l.length`. Any detector that
     tallies matching codepoints inherits `count ≤ length`, so its count
@@ -189,6 +203,25 @@ theorem foldl_count_le {α : Type} (p : α → Bool) :
     split
     · have h := ih (n + 1); omega
     · have h := ih n; omega
+
+/-- Array form of `foldl_step_le`: a fold over an array whose step increases the
+    accumulator by at most one is bounded by `n + as.size`. Detectors that tally
+    over `Array.range as.size` or over the array directly inherit
+    `count ≤ size`. -/
+theorem array_foldl_step_le {α : Type} (g : Nat → α → Nat)
+    (hg : ∀ (m : Nat) (x : α), g m x ≤ m + 1) (n : Nat) (as : Array α) :
+    as.foldl g n ≤ n + as.size := by
+  have h := foldl_step_le g hg n as.toList
+  simpa [Array.foldl_toList] using h
+
+/-- Position-scan form: a fold over `Array.range n` from `0` whose step increases
+    the accumulator by at most one is bounded by `n`. Detectors that scan input
+    positions and tally at most one per position inherit `count ≤ size`. -/
+theorem array_range_foldl_step_le (g : Nat → Nat → Nat)
+    (hg : ∀ (m : Nat) (i : Nat), g m i ≤ m + 1) (n : Nat) :
+    (Array.range n).foldl g 0 ≤ n := by
+  have h := array_foldl_step_le g hg 0 (Array.range n)
+  simpa using h
 
 /-- Outputs of `arr f` = `map f`. -/
 theorem outputs_arr (f : I → O) (inputs : List I) :

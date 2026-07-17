@@ -59,3 +59,7 @@ import Unicode.Security.Display.RtlInjectionSound
 -- Universal bounds for the SkinToneVariationForgery tallies: skin-tone and
 -- variation-selector counts are each at most the input size for every input.
 import Unicode.Security.Identity.SkinToneVariationForgerySound
+
+-- Universal bounds for the WidthClassConfusion position-scan tallies: fullwidth
+-- and halfwidth fold counts are each at most the input size for every input.
+import Unicode.Security.Form.WidthClassConfusionSound
