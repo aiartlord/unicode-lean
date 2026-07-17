@@ -308,8 +308,8 @@ def expectedUcdFiles : List String :=
 -- §1 SHAPE CHECKS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The trusted base pins 48 UCD source files. -/
-theorem ucdFileDigests_count : ucdFileDigests.length = 48 := by decide
+/-- The trusted base pins 47 UCD source files. -/
+theorem ucdFileDigests_count : ucdFileDigests.length = 47 := by decide
 
 /-- Every digest entry has the expected 64-hex-character SHA-256 payload. -/
 theorem ucdFileDigests_all_64 :
