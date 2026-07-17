@@ -49,6 +49,12 @@ namespace Unicode.Security.Form.WidthClassConfusion
 open Unicode.Security.Calculus
 open Unicode.Generated.EastAsianWidth (EastAsianWidthClass)
 
+-- The witness theorems below `decide` over `detect`, which reduces the East
+-- Asian Width and width-fold tables; the default elaboration recursion depth is
+-- too shallow for those reductions, so the module does not build in isolation
+-- without raising it.
+set_option maxRecDepth 100000
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 Per-position width-fold scan
 -- ═══════════════════════════════════════════════════════════════════════════════
