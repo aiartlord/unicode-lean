@@ -145,14 +145,35 @@ one module target per Lean process:
 4. `Unicode.Normalization.QuickCheckSoundnessHangul`
 5. `Unicode.Normalization.QuickCheckSoundnessSingletonRank`
 6. `Unicode.Normalization.QuickCheckSoundnessSingletonTable`
-7. `Unicode.Normalization.QuickCheckSoundnessSnoc`
-8. `Unicode.Normalization.QuickCheckSoundnessMaster`
-9. `Unicode.Normalization.QuickCheckSoundnessSnocClosure`
-10. `Unicode.Normalization.QuickCheckSoundnessTheorem`
+7. `Unicode.Normalization.QuickCheckSoundnessMaster`
+8. `Unicode.Normalization.QuickCheckSoundnessSnocClosure`
+9. `Unicode.Normalization.QuickCheckSoundnessTheorem`
 
-`QuickCheckSoundnessSnoc` is now a compatibility surface over the live split
-modules. It should not reintroduce a full-range Hangul `toNFC` reducer or a
-monolithic singleton table reducer.
+`Unicode.Precis.ZsPreservationFacts` holds the heavy `decide +kernel` table
+facts for the "no non-ASCII Zs" preservation proofs — the all-rows
+canonical-decomposition fact (over the `List` mirror `UnicodeData.rowsList`, not
+the quadratic Array `.all`), the 11172-syllable Hangul decomposition fact, and
+the per-codepoint `fullCanonicalDecompose` fact. Cache it before
+`Unicode.Precis.ZsPreservation`, whose structural proof lemmas consume the cached
+facts without re-running the kernel reductions:
+
+```bash
+scripts/lean-cache-stages.py \
+  --preset evidence \
+  --only-module Unicode.Precis.ZsPreservationFacts \
+  --run \
+  --resume \
+  --max-rss-gb 40 \
+  --timeout-sec 0
+
+scripts/lean-cache-stages.py \
+  --preset evidence \
+  --only-module Unicode.Precis.ZsPreservation \
+  --run \
+  --resume \
+  --max-rss-gb 40 \
+  --timeout-sec 0
+```
 
 Current implemented support:
 

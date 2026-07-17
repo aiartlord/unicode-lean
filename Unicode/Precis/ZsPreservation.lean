@@ -34,12 +34,18 @@ import Unicode.Normalization.Hangul
 import Unicode.Normalization.ComposeInversion
 import Unicode.CaseFoldRoundtrip
 import Unicode.Precis.ZsMapping
+import Unicode.Precis.ZsPreservationFacts
 
 namespace Unicode.Precis.ZsPreservation
 
 open Unicode.Normalization
 open Unicode.Normalization.NFC (toNFC)
 open Unicode.Generated
+
+-- The table facts below reduce large UCD ranges (all rows, 11172 Hangul
+-- syllables, per-codepoint `fullCanonicalDecompose`); kernel reduction needs a
+-- deeper recursion bound than the elaboration default.
+set_option maxRecDepth 1000000
 
 -- Runtime definitions (`nonAsciiZsCodepoints`, `isNonAsciiZs`,
 -- `remapZsToAscii`) live in `ZsMapping`.
@@ -78,35 +84,11 @@ theorem remapZsToAscii_id_of_no_nonAsciiZs (cps : Array Nat)
 -- NON-ASCII Zs DECOMPOSITION FACTS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Non-non-ASCII-Zs codepoints' canonical decompositions contain no
-    non-ASCII Zs. -/
-theorem nonNonAsciiZs_decomp_no_nonAsciiZs :
-    UnicodeData.rows.all (fun row =>
-      isNonAsciiZs row.codepoint ||
-      row.canonicalDecomposition.all (fun d => !isNonAsciiZs d)) = true := by
-  decide
-
-/-- Hangul jamo are not non-ASCII Zs. -/
-theorem hangulJamo_no_nonAsciiZs :
-    ((List.range 195).map (fun i => 0x1100 + i)).all
-      (fun cp => !isNonAsciiZs cp) = true := by decide
-
-/-- Hangul syllable decompositions contain no non-ASCII Zs. -/
-theorem hangulSyllable_decompose_no_nonAsciiZs :
-    (List.range 11172).all
-      (fun i => match Hangul.decomposeSyllable? (0xAC00 + i) with
-                | some arr => arr.all (fun j => !isNonAsciiZs j)
-                | none     => true) = true := by decide
-
-/-- Every non-ASCII Zs codepoint `c` has a non-ASCII Zs in its
-    `fullCanonicalDecompose` (either `c` itself when it has no
-    decomposition, or a non-ASCII Zs among its decomposition targets).
-    This anchors the `decompose_compose_inversion`-based argument that
-    `toNFC` cannot introduce non-ASCII Zs. -/
-theorem nonAsciiZs_fullDecompose_contains_nonAsciiZs :
-    nonAsciiZsCodepoints.all (fun c =>
-      (Decompose.fullCanonicalDecompose c).any isNonAsciiZs) = true := by
-  decide
+-- The heavy `decide +kernel` table facts — `nonNonAsciiZs_decomp_no_nonAsciiZs`,
+-- `hangulJamo_no_nonAsciiZs`, `hangulSyllable_decompose_no_nonAsciiZs`,
+-- `nonAsciiZs_fullDecompose_contains_nonAsciiZs` — live in
+-- `Unicode.Precis.ZsPreservationFacts` (imported above), so the structural proof
+-- lemmas here compile without re-running the kernel reductions.
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- POINTWISE LIFTS FROM UCD FACTS
@@ -148,21 +130,25 @@ theorem canonicalDecomposition_output_no_nonAsciiZs
   unfold Lookup.canonicalDecomposition at hj
   split at hj
   · next row hRow =>
-    have hRowMem : row ∈ UnicodeData.rows := Array.mem_of_find?_eq_some hRow
-    have hRowCp : row.codepoint = cp := by
-      have hFind : UnicodeData.rows.find? (fun r => r.codepoint = cp) = some row := hRow
-      have hP := Array.find?_some hFind
-      exact of_decide_eq_true hP
+    -- `Lookup.lookupRow` is the generated index lookup; recover `row.codepoint`
+    -- and a table-mirror `src` with the same decomposition via its soundness.
+    unfold Lookup.lookupRow at hRow
+    have hRowCp : row.codepoint = cp := UnicodeDataIndex.lookupRow?_codepoint hRow
+    obtain ⟨src, hSrcMem, hSrcCp, _hSrcCcc, hSrcDecomp⟩ :=
+      UnicodeDataIndex.lookupRow?_supported_rowsList hRow
+    have hSrcRows : src ∈ UnicodeData.rows := by
+      simpa [UnicodeData.rows] using hSrcMem
     have hTable := nonNonAsciiZs_decomp_no_nonAsciiZs
     rw [Array.all_eq_true] at hTable
-    rcases Array.getElem_of_mem hRowMem with ⟨i, hi, hElem⟩
+    rcases Array.getElem_of_mem hSrcRows with ⟨i, hi, hElem⟩
     have hEntry := hTable i hi
     rw [hElem] at hEntry
     simp only [Bool.or_eq_true] at hEntry
     rcases hEntry with hSrcZs | hTgtAllNonZs
-    · rw [hRowCp, hCp] at hSrcZs
+    · rw [hSrcCp, hRowCp, hCp] at hSrcZs
       exact Bool.noConfusion hSrcZs
     · rw [Array.all_eq_true] at hTgtAllNonZs
+      rw [← hSrcDecomp] at hj
       rcases Array.getElem_of_mem hj with ⟨k, hk, hElemJ⟩
       have hBool := hTgtAllNonZs k hk
       rw [hElemJ] at hBool
@@ -233,9 +219,7 @@ theorem fullCanonicalDecomposeFuel_preserves_no_nonAsciiZs (fuel : Nat) :
   | zero =>
     intro cp hCp j hj
     unfold Decompose.fullCanonicalDecomposeFuel at hj
-    simp at hj
-    rw [hj]
-    exact hCp
+    simp_all
   | succ fuel ih =>
     intro cp hCp j hj
     unfold Decompose.fullCanonicalDecomposeFuel at hj
@@ -249,9 +233,7 @@ theorem fullCanonicalDecomposeFuel_preserves_no_nonAsciiZs (fuel : Nat) :
                         acc ++ Decompose.fullCanonicalDecomposeFuel fuel cp') #[]) at hj
       split at hj
       · next hEmpty =>
-        simp at hj
-        rw [hj]
-        exact hCp
+        simp_all
       · next hNotEmpty =>
         obtain ⟨x, hxIn, hxF⟩ :=
           mem_foldl_append (Decompose.fullCanonicalDecomposeFuel fuel) step j hj
