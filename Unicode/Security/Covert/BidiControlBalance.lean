@@ -91,7 +91,7 @@ structure Verdict where
 /-- Per-iteration walk state.  Each opener pushes; each popper
     pops or records an orphan position.  `maxDepth` tracks the
     peak combined embedding-plus-isolate stack height. -/
-private structure WalkState where
+structure WalkState where
   pos            : Nat
   embStack       : Nat
   isoStack       : Nat
@@ -104,7 +104,7 @@ private structure WalkState where
   bidiPositions  : Array Nat
   deriving Inhabited
 
-private def WalkState.initial : WalkState :=
+def WalkState.initial : WalkState :=
   { pos := 0,
     embStack := 0, isoStack := 0,
     embOpenCount := 0, embPopCount := 0,
@@ -114,7 +114,7 @@ private def WalkState.initial : WalkState :=
     bidiPositions := #[] }
 
 /-- Single-step transition for the walk. -/
-private def WalkState.step (st : WalkState) (cp : Nat) : WalkState :=
+def WalkState.step (st : WalkState) (cp : Nat) : WalkState :=
   if ¬ isBidiFormatControl cp then
     { st with pos := st.pos + 1 }
   else
@@ -169,7 +169,7 @@ private def WalkState.step (st : WalkState) (cp : Nat) : WalkState :=
       { st with pos := st.pos + 1, bidiPositions := bidiPositions' }
 
 /-- Run the walk over the entire `input`. -/
-private def runWalk (input : Array Nat) : WalkState :=
+def runWalk (input : Array Nat) : WalkState :=
   input.foldl (init := WalkState.initial) WalkState.step
 
 -- ═══════════════════════════════════════════════════════════════════════════════
