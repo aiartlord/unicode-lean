@@ -174,6 +174,22 @@ theorem accumulate_invariant {S : Type} (f : S → I → S) (init : S) (P : S �
   rw [accumulate_finalState]
   exact foldl_invariant f P hstep init h0 inputs
 
+/-- A counting fold (`+1` on match, unchanged otherwise) is bounded by the number
+    of steps: from `n` over `l` it is at most `n + l.length`. Any detector that
+    tallies matching codepoints inherits `count ≤ length`, so its count
+    arithmetic cannot run past the input size. -/
+theorem foldl_count_le {α : Type} (p : α → Bool) :
+    ∀ (n : Nat) (l : List α),
+      l.foldl (fun m x => if p x then m + 1 else m) n ≤ n + l.length := by
+  intro n l
+  induction l generalizing n with
+  | nil => simp
+  | cons x xs ih =>
+    simp only [List.foldl_cons, List.length_cons]
+    split
+    · have h := ih (n + 1); omega
+    · have h := ih n; omega
+
 /-- Outputs of `arr f` = `map f`. -/
 theorem outputs_arr (f : I → O) (inputs : List I) :
     outputs (arr f) inputs = inputs.map f := by
