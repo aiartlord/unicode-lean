@@ -50,3 +50,8 @@ import Unicode.ConfusablesTableFacts
 -- BidiControlBalance walk's depth accounting is proven correct for every input
 -- using `Unicode.Machine.accumulate_invariant`.
 import Unicode.Security.Covert.BidiControlBalanceSound
+
+-- Universal bounds for the RtlInjection tallies: each strong-direction and
+-- bidi-control count is at most the input size for every input, via the
+-- reusable `Unicode.Machine.foldl_count_le`.
+import Unicode.Security.Display.RtlInjectionSound
