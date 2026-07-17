@@ -52,4 +52,33 @@ theorem runWalk_depthAccounted (input : Array Nat) :
   rw [accumulate_finalState] at key
   simpa [runWalk, depthAccounted, Array.foldl_toList] using key
 
+/-- Stack-consistency: the live embedding and isolate stacks never exceed their
+    total open counts. This is what makes a non-zero final `embStack`/`isoStack`
+    a genuine imbalance (more opens than pops), so the detector's
+    `unbalancedEmbedding`/`unbalancedIsolate` verdicts are meaningful. -/
+def stackConsistent (st : WalkState) : Prop :=
+  st.embStack ≤ st.embOpenCount ∧ st.isoStack ≤ st.isoOpenCount
+
+theorem stackConsistent_initial : stackConsistent WalkState.initial := by
+  simp [stackConsistent, WalkState.initial]
+
+theorem step_preserves_stackConsistent (st : WalkState) (cp : Nat) :
+    stackConsistent st → stackConsistent (WalkState.step st cp) := by
+  intro h
+  simp only [stackConsistent] at h
+  obtain ⟨he, hi⟩ := h
+  unfold WalkState.step
+  repeat' split
+  all_goals (unfold stackConsistent; dsimp only; constructor <;> omega)
+
+/-- Stack-consistency for EVERY input. -/
+theorem runWalk_stackConsistent (input : Array Nat) :
+    (runWalk input).embStack ≤ (runWalk input).embOpenCount ∧
+    (runWalk input).isoStack ≤ (runWalk input).isoOpenCount := by
+  have key : stackConsistent (finalState (accumulate WalkState.step WalkState.initial) input.toList) :=
+    accumulate_invariant WalkState.step WalkState.initial stackConsistent
+      stackConsistent_initial step_preserves_stackConsistent input.toList
+  rw [accumulate_finalState] at key
+  simpa [runWalk, stackConsistent, Array.foldl_toList] using key
+
 end Unicode.Security.Covert.BidiControlBalance
