@@ -84,11 +84,12 @@ theorem remapZsToAscii_id_of_no_nonAsciiZs (cps : Array Nat)
 -- NON-ASCII Zs DECOMPOSITION FACTS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
--- The heavy `decide +kernel` table facts — `nonNonAsciiZs_decomp_no_nonAsciiZs`,
--- `hangulJamo_no_nonAsciiZs`, `hangulSyllable_decompose_no_nonAsciiZs`,
--- `nonAsciiZs_fullDecompose_contains_nonAsciiZs` — live in
--- `Unicode.Precis.ZsPreservationFacts` (imported above), so the structural proof
--- lemmas here compile without re-running the kernel reductions.
+-- The two genuine table facts — `nonNonAsciiZs_decomp_no_nonAsciiZs` (over the
+-- `List` mirror `rowsList`) and `nonAsciiZs_fullDecompose_contains_nonAsciiZs`
+-- (16 codepoints) — live in `Unicode.Precis.ZsPreservationFacts`. The Hangul
+-- decomposition facts are proven STRUCTURALLY below
+-- (`decomposeSyllable_output_no_nonAsciiZs`) via the jamo-range formula and
+-- `omega`, not by enumerating 11172 syllables.
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- POINTWISE LIFTS FROM UCD FACTS
@@ -108,18 +109,34 @@ theorem decomposeSyllable_output_no_nonAsciiZs
     unfold Hangul.isHangulSyllable Hangul.SBase Hangul.SCount
            Hangul.LCount Hangul.NCount Hangul.VCount Hangul.TCount at hSyl
     exact of_decide_eq_true hSyl
-  have hiLt : cp - 0xAC00 < 11172 := by omega
-  have hCpEq : 0xAC00 + (cp - 0xAC00) = cp := by omega
-  have hTable := hangulSyllable_decompose_no_nonAsciiZs
-  rw [List.all_eq_true] at hTable
-  have hI : cp - 0xAC00 ∈ List.range 11172 := List.mem_range.mpr hiLt
-  have hAtI := hTable (cp - 0xAC00) hI
-  rw [hCpEq, h] at hAtI
-  rw [Array.all_eq_true] at hAtI
-  rcases Array.getElem_of_mem hj with ⟨k, hk, hElem⟩
-  have hBool := hAtI k hk
-  rw [hElem] at hBool
-  simpa using hBool
+  -- Structural, not an enumeration of all 11172 syllables: the decomposition
+  -- FORMULA places every output in the jamo block [0x1100, 0x11C2] — the leading
+  -- jamo `l = 0x1100 + sIndex/588 ≤ 0x1112`, the vowel
+  -- `v = 0x1161 + (sIndex%588)/28 ≤ 0x1175`, and any trailing `0x11A7 + sIndex%28
+  -- ≤ 0x11C2` — all by `omega` on the division/modulo bounds.
+  have hjRange : 0x1100 ≤ j ∧ j ≤ 0x11C2 := by
+    unfold Hangul.decomposeSyllable? at h
+    rw [if_pos hSyl] at h
+    simp only [Hangul.LBase, Hangul.VBase, Hangul.TBase, Hangul.NCount, Hangul.TCount,
+               Hangul.VCount, Hangul.SBase] at h
+    split at h
+    · rw [Option.some.injEq] at h; subst h
+      simp at hj
+      rcases hj with rfl | rfl <;> omega
+    · rw [Option.some.injEq] at h; subst h
+      simp at hj
+      rcases hj with rfl | rfl | rfl <;> omega
+  -- The jamo block is disjoint from every non-ASCII Zs codepoint (all < 0x1100
+  -- or > 0x11C2), so no output is a non-ASCII Zs.
+  obtain ⟨hj1, hj2⟩ := hjRange
+  unfold isNonAsciiZs
+  cases hc : nonAsciiZsCodepoints.contains j with
+  | false => rfl
+  | true =>
+    have hmem := Array.mem_of_contains_eq_true hc
+    unfold nonAsciiZsCodepoints at hmem
+    simp at hmem
+    omega
 
 /-- Pointwise: for a non-non-ASCII-Zs `cp`, every element of
     `Lookup.canonicalDecomposition cp` is also non-non-ASCII-Zs. -/
