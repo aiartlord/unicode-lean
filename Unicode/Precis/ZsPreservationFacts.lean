@@ -34,17 +34,10 @@ theorem nonNonAsciiZs_decomp_no_nonAsciiZs :
     decide +kernel
   simpa [UnicodeData.rows, List.all_toArray] using h
 
-/-- Hangul jamo are not non-ASCII Zs. -/
-theorem hangulJamo_no_nonAsciiZs :
-    ((List.range 195).map (fun i => 0x1100 + i)).all
-      (fun cp => !isNonAsciiZs cp) = true := by decide +kernel
-
-/-- Hangul syllable decompositions contain no non-ASCII Zs. -/
-theorem hangulSyllable_decompose_no_nonAsciiZs :
-    (List.range 11172).all
-      (fun i => match Hangul.decomposeSyllable? (0xAC00 + i) with
-                | some arr => arr.all (fun j => !isNonAsciiZs j)
-                | none     => true) = true := by decide +kernel
+-- The Hangul-decomposition "no non-ASCII Zs" facts are proven structurally in
+-- `ZsPreservation` (`decomposeSyllable_output_no_nonAsciiZs`): the decomposition
+-- formula places every output in the jamo block [0x1100, 0x11C2], disjoint from
+-- every Zs codepoint, by `omega`. No 11172-syllable enumeration is needed.
 
 /-- Every non-ASCII Zs codepoint `c` has a non-ASCII Zs in its
     `fullCanonicalDecompose` (either `c` itself when it has no
