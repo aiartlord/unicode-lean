@@ -53,7 +53,7 @@ theorem singleton_sound_pair_full
     (hEDecompEmpty : Lookup.canonicalDecomposition e = #[])
     (hDNotHangul : Hangul.isHangulSyllable d = false)
     (hENotHangul : Hangul.isHangulSyllable e = false) :
-    toNFC #[cp] = #[cp] := by
+    toNFC [cp] = [cp] := by
   have hPC := singleton_sound_pair cp d e hQC hCcc hDecomp
   have hDsylCp : Hangul.decomposeSyllable? cp = none := by
     unfold Hangul.decomposeSyllable?; rw [hNotHangul]; simp
@@ -84,30 +84,27 @@ theorem singleton_sound_pair_full
               Decompose.fullCanonicalDecomposeFuel 31 e := rfl
     rw [hFold, hFCD_d_31, hFCD_e_31]
     rfl
-  have hDS : Decompose.decomposeSequence #[cp] = #[d, e] := by
-    rw [Distribute.decomposeSequence_singleton]
-    exact hFCD_cp
+  have hDS : Decompose.decomposeSequence [cp] = [d, e] := by
+    rw [Distribute.decomposeSequence_singleton, hFCD_cp]
   have hHSR : Reorder.HasSortedRuns [d, e] := by
     refine ⟨?starterImplication, ?singletonRun⟩
     · intro hENs
       clear hENs
       rw [hDStarter]
       exact Nat.zero_le (Lookup.canonicalCombiningClass e)
-    · trivial
-  have hR : Reorder.reorder #[d, e] = #[d, e] := by
+    · rw [Reorder.HasSortedRuns_singleton]
+      exact True.intro
+  have hR : Reorder.reorder [d, e] = [d, e] := by
     apply Reorder.reorder_id_on_HasSortedRuns
-    show Reorder.HasSortedRuns [d, e]
     exact hHSR
-  show Compose.compose (toNFD #[cp]) = #[cp]
+  show Compose.compose (toNFD [cp]) = [cp]
   unfold toNFD
   rw [hDS, hR]
-  show Compose.flushCompose
-        ((#[d, e] : Array Nat).foldl Compose.stepCompose Compose.initialState) = #[cp]
-  have hFold2 : (#[d, e] : Array Nat).foldl Compose.stepCompose Compose.initialState
+  show (Compose.flushCompose
+          (([d, e] : List Nat).foldl Compose.stepCompose Compose.initialState)).toList
+      = [cp]
+  have hFold2 : ([d, e] : List Nat).foldl Compose.stepCompose Compose.initialState
               = Compose.stepCompose (Compose.stepCompose Compose.initialState d) e := by
-    rw [← Array.foldl_toList]
-    show ([d, e] : List Nat).foldl Compose.stepCompose Compose.initialState
-       = Compose.stepCompose (Compose.stepCompose Compose.initialState d) e
     simp only [List.foldl_cons, List.foldl_nil]
   rw [hFold2]
   have hStep1 : Compose.stepCompose Compose.initialState d

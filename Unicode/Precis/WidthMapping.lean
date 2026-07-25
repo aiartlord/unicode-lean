@@ -48,8 +48,8 @@ def widthMapCodepoint (cp : Nat) : Array Nat :=
 
 /-- Apply the width mapping to a codepoint sequence, flattening each
     per-codepoint result back into a single sequence. -/
-def widthMap (cps : Array Nat) : Array Nat :=
-  cps.foldl (fun acc cp => acc ++ widthMapCodepoint cp) #[]
+def widthMap (cps : List Nat) : List Nat :=
+  cps.flatMap (fun cp => (widthMapCodepoint cp).toList)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- TEST VECTORS
@@ -77,12 +77,12 @@ theorem widthMap_ascii_a : widthMapCodepoint 0x0061 = #[0x0061] := by decide
 
 /-- The sequence-level mapping preserves pure-ASCII input. -/
 theorem widthMap_ascii_identity :
-    widthMap #[0x0041, 0x0042, 0x0043] = #[0x0041, 0x0042, 0x0043] := by decide
+    widthMap [0x0041, 0x0042, 0x0043] = [0x0041, 0x0042, 0x0043] := by decide
 
 /-- Mixed input: a fullwidth A followed by ASCII B maps fullwidth A
     to plain A while leaving B unchanged. -/
 theorem widthMap_mixed :
-    widthMap #[0xFF21, 0x0042] = #[0x0041, 0x0042] := by decide
+    widthMap [0xFF21, 0x0042] = [0x0041, 0x0042] := by decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- IDEMPOTENCE
@@ -152,13 +152,23 @@ theorem arr_foldl_map_id_of_all_identity (cps : Array Nat)
 
 /-- `widthMap` is the identity on any sequence whose codepoints are
     all non-sources. -/
-theorem widthMap_id_of_all_non_source (cps : Array Nat)
+theorem widthMap_id_of_all_non_source (cps : List Nat)
     (h : ∀ cp ∈ cps, isWidthCompatSource cp = false) :
     widthMap cps = cps := by
   unfold widthMap
-  apply arr_foldl_map_id_of_all_identity cps widthMapCodepoint
-  intro cp hMem
-  exact widthMapCodepoint_id_of_non_source cp (h cp hMem)
+  have key : ∀ (l : List Nat), (∀ cp ∈ l, widthMapCodepoint cp = #[cp]) →
+      l.flatMap (fun cp => (widthMapCodepoint cp).toList) = l := by
+    intro l
+    induction l with
+    | nil => intro _hH; simp
+    | cons hd tl ih =>
+      intro hH
+      have hHd : widthMapCodepoint hd = #[hd] := hH hd (by simp)
+      have hTl : ∀ cp ∈ tl, widthMapCodepoint cp = #[cp] :=
+        fun cp hMem => hH cp (by simp [hMem])
+      simp [hHd, ih hTl]
+  rw [key cps (fun cp hMem =>
+        widthMapCodepoint_id_of_non_source cp (h cp hMem))]
 
 /-- Converse of `lookupWidthMapping_none_of_non_source`: a codepoint
     with no `lookupWidthMapping?` result is not a source. -/
@@ -171,34 +181,19 @@ theorem non_source_of_lookupWidthMapping_none (cp : Nat)
 
 /-- Membership decomposition: a codepoint in `widthMap cps` comes
     from `widthMapCodepoint x` for some `x ∈ cps`. -/
-theorem mem_widthMap_iff (cps : Array Nat) (cp : Nat)
+theorem mem_widthMap_iff (cps : List Nat) (cp : Nat)
     (hMem : cp ∈ widthMap cps) :
     ∃ x ∈ cps, cp ∈ widthMapCodepoint x := by
   unfold widthMap at hMem
-  rw [← Array.foldl_toList] at hMem
-  have key : ∀ (l : List Nat) (init : Array Nat),
-      cp ∈ l.foldl (fun acc x => acc ++ widthMapCodepoint x) init →
-      cp ∈ init ∨ ∃ x ∈ l, cp ∈ widthMapCodepoint x := by
-    intro l
-    induction l with
-    | nil => intro init hM; left; simpa using hM
-    | cons hd tl ih =>
-      intro init hM
-      simp [List.foldl_cons] at hM
-      rcases ih (init ++ widthMapCodepoint hd) hM with hInit | ⟨x, hxM, hxF⟩
-      · rcases Array.mem_append.mp hInit with h1 | h2
-        · left; exact h1
-        · right; exact ⟨hd, by simp, h2⟩
-      · right; exact ⟨x, by simp [hxM], hxF⟩
-  rcases key cps.toList #[] hMem with hEmpty | ⟨x, hxM, hxF⟩
-  · simp at hEmpty
-  · exact ⟨x, by simpa using hxM, hxF⟩
+  simp only [List.mem_flatMap] at hMem
+  obtain ⟨x, hxM, hxF⟩ := hMem
+  exact ⟨x, hxM, by simpa using hxF⟩
 
 /-- Every codepoint in the output of `widthMap` is a non-source:
     - sources in the input are replaced by certified non-source targets;
     - non-sources in the input are preserved as themselves.
 -/
-theorem widthMap_output_all_non_source (cps : Array Nat) :
+theorem widthMap_output_all_non_source (cps : List Nat) :
     ∀ cp ∈ widthMap cps, isWidthCompatSource cp = false := by
   intro cp hMem
   obtain ⟨x, hxInCps, hxF⟩ := mem_widthMap_iff cps cp hMem
@@ -236,20 +231,20 @@ theorem widthMap_output_all_non_source (cps : Array Nat) :
     - `widthMap` is the identity on such a sequence (by
       `widthMap_id_of_all_non_source`).
 -/
-theorem widthMap_idempotent (cps : Array Nat) :
+theorem widthMap_idempotent (cps : List Nat) :
     widthMap (widthMap cps) = widthMap cps :=
   widthMap_id_of_all_non_source (widthMap cps) (widthMap_output_all_non_source cps)
 
 /-- Double width-map on fullwidth A equals single width-map. -/
 theorem widthMap_idempotent_fullwidth_A :
-    widthMap (widthMap #[0xFF21]) = widthMap #[0xFF21] := by decide
+    widthMap (widthMap [0xFF21]) = widthMap [0xFF21] := by decide
 
 /-- Double width-map on halfwidth katakana equals single width-map. -/
 theorem widthMap_idempotent_halfwidth_katakana_a :
-    widthMap (widthMap #[0xFF71]) = widthMap #[0xFF71] := by decide
+    widthMap (widthMap [0xFF71]) = widthMap [0xFF71] := by decide
 
 /-- Double width-map on ASCII equals single width-map (trivially). -/
 theorem widthMap_idempotent_ascii :
-    widthMap (widthMap #[0x0041, 0x0042]) = widthMap #[0x0041, 0x0042] := by decide
+    widthMap (widthMap [0x0041, 0x0042]) = widthMap [0x0041, 0x0042] := by decide
 
 end Unicode.Precis.WidthMapping

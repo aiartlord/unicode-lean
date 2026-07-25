@@ -53,14 +53,15 @@ open Unicode.Normalization.ComposeNonstarterSlide (PrimaryFiresChain)
     `emitted ++ #[st] ++ buffer.reverse`. Direct from the
     `flushCompose` definition. -/
 theorem compose_output_form_active
-    (Z : Array Nat) (st : Nat)
+    (Z : List Nat) (st : Nat)
     (hSt : (Z.foldl Compose.stepCompose Compose.initialState).starter = some st) :
     Compose.compose Z =
-      (Z.foldl Compose.stepCompose Compose.initialState).emitted
-        ++ #[st]
-        ++ (Z.foldl Compose.stepCompose Compose.initialState).buffer.reverse.toArray := by
+      (Z.foldl Compose.stepCompose Compose.initialState).emitted.toList
+        ++ [st]
+        ++ (Z.foldl Compose.stepCompose Compose.initialState).buffer.reverse := by
   unfold Compose.compose Compose.flushCompose
   rw [hSt]
+  simp [Array.toList_append]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 ADJACENT-PAIR HSR EXTRACTION
@@ -204,11 +205,11 @@ theorem hasSortedRunsBool_run_le_snoc
     `compose Z`; HSR-on-snoc forces every trailing-run element to
     have CCC ≤ ccc cp. -/
 theorem compose_buffer_ccc_bound
-    (Z : Array Nat) (cp : Nat)
+    (Z : List Nat) (cp : Nat)
     (hCpPos : 0 < Lookup.canonicalCombiningClass cp)
     (hSt : (Z.foldl Compose.stepCompose Compose.initialState).starter.isSome
               = true)
-    (hHSR : hasSortedRunsBool (Compose.compose Z ++ #[cp]).toList = true) :
+    (hHSR : hasSortedRunsBool (Compose.compose Z ++ [cp]) = true) :
     ∀ m ∈ (Z.foldl Compose.stepCompose Compose.initialState).buffer,
       Lookup.canonicalCombiningClass m ≤ Lookup.canonicalCombiningClass cp := by
   intros m hMem
@@ -225,18 +226,7 @@ theorem compose_buffer_ccc_bound
         0 < Lookup.canonicalCombiningClass r := by
     intros r hr
     exact (hValid.2 r (List.mem_reverse.mp hr)).1
-  -- Re-shape the HSR list to match `prefix ++ run ++ [cp]`.
-  have hToList :
-      ((Z.foldl Compose.stepCompose Compose.initialState).emitted
-        ++ #[st]
-        ++ (Z.foldl Compose.stepCompose Compose.initialState).buffer.reverse.toArray
-        ++ #[cp]).toList
-        = ((Z.foldl Compose.stepCompose Compose.initialState).emitted.toList
-            ++ [st])
-          ++ (Z.foldl Compose.stepCompose Compose.initialState).buffer.reverse
-          ++ [cp] := by
-    simp [Array.toList_append, List.append_assoc]
-  rw [hToList] at hHSR
+  -- After `rw [hForm]`, `hHSR` is already in `prefix ++ run ++ [cp]` List form.
   have hRunBound :
       ∀ r ∈ (Z.foldl Compose.stepCompose Compose.initialState).buffer.reverse,
         Lookup.canonicalCombiningClass r ≤ Lookup.canonicalCombiningClass cp :=
@@ -419,18 +409,17 @@ theorem stepCompose_nonstarter_no_fire_buffers
     the element ends up in the final buffer with `ccc > ccc cp`,
     violating the bound. -/
 theorem chain_fires_via_buffer_bound
-    (B : List Nat) (X : Array Nat) (cp : Nat)
+    (B : List Nat) (X : List Nat) (cp : Nat)
     (hHighPos : ∀ b ∈ B, 0 < Lookup.canonicalCombiningClass b)
     (hHighGt : ∀ b ∈ B, Lookup.canonicalCombiningClass cp
                           < Lookup.canonicalCombiningClass b)
     (hXStarter : (X.foldl Compose.stepCompose Compose.initialState).starter.isSome
                     = true)
-    (hBufBound : ∀ y ∈ ((X ++ B.toArray).foldl Compose.stepCompose
+    (hBufBound : ∀ y ∈ ((X ++ B).foldl Compose.stepCompose
                             Compose.initialState).buffer,
                   Lookup.canonicalCombiningClass y
                     ≤ Lookup.canonicalCombiningClass cp) :
     PrimaryFiresChain (X.foldl Compose.stepCompose Compose.initialState) B := by
-  -- Convert array foldl to list foldl on B for buffer monotonicity.
   have hBufBoundList :
       ∀ y ∈ (B.foldl Compose.stepCompose
               (X.foldl Compose.stepCompose Compose.initialState)).buffer,
@@ -438,7 +427,7 @@ theorem chain_fires_via_buffer_bound
           ≤ Lookup.canonicalCombiningClass cp := by
     intros y hy
     apply hBufBound
-    rw [Array.foldl_append, ← Array.foldl_toList, List.toList_toArray]
+    rw [List.foldl_append]
     exact hy
   -- Induct on B.
   clear hBufBound
@@ -521,22 +510,22 @@ theorem chain_fires_via_buffer_bound
         (X.foldl Compose.stepCompose Compose.initialState) head st p
         hStAct hHeadPos hHeadStrictMax hPC
     have hXheadFold :
-        (X ++ #[head]).foldl Compose.stepCompose Compose.initialState
+        (X ++ [head]).foldl Compose.stepCompose Compose.initialState
           = { (X.foldl Compose.stepCompose Compose.initialState) with
               starter := some p } := by
-      rw [Array.foldl_append]
+      rw [List.foldl_append]
       show Compose.stepCompose
               (X.foldl Compose.stepCompose Compose.initialState) head
           = { (X.foldl Compose.stepCompose Compose.initialState) with
               starter := some p }
       exact hStepEq
     have hXheadStarter :
-        ((X ++ #[head]).foldl Compose.stepCompose Compose.initialState).starter.isSome
+        ((X ++ [head]).foldl Compose.stepCompose Compose.initialState).starter.isSome
           = true := by
       rw [hXheadFold]; rfl
     have hRestBufBound :
         ∀ y ∈ (rest.foldl Compose.stepCompose
-                ((X ++ #[head]).foldl Compose.stepCompose Compose.initialState)).buffer,
+                ((X ++ [head]).foldl Compose.stepCompose Compose.initialState)).buffer,
           Lookup.canonicalCombiningClass y
             ≤ Lookup.canonicalCombiningClass cp := by
       intros y hy
@@ -545,7 +534,7 @@ theorem chain_fires_via_buffer_bound
       simp only [List.foldl_cons]
       rw [hStepEq]
       exact hy
-    have hRecur := ih (X ++ #[head]) hRestPos hRestGt hXheadStarter hRestBufBound
+    have hRecur := ih (X ++ [head]) hRestPos hRestGt hXheadStarter hRestBufBound
     rw [hXheadFold] at hRecur
     exact hRecur
 

@@ -67,34 +67,26 @@ def isConfusableCp (cp : Nat) : Bool :=
   (Unicode.Confusables.lookupConfusable? cp).isSome
 
 /-- First input position holding a confusable cp. -/
-def firstConfusablePos (input : Array Nat) : Option Nat :=
-  (Array.range input.size).findSome? (fun i =>
-    if h : i < input.size then
-      if isConfusableCp input[i] then some i else none
-    else none)
+def firstConfusablePos (input : List Nat) : Option Nat :=
+  input.zipIdx.findSome? (fun cpWithIdx =>
+    if isConfusableCp cpWithIdx.1 then some cpWithIdx.2 else none)
 
 /-- First input position holding an override-class bidi control
     (LRE / RLE / LRO / RLO / PDF). -/
-def firstOverridePos (input : Array Nat) : Option Nat :=
-  (Array.range input.size).findSome? (fun i =>
-    if h : i < input.size then
-      if isBidiEmbeddingControl input[i] then some i else none
-    else none)
+def firstOverridePos (input : List Nat) : Option Nat :=
+  input.zipIdx.findSome? (fun cpWithIdx =>
+    if isBidiEmbeddingControl cpWithIdx.1 then some cpWithIdx.2 else none)
 
 /-- First input position holding an isolate-class bidi control
     (LRI / RLI / FSI / PDI). -/
-def firstIsolatePos (input : Array Nat) : Option Nat :=
-  (Array.range input.size).findSome? (fun i =>
-    if h : i < input.size then
-      if isBidiIsolateControl input[i] then some i else none
-    else none)
+def firstIsolatePos (input : List Nat) : Option Nat :=
+  input.zipIdx.findSome? (fun cpWithIdx =>
+    if isBidiIsolateControl cpWithIdx.1 then some cpWithIdx.2 else none)
 
 /-- Total count of confusable cps in `input`. -/
-def confusableCount (input : Array Nat) : Nat :=
-  (Array.range input.size).foldl (init := 0) (fun acc i =>
-    if h : i < input.size then
-      if isConfusableCp input[i] then acc + 1 else acc
-    else acc)
+def confusableCount (input : List Nat) : Nat :=
+  input.foldl (init := 0) (fun acc cp =>
+    if isConfusableCp cp then acc + 1 else acc)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 Types
@@ -107,11 +99,11 @@ inductive SubThreat where
 
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
   deriving Inhabited
 
 structure Verdict where
-  input           : Array Nat
+  input           : List Nat
   classify        : Classification
   confusableCount : Nat
   deriving Inhabited
@@ -121,7 +113,7 @@ structure Verdict where
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The ConfusableBidiCompound detection function. -/
-def detect (input : Array Nat) : Verdict :=
+def detect (input : List Nat) : Verdict :=
   let classification : Classification :=
     match firstConfusablePos input with
     | none => .clear
@@ -129,12 +121,12 @@ def detect (input : Array Nat) : Verdict :=
       match firstOverridePos input with
       | some bidiPos =>
         .hazard (.confusableInOverride confusablePos bidiPos)
-          #[confusablePos, bidiPos] ByteArray.empty
+          [confusablePos, bidiPos] ByteArray.empty
       | none =>
         match firstIsolatePos input with
         | some bidiPos =>
           .hazard (.confusableInIsolate confusablePos bidiPos)
-            #[confusablePos, bidiPos] ByteArray.empty
+            [confusablePos, bidiPos] ByteArray.empty
         | none => .clear
   { input := input,
     classify := classification,
@@ -153,16 +145,16 @@ def SubThreat.tag : SubThreat → String
 def Classification.isClear : Classification → Bool
   | .clear                       => true
   | .hazard sub positions decoded =>
-    Function.const (SubThreat × Array Nat × ByteArray) false
+    Function.const (SubThreat × List Nat × ByteArray) false
       (sub, positions, decoded)
 
 def Classification.tag : Classification → Option String
   | .clear                       => none
   | .hazard sub positions decoded =>
-    Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
+    Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
 
-def Classification.positions : Classification → Array Nat
-  | .clear                       => #[]
+def Classification.positions : Classification → List Nat
+  | .clear                       => []
   | .hazard sub positions decoded =>
     Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
@@ -171,35 +163,36 @@ def Classification.positions : Classification → Array Nat
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Empty input is clear. -/
-theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
+theorem detect_empty_clear : (detect []).classify.isClear = true := by
   decide
 
 /-- Pure ASCII is clear; no confusables, no bidi. -/
 theorem detect_ascii_clear :
-    (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
+    (detect [0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
   decide
 
 /-- ASCII + override bidi is clear here — RtlInjection covers the
     bidi-only case.  No confusable, no compound. -/
 theorem detect_ascii_plus_override_clear :
-    (detect #[0x202E, 0x0041, 0x0042, 0x0043]).classify.isClear = true := by
+    (detect [0x202E, 0x0041, 0x0042, 0x0043]).classify.isClear = true := by
   decide
 
-/-- Cyrillic а alone is clear under X3 — I1 covers the
-    confusable-only case.  No bidi, no compound. -/
+/-- Cyrillic а alone is clear under the compound detector — the
+    homoglyph detector covers the confusable-only case.  No bidi,
+    no compound. -/
 theorem detect_cyrillic_a_alone_clear :
-    (detect #[0x0430]).classify.isClear = true := by decide
+    (detect [0x0430]).classify.isClear = true := by decide
 
 /-- RLO + Cyrillic а fires `confusableInOverride` — the canonical
     Trojan-Source + IDN-homograph compound. -/
 theorem detect_rlo_cyrillic_compound :
-    (detect #[0x202E, 0x0430]).classify.tag = some "ConfusableInOverride" := by
+    (detect [0x202E, 0x0430]).classify.tag = some "ConfusableInOverride" := by
   decide
 
 /-- LRI + Greek ο fires `confusableInIsolate` — the isolate-class
     soft compound. -/
 theorem detect_lri_greek_compound :
-    (detect #[0x2066, 0x03BF]).classify.tag = some "ConfusableInIsolate" := by
+    (detect [0x2066, 0x03BF]).classify.tag = some "ConfusableInIsolate" := by
   decide
 
 end Unicode.Security.Boundary.ConfusableBidiCompound

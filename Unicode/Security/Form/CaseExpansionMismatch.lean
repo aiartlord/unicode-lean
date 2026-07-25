@@ -56,52 +56,44 @@ open Unicode.Casing (lowerCodepoint upperCodepoint)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- First input position whose `upperCodepoint .default` expands
-    to more than one codepoint.  Returns `(basePos, cp, expansionLen)`. -/
-def firstUpperExpansion (input : Array Nat) : Option (Nat × Nat × Nat) :=
-  (Array.range input.size).findSome? (fun i =>
-    if h : i < input.size then
-      let cp := input[i]
-      let up := upperCodepoint .default input i cp
-      if up.size > 1 then some (i, cp, up.size) else none
-    else none)
+    to more than one codepoint.  Returns `(basePos, cp, expansionLen)`.
+    The SpecialCasing context predicates read the surrounding
+    characters, so each position is scanned through its reversed
+    prefix and forward suffix via `Unicode.Casing.contextSplits`. -/
+def firstUpperExpansion (input : List Nat) : Option (Nat × Nat × Nat) :=
+  (Unicode.Casing.contextSplits input).findSome? (fun w =>
+    let up := upperCodepoint .default w.2.1 w.2.2.2 w.2.2.1
+    if up.size > 1 then some (w.1, w.2.2.1, up.size) else none)
 
 /-- First input position whose `lowerCodepoint .default` expands
     to more than one codepoint. -/
-def firstLowerExpansion (input : Array Nat) : Option (Nat × Nat × Nat) :=
-  (Array.range input.size).findSome? (fun i =>
-    if h : i < input.size then
-      let cp := input[i]
-      let lo := lowerCodepoint .default input i cp
-      if lo.size > 1 then some (i, cp, lo.size) else none
-    else none)
+def firstLowerExpansion (input : List Nat) : Option (Nat × Nat × Nat) :=
+  (Unicode.Casing.contextSplits input).findSome? (fun w =>
+    let lo := lowerCodepoint .default w.2.1 w.2.2.2 w.2.2.1
+    if lo.size > 1 then some (w.1, w.2.2.1, lo.size) else none)
 
 /-- Count of input positions whose `upperCodepoint .default` expands. -/
-def upperExpansionCount (input : Array Nat) : Nat :=
-  (Array.range input.size).foldl (init := 0) (fun acc i =>
-    if h : i < input.size then
-      let cp := input[i]
-      if (upperCodepoint .default input i cp).size > 1 then acc + 1 else acc
+def upperExpansionCount (input : List Nat) : Nat :=
+  (Unicode.Casing.contextSplits input).foldl (init := 0) (fun acc w =>
+    if (upperCodepoint .default w.2.1 w.2.2.2 w.2.2.1).size > 1 then
+      acc + 1
     else acc)
 
 /-- Count of input positions whose `lowerCodepoint .default` expands. -/
-def lowerExpansionCount (input : Array Nat) : Nat :=
-  (Array.range input.size).foldl (init := 0) (fun acc i =>
-    if h : i < input.size then
-      let cp := input[i]
-      if (lowerCodepoint .default input i cp).size > 1 then acc + 1 else acc
+def lowerExpansionCount (input : List Nat) : Nat :=
+  (Unicode.Casing.contextSplits input).foldl (init := 0) (fun acc w =>
+    if (lowerCodepoint .default w.2.1 w.2.2.2 w.2.2.1).size > 1 then
+      acc + 1
     else acc)
 
 /-- Maximum expansion length across all input positions (max of upper
     and lower mappings combined). -/
-def maxExpansionLen (input : Array Nat) : Nat :=
-  (Array.range input.size).foldl (init := 0) (fun acc i =>
-    if h : i < input.size then
-      let cp := input[i]
-      let u := (upperCodepoint .default input i cp).size
-      let l := (lowerCodepoint .default input i cp).size
-      let m := if u > l then u else l
-      if m > acc then m else acc
-    else acc)
+def maxExpansionLen (input : List Nat) : Nat :=
+  (Unicode.Casing.contextSplits input).foldl (init := 0) (fun acc w =>
+    let u := (upperCodepoint .default w.2.1 w.2.2.2 w.2.2.1).size
+    let l := (lowerCodepoint .default w.2.1 w.2.2.2 w.2.2.1).size
+    let m := if u > l then u else l
+    if m > acc then m else acc)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 Types
@@ -114,11 +106,11 @@ inductive SubThreat where
 
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
   deriving Inhabited
 
 structure Verdict where
-  input               : Array Nat
+  input               : List Nat
   classify            : Classification
   upperExpansionCount : Nat
   lowerExpansionCount : Nat
@@ -130,15 +122,15 @@ structure Verdict where
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The F4 detection function. -/
-def detect (input : Array Nat) : Verdict :=
+def detect (input : List Nat) : Verdict :=
   let classification : Classification :=
     match firstUpperExpansion input with
     | some (pos, cp, len) =>
-      .hazard (.upperExpansion pos cp len) #[pos] ByteArray.empty
+      .hazard (.upperExpansion pos cp len) [pos] ByteArray.empty
     | none =>
       match firstLowerExpansion input with
       | some (pos, cp, len) =>
-        .hazard (.lowerExpansion pos cp len) #[pos] ByteArray.empty
+        .hazard (.lowerExpansion pos cp len) [pos] ByteArray.empty
       | none => .clear
   { input := input,
     classify := classification,
@@ -161,16 +153,16 @@ def SubThreat.tag : SubThreat → String
 def Classification.isClear : Classification → Bool
   | .clear                       => true
   | .hazard sub positions decoded =>
-    Function.const (SubThreat × Array Nat × ByteArray) false
+    Function.const (SubThreat × List Nat × ByteArray) false
       (sub, positions, decoded)
 
 def Classification.tag : Classification → Option String
   | .clear                       => none
   | .hazard sub positions decoded =>
-    Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
+    Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
 
-def Classification.positions : Classification → Array Nat
-  | .clear                       => #[]
+def Classification.positions : Classification → List Nat
+  | .clear                       => []
   | .hazard sub positions decoded =>
     Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
@@ -179,29 +171,29 @@ def Classification.positions : Classification → Array Nat
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Empty input is clear. -/
-theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
+theorem detect_empty_clear : (detect []).classify.isClear = true := by
   decide +kernel
 
 /-- Pure ASCII is clear; every ASCII cp case-maps to a single cp. -/
 theorem detect_ascii_clear :
-    (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
+    (detect [0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
   decide +kernel
 
 /-- ß (U+00DF) fires `upperExpansion` at position 0 — toUpper → "SS". -/
 theorem detect_sharp_s_upper :
-    (detect #[0x00DF]).classify.tag = some "UpperExpansion" := by
+    (detect [0x00DF]).classify.tag = some "UpperExpansion" := by
   decide +kernel
 
 /-- ﬁ ligature (U+FB01) fires `upperExpansion` at position 0 — toUpper → "FI". -/
 theorem detect_fi_ligature_upper :
-    (detect #[0xFB01]).classify.tag = some "UpperExpansion" := by
+    (detect [0xFB01]).classify.tag = some "UpperExpansion" := by
   decide +kernel
 
 /-- İ (U+0130) fires `lowerExpansion` at position 0 — toLower under
     default → "i + 0307".  No upper expansion (İ stays İ), so the
     detector falls through to the lower scan. -/
 theorem detect_dotted_I_lower :
-    (detect #[0x0130]).classify.tag = some "LowerExpansion" := by
+    (detect [0x0130]).classify.tag = some "LowerExpansion" := by
   decide +kernel
 
 end Unicode.Security.Form.CaseExpansionMismatch

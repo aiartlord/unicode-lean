@@ -169,7 +169,7 @@ def isFirstCharBidiClass (bc : BidiClass) : Bool :=
 
 /-- `true` iff the first character's Bidi class is L, R, or AL
     (RFC 5893 §2 rule 1). -/
-def firstCharValid (cps : Array Nat) : Bool :=
+def firstCharValid (cps : List Nat) : Bool :=
   match cps[0]? with
   | some cp => isFirstCharBidiClass (lookupBidiClass cp)
   | none    => true  -- empty label: rule 1 vacuously satisfied.
@@ -177,7 +177,7 @@ def firstCharValid (cps : Array Nat) : Bool :=
 /-- `true` iff the label is RTL (first char has class R or AL). LTR
     otherwise. An empty label is treated as LTR — the subsequent rules
     vacuously apply. -/
-def isRtlLabel (cps : Array Nat) : Bool :=
+def isRtlLabel (cps : List Nat) : Bool :=
   match cps[0]? with
   | some cp => isRAlBidiClass (lookupBidiClass cp)
   | none    => false
@@ -191,50 +191,45 @@ def isRtlLabel (cps : Array Nat) : Bool :=
     must be stripped before applying those rules. Implemented as a
     fuel-bounded reverse-walk for structural termination under
     `Array`'s eager-evaluation semantics. -/
-def dropTrailingNSMFuel : Nat → Array Nat → Array Nat
+def dropTrailingNSMFuel : Nat → List Nat → List Nat
   | 0, cps => cps
   | fuel + 1, cps =>
-    if hEmpty : cps.size = 0 then cps
-    else
-      let lastIdx := cps.size - 1
-      have hLt : lastIdx < cps.size := by
-        rcases Nat.eq_or_lt_of_le (Nat.zero_le cps.size) with hEq | hGt
-        · exact absurd hEq.symm hEmpty
-        · omega
-      let last := cps[lastIdx]
+    match cps.getLast? with
+    | none      => cps
+    | some last =>
       if isNsmBidiClass (lookupBidiClass last) then
-        dropTrailingNSMFuel fuel cps.pop
+        dropTrailingNSMFuel fuel cps.dropLast
       else
         cps
 
-/-- Drop trailing NSM codepoints with a fuel bound equal to the array
-    size (guaranteed termination). -/
-def dropTrailingNSM (cps : Array Nat) : Array Nat :=
-  dropTrailingNSMFuel cps.size cps
+/-- Drop trailing NSM codepoints with a fuel bound equal to the list
+    length (guaranteed termination). -/
+def dropTrailingNSM (cps : List Nat) : List Nat :=
+  dropTrailingNSMFuel cps.length cps
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- THE SIX RULES
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- RFC 5893 §2 rule 4: in an RTL label, EN and AN do not coexist. -/
-def noMixedEnAnInRtl (cps : Array Nat) : Bool :=
+def noMixedEnAnInRtl (cps : List Nat) : Bool :=
   let hasEn := cps.any (fun cp => isEnBidiClass (lookupBidiClass cp))
   let hasAn := cps.any (fun cp => isAnBidiClass (lookupBidiClass cp))
   !(hasEn && hasAn)
 
 /-- RFC 5893 §2 rule 3: in an RTL label, the end (after stripping NSM)
     is R, AL, EN, or AN. -/
-def rtlEndValid (cps : Array Nat) : Bool :=
+def rtlEndValid (cps : List Nat) : Bool :=
   let stripped := dropTrailingNSM cps
-  match stripped[stripped.size - 1]? with
+  match stripped.getLast? with
   | some cp => validRtlEndClass (lookupBidiClass cp)
   | none    => true  -- all-NSM stripped to empty; vacuous
 
 /-- RFC 5893 §2 rule 6: in an LTR label, the end (after stripping NSM)
     is L or EN. -/
-def ltrEndValid (cps : Array Nat) : Bool :=
+def ltrEndValid (cps : List Nat) : Bool :=
   let stripped := dropTrailingNSM cps
-  match stripped[stripped.size - 1]? with
+  match stripped.getLast? with
   | some cp => validLtrEndClass (lookupBidiClass cp)
   | none    => true
 
@@ -247,7 +242,7 @@ def ltrEndValid (cps : Array Nat) : Bool :=
     the Bidi Rule applies only to Bidi labels. Per RFC 5893 and RFC
     8265 §5.5, a label that contains no RTL characters passes
     unconditionally. -/
-def isBidiLabel (cps : Array Nat) : Bool :=
+def isBidiLabel (cps : List Nat) : Bool :=
   cps.any (fun cp => isRtlBidiClass (lookupBidiClass cp))
 
 /-- **RFC 5893 §2 Bidi Rule.** Returns `true` iff either:
@@ -263,7 +258,7 @@ def isBidiLabel (cps : Array Nat) : Bool :=
       * Rule 1 (first char ∈ {L, R, AL}) must hold.
       * If first char is R or AL → RTL label; check rules 2, 3, 4.
       * If first char is L → LTR label; check rules 5, 6. -/
-def satisfiesBidiRule (cps : Array Nat) : Bool :=
+def satisfiesBidiRule (cps : List Nat) : Bool :=
   if !isBidiLabel cps then true
   else if !firstCharValid cps then false
   else if isRtlLabel cps then
@@ -281,8 +276,8 @@ def satisfiesBidiRule (cps : Array Nat) : Bool :=
     rule. Used by IDNA's domain-level `CheckBidi`. The empty label
     is treated as vacuously valid (later validity checks reject it
     on length grounds). -/
-def satisfiesBidiRuleStrict (cps : Array Nat) : Bool :=
-  if cps.size = 0 then true
+def satisfiesBidiRuleStrict (cps : List Nat) : Bool :=
+  if cps.isEmpty then true
   else if !firstCharValid cps then false
   else if isRtlLabel cps then
     cps.all (fun cp => allowedInRtlLabel (lookupBidiClass cp)) &&
@@ -305,7 +300,7 @@ def satisfiesBidiRuleStrict (cps : Array Nat) : Bool :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The check is pure: applying it twice gives the same answer. -/
-theorem satisfiesBidiRule_deterministic (cps : Array Nat) :
+theorem satisfiesBidiRule_deterministic (cps : List Nat) :
     satisfiesBidiRule cps = satisfiesBidiRule cps := rfl
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -313,40 +308,40 @@ theorem satisfiesBidiRule_deterministic (cps : Array Nat) :
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Empty label is vacuously valid. -/
-theorem bidi_empty : satisfiesBidiRule #[] = true := by
+theorem bidi_empty : satisfiesBidiRule [] = true := by
   simp [satisfiesBidiRule, isBidiLabel, lookupBidiClass, isRtlBidiClass]
 
 /-- Pure-ASCII LTR label passes. -/
-theorem bidi_alice : satisfiesBidiRule #[0x61, 0x6C, 0x69, 0x63, 0x65] = true := by
+theorem bidi_alice : satisfiesBidiRule [0x61, 0x6C, 0x69, 0x63, 0x65] = true := by
   simp [satisfiesBidiRule, isBidiLabel, lookupBidiClass, isRtlBidiClass]
 
 /-- Mixed-case ASCII passes (all L class). -/
-theorem bidi_Alice : satisfiesBidiRule #[0x41, 0x6C, 0x69, 0x63, 0x65] = true := by
+theorem bidi_Alice : satisfiesBidiRule [0x41, 0x6C, 0x69, 0x63, 0x65] = true := by
   simp [satisfiesBidiRule, isBidiLabel, lookupBidiClass, isRtlBidiClass]
 
 /-- ASCII with digit passes (L followed by EN). Ends with EN which is
     valid for an LTR label. -/
 theorem bidi_alice1 :
-    satisfiesBidiRule #[0x61, 0x6C, 0x69, 0x63, 0x65, 0x31] = true := by
+    satisfiesBidiRule [0x61, 0x6C, 0x69, 0x63, 0x65, 0x31] = true := by
   simp [satisfiesBidiRule, isBidiLabel, lookupBidiClass, isRtlBidiClass]
 
 /-- Label starting with a digit + LTR chars, no RTL characters: NOT a
     Bidi label per RFC 5893 §1.4, so passes unconditionally. -/
 theorem bidi_digit_start :
-    satisfiesBidiRule #[0x30, 0x61, 0x6C, 0x69, 0x63, 0x65] = true := by
+    satisfiesBidiRule [0x30, 0x61, 0x6C, 0x69, 0x63, 0x65] = true := by
   simp [satisfiesBidiRule, isBidiLabel, lookupBidiClass, isRtlBidiClass]
 
 /-- RTL label starting with a digit (EN) FAILS rule 1 — first char must
     be L, R, or AL. (Example: Arabic digit + Arabic letter.) -/
 theorem bidi_rtl_digit_start :
-    satisfiesBidiRule #[0x0660, 0x0627] = false := by
+    satisfiesBidiRule [0x0660, 0x0627] = false := by
   simp [satisfiesBidiRule, isBidiLabel, firstCharValid, lookupBidiClass,
     isRtlBidiClass, isFirstCharBidiClass]
 
 /-- Pure Arabic identifier (RTL label). `ا` U+0627, Arabic letter alef.
     Starts and ends with AL. -/
 theorem bidi_arabic :
-    satisfiesBidiRule #[0x0627, 0x0644, 0x0639, 0x0631, 0x0628] = true := by
+    satisfiesBidiRule [0x0627, 0x0644, 0x0639, 0x0631, 0x0628] = true := by
   simp [satisfiesBidiRule, isBidiLabel, firstCharValid, isRtlLabel,
     noMixedEnAnInRtl, rtlEndValid, dropTrailingNSM, dropTrailingNSMFuel,
     lookupBidiClass, isRtlBidiClass, isFirstCharBidiClass, isRAlBidiClass,
@@ -355,7 +350,7 @@ theorem bidi_arabic :
 
 /-- Pure Hebrew identifier (RTL label), starts and ends with R. -/
 theorem bidi_hebrew :
-    satisfiesBidiRule #[0x05D0, 0x05D1, 0x05D2] = true := by
+    satisfiesBidiRule [0x05D0, 0x05D1, 0x05D2] = true := by
   simp [satisfiesBidiRule, isBidiLabel, firstCharValid, isRtlLabel,
     noMixedEnAnInRtl, rtlEndValid, dropTrailingNSM, dropTrailingNSMFuel,
     lookupBidiClass, isRtlBidiClass, isFirstCharBidiClass, isRAlBidiClass,
@@ -365,7 +360,7 @@ theorem bidi_hebrew :
 /-- Rejects: Latin start + Arabic middle + Latin end. The Arabic
     codepoint (AL) is not allowed in an LTR label. -/
 theorem bidi_reject_mixed :
-    satisfiesBidiRule #[0x61, 0x0627, 0x62] = false := by
+    satisfiesBidiRule [0x61, 0x0627, 0x62] = false := by
   simp [satisfiesBidiRule, isBidiLabel, firstCharValid, isRtlLabel,
     ltrEndValid, dropTrailingNSM, dropTrailingNSMFuel, lookupBidiClass,
     isRtlBidiClass, isFirstCharBidiClass, isRAlBidiClass,

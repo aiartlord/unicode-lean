@@ -96,17 +96,17 @@ def isSubset (set super : Array ScriptAbbrev) : Bool :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- True iff every codepoint of `cps` is < U+0080 (ASCII). -/
-def isAsciiOnly (cps : Array Nat) : Bool :=
+def isAsciiOnly (cps : List Nat) : Bool :=
   cps.all (fun cp => cp < 0x80)
 
 /-- The resolved-scripts intersection across all non-Common,
     non-Inherited codepoints of `cps`. UTS #39 calls this the
     "resolved-scripts set" of the string. -/
-def stringResolvedScripts (cps : Array Nat) : Array ScriptAbbrev :=
+def stringResolvedScripts (cps : List Nat) : Array ScriptAbbrev :=
   let nonIgnored := cps.filter (fun cp => ! isIgnoredForIntersection cp)
   if nonIgnored.isEmpty then #[]
   else
-    let sets := nonIgnored.map resolveScripts
+    let sets := (nonIgnored.map resolveScripts).toArray
     intersectMany sets
 
 /-- Push each not-yet-present element of `arr` (from index `j`) onto `acc`. -/
@@ -118,16 +118,10 @@ def unionScriptsInto (acc arr : Array ScriptAbbrev) (fuel j : Nat) : Array Scrip
       unionScriptsInto (if acc.contains arr[j] then acc else acc.push arr[j]) arr fuel (j + 1)
     else acc
 
-def stringScriptUnionGo (cps : Array Nat) (acc : Array ScriptAbbrev)
-    (fuel i : Nat) : Array ScriptAbbrev :=
-  match fuel with
-  | 0 => acc
-  | fuel + 1 =>
-    if h : i < cps.size then
-      let acc := if isIgnoredForIntersection cps[i] then acc
-                 else let r := resolveScripts cps[i]; unionScriptsInto acc r r.size 0
-      stringScriptUnionGo cps acc fuel (i + 1)
-    else acc
+/-- Fold one codepoint into the running resolved-scripts union. -/
+def stringScriptUnionStep (acc : Array ScriptAbbrev) (cp : Nat) : Array ScriptAbbrev :=
+  if isIgnoredForIntersection cp then acc
+  else let r := resolveScripts cp; unionScriptsInto acc r r.size 0
 
 /-- The resolved-scripts union over all non-Common, non-Inherited
     codepoints of `cps`.  Counts every distinct script family
@@ -140,18 +134,18 @@ def stringScriptUnionGo (cps : Array Nat) (acc : Array ScriptAbbrev)
     present in this identifier" questions; the intersection
     answers "is there a single script every codepoint could
     belong to". -/
-def stringScriptUnion (cps : Array Nat) : Array ScriptAbbrev :=
-  stringScriptUnionGo cps #[] cps.size 0
+def stringScriptUnion (cps : List Nat) : Array ScriptAbbrev :=
+  cps.foldl stringScriptUnionStep #[]
 
 /-- True iff `input` contains at least one codepoint whose
     resolved script set contains `target`.  Union-side question,
     distinct from `stringResolvedScripts`. -/
-def hasScript (input : Array Nat) (target : ScriptAbbrev) : Bool :=
+def hasScript (input : List Nat) (target : ScriptAbbrev) : Bool :=
   input.any (fun cp => (resolveScripts cp).contains target)
 
 /-- True iff `cps` is Single-Script per UTS #39 § 5.1.2: not
     ASCII-Only and `stringResolvedScripts` is non-empty. -/
-def isSingleScript (cps : Array Nat) : Bool :=
+def isSingleScript (cps : List Nat) : Bool :=
   ! isAsciiOnly cps && ! (stringResolvedScripts cps).isEmpty
 
 /-- The "Japanese" covered set: Latin + Han + Hiragana + Katakana. -/
@@ -166,7 +160,7 @@ def coveredKorean : Array ScriptAbbrev := #[.Latn, .Hani, .Hang]
 /-- True iff every non-ignored codepoint's resolved scripts is
     a subset of `covered`. Used to test the three CJK covered
     sets for Highly Restrictive. -/
-def allWithinCoveredSet (cps : Array Nat) (covered : Array ScriptAbbrev) : Bool :=
+def allWithinCoveredSet (cps : List Nat) (covered : Array ScriptAbbrev) : Bool :=
   cps.all (fun cp =>
     if isIgnoredForIntersection cp then true
     else
@@ -176,60 +170,57 @@ def allWithinCoveredSet (cps : Array Nat) (covered : Array ScriptAbbrev) : Bool 
 /-- True iff `cps` matches one of the three CJK covered sets:
     Japanese / Chinese / Korean (each a fixed combination of Latin
     plus CJK ideographic and syllabic scripts). -/
-def isCoveredCJK (cps : Array Nat) : Bool :=
+def isCoveredCJK (cps : List Nat) : Bool :=
   allWithinCoveredSet cps coveredJapanese
     || allWithinCoveredSet cps coveredChinese
     || allWithinCoveredSet cps coveredKorean
 
 /-- True iff `cps` is Highly Restrictive: Single-Script or one of
     the three CJK covered combinations. -/
-def isHighlyRestrictive (cps : Array Nat) : Bool :=
+def isHighlyRestrictive (cps : List Nat) : Bool :=
   isSingleScript cps || isCoveredCJK cps
 
 /-- True iff `cps` matches the Moderately Restrictive shape:
     every codepoint resolves to {Latn} or to one fixed "other"
     Recommended script, with the "other" ∉ {Cyrl, Grek}. The
-    "other" is determined by scanning for the first
-    not-Latin-not-Common-not-Inherited script encountered. -/
-def isModeratelyRestrictiveShapeGo (cps : Array Nat)
-    (other : Option ScriptAbbrev) (fuel i : Nat) : Bool :=
-  match fuel with
-  | 0 => other.isSome
-  | fuel + 1 =>
-    if h : i < cps.size then
-      let cp := cps[i]
-      if isIgnoredForIntersection cp then
-        isModeratelyRestrictiveShapeGo cps other fuel (i + 1)
+    "other" is the first not-Latin-not-Common-not-Inherited script
+    encountered; the `other` parameter carries the committed choice
+    for the remaining suffix. -/
+def isModeratelyRestrictiveShapeGo :
+    List Nat → Option ScriptAbbrev → Bool
+  | [], other => other.isSome
+  | cp :: rest, other =>
+    if isIgnoredForIntersection cp then
+      isModeratelyRestrictiveShapeGo rest other
+    else
+      let r := resolveScripts cp
+      -- A codepoint must resolve to {Latn} or to exactly one script.
+      if r.size = 0 then false
+      else if intersects r #[.Latn] then
+        isModeratelyRestrictiveShapeGo rest other
       else
-        let r := resolveScripts cp
-        -- A codepoint must resolve to {Latn} or to exactly one script.
-        if r.size = 0 then false
-        else if intersects r #[.Latn] then
-          isModeratelyRestrictiveShapeGo cps other fuel (i + 1)
-        else
-          -- Determine the "other" script; pick the first non-Latin entry.
-          match r[0]? with
-          | none => false
-          | some s =>
-            if s = .Cyrl ∨ s = .Grek then false
-            else match other with
-              | none   => isModeratelyRestrictiveShapeGo cps (some s) fuel (i + 1)
-              | some o =>
-                if s ≠ o then false
-                else isModeratelyRestrictiveShapeGo cps other fuel (i + 1)
-    else other.isSome
+        -- Determine the "other" script; pick the first non-Latin entry.
+        match r[0]? with
+        | none => false
+        | some s =>
+          if s = .Cyrl ∨ s = .Grek then false
+          else match other with
+            | none   => isModeratelyRestrictiveShapeGo rest (some s)
+            | some o =>
+              if s ≠ o then false
+              else isModeratelyRestrictiveShapeGo rest other
 
-def isModeratelyRestrictiveShape (cps : Array Nat) : Bool :=
-  isModeratelyRestrictiveShapeGo cps none cps.size 0
+def isModeratelyRestrictiveShape (cps : List Nat) : Bool :=
+  isModeratelyRestrictiveShapeGo cps none
 
 /-- True iff `cps` is Moderately Restrictive: Highly Restrictive
     or Latin + one non-Cyrl/non-Grek other Recommended script. -/
-def isModeratelyRestrictive (cps : Array Nat) : Bool :=
+def isModeratelyRestrictive (cps : List Nat) : Bool :=
   isHighlyRestrictive cps || isModeratelyRestrictiveShape cps
 
 /-- True iff every codepoint of `cps` has Identifier_Status = Allowed
     (UTS #39 General security profile). -/
-def isMinimallyRestrictive (cps : Array Nat) : Bool :=
+def isMinimallyRestrictive (cps : List Nat) : Bool :=
   cps.all Unicode.Identifier.isAllowedStatus
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -239,7 +230,7 @@ def isMinimallyRestrictive (cps : Array Nat) : Bool :=
 /-- The strictest UTS #39 § 5.1 restriction level satisfied by
     `cps`. Returns `Unrestricted` for inputs that fail every
     stricter level. -/
-def restrictionLevel (cps : Array Nat) : RestrictionLevel :=
+def restrictionLevel (cps : List Nat) : RestrictionLevel :=
   if isAsciiOnly cps then .ASCIIOnly
   else if isSingleScript cps then .SingleScript
   else if isHighlyRestrictive cps then .HighlyRestrictive
@@ -309,25 +300,22 @@ def digitSetOf? (cp : Nat) : Option Nat :=
     if digitZero ≤ cp ∧ cp ≤ digitZero + 9 then some digitZero else none)
 
 /-- True iff `cps` contains digits from more than one decimal
-    digit set — UTS #39 § 5.3 Mixed-Number Detection. -/
-def hasMixedNumbersGo (cps : Array Nat) (seen : Option Nat)
-    (fuel i : Nat) : Bool :=
-  match fuel with
-  | 0 => false
-  | fuel + 1 =>
-    if h : i < cps.size then
-      match digitSetOf? cps[i] with
-      | none     => hasMixedNumbersGo cps seen fuel (i + 1)
-      | some set =>
-        match seen with
-        | none      => hasMixedNumbersGo cps (some set) fuel (i + 1)
-        | some prev =>
-          if prev ≠ set then true
-          else hasMixedNumbersGo cps seen fuel (i + 1)
-    else false
+    digit set — UTS #39 § 5.3 Mixed-Number Detection.  `seen`
+    carries the first digit-set encountered in the prefix. -/
+def hasMixedNumbersGo : List Nat → Option Nat → Bool
+  | [], seen => Function.const (Option Nat) false seen
+  | cp :: rest, seen =>
+    match digitSetOf? cp with
+    | none     => hasMixedNumbersGo rest seen
+    | some set =>
+      match seen with
+      | none      => hasMixedNumbersGo rest (some set)
+      | some prev =>
+        if prev ≠ set then true
+        else hasMixedNumbersGo rest (some prev)
 
-def hasMixedNumbers (cps : Array Nat) : Bool :=
-  hasMixedNumbersGo cps none cps.size 0
+def hasMixedNumbers (cps : List Nat) : Bool :=
+  hasMixedNumbersGo cps none
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 SAMPLE STRINGS
@@ -335,20 +323,20 @@ def hasMixedNumbers (cps : Array Nat) : Bool :=
 
 /-- "abc" is ASCII-Only. -/
 theorem rl_abc :
-    restrictionLevel #[0x61, 0x62, 0x63] = .ASCIIOnly := by decide +kernel
+    restrictionLevel [0x61, 0x62, 0x63] = .ASCIIOnly := by decide +kernel
 
 /-- The empty string is ASCII-Only (vacuously). -/
 theorem rl_empty :
-    restrictionLevel #[] = .ASCIIOnly := by decide +kernel
+    restrictionLevel [] = .ASCIIOnly := by decide +kernel
 
 /-- Pure Greek "λόγος" is Single-Script. -/
 theorem rl_logos :
-    restrictionLevel #[0x03BB, 0x03CC, 0x03B3, 0x03BF, 0x03C2]
+    restrictionLevel [0x03BB, 0x03CC, 0x03B3, 0x03BF, 0x03C2]
       = .SingleScript := by decide +kernel
 
 /-- Pure Cyrillic "привет" is Single-Script. -/
 theorem rl_privet :
-    restrictionLevel #[0x043F, 0x0440, 0x0438, 0x0432, 0x0435, 0x0442]
+    restrictionLevel [0x043F, 0x0440, 0x0438, 0x0432, 0x0435, 0x0442]
       = .SingleScript := by decide +kernel
 
 /-- The IDN homograph attack `аррӏе` (Cyrillic а р р ӏ е) is
@@ -356,7 +344,7 @@ theorem rl_privet :
     check requires a confusables comparison against the registered
     Latin form `apple`, not just restriction-level. -/
 theorem rl_apple_cyrillic :
-    restrictionLevel #[0x0430, 0x0440, 0x0440, 0x04CF, 0x0435]
+    restrictionLevel [0x0430, 0x0440, 0x0440, 0x04CF, 0x0435]
       = .SingleScript := by decide +kernel
 
 /-- A Latin/Cyrillic mix is Minimally Restrictive — fails
@@ -366,12 +354,12 @@ theorem rl_apple_cyrillic :
     rejecting IDN homograph attacks should require
     `.HighlyRestrictive` or stricter. -/
 theorem rl_latin_cyrillic_mix :
-    restrictionLevel #[0x0061, 0x0440, 0x0061]
+    restrictionLevel [0x0061, 0x0440, 0x0061]
       = .MinimallyRestrictive := by decide +kernel
 
 /-- A Latin/Greek mix is also Minimally Restrictive. -/
 theorem rl_latin_greek_mix :
-    restrictionLevel #[0x0061, 0x03B1, 0x0061]
+    restrictionLevel [0x0061, 0x03B1, 0x0061]
       = .MinimallyRestrictive := by decide +kernel
 
 /-- The restriction level reflects script-shape regardless of
@@ -381,29 +369,29 @@ theorem rl_latin_greek_mix :
     Identifier_Status=Restricted. To reach `Unrestricted` the
     string must additionally fail every script-shape check. -/
 theorem rl_ascii_with_c1_is_singlescript :
-    restrictionLevel #[0x0061, 0x0080] = .SingleScript := by decide +kernel
+    restrictionLevel [0x0061, 0x0080] = .SingleScript := by decide +kernel
 
 /-- Latin + Cyrillic + a Restricted-status codepoint is
     Unrestricted — fails Single-Script (Latn ∩ Cyrl = ∅), fails
     Moderately (Cyrl excluded), fails Minimally (Restricted). -/
 theorem rl_unrestricted_real :
-    restrictionLevel #[0x0061, 0x0440, 0x0080]
+    restrictionLevel [0x0061, 0x0440, 0x0080]
       = .Unrestricted := by decide +kernel
 
 /-- Mixed numbers: ASCII digit and Arabic-Indic digit. -/
 theorem mixed_numbers_ascii_arabic :
-    hasMixedNumbers #[0x0030, 0x0660] = true := by decide +kernel
+    hasMixedNumbers [0x0030, 0x0660] = true := by decide +kernel
 
 /-- Pure ASCII digits are not mixed. -/
 theorem mixed_numbers_ascii_only :
-    hasMixedNumbers #[0x0030, 0x0031, 0x0039] = false := by decide +kernel
+    hasMixedNumbers [0x0030, 0x0031, 0x0039] = false := by decide +kernel
 
 /-- An empty string has no mixed numbers. -/
 theorem mixed_numbers_empty :
-    hasMixedNumbers #[] = false := by decide +kernel
+    hasMixedNumbers [] = false := by decide +kernel
 
 /-- Plain text with no digits has no mixed numbers. -/
 theorem mixed_numbers_plain :
-    hasMixedNumbers #[0x0061, 0x0062, 0x0063] = false := by decide +kernel
+    hasMixedNumbers [0x0061, 0x0062, 0x0063] = false := by decide +kernel
 
 end Unicode.Restriction

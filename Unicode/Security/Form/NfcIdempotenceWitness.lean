@@ -52,29 +52,35 @@
 import Unicode.Security.Calculus
 import Unicode.Normalization.NFC
 import Unicode.Normalization.NFKC
+import Unicode.Normalization.LowCodepointNfc
+import Unicode.Normalization.LowCodepointNfkc
+import Unicode.Normalization.DetectorFormVectors
 
 namespace Unicode.Security.Form.NfcIdempotenceWitness
 
 open Unicode.Security.Calculus
 
+-- The `detect` spot checks reduce the normalization pipeline on concrete inputs;
+-- that nests deeper than the default reducer recursion budget.
+set_option maxRecDepth 100000
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 First-divergent-position helper
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- First index `i` at which `a[i] != b[i]`, or `min a.size b.size`
-    when one is a strict prefix of the other (the position
-    immediately past the shared prefix).  Returns `none` when the
-    arrays are identical. -/
-def firstDivergence (a b : Array Nat) : Option Nat :=
-  let n := if a.size ≤ b.size then a.size else b.size
-  match (Array.range n).findSome? (fun i =>
-    if ha : i < a.size then
-      if hb : i < b.size then
-        if a[i] != b[i] then some i else none
-      else none
-    else none) with
-  | some i => some i
-  | none   => if a.size = b.size then none else some n
+/-- First index at which the two lists differ, or the position
+    immediately past the shared prefix when one is a strict prefix
+    of the other.  Returns `none` when the lists are identical.
+    Structural recursion — one traversal, no index arithmetic. -/
+def firstDivergence : List Nat → List Nat → Option Nat
+  | [], [] => none
+  | [], bHead :: bTail =>
+    Function.const (Nat × List Nat) (some 0) (bHead, bTail)
+  | aHead :: aTail, [] =>
+    Function.const (Nat × List Nat) (some 0) (aHead, aTail)
+  | aHead :: aTail, bHead :: bTail =>
+    if aHead != bHead then some 0
+    else (firstDivergence aTail bTail).map (fun i => i + 1)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 Types
@@ -87,11 +93,11 @@ inductive SubThreat where
 
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
   deriving Inhabited
 
 structure Verdict where
-  input    : Array Nat
+  input    : List Nat
   classify : Classification
   nfcLen   : Nat
   nfkcLen  : Nat
@@ -102,22 +108,22 @@ structure Verdict where
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The F6 detection function. -/
-def detect (input : Array Nat) : Verdict :=
+def detect (input : List Nat) : Verdict :=
   let nfc  := Unicode.Normalization.NFC.toNFC input
   let nfkc := Unicode.Normalization.NFKC.toNFKC input
   let classification : Classification :=
     match firstDivergence input nfc with
     | some pos =>
-      .hazard (.nonNfcForm pos) #[pos] ByteArray.empty
+      .hazard (.nonNfcForm pos) [pos] ByteArray.empty
     | none =>
       match firstDivergence input nfkc with
       | some pos =>
-        .hazard (.nonNfkcCompatForm pos) #[pos] ByteArray.empty
+        .hazard (.nonNfkcCompatForm pos) [pos] ByteArray.empty
       | none => .clear
   { input := input,
     classify := classification,
-    nfcLen := nfc.size,
-    nfkcLen := nfkc.size }
+    nfcLen := nfc.length,
+    nfkcLen := nfkc.length }
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 Projection helpers
@@ -132,16 +138,16 @@ def SubThreat.tag : SubThreat → String
 def Classification.isClear : Classification → Bool
   | .clear                       => true
   | .hazard sub positions decoded =>
-    Function.const (SubThreat × Array Nat × ByteArray) false
+    Function.const (SubThreat × List Nat × ByteArray) false
       (sub, positions, decoded)
 
 def Classification.tag : Classification → Option String
   | .clear                       => none
   | .hazard sub positions decoded =>
-    Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
+    Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
 
-def Classification.positions : Classification → Array Nat
-  | .clear                       => #[]
+def Classification.positions : Classification → List Nat
+  | .clear                       => []
   | .hazard sub positions decoded =>
     Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
@@ -150,29 +156,39 @@ def Classification.positions : Classification → Array Nat
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Empty input is clear. -/
-theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
+theorem detect_empty_clear : (detect []).classify.isClear = true := by
   decide
 
-/-- Pure ASCII is in NFC and NFKC. -/
+/-- Pure ASCII is in NFC and NFKC. Both normal forms are the identity on an
+    all-ASCII sequence — established structurally, so neither the composition
+    table nor the `UnicodeData` row scan is reduced. -/
 theorem detect_ascii_clear :
-    (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
+    (detect [0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
+  unfold detect
+  rw [Unicode.Normalization.LowCodepointNfc.toNFC_id_all_lt
+        [0x48, 0x65, 0x6C, 0x6C, 0x6F] (by decide),
+      Unicode.Normalization.LowCodepointNfkc.toNFKC_id_of_starters
+        [0x48, 0x65, 0x6C, 0x6C, 0x6F] (by decide) (by decide)]
   decide
 
 /-- Pre-composed é (U+00E9) is canonical NFC; NFKC = NFC for this cp. -/
 theorem detect_precomposed_e_clear :
-    (detect #[0x00E9]).classify.isClear = true := by decide
+    (detect [0x00E9]).classify.isClear = true := by decide
 
 /-- e + combining acute (decomposed é) fires `nonNfcForm` — NFC
     folds the pair into U+00E9, so `input != NFC(input)` at position 0. -/
 theorem detect_decomposed_e_nfc :
-    (detect #[0x0065, 0x0301]).classify.tag = some "NonNfcForm" := by
+    (detect [0x0065, 0x0301]).classify.tag = some "NonNfcForm" := by
   decide
 
 /-- ﬁ ligature (U+FB01) is canonical NFC (no canonical decomp),
     but NFKC = "fi" so `input != NFKC(input)` — fires
     `nonNfkcCompatForm`.  EAW = N so F5 doesn't catch this. -/
 theorem detect_fi_ligature_nfkc :
-    (detect #[0xFB01]).classify.tag = some "NonNfkcCompatForm" := by
+    (detect [0xFB01]).classify.tag = some "NonNfkcCompatForm" := by
+  unfold detect
+  rw [Unicode.Normalization.DetectorFormVectors.toNFC_ligature_fi,
+      Unicode.Normalization.DetectorFormVectors.toNFKC_ligature_fi]
   decide
 
 end Unicode.Security.Form.NfcIdempotenceWitness

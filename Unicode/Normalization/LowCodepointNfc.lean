@@ -110,23 +110,46 @@ theorem hsr_all_lt : ∀ (l : List Nat), (∀ cp ∈ l, cp < 0xC0) → Reorder.H
 
 /-- Below U+00C0 every code point is already fully decomposed (no decomposition,
     not a Hangul syllable). -/
-theorem ifd_all_lt (cps : Array Nat) (h : ∀ cp ∈ cps, cp < 0xC0) :
+theorem ifd_all_lt (cps : List Nat) (h : ∀ cp ∈ cps, cp < 0xC0) :
     Unicode.Invariants.IsFullyDecomposed cps := fun cp hMem =>
   ⟨dec_lt cp (h cp hMem), hsyl_false_lt cp (h cp hMem)⟩
 
 /-- **NFC is the identity on any sequence of code points below U+00C0.** Each NFC
     stage — decompose, reorder, compose — acts as the identity, established
     structurally against the two table facts, never reducing the tables. -/
-theorem toNFC_id_all_lt (cps : Array Nat) (h : ∀ cp ∈ cps, cp < 0xC0) :
+theorem toNFC_id_all_lt (cps : List Nat) (h : ∀ cp ∈ cps, cp < 0xC0) :
     toNFC cps = cps := by
-  have hHSR : Reorder.HasSortedRuns cps.toList :=
-    hsr_all_lt cps.toList (fun cp hcp => h cp (by simpa using hcp))
+  have hHSR : Reorder.HasSortedRuns cps :=
+    hsr_all_lt cps (fun cp hcp => h cp hcp)
   unfold toNFC toNFD
   rw [NFD.decomposeSequence_id_on_FullyDecomposed cps (ifd_all_lt cps h),
       Reorder.reorder_id_on_HasSortedRuns cps hHSR,
-      show cps = cps.toList.toArray from (by simp),
-      Compose.compose_id_of_shift cps.toList
-        (fun cp hcp => cccz cp (h cp (by simpa using hcp)))
-        (noAdj_all_lt cps.toList (fun cp hcp => h cp (by simpa using hcp)))]
+      Compose.compose_id_of_shift cps
+        (fun cp hcp => cccz cp (h cp hcp))
+        (noAdj_all_lt cps (fun cp hcp => h cp hcp))]
+
+/-- An all-starter list is canonically ordered: every ordering constraint's
+    non-starter antecedent (`0 < ccc y`) is false. -/
+theorem hsr_of_all_ccc0 : ∀ (l : List Nat),
+    (∀ cp ∈ l, Lookup.canonicalCombiningClass cp = 0) → Reorder.HasSortedRuns l
+  | [], _hnil => trivial
+  | [_x], _hsingle => trivial
+  | x :: y :: t, h =>
+    ⟨fun hy => by rw [h y (by simp)] at hy; omega,
+     hsr_of_all_ccc0 (y :: t) (fun cp hcp => h cp (by simp [hcp]))⟩
+
+/-- **NFC is the identity on any all-starter, non-decomposing, non-composing
+    sequence.** The three per-code-point structural conditions are supplied
+    directly, generalising `toNFC_id_all_lt` past the U+00C0 sufficient bound to
+    format characters and any other starter with no canonical decomposition. -/
+theorem toNFC_id_of_starters (cps : List Nat)
+    (hFD : Unicode.Invariants.IsFullyDecomposed cps)
+    (hCCC : ∀ cp ∈ cps, Lookup.canonicalCombiningClass cp = 0)
+    (hNoAdj : Compose.noAdjCompose cps) :
+    toNFC cps = cps := by
+  unfold toNFC toNFD
+  rw [NFD.decomposeSequence_id_on_FullyDecomposed cps hFD,
+      Reorder.reorder_id_on_HasSortedRuns cps (hsr_of_all_ccc0 cps hCCC),
+      Compose.compose_id_of_shift cps hCCC hNoAdj]
 
 end Unicode.Normalization.LowCodepointNfc

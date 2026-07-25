@@ -59,6 +59,13 @@ namespace Unicode.Security.Display.SourceDisplayDivergence
 
 open Unicode.Security.Calculus
 
+-- The spot checks run concrete inputs through the composed sub-detector
+-- pipeline (tag / variation / zero-width / bidi / confusable-skeleton), so they
+-- pin the wiring end to end rather than assuming it. The confusable skeleton is
+-- a balanced decision tree whose nesting exceeds the default reducer recursion
+-- budget.
+set_option maxRecDepth 100000
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 Types
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -71,26 +78,26 @@ inductive SubThreat where
   | zeroWidth           (innerTag : String)
   | bidiControl         (innerTag : String)
   | identifierHomoglyph (innerTag : String)
-  | compound            (constituents : Array String)
+  | compound            (constituents : List String)
   deriving DecidableEq, Repr, Inhabited
 
 /-- Top-level classification for D1. -/
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
   deriving Inhabited
 
 /-- D1 verdict — carries all five sub-detector verdicts so a
     reviewer can drill into any specific family if interested. -/
 structure Verdict where
-  input              : Array Nat
+  input              : List Nat
   classify           : Classification
   c1Tag              : Option String        -- TagBlockPayload
   c2Tag              : Option String        -- VariationSelectorPayload
   c3Tag              : Option String        -- ZeroWidthPayload
   c5Tag              : Option String        -- BidiControlBalance
   i1Tag              : Option String        -- HomoglyphConfusable
-  firedFamilies      : Array String         -- non-clear family names
+  firedFamilies      : List String          -- non-clear family names
   safeForReview      : Bool
   deriving Inhabited
 
@@ -104,26 +111,26 @@ structure Verdict where
     cross-referencing the per-family verdicts. -/
 def buildClassification
     (c1Tag c2Tag c3Tag c5Tag i1Tag : Option String) : Classification :=
-  let fires : Array (String × String) :=
-    #[("C1", c1Tag.getD ""), ("C2", c2Tag.getD ""), ("C3", c3Tag.getD ""),
-      ("C5", c5Tag.getD ""), ("I1", i1Tag.getD "")]
+  let fires : List (String × String) :=
+    [("C1", c1Tag.getD ""), ("C2", c2Tag.getD ""), ("C3", c3Tag.getD ""),
+     ("C5", c5Tag.getD ""), ("I1", i1Tag.getD "")]
     |>.filter (fun pair => pair.2 ≠ "")
-  match fires.size with
-  | 0 => .clear
-  | 1 =>
-    let pair := fires[0]!
+  match fires with
+  | [] => .clear
+  | [pair] =>
     let sub : SubThreat := match pair.1 with
       | "C1" => .tagBlock pair.2
       | "C2" => .variationSelector pair.2
       | "C3" => .zeroWidth pair.2
       | "C5" => .bidiControl pair.2
       | "I1" => .identifierHomoglyph pair.2
-      | other => Function.const String (.compound #[other]) other
-    .hazard sub #[] ByteArray.empty
-  | otherCount =>
-    Function.const Nat
-      (.hazard (.compound (fires.map (fun pair => pair.1))) #[] ByteArray.empty)
-      otherCount
+      | other => Function.const String (.compound [other]) other
+    .hazard sub [] ByteArray.empty
+  | first :: second :: rest =>
+    Function.const (List (String × String))
+      (.hazard (.compound ((first :: second :: rest).map (fun pair => pair.1)))
+        [] ByteArray.empty)
+      rest
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 Top-level detection
@@ -138,7 +145,7 @@ def buildClassification
     prereleases tried to filter hits by source-region grammar
     (strings, comments) but that surface has been retracted —
     see module header for the threat-model rationale. -/
-def detect (input : Array Nat) : Verdict :=
+def detect (input : List Nat) : Verdict :=
   let c1 := Unicode.Security.Covert.TagBlockPayload.detect input
   let c2 := Unicode.Security.Covert.VariationSelectorPayload.detect input
   let c3 := Unicode.Security.Covert.ZeroWidthPayload.detect input
@@ -150,9 +157,9 @@ def detect (input : Array Nat) : Verdict :=
   let c5Tag := c5.classify.tag
   let i1Tag := i1.classify.tag
   let classify := buildClassification c1Tag c2Tag c3Tag c5Tag i1Tag
-  let firedFamilies : Array String :=
-    #[("C1", c1Tag), ("C2", c2Tag), ("C3", c3Tag),
-      ("C5", c5Tag), ("I1", i1Tag)]
+  let firedFamilies : List String :=
+    [("C1", c1Tag), ("C2", c2Tag), ("C3", c3Tag),
+     ("C5", c5Tag), ("I1", i1Tag)]
     |>.filterMap (fun pair => match pair.2 with
                               | some hit  => Function.const String (some pair.1) hit
                               | none      => none)
@@ -180,24 +187,24 @@ def SubThreat.tag : SubThreat → String
   | .identifierHomoglyph innerTag      =>
       Function.const String "IdentifierHomoglyph" innerTag
   | .compound            constituents  =>
-      Function.const (Array String) "Compound" constituents
+      Function.const (List String) "Compound" constituents
 
 /-- True iff the classification is `.clear`. -/
 def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × Array Nat × ByteArray) false
+      Function.const (SubThreat × List Nat × ByteArray) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification. -/
 def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
-      Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
+      Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
 
 /-- Positions array of a classification. -/
-def Classification.positions : Classification → Array Nat
-  | .clear                     => #[]
+def Classification.positions : Classification → List Nat
+  | .clear                     => []
   | .hazard sub positions decoded =>
       Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
@@ -206,91 +213,90 @@ def Classification.positions : Classification → Array Nat
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Empty input is clear (every sub-detector clears). -/
-theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
-  decide
+theorem detect_empty_clear : (detect []).classify.isClear = true := by
+  decide +kernel
 
 /-- Pure ASCII "Hello world" is clear. -/
 theorem detect_ascii_clear :
-    (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64]).classify.isClear
-      = true := by decide
+    (detect [0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64]).classify.isClear
+      = true := by decide +kernel
 
 /-- A pure-C1 attack — tag-encoded "AB" — fires `.tagBlock`. -/
 theorem detect_tag_only :
-    (detect #[0xE0041, 0xE0042]).classify.tag = some "TagBlock" := by
-  decide
+    (detect [0xE0041, 0xE0042]).classify.tag = some "TagBlock" := by
+  decide +kernel
 
 /-- A pure-C2 attack — Latin A + VS16 — fires `.variationSelector`. -/
 theorem detect_vs_only :
-    (detect #[0x0041, 0xFE0F]).classify.tag = some "VariationSelector" := by
-  decide
+    (detect [0x0041, 0xFE0F]).classify.tag = some "VariationSelector" := by
+  decide +kernel
 
 /-- A pure-C3 attack — Latin H + ZWSP + i — fires `.zeroWidth`. -/
 theorem detect_zw_only :
-    (detect #[0x0048, 0x200B, 0x69]).classify.tag = some "ZeroWidth" := by
-  decide
+    (detect [0x0048, 0x200B, 0x69]).classify.tag = some "ZeroWidth" := by
+  decide +kernel
 
 /-- A pure-C5 attack — lone RLO — fires `.bidiControl`. -/
 theorem detect_bidi_only :
-    (detect #[0x202E, 0x41]).classify.tag = some "BidiControl" := by
-  decide
+    (detect [0x202E, 0x41]).classify.tag = some "BidiControl" := by
+  decide +kernel
 
 /-- A pure-I1 attack — Nethereum typosquat — fires `.identifierHomoglyph`. -/
 theorem detect_homoglyph_only :
-    (detect #[0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D]).classify.tag
-      = some "IdentifierHomoglyph" := by decide
+    (detect [0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D]).classify.tag
+      = some "IdentifierHomoglyph" := by decide +kernel
 
 /-- A compound attack — Latin A + VS16 + ZWSP — fires `.compound`. -/
 theorem detect_compound_vs_plus_zw :
-    (detect #[0x0041, 0xFE0F, 0x200B]).classify.tag = some "Compound" := by
-  decide
+    (detect [0x0041, 0xFE0F, 0x200B]).classify.tag = some "Compound" := by
+  decide +kernel
 
 /-- Tag + zero-width — also `.compound`. -/
 theorem detect_compound_tag_plus_zw :
-    (detect #[0xE0041, 0xE0042, 0x200B]).classify.tag = some "Compound" := by
-  decide
+    (detect [0xE0041, 0xE0042, 0x200B]).classify.tag = some "Compound" := by
+  decide +kernel
 
 /-- A clean code snippet "let x = 1;" is clear. -/
 theorem detect_clean_code :
-    (detect #[0x6C, 0x65, 0x74, 0x20, 0x78, 0x20, 0x3D, 0x20, 0x31, 0x3B]).classify.isClear
-      = true := by decide
+    (detect [0x6C, 0x65, 0x74, 0x20, 0x78, 0x20, 0x3D, 0x20, 0x31, 0x3B]).classify.isClear
+      = true := by decide +kernel
 
 /-- `safeForReview` mirrors `isClear`. -/
 theorem safeForReview_matches_clear_empty :
-    (detect #[]).safeForReview = true := by decide
+    (detect []).safeForReview = true := by decide +kernel
 
 theorem safeForReview_matches_hazard_VS :
-    (detect #[0x0041, 0xFE0F]).safeForReview = false := by decide
+    (detect [0x0041, 0xFE0F]).safeForReview = false := by decide +kernel
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 Region-agnosticism spot checks
 --
--- Pinning that D1 fires on hazardous codepoints regardless of
--- where they sit in the source.  Previously some of these
--- inputs cleared under a `Language.rust` / `.python` /
--- `.typescript` filter; the filter has been retracted in
--- v0.12.0 because source-region grammar is not a security
--- boundary (see module header).
+-- Pinning that detection fires on hazardous code points regardless of where they
+-- sit in the source.  Some of these inputs previously cleared under a
+-- `Language.rust` / `.python` / `.typescript` filter; that filter was retracted
+-- in v0.12.0 because source-region grammar is not a security boundary — a
+-- payload in a string literal or comment still deceives every consumer that
+-- reads bytes (LLM code assistants, doc generators, IDE renderers, CI grep
+-- matchers).
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- VS payload "inside a string literal" — fires D1 because the
-    source bytes are still attacker-visible regardless of what
-    a tokenizer says about the region. -/
+/-- VS payload "inside a string literal" — fires because the source bytes are
+    still attacker-visible regardless of what a tokenizer says about the
+    region. -/
 theorem detect_vs_inside_quote_pair_fires :
-    (detect #[0x22, 0x41, 0xFE00, 0x22]).classify.tag
-      = some "VariationSelector" := by decide
+    (detect [0x22, 0x41, 0xFE00, 0x22]).classify.tag
+      = some "VariationSelector" := by decide +kernel
 
-/-- RLO "inside a line comment" — fires D1 for the same
-    reason.  Source-display divergence in a comment still
-    deceives every consumer that reads bytes (LLM code
-    assistants, doc generators, IDE renderers, CI grep
-    matchers). -/
+/-- RLO "inside a line comment" — fires for the same reason.  Source-display
+    divergence in a comment still deceives every consumer that reads bytes
+    (LLM code assistants, doc generators, IDE renderers, CI grep matchers). -/
 theorem detect_rlo_inside_line_comment_marker_fires :
-    (detect #[0x2F, 0x2F, 0x202E]).classify.tag
-      = some "BidiControl" := by decide
+    (detect [0x2F, 0x2F, 0x202E]).classify.tag
+      = some "BidiControl" := by decide +kernel
 
-/-- RLO "inside a block comment" — fires D1. -/
+/-- RLO "inside a block comment" — fires. -/
 theorem detect_rlo_inside_block_comment_fires :
-    (detect #[0x2F, 0x2A, 0x202E, 0x2A, 0x2F]).classify.tag
-      = some "BidiControl" := by decide
+    (detect [0x2F, 0x2A, 0x202E, 0x2A, 0x2F]).classify.tag
+      = some "BidiControl" := by decide +kernel
 
 end Unicode.Security.Display.SourceDisplayDivergence

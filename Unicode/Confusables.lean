@@ -60,11 +60,11 @@ def lookupConfusable? (cp : Nat) : Option (Array Nat) :=
 /-- Replace every codepoint in a sequence with its confusables-table
     target (if one exists); codepoints absent from the table are
     preserved. Applied between two NFD passes in `skeleton`. -/
-def substitute (cps : Array Nat) : Array Nat :=
-  cps.foldl (fun acc cp =>
+def substitute (cps : List Nat) : List Nat :=
+  cps.flatMap (fun cp =>
     match lookupConfusable? cp with
-    | some tgt => acc ++ tgt
-    | none     => acc.push cp) #[]
+    | some tgt => tgt.toList
+    | none     => [cp])
 
 /-- The case-insensitive confusables skeleton of a codepoint
     sequence per UTS #39 §4 + §5.4.  Bracketed:
@@ -75,7 +75,7 @@ def substitute (cps : Array Nat) : Array Nat :=
     canonicalises case before substitution-table lookup so that
     upper-case and lower-case lookups agree and registry-style
     case-variant typosquats collapse to a single representative. -/
-def skeleton (cps : Array Nat) : Array Nat :=
+def skeleton (cps : List Nat) : List Nat :=
   Normalization.NFC.toNFD
     (Precis.CaseMapping.caseFold
       (substitute
@@ -83,7 +83,7 @@ def skeleton (cps : Array Nat) : Array Nat :=
           (Normalization.NFC.toNFD cps))))
 
 /-- Two sequences are confusable iff their skeletons are equal. -/
-def areConfusable (a b : Array Nat) : Bool :=
+def areConfusable (a b : List Nat) : Bool :=
   decide (skeleton a = skeleton b)
 
 -- `letterSkeleton` is defined further down — after `iteratedSkeleton`
@@ -96,12 +96,12 @@ def areConfusable (a b : Array Nat) : Bool :=
 -- neither requires induction over the Generated table.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-theorem areConfusable_refl (cps : Array Nat) :
+theorem areConfusable_refl (cps : List Nat) :
     areConfusable cps cps = true := by
   unfold areConfusable
   exact decide_eq_true rfl
 
-theorem areConfusable_symm (a b : Array Nat) :
+theorem areConfusable_symm (a b : List Nat) :
     areConfusable a b = areConfusable b a := by
   unfold areConfusable
   by_cases h : skeleton a = skeleton b
@@ -114,7 +114,7 @@ theorem areConfusable_symm (a b : Array Nat) :
     equality is transitive. Combined with reflexivity and symmetry,
     this establishes `areConfusable` as an equivalence relation on
     codepoint arrays. -/
-theorem areConfusable_trans (a b c : Array Nat)
+theorem areConfusable_trans (a b c : List Nat)
     (hab : areConfusable a b = true) (hbc : areConfusable b c = true) :
     areConfusable a c = true := by
   unfold areConfusable at hab hbc ⊢
@@ -150,7 +150,7 @@ def confusableChainBound : Nat := 32
     point or when fuel runs out. Termination is structural on the
     fuel parameter; correctness for UTS #39 inputs is established by
     the iteration cap exceeding the longest chain in the data. -/
-def iteratedSkeletonFuel (fuel : Nat) (cps : Array Nat) : Array Nat :=
+def iteratedSkeletonFuel (fuel : Nat) (cps : List Nat) : List Nat :=
   match fuel with
   | 0           => cps
   | fuel' + 1 =>
@@ -163,7 +163,7 @@ def iteratedSkeletonFuel (fuel : Nat) (cps : Array Nat) : Array Nat :=
     `skeleton (iteratedSkeleton cps) = iteratedSkeleton cps` whenever
     the chain depth is at most `confusableChainBound` — verified by
     the test vectors below for the bundled UTS #39 17.0.0 data. -/
-def iteratedSkeleton (cps : Array Nat) : Array Nat :=
+def iteratedSkeleton (cps : List Nat) : List Nat :=
   iteratedSkeletonFuel confusableChainBound cps
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -237,7 +237,7 @@ def isDefaultIgnorable (cp : Nat) : Bool :=
     step for the typosquat threat model.  `skeleton` and
     `iteratedSkeleton` remain spec-pure for IDN / PRECIS /
     general visual-equivalence consumers. -/
-def letterSkeleton (cps : Array Nat) : Array Nat :=
+def letterSkeleton (cps : List Nat) : List Nat :=
   (iteratedSkeleton cps).filter (fun cp =>
     decide (Normalization.Lookup.canonicalCombiningClass cp = 0)
       && ¬ isDefaultIgnorable cp)
@@ -245,15 +245,15 @@ def letterSkeleton (cps : Array Nat) : Array Nat :=
 /-- Fixed-point variant of `areConfusable`: two sequences are
     iterated-confusable iff their canonical (fixed-point) skeletons
     are equal. Strictly equal to or coarser than `areConfusable`. -/
-def areConfusableIterated (a b : Array Nat) : Bool :=
+def areConfusableIterated (a b : List Nat) : Bool :=
   decide (iteratedSkeleton a = iteratedSkeleton b)
 
-theorem areConfusableIterated_refl (cps : Array Nat) :
+theorem areConfusableIterated_refl (cps : List Nat) :
     areConfusableIterated cps cps = true := by
   unfold areConfusableIterated
   exact decide_eq_true rfl
 
-theorem areConfusableIterated_symm (a b : Array Nat) :
+theorem areConfusableIterated_symm (a b : List Nat) :
     areConfusableIterated a b = areConfusableIterated b a := by
   unfold areConfusableIterated
   by_cases h : iteratedSkeleton a = iteratedSkeleton b
@@ -261,7 +261,7 @@ theorem areConfusableIterated_symm (a b : Array Nat) :
   · have h' : ¬ iteratedSkeleton b = iteratedSkeleton a := fun e => h e.symm
     rw [decide_eq_false h, decide_eq_false h']
 
-theorem areConfusableIterated_trans (a b c : Array Nat)
+theorem areConfusableIterated_trans (a b c : List Nat)
     (hab : areConfusableIterated a b = true)
     (hbc : areConfusableIterated b c = true) :
     areConfusableIterated a c = true := by
@@ -274,7 +274,7 @@ theorem areConfusableIterated_trans (a b c : Array Nat)
     finiteness. Whole-table expansion facts live in
     `Unicode.ConfusablesTableFacts` so the runtime module does not reduce
     the complete confusables table during ordinary builds. -/
-theorem letterSkeleton_terminates (cps : Array Nat) :
+theorem letterSkeleton_terminates (cps : List Nat) :
     letterSkeleton cps = (iteratedSkeleton cps).filter (fun cp =>
       decide (Normalization.Lookup.canonicalCombiningClass cp = 0)
         && ¬ isDefaultIgnorable cp) := by

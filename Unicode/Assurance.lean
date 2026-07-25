@@ -34,6 +34,9 @@ import Unicode.Normalization.QuickCheckSoundnessTheorem
 import Unicode.CaseFoldCommutation
 import Unicode.CaseFoldRoundtrip
 import Unicode.Precis.Preparation
+import Unicode.Precis.PreparationVectorsMapped
+import Unicode.Precis.PreparationVectorsRejected
+import Unicode.Precis.PreparationVectorsPreserved
 import Unicode.Precis.ZsPreservation
 import Unicode.Precis.OpaqueString
 

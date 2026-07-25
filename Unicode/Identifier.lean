@@ -73,16 +73,10 @@ def isDefaultIdContinue (cp : Nat) : Bool :=
 
 /-- True iff `cps` is a well-formed default identifier per UAX #31
     R1-D1. The empty sequence is rejected. -/
-def isDefaultIdentifier (cps : Array Nat) : Bool := Id.run do
-  if hsize : 0 < cps.size then
-    let first := cps[0]'hsize
-    if !isDefaultIdStart first then return false
-    for i in [1:cps.size] do
-      if hi : i < cps.size then
-        if !isDefaultIdContinue (cps[i]'hi) then return false
-    return true
-  else
-    return false
+def isDefaultIdentifier (cps : List Nat) : Bool :=
+  match cps with
+  | []            => false
+  | first :: rest => isDefaultIdStart first && rest.all isDefaultIdContinue
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 UTS #39 GENERAL SECURITY PROFILE
@@ -90,12 +84,8 @@ def isDefaultIdentifier (cps : Array Nat) : Bool := Id.run do
 
 /-- True iff `cps` is a well-formed default identifier AND every
     codepoint has `Identifier_Status = Allowed` per UTS #39. -/
-def isAllowedIdentifier (cps : Array Nat) : Bool := Id.run do
-  if !isDefaultIdentifier cps then return false
-  for i in [0:cps.size] do
-    if hi : i < cps.size then
-      if !isAllowedStatus (cps[i]'hi) then return false
-  return true
+def isAllowedIdentifier (cps : List Nat) : Bool :=
+  isDefaultIdentifier cps && cps.all isAllowedStatus
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 KNOWN-CODEPOINT PREDICATES
@@ -134,35 +124,35 @@ theorem isAllowedStatus_hangul_filler : isAllowedStatus 0x115F = false := by dec
 
 /-- `"abc"` is a valid default identifier. -/
 theorem isDefaultIdentifier_abc :
-    isDefaultIdentifier #[0x0061, 0x0062, 0x0063] = true := by decide +kernel
+    isDefaultIdentifier [0x0061, 0x0062, 0x0063] = true := by decide +kernel
 
 /-- `"_abc"` is valid (underscore can lead). -/
 theorem isDefaultIdentifier_underscoreLead :
-    isDefaultIdentifier #[0x005F, 0x0061, 0x0062, 0x0063] = true := by decide +kernel
+    isDefaultIdentifier [0x005F, 0x0061, 0x0062, 0x0063] = true := by decide +kernel
 
 /-- `"a1b2"` is valid (digits OK after start). -/
 theorem isDefaultIdentifier_a1b2 :
-    isDefaultIdentifier #[0x0061, 0x0031, 0x0062, 0x0032] = true := by decide +kernel
+    isDefaultIdentifier [0x0061, 0x0031, 0x0062, 0x0032] = true := by decide +kernel
 
 /-- `"123abc"` is rejected (digit cannot start). -/
 theorem isDefaultIdentifier_digitStart :
-    isDefaultIdentifier #[0x0031, 0x0032, 0x0033, 0x0061, 0x0062, 0x0063] = false := by
+    isDefaultIdentifier [0x0031, 0x0032, 0x0033, 0x0061, 0x0062, 0x0063] = false := by
   decide +kernel
 
 /-- `"a b"` is rejected (space is neither start nor continue). -/
 theorem isDefaultIdentifier_withSpace :
-    isDefaultIdentifier #[0x0061, 0x0020, 0x0062] = false := by decide +kernel
+    isDefaultIdentifier [0x0061, 0x0020, 0x0062] = false := by decide +kernel
 
 /-- The empty sequence is rejected. -/
 theorem isDefaultIdentifier_empty :
-    isDefaultIdentifier #[] = false := by decide +kernel
+    isDefaultIdentifier [] = false := by decide +kernel
 
 /-- Greek "λόγος" is a valid identifier (all XID_Continue, λ is XID_Start). -/
 theorem isDefaultIdentifier_logos :
-    isDefaultIdentifier #[0x03BB, 0x03CC, 0x03B3, 0x03BF, 0x03C2] = true := by decide +kernel
+    isDefaultIdentifier [0x03BB, 0x03CC, 0x03B3, 0x03BF, 0x03C2] = true := by decide +kernel
 
 /-- Default id pass + Allowed status pass for "abc". -/
 theorem isAllowedIdentifier_abc :
-    isAllowedIdentifier #[0x0061, 0x0062, 0x0063] = true := by decide +kernel
+    isAllowedIdentifier [0x0061, 0x0062, 0x0063] = true := by decide +kernel
 
 end Unicode.Identifier

@@ -212,15 +212,14 @@ theorem fullCanonicalDecompose_fullyDecomposed (cp : Nat) :
   exact fullCanonicalDecomposeFuel_fullyDecomposed Decompose.maxDepth cp
 
 /-- `decomposeSequence` output is fully decomposed. Lifted from the
-    per-codepoint witness via `mem_foldl_append`. -/
-theorem decomposeSequence_fullyDecomposed (cps : Array Nat) :
+    per-codepoint witness through the flattened per-codepoint expansion. -/
+theorem decomposeSequence_fullyDecomposed (cps : List Nat) :
     ∀ j ∈ Decompose.decomposeSequence cps,
       Lookup.canonicalDecomposition j = #[] ∧ Hangul.isHangulSyllable j = false := by
   intro j hj
   unfold Decompose.decomposeSequence at hj
-  obtain ⟨x, hxInCps, hxF⟩ :=
-    mem_foldl_append Decompose.fullCanonicalDecompose cps j hj
-  clear hxInCps
-  exact fullCanonicalDecompose_fullyDecomposed x j hxF
+  simp only [List.mem_flatMap] at hj
+  obtain ⟨x, _hxInCps, hxF⟩ := hj
+  exact fullCanonicalDecompose_fullyDecomposed x j (by simpa using hxF)
 
 end Unicode.Normalization.Decomposability

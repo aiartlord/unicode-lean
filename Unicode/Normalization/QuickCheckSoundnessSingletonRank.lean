@@ -43,34 +43,31 @@ theorem stepCompose_empty_buffer_primary
 /-- Append one composing codepoint to an input whose composition fold is already
     a singleton active starter. -/
 theorem foldl_append_singleton_primary
-    (xs : Array Nat) (left right cp : Nat)
+    (xs : List Nat) (left right cp : Nat)
     (hFold : xs.foldl Compose.stepCompose Compose.initialState =
       singletonState left)
     (hPC : Compose.primaryComposite? left right = some cp) :
-    (xs ++ #[right]).foldl Compose.stepCompose Compose.initialState =
+    (xs ++ [right]).foldl Compose.stepCompose Compose.initialState =
       singletonState cp := by
-  rw [Array.foldl_append, hFold]
-  rw [← Array.foldl_toList]
+  rw [List.foldl_append, hFold]
   simp [stepCompose_empty_buffer_primary left right cp hPC]
 
 /-- A folded `toNFD` singleton state is enough to prove singleton NFC identity. -/
 theorem toNFC_of_toNFD_foldl_singletonState
     (cp : Nat)
-    (hFold : (toNFD #[cp]).foldl Compose.stepCompose Compose.initialState =
+    (hFold : (toNFD [cp]).foldl Compose.stepCompose Compose.initialState =
       singletonState cp) :
-    toNFC #[cp] = #[cp] := by
+    toNFC [cp] = [cp] := by
   unfold toNFC Compose.compose
-  rw [hFold]
-  exact flush_singletonState cp
+  rw [hFold, flush_singletonState cp]
 
 /-- Raw composition over a singleton starter produces the active singleton
     state. -/
 theorem foldl_singleton_starter
     (cp : Nat)
     (hCcc : Lookup.canonicalCombiningClass cp = 0) :
-    (#[cp] : Array Nat).foldl Compose.stepCompose Compose.initialState =
+    ([cp] : List Nat).foldl Compose.stepCompose Compose.initialState =
       singletonState cp := by
-  rw [← Array.foldl_toList]
   simp only [List.foldl_cons, List.foldl_nil]
   rw [Compose.stepCompose.eq_def]
   unfold Compose.initialState singletonState
@@ -81,7 +78,7 @@ theorem atomic_starter_toNFD_singleton
     (cp : Nat)
     (hDecomp : Lookup.canonicalDecomposition cp = #[])
     (hNotHangul : Hangul.isHangulSyllable cp = false) :
-    toNFD #[cp] = #[cp] := by
+    toNFD [cp] = [cp] := by
   have hDsyl : Hangul.decomposeSyllable? cp = none := by
     unfold Hangul.decomposeSyllable?
     rw [hNotHangul]
@@ -91,13 +88,12 @@ theorem atomic_starter_toNFD_singleton
     unfold Decompose.maxDepth Decompose.fullCanonicalDecomposeFuel
     rw [hDsyl]
     simp [hDecomp]
-  have hDS : Decompose.decomposeSequence #[cp] = #[cp] := by
-    rw [Distribute.decomposeSequence_singleton]
-    exact hFCD
-  have hR : Reorder.reorder #[cp] = #[cp] := by
+  have hDS : Decompose.decomposeSequence [cp] = [cp] := by
+    rw [Distribute.decomposeSequence_singleton, hFCD]
+  have hR : Reorder.reorder [cp] = [cp] := by
     apply Reorder.reorder_id_on_HasSortedRuns
-    show Reorder.HasSortedRuns [cp]
-    trivial
+    rw [Reorder.HasSortedRuns_singleton]
+    exact True.intro
   unfold toNFD
   rw [hDS, hR]
 
@@ -108,7 +104,7 @@ theorem atomic_starter_toNFD_foldl_singletonState
     (hCcc : Lookup.canonicalCombiningClass cp = 0)
     (hDecomp : Lookup.canonicalDecomposition cp = #[])
     (hNotHangul : Hangul.isHangulSyllable cp = false) :
-    (toNFD #[cp]).foldl Compose.stepCompose Compose.initialState =
+    (toNFD [cp]).foldl Compose.stepCompose Compose.initialState =
       singletonState cp := by
   rw [atomic_starter_toNFD_singleton cp hDecomp hNotHangul]
   exact foldl_singleton_starter cp hCcc
@@ -211,7 +207,7 @@ theorem entryRank1_left_toNFD_foldl_singletonState
     (entry : QuickCheckSingletonRankData.SingletonRankRow)
     (h : QuickCheckSingletonRankData.entryRankValid entry = true)
     (hRank : entry.rank = 1) :
-    (toNFD #[entry.left]).foldl Compose.stepCompose Compose.initialState =
+    (toNFD [entry.left]).foldl Compose.stepCompose Compose.initialState =
       singletonState entry.left := by
   have hCommon := entryRankValid_common entry h
   have facts := entryCommonValid_facts entry hCommon
@@ -225,7 +221,7 @@ theorem entryRank1_toNFD_foldl_singletonState
     (entry : QuickCheckSingletonRankData.SingletonRankRow)
     (h : QuickCheckSingletonRankData.entryRankValid entry = true)
     (hRank : entry.rank = 1) :
-    (toNFD #[entry.codepoint]).foldl Compose.stepCompose Compose.initialState =
+    (toNFD [entry.codepoint]).foldl Compose.stepCompose Compose.initialState =
       singletonState entry.codepoint := by
   have hCommon := entryRankValid_common entry h
   have facts := entryCommonValid_facts entry hCommon
@@ -275,30 +271,29 @@ theorem entryRank1_toNFD_foldl_singletonState
     rw [hFold, hFCDLeft31, hFCDRight31]
     rfl
   have hDS :
-      Decompose.decomposeSequence #[entry.codepoint] =
-        #[entry.left, entry.right] := by
-    rw [Distribute.decomposeSequence_singleton]
-    exact hFCD
-  have hR : Reorder.reorder #[entry.left, entry.right] =
-      #[entry.left, entry.right] := by
+      Decompose.decomposeSequence [entry.codepoint] =
+        [entry.left, entry.right] := by
+    rw [Distribute.decomposeSequence_singleton, hFCD]
+  have hR : Reorder.reorder [entry.left, entry.right] =
+      [entry.left, entry.right] := by
     apply Reorder.reorder_id_on_HasSortedRuns
-    show Reorder.HasSortedRuns [entry.left, entry.right]
     refine ⟨?starterImplication, ?singletonRun⟩
-    · intro _hRightNonstarter
+    · intro hRightNonstarter
+      clear hRightNonstarter
       rw [facts.hLeftCcc]
       exact Nat.zero_le (Lookup.canonicalCombiningClass entry.right)
-    · trivial
+    · rw [Reorder.HasSortedRuns_singleton]
+      exact True.intro
   have hToNFD :
-      toNFD #[entry.codepoint] = #[entry.left, entry.right] := by
+      toNFD [entry.codepoint] = [entry.left, entry.right] := by
     unfold toNFD
     rw [hDS, hR]
   rw [hToNFD]
-  rw [← Array.foldl_toList]
   simp only [List.foldl_cons, List.foldl_nil]
   have hStepLeft :
       Compose.stepCompose Compose.initialState entry.left =
         singletonState entry.left := by
-    change (#[entry.left] : Array Nat).foldl
+    change ([entry.left] : List Nat).foldl
         Compose.stepCompose Compose.initialState = singletonState entry.left
     exact foldl_singleton_starter entry.left facts.hLeftCcc
   rw [hStepLeft]
@@ -313,11 +308,11 @@ theorem entryRank1_toNFD_head
     (h : QuickCheckSingletonRankData.entryRankValid entry = true)
     (hRank : entry.rank = 1) :
     Lookup.canonicalCombiningClass
-        (Decompose.decomposeSequence #[entry.codepoint])[0]! = 0 ∧
-    Lookup.canonicalCombiningClass (toNFD #[entry.codepoint])[0]! = 0 ∧
-    nfcQCValue (toNFD #[entry.codepoint])[0]! = .Y ∧
-    (Decompose.decomposeSequence #[entry.codepoint]).size > 0 ∧
-    (toNFD #[entry.codepoint]).size > 0 := by
+        (Decompose.decomposeSequence [entry.codepoint])[0]! = 0 ∧
+    Lookup.canonicalCombiningClass (toNFD [entry.codepoint])[0]! = 0 ∧
+    nfcQCValue (toNFD [entry.codepoint])[0]! = .Y ∧
+    (Decompose.decomposeSequence [entry.codepoint]).length > 0 ∧
+    (toNFD [entry.codepoint]).length > 0 := by
   have hCommon := entryRankValid_common entry h
   have facts := entryCommonValid_facts entry hCommon
   have hLeftEmpty := entryRankValid_rank1_left_empty entry h hRank
@@ -366,36 +361,36 @@ theorem entryRank1_toNFD_head
     rw [hFold, hFCDLeft31, hFCDRight31]
     rfl
   have hDS :
-      Decompose.decomposeSequence #[entry.codepoint] =
-        #[entry.left, entry.right] := by
-    rw [Distribute.decomposeSequence_singleton]
-    exact hFCD
-  have hR : Reorder.reorder #[entry.left, entry.right] =
-      #[entry.left, entry.right] := by
+      Decompose.decomposeSequence [entry.codepoint] =
+        [entry.left, entry.right] := by
+    rw [Distribute.decomposeSequence_singleton, hFCD]
+  have hR : Reorder.reorder [entry.left, entry.right] =
+      [entry.left, entry.right] := by
     apply Reorder.reorder_id_on_HasSortedRuns
-    show Reorder.HasSortedRuns [entry.left, entry.right]
     refine ⟨?starterImplication, ?singletonRun⟩
-    · intro _hRightNonstarter
+    · intro hRightNonstarter
+      clear hRightNonstarter
       rw [facts.hLeftCcc]
       exact Nat.zero_le (Lookup.canonicalCombiningClass entry.right)
-    · trivial
+    · rw [Reorder.HasSortedRuns_singleton]
+      exact True.intro
   have hToNFD :
-      toNFD #[entry.codepoint] = #[entry.left, entry.right] := by
+      toNFD [entry.codepoint] = [entry.left, entry.right] := by
     unfold toNFD
     rw [hDS, hR]
   have hDsHead :
       Lookup.canonicalCombiningClass
-        (Decompose.decomposeSequence #[entry.codepoint])[0]! = 0 := by
-    rw [hDS]; simp [facts.hLeftCcc]
+        (Decompose.decomposeSequence [entry.codepoint])[0]! = 0 := by
+    rw [hDS]; simpa using facts.hLeftCcc
   have hNfdHead :
-      Lookup.canonicalCombiningClass (toNFD #[entry.codepoint])[0]! = 0 := by
-    rw [hToNFD]; simp [facts.hLeftCcc]
+      Lookup.canonicalCombiningClass (toNFD [entry.codepoint])[0]! = 0 := by
+    rw [hToNFD]; simpa using facts.hLeftCcc
   have hNfdQC :
-      nfcQCValue (toNFD #[entry.codepoint])[0]! = .Y := by
-    rw [hToNFD]; simp [facts.hLeftQC]
-  have hDsNonEmpty : (Decompose.decomposeSequence #[entry.codepoint]).size > 0 := by
+      nfcQCValue (toNFD [entry.codepoint])[0]! = .Y := by
+    rw [hToNFD]; simpa using facts.hLeftQC
+  have hDsNonEmpty : (Decompose.decomposeSequence [entry.codepoint]).length > 0 := by
     rw [hDS]; simp
-  have hNfdNonEmpty : (toNFD #[entry.codepoint]).size > 0 := by
+  have hNfdNonEmpty : (toNFD [entry.codepoint]).length > 0 := by
     rw [hToNFD]; simp
   exact And.intro hDsHead
     (And.intro hNfdHead
@@ -407,7 +402,7 @@ theorem entryRank1_toNFC_singleton
     (entry : QuickCheckSingletonRankData.SingletonRankRow)
     (h : QuickCheckSingletonRankData.entryRankValid entry = true)
     (hRank : entry.rank = 1) :
-    toNFC #[entry.codepoint] = #[entry.codepoint] :=
+    toNFC [entry.codepoint] = [entry.codepoint] :=
   toNFC_of_toNFD_foldl_singletonState entry.codepoint
     (entryRank1_toNFD_foldl_singletonState entry h hRank)
 
@@ -526,7 +521,7 @@ theorem rowsRank3_parent_right_order
 theorem entryRank2_toNFD_foldl_singletonState
     (entry : QuickCheckSingletonRankData.SingletonRankRow)
     (hMem : entry ∈ QuickCheckSingletonRankData.rowsRank2) :
-    (toNFD #[entry.codepoint]).foldl Compose.stepCompose Compose.initialState =
+    (toNFD [entry.codepoint]).foldl Compose.stepCompose Compose.initialState =
       singletonState entry.codepoint := by
   have hValid :=
     List.all_eq_true.mp QuickCheckSingletonRankData.rowsRank2_valid entry hMem
@@ -617,17 +612,16 @@ theorem entryRank2_toNFD_foldl_singletonState
     rw [hFold, hFCDLeft31, hFCDRight31]
     rfl
   have hDS :
-      Decompose.decomposeSequence #[entry.codepoint] =
-        #[parent.left, parent.right, entry.right] := by
-    rw [Distribute.decomposeSequence_singleton]
-    exact hFCD
+      Decompose.decomposeSequence [entry.codepoint] =
+        [parent.left, parent.right, entry.right] := by
+    rw [Distribute.decomposeSequence_singleton, hFCD]
   have hR :
-      Reorder.reorder #[parent.left, parent.right, entry.right] =
-        #[parent.left, parent.right, entry.right] := by
+      Reorder.reorder [parent.left, parent.right, entry.right] =
+        [parent.left, parent.right, entry.right] := by
     apply Reorder.reorder_id_on_HasSortedRuns
-    show Reorder.HasSortedRuns [parent.left, parent.right, entry.right]
     refine ⟨?leftToParentRight, ?tailSorted⟩
-    · intro _hParentRightNonstarter
+    · intro hParentRightNonstarter
+      clear hParentRightNonstarter
       rw [parentFacts.hLeftCcc]
       exact Nat.zero_le (Lookup.canonicalCombiningClass parent.right)
     · refine ⟨?parentRightToEntryRight, ?single⟩
@@ -637,19 +631,19 @@ theorem entryRank2_toNFD_foldl_singletonState
             omega
         | inr hLe =>
             exact hLe
-      · trivial
+      · rw [Reorder.HasSortedRuns_singleton]
+        exact True.intro
   have hToNFD :
-      toNFD #[entry.codepoint] =
-        #[parent.left, parent.right, entry.right] := by
+      toNFD [entry.codepoint] =
+        [parent.left, parent.right, entry.right] := by
     unfold toNFD
     rw [hDS, hR]
   rw [hToNFD]
-  rw [← Array.foldl_toList]
   simp only [List.foldl_cons, List.foldl_nil]
   have hStepParentLeft :
       Compose.stepCompose Compose.initialState parent.left =
         singletonState parent.left := by
-    change (#[parent.left] : Array Nat).foldl
+    change ([parent.left] : List Nat).foldl
         Compose.stepCompose Compose.initialState = singletonState parent.left
     exact foldl_singleton_starter parent.left parentFacts.hLeftCcc
   rw [hStepParentLeft]
@@ -667,11 +661,11 @@ theorem entryRank2_toNFD_head
     (entry : QuickCheckSingletonRankData.SingletonRankRow)
     (hMem : entry ∈ QuickCheckSingletonRankData.rowsRank2) :
     Lookup.canonicalCombiningClass
-        (Decompose.decomposeSequence #[entry.codepoint])[0]! = 0 ∧
-    Lookup.canonicalCombiningClass (toNFD #[entry.codepoint])[0]! = 0 ∧
-    nfcQCValue (toNFD #[entry.codepoint])[0]! = .Y ∧
-    (Decompose.decomposeSequence #[entry.codepoint]).size > 0 ∧
-    (toNFD #[entry.codepoint]).size > 0 := by
+        (Decompose.decomposeSequence [entry.codepoint])[0]! = 0 ∧
+    Lookup.canonicalCombiningClass (toNFD [entry.codepoint])[0]! = 0 ∧
+    nfcQCValue (toNFD [entry.codepoint])[0]! = .Y ∧
+    (Decompose.decomposeSequence [entry.codepoint]).length > 0 ∧
+    (toNFD [entry.codepoint]).length > 0 := by
   have hValid :=
     List.all_eq_true.mp QuickCheckSingletonRankData.rowsRank2_valid entry hMem
   have facts := entryCommonValid_facts entry (entryRankValid_common entry hValid)
@@ -761,17 +755,16 @@ theorem entryRank2_toNFD_head
     rw [hFold, hFCDLeft31, hFCDRight31]
     rfl
   have hDS :
-      Decompose.decomposeSequence #[entry.codepoint] =
-        #[parent.left, parent.right, entry.right] := by
-    rw [Distribute.decomposeSequence_singleton]
-    exact hFCD
+      Decompose.decomposeSequence [entry.codepoint] =
+        [parent.left, parent.right, entry.right] := by
+    rw [Distribute.decomposeSequence_singleton, hFCD]
   have hR :
-      Reorder.reorder #[parent.left, parent.right, entry.right] =
-        #[parent.left, parent.right, entry.right] := by
+      Reorder.reorder [parent.left, parent.right, entry.right] =
+        [parent.left, parent.right, entry.right] := by
     apply Reorder.reorder_id_on_HasSortedRuns
-    show Reorder.HasSortedRuns [parent.left, parent.right, entry.right]
     refine ⟨?leftToParentRight, ?tailSorted⟩
-    · intro _hParentRightNonstarter
+    · intro hParentRightNonstarter
+      clear hParentRightNonstarter
       rw [parentFacts.hLeftCcc]
       exact Nat.zero_le (Lookup.canonicalCombiningClass parent.right)
     · refine ⟨?parentRightToEntryRight, ?single⟩
@@ -781,25 +774,26 @@ theorem entryRank2_toNFD_head
             omega
         | inr hLe =>
             exact hLe
-      · trivial
+      · rw [Reorder.HasSortedRuns_singleton]
+        exact True.intro
   have hToNFD :
-      toNFD #[entry.codepoint] =
-        #[parent.left, parent.right, entry.right] := by
+      toNFD [entry.codepoint] =
+        [parent.left, parent.right, entry.right] := by
     unfold toNFD
     rw [hDS, hR]
   have hDsHead :
       Lookup.canonicalCombiningClass
-        (Decompose.decomposeSequence #[entry.codepoint])[0]! = 0 := by
-    rw [hDS]; simp [parentFacts.hLeftCcc]
+        (Decompose.decomposeSequence [entry.codepoint])[0]! = 0 := by
+    rw [hDS]; simpa using parentFacts.hLeftCcc
   have hNfdHead :
-      Lookup.canonicalCombiningClass (toNFD #[entry.codepoint])[0]! = 0 := by
-    rw [hToNFD]; simp [parentFacts.hLeftCcc]
+      Lookup.canonicalCombiningClass (toNFD [entry.codepoint])[0]! = 0 := by
+    rw [hToNFD]; simpa using parentFacts.hLeftCcc
   have hNfdQC :
-      nfcQCValue (toNFD #[entry.codepoint])[0]! = .Y := by
-    rw [hToNFD]; simp [parentFacts.hLeftQC]
-  have hDsNonEmpty : (Decompose.decomposeSequence #[entry.codepoint]).size > 0 := by
+      nfcQCValue (toNFD [entry.codepoint])[0]! = .Y := by
+    rw [hToNFD]; simpa using parentFacts.hLeftQC
+  have hDsNonEmpty : (Decompose.decomposeSequence [entry.codepoint]).length > 0 := by
     rw [hDS]; simp
-  have hNfdNonEmpty : (toNFD #[entry.codepoint]).size > 0 := by
+  have hNfdNonEmpty : (toNFD [entry.codepoint]).length > 0 := by
     rw [hToNFD]; simp
   exact And.intro hDsHead
     (And.intro hNfdHead
@@ -810,7 +804,7 @@ theorem entryRank2_toNFD_head
 theorem entryRank2_toNFC_singleton
     (entry : QuickCheckSingletonRankData.SingletonRankRow)
     (hMem : entry ∈ QuickCheckSingletonRankData.rowsRank2) :
-    toNFC #[entry.codepoint] = #[entry.codepoint] :=
+    toNFC [entry.codepoint] = [entry.codepoint] :=
   toNFC_of_toNFD_foldl_singletonState entry.codepoint
     (entryRank2_toNFD_foldl_singletonState entry hMem)
 
@@ -819,7 +813,7 @@ theorem entryRank2_toNFC_singleton
 theorem entryRank3_toNFD_foldl_singletonState
     (entry : QuickCheckSingletonRankData.SingletonRankRow)
     (hMem : entry ∈ QuickCheckSingletonRankData.rowsRank3) :
-    (toNFD #[entry.codepoint]).foldl Compose.stepCompose Compose.initialState =
+    (toNFD [entry.codepoint]).foldl Compose.stepCompose Compose.initialState =
       singletonState entry.codepoint := by
   have hValid :=
     List.all_eq_true.mp QuickCheckSingletonRankData.rowsRank3_valid entry hMem
@@ -949,17 +943,16 @@ theorem entryRank3_toNFD_foldl_singletonState
     rw [hFold, hFCDLeft31, hFCDRight31]
     rfl
   have hDS :
-      Decompose.decomposeSequence #[entry.codepoint] =
-        #[grand.left, grand.right, parent.right, entry.right] := by
-    rw [Distribute.decomposeSequence_singleton]
-    exact hFCD
+      Decompose.decomposeSequence [entry.codepoint] =
+        [grand.left, grand.right, parent.right, entry.right] := by
+    rw [Distribute.decomposeSequence_singleton, hFCD]
   have hR :
-      Reorder.reorder #[grand.left, grand.right, parent.right, entry.right] =
-        #[grand.left, grand.right, parent.right, entry.right] := by
+      Reorder.reorder [grand.left, grand.right, parent.right, entry.right] =
+        [grand.left, grand.right, parent.right, entry.right] := by
     apply Reorder.reorder_id_on_HasSortedRuns
-    show Reorder.HasSortedRuns [grand.left, grand.right, parent.right, entry.right]
     refine ⟨?leftToGrandRight, ?tailSorted⟩
-    · intro _hGrandRightNonstarter
+    · intro hGrandRightNonstarter
+      clear hGrandRightNonstarter
       rw [grandFacts.hLeftCcc]
       exact Nat.zero_le (Lookup.canonicalCombiningClass grand.right)
     · refine ⟨?grandRightToParentRight, ?tailTailSorted⟩
@@ -976,19 +969,19 @@ theorem entryRank3_toNFD_foldl_singletonState
               omega
           | inr hLe =>
               exact hLe
-        · trivial
+        · rw [Reorder.HasSortedRuns_singleton]
+          exact True.intro
   have hToNFD :
-      toNFD #[entry.codepoint] =
-        #[grand.left, grand.right, parent.right, entry.right] := by
+      toNFD [entry.codepoint] =
+        [grand.left, grand.right, parent.right, entry.right] := by
     unfold toNFD
     rw [hDS, hR]
   rw [hToNFD]
-  rw [← Array.foldl_toList]
   simp only [List.foldl_cons, List.foldl_nil]
   have hStepGrandLeft :
       Compose.stepCompose Compose.initialState grand.left =
         singletonState grand.left := by
-    change (#[grand.left] : Array Nat).foldl
+    change ([grand.left] : List Nat).foldl
         Compose.stepCompose Compose.initialState = singletonState grand.left
     exact foldl_singleton_starter grand.left grandFacts.hLeftCcc
   rw [hStepGrandLeft]
@@ -1010,11 +1003,11 @@ theorem entryRank3_toNFD_head
     (entry : QuickCheckSingletonRankData.SingletonRankRow)
     (hMem : entry ∈ QuickCheckSingletonRankData.rowsRank3) :
     Lookup.canonicalCombiningClass
-        (Decompose.decomposeSequence #[entry.codepoint])[0]! = 0 ∧
-    Lookup.canonicalCombiningClass (toNFD #[entry.codepoint])[0]! = 0 ∧
-    nfcQCValue (toNFD #[entry.codepoint])[0]! = .Y ∧
-    (Decompose.decomposeSequence #[entry.codepoint]).size > 0 ∧
-    (toNFD #[entry.codepoint]).size > 0 := by
+        (Decompose.decomposeSequence [entry.codepoint])[0]! = 0 ∧
+    Lookup.canonicalCombiningClass (toNFD [entry.codepoint])[0]! = 0 ∧
+    nfcQCValue (toNFD [entry.codepoint])[0]! = .Y ∧
+    (Decompose.decomposeSequence [entry.codepoint]).length > 0 ∧
+    (toNFD [entry.codepoint]).length > 0 := by
   have hValid :=
     List.all_eq_true.mp QuickCheckSingletonRankData.rowsRank3_valid entry hMem
   have facts := entryCommonValid_facts entry (entryRankValid_common entry hValid)
@@ -1143,17 +1136,16 @@ theorem entryRank3_toNFD_head
     rw [hFold, hFCDLeft31, hFCDRight31]
     rfl
   have hDS :
-      Decompose.decomposeSequence #[entry.codepoint] =
-        #[grand.left, grand.right, parent.right, entry.right] := by
-    rw [Distribute.decomposeSequence_singleton]
-    exact hFCD
+      Decompose.decomposeSequence [entry.codepoint] =
+        [grand.left, grand.right, parent.right, entry.right] := by
+    rw [Distribute.decomposeSequence_singleton, hFCD]
   have hR :
-      Reorder.reorder #[grand.left, grand.right, parent.right, entry.right] =
-        #[grand.left, grand.right, parent.right, entry.right] := by
+      Reorder.reorder [grand.left, grand.right, parent.right, entry.right] =
+        [grand.left, grand.right, parent.right, entry.right] := by
     apply Reorder.reorder_id_on_HasSortedRuns
-    show Reorder.HasSortedRuns [grand.left, grand.right, parent.right, entry.right]
     refine ⟨?leftToGrandRight, ?tailSorted⟩
-    · intro _hGrandRightNonstarter
+    · intro hGrandRightNonstarter
+      clear hGrandRightNonstarter
       rw [grandFacts.hLeftCcc]
       exact Nat.zero_le (Lookup.canonicalCombiningClass grand.right)
     · refine ⟨?grandRightToParentRight, ?tailTailSorted⟩
@@ -1170,25 +1162,26 @@ theorem entryRank3_toNFD_head
               omega
           | inr hLe =>
               exact hLe
-        · trivial
+        · rw [Reorder.HasSortedRuns_singleton]
+          exact True.intro
   have hToNFD :
-      toNFD #[entry.codepoint] =
-        #[grand.left, grand.right, parent.right, entry.right] := by
+      toNFD [entry.codepoint] =
+        [grand.left, grand.right, parent.right, entry.right] := by
     unfold toNFD
     rw [hDS, hR]
   have hDsHead :
       Lookup.canonicalCombiningClass
-        (Decompose.decomposeSequence #[entry.codepoint])[0]! = 0 := by
-    rw [hDS]; simp [grandFacts.hLeftCcc]
+        (Decompose.decomposeSequence [entry.codepoint])[0]! = 0 := by
+    rw [hDS]; simpa using grandFacts.hLeftCcc
   have hNfdHead :
-      Lookup.canonicalCombiningClass (toNFD #[entry.codepoint])[0]! = 0 := by
-    rw [hToNFD]; simp [grandFacts.hLeftCcc]
+      Lookup.canonicalCombiningClass (toNFD [entry.codepoint])[0]! = 0 := by
+    rw [hToNFD]; simpa using grandFacts.hLeftCcc
   have hNfdQC :
-      nfcQCValue (toNFD #[entry.codepoint])[0]! = .Y := by
-    rw [hToNFD]; simp [grandFacts.hLeftQC]
-  have hDsNonEmpty : (Decompose.decomposeSequence #[entry.codepoint]).size > 0 := by
+      nfcQCValue (toNFD [entry.codepoint])[0]! = .Y := by
+    rw [hToNFD]; simpa using grandFacts.hLeftQC
+  have hDsNonEmpty : (Decompose.decomposeSequence [entry.codepoint]).length > 0 := by
     rw [hDS]; simp
-  have hNfdNonEmpty : (toNFD #[entry.codepoint]).size > 0 := by
+  have hNfdNonEmpty : (toNFD [entry.codepoint]).length > 0 := by
     rw [hToNFD]; simp
   exact And.intro hDsHead
     (And.intro hNfdHead
@@ -1199,13 +1192,13 @@ theorem entryRank3_toNFD_head
 theorem entryRank3_toNFC_singleton
     (entry : QuickCheckSingletonRankData.SingletonRankRow)
     (hMem : entry ∈ QuickCheckSingletonRankData.rowsRank3) :
-    toNFC #[entry.codepoint] = #[entry.codepoint] :=
+    toNFC [entry.codepoint] = [entry.codepoint] :=
   toNFC_of_toNFD_foldl_singletonState entry.codepoint
     (entryRank3_toNFD_foldl_singletonState entry hMem)
 
 theorem rowsRank1_singletonNFC :
     QuickCheckSingletonRankData.rowsRank1.all
-      (fun entry => decide (toNFC #[entry.codepoint] = #[entry.codepoint])) = true := by
+      (fun entry => decide (toNFC [entry.codepoint] = [entry.codepoint])) = true := by
   rw [List.all_eq_true]
   intro entry hMem
   have hValid :=
@@ -1215,14 +1208,14 @@ theorem rowsRank1_singletonNFC :
 
 theorem rowsRank2_singletonNFC :
     QuickCheckSingletonRankData.rowsRank2.all
-      (fun entry => decide (toNFC #[entry.codepoint] = #[entry.codepoint])) = true := by
+      (fun entry => decide (toNFC [entry.codepoint] = [entry.codepoint])) = true := by
   rw [List.all_eq_true]
   intro entry hMem
   exact decide_eq_true (entryRank2_toNFC_singleton entry hMem)
 
 theorem rowsRank3_singletonNFC :
     QuickCheckSingletonRankData.rowsRank3.all
-      (fun entry => decide (toNFC #[entry.codepoint] = #[entry.codepoint])) = true := by
+      (fun entry => decide (toNFC [entry.codepoint] = [entry.codepoint])) = true := by
   rw [List.all_eq_true]
   intro entry hMem
   exact decide_eq_true (entryRank3_toNFC_singleton entry hMem)
@@ -1230,7 +1223,7 @@ theorem rowsRank3_singletonNFC :
 /-- Every generated singleton-rank entry is in NFC as a singleton. -/
 theorem rows_singletonNFC :
     QuickCheckSingletonRankData.rows.all
-      (fun entry => decide (toNFC #[entry.codepoint] = #[entry.codepoint])) = true := by
+      (fun entry => decide (toNFC [entry.codepoint] = [entry.codepoint])) = true := by
   unfold QuickCheckSingletonRankData.rows
   simp [rowsRank1_singletonNFC, rowsRank2_singletonNFC, rowsRank3_singletonNFC]
 
@@ -1240,7 +1233,7 @@ theorem singletonNFC_of_rank_rows_any
     (cp : Nat)
     (hAny : QuickCheckSingletonRankData.rows.any
       (fun entry => decide (entry.codepoint = cp)) = true) :
-    toNFC #[cp] = #[cp] := by
+    toNFC [cp] = [cp] := by
   rw [List.any_eq_true] at hAny
   obtain ⟨entry, hMem, hCodepoint⟩ := hAny
   have hEntry :=
@@ -1257,11 +1250,11 @@ theorem toNFD_head_of_rank_rows_any
     (hAny : QuickCheckSingletonRankData.rows.any
       (fun entry => decide (entry.codepoint = cp)) = true) :
     Lookup.canonicalCombiningClass
-        (Decompose.decomposeSequence #[cp])[0]! = 0 ∧
-    Lookup.canonicalCombiningClass (toNFD #[cp])[0]! = 0 ∧
-    nfcQCValue (toNFD #[cp])[0]! = .Y ∧
-    (Decompose.decomposeSequence #[cp]).size > 0 ∧
-    (toNFD #[cp]).size > 0 := by
+        (Decompose.decomposeSequence [cp])[0]! = 0 ∧
+    Lookup.canonicalCombiningClass (toNFD [cp])[0]! = 0 ∧
+    nfcQCValue (toNFD [cp])[0]! = .Y ∧
+    (Decompose.decomposeSequence [cp]).length > 0 ∧
+    (toNFD [cp]).length > 0 := by
   rw [List.any_eq_true] at hAny
   obtain ⟨entry, hMem, hCodepoint⟩ := hAny
   have hCp : entry.codepoint = cp := of_decide_eq_true hCodepoint

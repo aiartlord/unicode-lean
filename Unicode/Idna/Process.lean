@@ -60,11 +60,11 @@ def joinLabels (labels : Array (Array Nat)) : Array Nat := Id.run do
 
 /-- Convert a `String` to `Array Nat` by mapping each char to its codepoint. -/
 def stringToCps (s : String) : Array Nat :=
-  s.toList.foldl (fun acc c => acc.push c.toNat) #[]
+  (s.toList.map (fun c => c.toNat)).toArray
 
 /-- Convert an array of ASCII codepoints (assumed `< 0x80`) to a `String`. -/
 def asciiCpsToString (cps : Array Nat) : String :=
-  cps.foldl (fun acc cp => acc.push (Char.ofNat cp)) ""
+  String.ofList (cps.toList.map Char.ofNat)
 
 /-- True iff every codepoint is in the ASCII range. -/
 def allAscii (cps : Array Nat) : Bool := cps.all (· < 0x80)

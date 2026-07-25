@@ -70,12 +70,28 @@ theorem foldl_concat_id_of_all_singleton
   rw [key cps.toList #[] hAllList]
   simp
 
+/-- Flattening a per-codepoint expansion that is singleton everywhere
+    returns the sequence unchanged. The linear counterpart of
+    `foldl_concat_id_of_all_singleton`: one traversal, no accumulator
+    copying. Generic helper; does not depend on any specific UCD facts. -/
+theorem flatMap_concat_id_of_all_singleton
+    (f : Nat → Array Nat) (cps : List Nat)
+    (h : ∀ cp ∈ cps, f cp = #[cp]) :
+    cps.flatMap (fun cp => (f cp).toList) = cps := by
+  induction cps with
+  | nil => simp
+  | cons hd tl ih =>
+    have hHd : f hd = #[hd] := h hd (by simp)
+    have hTl : ∀ cp ∈ tl, f cp = #[cp] :=
+      fun cp hMem => h cp (by simp [hMem])
+    simp [hHd, ih hTl]
+
 /-- `decomposeSequence` is the identity on `IsFullyDecomposed` input. -/
-theorem decomposeSequence_id_on_FullyDecomposed (cps : Array Nat)
+theorem decomposeSequence_id_on_FullyDecomposed (cps : List Nat)
     (h : IsFullyDecomposed cps) :
     Decompose.decomposeSequence cps = cps := by
   unfold Decompose.decomposeSequence
-  apply foldl_concat_id_of_all_singleton Decompose.fullCanonicalDecompose
+  apply flatMap_concat_id_of_all_singleton Decompose.fullCanonicalDecompose
   intro cp hMem
   obtain ⟨hDecomp, hNotHangul⟩ := h cp hMem
   exact fullCanonicalDecompose_id_of_nonDecomposable cp hDecomp hNotHangul
@@ -86,7 +102,7 @@ theorem decomposeSequence_id_on_FullyDecomposed (cps : Array Nat)
 
 /-- `toNFD` output satisfies both `IsHSR` (sorted non-starter runs) and
     `IsFullyDecomposed` (no further canonical decomposition). -/
-theorem toNFD_output_HSR_and_FullyDecomposed (cps : Array Nat) :
+theorem toNFD_output_HSR_and_FullyDecomposed (cps : List Nat) :
     IsHSR (NFC.toNFD cps) ∧ IsFullyDecomposed (NFC.toNFD cps) := by
   refine ⟨?nfdHsr, ?nfdFullyDec⟩
   · unfold NFC.toNFD
@@ -116,7 +132,7 @@ theorem toNFD_output_HSR_and_FullyDecomposed (cps : Array Nat) :
     Proof: `toNFD x` is HSR (so `reorder` is identity) and
     `IsFullyDecomposed` (so `decomposeSequence` is identity); composing
     both identities gives the claim. -/
-theorem toNFD_idempotent (cps : Array Nat) :
+theorem toNFD_idempotent (cps : List Nat) :
     NFC.toNFD (NFC.toNFD cps) = NFC.toNFD cps := by
   obtain ⟨hHSR, hFD⟩ := toNFD_output_HSR_and_FullyDecomposed cps
   -- Unfold hHSR, hFD to match the unfolded toNFD goal shape.
@@ -140,7 +156,7 @@ theorem toNFD_idempotent (cps : Array Nat) :
 
 /-- `toNFC` is determined by `toNFD`: if two arrays canonicalize to the
     same NFD form, they canonicalize to the same NFC form. -/
-theorem toNFC_eq_of_toNFD_eq {x y : Array Nat} (h : NFC.toNFD x = NFC.toNFD y) :
+theorem toNFC_eq_of_toNFD_eq {x y : List Nat} (h : NFC.toNFD x = NFC.toNFD y) :
     NFC.toNFC x = NFC.toNFC y := by
   unfold NFC.toNFC
   rw [h]
@@ -211,25 +227,25 @@ theorem ccc_below_first_nonzero_range (cp : Nat) (h : cp < 0x0300) :
 /-- Quick check per UAX #15 §A.1 NFD: a sequence is guaranteed to be in
     NFD when every codepoint has `NFD_QC = Y` AND combining marks are
     non-decreasing in CCC within non-starter runs. -/
-def isNFDQuickCheck (cps : Array Nat) : Bool :=
+def isNFDQuickCheck (cps : List Nat) : Bool :=
   cps.all (fun cp => decide (nfdQCValue cp = .Y)) &&
-  NFC.hasSortedRunsBool cps.toList
+  NFC.hasSortedRunsBool cps
 
 /-- Definitive NFD check: a sequence is in NFD iff applying the NFD
     pipeline is a no-op. -/
-def isNFD (cps : Array Nat) : Bool :=
+def isNFD (cps : List Nat) : Bool :=
   NFC.toNFD cps = cps
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- TEST VECTORS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-theorem isNFDQuickCheck_empty : isNFDQuickCheck #[] = true := by
+theorem isNFDQuickCheck_empty : isNFDQuickCheck [] = true := by
   unfold isNFDQuickCheck NFC.hasSortedRunsBool
   simp
 
 theorem isNFDQuickCheck_ascii :
-    isNFDQuickCheck #[0x0048, 0x0069] = true := by
+    isNFDQuickCheck [0x0048, 0x0069] = true := by
   have hH : nfdQCValue 0x0048 = .Y :=
     nfdQCValue_below_first_range 0x0048 (by decide)
   have hI : nfdQCValue 0x0069 = .Y :=
@@ -245,7 +261,7 @@ theorem isNFDQuickCheck_ascii :
   simp [hH, hI, hSorted]
 
 /-- LATIN CAPITAL LETTER A WITH GRAVE has `NFD_QC = N` (it decomposes). -/
-theorem isNFDQuickCheck_A_grave : isNFDQuickCheck #[0x00C0] = false := by
+theorem isNFDQuickCheck_A_grave : isNFDQuickCheck [0x00C0] = false := by
   have hN : nfdQCValue 0x00C0 = .N :=
     nfdQCValue_first_range_N 0x00C0 (by decide) (by decide)
   simp [isNFDQuickCheck, hN]

@@ -2,8 +2,8 @@
   Unicode.Normalization.QuickCheckSoundnessPrefix
 
   Prefix-preservation support for the `isNFCQuickCheck` soundness snoc
-  induction.  This module contains only the structural list/array plumbing
-  needed to strip the trailing element from `xs ++ #[cp]`; singleton NFC
+  induction.  This module contains only the structural list plumbing
+  needed to strip the trailing element from `xs ++ [cp]`; singleton NFC
   cases live in separate theorem modules.
 -/
 
@@ -43,29 +43,19 @@ theorem hasSortedRunsBool_tail
   | nil => unfold hasSortedRunsBool; rfl
   | cons y t => exact hasSortedRunsBool_cons_tail x y t h
 
-/-- `Array.all` membership: every element of an `Array.all = true`
-    array satisfies the predicate. -/
-theorem array_all_of_mem (arr : Array Nat) (p : Nat → Bool)
-    (h : arr.all p = true) : ∀ x ∈ arr, p x = true := by
-  rw [Array.all_eq_true] at h
-  intro x hx
-  rcases Array.getElem_of_mem hx with ⟨i, hi, hElem⟩
-  have := h i hi
-  rw [hElem] at this
-  exact this
+/-- `List.all` membership: every element of a `List.all = true`
+    list satisfies the predicate. -/
+theorem list_all_of_mem (l : List Nat) (p : Nat → Bool)
+    (h : l.all p = true) : ∀ x ∈ l, p x = true :=
+  List.all_eq_true.mp h
 
-/-- `Array.all` on an `xs ++ #[cp]` truth carries to the prefix `xs`. -/
+/-- `List.all` on an `xs ++ [cp]` truth carries to the prefix `xs`. -/
 theorem all_append_singleton_of_all
-    (xs : Array Nat) (cp : Nat) (p : Nat → Bool)
-    (h : (xs ++ #[cp]).all p = true) :
+    (xs : List Nat) (cp : Nat) (p : Nat → Bool)
+    (h : (xs ++ [cp]).all p = true) :
     xs.all p = true := by
-  rw [Array.all_eq_true]
-  intro i hi
-  have hMem : xs[i] ∈ xs ++ #[cp] := by
-    apply Array.mem_append.mpr
-    left
-    exact Array.getElem_mem hi
-  exact array_all_of_mem (xs ++ #[cp]) p h xs[i] hMem
+  rw [List.all_append, Bool.and_eq_true] at h
+  exact h.1
 
 /-- Every pair in the zip-with-tail of `l` is also in the zip-with-tail
     of `l ++ [x]`. -/
@@ -88,22 +78,20 @@ theorem zipTail_pair_mem_append_singleton {α : Type u}
       · exact Or.inl hHead
       · exact Or.inr (ih hTail)
 
-/-- `hasSortedRunsBool` on `(xs ++ #[cp]).toList` carries to `xs.toList`. -/
+/-- `hasSortedRunsBool` on `xs ++ [cp]` carries to `xs`. -/
 theorem hasSortedRunsBool_dropLast
-    (xs : Array Nat) (cp : Nat)
-    (h : hasSortedRunsBool (xs ++ #[cp]).toList = true) :
-    hasSortedRunsBool xs.toList = true := by
+    (xs : List Nat) (cp : Nat)
+    (h : hasSortedRunsBool (xs ++ [cp]) = true) :
+    hasSortedRunsBool xs = true := by
   unfold hasSortedRunsBool at h ⊢
-  have hCpList : (#[cp] : Array Nat).toList = [cp] := rfl
-  rw [Array.toList_append, hCpList] at h
   rw [List.all_eq_true] at h ⊢
   intro pair hPair
-  exact h pair (zipTail_pair_mem_append_singleton xs.toList cp pair hPair)
+  exact h pair (zipTail_pair_mem_append_singleton xs cp pair hPair)
 
-/-- `isNFCQuickCheck` truth on `xs ++ #[cp]` carries to `xs`. -/
+/-- `isNFCQuickCheck` truth on `xs ++ [cp]` carries to `xs`. -/
 theorem isNFCQuickCheck_dropLast
-    (xs : Array Nat) (cp : Nat)
-    (h : isNFCQuickCheck (xs ++ #[cp]) = true) :
+    (xs : List Nat) (cp : Nat)
+    (h : isNFCQuickCheck (xs ++ [cp]) = true) :
     isNFCQuickCheck xs = true := by
   unfold isNFCQuickCheck at h ⊢
   rw [Bool.and_eq_true] at h ⊢

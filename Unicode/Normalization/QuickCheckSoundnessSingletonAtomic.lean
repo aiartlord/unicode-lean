@@ -25,7 +25,7 @@ theorem singleton_sound_atomic
     (hCcc : Lookup.canonicalCombiningClass cp = 0)
     (hDecomp : Lookup.canonicalDecomposition cp = #[])
     (hNotHangul : Hangul.isHangulSyllable cp = false) :
-    toNFC #[cp] = #[cp] := by
+    toNFC [cp] = [cp] := by
   have hDsyl : Hangul.decomposeSyllable? cp = none := by
     unfold Hangul.decomposeSyllable?
     rw [hNotHangul]
@@ -35,19 +35,18 @@ theorem singleton_sound_atomic
     unfold Decompose.maxDepth Decompose.fullCanonicalDecomposeFuel
     rw [hDsyl]
     simp [hDecomp]
-  have hDS : Decompose.decomposeSequence #[cp] = #[cp] := by
-    rw [Distribute.decomposeSequence_singleton]
-    exact hFCD
-  have hR : Reorder.reorder #[cp] = #[cp] := by
+  have hDS : Decompose.decomposeSequence [cp] = [cp] := by
+    rw [Distribute.decomposeSequence_singleton, hFCD]
+  have hR : Reorder.reorder [cp] = [cp] := by
     apply Reorder.reorder_id_on_HasSortedRuns
-    show Reorder.HasSortedRuns [cp]
-    trivial
-  show Compose.compose (toNFD #[cp]) = #[cp]
+    rw [Reorder.HasSortedRuns_singleton]
+    exact True.intro
+  show Compose.compose (toNFD [cp]) = [cp]
   unfold toNFD
   rw [hDS, hR]
-  change Compose.flushCompose
-      ((#[cp] : Array Nat).foldl Compose.stepCompose Compose.initialState) = #[cp]
-  rw [← Array.foldl_toList]
+  show (Compose.flushCompose
+          (([cp] : List Nat).foldl Compose.stepCompose Compose.initialState)).toList
+      = [cp]
   simp only [List.foldl_cons, List.foldl_nil]
   rw [Compose.stepCompose.eq_def]
   unfold Compose.flushCompose Compose.initialState

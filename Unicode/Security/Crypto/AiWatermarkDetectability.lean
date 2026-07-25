@@ -160,7 +160,7 @@ def subThreatCueClass : SubThreat → Option CueClass
     positions. -/
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : Array Nat)
+  | hazard (sub : SubThreat) (positions : List Nat)
   deriving DecidableEq, Repr, Inhabited
 
 /-- AiWatermarkDetectability verdict — the structured output of
@@ -169,7 +169,7 @@ inductive Classification where
     HashInputStability's `stableSize` in shape — a single scalar
     the harness can pin on every fixture row. -/
 structure Verdict where
-  input        : Array Nat
+  input        : List Nat
   classify     : Classification
   markerCount  : Nat
   deriving Inhabited
@@ -203,12 +203,12 @@ namespace Classification
 @[inline] def isClear : Classification → Bool
   | .clear              => true
   | .hazard sub ps      =>
-    Function.const (SubThreat × Array Nat) false (sub, ps)
+    Function.const (SubThreat × List Nat) false (sub, ps)
 
 @[inline] def tag : Classification → Option String
   | .clear              => none
   | .hazard sub ps      =>
-    Function.const (Array Nat) (
+    Function.const (List Nat) (
       match sub with
       | .nnbspBoundary count            =>
         Function.const Nat (some "NnbspBoundary") count
@@ -232,8 +232,8 @@ namespace Classification
         Function.const Nat (some "Unknown") anomaly
     ) ps
 
-@[inline] def positions : Classification → Array Nat
-  | .clear              => #[]
+@[inline] def positions : Classification → List Nat
+  | .clear              => []
   | .hazard sub ps      => Function.const SubThreat ps sub
 
 end Classification
@@ -275,30 +275,28 @@ end Classification
     codepoint.  Used by the VS and ZWJ probes to exclude
     legitimate emoji-context occurrences from K3's marker
     inventory.  Two-sided check, single pass. -/
-def isAdjacentToEmoji (input : Array Nat) (i : Nat) : Bool :=
+def isAdjacentToEmoji (input : List Nat) (i : Nat) : Bool :=
   let prevIsEmoji :=
-    if h0 : 0 < i then
-      if hLt : i - 1 < input.size then
-        isEmoji input[i - 1]
-      else
-        Function.const (0 < i) false h0
-    else false
+    match i with
+    | 0 => false
+    | Nat.succ iPred =>
+      match input[iPred]? with
+      | some cp => isEmoji cp
+      | none    => false
   let nextIsEmoji :=
-    if hLt : i + 1 < input.size then
-      isEmoji input[i + 1]
-    else false
+    match input[i + 1]? with
+    | some cp => isEmoji cp
+    | none    => false
   prevIsEmoji || nextIsEmoji
 
 /-- All positions in `input` matching predicate `p`. -/
-def allPositions (p : Nat → Bool) (input : Array Nat) : Array Nat :=
-  (Array.range input.size).filterMap (fun i =>
-    if h : i < input.size then
-      if p input[i] then some i else none
-    else none)
+def allPositions (p : Nat → Bool) (input : List Nat) : List Nat :=
+  input.zipIdx.filterMap (fun cpWithIdx =>
+    if p cpWithIdx.1 then some cpWithIdx.2 else none)
 
 /-- Count of codepoints in `input` matching predicate `p`. -/
-@[inline] def countWhere (p : Nat → Bool) (input : Array Nat) : Nat :=
-  (input.filter p).size
+@[inline] def countWhere (p : Nat → Bool) (input : List Nat) : Nat :=
+  (input.filter p).length
 
 /-- True iff `cp` is U+200B ZERO WIDTH SPACE.  Used by the
     `gpt5ZwspModulo` probe to detect ZWSP carriers. -/
@@ -337,13 +335,13 @@ def allPositions (p : Nat → Bool) (input : Array Nat) : Array Nat :=
     placement; tolerance allows catching modulo schedules with
     light position jitter. -/
 def positionsAreArithmeticWithin
-    (positions : Array Nat) (tolerance : Nat) : Bool :=
-  if positions.size < 2 then true
+    (positions : List Nat) (tolerance : Nat) : Bool :=
+  if positions.length < 2 then true
   else
     let p0 := positions.getD 0 0
     let p1 := positions.getD 1 0
     let firstGap := p1 - p0
-    (Array.range (positions.size - 1)).all (fun i =>
+    (List.range (positions.length - 1)).all (fun i =>
       let curr := positions.getD i 0
       let next := positions.getD (i + 1) 0
       let gap := next - curr
@@ -355,20 +353,20 @@ def positionsAreArithmeticWithin
     zero-tolerance `positionsAreArithmeticWithin` call so existing callers and
     theorems that don't carry a tolerance parameter continue to
     work unchanged. -/
-@[inline] def positionsAreArithmetic (positions : Array Nat) : Bool :=
+@[inline] def positionsAreArithmetic (positions : List Nat) : Bool :=
   positionsAreArithmeticWithin positions 0
 
 /-- First start-position at which `pattern` appears as a
-    contiguous subarray of `input`, or `none` if absent.  Used
+    contiguous sublist of `input`, or `none` if absent.  Used
     by `statisticalTokenChoice` to scan for AI-favored lexical
     patterns. -/
-def containsSubarray (pattern input : Array Nat) : Option Nat :=
-  if pattern.size = 0 then none
-  else if pattern.size > input.size then none
+def containsSubarray (pattern input : List Nat) : Option Nat :=
+  if pattern.length = 0 then none
+  else if pattern.length > input.length then none
   else
-    let maxStart := input.size - pattern.size
-    (Array.range (maxStart + 1)).findSome? (fun start =>
-      if (Array.range pattern.size).all (fun j =>
+    let maxStart := input.length - pattern.length
+    (List.range (maxStart + 1)).findSome? (fun start =>
+      if (List.range pattern.length).all (fun j =>
         let inputAtPos := input.getD (start + j) 0
         let patternAtPos := pattern.getD j 0
         decide (inputAtPos = patternAtPos))
@@ -497,15 +495,15 @@ theorem isEmoji_ascii_false : isEmoji 0x61 = false := by decide +kernel
 
 /-- VS16 sitting between 'a' and 'b' (no emoji adjacent) — flagged. -/
 theorem isAdjacentToEmoji_negative :
-    isAdjacentToEmoji #[0x61, 0xFE0F, 0x62] 1 = false := by decide +kernel
+    isAdjacentToEmoji [0x61, 0xFE0F, 0x62] 1 = false := by decide +kernel
 
 /-- VS16 sitting after 😀 — adjacent to emoji, excluded. -/
 theorem isAdjacentToEmoji_after_smiley :
-    isAdjacentToEmoji #[0x1F600, 0xFE0F] 1 = true := by decide +kernel
+    isAdjacentToEmoji [0x1F600, 0xFE0F] 1 = true := by decide +kernel
 
 /-- VS16 sitting before 😀 — adjacent to emoji, excluded. -/
 theorem isAdjacentToEmoji_before_smiley :
-    isAdjacentToEmoji #[0xFE0F, 0x1F600] 0 = true := by decide +kernel
+    isAdjacentToEmoji [0xFE0F, 0x1F600] 0 = true := by decide +kernel
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Top-level detection
@@ -563,9 +561,9 @@ theorem isAdjacentToEmoji_before_smiley :
     signatures.  Ordering them most-specific-first ensures the
     verdict names the most-informative attribution available.
 -/
-def detectWithContext (ctx : Context) (input : Array Nat) : Verdict :=
+def detectWithContext (ctx : Context) (input : List Nat) : Verdict :=
   let nnbspPositions := allPositions isNnbsp input
-  let nnbspCount := nnbspPositions.size
+  let nnbspCount := nnbspPositions.length
 
   -- Probe 1: adversarial — NNBSP too-regular.
   let adversarialFires :=
@@ -574,7 +572,7 @@ def detectWithContext (ctx : Context) (input : Array Nat) : Verdict :=
 
   -- Probe 2: gpt5ZwspModulo — ZWSP arithmetic progression.
   let zwspPositions := allPositions isZwsp input
-  let zwspCount := zwspPositions.size
+  let zwspCount := zwspPositions.length
   let zwspModuloFires :=
     decide (zwspCount ≥ 3)
       ∧ positionsAreArithmeticWithin zwspPositions ctx.zwspModuloTolerance
@@ -582,28 +580,29 @@ def detectWithContext (ctx : Context) (input : Array Nat) : Verdict :=
   let vsAllPos := allPositions isVariationSelector input
   let vsNonEmojiPos := vsAllPos.filter
     (fun i => ¬ (isAdjacentToEmoji input i))
-  let vsNonEmojiCount := vsNonEmojiPos.size
+  let vsNonEmojiCount := vsNonEmojiPos.length
 
   let zwjAllPos := allPositions isZwj input
   let zwjNonEmojiPos := zwjAllPos.filter
     (fun i => ¬ (isAdjacentToEmoji input i))
-  let zwjNonEmojiCount := zwjNonEmojiPos.size
+  let zwjNonEmojiCount := zwjNonEmojiPos.length
 
   -- Probe 6: smartQuoteAlternation — curly quotes only.
   let curlyPositions := allPositions isCurlyQuote input
-  let curlyCount := curlyPositions.size
+  let curlyCount := curlyPositions.length
   let hasStraightQuote := input.any isStraightQuote
   let smartQuoteFires := decide (curlyCount ≥ 2) ∧ ¬ hasStraightQuote
 
   -- Probe 7: emDashPattern — em-dashes without hyphen-minus.
   let emDashPositions := allPositions isEmDash input
-  let emDashCount := emDashPositions.size
+  let emDashCount := emDashPositions.length
   let hasHyphenMinus := input.any isHyphenMinus
   let emDashFires := decide (emDashCount ≥ 2) ∧ ¬ hasHyphenMinus
 
-  -- Probe 8: statisticalTokenChoice — scan vocabulary.
+  -- Probe 8: statisticalTokenChoice — scan vocabulary.  Each pinned
+  -- vocabulary word is compared as a `List Nat` sublist of the input.
   let vocabHit := aiFavoredVocabulary.findSome?
-    (fun pattern => containsSubarray pattern input)
+    (fun pattern => containsSubarray pattern.toList input)
 
   -- Residual default-ignorables (excluding ZWSP — handled by
   -- gpt5ZwspModulo first when the modulo pattern matches; bare
@@ -614,7 +613,7 @@ def detectWithContext (ctx : Context) (input : Array Nat) : Verdict :=
     && (¬ isVariationSelector cp)
     && (¬ isZwj cp)
   let diPositions := allPositions isResidualDI input
-  let diCount := diPositions.size
+  let diCount := diPositions.length
 
   -- Probe 3: unknown — invisible markers from multiple
   -- categories.  Means the input mixes scheme-relevant
@@ -641,11 +640,11 @@ def detectWithContext (ctx : Context) (input : Array Nat) : Verdict :=
       (.hazard (.gpt5ZwspModulo firstPos) zwspPositions, zwspCount)
     else if unknownFires then
       let allInvisiblePos :=
-        (Array.range input.size).filterMap (fun i =>
-          let cp := input.getD i 0
+        input.zipIdx.filterMap (fun cpWithIdx =>
+          let cp := cpWithIdx.1
           if isNnbsp cp || isVariationSelector cp
              || isZwj cp || isDefaultIgnorable cp
-          then some i else none)
+          then some cpWithIdx.2 else none)
       (.hazard (.unknown totalInvisibleCount) allInvisiblePos,
        totalInvisibleCount)
     else if nnbspCount > 0 then
@@ -664,7 +663,7 @@ def detectWithContext (ctx : Context) (input : Array Nat) : Verdict :=
       (.hazard (.emDashPattern firstPos) emDashPositions, emDashCount)
     else match vocabHit with
     | some pos =>
-      (.hazard (.statisticalTokenChoice pos) #[pos], 1)
+      (.hazard (.statisticalTokenChoice pos) [pos], 1)
     | none =>
       if diCount > 0 then
         (.hazard (.defaultIgnorableCarrier diCount) diPositions, diCount)
@@ -680,7 +679,7 @@ def detectWithContext (ctx : Context) (input : Array Nat) : Verdict :=
     `adversarialTolerance = 0`).  Used by
     `Unicode.Security.RunAll` and by callers who don't have a
     tolerance preference. -/
-def detect (input : Array Nat) : Verdict :=
+def detect (input : List Nat) : Verdict :=
   detectWithContext {} input
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -689,38 +688,38 @@ def detect (input : Array Nat) : Verdict :=
 
 /-- Empty input is clear (vacuous no-watermark). -/
 theorem detect_empty_clear :
-    (detect #[]).classify = .clear := by decide +kernel
+    (detect []).classify = .clear := by decide +kernel
 
 /-- Pure ASCII is clear — no markers. -/
 theorem detect_ascii_clear :
-    (detect #[0x61, 0x62, 0x63]).classify = .clear := by decide +kernel
+    (detect [0x61, 0x62, 0x63]).classify = .clear := by decide +kernel
 
 /-- CJK Han is clear — no markers. -/
 theorem detect_han_clear :
-    (detect #[0x4E2D, 0x6587]).classify = .clear := by decide +kernel
+    (detect [0x4E2D, 0x6587]).classify = .clear := by decide +kernel
 
 /-- Single U+202F NNBSP fires NnbspBoundary at position 1. -/
 theorem detect_nnbsp_fires :
-    let v := detect #[0x61, 0x202F, 0x62]
+    let v := detect [0x61, 0x202F, 0x62]
     v.classify.tag = some "NnbspBoundary"
-    ∧ v.classify.positions = #[1]
+    ∧ v.classify.positions = [1]
     ∧ v.markerCount = 1 := by decide +kernel
 
 /-- VS16 between ASCII letters (no emoji adjacent) fires
     VariationSelectorCarrier. -/
 theorem detect_vs_in_plain_text_fires :
-    let v := detect #[0x61, 0xFE0F, 0x62]
+    let v := detect [0x61, 0xFE0F, 0x62]
     v.classify.tag = some "VariationSelectorCarrier"
     ∧ v.markerCount = 1 := by decide +kernel
 
 /-- VS16 after 😀 is legitimate emoji-presentation selector —
     K3 stays clear.  Pins the emoji-adjacency exclusion. -/
 theorem detect_vs_after_emoji_clear :
-    (detect #[0x1F600, 0xFE0F]).classify = .clear := by decide +kernel
+    (detect [0x1F600, 0xFE0F]).classify = .clear := by decide +kernel
 
 /-- ZWJ between ASCII letters fires ZwjNonEmoji. -/
 theorem detect_zwj_in_plain_text_fires :
-    let v := detect #[0x61, 0x200D, 0x62]
+    let v := detect [0x61, 0x200D, 0x62]
     v.classify.tag = some "ZwjNonEmoji"
     ∧ v.markerCount = 1 := by decide +kernel
 
@@ -728,13 +727,13 @@ theorem detect_zwj_in_plain_text_fires :
     sequence — K3 stays clear.  The "woman + ZWJ + scientist"
     sequence base 👩 (U+1F469) + ZWJ + 🔬 (U+1F52C) shape. -/
 theorem detect_zwj_emoji_sequence_clear :
-    (detect #[0x1F469, 0x200D, 0x1F52C]).classify = .clear := by
+    (detect [0x1F469, 0x200D, 0x1F52C]).classify = .clear := by
   decide +kernel
 
 /-- SOFT HYPHEN (U+00AD) fires DefaultIgnorableCarrier — it's
     default-ignorable, not NNBSP, not VS, not ZWJ. -/
 theorem detect_soft_hyphen_fires :
-    let v := detect #[0x61, 0x00AD, 0x62]
+    let v := detect [0x61, 0x00AD, 0x62]
     v.classify.tag = some "DefaultIgnorableCarrier"
     ∧ v.markerCount = 1 := by decide +kernel
 
@@ -746,7 +745,7 @@ theorem detect_soft_hyphen_fires :
     higher Levels; isolated rejection under
     `cryptoAdmissible .aiAttribution`. -/
 theorem detect_zwsp_fires :
-    let v := detect #[0x61, 0x200B, 0x62]
+    let v := detect [0x61, 0x200B, 0x62]
     v.classify.tag = some "DefaultIgnorableCarrier"
     ∧ v.markerCount = 1 := by decide +kernel
 
@@ -755,24 +754,24 @@ theorem detect_zwsp_fires :
     invisible-marker categories and cannot be attributed to a
     single scheme.  Pinned by NNBSP + SOFT HYPHEN. -/
 theorem detect_priority_unknown_over_nnbsp_with_di :
-    let v := detect #[0x61, 0x202F, 0x00AD, 0x62]
+    let v := detect [0x61, 0x202F, 0x00AD, 0x62]
     v.classify.tag = some "Unknown" := by decide +kernel
 
 /-- Priority pin: when BOTH VS-non-emoji and ZWJ-non-emoji
     apply, `Unknown` fires (priority 3) — same multi-category
     semantic as above. -/
 theorem detect_priority_unknown_over_vs_with_zwj :
-    let v := detect #[0x61, 0xFE0F, 0x200D, 0x62]
+    let v := detect [0x61, 0xFE0F, 0x200D, 0x62]
     v.classify.tag = some "Unknown" := by
   decide +kernel
 
 /-- Multiple NNBSPs are aggregated into a single
     NnbspBoundary verdict with markerCount = total. -/
 theorem detect_multiple_nnbsp_aggregates :
-    let v := detect #[0x61, 0x202F, 0x62, 0x202F, 0x63]
+    let v := detect [0x61, 0x202F, 0x62, 0x202F, 0x63]
     v.classify.tag = some "NnbspBoundary"
     ∧ v.markerCount = 2
-    ∧ v.classify.positions = #[1, 3] := by decide +kernel
+    ∧ v.classify.positions = [1, 3] := by decide +kernel
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §7 Refinement-probe spot checks (adversarial / gpt5ZwspModulo /
@@ -786,14 +785,14 @@ theorem detect_multiple_nnbsp_aggregates :
     `nnbspBoundary` verdict. -/
 theorem detect_adversarial_arithmetic_nnbsp :
     -- "a NNBSP b NNBSP c NNBSP d" — NNBSPs at 1,3,5 (gap 2).
-    let v := detect #[0x61, 0x202F, 0x62, 0x202F, 0x63, 0x202F, 0x64]
+    let v := detect [0x61, 0x202F, 0x62, 0x202F, 0x63, 0x202F, 0x64]
     v.classify.tag = some "Adversarial"
     ∧ v.markerCount = 3 := by decide +kernel
 
 /-- 2-NNBSP input STAYS in `nnbspBoundary` — adversarial
     threshold is ≥ 3. -/
 theorem detect_nnbsp_two_below_adversarial_threshold :
-    (detect #[0x61, 0x202F, 0x62, 0x202F, 0x63]).classify.tag
+    (detect [0x61, 0x202F, 0x62, 0x202F, 0x63]).classify.tag
       = some "NnbspBoundary" := by decide +kernel
 
 /-- `gpt5ZwspModulo` fires when input has ≥ 3 ZWSPs at
@@ -802,14 +801,14 @@ theorem detect_nnbsp_two_below_adversarial_threshold :
     `defaultIgnorableCarrier` verdict. -/
 theorem detect_gpt5_zwsp_modulo :
     -- "a ZWSP b ZWSP c ZWSP d" — ZWSPs at 1,3,5 (gap 2).
-    let v := detect #[0x61, 0x200B, 0x62, 0x200B, 0x63, 0x200B, 0x64]
+    let v := detect [0x61, 0x200B, 0x62, 0x200B, 0x63, 0x200B, 0x64]
     v.classify.tag = some "Gpt5ZwspModulo"
     ∧ v.markerCount = 3 := by decide +kernel
 
 /-- Two ZWSPs (below the modulo threshold of 3) fall through
     to `defaultIgnorableCarrier`. -/
 theorem detect_zwsp_two_below_modulo_threshold :
-    (detect #[0x61, 0x200B, 0x62, 0x200B, 0x63]).classify.tag
+    (detect [0x61, 0x200B, 0x62, 0x200B, 0x63]).classify.tag
       = some "DefaultIgnorableCarrier" := by decide +kernel
 
 /-- `smartQuoteAlternation` fires when input has ≥ 2 curly
@@ -817,7 +816,7 @@ theorem detect_zwsp_two_below_modulo_threshold :
     first curly-quote position. -/
 theorem detect_smart_quote_alternation :
     -- "“abc”" — U+201C abc U+201D (LEFT DOUBLE / RIGHT DOUBLE).
-    let v := detect #[0x201C, 0x61, 0x62, 0x63, 0x201D]
+    let v := detect [0x201C, 0x61, 0x62, 0x63, 0x201D]
     v.classify.tag = some "SmartQuoteAlternation"
     ∧ v.markerCount = 2 := by decide +kernel
 
@@ -826,7 +825,7 @@ theorem detect_smart_quote_alternation :
     stays silent.  Falls through to `clear`. -/
 theorem detect_smart_quote_with_straight_clear :
     -- U+201C abc U+201D + ASCII '"'
-    (detect #[0x201C, 0x61, 0x22, 0x201D]).classify = .clear := by
+    (detect [0x201C, 0x61, 0x22, 0x201D]).classify = .clear := by
   decide +kernel
 
 /-- `emDashPattern` fires when input has ≥ 2 em-dashes and no
@@ -834,7 +833,7 @@ theorem detect_smart_quote_with_straight_clear :
 theorem detect_em_dash_pattern :
     -- "ab — cd — ef"
     let v := detect
-      #[0x61, 0x62, 0x20, 0x2014, 0x20, 0x63, 0x64, 0x20, 0x2014, 0x20, 0x65, 0x66]
+      [0x61, 0x62, 0x20, 0x2014, 0x20, 0x63, 0x64, 0x20, 0x2014, 0x20, 0x65, 0x66]
     v.classify.tag = some "EmDashPattern"
     ∧ v.markerCount = 2 := by decide +kernel
 
@@ -842,14 +841,14 @@ theorem detect_em_dash_pattern :
     baseline present; emDashPattern stays silent. -/
 theorem detect_em_dash_with_hyphen_clear :
     -- "ab-cd — ef"
-    (detect #[0x61, 0x62, 0x2D, 0x63, 0x64, 0x20, 0x2014, 0x20, 0x65, 0x66]).classify
+    (detect [0x61, 0x62, 0x2D, 0x63, 0x64, 0x20, 0x2014, 0x20, 0x65, 0x66]).classify
     = .clear := by decide +kernel
 
 /-- `statisticalTokenChoice` fires on the AI-favored word
     "delve" as a contiguous codepoint sub-array of input. -/
 theorem detect_statistical_token_delve :
     -- "I delve into ..."  — bytes for "delve" at position 0.
-    let v := detect #[0x64, 0x65, 0x6C, 0x76, 0x65]
+    let v := detect [0x64, 0x65, 0x6C, 0x76, 0x65]
     v.classify.tag = some "StatisticalTokenChoice"
     ∧ v.markerCount = 1 := by decide +kernel
 
@@ -858,28 +857,28 @@ theorem detect_statistical_token_delve :
 theorem detect_statistical_token_moreover_embedded :
     -- "; moreover, "
     let v := detect
-      #[0x3B, 0x20, 0x6D, 0x6F, 0x72, 0x65, 0x6F, 0x76, 0x65, 0x72, 0x2C, 0x20]
+      [0x3B, 0x20, 0x6D, 0x6F, 0x72, 0x65, 0x6F, 0x76, 0x65, 0x72, 0x2C, 0x20]
     v.classify.tag = some "StatisticalTokenChoice"
-    ∧ v.classify.positions = #[2] := by decide +kernel
+    ∧ v.classify.positions = [2] := by decide +kernel
 
 /-- `unknown` fires on multi-category invisible-marker mixing:
     NNBSP + DI co-occur — two distinct categories, cannot be
     attributed to a single scheme. -/
 theorem detect_unknown_nnbsp_plus_di :
-    let v := detect #[0x61, 0x202F, 0x00AD, 0x62]
+    let v := detect [0x61, 0x202F, 0x00AD, 0x62]
     v.classify.tag = some "Unknown"
     ∧ v.markerCount = 2 := by decide +kernel
 
 /-- `unknown` fires on VS + ZWJ co-occurring (both in plain
     non-emoji context). -/
 theorem detect_unknown_vs_plus_zwj :
-    let v := detect #[0x61, 0xFE0F, 0x200D, 0x62]
+    let v := detect [0x61, 0xFE0F, 0x200D, 0x62]
     v.classify.tag = some "Unknown"
     ∧ v.markerCount = 2 := by decide +kernel
 
 /-- `unknown` fires on NNBSP + ZWJ co-occurring. -/
 theorem detect_unknown_nnbsp_plus_zwj :
-    let v := detect #[0x61, 0x202F, 0x200D, 0x62]
+    let v := detect [0x61, 0x202F, 0x200D, 0x62]
     v.classify.tag = some "Unknown"
     ∧ v.markerCount = 2 := by decide +kernel
 
@@ -887,19 +886,19 @@ theorem detect_unknown_nnbsp_plus_zwj :
     `unknown` — they fall through to the specific probe.
     Pin: single NNBSP fires nnbspBoundary (not unknown). -/
 theorem detect_single_category_skips_unknown :
-    (detect #[0x61, 0x202F, 0x62]).classify.tag
+    (detect [0x61, 0x202F, 0x62]).classify.tag
       = some "NnbspBoundary" := by decide +kernel
 
 /-- Priority pin: `adversarial` fires before `nnbspBoundary`
     when both apply. -/
 theorem detect_priority_adversarial_over_nnbsp :
-    let v := detect #[0x61, 0x202F, 0x62, 0x202F, 0x63, 0x202F, 0x64]
+    let v := detect [0x61, 0x202F, 0x62, 0x202F, 0x63, 0x202F, 0x64]
     v.classify.tag = some "Adversarial" := by decide +kernel
 
 /-- Priority pin: `gpt5ZwspModulo` fires before
     `defaultIgnorableCarrier` when both apply. -/
 theorem detect_priority_zwsp_modulo_over_di :
-    let v := detect #[0x61, 0x200B, 0x62, 0x200B, 0x63, 0x200B, 0x64]
+    let v := detect [0x61, 0x200B, 0x62, 0x200B, 0x63, 0x200B, 0x64]
     v.classify.tag = some "Gpt5ZwspModulo" := by decide +kernel
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -912,13 +911,13 @@ theorem detect_priority_zwsp_modulo_over_di :
     check (`tolerance=1`) DOES fire — the jittered modulo
     schedule still looks deliberate. -/
 theorem detect_zwsp_jittered_strict_clear :
-    let input := #[0x61, 0x200B, 0x62, 0x200B, 0x63, 0x64, 0x200B, 0x65]
+    let input := [0x61, 0x200B, 0x62, 0x200B, 0x63, 0x64, 0x200B, 0x65]
     let v := detect input  -- bare detect: tolerance=0
     v.classify.tag = some "DefaultIgnorableCarrier" := by decide +kernel
 
 /-- Same input, tolerance=1: `gpt5ZwspModulo` now fires. -/
 theorem detect_zwsp_jittered_tolerant_fires :
-    let input := #[0x61, 0x200B, 0x62, 0x200B, 0x63, 0x64, 0x200B, 0x65]
+    let input := [0x61, 0x200B, 0x62, 0x200B, 0x63, 0x64, 0x200B, 0x65]
     let ctx : Context := { zwspModuloTolerance := 1 }
     let v := detectWithContext ctx input
     v.classify.tag = some "Gpt5ZwspModulo" := by decide +kernel
@@ -926,8 +925,8 @@ theorem detect_zwsp_jittered_tolerant_fires :
 /-- The default `Context` reproduces the bare-detect behaviour.
     Pinned to confirm the wrapper-equivalence semantic. -/
 theorem detectWithContext_default_matches_detect :
-    (detectWithContext {} #[0x61, 0x202F, 0x62]).classify
-      = (detect #[0x61, 0x202F, 0x62]).classify := by decide +kernel
+    (detectWithContext {} [0x61, 0x202F, 0x62]).classify
+      = (detect [0x61, 0x202F, 0x62]).classify := by decide +kernel
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §7 Cue-class coverage

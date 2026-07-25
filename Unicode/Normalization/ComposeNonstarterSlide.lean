@@ -349,7 +349,7 @@ theorem slide_state_eq
     equality of folds carries to the flushed outputs because
     `flushCompose` is a function of the post-fold state. -/
 theorem compose_slide_qcY
-    (X : Array Nat) (cp : Nat) (B : List Nat) (st : Nat)
+    (X : List Nat) (cp : Nat) (B : List Nat) (st : Nat)
     (hSt : (X.foldl Compose.stepCompose Compose.initialState).starter = some st)
     (hQC : nfcQCValue cp = .Y)
     (hCccPos : 0 < Lookup.canonicalCombiningClass cp)
@@ -357,40 +357,20 @@ theorem compose_slide_qcY
                           < Lookup.canonicalCombiningClass b)
     (hChain : PrimaryFiresChain
                 (X.foldl Compose.stepCompose Compose.initialState) B) :
-    Compose.compose (X ++ #[cp] ++ B.toArray) =
-      Compose.compose (X ++ B.toArray ++ #[cp]) := by
+    Compose.compose (X ++ [cp] ++ B) =
+      Compose.compose (X ++ B ++ [cp]) := by
   unfold Compose.compose
   -- Reduce both sides to `flushCompose ∘ (cp-or-chain dispatch over s_X)`.
-  rw [Array.foldl_append, Array.foldl_append]
-  rw [Array.foldl_append, Array.foldl_append]
-  -- LHS: flushCompose (B.toArray.foldl stepCompose
-  --        (#[cp].foldl stepCompose s_X))
-  -- RHS: flushCompose (#[cp].foldl stepCompose
-  --        (B.toArray.foldl stepCompose s_X))
-  -- Convert array-foldl to list-foldl on B and singleton on #[cp].
+  rw [List.foldl_append, List.foldl_append]
+  rw [List.foldl_append, List.foldl_append]
+  -- LHS: flushCompose (B.foldl stepCompose ([cp].foldl stepCompose s_X))
+  -- RHS: flushCompose ([cp].foldl stepCompose (B.foldl stepCompose s_X))
   have hCpStep :
-      ∀ s, (#[cp] : Array Nat).foldl Compose.stepCompose s
+      ∀ s, ([cp] : List Nat).foldl Compose.stepCompose s
             = Compose.stepCompose s cp := by
     intro s
-    show ([cp] : List Nat).foldl Compose.stepCompose s
-       = Compose.stepCompose s cp
     simp only [List.foldl_cons, List.foldl_nil]
   rw [hCpStep, hCpStep]
-  have hConvert1 :
-      B.toArray.foldl Compose.stepCompose
-          (Compose.stepCompose
-            (X.foldl Compose.stepCompose Compose.initialState) cp)
-        = B.foldl Compose.stepCompose
-            (Compose.stepCompose
-              (X.foldl Compose.stepCompose Compose.initialState) cp) := by
-    rw [← Array.foldl_toList, List.toList_toArray]
-  have hConvert2 :
-      B.toArray.foldl Compose.stepCompose
-          (X.foldl Compose.stepCompose Compose.initialState)
-        = B.foldl Compose.stepCompose
-            (X.foldl Compose.stepCompose Compose.initialState) := by
-    rw [← Array.foldl_toList, List.toList_toArray]
-  rw [hConvert1, hConvert2]
   rw [slide_state_eq (X.foldl Compose.stepCompose Compose.initialState)
         cp B st hSt hQC hCccPos hHighGt hChain]
 

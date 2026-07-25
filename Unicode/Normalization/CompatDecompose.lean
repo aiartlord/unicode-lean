@@ -96,8 +96,8 @@ def fullCompatDecompose (cp : Nat) : Array Nat :=
 /-- Fully compatibility-decompose a codepoint sequence. Applies
     `fullCompatDecompose` to each input codepoint and concatenates the
     results in order. -/
-def compatDecomposeSequence (cps : Array Nat) : Array Nat :=
-  cps.foldl (fun acc cp => acc ++ fullCompatDecompose cp) #[]
+def compatDecomposeSequence (cps : List Nat) : List Nat :=
+  cps.flatMap (fun cp => (fullCompatDecompose cp).toList)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- TEST VECTORS
@@ -520,13 +520,13 @@ theorem compat_decompose_GAG :
 
 /-- Sequence decomposition concatenates per-codepoint decompositions. -/
 theorem compat_decompose_sequence_mixed :
-    compatDecomposeSequence #[0x00A0, 0x00B2, 0x0041]
-      = #[0x0020, 0x0032, 0x0041] := by
+    compatDecomposeSequence [0x00A0, 0x00B2, 0x0041]
+      = [0x0020, 0x0032, 0x0041] := by
   simp only [compatDecomposeSequence, fullCompatDecompose, maxDepth]
   simp [fcd_nbsp 30, fcd_super_2 30, fcd_latin_A 31]
 
 /-- Decomposition of an empty sequence is empty. -/
 theorem compat_decompose_empty :
-    compatDecomposeSequence #[] = #[] := by decide
+    compatDecomposeSequence [] = [] := by decide
 
 end Unicode.Normalization.CompatDecompose

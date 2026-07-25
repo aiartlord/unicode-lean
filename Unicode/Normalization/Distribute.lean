@@ -71,11 +71,11 @@ theorem foldl_append_distribute
 
 /-- **`decomposeSequence` distributes over `++`.** Immediate specialisation of
     `foldl_append_distribute` to `Decompose.fullCanonicalDecompose`. -/
-theorem decomposeSequence_append (xs ys : Array Nat) :
+theorem decomposeSequence_append (xs ys : List Nat) :
     Decompose.decomposeSequence (xs ++ ys) =
       Decompose.decomposeSequence xs ++ Decompose.decomposeSequence ys := by
   unfold Decompose.decomposeSequence
-  exact foldl_append_distribute Decompose.fullCanonicalDecompose xs ys
+  exact List.flatMap_append
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- SPECIALISATION: caseFold
@@ -85,10 +85,10 @@ open Unicode.Precis.CaseMapping
 
 /-- **`caseFold` distributes over `++`.** Immediate specialisation of
     `foldl_append_distribute` to `caseFoldCodepoint`. -/
-theorem caseFold_append (xs ys : Array Nat) :
+theorem caseFold_append (xs ys : List Nat) :
     caseFold (xs ++ ys) = caseFold xs ++ caseFold ys := by
   unfold caseFold
-  exact foldl_append_distribute caseFoldCodepoint xs ys
+  exact List.flatMap_append
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- SINGLETON EXPANSIONS
@@ -97,13 +97,13 @@ theorem caseFold_append (xs ys : Array Nat) :
 /-- `decomposeSequence` on a singleton is the per-codepoint full canonical
     decomposition. -/
 theorem decomposeSequence_singleton (cp : Nat) :
-    Decompose.decomposeSequence #[cp] = Decompose.fullCanonicalDecompose cp := by
+    Decompose.decomposeSequence [cp] = (Decompose.fullCanonicalDecompose cp).toList := by
   unfold Decompose.decomposeSequence
   simp
 
 /-- `caseFold` on a singleton is the per-codepoint case fold. -/
 theorem caseFold_singleton (cp : Nat) :
-    caseFold #[cp] = caseFoldCodepoint cp := by
+    caseFold [cp] = (caseFoldCodepoint cp).toList := by
   unfold caseFold
   simp
 
@@ -124,7 +124,7 @@ theorem caseFold_singleton (cp : Nat) :
     equals applying it once. Composed from the existing `Decomposability`
     output-fully-decomposed theorem with the `NFD` identity-on-fully-decomposed
     theorem. -/
-theorem decomposeSequence_idempotent (xs : Array Nat) :
+theorem decomposeSequence_idempotent (xs : List Nat) :
     Decompose.decomposeSequence (Decompose.decomposeSequence xs)
       = Decompose.decomposeSequence xs := by
   exact Unicode.Normalization.NFD.decomposeSequence_id_on_FullyDecomposed

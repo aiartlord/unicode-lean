@@ -51,17 +51,17 @@ open Unicode.Generated
 /-- Raw flattening of a Compose state: emitted ++ optional starter ++
     buffer-in-scan-order (i.e., reversed because buffer accumulates in
     reverse). Used in the state invariant. -/
-def expand (s : Compose.ComposeState) : Array Nat :=
+def expand (s : Compose.ComposeState) : List Nat :=
   match s.starter with
-  | some st => s.emitted ++ #[st] ++ s.buffer.reverse.toArray
-  | none    => s.emitted ++ s.buffer.reverse.toArray
+  | some st => s.emitted.toList ++ [st] ++ s.buffer.reverse
+  | none    => s.emitted.toList ++ s.buffer.reverse
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- ABBREVIATIONS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Shorthand alias for the full-canonical-decompose flatten of a sequence. -/
-abbrev dSeq (xs : Array Nat) : Array Nat :=
+abbrev dSeq (xs : List Nat) : List Nat :=
   Decompose.decomposeSequence xs
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -75,17 +75,17 @@ abbrev dSeq (xs : Array Nat) : Array Nat :=
 
 /-- Two codepoint arrays are NFD-equivalent iff they canonicalize to the
     same NFD form. -/
-def NFDEquivalent (a b : Array Nat) : Prop := NFC.toNFD a = NFC.toNFD b
+def NFDEquivalent (a b : List Nat) : Prop := NFC.toNFD a = NFC.toNFD b
 
 /-- NFD-equivalence is reflexive. -/
-theorem NFDEquivalent_rfl (a : Array Nat) : NFDEquivalent a a := Eq.refl (NFC.toNFD a)
+theorem NFDEquivalent_rfl (a : List Nat) : NFDEquivalent a a := Eq.refl (NFC.toNFD a)
 
 /-- NFD-equivalence is symmetric. -/
-theorem NFDEquivalent_symm {a b : Array Nat}
+theorem NFDEquivalent_symm {a b : List Nat}
     (h : NFDEquivalent a b) : NFDEquivalent b a := Eq.symm h
 
 /-- NFD-equivalence is transitive. -/
-theorem NFDEquivalent_trans {a b c : Array Nat}
+theorem NFDEquivalent_trans {a b c : List Nat}
     (hab : NFDEquivalent a b) (hbc : NFDEquivalent b c) :
     NFDEquivalent a c := Eq.trans hab hbc
 
@@ -103,13 +103,13 @@ theorem NFDEquivalent_trans {a b c : Array Nat}
 /-- For any ComposeState `s`, `flushCompose s = expand s`. Definitional —
     both functions produce `emitted ++ starterPart ++ buffer.reverse.toArray`. -/
 theorem flushCompose_eq_expand (s : Compose.ComposeState) :
-    Compose.flushCompose s = expand s := by
+    (Compose.flushCompose s).toList = expand s := by
   unfold Compose.flushCompose expand
-  rfl
+  cases s.starter <;> simp [Array.toList_append]
 
 /-- `compose x = expand (fold stepCompose initialState x)`. Immediate from
     the definition of `compose` composed with `flushCompose_eq_expand`. -/
-theorem compose_eq_expand (x : Array Nat) :
+theorem compose_eq_expand (x : List Nat) :
     Compose.compose x = expand (x.foldl Compose.stepCompose Compose.initialState) := by
   unfold Compose.compose
   rw [flushCompose_eq_expand]
@@ -364,16 +364,16 @@ theorem stepCompose_preserves_valid
       * Hangul branches use `Hangul.composePair?`/`decomposeSyllable?`
         algorithmic duality. -/
 def StepPreservesNFDEquivalence : Prop :=
-  ∀ (s : Compose.ComposeState) (cp : Nat) (pre : Array Nat),
+  ∀ (s : Compose.ComposeState) (cp : Nat) (pre : List Nat),
     ComposeStateValid s →
     NFDEquivalent (expand s) pre →
-    NFDEquivalent (expand (Compose.stepCompose s cp)) (pre ++ #[cp])
+    NFDEquivalent (expand (Compose.stepCompose s cp)) (pre ++ [cp])
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- BATCH A: EXPAND-APPEND CASES (1, 2, 6, 8)
 --
 -- These four `stepCompose` branches all have the structural property
--- `expand (stepCompose s cp) = expand s ++ #[cp]` and therefore preserve
+-- `expand (stepCompose s cp) = expand s ++ [cp]` and therefore preserve
 -- NFD-equivalence via the `ToNFDAppend.toNFD_congr_append` lemma.
 --
 --   Case 1 — `starter = none`, `ccc = 0` (leading starter, no active
@@ -410,16 +410,16 @@ theorem reverse_cons_toArray (cp : Nat) (buf : List Nat) :
 
 /-- **Case 1** expand equality: leading starter with no active starter
     (ccc = 0) and (by validity) empty buffer gives `expand (step s cp) =
-    expand s ++ #[cp]`. The output state carries `starter := some cp`
+    expand s ++ [cp]`. The output state carries `starter := some cp`
     and still-empty buffer, so expand produces `s.emitted ++ #[cp]` —
-    which equals `expand s ++ #[cp]` by the same validity-forced empty
+    which equals `expand s ++ [cp]` by the same validity-forced empty
     buffer on the input side. -/
 theorem stepCompose_case_leading_starter_expand
     (s : Compose.ComposeState) (cp : Nat)
     (hSNone : s.starter = none)
     (hCCC : Lookup.canonicalCombiningClass cp = 0)
     (hv : ComposeStateValid s) :
-    expand (Compose.stepCompose s cp) = expand s ++ #[cp] := by
+    expand (Compose.stepCompose s cp) = expand s ++ [cp] := by
   have hBuf : s.buffer = [] := hv.1 hSNone
   rw [stepCompose_starter_none_output s cp hSNone]
   rw [if_pos hCCC]
@@ -429,13 +429,13 @@ theorem stepCompose_case_leading_starter_expand
 
 /-- **Case 2** expand equality: leading non-starter with no active
     starter and (by validity) empty buffer gives `expand (step s cp) =
-    expand s ++ #[cp]`. -/
+    expand s ++ [cp]`. -/
 theorem stepCompose_case_leading_nonstarter_expand
     (s : Compose.ComposeState) (cp : Nat)
     (hSNone : s.starter = none)
     (hCCC : Lookup.canonicalCombiningClass cp ≠ 0)
     (hv : ComposeStateValid s) :
-    expand (Compose.stepCompose s cp) = expand s ++ #[cp] := by
+    expand (Compose.stepCompose s cp) = expand s ++ [cp] := by
   have hBuf : s.buffer = [] := hv.1 hSNone
   rw [stepCompose_starter_none_output s cp hSNone]
   rw [if_neg hCCC]
@@ -444,13 +444,13 @@ theorem stepCompose_case_leading_nonstarter_expand
   simp
 
 /-- **Case 6** expand equality: blocked non-starter joins the buffer
-    (reverse-prepend). `expand (step s cp) = expand s ++ #[cp]`. -/
+    (reverse-prepend). `expand (step s cp) = expand s ++ [cp]`. -/
 theorem stepCompose_case_buffer_append_expand
     (s : Compose.ComposeState) (cp : Nat) (st : Nat)
     (hSome : s.starter = some st)
     (hCCC : Lookup.canonicalCombiningClass cp ≠ 0)
     (hBlock : Lookup.canonicalCombiningClass cp ≤ s.maxCCC) :
-    expand (Compose.stepCompose s cp) = expand s ++ #[cp] := by
+    expand (Compose.stepCompose s cp) = expand s ++ [cp] := by
   have hStep : Compose.stepCompose s cp
              = { s with buffer := cp :: s.buffer
                       , maxCCC := Nat.max s.maxCCC
@@ -461,10 +461,10 @@ theorem stepCompose_case_buffer_append_expand
   rw [hStep]
   unfold expand
   rw [hSome]
-  show s.emitted ++ #[st] ++ (cp :: s.buffer).reverse.toArray
-     = s.emitted ++ #[st] ++ s.buffer.reverse.toArray ++ #[cp]
-  rw [reverse_cons_toArray]
-  rw [← Array.append_assoc]
+  show s.emitted.toList ++ [st] ++ (cp :: s.buffer).reverse
+     = s.emitted.toList ++ [st] ++ s.buffer.reverse ++ [cp]
+  rw [List.reverse_cons]
+  rw [← List.append_assoc]
 
 /-- **Case 8** expand equality: strict-max non-starter without a
     composition partner joins the buffer. Same pattern as Case 6. -/
@@ -474,7 +474,7 @@ theorem stepCompose_case_strict_max_no_composite_expand
     (hCCC : Lookup.canonicalCombiningClass cp ≠ 0)
     (hStrictMax : ¬(Lookup.canonicalCombiningClass cp ≤ s.maxCCC))
     (hPrim : Compose.primaryComposite? st cp = none) :
-    expand (Compose.stepCompose s cp) = expand s ++ #[cp] := by
+    expand (Compose.stepCompose s cp) = expand s ++ [cp] := by
   have hStep : Compose.stepCompose s cp
              = { s with buffer := cp :: s.buffer
                       , maxCCC := Nat.max s.maxCCC
@@ -485,68 +485,68 @@ theorem stepCompose_case_strict_max_no_composite_expand
   rw [hStep]
   unfold expand
   rw [hSome]
-  show s.emitted ++ #[st] ++ (cp :: s.buffer).reverse.toArray
-     = s.emitted ++ #[st] ++ s.buffer.reverse.toArray ++ #[cp]
-  rw [reverse_cons_toArray]
-  rw [← Array.append_assoc]
+  show s.emitted.toList ++ [st] ++ (cp :: s.buffer).reverse
+     = s.emitted.toList ++ [st] ++ s.buffer.reverse ++ [cp]
+  rw [List.reverse_cons]
+  rw [← List.append_assoc]
 
 /-- **NFD-equivalence preservation via expand-equality.** Generic helper
     for any `stepCompose` branch where the output `expand` equals the
     input `expand` appended with the new codepoint. -/
 theorem nfdEquivalent_of_expand_append
-    (s : Compose.ComposeState) (cp : Nat) (pre : Array Nat)
-    (hExpand : expand (Compose.stepCompose s cp) = expand s ++ #[cp])
+    (s : Compose.ComposeState) (cp : Nat) (pre : List Nat)
+    (hExpand : expand (Compose.stepCompose s cp) = expand s ++ [cp])
     (hEquiv : NFDEquivalent (expand s) pre) :
-    NFDEquivalent (expand (Compose.stepCompose s cp)) (pre ++ #[cp]) := by
+    NFDEquivalent (expand (Compose.stepCompose s cp)) (pre ++ [cp]) := by
   unfold NFDEquivalent
   rw [hExpand]
-  exact ToNFDAppend.toNFD_congr_append #[cp] hEquiv
+  exact ToNFDAppend.toNFD_congr_append [cp] hEquiv
 
 /-- **Case 1** closure: leading starter preserves NFD-equivalence. -/
 theorem stepPreserves_case_leading_starter
-    (s : Compose.ComposeState) (cp : Nat) (pre : Array Nat)
+    (s : Compose.ComposeState) (cp : Nat) (pre : List Nat)
     (hv : ComposeStateValid s)
     (hSNone : s.starter = none)
     (hCCC : Lookup.canonicalCombiningClass cp = 0)
     (hEquiv : NFDEquivalent (expand s) pre) :
-    NFDEquivalent (expand (Compose.stepCompose s cp)) (pre ++ #[cp]) :=
+    NFDEquivalent (expand (Compose.stepCompose s cp)) (pre ++ [cp]) :=
   nfdEquivalent_of_expand_append s cp pre
     (stepCompose_case_leading_starter_expand s cp hSNone hCCC hv) hEquiv
 
 /-- **Case 2** closure: leading non-starter preserves NFD-equivalence. -/
 theorem stepPreserves_case_leading_nonstarter
-    (s : Compose.ComposeState) (cp : Nat) (pre : Array Nat)
+    (s : Compose.ComposeState) (cp : Nat) (pre : List Nat)
     (hv : ComposeStateValid s)
     (hSNone : s.starter = none)
     (hCCC : Lookup.canonicalCombiningClass cp ≠ 0)
     (hEquiv : NFDEquivalent (expand s) pre) :
-    NFDEquivalent (expand (Compose.stepCompose s cp)) (pre ++ #[cp]) :=
+    NFDEquivalent (expand (Compose.stepCompose s cp)) (pre ++ [cp]) :=
   nfdEquivalent_of_expand_append s cp pre
     (stepCompose_case_leading_nonstarter_expand s cp hSNone hCCC hv) hEquiv
 
 /-- **Case 6** closure: blocked non-starter preserves NFD-equivalence. -/
 theorem stepPreserves_case_buffer_append
-    (s : Compose.ComposeState) (cp : Nat) (pre : Array Nat)
+    (s : Compose.ComposeState) (cp : Nat) (pre : List Nat)
     (st : Nat)
     (hSome : s.starter = some st)
     (hCCC : Lookup.canonicalCombiningClass cp ≠ 0)
     (hBlock : Lookup.canonicalCombiningClass cp ≤ s.maxCCC)
     (hEquiv : NFDEquivalent (expand s) pre) :
-    NFDEquivalent (expand (Compose.stepCompose s cp)) (pre ++ #[cp]) :=
+    NFDEquivalent (expand (Compose.stepCompose s cp)) (pre ++ [cp]) :=
   nfdEquivalent_of_expand_append s cp pre
     (stepCompose_case_buffer_append_expand s cp st hSome hCCC hBlock) hEquiv
 
 /-- **Case 8** closure: strict-max non-starter without composition
     partner preserves NFD-equivalence. -/
 theorem stepPreserves_case_strict_max_no_composite
-    (s : Compose.ComposeState) (cp : Nat) (pre : Array Nat)
+    (s : Compose.ComposeState) (cp : Nat) (pre : List Nat)
     (st : Nat)
     (hSome : s.starter = some st)
     (hCCC : Lookup.canonicalCombiningClass cp ≠ 0)
     (hStrictMax : ¬(Lookup.canonicalCombiningClass cp ≤ s.maxCCC))
     (hPrim : Compose.primaryComposite? st cp = none)
     (hEquiv : NFDEquivalent (expand s) pre) :
-    NFDEquivalent (expand (Compose.stepCompose s cp)) (pre ++ #[cp]) :=
+    NFDEquivalent (expand (Compose.stepCompose s cp)) (pre ++ [cp]) :=
   nfdEquivalent_of_expand_append s cp pre
     (stepCompose_case_strict_max_no_composite_expand s cp st hSome hCCC
       hStrictMax hPrim) hEquiv
@@ -558,7 +558,7 @@ theorem stepPreserves_case_strict_max_no_composite
 -- starter without composing. They flush the current starter (+ any
 -- buffered non-starters) into `emitted`, set `starter := some cp`, and
 -- reset the buffer. The output `expand` still has the form
--- `expand s ++ #[cp]`, so NFD-equivalence preservation follows via the
+-- `expand s ++ [cp]`, so NFD-equivalence preservation follows via the
 -- same `nfdEquivalent_of_expand_append` helper used in Batch A —
 -- `toNFD_congr_append` is agnostic about whether the appended element
 -- is a starter.
@@ -584,7 +584,7 @@ theorem stepCompose_case_starter_no_composite_expand
     (hCCC : Lookup.canonicalCombiningClass cp = 0)
     (hBufEmpty : s.buffer.isEmpty = true)
     (hPrim : Compose.primaryComposite? st cp = none) :
-    expand (Compose.stepCompose s cp) = expand s ++ #[cp] := by
+    expand (Compose.stepCompose s cp) = expand s ++ [cp] := by
   have hBuf : s.buffer = [] := List.isEmpty_iff.mp hBufEmpty
   have hStep : Compose.stepCompose s cp
              = { emitted := s.emitted ++ #[st]
@@ -601,7 +601,7 @@ theorem stepCompose_case_starter_no_composite_expand
 
 /-- **Case 5** expand equality: starter input with non-empty buffer.
     Flushing st and buffer into emitted, then making cp the new active
-    starter, gives the output `expand` as `s.emitted ++ #[st] ++
+    starter, gives the output `expand` as `s.emitted.toList ++ [st] ++
     s.buffer.reverse.toArray ++ #[cp] ++ #[]`. Reduces to `expand s ++
     #[cp]`. -/
 theorem stepCompose_case_starter_flush_expand
@@ -609,7 +609,7 @@ theorem stepCompose_case_starter_flush_expand
     (hSome : s.starter = some st)
     (hCCC : Lookup.canonicalCombiningClass cp = 0)
     (hBufNonEmpty : s.buffer.isEmpty = false) :
-    expand (Compose.stepCompose s cp) = expand s ++ #[cp] := by
+    expand (Compose.stepCompose s cp) = expand s ++ [cp] := by
   have hStep : Compose.stepCompose s cp
              = { emitted := s.emitted ++ #[st] ++ s.buffer.reverse.toArray
                , starter := some cp
@@ -626,14 +626,14 @@ theorem stepCompose_case_starter_flush_expand
 /-- **Case 4** closure: starter-to-starter without composition
     preserves NFD-equivalence. -/
 theorem stepPreserves_case_starter_no_composite
-    (s : Compose.ComposeState) (cp : Nat) (pre : Array Nat)
+    (s : Compose.ComposeState) (cp : Nat) (pre : List Nat)
     (st : Nat)
     (hSome : s.starter = some st)
     (hCCC : Lookup.canonicalCombiningClass cp = 0)
     (hBufEmpty : s.buffer.isEmpty = true)
     (hPrim : Compose.primaryComposite? st cp = none)
     (hEquiv : NFDEquivalent (expand s) pre) :
-    NFDEquivalent (expand (Compose.stepCompose s cp)) (pre ++ #[cp]) :=
+    NFDEquivalent (expand (Compose.stepCompose s cp)) (pre ++ [cp]) :=
   nfdEquivalent_of_expand_append s cp pre
     (stepCompose_case_starter_no_composite_expand s cp st hSome hCCC
       hBufEmpty hPrim) hEquiv
@@ -641,13 +641,13 @@ theorem stepPreserves_case_starter_no_composite
 /-- **Case 5** closure: starter input with non-empty buffer preserves
     NFD-equivalence. -/
 theorem stepPreserves_case_starter_flush
-    (s : Compose.ComposeState) (cp : Nat) (pre : Array Nat)
+    (s : Compose.ComposeState) (cp : Nat) (pre : List Nat)
     (st : Nat)
     (hSome : s.starter = some st)
     (hCCC : Lookup.canonicalCombiningClass cp = 0)
     (hBufNonEmpty : s.buffer.isEmpty = false)
     (hEquiv : NFDEquivalent (expand s) pre) :
-    NFDEquivalent (expand (Compose.stepCompose s cp)) (pre ++ #[cp]) :=
+    NFDEquivalent (expand (Compose.stepCompose s cp)) (pre ++ [cp]) :=
   nfdEquivalent_of_expand_append s cp pre
     (stepCompose_case_starter_flush_expand s cp st hSome hCCC hBufNonEmpty)
     hEquiv
@@ -967,8 +967,8 @@ def ReorderCommutesStrictMax : Prop :=
     ¬(Lookup.canonicalCombiningClass cp ≤ maxCCC) →
     (∀ y ∈ buffer, 0 < Lookup.canonicalCombiningClass y
                    ∧ Lookup.canonicalCombiningClass y ≤ maxCCC) →
-    NFC.toNFD (emitted ++ #[p] ++ buffer.reverse.toArray)
-      = NFC.toNFD (emitted ++ #[st] ++ buffer.reverse.toArray ++ #[cp])
+    NFC.toNFD (emitted.toList ++ [p] ++ buffer.reverse)
+      = NFC.toNFD (emitted.toList ++ [st] ++ buffer.reverse ++ [cp])
 
 -- ── Context-lifted factorization at the NFD level ─────────────────────────────
 
@@ -977,19 +977,19 @@ def ReorderCommutesStrictMax : Prop :=
     `primaryComposite? d c = some p` and `c` is not the `0x11C3`
     edge-case jamo. -/
 theorem toNFD_primaryComposite_expand
-    (X : Array Nat) (d c p : Nat)
+    (X : List Nat) (d c p : Nat)
     (h : Compose.primaryComposite? d c = some p)
     (hCRange : c < Hangul.TBase + Hangul.TCount) :
-    NFC.toNFD (X ++ #[p]) = NFC.toNFD (X ++ #[d] ++ #[c]) := by
+    NFC.toNFD (X ++ [p]) = NFC.toNFD (X ++ [d] ++ [c]) := by
   unfold NFC.toNFD
-  rw [Distribute.decomposeSequence_append X #[p]]
+  rw [Distribute.decomposeSequence_append X [p]]
   rw [Distribute.decomposeSequence_singleton p]
   rw [fullCanonicalDecompose_of_primaryComposite d c p h hCRange]
-  rw [Distribute.decomposeSequence_append (X ++ #[d]) #[c]]
-  rw [Distribute.decomposeSequence_append X #[d]]
+  rw [Distribute.decomposeSequence_append (X ++ [d]) [c]]
+  rw [Distribute.decomposeSequence_append X [d]]
   rw [Distribute.decomposeSequence_singleton d]
   rw [Distribute.decomposeSequence_singleton c]
-  rw [Array.append_assoc]
+  simp [Array.toList_append, List.append_assoc]
 
 /-- **Non-Hangul variant of `toNFD_primaryComposite_expand`.** When
     `Hangul.composePair? d c = none`, the expansion chain goes through
@@ -1001,19 +1001,19 @@ theorem toNFD_primaryComposite_expand
     starter-starter primary composites catalogued in the UCD audit,
     all of which route through the non-Hangul `UnicodeData.rows` scan). -/
 theorem toNFD_primaryComposite_expand_nonHangul
-    (X : Array Nat) (d c p : Nat)
+    (X : List Nat) (d c p : Nat)
     (hHangul : Hangul.composePair? d c = none)
     (h : Compose.primaryComposite? d c = some p) :
-    NFC.toNFD (X ++ #[p]) = NFC.toNFD (X ++ #[d] ++ #[c]) := by
+    NFC.toNFD (X ++ [p]) = NFC.toNFD (X ++ [d] ++ [c]) := by
   unfold NFC.toNFD
-  rw [Distribute.decomposeSequence_append X #[p]]
+  rw [Distribute.decomposeSequence_append X [p]]
   rw [Distribute.decomposeSequence_singleton p]
   rw [fullCanonicalDecompose_of_nonHangul_primaryComposite d c p hHangul h]
-  rw [Distribute.decomposeSequence_append (X ++ #[d]) #[c]]
-  rw [Distribute.decomposeSequence_append X #[d]]
+  rw [Distribute.decomposeSequence_append (X ++ [d]) [c]]
+  rw [Distribute.decomposeSequence_append X [d]]
   rw [Distribute.decomposeSequence_singleton d]
   rw [Distribute.decomposeSequence_singleton c]
-  rw [Array.append_assoc]
+  simp [Array.toList_append, List.append_assoc]
 
 /-- **Hangul composePair? second-argument bound**. When
     `Hangul.composePair? first second` succeeds, the second argument
@@ -1125,7 +1125,7 @@ theorem composePair?_none_of_nonStarter_second
     the Hangul sub-case uses the `decide`-backed
     `fullCanonicalDecomposeFactoringHangul_holds`. -/
 theorem stepPreserves_case_primary_absorb_starter
-    (s : Compose.ComposeState) (cp : Nat) (pre : Array Nat)
+    (s : Compose.ComposeState) (cp : Nat) (pre : List Nat)
     (st : Nat) (p : Nat)
     (hSome : s.starter = some st)
     (hCCC : Lookup.canonicalCombiningClass cp = 0)
@@ -1133,23 +1133,23 @@ theorem stepPreserves_case_primary_absorb_starter
     (hPrim : Compose.primaryComposite? st cp = some p)
     (hCpRange : cp < Hangul.TBase + Hangul.TCount)
     (hEquiv : NFDEquivalent (expand s) pre) :
-    NFDEquivalent (expand (Compose.stepCompose s cp)) (pre ++ #[cp]) := by
+    NFDEquivalent (expand (Compose.stepCompose s cp)) (pre ++ [cp]) := by
   have hBuf : s.buffer = [] := List.isEmpty_iff.mp hBufEmpty
   have hStep : Compose.stepCompose s cp = { s with starter := some p } := by
     unfold Compose.stepCompose
     rw [hSome]
     simp [hCCC, hBufEmpty, hPrim]
-  have hExpandInput : expand s = s.emitted ++ #[st] := by
+  have hExpandInput : expand s = s.emitted.toList ++ [st] := by
     unfold expand; rw [hSome, hBuf]; simp
-  have hExpandOutput : expand (Compose.stepCompose s cp) = s.emitted ++ #[p] := by
+  have hExpandOutput : expand (Compose.stepCompose s cp) = s.emitted.toList ++ [p] := by
     rw [hStep]; unfold expand; rw [hBuf]; simp
   rw [hExpandOutput]
   unfold NFDEquivalent
-  rw [toNFD_primaryComposite_expand s.emitted st cp p hPrim hCpRange]
-  have hEquiv' : NFC.toNFD (s.emitted ++ #[st]) = NFC.toNFD pre := by
+  rw [toNFD_primaryComposite_expand s.emitted.toList st cp p hPrim hCpRange]
+  have hEquiv' : NFC.toNFD (s.emitted.toList ++ [st]) = NFC.toNFD pre := by
     unfold NFDEquivalent at hEquiv
     rw [← hExpandInput]; exact hEquiv
-  exact ToNFDAppend.toNFD_congr_append #[cp] hEquiv'
+  exact ToNFDAppend.toNFD_congr_append [cp] hEquiv'
 
 /-- **Case 3 non-Hangul closure**: primary-composite absorb at starter
     boundary when the composition goes through the UnicodeData path
@@ -1161,7 +1161,7 @@ theorem stepPreserves_case_primary_absorb_starter
     including the 18 with `cp ≥ 0x11C3` (Brahmic vowel signs +
     musical-symbol combining stems). -/
 theorem stepPreserves_case_primary_absorb_starter_nonHangul
-    (s : Compose.ComposeState) (cp : Nat) (pre : Array Nat)
+    (s : Compose.ComposeState) (cp : Nat) (pre : List Nat)
     (st : Nat) (p : Nat)
     (hSome : s.starter = some st)
     (hCCC : Lookup.canonicalCombiningClass cp = 0)
@@ -1169,23 +1169,23 @@ theorem stepPreserves_case_primary_absorb_starter_nonHangul
     (hPrim : Compose.primaryComposite? st cp = some p)
     (hHangul : Hangul.composePair? st cp = none)
     (hEquiv : NFDEquivalent (expand s) pre) :
-    NFDEquivalent (expand (Compose.stepCompose s cp)) (pre ++ #[cp]) := by
+    NFDEquivalent (expand (Compose.stepCompose s cp)) (pre ++ [cp]) := by
   have hBuf : s.buffer = [] := List.isEmpty_iff.mp hBufEmpty
   have hStep : Compose.stepCompose s cp = { s with starter := some p } := by
     unfold Compose.stepCompose
     rw [hSome]
     simp [hCCC, hBufEmpty, hPrim]
-  have hExpandInput : expand s = s.emitted ++ #[st] := by
+  have hExpandInput : expand s = s.emitted.toList ++ [st] := by
     unfold expand; rw [hSome, hBuf]; simp
-  have hExpandOutput : expand (Compose.stepCompose s cp) = s.emitted ++ #[p] := by
+  have hExpandOutput : expand (Compose.stepCompose s cp) = s.emitted.toList ++ [p] := by
     rw [hStep]; unfold expand; rw [hBuf]; simp
   rw [hExpandOutput]
   unfold NFDEquivalent
-  rw [toNFD_primaryComposite_expand_nonHangul s.emitted st cp p hHangul hPrim]
-  have hEquiv' : NFC.toNFD (s.emitted ++ #[st]) = NFC.toNFD pre := by
+  rw [toNFD_primaryComposite_expand_nonHangul s.emitted.toList st cp p hHangul hPrim]
+  have hEquiv' : NFC.toNFD (s.emitted.toList ++ [st]) = NFC.toNFD pre := by
     unfold NFDEquivalent at hEquiv
     rw [← hExpandInput]; exact hEquiv
-  exact ToNFDAppend.toNFD_congr_append #[cp] hEquiv'
+  exact ToNFDAppend.toNFD_congr_append [cp] hEquiv'
 
 -- ── Case 7 close (conditional on both hypotheses) ─────────────────────────────
 
@@ -1195,7 +1195,7 @@ theorem stepPreserves_case_primary_absorb_starter_nonHangul
     `st` with the composite `p`. -/
 theorem stepPreserves_case_primary_absorb_strict_max
     (hRCSM : ReorderCommutesStrictMax)
-    (s : Compose.ComposeState) (cp : Nat) (pre : Array Nat)
+    (s : Compose.ComposeState) (cp : Nat) (pre : List Nat)
     (st : Nat) (p : Nat)
     (hSome : s.starter = some st)
     (hCCC : Lookup.canonicalCombiningClass cp ≠ 0)
@@ -1204,26 +1204,26 @@ theorem stepPreserves_case_primary_absorb_strict_max
     (hBuf : ∀ y ∈ s.buffer, 0 < Lookup.canonicalCombiningClass y
                             ∧ Lookup.canonicalCombiningClass y ≤ s.maxCCC)
     (hEquiv : NFDEquivalent (expand s) pre) :
-    NFDEquivalent (expand (Compose.stepCompose s cp)) (pre ++ #[cp]) := by
+    NFDEquivalent (expand (Compose.stepCompose s cp)) (pre ++ [cp]) := by
   have hStep : Compose.stepCompose s cp = { s with starter := some p } := by
     unfold Compose.stepCompose
     rw [hSome]
     simp [hCCC, hStrictMax, hPrim]
-  have hExpandInput : expand s = s.emitted ++ #[st] ++ s.buffer.reverse.toArray := by
+  have hExpandInput : expand s = s.emitted.toList ++ [st] ++ s.buffer.reverse := by
     unfold expand; rw [hSome]
   have hExpandOutput :
       expand (Compose.stepCompose s cp)
-        = s.emitted ++ #[p] ++ s.buffer.reverse.toArray := by
+        = s.emitted.toList ++ [p] ++ s.buffer.reverse := by
     rw [hStep]; unfold expand; simp
   rw [hExpandOutput]
   unfold NFDEquivalent
   rw [hRCSM s.emitted st cp p s.buffer s.maxCCC hPrim hCCC hStrictMax hBuf]
   have hEquiv' :
-      NFC.toNFD (s.emitted ++ #[st] ++ s.buffer.reverse.toArray)
+      NFC.toNFD (s.emitted.toList ++ [st] ++ s.buffer.reverse)
         = NFC.toNFD pre := by
     unfold NFDEquivalent at hEquiv
     rw [← hExpandInput]; exact hEquiv
-  exact ToNFDAppend.toNFD_congr_append #[cp] hEquiv'
+  exact ToNFDAppend.toNFD_congr_append [cp] hEquiv'
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- DISPATCHER: StepPreservesNFDEquivalence given ReorderCommutesStrictMax
@@ -1325,14 +1325,13 @@ theorem foldOverList (xs : Array Nat) :
     invariant is threaded through the induction unconditionally via
     `initialState_valid` and `stepCompose_preserves_valid`. -/
 theorem foldl_stepCompose_NFDEquivalence_given
-    (hStep : StepPreservesNFDEquivalence) (xs : Array Nat) :
+    (hStep : StepPreservesNFDEquivalence) (xs : List Nat) :
     NFDEquivalent (expand (xs.foldl Compose.stepCompose Compose.initialState)) xs := by
-  rw [← Array.foldl_toList]
-  have key : ∀ (l : List Nat) (s : Compose.ComposeState) (pre : Array Nat),
+  have key : ∀ (l : List Nat) (s : Compose.ComposeState) (pre : List Nat),
       ComposeStateValid s →
       NFDEquivalent (expand s) pre →
       NFDEquivalent (expand (l.foldl Compose.stepCompose s))
-                    (l.foldl (fun acc x => acc ++ #[x]) pre) := by
+                    (l.foldl (fun acc x => acc ++ [x]) pre) := by
     intro l
     induction l with
     | nil =>
@@ -1343,16 +1342,21 @@ theorem foldl_stepCompose_NFDEquivalence_given
       intro s pre hv h
       simp only [List.foldl_cons]
       apply ih (Compose.stepCompose s hd)
-        (pre ++ #[hd])
+        (pre ++ [hd])
         (stepCompose_preserves_valid s hd hv)
       exact hStep s hd pre hv h
-  have hInit : NFDEquivalent (expand Compose.initialState) #[] := by
-    unfold expand Compose.initialState
+  have hInit : NFDEquivalent (expand Compose.initialState) [] := by
+    unfold NFDEquivalent expand Compose.initialState
     simp
-    rfl
-  have hRes := key xs.toList Compose.initialState #[] initialState_valid hInit
-  rw [foldOverList xs] at hRes
-  exact hRes
+  have hFold : ∀ (l : List Nat) (init : List Nat),
+      l.foldl (fun acc x => acc ++ [x]) init = init ++ l := by
+    intro l
+    induction l with
+    | nil => intro init; simp
+    | cons hd tl ih => intro init; simp only [List.foldl_cons, ih]; simp
+  have hRes := key xs Compose.initialState [] initialState_valid hInit
+  rw [hFold xs []] at hRes
+  simpa using hRes
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- DECOMPOSE-COMPOSE INVERSION (conditional)
@@ -1363,7 +1367,7 @@ theorem foldl_stepCompose_NFDEquivalence_given
     `toNFD (compose x) = x`. -/
 theorem decompose_compose_inversion_given
     (hStep : StepPreservesNFDEquivalence)
-    (x : Array Nat) (hx : NFC.toNFD x = x) :
+    (x : List Nat) (hx : NFC.toNFD x = x) :
     NFC.toNFD (Compose.compose x) = x := by
   rw [compose_eq_expand]
   have hEquiv := foldl_stepCompose_NFDEquivalence_given hStep x
@@ -1380,7 +1384,7 @@ theorem decompose_compose_inversion_given
     `StepPreservesNFDEquivalence` is closed, this becomes unconditional. -/
 theorem toNFC_idempotent_given
     (hStep : StepPreservesNFDEquivalence)
-    (x : Array Nat) :
+    (x : List Nat) :
     NFC.toNFC (NFC.toNFC x) = NFC.toNFC x := by
   unfold NFC.toNFC
   have hNFD : NFC.toNFD (NFC.toNFD x) = NFC.toNFD x :=
@@ -1399,7 +1403,7 @@ theorem toNFC_idempotent_given
     trivially in NFD form by `toNFD_idempotent`). -/
 theorem toNFD_toNFC_eq_toNFD_given
     (hStep : StepPreservesNFDEquivalence)
-    (x : Array Nat) :
+    (x : List Nat) :
     NFC.toNFD (NFC.toNFC x) = NFC.toNFD x := by
   -- toNFC x = compose (toNFD x) by definition
   unfold NFC.toNFC
@@ -1487,39 +1491,23 @@ theorem fullCanonicalDecompose_preserves_ccc_of_nonStarter
     helper from `Decompose.lean`; the private version there is
     inaccessible from this module. -/
 theorem mem_foldl_fullCanonicalDecompose
-    (Y : Array Nat) (z : Nat)
-    (hZ : z ∈ (Decompose.decomposeSequence Y).toList) :
-    ∃ y ∈ Y.toList, z ∈ Decompose.fullCanonicalDecompose y := by
+    (Y : List Nat) (z : Nat)
+    (hZ : z ∈ Decompose.decomposeSequence Y) :
+    ∃ y ∈ Y, z ∈ Decompose.fullCanonicalDecompose y := by
   unfold Decompose.decomposeSequence at hZ
-  rw [← Array.foldl_toList] at hZ
-  have key : ∀ (l : List Nat) (init : Array Nat),
-      z ∈ (l.foldl (fun acc y => acc ++ Decompose.fullCanonicalDecompose y)
-                    init).toList →
-      z ∈ init.toList ∨ ∃ y ∈ l, z ∈ Decompose.fullCanonicalDecompose y := by
-    intro l
-    induction l with
-    | nil => intro init hM; left; simpa using hM
-    | cons hd tl ih =>
-      intro init hM
-      simp only [List.foldl_cons] at hM
-      rcases ih (init ++ Decompose.fullCanonicalDecompose hd) hM with hInit | ⟨y, hyM, hyF⟩
-      · rcases Array.mem_append.mp (by simpa using hInit) with h1 | h2
-        · left; simpa using h1
-        · right; exact ⟨hd, by simp, h2⟩
-      · right; exact ⟨y, by simp [hyM], hyF⟩
-  rcases key Y.toList #[] hZ with hEmpty | ⟨y, hyM, hyF⟩
-  · exact absurd hEmpty (by simp)
-  · exact ⟨y, hyM, hyF⟩
+  rw [List.mem_flatMap] at hZ
+  obtain ⟨y, hyM, hyF⟩ := hZ
+  exact ⟨y, hyM, by simpa using hyF⟩
 
 /-- **Sequence CCC preservation for non-starter arrays.** For every
     array `Y` whose elements are all non-starters with CCC ≤ some
     bound `M`, every element of `decomposeSequence Y` is also a
     non-starter with CCC ≤ `M`. -/
 theorem decomposeSequence_nonStarter_preserves_ccc
-    (Y : Array Nat) (M : Nat)
-    (hYnonStarter : ∀ y ∈ Y.toList, 0 < Lookup.canonicalCombiningClass y)
-    (hYbound : ∀ y ∈ Y.toList, Lookup.canonicalCombiningClass y ≤ M) :
-    ∀ z ∈ (Decompose.decomposeSequence Y).toList,
+    (Y : List Nat) (M : Nat)
+    (hYnonStarter : ∀ y ∈ Y, 0 < Lookup.canonicalCombiningClass y)
+    (hYbound : ∀ y ∈ Y, Lookup.canonicalCombiningClass y ≤ M) :
+    ∀ z ∈ Decompose.decomposeSequence Y,
       0 < Lookup.canonicalCombiningClass z
       ∧ Lookup.canonicalCombiningClass z ≤ M := by
   intro z hZ
@@ -1583,55 +1571,51 @@ theorem reorderCommutesStrictMax_holds : ReorderCommutesStrictMax := by
   have hHangul : Hangul.composePair? st cp = none :=
     composePair?_none_of_nonStarter_second st cp hCCCNe
   -- Step 2: Expand p = [st, cp] in NFD via the non-Hangul helper
-  have hExpandP : NFC.toNFD (emitted ++ #[p]) = NFC.toNFD (emitted ++ #[st] ++ #[cp]) :=
-    toNFD_primaryComposite_expand_nonHangul emitted st cp p hHangul hPrim
-  have hExpandFull : NFC.toNFD (emitted ++ #[p] ++ buffer.reverse.toArray)
-                   = NFC.toNFD (emitted ++ #[st] ++ #[cp] ++ buffer.reverse.toArray) :=
-    ToNFDAppend.toNFD_congr_append buffer.reverse.toArray hExpandP
+  have hExpandP : NFC.toNFD (emitted.toList ++ [p]) = NFC.toNFD (emitted.toList ++ [st] ++ [cp]) :=
+    toNFD_primaryComposite_expand_nonHangul emitted.toList st cp p hHangul hPrim
+  have hExpandFull : NFC.toNFD (emitted.toList ++ [p] ++ buffer.reverse)
+                   = NFC.toNFD (emitted.toList ++ [st] ++ [cp] ++ buffer.reverse) :=
+    ToNFDAppend.toNFD_congr_append buffer.reverse hExpandP
   rw [hExpandFull]
   -- Step 3: Prove toNFD (emitted ++ [st] ++ [cp] ++ buf.rev) = toNFD (emitted ++ [st] ++ buf.rev ++ [cp])
   -- Unfold toNFD, distribute decomposeSequence, apply reorder_commutes_strict_max_multi.
   unfold NFC.toNFD
-  -- Reassociate both sides to (emitted ++ #[st]) ++ ...
-  have hLhsAssoc : emitted ++ #[st] ++ #[cp] ++ buffer.reverse.toArray
-                 = (emitted ++ #[st]) ++ (#[cp] ++ buffer.reverse.toArray) := by
-    rw [Array.append_assoc, Array.append_assoc]
-  have hRhsAssoc : emitted ++ #[st] ++ buffer.reverse.toArray ++ #[cp]
-                 = (emitted ++ #[st]) ++ (buffer.reverse.toArray ++ #[cp]) := by
-    rw [Array.append_assoc, Array.append_assoc]
+  -- Reassociate both sides to (emitted ++ [st]) ++ ...
+  have hLhsAssoc : emitted.toList ++ [st] ++ [cp] ++ buffer.reverse
+                 = (emitted.toList ++ [st]) ++ ([cp] ++ buffer.reverse) := by
+    rw [List.append_assoc, List.append_assoc]
+  have hRhsAssoc : emitted.toList ++ [st] ++ buffer.reverse ++ [cp]
+                 = (emitted.toList ++ [st]) ++ (buffer.reverse ++ [cp]) := by
+    rw [List.append_assoc, List.append_assoc]
   rw [hLhsAssoc, hRhsAssoc]
-  rw [Distribute.decomposeSequence_append (emitted ++ #[st]) (#[cp] ++ buffer.reverse.toArray)]
-  rw [Distribute.decomposeSequence_append (emitted ++ #[st]) (buffer.reverse.toArray ++ #[cp])]
-  rw [Distribute.decomposeSequence_append #[cp] buffer.reverse.toArray]
-  rw [Distribute.decomposeSequence_append buffer.reverse.toArray #[cp]]
+  rw [Distribute.decomposeSequence_append (emitted.toList ++ [st]) ([cp] ++ buffer.reverse)]
+  rw [Distribute.decomposeSequence_append (emitted.toList ++ [st]) (buffer.reverse ++ [cp])]
+  rw [Distribute.decomposeSequence_append [cp] buffer.reverse]
+  rw [Distribute.decomposeSequence_append buffer.reverse [cp]]
   rw [Distribute.decomposeSequence_singleton cp]
   -- Reassociate to ((A ++ C) ++ Y) vs ((A ++ Y) ++ C) shape
-  simp only [← Array.append_assoc]
+  simp only [← List.append_assoc]
   -- Now goal in the shape of reorder_commutes_strict_max_multi:
   -- reorder (A ++ C ++ Y) = reorder (A ++ Y ++ C)   -- note: direction
   -- where A = ds(emitted ++ #[st]), C = fullCanonicalDecompose cp, Y = ds buf.rev
   -- reorder_commutes_strict_max_multi: reorder (A ++ Y ++ C) = reorder (A ++ C ++ Y)
   -- The .symm direction matches the goal.
   -- Establish the three multi-element hypotheses.
-  have hBufRevNonStarter : ∀ y ∈ buffer.reverse.toArray.toList,
+  have hBufRevNonStarter : ∀ y ∈ buffer.reverse,
                               0 < Lookup.canonicalCombiningClass y := by
     intro y hy
-    have hyBuf : y ∈ buffer := by
-      have hyRev : y ∈ buffer.reverse := by simpa using hy
-      exact List.mem_reverse.mp hyRev
+    have hyBuf : y ∈ buffer := List.mem_reverse.mp hy
     exact (hBuf y hyBuf).1
-  have hBufRevBound : ∀ y ∈ buffer.reverse.toArray.toList,
+  have hBufRevBound : ∀ y ∈ buffer.reverse,
                          Lookup.canonicalCombiningClass y ≤ maxCCC := by
     intro y hy
-    have hyBuf : y ∈ buffer := by
-      have hyRev : y ∈ buffer.reverse := by simpa using hy
-      exact List.mem_reverse.mp hyRev
+    have hyBuf : y ∈ buffer := List.mem_reverse.mp hy
     exact (hBuf y hyBuf).2
   have hYdecomp :
-      ∀ z ∈ (Decompose.decomposeSequence buffer.reverse.toArray).toList,
+      ∀ z ∈ Decompose.decomposeSequence buffer.reverse,
         0 < Lookup.canonicalCombiningClass z
         ∧ Lookup.canonicalCombiningClass z ≤ maxCCC :=
-    decomposeSequence_nonStarter_preserves_ccc buffer.reverse.toArray maxCCC
+    decomposeSequence_nonStarter_preserves_ccc buffer.reverse maxCCC
       hBufRevNonStarter hBufRevBound
   have hCdecomp :
       ∀ c ∈ (Decompose.fullCanonicalDecompose cp).toList,
@@ -1642,12 +1626,12 @@ theorem reorderCommutesStrictMax_holds : ReorderCommutesStrictMax := by
   have hCposMulti : ∀ c ∈ (Decompose.fullCanonicalDecompose cp).toList,
                       0 < Lookup.canonicalCombiningClass c :=
     fun c hc => (hCdecomp c hc).1
-  have hYposMulti : ∀ y ∈ (Decompose.decomposeSequence buffer.reverse.toArray).toList,
+  have hYposMulti : ∀ y ∈ Decompose.decomposeSequence buffer.reverse,
                       0 < Lookup.canonicalCombiningClass y :=
     fun y hy => (hYdecomp y hy).1
   have hStrictMulti :
       ∀ c ∈ (Decompose.fullCanonicalDecompose cp).toList,
-      ∀ y ∈ (Decompose.decomposeSequence buffer.reverse.toArray).toList,
+      ∀ y ∈ Decompose.decomposeSequence buffer.reverse,
         Lookup.canonicalCombiningClass y
           < Lookup.canonicalCombiningClass c := by
     intro c hc y hy
@@ -1660,9 +1644,9 @@ theorem reorderCommutesStrictMax_holds : ReorderCommutesStrictMax := by
     exact Nat.lt_of_le_of_lt hYbound hCpAboveMax
   -- Apply reorder_commutes_strict_max_multi with direction .symm.
   exact (ReorderAppend.reorder_commutes_strict_max_multi
-           (Decompose.decomposeSequence (emitted ++ #[st]))
-           (Decompose.decomposeSequence buffer.reverse.toArray)
-           (Decompose.fullCanonicalDecompose cp)
+           (Decompose.decomposeSequence (emitted.toList ++ [st]))
+           (Decompose.decomposeSequence buffer.reverse)
+           (Decompose.fullCanonicalDecompose cp).toList
            hCposMulti hYposMulti hStrictMulti).symm
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -1685,18 +1669,18 @@ theorem stepPreservesNFDEquivalence_holds : StepPreservesNFDEquivalence :=
     unconditional.** For any NFD-form input, applying `compose` and
     then `toNFD` returns the input unchanged. -/
 theorem decompose_compose_inversion
-    (x : Array Nat) (hx : NFC.toNFD x = x) :
+    (x : List Nat) (hx : NFC.toNFD x = x) :
     NFC.toNFD (Compose.compose x) = x :=
   decompose_compose_inversion_given stepPreservesNFDEquivalence_holds x hx
 
 /-- **NFC idempotence, unconditional.** `toNFC (toNFC x) = toNFC x`
     for every codepoint sequence. -/
-theorem toNFC_idempotent (x : Array Nat) :
+theorem toNFC_idempotent (x : List Nat) :
     NFC.toNFC (NFC.toNFC x) = NFC.toNFC x :=
   toNFC_idempotent_given stepPreservesNFDEquivalence_holds x
 
 /-- **NFD-NFC cancellation, unconditional.** `toNFD ∘ toNFC = toNFD`. -/
-theorem toNFD_toNFC_eq_toNFD (x : Array Nat) :
+theorem toNFD_toNFC_eq_toNFD (x : List Nat) :
     NFC.toNFD (NFC.toNFC x) = NFC.toNFD x :=
   toNFD_toNFC_eq_toNFD_given stepPreservesNFDEquivalence_holds x
 

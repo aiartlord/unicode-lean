@@ -29,7 +29,8 @@
 
     Phase 1 — per-position classification into
               `.nonVS`, `.registeredStandardized`,
-              `.registeredEmojiPresentation`, or `.suspicious`.
+              `.registeredEmojiPresentation`, or `.suspicious`,
+              each element judged against its predecessor.
     Phase 2 — partition into `registered` / `suspicious` index lists.
     Phase 3 — short-circuit clear verdict if `suspicious.isEmpty`.
     Phase 4 — decode the suspicious-VS run to a byte stream
@@ -97,16 +98,16 @@ inductive SubThreat where
     classifier fired; for the clear case it is implicitly empty. -/
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
   deriving Inhabited
 
 /-- Verdict — the structured output of `detect`. -/
 structure Verdict where
-  input                  : Array Nat
+  input                  : List Nat
   classify               : Classification
-  registeredPositions    : Array Nat               -- indices of registered VS
-  suspiciousPositions    : Array Nat               -- indices of suspicious VS
-  perPositionClass       : Array VSUseClass        -- one entry per input position
+  registeredPositions    : List Nat                -- indices of registered VS
+  suspiciousPositions    : List Nat                -- indices of suspicious VS
+  perPositionClass       : List VSUseClass         -- one entry per input position
   recoveredPayloadBytes  : ByteArray
   deriving Inhabited
 
@@ -140,22 +141,26 @@ def vsToNibble (cp : Nat) : Option Nat :=
   else if 0xE0100 ≤ cp ∧ cp ≤ 0xE01EF then some (cp - 0xE0100 + 16)
   else none
 
+/-- Structural worker for `decodeVSRun`: `highNibble` holds a decoded
+    high nibble awaiting its low-nibble pair; `bytes` is the output
+    accumulator. -/
+def decodeVSRunGo (highNibble : Option Nat) (bytes : ByteArray) :
+    List Nat → ByteArray
+  | [] => bytes
+  | cp :: rest =>
+    match vsToNibble cp with
+    | none => decodeVSRunGo highNibble bytes rest
+    | some n =>
+      match highNibble with
+      | none   => decodeVSRunGo (some n) bytes rest
+      | some h =>
+        decodeVSRunGo none (bytes.push (UInt8.ofNat ((h <<< 4) ||| n))) rest
+
 /-- Decode a sequence of VS codepoints to the recovered byte stream.
     Two nibbles → one byte (high nibble first).  An odd trailing
     nibble is discarded. -/
-def decodeVSRun (vs : Array Nat) : ByteArray := Id.run do
-  let mut bytes : ByteArray := ByteArray.empty
-  let mut highNibble : Option Nat := none
-  for cp in vs do
-    match vsToNibble cp with
-    | none => pure ()
-    | some n =>
-      match highNibble with
-      | none   => highNibble := some n
-      | some h =>
-        bytes := bytes.push (UInt8.ofNat ((h <<< 4) ||| n))
-        highNibble := none
-  pure bytes
+def decodeVSRun (vs : List Nat) : ByteArray :=
+  decodeVSRunGo none ByteArray.empty vs
 
 /-- True iff the byte represents a printable ASCII character (0x20..0x7E)
     or an ASCII whitespace (tab / newline / carriage return). -/
@@ -165,22 +170,14 @@ def isPrintableAsciiByte (b : UInt8) : Bool :=
   (n ≥ 0x20 ∧ n ≤ 0x7E) ∨ n = 0x09 ∨ n = 0x0A ∨ n = 0x0D
 
 /-- True iff every byte in `bytes` is printable ASCII. -/
-def allPrintableAscii (bytes : ByteArray) : Bool := Id.run do
-  let mut ok := true
-  for b in bytes do
-    if ¬ isPrintableAsciiByte b then ok := false
-  pure ok
+def allPrintableAscii (bytes : ByteArray) : Bool :=
+  bytes.toList.all isPrintableAsciiByte
 
 /-- Lossy ASCII-only decode of a byte stream.  Non-ASCII bytes are
     replaced with `?`.  Used as the `decoded` field of `directPayload`. -/
-def decodeAsciiLossy (bytes : ByteArray) : String := Id.run do
-  let mut s : String := ""
-  for b in bytes do
-    if isPrintableAsciiByte b then
-      s := s.push (Char.ofNat b.toNat)
-    else
-      s := s.push '?'
-  pure s
+def decodeAsciiLossy (bytes : ByteArray) : String :=
+  String.ofList (bytes.toList.map (fun b =>
+    if isPrintableAsciiByte b then Char.ofNat b.toNat else '?'))
 
 /-- True iff the decoded string starts with one of the named JS-shaped
     payload prefixes seen in published GlassWorm samples. -/
@@ -216,7 +213,7 @@ def classifyExecutableHint (bytes : ByteArray) : ExecutableHint :=
 -- §3 Per-position classification
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Classify the use of the codepoint at position `p` in `input`.
+/-- Classify a codepoint's VS use against its predecessor.
 
     A VS is `.registeredStandardized` iff `StandardizedVariants.txt`
     sanctions the (base, VS) pair.  A VS16 (`FE0F`) is
@@ -231,6 +228,7 @@ def classifyExecutableHint (bytes : ByteArray) : ExecutableHint :=
 
     A VS15 (`FE0E`) is `.registeredTextPresentation` under the
     symmetric condition.  Everything else that is a VS is
+    `.suspicious`; a VS with no preceding base is always
     `.suspicious`.
 
     `Unicode.Emoji.isEmoji` is the structural (file-derived)
@@ -240,14 +238,12 @@ def classifyExecutableHint (bytes : ByteArray) : ExecutableHint :=
     from "FE0F is a no-op" should consult
     `Unicode.Generated.EmojiVariationSequences.hasRegisteredEmojiPresentation`
     directly. -/
-def classifyVSPosition (input : Array Nat) (p : Nat) : VSUseClass :=
-  match input[p]? with
-  | none      => .nonVS
-  | some cp   =>
-    if ¬ isVariationSelector cp then .nonVS
-    else if p = 0 then .suspicious  -- a VS with no preceding base
-    else
-      let baseCp := input[p - 1]!
+def classifyVS (prev? : Option Nat) (cp : Nat) : VSUseClass :=
+  if ¬ isVariationSelector cp then .nonVS
+  else
+    match prev? with
+    | none => .suspicious
+    | some baseCp =>
       if Unicode.Generated.StandardizedVariants.isStandardizedVariation baseCp cp
         then .registeredStandardized
       else if cp = 0xFE0F ∧ Unicode.Emoji.isEmoji baseCp
@@ -256,15 +252,44 @@ def classifyVSPosition (input : Array Nat) (p : Nat) : VSUseClass :=
         then .registeredTextPresentation
       else .suspicious
 
+/-- Per-position classification of the whole input: each element is
+    judged against its predecessor via one zip against the
+    `none`-shifted input — a single traversal, no index arithmetic. -/
+def classifyPositions (input : List Nat) : List VSUseClass :=
+  ((none :: input.map some).zip input).map
+    (fun pair => classifyVS pair.1 pair.2)
+
+/-- Position-indexed view of `classifyPositions`, retained for callers
+    that address the input by index.  Out-of-range positions are
+    `.nonVS`. -/
+def classifyVSPosition (input : List Nat) (p : Nat) : VSUseClass :=
+  (classifyPositions input).getD p .nonVS
+
+/-- `(index, precedingCp, cp)` for every suspicious VS occurrence.
+    The preceding codepoint defaults to `0` at the head position —
+    matching the leading-VS convention of the sub-threat payloads. -/
+def suspiciousDetail (input : List Nat) : List (Nat × Nat × Nat) :=
+  (((none :: input.map some).zip input).zipIdx).filterMap
+    (fun entry =>
+      match classifyVS entry.1.1 entry.1.2 with
+      | .suspicious => some (entry.2, entry.1.1.getD 0, entry.1.2)
+      | .nonVS | .registeredStandardized | .registeredEmojiPresentation
+      | .registeredTextPresentation => none)
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 Sub-threat selection
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Number of distinct VS codepoints occurring at the given positions. -/
-def countUniqueVS (input : Array Nat) (positions : Array Nat) : Nat :=
-  let cps := positions.map (fun p => input[p]!)
-  cps.foldl (init := (#[] : Array Nat)) (fun acc cp =>
-    if acc.contains cp then acc else acc.push cp) |>.size
+/-- Number of distinct VS codepoints in `cps`. -/
+def countUniqueVS (cps : List Nat) : Nat :=
+  (cps.foldl (init := ([] : List Nat)) (fun acc cp =>
+    if acc.contains cp then acc else acc ++ [cp])).length
+
+/-- True iff every codepoint in `cps` equals the first one. -/
+def allSameVS (cps : List Nat) : Bool :=
+  match cps.head? with
+  | none => true
+  | some cp0 => cps.all (fun cp => cp = cp0)
 
 /-- True iff the input contains at least one registered VS position
     that precedes at least one suspicious VS position.  Returns the
@@ -275,25 +300,17 @@ def countUniqueVS (input : Array Nat) (positions : Array Nat) : Nat :=
     where the registered VS at position 1 precedes the suspicious
     run that begins after an intervening base codepoint. -/
 def embeddedAfterRegistered
-    (registered suspicious : Array Nat) : Option (Nat × Nat) :=
-  match suspicious[0]? with
+    (registered suspicious : List Nat) : Option (Nat × Nat) :=
+  match suspicious.head? with
   | none => none
   | some firstSus =>
-    -- Filter registered to those that come before firstSus.
-    let priorReg := registered.filter (fun p => p < firstSus)
-    match priorReg[priorReg.size - 1]? with
+    match (registered.filter (fun p => p < firstSus)).getLast? with
     | some lastReg => some (lastReg, firstSus)
     | none         => none
 
-/-- True iff every codepoint at the given positions is the same VS. -/
-def allSameVS (input : Array Nat) (positions : Array Nat) : Bool :=
-  match positions[0]? with
-  | none => true
-  | some p0 =>
-    let cp0 := input[p0]!
-    positions.all (fun p => input[p]! = cp0)
-
-/-- Pick the sub-threat for a non-empty suspicious-VS run.
+/-- Pick the sub-threat for a non-empty suspicious-VS run, given the
+    registered positions and the `(index, precedingCp, cp)` detail of
+    every suspicious occurrence.
 
     Priority order (highest first):
       1. `embeddedAfterReg`  — input mixes registered + suspicious VS
@@ -305,27 +322,25 @@ def allSameVS (input : Array Nat) (positions : Array Nat) : Bool :=
                               base that has no registered variation
 -/
 def pickSubThreat
-    (input : Array Nat)
-    (registered suspicious : Array Nat)
+    (registered : List Nat)
+    (susDetail : List (Nat × Nat × Nat))
     (payload : ByteArray) : SubThreat :=
   -- Phase 1: embedded-after-registered takes priority.
-  match embeddedAfterRegistered registered suspicious with
+  match embeddedAfterRegistered registered (susDetail.map (fun d => d.1)) with
   | some (regEnd, payloadStart) =>
     .embeddedAfterReg regEnd payloadStart
   | none =>
     -- Phase 2: long single-VS run is more specific than directPayload.
-    if suspicious.size ≥ 4 ∧ allSameVS input suspicious then
-      let p0 := suspicious[0]!
-      let baseCp := if p0 = 0 then 0 else input[p0 - 1]!
-      .repeatedBase baseCp suspicious.size 1
+    let susCps := susDetail.map (fun d => d.2.2)
+    if susDetail.length ≥ 4 ∧ allSameVS susCps then
+      .repeatedBase ((susDetail.headD (0, 0, 0)).2.1) susDetail.length 1
     -- Phase 3: direct payload if we recovered at least one full byte.
     else if payload.size ≥ 1 then
       .directPayload (decodeAsciiLossy payload) (classifyExecutableHint payload)
     -- Phase 4: single suspicious VS on an unregistered base.
     else
-      let p := suspicious[0]!
-      let targetCp := if p = 0 then 0 else input[p - 1]!
-      .illegalTarget targetCp input[p]!
+      let firstDetail := susDetail.headD (0, 0, 0)
+      .illegalTarget firstDetail.2.1 firstDetail.2.2
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Top-level detection
@@ -351,34 +366,28 @@ def VSUseClass.isSuspicious : VSUseClass → Bool
 
 /-- The VariationSelectorPayload detection function.  Returns
     a structured verdict over the codepoint sequence `input`. -/
-def detect (input : Array Nat) : Verdict :=
+def detect (input : List Nat) : Verdict :=
   -- Phase 1: per-position classification.
-  let perPos : Array VSUseClass :=
-    (Array.range input.size).map (classifyVSPosition input)
+  let perPos : List VSUseClass := classifyPositions input
   -- Phase 2: partition VS positions into registered + suspicious.
-  let regSet : Array Nat :=
-    (Array.range input.size).filterMap (fun i =>
-      if h : i < perPos.size then
-        if perPos[i].isRegistered then some i else none
-      else none)
-  let susSet : Array Nat :=
-    (Array.range input.size).filterMap (fun i =>
-      if h : i < perPos.size then
-        if perPos[i].isSuspicious then some i else none
-      else none)
+  let regSet : List Nat :=
+    perPos.zipIdx.filterMap (fun clsWithIdx =>
+      if clsWithIdx.1.isRegistered then some clsWithIdx.2 else none)
+  let susDetail := suspiciousDetail input
+  let susSet : List Nat := susDetail.map (fun d => d.1)
   -- Phase 3: short-circuit clear verdict.
   if susSet.isEmpty then
     { input := input,
       classify := .clear,
       registeredPositions := regSet,
-      suspiciousPositions := #[],
+      suspiciousPositions := [],
       perPositionClass := perPos,
       recoveredPayloadBytes := ByteArray.empty }
   else
     -- Phase 4: decode payload bytes from the suspicious-VS run.
-    let payload : ByteArray := decodeVSRun (susSet.map (fun p => input[p]!))
+    let payload : ByteArray := decodeVSRun (susDetail.map (fun d => d.2.2))
     -- Phase 5: pick sub-threat.
-    let sub : SubThreat := pickSubThreat input regSet susSet payload
+    let sub : SubThreat := pickSubThreat regSet susDetail payload
     { input := input,
       classify := .hazard sub susSet payload,
       registeredPositions := regSet,
@@ -414,18 +423,18 @@ def SubThreat.tag : SubThreat → String
 def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × Array Nat × ByteArray) false
+      Function.const (SubThreat × List Nat × ByteArray) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification (`none` for `.clear`). -/
 def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
-      Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
+      Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
 
-/-- Positions array of a classification (empty for `.clear`). -/
-def Classification.positions : Classification → Array Nat
-  | .clear                     => #[]
+/-- Positions list of a classification (empty for `.clear`). -/
+def Classification.positions : Classification → List Nat
+  | .clear                     => []
   | .hazard sub positions decoded =>
       Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
@@ -434,64 +443,64 @@ def Classification.positions : Classification → Array Nat
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Empty input is clear. -/
-theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
+theorem detect_empty_clear : (detect []).classify.isClear = true := by
   decide +kernel
 
 /-- Pure ASCII text is clear. -/
 theorem detect_ascii_clear :
-    (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
+    (detect [0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
   decide +kernel
 
 /-- Emoji + VS16 — registered emoji-presentation, clear verdict. -/
 theorem detect_emoji_presentation_clear :
-    (detect #[0x1F600, 0xFE0F]).classify.isClear = true := by
+    (detect [0x1F600, 0xFE0F]).classify.isClear = true := by
   decide +kernel
 
 /-- Mongolian Letter A + FVS1 (180B) — registered standardized variation,
     clear verdict.  (Mongolian uses 180B..180D, not the FE-range.) -/
 theorem detect_mongolian_variation_clear :
-    (detect #[0x1820, 0x180B]).classify.isClear = true := by
+    (detect [0x1820, 0x180B]).classify.isClear = true := by
   decide +kernel
 
 /-- VS16 (FE0F) on Latin A — Latin codepoints have no registered
     variation sequences, so this is `.illegalTarget`. -/
 theorem detect_illegal_target_latin :
-    (detect #[0x0041, 0xFE0F]).classify.tag = some "IllegalTarget" := by
+    (detect [0x0041, 0xFE0F]).classify.tag = some "IllegalTarget" := by
   decide +kernel
 
 /-- One-byte direct payload: `'a' + FE04 + FE01` decodes to the
     single byte `0x41 = 'A'`.  Must classify as `.directPayload`. -/
 theorem detect_direct_payload_byte :
-    (detect #[0x0061, 0xFE04, 0xFE01]).classify.tag = some "DirectPayload" := by
+    (detect [0x0061, 0xFE04, 0xFE01]).classify.tag = some "DirectPayload" := by
   decide +kernel
 
-/-- The same input recovers the decoded byte stream `#['A']`. -/
+/-- The same input recovers the decoded byte stream `['A']`. -/
 theorem detect_direct_payload_decodes_A :
-    (detect #[0x0061, 0xFE04, 0xFE01]).recoveredPayloadBytes.toList = [0x41] := by
+    (detect [0x0061, 0xFE04, 0xFE01]).recoveredPayloadBytes.toList = [0x41] := by
   decide +kernel
 
 /-- A repeated-VS run on a Latin base produces `.repeatedBase`. -/
 theorem detect_repeated_base :
-    (detect #[0x0061, 0xFE04, 0xFE04, 0xFE04, 0xFE04,
-              0xFE04, 0xFE04, 0xFE04, 0xFE04]).classify.tag
+    (detect [0x0061, 0xFE04, 0xFE04, 0xFE04, 0xFE04,
+             0xFE04, 0xFE04, 0xFE04, 0xFE04]).classify.tag
       = some "RepeatedBase" := by decide +kernel
 
 /-- A registered emoji presentation followed by a suspicious-VS run
     produces `.embeddedAfterReg` (payload hiding behind a legit glyph). -/
 theorem detect_embedded_after_registered :
-    (detect #[0x1F600, 0xFE0F, 0x0061,
-              0xFE06, 0xFE05]).classify.tag = some "EmbeddedAfterRegistered" := by
+    (detect [0x1F600, 0xFE0F, 0x0061,
+             0xFE06, 0xFE05]).classify.tag = some "EmbeddedAfterRegistered" := by
   decide +kernel
 
 /-- VS15 (FE0E) on a Latin codepoint is `.illegalTarget` — Latin has
     no Emoji property, so VS15 is not a sanctioned text-presentation. -/
 theorem detect_vs15_on_latin_illegal :
-    (detect #[0x0041, 0xFE0E]).classify.tag = some "IllegalTarget" := by
+    (detect [0x0041, 0xFE0E]).classify.tag = some "IllegalTarget" := by
   decide +kernel
 
 /-- Supplementary-VS range (E0100) on Latin A is `.illegalTarget`. -/
 theorem detect_supplementary_vs_on_latin :
-    (detect #[0x0041, 0xE0100]).classify.tag = some "IllegalTarget" := by
+    (detect [0x0041, 0xE0100]).classify.tag = some "IllegalTarget" := by
   decide +kernel
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -500,7 +509,7 @@ theorem detect_supplementary_vs_on_latin :
 
 /-- A leading VS (no preceding base) is hazardous (not clear). -/
 theorem detect_leading_vs_suspicious :
-    (detect #[0xFE04]).classify.isClear = false := by
+    (detect [0xFE04]).classify.isClear = false := by
   decide +kernel
 
 /-- `vsToNibble` is exhaustive on the FE-range: every codepoint in

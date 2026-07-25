@@ -59,9 +59,9 @@
 
   Top-level entry points:
 
-    * `detectWithContext (ctx : Context) (input : Array Nat) :
+    * `detectWithContext (ctx : Context) (input : List Nat) :
        Verdict`  — full surface, all six probes.
-    * `detect (input : Array Nat) : Verdict` — convenience
+    * `detect (input : List Nat) : Verdict` — convenience
        wrapper that calls `detectWithContext { } input`,
        leaving the four context-bearing probes silent.
 
@@ -81,10 +81,13 @@
 
 import Unicode.Security.Calculus
 import Unicode.Normalization.NFC
+import Unicode.Normalization.LowCodepointNfc
 
 namespace Unicode.Security.Crypto.HashInputStability
 
 open Unicode.Security.Calculus
+open Unicode.Normalization.NFC (toNFC toNFC_e_acute toNFC_e_acute_precomposed)
+open Unicode.Normalization.LowCodepointNfc (toNFC_id_all_lt)
 
 set_option maxRecDepth 1000000
 
@@ -200,28 +203,28 @@ structure Context where
       whose re-read is `input`.  When provided, K2 compares
       the two codepoint-by-codepoint and fires
       `auditLogReinterpretation` on the first divergence. -/
-  asWritten : Option (Array Nat) := none
+  asWritten : Option (List Nat) := none
   /-- The server-side recomputed bytes for a webhook signature.
       When provided, K2 compares the client `input` against
-      this array and fires `webhookSignatureDrift` on the
+      this list and fires `webhookSignatureDrift` on the
       first divergence. -/
-  serverBytes : Option (Array Nat) := none
+  serverBytes : Option (List Nat) := none
   deriving Inhabited
 
 /-- Top-level K2 classification. -/
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : Array Nat)
+  | hazard (sub : SubThreat) (positions : List Nat)
   deriving DecidableEq, Repr, Inhabited
 
 /-- K2 verdict — the structured output of `detect`.
     `stableSize` is the codepoint count of the hash-stable
     canonical form; downstream callers compare it against
-    `input.size` to size the byte-drift their hash would see. -/
+    `input.length` to size the byte-drift their hash would see. -/
 structure Verdict where
-  input        : Array Nat
+  input        : List Nat
   classify     : Classification
-  stableForm   : Array Nat
+  stableForm   : List Nat
   stableSize   : Nat
   deriving Inhabited
 
@@ -234,12 +237,12 @@ namespace Classification
 @[inline] def isClear : Classification → Bool
   | .clear              => true
   | .hazard sub ps      =>
-    Function.const (SubThreat × Array Nat) false (sub, ps)
+    Function.const (SubThreat × List Nat) false (sub, ps)
 
 @[inline] def tag : Classification → Option String
   | .clear              => none
   | .hazard sub ps      =>
-    Function.const (Array Nat) (
+    Function.const (List Nat) (
       match sub with
       | .normalizationDrift pos =>
         Function.const Nat (some "NormalizationDrift") pos
@@ -256,8 +259,8 @@ namespace Classification
         Function.const Nat (some "WebhookSignatureDrift") pos
     ) ps
 
-@[inline] def positions : Classification → Array Nat
-  | .clear              => #[]
+@[inline] def positions : Classification → List Nat
+  | .clear              => []
   | .hazard sub ps      => Function.const SubThreat ps sub
 
 end Classification
@@ -277,17 +280,38 @@ end Classification
     || decide (cp = 0x000A) || decide (cp = 0x000D)
 
 /-- Count of trailing ASCII whitespace codepoints in `input`. -/
-def countTrailingWhitespace (input : Array Nat) : Nat :=
-  (input.reverse.takeWhile isAsciiWhitespace).size
+def countTrailingWhitespace (input : List Nat) : Nat :=
+  (input.reverse.takeWhile isAsciiWhitespace).length
 
 /-- Strip trailing ASCII whitespace. -/
-def trimTrailing (input : Array Nat) : Array Nat :=
-  input.extract 0 (input.size - countTrailingWhitespace input)
+def trimTrailing (input : List Nat) : List Nat :=
+  input.take (input.length - countTrailingWhitespace input)
 
 /-- The K2 hash-stable form of an input.  Composes the two
     canonicalisation stages in spec order: NFC then trim. -/
-def hashStable (input : Array Nat) : Array Nat :=
+def hashStable (input : List Nat) : List Nat :=
   trimTrailing (Unicode.Normalization.NFC.toNFC input)
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §3a Reused NFC value facts
+--
+-- The spot checks below never reduce the `toNFC` pipeline in the kernel.
+-- Inputs whose codepoints are all below U+00C0 are `toNFC`-identity by the
+-- structural range lemma `LowCodepointNfc.toNFC_id_all_lt`.  The two canonical-
+-- composition vectors — `e + combining acute → é` decomposed and precomposed —
+-- are proved structurally through the decompose / reorder / compose stages in
+-- `Unicode.Normalization.NFC` (`toNFC_e_acute`, `toNFC_e_acute_precomposed`) and
+-- imported by rewriting.  Every spot check whose verdict is settled by an
+-- earlier-priority probe (encoding, trailing whitespace) decides directly: the
+-- classification match returns from that arm without forcing the
+-- `normalizationDrift` arm's `toNFC` binding, so no NFC value fact is required.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- `toNFC` is the identity on any input whose codepoints are all
+    below U+00C0 (no canonical decomposition or composition applies). -/
+theorem toNFC_id_lowAscii (cps : List Nat) (h : ∀ cp ∈ cps, cp < 0xC0) :
+    toNFC cps = cps :=
+  toNFC_id_all_lt cps h
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 Canonicalisation spot checks
@@ -295,62 +319,85 @@ def hashStable (input : Array Nat) : Array Nat :=
 
 /-- Empty input has empty stable form. -/
 theorem stable_empty :
-    hashStable #[] = #[] := by decide +kernel
+    hashStable [] = [] := by decide
 
 /-- Already-canonical ASCII is a fixed point. -/
 theorem stable_ascii_idempotent :
-    let cps : Array Nat := #[0x61, 0x62, 0x63]
-    hashStable (hashStable cps) = hashStable cps := by decide +kernel
+    hashStable (hashStable [0x61, 0x62, 0x63]) = hashStable [0x61, 0x62, 0x63] := by
+  have h : hashStable [0x61, 0x62, 0x63] = [0x61, 0x62, 0x63] := by
+    unfold hashStable
+    rw [toNFC_id_lowAscii [0x61, 0x62, 0x63] (by decide)]
+    decide
+  simp only [h]
 
 /-- Trailing U+0020 is stripped. -/
 theorem stable_strips_trailing_space :
-    hashStable #[0x61, 0x20] = #[0x61] := by decide +kernel
+    hashStable [0x61, 0x20] = [0x61] := by
+  unfold hashStable
+  rw [toNFC_id_lowAscii [0x61, 0x20] (by decide)]
+  decide
 
 /-- Trailing U+0009 TAB is stripped. -/
 theorem stable_strips_trailing_tab :
-    hashStable #[0x61, 0x09] = #[0x61] := by decide +kernel
+    hashStable [0x61, 0x09] = [0x61] := by
+  unfold hashStable
+  rw [toNFC_id_lowAscii [0x61, 0x09] (by decide)]
+  decide
 
 /-- Trailing U+000A LF is stripped. -/
 theorem stable_strips_trailing_lf :
-    hashStable #[0x61, 0x0A] = #[0x61] := by decide +kernel
+    hashStable [0x61, 0x0A] = [0x61] := by
+  unfold hashStable
+  rw [toNFC_id_lowAscii [0x61, 0x0A] (by decide)]
+  decide
 
 /-- Trailing CRLF is stripped. -/
 theorem stable_strips_trailing_crlf :
-    hashStable #[0x61, 0x0D, 0x0A] = #[0x61] := by decide +kernel
+    hashStable [0x61, 0x0D, 0x0A] = [0x61] := by
+  unfold hashStable
+  rw [toNFC_id_lowAscii [0x61, 0x0D, 0x0A] (by decide)]
+  decide
 
 /-- Internal U+0020 between non-whitespace content is
     preserved — only TRAILING whitespace is framing. -/
 theorem stable_preserves_internal_space :
-    hashStable #[0x61, 0x20, 0x62] = #[0x61, 0x20, 0x62] := by
-  decide +kernel
+    hashStable [0x61, 0x20, 0x62] = [0x61, 0x20, 0x62] := by
+  unfold hashStable
+  rw [toNFC_id_lowAscii [0x61, 0x20, 0x62] (by decide)]
+  decide
 
 /-- Decomposed é (a + combining acute) NFC-composes to U+00E9. -/
 theorem stable_composes_nfc :
-    let cps : Array Nat := #[0x0065, 0x0301]
-    hashStable cps = #[0x00E9] := by decide +kernel
+    hashStable [0x0065, 0x0301] = [0x00E9] := by
+  unfold hashStable
+  rw [toNFC_e_acute]
+  decide
 
 /-- Unicode whitespace U+00A0 NBSP is content, not framing —
     trailing NBSP is NOT stripped. -/
 theorem stable_preserves_trailing_nbsp :
-    hashStable #[0x61, 0x00A0] = #[0x61, 0x00A0] := by
-  decide +kernel
+    hashStable [0x61, 0x00A0] = [0x61, 0x00A0] := by
+  unfold hashStable
+  rw [toNFC_id_lowAscii [0x61, 0x00A0] (by decide)]
+  decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Hazard probes (per-priority position-finders)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- First position at which `a` and `b` diverge.  Returns
-    `none` when they are identical. -/
-def firstArrayDivergence (a b : Array Nat) : Option Nat :=
-  let n := if a.size ≤ b.size then a.size else b.size
-  match (Array.range n).findSome? (fun i =>
-    if ha : i < a.size then
-      if hb : i < b.size then
-        if a[i] != b[i] then some i else none
-      else none
-    else none) with
-  | some i => some i
-  | none   => if a.size = b.size then none else some n
+/-- First position at which `a` and `b` diverge, or the position
+    just past the shared prefix when one is a strict prefix of the
+    other.  Returns `none` when they are identical.  Structural
+    recursion — one traversal, no index arithmetic. -/
+def firstArrayDivergence : List Nat → List Nat → Option Nat
+  | [], [] => none
+  | [], bHead :: bTail =>
+    Function.const (Nat × List Nat) (some 0) (bHead, bTail)
+  | aHead :: aTail, [] =>
+    Function.const (Nat × List Nat) (some 0) (aHead, aTail)
+  | aHead :: aTail, bHead :: bTail =>
+    if aHead != bHead then some 0
+    else (firstArrayDivergence aTail bTail).map (fun i => i + 1)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 Context-bearing probes
@@ -385,11 +432,9 @@ def isUtf8Label (label : String) : Bool :=
 /-- First position in `input` containing a codepoint that is not
     a valid Unicode scalar value, or `none` if every codepoint
     is valid. -/
-def firstInvalidScalar (input : Array Nat) : Option Nat :=
-  (Array.range input.size).findSome? (fun i =>
-    if h : i < input.size then
-      if isValidScalar input[i] then none else some i
-    else none)
+def firstInvalidScalar (input : List Nat) : Option Nat :=
+  input.zipIdx.findSome? (fun cpWithIdx =>
+    if isValidScalar cpWithIdx.1 then none else some cpWithIdx.2)
 
 /-- Probe: `encodingMismatch`.  Two firing paths, with input
     validity dispatched first:
@@ -407,7 +452,7 @@ def firstInvalidScalar (input : Array Nat) : Option Nat :=
 
     Returns `(declaredEnc, detectedEnc, firstPos)` triple when
     firing, `none` when valid Unicode + UTF-8 label. -/
-def encodingMismatchProbe (declared : String) (input : Array Nat) :
+def encodingMismatchProbe (declared : String) (input : List Nat) :
     Option (String × String × Nat) :=
   match firstInvalidScalar input with
   | some pos => some (declared, "invalid", pos)
@@ -419,40 +464,44 @@ def encodingMismatchProbe (declared : String) (input : Array Nat) :
     Same condition as `trailingWhitespace` but reported under
     the RFC-specific tag.  Returns the firstPos at which the
     trailing run begins. -/
-def pgp4880Violation (input : Array Nat) : Option Nat :=
+def pgp4880Violation (input : List Nat) : Option Nat :=
   let trailingCount := countTrailingWhitespace input
-  if trailingCount > 0 then some (input.size - trailingCount)
+  if trailingCount > 0 then some (input.length - trailingCount)
   else none
+
+/-- One-pass windowed inventory: `(index, prev?, cp, next?)` for
+    every codepoint, pairing each element with its neighbours via
+    zips against the shift-by-one views. -/
+def windows (input : List Nat) : List (Nat × Option Nat × Nat × Option Nat) :=
+  let prevs : List (Option Nat) := none :: input.map some
+  let nexts : List (Option Nat) := (input.drop 1).map some ++ [none]
+  ((prevs.zip (input.zip nexts)).zipIdx).map
+    (fun entry => (entry.2, entry.1.1, entry.1.2.1, entry.1.2.2))
 
 /-- Probe: `signedMessageRule` for `pgp9580LineEnding`.  Scans
     `input` for the first bare LF (U+000A not preceded by CR)
     or bare CR (U+000D not followed by LF).  Returns the
     position of the bare line-ending codepoint. -/
-def pgp9580Violation (input : Array Nat) : Option Nat :=
-  (Array.range input.size).findSome? (fun i =>
-    if h : i < input.size then
-      let cp := input[i]
-      if cp = 0x000A then
-        -- LF: violating iff not preceded by CR
-        if hPrev : 0 < i then
-          if hLt : i - 1 < input.size then
-            if input[i - 1] = 0x000D then none else some i
-          else
-            Function.const (0 < i) (some i) hPrev
-        else some i
-      else if cp = 0x000D then
-        -- CR: violating iff not followed by LF
-        if hLt : i + 1 < input.size then
-          if input[i + 1] = 0x000A then none else some i
-        else some i
-      else none
+def pgp9580Violation (input : List Nat) : Option Nat :=
+  (windows input).findSome? (fun w =>
+    let cp := w.2.2.1
+    if cp = 0x000A then
+      -- LF: violating iff not preceded by CR
+      match w.2.1 with
+      | some prev => if prev = 0x000D then none else some w.1
+      | none      => some w.1
+    else if cp = 0x000D then
+      -- CR: violating iff not followed by LF
+      match w.2.2.2 with
+      | some next => if next = 0x000A then none else some w.1
+      | none      => some w.1
     else none)
 
 /-- Probe: `signedMessageRule` for `rfc8785NfcRequirement`.
     Fires on the same condition as `normalizationDrift` but
     reported under the JSON-canonicalisation rule.  Returns
     the firstPos at which `input` diverges from its NFC form. -/
-def rfc8785Violation (input : Array Nat) : Option Nat :=
+def rfc8785Violation (input : List Nat) : Option Nat :=
   let nfc := Unicode.Normalization.NFC.toNFC input
   if input == nfc then none else firstArrayDivergence input nfc
 
@@ -463,59 +512,50 @@ def rfc8785Violation (input : Array Nat) : Option Nat :=
     escaping in JSON strings per RFC 8259 §7, so they also
     count as violations).  Returns the position of the first
     violating control char. -/
-def rfc8259Violation (input : Array Nat) : Option Nat :=
-  (Array.range input.size).findSome? (fun i =>
-    if h : i < input.size then
-      let cp := input[i]
-      if cp ≤ 0x1F then some i else none
-    else none)
+def rfc8259Violation (input : List Nat) : Option Nat :=
+  input.zipIdx.findSome? (fun cpWithIdx =>
+    if cpWithIdx.1 ≤ 0x1F then some cpWithIdx.2 else none)
 
 /-- Probe: `signedMessageRule` for `rfc7515JwsBase64Url`.  The
     JWS compact-serialisation alphabet is `[A-Za-z0-9_-]`.
     Returns the position of the first codepoint outside that
     alphabet. -/
-def rfc7515Violation (input : Array Nat) : Option Nat :=
+def rfc7515Violation (input : List Nat) : Option Nat :=
   let isBase64Url (cp : Nat) : Bool :=
     (decide (0x41 ≤ cp) && decide (cp ≤ 0x5A))       -- A-Z
     || (decide (0x61 ≤ cp) && decide (cp ≤ 0x7A))    -- a-z
     || (decide (0x30 ≤ cp) && decide (cp ≤ 0x39))    -- 0-9
     || decide (cp = 0x2D)                             -- '-'
     || decide (cp = 0x5F)                             -- LOW LINE
-  (Array.range input.size).findSome? (fun i =>
-    if h : i < input.size then
-      if isBase64Url input[i] then none else some i
-    else none)
+  input.zipIdx.findSome? (fun cpWithIdx =>
+    if isBase64Url cpWithIdx.1 then none else some cpWithIdx.2)
 
 /-- Probe: `signedMessageRule` for `rfc6376DkimRelaxed`.  DKIM
     relaxed body canonicalisation collapses runs of SP / HTAB
     to a single SP.  Returns the position of the second
     whitespace codepoint in the first run that is longer than
     one. -/
-def rfc6376Violation (input : Array Nat) : Option Nat :=
+def rfc6376Violation (input : List Nat) : Option Nat :=
   let isDkimWhitespace (cp : Nat) : Bool :=
     decide (cp = 0x20) || decide (cp = 0x09)
-  (Array.range input.size).findSome? (fun i =>
-    if h0 : 0 < i then
-      if hLt : i < input.size then
-        if isDkimWhitespace input[i] then
-          if hPrev : i - 1 < input.size then
-            if isDkimWhitespace input[i - 1] then some i else none
-          else none
-        else none
-      else none
+  (windows input).findSome? (fun w =>
+    if isDkimWhitespace w.2.2.1 then
+      match w.2.1 with
+      | some prev => if isDkimWhitespace prev then some w.1 else none
+      | none      => none
     else none)
 
 /-- Probe: `signedMessageRule` for `rfc5751SmimeLineEnding`.
     S/MIME canonical text matches the PGP 9580 rule on line
     endings (bare LF or bare CR violates).  Reuses
     `pgp9580Violation`. -/
-def rfc5751Violation (input : Array Nat) : Option Nat :=
+def rfc5751Violation (input : List Nat) : Option Nat :=
   pgp9580Violation input
 
 /-- Dispatch the RFC-rule probe.  Returns the position of the
     first violation when the rule is violated, `none` when the
     input is clean per the rule. -/
-def rfcRuleViolation (rule : RfcRule) (input : Array Nat) : Option Nat :=
+def rfcRuleViolation (rule : RfcRule) (input : List Nat) : Option Nat :=
   match rule with
   | .pgp4880TrailingWhitespace => pgp4880Violation input
   | .pgp9580LineEnding         => pgp9580Violation input
@@ -542,7 +582,7 @@ def rfcRuleViolation (rule : RfcRule) (input : Array Nat) : Option Nat :=
 
     Context-specific probes fire first because they carry more
     precise threat information than the generic probes.  -/
-def detectWithContext (ctx : Context) (input : Array Nat) : Verdict :=
+def detectWithContext (ctx : Context) (input : List Nat) : Verdict :=
   let stable := hashStable input
 
   -- Probe 1: encodingMismatch.
@@ -583,36 +623,36 @@ def detectWithContext (ctx : Context) (input : Array Nat) : Verdict :=
   let classification : Classification :=
     match encodingHit with
     | some (declared, detected, pos) =>
-      .hazard (.encodingMismatch declared detected) #[pos]
+      .hazard (.encodingMismatch declared detected) [pos]
     | none =>
     match webhookHit with
-    | some pos => .hazard (.webhookSignatureDrift pos) #[pos]
+    | some pos => .hazard (.webhookSignatureDrift pos) [pos]
     | none =>
     match auditHit with
-    | some pos => .hazard (.auditLogReinterpretation pos) #[pos]
+    | some pos => .hazard (.auditLogReinterpretation pos) [pos]
     | none =>
     match rfcHit with
     | some (rule, pos) =>
-      .hazard (.signedMessageRule rule.tag pos) #[pos]
+      .hazard (.signedMessageRule rule.tag pos) [pos]
     | none =>
     if trailingCount > 0 then
-      let p := input.size - trailingCount
-      .hazard (.trailingWhitespace trailingCount) #[p]
+      let p := input.length - trailingCount
+      .hazard (.trailingWhitespace trailingCount) [p]
     else match nonNfcPos with
-    | some p => .hazard (.normalizationDrift p) #[p]
+    | some p => .hazard (.normalizationDrift p) [p]
     | none   => .clear
 
   { input := input,
     classify := classification,
     stableForm := stable,
-    stableSize := stable.size }
+    stableSize := stable.length }
 
 /-- Convenience wrapper over `detectWithContext` with the empty
     context — equivalent to running only the two bare-input
     probes (`trailingWhitespace`, `normalizationDrift`).  Used
     by `Unicode.Security.RunAll` and by callers who don't have
     encoding / RFC / paired-bytes context to supply. -/
-def detect (input : Array Nat) : Verdict :=
+def detect (input : List Nat) : Verdict :=
   detectWithContext {} input
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -621,48 +661,70 @@ def detect (input : Array Nat) : Verdict :=
 
 /-- Empty input is clear. -/
 theorem detect_empty_clear :
-    (detect #[]).classify = .clear := by decide +kernel
+    (detect []).classify = .clear := by
+  unfold detect detectWithContext hashStable
+  rw [toNFC_id_lowAscii [] (by decide)]
+  decide
 
 /-- ASCII "abc" is already hash-stable. -/
 theorem detect_ascii_idempotent :
-    (detect #[0x61, 0x62, 0x63]).classify = .clear := by decide +kernel
+    (detect [0x61, 0x62, 0x63]).classify = .clear := by
+  unfold detect detectWithContext hashStable
+  rw [toNFC_id_lowAscii [0x61, 0x62, 0x63] (by decide)]
+  decide
 
 /-- Single trailing space fires `trailingWhitespace` at index
     after the content. -/
 theorem detect_trailing_space :
-    let v := detect #[0x61, 0x20]
+    let v := detect [0x61, 0x20]
     v.classify.tag = some "TrailingWhitespace"
     ∧ v.stableSize = 1
-    ∧ v.classify.positions = #[1] := by decide +kernel
+    ∧ v.classify.positions = [1] := by
+  unfold detect detectWithContext hashStable
+  rw [toNFC_id_lowAscii [0x61, 0x20] (by decide)]
+  decide
 
 /-- Trailing CRLF fires `trailingWhitespace` with count = 2. -/
 theorem detect_trailing_crlf :
-    let v := detect #[0x61, 0x0D, 0x0A]
+    let v := detect [0x61, 0x0D, 0x0A]
     v.classify.tag = some "TrailingWhitespace"
-    ∧ v.stableSize = 1 := by decide +kernel
+    ∧ v.stableSize = 1 := by
+  unfold detect detectWithContext hashStable
+  rw [toNFC_id_lowAscii [0x61, 0x0D, 0x0A] (by decide)]
+  decide
 
 /-- Decomposed é fires `normalizationDrift` at position 0. -/
 theorem detect_decomposed_e_acute :
-    let v := detect #[0x0065, 0x0301]
+    let v := detect [0x0065, 0x0301]
     v.classify.tag = some "NormalizationDrift"
-    ∧ v.classify.positions = #[0] := by decide +kernel
+    ∧ v.classify.positions = [0] := by
+  unfold detect detectWithContext hashStable
+  rw [toNFC_e_acute]
+  decide
 
 /-- Precomposed é is clear. -/
 theorem detect_precomposed_e_acute_clear :
-    (detect #[0x00E9]).classify = .clear := by decide +kernel
+    (detect [0x00E9]).classify = .clear := by
+  unfold detect detectWithContext hashStable
+  rw [toNFC_e_acute_precomposed]
+  decide
 
 /-- Priority: trailing whitespace fires before normalization
     drift when both apply.  Input is decomposed "é " — fires
     TrailingWhitespace at position 2, not NormalizationDrift
     at position 0. -/
 theorem detect_priority_trailing_over_nfc :
-    let v := detect #[0x0065, 0x0301, 0x20]
+    let v := detect [0x0065, 0x0301, 0x20]
     v.classify.tag = some "TrailingWhitespace" := by
-  decide +kernel
+  unfold detect detectWithContext hashStable
+  decide
 
 /-- Internal-only whitespace passes — only TRAILING fires. -/
 theorem detect_internal_space_clear :
-    (detect #[0x61, 0x20, 0x62]).classify = .clear := by decide +kernel
+    (detect [0x61, 0x20, 0x62]).classify = .clear := by
+  unfold detect detectWithContext hashStable
+  rw [toNFC_id_lowAscii [0x61, 0x20, 0x62] (by decide)]
+  decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §9 Context-bearing probe spot checks
@@ -672,22 +734,27 @@ theorem detect_internal_space_clear :
     Pinning that the convenience wrapper is genuinely equivalent
     to the context-aware entry point with the empty context.
     Tested via classification + stableSize co-fields (Verdict
-    itself doesn't derive DecidableEq because Array Nat doesn't). -/
+    itself carries List/ByteArray-shaped fields the harness pins via co-fields). -/
 theorem detectWithContext_default_matches_detect :
-    (detectWithContext {} #[0x61, 0x62, 0x63]).classify
-      = (detect #[0x61, 0x62, 0x63]).classify
-    ∧ (detectWithContext {} #[0x61, 0x62, 0x63]).stableSize
-      = (detect #[0x61, 0x62, 0x63]).stableSize
-    := by decide +kernel
+    (detectWithContext {} [0x61, 0x62, 0x63]).classify
+      = (detect [0x61, 0x62, 0x63]).classify
+    ∧ (detectWithContext {} [0x61, 0x62, 0x63]).stableSize
+      = (detect [0x61, 0x62, 0x63]).stableSize
+    := by
+  simp only [detect, detectWithContext, hashStable]
+  decide
 
 /-- `encodingMismatch` fires when declared encoding is not UTF-8.
     Pure-ASCII "abc" labeled "utf-16" reports the mismatch with
     detected = "utf-8". -/
 theorem detect_encoding_mismatch_utf16_label :
     let ctx : Context := { declaredEncoding := some "utf-16" }
-    let v := detectWithContext ctx #[0x61, 0x62, 0x63]
+    let v := detectWithContext ctx [0x61, 0x62, 0x63]
     v.classify.tag = some "EncodingMismatch"
-    ∧ v.classify.positions = #[0] := by decide +kernel
+    ∧ v.classify.positions = [0] := by
+  simp only [detectWithContext, hashStable]
+  rw [toNFC_id_lowAscii [0x61, 0x62, 0x63] (by decide)]
+  decide
 
 /-- `encodingMismatch` fires with detectedEnc="invalid" when
     the input contains a high-surrogate codepoint (U+D800),
@@ -697,17 +764,21 @@ theorem detect_encoding_mismatch_utf16_label :
 theorem detect_encoding_invalid_surrogate :
     let ctx : Context := { declaredEncoding := some "utf-8" }
     -- ASCII 'a' + lone high surrogate + ASCII 'b'.
-    let v := detectWithContext ctx #[0x61, 0xD800, 0x62]
+    let v := detectWithContext ctx [0x61, 0xD800, 0x62]
     v.classify.tag = some "EncodingMismatch"
-    ∧ v.classify.positions = #[1] := by decide +kernel
+    ∧ v.classify.positions = [1] := by
+  simp only [detectWithContext, hashStable]
+  decide
 
 /-- `encodingMismatch` fires with detectedEnc="invalid" on a
     codepoint beyond the Unicode max (U+110000 and up). -/
 theorem detect_encoding_invalid_out_of_range :
     let ctx : Context := { declaredEncoding := some "utf-8" }
-    let v := detectWithContext ctx #[0x61, 0x110000, 0x62]
+    let v := detectWithContext ctx [0x61, 0x110000, 0x62]
     v.classify.tag = some "EncodingMismatch"
-    ∧ v.classify.positions = #[1] := by decide +kernel
+    ∧ v.classify.positions = [1] := by
+  simp only [detectWithContext, hashStable]
+  decide
 
 /-- `encodingMismatch` is case-insensitive on the UTF-8 label —
     "UTF-8" / "UTF8" / "utf-8" / "utf8" all match. -/
@@ -715,10 +786,13 @@ theorem detect_encoding_utf8_label_case_insensitive :
     let ctxUpper : Context := { declaredEncoding := some "UTF-8" }
     let ctxLower : Context := { declaredEncoding := some "utf-8" }
     let ctxNoDash : Context := { declaredEncoding := some "UTF8" }
-    (detectWithContext ctxUpper #[0x61, 0x62, 0x63]).classify = .clear
-    ∧ (detectWithContext ctxLower #[0x61, 0x62, 0x63]).classify = .clear
-    ∧ (detectWithContext ctxNoDash #[0x61, 0x62, 0x63]).classify = .clear
-    := by decide +kernel
+    (detectWithContext ctxUpper [0x61, 0x62, 0x63]).classify = .clear
+    ∧ (detectWithContext ctxLower [0x61, 0x62, 0x63]).classify = .clear
+    ∧ (detectWithContext ctxNoDash [0x61, 0x62, 0x63]).classify = .clear
+    := by
+  simp only [detectWithContext, hashStable]
+  rw [toNFC_id_lowAscii [0x61, 0x62, 0x63] (by decide)]
+  decide
 
 /-- `signedMessageRule` fires for `pgp4880TrailingWhitespace` on
     a trailing-space input — same condition as
@@ -727,17 +801,23 @@ theorem detect_encoding_utf8_label_case_insensitive :
     verdict before the generic one. -/
 theorem detect_signed_message_pgp4880 :
     let ctx : Context := { rfcRule := some .pgp4880TrailingWhitespace }
-    let v := detectWithContext ctx #[0x61, 0x20]
+    let v := detectWithContext ctx [0x61, 0x20]
     v.classify.tag = some "SignedMessageRule"
-    ∧ v.classify.positions = #[1] := by decide +kernel
+    ∧ v.classify.positions = [1] := by
+  simp only [detectWithContext, hashStable]
+  rw [toNFC_id_lowAscii [0x61, 0x20] (by decide)]
+  decide
 
 /-- `signedMessageRule` fires for `pgp9580LineEnding` on a bare
     LF (no preceding CR).  Position points at the LF. -/
 theorem detect_signed_message_pgp9580_bare_lf :
     let ctx : Context := { rfcRule := some .pgp9580LineEnding }
-    let v := detectWithContext ctx #[0x61, 0x0A, 0x62]
+    let v := detectWithContext ctx [0x61, 0x0A, 0x62]
     v.classify.tag = some "SignedMessageRule"
-    ∧ v.classify.positions = #[1] := by decide +kernel
+    ∧ v.classify.positions = [1] := by
+  simp only [detectWithContext, hashStable]
+  rw [toNFC_id_lowAscii [0x61, 0x0A, 0x62] (by decide)]
+  decide
 
 /-- `signedMessageRule` with `pgp9580LineEnding` stays clear on
     proper CRLF. -/
@@ -745,17 +825,23 @@ theorem detect_signed_message_pgp9580_crlf_clear_internal :
     let ctx : Context := { rfcRule := some .pgp9580LineEnding }
     -- "abc" CRLF "def" — CRLF is the canonical line ending.
     (detectWithContext ctx
-      #[0x61, 0x62, 0x63, 0x0D, 0x0A, 0x64, 0x65, 0x66]).classify
-    = .clear := by decide +kernel
+      [0x61, 0x62, 0x63, 0x0D, 0x0A, 0x64, 0x65, 0x66]).classify
+    = .clear := by
+  simp only [detectWithContext, hashStable]
+  rw [toNFC_id_lowAscii [0x61, 0x62, 0x63, 0x0D, 0x0A, 0x64, 0x65, 0x66] (by decide)]
+  decide
 
 /-- `signedMessageRule` fires for `rfc8785NfcRequirement` on
     decomposed é — same condition as `normalizationDrift` but
     reported under the JSON-canonicalisation tag. -/
 theorem detect_signed_message_rfc8785_decomposed :
     let ctx : Context := { rfcRule := some .rfc8785NfcRequirement }
-    let v := detectWithContext ctx #[0x0065, 0x0301]
+    let v := detectWithContext ctx [0x0065, 0x0301]
     v.classify.tag = some "SignedMessageRule"
-    ∧ v.classify.positions = #[0] := by decide +kernel
+    ∧ v.classify.positions = [0] := by
+  simp only [detectWithContext, hashStable]
+  rw [toNFC_e_acute]
+  decide
 
 /-- `signedMessageRule` fires for `rfc8259ControlChar` on an
     unescaped control codepoint inside the input.  Position
@@ -763,26 +849,35 @@ theorem detect_signed_message_rfc8785_decomposed :
 theorem detect_signed_message_rfc8259_control :
     let ctx : Context := { rfcRule := some .rfc8259ControlChar }
     -- "a" + U+0001 (Start of Heading) + "b"
-    let v := detectWithContext ctx #[0x61, 0x01, 0x62]
+    let v := detectWithContext ctx [0x61, 0x01, 0x62]
     v.classify.tag = some "SignedMessageRule"
-    ∧ v.classify.positions = #[1] := by decide +kernel
+    ∧ v.classify.positions = [1] := by
+  simp only [detectWithContext, hashStable]
+  rw [toNFC_id_lowAscii [0x61, 0x01, 0x62] (by decide)]
+  decide
 
 /-- `signedMessageRule` fires for `rfc7515JwsBase64Url` on a
     codepoint outside the Base64URL alphabet.  ASCII `+` (0x2B)
     is allowed in standard Base64 but NOT in Base64URL — fires. -/
 theorem detect_signed_message_rfc7515_plus_char :
     let ctx : Context := { rfcRule := some .rfc7515JwsBase64Url }
-    let v := detectWithContext ctx #[0x41, 0x2B, 0x42]
+    let v := detectWithContext ctx [0x41, 0x2B, 0x42]
     v.classify.tag = some "SignedMessageRule"
-    ∧ v.classify.positions = #[1] := by decide +kernel
+    ∧ v.classify.positions = [1] := by
+  simp only [detectWithContext, hashStable]
+  rw [toNFC_id_lowAscii [0x41, 0x2B, 0x42] (by decide)]
+  decide
 
 /-- `signedMessageRule` for RFC 7515 stays clear on a pure
     Base64URL string. -/
 theorem detect_signed_message_rfc7515_clean_clear :
     let ctx : Context := { rfcRule := some .rfc7515JwsBase64Url }
     -- "Aa0-_zZ9"
-    let cps : Array Nat := #[0x41, 0x61, 0x30, 0x2D, 0x5F, 0x7A, 0x5A, 0x39]
-    (detectWithContext ctx cps).classify = .clear := by decide +kernel
+    let cps : List Nat := [0x41, 0x61, 0x30, 0x2D, 0x5F, 0x7A, 0x5A, 0x39]
+    (detectWithContext ctx cps).classify = .clear := by
+  simp only [detectWithContext, hashStable]
+  rw [toNFC_id_lowAscii [0x41, 0x61, 0x30, 0x2D, 0x5F, 0x7A, 0x5A, 0x39] (by decide)]
+  decide
 
 /-- `signedMessageRule` fires for `rfc6376DkimRelaxed` on a
     multi-codepoint internal whitespace run.  Position points
@@ -790,59 +885,79 @@ theorem detect_signed_message_rfc7515_clean_clear :
 theorem detect_signed_message_rfc6376_double_space :
     let ctx : Context := { rfcRule := some .rfc6376DkimRelaxed }
     -- "a" + SP + SP + "b"
-    let v := detectWithContext ctx #[0x61, 0x20, 0x20, 0x62]
+    let v := detectWithContext ctx [0x61, 0x20, 0x20, 0x62]
     v.classify.tag = some "SignedMessageRule"
-    ∧ v.classify.positions = #[2] := by decide +kernel
+    ∧ v.classify.positions = [2] := by
+  simp only [detectWithContext, hashStable]
+  rw [toNFC_id_lowAscii [0x61, 0x20, 0x20, 0x62] (by decide)]
+  decide
 
 /-- `signedMessageRule` for `rfc6376DkimRelaxed` stays clear on
     a single internal space — the canonical form. -/
 theorem detect_signed_message_rfc6376_single_space_clear :
     let ctx : Context := { rfcRule := some .rfc6376DkimRelaxed }
-    (detectWithContext ctx #[0x61, 0x20, 0x62]).classify = .clear := by
-  decide +kernel
+    (detectWithContext ctx [0x61, 0x20, 0x62]).classify = .clear := by
+  simp only [detectWithContext, hashStable]
+  rw [toNFC_id_lowAscii [0x61, 0x20, 0x62] (by decide)]
+  decide
 
 /-- `signedMessageRule` for `rfc5751SmimeLineEnding` matches
     the PGP 9580 rule: bare LF (no preceding CR) violates. -/
 theorem detect_signed_message_rfc5751_bare_lf :
     let ctx : Context := { rfcRule := some .rfc5751SmimeLineEnding }
-    let v := detectWithContext ctx #[0x61, 0x0A, 0x62]
+    let v := detectWithContext ctx [0x61, 0x0A, 0x62]
     v.classify.tag = some "SignedMessageRule"
-    ∧ v.classify.positions = #[1] := by decide +kernel
+    ∧ v.classify.positions = [1] := by
+  simp only [detectWithContext, hashStable]
+  rw [toNFC_id_lowAscii [0x61, 0x0A, 0x62] (by decide)]
+  decide
 
 /-- `auditLogReinterpretation` fires when `ctx.asWritten`
     differs from `input` at a known position. -/
 theorem detect_audit_log_divergence :
-    let written : Array Nat := #[0x61, 0x62, 0x63]
-    let asRead  : Array Nat := #[0x61, 0x62, 0x64]
+    let written : List Nat := [0x61, 0x62, 0x63]
+    let asRead  : List Nat := [0x61, 0x62, 0x64]
     let ctx : Context := { asWritten := some written }
     let v := detectWithContext ctx asRead
     v.classify.tag = some "AuditLogReinterpretation"
-    ∧ v.classify.positions = #[2] := by decide +kernel
+    ∧ v.classify.positions = [2] := by
+  simp only [detectWithContext, hashStable]
+  rw [toNFC_id_lowAscii [0x61, 0x62, 0x64] (by decide)]
+  decide
 
 /-- `auditLogReinterpretation` stays silent when written and
     read are identical. -/
 theorem detect_audit_log_identical_clear :
-    let bytes : Array Nat := #[0x61, 0x62, 0x63]
+    let bytes : List Nat := [0x61, 0x62, 0x63]
     let ctx : Context := { asWritten := some bytes }
-    (detectWithContext ctx bytes).classify = .clear := by decide +kernel
+    (detectWithContext ctx bytes).classify = .clear := by
+  simp only [detectWithContext, hashStable]
+  rw [toNFC_id_lowAscii [0x61, 0x62, 0x63] (by decide)]
+  decide
 
 /-- `webhookSignatureDrift` fires when `ctx.serverBytes` differs
     from the client `input`.  Position is the first divergent
     index. -/
 theorem detect_webhook_signature_drift :
-    let client : Array Nat := #[0x61, 0x62, 0x63]
-    let server : Array Nat := #[0x61, 0x62, 0x64]
+    let client : List Nat := [0x61, 0x62, 0x63]
+    let server : List Nat := [0x61, 0x62, 0x64]
     let ctx : Context := { serverBytes := some server }
     let v := detectWithContext ctx client
     v.classify.tag = some "WebhookSignatureDrift"
-    ∧ v.classify.positions = #[2] := by decide +kernel
+    ∧ v.classify.positions = [2] := by
+  simp only [detectWithContext, hashStable]
+  rw [toNFC_id_lowAscii [0x61, 0x62, 0x63] (by decide)]
+  decide
 
 /-- `webhookSignatureDrift` stays silent when client and server
     bytes are identical. -/
 theorem detect_webhook_signature_match_clear :
-    let bytes : Array Nat := #[0x61, 0x62, 0x63]
+    let bytes : List Nat := [0x61, 0x62, 0x63]
     let ctx : Context := { serverBytes := some bytes }
-    (detectWithContext ctx bytes).classify = .clear := by decide +kernel
+    (detectWithContext ctx bytes).classify = .clear := by
+  simp only [detectWithContext, hashStable]
+  rw [toNFC_id_lowAscii [0x61, 0x62, 0x63] (by decide)]
+  decide
 
 /-- Priority pin: `encodingMismatch` fires before all other
     context-bearing probes.  An input with bare LF (would fire
@@ -853,22 +968,27 @@ theorem detect_priority_encoding_over_rfc :
       declaredEncoding := some "utf-16"
       rfcRule := some .pgp9580LineEnding
     }
-    let v := detectWithContext ctx #[0x0065, 0x0301, 0x0A]
-    v.classify.tag = some "EncodingMismatch" := by decide +kernel
+    let v := detectWithContext ctx [0x0065, 0x0301, 0x0A]
+    v.classify.tag = some "EncodingMismatch" := by
+  simp only [detectWithContext, hashStable]
+  decide
 
 /-- Priority pin: `webhookSignatureDrift` fires before
     `auditLogReinterpretation` when both diverge.  Pinned by
     setting both fields to diverging arrays. -/
 theorem detect_priority_webhook_over_audit :
-    let server : Array Nat := #[0x61, 0x62, 0x65]
-    let written : Array Nat := #[0x61, 0x62, 0x66]
-    let client : Array Nat := #[0x61, 0x62, 0x63]
+    let server : List Nat := [0x61, 0x62, 0x65]
+    let written : List Nat := [0x61, 0x62, 0x66]
+    let client : List Nat := [0x61, 0x62, 0x63]
     let ctx : Context := {
       serverBytes := some server
       asWritten := some written
     }
     let v := detectWithContext ctx client
-    v.classify.tag = some "WebhookSignatureDrift" := by decide +kernel
+    v.classify.tag = some "WebhookSignatureDrift" := by
+  simp only [detectWithContext, hashStable]
+  rw [toNFC_id_lowAscii [0x61, 0x62, 0x63] (by decide)]
+  decide
 
 /-- Priority pin: context-bearing `signedMessageRule` (priority 4)
     fires before generic `trailingWhitespace` (priority 5) when
@@ -877,7 +997,10 @@ theorem detect_priority_webhook_over_audit :
     RFC-specific verdict wins. -/
 theorem detect_priority_rfc_over_trailing :
     let ctx : Context := { rfcRule := some .pgp4880TrailingWhitespace }
-    let v := detectWithContext ctx #[0x61, 0x20]
-    v.classify.tag = some "SignedMessageRule" := by decide +kernel
+    let v := detectWithContext ctx [0x61, 0x20]
+    v.classify.tag = some "SignedMessageRule" := by
+  simp only [detectWithContext, hashStable]
+  rw [toNFC_id_lowAscii [0x61, 0x20] (by decide)]
+  decide
 
 end Unicode.Security.Crypto.HashInputStability

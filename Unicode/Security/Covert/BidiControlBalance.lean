@@ -57,7 +57,7 @@ set_option maxHeartbeats 10000000
 -/
 inductive SubThreat where
   | depthExceeded       (maxDepth : Nat)
-  | orphanPop           (positions : Array Nat)
+  | orphanPop           (positions : List Nat)
   | unbalancedEmbedding (openCount : Nat) (popCount : Nat)
   | unbalancedIsolate   (openCount : Nat) (popCount : Nat)
   deriving DecidableEq, Repr, Inhabited
@@ -65,7 +65,7 @@ inductive SubThreat where
 /-- Top-level classification for BidiControlBalance. -/
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
   deriving Inhabited
 
 /-- The depth bound from UAX #9 §3.3.2. -/
@@ -73,15 +73,15 @@ def uaxDepthLimit : Nat := 125
 
 /-- Verdict — the structured output of `detect`. -/
 structure Verdict where
-  input          : Array Nat
+  input          : List Nat
   classify       : Classification
-  bidiPositions  : Array Nat                       -- every bidi format-control position
+  bidiPositions  : List Nat                        -- every bidi format-control position
   embOpenCount   : Nat                              -- LRE+RLE+LRO occurrences
   embPopCount    : Nat                              -- PDF occurrences
   isoOpenCount   : Nat                              -- LRI+RLI+FSI occurrences
   isoPopCount    : Nat                              -- PDI occurrences
   maxDepth       : Nat                              -- peak stack-of-stacks depth
-  orphans        : Array Nat                       -- positions of unmatched pops
+  orphans        : List Nat                        -- positions of unmatched pops
   deriving Inhabited
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -90,7 +90,9 @@ structure Verdict where
 
 /-- Per-iteration walk state.  Each opener pushes; each popper
     pops or records an orphan position.  `maxDepth` tracks the
-    peak combined embedding-plus-isolate stack height. -/
+    peak combined embedding-plus-isolate stack height.  `orphans`
+    and `bidiPositions` accumulate in reverse (newest-first) and are
+    reversed at verdict-build time. -/
 structure WalkState where
   pos            : Nat
   embStack       : Nat
@@ -100,8 +102,8 @@ structure WalkState where
   isoOpenCount   : Nat
   isoPopCount    : Nat
   maxDepth       : Nat
-  orphans        : Array Nat
-  bidiPositions  : Array Nat
+  orphansRev     : List Nat
+  bidiPositionsRev : List Nat
   deriving Inhabited
 
 def WalkState.initial : WalkState :=
@@ -110,15 +112,15 @@ def WalkState.initial : WalkState :=
     embOpenCount := 0, embPopCount := 0,
     isoOpenCount := 0, isoPopCount := 0,
     maxDepth := 0,
-    orphans := #[],
-    bidiPositions := #[] }
+    orphansRev := [],
+    bidiPositionsRev := [] }
 
 /-- Single-step transition for the walk. -/
 def WalkState.step (st : WalkState) (cp : Nat) : WalkState :=
   if ¬ isBidiFormatControl cp then
     { st with pos := st.pos + 1 }
   else
-    let bidiPositions' := st.bidiPositions.push st.pos
+    let bidiPositions' := st.pos :: st.bidiPositionsRev
     if opensEmbedding cp then
       let emb' := st.embStack + 1
       let mx := Nat.max st.maxDepth (emb' + st.isoStack)
@@ -127,20 +129,20 @@ def WalkState.step (st : WalkState) (cp : Nat) : WalkState :=
           embStack := emb',
           embOpenCount := st.embOpenCount + 1,
           maxDepth := mx,
-          bidiPositions := bidiPositions' }
+          bidiPositionsRev := bidiPositions' }
     else if isPDF cp then
       if st.embStack > 0 then
         { st with
             pos := st.pos + 1,
             embStack := st.embStack - 1,
             embPopCount := st.embPopCount + 1,
-            bidiPositions := bidiPositions' }
+            bidiPositionsRev := bidiPositions' }
       else
         { st with
             pos := st.pos + 1,
             embPopCount := st.embPopCount + 1,
-            orphans := st.orphans.push st.pos,
-            bidiPositions := bidiPositions' }
+            orphansRev := st.pos :: st.orphansRev,
+            bidiPositionsRev := bidiPositions' }
     else if opensIsolate cp then
       let iso' := st.isoStack + 1
       let mx := Nat.max st.maxDepth (st.embStack + iso')
@@ -149,27 +151,27 @@ def WalkState.step (st : WalkState) (cp : Nat) : WalkState :=
           isoStack := iso',
           isoOpenCount := st.isoOpenCount + 1,
           maxDepth := mx,
-          bidiPositions := bidiPositions' }
+          bidiPositionsRev := bidiPositions' }
     else if isPDI cp then
       if st.isoStack > 0 then
         { st with
             pos := st.pos + 1,
             isoStack := st.isoStack - 1,
             isoPopCount := st.isoPopCount + 1,
-            bidiPositions := bidiPositions' }
+            bidiPositionsRev := bidiPositions' }
       else
         { st with
             pos := st.pos + 1,
             isoPopCount := st.isoPopCount + 1,
-            orphans := st.orphans.push st.pos,
-            bidiPositions := bidiPositions' }
+            orphansRev := st.pos :: st.orphansRev,
+            bidiPositionsRev := bidiPositions' }
     else
       -- Unreachable: every bidi format-control falls in one of the
       -- four classes above by `Unicode.TrojanSource.isBidiFormatControl`.
-      { st with pos := st.pos + 1, bidiPositions := bidiPositions' }
+      { st with pos := st.pos + 1, bidiPositionsRev := bidiPositions' }
 
 /-- Run the walk over the entire `input`. -/
-def runWalk (input : Array Nat) : WalkState :=
+def runWalk (input : List Nat) : WalkState :=
   input.foldl (init := WalkState.initial) WalkState.step
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -186,8 +188,8 @@ def runWalk (input : Array Nat) : WalkState :=
 private def pickSubThreat (st : WalkState) : Option SubThreat :=
   if st.maxDepth > uaxDepthLimit then
     some (.depthExceeded st.maxDepth)
-  else if st.orphans.size > 0 then
-    some (.orphanPop st.orphans)
+  else if st.orphansRev.length > 0 then
+    some (.orphanPop st.orphansRev.reverse)
   else if st.embStack > 0 then
     some (.unbalancedEmbedding st.embOpenCount st.embPopCount)
   else if st.isoStack > 0 then
@@ -197,50 +199,51 @@ private def pickSubThreat (st : WalkState) : Option SubThreat :=
 
 /-- The BidiControlBalance detection function.  Returns a
     structured verdict over the codepoint sequence `input`. -/
-def detect (input : Array Nat) : Verdict :=
+def detect (input : List Nat) : Verdict :=
   let st := runWalk input
-  if st.bidiPositions.isEmpty then
+  let bidiPositions := st.bidiPositionsRev.reverse
+  if bidiPositions.isEmpty then
     { input := input,
       classify := .clear,
-      bidiPositions := #[],
+      bidiPositions := [],
       embOpenCount := 0, embPopCount := 0,
       isoOpenCount := 0, isoPopCount := 0,
-      maxDepth := 0, orphans := #[] }
+      maxDepth := 0, orphans := [] }
   else
     match pickSubThreat st with
     | none =>
       -- Bidi present but balanced + within depth (legitimate RTL).
       { input := input,
         classify := .clear,
-        bidiPositions := st.bidiPositions,
+        bidiPositions := bidiPositions,
         embOpenCount := st.embOpenCount, embPopCount := st.embPopCount,
         isoOpenCount := st.isoOpenCount, isoPopCount := st.isoPopCount,
-        maxDepth := st.maxDepth, orphans := #[] }
+        maxDepth := st.maxDepth, orphans := [] }
     | some sub =>
       -- Positions semantics: orphan-pop is per-codepoint (one
       -- entry per stray PDF/PDI).  Depth-exceeded is a
       -- whole-string verdict — the stack-of-stacks is the
       -- problem, not any single codepoint — so we report an
-      -- empty positions array and let the `max_depth` metadata
+      -- empty positions list and let the `max_depth` metadata
       -- field carry the quantitative signal.  Unbalanced
       -- embedding / isolate likewise report all detected bidi
       -- positions; the diagnostic is "look at these controls,
       -- something is missing a partner".
-      let positions : Array Nat :=
+      let positions : List Nat :=
         match sub with
         | .orphanPop ps                            => ps
         | .depthExceeded maxDepth                  =>
-            Function.const Nat (#[] : Array Nat) maxDepth
+            Function.const Nat ([] : List Nat) maxDepth
         | .unbalancedEmbedding openCount popCount  =>
-            Function.const (Nat × Nat) st.bidiPositions (openCount, popCount)
+            Function.const (Nat × Nat) bidiPositions (openCount, popCount)
         | .unbalancedIsolate openCount popCount    =>
-            Function.const (Nat × Nat) st.bidiPositions (openCount, popCount)
+            Function.const (Nat × Nat) bidiPositions (openCount, popCount)
       { input := input,
         classify := .hazard sub positions ByteArray.empty,
-        bidiPositions := st.bidiPositions,
+        bidiPositions := bidiPositions,
         embOpenCount := st.embOpenCount, embPopCount := st.embPopCount,
         isoOpenCount := st.isoOpenCount, isoPopCount := st.isoPopCount,
-        maxDepth := st.maxDepth, orphans := st.orphans }
+        maxDepth := st.maxDepth, orphans := st.orphansRev.reverse }
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 Projection helpers
@@ -251,7 +254,7 @@ def SubThreat.tag : SubThreat → String
   | .depthExceeded       maxDepth               =>
       Function.const Nat "DepthExceeded" maxDepth
   | .orphanPop           orphanPositions        =>
-      Function.const (Array Nat) "OrphanPop" orphanPositions
+      Function.const (List Nat) "OrphanPop" orphanPositions
   | .unbalancedEmbedding openCount popCount     =>
       Function.const (Nat × Nat) "UnbalancedEmbedding" (openCount, popCount)
   | .unbalancedIsolate   openCount popCount     =>
@@ -261,18 +264,18 @@ def SubThreat.tag : SubThreat → String
 def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × Array Nat × ByteArray) false
+      Function.const (SubThreat × List Nat × ByteArray) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification (`none` for `.clear`). -/
 def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
-      Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
+      Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
 
-/-- Positions array of a classification (empty for `.clear`). -/
-def Classification.positions : Classification → Array Nat
-  | .clear                     => #[]
+/-- Positions list of a classification (empty for `.clear`). -/
+def Classification.positions : Classification → List Nat
+  | .clear                     => []
   | .hazard sub positions decoded =>
       Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
@@ -281,47 +284,47 @@ def Classification.positions : Classification → Array Nat
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Empty input is clear. -/
-theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
+theorem detect_empty_clear : (detect []).classify.isClear = true := by
   decide
 
 /-- Plain ASCII is clear (no bidi controls). -/
 theorem detect_ascii_clear :
-    (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
+    (detect [0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
   decide
 
 /-- Balanced LRE … PDF is clear (legitimate left-to-right embedding). -/
 theorem detect_balanced_embedding_clear :
-    (detect #[0x202A, 0x41, 0x202C]).classify.isClear = true := by
+    (detect [0x202A, 0x41, 0x202C]).classify.isClear = true := by
   decide
 
 /-- Balanced LRI … PDI is clear (legitimate left-to-right isolate). -/
 theorem detect_balanced_isolate_clear :
-    (detect #[0x2066, 0x41, 0x2069]).classify.isClear = true := by
+    (detect [0x2066, 0x41, 0x2069]).classify.isClear = true := by
   decide
 
 /-- Lone LRE (no PDF) — unbalanced embedding (Trojan Source CVE-2021-42574). -/
 theorem detect_lone_lre :
-    (detect #[0x202A, 0x41]).classify.tag = some "UnbalancedEmbedding" := by
+    (detect [0x202A, 0x41]).classify.tag = some "UnbalancedEmbedding" := by
   decide
 
 /-- Lone RLO (no PDF) — unbalanced embedding override. -/
 theorem detect_lone_rlo :
-    (detect #[0x202E, 0x41]).classify.tag = some "UnbalancedEmbedding" := by
+    (detect [0x202E, 0x41]).classify.tag = some "UnbalancedEmbedding" := by
   decide
 
 /-- Lone PDF (no preceding opener) — orphan pop. -/
 theorem detect_lone_pdf :
-    (detect #[0x202C]).classify.tag = some "OrphanPop" := by
+    (detect [0x202C]).classify.tag = some "OrphanPop" := by
   decide
 
 /-- Lone PDI (no preceding isolate) — orphan pop. -/
 theorem detect_lone_pdi :
-    (detect #[0x2069]).classify.tag = some "OrphanPop" := by
+    (detect [0x2069]).classify.tag = some "OrphanPop" := by
   decide
 
 /-- Lone LRI (no PDI) — unbalanced isolate (CVE-2021-42694). -/
 theorem detect_lone_lri :
-    (detect #[0x2067, 0x41]).classify.tag = some "UnbalancedIsolate" := by
+    (detect [0x2067, 0x41]).classify.tag = some "UnbalancedIsolate" := by
   decide
 
 /-- The Boucher-Anderson 2021 canonical "commenting-out" attack
@@ -329,27 +332,27 @@ theorem detect_lone_lri :
     repro is `.clear`.  The actual hazard surfaces when the PDF is
     elided (next theorem). -/
 theorem detect_trojan_source_shape :
-    (detect #[0x69, 0x66, 0x20, 0x202E, 0x29, 0x202C,
-              0x7B]).classify.isClear = true := by
+    (detect [0x69, 0x66, 0x20, 0x202E, 0x29, 0x202C,
+             0x7B]).classify.isClear = true := by
   decide
 
 /-- Same shape with the closing PDF removed — the actual
     Trojan-Source attack class. -/
 theorem detect_trojan_source_unbalanced :
-    (detect #[0x69, 0x66, 0x20, 0x202E, 0x29, 0x7B]).classify.tag
+    (detect [0x69, 0x66, 0x20, 0x202E, 0x29, 0x7B]).classify.tag
       = some "UnbalancedEmbedding" := by decide
 
 /-- Deep-nesting attack — 126 nested LRE's exceed UAX #9 §3.3.2's 125 cap. -/
 theorem detect_depth_exceeded :
-    let deepInput : Array Nat :=
-      Array.replicate 126 0x202A ++ Array.replicate 126 0x202C
+    let deepInput : List Nat :=
+      List.replicate 126 0x202A ++ List.replicate 126 0x202C
     (detect deepInput).classify.tag = some "DepthExceeded" := by
   decide
 
 /-- Exactly 125-deep nesting is within the UAX #9 cap. -/
 theorem detect_depth_at_limit_clear :
-    let okInput : Array Nat :=
-      Array.replicate 125 0x202A ++ Array.replicate 125 0x202C
+    let okInput : List Nat :=
+      List.replicate 125 0x202A ++ List.replicate 125 0x202C
     (detect okInput).classify.isClear = true := by
   decide
 

@@ -64,35 +64,35 @@ namespace Unicode.Security.Boundary.IdentifierFormDrift
 open Unicode.Security.Calculus
 open Unicode.Identifier (isAllowedStatus)
 
+-- The `detect` spot checks reduce the NFKD + identifier-status pipeline on
+-- concrete inputs; that nests deeper than the default reducer recursion budget.
+set_option maxRecDepth 100000
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 Per-position shift scan
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- `Identifier_Status` of the first codepoint of `cp`'s NFKD form,
     or `cp`'s own status when NFKD is empty (defensive — `toNFKD`
-    is total and returns at least `#[cp]` for any cp). -/
+    is total and returns at least `[cp]` for any cp). -/
 def nfkdHeadAllowed (cp : Nat) : Bool :=
-  let d := Unicode.Normalization.NFKD.toNFKD #[cp]
-  if h : 0 < d.size then isAllowedStatus d[0] else isAllowedStatus cp
+  match Unicode.Normalization.NFKD.toNFKD [cp] with
+  | []           => isAllowedStatus cp
+  | head :: rest => Function.const (List Nat) (isAllowedStatus head) rest
 
 /-- First input position whose `isAllowedStatus` differs from its
     NFKD-head's `isAllowedStatus`. -/
-def firstStatusShift (input : Array Nat) : Option (Nat × Nat) :=
-  (Array.range input.size).findSome? (fun i =>
-    if h : i < input.size then
-      let cp := input[i]
-      if isAllowedStatus cp != nfkdHeadAllowed cp then some (i, cp)
-      else none
+def firstStatusShift (input : List Nat) : Option (Nat × Nat) :=
+  input.zipIdx.findSome? (fun cpWithIdx =>
+    if isAllowedStatus cpWithIdx.1 != nfkdHeadAllowed cpWithIdx.1 then
+      some (cpWithIdx.2, cpWithIdx.1)
     else none)
 
 /-- Total count of input positions where the per-cp status shifts
     under NFKD. -/
-def statusShiftCount (input : Array Nat) : Nat :=
-  (Array.range input.size).foldl (init := 0) (fun acc i =>
-    if h : i < input.size then
-      let cp := input[i]
-      if isAllowedStatus cp != nfkdHeadAllowed cp then acc + 1 else acc
-    else acc)
+def statusShiftCount (input : List Nat) : Nat :=
+  input.foldl (init := 0) (fun acc cp =>
+    if isAllowedStatus cp != nfkdHeadAllowed cp then acc + 1 else acc)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 Types
@@ -104,11 +104,11 @@ inductive SubThreat where
 
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
   deriving Inhabited
 
 structure Verdict where
-  input      : Array Nat
+  input      : List Nat
   classify   : Classification
   shiftCount : Nat
   deriving Inhabited
@@ -118,11 +118,11 @@ structure Verdict where
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The IdentifierFormDrift detection function. -/
-def detect (input : Array Nat) : Verdict :=
+def detect (input : List Nat) : Verdict :=
   let classification : Classification :=
     match firstStatusShift input with
     | some (pos, cp) =>
-      .hazard (.identifierStatusShift pos cp) #[pos] ByteArray.empty
+      .hazard (.identifierStatusShift pos cp) [pos] ByteArray.empty
     | none => .clear
   { input := input,
     classify := classification,
@@ -139,16 +139,16 @@ def SubThreat.tag : SubThreat → String
 def Classification.isClear : Classification → Bool
   | .clear                       => true
   | .hazard sub positions decoded =>
-    Function.const (SubThreat × Array Nat × ByteArray) false
+    Function.const (SubThreat × List Nat × ByteArray) false
       (sub, positions, decoded)
 
 def Classification.tag : Classification → Option String
   | .clear                       => none
   | .hazard sub positions decoded =>
-    Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
+    Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
 
-def Classification.positions : Classification → Array Nat
-  | .clear                       => #[]
+def Classification.positions : Classification → List Nat
+  | .clear                       => []
   | .hazard sub positions decoded =>
     Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
@@ -157,28 +157,28 @@ def Classification.positions : Classification → Array Nat
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Empty input is clear. -/
-theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
+theorem detect_empty_clear : (detect []).classify.isClear = true := by
   decide
 
 /-- Pure ASCII is clear; every ASCII letter is Allowed, identity NFKD. -/
 theorem detect_ascii_clear :
-    (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
+    (detect [0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
   decide
 
 /-- Greek lowercase α is Allowed with identity NFKD — clear. -/
 theorem detect_greek_alpha_clear :
-    (detect #[0x03B1]).classify.isClear = true := by decide
+    (detect [0x03B1]).classify.isClear = true := by decide
 
 /-- Math Italic Small A (U+1D44E) is Restricted; NFKD head U+0061
     is Allowed.  The canonical IdentifierFormDrift case. -/
 theorem detect_math_italic_a_shift :
-    (detect #[0x1D44E]).classify.tag = some "IdentifierStatusShift" := by
+    (detect [0x1D44E]).classify.tag = some "IdentifierStatusShift" := by
   decide
 
 /-- Fullwidth A (U+FF21) is Restricted (compatibility form); NFKD head
     U+0041 is Allowed. -/
 theorem detect_fullwidth_A_shift :
-    (detect #[0xFF21]).classify.tag = some "IdentifierStatusShift" := by
+    (detect [0xFF21]).classify.tag = some "IdentifierStatusShift" := by
   decide
 
 end Unicode.Security.Boundary.IdentifierFormDrift
