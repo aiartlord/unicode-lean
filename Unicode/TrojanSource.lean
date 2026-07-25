@@ -75,7 +75,7 @@ def isBidiFormatControl (cp : Nat) : Bool :=
 /-- True iff `cps` contains any bidi format-control codepoint.
     Most source-code review systems should reject any input where
     this is true. -/
-def containsBidiFormatControl (cps : Array Nat) : Bool :=
+def containsBidiFormatControl (cps : List Nat) : Bool :=
   cps.any isBidiFormatControl
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -109,31 +109,28 @@ def isPDI (cp : Nat) : Bool := cp = 0x2069
     are properly closed. Returns `true` if the bidi controls are
     not balanced — i.e. an open without a matching close, a close
     without a matching open, or interleaved kinds. -/
-def hasUnbalancedBidiGo (cps : Array Nat) (i : Nat)
-    (embDepth isoDepth : Nat) : Bool :=
-  if h : i < cps.size then
-    let cp := cps[i]
+def hasUnbalancedBidiGo (cps : List Nat) (embDepth isoDepth : Nat) : Bool :=
+  match cps with
+  | [] => embDepth ≠ 0 || isoDepth ≠ 0
+  | cp :: rest =>
     if opensEmbedding cp then
-      hasUnbalancedBidiGo cps (i + 1) (embDepth + 1) isoDepth
+      hasUnbalancedBidiGo rest (embDepth + 1) isoDepth
     else if isPDF cp then
       if embDepth = 0 then true
-      else hasUnbalancedBidiGo cps (i + 1) (embDepth - 1) isoDepth
+      else hasUnbalancedBidiGo rest (embDepth - 1) isoDepth
     else if opensIsolate cp then
-      hasUnbalancedBidiGo cps (i + 1) embDepth (isoDepth + 1)
+      hasUnbalancedBidiGo rest embDepth (isoDepth + 1)
     else if isPDI cp then
       if isoDepth = 0 then true
-      else hasUnbalancedBidiGo cps (i + 1) embDepth (isoDepth - 1)
+      else hasUnbalancedBidiGo rest embDepth (isoDepth - 1)
     else
-      hasUnbalancedBidiGo cps (i + 1) embDepth isoDepth
-  else
-    embDepth ≠ 0 || isoDepth ≠ 0
-  termination_by cps.size - i
+      hasUnbalancedBidiGo rest embDepth isoDepth
 
 /-- True iff `cps` has unbalanced bidi format-controls — at end
     of input some embedding or isolate is still open, or a close
     appears with no matching open. -/
-def hasUnbalancedBidi (cps : Array Nat) : Bool :=
-  hasUnbalancedBidiGo cps 0 0 0
+def hasUnbalancedBidi (cps : List Nat) : Bool :=
+  hasUnbalancedBidiGo cps 0 0
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 INTEGRATED CODE-CONTEXT DECISION
@@ -146,7 +143,7 @@ def hasUnbalancedBidi (cps : Array Nat) : Bool :=
     rejected). The threshold can be relaxed for languages
     requiring stronger Latin/non-Latin mixing — but the bidi
     check is non-negotiable. -/
-def safeForCodeContext (cps : Array Nat) : Bool :=
+def safeForCodeContext (cps : List Nat) : Bool :=
   let lvl := restrictionLevel cps
   ! containsBidiFormatControl cps
     && (lvl = .ASCIIOnly
@@ -159,17 +156,17 @@ def safeForCodeContext (cps : Array Nat) : Bool :=
 
 /-- A pure ASCII identifier passes. -/
 theorem safe_ascii :
-    safeForCodeContext #[0x69, 0x66, 0x20, 0x78, 0x20, 0x3D, 0x3D, 0x20, 0x31]
+    safeForCodeContext [0x69, 0x66, 0x20, 0x78, 0x20, 0x3D, 0x3D, 0x20, 0x31]
       = true := by decide +kernel
 
 /-- The classic Trojan Source CVE-2021-42574 fragment uses U+202E
     RLO. With it present the input is rejected. -/
 theorem reject_rlo :
-    safeForCodeContext #[0x69, 0x66, 0x202E, 0x78] = false := by decide +kernel
+    safeForCodeContext [0x69, 0x66, 0x202E, 0x78] = false := by decide +kernel
 
 /-- LRI (U+2066) alone is also rejected. -/
 theorem reject_lri :
-    safeForCodeContext #[0x69, 0x66, 0x2066, 0x78] = false := by decide +kernel
+    safeForCodeContext [0x69, 0x66, 0x2066, 0x78] = false := by decide +kernel
 
 /-- containsBidiFormatControl flags the nine bidi controls. -/
 theorem detect_lre  : isBidiFormatControl 0x202A = true := by decide +kernel
@@ -184,25 +181,25 @@ theorem detect_pdi  : isBidiFormatControl 0x2069 = true := by decide +kernel
 
 /-- Plain ASCII has no bidi format-controls. -/
 theorem no_bidi_ascii :
-    containsBidiFormatControl #[0x61, 0x62, 0x63] = false := by decide +kernel
+    containsBidiFormatControl [0x61, 0x62, 0x63] = false := by decide +kernel
 
 /-- Balanced LRE…PDF passes the balance check. -/
 theorem balanced_lre_pdf :
-    hasUnbalancedBidi #[0x202A, 0x61, 0x202C] = false := by decide +kernel
+    hasUnbalancedBidi [0x202A, 0x61, 0x202C] = false := by decide +kernel
 
 /-- LRE without matching PDF is unbalanced. -/
 theorem unbalanced_open_lre :
-    hasUnbalancedBidi #[0x202A, 0x61] = true := by decide +kernel
+    hasUnbalancedBidi [0x202A, 0x61] = true := by decide +kernel
 
 /-- PDF without preceding LRE/RLE/LRO is unbalanced. -/
 theorem unbalanced_lone_pdf :
-    hasUnbalancedBidi #[0x61, 0x202C] = true := by decide +kernel
+    hasUnbalancedBidi [0x61, 0x202C] = true := by decide +kernel
 
 /-- A Cyrillic-letter identifier that passes Single-Script also
     passes `safeForCodeContext` — there are no bidi controls and
     the level meets the threshold. -/
 theorem safe_cyrillic :
-    safeForCodeContext #[0x043F, 0x0440, 0x0438, 0x0432, 0x0435, 0x0442]
+    safeForCodeContext [0x043F, 0x0440, 0x0438, 0x0432, 0x0435, 0x0442]
       = true := by decide +kernel
 
 /-- The Cyrillic IDN-homograph form of `apple` is Single-Script
@@ -211,13 +208,13 @@ theorem safe_cyrillic :
     is a confusables comparison against the Latin form, not the
     restriction level. -/
 theorem safe_apple_cyrillic_passes :
-    safeForCodeContext #[0x0430, 0x0440, 0x0440, 0x04CF, 0x0435]
+    safeForCodeContext [0x0430, 0x0440, 0x0440, 0x04CF, 0x0435]
       = true := by decide +kernel
 
 /-- A Latin/Cyrillic mix is MinimallyRestrictive (below the
     Highly threshold) so `safeForCodeContext` rejects it even
     without bidi controls. -/
 theorem reject_latin_cyrillic_mix :
-    safeForCodeContext #[0x0061, 0x0440, 0x0061] = false := by decide +kernel
+    safeForCodeContext [0x0061, 0x0440, 0x0061] = false := by decide +kernel
 
 end Unicode.TrojanSource

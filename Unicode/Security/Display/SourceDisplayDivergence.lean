@@ -58,6 +58,9 @@ import Unicode.Security.Identity.HomoglyphConfusable
 namespace Unicode.Security.Display.SourceDisplayDivergence
 
 open Unicode.Security.Calculus
+open Unicode.Security.Identity.HomoglyphConfusable (hasDecompositionSwap)
+open Unicode.Normalization.LowCodepointNfc (toNFC_id_all_lt toNFC_id_of_starters)
+open Unicode.Normalization.Compose (primaryComposite?_none_of_all_ne)
 
 -- The spot checks run concrete inputs through the composed sub-detector
 -- pipeline (tag / variation / zero-width / bidi / confusable-skeleton), so they
@@ -212,61 +215,202 @@ def Classification.positions : Classification → List Nat
 -- §5 Spot checks
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+-- Each check settles the composed verdict without ever reducing the `toNFC`
+-- pipeline. HomoglyphConfusable's `hasDecompositionSwap` is its only `toNFC`
+-- call; it is rewritten to `false` structurally — by `toNFC_id_all_lt` for
+-- all-ASCII inputs, and by `toNFC_id_of_starters` (indexed per-code-point
+-- decomposition/CCC lookups plus an explicit non-composition tuple) for inputs
+-- carrying tag, variation-selector, zero-width, or bidi code points. With that
+-- branch pinned, HomoglyphConfusable's verdict reduces over the confusable
+-- skeleton and script tables alone (bounded), and the four code-point-scan
+-- sub-detectors plus the aggregation bookkeeping decide directly.
+
 /-- Empty input is clear (every sub-detector clears). -/
 theorem detect_empty_clear : (detect []).classify.isClear = true := by
-  decide +kernel
+  have hds : hasDecompositionSwap [] = false := by
+    unfold hasDecompositionSwap; rw [toNFC_id_all_lt [] (by decide)]; simp
+  have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect []).classify.tag = none := by
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+  simp only [detect, hi1]
+  decide
 
 /-- Pure ASCII "Hello world" is clear. -/
 theorem detect_ascii_clear :
     (detect [0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64]).classify.isClear
-      = true := by decide +kernel
+      = true := by
+  have hds : hasDecompositionSwap [0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64]
+      = false := by
+    unfold hasDecompositionSwap
+    rw [toNFC_id_all_lt [0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64] (by decide)]
+    simp
+  have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
+      [0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64]).classify.tag = none := by
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+  simp only [detect, hi1]
+  decide
 
 /-- A pure-C1 attack — tag-encoded "AB" — fires `.tagBlock`. -/
 theorem detect_tag_only :
     (detect [0xE0041, 0xE0042]).classify.tag = some "TagBlock" := by
-  decide +kernel
+  have hds : hasDecompositionSwap [0xE0041, 0xE0042] = false := by
+    unfold hasDecompositionSwap
+    rw [toNFC_id_of_starters [0xE0041, 0xE0042]
+        (by intro x hx; simp at hx; rcases hx with h | h <;> subst h <;> exact ⟨by decide, by decide⟩)
+        (by intro x hx; simp at hx; rcases hx with h | h <;> subst h <;> decide)
+        ⟨primaryComposite?_none_of_all_ne 0xE0041 0xE0042 (by decide) (by decide +kernel), trivial⟩]
+    simp
+  have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
+      [0xE0041, 0xE0042]).classify.tag = none := by
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+  simp only [detect, hi1]
+  decide
 
 /-- A pure-C2 attack — Latin A + VS16 — fires `.variationSelector`. -/
 theorem detect_vs_only :
     (detect [0x0041, 0xFE0F]).classify.tag = some "VariationSelector" := by
-  decide +kernel
+  have hds : hasDecompositionSwap [0x0041, 0xFE0F] = false := by
+    unfold hasDecompositionSwap
+    rw [toNFC_id_of_starters [0x0041, 0xFE0F]
+        (by intro x hx; simp at hx; rcases hx with h | h <;> subst h <;> exact ⟨by decide, by decide⟩)
+        (by intro x hx; simp at hx; rcases hx with h | h <;> subst h <;> decide)
+        ⟨primaryComposite?_none_of_all_ne 0x0041 0xFE0F (by decide) (by decide +kernel), trivial⟩]
+    simp
+  have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
+      [0x0041, 0xFE0F]).classify.tag = none := by
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+  simp only [detect, hi1]
+  decide
 
 /-- A pure-C3 attack — Latin H + ZWSP + i — fires `.zeroWidth`. -/
 theorem detect_zw_only :
     (detect [0x0048, 0x200B, 0x69]).classify.tag = some "ZeroWidth" := by
-  decide +kernel
+  have hds : hasDecompositionSwap [0x0048, 0x200B, 0x69] = false := by
+    unfold hasDecompositionSwap
+    rw [toNFC_id_of_starters [0x0048, 0x200B, 0x69]
+        (by intro x hx; simp at hx; rcases hx with h | h | h <;> subst h <;> exact ⟨by decide, by decide⟩)
+        (by intro x hx; simp at hx; rcases hx with h | h | h <;> subst h <;> decide)
+        ⟨primaryComposite?_none_of_all_ne 0x0048 0x200B (by decide) (by decide +kernel),
+         primaryComposite?_none_of_all_ne 0x200B 0x69 (by decide) (by decide +kernel), trivial⟩]
+    simp
+  have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
+      [0x0048, 0x200B, 0x69]).classify.tag = none := by
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+  simp only [detect, hi1]
+  decide
 
 /-- A pure-C5 attack — lone RLO — fires `.bidiControl`. -/
 theorem detect_bidi_only :
     (detect [0x202E, 0x41]).classify.tag = some "BidiControl" := by
-  decide +kernel
+  have hds : hasDecompositionSwap [0x202E, 0x41] = false := by
+    unfold hasDecompositionSwap
+    rw [toNFC_id_of_starters [0x202E, 0x41]
+        (by intro x hx; simp at hx; rcases hx with h | h <;> subst h <;> exact ⟨by decide, by decide⟩)
+        (by intro x hx; simp at hx; rcases hx with h | h <;> subst h <;> decide)
+        ⟨primaryComposite?_none_of_all_ne 0x202E 0x41 (by decide) (by decide +kernel), trivial⟩]
+    simp
+  have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
+      [0x202E, 0x41]).classify.tag = none := by
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+  simp only [detect, hi1]
+  decide
 
-/-- A pure-I1 attack — Nethereum typosquat — fires `.identifierHomoglyph`. -/
+/-- A pure-I1 attack — Nethereum typosquat — fires `.identifierHomoglyph`.
+    Here the four codepoint-scan detectors are pinned clear and the skeleton
+    reduces in place. -/
 theorem detect_homoglyph_only :
     (detect [0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D]).classify.tag
-      = some "IdentifierHomoglyph" := by decide +kernel
+      = some "IdentifierHomoglyph" := by
+  have hc1 : (Unicode.Security.Covert.TagBlockPayload.detect
+      [0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D]).classify.tag = none := by
+    decide
+  have hc2 : (Unicode.Security.Covert.VariationSelectorPayload.detect
+      [0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D]).classify.tag = none := by
+    decide
+  have hc3 : (Unicode.Security.Covert.ZeroWidthPayload.detect
+      [0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D]).classify.tag = none := by
+    decide
+  have hc5 : (Unicode.Security.Covert.BidiControlBalance.detect
+      [0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D]).classify.tag = none := by
+    decide
+  have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
+      [0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D]).classify.tag
+      = some "TargetMatch" := by decide +kernel
+  simp only [detect, hc1, hc2, hc3, hc5, hi1]
+  decide
 
 /-- A compound attack — Latin A + VS16 + ZWSP — fires `.compound`. -/
 theorem detect_compound_vs_plus_zw :
     (detect [0x0041, 0xFE0F, 0x200B]).classify.tag = some "Compound" := by
-  decide +kernel
+  have hds : hasDecompositionSwap [0x0041, 0xFE0F, 0x200B] = false := by
+    unfold hasDecompositionSwap
+    rw [toNFC_id_of_starters [0x0041, 0xFE0F, 0x200B]
+        (by intro x hx; simp at hx; rcases hx with h | h | h <;> subst h <;> exact ⟨by decide, by decide⟩)
+        (by intro x hx; simp at hx; rcases hx with h | h | h <;> subst h <;> decide)
+        ⟨primaryComposite?_none_of_all_ne 0x0041 0xFE0F (by decide) (by decide +kernel),
+         primaryComposite?_none_of_all_ne 0xFE0F 0x200B (by decide) (by decide +kernel), trivial⟩]
+    simp
+  have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
+      [0x0041, 0xFE0F, 0x200B]).classify.tag = none := by
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+  simp only [detect, hi1]
+  decide
 
 /-- Tag + zero-width — also `.compound`. -/
 theorem detect_compound_tag_plus_zw :
     (detect [0xE0041, 0xE0042, 0x200B]).classify.tag = some "Compound" := by
-  decide +kernel
+  have hds : hasDecompositionSwap [0xE0041, 0xE0042, 0x200B] = false := by
+    unfold hasDecompositionSwap
+    rw [toNFC_id_of_starters [0xE0041, 0xE0042, 0x200B]
+        (by intro x hx; simp at hx; rcases hx with h | h | h <;> subst h <;> exact ⟨by decide, by decide⟩)
+        (by intro x hx; simp at hx; rcases hx with h | h | h <;> subst h <;> decide)
+        ⟨primaryComposite?_none_of_all_ne 0xE0041 0xE0042 (by decide) (by decide +kernel),
+         primaryComposite?_none_of_all_ne 0xE0042 0x200B (by decide) (by decide +kernel), trivial⟩]
+    simp
+  have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
+      [0xE0041, 0xE0042, 0x200B]).classify.tag = none := by
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+  simp only [detect, hi1]
+  decide
 
 /-- A clean code snippet "let x = 1;" is clear. -/
 theorem detect_clean_code :
     (detect [0x6C, 0x65, 0x74, 0x20, 0x78, 0x20, 0x3D, 0x20, 0x31, 0x3B]).classify.isClear
-      = true := by decide +kernel
+      = true := by
+  have hds : hasDecompositionSwap [0x6C, 0x65, 0x74, 0x20, 0x78, 0x20, 0x3D, 0x20, 0x31, 0x3B]
+      = false := by
+    unfold hasDecompositionSwap
+    rw [toNFC_id_all_lt [0x6C, 0x65, 0x74, 0x20, 0x78, 0x20, 0x3D, 0x20, 0x31, 0x3B] (by decide)]
+    simp
+  have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
+      [0x6C, 0x65, 0x74, 0x20, 0x78, 0x20, 0x3D, 0x20, 0x31, 0x3B]).classify.tag = none := by
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+  simp only [detect, hi1]
+  decide
 
 /-- `safeForReview` mirrors `isClear`. -/
 theorem safeForReview_matches_clear_empty :
-    (detect []).safeForReview = true := by decide +kernel
+    (detect []).safeForReview = true := by
+  have hds : hasDecompositionSwap [] = false := by
+    unfold hasDecompositionSwap; rw [toNFC_id_all_lt [] (by decide)]; simp
+  have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect []).classify.tag = none := by
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+  simp only [detect, hi1]
+  decide
 
 theorem safeForReview_matches_hazard_VS :
-    (detect [0x0041, 0xFE0F]).safeForReview = false := by decide +kernel
+    (detect [0x0041, 0xFE0F]).safeForReview = false := by
+  have hds : hasDecompositionSwap [0x0041, 0xFE0F] = false := by
+    unfold hasDecompositionSwap
+    rw [toNFC_id_of_starters [0x0041, 0xFE0F]
+        (by intro x hx; simp at hx; rcases hx with h | h <;> subst h <;> exact ⟨by decide, by decide⟩)
+        (by intro x hx; simp at hx; rcases hx with h | h <;> subst h <;> decide)
+        ⟨primaryComposite?_none_of_all_ne 0x0041 0xFE0F (by decide) (by decide +kernel), trivial⟩]
+    simp
+  have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
+      [0x0041, 0xFE0F]).classify.tag = none := by
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+  simp only [detect, hi1]
+  decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 Region-agnosticism spot checks
@@ -285,18 +429,60 @@ theorem safeForReview_matches_hazard_VS :
     region. -/
 theorem detect_vs_inside_quote_pair_fires :
     (detect [0x22, 0x41, 0xFE00, 0x22]).classify.tag
-      = some "VariationSelector" := by decide +kernel
+      = some "VariationSelector" := by
+  have hds : hasDecompositionSwap [0x22, 0x41, 0xFE00, 0x22] = false := by
+    unfold hasDecompositionSwap
+    rw [toNFC_id_of_starters [0x22, 0x41, 0xFE00, 0x22]
+        (by intro x hx; simp at hx; rcases hx with h | h | h | h <;> subst h <;> exact ⟨by decide, by decide⟩)
+        (by intro x hx; simp at hx; rcases hx with h | h | h | h <;> subst h <;> decide)
+        ⟨primaryComposite?_none_of_all_ne 0x22 0x41 (by decide) (by decide +kernel),
+         primaryComposite?_none_of_all_ne 0x41 0xFE00 (by decide) (by decide +kernel),
+         primaryComposite?_none_of_all_ne 0xFE00 0x22 (by decide) (by decide +kernel), trivial⟩]
+    simp
+  have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
+      [0x22, 0x41, 0xFE00, 0x22]).classify.tag = none := by
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+  simp only [detect, hi1]
+  decide
 
 /-- RLO "inside a line comment" — fires for the same reason.  Source-display
     divergence in a comment still deceives every consumer that reads bytes
     (LLM code assistants, doc generators, IDE renderers, CI grep matchers). -/
 theorem detect_rlo_inside_line_comment_marker_fires :
     (detect [0x2F, 0x2F, 0x202E]).classify.tag
-      = some "BidiControl" := by decide +kernel
+      = some "BidiControl" := by
+  have hds : hasDecompositionSwap [0x2F, 0x2F, 0x202E] = false := by
+    unfold hasDecompositionSwap
+    rw [toNFC_id_of_starters [0x2F, 0x2F, 0x202E]
+        (by intro x hx; simp at hx; rcases hx with h | h <;> subst h <;> exact ⟨by decide, by decide⟩)
+        (by intro x hx; simp at hx; rcases hx with h | h <;> subst h <;> decide)
+        ⟨primaryComposite?_none_of_all_ne 0x2F 0x2F (by decide) (by decide +kernel),
+         primaryComposite?_none_of_all_ne 0x2F 0x202E (by decide) (by decide +kernel), trivial⟩]
+    simp
+  have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
+      [0x2F, 0x2F, 0x202E]).classify.tag = none := by
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+  simp only [detect, hi1]
+  decide
 
 /-- RLO "inside a block comment" — fires. -/
 theorem detect_rlo_inside_block_comment_fires :
     (detect [0x2F, 0x2A, 0x202E, 0x2A, 0x2F]).classify.tag
-      = some "BidiControl" := by decide +kernel
+      = some "BidiControl" := by
+  have hds : hasDecompositionSwap [0x2F, 0x2A, 0x202E, 0x2A, 0x2F] = false := by
+    unfold hasDecompositionSwap
+    rw [toNFC_id_of_starters [0x2F, 0x2A, 0x202E, 0x2A, 0x2F]
+        (by intro x hx; simp at hx; rcases hx with h | h | h | h | h <;> subst h <;> exact ⟨by decide, by decide⟩)
+        (by intro x hx; simp at hx; rcases hx with h | h | h | h | h <;> subst h <;> decide)
+        ⟨primaryComposite?_none_of_all_ne 0x2F 0x2A (by decide) (by decide +kernel),
+         primaryComposite?_none_of_all_ne 0x2A 0x202E (by decide) (by decide +kernel),
+         primaryComposite?_none_of_all_ne 0x202E 0x2A (by decide) (by decide +kernel),
+         primaryComposite?_none_of_all_ne 0x2A 0x2F (by decide) (by decide +kernel), trivial⟩]
+    simp
+  have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
+      [0x2F, 0x2A, 0x202E, 0x2A, 0x2F]).classify.tag = none := by
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+  simp only [detect, hi1]
+  decide
 
 end Unicode.Security.Display.SourceDisplayDivergence
