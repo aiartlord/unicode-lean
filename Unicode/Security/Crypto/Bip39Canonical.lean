@@ -104,14 +104,14 @@ inductive SubThreat where
     canonical word (vacuously English on empty input). -/
 inductive Classification where
   | clear  (lang : Language)
-  | hazard (sub : SubThreat) (positions : Array Nat)
+  | hazard (sub : SubThreat) (positions : List Nat)
   deriving DecidableEq, Repr, Inhabited
 
 /-- Verdict — the structured output of `detect`. -/
 structure Verdict where
-  input          : Array Nat
+  input          : List Nat
   classify       : Classification
-  canonicalForm  : Array Nat
+  canonicalForm  : List Nat
   wordCount      : Nat
   deriving Inhabited
 
@@ -125,12 +125,12 @@ namespace Classification
 @[inline] def isClear : Classification → Bool
   | .clear lang        => Function.const Language true lang
   | .hazard sub ps     =>
-    Function.const (SubThreat × Array Nat) false (sub, ps)
+    Function.const (SubThreat × List Nat) false (sub, ps)
 
 @[inline] def tag : Classification → Option String
   | .clear lang                   => Function.const Language none lang
   | .hazard sub ps                =>
-    Function.const (Array Nat) (
+    Function.const (List Nat) (
       match sub with
       | .nonCanonicalForm pre post =>
         Function.const (Nat × Nat) (some "NonCanonicalForm") (pre, post)
@@ -148,8 +148,8 @@ namespace Classification
         Function.const Nat (some "MixedCase") pos
     ) ps
 
-@[inline] def positions : Classification → Array Nat
-  | .clear lang        => Function.const Language #[] lang
+@[inline] def positions : Classification → List Nat
+  | .clear lang        => Function.const Language [] lang
   | .hazard sub ps     => Function.const SubThreat ps sub
 
 end Classification
@@ -176,46 +176,24 @@ end Classification
     `U+0020` SPACE.  Preserves non-whitespace codepoints
     byte-for-byte.  Idempotent on any input that already has
     single-space separation. -/
-def collapseWhitespaceToSingle (input : Array Nat) : Array Nat := Id.run do
-  let mut out : Array Nat := #[]
-  let mut prevWasSpace : Bool := false
-  for cp in input do
+def collapseWhitespaceToSingle (input : List Nat) : List Nat :=
+  let step : (List Nat × Bool) → Nat → (List Nat × Bool) := fun acc cp =>
     if isBip39Whitespace cp then
-      if !prevWasSpace then
-        out := out.push 0x0020
-      prevWasSpace := true
-    else
-      out := out.push cp
-      prevWasSpace := false
-  pure out
+      (if acc.2 then acc.1 else 0x0020 :: acc.1, true)
+    else (cp :: acc.1, false)
+  (input.foldl step ([], false)).1.reverse
 
 /-- Strip leading and trailing `U+0020` SPACE.  Assumes
     `collapseWhitespaceToSingle` has already run so the only
     whitespace codepoint remaining is `U+0020`. -/
-def trimLeadingTrailing (input : Array Nat) : Array Nat :=
-  let firstNonSpace :=
-    (Array.range input.size).findSome? (fun i =>
-      if hi : i < input.size then
-        if input[i] ≠ 0x0020 then some i else none
-      else none)
-  match firstNonSpace with
-  | none    => #[]
-  | some s  =>
-    let lastNonSpace :=
-      (Array.range input.size).findSome? (fun i =>
-        let j := input.size - 1 - i
-        if hj : j < input.size then
-          if input[j] ≠ 0x0020 then some j else none
-        else none)
-    match lastNonSpace with
-    | none      => #[]
-    | some last => input.extract s (last + 1)
+def trimLeadingTrailing (input : List Nat) : List Nat :=
+  ((input.dropWhile (· = 0x0020)).reverse.dropWhile (· = 0x0020)).reverse
 
 /-- The BIP-39 canonical form of a codepoint sequence.  Composes
     the four pipeline stages in spec order: NFKD → toLower
     (default locale) → collapse whitespace → trim leading /
     trailing. -/
-def bip39Canonical (input : Array Nat) : Array Nat :=
+def bip39Canonical (input : List Nat) : List Nat :=
   let nfkd      := Unicode.Normalization.NFKD.toNFKD input
   let lowered   := Unicode.Casing.toLower .default nfkd
   let collapsed := collapseWhitespaceToSingle lowered
@@ -227,64 +205,65 @@ def bip39Canonical (input : Array Nat) : Array Nat :=
 
 /-- Empty input canonicalises to empty. -/
 theorem canonical_empty :
-    bip39Canonical #[] = #[] := by decide
+    bip39Canonical [] = [] := by decide
 
 /-- An already-canonical lowercase ASCII input is a fixed point. -/
 theorem canonical_idempotent_ascii :
-    let cps : Array Nat := #[0x61, 0x62, 0x63]  -- "abc"
+    let cps : List Nat := [0x61, 0x62, 0x63]  -- "abc"
     bip39Canonical (bip39Canonical cps) = bip39Canonical cps := by
   -- Reduce the canonical form once, then rewrite; evaluating the nested
   -- `bip39Canonical (bip39Canonical _)` directly runs the NFKD→lower→collapse
-  -- →trim pipeline twice and overflows the reducer. Factor out the single-pass
-  -- fixed-point fact and rewrite both occurrences instead.
-  have h : bip39Canonical #[0x61, 0x62, 0x63] = #[0x61, 0x62, 0x63] := by decide
-  show bip39Canonical (bip39Canonical #[0x61, 0x62, 0x63]) = bip39Canonical #[0x61, 0x62, 0x63]
+  -- →trim pipeline twice. Factor out the single-pass fixed-point fact and
+  -- rewrite both occurrences instead.
+  have h : bip39Canonical [0x61, 0x62, 0x63] = [0x61, 0x62, 0x63] := by decide
+  show bip39Canonical (bip39Canonical [0x61, 0x62, 0x63]) = bip39Canonical [0x61, 0x62, 0x63]
   simp only [h]
 
 /-- Double space between non-space content collapses to single. -/
 theorem canonical_collapses_double_space :
-    let cps : Array Nat := #[0x61, 0x20, 0x20, 0x62]  -- "a  b"
-    bip39Canonical cps = #[0x61, 0x20, 0x62] := by decide
+    let cps : List Nat := [0x61, 0x20, 0x20, 0x62]  -- "a  b"
+    bip39Canonical cps = [0x61, 0x20, 0x62] := by decide
 
 /-- Trailing single space is stripped. -/
 theorem canonical_strips_trailing :
-    let cps : Array Nat := #[0x61, 0x20]
-    bip39Canonical cps = #[0x61] := by decide
+    let cps : List Nat := [0x61, 0x20]
+    bip39Canonical cps = [0x61] := by decide
 
 /-- Leading single space is stripped. -/
 theorem canonical_strips_leading :
-    let cps : Array Nat := #[0x20, 0x61]
-    bip39Canonical cps = #[0x61] := by decide
+    let cps : List Nat := [0x20, 0x61]
+    bip39Canonical cps = [0x61] := by decide
 
 /-- Uppercase ASCII lowercases. -/
 theorem canonical_lowercases_ascii :
-    let cps : Array Nat := #[0x41]  -- "A"
-    bip39Canonical cps = #[0x61] := by decide
+    let cps : List Nat := [0x41]  -- "A"
+    bip39Canonical cps = [0x61] := by decide
 
 /-- Japanese ideographic space U+3000 canonicalises to U+0020. -/
 theorem canonical_normalises_ideographic_space :
-    let cps : Array Nat := #[0x61, 0x3000, 0x62]  -- "a<3000>b"
-    bip39Canonical cps = #[0x61, 0x20, 0x62] := by decide
+    let cps : List Nat := [0x61, 0x3000, 0x62]  -- "a<3000>b"
+    bip39Canonical cps = [0x61, 0x20, 0x62] := by decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Wordlist lookup
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+/-- Accumulate the words of a canonical-form input, splitting at
+    `U+0020` boundaries.  `acc` holds the current word in reverse;
+    empty runs between separators contribute no word. -/
+def splitWordsAux : List Nat → List Nat → List (List Nat)
+  | [],          acc => if acc.isEmpty then [] else [acc.reverse]
+  | cp :: rest,  acc =>
+    if cp = 0x0020 then
+      (if acc.isEmpty then [] else [acc.reverse]) ++ splitWordsAux rest []
+    else splitWordsAux rest (cp :: acc)
+
 /-- Split a canonical-form input into words at `U+0020` boundaries.
-    Returns the word slices as `Array Nat` (codepoint arrays). -/
-def splitWords (canonical : Array Nat) : Array (Array Nat) := Id.run do
-  let mut out : Array (Array Nat) := #[]
-  let mut wordStart : Nat := 0
-  let mut i : Nat := 0
-  while hi : i < canonical.size do
-    if canonical[i] = 0x0020 then
-      if i > wordStart then
-        out := out.push (canonical.extract wordStart i)
-      wordStart := i + 1
-    i := i + 1
-  if canonical.size > wordStart then
-    out := out.push (canonical.extract wordStart canonical.size)
-  pure out
+    The per-word codepoint sequences are returned as `Array Nat` so the
+    membership lookup runs against the generated `Array`-backed wordlist
+    tables. -/
+def splitWords (canonical : List Nat) : Array (Array Nat) :=
+  ((splitWordsAux canonical []).map List.toArray).toArray
 
 /-- Convert a `String` to its codepoint array. `String.toList` does not reduce
     under the kernel, so this is used only at runtime — by `wordlistCpsDrift`
@@ -370,44 +349,44 @@ theorem uniqueLanguage_empty :
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Count the trailing BIP-39 whitespace codepoints in `input`. -/
-def countTrailingWhitespace (input : Array Nat) : Nat :=
-  (input.reverse.takeWhile isBip39Whitespace).size
+def countTrailingWhitespace (input : List Nat) : Nat :=
+  (input.reverse.takeWhile isBip39Whitespace).length
 
 /-- First position of an uppercase ASCII letter in `input`, if any. -/
-def firstUppercasePos (input : Array Nat) : Option Nat :=
-  (Array.range input.size).findSome? (fun i =>
-    if hi : i < input.size then
-      let cp := input[i]
-      if 0x41 ≤ cp ∧ cp ≤ 0x5A then some i else none
-    else none)
+def firstUppercasePos (input : List Nat) : Option Nat :=
+  input.zipIdx.findSome? (fun cpWithIdx =>
+    if 0x41 ≤ cpWithIdx.1 ∧ cpWithIdx.1 ≤ 0x5A then some cpWithIdx.2 else none)
 
 /-- First position of a leading-or-consecutive whitespace run in
     `input`.  Fires when `input[i]` is BIP-39 whitespace AND either
     `i = 0` (leading) OR `input[i + 1]` is also BIP-39 whitespace
-    (consecutive run).  Single internal separators do not fire. -/
-def firstWhitespaceRunPos (input : Array Nat) : Option Nat :=
-  (Array.range input.size).findSome? (fun i =>
-    if hi : i < input.size then
-      if isBip39Whitespace input[i] then
-        if i = 0 then some i
-        else if hj : i + 1 < input.size then
-          if isBip39Whitespace input[i + 1] then some i else none
-        else none
-      else none
+    (consecutive run).  Single internal separators do not fire.
+    The lookahead pairs each code point with its successor via a zip
+    against the shift-by-one view. -/
+def firstWhitespaceRunPos (input : List Nat) : Option Nat :=
+  let nexts : List (Option Nat) := (input.drop 1).map some ++ [none]
+  ((input.zip nexts).zipIdx).findSome? (fun w =>
+    let cp := w.1.1
+    let i  := w.2
+    if isBip39Whitespace cp then
+      if i = 0 then some i
+      else match w.1.2 with
+        | some n => if isBip39Whitespace n then some i else none
+        | none   => none
     else none)
 
-/-- First position at which two `Array Nat`s diverge (differ in
-    element or one ends).  Returns `none` when they are identical. -/
-def firstArrayDivergence (a b : Array Nat) : Option Nat :=
-  let n := if a.size ≤ b.size then a.size else b.size
-  match (Array.range n).findSome? (fun i =>
-    if ha : i < a.size then
-      if hb : i < b.size then
-        if a[i] != b[i] then some i else none
-      else none
-    else none) with
-  | some i => some i
-  | none   => if a.size = b.size then none else some n
+/-- First position at which two code point lists diverge (differ in
+    element or one ends).  Returns `none` when they are identical.
+    Structural recursion — one traversal, no index arithmetic. -/
+def firstArrayDivergence : List Nat → List Nat → Option Nat
+  | [], [] => none
+  | [], bHead :: bTail =>
+    Function.const (Nat × List Nat) (some 0) (bHead, bTail)
+  | aHead :: aTail, [] =>
+    Function.const (Nat × List Nat) (some 0) (aHead, aTail)
+  | aHead :: aTail, bHead :: bTail =>
+    if aHead != bHead then some 0
+    else (firstArrayDivergence aTail bTail).map (fun i => i + 1)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §8 Top-level detection
@@ -418,7 +397,7 @@ def firstArrayDivergence (a b : Array Nat) : Option Nat :=
     Composes the six probes in priority order; first hit wins.
     See module header §"Sub-threats" for the rationale on each
     position in the order. -/
-def detect (input : Array Nat) : Verdict :=
+def detect (input : List Nat) : Verdict :=
   let canonical := bip39Canonical input
   let words     := splitWords canonical
   let wordCount := words.size
@@ -437,16 +416,16 @@ def detect (input : Array Nat) : Verdict :=
 
   let classification : Classification :=
     if trailingCount > 0 then
-      let p := input.size - trailingCount
-      .hazard (.trailingWhitespace trailingCount) #[p]
+      let p := input.length - trailingCount
+      .hazard (.trailingWhitespace trailingCount) [p]
     else match uppercasePos with
-    | some p => .hazard (.mixedCase p) #[p]
+    | some p => .hazard (.mixedCase p) [p]
     | none   => match whitespacePos with
-    | some p => .hazard (.whitespaceAnomaly p) #[p]
+    | some p => .hazard (.whitespaceAnomaly p) [p]
     | none   => match nonNfkdPos with
-    | some p => .hazard (.nonNFKD p) #[p]
+    | some p => .hazard (.nonNFKD p) [p]
     | none   => match firstUnknownIdx with
-    | some idx => .hazard (.wordlistMismatch idx) #[idx]
+    | some idx => .hazard (.wordlistMismatch idx) [idx]
     | none     => match unique with
     | some lang => .clear lang
     | none      =>
@@ -457,7 +436,7 @@ def detect (input : Array Nat) : Verdict :=
         (fun acc langs =>
           langs.foldl (init := acc) (fun a l =>
             if a.contains l then a else a.push l))
-      .hazard (.languageAmbiguous allPossible) #[]
+      .hazard (.languageAmbiguous allPossible) []
 
   { input := input,
     classify := classification,
