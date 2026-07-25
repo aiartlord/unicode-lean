@@ -6,7 +6,7 @@
   class.
 
     * Starter (CCC = 0): `nfc_snoc_qcY_starter` — `singleton_sound`
-      gives `toNFC #[cp] = #[cp]` for any QC=Y starter regardless
+      gives `toNFC [cp] = [cp]` for any QC=Y starter regardless
       of decomposition shape (atomic, Hangul, size-2, or
       recursively-chained size-2);
       `compose_qcY_starter_block_additive` factors `compose` over
@@ -21,8 +21,8 @@
       `ComposeBufferStructure`.
 
   The starter branch needs a structural premise: for any QC=Y starter
-  `cp`, the head of `decomposeSequence #[cp]` is a starter and the head of
-  `toNFD #[cp]` is a QC=Y starter.  This module proves that premise by
+  `cp`, the head of `decomposeSequence [cp]` is a starter and the head of
+  `toNFD [cp]` is a QC=Y starter.  This module proves that premise by
   dispatching over the same semantic cases as singleton soundness:
   atomic, Hangul, and generated rank-certificate rows.
 -/
@@ -76,8 +76,8 @@ open Unicode.Generated
 -- §1 PER-CODEPOINT STARTER-HEAD LIFT
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- For any QC=Y starter `cp`, `decomposeSequence #[cp]` is non-empty
-    and starter-led, and `toNFD #[cp]` is non-empty with a QC=Y starter
+/-- For any QC=Y starter `cp`, `decomposeSequence [cp]` is non-empty
+    and starter-led, and `toNFD [cp]` is non-empty with a QC=Y starter
     head. Atomic rows reduce directly, Hangul syllables use Hangul
     arithmetic, and non-empty non-Hangul row decompositions route through
     the generated singleton-rank certificate. -/
@@ -86,11 +86,11 @@ theorem qcY_starter_toNFD_head
     (hQC : nfcQCValue cp = .Y)
     (hCcc : Lookup.canonicalCombiningClass cp = 0) :
     Lookup.canonicalCombiningClass
-        (Decompose.decomposeSequence #[cp])[0]! = 0 ∧
-    Lookup.canonicalCombiningClass (toNFD #[cp])[0]! = 0 ∧
-    nfcQCValue (toNFD #[cp])[0]! = .Y ∧
-    (Decompose.decomposeSequence #[cp]).size > 0 ∧
-    (toNFD #[cp]).size > 0 := by
+        (Decompose.decomposeSequence [cp])[0]! = 0 ∧
+    Lookup.canonicalCombiningClass (toNFD [cp])[0]! = 0 ∧
+    nfcQCValue (toNFD [cp])[0]! = .Y ∧
+    (Decompose.decomposeSequence [cp]).length > 0 ∧
+    (toNFD [cp]).length > 0 := by
   by_cases hHangul : Hangul.isHangulSyllable cp = true
   · exact QuickCheckSoundnessHangul.hangul_singleton_toNFD_head cp hHangul
   · have hNotHangul : Hangul.isHangulSyllable cp = false := by
@@ -110,27 +110,26 @@ theorem qcY_starter_toNFD_head
         unfold Decompose.maxDepth Decompose.fullCanonicalDecomposeFuel
         rw [hDsyl]
         simp [hDecomp]
-      have hDS : Decompose.decomposeSequence #[cp] = #[cp] := by
-        rw [Distribute.decomposeSequence_singleton]
-        exact hFCD
-      have hToNFD : toNFD #[cp] = #[cp] := by
+      have hDS : Decompose.decomposeSequence [cp] = [cp] := by
+        rw [Distribute.decomposeSequence_singleton, hFCD]
+      have hToNFD : toNFD [cp] = [cp] := by
         unfold toNFD
         rw [hDS]
         apply Reorder.reorder_id_on_HasSortedRuns
-        show Reorder.HasSortedRuns [cp]
-        trivial
+        rw [Reorder.HasSortedRuns_singleton]
+        exact True.intro
       have hDsHead :
           Lookup.canonicalCombiningClass
-            (Decompose.decomposeSequence #[cp])[0]! = 0 := by
-        rw [hDS]; simp; exact hCcc
+            (Decompose.decomposeSequence [cp])[0]! = 0 := by
+        rw [hDS]; simpa using hCcc
       have hNfdHead :
-          Lookup.canonicalCombiningClass (toNFD #[cp])[0]! = 0 := by
-        rw [hToNFD]; simp; exact hCcc
-      have hNfdQC : nfcQCValue (toNFD #[cp])[0]! = .Y := by
-        rw [hToNFD]; simp; exact hQC
-      have hDsNonEmpty : (Decompose.decomposeSequence #[cp]).size > 0 := by
+          Lookup.canonicalCombiningClass (toNFD [cp])[0]! = 0 := by
+        rw [hToNFD]; simpa using hCcc
+      have hNfdQC : nfcQCValue (toNFD [cp])[0]! = .Y := by
+        rw [hToNFD]; simpa using hQC
+      have hDsNonEmpty : (Decompose.decomposeSequence [cp]).length > 0 := by
         rw [hDS]; simp
-      have hNfdNonEmpty : (toNFD #[cp]).size > 0 := by
+      have hNfdNonEmpty : (toNFD [cp]).length > 0 := by
         rw [hToNFD]; simp
       exact And.intro hDsHead
         (And.intro hNfdHead
@@ -152,27 +151,25 @@ theorem qcY_starter_toNFD_head
           unfold Decompose.maxDepth Decompose.fullCanonicalDecomposeFuel
           rw [hDsyl]
           simp [hEmpty]
-        have hDS : Decompose.decomposeSequence #[cp] = #[cp] := by
-          rw [Distribute.decomposeSequence_singleton]
-          exact hFCD
-        have hToNFD : toNFD #[cp] = #[cp] := by
+        have hDS : Decompose.decomposeSequence [cp] = [cp] := by
+          rw [Distribute.decomposeSequence_singleton, hFCD]
+        have hToNFD : toNFD [cp] = [cp] := by
           unfold toNFD
           rw [hDS]
           apply Reorder.reorder_id_on_HasSortedRuns
-          show Reorder.HasSortedRuns [cp]
           trivial
         have hDsHead :
             Lookup.canonicalCombiningClass
-              (Decompose.decomposeSequence #[cp])[0]! = 0 := by
-          rw [hDS]; simp; exact hCcc
+              (Decompose.decomposeSequence [cp])[0]! = 0 := by
+          rw [hDS]; simpa using hCcc
         have hNfdHead :
-            Lookup.canonicalCombiningClass (toNFD #[cp])[0]! = 0 := by
-          rw [hToNFD]; simp; exact hCcc
-        have hNfdQC : nfcQCValue (toNFD #[cp])[0]! = .Y := by
-          rw [hToNFD]; simp; exact hQC
-        have hDsNonEmpty : (Decompose.decomposeSequence #[cp]).size > 0 := by
+            Lookup.canonicalCombiningClass (toNFD [cp])[0]! = 0 := by
+          rw [hToNFD]; simpa using hCcc
+        have hNfdQC : nfcQCValue (toNFD [cp])[0]! = .Y := by
+          rw [hToNFD]; simpa using hQC
+        have hDsNonEmpty : (Decompose.decomposeSequence [cp]).length > 0 := by
           rw [hDS]; simp
-        have hNfdNonEmpty : (toNFD #[cp]).size > 0 := by
+        have hNfdNonEmpty : (toNFD [cp]).length > 0 := by
           rw [hToNFD]; simp
         exact And.intro hDsHead
           (And.intro hNfdHead
@@ -219,76 +216,58 @@ theorem qcY_starter_toNFD_head
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- `reorder` distributes over `X ++ Y` when `Y` is non-empty with a
-    starter head: factoring `Y = #[Y[0]] ++ Y_tail` and applying
+    starter head: factoring `Y = [Y[0]] ++ Y_tail` and applying
     `reorder_append_starter_middle` once to the (X, head, tail)
     triple and once to the (∅, head, tail) triple. -/
 theorem reorder_append_starter_led
-    (X : Array Nat) (head : Nat) (tail : List Nat)
+    (X : List Nat) (head : Nat) (tail : List Nat)
     (hHead : Lookup.canonicalCombiningClass head = 0) :
-    Reorder.reorder (X ++ (head :: tail).toArray) =
-      Reorder.reorder X ++ Reorder.reorder (head :: tail).toArray := by
-  have hYEq : ((head :: tail).toArray : Array Nat) = #[head] ++ tail.toArray := by
-    apply Array.toList_inj.mp
-    rw [List.toList_toArray]
-    rw [Array.toList_append, List.toList_toArray]
-    rfl
-  have hReorderEmpty : Reorder.reorder (#[] : Array Nat) = #[] := by
-    apply Reorder.reorder_id_on_HasSortedRuns
-    show Reorder.HasSortedRuns []
-    trivial
+    Reorder.reorder (X ++ (head :: tail)) =
+      Reorder.reorder X ++ Reorder.reorder (head :: tail) := by
   -- The right block reorder factors at its leading starter.
   have hReorderRight :
-      Reorder.reorder (#[head] ++ tail.toArray)
-        = #[head] ++ Reorder.reorder tail.toArray := by
+      Reorder.reorder (head :: tail)
+        = [head] ++ Reorder.reorder tail := by
     have hStep := ReorderAppend.reorder_append_starter_middle
-                    (#[] : Array Nat) head tail.toArray hHead
-    -- hStep: reorder (∅ ++ #[head] ++ tail.toArray)
-    --        = reorder ∅ ++ #[head] ++ reorder tail.toArray.
-    rw [Array.empty_append, hReorderEmpty, Array.empty_append] at hStep
-    exact hStep
-  rw [hYEq, hReorderRight]
-  rw [← Array.append_assoc]
-  rw [ReorderAppend.reorder_append_starter_middle X head tail.toArray hHead]
-  rw [Array.append_assoc]
+                    ([] : List Nat) head tail hHead
+    -- hStep: reorder ([] ++ [head] ++ tail)
+    --        = reorder [] ++ [head] ++ reorder tail.
+    simpa [show Reorder.reorder ([] : List Nat) = [] from rfl] using hStep
+  have hYEq : X ++ (head :: tail) = X ++ [head] ++ tail := by simp
+  rw [hYEq, ReorderAppend.reorder_append_starter_middle X head tail hHead,
+      hReorderRight, List.append_assoc]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 toNFD DISTRIBUTES OVER SNOC AT A STARTER BOUNDARY
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- For any QC=Y starter `cp`, `toNFD` distributes over the snoc-
-    extension boundary: the decomposition+reorder of `xs ++ #[cp]`
-    factors as `toNFD xs ++ toNFD #[cp]`. The factoring uses
-    `decomposeSequence_append` (decomposition is array-additive) and
+    extension boundary: the decomposition+reorder of `xs ++ [cp]`
+    factors as `toNFD xs ++ toNFD [cp]`. The factoring uses
+    `decomposeSequence_append` (decomposition is list-additive) and
     `reorder_append_starter_led` (starter-led right block). -/
 theorem toNFD_snoc_qcY_starter
-    (xs : Array Nat) (cp : Nat)
+    (xs : List Nat) (cp : Nat)
     (hQC : nfcQCValue cp = .Y)
     (hCcc : Lookup.canonicalCombiningClass cp = 0) :
-    toNFD (xs ++ #[cp]) = toNFD xs ++ toNFD #[cp] := by
+    toNFD (xs ++ [cp]) = toNFD xs ++ toNFD [cp] := by
   have hLift := qcY_starter_toNFD_head cp hQC hCcc
   have hDsHead := hLift.1
   have hDsNonEmpty := hLift.2.2.2.1
-  cases hL : (Decompose.decomposeSequence #[cp]).toList with
+  cases hL : Decompose.decomposeSequence [cp] with
   | nil =>
     exfalso
-    have hSize : (Decompose.decomposeSequence #[cp]).size = 0 := by
-      rw [← Array.length_toList, hL]; rfl
-    omega
+    rw [hL] at hDsNonEmpty
+    simp at hDsNonEmpty
   | cons head tail =>
-    have hDArr :
-        Decompose.decomposeSequence #[cp] = (head :: tail).toArray := by
-      apply Array.toList_inj.mp
-      rw [hL]
     have hHeadCcc : Lookup.canonicalCombiningClass head = 0 := by
-      have hHeadEq : (Decompose.decomposeSequence #[cp])[0]! = head := by
-        rw [hDArr]; simp
-      rw [← hHeadEq]
-      exact hDsHead
+      rw [hL] at hDsHead
+      simpa using hDsHead
     unfold toNFD
-    rw [Distribute.decomposeSequence_append xs #[cp]]
-    rw [hDArr]
-    rw [reorder_append_starter_led (Decompose.decomposeSequence xs)
-          head tail hHeadCcc]
+    rw [Distribute.decomposeSequence_append xs [cp]]
+    rw [hL]
+    exact reorder_append_starter_led (Decompose.decomposeSequence xs)
+            head tail hHeadCcc
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 STARTER SNOC CLOSURE
@@ -300,75 +279,36 @@ theorem toNFD_snoc_qcY_starter
     to factor `compose`, and finally `singleton_sound` for the singleton
     round-trip. -/
 theorem nfc_snoc_qcY_starter
-    (xs : Array Nat) (cp : Nat)
+    (xs : List Nat) (cp : Nat)
     (hQC : nfcQCValue cp = .Y)
     (hCcc : Lookup.canonicalCombiningClass cp = 0)
     (hPrefix : toNFC xs = xs) :
-    toNFC (xs ++ #[cp]) = xs ++ #[cp] := by
+    toNFC (xs ++ [cp]) = xs ++ [cp] := by
   have hLift := qcY_starter_toNFD_head cp hQC hCcc
   have hNfdHead := hLift.2.1
   have hNfdQC := hLift.2.2.1
   have hNfdNonEmpty := hLift.2.2.2.2
-  have hSingleton : toNFC #[cp] = #[cp] := singleton_sound cp hQC
-  have hToNFDSnoc : toNFD (xs ++ #[cp]) = toNFD xs ++ toNFD #[cp] :=
+  have hSingleton : toNFC [cp] = [cp] := singleton_sound cp hQC
+  have hToNFDSnoc : toNFD (xs ++ [cp]) = toNFD xs ++ toNFD [cp] :=
     toNFD_snoc_qcY_starter xs cp hQC hCcc
-  -- Pattern-match `toNFD #[cp]` via `toList` to expose head + tail in
-  -- list form, matching `compose_qcY_starter_block_additive_list`.
-  cases hL : (toNFD #[cp]).toList with
+  cases hL : toNFD [cp] with
   | nil =>
     exfalso
-    have hSize : (toNFD #[cp]).size = 0 := by
-      rw [← Array.length_toList, hL]; rfl
-    have hHeadEq : (toNFD #[cp])[0]! = (default : Nat) := by
-      rw [Array.getElem!_eq_getD]
-      simp [Array.getD, hSize]
-    rw [hHeadEq] at hNfdQC
-    -- `default = 0` and `nfcQCValue 0 = .Y`, so this branch is consistent
-    -- with the per-cp lift; need a different contradiction route.
-    -- Use the explicit non-empty fact from the lift.
-    exact absurd hSize (Nat.ne_of_gt hNfdNonEmpty)
+    rw [hL] at hNfdNonEmpty
+    simp at hNfdNonEmpty
   | cons head tail =>
-    have hToNFDArr : toNFD #[cp] = (head :: tail).toArray := by
-      apply Array.toList_inj.mp
-      rw [hL]
-    have hHeadEqBang : (toNFD #[cp])[0]! = head := by
-      rw [hToNFDArr]; simp
-    rw [hHeadEqBang] at hNfdHead hNfdQC
-    show Compose.compose (toNFD (xs ++ #[cp])) = xs ++ #[cp]
-    rw [hToNFDSnoc, hToNFDArr]
-    -- `compose ((toNFD xs) ++ (head :: tail).toArray)` factors via
-    -- `compose_qcY_starter_block_additive_list`.
-    show Compose.flushCompose
-            ((toNFD xs ++ (head :: tail).toArray).foldl
-                Compose.stepCompose Compose.initialState) = xs ++ #[cp]
-    rw [Array.foldl_append]
-    have hListEq :
-        ((head :: tail).toArray.foldl Compose.stepCompose
-            ((toNFD xs).foldl Compose.stepCompose Compose.initialState))
-        = (head :: tail).foldl Compose.stepCompose
-            ((toNFD xs).foldl Compose.stepCompose Compose.initialState) := by
-      rw [← Array.foldl_toList]
-    rw [hListEq]
-    rw [Unicode.Normalization.ComposeBlockAdditive.compose_qcY_starter_block_additive_list
-          (toNFD xs) head tail hNfdHead hNfdQC]
-    show Compose.compose (toNFD xs)
-       ++ Compose.flushCompose
-            ((head :: tail).foldl Compose.stepCompose Compose.initialState)
-        = xs ++ #[cp]
-    -- The right factor reduces to `compose (toNFD #[cp])` via array-list
-    -- foldl conversion.
-    have hRightEq :
-        Compose.flushCompose
-            ((head :: tail).foldl Compose.stepCompose Compose.initialState)
-        = Compose.compose (toNFD #[cp]) := by
-      show Compose.flushCompose
-              ((head :: tail).foldl Compose.stepCompose Compose.initialState)
-          = Compose.flushCompose
-              ((toNFD #[cp]).foldl Compose.stepCompose Compose.initialState)
-      rw [hToNFDArr]
-      rw [← Array.foldl_toList]
-    rw [hRightEq]
-    show toNFC xs ++ toNFC #[cp] = xs ++ #[cp]
+    have hHeadCcc0 : Lookup.canonicalCombiningClass head = 0 := by
+      rw [hL] at hNfdHead
+      simpa using hNfdHead
+    have hHeadQC : nfcQCValue head = .Y := by
+      rw [hL] at hNfdQC
+      simpa using hNfdQC
+    show Compose.compose (toNFD (xs ++ [cp])) = xs ++ [cp]
+    rw [hToNFDSnoc, hL]
+    rw [compose_qcY_starter_block_additive (toNFD xs) (head :: tail)
+          (by simp) hHeadCcc0 hHeadQC]
+    rw [← hL]
+    show toNFC xs ++ toNFC [cp] = xs ++ [cp]
     rw [hPrefix, hSingleton]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -376,28 +316,28 @@ theorem nfc_snoc_qcY_starter
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- **Atomic-nonstarter snoc closure.** The slide step
-    `compose (lowL ++ #[cp] ++ highL) = compose (lowL ++ highL ++
-    #[cp])` is discharged by `compose_slide_qcY`
+    `compose (lowL ++ [cp] ++ highL) = compose (lowL ++ highL ++
+    [cp])` is discharged by `compose_slide_qcY`
     (`ComposeNonstarterSlide`); chain validity for the high part is
     derived from the buffer-bound on `lowL ++ highL` via
     `chain_fires_via_buffer_bound` (`ComposeBufferStructure`). -/
 theorem nfc_snoc_qcY_nonstarter_structural
-    (xs : Array Nat) (cp : Nat)
+    (xs : List Nat) (cp : Nat)
     (hQC : nfcQCValue cp = .Y)
     (hCp_ccc_pos : 0 < Lookup.canonicalCombiningClass cp)
     (hDecomp : Lookup.canonicalDecomposition cp = #[])
     (hNotHangul : Hangul.isHangulSyllable cp = false)
     (hPrefix : toNFC xs = xs)
-    (hQCSnoc : NFC.isNFCQuickCheck (xs ++ #[cp]) = true) :
-    toNFC (xs ++ #[cp]) = xs ++ #[cp] := by
-  have hHSR_outer : NFC.hasSortedRunsBool (xs ++ #[cp]).toList = true := by
+    (hQCSnoc : NFC.isNFCQuickCheck (xs ++ [cp]) = true) :
+    toNFC (xs ++ [cp]) = xs ++ [cp] := by
+  have hHSR_outer : NFC.hasSortedRunsBool (xs ++ [cp]) = true := by
     unfold NFC.isNFCQuickCheck at hQCSnoc
     rw [Bool.and_eq_true] at hQCSnoc
     exact hQCSnoc.2
-  by_cases hHSR_inner : NFC.hasSortedRunsBool (toNFD xs ++ #[cp]).toList = true
-  · have hHSR_prop : Reorder.HasSortedRuns (toNFD xs ++ #[cp]).toList :=
+  by_cases hHSR_inner : NFC.hasSortedRunsBool (toNFD xs ++ [cp]) = true
+  · have hHSR_prop : Reorder.HasSortedRuns (toNFD xs ++ [cp]) :=
       (NFC.hasSortedRunsBool_iff_HasSortedRuns
-        (toNFD xs ++ #[cp]).toList).mp hHSR_inner
+        (toNFD xs ++ [cp])).mp hHSR_inner
     exact nfc_snoc_atomic_nonstarter_hsr_preserves
       xs cp hQC hCp_ccc_pos hDecomp hNotHangul hHSR_prop hPrefix
   · -- Swap variant: partition `toNFD xs` at the cp-CCC threshold,
@@ -406,22 +346,20 @@ theorem nfc_snoc_qcY_nonstarter_structural
       Nat.pos_iff_ne_zero.mp hCp_ccc_pos
     have hFCD : Decompose.fullCanonicalDecompose cp = #[cp] :=
       decomp_atomic_id cp hDecomp hNotHangul
-    have hZ_HSR : Reorder.HasSortedRuns (toNFD xs).toList :=
+    have hZ_HSR : Reorder.HasSortedRuns (toNFD xs) :=
       (NFD.toNFD_output_HSR_and_FullyDecomposed xs).1
     obtain ⟨lowL, hLowEq⟩ :
         ∃ lowL, lowL =
-          trailingLow
-            (toNFD xs).toList (Lookup.canonicalCombiningClass cp) :=
-      ⟨trailingLow (toNFD xs).toList (Lookup.canonicalCombiningClass cp), rfl⟩
+          trailingLow (toNFD xs) (Lookup.canonicalCombiningClass cp) :=
+      ⟨trailingLow (toNFD xs) (Lookup.canonicalCombiningClass cp), rfl⟩
     obtain ⟨highL, hHighEq⟩ :
         ∃ highL, highL =
-          trailingHigh
-            (toNFD xs).toList (Lookup.canonicalCombiningClass cp) :=
-      ⟨trailingHigh (toNFD xs).toList (Lookup.canonicalCombiningClass cp), rfl⟩
-    have hPartition : (toNFD xs).toList = lowL ++ highL := by
+          trailingHigh (toNFD xs) (Lookup.canonicalCombiningClass cp) :=
+      ⟨trailingHigh (toNFD xs) (Lookup.canonicalCombiningClass cp), rfl⟩
+    have hPartition : toNFD xs = lowL ++ highL := by
       rw [hLowEq, hHighEq]
       exact (trailingLow_append_trailingHigh
-              (toNFD xs).toList (Lookup.canonicalCombiningClass cp)).symm
+              (toNFD xs) (Lookup.canonicalCombiningClass cp)).symm
     have hHighNonEmpty : highL ≠ [] := by
       rw [hHighEq]
       exact trailingHigh_nonempty_in_swap_case
@@ -430,70 +368,59 @@ theorem nfc_snoc_qcY_nonstarter_structural
       intros b hb
       rw [hHighEq] at hb
       exact trailingHigh_all_pos
-              (toNFD xs).toList (Lookup.canonicalCombiningClass cp) b hb
+              (toNFD xs) (Lookup.canonicalCombiningClass cp) b hb
     have hHighGt : ∀ b ∈ highL,
                       Lookup.canonicalCombiningClass cp
                         < Lookup.canonicalCombiningClass b := by
       intros b hb
       rw [hHighEq] at hb
       exact trailingHigh_all_gt
-              (toNFD xs).toList (Lookup.canonicalCombiningClass cp) b hb
+              (toNFD xs) (Lookup.canonicalCombiningClass cp) b hb
     have hLowHasStarter : ∃ s ∈ lowL, Lookup.canonicalCombiningClass s = 0 := by
       rw [hLowEq]
       exact lowL_has_starter_in_swap_case
               xs cp hCp_ccc_pos hPrefix hHSR_outer hHSR_inner
     have hLowStarter :
-        (lowL.toArray.foldl Compose.stepCompose Compose.initialState).starter.isSome
-          = true := by
-      rw [← Array.foldl_toList, List.toList_toArray]
-      exact foldl_stepCompose_starter_isSome_of_member
-              lowL Compose.initialState hLowHasStarter
-    -- Reshape `toNFD xs ++ #[cp]` to `lowL ++ highL ++ #[cp]`, then
+        (lowL.foldl Compose.stepCompose Compose.initialState).starter.isSome
+          = true :=
+      foldl_stepCompose_starter_isSome_of_member
+        lowL Compose.initialState hLowHasStarter
+    -- Reshape `toNFD xs ++ [cp]` to `lowL ++ highL ++ [cp]`, then
     -- commute `cp` past `highL` via reorder's strict-max-multi
     -- lemma so that `reorder` becomes the identity on the inserted
-    -- `lowL ++ #[cp] ++ highL`.
-    show Compose.compose (toNFD (xs ++ #[cp])) = xs ++ #[cp]
-    have hToNFD_snoc : toNFD (xs ++ #[cp])
-                      = Reorder.reorder (toNFD xs ++ #[cp]) := by
+    -- `lowL ++ [cp] ++ highL`.
+    show Compose.compose (toNFD (xs ++ [cp])) = xs ++ [cp]
+    have hToNFD_snoc : toNFD (xs ++ [cp])
+                      = Reorder.reorder (toNFD xs ++ [cp]) := by
       unfold toNFD
-      rw [Distribute.decomposeSequence_append xs #[cp]]
+      rw [Distribute.decomposeSequence_append xs [cp]]
       rw [Distribute.decomposeSequence_singleton, hFCD]
       exact ReorderAppend.reorder_append_absorbing_nonstarter
               (Decompose.decomposeSequence xs) cp hCp_ccc_pos
     rw [hToNFD_snoc]
-    have hZArr : toNFD xs = lowL.toArray ++ highL.toArray := by
-      apply Array.toList_inj.mp
-      rw [Array.toList_append]
-      show (toNFD xs).toList = lowL.toArray.toList ++ highL.toArray.toList
-      rw [List.toList_toArray, List.toList_toArray]
-      exact hPartition
-    have hZsnocReshape : toNFD xs ++ #[cp]
-                       = lowL.toArray ++ highL.toArray ++ #[cp] := by
-      rw [hZArr]
+    have hZsnocReshape : toNFD xs ++ [cp]
+                       = lowL ++ highL ++ [cp] := by
+      rw [hPartition]
     rw [hZsnocReshape]
-    have hHighArrPos :
-        ∀ c ∈ highL.toArray.toList, 0 < Lookup.canonicalCombiningClass c := by
-      rw [List.toList_toArray]; exact hHighPos
-    have hCpArrPos :
-        ∀ y ∈ (#[cp] : Array Nat).toList, 0 < Lookup.canonicalCombiningClass y := by
+    have hCpPos :
+        ∀ y ∈ ([cp] : List Nat), 0 < Lookup.canonicalCombiningClass y := by
       intro y hy
       have hYcp : y = cp := by simpa using hy
       rw [hYcp]; exact hCp_ccc_pos
     have hStrictGt :
-        ∀ c ∈ highL.toArray.toList, ∀ y ∈ (#[cp] : Array Nat).toList,
+        ∀ c ∈ highL, ∀ y ∈ ([cp] : List Nat),
           Lookup.canonicalCombiningClass y
             < Lookup.canonicalCombiningClass c := by
       intros c hc y hy
       have hYcp : y = cp := by simpa using hy
       rw [hYcp]
-      rw [List.toList_toArray] at hc
       exact hHighGt c hc
     have hCommute :
-        Reorder.reorder (lowL.toArray ++ #[cp] ++ highL.toArray)
-          = Reorder.reorder (lowL.toArray ++ highL.toArray ++ #[cp]) :=
+        Reorder.reorder (lowL ++ [cp] ++ highL)
+          = Reorder.reorder (lowL ++ highL ++ [cp]) :=
       ReorderAppend.reorder_commutes_strict_max_multi
-        lowL.toArray (#[cp] : Array Nat) highL.toArray
-        hHighArrPos hCpArrPos hStrictGt
+        lowL ([cp] : List Nat) highL
+        hHighPos hCpPos hStrictGt
     rw [← hCommute]
     -- HSR for the inserted form makes `reorder` the identity.
     have hHSR_partitioned : Reorder.HasSortedRuns (lowL ++ highL) :=
@@ -513,7 +440,7 @@ theorem nfc_snoc_qcY_nonstarter_structural
       clear hCpPosArg
       rw [hLowEq] at hLast
       exact trailingLow_last_le_when_high_nonempty
-              (toNFD xs).toList (Lookup.canonicalCombiningClass cp) a hLast
+              (toNFD xs) (Lookup.canonicalCombiningClass cp) a hLast
     have hHSR_lowL_cp : Reorder.HasSortedRuns (lowL ++ [cp]) :=
       HasSortedRuns_append_singleton
         lowL cp hHSR_lowL hSeam_lowL_cp
@@ -544,60 +471,52 @@ theorem nfc_snoc_qcY_nonstarter_structural
     have hHSR_inserted : Reorder.HasSortedRuns (lowL ++ [cp] ++ highL) :=
       HasSortedRuns_concat
         (lowL ++ [cp]) highL hHSR_lowL_cp hHSR_highL hSeam_lowLcp_highL
-    have hListEq : (lowL.toArray ++ #[cp] ++ highL.toArray).toList
-                 = lowL ++ [cp] ++ highL := by
-      rw [Array.toList_append, Array.toList_append, List.toList_toArray,
-          List.toList_toArray]
-    have hHSR_inserted_arr :
-        Reorder.HasSortedRuns
-            (lowL.toArray ++ #[cp] ++ highL.toArray).toList := by
-      rw [hListEq]; exact hHSR_inserted
     rw [Reorder.reorder_id_on_HasSortedRuns
-      (lowL.toArray ++ #[cp] ++ highL.toArray) hHSR_inserted_arr]
+      (lowL ++ [cp] ++ highL) hHSR_inserted]
     -- Apply the slide. Chain validity is derived from the buffer-
-    -- bound on `compose (lowL.toArray ++ highL.toArray)`.
-    have hCompZ : Compose.compose (lowL.toArray ++ highL.toArray) = xs := by
-      rw [← hZArr]; show toNFC xs = xs; exact hPrefix
+    -- bound on `compose (lowL ++ highL)`.
+    have hCompZ : Compose.compose (lowL ++ highL) = xs := by
+      rw [← hPartition]; show toNFC xs = xs; exact hPrefix
     have hFinalStarter :
-        ((lowL.toArray ++ highL.toArray).foldl
+        ((lowL ++ highL).foldl
             Compose.stepCompose Compose.initialState).starter.isSome
           = true := by
-      rw [Array.foldl_append, ← Array.foldl_toList]
+      rw [List.foldl_append]
       exact foldl_stepCompose_starter_isSome_persists
-              highL.toArray.toList
-              (lowL.toArray.foldl Compose.stepCompose Compose.initialState)
+              highL
+              (lowL.foldl Compose.stepCompose Compose.initialState)
               hLowStarter
     have hHSR_postCompose :
         NFC.hasSortedRunsBool
-          (Compose.compose (lowL.toArray ++ highL.toArray) ++ #[cp]).toList
+          (Compose.compose (lowL ++ highL) ++ [cp])
             = true := by
       rw [hCompZ]; exact hHSR_outer
     -- Buffer-bound (`compose_buffer_ccc_bound`) via the trailing-
     -- run-of-output characterization.
     have hFinalBufBound :
-        ∀ y ∈ ((lowL.toArray ++ highL.toArray).foldl
+        ∀ y ∈ ((lowL ++ highL).foldl
                   Compose.stepCompose Compose.initialState).buffer,
           Lookup.canonicalCombiningClass y
             ≤ Lookup.canonicalCombiningClass cp :=
-      compose_buffer_ccc_bound (lowL.toArray ++ highL.toArray) cp
+      compose_buffer_ccc_bound (lowL ++ highL) cp
         hCp_ccc_pos hFinalStarter hHSR_postCompose
     -- Chain validity (`chain_fires_via_buffer_bound`) via the
     -- buffer-bound + buffer-or-fire dichotomy.
     have hChainFresh : PrimaryFiresChain
-          (lowL.toArray.foldl Compose.stepCompose Compose.initialState) highL :=
-      chain_fires_via_buffer_bound highL lowL.toArray cp hHighPos hHighGt
+          (lowL.foldl Compose.stepCompose Compose.initialState) highL :=
+      chain_fires_via_buffer_bound highL lowL cp hHighPos hHighGt
         hLowStarter hFinalBufBound
     obtain ⟨stLow, hStLow⟩ :=
       Option.isSome_iff_exists.mp hLowStarter
     have hSlide : Compose.compose
-                    (lowL.toArray ++ #[cp] ++ highL.toArray)
+                    (lowL ++ [cp] ++ highL)
                   = Compose.compose
-                    (lowL.toArray ++ highL.toArray ++ #[cp]) :=
-      compose_slide_qcY lowL.toArray cp highL stLow hStLow hQC hCp_ccc_pos
+                    (lowL ++ highL ++ [cp]) :=
+      compose_slide_qcY lowL cp highL stLow hStLow hQC hCp_ccc_pos
         hHighGt hChainFresh
     rw [hSlide]
     rw [compose_qcY_linear
-          (lowL.toArray ++ highL.toArray) cp hQC]
+          (lowL ++ highL) cp hQC]
     rw [hCompZ]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -616,11 +535,11 @@ theorem nfc_snoc_qcY_nonstarter_structural
         not-Hangul premises derive from Fact 1 and
         `hangulSyllable_ccc_zero`. -/
 theorem nfc_snoc_qcY
-    (xs : Array Nat) (cp : Nat)
+    (xs : List Nat) (cp : Nat)
     (hQC : nfcQCValue cp = .Y)
     (hPrefix : toNFC xs = xs)
-    (hSnocQC : isNFCQuickCheck (xs ++ #[cp]) = true) :
-    toNFC (xs ++ #[cp]) = xs ++ #[cp] := by
+    (hSnocQC : isNFCQuickCheck (xs ++ [cp]) = true) :
+    toNFC (xs ++ [cp]) = xs ++ [cp] := by
   by_cases hCcc : Lookup.canonicalCombiningClass cp = 0
   · exact nfc_snoc_qcY_starter xs cp hQC hCcc hPrefix
   · have hCccPos : 0 < Lookup.canonicalCombiningClass cp :=

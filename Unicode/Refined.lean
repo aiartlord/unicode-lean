@@ -38,24 +38,24 @@ open Unicode.Normalization
 
 /-- `widthMap` lifted to a `WidthMappedArray`-producing function.
     Witness: `Precis.WidthMapping.widthMap_output_all_non_source`. -/
-def widthMap (cps : Array Nat) : WidthMappedArray :=
+def widthMap (cps : List Nat) : WidthMappedArray :=
   ⟨Precis.WidthMapping.widthMap cps,
    Precis.WidthMapping.widthMap_output_all_non_source cps⟩
 
 /-- `caseFold` lifted to a `CaseFoldedArray`-producing function.
     Witness: `Precis.CaseMapping.caseFold_output_all_non_source`. -/
-def caseFold (cps : Array Nat) : CaseFoldedArray :=
+def caseFold (cps : List Nat) : CaseFoldedArray :=
   ⟨Precis.CaseMapping.caseFold cps,
    Precis.CaseMapping.caseFold_output_all_non_source cps⟩
 
 /-- `reorder` lifted to an `HSRArray`-producing function.
     Witness: `Normalization.Reorder.reorder_output_HasSortedRuns`. -/
-def reorder (cps : Array Nat) : HSRArray :=
+def reorder (cps : List Nat) : HSRArray :=
   ⟨Reorder.reorder cps, Reorder.reorder_output_HasSortedRuns cps⟩
 
 /-- `decomposeSequence` lifted to a `FullyDecomposedArray`-producing function.
     Witness: `Normalization.Decomposability.decomposeSequence_fullyDecomposed`. -/
-def decomposeSequence (cps : Array Nat) : FullyDecomposedArray :=
+def decomposeSequence (cps : List Nat) : FullyDecomposedArray :=
   ⟨Decompose.decomposeSequence cps,
    Decomposability.decomposeSequence_fullyDecomposed cps⟩
 
@@ -94,17 +94,17 @@ theorem reorder_id_on_HSR (x : HSRArray) :
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Refinement-typed `widthMap` is idempotent on the value projection. -/
-theorem widthMap_idempotent (cps : Array Nat) :
+theorem widthMap_idempotent (cps : List Nat) :
     (widthMap (widthMap cps).val).val = (widthMap cps).val :=
   widthMap_id_on_WidthMapped (widthMap cps)
 
 /-- Refinement-typed `caseFold` is idempotent on the value projection. -/
-theorem caseFold_idempotent (cps : Array Nat) :
+theorem caseFold_idempotent (cps : List Nat) :
     (caseFold (caseFold cps).val).val = (caseFold cps).val :=
   caseFold_id_on_CaseFolded (caseFold cps)
 
 /-- Refinement-typed `reorder` is idempotent on the value projection. -/
-theorem reorder_idempotent (cps : Array Nat) :
+theorem reorder_idempotent (cps : List Nat) :
     (reorder (reorder cps).val).val = (reorder cps).val :=
   reorder_id_on_HSR (reorder cps)
 
@@ -122,7 +122,7 @@ theorem reorder_idempotent (cps : Array Nat) :
 /-- Sequence that has survived both width-mapping and case-folding:
     no `<wide>`/`<narrow>` sources AND no case-fold sources. -/
 abbrev WidthCaseFoldedArray : Type :=
-  { cps : Array Nat // IsWidthMapped cps ∧ IsCaseFolded cps }
+  { cps : List Nat // IsWidthMapped cps ∧ IsCaseFolded cps }
 
 /-- `caseFold` applied to a width-mapped input produces a
     width-and-case-folded result. Both invariants are witnessed in the
@@ -136,14 +136,14 @@ def caseFoldOnWidthMapped (input : WidthMappedArray) : WidthCaseFoldedArray :=
 
 /-- The `widthMap` + `caseFold` composite — the first two stages of
     RFC 8265 mapping, typed to carry both preservation witnesses. -/
-def widthCaseFoldMap (cps : Array Nat) : WidthCaseFoldedArray :=
+def widthCaseFoldMap (cps : List Nat) : WidthCaseFoldedArray :=
   caseFoldOnWidthMapped (widthMap cps)
 
 /-- The composite map is idempotent on the value projection: applying
     the refined composite to its own value projection yields the same
     value projection. Follows from `widthMap_id_of_all_non_source` and
     `caseFold_id_of_all_non_source` on the respective invariants. -/
-theorem widthCaseFoldMap_idempotent (cps : Array Nat) :
+theorem widthCaseFoldMap_idempotent (cps : List Nat) :
     (widthCaseFoldMap (widthCaseFoldMap cps).val).val = (widthCaseFoldMap cps).val := by
   let x := widthCaseFoldMap cps
   have hW : IsWidthMapped x.val := x.property.1
@@ -160,7 +160,7 @@ theorem widthCaseFoldMap_idempotent (cps : Array Nat) :
     Note: `IsCaseFolded` is NOT preserved through NFC (the U+01F0 family —
     see `CaseFoldNfcRoundtripFixed`), so the refinement can only carry
     the width-mapped witness. -/
-def precisMap (cps : Array Nat) : WidthMappedArray :=
+def precisMap (cps : List Nat) : WidthMappedArray :=
   ⟨Precis.Preparation.precisMap cps, by
     unfold Precis.Preparation.precisMap
     have hW : IsWidthMapped (Precis.WidthMapping.widthMap cps) :=
@@ -186,24 +186,21 @@ def precisMap (cps : Array Nat) : WidthMappedArray :=
     `IsAllAdmissible` witness; the BidiRule gate is also enforced so
     this function returns `some` exactly when the unrefined
     `Precis.Preparation.precisPreparation` does. -/
-def precisPreparation (cps : Array Nat) : Option AdmissibleArray :=
+def precisPreparation (cps : List Nat) : Option AdmissibleArray :=
   let mapped := Precis.Preparation.precisMap cps
   if h : mapped.all Precis.Categories.isPrecisAdmissible = true ∧
          Precis.BidiRule.satisfiesBidiRule mapped = true then
     some ⟨mapped, by
       intro cp hMem
       have hAll := h.1
-      rw [Array.all_eq_true] at hAll
-      rcases Array.getElem_of_mem hMem with ⟨i, hi, hElem⟩
-      have := hAll i hi
-      rw [hElem] at this
-      exact this⟩
+      rw [List.all_eq_true] at hAll
+      exact hAll cp hMem⟩
   else
     none
 
 /-- Value projection of the refined `precisPreparation` matches the
     underlying unrefined one. -/
-theorem precisPreparation_val_eq (cps : Array Nat) :
+theorem precisPreparation_val_eq (cps : List Nat) :
     (precisPreparation cps).map Subtype.val = Precis.Preparation.precisPreparation cps := by
   unfold precisPreparation Precis.Preparation.precisPreparation
     Precis.Preparation.isGatePass Precis.Preparation.allAdmissible

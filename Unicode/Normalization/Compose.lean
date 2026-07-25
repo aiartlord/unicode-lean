@@ -351,8 +351,8 @@ def stepCompose (s : ComposeState) (cp : Nat) : ComposeState :=
         | none   => { s with buffer := cp :: s.buffer, maxCCC := Nat.max s.maxCCC ccc }
 
 /-- Canonical composition of a codepoint sequence per UAX #15 §1.3. -/
-def compose (cps : Array Nat) : Array Nat :=
-  flushCompose (cps.foldl stepCompose initialState)
+def compose (cps : List Nat) : List Nat :=
+  (flushCompose (cps.foldl stepCompose initialState)).toList
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- TEST VECTORS
@@ -371,7 +371,7 @@ theorem primary_hangul_LV :
     primaryComposite? 0x1100 0x1161 = some 0xAC00 := by decide
 
 /-- Empty sequence composes to empty. -/
-theorem compose_empty : compose #[] = #[] := by decide
+theorem compose_empty : compose [] = [] := by decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- WIDTH-COMPAT NON-INTERFERENCE
@@ -633,12 +633,11 @@ theorem flushCompose_preserves_non_widthCompatSource
     non-width-compat-source, every output codepoint of `compose` is
     also a non-width-compat-source. -/
 theorem compose_preserves_non_widthCompatSource
-    (cps : Array Nat) (h : ∀ cp ∈ cps, isWidthCompatSource cp = false) :
+    (cps : List Nat) (h : ∀ cp ∈ cps, isWidthCompatSource cp = false) :
     ∀ j ∈ compose cps, isWidthCompatSource j = false := by
   unfold compose
   have hFold : AllSatisfiesP (fun x => !isWidthCompatSource x)
                   (cps.foldl stepCompose initialState) := by
-    rw [← Array.foldl_toList]
     have key : ∀ (l : List Nat) (s : ComposeState),
         (∀ x ∈ l, isWidthCompatSource x = false) →
         AllSatisfiesP (fun x => !isWidthCompatSource x) s →
@@ -652,11 +651,12 @@ theorem compose_preserves_non_widthCompatSource
         apply ih (stepCompose s hd) (fun y hy => hL y (by simp [hy]))
         exact stepCompose_preserves_non_widthCompatSource s hd
           (hL hd (by simp)) hS
-    exact key cps.toList initialState
-      (fun x hx => h x (by simpa using hx))
+    exact key cps initialState
+      (fun x hx => h x hx)
       (initial_state_AllSatisfiesP (fun x => !isWidthCompatSource x))
+  intro j hj
   exact flushCompose_preserves_non_widthCompatSource
-    (cps.foldl stepCompose initialState) hFold
+    (cps.foldl stepCompose initialState) hFold j (by simpa using hj)
 
 end WidthCompatPreservation
 
@@ -706,7 +706,7 @@ theorem foldl_stepCompose_shift : ∀ (l : List Nat) (em : Array Nat) (st : Nat)
 theorem compose_id_of_shift (l : List Nat)
     (hS : ∀ cp ∈ l, Lookup.canonicalCombiningClass cp = 0)
     (hN : noAdjCompose l) :
-    compose l.toArray = l.toArray := by
+    compose l = l := by
   cases l with
   | nil => simp [compose, flushCompose, initialState]
   | cons c cs =>
@@ -715,9 +715,8 @@ theorem compose_id_of_shift (l : List Nat)
         = { emitted := #[], starter := some c, buffer := [], maxCCC := 0 } := by
       unfold stepCompose initialState; simp only [hcc, reduceIte]
     unfold compose
-    rw [← Array.foldl_toList, List.toList_toArray, List.foldl_cons, hfirst,
-        foldl_stepCompose_shift cs #[] c (fun cp h => hS cp (by simp [h])) hN,
-        List.toArray_cons c cs]
+    rw [List.foldl_cons, hfirst,
+        foldl_stepCompose_shift cs #[] c (fun cp h => hS cp (by simp [h])) hN]
     simp
 
 end Unicode.Normalization.Compose

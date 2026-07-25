@@ -66,21 +66,21 @@ theorem stepReorder_starter_output
 
 /-- Explicit `reorder` equation without the internal `let` binding. Lets
     downstream rewrites reach inside `reorder` calls. -/
-theorem reorder_eq (Y : Array Nat) :
-    reorder Y = (Y.foldl stepReorder { emitted := #[], currentRun := [] }).emitted
-                ++ flushRun (Y.foldl stepReorder { emitted := #[], currentRun := [] }) := rfl
+theorem reorder_eq (Y : List Nat) :
+    reorder Y = ((Y.foldl stepReorder { emitted := #[], currentRun := [] }).emitted
+                ++ flushRun (Y.foldl stepReorder { emitted := #[], currentRun := [] })).toList := rfl
 
 /-- **Starter-append absorbing lemma.** Appending a starter codepoint to
     the input of `reorder` is the same as appending it to the reordered
     output. -/
 theorem reorder_append_starter
-    (X : Array Nat) (cp : Nat)
+    (X : List Nat) (cp : Nat)
     (h : Lookup.canonicalCombiningClass cp = 0) :
-    reorder (X ++ #[cp]) = reorder X ++ #[cp] := by
-  rw [reorder_eq (X ++ #[cp]), reorder_eq X]
-  rw [Array.foldl_append]
+    reorder (X ++ [cp]) = reorder X ++ [cp] := by
+  rw [reorder_eq (X ++ [cp]), reorder_eq X]
+  rw [List.foldl_append]
   have hStep :
-      (#[cp] : Array Nat).foldl stepReorder
+      ([cp] : List Nat).foldl stepReorder
         (X.foldl stepReorder { emitted := #[], currentRun := [] })
       = stepReorder (X.foldl stepReorder { emitted := #[], currentRun := [] }) cp := by
     simp
@@ -171,35 +171,33 @@ theorem foldl_list_stepReorder_currentRun_eq
     the output `Z ++ reorder Y`. Key consequence of emitted-additivity
     and currentRun-independence: the starting `Z` prefix passes through
     untouched to the final output. -/
-theorem reorder_with_prefixed_state (Y : Array Nat) (Z : Array Nat) :
-    (Y.foldl stepReorder { emitted := Z, currentRun := ([] : List Nat) }).emitted
-      ++ flushRun (Y.foldl stepReorder { emitted := Z, currentRun := ([] : List Nat) })
-      = Z ++ reorder Y := by
-  rw [← Array.foldl_toList]
-  rw [foldl_list_stepReorder_emitted_add Y.toList Z []]
+theorem reorder_with_prefixed_state (Y : List Nat) (Z : Array Nat) :
+    ((Y.foldl stepReorder { emitted := Z, currentRun := ([] : List Nat) }).emitted
+      ++ flushRun (Y.foldl stepReorder { emitted := Z, currentRun := ([] : List Nat) })).toList
+      = Z.toList ++ reorder Y := by
+  rw [foldl_list_stepReorder_emitted_add Y Z []]
   have hFlush :
-      flushRun (Y.toList.foldl stepReorder { emitted := Z, currentRun := [] })
-        = flushRun (Y.toList.foldl stepReorder { emitted := #[], currentRun := [] }) := by
+      flushRun (Y.foldl stepReorder { emitted := Z, currentRun := [] })
+        = flushRun (Y.foldl stepReorder { emitted := #[], currentRun := [] }) := by
     unfold flushRun
-    rw [foldl_list_stepReorder_currentRun_eq Y.toList Z []]
+    rw [foldl_list_stepReorder_currentRun_eq Y Z []]
   rw [hFlush]
   rw [reorder_eq Y]
-  rw [← Array.foldl_toList]
-  simp [Array.append_assoc]
+  simp [Array.append_assoc, Array.toList_append]
 
 /-- **Starter-middle partition.** `reorder` commutes with any starter
     codepoint sitting between two arbitrary arrays: the reordered
     output is the concatenation of `reorder X`, the starter, and
     `reorder Y`. -/
 theorem reorder_append_starter_middle
-    (X : Array Nat) (cp : Nat) (Y : Array Nat)
+    (X : List Nat) (cp : Nat) (Y : List Nat)
     (h : Lookup.canonicalCombiningClass cp = 0) :
-    reorder (X ++ #[cp] ++ Y) = reorder X ++ #[cp] ++ reorder Y := by
-  rw [reorder_eq (X ++ #[cp] ++ Y)]
-  rw [Array.foldl_append]
-  rw [Array.foldl_append]
+    reorder (X ++ [cp] ++ Y) = reorder X ++ [cp] ++ reorder Y := by
+  rw [reorder_eq (X ++ [cp] ++ Y)]
+  rw [List.foldl_append]
+  rw [List.foldl_append]
   have hStepCp :
-      (#[cp] : Array Nat).foldl stepReorder
+      ([cp] : List Nat).foldl stepReorder
         (X.foldl stepReorder { emitted := #[], currentRun := [] })
       = stepReorder (X.foldl stepReorder { emitted := #[], currentRun := [] }) cp := by
     simp
@@ -210,7 +208,8 @@ theorem reorder_append_starter_middle
         ((X.foldl stepReorder { emitted := #[], currentRun := [] }).emitted
           ++ flushRun (X.foldl stepReorder { emitted := #[], currentRun := [] })
           ++ #[cp])]
-  rw [← reorder_eq X]
+  rw [reorder_eq X]
+  simp [Array.toList_append]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- SORTNONSTARTERRUN IDEMPOTENCE + APPEND-ABSORBING
@@ -609,28 +608,27 @@ theorem fold_HSR_endingStarter_from_init
     rw [List.foldl_append]
     have hPreSR : HasSortedRuns pre :=
       HasSortedRuns_of_append_singleton pre last hSR
-    have hReorderPre : reorder pre.toArray = pre.toArray := by
+    have hReorderPre : reorder pre = pre := by
       apply reorder_id_on_HasSortedRuns
-      simpa using hPreSR
-    have hFoldPreEq : pre.foldl stepReorder initState
-                    = pre.toArray.foldl stepReorder initState := by
-      rw [← Array.foldl_toList]
-    rw [hFoldPreEq]
+      exact hPreSR
     simp only [List.foldl_cons, List.foldl_nil]
     have hStep :
-        stepReorder (pre.toArray.foldl stepReorder initState) last
-          = { emitted := (pre.toArray.foldl stepReorder initState).emitted
-                           ++ flushRun (pre.toArray.foldl stepReorder initState)
+        stepReorder (pre.foldl stepReorder initState) last
+          = { emitted := (pre.foldl stepReorder initState).emitted
+                           ++ flushRun (pre.foldl stepReorder initState)
                            ++ #[last]
             , currentRun := [] } := by
       unfold stepReorder
       rw [if_pos hLast]
     rw [hStep]
     have hReorderExpand :
-        (pre.toArray.foldl stepReorder initState).emitted
-          ++ flushRun (pre.toArray.foldl stepReorder initState)
+        (pre.foldl stepReorder initState).emitted
+          ++ flushRun (pre.foldl stepReorder initState)
         = pre.toArray := by
-      exact hReorderPre
+      have := hReorderPre
+      rw [reorder_eq pre] at this
+      have h2 := congrArg List.toArray this
+      simpa [initState] using h2
     rw [hReorderExpand]
     have hArr : pre.toArray ++ #[last] = (pre ++ [last]).toArray := by
       apply Array.toList_inj.mp
@@ -648,17 +646,16 @@ theorem fold_HSR_endingStarter_from_init
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- `state(reorder A).emitted = state(A).emitted`. -/
-theorem state_reorder_emitted_eq_state_emitted (A : Array Nat) :
+theorem state_reorder_emitted_eq_state_emitted (A : List Nat) :
     ((reorder A).foldl stepReorder initState).emitted
       = (A.foldl stepReorder initState).emitted := by
   have hInvOut : ReorderOutputInvariant (A.foldl stepReorder initState) := by
-    have h := foldl_stepReorder_output_invariant A.toList
-    rw [Array.foldl_toList] at h
+    have h := foldl_stepReorder_output_invariant A
     exact h
   obtain ⟨hEmittedHSR, hEmittedEnd, hRunNS⟩ := hInvOut
   have hReorderEq :
-      reorder A = (A.foldl stepReorder initState).emitted
-                    ++ flushRun (A.foldl stepReorder initState) := rfl
+      reorder A = ((A.foldl stepReorder initState).emitted
+                    ++ flushRun (A.foldl stepReorder initState)).toList := rfl
   have hFlushListEq :
       (flushRun (A.foldl stepReorder initState)).toList
         = sortNonStarterRun (A.foldl stepReorder initState).currentRun.reverse := by
@@ -671,16 +668,12 @@ theorem state_reorder_emitted_eq_state_emitted (A : Array Nat) :
                 (A.foldl stepReorder initState).emitted.toList hEmittedHSR hEmittedEnd
     rw [h]
   have hReorderAToList :
-      (reorder A).toList
+      reorder A
         = (A.foldl stepReorder initState).emitted.toList
             ++ (flushRun (A.foldl stepReorder initState)).toList := by
     rw [hReorderEq]
     simp
-  have hArrFoldEq :
-      (reorder A).foldl stepReorder initState
-        = (reorder A).toList.foldl stepReorder initState := by
-    rw [← Array.foldl_toList]
-  rw [hArrFoldEq, hReorderAToList, List.foldl_append, hStateEmitted]
+  rw [hReorderAToList, List.foldl_append, hStateEmitted]
   have hFlushNonStarter :
       ∀ x ∈ (flushRun (A.foldl stepReorder initState)).toList,
         0 < Lookup.canonicalCombiningClass x := by
@@ -706,17 +699,16 @@ theorem state_reorder_emitted_eq_state_emitted (A : Array Nat) :
 
 /-- `sortNonStarterRun state(reorder A).currentRun.reverse
       = sortNonStarterRun state(A).currentRun.reverse`. -/
-theorem state_reorder_currentRun_sortedRun_eq (A : Array Nat) :
+theorem state_reorder_currentRun_sortedRun_eq (A : List Nat) :
     sortNonStarterRun ((reorder A).foldl stepReorder initState).currentRun.reverse
       = sortNonStarterRun (A.foldl stepReorder initState).currentRun.reverse := by
   have hInvOut : ReorderOutputInvariant (A.foldl stepReorder initState) := by
-    have h := foldl_stepReorder_output_invariant A.toList
-    rw [Array.foldl_toList] at h
+    have h := foldl_stepReorder_output_invariant A
     exact h
   obtain ⟨hEmittedHSR, hEmittedEnd, hRunNS⟩ := hInvOut
   have hReorderEq :
-      reorder A = (A.foldl stepReorder initState).emitted
-                    ++ flushRun (A.foldl stepReorder initState) := rfl
+      reorder A = ((A.foldl stepReorder initState).emitted
+                    ++ flushRun (A.foldl stepReorder initState)).toList := rfl
   have hFlushListEq :
       (flushRun (A.foldl stepReorder initState)).toList
         = sortNonStarterRun (A.foldl stepReorder initState).currentRun.reverse := by
@@ -729,15 +721,11 @@ theorem state_reorder_currentRun_sortedRun_eq (A : Array Nat) :
                 (A.foldl stepReorder initState).emitted.toList hEmittedHSR hEmittedEnd
     rw [h]
   have hReorderAToList :
-      (reorder A).toList
+      reorder A
         = (A.foldl stepReorder initState).emitted.toList
             ++ (flushRun (A.foldl stepReorder initState)).toList := by
     rw [hReorderEq]
     simp
-  have hArrFoldEq :
-      (reorder A).foldl stepReorder initState
-        = (reorder A).toList.foldl stepReorder initState := by
-    rw [← Array.foldl_toList]
   have hFlushNonStarter :
       ∀ x ∈ (flushRun (A.foldl stepReorder initState)).toList,
         0 < Lookup.canonicalCombiningClass x := by
@@ -755,7 +743,7 @@ theorem state_reorder_currentRun_sortedRun_eq (A : Array Nat) :
       (fun y hy => by simp [hPreserve y hy])
       x hx
     exact of_decide_eq_true hBool
-  rw [hArrFoldEq, hReorderAToList, List.foldl_append, hStateEmitted,
+  rw [hReorderAToList, List.foldl_append, hStateEmitted,
       fold_nonstarters_from_state
         (flushRun (A.foldl stepReorder initState)).toList
         hFlushNonStarter
@@ -775,20 +763,20 @@ theorem state_reorder_currentRun_sortedRun_eq (A : Array Nat) :
 /-- **Single-element absorbing-left for non-starter append.** Uses the
     state characterization + `sortNonStarterRun_append_absorbing`. -/
 theorem reorder_append_absorbing_nonstarter
-    (A : Array Nat) (cp : Nat)
+    (A : List Nat) (cp : Nat)
     (h : 0 < Lookup.canonicalCombiningClass cp) :
-    reorder (A ++ #[cp]) = reorder (reorder A ++ #[cp]) := by
+    reorder (A ++ [cp]) = reorder (reorder A ++ [cp]) := by
   have hCpNe : Lookup.canonicalCombiningClass cp ≠ 0 := Nat.pos_iff_ne_zero.mp h
-  rw [reorder_eq (A ++ #[cp]), reorder_eq (reorder A ++ #[cp])]
-  rw [Array.foldl_append, Array.foldl_append]
+  rw [reorder_eq (A ++ [cp]), reorder_eq (reorder A ++ [cp])]
+  rw [List.foldl_append, List.foldl_append]
   have hStepLhs :
-      (#[cp] : Array Nat).foldl stepReorder
+      ([cp] : List Nat).foldl stepReorder
         (A.foldl stepReorder { emitted := #[], currentRun := [] })
         = stepReorder
             (A.foldl stepReorder { emitted := #[], currentRun := [] }) cp := by
     simp
   have hStepRhs :
-      (#[cp] : Array Nat).foldl stepReorder
+      ([cp] : List Nat).foldl stepReorder
         ((reorder A).foldl stepReorder { emitted := #[], currentRun := [] })
         = stepReorder
             ((reorder A).foldl stepReorder { emitted := #[], currentRun := [] }) cp := by
@@ -817,8 +805,8 @@ theorem reorder_append_absorbing_nonstarter
   have hSortedEq : sortNonStarterRun sA.currentRun.reverse
                  = sortNonStarterRun sRA.currentRun.reverse :=
     (state_reorder_currentRun_sortedRun_eq A).symm
-  show sA.emitted ++ flushRun { sA with currentRun := cp :: sA.currentRun }
-     = sRA.emitted ++ flushRun { sRA with currentRun := cp :: sRA.currentRun }
+  show (sA.emitted ++ flushRun { sA with currentRun := cp :: sA.currentRun }).toList
+     = (sRA.emitted ++ flushRun { sRA with currentRun := cp :: sRA.currentRun }).toList
   have hFlushLhs :
       flushRun { sA with currentRun := cp :: sA.currentRun }
         = (sortNonStarterRun (sA.currentRun.reverse ++ [cp])).toArray := by
@@ -844,8 +832,8 @@ theorem reorder_append_absorbing_nonstarter
 
 /-- **Single-element absorbing-left.** Combines the starter case (via
     `reorder_append_starter`) and the non-starter case. -/
-theorem reorder_append_absorbing (A : Array Nat) (cp : Nat) :
-    reorder (A ++ #[cp]) = reorder (reorder A ++ #[cp]) := by
+theorem reorder_append_absorbing (A : List Nat) (cp : Nat) :
+    reorder (A ++ [cp]) = reorder (reorder A ++ [cp]) := by
   by_cases h : Lookup.canonicalCombiningClass cp = 0
   · rw [reorder_append_starter A cp h]
     rw [reorder_append_starter (reorder A) cp h]
@@ -879,39 +867,20 @@ theorem list_snoc_ind
     on `B.toList` via `list_snoc_ind` (snoc-induction), which reduces
     each step to a single-element append handled by
     `reorder_append_absorbing`. -/
-theorem reorder_absorbing_left (A B : Array Nat) :
+theorem reorder_absorbing_left (A B : List Nat) :
     reorder (A ++ B) = reorder (reorder A ++ B) := by
-  suffices h : ∀ (L : List Nat),
-      reorder (A ++ L.toArray) = reorder (reorder A ++ L.toArray) by
-    have hB := h B.toList
-    have hTA : B.toList.toArray = B := Array.toArray_toList
-    rw [hTA] at hB
-    exact hB
-  intro L
-  induction L using list_snoc_ind with
+  induction B using list_snoc_ind with
   | nil =>
-    have hNilToArr : ([] : List Nat).toArray = (#[] : Array Nat) := rfl
-    rw [hNilToArr]
-    have hEmptyA : A ++ (#[] : Array Nat) = A := by
-      apply Array.toList_inj.mp
-      simp
-    have hEmptyRA : reorder A ++ (#[] : Array Nat) = reorder A := by
-      apply Array.toList_inj.mp
-      simp
-    rw [hEmptyA, hEmptyRA]
+    simp only [List.append_nil]
     exact (reorder_idempotent A).symm
   | snoc L' cp ih =>
-    have hListToArr : (L' ++ [cp]).toArray = L'.toArray ++ #[cp] := by
-      apply Array.toList_inj.mp
-      simp
-    rw [hListToArr]
-    have hAssoc1 : A ++ (L'.toArray ++ #[cp]) = (A ++ L'.toArray) ++ #[cp] := by
-      rw [← Array.append_assoc]
-    have hAssoc2 : reorder A ++ (L'.toArray ++ #[cp]) = (reorder A ++ L'.toArray) ++ #[cp] := by
-      rw [← Array.append_assoc]
+    have hAssoc1 : A ++ (L' ++ [cp]) = (A ++ L') ++ [cp] := by
+      rw [← List.append_assoc]
+    have hAssoc2 : reorder A ++ (L' ++ [cp]) = (reorder A ++ L') ++ [cp] := by
+      rw [← List.append_assoc]
     rw [hAssoc1, hAssoc2]
-    rw [reorder_append_absorbing (A ++ L'.toArray) cp]
-    rw [reorder_append_absorbing (reorder A ++ L'.toArray) cp]
+    rw [reorder_append_absorbing (A ++ L') cp]
+    rw [reorder_append_absorbing (reorder A ++ L') cp]
     rw [ih]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -967,35 +936,35 @@ theorem flushRun_swap_strict_max
     `cp` with CCC strictly greater than every element of a non-starter
     run `Y` can slide across `Y` without changing `reorder`'s output. -/
 theorem reorder_commutes_strict_max
-    (A Y : Array Nat) (cp : Nat)
+    (A Y : List Nat) (cp : Nat)
     (hCp : 0 < Lookup.canonicalCombiningClass cp)
-    (hY : ∀ y ∈ Y.toList,
+    (hY : ∀ y ∈ Y,
             0 < Lookup.canonicalCombiningClass y
             ∧ Lookup.canonicalCombiningClass y
                 < Lookup.canonicalCombiningClass cp) :
-    reorder (A ++ Y ++ #[cp]) = reorder (A ++ #[cp] ++ Y) := by
+    reorder (A ++ Y ++ [cp]) = reorder (A ++ [cp] ++ Y) := by
   have hCpNe : Lookup.canonicalCombiningClass cp ≠ 0 :=
     Nat.pos_iff_ne_zero.mp hCp
-  have hYNonStarter : ∀ y ∈ Y.toList,
+  have hYNonStarter : ∀ y ∈ Y,
         0 < Lookup.canonicalCombiningClass y :=
     fun y hy => (hY y hy).1
-  have hYStrictLt : ∀ y ∈ Y.toList,
+  have hYStrictLt : ∀ y ∈ Y,
         Lookup.canonicalCombiningClass y
           < Lookup.canonicalCombiningClass cp :=
     fun y hy => (hY y hy).2
   -- Unfold `reorder` on both sides, split the folds.
-  rw [reorder_eq (A ++ Y ++ #[cp]), reorder_eq (A ++ #[cp] ++ Y)]
-  rw [Array.foldl_append, Array.foldl_append,
-      Array.foldl_append, Array.foldl_append]
+  rw [reorder_eq (A ++ Y ++ [cp]), reorder_eq (A ++ [cp] ++ Y)]
+  rw [List.foldl_append, List.foldl_append,
+      List.foldl_append, List.foldl_append]
   -- Reduce the singleton folds.
   have hSingletonLhs :
-      (#[cp] : Array Nat).foldl stepReorder
+      ([cp] : List Nat).foldl stepReorder
         (Y.foldl stepReorder (A.foldl stepReorder { emitted := #[], currentRun := [] }))
         = stepReorder
             (Y.foldl stepReorder (A.foldl stepReorder { emitted := #[], currentRun := [] })) cp := by
     simp
   have hSingletonRhs :
-      (#[cp] : Array Nat).foldl stepReorder
+      ([cp] : List Nat).foldl stepReorder
         (A.foldl stepReorder { emitted := #[], currentRun := [] })
         = stepReorder (A.foldl stepReorder { emitted := #[], currentRun := [] }) cp := by
     simp
@@ -1004,11 +973,10 @@ theorem reorder_commutes_strict_max
   have hFoldY :
       Y.foldl stepReorder (A.foldl stepReorder { emitted := #[], currentRun := [] })
         = { emitted := (A.foldl stepReorder { emitted := #[], currentRun := [] }).emitted
-          , currentRun := Y.toList.reverse
+          , currentRun := Y.reverse
                            ++ (A.foldl stepReorder { emitted := #[], currentRun := [] }).currentRun
           } := by
-    rw [← Array.foldl_toList]
-    exact fold_nonstarters_from_state Y.toList hYNonStarter
+    exact fold_nonstarters_from_state Y hYNonStarter
       (A.foldl stepReorder { emitted := #[], currentRun := [] }).emitted
       (A.foldl stepReorder { emitted := #[], currentRun := [] }).currentRun
   -- Characterize the state after `A ++ #[cp]`, then folding `Y`.
@@ -1023,12 +991,11 @@ theorem reorder_commutes_strict_max
       Y.foldl stepReorder
         (stepReorder (A.foldl stepReorder { emitted := #[], currentRun := [] }) cp)
         = { emitted := (A.foldl stepReorder { emitted := #[], currentRun := [] }).emitted
-          , currentRun := Y.toList.reverse
+          , currentRun := Y.reverse
                            ++ cp :: (A.foldl stepReorder { emitted := #[], currentRun := [] }).currentRun
           } := by
     rw [hStepCp]
-    rw [← Array.foldl_toList]
-    exact fold_nonstarters_from_state Y.toList hYNonStarter
+    exact fold_nonstarters_from_state Y hYNonStarter
       (A.foldl stepReorder { emitted := #[], currentRun := [] }).emitted
       (cp :: (A.foldl stepReorder { emitted := #[], currentRun := [] }).currentRun)
   rw [hFoldY, hFoldYFromCp]
@@ -1036,16 +1003,16 @@ theorem reorder_commutes_strict_max
   have hStepLhs :
       stepReorder
         { emitted := (A.foldl stepReorder { emitted := #[], currentRun := [] }).emitted
-        , currentRun := Y.toList.reverse
+        , currentRun := Y.reverse
                          ++ (A.foldl stepReorder { emitted := #[], currentRun := [] }).currentRun
         } cp
         = { emitted := (A.foldl stepReorder { emitted := #[], currentRun := [] }).emitted
-          , currentRun := cp :: (Y.toList.reverse
+          , currentRun := cp :: (Y.reverse
                                    ++ (A.foldl stepReorder { emitted := #[], currentRun := [] }).currentRun)
           } :=
     stepReorder_nonstarter_output
       { emitted := (A.foldl stepReorder { emitted := #[], currentRun := [] }).emitted
-      , currentRun := Y.toList.reverse
+      , currentRun := Y.reverse
                        ++ (A.foldl stepReorder { emitted := #[], currentRun := [] }).currentRun
       } cp hCpNe
   rw [hStepLhs]
@@ -1055,12 +1022,12 @@ theorem reorder_commutes_strict_max
   -- `Array.append` term (which accumulates whnf work across the proof
   -- and exhausts the heartbeat budget). Remaining `flushRun` equality
   -- is discharged by the `flushRun_swap_strict_max` helper.
-  exact congrArg
+  exact congrArg (·.toList) (congrArg
     ((A.foldl stepReorder { emitted := #[], currentRun := [] }).emitted ++ ·)
     (flushRun_swap_strict_max
       (A.foldl stepReorder { emitted := #[], currentRun := [] }).emitted
       (A.foldl stepReorder { emitted := #[], currentRun := [] }).currentRun
-      Y.toList cp hYStrictLt)
+      Y cp hYStrictLt))
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- MULTI-ELEMENT FOLDL COMMUTATIVITY (strict-max disjoint CCCs)
@@ -1145,101 +1112,97 @@ set_option maxRecDepth 8192 in
     without changing `reorder`'s output. Generalizes
     `reorder_commutes_strict_max` from single `cp` to multi-element `C`. -/
 theorem reorder_commutes_strict_max_multi
-    (A Y C : Array Nat)
-    (hCpos : ∀ c ∈ C.toList, 0 < Lookup.canonicalCombiningClass c)
-    (hYpos : ∀ y ∈ Y.toList, 0 < Lookup.canonicalCombiningClass y)
-    (hStrict : ∀ c ∈ C.toList, ∀ y ∈ Y.toList,
+    (A Y C : List Nat)
+    (hCpos : ∀ c ∈ C, 0 < Lookup.canonicalCombiningClass c)
+    (hYpos : ∀ y ∈ Y, 0 < Lookup.canonicalCombiningClass y)
+    (hStrict : ∀ c ∈ C, ∀ y ∈ Y,
                  Lookup.canonicalCombiningClass y
                    < Lookup.canonicalCombiningClass c) :
     reorder (A ++ Y ++ C) = reorder (A ++ C ++ Y) := by
   rw [reorder_eq (A ++ Y ++ C), reorder_eq (A ++ C ++ Y)]
-  rw [Array.foldl_append, Array.foldl_append,
-      Array.foldl_append, Array.foldl_append]
+  rw [List.foldl_append, List.foldl_append,
+      List.foldl_append, List.foldl_append]
   -- Characterize Y.foldl from stateA.
   have hFoldY :
       Y.foldl stepReorder (A.foldl stepReorder { emitted := #[], currentRun := [] })
         = { emitted := (A.foldl stepReorder { emitted := #[], currentRun := [] }).emitted
-          , currentRun := Y.toList.reverse
+          , currentRun := Y.reverse
                            ++ (A.foldl stepReorder { emitted := #[], currentRun := [] }).currentRun
           } := by
-    rw [← Array.foldl_toList]
-    exact fold_nonstarters_from_state Y.toList hYpos
+    exact fold_nonstarters_from_state Y hYpos
       (A.foldl stepReorder { emitted := #[], currentRun := [] }).emitted
       (A.foldl stepReorder { emitted := #[], currentRun := [] }).currentRun
   -- Characterize C.foldl from (Y.foldl stateA).
   have hFoldCfromY :
       C.foldl stepReorder (Y.foldl stepReorder (A.foldl stepReorder { emitted := #[], currentRun := [] }))
         = { emitted := (A.foldl stepReorder { emitted := #[], currentRun := [] }).emitted
-          , currentRun := C.toList.reverse
-                           ++ (Y.toList.reverse
+          , currentRun := C.reverse
+                           ++ (Y.reverse
                                  ++ (A.foldl stepReorder { emitted := #[], currentRun := [] }).currentRun)
           } := by
     rw [hFoldY]
-    rw [← Array.foldl_toList]
-    exact fold_nonstarters_from_state C.toList hCpos
+    exact fold_nonstarters_from_state C hCpos
       (A.foldl stepReorder { emitted := #[], currentRun := [] }).emitted
-      (Y.toList.reverse
+      (Y.reverse
         ++ (A.foldl stepReorder { emitted := #[], currentRun := [] }).currentRun)
   -- Characterize C.foldl from stateA.
   have hFoldC :
       C.foldl stepReorder (A.foldl stepReorder { emitted := #[], currentRun := [] })
         = { emitted := (A.foldl stepReorder { emitted := #[], currentRun := [] }).emitted
-          , currentRun := C.toList.reverse
+          , currentRun := C.reverse
                            ++ (A.foldl stepReorder { emitted := #[], currentRun := [] }).currentRun
           } := by
-    rw [← Array.foldl_toList]
-    exact fold_nonstarters_from_state C.toList hCpos
+    exact fold_nonstarters_from_state C hCpos
       (A.foldl stepReorder { emitted := #[], currentRun := [] }).emitted
       (A.foldl stepReorder { emitted := #[], currentRun := [] }).currentRun
   -- Characterize Y.foldl from (C.foldl stateA).
   have hFoldYfromC :
       Y.foldl stepReorder (C.foldl stepReorder (A.foldl stepReorder { emitted := #[], currentRun := [] }))
         = { emitted := (A.foldl stepReorder { emitted := #[], currentRun := [] }).emitted
-          , currentRun := Y.toList.reverse
-                           ++ (C.toList.reverse
+          , currentRun := Y.reverse
+                           ++ (C.reverse
                                  ++ (A.foldl stepReorder { emitted := #[], currentRun := [] }).currentRun)
           } := by
     rw [hFoldC]
-    rw [← Array.foldl_toList]
-    exact fold_nonstarters_from_state Y.toList hYpos
+    exact fold_nonstarters_from_state Y hYpos
       (A.foldl stepReorder { emitted := #[], currentRun := [] }).emitted
-      (C.toList.reverse
+      (C.reverse
         ++ (A.foldl stepReorder { emitted := #[], currentRun := [] }).currentRun)
   rw [hFoldCfromY, hFoldYfromC]
   -- Both records share `emitted`; discharge via congrArg on the common prefix.
   -- The remaining `flushRun` equality reduces to `sortNonStarterRun_swap_disjoint_ccc`.
   have hFlushEq :
       flushRun { emitted := (A.foldl stepReorder { emitted := #[], currentRun := [] }).emitted
-               , currentRun := C.toList.reverse
-                                ++ (Y.toList.reverse
+               , currentRun := C.reverse
+                                ++ (Y.reverse
                                       ++ (A.foldl stepReorder { emitted := #[], currentRun := [] }).currentRun) }
         = flushRun { emitted := (A.foldl stepReorder { emitted := #[], currentRun := [] }).emitted
-                   , currentRun := Y.toList.reverse
-                                    ++ (C.toList.reverse
+                   , currentRun := Y.reverse
+                                    ++ (C.reverse
                                           ++ (A.foldl stepReorder { emitted := #[], currentRun := [] }).currentRun) } := by
     unfold flushRun
     congr 1
     have hLhsRev :
-        (C.toList.reverse
-          ++ (Y.toList.reverse
+        (C.reverse
+          ++ (Y.reverse
                 ++ (A.foldl stepReorder { emitted := #[], currentRun := [] }).currentRun)).reverse
           = (A.foldl stepReorder { emitted := #[], currentRun := [] }).currentRun.reverse
-              ++ Y.toList ++ C.toList := by
+              ++ Y ++ C := by
       simp [List.reverse_append, List.reverse_reverse, List.append_assoc]
     have hRhsRev :
-        (Y.toList.reverse
-          ++ (C.toList.reverse
+        (Y.reverse
+          ++ (C.reverse
                 ++ (A.foldl stepReorder { emitted := #[], currentRun := [] }).currentRun)).reverse
           = (A.foldl stepReorder { emitted := #[], currentRun := [] }).currentRun.reverse
-              ++ C.toList ++ Y.toList := by
+              ++ C ++ Y := by
       simp [List.reverse_append, List.reverse_reverse, List.append_assoc]
     rw [hLhsRev, hRhsRev]
     exact (sortNonStarterRun_swap_disjoint_ccc
             (A.foldl stepReorder { emitted := #[], currentRun := [] }).currentRun.reverse
-            C.toList Y.toList hStrict).symm
-  exact congrArg
+            C Y hStrict).symm
+  exact congrArg (·.toList) (congrArg
     ((A.foldl stepReorder { emitted := #[], currentRun := [] }).emitted ++ ·)
-    hFlushEq
+    hFlushEq)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- SORT RIGHT-ABSORBING
@@ -1402,11 +1365,11 @@ theorem sortNonStarterRun_right_absorbing (L M : List Nat) :
     Reduces to the empty-currentRun version by pre-folding
     `Rrev.reverse.toArray` into the initial state. -/
 theorem reorder_with_prefixed_run_state
-    (Y : Array Nat) (Z : Array Nat) (Rrev : List Nat)
+    (Y : List Nat) (Z : Array Nat) (Rrev : List Nat)
     (hRrev : ∀ r ∈ Rrev, 0 < Lookup.canonicalCombiningClass r) :
-    (Y.foldl stepReorder { emitted := Z, currentRun := Rrev }).emitted
-      ++ flushRun (Y.foldl stepReorder { emitted := Z, currentRun := Rrev })
-      = Z ++ reorder (Rrev.reverse.toArray ++ Y) := by
+    ((Y.foldl stepReorder { emitted := Z, currentRun := Rrev }).emitted
+      ++ flushRun (Y.foldl stepReorder { emitted := Z, currentRun := Rrev })).toList
+      = Z.toList ++ reorder (Rrev.reverse ++ Y) := by
   -- Rrev.reverse is the non-starter run in forward order; folding it
   -- from initState produces exactly state {#[], Rrev}.
   have hRrevRevNS : ∀ x ∈ Rrev.reverse, 0 < Lookup.canonicalCombiningClass x := by
@@ -1414,11 +1377,8 @@ theorem reorder_with_prefixed_run_state
     rw [List.mem_reverse] at hx
     exact hRrev x hx
   have hFoldRrev :
-      Rrev.reverse.toArray.foldl stepReorder { emitted := #[], currentRun := [] }
+      Rrev.reverse.foldl stepReorder { emitted := #[], currentRun := [] }
         = { emitted := #[], currentRun := Rrev } := by
-    rw [← Array.foldl_toList]
-    have hT : Rrev.reverse.toArray.toList = Rrev.reverse := List.toList_toArray
-    rw [hT]
     have hFoldNS := fold_nonstarters_from_state Rrev.reverse hRrevRevNS
                       (#[] : Array Nat) []
     rw [hFoldNS]
@@ -1426,27 +1386,25 @@ theorem reorder_with_prefixed_run_state
     rw [hRR, List.append_nil]
   -- Rewrite LHS via foldl_list_stepReorder_emitted_add and
   -- foldl_list_stepReorder_currentRun_eq.
-  rw [← Array.foldl_toList]
-  rw [foldl_list_stepReorder_emitted_add Y.toList Z Rrev]
+  rw [foldl_list_stepReorder_emitted_add Y Z Rrev]
   have hFlushEq :
-      flushRun (Y.toList.foldl stepReorder { emitted := Z, currentRun := Rrev })
-        = flushRun (Y.toList.foldl stepReorder { emitted := #[], currentRun := Rrev }) := by
+      flushRun (Y.foldl stepReorder { emitted := Z, currentRun := Rrev })
+        = flushRun (Y.foldl stepReorder { emitted := #[], currentRun := Rrev }) := by
     unfold flushRun
-    rw [foldl_list_stepReorder_currentRun_eq Y.toList Z Rrev]
+    rw [foldl_list_stepReorder_currentRun_eq Y Z Rrev]
   rw [hFlushEq]
   -- Now the LHS equals Z ++ (fold Y from {#[], Rrev}).emitted ++ flushRun(fold Y from {#[], Rrev}).
-  -- Collapse to Z ++ reorder (Rrev.reverse.toArray ++ Y).
-  rw [show reorder (Rrev.reverse.toArray ++ Y)
-        = ((Rrev.reverse.toArray ++ Y).foldl stepReorder
+  -- Collapse to Z ++ reorder (Rrev.reverse ++ Y).
+  rw [show reorder (Rrev.reverse ++ Y)
+        = (((Rrev.reverse ++ Y).foldl stepReorder
               { emitted := #[], currentRun := [] }).emitted
           ++ flushRun
-              ((Rrev.reverse.toArray ++ Y).foldl stepReorder
-                { emitted := #[], currentRun := [] })
+              ((Rrev.reverse ++ Y).foldl stepReorder
+                { emitted := #[], currentRun := [] })).toList
        from rfl]
-  rw [Array.foldl_append]
+  rw [List.foldl_append]
   rw [hFoldRrev]
-  rw [← Array.foldl_toList]
-  simp [Array.append_assoc]
+  simp [Array.append_assoc, Array.toList_append]
 
 /-- **Intermediate reduction to non-starter left operand.**  For any
     `Z, Rrev` (`Rrev` all non-starters) and arrays `Y, W` where
@@ -1457,13 +1415,13 @@ theorem reorder_with_prefixed_run_state
 theorem reorder_absorb_right_via_prefix
     (Z : Array Nat) (Rrev : List Nat)
     (hRrev : ∀ r ∈ Rrev, 0 < Lookup.canonicalCombiningClass r)
-    (Y : Array Nat)
-    (hIH : reorder (Rrev.reverse.toArray ++ Y)
-             = reorder (Rrev.reverse.toArray ++ reorder Y)) :
-    (Y.foldl stepReorder { emitted := Z, currentRun := Rrev }).emitted
-      ++ flushRun (Y.foldl stepReorder { emitted := Z, currentRun := Rrev })
-      = ((reorder Y).foldl stepReorder { emitted := Z, currentRun := Rrev }).emitted
-          ++ flushRun ((reorder Y).foldl stepReorder { emitted := Z, currentRun := Rrev }) := by
+    (Y : List Nat)
+    (hIH : reorder (Rrev.reverse ++ Y)
+             = reorder (Rrev.reverse ++ reorder Y)) :
+    ((Y.foldl stepReorder { emitted := Z, currentRun := Rrev }).emitted
+      ++ flushRun (Y.foldl stepReorder { emitted := Z, currentRun := Rrev })).toList
+      = (((reorder Y).foldl stepReorder { emitted := Z, currentRun := Rrev }).emitted
+          ++ flushRun ((reorder Y).foldl stepReorder { emitted := Z, currentRun := Rrev })).toList := by
   rw [reorder_with_prefixed_run_state Y Z Rrev hRrev]
   rw [reorder_with_prefixed_run_state (reorder Y) Z Rrev hRrev]
   rw [hIH]
@@ -1472,12 +1430,11 @@ theorem reorder_absorb_right_via_prefix
     stable sort of its underlying list.  Derived from
     `fold_nonstarters_from_state` applied to the whole array. -/
 theorem reorder_all_nonStarter_eq_sort
-    (X : Array Nat)
-    (hX : ∀ x ∈ X.toList, 0 < Lookup.canonicalCombiningClass x) :
-    reorder X = (sortNonStarterRun X.toList).toArray := by
+    (X : List Nat)
+    (hX : ∀ x ∈ X, 0 < Lookup.canonicalCombiningClass x) :
+    reorder X = sortNonStarterRun X := by
   rw [reorder_eq X]
-  rw [← Array.foldl_toList]
-  rw [fold_nonstarters_from_state X.toList hX (#[] : Array Nat) []]
+  rw [fold_nonstarters_from_state X hX (#[] : Array Nat) []]
   unfold flushRun
   simp
 
@@ -1485,38 +1442,18 @@ theorem reorder_all_nonStarter_eq_sort
     into an all-non-starter prefix followed by a starter and a
     remaining suffix.  Case-analysis helper for
     `reorder_absorbing_right_on_nonStarterRun`. -/
-theorem array_first_starter_split (W : Array Nat) :
-    (∀ w ∈ W.toList, 0 < Lookup.canonicalCombiningClass w)
-    ∨ ∃ (W₁ W₃ : Array Nat) (s : Nat),
-        W = W₁ ++ #[s] ++ W₃
-        ∧ (∀ w ∈ W₁.toList, 0 < Lookup.canonicalCombiningClass w)
+theorem array_first_starter_split (W : List Nat) :
+    (∀ w ∈ W, 0 < Lookup.canonicalCombiningClass w)
+    ∨ ∃ (W₁ W₃ : List Nat) (s : Nat),
+        W = W₁ ++ [s] ++ W₃
+        ∧ (∀ w ∈ W₁, 0 < Lookup.canonicalCombiningClass w)
         ∧ Lookup.canonicalCombiningClass s = 0 := by
-  suffices h : ∀ (L : List Nat),
-      (∀ w ∈ L, 0 < Lookup.canonicalCombiningClass w)
-      ∨ ∃ (L₁ L₃ : List Nat) (s : Nat),
-          L = L₁ ++ s :: L₃
-          ∧ (∀ w ∈ L₁, 0 < Lookup.canonicalCombiningClass w)
-          ∧ Lookup.canonicalCombiningClass s = 0 by
-    rcases h W.toList with hNS | ⟨L₁, L₃, s, hEq, hL₁NS, hSstar⟩
-    · left; exact hNS
-    · right
-      have hArrayEq : W = L₁.toArray ++ #[s] ++ L₃.toArray := by
-        apply Array.toList_inj.mp
-        rw [hEq]
-        simp
-      have hArrayNS : ∀ w ∈ L₁.toArray.toList,
-          0 < Lookup.canonicalCombiningClass w := by
-        intro w hw
-        rw [List.toList_toArray] at hw
-        exact hL₁NS w hw
-      exact ⟨L₁.toArray, L₃.toArray, s, hArrayEq, hArrayNS, hSstar⟩
-  intro L
-  induction L with
+  induction W with
   | nil => left; intro w hw; cases hw
   | cons hd tl ih =>
     by_cases hHd : Lookup.canonicalCombiningClass hd = 0
     · right
-      have hSplitEq : hd :: tl = [] ++ hd :: tl := by simp
+      have hSplitEq : hd :: tl = [] ++ [hd] ++ tl := by simp
       have hEmptyNS : ∀ w ∈ ([] : List Nat),
           0 < Lookup.canonicalCombiningClass w := by
         intro w hw; cases hw
@@ -1530,9 +1467,8 @@ theorem array_first_starter_split (W : Array Nat) :
         · rw [hEq]; exact hHdNS
         · exact hNSTl w hwTl
       · right
-        have hSplitEq : hd :: tl = (hd :: L₁') ++ s :: L₃' := by
-          show hd :: tl = hd :: L₁' ++ s :: L₃'
-          rw [hEqTl]; rfl
+        have hSplitEq : hd :: tl = (hd :: L₁') ++ [s] ++ L₃' := by
+          rw [hEqTl]; simp
         have hPrefixNS : ∀ w ∈ hd :: L₁',
             0 < Lookup.canonicalCombiningClass w := by
           intro w hw
@@ -1549,70 +1485,64 @@ theorem array_first_starter_split (W : Array Nat) :
     at the first starter and apply `reorder_append_starter_middle` to
     reduce to case (a). -/
 theorem reorder_absorbing_right_on_nonStarterRun
-    (R : Array Nat)
-    (hR : ∀ r ∈ R.toList, 0 < Lookup.canonicalCombiningClass r)
-    (W : Array Nat) :
+    (R : List Nat)
+    (hR : ∀ r ∈ R, 0 < Lookup.canonicalCombiningClass r)
+    (W : List Nat) :
     reorder (R ++ W) = reorder (R ++ reorder W) := by
   rcases array_first_starter_split W with hAllNS | ⟨W₁, W₃, s, hEqW, hW₁NS, hSstar⟩
   · -- Case (a): W is all non-starters.  Both sides reduce to
     -- `sortNonStarterRun` of the concatenation.
-    have hRWns : ∀ w ∈ (R ++ W).toList, 0 < Lookup.canonicalCombiningClass w := by
+    have hRWns : ∀ w ∈ R ++ W, 0 < Lookup.canonicalCombiningClass w := by
       intro w hw
-      rw [Array.toList_append] at hw
       rcases List.mem_append.mp hw with h1 | h2
       · exact hR w h1
       · exact hAllNS w h2
-    have hReorderW : reorder W = (sortNonStarterRun W.toList).toArray :=
+    have hReorderW : reorder W = sortNonStarterRun W :=
       reorder_all_nonStarter_eq_sort W hAllNS
-    have hSortedWNS : ∀ w ∈ (sortNonStarterRun W.toList), 0 < Lookup.canonicalCombiningClass w := by
+    have hSortedWNS : ∀ w ∈ (sortNonStarterRun W), 0 < Lookup.canonicalCombiningClass w := by
       intro w hw
       have hBool := sortNonStarterRun_preserves_all
         (fun n => decide (0 < Lookup.canonicalCombiningClass n))
-        W.toList
+        W
         (fun y hy => by simp [hAllNS y hy])
         w hw
       exact of_decide_eq_true hBool
     have hRreorderWns :
-        ∀ w ∈ (R ++ reorder W).toList, 0 < Lookup.canonicalCombiningClass w := by
+        ∀ w ∈ R ++ reorder W, 0 < Lookup.canonicalCombiningClass w := by
       intro w hw
-      rw [Array.toList_append] at hw
       rcases List.mem_append.mp hw with h1 | h2
       · exact hR w h1
-      · rw [hReorderW, List.toList_toArray] at h2
+      · rw [hReorderW] at h2
         exact hSortedWNS w h2
     rw [reorder_all_nonStarter_eq_sort (R ++ W) hRWns]
     rw [reorder_all_nonStarter_eq_sort (R ++ reorder W) hRreorderWns]
-    have hLhsList : (R ++ W).toList = R.toList ++ W.toList := by
-      rw [Array.toList_append]
-    have hRhsList : (R ++ reorder W).toList = R.toList ++ sortNonStarterRun W.toList := by
-      rw [Array.toList_append, hReorderW, List.toList_toArray]
-    rw [hLhsList, hRhsList]
-    rw [sortNonStarterRun_right_absorbing R.toList W.toList]
-  · -- Case (b): W = W₁ ++ #[s] ++ W₃, W₁ all non-starters, s starter.
+    rw [hReorderW]
+    rw [sortNonStarterRun_right_absorbing R W]
+  · -- Case (b): W = W₁ ++ [s] ++ W₃, W₁ all non-starters, s starter.
     -- Split at s via reorder_append_starter_middle, reduce to case (a)
     -- on the pre-s segment (which is all non-starters combined with R).
     rw [hEqW]
-    -- LHS: reorder (R ++ (W₁ ++ #[s] ++ W₃))
-    --    = reorder (R ++ W₁) ++ #[s] ++ reorder W₃
+    -- LHS: reorder (R ++ (W₁ ++ [s] ++ W₃))
+    --    = reorder (R ++ W₁) ++ [s] ++ reorder W₃
     have hLhsStep :
-        reorder (R ++ (W₁ ++ #[s] ++ W₃))
-          = reorder (R ++ W₁) ++ #[s] ++ reorder W₃ := by
-      rw [show R ++ (W₁ ++ #[s] ++ W₃) = (R ++ W₁) ++ #[s] ++ W₃
-            from by rw [← Array.append_assoc, ← Array.append_assoc]]
+        reorder (R ++ (W₁ ++ [s] ++ W₃))
+          = reorder (R ++ W₁) ++ [s] ++ reorder W₃ := by
+      rw [show R ++ (W₁ ++ [s] ++ W₃) = (R ++ W₁) ++ [s] ++ W₃
+            from by rw [← List.append_assoc, ← List.append_assoc]]
       exact reorder_append_starter_middle (R ++ W₁) s W₃ hSstar
-    -- reorder (W₁ ++ #[s] ++ W₃) = reorder W₁ ++ #[s] ++ reorder W₃
+    -- reorder (W₁ ++ [s] ++ W₃) = reorder W₁ ++ [s] ++ reorder W₃
     have hInnerReorder :
-        reorder (W₁ ++ #[s] ++ W₃) = reorder W₁ ++ #[s] ++ reorder W₃ :=
+        reorder (W₁ ++ [s] ++ W₃) = reorder W₁ ++ [s] ++ reorder W₃ :=
       reorder_append_starter_middle W₁ s W₃ hSstar
-    -- RHS: reorder (R ++ reorder (W₁ ++ #[s] ++ W₃))
-    --    = reorder (R ++ reorder W₁) ++ #[s] ++ reorder W₃
+    -- RHS: reorder (R ++ reorder (W₁ ++ [s] ++ W₃))
+    --    = reorder (R ++ reorder W₁) ++ [s] ++ reorder W₃
     have hRhsStep :
-        reorder (R ++ reorder (W₁ ++ #[s] ++ W₃))
-          = reorder (R ++ reorder W₁) ++ #[s] ++ reorder W₃ := by
+        reorder (R ++ reorder (W₁ ++ [s] ++ W₃))
+          = reorder (R ++ reorder W₁) ++ [s] ++ reorder W₃ := by
       rw [hInnerReorder]
-      rw [show R ++ (reorder W₁ ++ #[s] ++ reorder W₃)
-            = (R ++ reorder W₁) ++ #[s] ++ reorder W₃
-          from by rw [← Array.append_assoc, ← Array.append_assoc]]
+      rw [show R ++ (reorder W₁ ++ [s] ++ reorder W₃)
+            = (R ++ reorder W₁) ++ [s] ++ reorder W₃
+          from by rw [← List.append_assoc, ← List.append_assoc]]
       rw [reorder_append_starter_middle (R ++ reorder W₁) s (reorder W₃) hSstar]
       rw [reorder_idempotent W₃]
     rw [hLhsStep, hRhsStep]
@@ -1620,44 +1550,41 @@ theorem reorder_absorbing_right_on_nonStarterRun
     -- Both sides have R all non-starters and W₁ all non-starters, so
     -- this is the all-non-starter case, which reduces via
     -- `sortNonStarterRun_right_absorbing`.
-    have hRW₁NS : ∀ w ∈ (R ++ W₁).toList, 0 < Lookup.canonicalCombiningClass w := by
+    have hRW₁NS : ∀ w ∈ R ++ W₁, 0 < Lookup.canonicalCombiningClass w := by
       intro w hw
-      rw [Array.toList_append] at hw
       rcases List.mem_append.mp hw with h1 | h2
       · exact hR w h1
       · exact hW₁NS w h2
-    have hReorderW₁ : reorder W₁ = (sortNonStarterRun W₁.toList).toArray :=
+    have hReorderW₁ : reorder W₁ = sortNonStarterRun W₁ :=
       reorder_all_nonStarter_eq_sort W₁ hW₁NS
-    have hSortedW₁NS : ∀ w ∈ (sortNonStarterRun W₁.toList),
+    have hSortedW₁NS : ∀ w ∈ (sortNonStarterRun W₁),
                          0 < Lookup.canonicalCombiningClass w := by
       intro w hw
       have hBool := sortNonStarterRun_preserves_all
         (fun n => decide (0 < Lookup.canonicalCombiningClass n))
-        W₁.toList
+        W₁
         (fun y hy => by simp [hW₁NS y hy])
         w hw
       exact of_decide_eq_true hBool
     have hRreorderW₁NS :
-        ∀ w ∈ (R ++ reorder W₁).toList, 0 < Lookup.canonicalCombiningClass w := by
+        ∀ w ∈ R ++ reorder W₁, 0 < Lookup.canonicalCombiningClass w := by
       intro w hw
-      rw [Array.toList_append] at hw
       rcases List.mem_append.mp hw with h1 | h2
       · exact hR w h1
-      · rw [hReorderW₁, List.toList_toArray] at h2
+      · rw [hReorderW₁] at h2
         exact hSortedW₁NS w h2
     have hLhsSort :
-        reorder (R ++ W₁) = (sortNonStarterRun (R.toList ++ W₁.toList)).toArray := by
-      rw [reorder_all_nonStarter_eq_sort (R ++ W₁) hRW₁NS]
-      rw [Array.toList_append]
+        reorder (R ++ W₁) = sortNonStarterRun (R ++ W₁) :=
+      reorder_all_nonStarter_eq_sort (R ++ W₁) hRW₁NS
     have hRhsSort :
         reorder (R ++ reorder W₁)
-          = (sortNonStarterRun (R.toList ++ sortNonStarterRun W₁.toList)).toArray := by
+          = sortNonStarterRun (R ++ sortNonStarterRun W₁) := by
       rw [reorder_all_nonStarter_eq_sort (R ++ reorder W₁) hRreorderW₁NS]
-      rw [Array.toList_append, hReorderW₁, List.toList_toArray]
+      rw [hReorderW₁]
     have hSortAbsorb :
-        sortNonStarterRun (R.toList ++ W₁.toList)
-          = sortNonStarterRun (R.toList ++ sortNonStarterRun W₁.toList) :=
-      sortNonStarterRun_right_absorbing R.toList W₁.toList
+        sortNonStarterRun (R ++ W₁)
+          = sortNonStarterRun (R ++ sortNonStarterRun W₁) :=
+      sortNonStarterRun_right_absorbing R W₁
     rw [hLhsSort, hRhsSort, hSortAbsorb]
 
 /-- **Reorder right-absorbing.**  For any arrays `P, Q`,
@@ -1665,13 +1592,12 @@ theorem reorder_absorbing_right_on_nonStarterRun
     reduces `P` to its trailing non-starter run via the
     state-machine characterization, then applies
     `reorder_absorbing_right_on_nonStarterRun`. -/
-theorem reorder_absorbing_right (P Q : Array Nat) :
+theorem reorder_absorbing_right (P Q : List Nat) :
     reorder (P ++ Q) = reorder (P ++ reorder Q) := by
   -- Analyze state(P) to reduce to the non-starter-run-left case.
   have hInvOut : ReorderOutputInvariant
                     (P.foldl stepReorder { emitted := #[], currentRun := [] }) := by
-    have h := foldl_stepReorder_output_invariant P.toList
-    rw [Array.foldl_toList] at h
+    have h := foldl_stepReorder_output_invariant P
     exact h
   have hRunNS : ∀ x ∈ (P.foldl stepReorder { emitted := #[], currentRun := [] }).currentRun,
                    0 < Lookup.canonicalCombiningClass x := hInvOut.2.2
@@ -1681,30 +1607,29 @@ theorem reorder_absorbing_right (P Q : Array Nat) :
   -- Step 1: reduce reorder (P ++ Q) via state of P.
   have hLhsStep :
       reorder (P ++ Q)
-        = sP.emitted ++ reorder (sP.currentRun.reverse.toArray ++ Q) := by
-    show ((P ++ Q).foldl stepReorder { emitted := #[], currentRun := [] }).emitted
-           ++ flushRun ((P ++ Q).foldl stepReorder { emitted := #[], currentRun := [] })
-         = sP.emitted ++ reorder (sP.currentRun.reverse.toArray ++ Q)
-    rw [Array.foldl_append]
+        = sP.emitted.toList ++ reorder (sP.currentRun.reverse ++ Q) := by
+    show (((P ++ Q).foldl stepReorder { emitted := #[], currentRun := [] }).emitted
+           ++ flushRun ((P ++ Q).foldl stepReorder { emitted := #[], currentRun := [] })).toList
+         = sP.emitted.toList ++ reorder (sP.currentRun.reverse ++ Q)
+    rw [List.foldl_append]
     exact reorder_with_prefixed_run_state Q sP.emitted sP.currentRun hRrevNS
   have hRhsStep :
       reorder (P ++ reorder Q)
-        = sP.emitted ++ reorder (sP.currentRun.reverse.toArray ++ reorder Q) := by
-    show ((P ++ reorder Q).foldl stepReorder { emitted := #[], currentRun := [] }).emitted
+        = sP.emitted.toList ++ reorder (sP.currentRun.reverse ++ reorder Q) := by
+    show (((P ++ reorder Q).foldl stepReorder { emitted := #[], currentRun := [] }).emitted
            ++ flushRun ((P ++ reorder Q).foldl stepReorder
-                           { emitted := #[], currentRun := [] })
-         = sP.emitted ++ reorder (sP.currentRun.reverse.toArray ++ reorder Q)
-    rw [Array.foldl_append]
+                           { emitted := #[], currentRun := [] })).toList
+         = sP.emitted.toList ++ reorder (sP.currentRun.reverse ++ reorder Q)
+    rw [List.foldl_append]
     exact reorder_with_prefixed_run_state (reorder Q) sP.emitted sP.currentRun hRrevNS
   -- Step 2: apply reorder_absorbing_right_on_nonStarterRun to the reduced problem.
-  have hRunArrNS : ∀ r ∈ sP.currentRun.reverse.toArray.toList,
+  have hRunArrNS : ∀ r ∈ sP.currentRun.reverse,
                      0 < Lookup.canonicalCombiningClass r := by
     intro r hr
-    have hrL : r ∈ sP.currentRun.reverse.toArray.toList := hr
-    rw [List.toList_toArray, List.mem_reverse] at hrL
-    exact hRunNS r hrL
+    rw [List.mem_reverse] at hr
+    exact hRunNS r hr
   have hCore :=
-    reorder_absorbing_right_on_nonStarterRun sP.currentRun.reverse.toArray hRunArrNS Q
+    reorder_absorbing_right_on_nonStarterRun sP.currentRun.reverse hRunArrNS Q
   rw [hLhsStep, hRhsStep, hCore]
 
 end Unicode.Normalization.ReorderAppend

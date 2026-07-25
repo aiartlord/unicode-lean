@@ -119,7 +119,7 @@ def concat (a b : CompositeVerdict) : CompositeVerdict :=
     CompositeVerdict. -/
 def composeMany (input : Array Nat) (vs : List CompositeVerdict) :
     CompositeVerdict :=
-  compoundOf input (vs.foldl (fun acc v => acc ++ v.sites) #[])
+  compoundOf input (vs.flatMap (fun v => v.sites.toList)).toArray
 
 /-- True iff no hazard was detected. -/
 @[inline]

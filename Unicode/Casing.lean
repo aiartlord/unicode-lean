@@ -87,148 +87,135 @@ def ccc (cp : Nat) : Nat :=
 --                            ccc=0 character.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Walk forward from `start` looking for a ccc=230 codepoint
-    before the next ccc=0 codepoint. Fuel-bounded for
-    `decide` evaluability. -/
-def moreAboveGo (fuel : Nat) (cps : Array Nat) (i : Nat) : Bool :=
-  match fuel with
-  | 0 => false
-  | fuel' + 1 =>
-    if h : i < cps.size then
-      let c := ccc cps[i]
-      if c = 230 then true
-      else if c = 0 then false
-      else moreAboveGo fuel' cps (i + 1)
-    else false
+/-- Walk the forward suffix looking for a ccc=230 codepoint
+    before the next ccc=0 codepoint.  Structural recursion on the
+    codepoints following the current position. -/
+def moreAboveAfterGo : List Nat → Bool
+  | [] => false
+  | cp :: rest =>
+    let c := ccc cp
+    if c = 230 then true
+    else if c = 0 then false
+    else moreAboveAfterGo rest
 
-def moreAboveAfter (cps : Array Nat) (idx : Nat) : Bool :=
-  moreAboveGo cps.size cps (idx + 1)
+/-- More_Above: some ccc=230 mark follows before the next ccc=0
+    break.  `suffix` is the codepoints strictly after the current
+    position. -/
+def moreAboveAfter (suffix : List Nat) : Bool :=
+  moreAboveAfterGo suffix
 
-/-- Walk backward from `start` looking for a Soft_Dotted base
+/-- Walk the reversed prefix (nearest-first) looking for a
+    Soft_Dotted base before the next ccc=0 or ccc=230 break. -/
+def afterSoftDottedGo : List Nat → Bool
+  | [] => false
+  | cp :: rest =>
+    let isSD := Unicode.Generated.DerivedCoreProperties.softDotted.any
+      (fun lh => lh.fst ≤ cp ∧ cp ≤ lh.snd)
+    if isSD then true
+    else
+      let c := ccc cp
+      if c = 230 ∨ c = 0 then false
+      else afterSoftDottedGo rest
+
+/-- After_Soft_Dotted: the last preceding base is Soft_Dotted.
+    `revPrefix` is the codepoints before the current position in
+    nearest-first (reversed) order. -/
+def afterSoftDotted (revPrefix : List Nat) : Bool :=
+  afterSoftDottedGo revPrefix
+
+/-- Walk the reversed prefix (nearest-first) looking for U+0049 'I'
     before the next ccc=0 or ccc=230 break. -/
-def afterSoftDottedGo (fuel : Nat) (cps : Array Nat) (i : Nat) : Bool :=
-  match fuel with
-  | 0 => false
-  | fuel' + 1 =>
-    if i = 0 then false
+def afterIGo : List Nat → Bool
+  | [] => false
+  | cp :: rest =>
+    if cp = 0x0049 then true
     else
-      let j := i - 1
-      let cp := cps[j]!
-      let isSD := Unicode.Generated.DerivedCoreProperties.softDotted.any
-        (fun lh => lh.fst ≤ cp ∧ cp ≤ lh.snd)
-      if isSD then true
-      else
-        let c := ccc cp
-        if c = 230 ∨ c = 0 then false
-        else afterSoftDottedGo fuel' cps j
+      let c := ccc cp
+      if c = 230 ∨ c = 0 then false
+      else afterIGo rest
 
-def afterSoftDotted (cps : Array Nat) (idx : Nat) : Bool :=
-  afterSoftDottedGo cps.size cps idx
+/-- After_I: an uppercase 'I' precedes before the next above/base
+    break.  `revPrefix` is the nearest-first preceding codepoints. -/
+def afterI (revPrefix : List Nat) : Bool :=
+  afterIGo revPrefix
 
-/-- Walk backward looking for U+0049 'I' before the next ccc=0
-    or ccc=230 break. -/
-def afterIGo (fuel : Nat) (cps : Array Nat) (i : Nat) : Bool :=
-  match fuel with
-  | 0 => false
-  | fuel' + 1 =>
-    if i = 0 then false
+/-- Walk the forward suffix looking for U+0307 before the next
+    ccc=0 break. -/
+def beforeDotGo : List Nat → Bool
+  | [] => false
+  | cp :: rest =>
+    if cp = 0x0307 then true
     else
-      let j := i - 1
-      let cp := cps[j]!
-      if cp = 0x0049 then true
-      else
-        let c := ccc cp
-        if c = 230 ∨ c = 0 then false
-        else afterIGo fuel' cps j
+      let c := ccc cp
+      if c = 0 then false
+      else beforeDotGo rest
 
-def afterI (cps : Array Nat) (idx : Nat) : Bool :=
-  afterIGo cps.size cps idx
-
-/-- Walk forward looking for U+0307 before the next ccc=0 break. -/
-def beforeDotGo (fuel : Nat) (cps : Array Nat) (i : Nat) : Bool :=
-  match fuel with
-  | 0 => false
-  | fuel' + 1 =>
-    if h : i < cps.size then
-      let cp := cps[i]
-      if cp = 0x0307 then true
-      else
-        let c := ccc cp
-        if c = 0 then false
-        else beforeDotGo fuel' cps (i + 1)
-    else false
-
-def beforeDot (cps : Array Nat) (idx : Nat) : Bool :=
-  beforeDotGo cps.size cps (idx + 1)
+/-- Before_Dot: a U+0307 follows before the next ccc=0 break.
+    `suffix` is the codepoints strictly after the current position. -/
+def beforeDot (suffix : List Nat) : Bool :=
+  beforeDotGo suffix
 
 /-- True iff `cp` is Cased per `DerivedCoreProperties.txt`. -/
 def isCased (cp : Nat) : Bool :=
   Unicode.Generated.DerivedCoreProperties.cased.any
     (fun lh => lh.fst ≤ cp ∧ cp ≤ lh.snd)
 
-/-- Walk backward looking for the most-recent Cased character
-    before the current position, skipping over combining marks. -/
-def hasCasedBeforeGo (fuel : Nat) (cps : Array Nat) (i : Nat) : Bool :=
-  match fuel with
-  | 0 => false
-  | fuel' + 1 =>
-    if i = 0 then false
+/-- Walk the reversed prefix (nearest-first) looking for the most-
+    recent Cased character, skipping over combining marks. -/
+def hasCasedBeforeGo : List Nat → Bool
+  | [] => false
+  | cp :: rest =>
+    if isCased cp then true
     else
-      let j := i - 1
-      let cp := cps[j]!
-      if isCased cp then true
-      else
-        let c := ccc cp
-        if c = 0 then false
-        else hasCasedBeforeGo fuel' cps j
+      let c := ccc cp
+      if c = 0 then false
+      else hasCasedBeforeGo rest
 
-/-- Walk forward looking for the next non-combining character;
-    returns `true` if it's Cased. -/
-def hasCasedAfterGo (fuel : Nat) (cps : Array Nat) (i : Nat) : Bool :=
-  match fuel with
-  | 0 => false
-  | fuel' + 1 =>
-    if h : i < cps.size then
-      let cp := cps[i]
-      if isCased cp then true
-      else
-        let c := ccc cp
-        if c = 0 then false
-        else hasCasedAfterGo fuel' cps (i + 1)
-    else false
+/-- Walk the forward suffix looking for the next non-combining
+    character; returns `true` if it is Cased. -/
+def hasCasedAfterGo : List Nat → Bool
+  | [] => false
+  | cp :: rest =>
+    if isCased cp then true
+    else
+      let c := ccc cp
+      if c = 0 then false
+      else hasCasedAfterGo rest
 
 /-- Final_Sigma: the position is between a Cased prefix and a
-    no-Cased suffix (UAX #21). -/
-def finalSigma (cps : Array Nat) (idx : Nat) : Bool :=
-  hasCasedBeforeGo cps.size cps idx
-    && ! hasCasedAfterGo cps.size cps (idx + 1)
+    no-Cased suffix (UAX #21).  `revPrefix` is the nearest-first
+    preceding codepoints; `suffix` the strictly-following ones. -/
+def finalSigma (revPrefix suffix : List Nat) : Bool :=
+  hasCasedBeforeGo revPrefix && ! hasCasedAfterGo suffix
 
-/-- Evaluate one row's condition list against the locale + context. -/
-def conditionsHold (loc : Locale) (cps : Array Nat) (idx : Nat)
+/-- Evaluate one row's condition list against the locale + context.
+    `revPrefix` is the nearest-first preceding codepoints; `suffix`
+    the strictly-following ones. -/
+def conditionsHold (loc : Locale) (revPrefix suffix : List Nat)
     (conds : Array Condition) : Bool :=
   localeMatches loc conds
     && conds.all (fun c =>
       match c with
       | .LangTr | .LangAz | .LangLt => true
-      | .FinalSigma         => finalSigma cps idx
-      | .NotFinalSigma      => ! finalSigma cps idx
-      | .AfterSoftDotted    => afterSoftDotted cps idx
-      | .MoreAbove          => moreAboveAfter cps idx
-      | .NotBeforeDot       => ! beforeDot cps idx
-      | .AfterI             => afterI cps idx
+      | .FinalSigma         => finalSigma revPrefix suffix
+      | .NotFinalSigma      => ! finalSigma revPrefix suffix
+      | .AfterSoftDotted    => afterSoftDotted revPrefix
+      | .MoreAbove          => moreAboveAfter suffix
+      | .NotBeforeDot       => ! beforeDot suffix
+      | .AfterI             => afterI revPrefix
       | .Other token        => Function.const String false token)
 
 /-- Find the most-specific applicable SpecialCasing row for `cp`
-    at position `idx`. UAX #21 semantics: a conditional row whose
+    in the given context. UAX #21 semantics: a conditional row whose
     conditions hold takes precedence over an unconditional row
     for the same codepoint. We do this by searching conditional
     rows first and falling back to unconditional rows. -/
-def findSpecialRow (loc : Locale) (cps : Array Nat) (idx : Nat)
+def findSpecialRow (loc : Locale) (revPrefix suffix : List Nat)
     (cp : Nat) : Option Row :=
   let matchConditional :=
     Unicode.Generated.SpecialCasing.parsedRows.findSome? (fun r =>
       if r.code = cp ∧ ! r.conditions.isEmpty
-          ∧ conditionsHold loc cps idx r.conditions
+          ∧ conditionsHold loc revPrefix suffix r.conditions
         then some r else none)
   match matchConditional with
   | some r => some r
@@ -242,23 +229,23 @@ def findSpecialRow (loc : Locale) (cps : Array Nat) (idx : Nat)
 
 /-- Lowercase a single codepoint, falling back to simple lowercase
     when no SpecialCasing row applies. -/
-def lowerCodepoint (loc : Locale) (cps : Array Nat) (idx : Nat)
+def lowerCodepoint (loc : Locale) (revPrefix suffix : List Nat)
     (cp : Nat) : Array Nat :=
-  match findSpecialRow loc cps idx cp with
+  match findSpecialRow loc revPrefix suffix cp with
   | some r => r.lower
   | none   => #[Unicode.Generated.SimpleCaseMappings.simpleLowercase cp]
 
 /-- Uppercase a single codepoint. -/
-def upperCodepoint (loc : Locale) (cps : Array Nat) (idx : Nat)
+def upperCodepoint (loc : Locale) (revPrefix suffix : List Nat)
     (cp : Nat) : Array Nat :=
-  match findSpecialRow loc cps idx cp with
+  match findSpecialRow loc revPrefix suffix cp with
   | some r => r.upper
   | none   => #[Unicode.Generated.SimpleCaseMappings.simpleUppercase cp]
 
 /-- Titlecase a single codepoint. -/
-def titleCodepoint (loc : Locale) (cps : Array Nat) (idx : Nat)
+def titleCodepoint (loc : Locale) (revPrefix suffix : List Nat)
     (cp : Nat) : Array Nat :=
-  match findSpecialRow loc cps idx cp with
+  match findSpecialRow loc revPrefix suffix cp with
   | some r => r.title
   | none   => #[Unicode.Generated.SimpleCaseMappings.simpleTitlecase cp]
 
@@ -266,36 +253,46 @@ def titleCodepoint (loc : Locale) (cps : Array Nat) (idx : Nat)
 -- §3 STRING-LEVEL OPERATIONS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Lowercase codepoints from index `i` onward, concatenating each
-    codepoint's (possibly multi-element) mapping. `fuel` bounds the
-    recursion structurally so the result reduces in the kernel; callers
-    pass `cps.size`. Equivalent to the left append-fold `#[] ++ m₀ ++ …`. -/
-def toLowerFrom (loc : Locale) (cps : Array Nat) (fuel : Nat) (i : Nat) : Array Nat :=
-  match fuel with
-  | 0 => #[]
-  | fuel + 1 =>
-    if h : i < cps.size then
-      lowerCodepoint loc cps i cps[i] ++ toLowerFrom loc cps fuel (i + 1)
-    else
-      #[]
+/-- Lowercase the codepoints in `suffix`, concatenating each
+    codepoint's (possibly multi-element) mapping.  `revPrefix`
+    carries the already-processed codepoints in nearest-first order
+    so each position's context conditions read their neighbours. -/
+def toLowerGo (loc : Locale) (revPrefix : List Nat) : List Nat → List Nat
+  | [] => []
+  | cp :: suffix =>
+    (lowerCodepoint loc revPrefix suffix cp).toList
+      ++ toLowerGo loc (cp :: revPrefix) suffix
 
 /-- Lowercase a codepoint sequence under the given locale. -/
-def toLower (loc : Locale) (cps : Array Nat) : Array Nat :=
-  toLowerFrom loc cps cps.size 0
+def toLower (loc : Locale) (cps : List Nat) : List Nat :=
+  toLowerGo loc [] cps
 
-/-- Uppercase codepoints from index `i` onward; see `toLowerFrom`. -/
-def toUpperFrom (loc : Locale) (cps : Array Nat) (fuel : Nat) (i : Nat) : Array Nat :=
-  match fuel with
-  | 0 => #[]
-  | fuel + 1 =>
-    if h : i < cps.size then
-      upperCodepoint loc cps i cps[i] ++ toUpperFrom loc cps fuel (i + 1)
-    else
-      #[]
+/-- Uppercase the codepoints in `suffix`; see `toLowerGo`. -/
+def toUpperGo (loc : Locale) (revPrefix : List Nat) : List Nat → List Nat
+  | [] => []
+  | cp :: suffix =>
+    (upperCodepoint loc revPrefix suffix cp).toList
+      ++ toUpperGo loc (cp :: revPrefix) suffix
 
 /-- Uppercase a codepoint sequence under the given locale. -/
-def toUpper (loc : Locale) (cps : Array Nat) : Array Nat :=
-  toUpperFrom loc cps cps.size 0
+def toUpper (loc : Locale) (cps : List Nat) : List Nat :=
+  toUpperGo loc [] cps
+
+/-- The per-position context inventory of `cps`:
+    `(index, revPrefix, cp, suffix)` for every position, where
+    `revPrefix` is the nearest-first preceding codepoints and
+    `suffix` the strictly-following ones.  Callers that need the
+    context-aware per-codepoint mappings at a specific position
+    read the tuple without any index arithmetic. -/
+def contextSplitsGo (idx : Nat) (revPrefix : List Nat) :
+    List Nat → List (Nat × List Nat × Nat × List Nat)
+  | [] => []
+  | cp :: suffix =>
+    (idx, revPrefix, cp, suffix)
+      :: contextSplitsGo (idx + 1) (cp :: revPrefix) suffix
+
+def contextSplits (cps : List Nat) : List (Nat × List Nat × Nat × List Nat) :=
+  contextSplitsGo 0 [] cps
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 SAMPLE STRINGS
@@ -303,35 +300,35 @@ def toUpper (loc : Locale) (cps : Array Nat) : Array Nat :=
 
 /-- "Hello" lowercases to "hello" under the default locale. -/
 theorem toLower_hello :
-    toLower .default #[0x48, 0x65, 0x6C, 0x6C, 0x6F] =
-      #[0x68, 0x65, 0x6C, 0x6C, 0x6F] := by decide +kernel
+    toLower .default [0x48, 0x65, 0x6C, 0x6C, 0x6F] =
+      [0x68, 0x65, 0x6C, 0x6C, 0x6F] := by decide +kernel
 
 /-- "hello" uppercases to "HELLO". -/
 theorem toUpper_hello :
-    toUpper .default #[0x68, 0x65, 0x6C, 0x6C, 0x6F] =
-      #[0x48, 0x45, 0x4C, 0x4C, 0x4F] := by decide +kernel
+    toUpper .default [0x68, 0x65, 0x6C, 0x6C, 0x6F] =
+      [0x48, 0x45, 0x4C, 0x4C, 0x4F] := by decide +kernel
 
 /-- ß (U+00DF) uppercases to "SS" (full case mapping). -/
 theorem toUpper_sharp_s :
-    toUpper .default #[0x00DF] = #[0x0053, 0x0053] := by decide +kernel
+    toUpper .default [0x00DF] = [0x0053, 0x0053] := by decide +kernel
 
 /-- Turkish I (U+0049) lowercases to dotless ı (U+0131) under tr/az,
     but to dotted i (U+0069) under default. -/
 theorem toLower_I_default :
-    toLower .default #[0x0049] = #[0x0069] := by decide +kernel
+    toLower .default [0x0049] = [0x0069] := by decide +kernel
 
 theorem toLower_I_turkish :
-    toLower .turkish #[0x0049] = #[0x0131] := by decide +kernel
+    toLower .turkish [0x0049] = [0x0131] := by decide +kernel
 
 theorem toLower_I_azeri :
-    toLower .azeri #[0x0049] = #[0x0131] := by decide +kernel
+    toLower .azeri [0x0049] = [0x0131] := by decide +kernel
 
 /-- Turkish dotted İ (U+0130) lowercases to plain `i` under tr/az;
     under default it lowercases to `i + COMBINING DOT ABOVE`. -/
 theorem toLower_dotted_I_turkish :
-    toLower .turkish #[0x0130] = #[0x0069] := by decide +kernel
+    toLower .turkish [0x0130] = [0x0069] := by decide +kernel
 
 theorem toLower_dotted_I_default :
-    toLower .default #[0x0130] = #[0x0069, 0x0307] := by decide +kernel
+    toLower .default [0x0130] = [0x0069, 0x0307] := by decide +kernel
 
 end Unicode.Casing

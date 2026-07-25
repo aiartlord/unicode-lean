@@ -14,11 +14,11 @@ open Unicode.Generated
 open Unicode.Precis.CaseMapping
 
 def sourceCommP (entry : Nat × Array Nat) : Bool :=
-  decide (NFC.toNFD (caseFold #[entry.1]) =
-          NFC.toNFD (caseFold (NFC.toNFD #[entry.1])))
+  decide (NFC.toNFD (caseFold [entry.1]) =
+          NFC.toNFD (caseFold (NFC.toNFD [entry.1])))
 
 def sourcePointwiseP (entry : Nat × Array Nat) : Bool :=
-  decide (NFC.toNFD entry.2 =
-          NFC.toNFD (caseFold (NFC.toNFD #[entry.1])))
+  decide (NFC.toNFD entry.2.toList =
+          NFC.toNFD (caseFold (NFC.toNFD [entry.1])))
 
 end Unicode.CaseFoldCommutation

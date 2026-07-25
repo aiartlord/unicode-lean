@@ -12,6 +12,7 @@
 namespace Unicode.Generated.DerivedCoreProperties
 
 set_option maxRecDepth 1000000
+set_option maxHeartbeats 10000000
 
 /-- One parsed DerivedCoreProperties row: a codepoint range and its
     property name. -/

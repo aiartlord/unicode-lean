@@ -35,7 +35,7 @@ open Unicode.Normalization
 open Unicode.Generated
 
 /-- Apply the full NFKC pipeline to a codepoint sequence. -/
-def toNFKC (cps : Array Nat) : Array Nat :=
+def toNFKC (cps : List Nat) : List Nat :=
   Compose.compose (NFKD.toNFKD cps)
 
 /-- Look up a codepoint's `NFKC_QuickCheck` value. Falls back to the
@@ -53,13 +53,13 @@ def nfkcQCValue (cp : Nat) : DerivedNormalizationProps.NFC_QC :=
     YES-verdict, `false` otherwise (inconclusive `M` or out-of-order
     cases). The HSR check reuses `NFC.hasSortedRunsBool` because the
     canonical reorder stage is identical to NFC's. -/
-def isNFKCQuickCheck (cps : Array Nat) : Bool :=
+def isNFKCQuickCheck (cps : List Nat) : Bool :=
   cps.all (fun cp => decide (nfkcQCValue cp = .Y)) &&
-  NFC.hasSortedRunsBool cps.toList
+  NFC.hasSortedRunsBool cps
 
 /-- Definitive NFKC check: a sequence is in NFKC iff applying the NFKC
     pipeline to it is a no-op. -/
-def isNFKC (cps : Array Nat) : Bool :=
+def isNFKC (cps : List Nat) : Bool :=
   toNFKC cps = cps
 
 set_option maxRecDepth 100000
@@ -78,8 +78,8 @@ set_option maxRecDepth 100000
 /-- Canonical composition is the identity on a lone starter. -/
 theorem compose_single_starter (cp : Nat)
     (h : Lookup.canonicalCombiningClass cp = 0) :
-    Compose.compose #[cp] = #[cp] := by
-  rewrite [Compose.compose.eq_def, ← Array.foldl_toList, List.toList_toArray,
+    Compose.compose [cp] = [cp] := by
+  rewrite [Compose.compose.eq_def,
            List.foldl_cons, List.foldl_nil]
   rewrite [show Compose.stepCompose Compose.initialState cp
              = { emitted := #[], starter := some cp, buffer := [], maxCCC := 0 } by
@@ -93,8 +93,8 @@ theorem primaryComposite_ff_none :
   Compose.primaryComposite?_none_of_all_ne 0x0066 0x0066 (by decide) (by decide +kernel)
 
 /-- Compose leaves two `f` starters unchanged (no ligature recomposition). -/
-theorem compose_ff : Compose.compose #[0x0066, 0x0066] = #[0x0066, 0x0066] := by
-  rewrite [Compose.compose.eq_def, ← Array.foldl_toList, List.toList_toArray,
+theorem compose_ff : Compose.compose [0x0066, 0x0066] = [0x0066, 0x0066] := by
+  rewrite [Compose.compose.eq_def,
            List.foldl_cons, List.foldl_cons, List.foldl_nil]
   rewrite [show Compose.stepCompose Compose.initialState 0x0066
              = { emitted := #[], starter := some 0x0066, buffer := [], maxCCC := 0 } by
@@ -108,23 +108,23 @@ theorem compose_ff : Compose.compose #[0x0066, 0x0066] = #[0x0066, 0x0066] := by
   rfl
 
 /-- Empty sequence. -/
-theorem toNFKC_empty : toNFKC #[] = #[] := by decide
+theorem toNFKC_empty : toNFKC [] = [] := by decide
 
 /-- Pure ASCII is in NFKC unchanged. -/
 theorem toNFKC_ascii :
-    toNFKC #[0x0048, 0x0069] = #[0x0048, 0x0069] := by  -- "Hi"
+    toNFKC [0x0048, 0x0069] = [0x0048, 0x0069] := by  -- "Hi"
   unfold toNFKC
   rw [NFKD.toNFKD_ascii]
   exact NFC.compose_ascii
 
 /-- Decomposed → precomposed under canonical composition (same as NFC). -/
 theorem toNFKC_composes_A_grave :
-    toNFKC #[0x0041, 0x0300] = #[0x00C0] := by
+    toNFKC [0x0041, 0x0300] = [0x00C0] := by
   unfold toNFKC
-  rw [show NFKD.toNFKD #[0x0041, 0x0300] = #[0x0041, 0x0300] from by
+  rw [show NFKD.toNFKD [0x0041, 0x0300] = [0x0041, 0x0300] from by
         unfold NFKD.toNFKD
-        rw [show CompatDecompose.compatDecomposeSequence #[0x0041, 0x0300]
-              = #[0x0041, 0x0300] from by
+        rw [show CompatDecompose.compatDecomposeSequence [0x0041, 0x0300]
+              = [0x0041, 0x0300] from by
               simp [CompatDecompose.compatDecomposeSequence,
                     CompatDecompose.compat_decompose_latin_A,
                     CompatDecompose.compat_decompose_grave]]
@@ -135,33 +135,33 @@ theorem toNFKC_composes_A_grave :
     target (DIGIT TWO) has no canonical composition back to U+00B2, so
     the output stays decomposed. -/
 theorem toNFKC_super_2 :
-    toNFKC #[0x00B2] = #[0x0032] := by
+    toNFKC [0x00B2] = [0x0032] := by
   unfold toNFKC
   rw [NFKD.toNFKD_decomposes_super_2]
   exact compose_single_starter 0x0032 NFKD.ccc_digit_2
 
 /-- NO-BREAK SPACE U+00A0 → SPACE U+0020 under NFKC. -/
 theorem toNFKC_nbsp :
-    toNFKC #[0x00A0] = #[0x0020] := by
+    toNFKC [0x00A0] = [0x0020] := by
   unfold toNFKC
   rw [NFKD.toNFKD_nbsp]
   exact compose_single_starter 0x0020 NFKD.ccc_space
 
 /-- LATIN SMALL LIGATURE FF (U+FB00) → "ff" (lowercase) under NFKC. -/
 theorem toNFKC_ligature_ff :
-    toNFKC #[0xFB00] = #[0x0066, 0x0066] := by
+    toNFKC [0xFB00] = [0x0066, 0x0066] := by
   unfold toNFKC
   rw [NFKD.toNFKD_ligature_ff]
   exact compose_ff
 
 /-- HANGUL: decomposed jamo LV recompose to the precomposed syllable. -/
 theorem toNFKC_hangul :
-    toNFKC #[0x1100, 0x1161] = #[0xAC00] := by
+    toNFKC [0x1100, 0x1161] = [0xAC00] := by
   unfold toNFKC
-  rw [show NFKD.toNFKD #[0x1100, 0x1161] = #[0x1100, 0x1161] from by
+  rw [show NFKD.toNFKD [0x1100, 0x1161] = [0x1100, 0x1161] from by
         unfold NFKD.toNFKD
-        rw [show CompatDecompose.compatDecomposeSequence #[0x1100, 0x1161]
-              = #[0x1100, 0x1161] from by
+        rw [show CompatDecompose.compatDecomposeSequence [0x1100, 0x1161]
+              = [0x1100, 0x1161] from by
               simp [CompatDecompose.compatDecomposeSequence,
                     CompatDecompose.compat_decompose_choseong_kiyeok,
                     CompatDecompose.compat_decompose_jungseong_a]]
@@ -173,7 +173,7 @@ theorem toNFKC_hangul :
     the materialized `List`; the CCC / HSR check uses the row-transport
     CCC lemmas (never the Array scan). -/
 theorem isNFKCQuickCheck_ascii :
-    isNFKCQuickCheck #[0x0048, 0x0069] = true := by
+    isNFKCQuickCheck [0x0048, 0x0069] = true := by
   have hH : nfkcQCValue 0x0048 = .Y := by decide +kernel
   have hI : nfkcQCValue 0x0069 = .Y := by decide +kernel
   have hSorted : NFC.hasSortedRunsBool [0x0048, 0x0069] = true := by
@@ -185,7 +185,7 @@ theorem isNFKCQuickCheck_ascii :
 /-- `isNFKCQuickCheck` returns `false` for an `NFKC_QC = N` codepoint.
     NO-BREAK SPACE U+00A0 has `NFKC_QC = N` per the pinned table. -/
 theorem isNFKCQuickCheck_nbsp :
-    isNFKCQuickCheck #[0x00A0] = false := by
+    isNFKCQuickCheck [0x00A0] = false := by
   have hN : nfkcQCValue 0x00A0 = .N := by decide +kernel
   unfold isNFKCQuickCheck
   simp [hN]

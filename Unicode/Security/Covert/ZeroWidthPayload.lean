@@ -78,15 +78,15 @@ inductive SubThreat where
 /-- Top-level classification for C3. -/
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
   deriving Inhabited
 
 /-- C3 verdict — the structured output of `detect`. -/
 structure Verdict where
-  input              : Array Nat
+  input              : List Nat
   classify           : Classification
-  zwPositions        : Array Nat                  -- every zero-width position
-  suspiciousPositions: Array Nat                  -- minus RGI-context ZWJ
+  zwPositions        : List Nat                   -- every zero-width position
+  suspiciousPositions: List Nat                   -- minus RGI-context ZWJ
   totalZeroWidth     : Nat
   zwspCount          : Nat
   zwjCount           : Nat
@@ -173,24 +173,37 @@ def isZeroWidthChar (cp : Nat) : Bool :=
 @[inline] def isAnnotationMark       (cp : Nat) : Bool :=
   0xFFF9 ≤ cp ∧ cp ≤ 0xFFFB
 
-/-- True iff a ZWJ at position `p` in `input` is flanked by two
-    codepoints that *actually* participate in some registered RGI
-    ZWJ sequence — `Unicode.Generated.EmojiSequences.isInZwjAlphabet`
-    is the membership predicate derived from
-    `emoji-zwj-sequences.txt` itself.
+/-- True iff a ZWJ whose immediate neighbours are `prev?` and `next?`
+    is flanked by two codepoints that *actually* participate in some
+    registered RGI ZWJ sequence —
+    `Unicode.Generated.EmojiSequences.isInZwjAlphabet` is the
+    membership predicate derived from `emoji-zwj-sequences.txt`
+    itself.
 
     The structural membership predicate is strictly narrower
     than `Unicode.Emoji.isEmoji`: keycap-eligible ASCII digits
     and other Emoji-property codepoints that never appear in
     any registered ZWJ sequence are excluded, so a ZWJ between
     two such codepoints is correctly classified as suspicious
-    rather than legitimate. -/
-def isLegitimateZwjContext (input : Array Nat) (p : Nat) : Bool :=
-  if p > 0 ∧ p + 1 < input.size then
-    Unicode.Generated.EmojiSequences.isInZwjAlphabet input[p - 1]! ∧
-    Unicode.Generated.EmojiSequences.isInZwjAlphabet input[p + 1]!
-  else
-    false
+    rather than legitimate.  A ZWJ with no preceding or no
+    following codepoint (head or tail position) is never a
+    legitimate RGI context. -/
+def isLegitimateZwjContext (prev? next? : Option Nat) : Bool :=
+  match prev?, next? with
+  | some prevCp, some nextCp =>
+    Unicode.Generated.EmojiSequences.isInZwjAlphabet prevCp ∧
+    Unicode.Generated.EmojiSequences.isInZwjAlphabet nextCp
+  | none, _next        => false
+  | some _prev, none   => false
+
+/-- One-pass windowed inventory: `(index, prev?, cp, next?)` for every
+    codepoint of `input`, pairing each element with its immediate
+    neighbours via zips against the shift-by-one views. -/
+def windows (input : List Nat) : List (Nat × Option Nat × Nat × Option Nat) :=
+  let prevs : List (Option Nat) := none :: input.map some
+  let nexts : List (Option Nat) := (input.drop 1).map some ++ [none]
+  ((prevs.zip (input.zip nexts)).zipIdx).map
+    (fun entry => (entry.2, entry.1.1, entry.1.2.1, entry.1.2.2))
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 Aggregate counters
@@ -209,21 +222,22 @@ structure ZWCounts where
 
 def ZWCounts.zero : ZWCounts := default
 
-def tally (input : Array Nat) : ZWCounts := Id.run do
-  let mut c : ZWCounts := .zero
-  for cp in input do
-    if isZwsp cp then c := { c with zwspCount := c.zwspCount + 1 }
-    if isZwj cp  then c := { c with zwjCount := c.zwjCount + 1 }
-    if isWordJoiner cp then
-      c := { c with wordJoinerCount := c.wordJoinerCount + 1 }
-    if isNNBSP cp then c := { c with nnbspCount := c.nnbspCount + 1 }
-    if isAnnotationAnchor cp then
-      c := { c with anchorCount := c.anchorCount + 1 }
-    if isAnnotationSeparator cp then
-      c := { c with separatorCount := c.separatorCount + 1 }
-    if isAnnotationTerminator cp then
-      c := { c with terminatorCount := c.terminatorCount + 1 }
-  pure c
+/-- Fold one codepoint into the running zero-width tally. -/
+def tallyStep (c : ZWCounts) (cp : Nat) : ZWCounts :=
+  let c := if isZwsp cp then { c with zwspCount := c.zwspCount + 1 } else c
+  let c := if isZwj cp then { c with zwjCount := c.zwjCount + 1 } else c
+  let c := if isWordJoiner cp then
+             { c with wordJoinerCount := c.wordJoinerCount + 1 } else c
+  let c := if isNNBSP cp then { c with nnbspCount := c.nnbspCount + 1 } else c
+  let c := if isAnnotationAnchor cp then
+             { c with anchorCount := c.anchorCount + 1 } else c
+  let c := if isAnnotationSeparator cp then
+             { c with separatorCount := c.separatorCount + 1 } else c
+  if isAnnotationTerminator cp then
+    { c with terminatorCount := c.terminatorCount + 1 } else c
+
+def tally (input : List Nat) : ZWCounts :=
+  input.foldl tallyStep .zero
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 Sub-threat selection
@@ -240,27 +254,24 @@ def annotationIllFormed (c : ZWCounts) : Bool :=
     decide (c.anchorCount ≠ c.separatorCount) ∨
     decide (c.separatorCount ≠ c.terminatorCount)
 
-/-- Pick the sub-threat from the tallies.  Returns `none` when
-    no zero-width suspicion remains after legitimacy filtering. -/
+/-- Pick the sub-threat from the tallies.  `suspicious` is the list of
+    `(index, cp)` pairs surviving legitimacy filtering.  Returns `none`
+    when no zero-width suspicion remains. -/
 def pickSubThreat
-    (suspicious : Array Nat) (input : Array Nat) (c : ZWCounts) :
-    Option SubThreat :=
-  if suspicious.isEmpty then
-    none
-  else if annotationIllFormed c then
-    some (.annotationMisuse c.anchorCount c.separatorCount c.terminatorCount)
-  else if c.wordJoinerCount > 0 then
-    some (.wordJoinerInjection c.wordJoinerCount)
-  else if c.nnbspCount ≥ 2 then
-    some (.aiWatermarkNNBSP c.nnbspCount)
-  else if c.zwspCount + c.zwjCount ≥ 2 then
-    some (.binaryPayload c.zwspCount c.zwjCount)
-  else
-    let p := suspicious[0]!
-    if h : p < input.size then
-      some (.bareZeroWidth input[p])
+    (suspicious : List (Nat × Nat)) (c : ZWCounts) : Option SubThreat :=
+  match suspicious with
+  | [] => none
+  | firstSus :: _rest =>
+    if annotationIllFormed c then
+      some (.annotationMisuse c.anchorCount c.separatorCount c.terminatorCount)
+    else if c.wordJoinerCount > 0 then
+      some (.wordJoinerInjection c.wordJoinerCount)
+    else if c.nnbspCount ≥ 2 then
+      some (.aiWatermarkNNBSP c.nnbspCount)
+    else if c.zwspCount + c.zwjCount ≥ 2 then
+      some (.binaryPayload c.zwspCount c.zwjCount)
     else
-      some (.bareZeroWidth 0)
+      some (.bareZeroWidth firstSus.2)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Top-level detection
@@ -268,51 +279,51 @@ def pickSubThreat
 
 /-- The C3 detection function.  Returns a structured verdict
     over the codepoint sequence `input`. -/
-def detect (input : Array Nat) : Verdict :=
+def detect (input : List Nat) : Verdict :=
+  let win := windows input
   -- Phase 1: collect every zero-width position.
-  let zwPositions : Array Nat :=
-    (Array.range input.size).filterMap (fun i =>
-      if h : i < input.size then
-        if isZeroWidthChar input[i] then some i else none
-      else none)
+  let zwPositions : List Nat :=
+    win.filterMap (fun w =>
+      if isZeroWidthChar w.2.2.1 then some w.1 else none)
   -- Phase 2: drop positions whose codepoint is ZWJ flanked by
   -- two emoji codepoints (sanctioned RGI emoji-ZWJ-sequence).
-  let suspicious : Array Nat :=
-    zwPositions.filter (fun p =>
-      if h : p < input.size then
-        let cp := input[p]
-        ¬ (isZwj cp ∧ isLegitimateZwjContext input p)
-      else true)
+  let suspicious : List (Nat × Nat) :=
+    win.filterMap (fun w =>
+      let cp := w.2.2.1
+      if isZeroWidthChar cp ∧ ¬ (isZwj cp ∧ isLegitimateZwjContext w.2.1 w.2.2.2)
+        then some (w.1, cp)
+      else none)
+  let suspiciousPos : List Nat := suspicious.map (fun s => s.1)
   let counts := tally input
   if zwPositions.isEmpty then
     { input := input,
       classify := .clear,
-      zwPositions := #[],
-      suspiciousPositions := #[],
+      zwPositions := [],
+      suspiciousPositions := [],
       totalZeroWidth := 0,
       zwspCount := 0, zwjCount := 0,
       wordJoinerCount := 0, nnbspCount := 0, annotationCount := 0 }
   else
     let annotationCount :=
       counts.anchorCount + counts.separatorCount + counts.terminatorCount
-    match pickSubThreat suspicious input counts with
+    match pickSubThreat suspicious counts with
     | none =>
       -- All zero-widths are legitimate (e.g., emoji ZWJ only).
       { input := input,
         classify := .clear,
         zwPositions := zwPositions,
-        suspiciousPositions := #[],
-        totalZeroWidth := zwPositions.size,
+        suspiciousPositions := [],
+        totalZeroWidth := zwPositions.length,
         zwspCount := counts.zwspCount, zwjCount := counts.zwjCount,
         wordJoinerCount := counts.wordJoinerCount,
         nnbspCount := counts.nnbspCount,
         annotationCount := annotationCount }
     | some sub =>
       { input := input,
-        classify := .hazard sub suspicious ByteArray.empty,
+        classify := .hazard sub suspiciousPos ByteArray.empty,
         zwPositions := zwPositions,
-        suspiciousPositions := suspicious,
-        totalZeroWidth := zwPositions.size,
+        suspiciousPositions := suspiciousPos,
+        totalZeroWidth := zwPositions.length,
         zwspCount := counts.zwspCount, zwjCount := counts.zwjCount,
         wordJoinerCount := counts.wordJoinerCount,
         nnbspCount := counts.nnbspCount,
@@ -340,18 +351,18 @@ def SubThreat.tag : SubThreat → String
 def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × Array Nat × ByteArray) false
+      Function.const (SubThreat × List Nat × ByteArray) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification (`none` for `.clear`). -/
 def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
-      Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
+      Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
 
-/-- Positions array of a classification (empty for `.clear`). -/
-def Classification.positions : Classification → Array Nat
-  | .clear                     => #[]
+/-- Positions list of a classification (empty for `.clear`). -/
+def Classification.positions : Classification → List Nat
+  | .clear                     => []
   | .hazard sub positions decoded =>
       Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
@@ -360,58 +371,58 @@ def Classification.positions : Classification → Array Nat
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Empty input is clear. -/
-theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
+theorem detect_empty_clear : (detect []).classify.isClear = true := by
   decide
 
 /-- Pure ASCII is clear. -/
 theorem detect_ascii_clear :
-    (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
+    (detect [0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
   decide
 
 /-- Emoji ZWJ sequence "👨‍💻" is clear (RGI-context). -/
 theorem detect_emoji_zwj_clear :
-    (detect #[0x1F468, 0x200D, 0x1F4BB]).classify.isClear = true := by
+    (detect [0x1F468, 0x200D, 0x1F4BB]).classify.isClear = true := by
   decide
 
 /-- ZWJ between two emojis remains clear even with a third emoji
     after another ZWJ. -/
 theorem detect_emoji_zwj_chain_clear :
-    (detect #[0x1F468, 0x200D, 0x1F469, 0x200D,
-              0x1F466]).classify.isClear = true := by decide
+    (detect [0x1F468, 0x200D, 0x1F469, 0x200D,
+             0x1F466]).classify.isClear = true := by decide
 
 /-- Two ZWSPs in plain text — `.binaryPayload`. -/
 theorem detect_two_zwsp_binary :
-    (detect #[0x48, 0x200B, 0x69, 0x200B, 0x69]).classify.tag
+    (detect [0x48, 0x200B, 0x69, 0x200B, 0x69]).classify.tag
       = some "BinaryPayload" := by decide
 
 /-- ZWSP + ZWJ mixed — `.binaryPayload` (ZWJ alone, no emoji context). -/
 theorem detect_zwsp_zwj_mix_binary :
-    (detect #[0x48, 0x200B, 0x200D, 0x69]).classify.tag
+    (detect [0x48, 0x200B, 0x200D, 0x69]).classify.tag
       = some "BinaryPayload" := by decide
 
 /-- WORD JOINER injected into Latin text — `.wordJoinerInjection`. -/
 theorem detect_word_joiner :
-    (detect #[0x48, 0x2060, 0x69]).classify.tag
+    (detect [0x48, 0x2060, 0x69]).classify.tag
       = some "WordJoinerInjection" := by decide
 
 /-- Two NNBSPs in a row — suspected AI watermark. -/
 theorem detect_nnbsp_watermark :
-    (detect #[0x48, 0x202F, 0x69, 0x202F, 0x6F]).classify.tag
+    (detect [0x48, 0x202F, 0x69, 0x202F, 0x6F]).classify.tag
       = some "AIWatermarkNNBSP" := by decide
 
 /-- Bare BOM (`U+FEFF`) in the middle of text — `.bareZeroWidth`. -/
 theorem detect_bare_bom :
-    (detect #[0x48, 0xFEFF, 0x69]).classify.tag
+    (detect [0x48, 0xFEFF, 0x69]).classify.tag
       = some "BareZeroWidth" := by decide
 
 /-- A single bare ZWSP — `.bareZeroWidth`. -/
 theorem detect_bare_zwsp :
-    (detect #[0x48, 0x200B, 0x69]).classify.tag
+    (detect [0x48, 0x200B, 0x69]).classify.tag
       = some "BareZeroWidth" := by decide
 
 /-- Annotation anchor without separator + terminator — misuse. -/
 theorem detect_annotation_misuse :
-    (detect #[0x48, 0xFFF9, 0x69]).classify.tag
+    (detect [0x48, 0xFFF9, 0x69]).classify.tag
       = some "AnnotationMisuse" := by decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════

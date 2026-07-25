@@ -79,8 +79,8 @@ set_option maxRecDepth 1000000
 -/
 inductive SubThreat where
   | restrictedStatusCp  (firstPos : Nat) (firstCp : Nat)
-  | latinCyrillic       (cyrillicPositions : Array Nat)
-  | latinGreek          (greekPositions : Array Nat)
+  | latinCyrillic       (cyrillicPositions : List Nat)
+  | latinGreek          (greekPositions : List Nat)
   | cjkMix              (scriptCount : Nat)
   | scriptMixOther      (scriptCount : Nat)
   | unrestrictedLevel
@@ -92,16 +92,16 @@ inductive SubThreat where
     downstream audit. -/
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
   deriving Inhabited
 
 /-- Verdict — the structured output of `detect`. -/
 structure Verdict where
-  input            : Array Nat
+  input            : List Nat
   classify         : Classification
   scripts          : Array ScriptAbbrev
   level            : RestrictionLevel
-  restrictedCps    : Array Nat
+  restrictedCps    : List Nat
   hasLatin         : Bool
   hasCyrillic      : Bool
   hasGreek         : Bool
@@ -116,26 +116,18 @@ structure Verdict where
 def isRestrictedStatus (cp : Nat) : Bool :=
   ¬ Unicode.Identifier.isAllowedStatus cp
 
-/-- Collect positions of every Restricted-status codepoint. -/
-def restrictedStatusPositions (input : Array Nat) : Array Nat :=
-  (Array.range input.size).filterMap (fun i =>
-    if h : i < input.size then
-      if isRestrictedStatus input[i] then some i else none
-    else none)
-
-/-- Codepoints at the restricted positions. -/
-def restrictedStatusCps (input : Array Nat) : Array Nat :=
-  (restrictedStatusPositions input).filterMap (fun p =>
-    if h : p < input.size then some input[p] else none)
+/-- The `(index, cp)` inventory of every Restricted-status codepoint. -/
+def restrictedStatusDetail (input : List Nat) : List (Nat × Nat) :=
+  input.zipIdx.filterMap (fun cpWithIdx =>
+    if isRestrictedStatus cpWithIdx.1 then some (cpWithIdx.2, cpWithIdx.1) else none)
 
 /-- Collect positions of every codepoint whose resolved script
     set contains `target`. -/
 def positionsForScript
-    (input : Array Nat) (target : ScriptAbbrev) : Array Nat :=
-  (Array.range input.size).filterMap (fun i =>
-    if h : i < input.size then
-      let scripts := Unicode.ResolvedScripts.resolveScripts input[i]
-      if scripts.contains target then some i else none
+    (input : List Nat) (target : ScriptAbbrev) : List Nat :=
+  input.zipIdx.filterMap (fun cpWithIdx =>
+    if (Unicode.ResolvedScripts.resolveScripts cpWithIdx.1).contains target then
+      some cpWithIdx.2
     else none)
 
 /-- True iff `input` contains at least one codepoint whose
@@ -144,13 +136,13 @@ def positionsForScript
     distinct from the intersection-based
     `stringResolvedScripts`). -/
 @[inline]
-def hasScript (input : Array Nat) (target : ScriptAbbrev) : Bool :=
+def hasScript (input : List Nat) (target : ScriptAbbrev) : Bool :=
   Unicode.Restriction.hasScript input target
 
 /-- Union of resolved scripts over all non-ignored codepoints in
     `input`.  Re-export of `Unicode.Restriction.stringScriptUnion`. -/
 @[inline]
-def unionOfScripts (input : Array Nat) : Array ScriptAbbrev :=
+def unionOfScripts (input : List Nat) : Array ScriptAbbrev :=
   Unicode.Restriction.stringScriptUnion input
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -158,46 +150,47 @@ def unionOfScripts (input : Array Nat) : Array ScriptAbbrev :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The MixedScriptAdmissibility detection function. -/
-def detect (input : Array Nat) : Verdict :=
+def detect (input : List Nat) : Verdict :=
   let scriptsIntersect := Unicode.Restriction.stringResolvedScripts input
   let scriptsUnion := unionOfScripts input
   let level := Unicode.Restriction.restrictionLevel input
-  let restrictedPositions := restrictedStatusPositions input
-  let restrictedCps := restrictedStatusCps input
+  let restrictedDetail := restrictedStatusDetail input
+  let restrictedPositions := restrictedDetail.map (fun d => d.1)
+  let restrictedCps := restrictedDetail.map (fun d => d.2)
   let hasLatn := hasScript input .Latn
   let hasCyrl := hasScript input .Cyrl
   let hasGrek := hasScript input .Grek
   let classification : Classification :=
-    if h : restrictedPositions.size > 0 then
-      let p0 := restrictedPositions[0]'h
-      let cp0 := if hp : p0 < input.size then input[p0]'hp else 0
-      .hazard (.restrictedStatusCp p0 cp0)
+    match restrictedDetail with
+    | first :: _rest =>
+      .hazard (.restrictedStatusCp first.1 first.2)
         restrictedPositions ByteArray.empty
-    else if hasLatn ∧ hasCyrl then
-      .hazard (.latinCyrillic (positionsForScript input .Cyrl))
-        (positionsForScript input .Cyrl) ByteArray.empty
-    else if hasLatn ∧ hasGrek then
-      .hazard (.latinGreek (positionsForScript input .Grek))
-        (positionsForScript input .Grek) ByteArray.empty
-    else if scriptsUnion.size ≥ 2 ∧
-            ¬ Unicode.Restriction.isHighlyRestrictive input then
-      -- Multi-script outside CJK profile.  Distinguish from the
-      -- CJK-shaped-but-not-Highly-Restrictive case.
-      let inAnyCJK :=
-        Unicode.Restriction.allWithinCoveredSet input
-          Unicode.Restriction.coveredJapanese ||
-        Unicode.Restriction.allWithinCoveredSet input
-          Unicode.Restriction.coveredChinese ||
-        Unicode.Restriction.allWithinCoveredSet input
-          Unicode.Restriction.coveredKorean
-      if inAnyCJK then
-        .hazard (.cjkMix scriptsUnion.size) #[] ByteArray.empty
+    | [] =>
+      if hasLatn ∧ hasCyrl then
+        .hazard (.latinCyrillic (positionsForScript input .Cyrl))
+          (positionsForScript input .Cyrl) ByteArray.empty
+      else if hasLatn ∧ hasGrek then
+        .hazard (.latinGreek (positionsForScript input .Grek))
+          (positionsForScript input .Grek) ByteArray.empty
+      else if scriptsUnion.size ≥ 2 ∧
+              ¬ Unicode.Restriction.isHighlyRestrictive input then
+        -- Multi-script outside CJK profile.  Distinguish from the
+        -- CJK-shaped-but-not-Highly-Restrictive case.
+        let inAnyCJK :=
+          Unicode.Restriction.allWithinCoveredSet input
+            Unicode.Restriction.coveredJapanese ||
+          Unicode.Restriction.allWithinCoveredSet input
+            Unicode.Restriction.coveredChinese ||
+          Unicode.Restriction.allWithinCoveredSet input
+            Unicode.Restriction.coveredKorean
+        if inAnyCJK then
+          .hazard (.cjkMix scriptsUnion.size) [] ByteArray.empty
+        else
+          .hazard (.scriptMixOther scriptsUnion.size) [] ByteArray.empty
+      else if level = .Unrestricted then
+        .hazard .unrestrictedLevel [] ByteArray.empty
       else
-        .hazard (.scriptMixOther scriptsUnion.size) #[] ByteArray.empty
-    else if level = .Unrestricted then
-      .hazard .unrestrictedLevel #[] ByteArray.empty
-    else
-      .clear
+        .clear
   { input := input,
     classify := classification,
     scripts := scriptsIntersect,
@@ -216,9 +209,9 @@ def SubThreat.tag : SubThreat → String
   | .restrictedStatusCp firstPos firstCp =>
       Function.const (Nat × Nat) "RestrictedStatusCp" (firstPos, firstCp)
   | .latinCyrillic      cyrPositions    =>
-      Function.const (Array Nat) "LatinCyrillic" cyrPositions
+      Function.const (List Nat) "LatinCyrillic" cyrPositions
   | .latinGreek         greekPositions  =>
-      Function.const (Array Nat) "LatinGreek" greekPositions
+      Function.const (List Nat) "LatinGreek" greekPositions
   | .cjkMix             scriptCount     =>
       Function.const Nat "CjkMix" scriptCount
   | .scriptMixOther     scriptCount     =>
@@ -229,18 +222,18 @@ def SubThreat.tag : SubThreat → String
 def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × Array Nat × ByteArray) false
+      Function.const (SubThreat × List Nat × ByteArray) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification. -/
 def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
-      Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
+      Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
 
-/-- Positions array of a classification. -/
-def Classification.positions : Classification → Array Nat
-  | .clear                     => #[]
+/-- Positions list of a classification. -/
+def Classification.positions : Classification → List Nat
+  | .clear                     => []
   | .hazard sub positions decoded =>
       Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
@@ -249,38 +242,38 @@ def Classification.positions : Classification → Array Nat
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Empty input is clear. -/
-theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
+theorem detect_empty_clear : (detect []).classify.isClear = true := by
   decide +kernel
 
 /-- Pure ASCII is clear at `.ASCIIOnly`. -/
 theorem detect_ascii_clear :
-    (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
+    (detect [0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
   decide +kernel
 
 /-- Pure Cyrillic "привет" is single-script-clear. -/
 theorem detect_cyrillic_single_clear :
-    (detect #[0x043F, 0x0440, 0x0438, 0x0432, 0x0435, 0x0442]).classify.isClear
+    (detect [0x043F, 0x0440, 0x0438, 0x0432, 0x0435, 0x0442]).classify.isClear
       = true := by decide +kernel
 
 /-- Pure Greek "αλφα" is single-script-clear. -/
 theorem detect_greek_single_clear :
-    (detect #[0x03B1, 0x03BB, 0x03C6, 0x03B1]).classify.isClear = true := by
+    (detect [0x03B1, 0x03BB, 0x03C6, 0x03B1]).classify.isClear = true := by
   decide +kernel
 
 /-- Latin + Cyrillic mix — fires `.latinCyrillic`. -/
 theorem detect_latin_cyrillic :
-    (detect #[0x0061, 0x0440, 0x0061]).classify.tag = some "LatinCyrillic" := by
+    (detect [0x0061, 0x0440, 0x0061]).classify.tag = some "LatinCyrillic" := by
   decide +kernel
 
 /-- Latin + Greek mix — fires `.latinGreek`. -/
 theorem detect_latin_greek :
-    (detect #[0x0061, 0x03B1, 0x0061]).classify.tag = some "LatinGreek" := by
+    (detect [0x0061, 0x03B1, 0x0061]).classify.tag = some "LatinGreek" := by
   decide +kernel
 
 /-- Hangul filler U+115F is Identifier_Status = Restricted — fires
     `.restrictedStatusCp`. -/
 theorem detect_restricted_hangul_filler :
-    (detect #[0x115F]).classify.tag = some "RestrictedStatusCp" := by
+    (detect [0x115F]).classify.tag = some "RestrictedStatusCp" := by
   decide +kernel
 
 end Unicode.Security.Identity.MixedScriptAdmissibility

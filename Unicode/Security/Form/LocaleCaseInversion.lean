@@ -60,16 +60,16 @@ open Unicode.Casing (Locale lowerCodepoint)
 
 /-- First input position whose `lowerCodepoint` under `loc`
     differs from the default-locale result.  Returns
-    `(basePos, cp)` on hit. -/
-def firstLocaleDivergence (loc : Locale) (input : Array Nat) :
+    `(basePos, cp)` on hit.  The SpecialCasing context predicates
+    (`AfterI`, `MoreAbove`, …) read the surrounding characters, so
+    the scan hands `lowerCodepoint` each position's reversed prefix
+    and forward suffix via `Unicode.Casing.contextSplits`. -/
+def firstLocaleDivergence (loc : Locale) (input : List Nat) :
     Option (Nat × Nat) :=
-  (Array.range input.size).findSome? (fun i =>
-    if h : i < input.size then
-      let cp := input[i]
-      let defLower := lowerCodepoint .default input i cp
-      let locLower := lowerCodepoint loc input i cp
-      if defLower != locLower then some (i, cp) else none
-    else none)
+  (Unicode.Casing.contextSplits input).findSome? (fun w =>
+    let defLower := lowerCodepoint .default w.2.1 w.2.2.2 w.2.2.1
+    let locLower := lowerCodepoint loc w.2.1 w.2.2.2 w.2.2.1
+    if defLower != locLower then some (w.1, w.2.2.1) else none)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 Types
@@ -82,11 +82,11 @@ inductive SubThreat where
 
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
   deriving Inhabited
 
 structure Verdict where
-  input    : Array Nat
+  input    : List Nat
   classify : Classification
   deriving Inhabited
 
@@ -95,15 +95,15 @@ structure Verdict where
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The LocaleCaseInversion detection function. -/
-def detect (input : Array Nat) : Verdict :=
+def detect (input : List Nat) : Verdict :=
   let classification : Classification :=
     match firstLocaleDivergence .turkish input with
     | some (pos, cp) =>
-      .hazard (.turkishCaseDivergence pos cp) #[pos] ByteArray.empty
+      .hazard (.turkishCaseDivergence pos cp) [pos] ByteArray.empty
     | none =>
       match firstLocaleDivergence .lithuanian input with
       | some (pos, cp) =>
-        .hazard (.lithuanianCaseDivergence pos cp) #[pos] ByteArray.empty
+        .hazard (.lithuanianCaseDivergence pos cp) [pos] ByteArray.empty
       | none => .clear
   { input := input, classify := classification }
 
@@ -120,16 +120,16 @@ def SubThreat.tag : SubThreat → String
 def Classification.isClear : Classification → Bool
   | .clear                       => true
   | .hazard sub positions decoded =>
-    Function.const (SubThreat × Array Nat × ByteArray) false
+    Function.const (SubThreat × List Nat × ByteArray) false
       (sub, positions, decoded)
 
 def Classification.tag : Classification → Option String
   | .clear                       => none
   | .hazard sub positions decoded =>
-    Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
+    Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
 
-def Classification.positions : Classification → Array Nat
-  | .clear                       => #[]
+def Classification.positions : Classification → List Nat
+  | .clear                       => []
   | .hazard sub positions decoded =>
     Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
@@ -138,22 +138,22 @@ def Classification.positions : Classification → Array Nat
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Empty input is clear. -/
-theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
+theorem detect_empty_clear : (detect []).classify.isClear = true := by
   decide +kernel
 
 /-- Pure ASCII without I/i is clear. -/
 theorem detect_ascii_clear :
-    (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
+    (detect [0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
   decide +kernel
 
 /-- Capital I alone fires `turkishCaseDivergence` at position 0. -/
 theorem detect_capital_I_turkish :
-    (detect #[0x0049]).classify.tag = some "TurkishCaseDivergence" := by
+    (detect [0x0049]).classify.tag = some "TurkishCaseDivergence" := by
   decide +kernel
 
 /-- Dotted İ (U+0130) fires `turkishCaseDivergence` at position 0. -/
 theorem detect_dotted_I_turkish :
-    (detect #[0x0130]).classify.tag = some "TurkishCaseDivergence" := by
+    (detect [0x0130]).classify.tag = some "TurkishCaseDivergence" := by
   decide +kernel
 
 /-- "I" + combining grave above (ccc = 230) fires `lithuanianCaseDivergence`
@@ -161,14 +161,14 @@ theorem detect_dotted_I_turkish :
     already drives `turkishCaseDivergence`, this row's verdict is
     Turkish, not Lithuanian.  Demonstrates priority order. -/
 theorem detect_I_with_grave_picks_turkish_first :
-    (detect #[0x0049, 0x0300]).classify.tag = some "TurkishCaseDivergence" := by
+    (detect [0x0049, 0x0300]).classify.tag = some "TurkishCaseDivergence" := by
   decide +kernel
 
 /-- "J" + combining grave above (ccc = 230) — Lithuanian-only divergence.
     J has no Turkish-conditional row, so `firstLocaleDivergence .turkish`
     returns `none` and the detector falls through to Lithuanian. -/
 theorem detect_J_with_grave_lithuanian :
-    (detect #[0x004A, 0x0300]).classify.tag =
+    (detect [0x004A, 0x0300]).classify.tag =
       some "LithuanianCaseDivergence" := by
   decide +kernel
 

@@ -60,9 +60,9 @@ def stepReorder (s : ReorderState) (cp : Nat) : ReorderState :=
     { s with currentRun := cp :: s.currentRun }
 
 /-- Canonical reordering of a codepoint sequence per UAX #15 §1.3. -/
-def reorder (cps : Array Nat) : Array Nat :=
+def reorder (cps : List Nat) : List Nat :=
   let final := cps.foldl stepReorder { emitted := #[], currentRun := [] }
-  final.emitted ++ flushRun final
+  (final.emitted ++ flushRun final).toList
 
 -- ─────────────────────────────────────────────────────────────────────────────
 --                                          // reorder // concrete-ccc-evaluation
@@ -743,17 +743,14 @@ theorem reorder_fold_invariant (xs : List Nat) (h : HasSortedRuns xs) :
     satisfies `HasSortedRuns`. Every fold step preserves the invariant
     from `reorder_fold_invariant`, and the final flush is a no-op on
     the already-sorted pending run. -/
-theorem reorder_id_on_HasSortedRuns (cps : Array Nat)
-    (h : HasSortedRuns cps.toList) : reorder cps = cps := by
-  have hInv := reorder_fold_invariant cps.toList h
+theorem reorder_id_on_HasSortedRuns (cps : List Nat)
+    (h : HasSortedRuns cps) : reorder cps = cps := by
+  have hInv := reorder_fold_invariant cps h
   obtain ⟨hP1, hP2, hP3⟩ := hInv
-  rw [Array.foldl_toList] at hP1 hP2
   show ((cps.foldl stepReorder initState).emitted
-          ++ flushRun (cps.foldl stepReorder initState)) = cps
+          ++ flushRun (cps.foldl stepReorder initState)).toList = cps
   rw [flushRun_sorted_noop (cps.foldl stepReorder initState) hP2]
-  apply Array.toList_inj.mp
-  simp [Array.toList_append]
-  exact hP1
+  simpa using hP1
 
 /-- Concat lemma: if `pre ++ [starter]` is `HasSortedRuns`, `starter` is
     a starter (CCC = 0), and `run` is `IsCCCSorted`, then
@@ -889,10 +886,9 @@ theorem foldl_stepReorder_output_invariant (xs : List Nat) :
 /-- **Output has sorted runs.** The output of `reorder` on any input
     satisfies `HasSortedRuns`. Combined with
     `reorder_id_on_HasSortedRuns`, this yields `reorder_idempotent`. -/
-theorem reorder_output_HasSortedRuns (cps : Array Nat) :
-    HasSortedRuns (reorder cps).toList := by
-  have hInv := foldl_stepReorder_output_invariant cps.toList
-  rw [Array.foldl_toList] at hInv
+theorem reorder_output_HasSortedRuns (cps : List Nat) :
+    HasSortedRuns (reorder cps) := by
+  have hInv := foldl_stepReorder_output_invariant cps
   obtain ⟨hHSR, hEnd, hRun⟩ := hInv
   show HasSortedRuns
     ((cps.foldl stepReorder initState).emitted ++
@@ -923,7 +919,7 @@ theorem reorder_output_HasSortedRuns (cps : Array Nat) :
 /-- **`reorder` is idempotent.** Applying `reorder` twice equals applying
     it once: the output always has sorted runs, and `reorder` is the
     identity on sorted-runs inputs. -/
-theorem reorder_idempotent (cps : Array Nat) :
+theorem reorder_idempotent (cps : List Nat) :
     reorder (reorder cps) = reorder cps :=
   reorder_id_on_HasSortedRuns (reorder cps) (reorder_output_HasSortedRuns cps)
 
@@ -932,11 +928,11 @@ theorem reorder_idempotent (cps : Array Nat) :
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Empty input reorders to empty. -/
-theorem reorder_empty : reorder #[] = #[] := by decide
+theorem reorder_empty : reorder [] = [] := by decide
 
 /-- Pure-starter input passes through unchanged (no non-starter runs). -/
 theorem reorder_ascii :
-    reorder #[0x0048, 0x0069] = #[0x0048, 0x0069] := by
+    reorder [0x0048, 0x0069] = [0x0048, 0x0069] := by
   simp [reorder, stepReorder, flushRun, sortNonStarterRun,
         ccc_latin_H, ccc_latin_i]  -- "Hi"
 
@@ -944,16 +940,16 @@ theorem reorder_ascii :
     (CCC = 202) followed by COMBINING GRAVE ACCENT (CCC = 230) is
     canonical order. -/
 theorem reorder_already_sorted :
-    reorder #[0x0041, 0x0327, 0x0300]
-      = #[0x0041, 0x0327, 0x0300] := by
+    reorder [0x0041, 0x0327, 0x0300]
+      = [0x0041, 0x0327, 0x0300] := by
   simp [reorder, stepReorder, flushRun, sortNonStarterRun, insertByCCC,
         ccc_latin_A, ccc_combining_cedilla, ccc_combining_grave]
 
 /-- Out-of-order non-starters get swapped. GRAVE (230) then CEDILLA
     (202) should reorder to CEDILLA then GRAVE. -/
 theorem reorder_swap :
-    reorder #[0x0041, 0x0300, 0x0327]
-      = #[0x0041, 0x0327, 0x0300] := by
+    reorder [0x0041, 0x0300, 0x0327]
+      = [0x0041, 0x0327, 0x0300] := by
   simp [reorder, stepReorder, flushRun, sortNonStarterRun, insertByCCC,
         ccc_latin_A, ccc_combining_grave, ccc_combining_cedilla]
 
@@ -961,8 +957,8 @@ theorem reorder_swap :
     relative scan order must be preserved even after reorder passes
     against a lower-CCC mark. -/
 theorem reorder_stable_equal_ccc :
-    reorder #[0x0041, 0x0300, 0x0301, 0x0327]
-      = #[0x0041, 0x0327, 0x0300, 0x0301] := by
+    reorder [0x0041, 0x0300, 0x0301, 0x0327]
+      = [0x0041, 0x0327, 0x0300, 0x0301] := by
   simp [reorder, stepReorder, flushRun, sortNonStarterRun, insertByCCC,
         ccc_latin_A, ccc_combining_grave, ccc_combining_acute,
         ccc_combining_cedilla]
@@ -970,8 +966,8 @@ theorem reorder_stable_equal_ccc :
 /-- Starter boundary: a starter between two non-starter runs partitions
     the sort; runs are sorted independently. -/
 theorem reorder_starter_partition :
-    reorder #[0x0041, 0x0300, 0x0327, 0x0042, 0x0300, 0x0327]
-      = #[0x0041, 0x0327, 0x0300, 0x0042, 0x0327, 0x0300] := by
+    reorder [0x0041, 0x0300, 0x0327, 0x0042, 0x0300, 0x0327]
+      = [0x0041, 0x0327, 0x0300, 0x0042, 0x0327, 0x0300] := by
   simp [reorder, stepReorder, flushRun, sortNonStarterRun, insertByCCC,
         ccc_latin_A, ccc_latin_B, ccc_combining_grave, ccc_combining_cedilla]
 
@@ -1074,13 +1070,12 @@ theorem stepReorder_preserves_all (s : ReorderState) (cp : Nat)
 
 /-- `reorder` preserves a universal Bool predicate: every output codepoint
     satisfies `P` whenever every input codepoint does. -/
-theorem reorder_preserves_all (cps : Array Nat)
+theorem reorder_preserves_all (cps : List Nat)
     (h : ∀ cp ∈ cps, P cp = true) :
     ∀ j ∈ reorder cps, P j = true := by
   unfold reorder
   have hFold : (∀ x ∈ (cps.foldl stepReorder initState).emitted, P x = true)
                 ∧ (∀ x ∈ (cps.foldl stepReorder initState).currentRun, P x = true) := by
-    rw [← Array.foldl_toList]
     have key : ∀ (l : List Nat) (s : ReorderState),
         (∀ x ∈ l, P x = true) →
         (∀ x ∈ s.emitted, P x = true) → (∀ x ∈ s.currentRun, P x = true) →
@@ -1096,10 +1091,10 @@ theorem reorder_preserves_all (cps : Array Nat)
         simp only [List.foldl_cons]
         obtain ⟨hE', hR'⟩ := stepReorder_preserves_all P s hd hE hR (hL hd (by simp))
         exact ih (stepReorder s hd) (fun y hy => hL y (by simp [hy])) hE' hR'
-    exact key cps.toList initState (fun x hx => h x (by simpa using hx))
+    exact key cps initState (fun x hx => h x hx)
       (fun x hz => by simp [initState] at hz) (fun x hz => by simp [initState] at hz)
   intro j hj
-  rcases Array.mem_append.mp hj with hLeft | hRight
+  rcases Array.mem_append.mp (by simpa using hj) with hLeft | hRight
   · exact hFold.1 j hLeft
   · exact flushRun_preserves_all P (cps.foldl stepReorder initState) hFold.2 j hRight
 

@@ -67,14 +67,14 @@ inductive SubThreat where
 /-- Top-level classification for FilenameDisguise. -/
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
   deriving Inhabited
 
 /-- Verdict — the structured output of `detect`. -/
 structure Verdict where
-  input              : Array Nat
+  input              : List Nat
   classify           : Classification
-  dotPositions       : Array Nat
+  dotPositions       : List Nat
   lastDotPos         : Option Nat
   bidiControlCount   : Nat
   fullwidthInExt     : Nat
@@ -108,68 +108,58 @@ def isGraphemeExtend (cp : Nat) : Bool :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Positions of every `.` in `input`. -/
-def dotPositions (input : Array Nat) : Array Nat :=
-  (Array.range input.size).filterMap (fun i =>
-    if h : i < input.size then
-      if isAsciiDot input[i] then some i else none
-    else none)
+def dotPositions (input : List Nat) : List Nat :=
+  input.zipIdx.filterMap (fun cpWithIdx =>
+    if isAsciiDot cpWithIdx.1 then some cpWithIdx.2 else none)
 
 /-- Position and codepoint of the first bidi format-control in
     `input`. -/
-def firstBidiControl (input : Array Nat) : Option (Nat × Nat) :=
-  (Array.range input.size).findSome? (fun i =>
-    if h : i < input.size then
-      if Unicode.TrojanSource.isBidiFormatControl input[i] then
-        some (i, input[i])
-      else none
+def firstBidiControl (input : List Nat) : Option (Nat × Nat) :=
+  input.zipIdx.findSome? (fun cpWithIdx =>
+    if Unicode.TrojanSource.isBidiFormatControl cpWithIdx.1 then
+      some (cpWithIdx.2, cpWithIdx.1)
     else none)
 
 /-- Position and codepoint of the first fullwidth/halfwidth char
     occurring at or after `start`. -/
 def firstFullwidthFrom
-    (input : Array Nat) (start : Nat) : Option (Nat × Nat) :=
-  (Array.range input.size).findSome? (fun i =>
-    if h : i < input.size ∧ i ≥ start then
-      if isFullwidthHalfwidth input[i] then some (i, input[i])
-      else none
+    (input : List Nat) (start : Nat) : Option (Nat × Nat) :=
+  input.zipIdx.findSome? (fun cpWithIdx =>
+    if cpWithIdx.2 ≥ start ∧ isFullwidthHalfwidth cpWithIdx.1 then
+      some (cpWithIdx.2, cpWithIdx.1)
     else none)
 
 /-- Position and codepoint of the first Extend codepoint
     occurring at or after `start`. -/
 def firstExtendFrom
-    (input : Array Nat) (start : Nat) : Option (Nat × Nat) :=
-  (Array.range input.size).findSome? (fun i =>
-    if h : i < input.size ∧ i ≥ start then
-      if isGraphemeExtend input[i] then some (i, input[i])
-      else none
+    (input : List Nat) (start : Nat) : Option (Nat × Nat) :=
+  input.zipIdx.findSome? (fun cpWithIdx =>
+    if cpWithIdx.2 ≥ start ∧ isGraphemeExtend cpWithIdx.1 then
+      some (cpWithIdx.2, cpWithIdx.1)
     else none)
 
 /-- Count of fullwidth/halfwidth codepoints at or after `start`. -/
-def countFullwidthFrom (input : Array Nat) (start : Nat) : Nat :=
-  (Array.range input.size).foldl (init := 0) (fun n i =>
-    if h : i < input.size ∧ i ≥ start then
-      if isFullwidthHalfwidth input[i] then n + 1 else n
-    else n)
+def countFullwidthFrom (input : List Nat) (start : Nat) : Nat :=
+  input.zipIdx.foldl (init := 0) (fun n cpWithIdx =>
+    if cpWithIdx.2 ≥ start ∧ isFullwidthHalfwidth cpWithIdx.1 then n + 1 else n)
 
 /-- Count of Extend codepoints at or after `start`. -/
-def countExtendFrom (input : Array Nat) (start : Nat) : Nat :=
-  (Array.range input.size).foldl (init := 0) (fun n i =>
-    if h : i < input.size ∧ i ≥ start then
-      if isGraphemeExtend input[i] then n + 1 else n
-    else n)
+def countExtendFrom (input : List Nat) (start : Nat) : Nat :=
+  input.zipIdx.foldl (init := 0) (fun n cpWithIdx =>
+    if cpWithIdx.2 ≥ start ∧ isGraphemeExtend cpWithIdx.1 then n + 1 else n)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 Top-level detection
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The FilenameDisguise detection function. -/
-def detect (input : Array Nat) : Verdict :=
+def detect (input : List Nat) : Verdict :=
   let dots := dotPositions input
-  let lastDot := dots[dots.size - 1]?
+  let lastDot := dots.getLast?
   let extStart : Nat :=
     match lastDot with
     | some p => p + 1
-    | none   => input.size  -- no extension; range is empty
+    | none   => input.length  -- no extension; range is empty
   let bidiCount :=
     input.foldl (fun n cp =>
       if Unicode.TrojanSource.isBidiFormatControl cp then n + 1 else n) 0
@@ -180,18 +170,18 @@ def detect (input : Array Nat) : Verdict :=
   let classification : Classification :=
     match firstBidiControl input with
     | some (pos, ctlCp) =>
-      .hazard (.rloFlip pos ctlCp) #[pos] ByteArray.empty
+      .hazard (.rloFlip pos ctlCp) [pos] ByteArray.empty
     | none =>
       match firstFullwidthFrom input extStart with
       | some (pos, cp) =>
-        .hazard (.widthClassExt pos cp) #[pos] ByteArray.empty
+        .hazard (.widthClassExt pos cp) [pos] ByteArray.empty
       | none =>
         match firstExtendFrom input extStart with
         | some (pos, cp) =>
-          .hazard (.combiningInExt pos cp) #[pos] ByteArray.empty
+          .hazard (.combiningInExt pos cp) [pos] ByteArray.empty
         | none =>
-          if dots.size ≥ 3 then
-            .hazard (.multipleExtensions dots.size) dots ByteArray.empty
+          if dots.length ≥ 3 then
+            .hazard (.multipleExtensions dots.length) dots ByteArray.empty
           else
             .clear
   { input := input,
@@ -221,18 +211,18 @@ def SubThreat.tag : SubThreat → String
 def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × Array Nat × ByteArray) false
+      Function.const (SubThreat × List Nat × ByteArray) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification. -/
 def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
-      Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
+      Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
 
 /-- Positions array of a classification. -/
-def Classification.positions : Classification → Array Nat
-  | .clear                     => #[]
+def Classification.positions : Classification → List Nat
+  | .clear                     => []
   | .hazard sub positions decoded =>
       Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
@@ -241,35 +231,35 @@ def Classification.positions : Classification → Array Nat
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Empty filename is clear. -/
-theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
+theorem detect_empty_clear : (detect []).classify.isClear = true := by
   decide
 
 /-- Plain ASCII filename `document.txt` is clear. -/
 theorem detect_plain_txt_clear :
-    let cps := #[0x64, 0x6F, 0x63, 0x75, 0x6D, 0x65, 0x6E, 0x74,
+    let cps := [0x64, 0x6F, 0x63, 0x75, 0x6D, 0x65, 0x6E, 0x74,
                  0x2E, 0x74, 0x78, 0x74]  -- "document.txt"
     (detect cps).classify.isClear = true := by decide
 
 /-- ASCII filename with no extension is clear. -/
 theorem detect_no_extension_clear :
-    (detect #[0x66, 0x6F, 0x6F]).classify.isClear = true := by decide
+    (detect [0x66, 0x6F, 0x6F]).classify.isClear = true := by decide
 
 /-- Two-segment filename `archive.tar.gz` is clear. -/
 theorem detect_tar_gz_clear :
-    let cps := #[0x61, 0x72, 0x63, 0x68, 0x69, 0x76, 0x65,
+    let cps := [0x61, 0x72, 0x63, 0x68, 0x69, 0x76, 0x65,
                  0x2E, 0x74, 0x61, 0x72, 0x2E, 0x67, 0x7A]
     (detect cps).classify.isClear = true := by decide
 
 /-- The classic Trojan filename `document<RLO>txt.exe` fires
     `.rloFlip` at the RLO position. -/
 theorem detect_rlo_flip :
-    let cps := #[0x64, 0x6F, 0x63, 0x75, 0x6D, 0x65, 0x6E, 0x74,
+    let cps := [0x64, 0x6F, 0x63, 0x75, 0x6D, 0x65, 0x6E, 0x74,
                  0x202E, 0x74, 0x78, 0x74, 0x2E, 0x65, 0x78, 0x65]
     (detect cps).classify.tag = some "RloFlip" := by decide
 
 /-- Fullwidth `.ＥＸＥ` extension fires `.widthClassExt`. -/
 theorem detect_fullwidth_exe :
-    let cps := #[0x66, 0x69, 0x6C, 0x65,
+    let cps := [0x66, 0x69, 0x6C, 0x65,
                  0x2E, 0xFF25, 0xFF38, 0xFF25]  -- "file.ＥＸＥ"
     (detect cps).classify.tag = some "WidthClassExt" := by decide
 
@@ -277,14 +267,14 @@ theorem detect_fullwidth_exe :
     `.e<combining acute>xe` — the combining acute (U+0301) is
     `Grapheme_Cluster_Break = Extend`. -/
 theorem detect_combining_in_ext :
-    let cps := #[0x66, 0x69, 0x6C, 0x65,
+    let cps := [0x66, 0x69, 0x6C, 0x65,
                  0x2E, 0x65, 0x0301, 0x78, 0x65]  -- "file.éxe"
     (detect cps).classify.tag = some "CombiningInExt" := by decide
 
 /-- Triple-extension `setup.tar.gz.sig` fires `.multipleExtensions`
     (advisory).  Could be a legitimate detached-signature file. -/
 theorem detect_triple_extension :
-    let cps := #[0x73, 0x65, 0x74, 0x75, 0x70,
+    let cps := [0x73, 0x65, 0x74, 0x75, 0x70,
                  0x2E, 0x74, 0x61, 0x72,
                  0x2E, 0x67, 0x7A,
                  0x2E, 0x73, 0x69, 0x67]
@@ -293,14 +283,14 @@ theorem detect_triple_extension :
 /-- Native Hebrew filename (no bidi controls) is clear — the
     legitimate-RTL-language case. -/
 theorem detect_hebrew_clear :
-    let cps := #[0x05D0, 0x05D1, 0x05D2, 0x2E, 0x74, 0x78, 0x74]
+    let cps := [0x05D0, 0x05D1, 0x05D2, 0x2E, 0x74, 0x78, 0x74]
                 -- אבג.txt
     (detect cps).classify.isClear = true := by decide
 
 /-- RLI/PDI isolate variant of the flip — also `.rloFlip`
     (any bidi control triggers it). -/
 theorem detect_isolate_flip :
-    let cps := #[0x64, 0x6F, 0x63, 0x2067,  -- doc + RLI
+    let cps := [0x64, 0x6F, 0x63, 0x2067,  -- doc + RLI
                  0x74, 0x78, 0x74, 0x2E, 0x65, 0x78, 0x65, 0x2069]
     (detect cps).classify.tag = some "RloFlip" := by decide
 

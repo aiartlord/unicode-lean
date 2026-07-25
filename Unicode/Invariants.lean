@@ -46,24 +46,24 @@ open Unicode.Normalization
 
 /-- Every codepoint is absent from the `<wide>`/`<narrow>` compat source
     column of UCD. Equivalent to `widthMap cps = cps`. -/
-def IsWidthMapped (cps : Array Nat) : Prop :=
+def IsWidthMapped (cps : List Nat) : Prop :=
   ∀ cp ∈ cps, Precis.WidthMapping.isWidthCompatSource cp = false
 
 /-- Every codepoint has no default full case-fold (status C or F entry).
     Equivalent to `caseFold cps = cps`. -/
-def IsCaseFolded (cps : Array Nat) : Prop :=
+def IsCaseFolded (cps : List Nat) : Prop :=
   ∀ cp ∈ cps, Precis.CaseMapping.isCaseFoldSource cp = false
 
 /-- Every codepoint has no canonical decomposition AND is not a precomposed
     Hangul syllable. Equivalent to "applying `fullCanonicalDecompose` to
-    any element returns the singleton `#[cp]`". -/
-def IsFullyDecomposed (cps : Array Nat) : Prop :=
+    any element returns the singleton `[cp]`". -/
+def IsFullyDecomposed (cps : List Nat) : Prop :=
   ∀ cp ∈ cps,
     Lookup.canonicalDecomposition cp = #[] ∧ Hangul.isHangulSyllable cp = false
 
 /-- Every codepoint is admissible under the PRECIS IdentifierClass
     (UTS #39 Identifier_Status = Allowed and no disallowed PRECIS category). -/
-def IsAllAdmissible (cps : Array Nat) : Prop :=
+def IsAllAdmissible (cps : List Nat) : Prop :=
   ∀ cp ∈ cps, Precis.Categories.isPrecisAdmissible cp = true
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -71,7 +71,7 @@ def IsAllAdmissible (cps : Array Nat) : Prop :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Canonical combining class ordering on non-starter runs (UAX #15 §1.3). -/
-def IsHSR (cps : Array Nat) : Prop := Reorder.HasSortedRuns cps.toList
+def IsHSR (cps : List Nat) : Prop := Reorder.HasSortedRuns cps
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- REFINED ARRAY TYPES
@@ -82,39 +82,39 @@ def IsHSR (cps : Array Nat) : Prop := Reorder.HasSortedRuns cps.toList
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Width-mapped codepoint sequence: no `<wide>`/`<narrow>` sources. -/
-abbrev WidthMappedArray : Type := { cps : Array Nat // IsWidthMapped cps }
+abbrev WidthMappedArray : Type := { cps : List Nat // IsWidthMapped cps }
 
 /-- Case-folded codepoint sequence: no case-fold sources remain. -/
-abbrev CaseFoldedArray : Type := { cps : Array Nat // IsCaseFolded cps }
+abbrev CaseFoldedArray : Type := { cps : List Nat // IsCaseFolded cps }
 
 /-- Fully decomposed codepoint sequence: no canonical decomposition, no
     Hangul syllables. The natural input type for `compose`. -/
-abbrev FullyDecomposedArray : Type := { cps : Array Nat // IsFullyDecomposed cps }
+abbrev FullyDecomposedArray : Type := { cps : List Nat // IsFullyDecomposed cps }
 
 /-- Admissible codepoint sequence: every codepoint is PRECIS-admissible. -/
-abbrev AdmissibleArray : Type := { cps : Array Nat // IsAllAdmissible cps }
+abbrev AdmissibleArray : Type := { cps : List Nat // IsAllAdmissible cps }
 
 /-- CCC-sorted-runs codepoint sequence: structural output of `reorder`. -/
-abbrev HSRArray : Type := { cps : Array Nat // IsHSR cps }
+abbrev HSRArray : Type := { cps : List Nat // IsHSR cps }
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- BASIC INTERACTIONS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The empty array satisfies every leaf invariant vacuously. -/
-theorem IsWidthMapped_empty : IsWidthMapped #[] := by
+theorem IsWidthMapped_empty : IsWidthMapped [] := by
   intro cp hMem; simp at hMem
 
-theorem IsCaseFolded_empty : IsCaseFolded #[] := by
+theorem IsCaseFolded_empty : IsCaseFolded [] := by
   intro cp hMem; simp at hMem
 
-theorem IsFullyDecomposed_empty : IsFullyDecomposed #[] := by
+theorem IsFullyDecomposed_empty : IsFullyDecomposed [] := by
   intro cp hMem; simp at hMem
 
-theorem IsAllAdmissible_empty : IsAllAdmissible #[] := by
+theorem IsAllAdmissible_empty : IsAllAdmissible [] := by
   intro cp hMem; simp at hMem
 
-theorem IsHSR_empty : IsHSR #[] := by
+theorem IsHSR_empty : IsHSR [] := by
   unfold IsHSR
   simp
 

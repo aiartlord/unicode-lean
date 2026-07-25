@@ -51,6 +51,10 @@ namespace Unicode.Security.Form.NormalizationBomb
 
 open Unicode.Security.Calculus
 
+-- The `detect` spot checks reduce the normalization pipeline on concrete inputs;
+-- that nests deeper than the default reducer recursion budget.
+set_option maxRecDepth 100000
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 Constants
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -92,11 +96,11 @@ inductive SubThreat where
 
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
   deriving Inhabited
 
 structure Verdict where
-  input              : Array Nat
+  input              : List Nat
   classify           : Classification
   nfdLen             : Nat
   nfkdLen            : Nat
@@ -114,54 +118,53 @@ structure Verdict where
     checked rather than NFD (canonical) because the canonical
     examples of normalization bombs — Arabic ligatures, parenthesised
     digits — carry only compatibility decompositions. -/
-def firstBlowupCp (input : Array Nat) : Option (Nat × Nat × Nat) :=
-  (Array.range input.size).findSome? (fun i =>
-    if h : i < input.size then
-      let cp := input[i]
-      let expand := (Unicode.Normalization.NFKD.toNFKD #[cp]).size
-      if expand > maxNfkdPerCp then some (i, cp, expand) else none
+def firstBlowupCp (input : List Nat) : Option (Nat × Nat × Nat) :=
+  input.zipIdx.findSome? (fun cpWithIdx =>
+    let expand := (Unicode.Normalization.NFKD.toNFKD [cpWithIdx.1]).length
+    if expand > maxNfkdPerCp then
+      some (cpWithIdx.2, cpWithIdx.1, expand)
     else none)
 
 /-- Maximum NFKD-expansion any single codepoint in `input` produces. -/
-def maxPerCpExpansion (input : Array Nat) : Nat :=
+def maxPerCpExpansion (input : List Nat) : Nat :=
   input.foldl (init := 0) (fun acc cp =>
-    let e := (Unicode.Normalization.NFKD.toNFKD #[cp]).size
+    let e := (Unicode.Normalization.NFKD.toNFKD [cp]).length
     if e > acc then e else acc)
 
 /-- NFD ratio percentage = `100 * nfdLen / inputLen`.  Returns
     `0` for an empty input (vacuously within bound). -/
-def nfdRatioPctOf (input : Array Nat) : Nat :=
-  if input.size = 0 then 0
-  else (Unicode.Normalization.NFC.toNFD input).size * 100 / input.size
+def nfdRatioPctOf (input : List Nat) : Nat :=
+  if input.length = 0 then 0
+  else (Unicode.Normalization.NFC.toNFD input).length * 100 / input.length
 
 /-- NFKD ratio percentage = `100 * nfkdLen / inputLen`. -/
-def nfkdRatioPctOf (input : Array Nat) : Nat :=
-  if input.size = 0 then 0
-  else (Unicode.Normalization.NFKD.toNFKD input).size * 100 / input.size
+def nfkdRatioPctOf (input : List Nat) : Nat :=
+  if input.length = 0 then 0
+  else (Unicode.Normalization.NFKD.toNFKD input).length * 100 / input.length
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 Top-level detection
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The F1 detection function. -/
-def detect (input : Array Nat) : Verdict :=
-  let nfdLen := (Unicode.Normalization.NFC.toNFD input).size
-  let nfkdLen := (Unicode.Normalization.NFKD.toNFKD input).size
-  let inputLen := input.size
+def detect (input : List Nat) : Verdict :=
+  let nfdLen := (Unicode.Normalization.NFC.toNFD input).length
+  let nfkdLen := (Unicode.Normalization.NFKD.toNFKD input).length
+  let inputLen := input.length
   let maxPer := maxPerCpExpansion input
   let classification : Classification :=
     -- Priority 1: per-codepoint blow-up.
     match firstBlowupCp input with
     | some (pos, cp, expand) =>
-      .hazard (.singleCpBlowup pos cp expand) #[pos] ByteArray.empty
+      .hazard (.singleCpBlowup pos cp expand) [pos] ByteArray.empty
     | none =>
       -- Priority 2: NFKD ratio.
       if nfkdRatioPctOf input > nfkdRatioPct then
-        .hazard (.nfkdHighExpansion nfkdLen inputLen) #[] ByteArray.empty
+        .hazard (.nfkdHighExpansion nfkdLen inputLen) [] ByteArray.empty
       -- Priority 3: NFD ratio (lower than NFKD; usually triggers
       -- only on extreme cases).
       else if nfdRatioPctOf input > nfdRatioPct then
-        .hazard (.nfdHighExpansion nfdLen inputLen) #[] ByteArray.empty
+        .hazard (.nfdHighExpansion nfdLen inputLen) [] ByteArray.empty
       else
         .clear
   { input := input,
@@ -186,16 +189,16 @@ def SubThreat.tag : SubThreat → String
 def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × Array Nat × ByteArray) false
+      Function.const (SubThreat × List Nat × ByteArray) false
         (sub, positions, decoded)
 
 def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
-      Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
+      Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
 
-def Classification.positions : Classification → Array Nat
-  | .clear                     => #[]
+def Classification.positions : Classification → List Nat
+  | .clear                     => []
   | .hazard sub positions decoded =>
       Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
@@ -204,30 +207,30 @@ def Classification.positions : Classification → Array Nat
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Empty input is clear. -/
-theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
+theorem detect_empty_clear : (detect []).classify.isClear = true := by
   decide
 
 /-- Pure ASCII is clear (no expansion). -/
 theorem detect_ascii_clear :
-    (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
+    (detect [0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
   decide
 
 /-- Korean Hangul `한` (U+D55C) decomposes to 3 jamos under NFD —
     within the per-cp bound of 4, so this stays clear. -/
 theorem detect_korean_within_bound :
-    (detect #[0xD55C]).classify.isClear = true := by decide
+    (detect [0xD55C]).classify.isClear = true := by decide
 
 /-- The Arabic ligature `U+FDFA SALLALLAHOU ALAYHE WASALLAM`
     decomposes to 18 codepoints under NFKD — fires
     `.singleCpBlowup` because NFD alone exceeds 4. -/
 theorem detect_arabic_ligature_blowup :
-    (detect #[0xFDFA]).classify.tag = some "SingleCpBlowup" := by
+    (detect [0xFDFA]).classify.tag = some "SingleCpBlowup" := by
   decide
 
 /-- Parenthesized digit `①` (U+2460) expands under NFKD to `1`
     (1 cp → 1 cp), so it does not trigger NFD blow-up.  Under
     pure NFD it stays as-is.  The detector classifies as clear. -/
 theorem detect_circled_one_clear :
-    (detect #[0x2460]).classify.isClear = true := by decide
+    (detect [0x2460]).classify.isClear = true := by decide
 
 end Unicode.Security.Form.NormalizationBomb

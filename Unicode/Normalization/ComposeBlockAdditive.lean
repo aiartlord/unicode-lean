@@ -100,11 +100,10 @@ theorem foldl_stepCompose_strongValid
     exact ih (Compose.stepCompose s hd)
             (stepCompose_preserves_strongValid s hd hValid)
 
-theorem foldl_stepCompose_strongValid_array (A : Array Nat) :
+theorem foldl_stepCompose_strongValid_array (A : List Nat) :
     ComposeStateStrongValid
       (A.foldl Compose.stepCompose Compose.initialState) := by
-  rw [← Array.foldl_toList]
-  exact foldl_stepCompose_strongValid A.toList Compose.initialState
+  exact foldl_stepCompose_strongValid A Compose.initialState
           initialState_strongValid
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -238,7 +237,7 @@ theorem stepCompose_initial_starter
     of `flushCompose s_A`; the prefix carries through the remaining
     fold and the final `flushCompose` by §2. -/
 theorem compose_qcY_starter_block_additive_list
-    (A : Array Nat) (head : Nat) (rest : List Nat)
+    (A : List Nat) (head : Nat) (rest : List Nat)
     (hHeadCcc : Lookup.canonicalCombiningClass head = 0)
     (hHeadQC : nfcQCValue head = .Y) :
     Compose.flushCompose
@@ -284,41 +283,21 @@ theorem compose_qcY_starter_block_additive_list
 
 /-- Compose-block additivity at a QC=Y starter boundary. -/
 theorem compose_qcY_starter_block_additive
-    (A : Array Nat) (B : Array Nat)
-    (hNonEmpty : B.size > 0)
+    (A : List Nat) (B : List Nat)
+    (hNonEmpty : B.length > 0)
     (hHeadCcc : Lookup.canonicalCombiningClass (B[0]'hNonEmpty) = 0)
     (hHeadQC : nfcQCValue (B[0]'hNonEmpty) = .Y) :
     Compose.compose (A ++ B) = Compose.compose A ++ Compose.compose B := by
-  obtain ⟨bs⟩ := B
-  match bs, hNonEmpty with
+  match B, hNonEmpty with
   | [], hNE =>
     exact absurd hNE (by simp)
   | head :: rest, hNE =>
     have hHeadCcc' : Lookup.canonicalCombiningClass head = 0 := hHeadCcc
     have hHeadQC' : nfcQCValue head = .Y := hHeadQC
-    show Compose.flushCompose
-            ((A ++ ⟨head :: rest⟩).foldl Compose.stepCompose Compose.initialState)
-        = Compose.flushCompose
-            (A.foldl Compose.stepCompose Compose.initialState)
-          ++ Compose.flushCompose
-            ((⟨head :: rest⟩ : Array Nat).foldl
-                Compose.stepCompose Compose.initialState)
-    rw [Array.foldl_append]
-    have hEqLeft :
-        (⟨head :: rest⟩ : Array Nat).foldl Compose.stepCompose
-            (A.foldl Compose.stepCompose Compose.initialState)
-        = (head :: rest).foldl Compose.stepCompose
-            (A.foldl Compose.stepCompose Compose.initialState) := by
-      rw [← Array.foldl_toList]
-    have hEqRight :
-        (⟨head :: rest⟩ : Array Nat).foldl Compose.stepCompose
-            Compose.initialState
-        = (head :: rest).foldl Compose.stepCompose Compose.initialState := by
-      rw [← Array.foldl_toList]
-    rw [hEqLeft, hEqRight]
-    exact Function.const (0 < (head :: rest).length)
-      (compose_qcY_starter_block_additive_list A head rest hHeadCcc' hHeadQC')
-      hNE
+    unfold Compose.compose
+    rw [List.foldl_append]
+    rw [compose_qcY_starter_block_additive_list A head rest hHeadCcc' hHeadQC']
+    simp [Array.toList_append]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §8 COMPOSE-SNOC LINEARITY FOR QC=Y EXTENSION
@@ -397,23 +376,20 @@ theorem step_qcY_linear
     array; strong validity of the post-X state comes from
     `foldl_stepCompose_strongValid_array`. -/
 theorem compose_qcY_linear
-    (X : Array Nat) (cp : Nat) (hQC : nfcQCValue cp = .Y) :
-    Compose.compose (X ++ #[cp]) = Compose.compose X ++ #[cp] := by
+    (X : List Nat) (cp : Nat) (hQC : nfcQCValue cp = .Y) :
+    Compose.compose (X ++ [cp]) = Compose.compose X ++ [cp] := by
   unfold Compose.compose
-  rw [Array.foldl_append]
+  rw [List.foldl_append]
   have hStep :
-      (#[cp] : Array Nat).foldl Compose.stepCompose
+      ([cp] : List Nat).foldl Compose.stepCompose
           (X.foldl Compose.stepCompose Compose.initialState)
         = Compose.stepCompose
             (X.foldl Compose.stepCompose Compose.initialState) cp := by
-    show ([cp] : List Nat).foldl Compose.stepCompose
-            (X.foldl Compose.stepCompose Compose.initialState)
-        = Compose.stepCompose
-            (X.foldl Compose.stepCompose Compose.initialState) cp
     simp only [List.foldl_cons, List.foldl_nil]
   rw [hStep]
-  exact step_qcY_linear
+  rw [step_qcY_linear
           (X.foldl Compose.stepCompose Compose.initialState) cp
-          (foldl_stepCompose_strongValid_array X) hQC
+          (foldl_stepCompose_strongValid_array X) hQC]
+  simp [Array.toList_append]
 
 end Unicode.Normalization.ComposeBlockAdditive

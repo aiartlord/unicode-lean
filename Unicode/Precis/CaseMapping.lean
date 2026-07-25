@@ -44,8 +44,8 @@ def caseFoldCodepoint (cp : Nat) : Array Nat :=
 /-- Apply default full case folding to a codepoint sequence,
     flattening each per-codepoint result back into a single
     sequence. -/
-def caseFold (cps : Array Nat) : Array Nat :=
-  cps.foldl (fun acc cp => acc ++ caseFoldCodepoint cp) #[]
+def caseFold (cps : List Nat) : List Nat :=
+  cps.flatMap (fun cp => (caseFoldCodepoint cp).toList)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- TEST VECTORS
@@ -98,7 +98,7 @@ theorem caseFold_digit : caseFoldCodepoint 0x0030 = #[0x0030] := by
 
 /-- Sequence-level fold lowercases each ASCII letter. -/
 theorem caseFold_ascii_word :
-    caseFold #[0x0041, 0x0042, 0x0043] = #[0x0061, 0x0062, 0x0063] := by
+    caseFold [0x0041, 0x0042, 0x0043] = [0x0061, 0x0062, 0x0063] := by
   have hB : caseFoldCodepoint 0x0042 = #[0x0062] := by
     unfold caseFoldCodepoint lookupCaseFolding?
     rw [CaseFolding.lookup_u0042]
@@ -109,7 +109,7 @@ theorem caseFold_ascii_word :
 
 /-- The sharp-s substitution grows a 1-codepoint input into a 2-codepoint output. -/
 theorem caseFold_straße_style :
-    caseFold #[0x0073, 0x00DF] = #[0x0073, 0x0073, 0x0073] := by
+    caseFold [0x0073, 0x00DF] = [0x0073, 0x0073, 0x0073] := by
   have hS : caseFoldCodepoint 0x0073 = #[0x0073] := by
     unfold caseFoldCodepoint lookupCaseFolding?
     rw [CaseFolding.lookup_u0073]
@@ -193,15 +193,31 @@ theorem arr_foldl_map_id_of_all_identity (cps : Array Nat)
   rw [key cps.toList #[] hAllList]
   simp
 
+/-- Generic lift on lists: flattening a per-element expansion that is
+    singleton everywhere reproduces the original list. This is the linear
+    counterpart of `arr_foldl_map_id_of_all_identity` — `flatMap` traverses
+    once, where the array fold re-copies its accumulator at every step. -/
+theorem list_flatMap_singleton_id (l : List Nat) (g : Nat → List Nat)
+    (hAll : ∀ cp ∈ l, g cp = [cp]) : l.flatMap g = l := by
+  induction l with
+  | nil => simp
+  | cons hd tl ih =>
+    have hHd : g hd = [hd] := hAll hd (by simp)
+    have hTl : ∀ cp ∈ tl, g cp = [cp] :=
+      fun cp hMem => hAll cp (by simp [hMem])
+    simp [hHd, ih hTl]
+
 /-- `caseFold` is the identity on any sequence whose codepoints are
     all non-sources. -/
-theorem caseFold_id_of_all_non_source (cps : Array Nat)
+theorem caseFold_id_of_all_non_source (cps : List Nat)
     (h : ∀ cp ∈ cps, isCaseFoldSource cp = false) :
     caseFold cps = cps := by
   unfold caseFold
-  apply arr_foldl_map_id_of_all_identity cps caseFoldCodepoint
-  intro cp hMem
-  exact caseFoldCodepoint_id_of_non_source cp (h cp hMem)
+  have hAll : ∀ cp ∈ cps, (caseFoldCodepoint cp).toList = [cp] := by
+    intro cp hMem
+    rw [caseFoldCodepoint_id_of_non_source cp (h cp hMem)]
+  exact list_flatMap_singleton_id cps
+    (fun cp => (caseFoldCodepoint cp).toList) hAll
 
 /-- Converse of `lookupCaseFolding_none_of_non_source`: a codepoint
     with no `lookupCaseFolding?` result is not a source. -/
@@ -214,31 +230,16 @@ theorem non_source_of_lookupCaseFolding_none (cp : Nat)
 
 /-- Membership decomposition: a codepoint in `caseFold cps` comes
     from `caseFoldCodepoint x` for some `x ∈ cps`. -/
-theorem mem_caseFold_iff (cps : Array Nat) (cp : Nat)
+theorem mem_caseFold_iff (cps : List Nat) (cp : Nat)
     (hMem : cp ∈ caseFold cps) :
     ∃ x ∈ cps, cp ∈ caseFoldCodepoint x := by
   unfold caseFold at hMem
-  rw [← Array.foldl_toList] at hMem
-  have key : ∀ (l : List Nat) (init : Array Nat),
-      cp ∈ l.foldl (fun acc x => acc ++ caseFoldCodepoint x) init →
-      cp ∈ init ∨ ∃ x ∈ l, cp ∈ caseFoldCodepoint x := by
-    intro l
-    induction l with
-    | nil => intro init hM; left; simpa using hM
-    | cons hd tl ih =>
-      intro init hM
-      simp [List.foldl_cons] at hM
-      rcases ih (init ++ caseFoldCodepoint hd) hM with hInit | ⟨x, hxM, hxF⟩
-      · rcases Array.mem_append.mp hInit with h1 | h2
-        · left; exact h1
-        · right; exact ⟨hd, by simp, h2⟩
-      · right; exact ⟨x, by simp [hxM], hxF⟩
-  rcases key cps.toList #[] hMem with hEmpty | ⟨x, hxM, hxF⟩
-  · simp at hEmpty
-  · exact ⟨x, by simpa using hxM, hxF⟩
+  simp only [List.mem_flatMap] at hMem
+  obtain ⟨x, hxM, hxF⟩ := hMem
+  exact ⟨x, hxM, by simpa using hxF⟩
 
 /-- Every codepoint in the output of `caseFold` is a non-source. -/
-theorem caseFold_output_all_non_source (cps : Array Nat) :
+theorem caseFold_output_all_non_source (cps : List Nat) :
     ∀ cp ∈ caseFold cps, isCaseFoldSource cp = false := by
   intro cp hMem
   obtain ⟨x, hxInCps, hxF⟩ := mem_caseFold_iff cps cp hMem
@@ -258,7 +259,7 @@ theorem caseFold_output_all_non_source (cps : Array Nat) :
 /-- **`caseFold` is idempotent.** For every codepoint sequence,
     applying RFC 8265 §5.2.4 default full case folding twice
     produces the same result as applying it once. -/
-theorem caseFold_idempotent (cps : Array Nat) :
+theorem caseFold_idempotent (cps : List Nat) :
     caseFold (caseFold cps) = caseFold cps :=
   caseFold_id_of_all_non_source (caseFold cps) (caseFold_output_all_non_source cps)
 
@@ -286,7 +287,7 @@ theorem caseFold_preserves_non_widthCompatSource
 /-- Structural lift: on any sequence whose codepoints are all
     non-width-compat-sources, the case-folded output is still all
     non-width-compat-sources. -/
-theorem caseFold_output_non_widthCompatSource (cps : Array Nat)
+theorem caseFold_output_non_widthCompatSource (cps : List Nat)
     (hIn : ∀ cp ∈ cps, WidthMapping.isWidthCompatSource cp = false) :
     ∀ cp ∈ caseFold cps, WidthMapping.isWidthCompatSource cp = false := by
   intro cp hMem
@@ -310,15 +311,15 @@ theorem caseFold_output_non_widthCompatSource (cps : Array Nat)
 
 /-- Double case-fold on capital A equals single case-fold. -/
 theorem caseFold_idempotent_A :
-    caseFold (caseFold #[0x0041]) = caseFold #[0x0041] := by decide
+    caseFold (caseFold [0x0041]) = caseFold [0x0041] := by decide
 
 /-- Double case-fold on sharp-s equals single case-fold. -/
 theorem caseFold_idempotent_sharp_s :
-    caseFold (caseFold #[0x00DF]) = caseFold #[0x00DF] := by decide
+    caseFold (caseFold [0x00DF]) = caseFold [0x00DF] := by decide
 
 /-- Double case-fold on a mixed ASCII word equals single case-fold. -/
 theorem caseFold_idempotent_ascii_word :
-    caseFold (caseFold #[0x0041, 0x0062, 0x0043])
-      = caseFold #[0x0041, 0x0062, 0x0043] := by decide
+    caseFold (caseFold [0x0041, 0x0062, 0x0043])
+      = caseFold [0x0041, 0x0062, 0x0043] := by decide
 
 end Unicode.Precis.CaseMapping

@@ -215,27 +215,27 @@ theorem primaryComposite_none_of_qcY_nonstarter
 -- §3 MAIN SOUNDNESS PROOF — EMPTY CASE + SINGLETON NONSTARTER CASE
 --
 -- Base-case building blocks of the full soundness induction. They
--- cover `cps = #[]` and `cps = #[cp]` where cp is a QC=Y nonstarter.
+-- cover `cps = []` and `cps = [cp]` where cp is a QC=Y nonstarter.
 -- Both follow directly from `decomposeSequence` unfolds, `reorder`'s
 -- identity on ≤1-element input, and Fact 3 for `compose` in the
 -- nonstarter case.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- **Empty case of soundness.** Trivial; every stage maps `#[]` to `#[]`. -/
+/-- **Empty case of soundness.** Trivial; every stage maps `[]` to `[]`. -/
 theorem empty_sound :
-    toNFC (#[] : Array Nat) = #[] := by
+    toNFC ([] : List Nat) = [] := by
   decide
 
 /-- **Singleton nonstarter case.** A single QC=Y nonstarter codepoint is in
-    NFC form. `decomposeSequence #[cp] = fullCanonicalDecompose cp = #[cp]`
-    by Fact 1. `reorder #[cp] = #[cp]` on a single element. `compose #[cp]`
+    NFC form. `decomposeSequence [cp] = fullCanonicalDecompose cp = [cp]`
+    by Fact 1. `reorder [cp] = [cp]` on a single element. `compose [cp]`
     treats cp as a leading nonstarter (no prior starter), emitting it to
     `emitted` unchanged. -/
 theorem singleton_sound_nonstarter
     (cp : Nat)
     (hQC : nfcQCValue cp = .Y)
     (hCcc : 0 < Lookup.canonicalCombiningClass cp) :
-    toNFC #[cp] = #[cp] := by
+    toNFC [cp] = [cp] := by
   -- Decompose: Fact 1 gives empty canonical decomposition, and cp is
   -- not a Hangul syllable (Hangul syllables have CCC = 0, contradicting
   -- the nonstarter hypothesis).
@@ -260,27 +260,27 @@ theorem singleton_sound_nonstarter
     unfold Decompose.maxDepth Decompose.fullCanonicalDecomposeFuel
     rw [hDsyl]
     simp [hDecomp]
-  -- Pipeline: decomposeSequence #[cp] = #[cp].
-  have hDS : Decompose.decomposeSequence #[cp] = #[cp] := by
-    rw [Distribute.decomposeSequence_singleton]
-    exact hFCD
-  -- Reorder: #[cp] → #[cp] (single element, trivially HSR).
-  have hR : Reorder.reorder #[cp] = #[cp] := by
+  -- Pipeline: decomposeSequence [cp] = [cp].
+  have hDS : Decompose.decomposeSequence [cp] = [cp] := by
+    rw [Distribute.decomposeSequence_singleton, hFCD]
+  -- Reorder: [cp] → [cp] (a singleton run is sorted by definition).
+  have hR : Reorder.reorder [cp] = [cp] := by
     apply Reorder.reorder_id_on_HasSortedRuns
-    show Reorder.HasSortedRuns [cp]
-    trivial
+    rw [Reorder.HasSortedRuns_singleton]
+    exact True.intro
   -- Compose on a single nonstarter: no active starter, CCC > 0 → emit to
   -- `emitted`, then flush the empty `starter` + empty buffer.
-  show Compose.compose (toNFD #[cp]) = #[cp]
+  show Compose.compose (toNFD [cp]) = [cp]
   unfold toNFD
   rw [hDS, hR]
-  -- compose #[cp] folds stepCompose once from initialState. The CCC>0
+  -- compose [cp] folds stepCompose once from initialState. The CCC>0
   -- hypothesis selects the nonstarter branch of the `starter=none` case:
   -- emit cp, state becomes { emitted := #[cp], starter := none, ... }.
   -- flushCompose with starter=none returns emitted ++ buffer.reverse = #[cp].
   have hCccNe : ¬ Lookup.canonicalCombiningClass cp = 0 := by omega
-  change Compose.flushCompose ((#[cp] : Array Nat).foldl Compose.stepCompose Compose.initialState) = #[cp]
-  rw [← Array.foldl_toList]
+  show (Compose.flushCompose
+          (([cp] : List Nat).foldl Compose.stepCompose Compose.initialState)).toList
+      = [cp]
   simp only [List.foldl_cons, List.foldl_nil]
   rw [Compose.stepCompose.eq_def]
   unfold Compose.flushCompose Compose.initialState

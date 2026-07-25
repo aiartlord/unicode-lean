@@ -27,6 +27,7 @@
 
 import Unicode.Security
 import Unicode.Security.Crypto.Bip39Canonical
+import Unicode.Security.Crypto.Bip39CanonicalVectorsDetect
 import Unicode.Security.Crypto.HashInputStability
 import Unicode.Security.Crypto.AiWatermarkDetectability
 

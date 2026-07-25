@@ -66,8 +66,8 @@ def fullCanonicalDecompose (cp : Nat) : Array Nat :=
 /-- Fully canonical decomposition of a codepoint sequence. Applies
     `fullCanonicalDecompose` to each input codepoint and concatenates
     the results in order. -/
-def decomposeSequence (cps : Array Nat) : Array Nat :=
-  cps.foldl (fun acc cp => acc ++ fullCanonicalDecompose cp) #[]
+def decomposeSequence (cps : List Nat) : List Nat :=
+  cps.flatMap (fun cp => (fullCanonicalDecompose cp).toList)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- TEST VECTORS
@@ -156,6 +156,24 @@ theorem canonicalDecomposition_A_grave :
   Lookup.canonicalDecomposition_of_hit 0x00C0 #[0x0041, 0x0300]
     rows_hit_A_grave rows_decomp_A_grave
 
+/-- The pinned table carries a row for LATIN SMALL LETTER E WITH ACUTE. -/
+theorem rows_hit_e_acute :
+    UnicodeData.rowsList.any (fun r => decide (r.codepoint = 0x00E9)) = true := by
+  decide +kernel
+
+/-- Every row carrying U+00E9 decomposes it to `e` + combining acute. -/
+theorem rows_decomp_e_acute :
+    UnicodeData.rowsList.all (fun r =>
+      decide (r.codepoint = 0x00E9 →
+        r.canonicalDecomposition = #[0x0065, 0x0301])) = true := by
+  decide +kernel
+
+/-- U+00E9 canonically decomposes to `e` + combining acute. -/
+theorem canonicalDecomposition_e_acute :
+    Lookup.canonicalDecomposition 0x00E9 = #[0x0065, 0x0301] :=
+  Lookup.canonicalDecomposition_of_hit 0x00E9 #[0x0065, 0x0301]
+    rows_hit_e_acute rows_decomp_e_acute
+
 /-- The pinned table carries a row for LATIN CAPITAL LETTER A WITH RING
     ABOVE. -/
 theorem rows_hit_A_ring :
@@ -211,6 +229,25 @@ theorem canonicalDecomposition_grave :
     Lookup.canonicalDecomposition 0x0300 = #[] :=
   Lookup.canonicalDecomposition_of_hit 0x0300 #[]
     rows_hit_grave rows_decomp_grave
+
+/-- The pinned table carries a row for COMBINING ACUTE ACCENT (for its
+    non-zero CCC). -/
+theorem rows_hit_acute :
+    UnicodeData.rowsList.any (fun r => decide (r.codepoint = 0x0301)) = true := by
+  decide +kernel
+
+/-- Every row carrying U+0301 records an empty canonical decomposition. -/
+theorem rows_decomp_acute :
+    UnicodeData.rowsList.all (fun r =>
+      decide (r.codepoint = 0x0301 →
+        r.canonicalDecomposition = #[])) = true := by
+  decide +kernel
+
+/-- U+0301 has no canonical decomposition. -/
+theorem canonicalDecomposition_acute :
+    Lookup.canonicalDecomposition 0x0301 = #[] :=
+  Lookup.canonicalDecomposition_of_hit 0x0301 #[]
+    rows_hit_acute rows_decomp_acute
 
 /-- The pinned table carries a row for COMBINING RING ABOVE (for its
     non-zero CCC). -/
@@ -280,6 +317,15 @@ theorem fcdf_grave (fuel : Nat) :
         Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
         canonicalDecomposition_grave]
 
+/-- One fuel step on COMBINING ACUTE ACCENT: no decomposition, so its
+    own singleton. -/
+theorem fcdf_acute (fuel : Nat) :
+    fullCanonicalDecomposeFuel (fuel + 1) 0x0301 = #[0x0301] := by
+  rw [fullCanonicalDecomposeFuel.eq_def]
+  simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
+        Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
+        canonicalDecomposition_acute]
+
 /-- One fuel step on COMBINING RING ABOVE: no decomposition, so its own
     singleton. -/
 theorem fcdf_ring (fuel : Nat) :
@@ -296,6 +342,14 @@ theorem fcdf_A_grave (fuel : Nat) :
   simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
         Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
         canonicalDecomposition_A_grave, fcdf_latin_A, fcdf_grave]
+
+/-- Two fuel steps on U+00E9: expand to `e` + acute, both terminal. -/
+theorem fcdf_e_acute (fuel : Nat) :
+    fullCanonicalDecomposeFuel (fuel + 2) 0x00E9 = #[0x0065, 0x0301] := by
+  rw [fullCanonicalDecomposeFuel.eq_def]
+  simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
+        Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
+        canonicalDecomposition_e_acute, fcdf_latin_e, fcdf_acute]
 
 /-- Two fuel steps on U+00C5: expand to `A` + ring above, both terminal. -/
 theorem fcdf_A_ring (fuel : Nat) :
@@ -339,18 +393,18 @@ theorem decompose_GAG :
 
 /-- Sequence decomposition concatenates per-codepoint decompositions. -/
 theorem decompose_sequence_mixed :
-    decomposeSequence #[0x0041, 0x00C0, 0x212B]
-      = #[0x0041, 0x0041, 0x0300, 0x0041, 0x030A] := by
+    decomposeSequence [0x0041, 0x00C0, 0x212B]
+      = [0x0041, 0x0041, 0x0300, 0x0041, 0x030A] := by
   simp only [decomposeSequence, fullCanonicalDecompose, maxDepth]
   simp [fcdf_latin_A 31, fcdf_A_grave 30, fcdf_angstrom 29]
 
 /-- Decomposition of an empty sequence is empty. -/
-theorem decompose_empty : decomposeSequence #[] = #[] := by decide
+theorem decompose_empty : decomposeSequence [] = [] := by decide
 
 /-- Decomposition of a pure-ASCII sequence is the input unchanged. -/
 theorem decompose_ascii :
-    decomposeSequence #[0x0068, 0x0065, 0x006C, 0x006C, 0x006F] -- "hello"
-      = #[0x0068, 0x0065, 0x006C, 0x006C, 0x006F] := by
+    decomposeSequence [0x0068, 0x0065, 0x006C, 0x006C, 0x006F] -- "hello"
+      = [0x0068, 0x0065, 0x006C, 0x006C, 0x006F] := by
   simp only [decomposeSequence, fullCanonicalDecompose, maxDepth]
   simp [fcdf_latin_h 31, fcdf_latin_e 31, fcdf_latin_l 31, fcdf_latin_o 31]
 
@@ -562,11 +616,13 @@ theorem fullCanonicalDecompose_preserves_non_widthCompatSource
     non-width-compat-source, then every output codepoint of
     `decomposeSequence` is also a non-width-compat-source. -/
 theorem decomposeSequence_preserves_non_widthCompatSource
-    (cps : Array Nat) (h : ∀ cp ∈ cps, isWidthCompatSource cp = false) :
+    (cps : List Nat) (h : ∀ cp ∈ cps, isWidthCompatSource cp = false) :
     ∀ j ∈ decomposeSequence cps, isWidthCompatSource j = false := by
   intro j hj
   unfold decomposeSequence at hj
-  obtain ⟨x, hxIn, hxF⟩ := mem_foldl_append fullCanonicalDecompose cps j hj
-  exact fullCanonicalDecompose_preserves_non_widthCompatSource x (h x hxIn) j hxF
+  simp only [List.mem_flatMap] at hj
+  obtain ⟨x, hxIn, hxF⟩ := hj
+  exact fullCanonicalDecompose_preserves_non_widthCompatSource x
+    (h x hxIn) j (by simpa using hxF)
 
 end Unicode.Normalization.Decompose

@@ -44,6 +44,7 @@
 import Unicode.Normalization.NFC
 import Unicode.Normalization.NFD
 import Unicode.Normalization.ComposeInversion
+import Unicode.Normalization.LowCodepointNfc
 import Unicode.CaseFoldRoundtrip
 import Unicode.Precis.PreparationCore
 import Unicode.Precis.BidiRule
@@ -54,106 +55,77 @@ import Unicode.Precis.Categories
 
 namespace Unicode.Precis.Preparation
 
+open Unicode.Normalization
 open Unicode.Normalization.NFC (toNFC)
+open Unicode.Normalization.LowCodepointNfc (toNFC_id_all_lt toNFC_id_of_starters)
 open Unicode.Precis.IdentifierClass (isAllowedInIdentifierClass)
-open Unicode.Precis.WidthMapping (widthMap)
-open Unicode.Precis.CaseMapping (caseFold)
+open Unicode.Precis.WidthMapping (widthMap widthMap_id_of_all_non_source isWidthCompatSource)
+open Unicode.Precis.CaseMapping (caseFold caseFold_id_of_all_non_source isCaseFoldSource)
+
+set_option maxRecDepth 100000
 open Unicode.Precis.Categories (isPrecisAdmissible)
 open Unicode.Precis.BidiRule (satisfiesBidiRule)
 
 -- Executable preparation definitions live in `PreparationCore`; this module
 -- contains the proof/test-vector layer.
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- TEST VECTORS — ADMISSIBLE (PASS)
--- ═══════════════════════════════════════════════════════════════════════════════
+/-- On inputs whose width-mapped, case-folded form lies entirely below U+00C0,
+    `precisMap` equals that form. Canonical decomposition and composition are
+    both inert on that range, so its NFC stage is the identity
+    (`toNFC_id_all_lt`). -/
+theorem precisMap_ascii_output (cps : List Nat)
+    (h : ∀ cp ∈ caseFold (widthMap cps), cp < 0xC0) :
+    precisMap cps = caseFold (widthMap cps) := by
+  unfold precisMap
+  exact toNFC_id_all_lt (caseFold (widthMap cps)) h
 
-/-- Empty input passes preparation (no codepoints to classify). -/
-theorem prep_empty : precisPreparation #[] = some #[] := by decide
+/-- Preserved-profile companion of `precisMap_ascii_output`: on a width-mapped
+    form entirely below U+00C0, `precisMapPreserved` equals that form, since
+    `toNFC` is the identity on that range. -/
+theorem precisMapPreserved_ascii_output (cps : List Nat)
+    (h : ∀ cp ∈ widthMap cps, cp < 0xC0) :
+    precisMapPreserved cps = widthMap cps := by
+  unfold precisMapPreserved
+  exact toNFC_id_all_lt (widthMap cps) h
 
-/-- Pure-lowercase ASCII identifier is unchanged. -/
-theorem prep_alice :
-    precisPreparation #[0x61, 0x6C, 0x69, 0x63, 0x65]
-      = some #[0x61, 0x6C, 0x69, 0x63, 0x65] := by decide
+/-- `precisMap` is the identity on a single non-source, non-decomposing starter.
+    Every stage acts as the identity — width and case mapping because the code
+    point is not a source, NFC by `toNFC_id_of_starters` — so the proof reduces
+    no mapping or normalization table, only the O(1) per-code-point lookups. -/
+theorem precisMap_id_singleton (cp : Nat)
+    (hw : isWidthCompatSource cp = false)
+    (hc : isCaseFoldSource cp = false)
+    (hd : Lookup.canonicalDecomposition cp = #[])
+    (hh : Hangul.isHangulSyllable cp = false)
+    (hccc : Lookup.canonicalCombiningClass cp = 0) :
+    precisMap [cp] = [cp] := by
+  unfold precisMap
+  rw [widthMap_id_of_all_non_source [cp] (by intro x hx; simp at hx; subst hx; exact hw),
+      caseFold_id_of_all_non_source [cp] (by intro x hx; simp at hx; subst hx; exact hc)]
+  exact toNFC_id_of_starters [cp]
+    (by intro x hx; simp at hx; subst hx; exact ⟨hd, hh⟩)
+    (by intro x hx; simp at hx; subst hx; exact hccc)
+    (by simp [Compose.noAdjCompose])
 
-/-- Pure-uppercase ASCII identifier folds to lowercase. -/
-theorem prep_uppercase_ALICE :
-    precisPreparation #[0x41, 0x4C, 0x49, 0x43, 0x45]
-      = some #[0x61, 0x6C, 0x69, 0x63, 0x65] := by decide
+/-- Preserved-profile companion: `precisMapPreserved` (width map then NFC, no
+    case fold) is the identity on a single non-width-source, non-decomposing
+    starter. -/
+theorem precisMapPreserved_id_singleton (cp : Nat)
+    (hw : isWidthCompatSource cp = false)
+    (hd : Lookup.canonicalDecomposition cp = #[])
+    (hh : Hangul.isHangulSyllable cp = false)
+    (hccc : Lookup.canonicalCombiningClass cp = 0) :
+    precisMapPreserved [cp] = [cp] := by
+  unfold precisMapPreserved
+  rw [widthMap_id_of_all_non_source [cp] (by intro x hx; simp at hx; subst hx; exact hw)]
+  exact toNFC_id_of_starters [cp]
+    (by intro x hx; simp at hx; subst hx; exact ⟨hd, hh⟩)
+    (by intro x hx; simp at hx; subst hx; exact hccc)
+    (by simp [Compose.noAdjCompose])
 
-/-- Fullwidth ASCII identifier is width-mapped to ASCII then
-    case-folded. `Ａｌｉｃｅ` (U+FF21 U+FF4C U+FF49 U+FF43 U+FF45)
-    prepares to `alice`. -/
-theorem prep_fullwidth_Alice :
-    precisPreparation #[0xFF21, 0xFF4C, 0xFF49, 0xFF43, 0xFF45]
-      = some #[0x61, 0x6C, 0x69, 0x63, 0x65] := by decide
-
-/-- SHARP S prepares to `ss` via the case-folding step. -/
-theorem prep_sharp_s :
-    precisPreparation #[0x00DF] = some #[0x0073, 0x0073] := by decide
-
-/-- Underscore and digits are accepted. -/
-theorem prep_underscore_digits :
-    precisPreparation #[0x005F, 0x0030, 0x0031]
-      = some #[0x005F, 0x0030, 0x0031] := by decide
-
--- ═══════════════════════════════════════════════════════════════════════════════
--- TEST VECTORS — REJECTED
--- ═══════════════════════════════════════════════════════════════════════════════
-
-/-- ASCII SPACE is rejected (not admissible in IdentifierClass). -/
-theorem prep_rejects_space :
-    precisPreparation #[0x0020] = none := by decide
-
-/-- RIGHT-TO-LEFT OVERRIDE is rejected (Trojan Source vector). -/
-theorem prep_rejects_bidi_override :
-    precisPreparation #[0x202E] = none := by decide
-
-/-- ZERO WIDTH SPACE is rejected (invisible content). -/
-theorem prep_rejects_zwsp :
-    precisPreparation #[0x200B] = none := by decide
-
-/-- An otherwise-valid identifier containing a disallowed codepoint
-    is rejected — the category check fails on the disallowed byte
-    even though the surrounding ASCII would be accepted. -/
-theorem prep_rejects_mixed :
-    precisPreparation #[0x61, 0x202E, 0x62] = none := by decide
-
--- ═══════════════════════════════════════════════════════════════════════════════
--- IDEMPOTENCE — CONCRETE VECTORS
--- Double-application of `precisPreparation` on each admissible
--- vector above returns the same result. The closed-form
--- `precis_idempotent : ∀ cps, precisPreparation cps = some out →
--- precisPreparation out = some out` follows structurally from
--- `toNFC_idempotent` and is stated below as a conditional theorem
--- that closes automatically when `toNFC_idempotent` lands.
--- ═══════════════════════════════════════════════════════════════════════════════
-
-/-- Empty input is idempotent under preparation. -/
-theorem prep_idempotent_empty :
-    precisPreparation #[] >>= precisPreparation = some #[] := by decide
-
-/-- Already-lowercase ASCII is idempotent under preparation. -/
-theorem prep_idempotent_alice :
-    (precisPreparation #[0x61, 0x6C, 0x69, 0x63, 0x65]).bind precisPreparation
-      = some #[0x61, 0x6C, 0x69, 0x63, 0x65] := by decide
-
-/-- Applying preparation to the already-folded `alice` output
-    equals `some alice`. -/
-theorem prep_idempotent_alice_from_fullwidth :
-    (precisPreparation #[0xFF21, 0xFF4C, 0xFF49, 0xFF43, 0xFF45]).bind precisPreparation
-      = some #[0x61, 0x6C, 0x69, 0x63, 0x65] := by decide
-
-/-- Sharp-s's output `ss` is a fixed point of preparation. -/
-theorem prep_idempotent_sharp_s :
-    (precisPreparation #[0x00DF]).bind precisPreparation
-      = some #[0x0073, 0x0073] := by decide
-
-/-- Capital ALICE folds to alice; re-applying preparation leaves it
-    unchanged. -/
-theorem prep_idempotent_uppercase_ALICE :
-    (precisPreparation #[0x41, 0x4C, 0x49, 0x43, 0x45]).bind precisPreparation
-      = some #[0x61, 0x6C, 0x69, 0x63, 0x65] := by decide
+-- Concrete UsernameCaseMapped conformance vectors live in
+-- `Unicode.Precis.PreparationVectorsMapped` and
+-- `Unicode.Precis.PreparationVectorsRejected`.
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- CONDITIONAL UNIVERSAL IDEMPOTENCE
@@ -243,7 +215,7 @@ def CaseFoldNfcRoundtripFixed : Prop :=
 theorem precisMap_idempotent_given
     (hNfcWidth : NfcPreservesNonWidthCompatSource)
     (hRoundtrip : CaseFoldNfcRoundtripFixed)
-    (cps : Array Nat) :
+    (cps : List Nat) :
     precisMap (precisMap cps) = precisMap cps := by
   unfold precisMap
   -- Establish: `caseFold (widthMap cps)` has no width-sources.
@@ -273,7 +245,7 @@ theorem precisMap_idempotent_given
 theorem precis_idempotent_given
     (hNfcWidth : NfcPreservesNonWidthCompatSource)
     (hRoundtrip : CaseFoldNfcRoundtripFixed)
-    (cps : Array Nat) (out : Array Nat)
+    (cps : List Nat) (out : List Nat)
     (h : precisPreparation cps = some out) :
     precisPreparation out = some out := by
   have hPMIdem : precisMap (precisMap cps) = precisMap cps :=
@@ -306,7 +278,7 @@ theorem nfcPreservesNonWidthCompatSource : NfcPreservesNonWidthCompatSource :=
     combining-mark characters that are themselves case-fold sources. -/
 theorem precis_idempotent_given_roundtrip
     (hRoundtrip : CaseFoldNfcRoundtripFixed)
-    (cps out : Array Nat) (h : precisPreparation cps = some out) :
+    (cps out : List Nat) (h : precisPreparation cps = some out) :
     precisPreparation out = some out :=
   precis_idempotent_given nfcPreservesNonWidthCompatSource hRoundtrip cps out h
 
@@ -315,7 +287,7 @@ theorem precis_idempotent_given_roundtrip
     is idempotent given only the caseFold ∘ toNFC round-trip fixed point. -/
 theorem precisMap_idempotent_given_roundtrip
     (hRoundtrip : CaseFoldNfcRoundtripFixed)
-    (cps : Array Nat) :
+    (cps : List Nat) :
     precisMap (precisMap cps) = precisMap cps :=
   precisMap_idempotent_given nfcPreservesNonWidthCompatSource hRoundtrip cps
 
@@ -343,7 +315,7 @@ theorem precisMap_idempotent_given_roundtrip
     returns `some out`. Closes RFC 8264/8265 §7's idempotence
     requirement for the UsernameCaseMapped profile. -/
 theorem precis_idempotent
-    (cps out : Array Nat) (h : precisPreparation cps = some out) :
+    (cps out : List Nat) (h : precisPreparation cps = some out) :
     precisPreparation out = some out :=
   precis_idempotent_given_roundtrip
     (Unicode.CaseFoldRoundtrip.caseFoldNfcRoundtripFixed_holds) cps out h
@@ -351,7 +323,7 @@ theorem precis_idempotent
 /-- **Unconditional PRECIS map idempotence.** Companion to
     `precis_idempotent` but for the map-only stage, without the
     admissibility gate. -/
-theorem precisMap_idempotent (cps : Array Nat) :
+theorem precisMap_idempotent (cps : List Nat) :
     precisMap (precisMap cps) = precisMap cps :=
   precisMap_idempotent_given_roundtrip
     (Unicode.CaseFoldRoundtrip.caseFoldNfcRoundtripFixed_holds) cps
@@ -383,7 +355,7 @@ theorem precisMap_idempotent (cps : Array Nat) :
                            = toNFC (toNFC (widthMap cps))
                            = toNFC (widthMap cps)   [toNFC idempotent]
                            = y. -/
-theorem precisMapPreserved_idempotent (cps : Array Nat) :
+theorem precisMapPreserved_idempotent (cps : List Nat) :
     precisMapPreserved (precisMapPreserved cps) = precisMapPreserved cps := by
   unfold precisMapPreserved
   have hWcNoWidth : ∀ cp ∈ WidthMapping.widthMap cps,
@@ -406,7 +378,7 @@ theorem precisMapPreserved_idempotent (cps : Array Nat) :
     preparation to `out` again yields `some out`. Direct analog of
     `precis_idempotent` for the case-preserving profile. -/
 theorem precis_idempotent_preserved
-    (cps out : Array Nat) (h : precisPreparationPreserved cps = some out) :
+    (cps out : List Nat) (h : precisPreparationPreserved cps = some out) :
     precisPreparationPreserved out = some out := by
   have hPMIdem : precisMapPreserved (precisMapPreserved cps) = precisMapPreserved cps :=
     precisMapPreserved_idempotent cps
@@ -423,43 +395,9 @@ theorem precis_idempotent_preserved
   · rw [if_neg hAdm] at hCps
     exact absurd hCps (by simp)
 
--- ═══════════════════════════════════════════════════════════════════════════════
--- USERNAMECASEPRESERVED TEST VECTORS
--- ═══════════════════════════════════════════════════════════════════════════════
-
-/-- Empty input passes preparation. -/
-theorem prepPreserved_empty : precisPreparationPreserved #[] = some #[] := by
-  decide
-
-/-- Pure-lowercase ASCII is unchanged — case preserved, no mapping. -/
-theorem prepPreserved_alice :
-    precisPreparationPreserved #[0x61, 0x6C, 0x69, 0x63, 0x65]
-      = some #[0x61, 0x6C, 0x69, 0x63, 0x65] := by decide
-
-/-- Pure-uppercase ASCII is preserved (unlike UsernameCaseMapped which
-    folds to lowercase). -/
-theorem prepPreserved_uppercase_ALICE :
-    precisPreparationPreserved #[0x41, 0x4C, 0x49, 0x43, 0x45]
-      = some #[0x41, 0x4C, 0x49, 0x43, 0x45] := by decide
-
-/-- Mixed-case identifier is preserved. -/
-theorem prepPreserved_mixed_Alice :
-    precisPreparationPreserved #[0x41, 0x6C, 0x69, 0x63, 0x65]
-      = some #[0x41, 0x6C, 0x69, 0x63, 0x65] := by decide
-
-/-- Fullwidth ASCII is width-mapped but not case-folded. `Ａｌｉｃｅ`
-    prepares to `Alice`, preserving case. -/
-theorem prepPreserved_fullwidth_Alice :
-    precisPreparationPreserved #[0xFF21, 0xFF4C, 0xFF49, 0xFF43, 0xFF45]
-      = some #[0x41, 0x6C, 0x69, 0x63, 0x65] := by decide
-
-/-- Space is still disallowed under IdentifierClass. -/
-theorem prepPreserved_rejects_space :
-    precisPreparationPreserved #[0x0020] = none := by decide
-
-/-- Bidi override is still disallowed (Trojan Source protection). -/
-theorem prepPreserved_rejects_bidi_override :
-    precisPreparationPreserved #[0x202E] = none := by decide
+-- Concrete UsernameCasePreserved conformance vectors live in
+-- `Unicode.Precis.PreparationVectorsPreserved` and
+-- `Unicode.Precis.PreparationVectorsRejected`.
 
 -- Note: the RFC-complete OpaqueString profile (for passwords / secrets,
 -- RFC 8265 §4, with non-ASCII Zs → U+0020 remap and admittance of
@@ -481,7 +419,7 @@ theorem prepPreserved_rejects_bidi_override :
 /-- PRECIS UsernameCaseMapped output is in NFC form. Follows from
     `toNFC_idempotent` applied to `precisMap` which ends with `toNFC`. -/
 theorem precis_output_in_NFC_mapped
-    (cps out : Array Nat) (h : precisPreparation cps = some out) :
+    (cps out : List Nat) (h : precisPreparation cps = some out) :
     toNFC out = out := by
   by_cases hAdm : isGatePass (precisMap cps) = true
   · have hOut : out = precisMap cps := by
@@ -501,7 +439,7 @@ theorem precis_output_in_NFC_mapped
 
 /-- PRECIS UsernameCasePreserved output is in NFC form. -/
 theorem precis_output_in_NFC_preserved
-    (cps out : Array Nat) (h : precisPreparationPreserved cps = some out) :
+    (cps out : List Nat) (h : precisPreparationPreserved cps = some out) :
     toNFC out = out := by
   by_cases hAdm : isGatePass (precisMapPreserved cps) = true
   · have hOut : out = precisMapPreserved cps := by
@@ -525,7 +463,7 @@ theorem precis_output_in_NFC_preserved
     `Unicode.Normalization.NFC.toNFC_preserves_non_widthCompatSource`
     along the `widthMap → caseFold → toNFC` pipeline. -/
 theorem precis_output_non_widthCompatSource_mapped
-    (cps out : Array Nat) (h : precisPreparation cps = some out) :
+    (cps out : List Nat) (h : precisPreparation cps = some out) :
     ∀ cp ∈ out, WidthMapping.isWidthCompatSource cp = false := by
   by_cases hAdm : isGatePass (precisMap cps) = true
   · have hOut : out = precisMap cps := by
@@ -553,7 +491,7 @@ theorem precis_output_non_widthCompatSource_mapped
 /-- PRECIS UsernameCasePreserved output contains no width-compat-source
     codepoints. Same pipeline as `_mapped` minus `caseFold`. -/
 theorem precis_output_non_widthCompatSource_preserved
-    (cps out : Array Nat) (h : precisPreparationPreserved cps = some out) :
+    (cps out : List Nat) (h : precisPreparationPreserved cps = some out) :
     ∀ cp ∈ out, WidthMapping.isWidthCompatSource cp = false := by
   by_cases hAdm : isGatePass (precisMapPreserved cps) = true
   · have hOut : out = precisMapPreserved cps := by
@@ -578,7 +516,7 @@ theorem precis_output_non_widthCompatSource_preserved
     `isPrecisAdmissible`. Follows from `isGatePass` requiring
     admissibility as one of its two conjuncts. -/
 theorem precis_output_admissible_mapped
-    (cps out : Array Nat) (h : precisPreparation cps = some out) :
+    (cps out : List Nat) (h : precisPreparation cps = some out) :
     ∀ cp ∈ out, isPrecisAdmissible cp = true := by
   by_cases hAdm : isGatePass (precisMap cps) = true
   · have hOut : out = precisMap cps := by
@@ -605,7 +543,7 @@ theorem precis_output_admissible_mapped
 
 /-- UsernameCasePreserved preparation output is admissible. -/
 theorem precis_output_admissible_preserved
-    (cps out : Array Nat) (h : precisPreparationPreserved cps = some out) :
+    (cps out : List Nat) (h : precisPreparationPreserved cps = some out) :
     ∀ cp ∈ out, isPrecisAdmissible cp = true := by
   by_cases hAdm : isGatePass (precisMapPreserved cps) = true
   · have hOut : out = precisMapPreserved cps := by
@@ -634,7 +572,7 @@ theorem precis_output_admissible_preserved
     Rule. Follows from `isGatePass` requiring the rule as one of its
     two conjuncts. -/
 theorem precis_output_bidi_rule_mapped
-    (cps out : Array Nat) (h : precisPreparation cps = some out) :
+    (cps out : List Nat) (h : precisPreparation cps = some out) :
     satisfiesBidiRule out = true := by
   by_cases hAdm : isGatePass (precisMap cps) = true
   · have hOut : out = precisMap cps := by
@@ -653,7 +591,7 @@ theorem precis_output_bidi_rule_mapped
 
 /-- UsernameCasePreserved preparation output satisfies the Bidi Rule. -/
 theorem precis_output_bidi_rule_preserved
-    (cps out : Array Nat) (h : precisPreparationPreserved cps = some out) :
+    (cps out : List Nat) (h : precisPreparationPreserved cps = some out) :
     satisfiesBidiRule out = true := by
   by_cases hAdm : isGatePass (precisMapPreserved cps) = true
   · have hOut : out = precisMapPreserved cps := by

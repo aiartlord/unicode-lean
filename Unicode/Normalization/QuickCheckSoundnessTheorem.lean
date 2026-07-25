@@ -44,7 +44,7 @@ open Unicode.Normalization.NFC
     `nfcQCValue = .Y`. Direct projection of the per-element conjunct
     of `isNFCQuickCheck`. -/
 theorem qcY_of_mem
-    {cps : Array Nat} (h : isNFCQuickCheck cps = true)
+    {cps : List Nat} (h : isNFCQuickCheck cps = true)
     {cp : Nat} (hMem : cp ∈ cps) :
     nfcQCValue cp = .Y :=
   QuickCheckSoundnessMaster.qcY_of_mem cps h cp hMem
@@ -56,28 +56,24 @@ theorem qcY_of_mem
 /-- Singleton soundness for any QC=Y codepoint. -/
 theorem singleton_sound
     (cp : Nat) (hQC : nfcQCValue cp = .Y) :
-    toNFC #[cp] = #[cp] :=
+    toNFC [cp] = [cp] :=
   QuickCheckSoundnessMaster.singleton_sound cp hQC
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 MEMBERSHIP HELPERS FOR SNOC INDUCTION
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The trailing element of `xs ++ #[cp]` is a member. -/
-theorem mem_snoc_self (xs : Array Nat) (cp : Nat) :
-    cp ∈ xs ++ #[cp] := by
-  apply Array.mem_append.mpr
-  right
-  simp
+/-- The trailing element of `xs ++ [cp]` is a member. -/
+theorem mem_snoc_self (xs : List Nat) (cp : Nat) :
+    cp ∈ xs ++ [cp] :=
+  List.mem_append.mpr (Or.inr List.mem_cons_self)
 
 /-- Membership in the prefix lifts to membership in the snoc-extended
-    array. -/
+    list. -/
 theorem mem_snoc_of_mem_prefix
-    {xs : Array Nat} {cp : Nat} (x : Nat) (hMem : x ∈ xs) :
-    x ∈ xs ++ #[cp] := by
-  apply Array.mem_append.mpr
-  left
-  exact hMem
+    {xs : List Nat} {cp : Nat} (x : Nat) (hMem : x ∈ xs) :
+    x ∈ xs ++ [cp] :=
+  List.mem_append.mpr (Or.inl hMem)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 MASTER SOUNDNESS THEOREM (UNCONDITIONAL)
@@ -90,41 +86,29 @@ theorem mem_snoc_of_mem_prefix
     dispatcher built atop `compose_qcY_starter_block_additive` (starter)
     and `nfc_snoc_atomic_nonstarter` (non-starter). -/
 theorem quickCheck_sound
-    (cps : Array Nat) (hQC : isNFCQuickCheck cps = true) :
+    (cps : List Nat) (hQC : isNFCQuickCheck cps = true) :
     toNFC cps = cps := by
-  suffices hList : ∀ (l : List Nat),
-      isNFCQuickCheck l.toArray = true → toNFC l.toArray = l.toArray by
-    have hRes := hList cps.toList
-    have hToArr : cps.toList.toArray = cps := cps.toArray_toList
-    rw [hToArr] at hRes
-    exact hRes hQC
-  intro l
   refine Reorder.list_snoc_induction
-    (motive := fun l =>
-      isNFCQuickCheck l.toArray = true → toNFC l.toArray = l.toArray)
-    ?baseCase ?stepCase l
+    (motive := fun l => isNFCQuickCheck l = true → toNFC l = l)
+    ?baseCase ?stepCase cps hQC
   · intro hQCNil
     clear hQCNil
     exact QuickCheckSoundness.empty_sound
   · intro xs cp ih hSnocQC
-    have hAppend : (xs ++ [cp]).toArray = xs.toArray ++ #[cp] :=
-      (List.append_toArray xs [cp]).symm
-    rw [hAppend] at hSnocQC ⊢
-    have hPrefixQC : isNFCQuickCheck xs.toArray = true :=
-      QuickCheckSoundnessPrefix.isNFCQuickCheck_dropLast
-        xs.toArray cp hSnocQC
-    have hPrefixNFC : toNFC xs.toArray = xs.toArray := ih hPrefixQC
+    have hPrefixQC : isNFCQuickCheck xs = true :=
+      QuickCheckSoundnessPrefix.isNFCQuickCheck_dropLast xs cp hSnocQC
+    have hPrefixNFC : toNFC xs = xs := ih hPrefixQC
     have hCpQC : nfcQCValue cp = .Y :=
-      qcY_of_mem hSnocQC (mem_snoc_self xs.toArray cp)
+      qcY_of_mem hSnocQC (mem_snoc_self xs cp)
     exact QuickCheckSoundnessSnocClosure.nfc_snoc_qcY
-      xs.toArray cp hCpQC hPrefixNFC hSnocQC
+      xs cp hCpQC hPrefixNFC hSnocQC
 
 /-- The fast-path `toNFCQuick` is observably equal to the full
     `toNFC` pipeline. When `isNFCQuickCheck` returns `true` the
     quick-check soundness theorem closes by `quickCheck_sound`;
     when it returns `false` the function definitionally falls
     through to `toNFC`. -/
-theorem toNFCQuick_eq_toNFC (cps : Array Nat) :
+theorem toNFCQuick_eq_toNFC (cps : List Nat) :
     toNFCQuick cps = toNFC cps := by
   unfold toNFCQuick
   by_cases hQC : isNFCQuickCheck cps = true

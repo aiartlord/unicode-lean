@@ -20,6 +20,16 @@ import Unicode.Generated.BIP39.French
 import Unicode.Generated.BIP39.Italian
 import Unicode.Generated.BIP39.Czech
 import Unicode.Generated.BIP39.Portuguese
+import Unicode.Generated.BIP39.EnglishCps
+import Unicode.Generated.BIP39.JapaneseCps
+import Unicode.Generated.BIP39.KoreanCps
+import Unicode.Generated.BIP39.SpanishCps
+import Unicode.Generated.BIP39.ChineseSimplifiedCps
+import Unicode.Generated.BIP39.ChineseTraditionalCps
+import Unicode.Generated.BIP39.FrenchCps
+import Unicode.Generated.BIP39.ItalianCps
+import Unicode.Generated.BIP39.CzechCps
+import Unicode.Generated.BIP39.PortugueseCps
 
 namespace Unicode.Generated.BIP39
 
@@ -50,6 +60,21 @@ def wordlist : Language → Array String
   | .italian             => Italian.wordlist
   | .czech               => Czech.wordlist
   | .portuguese          => Portuguese.wordlist
+
+/-- Get the canonical 2,048-word list for `lang` as codepoint sequences.
+    Kernel-visible data: membership proofs reduce over `Nat` codepoints
+    without the unreducible `String.toList`. -/
+def wordlistCps : Language → Array (Array Nat)
+  | .english             => EnglishCps.wordlistCps
+  | .japanese            => JapaneseCps.wordlistCps
+  | .korean              => KoreanCps.wordlistCps
+  | .spanish             => SpanishCps.wordlistCps
+  | .chineseSimplified   => ChineseSimplifiedCps.wordlistCps
+  | .chineseTraditional  => ChineseTraditionalCps.wordlistCps
+  | .french              => FrenchCps.wordlistCps
+  | .italian             => ItalianCps.wordlistCps
+  | .czech               => CzechCps.wordlistCps
+  | .portuguese          => PortugueseCps.wordlistCps
 
 /-- All ten languages, in declaration order. -/
 def allLanguages : Array Language :=

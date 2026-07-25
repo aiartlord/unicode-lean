@@ -33,7 +33,7 @@ theorem qcY_starter_nontrivial_singleton_nfc_id_table :
       decide (Hangul.isHangulSyllable row.codepoint = true) ||
       decide (nfcQCValue row.codepoint ≠ .Y) ||
       decide (row.canonicalDecomposition.size = 0) ||
-      decide (toNFC #[row.codepoint] = #[row.codepoint])) = true := by
+      decide (toNFC [row.codepoint] = [row.codepoint])) = true := by
   unfold UnicodeData.rows
   rw [List.all_toArray, List.all_eq_true]
   intro row hMem
@@ -46,7 +46,7 @@ theorem qcY_starter_nontrivial_singleton_nfc_id_table :
       QuickCheckSoundnessSingletonRank.singletonNFC_of_rank_rows_any
         row.codepoint hAny
     have hLast :
-        decide (toNFC #[row.codepoint] = #[row.codepoint]) = true :=
+        decide (toNFC [row.codepoint] = [row.codepoint]) = true :=
       decide_eq_true hSingleton
     rw [Bool.or_eq_true]
     exact Or.inr hLast

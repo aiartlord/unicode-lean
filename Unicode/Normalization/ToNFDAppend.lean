@@ -53,9 +53,9 @@ open Unicode.Generated
 /-- `reorder` is the identity on a starter singleton. -/
 theorem reorder_singleton_starter (cp : Nat)
     (h : Lookup.canonicalCombiningClass cp = 0) :
-    Reorder.reorder #[cp] = #[cp] := by
-  have hAppend : Reorder.reorder (#[] ++ #[cp]) = Reorder.reorder #[] ++ #[cp] :=
-    ReorderAppend.reorder_append_starter #[] cp h
+    Reorder.reorder [cp] = [cp] := by
+  have hAppend : Reorder.reorder ([] ++ [cp]) = Reorder.reorder [] ++ [cp] :=
+    ReorderAppend.reorder_append_starter [] cp h
   rw [Reorder.reorder_empty] at hAppend
   simp at hAppend
   exact hAppend
@@ -69,7 +69,7 @@ theorem reorder_singleton_starter (cp : Nat)
 theorem toNFD_singleton_trivial
     (cp : Nat) (hCp : Lookup.canonicalCombiningClass cp = 0)
     (hFCD : Decompose.fullCanonicalDecompose cp = #[cp]) :
-    NFC.toNFD #[cp] = #[cp] := by
+    NFC.toNFD [cp] = [cp] := by
   unfold NFC.toNFD
   rw [Distribute.decomposeSequence_singleton cp]
   rw [hFCD]
@@ -79,13 +79,13 @@ theorem toNFD_singleton_trivial
     with empty canonical decomposition, appending commutes directly via
     `reorder_append_starter`. -/
 theorem toNFD_append_starter_trivial
-    (X : Array Nat) (cp : Nat)
+    (X : List Nat) (cp : Nat)
     (hCp : Lookup.canonicalCombiningClass cp = 0)
     (hFCD : Decompose.fullCanonicalDecompose cp = #[cp]) :
-    NFC.toNFD (X ++ #[cp]) = NFC.toNFD X ++ NFC.toNFD #[cp] := by
+    NFC.toNFD (X ++ [cp]) = NFC.toNFD X ++ NFC.toNFD [cp] := by
   rw [toNFD_singleton_trivial cp hCp hFCD]
   unfold NFC.toNFD
-  rw [Distribute.decomposeSequence_append X #[cp]]
+  rw [Distribute.decomposeSequence_append X [cp]]
   rw [Distribute.decomposeSequence_singleton cp]
   rw [hFCD]
   exact ReorderAppend.reorder_append_starter (Decompose.decomposeSequence X) cp hCp
@@ -404,25 +404,26 @@ theorem starterHead_destructure
     Appending any non-anomalous starter commutes with canonical NFD
     normalization. -/
 theorem toNFD_append_starter_general
-    (X : Array Nat) (cp : Nat)
+    (X : List Nat) (cp : Nat)
     (hCp : Lookup.canonicalCombiningClass cp = 0)
     (hNotAnomalous : isAnomalousStarter cp = false) :
-    NFC.toNFD (X ++ #[cp]) = NFC.toNFD X ++ NFC.toNFD #[cp] := by
+    NFC.toNFD (X ++ [cp]) = NFC.toNFD X ++ NFC.toNFD [cp] := by
   unfold NFC.toNFD
-  rw [Distribute.decomposeSequence_append X #[cp]]
+  rw [Distribute.decomposeSequence_append X [cp]]
   rw [Distribute.decomposeSequence_singleton cp]
   have hSH := fullCanonicalDecompose_starterHead cp hCp hNotAnomalous
   obtain ⟨head, tail, hEq, hHeadCCC⟩ :=
     starterHead_destructure (Decompose.fullCanonicalDecompose cp) hSH
   rw [hEq]
-  rw [show Decompose.decomposeSequence X ++ (#[head] ++ tail)
-         = Decompose.decomposeSequence X ++ #[head] ++ tail
-       from by rw [Array.append_assoc]]
+  simp only [Array.toList_append, List.toList_toArray]
+  rw [show Decompose.decomposeSequence X ++ ([head] ++ tail.toList)
+         = Decompose.decomposeSequence X ++ [head] ++ tail.toList
+       from by rw [List.append_assoc]]
   rw [ReorderAppend.reorder_append_starter_middle
-        (Decompose.decomposeSequence X) head tail hHeadCCC]
-  rw [show (#[head] ++ tail : Array Nat) = #[] ++ #[head] ++ tail
+        (Decompose.decomposeSequence X) head tail.toList hHeadCCC]
+  rw [show ([head] ++ tail.toList : List Nat) = [] ++ [head] ++ tail.toList
        from by simp]
-  rw [ReorderAppend.reorder_append_starter_middle #[] head tail hHeadCCC]
+  rw [ReorderAppend.reorder_append_starter_middle [] head tail.toList hHeadCCC]
   rw [Reorder.reorder_empty]
   simp
 
@@ -432,22 +433,22 @@ theorem toNFD_append_starter_general
 
 /-- **ToNFD congruence for trivially-decomposed starter appends.** -/
 theorem toNFD_congr_append_starter_trivial
-    {a b : Array Nat} (cp : Nat)
+    {a b : List Nat} (cp : Nat)
     (hCp : Lookup.canonicalCombiningClass cp = 0)
     (hFCD : Decompose.fullCanonicalDecompose cp = #[cp])
     (h : NFC.toNFD a = NFC.toNFD b) :
-    NFC.toNFD (a ++ #[cp]) = NFC.toNFD (b ++ #[cp]) := by
+    NFC.toNFD (a ++ [cp]) = NFC.toNFD (b ++ [cp]) := by
   rw [toNFD_append_starter_trivial a cp hCp hFCD]
   rw [toNFD_append_starter_trivial b cp hCp hFCD]
   rw [h]
 
 /-- **ToNFD congruence for non-anomalous starter appends.** -/
 theorem toNFD_congr_append_starter_general
-    {a b : Array Nat} (cp : Nat)
+    {a b : List Nat} (cp : Nat)
     (hCp : Lookup.canonicalCombiningClass cp = 0)
     (hNotAnomalous : isAnomalousStarter cp = false)
     (h : NFC.toNFD a = NFC.toNFD b) :
-    NFC.toNFD (a ++ #[cp]) = NFC.toNFD (b ++ #[cp]) := by
+    NFC.toNFD (a ++ [cp]) = NFC.toNFD (b ++ [cp]) := by
   rw [toNFD_append_starter_general a cp hCp hNotAnomalous]
   rw [toNFD_append_starter_general b cp hCp hNotAnomalous]
   rw [h]
@@ -465,7 +466,7 @@ theorem toNFD_congr_append_starter_general
 
 /-- Definitional equation for `NFC.toNFD`. Used to fold/unfold without
     pattern-match confusion. -/
-theorem toNFD_eq (X : Array Nat) :
+theorem toNFD_eq (X : List Nat) :
     NFC.toNFD X = Reorder.reorder (Decompose.decomposeSequence X) := rfl
 
 /-- `decomposeSequence ∘ toNFD = toNFD`. Every codepoint in `toNFD A`
@@ -473,7 +474,7 @@ theorem toNFD_eq (X : Array Nat) :
     `toNFD_output_HSR_and_FullyDecomposed`), so applying
     `decomposeSequence` again is the identity (by
     `decomposeSequence_id_on_FullyDecomposed`). -/
-theorem decomposeSequence_toNFD (A : Array Nat) :
+theorem decomposeSequence_toNFD (A : List Nat) :
     Decompose.decomposeSequence (NFC.toNFD A) = NFC.toNFD A := by
   have hFD := (NFD.toNFD_output_HSR_and_FullyDecomposed A).2
   exact NFD.decomposeSequence_id_on_FullyDecomposed (NFC.toNFD A) hFD
@@ -488,7 +489,7 @@ theorem decomposeSequence_toNFD (A : Array Nat) :
     ∘ decomposeSequence` on both sides and distributing
     `decomposeSequence` across `++` yields a `reorder_absorbing_left`
     invocation with the `decomposeSequence` components of the inputs. -/
-theorem toNFD_absorbing_left (A B : Array Nat) :
+theorem toNFD_absorbing_left (A B : List Nat) :
     NFC.toNFD (A ++ B) = NFC.toNFD (NFC.toNFD A ++ B) := by
   rw [toNFD_eq (A ++ B), toNFD_eq (NFC.toNFD A ++ B)]
   rw [Distribute.decomposeSequence_append A B]
@@ -505,7 +506,7 @@ theorem toNFD_absorbing_left (A B : Array Nat) :
     `toNFD (a ++ c)` to `toNFD (toNFD a ++ c)` and `toNFD (b ++ c)` to
     `toNFD (toNFD b ++ c)`; substituting `toNFD a = toNFD b` closes
     the goal. -/
-theorem toNFD_congr_append {a b : Array Nat} (c : Array Nat)
+theorem toNFD_congr_append {a b : List Nat} (c : List Nat)
     (h : NFC.toNFD a = NFC.toNFD b) :
     NFC.toNFD (a ++ c) = NFC.toNFD (b ++ c) := by
   rw [toNFD_absorbing_left a c]
@@ -523,7 +524,7 @@ theorem toNFD_congr_append {a b : Array Nat} (c : Array Nat)
     across `++`, and using `decomposeSequence_toNFD` on the right
     operand reduces the claim to a `reorder_absorbing_right` on the
     `decomposeSequence` components. -/
-theorem toNFD_absorbing_right (A B : Array Nat) :
+theorem toNFD_absorbing_right (A B : List Nat) :
     NFC.toNFD (A ++ B) = NFC.toNFD (A ++ NFC.toNFD B) := by
   rw [toNFD_eq (A ++ B), toNFD_eq (A ++ NFC.toNFD B)]
   rw [Distribute.decomposeSequence_append A B]
@@ -540,7 +541,7 @@ theorem toNFD_absorbing_right (A B : Array Nat) :
     `toNFD (c ++ a)` to `toNFD (c ++ toNFD a)` and `toNFD (c ++ b)` to
     `toNFD (c ++ toNFD b)`; substituting `toNFD a = toNFD b` closes
     the goal.  Companion to `toNFD_congr_append`. -/
-theorem toNFD_congr_prepend {a b : Array Nat} (c : Array Nat)
+theorem toNFD_congr_prepend {a b : List Nat} (c : List Nat)
     (h : NFC.toNFD a = NFC.toNFD b) :
     NFC.toNFD (c ++ a) = NFC.toNFD (c ++ b) := by
   rw [toNFD_absorbing_right c a]

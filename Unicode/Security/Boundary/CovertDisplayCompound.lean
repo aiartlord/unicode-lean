@@ -48,7 +48,7 @@ namespace Unicode.Security.Boundary.CovertDisplayCompound
 open Unicode.Security.Calculus
 open Unicode.TrojanSource (isBidiFormatControl)
 open Unicode.Security.Covert.VariationSelectorPayload
-  (VSUseClass classifyVSPosition)
+  (VSUseClass classifyPositions)
 
 set_option maxRecDepth 1000000
 
@@ -57,19 +57,17 @@ set_option maxRecDepth 1000000
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- First input position holding a UAX #9 bidi format control. -/
-def firstBidiPos (input : Array Nat) : Option Nat :=
-  (Array.range input.size).findSome? (fun i =>
-    if h : i < input.size then
-      if isBidiFormatControl input[i] then some i else none
-    else none)
+def firstBidiPos (input : List Nat) : Option Nat :=
+  input.zipIdx.findSome? (fun cpWithIdx =>
+    if isBidiFormatControl cpWithIdx.1 then some cpWithIdx.2 else none)
 
-/-- First input position whose `classifyVSPosition` is
-    `.suspicious` — i.e. a VS with no matching StandardizedVariants
-    or emoji-variation-sequences row. -/
-def firstSuspiciousVsPos (input : Array Nat) : Option Nat :=
-  (Array.range input.size).findSome? (fun i =>
-    match classifyVSPosition input i with
-    | .suspicious => some i
+/-- First input position whose classification under
+    `classifyPositions` is `.suspicious` — i.e. a VS with no matching
+    StandardizedVariants or emoji-variation-sequences row. -/
+def firstSuspiciousVsPos (input : List Nat) : Option Nat :=
+  (classifyPositions input).zipIdx.findSome? (fun clsWithIdx =>
+    match clsWithIdx.1 with
+    | .suspicious => some clsWithIdx.2
     | .nonVS | .registeredStandardized | .registeredEmojiPresentation
     | .registeredTextPresentation => none)
 
@@ -81,11 +79,9 @@ def isTagBlockChar (cp : Nat) : Bool :=
   Nat.ble 0xE0000 cp && Nat.ble cp 0xE007F
 
 /-- First input position holding a tag-block character. -/
-def firstTagBlockPos (input : Array Nat) : Option Nat :=
-  (Array.range input.size).findSome? (fun i =>
-    if h : i < input.size then
-      if isTagBlockChar input[i] then some i else none
-    else none)
+def firstTagBlockPos (input : List Nat) : Option Nat :=
+  input.zipIdx.findSome? (fun cpWithIdx =>
+    if isTagBlockChar cpWithIdx.1 then some cpWithIdx.2 else none)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 Types
@@ -98,11 +94,11 @@ inductive SubThreat where
 
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
   deriving Inhabited
 
 structure Verdict where
-  input    : Array Nat
+  input    : List Nat
   classify : Classification
   deriving Inhabited
 
@@ -111,7 +107,7 @@ structure Verdict where
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The CovertDisplayCompound detection function. -/
-def detect (input : Array Nat) : Verdict :=
+def detect (input : List Nat) : Verdict :=
   let classification : Classification :=
     match firstBidiPos input with
     | none => .clear
@@ -119,12 +115,12 @@ def detect (input : Array Nat) : Verdict :=
       match firstSuspiciousVsPos input with
       | some vsPos =>
         .hazard (.bidiPlusUnregisteredVs bidiPos vsPos)
-          #[bidiPos, vsPos] ByteArray.empty
+          [bidiPos, vsPos] ByteArray.empty
       | none =>
         match firstTagBlockPos input with
         | some tagPos =>
           .hazard (.bidiPlusTagBlock bidiPos tagPos)
-            #[bidiPos, tagPos] ByteArray.empty
+            [bidiPos, tagPos] ByteArray.empty
         | none => .clear
   { input := input, classify := classification }
 
@@ -141,16 +137,16 @@ def SubThreat.tag : SubThreat → String
 def Classification.isClear : Classification → Bool
   | .clear                       => true
   | .hazard sub positions decoded =>
-    Function.const (SubThreat × Array Nat × ByteArray) false
+    Function.const (SubThreat × List Nat × ByteArray) false
       (sub, positions, decoded)
 
 def Classification.tag : Classification → Option String
   | .clear                       => none
   | .hazard sub positions decoded =>
-    Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
+    Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
 
-def Classification.positions : Classification → Array Nat
-  | .clear                       => #[]
+def Classification.positions : Classification → List Nat
+  | .clear                       => []
   | .hazard sub positions decoded =>
     Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
@@ -159,36 +155,36 @@ def Classification.positions : Classification → Array Nat
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Empty input is clear. -/
-theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
+theorem detect_empty_clear : (detect []).classify.isClear = true := by
   decide +kernel
 
 /-- Pure ASCII is clear; no bidi, no VS, no tag block. -/
 theorem detect_ascii_clear :
-    (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
+    (detect [0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
   decide +kernel
 
 /-- Bidi-only (RLO alone) is clear here; the compound is
     not present. -/
 theorem detect_bidi_only_clear :
-    (detect #[0x202E]).classify.isClear = true := by decide +kernel
+    (detect [0x202E]).classify.isClear = true := by decide +kernel
 
 /-- VS-only (ASCII + VS1) is clear here; the compound is
     not present. -/
 theorem detect_vs_only_clear :
-    (detect #[0x0041, 0xFE00]).classify.isClear = true := by decide +kernel
+    (detect [0x0041, 0xFE00]).classify.isClear = true := by decide +kernel
 
 /-- Compound RLO + ASCII + VS1 fires `bidiPlusUnregisteredVs`.
     VS1 attached to ASCII A is not in any standardized table, so
-    `classifyVSPosition` is `.suspicious`. -/
+    its classification is `.suspicious`. -/
 theorem detect_compound_bidi_vs :
-    (detect #[0x202E, 0x0041, 0xFE00]).classify.tag =
+    (detect [0x202E, 0x0041, 0xFE00]).classify.tag =
       some "BidiPlusUnregisteredVs" := by
   decide +kernel
 
 /-- Compound RLO + ASCII + tag block (no suspicious VS) fires
     `bidiPlusTagBlock`. -/
 theorem detect_compound_bidi_tag :
-    (detect #[0x202E, 0x0041, 0xE0001]).classify.tag =
+    (detect [0x202E, 0x0041, 0xE0001]).classify.tag =
       some "BidiPlusTagBlock" := by
   decide +kernel
 

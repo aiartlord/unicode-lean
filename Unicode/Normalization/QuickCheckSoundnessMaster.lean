@@ -58,7 +58,7 @@ theorem singleton_sound_nontrivial
     (hCcc : Lookup.canonicalCombiningClass cp = 0)
     (hNotHangul : Hangul.isHangulSyllable cp = false)
     (hNonEmpty : Lookup.canonicalDecomposition cp ≠ #[]) :
-    toNFC #[cp] = #[cp] := by
+    toNFC [cp] = [cp] := by
   -- A non-empty `Lookup.canonicalDecomposition cp` implies `cp` is in
   -- `UnicodeData.rows` (codepoints absent from the table fall through
   -- to the empty-array @missing default).
@@ -123,7 +123,7 @@ theorem singleton_sound_nontrivial
 
 /-- **Singleton soundness dispatcher.** Every QC=Y singleton is in NFC. -/
 theorem singleton_sound (cp : Nat) (hQC : nfcQCValue cp = .Y) :
-    toNFC #[cp] = #[cp] := by
+    toNFC [cp] = [cp] := by
   by_cases hCcc : Lookup.canonicalCombiningClass cp = 0
   · -- Starter
     by_cases hHangul : Hangul.isHangulSyllable cp = true
@@ -149,17 +149,14 @@ theorem singleton_sound (cp : Nat) (hQC : nfcQCValue cp = .Y) :
     `nfcQCValue = .Y`. Direct projection of the per-element
     conjunct of `isNFCQuickCheck`. -/
 theorem qcY_of_mem
-    (cps : Array Nat) (h : isNFCQuickCheck cps = true)
+    (cps : List Nat) (h : isNFCQuickCheck cps = true)
     (cp : Nat) (hMem : cp ∈ cps) :
     nfcQCValue cp = .Y := by
   unfold isNFCQuickCheck at h
   rw [Bool.and_eq_true] at h
   obtain ⟨hAllQC, hHsr⟩ := h
   clear hHsr
-  rw [Array.all_eq_true] at hAllQC
-  rcases Array.getElem_of_mem hMem with ⟨i, hi, hElem⟩
-  have h_i := hAllQC i hi
-  rw [hElem] at h_i
-  exact of_decide_eq_true h_i
+  rw [List.all_eq_true] at hAllQC
+  exact of_decide_eq_true (hAllQC cp hMem)
 
 end Unicode.Normalization.QuickCheckSoundnessMaster

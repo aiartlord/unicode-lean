@@ -431,27 +431,22 @@ theorem zip_tail_mem_seam (pre : List Nat) (y cp : Nat) :
 /-- Under HSR snoc-extension `arr ++ #[cp]` with `cp` non-starter,
     `arr`'s last element has CCC bounded above by `ccc cp`. -/
 theorem hasSortedRunsBool_snoc_le
-    (arr : Array Nat) (cp y : Nat)
-    (hHSR : NFC.hasSortedRunsBool (arr ++ #[cp]).toList = true)
-    (hLast : arr.toList.getLast? = some y)
+    (arr : List Nat) (cp y : Nat)
+    (hHSR : NFC.hasSortedRunsBool (arr ++ [cp]) = true)
+    (hLast : arr.getLast? = some y)
     (hCp_pos : 0 < Lookup.canonicalCombiningClass cp) :
     Lookup.canonicalCombiningClass y ≤ Lookup.canonicalCombiningClass cp := by
-  rcases List.eq_nil_or_concat arr.toList with hNil | ⟨pre, last, hConcat⟩
+  rcases List.eq_nil_or_concat arr with hNil | ⟨pre, last, hConcat⟩
   · rw [hNil] at hLast
     exact absurd hLast (by simp)
-  · have hConcatApp : arr.toList = pre ++ [last] := by
-      rw [hConcat]
-      simp
+  · have hConcatApp : arr = pre ++ [last] := by rw [hConcat]; simp
     have hLastEq : y = last := by
       rw [hConcatApp] at hLast
       rw [getLast?_concat_singleton pre last] at hLast
       exact ((Option.some.injEq last y).mp hLast).symm
     rw [hLastEq]
-    have hListEq : (arr ++ #[cp]).toList = pre ++ [last, cp] := by
-      rw [Array.toList_append, hConcatApp]
-      show pre ++ [last] ++ (#[cp] : Array Nat).toList = pre ++ [last, cp]
-      have hSingleton : (#[cp] : Array Nat).toList = [cp] := rfl
-      rw [hSingleton]
+    have hListEq : arr ++ [cp] = pre ++ [last, cp] := by
+      rw [hConcatApp]
       simp [List.append_assoc]
     rw [hListEq] at hHSR
     have hZipMem : (last, cp) ∈ ((pre ++ [last, cp]).zip (pre ++ [last, cp]).tail) :=
@@ -552,37 +547,33 @@ theorem foldl_all_nonstarter_eq
 
 /-- `compose Z = Z` when `Z` is all non-starters. -/
 theorem compose_id_when_all_nonstarter
-    (Z : Array Nat)
-    (hAllPos : ∀ x ∈ Z.toList, 0 < Lookup.canonicalCombiningClass x) :
+    (Z : List Nat)
+    (hAllPos : ∀ x ∈ Z, 0 < Lookup.canonicalCombiningClass x) :
     Compose.compose Z = Z := by
   unfold Compose.compose
-  rw [← Array.foldl_toList]
-  have hFold := foldl_all_nonstarter_eq Z.toList Compose.initialState rfl hAllPos
+  have hFold := foldl_all_nonstarter_eq Z Compose.initialState rfl hAllPos
   rw [hFold]
-  unfold Compose.flushCompose
-  show Compose.initialState.emitted ++ Z.toList.toArray
-        ++ ([] : List Nat).reverse.toArray = Z
-  show #[] ++ Z.toList.toArray ++ #[] = Z
+  unfold Compose.flushCompose Compose.initialState
   simp
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §9 SWAP-CASE STRUCTURE
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- HSR-fail on `toNFD xs ++ #[cp]` forces `trailingHigh` non-empty:
+/-- HSR-fail on `toNFD xs ++ [cp]` forces `trailingHigh` non-empty:
     if it were empty, all elements of `toNFD xs` would have CCC ≤
     ccc(cp), and `HasSortedRuns_append_singleton` would give HSR on
     `(toNFD xs) ++ [cp]`, contradicting the failure. -/
 theorem trailingHigh_nonempty_in_swap_case
-    (xs : Array Nat) (cp : Nat)
-    (hHSR_fail : ¬ NFC.hasSortedRunsBool (toNFD xs ++ #[cp]).toList = true) :
-    trailingHigh (toNFD xs).toList (Lookup.canonicalCombiningClass cp) ≠ [] := by
+    (xs : List Nat) (cp : Nat)
+    (hHSR_fail : ¬ NFC.hasSortedRunsBool (toNFD xs ++ [cp]) = true) :
+    trailingHigh (toNFD xs) (Lookup.canonicalCombiningClass cp) ≠ [] := by
   intro hHighEmpty
   apply hHSR_fail
-  have hZ_HSR : Reorder.HasSortedRuns (toNFD xs).toList :=
+  have hZ_HSR : Reorder.HasSortedRuns (toNFD xs) :=
     (NFD.toNFD_output_HSR_and_FullyDecomposed xs).1
   have hSeam : 0 < Lookup.canonicalCombiningClass cp
-              → ∀ a, (toNFD xs).toList.getLast? = some a
+              → ∀ a, (toNFD xs).getLast? = some a
                   → Lookup.canonicalCombiningClass a
                       ≤ Lookup.canonicalCombiningClass cp := by
     intros hCpPosLocal a hLast
@@ -590,7 +581,7 @@ theorem trailingHigh_nonempty_in_swap_case
     rw [List.getLast?_eq_head?_reverse] at hLast
     unfold trailingHigh at hHighEmpty
     rw [List.reverse_eq_nil_iff] at hHighEmpty
-    cases hRev : (toNFD xs).toList.reverse with
+    cases hRev : (toNFD xs).reverse with
     | nil =>
       rw [hRev] at hLast
       exact absurd hLast (by simp)
@@ -617,11 +608,8 @@ theorem trailingHigh_nonempty_in_swap_case
         exact hTakeWhileNonEmpty hHighEmpty
       · rw [← hZeq]
         omega
-  apply (NFC.hasSortedRunsBool_iff_HasSortedRuns (toNFD xs ++ #[cp]).toList).mpr
-  rw [Array.toList_append]
-  have hSingleton : (#[cp] : Array Nat).toList = [cp] := rfl
-  rw [hSingleton]
-  exact HasSortedRuns_append_singleton (toNFD xs).toList cp hZ_HSR hSeam
+  apply (NFC.hasSortedRunsBool_iff_HasSortedRuns (toNFD xs ++ [cp])).mpr
+  exact HasSortedRuns_append_singleton (toNFD xs) cp hZ_HSR hSeam
 
 /-- In the swap case, `lowL` contains a starter. Contrapositive proof:
     if `lowL` had no starter, `toNFD xs` would be all non-starters
@@ -630,39 +618,39 @@ theorem trailingHigh_nonempty_in_swap_case
     xs) = xs`, this gives `xs = toNFD xs`, so `xs.last ∈ highL` with
     `ccc > ccc cp`, contradicting HSR's seam bound. -/
 theorem lowL_has_starter_in_swap_case
-    (xs : Array Nat) (cp : Nat)
+    (xs : List Nat) (cp : Nat)
     (hCp_ccc_pos : 0 < Lookup.canonicalCombiningClass cp)
     (hPrefix : toNFC xs = xs)
-    (hHSR_outer : NFC.hasSortedRunsBool (xs ++ #[cp]).toList = true)
+    (hHSR_outer : NFC.hasSortedRunsBool (xs ++ [cp]) = true)
     (hHSR_inner_fail :
-      ¬ NFC.hasSortedRunsBool (toNFD xs ++ #[cp]).toList = true) :
-    ∃ s ∈ trailingLow (toNFD xs).toList (Lookup.canonicalCombiningClass cp),
+      ¬ NFC.hasSortedRunsBool (toNFD xs ++ [cp]) = true) :
+    ∃ s ∈ trailingLow (toNFD xs) (Lookup.canonicalCombiningClass cp),
       Lookup.canonicalCombiningClass s = 0 := by
-  have hPartition : (toNFD xs).toList
-                  = trailingLow (toNFD xs).toList (Lookup.canonicalCombiningClass cp)
-                    ++ trailingHigh (toNFD xs).toList (Lookup.canonicalCombiningClass cp) :=
-    (trailingLow_append_trailingHigh (toNFD xs).toList
+  have hPartition : toNFD xs
+                  = trailingLow (toNFD xs) (Lookup.canonicalCombiningClass cp)
+                    ++ trailingHigh (toNFD xs) (Lookup.canonicalCombiningClass cp) :=
+    (trailingLow_append_trailingHigh (toNFD xs)
       (Lookup.canonicalCombiningClass cp)).symm
   have hHighNonEmpty :
-      trailingHigh (toNFD xs).toList (Lookup.canonicalCombiningClass cp) ≠ [] :=
+      trailingHigh (toNFD xs) (Lookup.canonicalCombiningClass cp) ≠ [] :=
     trailingHigh_nonempty_in_swap_case xs cp hHSR_inner_fail
   have hHighPos :
-      ∀ b ∈ trailingHigh (toNFD xs).toList (Lookup.canonicalCombiningClass cp),
+      ∀ b ∈ trailingHigh (toNFD xs) (Lookup.canonicalCombiningClass cp),
         0 < Lookup.canonicalCombiningClass b :=
-    trailingHigh_all_pos (toNFD xs).toList (Lookup.canonicalCombiningClass cp)
+    trailingHigh_all_pos (toNFD xs) (Lookup.canonicalCombiningClass cp)
   have hHighGt :
-      ∀ b ∈ trailingHigh (toNFD xs).toList (Lookup.canonicalCombiningClass cp),
+      ∀ b ∈ trailingHigh (toNFD xs) (Lookup.canonicalCombiningClass cp),
         Lookup.canonicalCombiningClass cp < Lookup.canonicalCombiningClass b :=
-    trailingHigh_all_gt (toNFD xs).toList (Lookup.canonicalCombiningClass cp)
+    trailingHigh_all_gt (toNFD xs) (Lookup.canonicalCombiningClass cp)
   refine Classical.byContradiction (fun hNoStarter => ?contradictionPath)
   have hAllPosLow :
-      ∀ x ∈ trailingLow (toNFD xs).toList (Lookup.canonicalCombiningClass cp),
+      ∀ x ∈ trailingLow (toNFD xs) (Lookup.canonicalCombiningClass cp),
         0 < Lookup.canonicalCombiningClass x := by
     intros x hx
     refine Classical.byContradiction (fun hNotPos => ?innerPath)
     have hCccZero : Lookup.canonicalCombiningClass x = 0 := by omega
     exact hNoStarter ⟨x, hx, hCccZero⟩
-  have hAllPosToNFD : ∀ x ∈ (toNFD xs).toList,
+  have hAllPosToNFD : ∀ x ∈ toNFD xs,
                         0 < Lookup.canonicalCombiningClass x := by
     intros x hx
     rw [hPartition] at hx
@@ -675,16 +663,16 @@ theorem lowL_has_starter_in_swap_case
     hPrefix.symm.trans hPassThrough
   obtain ⟨hd, tl, hHighEq⟩ :
       ∃ hd tl,
-        trailingHigh (toNFD xs).toList (Lookup.canonicalCombiningClass cp)
+        trailingHigh (toNFD xs) (Lookup.canonicalCombiningClass cp)
           = hd :: tl := by
-    cases hHigh : trailingHigh (toNFD xs).toList (Lookup.canonicalCombiningClass cp) with
+    cases hHigh : trailingHigh (toNFD xs) (Lookup.canonicalCombiningClass cp) with
     | nil => exact absurd hHigh hHighNonEmpty
     | cons hd tl => exact ⟨hd, tl, rfl⟩
   have hHighEq_ne_nil : (hd :: tl) ≠ ([] : List Nat) :=
     List.cons_ne_nil hd tl
   have hZHighMem :
       (hd :: tl).getLast hHighEq_ne_nil
-        ∈ trailingHigh (toNFD xs).toList (Lookup.canonicalCombiningClass cp) := by
+        ∈ trailingHigh (toNFD xs) (Lookup.canonicalCombiningClass cp) := by
     rw [hHighEq]
     exact List.getLast_mem hHighEq_ne_nil
   have hZHighGt :
@@ -692,11 +680,11 @@ theorem lowL_has_starter_in_swap_case
         < Lookup.canonicalCombiningClass ((hd :: tl).getLast hHighEq_ne_nil) :=
     hHighGt ((hd :: tl).getLast hHighEq_ne_nil) hZHighMem
   have hXsLast :
-      xs.toList.getLast? = some ((hd :: tl).getLast hHighEq_ne_nil) := by
+      xs.getLast? = some ((hd :: tl).getLast hHighEq_ne_nil) := by
     rw [hXsEq, hPartition]
     rw [List.getLast?_append]
     have hHighGetLast :
-        (trailingHigh (toNFD xs).toList
+        (trailingHigh (toNFD xs)
           (Lookup.canonicalCombiningClass cp)).getLast?
           = some ((hd :: tl).getLast hHighEq_ne_nil) := by
       rw [hHighEq]
@@ -715,35 +703,35 @@ theorem lowL_has_starter_in_swap_case
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The HSR-preserves variant of the non-starter snoc closure: when
-    `toNFD xs ++ #[cp]` is already HSR, `reorder` is the identity on
+    `toNFD xs ++ [cp]` is already HSR, `reorder` is the identity on
     it, so the boundary collapses to `compose_qcY_linear` + IH. -/
 theorem nfc_snoc_atomic_nonstarter_hsr_preserves
-    (xs : Array Nat) (cp : Nat)
+    (xs : List Nat) (cp : Nat)
     (hQC : nfcQCValue cp = .Y)
     (hCccPos : 0 < Lookup.canonicalCombiningClass cp)
     (hDecomp : Lookup.canonicalDecomposition cp = #[])
     (hNotHangul : Hangul.isHangulSyllable cp = false)
-    (hHsrToNFD : Reorder.HasSortedRuns (toNFD xs ++ #[cp]).toList)
+    (hHsrToNFD : Reorder.HasSortedRuns (toNFD xs ++ [cp]))
     (hPrefix : toNFC xs = xs) :
-    toNFC (xs ++ #[cp]) = xs ++ #[cp] := by
+    toNFC (xs ++ [cp]) = xs ++ [cp] := by
   have hFCD : Decompose.fullCanonicalDecompose cp = #[cp] :=
     decomp_atomic_id cp hDecomp hNotHangul
-  show Compose.compose (toNFD (xs ++ #[cp])) = xs ++ #[cp]
-  have hToNFDExpand : toNFD (xs ++ #[cp])
-                    = Reorder.reorder (toNFD xs ++ #[cp]) := by
+  show Compose.compose (toNFD (xs ++ [cp])) = xs ++ [cp]
+  have hToNFDExpand : toNFD (xs ++ [cp])
+                    = Reorder.reorder (toNFD xs ++ [cp]) := by
     unfold toNFD
-    rw [Distribute.decomposeSequence_append xs #[cp]]
+    rw [Distribute.decomposeSequence_append xs [cp]]
     rw [Distribute.decomposeSequence_singleton, hFCD]
     exact ReorderAppend.reorder_append_absorbing_nonstarter
       (Decompose.decomposeSequence xs) cp hCccPos
   rw [hToNFDExpand]
-  have hReorderId : Reorder.reorder (toNFD xs ++ #[cp])
-                  = toNFD xs ++ #[cp] :=
-    Reorder.reorder_id_on_HasSortedRuns (toNFD xs ++ #[cp]) hHsrToNFD
+  have hReorderId : Reorder.reorder (toNFD xs ++ [cp])
+                  = toNFD xs ++ [cp] :=
+    Reorder.reorder_id_on_HasSortedRuns (toNFD xs ++ [cp]) hHsrToNFD
   rw [hReorderId]
   rw [compose_qcY_linear (toNFD xs) cp hQC]
-  show Compose.compose (toNFD xs) ++ #[cp] = xs ++ #[cp]
-  show toNFC xs ++ #[cp] = xs ++ #[cp]
+  show Compose.compose (toNFD xs) ++ [cp] = xs ++ [cp]
+  show toNFC xs ++ [cp] = xs ++ [cp]
   rw [hPrefix]
 
 end Unicode.Normalization.ComposeKernelSupport

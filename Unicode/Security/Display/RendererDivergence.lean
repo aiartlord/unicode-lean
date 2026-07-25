@@ -75,11 +75,11 @@ inductive SubThreat where
 
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : Array Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
   deriving Inhabited
 
 structure Verdict where
-  input              : Array Nat
+  input              : List Nat
   classify           : Classification
   vsCount            : Nat
   combiningCount     : Nat
@@ -120,58 +120,50 @@ def isGraphemeExtend (cp : Nat) : Bool :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Count of variation selectors in `input`. -/
-def countVS (input : Array Nat) : Nat :=
+def countVS (input : List Nat) : Nat :=
   input.foldl (fun n cp => if isVariationSelector cp then n + 1 else n) 0
 
 /-- Count of combining (Extend) marks in `input`. -/
-def countCombining (input : Array Nat) : Nat :=
+def countCombining (input : List Nat) : Nat :=
   input.foldl (fun n cp => if isGraphemeExtend cp then n + 1 else n) 0
 
 /-- Count of fullwidth/halfwidth chars in `input`. -/
-def countFullwidth (input : Array Nat) : Nat :=
+def countFullwidth (input : List Nat) : Nat :=
   input.foldl (fun n cp => if isFullwidthHalfwidth cp then n + 1 else n) 0
 
 /-- True iff `input` contains any ZWJ. -/
-def hasZwj (input : Array Nat) : Bool :=
+def hasZwj (input : List Nat) : Bool :=
   input.any isZwj
 
 /-- Position of the first variation selector in `input`. -/
-def firstVsPos (input : Array Nat) : Option (Nat × Nat) :=
-  (Array.range input.size).findSome? (fun i =>
-    if h : i < input.size then
-      if isVariationSelector input[i] then some (i, input[i]) else none
+def firstVsPos (input : List Nat) : Option (Nat × Nat) :=
+  input.zipIdx.findSome? (fun cpWithIdx =>
+    if isVariationSelector cpWithIdx.1 then some (cpWithIdx.2, cpWithIdx.1)
     else none)
 
 /-- Position of the first ZWJ. -/
-def firstZwjPos (input : Array Nat) : Option Nat :=
-  (Array.range input.size).findSome? (fun i =>
-    if h : i < input.size then
-      if isZwj input[i] then some i else none
-    else none)
+def firstZwjPos (input : List Nat) : Option Nat :=
+  input.zipIdx.findSome? (fun cpWithIdx =>
+    if isZwj cpWithIdx.1 then some cpWithIdx.2 else none)
 
 /-- Position of the first fullwidth/halfwidth char. -/
-def firstFullwidthPos (input : Array Nat) : Option (Nat × Nat) :=
-  (Array.range input.size).findSome? (fun i =>
-    if h : i < input.size then
-      if isFullwidthHalfwidth input[i] then some (i, input[i]) else none
+def firstFullwidthPos (input : List Nat) : Option (Nat × Nat) :=
+  input.zipIdx.findSome? (fun cpWithIdx =>
+    if isFullwidthHalfwidth cpWithIdx.1 then some (cpWithIdx.2, cpWithIdx.1)
     else none)
 
-/-- Find the first base position `p` followed by ≥ `minStack`
-    consecutive Extend codepoints (Zalgo-like stack).  Returns
-    `some (basePos, minStack)` on hit.  Pure-functional shape:
-    for each candidate base `p`, check that the next `minStack`
-    positions are all Extend. -/
+/-- Find the first base position `p` (a non-Extend codepoint)
+    immediately followed by ≥ `minStack` consecutive Extend
+    codepoints (Zalgo-like stack).  Returns `some (basePos, minStack)`
+    on hit: the `minStack` codepoints following `p` are taken and
+    tested for the full run of Extend. -/
 def firstCombiningStack
-    (input : Array Nat) (minStack : Nat) : Option (Nat × Nat) :=
-  (Array.range input.size).findSome? (fun p =>
-    if h : p < input.size ∧ p + minStack < input.size then
-      if ¬ isGraphemeExtend input[p] then
-        let allExtend :=
-          (Array.range minStack).all (fun k =>
-            if hk : p + 1 + k < input.size then
-              isGraphemeExtend input[p + 1 + k]
-            else false)
-        if allExtend then some (p, minStack) else none
+    (input : List Nat) (minStack : Nat) : Option (Nat × Nat) :=
+  input.zipIdx.findSome? (fun cpWithIdx =>
+    if ¬ isGraphemeExtend cpWithIdx.1 then
+      let following := (input.drop (cpWithIdx.2 + 1)).take minStack
+      if following.length = minStack ∧ following.all isGraphemeExtend then
+        some (cpWithIdx.2, minStack)
       else none
     else none)
 
@@ -180,7 +172,7 @@ def firstCombiningStack
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The RendererDivergence detection function. -/
-def detect (input : Array Nat) : Verdict :=
+def detect (input : List Nat) : Verdict :=
   let vsCount := countVS input
   let combCount := countCombining input
   let fwCount := countFullwidth input
@@ -192,30 +184,30 @@ def detect (input : Array Nat) : Verdict :=
     match firstCombiningStack input 4 with
     | some (basePos, stackLen) =>
       .hazard (.combiningStackOverflow basePos stackLen)
-        #[basePos] ByteArray.empty
+        [basePos] ByteArray.empty
     | none =>
       -- Priority 2: any VS triggers presentation variance.
       match firstVsPos input with
       | some (pos, cp) =>
-        .hazard (.variationSelectorVariance pos cp) #[pos] ByteArray.empty
+        .hazard (.variationSelectorVariance pos cp) [pos] ByteArray.empty
       | none =>
         -- Priority 3: ZWJ-containing input not in registered RGI.
         if zwjPresent ∧
-           ¬ Unicode.Generated.EmojiSequences.isRegisteredZwjSequence input then
+           ¬ Unicode.Generated.EmojiSequences.isRegisteredZwjSequence input.toArray then
           match firstZwjPos input with
           | some pos =>
-            .hazard (.unregisteredZwjVariance pos) #[pos] ByteArray.empty
+            .hazard (.unregisteredZwjVariance pos) [pos] ByteArray.empty
           | none => .clear
         -- Priority 4: fullwidth/halfwidth.
         else
           match firstFullwidthPos input with
           | some (pos, cp) =>
-            .hazard (.fullwidthVariance pos cp) #[pos] ByteArray.empty
+            .hazard (.fullwidthVariance pos cp) [pos] ByteArray.empty
           | none =>
             -- Priority 5: mixed direction.
             if ltrCount > 0 ∧ rtlCount > 0 then
               .hazard (.mixedDirectionVariance ltrCount rtlCount)
-                #[] ByteArray.empty
+                [] ByteArray.empty
             else
               .clear
   { input := input,
@@ -249,18 +241,18 @@ def SubThreat.tag : SubThreat → String
 def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × Array Nat × ByteArray) false
+      Function.const (SubThreat × List Nat × ByteArray) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification. -/
 def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
-      Function.const (Array Nat × ByteArray) (some sub.tag) (positions, decoded)
+      Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
 
 /-- Positions array of a classification. -/
-def Classification.positions : Classification → Array Nat
-  | .clear                     => #[]
+def Classification.positions : Classification → List Nat
+  | .clear                     => []
   | .hazard sub positions decoded =>
       Function.const (SubThreat × ByteArray) positions (sub, decoded)
 
@@ -269,46 +261,46 @@ def Classification.positions : Classification → Array Nat
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Empty input is stable. -/
-theorem detect_empty_clear : (detect #[]).classify.isClear = true := by
+theorem detect_empty_clear : (detect []).classify.isClear = true := by
   decide +kernel
 
 /-- Plain ASCII is stable. -/
 theorem detect_ascii_clear :
-    (detect #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
+    (detect [0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
   decide +kernel
 
 /-- Plain Han is stable. -/
 theorem detect_han_clear :
-    (detect #[0x4E2D, 0x6587]).classify.isClear = true := by decide +kernel
+    (detect [0x4E2D, 0x6587]).classify.isClear = true := by decide +kernel
 
 /-- A single VS (FE0F) — variance. -/
 theorem detect_vs_variance :
-    (detect #[0x1F600, 0xFE0F]).classify.tag
+    (detect [0x1F600, 0xFE0F]).classify.tag
       = some "VariationSelectorVariance" := by decide +kernel
 
 /-- Registered RGI family ZWJ sequence — stable. -/
 theorem detect_rgi_family_clear :
-    (detect #[0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467,
+    (detect [0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467,
               0x200D, 0x1F466]).classify.isClear = true := by decide +kernel
 
 /-- Unregistered ZWJ chain (man + ZWJ + woman, not in RGI) — variance. -/
 theorem detect_unregistered_zwj_variance :
-    (detect #[0x1F468, 0x200D, 0x1F469]).classify.tag
+    (detect [0x1F468, 0x200D, 0x1F469]).classify.tag
       = some "UnregisteredZwjVariance" := by decide +kernel
 
 /-- 4-deep combining stack (Zalgo-shape) — variance. -/
 theorem detect_zalgo_variance :
-    (detect #[0x0061, 0x0301, 0x0302, 0x0303, 0x0304]).classify.tag
+    (detect [0x0061, 0x0301, 0x0302, 0x0303, 0x0304]).classify.tag
       = some "CombiningStackOverflow" := by decide +kernel
 
 /-- Fullwidth A — variance. -/
 theorem detect_fullwidth_variance :
-    (detect #[0xFF21]).classify.tag = some "FullwidthVariance" := by
+    (detect [0xFF21]).classify.tag = some "FullwidthVariance" := by
   decide +kernel
 
 /-- Mixed Latin + Hebrew — variance. -/
 theorem detect_mixed_direction :
-    (detect #[0x41, 0x42, 0x05D0, 0x05D1]).classify.tag
+    (detect [0x41, 0x42, 0x05D0, 0x05D1]).classify.tag
       = some "MixedDirectionVariance" := by decide +kernel
 
 end Unicode.Security.Display.RendererDivergence
