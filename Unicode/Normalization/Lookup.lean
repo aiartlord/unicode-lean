@@ -36,12 +36,12 @@ def canonicalCombiningClass (cp : Nat) : Nat :=
   | none => 0
 
 /-- Canonical decomposition target sequence for a codepoint. Returns
-    the empty array when the codepoint has no canonical decomposition
+    the empty list when the codepoint has no canonical decomposition
     (every codepoint outside the pinned subset, and many inside it). -/
-def canonicalDecomposition (cp : Nat) : Array Nat :=
+def canonicalDecomposition (cp : Nat) : List Nat :=
   match lookupRow cp with
   | some row => row.canonicalDecomposition
-  | none => #[]
+  | none => []
 
 /-- Whether a codepoint appears in CompositionExclusions.txt. When
     `true`, the codepoint decomposes canonically but must NOT recompose
@@ -122,7 +122,7 @@ theorem canonicalCombiningClass_of_lookupRow_none (cp : Nat)
     the pinned NFC-relevant subset decompose to themselves. -/
 theorem canonicalDecomposition_of_lookupRow_none (cp : Nat)
     (h : lookupRow cp = none) :
-    canonicalDecomposition cp = #[] := by
+    canonicalDecomposition cp = [] := by
   unfold canonicalDecomposition
   rw [h]
 
@@ -157,7 +157,7 @@ theorem canonicalCombiningClass_of_hit (cp ccc : Nat)
 /-- Canonical decomposition of a codepoint PRESENT in the table, without
     reducing the scan. Same transport shape as
     `canonicalCombiningClass_of_hit`. -/
-theorem canonicalDecomposition_of_hit (cp : Nat) (target : Array Nat)
+theorem canonicalDecomposition_of_hit (cp : Nat) (target : List Nat)
     (hAny : UnicodeData.rowsList.any
       (fun r => decide (r.codepoint = cp)) = true)
     (hAll : UnicodeData.rowsList.all
