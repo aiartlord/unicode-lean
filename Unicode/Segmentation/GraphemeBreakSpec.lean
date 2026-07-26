@@ -34,8 +34,8 @@ set_option maxRecDepth 1000000
 
 /-- The fold body of `graphemeBreaks`: record the break decision, advance the
     running state. -/
-def step (acc : Array Bool × State) (cp : Nat) : Array Bool × State :=
-  (acc.fst.push (shouldBreakBefore cp acc.snd), advance cp acc.snd)
+def step (acc : List Bool × State) (cp : Nat) : List Bool × State :=
+  (acc.fst ++ [shouldBreakBefore cp acc.snd], advance cp acc.snd)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 GB12/GB13 CONTEXT — the Regional_Indicator run
@@ -65,7 +65,7 @@ theorem advance_riRun (cp : Nat) (s : State) :
   rfl
 
 /-- `State.riRun` after scanning `l` equals `riRunSpec` over `l`. -/
-theorem riRun_eq_spec (l : List Nat) (acc : Array Bool × State) :
+theorem riRun_eq_spec (l : List Nat) (acc : List Bool × State) :
     (l.foldl step acc).snd.riRun = riRunSpec acc.snd.riRun l := by
   induction l generalizing acc with
   | nil => rfl
@@ -127,7 +127,7 @@ theorem riRunSpec_eq_trailingRI_carry (l : List Nat) (k : Nat) :
     rule text refers to. The operational counter faithfully computes the
     declarative pattern. -/
 theorem riRun_eq_trailingRI (l : List Nat) :
-    (l.foldl step (#[], State.initial)).snd.riRun = trailingRI l := by
+    (l.foldl step ([], State.initial)).snd.riRun = trailingRI l := by
   rw [riRun_eq_spec]
   show riRunSpec 0 l = trailingRI l
   rw [riRunSpec_eq_trailingRI_carry]
@@ -141,7 +141,7 @@ theorem riRun_eq_trailingRI (l : List Nat) :
 /-- **GB3–GB9b context bridge.** After scanning a prefix ending in `x`, the
     operational `prevClass` is exactly `some (lookupGCB x)` — the class of the
     last code point, which the pairwise rules GB3–GB9b test against. -/
-theorem prevClass_eq_last (l : List Nat) (x : Nat) (acc : Array Bool × State) :
+theorem prevClass_eq_last (l : List Nat) (x : Nat) (acc : List Bool × State) :
     ((l ++ [x]).foldl step acc).snd.prevClass = some (lookupGCB x) := by
   rw [List.foldl_append, List.foldl_cons, List.foldl_nil]
   unfold step advance
@@ -174,7 +174,7 @@ theorem advance_epicState (cp : Nat) (s : State) :
   rfl
 
 /-- `State.epicState` after scanning `l` equals `epicSpec` over `l`. -/
-theorem epicState_eq_spec (l : List Nat) (acc : Array Bool × State) :
+theorem epicState_eq_spec (l : List Nat) (acc : List Bool × State) :
     (l.foldl step acc).snd.epicState = epicSpec acc.snd.epicState l := by
   induction l generalizing acc with
   | nil => rfl
@@ -334,7 +334,7 @@ theorem advance_inCBState (cp : Nat) (s : State) :
   rfl
 
 /-- `State.inCBState` after scanning `l` equals `inCBSpec` over `l`. -/
-theorem inCBState_eq_spec (l : List Nat) (acc : Array Bool × State) :
+theorem inCBState_eq_spec (l : List Nat) (acc : List Bool × State) :
     (l.foldl step acc).snd.inCBState = inCBSpec acc.snd.inCBState l := by
   induction l generalizing acc with
   | nil => rfl
@@ -446,7 +446,7 @@ theorem shouldBreakBefore_congr (cp : Nat) (s₁ s₂ : State)
 
 /-- The running state after scanning `pre` from the initial state. -/
 def scanState (pre : List Nat) : State :=
-  (pre.foldl step (#[], State.initial)).snd
+  (pre.foldl step ([], State.initial)).snd
 
 theorem scanState_prevClass (pre : List Nat) :
     (scanState pre).prevClass = pre.getLast?.map lookupGCB := by
@@ -508,25 +508,24 @@ def breaksOf (s : State) : List Nat → List Bool
   | []        => []
   | (x :: xs) => shouldBreakBefore x s :: breaksOf (advance x s) xs
 
-theorem foldl_fst_eq_breaksOf (l : List Nat) (bs : Array Bool) (s : State) :
-    (l.foldl step (bs, s)).fst.toList = bs.toList ++ breaksOf s l := by
+theorem foldl_fst_eq_breaksOf (l : List Nat) (bs : List Bool) (s : State) :
+    (l.foldl step (bs, s)).fst = bs ++ breaksOf s l := by
   induction l generalizing bs s with
   | nil => simp [breaksOf]
   | cons x xs ih =>
     rw [List.foldl_cons]
-    show (xs.foldl step (bs.push (shouldBreakBefore x s), advance x s)).fst.toList
-      = bs.toList ++ breaksOf s (x :: xs)
+    show (xs.foldl step (bs ++ [shouldBreakBefore x s], advance x s)).fst
+      = bs ++ breaksOf s (x :: xs)
     rw [ih]
-    simp [breaksOf, Array.toList_push, List.append_assoc]
+    simp [breaksOf, List.append_assoc]
 
-theorem graphemeBreaks_eq_breaksOf (cps : Array Nat) :
-    (graphemeBreaks cps).toList = breaksOf State.initial cps.toList ++ [true] := by
-  have h : graphemeBreaks cps = (cps.toList.foldl step (#[], State.initial)).fst.push true := by
+theorem graphemeBreaks_eq_breaksOf (cps : List Nat) :
+    graphemeBreaks cps = breaksOf State.initial cps ++ [true] := by
+  have h : graphemeBreaks cps = (cps.foldl step ([], State.initial)).fst ++ [true] := by
     unfold graphemeBreaks
     simp only [Function.const]
-    rw [← Array.foldl_toList]
     rfl
-  rw [h, Array.toList_push, foldl_fst_eq_breaksOf]
+  rw [h, foldl_fst_eq_breaksOf]
   simp
 
 /-- Scanning one more code point advances the running state. -/
@@ -554,8 +553,8 @@ theorem breaksOf_scanState_eq (pre : List Nat) (l : List Nat) :
     the declarative specification: the GB1 sot break, one `specBreakBefore`
     decision per code point over the raw prefix, and the GB2 eot break. The
     operational scan implements the UAX #29 rules, proven, not tested. -/
-theorem graphemeBreaks_eq_spec (cps : Array Nat) :
-    (graphemeBreaks cps).toList = specBreaksGo [] cps.toList ++ [true] := by
+theorem graphemeBreaks_eq_spec (cps : List Nat) :
+    graphemeBreaks cps = specBreaksGo [] cps ++ [true] := by
   rw [graphemeBreaks_eq_breaksOf]
   have hinit : scanState [] = State.initial := rfl
   rw [← hinit, breaksOf_scanState_eq]

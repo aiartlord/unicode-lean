@@ -20,7 +20,7 @@ inductive VariantProperty where
 structure Row where
   source : Nat
   property : VariantProperty
-  targets : Array Nat
+  targets : List Nat
   deriving BEq, Repr, Inhabited
 
 end Unicode.Generated.UnihanVariants

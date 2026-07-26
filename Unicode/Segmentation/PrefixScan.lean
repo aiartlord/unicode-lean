@@ -36,21 +36,21 @@ theorem carries_length (upd : β → α → β) (c : β) (l : List α) :
 /-- A push-carry fold — a step `s` whose first component pushes the carry and
     whose second updates it by `upd` — leaves the seed array `bs` extended by
     exactly the prefix carries of the input. -/
-theorem foldl_toList (s : Array β × β → α → Array β × β) (upd : β → α → β)
-    (hfst : ∀ acc x, (s acc x).1 = acc.1.push acc.2)
+theorem foldl_toList (s : List β × β → α → List β × β) (upd : β → α → β)
+    (hfst : ∀ acc x, (s acc x).1 = acc.1 ++ [acc.2])
     (hsnd : ∀ acc x, (s acc x).2 = upd acc.2 x)
-    (l : List α) (bs : Array β) (c : β) :
-    (l.foldl s (bs, c)).1.toList = bs.toList ++ carries upd c l := by
+    (l : List α) (bs : List β) (c : β) :
+    (l.foldl s (bs, c)).1 = bs ++ carries upd c l := by
   induction l generalizing bs c with
   | nil => simp [carries]
   | cons x xs ih =>
     rw [List.foldl_cons]
-    have hstep : s (bs, c) x = (bs.push c, upd c x) := by
+    have hstep : s (bs, c) x = (bs ++ [c], upd c x) := by
       have h1 := hfst (bs, c) x
       have h2 := hsnd (bs, c) x
       simp only at h1 h2
       exact Prod.ext h1 h2
-    rw [hstep, ih, Array.toList_push, carries]
+    rw [hstep, ih, carries]
     simp
 
 /-- A conditional whose branches share a first component is a pair over a
@@ -105,28 +105,26 @@ theorem carries_getElem? (upd : β → α → β) (c : β) (l : List α) (i : Na
 /-- For a push-carry fold from the empty seed, the entry at any in-range index
     `i` is the carry over the first `i` inputs, `(arr.take i).foldl upd c0`. -/
 theorem build_getElem! [Inhabited β]
-    (s : Array β × β → α → Array β × β) (upd : β → α → β)
-    (hfst : ∀ acc x, (s acc x).1 = acc.1.push acc.2)
+    (s : List β × β → α → List β × β) (upd : β → α → β)
+    (hfst : ∀ acc x, (s acc x).1 = acc.1 ++ [acc.2])
     (hsnd : ∀ acc x, (s acc x).2 = upd acc.2 x)
-    (c0 : β) (arr : Array α) (build : Array β)
-    (hbuild : build = (arr.toList.foldl s (#[], c0)).1)
-    (i : Nat) (h : i < arr.size) :
-    build[i]! = (arr.toList.take i).foldl upd c0 := by
-  have hbl : build.toList = carries upd c0 arr.toList := by
+    (c0 : β) (arr : List α) (build : List β)
+    (hbuild : build = (arr.foldl s ([], c0)).1)
+    (i : Nat) (h : i < arr.length) :
+    build[i]! = (arr.take i).foldl upd c0 := by
+  have hbl : build = carries upd c0 arr := by
     rw [hbuild, foldl_toList s upd hfst hsnd]
     simp
-  have hsize : i < build.size := by
-    rw [← Array.length_toList, hbl, carries_length, Array.length_toList]
+  have hsize : i < build.length := by
+    rw [hbl, carries_length]
     exact h
-  have hq : build[i]? = some ((arr.toList.take i).foldl upd c0) := by
-    rw [← Array.getElem?_toList, hbl]
-    have hqi := carries_getElem? upd c0 arr.toList i
-    have hlt : i < arr.toList.length := by rw [Array.length_toList]; exact h
-    simp only [hlt, if_pos] at hqi
+  have hq : build[i]? = some ((arr.take i).foldl upd c0) := by
+    rw [hbl]
+    have hqi := carries_getElem? upd c0 arr i
+    simp only [h, if_pos] at hqi
     exact hqi
   rw [getElem!_pos build i hsize]
-  have hsome : build[i]? = some build[i] :=
-    (Array.getElem?_eq_some_getElem_iff build i hsize).mpr trivial
+  have hsome : build[i]? = some build[i] := List.getElem?_eq_getElem hsize
   rw [hsome] at hq
   exact Option.some_inj.mp hq
 
@@ -168,12 +166,12 @@ theorem foldl_proj {γ : Type} (π : β → γ) (f : β → α → β) (g : γ �
 /-- A left fold that pushes a function of each element appends exactly that map
     to the seed array. This is the per-position decision fold of a segmentation
     algorithm: `breaks[i] = decide i` collected over `0 .. n-1`. -/
-theorem foldl_push_map_toList (l : List α) (hmap : α → β) (bs0 : Array β) :
-    (l.foldl (fun bs x => bs.push (hmap x)) bs0).toList = bs0.toList ++ l.map hmap := by
+theorem foldl_push_map_toList (l : List α) (hmap : α → β) (bs0 : List β) :
+    (l.foldl (fun bs x => bs ++ [hmap x]) bs0) = bs0 ++ l.map hmap := by
   induction l generalizing bs0 with
   | nil => simp
   | cons x xs ih =>
-    rw [List.foldl_cons, ih, Array.toList_push, List.map_cons]
+    rw [List.foldl_cons, ih, List.map_cons]
     simp
 
 end Unicode.Segmentation.PrefixScan

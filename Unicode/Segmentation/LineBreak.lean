@@ -100,11 +100,11 @@ def EffSnapshot.initial : EffSnapshot :=
     to the break-decision at position `i` — derived from positions
     `0 .. i-1`). -/
 def buildSnapshots
-    (cps : Array Nat) (lits : Array LBClass) : Array EffSnapshot :=
-  let go : Array EffSnapshot × EffSnapshot → Nat × LBClass
-         → Array EffSnapshot × EffSnapshot :=
+    (cps : List Nat) (lits : List LBClass) : List EffSnapshot :=
+  let go : List EffSnapshot × EffSnapshot → Nat × LBClass
+         → List EffSnapshot × EffSnapshot :=
     fun (out, s) (i, c) =>
-      let out' := out.push s
+      let out' := out ++ [s]
       let cReal :=
         if isCMZWJ c then
           match s.effPrev with
@@ -156,8 +156,8 @@ def buildSnapshots
             riRun            := riRun'
             inNuChain        := inNuChain' }
         (out', s')
-  let indexed := (Array.range cps.size).zip lits
-  (indexed.foldl go (#[], EffSnapshot.initial)).1
+  let indexed := (List.range cps.length).zip lits
+  (indexed.foldl go ([], EffSnapshot.initial)).1
 
 /-- Whether `o` is `some c` with `c` equal to one of the listed classes. -/
 def epEq (o : Option LBClass) (target : LBClass) : Bool :=
@@ -194,12 +194,12 @@ def epEq7 (o : Option LBClass) (a b d e f g h : LBClass) : Bool :=
 /-- Decide whether a line break opportunity exists immediately
     before position `i`. -/
 def shouldBreakBefore
-    (cps  : Array Nat)
-    (lits : Array LBClass)
-    (snaps : Array EffSnapshot)
+    (cps  : List Nat)
+    (lits : List LBClass)
+    (snaps : List EffSnapshot)
     (i : Nat) : Bool :=
   if i = 0 then false                        -- LB2
-  else if i ≥ lits.size then true            -- LB3
+  else if i ≥ lits.length then true            -- LB3
   else
     let lp := lits[i-1]!
     let lc := lits[i]!
@@ -244,7 +244,7 @@ def shouldBreakBefore
     -- SP ÷ IS NU. Break before an `IS` that begins a number and
     -- follows a space, e.g. "equals .35".
     else if lp == .SP && lcEff == .IS &&
-            (i + 1 < cps.size && lits[i+1]! == .NU) then true
+            (i + 1 < cps.length && lits[i+1]! == .NU) then true
     -- LB13
     else if lcEff == .CL || lcEff == .CP || lcEff == .EX ||
             lcEff == .IS || lcEff == .SY then false
@@ -254,7 +254,7 @@ def shouldBreakBefore
     else if s.inPiQuoteWindow then false
     -- LB15b
     else if isPfQuote (cps[i]!) lcEff &&
-            (i + 1 ≥ cps.size ||
+            (i + 1 ≥ cps.length ||
              (let nxt := lits[i+1]!
               nxt == .SP || nxt == .GL || nxt == .WJ || nxt == .CL ||
               nxt == .QU || nxt == .CP || nxt == .EX || nxt == .IS ||
@@ -286,7 +286,7 @@ def shouldBreakBefore
                (let prevCp := cps[i-1]!
                 let qCp    := cps[i]!
                 let nextEA :=
-                  if i + 1 < cps.size then
+                  if i + 1 < cps.length then
                     let w := Unicode.Generated.EastAsianWidth.lookup (cps[i+1]!)
                     w == .F || w == .W || w == .H || w == .A
                   else false
@@ -388,7 +388,7 @@ def shouldBreakBefore
             ! Unicode.Generated.EastAsianWidth.isEastAsianFWH (cps[i]!) &&
             ! Unicode.Generated.EastAsianWidth.isEastAsianFWH
                 (s.effPrevCp.getD 0) &&
-            (i + 1 < lits.size && lits[i+1]! == .NU) then false
+            (i + 1 < lits.length && lits[i+1]! == .NU) then false
     -- LB26
     else if epEq ep .JL &&
             (lcEff == .JL || lcEff == .JV || lcEff == .H2 ||
@@ -428,13 +428,13 @@ def shouldBreakBefore
                  match fuel with
                  | 0     => false
                  | f + 1 =>
-                   if j ≥ lits.size then false
+                   if j ≥ lits.length then false
                    else
                      let cls := lits[j]!
                      if cls == .CM || cls == .ZWJ then go (j+1) f
                      else cls == .VF
                go startIdx fuel
-             scan (i+1) (lits.size - i + 1)) then false
+             scan (i+1) (lits.length - i + 1)) then false
     -- LB29
     else if (lcEff == .AL || lcEff == .HL) && epEq ep .IS then false
     -- LB30: (AL|HL|NU) × OP and CP × (AL|HL|NU), but only when the
@@ -457,16 +457,16 @@ def shouldBreakBefore
     -- LB31
     else true
 
-/-- Boolean array of length `cps.size + 1`. Entry `i` is `true` when
+/-- Boolean array of length `cps.length + 1`. Entry `i` is `true` when
     a line break opportunity occurs immediately before position `i`.
-    `bs[0] = false` per LB2; `bs[cps.size] = true` per LB3. -/
-def lineBreaks (cps : Array Nat) : Array Bool :=
+    `bs[0] = false` per LB2; `bs[cps.length] = true` per LB3. -/
+def lineBreaks (cps : List Nat) : List Bool :=
   let lits  := cps.map lookupResolved
   let snaps := buildSnapshots cps lits
-  let n := cps.size
-  let go : Array Bool → Nat → Array Bool :=
-    fun bs i => bs.push (shouldBreakBefore cps lits snaps i)
-  let bs := (List.range n).foldl go #[]
-  bs.push true                               -- LB3
+  let n := cps.length
+  let go : List Bool → Nat → List Bool :=
+    fun bs i => bs ++ [shouldBreakBefore cps lits snaps i]
+  let bs := (List.range n).foldl go []
+  bs ++ [true]                               -- LB3
 
 end Unicode.Segmentation.LineBreak

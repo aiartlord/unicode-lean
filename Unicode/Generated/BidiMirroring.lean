@@ -8,7 +8,7 @@ namespace Unicode.Generated.BidiMirroring
 
 set_option maxRecDepth 100000
 
-def bidiMirrorPairs : Array (Nat × Nat) := #[
+def bidiMirrorPairs : List (Nat × Nat) := [
   (0x0028, 0x0029),
   (0x0029, 0x0028),
   (0x003C, 0x003E),
@@ -480,8 +480,8 @@ def bmParse (line : String) : Option (Nat × Nat) :=
   | [a, b] => some (bHex (bTrim a), bHex (bTrim b))
   | _other => none
 
-def bidiMirrorPairsParsed : Array (Nat × Nat) :=
-  ((bidiMirroringRaw.splitOn "\n").filterMap bmParse).toArray
+def bidiMirrorPairsParsed : List (Nat × Nat) :=
+  ((bidiMirroringRaw.splitOn "\n").filterMap bmParse)
 
 #eval do
   unless bidiMirrorPairs == bidiMirrorPairsParsed do

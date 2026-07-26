@@ -133,7 +133,7 @@ theorem decomposeSyllable_output_no_nonAsciiZs
   cases hc : nonAsciiZsCodepoints.contains j with
   | false => rfl
   | true =>
-    have hmem := Array.mem_of_contains_eq_true hc
+    have hmem := List.mem_of_contains_eq_true hc
     unfold nonAsciiZsCodepoints at hmem
     simp at hmem
     omega
@@ -307,12 +307,10 @@ theorem toNFC_preserves_no_nonAsciiZs
     exfalso
     have hCinZs : c ∈ nonAsciiZsCodepoints := by
       unfold isNonAsciiZs at hZsC
-      exact Array.mem_of_contains_eq_true hZsC
+      exact List.mem_of_contains_eq_true hZsC
     have hTable := nonAsciiZs_fullDecompose_contains_nonAsciiZs
-    rw [Array.all_eq_true] at hTable
-    rcases Array.getElem_of_mem hCinZs with ⟨i, hi, hElem⟩
-    have hAtI := hTable i hi
-    rw [hElem] at hAtI
+    rw [List.all_eq_true] at hTable
+    have hAtI := hTable c hCinZs
     rw [Array.any_eq_true] at hAtI
     obtain ⟨idx, hIdx, hIsZs⟩ := hAtI
     let d : Nat := (Decompose.fullCanonicalDecompose c)[idx]

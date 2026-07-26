@@ -113,12 +113,12 @@ def transition (phase : ChainPhase) (c : SBClass)
 /-- Build the per-position state array. `out[i]` is the chain state
     after consuming positions `0 .. i-1` (i.e. the state available to
     the break-decision at position `i`). -/
-def buildStates (lits : Array SBClass) : Array StateAt :=
-  let go : Array StateAt × ChainPhase × Bool × Option SBClass
+def buildStates (lits : List SBClass) : List StateAt :=
+  let go : List StateAt × ChainPhase × Bool × Option SBClass
          → SBClass
-         → Array StateAt × ChainPhase × Bool × Option SBClass :=
+         → List StateAt × ChainPhase × Bool × Option SBClass :=
     fun (out, phase, elig, effPrev) c =>
-      let out' := out.push { phase := phase, sb7AtermEligible := elig }
+      let out' := out ++ [{ phase := phase, sb7AtermEligible := elig }]
       if isAbsorbable c then
         -- `.atermSep` / `.stermSep` are completed-chain states: the
         -- (Sep|CR|LF) has been consumed and SB4 has already fired
@@ -134,17 +134,17 @@ def buildStates (lits : Array SBClass) : Array StateAt :=
       else
         let (phase', elig') := transition phase c effPrev elig
         (out', phase', elig', some c)
-  (lits.foldl go (#[], .none, false, none)).1
+  (lits.foldl go ([], .none, false, none)).1
 
 /-- SB8 forward scan from position `i`. Returns `true` if a `Lower`
     is found before any disruptor (`OLetter`, `Upper`, `Sep`, `CR`,
     `LF`, `STerm`, `ATerm`). Absorbable and neutral classes are
-    skipped. The fuel parameter must be at least `lits.size - i`. -/
-def sb8Scan (lits : Array SBClass) (i fuel : Nat) : Bool :=
+    skipped. The fuel parameter must be at least `lits.length - i`. -/
+def sb8Scan (lits : List SBClass) (i fuel : Nat) : Bool :=
   match fuel with
   | 0      => false
   | fuel'+1 =>
-    if h : i < lits.size then
+    if h : i < lits.length then
       let c := lits[i]
       if c == .Lower then true
       else if c == .OLetter || c == .Upper || c == .Sep ||
@@ -156,11 +156,11 @@ def sb8Scan (lits : Array SBClass) (i fuel : Nat) : Bool :=
 /-- Decide whether a sentence break occurs immediately before
     position `i`. -/
 def shouldBreakBefore
-    (lits   : Array SBClass)
-    (states : Array StateAt)
+    (lits   : List SBClass)
+    (states : List StateAt)
     (i : Nat) : Bool :=
   if i = 0 then true                         -- SB1
-  else if i ≥ lits.size then true            -- SB2 (caller adds eot)
+  else if i ≥ lits.length then true            -- SB2 (caller adds eot)
   else
     let lp := lits[i-1]!
     let lc := lits[i]!
@@ -179,7 +179,7 @@ def shouldBreakBefore
       else if phase == .aterm && s.sb7AtermEligible && lc == .Upper then false
       -- SB8: ATerm Close* Sp* × (¬{OLetter,Upper,Lower,Sep,CR,LF,STerm,ATerm})* Lower
       else if phase.atermActiveNoSep &&
-              sb8Scan lits i (lits.size - i + 1) then false
+              sb8Scan lits i (lits.length - i + 1) then false
       -- SB8a: (STerm|ATerm) Close* Sp* × (SContinue | STerm | ATerm)
       else if phase.activeNoSep &&
               (lc == .SContinue || lc == .STerm || lc == .ATerm) then false
@@ -197,13 +197,13 @@ def shouldBreakBefore
 
 /-- Boolean array of length `cps.size + 1`. Entry `i` is `true`
     when a sentence break occurs immediately before position `i`. -/
-def sentenceBreaks (cps : Array Nat) : Array Bool :=
+def sentenceBreaks (cps : List Nat) : List Bool :=
   let lits   := cps.map lookupSB
   let states := buildStates lits
-  let n := cps.size
-  let go : Array Bool → Nat → Array Bool :=
-    fun bs i => bs.push (shouldBreakBefore lits states i)
-  let bs := (List.range n).foldl go #[]
-  bs.push true                               -- SB2: eot
+  let n := cps.length
+  let go : List Bool → Nat → List Bool :=
+    fun bs i => bs ++ [shouldBreakBefore lits states i]
+  let bs := (List.range n).foldl go []
+  bs ++ [true]                               -- SB2: eot
 
 end Unicode.Segmentation.SentenceBreak

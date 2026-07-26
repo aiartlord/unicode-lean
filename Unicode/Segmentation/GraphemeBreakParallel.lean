@@ -58,13 +58,13 @@ theorem advanceRun_append_comp (l₁ l₂ : List Nat) :
 
 /-- The state component of the break-scan fold ignores the accumulated break
     array and equals `advanceRun`. -/
-theorem step_snd (l : List Nat) (bs : Array Bool) (s : State) :
+theorem step_snd (l : List Nat) (bs : List Bool) (s : State) :
     (l.foldl step (bs, s)).snd = advanceRun l s := by
   induction l generalizing bs s with
   | nil => rfl
   | cons x xs ih =>
     rw [List.foldl_cons]
-    show (xs.foldl step (bs.push (shouldBreakBefore x s), advance x s)).snd = advanceRun (x :: xs) s
+    show (xs.foldl step (bs ++ [shouldBreakBefore x s], advance x s)).snd = advanceRun (x :: xs) s
     rw [ih]
     unfold advanceRun
     rw [List.foldl_cons]
@@ -76,7 +76,7 @@ theorem step_snd (l : List Nat) (bs : Array Bool) (s : State) :
     `graphemeBreaks_eq_spec`. -/
 theorem scanState_eq_advanceRun (pre : List Nat) :
     scanState pre = advanceRun pre State.initial :=
-  step_snd pre #[] State.initial
+  step_snd pre [] State.initial
 
 /-- **Chunk composition.** The boundary state after two runs is the second run's
     transition applied to the boundary state after the first — chunks compose,

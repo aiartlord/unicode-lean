@@ -27,7 +27,7 @@ set_option maxRecDepth 100000
 /-- The carry update `buildSnapshots` performs at each position: the snapshot
     logic of the algorithm's fold with the output-push removed. Identical in
     structure to the inline step so the two folds agree. -/
-def snapUpdate (cps : Array Nat) (s : EffSnapshot) : Nat × LBClass → EffSnapshot :=
+def snapUpdate (cps : List Nat) (s : EffSnapshot) : Nat × LBClass → EffSnapshot :=
   fun (i, c) =>
     let cReal :=
       if isCMZWJ c then
@@ -77,28 +77,26 @@ def snapUpdate (cps : Array Nat) (s : EffSnapshot) : Nat × LBClass → EffSnaps
 
 /-- The push-carry step of `buildSnapshots`: push the current snapshot, then
     advance by `snapUpdate`. -/
-def snapStep (cps : Array Nat)
-    (acc : Array EffSnapshot × EffSnapshot) (ic : Nat × LBClass) :
-    Array EffSnapshot × EffSnapshot :=
-  (acc.1.push acc.2, snapUpdate cps acc.2 ic)
+def snapStep (cps : List Nat)
+    (acc : List EffSnapshot × EffSnapshot) (ic : Nat × LBClass) :
+    List EffSnapshot × EffSnapshot :=
+  (acc.1 ++ [acc.2], snapUpdate cps acc.2 ic)
 
-theorem snapStep_fst (cps : Array Nat) (acc : Array EffSnapshot × EffSnapshot)
-    (ic : Nat × LBClass) : (snapStep cps acc ic).1 = acc.1.push acc.2 := rfl
+theorem snapStep_fst (cps : List Nat) (acc : List EffSnapshot × EffSnapshot)
+    (ic : Nat × LBClass) : (snapStep cps acc ic).1 = acc.1 ++ [acc.2] := rfl
 
-theorem snapStep_snd (cps : Array Nat) (acc : Array EffSnapshot × EffSnapshot)
+theorem snapStep_snd (cps : List Nat) (acc : List EffSnapshot × EffSnapshot)
     (ic : Nat × LBClass) : (snapStep cps acc ic).2 = snapUpdate cps acc.2 ic := rfl
 
 /-- `buildSnapshots` is the push-carry scan with step `snapStep`. The inline fold
     interleaves the push with its branches; factoring the push out is the only
     reshaping needed, discharged by cases on the absorb test. -/
-theorem buildSnapshots_eq_foldl (cps : Array Nat) (lits : Array LBClass) :
+theorem buildSnapshots_eq_foldl (cps : List Nat) (lits : List LBClass) :
     buildSnapshots cps lits =
-      (((Array.range cps.size).zip lits).toList.foldl (snapStep cps)
-        (#[], EffSnapshot.initial)).1 := by
+      (((List.range cps.length).zip lits).foldl (snapStep cps)
+        ([], EffSnapshot.initial)).1 := by
   unfold buildSnapshots
-  rw [Array.foldl_toList]
   apply congrArg Prod.fst
-  rw [← Array.foldl_toList, ← Array.foldl_toList]
   apply PrefixScan.foldl_congr
   intro b a
   obtain ⟨out, s⟩ := b
@@ -112,14 +110,14 @@ theorem buildSnapshots_eq_foldl (cps : Array Nat) (lits : Array LBClass) :
 /-- **Snapshot array-index bridge.** The snapshot the decision reads at position
     `i` is the carry over the first `i` inputs — an instance of the push-carry
     scan bridge with update `snapUpdate`, over the indexed class sequence. -/
-theorem buildSnapshots_getElem! (cps : Array Nat) (lits : Array LBClass)
-    (i : Nat) (h : i < ((Array.range cps.size).zip lits).size) :
+theorem buildSnapshots_getElem! (cps : List Nat) (lits : List LBClass)
+    (i : Nat) (h : i < ((List.range cps.length).zip lits).length) :
     (buildSnapshots cps lits)[i]! =
-      (((Array.range cps.size).zip lits).toList.take i).foldl (snapUpdate cps)
+      (((List.range cps.length).zip lits).take i).foldl (snapUpdate cps)
         EffSnapshot.initial := by
   exact PrefixScan.build_getElem! (snapStep cps) (snapUpdate cps)
     (snapStep_fst cps) (snapStep_snd cps) EffSnapshot.initial
-    ((Array.range cps.size).zip lits) (buildSnapshots cps lits)
+    ((List.range cps.length).zip lits) (buildSnapshots cps lits)
     (buildSnapshots_eq_foldl cps lits) i h
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -140,7 +138,7 @@ def effPrevUpdate (ep : Option LBClass) (c : LBClass) : Option LBClass :=
 
 /-- The `effPrev` component of the snapshot update depends only on `effPrev` —
     so it is a scan in its own right (`PrefixScan.foldl_proj` applies). -/
-theorem snapUpdate_effPrev (cps : Array Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
+theorem snapUpdate_effPrev (cps : List Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
     (snapUpdate cps s ic).effPrev = effPrevUpdate s.effPrev ic.2 := by
   obtain ⟨i, c⟩ := ic
   unfold snapUpdate effPrevUpdate
@@ -149,15 +147,15 @@ theorem snapUpdate_effPrev (cps : Array Nat) (s : EffSnapshot) (ic : Nat × LBCl
 /-- **Effective-previous field bridge.** The `effPrev` the decision reads at
     position `i` is the fold of `effPrevUpdate` over the first `i` classes — the
     coupled snapshot fold isolated to its LB9/LB10 resolved-class component. -/
-theorem buildSnapshots_effPrev (cps : Array Nat) (lits : Array LBClass) (i : Nat)
-    (h : i < ((Array.range cps.size).zip lits).size) :
+theorem buildSnapshots_effPrev (cps : List Nat) (lits : List LBClass) (i : Nat)
+    (h : i < ((List.range cps.length).zip lits).length) :
     ((buildSnapshots cps lits)[i]!).effPrev =
-      (((Array.range cps.size).zip lits).toList.take i).foldl
+      (((List.range cps.length).zip lits).take i).foldl
         (fun ep ic => effPrevUpdate ep ic.2) none := by
   rw [buildSnapshots_getElem! cps lits i h]
   exact PrefixScan.foldl_proj EffSnapshot.effPrev (snapUpdate cps)
     (fun ep ic => effPrevUpdate ep ic.2) (fun s ic => snapUpdate_effPrev cps s ic)
-    (((Array.range cps.size).zip lits).toList.take i) EffSnapshot.initial
+    (((List.range cps.length).zip lits).take i) EffSnapshot.initial
 
 /-- A non-CM/ZWJ class resolves to itself and sets `effPrev` (LB9 base case). -/
 theorem effPrevUpdate_nonCMZWJ (ep : Option LBClass) (c : LBClass)
@@ -260,7 +258,7 @@ theorem effPrevUpdate_cRealOf (ep : Option LBClass) (c : LBClass) :
       if isCMZWJ (cRealOf ep c) then ep else some (cRealOf ep c) := rfl
 
 /-- The `spSinceNoSp` component of the snapshot update. -/
-theorem snapUpdate_spSinceNoSp (cps : Array Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
+theorem snapUpdate_spSinceNoSp (cps : List Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
     (snapUpdate cps s ic).spSinceNoSp =
       if isCMZWJ (cRealOf s.effPrev ic.2) then s.spSinceNoSp
       else (cRealOf s.effPrev ic.2 == .SP) := by
@@ -269,7 +267,7 @@ theorem snapUpdate_spSinceNoSp (cps : Array Nat) (s : EffSnapshot) (ic : Nat × 
   rw [apply_ite EffSnapshot.spSinceNoSp]
 
 /-- One `snapUpdate` preserves `spSinceNoSp = (effPrev == some SP)`. -/
-theorem snapUpdate_spSinceNoSp_inv (cps : Array Nat) (s : EffSnapshot) (ic : Nat × LBClass)
+theorem snapUpdate_spSinceNoSp_inv (cps : List Nat) (s : EffSnapshot) (ic : Nat × LBClass)
     (hs : s.spSinceNoSp = (s.effPrev == some .SP)) :
     (snapUpdate cps s ic).spSinceNoSp = ((snapUpdate cps s ic).effPrev == some .SP) := by
   rw [snapUpdate_spSinceNoSp, snapUpdate_effPrev, effPrevUpdate_cRealOf]
@@ -280,15 +278,15 @@ theorem snapUpdate_spSinceNoSp_inv (cps : Array Nat) (s : EffSnapshot) (ic : Nat
 /-- **spSinceNoSp is redundant with effPrev.** The field is exactly whether the
     effective-previous class is `SP`; it carries no state the resolved-class
     characterisation does not already determine. -/
-theorem buildSnapshots_spSinceNoSp (cps : Array Nat) (lits : Array LBClass) (i : Nat)
-    (h : i < ((Array.range cps.size).zip lits).size) :
+theorem buildSnapshots_spSinceNoSp (cps : List Nat) (lits : List LBClass) (i : Nat)
+    (h : i < ((List.range cps.length).zip lits).length) :
     ((buildSnapshots cps lits)[i]!).spSinceNoSp =
       (((buildSnapshots cps lits)[i]!).effPrev == some .SP) := by
   rw [buildSnapshots_getElem! cps lits i h]
   exact PrefixScan.foldl_inv
     (fun s => s.spSinceNoSp = (s.effPrev == some .SP))
     (snapUpdate cps) (fun s x hx => snapUpdate_spSinceNoSp_inv cps s x hx)
-    (((Array.range cps.size).zip lits).toList.take i) EffSnapshot.initial rfl
+    (((List.range cps.length).zip lits).take i) EffSnapshot.initial rfl
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 PREV-PREV FIELD — the effPrev one effective step back (a shift register)
@@ -296,7 +294,7 @@ theorem buildSnapshots_spSinceNoSp (cps : Array Nat) (lits : Array LBClass) (i :
 
 /-- The `effPrevPrev` component of the snapshot update: on a non-absorbed step it
     takes the previous `effPrev` (shift), otherwise it is unchanged. -/
-theorem snapUpdate_effPrevPrev (cps : Array Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
+theorem snapUpdate_effPrevPrev (cps : List Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
     (snapUpdate cps s ic).effPrevPrev =
       if isCMZWJ (cRealOf s.effPrev ic.2) then s.effPrevPrev else s.effPrev := by
   obtain ⟨i, c⟩ := ic
@@ -310,7 +308,7 @@ def effPrevPairUpdate (p : Option LBClass × Option LBClass) (c : LBClass) :
     Option LBClass × Option LBClass :=
   (effPrevUpdate p.1 c, if isCMZWJ (cRealOf p.1 c) then p.2 else p.1)
 
-theorem snapUpdate_effPrevPair (cps : Array Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
+theorem snapUpdate_effPrevPair (cps : List Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
     ((snapUpdate cps s ic).effPrev, (snapUpdate cps s ic).effPrevPrev) =
       effPrevPairUpdate (s.effPrev, s.effPrevPrev) ic.2 := by
   rw [snapUpdate_effPrev, snapUpdate_effPrevPrev]
@@ -320,15 +318,15 @@ theorem snapUpdate_effPrevPair (cps : Array Nat) (s : EffSnapshot) (ic : Nat × 
     is the pure joint fold from `(none, none)`; its first component is `effPrevSpec`
     (the LB9/LB10 resolved class), its second the resolved class one effective step
     back. -/
-theorem buildSnapshots_effPrevPair (cps : Array Nat) (lits : Array LBClass) (i : Nat)
-    (h : i < ((Array.range cps.size).zip lits).size) :
+theorem buildSnapshots_effPrevPair (cps : List Nat) (lits : List LBClass) (i : Nat)
+    (h : i < ((List.range cps.length).zip lits).length) :
     (((buildSnapshots cps lits)[i]!).effPrev, ((buildSnapshots cps lits)[i]!).effPrevPrev) =
-      (((Array.range cps.size).zip lits).toList.take i).foldl
+      (((List.range cps.length).zip lits).take i).foldl
         (fun p ic => effPrevPairUpdate p ic.2) (none, none) := by
   rw [buildSnapshots_getElem! cps lits i h]
   exact PrefixScan.foldl_proj (fun s => (s.effPrev, s.effPrevPrev)) (snapUpdate cps)
     (fun p ic => effPrevPairUpdate p ic.2) (fun s ic => snapUpdate_effPrevPair cps s ic)
-    (((Array.range cps.size).zip lits).toList.take i) EffSnapshot.initial
+    (((List.range cps.length).zip lits).take i) EffSnapshot.initial
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 EFFECTIVE-CLASS SEQUENCE — a clean reverse recursion, most-recent first
@@ -375,10 +373,10 @@ theorem effPrevPairUpdate_foldl (l : List LBClass) :
     reads at position `i` are the last two LB9/LB10-effective classes of the first
     `i` code points — head and second of `effClassesRev`, for all input, independent
     of the fold. -/
-theorem buildSnapshots_effPrevTwo (cps : Array Nat) (lits : Array LBClass) (i : Nat)
-    (h : i < ((Array.range cps.size).zip lits).size) :
+theorem buildSnapshots_effPrevTwo (cps : List Nat) (lits : List LBClass) (i : Nat)
+    (h : i < ((List.range cps.length).zip lits).length) :
     (((buildSnapshots cps lits)[i]!).effPrev, ((buildSnapshots cps lits)[i]!).effPrevPrev) =
-      effPrevTwo ((((Array.range cps.size).zip lits).toList.take i).map (·.2)) := by
+      effPrevTwo ((((List.range cps.length).zip lits).take i).map (·.2)) := by
   rw [buildSnapshots_effPrevPair cps lits i h, ← effPrevPairUpdate_foldl, List.foldl_map]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -399,7 +397,7 @@ def riPairUpdate (p : Option LBClass × Nat) (c : LBClass) : Option LBClass × N
     else (if cRealOf p.1 c == .RI then p.2 + 1 else 0))
 
 /-- The `riRun` component of the snapshot update. -/
-theorem snapUpdate_riRun (cps : Array Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
+theorem snapUpdate_riRun (cps : List Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
     (snapUpdate cps s ic).riRun =
       if isCMZWJ (cRealOf s.effPrev ic.2) then s.riRun
       else (if cRealOf s.effPrev ic.2 == .RI then s.riRun + 1 else 0) := by
@@ -407,7 +405,7 @@ theorem snapUpdate_riRun (cps : Array Nat) (s : EffSnapshot) (ic : Nat × LBClas
   unfold snapUpdate cRealOf
   rw [apply_ite EffSnapshot.riRun]
 
-theorem snapUpdate_riPair (cps : Array Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
+theorem snapUpdate_riPair (cps : List Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
     ((snapUpdate cps s ic).effPrev, (snapUpdate cps s ic).riRun) =
       riPairUpdate (s.effPrev, s.riRun) ic.2 := by
   rw [snapUpdate_effPrev, snapUpdate_riRun]
@@ -436,23 +434,23 @@ theorem riPairUpdate_foldl (l : List LBClass) :
         cases hhd : (effClassesRev m.reverse).head? <;>
         simp_all [isCMZWJ_AL, isRI, List.takeWhile_cons]
 
-theorem buildSnapshots_riPair (cps : Array Nat) (lits : Array LBClass) (i : Nat)
-    (h : i < ((Array.range cps.size).zip lits).size) :
+theorem buildSnapshots_riPair (cps : List Nat) (lits : List LBClass) (i : Nat)
+    (h : i < ((List.range cps.length).zip lits).length) :
     (((buildSnapshots cps lits)[i]!).effPrev, ((buildSnapshots cps lits)[i]!).riRun) =
-      (((Array.range cps.size).zip lits).toList.take i).foldl
+      (((List.range cps.length).zip lits).take i).foldl
         (fun p ic => riPairUpdate p ic.2) (none, 0) := by
   rw [buildSnapshots_getElem! cps lits i h]
   exact PrefixScan.foldl_proj (fun s => (s.effPrev, s.riRun)) (snapUpdate cps)
     (fun p ic => riPairUpdate p ic.2) (fun s ic => snapUpdate_riPair cps s ic)
-    (((Array.range cps.size).zip lits).toList.take i) EffSnapshot.initial
+    (((List.range cps.length).zip lits).take i) EffSnapshot.initial
 
 /-- **RI-run field characterisation.** The `riRun` the decision reads at position
     `i` is the leading RI run of the effective classes of the first `i` code points
     — the trailing Regional_Indicator count LB30a consumes, for all input. -/
-theorem buildSnapshots_riRun (cps : Array Nat) (lits : Array LBClass) (i : Nat)
-    (h : i < ((Array.range cps.size).zip lits).size) :
+theorem buildSnapshots_riRun (cps : List Nat) (lits : List LBClass) (i : Nat)
+    (h : i < ((List.range cps.length).zip lits).length) :
     ((buildSnapshots cps lits)[i]!).riRun =
-      leadRI (effClassesRev ((((Array.range cps.size).zip lits).toList.take i).map (·.2)).reverse) := by
+      leadRI (effClassesRev ((((List.range cps.length).zip lits).take i).map (·.2)).reverse) := by
   have hp := buildSnapshots_riPair cps lits i h
   rw [← List.foldl_map, riPairUpdate_foldl] at hp
   exact congrArg Prod.snd hp
@@ -476,7 +474,7 @@ def noSpPairUpdate (p : Option LBClass × Option LBClass) (c : LBClass) :
     else (if cRealOf p.1 c == .SP then p.2 else some (cRealOf p.1 c)))
 
 /-- The `effPrevNoSp` component of the snapshot update. -/
-theorem snapUpdate_effPrevNoSp (cps : Array Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
+theorem snapUpdate_effPrevNoSp (cps : List Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
     (snapUpdate cps s ic).effPrevNoSp =
       if isCMZWJ (cRealOf s.effPrev ic.2) then s.effPrevNoSp
       else (if cRealOf s.effPrev ic.2 == .SP then s.effPrevNoSp
@@ -485,7 +483,7 @@ theorem snapUpdate_effPrevNoSp (cps : Array Nat) (s : EffSnapshot) (ic : Nat × 
   unfold snapUpdate cRealOf
   rw [apply_ite EffSnapshot.effPrevNoSp]
 
-theorem snapUpdate_noSpPair (cps : Array Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
+theorem snapUpdate_noSpPair (cps : List Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
     ((snapUpdate cps s ic).effPrev, (snapUpdate cps s ic).effPrevNoSp) =
       noSpPairUpdate (s.effPrev, s.effPrevNoSp) ic.2 := by
   rw [snapUpdate_effPrev, snapUpdate_effPrevNoSp]
@@ -512,23 +510,23 @@ theorem noSpPairUpdate_foldl (l : List LBClass) :
         cases hhd : (effClassesRev m.reverse).head? <;>
         simp_all [isCMZWJ_AL, isNotSP, List.find?_cons]
 
-theorem buildSnapshots_noSpPair (cps : Array Nat) (lits : Array LBClass) (i : Nat)
-    (h : i < ((Array.range cps.size).zip lits).size) :
+theorem buildSnapshots_noSpPair (cps : List Nat) (lits : List LBClass) (i : Nat)
+    (h : i < ((List.range cps.length).zip lits).length) :
     (((buildSnapshots cps lits)[i]!).effPrev, ((buildSnapshots cps lits)[i]!).effPrevNoSp) =
-      (((Array.range cps.size).zip lits).toList.take i).foldl
+      (((List.range cps.length).zip lits).take i).foldl
         (fun p ic => noSpPairUpdate p ic.2) (none, none) := by
   rw [buildSnapshots_getElem! cps lits i h]
   exact PrefixScan.foldl_proj (fun s => (s.effPrev, s.effPrevNoSp)) (snapUpdate cps)
     (fun p ic => noSpPairUpdate p ic.2) (fun s ic => snapUpdate_noSpPair cps s ic)
-    (((Array.range cps.size).zip lits).toList.take i) EffSnapshot.initial
+    (((List.range cps.length).zip lits).take i) EffSnapshot.initial
 
 /-- **Prev-no-SP field characterisation.** The `effPrevNoSp` the decision reads at
     position `i` is the most-recent non-SP effective class of the first `i` code
     points, for all input. -/
-theorem buildSnapshots_effPrevNoSp (cps : Array Nat) (lits : Array LBClass) (i : Nat)
-    (h : i < ((Array.range cps.size).zip lits).size) :
+theorem buildSnapshots_effPrevNoSp (cps : List Nat) (lits : List LBClass) (i : Nat)
+    (h : i < ((List.range cps.length).zip lits).length) :
     ((buildSnapshots cps lits)[i]!).effPrevNoSp =
-      lastNonSP (effClassesRev ((((Array.range cps.size).zip lits).toList.take i).map (·.2)).reverse) := by
+      lastNonSP (effClassesRev ((((List.range cps.length).zip lits).take i).map (·.2)).reverse) := by
   have hp := buildSnapshots_noSpPair cps lits i h
   rw [← List.foldl_map, noSpPairUpdate_foldl] at hp
   exact congrArg Prod.snd hp
@@ -555,7 +553,7 @@ def nuPairUpdate (p : Option LBClass × Bool) (c : LBClass) : Option LBClass × 
           else if p.2 && isNuTail (cRealOf p.1 c) then true else false))
 
 /-- The `inNuChain` component of the snapshot update. -/
-theorem snapUpdate_inNuChain (cps : Array Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
+theorem snapUpdate_inNuChain (cps : List Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
     (snapUpdate cps s ic).inNuChain =
       if isCMZWJ (cRealOf s.effPrev ic.2) then s.inNuChain
       else (if cRealOf s.effPrev ic.2 == .NU then true
@@ -564,7 +562,7 @@ theorem snapUpdate_inNuChain (cps : Array Nat) (s : EffSnapshot) (ic : Nat × LB
   unfold snapUpdate cRealOf isNuTail
   rw [apply_ite EffSnapshot.inNuChain]
 
-theorem snapUpdate_nuPair (cps : Array Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
+theorem snapUpdate_nuPair (cps : List Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
     ((snapUpdate cps s ic).effPrev, (snapUpdate cps s ic).inNuChain) =
       nuPairUpdate (s.effPrev, s.inNuChain) ic.2 := by
   rw [snapUpdate_effPrev, snapUpdate_inNuChain]
@@ -590,23 +588,23 @@ theorem nuPairUpdate_foldl (l : List LBClass) :
     · cases hhd : (effClassesRev m.reverse).head? <;>
         simp_all [isCMZWJ_AL, isNuTail, inNuChainSpec, Bool.and_comm]
 
-theorem buildSnapshots_nuPair (cps : Array Nat) (lits : Array LBClass) (i : Nat)
-    (h : i < ((Array.range cps.size).zip lits).size) :
+theorem buildSnapshots_nuPair (cps : List Nat) (lits : List LBClass) (i : Nat)
+    (h : i < ((List.range cps.length).zip lits).length) :
     (((buildSnapshots cps lits)[i]!).effPrev, ((buildSnapshots cps lits)[i]!).inNuChain) =
-      (((Array.range cps.size).zip lits).toList.take i).foldl
+      (((List.range cps.length).zip lits).take i).foldl
         (fun p ic => nuPairUpdate p ic.2) (none, false) := by
   rw [buildSnapshots_getElem! cps lits i h]
   exact PrefixScan.foldl_proj (fun s => (s.effPrev, s.inNuChain)) (snapUpdate cps)
     (fun p ic => nuPairUpdate p ic.2) (fun s ic => snapUpdate_nuPair cps s ic)
-    (((Array.range cps.size).zip lits).toList.take i) EffSnapshot.initial
+    (((List.range cps.length).zip lits).take i) EffSnapshot.initial
 
 /-- **NU-chain field characterisation.** The `inNuChain` the decision reads at
     position `i` holds iff the effective classes of the first `i` code points end
     in `NU (SY|IS|CL|CP|PR)*` (LB25), for all input. -/
-theorem buildSnapshots_inNuChain (cps : Array Nat) (lits : Array LBClass) (i : Nat)
-    (h : i < ((Array.range cps.size).zip lits).size) :
+theorem buildSnapshots_inNuChain (cps : List Nat) (lits : List LBClass) (i : Nat)
+    (h : i < ((List.range cps.length).zip lits).length) :
     ((buildSnapshots cps lits)[i]!).inNuChain =
-      inNuChainSpec (effClassesRev ((((Array.range cps.size).zip lits).toList.take i).map (·.2)).reverse) := by
+      inNuChainSpec (effClassesRev ((((List.range cps.length).zip lits).take i).map (·.2)).reverse) := by
   have hp := buildSnapshots_nuPair cps lits i h
   rw [← List.foldl_map, nuPairUpdate_foldl] at hp
   exact congrArg Prod.snd hp
@@ -633,14 +631,14 @@ def cpPairUpdate (p : Option LBClass × Option Nat) (gc : Nat × LBClass) :
   (effPrevUpdate p.1 gc.2, if isCMZWJ (cRealOf p.1 gc.2) then p.2 else some gc.1)
 
 /-- The `effPrevCp` component of the snapshot update. -/
-theorem snapUpdate_effPrevCp (cps : Array Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
+theorem snapUpdate_effPrevCp (cps : List Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
     (snapUpdate cps s ic).effPrevCp =
       if isCMZWJ (cRealOf s.effPrev ic.2) then s.effPrevCp else some cps[ic.1]! := by
   obtain ⟨i, c⟩ := ic
   unfold snapUpdate cRealOf
   rw [apply_ite EffSnapshot.effPrevCp]
 
-theorem snapUpdate_cpPair (cps : Array Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
+theorem snapUpdate_cpPair (cps : List Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
     ((snapUpdate cps s ic).effPrev, (snapUpdate cps s ic).effPrevCp) =
       cpPairUpdate (s.effPrev, s.effPrevCp) (cps[ic.1]!, ic.2) := by
   rw [snapUpdate_effPrev, snapUpdate_effPrevCp]
@@ -664,23 +662,23 @@ theorem cpPairUpdate_foldl (l : List (Nat × LBClass)) :
         by_cases hbl : lb9BlocksAbsorb val.2 = true <;> simp_all [isCMZWJ_AL]
     · cases hhd : (effClassesRevP m.reverse).head? <;> simp_all [isCMZWJ_AL]
 
-theorem buildSnapshots_cpPair (cps : Array Nat) (lits : Array LBClass) (i : Nat)
-    (h : i < ((Array.range cps.size).zip lits).size) :
+theorem buildSnapshots_cpPair (cps : List Nat) (lits : List LBClass) (i : Nat)
+    (h : i < ((List.range cps.length).zip lits).length) :
     (((buildSnapshots cps lits)[i]!).effPrev, ((buildSnapshots cps lits)[i]!).effPrevCp) =
-      (((Array.range cps.size).zip lits).toList.take i).foldl
+      (((List.range cps.length).zip lits).take i).foldl
         (fun p ic => cpPairUpdate p (cps[ic.1]!, ic.2)) (none, none) := by
   rw [buildSnapshots_getElem! cps lits i h]
   exact PrefixScan.foldl_proj (fun s => (s.effPrev, s.effPrevCp)) (snapUpdate cps)
     (fun p ic => cpPairUpdate p (cps[ic.1]!, ic.2)) (fun s ic => snapUpdate_cpPair cps s ic)
-    (((Array.range cps.size).zip lits).toList.take i) EffSnapshot.initial
+    (((List.range cps.length).zip lits).take i) EffSnapshot.initial
 
 /-- **Prev-codepoint field characterisation.** The `effPrevCp` the decision reads at
     position `i` is the code point of the last effective segment — the head code
     point of `effClassesRevP`, for all input. -/
-theorem buildSnapshots_effPrevCp (cps : Array Nat) (lits : Array LBClass) (i : Nat)
-    (h : i < ((Array.range cps.size).zip lits).size) :
+theorem buildSnapshots_effPrevCp (cps : List Nat) (lits : List LBClass) (i : Nat)
+    (h : i < ((List.range cps.length).zip lits).length) :
     ((buildSnapshots cps lits)[i]!).effPrevCp =
-      (effClassesRevP ((((Array.range cps.size).zip lits).toList.take i).map
+      (effClassesRevP ((((List.range cps.length).zip lits).take i).map
         (fun ic => (cps[ic.1]!, ic.2))).reverse).head?.map (·.1) := by
   have hp := buildSnapshots_cpPair cps lits i h
   rw [← List.foldl_map, cpPairUpdate_foldl] at hp
@@ -694,14 +692,14 @@ def cpTripleUpdate (p : Option LBClass × Option Nat × Option Nat) (gc : Nat ×
     if isCMZWJ (cRealOf p.1 gc.2) then p.2.2 else p.2.1)
 
 /-- The `effPrevPrevCp` component of the snapshot update (shift of `effPrevCp`). -/
-theorem snapUpdate_effPrevPrevCp (cps : Array Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
+theorem snapUpdate_effPrevPrevCp (cps : List Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
     (snapUpdate cps s ic).effPrevPrevCp =
       if isCMZWJ (cRealOf s.effPrev ic.2) then s.effPrevPrevCp else s.effPrevCp := by
   obtain ⟨i, c⟩ := ic
   unfold snapUpdate cRealOf
   rw [apply_ite EffSnapshot.effPrevPrevCp]
 
-theorem snapUpdate_cpTriple (cps : Array Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
+theorem snapUpdate_cpTriple (cps : List Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
     ((snapUpdate cps s ic).effPrev, (snapUpdate cps s ic).effPrevCp,
         (snapUpdate cps s ic).effPrevPrevCp) =
       cpTripleUpdate (s.effPrev, s.effPrevCp, s.effPrevPrevCp) (cps[ic.1]!, ic.2) := by
@@ -731,20 +729,20 @@ theorem cpTripleUpdate_foldl (l : List (Nat × LBClass)) :
 /-- **Prev-prev-codepoint field characterisation.** The `effPrevPrevCp` the decision
     reads at position `i` is the code point of the second-to-last effective segment
     — the second code point of `effClassesRevP`, for all input. -/
-theorem buildSnapshots_effPrevPrevCp (cps : Array Nat) (lits : Array LBClass) (i : Nat)
-    (h : i < ((Array.range cps.size).zip lits).size) :
+theorem buildSnapshots_effPrevPrevCp (cps : List Nat) (lits : List LBClass) (i : Nat)
+    (h : i < ((List.range cps.length).zip lits).length) :
     ((buildSnapshots cps lits)[i]!).effPrevPrevCp =
-      (effClassesRevP ((((Array.range cps.size).zip lits).toList.take i).map
+      (effClassesRevP ((((List.range cps.length).zip lits).take i).map
         (fun ic => (cps[ic.1]!, ic.2))).reverse).tail.head?.map (·.1) := by
   have hp : (((buildSnapshots cps lits)[i]!).effPrev, ((buildSnapshots cps lits)[i]!).effPrevCp,
       ((buildSnapshots cps lits)[i]!).effPrevPrevCp) =
-      (((Array.range cps.size).zip lits).toList.take i).foldl
+      (((List.range cps.length).zip lits).take i).foldl
         (fun p ic => cpTripleUpdate p (cps[ic.1]!, ic.2)) (none, none, none) := by
     rw [buildSnapshots_getElem! cps lits i h]
     exact PrefixScan.foldl_proj (fun s => (s.effPrev, s.effPrevCp, s.effPrevPrevCp))
       (snapUpdate cps) (fun p ic => cpTripleUpdate p (cps[ic.1]!, ic.2))
       (fun s ic => snapUpdate_cpTriple cps s ic)
-      (((Array.range cps.size).zip lits).toList.take i) EffSnapshot.initial
+      (((List.range cps.length).zip lits).take i) EffSnapshot.initial
   rw [← List.foldl_map, cpTripleUpdate_foldl] at hp
   exact congrArg (fun t => t.2.2) hp
 
@@ -776,7 +774,7 @@ def piPairUpdate (p : Option LBClass × Bool) (gc : Nat × LBClass) : Option LBC
           else if cRealOf p.1 gc.2 == .SP then p.2 else false))
 
 /-- The `inPiQuoteWindow` component of the snapshot update. -/
-theorem snapUpdate_inPiQuoteWindow (cps : Array Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
+theorem snapUpdate_inPiQuoteWindow (cps : List Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
     (snapUpdate cps s ic).inPiQuoteWindow =
       if isCMZWJ (cRealOf s.effPrev ic.2) then s.inPiQuoteWindow
       else (if isPiQuote cps[ic.1]! (cRealOf s.effPrev ic.2) && piLeftCtxOK s.effPrev then true
@@ -785,7 +783,7 @@ theorem snapUpdate_inPiQuoteWindow (cps : Array Nat) (s : EffSnapshot) (ic : Nat
   unfold snapUpdate cRealOf piLeftCtxOK
   rw [apply_ite EffSnapshot.inPiQuoteWindow]
 
-theorem snapUpdate_piPair (cps : Array Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
+theorem snapUpdate_piPair (cps : List Nat) (s : EffSnapshot) (ic : Nat × LBClass) :
     ((snapUpdate cps s ic).effPrev, (snapUpdate cps s ic).inPiQuoteWindow) =
       piPairUpdate (s.effPrev, s.inPiQuoteWindow) (cps[ic.1]!, ic.2) := by
   rw [snapUpdate_effPrev, snapUpdate_inPiQuoteWindow]
@@ -811,23 +809,23 @@ theorem piPairUpdate_foldl (l : List (Nat × LBClass)) :
     · cases hhd : (effClassesRevP m.reverse).head? <;>
         simp_all [isCMZWJ_AL, inPiWindowSpec]
 
-theorem buildSnapshots_piPair (cps : Array Nat) (lits : Array LBClass) (i : Nat)
-    (h : i < ((Array.range cps.size).zip lits).size) :
+theorem buildSnapshots_piPair (cps : List Nat) (lits : List LBClass) (i : Nat)
+    (h : i < ((List.range cps.length).zip lits).length) :
     (((buildSnapshots cps lits)[i]!).effPrev, ((buildSnapshots cps lits)[i]!).inPiQuoteWindow) =
-      (((Array.range cps.size).zip lits).toList.take i).foldl
+      (((List.range cps.length).zip lits).take i).foldl
         (fun p ic => piPairUpdate p (cps[ic.1]!, ic.2)) (none, false) := by
   rw [buildSnapshots_getElem! cps lits i h]
   exact PrefixScan.foldl_proj (fun s => (s.effPrev, s.inPiQuoteWindow)) (snapUpdate cps)
     (fun p ic => piPairUpdate p (cps[ic.1]!, ic.2)) (fun s ic => snapUpdate_piPair cps s ic)
-    (((Array.range cps.size).zip lits).toList.take i) EffSnapshot.initial
+    (((List.range cps.length).zip lits).take i) EffSnapshot.initial
 
 /-- **Pi-window field characterisation.** The `inPiQuoteWindow` the decision reads at
     position `i` holds iff the effective segments of the first `i` code points end in
     a Pi-quote (valid left context) followed by `SP*` (LB15a), for all input. -/
-theorem buildSnapshots_inPiQuoteWindow (cps : Array Nat) (lits : Array LBClass) (i : Nat)
-    (h : i < ((Array.range cps.size).zip lits).size) :
+theorem buildSnapshots_inPiQuoteWindow (cps : List Nat) (lits : List LBClass) (i : Nat)
+    (h : i < ((List.range cps.length).zip lits).length) :
     ((buildSnapshots cps lits)[i]!).inPiQuoteWindow =
-      inPiWindowSpec (effClassesRevP ((((Array.range cps.size).zip lits).toList.take i).map
+      inPiWindowSpec (effClassesRevP ((((List.range cps.length).zip lits).take i).map
         (fun ic => (cps[ic.1]!, ic.2))).reverse) := by
   have hp := buildSnapshots_piPair cps lits i h
   rw [← List.foldl_map, piPairUpdate_foldl] at hp
@@ -837,14 +835,14 @@ theorem buildSnapshots_inPiQuoteWindow (cps : Array Nat) (lits : Array LBClass) 
     `shouldBreakBefore` evaluated at each position `0 .. n-1`, followed by the
     LB3 end-of-text break. So the `lineBreaks` boundary at `i` is exactly the
     per-position decision over the (bridged) snapshot. -/
-theorem lineBreaks_toList (cps : Array Nat) :
-    (lineBreaks cps).toList =
-      (List.range cps.size).map
+theorem lineBreaks_toList (cps : List Nat) :
+    lineBreaks cps =
+      (List.range cps.length).map
         (fun i => shouldBreakBefore cps (cps.map lookupResolved)
           (buildSnapshots cps (cps.map lookupResolved)) i)
       ++ [true] := by
   unfold lineBreaks
-  rw [Array.toList_push, PrefixScan.foldl_push_map_toList]
+  rw [PrefixScan.foldl_push_map_toList]
   simp
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -854,8 +852,8 @@ theorem lineBreaks_toList (cps : Array Nat) :
 /-- The declarative snapshot at position `i`: every `EffSnapshot` field expressed as
     a function of the first `i` code points via `effClassesRev` / `effClassesRevP`,
     independent of the algorithm's fold. This is the state the UAX #14 rules read. -/
-def lbSnapAt (cps : Array Nat) (i : Nat) : EffSnapshot :=
-  let idx := ((Array.range cps.size).zip (cps.map lookupResolved)).toList.take i
+def lbSnapAt (cps : List Nat) (i : Nat) : EffSnapshot :=
+  let idx := ((List.range cps.length).zip (cps.map lookupResolved)).take i
   let e := effClassesRev (idx.map (·.2)).reverse
   let ep := effClassesRevP (idx.map (fun ic => (cps[ic.1]!, ic.2))).reverse
   { effPrev := e.head?
@@ -870,8 +868,8 @@ def lbSnapAt (cps : Array Nat) (i : Nat) : EffSnapshot :=
 
 /-- **The fold's snapshot equals the declarative snapshot**, for all input — the
     nine field characterisations assembled into the whole `EffSnapshot`. -/
-theorem buildSnapshots_snap_eq_spec (cps : Array Nat) (i : Nat)
-    (h : i < ((Array.range cps.size).zip (cps.map lookupResolved)).size) :
+theorem buildSnapshots_snap_eq_spec (cps : List Nat) (i : Nat)
+    (h : i < ((List.range cps.length).zip (cps.map lookupResolved)).length) :
     (buildSnapshots cps (cps.map lookupResolved))[i]! = lbSnapAt cps i := by
   have htwo := buildSnapshots_effPrevTwo cps (cps.map lookupResolved) i h
   have hnosp := buildSnapshots_effPrevNoSp cps (cps.map lookupResolved) i h
@@ -893,41 +891,41 @@ theorem buildSnapshots_snap_eq_spec (cps : Array Nat) (i : Nat)
 /-- `shouldBreakBefore` reads the snapshot array only at index `i`, so two arrays
     that agree there give the same decision. This lets the fold's snapshot array be
     replaced by the declarative one without a whole-array equality. -/
-theorem shouldBreakBefore_snaps_congr (cps : Array Nat) (lits : Array LBClass)
-    (s1 s2 : Array EffSnapshot) (i : Nat) (heq : s1[i]! = s2[i]!) :
+theorem shouldBreakBefore_snaps_congr (cps : List Nat) (lits : List LBClass)
+    (s1 s2 : List EffSnapshot) (i : Nat) (heq : s1[i]! = s2[i]!) :
     shouldBreakBefore cps lits s1 i = shouldBreakBefore cps lits s2 i := by
   unfold shouldBreakBefore
   rw [heq]
 
 /-- The declarative UAX #14 break decision at position `i`: the algorithm's rule
     chain run over the declarative snapshot `lbSnapAt`. -/
-def lbBreakSpecAt (cps : Array Nat) (i : Nat) : Bool :=
+def lbBreakSpecAt (cps : List Nat) (i : Nat) : Bool :=
   shouldBreakBefore cps (cps.map lookupResolved)
-    (((List.range cps.size).map (lbSnapAt cps)).toArray) i
+    ((List.range cps.length).map (lbSnapAt cps)) i
 
-theorem declSnaps_getElem! (cps : Array Nat) (i : Nat) (hi : i < cps.size) :
-    (((List.range cps.size).map (lbSnapAt cps)).toArray)[i]! = lbSnapAt cps i := by
-  have hsz : ((List.range cps.size).map (lbSnapAt cps)).toArray.size = cps.size := by simp
-  rw [getElem!_pos ((List.range cps.size).map (lbSnapAt cps)).toArray i
+theorem declSnaps_getElem! (cps : List Nat) (i : Nat) (hi : i < cps.length) :
+    ((List.range cps.length).map (lbSnapAt cps))[i]! = lbSnapAt cps i := by
+  have hsz : ((List.range cps.length).map (lbSnapAt cps)).length = cps.length := by simp
+  rw [getElem!_pos ((List.range cps.length).map (lbSnapAt cps)) i
         (by rw [hsz]; exact hi)]
-  simp [List.getElem_toArray, List.getElem_map, List.getElem_range]
+  simp [List.getElem_map, List.getElem_range]
 
 /-- **Line break equals its declarative UAX #14 specification.** `lineBreaks cps`
     is, position by position, the declarative LB1–LB31 decision over the raw code
     points — every snapshot field the rules read is a declarative function of the
     prefix (`effClassesRev` / `effClassesRevP`), not the fold — followed by the LB3
     end-of-text break. Correctness for all input, without brute force. -/
-theorem lineBreaks_eq_spec (cps : Array Nat) :
-    (lineBreaks cps).toList =
-      (List.range cps.size).map (lbBreakSpecAt cps) ++ [true] := by
+theorem lineBreaks_eq_spec (cps : List Nat) :
+    lineBreaks cps =
+      (List.range cps.length).map (lbBreakSpecAt cps) ++ [true] := by
   rw [lineBreaks_toList]
   congr 1
   apply List.map_congr_left
   intro i hi
   rw [List.mem_range] at hi
-  have hz : ((Array.range cps.size).zip (cps.map lookupResolved)).size = cps.size := by
-    simp [Array.size_zip, Array.size_range, Array.size_map]
-  have h : i < ((Array.range cps.size).zip (cps.map lookupResolved)).size := by
+  have hz : ((List.range cps.length).zip (cps.map lookupResolved)).length = cps.length := by
+    simp [List.length_zip, List.length_range, List.length_map]
+  have h : i < ((List.range cps.length).zip (cps.map lookupResolved)).length := by
     rw [hz]; exact hi
   unfold lbBreakSpecAt
   apply shouldBreakBefore_snaps_congr

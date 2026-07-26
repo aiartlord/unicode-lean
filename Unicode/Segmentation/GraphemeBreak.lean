@@ -122,21 +122,20 @@ def advance (cp : Nat) (s : State) : State :=
     inCBState := inCBState'
     riRun     := riRun' }
 
-/-- Boolean array of length `cps.size + 1`. Entry `i` is `true` when
+/-- Boolean list of length `cps.length + 1`. Entry `i` is `true` when
     a grapheme cluster break occurs immediately before position `i`
-    (so entry `0` is GB1's sot break and entry `cps.size` is GB2's
+    (so entry `0` is GB1's sot break and entry `cps.length` is GB2's
     eot break, both always `true`). -/
-def graphemeBreaks (cps : Array Nat) : Array Bool :=
-  let init : Array Bool × State := (#[], State.initial)
+def graphemeBreaks (cps : List Nat) : List Bool :=
+  let init : List Bool × State := ([], State.initial)
   let (bs, finalState) := cps.foldl
-    (fun (acc : Array Bool × State) cp =>
+    (fun (acc : List Bool × State) cp =>
       let (bs, s) := acc
       let breakHere := shouldBreakBefore cp s
-      let bs' := bs.push breakHere
       let s' := advance cp s
-      (bs', s'))
+      (bs ++ [breakHere], s'))
     init
   -- GB2: eot break is always true.
-  Function.const State (bs.push true) finalState
+  Function.const State (bs ++ [true]) finalState
 
 end Unicode.Segmentation.GraphemeBreak
