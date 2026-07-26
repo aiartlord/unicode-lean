@@ -37,7 +37,7 @@ structure Row where
   deriving Repr, Inhabited, DecidableEq
 
 /-- Numeric rows sorted by `(source, propertyRank property)`. -/
-def parsedRows : Array Row := #[
+def parsedRows : List Row := [
   { source := 0x3405, property := .OtherNumeric, value := 5 },
   { source := 0x3431, property := .VietnameseNumeric, value := 9 },
   { source := 0x3483, property := .OtherNumeric, value := 2 },
@@ -287,8 +287,8 @@ def uParseRow (line : String) : Option Row :=
     if (valField.splitOn " ").length > 1 then none
     else some { source := uSource f[0]!, property := p, value := uDec valField }
 
-def parsedRowsParsed : Array Row :=
-  (((unihanNumericRaw.splitOn "\n").filterMap uParseRow).toArray).qsort
+def parsedRowsParsed : List Row :=
+  (((unihanNumericRaw.splitOn "\n").filterMap uParseRow)).mergeSort
     (fun a b => decide (a.source < b.source ∨
       (a.source = b.source ∧ propertyRank a.property < propertyRank b.property)))
 

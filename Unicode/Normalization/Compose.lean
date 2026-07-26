@@ -13,7 +13,7 @@
 
   "Primary composite" lookup is the reverse of the canonical-
   decomposition table: find the codepoint whose decomposition is
-  exactly `#[starter, C]`. Hangul L+V / LV+T pairs short-circuit via
+  exactly `[starter, C]`. Hangul L+V / LV+T pairs short-circuit via
   the algorithmic path in `Hangul.composePair?`.
 -/
 
@@ -39,8 +39,8 @@ def primaryComposite? (d c : Nat) : Option Nat :=
   match Hangul.composePair? d c with
   | some p => some p
   | none =>
-    UnicodeData.rows.findSome? (fun r =>
-      if r.canonicalDecomposition = #[d, c]
+    UnicodeData.rowsList.findSome? (fun r =>
+      if r.canonicalDecomposition = [d, c]
          ∧ ¬ Lookup.isFullCompositionExclusion r.codepoint then
         some r.codepoint
       else
@@ -62,13 +62,13 @@ def primaryComposite? (d c : Nat) : Option Nat :=
 
 /-- The pair-extraction view of one UnicodeData row: `some (d, c, p)`
     exactly when the row records a non-excluded two-element canonical
-    decomposition `#[d, c]` for codepoint `p` — precisely the rows the
+    decomposition `[d, c]` for codepoint `p` — precisely the rows the
     scan inside `primaryComposite?` can select. -/
 def pairOfRow (r : UnicodeData.UnicodeDataRow) : Option (Nat × Nat × Nat) :=
   if Lookup.isFullCompositionExclusion r.codepoint then
     none
   else
-    match r.canonicalDecomposition.toList with
+    match r.canonicalDecomposition with
     | [] => none
     | [_only] => none
     | [d, c] => some (d, c, r.codepoint)
@@ -89,7 +89,7 @@ theorem compositionPairs_eq_filterMap :
 theorem findSome?_matcher_eq_find?_pairs (d c : Nat)
     (l : List UnicodeData.UnicodeDataRow) :
     l.findSome? (fun r =>
-      if r.canonicalDecomposition = #[d, c]
+      if r.canonicalDecomposition = [d, c]
          ∧ ¬ Lookup.isFullCompositionExclusion r.codepoint then
         some r.codepoint
       else
@@ -102,7 +102,7 @@ theorem findSome?_matcher_eq_find?_pairs (d c : Nat)
   | cons r rest ih =>
     rw [List.findSome?_cons, List.filterMap_cons]
     by_cases hExcl : Lookup.isFullCompositionExclusion r.codepoint
-    · have hMatch : (if r.canonicalDecomposition = #[d, c]
+    · have hMatch : (if r.canonicalDecomposition = [d, c]
              ∧ ¬ Lookup.isFullCompositionExclusion r.codepoint then
             some r.codepoint else none) = none := by
         rw [if_neg]
@@ -113,14 +113,14 @@ theorem findSome?_matcher_eq_find?_pairs (d c : Nat)
         rw [if_pos hExcl]
       simp only [hMatch, hPair]
       exact ih
-    · cases hDT : r.canonicalDecomposition.toList with
+    · cases hDT : r.canonicalDecomposition with
       | nil =>
-        have hMatch : (if r.canonicalDecomposition = #[d, c]
+        have hMatch : (if r.canonicalDecomposition = [d, c]
                ∧ ¬ Lookup.isFullCompositionExclusion r.codepoint then
               some r.codepoint else none) = none := by
           rw [if_neg]
           intro hCon
-          have hTL := congrArg Array.toList hCon.1
+          have hTL := hCon.1
           rw [hDT] at hTL
           simp at hTL
         have hPair : pairOfRow r = none := by
@@ -131,12 +131,12 @@ theorem findSome?_matcher_eq_find?_pairs (d c : Nat)
       | cons a tail1 =>
         cases hDT2 : tail1 with
         | nil =>
-          have hMatch : (if r.canonicalDecomposition = #[d, c]
+          have hMatch : (if r.canonicalDecomposition = [d, c]
                  ∧ ¬ Lookup.isFullCompositionExclusion r.codepoint then
                 some r.codepoint else none) = none := by
             rw [if_neg]
             intro hCon
-            have hTL := congrArg Array.toList hCon.1
+            have hTL := hCon.1
             rw [hDT, hDT2] at hTL
             simp at hTL
           have hPair : pairOfRow r = none := by
@@ -147,12 +147,12 @@ theorem findSome?_matcher_eq_find?_pairs (d c : Nat)
         | cons b tail2 =>
           cases hDT3 : tail2 with
           | cons e tail3 =>
-            have hMatch : (if r.canonicalDecomposition = #[d, c]
+            have hMatch : (if r.canonicalDecomposition = [d, c]
                    ∧ ¬ Lookup.isFullCompositionExclusion r.codepoint then
                   some r.codepoint else none) = none := by
               rw [if_neg]
               intro hCon
-              have hTL := congrArg Array.toList hCon.1
+              have hTL := hCon.1
               rw [hDT, hDT2, hDT3] at hTL
               simp at hTL
             have hPair : pairOfRow r = none := by
@@ -166,12 +166,11 @@ theorem findSome?_matcher_eq_find?_pairs (d c : Nat)
               rw [if_neg hExcl, hDT, hDT2, hDT3]
             by_cases hKey : a = d ∧ b = c
             · obtain ⟨hA, hB⟩ := hKey
-              have hMatch : (if r.canonicalDecomposition = #[d, c]
+              have hMatch : (if r.canonicalDecomposition = [d, c]
                      ∧ ¬ Lookup.isFullCompositionExclusion r.codepoint then
                     some r.codepoint else none) = some r.codepoint := by
                 rw [if_pos]
                 refine ⟨?arrEq, hExcl⟩
-                rw [← Array.toList_inj]
                 rw [hDT, hDT2, hDT3, hA, hB]
               have hCond : (decide ((a, b, r.codepoint).1 = d)
                   && decide ((a, b, r.codepoint).2.1 = c)) = true := by
@@ -181,12 +180,12 @@ theorem findSome?_matcher_eq_find?_pairs (d c : Nat)
                   = some (a, b, r.codepoint) :=
                 List.find?_cons_of_pos hCond
               simp only [hMatch, hPair, hFind, Option.map_some]
-            · have hMatch : (if r.canonicalDecomposition = #[d, c]
+            · have hMatch : (if r.canonicalDecomposition = [d, c]
                      ∧ ¬ Lookup.isFullCompositionExclusion r.codepoint then
                     some r.codepoint else none) = none := by
                 rw [if_neg]
                 intro hCon
-                have hTL := congrArg Array.toList hCon.1
+                have hTL := hCon.1
                 rw [hDT, hDT2, hDT3] at hTL
                 simp at hTL
                 exact hKey hTL
@@ -221,7 +220,6 @@ theorem primaryComposite?_eq_pairs (d c : Nat) :
   | some p => rfl
   | none =>
     rw [compositionPairs_eq_filterMap]
-    simp only [UnicodeData.rows, List.findSome?_toArray]
     exact findSome?_matcher_eq_find?_pairs d c UnicodeData.rowsList
 
 /-- A non-composing pair, without reducing either scan: the Hangul
@@ -288,22 +286,22 @@ theorem primaryComposite?_some_of_pair (d c p : Nat)
     * `maxCCC`   — maximum CCC among buffered non-starters, used to
                    detect blocking per UAX #15. -/
 structure ComposeState where
-  emitted : Array Nat
+  emitted : List Nat
   starter : Option Nat
   buffer  : List Nat
   maxCCC  : Nat
   deriving Inhabited
 
 def initialState : ComposeState :=
-  { emitted := #[], starter := none, buffer := [], maxCCC := 0 }
+  { emitted := [], starter := none, buffer := [], maxCCC := 0 }
 
 /-- Emit the accumulated starter + buffer as a suffix appended to
-    `emitted`, producing the final output array. -/
-def flushCompose (s : ComposeState) : Array Nat :=
-  let bufferArr := s.buffer.reverse.toArray
+    `emitted`, producing the final output list. -/
+def flushCompose (s : ComposeState) : List Nat :=
+  let bufferList := s.buffer.reverse
   match s.starter with
-  | some st => s.emitted ++ #[st] ++ bufferArr
-  | none    => s.emitted ++ bufferArr
+  | some st => s.emitted ++ [st] ++ bufferList
+  | none    => s.emitted ++ bufferList
 
 /-- Step: process one codepoint.
 
@@ -322,7 +320,7 @@ def stepCompose (s : ComposeState) (cp : Nat) : ComposeState :=
       { s with starter := some cp }
     else
       -- Leading non-starter with no active starter to absorb into.
-      { s with emitted := s.emitted ++ #[cp] }
+      { s with emitted := s.emitted ++ [cp] }
   | some st =>
     if ccc = 0 then
       -- New starter. Compose with active starter only if no buffered
@@ -331,12 +329,12 @@ def stepCompose (s : ComposeState) (cp : Nat) : ComposeState :=
         match primaryComposite? st cp with
         | some p => { s with starter := some p }
         | none =>
-          { emitted := s.emitted ++ #[st]
+          { emitted := s.emitted ++ [st]
             starter := some cp
             buffer  := []
             maxCCC  := 0 }
       else
-        { emitted := s.emitted ++ #[st] ++ s.buffer.reverse.toArray
+        { emitted := s.emitted ++ [st] ++ s.buffer.reverse
           starter := some cp
           buffer  := []
           maxCCC  := 0 }
@@ -352,7 +350,7 @@ def stepCompose (s : ComposeState) (cp : Nat) : ComposeState :=
 
 /-- Canonical composition of a codepoint sequence per UAX #15 §1.3. -/
 def compose (cps : List Nat) : List Nat :=
-  (flushCompose (cps.foldl stepCompose initialState)).toList
+  flushCompose (cps.foldl stepCompose initialState)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- TEST VECTORS
@@ -384,7 +382,7 @@ theorem compose_empty : compose [] = [] := by decide
 --     arithmetic); the entire inclusive range is enumerated non-width-compat-
 --     source by `decide`, or
 --   * the codepoint of a UnicodeData row whose canonical decomposition equals
---     `#[d, c]`; rows with any canonical decomposition are non-width-compat-
+--     `[d, c]`; rows with any canonical decomposition are non-width-compat-
 --     source by `decide` on the pinned UnicodeData table (Unicode
 --     invariant: a codepoint has either a canonical decomposition or a
 --     compatibility decomposition, not both).
@@ -532,7 +530,7 @@ theorem stepCompose_preserves_non_widthCompatSource
     · simp only [hCCC, if_false]
       refine ⟨?emitInvB, ?starterInvB, hBuf⟩
       · intro x hx
-        rcases Array.mem_append.mp hx with h1 | h2
+        rcases List.mem_append.mp hx with h1 | h2
         · exact hE x h1
         · simp at h2; rw [h2]; exact hCpP
       · intro x hx
@@ -553,7 +551,7 @@ theorem stepCompose_preserves_non_widthCompatSource
         | none =>
           refine ⟨?emitInvD, ?starterInvD, ?bufInvD⟩
           · intro x hx
-            rcases Array.mem_append.mp hx with h1 | h2
+            rcases List.mem_append.mp hx with h1 | h2
             · exact hE x h1
             · simp at h2; rw [h2]; exact hStar st hS
           · intro x hx
@@ -562,11 +560,11 @@ theorem stepCompose_preserves_non_widthCompatSource
       · simp only [hBufEm]
         refine ⟨?emitInvE, ?starterInvE, ?bufInvE⟩
         · intro x hx
-          rcases Array.mem_append.mp hx with h1 | h2
-          · rcases Array.mem_append.mp h1 with h1a | h1b
+          rcases List.mem_append.mp hx with h1 | h2
+          · rcases List.mem_append.mp h1 with h1a | h1b
             · exact hE x h1a
             · simp at h1b; rw [h1b]; exact hStar st hS
-          · rw [List.mem_toArray, List.mem_reverse] at h2
+          · rw [List.mem_reverse] at h2
             exact hBuf x h2
         · intro x hx
           rw [← Option.some.inj hx]; exact hCpP
@@ -612,20 +610,20 @@ theorem flushCompose_preserves_non_widthCompatSource
   unfold flushCompose at hj
   split at hj
   · next st hSt =>
-    rcases Array.mem_append.mp hj with h1 | h2
-    · rcases Array.mem_append.mp h1 with h1a | h1b
+    rcases List.mem_append.mp hj with h1 | h2
+    · rcases List.mem_append.mp h1 with h1a | h1b
       · have := hE j h1a; simpa using this
       · simp at h1b
         rw [h1b]
         have := hStar st hSt
         simpa using this
-    · rw [List.mem_toArray, List.mem_reverse] at h2
+    · rw [List.mem_reverse] at h2
       have := hBuf j h2
       simpa using this
   · next hSt =>
-    rcases Array.mem_append.mp hj with h1 | h2
+    rcases List.mem_append.mp hj with h1 | h2
     · have := hE j h1; simpa using this
-    · rw [List.mem_toArray, List.mem_reverse] at h2
+    · rw [List.mem_reverse] at h2
       have := hBuf j h2
       simpa using this
 
@@ -682,12 +680,12 @@ def noAdjCompose : List Nat → Prop
     `stepCompose` over an all-starter, no-adjacent-compose list from a clean
     single-starter state emits each held starter in turn: the flushed output is the
     emitted prefix, the held starter, then the list verbatim. -/
-theorem foldl_stepCompose_shift : ∀ (l : List Nat) (em : Array Nat) (st : Nat),
+theorem foldl_stepCompose_shift : ∀ (l : List Nat) (em : List Nat) (st : Nat),
     (∀ cp ∈ l, Lookup.canonicalCombiningClass cp = 0) →
     noAdjCompose (st :: l) →
     flushCompose (l.foldl stepCompose
         { emitted := em, starter := some st, buffer := [], maxCCC := 0 })
-      = em ++ #[st] ++ l.toArray := by
+      = em ++ [st] ++ l := by
   intro l
   induction l with
   | nil => intro em st hSn hNn; simp [flushCompose]
@@ -696,11 +694,11 @@ theorem foldl_stepCompose_shift : ∀ (l : List Nat) (em : Array Nat) (st : Nat)
     have hcc : Lookup.canonicalCombiningClass c = 0 := hS c (by simp)
     have hpc : primaryComposite? st c = none := hN.1
     have hstep : stepCompose { emitted := em, starter := some st, buffer := [], maxCCC := 0 } c
-        = { emitted := em ++ #[st], starter := some c, buffer := [], maxCCC := 0 } := by
+        = { emitted := em ++ [st], starter := some c, buffer := [], maxCCC := 0 } := by
       unfold stepCompose; simp only [hcc, hpc, List.isEmpty_nil, if_true]
     rw [List.foldl_cons, hstep,
-        ih (em ++ #[st]) c (fun cp h => hS cp (by simp [h])) hN.2,
-        List.toArray_cons c cs, Array.append_assoc]
+        ih (em ++ [st]) c (fun cp h => hS cp (by simp [h])) hN.2]
+    simp
 
 /-- **`compose` is the identity on all-starter, no-adjacent-compose input.** -/
 theorem compose_id_of_shift (l : List Nat)
@@ -712,11 +710,11 @@ theorem compose_id_of_shift (l : List Nat)
   | cons c cs =>
     have hcc : Lookup.canonicalCombiningClass c = 0 := hS c (by simp)
     have hfirst : stepCompose initialState c
-        = { emitted := #[], starter := some c, buffer := [], maxCCC := 0 } := by
+        = { emitted := [], starter := some c, buffer := [], maxCCC := 0 } := by
       unfold stepCompose initialState; simp only [hcc, reduceIte]
     unfold compose
     rw [List.foldl_cons, hfirst,
-        foldl_stepCompose_shift cs #[] c (fun cp h => hS cp (by simp [h])) hN]
+        foldl_stepCompose_shift cs [] c (fun cp h => hS cp (by simp [h])) hN]
     simp
 
 end Unicode.Normalization.Compose

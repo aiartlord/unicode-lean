@@ -19,7 +19,7 @@ structure BidiBracketRow where
   bracketType : BidiBracketType
   deriving Repr, Inhabited, DecidableEq
 
-def bidiBracketRows : Array BidiBracketRow := #[
+def bidiBracketRows : List BidiBracketRow := [
   { codepoint := 0x0028, pair := 0x0029, bracketType := .Open },
   { codepoint := 0x0029, pair := 0x0028, bracketType := .Close },
   { codepoint := 0x005B, pair := 0x005D, bracketType := .Open },
@@ -195,8 +195,8 @@ def bbParse (line : String) : Option BidiBracketRow :=
     else none
   | _other => none
 
-def bidiBracketRowsParsed : Array BidiBracketRow :=
-  ((bidiBracketsRaw.splitOn "\n").filterMap bbParse).toArray
+def bidiBracketRowsParsed : List BidiBracketRow :=
+  ((bidiBracketsRaw.splitOn "\n").filterMap bbParse)
 
 #eval do
   unless bidiBracketRows == bidiBracketRowsParsed do

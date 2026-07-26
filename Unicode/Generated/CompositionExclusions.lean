@@ -7,7 +7,7 @@
 namespace Unicode.Generated.CompositionExclusions
 
 /-- Sorted array of codepoints excluded from canonical composition. -/
-def codepoints : Array Nat := #[
+def codepoints : List Nat := [
   0x0958,
   0x0959,
   0x095A,
@@ -114,8 +114,8 @@ def ceParseRow (line : String) : Option Nat :=
   if t.isEmpty then none else some (ceHex t)
 
 /-- Fresh parse of the pinned source, used only by the drift gate. -/
-def codepointsParsed : Array Nat :=
-  ((compositionExclusionsRaw.splitOn "\n").filterMap ceParseRow).toArray
+def codepointsParsed : List Nat :=
+  ((compositionExclusionsRaw.splitOn "\n").filterMap ceParseRow)
 
 #eval do
   unless codepoints == codepointsParsed do

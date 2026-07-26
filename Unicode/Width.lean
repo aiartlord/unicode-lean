@@ -115,7 +115,7 @@ def codepointWidth (mode : AmbiguousMode) (cp : Nat) : Nat :=
     `displayWidthClusters` for the UTS #51-aware variant that
     collapses ZWJ chains to a single cluster.  For non-emoji text
     and for individual emoji codepoints the two agree. -/
-def displayWidth (mode : AmbiguousMode) (cps : Array Nat) : Nat :=
+def displayWidth (mode : AmbiguousMode) (cps : List Nat) : Nat :=
   cps.foldl (fun acc cp => acc + codepointWidth mode cp) 0
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -151,7 +151,7 @@ def isRegionalIndicator (cp : Nat) : Bool :=
 
     Emoji clusters are rendered at width 2 regardless of their
     constituent codepoints' East_Asian_Width values. -/
-def isEmojiCluster (cluster : Array Nat) : Bool :=
+def isEmojiCluster (cluster : List Nat) : Bool :=
   cluster.any (fun cp =>
     Unicode.Generated.EmojiData.isEmojiPresentation cp
       || cp = 0xFE0F
@@ -163,7 +163,7 @@ def isEmojiCluster (cluster : Array Nat) : Bool :=
     text clusters take the max per-codepoint width within the
     cluster (combining marks contribute 0, so a base + combining
     cluster has the base's width). -/
-def clusterWidth (mode : AmbiguousMode) (cluster : Array Nat) : Nat :=
+def clusterWidth (mode : AmbiguousMode) (cluster : List Nat) : Nat :=
   if isEmojiCluster cluster then 2
   else
     cluster.foldl (fun acc cp =>
@@ -171,18 +171,17 @@ def clusterWidth (mode : AmbiguousMode) (cluster : Array Nat) : Nat :=
       if Nat.ble acc w then w else acc) 0
 
 /-- Slice `cps` into grapheme clusters using UAX #29 break positions. -/
-def graphemeClusters (cps : Array Nat) : Array (Array Nat) := Id.run do
+def graphemeClusters (cps : List Nat) : List (List Nat) :=
   let breaks := Unicode.Segmentation.GraphemeBreak.graphemeBreaks cps
-  let mut clusters : Array (Array Nat) := #[]
-  let mut current  : Array Nat         := #[]
-  for h : i in [0:cps.size] do
-    if breaks[i]! ∧ ! current.isEmpty then
-      clusters := clusters.push current
-      current  := #[]
-    current := current.push cps[i]
-  if ! current.isEmpty then
-    clusters := clusters.push current
-  return clusters
+  let step := fun (acc : List (List Nat) × List Nat) (p : Nat × Bool) =>
+    let (clusters, current) := acc
+    let (cp, brk) := p
+    let (clusters', current') :=
+      if brk ∧ ! current.isEmpty then (clusters ++ [current], ([] : List Nat))
+      else (clusters, current)
+    (clusters', current' ++ [cp])
+  let (clusters, current) := (cps.zip breaks).foldl step (([], []) : List (List Nat) × List Nat)
+  if ! current.isEmpty then clusters ++ [current] else clusters
 
 /-- The display width of `cps` computed cluster-wise: chunk via
     UAX #29 grapheme breaks, take the max codepoint-width within
@@ -190,7 +189,7 @@ def graphemeClusters (cps : Array Nat) : Array (Array Nat) := Id.run do
     for emoji ZWJ sequences (a family is one width-2 cluster
     rather than the codepoint-summed width 6) and for combining-
     mark clusters (`a + ̈` is one width-1 cluster, not 1 + 0). -/
-def displayWidthClusters (mode : AmbiguousMode) (cps : Array Nat) : Nat :=
+def displayWidthClusters (mode : AmbiguousMode) (cps : List Nat) : Nat :=
   (graphemeClusters cps).foldl
     (fun acc cluster => acc + clusterWidth mode cluster) 0
 

@@ -36,57 +36,57 @@ def isAbsorbable (c : WBClass) : Bool :=
     `effPrevPrev` is the class of the second-most-recent such
     position. Both are `none` when there are too few non-absorbable
     positions before `i`. -/
-def buildEffPrev (lits : Array WBClass) :
-    Array (Option WBClass × Option WBClass) :=
-  let go : Array (Option WBClass × Option WBClass) × Option WBClass × Option WBClass
+def buildEffPrev (lits : List WBClass) :
+    List (Option WBClass × Option WBClass) :=
+  let go : List (Option WBClass × Option WBClass) × Option WBClass × Option WBClass
          → WBClass
-         → Array (Option WBClass × Option WBClass) × Option WBClass × Option WBClass :=
+         → List (Option WBClass × Option WBClass) × Option WBClass × Option WBClass :=
     fun (out, cur, prev) c =>
-      let out' := out.push (cur, prev)
+      let out' := out ++ [(cur, prev)]
       if isAbsorbable c then (out', cur, prev)
       else (out', some c, cur)
-  (lits.foldl go (#[], none, none)).1
+  (lits.foldl go ([], none, none)).1
 
 /-- Effective-next class at every position: the class of the
     most-recent non-absorbable position strictly AFTER `i`. -/
-def buildEffNext (lits : Array WBClass) : Array (Option WBClass) :=
+def buildEffNext (lits : List WBClass) : List (Option WBClass) :=
   -- Reverse, fold computing "effective prev" of the reversed sequence,
   -- then reverse the result. Each element of the reversed-fold output
   -- corresponds to "effective next" in the original direction.
   let rev := lits.reverse
-  let go : Array (Option WBClass) × Option WBClass → WBClass
-         → Array (Option WBClass) × Option WBClass :=
+  let go : List (Option WBClass) × Option WBClass → WBClass
+         → List (Option WBClass) × Option WBClass :=
     fun (out, cur) c =>
-      let out' := out.push cur
+      let out' := out ++ [cur]
       if isAbsorbable c then (out', cur)
       else (out', some c)
-  ((rev.foldl go (#[], none)).1).reverse
+  ((rev.foldl go ([], none)).1).reverse
 
 /-- Effective Regional_Indicator run length ending at the most-recent
     non-absorbable position strictly before each position `i`. Used
     by WB15 / WB16. -/
-def buildEffRiRun (lits : Array WBClass) : Array Nat :=
-  let go : Array Nat × Nat → WBClass → Array Nat × Nat :=
+def buildEffRiRun (lits : List WBClass) : List Nat :=
+  let go : List Nat × Nat → WBClass → List Nat × Nat :=
     fun (out, cur) c =>
-      let out' := out.push cur
+      let out' := out ++ [cur]
       if isAbsorbable c then (out', cur)
       else if c == .Regional_Indicator then (out', cur + 1)
       else (out', 0)
-  (lits.foldl go (#[], 0)).1
+  (lits.foldl go ([], 0)).1
 
 /-- Decide whether a word break occurs immediately before position
     `i`. Implements UAX #29 R28 rules WB1 .. WB999 in canonical
     order, using effective neighbours for the WB5+ rules. -/
 def shouldBreakBefore
-    (cps  : Array Nat)
-    (lits : Array WBClass)
-    (eps  : Array Bool)
-    (effP : Array (Option WBClass × Option WBClass))
-    (effN : Array (Option WBClass))
-    (riR  : Array Nat)
+    (cps  : List Nat)
+    (lits : List WBClass)
+    (eps  : List Bool)
+    (effP : List (Option WBClass × Option WBClass))
+    (effN : List (Option WBClass))
+    (riR  : List Nat)
     (i : Nat) : Bool :=
   if i = 0 then true                        -- WB1: sot ÷
-  else if i ≥ cps.size then true            -- WB2: ÷ eot (caller adds eot)
+  else if i ≥ cps.length then true            -- WB2: ÷ eot (caller adds eot)
   else
     let lp := lits[i-1]!
     let lc := lits[i]!
@@ -168,18 +168,18 @@ def shouldBreakBefore
         -- WB999: Any ÷ Any
         else true
 
-/-- Boolean array of length `cps.size + 1`. Entry `i` is `true` when
+/-- Boolean array of length `cps.length + 1`. Entry `i` is `true` when
     a word break occurs immediately before position `i`. -/
-def wordBreaks (cps : Array Nat) : Array Bool :=
+def wordBreaks (cps : List Nat) : List Bool :=
   let lits := cps.map lookupWB
   let eps  := cps.map isExtendedPictographic
   let effP := buildEffPrev lits
   let effN := buildEffNext lits
   let riR  := buildEffRiRun lits
-  let n := cps.size
-  let go : Array Bool → Nat → Array Bool :=
-    fun bs i => bs.push (shouldBreakBefore cps lits eps effP effN riR i)
-  let bs := (List.range n).foldl go #[]
-  bs.push true  -- WB2: eot
+  let n := cps.length
+  let go : List Bool → Nat → List Bool :=
+    fun bs i => bs ++ [shouldBreakBefore cps lits eps effP effN riR i]
+  let bs := (List.range n).foldl go []
+  bs ++ [true]  -- WB2: eot
 
 end Unicode.Segmentation.WordBreak

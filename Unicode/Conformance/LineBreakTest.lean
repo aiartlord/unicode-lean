@@ -16,8 +16,8 @@ namespace Unicode.Conformance.LineBreakTest
 open Unicode.Segmentation.LineBreak
 
 structure Row where
-  codepoints : Array Nat
-  breaks     : Array Bool
+  codepoints : List Nat
+  breaks     : List Bool
   deriving Inhabited, Repr
 
 @[inline]
@@ -38,26 +38,26 @@ def parseRow (rawLine : String) : Option Row :=
   let line := trimS stripped
   if line.isEmpty then none else
   let tokens := (line.splitOn " ").filter (fun s => ! s.isEmpty)
-  let go : Array Nat × Array Bool × Bool × Bool → String → Array Nat × Array Bool × Bool × Bool :=
+  let go : List Nat × List Bool × Bool × Bool → String → List Nat × List Bool × Bool × Bool :=
     fun (cps, bs, expectingMarker, ok) tok =>
       if ! ok then (cps, bs, expectingMarker, ok)
       else if expectingMarker then
-        if tok = "÷" then (cps, bs.push true, false, true)
-        else if tok = "×" then (cps, bs.push false, false, true)
+        if tok = "÷" then (cps, bs ++ [true], false, true)
+        else if tok = "×" then (cps, bs ++ [false], false, true)
         else (cps, bs, expectingMarker, false)
       else
-        (cps.push (parseHex tok), bs, true, true)
-  let (cps, bs, expectingMarkerFinal, ok) := tokens.foldl go (#[], #[], true, true)
+        (cps ++ [parseHex tok], bs, true, true)
+  let (cps, bs, expectingMarkerFinal, ok) := tokens.foldl go ([], [], true, true)
   if ! ok then none
-  else if !expectingMarkerFinal && bs.size = cps.size + 1 then
+  else if !expectingMarkerFinal && bs.length = cps.length + 1 then
     some { codepoints := cps, breaks := bs }
   else none
 
 def lineBreakTestRaw : String :=
   include_str "../Ucd/LineBreakTest.txt"
 
-def rows : Array Row :=
-  ((lineBreakTestRaw.splitOn "\n").filterMap parseRow).toArray
+def rows : List Row :=
+  ((lineBreakTestRaw.splitOn "\n").filterMap parseRow)
 
 def verifyRow (r : Row) : Bool :=
   lineBreaks r.codepoints == r.breaks

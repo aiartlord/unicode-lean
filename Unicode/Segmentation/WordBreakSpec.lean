@@ -29,29 +29,27 @@ open Unicode.Generated.WordBreakProperty (WBClass lookupWB)
 open Unicode.Generated.EmojiData (isExtendedPictographic)
 
 -- The precompute builders are `Array.foldl (push carry; update carry)`. The
--- following bridges each to `List.foldl` over `lits.toList`, so the entry at a
+-- following bridges each to `List.foldl` over `lits`, so the entry at a
 -- position can be reasoned about as the fold's carry over the prefix.
 
 set_option maxRecDepth 100000
 
 /-- The `buildEffRiRun` fold body over `(output, carry)`, structurally identical
     to the algorithm's inline step so the two folds are definitionally equal. -/
-def riStep : Array Nat × Nat → WBClass → Array Nat × Nat :=
+def riStep : List Nat × Nat → WBClass → List Nat × Nat :=
   fun (out, cur) c =>
-    let out' := out.push cur
+    let out' := out ++ [cur]
     if isAbsorbable c then (out', cur)
     else if c == WBClass.Regional_Indicator then (out', cur + 1)
     else (out', 0)
 
-theorem buildEffRiRun_eq_foldl (lits : Array WBClass) :
-    buildEffRiRun lits = (lits.toList.foldl riStep (#[], 0)).fst := by
-  rw [Array.foldl_toList]
-  rfl
+theorem buildEffRiRun_eq_foldl (lits : List WBClass) :
+    buildEffRiRun lits = (lits.foldl riStep ([], 0)).fst := rfl
 
 /-- Every `riStep` pushes the current carry onto the output, regardless of which
     rule branch it takes. -/
-theorem riStep_fst (acc : Array Nat × Nat) (c : WBClass) :
-    (riStep acc c).fst = acc.fst.push acc.snd := by
+theorem riStep_fst (acc : List Nat × Nat) (c : WBClass) :
+    (riStep acc c).fst = acc.fst ++ [acc.snd] := by
   obtain ⟨out, cur⟩ := acc
   unfold riStep
   by_cases h1 : isAbsorbable c <;>
@@ -59,19 +57,19 @@ theorem riStep_fst (acc : Array Nat × Nat) (c : WBClass) :
     simp [h1, h2]
 
 /-- The output array of a `riStep` fold has one entry per consumed input. -/
-theorem riStep_fst_length (l : List WBClass) (acc : Array Nat × Nat) :
-    (l.foldl riStep acc).fst.toList.length = acc.fst.toList.length + l.length := by
+theorem riStep_fst_length (l : List WBClass) (acc : List Nat × Nat) :
+    (l.foldl riStep acc).fst.length = acc.fst.length + l.length := by
   induction l generalizing acc with
   | nil => simp
   | cons x xs ih =>
     rw [List.foldl_cons, ih, riStep_fst]
-    simp [Array.toList_push]
+    simp only [List.length_append, List.length_cons, List.length_nil]
     omega
 
 /-- `buildEffRiRun lits` has exactly one entry per class in `lits`. -/
-theorem buildEffRiRun_size (lits : Array WBClass) :
-    (buildEffRiRun lits).size = lits.size := by
-  rw [buildEffRiRun_eq_foldl, ← Array.length_toList, riStep_fst_length]
+theorem buildEffRiRun_size (lits : List WBClass) :
+    (buildEffRiRun lits).length = lits.length := by
+  rw [buildEffRiRun_eq_foldl, riStep_fst_length]
   simp
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -305,7 +303,7 @@ theorem nextCarry_zero (l : List WBClass) :
 
 /-- The carry `riStep` carries forward is exactly `riUpdate`, so `riStep` is a
     push-carry step in the sense of `PrefixScan`. -/
-theorem riStep_snd (acc : Array Nat × Nat) (c : WBClass) :
+theorem riStep_snd (acc : List Nat × Nat) (c : WBClass) :
     (riStep acc c).snd = riUpdate acc.snd c := by
   obtain ⟨out, cur⟩ := acc
   unfold riStep riUpdate
@@ -316,8 +314,8 @@ theorem riStep_snd (acc : Array Nat × Nat) (c : WBClass) :
     RI carry over the first `i` classes — hence, via `riCarry_zero_eq_effTrailingRI`,
     `effTrailingRI (lits.take i)`. An instance of the push-carry scan bridge with
     update `riUpdate`. -/
-theorem buildEffRiRun_getElem! (lits : Array WBClass) (i : Nat) (h : i < lits.size) :
-    (buildEffRiRun lits)[i]! = riCarry 0 (lits.toList.take i) := by
+theorem buildEffRiRun_getElem! (lits : List WBClass) (i : Nat) (h : i < lits.length) :
+    (buildEffRiRun lits)[i]! = riCarry 0 (lits.take i) := by
   rw [riCarry_eq_foldl]
   exact PrefixScan.build_getElem! riStep riUpdate riStep_fst riStep_snd 0 lits
     (buildEffRiRun lits) (buildEffRiRun_eq_foldl lits) i h
@@ -330,27 +328,25 @@ theorem buildEffRiRun_getElem! (lits : Array WBClass) (i : Nat) (h : i < lits.si
     right-associated as `(out, (cur, prev))`, so the pair is the carry and the
     RI-bridge template applies directly. -/
 def effPrevStep :
-    Array (Option WBClass × Option WBClass) × Option WBClass × Option WBClass → WBClass
-    → Array (Option WBClass × Option WBClass) × Option WBClass × Option WBClass :=
+    List (Option WBClass × Option WBClass) × Option WBClass × Option WBClass → WBClass
+    → List (Option WBClass × Option WBClass) × Option WBClass × Option WBClass :=
   fun (out, cur, prev) c =>
-    let out' := out.push (cur, prev)
+    let out' := out ++ [(cur, prev)]
     if isAbsorbable c then (out', cur, prev)
     else (out', some c, cur)
 
-theorem buildEffPrev_eq_foldl (lits : Array WBClass) :
-    buildEffPrev lits = (lits.toList.foldl effPrevStep (#[], none, none)).fst := by
-  rw [Array.foldl_toList]
-  rfl
+theorem buildEffPrev_eq_foldl (lits : List WBClass) :
+    buildEffPrev lits = (lits.foldl effPrevStep ([], none, none)).fst := rfl
 
 /-- Each `effPrevStep` pushes the current carry pair onto the output. -/
-theorem effPrevStep_fst (acc : Array (Option WBClass × Option WBClass) × Option WBClass × Option WBClass)
-    (c : WBClass) : (effPrevStep acc c).fst = acc.fst.push acc.snd := by
+theorem effPrevStep_fst (acc : List (Option WBClass × Option WBClass) × Option WBClass × Option WBClass)
+    (c : WBClass) : (effPrevStep acc c).fst = acc.fst ++ [acc.snd] := by
   obtain ⟨out, cur, prev⟩ := acc
   unfold effPrevStep
   by_cases h : isAbsorbable c <;> simp [h]
 
 /-- The carry `effPrevStep` carries forward is exactly `effPrevUpdate`. -/
-theorem effPrevStep_snd (acc : Array (Option WBClass × Option WBClass) × Option WBClass × Option WBClass)
+theorem effPrevStep_snd (acc : List (Option WBClass × Option WBClass) × Option WBClass × Option WBClass)
     (c : WBClass) : (effPrevStep acc c).snd = effPrevUpdate acc.snd c := by
   obtain ⟨out, cur, prev⟩ := acc
   unfold effPrevStep effPrevUpdate
@@ -360,8 +356,8 @@ theorem effPrevStep_snd (acc : Array (Option WBClass × Option WBClass) × Optio
     is the effective-prev/prev-prev pair over the first `i` classes — hence, via
     `effPrevCarry_zero`, the last two classes of `effSeq (lits.take i)`. An
     instance of the push-carry scan bridge with update `effPrevUpdate`. -/
-theorem buildEffPrev_getElem! (lits : Array WBClass) (i : Nat) (h : i < lits.size) :
-    (buildEffPrev lits)[i]! = effPrevCarry (none, none) (lits.toList.take i) := by
+theorem buildEffPrev_getElem! (lits : List WBClass) (i : Nat) (h : i < lits.length) :
+    (buildEffPrev lits)[i]! = effPrevCarry (none, none) (lits.take i) := by
   rw [effPrevCarry_eq_foldl]
   exact PrefixScan.build_getElem! effPrevStep effPrevUpdate effPrevStep_fst effPrevStep_snd
     (none, none) lits (buildEffPrev lits) (buildEffPrev_eq_foldl lits) i h
@@ -371,28 +367,27 @@ theorem buildEffPrev_getElem! (lits : Array WBClass) (i : Nat) (h : i < lits.siz
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The `buildEffNext` reversed-scan fold body. -/
-def nextStep : Array (Option WBClass) × Option WBClass → WBClass
-    → Array (Option WBClass) × Option WBClass :=
+def nextStep : List (Option WBClass) × Option WBClass → WBClass
+    → List (Option WBClass) × Option WBClass :=
   fun (out, cur) c =>
-    let out' := out.push cur
+    let out' := out ++ [cur]
     if isAbsorbable c then (out', cur)
     else (out', some c)
 
-theorem buildEffNext_eq_foldl (lits : Array WBClass) :
-    buildEffNext lits = ((lits.toList.reverse.foldl nextStep (#[], none)).fst).reverse := by
+theorem buildEffNext_eq_foldl (lits : List WBClass) :
+    buildEffNext lits = ((lits.reverse.foldl nextStep ([], none)).fst).reverse := by
   unfold buildEffNext
-  rw [Array.foldl_toList, ← Array.toList_reverse]
   rfl
 
 /-- Each `nextStep` pushes the current carry. -/
-theorem nextStep_fst (acc : Array (Option WBClass) × Option WBClass) (c : WBClass) :
-    (nextStep acc c).fst = acc.fst.push acc.snd := by
+theorem nextStep_fst (acc : List (Option WBClass) × Option WBClass) (c : WBClass) :
+    (nextStep acc c).fst = acc.fst ++ [acc.snd] := by
   obtain ⟨out, cur⟩ := acc
   unfold nextStep
   by_cases h : isAbsorbable c <;> simp [h]
 
 /-- The carry `nextStep` carries forward is exactly `nextUpdate`. -/
-theorem nextStep_snd (acc : Array (Option WBClass) × Option WBClass) (c : WBClass) :
+theorem nextStep_snd (acc : List (Option WBClass) × Option WBClass) (c : WBClass) :
     (nextStep acc c).snd = nextUpdate acc.snd c := by
   obtain ⟨out, cur⟩ := acc
   unfold nextStep nextUpdate
@@ -400,10 +395,10 @@ theorem nextStep_snd (acc : Array (Option WBClass) × Option WBClass) (c : WBCla
 
 /-- The reversed scan of `buildEffNext`, as a list, is the prefix carries of the
     reversed class sequence — then reversed back to forward order. -/
-theorem buildEffNext_toList (lits : Array WBClass) :
-    (buildEffNext lits).toList =
-      (PrefixScan.carries nextUpdate none lits.toList.reverse).reverse := by
-  rw [buildEffNext_eq_foldl, Array.toList_reverse,
+theorem buildEffNext_toList (lits : List WBClass) :
+    buildEffNext lits =
+      (PrefixScan.carries nextUpdate none lits.reverse).reverse := by
+  rw [buildEffNext_eq_foldl,
       PrefixScan.foldl_toList nextStep nextUpdate nextStep_fst nextStep_snd]
   simp
 
@@ -414,48 +409,48 @@ theorem effSeq_reverse (l : List WBClass) : effSeq l.reverse = (effSeq l).revers
 
 /-- The class array is `cps` mapped through `lookupWB`, so `lits[i]!` is the
     class of the `i`-th code point. -/
-theorem lits_getElem! (cps : Array Nat) (i : Nat) (h : i < cps.size) :
+theorem lits_getElem! (cps : List Nat) (i : Nat) (h : i < cps.length) :
     (cps.map lookupWB)[i]! = lookupWB (cps[i]!) := by
-  have hs : i < (cps.map lookupWB).size := by rw [Array.size_map]; exact h
-  rw [getElem!_pos (cps.map lookupWB) i hs, Array.getElem_map, getElem!_pos cps i h]
+  have hs : i < (cps.map lookupWB).length := by rw [List.length_map]; exact h
+  rw [getElem!_pos (cps.map lookupWB) i hs, List.getElem_map, getElem!_pos cps i h]
 
 /-- The Extended_Pictographic array is `cps` mapped through
     `isExtendedPictographic`, so `eps[i]!` is that predicate on the `i`-th code
     point (the WB3c input). -/
-theorem eps_getElem! (cps : Array Nat) (i : Nat) (h : i < cps.size) :
+theorem eps_getElem! (cps : List Nat) (i : Nat) (h : i < cps.length) :
     (cps.map isExtendedPictographic)[i]! = isExtendedPictographic (cps[i]!) := by
-  have hs : i < (cps.map isExtendedPictographic).size := by rw [Array.size_map]; exact h
-  rw [getElem!_pos (cps.map isExtendedPictographic) i hs, Array.getElem_map,
+  have hs : i < (cps.map isExtendedPictographic).length := by rw [List.length_map]; exact h
+  rw [getElem!_pos (cps.map isExtendedPictographic) i hs, List.getElem_map,
       getElem!_pos cps i h]
 
 /-- **Effective-next array-index bridge.** The value the algorithm reads at
     `effN[i]!` is the first non-absorbable class strictly after position `i` —
     `head?` of the WB4-effective subsequence of the suffix `lits.drop (i+1)`, the
     effective NEXT class the WB6/WB7b/WB12 lookahead rules test. -/
-theorem buildEffNext_getElem! (lits : Array WBClass) (i : Nat) (h : i < lits.size) :
-    (buildEffNext lits)[i]! = (effSeq (lits.toList.drop (i + 1))).head? := by
-  have hrev : (PrefixScan.carries nextUpdate none lits.toList.reverse).length = lits.size := by
-    rw [PrefixScan.carries_length, List.length_reverse, Array.length_toList]
-  have hi_rev : i < (PrefixScan.carries nextUpdate none lits.toList.reverse).length := by
+theorem buildEffNext_getElem! (lits : List WBClass) (i : Nat) (h : i < lits.length) :
+    (buildEffNext lits)[i]! = (effSeq (lits.drop (i + 1))).head? := by
+  have hrev : (PrefixScan.carries nextUpdate none lits.reverse).length = lits.length := by
+    rw [PrefixScan.carries_length, List.length_reverse]
+  have hi_rev : i < (PrefixScan.carries nextUpdate none lits.reverse).length := by
     rw [hrev]; exact h
-  have hsize : i < (buildEffNext lits).size := by
-    rw [← Array.length_toList, buildEffNext_toList, List.length_reverse]; exact hi_rev
-  have hidx : (PrefixScan.carries nextUpdate none lits.toList.reverse).length - 1 - i
-      < lits.toList.reverse.length := by
-    rw [hrev, List.length_reverse, Array.length_toList]; omega
-  have harith : lits.toList.length
-      - ((PrefixScan.carries nextUpdate none lits.toList.reverse).length - 1 - i) = i + 1 := by
-    rw [hrev, Array.length_toList]; omega
-  have hq : (buildEffNext lits)[i]? = some ((effSeq (lits.toList.drop (i + 1))).head?) := by
-    rw [← Array.getElem?_toList, buildEffNext_toList, List.getElem?_reverse hi_rev]
-    have hqi := PrefixScan.carries_getElem? nextUpdate none lits.toList.reverse
-      ((PrefixScan.carries nextUpdate none lits.toList.reverse).length - 1 - i)
+  have hsize : i < (buildEffNext lits).length := by
+    rw [buildEffNext_toList, List.length_reverse]; exact hi_rev
+  have hidx : (PrefixScan.carries nextUpdate none lits.reverse).length - 1 - i
+      < lits.reverse.length := by
+    rw [hrev, List.length_reverse]; omega
+  have harith : lits.length
+      - ((PrefixScan.carries nextUpdate none lits.reverse).length - 1 - i) = i + 1 := by
+    rw [hrev]; omega
+  have hq : (buildEffNext lits)[i]? = some ((effSeq (lits.drop (i + 1))).head?) := by
+    rw [buildEffNext_toList, List.getElem?_reverse hi_rev]
+    have hqi := PrefixScan.carries_getElem? nextUpdate none lits.reverse
+      ((PrefixScan.carries nextUpdate none lits.reverse).length - 1 - i)
     simp only [hidx, if_pos] at hqi
     rw [hqi, ← nextCarry_eq_foldl, nextCarry_zero, List.take_reverse, harith, effSeq_reverse,
         List.getLast?_reverse]
   rw [getElem!_pos (buildEffNext lits) i hsize]
   have hsome : (buildEffNext lits)[i]? = some (buildEffNext lits)[i] :=
-    (Array.getElem?_eq_some_getElem_iff (buildEffNext lits) i hsize).mpr trivial
+    List.getElem?_eq_getElem hsize
   rw [hsome] at hq
   exact Option.some_inj.mp hq
 
@@ -468,15 +463,15 @@ theorem buildEffNext_getElem! (lits : Array WBClass) (i : Nat) (h : i < lits.siz
     WB2 end-of-text break. The `wordBreaks` boundary at `i` is therefore exactly
     the per-position decision, whose inputs are the bridged declarative
     patterns. -/
-theorem wordBreaks_toList (cps : Array Nat) :
-    (wordBreaks cps).toList =
-      (List.range cps.size).map
+theorem wordBreaks_toList (cps : List Nat) :
+    wordBreaks cps =
+      (List.range cps.length).map
         (fun i => shouldBreakBefore cps (cps.map lookupWB) (cps.map isExtendedPictographic)
           (buildEffPrev (cps.map lookupWB)) (buildEffNext (cps.map lookupWB))
           (buildEffRiRun (cps.map lookupWB)) i)
       ++ [true] := by
   unfold wordBreaks
-  rw [Array.toList_push, PrefixScan.foldl_push_map_toList]
+  rw [PrefixScan.foldl_push_map_toList]
   simp
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -539,9 +534,9 @@ def wbRuleDecision (lp lc : WBClass) (isEPCurr : Bool)
 
 /-- `shouldBreakBefore` is `wbRuleDecision` applied to the values it reads from
     its arrays, once the WB1/WB2 boundary guards are discharged. -/
-theorem shouldBreakBefore_decision (cps : Array Nat) (lits : Array WBClass) (eps : Array Bool)
-    (effP : Array (Option WBClass × Option WBClass)) (effN : Array (Option WBClass))
-    (riR : Array Nat) (i : Nat) (h0 : i ≠ 0) (hn : ¬ i ≥ cps.size) :
+theorem shouldBreakBefore_decision (cps : List Nat) (lits : List WBClass) (eps : List Bool)
+    (effP : List (Option WBClass × Option WBClass)) (effN : List (Option WBClass))
+    (riR : List Nat) (i : Nat) (h0 : i ≠ 0) (hn : ¬ i ≥ cps.length) :
     shouldBreakBefore cps lits eps effP effN riR i =
       wbRuleDecision lits[i-1]! lits[i]! eps[i]! effP[i]! effN[i]! riR[i]! := by
   unfold shouldBreakBefore wbRuleDecision
@@ -552,11 +547,11 @@ theorem shouldBreakBefore_decision (cps : Array Nat) (lits : Array WBClass) (eps
     WB2 (end), else `wbRuleDecision` over the neighbours defined declaratively
     from the raw code points — the effective prev/prev-prev/next and the RI run
     over the WB4-effective subsequence of the class sequence. -/
-def wbBreakSpecAt (cps : Array Nat) (i : Nat) : Bool :=
+def wbBreakSpecAt (cps : List Nat) (i : Nat) : Bool :=
   if i = 0 then true
-  else if i ≥ cps.size then true
+  else if i ≥ cps.length then true
   else
-    let classes := (cps.map lookupWB).toList
+    let classes := cps.map lookupWB
     wbRuleDecision (lookupWB cps[i-1]!) (lookupWB cps[i]!) (isExtendedPictographic cps[i]!)
       ((effSeq (classes.take i)).getLast?, (effSeq (classes.take i)).dropLast.getLast?)
       ((effSeq (classes.drop (i + 1))).head?) (effTrailingRI (classes.take i))
@@ -564,17 +559,17 @@ def wbBreakSpecAt (cps : Array Nat) (i : Nat) : Bool :=
 /-- **Per-position rule equivalence.** The algorithm's boundary decision at `i`
     equals the declarative UAX #29 decision `wbBreakSpecAt`, obtained by
     substituting every array-index bridge into `shouldBreakBefore`. -/
-theorem shouldBreakBefore_eq_spec (cps : Array Nat) (i : Nat) :
+theorem shouldBreakBefore_eq_spec (cps : List Nat) (i : Nat) :
     shouldBreakBefore cps (cps.map lookupWB) (cps.map isExtendedPictographic)
       (buildEffPrev (cps.map lookupWB)) (buildEffNext (cps.map lookupWB))
       (buildEffRiRun (cps.map lookupWB)) i = wbBreakSpecAt cps i := by
   by_cases h0 : i = 0
   · simp [shouldBreakBefore, wbBreakSpecAt, h0]
-  · by_cases hn : i ≥ cps.size
+  · by_cases hn : i ≥ cps.length
     · simp [shouldBreakBefore, wbBreakSpecAt, h0, hn]
-    · have hi : i < cps.size := Nat.lt_of_not_ge hn
-      have hi1 : i - 1 < cps.size := by omega
-      have hmap : i < (cps.map lookupWB).size := by rw [Array.size_map]; exact hi
+    · have hi : i < cps.length := Nat.lt_of_not_ge hn
+      have hi1 : i - 1 < cps.length := by omega
+      have hmap : i < (cps.map lookupWB).length := by rw [List.length_map]; exact hi
       rw [shouldBreakBefore_decision cps (cps.map lookupWB) (cps.map isExtendedPictographic)
             (buildEffPrev (cps.map lookupWB)) (buildEffNext (cps.map lookupWB))
             (buildEffRiRun (cps.map lookupWB)) i h0 hn,
@@ -589,8 +584,8 @@ theorem shouldBreakBefore_eq_spec (cps : Array Nat) (i : Nat) :
     is, position by position, the declarative WB1-WB999 decision over the raw
     code points, followed by the WB2 end-of-text break. Correctness for all input
     without brute force — the analog of `graphemeBreaks_eq_spec`. -/
-theorem wordBreaks_eq_spec (cps : Array Nat) :
-    (wordBreaks cps).toList = (List.range cps.size).map (wbBreakSpecAt cps) ++ [true] := by
+theorem wordBreaks_eq_spec (cps : List Nat) :
+    wordBreaks cps = (List.range cps.length).map (wbBreakSpecAt cps) ++ [true] := by
   rw [wordBreaks_toList]
   have hfun : (fun i => shouldBreakBefore cps (cps.map lookupWB) (cps.map isExtendedPictographic)
       (buildEffPrev (cps.map lookupWB)) (buildEffNext (cps.map lookupWB))

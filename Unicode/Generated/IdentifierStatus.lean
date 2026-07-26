@@ -16,7 +16,7 @@ inductive IdentifierStatus where
   deriving DecidableEq, Repr, Inhabited
 
 /-- Allowed-identifier ranges, each encoded as `(min, max)` inclusive. -/
-def allowedRanges : Array (Nat × Nat) := #[
+def allowedRanges : List (Nat × Nat) := [
   (39, 39),
   (45, 46),
   (48, 58),
@@ -1749,8 +1749,8 @@ def gateParseAllowed (line : String) : Option (Nat × Nat) :=
   | _irregular => none
 
 /-- Fresh parse of the pinned source, used only by the drift gate. -/
-def allowedRangesParsed : Array (Nat × Nat) :=
-  ((identifierStatusRaw.splitOn "\n").filterMap gateParseAllowed).toArray
+def allowedRangesParsed : List (Nat × Nat) :=
+  ((identifierStatusRaw.splitOn "\n").filterMap gateParseAllowed)
 
 #eval do
   unless allowedRanges == allowedRangesParsed do
