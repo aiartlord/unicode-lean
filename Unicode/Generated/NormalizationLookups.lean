@@ -463,7 +463,7 @@ theorem rows_decompositionTargets_nonSource :
     such a row, so composites are non-sources. -/
 theorem rows_decomposed_nonSource :
     UnicodeData.rows.all (fun r =>
-      decide (r.canonicalDecomposition.size = 0) ||
+      decide (r.canonicalDecomposition.length = 0) ||
       ! WidthCompatMappings.isSource r.codepoint) = true := by
   rw [← Array.all_toList]
   simp only [UnicodeData.rows, List.toList_toArray]
@@ -477,7 +477,7 @@ theorem canonicalDecomposition_target_non_source
     WidthCompatMappings.isSource j = false := by
   cases hrow : Lookup.lookupRow cp with
   | none =>
-      have hcd : Lookup.canonicalDecomposition cp = #[] := by
+      have hcd : Lookup.canonicalDecomposition cp = [] := by
         unfold Lookup.canonicalDecomposition
         rw [hrow]
       rw [hcd] at hj
@@ -497,21 +497,19 @@ theorem canonicalDecomposition_target_non_source
       rcases Array.getElem_of_mem hmem with ⟨i, hi, hiEq⟩
       have hRow := hAll i hi
       rw [hiEq] at hRow
-      rw [Array.all_eq_true] at hRow
-      rcases Array.getElem_of_mem hj with ⟨k, hk, hkEq⟩
-      have hElem := hRow k hk
-      rw [hkEq] at hElem
+      rw [List.all_eq_true] at hRow
+      have hElem := hRow j hj
       simpa using hElem
 
 /-- A non-Hangul primary composite — the codepoint a row with two-element
-    canonical decomposition `#[d, c]` recomposes to — is never a
+    canonical decomposition `[d, c]` recomposes to — is never a
     width-compatibility source. Lifted from `rows_decomposed_nonSource`; the
     hypothesis is the `findSome?` scan that `Compose.primaryComposite?` reduces
     to on its non-Hangul branch. -/
 theorem primaryComposite_target_non_source
     (d c p : Nat)
     (h : UnicodeData.rows.findSome? (fun r =>
-           if r.canonicalDecomposition = #[d, c] ∧
+           if r.canonicalDecomposition = [d, c] ∧
               ¬ Lookup.isFullCompositionExclusion r.codepoint then
              some r.codepoint
            else
@@ -521,7 +519,7 @@ theorem primaryComposite_target_non_source
   split at hf
   · next hcond =>
       simp only [Option.some.injEq] at hf
-      have hdecomp : row.canonicalDecomposition = #[d, c] := hcond.1
+      have hdecomp : row.canonicalDecomposition = [d, c] := hcond.1
       have hAll := rows_decomposed_nonSource
       rw [Array.all_eq_true] at hAll
       rcases Array.getElem_of_mem hmem with ⟨i, hi, hiEq⟩
