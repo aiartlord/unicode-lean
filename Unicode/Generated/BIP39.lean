@@ -64,7 +64,7 @@ def wordlist : Language → Array String
 /-- Get the canonical 2,048-word list for `lang` as codepoint sequences.
     Kernel-visible data: membership proofs reduce over `Nat` codepoints
     without the unreducible `String.toList`. -/
-def wordlistCps : Language → Array (Array Nat)
+def wordlistCps : Language → List (List Nat)
   | .english             => EnglishCps.wordlistCps
   | .japanese            => JapaneseCps.wordlistCps
   | .korean              => KoreanCps.wordlistCps

@@ -68,7 +68,6 @@ import Unicode.Security.Calculus
 import Unicode.Normalization.NFKD
 import Unicode.Casing
 import Unicode.Generated.BIP39
-import Unicode.Security.Crypto.WordlistOrder
 
 namespace Unicode.Security.Crypto.Bip39Canonical
 
@@ -259,23 +258,22 @@ def splitWordsAux : List Nat → List Nat → List (List Nat)
     else splitWordsAux rest (cp :: acc)
 
 /-- Split a canonical-form input into words at `U+0020` boundaries.
-    The per-word codepoint sequences are returned as `Array Nat` so the
-    membership lookup runs against the generated `Array`-backed wordlist
-    tables. -/
-def splitWords (canonical : List Nat) : Array (Array Nat) :=
-  ((splitWordsAux canonical []).map List.toArray).toArray
+    The per-word codepoint sequences are returned as `List Nat`, matching the
+    List-backed wordlist tables the membership lookup scans. -/
+def splitWords (canonical : List Nat) : List (List Nat) :=
+  splitWordsAux canonical []
 
 /-- Convert a `String` to its codepoint array. `String.toList` does not reduce
     under the kernel, so this is used only at runtime — by `wordlistCpsDrift`
     below — to check the generated codepoint tables against the string wordlist. -/
-@[inline] def stringToCodepoints (s : String) : Array Nat :=
-  s.toList.toArray.map (·.toNat)
+@[inline] def stringToCodepoints (s : String) : List Nat :=
+  s.toList.map (·.toNat)
 
 /-- Codepoint-array form of every wordlist, taken directly from the generated
     kernel-visible tables (`Unicode.Generated.BIP39.wordlistCps`). Membership
     proofs reduce over `Nat` codepoints; the `String` wordlist would stall the
     kernel at the unreducible `String.toList`. -/
-def wordlistCps (lang : Language) : Array (Array Nat) :=
+def wordlistCps (lang : Language) : List (List Nat) :=
   Unicode.Generated.BIP39.wordlistCps lang
 
 /-- Runtime drift gate: the generated codepoint table equals the codepoint
@@ -283,24 +281,24 @@ def wordlistCps (lang : Language) : Array (Array Nat) :=
     representations pinned to the same UCD source. -/
 def wordlistCpsDrift : Bool :=
   allLanguages.all (fun lang =>
-    Unicode.Generated.BIP39.wordlistCps lang == (wordlist lang).map stringToCodepoints)
+    Unicode.Generated.BIP39.wordlistCps lang == ((wordlist lang).map stringToCodepoints).toList)
 
 /-- True iff `word` (as codepoints) appears in `lang`'s wordlist. -/
-def isInWordlist (lang : Language) (word : Array Nat) : Bool :=
+def isInWordlist (lang : Language) (word : List Nat) : Bool :=
   (wordlistCps lang).any (fun entry => entry == word)
 
 /-- Every language whose wordlist contains `word`.  Empty if
     `word` is not in any BIP-39 wordlist. -/
-def wordlistsContaining (word : Array Nat) : Array Language :=
+def wordlistsContaining (word : List Nat) : Array Language :=
   allLanguages.filter (fun lang => isInWordlist lang word)
 
 /-- The single language whose wordlist contains every word in
     `words`, if such a language exists; otherwise `none`.
 
-    On empty `words`, returns `some .english` because
-    `Array.all` on the empty array is `true` for every predicate;
-    `findSome?` returns the first match (English). -/
-def uniqueLanguage (words : Array (Array Nat)) : Option Language :=
+    On empty `words`, returns `some .english` because `List.all` on
+    the empty list is `true` for every predicate; `findSome?` returns
+    the first match (English). -/
+def uniqueLanguage (words : List (List Nat)) : Option Language :=
   allLanguages.findSome? (fun lang =>
     if words.all (fun w => isInWordlist lang w) then some lang else none)
 
@@ -309,40 +307,27 @@ def uniqueLanguage (words : Array (Array Nat)) : Option Language :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- The English wordlist contains "abandon" — every BIP-39 mnemonic test vector
-    starts with it. Proven by the index witness (`abandon` is entry 0), so only
-    that one entry is reduced, not the 2,048-word table. -/
+    starts with it. A single linear scan of the List-backed wordlist. -/
 theorem english_contains_abandon :
-    isInWordlist .english #[0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E] = true := by
-  unfold isInWordlist
-  rw [Array.any_eq_true]
-  exact ⟨0, by decide, by decide⟩
-
-/-- A made-up word is in no wordlist. Non-membership has no O(1) witness, so each
-    language is a single linear `List.all` pass (O(n), via `any_beq_false_of_allNe`)
-    — never the O(n²) `Array.any` index-per-element reduction. -/
-theorem nonsense_in_no_wordlist :
-    wordlistsContaining #[0x71, 0x7A, 0x71, 0x7A, 0x71, 0x7A] = #[] := by
-  have key : (fun lang => isInWordlist lang #[0x71, 0x7A, 0x71, 0x7A, 0x71, 0x7A])
-      = (fun _lang => false) := by
-    funext lang
-    unfold isInWordlist
-    exact WordlistOrder.any_beq_false_of_allNe (wordlistCps lang)
-      #[0x71, 0x7A, 0x71, 0x7A, 0x71, 0x7A] (by cases lang <;> decide +kernel)
-  unfold wordlistsContaining
-  rw [key]
-  decide
-
-/-- Single-word "abandon" is unambiguously English: English is the first
-    language tried and it matches at entry 0, so `findSome?`/`any` short-circuit
-    before scanning the table. -/
-theorem uniqueLanguage_abandon :
-    uniqueLanguage #[#[0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E]] = some .english := by
+    isInWordlist .english [0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E] = true := by
   decide +kernel
 
-/-- Empty word-list is vacuously unique (defaults to English): `Array.all` on
-    the empty array is `true`, so no wordlist entry is consulted. -/
+/-- A made-up word is in no wordlist. Each language is one linear `List.any`
+    pass over the List-backed table. -/
+theorem nonsense_in_no_wordlist :
+    wordlistsContaining [0x71, 0x7A, 0x71, 0x7A, 0x71, 0x7A] = #[] := by
+  decide +kernel
+
+/-- Single-word "abandon" is unambiguously English: English is the first
+    language tried and it matches. -/
+theorem uniqueLanguage_abandon :
+    uniqueLanguage [[0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E]] = some .english := by
+  decide +kernel
+
+/-- Empty word-list is vacuously unique (defaults to English): `List.all` on
+    the empty list is `true`, so no wordlist entry is consulted. -/
 theorem uniqueLanguage_empty :
-    uniqueLanguage #[] = some .english := by decide +kernel
+    uniqueLanguage [] = some .english := by decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §7 Hazard probes (per-priority position-finders)
@@ -400,7 +385,7 @@ def firstArrayDivergence : List Nat → List Nat → Option Nat
 def detect (input : List Nat) : Verdict :=
   let canonical := bip39Canonical input
   let words     := splitWords canonical
-  let wordCount := words.size
+  let wordCount := words.length
 
   let trailingCount := countTrailingWhitespace input
   let uppercasePos  := firstUppercasePos input
