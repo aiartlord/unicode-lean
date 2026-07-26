@@ -36,7 +36,7 @@ set_option maxRecDepth 100000
 def maxDepth : Nat := 32
 
 /-- Fully canonically decompose a single codepoint, recursively until
-    a fixed point. Returns the `#[cp]` singleton when the codepoint
+    a fixed point. Returns the `[cp]` singleton when the codepoint
     has no decomposition (primary character). Returns the expanded
     sequence otherwise.
 
@@ -44,30 +44,30 @@ def maxDepth : Nat := 32
     empty guard result rather than emitting a possibly non-decomposed
     codepoint; this case is unreachable under the `maxDepth` default on
     any real UCD release. -/
-def fullCanonicalDecomposeFuel : Nat → Nat → Array Nat
-  | 0,        _cp => #[]
+def fullCanonicalDecomposeFuel : Nat → Nat → List Nat
+  | 0,        _cp => []
   | fuel + 1, cp =>
     match Hangul.decomposeSyllable? cp with
     | some jamo => jamo
     | none =>
       let step := Lookup.canonicalDecomposition cp
       if step.isEmpty then
-        #[cp]
+        [cp]
       else
         step.foldl
           (fun acc cp' => acc ++ fullCanonicalDecomposeFuel fuel cp')
-          #[]
+          []
 
 /-- Fully canonical decomposition of a single codepoint. Thin wrapper
     that fixes `fuel = maxDepth`. -/
-def fullCanonicalDecompose (cp : Nat) : Array Nat :=
+def fullCanonicalDecompose (cp : Nat) : List Nat :=
   fullCanonicalDecomposeFuel maxDepth cp
 
 /-- Fully canonical decomposition of a codepoint sequence. Applies
     `fullCanonicalDecompose` to each input codepoint and concatenates
     the results in order. -/
 def decomposeSequence (cps : List Nat) : List Nat :=
-  cps.flatMap (fun cp => (fullCanonicalDecompose cp).toList)
+  cps.flatMap fullCanonicalDecompose
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- TEST VECTORS
@@ -110,31 +110,31 @@ theorem rows_omit_latin_o :
 
 /-- U+0041 has no canonical decomposition. -/
 theorem canonicalDecomposition_latin_A :
-    Lookup.canonicalDecomposition 0x0041 = #[] :=
+    Lookup.canonicalDecomposition 0x0041 = [] :=
   Lookup.canonicalDecomposition_of_lookupRow_none 0x0041
     (Lookup.lookupRow_none_of_all_ne 0x0041 rows_omit_latin_A)
 
 /-- U+0068 has no canonical decomposition. -/
 theorem canonicalDecomposition_latin_h :
-    Lookup.canonicalDecomposition 0x0068 = #[] :=
+    Lookup.canonicalDecomposition 0x0068 = [] :=
   Lookup.canonicalDecomposition_of_lookupRow_none 0x0068
     (Lookup.lookupRow_none_of_all_ne 0x0068 rows_omit_latin_h)
 
 /-- U+0065 has no canonical decomposition. -/
 theorem canonicalDecomposition_latin_e :
-    Lookup.canonicalDecomposition 0x0065 = #[] :=
+    Lookup.canonicalDecomposition 0x0065 = [] :=
   Lookup.canonicalDecomposition_of_lookupRow_none 0x0065
     (Lookup.lookupRow_none_of_all_ne 0x0065 rows_omit_latin_e)
 
 /-- U+006C has no canonical decomposition. -/
 theorem canonicalDecomposition_latin_l :
-    Lookup.canonicalDecomposition 0x006C = #[] :=
+    Lookup.canonicalDecomposition 0x006C = [] :=
   Lookup.canonicalDecomposition_of_lookupRow_none 0x006C
     (Lookup.lookupRow_none_of_all_ne 0x006C rows_omit_latin_l)
 
 /-- U+006F has no canonical decomposition. -/
 theorem canonicalDecomposition_latin_o :
-    Lookup.canonicalDecomposition 0x006F = #[] :=
+    Lookup.canonicalDecomposition 0x006F = [] :=
   Lookup.canonicalDecomposition_of_lookupRow_none 0x006F
     (Lookup.lookupRow_none_of_all_ne 0x006F rows_omit_latin_o)
 
@@ -147,13 +147,13 @@ theorem rows_hit_A_grave :
 theorem rows_decomp_A_grave :
     UnicodeData.rowsList.all (fun r =>
       decide (r.codepoint = 0x00C0 →
-        r.canonicalDecomposition = #[0x0041, 0x0300])) = true := by
+        r.canonicalDecomposition = [0x0041, 0x0300])) = true := by
   decide +kernel
 
 /-- U+00C0 canonically decomposes to `A` + combining grave. -/
 theorem canonicalDecomposition_A_grave :
-    Lookup.canonicalDecomposition 0x00C0 = #[0x0041, 0x0300] :=
-  Lookup.canonicalDecomposition_of_hit 0x00C0 #[0x0041, 0x0300]
+    Lookup.canonicalDecomposition 0x00C0 = [0x0041, 0x0300] :=
+  Lookup.canonicalDecomposition_of_hit 0x00C0 [0x0041, 0x0300]
     rows_hit_A_grave rows_decomp_A_grave
 
 /-- The pinned table carries a row for LATIN SMALL LETTER E WITH ACUTE. -/
@@ -165,13 +165,13 @@ theorem rows_hit_e_acute :
 theorem rows_decomp_e_acute :
     UnicodeData.rowsList.all (fun r =>
       decide (r.codepoint = 0x00E9 →
-        r.canonicalDecomposition = #[0x0065, 0x0301])) = true := by
+        r.canonicalDecomposition = [0x0065, 0x0301])) = true := by
   decide +kernel
 
 /-- U+00E9 canonically decomposes to `e` + combining acute. -/
 theorem canonicalDecomposition_e_acute :
-    Lookup.canonicalDecomposition 0x00E9 = #[0x0065, 0x0301] :=
-  Lookup.canonicalDecomposition_of_hit 0x00E9 #[0x0065, 0x0301]
+    Lookup.canonicalDecomposition 0x00E9 = [0x0065, 0x0301] :=
+  Lookup.canonicalDecomposition_of_hit 0x00E9 [0x0065, 0x0301]
     rows_hit_e_acute rows_decomp_e_acute
 
 /-- The pinned table carries a row for LATIN CAPITAL LETTER A WITH RING
@@ -184,13 +184,13 @@ theorem rows_hit_A_ring :
 theorem rows_decomp_A_ring :
     UnicodeData.rowsList.all (fun r =>
       decide (r.codepoint = 0x00C5 →
-        r.canonicalDecomposition = #[0x0041, 0x030A])) = true := by
+        r.canonicalDecomposition = [0x0041, 0x030A])) = true := by
   decide +kernel
 
 /-- U+00C5 canonically decomposes to `A` + combining ring above. -/
 theorem canonicalDecomposition_A_ring :
-    Lookup.canonicalDecomposition 0x00C5 = #[0x0041, 0x030A] :=
-  Lookup.canonicalDecomposition_of_hit 0x00C5 #[0x0041, 0x030A]
+    Lookup.canonicalDecomposition 0x00C5 = [0x0041, 0x030A] :=
+  Lookup.canonicalDecomposition_of_hit 0x00C5 [0x0041, 0x030A]
     rows_hit_A_ring rows_decomp_A_ring
 
 /-- The pinned table carries a row for ANGSTROM SIGN. -/
@@ -202,13 +202,13 @@ theorem rows_hit_angstrom :
 theorem rows_decomp_angstrom :
     UnicodeData.rowsList.all (fun r =>
       decide (r.codepoint = 0x212B →
-        r.canonicalDecomposition = #[0x00C5])) = true := by
+        r.canonicalDecomposition = [0x00C5])) = true := by
   decide +kernel
 
 /-- U+212B canonically decomposes to the U+00C5 singleton. -/
 theorem canonicalDecomposition_angstrom :
-    Lookup.canonicalDecomposition 0x212B = #[0x00C5] :=
-  Lookup.canonicalDecomposition_of_hit 0x212B #[0x00C5]
+    Lookup.canonicalDecomposition 0x212B = [0x00C5] :=
+  Lookup.canonicalDecomposition_of_hit 0x212B [0x00C5]
     rows_hit_angstrom rows_decomp_angstrom
 
 /-- The pinned table carries a row for COMBINING GRAVE ACCENT (for its
@@ -221,13 +221,13 @@ theorem rows_hit_grave :
 theorem rows_decomp_grave :
     UnicodeData.rowsList.all (fun r =>
       decide (r.codepoint = 0x0300 →
-        r.canonicalDecomposition = #[])) = true := by
+        r.canonicalDecomposition = [])) = true := by
   decide +kernel
 
 /-- U+0300 has no canonical decomposition. -/
 theorem canonicalDecomposition_grave :
-    Lookup.canonicalDecomposition 0x0300 = #[] :=
-  Lookup.canonicalDecomposition_of_hit 0x0300 #[]
+    Lookup.canonicalDecomposition 0x0300 = [] :=
+  Lookup.canonicalDecomposition_of_hit 0x0300 []
     rows_hit_grave rows_decomp_grave
 
 /-- The pinned table carries a row for COMBINING ACUTE ACCENT (for its
@@ -240,13 +240,13 @@ theorem rows_hit_acute :
 theorem rows_decomp_acute :
     UnicodeData.rowsList.all (fun r =>
       decide (r.codepoint = 0x0301 →
-        r.canonicalDecomposition = #[])) = true := by
+        r.canonicalDecomposition = [])) = true := by
   decide +kernel
 
 /-- U+0301 has no canonical decomposition. -/
 theorem canonicalDecomposition_acute :
-    Lookup.canonicalDecomposition 0x0301 = #[] :=
-  Lookup.canonicalDecomposition_of_hit 0x0301 #[]
+    Lookup.canonicalDecomposition 0x0301 = [] :=
+  Lookup.canonicalDecomposition_of_hit 0x0301 []
     rows_hit_acute rows_decomp_acute
 
 /-- The pinned table carries a row for COMBINING RING ABOVE (for its
@@ -259,18 +259,18 @@ theorem rows_hit_ring :
 theorem rows_decomp_ring :
     UnicodeData.rowsList.all (fun r =>
       decide (r.codepoint = 0x030A →
-        r.canonicalDecomposition = #[])) = true := by
+        r.canonicalDecomposition = [])) = true := by
   decide +kernel
 
 /-- U+030A has no canonical decomposition. -/
 theorem canonicalDecomposition_ring :
-    Lookup.canonicalDecomposition 0x030A = #[] :=
-  Lookup.canonicalDecomposition_of_hit 0x030A #[]
+    Lookup.canonicalDecomposition 0x030A = [] :=
+  Lookup.canonicalDecomposition_of_hit 0x030A []
     rows_hit_ring rows_decomp_ring
 
 /-- One fuel step on `A`: no decomposition, so its own singleton. -/
 theorem fcdf_latin_A (fuel : Nat) :
-    fullCanonicalDecomposeFuel (fuel + 1) 0x0041 = #[0x0041] := by
+    fullCanonicalDecomposeFuel (fuel + 1) 0x0041 = [0x0041] := by
   rw [fullCanonicalDecomposeFuel.eq_def]
   simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
         Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
@@ -278,7 +278,7 @@ theorem fcdf_latin_A (fuel : Nat) :
 
 /-- One fuel step on `h`: no decomposition, so its own singleton. -/
 theorem fcdf_latin_h (fuel : Nat) :
-    fullCanonicalDecomposeFuel (fuel + 1) 0x0068 = #[0x0068] := by
+    fullCanonicalDecomposeFuel (fuel + 1) 0x0068 = [0x0068] := by
   rw [fullCanonicalDecomposeFuel.eq_def]
   simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
         Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
@@ -286,7 +286,7 @@ theorem fcdf_latin_h (fuel : Nat) :
 
 /-- One fuel step on `e`: no decomposition, so its own singleton. -/
 theorem fcdf_latin_e (fuel : Nat) :
-    fullCanonicalDecomposeFuel (fuel + 1) 0x0065 = #[0x0065] := by
+    fullCanonicalDecomposeFuel (fuel + 1) 0x0065 = [0x0065] := by
   rw [fullCanonicalDecomposeFuel.eq_def]
   simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
         Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
@@ -294,7 +294,7 @@ theorem fcdf_latin_e (fuel : Nat) :
 
 /-- One fuel step on `l`: no decomposition, so its own singleton. -/
 theorem fcdf_latin_l (fuel : Nat) :
-    fullCanonicalDecomposeFuel (fuel + 1) 0x006C = #[0x006C] := by
+    fullCanonicalDecomposeFuel (fuel + 1) 0x006C = [0x006C] := by
   rw [fullCanonicalDecomposeFuel.eq_def]
   simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
         Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
@@ -302,7 +302,7 @@ theorem fcdf_latin_l (fuel : Nat) :
 
 /-- One fuel step on `o`: no decomposition, so its own singleton. -/
 theorem fcdf_latin_o (fuel : Nat) :
-    fullCanonicalDecomposeFuel (fuel + 1) 0x006F = #[0x006F] := by
+    fullCanonicalDecomposeFuel (fuel + 1) 0x006F = [0x006F] := by
   rw [fullCanonicalDecomposeFuel.eq_def]
   simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
         Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
@@ -311,7 +311,7 @@ theorem fcdf_latin_o (fuel : Nat) :
 /-- One fuel step on COMBINING GRAVE ACCENT: no decomposition, so its
     own singleton. -/
 theorem fcdf_grave (fuel : Nat) :
-    fullCanonicalDecomposeFuel (fuel + 1) 0x0300 = #[0x0300] := by
+    fullCanonicalDecomposeFuel (fuel + 1) 0x0300 = [0x0300] := by
   rw [fullCanonicalDecomposeFuel.eq_def]
   simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
         Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
@@ -320,7 +320,7 @@ theorem fcdf_grave (fuel : Nat) :
 /-- One fuel step on COMBINING ACUTE ACCENT: no decomposition, so its
     own singleton. -/
 theorem fcdf_acute (fuel : Nat) :
-    fullCanonicalDecomposeFuel (fuel + 1) 0x0301 = #[0x0301] := by
+    fullCanonicalDecomposeFuel (fuel + 1) 0x0301 = [0x0301] := by
   rw [fullCanonicalDecomposeFuel.eq_def]
   simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
         Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
@@ -329,7 +329,7 @@ theorem fcdf_acute (fuel : Nat) :
 /-- One fuel step on COMBINING RING ABOVE: no decomposition, so its own
     singleton. -/
 theorem fcdf_ring (fuel : Nat) :
-    fullCanonicalDecomposeFuel (fuel + 1) 0x030A = #[0x030A] := by
+    fullCanonicalDecomposeFuel (fuel + 1) 0x030A = [0x030A] := by
   rw [fullCanonicalDecomposeFuel.eq_def]
   simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
         Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
@@ -337,7 +337,7 @@ theorem fcdf_ring (fuel : Nat) :
 
 /-- Two fuel steps on U+00C0: expand to `A` + grave, both terminal. -/
 theorem fcdf_A_grave (fuel : Nat) :
-    fullCanonicalDecomposeFuel (fuel + 2) 0x00C0 = #[0x0041, 0x0300] := by
+    fullCanonicalDecomposeFuel (fuel + 2) 0x00C0 = [0x0041, 0x0300] := by
   rw [fullCanonicalDecomposeFuel.eq_def]
   simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
         Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
@@ -345,7 +345,7 @@ theorem fcdf_A_grave (fuel : Nat) :
 
 /-- Two fuel steps on U+00E9: expand to `e` + acute, both terminal. -/
 theorem fcdf_e_acute (fuel : Nat) :
-    fullCanonicalDecomposeFuel (fuel + 2) 0x00E9 = #[0x0065, 0x0301] := by
+    fullCanonicalDecomposeFuel (fuel + 2) 0x00E9 = [0x0065, 0x0301] := by
   rw [fullCanonicalDecomposeFuel.eq_def]
   simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
         Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
@@ -353,7 +353,7 @@ theorem fcdf_e_acute (fuel : Nat) :
 
 /-- Two fuel steps on U+00C5: expand to `A` + ring above, both terminal. -/
 theorem fcdf_A_ring (fuel : Nat) :
-    fullCanonicalDecomposeFuel (fuel + 2) 0x00C5 = #[0x0041, 0x030A] := by
+    fullCanonicalDecomposeFuel (fuel + 2) 0x00C5 = [0x0041, 0x030A] := by
   rw [fullCanonicalDecomposeFuel.eq_def]
   simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
         Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
@@ -362,7 +362,7 @@ theorem fcdf_A_ring (fuel : Nat) :
 /-- Three fuel steps on ANGSTROM SIGN: the U+00C5 singleton, then its
     two-step expansion — the recursive flattening in action. -/
 theorem fcdf_angstrom (fuel : Nat) :
-    fullCanonicalDecomposeFuel (fuel + 3) 0x212B = #[0x0041, 0x030A] := by
+    fullCanonicalDecomposeFuel (fuel + 3) 0x212B = [0x0041, 0x030A] := by
   rw [fullCanonicalDecomposeFuel.eq_def]
   simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
         Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
@@ -370,33 +370,31 @@ theorem fcdf_angstrom (fuel : Nat) :
 
 /-- `A` (no decomposition) round-trips as its own singleton. -/
 theorem decompose_latin_A :
-    fullCanonicalDecompose 0x0041 = #[0x0041] :=
+    fullCanonicalDecompose 0x0041 = [0x0041] :=
   fcdf_latin_A 31
 
 /-- LATIN CAPITAL LETTER A WITH GRAVE decomposes to `A` + combining grave
     in one step. -/
 theorem decompose_A_grave :
-    fullCanonicalDecompose 0x00C0 = #[0x0041, 0x0300] :=
+    fullCanonicalDecompose 0x00C0 = [0x0041, 0x0300] :=
   fcdf_A_grave 30
 
 /-- ANGSTROM SIGN decomposes in TWO steps: first to LATIN CAPITAL A WITH
     RING ABOVE (0x00C5), then to `A` + combining ring above (0x030A).
     This exercises the recursive flattening. -/
 theorem decompose_angstrom :
-    fullCanonicalDecompose 0x212B = #[0x0041, 0x030A] :=
+    fullCanonicalDecompose 0x212B = [0x0041, 0x030A] :=
   fcdf_angstrom 29
 
 /-- HANGUL SYLLABLE GAG decomposes to `L + V + T` via the algorithmic
     path; no UnicodeData lookup involved. -/
 theorem decompose_GAG :
-    fullCanonicalDecompose 0xAC01 = #[0x1100, 0x1161, 0x11A8] := by decide
+    fullCanonicalDecompose 0xAC01 = [0x1100, 0x1161, 0x11A8] := by decide
 
 /-- Sequence decomposition concatenates per-codepoint decompositions. -/
 theorem decompose_sequence_mixed :
     decomposeSequence [0x0041, 0x00C0, 0x212B]
-      = [0x0041, 0x0041, 0x0300, 0x0041, 0x030A] := by
-  simp only [decomposeSequence, fullCanonicalDecompose, maxDepth]
-  simp [fcdf_latin_A 31, fcdf_A_grave 30, fcdf_angstrom 29]
+      = [0x0041, 0x0041, 0x0300, 0x0041, 0x030A] := by decide
 
 /-- Decomposition of an empty sequence is empty. -/
 theorem decompose_empty : decomposeSequence [] = [] := by decide
@@ -405,8 +403,7 @@ theorem decompose_empty : decomposeSequence [] = [] := by decide
 theorem decompose_ascii :
     decomposeSequence [0x0068, 0x0065, 0x006C, 0x006C, 0x006F] -- "hello"
       = [0x0068, 0x0065, 0x006C, 0x006C, 0x006F] := by
-  simp only [decomposeSequence, fullCanonicalDecompose, maxDepth]
-  simp [fcdf_latin_h 31, fcdf_latin_e 31, fcdf_latin_l 31, fcdf_latin_o 31]
+  decide
 
 end Unicode.Normalization.Decompose
 
@@ -463,7 +460,7 @@ theorem hangulJamo_non_widthCompatSource :
     The proof extracts the Hangul-range membership from the hypothesis and applies
     the enumerated table fact. -/
 theorem decomposeSyllable_output_non_widthCompatSource
-    (cp : Nat) (arr : Array Nat)
+    (cp : Nat) (arr : List Nat)
     (h : Hangul.decomposeSyllable? cp = some arr) (j : Nat) (hj : j ∈ arr) :
     isWidthCompatSource j = false := by
   unfold Hangul.decomposeSyllable? at h
@@ -489,7 +486,7 @@ theorem decomposeSyllable_output_non_widthCompatSource
     · next hTZero =>
       simp only [Option.some.injEq] at h
       rw [← h] at hj
-      simp only [Array.mem_def, List.mem_cons] at hj
+      simp only [List.mem_cons] at hj
       rcases hj with hJL | hRest
       · rw [hJL]
         apply hangulJamo_range_non_widthCompatSource
@@ -504,7 +501,7 @@ theorem decomposeSyllable_output_non_widthCompatSource
     · next hTNonzero =>
       simp only [Option.some.injEq] at h
       rw [← h] at hj
-      simp only [Array.mem_def, List.mem_cons] at hj
+      simp only [List.mem_cons] at hj
       have hTIndexPos : 0 < (cp - 0xAC00) % 28 := by omega
       rcases hj with hJL | hRest
       · rw [hJL]
@@ -538,11 +535,10 @@ theorem canonicalDecomposition_output_non_widthCompatSource
 
 /-- Generic: membership in a `foldl`-with-append over an array factors
     through one of the source elements. -/
-theorem mem_foldl_append (f : Nat → Array Nat) (cps : Array Nat) (cp : Nat)
-    (hMem : cp ∈ cps.foldl (fun acc x => acc ++ f x) #[]) :
+theorem mem_foldl_append (f : Nat → List Nat) (cps : List Nat) (cp : Nat)
+    (hMem : cp ∈ cps.foldl (fun acc x => acc ++ f x) []) :
     ∃ x ∈ cps, cp ∈ f x := by
-  rw [← Array.foldl_toList] at hMem
-  have key : ∀ (l : List Nat) (init : Array Nat),
+  have key : ∀ (l : List Nat) (init : List Nat),
       cp ∈ l.foldl (fun acc x => acc ++ f x) init →
       cp ∈ init ∨ ∃ x ∈ l, cp ∈ f x := by
     intro l
@@ -552,13 +548,13 @@ theorem mem_foldl_append (f : Nat → Array Nat) (cps : Array Nat) (cp : Nat)
       intro init hM
       simp only [List.foldl_cons] at hM
       rcases ih (init ++ f hd) hM with hInit | ⟨x, hxM, hxF⟩
-      · rcases Array.mem_append.mp hInit with h1 | h2
+      · rcases List.mem_append.mp hInit with h1 | h2
         · left; exact h1
         · right; exact ⟨hd, by simp, h2⟩
       · right; exact ⟨x, by simp [hxM], hxF⟩
-  rcases key cps.toList #[] hMem with hEmpty | ⟨x, hxM, hxF⟩
+  rcases key cps [] hMem with hEmpty | ⟨x, hxM, hxF⟩
   · simp at hEmpty
-  · exact ⟨x, by simpa using hxM, hxF⟩
+  · exact ⟨x, hxM, hxF⟩
 
 /-- **Fuel-bounded preservation.** If the input codepoint is a non-width-compat-source,
     every codepoint in its fuel-bounded canonical decomposition is also a
@@ -571,7 +567,7 @@ theorem mem_foldl_append (f : Nat → Array Nat) (cps : Array Nat) (cp : Nat)
         canonical decomposition targets; those targets are themselves non-sources
         (by the generated canonical-decomposition certificate), so the
         inductive hypothesis gives the conclusion for each recursive call.
-      - empty lookup: output is `#[cp]`, direct from the hypothesis. -/
+      - empty lookup: output is `[cp]`, direct from the hypothesis. -/
 theorem fullCanonicalDecomposeFuel_preserves_non_widthCompatSource (fuel : Nat) :
     ∀ cp, isWidthCompatSource cp = false →
     ∀ j ∈ fullCanonicalDecomposeFuel fuel cp, isWidthCompatSource j = false := by
@@ -588,8 +584,8 @@ theorem fullCanonicalDecomposeFuel_preserves_non_widthCompatSource (fuel : Nat) 
       exact decomposeSyllable_output_non_widthCompatSource cp arr hSome j hj
     · next hNone =>
       generalize hStep : Lookup.canonicalDecomposition cp = step at hj
-      change j ∈ (if step.isEmpty = true then #[cp]
-                  else step.foldl (fun acc cp' => acc ++ fullCanonicalDecomposeFuel fuel cp') #[])
+      change j ∈ (if step.isEmpty = true then [cp]
+                  else step.foldl (fun acc cp' => acc ++ fullCanonicalDecomposeFuel fuel cp') [])
         at hj
       split at hj
       · next hEmpty =>

@@ -60,19 +60,19 @@ def isTJamo (cp : Nat) : Bool :=
   decide (TBase < cp ∧ cp < TBase + TCount)
 
 /-- Canonical decomposition of a Hangul syllable. Produces a two-element
-    sequence `#[L, V]` when the syllable has no trailing consonant and
-    a three-element sequence `#[L, V, T]` otherwise. Returns `none` when
+    sequence `[L, V]` when the syllable has no trailing consonant and
+    a three-element sequence `[L, V, T]` otherwise. Returns `none` when
     `cp` is not a precomposed Hangul syllable. -/
-def decomposeSyllable? (cp : Nat) : Option (Array Nat) :=
+def decomposeSyllable? (cp : Nat) : Option (List Nat) :=
   if isHangulSyllable cp then
     let sIndex := cp - SBase
     let l      := LBase + sIndex / NCount
     let v      := VBase + (sIndex % NCount) / TCount
     let tIndex := sIndex % TCount
     if tIndex = 0 then
-      some #[l, v]
+      some [l, v]
     else
-      some #[l, v, TBase + tIndex]
+      some [l, v, TBase + tIndex]
   else
     none
 
@@ -105,15 +105,15 @@ def composePair? (first second : Nat) : Option Nat :=
 /-- HANGUL SYLLABLE GA (U+AC00) is `L + V` with no trailing consonant:
     LBase + VBase. -/
 theorem decompose_GA :
-    decomposeSyllable? 0xAC00 = some #[0x1100, 0x1161] := by decide
+    decomposeSyllable? 0xAC00 = some [0x1100, 0x1161] := by decide
 
 /-- HANGUL SYLLABLE GAG (U+AC01) is `L + V + T`: KIYEOK + A + KIYEOK. -/
 theorem decompose_GAG :
-    decomposeSyllable? 0xAC01 = some #[0x1100, 0x1161, 0x11A8] := by decide
+    decomposeSyllable? 0xAC01 = some [0x1100, 0x1161, 0x11A8] := by decide
 
 /-- HANGUL SYLLABLE HIH (U+D7A3 = last syllable) is `L + V + T`. -/
 theorem decompose_last :
-    decomposeSyllable? 0xD7A3 = some #[0x1112, 0x1175, 0x11C2] := by decide
+    decomposeSyllable? 0xD7A3 = some [0x1112, 0x1175, 0x11C2] := by decide
 
 /-- Non-syllable codepoints return `none`. -/
 theorem decompose_latin_A : decomposeSyllable? 0x0041 = none := by decide
