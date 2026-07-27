@@ -35,35 +35,35 @@ namespace Unicode.Unihan
 -- §1 VARIANT LOOKUPS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The Simplified Chinese variant(s) of `cp`. Returns `#[]` for
+/-- The Simplified Chinese variant(s) of `cp`. Returns `[]` for
     codepoints with no `kSimplifiedVariant` row. -/
-def simplifiedVariants (cp : Nat) : Array Nat :=
+def simplifiedVariants (cp : Nat) : List Nat :=
   Unicode.Generated.UnihanVariants.lookup cp .SimplifiedVariant
 
-/-- The Traditional Chinese variant(s) of `cp`. Returns `#[]` for
+/-- The Traditional Chinese variant(s) of `cp`. Returns `[]` for
     codepoints with no `kTraditionalVariant` row. -/
-def traditionalVariants (cp : Nat) : Array Nat :=
+def traditionalVariants (cp : Nat) : List Nat :=
   Unicode.Generated.UnihanVariants.lookup cp .TraditionalVariant
 
 /-- The semantic variant(s) of `cp` — characters with the same
     meaning but different graphical form. -/
-def semanticVariants (cp : Nat) : Array Nat :=
+def semanticVariants (cp : Nat) : List Nat :=
   Unicode.Generated.UnihanVariants.lookup cp .SemanticVariant
 
 /-- The specialized-semantic variant(s) of `cp` — variants
     restricted to particular contexts. -/
-def specializedSemanticVariants (cp : Nat) : Array Nat :=
+def specializedSemanticVariants (cp : Nat) : List Nat :=
   Unicode.Generated.UnihanVariants.lookup cp .SpecializedSemanticVariant
 
 /-- The spoofing variant(s) of `cp` — codepoints visually
     confusable with `cp` and explicitly flagged in the Unihan
     spoofing table. Useful for security-sensitive identifier
     comparison alongside `Unicode.Confusables`. -/
-def spoofingVariants (cp : Nat) : Array Nat :=
+def spoofingVariants (cp : Nat) : List Nat :=
   Unicode.Generated.UnihanVariants.lookup cp .SpoofingVariant
 
 /-- The Z-axis (graphical) variant(s) of `cp`. -/
-def zVariants (cp : Nat) : Array Nat :=
+def zVariants (cp : Nat) : List Nat :=
   Unicode.Generated.UnihanVariants.lookup cp .ZVariant
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -90,17 +90,17 @@ def otherNumeric (cp : Nat) : Option Nat :=
 
 /-- 漢 (U+6F22, traditional) maps to 汉 (U+6C49, simplified). -/
 theorem simplified_han :
-    simplifiedVariants 0x6F22 = #[0x6C49] := by
+    simplifiedVariants 0x6F22 = [0x6C49] := by
   simp [simplifiedVariants, Unicode.Generated.UnihanVariants.lookup_u6F22_simplified]
 
 /-- 汉 (U+6C49, simplified) maps to 漢 (U+6F22, traditional). -/
 theorem traditional_han :
-    traditionalVariants 0x6C49 = #[0x6F22] := by
+    traditionalVariants 0x6C49 = [0x6F22] := by
   simp [traditionalVariants, Unicode.Generated.UnihanVariants.lookup_u6C49_traditional]
 
 /-- 国 (U+56FD, simplified country) → 國 (U+570B, traditional). -/
 theorem traditional_guo :
-    traditionalVariants 0x56FD = #[0x570B] := by
+    traditionalVariants 0x56FD = [0x570B] := by
   simp [traditionalVariants, Unicode.Generated.UnihanVariants.lookup_u56FD_traditional]
 
 /-- 一 (U+4E00) is the canonical CJK numeric 1. -/

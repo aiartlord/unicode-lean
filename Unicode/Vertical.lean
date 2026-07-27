@@ -67,7 +67,7 @@ def needsVerticalSubstitution (cp : Nat) : Bool :=
 
 /-- Map a codepoint sequence to its per-codepoint vertical
     glyph orientations, preserving order. -/
-def stringOrientations (cps : Array Nat) : Array Orientation :=
+def stringOrientations (cps : List Nat) : List Orientation :=
   cps.map verticalGlyphForm
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -97,7 +97,7 @@ theorem isRotated_latin_small_a : isRotated 0x0061 = true := by decide +kernel
 
 /-- A handful of mixed codepoints' orientations. -/
 theorem stringOrientations_mixed :
-    stringOrientations #[0x0041, 0x0042, 0x4E00, 0x4E8C]
-      = #[.Rotated, .Rotated, .Upright, .Upright] := by decide +kernel
+    stringOrientations [0x0041, 0x0042, 0x4E00, 0x4E8C]
+      = [.Rotated, .Rotated, .Upright, .Upright] := by decide +kernel
 
 end Unicode.Vertical

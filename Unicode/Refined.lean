@@ -2,7 +2,7 @@
   Unicode.Refined
 
   Refinement-typed pipeline wrappers. Each Unicode normalization stage
-  returns `{ out : Array Nat // P out }` where `P` is the structural
+  returns `{ out : List Nat // P out }` where `P` is the structural
   invariant established by that stage. Composition threads the invariants
   automatically: `(reorder cps).val` on input to `compose` carries the
   `IsHSR` witness in its type.
@@ -175,7 +175,7 @@ def precisMap (cps : List Nat) : WidthMappedArray :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- PRECIS PREPARATION
 --
--- `precisPreparation` returns `Option (Array Nat)` with `none` signaling
+-- `precisPreparation` returns `Option (List Nat)` with `none` signaling
 -- rejection. The refined version returns `Option AdmissibleArray` — when
 -- the result is `some out`, the `IsAllAdmissible` witness is available
 -- in the type.
