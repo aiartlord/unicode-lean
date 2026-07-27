@@ -88,7 +88,7 @@ inductive SubThreat where
 /-- Top-level classification for HomoglyphConfusable. -/
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : List UInt8)
   deriving Inhabited
 
 /-- Verdict — the structured output of `detect`. -/
@@ -110,12 +110,12 @@ structure Verdict where
     typed by a developer. -/
 structure CanonicalTarget where
   name : String
-  cps  : Array Nat
+  cps  : List Nat
   deriving Repr, Inhabited
 
 /-- Construct a target from an ASCII name string. -/
 def mkAscii (s : String) : CanonicalTarget :=
-  { name := s, cps := (s.toList.map Char.toNat).toArray }
+  { name := s, cps := s.toList.map Char.toNat }
 
 /-- Canonical-target dictionary, derived from the SHA-pinned
     `Unicode/Ucd/Curated/KnownAttackTargets.txt` data file via
@@ -123,7 +123,7 @@ def mkAscii (s : String) : CanonicalTarget :=
     file is the single maintenance surface for the target set;
     this definition is its in-detector projection. -/
 def canonicalTargets : Array CanonicalTarget :=
-  (Unicode.Generated.KnownAttackTargets.targets.map mkAscii).toArray
+  Unicode.Generated.KnownAttackTargets.targets.map mkAscii
 
 /-- Letter skeletons of the canonical targets, materialized.
 
@@ -136,74 +136,74 @@ def canonicalTargets : Array CanonicalTarget :=
     the single place that reduction is performed.
 
     Order matches `canonicalTargets` positionally; the two are consumed zipped. -/
-def canonicalTargetSkeletons : Array (Array Nat) :=
-  #[ #[110, 101, 116, 104, 101, 114, 101, 117, 114, 110],
-     #[101, 116, 104, 101, 114, 101, 117, 114, 110],
-     #[101, 116, 104, 101, 114, 115],
-     #[119, 101, 98, 51],
-     #[98, 105, 116, 99, 111, 105, 110],
-     #[117, 110, 105, 115, 119, 97, 112],
-     #[114, 110, 101, 116, 97, 114, 110, 97, 115, 107],
-     #[98, 105, 110, 97, 110, 99, 101],
-     #[99, 111, 105, 110, 98, 97, 115, 101],
-     #[115, 111, 108, 97, 110, 97],
-     #[114, 101, 97, 99, 116],
-     #[114, 101, 97, 99, 116, 45, 100, 111, 114, 110],
-     #[110, 101, 120, 116],
-     #[118, 117, 101],
-     #[97, 110, 103, 117, 108, 97, 114],
-     #[108, 111, 100, 97, 115, 104],
-     #[101, 120, 112, 114, 101, 115, 115],
-     #[101, 108, 101, 99, 116, 114, 111, 110],
-     #[116, 121, 112, 101, 115, 99, 114, 105, 112, 116],
-     #[119, 101, 98, 112, 97, 99, 107],
-     #[110, 111, 100, 101, 45, 102, 101, 116, 99, 104],
-     #[100, 105, 115, 99, 111, 114, 100, 46, 106, 115],
-     #[99, 114, 121, 112, 116, 111, 45, 106, 115],
-     #[100, 106, 97, 110, 103, 111],
-     #[114, 101, 113, 117, 101, 115, 116, 115],
-     #[102, 108, 97, 115, 107],
-     #[110, 117, 114, 110, 112, 121],
-     #[112, 97, 110, 100, 97, 115],
-     #[116, 101, 110, 115, 111, 114, 102, 108, 111, 119],
-     #[112, 121, 116, 111, 114, 99, 104],
-     #[114, 110, 97, 116, 112, 108, 111, 116, 108, 105, 98],
-     #[115, 99, 105, 112, 121],
-     #[98, 101, 97, 117, 116, 105, 102, 117, 108, 115, 111, 117, 112, 52],
-     #[112, 121, 121, 97, 114, 110, 108],
-     #[99, 114, 121, 112, 116, 111, 103, 114, 97, 112, 104, 121],
-     #[115, 101, 114, 100, 101],
-     #[116, 111, 107, 105, 111],
-     #[99, 108, 97, 112],
-     #[114, 101, 113, 119, 101, 115, 116],
-     #[114, 97, 110, 100],
-     #[97, 110, 121, 104, 111, 119],
-     #[114, 97, 105, 108, 115],
-     #[114, 115, 112, 101, 99],
-     #[100, 101, 118, 105, 115, 101],
-     #[110, 111, 107, 111, 103, 105, 114, 105],
-     #[103, 111, 111, 103, 108, 101],
-     #[97, 114, 110, 97, 122, 111, 110],
-     #[114, 110, 105, 99, 114, 111, 115, 111, 102, 116],
-     #[97, 112, 112, 108, 101],
-     #[103, 105, 116, 104, 117, 98],
-     #[103, 105, 116, 108, 97, 98],
-     #[98, 105, 116, 98, 117, 99, 107, 101, 116],
-     #[99, 108, 111, 117, 100, 102, 108, 97, 114, 101],
-     #[115, 116, 114, 105, 112, 101],
-     #[116, 119, 105, 108, 105, 111],
-     #[112, 97, 121, 112, 97, 108],
-     #[111, 112, 101, 110, 97, 105],
-     #[97, 110, 116, 104, 114, 111, 112, 105, 99],
-     #[99, 108, 97, 117, 100, 101],
-     #[99, 104, 97, 116, 103, 112, 116],
-     #[116, 101, 115, 108, 97],
-     #[116, 119, 105, 116, 116, 101, 114],
-     #[102, 97, 99, 101, 98, 111, 111, 107],
-     #[105, 110, 115, 116, 97, 103, 114, 97, 114, 110],
-     #[116, 105, 107, 116, 111, 107],
-     #[116, 101, 108, 101, 103, 114, 97, 114, 110],
-     #[100, 105, 115, 99, 111, 114, 100] ]
+def canonicalTargetSkeletons : List (List Nat) :=
+  [ [110, 101, 116, 104, 101, 114, 101, 117, 114, 110],
+     [101, 116, 104, 101, 114, 101, 117, 114, 110],
+     [101, 116, 104, 101, 114, 115],
+     [119, 101, 98, 51],
+     [98, 105, 116, 99, 111, 105, 110],
+     [117, 110, 105, 115, 119, 97, 112],
+     [114, 110, 101, 116, 97, 114, 110, 97, 115, 107],
+     [98, 105, 110, 97, 110, 99, 101],
+     [99, 111, 105, 110, 98, 97, 115, 101],
+     [115, 111, 108, 97, 110, 97],
+     [114, 101, 97, 99, 116],
+     [114, 101, 97, 99, 116, 45, 100, 111, 114, 110],
+     [110, 101, 120, 116],
+     [118, 117, 101],
+     [97, 110, 103, 117, 108, 97, 114],
+     [108, 111, 100, 97, 115, 104],
+     [101, 120, 112, 114, 101, 115, 115],
+     [101, 108, 101, 99, 116, 114, 111, 110],
+     [116, 121, 112, 101, 115, 99, 114, 105, 112, 116],
+     [119, 101, 98, 112, 97, 99, 107],
+     [110, 111, 100, 101, 45, 102, 101, 116, 99, 104],
+     [100, 105, 115, 99, 111, 114, 100, 46, 106, 115],
+     [99, 114, 121, 112, 116, 111, 45, 106, 115],
+     [100, 106, 97, 110, 103, 111],
+     [114, 101, 113, 117, 101, 115, 116, 115],
+     [102, 108, 97, 115, 107],
+     [110, 117, 114, 110, 112, 121],
+     [112, 97, 110, 100, 97, 115],
+     [116, 101, 110, 115, 111, 114, 102, 108, 111, 119],
+     [112, 121, 116, 111, 114, 99, 104],
+     [114, 110, 97, 116, 112, 108, 111, 116, 108, 105, 98],
+     [115, 99, 105, 112, 121],
+     [98, 101, 97, 117, 116, 105, 102, 117, 108, 115, 111, 117, 112, 52],
+     [112, 121, 121, 97, 114, 110, 108],
+     [99, 114, 121, 112, 116, 111, 103, 114, 97, 112, 104, 121],
+     [115, 101, 114, 100, 101],
+     [116, 111, 107, 105, 111],
+     [99, 108, 97, 112],
+     [114, 101, 113, 119, 101, 115, 116],
+     [114, 97, 110, 100],
+     [97, 110, 121, 104, 111, 119],
+     [114, 97, 105, 108, 115],
+     [114, 115, 112, 101, 99],
+     [100, 101, 118, 105, 115, 101],
+     [110, 111, 107, 111, 103, 105, 114, 105],
+     [103, 111, 111, 103, 108, 101],
+     [97, 114, 110, 97, 122, 111, 110],
+     [114, 110, 105, 99, 114, 111, 115, 111, 102, 116],
+     [97, 112, 112, 108, 101],
+     [103, 105, 116, 104, 117, 98],
+     [103, 105, 116, 108, 97, 98],
+     [98, 105, 116, 98, 117, 99, 107, 101, 116],
+     [99, 108, 111, 117, 100, 102, 108, 97, 114, 101],
+     [115, 116, 114, 105, 112, 101],
+     [116, 119, 105, 108, 105, 111],
+     [112, 97, 121, 112, 97, 108],
+     [111, 112, 101, 110, 97, 105],
+     [97, 110, 116, 104, 114, 111, 112, 105, 99],
+     [99, 108, 97, 117, 100, 101],
+     [99, 104, 97, 116, 103, 112, 116],
+     [116, 101, 115, 108, 97],
+     [116, 119, 105, 116, 116, 101, 114],
+     [102, 97, 99, 101, 98, 111, 111, 107],
+     [105, 110, 115, 116, 97, 103, 114, 97, 114, 110],
+     [116, 105, 107, 116, 111, 107],
+     [116, 101, 108, 101, 103, 114, 97, 114, 110],
+     [100, 105, 115, 99, 111, 114, 100] ]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 Block predicates
@@ -296,7 +296,7 @@ def firstDecompositionDiffPos (input : List Nat) : Option Nat :=
     intersection collapses to ∅. -/
 def crossScriptCount (input : List Nat) : Nat :=
   let scripts := Unicode.Restriction.stringScriptUnion input
-  scripts.size
+  scripts.length
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Top-level detection
@@ -316,30 +316,30 @@ def detect (input : List Nat) : Verdict :=
   -- decompositionSwap → crossScriptMix → restrictionLow → clear.
   let classification : Classification :=
     match matched with
-    | some t => .hazard (.targetMatch t.name) [] ByteArray.empty
+    | some t => .hazard (.targetMatch t.name) [] []
     | none =>
       let mc := mathAlphaCount input
       if mc > 0 then
         match firstMathAlphaPos input with
         | some p =>
-          .hazard (.mathAlpha (input.getD p 0) mc) [p] ByteArray.empty
+          .hazard (.mathAlpha (input.getD p 0) mc) [p] []
         | none   => .clear  -- unreachable when mc > 0
       else
         let fwc := fullwidthCount input
         if fwc > 0 then
           match firstFullwidthPos input with
           | some p =>
-            .hazard (.widthClass (input.getD p 0) fwc) [p] ByteArray.empty
+            .hazard (.widthClass (input.getD p 0) fwc) [p] []
           | none   => .clear
         else if hasDecompositionSwap input then
           let diffPos := (firstDecompositionDiffPos input).getD 0
-          .hazard (.decompositionSwap diffPos) [diffPos] ByteArray.empty
+          .hazard (.decompositionSwap diffPos) [diffPos] []
         else
           let sc := crossScriptCount input
           if sc ≥ 2 ∧ ¬ Unicode.Restriction.isHighlyRestrictive input then
-            .hazard (.crossScriptMix sc) [] ByteArray.empty
+            .hazard (.crossScriptMix sc) [] []
           else if rl = .MinimallyRestrictive ∨ rl = .Unrestricted then
-            .hazard (.restrictionLow rl) [] ByteArray.empty
+            .hazard (.restrictionLow rl) [] []
           else
             .clear
   { input := input,
@@ -372,20 +372,20 @@ def SubThreat.tag : SubThreat → String
 def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × List Nat × ByteArray) false
+      Function.const (SubThreat × List Nat × List UInt8) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification. -/
 def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
-      Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
+      Function.const (List Nat × List UInt8) (some sub.tag) (positions, decoded)
 
 /-- Positions list of a classification. -/
 def Classification.positions : Classification → List Nat
   | .clear                     => []
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × ByteArray) positions (sub, decoded)
+      Function.const (SubThreat × List UInt8) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §7 Spot checks
