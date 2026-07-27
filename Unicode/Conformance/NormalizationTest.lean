@@ -39,13 +39,13 @@ namespace Unicode.Conformance.NormalizationTest
 open Unicode.Normalization
 
 /-- One row of `NormalizationTest.txt`. The five columns are stored
-    as `Array Nat` codepoint sequences. -/
+    as `List Nat` codepoint sequences. -/
 structure ConformanceRow where
-  source : Array Nat
-  nfc    : Array Nat
-  nfd    : Array Nat
-  nfkc   : Array Nat
-  nfkd   : Array Nat
+  source : List Nat
+  nfc    : List Nat
+  nfd    : List Nat
+  nfkc   : List Nat
+  nfkd   : List Nat
   deriving Repr, Inhabited
 
 @[inline]
@@ -62,10 +62,10 @@ def parseHex (s : String) : Nat :=
   s.foldl (fun acc c => acc * 16 + hexDigitVal c) 0
 
 /-- Parse a space-separated list of hex codepoints. -/
-def parseCodepoints (s : String) : Array Nat :=
+def parseCodepoints (s : String) : List Nat :=
   ((s.splitOn " ").filterMap (fun tok =>
     let t := trimS tok
-    if t.isEmpty then none else some (parseHex t))).toArray
+    if t.isEmpty then none else some (parseHex t)))
 
 /-- Parse one data line. Returns `none` for blank, comment, or
     section-header lines. -/
@@ -95,9 +95,9 @@ structure TaggedRow where
   deriving Inhabited
 
 /-- Walk the file once, threading the current `@Part` index. -/
-def parseTaggedRows (raw : String) : Array TaggedRow :=
+def parseTaggedRows (raw : String) : List TaggedRow :=
   Prod.fst <| (raw.splitOn "\n").foldl
-    (fun (acc : Array TaggedRow × Nat) line =>
+    (fun (acc : List TaggedRow × Nat) line =>
       let (out, currentPart) := acc
       let trimmed := trimS line
       if trimmed.startsWith "@Part" then
@@ -108,16 +108,16 @@ def parseTaggedRows (raw : String) : Array TaggedRow :=
         (out, pNum)
       else
         match parseRow line with
-        | some r => (out.push { part := currentPart, row := r }, currentPart)
+        | some r => (out ++ [{ part := currentPart, row := r }], currentPart)
         | none   => (out, currentPart))
-    (#[], 0)
+    ([], 0)
 
 /-- Raw test file embedded at compile time. -/
 def normalizationTestRaw : String :=
   include_str "../Ucd/NormalizationTest.txt"
 
 /-- All parsed test rows tagged by `@Part`. -/
-def taggedRows : Array TaggedRow := parseTaggedRows normalizationTestRaw
+def taggedRows : List TaggedRow := parseTaggedRows normalizationTestRaw
 
 /-- Verify every UAX #15 §5 conformance property for one row. -/
 def verifyRow (r : ConformanceRow) : Bool :=

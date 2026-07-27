@@ -72,28 +72,28 @@ def parseDecimal (s : String) : Nat :=
 
 /-- Parse a space- (or tab-) separated list of bidi-class tokens
     into the corresponding codepoint sequence. -/
-def parseClassRow (s : String) : Array Nat :=
+def parseClassRow (s : String) : List Nat :=
   ((s.splitOn " ").filterMap (fun tok =>
     let t := trimS tok
-    if t.isEmpty then none else some (classToCodepoint t))).toArray
+    if t.isEmpty then none else some (classToCodepoint t)))
 
 /-- Parse the `@Levels:` directive value: space-separated decimal
     levels with `x` for X9-removed positions. -/
-def parseLevelsDirective (s : String) : Array (Option Nat) :=
+def parseLevelsDirective (s : String) : List (Option Nat) :=
   let normalised := s.replace "\t" " "
   ((normalised.splitOn " ").filterMap (fun tok =>
     let t := trimS tok
     if t.isEmpty then none
     else if t = "x" then some none
-    else some (some (parseDecimal t)))).toArray
+    else some (some (parseDecimal t))))
 
 /-- Parse the `@Reorder:` directive value: space-separated decimal
     indices into the input class array. -/
-def parseReorderDirective (s : String) : Array Nat :=
+def parseReorderDirective (s : String) : List Nat :=
   let normalised := s.replace "\t" " "
   ((normalised.splitOn " ").filterMap (fun tok =>
     let t := trimS tok
-    if t.isEmpty then none else some (parseDecimal t))).toArray
+    if t.isEmpty then none else some (parseDecimal t)))
 
 /-- Strip a trailing comment introduced by `#` and trim whitespace. -/
 def stripCommentAndTrim (line : String) : String :=
@@ -103,17 +103,17 @@ def stripCommentAndTrim (line : String) : String :=
 /-- One parsed test row carrying the inherited @Levels / @Reorder
     directives and the input class sequence. -/
 structure Row where
-  classes         : Array Nat        -- representative codepoints
-  expectedLevels  : Array (Option Nat)
-  expectedReorder : Array Nat
+  classes         : List Nat        -- representative codepoints
+  expectedLevels  : List (Option Nat)
+  expectedReorder : List Nat
   pLevelBits      : Nat              -- 1 = auto, 2 = LTR, 4 = RTL
   deriving Repr, Inhabited
 
 /-- Walk the file once, threading the most-recent `@Levels:` and
     `@Reorder:` directives forward into the data rows that follow. -/
-def parseRows (raw : String) : Array Row :=
+def parseRows (raw : String) : List Row :=
   Prod.fst <| (raw.splitOn "\n").foldl
-    (fun (acc : Array Row × Array (Option Nat) × Array Nat) line =>
+    (fun (acc : List Row × List (Option Nat) × List Nat) line =>
       let (rows, curLevels, curReorder) := acc
       let stripped := stripCommentAndTrim line
       if stripped.isEmpty then (rows, curLevels, curReorder)
@@ -131,19 +131,19 @@ def parseRows (raw : String) : Array Row :=
               expectedLevels  := curLevels,
               expectedReorder := curReorder,
               pLevelBits      := parseDecimal (trimS bitsField) }
-          Function.const (List String) (rows.push row, curLevels, curReorder)
+          Function.const (List String) (rows ++ [row], curLevels, curReorder)
             trailingFields
         | irregularSplit =>
           Function.const (List String) (rows, curLevels, curReorder)
             irregularSplit)
-    (#[], #[], #[])
+    ([], [], [])
 
 /-- Raw test file embedded at compile time. -/
 def bidiTestRaw : String :=
   include_str "../Ucd/BidiTest.txt"
 
 /-- All parsed test rows. -/
-def rows : Array Row := parseRows bidiTestRaw
+def rows : List Row := parseRows bidiTestRaw
 
 /-- Verify the given row at the supplied paragraph-level setting:
       0 → forced LTR
@@ -157,11 +157,11 @@ def verifyAtLevel (r : Row) (pLevelKey : Nat) : Bool :=
     if pLevelKey = 2 then bidiParagraph r.classes
     else bidiParagraphAt r.classes pLevelKey
   let aligned := levelsAlignedToInput r.classes result
-  let n := r.expectedLevels.size
-  let lengthOk := n == aligned.size
+  let n := r.expectedLevels.length
+  let lengthOk := n == aligned.length
   let levelsOk :=
     if lengthOk then
-      (Array.range n).all (fun i =>
+      (List.range n).all (fun i =>
         match r.expectedLevels[i]! with
         | none          => true
         | some expected =>
@@ -187,8 +187,8 @@ def allRowsPass : Bool := rows.all verifyRow
 /-- Index of the first failing row, or `none` if all pass. -/
 def firstFailingRow : Option Nat :=
   Id.run do
-    for i in [0:rows.size] do
-      if h : i < rows.size then
+    for i in [0:rows.length] do
+      if h : i < rows.length then
         if !verifyRow rows[i] then return some i
     return none
 
@@ -197,7 +197,7 @@ def countPassing (limit : Nat) : Nat :=
   Id.run do
     let mut count : Nat := 0
     for i in [0:limit] do
-      if h : i < rows.size then
+      if h : i < rows.length then
         if verifyRow rows[i] then count := count + 1
     return count
 
