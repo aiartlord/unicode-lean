@@ -35,7 +35,7 @@
 
   Input convention.  C4 acts on a *byte stream*, but to keep the
   shared `Unicode.Security.Fixture` row format usable the
-  detector accepts `Array Nat` where every value must fit in
+  detector accepts `List Nat` where every value must fit in
   `UInt8`.  Values outside `[0, 255]` are clamped to `255`, a
   byte the strict decoder always rejects, so out-of-range values
   produce a malformed-stream verdict rather than being silently
@@ -69,7 +69,7 @@ inductive SubThreat where
 /-- Top-level classification for C4. -/
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : List UInt8)
   deriving Inhabited
 
 /-- C4 verdict — the structured output of `detect`. -/
@@ -84,12 +84,12 @@ structure Verdict where
 -- §2 Byte-stream conversion
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Convert a `List Nat` to a `ByteArray`.  Values outside the
+/-- Convert a `List Nat` to a byte list (`List UInt8`).  Values outside the
     byte range `[0, 255]` are clamped to `255`, which is never a
     valid UTF-8 start byte, so any out-of-range input reaches the
     malformed-stream branch of the decoder. -/
-def toByteArray (input : List Nat) : ByteArray :=
-  (input.map (fun n => if n > 255 then 255 else UInt8.ofNat n)).toByteArray
+def toBytes (input : List Nat) : List UInt8 :=
+  input.map (fun n => if n > 255 then 255 else UInt8.ofNat n)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 Reject-kind → sub-threat projection
@@ -112,18 +112,18 @@ def subThreatOfRejectKind (offset : Nat) : Utf8RejectKind → SubThreat
     (one byte per entry, clamped to `0xFF`) and produces a
     structured verdict over the first detected UTF-8 violation. -/
 def detect (input : List Nat) : Verdict :=
-  let bytes := toByteArray input
+  let bytes := toBytes input
   match Unicode.Codec.Utf8.firstInvalidUtf8Offset bytes with
   | none =>
     { input := input,
       classify := .clear,
-      byteCount := bytes.size,
+      byteCount := bytes.length,
       firstInvalidOffset := none }
   | some (offset, kind) =>
     let sub := subThreatOfRejectKind offset kind
     { input := input,
       classify := .hazard sub [offset] bytes,
-      byteCount := bytes.size,
+      byteCount := bytes.length,
       firstInvalidOffset := some offset }
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -143,20 +143,20 @@ def SubThreat.tag : SubThreat → String
 def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × List Nat × ByteArray) false
+      Function.const (SubThreat × List Nat × List UInt8) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification (`none` for `.clear`). -/
 def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
-      Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
+      Function.const (List Nat × List UInt8) (some sub.tag) (positions, decoded)
 
 /-- Positions list of a classification (empty for `.clear`). -/
 def Classification.positions : Classification → List Nat
   | .clear                     => []
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × ByteArray) positions (sub, decoded)
+      Function.const (SubThreat × List UInt8) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 Spot checks

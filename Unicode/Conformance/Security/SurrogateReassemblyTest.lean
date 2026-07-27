@@ -9,8 +9,8 @@
 
   Input bytes are encoded in column 1 of the fixture as single-byte
   hex values (each `0x00..0xFF`).  The fixture parser stores them
-  in `r.input : List Nat`; the C4 detector converts to `ByteArray`
-  via `Unicode.Security.Covert.SurrogateReassembly.toByteArray`.
+  in `r.input : List Nat`; the C4 detector converts to a byte list
+  (`List UInt8`) via `Unicode.Security.Covert.SurrogateReassembly.toBytes`.
 -/
 
 import Unicode.Security.Fixture
