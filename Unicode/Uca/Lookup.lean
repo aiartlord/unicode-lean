@@ -41,25 +41,25 @@ set_option maxRecDepth 1000000
     sharing that first codepoint. Built once at module load so every
     subsequent lookup is O(k) where k is the small bucket size,
     instead of O(39 407) over the full table. -/
-def ducetIndex : Std.HashMap Nat (Array DucetEntry) := Id.run do
-  let mut acc : Std.HashMap Nat (Array DucetEntry) :=
+def ducetIndex : Std.HashMap Nat (List DucetEntry) := Id.run do
+  let mut acc : Std.HashMap Nat (List DucetEntry) :=
     Std.HashMap.emptyWithCapacity 4096
   for entry in ducetEntries do
-    if h : 0 < entry.key.size then
+    if h : 0 < entry.key.length then
       let cp := entry.key[0]
-      let bucket := acc.getD cp #[]
-      acc := acc.insert cp (bucket.push entry)
+      let bucket := acc.getD cp []
+      acc := acc.insert cp (bucket ++ [entry])
   return acc
 
 /-- Bucket of DUCET entries whose key starts with `cp`. Empty when
     no explicit entry begins with `cp` — the caller falls back to
     the implicit-weight branch. -/
-def bucketFor (cp : Nat) : Array DucetEntry := ducetIndex.getD cp #[]
+def bucketFor (cp : Nat) : List DucetEntry := ducetIndex.getD cp []
 
-/-- True iff `cps[start..start+key.size]` equals `key` exactly. -/
-def matchesAt (cps : Array Nat) (start : Nat) (key : Array Nat) : Bool := Id.run do
-  if start + key.size > cps.size then return false
-  for h : i in [0:key.size] do
+/-- True iff `cps[start..start+key.length]` equals `key` exactly. -/
+def matchesAt (cps : List Nat) (start : Nat) (key : List Nat) : Bool := Id.run do
+  if start + key.length > cps.length then return false
+  for h : i in [0:key.length] do
     let kVal := key[i]
     match cps[start + i]? with
     | none      => return false
@@ -70,7 +70,7 @@ def matchesAt (cps : Array Nat) (start : Nat) (key : Array Nat) : Bool := Id.run
     Lookup is bucketed by the first codepoint, so the inner scan is
     over a handful of contraction candidates rather than the entire
     table. -/
-def longestMatchAt (cps : Array Nat) (start : Nat) : Option (DucetEntry × Nat) := Id.run do
+def longestMatchAt (cps : List Nat) (start : Nat) : Option (DucetEntry × Nat) := Id.run do
   match cps[start]? with
   | none    => return none
   | some cp =>
@@ -78,7 +78,7 @@ def longestMatchAt (cps : Array Nat) (start : Nat) : Option (DucetEntry × Nat) 
     let mut best : Option (DucetEntry × Nat) := none
     for entry in bucket do
       if matchesAt cps start entry.key then
-        let len := entry.key.size
+        let len := entry.key.length
         match best with
         | none             => best := some (entry, len)
         | some (oldEntry, oldLen) =>
@@ -137,7 +137,7 @@ def implicitBaseFor (cp : Nat) : Nat :=
     given the standard formula yields `FB00 + 2 = FB02` and a BBBB
     that includes high-bit fragments of the codepoint, instead of
     `FB00 | 0x8000 + offset` as the spec demands. -/
-def implicitElements (cp : Nat) : Array CollationElement :=
+def implicitElements (cp : Nat) : List CollationElement :=
   match implicitBlocks.findSome? (fun b =>
     if inImplicitBlock cp b then some b else none) with
   | some block =>
@@ -154,7 +154,7 @@ def implicitElements (cp : Nat) : Array CollationElement :=
       | none   => block.min
     let aaaa := block.base
     let bbbb := (cp - xStart) ||| 0x8000
-    #[⟨aaaa, 0x0020, 0x0002, false⟩,
+    [⟨aaaa, 0x0020, 0x0002, false⟩,
       ⟨bbbb, 0x0000, 0x0000, false⟩]
   | none =>
     let base :=
@@ -164,19 +164,19 @@ def implicitElements (cp : Nat) : Array CollationElement :=
         0xFBC0
     let aaaa := base + (cp >>> 15)
     let bbbb := (cp &&& 0x7FFF) ||| 0x8000
-    #[⟨aaaa, 0x0020, 0x0002, false⟩,
+    [⟨aaaa, 0x0020, 0x0002, false⟩,
       ⟨bbbb, 0x0000, 0x0000, false⟩]
 
 /-- Synthesize a default DUCET entry for `cp` when no explicit
     table entry covers it. -/
 def implicitEntry (cp : Nat) : DucetEntry :=
-  ⟨#[cp], implicitElements cp⟩
+  ⟨[cp], implicitElements cp⟩
 
 /-- Resolve the next collation step at `cps[start..]`. Returns
     the matched entry and the number of input codepoints consumed.
     Falls back to an implicit-weight entry for codepoints absent
     from the explicit DUCET. -/
-def resolveAt (cps : Array Nat) (start : Nat) : DucetEntry × Nat :=
+def resolveAt (cps : List Nat) (start : Nat) : DucetEntry × Nat :=
   match longestMatchAt cps start with
   | some (entry, len) => (entry, len)
   | none =>
@@ -194,13 +194,13 @@ def resolveAt (cps : Array Nat) (start : Nat) : DucetEntry × Nat :=
     appear when a discontiguous contraction match has skipped over
     blocked-class non-starters to find a longer key. -/
 structure MatchStep where
-  ces      : Array CollationElement
-  consumed : Array Nat
+  ces      : List CollationElement
+  consumed : List Nat
   deriving Inhabited
 
 /-- Look up a DUCET entry whose key exactly equals `target` within a
     bucket already filtered on the first codepoint. -/
-def findInBucket (bucket : Array DucetEntry) (target : Array Nat) :
+def findInBucket (bucket : List DucetEntry) (target : List Nat) :
     Option DucetEntry :=
   bucket.findSome? (fun e => if e.key = target then some e else none)
 
@@ -213,10 +213,10 @@ def findInBucket (bucket : Array DucetEntry) (target : Array Nat) :
     NFD reordering, this is equivalent to requiring that the
     most-recently-skipped non-starter has strictly lower CCC than
     `c`. Successful extensions reset the skipped-CCC tracker. -/
-def matchAt (cps : Array Nat) (consumed : Array Bool) (start : Nat) :
+def matchAt (cps : List Nat) (consumed : List Bool) (start : Nat) :
     MatchStep := Id.run do
   match cps[start]? with
-  | none    => return ⟨#[], #[start]⟩
+  | none    => return ⟨[], [start]⟩
   | some cp =>
     let bucket := bucketFor cp
     -- Phase 1: longest contiguous prefix match. The `gotMatch` flag
@@ -230,34 +230,34 @@ def matchAt (cps : Array Nat) (consumed : Array Bool) (start : Nat) :
     -- `0F71 0F80` at i=2 even though i=3 was already consumed by
     -- the previous discontiguous match of `0FB2 0F80`.
     let mut bestEntry : DucetEntry := implicitEntry cp
-    let mut bestKey   : Array Nat   := #[cp]
+    let mut bestKey   : List Nat    := [cp]
     let mut bestLen   : Nat         := 1
     let mut gotMatch  : Bool        := false
     for entry in bucket do
       if matchesAt cps start entry.key then
         let mut clear : Bool := true
-        for k in [0:entry.key.size] do
+        for k in [0:entry.key.length] do
           if (consumed[start + k]?.getD false) then clear := false
-        if clear ∧ (!gotMatch ∨ entry.key.size > bestLen) then
+        if clear ∧ (!gotMatch ∨ entry.key.length > bestLen) then
           bestEntry := entry
           bestKey   := entry.key
-          bestLen   := entry.key.size
+          bestLen   := entry.key.length
           gotMatch  := true
-    let mut consumedHere : Array Nat :=
-      (Array.range bestLen).map (fun k => start + k)
+    let mut consumedHere : List Nat :=
+      (List.range bestLen).map (fun k => start + k)
     -- Phase 2: discontiguous extension per UTS #10 §7.2 S2.1.1–S2.1.3.
     -- Walk forward from the end of the contiguous match. For each
     -- non-starter C at position j: if C is unblocked w.r.t. S
-    -- (`CCC(C) > maxSkippedCCC`), try `bestKey ++ #[C]` against the
+    -- (`CCC(C) > maxSkippedCCC`), try `bestKey ++ [C]` against the
     -- bucket; on success extend the match and reset `maxSkippedCCC`,
     -- on failure record C as skipped (`maxSkippedCCC := max …`). If C
     -- is blocked (`CCC(C) ≤ maxSkippedCCC`), advance past C without
     -- trying to extend; C's CCC is already covered by the running max.
     -- The scan terminates on a starter (CCC = 0) or end of input.
-    -- Bound the loop by `cps.size` so totality is structural.
+    -- Bound the loop by `cps.length` so totality is structural.
     let mut j              : Nat := start + bestLen
     let mut maxSkippedCCC  : Nat := 0
-    let n := cps.size
+    let n := cps.length
     for step in [0:n] do
       if step ≥ n then break
       if j ≥ n then break
@@ -269,12 +269,12 @@ def matchAt (cps : Array Nat) (consumed : Array Bool) (start : Nat) :
         if cCCC = 0 then
           break
         if cCCC > maxSkippedCCC then
-          let candidateKey := bestKey.push c
+          let candidateKey := bestKey ++ [c]
           match findInBucket bucket candidateKey with
           | some entry =>
             bestEntry     := entry
             bestKey       := candidateKey
-            consumedHere  := consumedHere.push j
+            consumedHere  := consumedHere ++ [j]
             maxSkippedCCC := 0
           | none =>
             maxSkippedCCC := cCCC
@@ -297,18 +297,18 @@ def longestMatchAtList (cps : List Nat) : Option (DucetEntry × Nat) :=
   | some cp =>
     (ducetEntriesList.filter (fun e => e.key[0]? = some cp)).foldl
       (fun best e =>
-        if List.isPrefixOf e.key.toList cps then
+        if List.isPrefixOf e.key cps then
           match best with
-          | none                    => some (e, e.key.size)
+          | none                    => some (e, e.key.length)
           | some (oldEntry, oldLen) =>
-            if e.key.size > oldLen then some (e, e.key.size) else some (oldEntry, oldLen)
+            if e.key.length > oldLen then some (e, e.key.length) else some (oldEntry, oldLen)
         else best)
       none
 
 /-- Kernel-reducible mirror of `resolveAt`: longest contiguous DUCET match at
     `cps[start..]`, falling back to the implicit-weight entry. -/
-def resolveAtList (cps : Array Nat) (start : Nat) : DucetEntry × Nat :=
-  match longestMatchAtList (cps.toList.drop start) with
+def resolveAtList (cps : List Nat) (start : Nat) : DucetEntry × Nat :=
+  match longestMatchAtList (cps.drop start) with
   | some (entry, len) => (entry, len)
   | none              =>
     match cps[start]? with
@@ -321,22 +321,22 @@ def resolveAtList (cps : Array Nat) (start : Nat) : DucetEntry × Nat :=
 
 /-- "abc" — three single-codepoint lookups, no contraction. -/
 theorem resolveAt_abc_at_0 :
-    (resolveAtList #[0x0061, 0x0062, 0x0063] 0).snd = 1 := by decide +kernel
+    (resolveAtList [0x0061, 0x0062, 0x0063] 0).snd = 1 := by decide +kernel
 
 /-- 006C 00B7 (LATIN SMALL LETTER L + MIDDLE DOT) is a contraction —
     a two-codepoint match wins over the single-cp 'l' lookup. -/
 theorem resolveAt_l_middledot :
-    (resolveAtList #[0x006C, 0x00B7, 0x0061] 0).snd = 2 := by decide +kernel
+    (resolveAtList [0x006C, 0x00B7, 0x0061] 0).snd = 2 := by decide +kernel
 
 /-- A codepoint outside DUCET (U+E0000 in PUA-A) falls back to an
     implicit entry with two synthetic elements. -/
 theorem resolveAt_pua :
-    (resolveAtList #[0xE0000] 0).fst.ces.size = 2 := by decide +kernel
+    (resolveAtList [0xE0000] 0).fst.ces.length = 2 := by decide +kernel
 
 /-- A CJK Unified Ideograph (U+4E2D 中) lands in the 0xFB40 implicit
     range and produces an implicit entry. -/
 theorem resolveAt_cjk :
-    (resolveAtList #[0x4E2D] 0).fst.ces.size = 2 := by decide +kernel
+    (resolveAtList [0x4E2D] 0).fst.ces.length = 2 := by decide +kernel
 
 /-- U+2B73A is assigned as Unified_Ideograph in UCD 17.0, so UCA 17.0
     implicit lookup places it in the Han Other FB80 tier. -/
