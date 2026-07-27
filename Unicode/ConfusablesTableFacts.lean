@@ -32,7 +32,7 @@ set_option maxRecDepth 1000000
 set_option maxHeartbeats 0
 
 /-- Grouped mirror of the generated confusables table, in chunk order. -/
-def mappingsFactGroupsList : List (Nat × Array Nat) :=
+def mappingsFactGroupsList : List (Nat × List Nat) :=
   mappingsFactGroup0
   ++ mappingsFactGroup1
   ++ mappingsFactGroup2
@@ -65,7 +65,7 @@ theorem mappingsList_expansion_under_bound :
 
 /-- The maximum target sequence length across the generated confusables table. -/
 def maxConfusableExpansion : Nat :=
-  mappingsFactGroupsList.foldl (fun m e => max m e.2.size) 0
+  mappingsFactGroupsList.foldl (fun m e => max m e.2.length) 0
 
 /-- Concrete expansion bound for the bundled UTS #39 data. -/
 theorem maxConfusableExpansion_concrete :

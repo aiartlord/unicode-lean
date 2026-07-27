@@ -22,7 +22,7 @@ open Unicode.Generated
 set_option maxRecDepth 1000000
 set_option maxHeartbeats 0
 
-def mappingsFactGroup9 : List (Nat × Array Nat) :=
+def mappingsFactGroup9 : List (Nat × List Nat) :=
   Unicode.Generated.Confusables.mappingsChunk90
   ++ Unicode.Generated.Confusables.mappingsChunk91
   ++ Unicode.Generated.Confusables.mappingsChunk92
