@@ -3,7 +3,7 @@
 
   Aggregator over every Security Conformance Layer detector.  Folds
   the 26 per-family `detect` functions into a uniform
-  `Array FamilyResult` shape so downstream consumers can call once
+  `List FamilyResult` shape so downstream consumers can call once
   and receive a structured per-family inventory of verdicts on a
   single input.
 
@@ -20,7 +20,7 @@
     * `subThreat`      — the firing sub-threat tag, or `none` if clear.
     * `positions`      — the input positions flagged by the family.
 
-  Callers that need per-family metadata (decoded ByteArray payloads,
+  Callers that need per-family metadata (decoded byte payloads,
   expansion ratios, run lengths, etc.) should call the corresponding
   `<Family>.detect` directly.
 -/
@@ -44,7 +44,7 @@ structure FamilyResult where
   family         : Family
   classification : ClassificationKind
   subThreat      : Option String
-  positions      : Array Nat
+  positions      : List Nat
   deriving Repr, Inhabited
 
 /-- Build a `FamilyResult` from a per-family classification's three
@@ -52,7 +52,7 @@ structure FamilyResult where
     in `Unicode/Security/` exposes those three by convention. -/
 @[inline]
 def mkResult (family : Family)
-    (isClear : Bool) (tag : Option String) (positions : Array Nat) :
+    (isClear : Bool) (tag : Option String) (positions : List Nat) :
     FamilyResult :=
   { family         := family,
     classification := if isClear then .clear else .hazard,
@@ -68,7 +68,7 @@ def mkResult (family : Family)
     on both byte-array and codepoint-array inputs without
     requiring callers to choose. -/
 @[inline]
-def looksLikeByteStream (input : Array Nat) : Bool :=
+def looksLikeByteStream (input : List Nat) : Bool :=
   input.all (fun cp => cp < 0x100)
 
 /-- Run every Security Conformance Layer detector on `input` and
@@ -85,7 +85,7 @@ def looksLikeByteStream (input : Array Nat) : Bool :=
     bounded input or invoke
     `Unicode.Security.Covert.SurrogateReassembly.detect` on
     their byte input separately. -/
-def runAll (input : Array Nat) : Array FamilyResult :=
+def runAll (input : List Nat) : List FamilyResult :=
   let c1 := Unicode.Security.Covert.TagBlockPayload.detect           input
   let c2 := Unicode.Security.Covert.VariationSelectorPayload.detect  input
   let c3 := Unicode.Security.Covert.ZeroWidthPayload.detect          input
@@ -95,7 +95,7 @@ def runAll (input : Array Nat) : Array FamilyResult :=
     else
       ({ input              := input,
          classify           := .clear,
-         byteCount          := input.size,
+         byteCount          := input.length,
          firstInvalidOffset := none }
         : Unicode.Security.Covert.SurrogateReassembly.Verdict)
   let c5 := Unicode.Security.Covert.BidiControlBalance.detect        input
@@ -120,7 +120,7 @@ def runAll (input : Array Nat) : Array FamilyResult :=
   let k1 := Unicode.Security.Crypto.Bip39Canonical.detect            input
   let k2 := Unicode.Security.Crypto.HashInputStability.detect        input
   let k3 := Unicode.Security.Crypto.AiWatermarkDetectability.detect  input
-  #[ mkResult .tagBlockPayload          c1.classify.isClear c1.classify.tag c1.classify.positions,
+  [ mkResult .tagBlockPayload          c1.classify.isClear c1.classify.tag c1.classify.positions,
      mkResult .variationSelectorPayload c2.classify.isClear c2.classify.tag c2.classify.positions,
      mkResult .zeroWidthPayload         c3.classify.isClear c3.classify.tag c3.classify.positions,
      mkResult .surrogateReassembly      c4.classify.isClear c4.classify.tag c4.classify.positions,
@@ -149,7 +149,7 @@ def runAll (input : Array Nat) : Array FamilyResult :=
 
 /-- Subset of `runAll` containing only the families whose verdict is
     `.hazard`.  Empty when the input passes every detector. -/
-def hazardsOnly (input : Array Nat) : Array FamilyResult :=
+def hazardsOnly (input : List Nat) : List FamilyResult :=
   (runAll input).filter (fun r =>
     match r.classification with
     | .clear        => false
@@ -158,7 +158,7 @@ def hazardsOnly (input : Array Nat) : Array FamilyResult :=
     | .informational => false)
 
 /-- True iff at least one family fires on `input`. -/
-def anyHazard (input : Array Nat) : Bool :=
+def anyHazard (input : List Nat) : Bool :=
   (runAll input).any (fun r =>
     match r.classification with
     | .clear        => false
@@ -171,7 +171,7 @@ def anyHazard (input : Array Nat) : Bool :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- `runAll` always returns exactly 26 entries, one per family. -/
-theorem runAll_size (input : Array Nat) : (runAll input).size = 26 := by
+theorem runAll_size (input : List Nat) : (runAll input).length = 26 := by
   unfold runAll
   rfl
 
@@ -186,7 +186,7 @@ theorem runAll_size (input : Array Nat) : (runAll input).size = 26 := by
     is correct behaviour for a BIP-39 mnemonic context but not a
     general-Unicode hazard. -/
 theorem ascii_hello_no_unicode_hazards :
-    ((runAll #[0x48, 0x65, 0x6C, 0x6C, 0x6F]).filter
+    ((runAll [0x48, 0x65, 0x6C, 0x6C, 0x6F]).filter
       (fun r =>
         ¬ (r.family = .bip39Canonical
            ∨ r.family = .hashInputStability
@@ -201,14 +201,14 @@ theorem ascii_hello_no_unicode_hazards :
 /-- The Arabic ligature U+FDFA fires at least one detector
     (NormalizationBomb, at minimum). -/
 theorem arabic_ligature_hazardous :
-    anyHazard #[0xFDFA] = true := by decide
+    anyHazard [0xFDFA] = true := by decide
 
 /-- The Math Italic identifier fires multiple detectors at once —
     at minimum HomoglyphConfusable, IdentifierFormDrift (per-cp
     identifier-status shift), and AdmissibilityFormDrift (whole-
     string admissibility drift). -/
 theorem math_italic_admin_multiple_hazards :
-    (hazardsOnly #[0x1D44E, 0x1D451, 0x1D45A, 0x1D456, 0x1D45B]).size ≥ 3 := by
+    (hazardsOnly [0x1D44E, 0x1D451, 0x1D45A, 0x1D456, 0x1D45B]).length ≥ 3 := by
   decide
 
 end Unicode.Security.RunAll

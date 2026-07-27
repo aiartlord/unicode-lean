@@ -57,19 +57,19 @@ structure Finding where
   code      : String
   family    : Family
   severity  : Severity
-  positions : Array Nat
+  positions : List Nat
   subThreat : Option String
   detail    : String
   deriving Repr, Inhabited
 
 /-- Runtime verdict returned by `scan`. -/
 structure Verdict where
-  input       : Array Nat
+  input       : List Nat
   profile     : Profile
   mode        : Mode
   action      : Action
-  findings    : Array Finding
-  normalized? : Option (Array Nat)
+  findings    : List Finding
+  normalized? : Option (List Nat)
   deriving Repr, Inhabited
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -213,7 +213,7 @@ def policyOfProfile : Profile → ProfilePolicy
 
 /-- Families whose hazards are admission-relevant under a profile. All detector
     findings remain reportable; this set only drives `Action` selection. -/
-def effectiveRejectionSet (profile : Profile) : Array Family :=
+def effectiveRejectionSet (profile : Profile) : List Family :=
   let p := policyOfProfile profile
   Unicode.Security.Level.rejectionSet p.level ++ p.cryptoContext.toFamilies
 
@@ -259,23 +259,23 @@ def resultToFinding? (r : Unicode.Security.RunAll.FamilyResult) : Option Finding
         detail    := Family.slug r.family
       }
 
-def findingsOfResults (results : Array Unicode.Security.RunAll.FamilyResult) : Array Finding :=
+def findingsOfResults (results : List Unicode.Security.RunAll.FamilyResult) : List Finding :=
   results.foldl
     (fun acc r =>
       match resultToFinding? r with
       | none   => acc
-      | some f => acc.push f)
-    #[]
+      | some f => acc ++ [f])
+    []
 
-def blockingFindings (profile : Profile) (findings : Array Finding) :
-    Array Finding :=
+def blockingFindings (profile : Profile) (findings : List Finding) :
+    List Finding :=
   findings.filter (findingAdmissionRelevant profile)
 
 def actionForBlocking (profile : Profile) : Action :=
   if (policyOfProfile profile).quarantine then .quarantine else .reject
 
 def selectAction (profile : Profile) (mode : Mode)
-    (findings : Array Finding) : Action :=
+    (findings : List Finding) : Action :=
   let blocking := blockingFindings profile findings
   match mode with
   | .observe =>
@@ -290,7 +290,7 @@ def selectAction (profile : Profile) (mode : Mode)
 /-- Runtime scan over a codepoint array. Byte decoding and wire-format framing
     belong one layer above this function; this is the profile/policy decision
     over already-decoded codepoints. -/
-def scan (profile : Profile) (mode : Mode) (input : Array Nat) : Verdict :=
+def scan (profile : Profile) (mode : Mode) (input : List Nat) : Verdict :=
   let results := Unicode.Security.RunAll.runAll input
   let findings := findingsOfResults results
   {
@@ -302,11 +302,11 @@ def scan (profile : Profile) (mode : Mode) (input : Array Nat) : Verdict :=
     normalized? := none
   }
 
-def scanDefault (profile : Profile) (input : Array Nat) : Verdict :=
+def scanDefault (profile : Profile) (input : List Nat) : Verdict :=
   scan profile .enforce input
 
 /-- Runtime admission predicate derived from `scan`. -/
-def admits (profile : Profile) (mode : Mode) (input : Array Nat) : Bool :=
+def admits (profile : Profile) (mode : Mode) (input : List Nat) : Bool :=
   match (scan profile mode input).action with
   | .allow => true
   | .observe => true
