@@ -734,7 +734,7 @@ theorem detect_internal_space_clear :
     Pinning that the convenience wrapper is genuinely equivalent
     to the context-aware entry point with the empty context.
     Tested via classification + stableSize co-fields (Verdict
-    itself carries List/ByteArray-shaped fields the harness pins via co-fields). -/
+    itself carries List-shaped byte fields the harness pins via co-fields). -/
 theorem detectWithContext_default_matches_detect :
     (detectWithContext {} [0x61, 0x62, 0x63]).classify
       = (detect [0x61, 0x62, 0x63]).classify

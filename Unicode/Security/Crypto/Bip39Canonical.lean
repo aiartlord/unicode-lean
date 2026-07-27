@@ -91,7 +91,7 @@ set_option maxRecDepth 100000
 inductive SubThreat where
   | nonCanonicalForm    (preCanonLen : Nat) (postCanonLen : Nat)
   | wordlistMismatch    (firstUnknownWordIdx : Nat)
-  | languageAmbiguous   (possibleLanguages : Array Language)
+  | languageAmbiguous   (possibleLanguages : List Language)
   | whitespaceAnomaly   (firstRunPos : Nat)
   | trailingWhitespace  (count : Nat)
   | nonNFKD             (firstDivergentPos : Nat)
@@ -136,7 +136,7 @@ namespace Classification
       | .wordlistMismatch idx      =>
         Function.const Nat (some "WordlistMismatch") idx
       | .languageAmbiguous langs   =>
-        Function.const (Array Language) (some "LanguageAmbiguous") langs
+        Function.const (List Language) (some "LanguageAmbiguous") langs
       | .whitespaceAnomaly pos     =>
         Function.const Nat (some "WhitespaceAnomaly") pos
       | .trailingWhitespace count  =>
@@ -289,7 +289,7 @@ def isInWordlist (lang : Language) (word : List Nat) : Bool :=
 
 /-- Every language whose wordlist contains `word`.  Empty if
     `word` is not in any BIP-39 wordlist. -/
-def wordlistsContaining (word : List Nat) : Array Language :=
+def wordlistsContaining (word : List Nat) : List Language :=
   allLanguages.filter (fun lang => isInWordlist lang word)
 
 /-- The single language whose wordlist contains every word in
@@ -315,7 +315,7 @@ theorem english_contains_abandon :
 /-- A made-up word is in no wordlist. Each language is one linear `List.any`
     pass over the List-backed table. -/
 theorem nonsense_in_no_wordlist :
-    wordlistsContaining [0x71, 0x7A, 0x71, 0x7A, 0x71, 0x7A] = #[] := by
+    wordlistsContaining [0x71, 0x7A, 0x71, 0x7A, 0x71, 0x7A] = [] := by
   decide +kernel
 
 /-- Single-word "abandon" is unambiguously English: English is the first
@@ -417,10 +417,10 @@ def detect (input : List Nat) : Verdict :=
       -- Every word in some wordlist, no single language covers
       -- all — collect the union for the verdict.
       let allPossible := wordlistsPerWord.foldl
-        (init := (#[] : Array Language))
+        (init := ([] : List Language))
         (fun acc langs =>
           langs.foldl (init := acc) (fun a l =>
-            if a.contains l then a else a.push l))
+            if a.contains l then a else a ++ [l]))
       .hazard (.languageAmbiguous allPossible) []
 
   { input := input,

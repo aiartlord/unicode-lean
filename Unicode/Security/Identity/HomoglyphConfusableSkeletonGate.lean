@@ -31,13 +31,13 @@ set_option maxHeartbeats 4000000
 theorem canonicalTargetSkeletons_correct :
     canonicalTargetSkeletons.toList
       = canonicalTargets.toList.map
-          (fun t => (Unicode.Confusables.letterSkeleton t.cps.toList).toArray) := by
+          (fun t => Unicode.Confusables.letterSkeleton t.cps) := by
   decide +kernel
 
 /-- The pinned table and the target list agree in length, so zipping them in
     `findTargetMatch` drops no target. -/
 theorem canonicalTargetSkeletons_size :
-    canonicalTargetSkeletons.size = canonicalTargets.size := by
+    canonicalTargetSkeletons.length = canonicalTargets.length := by
   simpa using congrArg List.length canonicalTargetSkeletons_correct
 
 end Unicode.Security.Identity.HomoglyphConfusableSkeletonGate
