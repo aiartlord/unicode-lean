@@ -15,8 +15,8 @@ namespace Unicode.Security.Form.WidthClassConfusion
 open Unicode.Machine.AbstractMachine
 
 /-- The fullwidth-fold tally is at most the input size, for every input. -/
-theorem fullwidthFoldCount_le_size (input : Array Nat) :
-    fullwidthFoldCount input ≤ input.size := by
+theorem fullwidthFoldCount_le_size (input : List Nat) :
+    fullwidthFoldCount input ≤ input.length := by
   unfold fullwidthFoldCount
   apply array_range_foldl_step_le
   intro m i
@@ -25,8 +25,8 @@ theorem fullwidthFoldCount_le_size (input : Array Nat) :
   all_goals omega
 
 /-- The halfwidth-fold tally is at most the input size, for every input. -/
-theorem halfwidthFoldCount_le_size (input : Array Nat) :
-    halfwidthFoldCount input ≤ input.size := by
+theorem halfwidthFoldCount_le_size (input : List Nat) :
+    halfwidthFoldCount input ≤ input.length := by
   unfold halfwidthFoldCount
   apply array_range_foldl_step_le
   intro m i
