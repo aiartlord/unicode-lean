@@ -55,7 +55,7 @@ inductive SubThreat where
 
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : List UInt8)
   deriving Inhabited
 
 structure Verdict where
@@ -76,7 +76,7 @@ def detect (input : List Nat) : Verdict :=
   let nfkcOk := isAllowedIdentifier nfkc
   let classification : Classification :=
     if inOk = nfkcOk then .clear
-    else .hazard (.admissibilityFormDrift inOk nfkcOk) [] ByteArray.empty
+    else .hazard (.admissibilityFormDrift inOk nfkcOk) [] []
   { input := input,
     classify := classification,
     inputAdmissible := inOk,
@@ -93,18 +93,18 @@ def SubThreat.tag : SubThreat → String
 def Classification.isClear : Classification → Bool
   | .clear                       => true
   | .hazard sub positions decoded =>
-    Function.const (SubThreat × List Nat × ByteArray) false
+    Function.const (SubThreat × List Nat × List UInt8) false
       (sub, positions, decoded)
 
 def Classification.tag : Classification → Option String
   | .clear                       => none
   | .hazard sub positions decoded =>
-    Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
+    Function.const (List Nat × List UInt8) (some sub.tag) (positions, decoded)
 
 def Classification.positions : Classification → List Nat
   | .clear                       => []
   | .hazard sub positions decoded =>
-    Function.const (SubThreat × ByteArray) positions (sub, decoded)
+    Function.const (SubThreat × List UInt8) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 Spot checks

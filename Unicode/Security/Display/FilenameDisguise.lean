@@ -67,7 +67,7 @@ inductive SubThreat where
 /-- Top-level classification for FilenameDisguise. -/
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : List UInt8)
   deriving Inhabited
 
 /-- Verdict — the structured output of `detect`. -/
@@ -170,18 +170,18 @@ def detect (input : List Nat) : Verdict :=
   let classification : Classification :=
     match firstBidiControl input with
     | some (pos, ctlCp) =>
-      .hazard (.rloFlip pos ctlCp) [pos] ByteArray.empty
+      .hazard (.rloFlip pos ctlCp) [pos] []
     | none =>
       match firstFullwidthFrom input extStart with
       | some (pos, cp) =>
-        .hazard (.widthClassExt pos cp) [pos] ByteArray.empty
+        .hazard (.widthClassExt pos cp) [pos] []
       | none =>
         match firstExtendFrom input extStart with
         | some (pos, cp) =>
-          .hazard (.combiningInExt pos cp) [pos] ByteArray.empty
+          .hazard (.combiningInExt pos cp) [pos] []
         | none =>
           if dots.length ≥ 3 then
-            .hazard (.multipleExtensions dots.length) dots ByteArray.empty
+            .hazard (.multipleExtensions dots.length) dots []
           else
             .clear
   { input := input,
@@ -211,20 +211,20 @@ def SubThreat.tag : SubThreat → String
 def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × List Nat × ByteArray) false
+      Function.const (SubThreat × List Nat × List UInt8) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification. -/
 def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
-      Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
+      Function.const (List Nat × List UInt8) (some sub.tag) (positions, decoded)
 
 /-- Positions array of a classification. -/
 def Classification.positions : Classification → List Nat
   | .clear                     => []
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × ByteArray) positions (sub, decoded)
+      Function.const (SubThreat × List UInt8) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 Spot checks
