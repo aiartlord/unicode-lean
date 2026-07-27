@@ -397,52 +397,45 @@ theorem primaryComposite_A_ring :
 /-- Decompose stage on "Hi": both terminal. -/
 theorem decomposeSequence_ascii :
     Decompose.decomposeSequence [0x0048, 0x0069] = [0x0048, 0x0069] := by
-  simp only [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose,
-             Decompose.maxDepth]
-  simp [fcdf_latin_H 31, fcdf_latin_i 31]
+  simp [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose,
+        Decompose.maxDepth,fcdf_latin_H 31, fcdf_latin_i 31]
 
 /-- Decompose stage on `A + grave`: both terminal. -/
 theorem decomposeSequence_A_grave_pair :
     Decompose.decomposeSequence [0x0041, 0x0300] = [0x0041, 0x0300] := by
-  simp only [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose,
-             Decompose.maxDepth]
-  simp [Decompose.fcdf_latin_A 31, Decompose.fcdf_grave 31]
+  simp [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose,
+        Decompose.maxDepth,Decompose.fcdf_latin_A 31, Decompose.fcdf_grave 31]
 
 /-- Decompose stage on `À`: one expansion step. -/
 theorem decomposeSequence_A_grave_precomposed :
     Decompose.decomposeSequence [0x00C0] = [0x0041, 0x0300] := by
-  simp only [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose,
-             Decompose.maxDepth]
-  simp [Decompose.fcdf_A_grave 30]
+  simp [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose,
+        Decompose.maxDepth,Decompose.fcdf_A_grave 30]
 
 /-- Decompose stage on ANGSTROM SIGN: the recursive two-step expansion. -/
 theorem decomposeSequence_angstrom :
     Decompose.decomposeSequence [0x212B] = [0x0041, 0x030A] := by
-  simp only [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose,
-             Decompose.maxDepth]
-  simp [Decompose.fcdf_angstrom 29]
+  simp [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose,
+        Decompose.maxDepth,Decompose.fcdf_angstrom 29]
 
 /-- Decompose stage on `A + grave + cedilla`: all terminal. -/
 theorem decomposeSequence_A_grave_cedilla :
     Decompose.decomposeSequence [0x0041, 0x0300, 0x0327]
       = [0x0041, 0x0300, 0x0327] := by
-  simp only [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose,
-             Decompose.maxDepth]
-  simp [Decompose.fcdf_latin_A 31, Decompose.fcdf_grave 31, fcdf_cedilla 31]
+  simp [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose,
+        Decompose.maxDepth,Decompose.fcdf_latin_A 31, Decompose.fcdf_grave 31, fcdf_cedilla 31]
 
 /-- Decompose stage on the L+V jamo pair: both terminal. -/
 theorem decomposeSequence_jamo_LV :
     Decompose.decomposeSequence [0x1100, 0x1161] = [0x1100, 0x1161] := by
-  simp only [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose,
-             Decompose.maxDepth]
-  simp [fcdf_choseong_kiyeok 31, fcdf_jungseong_a 31]
+  simp [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose,
+        Decompose.maxDepth,fcdf_choseong_kiyeok 31, fcdf_jungseong_a 31]
 
 /-- Decompose stage on HANGUL SYLLABLE GA: the algorithmic expansion. -/
 theorem decomposeSequence_hangul_GA :
     Decompose.decomposeSequence [0xAC00] = [0x1100, 0x1161] := by
-  simp only [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose,
-             Decompose.maxDepth]
-  simp [fcdf_hangul_GA 31]
+  simp [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose,
+        Decompose.maxDepth,fcdf_hangul_GA 31]
 
 /-- Reorder stage on `A + grave`: already in canonical order. -/
 theorem reorder_A_grave :
@@ -660,16 +653,14 @@ theorem stepCompose_e_acute :
 /-- Decompose stage on `e + acute`: both terminal. -/
 theorem decomposeSequence_e_acute_pair :
     Decompose.decomposeSequence [0x0065, 0x0301] = [0x0065, 0x0301] := by
-  simp only [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose,
-             Decompose.maxDepth]
-  simp [Decompose.fcdf_latin_e 31, Decompose.fcdf_acute 31]
+  simp [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose,
+        Decompose.maxDepth,Decompose.fcdf_latin_e 31, Decompose.fcdf_acute 31]
 
 /-- Decompose stage on `é`: one expansion step. -/
 theorem decomposeSequence_e_acute_precomposed :
     Decompose.decomposeSequence [0x00E9] = [0x0065, 0x0301] := by
-  simp only [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose,
-             Decompose.maxDepth]
-  simp [Decompose.fcdf_e_acute 30]
+  simp [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose,
+        Decompose.maxDepth,Decompose.fcdf_e_acute 30]
 
 /-- Reorder stage on `e + acute`: already in canonical order. -/
 theorem reorder_e_acute :
