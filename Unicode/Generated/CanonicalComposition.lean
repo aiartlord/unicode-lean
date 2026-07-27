@@ -10,8 +10,8 @@
   non-Hangul case. Holding it as a flat `List` (rather than scanning
   the whole `UnicodeData.rows` array) keeps the composition pass
   reducible in the kernel: list traversal is linear, where repeated
-  `Array.append` and indexing over the chunked row table is
-  quadratic. Entries appear in UnicodeData codepoint order, so a
+  append and random indexing over a chunked backing-vector row table
+  is quadratic. Entries appear in UnicodeData codepoint order, so a
   linear `find?` selects the same match the row scan did.
 -/
 
@@ -1006,11 +1006,11 @@ def ccTrim (s : String) : String := (String.trimAscii s).toString
 def ccExcluded (c : Nat) : Bool :=
   DerivedNormalizationProps.fullCompositionExclusion.any (fun r => decide (r.1 ≤ c ∧ c ≤ r.2))
 
-def ccDerive : Array (Nat × Nat × Nat) := Id.run do
-  let mut out : Array (Nat × Nat × Nat) := #[]
+def ccDerive : List (Nat × Nat × Nat) := Id.run do
+  let mut out : List (Nat × Nat × Nat) := []
   for line in unicodeDataRawCC.splitOn "\n" do
-    let f := (line.splitOn ";").toArray
-    if f.size < 6 then continue
+    let f := line.splitOn ";"
+    if f.length < 6 then continue
     let d := ccTrim f[5]!
     if d.isEmpty ∨ d.startsWith "<" then continue
     let parts := (d.splitOn " ").filterMap (fun t =>
@@ -1018,12 +1018,12 @@ def ccDerive : Array (Nat × Nat × Nat) := Id.run do
     match parts with
     | [a, b] =>
       let comp := ccHex (ccTrim f[0]!)
-      if !ccExcluded comp then out := out.push (a, b, comp)
+      if !ccExcluded comp then out := out ++ [(a, b, comp)]
     | _other => pure ()
   return out
 
 def compositionPairsParsed : List (Nat × Nat × Nat) :=
-  (ccDerive.qsort (fun (x y : Nat × Nat × Nat) => decide (x.2.2 < y.2.2))).toList
+  ccDerive.mergeSort (fun (x y : Nat × Nat × Nat) => decide (x.2.2 < y.2.2))
 
 #eval do
   unless compositionPairs == compositionPairsParsed do
