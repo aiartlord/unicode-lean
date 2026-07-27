@@ -67,28 +67,28 @@ def isIgnoredForIntersection (cp : Nat) : Bool :=
 
 /-- True iff `a` and `b` intersect — share at least one
     `ScriptAbbrev` value. -/
-def intersects (a b : Array ScriptAbbrev) : Bool :=
+def intersects (a b : List ScriptAbbrev) : Bool :=
   a.any (fun s => b.contains s)
 
 /-- Intersect a list of script-sets pairwise. Returns the common
-    scripts across all of them; returns `#[]` if any input set is
-    `#[]` (the result is empty by definition). -/
-def intersectManyGo (sets : Array (Array ScriptAbbrev))
-    (acc : Array ScriptAbbrev) (fuel i : Nat) : Array ScriptAbbrev :=
+    scripts across all of them; returns `[]` if any input set is
+    `[]` (the result is empty by definition). -/
+def intersectManyGo (sets : List (List ScriptAbbrev))
+    (acc : List ScriptAbbrev) (fuel i : Nat) : List ScriptAbbrev :=
   match fuel with
   | 0 => acc
   | fuel + 1 =>
-    if h : i < sets.size then
+    if h : i < sets.length then
       intersectManyGo sets (acc.filter (fun s => sets[i].contains s)) fuel (i + 1)
     else acc
 
-def intersectMany (sets : Array (Array ScriptAbbrev)) : Array ScriptAbbrev :=
+def intersectMany (sets : List (List ScriptAbbrev)) : List ScriptAbbrev :=
   match sets[0]? with
-  | none      => #[]
-  | some head => intersectManyGo sets head sets.size 1
+  | none      => []
+  | some head => intersectManyGo sets head sets.length 1
 
 /-- True iff every codepoint in `set` is contained in `super`. -/
-def isSubset (set super : Array ScriptAbbrev) : Bool :=
+def isSubset (set super : List ScriptAbbrev) : Bool :=
   set.all (fun s => super.contains s)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -102,26 +102,26 @@ def isAsciiOnly (cps : List Nat) : Bool :=
 /-- The resolved-scripts intersection across all non-Common,
     non-Inherited codepoints of `cps`. UTS #39 calls this the
     "resolved-scripts set" of the string. -/
-def stringResolvedScripts (cps : List Nat) : Array ScriptAbbrev :=
+def stringResolvedScripts (cps : List Nat) : List ScriptAbbrev :=
   let nonIgnored := cps.filter (fun cp => ! isIgnoredForIntersection cp)
-  if nonIgnored.isEmpty then #[]
+  if nonIgnored.isEmpty then []
   else
-    let sets := (nonIgnored.map resolveScripts).toArray
+    let sets := nonIgnored.map resolveScripts
     intersectMany sets
 
 /-- Push each not-yet-present element of `arr` (from index `j`) onto `acc`. -/
-def unionScriptsInto (acc arr : Array ScriptAbbrev) (fuel j : Nat) : Array ScriptAbbrev :=
+def unionScriptsInto (acc arr : List ScriptAbbrev) (fuel j : Nat) : List ScriptAbbrev :=
   match fuel with
   | 0 => acc
   | fuel + 1 =>
-    if h : j < arr.size then
-      unionScriptsInto (if acc.contains arr[j] then acc else acc.push arr[j]) arr fuel (j + 1)
+    if h : j < arr.length then
+      unionScriptsInto (if acc.contains arr[j] then acc else acc ++ [arr[j]]) arr fuel (j + 1)
     else acc
 
 /-- Fold one codepoint into the running resolved-scripts union. -/
-def stringScriptUnionStep (acc : Array ScriptAbbrev) (cp : Nat) : Array ScriptAbbrev :=
+def stringScriptUnionStep (acc : List ScriptAbbrev) (cp : Nat) : List ScriptAbbrev :=
   if isIgnoredForIntersection cp then acc
-  else let r := resolveScripts cp; unionScriptsInto acc r r.size 0
+  else let r := resolveScripts cp; unionScriptsInto acc r r.length 0
 
 /-- The resolved-scripts union over all non-Common, non-Inherited
     codepoints of `cps`.  Counts every distinct script family
@@ -134,8 +134,8 @@ def stringScriptUnionStep (acc : Array ScriptAbbrev) (cp : Nat) : Array ScriptAb
     present in this identifier" questions; the intersection
     answers "is there a single script every codepoint could
     belong to". -/
-def stringScriptUnion (cps : List Nat) : Array ScriptAbbrev :=
-  cps.foldl stringScriptUnionStep #[]
+def stringScriptUnion (cps : List Nat) : List ScriptAbbrev :=
+  cps.foldl stringScriptUnionStep []
 
 /-- True iff `input` contains at least one codepoint whose
     resolved script set contains `target`.  Union-side question,
@@ -149,23 +149,23 @@ def isSingleScript (cps : List Nat) : Bool :=
   ! isAsciiOnly cps && ! (stringResolvedScripts cps).isEmpty
 
 /-- The "Japanese" covered set: Latin + Han + Hiragana + Katakana. -/
-def coveredJapanese : Array ScriptAbbrev := #[.Latn, .Hani, .Hira, .Kana]
+def coveredJapanese : List ScriptAbbrev := [.Latn, .Hani, .Hira, .Kana]
 
 /-- The "Chinese" covered set: Latin + Han + Bopomofo. -/
-def coveredChinese : Array ScriptAbbrev := #[.Latn, .Hani, .Bopo]
+def coveredChinese : List ScriptAbbrev := [.Latn, .Hani, .Bopo]
 
 /-- The "Korean" covered set: Latin + Han + Hangul. -/
-def coveredKorean : Array ScriptAbbrev := #[.Latn, .Hani, .Hang]
+def coveredKorean : List ScriptAbbrev := [.Latn, .Hani, .Hang]
 
 /-- True iff every non-ignored codepoint's resolved scripts is
     a subset of `covered`. Used to test the three CJK covered
     sets for Highly Restrictive. -/
-def allWithinCoveredSet (cps : List Nat) (covered : Array ScriptAbbrev) : Bool :=
+def allWithinCoveredSet (cps : List Nat) (covered : List ScriptAbbrev) : Bool :=
   cps.all (fun cp =>
     if isIgnoredForIntersection cp then true
     else
       let r := resolveScripts cp
-      r.size > 0 && intersects r covered)
+      r.length > 0 && intersects r covered)
 
 /-- True iff `cps` matches one of the three CJK covered sets:
     Japanese / Chinese / Korean (each a fixed combination of Latin
@@ -195,8 +195,8 @@ def isModeratelyRestrictiveShapeGo :
     else
       let r := resolveScripts cp
       -- A codepoint must resolve to {Latn} or to exactly one script.
-      if r.size = 0 then false
-      else if intersects r #[.Latn] then
+      if r.length = 0 then false
+      else if intersects r [.Latn] then
         isModeratelyRestrictiveShapeGo rest other
       else
         -- Determine the "other" script; pick the first non-Latin entry.
@@ -247,7 +247,7 @@ def restrictionLevel (cps : List Nat) : RestrictionLevel :=
     A string mixing digits from two distinct sets fails
     Mixed-Number. The list comes from UCD `UnicodeData.txt`
     Numeric_Type=Decimal entries with `Numeric_Value=0`. -/
-def decimalZeroOffsets : Array Nat := #[
+def decimalZeroOffsets : List Nat := [
   0x0030,  -- DIGIT ZERO (ASCII)
   0x0660,  -- ARABIC-INDIC DIGIT ZERO
   0x06F0,  -- EXTENDED ARABIC-INDIC DIGIT ZERO

@@ -170,14 +170,14 @@ def isInheritedScript (cp : Nat) : Bool :=
     explicit list is used; otherwise the singleton list of `cp`'s
     `Script` is used (or empty when the Script has no abbreviation
     in `ScriptAbbrev`). -/
-def resolveScripts (cp : Nat) : Array ScriptAbbrev :=
+def resolveScripts (cp : Nat) : List ScriptAbbrev :=
   match scriptExtensionRanges.findSome? (fun ⟨lo, hi, abbrevs⟩ =>
           if lo ≤ cp ∧ cp ≤ hi then some abbrevs else none) with
   | some abbrevs => abbrevs
   | none =>
     match scriptToAbbrev (lookupScript cp) with
-    | some s => #[s]
-    | none   => #[]
+    | some s => [s]
+    | none   => []
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 SAMPLE LOOKUPS
@@ -185,7 +185,7 @@ def resolveScripts (cp : Nat) : Array ScriptAbbrev :=
 
 /-- ASCII letter 'a' resolves to {Latn}. -/
 theorem resolve_ascii_a :
-    resolveScripts 0x0061 = #[.Latn] := by decide +kernel
+    resolveScripts 0x0061 = [.Latn] := by decide +kernel
 
 /-- ASCII digit '0' has Script = Common, which has no
     `ScriptAbbrev` entry, so it resolves to the empty set.
@@ -193,26 +193,26 @@ theorem resolve_ascii_a :
     Single-Script intersection (they don't contribute and they
     don't fail). -/
 theorem resolve_ascii_0 :
-    resolveScripts 0x0030 = #[] := by decide +kernel
+    resolveScripts 0x0030 = [] := by decide +kernel
 
 /-- Common-script detection: ASCII digit is Common. -/
 theorem isCommon_ascii_0 : isCommonScript 0x0030 = true := by decide +kernel
 
 /-- Cyrillic small letter а (U+0430) resolves to {Cyrl}. -/
 theorem resolve_cyrillic_a :
-    resolveScripts 0x0430 = #[.Cyrl] := by decide +kernel
+    resolveScripts 0x0430 = [.Cyrl] := by decide +kernel
 
 /-- Greek small letter alpha resolves to {Grek}. -/
 theorem resolve_greek_alpha :
-    resolveScripts 0x03B1 = #[.Grek] := by decide +kernel
+    resolveScripts 0x03B1 = [.Grek] := by decide +kernel
 
 /-- Hebrew letter alef resolves to {Hebr}. -/
 theorem resolve_hebrew_alef :
-    resolveScripts 0x05D0 = #[.Hebr] := by decide +kernel
+    resolveScripts 0x05D0 = [.Hebr] := by decide +kernel
 
 /-- A Han ideograph resolves to a non-empty SCX (typically several
     East-Asian scripts share a Han codepoint via Script_Extensions). -/
 theorem resolve_han_yi_nonempty :
-    (resolveScripts 0x4E00).size > 0 := by decide +kernel
+    (resolveScripts 0x4E00).length > 0 := by decide +kernel
 
 end Unicode.ResolvedScripts
