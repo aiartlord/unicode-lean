@@ -42,7 +42,7 @@ def toNFKC (cps : List Nat) : List Nat :=
     source file's `@missing` default (`Y`) when the codepoint is not
     covered by any explicit range. -/
 def nfkcQCValue (cp : Nat) : DerivedNormalizationProps.NFC_QC :=
-  match DerivedNormalizationProps.nfkcQC.toList.findSome?
+  match DerivedNormalizationProps.nfkcQC.findSome?
           (fun ⟨min, max, v⟩ => if min ≤ cp ∧ cp ≤ max then some v else none) with
   | some v => v
   | none   => DerivedNormalizationProps.defaultNfkcQC
@@ -82,7 +82,7 @@ theorem compose_single_starter (cp : Nat)
   rewrite [Compose.compose.eq_def,
            List.foldl_cons, List.foldl_nil]
   rewrite [show Compose.stepCompose Compose.initialState cp
-             = { emitted := #[], starter := some cp, buffer := [], maxCCC := 0 } by
+             = { emitted := [], starter := some cp, buffer := [], maxCCC := 0 } by
            rw [Compose.stepCompose.eq_def]; simp [Compose.initialState, h]]
   rfl
 
@@ -97,11 +97,11 @@ theorem compose_ff : Compose.compose [0x0066, 0x0066] = [0x0066, 0x0066] := by
   rewrite [Compose.compose.eq_def,
            List.foldl_cons, List.foldl_cons, List.foldl_nil]
   rewrite [show Compose.stepCompose Compose.initialState 0x0066
-             = { emitted := #[], starter := some 0x0066, buffer := [], maxCCC := 0 } by
+             = { emitted := [], starter := some 0x0066, buffer := [], maxCCC := 0 } by
            rw [Compose.stepCompose.eq_def]; simp [Compose.initialState, NFKD.ccc_latin_f]]
   rewrite [show Compose.stepCompose
-             { emitted := #[], starter := some 0x0066, buffer := [], maxCCC := 0 } 0x0066
-             = { emitted := #[0x0066], starter := some 0x0066, buffer := [],
+             { emitted := [], starter := some 0x0066, buffer := [], maxCCC := 0 } 0x0066
+             = { emitted := [0x0066], starter := some 0x0066, buffer := [],
                  maxCCC := 0 } by
            rw [Compose.stepCompose.eq_def]
            simp [NFKD.ccc_latin_f, primaryComposite_ff_none]]
@@ -171,7 +171,7 @@ theorem toNFKC_hangul :
 /-- `isNFKCQuickCheck` is conservative: pure ASCII has `NFKC_QC = Y`
     and the quick check returns `true`. The `NFKC_QC` values reduce over
     the materialized `List`; the CCC / HSR check uses the row-transport
-    CCC lemmas (never the Array scan). -/
+    CCC lemmas (never the row scan). -/
 theorem isNFKCQuickCheck_ascii :
     isNFKCQuickCheck [0x0048, 0x0069] = true := by
   have hH : nfkcQCValue 0x0048 = .Y := by decide +kernel

@@ -27,47 +27,44 @@ open Unicode.Invariants
 -- DECOMPOSE ON FULLY-DECOMPOSED INPUT
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Pointwise: `fullCanonicalDecompose` returns `#[cp]` when `cp` has no
+/-- Pointwise: `fullCanonicalDecompose` returns `[cp]` when `cp` has no
     canonical decomposition and is not a Hangul syllable. -/
 theorem fullCanonicalDecompose_id_of_nonDecomposable
     (cp : Nat)
-    (hDecomp : Lookup.canonicalDecomposition cp = #[])
+    (hDecomp : Lookup.canonicalDecomposition cp = [])
     (hNotHangul : Hangul.isHangulSyllable cp = false) :
-    Decompose.fullCanonicalDecompose cp = #[cp] := by
+    Decompose.fullCanonicalDecompose cp = [cp] := by
   have hDsyl : Hangul.decomposeSyllable? cp = none := by
     unfold Hangul.decomposeSyllable?
     rw [hNotHangul]
     simp
-  show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth cp = #[cp]
+  show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth cp = [cp]
   unfold Decompose.maxDepth
   unfold Decompose.fullCanonicalDecomposeFuel
   rw [hDsyl]
   simp [hDecomp]
 
-/-- Array.foldl with concat on a sequence where every element `f cp = #[cp]`
+/-- Left fold with concat on a sequence where every element `f cp = [cp]`
     returns the sequence unchanged. Generic helper; does not depend on
     any specific UCD facts. -/
 theorem foldl_concat_id_of_all_singleton
-    (f : Nat → Array Nat) (cps : Array Nat)
-    (h : ∀ cp ∈ cps, f cp = #[cp]) :
-    cps.foldl (fun acc cp => acc ++ f cp) #[] = cps := by
-  rw [← Array.foldl_toList]
-  have hAllList : ∀ cp ∈ cps.toList, f cp = #[cp] :=
-    fun cp hMem => h cp (by simpa using hMem)
-  have key : ∀ (l : List Nat) (init : Array Nat),
-      (∀ cp ∈ l, f cp = #[cp]) →
-      l.foldl (fun acc cp => acc ++ f cp) init = init ++ l.toArray := by
+    (f : Nat → List Nat) (cps : List Nat)
+    (h : ∀ cp ∈ cps, f cp = [cp]) :
+    cps.foldl (fun acc cp => acc ++ f cp) [] = cps := by
+  have key : ∀ (l : List Nat) (init : List Nat),
+      (∀ cp ∈ l, f cp = [cp]) →
+      l.foldl (fun acc cp => acc ++ f cp) init = init ++ l := by
     intro l
     induction l with
     | nil => intro init hH; simp
     | cons hd tl ih =>
       intro init hH
-      have hHd : f hd = #[hd] := hH hd (by simp)
-      have hTl : ∀ cp ∈ tl, f cp = #[cp] := fun cp hMem => hH cp (by simp [hMem])
+      have hHd : f hd = [hd] := hH hd (by simp)
+      have hTl : ∀ cp ∈ tl, f cp = [cp] := fun cp hMem => hH cp (by simp [hMem])
       simp only [List.foldl_cons, hHd]
-      rw [ih (init ++ #[hd]) hTl]
+      rw [ih (init ++ [hd]) hTl]
       simp
-  rw [key cps.toList #[] hAllList]
+  rw [key cps [] h]
   simp
 
 /-- Flattening a per-codepoint expansion that is singleton everywhere
@@ -75,14 +72,14 @@ theorem foldl_concat_id_of_all_singleton
     `foldl_concat_id_of_all_singleton`: one traversal, no accumulator
     copying. Generic helper; does not depend on any specific UCD facts. -/
 theorem flatMap_concat_id_of_all_singleton
-    (f : Nat → Array Nat) (cps : List Nat)
-    (h : ∀ cp ∈ cps, f cp = #[cp]) :
-    cps.flatMap (fun cp => (f cp).toList) = cps := by
+    (f : Nat → List Nat) (cps : List Nat)
+    (h : ∀ cp ∈ cps, f cp = [cp]) :
+    cps.flatMap f = cps := by
   induction cps with
   | nil => simp
   | cons hd tl ih =>
-    have hHd : f hd = #[hd] := h hd (by simp)
-    have hTl : ∀ cp ∈ tl, f cp = #[cp] :=
+    have hHd : f hd = [hd] := h hd (by simp)
+    have hTl : ∀ cp ∈ tl, f cp = [cp] :=
       fun cp hMem => h cp (by simp [hMem])
     simp [hHd, ih hTl]
 

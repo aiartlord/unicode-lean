@@ -44,25 +44,25 @@ def sortNonStarterRun (run : List Nat) : List Nat :=
     when flushed, the list is reversed back into scan order before
     sorting. -/
 structure ReorderState where
-  emitted    : Array Nat
+  emitted    : List Nat
   currentRun : List Nat
   deriving Inhabited
 
 /-- Sort the accumulated non-starter run and return its sorted array. -/
-def flushRun (s : ReorderState) : Array Nat :=
-  (sortNonStarterRun s.currentRun.reverse).toArray
+def flushRun (s : ReorderState) : List Nat :=
+  sortNonStarterRun s.currentRun.reverse
 
 /-- Step: process one codepoint. -/
 def stepReorder (s : ReorderState) (cp : Nat) : ReorderState :=
   if Lookup.canonicalCombiningClass cp = 0 then
-    { emitted := s.emitted ++ flushRun s ++ #[cp], currentRun := [] }
+    { emitted := s.emitted ++ flushRun s ++ [cp], currentRun := [] }
   else
     { s with currentRun := cp :: s.currentRun }
 
 /-- Canonical reordering of a codepoint sequence per UAX #15 §1.3. -/
 def reorder (cps : List Nat) : List Nat :=
-  let final := cps.foldl stepReorder { emitted := #[], currentRun := [] }
-  (final.emitted ++ flushRun final).toList
+  let final := cps.foldl stepReorder { emitted := [], currentRun := [] }
+  (final.emitted ++ flushRun final)
 
 -- ─────────────────────────────────────────────────────────────────────────────
 --                                          // reorder // concrete-ccc-evaluation
@@ -354,7 +354,7 @@ theorem IsCCCSorted_front_le_last {front : List Nat} {last : Nat}
     to do. -/
 theorem flushRun_sorted_noop (s : ReorderState)
     (h : IsCCCSorted s.currentRun.reverse) :
-    flushRun s = s.currentRun.reverse.toArray := by
+    flushRun s = s.currentRun.reverse := by
   unfold flushRun
   rw [sortNonStarterRun_fixed_on_sorted s.currentRun.reverse h]
 
@@ -593,13 +593,13 @@ theorem getLast?_append_singleton (xs : List Nat) (x : Nat) :
 /-- The initial reorder state used by `reorder` at the start of the
     fold. Given a name so theorems can refer to it without repeating
     the anonymous record literal. -/
-def initState : ReorderState := { emitted := #[], currentRun := [] }
+def initState : ReorderState := { emitted := [], currentRun := [] }
 
 /-- Evaluation lemma for `stepReorder` on a starter codepoint. -/
 theorem stepReorder_starter (S : ReorderState) (cp : Nat)
     (hccc : Lookup.canonicalCombiningClass cp = 0) :
     stepReorder S cp
-      = { emitted := S.emitted ++ flushRun S ++ #[cp], currentRun := [] } := by
+      = { emitted := S.emitted ++ flushRun S ++ [cp], currentRun := [] } := by
   unfold stepReorder
   rw [if_pos hccc]
 
@@ -613,7 +613,7 @@ theorem stepReorder_nonstarter (S : ReorderState) (cp : Nat)
 /-- Aggregate invariant carried by the reorder fold, kept as a single
     `Prop` so the `list_snoc_induction` motive is flat (no `let`). -/
 def ReorderFoldInvariant (S : ReorderState) (xs : List Nat) : Prop :=
-  S.emitted.toList ++ S.currentRun.reverse = xs
+  S.emitted ++ S.currentRun.reverse = xs
     ∧ IsCCCSorted S.currentRun.reverse
     ∧ (∀ x ∈ S.currentRun.reverse, 0 < Lookup.canonicalCombiningClass x)
 
@@ -627,15 +627,12 @@ theorem reorderFoldInvariant_step_starter
     ReorderFoldInvariant (stepReorder S cp) (xs ++ [cp]) := by
   obtain ⟨hP1, hP2, hP3⟩ := hInv
   rw [stepReorder_starter S cp hccc]
-  have h_arr_eq : (S.emitted ++ S.currentRun.reverse.toArray ++ #[cp]).toList
-                = S.emitted.toList ++ S.currentRun.reverse ++ [cp] := by
-    rw [Array.toList_append, Array.toList_append]
   refine ⟨?stateEq, ?runSorted, ?runNonStarters⟩
-  · show (S.emitted ++ flushRun S ++ #[cp]).toList ++ ([] : List Nat).reverse
+  · show (S.emitted ++ flushRun S ++ [cp]) ++ ([] : List Nat).reverse
         = xs ++ [cp]
     rw [List.reverse_nil, List.append_nil]
     rw [flushRun_sorted_noop S hP2]
-    rw [h_arr_eq, hP1]
+    rw [hP1]
   · show IsCCCSorted ([] : List Nat).reverse
     rw [List.reverse_nil]
     trivial
@@ -656,7 +653,7 @@ theorem reorderFoldInvariant_step_nonstarter
   have hcpPos : 0 < Lookup.canonicalCombiningClass cp := Nat.pos_of_ne_zero hccc
   rw [stepReorder_nonstarter S cp hccc]
   refine ⟨?stateEq, ?runSorted, ?runNonStarters⟩
-  · show S.emitted.toList ++ (cp :: S.currentRun).reverse = xs ++ [cp]
+  · show S.emitted ++ (cp :: S.currentRun).reverse = xs ++ [cp]
     rw [List.reverse_cons]
     rw [← List.append_assoc, hP1]
   · show IsCCCSorted (cp :: S.currentRun).reverse
@@ -669,11 +666,11 @@ theorem reorderFoldInvariant_step_nonstarter
       List.exists_append_singleton_of_ne_nil hNonempty
     have hy' : y ∈ front ++ [last] := by rw [← hfl]; exact hy
     have hP2' : IsCCCSorted (front ++ [last]) := by rw [← hfl]; exact hP2
-    have hxs_concat : xs = (S.emitted.toList ++ front) ++ [last] := by
+    have hxs_concat : xs = (S.emitted ++ front) ++ [last] := by
       rw [← hP1, hfl, List.append_assoc]
     have hlast_xs : xs.getLast? = some last := by
       rw [hxs_concat]
-      exact getLast?_append_singleton (S.emitted.toList ++ front) last
+      exact getLast?_append_singleton (S.emitted ++ front) last
     have hlast_le : Lookup.canonicalCombiningClass last
                       ≤ Lookup.canonicalCombiningClass cp :=
       HasSortedRuns_last_le hSR hcpPos last hlast_xs
@@ -697,7 +694,7 @@ theorem reorderFoldInvariant_step_nonstarter
 
 /-- Fold invariant on the reorder state machine. For a list `xs`
     satisfying `HasSortedRuns`, folding `stepReorder` over `xs` from
-    `initState` produces a state `S` such that `S.emitted.toList ++
+    `initState` produces a state `S` such that `S.emitted ++
     S.currentRun.reverse` equals `xs`, the pending run is
     CCC-non-decreasing, and every buffered codepoint is a non-starter.
     The sorted-pending-run part makes `flushRun` on `S` the identity
@@ -739,7 +736,7 @@ theorem reorder_fold_invariant (xs : List Nat) (h : HasSortedRuns xs) :
 -- reorder xs`.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- `reorder` is the identity on any `Array Nat` whose list form already
+/-- `reorder` is the identity on any `List Nat` whose form already
     satisfies `HasSortedRuns`. Every fold step preserves the invariant
     from `reorder_fold_invariant`, and the final flush is a no-op on
     the already-sorted pending run. -/
@@ -748,7 +745,7 @@ theorem reorder_id_on_HasSortedRuns (cps : List Nat)
   have hInv := reorder_fold_invariant cps h
   obtain ⟨hP1, hP2, hP3⟩ := hInv
   show ((cps.foldl stepReorder initState).emitted
-          ++ flushRun (cps.foldl stepReorder initState)).toList = cps
+          ++ flushRun (cps.foldl stepReorder initState)) = cps
   rw [flushRun_sorted_noop (cps.foldl stepReorder initState) hP2]
   simpa using hP1
 
@@ -799,9 +796,9 @@ theorem HasSortedRuns_append_after_starter
     `HasSortedRuns` and either empty or ends with a starter;
     `currentRun` contains only non-starters. -/
 def ReorderOutputInvariant (S : ReorderState) : Prop :=
-  HasSortedRuns S.emitted.toList
-    ∧ (S.emitted.toList = []
-        ∨ ∃ pre last, S.emitted.toList = pre ++ [last]
+  HasSortedRuns S.emitted
+    ∧ (S.emitted = []
+        ∨ ∃ pre last, S.emitted = pre ++ [last]
                        ∧ Lookup.canonicalCombiningClass last = 0)
     ∧ (∀ x ∈ S.currentRun, 0 < Lookup.canonicalCombiningClass x)
 
@@ -836,11 +833,11 @@ theorem stepReorder_output_invariant (S : ReorderState) (cp : Nat)
         IsCCCSorted (sortNonStarterRun S.currentRun.reverse) :=
       sortNonStarterRun_sorted S.currentRun.reverse
     have hFlushListEq :
-        (flushRun S).toList = sortNonStarterRun S.currentRun.reverse := by
+        flushRun S = sortNonStarterRun S.currentRun.reverse := by
       unfold flushRun
       rfl
     have hEmittedPlusFlush :
-        HasSortedRuns (S.emitted.toList ++ (flushRun S).toList) := by
+        HasSortedRuns (S.emitted ++ flushRun S) := by
       rw [hFlushListEq]
       rcases hEnd with hNil | ⟨pre, last, hAEq, hLast⟩
       · rw [hNil]
@@ -853,15 +850,12 @@ theorem stepReorder_output_invariant (S : ReorderState) (cp : Nat)
         rw [← hAEq]; exact hHSR
     refine ⟨?emitHsr, ?emitEnd, ?runNonStarters⟩
     · show HasSortedRuns
-        (S.emitted ++ flushRun S ++ #[cp]).toList
-      rw [Array.toList_append, Array.toList_append]
-      show HasSortedRuns
-        (S.emitted.toList ++ (flushRun S).toList ++ [cp])
+        (S.emitted ++ flushRun S ++ [cp])
       exact HasSortedRuns_append_starter
-        (S.emitted.toList ++ (flushRun S).toList) cp hEmittedPlusFlush hccc
+        (S.emitted ++ flushRun S) cp hEmittedPlusFlush hccc
     · right
-      refine ⟨(S.emitted ++ flushRun S).toList, cp, ?listEq, hccc⟩
-      rw [Array.toList_append, Array.toList_append]
+      refine ⟨S.emitted ++ flushRun S, cp, ?listEq, hccc⟩
+      rfl
     · intro x hx; cases hx
   · rw [stepReorder_nonstarter S cp hccc]
     have hcpPos : 0 < Lookup.canonicalCombiningClass cp := Nat.pos_of_ne_zero hccc
@@ -892,14 +886,13 @@ theorem reorder_output_HasSortedRuns (cps : List Nat) :
   obtain ⟨hHSR, hEnd, hRun⟩ := hInv
   show HasSortedRuns
     ((cps.foldl stepReorder initState).emitted ++
-      flushRun (cps.foldl stepReorder initState)).toList
-  rw [Array.toList_append]
+      flushRun (cps.foldl stepReorder initState))
   have hFlushSortedList :
       IsCCCSorted
         (sortNonStarterRun (cps.foldl stepReorder initState).currentRun.reverse) :=
     sortNonStarterRun_sorted (cps.foldl stepReorder initState).currentRun.reverse
   have hFlushListEq :
-      (flushRun (cps.foldl stepReorder initState)).toList =
+      flushRun (cps.foldl stepReorder initState) =
         sortNonStarterRun (cps.foldl stepReorder initState).currentRun.reverse := by
     unfold flushRun
     rfl
@@ -1036,7 +1029,6 @@ theorem flushRun_preserves_all (s : ReorderState)
     ∀ z ∈ flushRun s, P z = true := by
   unfold flushRun
   intro z hz
-  rw [List.mem_toArray] at hz
   apply sortNonStarterRun_preserves_all P s.currentRun.reverse
   · intro y hy
     rw [List.mem_reverse] at hy
@@ -1094,7 +1086,7 @@ theorem reorder_preserves_all (cps : List Nat)
     exact key cps initState (fun x hx => h x hx)
       (fun x hz => by simp [initState] at hz) (fun x hz => by simp [initState] at hz)
   intro j hj
-  rcases Array.mem_append.mp (by simpa using hj) with hLeft | hRight
+  rcases List.mem_append.mp (by simpa using hj) with hLeft | hRight
   · exact hFold.1 j hLeft
   · exact flushRun_preserves_all P (cps.foldl stepReorder initState) hFold.2 j hRight
 

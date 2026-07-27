@@ -56,7 +56,7 @@ def isCompositionExclusion (cp : Nat) : Bool :=
     NFC algorithm uses this broader test when deciding which canonical
     decompositions may recompose. -/
 def isFullCompositionExclusion (cp : Nat) : Bool :=
-  DerivedNormalizationProps.fullCompositionExclusion.toList.any
+  DerivedNormalizationProps.fullCompositionExclusion.any
     (fun ⟨min, max⟩ => decide (min ≤ cp ∧ cp ≤ max))
 
 -- ─────────────────────────────────────────────────────────────────────────────
