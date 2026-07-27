@@ -44,13 +44,13 @@ theorem step_preserves_depthAccounted (st : WalkState) (cp : Nat) :
 
 /-- Universal depth soundness: for EVERY input, the walk's recorded peak depth is
     at least the final live stack height. -/
-theorem runWalk_depthAccounted (input : Array Nat) :
+theorem runWalk_depthAccounted (input : List Nat) :
     (runWalk input).maxDepth ≥ (runWalk input).embStack + (runWalk input).isoStack := by
-  have key : depthAccounted (finalState (accumulate WalkState.step WalkState.initial) input.toList) :=
+  have key : depthAccounted (finalState (accumulate WalkState.step WalkState.initial) input) :=
     accumulate_invariant WalkState.step WalkState.initial depthAccounted
-      depthAccounted_initial step_preserves_depthAccounted input.toList
+      depthAccounted_initial step_preserves_depthAccounted input
   rw [accumulate_finalState] at key
-  simpa [runWalk, depthAccounted, Array.foldl_toList] using key
+  simpa [runWalk, depthAccounted] using key
 
 /-- Stack-consistency: the live embedding and isolate stacks never exceed their
     total open counts. This is what makes a non-zero final `embStack`/`isoStack`
@@ -72,13 +72,13 @@ theorem step_preserves_stackConsistent (st : WalkState) (cp : Nat) :
   all_goals (unfold stackConsistent; dsimp only; constructor <;> omega)
 
 /-- Stack-consistency for EVERY input. -/
-theorem runWalk_stackConsistent (input : Array Nat) :
+theorem runWalk_stackConsistent (input : List Nat) :
     (runWalk input).embStack ≤ (runWalk input).embOpenCount ∧
     (runWalk input).isoStack ≤ (runWalk input).isoOpenCount := by
-  have key : stackConsistent (finalState (accumulate WalkState.step WalkState.initial) input.toList) :=
+  have key : stackConsistent (finalState (accumulate WalkState.step WalkState.initial) input) :=
     accumulate_invariant WalkState.step WalkState.initial stackConsistent
-      stackConsistent_initial step_preserves_stackConsistent input.toList
+      stackConsistent_initial step_preserves_stackConsistent input
   rw [accumulate_finalState] at key
-  simpa [runWalk, stackConsistent, Array.foldl_toList] using key
+  simpa [runWalk, stackConsistent] using key
 
 end Unicode.Security.Covert.BidiControlBalance
