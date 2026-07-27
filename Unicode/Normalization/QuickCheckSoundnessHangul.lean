@@ -154,16 +154,16 @@ theorem compose_LV_array
   simp only [List.foldl_cons, List.foldl_nil]
   have hStep1 :
       Compose.stepCompose Compose.initialState (Hangul.LBase + li) =
-        { emitted := #[], starter := some (Hangul.LBase + li), buffer := [],
+        { emitted := [], starter := some (Hangul.LBase + li), buffer := [],
           maxCCC := 0 } := by
     rw [Compose.stepCompose.eq_def]
     unfold Compose.initialState
     simp [hLcc]
   have hStep2 :
       Compose.stepCompose
-        { emitted := #[], starter := some (Hangul.LBase + li), buffer := [],
+        { emitted := [], starter := some (Hangul.LBase + li), buffer := [],
           maxCCC := 0 } (Hangul.VBase + vi) =
-        { emitted := #[], starter := some
+        { emitted := [], starter := some
             (Hangul.SBase + (li * Hangul.VCount + vi) * Hangul.TCount),
           buffer := [], maxCCC := 0 } := by
     have hPrimary :
@@ -192,16 +192,16 @@ theorem compose_LVT_array
   simp only [List.foldl_cons, List.foldl_nil]
   have hStep1 :
       Compose.stepCompose Compose.initialState (Hangul.LBase + li) =
-        { emitted := #[], starter := some (Hangul.LBase + li), buffer := [],
+        { emitted := [], starter := some (Hangul.LBase + li), buffer := [],
           maxCCC := 0 } := by
     rw [Compose.stepCompose.eq_def]
     unfold Compose.initialState
     simp [hLcc]
   have hStep2 :
       Compose.stepCompose
-        { emitted := #[], starter := some (Hangul.LBase + li), buffer := [],
+        { emitted := [], starter := some (Hangul.LBase + li), buffer := [],
           maxCCC := 0 } (Hangul.VBase + vi) =
-        { emitted := #[], starter := some
+        { emitted := [], starter := some
             (Hangul.SBase + (li * Hangul.VCount + vi) * Hangul.TCount),
           buffer := [], maxCCC := 0 } := by
     have hPrimary :
@@ -213,10 +213,10 @@ theorem compose_LVT_array
     simp [hVcc, hPrimary]
   have hStep3 :
       Compose.stepCompose
-        { emitted := #[], starter := some
+        { emitted := [], starter := some
             (Hangul.SBase + (li * Hangul.VCount + vi) * Hangul.TCount),
           buffer := [], maxCCC := 0 } (Hangul.TBase + ti) =
-        { emitted := #[], starter := some
+        { emitted := [], starter := some
             (Hangul.SBase + (li * Hangul.VCount + vi) * Hangul.TCount + ti),
           buffer := [], maxCCC := 0 } := by
     have hPrimary :
@@ -270,9 +270,9 @@ theorem hangul_singleton_toNFD_head
   have hDecompSyllable :
       Hangul.decomposeSyllable? cp =
         if ti = 0 then
-          some #[Hangul.LBase + li, Hangul.VBase + vi]
+          some [Hangul.LBase + li, Hangul.VBase + vi]
         else
-          some #[Hangul.LBase + li, Hangul.VBase + vi, Hangul.TBase + ti] := by
+          some [Hangul.LBase + li, Hangul.VBase + vi, Hangul.TBase + ti] := by
     unfold Hangul.decomposeSyllable?
     rw [hHangul]
     simp [sIndex, li, vi, ti]
@@ -281,9 +281,9 @@ theorem hangul_singleton_toNFD_head
   by_cases htiZero : ti = 0
   · have hFCD :
         Decompose.fullCanonicalDecompose cp =
-          #[Hangul.LBase + li, Hangul.VBase + vi] := by
+          [Hangul.LBase + li, Hangul.VBase + vi] := by
       show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth cp =
-        #[Hangul.LBase + li, Hangul.VBase + vi]
+        [Hangul.LBase + li, Hangul.VBase + vi]
       simp [Decompose.maxDepth, Decompose.fullCanonicalDecomposeFuel,
         hDecompSyllable, htiZero]
     have hDS :
@@ -322,9 +322,9 @@ theorem hangul_singleton_toNFD_head
   · have htiPos : 0 < ti := by omega
     have hFCD :
         Decompose.fullCanonicalDecompose cp =
-          #[Hangul.LBase + li, Hangul.VBase + vi, Hangul.TBase + ti] := by
+          [Hangul.LBase + li, Hangul.VBase + vi, Hangul.TBase + ti] := by
       show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth cp =
-        #[Hangul.LBase + li, Hangul.VBase + vi, Hangul.TBase + ti]
+        [Hangul.LBase + li, Hangul.VBase + vi, Hangul.TBase + ti]
       simp [Decompose.maxDepth, Decompose.fullCanonicalDecomposeFuel,
         hDecompSyllable, htiZero]
     have hDS :
@@ -414,18 +414,18 @@ theorem singleton_sound_hangul (cp : Nat)
   have hDecompSyllable :
       Hangul.decomposeSyllable? cp =
         if ti = 0 then
-          some #[Hangul.LBase + li, Hangul.VBase + vi]
+          some [Hangul.LBase + li, Hangul.VBase + vi]
         else
-          some #[Hangul.LBase + li, Hangul.VBase + vi, Hangul.TBase + ti] := by
+          some [Hangul.LBase + li, Hangul.VBase + vi, Hangul.TBase + ti] := by
     unfold Hangul.decomposeSyllable?
     rw [hHangul]
     simp [sIndex, li, vi, ti]
   by_cases htiZero : ti = 0
   · have hFCD :
         Decompose.fullCanonicalDecompose cp =
-          #[Hangul.LBase + li, Hangul.VBase + vi] := by
+          [Hangul.LBase + li, Hangul.VBase + vi] := by
       show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth cp =
-        #[Hangul.LBase + li, Hangul.VBase + vi]
+        [Hangul.LBase + li, Hangul.VBase + vi]
       simp [Decompose.maxDepth, Decompose.fullCanonicalDecomposeFuel,
         hDecompSyllable, htiZero]
     have hDS :
@@ -451,9 +451,9 @@ theorem singleton_sound_hangul (cp : Nat)
   · have htiPos : 0 < ti := by omega
     have hFCD :
         Decompose.fullCanonicalDecompose cp =
-          #[Hangul.LBase + li, Hangul.VBase + vi, Hangul.TBase + ti] := by
+          [Hangul.LBase + li, Hangul.VBase + vi, Hangul.TBase + ti] := by
       show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth cp =
-        #[Hangul.LBase + li, Hangul.VBase + vi, Hangul.TBase + ti]
+        [Hangul.LBase + li, Hangul.VBase + vi, Hangul.TBase + ti]
       simp [Decompose.maxDepth, Decompose.fullCanonicalDecomposeFuel,
         hDecompSyllable, htiZero]
     have hDS :

@@ -56,9 +56,8 @@ theorem qcY_nonstarter_rows_no_decomp :
     UnicodeData.rows.all (fun r =>
       (! (decide (NFC.nfcQCValue r.codepoint = .Y) &&
           decide (r.canonicalCombiningClass > 0))) ||
-      decide (r.canonicalDecomposition = #[])) = true := by
-  rewrite [← Array.all_toList]
-  simp only [UnicodeData.rows, List.toList_toArray]
+      decide (r.canonicalDecomposition = [])) = true := by
+  simp only [UnicodeData.rows]
   decide +kernel
 
 /-- Fact 2 against the linear pairs lookup: the enumeration the kernel
@@ -69,7 +68,7 @@ theorem qcY_starter_2decomp_rows_compose_pairs :
     UnicodeData.rowsList.all (fun r =>
       (! (decide (NFC.nfcQCValue r.codepoint = .Y) &&
           decide (r.canonicalCombiningClass = 0) &&
-          decide (r.canonicalDecomposition.size = 2))) ||
+          decide (r.canonicalDecomposition.length = 2))) ||
       decide (Compose.primaryCompositePairs?
                 (r.canonicalDecomposition[0]!)
                 (r.canonicalDecomposition[1]!) = some r.codepoint)) = true := by
@@ -83,13 +82,12 @@ theorem qcY_starter_2decomp_rows_compose :
     UnicodeData.rows.all (fun r =>
       (! (decide (NFC.nfcQCValue r.codepoint = .Y) &&
           decide (r.canonicalCombiningClass = 0) &&
-          decide (r.canonicalDecomposition.size = 2))) ||
+          decide (r.canonicalDecomposition.length = 2))) ||
       decide (Compose.primaryComposite?
                 (r.canonicalDecomposition[0]!)
                 (r.canonicalDecomposition[1]!) = some r.codepoint)) = true := by
   simp only [Compose.primaryComposite?_eq_pairs]
-  rewrite [← Array.all_toList]
-  simp only [UnicodeData.rows, List.toList_toArray]
+  simp only [UnicodeData.rows]
   exact qcY_starter_2decomp_rows_compose_pairs
 
 /-- Row-level fact 3: every `UnicodeData` row with a two-element
@@ -100,11 +98,10 @@ theorem qcY_starter_2decomp_rows_compose :
     contribute compose paths. -/
 theorem qcY_nonstarter_not_decomp_target :
     UnicodeData.rows.all (fun r =>
-      (! decide (r.canonicalDecomposition.size = 2)) ||
+      (! decide (r.canonicalDecomposition.length = 2)) ||
       decide (Lookup.isFullCompositionExclusion r.codepoint = true) ||
       (! decide (NFC.nfcQCValue (r.canonicalDecomposition[1]!) = .Y))) = true := by
-  rewrite [← Array.all_toList]
-  simp only [UnicodeData.rows, List.toList_toArray]
+  simp only [UnicodeData.rows]
   decide +kernel
 
 theorem lookupRow_codepoint
@@ -136,14 +133,14 @@ theorem no_row_of_lookupRow_none
 
 theorem canonicalDecomposition_empty_of_lookupRow_none
     (cp : Nat) (hLookup : Lookup.lookupRow cp = none) :
-    Lookup.canonicalDecomposition cp = #[] :=
+    Lookup.canonicalDecomposition cp = [] :=
   Lookup.canonicalDecomposition_of_lookupRow_none cp hLookup
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- LIFTED PER-CODEPOINT FACTS
 --
--- Each row-level `Array.all` decomposes into a per-row implication via
--- `Array.all_eq_true`, then lifts to a per-codepoint claim by case-analysis
+-- Each row-level `List.all` decomposes into a per-row implication via
+-- `List.all_eq_true`, then lifts to a per-codepoint claim by case-analysis
 -- on `Lookup.lookupRow`. The actual generated lookup implementation is
 -- connected to the row table by the definitions in `Lookup`.
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -153,7 +150,7 @@ theorem canonicalDecomposition_empty_of_lookupRow_none
 theorem qcY_nonstarter_cp_no_decomp
     (cp : Nat) (hQC : NFC.nfcQCValue cp = .Y)
     (hCcc : Lookup.canonicalCombiningClass cp > 0) :
-    Lookup.canonicalDecomposition cp = #[] := by
+    Lookup.canonicalDecomposition cp = [] := by
   cases hLookup : Lookup.lookupRow cp with
   | none =>
     exact canonicalDecomposition_empty_of_lookupRow_none cp hLookup
@@ -172,10 +169,10 @@ theorem qcY_nonstarter_cp_no_decomp
     have hAll : UnicodeData.rows.all (fun r =>
       (! (decide (NFC.nfcQCValue r.codepoint = .Y) &&
           decide (r.canonicalCombiningClass > 0))) ||
-      decide (r.canonicalDecomposition = #[])) = true :=
+      decide (r.canonicalDecomposition = [])) = true :=
       qcY_nonstarter_rows_no_decomp
-    rw [Array.all_eq_true] at hAll
-    rcases Array.getElem_of_mem hMem with ⟨i, hi, hIEq⟩
+    rw [List.all_eq_true] at hAll
+    rcases List.getElem_of_mem hMem with ⟨i, hi, hIEq⟩
     have hThis := hAll i hi
     rw [hIEq] at hThis
     simp only [Bool.or_eq_true] at hThis
@@ -218,7 +215,7 @@ theorem qcY_starter_2decomp_cp_composes
       rw [hSrcCcc, ← hFields.1]
       exact hCcc
     have hRQC : NFC.nfcQCValue src.codepoint = .Y := by rw [hSrcCpEq]; exact hQC
-    have hSrcSize : src.canonicalDecomposition.size = 2 := by
+    have hSrcSize : src.canonicalDecomposition.length = 2 := by
       rw [hSrcDecomp]
       exact hSize
     have hMem : src ∈ UnicodeData.rows := by
@@ -226,13 +223,13 @@ theorem qcY_starter_2decomp_cp_composes
     have hAll : UnicodeData.rows.all (fun r =>
       (! (decide (NFC.nfcQCValue r.codepoint = .Y) &&
           decide (r.canonicalCombiningClass = 0) &&
-          decide (r.canonicalDecomposition.size = 2))) ||
+          decide (r.canonicalDecomposition.length = 2))) ||
       decide (Compose.primaryComposite?
                 (r.canonicalDecomposition[0]!)
                 (r.canonicalDecomposition[1]!) = some r.codepoint)) = true :=
       qcY_starter_2decomp_rows_compose
-    rw [Array.all_eq_true] at hAll
-    rcases Array.getElem_of_mem hMem with ⟨i, hi, hIEq⟩
+    rw [List.all_eq_true] at hAll
+    rcases List.getElem_of_mem hMem with ⟨i, hi, hIEq⟩
     have hThis := hAll i hi
     rw [hIEq] at hThis
     simp only [Bool.or_eq_true] at hThis
@@ -244,7 +241,7 @@ theorem qcY_starter_2decomp_cp_composes
         decide_eq_true hRQC
       have h2 : decide (src.canonicalCombiningClass = 0) = true :=
         decide_eq_true hRccc
-      have h3 : decide (src.canonicalDecomposition.size = 2) = true :=
+      have h3 : decide (src.canonicalDecomposition.length = 2) = true :=
         decide_eq_true hSrcSize
       rw [h1, h2, h3] at hNot
       exact Bool.noConfusion hNot

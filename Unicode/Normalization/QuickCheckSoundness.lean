@@ -61,7 +61,7 @@ open Unicode.Generated
 theorem qcY_nonstarter_cp_no_decomp
     (cp : Nat) (hQC : NFC.nfcQCValue cp = .Y)
     (hCcc : Lookup.canonicalCombiningClass cp > 0) :
-    Lookup.canonicalDecomposition cp = #[] :=
+    Lookup.canonicalDecomposition cp = [] :=
   QuickCheckFacts.qcY_nonstarter_cp_no_decomp cp hQC hCcc
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -176,7 +176,7 @@ theorem primaryComposite_none_of_qcY_nonstarter
   -- call. Force that reduction with `show` so the subsequent case split
   -- is over an Option at the surface, not inside a match wrapper.
   show UnicodeData.rows.findSome? (fun r =>
-      if r.canonicalDecomposition = #[st, e]
+      if r.canonicalDecomposition = [st, e]
          ∧ ¬ Lookup.isFullCompositionExclusion r.codepoint then
         some r.codepoint
       else none) = none
@@ -184,7 +184,7 @@ theorem primaryComposite_none_of_qcY_nonstarter
   -- immediately), or it returned `some p` — in which case Fact 3's
   -- row-level fact yields a contradiction.
   generalize hFind : UnicodeData.rows.findSome? (fun r =>
-      if r.canonicalDecomposition = #[st, e]
+      if r.canonicalDecomposition = [st, e]
          ∧ ¬ Lookup.isFullCompositionExclusion r.codepoint then
         some r.codepoint
       else none) = result
@@ -192,10 +192,10 @@ theorem primaryComposite_none_of_qcY_nonstarter
   | none => rfl
   | some p =>
     exfalso
-    obtain ⟨row, hRowMem, hFEq⟩ := Array.exists_of_findSome?_eq_some hFind
+    obtain ⟨row, hRowMem, hFEq⟩ := List.exists_of_findSome?_eq_some hFind
     have hAll := qcY_nonstarter_not_decomp_target
-    rw [Array.all_eq_true] at hAll
-    rcases Array.getElem_of_mem hRowMem with ⟨i, hi, hElem⟩
+    rw [List.all_eq_true] at hAll
+    rcases List.getElem_of_mem hRowMem with ⟨i, hi, hElem⟩
     have hRow := hAll i hi
     rw [hElem] at hRow
     split at hFEq
@@ -239,7 +239,7 @@ theorem singleton_sound_nonstarter
   -- Decompose: Fact 1 gives empty canonical decomposition, and cp is
   -- not a Hangul syllable (Hangul syllables have CCC = 0, contradicting
   -- the nonstarter hypothesis).
-  have hDecomp : Lookup.canonicalDecomposition cp = #[] :=
+  have hDecomp : Lookup.canonicalDecomposition cp = [] :=
     qcY_nonstarter_cp_no_decomp cp hQC hCcc
   have hNotHangul : Hangul.isHangulSyllable cp = false := by
     -- Hangul syllables have CCC = 0 (hangulSyllable_ccc_zero_cp), which
@@ -250,13 +250,13 @@ theorem singleton_sound_nonstarter
       exfalso
       have := hangulSyllable_ccc_zero_cp cp h
       omega
-  -- fullCanonicalDecompose cp reduces to #[cp] under empty decomp + not Hangul.
-  have hFCD : Decompose.fullCanonicalDecompose cp = #[cp] := by
+  -- fullCanonicalDecompose cp reduces to [cp] under empty decomp + not Hangul.
+  have hFCD : Decompose.fullCanonicalDecompose cp = [cp] := by
     have hDsyl : Hangul.decomposeSyllable? cp = none := by
       unfold Hangul.decomposeSyllable?
       rw [hNotHangul]
       simp
-    show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth cp = #[cp]
+    show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth cp = [cp]
     unfold Decompose.maxDepth Decompose.fullCanonicalDecomposeFuel
     rw [hDsyl]
     simp [hDecomp]
@@ -275,8 +275,8 @@ theorem singleton_sound_nonstarter
   rw [hDS, hR]
   -- compose [cp] folds stepCompose once from initialState. The CCC>0
   -- hypothesis selects the nonstarter branch of the `starter=none` case:
-  -- emit cp, state becomes { emitted := #[cp], starter := none, ... }.
-  -- flushCompose with starter=none returns emitted ++ buffer.reverse = #[cp].
+  -- emit cp, state becomes { emitted := [cp], starter := none, ... }.
+  -- flushCompose with starter=none returns emitted ++ buffer.reverse = [cp].
   have hCccNe : ¬ Lookup.canonicalCombiningClass cp = 0 := by omega
   show (Compose.flushCompose
           (([cp] : List Nat).foldl Compose.stepCompose Compose.initialState)).toList

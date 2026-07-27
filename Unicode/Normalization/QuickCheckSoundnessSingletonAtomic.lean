@@ -23,15 +23,15 @@ open Unicode.Normalization.NFC (toNFC toNFD)
 theorem singleton_sound_atomic
     (cp : Nat)
     (hCcc : Lookup.canonicalCombiningClass cp = 0)
-    (hDecomp : Lookup.canonicalDecomposition cp = #[])
+    (hDecomp : Lookup.canonicalDecomposition cp = [])
     (hNotHangul : Hangul.isHangulSyllable cp = false) :
     toNFC [cp] = [cp] := by
   have hDsyl : Hangul.decomposeSyllable? cp = none := by
     unfold Hangul.decomposeSyllable?
     rw [hNotHangul]
     simp
-  have hFCD : Decompose.fullCanonicalDecompose cp = #[cp] := by
-    show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth cp = #[cp]
+  have hFCD : Decompose.fullCanonicalDecompose cp = [cp] := by
+    show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth cp = [cp]
     unfold Decompose.maxDepth Decompose.fullCanonicalDecomposeFuel
     rw [hDsyl]
     simp [hDecomp]

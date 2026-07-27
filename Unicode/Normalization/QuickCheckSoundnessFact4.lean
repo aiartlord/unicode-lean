@@ -146,12 +146,12 @@ theorem primaryComposite_none_of_qcY (st cp : Nat) (hQC : nfcQCValue cp = .Y) :
   unfold Compose.primaryComposite?
   rw [hangul_composePair_none_of_qcY st cp hQC]
   show UnicodeData.rows.findSome? (fun r =>
-      if r.canonicalDecomposition = #[st, cp]
+      if r.canonicalDecomposition = [st, cp]
          ∧ ¬ Lookup.isFullCompositionExclusion r.codepoint then
         some r.codepoint
       else none) = none
   generalize hFind : UnicodeData.rows.findSome? (fun r =>
-      if r.canonicalDecomposition = #[st, cp]
+      if r.canonicalDecomposition = [st, cp]
          ∧ ¬ Lookup.isFullCompositionExclusion r.codepoint then
         some r.codepoint
       else none) = result
@@ -159,10 +159,10 @@ theorem primaryComposite_none_of_qcY (st cp : Nat) (hQC : nfcQCValue cp = .Y) :
   | none => rfl
   | some p =>
     exfalso
-    obtain ⟨row, hRowMem, hFEq⟩ := Array.exists_of_findSome?_eq_some hFind
+    obtain ⟨row, hRowMem, hFEq⟩ := List.exists_of_findSome?_eq_some hFind
     have hAll := QuickCheckFacts.qcY_nonstarter_not_decomp_target
-    rw [Array.all_eq_true] at hAll
-    rcases Array.getElem_of_mem hRowMem with ⟨i, hi, hElem⟩
+    rw [List.all_eq_true] at hAll
+    rcases List.getElem_of_mem hRowMem with ⟨i, hi, hElem⟩
     have hRow := hAll i hi
     rw [hElem] at hRow
     split at hFEq
