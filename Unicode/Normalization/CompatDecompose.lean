@@ -522,8 +522,8 @@ theorem compat_decompose_GAG :
 theorem compat_decompose_sequence_mixed :
     compatDecomposeSequence [0x00A0, 0x00B2, 0x0041]
       = [0x0020, 0x0032, 0x0041] := by
-  simp only [compatDecomposeSequence, fullCompatDecompose, maxDepth]
-  simp [fcd_nbsp 30, fcd_super_2 30, fcd_latin_A 31]
+  simp [compatDecomposeSequence, fullCompatDecompose, maxDepth,
+        fcd_nbsp 30, fcd_super_2 30, fcd_latin_A 31]
 
 /-- Decomposition of an empty sequence is empty. -/
 theorem compat_decompose_empty :
