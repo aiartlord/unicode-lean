@@ -93,13 +93,19 @@ theorem unwrap_valid (v : ValidatedUtf8) :
 theorem empty_validates : (validateUtf8 ([] : List UInt8)).isSome = true := by
   decide
 
-theorem hello_validates : (validateUtf8 "hello".toUTF8.toList).isSome = true := by
+/-- The UTF-8 bytes of "hello" validate. -/
+theorem hello_validates :
+    (validateUtf8 ([0x68, 0x65, 0x6C, 0x6C, 0x6F] : List UInt8)).isSome = true := by
   decide
 
-theorem accented_validates : (validateUtf8 "héllo".toUTF8.toList).isSome = true := by
+/-- The UTF-8 bytes of "héllo" (é = U+00E9 → 0xC3 0xA9) validate. -/
+theorem accented_validates :
+    (validateUtf8 ([0x68, 0xC3, 0xA9, 0x6C, 0x6C, 0x6F] : List UInt8)).isSome = true := by
   decide
 
-theorem cjk_validates : (validateUtf8 "日本".toUTF8.toList).isSome = true := by
+/-- The UTF-8 bytes of "日本" (日 = 0xE6 0x97 0xA5, 本 = 0xE6 0x9C 0xAC) validate. -/
+theorem cjk_validates :
+    (validateUtf8 ([0xE6, 0x97, 0xA5, 0xE6, 0x9C, 0xAC] : List UInt8)).isSome = true := by
   decide
 
 theorem bare_continuation_rejected :
