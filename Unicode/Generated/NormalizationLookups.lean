@@ -442,10 +442,8 @@ theorem canonicalCombiningClass_hangul_syllable
 -- width-compatibility source — so neither normalization output ever requires a
 -- further width pass.
 --
--- Both close by kernel reduction over the `List` view of `UnicodeData.rows`:
--- `Array` traversal reduces in O(n²) (the rows are a push-built `++` chain), so
--- we drop to `List` via `Array.all_toList` plus the symbolic `toList` rewrites,
--- where reduction is linear.
+-- Both close by kernel reduction over `UnicodeData.rows` (a `List` alias of
+-- `rowsList`), where `List.all` reduction is linear.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Every element of every row's canonical decomposition is not a
@@ -454,8 +452,7 @@ theorem rows_decompositionTargets_nonSource :
     UnicodeData.rows.all (fun r =>
       r.canonicalDecomposition.all (fun t =>
         ! WidthCompatMappings.isSource t)) = true := by
-  rw [← Array.all_toList]
-  simp only [UnicodeData.rows, List.toList_toArray]
+  simp only [UnicodeData.rows]
   decide +kernel
 
 /-- Every row that carries a canonical decomposition is itself not a
@@ -465,8 +462,7 @@ theorem rows_decomposed_nonSource :
     UnicodeData.rows.all (fun r =>
       decide (r.canonicalDecomposition.length = 0) ||
       ! WidthCompatMappings.isSource r.codepoint) = true := by
-  rw [← Array.all_toList]
-  simp only [UnicodeData.rows, List.toList_toArray]
+  simp only [UnicodeData.rows]
   decide +kernel
 
 /-- A canonical-decomposition element is never a width-compatibility source.
@@ -493,8 +489,8 @@ theorem canonicalDecomposition_target_non_source
       have hmem : src ∈ UnicodeData.rows := by
         simpa [UnicodeData.rows] using hSrcMem
       have hAll := rows_decompositionTargets_nonSource
-      rw [Array.all_eq_true] at hAll
-      rcases Array.getElem_of_mem hmem with ⟨i, hi, hiEq⟩
+      rw [List.all_eq_true] at hAll
+      rcases List.getElem_of_mem hmem with ⟨i, hi, hiEq⟩
       have hRow := hAll i hi
       rw [hiEq] at hRow
       rw [List.all_eq_true] at hRow
@@ -515,14 +511,14 @@ theorem primaryComposite_target_non_source
            else
              none) = some p) :
     WidthCompatMappings.isSource p = false := by
-  obtain ⟨row, hmem, hf⟩ := Array.exists_of_findSome?_eq_some h
+  obtain ⟨row, hmem, hf⟩ := List.exists_of_findSome?_eq_some h
   split at hf
   · next hcond =>
       simp only [Option.some.injEq] at hf
       have hdecomp : row.canonicalDecomposition = [d, c] := hcond.1
       have hAll := rows_decomposed_nonSource
-      rw [Array.all_eq_true] at hAll
-      rcases Array.getElem_of_mem hmem with ⟨i, hi, hiEq⟩
+      rw [List.all_eq_true] at hAll
+      rcases List.getElem_of_mem hmem with ⟨i, hi, hiEq⟩
       have hRow := hAll i hi
       rw [hiEq, hdecomp, hf] at hRow
       simpa using hRow
@@ -551,8 +547,8 @@ def nlDec (s : String) : Nat := (nlTrim s).foldl (fun acc c => acc * 10 + (c.toN
 
 #eval show IO Unit from do
   for line in unicodeDataRawNL.splitOn "\n" do
-    let f := (line.splitOn ";").toArray
-    if f.size < 4 then continue
+    let f := line.splitOn ";"
+    if f.length < 4 then continue
     let cp := nlHex (nlTrim f[0]!)
     let ccc := nlDec (nlTrim f[3]!)
     unless canonicalCombiningClass cp == ccc do

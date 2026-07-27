@@ -25,25 +25,25 @@ theorem foldingsList_targets_non_source :
   decide +kernel
 
 /-- Any table entry's targets lie outside the source column, phrased
-    for the `Array` view of the table. -/
-theorem target_non_source_of_entry (source cp : Nat) (target : Array Nat)
+    for the runtime view of the table. -/
+theorem target_non_source_of_entry (source cp : Nat) (target : List Nat)
     (hEntry : (source, target) ∈ foldings) (hMem : cp ∈ target) :
     isSource cp = false := by
   have hList : (source, target) ∈ foldingsList := by
     unfold foldings at hEntry
-    exact List.mem_toArray.mp hEntry
+    exact hEntry
   have hAll := foldingsList_targets_non_source
   rw [List.all_eq_true] at hAll
   have hEntryAll := hAll (source, target) hList
-  rw [Array.all_eq_true] at hEntryAll
-  rcases Array.getElem_of_mem hMem with ⟨i, hi, hIEq⟩
+  rw [List.all_eq_true] at hEntryAll
+  rcases List.getElem_of_mem hMem with ⟨i, hi, hIEq⟩
   have hBool := hEntryAll i hi
   rw [hIEq] at hBool
   simpa using hBool
 
 /-- An unguarded lookup hit yields only targets outside the source
     column: the hit's `find?` witness is a table entry. -/
-theorem lookupRaw_target_non_source (source cp : Nat) (target : Array Nat)
+theorem lookupRaw_target_non_source (source cp : Nat) (target : List Nat)
     (hLookup : lookupRaw? source = some target) (hMem : cp ∈ target) :
     isSource cp = false := by
   unfold lookupRaw? at hLookup
@@ -63,14 +63,14 @@ theorem lookupRaw_target_non_source (source cp : Nat) (target : Array Nat)
       have hAll := foldingsList_targets_non_source
       rw [List.all_eq_true] at hAll
       have hEntryAll := hAll (source, target) hEntryPair
-      rw [Array.all_eq_true] at hEntryAll
-      rcases Array.getElem_of_mem hMem with ⟨i, hi, hIEq⟩
+      rw [List.all_eq_true] at hEntryAll
+      rcases List.getElem_of_mem hMem with ⟨i, hi, hIEq⟩
       have hBool := hEntryAll i hi
       rw [hIEq] at hBool
       simpa using hBool
 
 /-- A raw lookup hit is exactly a member of the generated folding list. -/
-theorem lookupRaw_mem_foldingsList (source : Nat) (target : Array Nat)
+theorem lookupRaw_mem_foldingsList (source : Nat) (target : List Nat)
     (hLookup : lookupRaw? source = some target) :
     (source, target) ∈ foldingsList := by
   unfold lookupRaw? at hLookup
@@ -88,7 +88,7 @@ theorem lookupRaw_mem_foldingsList (source : Nat) (target : Array Nat)
       exact hMemList
 
 /-- A guarded lookup hit yields only targets outside the source column. -/
-theorem lookup_target_non_source (source cp : Nat) (target : Array Nat)
+theorem lookup_target_non_source (source cp : Nat) (target : List Nat)
     (hLookup : lookup? source = some target) (hMem : cp ∈ target) :
     isSource cp = false := by
   unfold lookup? at hLookup
@@ -108,13 +108,13 @@ theorem lookup_target_non_source (source cp : Nat) (target : Array Nat)
 -- Anchor lookups at both ends of the table plus known non-sources.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-theorem lookup_u0041 : lookup? 0x0041 = some #[0x0061] := by decide
-theorem lookup_u0042 : lookup? 0x0042 = some #[0x0062] := by decide
-theorem lookup_u0043 : lookup? 0x0043 = some #[0x0063] := by decide
-theorem lookup_u005A : lookup? 0x005A = some #[0x007A] := by decide
-theorem lookup_u00DF : lookup? 0x00DF = some #[0x0073, 0x0073] := by decide
-theorem lookup_u0049 : lookup? 0x0049 = some #[0x0069] := by decide
-theorem lookup_u0130 : lookup? 0x0130 = some #[0x0069, 0x0307] := by decide
+theorem lookup_u0041 : lookup? 0x0041 = some [0x0061] := by decide
+theorem lookup_u0042 : lookup? 0x0042 = some [0x0062] := by decide
+theorem lookup_u0043 : lookup? 0x0043 = some [0x0063] := by decide
+theorem lookup_u005A : lookup? 0x005A = some [0x007A] := by decide
+theorem lookup_u00DF : lookup? 0x00DF = some [0x0073, 0x0073] := by decide
+theorem lookup_u0049 : lookup? 0x0049 = some [0x0069] := by decide
+theorem lookup_u0130 : lookup? 0x0130 = some [0x0069, 0x0307] := by decide
 theorem lookup_u0061 : lookup? 0x0061 = none := by decide
 theorem lookup_u0062 : lookup? 0x0062 = none := by decide
 theorem lookup_u0063 : lookup? 0x0063 = none := by decide
