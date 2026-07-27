@@ -50,7 +50,7 @@ inductive Status where
   deriving DecidableEq, Repr, Inhabited
 
 structure Row where
-  cps    : Array Nat
+  cps    : List Nat
   status : Status
   deriving Inhabited, Repr
 
@@ -67,10 +67,10 @@ def hexDigitVal (c : Char) : Nat :=
 def parseHex (s : String) : Nat :=
   s.foldl (fun acc c => acc * 16 + hexDigitVal c) 0
 
-def parseCodepointList (s : String) : Array Nat :=
+def parseCodepointList (s : String) : List Nat :=
   ((s.splitOn " ").filterMap (fun tok =>
     let t := trimS tok
-    if t.isEmpty then none else some (parseHex t))).toArray
+    if t.isEmpty then none else some (parseHex t)))
 
 def parseStatus? : String → Option Status
   | "component"           => some .component
@@ -97,15 +97,15 @@ def parseRow (rawLine : String) : Option Row :=
 def emojiTestRaw : String := include_str "../Ucd/emoji-test.txt"
 
 /-- All parsed test rows, in source (CLDR) order. -/
-def rows : Array Row :=
-  ((emojiTestRaw.splitOn "\n").filterMap parseRow).toArray
+def rows : List Row :=
+  ((emojiTestRaw.splitOn "\n").filterMap parseRow)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 ROW VERIFICATION
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Total number of parsed rows. -/
-def rowCount : Nat := rows.size
+def rowCount : Nat := rows.length
 
 /-- Number of rows with each status. -/
 def fullyQualifiedRowCount : Nat :=

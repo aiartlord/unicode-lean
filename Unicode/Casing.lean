@@ -47,7 +47,7 @@ inductive Locale where
     chosen `Locale`. A row with no locale conditions matches every
     locale; a row with a locale condition matches only that
     locale. -/
-def localeMatches (loc : Locale) (conds : Array Condition) : Bool :=
+def localeMatches (loc : Locale) (conds : List Condition) : Bool :=
   let hasLocaleCondition := conds.any (fun c =>
     match c with
     | .LangTr | .LangAz | .LangLt => true
@@ -192,7 +192,7 @@ def finalSigma (revPrefix suffix : List Nat) : Bool :=
     `revPrefix` is the nearest-first preceding codepoints; `suffix`
     the strictly-following ones. -/
 def conditionsHold (loc : Locale) (revPrefix suffix : List Nat)
-    (conds : Array Condition) : Bool :=
+    (conds : List Condition) : Bool :=
   localeMatches loc conds
     && conds.all (fun c =>
       match c with
@@ -230,24 +230,24 @@ def findSpecialRow (loc : Locale) (revPrefix suffix : List Nat)
 /-- Lowercase a single codepoint, falling back to simple lowercase
     when no SpecialCasing row applies. -/
 def lowerCodepoint (loc : Locale) (revPrefix suffix : List Nat)
-    (cp : Nat) : Array Nat :=
+    (cp : Nat) : List Nat :=
   match findSpecialRow loc revPrefix suffix cp with
   | some r => r.lower
-  | none   => #[Unicode.Generated.SimpleCaseMappings.simpleLowercase cp]
+  | none   => [Unicode.Generated.SimpleCaseMappings.simpleLowercase cp]
 
 /-- Uppercase a single codepoint. -/
 def upperCodepoint (loc : Locale) (revPrefix suffix : List Nat)
-    (cp : Nat) : Array Nat :=
+    (cp : Nat) : List Nat :=
   match findSpecialRow loc revPrefix suffix cp with
   | some r => r.upper
-  | none   => #[Unicode.Generated.SimpleCaseMappings.simpleUppercase cp]
+  | none   => [Unicode.Generated.SimpleCaseMappings.simpleUppercase cp]
 
 /-- Titlecase a single codepoint. -/
 def titleCodepoint (loc : Locale) (revPrefix suffix : List Nat)
-    (cp : Nat) : Array Nat :=
+    (cp : Nat) : List Nat :=
   match findSpecialRow loc revPrefix suffix cp with
   | some r => r.title
-  | none   => #[Unicode.Generated.SimpleCaseMappings.simpleTitlecase cp]
+  | none   => [Unicode.Generated.SimpleCaseMappings.simpleTitlecase cp]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 STRING-LEVEL OPERATIONS
@@ -260,7 +260,7 @@ def titleCodepoint (loc : Locale) (revPrefix suffix : List Nat)
 def toLowerGo (loc : Locale) (revPrefix : List Nat) : List Nat → List Nat
   | [] => []
   | cp :: suffix =>
-    (lowerCodepoint loc revPrefix suffix cp).toList
+    lowerCodepoint loc revPrefix suffix cp
       ++ toLowerGo loc (cp :: revPrefix) suffix
 
 /-- Lowercase a codepoint sequence under the given locale. -/
@@ -271,7 +271,7 @@ def toLower (loc : Locale) (cps : List Nat) : List Nat :=
 def toUpperGo (loc : Locale) (revPrefix : List Nat) : List Nat → List Nat
   | [] => []
   | cp :: suffix =>
-    (upperCodepoint loc revPrefix suffix cp).toList
+    upperCodepoint loc revPrefix suffix cp
       ++ toUpperGo loc (cp :: revPrefix) suffix
 
 /-- Uppercase a codepoint sequence under the given locale. -/
