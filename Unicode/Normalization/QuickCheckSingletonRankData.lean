@@ -990,25 +990,25 @@ def rowFieldsMatch (entry : SingletonRankRow) : Bool :=
   UnicodeData.rowsList.any (fun row =>
     decide (row.codepoint = entry.codepoint ∧
       row.canonicalCombiningClass = 0 ∧
-      row.canonicalDecomposition = #[entry.left, entry.right]))
+      row.canonicalDecomposition = [entry.left, entry.right]))
 
 def entryCommonValid (entry : SingletonRankRow) : Bool :=
   rowFieldsMatch entry &&
   decide (nfcQCValue entry.codepoint = .Y) &&
   decide (Hangul.isHangulSyllable entry.codepoint = false) &&
   decide (Lookup.canonicalCombiningClass entry.codepoint = 0) &&
-  decide (Lookup.canonicalDecomposition entry.codepoint = #[entry.left, entry.right]) &&
+  decide (Lookup.canonicalDecomposition entry.codepoint = [entry.left, entry.right]) &&
   decide (Lookup.canonicalCombiningClass entry.left = 0) &&
   decide (nfcQCValue entry.left = .Y) &&
   decide (Hangul.isHangulSyllable entry.left = false) &&
-  decide (Lookup.canonicalDecomposition entry.right = #[]) &&
+  decide (Lookup.canonicalDecomposition entry.right = []) &&
   decide (Hangul.isHangulSyllable entry.right = false) &&
   decide (Hangul.composePair? entry.left entry.right = none)
 
 def entryRankValid (entry : SingletonRankRow) : Bool :=
   entryCommonValid entry &&
   if entry.rank = 1 then
-    decide (Lookup.canonicalDecomposition entry.left = #[])
+    decide (Lookup.canonicalDecomposition entry.left = [])
   else if entry.rank = 2 then
     rowsRank1.any (fun parent => decide (parent.codepoint = entry.left))
   else if entry.rank = 3 then

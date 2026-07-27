@@ -36,23 +36,23 @@ theorem rows_omit_ligature_fi :
 
 /-- U+FB01 has no canonical decomposition (only a compatibility one). -/
 theorem canonicalDecomposition_ligature_fi :
-    Lookup.canonicalDecomposition 0xFB01 = #[] :=
+    Lookup.canonicalDecomposition 0xFB01 = [] :=
   Lookup.canonicalDecomposition_of_lookupRow_none 0xFB01
     (Lookup.lookupRow_none_of_all_ne 0xFB01 rows_omit_ligature_fi)
 
 /-- Two fuel steps on LATIN SMALL LIGATURE FI: the compatibility branch expands
     to `f` then `i`, both terminal. -/
 theorem fcd_ligature_fi (fuel : Nat) :
-    CompatDecompose.fullCompatDecomposeFuel (fuel + 2) 0xFB01 = #[0x0066, 0x0069] := by
+    CompatDecompose.fullCompatDecomposeFuel (fuel + 2) 0xFB01 = [0x0066, 0x0069] := by
   rw [CompatDecompose.fullCompatDecomposeFuel.eq_def]
   simp [show Hangul.decomposeSyllable? 0xFB01 = none from by decide,
         canonicalDecomposition_ligature_fi,
-        show CompatDecompose.compatDecomposition 0xFB01 = #[0x0066, 0x0069] from by decide,
+        show CompatDecompose.compatDecomposition 0xFB01 = [0x0066, 0x0069] from by decide,
         CompatDecompose.fcd_latin_f, CompatDecompose.fcd_latin_i]
 
 /-- U+FB01 fully compat-decomposes to lowercase f + i. -/
 theorem compat_decompose_ligature_fi :
-    CompatDecompose.fullCompatDecompose 0xFB01 = #[0x0066, 0x0069] :=
+    CompatDecompose.fullCompatDecompose 0xFB01 = [0x0066, 0x0069] :=
   fcd_ligature_fi 30
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -75,11 +75,11 @@ theorem compose_fi : Compose.compose [0x0066, 0x0069] = [0x0066, 0x0069] := by
   rewrite [Compose.compose.eq_def,
            List.foldl_cons, List.foldl_cons, List.foldl_nil]
   rewrite [show Compose.stepCompose Compose.initialState 0x0066
-             = { emitted := #[], starter := some 0x0066, buffer := [], maxCCC := 0 } by
+             = { emitted := [], starter := some 0x0066, buffer := [], maxCCC := 0 } by
            rw [Compose.stepCompose.eq_def]; simp [Compose.initialState, NFKD.ccc_latin_f]]
   rewrite [show Compose.stepCompose
-             { emitted := #[], starter := some 0x0066, buffer := [], maxCCC := 0 } 0x0069
-             = { emitted := #[0x0066], starter := some 0x0069, buffer := [],
+             { emitted := [], starter := some 0x0066, buffer := [], maxCCC := 0 } 0x0069
+             = { emitted := [0x0066], starter := some 0x0069, buffer := [],
                  maxCCC := 0 } by
            rw [Compose.stepCompose.eq_def]
            simp [Reorder.ccc_latin_i, primaryComposite_fi_none]]
@@ -131,34 +131,34 @@ theorem rows_omit_jongseong_nieun :
 
 /-- U+1112 has no canonical decomposition. -/
 theorem canonicalDecomposition_choseong_hieuh :
-    Lookup.canonicalDecomposition 0x1112 = #[] :=
+    Lookup.canonicalDecomposition 0x1112 = [] :=
   Lookup.canonicalDecomposition_of_lookupRow_none 0x1112
     (Lookup.lookupRow_none_of_all_ne 0x1112 rows_omit_choseong_hieuh)
 
 /-- U+11AB has no canonical decomposition. -/
 theorem canonicalDecomposition_jongseong_nieun :
-    Lookup.canonicalDecomposition 0x11AB = #[] :=
+    Lookup.canonicalDecomposition 0x11AB = [] :=
   Lookup.canonicalDecomposition_of_lookupRow_none 0x11AB
     (Lookup.lookupRow_none_of_all_ne 0x11AB rows_omit_jongseong_nieun)
 
 /-- U+1112 fully compat-decomposes to itself (a leading jamo is a starter with
     no decomposition). -/
 theorem compat_decompose_choseong_hieuh :
-    CompatDecompose.fullCompatDecompose 0x1112 = #[0x1112] := by
+    CompatDecompose.fullCompatDecompose 0x1112 = [0x1112] := by
   unfold CompatDecompose.fullCompatDecompose CompatDecompose.maxDepth
   rw [CompatDecompose.fullCompatDecomposeFuel.eq_def]
   simp [show Hangul.decomposeSyllable? 0x1112 = none from by decide,
         canonicalDecomposition_choseong_hieuh,
-        show CompatDecompose.compatDecomposition 0x1112 = #[] from by decide]
+        show CompatDecompose.compatDecomposition 0x1112 = [] from by decide]
 
 /-- U+11AB fully compat-decomposes to itself. -/
 theorem compat_decompose_jongseong_nieun :
-    CompatDecompose.fullCompatDecompose 0x11AB = #[0x11AB] := by
+    CompatDecompose.fullCompatDecompose 0x11AB = [0x11AB] := by
   unfold CompatDecompose.fullCompatDecompose CompatDecompose.maxDepth
   rw [CompatDecompose.fullCompatDecomposeFuel.eq_def]
   simp [show Hangul.decomposeSyllable? 0x11AB = none from by decide,
         canonicalDecomposition_jongseong_nieun,
-        show CompatDecompose.compatDecomposition 0x11AB = #[] from by decide]
+        show CompatDecompose.compatDecomposition 0x11AB = [] from by decide]
 
 /-- CCC of the three jamos is zero (each is a starter). -/
 theorem ccc_choseong_hieuh : Lookup.canonicalCombiningClass 0x1112 = 0 :=
@@ -214,17 +214,17 @@ theorem compose_jamo_han :
   rewrite [Compose.compose.eq_def,
            List.foldl_cons, List.foldl_cons, List.foldl_cons, List.foldl_nil]
   rewrite [show Compose.stepCompose Compose.initialState 0x1112
-             = { emitted := #[], starter := some 0x1112, buffer := [], maxCCC := 0 } by
+             = { emitted := [], starter := some 0x1112, buffer := [], maxCCC := 0 } by
            rw [Compose.stepCompose.eq_def]
            simp [Compose.initialState, ccc_choseong_hieuh]]
   rewrite [show Compose.stepCompose
-             { emitted := #[], starter := some 0x1112, buffer := [], maxCCC := 0 } 0x1161
-             = { emitted := #[], starter := some 0xD558, buffer := [], maxCCC := 0 } by
+             { emitted := [], starter := some 0x1112, buffer := [], maxCCC := 0 } 0x1161
+             = { emitted := [], starter := some 0xD558, buffer := [], maxCCC := 0 } by
            rw [Compose.stepCompose.eq_def]
            simp [NFC.ccc_jungseong_a, primaryComposite_hieuh_a]]
   rewrite [show Compose.stepCompose
-             { emitted := #[], starter := some 0xD558, buffer := [], maxCCC := 0 } 0x11AB
-             = { emitted := #[], starter := some 0xD55C, buffer := [], maxCCC := 0 } by
+             { emitted := [], starter := some 0xD558, buffer := [], maxCCC := 0 } 0x11AB
+             = { emitted := [], starter := some 0xD55C, buffer := [], maxCCC := 0 } by
            rw [Compose.stepCompose.eq_def]
            simp [ccc_jongseong_nieun, primaryComposite_ha_nieun]]
   rfl

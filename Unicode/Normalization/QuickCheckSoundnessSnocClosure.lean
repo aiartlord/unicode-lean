@@ -99,14 +99,14 @@ theorem qcY_starter_toNFD_head
       · exact absurd hH hHangul
     cases hLookup : Lookup.lookupRow cp with
     | none =>
-      have hDecomp : Lookup.canonicalDecomposition cp = #[] := by
+      have hDecomp : Lookup.canonicalDecomposition cp = [] := by
         unfold Lookup.canonicalDecomposition; rw [hLookup]
       have hDsyl : Hangul.decomposeSyllable? cp = none := by
         unfold Hangul.decomposeSyllable?
         rw [hNotHangul]
         simp
-      have hFCD : Decompose.fullCanonicalDecompose cp = #[cp] := by
-        show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth cp = #[cp]
+      have hFCD : Decompose.fullCanonicalDecompose cp = [cp] := by
+        show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth cp = [cp]
         unfold Decompose.maxDepth Decompose.fullCanonicalDecomposeFuel
         rw [hDsyl]
         simp [hDecomp]
@@ -141,13 +141,13 @@ theorem qcY_starter_toNFD_head
       obtain ⟨src, hSrcMem, hSrcCp, _hSrcCcc, hSrcDecomp⟩ :=
         Unicode.Generated.UnicodeDataIndex.lookupRow?_supported_rowsList hLookup
       have hSrcCpEq : src.codepoint = cp := hSrcCp.trans hRowCp
-      by_cases hEmpty : Lookup.canonicalDecomposition cp = #[]
+      by_cases hEmpty : Lookup.canonicalDecomposition cp = []
       · have hDsyl : Hangul.decomposeSyllable? cp = none := by
           unfold Hangul.decomposeSyllable?
           rw [hNotHangul]
           simp
-        have hFCD : Decompose.fullCanonicalDecompose cp = #[cp] := by
-          show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth cp = #[cp]
+        have hFCD : Decompose.fullCanonicalDecompose cp = [cp] := by
+          show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth cp = [cp]
           unfold Decompose.maxDepth Decompose.fullCanonicalDecomposeFuel
           rw [hDsyl]
           simp [hEmpty]
@@ -195,12 +195,12 @@ theorem qcY_starter_toNFD_head
           rw [hLookup]
           exact hSrcDecomp
         have hSizeDecide :
-            decide (src.canonicalDecomposition.size = 0) = false := by
+            decide (src.canonicalDecomposition.length = 0) = false := by
           rw [hRowDecomp]
-          have hSizeNonzero : (Lookup.canonicalDecomposition cp).size ≠ 0 := by
+          have hSizeNonzero : (Lookup.canonicalDecomposition cp).length ≠ 0 := by
             intro hZero
             apply hEmpty
-            exact Array.eq_empty_of_size_eq_zero hZero
+            exact List.eq_nil_of_length_eq_zero hZero
           simp [hSizeNonzero]
         have hAny :
             QuickCheckSingletonRankData.rows.any
@@ -325,7 +325,7 @@ theorem nfc_snoc_qcY_nonstarter_structural
     (xs : List Nat) (cp : Nat)
     (hQC : nfcQCValue cp = .Y)
     (hCp_ccc_pos : 0 < Lookup.canonicalCombiningClass cp)
-    (hDecomp : Lookup.canonicalDecomposition cp = #[])
+    (hDecomp : Lookup.canonicalDecomposition cp = [])
     (hNotHangul : Hangul.isHangulSyllable cp = false)
     (hPrefix : toNFC xs = xs)
     (hQCSnoc : NFC.isNFCQuickCheck (xs ++ [cp]) = true) :
@@ -344,7 +344,7 @@ theorem nfc_snoc_qcY_nonstarter_structural
     -- derive chain validity for the high part, and apply the slide.
     have hCpCcc : Lookup.canonicalCombiningClass cp ≠ 0 :=
       Nat.pos_iff_ne_zero.mp hCp_ccc_pos
-    have hFCD : Decompose.fullCanonicalDecompose cp = #[cp] :=
+    have hFCD : Decompose.fullCanonicalDecompose cp = [cp] :=
       decomp_atomic_id cp hDecomp hNotHangul
     have hZ_HSR : Reorder.HasSortedRuns (toNFD xs) :=
       (NFD.toNFD_output_HSR_and_FullyDecomposed xs).1
@@ -544,7 +544,7 @@ theorem nfc_snoc_qcY
   · exact nfc_snoc_qcY_starter xs cp hQC hCcc hPrefix
   · have hCccPos : 0 < Lookup.canonicalCombiningClass cp :=
       Nat.pos_of_ne_zero hCcc
-    have hDecomp : Lookup.canonicalDecomposition cp = #[] :=
+    have hDecomp : Lookup.canonicalDecomposition cp = [] :=
       qcY_nonstarter_cp_no_decomp cp hQC hCccPos
     have hNotHangul : Hangul.isHangulSyllable cp = false := by
       cases hH : Hangul.isHangulSyllable cp with

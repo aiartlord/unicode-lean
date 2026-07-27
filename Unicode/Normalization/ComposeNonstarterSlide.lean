@@ -14,7 +14,7 @@
       strict-max branch's `none` case for QC=Y).
 
   These two facts compose at the snoc boundary to yield the slide
-  `compose (X ++ #[cp] ++ B.toArray) = compose (X ++ B.toArray ++ #[cp])`,
+  `compose (X ++ [cp] ++ B.toArray) = compose (X ++ B.toArray ++ [cp])`,
   which is the substantive content for the non-starter snoc case of
   the master soundness theorem.
 -/
@@ -343,7 +343,7 @@ theorem slide_state_eq
     past a primary-firing chain `B` without changing `compose`'s
     output:
 
-        compose (X ++ #[cp] ++ B.toArray) = compose (X ++ B.toArray ++ #[cp]).
+        compose (X ++ [cp] ++ B.toArray) = compose (X ++ B.toArray ++ [cp]).
 
     Lifts `slide_state_eq` through `flushCompose`. The state-level
     equality of folds carries to the flushed outputs because

@@ -11,7 +11,7 @@
       theorem in `QuickCheckSoundnessSingletonTable` keeps the public
       table-shaped contract, while its proof routes relevant rows through the
       generated singleton-rank certificate instead of reducing
-      `toNFC #[row.codepoint]` over the table.
+      `toNFC [row.codepoint]` over the table.
     * §2 — Singleton dispatcher (`singleton_sound`). The four cases dispatch to:
       nonstarter support in `QuickCheckSoundness`, structural Hangul support in
       `QuickCheckSoundnessHangul`, atomic starter support in
@@ -44,9 +44,9 @@ open Unicode.Generated
 -- §1 PER-CODEPOINT LIFT FOR THE NON-TRIVIAL DECOMP CASE
 --
 -- The table fact lifts to: for any QC=Y non-Hangul starter `cp` whose
--- canonical decomposition is non-empty, `toNFC #[cp] = #[cp]`. The
+-- canonical decomposition is non-empty, `toNFC [cp] = [cp]`. The
 -- lift uses `Lookup.lookupRow cp = some row` (which holds whenever
--- `Lookup.canonicalDecomposition cp ≠ #[]`, since codepoints absent
+-- `Lookup.canonicalDecomposition cp ≠ []`, since codepoints absent
 -- from the table have empty decomposition by the @missing default).
 -- ═══════════════════════════════════════════════════════════════════════════════
 
@@ -57,7 +57,7 @@ theorem singleton_sound_nontrivial
     (hQC : nfcQCValue cp = .Y)
     (hCcc : Lookup.canonicalCombiningClass cp = 0)
     (hNotHangul : Hangul.isHangulSyllable cp = false)
-    (hNonEmpty : Lookup.canonicalDecomposition cp ≠ #[]) :
+    (hNonEmpty : Lookup.canonicalDecomposition cp ≠ []) :
     toNFC [cp] = [cp] := by
   -- A non-empty `Lookup.canonicalDecomposition cp` implies `cp` is in
   -- `UnicodeData.rows` (codepoints absent from the table fall through
@@ -79,8 +79,8 @@ theorem singleton_sound_nontrivial
     simpa [UnicodeData.rows] using hSrcMem
   have hTable :=
     QuickCheckSoundnessSingletonTable.qcY_starter_nontrivial_singleton_nfc_id_table
-  rw [Array.all_eq_true] at hTable
-  rcases Array.getElem_of_mem hRowMem with ⟨i, hi, hElem⟩
+  rw [List.all_eq_true] at hTable
+  rcases List.getElem_of_mem hRowMem with ⟨i, hi, hElem⟩
   have hRowFact := hTable i hi
   rw [hElem] at hRowFact
   rw [hSrcCpEq] at hRowFact
@@ -98,13 +98,12 @@ theorem singleton_sound_nontrivial
     unfold Lookup.canonicalDecomposition
     rw [hLookup]
     exact hSrcDecomp
-  have hSizeDecide : decide (src.canonicalDecomposition.size = 0) = false := by
+  have hSizeDecide : decide (src.canonicalDecomposition.length = 0) = false := by
     rw [hRowDecomp]
-    have hNonEmptyArr : (Lookup.canonicalDecomposition cp).size ≠ 0 := by
+    have hNonEmptyArr : (Lookup.canonicalDecomposition cp).length ≠ 0 := by
       intro hZero
       apply hNonEmpty
-      apply Array.eq_empty_of_size_eq_zero
-      exact hZero
+      exact List.eq_nil_of_length_eq_zero hZero
     simp [hNonEmptyArr]
   rw [hCccDecide, hHangulDecide, hQCDecide, hSizeDecide] at hRowFact
   simp only [Bool.or_self, Bool.false_or] at hRowFact
@@ -113,7 +112,7 @@ theorem singleton_sound_nontrivial
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 SINGLETON SOUNDNESS DISPATCHER
 --
--- For any QC=Y singleton `#[cp]`, dispatch to the matching singleton
+-- For any QC=Y singleton `[cp]`, dispatch to the matching singleton
 -- soundness lemma based on `cp`'s structural shape:
 --   * non-starter      → QuickCheckSoundness.singleton_nonstarter
 --   * Hangul syllable  → QuickCheckSoundnessHangul.singleton_hangul
@@ -132,7 +131,7 @@ theorem singleton_sound (cp : Nat) (hQC : nfcQCValue cp = .Y) :
         cases hH : Hangul.isHangulSyllable cp
         · rfl
         · exact absurd hH hHangul
-      by_cases hEmpty : Lookup.canonicalDecomposition cp = #[]
+      by_cases hEmpty : Lookup.canonicalDecomposition cp = []
       · exact QuickCheckSoundnessSingletonAtomic.singleton_sound_atomic
           cp hCcc hEmpty hNotHangul
       · exact singleton_sound_nontrivial

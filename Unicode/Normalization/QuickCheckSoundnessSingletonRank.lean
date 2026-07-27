@@ -17,11 +17,11 @@ open Unicode.Normalization.NFC (toNFC toNFD nfcQCValue)
 
 /-- The composition fold state for an already-normalized singleton starter. -/
 def singletonState (cp : Nat) : Compose.ComposeState :=
-  { emitted := #[], starter := some cp, buffer := [], maxCCC := 0 }
+  { emitted := [], starter := some cp, buffer := [], maxCCC := 0 }
 
 /-- Flushing an active singleton starter produces the singleton array. -/
 theorem flush_singletonState (cp : Nat) :
-    Compose.flushCompose (singletonState cp) = #[cp] := by
+    Compose.flushCompose (singletonState cp) = [cp] := by
   unfold singletonState Compose.flushCompose
   rfl
 
@@ -76,15 +76,15 @@ theorem foldl_singleton_starter
 /-- Atomic non-Hangul starters are unchanged by `toNFD`. -/
 theorem atomic_starter_toNFD_singleton
     (cp : Nat)
-    (hDecomp : Lookup.canonicalDecomposition cp = #[])
+    (hDecomp : Lookup.canonicalDecomposition cp = [])
     (hNotHangul : Hangul.isHangulSyllable cp = false) :
     toNFD [cp] = [cp] := by
   have hDsyl : Hangul.decomposeSyllable? cp = none := by
     unfold Hangul.decomposeSyllable?
     rw [hNotHangul]
     simp
-  have hFCD : Decompose.fullCanonicalDecompose cp = #[cp] := by
-    show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth cp = #[cp]
+  have hFCD : Decompose.fullCanonicalDecompose cp = [cp] := by
+    show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth cp = [cp]
     unfold Decompose.maxDepth Decompose.fullCanonicalDecomposeFuel
     rw [hDsyl]
     simp [hDecomp]
@@ -102,7 +102,7 @@ theorem atomic_starter_toNFD_singleton
 theorem atomic_starter_toNFD_foldl_singletonState
     (cp : Nat)
     (hCcc : Lookup.canonicalCombiningClass cp = 0)
-    (hDecomp : Lookup.canonicalDecomposition cp = #[])
+    (hDecomp : Lookup.canonicalDecomposition cp = [])
     (hNotHangul : Hangul.isHangulSyllable cp = false) :
     (toNFD [cp]).foldl Compose.stepCompose Compose.initialState =
       singletonState cp := by
@@ -117,7 +117,7 @@ theorem entry_primaryComposite
     (hCcc : Lookup.canonicalCombiningClass entry.codepoint = 0)
     (hDecomp :
       Lookup.canonicalDecomposition entry.codepoint =
-        #[entry.left, entry.right]) :
+        [entry.left, entry.right]) :
     Compose.primaryComposite? entry.left entry.right = some entry.codepoint :=
   QuickCheckSoundnessSingletonPair.singleton_sound_pair
     entry.codepoint entry.left entry.right hQC hCcc hDecomp
@@ -131,11 +131,11 @@ structure EntryCommonFacts
   hCcc : Lookup.canonicalCombiningClass entry.codepoint = 0
   hDecomp :
     Lookup.canonicalDecomposition entry.codepoint =
-      #[entry.left, entry.right]
+      [entry.left, entry.right]
   hLeftCcc : Lookup.canonicalCombiningClass entry.left = 0
   hLeftQC : nfcQCValue entry.left = .Y
   hLeftNotHangul : Hangul.isHangulSyllable entry.left = false
-  hRightDecompEmpty : Lookup.canonicalDecomposition entry.right = #[]
+  hRightDecompEmpty : Lookup.canonicalDecomposition entry.right = []
   hRightNotHangul : Hangul.isHangulSyllable entry.right = false
   hHangulPairNone : Hangul.composePair? entry.left entry.right = none
 
@@ -194,7 +194,7 @@ theorem entryRankValid_rank1_left_empty
     (entry : QuickCheckSingletonRankData.SingletonRankRow)
     (h : QuickCheckSingletonRankData.entryRankValid entry = true)
     (hRank : entry.rank = 1) :
-    Lookup.canonicalDecomposition entry.left = #[] := by
+    Lookup.canonicalDecomposition entry.left = [] := by
   unfold QuickCheckSingletonRankData.entryRankValid at h
   rw [Bool.and_eq_true] at h
   have hRankBranch := h.2
@@ -239,34 +239,34 @@ theorem entryRank1_toNFD_foldl_singletonState
     rw [facts.hRightNotHangul]
     simp
   have hFCDLeft31 :
-      Decompose.fullCanonicalDecomposeFuel 31 entry.left = #[entry.left] := by
+      Decompose.fullCanonicalDecomposeFuel 31 entry.left = [entry.left] := by
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylLeft]
     simp [hLeftEmpty]
   have hFCDRight31 :
-      Decompose.fullCanonicalDecomposeFuel 31 entry.right = #[entry.right] := by
+      Decompose.fullCanonicalDecomposeFuel 31 entry.right = [entry.right] := by
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylRight]
     simp [facts.hRightDecompEmpty]
   have hFCD :
       Decompose.fullCanonicalDecompose entry.codepoint =
-        #[entry.left, entry.right] := by
+        [entry.left, entry.right] := by
     show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth entry.codepoint =
-      #[entry.left, entry.right]
+      [entry.left, entry.right]
     unfold Decompose.maxDepth
     show Decompose.fullCanonicalDecomposeFuel 32 entry.codepoint =
-      #[entry.left, entry.right]
+      [entry.left, entry.right]
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylCp]
     simp only []
     rw [facts.hDecomp]
-    show ((#[entry.left, entry.right] : Array Nat).foldl
-        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') #[])
-      = #[entry.left, entry.right]
+    show (([entry.left, entry.right] : List Nat).foldl
+        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') [])
+      = [entry.left, entry.right]
     have hFold :
-        (#[entry.left, entry.right] : Array Nat).foldl
-          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') #[]
-        = (#[] ++ Decompose.fullCanonicalDecomposeFuel 31 entry.left) ++
+        ([entry.left, entry.right] : List Nat).foldl
+          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') []
+        = ([] ++ Decompose.fullCanonicalDecomposeFuel 31 entry.left) ++
             Decompose.fullCanonicalDecomposeFuel 31 entry.right := rfl
     rw [hFold, hFCDLeft31, hFCDRight31]
     rfl
@@ -329,34 +329,34 @@ theorem entryRank1_toNFD_head
     rw [facts.hRightNotHangul]
     simp
   have hFCDLeft31 :
-      Decompose.fullCanonicalDecomposeFuel 31 entry.left = #[entry.left] := by
+      Decompose.fullCanonicalDecomposeFuel 31 entry.left = [entry.left] := by
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylLeft]
     simp [hLeftEmpty]
   have hFCDRight31 :
-      Decompose.fullCanonicalDecomposeFuel 31 entry.right = #[entry.right] := by
+      Decompose.fullCanonicalDecomposeFuel 31 entry.right = [entry.right] := by
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylRight]
     simp [facts.hRightDecompEmpty]
   have hFCD :
       Decompose.fullCanonicalDecompose entry.codepoint =
-        #[entry.left, entry.right] := by
+        [entry.left, entry.right] := by
     show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth entry.codepoint =
-      #[entry.left, entry.right]
+      [entry.left, entry.right]
     unfold Decompose.maxDepth
     show Decompose.fullCanonicalDecomposeFuel 32 entry.codepoint =
-      #[entry.left, entry.right]
+      [entry.left, entry.right]
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylCp]
     simp only []
     rw [facts.hDecomp]
-    show ((#[entry.left, entry.right] : Array Nat).foldl
-        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') #[])
-      = #[entry.left, entry.right]
+    show (([entry.left, entry.right] : List Nat).foldl
+        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') [])
+      = [entry.left, entry.right]
     have hFold :
-        (#[entry.left, entry.right] : Array Nat).foldl
-          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') #[]
-        = (#[] ++ Decompose.fullCanonicalDecomposeFuel 31 entry.left) ++
+        ([entry.left, entry.right] : List Nat).foldl
+          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') []
+        = ([] ++ Decompose.fullCanonicalDecomposeFuel 31 entry.left) ++
             Decompose.fullCanonicalDecomposeFuel 31 entry.right := rfl
     rw [hFold, hFCDLeft31, hFCDRight31]
     rfl
@@ -553,61 +553,61 @@ theorem entryRank2_toNFD_foldl_singletonState
     rw [facts.hRightNotHangul]
     simp
   have hFCDParentLeft30 :
-      Decompose.fullCanonicalDecomposeFuel 30 parent.left = #[parent.left] := by
+      Decompose.fullCanonicalDecomposeFuel 30 parent.left = [parent.left] := by
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylParentLeft]
     simp [hParentLeftEmpty]
   have hFCDParentRight30 :
-      Decompose.fullCanonicalDecomposeFuel 30 parent.right = #[parent.right] := by
+      Decompose.fullCanonicalDecomposeFuel 30 parent.right = [parent.right] := by
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylParentRight]
     simp [parentFacts.hRightDecompEmpty]
   have hFCDParent31AtParent :
       Decompose.fullCanonicalDecomposeFuel 31 parent.codepoint =
-        #[parent.left, parent.right] := by
+        [parent.left, parent.right] := by
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylParentCp]
     simp only []
     rw [parentFacts.hDecomp]
-    show ((#[parent.left, parent.right] : Array Nat).foldl
-        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 30 cp') #[])
-      = #[parent.left, parent.right]
+    show (([parent.left, parent.right] : List Nat).foldl
+        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 30 cp') [])
+      = [parent.left, parent.right]
     have hFold :
-        (#[parent.left, parent.right] : Array Nat).foldl
-          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 30 cp') #[]
-        = (#[] ++ Decompose.fullCanonicalDecomposeFuel 30 parent.left) ++
+        ([parent.left, parent.right] : List Nat).foldl
+          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 30 cp') []
+        = ([] ++ Decompose.fullCanonicalDecomposeFuel 30 parent.left) ++
             Decompose.fullCanonicalDecomposeFuel 30 parent.right := rfl
     rw [hFold, hFCDParentLeft30, hFCDParentRight30]
     rfl
   have hFCDLeft31 :
       Decompose.fullCanonicalDecomposeFuel 31 entry.left =
-        #[parent.left, parent.right] := by
+        [parent.left, parent.right] := by
     rw [← hParentCp]
     exact hFCDParent31AtParent
   have hFCDRight31 :
-      Decompose.fullCanonicalDecomposeFuel 31 entry.right = #[entry.right] := by
+      Decompose.fullCanonicalDecomposeFuel 31 entry.right = [entry.right] := by
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylRight]
     simp [facts.hRightDecompEmpty]
   have hFCD :
       Decompose.fullCanonicalDecompose entry.codepoint =
-        #[parent.left, parent.right, entry.right] := by
+        [parent.left, parent.right, entry.right] := by
     show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth entry.codepoint =
-      #[parent.left, parent.right, entry.right]
+      [parent.left, parent.right, entry.right]
     unfold Decompose.maxDepth
     show Decompose.fullCanonicalDecomposeFuel 32 entry.codepoint =
-      #[parent.left, parent.right, entry.right]
+      [parent.left, parent.right, entry.right]
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylCp]
     simp only []
     rw [facts.hDecomp]
-    show ((#[entry.left, entry.right] : Array Nat).foldl
-        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') #[])
-      = #[parent.left, parent.right, entry.right]
+    show (([entry.left, entry.right] : List Nat).foldl
+        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') [])
+      = [parent.left, parent.right, entry.right]
     have hFold :
-        (#[entry.left, entry.right] : Array Nat).foldl
-          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') #[]
-        = (#[] ++ Decompose.fullCanonicalDecomposeFuel 31 entry.left) ++
+        ([entry.left, entry.right] : List Nat).foldl
+          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') []
+        = ([] ++ Decompose.fullCanonicalDecomposeFuel 31 entry.left) ++
             Decompose.fullCanonicalDecomposeFuel 31 entry.right := rfl
     rw [hFold, hFCDLeft31, hFCDRight31]
     rfl
@@ -696,61 +696,61 @@ theorem entryRank2_toNFD_head
     rw [facts.hRightNotHangul]
     simp
   have hFCDParentLeft30 :
-      Decompose.fullCanonicalDecomposeFuel 30 parent.left = #[parent.left] := by
+      Decompose.fullCanonicalDecomposeFuel 30 parent.left = [parent.left] := by
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylParentLeft]
     simp [hParentLeftEmpty]
   have hFCDParentRight30 :
-      Decompose.fullCanonicalDecomposeFuel 30 parent.right = #[parent.right] := by
+      Decompose.fullCanonicalDecomposeFuel 30 parent.right = [parent.right] := by
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylParentRight]
     simp [parentFacts.hRightDecompEmpty]
   have hFCDParent31AtParent :
       Decompose.fullCanonicalDecomposeFuel 31 parent.codepoint =
-        #[parent.left, parent.right] := by
+        [parent.left, parent.right] := by
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylParentCp]
     simp only []
     rw [parentFacts.hDecomp]
-    show ((#[parent.left, parent.right] : Array Nat).foldl
-        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 30 cp') #[])
-      = #[parent.left, parent.right]
+    show (([parent.left, parent.right] : List Nat).foldl
+        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 30 cp') [])
+      = [parent.left, parent.right]
     have hFold :
-        (#[parent.left, parent.right] : Array Nat).foldl
-          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 30 cp') #[]
-        = (#[] ++ Decompose.fullCanonicalDecomposeFuel 30 parent.left) ++
+        ([parent.left, parent.right] : List Nat).foldl
+          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 30 cp') []
+        = ([] ++ Decompose.fullCanonicalDecomposeFuel 30 parent.left) ++
             Decompose.fullCanonicalDecomposeFuel 30 parent.right := rfl
     rw [hFold, hFCDParentLeft30, hFCDParentRight30]
     rfl
   have hFCDLeft31 :
       Decompose.fullCanonicalDecomposeFuel 31 entry.left =
-        #[parent.left, parent.right] := by
+        [parent.left, parent.right] := by
     rw [← hParentCp]
     exact hFCDParent31AtParent
   have hFCDRight31 :
-      Decompose.fullCanonicalDecomposeFuel 31 entry.right = #[entry.right] := by
+      Decompose.fullCanonicalDecomposeFuel 31 entry.right = [entry.right] := by
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylRight]
     simp [facts.hRightDecompEmpty]
   have hFCD :
       Decompose.fullCanonicalDecompose entry.codepoint =
-        #[parent.left, parent.right, entry.right] := by
+        [parent.left, parent.right, entry.right] := by
     show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth entry.codepoint =
-      #[parent.left, parent.right, entry.right]
+      [parent.left, parent.right, entry.right]
     unfold Decompose.maxDepth
     show Decompose.fullCanonicalDecomposeFuel 32 entry.codepoint =
-      #[parent.left, parent.right, entry.right]
+      [parent.left, parent.right, entry.right]
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylCp]
     simp only []
     rw [facts.hDecomp]
-    show ((#[entry.left, entry.right] : Array Nat).foldl
-        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') #[])
-      = #[parent.left, parent.right, entry.right]
+    show (([entry.left, entry.right] : List Nat).foldl
+        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') [])
+      = [parent.left, parent.right, entry.right]
     have hFold :
-        (#[entry.left, entry.right] : Array Nat).foldl
-          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') #[]
-        = (#[] ++ Decompose.fullCanonicalDecomposeFuel 31 entry.left) ++
+        ([entry.left, entry.right] : List Nat).foldl
+          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') []
+        = ([] ++ Decompose.fullCanonicalDecomposeFuel 31 entry.left) ++
             Decompose.fullCanonicalDecomposeFuel 31 entry.right := rfl
     rw [hFold, hFCDLeft31, hFCDRight31]
     rfl
@@ -857,88 +857,88 @@ theorem entryRank3_toNFD_foldl_singletonState
     rw [facts.hRightNotHangul]
     simp
   have hFCDGrandLeft29 :
-      Decompose.fullCanonicalDecomposeFuel 29 grand.left = #[grand.left] := by
+      Decompose.fullCanonicalDecomposeFuel 29 grand.left = [grand.left] := by
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylGrandLeft]
     simp [hGrandLeftEmpty]
   have hFCDGrandRight29 :
-      Decompose.fullCanonicalDecomposeFuel 29 grand.right = #[grand.right] := by
+      Decompose.fullCanonicalDecomposeFuel 29 grand.right = [grand.right] := by
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylGrandRight]
     simp [grandFacts.hRightDecompEmpty]
   have hFCDGrand30AtGrand :
       Decompose.fullCanonicalDecomposeFuel 30 grand.codepoint =
-        #[grand.left, grand.right] := by
+        [grand.left, grand.right] := by
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylGrandCp]
     simp only []
     rw [grandFacts.hDecomp]
-    show ((#[grand.left, grand.right] : Array Nat).foldl
-        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 29 cp') #[])
-      = #[grand.left, grand.right]
+    show (([grand.left, grand.right] : List Nat).foldl
+        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 29 cp') [])
+      = [grand.left, grand.right]
     have hFold :
-        (#[grand.left, grand.right] : Array Nat).foldl
-          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 29 cp') #[]
-        = (#[] ++ Decompose.fullCanonicalDecomposeFuel 29 grand.left) ++
+        ([grand.left, grand.right] : List Nat).foldl
+          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 29 cp') []
+        = ([] ++ Decompose.fullCanonicalDecomposeFuel 29 grand.left) ++
             Decompose.fullCanonicalDecomposeFuel 29 grand.right := rfl
     rw [hFold, hFCDGrandLeft29, hFCDGrandRight29]
     rfl
   have hFCDParentLeft30 :
       Decompose.fullCanonicalDecomposeFuel 30 parent.left =
-        #[grand.left, grand.right] := by
+        [grand.left, grand.right] := by
     rw [← hGrandCp]
     exact hFCDGrand30AtGrand
   have hFCDParentRight30 :
-      Decompose.fullCanonicalDecomposeFuel 30 parent.right = #[parent.right] := by
+      Decompose.fullCanonicalDecomposeFuel 30 parent.right = [parent.right] := by
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylParentRight]
     simp [parentFacts.hRightDecompEmpty]
   have hFCDParent31AtParent :
       Decompose.fullCanonicalDecomposeFuel 31 parent.codepoint =
-        #[grand.left, grand.right, parent.right] := by
+        [grand.left, grand.right, parent.right] := by
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylParentCp]
     simp only []
     rw [parentFacts.hDecomp]
-    show ((#[parent.left, parent.right] : Array Nat).foldl
-        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 30 cp') #[])
-      = #[grand.left, grand.right, parent.right]
+    show (([parent.left, parent.right] : List Nat).foldl
+        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 30 cp') [])
+      = [grand.left, grand.right, parent.right]
     have hFold :
-        (#[parent.left, parent.right] : Array Nat).foldl
-          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 30 cp') #[]
-        = (#[] ++ Decompose.fullCanonicalDecomposeFuel 30 parent.left) ++
+        ([parent.left, parent.right] : List Nat).foldl
+          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 30 cp') []
+        = ([] ++ Decompose.fullCanonicalDecomposeFuel 30 parent.left) ++
             Decompose.fullCanonicalDecomposeFuel 30 parent.right := rfl
     rw [hFold, hFCDParentLeft30, hFCDParentRight30]
     rfl
   have hFCDLeft31 :
       Decompose.fullCanonicalDecomposeFuel 31 entry.left =
-        #[grand.left, grand.right, parent.right] := by
+        [grand.left, grand.right, parent.right] := by
     rw [← hParentCp]
     exact hFCDParent31AtParent
   have hFCDRight31 :
-      Decompose.fullCanonicalDecomposeFuel 31 entry.right = #[entry.right] := by
+      Decompose.fullCanonicalDecomposeFuel 31 entry.right = [entry.right] := by
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylRight]
     simp [facts.hRightDecompEmpty]
   have hFCD :
       Decompose.fullCanonicalDecompose entry.codepoint =
-        #[grand.left, grand.right, parent.right, entry.right] := by
+        [grand.left, grand.right, parent.right, entry.right] := by
     show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth entry.codepoint =
-      #[grand.left, grand.right, parent.right, entry.right]
+      [grand.left, grand.right, parent.right, entry.right]
     unfold Decompose.maxDepth
     show Decompose.fullCanonicalDecomposeFuel 32 entry.codepoint =
-      #[grand.left, grand.right, parent.right, entry.right]
+      [grand.left, grand.right, parent.right, entry.right]
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylCp]
     simp only []
     rw [facts.hDecomp]
-    show ((#[entry.left, entry.right] : Array Nat).foldl
-        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') #[])
-      = #[grand.left, grand.right, parent.right, entry.right]
+    show (([entry.left, entry.right] : List Nat).foldl
+        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') [])
+      = [grand.left, grand.right, parent.right, entry.right]
     have hFold :
-        (#[entry.left, entry.right] : Array Nat).foldl
-          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') #[]
-        = (#[] ++ Decompose.fullCanonicalDecomposeFuel 31 entry.left) ++
+        ([entry.left, entry.right] : List Nat).foldl
+          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') []
+        = ([] ++ Decompose.fullCanonicalDecomposeFuel 31 entry.left) ++
             Decompose.fullCanonicalDecomposeFuel 31 entry.right := rfl
     rw [hFold, hFCDLeft31, hFCDRight31]
     rfl
@@ -1050,88 +1050,88 @@ theorem entryRank3_toNFD_head
     rw [facts.hRightNotHangul]
     simp
   have hFCDGrandLeft29 :
-      Decompose.fullCanonicalDecomposeFuel 29 grand.left = #[grand.left] := by
+      Decompose.fullCanonicalDecomposeFuel 29 grand.left = [grand.left] := by
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylGrandLeft]
     simp [hGrandLeftEmpty]
   have hFCDGrandRight29 :
-      Decompose.fullCanonicalDecomposeFuel 29 grand.right = #[grand.right] := by
+      Decompose.fullCanonicalDecomposeFuel 29 grand.right = [grand.right] := by
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylGrandRight]
     simp [grandFacts.hRightDecompEmpty]
   have hFCDGrand30AtGrand :
       Decompose.fullCanonicalDecomposeFuel 30 grand.codepoint =
-        #[grand.left, grand.right] := by
+        [grand.left, grand.right] := by
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylGrandCp]
     simp only []
     rw [grandFacts.hDecomp]
-    show ((#[grand.left, grand.right] : Array Nat).foldl
-        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 29 cp') #[])
-      = #[grand.left, grand.right]
+    show (([grand.left, grand.right] : List Nat).foldl
+        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 29 cp') [])
+      = [grand.left, grand.right]
     have hFold :
-        (#[grand.left, grand.right] : Array Nat).foldl
-          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 29 cp') #[]
-        = (#[] ++ Decompose.fullCanonicalDecomposeFuel 29 grand.left) ++
+        ([grand.left, grand.right] : List Nat).foldl
+          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 29 cp') []
+        = ([] ++ Decompose.fullCanonicalDecomposeFuel 29 grand.left) ++
             Decompose.fullCanonicalDecomposeFuel 29 grand.right := rfl
     rw [hFold, hFCDGrandLeft29, hFCDGrandRight29]
     rfl
   have hFCDParentLeft30 :
       Decompose.fullCanonicalDecomposeFuel 30 parent.left =
-        #[grand.left, grand.right] := by
+        [grand.left, grand.right] := by
     rw [← hGrandCp]
     exact hFCDGrand30AtGrand
   have hFCDParentRight30 :
-      Decompose.fullCanonicalDecomposeFuel 30 parent.right = #[parent.right] := by
+      Decompose.fullCanonicalDecomposeFuel 30 parent.right = [parent.right] := by
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylParentRight]
     simp [parentFacts.hRightDecompEmpty]
   have hFCDParent31AtParent :
       Decompose.fullCanonicalDecomposeFuel 31 parent.codepoint =
-        #[grand.left, grand.right, parent.right] := by
+        [grand.left, grand.right, parent.right] := by
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylParentCp]
     simp only []
     rw [parentFacts.hDecomp]
-    show ((#[parent.left, parent.right] : Array Nat).foldl
-        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 30 cp') #[])
-      = #[grand.left, grand.right, parent.right]
+    show (([parent.left, parent.right] : List Nat).foldl
+        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 30 cp') [])
+      = [grand.left, grand.right, parent.right]
     have hFold :
-        (#[parent.left, parent.right] : Array Nat).foldl
-          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 30 cp') #[]
-        = (#[] ++ Decompose.fullCanonicalDecomposeFuel 30 parent.left) ++
+        ([parent.left, parent.right] : List Nat).foldl
+          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 30 cp') []
+        = ([] ++ Decompose.fullCanonicalDecomposeFuel 30 parent.left) ++
             Decompose.fullCanonicalDecomposeFuel 30 parent.right := rfl
     rw [hFold, hFCDParentLeft30, hFCDParentRight30]
     rfl
   have hFCDLeft31 :
       Decompose.fullCanonicalDecomposeFuel 31 entry.left =
-        #[grand.left, grand.right, parent.right] := by
+        [grand.left, grand.right, parent.right] := by
     rw [← hParentCp]
     exact hFCDParent31AtParent
   have hFCDRight31 :
-      Decompose.fullCanonicalDecomposeFuel 31 entry.right = #[entry.right] := by
+      Decompose.fullCanonicalDecomposeFuel 31 entry.right = [entry.right] := by
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylRight]
     simp [facts.hRightDecompEmpty]
   have hFCD :
       Decompose.fullCanonicalDecompose entry.codepoint =
-        #[grand.left, grand.right, parent.right, entry.right] := by
+        [grand.left, grand.right, parent.right, entry.right] := by
     show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth entry.codepoint =
-      #[grand.left, grand.right, parent.right, entry.right]
+      [grand.left, grand.right, parent.right, entry.right]
     unfold Decompose.maxDepth
     show Decompose.fullCanonicalDecomposeFuel 32 entry.codepoint =
-      #[grand.left, grand.right, parent.right, entry.right]
+      [grand.left, grand.right, parent.right, entry.right]
     unfold Decompose.fullCanonicalDecomposeFuel
     rw [hDsylCp]
     simp only []
     rw [facts.hDecomp]
-    show ((#[entry.left, entry.right] : Array Nat).foldl
-        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') #[])
-      = #[grand.left, grand.right, parent.right, entry.right]
+    show (([entry.left, entry.right] : List Nat).foldl
+        (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') [])
+      = [grand.left, grand.right, parent.right, entry.right]
     have hFold :
-        (#[entry.left, entry.right] : Array Nat).foldl
-          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') #[]
-        = (#[] ++ Decompose.fullCanonicalDecomposeFuel 31 entry.left) ++
+        ([entry.left, entry.right] : List Nat).foldl
+          (fun acc cp' => acc ++ Decompose.fullCanonicalDecomposeFuel 31 cp') []
+        = ([] ++ Decompose.fullCanonicalDecomposeFuel 31 entry.left) ++
             Decompose.fullCanonicalDecomposeFuel 31 entry.right := rfl
     rw [hFold, hFCDLeft31, hFCDRight31]
     rfl

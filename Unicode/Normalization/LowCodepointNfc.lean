@@ -59,7 +59,7 @@ theorem cccz (cp : Nat) (h : cp < 0xC0) : Lookup.canonicalCombiningClass cp = 0 
   rw [lookupRow_none_lt cp h]
 
 /-- Below U+00C0: no canonical decomposition. -/
-theorem dec_lt (cp : Nat) (h : cp < 0xC0) : Lookup.canonicalDecomposition cp = #[] := by
+theorem dec_lt (cp : Nat) (h : cp < 0xC0) : Lookup.canonicalDecomposition cp = [] := by
   unfold Lookup.canonicalDecomposition
   rw [lookupRow_none_lt cp h]
 

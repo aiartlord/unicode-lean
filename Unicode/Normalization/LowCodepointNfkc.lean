@@ -11,7 +11,7 @@
   compatibility-decomposition stage differs from the canonical stage of NFC — it
   consults the sorted `CompatDecomp` table by binary search in addition to the
   canonical `UnicodeData` scan — so the identity carries one extra per-code-point
-  hypothesis (`compatDecomposition cp = #[]`). That hypothesis is decidable by a
+  hypothesis (`compatDecomposition cp = []`). That hypothesis is decidable by a
   handful of binary-search probes, so at a concrete call site it discharges with
   `by decide` without ever reducing the `UnicodeData` row scan, which is instead
   witnessed structurally against the below-U+00C0 bound reused from
@@ -44,23 +44,23 @@ theorem decomposeSyllable_none_lt (cp : Nat) (h : cp < 0xC0) :
     decomposition (witnessed by the below-U+00C0 row bound), no compatibility
     decomposition (supplied). -/
 theorem fcdFuel_id_lt (fuel cp : Nat) (h : cp < 0xC0)
-    (hCompat : CompatDecompose.compatDecomposition cp = #[]) :
-    CompatDecompose.fullCompatDecomposeFuel (fuel + 1) cp = #[cp] := by
+    (hCompat : CompatDecompose.compatDecomposition cp = []) :
+    CompatDecompose.fullCompatDecomposeFuel (fuel + 1) cp = [cp] := by
   rw [CompatDecompose.fullCompatDecomposeFuel.eq_def]
   simp [decomposeSyllable_none_lt cp h, dec_lt cp h, hCompat]
 
 /-- A below-U+00C0 code point with no compatibility decomposition fully
     compat-decomposes to itself. -/
 theorem fullCompatDecompose_id_lt (cp : Nat) (h : cp < 0xC0)
-    (hCompat : CompatDecompose.compatDecomposition cp = #[]) :
-    CompatDecompose.fullCompatDecompose cp = #[cp] := by
+    (hCompat : CompatDecompose.compatDecomposition cp = []) :
+    CompatDecompose.fullCompatDecompose cp = [cp] := by
   unfold CompatDecompose.fullCompatDecompose CompatDecompose.maxDepth
   exact fcdFuel_id_lt 31 cp h hCompat
 
 /-- Compatibility decomposition of a sequence is the identity when each code
     point compat-decomposes to itself. -/
 theorem compatDecomposeSequence_id (cps : List Nat)
-    (h : ∀ cp ∈ cps, CompatDecompose.fullCompatDecompose cp = #[cp]) :
+    (h : ∀ cp ∈ cps, CompatDecompose.fullCompatDecompose cp = [cp]) :
     CompatDecompose.compatDecomposeSequence cps = cps := by
   unfold CompatDecompose.compatDecomposeSequence
   exact NFD.flatMap_concat_id_of_all_singleton
@@ -71,7 +71,7 @@ theorem compatDecomposeSequence_id (cps : List Nat)
     compatibility branch against the supplied per-code-point facts; the reorder
     stage is vacuous on all starters. -/
 theorem toNFKD_id_of_starters (cps : List Nat)
-    (hCompat : ∀ cp ∈ cps, CompatDecompose.compatDecomposition cp = #[])
+    (hCompat : ∀ cp ∈ cps, CompatDecompose.compatDecomposition cp = [])
     (hLt : ∀ cp ∈ cps, cp < 0xC0) :
     NFKD.toNFKD cps = cps := by
   unfold NFKD.toNFKD
@@ -86,7 +86,7 @@ theorem toNFKD_id_of_starters (cps : List Nat)
     `toNFKD_id_of_starters`; the compose stage is the identity because no
     adjacent starter pair primary-composes below U+00C0. -/
 theorem toNFKC_id_of_starters (cps : List Nat)
-    (hCompat : ∀ cp ∈ cps, CompatDecompose.compatDecomposition cp = #[])
+    (hCompat : ∀ cp ∈ cps, CompatDecompose.compatDecomposition cp = [])
     (hLt : ∀ cp ∈ cps, cp < 0xC0) :
     NFKC.toNFKC cps = cps := by
   unfold NFKC.toNFKC
