@@ -128,7 +128,7 @@ theorem rejectReason_forbidden_different_categories_ne :
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 inductive StrictParseResult (α : Type) where
-  | ok         : α → ByteArray → StrictParseResult α
+  | ok         : α → List UInt8 → StrictParseResult α
   | rejected   : RejectReason → StrictParseResult α
   | incomplete : (needed : Nat) → StrictParseResult α
   deriving DecidableEq
@@ -141,32 +141,32 @@ def map {α β : Type} (f : α → β) : StrictParseResult α → StrictParseRes
   | incomplete n => incomplete n
 
 def bind {α β : Type} (r : StrictParseResult α)
-    (f : α → ByteArray → StrictParseResult β) : StrictParseResult β :=
+    (f : α → List UInt8 → StrictParseResult β) : StrictParseResult β :=
   match r with
   | ok a rest    => f a rest
   | rejected r'  => rejected r'
   | incomplete n => incomplete n
 
-@[simp] theorem map_ok {α β : Type} (f : α → β) (a : α) (rest : ByteArray) :
+@[simp] theorem map_ok {α β : Type} (f : α → β) (a : α) (rest : List UInt8) :
     map f (ok a rest) = ok (f a) rest := rfl
 @[simp] theorem map_rejected {α β : Type} (f : α → β) (r : RejectReason) :
     map f (rejected r : StrictParseResult α) = (rejected r : StrictParseResult β) := rfl
 @[simp] theorem map_incomplete {α β : Type} (f : α → β) (n : Nat) :
     map f (incomplete n : StrictParseResult α) = (incomplete n : StrictParseResult β) := rfl
-@[simp] theorem bind_ok {α β : Type} (a : α) (rest : ByteArray)
-    (f : α → ByteArray → StrictParseResult β) :
+@[simp] theorem bind_ok {α β : Type} (a : α) (rest : List UInt8)
+    (f : α → List UInt8 → StrictParseResult β) :
     bind (ok a rest) f = f a rest := rfl
 @[simp] theorem bind_rejected {α β : Type} (r : RejectReason)
-    (f : α → ByteArray → StrictParseResult β) :
+    (f : α → List UInt8 → StrictParseResult β) :
     bind (rejected r : StrictParseResult α) f = (rejected r : StrictParseResult β) := rfl
 @[simp] theorem bind_incomplete {α β : Type} (n : Nat)
-    (f : α → ByteArray → StrictParseResult β) :
+    (f : α → List UInt8 → StrictParseResult β) :
     bind (incomplete n : StrictParseResult α) f = (incomplete n : StrictParseResult β) := rfl
 
 /-- Coerce `.incomplete` to `.rejected` for file-ingestion callers who know
     their input is complete. Loses the "needed N bytes" detail — callers who
     want that detail pattern-match on StrictParseResult directly. -/
-def finalize {α : Type} : StrictParseResult α → Sum RejectReason (α × ByteArray)
+def finalize {α : Type} : StrictParseResult α → Sum RejectReason (α × List UInt8)
   | ok a rest    => .inr (a, rest)
   | rejected r   => .inl r
   | incomplete n => .inl (RejectReason.sizeExceeded 0 n)
@@ -178,7 +178,7 @@ theorem map_id_strictParseResult {α : Type} (r : StrictParseResult α) :
   cases r <;> rfl
 
 theorem bind_rejected_irrespective {α β : Type} (r : RejectReason)
-    (f : α → ByteArray → StrictParseResult β) :
+    (f : α → List UInt8 → StrictParseResult β) :
     StrictParseResult.bind (StrictParseResult.rejected r) f
       = StrictParseResult.rejected r := rfl
 
@@ -189,9 +189,9 @@ theorem bind_rejected_irrespective {α β : Type} (r : RejectReason)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 structure StrictBox (α : Type) where
-  parse       : ByteArray → StrictParseResult α
-  serialize   : α → ByteArray
-  roundtrip   : ∀ a, parse (serialize a) = StrictParseResult.ok a ByteArray.empty
+  parse       : List UInt8 → StrictParseResult α
+  serialize   : α → List UInt8
+  roundtrip   : ∀ a, parse (serialize a) = StrictParseResult.ok a ([] : List UInt8)
   consumption : ∀ a extra, parse (serialize a ++ extra) = StrictParseResult.ok a extra
 
 -- ═══════════════════════════════════════════════════════════════════════════════
