@@ -44,10 +44,10 @@ def parseHex (s : String) : Nat :=
   s.foldl (fun acc c => acc * 16 + hexDigitVal c) 0
 
 /-- Parse a key field — space-separated hex codepoints. -/
-def parseKey (s : String) : Array Nat :=
-  ((s.splitOn " ").filterMap (fun tok =>
+def parseKey (s : String) : List Nat :=
+  (s.splitOn " ").filterMap (fun tok =>
     let t := trimS tok
-    if t.isEmpty then none else some (parseHex t))).toArray
+    if t.isEmpty then none else some (parseHex t))
 
 /-- Drop the first `n` characters from `s` and return a new String. -/
 @[inline]
@@ -70,7 +70,7 @@ def parseElementBody (body : String) : Option CollationElement :=
   | malformed => Function.const (List String) none malformed
 
 /-- Parse the weights field — a sequence of `[…]` brackets. -/
-def parseWeights (s : String) : Array CollationElement :=
+def parseWeights (s : String) : List CollationElement :=
   let trimmed := trimS s
   let chunks : List String :=
     if trimmed.isEmpty then []
@@ -78,7 +78,7 @@ def parseWeights (s : String) : Array CollationElement :=
       let inner := if trimmed.startsWith "[" then stringDrop trimmed 1 else trimmed
       let inner := if inner.endsWith "]" then stringDropRight inner 1 else inner
       inner.splitOn "]["
-  ((chunks.filterMap parseElementBody)).toArray
+  chunks.filterMap parseElementBody
 
 /-- Parse one DUCET row. Returns `none` for blank lines, comment
     lines, or directive lines (those starting with `@`). -/
@@ -115,18 +115,18 @@ def parseImplicit (rawLine : String) : Option ImplicitBlock :=
 def allkeysRaw : String := include_str "../Ucd/allkeys.txt"
 
 /-- All explicit DUCET rows. -/
-def ducetEntriesParsed : Array DucetEntry :=
-  ((allkeysRaw.splitOn "\n").filterMap parseRow).toArray
+def ducetEntriesParsed : List DucetEntry :=
+  (allkeysRaw.splitOn "\n").filterMap parseRow
 
 /-- All explicit DUCET rows (materialized view). -/
-def ducetEntries : Array DucetEntry := ducetEntriesList.toArray
+def ducetEntries : List DucetEntry := ducetEntriesList
 
 /-- All `@implicitweights` directive blocks. -/
-def implicitBlocksParsed : Array ImplicitBlock :=
-  ((allkeysRaw.splitOn "\n").filterMap parseImplicit).toArray
+def implicitBlocksParsed : List ImplicitBlock :=
+  (allkeysRaw.splitOn "\n").filterMap parseImplicit
 
 /-- All @implicitweights blocks (materialized view). -/
-def implicitBlocks : Array ImplicitBlock := implicitBlocksList.toArray
+def implicitBlocks : List ImplicitBlock := implicitBlocksList
 
 /-- Look up the DUCET entry whose key is a single codepoint `cp`,
     or `none` if `cp` is not in the explicit table. Multi-codepoint
@@ -134,14 +134,14 @@ def implicitBlocks : Array ImplicitBlock := implicitBlocksList.toArray
     (in `Unicode.Uca.Lookup`) handles the greedy matching. -/
 def lookupSingle (cp : Nat) : Option DucetEntry :=
   ducetEntries.findSome? (fun e =>
-    if e.key.size = 1 ∧ e.key[0]? = some cp then some e else none)
+    if e.key.length = 1 ∧ e.key[0]? = some cp then some e else none)
 
 /-- Kernel-reducible single-codepoint lookup over the pinned `List` (the
-    Array `lookupSingle` is the runtime path; this is for `decide` proofs;
-    linear over the small prefix that the spot-checks touch). -/
+    `lookupSingle` findSome? path is the runtime one; this is for `decide`
+    proofs; linear over the small prefix that the spot-checks touch). -/
 def lookupSingleList (cp : Nat) : Option DucetEntry :=
   ducetEntriesList.findSome? (fun e =>
-    if e.key.size = 1 ∧ e.key[0]? = some cp then some e else none)
+    if e.key.length = 1 ∧ e.key[0]? = some cp then some e else none)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 SHAPE CHECKS
@@ -161,36 +161,36 @@ theorem implicitBlocks_count : implicitBlocksList.length = 6 := by decide +kerne
 /-- LATIN SMALL LETTER A: `[.23EC.0020.0002]` (UCA 17.0). -/
 theorem lookup_a :
     lookupSingleList 0x0061 = some
-      ⟨#[0x0061], #[⟨0x23EC, 0x0020, 0x0002, false⟩]⟩ := by decide +kernel
+      ⟨[0x0061], [⟨0x23EC, 0x0020, 0x0002, false⟩]⟩ := by decide +kernel
 
 /-- LATIN CAPITAL A shares the primary with 'a' but uses a different
     tertiary weight (`0x0008`) — this is how UCA encodes case at L3. -/
 theorem lookup_A :
     lookupSingleList 0x0041 = some
-      ⟨#[0x0041], #[⟨0x23EC, 0x0020, 0x0008, false⟩]⟩ := by decide +kernel
+      ⟨[0x0041], [⟨0x23EC, 0x0020, 0x0008, false⟩]⟩ := by decide +kernel
 
 /-- SPACE U+0020 is variable-weighted (the asterisk in the source
     file). -/
 theorem lookup_space :
     lookupSingleList 0x0020 = some
-      ⟨#[0x0020], #[⟨0x0209, 0x0020, 0x0002, true⟩]⟩ := by decide +kernel
+      ⟨[0x0020], [⟨0x0209, 0x0020, 0x0002, true⟩]⟩ := by decide +kernel
 
 /-- LATIN SMALL LETTER A WITH GRAVE expands to two collation
     elements — the base 'a' weight followed by an accent secondary. -/
 theorem lookup_agrave :
     lookupSingleList 0x00E0 = some
-      ⟨#[0x00E0],
-       #[⟨0x23EC, 0x0020, 0x0002, false⟩,
+      ⟨[0x00E0],
+       [⟨0x23EC, 0x0020, 0x0002, false⟩,
          ⟨0x0000, 0x0025, 0x0002, false⟩]⟩ := by decide +kernel
 
 theorem ducet_has_contractions :
-    (ducetEntriesList.filter (fun e => e.key.size ≥ 2)).length = 964 := by decide +kernel
+    (ducetEntriesList.filter (fun e => e.key.length ≥ 2)).length = 964 := by decide +kernel
 
 -- Build-time drift gate.
 #eval do
-  unless ducetEntriesList.toArray == ducetEntriesParsed do
+  unless ducetEntriesList == ducetEntriesParsed do
     throw (IO.userError "Allkeys drift: ducet list ≠ parsed")
-  unless implicitBlocksList.toArray == implicitBlocksParsed do
+  unless implicitBlocksList == implicitBlocksParsed do
     throw (IO.userError "Allkeys drift: blocks list ≠ parsed")
 
 end Unicode.Generated.Allkeys
