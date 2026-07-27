@@ -24,8 +24,7 @@ theorem nonNonAsciiZs_decomp_no_nonAsciiZs :
     UnicodeData.rows.all (fun row =>
       isNonAsciiZs row.codepoint ||
       row.canonicalDecomposition.all (fun d => !isNonAsciiZs d)) = true := by
-  -- `rows.all` over the Array is quadratic under kernel reduction; prove it over
-  -- the `List` mirror (linear, chunk-distributed) and transport to the Array.
+  -- `rows` is the `rowsList` alias; `rows.all` reduces linearly (chunk-distributed).
   have h : UnicodeData.rowsList.all (fun row =>
       isNonAsciiZs row.codepoint ||
       row.canonicalDecomposition.all (fun d => !isNonAsciiZs d)) = true := by

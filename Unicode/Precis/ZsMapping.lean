@@ -25,7 +25,7 @@ theorem isNonAsciiZs_ascii_space : isNonAsciiZs 0x0020 = false := by
   simp [isNonAsciiZs, nonAsciiZsCodepoints]
 
 /-- RFC 8265 §4.2.2: remap every non-ASCII Zs codepoint to U+0020 SPACE. -/
-def remapZsToAscii (cps : Array Nat) : Array Nat :=
+def remapZsToAscii (cps : List Nat) : List Nat :=
   cps.map (fun cp => if isNonAsciiZs cp then 0x0020 else cp)
 
 end Unicode.Precis.ZsPreservation

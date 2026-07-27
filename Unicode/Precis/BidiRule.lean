@@ -24,7 +24,7 @@
        with Bidi property NSM.
 
   This module implements the rule as a pure Boolean predicate on an
-  `Array Nat`; `Bidi_Class` values come from the pinned
+  `List Nat`; `Bidi_Class` values come from the pinned
   `Unicode.Generated.DerivedBidiClass` table. Because the rule is a
   predicate rather than a transformation, enforcing it in
   `precisPreparation*` preserves idempotence trivially: a string that
@@ -189,8 +189,7 @@ def isRtlLabel (cps : List Nat) : Bool :=
 /-- Drop trailing NSM codepoints. RFC 5893 §2 rules 3 and 6 specify the
     end-of-label condition on the last non-NSM character, so NSM suffix
     must be stripped before applying those rules. Implemented as a
-    fuel-bounded reverse-walk for structural termination under
-    `Array`'s eager-evaluation semantics. -/
+    fuel-bounded reverse-walk for structural termination. -/
 def dropTrailingNSMFuel : Nat → List Nat → List Nat
   | 0, cps => cps
   | fuel + 1, cps =>

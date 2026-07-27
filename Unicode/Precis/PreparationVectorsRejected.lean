@@ -24,23 +24,23 @@ set_option maxRecDepth 100000
 
 /-- ASCII SPACE is rejected (not admissible in IdentifierClass). -/
 theorem prep_rejects_space :
-    precisPreparation #[0x0020] = none := by
+    precisPreparation [0x0020] = none := by
   unfold precisPreparation
-  rw [precisMap_ascii_output #[0x0020] (by decide)]
+  rw [precisMap_ascii_output [0x0020] (by decide)]
   decide +kernel
 
 /-- RIGHT-TO-LEFT OVERRIDE is rejected (Trojan Source vector). The mapping is
     the identity on U+202E — it is a non-source, non-decomposing starter — so
     only the admissibility gate is evaluated, over no normalization table. -/
 theorem prep_rejects_bidi_override :
-    precisPreparation #[0x202E] = none := by
+    precisPreparation [0x202E] = none := by
   unfold precisPreparation
   rw [precisMap_id_singleton 0x202E (by decide) (by decide) (by decide) (by decide) (by decide)]
   decide +kernel
 
 /-- ZERO WIDTH SPACE is rejected (invisible content). -/
 theorem prep_rejects_zwsp :
-    precisPreparation #[0x200B] = none := by
+    precisPreparation [0x200B] = none := by
   unfold precisPreparation
   rw [precisMap_id_singleton 0x200B (by decide) (by decide) (by decide) (by decide) (by decide)]
   decide +kernel
@@ -50,12 +50,12 @@ theorem prep_rejects_zwsp :
     ASCII would be accepted. The three code points are non-source starters and no
     adjacent pair primary-composes, so the mapping is the identity structurally. -/
 theorem prep_rejects_mixed :
-    precisPreparation #[0x61, 0x202E, 0x62] = none := by
-  have hmap : precisMap #[0x61, 0x202E, 0x62] = #[0x61, 0x202E, 0x62] := by
+    precisPreparation [0x61, 0x202E, 0x62] = none := by
+  have hmap : precisMap [0x61, 0x202E, 0x62] = [0x61, 0x202E, 0x62] := by
     unfold precisMap
-    rw [widthMap_id_of_all_non_source #[0x61, 0x202E, 0x62] (by decide),
-        caseFold_id_of_all_non_source #[0x61, 0x202E, 0x62] (by decide)]
-    exact toNFC_id_of_starters #[0x61, 0x202E, 0x62]
+    rw [widthMap_id_of_all_non_source [0x61, 0x202E, 0x62] (by decide),
+        caseFold_id_of_all_non_source [0x61, 0x202E, 0x62] (by decide)]
+    exact toNFC_id_of_starters [0x61, 0x202E, 0x62]
       (by intro x hx; simp at hx; rcases hx with h | h | h <;> subst h <;> exact ⟨by decide, by decide⟩)
       (by intro x hx; simp at hx; rcases hx with h | h | h <;> subst h <;> decide)
       ⟨Compose.primaryComposite?_none_of_all_ne 0x61 0x202E (by decide) (by decide +kernel),
@@ -71,14 +71,14 @@ theorem prep_rejects_mixed :
 
 /-- Space is still disallowed under IdentifierClass. -/
 theorem prepPreserved_rejects_space :
-    precisPreparationPreserved #[0x0020] = none := by
+    precisPreparationPreserved [0x0020] = none := by
   unfold precisPreparationPreserved
-  rw [precisMapPreserved_ascii_output #[0x0020] (by decide)]
+  rw [precisMapPreserved_ascii_output [0x0020] (by decide)]
   decide +kernel
 
 /-- Bidi override is still disallowed (Trojan Source protection). -/
 theorem prepPreserved_rejects_bidi_override :
-    precisPreparationPreserved #[0x202E] = none := by
+    precisPreparationPreserved [0x202E] = none := by
   unfold precisPreparationPreserved
   rw [precisMapPreserved_id_singleton 0x202E (by decide) (by decide) (by decide) (by decide)]
   decide +kernel
