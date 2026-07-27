@@ -70,7 +70,7 @@ def stripComment (line : String) : String :=
 
 /-- Parse one row: a sequence of space-separated hex codepoints.
     Returns `none` for blank, comment, or directive lines. -/
-def parseRow (rawLine : String) : Option (Array Nat) :=
+def parseRow (rawLine : String) : Option (List Nat) :=
   let stripped := stripComment rawLine
   let trimmed := trimS stripped
   if trimmed.isEmpty then none
@@ -78,7 +78,7 @@ def parseRow (rawLine : String) : Option (Array Nat) :=
     let toks := (stripped.splitOn " ").filterMap (fun tok =>
       let t := trimS tok
       if t.isEmpty then none else some (parseHex t))
-    if toks.isEmpty then none else some toks.toArray
+    if toks.isEmpty then none else some toks
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 ROW LOADING
@@ -91,28 +91,28 @@ def rawNonIgnorable : String := include_str "../Ucd/CollationTest_NON_IGNORABLE_
 def rawShifted : String := include_str "../Ucd/CollationTest_SHIFTED_SHORT.txt"
 
 /-- All parsed rows from the NON_IGNORABLE conformance file. -/
-def rowsNonIgnorable : Array (Array Nat) :=
-  ((rawNonIgnorable.splitOn "\n").filterMap parseRow).toArray
+def rowsNonIgnorable : List (List Nat) :=
+  ((rawNonIgnorable.splitOn "\n").filterMap parseRow)
 
 /-- All parsed rows from the SHIFTED conformance file. -/
-def rowsShifted : Array (Array Nat) :=
-  ((rawShifted.splitOn "\n").filterMap parseRow).toArray
+def rowsShifted : List (List Nat) :=
+  ((rawShifted.splitOn "\n").filterMap parseRow)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 VERIFICATION
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- True iff `sortKey(a) ≤ sortKey(b)` under the chosen policy. -/
-def pairOk (handling : VariableHandling) (a b : Array Nat) : Bool :=
+def pairOk (handling : VariableHandling) (a b : List Nat) : Bool :=
   match ucaCompare handling a b with
   | .lt => true
   | .eq => true
   | .gt => false
 
 /-- True iff every adjacent pair in `rows` is ordered. -/
-def adjacentOrdered (handling : VariableHandling) (rows : Array (Array Nat)) :
+def adjacentOrdered (handling : VariableHandling) (rows : List (List Nat)) :
     Bool := Id.run do
-  let n := rows.size
+  let n := rows.length
   if n ≤ 1 then return true
   for i in [0:n - 1] do
     if hi : i < n ∧ i + 1 < n then
@@ -121,9 +121,9 @@ def adjacentOrdered (handling : VariableHandling) (rows : Array (Array Nat)) :
   return true
 
 /-- Index of the first adjacent pair that fails ordering, or `none`. -/
-def firstFailingPair (handling : VariableHandling) (rows : Array (Array Nat)) :
+def firstFailingPair (handling : VariableHandling) (rows : List (List Nat)) :
     Option Nat := Id.run do
-  let n := rows.size
+  let n := rows.length
   if n ≤ 1 then return none
   for i in [0:n - 1] do
     if hi : i < n ∧ i + 1 < n then
@@ -176,20 +176,20 @@ theorem shifted_conformance : shiftedOrdered = true := by decide
     joining. Empty levels (e.g. an empty L1 for combining-mark-only
     rows) are preserved as zero-length segments between separators,
     exactly as `sortKey` would emit them. -/
-def flattenLevels (s : String) : Array Nat := Id.run do
+def flattenLevels (s : String) : List Nat := Id.run do
   let segments := s.splitOn "|"
   let levels := segments.dropLast
-  let mut acc : Array Nat := #[]
+  let mut acc : List Nat := []
   let mut first : Bool := true
   for seg in levels do
-    if first then first := false else acc := acc.push sep
+    if first then first := false else acc := acc ++ [sep]
     for tok in seg.splitOn " " do
       let t := trimS tok
-      if !t.isEmpty then acc := acc.push (parseHex t)
+      if !t.isEmpty then acc := acc ++ [parseHex t]
   return acc
 
 /-- Parse one FULL-format row into `(codepoints, expectedFlatKey)`.
-    The expected key is in the same flat-`Array Nat` shape returned by
+    The expected key is in the same flat-`List Nat` shape returned by
     `sortKey`, so byte-equality can be checked with `==` directly.
 
     The line shape is:
@@ -201,7 +201,7 @@ def flattenLevels (s : String) : Array Nat := Id.run do
     SQUARE BRACKET shows the literal `[` in its glyph-quote).
 
     Returns `none` for blank, comment, or otherwise non-FULL lines. -/
-def parseFullRow (rawLine : String) : Option (Array Nat × Array Nat) :=
+def parseFullRow (rawLine : String) : Option (List Nat × List Nat) :=
   let line := trimS rawLine
   if line.isEmpty then none
   else if line.startsWith "#" then none
@@ -211,7 +211,7 @@ def parseFullRow (rawLine : String) : Option (Array Nat × Array Nat) :=
     let cpsField := (line.takeWhile (· ≠ ';')).toString
     let cps := ((cpsField.splitOn " ").filterMap (fun tok =>
       let t := trimS tok
-      if t.isEmpty then none else some (parseHex t))).toArray
+      if t.isEmpty then none else some (parseHex t)))
     if cps.isEmpty then none else
     let afterLastOpen := (line.splitOn "[").getLast?.getD ""
     let inside := (afterLastOpen.splitOn "]").head?.getD ""
@@ -227,13 +227,13 @@ def rawShiftedFull : String :=
 
 /-- All `(codepoints, expectedKey)` pairs from the FULL NON_IGNORABLE
     file. -/
-def fullNonIgnorableRows : Array (Array Nat × Array Nat) :=
-  ((rawNonIgnorableFull.splitOn "\n").filterMap parseFullRow).toArray
+def fullNonIgnorableRows : List (List Nat × List Nat) :=
+  ((rawNonIgnorableFull.splitOn "\n").filterMap parseFullRow)
 
 /-- All `(codepoints, expectedKey)` pairs from the FULL SHIFTED
     file. -/
-def fullShiftedRows : Array (Array Nat × Array Nat) :=
-  ((rawShiftedFull.splitOn "\n").filterMap parseFullRow).toArray
+def fullShiftedRows : List (List Nat × List Nat) :=
+  ((rawShiftedFull.splitOn "\n").filterMap parseFullRow)
 
 /-- True iff our `sortKey .nonIgnorable cps` is byte-equal to the
     expected key for every FULL NON_IGNORABLE row. -/
