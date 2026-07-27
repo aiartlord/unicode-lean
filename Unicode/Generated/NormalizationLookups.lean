@@ -490,9 +490,7 @@ theorem canonicalDecomposition_target_non_source
         simpa [UnicodeData.rows] using hSrcMem
       have hAll := rows_decompositionTargets_nonSource
       rw [List.all_eq_true] at hAll
-      rcases List.getElem_of_mem hmem with ⟨i, hi, hiEq⟩
-      have hRow := hAll i hi
-      rw [hiEq] at hRow
+      have hRow := hAll src hmem
       rw [List.all_eq_true] at hRow
       have hElem := hRow j hj
       simpa using hElem
@@ -518,9 +516,8 @@ theorem primaryComposite_target_non_source
       have hdecomp : row.canonicalDecomposition = [d, c] := hcond.1
       have hAll := rows_decomposed_nonSource
       rw [List.all_eq_true] at hAll
-      rcases List.getElem_of_mem hmem with ⟨i, hi, hiEq⟩
-      have hRow := hAll i hi
-      rw [hiEq, hdecomp, hf] at hRow
+      have hRow := hAll row hmem
+      rw [hdecomp, hf] at hRow
       simpa using hRow
   · next hcond =>
       simp at hf
