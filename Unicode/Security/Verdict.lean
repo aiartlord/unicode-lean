@@ -39,7 +39,7 @@ open Unicode.Security.Calculus
     with what severity and family-specific attribution metadata. -/
 structure HazardSite where
   family       : Family
-  positions    : Array Nat                    -- 0-indexed codepoint positions
+  positions    : List Nat                    -- 0-indexed codepoint positions
   severity     : Severity
   subThreatTag : String                       -- family-specific sub-threat name
   attribution  : KeyValueAttribution
@@ -48,7 +48,7 @@ structure HazardSite where
 namespace HazardSite
 
 /-- Build a hazard site with default-severity and empty attribution. -/
-def mk' (family : Family) (positions : Array Nat) (subThreatTag : String) :
+def mk' (family : Family) (positions : List Nat) (subThreatTag : String) :
     HazardSite where
   family := family
   positions := positions
@@ -76,36 +76,36 @@ end HazardSite
     verdict structure (`<F>Verdict`) in its own module and projects it
     onto this shared shape via a `toComposite` adapter. -/
 structure CompositeVerdict where
-  input    : Array Nat
+  input    : List Nat
   kind     : ClassificationKind
-  sites    : Array HazardSite                -- empty when kind = .clear
+  sites    : List HazardSite                -- empty when kind = .clear
   severity : Severity                         -- rollup over `sites`
   deriving Repr, Inhabited
 
 namespace CompositeVerdict
 
 /-- A clear verdict on `input`. -/
-def clear (input : Array Nat) : CompositeVerdict where
+def clear (input : List Nat) : CompositeVerdict where
   input := input
   kind := .clear
-  sites := #[]
+  sites := []
   severity := .informational
 
 /-- A single-site hazard verdict on `input`. -/
-def singleHazard (input : Array Nat) (site : HazardSite) : CompositeVerdict where
+def singleHazard (input : List Nat) (site : HazardSite) : CompositeVerdict where
   input := input
   kind := .hazard
-  sites := #[site]
+  sites := [site]
   severity := site.severity
 
 /-- A compound (multi-site) verdict on `input`. The composite severity is
     the maximum over constituent site severities. -/
-def compoundOf (input : Array Nat) (sites : Array HazardSite) :
+def compoundOf (input : List Nat) (sites : List HazardSite) :
     CompositeVerdict :=
   let maxSev := sites.foldl (fun acc s => Severity.max acc s.severity) .informational
   let kind : ClassificationKind :=
     if sites.isEmpty then .clear
-    else if sites.size = 1 then .hazard
+    else if sites.length = 1 then .hazard
     else .compound
   { input := input, kind := kind, sites := sites, severity := maxSev }
 
@@ -117,9 +117,9 @@ def concat (a b : CompositeVerdict) : CompositeVerdict :=
 
 /-- Compose any number of family verdicts on the same input into a single
     CompositeVerdict. -/
-def composeMany (input : Array Nat) (vs : List CompositeVerdict) :
+def composeMany (input : List Nat) (vs : List CompositeVerdict) :
     CompositeVerdict :=
-  compoundOf input (vs.flatMap (fun v => v.sites.toList)).toArray
+  compoundOf input (vs.flatMap (fun v => v.sites))
 
 /-- True iff no hazard was detected. -/
 @[inline]
@@ -138,17 +138,17 @@ end CompositeVerdict
 
 /-- A clear verdict has no hazard sites. -/
 @[simp]
-theorem clear_sites_empty (input : Array Nat) :
-    (CompositeVerdict.clear input).sites = #[] := rfl
+theorem clear_sites_empty (input : List Nat) :
+    (CompositeVerdict.clear input).sites = [] := rfl
 
 /-- A clear verdict has informational severity. -/
 @[simp]
-theorem clear_severity (input : Array Nat) :
+theorem clear_severity (input : List Nat) :
     (CompositeVerdict.clear input).severity = .informational := rfl
 
 /-- A single-hazard verdict carries the site's severity. -/
 @[simp]
-theorem singleHazard_severity (input : Array Nat) (s : HazardSite) :
+theorem singleHazard_severity (input : List Nat) (s : HazardSite) :
     (CompositeVerdict.singleHazard input s).severity = s.severity := rfl
 
 /-- Concatenating with a clear verdict on the same input preserves the
@@ -161,10 +161,10 @@ theorem concat_clear_right (a : CompositeVerdict) :
 
 /-- Concatenating two clear verdicts yields a clear verdict (modulo
     empty-sites compound classification). -/
-theorem concat_clear_clear (input : Array Nat) :
+theorem concat_clear_clear (input : List Nat) :
     let lhs := CompositeVerdict.concat (CompositeVerdict.clear input)
                                        (CompositeVerdict.clear input)
-    lhs.sites = #[] := by
+    lhs.sites = [] := by
   simp [CompositeVerdict.concat, CompositeVerdict.compoundOf,
         CompositeVerdict.clear]
 
@@ -195,13 +195,13 @@ theorem severity_min_right (a b : Severity) :
 
 /-- Build a sample hazard site for the `decide`-based sanity proofs. -/
 def sampleSite : HazardSite :=
-  HazardSite.mk' .variationSelectorPayload #[1, 2, 3] "DirectPayload"
+  HazardSite.mk' .variationSelectorPayload [1, 2, 3] "DirectPayload"
 
 def sampleClear : CompositeVerdict :=
-  CompositeVerdict.clear #[0x61, 0x62, 0x63]
+  CompositeVerdict.clear [0x61, 0x62, 0x63]
 
 def sampleHazardous : CompositeVerdict :=
-  CompositeVerdict.singleHazard #[0x61, 0x62, 0x63] sampleSite
+  CompositeVerdict.singleHazard [0x61, 0x62, 0x63] sampleSite
 
 /-- Clear sample is isClear. -/
 theorem sample_clear_isClear : sampleClear.isClear = true := rfl
@@ -210,6 +210,6 @@ theorem sample_clear_isClear : sampleClear.isClear = true := rfl
 theorem sample_hazardous_not_clear : sampleHazardous.isClear = false := rfl
 
 /-- Hazardous sample has exactly one site. -/
-theorem sample_hazardous_size : sampleHazardous.sites.size = 1 := rfl
+theorem sample_hazardous_size : sampleHazardous.sites.length = 1 := rfl
 
 end Unicode.Security.Verdict
