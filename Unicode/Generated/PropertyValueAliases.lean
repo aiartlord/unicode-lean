@@ -28,8 +28,8 @@ def parseRow (rawLine : String) : Option PropertyValueRow :=
   let stripped : String := (rawLine.takeWhile (· ≠ '#')).toString
   let line := trimS stripped
   if line.isEmpty then none else
-  let fields : Array String :=
-    ((line.splitOn ";").map trimS).toArray
+  let fields : List String :=
+    ((line.splitOn ";").map trimS)
   if fields.size < 3 then none
   else
     let prop  := fields[0]!
@@ -46,11 +46,11 @@ def propertyValueAliasesRaw : String :=
   include_str "../Ucd/PropertyValueAliases.txt"
 
 /-- All parsed property-value-alias rows, in source order. -/
-def parsedRowsParsed : Array PropertyValueRow :=
-  ((propertyValueAliasesRaw.splitOn "\n").filterMap parseRow).toArray
+def parsedRowsParsed : List PropertyValueRow :=
+  ((propertyValueAliasesRaw.splitOn "\n").filterMap parseRow)
 
 /-- All parsed property-value-alias rows — the materialized view. -/
-def parsedRows : Array PropertyValueRow := parsedRowsList.toArray
+def parsedRows : List PropertyValueRow := parsedRowsList
 
 /-- Look up the canonical short value name for a (property,
     value-alias) pair. Returns `none` if the alias is not in the
@@ -72,7 +72,7 @@ def longValueOf? (property valueAlias : String) : Option String :=
 
 -- Build-time drift gate.
 #eval do
-  unless parsedRowsList.toArray == parsedRowsParsed do
+  unless parsedRowsList == parsedRowsParsed do
     throw (IO.userError "PropertyValueAliases drift: list ≠ parsed")
 
 end Unicode.Generated.PropertyValueAliases

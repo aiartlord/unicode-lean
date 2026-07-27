@@ -37,11 +37,11 @@ def parseHex (s : String) : Nat :=
   s.foldl (fun acc c => acc * 16 + hexDigitVal c) 0
 
 /-- Parse a space-separated list of hex codepoints into an
-    `Array Nat`. Empty input yields `#[]`. -/
-def parseCodepoints (s : String) : Array Nat :=
+    `List Nat`. Empty input yields `[]`. -/
+def parseCodepoints (s : String) : List Nat :=
   ((s.splitOn " ").filterMap (fun tok =>
     let t := trimS tok
-    if t.isEmpty then none else some (parseHex t))).toArray
+    if t.isEmpty then none else some (parseHex t)))
 
 /-- Parse a `condition_list` token into a `Condition` (the type is
     defined in `SpecialCasingData`). Locale tokens are 2-letter language
@@ -65,8 +65,8 @@ def parseRow (rawLine : String) : Option Row :=
   let stripped : String := (rawLine.takeWhile (· ≠ '#')).toString
   let line := trimS stripped
   if line.isEmpty then none else
-  let fields : Array String :=
-    ((line.splitOn ";").map trimS).toArray
+  let fields : List String :=
+    ((line.splitOn ";").map trimS)
   if fields.size < 4 then none
   else
     let code  := parseHex fields[0]!
@@ -76,26 +76,26 @@ def parseRow (rawLine : String) : Option Row :=
     let conditions := if fields.size ≤ 4 ∨ fields[4]!.isEmpty then #[]
       else (((fields[4]!).splitOn " ").filterMap (fun tok =>
         let t := trimS tok
-        if t.isEmpty then none else some (parseCondition t))).toArray
+        if t.isEmpty then none else some (parseCondition t)))
     some ⟨code, lower, title, upper, conditions⟩
 
 /-- Raw text of `SpecialCasing.txt`, embedded at compile time. -/
 def specialCasingRaw : String := include_str "../Ucd/SpecialCasing.txt"
 
 /-- All parsed SpecialCasing rows. -/
-def parsedRowsParsed : Array Row :=
-  ((specialCasingRaw.splitOn "\n").filterMap parseRow).toArray
+def parsedRowsParsed : List Row :=
+  ((specialCasingRaw.splitOn "\n").filterMap parseRow)
 
 /-- All parsed SpecialCasing rows — the materialized view. -/
-def parsedRows : Array Row := parsedRowsList.toArray
+def parsedRows : List Row := parsedRowsList
 
 /-- Rows applicable unconditionally (no `condition_list`). -/
-def unconditionalRows : Array Row :=
+def unconditionalRows : List Row :=
   parsedRows.filter (fun r => r.conditions.isEmpty)
 
 -- Build-time drift gate.
 #eval do
-  unless parsedRowsList.toArray == parsedRowsParsed do
+  unless parsedRowsList == parsedRowsParsed do
     throw (IO.userError "SpecialCasing drift: list ≠ parsed")
 
 end Unicode.Generated.SpecialCasing

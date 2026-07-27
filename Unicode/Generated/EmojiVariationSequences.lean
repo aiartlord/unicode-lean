@@ -54,14 +54,14 @@ def parseRow (rawLine : String) : Option (Nat × Nat) :=
   let line := trimS stripped
   if line.isEmpty then none
   else
-    let fields : Array String := (String.splitOn line ";").toArray
+    let fields : List String := (String.splitOn line ";")
     if fields.isEmpty then none
     else
       let cpField := fields[0]!
-      let toks : Array String :=
+      let toks : List String :=
         ((cpField.splitOn " ").filterMap (fun t =>
           let tt := trimS t
-          if tt.isEmpty then none else some tt)).toArray
+          if tt.isEmpty then none else some tt))
       if toks.size = 2 then
         some (parseHex toks[0]!, parseHex toks[1]!)
       else
@@ -72,22 +72,22 @@ def rawText : String :=
   include_str "../Ucd/emoji-variation-sequences.txt"
 
 /-- Fresh parse of the pinned source, used only by the drift gate. -/
-def parsedPairsParsed : Array (Nat × Nat) :=
-  ((rawText.splitOn "\n").filterMap parseRow).toArray
+def parsedPairsParsed : List (Nat × Nat) :=
+  ((rawText.splitOn "\n").filterMap parseRow)
 
 /-- All parsed `(base, vs)` pairs in file order — the materialized view. -/
-def parsedPairs : Array (Nat × Nat) := parsedPairsList.toArray
+def parsedPairs : List (Nat × Nat) := parsedPairsList
 
 /-- The set of base codepoints that have a registered emoji-style
     variation (`base + U+FE0F`).  Derived from `parsedPairs`. -/
-def emojiStyleBases : Array Nat :=
+def emojiStyleBases : List Nat :=
   parsedPairs.filterMap (fun p => if p.2 = 0xFE0F then some p.1 else none)
 
 /-- The set of base codepoints that have a registered text-style
     variation (`base + U+FE0E`).  Per UTS #51 every emoji-style
     entry has a matching text-style entry, so this is the same
     underlying set as `emojiStyleBases`. -/
-def textStyleBases : Array Nat :=
+def textStyleBases : List Nat :=
   parsedPairs.filterMap (fun p => if p.2 = 0xFE0E then some p.1 else none)
 
 /-- True iff `(base, U+FE0F)` is a registered emoji-style
@@ -137,7 +137,7 @@ theorem latin_A_no_emoji_pres :
 
 -- Build-time drift gate.
 #eval do
-  unless parsedPairsList.toArray == parsedPairsParsed do
+  unless parsedPairsList == parsedPairsParsed do
     throw (IO.userError "EmojiVariationSequences drift: list ≠ parsed")
 
 end Unicode.Generated.EmojiVariationSequences

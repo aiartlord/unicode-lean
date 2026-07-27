@@ -30,8 +30,8 @@ def parseRow (rawLine : String) : Option PropertyRow :=
   let stripped : String := (rawLine.takeWhile (· ≠ '#')).toString
   let line := trimS stripped
   if line.isEmpty then none else
-  let fields : Array String :=
-    ((line.splitOn ";").map trimS).toArray
+  let fields : List String :=
+    ((line.splitOn ";").map trimS)
   if fields.size < 2 then none
   else
     let short := fields[0]!
@@ -44,11 +44,11 @@ def parseRow (rawLine : String) : Option PropertyRow :=
 def propertyAliasesRaw : String := include_str "../Ucd/PropertyAliases.txt"
 
 /-- All parsed property-alias rows, in source order. -/
-def parsedRowsParsed : Array PropertyRow :=
-  ((propertyAliasesRaw.splitOn "\n").filterMap parseRow).toArray
+def parsedRowsParsed : List PropertyRow :=
+  ((propertyAliasesRaw.splitOn "\n").filterMap parseRow)
 
 /-- All parsed property-alias rows — the materialized view. -/
-def parsedRows : Array PropertyRow := parsedRowsList.toArray
+def parsedRows : List PropertyRow := parsedRowsList
 
 /-- Look up the canonical short name for a property given any of
     its aliases (short / long / additional). Returns `none` if the
@@ -71,7 +71,7 @@ def longNameOf? (alias : String) : Option String :=
 
 -- Build-time drift gate.
 #eval do
-  unless parsedRowsList.toArray == parsedRowsParsed do
+  unless parsedRowsList == parsedRowsParsed do
     throw (IO.userError "PropertyAliases drift: list ≠ parsed")
 
 end Unicode.Generated.PropertyAliases

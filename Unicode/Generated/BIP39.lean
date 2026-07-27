@@ -3,7 +3,7 @@
 
   Aggregate over the 10 BIP-39 wordlists.  Each per-language
   module under `Unicode/Generated/BIP39/<Lang>.lean` exposes a
-  literal `wordlist : Array String` with 2,048 entries.
+  literal `wordlist : List String` with 2,048 entries.
 
   This module wraps them in a `Language` enum + `wordlist`
   dispatch so callers that work with mnemonics across languages
@@ -49,7 +49,7 @@ inductive Language where
   deriving DecidableEq, Repr, Inhabited
 
 /-- Get the canonical 2,048-word array for `lang`. -/
-def wordlist : Language → Array String
+def wordlist : Language → List String
   | .english             => English.wordlist
   | .japanese            => Japanese.wordlist
   | .korean              => Korean.wordlist
@@ -77,7 +77,7 @@ def wordlistCps : Language → List (List Nat)
   | .portuguese          => PortugueseCps.wordlistCps
 
 /-- All ten languages, in declaration order. -/
-def allLanguages : Array Language :=
+def allLanguages : List Language :=
   #[.english, .japanese, .korean, .spanish,
     .chineseSimplified, .chineseTraditional,
     .french, .italian, .czech, .portuguese]

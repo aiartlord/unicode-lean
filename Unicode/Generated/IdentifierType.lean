@@ -67,14 +67,14 @@ def parseIdentifierType? : String → Option IdentifierType
   | unknownIdentifierType => Function.const String none unknownIdentifierType
 
 /-- Parse the type-set field (space-separated long names). -/
-def parseTypeSet (s : String) : Array IdentifierType :=
+def parseTypeSet (s : String) : List IdentifierType :=
   ((s.splitOn " ").filterMap (fun tok =>
     let t := trimS tok
-    if t.isEmpty then none else parseIdentifierType? t)).toArray
+    if t.isEmpty then none else parseIdentifierType? t))
 
 /-- Parse one IdentifierType.txt explicit row. -/
 def parseExplicitRow
-    (rawLine : String) : Option (Nat × Nat × Array IdentifierType) :=
+    (rawLine : String) : Option (Nat × Nat × List IdentifierType) :=
   let stripped : String := (rawLine.takeWhile (· != '#')).toString
   let line := trimS stripped
   if line.isEmpty then none else
@@ -88,7 +88,7 @@ def parseExplicitRow
 /-- Parse one `@missing:` directive. Format:
     `# @missing: <range>; <type-set>`. -/
 def parseMissingRow
-    (rawLine : String) : Option (Nat × Nat × Array IdentifierType) :=
+    (rawLine : String) : Option (Nat × Nat × List IdentifierType) :=
   let line := trimS rawLine
   if !line.startsWith "# @missing:" then none else
   let body := trimS (line.drop "# @missing:".length).toString
@@ -103,11 +103,11 @@ def parseMissingRow
 def identifierTypeRaw : String := include_str "../Ucd/IdentifierType.txt"
 
 /-! Per-range Identifier_Type assignments. -/
-def explicitRanges : Array (Nat × Nat × Array IdentifierType) :=
-  ((identifierTypeRaw.splitOn "\n").filterMap parseExplicitRow).toArray
+def explicitRanges : List (Nat × Nat × List IdentifierType) :=
+  ((identifierTypeRaw.splitOn "\n").filterMap parseExplicitRow)
 
 /-! `@missing` default assignments from the source header. -/
-def defaultRanges : Array (Nat × Nat × Array IdentifierType) :=
-  ((identifierTypeRaw.splitOn "\n").filterMap parseMissingRow).toArray
+def defaultRanges : List (Nat × Nat × List IdentifierType) :=
+  ((identifierTypeRaw.splitOn "\n").filterMap parseMissingRow)
 
 end Unicode.Generated.IdentifierType
