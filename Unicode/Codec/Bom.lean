@@ -121,7 +121,7 @@ theorem detect_prefers_utf32_over_utf16 :
 
 /-- Empty input has no BOM. -/
 theorem detect_empty :
-    detect List UInt8.empty = none := by decide
+    detect ([] : List UInt8) = none := by decide
 
 /-- Non-BOM content returns none. -/
 theorem detect_ascii :
