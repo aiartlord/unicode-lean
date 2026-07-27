@@ -76,7 +76,7 @@ theorem isNoncharacter_emoji : isNoncharacter 0x1F600 = false := by decide
 -- §4 ENUMERATION + COUNT
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Enumerate the 66 noncharacters as an Array. -/
+/-- Enumerate the 66 noncharacters as a List. -/
 def all : List Nat := [
   0xFDD0,
   0xFDD1,
