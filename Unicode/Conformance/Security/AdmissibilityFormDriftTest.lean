@@ -29,7 +29,7 @@ open Unicode.Security.Boundary.AdmissibilityFormDrift
 def rawFixture : String :=
   include_str "../../Ucd/Security/AdmissibilityFormDriftTest.txt"
 
-def rows : Array Row := parseFixture rawFixture
+def rows : List Row := parseFixture rawFixture
 
 /-- Project an `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
@@ -38,7 +38,7 @@ def projectClassify
 
 /-- Project an `Classification` to the positions array.
     X4 reports no positions because the predicate is whole-string. -/
-def projectPositions (c : Classification) : Array Nat :=
+def projectPositions (c : Classification) : List Nat :=
   c.positions
 
 /-- Validate the X4 verdict's metadata fields against the row's
@@ -67,13 +67,13 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 23 := by decide
+theorem row_count : rows.length = 23 := by decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 9 := by decide
+    (rows.filter (·.sectionName = "Clear")).length ≥ 9 := by decide
 
 theorem covers_drift :
-    (rows.filter (·.sectionName = "AdmissibilityFormDrift")).size ≥ 12 := by
+    (rows.filter (·.sectionName = "AdmissibilityFormDrift")).length ≥ 12 := by
   decide
 
 end Unicode.Conformance.Security.AdmissibilityFormDriftTest
