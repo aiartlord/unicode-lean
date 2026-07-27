@@ -54,7 +54,7 @@ set_option maxRecDepth 1000000
     The generated table provides a balanced decision tree, which keeps
     kernel reduction bounded to the lookup path instead of reducing the
     whole mapping array on every `skeleton` check. -/
-def lookupConfusable? (cp : Nat) : Option (Array Nat) :=
+def lookupConfusable? (cp : Nat) : Option (List Nat) :=
   Unicode.Generated.Confusables.lookup? cp
 
 /-- Replace every codepoint in a sequence with its confusables-table
@@ -270,7 +270,7 @@ theorem areConfusableIterated_trans (a b c : List Nat)
   have hSbc : iteratedSkeleton b = iteratedSkeleton c := of_decide_eq_true hbc
   exact decide_eq_true (hSab.trans hSbc)
 /-- `letterSkeleton` is total by construction: `iteratedSkeleton` is
-    structurally recursive on finite fuel, and `Array.filter` preserves
+    structurally recursive on finite fuel, and `List.filter` preserves
     finiteness. Whole-table expansion facts live in
     `Unicode.ConfusablesTableFacts` so the runtime module does not reduce
     the complete confusables table during ordinary builds. -/

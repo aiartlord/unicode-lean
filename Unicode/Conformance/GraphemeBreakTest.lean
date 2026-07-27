@@ -20,7 +20,7 @@ open Unicode.Segmentation.GraphemeBreak
 /-- A parsed test row: codepoint sequence plus the n+1 expected
     break positions. `breaks[i]` is `true` iff a grapheme break
     occurs immediately before codepoint `i` (or at end-of-string
-    when `i = codepoints.size`). -/
+    when `i = codepoints.length`). -/
 structure Row where
   codepoints : List Nat
   breaks     : List Bool

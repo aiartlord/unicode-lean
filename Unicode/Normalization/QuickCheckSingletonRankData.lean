@@ -1059,7 +1059,7 @@ theorem relevant_rows_covered :
       decide (row.canonicalCombiningClass ≠ 0) ||
       decide (Hangul.isHangulSyllable row.codepoint = true) ||
       decide (nfcQCValue row.codepoint ≠ .Y) ||
-      decide (row.canonicalDecomposition.size = 0) ||
+      decide (row.canonicalDecomposition.length = 0) ||
       rows.any (fun entry => decide (entry.codepoint = row.codepoint))) = true := by
   decide +kernel
 
@@ -1068,7 +1068,7 @@ theorem relevant_lookup_rows_covered :
       decide (Lookup.canonicalCombiningClass row.codepoint ≠ 0) ||
       decide (Hangul.isHangulSyllable row.codepoint = true) ||
       decide (nfcQCValue row.codepoint ≠ .Y) ||
-      decide (row.canonicalDecomposition.size = 0) ||
+      decide (row.canonicalDecomposition.length = 0) ||
       rows.any (fun entry => decide (entry.codepoint = row.codepoint))) = true := by
   decide +kernel
 

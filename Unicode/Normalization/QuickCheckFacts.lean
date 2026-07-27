@@ -195,7 +195,7 @@ theorem qcY_nonstarter_cp_no_decomp
 theorem qcY_starter_2decomp_cp_composes
     (cp : Nat) (hQC : NFC.nfcQCValue cp = .Y)
     (hCcc : Lookup.canonicalCombiningClass cp = 0)
-    (hSize : (Lookup.canonicalDecomposition cp).size = 2) :
+    (hSize : (Lookup.canonicalDecomposition cp).length = 2) :
     Compose.primaryComposite?
       (Lookup.canonicalDecomposition cp)[0]!
       (Lookup.canonicalDecomposition cp)[1]! = some cp := by

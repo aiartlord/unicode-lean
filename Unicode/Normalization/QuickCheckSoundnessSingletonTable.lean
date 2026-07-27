@@ -32,7 +32,7 @@ theorem qcY_starter_nontrivial_singleton_nfc_id_table :
       decide (Lookup.canonicalCombiningClass row.codepoint ≠ 0) ||
       decide (Hangul.isHangulSyllable row.codepoint = true) ||
       decide (nfcQCValue row.codepoint ≠ .Y) ||
-      decide (row.canonicalDecomposition.size = 0) ||
+      decide (row.canonicalDecomposition.length = 0) ||
       decide (toNFC [row.codepoint] = [row.codepoint])) = true := by
   unfold UnicodeData.rows
   rw [List.all_toArray, List.all_eq_true]
@@ -54,7 +54,7 @@ theorem qcY_starter_nontrivial_singleton_nfc_id_table :
         (((decide (Lookup.canonicalCombiningClass row.codepoint ≠ 0) ||
           decide (Hangul.isHangulSyllable row.codepoint = true)) ||
           decide (nfcQCValue row.codepoint ≠ .Y)) ||
-          decide (row.canonicalDecomposition.size = 0)) = true := by
+          decide (row.canonicalDecomposition.length = 0)) = true := by
       simpa [hAny] using hCovered
     rw [Bool.or_eq_true]
     exact Or.inl hFirst4

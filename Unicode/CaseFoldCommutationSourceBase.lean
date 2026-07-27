@@ -13,11 +13,11 @@ open Unicode.Normalization
 open Unicode.Generated
 open Unicode.Precis.CaseMapping
 
-def sourceCommP (entry : Nat × Array Nat) : Bool :=
+def sourceCommP (entry : Nat × List Nat) : Bool :=
   decide (NFC.toNFD (caseFold [entry.1]) =
           NFC.toNFD (caseFold (NFC.toNFD [entry.1])))
 
-def sourcePointwiseP (entry : Nat × Array Nat) : Bool :=
+def sourcePointwiseP (entry : Nat × List Nat) : Bool :=
   decide (NFC.toNFD entry.2.toList =
           NFC.toNFD (caseFold (NFC.toNFD [entry.1])))
 

@@ -709,7 +709,7 @@ end CombPClosure
     pinned 3045-row table. -/
 theorem ucd_twoEltDecomp_factoring :
     UnicodeData.rows.all (fun row =>
-      if row.canonicalDecomposition.size = 2 then
+      if row.canonicalDecomposition.length = 2 then
         decide (Decompose.fullCanonicalDecompose row.codepoint
                 = Decompose.fullCanonicalDecompose
                     (row.canonicalDecomposition.getD 0 0)
@@ -757,7 +757,7 @@ theorem fullCanonicalDecompose_of_twoElt_decomp
   have hSrcCodepointEq : src.codepoint = p := hSrcCp.trans hCodepointEq
   have hSrcDecompEq : src.canonicalDecomposition = [d, c] := by
     rw [hSrcDecomp, hRowDecomp]
-  have hSize : src.canonicalDecomposition.size = 2 := by
+  have hSize : src.canonicalDecomposition.length = 2 := by
     rw [hSrcDecompEq]; rfl
   have hGet0 : src.canonicalDecomposition.getD 0 0 = d := by
     rw [hSrcDecompEq]; rfl

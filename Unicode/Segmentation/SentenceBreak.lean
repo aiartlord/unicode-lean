@@ -195,7 +195,7 @@ def shouldBreakBefore
       -- SB998: × Any (do not break)
       else false
 
-/-- Boolean array of length `cps.size + 1`. Entry `i` is `true`
+/-- Boolean list of length `cps.length + 1`. Entry `i` is `true`
     when a sentence break occurs immediately before position `i`. -/
 def sentenceBreaks (cps : List Nat) : List Bool :=
   let lits   := cps.map lookupSB
