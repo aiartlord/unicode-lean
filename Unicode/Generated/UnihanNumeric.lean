@@ -220,9 +220,9 @@ def binarySearch (cp : Nat) (prop : NumericProperty) (left right fuel : Nat) : O
 
 /-- Look up the numeric value for a given codepoint and property. -/
 def lookup (cp : Nat) (prop : NumericProperty) : Option Nat :=
-  binarySearch cp prop 0 parsedRows.size (parsedRows.size + 1)
+  binarySearch cp prop 0 parsedRows.length (parsedRows.length + 1)
 
-theorem parsedRows_count : parsedRows.size = 152 := by decide
+theorem parsedRows_count : parsedRows.length = 152 := by decide
 
 theorem lookup_u4E00_primary :
     lookup 0x4E00 .PrimaryNumeric = some 1 := by decide
@@ -277,8 +277,8 @@ def uProp : String → Option NumericProperty
 
 def uParseRow (line : String) : Option Row :=
   if (uTrim line).startsWith "#" then none else
-  let f := (line.splitOn "\t").toArray
-  if f.size < 3 then none else
+  let f := line.splitOn "\t"
+  if f.length < 3 then none else
   match uProp (uTrim f[1]!) with
   | none => none
   | some p =>

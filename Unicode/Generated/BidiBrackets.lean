@@ -163,7 +163,7 @@ def binarySearch (cp : Nat) (left right fuel : Nat) : Option BidiBracketRow :=
     else none
 
 def lookup? (cp : Nat) : Option BidiBracketRow :=
-  binarySearch cp 0 bidiBracketRows.size (bidiBracketRows.size + 1)
+  binarySearch cp 0 bidiBracketRows.length (bidiBracketRows.length + 1)
 
 theorem lookup_u0028 :
     lookup? 0x0028 = some { codepoint := 0x0028, pair := 0x0029, bracketType := .Open } := by decide
