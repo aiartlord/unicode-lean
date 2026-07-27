@@ -25,10 +25,10 @@ def containsInfix (needle hay : List Nat) : Bool :=
 
 /-- True iff `input` contains any curated glitch token as a contiguous
     codepoint infix. -/
-def containsGlitchToken (input : Array Nat) : Bool :=
+def containsGlitchToken (input : List Nat) : Bool :=
   glitchTokenCodepoints.any (fun tok => containsInfix tok input.toList)
 
 /-- Empty input contains no glitch token. -/
-theorem empty_clear : containsGlitchToken #[] = false := by decide +kernel
+theorem empty_clear : containsGlitchToken [] = false := by decide +kernel
 
 end Unicode.Security.Crypto.GlitchTokenScan

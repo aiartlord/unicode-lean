@@ -53,7 +53,7 @@ inductive SubThreat where
 /-- Top-level classification for SkinToneVariationForgery. -/
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : List UInt8)
   deriving Inhabited
 
 /-- Verdict — the structured output of `detect`. -/
@@ -152,17 +152,17 @@ def detect (input : List Nat) : Verdict :=
       let modPositions :=
         (List.range mods.length).map (fun i => basePos + 1 + i)
       .hazard (.stackedSkinTones basePos mods)
-        modPositions ByteArray.empty
+        modPositions []
     | none =>
       match firstInvalidSkinToneTarget input with
       | some (basePos, baseCp, modCp) =>
         .hazard (.invalidSkinToneTarget basePos baseCp modCp)
-          [basePos + 1] ByteArray.empty
+          [basePos + 1] []
       | none =>
         match firstForcedTextStyle input with
         | some (basePos, baseCp) =>
           .hazard (.forcedTextStyle basePos baseCp)
-            [basePos + 1] ByteArray.empty
+            [basePos + 1] []
         | none => .clear
   { input := input,
     classify := classification,
@@ -188,20 +188,20 @@ def SubThreat.tag : SubThreat → String
 def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × List Nat × ByteArray) false
+      Function.const (SubThreat × List Nat × List UInt8) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification. -/
 def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
-      Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
+      Function.const (List Nat × List UInt8) (some sub.tag) (positions, decoded)
 
 /-- Positions array of a classification. -/
 def Classification.positions : Classification → List Nat
   | .clear                     => []
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × ByteArray) positions (sub, decoded)
+      Function.const (SubThreat × List UInt8) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 Spot checks
