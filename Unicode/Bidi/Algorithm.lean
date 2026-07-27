@@ -13,7 +13,7 @@
     I1–I2   implicit embedding-level adjustment
     L1–L4   line-level reset, run reversal, and mirroring helpers
 
-  This module operates on a paragraph as `Array Nat` codepoints. Line
+  This module operates on a paragraph as `List Nat` codepoints. Line
   breaking is the caller's responsibility; the L1 / L2 reorder stage is
   applied to one line at a time via `reorderLine`. L3 (combining-mark
   stickiness) is the renderer's concern. L4 is exposed through
@@ -24,7 +24,7 @@
   `BidiMirroring`.
 
   Implementation note: every per-character walk is expressed via
-  `Array.foldl` / `Array.mapIdx` so termination is automatic. Stack-
+  `List.foldl` / `List.mapIdx` so termination is automatic. Stack-
   shaped logic (X-rules, bracket matching) carries its own state
   through `foldl`.
 -/
@@ -103,7 +103,7 @@ def isStrong (bc : BidiClass) : Bool :=
     fold tracks `(found?, isolateDepth)`; isolate initiators bump the
     depth, PDI decrements it (clamped at zero), and a strong class at
     depth 0 finalises `found?`. -/
-def firstStrongIgnoringIsolates (cps : Array Nat) : Option BidiClass :=
+def firstStrongIgnoringIsolates (cps : List Nat) : Option BidiClass :=
   Prod.fst <| cps.foldl
     (fun (acc : Option BidiClass × Nat) cp =>
       match acc with
@@ -119,7 +119,7 @@ def firstStrongIgnoringIsolates (cps : Array Nat) : Option BidiClass :=
     (none, 0)
 
 /-- P2 + P3: paragraph base level. R or AL strong → 1 (RTL). Else 0 (LTR). -/
-def paragraphLevel (cps : Array Nat) : Level :=
+def paragraphLevel (cps : List Nat) : Level :=
   match firstStrongIgnoringIsolates cps with
   | some .R | some .AL => 1
   | none
@@ -129,7 +129,7 @@ def paragraphLevel (cps : Array Nat) : Level :=
   | some .LRI | some .RLI | some .FSI | some .PDI => 0
 
 /-- P2 + P3: paragraph base direction. -/
-def paragraphDirection (cps : Array Nat) : Direction :=
+def paragraphDirection (cps : List Nat) : Direction :=
   if paragraphLevel cps = 0 then .LTR else .RTL
 
 /-- Embedding direction: even level → LTR; odd → RTL. -/
@@ -160,18 +160,18 @@ def applyOverride (origClass : BidiClass) (entry : StackEntry) : BidiClass :=
   | none      => origClass
 
 /-- Top-of-stack accessor with a sentinel when the stack is empty. -/
-def topEntry (st : Array StackEntry) : StackEntry :=
-  match st.back? with
+def topEntry (st : List StackEntry) : StackEntry :=
+  match st.getLast? with
   | some e => e
   | none   => { level := 0, override := none, isolate := false }
 
 /-- Internal X-rules state. -/
 structure XState where
-  stack            : Array StackEntry
+  stack            : List StackEntry
   overflowEmbed    : Nat
   overflowIsolate  : Nat
   validIsolates    : Nat
-  records          : Array CharRecord
+  records          : List CharRecord
   deriving Inhabited
 
 /-- X5c look-ahead: scan from `start + 1` forward and return the
@@ -181,8 +181,8 @@ structure XState where
     are ignored. The scan terminates at the matching PDI of the
     outer FSI, or at the end of the codepoint array if no matching
     PDI exists. -/
-def firstStrongInScope (cps : Array Nat) (start : Nat) : Option BidiClass :=
-  let tail := cps.extract (start + 1) cps.size
+def firstStrongInScope (cps : List Nat) (start : Nat) : Option BidiClass :=
+  let tail := cps.drop (start + 1)
   Prod.fst <| tail.foldl
     (fun (acc : Option BidiClass × Nat × Bool) cp =>
       let (result, depth, stopped) := acc
@@ -205,7 +205,7 @@ def firstStrongInScope (cps : Array Nat) (start : Nat) : Option BidiClass :=
 /-- Per-position rewrite for X5c. Returns the LRI / RLI codepoint
     that the FSI at `i` resolves to per UAX #9 §3.3.2 X5c, or the
     original codepoint at position `i` when it is not FSI. -/
-def resolveFSIAt (cps : Array Nat) (i : Nat) (cp : Nat) : Nat :=
+def resolveFSIAt (cps : List Nat) (i : Nat) (cp : Nat) : Nat :=
   if lookupBidiClass cp = .FSI then
     match firstStrongInScope cps i with
     | some .R | some .AL => 0x2067
@@ -221,7 +221,7 @@ def resolveFSIAt (cps : Array Nat) (i : Nat) (cp : Nat) : Nat :=
     with the LRI codepoint (U+2066). After this pass, the X-rules
     driver receives no FSI characters; the FSI behavior is fully
     determined upstream and matches UAX #9 §3.3.2 X5c. -/
-def resolveFSI (cps : Array Nat) : Array Nat :=
+def resolveFSI (cps : List Nat) : List Nat :=
   cps.mapIdx (resolveFSIAt cps)
 
 /-- Per-position invariant for X5c: every codepoint emitted by
@@ -229,7 +229,7 @@ def resolveFSI (cps : Array Nat) : Array Nat :=
     the RLI replacement (0x2067 → .RLI), the LRI replacement
     (0x2066 → .LRI), and the passthrough where the input class
     was already non-FSI by the if-condition. -/
-theorem resolveFSIAt_no_FSI (cps : Array Nat) (i cp : Nat) :
+theorem resolveFSIAt_no_FSI (cps : List Nat) (i cp : Nat) :
     lookupBidiClass (resolveFSIAt cps i cp) ≠ .FSI := by
   unfold resolveFSIAt
   split
@@ -255,28 +255,28 @@ def xStep (paragraphLevel : Level) (cp : Nat) (s : XState) : XState :=
   | .RLE =>
     let newLvl := nextOdd curLevel
     if levelInBounds newLvl ∧ s.overflowEmbed = 0 ∧ s.overflowIsolate = 0 then
-      { s with stack := s.stack.push { level := newLvl, override := none, isolate := false } }
+      { s with stack := s.stack ++ [{ level := newLvl, override := none, isolate := false }] }
     else if s.overflowIsolate = 0 then
       { s with overflowEmbed := s.overflowEmbed + 1 }
     else s
   | .LRE =>
     let newLvl := nextEven curLevel
     if levelInBounds newLvl ∧ s.overflowEmbed = 0 ∧ s.overflowIsolate = 0 then
-      { s with stack := s.stack.push { level := newLvl, override := none, isolate := false } }
+      { s with stack := s.stack ++ [{ level := newLvl, override := none, isolate := false }] }
     else if s.overflowIsolate = 0 then
       { s with overflowEmbed := s.overflowEmbed + 1 }
     else s
   | .RLO =>
     let newLvl := nextOdd curLevel
     if levelInBounds newLvl ∧ s.overflowEmbed = 0 ∧ s.overflowIsolate = 0 then
-      { s with stack := s.stack.push { level := newLvl, override := some .RTL, isolate := false } }
+      { s with stack := s.stack ++ [{ level := newLvl, override := some .RTL, isolate := false }] }
     else if s.overflowIsolate = 0 then
       { s with overflowEmbed := s.overflowEmbed + 1 }
     else s
   | .LRO =>
     let newLvl := nextEven curLevel
     if levelInBounds newLvl ∧ s.overflowEmbed = 0 ∧ s.overflowIsolate = 0 then
-      { s with stack := s.stack.push { level := newLvl, override := some .LTR, isolate := false } }
+      { s with stack := s.stack ++ [{ level := newLvl, override := some .LTR, isolate := false }] }
     else if s.overflowIsolate = 0 then
       { s with overflowEmbed := s.overflowEmbed + 1 }
     else s
@@ -290,11 +290,11 @@ def xStep (paragraphLevel : Level) (cp : Nat) (s : XState) : XState :=
       { codepoint := cp, origClass := bc, level := curLevel, resolvedClass := resolved }
     if levelInBounds newLvl ∧ s.overflowEmbed = 0 ∧ s.overflowIsolate = 0 then
       { s with
-        stack := s.stack.push { level := newLvl, override := none, isolate := true },
+        stack := s.stack ++ [{ level := newLvl, override := none, isolate := true }],
         validIsolates := s.validIsolates + 1,
-        records := s.records.push rec0 }
+        records := s.records ++ [rec0] }
     else
-      { s with overflowIsolate := s.overflowIsolate + 1, records := s.records.push rec0 }
+      { s with overflowIsolate := s.overflowIsolate + 1, records := s.records ++ [rec0] }
   | .LRI =>
     let newLvl := nextEven curLevel
     let resolved := applyOverride bc top
@@ -302,11 +302,11 @@ def xStep (paragraphLevel : Level) (cp : Nat) (s : XState) : XState :=
       { codepoint := cp, origClass := bc, level := curLevel, resolvedClass := resolved }
     if levelInBounds newLvl ∧ s.overflowEmbed = 0 ∧ s.overflowIsolate = 0 then
       { s with
-        stack := s.stack.push { level := newLvl, override := none, isolate := true },
+        stack := s.stack ++ [{ level := newLvl, override := none, isolate := true }],
         validIsolates := s.validIsolates + 1,
-        records := s.records.push rec0 }
+        records := s.records ++ [rec0] }
     else
-      { s with overflowIsolate := s.overflowIsolate + 1, records := s.records.push rec0 }
+      { s with overflowIsolate := s.overflowIsolate + 1, records := s.records ++ [rec0] }
   -- FSI: provably unreachable when input flows from `resolveFSI`,
   -- per `resolveFSIAt_no_FSI` above. Lean's exhaustiveness check
   -- requires every Bidi class to have a match arm; this one mirrors
@@ -320,23 +320,23 @@ def xStep (paragraphLevel : Level) (cp : Nat) (s : XState) : XState :=
       { codepoint := cp, origClass := bc, level := curLevel, resolvedClass := resolved }
     if levelInBounds newLvl ∧ s.overflowEmbed = 0 ∧ s.overflowIsolate = 0 then
       { s with
-        stack := s.stack.push { level := newLvl, override := none, isolate := true },
+        stack := s.stack ++ [{ level := newLvl, override := none, isolate := true }],
         validIsolates := s.validIsolates + 1,
-        records := s.records.push rec0 }
+        records := s.records ++ [rec0] }
     else
-      { s with overflowIsolate := s.overflowIsolate + 1, records := s.records.push rec0 }
+      { s with overflowIsolate := s.overflowIsolate + 1, records := s.records ++ [rec0] }
   | .PDI =>
     if s.overflowIsolate > 0 then
       let rec0 : CharRecord :=
         { codepoint := cp, origClass := bc, level := curLevel, resolvedClass := bc }
-      { s with overflowIsolate := s.overflowIsolate - 1, records := s.records.push rec0 }
+      { s with overflowIsolate := s.overflowIsolate - 1, records := s.records ++ [rec0] }
     else if s.validIsolates = 0 then
       let rec0 : CharRecord :=
         { codepoint := cp, origClass := bc, level := curLevel, resolvedClass := bc }
-      { s with records := s.records.push rec0 }
+      { s with records := s.records ++ [rec0] }
     else
-      let popped  := s.stack.popWhile (fun e => ! e.isolate)
-      let popped' := popped.pop
+      let popped  := (s.stack.reverse.dropWhile (fun e => ! e.isolate)).reverse
+      let popped' := popped.dropLast
       let newTop  := topEntry popped'
       -- UAX #9 X6a: PDI is treated as having the directional override
       -- direction of the stack frame restored after popping the
@@ -346,13 +346,13 @@ def xStep (paragraphLevel : Level) (cp : Nat) (s : XState) : XState :=
         stack := popped',
         overflowEmbed := 0,
         validIsolates := s.validIsolates - 1,
-        records := s.records.push
-          { codepoint := cp, origClass := bc, level := newTop.level,
-            resolvedClass := resolved } }
+        records := s.records ++
+          [{ codepoint := cp, origClass := bc, level := newTop.level,
+            resolvedClass := resolved }] }
   | .PDF =>
     if s.overflowIsolate > 0 then s
     else if s.overflowEmbed > 0 then { s with overflowEmbed := s.overflowEmbed - 1 }
-    else if s.stack.size ≥ 2 ∧ ! top.isolate then { s with stack := s.stack.pop }
+    else if s.stack.length ≥ 2 ∧ ! top.isolate then { s with stack := s.stack.dropLast }
     else s
   -- X9: BN is removed alongside the embedding / override controls
   -- handled above. The X-rules state machine treats it as a no-op
@@ -365,32 +365,32 @@ def xStep (paragraphLevel : Level) (cp : Nat) (s : XState) : XState :=
     let rec0 : CharRecord :=
       { codepoint := cp, origClass := bc, level := paragraphLevel,
         resolvedClass := bc }
-    { s with records := s.records.push rec0 }
+    { s with records := s.records ++ [rec0] }
   | .L | .R | .AL | .EN | .ES | .ET | .AN | .CS | .NSM
   | .S | .WS | .ON =>
     let resolved := applyOverride bc top
     let rec0 : CharRecord :=
       { codepoint := cp, origClass := bc, level := curLevel, resolvedClass := resolved }
-    { s with records := s.records.push rec0 }
+    { s with records := s.records ++ [rec0] }
 
 /-- X-rules driver with an explicit paragraph base level. Resolves
     FSI per X5c first, then applies the explicit-formatting state
     machine over the resolved codepoint array. -/
-def assignLevelsAt (cps : Array Nat) (pLevel : Level) : Array CharRecord :=
+def assignLevelsAt (cps : List Nat) (pLevel : Level) : List CharRecord :=
   let resolved := resolveFSI cps
   let seed     : XState :=
-    { stack            := #[{ level := pLevel, override := none, isolate := false }],
+    { stack            := [{ level := pLevel, override := none, isolate := false }],
       overflowEmbed    := 0,
       overflowIsolate  := 0,
       validIsolates    := 0,
-      records          := #[] }
+      records          := [] }
   (resolved.foldl (fun acc cp => xStep pLevel cp acc) seed).records
 
 /-- X-rules driver with the paragraph level discovered from P2/P3.
     The paragraph base level is computed on the original array
     because P2 ignores all isolate interiors and is therefore
     invariant under FSI-to-RLI/LRI rewriting. -/
-def assignLevels (cps : Array Nat) : Array CharRecord :=
+def assignLevels (cps : List Nat) : List CharRecord :=
   assignLevelsAt cps (paragraphLevel cps)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -398,42 +398,42 @@ def assignLevels (cps : Array Nat) : Array CharRecord :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Split a record array into level runs `[start, endExclusive)`. -/
-def levelRuns (records : Array CharRecord) : Array (Nat × Nat) :=
-  if records.isEmpty then #[]
+def levelRuns (records : List CharRecord) : List (Nat × Nat) :=
+  if records.isEmpty then []
   else
-    let n := records.size
+    let n := records.length
     let initLvl := (records[0]!).level
     let result := records.foldl
-      (fun (acc : Array (Nat × Nat) × Nat × Nat × Level) r =>
+      (fun (acc : List (Nat × Nat) × Nat × Nat × Level) r =>
         let (runs, idx, curStart, curLvl) := acc
         if idx = 0 then (runs, 1, 0, r.level)
         else if r.level = curLvl then (runs, idx + 1, curStart, curLvl)
-        else (runs.push (curStart, idx), idx + 1, idx, r.level))
-      (#[], 0, 0, initLvl)
+        else (runs ++ [(curStart, idx)], idx + 1, idx, r.level))
+      ([], 0, 0, initLvl)
     let runs := result.1
     let curStart := result.2.2.1
-    runs.push (curStart, n)
+    runs ++ [(curStart, n)]
 
 /-- Find matching pairs of isolate initiators (LRI / RLI / FSI) and
     their PDIs in the records array. Returns `(initiator_idx, pdi_idx)`
     pairs in initiator-order. Unmatched initiators or unmatched PDIs
     are excluded. -/
-def findIsolatePairs (records : Array CharRecord) : Array (Nat × Nat) :=
-  let final : Array Nat × Array (Nat × Nat) × Nat :=
+def findIsolatePairs (records : List CharRecord) : List (Nat × Nat) :=
+  let final : List Nat × List (Nat × Nat) × Nat :=
     records.foldl
-      (fun (acc : Array Nat × Array (Nat × Nat) × Nat) r =>
+      (fun (acc : List Nat × List (Nat × Nat) × Nat) r =>
         let (stack, pairs, idx) := acc
         match r.resolvedClass with
-        | .LRI | .RLI | .FSI => (stack.push idx, pairs, idx + 1)
+        | .LRI | .RLI | .FSI => (stack ++ [idx], pairs, idx + 1)
         | .PDI =>
-          if stack.size > 0 then
-            let openIdx := stack[stack.size - 1]!
-            (stack.pop, pairs.push (openIdx, idx), idx + 1)
+          if stack.length > 0 then
+            let openIdx := stack[stack.length - 1]!
+            (stack.dropLast, pairs ++ [(openIdx, idx)], idx + 1)
           else (stack, pairs, idx + 1)
         | .L | .R | .AL | .EN | .ES | .ET | .AN | .CS | .NSM | .BN
         | .B | .S | .WS | .ON | .LRE | .LRO | .RLE | .RLO | .PDF =>
           (stack, pairs, idx + 1))
-      (#[], #[], 0)
+      ([], [], 0)
   final.2.1
 
 /-- Compute isolating run sequences (IRSes) from the X-rules output.
@@ -441,17 +441,17 @@ def findIsolatePairs (records : Array CharRecord) : Array (Nat × Nat) :=
     increasing order. Per UAX #9 §3.3.2 an IRS chains level runs
     whose last character is an isolate initiator with a matching
     PDI starting a later level run. -/
-def computeIRSes (records : Array CharRecord) : Array (Array Nat) :=
-  if records.isEmpty then #[]
+def computeIRSes (records : List CharRecord) : List (List Nat) :=
+  if records.isEmpty then []
   else
     let runs := levelRuns records
     let pairs := findIsolatePairs records
     -- For each level-run index, the index of the level run it chains
     -- into (via an isolate match), or `none` for a terminus.
-    let nextRun : Array (Option Nat) :=
+    let nextRun : List (Option Nat) :=
       runs.map (fun range =>
         let lastIdx := range.2 - 1
-        if h : lastIdx < records.size then
+        if h : lastIdx < records.length then
           match (records[lastIdx]'h).resolvedClass with
           | .LRI | .RLI | .FSI =>
             match pairs.findSome? (fun p =>
@@ -466,29 +466,29 @@ def computeIRSes (records : Array CharRecord) : Array (Array Nat) :=
     -- A level-run index is the SOS of an IRS iff it has no
     -- predecessor in the chain. Compute the set of indices that
     -- ARE chained into; the heads are the complement.
-    let chainedInto : Array Bool := Id.run do
-      let mut acc : Array Bool := Array.replicate runs.size false
+    let chainedInto : List Bool := Id.run do
+      let mut acc : List Bool := List.replicate runs.length false
       for opt in nextRun do
         match opt with
         | some j =>
-          if j < acc.size then
-            acc := acc.set! j true
+          if j < acc.length then
+            acc := acc.set j true
         | none => pure ()
       return acc
     -- For each head run, follow the chain forward through `nextRun`
     -- to collect every record index in the resulting IRS.
-    let buildChain (head : Nat) : Array Nat := Id.run do
-      let mut acc : Array Nat := #[]
+    let buildChain (head : Nat) : List Nat := Id.run do
+      let mut acc : List Nat := []
       let mut cur : Option Nat := some head
       let mut steps := 0
-      while cur.isSome ∧ steps < runs.size do
+      while cur.isSome ∧ steps < runs.length do
         match cur with
         | none => pure ()
         | some runIdx =>
           if let some range := runs[runIdx]? then
             if let some nxt := nextRun[runIdx]? then
               for k in [range.1 : range.2] do
-                acc := acc.push k
+                acc := acc ++ [k]
               cur := nxt
             else
               cur := none
@@ -496,11 +496,11 @@ def computeIRSes (records : Array CharRecord) : Array (Array Nat) :=
             cur := none
         steps := steps + 1
       return acc
-    (Array.range runs.size).foldl
-      (fun (out : Array (Array Nat)) i =>
+    (List.range runs.length).foldl
+      (fun (out : List (List Nat)) i =>
         if chainedInto[i]! then out
-        else out.push (buildChain i))
-      #[]
+        else out ++ [buildChain i])
+      []
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 W-RULES — W1 / W2 / W3 / W4 / W5 / W6 / W7
@@ -508,9 +508,9 @@ def computeIRSes (records : Array CharRecord) : Array (Array Nat) :=
 
 /-- W1: NSM picks up its predecessor's class. NSMs after isolate
     initiators or PDI take ON. -/
-def applyW1 (sosClass : BidiClass) (records : Array CharRecord) : Array CharRecord :=
+def applyW1 (sosClass : BidiClass) (records : List CharRecord) : List CharRecord :=
   Prod.fst <| records.foldl
-    (fun (acc : Array CharRecord × BidiClass) r =>
+    (fun (acc : List CharRecord × BidiClass) r =>
       let (out, prev) := acc
       let newClass :=
         match r.resolvedClass with
@@ -522,13 +522,13 @@ def applyW1 (sosClass : BidiClass) (records : Array CharRecord) : Array CharReco
         | .L | .R | .AL | .EN | .ES | .ET | .AN | .CS | .BN
         | .B | .S | .WS | .ON | .LRE | .LRO | .RLE | .RLO | .PDF
         | .LRI | .RLI | .FSI | .PDI => r.resolvedClass
-      (out.push { r with resolvedClass := newClass }, newClass))
-    (#[], sosClass)
+      (out ++ [{ r with resolvedClass := newClass }],newClass))
+    ([], sosClass)
 
 /-- W2: EN preceded by AL (with intervening EN/ET/ES/CS/NSM) → AN. -/
-def applyW2 (sosClass : BidiClass) (records : Array CharRecord) : Array CharRecord :=
+def applyW2 (sosClass : BidiClass) (records : List CharRecord) : List CharRecord :=
   Prod.fst <| records.foldl
-    (fun (acc : Array CharRecord × BidiClass) r =>
+    (fun (acc : List CharRecord × BidiClass) r =>
       let (out, lastStrong) := acc
       let cls := r.resolvedClass
       let newClass :=
@@ -543,18 +543,18 @@ def applyW2 (sosClass : BidiClass) (records : Array CharRecord) : Array CharReco
         | .EN | .ES | .ET | .AN | .CS | .NSM | .BN
         | .B | .S | .WS | .ON | .LRE | .LRO | .RLE | .RLO | .PDF
         | .LRI | .RLI | .FSI | .PDI => lastStrong
-      (out.push { r with resolvedClass := newClass }, newStrong))
-    (#[], sosClass)
+      (out ++ [{ r with resolvedClass := newClass }],newStrong))
+    ([], sosClass)
 
 /-- W3: every AL → R. -/
-def applyW3 (records : Array CharRecord) : Array CharRecord :=
+def applyW3 (records : List CharRecord) : List CharRecord :=
   records.map (fun r =>
     if r.resolvedClass = .AL then { r with resolvedClass := .R } else r)
 
 /-- W4: a single ES between two ENs becomes EN. A single CS between two
     ENs becomes EN. A single CS between two ANs becomes AN. -/
-def applyW4 (records : Array CharRecord) : Array CharRecord :=
-  let n := records.size
+def applyW4 (records : List CharRecord) : List CharRecord :=
+  let n := records.length
   records.mapIdx (fun i r =>
     if 0 < i ∧ i + 1 < n then
       let prev := records[i - 1]!
@@ -577,36 +577,36 @@ def applyW4 (records : Array CharRecord) : Array CharRecord :=
 
 /-- W5 forward pass: precompute, for each index, whether the preceding
     contiguous ET-run is preceded by an EN. -/
-def w5LeftAdjEN (records : Array CharRecord) : Array Bool :=
+def w5LeftAdjEN (records : List CharRecord) : List Bool :=
   Prod.fst <| records.foldl
-    (fun (acc : Array Bool × Bool) r =>
+    (fun (acc : List Bool × Bool) r =>
       let (out, lastNonEtWasEN) := acc
       match r.resolvedClass with
-      | .ET => (out.push lastNonEtWasEN, lastNonEtWasEN)
-      | .EN => (out.push true, true)
+      | .ET => (out ++ [lastNonEtWasEN], lastNonEtWasEN)
+      | .EN => (out ++ [true], true)
       | .L | .R | .AL | .ES | .AN | .CS | .NSM | .BN
       | .B | .S | .WS | .ON | .LRE | .LRO | .RLE | .RLO | .PDF
-      | .LRI | .RLI | .FSI | .PDI => (out.push false, false))
-    (#[], false)
+      | .LRI | .RLI | .FSI | .PDI => (out ++ [false], false))
+    ([], false)
 
 /-- W5 backward pass: precompute, for each index, whether the following
     contiguous ET-run is followed by an EN. -/
-def w5RightAdjEN (records : Array CharRecord) : Array Bool :=
+def w5RightAdjEN (records : List CharRecord) : List Bool :=
   let reversed := records.reverse
   let revFlags := Prod.fst <| reversed.foldl
-    (fun (acc : Array Bool × Bool) r =>
+    (fun (acc : List Bool × Bool) r =>
       let (out, lastNonEtWasEN) := acc
       match r.resolvedClass with
-      | .ET => (out.push lastNonEtWasEN, lastNonEtWasEN)
-      | .EN => (out.push true, true)
+      | .ET => (out ++ [lastNonEtWasEN], lastNonEtWasEN)
+      | .EN => (out ++ [true], true)
       | .L | .R | .AL | .ES | .AN | .CS | .NSM | .BN
       | .B | .S | .WS | .ON | .LRE | .LRO | .RLE | .RLO | .PDF
-      | .LRI | .RLI | .FSI | .PDI => (out.push false, false))
-    (#[], false)
+      | .LRI | .RLI | .FSI | .PDI => (out ++ [false], false))
+    ([], false)
   revFlags.reverse
 
 /-- W5: ETs adjacent to an EN take EN. -/
-def applyW5 (records : Array CharRecord) : Array CharRecord :=
+def applyW5 (records : List CharRecord) : List CharRecord :=
   let leftAdj  := w5LeftAdjEN records
   let rightAdj := w5RightAdjEN records
   records.mapIdx (fun i r =>
@@ -615,7 +615,7 @@ def applyW5 (records : Array CharRecord) : Array CharRecord :=
     else r)
 
 /-- W6: any remaining ES, CS, ET → ON. -/
-def applyW6 (records : Array CharRecord) : Array CharRecord :=
+def applyW6 (records : List CharRecord) : List CharRecord :=
   records.map (fun r =>
     match r.resolvedClass with
     | .ES | .CS | .ET => { r with resolvedClass := .ON }
@@ -624,9 +624,9 @@ def applyW6 (records : Array CharRecord) : Array CharRecord :=
     | .LRI | .RLI | .FSI | .PDI => r)
 
 /-- W7: every EN whose nearest preceding strong is L becomes L. -/
-def applyW7 (sosClass : BidiClass) (records : Array CharRecord) : Array CharRecord :=
+def applyW7 (sosClass : BidiClass) (records : List CharRecord) : List CharRecord :=
   Prod.fst <| records.foldl
-    (fun (acc : Array CharRecord × BidiClass) r =>
+    (fun (acc : List CharRecord × BidiClass) r =>
       let (out, lastStrong) := acc
       let cls := r.resolvedClass
       let newClass :=
@@ -641,11 +641,11 @@ def applyW7 (sosClass : BidiClass) (records : Array CharRecord) : Array CharReco
         | .AL | .EN | .ES | .ET | .AN | .CS | .NSM | .BN
         | .B | .S | .WS | .ON | .LRE | .LRO | .RLE | .RLO | .PDF
         | .LRI | .RLI | .FSI | .PDI => lastStrong
-      (out.push { r with resolvedClass := newClass }, newStrong))
-    (#[], sosClass)
+      (out ++ [{ r with resolvedClass := newClass }],newStrong))
+    ([], sosClass)
 
 /-- Apply W1 .. W7 in sequence. -/
-def applyWeakRules (sosClass : BidiClass) (records : Array CharRecord) : Array CharRecord :=
+def applyWeakRules (sosClass : BidiClass) (records : List CharRecord) : List CharRecord :=
   applyW7 sosClass
     (applyW6 (applyW5 (applyW4 (applyW3 (applyW2 sosClass (applyW1 sosClass records))))))
 
@@ -660,8 +660,8 @@ def lookupBracket (cp : Nat) : Option BidiBrackets.BidiBracketRow :=
 /-- Internal state for bracket pair scanning. -/
 structure BracketPairState where
   index : Nat
-  stack : Array (Nat × Nat)        -- (open-index, expected-close codepoint)
-  pairs : Array (Nat × Nat)        -- (open-index, close-index)
+  stack : List (Nat × Nat)        -- (open-index, expected-close codepoint)
+  pairs : List (Nat × Nat)        -- (open-index, close-index)
   deriving Inhabited
 
 /-- BD16 caps the bracket-pair stack at 63 entries. -/
@@ -686,12 +686,12 @@ def canonicalBracketEquiv (cp : Nat) : Nat :=
     bracket events. -/
 structure BracketPairScanState where
   index   : Nat
-  stack   : Array (Nat × Nat)
-  pairs   : Array (Nat × Nat)
+  stack   : List (Nat × Nat)
+  pairs   : List (Nat × Nat)
   aborted : Bool
   deriving Inhabited
 
-def findBracketPairs (records : Array CharRecord) : Array (Nat × Nat) :=
+def findBracketPairs (records : List CharRecord) : List (Nat × Nat) :=
   let final : BracketPairScanState := records.foldl
     (fun (s : BracketPairScanState) r =>
       let i := s.index
@@ -703,8 +703,8 @@ def findBracketPairs (records : Array CharRecord) : Array (Nat × Nat) :=
         let pairCanon := canonicalBracketEquiv br.pair
         match br.bracketType with
         | .Open =>
-          if s.stack.size < bracketStackBound then
-            { s with index := i + 1, stack := s.stack.push (i, pairCanon) }
+          if s.stack.length < bracketStackBound then
+            { s with index := i + 1, stack := s.stack ++ [(i, pairCanon)] }
           else
             -- BD16 stack-overflow: abandon all bracket pairing for
             -- the remainder of this IRS.
@@ -717,15 +717,15 @@ def findBracketPairs (records : Array CharRecord) : Array (Nat × Nat) :=
             s.stack.reverse.findIdx? (fun pair => pair.2 = cpCanon)
           match kRev with
           | some kFromTop =>
-            let k := s.stack.size - 1 - kFromTop
+            let k := s.stack.length - 1 - kFromTop
             let openIdx := (s.stack[k]!).1
-            let stack' := s.stack.extract 0 k
-            { s with index := i + 1, stack := stack', pairs := s.pairs.push (openIdx, i) }
+            let stack' := s.stack.take k
+            { s with index := i + 1, stack := stack', pairs := s.pairs ++ [(openIdx, i)] }
           | none =>
             { s with index := i + 1 }
       | none =>
         { s with index := i + 1 })
-    ({ index := 0, stack := #[], pairs := #[], aborted := false }
+    ({ index := 0, stack := [], pairs := [], aborted := false }
         : BracketPairScanState)
   final.pairs
 
@@ -749,8 +749,8 @@ def isNeutralOrIsolate (bc : BidiClass) : Bool :=
   | .LRE | .LRO | .RLE | .RLO | .PDF => false
 
 /-- Resolve a single bracket pair per N0. -/
-def resolveBracketPair (records : Array CharRecord)
-    (level : Level) (openIdx closeIdx : Nat) : Array CharRecord :=
+def resolveBracketPair (records : List CharRecord)
+    (level : Level) (openIdx closeIdx : Nat) : List CharRecord :=
   -- A bracket whose resolved class differs from its original class
   -- has had its direction fixed by an LRE / LRO / RLE / RLO override
   -- earlier in X-rules. Per the BIDI reference behaviour exercised
@@ -758,12 +758,12 @@ def resolveBracketPair (records : Array CharRecord)
   -- alone — the override wins. Skip the entire pair when either
   -- bracket carries an override.
   let openOverridden :=
-    if openIdx < records.size then
+    if openIdx < records.length then
       let r := records[openIdx]!
       r.origClass != r.resolvedClass
     else false
   let closeOverridden :=
-    if closeIdx < records.size then
+    if closeIdx < records.length then
       let r := records[closeIdx]!
       r.origClass != r.resolvedClass
     else false
@@ -780,7 +780,7 @@ def resolveBracketPair (records : Array CharRecord)
     | .ES | .ET | .CS | .NSM | .BN | .B | .S | .WS | .ON
     | .LRE | .LRO | .RLE | .RLO | .PDF
     | .LRI | .RLI | .FSI | .PDI => none
-  let inside := records.extract (openIdx + 1) closeIdx
+  let inside := (records.take closeIdx).drop (openIdx + 1)
   let res := inside.foldl
     (fun (acc : Bool × Bool) r =>
       let (sawEmbed, sawOpp) := acc
@@ -799,29 +799,29 @@ def resolveBracketPair (records : Array CharRecord)
   -- bracket's new class. Walks forward from `idx` skipping BN-class
   -- records until the first non-BN; updates that record only if it
   -- is an original NSM.
-  let propagateToFollowingNSM (out : Array CharRecord) (idx : Nat)
-      (cls : BidiClass) : Array CharRecord :=
-    let rec go (j : Nat) (acc : Array CharRecord) : Array CharRecord :=
-      if h : j < acc.size then
+  let propagateToFollowingNSM (out : List CharRecord) (idx : Nat)
+      (cls : BidiClass) : List CharRecord :=
+    let rec go (j : Nat) (acc : List CharRecord) : List CharRecord :=
+      if h : j < acc.length then
         let r := acc[j]'h
         match r.origClass with
         | .BN => go (j + 1) acc
-        | .NSM => acc.set! j { r with resolvedClass := cls }
+        | .NSM => acc.set j { r with resolvedClass := cls }
         | .L | .R | .AL | .EN | .ES | .ET | .AN | .CS
         | .B | .S | .WS | .ON
         | .LRE | .LRO | .RLE | .RLO | .PDF
         | .LRI | .RLI | .FSI | .PDI => acc
       else acc
-    termination_by acc.size - j
+    termination_by acc.length - j
     go (idx + 1) out
-  let setBoth (cls : BidiClass) : Array CharRecord :=
+  let setBoth (cls : BidiClass) : List CharRecord :=
     let withOpen :=
-      if openIdx < records.size then
-        records.set! openIdx { records[openIdx]! with resolvedClass := cls }
+      if openIdx < records.length then
+        records.set openIdx { records[openIdx]! with resolvedClass := cls }
       else records
     let withBoth :=
-      if closeIdx < withOpen.size then
-        withOpen.set! closeIdx { withOpen[closeIdx]! with resolvedClass := cls }
+      if closeIdx < withOpen.length then
+        withOpen.set closeIdx { withOpen[closeIdx]! with resolvedClass := cls }
       else withOpen
     -- N0 post-processing — only when the bracket direction differs
     -- from the embedding direction at this level.
@@ -844,7 +844,7 @@ def resolveBracketPair (records : Array CharRecord)
   -- exists, in which case sos = embed direction by convention) the
   -- bracket pair takes the embedding direction.
   else if sawOpp then
-    let beforeOpen := records.extract 0 openIdx
+    let beforeOpen := records.take openIdx
     let precedingDir : Direction :=
       beforeOpen.foldl
         (fun acc r =>
@@ -862,19 +862,19 @@ def resolveBracketPair (records : Array CharRecord)
     records
 
 /-- N0: apply bracket-pair resolution paragraph-wide. -/
-def applyN0 (records : Array CharRecord) (level : Level) : Array CharRecord :=
+def applyN0 (records : List CharRecord) (level : Level) : List CharRecord :=
   -- UAX #9 N0: process bracket pairs in opening-position order. The
   -- pairs returned by `findBracketPairs` are emitted in closing
   -- order; reindex them into a `closeAt[openIdx]` map and then walk
   -- the records in source order to recover open-order processing.
   let pairs := findBracketPairs records
-  let n := records.size
-  let closeAt : Array (Option Nat) :=
+  let n := records.length
+  let closeAt : List (Option Nat) :=
     pairs.foldl
       (fun acc p =>
-        if p.1 < acc.size then acc.set! p.1 (some p.2) else acc)
-      (Array.replicate n none)
-  (Array.range n).foldl
+        if p.1 < acc.length then acc.set p.1 (some p.2) else acc)
+      (List.replicate n none)
+  (List.range n).foldl
     (fun acc i =>
       match closeAt[i]? with
       | some (some c) => resolveBracketPair acc level i c
@@ -884,8 +884,8 @@ def applyN0 (records : Array CharRecord) (level : Level) : Array CharRecord :=
 
 /-- Direction projection at index `i`, falling back to the right-side
     boundary when the index is out of range. -/
-def directionAt (records : Array CharRecord) (eosDir : Direction) (i : Nat) : Direction :=
-  if h : i < records.size then
+def directionAt (records : List CharRecord) (eosDir : Direction) (i : Nat) : Direction :=
+  if h : i < records.length then
     match asNDir (records[i]'h).resolvedClass with
     | some d => d
     | none   => eosDir
@@ -894,37 +894,37 @@ def directionAt (records : Array CharRecord) (eosDir : Direction) (i : Nat) : Di
 /-- For each index, the strong direction immediately to the left
     (skipping neutral / isolate formatting); falls back to `sosDir` at
     the start. Implemented as a forward foldl. -/
-def leftStrongDir (sosDir : Direction) (records : Array CharRecord) : Array Direction :=
+def leftStrongDir (sosDir : Direction) (records : List CharRecord) : List Direction :=
   Prod.fst <| records.foldl
-    (fun (acc : Array Direction × Direction) r =>
+    (fun (acc : List Direction × Direction) r =>
       let (out, prev) := acc
       let cur :=
         match asNDir r.resolvedClass with
         | some d => d
         | none   => prev
-      (out.push prev, cur))
-    (#[], sosDir)
+      (out ++ [prev], cur))
+    ([], sosDir)
 
 /-- For each index, the strong direction immediately to the right
     (skipping neutrals); falls back to `eosDir` at the end. Implemented
     as a forward foldl over the reversed array, then re-reversed. -/
-def rightStrongDir (eosDir : Direction) (records : Array CharRecord) : Array Direction :=
+def rightStrongDir (eosDir : Direction) (records : List CharRecord) : List Direction :=
   let reversed := records.reverse
   let revFlags := Prod.fst <| reversed.foldl
-    (fun (acc : Array Direction × Direction) r =>
+    (fun (acc : List Direction × Direction) r =>
       let (out, prev) := acc
       let cur :=
         match asNDir r.resolvedClass with
         | some d => d
         | none   => prev
-      (out.push prev, cur))
-    (#[], eosDir)
+      (out ++ [prev], cur))
+    ([], eosDir)
   revFlags.reverse
 
 /-- N1 + N2: replace each NI with its surrounding strong direction (N1
     when both sides agree, N2 with the embedding direction otherwise). -/
 def applyN1N2 (sosDir eosDir : Direction) (level : Level)
-    (records : Array CharRecord) : Array CharRecord :=
+    (records : List CharRecord) : List CharRecord :=
   let lefts  := leftStrongDir sosDir records
   let rights := rightStrongDir eosDir records
   let embed  := embeddingDirection level
@@ -939,7 +939,7 @@ def applyN1N2 (sosDir eosDir : Direction) (level : Level)
 
 /-- Apply N0, N1, N2 in order. -/
 def applyNeutralRules (sosDir eosDir : Direction) (level : Level)
-    (records : Array CharRecord) : Array CharRecord :=
+    (records : List CharRecord) : List CharRecord :=
   applyN1N2 sosDir eosDir level (applyN0 records level)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -950,7 +950,7 @@ def applyNeutralRules (sosDir eosDir : Direction) (level : Level)
 
     Even level (LTR): R → +1 ; AN/EN → +2 ; else → 0.
     Odd  level (RTL): L/AN/EN → +1 ; else → 0. -/
-def applyImplicitLevels (records : Array CharRecord) : Array CharRecord :=
+def applyImplicitLevels (records : List CharRecord) : List CharRecord :=
   records.map (fun r =>
     let lvl := r.level
     let bump :=
@@ -986,15 +986,15 @@ def l1WhitespaceLike (bc : BidiClass) : Bool :=
 
     Implemented via two forward passes that update a running "trailing
     WS run" tracker, then a backward pass for the line-end tail. -/
-def applyL1 (paragraphLvl : Level) (records : Array CharRecord) : Array CharRecord :=
+def applyL1 (paragraphLvl : Level) (records : List CharRecord) : List CharRecord :=
   -- Forward pass: for each B / S, retroactively reset preceding WS-like
   -- run AND the B / S itself. Whether the cursor is inside a WS-like
   -- prefix segment is tracked via a state index.
-  let n := records.size
+  let n := records.length
   -- Step 1: build a Bool array marking each index that needs the
   -- paragraph-level reset.
   let resetMaskA := Prod.fst <| records.foldl
-    (fun (acc : Array Bool × Nat × Nat) r =>
+    (fun (acc : List Bool × Nat × Nat) r =>
       let (mask, i, runStart) := acc
       match r.origClass with
       | .B | .S =>
@@ -1004,10 +1004,10 @@ def applyL1 (paragraphLvl : Level) (records : Array CharRecord) : Array CharReco
             (List.range (i - runStart + 1)).foldl
               (fun a j =>
                 let idx := runStart + j
-                if idx < a.size then a.set! idx true else a)
+                if idx < a.length then a.set idx true else a)
               mask
           else mask
-        let mask'' := if i < mask'.size then mask'.set! i true else mask'
+        let mask'' := if i < mask'.length then mask'.set i true else mask'
         (mask'', i + 1, i + 1)
       | .L | .R | .AL | .EN | .ES | .ET | .AN | .CS | .NSM | .BN
       | .WS | .ON | .LRE | .LRO | .RLE | .RLO | .PDF
@@ -1016,16 +1016,16 @@ def applyL1 (paragraphLvl : Level) (records : Array CharRecord) : Array CharReco
           (mask, i + 1, runStart)
         else
           (mask, i + 1, i + 1))
-    (Array.replicate n false, 0, 0)
+    (List.replicate n false, 0, 0)
   -- Step 2: scan from the end backwards to mark trailing WS-like.
   let resetMaskB :=
     let pairs := records.mapIdx (fun i r => (i, r))
     let revPairs := pairs.reverse
     Prod.fst <| revPairs.foldl
-      (fun (acc : Array Bool × Bool) ⟨i, r⟩ =>
+      (fun (acc : List Bool × Bool) ⟨i, r⟩ =>
         let (mask, stillTrailing) := acc
         if stillTrailing ∧ l1WhitespaceLike r.origClass then
-          let mask' := if i < mask.size then mask.set! i true else mask
+          let mask' := if i < mask.length then mask.set i true else mask
           (mask', true)
         else
           (mask, false))
@@ -1036,18 +1036,18 @@ def applyL1 (paragraphLvl : Level) (records : Array CharRecord) : Array CharReco
     else r)
 
 /-- Reverse a sub-array `[lo, hi)` by index swap. -/
-def reverseSlice (records : Array CharRecord) (lo hi : Nat) : Array CharRecord :=
+def reverseSlice (records : List CharRecord) (lo hi : Nat) : List CharRecord :=
   records.mapIdx (fun i r =>
     if lo ≤ i ∧ i < hi then
       records[lo + hi - 1 - i]!
     else r)
 
 /-- Maximum level over a record array. -/
-def maxLevel (records : Array CharRecord) : Level :=
+def maxLevel (records : List CharRecord) : Level :=
   records.foldl (fun m r => Nat.max m r.level) 0
 
 /-- Smallest odd level ≥ 1 in the records, or `none` if no odd level. -/
-def minOddLevel (records : Array CharRecord) : Option Level :=
+def minOddLevel (records : List CharRecord) : Option Level :=
   records.foldl
     (fun acc r =>
       if r.level % 2 = 1 then
@@ -1059,11 +1059,11 @@ def minOddLevel (records : Array CharRecord) : Option Level :=
 
 /-- Reverse all sub-sequences at level ≥ `lvl`. Walks left to right
     collecting maximal `[start, end)` ranges and reversing each. -/
-def reverseAtLevel (records : Array CharRecord) (lvl : Level) : Array CharRecord :=
-  let n := records.size
+def reverseAtLevel (records : List CharRecord) (lvl : Level) : List CharRecord :=
+  let n := records.length
   -- Collect ranges to reverse.
   let res := records.foldl
-    (fun (acc : Array (Nat × Nat) × Nat × Option Nat) r =>
+    (fun (acc : List (Nat × Nat) × Nat × Option Nat) r =>
       let (ranges, idx, curStart) := acc
       if r.level ≥ lvl then
         match curStart with
@@ -1071,20 +1071,20 @@ def reverseAtLevel (records : Array CharRecord) (lvl : Level) : Array CharRecord
         | none          => (ranges, idx + 1, some idx)
       else
         match curStart with
-        | some s => (ranges.push (s, idx), idx + 1, none)
+        | some s => (ranges ++ [(s, idx)], idx + 1, none)
         | none   => (ranges, idx + 1, none))
-    ((#[] : Array (Nat × Nat)), 0, none)
+    (([] : List (Nat × Nat)), 0, none)
   let ranges := res.1
   let lastStart := res.2.2
   let allRanges :=
     match lastStart with
-    | some s => ranges.push (s, n)
+    | some s => ranges ++ [(s, n)]
     | none   => ranges
   allRanges.foldl (fun acc ⟨lo, hi⟩ => reverseSlice acc lo hi) records
 
 /-- L2: from the highest level down to the smallest odd level, reverse
     every maximal sub-sequence at or above that level. -/
-def applyL2 (records : Array CharRecord) : Array CharRecord :=
+def applyL2 (records : List CharRecord) : List CharRecord :=
   match minOddLevel records with
   | none => records
   | some minOdd =>
@@ -1106,7 +1106,7 @@ def mirrorChar (cp : Nat) : Nat :=
 
 /-- Output of the paragraph pipeline. -/
 structure ParagraphResult where
-  records        : Array CharRecord
+  records        : List CharRecord
   paragraphLevel : Level
   deriving Repr, Inhabited
 
@@ -1121,14 +1121,14 @@ structure ParagraphResult where
     paragraph embedding level rather than the level of the next
     character — the unmatched initiator's "scope" notionally
     extends to end-of-paragraph for boundary purposes. -/
-def computeIRSBoundaries (records : Array CharRecord) (paragraphLevel : Level)
-    (irs : Array Nat) : Direction × Direction :=
+def computeIRSBoundaries (records : List CharRecord) (paragraphLevel : Level)
+    (irs : List Nat) : Direction × Direction :=
   if irs.isEmpty then
     let dir := embeddingDirection paragraphLevel
     (dir, dir)
   else
     let firstIdx := irs[0]!
-    let lastIdx  := irs[irs.size - 1]!
+    let lastIdx  := irs[irs.length - 1]!
     let firstInIRSLevel := (records[firstIdx]!).level
     let lastInIRSLevel  := (records[lastIdx]!).level
     let precedingLevel :=
@@ -1142,7 +1142,7 @@ def computeIRSBoundaries (records : Array CharRecord) (paragraphLevel : Level)
       | .LRE | .LRO | .RLE | .RLO | .PDF | .PDI => false
     let followingLevel :=
       if lastIsIsolateInit then paragraphLevel
-      else if lastIdx + 1 = records.size then paragraphLevel
+      else if lastIdx + 1 = records.length then paragraphLevel
       else (records[lastIdx + 1]!).level
     let sosLevel := max precedingLevel firstInIRSLevel
     let eosLevel := max followingLevel lastInIRSLevel
@@ -1153,8 +1153,8 @@ def computeIRSBoundaries (records : Array CharRecord) (paragraphLevel : Level)
     N0 / N1 / N2 over that subset using the IRS-specific sos / eos
     directions, and merges the resolved subset back at the original
     indices. -/
-def applyWAndNToIRS (paragraphLevel : Level) (records : Array CharRecord)
-    (irs : Array Nat) : Array CharRecord :=
+def applyWAndNToIRS (paragraphLevel : Level) (records : List CharRecord)
+    (irs : List Nat) : List CharRecord :=
   if irs.isEmpty then records
   else
     let (sos, eos) := computeIRSBoundaries records paragraphLevel irs
@@ -1164,14 +1164,14 @@ def applyWAndNToIRS (paragraphLevel : Level) (records : Array CharRecord)
     let sosClass : BidiClass := match sos with | .LTR => .L | .RTL => .R
     let weak    := applyWeakRules sosClass irsRecords
     let neutral := applyNeutralRules sos eos level weak
-    -- Merge back: for each j in 0..irs.size, write neutral[j] into
+    -- Merge back: for each j in 0..irs.length, write neutral[j] into
     -- records[irs[j]].
     Prod.fst <| irs.foldl
-      (fun (acc : Array CharRecord × Nat) recIdx =>
+      (fun (acc : List CharRecord × Nat) recIdx =>
         let (out, j) := acc
-        if hj : j < neutral.size then
-          if recIdx < out.size then
-            (out.set! recIdx (neutral[j]'hj), j + 1)
+        if hj : j < neutral.length then
+          if recIdx < out.length then
+            (out.set recIdx (neutral[j]'hj), j + 1)
           else (out, j + 1)
         else (out, j + 1))
       (records, 0)
@@ -1182,7 +1182,7 @@ def applyWAndNToIRS (paragraphLevel : Level) (records : Array CharRecord)
     given by the test row, not auto-detected). Applies the W- and
     N-rules per isolating run sequence as required by UAX #9
     §3.3.6. -/
-def bidiParagraphAt (cps : Array Nat) (pLevel : Level) : ParagraphResult :=
+def bidiParagraphAt (cps : List Nat) (pLevel : Level) : ParagraphResult :=
   let assigned := assignLevelsAt cps pLevel
   let irses := computeIRSes assigned
   let resolved := irses.foldl
@@ -1199,7 +1199,7 @@ def bidiParagraphAt (cps : Array Nat) (pLevel : Level) : ParagraphResult :=
 
 /-- Full Bidi pipeline with paragraph base level discovered from
     P2/P3. -/
-def bidiParagraph (cps : Array Nat) : ParagraphResult :=
+def bidiParagraph (cps : List Nat) : ParagraphResult :=
   bidiParagraphAt cps (paragraphLevel cps)
 
 /-- Bidi class is removed by UAX #9 X9 (RLE / LRE / RLO / LRO / PDF / BN).
@@ -1218,32 +1218,32 @@ def isX9Removed (bc : BidiClass) : Bool :=
     `some level` at every retained position, in the order produced by
     the X-rules driver. Used by UAX #9 conformance test harnesses
     where expected output is keyed by input position. -/
-def levelsAlignedToInput (cps : Array Nat) (result : ParagraphResult) :
-    Array (Option Nat) :=
+def levelsAlignedToInput (cps : List Nat) (result : ParagraphResult) :
+    List (Option Nat) :=
   Prod.fst <| cps.foldl
-    (fun (acc : Array (Option Nat) × Nat) cp =>
+    (fun (acc : List (Option Nat) × Nat) cp =>
       let (out, recIdx) := acc
       let bc := lookupBidiClass cp
       if isX9Removed bc then
-        (out.push none, recIdx)
-      else if h : recIdx < result.records.size then
+        (out ++ [none], recIdx)
+      else if h : recIdx < result.records.length then
         let lvl := (result.records[recIdx]'h).level
-        (out.push (some lvl), recIdx + 1)
+        (out ++ [some lvl], recIdx + 1)
       else
-        (out.push none, recIdx))
-    (#[], 0)
+        (out ++ [none], recIdx))
+    ([], 0)
 
 /-- The original input indices retained after X9 stripping. The
     `i`-th entry is the position in the original `cps` array that
     corresponds to the `i`-th post-X9 record. -/
-def originalInputIndices (cps : Array Nat) : Array Nat :=
+def originalInputIndices (cps : List Nat) : List Nat :=
   Prod.fst <| cps.foldl
-    (fun (acc : Array Nat × Nat) cp =>
+    (fun (acc : List Nat × Nat) cp =>
       let (out, idx) := acc
       let bc := lookupBidiClass cp
       if isX9Removed bc then (out, idx + 1)
-      else (out.push idx, idx + 1))
-    (#[], 0)
+      else (out ++ [idx], idx + 1))
+    ([], 0)
 
 /-- Compute the visual-order reordering of input indices per UAX #9
     L1 + L2. Returns input indices in display (visual) order; X9-
@@ -1252,10 +1252,10 @@ def originalInputIndices (cps : Array Nat) : Array Nat :=
     `codepoint` field is hijacked to carry the original input index;
     the output `.codepoint` projection reads back the index permuted
     into visual order. The original `result.records` is unmodified. -/
-def reorderedInputIndices (cps : Array Nat) (result : ParagraphResult) :
-    Array Nat :=
+def reorderedInputIndices (cps : List Nat) (result : ParagraphResult) :
+    List Nat :=
   let inputIndices := originalInputIndices cps
-  let indexedRecords : Array CharRecord :=
+  let indexedRecords : List CharRecord :=
     result.records.mapIdx (fun i r =>
       { r with codepoint := inputIndices[i]?.getD 0 })
   let l1 := applyL1 result.paragraphLevel indexedRecords
@@ -1264,8 +1264,8 @@ def reorderedInputIndices (cps : Array Nat) (result : ParagraphResult) :
 
 /-- L1 + L2 reorder for one line `[lineStart, lineEnd)`. Returns the
     reordered codepoints; the caller may apply `mirrorChar` for L4. -/
-def reorderLine (result : ParagraphResult) (lineStart lineEnd : Nat) : Array Nat :=
-  let slice := result.records.extract lineStart lineEnd
+def reorderLine (result : ParagraphResult) (lineStart lineEnd : Nat) : List Nat :=
+  let slice := (result.records.take lineEnd).drop lineStart
   let l1    := applyL1 result.paragraphLevel slice
   let l2    := applyL2 l1
   l2.map (fun r => r.codepoint)
@@ -1276,15 +1276,15 @@ def reorderLine (result : ParagraphResult) (lineStart lineEnd : Nat) : Array Nat
 
 /-- Pure ASCII paragraph has level 0. -/
 theorem paragraphLevel_ascii :
-    paragraphLevel #[0x0048, 0x0069] = 0 := by decide  -- "Hi"
+    paragraphLevel [0x0048, 0x0069] = 0 := by decide  -- "Hi"
 
 /-- Pure Hebrew paragraph (R class on first char) has level 1. -/
 theorem paragraphLevel_hebrew :
-    paragraphLevel #[0x05D0, 0x05D1] = 1 := by decide
+    paragraphLevel [0x05D0, 0x05D1] = 1 := by decide
 
 /-- Empty paragraph defaults to level 0. -/
 theorem paragraphLevel_empty :
-    paragraphLevel #[] = 0 := by decide
+    paragraphLevel [] = 0 := by decide
 
 /-- Bracket lookup finds LEFT PARENTHESIS as Open with pair RIGHT PAREN. -/
 theorem bracket_lookup_lparen :
@@ -1299,45 +1299,45 @@ theorem mirror_letter_a : mirrorChar 0x0041 = 0x0041 := by decide
 
 /-- Pure-ASCII paragraph after the full pipeline: paragraph level 0. -/
 theorem bidiParagraph_ascii :
-    (bidiParagraph #[0x0048, 0x0069]).paragraphLevel = 0 := by decide
+    (bidiParagraph [0x0048, 0x0069]).paragraphLevel = 0 := by decide
 
 /-- X5c — FSI followed by Hebrew (RTL strong) inside scope resolves to RLI. -/
 theorem resolveFSI_hebrew_inner :
-    resolveFSI #[0x2068, 0x05D0, 0x05D1, 0x2069] = #[0x2067, 0x05D0, 0x05D1, 0x2069]
+    resolveFSI [0x2068, 0x05D0, 0x05D1, 0x2069] = [0x2067, 0x05D0, 0x05D1, 0x2069]
     := by decide
 
 /-- X5c — FSI followed by ASCII (LTR strong) inside scope resolves to LRI. -/
 theorem resolveFSI_ascii_inner :
-    resolveFSI #[0x2068, 0x0048, 0x0069, 0x2069] = #[0x2066, 0x0048, 0x0069, 0x2069]
+    resolveFSI [0x2068, 0x0048, 0x0069, 0x2069] = [0x2066, 0x0048, 0x0069, 0x2069]
     := by decide
 
 /-- X5c — FSI with no strong character in scope defaults to LRI. -/
 theorem resolveFSI_neutral_inner :
-    resolveFSI #[0x2068, 0x0020, 0x2069] = #[0x2066, 0x0020, 0x2069]
+    resolveFSI [0x2068, 0x0020, 0x2069] = [0x2066, 0x0020, 0x2069]
     := by decide
 
 /-- X5c — empty FSI scope (immediate matching PDI) defaults to LRI. -/
 theorem resolveFSI_empty_inner :
-    resolveFSI #[0x2068, 0x2069] = #[0x2066, 0x2069]
+    resolveFSI [0x2068, 0x2069] = [0x2066, 0x2069]
     := by decide
 
 /-- X5c — nested isolate's interior is ignored when scanning the outer FSI's
     scope. Outer FSI sees only "L" outside the inner LRI...PDI scope. -/
 theorem resolveFSI_nested_isolate_skipped :
-    resolveFSI #[0x2068, 0x2066, 0x05D0, 0x2069, 0x0041, 0x2069]
-      = #[0x2066, 0x2066, 0x05D0, 0x2069, 0x0041, 0x2069]
+    resolveFSI [0x2068, 0x2066, 0x05D0, 0x2069, 0x0041, 0x2069]
+      = [0x2066, 0x2066, 0x05D0, 0x2069, 0x0041, 0x2069]
     := by decide
 
 /-- X5c — FSI with no matching PDI scans to end of array; first strong
     character (Hebrew here) selects RLI. -/
 theorem resolveFSI_unmatched_pdi :
-    resolveFSI #[0x2068, 0x05D0] = #[0x2067, 0x05D0]
+    resolveFSI [0x2068, 0x05D0] = [0x2067, 0x05D0]
     := by decide
 
 /-- `resolveFSI` is the identity on arrays containing no FSI. -/
 theorem resolveFSI_identity_no_fsi :
-    resolveFSI #[0x0048, 0x0069, 0x2066, 0x05D0, 0x2069] =
-      #[0x0048, 0x0069, 0x2066, 0x05D0, 0x2069]
+    resolveFSI [0x0048, 0x0069, 0x2066, 0x05D0, 0x2069] =
+      [0x0048, 0x0069, 0x2066, 0x05D0, 0x2069]
     := by decide
 
 end Unicode.Bidi.Algorithm
