@@ -108,7 +108,7 @@ theorem underscore_start :
     isValidIdentifierBytes ([0x5F]) = true := by
   rfl
 theorem empty_not_identifier :
-    isValidIdentifierBytes List UInt8.empty = false := by
+    isValidIdentifierBytes ([] : List UInt8) = false := by
   rfl
 theorem leading_digit_not :
     isValidIdentifierBytes ([0x31, 0x76, 0x61, 0x72]) = false := by
