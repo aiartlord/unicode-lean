@@ -62,9 +62,7 @@ theorem lookupRaw_target_non_width_of_source_non_width
         rw [hSourceNonWidth] at hWidthSource
         exact Bool.noConfusion hWidthSource
       · rw [List.all_eq_true] at hTargets
-        rcases List.getElem_of_mem hMem with ⟨i, hi, hIEq⟩
-        have hBool := hTargets i hi
-        rw [hIEq] at hBool
+        have hBool := hTargets cp hMem
         simpa using hBool
 
 /-- A guarded lookup hit from a non-width-compatibility source yields
