@@ -204,24 +204,23 @@ theorem foldl_count_le {α : Type} (p : α → Bool) :
     · have h := ih (n + 1); omega
     · have h := ih n; omega
 
-/-- Array form of `foldl_step_le`: a fold over an array whose step increases the
-    accumulator by at most one is bounded by `n + as.size`. Detectors that tally
-    over `Array.range as.size` or over the array directly inherit
-    `count ≤ size`. -/
+/-- List form of `foldl_step_le`: a fold over a list whose step increases the
+    accumulator by at most one is bounded by `n + as.length`. Detectors that tally
+    over `List.range as.length` or over the list directly inherit
+    `count ≤ length`. -/
 theorem array_foldl_step_le {α : Type} (g : Nat → α → Nat)
-    (hg : ∀ (m : Nat) (x : α), g m x ≤ m + 1) (n : Nat) (as : Array α) :
-    as.foldl g n ≤ n + as.size := by
-  have h := foldl_step_le g hg n as.toList
-  simpa [Array.foldl_toList] using h
+    (hg : ∀ (m : Nat) (x : α), g m x ≤ m + 1) (n : Nat) (as : List α) :
+    as.foldl g n ≤ n + as.length :=
+  foldl_step_le g hg n as
 
-/-- Position-scan form: a fold over `Array.range n` from `0` whose step increases
+/-- Position-scan form: a fold over `List.range n` from `0` whose step increases
     the accumulator by at most one is bounded by `n`. Detectors that scan input
-    positions and tally at most one per position inherit `count ≤ size`. -/
+    positions and tally at most one per position inherit `count ≤ length`. -/
 theorem array_range_foldl_step_le (g : Nat → Nat → Nat)
     (hg : ∀ (m : Nat) (i : Nat), g m i ≤ m + 1) (n : Nat) :
-    (Array.range n).foldl g 0 ≤ n := by
-  have h := array_foldl_step_le g hg 0 (Array.range n)
-  simpa using h
+    (List.range n).foldl g 0 ≤ n := by
+  have h := array_foldl_step_le g hg 0 (List.range n)
+  simpa [List.length_range] using h
 
 /-- Outputs of `arr f` = `map f`. -/
 theorem outputs_arr (f : I → O) (inputs : List I) :
