@@ -218,13 +218,13 @@ theorem firstInvalidUtf8Offset_none_iff (bs : List UInt8) :
 
 theorem empty_is_valid : isValidUtf8 ([] : List UInt8) = true := by decide
 
-theorem hello_is_valid : isValidUtf8 "hello".toUTF8.toList = true := by decide
+theorem hello_is_valid : isValidUtf8 ([0x68, 0x65, 0x6C, 0x6C, 0x6F] : List UInt8) = true := by decide
 
-theorem ascii_digits_valid : isValidUtf8 "0123456789".toUTF8.toList = true := by decide
+theorem ascii_digits_valid : isValidUtf8 ([0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39] : List UInt8) = true := by decide
 
-theorem accented_is_valid : isValidUtf8 "héllo".toUTF8.toList = true := by decide
+theorem accented_is_valid : isValidUtf8 ([0x68, 0xC3, 0xA9, 0x6C, 0x6C, 0x6F] : List UInt8) = true := by decide
 
-theorem cjk_is_valid : isValidUtf8 "日本".toUTF8.toList = true := by decide
+theorem cjk_is_valid : isValidUtf8 ([0xE6, 0x97, 0xA5, 0xE6, 0x9C, 0xAC] : List UInt8) = true := by decide
 
 theorem bare_continuation_rejected :
     firstInvalidUtf8Offset ([0x80]) = some (0, .invalidStartByte) := by
@@ -309,7 +309,7 @@ theorem fold_empty_identity {α : Type} (init : α) (f : α → Nat → Nat → 
   simp
 
 theorem no_bidi_in_hello :
-    firstCodepointWhere "hello".toUTF8.toList
+    firstCodepointWhere ([0x68, 0x65, 0x6C, 0x6C, 0x6F] : List UInt8)
         (fun cp => (0x202A ≤ cp && cp ≤ 0x202E) || (0x2066 ≤ cp && cp ≤ 0x2069)) = none := by
   decide
 
@@ -349,12 +349,12 @@ def toStringFromValid (bs : List UInt8) (hValid : isValidUtf8 bs = true) : Strin
     hValid
 
 theorem hello_decodes_to_hello :
-    toStringFromValid "hello".toUTF8.toList (by decide) = "hello" := by decide
+    toStringFromValid ([0x68, 0x65, 0x6C, 0x6C, 0x6F] : List UInt8) (by decide) = "hello" := by decide
 
 theorem empty_decodes_to_empty :
     toStringFromValid ([] : List UInt8) (by decide) = "" := by decide
 
 theorem accented_decodes :
-    toStringFromValid "héllo".toUTF8.toList (by decide) = "héllo" := by decide
+    toStringFromValid ([0x68, 0xC3, 0xA9, 0x6C, 0x6C, 0x6F] : List UInt8) (by decide) = "héllo" := by decide
 
 end Unicode.Codec.Utf8
