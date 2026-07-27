@@ -51,8 +51,8 @@ def parseLine (line : String) : Option Entry :=
     | tooFew => Function.const (List String) none tooFew
 
 /-- Catalog of published watermark schemes. -/
-def entriesParsed : Array Entry :=
-  ((rawText.splitOn "\n").filterMap parseLine).toArray
+def entriesParsed : List Entry :=
+  ((rawText.splitOn "\n").filterMap parseLine)
 
 /-- The materialized catalog, consumed downstream. -/
 def entries : List Entry := entriesList
@@ -61,7 +61,7 @@ theorem entries_count : entries.length = 3 := by decide +kernel
 
 -- Build-time drift gate.
 #eval do
-  unless entriesList.toArray == entriesParsed do
+  unless entriesList == entriesParsed do
     throw (IO.userError "WatermarkSchemes drift: list ≠ parsed")
 
 theorem kgw_present : entries.any (fun e => e.tag = "KGW") = true := by

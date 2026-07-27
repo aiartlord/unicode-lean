@@ -90,8 +90,8 @@ def parseRow (rawLine : String) : Option (Nat × Nat × LBClass) :=
   let stripped : String := (rawLine.takeWhile (· != '#')).toString
   let line := trimS stripped
   if line.isEmpty then none else
-  let fields : Array String := (String.splitOn line ";").toArray
-  if fields.size ≥ 2 then
+  let fields : List String := String.splitOn line ";"
+  if fields.length ≥ 2 then
     let rngField := fields[0]!
     let clsField := fields[1]!
     let (lo, hi) := parseRange (trimS rngField)
@@ -107,11 +107,11 @@ def lineBreakRaw : String :=
 /-- A fresh parse of the embedded fixture. Uses the String primitives (hence
     `Classical.choice` in its trusted base); consumed only by the drift gate,
     never by `lookupRaw`. -/
-def rangesParsed : Array (Nat × Nat × LBClass) :=
-  ((lineBreakRaw.splitOn "\n").filterMap parseRow).toArray
+def rangesParsed : List (Nat × Nat × LBClass) :=
+  ((lineBreakRaw.splitOn "\n").filterMap parseRow)
 
 /-- The Line_Break range table used by lookup: the materialized `rangesList`. -/
-def ranges : Array (Nat × Nat × LBClass) := rangesList.toArray
+def ranges : List (Nat × Nat × LBClass) := rangesList
 
 /-- Raw Line_Break class for `cp`, returning `XX` for codepoints
     not covered by any explicit range (per the source's
@@ -149,7 +149,7 @@ def lookupResolved (cp : Nat) : LBClass :=
 -- Drift gate: the materialized `rangesList` mirrors a fresh parse of the
 -- embedded fixture, checked at build time (not a kernel theorem).
 #eval do
-  unless rangesList.toArray == rangesParsed do
+  unless rangesList == rangesParsed do
     throw (IO.userError "LineBreakProperty drift: rangesList ≠ rangesParsed")
 
 end Unicode.Generated.LineBreakProperty

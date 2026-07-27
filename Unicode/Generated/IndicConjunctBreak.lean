@@ -65,8 +65,8 @@ def parseRow (rawLine : String) : Option (Nat × Nat × InCBClass) :=
   let stripped : String := (rawLine.takeWhile (· != '#')).toString
   let line := trimS stripped
   if line.isEmpty then none else
-  let fields : Array String := (String.splitOn line ";").toArray
-  if fields.size ≥ 3 then
+  let fields : List String := String.splitOn line ";"
+  if fields.length ≥ 3 then
     let rngField := fields[0]!
     let tagField := fields[1]!
     let valField := fields[2]!
@@ -84,8 +84,8 @@ def derivedCorePropertiesRaw : String :=
   include_str "../Ucd/DerivedCoreProperties.txt"
 
 /-- All explicit InCB rows from the source file. -/
-def ranges : Array (Nat × Nat × InCBClass) :=
-  ((derivedCorePropertiesRaw.splitOn "\n").filterMap parseRow).toArray
+def ranges : List (Nat × Nat ×InCBClass) :=
+  ((derivedCorePropertiesRaw.splitOn "\n").filterMap parseRow)
 
 /-- Look up the InCB class for a codepoint. Returns `None` for
     codepoints not listed in the source file. Consults the materialized
@@ -104,7 +104,7 @@ def lookupInCB (cp : Nat) : InCBClass :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 #eval do
-  unless rangesList.toArray == ranges do
+  unless rangesList == ranges do
     throw (IO.userError "IndicConjunctBreak drift: rangesList ≠ parsed ranges")
 
 end Unicode.Generated.IndicConjunctBreak

@@ -55,13 +55,13 @@ def derivedCorePropertiesRaw : String :=
 
 /-- All parsed rows, retained as the intermediate form for the
     per-property derived definitions below. -/
-def parsedRowsParsed : Array RawRow :=
-  ((derivedCorePropertiesRaw.splitOn "\n").filterMap parseRawRow).toArray
+def parsedRowsParsed : List RawRow :=
+  ((derivedCorePropertiesRaw.splitOn "\n").filterMap parseRawRow)
 
 -- Build-time drift gate: materialized `parsedRowsList` must match a
 -- fresh parse of DerivedCoreProperties.txt.
 #eval do
-  unless parsedRowsList.toArray == parsedRowsParsed do
+  unless parsedRowsList == parsedRowsParsed do
     throw (IO.userError "DerivedCoreProperties drift: parsedRowsList ≠ parsed")
 
 end Unicode.Generated.DerivedCoreProperties

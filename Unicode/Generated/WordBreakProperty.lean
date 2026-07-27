@@ -63,8 +63,8 @@ def parseRow (rawLine : String) : Option (Nat × Nat × WBClass) :=
   let stripped : String := (rawLine.takeWhile (· != '#')).toString
   let line := trimS stripped
   if line.isEmpty then none else
-  let fields : Array String := (String.splitOn line ";").toArray
-  if fields.size ≥ 2 then
+  let fields : List String := String.splitOn line ";"
+  if fields.length ≥ 2 then
     let rngField := fields[0]!
     let clsField := fields[1]!
     let (lo, hi) := parseRange (trimS rngField)
@@ -79,11 +79,11 @@ def wordBreakPropertyRaw : String :=
   include_str "../Ucd/WordBreakProperty.txt"
 
 /-- Parsed (lo, hi, class) ranges from the source file. -/
-def rangesParsed : Array (Nat × Nat × WBClass) :=
-  ((wordBreakPropertyRaw.splitOn "\n").filterMap parseRow).toArray
+def rangesParsed : List (Nat × Nat × WBClass) :=
+  ((wordBreakPropertyRaw.splitOn "\n").filterMap parseRow)
 
 /-- The materialized Word_Break range table. -/
-def ranges : Array (Nat × Nat × WBClass) := rangesList.toArray
+def ranges : List (Nat × Nat × WBClass) := rangesList
 
 /-- Look up the Word_Break class for a codepoint. Returns `Other`
     for codepoints not covered by any explicit range. -/
@@ -94,7 +94,7 @@ def lookupWB (cp : Nat) : WBClass :=
 
 -- `rangesList` mirrors a fresh parse of the fixture, checked at build time.
 #eval do
-  unless rangesList.toArray == rangesParsed do
+  unless rangesList == rangesParsed do
     throw (IO.userError "WordBreakProperty drift: list ≠ parsed")
 
 end Unicode.Generated.WordBreakProperty

@@ -40,8 +40,8 @@ def parseLine (line : String) : Option String :=
   else some line
 
 /-- The catalog of glitch tokens, in source-file order. -/
-def tokensParsed : Array String :=
-  ((rawText.splitOn "\n").filterMap parseLine).toArray
+def tokensParsed : List String :=
+  ((rawText.splitOn "\n").filterMap parseLine)
 
 /-- The materialized catalog, consumed downstream. -/
 def tokens : List String := tokensList
@@ -50,7 +50,7 @@ theorem tokens_count : tokens.length = 39 := by decide +kernel
 
 -- Build-time drift gate.
 #eval do
-  unless tokensList.toArray == tokensParsed do
+  unless tokensList == tokensParsed do
     throw (IO.userError "GlitchTokens drift: list ≠ parsed")
 
 theorem solid_gold_present :

@@ -57,8 +57,8 @@ def parseRow (rawLine : String) : Option (Nat × Nat × SBClass) :=
   let stripped : String := (rawLine.takeWhile (· != '#')).toString
   let line := trimS stripped
   if line.isEmpty then none else
-  let fields : Array String := (String.splitOn line ";").toArray
-  if fields.size ≥ 2 then
+  let fields : List String := String.splitOn line ";"
+  if fields.length ≥ 2 then
     let rngField := fields[0]!
     let clsField := fields[1]!
     let (lo, hi) := parseRange (trimS rngField)
@@ -71,11 +71,11 @@ def parseRow (rawLine : String) : Option (Nat × Nat × SBClass) :=
 def sentenceBreakPropertyRaw : String :=
   include_str "../Ucd/SentenceBreakProperty.txt"
 
-def rangesParsed : Array (Nat × Nat × SBClass) :=
-  ((sentenceBreakPropertyRaw.splitOn "\n").filterMap parseRow).toArray
+def rangesParsed : List (Nat × Nat ×SBClass) :=
+  ((sentenceBreakPropertyRaw.splitOn "\n").filterMap parseRow)
 
 /-- The materialized Sentence_Break range table. -/
-def ranges : Array (Nat × Nat × SBClass) := rangesList.toArray
+def ranges : List (Nat × Nat ×SBClass) := rangesList
 
 def lookupSB (cp : Nat) : SBClass :=
   match rangesList.find? (fun r => r.1 ≤ cp ∧ cp ≤ r.2.1) with
@@ -84,7 +84,7 @@ def lookupSB (cp : Nat) : SBClass :=
 
 -- `rangesList` mirrors a fresh parse of the fixture, checked at build time.
 #eval do
-  unless rangesList.toArray == rangesParsed do
+  unless rangesList == rangesParsed do
     throw (IO.userError "SentenceBreakProperty drift: list ≠ parsed")
 
 end Unicode.Generated.SentenceBreakProperty

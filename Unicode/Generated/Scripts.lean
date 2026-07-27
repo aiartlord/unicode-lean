@@ -233,8 +233,8 @@ def scriptsRaw : String := include_str "../Ucd/Scripts.txt"
 
 /-- Range table mapping codepoint ranges to their Script property value
     from Scripts.txt. Inclusive on both ends. -/
-def scriptRanges : Array (Nat × Nat × Script) :=
-  ((scriptsRaw.splitOn "\n").filterMap parseScriptRow).toArray
+def scriptRanges : List (Nat × Nat × Script) :=
+  ((scriptsRaw.splitOn "\n").filterMap parseScriptRow)
 
 /-- `@missing 0000..10FFFF; Unknown` — the default Script value for
     codepoints not covered by `scriptRanges`. -/
@@ -252,7 +252,7 @@ def lookupScript (cp : Nat) : Script :=
 -- Build-time drift gate: materialized `scriptRangesList` must match a
 -- fresh parse of Scripts.txt.
 #eval do
-  unless scriptRangesList.toArray == scriptRanges do
+  unless scriptRangesList == scriptRanges do
     throw (IO.userError "Scripts drift: scriptRangesList ≠ parsed scriptRanges")
 
 end Unicode.Generated.Scripts

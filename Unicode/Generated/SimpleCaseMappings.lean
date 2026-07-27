@@ -57,11 +57,11 @@ def parseRow (rawLine : String) : Option CaseRow :=
 def unicodeDataRaw : String := include_str "../Ucd/UnicodeData.txt"
 
 /-- All parsed simple-case rows. -/
-def rowsParsed : Array CaseRow :=
-  ((unicodeDataRaw.splitOn "\n").filterMap parseRow).toArray
+def rowsParsed : List CaseRow :=
+  ((unicodeDataRaw.splitOn "\n").filterMap parseRow)
 
 /-- All parsed simple-case rows — the materialized view. -/
-def rows : Array CaseRow := rowsList.toArray
+def rows : List CaseRow := rowsList
 
 /-- Look up the simple-uppercase mapping of `cp`. Returns `cp`
     itself when no mapping exists. -/
@@ -84,7 +84,7 @@ def simpleTitlecase (cp : Nat) : Nat :=
 
 -- Build-time drift gate.
 #eval do
-  unless rowsList.toArray == rowsParsed do
+  unless rowsList == rowsParsed do
     throw (IO.userError "SimpleCaseMappings drift: list ≠ parsed")
 
 end Unicode.Generated.SimpleCaseMappings

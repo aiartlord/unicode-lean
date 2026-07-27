@@ -109,8 +109,8 @@ def propListRaw : String := include_str "../Ucd/PropList.txt"
 
 /-- Range table mapping codepoint ranges to binary properties from
     PropList.txt. Inclusive on both ends. -/
-def propRangesParsed : Array (Nat × Nat × BinaryProperty) :=
-  ((String.splitOn propListRaw "\n").filterMap parsePropListRow).toArray
+def propRangesParsed : List (Nat × Nat × BinaryProperty) :=
+  ((String.splitOn propListRaw "\n").filterMap parsePropListRow)
 
 /-- The materialized range table, consumed downstream. -/
 def propRanges : List (Nat × Nat × BinaryProperty) := propRangesList
@@ -131,7 +131,7 @@ theorem propRanges_count : propRangesList.length = 1744 := by decide +kernel
 
 -- Build-time drift gate.
 #eval do
-  unless propRangesList.toArray == propRangesParsed do
+  unless propRangesList == propRangesParsed do
     throw (IO.userError "PropList drift: list ≠ parsed")
 
 end Unicode.Generated.PropList

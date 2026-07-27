@@ -33,8 +33,8 @@ def parseLine (line : String) : Option String :=
   else some t
 
 /-- The canonical attack-target names in source-file order. -/
-def targetsParsed : Array String :=
-  ((rawText.splitOn "\n").filterMap parseLine).toArray
+def targetsParsed : List String :=
+  ((rawText.splitOn "\n").filterMap parseLine)
 
 /-- The materialized catalog, consumed downstream. -/
 def targets : List String := targetsList
@@ -43,7 +43,7 @@ theorem targets_count : targets.length = 67 := by decide +kernel
 
 -- Build-time drift gate.
 #eval do
-  unless targetsList.toArray == targetsParsed do
+  unless targetsList == targetsParsed do
     throw (IO.userError "KnownAttackTargets drift: list ≠ parsed")
 
 theorem react_present : targets.contains "react" = true := by decide +kernel

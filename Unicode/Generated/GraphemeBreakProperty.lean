@@ -60,8 +60,8 @@ def parseRow (rawLine : String) : Option (Nat × Nat × GCBClass) :=
   let stripped : String := (rawLine.takeWhile (· != '#')).toString
   let line := trimS stripped
   if line.isEmpty then none else
-  let fields : Array String := (String.splitOn line ";").toArray
-  if fields.size ≥ 2 then
+  let fields : List String := String.splitOn line ";"
+  if fields.length ≥ 2 then
     let rngField := fields[0]!
     let clsField := fields[1]!
     let (lo, hi) := parseRange (trimS rngField)
@@ -76,8 +76,8 @@ def graphemeBreakPropertyRaw : String :=
   include_str "../Ucd/GraphemeBreakProperty.txt"
 
 /-- Parsed (lo, hi, class) ranges from the source file. -/
-def ranges : Array (Nat × Nat × GCBClass) :=
-  ((graphemeBreakPropertyRaw.splitOn "\n").filterMap parseRow).toArray
+def ranges : List (Nat × Nat ×GCBClass) :=
+  ((graphemeBreakPropertyRaw.splitOn "\n").filterMap parseRow)
 
 /-- Look up the Grapheme_Cluster_Break class for a codepoint, returning
     `Other` for codepoints not covered by any explicit range. Consults
@@ -97,7 +97,7 @@ def lookupGCB (cp : Nat) : GCBClass :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 #eval do
-  unless rangesList.toArray == ranges do
+  unless rangesList == ranges do
     throw (IO.userError "GraphemeBreakProperty drift: rangesList ≠ parsed ranges")
 
 end Unicode.Generated.GraphemeBreakProperty
