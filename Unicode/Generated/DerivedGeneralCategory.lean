@@ -24,7 +24,7 @@ inductive GC where
 def defaultGC : GC := .Cn
 
 /-- Coalesced explicit General_Category ranges, each `(min, max, gc)` inclusive. -/
-def gcRanges : Array (Nat × Nat × GC) := #[
+def gcRanges : List (Nat × Nat × GC) := [
   (0x0000, 0x001F, .Cc),
   (0x0020, 0x0020, .Zs),
   (0x0021, 0x0023, .Po),
@@ -3458,7 +3458,7 @@ def binarySearch (cp : Nat) (left right fuel : Nat) : GC :=
 
 /-- Look up the General_Category for a codepoint, defaulting to `Cn`. -/
 def lookup (cp : Nat) : GC :=
-  binarySearch cp 0 gcRanges.size (gcRanges.size + 1)
+  binarySearch cp 0 gcRanges.length (gcRanges.length + 1)
 
 theorem lookup_u0000 : lookup 0x0000 = .Cc := by decide
 theorem lookup_u0020 : lookup 0x0020 = .Zs := by decide
@@ -3505,12 +3505,12 @@ def gParseGC : String → Option GC
   | _unknownGC => none
 
 /-- Raw General_Category segments, First/Last markers expanded to ranges. -/
-def gSegments : Array (Nat × Nat × GC) := Id.run do
-  let mut out : Array (Nat × Nat × GC) := #[]
+def gSegments : List (Nat × Nat × GC) := Id.run do
+  let mut out : List (Nat × Nat × GC) := []
   let mut pend : Option (Nat × GC) := none
   for line in unicodeDataRaw.splitOn "\n" do
-    let f := (line.splitOn ";").toArray
-    if f.size < 3 then continue
+    let f := line.splitOn ";"
+    if f.length < 3 then continue
     let cp := gHex (gTrim f[0]!)
     match gParseGC (gTrim f[2]!) with
     | none => pure ()
@@ -3521,20 +3521,20 @@ def gSegments : Array (Nat × Nat × GC) := Id.run do
         let seg : Nat × Nat × GC := match pend with
           | some (s, _pg) => (s, cp, g)
           | none => (cp, cp, g)
-        out := out.push seg
+        out := out ++ [seg]
         pend := none
-      else out := out.push (cp, cp, g)
+      else out := out ++ [(cp, cp, g)]
   return out
 
 /-- Coalesce consecutive same-category segments. -/
-def gCoalesce : Array (Nat × Nat × GC) := Id.run do
-  let mut out : Array (Nat × Nat × GC) := #[]
+def gCoalesce : List (Nat × Nat × GC) := Id.run do
+  let mut out : List (Nat × Nat × GC) := []
   for s in gSegments do
-    match out.back? with
+    match out.getLast? with
     | some (lo, hi, g) =>
-      if hi + 1 == s.1 ∧ g == s.2.2 then out := out.set! (out.size - 1) (lo, s.2.1, g)
-      else out := out.push s
-    | none => out := out.push s
+      if hi + 1 == s.1 ∧ g == s.2.2 then out := out.set (out.length - 1) (lo, s.2.1, g)
+      else out := out ++ [s]
+    | none => out := out ++ [s]
   return out
 
 #eval do

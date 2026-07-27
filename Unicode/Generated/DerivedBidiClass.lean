@@ -16,7 +16,7 @@ inductive BidiClass where
   deriving DecidableEq, Repr, Inhabited
 
 /-- Explicit Bidi_Class ranges, sorted by lower bound. -/
-def explicitRanges : Array (Nat × Nat × BidiClass) := #[
+def explicitRanges : List (Nat × Nat × BidiClass) := [
   (0x0000, 0x0008, .BN),
   (0x0009, 0x0009, .S),
   (0x000A, 0x000A, .B),
@@ -2343,7 +2343,7 @@ def explicitRanges : Array (Nat × Nat × BidiClass) := #[
 ]
 
 /-- `@missing` default ranges, in source order. Last matching row wins. -/
-def defaultRanges : Array (Nat × Nat × BidiClass) := #[
+def defaultRanges : List (Nat × Nat × BidiClass) := [
   (0x0000, 0x10FFFF, .L),
   (0x0590, 0x05FF, .R),
   (0x0600, 0x07BF, .AL),
@@ -2370,7 +2370,7 @@ def defaultRanges : Array (Nat × Nat × BidiClass) := #[
   (0x01EF00, 0x01EFFF, .R)
 ]
 
-def binarySearchRange (arr : Array (Nat × Nat × BidiClass)) (cp : Nat)
+def binarySearchRange (arr : List (Nat × Nat × BidiClass)) (cp : Nat)
     (left right fuel : Nat) : Option BidiClass :=
   match fuel with
   | 0 => none
@@ -2391,7 +2391,7 @@ def binarySearchRange (arr : Array (Nat × Nat × BidiClass)) (cp : Nat)
       none
 
 def lookupExplicitBinary (cp : Nat) : Option BidiClass :=
-  binarySearchRange explicitRanges cp 0 explicitRanges.size (explicitRanges.size + 1)
+  binarySearchRange explicitRanges cp 0 explicitRanges.length (explicitRanges.length + 1)
 
 def lookupDefault (cp : Nat) : Option BidiClass :=
   defaultRanges.foldl
@@ -2485,11 +2485,11 @@ def cParseMissing (line : String) : Option (Nat × Nat × BidiClass) :=
     | _o => none
   | _o => none
 
-def explicitRangesParsed : Array (Nat × Nat × BidiClass) :=
-  (((derivedBidiClassRaw.splitOn "\n").filterMap cParseExplicit).toArray).qsort
+def explicitRangesParsed : List (Nat × Nat × BidiClass) :=
+  ((derivedBidiClassRaw.splitOn "\n").filterMap cParseExplicit).mergeSort
     (fun a b => decide (a.1 < b.1))
-def defaultRangesParsed : Array (Nat × Nat × BidiClass) :=
-  ((derivedBidiClassRaw.splitOn "\n").filterMap cParseMissing).toArray
+def defaultRangesParsed : List (Nat × Nat × BidiClass) :=
+  ((derivedBidiClassRaw.splitOn "\n").filterMap cParseMissing)
 
 #eval do
   unless explicitRanges == explicitRangesParsed do
