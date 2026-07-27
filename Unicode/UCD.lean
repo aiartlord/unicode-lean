@@ -337,7 +337,7 @@ theorem ucdFileDigests_unicode_data :
 #eval show IO Unit from do
   for (name, expected) in ucdFileDigests do
     let bytes ← IO.FS.readBinFile s!"Unicode/Ucd/{name}"
-    let actual := Sha256.hashHex bytes
+    let actual := Sha256.hashHex bytes.toList
     unless actual == expected do
       throw (IO.userError
         s!"UCD integrity gate: {name} hashes to {actual}, but the pinned digest is {expected}")

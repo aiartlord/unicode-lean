@@ -1,7 +1,7 @@
 /-
   Unicode.Sha256
 
-  A self-contained SHA-256 (FIPS 180-4) over `ByteArray`, used to verify
+  A self-contained SHA-256 (FIPS 180-4) over a byte list (`List UInt8`), used to verify
   at build time that each pinned UCD source file hashes to its recorded
   digest. This turns the digest manifest from a passive record into an
   enforced gate: a tampered or version-drifted `.txt` changes its hash and
@@ -15,7 +15,7 @@ namespace Unicode.Sha256
 
 /-- The 64 SHA-256 round constants (FIPS 180-4 §4.2.2): the first 32 bits of
     the fractional parts of the cube roots of the first 64 primes. -/
-def roundConstants : Array UInt32 := #[
+def roundConstants : List UInt32 := [
   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
   0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
   0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
@@ -27,7 +27,7 @@ def roundConstants : Array UInt32 := #[
 
 /-- Initial hash value (FIPS 180-4 §5.3.3): fractional parts of the square
     roots of the first 8 primes. -/
-def initialHash : Array UInt32 := #[
+def initialHash : List UInt32 := [
   0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]
 
 /-- 32-bit right rotate. -/
@@ -35,31 +35,40 @@ def initialHash : Array UInt32 := #[
 
 /-- Pad the message per FIPS 180-4 §5.1.1: append `0x80`, then zeros, then the
     64-bit big-endian bit length, to a multiple of 64 bytes. -/
-def pad (msg : ByteArray) : ByteArray := Id.run do
-  let bitLen : UInt64 := (UInt64.ofNat msg.size) * 8
-  let mut out := msg.push 0x80
-  while out.size % 64 != 56 do
-    out := out.push 0x00
+def pad (msg : List UInt8) : List UInt8 := Id.run do
+  let bitLen : UInt64 := (UInt64.ofNat msg.length) * 8
+  let mut out := msg ++ [0x80]
+  while out.length % 64 != 56 do
+    out := out ++ [0x00]
   for i in [0:8] do
-    out := out.push (UInt8.ofNat ((bitLen >>> (UInt64.ofNat ((7 - i) * 8))).toNat % 256))
+    out := out ++ [UInt8.ofNat ((bitLen >>> (UInt64.ofNat ((7 - i) * 8))).toNat % 256)]
   return out
 
 /-- Big-endian read of 4 bytes at `off` as a `UInt32`. -/
-@[inline] def beWord (b : ByteArray) (off : Nat) : UInt32 :=
-  (UInt32.ofNat (b.get! off).toNat <<< 24) |||
-  (UInt32.ofNat (b.get! (off+1)).toNat <<< 16) |||
-  (UInt32.ofNat (b.get! (off+2)).toNat <<< 8) |||
-  (UInt32.ofNat (b.get! (off+3)).toNat)
+@[inline] def beWord (b : List UInt8) (off : Nat) : UInt32 :=
+  (UInt32.ofNat (b[off]!).toNat <<< 24) |||
+  (UInt32.ofNat (b[off+1]!).toNat <<< 16) |||
+  (UInt32.ofNat (b[off+2]!).toNat <<< 8) |||
+  (UInt32.ofNat (b[off+3]!).toNat)
 
-/-- Compress one 64-byte block starting at `off` into the running state `hv`. -/
-def compressBlock (b : ByteArray) (off : Nat) (hv : Array UInt32) : Array UInt32 := Id.run do
-  let mut w : Array UInt32 := Array.replicate 64 0
+/-- Split a byte list into 64-byte blocks. On a padded message the length is
+    an exact multiple of 64, so every block is full; the last partial chunk (if
+    any) is only produced for a non-padded input and is harmless here. -/
+def chunk64 : List UInt8 → List (List UInt8)
+  | []        => []
+  | (x :: xs) => (x :: xs).take 64 :: chunk64 ((x :: xs).drop 64)
+  termination_by l => l.length
+  decreasing_by simp only [List.length_drop, List.length_cons]; omega
+
+/-- Compress one 64-byte `block` into the running state `hv`. -/
+def compressBlock (block : List UInt8) (hv : List UInt32) : List UInt32 := Id.run do
+  let mut w : List UInt32 := List.replicate 64 0
   for t in [0:16] do
-    w := w.set! t (beWord b (off + t*4))
+    w := w.set t (beWord block (t*4))
   for t in [16:64] do
     let s0 := rotr w[t-15]! 7 ^^^ rotr w[t-15]! 18 ^^^ (w[t-15]! >>> 3)
     let s1 := rotr w[t-2]! 17 ^^^ rotr w[t-2]! 19 ^^^ (w[t-2]! >>> 10)
-    w := w.set! t (w[t-16]! + s0 + w[t-7]! + s1)
+    w := w.set t (w[t-16]! + s0 + w[t-7]! + s1)
   let mut a := hv[0]!
   let mut bb := hv[1]!
   let mut c := hv[2]!
@@ -77,7 +86,7 @@ def compressBlock (b : ByteArray) (off : Nat) (hv : Array UInt32) : Array UInt32
     let temp2 := s0 + maj
     h := g; g := f; f := e; e := d + temp1
     d := c; c := bb; bb := a; a := temp1 + temp2
-  return #[hv[0]! + a, hv[1]! + bb, hv[2]! + c, hv[3]! + d,
+  return [hv[0]! + a, hv[1]! + bb, hv[2]! + c, hv[3]! + d,
            hv[4]! + e, hv[5]! + f, hv[6]! + g, hv[7]! + h]
 
 /-- A nibble (0–15) as its lowercase hex character. -/
@@ -93,19 +102,14 @@ def wordHex (x : UInt32) : String := Id.run do
   return s
 
 /-- SHA-256 digest of `msg` as a 64-character lowercase hex string. -/
-def hashHex (msg : ByteArray) : String := Id.run do
-  let padded := pad msg
-  let mut hv := initialHash
-  let mut off := 0
-  while off < padded.size do
-    hv := compressBlock padded off hv
-    off := off + 64
+def hashHex (msg : List UInt8) : String := Id.run do
+  let hv := (chunk64 (pad msg)).foldl (fun hv block => compressBlock block hv) initialHash
   let mut out := ""
   for i in [0:8] do
     out := out ++ wordHex hv[i]!
   return out
 
 /-- SHA-256 of a `String`'s UTF-8 encoding. -/
-def hashStringHex (s : String) : String := hashHex s.toUTF8
+def hashStringHex (s : String) : String := hashHex s.toUTF8.toList
 
 end Unicode.Sha256
