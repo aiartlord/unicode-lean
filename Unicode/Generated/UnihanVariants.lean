@@ -57,8 +57,8 @@ def parseCodepointRef (s : String) : Option Nat :=
     none
 
 /-- Parse a space-separated list of `U+XXXX` codepoint references. -/
-def parseCodepointList (s : String) : Array Nat :=
-  ((s.splitOn " ").filterMap parseCodepointRef).toArray
+def parseCodepointList (s : String) : List Nat :=
+  ((s.splitOn " ").filterMap parseCodepointRef)
 
 def parseProperty? : String → Option VariantProperty
   | "kSimplifiedVariant"          => some .SimplifiedVariant
@@ -75,7 +75,7 @@ def parseRow (rawLine : String) : Option Row :=
   let stripped : String := (rawLine.takeWhile (· ≠ '#')).toString
   let line := trimS stripped
   if line.isEmpty then none else
-  let fields : Array String := (line.splitOn "\t").toArray
+  let fields : List String := (line.splitOn "\t")
   if fields.size < 3 then none
   else
     match parseCodepointRef fields[0]!, parseProperty? (trimS fields[1]!) with
@@ -92,13 +92,13 @@ def variantsRaw : String := include_str "../Ucd/Unihan_Variants.txt"
     text at every build. `rowsList` (the literal table in
     `UnihanVariantsData`) is what proofs and the lookup consume; this
     parse exists so the drift gate below can compare the two. -/
-def parsedRows : Array Row :=
-  ((variantsRaw.splitOn "\n").filterMap parseRow).toArray
+def parsedRows : List Row :=
+  ((variantsRaw.splitOn "\n").filterMap parseRow)
 
 /-- Look up the targets for a given (source codepoint, variant
     property) pair over the literal row table. Returns `#[]` if no
     row matches. -/
-def lookup (cp : Nat) (prop : VariantProperty) : Array Nat :=
+def lookup (cp : Nat) (prop : VariantProperty) : List Nat :=
   rowsList.foldl (fun acc r =>
     if r.source = cp ∧ r.property = prop then acc ++ r.targets else acc) #[]
 

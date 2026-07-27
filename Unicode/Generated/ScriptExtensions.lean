@@ -147,7 +147,7 @@ def parseScriptAbbrev? : String → Option ScriptAbbrev
 /-- Parse one ScriptExtensions.txt row. Returns `none` for blank/comment
     lines or rows whose abbreviation list is empty / unrecognised. -/
 def parseScriptExtensionRow
-    (rawLine : String) : Option (Nat × Nat × Array ScriptAbbrev) :=
+    (rawLine : String) : Option (Nat × Nat × List ScriptAbbrev) :=
   let stripped : String := (rawLine.takeWhile (· != '#')).toString
   let line := trimS stripped
   if line.isEmpty then none else
@@ -156,7 +156,7 @@ def parseScriptExtensionRow
     let (lo, hi) := parseRange (trimS rngField)
     let abbrevs := (((trimS abbrevField).splitOn " ").filterMap (fun tok =>
       let t := trimS tok
-      if t.isEmpty then none else parseScriptAbbrev? t)).toArray
+      if t.isEmpty then none else parseScriptAbbrev? t))
     if abbrevs.isEmpty then none else some (lo, hi, abbrevs)
   | irregularSplit => Function.const (List String) none irregularSplit
 
@@ -165,13 +165,13 @@ def scriptExtensionsRaw : String := include_str "../Ucd/ScriptExtensions.txt"
 
 /-- Range table from ScriptExtensions.txt. Each row carries the set of
     Script_Extensions for one inclusive codepoint range. -/
-def scriptExtensionRangesParsed : Array (Nat × Nat × Array ScriptAbbrev) :=
-  ((scriptExtensionsRaw.splitOn "\n").filterMap parseScriptExtensionRow).toArray
+def scriptExtensionRangesParsed : List (Nat × Nat × List ScriptAbbrev) :=
+  ((scriptExtensionsRaw.splitOn "\n").filterMap parseScriptExtensionRow)
 
 -- Build-time drift gate: materialized `scriptExtensionRanges` (List, from
 -- ScriptExtensionsData) must match a fresh parse.
 #eval do
-  unless scriptExtensionRanges.toArray == scriptExtensionRangesParsed do
+  unless scriptExtensionRanges == scriptExtensionRangesParsed do
     throw (IO.userError "ScriptExtensions drift: scriptExtensionRanges ≠ parsed")
 
 end Unicode.Generated.ScriptExtensions
