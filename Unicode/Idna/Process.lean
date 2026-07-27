@@ -30,27 +30,27 @@ namespace Unicode.Idna.Process
 /-- Split codepoints at every U+002E ('.'); the dots are consumed.
     `splitLabels [a, '.', b, '.', c] = [[a], [b], [c]]`. The result
     always has at least one element. -/
-def splitLabels (cps : Array Nat) : Array (Array Nat) := Id.run do
-  let mut labels  : Array (Array Nat) := #[]
-  let mut current : Array Nat         := #[]
+def splitLabels (cps : List Nat) : List (List Nat) := Id.run do
+  let mut labels  : List (List Nat) := []
+  let mut current : List Nat         := []
   for cp in cps do
     if cp = 0x002E then
-      labels := labels.push current
-      current := #[]
+      labels := labels ++ [current]
+      current := []
     else
-      current := current.push cp
-  labels := labels.push current
+      current := current ++ [cp]
+  labels := labels ++ [current]
   return labels
 
 /-- Join labels with U+002E ('.'). -/
-def joinLabels (labels : Array (Array Nat)) : Array Nat := Id.run do
-  let mut acc   : Array Nat := #[]
+def joinLabels (labels : List (List Nat)) : List Nat := Id.run do
+  let mut acc   : List Nat := []
   let mut first : Bool      := true
   for label in labels do
     if first then
       first := false
     else
-      acc := acc.push 0x002E
+      acc := acc ++ [0x002E]
     acc := acc ++ label
   return acc
 
@@ -58,20 +58,20 @@ def joinLabels (labels : Array (Array Nat)) : Array Nat := Id.run do
 -- §2 ASCII / UNICODE BRIDGE
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Convert a `String` to `Array Nat` by mapping each char to its codepoint. -/
-def stringToCps (s : String) : Array Nat :=
-  (s.toList.map (fun c => c.toNat)).toArray
+/-- Convert a `String` to `List Nat` by mapping each char to its codepoint. -/
+def stringToCps (s : String) : List Nat :=
+  s.toList.map (fun c => c.toNat)
 
-/-- Convert an array of ASCII codepoints (assumed `< 0x80`) to a `String`. -/
-def asciiCpsToString (cps : Array Nat) : String :=
-  String.ofList (cps.toList.map Char.ofNat)
+/-- Convert a list of ASCII codepoints (assumed `< 0x80`) to a `String`. -/
+def asciiCpsToString (cps : List Nat) : String :=
+  String.ofList (cps.map Char.ofNat)
 
 /-- True iff every codepoint is in the ASCII range. -/
-def allAscii (cps : Array Nat) : Bool := cps.all (· < 0x80)
+def allAscii (cps : List Nat) : Bool := cps.all (· < 0x80)
 
 /-- True iff `label` starts with the literal codepoints 'x','n','-','-'. -/
-def hasXnPrefix (label : Array Nat) : Bool :=
-  Nat.ble 4 label.size
+def hasXnPrefix (label : List Nat) : Bool :=
+  Nat.ble 4 label.length
     && label[0]? == some 0x78
     && label[1]? == some 0x6E
     && label[2]? == some 0x2D
@@ -124,15 +124,15 @@ def defaultOptions : Options :=
     pass naturally, while a label whose decoded form happens to
     have ASCII hyphens at 3+4 (e.g. a maliciously-chained
     `xn--xn--a--gua`) is rejected. -/
-def violatesHyphenRule (label : Array Nat) : Bool :=
-  Nat.ble 4 label.size
+def violatesHyphenRule (label : List Nat) : Bool :=
+  Nat.ble 4 label.length
     && label[2]? == some 0x2D
     && label[3]? == some 0x2D
 
 /-- A label fails the leading/trailing-hyphen rule when its first or
     last character is '-'. -/
-def violatesLeadTrailHyphen (label : Array Nat) : Bool :=
-  (label[0]? == some 0x2D) || (label[label.size - 1]? == some 0x2D)
+def violatesLeadTrailHyphen (label : List Nat) : Bool :=
+  (label[0]? == some 0x2D) || (label[label.length - 1]? == some 0x2D)
 
 /-- A label fails the leading-combining-mark rule (UTS #46 §4.1
     V5) when its first codepoint has General_Category in
@@ -140,7 +140,7 @@ def violatesLeadTrailHyphen (label : Array Nat) : Bool :=
     combining marks (Mc) that have canonical_combining_class = 0
     — a class of codepoint that a `ccc ≠ 0` heuristic would
     silently accept. -/
-def violatesLeadingCombiner (label : Array Nat) : Bool :=
+def violatesLeadingCombiner (label : List Nat) : Bool :=
   match label[0]? with
   | none    => false
   | some cp =>
@@ -165,7 +165,7 @@ def isLDH (cp : Nat) : Bool :=
 /-- A label fails STD3 ASCII rules when any of its ASCII codepoints
     fall outside the LDH set. Non-ASCII codepoints are unrestricted
     by this check. -/
-def violatesSTD3 (label : Array Nat) : Bool :=
+def violatesSTD3 (label : List Nat) : Bool :=
   label.any (fun cp => cp < 0x80 && ! isLDH cp)
 
 /-- A label is valid under `opts` if it passes the leading-combiner
@@ -173,7 +173,7 @@ def violatesSTD3 (label : Array Nat) : Bool :=
     set, and the STD3 LDH rule when `useSTD3ASCIIRules` is set. The
     label must additionally be in NFC; we ensure this upstream by
     normalising before label splitting. -/
-def isValidLabel (opts : Options) (label : Array Nat) : Bool :=
+def isValidLabel (opts : Options) (label : List Nat) : Bool :=
   ! decide (violatesLeadingCombiner label)
     && (! opts.checkHyphens
           || (! violatesHyphenRule label && ! violatesLeadTrailHyphen label))
@@ -185,31 +185,31 @@ def isValidLabel (opts : Options) (label : Array Nat) : Bool :=
     satisfy the strict variant of RFC 5893 §2 that does not
     short-circuit on non-Bidi labels. For a non-bidi domain the
     check is vacuously satisfied. -/
-def checkBidi (labels : Array (Array Nat)) : Bool :=
+def checkBidi (labels : List (List Nat)) : Bool :=
   let isBidiDomain := labels.any Unicode.Precis.BidiRule.isBidiLabel
   ! isBidiDomain || labels.all Unicode.Precis.BidiRule.satisfiesBidiRuleStrict
 
 /-- True iff the joined-domain length is in [1, 253] codepoints.
     UTS #46 §4.4 — total-length check (`X4_2` for toUnicode,
     `A4_2` for toASCII). -/
-def totalLengthOk (output : Array Nat) : Bool :=
-  Nat.ble 1 output.size && Nat.ble output.size 253
+def totalLengthOk (output : List Nat) : Bool :=
+  Nat.ble 1 output.length && Nat.ble output.length 253
 
 /-- True iff every label has length in [1, 63] codepoints. UTS #46
     §4.4 — per-label-length check (`A4_1`, applied only to toASCII
     output). -/
-def labelsLengthOk (labels : Array (Array Nat)) : Bool :=
-  labels.all (fun l => Nat.ble 1 l.size && Nat.ble l.size 63)
+def labelsLengthOk (labels : List (List Nat)) : Bool :=
+  labels.all (fun l => Nat.ble 1 l.length && Nat.ble l.length 63)
 
 /-- True iff `labels` contains an empty label that is not the
     final (trailing) one. A single trailing empty label is allowed
     as the fully-qualified-domain root dot (per UTS #46 / RFC 5891
     convention); empty labels in any earlier position are validity
     violations (`V4` or equivalent). -/
-def hasNonTrailingEmptyLabel (labels : Array (Array Nat)) : Bool :=
-  let n := labels.size
+def hasNonTrailingEmptyLabel (labels : List (List Nat)) : Bool :=
+  let n := labels.length
   if Nat.ble n 1 then false
-  else (labels.extract 0 (n - 1)).any (fun l => l.size = 0)
+  else (labels.take (n - 1)).any (fun l => l.length = 0)
 
 /-- True iff the decoded label array satisfies every UTS #46 check
     enabled in `opts`: per-label validity, the CheckJoiners CONTEXTJ
@@ -218,7 +218,7 @@ def hasNonTrailingEmptyLabel (labels : Array (Array Nat)) : Bool :=
     applied at each operation's output stage instead, since
     toUnicode and toASCII apply different subsets (`X4_2` only vs
     `A4_1` + `A4_2`). -/
-def labelsPass (opts : Options) (decoded : Array (Array Nat)) : Bool :=
+def labelsPass (opts : Options) (decoded : List (List Nat)) : Bool :=
   decoded.all (isValidLabel opts)
     && (! opts.checkJoiners    || decoded.all CheckJoiners.checkJoiners)
     && (! opts.checkBidi       || checkBidi decoded)
@@ -235,7 +235,7 @@ def labelsPass (opts : Options) (decoded : Array (Array Nat)) : Bool :=
     The mapping pass earlier in `toUnicode` already handles these
     on the input side, but Punycode-decoded forms have not been
     through mapping and must be checked separately. -/
-def decodedLabelValidV6 (cps : Array Nat) : Bool :=
+def decodedLabelValidV6 (cps : List Nat) : Bool :=
   cps.all (fun cp =>
     match Unicode.Idna.Disposition.disposition cp with
     | .Valid | .Deviation => true
@@ -247,7 +247,7 @@ def decodedLabelValidV6 (cps : Array Nat) : Bool :=
     pure-ASCII content as Punycode would not produce the
     original `xn--` form, so the input was a malformed
     Punycode wrapper around content that needed no encoding. -/
-def isAllAsciiCps (cps : Array Nat) : Bool :=
+def isAllAsciiCps (cps : List Nat) : Bool :=
   cps.all (fun cp => Nat.ble cp 0x7F)
 
 /-- Decode a single label whose first four codepoints are 'xn--' via
@@ -280,10 +280,10 @@ def isAllAsciiCps (cps : Array Nat) : Bool :=
 
     On a non-`xn--` label the input is returned unchanged with
     no error. -/
-def decodeLabel (label : Array Nat) : Map.Result :=
+def decodeLabel (label : List Nat) : Map.Result :=
   if hasXnPrefix label then
-    let suffixSize := label.size - 4
-    let suffix := asciiCpsToString (label.extract 4 label.size)
+    let suffixSize := label.length - 4
+    let suffix := asciiCpsToString (label.drop 4)
     match Punycode.decode suffix with
     | none         => { output := label, hasErrors := true }
     | some decoded =>
@@ -293,7 +293,7 @@ def decodeLabel (label : Array Nat) : Map.Result :=
         -- nevertheless yields an empty decoded form is malformed,
         -- and the spec preserves the original bytes for downstream
         -- validity checks.
-        if suffixSize = 0 then { output := #[], hasErrors := true }
+        if suffixSize = 0 then { output := [], hasErrors := true }
         else { output := label, hasErrors := true }
       else
         let asciiOnly := isAllAsciiCps decoded
@@ -304,13 +304,13 @@ def decodeLabel (label : Array Nat) : Map.Result :=
     { output := label, hasErrors := false }
 
 /-- Decode every label in `labels`, joining their `hasErrors` flags. -/
-def decodeLabels (labels : Array (Array Nat)) :
-    Array (Array Nat) × Bool := Id.run do
-  let mut decoded : Array (Array Nat) := #[]
+def decodeLabels (labels : List (List Nat)) :
+    List (List Nat) × Bool := Id.run do
+  let mut decoded : List (List Nat) := []
   let mut errs    : Bool              := false
   for label in labels do
     let r := decodeLabel label
-    decoded := decoded.push r.output
+    decoded := decoded ++ [r.output]
     errs    := errs || r.hasErrors
   return (decoded, errs)
 
@@ -321,7 +321,7 @@ def decodeLabels (labels : Array (Array Nat)) :
     the output is produced as if the recovery path was taken.
     UTS #46 §4.4's `VerifyDnsLength` flag controls only A4_1 and
     A4_2 on the toAscii side; toUnicode has no length check. -/
-def toUnicode (input : Array Nat) (opts : Options := defaultOptions) :
+def toUnicode (input : List Nat) (opts : Options := defaultOptions) :
     Map.Result :=
   let mapped              := Map.mapNonTransitional input
   let normalized          := Unicode.Normalization.NFC.toNFC mapped.output
@@ -359,7 +359,7 @@ def isValidScalar (cp : Nat) : Bool :=
       * Otherwise → Punycode-encode and prefix with `xn--`. A
         Punycode failure on a valid-scalar input falls back to
         preserving the label with hasErrors=true. -/
-def encodeLabel (label : Array Nat) : Map.Result :=
+def encodeLabel (label : List Nat) : Map.Result :=
   if allAscii label then
     { output := label, hasErrors := false }
   else if ! label.all isValidScalar then
@@ -368,17 +368,17 @@ def encodeLabel (label : Array Nat) : Map.Result :=
     match Punycode.encode label with
     | none     => { output := label, hasErrors := true }
     | some pny =>
-      { output := #[0x78, 0x6E, 0x2D, 0x2D] ++ stringToCps pny,
+      { output := [0x78, 0x6E, 0x2D, 0x2D] ++ stringToCps pny,
         hasErrors := false }
 
 /-- Encode every label in `labels`, joining outputs with U+002E and
     or'ing their `hasErrors` flags. -/
-def encodeLabels (labels : Array (Array Nat)) : Map.Result := Id.run do
-  let mut encoded : Array (Array Nat) := #[]
+def encodeLabels (labels : List (List Nat)) : Map.Result := Id.run do
+  let mut encoded : List (List Nat) := []
   let mut errs    : Bool              := false
   for label in labels do
     let r := encodeLabel label
-    encoded := encoded.push r.output
+    encoded := encoded ++ [r.output]
     errs    := errs || r.hasErrors
   return { output := joinLabels encoded, hasErrors := errs }
 
@@ -388,7 +388,7 @@ def encodeLabels (labels : Array (Array Nat)) : Map.Result := Id.run do
     post-encoding length checks (`A4_1` for label, `A4_2` for
     domain — both applied when `verifyDnsLength` is set) are joined
     into `hasErrors`. -/
-def toAscii (input : Array Nat) (opts : Options := defaultOptions) :
+def toAscii (input : List Nat) (opts : Options := defaultOptions) :
     Map.Result :=
   let unicode  := toUnicode input opts
   let labels   := splitLabels unicode.output
@@ -403,7 +403,7 @@ def toAscii (input : Array Nat) (opts : Options := defaultOptions) :
     with the given `opts`. Transitional processing maps the four
     UTS #46 §2.3 Deviation codepoints (matching IDNA2003 behaviour);
     for a non-deviation input the output equals `toAscii input opts`. -/
-def toAsciiTransitional (input : Array Nat) (opts : Options := defaultOptions) :
+def toAsciiTransitional (input : List Nat) (opts : Options := defaultOptions) :
     Map.Result :=
   let mapped              := Map.mapTransitional input
   let normalized          := Unicode.Normalization.NFC.toNFC mapped.output
@@ -454,21 +454,21 @@ theorem toAscii_fass :
 /-- IdnaTestV2 vector: "faß.de" → "xn--fa-hia.de" non-transitionally
     (sharp s is kept under non-transitional, then Punycode-encoded). -/
 theorem toAscii_faß :
-    toAscii (#[0x0066, 0x0061, 0x00DF, 0x002E, 0x0064, 0x0065])
+    toAscii ([0x0066, 0x0061, 0x00DF, 0x002E, 0x0064, 0x0065])
       = { output := stringToCps "xn--fa-hia.de", hasErrors := false } := by
   decide
 
 /-- IdnaTestV2 vector: "Faß.de" → "faß.de" under ToUnicode. -/
 theorem toUnicode_Faß :
-    toUnicode (#[0x0046, 0x0061, 0x00DF, 0x002E, 0x0064, 0x0065])
-      = { output := #[0x0066, 0x0061, 0x00DF, 0x002E, 0x0064, 0x0065],
+    toUnicode ([0x0046, 0x0061, 0x00DF, 0x002E, 0x0064, 0x0065])
+      = { output := [0x0066, 0x0061, 0x00DF, 0x002E, 0x0064, 0x0065],
           hasErrors := false } := by
   decide
 
 /-- IdnaTestV2 vector: "faß.de" → "fass.de" under transitional ToASCII
     (sharp s is mapped to "ss"). -/
 theorem toAsciiTransitional_faß :
-    toAsciiTransitional (#[0x0066, 0x0061, 0x00DF, 0x002E, 0x0064, 0x0065])
+    toAsciiTransitional ([0x0066, 0x0061, 0x00DF, 0x002E, 0x0064, 0x0065])
       = { output := stringToCps "fass.de", hasErrors := false } := by
   decide
 
@@ -476,7 +476,7 @@ theorem toAsciiTransitional_faß :
     Unicode codepoints under ToUnicode. -/
 theorem toUnicode_xn_traditional_chinese :
     toUnicode (stringToCps "xn--ihqwctvzc91f659drss3x8bo0yb.example")
-      = { output := #[0x4ED6, 0x5011, 0x7232, 0x4EC0, 0x9EBD,
+      = { output := [0x4ED6, 0x5011, 0x7232, 0x4EC0, 0x9EBD,
                       0x4E0D, 0x8AAA, 0x4E2D, 0x6587, 0x002E]
                     ++ stringToCps "example",
           hasErrors := false } := by

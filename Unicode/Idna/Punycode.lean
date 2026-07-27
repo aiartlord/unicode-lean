@@ -91,7 +91,7 @@ def encodeQ (fuel q k bias : Nat) (acc : String) : String :=
 /-- For the current threshold `n`, walk every codepoint in `input` and emit
     a digit run for each occurrence of `n`, accumulating the running
     `(output, h, delta, bias)`. -/
-def encodeProcess (input : Array Nat) (n h delta bias b : Nat) (acc : String) :
+def encodeProcess (input : List Nat) (n h delta bias b : Nat) (acc : String) :
     String × Nat × Nat × Nat := Id.run do
   let mut acc'   := acc
   let mut h'     := h
@@ -108,7 +108,7 @@ def encodeProcess (input : Array Nat) (n h delta bias b : Nat) (acc : String) :
   return (acc', h', delta', bias')
 
 /-- Find the smallest codepoint in `input` that is ≥ `n`. -/
-def minGE (input : Array Nat) (n : Nat) : Option Nat :=
+def minGE (input : List Nat) (n : Nat) : Option Nat :=
   input.foldl (fun a cp =>
     if cp ≥ n then
       match a with
@@ -118,9 +118,9 @@ def minGE (input : Array Nat) (n : Nat) : Option Nat :=
 
 /-- Outer encode loop, fuelled. Each iteration strictly increases `n`, so
     fuel `0x110001` is sufficient for any well-formed Unicode input. -/
-def encodeOuter (fuel : Nat) (input : Array Nat) (n h delta bias b : Nat)
+def encodeOuter (fuel : Nat) (input : List Nat) (n h delta bias b : Nat)
     (acc : String) : Option String :=
-  if h ≥ input.size then some acc
+  if h ≥ input.length then some acc
   else match fuel with
     | 0       => none
     | fuel+1  =>
@@ -134,16 +134,16 @@ def encodeOuter (fuel : Nat) (input : Array Nat) (n h delta bias b : Nat)
 /-- Encode an array of Unicode codepoints to its Punycode form. Returns
     `none` only on internal logic errors (the underlying algorithm is
     deterministic and total on well-formed input). -/
-def encode (input : Array Nat) : Option String := Id.run do
+def encode (input : List Nat) : Option String := Id.run do
   let mut acc : String := ""
   let mut b   : Nat    := 0
   for cp in input do
     if cp < 0x80 then
       acc := acc.push (Char.ofNat cp)
       b   := b + 1
-  if 0 < b ∧ b < input.size then
+  if 0 < b ∧ b < input.length then
     acc := acc.push '-'
-  return encodeOuter (input.size + 1) input initialN b 0 initialBias b acc
+  return encodeOuter (input.length + 1) input initialN b 0 initialBias b acc
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 DECODE  (RFC 3492 §6.2)
@@ -151,7 +151,7 @@ def encode (input : Array Nat) : Option String := Id.run do
 
 /-- Inner k-loop of decode: read base-36 digits, accumulate into `i` with
     weight `w`. Returns `(i, pos)` after consumption, or `none` on bad input. -/
-def decodeQ (fuel : Nat) (chars : Array Char) (pos i w k bias : Nat) :
+def decodeQ (fuel : Nat) (chars : List Char) (pos i w k bias : Nat) :
     Option (Nat × Nat) :=
   match fuel with
   | 0       => none
@@ -167,16 +167,16 @@ def decodeQ (fuel : Nat) (chars : Array Char) (pos i w k bias : Nat) :
         if digit < t then some (i', pos + 1)
         else decodeQ fuel chars (pos + 1) i' (w * (base - t)) (k + base) bias
 
-/-- Insert `x` at index `i` in `arr` (clamping to the end if `i ≥ arr.size`). -/
-def insertAt (arr : Array Nat) (i : Nat) (x : Nat) : Array Nat :=
-  let n := arr.size
-  if i ≥ n then arr.push x
-  else (arr.extract 0 i).push x ++ arr.extract i n
+/-- Insert `x` at index `i` in `arr` (clamping to the end if `i ≥ arr.length`). -/
+def insertAt (arr : List Nat) (i : Nat) (x : Nat) : List Nat :=
+  let n := arr.length
+  if i ≥ n then arr ++ [x]
+  else (arr.take i ++ [x]) ++ arr.drop i
 
 /-- Outer decode loop, fuelled. Each iteration consumes ≥ 1 character. -/
-def decodeOuter (fuel : Nat) (chars : Array Char) (pos n i bias : Nat)
-    (output : Array Nat) : Option (Array Nat) :=
-  if pos ≥ chars.size then some output
+def decodeOuter (fuel : Nat) (chars : List Char) (pos n i bias : Nat)
+    (output : List Nat) : Option (List Nat) :=
+  if pos ≥ chars.length then some output
   else match fuel with
     | 0       => none
     | fuel+1  =>
@@ -184,66 +184,66 @@ def decodeOuter (fuel : Nat) (chars : Array Char) (pos n i bias : Nat)
       match decodeQ 64 chars pos i 1 base bias with
       | none            => none
       | some (i', pos') =>
-        let bias'  := adapt (i' - oldi) (output.size + 1) (oldi == 0)
-        let nDelta := i' / (output.size + 1)
-        let i''    := i' % (output.size + 1)
+        let bias'  := adapt (i' - oldi) (output.length + 1) (oldi == 0)
+        let nDelta := i' / (output.length + 1)
+        let i''    := i' % (output.length + 1)
         let n'     := n + nDelta
         if 0x10FFFF < n' then none
         else decodeOuter fuel chars pos' n' (i'' + 1) bias' (insertAt output i'' n')
 
 /-- Find the index of the last '-' in `chars`, or `none`. -/
-def findLastDelim (chars : Array Char) : Option Nat :=
+def findLastDelim (chars : List Char) : Option Nat :=
   (chars.foldl (fun (s : Nat × Option Nat) c =>
     let (i, acc) := s
     let acc' := if c == '-' then some i else acc
     (i + 1, acc')) (0, none)).snd
 
 /-- Decode a Punycode string to an array of Unicode codepoints. -/
-def decode (input : String) : Option (Array Nat) :=
-  let chars := input.toList.toArray
+def decode (input : String) : Option (List Nat) :=
+  let chars := input.toList
   match findLastDelim chars with
   | none =>
-    decodeOuter (chars.size + 1) chars 0 initialN 0 initialBias #[]
+    decodeOuter (chars.length + 1) chars 0 initialN 0 initialBias []
   | some idx =>
-    let basicArr : Array Char := chars.extract 0 idx
+    let basicArr : List Char := chars.take idx
     if basicArr.any (fun c => c.toNat ≥ 0x80) then none
     else
-      let basic : Array Nat := basicArr.map Char.toNat
-      decodeOuter (chars.size + 1) chars (idx + 1) initialN 0 initialBias basic
+      let basic : List Nat := basicArr.map Char.toNat
+      decodeOuter (chars.length + 1) chars (idx + 1) initialN 0 initialBias basic
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 RFC 3492 §7.1 SAMPLE STRINGS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Empty input round-trips trivially. -/
-theorem encode_empty : encode #[] = some "" := by decide
-theorem decode_empty : decode "" = some #[] := by decide
+theorem encode_empty : encode [] = some "" := by decide
+theorem decode_empty : decode "" = some [] := by decide
 
 /-- (B) Chinese (simplified). All-non-basic input. -/
 theorem encode_sample_B :
-    encode #[0x4ED6, 0x4EEC, 0x4E3A, 0x4EC0, 0x4E48,
+    encode [0x4ED6, 0x4EEC, 0x4E3A, 0x4EC0, 0x4E48,
              0x4E0D, 0x8BF4, 0x4E2D, 0x6587]
       = some "ihqwcrb4cv8a8dqg056pqjye" := by decide
 
 theorem decode_sample_B :
     decode "ihqwcrb4cv8a8dqg056pqjye"
-      = some #[0x4ED6, 0x4EEC, 0x4E3A, 0x4EC0, 0x4E48,
+      = some [0x4ED6, 0x4EEC, 0x4E3A, 0x4EC0, 0x4E48,
                0x4E0D, 0x8BF4, 0x4E2D, 0x6587] := by decide
 
 /-- (C) Chinese (traditional). -/
 theorem encode_sample_C :
-    encode #[0x4ED6, 0x5011, 0x7232, 0x4EC0, 0x9EBD,
+    encode [0x4ED6, 0x5011, 0x7232, 0x4EC0, 0x9EBD,
              0x4E0D, 0x8AAA, 0x4E2D, 0x6587]
       = some "ihqwctvzc91f659drss3x8bo0yb" := by decide
 
 theorem decode_sample_C :
     decode "ihqwctvzc91f659drss3x8bo0yb"
-      = some #[0x4ED6, 0x5011, 0x7232, 0x4EC0, 0x9EBD,
+      = some [0x4ED6, 0x5011, 0x7232, 0x4EC0, 0x9EBD,
                0x4E0D, 0x8AAA, 0x4E2D, 0x6587] := by decide
 
 /-- (J) Spanish: mixed basic and non-basic codepoints. -/
 theorem encode_sample_J :
-    encode #[0x50, 0x6F, 0x72, 0x71, 0x75, 0xE9, 0x6E, 0x6F,
+    encode [0x50, 0x6F, 0x72, 0x71, 0x75, 0xE9, 0x6E, 0x6F,
              0x70, 0x75, 0x65, 0x64, 0x65, 0x6E, 0x73, 0x69,
              0x6D, 0x70, 0x6C, 0x65, 0x6D, 0x65, 0x6E, 0x74,
              0x65, 0x68, 0x61, 0x62, 0x6C, 0x61, 0x72, 0x65,
@@ -252,7 +252,7 @@ theorem encode_sample_J :
 
 theorem decode_sample_J :
     decode "PorqunopuedensimplementehablarenEspaol-fmd56a"
-      = some #[0x50, 0x6F, 0x72, 0x71, 0x75, 0xE9, 0x6E, 0x6F,
+      = some [0x50, 0x6F, 0x72, 0x71, 0x75, 0xE9, 0x6E, 0x6F,
                0x70, 0x75, 0x65, 0x64, 0x65, 0x6E, 0x73, 0x69,
                0x6D, 0x70, 0x6C, 0x65, 0x6D, 0x65, 0x6E, 0x74,
                0x65, 0x68, 0x61, 0x62, 0x6C, 0x61, 0x72, 0x65,
