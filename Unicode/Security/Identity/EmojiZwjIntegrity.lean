@@ -83,7 +83,7 @@ inductive SubThreat where
 /-- Top-level classification for EmojiZwjIntegrity. -/
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : List UInt8)
   deriving Inhabited
 
 /-- Verdict — the structured output of `detect`. -/
@@ -172,7 +172,7 @@ def skinToneCount (input : List Nat) : Nat :=
 def detect (input : List Nat) : Verdict :=
   let zwjs := zwjPositions input
   let stCount := skinToneCount input
-  let isRgi := Unicode.Generated.EmojiSequences.isRegisteredZwjSequence input.toArray
+  let isRgi := Unicode.Generated.EmojiSequences.isRegisteredZwjSequence input
   let chainLen := if zwjs.isEmpty then 0 else input.length
   if zwjs.isEmpty ∧ stCount ≤ 1 then
     { input := input,
@@ -189,24 +189,24 @@ def detect (input : List Nat) : Verdict :=
         -- Phase 2: ZWJ-ZWJ adjacency.
         let dzwj := doubleZwjPositions input
         if dzwj.length > 0 then
-          .hazard (.doubleZWJ dzwj) dzwj ByteArray.empty
+          .hazard (.doubleZWJ dzwj) dzwj []
         else
           -- Phase 3: ZWJ adjacent to non-emoji.
           match firstNonEmojiInjection input with
           | some (zwjPos, offendCp) =>
             .hazard (.nonEmojiInjection zwjPos offendCp)
-              [zwjPos] ByteArray.empty
+              [zwjPos] []
           | none =>
             -- Phase 4: length cap.
             if input.length > maxRgiLength then
               .hazard (.overLength input.length maxRgiLength)
-                [] ByteArray.empty
+                [] []
             -- Phase 5: skin-tone overflow.
             else if stCount ≥ 5 then
-              .hazard (.skinToneOverflow stCount) [] ByteArray.empty
+              .hazard (.skinToneOverflow stCount) [] []
             -- Phase 6: catch-all for unregistered ZWJ sequences.
             else if zwjs.length > 0 then
-              .hazard (.unregisteredSequence input.length) zwjs ByteArray.empty
+              .hazard (.unregisteredSequence input.length) zwjs []
             else .clear
     { input := input,
       classify := classification,
@@ -236,20 +236,20 @@ def SubThreat.tag : SubThreat → String
 def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × List Nat × ByteArray) false
+      Function.const (SubThreat × List Nat × List UInt8) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification. -/
 def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
-      Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
+      Function.const (List Nat × List UInt8) (some sub.tag) (positions, decoded)
 
 /-- Positions array of a classification. -/
 def Classification.positions : Classification → List Nat
   | .clear                     => []
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × ByteArray) positions (sub, decoded)
+      Function.const (SubThreat × List UInt8) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Spot checks

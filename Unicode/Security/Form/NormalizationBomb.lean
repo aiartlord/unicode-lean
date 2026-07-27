@@ -16,8 +16,8 @@
       letters expand under NFKD/NFKC.
 
   Detection strategy.  Pure-functional, no normalization loop
-  required: compute `(NFD.toNFD input).size` and
-  `(NFKD.toNFKD input).size`, then test against two
+  required: compute `(NFD.toNFD input).length` and
+  `(NFKD.toNFKD input).length`, then test against two
   whole-sequence thresholds plus a per-codepoint scan.
 
   Ratios are expressed in hundredths to avoid floats.
@@ -96,7 +96,7 @@ inductive SubThreat where
 
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : List UInt8)
   deriving Inhabited
 
 structure Verdict where
@@ -156,15 +156,15 @@ def detect (input : List Nat) : Verdict :=
     -- Priority 1: per-codepoint blow-up.
     match firstBlowupCp input with
     | some (pos, cp, expand) =>
-      .hazard (.singleCpBlowup pos cp expand) [pos] ByteArray.empty
+      .hazard (.singleCpBlowup pos cp expand) [pos] []
     | none =>
       -- Priority 2: NFKD ratio.
       if nfkdRatioPctOf input > nfkdRatioPct then
-        .hazard (.nfkdHighExpansion nfkdLen inputLen) [] ByteArray.empty
+        .hazard (.nfkdHighExpansion nfkdLen inputLen) [] []
       -- Priority 3: NFD ratio (lower than NFKD; usually triggers
       -- only on extreme cases).
       else if nfdRatioPctOf input > nfdRatioPct then
-        .hazard (.nfdHighExpansion nfdLen inputLen) [] ByteArray.empty
+        .hazard (.nfdHighExpansion nfdLen inputLen) [] []
       else
         .clear
   { input := input,
@@ -189,18 +189,18 @@ def SubThreat.tag : SubThreat → String
 def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × List Nat × ByteArray) false
+      Function.const (SubThreat × List Nat × List UInt8) false
         (sub, positions, decoded)
 
 def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
-      Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
+      Function.const (List Nat × List UInt8) (some sub.tag) (positions, decoded)
 
 def Classification.positions : Classification → List Nat
   | .clear                     => []
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × ByteArray) positions (sub, decoded)
+      Function.const (SubThreat × List UInt8) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 Spot checks

@@ -35,7 +35,7 @@
     Phase 3 — classify by script combination:
                 * `Latn` ∩ `Cyrl` ≠ ∅  → `.latinCyrillic`
                 * `Latn` ∩ `Grek` ≠ ∅  → `.latinGreek`
-                * scripts.size ≥ 2 and outside an allowed CJK
+                * scripts.length ≥ 2 and outside an allowed CJK
                   profile → `.cjkMix` or `.scriptMixOther`
     Phase 4 — surface the input's `RestrictionLevel` for audit.
               `.Unrestricted` always fires `.unrestrictedLevel`
@@ -92,14 +92,14 @@ inductive SubThreat where
     downstream audit. -/
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : List UInt8)
   deriving Inhabited
 
 /-- Verdict — the structured output of `detect`. -/
 structure Verdict where
   input            : List Nat
   classify         : Classification
-  scripts          : Array ScriptAbbrev
+  scripts          : List ScriptAbbrev
   level            : RestrictionLevel
   restrictedCps    : List Nat
   hasLatin         : Bool
@@ -142,7 +142,7 @@ def hasScript (input : List Nat) (target : ScriptAbbrev) : Bool :=
 /-- Union of resolved scripts over all non-ignored codepoints in
     `input`.  Re-export of `Unicode.Restriction.stringScriptUnion`. -/
 @[inline]
-def unionOfScripts (input : List Nat) : Array ScriptAbbrev :=
+def unionOfScripts (input : List Nat) : List ScriptAbbrev :=
   Unicode.Restriction.stringScriptUnion input
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -164,15 +164,15 @@ def detect (input : List Nat) : Verdict :=
     match restrictedDetail with
     | first :: _rest =>
       .hazard (.restrictedStatusCp first.1 first.2)
-        restrictedPositions ByteArray.empty
+        restrictedPositions []
     | [] =>
       if hasLatn ∧ hasCyrl then
         .hazard (.latinCyrillic (positionsForScript input .Cyrl))
-          (positionsForScript input .Cyrl) ByteArray.empty
+          (positionsForScript input .Cyrl) []
       else if hasLatn ∧ hasGrek then
         .hazard (.latinGreek (positionsForScript input .Grek))
-          (positionsForScript input .Grek) ByteArray.empty
-      else if scriptsUnion.size ≥ 2 ∧
+          (positionsForScript input .Grek) []
+      else if scriptsUnion.length ≥ 2 ∧
               ¬ Unicode.Restriction.isHighlyRestrictive input then
         -- Multi-script outside CJK profile.  Distinguish from the
         -- CJK-shaped-but-not-Highly-Restrictive case.
@@ -184,11 +184,11 @@ def detect (input : List Nat) : Verdict :=
           Unicode.Restriction.allWithinCoveredSet input
             Unicode.Restriction.coveredKorean
         if inAnyCJK then
-          .hazard (.cjkMix scriptsUnion.size) [] ByteArray.empty
+          .hazard (.cjkMix scriptsUnion.length) [] []
         else
-          .hazard (.scriptMixOther scriptsUnion.size) [] ByteArray.empty
+          .hazard (.scriptMixOther scriptsUnion.length) [] []
       else if level = .Unrestricted then
-        .hazard .unrestrictedLevel [] ByteArray.empty
+        .hazard .unrestrictedLevel [] []
       else
         .clear
   { input := input,
@@ -222,20 +222,20 @@ def SubThreat.tag : SubThreat → String
 def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × List Nat × ByteArray) false
+      Function.const (SubThreat × List Nat × List UInt8) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification. -/
 def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
-      Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
+      Function.const (List Nat × List UInt8) (some sub.tag) (positions, decoded)
 
 /-- Positions list of a classification. -/
 def Classification.positions : Classification → List Nat
   | .clear                     => []
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × ByteArray) positions (sub, decoded)
+      Function.const (SubThreat × List UInt8) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Spot checks
