@@ -63,26 +63,26 @@ open Unicode.Casing (lowerCodepoint upperCodepoint)
 def firstUpperExpansion (input : List Nat) : Option (Nat × Nat × Nat) :=
   (Unicode.Casing.contextSplits input).findSome? (fun w =>
     let up := upperCodepoint .default w.2.1 w.2.2.2 w.2.2.1
-    if up.size > 1 then some (w.1, w.2.2.1, up.size) else none)
+    if up.length > 1 then some (w.1, w.2.2.1, up.length) else none)
 
 /-- First input position whose `lowerCodepoint .default` expands
     to more than one codepoint. -/
 def firstLowerExpansion (input : List Nat) : Option (Nat × Nat × Nat) :=
   (Unicode.Casing.contextSplits input).findSome? (fun w =>
     let lo := lowerCodepoint .default w.2.1 w.2.2.2 w.2.2.1
-    if lo.size > 1 then some (w.1, w.2.2.1, lo.size) else none)
+    if lo.length > 1 then some (w.1, w.2.2.1, lo.length) else none)
 
 /-- Count of input positions whose `upperCodepoint .default` expands. -/
 def upperExpansionCount (input : List Nat) : Nat :=
   (Unicode.Casing.contextSplits input).foldl (init := 0) (fun acc w =>
-    if (upperCodepoint .default w.2.1 w.2.2.2 w.2.2.1).size > 1 then
+    if (upperCodepoint .default w.2.1 w.2.2.2 w.2.2.1).length > 1 then
       acc + 1
     else acc)
 
 /-- Count of input positions whose `lowerCodepoint .default` expands. -/
 def lowerExpansionCount (input : List Nat) : Nat :=
   (Unicode.Casing.contextSplits input).foldl (init := 0) (fun acc w =>
-    if (lowerCodepoint .default w.2.1 w.2.2.2 w.2.2.1).size > 1 then
+    if (lowerCodepoint .default w.2.1 w.2.2.2 w.2.2.1).length > 1 then
       acc + 1
     else acc)
 
@@ -90,8 +90,8 @@ def lowerExpansionCount (input : List Nat) : Nat :=
     and lower mappings combined). -/
 def maxExpansionLen (input : List Nat) : Nat :=
   (Unicode.Casing.contextSplits input).foldl (init := 0) (fun acc w =>
-    let u := (upperCodepoint .default w.2.1 w.2.2.2 w.2.2.1).size
-    let l := (lowerCodepoint .default w.2.1 w.2.2.2 w.2.2.1).size
+    let u := (upperCodepoint .default w.2.1 w.2.2.2 w.2.2.1).length
+    let l := (lowerCodepoint .default w.2.1 w.2.2.2 w.2.2.1).length
     let m := if u > l then u else l
     if m > acc then m else acc)
 
@@ -106,7 +106,7 @@ inductive SubThreat where
 
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : List UInt8)
   deriving Inhabited
 
 structure Verdict where
@@ -126,11 +126,11 @@ def detect (input : List Nat) : Verdict :=
   let classification : Classification :=
     match firstUpperExpansion input with
     | some (pos, cp, len) =>
-      .hazard (.upperExpansion pos cp len) [pos] ByteArray.empty
+      .hazard (.upperExpansion pos cp len) [pos] []
     | none =>
       match firstLowerExpansion input with
       | some (pos, cp, len) =>
-        .hazard (.lowerExpansion pos cp len) [pos] ByteArray.empty
+        .hazard (.lowerExpansion pos cp len) [pos] []
       | none => .clear
   { input := input,
     classify := classification,
@@ -153,18 +153,18 @@ def SubThreat.tag : SubThreat → String
 def Classification.isClear : Classification → Bool
   | .clear                       => true
   | .hazard sub positions decoded =>
-    Function.const (SubThreat × List Nat × ByteArray) false
+    Function.const (SubThreat × List Nat × List UInt8) false
       (sub, positions, decoded)
 
 def Classification.tag : Classification → Option String
   | .clear                       => none
   | .hazard sub positions decoded =>
-    Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
+    Function.const (List Nat × List UInt8) (some sub.tag) (positions, decoded)
 
 def Classification.positions : Classification → List Nat
   | .clear                       => []
   | .hazard sub positions decoded =>
-    Function.const (SubThreat × ByteArray) positions (sub, decoded)
+    Function.const (SubThreat × List UInt8) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Spot checks

@@ -75,7 +75,7 @@ inductive SubThreat where
 
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : List UInt8)
   deriving Inhabited
 
 structure Verdict where
@@ -184,30 +184,30 @@ def detect (input : List Nat) : Verdict :=
     match firstCombiningStack input 4 with
     | some (basePos, stackLen) =>
       .hazard (.combiningStackOverflow basePos stackLen)
-        [basePos] ByteArray.empty
+        [basePos] []
     | none =>
       -- Priority 2: any VS triggers presentation variance.
       match firstVsPos input with
       | some (pos, cp) =>
-        .hazard (.variationSelectorVariance pos cp) [pos] ByteArray.empty
+        .hazard (.variationSelectorVariance pos cp) [pos] []
       | none =>
         -- Priority 3: ZWJ-containing input not in registered RGI.
         if zwjPresent ∧
-           ¬ Unicode.Generated.EmojiSequences.isRegisteredZwjSequence input.toArray then
+           ¬ Unicode.Generated.EmojiSequences.isRegisteredZwjSequence input then
           match firstZwjPos input with
           | some pos =>
-            .hazard (.unregisteredZwjVariance pos) [pos] ByteArray.empty
+            .hazard (.unregisteredZwjVariance pos) [pos] []
           | none => .clear
         -- Priority 4: fullwidth/halfwidth.
         else
           match firstFullwidthPos input with
           | some (pos, cp) =>
-            .hazard (.fullwidthVariance pos cp) [pos] ByteArray.empty
+            .hazard (.fullwidthVariance pos cp) [pos] []
           | none =>
             -- Priority 5: mixed direction.
             if ltrCount > 0 ∧ rtlCount > 0 then
               .hazard (.mixedDirectionVariance ltrCount rtlCount)
-                [] ByteArray.empty
+                [] []
             else
               .clear
   { input := input,
@@ -241,20 +241,20 @@ def SubThreat.tag : SubThreat → String
 def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × List Nat × ByteArray) false
+      Function.const (SubThreat × List Nat × List UInt8) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification. -/
 def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
-      Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
+      Function.const (List Nat × List UInt8) (some sub.tag) (positions, decoded)
 
 /-- Positions array of a classification. -/
 def Classification.positions : Classification → List Nat
   | .clear                     => []
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × ByteArray) positions (sub, decoded)
+      Function.const (SubThreat × List UInt8) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 Spot checks
