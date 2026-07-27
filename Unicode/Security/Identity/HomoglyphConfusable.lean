@@ -122,7 +122,7 @@ def mkAscii (s : String) : CanonicalTarget :=
     `Unicode.Generated.KnownAttackTargets.targets`.  The data
     file is the single maintenance surface for the target set;
     this definition is its in-detector projection. -/
-def canonicalTargets : Array CanonicalTarget :=
+def canonicalTargets : List CanonicalTarget :=
   Unicode.Generated.KnownAttackTargets.targets.map mkAscii
 
 /-- Letter skeletons of the canonical targets, materialized.
@@ -247,9 +247,9 @@ def isFullwidthHalfwidth (cp : Nat) : Bool :=
 def findTargetMatch
     (input : List Nat) (iSkel : List Nat) : Option CanonicalTarget :=
   Function.const (List Nat)
-    (let inputLetters := (Unicode.Confusables.letterSkeleton input).toArray
+    (let inputLetters := Unicode.Confusables.letterSkeleton input
      ((canonicalTargets.zip canonicalTargetSkeletons).find? (fun ts =>
-        decide (ts.fst.cps ≠ input.toArray) ∧
+        decide (ts.fst.cps ≠ input) ∧
         decide (ts.snd = inputLetters))).map (fun ts => ts.fst))
     iSkel
 
