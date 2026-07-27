@@ -74,7 +74,7 @@ def encodeCodepoints (cps : List Nat) : List UInt8 :=
 /-- Byte-level NFC: validate UTF-8, decode, normalize, re-encode.
     Returns `none` on invalid UTF-8 input; the NFC algorithm itself
     does not fail on any valid UTF-8 sequence. -/
-def toNFCBytes (bs : List UInt8) : Option List UInt8 :=
+def toNFCBytes (bs : List UInt8) : Option (List UInt8) :=
   if isValidUtf8 bs then
     some (encodeCodepoints (NFC.toNFC (decodeToCodepoints bs)))
   else
