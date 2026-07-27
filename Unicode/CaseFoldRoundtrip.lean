@@ -104,12 +104,11 @@ theorem hangulSyllable_decompose_output_non_caseFoldSource :
   cases h : Hangul.decomposeSyllable? (0xAC00 + i) with
   | none => rfl
   | some arr =>
-      rw [Array.all_eq_true]
-      intro k hk
-      have hMem : arr[k] ∈ arr := Array.getElem_mem hk
+      rw [List.all_eq_true]
+      intro j hj
       have hNon :=
         Unicode.CaseFoldCommutation.decomposeSyllable_output_non_caseFoldSource
-          (0xAC00 + i) arr h arr[k] hMem
+          (0xAC00 + i) arr h j hj
       simpa using hNon
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -120,7 +119,7 @@ theorem hangulSyllable_decompose_output_non_caseFoldSource :
     `hangulSyllable_decompose_output_non_caseFoldSource`: any successful
     `decomposeSyllable?` output contains only non-case-fold-sources. -/
 theorem decomposeSyllable_output_non_caseFoldSource
-    (cp : Nat) (arr : Array Nat)
+    (cp : Nat) (arr : List Nat)
     (h : Hangul.decomposeSyllable? cp = some arr) (j : Nat) (hj : j ∈ arr) :
     isCaseFoldSource j = false := by
   exact Unicode.CaseFoldCommutation.decomposeSyllable_output_non_caseFoldSource
@@ -141,11 +140,10 @@ theorem canonicalDecomposition_output_non_caseFoldSource
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Membership through a `foldl`-with-append over an array. -/
-theorem mem_foldl_append (f : Nat → Array Nat) (cps : Array Nat) (cp : Nat)
-    (hMem : cp ∈ cps.foldl (fun acc x => acc ++ f x) #[]) :
+theorem mem_foldl_append (f : Nat → List Nat) (cps : List Nat) (cp : Nat)
+    (hMem : cp ∈ cps.foldl (fun acc x => acc ++ f x) []) :
     ∃ x ∈ cps, cp ∈ f x := by
-  rw [← Array.foldl_toList] at hMem
-  have key : ∀ (l : List Nat) (init : Array Nat),
+  have key : ∀ (l : List Nat) (init : List Nat),
       cp ∈ l.foldl (fun acc x => acc ++ f x) init →
       cp ∈ init ∨ ∃ x ∈ l, cp ∈ f x := by
     intro l
@@ -155,13 +153,13 @@ theorem mem_foldl_append (f : Nat → Array Nat) (cps : Array Nat) (cp : Nat)
       intro init hM
       simp only [List.foldl_cons] at hM
       rcases ih (init ++ f hd) hM with hInit | ⟨x, hxM, hxF⟩
-      · rcases Array.mem_append.mp hInit with h1 | h2
+      · rcases List.mem_append.mp hInit with h1 | h2
         · left; exact h1
         · right; exact ⟨hd, by simp, h2⟩
       · right; exact ⟨x, by simp [hxM], hxF⟩
-  rcases key cps.toList #[] hMem with hEmpty | ⟨x, hxM, hxF⟩
+  rcases key cps [] hMem with hEmpty | ⟨x, hxM, hxF⟩
   · simp at hEmpty
-  · exact ⟨x, by simpa using hxM, hxF⟩
+  · exact ⟨x, hxM, hxF⟩
 
 /-- Fuel-bounded preservation of non-case-fold-source through
     `fullCanonicalDecomposeFuel`. Induction on fuel: the zero case
@@ -184,9 +182,9 @@ theorem fullCanonicalDecomposeFuel_preserves_non_caseFoldSource (fuel : Nat) :
       exact decomposeSyllable_output_non_caseFoldSource cp arr hSome j hj
     · next hNone =>
       generalize hStep : Lookup.canonicalDecomposition cp = step at hj
-      change j ∈ (if step.isEmpty = true then #[cp]
+      change j ∈ (if step.isEmpty = true then [cp]
                   else step.foldl (fun acc cp' =>
-                        acc ++ Decompose.fullCanonicalDecomposeFuel fuel cp') #[]) at hj
+                        acc ++ Decompose.fullCanonicalDecomposeFuel fuel cp') []) at hj
       split at hj
       · next hEmpty =>
         simp at hj
@@ -211,7 +209,7 @@ theorem fullCanonicalDecompose_preserves_non_caseFoldSource
 /-- Sequence-level preservation of non-case-fold-source through
     `decomposeSequence`. -/
 theorem decomposeSequence_preserves_non_caseFoldSource
-    (cps : Array Nat) (h : ∀ cp ∈ cps, isCaseFoldSource cp = false) :
+    (cps : List Nat) (h : ∀ cp ∈ cps, isCaseFoldSource cp = false) :
     ∀ j ∈ Decompose.decomposeSequence cps, isCaseFoldSource j = false := by
   intro j hj
   unfold Decompose.decomposeSequence at hj
@@ -223,7 +221,7 @@ theorem decomposeSequence_preserves_non_caseFoldSource
     Consumed by the main theorem to establish that `toNFD (caseFold cs)`
     is itself caseFold-stable for every input `cs`. -/
 theorem toNFD_preserves_non_caseFoldSource
-    (cps : Array Nat) (h : ∀ cp ∈ cps, isCaseFoldSource cp = false) :
+    (cps : List Nat) (h : ∀ cp ∈ cps, isCaseFoldSource cp = false) :
     ∀ j ∈ NFC.toNFD cps, isCaseFoldSource j = false := by
   unfold NFC.toNFD
   intro j hj
@@ -242,28 +240,27 @@ theorem toNFD_preserves_non_caseFoldSource
 
 /-- Folding `(acc ++ caseFoldCodepoint cp)` over `b` starting from any
     prefix `init` distributes: the result is `init` concatenated with
-    the result of folding over `b` from `#[]`. -/
-theorem foldl_caseFold_init_distrib (b : Array Nat) (init : Array Nat) :
+    the result of folding over `b` from `[]`. -/
+theorem foldl_caseFold_init_distrib (b : List Nat) (init : List Nat) :
     b.foldl (fun acc cp => acc ++ caseFoldCodepoint cp) init =
-    init ++ b.foldl (fun acc cp => acc ++ caseFoldCodepoint cp) #[] := by
-  rw [← Array.foldl_toList, ← Array.foldl_toList]
-  induction b.toList generalizing init with
+    init ++ b.foldl (fun acc cp => acc ++ caseFoldCodepoint cp) [] := by
+  induction b generalizing init with
   | nil => simp
   | cons hd tl ih =>
     simp only [List.foldl_cons]
-    rw [ih (init ++ caseFoldCodepoint hd), ih (#[] ++ caseFoldCodepoint hd)]
-    rw [Array.empty_append]
-    rw [Array.append_assoc]
+    rw [ih (init ++ caseFoldCodepoint hd), ih ([] ++ caseFoldCodepoint hd)]
+    rw [List.nil_append]
+    rw [List.append_assoc]
 
 /-- **`caseFold` distributes over `++`.** -/
-theorem caseFold_append (a b : Array Nat) :
+theorem caseFold_append (a b : List Nat) :
     caseFold (a ++ b) = caseFold a ++ caseFold b := by
-  show (a ++ b).foldl (fun acc cp => acc ++ caseFoldCodepoint cp) #[] =
-       a.foldl (fun acc cp => acc ++ caseFoldCodepoint cp) #[] ++
-       b.foldl (fun acc cp => acc ++ caseFoldCodepoint cp) #[]
-  rw [Array.foldl_append]
+  show (a ++ b).foldl (fun acc cp => acc ++ caseFoldCodepoint cp) [] =
+       a.foldl (fun acc cp => acc ++ caseFoldCodepoint cp) [] ++
+       b.foldl (fun acc cp => acc ++ caseFoldCodepoint cp) []
+  rw [List.foldl_append]
   exact foldl_caseFold_init_distrib b
-    (a.foldl (fun acc cp => acc ++ caseFoldCodepoint cp) #[])
+    (a.foldl (fun acc cp => acc ++ caseFoldCodepoint cp) [])
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- REORDER MEMBERSHIP (IN → OUT)
@@ -335,7 +332,6 @@ theorem sortNonStarterRun_mem
 theorem flushRun_mem (S : Reorder.ReorderState) (d : Nat)
     (h : d ∈ S.currentRun) : d ∈ Reorder.flushRun S := by
   unfold Reorder.flushRun
-  rw [List.mem_toArray]
   apply sortNonStarterRun_mem
   exact List.mem_reverse.mpr h
 
@@ -362,14 +358,14 @@ theorem stepReorder_fold_preserves_mem
       simp only [List.mem_cons] at h
       rcases h with he | hr | hEq | hRest
       · left
-        rw [Array.mem_append]; left
-        rw [Array.mem_append]; left; exact he
+        rw [List.mem_append]; left
+        rw [List.mem_append]; left; exact he
       · left
-        rw [Array.mem_append]; left
-        rw [Array.mem_append]; right
+        rw [List.mem_append]; left
+        rw [List.mem_append]; right
         exact flushRun_mem S d hr
       · left
-        rw [Array.mem_append]; right
+        rw [List.mem_append]; right
         simp; exact hEq
       · right; right; exact hRest
     · rw [if_neg hCcc]
@@ -386,16 +382,15 @@ theorem stepReorder_fold_preserves_mem
     the reorder output. Companion to `Reorder.reorder_preserves_all`
     which gives the OUT → IN direction; together they establish that
     `reorder` permutes its input without adding or removing elements. -/
-theorem reorder_mem_of_mem (cps : Array Nat) (d : Nat) (hd : d ∈ cps) :
+theorem reorder_mem_of_mem (cps : List Nat) (d : Nat) (hd : d ∈ cps) :
     d ∈ Reorder.reorder cps := by
   unfold Reorder.reorder
-  rw [← Array.foldl_toList]
-  have hFold := stepReorder_fold_preserves_mem cps.toList Reorder.initState d
-    (Or.inr (Or.inr (by simpa using hd)))
+  have hFold := stepReorder_fold_preserves_mem cps Reorder.initState d
+    (Or.inr (Or.inr hd))
   rcases hFold with he | hr
-  · rw [Array.mem_append]; left; exact he
-  · rw [Array.mem_append]; right
-    exact flushRun_mem (cps.toList.foldl Reorder.stepReorder Reorder.initState) d hr
+  · rw [List.mem_append]; left; exact he
+  · rw [List.mem_append]; right
+    exact flushRun_mem (cps.foldl Reorder.stepReorder Reorder.initState) d hr
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- FORWARD MEMBERSHIP IN foldl-WITH-APPEND
@@ -403,11 +398,10 @@ theorem reorder_mem_of_mem (cps : Array Nat) (d : Nat) (hd : d ∈ cps) :
 
 /-- Forward direction of `mem_foldl_append`: given `c ∈ cps` and
     `d ∈ f c`, `d` appears in the `foldl`-with-append output. -/
-theorem mem_foldl_append_of (f : Nat → Array Nat) (cps : Array Nat)
+theorem mem_foldl_append_of (f : Nat → List Nat) (cps : List Nat)
     (c : Nat) (hc : c ∈ cps) (d : Nat) (hd : d ∈ f c) :
-    d ∈ cps.foldl (fun acc x => acc ++ f x) #[] := by
-  rw [← Array.foldl_toList]
-  have key : ∀ (l : List Nat) (init : Array Nat),
+    d ∈ cps.foldl (fun acc x => acc ++ f x) [] := by
+  have key : ∀ (l : List Nat) (init : List Nat),
       (d ∈ init ∨ ∃ c' ∈ l, d ∈ f c') →
       d ∈ l.foldl (fun acc x => acc ++ f x) init := by
     intro l
@@ -422,13 +416,13 @@ theorem mem_foldl_append_of (f : Nat → Array Nat) (cps : Array Nat)
       simp only [List.foldl_cons]
       apply ih (init ++ f hd')
       rcases hCase with hInit | ⟨c', hc', hcf⟩
-      · left; exact Array.mem_append.mpr (Or.inl hInit)
+      · left; exact List.mem_append.mpr (Or.inl hInit)
       · rcases List.mem_cons.mp hc' with rfl | hRest
-        · left; exact Array.mem_append.mpr (Or.inr hcf)
+        · left; exact List.mem_append.mpr (Or.inr hcf)
         · right; exact ⟨c', hRest, hcf⟩
-  apply key cps.toList #[]
+  apply key cps []
   right
-  exact ⟨c, by simpa using hc, hd⟩
+  exact ⟨c, hc, hd⟩
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- RESTRICTED SEQUENCE LIFT
@@ -436,7 +430,7 @@ theorem mem_foldl_append_of (f : Nat → Array Nat) (cps : Array Nat)
 
 /-- **Restricted sequence lift for `caseFold` and `toNFD`.** If every
     codepoint in `x` satisfies the pointwise fixed-point
-    `toNFD (caseFold #[cp]) = toNFD #[cp]`, then the sequence-level
+    `toNFD (caseFold [cp]) = toNFD [cp]`, then the sequence-level
     equality `toNFD (caseFold x) = toNFD x` holds. The universal form
     — the statement `CaseFoldNfdCommutesSeq` in
     `Unicode.Precis.Preparation` — is FALSE; a concrete counter-example
@@ -444,40 +438,29 @@ theorem mem_foldl_append_of (f : Nat → Array Nat) (cps : Array Nat)
     is sufficient for the PRECIS roundtrip because the chain only
     invokes the lift on arrays whose codepoints have this pointwise
     fixed-point property. -/
-theorem toNFD_caseFold_pointwise_lift (x : Array Nat)
-    (h : ∀ cp ∈ x, NFC.toNFD (caseFold #[cp]) = NFC.toNFD #[cp]) :
+theorem toNFD_caseFold_pointwise_lift (x : List Nat)
+    (h : ∀ cp ∈ x, NFC.toNFD (caseFold [cp]) = NFC.toNFD [cp]) :
     NFC.toNFD (caseFold x) = NFC.toNFD x := by
   have key : ∀ (l : List Nat),
-      (∀ cp ∈ l, NFC.toNFD (caseFold #[cp]) = NFC.toNFD #[cp]) →
-      NFC.toNFD (caseFold l.toArray) = NFC.toNFD l.toArray := by
+      (∀ cp ∈ l, NFC.toNFD (caseFold [cp]) = NFC.toNFD [cp]) →
+      NFC.toNFD (caseFold l) = NFC.toNFD l := by
     refine Reorder.list_snoc_induction ?baseNil ?inductiveSnoc
     · intro hAllNil
-      show NFC.toNFD (caseFold (([] : List Nat).toArray)) =
-           NFC.toNFD (([] : List Nat).toArray)
       rfl
     · intro xs cp ih hSnoc
-      have h_xs : ∀ cp' ∈ xs, NFC.toNFD (caseFold #[cp']) = NFC.toNFD #[cp'] := by
+      have h_xs : ∀ cp' ∈ xs, NFC.toNFD (caseFold [cp']) = NFC.toNFD [cp'] := by
         intro cp' hMem; exact hSnoc cp' (by simp [hMem])
-      have h_cp : NFC.toNFD (caseFold #[cp]) = NFC.toNFD #[cp] :=
+      have h_cp : NFC.toNFD (caseFold [cp]) = NFC.toNFD [cp] :=
         hSnoc cp (by simp)
       have hIH := ih h_xs
-      show NFC.toNFD (caseFold ((xs ++ [cp]).toArray)) =
-           NFC.toNFD ((xs ++ [cp]).toArray)
-      have hArrEq : (xs ++ [cp]).toArray = xs.toArray ++ #[cp] := by simp
-      rw [hArrEq]
       rw [caseFold_append]
-      rw [ToNFDAppend.toNFD_absorbing_left (caseFold xs.toArray) (caseFold #[cp])]
+      rw [ToNFDAppend.toNFD_absorbing_left (caseFold xs) (caseFold [cp])]
       rw [hIH]
-      rw [← ToNFDAppend.toNFD_absorbing_left xs.toArray (caseFold #[cp])]
-      rw [ToNFDAppend.toNFD_absorbing_right xs.toArray #[cp]]
+      rw [← ToNFDAppend.toNFD_absorbing_left xs (caseFold [cp])]
+      rw [ToNFDAppend.toNFD_absorbing_right xs [cp]]
       rw [← h_cp]
-      rw [← ToNFDAppend.toNFD_absorbing_right xs.toArray (caseFold #[cp])]
-  have hListHyp : ∀ cp ∈ x.toList, NFC.toNFD (caseFold #[cp]) = NFC.toNFD #[cp] :=
-    fun cp hMem => h cp (by simpa using hMem)
-  have hResult := key x.toList hListHyp
-  have hToArray : x.toList.toArray = x := Array.toArray_toList
-  rw [hToArray] at hResult
-  exact hResult
+      rw [← ToNFDAppend.toNFD_absorbing_right xs (caseFold [cp])]
+  exact key x h
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- MAIN THEOREM: `CaseFoldNfcRoundtripFixed` UNCONDITIONAL
@@ -497,16 +480,16 @@ theorem toNFD_caseFold_pointwise_lift (x : Array Nat)
       `toNFD (caseFold (toNFC w)) = toNFD w`. We apply
       `toNFD_caseFold_pointwise_lift` to `toNFC w`, establishing for
       each `c ∈ toNFC w` the pointwise fixed-point
-      `toNFD (caseFold #[c]) = toNFD #[c]`.
+      `toNFD (caseFold [c]) = toNFD [c]`.
 
-      Per-codepoint: `d ∈ toNFD #[c]` lifts through
-      `reorder_preserves_all` (OUT→IN) to `d ∈ decomposeSequence #[c] =
+      Per-codepoint: `d ∈ toNFD [c]` lifts through
+      `reorder_preserves_all` (OUT→IN) to `d ∈ decomposeSequence [c] =
       fullCanonicalDecompose c`, then through `mem_foldl_append_of` to
       `d ∈ decomposeSequence (toNFC w)`, then through
       `reorder_mem_of_mem` (IN→OUT) to `d ∈ toNFD (toNFC w) = toNFD w`
       (via `toNFD_toNFC_eq_toNFD`). Caseful-stability of `toNFD w`
-      gives `isCaseFoldSource d = false`. So `toNFD #[c]` is
-      caseFold-stable, hence `caseFold (toNFD #[c]) = toNFD #[c]`.
+      gives `isCaseFoldSource d = false`. So `toNFD [c]` is
+      caseFold-stable, hence `caseFold (toNFD [c]) = toNFD [c]`.
       The pointwise commutation
       `caseFold_commutes_with_NFD_singleton c` then closes the
       pointwise fixed-point.
@@ -514,7 +497,7 @@ theorem toNFD_caseFold_pointwise_lift (x : Array Nat)
       After the lift: `toNFD (caseFold (toNFC w)) = toNFD (toNFC w)`.
       `toNFD_toNFC_eq_toNFD` reduces the RHS to `toNFD w`. -/
 theorem caseFoldNfcRoundtripFixed_holds :
-    ∀ cs : Array Nat,
+    ∀ cs : List Nat,
       NFC.toNFC (caseFold (NFC.toNFC (caseFold cs))) = NFC.toNFC (caseFold cs) := by
   intro cs
   have hwStable : ∀ cp ∈ caseFold cs, isCaseFoldSource cp = false := by
@@ -524,20 +507,20 @@ theorem caseFoldNfcRoundtripFixed_holds :
     toNFD_preserves_non_caseFoldSource (caseFold cs) hwStable
   apply NFD.toNFC_eq_of_toNFD_eq
   have hPointwiseForToNFCw : ∀ c ∈ NFC.toNFC (caseFold cs),
-      NFC.toNFD (caseFold #[c]) = NFC.toNFD #[c] := by
+      NFC.toNFD (caseFold [c]) = NFC.toNFD [c] := by
     intro c hc
-    have hToNFDcStable : ∀ d ∈ NFC.toNFD #[c], isCaseFoldSource d = false := by
+    have hToNFDcStable : ∀ d ∈ NFC.toNFD [c], isCaseFoldSource d = false := by
       intro d hd
-      have hDecSing : d ∈ Decompose.decomposeSequence #[c] := by
-        have hPdec : ∀ y ∈ Decompose.decomposeSequence #[c],
-            (fun x => decide (x ∈ Decompose.decomposeSequence #[c])) y = true := by
+      have hDecSing : d ∈ Decompose.decomposeSequence [c] := by
+        have hPdec : ∀ y ∈ Decompose.decomposeSequence [c],
+            (fun x => decide (x ∈ Decompose.decomposeSequence [c])) y = true := by
           intro y hy; exact decide_eq_true hy
         have hReorder := Reorder.reorder_preserves_all
-          (fun x => decide (x ∈ Decompose.decomposeSequence #[c]))
-          (Decompose.decomposeSequence #[c]) hPdec d hd
+          (fun x => decide (x ∈ Decompose.decomposeSequence [c]))
+          (Decompose.decomposeSequence [c]) hPdec d hd
         exact of_decide_eq_true hReorder
       have hFCDc : d ∈ Decompose.fullCanonicalDecompose c := by
-        have hEq : Decompose.decomposeSequence #[c] = Decompose.fullCanonicalDecompose c := by
+        have hEq : Decompose.decomposeSequence [c] = Decompose.fullCanonicalDecompose c := by
           unfold Decompose.decomposeSequence
           simp
         rw [hEq] at hDecSing; exact hDecSing
@@ -549,13 +532,13 @@ theorem caseFoldNfcRoundtripFixed_holds :
         reorder_mem_of_mem (Decompose.decomposeSequence (NFC.toNFC (caseFold cs))) d hDecAll
       rw [ComposeInversion.toNFD_toNFC_eq_toNFD] at hToNFDall
       exact hToNFDwStable d hToNFDall
-    have hCaseFoldId : caseFold (NFC.toNFD #[c]) = NFC.toNFD #[c] :=
-      caseFold_id_of_all_non_source (NFC.toNFD #[c]) hToNFDcStable
+    have hCaseFoldId : caseFold (NFC.toNFD [c]) = NFC.toNFD [c] :=
+      caseFold_id_of_all_non_source (NFC.toNFD [c]) hToNFDcStable
     have hSingleton :=
       Unicode.CaseFoldCommutation.caseFold_commutes_with_NFD_singleton c
     rw [hCaseFoldId] at hSingleton
     rw [hSingleton]
-    exact NFD.toNFD_idempotent #[c]
+    exact NFD.toNFD_idempotent [c]
   have hLift := toNFD_caseFold_pointwise_lift
                   (NFC.toNFC (caseFold cs)) hPointwiseForToNFCw
   rw [hLift]
