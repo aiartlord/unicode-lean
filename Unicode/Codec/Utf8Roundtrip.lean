@@ -13,12 +13,12 @@
 
     §1  IsValidCodepoint — the scalar codepoint range minus surrogates.
     §2  Per-byte-class lemmas (1-byte ASCII, 2-byte, 3-byte, 4-byte)
-        covering `decodeToCodepoints (encodeCodepoint cp) = #[cp]`
+        covering `decodeToCodepoints (encodeCodepoint cp) = [cp]`
         for each of the four UTF-8 length brackets.
     §3  Per-codepoint roundtrip — `decode_encode_codepoint`.
     §4  Append-distribution lemma — `decodeToCodepoints` over a
         valid-codepoint encoded prefix joined with arbitrary suffix.
-    §5  Array-level roundtrip — `decodeToCodepoints
+    §5  List-level roundtrip — `decodeToCodepoints
         (encodeCodepoints cps) = cps`.
 -/
 
@@ -68,12 +68,12 @@ theorem uint8_ofNat_toNat (n : Nat) (h : n < 256) :
 -- `utf8DecodeStep`.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Out-of-bounds short-circuit: when `i ≥ bs.size`, fold from
+/-- Out-of-bounds short-circuit: when `i ≥ bs.length`, fold from
     `.expectStart` with any positive fuel returns `acc`. -/
 theorem fold_oob_expectStart
-    (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
-    (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
-    (hi : ¬ i < bs.size) :
+    (bs : List UInt8) (f : List Nat → Nat → Nat → List Nat)
+    (i seqStart : Nat) (acc : List Nat) (fuel : Nat)
+    (hi : ¬ i < bs.length) :
     foldCodepointsWithOffsetGo bs f .expectStart i seqStart acc (fuel + 1) = acc := by
   unfold foldCodepointsWithOffsetGo
   simp [hi]
@@ -82,10 +82,10 @@ theorem fold_oob_expectStart
     codepoint `cp < 0x80`, fold consumes one byte, emits `cp`, and
     returns to `.expectStart`. -/
 theorem fold_step_ascii
-    (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
-    (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
+    (bs : List UInt8) (f : List Nat → Nat → Nat → List Nat)
+    (i seqStart : Nat) (acc : List Nat) (fuel : Nat)
     (cp : Nat) (h_cp : cp < 0x80)
-    (hi : i < bs.size)
+    (hi : i < bs.length)
     (h_byte : (bs[i]'hi).toNat = cp) :
     foldCodepointsWithOffsetGo bs f .expectStart i seqStart acc (fuel + 1)
       = foldCodepointsWithOffsetGo bs f .expectStart (i + 1) (i + 1)
@@ -102,10 +102,10 @@ theorem fold_step_ascii
     decoder is structurally unreachable; this lemma captures the
     "remaining = 1, last byte" emission path. -/
 theorem fold_step_cont_emit_last
-    (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
-    (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
+    (bs : List UInt8) (f : List Nat → Nat → Nat → List Nat)
+    (i seqStart : Nat) (acc : List Nat) (fuel : Nat)
     (accum minCp cp : Nat)
-    (hi : i < bs.size)
+    (hi : i < bs.length)
     (h_b_lo : 0x80 ≤ (bs[i]'hi).toNat) (h_b_hi : (bs[i]'hi).toNat < 0xC0)
     (h_cp_eq : cp = (accum <<< 6) ||| ((bs[i]'hi).toNat &&& 0x3F))
     (h_overlong : ¬ cp < minCp)
@@ -128,9 +128,9 @@ theorem fold_step_cont_emit_last
 /-- Continuation step (non-final): when `remaining ≥ 2`, decoder
     accumulates the next continuation byte and stays in `.expectCont`. -/
 theorem fold_step_cont_continue
-    (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
-    (i seqStart : Nat) (acc : Array Nat) (fuel m accum minCp : Nat)
-    (hi : i < bs.size)
+    (bs : List UInt8) (f : List Nat → Nat → Nat → List Nat)
+    (i seqStart : Nat) (acc : List Nat) (fuel m accum minCp : Nat)
+    (hi : i < bs.length)
     (h_b_lo : 0x80 ≤ (bs[i]'hi).toNat) (h_b_hi : (bs[i]'hi).toNat < 0xC0) :
     foldCodepointsWithOffsetGo bs f (.expectCont (m + 2) accum minCp)
         i seqStart acc (fuel + 1)
@@ -151,9 +151,9 @@ theorem fold_step_cont_continue
 /-- 2-byte start step: when `0xC2 ≤ b < 0xE0`, decoder enters
     `.expectCont 1 (b &&& 0x1F) 0x80`. -/
 theorem fold_step_2byte_start
-    (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
-    (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
-    (hi : i < bs.size)
+    (bs : List UInt8) (f : List Nat → Nat → Nat → List Nat)
+    (i seqStart : Nat) (acc : List Nat) (fuel : Nat)
+    (hi : i < bs.length)
     (h_b_lo : 0xC2 ≤ (bs[i]'hi).toNat) (h_b_hi : (bs[i]'hi).toNat < 0xE0) :
     foldCodepointsWithOffsetGo bs f .expectStart i seqStart acc (fuel + 1)
       = foldCodepointsWithOffsetGo bs f
@@ -171,9 +171,9 @@ theorem fold_step_2byte_start
 /-- 3-byte start step: when `0xE0 ≤ b < 0xF0`, decoder enters
     `.expectCont 2 (b &&& 0x0F) 0x800`. -/
 theorem fold_step_3byte_start
-    (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
-    (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
-    (hi : i < bs.size)
+    (bs : List UInt8) (f : List Nat → Nat → Nat → List Nat)
+    (i seqStart : Nat) (acc : List Nat) (fuel : Nat)
+    (hi : i < bs.length)
     (h_b_lo : 0xE0 ≤ (bs[i]'hi).toNat) (h_b_hi : (bs[i]'hi).toNat < 0xF0) :
     foldCodepointsWithOffsetGo bs f .expectStart i seqStart acc (fuel + 1)
       = foldCodepointsWithOffsetGo bs f
@@ -192,9 +192,9 @@ theorem fold_step_3byte_start
 /-- 4-byte start step: when `0xF0 ≤ b < 0xF5`, decoder enters
     `.expectCont 3 (b &&& 0x07) 0x10000`. -/
 theorem fold_step_4byte_start
-    (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
-    (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
-    (hi : i < bs.size)
+    (bs : List UInt8) (f : List Nat → Nat → Nat → List Nat)
+    (i seqStart : Nat) (acc : List Nat) (fuel : Nat)
+    (hi : i < bs.length)
     (h_b_lo : 0xF0 ≤ (bs[i]'hi).toNat) (h_b_hi : (bs[i]'hi).toNat < 0xF5) :
     foldCodepointsWithOffsetGo bs f .expectStart i seqStart acc (fuel + 1)
       = foldCodepointsWithOffsetGo bs f
@@ -218,25 +218,25 @@ theorem fold_step_4byte_start
 /-- Push-only fold satisfies the left-monoid factoring law:
 
       fold bs f st i seqStart acc fuel
-        = acc ++ fold bs f st i seqStart #[] fuel
+        = acc ++ fold bs f st i seqStart [] fuel
 
     Holds for any `f` whose effect on the accumulator is
-    `acc.push cp` (i.e. left-extension) — captured by the `hf`
+    `acc ++ [cp]` (i.e. left-extension) — captured by the `hf`
     hypothesis. The proof is by fuel induction, splitting on the
     state-machine result for the current byte. -/
 theorem fold_push_acc_factor
-    (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
-    (hf : ∀ a o c, f a o c = a.push c)
-    (st : Utf8State) (i seqStart : Nat) (acc : Array Nat) (fuel : Nat) :
+    (bs : List UInt8) (f : List Nat → Nat → Nat → List Nat)
+    (hf : ∀ a o c, f a o c = a ++ [c])
+    (st : Utf8State) (i seqStart : Nat) (acc : List Nat) (fuel : Nat) :
     foldCodepointsWithOffsetGo bs f st i seqStart acc fuel
-      = acc ++ foldCodepointsWithOffsetGo bs f st i seqStart #[] fuel := by
+      = acc ++ foldCodepointsWithOffsetGo bs f st i seqStart [] fuel := by
   induction fuel generalizing st i seqStart acc with
   | zero =>
     unfold foldCodepointsWithOffsetGo
     simp
   | succ fuel' ih =>
     unfold foldCodepointsWithOffsetGo
-    by_cases hi : i < bs.size
+    by_cases hi : i < bs.length
     · simp only [hi, ↓reduceDIte]
       generalize hStep : utf8DecodeStep st (bs[i]'hi) = step
       cases step with
@@ -247,42 +247,42 @@ theorem fold_push_acc_factor
         | expectCont rem accum minCp => exact ih next (i + 1) seqStart acc
       | emit cp next =>
         simp only []
-        rw [hf acc seqStart cp, hf #[] seqStart cp]
-        rw [ih next (i + 1) (i + 1) (acc.push cp)]
-        rw [ih next (i + 1) (i + 1) (#[].push cp)]
-        -- Goal: acc.push cp ++ X = acc ++ (#[].push cp ++ X)
-        -- where X is the same fold-from-#[] on both sides
-        rw [show (#[] : Array Nat).push cp = #[cp] from rfl,
-            show acc.push cp = acc ++ #[cp] from rfl,
-            Array.append_assoc]
+        rw [hf acc seqStart cp, hf [] seqStart cp]
+        rw [ih next (i + 1) (i + 1) (acc ++ [cp])]
+        rw [ih next (i + 1) (i + 1) ([] ++ [cp])]
+        -- Goal: acc ++ [cp] ++ X = acc ++ ([] ++ [cp] ++ X)
+        -- where X is the same fold-from-[] on both sides
+        rw [show ([] : List Nat) ++ [cp] = [cp] from rfl,
+            show acc ++ [cp] = acc ++ [cp] from rfl,
+            List.append_assoc]
       | reject reason =>
         simp
     · simp [hi]
 
 /-- The specialised form for `decodeToCodepoints`'s inline lambda.
-    `fun acc offset cp => Function.const Nat (acc.push cp) offset`
+    `fun acc offset cp => Function.const Nat (acc ++ [cp]) offset`
     discards the offset via `Function.const`; this lemma exposes the
     push-only behaviour to `fold_push_acc_factor`. -/
-theorem decode_fn_push (a : Array Nat) (o c : Nat) :
-    (fun acc offset cp => Function.const Nat (acc.push cp) offset)
-      a o c = a.push c := by
+theorem decode_fn_push (a : List Nat) (o c : Nat) :
+    (fun acc offset cp => Function.const Nat (acc ++ [cp]) offset)
+      a o c = a ++ [c] := by
   rfl
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 OFFSET TRANSLATION
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Index `a.size + k` in `a ++ b` equals index `k` in `b`. The
-    standard `ByteArray.getElem_append_right`-style fact, restated
+/-- Index `a.length + k` in `a ++ b` equals index `k` in `b`. The
+    standard `List.getElem_append_right`-style fact, restated
     here so the proof of `fold_concat_translate` doesn't have to
     grovel through Substring index arithmetic. -/
 theorem byte_at_offset_concat
-    (a b : ByteArray) (k : Nat) (hk : k < b.size) :
-    (a ++ b)[a.size + k]'(by
-      simp [ByteArray.size_append]; omega) = b[k]'hk := by
-  simp [ByteArray.getElem_append_right]
+    (a b : List UInt8) (k : Nat) (hk : k < b.length) :
+    (a ++ b)[a.length + k]'(by
+      simp [List.length_append]; omega) = b[k]'hk := by
+  simp [List.getElem_append_right]
 
-/-- Fold-translation invariance: walking `(a ++ b)` from offset `a.size`
+/-- Fold-translation invariance: walking `(a ++ b)` from offset `a.length`
     is the same walk as `b` from offset 0. The fold's `seqStart` is
     threaded through but never inspected by the push-only `f`, so the
     two sides may carry different `seqStart` values (`sa` and `sb`)
@@ -291,10 +291,10 @@ theorem byte_at_offset_concat
     untouched while the index advances; without it, the IH would not
     apply across that case. -/
 theorem fold_concat_translate
-    (a b : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
-    (hf : ∀ ac o c, f ac o c = ac.push c)
-    (st : Utf8State) (delta sa sb : Nat) (acc : Array Nat) (fuel : Nat) :
-    foldCodepointsWithOffsetGo (a ++ b) f st (a.size + delta) sa acc fuel
+    (a b : List UInt8) (f : List Nat → Nat → Nat → List Nat)
+    (hf : ∀ ac o c, f ac o c = ac ++ [c])
+    (st : Utf8State) (delta sa sb : Nat) (acc : List Nat) (fuel : Nat) :
+    foldCodepointsWithOffsetGo (a ++ b) f st (a.length + delta) sa acc fuel
       = foldCodepointsWithOffsetGo b f st delta sb acc fuel := by
   induction fuel generalizing st delta sa sb acc with
   | zero =>
@@ -302,33 +302,33 @@ theorem fold_concat_translate
     rfl
   | succ fuel' ih =>
     unfold foldCodepointsWithOffsetGo
-    by_cases hb : delta < b.size
-    · have hab : a.size + delta < (a ++ b).size := by
-        simp [ByteArray.size_append]; omega
+    by_cases hb : delta < b.length
+    · have hab : a.length + delta < (a ++ b).length := by
+        simp [List.length_append]; omega
       have hbyte :
-          (a ++ b)[a.size + delta]'hab = b[delta]'hb := by
-        simp [ByteArray.getElem_append_right]
+          (a ++ b)[a.length + delta]'hab = b[delta]'hb := by
+        simp [List.getElem_append_right]
       simp only [hab, ↓reduceDIte, hb, hbyte]
       generalize hStep : utf8DecodeStep st (b[delta]'hb) = step
       cases step with
       | «continue» next =>
         simp only []
-        have h1 : a.size + delta + 1 = a.size + (delta + 1) := by omega
+        have h1 : a.length + delta + 1 = a.length + (delta + 1) := by omega
         cases st with
         | expectStart =>
           rw [h1]
-          exact ih next (delta + 1) (a.size + delta) delta acc
+          exact ih next (delta + 1) (a.length + delta) delta acc
         | expectCont rem accum minCp =>
           rw [h1]
           exact ih next (delta + 1) sa sb acc
       | emit cp next =>
         simp only []
-        have h1 : a.size + delta + 1 = a.size + (delta + 1) := by omega
+        have h1 : a.length + delta + 1 = a.length + (delta + 1) := by omega
         rw [hf acc sa cp, hf acc sb cp, h1]
-        exact ih next (delta + 1) (a.size + delta + 1) (delta + 1) (acc.push cp)
+        exact ih next (delta + 1) (a.length + delta + 1) (delta + 1) (acc ++ [cp])
       | reject reason =>
         rfl
-    · simp [hb, ByteArray.size_append]
+    · simp [hb, List.length_append]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §7 PER-BYTE-LENGTH CONSUME LEMMAS
@@ -341,10 +341,10 @@ theorem fold_concat_translate
 /-- An ASCII codepoint occupies 1 byte; fold consumes that byte and
     emits `cp`. -/
 theorem fold_consume_ascii
-    (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
-    (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
+    (bs : List UInt8) (f : List Nat → Nat → Nat → List Nat)
+    (i seqStart : Nat) (acc : List Nat) (fuel : Nat)
     (cp : Nat) (h_cp : cp < 0x80)
-    (hi : i < bs.size)
+    (hi : i < bs.length)
     (h_b0 : (bs[i]'hi).toNat = cp) :
     foldCodepointsWithOffsetGo bs f .expectStart i seqStart acc (fuel + 1)
       = foldCodepointsWithOffsetGo bs f .expectStart (i + 1) (i + 1)
@@ -354,10 +354,10 @@ theorem fold_consume_ascii
 /-- A 2-byte codepoint occupies bytes [i, i+1]; fold consumes both
     and emits `cp`. -/
 theorem fold_consume_2byte
-    (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
-    (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
+    (bs : List UInt8) (f : List Nat → Nat → Nat → List Nat)
+    (i seqStart : Nat) (acc : List Nat) (fuel : Nat)
     (cp : Nat)
-    (hi0 : i < bs.size) (hi1 : i + 1 < bs.size)
+    (hi0 : i < bs.length) (hi1 : i + 1 < bs.length)
     (h_b0_lo : 0xC2 ≤ (bs[i]'hi0).toNat) (h_b0_hi : (bs[i]'hi0).toNat < 0xE0)
     (h_b1_lo : 0x80 ≤ (bs[i+1]'hi1).toNat) (h_b1_hi : (bs[i+1]'hi1).toNat < 0xC0)
     (h_cp_eq : cp = (((bs[i]'hi0).toNat &&& 0x1F) <<< 6)
@@ -376,10 +376,10 @@ theorem fold_consume_2byte
 
 /-- A 3-byte codepoint occupies bytes [i, i+1, i+2]. -/
 theorem fold_consume_3byte
-    (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
-    (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
+    (bs : List UInt8) (f : List Nat → Nat → Nat → List Nat)
+    (i seqStart : Nat) (acc : List Nat) (fuel : Nat)
     (cp : Nat)
-    (hi0 : i < bs.size) (hi1 : i + 1 < bs.size) (hi2 : i + 2 < bs.size)
+    (hi0 : i < bs.length) (hi1 : i + 1 < bs.length) (hi2 : i + 2 < bs.length)
     (h_b0_lo : 0xE0 ≤ (bs[i]'hi0).toNat) (h_b0_hi : (bs[i]'hi0).toNat < 0xF0)
     (h_b1_lo : 0x80 ≤ (bs[i+1]'hi1).toNat) (h_b1_hi : (bs[i+1]'hi1).toNat < 0xC0)
     (h_b2_lo : 0x80 ≤ (bs[i+2]'hi2).toNat) (h_b2_hi : (bs[i+2]'hi2).toNat < 0xC0)
@@ -405,11 +405,11 @@ theorem fold_consume_3byte
 
 /-- A 4-byte codepoint occupies bytes [i, i+1, i+2, i+3]. -/
 theorem fold_consume_4byte
-    (bs : ByteArray) (f : Array Nat → Nat → Nat → Array Nat)
-    (i seqStart : Nat) (acc : Array Nat) (fuel : Nat)
+    (bs : List UInt8) (f : List Nat → Nat → Nat → List Nat)
+    (i seqStart : Nat) (acc : List Nat) (fuel : Nat)
     (cp : Nat)
-    (hi0 : i < bs.size) (hi1 : i + 1 < bs.size)
-    (hi2 : i + 2 < bs.size) (hi3 : i + 3 < bs.size)
+    (hi0 : i < bs.length) (hi1 : i + 1 < bs.length)
+    (hi2 : i + 2 < bs.length) (hi3 : i + 3 < bs.length)
     (h_b0_lo : 0xF0 ≤ (bs[i]'hi0).toNat) (h_b0_hi : (bs[i]'hi0).toNat < 0xF5)
     (h_b1_lo : 0x80 ≤ (bs[i+1]'hi1).toNat) (h_b1_hi : (bs[i+1]'hi1).toNat < 0xC0)
     (h_b2_lo : 0x80 ≤ (bs[i+2]'hi2).toNat) (h_b2_hi : (bs[i+2]'hi2).toNat < 0xC0)
@@ -447,34 +447,28 @@ theorem fold_consume_4byte
 
 /-- The list-recursive form of `encodeCodepoints`, the shape needed
     for inductive reasoning over codepoint sequences. -/
-def encodeCodepointsList : List Nat → ByteArray
-  | []        => ByteArray.empty
+def encodeCodepointsList : List Nat → List UInt8
+  | []        => ([] : List UInt8)
   | cp :: cps => encodeCodepoint cp ++ encodeCodepointsList cps
 
 /-- `encodeCodepoints` as a left fold over an array equals the
     right-recursive list form on the underlying list. The IH is
     strengthened to thread an arbitrary starting accumulator so the
     cons-step lands cleanly. -/
-theorem encodeCodepoints_eq_list (cps : Array Nat) :
-    encodeCodepoints cps = encodeCodepointsList cps.toList := by
-  suffices h : ∀ (init : ByteArray) (xs : List Nat),
+theorem encodeCodepoints_eq_list (cps : List Nat) :
+    encodeCodepoints cps = encodeCodepointsList cps := by
+  suffices h : ∀ (init : List UInt8) (xs : List Nat),
       List.foldl (fun acc cp => acc ++ encodeCodepoint cp) init xs
         = init ++ encodeCodepointsList xs by
     unfold encodeCodepoints
-    rcases cps with ⟨xs⟩
-    -- `Array.foldl f init ⟨xs⟩` reduces to `List.foldl f init xs` via simp.
-    rw [show Array.foldl (fun acc cp => acc ++ encodeCodepoint cp) ByteArray.empty
-              ⟨xs⟩
-          = List.foldl (fun acc cp => acc ++ encodeCodepoint cp) ByteArray.empty xs
-        by simp]
-    rw [h ByteArray.empty xs]
-    simp [ByteArray.empty_append]
+    rw [h ([] : List UInt8) cps]
+    simp [List.nil_append]
   intro init xs
   induction xs generalizing init with
   | nil =>
     simp [List.foldl, encodeCodepointsList]
   | cons x xs' ih =>
-    simp [List.foldl, encodeCodepointsList, ih, ByteArray.append_assoc]
+    simp [List.foldl, encodeCodepointsList, ih, List.append_assoc]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §9 BIT-TWIDDLING UTILITIES
@@ -555,7 +549,7 @@ theorem nat_lor_flag_and_mask (flag x mask : Nat)
 
 /-- Closed form of `encodeCodepoint cp` on the ASCII bracket. -/
 theorem encode_ascii_form (cp : Nat) (h : cp < 0x80) :
-    encodeCodepoint cp = ByteArray.mk #[UInt8.ofNat cp] := by
+    encodeCodepoint cp = [UInt8.ofNat cp] := by
   unfold encodeCodepoint; simp [h]
 
 -- ────────────────────────────────────────────────────────────────────────────
@@ -564,7 +558,7 @@ theorem encode_ascii_form (cp : Nat) (h : cp < 0x80) :
 
 /-- Closed form of `encodeCodepoint cp` on the 2-byte bracket. -/
 theorem encode_2byte_form (cp : Nat) (h_lo : 0x80 ≤ cp) (h_hi : cp < 0x800) :
-    encodeCodepoint cp = ByteArray.mk #[
+    encodeCodepoint cp = [
       UInt8.ofNat (0xC0 ||| (cp >>> 6)),
       UInt8.ofNat (0x80 ||| (cp &&& 0x3F))] := by
   unfold encodeCodepoint
@@ -572,7 +566,7 @@ theorem encode_2byte_form (cp : Nat) (h_lo : 0x80 ≤ cp) (h_hi : cp < 0x800) :
 
 /-- Closed form of `encodeCodepoint cp` on the 3-byte bracket. -/
 theorem encode_3byte_form (cp : Nat) (h_lo : 0x800 ≤ cp) (h_hi : cp < 0x10000) :
-    encodeCodepoint cp = ByteArray.mk #[
+    encodeCodepoint cp = [
       UInt8.ofNat (0xE0 ||| (cp >>> 12)),
       UInt8.ofNat (0x80 ||| ((cp >>> 6) &&& 0x3F)),
       UInt8.ofNat (0x80 ||| (cp &&& 0x3F))] := by
@@ -583,7 +577,7 @@ theorem encode_3byte_form (cp : Nat) (h_lo : 0x800 ≤ cp) (h_hi : cp < 0x10000)
 /-- Closed form of `encodeCodepoint cp` on the 4-byte bracket. -/
 theorem encode_4byte_form (cp : Nat) (h_lo : 0x10000 ≤ cp)
     (h_hi : cp < 0x110000) :
-    encodeCodepoint cp = ByteArray.mk #[
+    encodeCodepoint cp = [
       UInt8.ofNat (0xF0 ||| (cp >>> 18)),
       UInt8.ofNat (0x80 ||| ((cp >>> 12) &&& 0x3F)),
       UInt8.ofNat (0x80 ||| ((cp >>> 6) &&& 0x3F)),
@@ -820,69 +814,69 @@ theorem encode_4byte_byte0 (cp : Nat) (h_lo : 0x10000 ≤ cp) (h_hi : cp < 0x110
 -- §12 PER-BYTE-LENGTH DECODE_CONCAT
 -- ═══════════════════════════════════════════════════════════════════════════════
 --
--- Prepending an encoded codepoint to `rest` decodes to `#[cp] ++
+-- Prepending an encoded codepoint to `rest` decodes to `[cp] ++
 -- decodeToCodepoints rest`. Each helper advances the fold past the
 -- encoding's bytes via `fold_consume_<n>byte`, translates the suffix
--- fold via `fold_concat_translate`, and lifts the leading `#[cp]` out
+-- fold via `fold_concat_translate`, and lifts the leading `[cp]` out
 -- of the accumulator via `fold_push_acc_factor`.
 
-/-- The decode-fold's update function lifts to `acc.push c` after β.
+/-- The decode-fold's update function lifts to `acc ++ [c]` after β.
     Used as the `hf` hypothesis for `fold_concat_translate` and
     `fold_push_acc_factor`. -/
 theorem decode_fn_push_eq
-    (acc : Array Nat) (offset c : Nat) :
-    (fun (a : Array Nat) (o c : Nat) => Function.const Nat (a.push c) o) acc offset c
-      = acc.push c := rfl
+    (acc : List Nat) (offset c : Nat) :
+    (fun (a : List Nat) (o c : Nat) => Function.const Nat (a ++ [c]) o) acc offset c
+      = acc ++ [c] := rfl
 
 -- ────────────────────────────────────────────────────────────────────────────
 -- 1-byte (ASCII)
 -- ────────────────────────────────────────────────────────────────────────────
 
 /-- Prepending an ASCII-encoded codepoint to `rest` decodes to
-    `#[cp] ++ decodeToCodepoints rest`. -/
-theorem decode_concat_ascii (cp : Nat) (h_lt : cp < 0x80) (rest : ByteArray) :
+    `[cp] ++ decodeToCodepoints rest`. -/
+theorem decode_concat_ascii (cp : Nat) (h_lt : cp < 0x80) (rest : List UInt8) :
     decodeToCodepoints (encodeCodepoint cp ++ rest)
-      = #[cp] ++ decodeToCodepoints rest := by
+      = [cp] ++ decodeToCodepoints rest := by
   -- Substitute encodeCodepoint cp with its closed form so its size
   -- (= 1) reduces by `rfl` and indexing is direct.
   rw [encode_ascii_form cp h_lt]
-  have h_pfx_size : (ByteArray.mk #[UInt8.ofNat cp] : ByteArray).size = 1 := rfl
-  have h_pfx_pos : 0 < (ByteArray.mk #[UInt8.ofNat cp] : ByteArray).size := by
+  have h_pfx_size : ([UInt8.ofNat cp] : List UInt8).length = 1 := rfl
+  have h_pfx_pos : 0 < ([UInt8.ofNat cp] : List UInt8).length := by
     rw [h_pfx_size]; omega
-  have h_total : (ByteArray.mk #[UInt8.ofNat cp] ++ rest).size = rest.size + 1 := by
-    rw [ByteArray.size_append, h_pfx_size]; omega
-  have h_idx : 0 < (ByteArray.mk #[UInt8.ofNat cp] ++ rest).size := by
+  have h_total : ([UInt8.ofNat cp] ++ rest).length = rest.length + 1 := by
+    rw [List.length_append, h_pfx_size]; omega
+  have h_idx : 0 < ([UInt8.ofNat cp] ++ rest).length := by
     rw [h_total]; omega
-  have h_byte0 : ((ByteArray.mk #[UInt8.ofNat cp] ++ rest)[0]'h_idx).toNat = cp := by
-    rw [ByteArray.getElem_append_left h_pfx_pos]
+  have h_byte0 : (([UInt8.ofNat cp] ++ rest)[0]'h_idx).toNat = cp := by
+    rw [List.getElem_append_left h_pfx_pos]
     show (UInt8.ofNat cp).toNat = cp
     exact uint8_ofNat_toNat cp (by omega)
   -- Unfold both sides to fold-Go form.
   unfold decodeToCodepoints foldCodepointsWithOffset
-  -- Massage the LHS fuel `(pfx ++ rest).size + 1` into `(rest.size + 1) + 1`
+  -- Massage the LHS fuel `(pfx ++ rest).length + 1` into `(rest.length + 1) + 1`
   -- so `fold_consume_ascii` can fire its `fuel + 1` pattern.
-  rw [show (ByteArray.mk #[UInt8.ofNat cp] ++ rest).size + 1
-        = (rest.size + 1) + 1 from by rw [h_total]]
-  rw [fold_consume_ascii (ByteArray.mk #[UInt8.ofNat cp] ++ rest)
-        (fun a o c => Function.const Nat (a.push c) o)
-        0 0 #[] (rest.size + 1) cp h_lt h_idx h_byte0]
+  rw [show ([UInt8.ofNat cp] ++ rest).length + 1
+        = (rest.length + 1) + 1 from by rw [h_total]]
+  rw [fold_consume_ascii ([UInt8.ofNat cp] ++ rest)
+        (fun a o c => Function.const Nat (a ++ [c]) o)
+        0 0 [] (rest.length + 1) cp h_lt h_idx h_byte0]
   -- After consume: index `0 + 1`, seqStart `0 + 1`, accumulator
-  -- `Function.const Nat (#[].push cp) 0`. Bridge index to
-  -- `pfx.size + 0` so `fold_concat_translate` matches.
+  -- `Function.const Nat ([] ++ [cp]) 0`. Bridge index to
+  -- `pfx.length + 0` so `fold_concat_translate` matches.
   rw [show (0 : Nat) + 1
-        = (ByteArray.mk #[UInt8.ofNat cp] : ByteArray).size + 0 from by
+        = ([UInt8.ofNat cp] : List UInt8).length + 0 from by
     rw [h_pfx_size]]
-  rw [fold_concat_translate (ByteArray.mk #[UInt8.ofNat cp]) rest
-        (fun a o c => Function.const Nat (a.push c) o)
+  rw [fold_concat_translate ([UInt8.ofNat cp]) rest
+        (fun a o c => Function.const Nat (a ++ [c]) o)
         decode_fn_push_eq
         Utf8State.expectStart 0
-        ((ByteArray.mk #[UInt8.ofNat cp] : ByteArray).size + 0) 0
-        (Function.const Nat ((#[] : Array Nat).push cp) 0) (rest.size + 1)]
+        (([UInt8.ofNat cp] : List UInt8).length + 0) 0
+        (Function.const Nat (([] : List Nat) ++ [cp]) 0) (rest.length + 1)]
   rw [fold_push_acc_factor rest
-        (fun a o c => Function.const Nat (a.push c) o)
+        (fun a o c => Function.const Nat (a ++ [c]) o)
         decode_fn_push_eq
         Utf8State.expectStart 0 0
-        (Function.const Nat ((#[] : Array Nat).push cp) 0) (rest.size + 1)]
+        (Function.const Nat (([] : List Nat) ++ [cp]) 0) (rest.length + 1)]
   rfl
 
 -- ────────────────────────────────────────────────────────────────────────────
@@ -890,33 +884,33 @@ theorem decode_concat_ascii (cp : Nat) (h_lt : cp < 0x80) (rest : ByteArray) :
 -- ────────────────────────────────────────────────────────────────────────────
 
 /-- Prepending a 2-byte-encoded codepoint to `rest` decodes to
-    `#[cp] ++ decodeToCodepoints rest`. -/
+    `[cp] ++ decodeToCodepoints rest`. -/
 theorem decode_concat_2byte (cp : Nat) (h_lo : 0x80 ≤ cp) (h_hi : cp < 0x800)
-    (rest : ByteArray) :
+    (rest : List UInt8) :
     decodeToCodepoints (encodeCodepoint cp ++ rest)
-      = #[cp] ++ decodeToCodepoints rest := by
+      = [cp] ++ decodeToCodepoints rest := by
   rw [encode_2byte_form cp h_lo h_hi]
   -- Concrete prefix: 2 bytes long.
-  let pfxBytes : ByteArray := ByteArray.mk #[
+  let pfxBytes : List UInt8 := [
     UInt8.ofNat (0xC0 ||| (cp >>> 6)),
     UInt8.ofNat (0x80 ||| (cp &&& 0x3F))]
-  have h_pfx_size : pfxBytes.size = 2 := rfl
-  have h_pfx_pos0 : 0 < pfxBytes.size := by rw [h_pfx_size]; omega
-  have h_pfx_pos1 : 1 < pfxBytes.size := by rw [h_pfx_size]; omega
-  have h_total : (pfxBytes ++ rest).size = rest.size + 2 := by
-    rw [ByteArray.size_append, h_pfx_size]; omega
-  have h_idx0 : 0 < (pfxBytes ++ rest).size := by rw [h_total]; omega
-  have h_idx1 : 0 + 1 < (pfxBytes ++ rest).size := by rw [h_total]; omega
+  have h_pfx_size : pfxBytes.length = 2 := rfl
+  have h_pfx_pos0 : 0 < pfxBytes.length := by rw [h_pfx_size]; omega
+  have h_pfx_pos1 : 1 < pfxBytes.length := by rw [h_pfx_size]; omega
+  have h_total : (pfxBytes ++ rest).length = rest.length + 2 := by
+    rw [List.length_append, h_pfx_size]; omega
+  have h_idx0 : 0 < (pfxBytes ++ rest).length := by rw [h_total]; omega
+  have h_idx1 : 0 + 1 < (pfxBytes ++ rest).length := by rw [h_total]; omega
   -- Byte 0 is the start byte; byte 1 is the continuation byte.
   have h_byte0_eq :
       ((pfxBytes ++ rest)[0]'h_idx0).toNat = 0xC0 ||| (cp >>> 6) := by
-    rw [ByteArray.getElem_append_left h_pfx_pos0]
+    rw [List.getElem_append_left h_pfx_pos0]
     show (UInt8.ofNat (0xC0 ||| (cp >>> 6))).toNat = 0xC0 ||| (cp >>> 6)
     have h_b0 := encode_2byte_byte0 cp h_lo h_hi
     exact h_b0.left
   have h_byte1_eq :
       ((pfxBytes ++ rest)[0 + 1]'h_idx1).toNat = 0x80 ||| (cp &&& 0x3F) := by
-    rw [ByteArray.getElem_append_left h_pfx_pos1]
+    rw [List.getElem_append_left h_pfx_pos1]
     show (UInt8.ofNat (0x80 ||| (cp &&& 0x3F))).toNat = 0x80 ||| (cp &&& 0x3F)
     have h_b1 := encode_2byte_byte1 cp
     exact h_b1.left
@@ -939,23 +933,23 @@ theorem decode_concat_2byte (cp : Nat) (h_lo : 0x80 ≤ cp) (h_hi : cp < 0x800)
   have h_nonsurr : ¬ (0xD800 ≤ cp ∧ cp ≤ 0xDFFF) := by omega
   have h_max : ¬ cp > 0x10FFFF := by omega
   unfold decodeToCodepoints foldCodepointsWithOffset
-  rw [show (pfxBytes ++ rest).size + 1 = (rest.size + 1) + 2 from by
+  rw [show (pfxBytes ++ rest).length + 1 = (rest.length + 1) + 2 from by
     rw [h_total]]
   rw [fold_consume_2byte (pfxBytes ++ rest)
-        (fun a o c => Function.const Nat (a.push c) o)
-        0 0 #[] (rest.size + 1) cp h_idx0 h_idx1
+        (fun a o c => Function.const Nat (a ++ [c]) o)
+        0 0 [] (rest.length + 1) cp h_idx0 h_idx1
         h_b0_lo h_b0_hi h_b1_lo h_b1_hi h_cp_eq h_overlong h_nonsurr h_max]
-  rw [show (0 : Nat) + 2 = pfxBytes.size + 0 from by rw [h_pfx_size]]
+  rw [show (0 : Nat) + 2 = pfxBytes.length + 0 from by rw [h_pfx_size]]
   rw [fold_concat_translate pfxBytes rest
-        (fun a o c => Function.const Nat (a.push c) o)
+        (fun a o c => Function.const Nat (a ++ [c]) o)
         decode_fn_push_eq
-        Utf8State.expectStart 0 (pfxBytes.size + 0) 0
-        (Function.const Nat ((#[] : Array Nat).push cp) 0) (rest.size + 1)]
+        Utf8State.expectStart 0 (pfxBytes.length + 0) 0
+        (Function.const Nat (([] : List Nat) ++ [cp]) 0) (rest.length + 1)]
   rw [fold_push_acc_factor rest
-        (fun a o c => Function.const Nat (a.push c) o)
+        (fun a o c => Function.const Nat (a ++ [c]) o)
         decode_fn_push_eq
         Utf8State.expectStart 0 0
-        (Function.const Nat ((#[] : Array Nat).push cp) 0) (rest.size + 1)]
+        (Function.const Nat (([] : List Nat) ++ [cp]) 0) (rest.length + 1)]
   rfl
 
 -- ────────────────────────────────────────────────────────────────────────────
@@ -972,40 +966,40 @@ theorem encode_continuation_bounds (x : Nat) :
   encode_2byte_byte1 x
 
 /-- Prepending a 3-byte-encoded codepoint to `rest` decodes to
-    `#[cp] ++ decodeToCodepoints rest`. -/
+    `[cp] ++ decodeToCodepoints rest`. -/
 theorem decode_concat_3byte (cp : Nat) (h_lo : 0x800 ≤ cp) (h_hi : cp < 0x10000)
     (h_nonsurr : ¬ (0xD800 ≤ cp ∧ cp ≤ 0xDFFF))
-    (rest : ByteArray) :
+    (rest : List UInt8) :
     decodeToCodepoints (encodeCodepoint cp ++ rest)
-      = #[cp] ++ decodeToCodepoints rest := by
+      = [cp] ++ decodeToCodepoints rest := by
   rw [encode_3byte_form cp h_lo h_hi]
-  let pfxBytes : ByteArray := ByteArray.mk #[
+  let pfxBytes : List UInt8 := [
     UInt8.ofNat (0xE0 ||| (cp >>> 12)),
     UInt8.ofNat (0x80 ||| ((cp >>> 6) &&& 0x3F)),
     UInt8.ofNat (0x80 ||| (cp &&& 0x3F))]
-  have h_pfx_size : pfxBytes.size = 3 := rfl
-  have h_pfx_pos0 : 0 < pfxBytes.size := by rw [h_pfx_size]; omega
-  have h_pfx_pos1 : 1 < pfxBytes.size := by rw [h_pfx_size]; omega
-  have h_pfx_pos2 : 2 < pfxBytes.size := by rw [h_pfx_size]; omega
-  have h_total : (pfxBytes ++ rest).size = rest.size + 3 := by
-    rw [ByteArray.size_append, h_pfx_size]; omega
-  have h_idx0 : 0 < (pfxBytes ++ rest).size := by rw [h_total]; omega
-  have h_idx1 : 0 + 1 < (pfxBytes ++ rest).size := by rw [h_total]; omega
-  have h_idx2 : 0 + 2 < (pfxBytes ++ rest).size := by rw [h_total]; omega
+  have h_pfx_size : pfxBytes.length = 3 := rfl
+  have h_pfx_pos0 : 0 < pfxBytes.length := by rw [h_pfx_size]; omega
+  have h_pfx_pos1 : 1 < pfxBytes.length := by rw [h_pfx_size]; omega
+  have h_pfx_pos2 : 2 < pfxBytes.length := by rw [h_pfx_size]; omega
+  have h_total : (pfxBytes ++ rest).length = rest.length + 3 := by
+    rw [List.length_append, h_pfx_size]; omega
+  have h_idx0 : 0 < (pfxBytes ++ rest).length := by rw [h_total]; omega
+  have h_idx1 : 0 + 1 < (pfxBytes ++ rest).length := by rw [h_total]; omega
+  have h_idx2 : 0 + 2 < (pfxBytes ++ rest).length := by rw [h_total]; omega
   have h_byte0_eq :
       ((pfxBytes ++ rest)[0]'h_idx0).toNat = 0xE0 ||| (cp >>> 12) := by
-    rw [ByteArray.getElem_append_left h_pfx_pos0]
+    rw [List.getElem_append_left h_pfx_pos0]
     show (UInt8.ofNat (0xE0 ||| (cp >>> 12))).toNat = 0xE0 ||| (cp >>> 12)
     exact (encode_3byte_byte0 cp h_lo h_hi).left
   have h_byte1_eq :
       ((pfxBytes ++ rest)[0 + 1]'h_idx1).toNat = 0x80 ||| ((cp >>> 6) &&& 0x3F) := by
-    rw [ByteArray.getElem_append_left h_pfx_pos1]
+    rw [List.getElem_append_left h_pfx_pos1]
     show (UInt8.ofNat (0x80 ||| ((cp >>> 6) &&& 0x3F))).toNat
         = 0x80 ||| ((cp >>> 6) &&& 0x3F)
     exact (encode_continuation_bounds (cp >>> 6)).left
   have h_byte2_eq :
       ((pfxBytes ++ rest)[0 + 2]'h_idx2).toNat = 0x80 ||| (cp &&& 0x3F) := by
-    rw [ByteArray.getElem_append_left h_pfx_pos2]
+    rw [List.getElem_append_left h_pfx_pos2]
     show (UInt8.ofNat (0x80 ||| (cp &&& 0x3F))).toNat = 0x80 ||| (cp &&& 0x3F)
     exact (encode_continuation_bounds cp).left
   have h_b0_lo : 0xE0 ≤ ((pfxBytes ++ rest)[0]'h_idx0).toNat := by
@@ -1029,23 +1023,23 @@ theorem decode_concat_3byte (cp : Nat) (h_lo : 0x800 ≤ cp) (h_hi : cp < 0x1000
   have h_overlong : ¬ cp < 0x800 := by omega
   have h_max : ¬ cp > 0x10FFFF := by omega
   unfold decodeToCodepoints foldCodepointsWithOffset
-  rw [show (pfxBytes ++ rest).size + 1 = (rest.size + 1) + 3 from by rw [h_total]]
+  rw [show (pfxBytes ++ rest).length + 1 = (rest.length + 1) + 3 from by rw [h_total]]
   rw [fold_consume_3byte (pfxBytes ++ rest)
-        (fun a o c => Function.const Nat (a.push c) o)
-        0 0 #[] (rest.size + 1) cp h_idx0 h_idx1 h_idx2
+        (fun a o c => Function.const Nat (a ++ [c]) o)
+        0 0 [] (rest.length + 1) cp h_idx0 h_idx1 h_idx2
         h_b0_lo h_b0_hi h_b1_lo h_b1_hi h_b2_lo h_b2_hi
         h_cp_eq h_overlong h_nonsurr h_max]
-  rw [show (0 : Nat) + 3 = pfxBytes.size + 0 from by rw [h_pfx_size]]
+  rw [show (0 : Nat) + 3 = pfxBytes.length + 0 from by rw [h_pfx_size]]
   rw [fold_concat_translate pfxBytes rest
-        (fun a o c => Function.const Nat (a.push c) o)
+        (fun a o c => Function.const Nat (a ++ [c]) o)
         decode_fn_push_eq
-        Utf8State.expectStart 0 (pfxBytes.size + 0) 0
-        (Function.const Nat ((#[] : Array Nat).push cp) 0) (rest.size + 1)]
+        Utf8State.expectStart 0 (pfxBytes.length + 0) 0
+        (Function.const Nat (([] : List Nat) ++ [cp]) 0) (rest.length + 1)]
   rw [fold_push_acc_factor rest
-        (fun a o c => Function.const Nat (a.push c) o)
+        (fun a o c => Function.const Nat (a ++ [c]) o)
         decode_fn_push_eq
         Utf8State.expectStart 0 0
-        (Function.const Nat ((#[] : Array Nat).push cp) 0) (rest.size + 1)]
+        (Function.const Nat (([] : List Nat) ++ [cp]) 0) (rest.length + 1)]
   rfl
 
 -- ────────────────────────────────────────────────────────────────────────────
@@ -1053,48 +1047,48 @@ theorem decode_concat_3byte (cp : Nat) (h_lo : 0x800 ≤ cp) (h_hi : cp < 0x1000
 -- ────────────────────────────────────────────────────────────────────────────
 
 /-- Prepending a 4-byte-encoded codepoint to `rest` decodes to
-    `#[cp] ++ decodeToCodepoints rest`. -/
+    `[cp] ++ decodeToCodepoints rest`. -/
 theorem decode_concat_4byte (cp : Nat) (h_lo : 0x10000 ≤ cp) (h_hi : cp < 0x110000)
-    (rest : ByteArray) :
+    (rest : List UInt8) :
     decodeToCodepoints (encodeCodepoint cp ++ rest)
-      = #[cp] ++ decodeToCodepoints rest := by
+      = [cp] ++ decodeToCodepoints rest := by
   rw [encode_4byte_form cp h_lo h_hi]
-  let pfxBytes : ByteArray := ByteArray.mk #[
+  let pfxBytes : List UInt8 := [
     UInt8.ofNat (0xF0 ||| (cp >>> 18)),
     UInt8.ofNat (0x80 ||| ((cp >>> 12) &&& 0x3F)),
     UInt8.ofNat (0x80 ||| ((cp >>> 6) &&& 0x3F)),
     UInt8.ofNat (0x80 ||| (cp &&& 0x3F))]
-  have h_pfx_size : pfxBytes.size = 4 := rfl
-  have h_pfx_pos0 : 0 < pfxBytes.size := by rw [h_pfx_size]; omega
-  have h_pfx_pos1 : 1 < pfxBytes.size := by rw [h_pfx_size]; omega
-  have h_pfx_pos2 : 2 < pfxBytes.size := by rw [h_pfx_size]; omega
-  have h_pfx_pos3 : 3 < pfxBytes.size := by rw [h_pfx_size]; omega
-  have h_total : (pfxBytes ++ rest).size = rest.size + 4 := by
-    rw [ByteArray.size_append, h_pfx_size]; omega
-  have h_idx0 : 0 < (pfxBytes ++ rest).size := by rw [h_total]; omega
-  have h_idx1 : 0 + 1 < (pfxBytes ++ rest).size := by rw [h_total]; omega
-  have h_idx2 : 0 + 2 < (pfxBytes ++ rest).size := by rw [h_total]; omega
-  have h_idx3 : 0 + 3 < (pfxBytes ++ rest).size := by rw [h_total]; omega
+  have h_pfx_size : pfxBytes.length = 4 := rfl
+  have h_pfx_pos0 : 0 < pfxBytes.length := by rw [h_pfx_size]; omega
+  have h_pfx_pos1 : 1 < pfxBytes.length := by rw [h_pfx_size]; omega
+  have h_pfx_pos2 : 2 < pfxBytes.length := by rw [h_pfx_size]; omega
+  have h_pfx_pos3 : 3 < pfxBytes.length := by rw [h_pfx_size]; omega
+  have h_total : (pfxBytes ++ rest).length = rest.length + 4 := by
+    rw [List.length_append, h_pfx_size]; omega
+  have h_idx0 : 0 < (pfxBytes ++ rest).length := by rw [h_total]; omega
+  have h_idx1 : 0 + 1 < (pfxBytes ++ rest).length := by rw [h_total]; omega
+  have h_idx2 : 0 + 2 < (pfxBytes ++ rest).length := by rw [h_total]; omega
+  have h_idx3 : 0 + 3 < (pfxBytes ++ rest).length := by rw [h_total]; omega
   have h_byte0_eq :
       ((pfxBytes ++ rest)[0]'h_idx0).toNat = 0xF0 ||| (cp >>> 18) := by
-    rw [ByteArray.getElem_append_left h_pfx_pos0]
+    rw [List.getElem_append_left h_pfx_pos0]
     show (UInt8.ofNat (0xF0 ||| (cp >>> 18))).toNat = 0xF0 ||| (cp >>> 18)
     exact (encode_4byte_byte0 cp h_lo h_hi).left
   have h_byte1_eq :
       ((pfxBytes ++ rest)[0 + 1]'h_idx1).toNat = 0x80 ||| ((cp >>> 12) &&& 0x3F) := by
-    rw [ByteArray.getElem_append_left h_pfx_pos1]
+    rw [List.getElem_append_left h_pfx_pos1]
     show (UInt8.ofNat (0x80 ||| ((cp >>> 12) &&& 0x3F))).toNat
         = 0x80 ||| ((cp >>> 12) &&& 0x3F)
     exact (encode_continuation_bounds (cp >>> 12)).left
   have h_byte2_eq :
       ((pfxBytes ++ rest)[0 + 2]'h_idx2).toNat = 0x80 ||| ((cp >>> 6) &&& 0x3F) := by
-    rw [ByteArray.getElem_append_left h_pfx_pos2]
+    rw [List.getElem_append_left h_pfx_pos2]
     show (UInt8.ofNat (0x80 ||| ((cp >>> 6) &&& 0x3F))).toNat
         = 0x80 ||| ((cp >>> 6) &&& 0x3F)
     exact (encode_continuation_bounds (cp >>> 6)).left
   have h_byte3_eq :
       ((pfxBytes ++ rest)[0 + 3]'h_idx3).toNat = 0x80 ||| (cp &&& 0x3F) := by
-    rw [ByteArray.getElem_append_left h_pfx_pos3]
+    rw [List.getElem_append_left h_pfx_pos3]
     show (UInt8.ofNat (0x80 ||| (cp &&& 0x3F))).toNat = 0x80 ||| (cp &&& 0x3F)
     exact (encode_continuation_bounds cp).left
   have h_b0_lo : 0xF0 ≤ ((pfxBytes ++ rest)[0]'h_idx0).toNat := by
@@ -1124,23 +1118,23 @@ theorem decode_concat_4byte (cp : Nat) (h_lo : 0x10000 ≤ cp) (h_hi : cp < 0x11
   have h_nonsurr : ¬ (0xD800 ≤ cp ∧ cp ≤ 0xDFFF) := by omega
   have h_max : ¬ cp > 0x10FFFF := by omega
   unfold decodeToCodepoints foldCodepointsWithOffset
-  rw [show (pfxBytes ++ rest).size + 1 = (rest.size + 1) + 4 from by rw [h_total]]
+  rw [show (pfxBytes ++ rest).length + 1 = (rest.length + 1) + 4 from by rw [h_total]]
   rw [fold_consume_4byte (pfxBytes ++ rest)
-        (fun a o c => Function.const Nat (a.push c) o)
-        0 0 #[] (rest.size + 1) cp h_idx0 h_idx1 h_idx2 h_idx3
+        (fun a o c => Function.const Nat (a ++ [c]) o)
+        0 0 [] (rest.length + 1) cp h_idx0 h_idx1 h_idx2 h_idx3
         h_b0_lo h_b0_hi h_b1_lo h_b1_hi h_b2_lo h_b2_hi h_b3_lo h_b3_hi
         h_cp_eq h_overlong h_nonsurr h_max]
-  rw [show (0 : Nat) + 4 = pfxBytes.size + 0 from by rw [h_pfx_size]]
+  rw [show (0 : Nat) + 4 = pfxBytes.length + 0 from by rw [h_pfx_size]]
   rw [fold_concat_translate pfxBytes rest
-        (fun a o c => Function.const Nat (a.push c) o)
+        (fun a o c => Function.const Nat (a ++ [c]) o)
         decode_fn_push_eq
-        Utf8State.expectStart 0 (pfxBytes.size + 0) 0
-        (Function.const Nat ((#[] : Array Nat).push cp) 0) (rest.size + 1)]
+        Utf8State.expectStart 0 (pfxBytes.length + 0) 0
+        (Function.const Nat (([] : List Nat) ++ [cp]) 0) (rest.length + 1)]
   rw [fold_push_acc_factor rest
-        (fun a o c => Function.const Nat (a.push c) o)
+        (fun a o c => Function.const Nat (a ++ [c]) o)
         decode_fn_push_eq
         Utf8State.expectStart 0 0
-        (Function.const Nat ((#[] : Array Nat).push cp) 0) (rest.size + 1)]
+        (Function.const Nat (([] : List Nat) ++ [cp]) 0) (rest.length + 1)]
   rfl
 
 -- ────────────────────────────────────────────────────────────────────────────
@@ -1150,9 +1144,9 @@ theorem decode_concat_4byte (cp : Nat) (h_lo : 0x10000 ≤ cp) (h_hi : cp < 0x11
 /-- Append distribution for any valid codepoint. The case split on
     `cp`'s UTF-8 byte length picks the matching per-length helper. -/
 theorem decode_concat_codepoint (cp : Nat) (h : IsValidCodepoint cp)
-    (rest : ByteArray) :
+    (rest : List UInt8) :
     decodeToCodepoints (encodeCodepoint cp ++ rest)
-      = #[cp] ++ decodeToCodepoints rest := by
+      = [cp] ++ decodeToCodepoints rest := by
   obtain ⟨h_max, h_nonsurr⟩ := h
   by_cases h1 : cp < 0x80
   · exact decode_concat_ascii cp h1 rest
@@ -1169,43 +1163,43 @@ theorem decode_concat_codepoint (cp : Nat) (h : IsValidCodepoint cp)
 /-- HEADLINE per-codepoint theorem: every valid Unicode scalar
     codepoint encodes-then-decodes to itself. -/
 theorem decode_encode_codepoint (cp : Nat) (h : IsValidCodepoint cp) :
-    decodeToCodepoints (encodeCodepoint cp) = #[cp] := by
-  have hConcat := decode_concat_codepoint cp h ByteArray.empty
-  simpa [ByteArray.append_empty] using hConcat
+    decodeToCodepoints (encodeCodepoint cp) = [cp] := by
+  have hConcat := decode_concat_codepoint cp h ([] : List UInt8)
+  simpa [List.append_nil] using hConcat
 
 /-- ASCII (1-byte) codepoint roundtrip. -/
 theorem decode_encode_ascii (cp : Nat) (h : cp < 0x80) :
-    decodeToCodepoints (encodeCodepoint cp) = #[cp] :=
+    decodeToCodepoints (encodeCodepoint cp) = [cp] :=
   decode_encode_codepoint cp ⟨by omega, by omega⟩
 
 /-- 2-byte codepoint roundtrip. -/
 theorem decode_encode_2byte (cp : Nat) (h : cp < 0x800) :
-    decodeToCodepoints (encodeCodepoint cp) = #[cp] :=
+    decodeToCodepoints (encodeCodepoint cp) = [cp] :=
   decode_encode_codepoint cp ⟨by omega, by omega⟩
 
 /-- BMP codepoint roundtrip, excluding surrogates. -/
 theorem decode_encode_3byte (cp : Nat) (h : cp < 0x10000)
     (h_nonsurr : ¬ (0xD800 ≤ cp ∧ cp ≤ 0xDFFF)) :
-    decodeToCodepoints (encodeCodepoint cp) = #[cp] :=
+    decodeToCodepoints (encodeCodepoint cp) = [cp] :=
   decode_encode_codepoint cp ⟨by omega, h_nonsurr⟩
 
 /-- 4-byte codepoint roundtrip. -/
 theorem decode_encode_4byte (cp : Nat)
     (h_lo : 0x10000 ≤ cp) (h_hi : cp < 0x110000) :
-    decodeToCodepoints (encodeCodepoint cp) = #[cp] :=
+    decodeToCodepoints (encodeCodepoint cp) = [cp] :=
   decode_encode_codepoint cp ⟨h_hi, by omega⟩
 
 /-- Finite-domain ASCII roundtrip alias. -/
 theorem decode_encode_ascii_fin :
     ∀ cp : Fin 0x80,
-      decodeToCodepoints (encodeCodepoint cp.val) = #[cp.val] := by
+      decodeToCodepoints (encodeCodepoint cp.val) = [cp.val] := by
   intro cp
   exact decode_encode_ascii cp.val cp.isLt
 
 /-- Finite-domain 2-byte bracket roundtrip alias. -/
 theorem decode_encode_2byte_fin :
     ∀ cp : Fin 0x800,
-      decodeToCodepoints (encodeCodepoint cp.val) = #[cp.val] := by
+      decodeToCodepoints (encodeCodepoint cp.val) = [cp.val] := by
   intro cp
   exact decode_encode_2byte cp.val cp.isLt
 
@@ -1213,7 +1207,7 @@ theorem decode_encode_2byte_fin :
 theorem decode_encode_3byte_fin :
     ∀ cp : Fin 0x10000,
       ¬ (0xD800 ≤ cp.val ∧ cp.val ≤ 0xDFFF) →
-      decodeToCodepoints (encodeCodepoint cp.val) = #[cp.val] := by
+      decodeToCodepoints (encodeCodepoint cp.val) = [cp.val] := by
   intro cp h_nonsurr
   exact decode_encode_3byte cp.val cp.isLt h_nonsurr
 
@@ -1221,112 +1215,112 @@ theorem decode_encode_3byte_fin :
 theorem decode_encode_4byte_plane_1 :
     ∀ cp : Fin 0x10000,
       decodeToCodepoints (encodeCodepoint (0x10000 + cp.val))
-        = #[0x10000 + cp.val] := by
+        = [0x10000 + cp.val] := by
   intro cp
   exact decode_encode_4byte (0x10000 + cp.val) (by omega) (by omega)
 
 theorem decode_encode_4byte_plane_2 :
     ∀ cp : Fin 0x10000,
       decodeToCodepoints (encodeCodepoint (0x20000 + cp.val))
-        = #[0x20000 + cp.val] := by
+        = [0x20000 + cp.val] := by
   intro cp
   exact decode_encode_4byte (0x20000 + cp.val) (by omega) (by omega)
 
 theorem decode_encode_4byte_plane_3 :
     ∀ cp : Fin 0x10000,
       decodeToCodepoints (encodeCodepoint (0x30000 + cp.val))
-        = #[0x30000 + cp.val] := by
+        = [0x30000 + cp.val] := by
   intro cp
   exact decode_encode_4byte (0x30000 + cp.val) (by omega) (by omega)
 
 theorem decode_encode_4byte_plane_4 :
     ∀ cp : Fin 0x10000,
       decodeToCodepoints (encodeCodepoint (0x40000 + cp.val))
-        = #[0x40000 + cp.val] := by
+        = [0x40000 + cp.val] := by
   intro cp
   exact decode_encode_4byte (0x40000 + cp.val) (by omega) (by omega)
 
 theorem decode_encode_4byte_plane_5 :
     ∀ cp : Fin 0x10000,
       decodeToCodepoints (encodeCodepoint (0x50000 + cp.val))
-        = #[0x50000 + cp.val] := by
+        = [0x50000 + cp.val] := by
   intro cp
   exact decode_encode_4byte (0x50000 + cp.val) (by omega) (by omega)
 
 theorem decode_encode_4byte_plane_6 :
     ∀ cp : Fin 0x10000,
       decodeToCodepoints (encodeCodepoint (0x60000 + cp.val))
-        = #[0x60000 + cp.val] := by
+        = [0x60000 + cp.val] := by
   intro cp
   exact decode_encode_4byte (0x60000 + cp.val) (by omega) (by omega)
 
 theorem decode_encode_4byte_plane_7 :
     ∀ cp : Fin 0x10000,
       decodeToCodepoints (encodeCodepoint (0x70000 + cp.val))
-        = #[0x70000 + cp.val] := by
+        = [0x70000 + cp.val] := by
   intro cp
   exact decode_encode_4byte (0x70000 + cp.val) (by omega) (by omega)
 
 theorem decode_encode_4byte_plane_8 :
     ∀ cp : Fin 0x10000,
       decodeToCodepoints (encodeCodepoint (0x80000 + cp.val))
-        = #[0x80000 + cp.val] := by
+        = [0x80000 + cp.val] := by
   intro cp
   exact decode_encode_4byte (0x80000 + cp.val) (by omega) (by omega)
 
 theorem decode_encode_4byte_plane_9 :
     ∀ cp : Fin 0x10000,
       decodeToCodepoints (encodeCodepoint (0x90000 + cp.val))
-        = #[0x90000 + cp.val] := by
+        = [0x90000 + cp.val] := by
   intro cp
   exact decode_encode_4byte (0x90000 + cp.val) (by omega) (by omega)
 
 theorem decode_encode_4byte_plane_10 :
     ∀ cp : Fin 0x10000,
       decodeToCodepoints (encodeCodepoint (0xA0000 + cp.val))
-        = #[0xA0000 + cp.val] := by
+        = [0xA0000 + cp.val] := by
   intro cp
   exact decode_encode_4byte (0xA0000 + cp.val) (by omega) (by omega)
 
 theorem decode_encode_4byte_plane_11 :
     ∀ cp : Fin 0x10000,
       decodeToCodepoints (encodeCodepoint (0xB0000 + cp.val))
-        = #[0xB0000 + cp.val] := by
+        = [0xB0000 + cp.val] := by
   intro cp
   exact decode_encode_4byte (0xB0000 + cp.val) (by omega) (by omega)
 
 theorem decode_encode_4byte_plane_12 :
     ∀ cp : Fin 0x10000,
       decodeToCodepoints (encodeCodepoint (0xC0000 + cp.val))
-        = #[0xC0000 + cp.val] := by
+        = [0xC0000 + cp.val] := by
   intro cp
   exact decode_encode_4byte (0xC0000 + cp.val) (by omega) (by omega)
 
 theorem decode_encode_4byte_plane_13 :
     ∀ cp : Fin 0x10000,
       decodeToCodepoints (encodeCodepoint (0xD0000 + cp.val))
-        = #[0xD0000 + cp.val] := by
+        = [0xD0000 + cp.val] := by
   intro cp
   exact decode_encode_4byte (0xD0000 + cp.val) (by omega) (by omega)
 
 theorem decode_encode_4byte_plane_14 :
     ∀ cp : Fin 0x10000,
       decodeToCodepoints (encodeCodepoint (0xE0000 + cp.val))
-        = #[0xE0000 + cp.val] := by
+        = [0xE0000 + cp.val] := by
   intro cp
   exact decode_encode_4byte (0xE0000 + cp.val) (by omega) (by omega)
 
 theorem decode_encode_4byte_plane_15 :
     ∀ cp : Fin 0x10000,
       decodeToCodepoints (encodeCodepoint (0xF0000 + cp.val))
-        = #[0xF0000 + cp.val] := by
+        = [0xF0000 + cp.val] := by
   intro cp
   exact decode_encode_4byte (0xF0000 + cp.val) (by omega) (by omega)
 
 theorem decode_encode_4byte_plane_16 :
     ∀ cp : Fin 0x10000,
       decodeToCodepoints (encodeCodepoint (0x100000 + cp.val))
-        = #[0x100000 + cp.val] := by
+        = [0x100000 + cp.val] := by
   intro cp
   exact decode_encode_4byte (0x100000 + cp.val) (by omega) (by omega)
 
@@ -1337,14 +1331,14 @@ theorem decode_encode_4byte_plane_16 :
 
 /-- The list-form analogue of `decode_encode_codepoints`: decoding the
     concatenation of UTF-8 encodings of a list of valid codepoints
-    yields back the list as an `Array`. Proven by structural induction
+    yields back the list. Proven by structural induction
     on the codepoint list using `decode_concat_codepoint`. -/
 theorem decode_encodeList (cps : List Nat)
     (h_all : ∀ cp ∈ cps, IsValidCodepoint cp) :
-    decodeToCodepoints (encodeCodepointsList cps) = cps.toArray := by
+    decodeToCodepoints (encodeCodepointsList cps) = cps := by
   induction cps with
   | nil =>
-    show decodeToCodepoints ByteArray.empty = (#[] : Array Nat)
+    show decodeToCodepoints ([] : List UInt8) = ([] : List Nat)
     unfold decodeToCodepoints foldCodepointsWithOffset foldCodepointsWithOffsetGo
     rfl
   | cons cp tail ih =>
@@ -1352,18 +1346,17 @@ theorem decode_encodeList (cps : List Nat)
     have h_tail : ∀ cp' ∈ tail, IsValidCodepoint cp' := fun cp' h_mem =>
       h_all cp' (List.mem_cons_of_mem cp h_mem)
     show decodeToCodepoints (encodeCodepoint cp ++ encodeCodepointsList tail)
-        = (cp :: tail).toArray
+        = (cp :: tail)
     rw [decode_concat_codepoint cp h_cp (encodeCodepointsList tail), ih h_tail]
-    exact (List.toArray_cons cp tail).symm
 
-/-- **Array-level UTF-8 roundtrip.** Decoding the UTF-8 encoding of an
-    array of valid codepoints yields the array back. The inductive
+/-- **List-level UTF-8 roundtrip.** Decoding the UTF-8 encoding of a
+    list of valid codepoints yields the list back. The inductive
     step is `decode_concat_codepoint`; the base case is the empty
     fold's identity behaviour. -/
-theorem decode_encode_codepoints (cps : Array Nat)
+theorem decode_encode_codepoints (cps : List Nat)
     (h_all : ∀ cp ∈ cps, IsValidCodepoint cp) :
     decodeToCodepoints (encodeCodepoints cps) = cps := by
   rw [encodeCodepoints_eq_list cps]
-  rw [decode_encodeList cps.toList (fun cp h_mem => h_all cp (Array.mem_def.mpr h_mem))]
+  rw [decode_encodeList cps h_all]
 
 end Unicode.Codec.Utf8Roundtrip
