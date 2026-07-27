@@ -28,7 +28,7 @@ namespace Unicode.Segmentation.WordBreak
 open Unicode.Generated.WordBreakProperty (WBClass lookupWB)
 open Unicode.Generated.EmojiData (isExtendedPictographic)
 
--- The precompute builders are `Array.foldl (push carry; update carry)`. The
+-- The precompute builders are `List.foldl (append carry; update carry)`. The
 -- following bridges each to `List.foldl` over `lits`, so the entry at a
 -- position can be reasoned about as the fold's carry over the prefix.
 

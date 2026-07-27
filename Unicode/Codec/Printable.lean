@@ -518,7 +518,7 @@ theorem non_nfc_decomposed_e_not_printable :
 
 structure PrintableUtf8 (maxBytes : Nat) where
   bytes     : List UInt8
-  sizeOk    : bytes.size ≤ maxBytes
+  sizeOk    : bytes.length ≤ maxBytes
   printable : isPrintableUtf8Bytes bytes = true
 
 instance (maxBytes : Nat) : DecidableEq (PrintableUtf8 maxBytes) := fun a b =>

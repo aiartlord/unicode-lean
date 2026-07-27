@@ -146,11 +146,11 @@ def shiftedOrdered : Bool := adjacentOrdered .shifted rowsShifted
 /-- Convenience: ordering of the first `n` rows of the NON_IGNORABLE
     file. Used to bisect a partial failure of `nonIgnorableOrdered`. -/
 def nonIgnorableOrderedFirstN (n : Nat) : Bool :=
-  adjacentOrdered .nonIgnorable (rowsNonIgnorable.extract 0 n)
+  adjacentOrdered .nonIgnorable (rowsNonIgnorable.take n)
 
 /-- Convenience: ordering of the first `n` rows of the SHIFTED file. -/
 def shiftedOrderedFirstN (n : Nat) : Bool :=
-  adjacentOrdered .shifted (rowsShifted.extract 0 n)
+  adjacentOrdered .shifted (rowsShifted.take n)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 SMOKE TESTS  (small slices — fast feedback that the pipeline runs)
