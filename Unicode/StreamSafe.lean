@@ -7,7 +7,7 @@
   text never approaches this bound; an adversary feeding `a +
   10000 × U+0301` to an unbounded `toNFC` allocates a 10001-codepoint
   result. Stream-Safe enforcement at the input boundary keeps the
-  normalization buffer bounded by `O(input.size)` plus a fixed
+  normalization buffer bounded by `O(input.length)` plus a fixed
   constant, eliminating that DoS vector.
 
   Two operations:
@@ -54,11 +54,11 @@ def isNonStarter (cp : Nat) : Bool :=
 /-- True iff `cps` contains no run of more than `streamSafeLimit`
     consecutive non-starters. Implemented as a fuel-bounded scan
     that resets the counter on each starter. -/
-def isStreamSafeGo (cps : Array Nat) (i : Nat) (run : Nat) (fuel : Nat) : Bool :=
+def isStreamSafeGo (cps : List Nat) (i : Nat) (run : Nat) (fuel : Nat) : Bool :=
   match fuel with
   | 0           => true
   | fuel' + 1 =>
-    if h : i < cps.size then
+    if h : i < cps.length then
       let cp := cps[i]
       if isNonStarter cp then
         let run' := run + 1
@@ -71,27 +71,27 @@ def isStreamSafeGo (cps : Array Nat) (i : Nat) (run : Nat) (fuel : Nat) : Bool :
       true
 
 /-- True iff `cps` is already in Stream-Safe Text Format. -/
-def isStreamSafe (cps : Array Nat) : Bool :=
-  isStreamSafeGo cps 0 0 cps.size
+def isStreamSafe (cps : List Nat) : Bool :=
+  isStreamSafeGo cps 0 0 cps.length
 
 /-- Build a Stream-Safe Text representation of `cps` by inserting
     U+034F COMBINING GRAPHEME JOINER after every `streamSafeLimit`
     consecutive non-starters. The CGJ acts as a starter, so the
     counter resets to zero immediately after insertion. -/
-def toStreamSafeGo (cps : Array Nat) (i : Nat) (run : Nat)
-    (acc : Array Nat) (fuel : Nat) : Array Nat :=
+def toStreamSafeGo (cps : List Nat) (i : Nat) (run : Nat)
+    (acc : List Nat) (fuel : Nat) : List Nat :=
   match fuel with
   | 0           => acc
   | fuel' + 1 =>
-    if h : i < cps.size then
+    if h : i < cps.length then
       let cp := cps[i]
       if isNonStarter cp then
         if Nat.ble streamSafeLimit run then
-          toStreamSafeGo cps i 0 (acc.push cgj) fuel'
+          toStreamSafeGo cps i 0 (acc ++ [cgj]) fuel'
         else
-          toStreamSafeGo cps (i + 1) (run + 1) (acc.push cp) fuel'
+          toStreamSafeGo cps (i + 1) (run + 1) (acc ++ [cp]) fuel'
       else
-        toStreamSafeGo cps (i + 1) 0 (acc.push cp) fuel'
+        toStreamSafeGo cps (i + 1) 0 (acc ++ [cp]) fuel'
     else
       acc
 
@@ -99,8 +99,8 @@ def toStreamSafeGo (cps : Array Nat) (i : Nat) (run : Nat)
     where needed. A starter passes through unchanged; a non-starter
     triggers CGJ insertion when the consecutive non-starter run
     has reached the limit. -/
-def toStreamSafe (cps : Array Nat) : Array Nat :=
-  toStreamSafeGo cps 0 0 #[] (cps.size * 2 + 1)
+def toStreamSafe (cps : List Nat) : List Nat :=
+  toStreamSafeGo cps 0 0 [] (cps.length * 2 + 1)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 BASIC TEST VECTORS
@@ -148,22 +148,22 @@ theorem ccc_cgj : canonicalCombiningClass 0x034F = 0 :=
     (lookupRow_none_of_all_ne 0x034F rows_omit_cgj)
 
 /-- ASCII letters are starters; the empty array is trivially Stream-Safe. -/
-theorem isStreamSafe_empty : isStreamSafe #[] = true := by decide
+theorem isStreamSafe_empty : isStreamSafe [] = true := by decide
 
 theorem isStreamSafe_ascii :
-    isStreamSafe #[0x61, 0x62, 0x63] = true := by
+    isStreamSafe [0x61, 0x62, 0x63] = true := by
   simp [isStreamSafe, isStreamSafeGo, isNonStarter,
         ccc_ascii_a, ccc_ascii_b, ccc_ascii_c]
 
 /-- A single combining mark following a starter is Stream-Safe. -/
 theorem isStreamSafe_one_combine :
-    isStreamSafe #[0x61, 0x0301] = true := by
+    isStreamSafe [0x61, 0x0301] = true := by
   simp [isStreamSafe, isStreamSafeGo, isNonStarter, streamSafeLimit,
         ccc_ascii_a, ccc_combining_acute]
 
 /-- Thirty combining marks in a row are still Stream-Safe (boundary case). -/
 theorem isStreamSafe_thirty_marks :
-    isStreamSafe #[0x61,
+    isStreamSafe [0x61,
       0x0301, 0x0301, 0x0301, 0x0301, 0x0301,
       0x0301, 0x0301, 0x0301, 0x0301, 0x0301,
       0x0301, 0x0301, 0x0301, 0x0301, 0x0301,
@@ -175,7 +175,7 @@ theorem isStreamSafe_thirty_marks :
 
 /-- Thirty-one combining marks in a row are NOT Stream-Safe. -/
 theorem isStreamSafe_thirtyone_marks :
-    isStreamSafe #[0x61,
+    isStreamSafe [0x61,
       0x0301, 0x0301, 0x0301, 0x0301, 0x0301,
       0x0301, 0x0301, 0x0301, 0x0301, 0x0301,
       0x0301, 0x0301, 0x0301, 0x0301, 0x0301,
@@ -192,20 +192,20 @@ theorem isStreamSafe_thirtyone_marks :
 
 /-- The transformation is a no-op on ASCII text. -/
 theorem toStreamSafe_ascii :
-    toStreamSafe #[0x61, 0x62, 0x63] = #[0x61, 0x62, 0x63] := by
+    toStreamSafe [0x61, 0x62, 0x63] = [0x61, 0x62, 0x63] := by
   simp [toStreamSafe, toStreamSafeGo, isNonStarter,
         ccc_ascii_a, ccc_ascii_b, ccc_ascii_c]
 
 /-- The transformation is a no-op on a single combining mark. -/
 theorem toStreamSafe_one_combine :
-    toStreamSafe #[0x61, 0x0301] = #[0x61, 0x0301] := by
+    toStreamSafe [0x61, 0x0301] = [0x61, 0x0301] := by
   simp [toStreamSafe, toStreamSafeGo, isNonStarter, streamSafeLimit,
         ccc_ascii_a, ccc_combining_acute]
 
 /-- The transformation inserts a CGJ after the 30th non-starter
     in a 31-run, splitting the run. -/
 theorem toStreamSafe_thirtyone_marks :
-    let input := #[0x61,
+    let input := [0x61,
       0x0301, 0x0301, 0x0301, 0x0301, 0x0301,
       0x0301, 0x0301, 0x0301, 0x0301, 0x0301,
       0x0301, 0x0301, 0x0301, 0x0301, 0x0301,
@@ -213,7 +213,7 @@ theorem toStreamSafe_thirtyone_marks :
       0x0301, 0x0301, 0x0301, 0x0301, 0x0301,
       0x0301, 0x0301, 0x0301, 0x0301, 0x0301,
       0x0301]
-    let expected := #[0x61,
+    let expected := [0x61,
       0x0301, 0x0301, 0x0301, 0x0301, 0x0301,
       0x0301, 0x0301, 0x0301, 0x0301, 0x0301,
       0x0301, 0x0301, 0x0301, 0x0301, 0x0301,
@@ -228,7 +228,7 @@ theorem toStreamSafe_thirtyone_marks :
 
 /-- A run of 31 marks transforms into a Stream-Safe form. -/
 theorem toStreamSafe_makes_safe :
-    isStreamSafe (toStreamSafe #[0x61,
+    isStreamSafe (toStreamSafe [0x61,
       0x0301, 0x0301, 0x0301, 0x0301, 0x0301,
       0x0301, 0x0301, 0x0301, 0x0301, 0x0301,
       0x0301, 0x0301, 0x0301, 0x0301, 0x0301,
