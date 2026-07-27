@@ -179,6 +179,11 @@ theorem runAll_size (input : List Nat) : (runAll input).length = 26 := by
 -- §2 Spot checks
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+-- The concrete-input checks below reduce the full 26-family detector sweep
+-- over a codepoint list; the structural List recursion runs deeper than the
+-- default elaborator limit, so raise it for this section.
+set_option maxRecDepth 100000
+
 /-- Pure ASCII "Hello" fires no general-Unicode detector.  The
     cryptographic-stability detectors are filtered out of this
     baseline because they are context-dependent — Bip39Canonical
@@ -196,12 +201,12 @@ theorem ascii_hello_no_unicode_hazards :
         | .clear         => true
         | .informational => true
         | .hazard        => false
-        | .compound      => false) = true := by decide
+        | .compound      => false) = true := by decide +kernel
 
 /-- The Arabic ligature U+FDFA fires at least one detector
     (NormalizationBomb, at minimum). -/
 theorem arabic_ligature_hazardous :
-    anyHazard [0xFDFA] = true := by decide
+    anyHazard [0xFDFA] = true := by decide +kernel
 
 /-- The Math Italic identifier fires multiple detectors at once —
     at minimum HomoglyphConfusable, IdentifierFormDrift (per-cp
@@ -209,6 +214,6 @@ theorem arabic_ligature_hazardous :
     string admissibility drift). -/
 theorem math_italic_admin_multiple_hazards :
     (hazardsOnly [0x1D44E, 0x1D451, 0x1D45A, 0x1D456, 0x1D45B]).length ≥ 3 := by
-  decide
+  decide +kernel
 
 end Unicode.Security.RunAll
