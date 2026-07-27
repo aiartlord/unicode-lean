@@ -79,7 +79,7 @@ inductive SubThreat where
     classifier fired; for the clear case it is implicitly empty. -/
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : List UInt8)
   deriving Inhabited
 
 /-- Verdict — the structured output of `detect`. -/
@@ -204,7 +204,7 @@ def detect (input : List Nat) : Verdict :=
     let decoded := decodeTagRun (tagDetail.map (fun d => d.2))
     -- Phase 4: pick sub-threat.
     let sub := pickSubThreat input tagDetail decoded
-    let payloadBytes : ByteArray := decoded.toUTF8
+    let payloadBytes : List UInt8 := decoded.toUTF8.toList
     let tagPositions := tagDetail.map (fun d => d.1)
     { input := input,
       classify := .hazard sub tagPositions payloadBytes,
@@ -232,20 +232,20 @@ def SubThreat.tag : SubThreat → String
 def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × List Nat × ByteArray) false
+      Function.const (SubThreat × List Nat × List UInt8) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification (`none` for `.clear`). -/
 def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
-      Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
+      Function.const (List Nat × List UInt8) (some sub.tag) (positions, decoded)
 
 /-- Positions list of a classification (empty for `.clear`). -/
 def Classification.positions : Classification → List Nat
   | .clear                     => []
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × ByteArray) positions (sub, decoded)
+      Function.const (SubThreat × List UInt8) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 Spot checks
