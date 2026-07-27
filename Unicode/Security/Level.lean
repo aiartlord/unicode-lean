@@ -107,6 +107,11 @@ import Unicode.Security.RunAll
 
 set_option maxHeartbeats 4000000
 
+-- The admissibility spot-checks reduce the full detector sweep over concrete
+-- codepoint lists; the structural List recursion runs past the default
+-- elaborator depth, so raise the limit for the whole module.
+set_option maxRecDepth 100000
+
 namespace Unicode.Security.Level
 
 open Unicode.Security.Calculus
