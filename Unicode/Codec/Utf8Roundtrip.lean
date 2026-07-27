@@ -1165,7 +1165,10 @@ theorem decode_concat_codepoint (cp : Nat) (h : IsValidCodepoint cp)
 theorem decode_encode_codepoint (cp : Nat) (h : IsValidCodepoint cp) :
     decodeToCodepoints (encodeCodepoint cp) = [cp] := by
   have hConcat := decode_concat_codepoint cp h ([] : List UInt8)
-  simpa [List.append_nil] using hConcat
+  have hNil : decodeToCodepoints ([] : List UInt8) = [] := by
+    unfold decodeToCodepoints foldCodepointsWithOffset foldCodepointsWithOffsetGo
+    rfl
+  simpa [List.append_nil, hNil] using hConcat
 
 /-- ASCII (1-byte) codepoint roundtrip. -/
 theorem decode_encode_ascii (cp : Nat) (h : cp < 0x80) :
@@ -1347,7 +1350,8 @@ theorem decode_encodeList (cps : List Nat)
       h_all cp' (List.mem_cons_of_mem cp h_mem)
     show decodeToCodepoints (encodeCodepoint cp ++ encodeCodepointsList tail)
         = (cp :: tail)
-    rw [decode_concat_codepoint cp h_cp (encodeCodepointsList tail), ih h_tail]
+    rw [decode_concat_codepoint cp h_cp (encodeCodepointsList tail), ih h_tail,
+      List.singleton_append]
 
 /-- **List-level UTF-8 roundtrip.** Decoding the UTF-8 encoding of a
     list of valid codepoints yields the list back. The inductive
