@@ -29,8 +29,8 @@ set_option maxHeartbeats 4000000
 /-- The pinned skeleton table is exactly the skeleton pipeline applied to the
     curated target list, position by position. -/
 theorem canonicalTargetSkeletons_correct :
-    canonicalTargetSkeletons.toList
-      = canonicalTargets.toList.map
+    canonicalTargetSkeletons
+      = canonicalTargets.map
           (fun t => Unicode.Confusables.letterSkeleton t.cps) := by
   decide +kernel
 
