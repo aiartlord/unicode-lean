@@ -63,7 +63,7 @@ def lookupConfusable? (cp : Nat) : Option (List Nat) :=
 def substitute (cps : List Nat) : List Nat :=
   cps.flatMap (fun cp =>
     match lookupConfusable? cp with
-    | some tgt => tgt.toList
+    | some tgt => tgt
     | none     => [cp])
 
 /-- The case-insensitive confusables skeleton of a codepoint
