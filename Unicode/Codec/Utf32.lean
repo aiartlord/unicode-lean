@@ -34,8 +34,8 @@ open Unicode.Codec.Utf8Roundtrip (IsValidCodepoint)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Encode a scalar codepoint as 4 bytes in big-endian order. -/
-def encodeOneBE (cp : Nat) : ByteArray :=
-  ByteArray.mk #[
+def encodeOneBE (cp : Nat) : List UInt8 :=
+  [
     UInt8.ofNat ((cp >>> 24) &&& 0xFF),
     UInt8.ofNat ((cp >>> 16) &&& 0xFF),
     UInt8.ofNat ((cp >>> 8) &&& 0xFF),
@@ -43,8 +43,8 @@ def encodeOneBE (cp : Nat) : ByteArray :=
   ]
 
 /-- Encode a scalar codepoint as 4 bytes in little-endian order. -/
-def encodeOneLE (cp : Nat) : ByteArray :=
-  ByteArray.mk #[
+def encodeOneLE (cp : Nat) : List UInt8 :=
+  [
     UInt8.ofNat (cp &&& 0xFF),
     UInt8.ofNat ((cp >>> 8) &&& 0xFF),
     UInt8.ofNat ((cp >>> 16) &&& 0xFF),
@@ -52,12 +52,12 @@ def encodeOneLE (cp : Nat) : ByteArray :=
   ]
 
 /-- Concatenate the UTF-32-BE encodings of a codepoint sequence. -/
-def encodeBE (cps : Array Nat) : ByteArray :=
-  cps.foldl (fun acc cp => acc ++ encodeOneBE cp) ByteArray.empty
+def encodeBE (cps : List Nat) : List UInt8 :=
+  cps.foldl (fun acc cp => acc ++ encodeOneBE cp) ([] : List UInt8)
 
 /-- Concatenate the UTF-32-LE encodings of a codepoint sequence. -/
-def encodeLE (cps : Array Nat) : ByteArray :=
-  cps.foldl (fun acc cp => acc ++ encodeOneLE cp) ByteArray.empty
+def encodeLE (cps : List Nat) : List UInt8 :=
+  cps.foldl (fun acc cp => acc ++ encodeOneLE cp) ([] : List UInt8)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 DECODER (single codepoint, strict)
@@ -65,12 +65,12 @@ def encodeLE (cps : Array Nat) : ByteArray :=
 
 /-- Decode 4 bytes as a big-endian UTF-32 codepoint, returning
     `none` on surrogate values or values exceeding U+10FFFF. -/
-def decodeOneBE (bs : ByteArray) : Option Nat :=
-  if h : bs.size = 4 then
-    have h0 : (0 : Nat) < bs.size := by rw [h]; omega
-    have h1 : (1 : Nat) < bs.size := by rw [h]; omega
-    have h2 : (2 : Nat) < bs.size := by rw [h]; omega
-    have h3 : (3 : Nat) < bs.size := by rw [h]; omega
+def decodeOneBE (bs : List UInt8) : Option Nat :=
+  if h : bs.length = 4 then
+    have h0 : (0 : Nat) < bs.length := by rw [h]; omega
+    have h1 : (1 : Nat) < bs.length := by rw [h]; omega
+    have h2 : (2 : Nat) < bs.length := by rw [h]; omega
+    have h3 : (3 : Nat) < bs.length := by rw [h]; omega
     let cp := ((bs[0]'h0).toNat <<< 24)
             ||| ((bs[1]'h1).toNat <<< 16)
             ||| ((bs[2]'h2).toNat <<< 8)
@@ -82,12 +82,12 @@ def decodeOneBE (bs : ByteArray) : Option Nat :=
 
 /-- Decode 4 bytes as a little-endian UTF-32 codepoint, returning
     `none` on surrogate values or values exceeding U+10FFFF. -/
-def decodeOneLE (bs : ByteArray) : Option Nat :=
-  if h : bs.size = 4 then
-    have h0 : (0 : Nat) < bs.size := by rw [h]; omega
-    have h1 : (1 : Nat) < bs.size := by rw [h]; omega
-    have h2 : (2 : Nat) < bs.size := by rw [h]; omega
-    have h3 : (3 : Nat) < bs.size := by rw [h]; omega
+def decodeOneLE (bs : List UInt8) : Option Nat :=
+  if h : bs.length = 4 then
+    have h0 : (0 : Nat) < bs.length := by rw [h]; omega
+    have h1 : (1 : Nat) < bs.length := by rw [h]; omega
+    have h2 : (2 : Nat) < bs.length := by rw [h]; omega
+    have h3 : (3 : Nat) < bs.length := by rw [h]; omega
     let cp := (bs[0]'h0).toNat
             ||| ((bs[1]'h1).toNat <<< 8)
             ||| ((bs[2]'h2).toNat <<< 16)
@@ -98,7 +98,7 @@ def decodeOneLE (bs : ByteArray) : Option Nat :=
   else none
 
 theorem decodeOneBE_mk4 (b0 b1 b2 b3 : UInt8) :
-    decodeOneBE (ByteArray.mk #[b0, b1, b2, b3]) =
+    decodeOneBE ([b0, b1, b2, b3]) =
       let cp := (b0.toNat <<< 24)
             ||| (b1.toNat <<< 16)
             ||| (b2.toNat <<< 8)
@@ -109,7 +109,7 @@ theorem decodeOneBE_mk4 (b0 b1 b2 b3 : UInt8) :
   rfl
 
 theorem decodeOneLE_mk4 (b0 b1 b2 b3 : UInt8) :
-    decodeOneLE (ByteArray.mk #[b0, b1, b2, b3]) =
+    decodeOneLE ([b0, b1, b2, b3]) =
       let cp := b0.toNat
             ||| (b1.toNat <<< 8)
             ||| (b2.toNat <<< 16)
@@ -444,9 +444,9 @@ theorem decodeOneLE_beyondMax_rejected :
 
 /-- Decoder rejects inputs whose length is not exactly 4. -/
 theorem decodeOneBE_too_short :
-    decodeOneBE (ByteArray.mk #[0x00, 0x00, 0x00]) = none := by decide
+    decodeOneBE ([0x00, 0x00, 0x00]) = none := by decide
 
 theorem decodeOneBE_too_long :
-    decodeOneBE (ByteArray.mk #[0x00, 0x00, 0x00, 0x41, 0x00]) = none := by decide
+    decodeOneBE ([0x00, 0x00, 0x00, 0x41, 0x00]) = none := by decide
 
 end Unicode.Codec.Utf32

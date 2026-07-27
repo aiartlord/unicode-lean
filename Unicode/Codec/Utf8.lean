@@ -158,17 +158,17 @@ theorem step_cont_with_ascii_rejects :
 -- §3 WALKER: firstInvalidUtf8Offset, isValidUtf8
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Fuel-based walker over `bs`. `fuel` is initialized to `bs.size` which is
+/-- Fuel-based walker over `bs`. `fuel` is initialized to `bs.length` which is
     always sufficient since we advance `i` by one per step. The `fuel = 0`
-    branch is structurally unreachable when entered with `fuel = bs.size` and
+    branch is structurally unreachable when entered with `fuel = bs.length` and
     `i ≤ fuel`; it returns `none` defensively. -/
-def firstInvalidUtf8OffsetGo (bs : ByteArray) : Utf8State → Nat → Nat → Nat
+def firstInvalidUtf8OffsetGo (bs : List UInt8) : Utf8State → Nat → Nat → Nat
     → Option (Nat × Utf8RejectKind)
   | st, i, seqStart, fuel =>
     match fuel with
     | 0 => none
     | f + 1 =>
-    if hi : i < bs.size then
+    if hi : i < bs.length then
       let b := bs[i]'hi
       match utf8DecodeStep st b with
       | .continue next =>
@@ -199,13 +199,13 @@ def firstInvalidUtf8OffsetGo (bs : ByteArray) : Utf8State → Nat → Nat → Na
     machine transitions to a reject state, or `none` if the whole array is
     valid UTF-8. Offset for `.overlongEncoding` is the START BYTE of the
     offending sequence; for other reject kinds it is the byte that triggered
-    the rejection. Truncated sequences report offset = bs.size. -/
-def firstInvalidUtf8Offset (bs : ByteArray) : Option (Nat × Utf8RejectKind) :=
-  firstInvalidUtf8OffsetGo bs .expectStart 0 0 (bs.size + 1)
+    the rejection. Truncated sequences report offset = bs.length. -/
+def firstInvalidUtf8Offset (bs : List UInt8) : Option (Nat × Utf8RejectKind) :=
+  firstInvalidUtf8OffsetGo bs .expectStart 0 0 (bs.length + 1)
 
-def isValidUtf8 (bs : ByteArray) : Bool := (firstInvalidUtf8Offset bs).isNone
+def isValidUtf8 (bs : List UInt8) : Bool := (firstInvalidUtf8Offset bs).isNone
 
-theorem firstInvalidUtf8Offset_none_iff (bs : ByteArray) :
+theorem firstInvalidUtf8Offset_none_iff (bs : List UInt8) :
     firstInvalidUtf8Offset bs = none ↔ isValidUtf8 bs = true := by
   unfold isValidUtf8
   cases h : firstInvalidUtf8Offset bs with
@@ -216,40 +216,40 @@ theorem firstInvalidUtf8Offset_none_iff (bs : ByteArray) :
 -- §4 CONCRETE VALIDATION THEOREMS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-theorem empty_is_valid : isValidUtf8 ByteArray.empty = true := by decide
+theorem empty_is_valid : isValidUtf8 ([] : List UInt8) = true := by decide
 
-theorem hello_is_valid : isValidUtf8 "hello".toUTF8 = true := by decide
+theorem hello_is_valid : isValidUtf8 "hello".toUTF8.toList = true := by decide
 
-theorem ascii_digits_valid : isValidUtf8 "0123456789".toUTF8 = true := by decide
+theorem ascii_digits_valid : isValidUtf8 "0123456789".toUTF8.toList = true := by decide
 
-theorem accented_is_valid : isValidUtf8 "héllo".toUTF8 = true := by decide
+theorem accented_is_valid : isValidUtf8 "héllo".toUTF8.toList = true := by decide
 
-theorem cjk_is_valid : isValidUtf8 "日本".toUTF8 = true := by decide
+theorem cjk_is_valid : isValidUtf8 "日本".toUTF8.toList = true := by decide
 
 theorem bare_continuation_rejected :
-    firstInvalidUtf8Offset (ByteArray.mk #[0x80]) = some (0, .invalidStartByte) := by
+    firstInvalidUtf8Offset ([0x80]) = some (0, .invalidStartByte) := by
   decide
 
 theorem overlong_nul_rejected :
-    firstInvalidUtf8Offset (ByteArray.mk #[0xC0, 0x80]) = some (0, .invalidStartByte) := by
+    firstInvalidUtf8Offset ([0xC0, 0x80]) = some (0, .invalidStartByte) := by
   -- 0xC0 itself is pre-rejected as invalid start (it would be overlong 2-byte).
   decide
 
 theorem overlong_3byte_rejected :
-    firstInvalidUtf8Offset (ByteArray.mk #[0xE0, 0x80, 0x80]) = some (0, .overlongEncoding) := by
+    firstInvalidUtf8Offset ([0xE0, 0x80, 0x80]) = some (0, .overlongEncoding) := by
   -- 0xE0 0x80 0x80 decodes to U+0000, minCp for 3-byte is 0x800 → overlongEncoding.
   decide
 
 theorem truncated_3byte_rejected :
-    firstInvalidUtf8Offset (ByteArray.mk #[0xE2, 0x80]) = some (2, .truncatedSequence) := by
+    firstInvalidUtf8Offset ([0xE2, 0x80]) = some (2, .truncatedSequence) := by
   decide
 
 theorem surrogate_rejected :
-    firstInvalidUtf8Offset (ByteArray.mk #[0xED, 0xA0, 0x80]) = some (2, .surrogateCodepoint) := by
+    firstInvalidUtf8Offset ([0xED, 0xA0, 0x80]) = some (2, .surrogateCodepoint) := by
   decide
 
 theorem beyond_max_rejected :
-    firstInvalidUtf8Offset (ByteArray.mk #[0xF4, 0x90, 0x80, 0x80])
+    firstInvalidUtf8Offset ([0xF4, 0x90, 0x80, 0x80])
       = some (3, .codepointBeyondMax) := by
   decide
 
@@ -268,13 +268,13 @@ theorem beyond_max_rejected :
     the function is total (returns `acc` on malformed input) but the
     emitted-codepoint sequence has no specified meaning in that case. -/
 def foldCodepointsWithOffsetGo {α : Type}
-    (bs : ByteArray) (f : α → Nat → Nat → α)
+    (bs : List UInt8) (f : α → Nat → Nat → α)
     : Utf8State → Nat → Nat → α → Nat → α
   | st, i, seqStart, acc, fuel =>
     match fuel with
     | 0 => acc
     | fuel' + 1 =>
-    if hi : i < bs.size then
+    if hi : i < bs.length then
       let b := bs[i]'hi
       match utf8DecodeStep st b with
       | .continue next =>
@@ -290,13 +290,13 @@ def foldCodepointsWithOffsetGo {α : Type}
       | .reject kind => Function.const Utf8RejectKind acc kind
     else acc
 
-def foldCodepointsWithOffset {α : Type} (bs : ByteArray) (init : α)
+def foldCodepointsWithOffset {α : Type} (bs : List UInt8) (init : α)
     (f : α → Nat → Nat → α) : α :=
-  foldCodepointsWithOffsetGo bs f .expectStart 0 0 init (bs.size + 1)
+  foldCodepointsWithOffsetGo bs f .expectStart 0 0 init (bs.length + 1)
 
 /-- First codepoint (with byte-offset) satisfying the predicate, or `none`.
     Requires `isValidUtf8 bs = true` for semantically meaningful results. -/
-def firstCodepointWhere (bs : ByteArray) (p : Nat → Bool) : Option (Nat × Nat) :=
+def firstCodepointWhere (bs : List UInt8) (p : Nat → Bool) : Option (Nat × Nat) :=
   foldCodepointsWithOffset bs (Option.none : Option (Nat × Nat))
     (fun acc off cp =>
       match acc with
@@ -304,24 +304,24 @@ def firstCodepointWhere (bs : ByteArray) (p : Nat → Bool) : Option (Nat × Nat
       | none   => if p cp then some (off, cp) else none)
 
 theorem fold_empty_identity {α : Type} (init : α) (f : α → Nat → Nat → α) :
-    foldCodepointsWithOffset ByteArray.empty init f = init := by
+    foldCodepointsWithOffset ([] : List UInt8) init f = init := by
   unfold foldCodepointsWithOffset foldCodepointsWithOffsetGo
   simp
 
 theorem no_bidi_in_hello :
-    firstCodepointWhere "hello".toUTF8
+    firstCodepointWhere "hello".toUTF8.toList
         (fun cp => (0x202A ≤ cp && cp ≤ 0x202E) || (0x2066 ≤ cp && cp ≤ 0x2069)) = none := by
   decide
 
 theorem find_bidi_override_in_input :
     -- "a" (0x61) + U+202E (0xE2 0x80 0xAE) + "b" (0x62)
-    firstCodepointWhere (ByteArray.mk #[0x61, 0xE2, 0x80, 0xAE, 0x62])
+    firstCodepointWhere ([0x61, 0xE2, 0x80, 0xAE, 0x62])
         (fun cp => 0x202A ≤ cp && cp ≤ 0x202E) = some (1, 0x202E) := by
   decide
 
 theorem find_bom_in_input :
     -- BOM is 0xEF 0xBB 0xBF
-    firstCodepointWhere (ByteArray.mk #[0xEF, 0xBB, 0xBF, 0x61])
+    firstCodepointWhere ([0xEF, 0xBB, 0xBF, 0x61])
         (fun cp => cp == 0xFEFF) = some (0, 0xFEFF) := by
   decide
 
@@ -342,19 +342,19 @@ theorem find_bom_in_input :
     Every codepoint the validator emits is in the Unicode scalar range
     (excluding surrogates, ≤ U+10FFFF), so `Char.ofNat cp` always produces
     a valid Char (no silent fallback). -/
-def toStringFromValid (bs : ByteArray) (hValid : isValidUtf8 bs = true) : String :=
+def toStringFromValid (bs : List UInt8) (hValid : isValidUtf8 bs = true) : String :=
   Function.const (isValidUtf8 bs = true)
     (foldCodepointsWithOffset bs "" (fun acc offset cp =>
       Function.const Nat (acc.push (Char.ofNat cp)) offset))
     hValid
 
 theorem hello_decodes_to_hello :
-    toStringFromValid "hello".toUTF8 (by decide) = "hello" := by decide
+    toStringFromValid "hello".toUTF8.toList (by decide) = "hello" := by decide
 
 theorem empty_decodes_to_empty :
-    toStringFromValid ByteArray.empty (by decide) = "" := by decide
+    toStringFromValid ([] : List UInt8) (by decide) = "" := by decide
 
 theorem accented_decodes :
-    toStringFromValid "héllo".toUTF8 (by decide) = "héllo" := by decide
+    toStringFromValid "héllo".toUTF8.toList (by decide) = "héllo" := by decide
 
 end Unicode.Codec.Utf8

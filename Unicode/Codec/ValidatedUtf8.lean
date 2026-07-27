@@ -8,7 +8,7 @@
   state machine in `Unicode.Codec.Utf8`.
 
   Rationale: the ingestion layer is security-critical. A plain `String`
-  or `ByteArray` field on a codec output type carries no claim about
+  or `List UInt8` field on a codec output type carries no claim about
   its UTF-8 validity — downstream consumers have to either re-validate
   or trust that the producer validated (and hope the producer didn't
   regress). `ValidatedUtf8` makes the claim type-level, so a downstream
@@ -27,36 +27,36 @@ open Unicode.Codec.Utf8 (isValidUtf8)
 -- §1 REFINEMENT TYPE
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- A `ByteArray` that has been validated as strict RFC 3629 UTF-8.
+/-- A `List UInt8` that has been validated as strict RFC 3629 UTF-8.
     The `valid` field is a proof that the underlying bytes pass
     `Unicode.Codec.Utf8.isValidUtf8`; the smart constructor
     `validateUtf8` below is the only blessed way to build a
     `ValidatedUtf8`. -/
 structure ValidatedUtf8 where
-  bytes : ByteArray
+  bytes : List UInt8
   valid : isValidUtf8 bytes = true
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 SMART CONSTRUCTOR
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Validate a `ByteArray` and, on success, return a `ValidatedUtf8`
+/-- Validate a `List UInt8` and, on success, return a `ValidatedUtf8`
     carrying the RFC 3629 validity proof. Returns `none` when the
     bytes fail the strict state machine (overlong, surrogate,
     > U+10FFFF, invalid start/continuation, truncated).
 
     The input bytes are stored by reference — no copy, no normalisation. -/
-def validateUtf8 (bs : ByteArray) : Option ValidatedUtf8 :=
+def validateUtf8 (bs : List UInt8) : Option ValidatedUtf8 :=
   if h : isValidUtf8 bs = true then
     some ⟨bs, h⟩
   else
     none
 
-/-- Consume the validity claim, returning the underlying `ByteArray`.
+/-- Consume the validity claim, returning the underlying `List UInt8`.
     After this call the validity claim is no longer carried at the
     type level — the caller owns the "these bytes are RFC 3629 valid"
     reasoning from here forward. -/
-def ValidatedUtf8.unwrap (v : ValidatedUtf8) : ByteArray :=
+def ValidatedUtf8.unwrap (v : ValidatedUtf8) : List UInt8 :=
   v.bytes
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -67,7 +67,7 @@ def ValidatedUtf8.unwrap (v : ValidatedUtf8) : ByteArray :=
     Structural equivalence justifying the smart constructor: validation
     at the `Option` level agrees with validation at the `Bool` predicate
     level. -/
-theorem validateUtf8_isSome_iff (bs : ByteArray) :
+theorem validateUtf8_isSome_iff (bs : List UInt8) :
     (validateUtf8 bs).isSome = true ↔ isValidUtf8 bs = true := by
   unfold validateUtf8
   by_cases h : isValidUtf8 bs = true
@@ -90,20 +90,20 @@ theorem unwrap_valid (v : ValidatedUtf8) :
 -- §4 CONCRETE CONSTRUCTION THEOREMS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-theorem empty_validates : (validateUtf8 ByteArray.empty).isSome = true := by
+theorem empty_validates : (validateUtf8 ([] : List UInt8)).isSome = true := by
   decide
 
-theorem hello_validates : (validateUtf8 "hello".toUTF8).isSome = true := by
+theorem hello_validates : (validateUtf8 "hello".toUTF8.toList).isSome = true := by
   decide
 
-theorem accented_validates : (validateUtf8 "héllo".toUTF8).isSome = true := by
+theorem accented_validates : (validateUtf8 "héllo".toUTF8.toList).isSome = true := by
   decide
 
-theorem cjk_validates : (validateUtf8 "日本".toUTF8).isSome = true := by
+theorem cjk_validates : (validateUtf8 "日本".toUTF8.toList).isSome = true := by
   decide
 
 theorem bare_continuation_rejected :
-    validateUtf8 (ByteArray.mk #[0x80]) = none := by
+    validateUtf8 ([0x80]) = none := by
   decide
 
 end Unicode.Codec.ValidatedUtf8

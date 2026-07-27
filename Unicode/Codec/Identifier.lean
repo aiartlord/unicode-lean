@@ -81,9 +81,9 @@ def firstInvalidIdentifierContinueList :
     the offset and value of the first byte that fails
     `isIdentifierContinueByte`. Returns `none` when every position from
     `i` onward is a valid continuation byte. -/
-def firstInvalidIdentifierContinueFrom (bs : ByteArray) (i : Nat) :
+def firstInvalidIdentifierContinueFrom (bs : List UInt8) (i : Nat) :
     Option (Nat × UInt8) :=
-  firstInvalidIdentifierContinueList i (bs.data.toList.drop i)
+  firstInvalidIdentifierContinueList i (bs.drop i)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 AGGREGATE PREDICATE
@@ -91,33 +91,33 @@ def firstInvalidIdentifierContinueFrom (bs : ByteArray) (i : Nat) :
 
 /-- ASCII-identifier predicate: non-empty, valid start byte at position
     zero, and every subsequent byte a valid continuation byte. -/
-def isValidIdentifierBytes (bs : ByteArray) : Bool :=
-  if h : 0 < bs.size then
+def isValidIdentifierBytes (bs : List UInt8) : Bool :=
+  if h : 0 < bs.length then
     isIdentifierStartByte (bs[0]'h)
       && (firstInvalidIdentifierContinueFrom bs 1).isNone
   else
     false
 
 theorem hello_is_identifier :
-    isValidIdentifierBytes (ByteArray.mk #[0x68, 0x65, 0x6C, 0x6C, 0x6F]) = true := by
+    isValidIdentifierBytes ([0x68, 0x65, 0x6C, 0x6C, 0x6F]) = true := by
   rfl
 theorem var_1_is_identifier :
-    isValidIdentifierBytes (ByteArray.mk #[0x76, 0x61, 0x72, 0x5F, 0x31]) = true := by
+    isValidIdentifierBytes ([0x76, 0x61, 0x72, 0x5F, 0x31]) = true := by
   rfl
 theorem underscore_start :
-    isValidIdentifierBytes (ByteArray.mk #[0x5F]) = true := by
+    isValidIdentifierBytes ([0x5F]) = true := by
   rfl
 theorem empty_not_identifier :
-    isValidIdentifierBytes ByteArray.empty = false := by
+    isValidIdentifierBytes List UInt8.empty = false := by
   rfl
 theorem leading_digit_not :
-    isValidIdentifierBytes (ByteArray.mk #[0x31, 0x76, 0x61, 0x72]) = false := by
+    isValidIdentifierBytes ([0x31, 0x76, 0x61, 0x72]) = false := by
   rfl
 theorem embedded_space_not :
-    isValidIdentifierBytes (ByteArray.mk #[0x61, 0x20, 0x62]) = false := by
+    isValidIdentifierBytes ([0x61, 0x20, 0x62]) = false := by
   rfl
 theorem high_bit_not :
-    isValidIdentifierBytes (ByteArray.mk #[0x41, 0xFF]) = false := by
+    isValidIdentifierBytes ([0x41, 0xFF]) = false := by
   rfl
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -127,8 +127,8 @@ theorem high_bit_not :
 /-- A byte sequence carrying its size bound and identifier-validity
     proof. -/
 structure IdentifierUtf8 (maxBytes : Nat) where
-  bytes   : ByteArray
-  sizeOk  : bytes.size ≤ maxBytes
+  bytes   : List UInt8
+  sizeOk  : bytes.length ≤ maxBytes
   validId : isValidIdentifierBytes bytes = true
 
 instance (maxBytes : Nat) : DecidableEq (IdentifierUtf8 maxBytes) := fun a b =>
@@ -141,11 +141,11 @@ instance (maxBytes : Nat) : DecidableEq (IdentifierUtf8 maxBytes) := fun a b =>
 -- §5 CONSTRUCTION
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Build an `IdentifierUtf8` value from a `ByteArray`, returning `none`
+/-- Build an `IdentifierUtf8` value from a `List UInt8`, returning `none`
     when either the size bound or identifier validity is violated. -/
-def IdentifierUtf8.ofBytes? (maxBytes : Nat) (bs : ByteArray) :
+def IdentifierUtf8.ofBytes? (maxBytes : Nat) (bs : List UInt8) :
     Option (IdentifierUtf8 maxBytes) :=
-  if hSize : bs.size ≤ maxBytes then
+  if hSize : bs.length ≤ maxBytes then
     if hValid : isValidIdentifierBytes bs = true then
       some ⟨bs, hSize, hValid⟩
     else none

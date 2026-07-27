@@ -38,22 +38,22 @@ open Unicode.Codec.Utf8 (firstInvalidUtf8Offset)
     Defined via `firstInvalidUtf8Offset.isNone` so any downstream
     offset-tracking variant remains by-definition consistent with
     this Boolean form. -/
-def isUtf8Blob (bs : ByteArray) : Bool :=
+def isUtf8Blob (bs : List UInt8) : Bool :=
   (firstInvalidUtf8Offset bs).isNone
 
-theorem empty_is_blob : isUtf8Blob ByteArray.empty = true := by decide
-theorem hello_is_blob : isUtf8Blob "hello".toUTF8 = true := by decide
-theorem accented_is_blob : isUtf8Blob "héllo".toUTF8 = true := by decide
-theorem cjk_is_blob : isUtf8Blob "日本".toUTF8 = true := by decide
+theorem empty_is_blob : isUtf8Blob ([] : List UInt8) = true := by decide
+theorem hello_is_blob : isUtf8Blob "hello".toUTF8.toList = true := by decide
+theorem accented_is_blob : isUtf8Blob "héllo".toUTF8.toList = true := by decide
+theorem cjk_is_blob : isUtf8Blob "日本".toUTF8.toList = true := by decide
 
 /-- The opaque blob predicate accepts content the printable profile
     rejects (e.g. bidi-override controls). Hardened callers must
     therefore use the printable profile instead of this predicate. -/
 theorem bidi_override_is_blob :
-    isUtf8Blob (ByteArray.mk #[0xE2, 0x80, 0xAE]) = true := by decide
+    isUtf8Blob ([0xE2, 0x80, 0xAE]) = true := by decide
 
 theorem invalid_start_not_blob :
-    isUtf8Blob (ByteArray.mk #[0x80]) = false := by decide
+    isUtf8Blob ([0x80]) = false := by decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 REFINEMENT TYPE
@@ -61,8 +61,8 @@ theorem invalid_start_not_blob :
 
 /-- A byte sequence carrying its size bound and UTF-8 validity proof. -/
 structure Utf8Blob (maxBytes : Nat) where
-  bytes     : ByteArray
-  sizeOk    : bytes.size ≤ maxBytes
+  bytes     : List UInt8
+  sizeOk    : bytes.length ≤ maxBytes
   validUtf8 : isUtf8Blob bytes = true
 
 instance (maxBytes : Nat) : DecidableEq (Utf8Blob maxBytes) := fun a b =>
@@ -75,11 +75,11 @@ instance (maxBytes : Nat) : DecidableEq (Utf8Blob maxBytes) := fun a b =>
 -- §3 CONSTRUCTION
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Build a `Utf8Blob` value from a `ByteArray`, returning `none` when
+/-- Build a `Utf8Blob` value from a `List UInt8`, returning `none` when
     either the size bound or UTF-8 validity is violated. -/
-def Utf8Blob.ofBytes? (maxBytes : Nat) (bs : ByteArray) :
+def Utf8Blob.ofBytes? (maxBytes : Nat) (bs : List UInt8) :
     Option (Utf8Blob maxBytes) :=
-  if hSize : bs.size ≤ maxBytes then
+  if hSize : bs.length ≤ maxBytes then
     if hValid : isUtf8Blob bs = true then
       some ⟨bs, hSize, hValid⟩
     else none
