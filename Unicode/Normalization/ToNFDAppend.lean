@@ -5,7 +5,7 @@
   flavours:
 
   * `toNFD_append_starter_trivial` — for starters with empty canonical
-    decomposition (`fullCanonicalDecompose cp = #[cp]`). Proof is direct
+    decomposition (`fullCanonicalDecompose cp = [cp]`). Proof is direct
     via `reorder_append_starter`.
 
   * `toNFD_append_starter_general` — for any starter not in the small
@@ -68,7 +68,7 @@ theorem reorder_singleton_starter (cp : Nat)
     identity on the singleton. -/
 theorem toNFD_singleton_trivial
     (cp : Nat) (hCp : Lookup.canonicalCombiningClass cp = 0)
-    (hFCD : Decompose.fullCanonicalDecompose cp = #[cp]) :
+    (hFCD : Decompose.fullCanonicalDecompose cp = [cp]) :
     NFC.toNFD [cp] = [cp] := by
   unfold NFC.toNFD
   rw [Distribute.decomposeSequence_singleton cp]
@@ -81,7 +81,7 @@ theorem toNFD_singleton_trivial
 theorem toNFD_append_starter_trivial
     (X : List Nat) (cp : Nat)
     (hCp : Lookup.canonicalCombiningClass cp = 0)
-    (hFCD : Decompose.fullCanonicalDecompose cp = #[cp]) :
+    (hFCD : Decompose.fullCanonicalDecompose cp = [cp]) :
     NFC.toNFD (X ++ [cp]) = NFC.toNFD X ++ NFC.toNFD [cp] := by
   rw [toNFD_singleton_trivial cp hCp hFCD]
   unfold NFC.toNFD
@@ -96,25 +96,25 @@ theorem toNFD_append_starter_trivial
 
 /-- An array is "starter-headed" when it is non-empty and its first
     element has `ccc = 0`. -/
-structure StarterHead (arr : Array Nat) : Prop where
-  nonEmpty : 0 < arr.size
+structure StarterHead (arr : List Nat) : Prop where
+  nonEmpty : 0 < arr.length
   firstCCC : Lookup.canonicalCombiningClass (arr[0]'nonEmpty) = 0
 
 /-- Boolean companion: returns `true` iff the array is non-empty and its
     first element is a starter. -/
-def starterHeadBool (arr : Array Nat) : Bool :=
-  if h : 0 < arr.size then
+def starterHeadBool (arr : List Nat) : Bool :=
+  if h : 0 < arr.length then
     decide (Lookup.canonicalCombiningClass (arr[0]'h) = 0)
   else
     false
 
 /-- The Boolean predicate reflects the `Prop` predicate. -/
-theorem starterHeadBool_iff (arr : Array Nat) :
+theorem starterHeadBool_iff (arr : List Nat) :
     starterHeadBool arr = true ↔ StarterHead arr := by
   constructor
   · intro hB
     unfold starterHeadBool at hB
-    by_cases h : 0 < arr.size
+    by_cases h : 0 < arr.length
     · simp only [h, dite_true] at hB
       exact ⟨h, of_decide_eq_true hB⟩
     · simp only [h, dite_false] at hB
@@ -143,7 +143,7 @@ theorem decomposeSyllable_isSome (cp : Nat) (h : Hangul.isHangulSyllable cp = tr
   by_cases ht : (cp - Hangul.SBase) % Hangul.TCount = 0 <;> simp [ht]
 
 theorem hangul_fcd_eq (cp : Nat) (h : Hangul.isHangulSyllable cp = true) :
-    Decompose.fullCanonicalDecompose cp = (Hangul.decomposeSyllable? cp).getD #[] := by
+    Decompose.fullCanonicalDecompose cp = (Hangul.decomposeSyllable? cp).getD [] := by
   unfold Decompose.fullCanonicalDecompose
   rw [Decompose.fullCanonicalDecomposeFuel.eq_def]
   simp only [Decompose.maxDepth]
@@ -171,7 +171,7 @@ theorem ccc_lJamo (cp : Nat) (hlo : 0x1100 ≤ cp) (hhi : cp ≤ 0x1112) :
     exact decide_eq_true (by omega))]
 
 theorem hangul_size_pos (cp : Nat) (h : Hangul.isHangulSyllable cp = true) :
-    0 < (Decompose.fullCanonicalDecompose cp).size := by
+    0 < (Decompose.fullCanonicalDecompose cp).length := by
   rw [hangul_fcd_eq cp h]
   unfold Hangul.decomposeSyllable?
   rw [if_pos h]
@@ -241,8 +241,8 @@ theorem fcdFuelL_eq : ∀ (fuel cp : Nat),
       by_cases he : (Lookup.canonicalDecomposition cp).isEmpty = true
       · rw [if_pos he, if_pos he]
       · rw [if_neg (by simp [he]), if_neg (by simp [he])]
-        have hstep : (fun (acc : Array Nat) cp' => acc ++ Decompose.fullCanonicalDecomposeFuel fuel cp')
-            = (fun (acc : Array Nat) cp' => acc ++ fcdFuelL fuel cp') := by
+        have hstep : (fun (acc : List Nat) cp' => acc ++ Decompose.fullCanonicalDecomposeFuel fuel cp')
+            = (fun (acc : List Nat) cp' => acc ++ fcdFuelL fuel cp') := by
           funext acc cp'; rw [ih cp']
         rw [hstep]
 
@@ -255,9 +255,9 @@ theorem canonicalCombiningClass_eq (cp : Nat) :
   unfold Lookup.canonicalCombiningClass canonicalCombiningClassL
   rw [lookupRow_eq_fun]; cases lookupRowL cp <;> rfl
 
-theorem starterHeadBool_eq (arr : Array Nat) : starterHeadBool arr = starterHeadBoolL arr := by
+theorem starterHeadBool_eq (arr : List Nat) : starterHeadBool arr = starterHeadBoolL arr := by
   unfold starterHeadBool starterHeadBoolL
-  by_cases h : 0 < arr.size <;> simp [h, canonicalCombiningClass_eq]
+  by_cases h : 0 < arr.length <;> simp [h, canonicalCombiningClass_eq]
 
 theorem origP_eq_rowP (row : UnicodeData.UnicodeDataRow) :
     (isAnomalousStarter row.codepoint
@@ -287,11 +287,10 @@ theorem rows_fullCanonicalDecompose_starterHead :
       isAnomalousStarter row.codepoint
         || decide (Lookup.canonicalCombiningClass row.codepoint ≠ 0)
         || starterHeadBool (Decompose.fullCanonicalDecompose row.codepoint)) = true := by
-  show UnicodeData.rowsList.toArray.all (fun (row : UnicodeData.UnicodeDataRow) =>
+  show UnicodeData.rowsList.all (fun (row : UnicodeData.UnicodeDataRow) =>
       isAnomalousStarter row.codepoint
         || decide (Lookup.canonicalCombiningClass row.codepoint ≠ 0)
         || starterHeadBool (Decompose.fullCanonicalDecompose row.codepoint)) = true
-  rw [List.all_toArray]
   have hP : (fun (row : UnicodeData.UnicodeDataRow) =>
       isAnomalousStarter row.codepoint
         || decide (Lookup.canonicalCombiningClass row.codepoint ≠ 0)
@@ -307,7 +306,7 @@ theorem rows_fullCanonicalDecompose_starterHead :
 /-- For any starter `cp` that is not anomalous, `fullCanonicalDecompose cp`
     is starter-headed. Dispatches across three cases: cp is a Hangul
     syllable, cp appears in `UnicodeData.rows`, or cp is not in the table
-    (fallback, `fullCanonicalDecompose cp = #[cp]`). -/
+    (fallback, `fullCanonicalDecompose cp = [cp]`). -/
 theorem fullCanonicalDecompose_starterHead
     (cp : Nat) (hCp : Lookup.canonicalCombiningClass cp = 0)
     (hNotAnomalous : isAnomalousStarter cp = false) :
@@ -332,23 +331,23 @@ theorem fullCanonicalDecompose_starterHead
       | true => exact absurd hIsHangul hHangul
     cases hLookup : Lookup.lookupRow cp with
     | none =>
-      -- cp is not in the table: canonicalDecomposition = #[], full decomp = #[cp]
-      have hDecompEmpty : Lookup.canonicalDecomposition cp = #[] := by
+      -- cp is not in the table: canonicalDecomposition = [], full decomp = [cp]
+      have hDecompEmpty : Lookup.canonicalDecomposition cp = [] := by
         unfold Lookup.canonicalDecomposition
         rw [hLookup]
       have hDsyl : Hangul.decomposeSyllable? cp = none := by
         unfold Hangul.decomposeSyllable?
         rw [hNotHangulFalse]
         simp
-      have hFCD : Decompose.fullCanonicalDecompose cp = #[cp] := by
-        show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth cp = #[cp]
+      have hFCD : Decompose.fullCanonicalDecompose cp = [cp] := by
+        show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth cp = [cp]
         unfold Decompose.maxDepth
         unfold Decompose.fullCanonicalDecomposeFuel
         rw [hDsyl]
         simp [hDecompEmpty]
       rw [hFCD]
       refine ⟨by simp, ?headCcc⟩
-      have hAccess : ((#[cp] : Array Nat)[0]'(by simp)) = cp := by simp
+      have hAccess : (([cp] : List Nat)[0]'(by simp)) = cp := by simp
       rw [hAccess]
       exact hCp
     | some row =>
@@ -371,30 +370,14 @@ theorem fullCanonicalDecompose_starterHead
 
 /-- Destructure a starter-headed array into a singleton head + tail. -/
 theorem starterHead_destructure
-    (arr : Array Nat) (h : StarterHead arr) :
-    ∃ (head : Nat) (tail : Array Nat),
-      arr = #[head] ++ tail
+    (arr : List Nat) (h : StarterHead arr) :
+    ∃ (head : Nat) (tail : List Nat),
+      arr = [head] ++ tail
         ∧ Lookup.canonicalCombiningClass head = 0 := by
-  match hL : arr.toList with
-  | [] =>
-    exfalso
-    have hLen : arr.toList.length = arr.size := by simp
-    rw [hL] at hLen
-    simp at hLen
-    have hPos := h.nonEmpty
-    omega
-  | head :: rest =>
-    have hArrEq : arr = #[head] ++ rest.toArray := by
-      apply Array.toList_inj.mp
-      rw [Array.toList_append, hL]
-      simp
-    refine ⟨head, rest.toArray, hArrEq, ?headCcc⟩
-    have hSH_shaped : StarterHead (#[head] ++ rest.toArray) := hArrEq ▸ h
-    have hSizeShaped : 0 < (#[head] ++ rest.toArray).size := hSH_shaped.nonEmpty
-    have hFirstShaped := hSH_shaped.firstCCC
-    have hOneLt : (0 : Nat) < (#[head] : Array Nat).size := by simp
-    rw [Array.getElem_append_left hOneLt] at hFirstShaped
-    simpa using hFirstShaped
+  match arr, h with
+  | [], h => exact absurd h.nonEmpty (by simp)
+  | head :: rest, h =>
+    exact ⟨head, rest, rfl, by simpa using h.firstCCC⟩
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- GENERAL STARTER-APPEND ABSORBING FOR NON-ANOMALOUS STARTERS
@@ -415,15 +398,14 @@ theorem toNFD_append_starter_general
   obtain ⟨head, tail, hEq, hHeadCCC⟩ :=
     starterHead_destructure (Decompose.fullCanonicalDecompose cp) hSH
   rw [hEq]
-  simp only [Array.toList_append, List.toList_toArray]
-  rw [show Decompose.decomposeSequence X ++ ([head] ++ tail.toList)
-         = Decompose.decomposeSequence X ++ [head] ++ tail.toList
+  rw [show Decompose.decomposeSequence X ++ ([head] ++ tail)
+         = Decompose.decomposeSequence X ++ [head] ++ tail
        from by rw [List.append_assoc]]
   rw [ReorderAppend.reorder_append_starter_middle
-        (Decompose.decomposeSequence X) head tail.toList hHeadCCC]
-  rw [show ([head] ++ tail.toList : List Nat) = [] ++ [head] ++ tail.toList
+        (Decompose.decomposeSequence X) head tail hHeadCCC]
+  rw [show ([head] ++ tail : List Nat) = [] ++ [head] ++ tail
        from by simp]
-  rw [ReorderAppend.reorder_append_starter_middle [] head tail.toList hHeadCCC]
+  rw [ReorderAppend.reorder_append_starter_middle [] head tail hHeadCCC]
   rw [Reorder.reorder_empty]
   simp
 
@@ -435,7 +417,7 @@ theorem toNFD_append_starter_general
 theorem toNFD_congr_append_starter_trivial
     {a b : List Nat} (cp : Nat)
     (hCp : Lookup.canonicalCombiningClass cp = 0)
-    (hFCD : Decompose.fullCanonicalDecompose cp = #[cp])
+    (hFCD : Decompose.fullCanonicalDecompose cp = [cp])
     (h : NFC.toNFD a = NFC.toNFD b) :
     NFC.toNFD (a ++ [cp]) = NFC.toNFD (b ++ [cp]) := by
   rw [toNFD_append_starter_trivial a cp hCp hFCD]
