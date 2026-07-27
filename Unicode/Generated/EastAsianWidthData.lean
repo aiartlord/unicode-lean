@@ -25,8 +25,8 @@ inductive EastAsianWidthClass where
 
 /-- Materialized East_Asian_Width explicitRangesList, one `(lo, hi, class)` triple
     per source range in UCD codepoint order. Kernel-reducible: a
-    `List.find?` over this table walks linearly, where the equivalent
-    `Array.find?` would re-materialize the whole table quadratically. -/
+    `List.find?` over this table walks linearly, where a random-access
+    representation would re-materialize the whole table quadratically. -/
 def explicitRangesList : List (Nat × Nat × EastAsianWidthClass) := [
   (0, 31, EastAsianWidthClass.N),
   (32, 32, EastAsianWidthClass.Na),
@@ -2710,8 +2710,8 @@ def explicitRangesList : List (Nat × Nat × EastAsianWidthClass) := [
 
 /-- Materialized East_Asian_Width defaultRangesList, one `(lo, hi, class)` triple
     per source range in UCD codepoint order. Kernel-reducible: a
-    `List.find?` over this table walks linearly, where the equivalent
-    `Array.find?` would re-materialize the whole table quadratically. -/
+    `List.find?` over this table walks linearly, where a random-access
+    representation would re-materialize the whole table quadratically. -/
 def defaultRangesList : List (Nat × Nat × EastAsianWidthClass) := [
   (0, 1114111, EastAsianWidthClass.N)
 ]

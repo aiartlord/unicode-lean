@@ -11,7 +11,7 @@ namespace Unicode.Generated.BIP39.Korean
 set_option maxRecDepth 100000
 
 /-- The 2,048 words in canonical BIP-39 order. -/
-def wordlist : Array String := #[
+def wordlist : List String := [
   "가격",
   "가끔",
   "가난",
@@ -2062,6 +2062,6 @@ def wordlist : Array String := #[
   "힘껏"
 ]
 
-theorem wordlist_count : wordlist.size = 2048 := by decide
+theorem wordlist_count : wordlist.length = 2048 := by decide
 
 end Unicode.Generated.BIP39.Korean
