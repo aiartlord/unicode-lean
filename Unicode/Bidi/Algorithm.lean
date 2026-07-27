@@ -342,13 +342,14 @@ def xStep (paragraphLevel : Level) (cp : Nat) (s : XState) : XState :=
       -- direction of the stack frame restored after popping the
       -- matched isolate scope.
       let resolved := applyOverride bc newTop
+      let rec0 : CharRecord :=
+        { codepoint := cp, origClass := bc, level := newTop.level,
+          resolvedClass := resolved }
       { s with
         stack := popped',
         overflowEmbed := 0,
         validIsolates := s.validIsolates - 1,
-        records := s.records ++
-          [{ codepoint := cp, origClass := bc, level := newTop.level,
-            resolvedClass := resolved }] }
+        records := s.records ++ [rec0] }
   | .PDF =>
     if s.overflowIsolate > 0 then s
     else if s.overflowEmbed > 0 then { s with overflowEmbed := s.overflowEmbed - 1 }
