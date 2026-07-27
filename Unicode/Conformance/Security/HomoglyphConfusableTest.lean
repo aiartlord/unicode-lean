@@ -30,7 +30,7 @@ def rawFixture : String :=
   include_str "../../Ucd/Security/HomoglyphConfusableTest.txt"
 
 /-- All parsed rows from the bundled fixture. -/
-def rows : Array Row := parseFixture rawFixture
+def rows : List Row := parseFixture rawFixture
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 Per-family classification-name mapping
@@ -42,7 +42,7 @@ def projectClassify
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
 /-- Project an `Classification` to the positions array. -/
-def projectPositions (c : Classification) : Array Nat :=
+def projectPositions (c : Classification) : List Nat :=
   c.positions
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -87,33 +87,33 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 41 := by decide
+theorem row_count : rows.length = 41 := by decide
 
 /-- Section coverage gates. -/
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 5 := by decide
+    (rows.filter (·.sectionName = "Clear")).length ≥ 5 := by decide
 
 theorem covers_target_match :
-    (rows.filter (·.sectionName = "TargetMatch")).size ≥ 8 := by
+    (rows.filter (·.sectionName = "TargetMatch")).length ≥ 8 := by
   decide
 
 theorem covers_math_alpha :
-    (rows.filter (·.sectionName = "MathAlpha")).size ≥ 8 := by decide
+    (rows.filter (·.sectionName = "MathAlpha")).length ≥ 8 := by decide
 
 theorem covers_width_class :
-    (rows.filter (·.sectionName = "WidthClass")).size ≥ 5 := by
+    (rows.filter (·.sectionName = "WidthClass")).length ≥ 5 := by
   decide
 
 theorem covers_decomposition_swap :
-    (rows.filter (·.sectionName = "DecompositionSwap")).size ≥ 4 := by
+    (rows.filter (·.sectionName = "DecompositionSwap")).length ≥ 4 := by
   decide
 
 theorem covers_cross_script_mix :
-    (rows.filter (·.sectionName = "CrossScriptMix")).size ≥ 7 := by
+    (rows.filter (·.sectionName = "CrossScriptMix")).length ≥ 7 := by
   decide
 
 theorem covers_restriction_low :
-    (rows.filter (·.sectionName = "RestrictionLow")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "RestrictionLow")).length ≥ 3 := by
   decide
 
 /-- Regression: the Nethereum Oct-2025 typosquat fires `TargetMatch`. -/

@@ -36,7 +36,7 @@ def rawFixture : String :=
   include_str "../../Ucd/Security/SourceDisplayDivergenceTest.txt"
 
 /-- All parsed rows from the bundled fixture. -/
-def rows : Array Row := parseFixture rawFixture
+def rows : List Row := parseFixture rawFixture
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 Per-family classification-name mapping
@@ -48,7 +48,7 @@ def projectClassify
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
 /-- Project a `Classification` to the positions array. -/
-def projectPositions (c : Classification) : Array Nat :=
+def projectPositions (c : Classification) : List Nat :=
   c.positions
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -65,9 +65,9 @@ def metadataMatches (v : Verdict)
   match attr.get? "inner_tag" with
   | none           => true
   | some expected  =>
-    let fires : Array String :=
-      #[v.c1Tag, v.c2Tag, v.c3Tag, v.c5Tag, v.i1Tag].filterMap id
-    match fires.size with
+    let fires : List String :=
+      [v.c1Tag, v.c2Tag, v.c3Tag, v.c5Tag, v.i1Tag].filterMap id
+    match fires.length with
     | 1 => decide (fires[0]! = expected)
     | otherCount => Function.const Nat true otherCount
 
@@ -91,47 +91,47 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 32 := by decide
+theorem row_count : rows.length = 32 := by decide
 
 /-- Section coverage gates. -/
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 7 := by decide
+    (rows.filter (·.sectionName = "Clear")).length ≥ 7 := by decide
 
 theorem covers_tag_block :
-    (rows.filter (·.sectionName = "TagBlock")).size ≥ 4 := by decide
+    (rows.filter (·.sectionName = "TagBlock")).length ≥ 4 := by decide
 
 theorem covers_variation_selector :
-    (rows.filter (·.sectionName = "VariationSelector")).size ≥ 4 := by
+    (rows.filter (·.sectionName = "VariationSelector")).length ≥ 4 := by
   decide
 
 theorem covers_zero_width :
-    (rows.filter (·.sectionName = "ZeroWidth")).size ≥ 4 := by decide
+    (rows.filter (·.sectionName = "ZeroWidth")).length ≥ 4 := by decide
 
 theorem covers_bidi_control :
-    (rows.filter (·.sectionName = "BidiControl")).size ≥ 4 := by decide
+    (rows.filter (·.sectionName = "BidiControl")).length ≥ 4 := by decide
 
 theorem covers_identifier_homoglyph :
-    (rows.filter (·.sectionName = "IdentifierHomoglyph")).size ≥ 5 := by
+    (rows.filter (·.sectionName = "IdentifierHomoglyph")).length ≥ 5 := by
   decide
 
 theorem covers_compound :
-    (rows.filter (·.sectionName = "Compound")).size ≥ 4 := by decide
+    (rows.filter (·.sectionName = "Compound")).length ≥ 4 := by decide
 
 /-- Cross-family regression: the Nethereum typosquat IS caught even
     in the D1 compound aggregation. -/
 theorem nethereum_caught_via_d1 :
-    (detect #[0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75,
+    (detect [0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75,
               0x6D]).classify.tag = some "IdentifierHomoglyph" := by
   decide
 
 /-- Cross-family regression: GlassWorm-shape pure-VS payload IS caught. -/
 theorem vs_payload_caught_via_d1 :
-    (detect #[0x0061, 0xFE04, 0xFE01]).classify.tag
+    (detect [0x0061, 0xFE04, 0xFE01]).classify.tag
       = some "VariationSelector" := by decide
 
 /-- Cross-family regression: Trojan Source lone RLO IS caught. -/
 theorem rlo_caught_via_d1 :
-    (detect #[0x202E, 0x41]).classify.tag = some "BidiControl" := by
+    (detect [0x202E, 0x41]).classify.tag = some "BidiControl" := by
   decide
 
 end Unicode.Conformance.Security.SourceDisplayDivergenceTest
