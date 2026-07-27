@@ -36,9 +36,7 @@ theorem target_non_source_of_entry (source cp : Nat) (target : List Nat)
   rw [List.all_eq_true] at hAll
   have hEntryAll := hAll (source, target) hList
   rw [List.all_eq_true] at hEntryAll
-  rcases List.getElem_of_mem hMem with ⟨i, hi, hIEq⟩
-  have hBool := hEntryAll i hi
-  rw [hIEq] at hBool
+  have hBool := hEntryAll cp hMem
   simpa using hBool
 
 /-- An unguarded lookup hit yields only targets outside the source
@@ -64,9 +62,7 @@ theorem lookupRaw_target_non_source (source cp : Nat) (target : List Nat)
       rw [List.all_eq_true] at hAll
       have hEntryAll := hAll (source, target) hEntryPair
       rw [List.all_eq_true] at hEntryAll
-      rcases List.getElem_of_mem hMem with ⟨i, hi, hIEq⟩
-      have hBool := hEntryAll i hi
-      rw [hIEq] at hBool
+      have hBool := hEntryAll cp hMem
       simpa using hBool
 
 /-- A raw lookup hit is exactly a member of the generated folding list. -/
