@@ -7,10 +7,8 @@ sentence segmentation (UAX #14, #29), the collation algorithm
 identifier rule (UAX #31), PRECIS identifier preparation
 (RFC 8264 / 8265), Punycode (RFC 3492), strict UTF-8 / UTF-16 /
 UTF-32 codecs, BOM detection, and noncharacter detection —
-machine-checked in Lean 4.30.0 against UCD 17.0.0 and UCA 17.0.0.
-Lean core only: no Mathlib,
-no external dependencies, no project-local `axiom`, no runtime escape, and no
-intentional incomplete-proof placeholders.
+machine-checked in Lean 4.32.0 against UCD 17.0.0 and UCA 17.0.0.
+Self-contained on Lean 4 core and kernel-checked end to end.
 
 ## Pillars
 

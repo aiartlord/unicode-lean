@@ -47,7 +47,7 @@ def canonicalDecomposition (cp : Nat) : List Nat :=
     `true`, the codepoint decomposes canonically but must NOT recompose
     during NFC synthesis. -/
 def isCompositionExclusion (cp : Nat) : Bool :=
-  CompositionExclusions.codepoints.toList.any (fun candidate => candidate == cp)
+  CompositionExclusions.codepoints.any (fun candidate => candidate == cp)
 
 /-- Whether a codepoint is marked `Full_Composition_Exclusion` in
     DerivedNormalizationProps. Strictly broader than
