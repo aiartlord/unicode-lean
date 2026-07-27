@@ -6,7 +6,7 @@
   Canon precedent: `Continuity.Gateway.Request` uses `Temperature`, `Port`,
   `Penalty` as refinement types with structural validity proofs. This module
   carries that idiom to the Unicode pipeline — each normalization stage
-  consumes and produces `Array Nat` tagged with a structural invariant, so
+  consumes and produces `List Nat` tagged with a structural invariant, so
   composition threads the invariants through the type system rather than
   through hand-proven preservation lemmas at every step.
 
@@ -59,7 +59,7 @@ def IsCaseFolded (cps : List Nat) : Prop :=
     any element returns the singleton `[cp]`". -/
 def IsFullyDecomposed (cps : List Nat) : Prop :=
   ∀ cp ∈ cps,
-    Lookup.canonicalDecomposition cp = #[] ∧ Hangul.isHangulSyllable cp = false
+    Lookup.canonicalDecomposition cp = [] ∧ Hangul.isHangulSyllable cp = false
 
 /-- Every codepoint is admissible under the PRECIS IdentifierClass
     (UTS #39 Identifier_Status = Allowed and no disallowed PRECIS category). -/
@@ -76,7 +76,7 @@ def IsHSR (cps : List Nat) : Prop := Reorder.HasSortedRuns cps
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- REFINED ARRAY TYPES
 --
--- `{ cps : Array Nat // P cps }` gives the pipeline stages typed outputs
+-- `{ cps : List Nat // P cps }` gives the pipeline stages typed outputs
 -- the same way `Port` / `Temperature` / `Bounded α box n` work in
 -- `Continuity.Gateway` and `Continuity.Codec.Guards`.
 -- ═══════════════════════════════════════════════════════════════════════════════

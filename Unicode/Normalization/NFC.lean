@@ -17,7 +17,7 @@
       `NFC_QC = M`) or when a caller wants the full round-trip
       guarantee.
 
-  This module operates on codepoint sequences (`Array Nat`). Byte-level
+  This module operates on codepoint sequences (`List Nat`). Byte-level
   UTF-8 wrapping lands separately once the UTF-8 encode helpers are
   confirmed against the existing `Codec.Utf8` module.
 -/
@@ -52,7 +52,7 @@ def toNFC (cps : List Nat) : List Nat :=
     of the pinned ranges — they are pairwise disjoint, so scan order
     cannot change the answer. -/
 def nfcQCValue (cp : Nat) : DerivedNormalizationProps.NFC_QC :=
-  match DerivedNormalizationProps.nfcQC.toList.find?
+  match DerivedNormalizationProps.nfcQC.find?
       (fun t => decide (t.1 ≤ cp ∧ cp ≤ t.2.1)) with
   | some t => t.2.2
   | none => DerivedNormalizationProps.defaultNfcQC
@@ -60,14 +60,14 @@ def nfcQCValue (cp : Nat) : DerivedNormalizationProps.NFC_QC :=
 /-- Every pinned NFC_QC range begins at or above U+0300. One linear
     kernel pass over the range table. -/
 theorem nfcQC_ranges_above_0x0300 :
-    DerivedNormalizationProps.nfcQC.toList.all
+    DerivedNormalizationProps.nfcQC.all
       (fun t => decide (0x0300 ≤ t.1)) = true := by
   decide +kernel
 
 theorem nfcQCValue_below_first_range (cp : Nat) (h : cp < 0x0300) :
     nfcQCValue cp = DerivedNormalizationProps.defaultNfcQC := by
   unfold nfcQCValue
-  have hNone : DerivedNormalizationProps.nfcQC.toList.find?
+  have hNone : DerivedNormalizationProps.nfcQC.find?
       (fun t => decide (t.1 ≤ cp ∧ cp ≤ t.2.1)) = none := by
     rw [List.find?_eq_none]
     intro t ht
@@ -82,12 +82,12 @@ theorem nfcQCValue_first_range_N (cp : Nat)
     (hLo : 0x0340 ≤ cp) (hHi : cp ≤ 0x0341) :
     nfcQCValue cp = .N := by
   unfold nfcQCValue
-  have hHead : DerivedNormalizationProps.nfcQC.toList.find?
+  have hHead : DerivedNormalizationProps.nfcQC.find?
       (fun t => decide (t.1 ≤ cp ∧ cp ≤ t.2.1))
       = some (0x0340, 0x0341, DerivedNormalizationProps.NFC_QC.N) := by
-    have hCons : DerivedNormalizationProps.nfcQC.toList
+    have hCons : DerivedNormalizationProps.nfcQC
         = (0x0340, 0x0341, DerivedNormalizationProps.NFC_QC.N)
-            :: DerivedNormalizationProps.nfcQC.toList.tail := rfl
+            :: DerivedNormalizationProps.nfcQC.tail := rfl
     rewrite [hCons]
     exact List.find?_cons_of_pos (decide_eq_true ⟨hLo, hHi⟩)
   rw [hHead]
@@ -213,13 +213,13 @@ def toNFCQuick (cps : List Nat) : List Nat :=
 /-- LATIN CAPITAL LETTER H has no UnicodeData row (`CCC = 0`, no
     decomposition), so it decomposes to its own singleton. -/
 theorem canonicalDecomposition_latin_H :
-    Lookup.canonicalDecomposition 0x0048 = #[] :=
+    Lookup.canonicalDecomposition 0x0048 = [] :=
   Lookup.canonicalDecomposition_of_lookupRow_none 0x0048
     (Lookup.lookupRow_none_of_all_ne 0x0048 Reorder.rows_omit_latin_H)
 
 /-- LATIN SMALL LETTER I likewise decomposes to its own singleton. -/
 theorem canonicalDecomposition_latin_i :
-    Lookup.canonicalDecomposition 0x0069 = #[] :=
+    Lookup.canonicalDecomposition 0x0069 = [] :=
   Lookup.canonicalDecomposition_of_lookupRow_none 0x0069
     (Lookup.lookupRow_none_of_all_ne 0x0069 Reorder.rows_omit_latin_i)
 
@@ -227,13 +227,13 @@ theorem canonicalDecomposition_latin_i :
 theorem rows_decomp_cedilla :
     UnicodeData.rowsList.all (fun r =>
       decide (r.codepoint = 0x0327 →
-        r.canonicalDecomposition = #[])) = true := by
+        r.canonicalDecomposition = [])) = true := by
   decide +kernel
 
 /-- COMBINING CEDILLA has no canonical decomposition. -/
 theorem canonicalDecomposition_cedilla :
-    Lookup.canonicalDecomposition 0x0327 = #[] :=
-  Lookup.canonicalDecomposition_of_hit 0x0327 #[]
+    Lookup.canonicalDecomposition 0x0327 = [] :=
+  Lookup.canonicalDecomposition_of_hit 0x0327 []
     Reorder.rows_hit_cedilla rows_decomp_cedilla
 
 /-- Every row carrying U+030A records `CCC = 230`. -/
@@ -271,19 +271,19 @@ theorem ccc_jungseong_a : Lookup.canonicalCombiningClass 0x1161 = 0 :=
 
 /-- U+1100 has no canonical decomposition. -/
 theorem canonicalDecomposition_choseong_kiyeok :
-    Lookup.canonicalDecomposition 0x1100 = #[] :=
+    Lookup.canonicalDecomposition 0x1100 = [] :=
   Lookup.canonicalDecomposition_of_lookupRow_none 0x1100
     (Lookup.lookupRow_none_of_all_ne 0x1100 rows_omit_choseong_kiyeok)
 
 /-- U+1161 has no canonical decomposition. -/
 theorem canonicalDecomposition_jungseong_a :
-    Lookup.canonicalDecomposition 0x1161 = #[] :=
+    Lookup.canonicalDecomposition 0x1161 = [] :=
   Lookup.canonicalDecomposition_of_lookupRow_none 0x1161
     (Lookup.lookupRow_none_of_all_ne 0x1161 rows_omit_jungseong_a)
 
 /-- One fuel step on `H`: no decomposition, so its own singleton. -/
 theorem fcdf_latin_H (fuel : Nat) :
-    Decompose.fullCanonicalDecomposeFuel (fuel + 1) 0x0048 = #[0x0048] := by
+    Decompose.fullCanonicalDecomposeFuel (fuel + 1) 0x0048 = [0x0048] := by
   rw [Decompose.fullCanonicalDecomposeFuel.eq_def]
   simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
         Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
@@ -291,7 +291,7 @@ theorem fcdf_latin_H (fuel : Nat) :
 
 /-- One fuel step on `i`: no decomposition, so its own singleton. -/
 theorem fcdf_latin_i (fuel : Nat) :
-    Decompose.fullCanonicalDecomposeFuel (fuel + 1) 0x0069 = #[0x0069] := by
+    Decompose.fullCanonicalDecomposeFuel (fuel + 1) 0x0069 = [0x0069] := by
   rw [Decompose.fullCanonicalDecomposeFuel.eq_def]
   simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
         Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
@@ -300,7 +300,7 @@ theorem fcdf_latin_i (fuel : Nat) :
 /-- One fuel step on COMBINING CEDILLA: no decomposition, so its own
     singleton. -/
 theorem fcdf_cedilla (fuel : Nat) :
-    Decompose.fullCanonicalDecomposeFuel (fuel + 1) 0x0327 = #[0x0327] := by
+    Decompose.fullCanonicalDecomposeFuel (fuel + 1) 0x0327 = [0x0327] := by
   rw [Decompose.fullCanonicalDecomposeFuel.eq_def]
   simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
         Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
@@ -308,7 +308,7 @@ theorem fcdf_cedilla (fuel : Nat) :
 
 /-- One fuel step on HANGUL CHOSEONG KIYEOK: its own singleton. -/
 theorem fcdf_choseong_kiyeok (fuel : Nat) :
-    Decompose.fullCanonicalDecomposeFuel (fuel + 1) 0x1100 = #[0x1100] := by
+    Decompose.fullCanonicalDecomposeFuel (fuel + 1) 0x1100 = [0x1100] := by
   rw [Decompose.fullCanonicalDecomposeFuel.eq_def]
   simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
         Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
@@ -316,7 +316,7 @@ theorem fcdf_choseong_kiyeok (fuel : Nat) :
 
 /-- One fuel step on HANGUL JUNGSEONG A: its own singleton. -/
 theorem fcdf_jungseong_a (fuel : Nat) :
-    Decompose.fullCanonicalDecomposeFuel (fuel + 1) 0x1161 = #[0x1161] := by
+    Decompose.fullCanonicalDecomposeFuel (fuel + 1) 0x1161 = [0x1161] := by
   rw [Decompose.fullCanonicalDecomposeFuel.eq_def]
   simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
         Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
@@ -326,7 +326,7 @@ theorem fcdf_jungseong_a (fuel : Nat) :
     no table involved. -/
 theorem fcdf_hangul_GA (fuel : Nat) :
     Decompose.fullCanonicalDecomposeFuel (fuel + 1) 0xAC00
-      = #[0x1100, 0x1161] := by
+      = [0x1100, 0x1161] := by
   rw [Decompose.fullCanonicalDecomposeFuel.eq_def]
   simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
         Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
@@ -467,7 +467,7 @@ theorem reorder_jamo_LV :
 /-- One compose step: `H` registers as the active starter. -/
 theorem stepCompose_init_H :
     Compose.stepCompose Compose.initialState 0x0048
-      = { emitted := #[], starter := some 0x0048, buffer := [], maxCCC := 0 } := by
+      = { emitted := [], starter := some 0x0048, buffer := [], maxCCC := 0 } := by
   rw [Compose.stepCompose.eq_def]
   simp [Compose.initialState, Reorder.ccc_latin_H]
 
@@ -475,8 +475,8 @@ theorem stepCompose_init_H :
     takes over as starter. -/
 theorem stepCompose_H_i :
     Compose.stepCompose
-      { emitted := #[], starter := some 0x0048, buffer := [], maxCCC := 0 } 0x0069
-      = { emitted := #[0x0048], starter := some 0x0069, buffer := [],
+      { emitted := [], starter := some 0x0048, buffer := [], maxCCC := 0 } 0x0069
+      = { emitted := [0x0048], starter := some 0x0069, buffer := [],
           maxCCC := 0 } := by
   rw [Compose.stepCompose.eq_def]
   simp [Reorder.ccc_latin_i, primaryComposite_H_i]
@@ -484,23 +484,23 @@ theorem stepCompose_H_i :
 /-- One compose step: `A` registers as the active starter. -/
 theorem stepCompose_init_A :
     Compose.stepCompose Compose.initialState 0x0041
-      = { emitted := #[], starter := some 0x0041, buffer := [], maxCCC := 0 } := by
+      = { emitted := [], starter := some 0x0041, buffer := [], maxCCC := 0 } := by
   rw [Compose.stepCompose.eq_def]
   simp [Compose.initialState, Reorder.ccc_latin_A]
 
 /-- One compose step: grave after `A` primary-composes to `À`. -/
 theorem stepCompose_A_grave :
     Compose.stepCompose
-      { emitted := #[], starter := some 0x0041, buffer := [], maxCCC := 0 } 0x0300
-      = { emitted := #[], starter := some 0x00C0, buffer := [], maxCCC := 0 } := by
+      { emitted := [], starter := some 0x0041, buffer := [], maxCCC := 0 } 0x0300
+      = { emitted := [], starter := some 0x00C0, buffer := [], maxCCC := 0 } := by
   rw [Compose.stepCompose.eq_def]
   simp [Reorder.ccc_combining_grave, primaryComposite_A_grave]
 
 /-- One compose step: ring above after `A` primary-composes to `Å`. -/
 theorem stepCompose_A_ring :
     Compose.stepCompose
-      { emitted := #[], starter := some 0x0041, buffer := [], maxCCC := 0 } 0x030A
-      = { emitted := #[], starter := some 0x00C5, buffer := [], maxCCC := 0 } := by
+      { emitted := [], starter := some 0x0041, buffer := [], maxCCC := 0 } 0x030A
+      = { emitted := [], starter := some 0x00C5, buffer := [], maxCCC := 0 } := by
   rw [Compose.stepCompose.eq_def]
   simp [ccc_combining_ring, primaryComposite_A_ring]
 
@@ -508,8 +508,8 @@ theorem stepCompose_A_ring :
     buffers. -/
 theorem stepCompose_A_cedilla :
     Compose.stepCompose
-      { emitted := #[], starter := some 0x0041, buffer := [], maxCCC := 0 } 0x0327
-      = { emitted := #[], starter := some 0x0041, buffer := [0x0327],
+      { emitted := [], starter := some 0x0041, buffer := [], maxCCC := 0 } 0x0327
+      = { emitted := [], starter := some 0x0041, buffer := [0x0327],
           maxCCC := 202 } := by
   rw [Compose.stepCompose.eq_def]
   simp [Reorder.ccc_combining_cedilla, primaryComposite_A_cedilla]
@@ -518,9 +518,9 @@ theorem stepCompose_A_cedilla :
     still reaches the starter and composes to `À`. -/
 theorem stepCompose_A_cedilla_grave :
     Compose.stepCompose
-      { emitted := #[], starter := some 0x0041, buffer := [0x0327],
+      { emitted := [], starter := some 0x0041, buffer := [0x0327],
         maxCCC := 202 } 0x0300
-      = { emitted := #[], starter := some 0x00C0, buffer := [0x0327],
+      = { emitted := [], starter := some 0x00C0, buffer := [0x0327],
           maxCCC := 202 } := by
   rw [Compose.stepCompose.eq_def]
   simp [Reorder.ccc_combining_grave, primaryComposite_A_grave]
@@ -528,7 +528,7 @@ theorem stepCompose_A_cedilla_grave :
 /-- One compose step: HANGUL CHOSEONG KIYEOK registers as starter. -/
 theorem stepCompose_init_choseong :
     Compose.stepCompose Compose.initialState 0x1100
-      = { emitted := #[], starter := some 0x1100, buffer := [], maxCCC := 0 } := by
+      = { emitted := [], starter := some 0x1100, buffer := [], maxCCC := 0 } := by
   rw [Compose.stepCompose.eq_def]
   simp [Compose.initialState, ccc_choseong_kiyeok]
 
@@ -536,8 +536,8 @@ theorem stepCompose_init_choseong :
     algorithmically to HANGUL SYLLABLE GA. -/
 theorem stepCompose_LV :
     Compose.stepCompose
-      { emitted := #[], starter := some 0x1100, buffer := [], maxCCC := 0 } 0x1161
-      = { emitted := #[], starter := some 0xAC00, buffer := [], maxCCC := 0 } := by
+      { emitted := [], starter := some 0x1100, buffer := [], maxCCC := 0 } 0x1161
+      = { emitted := [], starter := some 0xAC00, buffer := [], maxCCC := 0 } := by
   rw [Compose.stepCompose.eq_def]
   simp [ccc_jungseong_a, Compose.primary_hangul_LV]
 
@@ -645,15 +645,15 @@ theorem primaryComposite_e_acute :
 /-- One compose step: `e` registers as the active starter. -/
 theorem stepCompose_init_e :
     Compose.stepCompose Compose.initialState 0x0065
-      = { emitted := #[], starter := some 0x0065, buffer := [], maxCCC := 0 } := by
+      = { emitted := [], starter := some 0x0065, buffer := [], maxCCC := 0 } := by
   rw [Compose.stepCompose.eq_def]
   simp [Compose.initialState, ccc_latin_e]
 
 /-- One compose step: acute after `e` primary-composes to `é`. -/
 theorem stepCompose_e_acute :
     Compose.stepCompose
-      { emitted := #[], starter := some 0x0065, buffer := [], maxCCC := 0 } 0x0301
-      = { emitted := #[], starter := some 0x00E9, buffer := [], maxCCC := 0 } := by
+      { emitted := [], starter := some 0x0065, buffer := [], maxCCC := 0 } 0x0301
+      = { emitted := [], starter := some 0x00E9, buffer := [], maxCCC := 0 } := by
   rw [Compose.stepCompose.eq_def]
   simp [Reorder.ccc_combining_acute, primaryComposite_e_acute]
 

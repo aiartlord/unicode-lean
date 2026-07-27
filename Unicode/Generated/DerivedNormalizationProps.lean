@@ -16,7 +16,7 @@ inductive NFC_QC where
   | M
   deriving DecidableEq, Repr, Inhabited
 
-def nfcQC : Array (Nat × Nat × NFC_QC) := #[
+def nfcQC : List (Nat × Nat × NFC_QC) := [
   (0x0340, 0x0341, .N),
   (0x0343, 0x0344, .N),
   (0x0374, 0x0374, .N),
@@ -145,7 +145,7 @@ def nfcQC : Array (Nat × Nat × NFC_QC) := #[
 
 def defaultNfcQC : NFC_QC := .Y
 
-def fullCompositionExclusion : Array (Nat × Nat) := #[
+def fullCompositionExclusion : List (Nat × Nat) := [
   (0x0340, 0x0341),
   (0x0343, 0x0344),
   (0x0374, 0x0374),
@@ -222,7 +222,7 @@ def fullCompositionExclusion : Array (Nat × Nat) := #[
   (0x02F800, 0x02FA1D)
 ]
 
-def nfkcQC : Array (Nat × Nat × NFC_QC) := #[
+def nfkcQC : List (Nat × Nat × NFC_QC) := [
   (0x00A0, 0x00A0, .N),
   (0x00A8, 0x00A8, .N),
   (0x00AA, 0x00AA, .N),
@@ -672,7 +672,7 @@ def nfkcQC : Array (Nat × Nat × NFC_QC) := #[
 
 def defaultNfkcQC : NFC_QC := .Y
 
-def nfdQC : Array (Nat × Nat × NFC_QC) := #[
+def nfdQC : List (Nat × Nat × NFC_QC) := [
   (0x00C0, 0x00C5, .N),
   (0x00C7, 0x00CF, .N),
   (0x00D1, 0x00D6, .N),
@@ -930,7 +930,7 @@ def nfdQC : Array (Nat × Nat × NFC_QC) := #[
 
 def defaultNfdQC : NFC_QC := .Y
 
-def nfkdQC : Array (Nat × Nat × NFC_QC) := #[
+def nfkdQC : List (Nat × Nat × NFC_QC) := [
   (0x00A0, 0x00A0, .N),
   (0x00A8, 0x00A8, .N),
   (0x00AA, 0x00AA, .N),
@@ -1526,8 +1526,8 @@ def dQCVal (s : String) : NFC_QC :=
 /-- Parse a QC row for the given property name. -/
 def dParseQC (prop : String) (line : String) : Option (Nat × Nat × NFC_QC) :=
   if (dTrim line).startsWith "#" then none else
-  let fields := (line.splitOn ";").toArray
-  if fields.size < 3 then none else
+  let fields := line.splitOn ";"
+  if fields.length < 3 then none else
   if dTrim fields[1]! != prop then none else
   let (lo, hi) := dRange (dTrim fields[0]!)
   let val := dQCVal (dTrim ((fields[2]!.takeWhile (· != '#')).toString))
@@ -1536,17 +1536,17 @@ def dParseQC (prop : String) (line : String) : Option (Nat × Nat × NFC_QC) :=
 /-- Parse a Full_Composition_Exclusion range row. -/
 def dParseExcl (line : String) : Option (Nat × Nat) :=
   if (dTrim line).startsWith "#" then none else
-  let fields := (line.splitOn ";").toArray
-  if fields.size < 2 then none else
+  let fields := line.splitOn ";"
+  if fields.length < 2 then none else
   if dTrim ((fields[1]!.takeWhile (· != '#')).toString) != "Full_Composition_Exclusion" then none else
   some (dRange (dTrim fields[0]!))
 
-def nfcQCParsed : Array (Nat × Nat × NFC_QC) :=
-  ((derivedNormalizationPropsRaw.splitOn "\n").filterMap (dParseQC "NFC_QC")).toArray
-def nfkcQCParsed : Array (Nat × Nat × NFC_QC) :=
-  ((derivedNormalizationPropsRaw.splitOn "\n").filterMap (dParseQC "NFKC_QC")).toArray
-def fullCompositionExclusionParsed : Array (Nat × Nat) :=
-  ((derivedNormalizationPropsRaw.splitOn "\n").filterMap dParseExcl).toArray
+def nfcQCParsed : List (Nat × Nat × NFC_QC) :=
+  ((derivedNormalizationPropsRaw.splitOn "\n").filterMap (dParseQC "NFC_QC"))
+def nfkcQCParsed : List (Nat × Nat × NFC_QC) :=
+  ((derivedNormalizationPropsRaw.splitOn "\n").filterMap (dParseQC "NFKC_QC"))
+def fullCompositionExclusionParsed : List (Nat × Nat) :=
+  ((derivedNormalizationPropsRaw.splitOn "\n").filterMap dParseExcl)
 
 #eval do
   unless nfcQC == nfcQCParsed do

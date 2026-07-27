@@ -24,7 +24,7 @@ open Unicode.Normalization Unicode.Generated
 
 /-- Tibetan vowel signs whose canonical decomposition begins with a non-starter
     (U+0F71, CCC = 129) — the complete UCD-17.0 anomaly set. -/
-def anomalousStarters : Array Nat := #[0x0F73, 0x0F75, 0x0F81]
+def anomalousStarters : List Nat := [0x0F73, 0x0F75, 0x0F81]
 
 def isAnomalousStarter (cp : Nat) : Bool :=
   anomalousStarters.contains cp
@@ -33,28 +33,28 @@ def isAnomalousStarter (cp : Nat) : Bool :=
 def lookupRowL (cp : Nat) : Option UnicodeData.UnicodeDataRow :=
   UnicodeDataIndex.lookupRow? cp
 
-def canonicalDecompositionL (cp : Nat) : Array Nat :=
+def canonicalDecompositionL (cp : Nat) : List Nat :=
   match lookupRowL cp with
   | some row => row.canonicalDecomposition
-  | none => #[]
+  | none => []
 
-def fcdFuelL : Nat → Nat → Array Nat
-  | 0,        _cp => #[]
+def fcdFuelL : Nat → Nat → List Nat
+  | 0,        _cp => []
   | fuel + 1, cp =>
     match Hangul.decomposeSyllable? cp with
     | some jamo => jamo
     | none =>
       let step := canonicalDecompositionL cp
-      if step.isEmpty then #[cp]
-      else step.foldl (fun acc cp' => acc ++ fcdFuelL fuel cp') #[]
+      if step.isEmpty then [cp]
+      else step.foldl (fun acc cp' => acc ++ fcdFuelL fuel cp') []
 
 def canonicalCombiningClassL (cp : Nat) : Nat :=
   match lookupRowL cp with
   | some row => row.canonicalCombiningClass
   | none => 0
 
-def starterHeadBoolL (arr : Array Nat) : Bool :=
-  if h : 0 < arr.size then decide (canonicalCombiningClassL (arr[0]'h) = 0) else false
+def starterHeadBoolL (arr : List Nat) : Bool :=
+  if h : 0 < arr.length then decide (canonicalCombiningClassL (arr[0]'h) = 0) else false
 
 /-- Per-row invariant over the List mirror: the row is anomalous, a non-starter,
     or its full canonical decomposition is starter-headed. -/
