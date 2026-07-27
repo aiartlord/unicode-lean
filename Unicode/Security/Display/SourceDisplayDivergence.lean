@@ -87,7 +87,7 @@ inductive SubThreat where
 /-- Top-level classification for D1. -/
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : List UInt8)
   deriving Inhabited
 
 /-- D1 verdict — carries all five sub-detector verdicts so a
@@ -128,11 +128,11 @@ def buildClassification
       | "C5" => .bidiControl pair.2
       | "I1" => .identifierHomoglyph pair.2
       | other => Function.const String (.compound [other]) other
-    .hazard sub [] ByteArray.empty
+    .hazard sub [] []
   | first :: second :: rest =>
     Function.const (List (String × String))
       (.hazard (.compound ((first :: second :: rest).map (fun pair => pair.1)))
-        [] ByteArray.empty)
+        [] [])
       rest
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -196,20 +196,20 @@ def SubThreat.tag : SubThreat → String
 def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × List Nat × ByteArray) false
+      Function.const (SubThreat × List Nat × List UInt8) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification. -/
 def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
-      Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
+      Function.const (List Nat × List UInt8) (some sub.tag) (positions, decoded)
 
 /-- Positions array of a classification. -/
 def Classification.positions : Classification → List Nat
   | .clear                     => []
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × ByteArray) positions (sub, decoded)
+      Function.const (SubThreat × List UInt8) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Spot checks

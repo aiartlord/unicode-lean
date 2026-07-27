@@ -82,7 +82,7 @@ inductive SubThreat where
 
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : List UInt8)
   deriving Inhabited
 
 structure Verdict where
@@ -99,11 +99,11 @@ def detect (input : List Nat) : Verdict :=
   let classification : Classification :=
     match firstLocaleDivergence .turkish input with
     | some (pos, cp) =>
-      .hazard (.turkishCaseDivergence pos cp) [pos] ByteArray.empty
+      .hazard (.turkishCaseDivergence pos cp) [pos] []
     | none =>
       match firstLocaleDivergence .lithuanian input with
       | some (pos, cp) =>
-        .hazard (.lithuanianCaseDivergence pos cp) [pos] ByteArray.empty
+        .hazard (.lithuanianCaseDivergence pos cp) [pos] []
       | none => .clear
   { input := input, classify := classification }
 
@@ -120,18 +120,18 @@ def SubThreat.tag : SubThreat → String
 def Classification.isClear : Classification → Bool
   | .clear                       => true
   | .hazard sub positions decoded =>
-    Function.const (SubThreat × List Nat × ByteArray) false
+    Function.const (SubThreat × List Nat × List UInt8) false
       (sub, positions, decoded)
 
 def Classification.tag : Classification → Option String
   | .clear                       => none
   | .hazard sub positions decoded =>
-    Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
+    Function.const (List Nat × List UInt8) (some sub.tag) (positions, decoded)
 
 def Classification.positions : Classification → List Nat
   | .clear                       => []
   | .hazard sub positions decoded =>
-    Function.const (SubThreat × ByteArray) positions (sub, decoded)
+    Function.const (SubThreat × List UInt8) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Spot checks
