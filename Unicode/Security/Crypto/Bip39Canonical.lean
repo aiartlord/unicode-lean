@@ -281,7 +281,7 @@ def wordlistCps (lang : Language) : List (List Nat) :=
     representations pinned to the same UCD source. -/
 def wordlistCpsDrift : Bool :=
   allLanguages.all (fun lang =>
-    Unicode.Generated.BIP39.wordlistCps lang == ((wordlist lang).map stringToCodepoints).toList)
+    Unicode.Generated.BIP39.wordlistCps lang == (wordlist lang).map stringToCodepoints)
 
 /-- True iff `word` (as codepoints) appears in `lang`'s wordlist. -/
 def isInWordlist (lang : Language) (word : List Nat) : Bool :=
