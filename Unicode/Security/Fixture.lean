@@ -106,24 +106,24 @@ def parseDecC : List Char → Option Nat
 
 /-- Parse a space-separated hex codepoint list (char-list worker).
     Empty tokens are ignored. -/
-def parseCodepointListC (cs : List Char) : Array Nat :=
+def parseCodepointListC (cs : List Char) : List Nat :=
   ((splitOnC ' ' cs).filterMap (fun tok =>
     let t := trimC tok
-    if t.isEmpty then none else some (parseHexC t))).toArray
+    if t.isEmpty then none else some (parseHexC t)))
 
 /-- Parse a space-separated hex codepoint list. Empty tokens are ignored. -/
-def parseCodepointList (s : String) : Array Nat :=
+def parseCodepointList (s : String) : List Nat :=
   parseCodepointListC s.toList
 
 /-- Parse a comma-separated decimal-`Nat` list (char-list worker).
     Empty tokens are ignored. -/
-def parseDecimalListC (cs : List Char) : Array Nat :=
+def parseDecimalListC (cs : List Char) : List Nat :=
   ((splitOnC ',' cs).filterMap (fun tok =>
     let t := trimC tok
-    if t.isEmpty then none else parseDecC t)).toArray
+    if t.isEmpty then none else parseDecC t))
 
 /-- Parse a comma-separated decimal-`Nat` list. Empty tokens are ignored. -/
-def parseDecimalList (s : String) : Array Nat :=
+def parseDecimalList (s : String) : List Nat :=
   parseDecimalListC s.toList
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -200,10 +200,10 @@ def parseAttribution (s : String) : KeyValueAttribution :=
     `# @level` directive during fold-parse.  (Field names avoid the
     Lean reserved tokens `section` and `level`.) -/
 structure Row where
-  input              : Array Nat
+  input              : List Nat
   expectedKind       : ClassificationKind
   expectedSubThreat  : Option String
-  expectedPositions  : Array Nat
+  expectedPositions  : List Nat
   attribution        : KeyValueAttribution
   citation           : String
   sectionName        : String
@@ -303,16 +303,16 @@ def parseRow (currentSection : String) (currentLevel : ConformanceLevel)
 
 /-- Carry-state during fold-parse. -/
 structure ParseState where
-  rows           : Array Row
+  rows           : List Row
   currentSection : String
   currentLevel   : ConformanceLevel
   deriving Inhabited
 
 /-- Parse a full fixture file body. Applies `@section` / `@level`
     directives as carry-state and accumulates rows. -/
-def parseFixture (rawText : String) : Array Row :=
+def parseFixture (rawText : String) : List Row :=
   let initial : ParseState := {
-    rows := #[],
+    rows := [],
     currentSection := "<unspecified>",
     currentLevel := .basic
   }
@@ -324,7 +324,7 @@ def parseFixture (rawText : String) : Array Row :=
     | some (.levelDir l)   => { st with currentLevel := l }
     | none =>
       match parseRowC st.currentSection st.currentLevel lineC with
-      | some r => { st with rows := st.rows.push r }
+      | some r => { st with rows := st.rows ++ [r] }
       | none   => st)
   final.rows
 
@@ -366,7 +366,7 @@ def syntheticFixture : String :=
 
 /-- The synthetic parses cleanly, with five rows. -/
 theorem synthetic_parses_5_rows :
-    (parseFixture syntheticFixture).size = 5 := by decide +kernel
+    (parseFixture syntheticFixture).length = 5 := by decide +kernel
 
 /-- Row 0 is in the "Clear" section at basic level. -/
 theorem synthetic_row0_section :
@@ -379,7 +379,7 @@ theorem synthetic_row0_kind :
     (parseFixture syntheticFixture)[0]!.expectedKind = .clear := by decide +kernel
 
 theorem synthetic_row0_input :
-    (parseFixture syntheticFixture)[0]!.input = #[0x48, 0x65, 0x6C, 0x6C, 0x6F] := by
+    (parseFixture syntheticFixture)[0]!.input = [0x48, 0x65, 0x6C, 0x6C, 0x6F] := by
   decide +kernel
 
 /-- Row 1 is in the "Hazard" section, basic level, DirectPayload sub-threat. -/
@@ -394,7 +394,7 @@ theorem synthetic_row1_sub :
   decide +kernel
 
 theorem synthetic_row1_positions :
-    (parseFixture syntheticFixture)[1]!.expectedPositions = #[1, 2] := by decide +kernel
+    (parseFixture syntheticFixture)[1]!.expectedPositions = [1, 2] := by decide +kernel
 
 theorem synthetic_row1_decoded :
     (parseFixture syntheticFixture)[1]!.attribution.get? "decoded" = some "A" := by
