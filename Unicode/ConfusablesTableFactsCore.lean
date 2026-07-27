@@ -22,18 +22,18 @@ open Unicode.Generated
 set_option maxRecDepth 1000000
 
 /-- One raw UTS #39 substitution step for a single codepoint. -/
-def graphSubstituteCodepoint (cp : Nat) : Array Nat :=
+def graphSubstituteCodepoint (cp : Nat) : List Nat :=
   match Unicode.Generated.Confusables.lookup? cp with
   | some target => target
-  | none => #[cp]
+  | none => [cp]
 
 /-- Raw UTS #39 substitution over a codepoint sequence, without the runtime
     normalization/case-fold wrappers from `skeleton`. -/
-def graphSubstitute (cps : Array Nat) : Array Nat :=
-  cps.foldl (fun acc cp => acc ++ graphSubstituteCodepoint cp) #[]
+def graphSubstitute (cps : List Nat) : List Nat :=
+  cps.foldl (fun acc cp => acc ++ graphSubstituteCodepoint cp) []
 
 /-- Iterate raw UTS #39 substitution to a fixed point or until fuel runs out. -/
-def iteratedGraphSubstituteFuel (fuel : Nat) (cps : Array Nat) : Array Nat :=
+def iteratedGraphSubstituteFuel (fuel : Nat) (cps : List Nat) : List Nat :=
   match fuel with
   | 0 => cps
   | fuel' + 1 =>
@@ -44,25 +44,25 @@ def iteratedGraphSubstituteFuel (fuel : Nat) (cps : Array Nat) : Array Nat :=
     A generated table row already carries the first edge `source ↦ target`, so
     this checks that the row target reaches a fixed point within the remaining
     fuel. -/
-def chainConvergesEntry (entry : Nat × Array Nat) : Bool :=
+def chainConvergesEntry (entry : Nat × List Nat) : Bool :=
   graphSubstitute
       (iteratedGraphSubstituteFuel (confusableChainBound - 1) entry.2) ==
     iteratedGraphSubstituteFuel (confusableChainBound - 1) entry.2
 
-def expansionEntryUnderBound (bound : Nat) (entry : Nat × Array Nat) : Bool :=
-  decide (entry.2.size ≤ bound)
+def expansionEntryUnderBound (bound : Nat) (entry : Nat × List Nat) : Bool :=
+  decide (entry.2.length ≤ bound)
 
 theorem foldl_max_size_le_of_all
-    (bound : Nat) (l : List (Nat × Array Nat)) (acc : Nat)
+    (bound : Nat) (l : List (Nat × List Nat)) (acc : Nat)
     (hAcc : acc ≤ bound)
     (hAll : l.all (expansionEntryUnderBound bound) = true) :
-    l.foldl (fun m e => max m e.2.size) acc ≤ bound := by
+    l.foldl (fun m e => max m e.2.length) acc ≤ bound := by
   induction l generalizing acc with
   | nil =>
       simpa using hAcc
   | cons hd tl ih =>
       simp only [List.all_cons, Bool.and_eq_true] at hAll
-      have hHd : hd.2.size ≤ bound := of_decide_eq_true hAll.1
-      exact ih (max acc hd.2.size) (Nat.max_le.mpr ⟨hAcc, hHd⟩) hAll.2
+      have hHd : hd.2.length ≤ bound := of_decide_eq_true hAll.1
+      exact ih (max acc hd.2.length) (Nat.max_le.mpr ⟨hAcc, hHd⟩) hAll.2
 
 end Unicode.Confusables
