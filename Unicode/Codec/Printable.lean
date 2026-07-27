@@ -75,23 +75,23 @@ theorem isForbiddenControlByte_hi  : isForbiddenControlByte 0xFF = false := by d
 
 /-- Byte offset + offending byte of the first forbidden control byte
     in `bs`, or `none` if none is present. -/
-def firstForbiddenControlFrom (bs : ByteArray) (i : Nat) : Option (Nat × UInt8) :=
-  if hi : i < bs.size then
+def firstForbiddenControlFrom (bs : List UInt8) (i : Nat) : Option (Nat × UInt8) :=
+  if hi : i < bs.length then
     let b := bs[i]'hi
     if isForbiddenControlByte b then some (i, b)
     else firstForbiddenControlFrom bs (i + 1)
   else none
-termination_by bs.size - i
+termination_by bs.length - i
 
-def firstForbiddenControl (bs : ByteArray) : Option (Nat × UInt8) :=
+def firstForbiddenControl (bs : List UInt8) : Option (Nat × UInt8) :=
   firstForbiddenControlFrom bs 0
 
 /-- The forbidden-control walker returns `none` exactly when no byte is a forbidden
     control. Proven by well-founded recursion mirroring `firstForbiddenControlFrom`;
     that recursion does not reduce definitionally, so the fact is established
     structurally rather than by evaluation. -/
-theorem firstForbiddenControlFrom_none (bs : ByteArray) (i : Nat)
-    (h : ∀ (j : Nat) (hj : j < bs.size), isForbiddenControlByte (bs[j]'hj) = false) :
+theorem firstForbiddenControlFrom_none (bs : List UInt8) (i : Nat)
+    (h : ∀ (j : Nat) (hj : j < bs.length), isForbiddenControlByte (bs[j]'hj) = false) :
     firstForbiddenControlFrom bs i = none := by
   unfold firstForbiddenControlFrom
   split
@@ -99,10 +99,10 @@ theorem firstForbiddenControlFrom_none (bs : ByteArray) (i : Nat)
     rw [if_neg (by rw [h i hi]; simp)]
     exact firstForbiddenControlFrom_none bs (i + 1) h
   · rfl
-termination_by bs.size - i
+termination_by bs.length - i
 
-theorem firstForbiddenControl_none (bs : ByteArray)
-    (h : ∀ (j : Nat) (hj : j < bs.size), isForbiddenControlByte (bs[j]'hj) = false) :
+theorem firstForbiddenControl_none (bs : List UInt8)
+    (h : ∀ (j : Nat) (hj : j < bs.length), isForbiddenControlByte (bs[j]'hj) = false) :
     firstForbiddenControl bs = none :=
   firstForbiddenControlFrom_none bs 0 h
 
@@ -206,7 +206,7 @@ theorem classify_digit_none :
     `ForbiddenClassification`. Returns `some (offset, cp, class)`
     at the first forbidden codepoint encountered, or `none` when
     the content has no forbidden codepoints. -/
-def firstForbiddenCodepointClassified (bs : ByteArray) :
+def firstForbiddenCodepointClassified (bs : List UInt8) :
     Option (Nat × Nat × ForbiddenClassification) :=
   foldCodepointsWithOffset bs (Option.none : Option (Nat × Nat × ForbiddenClassification))
     (fun acc off cp =>
@@ -217,22 +217,22 @@ def firstForbiddenCodepointClassified (bs : ByteArray) :
                   | none      => none)
 
 theorem firstForbidden_hello_none :
-    firstForbiddenCodepointClassified "hello".toUTF8 = none := by decide
+    firstForbiddenCodepointClassified "hello".toUTF8.toList = none := by decide
 
 theorem firstForbidden_bidi :
-    firstForbiddenCodepointClassified (ByteArray.mk #[0x61, 0xE2, 0x80, 0xAE, 0x62])
+    firstForbiddenCodepointClassified ([0x61, 0xE2, 0x80, 0xAE, 0x62])
       = some (1, 0x202E, .narrow .bidiOverride) := by decide
 
 theorem firstForbidden_bom :
-    firstForbiddenCodepointClassified (ByteArray.mk #[0xEF, 0xBB, 0xBF])
+    firstForbiddenCodepointClassified ([0xEF, 0xBB, 0xBF])
       = some (0, 0xFEFF, .narrow .bom) := by decide
 
 theorem firstForbidden_cgj :
-    firstForbiddenCodepointClassified (ByteArray.mk #[0xCD, 0x8F])
+    firstForbiddenCodepointClassified ([0xCD, 0x8F])
       = some (0, 0x034F, .defaultIgnorable) := by decide
 
 theorem firstForbidden_word_joiner :
-    firstForbiddenCodepointClassified (ByteArray.mk #[0xE2, 0x81, 0xA0])
+    firstForbiddenCodepointClassified ([0xE2, 0x81, 0xA0])
       = some (0, 0x2060, .defaultIgnorable) := by decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -242,14 +242,14 @@ theorem firstForbidden_word_joiner :
 /-- The full printable-text predicate: four checks ANDed.
 
     Defined via the structural walkers' `.isNone` plus `isNFCBytes`
-    rather than `bs.data.all`-style traversals, so any downstream
+    rather than `bs.all`-style traversals, so any downstream
     offset-tracking variant remains by-definition consistent.
 
     The NFC stage runs last because only it depends on the holistic
     sequence rather than a per-byte or per-codepoint signal; the
     three earlier stages' cheaper rejections short-circuit its
     evaluation on invalid or forbidden inputs. -/
-def isPrintableUtf8Bytes (bs : ByteArray) : Bool :=
+def isPrintableUtf8Bytes (bs : List UInt8) : Bool :=
   (firstInvalidUtf8Offset bs).isNone
     && (firstForbiddenControl bs).isNone
     && (firstForbiddenCodepointClassified bs).isNone
@@ -258,7 +258,7 @@ def isPrintableUtf8Bytes (bs : ByteArray) : Bool :=
 /-- Byte-level NFC holds whenever the content decodes to code points that are all
     below U+00C0 and re-encodes to itself: those code points are NFC-fixed by
     `LowCodepointNfc.toNFC_id_all_lt`, so the pipeline is the identity. -/
-theorem isNFCBytes_of_lt (bs : ByteArray) (cps : Array Nat)
+theorem isNFCBytes_of_lt (bs : List UInt8) (cps : List Nat)
     (hv : Unicode.Codec.Utf8.isValidUtf8 bs = true)
     (hd : Unicode.Normalization.Utf8Bridge.decodeToCodepoints bs = cps)
     (he : Unicode.Normalization.Utf8Bridge.encodeCodepoints cps = bs)
@@ -269,7 +269,7 @@ theorem isNFCBytes_of_lt (bs : ByteArray) (cps : Array Nat)
 
 /-- Acceptance from the four stages: valid UTF-8, no forbidden control, no forbidden
     code point, and NFC form. -/
-theorem printable_true_of (bs : ByteArray)
+theorem printable_true_of (bs : List UInt8)
     (hv : (firstInvalidUtf8Offset bs).isNone = true)
     (hc : firstForbiddenControl bs = none)
     (hf : (firstForbiddenCodepointClassified bs).isNone = true)
@@ -292,29 +292,29 @@ theorem primaryComposite_e_acute : Compose.primaryComposite? 0x65 0x301 = some 0
     (by unfold CanonicalComposition.compositionPairs; decide +kernel)
 
 theorem stepCompose_init_e : Compose.stepCompose Compose.initialState 0x65
-    = { emitted := #[], starter := some 0x65, buffer := [], maxCCC := 0 } := by
+    = { emitted := [], starter := some 0x65, buffer := [], maxCCC := 0 } := by
   rw [Compose.stepCompose.eq_def]
   simp [Compose.initialState, LowCodepointNfc.cccz 0x65 (by decide)]
 
 theorem stepCompose_e_acute : Compose.stepCompose
-    { emitted := #[], starter := some 0x65, buffer := [], maxCCC := 0 } 0x301
-    = { emitted := #[], starter := some 0xE9, buffer := [], maxCCC := 0 } := by
+    { emitted := [], starter := some 0x65, buffer := [], maxCCC := 0 } 0x301
+    = { emitted := [], starter := some 0xE9, buffer := [], maxCCC := 0 } := by
   rw [Compose.stepCompose.eq_def]
   simp [Reorder.ccc_combining_acute, primaryComposite_e_acute]
 
-theorem compose_e_acute : Compose.compose #[0x65, 0x301] = #[0xE9] := by
-  rewrite [Compose.compose.eq_def, ← Array.foldl_toList, List.toList_toArray,
+theorem compose_e_acute : Compose.compose [0x65, 0x301] = [0xE9] := by
+  rewrite [Compose.compose.eq_def,
            List.foldl_cons, List.foldl_cons, List.foldl_nil, stepCompose_init_e,
            stepCompose_e_acute]
   rfl
 
-theorem canonicalDecomposition_acute : Lookup.canonicalDecomposition 0x301 = #[] :=
-  Lookup.canonicalDecomposition_of_hit 0x301 #[]
+theorem canonicalDecomposition_acute : Lookup.canonicalDecomposition 0x301 = [] :=
+  Lookup.canonicalDecomposition_of_hit 0x301 []
     (by unfold UnicodeData.rowsList; simp only [List.any_append]; decide +kernel)
     (by unfold UnicodeData.rowsList; simp only [List.all_append]; decide +kernel)
 
 theorem isFullyDecomposed_e_acute :
-    Unicode.Invariants.IsFullyDecomposed #[0x65, 0x301] := by
+    Unicode.Invariants.IsFullyDecomposed [0x65, 0x301] := by
   intro cp hMem; simp at hMem
   rcases hMem with rfl | rfl
   · exact ⟨LowCodepointNfc.dec_lt 0x65 (by decide), by decide⟩
@@ -324,10 +324,10 @@ theorem hasSortedRuns_e_acute : Reorder.HasSortedRuns [0x65, 0x301] := by
   simp [Reorder.HasSortedRuns, LowCodepointNfc.cccz 0x65 (by decide),
         Reorder.ccc_combining_acute]
 
-theorem toNFC_e_acute : NFC.toNFC #[0x65, 0x301] = #[0xE9] := by
+theorem toNFC_e_acute : NFC.toNFC [0x65, 0x301] = [0xE9] := by
   unfold NFC.toNFC NFC.toNFD
-  rw [NFD.decomposeSequence_id_on_FullyDecomposed #[0x65, 0x301] isFullyDecomposed_e_acute,
-      Reorder.reorder_id_on_HasSortedRuns #[0x65, 0x301] hasSortedRuns_e_acute,
+  rw [NFD.decomposeSequence_id_on_FullyDecomposed [0x65, 0x301] isFullyDecomposed_e_acute,
+      Reorder.reorder_id_on_HasSortedRuns [0x65, 0x301] hasSortedRuns_e_acute,
       compose_e_acute]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -339,69 +339,69 @@ theorem toNFC_e_acute : NFC.toNFC #[0x65, 0x301] = #[0xE9] := by
 
 /-- A compose step on a starter that does not compose with the active starter:
     emit the active starter, hold the new one. -/
-theorem stepCompose_shift (em : Array Nat) (s c : Nat)
+theorem stepCompose_shift (em : List Nat) (s c : Nat)
     (hc : Lookup.canonicalCombiningClass c = 0)
     (hpc : Compose.primaryComposite? s c = none) :
     Compose.stepCompose { emitted := em, starter := some s, buffer := [], maxCCC := 0 } c
-      = { emitted := em ++ #[s], starter := some c, buffer := [], maxCCC := 0 } := by
+      = { emitted := em ++ [s], starter := some c, buffer := [], maxCCC := 0 } := by
   rw [Compose.stepCompose.eq_def]
   simp [hc, hpc]
 
 /-- The e + combining acute compose step, from any emitted prefix. -/
-theorem stepCompose_e_acute_gen (em : Array Nat) :
+theorem stepCompose_e_acute_gen (em : List Nat) :
     Compose.stepCompose { emitted := em, starter := some 0x65, buffer := [], maxCCC := 0 } 0x301
       = { emitted := em, starter := some 0xE9, buffer := [], maxCCC := 0 } := by
   rw [Compose.stepCompose.eq_def]
   simp [Reorder.ccc_combining_acute, primaryComposite_e_acute]
 
 theorem stepCompose_init_h : Compose.stepCompose Compose.initialState 0x68
-    = { emitted := #[], starter := some 0x68, buffer := [], maxCCC := 0 } := by
+    = { emitted := [], starter := some 0x68, buffer := [], maxCCC := 0 } := by
   rw [Compose.stepCompose.eq_def]
   simp [Compose.initialState, LowCodepointNfc.cccz 0x68 (by decide)]
 
 theorem compose_héllo :
-    Compose.compose #[0x68, 0x65, 0x301, 0x6C, 0x6C, 0x6F] = #[0x68, 0xE9, 0x6C, 0x6C, 0x6F] := by
-  rewrite [Compose.compose.eq_def, ← Array.foldl_toList, List.toList_toArray,
+    Compose.compose [0x68, 0x65, 0x301, 0x6C, 0x6C, 0x6F] = [0x68, 0xE9, 0x6C, 0x6C, 0x6F] := by
+  rewrite [Compose.compose.eq_def,
            List.foldl_cons, List.foldl_cons, List.foldl_cons, List.foldl_cons,
            List.foldl_cons, List.foldl_cons, List.foldl_nil, stepCompose_init_h,
-           stepCompose_shift #[] 0x68 0x65 (LowCodepointNfc.cccz 0x65 (by decide))
+           stepCompose_shift [] 0x68 0x65 (LowCodepointNfc.cccz 0x65 (by decide))
              (LowCodepointNfc.nc_lt 0x68 0x65 (by decide)
                (LowCodepointNfc.hang_none_lt 0x68 0x65 (by decide))),
-           stepCompose_e_acute_gen (#[] ++ #[0x68]),
-           stepCompose_shift (#[] ++ #[0x68]) 0xE9 0x6C (LowCodepointNfc.cccz 0x6C (by decide))
+           stepCompose_e_acute_gen ([] ++ [0x68]),
+           stepCompose_shift ([] ++ [0x68]) 0xE9 0x6C (LowCodepointNfc.cccz 0x6C (by decide))
              (LowCodepointNfc.nc_lt 0xE9 0x6C (by decide) (by decide)),
-           stepCompose_shift ((#[] ++ #[0x68]) ++ #[0xE9]) 0x6C 0x6C
+           stepCompose_shift (([] ++ [0x68]) ++ [0xE9]) 0x6C 0x6C
              (LowCodepointNfc.cccz 0x6C (by decide))
              (LowCodepointNfc.nc_lt 0x6C 0x6C (by decide)
                (LowCodepointNfc.hang_none_lt 0x6C 0x6C (by decide))),
-           stepCompose_shift (((#[] ++ #[0x68]) ++ #[0xE9]) ++ #[0x6C]) 0x6C 0x6F
+           stepCompose_shift ((([] ++ [0x68]) ++ [0xE9]) ++ [0x6C]) 0x6C 0x6F
              (LowCodepointNfc.cccz 0x6F (by decide))
              (LowCodepointNfc.nc_lt 0x6C 0x6F (by decide)
                (LowCodepointNfc.hang_none_lt 0x6C 0x6F (by decide)))]
   rfl
 
-theorem canonicalDecomposition_eacute : Lookup.canonicalDecomposition 0xE9 = #[0x65, 0x301] :=
-  Lookup.canonicalDecomposition_of_hit 0xE9 #[0x65, 0x301]
+theorem canonicalDecomposition_eacute : Lookup.canonicalDecomposition 0xE9 = [0x65, 0x301] :=
+  Lookup.canonicalDecomposition_of_hit 0xE9 [0x65, 0x301]
     (by unfold UnicodeData.rowsList; simp only [List.any_append]; decide +kernel)
     (by unfold UnicodeData.rowsList; simp only [List.all_append]; decide +kernel)
 
 theorem fcdf_acute (fuel : Nat) :
-    Decompose.fullCanonicalDecomposeFuel (fuel + 1) 0x0301 = #[0x0301] := by
+    Decompose.fullCanonicalDecomposeFuel (fuel + 1) 0x0301 = [0x0301] := by
   rw [Decompose.fullCanonicalDecomposeFuel.eq_def]
   simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
         Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
         canonicalDecomposition_acute]
 
 theorem fcdf_eacute (fuel : Nat) :
-    Decompose.fullCanonicalDecomposeFuel (fuel + 2) 0x00E9 = #[0x0065, 0x0301] := by
+    Decompose.fullCanonicalDecomposeFuel (fuel + 2) 0x00E9 = [0x0065, 0x0301] := by
   rw [Decompose.fullCanonicalDecomposeFuel.eq_def]
   simp [Hangul.decomposeSyllable?, Hangul.isHangulSyllable,
         Hangul.SBase, Hangul.SCount, Hangul.NCount, Hangul.TCount,
         canonicalDecomposition_eacute, Decompose.fcdf_latin_e, fcdf_acute]
 
 theorem decomposeSequence_héllo :
-    Decompose.decomposeSequence #[0x68, 0xE9, 0x6C, 0x6C, 0x6F]
-      = #[0x68, 0x65, 0x301, 0x6C, 0x6C, 0x6F] := by
+    Decompose.decomposeSequence [0x68, 0xE9, 0x6C, 0x6C, 0x6F]
+      = [0x68, 0x65, 0x301, 0x6C, 0x6C, 0x6F] := by
   simp only [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose, Decompose.maxDepth]
   simp [Decompose.fcdf_latin_h 31, fcdf_eacute 30, Decompose.fcdf_latin_l 31,
         Decompose.fcdf_latin_o 31]
@@ -413,84 +413,84 @@ theorem hasSortedRuns_decomposed_héllo :
         LowCodepointNfc.cccz 0x6C (by decide), LowCodepointNfc.cccz 0x6F (by decide)]
 
 theorem toNFC_héllo :
-    NFC.toNFC #[0x68, 0xE9, 0x6C, 0x6C, 0x6F] = #[0x68, 0xE9, 0x6C, 0x6C, 0x6F] := by
+    NFC.toNFC [0x68, 0xE9, 0x6C, 0x6C, 0x6F] = [0x68, 0xE9, 0x6C, 0x6C, 0x6F] := by
   unfold NFC.toNFC NFC.toNFD
   rw [decomposeSequence_héllo,
-      Reorder.reorder_id_on_HasSortedRuns #[0x68, 0x65, 0x301, 0x6C, 0x6C, 0x6F]
+      Reorder.reorder_id_on_HasSortedRuns [0x68, 0x65, 0x301, 0x6C, 0x6C, 0x6F]
         hasSortedRuns_decomposed_héllo,
       compose_héllo]
 
 theorem empty_is_printable :
-    isPrintableUtf8Bytes ByteArray.empty = true :=
-  printable_true_of ByteArray.empty (by decide)
-    (firstForbiddenControl_none ByteArray.empty (by decide)) (by decide)
-    (isNFCBytes_of_lt ByteArray.empty #[] (by decide) (by decide) (by decide)
+    isPrintableUtf8Bytes List UInt8.empty = true :=
+  printable_true_of List UInt8.empty (by decide)
+    (firstForbiddenControl_none List UInt8.empty (by decide)) (by decide)
+    (isNFCBytes_of_lt List UInt8.empty [] (by decide) (by decide) (by decide)
       (by intro cp hMem; simp at hMem))
 
 theorem hello_is_printable :
-    isPrintableUtf8Bytes "hello".toUTF8 = true :=
-  printable_true_of "hello".toUTF8 (by decide)
-    (firstForbiddenControl_none "hello".toUTF8 (by decide)) (by decide)
-    (isNFCBytes_of_lt "hello".toUTF8 #[0x68, 0x65, 0x6C, 0x6C, 0x6F]
+    isPrintableUtf8Bytes "hello".toUTF8.toList = true :=
+  printable_true_of "hello".toUTF8.toList (by decide)
+    (firstForbiddenControl_none "hello".toUTF8.toList (by decide)) (by decide)
+    (isNFCBytes_of_lt "hello".toUTF8.toList [0x68, 0x65, 0x6C, 0x6C, 0x6F]
       (by decide) (by decide) (by decide)
       (by intro cp hMem; simp at hMem; rcases hMem with rfl|rfl|rfl|rfl|rfl <;> decide))
 
 theorem hello_nl_is_printable :
-    isPrintableUtf8Bytes "hello\nworld".toUTF8 = true :=
-  printable_true_of "hello\nworld".toUTF8 (by decide)
-    (firstForbiddenControl_none "hello\nworld".toUTF8 (by decide)) (by decide)
-    (isNFCBytes_of_lt "hello\nworld".toUTF8
-      #[0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x0A, 0x77, 0x6F, 0x72, 0x6C, 0x64]
+    isPrintableUtf8Bytes "hello\nworld".toUTF8.toList = true :=
+  printable_true_of "hello\nworld".toUTF8.toList (by decide)
+    (firstForbiddenControl_none "hello\nworld".toUTF8.toList (by decide)) (by decide)
+    (isNFCBytes_of_lt "hello\nworld".toUTF8.toList
+      [0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x0A, 0x77, 0x6F, 0x72, 0x6C, 0x64]
       (by decide) (by decide) (by decide)
       (by intro cp hMem; simp at hMem
           rcases hMem with rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl <;> decide))
 
 theorem accented_is_printable :
-    isPrintableUtf8Bytes "héllo".toUTF8 = true := by
-  have hn : Unicode.Normalization.Utf8Bridge.isNFCBytes "héllo".toUTF8 = true := by
-    have hv : Unicode.Codec.Utf8.isValidUtf8 "héllo".toUTF8 = true := by decide
-    have hd : Unicode.Normalization.Utf8Bridge.decodeToCodepoints "héllo".toUTF8
-        = #[0x68, 0xE9, 0x6C, 0x6C, 0x6F] := by decide
-    have he : Unicode.Normalization.Utf8Bridge.encodeCodepoints #[0x68, 0xE9, 0x6C, 0x6C, 0x6F]
-        = "héllo".toUTF8 := by decide
+    isPrintableUtf8Bytes "héllo".toUTF8.toList = true := by
+  have hn : Unicode.Normalization.Utf8Bridge.isNFCBytes "héllo".toUTF8.toList = true := by
+    have hv : Unicode.Codec.Utf8.isValidUtf8 "héllo".toUTF8.toList = true := by decide
+    have hd : Unicode.Normalization.Utf8Bridge.decodeToCodepoints "héllo".toUTF8.toList
+        = [0x68, 0xE9, 0x6C, 0x6C, 0x6F] := by decide
+    have he : Unicode.Normalization.Utf8Bridge.encodeCodepoints [0x68, 0xE9, 0x6C, 0x6C, 0x6F]
+        = "héllo".toUTF8.toList := by decide
     unfold Unicode.Normalization.Utf8Bridge.isNFCBytes Unicode.Normalization.Utf8Bridge.toNFCBytes
     simp only [String.toUTF8] at hv hd he
     simp [hv, hd, toNFC_héllo, he]
-  exact printable_true_of "héllo".toUTF8 (by decide)
-    (firstForbiddenControl_none "héllo".toUTF8 (by decide)) (by decide) hn
+  exact printable_true_of "héllo".toUTF8.toList (by decide)
+    (firstForbiddenControl_none "héllo".toUTF8.toList (by decide)) (by decide) hn
 
 theorem control_NUL_not_printable :
-    isPrintableUtf8Bytes (ByteArray.mk #[0x00]) = false := by
+    isPrintableUtf8Bytes ([0x00]) = false := by
   unfold isPrintableUtf8Bytes
-  rw [show firstForbiddenControl (ByteArray.mk #[0x00]) = some (0, 0) from by
+  rw [show firstForbiddenControl ([0x00]) = some (0, 0) from by
         unfold firstForbiddenControl firstForbiddenControlFrom; decide]
   simp
 
 theorem control_CR_not_printable :
-    isPrintableUtf8Bytes (ByteArray.mk #[0x0D]) = false := by
+    isPrintableUtf8Bytes ([0x0D]) = false := by
   unfold isPrintableUtf8Bytes
-  rw [show firstForbiddenControl (ByteArray.mk #[0x0D]) = some (0, 0x0D) from by
+  rw [show firstForbiddenControl ([0x0D]) = some (0, 0x0D) from by
         unfold firstForbiddenControl firstForbiddenControlFrom; decide]
   simp
 
 theorem bidi_override_not_printable :
-    isPrintableUtf8Bytes (ByteArray.mk #[0xE2, 0x80, 0xAE]) = false := by
+    isPrintableUtf8Bytes ([0xE2, 0x80, 0xAE]) = false := by
   unfold isPrintableUtf8Bytes
-  rw [firstForbiddenControl_none (ByteArray.mk #[0xE2, 0x80, 0xAE]) (by decide)]
+  rw [firstForbiddenControl_none ([0xE2, 0x80, 0xAE]) (by decide)]
   simp only [Option.isNone_none]
   decide
 
 theorem bom_not_printable :
-    isPrintableUtf8Bytes (ByteArray.mk #[0xEF, 0xBB, 0xBF]) = false := by
+    isPrintableUtf8Bytes ([0xEF, 0xBB, 0xBF]) = false := by
   unfold isPrintableUtf8Bytes
-  rw [firstForbiddenControl_none (ByteArray.mk #[0xEF, 0xBB, 0xBF]) (by decide)]
+  rw [firstForbiddenControl_none ([0xEF, 0xBB, 0xBF]) (by decide)]
   simp only [Option.isNone_none]
   decide
 
 theorem dicp_cgj_not_printable :
-    isPrintableUtf8Bytes (ByteArray.mk #[0xCD, 0x8F]) = false := by
+    isPrintableUtf8Bytes ([0xCD, 0x8F]) = false := by
   unfold isPrintableUtf8Bytes
-  rw [firstForbiddenControl_none (ByteArray.mk #[0xCD, 0x8F]) (by decide)]
+  rw [firstForbiddenControl_none ([0xCD, 0x8F]) (by decide)]
   simp only [Option.isNone_none]
   decide
 
@@ -498,18 +498,18 @@ theorem dicp_cgj_not_printable :
     codepoints, but it is not in NFC — the precomposed "é" is the NFC
     form. The aggregate predicate rejects. -/
 theorem non_nfc_decomposed_e_not_printable :
-    isPrintableUtf8Bytes (ByteArray.mk #[0x65, 0xCC, 0x81]) = false := by
-  have hn : Unicode.Normalization.Utf8Bridge.isNFCBytes (ByteArray.mk #[0x65, 0xCC, 0x81]) = false := by
+    isPrintableUtf8Bytes ([0x65, 0xCC, 0x81]) = false := by
+  have hn : Unicode.Normalization.Utf8Bridge.isNFCBytes ([0x65, 0xCC, 0x81]) = false := by
     unfold Unicode.Normalization.Utf8Bridge.isNFCBytes Unicode.Normalization.Utf8Bridge.toNFCBytes
-    rw [show Unicode.Codec.Utf8.isValidUtf8 (ByteArray.mk #[0x65, 0xCC, 0x81]) = true from by decide,
-        show Unicode.Normalization.Utf8Bridge.decodeToCodepoints (ByteArray.mk #[0x65, 0xCC, 0x81])
-               = #[0x65, 0x301] from by decide,
+    rw [show Unicode.Codec.Utf8.isValidUtf8 ([0x65, 0xCC, 0x81]) = true from by decide,
+        show Unicode.Normalization.Utf8Bridge.decodeToCodepoints ([0x65, 0xCC, 0x81])
+               = [0x65, 0x301] from by decide,
         toNFC_e_acute,
-        show Unicode.Normalization.Utf8Bridge.encodeCodepoints #[0xE9]
-               = ByteArray.mk #[0xC3, 0xA9] from by decide]
+        show Unicode.Normalization.Utf8Bridge.encodeCodepoints [0xE9]
+               = [0xC3, 0xA9] from by decide]
     decide
   unfold isPrintableUtf8Bytes
-  rw [firstForbiddenControl_none (ByteArray.mk #[0x65, 0xCC, 0x81]) (by decide), hn]
+  rw [firstForbiddenControl_none ([0x65, 0xCC, 0x81]) (by decide), hn]
   simp
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -517,7 +517,7 @@ theorem non_nfc_decomposed_e_not_printable :
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 structure PrintableUtf8 (maxBytes : Nat) where
-  bytes     : ByteArray
+  bytes     : List UInt8
   sizeOk    : bytes.size ≤ maxBytes
   printable : isPrintableUtf8Bytes bytes = true
 
@@ -531,9 +531,9 @@ instance (maxBytes : Nat) : DecidableEq (PrintableUtf8 maxBytes) := fun a b =>
 -- §7 CONSTRUCTION
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-def PrintableUtf8.ofBytes? (maxBytes : Nat) (bs : ByteArray) :
+def PrintableUtf8.ofBytes? (maxBytes : Nat) (bs : List UInt8) :
     Option (PrintableUtf8 maxBytes) :=
-  if hSize : bs.size ≤ maxBytes then
+  if hSize : bs.length ≤ maxBytes then
     if hPrint : isPrintableUtf8Bytes bs = true then
       some ⟨bs, hSize, hPrint⟩
     else none
