@@ -77,7 +77,7 @@ theorem isNoncharacter_emoji : isNoncharacter 0x1F600 = false := by decide
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Enumerate the 66 noncharacters as an Array. -/
-def all : Array Nat := #[
+def all : List Nat := [
   0xFDD0,
   0xFDD1,
   0xFDD2,
@@ -147,7 +147,7 @@ def all : Array Nat := #[
 ]
 
 /-- The enumeration has exactly 66 elements. -/
-theorem count_noncharacters : all.size = 66 := by
+theorem count_noncharacters : all.length = 66 := by
   simp [all]
 
 /-- Every enumerated noncharacter satisfies `isNoncharacter`. -/

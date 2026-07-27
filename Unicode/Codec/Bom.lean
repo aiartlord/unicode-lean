@@ -39,8 +39,8 @@ def BomKind.length : BomKind → Nat
     the 2-byte UTF-16 BOMs because `FF FE 00 00` is UTF-32LE, not
     UTF-16LE followed by U+0000. Returns `none` if the input does
     not begin with any recognised BOM. -/
-def detect (bs : ByteArray) : Option (BomKind × Nat) :=
-  if h4 : bs.size ≥ 4 then
+def detect (bs : List UInt8) : Option (BomKind × Nat) :=
+  if h4 : bs.length ≥ 4 then
     let b0 := (bs[0]'(by omega)).toNat
     let b1 := (bs[1]'(by omega)).toNat
     let b2 := (bs[2]'(by omega)).toNat
@@ -61,7 +61,7 @@ def detect (bs : ByteArray) : Option (BomKind × Nat) :=
     else if b0 = 0xFF ∧ b1 = 0xFE then
       some (.utf16LE, 2)
     else none
-  else if h3 : bs.size ≥ 3 then
+  else if h3 : bs.length ≥ 3 then
     let b0 := (bs[0]'(by omega)).toNat
     let b1 := (bs[1]'(by omega)).toNat
     let b2 := (bs[2]'(by omega)).toNat
@@ -72,7 +72,7 @@ def detect (bs : ByteArray) : Option (BomKind × Nat) :=
     else if b0 = 0xFF ∧ b1 = 0xFE then
       some (.utf16LE, 2)
     else none
-  else if h2 : bs.size ≥ 2 then
+  else if h2 : bs.length ≥ 2 then
     let b0 := (bs[0]'(by omega)).toNat
     let b1 := (bs[1]'(by omega)).toNat
     if b0 = 0xFE ∧ b1 = 0xFF then
@@ -86,9 +86,9 @@ def detect (bs : ByteArray) : Option (BomKind × Nat) :=
     remaining content and the detected encoding. Returns
     `(none, bs)` (no BOM stripped) if the input does not begin with
     a recognised BOM. -/
-def strip (bs : ByteArray) : Option BomKind × ByteArray :=
+def strip (bs : List UInt8) : Option BomKind × List UInt8 :=
   match detect bs with
-  | some (kind, n) => (some kind, bs.extract n bs.size)
+  | some (kind, n) => (some kind, bs.drop n)
   | none           => (none, bs)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -96,35 +96,35 @@ def strip (bs : ByteArray) : Option BomKind × ByteArray :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 theorem detect_utf8_bom :
-    detect (ByteArray.mk #[0xEF, 0xBB, 0xBF]) = some (.utf8, 3) := by decide
+    detect ([0xEF, 0xBB, 0xBF]) = some (.utf8, 3) := by decide
 
 theorem detect_utf8_bom_with_content :
-    detect (ByteArray.mk #[0xEF, 0xBB, 0xBF, 0x41]) = some (.utf8, 3) := by decide
+    detect ([0xEF, 0xBB, 0xBF, 0x41]) = some (.utf8, 3) := by decide
 
 theorem detect_utf16_be_bom :
-    detect (ByteArray.mk #[0xFE, 0xFF]) = some (.utf16BE, 2) := by decide
+    detect ([0xFE, 0xFF]) = some (.utf16BE, 2) := by decide
 
 theorem detect_utf16_le_bom :
-    detect (ByteArray.mk #[0xFF, 0xFE]) = some (.utf16LE, 2) := by decide
+    detect ([0xFF, 0xFE]) = some (.utf16LE, 2) := by decide
 
 theorem detect_utf32_be_bom :
-    detect (ByteArray.mk #[0x00, 0x00, 0xFE, 0xFF]) = some (.utf32BE, 4) := by decide
+    detect ([0x00, 0x00, 0xFE, 0xFF]) = some (.utf32BE, 4) := by decide
 
 theorem detect_utf32_le_bom :
-    detect (ByteArray.mk #[0xFF, 0xFE, 0x00, 0x00]) = some (.utf32LE, 4) := by decide
+    detect ([0xFF, 0xFE, 0x00, 0x00]) = some (.utf32LE, 4) := by decide
 
 /-- Critical: UTF-32LE BOM (FF FE 00 00) is detected as UTF-32LE,
     not as UTF-16LE followed by two NUL bytes. -/
 theorem detect_prefers_utf32_over_utf16 :
-    detect (ByteArray.mk #[0xFF, 0xFE, 0x00, 0x00]) = some (.utf32LE, 4) := by
+    detect ([0xFF, 0xFE, 0x00, 0x00]) = some (.utf32LE, 4) := by
   decide
 
 /-- Empty input has no BOM. -/
 theorem detect_empty :
-    detect ByteArray.empty = none := by decide
+    detect List UInt8.empty = none := by decide
 
 /-- Non-BOM content returns none. -/
 theorem detect_ascii :
-    detect (ByteArray.mk #[0x48, 0x65, 0x6C, 0x6C, 0x6F]) = none := by decide
+    detect ([0x48, 0x65, 0x6C, 0x6C, 0x6F]) = none := by decide
 
 end Unicode.Codec.Bom
