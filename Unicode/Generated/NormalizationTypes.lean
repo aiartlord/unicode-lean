@@ -12,17 +12,17 @@ set_option maxRecDepth 100000
 
 structure CertifiedDecomposition where
   codepoint : Nat
-  target : Array Nat
+  target : List Nat
   targetNonSource : target.all (fun cp => !WidthCompatMappings.isSource cp) = true
 
 instance : Inhabited CertifiedDecomposition where
   default := {
     codepoint := 0,
-    target := #[],
+    target := [],
     targetNonSource := by simp [WidthCompatMappings.isSource]
   }
 
-def lookupCertifiedDecompositionIn (rows : Array CertifiedDecomposition)
+def lookupCertifiedDecompositionIn (rows : List CertifiedDecomposition)
     (cp : Nat) (left right fuel : Nat) : Option CertifiedDecomposition :=
   match fuel with
   | 0 => none
@@ -39,28 +39,26 @@ def lookupCertifiedDecompositionIn (rows : Array CertifiedDecomposition)
     else
       none
 
-def lookupCertifiedDecompositionChunk (rows : Array CertifiedDecomposition)
+def lookupCertifiedDecompositionChunk (rows : List CertifiedDecomposition)
     (cp : Nat) : Option CertifiedDecomposition :=
-  lookupCertifiedDecompositionIn rows cp 0 rows.size (rows.size + 1)
+  lookupCertifiedDecompositionIn rows cp 0 rows.length (rows.length + 1)
 
 theorem certifiedDecomposition_target_non_source
     (cert : CertifiedDecomposition) (cp : Nat) (hMem : cp ∈ cert.target) :
     WidthCompatMappings.isSource cp = false := by
   have hAll := cert.targetNonSource
-  rw [Array.all_eq_true] at hAll
-  rcases Array.getElem_of_mem hMem with ⟨idx, hIdx, hElem⟩
-  have hBool := hAll idx hIdx
-  rw [hElem] at hBool
+  rw [List.all_eq_true] at hAll
+  have hBool := hAll cp hMem
   simpa using hBool
 
 theorem getElemBang_eq_getElem_of_lt
-    {α : Type} [Inhabited α] (rows : Array α) (idx : Nat) (hIdx : idx < rows.size) :
+    {α : Type} [Inhabited α] (rows : List α) (idx : Nat) (hIdx : idx < rows.length) :
     rows[idx]! = rows[idx] := by
   simp [hIdx]
 
 theorem lookupCertifiedDecompositionIn_mem
-    (rows : Array CertifiedDecomposition) (cp left right fuel : Nat)
-    (hRight : right <= rows.size) (cert : CertifiedDecomposition)
+    (rows : List CertifiedDecomposition) (cp left right fuel : Nat)
+    (hRight : right <= rows.length) (cert : CertifiedDecomposition)
     (hLookup :
       lookupCertifiedDecompositionIn rows cp left right fuel = some cert) :
     cert ∈ rows ∧ cert.codepoint = cp := by
@@ -72,7 +70,7 @@ theorem lookupCertifiedDecompositionIn_mem
       split at hLookup
       · next hLt =>
         let mid := (left + right) / 2
-        have hMid : mid < rows.size := by
+        have hMid : mid < rows.length := by
           have hTwo : 0 < 2 := by decide
           have hMidLtRight : (left + right) / 2 < right := by
             apply (Nat.div_lt_iff_lt_mul hTwo).2
@@ -84,7 +82,7 @@ theorem lookupCertifiedDecompositionIn_mem
         rw [hBang] at hLookup
         by_cases hCpLt : cp < rows[mid].codepoint
         · rw [if_pos hCpLt] at hLookup
-          have hMidLe : mid <= rows.size := by omega
+          have hMidLe : mid <= rows.length := by omega
           exact ih left mid hMidLe hLookup
         · rw [if_neg hCpLt] at hLookup
           by_cases hRowLt : rows[mid].codepoint < cp
@@ -93,18 +91,18 @@ theorem lookupCertifiedDecompositionIn_mem
           · rw [if_neg hRowLt] at hLookup
             cases hLookup
             constructor
-            · exact Array.mem_of_getElem rfl
+            · exact List.mem_of_getElem rfl
             · omega
       · next hNotLt =>
         simp at hLookup
 
 theorem lookupCertifiedDecompositionChunk_mem
-    (rows : Array CertifiedDecomposition) (cp : Nat) (cert : CertifiedDecomposition)
+    (rows : List CertifiedDecomposition) (cp : Nat) (cert : CertifiedDecomposition)
     (hLookup : lookupCertifiedDecompositionChunk rows cp = some cert) :
     cert ∈ rows ∧ cert.codepoint = cp := by
   unfold lookupCertifiedDecompositionChunk at hLookup
-  exact lookupCertifiedDecompositionIn_mem rows cp 0 rows.size (rows.size + 1)
-    (Nat.le_refl rows.size) cert hLookup
+  exact lookupCertifiedDecompositionIn_mem rows cp 0 rows.length (rows.length + 1)
+    (Nat.le_refl rows.length) cert hLookup
 
 structure CertifiedPrimaryComposite where
   starter : Nat
@@ -131,7 +129,7 @@ def primaryCompositePairLt
   decide (starter < rowStarter ∨
           (starter = rowStarter ∧ combining < rowCombining))
 
-def lookupCertifiedPrimaryCompositeIn (rows : Array CertifiedPrimaryComposite)
+def lookupCertifiedPrimaryCompositeIn (rows : List CertifiedPrimaryComposite)
     (starter combining : Nat) (left right fuel : Nat) : Option CertifiedPrimaryComposite :=
   match fuel with
   | 0 => none
@@ -148,14 +146,14 @@ def lookupCertifiedPrimaryCompositeIn (rows : Array CertifiedPrimaryComposite)
     else
       none
 
-def lookupCertifiedPrimaryCompositeChunk (rows : Array CertifiedPrimaryComposite)
+def lookupCertifiedPrimaryCompositeChunk (rows : List CertifiedPrimaryComposite)
     (starter combining : Nat) : Option CertifiedPrimaryComposite :=
-  lookupCertifiedPrimaryCompositeIn rows starter combining 0 rows.size (rows.size + 1)
+  lookupCertifiedPrimaryCompositeIn rows starter combining 0 rows.length (rows.length + 1)
 
 theorem lookupCertifiedPrimaryCompositeIn_mem
-    (rows : Array CertifiedPrimaryComposite)
+    (rows : List CertifiedPrimaryComposite)
     (starter combining left right fuel : Nat)
-    (hRight : right <= rows.size) (cert : CertifiedPrimaryComposite)
+    (hRight : right <= rows.length) (cert : CertifiedPrimaryComposite)
     (hLookup :
       lookupCertifiedPrimaryCompositeIn rows starter combining left right fuel = some cert) :
     cert ∈ rows ∧ cert.starter = starter ∧ cert.combining = combining := by
@@ -167,7 +165,7 @@ theorem lookupCertifiedPrimaryCompositeIn_mem
       split at hLookup
       · next hLt =>
         let mid := (left + right) / 2
-        have hMid : mid < rows.size := by
+        have hMid : mid < rows.length := by
           have hTwo : 0 < 2 := by decide
           have hMidLtRight : (left + right) / 2 < right := by
             apply (Nat.div_lt_iff_lt_mul hTwo).2
@@ -185,7 +183,7 @@ theorem lookupCertifiedPrimaryCompositeIn_mem
                 rows[mid].starter rows[mid].combining = true :=
             decide_eq_true hTargetLt
           rw [hTargetBool] at hLookup
-          have hMidLe : mid <= rows.size := by omega
+          have hMidLe : mid <= rows.length := by omega
           exact ih left mid hMidLe hLookup
         · have hTargetBool :
               primaryCompositePairLt starter combining
@@ -221,18 +219,18 @@ theorem lookupCertifiedPrimaryCompositeIn_mem
               intro h
               exact hRowLt (Or.inr ⟨hStarterEq, h⟩)
             have hCombiningEq : rows[mid].combining = combining := by omega
-            exact ⟨Array.mem_of_getElem rfl, hStarterEq, hCombiningEq⟩
+            exact ⟨List.mem_of_getElem rfl, hStarterEq, hCombiningEq⟩
       · next hNotLt =>
         simp at hLookup
 
 theorem lookupCertifiedPrimaryCompositeChunk_mem
-    (rows : Array CertifiedPrimaryComposite)
+    (rows : List CertifiedPrimaryComposite)
     (starter combining : Nat) (cert : CertifiedPrimaryComposite)
     (hLookup :
       lookupCertifiedPrimaryCompositeChunk rows starter combining = some cert) :
     cert ∈ rows ∧ cert.starter = starter ∧ cert.combining = combining := by
   unfold lookupCertifiedPrimaryCompositeChunk at hLookup
-  exact lookupCertifiedPrimaryCompositeIn_mem rows starter combining 0 rows.size
-    (rows.size + 1) (Nat.le_refl rows.size) cert hLookup
+  exact lookupCertifiedPrimaryCompositeIn_mem rows starter combining 0 rows.length
+    (rows.length + 1) (Nat.le_refl rows.length) cert hLookup
 
 end Unicode.Generated.NormalizationLookups
