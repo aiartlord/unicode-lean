@@ -118,12 +118,12 @@ theorem covers_restriction_low :
 
 /-- Regression: the Nethereum Oct-2025 typosquat fires `TargetMatch`. -/
 theorem nethereum_typosquat_caught :
-    (detect #[0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D]).classify.tag
+    (detect [0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D]).classify.tag
       = some "TargetMatch" := by decide
 
 /-- Regression: the legitimate "Nethereum" stays clear. -/
 theorem nethereum_legit_clear :
-    (detect #[0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x65, 0x75, 0x6D]).classify.isClear
+    (detect [0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x65, 0x75, 0x6D]).classify.isClear
       = true := by decide
 
 end Unicode.Conformance.Security.HomoglyphConfusableTest
