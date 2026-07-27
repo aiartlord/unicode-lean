@@ -98,7 +98,7 @@ inductive SubThreat where
     classifier fired; for the clear case it is implicitly empty. -/
 inductive Classification where
   | clear
-  | hazard (sub : SubThreat) (positions : List Nat) (decoded : ByteArray)
+  | hazard (sub : SubThreat) (positions : List Nat) (decoded : List UInt8)
   deriving Inhabited
 
 /-- Verdict — the structured output of `detect`. -/
@@ -108,7 +108,7 @@ structure Verdict where
   registeredPositions    : List Nat                -- indices of registered VS
   suspiciousPositions    : List Nat                -- indices of suspicious VS
   perPositionClass       : List VSUseClass         -- one entry per input position
-  recoveredPayloadBytes  : ByteArray
+  recoveredPayloadBytes  : List UInt8
   deriving Inhabited
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -144,8 +144,8 @@ def vsToNibble (cp : Nat) : Option Nat :=
 /-- Structural worker for `decodeVSRun`: `highNibble` holds a decoded
     high nibble awaiting its low-nibble pair; `bytes` is the output
     accumulator. -/
-def decodeVSRunGo (highNibble : Option Nat) (bytes : ByteArray) :
-    List Nat → ByteArray
+def decodeVSRunGo (highNibble : Option Nat) (bytes : List UInt8) :
+    List Nat → List UInt8
   | [] => bytes
   | cp :: rest =>
     match vsToNibble cp with
@@ -154,13 +154,13 @@ def decodeVSRunGo (highNibble : Option Nat) (bytes : ByteArray) :
       match highNibble with
       | none   => decodeVSRunGo (some n) bytes rest
       | some h =>
-        decodeVSRunGo none (bytes.push (UInt8.ofNat ((h <<< 4) ||| n))) rest
+        decodeVSRunGo none (bytes ++ [UInt8.ofNat ((h <<< 4) ||| n)]) rest
 
 /-- Decode a sequence of VS codepoints to the recovered byte stream.
     Two nibbles → one byte (high nibble first).  An odd trailing
     nibble is discarded. -/
-def decodeVSRun (vs : List Nat) : ByteArray :=
-  decodeVSRunGo none ByteArray.empty vs
+def decodeVSRun (vs : List Nat) : List UInt8 :=
+  decodeVSRunGo none [] vs
 
 /-- True iff the byte represents a printable ASCII character (0x20..0x7E)
     or an ASCII whitespace (tab / newline / carriage return). -/
@@ -170,13 +170,13 @@ def isPrintableAsciiByte (b : UInt8) : Bool :=
   (n ≥ 0x20 ∧ n ≤ 0x7E) ∨ n = 0x09 ∨ n = 0x0A ∨ n = 0x0D
 
 /-- True iff every byte in `bytes` is printable ASCII. -/
-def allPrintableAscii (bytes : ByteArray) : Bool :=
-  bytes.toList.all isPrintableAsciiByte
+def allPrintableAscii (bytes : List UInt8) : Bool :=
+  bytes.all isPrintableAsciiByte
 
 /-- Lossy ASCII-only decode of a byte stream.  Non-ASCII bytes are
     replaced with `?`.  Used as the `decoded` field of `directPayload`. -/
-def decodeAsciiLossy (bytes : ByteArray) : String :=
-  String.ofList (bytes.toList.map (fun b =>
+def decodeAsciiLossy (bytes : List UInt8) : String :=
+  String.ofList (bytes.map (fun b =>
     if isPrintableAsciiByte b then Char.ofNat b.toNat else '?'))
 
 /-- True iff the decoded string starts with one of the named JS-shaped
@@ -200,8 +200,8 @@ def looksLikeShell (s : String) : Bool :=
     Matches a literal byte prefix (`bash `, `curl `, `wget `,
     `/bin/sh`) — recursive base64/hex re-decoding is a
     downstream sanitiser's responsibility, not this layer's. -/
-def classifyExecutableHint (bytes : ByteArray) : ExecutableHint :=
-  if bytes.size = 0 then .empty
+def classifyExecutableHint (bytes : List UInt8) : ExecutableHint :=
+  if bytes.length = 0 then .empty
   else if ¬ allPrintableAscii bytes then .binary
   else
     let s := decodeAsciiLossy bytes
@@ -324,7 +324,7 @@ def embeddedAfterRegistered
 def pickSubThreat
     (registered : List Nat)
     (susDetail : List (Nat × Nat × Nat))
-    (payload : ByteArray) : SubThreat :=
+    (payload : List UInt8) : SubThreat :=
   -- Phase 1: embedded-after-registered takes priority.
   match embeddedAfterRegistered registered (susDetail.map (fun d => d.1)) with
   | some (regEnd, payloadStart) =>
@@ -335,7 +335,7 @@ def pickSubThreat
     if susDetail.length ≥ 4 ∧ allSameVS susCps then
       .repeatedBase ((susDetail.headD (0, 0, 0)).2.1) susDetail.length 1
     -- Phase 3: direct payload if we recovered at least one full byte.
-    else if payload.size ≥ 1 then
+    else if payload.length ≥ 1 then
       .directPayload (decodeAsciiLossy payload) (classifyExecutableHint payload)
     -- Phase 4: single suspicious VS on an unregistered base.
     else
@@ -382,10 +382,10 @@ def detect (input : List Nat) : Verdict :=
       registeredPositions := regSet,
       suspiciousPositions := [],
       perPositionClass := perPos,
-      recoveredPayloadBytes := ByteArray.empty }
+      recoveredPayloadBytes := [] }
   else
     -- Phase 4: decode payload bytes from the suspicious-VS run.
-    let payload : ByteArray := decodeVSRun (susDetail.map (fun d => d.2.2))
+    let payload : List UInt8 := decodeVSRun (susDetail.map (fun d => d.2.2))
     -- Phase 5: pick sub-threat.
     let sub : SubThreat := pickSubThreat regSet susDetail payload
     { input := input,
@@ -423,20 +423,20 @@ def SubThreat.tag : SubThreat → String
 def Classification.isClear : Classification → Bool
   | .clear                     => true
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × List Nat × ByteArray) false
+      Function.const (SubThreat × List Nat × List UInt8) false
         (sub, positions, decoded)
 
 /-- Tag string of a classification (`none` for `.clear`). -/
 def Classification.tag : Classification → Option String
   | .clear                     => none
   | .hazard sub positions decoded =>
-      Function.const (List Nat × ByteArray) (some sub.tag) (positions, decoded)
+      Function.const (List Nat × List UInt8) (some sub.tag) (positions, decoded)
 
 /-- Positions list of a classification (empty for `.clear`). -/
 def Classification.positions : Classification → List Nat
   | .clear                     => []
   | .hazard sub positions decoded =>
-      Function.const (SubThreat × ByteArray) positions (sub, decoded)
+      Function.const (SubThreat × List UInt8) positions (sub, decoded)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §7 Spot checks
@@ -476,7 +476,7 @@ theorem detect_direct_payload_byte :
 
 /-- The same input recovers the decoded byte stream `['A']`. -/
 theorem detect_direct_payload_decodes_A :
-    (detect [0x0061, 0xFE04, 0xFE01]).recoveredPayloadBytes.toList = [0x41] := by
+    (detect [0x0061, 0xFE04, 0xFE01]).recoveredPayloadBytes = [0x41] := by
   decide +kernel
 
 /-- A repeated-VS run on a Latin base produces `.repeatedBase`. -/
