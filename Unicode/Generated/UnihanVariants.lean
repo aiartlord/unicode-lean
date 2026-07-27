@@ -96,16 +96,16 @@ def parsedRows : List Row :=
   ((variantsRaw.splitOn "\n").filterMap parseRow)
 
 /-- Look up the targets for a given (source codepoint, variant
-    property) pair over the literal row table. Returns `#[]` if no
+    property) pair over the literal row table. Returns `[]` if no
     row matches. -/
 def lookup (cp : Nat) (prop : VariantProperty) : List Nat :=
   rowsList.foldl (fun acc r =>
-    if r.source = cp ∧ r.property = prop then acc ++ r.targets else acc) #[]
+    if r.source = cp ∧ r.property = prop then acc ++ r.targets else acc) []
 
 /- Drift gate: the literal table equals the parse of the SHA-pinned
    source. Elaboration of this module fails on any mismatch. -/
 #eval show IO Unit from do
-  unless rowsList == parsedRows.toList do
+  unless rowsList == parsedRows do
     throw <| IO.userError
       "Unicode.Generated.UnihanVariants: literal rows differ from parsed Unihan_Variants.txt"
 
@@ -116,12 +116,12 @@ def lookup (cp : Nat) (prop : VariantProperty) : List Nat :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 theorem lookup_u6F22_simplified :
-    lookup 0x6F22 .SimplifiedVariant = #[0x6C49] := by decide +kernel
+    lookup 0x6F22 .SimplifiedVariant = [0x6C49] := by decide +kernel
 
 theorem lookup_u6C49_traditional :
-    lookup 0x6C49 .TraditionalVariant = #[0x6F22] := by decide +kernel
+    lookup 0x6C49 .TraditionalVariant = [0x6F22] := by decide +kernel
 
 theorem lookup_u56FD_traditional :
-    lookup 0x56FD .TraditionalVariant = #[0x570B] := by decide +kernel
+    lookup 0x56FD .TraditionalVariant = [0x570B] := by decide +kernel
 
 end Unicode.Generated.UnihanVariants

@@ -3210,9 +3210,9 @@ def rowsChunk47 : List UnicodeDataRow := [
     `List` — the primary representation of the table. List reduction
     is structural: appends and traversals visit one cons per row, so
     kernel evaluation of a table fact is linear in the row count,
-    where the equivalent `Array` reduction re-materializes the
-    push-built array per access and is quadratic. Proofs consume this
-    list; the runtime consumes the derived `rows` array below. -/
+    where an index-addressed representation re-materializes its
+    backing store per access and is quadratic. Proofs consume this
+    list; the runtime consumes the derived `rows` list below. -/
 def rowsList : List UnicodeDataRow :=
   rowsChunk0
   ++ rowsChunk1

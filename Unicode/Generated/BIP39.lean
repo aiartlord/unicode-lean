@@ -78,13 +78,13 @@ def wordlistCps : Language → List (List Nat)
 
 /-- All ten languages, in declaration order. -/
 def allLanguages : List Language :=
-  #[.english, .japanese, .korean, .spanish,
+  [.english, .japanese, .korean, .spanish,
     .chineseSimplified, .chineseTraditional,
     .french, .italian, .czech, .portuguese]
 
 /-- Every language's wordlist has exactly 2,048 entries. -/
 theorem every_wordlist_2048 :
-    allLanguages.all (fun lang => (wordlist lang).size = 2048) = true := by
+    allLanguages.all (fun lang => (wordlist lang).length = 2048) = true := by
   simp [allLanguages, wordlist,
     English.wordlist_count,
     Japanese.wordlist_count,

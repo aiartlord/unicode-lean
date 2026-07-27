@@ -32,12 +32,12 @@ def parseRow (rawLine : String) : Option PropertyRow :=
   if line.isEmpty then none else
   let fields : List String :=
     ((line.splitOn ";").map trimS)
-  if fields.size < 2 then none
+  if fields.length < 2 then none
   else
     let short := fields[0]!
     let long  := fields[1]!
-    let others := if fields.size ≤ 2 then #[]
-                  else fields.extract 2 fields.size
+    let others := if fields.length ≤ 2 then []
+                  else fields.drop 2
     some ⟨short, long, others⟩
 
 /-- Raw text of `PropertyAliases.txt`, embedded at compile time. -/

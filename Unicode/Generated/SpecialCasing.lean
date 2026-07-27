@@ -67,13 +67,13 @@ def parseRow (rawLine : String) : Option Row :=
   if line.isEmpty then none else
   let fields : List String :=
     ((line.splitOn ";").map trimS)
-  if fields.size < 4 then none
+  if fields.length < 4 then none
   else
     let code  := parseHex fields[0]!
     let lower := parseCodepoints fields[1]!
     let title := parseCodepoints fields[2]!
     let upper := parseCodepoints fields[3]!
-    let conditions := if fields.size ≤ 4 ∨ fields[4]!.isEmpty then #[]
+    let conditions := if fields.length ≤ 4 ∨ fields[4]!.isEmpty then []
       else (((fields[4]!).splitOn " ").filterMap (fun tok =>
         let t := trimS tok
         if t.isEmpty then none else some (parseCondition t)))

@@ -6992,8 +6992,8 @@ def mappingsList : List (Nat × List Nat) :=
   ++ mappingsChunk101
   ++ mappingsChunk102
 
-def mappings : Array (Nat × List Nat) :=
-  mappingsList.toArray
+def mappings : List (Nat × List Nat) :=
+  mappingsList
 
 /-- Direct source-codepoint lookup over the generated UTS #39
     confusables table.  The generator emits a balanced decision tree
