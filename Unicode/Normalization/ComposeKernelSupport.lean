@@ -184,14 +184,14 @@ theorem mem_takeWhile_imp_pred (p : Nat → Bool) (l : List Nat) :
     precomposed syllable has trivial full canonical decomposition. -/
 theorem decomp_atomic_id
     (cp : Nat)
-    (hDecomp : Lookup.canonicalDecomposition cp = #[])
+    (hDecomp : Lookup.canonicalDecomposition cp = [])
     (hNotHangul : Hangul.isHangulSyllable cp = false) :
-    Decompose.fullCanonicalDecompose cp = #[cp] := by
+    Decompose.fullCanonicalDecompose cp = [cp] := by
   have hDsyl : Hangul.decomposeSyllable? cp = none := by
     unfold Hangul.decomposeSyllable?
     rw [hNotHangul]
     simp
-  show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth cp = #[cp]
+  show Decompose.fullCanonicalDecomposeFuel Decompose.maxDepth cp = [cp]
   unfold Decompose.maxDepth Decompose.fullCanonicalDecomposeFuel
   rw [hDsyl]
   simp [hDecomp]
@@ -428,7 +428,7 @@ theorem zip_tail_mem_seam (pre : List Nat) (y cp : Nat) :
       right
       exact ih
 
-/-- Under HSR snoc-extension `arr ++ #[cp]` with `cp` non-starter,
+/-- Under HSR snoc-extension `arr ++ [cp]` with `cp` non-starter,
     `arr`'s last element has CCC bounded above by `ccc cp`. -/
 theorem hasSortedRunsBool_snoc_le
     (arr : List Nat) (cp y : Nat)
@@ -472,7 +472,7 @@ theorem stepCompose_leading_nonstarter
     (hSt : S.starter = none)
     (hCp_pos : 0 < Lookup.canonicalCombiningClass cp) :
     Compose.stepCompose S cp
-      = { emitted := S.emitted ++ #[cp]
+      = { emitted := S.emitted ++ [cp]
           starter := none
           buffer  := S.buffer
           maxCCC  := S.maxCCC } := by
@@ -490,7 +490,7 @@ theorem foldl_all_nonstarter_eq
       S.starter = none
       → (∀ x ∈ L, 0 < Lookup.canonicalCombiningClass x)
       → L.foldl Compose.stepCompose S
-        = { emitted := S.emitted ++ L.toArray
+        = { emitted := S.emitted ++ L
             starter := none
             buffer  := S.buffer
             maxCCC  := S.maxCCC } := by
@@ -499,17 +499,11 @@ theorem foldl_all_nonstarter_eq
     intros S hSStarter hAllPos
     clear hAllPos
     show ([] : List Nat).foldl Compose.stepCompose S
-       = { emitted := S.emitted ++ ([] : List Nat).toArray
+       = { emitted := S.emitted ++ ([] : List Nat)
            starter := none
            buffer  := S.buffer
            maxCCC  := S.maxCCC }
-    have hListToArr : ([] : List Nat).toArray = (#[] : Array Nat) := rfl
-    rw [hListToArr]
-    show S = { emitted := S.emitted ++ #[]
-               starter := none
-               buffer  := S.buffer
-               maxCCC  := S.maxCCC }
-    have hAppNil : S.emitted ++ #[] = S.emitted := by simp
+    have hAppNil : S.emitted ++ ([] : List Nat) = S.emitted := by simp
     rw [hAppNil]
     obtain ⟨E, st, B, M⟩ := S
     simp at hSStarter
@@ -522,28 +516,26 @@ theorem foldl_all_nonstarter_eq
       fun y hy => hAllPos y (List.mem_cons.mpr (Or.inr hy))
     have hStep := stepCompose_leading_nonstarter S x hSStarter hXpos
     show rest.foldl Compose.stepCompose (Compose.stepCompose S x)
-       = { emitted := S.emitted ++ (x :: rest).toArray
+       = { emitted := S.emitted ++ (x :: rest)
            starter := none
            buffer  := S.buffer
            maxCCC  := S.maxCCC }
     rw [hStep]
     have hStepStarter :
-        ({ emitted := S.emitted ++ #[x]
+        ({ emitted := S.emitted ++ [x]
            starter := none
            buffer  := S.buffer
            maxCCC  := S.maxCCC } : Compose.ComposeState).starter
           = none := rfl
     have hIhResult := ih
-        { emitted := S.emitted ++ #[x]
+        { emitted := S.emitted ++ [x]
           starter := none
           buffer  := S.buffer
           maxCCC  := S.maxCCC }
         hStepStarter hRestPos
     rw [hIhResult]
     congr 1
-    rw [Array.append_assoc]
-    congr 1
-    exact (List.toArray_cons x rest).symm
+    rw [List.append_assoc]
 
 /-- `compose Z = Z` when `Z` is all non-starters. -/
 theorem compose_id_when_all_nonstarter
@@ -709,12 +701,12 @@ theorem nfc_snoc_atomic_nonstarter_hsr_preserves
     (xs : List Nat) (cp : Nat)
     (hQC : nfcQCValue cp = .Y)
     (hCccPos : 0 < Lookup.canonicalCombiningClass cp)
-    (hDecomp : Lookup.canonicalDecomposition cp = #[])
+    (hDecomp : Lookup.canonicalDecomposition cp = [])
     (hNotHangul : Hangul.isHangulSyllable cp = false)
     (hHsrToNFD : Reorder.HasSortedRuns (toNFD xs ++ [cp]))
     (hPrefix : toNFC xs = xs) :
     toNFC (xs ++ [cp]) = xs ++ [cp] := by
-  have hFCD : Decompose.fullCanonicalDecompose cp = #[cp] :=
+  have hFCD : Decompose.fullCanonicalDecompose cp = [cp] :=
     decomp_atomic_id cp hDecomp hNotHangul
   show Compose.compose (toNFD (xs ++ [cp])) = xs ++ [cp]
   have hToNFDExpand : toNFD (xs ++ [cp])

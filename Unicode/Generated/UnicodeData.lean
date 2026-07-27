@@ -3263,11 +3263,10 @@ def rowsList : List UnicodeDataRow :=
   ++ rowsChunk46
   ++ rowsChunk47
 
-/-- The row table as an `Array` — the runtime view of `rowsList`, for
-    the compiled lookup paths. Proofs about table contents go through
-    `rowsList`; `Array.all_toList` with `List.toList_toArray` bridges
-    an `Array`-phrased fact to the list in one rewrite. -/
-def rows : Array UnicodeDataRow :=
-  rowsList.toArray
+/-- The row table — alias of `rowsList`. Kept as a distinct name for the
+    lookup paths that reference `rows`; proofs about table contents go
+    through `rowsList` directly, which reduces linearly in the kernel. -/
+def rows : List UnicodeDataRow :=
+  rowsList
 
 end Unicode.Generated.UnicodeData

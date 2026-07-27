@@ -6,11 +6,11 @@
 
     * **Buffer-as-trailing-run** (`compose_output_form_active`) —
       when the post-fold state has `starter = some st`, `compose`'s
-      output is `emitted ++ #[st] ++ buffer.reverse`. The trailing
+      output is `emitted ++ [st] ++ buffer.reverse`. The trailing
       portion of the output IS the buffer reversed, by direct
       unfolding of `flushCompose`.
     * **Buffer CCC bound under HSR** (`compose_buffer_ccc_bound`) —
-      when `compose Z ++ #[cp]` is HSR with `cp` a non-starter, every
+      when `compose Z ++ [cp]` is HSR with `cp` a non-starter, every
       element of the post-fold buffer has `ccc ≤ ccc cp`. The buffer
       reversed appears in the output as the trailing nonstarter run;
       HSR on the snoc forces every trailing-run element to have CCC
@@ -50,18 +50,18 @@ open Unicode.Normalization.ComposeNonstarterSlide (PrimaryFiresChain)
 
 /-- **Output form (active starter).** When `compose`'s post-fold
     state has `starter = some st`, the output is
-    `emitted ++ #[st] ++ buffer.reverse`. Direct from the
+    `emitted ++ [st] ++ buffer.reverse`. Direct from the
     `flushCompose` definition. -/
 theorem compose_output_form_active
     (Z : List Nat) (st : Nat)
     (hSt : (Z.foldl Compose.stepCompose Compose.initialState).starter = some st) :
     Compose.compose Z =
-      (Z.foldl Compose.stepCompose Compose.initialState).emitted.toList
+      (Z.foldl Compose.stepCompose Compose.initialState).emitted
         ++ [st]
         ++ (Z.foldl Compose.stepCompose Compose.initialState).buffer.reverse := by
   unfold Compose.compose Compose.flushCompose
   rw [hSt]
-  simp [Array.toList_append]
+  simp
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 ADJACENT-PAIR HSR EXTRACTION
@@ -199,7 +199,7 @@ theorem hasSortedRunsBool_run_le_snoc
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- **Buffer-CCC bound under HSR.** When the post-fold state has an
-    active starter and `compose Z ++ #[cp]` is HSR with `cp` a non-
+    active starter and `compose Z ++ [cp]` is HSR with `cp` a non-
     starter, every buffered element has CCC bounded by `ccc cp`. The
     buffer reversed appears as the trailing nonstarter run of
     `compose Z`; HSR-on-snoc forces every trailing-run element to
@@ -499,7 +499,7 @@ theorem chain_fires_via_buffer_bound
           head st hStAct hHeadPos (Or.inr hPC)
     obtain ⟨p, hPC⟩ := hHeadFires
     refine ⟨st, p, hStAct, hHeadPos, hHeadStrictMax, hPC, ?recur⟩
-    -- Recursion: re-fold X ++ #[head] gives the post-head state, with
+    -- Recursion: re-fold X ++ [head] gives the post-head state, with
     -- starter updated to `some p` by `stepCompose_primary_fire_form`.
     have hStepEq :
         Compose.stepCompose

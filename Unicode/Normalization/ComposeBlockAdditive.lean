@@ -114,7 +114,7 @@ theorem foldl_stepCompose_strongValid_array (A : List Nat) :
     `emitted` is a passive prefix accumulator: `stepCompose` only
     appends to it and never branches on its value. -/
 theorem stepCompose_emitted_prepend
-    (Z : Array Nat) (s : Compose.ComposeState) (cp : Nat) :
+    (Z : List Nat) (s : Compose.ComposeState) (cp : Nat) :
     Compose.stepCompose { s with emitted := Z ++ s.emitted } cp =
       { Compose.stepCompose s cp with
         emitted := Z ++ (Compose.stepCompose s cp).emitted } := by
@@ -133,7 +133,7 @@ theorem stepCompose_emitted_prepend
         | none => simp
         | some p => rfl
       · simp only [hBuf]
-        simp [Array.append_assoc]
+        simp [List.append_assoc]
     · simp only [hCcc, ↓reduceIte]
       by_cases hMax : Lookup.canonicalCombiningClass cp ≤ s.maxCCC
       · simp [hMax]
@@ -144,7 +144,7 @@ theorem stepCompose_emitted_prepend
 
 /-- Foldl-level emitted-prepend equivariance. -/
 theorem foldl_stepCompose_emitted_prepend
-    (L : List Nat) (Z : Array Nat) (s : Compose.ComposeState) :
+    (L : List Nat) (Z : List Nat) (s : Compose.ComposeState) :
     L.foldl Compose.stepCompose { s with emitted := Z ++ s.emitted } =
       { L.foldl Compose.stepCompose s with
         emitted := Z ++ (L.foldl Compose.stepCompose s).emitted } := by
@@ -158,13 +158,13 @@ theorem foldl_stepCompose_emitted_prepend
 
 /-- `flushCompose` distributes a prepended `emitted` prefix. -/
 theorem flushCompose_emitted_prepend
-    (Z : Array Nat) (s : Compose.ComposeState) :
+    (Z : List Nat) (s : Compose.ComposeState) :
     Compose.flushCompose { s with emitted := Z ++ s.emitted } =
       Z ++ Compose.flushCompose s := by
   unfold Compose.flushCompose
   cases hSt : s.starter with
-  | none => simp [Array.append_assoc]
-  | some st => simp [Array.append_assoc]
+  | none => simp [List.append_assoc]
+  | some st => simp [List.append_assoc]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 QC=Y STARTER FLUSHES PRIOR STATE
@@ -179,10 +179,10 @@ theorem flushCompose_emitted_prepend
         matching `flushCompose ⟨em, none, [], 0⟩ = em`.
       * `starter = some st`, `buffer = []`: Fact 4 forces
         `primaryComposite? st cp = none`; the post-state is
-        `⟨em ++ #[st], some cp, [], 0⟩`, matching `flushCompose
+        `⟨em ++ [st], some cp, [], 0⟩`, matching `flushCompose
         with an empty buffer and arbitrary `maxCCC`.
       * `starter = some st`, `buffer ≠ []`: post-state is
-        `⟨em ++ #[st] ++ buf.reverse.toArray, some cp, [], 0⟩`,
+        `⟨em ++ [st] ++ buf.reverse, some cp, [], 0⟩`,
         matching `flushCompose` on the original non-empty buffer. -/
 theorem stepCompose_qcY_starter_flush
     (s : Compose.ComposeState) (cp : Nat)
@@ -220,11 +220,11 @@ theorem stepCompose_qcY_starter_flush
     · rw [if_neg hBuf]
 
 /-- `stepCompose initialState cp` on a starter `cp` yields the canonical
-    leading state `⟨#[], some cp, [], 0⟩`. -/
+    leading state `⟨[], some cp, [], 0⟩`. -/
 theorem stepCompose_initial_starter
     (cp : Nat) (hCcc : Lookup.canonicalCombiningClass cp = 0) :
     Compose.stepCompose Compose.initialState cp =
-      { emitted := #[], starter := some cp, buffer := [], maxCCC := 0 } := by
+      { emitted := [], starter := some cp, buffer := [], maxCCC := 0 } := by
   unfold Compose.stepCompose Compose.initialState
   simp [hCcc]
 
@@ -254,28 +254,28 @@ theorem compose_qcY_starter_block_additive_list
         head hsA_strongValid hHeadCcc hHeadQC]
   rw [stepCompose_initial_starter head hHeadCcc]
   -- Reshape the LHS post-`head` state to expose
-  -- `flushCompose s_A ++ #[]` as the `emitted` prefix.
+  -- `flushCompose s_A ++ []` as the `emitted` prefix.
   have hStateRewrite :
       ({ emitted := Compose.flushCompose
                       (A.foldl Compose.stepCompose Compose.initialState)
          starter := some head
          buffer  := []
          maxCCC  := 0 } : Compose.ComposeState)
-      = { (⟨#[], some head, [], 0⟩ : Compose.ComposeState) with
+      = { (⟨[], some head, [], 0⟩ : Compose.ComposeState) with
           emitted := Compose.flushCompose
                       (A.foldl Compose.stepCompose Compose.initialState)
-                    ++ #[] } := by
+                    ++ [] } := by
     simp
   rw [hStateRewrite]
   rw [foldl_stepCompose_emitted_prepend rest
         (Compose.flushCompose
           (A.foldl Compose.stepCompose Compose.initialState))
-        ⟨#[], some head, [], 0⟩]
+        ⟨[], some head, [], 0⟩]
   rw [flushCompose_emitted_prepend
         (Compose.flushCompose
           (A.foldl Compose.stepCompose Compose.initialState))
         (rest.foldl Compose.stepCompose
-          (⟨#[], some head, [], 0⟩ : Compose.ComposeState))]
+          (⟨[], some head, [], 0⟩ : Compose.ComposeState))]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 BLOCK ADDITIVITY (ARRAY FORM)
@@ -297,7 +297,7 @@ theorem compose_qcY_starter_block_additive
     unfold Compose.compose
     rw [List.foldl_append]
     rw [compose_qcY_starter_block_additive_list A head rest hHeadCcc' hHeadQC']
-    simp [Array.toList_append]
+    simp
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §8 COMPOSE-SNOC LINEARITY FOR QC=Y EXTENSION
@@ -307,18 +307,18 @@ theorem compose_qcY_starter_block_additive
     `cp` at the end of any strongly-valid state's processing flushes
     the prior state's pending output and appends `cp`:
 
-        flushCompose (stepCompose s cp) = flushCompose s ++ #[cp].
+        flushCompose (stepCompose s cp) = flushCompose s ++ [cp].
 
     Five cases by cp's shape and the prior state's `starter`:
 
       * Starter cp at strongly-valid state: by §3 (`stepCompose_qcY_
         starter_flush`), the post-step state is `⟨flushCompose s,
         some cp, [], 0⟩`; its `flushCompose` is `flushCompose s ++
-        #[cp]`.
+        [cp]`.
       * Non-starter cp from `starter = none`: by strong validity,
         `buffer = []` and `maxCCC = 0`; the leading-non-starter
         branch appends cp to `emitted`; flush gives `emitted ++
-        #[cp]`.
+        [cp]`.
       * Non-starter cp from `starter = some st`: post-step has
         `buffer := cp :: s.buffer`; flushing reverses the buffer,
         appending `cp` last. -/
@@ -327,11 +327,11 @@ theorem step_qcY_linear
     (hValid : ComposeStateStrongValid s)
     (hQC : nfcQCValue cp = .Y) :
     Compose.flushCompose (Compose.stepCompose s cp) =
-      Compose.flushCompose s ++ #[cp] := by
+      Compose.flushCompose s ++ [cp] := by
   by_cases hCcc : Lookup.canonicalCombiningClass cp = 0
   · -- Starter cp: post-step state is `⟨flushCompose s, some cp, [], 0⟩`.
     rw [stepCompose_qcY_starter_flush s cp hValid hCcc hQC]
-    show Compose.flushCompose s ++ #[cp] = Compose.flushCompose s ++ #[cp]
+    show Compose.flushCompose s ++ [cp] = Compose.flushCompose s ++ [cp]
     rfl
   · -- Non-starter cp. Case on starter.
     obtain ⟨⟨hStarterBuffer, hBufferCCC⟩, hStarterMax⟩ := hValid
@@ -342,7 +342,7 @@ theorem step_qcY_linear
       have hMx : s.maxCCC = 0 := hStarterMax hSt
       clear hMx
       have hPostStep :
-          Compose.stepCompose s cp = { s with emitted := s.emitted ++ #[cp] } := by
+          Compose.stepCompose s cp = { s with emitted := s.emitted ++ [cp] } := by
         set_option linter.unusedSimpArgs false in
         unfold Compose.stepCompose
         simp only [hSt]
@@ -350,8 +350,8 @@ theorem step_qcY_linear
       unfold Compose.flushCompose
       rw [hPostStep]
       simp only [hSt, hBuf]
-      -- LHS: emitted ++ #[cp] ++ [].reverse.toArray = emitted ++ #[cp].
-      -- RHS: emitted ++ [].reverse.toArray ++ #[cp] = emitted ++ #[cp].
+      -- LHS: emitted ++ [cp] ++ [].reverse = emitted ++ [cp].
+      -- RHS: emitted ++ [].reverse ++ [cp] = emitted ++ [cp].
       simp
     | some st =>
       have hCccPos : 0 < Lookup.canonicalCombiningClass cp :=
@@ -359,19 +359,15 @@ theorem step_qcY_linear
       rw [stepCompose_qcY_nonstarter_buffer_form s cp st hSt hQC hCccPos]
       unfold Compose.flushCompose
       simp only [hSt]
-      -- LHS: emitted ++ #[st] ++ (cp :: buffer).reverse.toArray.
-      -- RHS: emitted ++ #[st] ++ buffer.reverse.toArray ++ #[cp].
-      show s.emitted ++ #[st] ++ (cp :: s.buffer).reverse.toArray
-          = s.emitted ++ #[st] ++ s.buffer.reverse.toArray ++ #[cp]
+      -- LHS: emitted ++ [st] ++ (cp :: buffer).reverse.
+      -- RHS: emitted ++ [st] ++ buffer.reverse ++ [cp].
+      show s.emitted ++ [st] ++ (cp :: s.buffer).reverse
+          = s.emitted ++ [st] ++ s.buffer.reverse ++ [cp]
       rw [List.reverse_cons]
-      rw [show ((s.buffer.reverse ++ [cp]) : List Nat).toArray
-            = s.buffer.reverse.toArray ++ #[cp] from by
-          apply Array.toList_inj.mp
-          rw [Array.toList_append, List.toList_toArray, List.toList_toArray]]
-      simp
+      simp [List.append_assoc]
 
 /-- **Compose-snoc linearity for QC=Y extension.** For any QC=Y cp
-    and any array X, `compose (X ++ #[cp]) = compose X ++ #[cp]`.
+    and any array X, `compose (X ++ [cp]) = compose X ++ [cp]`.
     Lifts `step_qcY_linear` through the foldl over the snoc-extended
     array; strong validity of the post-X state comes from
     `foldl_stepCompose_strongValid_array`. -/
@@ -390,6 +386,6 @@ theorem compose_qcY_linear
   rw [step_qcY_linear
           (X.foldl Compose.stepCompose Compose.initialState) cp
           (foldl_stepCompose_strongValid_array X) hQC]
-  simp [Array.toList_append]
+  simp
 
 end Unicode.Normalization.ComposeBlockAdditive
