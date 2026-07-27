@@ -3892,9 +3892,9 @@ def binarySearch (cp : Nat) (left right fuel : Nat) : Option CompatDecompRow :=
 
 /-- Lookup a compatibility-decomposition row by source codepoint. -/
 def lookup? (cp : Nat) : Option CompatDecompRow :=
-  binarySearch cp 0 compatDecompRows.size (compatDecompRows.size + 1)
+  binarySearch cp 0 compatDecompRows.length (compatDecompRows.length + 1)
 
-theorem compatDecompRows_count : compatDecompRows.size = 3833 := by decide
+theorem compatDecompRows_count : compatDecompRows.length = 3833 := by decide
 
 theorem lookup_u00A0 :
     lookup? 0x00A0 = some { codepoint := 0x00A0, tag := .NoBreak, mapping := [0x0020] } := by decide
@@ -3943,8 +3943,8 @@ def gTag : String → Option CompatTag
 
 /-- Parse one UnicodeData row into a compatibility-decomposition row. -/
 def gParseRow (line : String) : Option CompatDecompRow :=
-  let fields := (line.splitOn ";").toArray
-  if fields.size < 6 then none else
+  let fields := line.splitOn ";"
+  if fields.length < 6 then none else
   let decomp := gTrim fields[5]!
   if decomp.isEmpty then none
   else if !decomp.startsWith "<" then none

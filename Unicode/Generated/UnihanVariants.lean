@@ -76,7 +76,7 @@ def parseRow (rawLine : String) : Option Row :=
   let line := trimS stripped
   if line.isEmpty then none else
   let fields : List String := (line.splitOn "\t")
-  if fields.size < 3 then none
+  if fields.length < 3 then none
   else
     match parseCodepointRef fields[0]!, parseProperty? (trimS fields[1]!) with
     | some src, some prop =>

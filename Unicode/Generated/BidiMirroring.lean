@@ -452,7 +452,7 @@ def binarySearch (cp : Nat) (left right fuel : Nat) : Option Nat :=
     else none
 
 def lookup? (cp : Nat) : Option Nat :=
-  binarySearch cp 0 bidiMirrorPairs.size (bidiMirrorPairs.size + 1)
+  binarySearch cp 0 bidiMirrorPairs.length (bidiMirrorPairs.length + 1)
 
 theorem lookup_u0028 : lookup? 0x0028 = some 0x0029 := by decide
 theorem lookup_u0041 : lookup? 0x0041 = none := by decide

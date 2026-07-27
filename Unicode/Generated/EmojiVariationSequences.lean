@@ -62,7 +62,7 @@ def parseRow (rawLine : String) : Option (Nat × Nat) :=
         ((cpField.splitOn " ").filterMap (fun t =>
           let tt := trimS t
           if tt.isEmpty then none else some tt))
-      if toks.size = 2 then
+      if toks.length = 2 then
         some (parseHex toks[0]!, parseHex toks[1]!)
       else
         none
@@ -106,12 +106,12 @@ def hasRegisteredTextPresentation (base : Nat) : Bool :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- UCD 17.0.0 has 742 rows = 371 base codepoints × 2 VS each. -/
-theorem rowCount : parsedPairs.size = 742 := by decide +kernel
+theorem rowCount : parsedPairs.length = 742 := by decide +kernel
 
 /-- 371 distinct base codepoints carry a registered emoji-style. -/
-theorem emojiStyleCount : emojiStyleBases.size = 371 := by decide +kernel
+theorem emojiStyleCount : emojiStyleBases.length = 371 := by decide +kernel
 
-theorem textStyleCount : textStyleBases.size = 371 := by decide +kernel
+theorem textStyleCount : textStyleBases.length = 371 := by decide +kernel
 
 /-- `U+2764 HEAVY BLACK HEART` has a registered emoji presentation. -/
 theorem heart_has_emoji_pres :

@@ -1691,7 +1691,7 @@ def binarySearchAllowed (cp : Nat) (left right fuel : Nat) : Bool :=
 
 /-- True iff `cp` has `Identifier_Status = Allowed`. -/
 def isAllowed (cp : Nat) : Bool :=
-  binarySearchAllowed cp 0 allowedRanges.size (allowedRanges.size + 1)
+  binarySearchAllowed cp 0 allowedRanges.length (allowedRanges.length + 1)
 
 /-- Lookup `Identifier_Status`, defaulting to `Restricted`. -/
 def lookup (cp : Nat) : IdentifierStatus :=
