@@ -17,43 +17,43 @@ set_option maxRecDepth 100000
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Empty input passes preparation. -/
-theorem prepPreserved_empty : precisPreparationPreserved #[] = some #[] := by
+theorem prepPreserved_empty : precisPreparationPreserved [] = some [] := by
   unfold precisPreparationPreserved
-  rw [precisMapPreserved_ascii_output #[] (by decide)]
+  rw [precisMapPreserved_ascii_output [] (by decide)]
   decide +kernel
 
 /-- Pure-lowercase ASCII is unchanged — case preserved, no mapping. -/
 theorem prepPreserved_alice :
-    precisPreparationPreserved #[0x61, 0x6C, 0x69, 0x63, 0x65]
-      = some #[0x61, 0x6C, 0x69, 0x63, 0x65] := by
+    precisPreparationPreserved [0x61, 0x6C, 0x69, 0x63, 0x65]
+      = some [0x61, 0x6C, 0x69, 0x63, 0x65] := by
   unfold precisPreparationPreserved
-  rw [precisMapPreserved_ascii_output #[0x61, 0x6C, 0x69, 0x63, 0x65] (by decide)]
+  rw [precisMapPreserved_ascii_output [0x61, 0x6C, 0x69, 0x63, 0x65] (by decide)]
   decide +kernel
 
 /-- Pure-uppercase ASCII is preserved (unlike UsernameCaseMapped which
     folds to lowercase). -/
 theorem prepPreserved_uppercase_ALICE :
-    precisPreparationPreserved #[0x41, 0x4C, 0x49, 0x43, 0x45]
-      = some #[0x41, 0x4C, 0x49, 0x43, 0x45] := by
+    precisPreparationPreserved [0x41, 0x4C, 0x49, 0x43, 0x45]
+      = some [0x41, 0x4C, 0x49, 0x43, 0x45] := by
   unfold precisPreparationPreserved
-  rw [precisMapPreserved_ascii_output #[0x41, 0x4C, 0x49, 0x43, 0x45] (by decide)]
+  rw [precisMapPreserved_ascii_output [0x41, 0x4C, 0x49, 0x43, 0x45] (by decide)]
   decide +kernel
 
 /-- Mixed-case identifier is preserved. -/
 theorem prepPreserved_mixed_Alice :
-    precisPreparationPreserved #[0x41, 0x6C, 0x69, 0x63, 0x65]
-      = some #[0x41, 0x6C, 0x69, 0x63, 0x65] := by
+    precisPreparationPreserved [0x41, 0x6C, 0x69, 0x63, 0x65]
+      = some [0x41, 0x6C, 0x69, 0x63, 0x65] := by
   unfold precisPreparationPreserved
-  rw [precisMapPreserved_ascii_output #[0x41, 0x6C, 0x69, 0x63, 0x65] (by decide)]
+  rw [precisMapPreserved_ascii_output [0x41, 0x6C, 0x69, 0x63, 0x65] (by decide)]
   decide +kernel
 
 /-- Fullwidth ASCII is width-mapped but not case-folded. `Ａｌｉｃｅ`
     prepares to `Alice`, preserving case. -/
 theorem prepPreserved_fullwidth_Alice :
-    precisPreparationPreserved #[0xFF21, 0xFF4C, 0xFF49, 0xFF43, 0xFF45]
-      = some #[0x41, 0x6C, 0x69, 0x63, 0x65] := by
+    precisPreparationPreserved [0xFF21, 0xFF4C, 0xFF49, 0xFF43, 0xFF45]
+      = some [0x41, 0x6C, 0x69, 0x63, 0x65] := by
   unfold precisPreparationPreserved
-  rw [precisMapPreserved_ascii_output #[0xFF21, 0xFF4C, 0xFF49, 0xFF43, 0xFF45] (by decide)]
+  rw [precisMapPreserved_ascii_output [0xFF21, 0xFF4C, 0xFF49, 0xFF43, 0xFF45] (by decide)]
   decide +kernel
 
 end Unicode.Precis.Preparation

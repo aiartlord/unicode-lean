@@ -35,21 +35,21 @@ set_option maxRecDepth 100000
     target` if the codepoint carries a `<wide>` or `<narrow>`
     compatibility decomposition per the pinned UCD tables, otherwise
     `none`. -/
-def lookupWidthMapping? (cp : Nat) : Option (Array Nat) :=
+def lookupWidthMapping? (cp : Nat) : Option (List Nat) :=
   WidthCompatMappings.lookup? cp
 
 /-- Apply the width mapping to a single codepoint, substituting with
     its compat target if one exists, otherwise returning the
     codepoint unchanged (as a singleton sequence). -/
-def widthMapCodepoint (cp : Nat) : Array Nat :=
+def widthMapCodepoint (cp : Nat) : List Nat :=
   match lookupWidthMapping? cp with
   | some target => target
-  | none        => #[cp]
+  | none        => [cp]
 
 /-- Apply the width mapping to a codepoint sequence, flattening each
     per-codepoint result back into a single sequence. -/
 def widthMap (cps : List Nat) : List Nat :=
-  cps.flatMap (fun cp => (widthMapCodepoint cp).toList)
+  cps.flatMap widthMapCodepoint
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- TEST VECTORS
@@ -62,18 +62,18 @@ def widthMap (cps : List Nat) : List Nat :=
 
 /-- FULLWIDTH LATIN CAPITAL LETTER A maps to LATIN CAPITAL LETTER A. -/
 theorem widthMap_fullwidth_A :
-    widthMapCodepoint 0xFF21 = #[0x0041] := by decide
+    widthMapCodepoint 0xFF21 = [0x0041] := by decide
 
 /-- IDEOGRAPHIC SPACE maps to ASCII SPACE. -/
 theorem widthMap_ideographic_space :
-    widthMapCodepoint 0x3000 = #[0x0020] := by decide
+    widthMapCodepoint 0x3000 = [0x0020] := by decide
 
 /-- HALFWIDTH KATAKANA LETTER A (U+FF71) maps to KATAKANA LETTER A (U+30A2). -/
 theorem widthMap_halfwidth_katakana_a :
-    widthMapCodepoint 0xFF71 = #[0x30A2] := by decide
+    widthMapCodepoint 0xFF71 = [0x30A2] := by decide
 
 /-- ASCII letter has no width mapping. -/
-theorem widthMap_ascii_a : widthMapCodepoint 0x0061 = #[0x0061] := by decide
+theorem widthMap_ascii_a : widthMapCodepoint 0x0061 = [0x0061] := by decide
 
 /-- The sequence-level mapping preserves pure-ASCII input. -/
 theorem widthMap_ascii_identity :
@@ -96,7 +96,7 @@ theorem widthMap_mixed :
 --
 -- The generated lookup carries a certificate that every replacement
 -- target is absent from the source set. The identity-on-miss half
--- lifts to `Array` level via `widthMap_id_on_non_sources` by structural
+-- lifts to `List` level via `widthMap_id_on_non_sources` by structural
 -- induction on the input sequence.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
@@ -122,32 +122,29 @@ theorem lookupWidthMapping_none_of_non_source (cp : Nat)
     singleton under `widthMapCodepoint`. -/
 theorem widthMapCodepoint_id_of_non_source (cp : Nat)
     (h : isWidthCompatSource cp = false) :
-    widthMapCodepoint cp = #[cp] := by
+    widthMapCodepoint cp = [cp] := by
   unfold widthMapCodepoint
   rw [lookupWidthMapping_none_of_non_source cp h]
 
-/-- Generic lift: on any `Array Nat` whose codepoints each satisfy
-    `f cp = #[cp]`, the foldl-with-append pipeline is the identity. -/
-theorem arr_foldl_map_id_of_all_identity (cps : Array Nat)
-    (f : Nat → Array Nat) (hAll : ∀ cp ∈ cps, f cp = #[cp]) :
-    cps.foldl (fun acc cp => acc ++ f cp) #[] = cps := by
-  rw [← Array.foldl_toList]
-  have hAllList : ∀ cp ∈ cps.toList, f cp = #[cp] :=
-    fun cp hMem => hAll cp (by simpa using hMem)
-  have key : ∀ (l : List Nat) (init : Array Nat),
-      (∀ cp ∈ l, f cp = #[cp]) →
-      l.foldl (fun acc cp => acc ++ f cp) init = init ++ l.toArray := by
+/-- Generic lift: on any `List Nat` whose codepoints each satisfy
+    `f cp = [cp]`, the foldl-with-append pipeline is the identity. -/
+theorem arr_foldl_map_id_of_all_identity (cps : List Nat)
+    (f : Nat → List Nat) (hAll : ∀ cp ∈ cps, f cp = [cp]) :
+    cps.foldl (fun acc cp => acc ++ f cp) [] = cps := by
+  have key : ∀ (l : List Nat) (init : List Nat),
+      (∀ cp ∈ l, f cp = [cp]) →
+      l.foldl (fun acc cp => acc ++ f cp) init = init ++ l := by
     intro l
     induction l with
     | nil => intro init hH; simp
     | cons hd tl ih =>
       intro init hH
-      have hHd : f hd = #[hd] := hH hd (by simp)
-      have hTl : ∀ cp ∈ tl, f cp = #[cp] := fun cp hMem => hH cp (by simp [hMem])
+      have hHd : f hd = [hd] := hH hd (by simp)
+      have hTl : ∀ cp ∈ tl, f cp = [cp] := fun cp hMem => hH cp (by simp [hMem])
       simp only [List.foldl_cons, hHd]
-      rw [ih (init ++ #[hd]) hTl]
+      rw [ih (init ++ [hd]) hTl]
       simp
-  rw [key cps.toList #[] hAllList]
+  rw [key cps [] hAll]
   simp
 
 /-- `widthMap` is the identity on any sequence whose codepoints are
@@ -156,15 +153,15 @@ theorem widthMap_id_of_all_non_source (cps : List Nat)
     (h : ∀ cp ∈ cps, isWidthCompatSource cp = false) :
     widthMap cps = cps := by
   unfold widthMap
-  have key : ∀ (l : List Nat), (∀ cp ∈ l, widthMapCodepoint cp = #[cp]) →
-      l.flatMap (fun cp => (widthMapCodepoint cp).toList) = l := by
+  have key : ∀ (l : List Nat), (∀ cp ∈ l, widthMapCodepoint cp = [cp]) →
+      l.flatMap widthMapCodepoint = l := by
     intro l
     induction l with
     | nil => intro _hH; simp
     | cons hd tl ih =>
       intro hH
-      have hHd : widthMapCodepoint hd = #[hd] := hH hd (by simp)
-      have hTl : ∀ cp ∈ tl, widthMapCodepoint cp = #[cp] :=
+      have hHd : widthMapCodepoint hd = [hd] := hH hd (by simp)
+      have hTl : ∀ cp ∈ tl, widthMapCodepoint cp = [cp] :=
         fun cp hMem => hH cp (by simp [hMem])
       simp [hHd, ih hTl]
   rw [key cps (fun cp hMem =>
@@ -202,7 +199,7 @@ theorem widthMap_output_all_non_source (cps : List Nat) :
   -- Split on whether `x` has a lookup or not.
   cases hLook : lookupWidthMapping? x with
   | none =>
-    -- widthMapCodepoint x reduces to #[x]; cp ∈ #[x] forces cp = x, which is a non-source.
+    -- widthMapCodepoint x reduces to [x]; cp ∈ [x] forces cp = x, which is a non-source.
     rw [hLook] at hxF
     simp at hxF
     have hCpEqX : cp = x := hxF

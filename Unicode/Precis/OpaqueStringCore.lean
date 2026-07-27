@@ -20,21 +20,21 @@ open Unicode.Precis.BidiRule (satisfiesBidiRule)
 def isOpaqueStringAdmissible (cp : Nat) : Bool :=
   Unicode.Precis.Categories.isFreeformClassAdmissibleGC cp
 
-def allOpaqueAdmissible (cps : Array Nat) : Bool :=
+def allOpaqueAdmissible (cps : List Nat) : Bool :=
   cps.all isOpaqueStringAdmissible
 
 /-- Combined gate for OpaqueString: FreeformClass admissibility AND
     RFC 5893 §2 Bidi Rule. -/
-def isOpaqueGatePass (cps : Array Nat) : Bool :=
+def isOpaqueGatePass (cps : List Nat) : Bool :=
   allOpaqueAdmissible cps && satisfiesBidiRule cps
 
 /-- OpaqueString mapping: non-ASCII-space remap to U+0020, then NFC. -/
-def precisMapOpaque (cps : Array Nat) : Array Nat :=
+def precisMapOpaque (cps : List Nat) : List Nat :=
   toNFC (remapZsToAscii cps)
 
 /-- OpaqueString preparation: apply the mapping stages, then reject if
     the result fails `isOpaqueGatePass`. -/
-def precisPreparationOpaque (cps : Array Nat) : Option (Array Nat) :=
+def precisPreparationOpaque (cps : List Nat) : Option (List Nat) :=
   let mapped := precisMapOpaque cps
   if isOpaqueGatePass mapped then some mapped else none
 

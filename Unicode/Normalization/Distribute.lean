@@ -102,7 +102,7 @@ theorem decomposeSequence_singleton (cp : Nat) :
 
 /-- `caseFold` on a singleton is the per-codepoint case fold. -/
 theorem caseFold_singleton (cp : Nat) :
-    caseFold [cp] = (caseFoldCodepoint cp).toList := by
+    caseFold [cp] = caseFoldCodepoint cp := by
   unfold caseFold
   simp
 

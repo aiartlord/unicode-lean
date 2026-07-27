@@ -74,7 +74,7 @@ open Unicode.Precis.BidiRule (satisfiesBidiRule)
       So `remapZsToAscii y = y` (`remapZsToAscii_id_of_no_nonAsciiZs`).
       Then `toNFC (remapZsToAscii y) = toNFC y = y` by
       `toNFC_idempotent`. -/
-theorem precisMapOpaque_idempotent (cps : Array Nat) :
+theorem precisMapOpaque_idempotent (cps : List Nat) :
     precisMapOpaque (precisMapOpaque cps) = precisMapOpaque cps := by
   unfold precisMapOpaque
   have hRemap_no_zs : ∀ cp ∈ remapZsToAscii cps, isNonAsciiZs cp = false :=
@@ -89,7 +89,7 @@ theorem precisMapOpaque_idempotent (cps : Array Nat) :
 
 /-- **OpaqueString preparation idempotence.** -/
 theorem precis_idempotent_opaque
-    (cps out : Array Nat) (h : precisPreparationOpaque cps = some out) :
+    (cps out : List Nat) (h : precisPreparationOpaque cps = some out) :
     precisPreparationOpaque out = some out := by
   have hPMIdem : precisMapOpaque (precisMapOpaque cps) = precisMapOpaque cps :=
     precisMapOpaque_idempotent cps
@@ -110,7 +110,7 @@ theorem precis_idempotent_opaque
 
 /-- OpaqueString preparation output is in NFC form. -/
 theorem precis_output_in_NFC_opaque
-    (cps out : Array Nat) (h : precisPreparationOpaque cps = some out) :
+    (cps out : List Nat) (h : precisPreparationOpaque cps = some out) :
     toNFC out = out := by
   by_cases hAdm : isOpaqueGatePass (precisMapOpaque cps) = true
   · have hOut : out = precisMapOpaque cps := by
@@ -129,7 +129,7 @@ theorem precis_output_in_NFC_opaque
 /-- OpaqueString preparation output contains no non-ASCII Zs (remap +
     NFC strip them; `toNFC` preserves the invariant). -/
 theorem precis_output_no_nonAsciiZs_opaque
-    (cps out : Array Nat) (h : precisPreparationOpaque cps = some out) :
+    (cps out : List Nat) (h : precisPreparationOpaque cps = some out) :
     ∀ cp ∈ out, isNonAsciiZs cp = false := by
   by_cases hAdm : isOpaqueGatePass (precisMapOpaque cps) = true
   · have hOut : out = precisMapOpaque cps := by
@@ -149,7 +149,7 @@ theorem precis_output_no_nonAsciiZs_opaque
 /-- OpaqueString preparation output is admissible under
     `isOpaqueStringAdmissible`. -/
 theorem precis_output_admissible_opaque
-    (cps out : Array Nat) (h : precisPreparationOpaque cps = some out) :
+    (cps out : List Nat) (h : precisPreparationOpaque cps = some out) :
     ∀ cp ∈ out, isOpaqueStringAdmissible cp = true := by
   by_cases hAdm : isOpaqueGatePass (precisMapOpaque cps) = true
   · have hOut : out = precisMapOpaque cps := by
@@ -164,8 +164,8 @@ theorem precis_output_admissible_opaque
       simp only [Bool.and_eq_true] at hAdm
       exact hAdm.1
     unfold allOpaqueAdmissible at hAllAdm
-    rw [Array.all_eq_true] at hAllAdm
-    rcases Array.getElem_of_mem hcp with ⟨i, hi, hElem⟩
+    rw [List.all_eq_true] at hAllAdm
+    rcases List.getElem_of_mem hcp with ⟨i, hi, hElem⟩
     have := hAllAdm i hi
     rw [hElem] at this
     exact this
@@ -176,7 +176,7 @@ theorem precis_output_admissible_opaque
 
 /-- OpaqueString preparation output satisfies the Bidi Rule. -/
 theorem precis_output_bidi_rule_opaque
-    (cps out : Array Nat) (h : precisPreparationOpaque cps = some out) :
+    (cps out : List Nat) (h : precisPreparationOpaque cps = some out) :
     satisfiesBidiRule out = true := by
   by_cases hAdm : isOpaqueGatePass (precisMapOpaque cps) = true
   · have hOut : out = precisMapOpaque cps := by

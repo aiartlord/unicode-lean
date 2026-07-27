@@ -51,11 +51,11 @@ set_option maxRecDepth 1000000
 -- `remapZsToAscii`) live in `ZsMapping`.
 
 /-- `remapZsToAscii` output contains no non-ASCII Zs codepoints. -/
-theorem remapZsToAscii_output_no_nonAsciiZs (cps : Array Nat) :
+theorem remapZsToAscii_output_no_nonAsciiZs (cps : List Nat) :
     ∀ cp ∈ remapZsToAscii cps, isNonAsciiZs cp = false := by
   intro cp hcp
   unfold remapZsToAscii at hcp
-  rw [Array.mem_map] at hcp
+  rw [List.mem_map] at hcp
   obtain ⟨a, hMem, ha⟩ := hcp
   clear hMem
   by_cases hAZs : isNonAsciiZs a = true
@@ -68,17 +68,17 @@ theorem remapZsToAscii_output_no_nonAsciiZs (cps : Array Nat) :
 
 /-- `remapZsToAscii` is the identity on inputs that already have no
     non-ASCII Zs. -/
-theorem remapZsToAscii_id_of_no_nonAsciiZs (cps : Array Nat)
+theorem remapZsToAscii_id_of_no_nonAsciiZs (cps : List Nat)
     (h : ∀ cp ∈ cps, isNonAsciiZs cp = false) :
     remapZsToAscii cps = cps := by
   unfold remapZsToAscii
   have hAllEq : cps.map (fun cp => if isNonAsciiZs cp then 0x0020 else cp) =
                 cps.map id := by
-    apply Array.map_congr_left
+    apply List.map_congr_left
     intro a ha
     have hA : isNonAsciiZs a = false := h a ha
     simp [hA]
-  rw [hAllEq, Array.map_id]
+  rw [hAllEq, List.map_id]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- NON-ASCII Zs DECOMPOSITION FACTS
@@ -97,7 +97,7 @@ theorem remapZsToAscii_id_of_no_nonAsciiZs (cps : Array Nat)
 
 /-- Pointwise Hangul analog. -/
 theorem decomposeSyllable_output_no_nonAsciiZs
-    (cp : Nat) (arr : Array Nat)
+    (cp : Nat) (arr : List Nat)
     (h : Hangul.decomposeSyllable? cp = some arr) (j : Nat) (hj : j ∈ arr) :
     isNonAsciiZs j = false := by
   have hSyl : Hangul.isHangulSyllable cp = true := by
@@ -156,17 +156,17 @@ theorem canonicalDecomposition_output_no_nonAsciiZs
     have hSrcRows : src ∈ UnicodeData.rows := by
       simpa [UnicodeData.rows] using hSrcMem
     have hTable := nonNonAsciiZs_decomp_no_nonAsciiZs
-    rw [Array.all_eq_true] at hTable
-    rcases Array.getElem_of_mem hSrcRows with ⟨i, hi, hElem⟩
+    rw [List.all_eq_true] at hTable
+    rcases List.getElem_of_mem hSrcRows with ⟨i, hi, hElem⟩
     have hEntry := hTable i hi
     rw [hElem] at hEntry
     simp only [Bool.or_eq_true] at hEntry
     rcases hEntry with hSrcZs | hTgtAllNonZs
     · rw [hSrcCp, hRowCp, hCp] at hSrcZs
       exact Bool.noConfusion hSrcZs
-    · rw [Array.all_eq_true] at hTgtAllNonZs
+    · rw [List.all_eq_true] at hTgtAllNonZs
       rw [← hSrcDecomp] at hj
-      rcases Array.getElem_of_mem hj with ⟨k, hk, hElemJ⟩
+      rcases List.getElem_of_mem hj with ⟨k, hk, hElemJ⟩
       have hBool := hTgtAllNonZs k hk
       rw [hElemJ] at hBool
       simpa using hBool
@@ -177,11 +177,10 @@ theorem canonicalDecomposition_output_no_nonAsciiZs
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Membership through a `foldl`-with-append over an array. -/
-theorem mem_foldl_append (f : Nat → Array Nat) (cps : Array Nat) (cp : Nat)
-    (hMem : cp ∈ cps.foldl (fun acc x => acc ++ f x) #[]) :
+theorem mem_foldl_append (f : Nat → List Nat) (cps : List Nat) (cp : Nat)
+    (hMem : cp ∈ cps.foldl (fun acc x => acc ++ f x) []) :
     ∃ x ∈ cps, cp ∈ f x := by
-  rw [← Array.foldl_toList] at hMem
-  have key : ∀ (l : List Nat) (init : Array Nat),
+  have key : ∀ (l : List Nat) (init : List Nat),
       cp ∈ l.foldl (fun acc x => acc ++ f x) init →
       cp ∈ init ∨ ∃ x ∈ l, cp ∈ f x := by
     intro l
@@ -191,20 +190,19 @@ theorem mem_foldl_append (f : Nat → Array Nat) (cps : Array Nat) (cp : Nat)
       intro init hM
       simp only [List.foldl_cons] at hM
       rcases ih (init ++ f hd) hM with hInit | ⟨x, hxM, hxF⟩
-      · rcases Array.mem_append.mp hInit with h1 | h2
+      · rcases List.mem_append.mp hInit with h1 | h2
         · left; exact h1
         · right; exact ⟨hd, by simp, h2⟩
       · right; exact ⟨x, by simp [hxM], hxF⟩
-  rcases key cps.toList #[] hMem with hEmpty | ⟨x, hxM, hxF⟩
+  rcases key cps [] hMem with hEmpty | ⟨x, hxM, hxF⟩
   · simp at hEmpty
-  · exact ⟨x, by simpa using hxM, hxF⟩
+  · exact ⟨x, hxM, hxF⟩
 
 /-- Forward membership through `foldl`-with-append. -/
-theorem mem_foldl_append_of (f : Nat → Array Nat) (cps : Array Nat)
+theorem mem_foldl_append_of (f : Nat → List Nat) (cps : List Nat)
     (c : Nat) (hc : c ∈ cps) (d : Nat) (hd : d ∈ f c) :
-    d ∈ cps.foldl (fun acc x => acc ++ f x) #[] := by
-  rw [← Array.foldl_toList]
-  have key : ∀ (l : List Nat) (init : Array Nat),
+    d ∈ cps.foldl (fun acc x => acc ++ f x) [] := by
+  have key : ∀ (l : List Nat) (init : List Nat),
       (d ∈ init ∨ ∃ c' ∈ l, d ∈ f c') →
       d ∈ l.foldl (fun acc x => acc ++ f x) init := by
     intro l
@@ -219,13 +217,13 @@ theorem mem_foldl_append_of (f : Nat → Array Nat) (cps : Array Nat)
       simp only [List.foldl_cons]
       apply ih (init ++ f hd')
       rcases hCase with hInit | ⟨c', hc', hcf⟩
-      · left; exact Array.mem_append.mpr (Or.inl hInit)
+      · left; exact List.mem_append.mpr (Or.inl hInit)
       · rcases List.mem_cons.mp hc' with rfl | hRest
-        · left; exact Array.mem_append.mpr (Or.inr hcf)
+        · left; exact List.mem_append.mpr (Or.inr hcf)
         · right; exact ⟨c', hRest, hcf⟩
-  apply key cps.toList #[]
+  apply key cps []
   right
-  exact ⟨c, by simpa using hc, hd⟩
+  exact ⟨c, hc, hd⟩
 
 /-- Fuel-bounded preservation of no-non-ASCII-Zs through
     `fullCanonicalDecomposeFuel`. -/
@@ -245,9 +243,9 @@ theorem fullCanonicalDecomposeFuel_preserves_no_nonAsciiZs (fuel : Nat) :
       exact decomposeSyllable_output_no_nonAsciiZs cp arr hSome j hj
     · next hNone =>
       generalize hStep : Lookup.canonicalDecomposition cp = step at hj
-      change j ∈ (if step.isEmpty = true then #[cp]
+      change j ∈ (if step.isEmpty = true then [cp]
                   else step.foldl (fun acc cp' =>
-                        acc ++ Decompose.fullCanonicalDecomposeFuel fuel cp') #[]) at hj
+                        acc ++ Decompose.fullCanonicalDecomposeFuel fuel cp') []) at hj
       split at hj
       · next hEmpty =>
         simp_all
@@ -261,7 +259,7 @@ theorem fullCanonicalDecomposeFuel_preserves_no_nonAsciiZs (fuel : Nat) :
 
 /-- `decomposeSequence` preserves no-non-ASCII-Zs. -/
 theorem decomposeSequence_preserves_no_nonAsciiZs
-    (cps : Array Nat) (h : ∀ cp ∈ cps, isNonAsciiZs cp = false) :
+    (cps : List Nat) (h : ∀ cp ∈ cps, isNonAsciiZs cp = false) :
     ∀ j ∈ Decompose.decomposeSequence cps, isNonAsciiZs j = false := by
   intro j hj
   unfold Decompose.decomposeSequence at hj
@@ -272,7 +270,7 @@ theorem decomposeSequence_preserves_no_nonAsciiZs
 
 /-- `toNFD` preserves no-non-ASCII-Zs. -/
 theorem toNFD_preserves_no_nonAsciiZs
-    (cps : Array Nat) (h : ∀ cp ∈ cps, isNonAsciiZs cp = false) :
+    (cps : List Nat) (h : ∀ cp ∈ cps, isNonAsciiZs cp = false) :
     ∀ j ∈ NFC.toNFD cps, isNonAsciiZs j = false := by
   unfold NFC.toNFD
   intro j hj
@@ -298,7 +296,7 @@ theorem toNFD_preserves_no_nonAsciiZs
     `decompose_compose_inversion`-derived `toNFD_toNFC_eq_toNFD`).
     But `toNFD x` has no non-ASCII Zs by hypothesis, contradiction. -/
 theorem toNFC_preserves_no_nonAsciiZs
-    (cps : Array Nat) (h : ∀ cp ∈ cps, isNonAsciiZs cp = false) :
+    (cps : List Nat) (h : ∀ cp ∈ cps, isNonAsciiZs cp = false) :
     ∀ cp ∈ toNFC cps, isNonAsciiZs cp = false := by
   intro c hc
   cases hZsC : isNonAsciiZs c with
@@ -311,11 +309,11 @@ theorem toNFC_preserves_no_nonAsciiZs
     have hTable := nonAsciiZs_fullDecompose_contains_nonAsciiZs
     rw [List.all_eq_true] at hTable
     have hAtI := hTable c hCinZs
-    rw [Array.any_eq_true] at hAtI
+    rw [List.any_eq_true] at hAtI
     obtain ⟨idx, hIdx, hIsZs⟩ := hAtI
     let d : Nat := (Decompose.fullCanonicalDecompose c)[idx]
     have hdInDecomp : d ∈ Decompose.fullCanonicalDecompose c :=
-      Array.getElem_mem hIdx
+      List.getElem_mem hIdx
     have hdIsZs : isNonAsciiZs d = true := hIsZs
     have hdInDecSeq : d ∈ Decompose.decomposeSequence (toNFC cps) := by
       unfold Decompose.decomposeSequence

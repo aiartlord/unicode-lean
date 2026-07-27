@@ -95,7 +95,7 @@ theorem precisMapPreserved_ascii_output (cps : List Nat)
 theorem precisMap_id_singleton (cp : Nat)
     (hw : isWidthCompatSource cp = false)
     (hc : isCaseFoldSource cp = false)
-    (hd : Lookup.canonicalDecomposition cp = #[])
+    (hd : Lookup.canonicalDecomposition cp = [])
     (hh : Hangul.isHangulSyllable cp = false)
     (hccc : Lookup.canonicalCombiningClass cp = 0) :
     precisMap [cp] = [cp] := by
@@ -112,7 +112,7 @@ theorem precisMap_id_singleton (cp : Nat)
     starter. -/
 theorem precisMapPreserved_id_singleton (cp : Nat)
     (hw : isWidthCompatSource cp = false)
-    (hd : Lookup.canonicalDecomposition cp = #[])
+    (hd : Lookup.canonicalDecomposition cp = [])
     (hh : Hangul.isHangulSyllable cp = false)
     (hccc : Lookup.canonicalCombiningClass cp = 0) :
     precisMapPreserved [cp] = [cp] := by
@@ -531,8 +531,8 @@ theorem precis_output_admissible_mapped
       simp only [Bool.and_eq_true] at hAdm
       exact hAdm.1
     unfold allAdmissible at hAllAdm
-    rw [Array.all_eq_true] at hAllAdm
-    rcases Array.getElem_of_mem hcp with ⟨i, hi, hElem⟩
+    rw [List.all_eq_true] at hAllAdm
+    rcases List.getElem_of_mem hcp with ⟨i, hi, hElem⟩
     have := hAllAdm i hi
     rw [hElem] at this
     exact this
@@ -558,8 +558,8 @@ theorem precis_output_admissible_preserved
       simp only [Bool.and_eq_true] at hAdm
       exact hAdm.1
     unfold allAdmissible at hAllAdm
-    rw [Array.all_eq_true] at hAllAdm
-    rcases Array.getElem_of_mem hcp with ⟨i, hi, hElem⟩
+    rw [List.all_eq_true] at hAllAdm
+    rcases List.getElem_of_mem hcp with ⟨i, hi, hElem⟩
     have := hAllAdm i hi
     rw [hElem] at this
     exact this
