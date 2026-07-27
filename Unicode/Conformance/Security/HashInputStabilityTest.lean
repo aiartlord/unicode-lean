@@ -70,7 +70,7 @@ def parseHexList (s : String) : List Nat :=
         else if c.toNat ≥ 'A'.toNat ∧ c.toNat ≤ 'F'.toNat then
           c.toNat - 'A'.toNat + 10
         else 0
-      acc * 16 + v) 0))).toArray
+      acc * 16 + v) 0)))
 
 /-- Parse a `Context` from the row's attribution dictionary.
     Recognised keys (all optional):
@@ -149,7 +149,7 @@ theorem covers_webhook_signature_drift :
     it.  Each entry is the string returned by
     `Classification.tag` for the corresponding constructor. -/
 theorem every_subthreat_has_fixture_row :
-    let expectedSubThreats : Array String :=
+    let expectedSubThreats : List String :=
       [ "NormalizationDrift"
        , "TrailingWhitespace"
        , "EncodingMismatch"

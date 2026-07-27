@@ -28,7 +28,7 @@ open Unicode.Security.Form.CaseExpansionMismatch
 def rawFixture : String :=
   include_str "../../Ucd/Security/CaseExpansionMismatchTest.txt"
 
-def rows : Array Row := parseFixture rawFixture
+def rows : List Row := parseFixture rawFixture
 
 /-- Project an `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
@@ -36,7 +36,7 @@ def projectClassify
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
 /-- Project an `Classification` to the positions array. -/
-def projectPositions (c : Classification) : Array Nat :=
+def projectPositions (c : Classification) : List Nat :=
   c.positions
 
 /-- Validate the F4 verdict's metadata fields against the row's
@@ -66,17 +66,17 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 22 := by decide
+theorem row_count : rows.length = 22 := by decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 9 := by decide
+    (rows.filter (·.sectionName = "Clear")).length ≥ 9 := by decide
 
 theorem covers_upper :
-    (rows.filter (·.sectionName = "UpperExpansion")).size ≥ 9 := by
+    (rows.filter (·.sectionName = "UpperExpansion")).length ≥ 9 := by
   decide
 
 theorem covers_lower :
-    (rows.filter (·.sectionName = "LowerExpansion")).size ≥ 4 := by
+    (rows.filter (·.sectionName = "LowerExpansion")).length ≥ 4 := by
   decide
 
 end Unicode.Conformance.Security.CaseExpansionMismatchTest

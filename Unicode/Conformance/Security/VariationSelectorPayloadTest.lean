@@ -43,7 +43,7 @@ def rawFixture : String :=
   include_str "../../Ucd/Security/VariationSelectorPayloadTest.txt"
 
 /-- All parsed rows from the bundled fixture. -/
-def rows : Array Row := parseFixture rawFixture
+def rows : List Row := parseFixture rawFixture
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 Per-family classification-name mapping
@@ -57,7 +57,7 @@ def projectClassify
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
 /-- Project a `Classification` to its positions array. -/
-def projectPositions (c : Classification) : Array Nat :=
+def projectPositions (c : Classification) : List Nat :=
   c.positions
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -66,11 +66,11 @@ def projectPositions (c : Classification) : Array Nat :=
 
 /-- Validate the C2 verdict's metadata fields against the row's
     column-4 attribution.  Keys recognised: `registered_vs` and
-    `suspicious_vs` against the corresponding `positions.size`. -/
+    `suspicious_vs` against the corresponding `positions.length`. -/
 def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
-  attr.checkNatKey "registered_vs" v.registeredPositions.size &&
-  attr.checkNatKey "suspicious_vs" v.suspiciousPositions.size
+  attr.checkNatKey "registered_vs" v.registeredPositions.length &&
+  attr.checkNatKey "suspicious_vs" v.suspiciousPositions.length
 
 /-- Run `detect` on the row's input and check the verdict against
     the fixture's expected classification, sub-threat name,
@@ -92,31 +92,31 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate (catches fixture corruption / accidental rewrites). -/
-theorem row_count : rows.size = 30 := by decide
+theorem row_count : rows.length = 30 := by decide
 
 /-- Section coverage gate — every named section is represented. -/
 theorem covers_registered_clear :
-    (rows.filter (·.sectionName = "RegisteredClear")).size ≥ 10 := by
+    (rows.filter (·.sectionName = "RegisteredClear")).length ≥ 10 := by
   decide
 
 theorem covers_direct_payload :
-    (rows.filter (·.sectionName = "DirectPayload")).size ≥ 6 := by
+    (rows.filter (·.sectionName = "DirectPayload")).length ≥ 6 := by
   decide
 
 theorem covers_illegal_target :
-    (rows.filter (·.sectionName = "IllegalTarget")).size ≥ 7 := by
+    (rows.filter (·.sectionName = "IllegalTarget")).length ≥ 7 := by
   decide
 
 theorem covers_repeated_base :
-    (rows.filter (·.sectionName = "RepeatedBase")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "RepeatedBase")).length ≥ 3 := by
   decide
 
 theorem covers_embedded_after_reg :
-    (rows.filter (·.sectionName = "EmbeddedAfterRegistered")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "EmbeddedAfterRegistered")).length ≥ 3 := by
   decide
 
 theorem covers_leading_vs :
-    (rows.filter (·.sectionName = "LeadingVS")).size ≥ 1 := by
+    (rows.filter (·.sectionName = "LeadingVS")).length ≥ 1 := by
   decide
 
 end Unicode.Conformance.Security.VariationSelectorPayloadTest

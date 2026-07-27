@@ -31,7 +31,7 @@ open Unicode.Security.Form.LocaleCaseInversion
 def rawFixture : String :=
   include_str "../../Ucd/Security/LocaleCaseInversionTest.txt"
 
-def rows : Array Row := parseFixture rawFixture
+def rows : List Row := parseFixture rawFixture
 
 /-- Project an `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
@@ -39,7 +39,7 @@ def projectClassify
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
 /-- Project an `Classification` to the positions array. -/
-def projectPositions (c : Classification) : Array Nat :=
+def projectPositions (c : Classification) : List Nat :=
   c.positions
 
 /-- Run `detect` on the row's input and check the verdict against
@@ -57,17 +57,17 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 21 := by decide
+theorem row_count : rows.length = 21 := by decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by decide
+    (rows.filter (·.sectionName = "Clear")).length ≥ 8 := by decide
 
 theorem covers_turkish :
-    (rows.filter (·.sectionName = "TurkishCaseDivergence")).size ≥ 6 := by
+    (rows.filter (·.sectionName = "TurkishCaseDivergence")).length ≥ 6 := by
   decide
 
 theorem covers_lithuanian :
-    (rows.filter (·.sectionName = "LithuanianCaseDivergence")).size ≥ 5 := by
+    (rows.filter (·.sectionName = "LithuanianCaseDivergence")).length ≥ 5 := by
   decide
 
 end Unicode.Conformance.Security.LocaleCaseInversionTest

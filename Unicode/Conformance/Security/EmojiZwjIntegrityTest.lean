@@ -26,7 +26,7 @@ open Unicode.Security.Identity.EmojiZwjIntegrity
 def rawFixture : String :=
   include_str "../../Ucd/Security/EmojiZwjIntegrityTest.txt"
 
-def rows : Array Row := parseFixture rawFixture
+def rows : List Row := parseFixture rawFixture
 
 /-- Project an `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
@@ -34,7 +34,7 @@ def projectClassify
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
 /-- Project an `Classification` to the positions array. -/
-def projectPositions (c : Classification) : Array Nat :=
+def projectPositions (c : Classification) : List Nat :=
   c.positions
 
 /-- Validate the EmojiZwjIntegrity verdict's metadata fields
@@ -45,7 +45,7 @@ def projectPositions (c : Classification) : Array Nat :=
 def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey   "chain_len"       v.chainLength &&
-  attr.checkNatKey   "zwj_count"       v.zwjPositions.size &&
+  attr.checkNatKey   "zwj_count"       v.zwjPositions.length &&
   attr.checkNatKey   "skin_tone_count" v.skinToneCount &&
   attr.checkBoolKey  "is_rgi"          v.isRegisteredRGI
 
@@ -65,23 +65,23 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 22 := by decide
+theorem row_count : rows.length = 22 := by decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by decide
+    (rows.filter (·.sectionName = "Clear")).length ≥ 8 := by decide
 
 theorem covers_double_zwj :
-    (rows.filter (·.sectionName = "DoubleZWJ")).size ≥ 3 := by decide
+    (rows.filter (·.sectionName = "DoubleZWJ")).length ≥ 3 := by decide
 
 theorem covers_non_emoji_injection :
-    (rows.filter (·.sectionName = "NonEmojiInjection")).size ≥ 5 := by
+    (rows.filter (·.sectionName = "NonEmojiInjection")).length ≥ 5 := by
   decide
 
 theorem covers_over_length :
-    (rows.filter (·.sectionName = "OverLength")).size ≥ 2 := by decide
+    (rows.filter (·.sectionName = "OverLength")).length ≥ 2 := by decide
 
 theorem covers_skin_tone_overflow :
-    (rows.filter (·.sectionName = "SkinToneOverflow")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "SkinToneOverflow")).length ≥ 3 := by
   decide
 
 end Unicode.Conformance.Security.EmojiZwjIntegrityTest

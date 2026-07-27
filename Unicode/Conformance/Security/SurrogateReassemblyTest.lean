@@ -9,7 +9,7 @@
 
   Input bytes are encoded in column 1 of the fixture as single-byte
   hex values (each `0x00..0xFF`).  The fixture parser stores them
-  in `r.input : Array Nat`; the C4 detector converts to `ByteArray`
+  in `r.input : List Nat`; the C4 detector converts to `ByteArray`
   via `Unicode.Security.Covert.SurrogateReassembly.toByteArray`.
 -/
 
@@ -33,7 +33,7 @@ def rawFixture : String :=
   include_str "../../Ucd/Security/SurrogateReassemblyTest.txt"
 
 /-- All parsed rows from the bundled fixture. -/
-def rows : Array Row := parseFixture rawFixture
+def rows : List Row := parseFixture rawFixture
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 Per-family classification-name mapping
@@ -45,7 +45,7 @@ def projectClassify
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
 /-- Project a `Classification` to the positions array. -/
-def projectPositions (c : Classification) : Array Nat :=
+def projectPositions (c : Classification) : List Nat :=
   c.positions
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -90,23 +90,23 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 28 := by decide
+theorem row_count : rows.length = 28 := by decide
 
 /-- Section coverage gates. -/
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by decide
+    (rows.filter (·.sectionName = "Clear")).length ≥ 8 := by decide
 
 theorem covers_invalid_start_byte :
-    (rows.filter (·.sectionName = "InvalidStartByte")).size ≥ 7 := by
+    (rows.filter (·.sectionName = "InvalidStartByte")).length ≥ 7 := by
   decide
 
 theorem covers_overlong :
-    (rows.filter (·.sectionName = "Overlong")).size ≥ 4 := by decide
+    (rows.filter (·.sectionName = "Overlong")).length ≥ 4 := by decide
 
 theorem covers_cesu8 :
-    (rows.filter (·.sectionName = "Cesu8")).size ≥ 3 := by decide
+    (rows.filter (·.sectionName = "Cesu8")).length ≥ 3 := by decide
 
 theorem covers_truncated :
-    (rows.filter (·.sectionName = "Truncated")).size ≥ 6 := by decide
+    (rows.filter (·.sectionName = "Truncated")).length ≥ 6 := by decide
 
 end Unicode.Conformance.Security.SurrogateReassemblyTest

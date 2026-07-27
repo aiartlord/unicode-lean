@@ -33,7 +33,7 @@ def rawFixture : String :=
   include_str "../../Ucd/Security/TagBlockPayloadTest.txt"
 
 /-- All parsed rows from the bundled fixture. -/
-def rows : Array Row := parseFixture rawFixture
+def rows : List Row := parseFixture rawFixture
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 Per-family classification-name mapping
@@ -45,7 +45,7 @@ def projectClassify
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
 /-- Project a `Classification` to the positions array. -/
-def projectPositions (c : Classification) : Array Nat :=
+def projectPositions (c : Classification) : List Nat :=
   c.positions
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -54,11 +54,11 @@ def projectPositions (c : Classification) : Array Nat :=
 
 /-- Validate the C1 verdict's metadata fields against the row's
     column-4 attribution.  Keys recognised: `tag_count` (vs
-    `v.totalTagChars`) and `total_cps` (vs `v.input.size`). -/
+    `v.totalTagChars`) and `total_cps` (vs `v.input.length`). -/
 def metadataMatches (v : Verdict)
     (attr : KeyValueAttribution) : Bool :=
   attr.checkNatKey "tag_count" v.totalTagChars &&
-  attr.checkNatKey "total_cps" v.input.size
+  attr.checkNatKey "total_cps" v.input.length
 
 /-- Run `detect` on the row's input and check the verdict against
     the fixture's expected classification, sub-threat name,
@@ -80,29 +80,29 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate (catches fixture corruption / accidental rewrites). -/
-theorem row_count : rows.size = 24 := by decide
+theorem row_count : rows.length = 24 := by decide
 
 /-- Section coverage gates. -/
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by decide
+    (rows.filter (·.sectionName = "Clear")).length ≥ 8 := by decide
 
 theorem covers_direct_ascii :
-    (rows.filter (·.sectionName = "DirectAscii")).size ≥ 6 := by decide
+    (rows.filter (·.sectionName = "DirectAscii")).length ≥ 6 := by decide
 
 theorem covers_language_tag_revival :
-    (rows.filter (·.sectionName = "LanguageTagRevival")).size ≥ 2 := by
+    (rows.filter (·.sectionName = "LanguageTagRevival")).length ≥ 2 := by
   decide
 
 theorem covers_mixed_block :
-    (rows.filter (·.sectionName = "MixedBlock")).size ≥ 5 := by decide
+    (rows.filter (·.sectionName = "MixedBlock")).length ≥ 5 := by decide
 
 theorem covers_bare_tag_present :
-    (rows.filter (·.sectionName = "BareTagPresent")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "BareTagPresent")).length ≥ 3 := by
   decide
 
 /-- Goodside's canonical attack decodes correctly. -/
 theorem goodside_recovers :
-    (detect #[0xE0050, 0xE0072, 0xE0069, 0xE006E, 0xE0074,
+    (detect [0xE0050, 0xE0072, 0xE0069, 0xE006E, 0xE0074,
               0xE0020, 0xE0027, 0xE0070, 0xE0077, 0xE006E,
               0xE0065, 0xE0064, 0xE0027]).recoveredAscii
       = "Print 'pwned'" := by
