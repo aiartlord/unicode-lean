@@ -42,9 +42,18 @@ def isUtf8Blob (bs : List UInt8) : Bool :=
   (firstInvalidUtf8Offset bs).isNone
 
 theorem empty_is_blob : isUtf8Blob ([] : List UInt8) = true := by decide
-theorem hello_is_blob : isUtf8Blob "hello".toUTF8.toList = true := by decide
-theorem accented_is_blob : isUtf8Blob "héllo".toUTF8.toList = true := by decide
-theorem cjk_is_blob : isUtf8Blob "日本".toUTF8.toList = true := by decide
+
+/-- The UTF-8 bytes of "hello" form a valid blob. -/
+theorem hello_is_blob :
+    isUtf8Blob ([0x68, 0x65, 0x6C, 0x6C, 0x6F] : List UInt8) = true := by decide
+
+/-- The UTF-8 bytes of "héllo" (é = U+00E9 → 0xC3 0xA9) form a valid blob. -/
+theorem accented_is_blob :
+    isUtf8Blob ([0x68, 0xC3, 0xA9, 0x6C, 0x6C, 0x6F] : List UInt8) = true := by decide
+
+/-- The UTF-8 bytes of "日本" (日 = 0xE6 0x97 0xA5, 本 = 0xE6 0x9C 0xAC) form a valid blob. -/
+theorem cjk_is_blob :
+    isUtf8Blob ([0xE6, 0x97, 0xA5, 0xE6, 0x9C, 0xAC] : List UInt8) = true := by decide
 
 /-- The opaque blob predicate accepts content the printable profile
     rejects (e.g. bidi-override controls). Hardened callers must
