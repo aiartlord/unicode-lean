@@ -37,7 +37,7 @@ open Unicode.Security.Crypto.HashInputStability
 def rawFixture : String :=
   include_str "../../Ucd/Security/HashInputStabilityTest.txt"
 
-def rows : Array Row := parseFixture rawFixture
+def rows : List Row := parseFixture rawFixture
 
 /-- Project a `Classification` to `(ClassificationKind,
     sub-threat-tag)`. -/
@@ -46,7 +46,7 @@ def projectClassify
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
 /-- Project a `Classification` to the positions array. -/
-def projectPositions (c : Classification) : Array Nat :=
+def projectPositions (c : Classification) : List Nat :=
   c.positions
 
 /-- Validate the K2 verdict's metadata fields against the row's
@@ -58,7 +58,7 @@ def metadataMatches (v : Verdict)
 
 /-- Parse a space-separated hex codepoint list (mirrors
     `Unicode.Security.Fixture.parseCodepointList`). -/
-def parseHexList (s : String) : Array Nat :=
+def parseHexList (s : String) : List Nat :=
   ((s.splitOn " ").filterMap (fun tok =>
     let t := tok.trimAscii.toString
     if t.isEmpty then none
@@ -106,40 +106,40 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 26 := by decide
+theorem row_count : rows.length = 26 := by decide
 
 theorem covers_clear :
-    (rows.filter (fun r => r.expectedKind = .clear)).size ≥ 7 := by
+    (rows.filter (fun r => r.expectedKind = .clear)).length ≥ 7 := by
   decide
 
 theorem covers_trailing_whitespace :
     (rows.filter (fun r =>
-      r.expectedSubThreat = some "TrailingWhitespace")).size ≥ 5 := by
+      r.expectedSubThreat = some "TrailingWhitespace")).length ≥ 5 := by
   decide
 
 theorem covers_normalization_drift :
     (rows.filter (fun r =>
-      r.expectedSubThreat = some "NormalizationDrift")).size ≥ 4 := by
+      r.expectedSubThreat = some "NormalizationDrift")).length ≥ 4 := by
   decide
 
 theorem covers_encoding_mismatch :
     (rows.filter (fun r =>
-      r.expectedSubThreat = some "EncodingMismatch")).size ≥ 3 := by
+      r.expectedSubThreat = some "EncodingMismatch")).length ≥ 3 := by
   decide
 
 theorem covers_signed_message_rule :
     (rows.filter (fun r =>
-      r.expectedSubThreat = some "SignedMessageRule")).size ≥ 4 := by
+      r.expectedSubThreat = some "SignedMessageRule")).length ≥ 4 := by
   decide
 
 theorem covers_audit_log_reinterpretation :
     (rows.filter (fun r =>
-      r.expectedSubThreat = some "AuditLogReinterpretation")).size ≥ 2 := by
+      r.expectedSubThreat = some "AuditLogReinterpretation")).length ≥ 2 := by
   decide
 
 theorem covers_webhook_signature_drift :
     (rows.filter (fun r =>
-      r.expectedSubThreat = some "WebhookSignatureDrift")).size ≥ 1 := by
+      r.expectedSubThreat = some "WebhookSignatureDrift")).length ≥ 1 := by
   decide
 
 /-- Every constructor of `SubThreat` has at least one fixture
@@ -150,7 +150,7 @@ theorem covers_webhook_signature_drift :
     `Classification.tag` for the corresponding constructor. -/
 theorem every_subthreat_has_fixture_row :
     let expectedSubThreats : Array String :=
-      #[ "NormalizationDrift"
+      [ "NormalizationDrift"
        , "TrailingWhitespace"
        , "EncodingMismatch"
        , "SignedMessageRule"

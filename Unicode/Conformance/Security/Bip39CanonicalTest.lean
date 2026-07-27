@@ -37,7 +37,7 @@ open Unicode.Generated.BIP39 (Language)
 def rawFixture : String :=
   include_str "../../Ucd/Security/Bip39CanonicalTest.txt"
 
-def rows : Array Row := parseFixture rawFixture
+def rows : List Row := parseFixture rawFixture
 
 /-- Map a `Language` to its canonical lowercase tag, used to
     match against the row's `language=<tag>` attribution. -/
@@ -60,7 +60,7 @@ def projectClassify
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
 /-- Project a `Classification` to the positions array. -/
-def projectPositions (c : Classification) : Array Nat :=
+def projectPositions (c : Classification) : List Nat :=
   c.positions
 
 /-- Validate the K1 verdict's metadata fields against the row's
@@ -74,7 +74,7 @@ def metadataMatches (v : Verdict)
     | .clear lang        => langToString lang
     | .hazard sub positions =>
       Function.const SubThreat
-        (Function.const (Array Nat) "" positions)
+        (Function.const (List Nat) "" positions)
         sub
   attr.checkNatKey    "wordCount" v.wordCount &&
   attr.checkStringKey "language"  languageStr
@@ -96,40 +96,40 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 20 := by decide
+theorem row_count : rows.length = 20 := by decide
 
 theorem covers_clear :
-    (rows.filter (fun r => r.expectedKind = .clear)).size ≥ 7 := by
+    (rows.filter (fun r => r.expectedKind = .clear)).length ≥ 7 := by
   decide
 
 theorem covers_non_nfkd :
     (rows.filter (fun r =>
-      r.expectedSubThreat = some "NonNFKD")).size ≥ 4 := by
+      r.expectedSubThreat = some "NonNFKD")).length ≥ 4 := by
   decide
 
 theorem covers_trailing_whitespace :
     (rows.filter (fun r =>
-      r.expectedSubThreat = some "TrailingWhitespace")).size ≥ 2 := by
+      r.expectedSubThreat = some "TrailingWhitespace")).length ≥ 2 := by
   decide
 
 theorem covers_whitespace_anomaly :
     (rows.filter (fun r =>
-      r.expectedSubThreat = some "WhitespaceAnomaly")).size ≥ 2 := by
+      r.expectedSubThreat = some "WhitespaceAnomaly")).length ≥ 2 := by
   decide
 
 theorem covers_mixed_case :
     (rows.filter (fun r =>
-      r.expectedSubThreat = some "MixedCase")).size ≥ 2 := by
+      r.expectedSubThreat = some "MixedCase")).length ≥ 2 := by
   decide
 
 theorem covers_wordlist_mismatch :
     (rows.filter (fun r =>
-      r.expectedSubThreat = some "WordlistMismatch")).size ≥ 2 := by
+      r.expectedSubThreat = some "WordlistMismatch")).length ≥ 2 := by
   decide
 
 theorem covers_language_ambiguous :
     (rows.filter (fun r =>
-      r.expectedSubThreat = some "LanguageAmbiguous")).size ≥ 1 := by
+      r.expectedSubThreat = some "LanguageAmbiguous")).length ≥ 1 := by
   decide
 
 end Unicode.Conformance.Security.Bip39CanonicalTest

@@ -31,7 +31,7 @@ open Unicode.Security.Form.NormalizationBomb
 def rawFixture : String :=
   include_str "../../Ucd/Security/NormalizationBombTest.txt"
 
-def rows : Array Row := parseFixture rawFixture
+def rows : List Row := parseFixture rawFixture
 
 /-- Project an `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
@@ -39,7 +39,7 @@ def projectClassify
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
 /-- Project an `Classification` to the positions array. -/
-def projectPositions (c : Classification) : Array Nat :=
+def projectPositions (c : Classification) : List Nat :=
   c.positions
 
 /-- Validate the F1 verdict's metadata fields against the row's
@@ -69,21 +69,21 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 26 := by decide
+theorem row_count : rows.length = 26 := by decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 10 := by decide
+    (rows.filter (·.sectionName = "Clear")).length ≥ 10 := by decide
 
 theorem covers_single_cp_blowup :
-    (rows.filter (·.sectionName = "SingleCpBlowup")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "SingleCpBlowup")).length ≥ 3 := by
   decide
 
 theorem covers_nfkd_high :
-    (rows.filter (·.sectionName = "NfkdHighExpansion")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "NfkdHighExpansion")).length ≥ 3 := by
   decide
 
 theorem covers_nfd_high :
-    (rows.filter (·.sectionName = "NfdHighExpansion")).size ≥ 9 := by
+    (rows.filter (·.sectionName = "NfdHighExpansion")).length ≥ 9 := by
   decide
 
 end Unicode.Conformance.Security.NormalizationBombTest

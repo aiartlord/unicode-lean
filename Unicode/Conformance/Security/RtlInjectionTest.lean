@@ -26,7 +26,7 @@ open Unicode.Security.Display.RtlInjection
 def rawFixture : String :=
   include_str "../../Ucd/Security/RtlInjectionTest.txt"
 
-def rows : Array Row := parseFixture rawFixture
+def rows : List Row := parseFixture rawFixture
 
 /-- Project a `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
@@ -34,7 +34,7 @@ def projectClassify
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
 /-- Project a `Classification` to the positions array. -/
-def projectPositions (c : Classification) : Array Nat :=
+def projectPositions (c : Classification) : List Nat :=
   c.positions
 
 /-- Validate the D3 verdict's metadata fields against the row's
@@ -64,25 +64,25 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 27 := by decide
+theorem row_count : rows.length = 27 := by decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by decide
+    (rows.filter (·.sectionName = "Clear")).length ≥ 8 := by decide
 
 theorem covers_rlo :
-    (rows.filter (·.sectionName = "RloInLTRField")).size ≥ 5 := by
+    (rows.filter (·.sectionName = "RloInLTRField")).length ≥ 5 := by
   decide
 
 theorem covers_field_takeover :
-    (rows.filter (·.sectionName = "FieldTakeover")).size ≥ 5 := by
+    (rows.filter (·.sectionName = "FieldTakeover")).length ≥ 5 := by
   decide
 
 theorem covers_strong_rtl_in_ltr :
-    (rows.filter (·.sectionName = "StrongRTLInLTR")).size ≥ 5 := by
+    (rows.filter (·.sectionName = "StrongRTLInLTR")).length ≥ 5 := by
   decide
 
 theorem covers_mixed_overflow :
-    (rows.filter (·.sectionName = "MixedOverflow")).size ≥ 4 := by
+    (rows.filter (·.sectionName = "MixedOverflow")).length ≥ 4 := by
   decide
 
 end Unicode.Conformance.Security.RtlInjectionTest

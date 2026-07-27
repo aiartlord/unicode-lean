@@ -28,7 +28,7 @@ open Unicode.Security.Identity.MixedScriptAdmissibility
 def rawFixture : String :=
   include_str "../../Ucd/Security/MixedScriptAdmissibilityTest.txt"
 
-def rows : Array Row := parseFixture rawFixture
+def rows : List Row := parseFixture rawFixture
 
 /-- Project a `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
@@ -36,7 +36,7 @@ def projectClassify
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
 /-- Project a `Classification` to the positions array. -/
-def projectPositions (c : Classification) : Array Nat :=
+def projectPositions (c : Classification) : List Nat :=
   c.positions
 
 /-- Render a `RestrictionLevel` as the bare constructor name used
@@ -73,25 +73,25 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 24 := by decide
+theorem row_count : rows.length = 24 := by decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by decide
+    (rows.filter (·.sectionName = "Clear")).length ≥ 8 := by decide
 
 theorem covers_latin_cyrillic :
-    (rows.filter (·.sectionName = "LatinCyrillic")).size ≥ 6 := by
+    (rows.filter (·.sectionName = "LatinCyrillic")).length ≥ 6 := by
   decide
 
 theorem covers_latin_greek :
-    (rows.filter (·.sectionName = "LatinGreek")).size ≥ 2 := by
+    (rows.filter (·.sectionName = "LatinGreek")).length ≥ 2 := by
   decide
 
 theorem covers_restricted_status_cp :
-    (rows.filter (·.sectionName = "RestrictedStatusCp")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "RestrictedStatusCp")).length ≥ 3 := by
   decide
 
 theorem covers_script_mix_other :
-    (rows.filter (·.sectionName = "ScriptMixOther")).size ≥ 5 := by
+    (rows.filter (·.sectionName = "ScriptMixOther")).length ≥ 5 := by
   decide
 
 end Unicode.Conformance.Security.MixedScriptAdmissibilityTest
