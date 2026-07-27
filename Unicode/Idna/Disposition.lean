@@ -37,37 +37,37 @@ def disposition (cp : Nat) : IdnaDisposition :=
 /-- Mapping target for `cp` under non-transitional UTS #46
     processing (the recommended mode for new applications):
 
-      * Valid       → singleton `#[cp]`
+      * Valid       → singleton `[cp]`
       * Mapped      → row's mapping sequence
-      * Deviation   → singleton `#[cp]` (kept as-is per UTS #46 §5;
+      * Deviation   → singleton `[cp]` (kept as-is per UTS #46 §5;
                       under non-transitional these match IDNA2008)
       * Ignored     → empty
       * Disallowed  → empty (the caller must reject the input)
 -/
-def mapNonTransitional (cp : Nat) : Array Nat :=
+def mapNonTransitional (cp : Nat) : List Nat :=
   match lookupRow? cp with
-  | none     => #[]
+  | none     => []
   | some row =>
     match row.disposition with
-    | .Valid      => #[cp]
+    | .Valid      => [cp]
     | .Mapped     => row.mapping
-    | .Deviation  => #[cp]
-    | .Ignored    => #[]
-    | .Disallowed => #[]
+    | .Deviation  => [cp]
+    | .Ignored    => []
+    | .Disallowed => []
 
 /-- Mapping target for `cp` under transitional UTS #46 processing,
     where Deviation codepoints are mapped (matching IDNA2003
     behaviour). Otherwise identical to the non-transitional mapping. -/
-def mapTransitional (cp : Nat) : Array Nat :=
+def mapTransitional (cp : Nat) : List Nat :=
   match lookupRow? cp with
-  | none     => #[]
+  | none     => []
   | some row =>
     match row.disposition with
-    | .Valid      => #[cp]
+    | .Valid      => [cp]
     | .Mapped     => row.mapping
     | .Deviation  => row.mapping
-    | .Ignored    => #[]
-    | .Disallowed => #[]
+    | .Ignored    => []
+    | .Disallowed => []
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 KNOWN-CODEPOINT DISPOSITIONS
@@ -87,12 +87,12 @@ theorem disposition_dot    : disposition 0x002E = .Valid := by decide +kernel
 theorem disposition_A : disposition 0x0041 = .Mapped := by decide +kernel
 theorem disposition_Z : disposition 0x005A = .Mapped := by decide +kernel
 
-theorem mapNT_A : mapNonTransitional 0x0041 = #[0x0061] := by decide +kernel
-theorem mapNT_Z : mapNonTransitional 0x005A = #[0x007A] := by decide +kernel
+theorem mapNT_A : mapNonTransitional 0x0041 = [0x0061] := by decide +kernel
+theorem mapNT_Z : mapNonTransitional 0x005A = [0x007A] := by decide +kernel
 
 /-- Soft hyphen U+00AD is ignored (dropped from the processed string). -/
 theorem disposition_softhyphen : disposition 0x00AD = .Ignored := by decide +kernel
-theorem mapNT_softhyphen       : mapNonTransitional 0x00AD = #[] := by decide +kernel
+theorem mapNT_softhyphen       : mapNonTransitional 0x00AD = [] := by decide +kernel
 
 /-- The four Deviation codepoints from UTS #46 §2.3. -/
 theorem disposition_sharp_s : disposition 0x00DF = .Deviation := by decide +kernel
@@ -101,18 +101,18 @@ theorem disposition_zwnj    : disposition 0x200C = .Deviation := by decide +kern
 theorem disposition_zwj     : disposition 0x200D = .Deviation := by decide +kernel
 
 /-- SHARP S is kept as-is non-transitionally; mapped to "ss" transitionally. -/
-theorem mapNT_sharp_s : mapNonTransitional 0x00DF = #[0x00DF]         := by decide +kernel
-theorem mapTr_sharp_s : mapTransitional   0x00DF = #[0x0073, 0x0073] := by decide +kernel
+theorem mapNT_sharp_s : mapNonTransitional 0x00DF = [0x00DF]         := by decide +kernel
+theorem mapTr_sharp_s : mapTransitional   0x00DF = [0x0073, 0x0073] := by decide +kernel
 
 /-- GREEK SMALL LETTER FINAL SIGMA is kept as-is non-transitionally;
     mapped to σ (U+03C3) transitionally. -/
-theorem mapNT_finalσ : mapNonTransitional 0x03C2 = #[0x03C2] := by decide +kernel
-theorem mapTr_finalσ : mapTransitional   0x03C2 = #[0x03C3] := by decide +kernel
+theorem mapNT_finalσ : mapNonTransitional 0x03C2 = [0x03C2] := by decide +kernel
+theorem mapTr_finalσ : mapTransitional   0x03C2 = [0x03C3] := by decide +kernel
 
 /-- C1 controls U+0080..U+009F are disallowed. -/
 theorem disposition_C1 : disposition 0x0080 = .Disallowed := by decide +kernel
 
 /-- Disallowed codepoints map to the empty sequence (caller must reject). -/
-theorem mapNT_C1 : mapNonTransitional 0x0080 = #[] := by decide +kernel
+theorem mapNT_C1 : mapNonTransitional 0x0080 = [] := by decide +kernel
 
 end Unicode.Idna.Disposition
