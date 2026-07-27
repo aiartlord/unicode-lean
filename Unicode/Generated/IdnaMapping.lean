@@ -69,10 +69,10 @@ def parseRange (s : String) : Nat × Nat :=
 
 /-- Parse a space-separated list of hex codepoints (the `mapping`
     column for Mapped / Deviation rows). -/
-def parseCodepoints (s : String) : Array Nat :=
-  ((s.splitOn " ").filterMap (fun tok =>
+def parseCodepoints (s : String) : List Nat :=
+  (s.splitOn " ").filterMap (fun tok =>
     let t := trimS tok
-    if t.isEmpty then none else some (parseHex t))).toArray
+    if t.isEmpty then none else some (parseHex t))
 
 /-- Parse one IdnaMappingTable.txt row. Returns `none` for blank or
     comment lines. -/
@@ -88,7 +88,7 @@ def parseIdnaRow (rawLine : String) : Option IdnaRow := Id.run do
   | some disp =>
     let mapping :=
       if fields.length ≥ 3 then parseCodepoints (trimS fields[2]!)
-      else #[]
+      else []
     let idna2008 :=
       if fields.length ≥ 4 then parseIdna2008? (trimS fields[3]!)
       else none
@@ -100,19 +100,18 @@ def idnaMappingRaw : String := include_str "../Ucd/IdnaMappingTable.txt"
 /-- Range table mapping codepoint ranges to their IDNA disposition.
     Stored in source order (already sorted by `min` per the UCD
     file convention), so binary search by `min` is correct. -/
-def idnaMappingRangesParsed : Array IdnaRow :=
-  ((idnaMappingRaw.splitOn "\n").filterMap parseIdnaRow).toArray
+def idnaMappingRangesParsed : List IdnaRow :=
+  (idnaMappingRaw.splitOn "\n").filterMap parseIdnaRow
 
-/-- The materialized range table (runtime Array view of the pinned List). -/
-def idnaMappingRanges : Array IdnaRow := idnaMappingRangesList.toArray
+/-- The materialized range table, pinned in source (sorted) order. -/
+def idnaMappingRanges : List IdnaRow := idnaMappingRangesList
 
 /-- Binary search the sorted-by-`min` `idnaMappingRanges` for a row
     whose `[min, max]` interval contains `cp`. Fuel-bounded for
-    `decide` evaluability; `arr.size` is always a sufficient
-    bound and a strict overestimate of the actual ⌈log₂ n⌉ steps.
-    Returns `none` for codepoints outside every range (caller maps
-    that to the table's "Disallowed" default). -/
-def binarySearchRange (arr : Array IdnaRow) (cp : Nat)
+    `decide` evaluability; `arr.length` is always a sufficient bound
+    on the probe count. Returns `none` for codepoints outside every
+    range (caller maps that to the table's "Disallowed" default). -/
+def binarySearchRange (arr : List IdnaRow) (cp : Nat)
     (left right fuel : Nat) : Option IdnaRow :=
   match fuel with
   | 0          => none
@@ -129,23 +128,22 @@ def binarySearchRange (arr : Array IdnaRow) (cp : Nat)
     else
       none
 
-/-- Look up `cp`'s row via binary search. O(log n) instead of the
-    O(n) linear `findSome?`; the table has ~9185 entries so this
-    is a ~600× speedup on the dominant IDNA hot path
-    (`mapNonTransitional` / `mapTransitional` /
-    `decodedLabelValidV6` all call it once per codepoint). -/
+/-- Look up `cp`'s row by binary search over `idnaMappingRanges`,
+    halving the probe interval by `min`-key comparison. Called once
+    per codepoint by `mapNonTransitional` / `mapTransitional` /
+    `decodedLabelValidV6`. -/
 def lookupRowBinary (cp : Nat) : Option IdnaRow :=
-  binarySearchRange idnaMappingRanges cp 0 idnaMappingRanges.size
-    (idnaMappingRanges.size + 1)
+  binarySearchRange idnaMappingRanges cp 0 idnaMappingRanges.length
+    (idnaMappingRanges.length + 1)
 
-/-- Kernel-reducible linear lookup over the pinned `List` (the Array
+/-- Kernel-reducible linear lookup over the pinned `List` (the
     binary search is the runtime path; this is for `decide` proofs). -/
 def lookupRowList? (cp : Nat) : Option IdnaRow :=
   idnaMappingRangesList.find? (fun r => decide (r.min ≤ cp ∧ cp ≤ r.max))
 
 -- Build-time drift gate.
 #eval do
-  unless idnaMappingRangesList.toArray == idnaMappingRangesParsed do
+  unless idnaMappingRangesList == idnaMappingRangesParsed do
     throw (IO.userError "IdnaMapping drift: list ≠ parsed")
 
 end Unicode.Generated.IdnaMapping

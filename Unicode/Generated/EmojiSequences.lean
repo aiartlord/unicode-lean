@@ -70,12 +70,12 @@ def parseType? : String → Option RgiSequenceType
   | "RGI_Emoji_ZWJ_Sequence"      => some .RGI_Emoji_ZWJ_Sequence
   | unknown                       => Function.const String none unknown
 
-/-- Parse a whitespace-separated list of hex codepoints into an
-    `Array Nat`. Empty tokens are skipped. -/
-def parseCodepointList (s : String) : Array Nat :=
-  ((s.splitOn " ").filterMap (fun tok =>
+/-- Parse a whitespace-separated list of hex codepoints into a
+    `List Nat`. Empty tokens are skipped. -/
+def parseCodepointList (s : String) : List Nat :=
+  (s.splitOn " ").filterMap (fun tok =>
     let t := trimS tok
-    if t.isEmpty then none else some (parseHex t))).toArray
+    if t.isEmpty then none else some (parseHex t))
 
 
 /-- Parse one sequence-file row. Returns `none` for blank or
@@ -84,22 +84,22 @@ def parseRow (rawLine : String) : Option SequenceRow :=
   let stripped : String := (rawLine.takeWhile (· != '#')).toString
   let line := trimS stripped
   if line.isEmpty then none else
-  let fields : Array String := (String.splitOn line ";").toArray
-  if fields.size ≥ 2 then
+  let fields : List String := String.splitOn line ";"
+  if fields.length ≥ 2 then
     let cpField := fields[0]!
     let typeField := fields[1]!
     match parseType? (trimS typeField) with
     | none => none
     | some t =>
       let trimmedCp := trimS cpField
-      let rangeParts : Array String := (String.splitOn trimmedCp "..").toArray
-      if rangeParts.size = 1 then
+      let rangeParts : List String := String.splitOn trimmedCp ".."
+      if rangeParts.length = 1 then
         -- Either one codepoint or a space-separated sequence.
         some ⟨parseCodepointList rangeParts[0]!, t, 0⟩
-      else if rangeParts.size = 2 then
+      else if rangeParts.length = 2 then
         let loN := parseHex (trimS rangeParts[0]!)
         let hiN := parseHex (trimS rangeParts[1]!)
-        some ⟨#[loN], t, hiN⟩
+        some ⟨[loN], t, hiN⟩
       else
         none
   else
@@ -112,9 +112,9 @@ def emojiSequencesRaw : String := include_str "../Ucd/emoji-sequences.txt"
 def emojiZwjSequencesRaw : String := include_str "../Ucd/emoji-zwj-sequences.txt"
 
 /-- All parsed rows from both sequence files, in source order. -/
-def parsedRows : Array SequenceRow :=
-  ((emojiSequencesRaw.splitOn "\n").filterMap parseRow).toArray
-    ++ ((emojiZwjSequencesRaw.splitOn "\n").filterMap parseRow).toArray
+def parsedRows : List SequenceRow :=
+  ((emojiSequencesRaw.splitOn "\n").filterMap parseRow)
+    ++ ((emojiZwjSequencesRaw.splitOn "\n").filterMap parseRow)
 
 /-- Filter rows by type, over the materialized `List` so downstream
     membership tests reduce linearly in the kernel. -/
@@ -125,23 +125,23 @@ def rowsOfType (t : RgiSequenceType) : List SequenceRow :=
 def basicEmojiRows : List SequenceRow := rowsOfType .Basic_Emoji
 
 /-- Keycap sequences. -/
-def keycapSequences : List (Array Nat) :=
+def keycapSequences : List (List Nat) :=
   (rowsOfType .Emoji_Keycap_Sequence).map (·.seq)
 
 /-- Flag sequences. -/
-def flagSequences : List (Array Nat) :=
+def flagSequences : List (List Nat) :=
   (rowsOfType .RGI_Emoji_Flag_Sequence).map (·.seq)
 
 /-- Modifier sequences. -/
-def modifierSequences : List (Array Nat) :=
+def modifierSequences : List (List Nat) :=
   (rowsOfType .RGI_Emoji_Modifier_Sequence).map (·.seq)
 
 /-- Tag sequences (subdivision flags). -/
-def tagSequences : List (Array Nat) :=
+def tagSequences : List (List Nat) :=
   (rowsOfType .RGI_Emoji_Tag_Sequence).map (·.seq)
 
 /-- ZWJ sequences. -/
-def zwjSequences : List (Array Nat) :=
+def zwjSequences : List (List Nat) :=
   (rowsOfType .RGI_Emoji_ZWJ_Sequence).map (·.seq)
 
 /-- True iff `cp` matches a Basic_Emoji single-codepoint or range
@@ -155,31 +155,31 @@ def isBasicEmojiCodepoint (cp : Nat) : Bool :=
        | some lo => lo ≤ cp ∧ cp ≤ r.rangeMax
        | none    => false)
     else
-      r.seq = #[cp])
+      r.seq = [cp])
 
 /-- True iff `cps` matches some Basic_Emoji multi-codepoint row
     (e.g. `cp + U+FE0F`). -/
-def isBasicEmojiSequence (cps : Array Nat) : Bool :=
+def isBasicEmojiSequence (cps : List Nat) : Bool :=
   basicEmojiRows.any (fun r => r.rangeMax = 0 ∧ r.seq = cps)
 
 /-- True iff `cps` is exactly a registered RGI keycap sequence. -/
-def isRegisteredKeycapSequence (cps : Array Nat) : Bool :=
+def isRegisteredKeycapSequence (cps : List Nat) : Bool :=
   keycapSequences.any (fun s => s = cps)
 
 /-- True iff `cps` is exactly a registered RGI flag (region) sequence. -/
-def isRegisteredFlagSequence (cps : Array Nat) : Bool :=
+def isRegisteredFlagSequence (cps : List Nat) : Bool :=
   flagSequences.any (fun s => s = cps)
 
 /-- True iff `cps` is exactly a registered RGI modifier sequence. -/
-def isRegisteredModifierSequence (cps : Array Nat) : Bool :=
+def isRegisteredModifierSequence (cps : List Nat) : Bool :=
   modifierSequences.any (fun s => s = cps)
 
 /-- True iff `cps` is exactly a registered RGI tag (subdivision) sequence. -/
-def isRegisteredTagSequence (cps : Array Nat) : Bool :=
+def isRegisteredTagSequence (cps : List Nat) : Bool :=
   tagSequences.any (fun s => s = cps)
 
 /-- True iff `cps` is exactly a registered RGI ZWJ sequence. -/
-def isRegisteredZwjSequence (cps : Array Nat) : Bool :=
+def isRegisteredZwjSequence (cps : List Nat) : Bool :=
   zwjSequences.any (fun s => s = cps)
 
 /-- The codepoint *alphabet* of the RGI ZWJ-sequence set: every
@@ -200,12 +200,12 @@ def isRegisteredZwjSequence (cps : Array Nat) : Bool :=
     ZWJ participants like `U+2764 HEAVY BLACK HEART` (which
     appears in registered couple-with-heart sequences but does
     not carry `Emoji_Presentation`). -/
-def zwjAlphabet : Array Nat :=
-  zwjSequences.foldl (init := (#[] : Array Nat)) (fun acc seq =>
+def zwjAlphabet : List Nat :=
+  zwjSequences.foldl (init := ([] : List Nat)) (fun acc seq =>
     seq.foldl (init := acc) (fun a cp =>
       if cp = 0x200D then a
       else if a.contains cp then a
-      else a.push cp))
+      else a ++ [cp]))
 
 /-- True iff `cp` appears at some position of a registered RGI
     ZWJ sequence (excluding the ZWJ joiner itself).  Membership
@@ -216,7 +216,7 @@ def isInZwjAlphabet (cp : Nat) : Bool :=
 
 -- Build-time gate: the pinned ZWJ alphabet equals the fold-and-dedup.
 #eval do
-  unless zwjAlphabetList.toArray == zwjAlphabet do
+  unless zwjAlphabetList == zwjAlphabet do
     throw (IO.userError "EmojiSequences drift: zwjAlphabetList ≠ zwjAlphabet fold")
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -229,7 +229,7 @@ def isInZwjAlphabet (cp : Nat) : Bool :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 #eval do
-  unless parsedRowsList.toArray == parsedRows do
+  unless parsedRowsList == parsedRows do
     throw (IO.userError "EmojiSequences drift: parsedRowsList ≠ parsed parsedRows")
 
 end Unicode.Generated.EmojiSequences

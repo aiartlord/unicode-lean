@@ -11,7 +11,7 @@ namespace Unicode.Generated.StandardizedVariants
 set_option maxRecDepth 100000
 
 /-- Sanctioned `(base, variation_selector)` pairs, preserving source file order. -/
-def parsedPairs : Array (Nat × Nat) := #[
+def parsedPairs : List (Nat × Nat) := [
   (0x30, 0xfe00),
   (0x2205, 0xfe00),
   (0x2229, 0xfe00),
@@ -1368,7 +1368,7 @@ def parsedPairs : Array (Nat × Nat) := #[
 ]
 
 /-- The same sanctioned pairs, sorted lexicographically for binary lookup. -/
-def sortedPairs : Array (Nat × Nat) := #[
+def sortedPairs : List (Nat × Nat) := [
   (0x30, 0xfe00),
   (0x1000, 0xfe00),
   (0x1002, 0xfe00),
@@ -2754,10 +2754,10 @@ def binarySearch (base vs : Nat) (left right fuel : Nat) : Bool :=
 
 /-- Membership predicate for sanctioned standardized variation sequences. -/
 def isStandardizedVariation (base vs : Nat) : Bool :=
-  binarySearch base vs 0 sortedPairs.size (sortedPairs.size + 1)
+  binarySearch base vs 0 sortedPairs.length (sortedPairs.length + 1)
 
 /-- UCD 17.0.0 has 1,353 standardized variation sequences. -/
-theorem rowCount : parsedPairs.size = 1353 := by decide
+theorem rowCount : parsedPairs.length = 1353 := by decide
 
 theorem isStandardizedVariation_u0030_uFE00 :
     isStandardizedVariation 0x0030 0xFE00 = true := by decide
@@ -2814,8 +2814,8 @@ def sParse (line:String) : Option (Nat × Nat) :=
     | [base, vs] => some (sHx (sTr base), sHx (sTr vs))
     | _other => none
   | _empty => none
-def parsedPairsParsed : Array (Nat × Nat) := ((standardizedVariantsRaw.splitOn "\n").filterMap sParse).toArray
-def sortedPairsParsed : Array (Nat × Nat) := parsedPairsParsed.qsort (fun a b => decide (a.1 < b.1 ∨ (a.1 = b.1 ∧ a.2 < b.2)))
+def parsedPairsParsed : List (Nat × Nat) := (standardizedVariantsRaw.splitOn "\n").filterMap sParse
+def sortedPairsParsed : List (Nat × Nat) := parsedPairsParsed.mergeSort (fun a b => decide (a.1 < b.1 ∨ (a.1 = b.1 ∧ a.2 < b.2)))
 #eval do
   unless parsedPairs == parsedPairsParsed do throw (IO.userError "StandardizedVariants drift: parsedPairs")
   unless sortedPairs == sortedPairsParsed do throw (IO.userError "StandardizedVariants drift: sortedPairs")
