@@ -129,14 +129,14 @@ inductive Level where
 
     Monotonicity: `minimal.rejectionSet ⊆ moderate.rejectionSet
     ⊆ restrictive.rejectionSet`.  Proven below. -/
-def rejectionSet : Level → Array Family
+def rejectionSet : Level → List Family
   | .restrictive =>
     -- All 23 non-K families.  SurrogateReassembly is included
     -- because `runAll` gates it on `looksLikeByteStream`
     -- (every codepoint ≤ 0xFF); on codepoint arrays with any
     -- non-ASCII content the detector emits clear and does not
     -- reject.
-    #[ .tagBlockPayload, .variationSelectorPayload
+    [ .tagBlockPayload, .variationSelectorPayload
      , .zeroWidthPayload, .surrogateReassembly
      , .bidiControlBalance
      , .homoglyphConfusable, .mixedScriptAdmissibility
@@ -176,7 +176,7 @@ def rejectionSet : Level → Array Family
     -- fires on multilingual codepoint inputs.  Every other
     -- targeted-attack detector and UTS #39 spec-compliance
     -- signal is intact.
-    #[ .tagBlockPayload, .variationSelectorPayload
+    [ .tagBlockPayload, .variationSelectorPayload
      , .zeroWidthPayload, .surrogateReassembly
      , .bidiControlBalance
      , .homoglyphConfusable, .mixedScriptAdmissibility
@@ -192,7 +192,7 @@ def rejectionSet : Level → Array Family
     -- validity (RFC 3629, via runAll's byte-stream gate),
     -- bidi-control imbalance (Trojan Source class), stream-
     -- safe overflow (UAX #15 §13 DoS class).
-    #[ .surrogateReassembly, .bidiControlBalance, .streamSafeViolation ]
+    [ .surrogateReassembly, .bidiControlBalance, .streamSafeViolation ]
 
 /-- True iff `family` is in `level`'s rejection set. -/
 @[inline]
@@ -204,7 +204,7 @@ def Level.rejects (level : Level) (family : Family) : Bool :=
     C4 is byte-stream-oriented and must not reject codepoint arrays
     merely because they contain non-ASCII scalar values. -/
 @[inline]
-def looksLikeByteStream (input : Array Nat) : Bool :=
+def looksLikeByteStream (input : List Nat) : Bool :=
   input.all (fun cp => cp < 0x100)
 
 /-- Admission-relevant hazard bit for one detector family.
@@ -215,7 +215,7 @@ def looksLikeByteStream (input : Array Nat) : Bool :=
     hazards in the declared rejection set, so evaluating unrelated
     detectors is avoidable proof-engineering cost. -/
 @[inline]
-def familyHazard (family : Family) (input : Array Nat) : Bool :=
+def familyHazard (family : Family) (input : List Nat) : Bool :=
   match family with
   | .tagBlockPayload =>
       !(Unicode.Security.Covert.TagBlockPayload.detect input).classify.isClear
@@ -306,11 +306,11 @@ inductive CryptoContext where
     `aiAttribution` adds AiWatermarkDetectability.  Each
     crypto-shape is exactly one cryptographic-stability detector. -/
 @[inline]
-def CryptoContext.toFamilies : CryptoContext → Array Family
-  | .nonCrypto      => #[]
-  | .bip39Mnemonic  => #[.bip39Canonical]
-  | .hashInput      => #[.hashInputStability]
-  | .aiAttribution  => #[.aiWatermarkDetectability]
+def CryptoContext.toFamilies : CryptoContext → List Family
+  | .nonCrypto      => []
+  | .bip39Mnemonic  => [.bip39Canonical]
+  | .hashInput      => [.hashInputStability]
+  | .aiAttribution  => [.aiWatermarkDetectability]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 Factored admission predicates (Level ⊥ Crypto)
@@ -355,7 +355,7 @@ def CryptoContext.toFamilies : CryptoContext → Array Family
     accepts `input`.  Independent of any cryptographic context.
     Used as the Level-only factor of the composite
     `admissibleAt`. -/
-def levelAdmissible (level : Level) (input : Array Nat) : Bool :=
+def levelAdmissible (level : Level) (input : List Nat) : Bool :=
   let effective := rejectionSet level
   ¬ effective.any (fun family => familyHazard family input)
 
@@ -365,7 +365,7 @@ def levelAdmissible (level : Level) (input : Array Nat) : Bool :=
     distinguishing power directly, without union-masking by
     general-Unicode detectors. -/
 def cryptoAdmissible (cryptoCtx : CryptoContext)
-    (input : Array Nat) : Bool :=
+    (input : List Nat) : Bool :=
   let effective := cryptoCtx.toFamilies
   ¬ effective.any (fun family => familyHazard family input)
 
@@ -388,7 +388,7 @@ def cryptoAdmissible (cryptoCtx : CryptoContext)
     would mask the contribution behind a general-Unicode
     rejection. -/
 def admissibleAt (level : Level) (cryptoCtx : CryptoContext)
-    (input : Array Nat) : Bool :=
+    (input : List Nat) : Bool :=
   levelAdmissible level input && cryptoAdmissible cryptoCtx input
 
 /-- The architectural invariant: `admissibleAt` is exactly the
@@ -399,7 +399,7 @@ def admissibleAt (level : Level) (cryptoCtx : CryptoContext)
     surface — downstream consumers and proof obligations can
     rely on this equality without reading the definition. -/
 theorem admissibleAt_factors
-    (level : Level) (cryptoCtx : CryptoContext) (input : Array Nat) :
+    (level : Level) (cryptoCtx : CryptoContext) (input : List Nat) :
     admissibleAt level cryptoCtx input
       = (levelAdmissible level input && cryptoAdmissible cryptoCtx input) :=
   rfl
@@ -412,18 +412,18 @@ theorem admissibleAt_factors
     `runAll`'s byte-stream gate makes C4 contribution
     well-behaved on codepoint inputs. -/
 theorem restrictive_rejection_size :
-    (rejectionSet .restrictive).size = 23 := by decide
+    (rejectionSet .restrictive).length = 23 := by decide
 
 /-- The moderate rejection set drops the 4 heuristic / FP-prone
     detectors (F1, D3, D4, I3) from restrictive, keeping 19. -/
 theorem moderate_rejection_size :
-    (rejectionSet .moderate).size = 19 := by decide
+    (rejectionSet .moderate).length = 19 := by decide
 
 /-- The minimal rejection set covers the 3 structural / RFC-
     violation families (C4 UTF-8 byte validity, C5 bidi-control
     balance, F2 stream-safe overflow). -/
 theorem minimal_rejection_size :
-    (rejectionSet .minimal).size = 3 := by decide
+    (rejectionSet .minimal).length = 3 := by decide
 
 /-- Every family in `moderate.rejectionSet` is also in
     `restrictive.rejectionSet`. -/
@@ -473,7 +473,7 @@ theorem minimal_rejection_subset_restrictive :
 /-- Monotonicity witness, pure ASCII.  Admissible at all three
     levels. -/
 theorem monotone_ascii_hello :
-    let input : Array Nat := #[0x48, 0x65, 0x6C, 0x6C, 0x6F]
+    let input : List Nat := [0x48, 0x65, 0x6C, 0x6C, 0x6F]
     admissibleAt .restrictive .nonCrypto input = true
     ∧ admissibleAt .moderate .nonCrypto input = true
     ∧ admissibleAt .minimal .nonCrypto input = true := by decide
@@ -481,7 +481,7 @@ theorem monotone_ascii_hello :
 /-- Monotonicity witness, lone RLO.  Inadmissible at every
     level (C5 is in every rejection set). -/
 theorem monotone_lone_rlo :
-    let input : Array Nat := #[0x202E]
+    let input : List Nat := [0x202E]
     admissibleAt .restrictive .nonCrypto input = false
     ∧ admissibleAt .moderate .nonCrypto input = false
     ∧ admissibleAt .minimal .nonCrypto input = false := by decide
@@ -490,7 +490,7 @@ theorem monotone_lone_rlo :
     Inadmissible at restrictive + moderate (I1 fires there),
     admissible at minimal (I1 not in minimal rejection set). -/
 theorem monotone_nethereum :
-    let input : Array Nat := #[0x4E, 0x65, 0x74, 0x68, 0x65, 0x72,
+    let input : List Nat := [0x4E, 0x65, 0x74, 0x68, 0x65, 0x72,
                                 0x0435, 0x75, 0x6D]
     admissibleAt .restrictive .nonCrypto input = false
     ∧ admissibleAt .moderate .nonCrypto input = false
@@ -500,7 +500,7 @@ theorem monotone_nethereum :
     Nethereum — identifier-side attack, inadmissible at
     restrictive + moderate, admissible at minimal. -/
 theorem monotone_math_italic_admin :
-    let input : Array Nat := #[0x1D44E, 0x1D451, 0x1D45A, 0x1D456, 0x1D45B]
+    let input : List Nat := [0x1D44E, 0x1D451, 0x1D45A, 0x1D456, 0x1D45B]
     admissibleAt .restrictive .nonCrypto input = false
     ∧ admissibleAt .moderate .nonCrypto input = false
     ∧ admissibleAt .minimal .nonCrypto input = true := by decide
@@ -519,7 +519,7 @@ theorem monotone_math_italic_admin :
     accidentally accepting Greek polytonic without auditing
     the trade-off. -/
 theorem monotone_greek_polytonic :
-    let input : Array Nat := #[0x1F86]
+    let input : List Nat := [0x1F86]
     admissibleAt .restrictive .nonCrypto input = false
     ∧ admissibleAt .moderate .nonCrypto input = false
     ∧ admissibleAt .minimal .nonCrypto input = true := by decide
@@ -533,7 +533,7 @@ theorem monotone_greek_polytonic :
     the single codepoint (FDFA > 0xFF so C4's byte-stream
     gate skips it). -/
 theorem monotone_fdfa :
-    let input : Array Nat := #[0xFDFA]
+    let input : List Nat := [0xFDFA]
     admissibleAt .restrictive .nonCrypto input = false
     ∧ admissibleAt .moderate .nonCrypto input = false
     ∧ admissibleAt .minimal .nonCrypto input = true := by decide
@@ -544,13 +544,13 @@ theorem monotone_fdfa :
     InvalidStartByte at offset 0.  Inadmissible at every
     level — C4 is in every rejection set including `minimal`. -/
 theorem monotone_modified_utf8_nul :
-    let input : Array Nat := #[0xC0, 0x80]
+    let input : List Nat := [0xC0, 0x80]
     admissibleAt .restrictive .nonCrypto input = false
     ∧ admissibleAt .moderate .nonCrypto input = false
     ∧ admissibleAt .minimal .nonCrypto input = false := by decide
 
 /-- Monotonicity witness, mixed input with a non-ASCII codepoint
-    `#[0xC0, 0x80, 0x4E2D]`.  The Han codepoint 0x4E2D > 0xFF
+    `[0xC0, 0x80, 0x4E2D]`.  The Han codepoint 0x4E2D > 0xFF
     so runAll's byte-stream gate skips C4 entirely.  Without
     C4 firing, the input is admissible at minimal (no other
     family fires on this short non-bidi codepoint sequence).
@@ -558,7 +558,7 @@ theorem monotone_modified_utf8_nul :
     mixing high codepoints into the input flips C4 off,
     preventing spurious rejection. -/
 theorem monotone_mixed_high_codepoint :
-    let input : Array Nat := #[0xC0, 0x80, 0x4E2D]
+    let input : List Nat := [0xC0, 0x80, 0x4E2D]
     admissibleAt .minimal .nonCrypto input = true := by decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -574,7 +574,7 @@ theorem monotone_mixed_high_codepoint :
     are not "identifier admissible" by design. -/
 theorem space_alone_fires_I2 :
     (Unicode.Security.Identity.MixedScriptAdmissibility.detect
-      #[0x20]).classify.isClear = false := by
+      [0x20]).classify.isClear = false := by
   decide
 
 /-- Pure ASCII "Hello" is admissible at every level under
@@ -582,7 +582,7 @@ theorem space_alone_fires_I2 :
     `bip39Mnemonic` the verdict flips: K1's `mixedCase` fires on
     the capital H and admission is refused. -/
 theorem crypto_ctx_gates_mixed_case :
-    let input : Array Nat := #[0x48, 0x65, 0x6C, 0x6C, 0x6F]
+    let input : List Nat := [0x48, 0x65, 0x6C, 0x6C, 0x6F]
     admissibleAt .restrictive .nonCrypto     input = true
     ∧ admissibleAt .restrictive .bip39Mnemonic input = false := by
   decide
@@ -592,7 +592,7 @@ theorem crypto_ctx_gates_mixed_case :
     Pins that the BIP-39 context does NOT spuriously reject
     canonical-form input. -/
 theorem crypto_ctx_single_word_passes_both :
-    let input : Array Nat := #[0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E]
+    let input : List Nat := [0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E]
     admissibleAt .restrictive .nonCrypto     input = true
     ∧ admissibleAt .restrictive .bip39Mnemonic input = true := by
   decide
@@ -613,7 +613,7 @@ theorem crypto_ctx_single_word_passes_both :
     `crypto_ctx_gates_decomposed_e_acute_at_minimal` below for
     the composite-form co-witness. -/
 theorem crypto_admissible_gates_decomposed_e_acute :
-    let input : Array Nat := #[0x0065, 0x0301]
+    let input : List Nat := [0x0065, 0x0301]
     cryptoAdmissible .nonCrypto input = true
     ∧ cryptoAdmissible .hashInput input = false := by
   decide
@@ -627,7 +627,7 @@ theorem crypto_admissible_gates_decomposed_e_acute :
     of K2.  The `crypto_admissible_gates_decomposed_e_acute` pin
     above shows K2's contribution explicitly without the masking. -/
 theorem crypto_ctx_gates_decomposed_e_acute_at_minimal :
-    let input : Array Nat := #[0x0065, 0x0301]
+    let input : List Nat := [0x0065, 0x0301]
     admissibleAt .minimal .nonCrypto input = true
     ∧ admissibleAt .minimal .hashInput input = false := by
   decide
@@ -640,14 +640,14 @@ theorem crypto_ctx_gates_decomposed_e_acute_at_minimal :
     factored predicates above show K2's contribution is still
     present in `cryptoAdmissible`. -/
 theorem level_admissible_rejects_decomposed_e_at_restrictive :
-    let input : Array Nat := #[0x0065, 0x0301]
+    let input : List Nat := [0x0065, 0x0301]
     levelAdmissible .restrictive input = false
     ∧ levelAdmissible .moderate    input = false := by
   decide
 
 /-- K3's `aiAttribution` context-gating, measured directly via
     `cryptoAdmissible` — Level-independent.  Plain ASCII
-    `a NNBSP b` (#[0x61, 0x202F, 0x62]) is accepted under
+    `a NNBSP b` ([0x61, 0x202F, 0x62]) is accepted under
     `.nonCrypto` (no cryptographic-stability detector in the effective set) and rejects
     under `.aiAttribution` because K3's `NnbspBoundary` fires.
     This is the architectural pin for K3's distinguishing power:
@@ -662,7 +662,7 @@ theorem level_admissible_rejects_decomposed_e_at_restrictive :
     K3-specific decision directly.  Follows the same shape as
     `crypto_admissible_gates_decomposed_e_acute` for K2. -/
 theorem crypto_admissible_gates_nnbsp_under_aiAttribution :
-    let input : Array Nat := #[0x61, 0x202F, 0x62]
+    let input : List Nat := [0x61, 0x202F, 0x62]
     cryptoAdmissible .nonCrypto     input = true
     ∧ cryptoAdmissible .aiAttribution input = false := by
   decide
@@ -675,7 +675,7 @@ theorem crypto_admissible_gates_nnbsp_under_aiAttribution :
     See `crypto_admissible_gates_nnbsp_under_aiAttribution`
     for the K3-specific gating pin. -/
 theorem level_admissible_rejects_nnbsp_at_restrictive :
-    let input : Array Nat := #[0x61, 0x202F, 0x62]
+    let input : List Nat := [0x61, 0x202F, 0x62]
     levelAdmissible .restrictive input = false := by
   decide
 
