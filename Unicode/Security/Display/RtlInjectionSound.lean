@@ -16,21 +16,21 @@ namespace Unicode.Security.Display.RtlInjection
 open Unicode.Machine.AbstractMachine
 
 /-- The strong-RTL tally is at most the input size, for every input. -/
-theorem countStrongRTL_le_size (input : Array Nat) :
-    countStrongRTL input ≤ input.size := by
-  have h := foldl_count_le isStrongRTL 0 input.toList
-  simpa [countStrongRTL, Array.foldl_toList] using h
+theorem countStrongRTL_le_size (input : List Nat) :
+    countStrongRTL input ≤ input.length := by
+  have h := foldl_count_le isStrongRTL 0 input
+  simpa [countStrongRTL] using h
 
 /-- The strong-LTR tally is at most the input size, for every input. -/
-theorem countStrongLTR_le_size (input : Array Nat) :
-    countStrongLTR input ≤ input.size := by
-  have h := foldl_count_le isStrongLTR 0 input.toList
-  simpa [countStrongLTR, Array.foldl_toList] using h
+theorem countStrongLTR_le_size (input : List Nat) :
+    countStrongLTR input ≤ input.length := by
+  have h := foldl_count_le isStrongLTR 0 input
+  simpa [countStrongLTR] using h
 
 /-- The bidi-control tally is at most the input size, for every input. -/
-theorem countBidiControl_le_size (input : Array Nat) :
-    countBidiControl input ≤ input.size := by
-  have h := foldl_count_le isBidiControl 0 input.toList
-  simpa [countBidiControl, Array.foldl_toList] using h
+theorem countBidiControl_le_size (input : List Nat) :
+    countBidiControl input ≤ input.length := by
+  have h := foldl_count_le isBidiControl 0 input
+  simpa [countBidiControl] using h
 
 end Unicode.Security.Display.RtlInjection
