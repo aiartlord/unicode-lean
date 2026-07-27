@@ -216,8 +216,10 @@ def firstForbiddenCodepointClassified (bs : List UInt8) :
                   | some kind => some (off, cp, kind)
                   | none      => none)
 
+/-- The UTF-8 bytes of "hello" contain no forbidden codepoint. -/
 theorem firstForbidden_hello_none :
-    firstForbiddenCodepointClassified "hello".toUTF8.toList = none := by decide
+    firstForbiddenCodepointClassified ([0x68, 0x65, 0x6C, 0x6C, 0x6F] : List UInt8)
+      = none := by decide
 
 theorem firstForbidden_bidi :
     firstForbiddenCodepointClassified ([0x61, 0xE2, 0x80, 0xAE, 0x62])
@@ -402,8 +404,8 @@ theorem fcdf_eacute (fuel : Nat) :
 theorem decomposeSequence_héllo :
     Decompose.decomposeSequence [0x68, 0xE9, 0x6C, 0x6C, 0x6F]
       = [0x68, 0x65, 0x301, 0x6C, 0x6C, 0x6F] := by
-  simp only [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose, Decompose.maxDepth]
-  simp [Decompose.fcdf_latin_h 31, fcdf_eacute 30, Decompose.fcdf_latin_l 31,
+  simp [Decompose.decomposeSequence, Decompose.fullCanonicalDecompose, Decompose.maxDepth,
+        Decompose.fcdf_latin_h 31, fcdf_eacute 30, Decompose.fcdf_latin_l 31,
         Decompose.fcdf_latin_o 31]
 
 theorem hasSortedRuns_decomposed_héllo :
@@ -421,43 +423,58 @@ theorem toNFC_héllo :
       compose_héllo]
 
 theorem empty_is_printable :
-    isPrintableUtf8Bytes List UInt8.empty = true :=
-  printable_true_of List UInt8.empty (by decide)
-    (firstForbiddenControl_none List UInt8.empty (by decide)) (by decide)
-    (isNFCBytes_of_lt List UInt8.empty [] (by decide) (by decide) (by decide)
+    isPrintableUtf8Bytes ([] : List UInt8) = true :=
+  printable_true_of ([] : List UInt8) (by decide)
+    (firstForbiddenControl_none ([] : List UInt8) (by decide)) (by decide)
+    (isNFCBytes_of_lt ([] : List UInt8) [] (by decide) (by decide) (by decide)
       (by intro cp hMem; simp at hMem))
 
+/-- The UTF-8 bytes of "hello" are printable. -/
 theorem hello_is_printable :
-    isPrintableUtf8Bytes "hello".toUTF8.toList = true :=
-  printable_true_of "hello".toUTF8.toList (by decide)
-    (firstForbiddenControl_none "hello".toUTF8.toList (by decide)) (by decide)
-    (isNFCBytes_of_lt "hello".toUTF8.toList [0x68, 0x65, 0x6C, 0x6C, 0x6F]
+    isPrintableUtf8Bytes ([0x68, 0x65, 0x6C, 0x6C, 0x6F] : List UInt8) = true :=
+  printable_true_of ([0x68, 0x65, 0x6C, 0x6C, 0x6F] : List UInt8) (by decide)
+    (firstForbiddenControl_none ([0x68, 0x65, 0x6C, 0x6C, 0x6F] : List UInt8) (by decide))
+    (by decide)
+    (isNFCBytes_of_lt ([0x68, 0x65, 0x6C, 0x6C, 0x6F] : List UInt8) [0x68, 0x65, 0x6C, 0x6C, 0x6F]
       (by decide) (by decide) (by decide)
       (by intro cp hMem; simp at hMem; rcases hMem with rfl|rfl|rfl|rfl|rfl <;> decide))
 
+/-- The UTF-8 bytes of "hello\nworld" are printable: newline is a permitted
+    control, not a forbidden one. -/
 theorem hello_nl_is_printable :
-    isPrintableUtf8Bytes "hello\nworld".toUTF8.toList = true :=
-  printable_true_of "hello\nworld".toUTF8.toList (by decide)
-    (firstForbiddenControl_none "hello\nworld".toUTF8.toList (by decide)) (by decide)
-    (isNFCBytes_of_lt "hello\nworld".toUTF8.toList
+    isPrintableUtf8Bytes
+        ([0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x0A, 0x77, 0x6F, 0x72, 0x6C, 0x64] : List UInt8)
+      = true :=
+  printable_true_of
+    ([0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x0A, 0x77, 0x6F, 0x72, 0x6C, 0x64] : List UInt8) (by decide)
+    (firstForbiddenControl_none
+      ([0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x0A, 0x77, 0x6F, 0x72, 0x6C, 0x64] : List UInt8) (by decide))
+    (by decide)
+    (isNFCBytes_of_lt
+      ([0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x0A, 0x77, 0x6F, 0x72, 0x6C, 0x64] : List UInt8)
       [0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x0A, 0x77, 0x6F, 0x72, 0x6C, 0x64]
       (by decide) (by decide) (by decide)
       (by intro cp hMem; simp at hMem
           rcases hMem with rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl|rfl <;> decide))
 
+/-- The UTF-8 bytes of "héllo" (é = U+00E9 → 0xC3 0xA9) are printable: the
+    accented form is already in NFC, so the NFC-stability gate passes. -/
 theorem accented_is_printable :
-    isPrintableUtf8Bytes "héllo".toUTF8.toList = true := by
-  have hn : Unicode.Normalization.Utf8Bridge.isNFCBytes "héllo".toUTF8.toList = true := by
-    have hv : Unicode.Codec.Utf8.isValidUtf8 "héllo".toUTF8.toList = true := by decide
-    have hd : Unicode.Normalization.Utf8Bridge.decodeToCodepoints "héllo".toUTF8.toList
+    isPrintableUtf8Bytes ([0x68, 0xC3, 0xA9, 0x6C, 0x6C, 0x6F] : List UInt8) = true := by
+  have hn : Unicode.Normalization.Utf8Bridge.isNFCBytes
+      ([0x68, 0xC3, 0xA9, 0x6C, 0x6C, 0x6F] : List UInt8) = true := by
+    have hv : Unicode.Codec.Utf8.isValidUtf8
+        ([0x68, 0xC3, 0xA9, 0x6C, 0x6C, 0x6F] : List UInt8) = true := by decide
+    have hd : Unicode.Normalization.Utf8Bridge.decodeToCodepoints
+        ([0x68, 0xC3, 0xA9, 0x6C, 0x6C, 0x6F] : List UInt8)
         = [0x68, 0xE9, 0x6C, 0x6C, 0x6F] := by decide
     have he : Unicode.Normalization.Utf8Bridge.encodeCodepoints [0x68, 0xE9, 0x6C, 0x6C, 0x6F]
-        = "héllo".toUTF8.toList := by decide
+        = ([0x68, 0xC3, 0xA9, 0x6C, 0x6C, 0x6F] : List UInt8) := by decide
     unfold Unicode.Normalization.Utf8Bridge.isNFCBytes Unicode.Normalization.Utf8Bridge.toNFCBytes
-    simp only [String.toUTF8] at hv hd he
     simp [hv, hd, toNFC_héllo, he]
-  exact printable_true_of "héllo".toUTF8.toList (by decide)
-    (firstForbiddenControl_none "héllo".toUTF8.toList (by decide)) (by decide) hn
+  exact printable_true_of ([0x68, 0xC3, 0xA9, 0x6C, 0x6C, 0x6F] : List UInt8) (by decide)
+    (firstForbiddenControl_none ([0x68, 0xC3, 0xA9, 0x6C, 0x6C, 0x6F] : List UInt8) (by decide))
+    (by decide) hn
 
 theorem control_NUL_not_printable :
     isPrintableUtf8Bytes ([0x00]) = false := by
