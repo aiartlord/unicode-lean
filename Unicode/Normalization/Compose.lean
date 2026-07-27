@@ -115,18 +115,10 @@ theorem findSome?_matcher_eq_find?_pairs (d c : Nat)
       exact ih
     · cases hDT : r.canonicalDecomposition with
       | nil =>
-        have hMatch : (if r.canonicalDecomposition = [d, c]
-               ∧ ¬ Lookup.isFullCompositionExclusion r.codepoint then
-              some r.codepoint else none) = none := by
-          rw [if_neg]
-          intro hCon
-          have hTL := hCon.1
-          rw [hDT] at hTL
-          simp at hTL
         have hPair : pairOfRow r = none := by
           unfold pairOfRow
           rw [if_neg hExcl, hDT]
-        simp only [hMatch, hPair]
+        simp only [hPair]
         exact ih
       | cons a tail1 =>
         cases hDT2 : tail1 with
@@ -142,6 +134,7 @@ theorem findSome?_matcher_eq_find?_pairs (d c : Nat)
           have hPair : pairOfRow r = none := by
             unfold pairOfRow
             rw [if_neg hExcl, hDT, hDT2]
+          rw [hDT, hDT2] at hMatch
           simp only [hMatch, hPair]
           exact ih
         | cons b tail2 =>
@@ -158,6 +151,7 @@ theorem findSome?_matcher_eq_find?_pairs (d c : Nat)
             have hPair : pairOfRow r = none := by
               unfold pairOfRow
               rw [if_neg hExcl, hDT, hDT2, hDT3]
+            rw [hDT, hDT2, hDT3] at hMatch
             simp only [hMatch, hPair]
             exact ih
           | nil =>
@@ -179,6 +173,7 @@ theorem findSome?_matcher_eq_find?_pairs (d c : Nat)
                     (fun t => decide (t.1 = d) && decide (t.2.1 = c))
                   = some (a, b, r.codepoint) :=
                 List.find?_cons_of_pos hCond
+              rw [hDT, hDT2, hDT3] at hMatch
               simp only [hMatch, hPair, hFind, Option.map_some]
             · have hMatch : (if r.canonicalDecomposition = [d, c]
                      ∧ ¬ Lookup.isFullCompositionExclusion r.codepoint then
@@ -197,6 +192,7 @@ theorem findSome?_matcher_eq_find?_pairs (d c : Nat)
                 simp only [Bool.and_eq_true, decide_eq_true_eq]
                 intro hCon
                 exact hKey hCon
+              rw [hDT, hDT2, hDT3] at hMatch
               simp only [hMatch, hPair, hFind]
               exact ih
 
