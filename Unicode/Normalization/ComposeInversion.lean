@@ -101,11 +101,11 @@ theorem NFDEquivalent_trans {a b c : List Nat}
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- For any ComposeState `s`, `flushCompose s = expand s`. Definitional —
-    both functions produce `emitted ++ starterPart ++ buffer.reverse.toArray`. -/
+    both functions produce `emitted ++ starterPart ++ buffer.reverse`. -/
 theorem flushCompose_eq_expand (s : Compose.ComposeState) :
     (Compose.flushCompose s).toList = expand s := by
   unfold Compose.flushCompose expand
-  cases s.starter <;> simp [Array.toList_append]
+  cases s.starter <;> simp
 
 /-- `compose x = expand (fold stepCompose initialState x)`. Immediate from
     the definition of `compose` composed with `flushCompose_eq_expand`. -/
@@ -132,7 +132,7 @@ theorem compose_eq_expand (x : List Nat) :
 -- The invariant rules out states like
 --   `{ starter := none, buffer := [non-starter], … }`
 -- whose `expand` places the non-starter BEFORE any subsequent starter,
--- producing a concatenation that does not match `pre ++ #[starter]` at
+-- producing a concatenation that does not match `pre ++ [starter]` at
 -- the NFD level. Such states have no preimage under `stepCompose ∘ … ∘
 -- stepCompose`, so excluding them costs nothing.
 --
@@ -182,7 +182,7 @@ theorem stepCompose_starter_none_output
       = if Lookup.canonicalCombiningClass cp = 0 then
           { s with starter := some cp }
         else
-          { s with emitted := s.emitted ++ #[cp] } := by
+          { s with emitted := s.emitted ++ [cp] } := by
   obtain ⟨em, opSt, buf, mx⟩ := s
   simp only at hS
   subst hS
@@ -327,7 +327,7 @@ theorem stepCompose_preserves_valid
 --      absorb-and-decompose round-trips the pair at NFD equivalence.
 --
 --   2. `FoldOverList`: a tactical detail — that folding append-singleton
---      over a list starting from `#[]` reconstructs the array. Structurally
+--      over a list starting from `[]` reconstructs the array. Structurally
 --      straightforward but requires a generalized induction.
 --
 -- Given both hypotheses, `decompose_compose_inversion` and `toNFC_idempotent`
@@ -345,17 +345,17 @@ theorem stepCompose_preserves_valid
     The validity precondition is load-bearing: without it the
     hypothesis is false (consider
     `s := { starter := none, buffer := [non-starter], … }` which
-    satisfies `NFDEquivalent (expand s) #[non-starter]` but whose
+    satisfies `NFDEquivalent (expand s) [non-starter]` but whose
     single-step expansion under a starter input places the new starter
     before the non-starter — giving a different NFD form than
-    `#[non-starter, starter]`). Because `initialState` is valid and
+    `[non-starter, starter]`). Because `initialState` is valid and
     `stepCompose_preserves_valid` threads validity through the fold,
     restricting the hypothesis to valid states costs nothing at the
     call site.
 
     Closure strategy (not yet executed):
       * Case on `stepCompose` branches.
-      * Pass-through branches reduce to `toNFD (A ++ #[cp]) = toNFD (A ++ #[cp])`.
+      * Pass-through branches reduce to `toNFD (A ++ [cp]) = toNFD (A ++ [cp])`.
       * Primary-composite absorption branches use
         `Invertibility.primaryComposite_canonicalDecomposition_nonHangul`
         to show the composite decomposes back to the absorbed pair; the
@@ -379,7 +379,7 @@ def StepPreservesNFDEquivalence : Prop :=
 --   Case 1 — `starter = none`, `ccc = 0` (leading starter, no active
 --            starter yet). Requires `ComposeStateValid` to force
 --            `s.buffer = []`; the output state has `starter := some cp`
---            and still-empty buffer, so expand emits `s.emitted ++ #[cp]`.
+--            and still-empty buffer, so expand emits `s.emitted ++ [cp]`.
 --
 --   Case 2 — `starter = none`, `ccc ≠ 0` (leading non-starter, no
 --            active starter yet). Requires `ComposeStateValid` to
@@ -399,19 +399,17 @@ def StepPreservesNFDEquivalence : Prop :=
 --            Case 6.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- `reverse` distribution over cons, lifted into `Array` form. Used to
-    rewrite `(cp :: buf).reverse.toArray` as `buf.reverse.toArray ++
-    #[cp]`. -/
+/-- `reverse` distribution over cons, in `List` form. Used to
+    rewrite `(cp :: buf).reverse` as `buf.reverse ++
+    [cp]`. -/
 theorem reverse_cons_toArray (cp : Nat) (buf : List Nat) :
-    (cp :: buf).reverse.toArray = buf.reverse.toArray ++ #[cp] := by
+    (cp :: buf).reverse = buf.reverse ++ [cp] := by
   rw [List.reverse_cons]
-  apply Array.toList_inj.mp
-  simp
 
 /-- **Case 1** expand equality: leading starter with no active starter
     (ccc = 0) and (by validity) empty buffer gives `expand (step s cp) =
     expand s ++ [cp]`. The output state carries `starter := some cp`
-    and still-empty buffer, so expand produces `s.emitted ++ #[cp]` —
+    and still-empty buffer, so expand produces `s.emitted ++ [cp]` —
     which equals `expand s ++ [cp]` by the same validity-forced empty
     buffer on the input side. -/
 theorem stepCompose_case_leading_starter_expand
@@ -576,8 +574,8 @@ theorem stepPreserves_case_strict_max_no_composite
 
 /-- **Case 4** expand equality: starter-to-starter with no composition.
     Buffer is empty by the branch guard, so the output `expand` has
-    `emitted ++ #[st] ++ #[cp] ++ #[]` which reduces to `expand s ++
-    #[cp]`. -/
+    `emitted ++ [st] ++ [cp] ++ []` which reduces to `expand s ++
+    [cp]`. -/
 theorem stepCompose_case_starter_no_composite_expand
     (s : Compose.ComposeState) (cp : Nat) (st : Nat)
     (hSome : s.starter = some st)
@@ -587,7 +585,7 @@ theorem stepCompose_case_starter_no_composite_expand
     expand (Compose.stepCompose s cp) = expand s ++ [cp] := by
   have hBuf : s.buffer = [] := List.isEmpty_iff.mp hBufEmpty
   have hStep : Compose.stepCompose s cp
-             = { emitted := s.emitted ++ #[st]
+             = { emitted := s.emitted ++ [st]
                , starter := some cp
                , buffer := []
                , maxCCC := 0 } := by
@@ -602,8 +600,8 @@ theorem stepCompose_case_starter_no_composite_expand
 /-- **Case 5** expand equality: starter input with non-empty buffer.
     Flushing st and buffer into emitted, then making cp the new active
     starter, gives the output `expand` as `s.emitted.toList ++ [st] ++
-    s.buffer.reverse.toArray ++ #[cp] ++ #[]`. Reduces to `expand s ++
-    #[cp]`. -/
+    s.buffer.reverse ++ [cp] ++ []`. Reduces to `expand s ++
+    [cp]`. -/
 theorem stepCompose_case_starter_flush_expand
     (s : Compose.ComposeState) (cp : Nat) (st : Nat)
     (hSome : s.starter = some st)
@@ -611,7 +609,7 @@ theorem stepCompose_case_starter_flush_expand
     (hBufNonEmpty : s.buffer.isEmpty = false) :
     expand (Compose.stepCompose s cp) = expand s ++ [cp] := by
   have hStep : Compose.stepCompose s cp
-             = { emitted := s.emitted ++ #[st] ++ s.buffer.reverse.toArray
+             = { emitted := s.emitted ++ [st] ++ s.buffer.reverse
                , starter := some cp
                , buffer := []
                , maxCCC := 0 } := by
@@ -682,7 +680,7 @@ theorem stepPreserves_case_starter_flush
 -- ── UCD factoring table (structural, via ToNFDAppend's List mirror) ───────────
 --
 -- The two 3045-row facts below (`ucd_twoEltDecomp_factoring` and the decomposition
--- shared-CCC fact) call `fullCanonicalDecompose`, whose `Array.find?` lookups are
+-- shared-CCC fact) call `fullCanonicalDecompose`, whose `List.find?` lookups are
 -- O(n²) in the kernel and cannot reduce the whole table. A single combined
 -- predicate `combP` restates both over `ToNFDAppend.fcdFuelL` (the proven-equal
 -- List mirror, linear lookups); it reduces per 64-row chunk and combines to the
@@ -737,12 +735,12 @@ theorem ucd_twoEltDecomp_factoring :
     Uses `Lookup.lookupRow` to identify the UCD row backing `p`, then
     applies the decide table. -/
 theorem fullCanonicalDecompose_of_twoElt_decomp
-    (p d c : Nat) (h : Lookup.canonicalDecomposition p = #[d, c]) :
+    (p d c : Nat) (h : Lookup.canonicalDecomposition p = [d, c]) :
     Decompose.fullCanonicalDecompose p
       = Decompose.fullCanonicalDecompose d
         ++ Decompose.fullCanonicalDecompose c := by
   have hLookup : ∃ row, Lookup.lookupRow p = some row
-                       ∧ row.canonicalDecomposition = #[d, c] := by
+                       ∧ row.canonicalDecomposition = [d, c] := by
     unfold Lookup.canonicalDecomposition at h
     cases hL : Lookup.lookupRow p with
     | none =>
@@ -757,7 +755,7 @@ theorem fullCanonicalDecompose_of_twoElt_decomp
   have hCodepointEq : row.codepoint = p :=
     Unicode.Generated.UnicodeDataIndex.lookupRow?_codepoint hRowEq
   have hSrcCodepointEq : src.codepoint = p := hSrcCp.trans hCodepointEq
-  have hSrcDecompEq : src.canonicalDecomposition = #[d, c] := by
+  have hSrcDecompEq : src.canonicalDecomposition = [d, c] := by
     rw [hSrcDecomp, hRowDecomp]
   have hSize : src.canonicalDecomposition.size = 2 := by
     rw [hSrcDecompEq]; rfl
@@ -778,7 +776,7 @@ theorem fullCanonicalDecompose_of_twoElt_decomp
     When `Hangul.composePair? d c = none` and `primaryComposite? d c
     = some p`, the factorization holds. Composed from
     `Invertibility.primaryComposite_canonicalDecomposition_nonHangul`
-    (which gives `canonicalDecomposition p = #[d, c]`) and
+    (which gives `canonicalDecomposition p = [d, c]`) and
     `fullCanonicalDecompose_of_twoElt_decomp` (the UCD-table-backed lift). -/
 theorem fullCanonicalDecompose_of_nonHangul_primaryComposite
     (d c p : Nat) (hHangul : Hangul.composePair? d c = none)
@@ -786,7 +784,7 @@ theorem fullCanonicalDecompose_of_nonHangul_primaryComposite
     Decompose.fullCanonicalDecompose p
       = Decompose.fullCanonicalDecompose d
         ++ Decompose.fullCanonicalDecompose c := by
-  have hCanon : Lookup.canonicalDecomposition p = #[d, c] :=
+  have hCanon : Lookup.canonicalDecomposition p = [d, c] :=
     Invertibility.primaryComposite_canonicalDecomposition_nonHangul d c p hHangul h
   exact fullCanonicalDecompose_of_twoElt_decomp p d c hCanon
 
@@ -960,7 +958,7 @@ theorem fullCanonicalDecompose_of_primaryComposite
     list-level foundation is in
     `ReorderAppend.sortNonStarterRun_{cons,append}_max`. -/
 def ReorderCommutesStrictMax : Prop :=
-  ∀ (emitted : Array Nat) (st cp p : Nat)
+  ∀ (emitted : List Nat) (st cp p : Nat)
     (buffer : List Nat) (maxCCC : Nat),
     Compose.primaryComposite? st cp = some p →
     Lookup.canonicalCombiningClass cp ≠ 0 →
@@ -973,7 +971,7 @@ def ReorderCommutesStrictMax : Prop :=
 -- ── Context-lifted factorization at the NFD level ─────────────────────────────
 
 /-- Corollary of the primary-composite factorization: for any surrounding
-    context `X`, `toNFD (X ++ #[p]) = toNFD (X ++ #[d] ++ #[c])` when
+    context `X`, `toNFD (X ++ [p]) = toNFD (X ++ [d] ++ [c])` when
     `primaryComposite? d c = some p` and `c` is not the `0x11C3`
     edge-case jamo. -/
 theorem toNFD_primaryComposite_expand
@@ -989,7 +987,7 @@ theorem toNFD_primaryComposite_expand
   rw [Distribute.decomposeSequence_append X [d]]
   rw [Distribute.decomposeSequence_singleton d]
   rw [Distribute.decomposeSequence_singleton c]
-  simp [Array.toList_append, List.append_assoc]
+  simp [List.append_assoc]
 
 /-- **Non-Hangul variant of `toNFD_primaryComposite_expand`.** When
     `Hangul.composePair? d c = none`, the expansion chain goes through
@@ -1013,7 +1011,7 @@ theorem toNFD_primaryComposite_expand_nonHangul
   rw [Distribute.decomposeSequence_append X [d]]
   rw [Distribute.decomposeSequence_singleton d]
   rw [Distribute.decomposeSequence_singleton c]
-  simp [Array.toList_append, List.append_assoc]
+  simp [List.append_assoc]
 
 /-- **Hangul composePair? second-argument bound**. When
     `Hangul.composePair? first second` succeeds, the second argument
@@ -1307,17 +1305,17 @@ theorem stepPreservesNFDEquivalence_given_rcsm
                   hS hCCC hBlock hPrim hEquiv
 
 /-- **Tactical lemma (closed).** Folding append-singleton over a list
-    reconstructs the array. Closed via `Array.push_eq_append` (definitional
-    push/append equivalence) and `List.foldl_push_eq_append'` (standard
-    library lemma for foldl-push reconstruction). -/
-theorem foldOverList (xs : Array Nat) :
-    xs.toList.foldl (fun acc (x : Nat) => acc ++ #[x]) #[] = xs := by
-  have hPushEq : (fun (acc : Array Nat) (x : Nat) => acc ++ #[x]) =
-                 (fun acc x => acc.push x) := by
-    funext acc x
-    rfl
-  rw [hPushEq, List.foldl_push_eq_append']
-  simp
+    from `[]` reconstructs the list. Closed by induction with the
+    accumulator generalised to `init ++ l`. -/
+theorem foldOverList (xs : List Nat) :
+    xs.foldl (fun acc (x : Nat) => acc ++ [x]) [] = xs := by
+  have key : ∀ (l : List Nat) (init : List Nat),
+      l.foldl (fun acc x => acc ++ [x]) init = init ++ l := by
+    intro l
+    induction l with
+    | nil => intro init; simp
+    | cons hd tl ih => intro init; simp only [List.foldl_cons]; rw [ih]; simp
+  simpa using key xs []
 
 /-- Folding `stepCompose` preserves the NFD-equivalence invariant — conditional
     on the step-preservation hypothesis. The fold-over-list tactical detail
@@ -1478,10 +1476,10 @@ theorem fullCanonicalDecompose_preserves_ccc_of_nonStarter
     have hNotZero : decide (src.canonicalCombiningClass = 0) = false :=
       decide_eq_false hSrcCCCne
     rw [hNotZero, Bool.false_or] at hAt
-    rw [Array.all_eq_true] at hAt
+    rw [List.all_eq_true] at hAt
     rw [← hSrcCpEq] at hMem
     rw [ToNFDAppend.fullCanonicalDecompose_eq] at hMem
-    rcases Array.getElem_of_mem hMem with ⟨j, hj, hJElem⟩
+    rcases List.getElem_of_mem hMem with ⟨j, hj, hJElem⟩
     have hCpcEq := of_decide_eq_true (hAt j hj)
     rw [hJElem] at hCpcEq
     rw [← ToNFDAppend.canonicalCombiningClass_eq cp'] at hCpcEq
@@ -1523,7 +1521,7 @@ theorem decomposeSequence_nonStarter_preserves_ccc
 
 /-- **Sequence CCC preservation for a non-starter singleton.** For a
     single non-starter codepoint `cp`, every element of
-    `decomposeSequence #[cp] = fullCanonicalDecompose cp` is a
+    `decomposeSequence [cp] = fullCanonicalDecompose cp` is a
     non-starter with the same CCC as `cp`. -/
 theorem fullCanonicalDecompose_nonStarter_preserves_ccc
     (cp : Nat) (h : Lookup.canonicalCombiningClass cp ≠ 0) :
@@ -1561,7 +1559,7 @@ theorem fullCanonicalDecompose_nonStarter_preserves_ccc
       3. Unfold `toNFD`, distribute `decomposeSequence` across `++`.
       4. Apply `reorder_commutes_strict_max_multi` with
          `C = fullCanonicalDecompose cp` and
-         `Y = decomposeSequence buf.rev.toArray`.
+         `Y = decomposeSequence buf.rev`.
       5. Discharge the `multi` hypotheses from CCC preservation
          (non-starter decomposition preserves CCC) + the `hStrict`
          input hypothesis. -/
@@ -1597,7 +1595,7 @@ theorem reorderCommutesStrictMax_holds : ReorderCommutesStrictMax := by
   simp only [← List.append_assoc]
   -- Now goal in the shape of reorder_commutes_strict_max_multi:
   -- reorder (A ++ C ++ Y) = reorder (A ++ Y ++ C)   -- note: direction
-  -- where A = ds(emitted ++ #[st]), C = fullCanonicalDecompose cp, Y = ds buf.rev
+  -- where A = ds(emitted ++ [st]), C = fullCanonicalDecompose cp, Y = ds buf.rev
   -- reorder_commutes_strict_max_multi: reorder (A ++ Y ++ C) = reorder (A ++ C ++ Y)
   -- The .symm direction matches the goal.
   -- Establish the three multi-element hypotheses.
