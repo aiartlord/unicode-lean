@@ -49,7 +49,7 @@ def isXIDContinue (cp : Nat) : Bool := inRanges cp xidContinue
 /-- Identifier_Status of `cp` per `IdentifierStatus.txt`. Codepoints
     not explicitly listed default to `Restricted`. -/
 def identifierStatus (cp : Nat) : IdentifierStatus :=
-  if inRanges cp allowedRanges.toList then .Allowed else defaultStatus
+  if inRanges cp allowedRanges then .Allowed else defaultStatus
 
 /-- True iff `cp` has `Identifier_Status = Allowed` per UTS #39. -/
 def isAllowedStatus (cp : Nat) : Bool :=
