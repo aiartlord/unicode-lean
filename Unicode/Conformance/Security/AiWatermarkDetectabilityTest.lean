@@ -44,7 +44,7 @@ open Unicode.Security.Crypto.AiWatermarkDetectability
 def rawFixture : String :=
   include_str "../../Ucd/Security/AiWatermarkDetectabilityTest.txt"
 
-def rows : Array Row := parseFixture rawFixture
+def rows : List Row := parseFixture rawFixture
 
 /-- Project a `Classification` to `(ClassificationKind,
     sub-threat-tag)`. -/
@@ -53,7 +53,7 @@ def projectClassify
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
 /-- Project a `Classification` to the positions array. -/
-def projectPositions (c : Classification) : Array Nat :=
+def projectPositions (c : Classification) : List Nat :=
   c.positions
 
 /-- Validate the K3 verdict's metadata fields against the row's
@@ -81,60 +81,60 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 27 := by decide
+theorem row_count : rows.length = 27 := by decide
 
 theorem covers_clear :
-    (rows.filter (fun r => r.expectedKind = .clear)).size ≥ 5 := by
+    (rows.filter (fun r => r.expectedKind = .clear)).length ≥ 5 := by
   decide
 
 theorem covers_nnbsp_boundary :
     (rows.filter (fun r =>
-      r.expectedSubThreat = some "NnbspBoundary")).size ≥ 2 := by
+      r.expectedSubThreat = some "NnbspBoundary")).length ≥ 2 := by
   decide
 
 theorem covers_variation_selector_carrier :
     (rows.filter (fun r =>
-      r.expectedSubThreat = some "VariationSelectorCarrier")).size ≥ 3 := by
+      r.expectedSubThreat = some "VariationSelectorCarrier")).length ≥ 3 := by
   decide
 
 theorem covers_zwj_non_emoji :
     (rows.filter (fun r =>
-      r.expectedSubThreat = some "ZwjNonEmoji")).size ≥ 1 := by
+      r.expectedSubThreat = some "ZwjNonEmoji")).length ≥ 1 := by
   decide
 
 theorem covers_default_ignorable_carrier :
     (rows.filter (fun r =>
-      r.expectedSubThreat = some "DefaultIgnorableCarrier")).size ≥ 3 := by
+      r.expectedSubThreat = some "DefaultIgnorableCarrier")).length ≥ 3 := by
   decide
 
 theorem covers_adversarial :
     (rows.filter (fun r =>
-      r.expectedSubThreat = some "Adversarial")).size ≥ 2 := by
+      r.expectedSubThreat = some "Adversarial")).length ≥ 2 := by
   decide
 
 theorem covers_gpt5_zwsp_modulo :
     (rows.filter (fun r =>
-      r.expectedSubThreat = some "Gpt5ZwspModulo")).size ≥ 2 := by
+      r.expectedSubThreat = some "Gpt5ZwspModulo")).length ≥ 2 := by
   decide
 
 theorem covers_smart_quote_alternation :
     (rows.filter (fun r =>
-      r.expectedSubThreat = some "SmartQuoteAlternation")).size ≥ 2 := by
+      r.expectedSubThreat = some "SmartQuoteAlternation")).length ≥ 2 := by
   decide
 
 theorem covers_em_dash_pattern :
     (rows.filter (fun r =>
-      r.expectedSubThreat = some "EmDashPattern")).size ≥ 1 := by
+      r.expectedSubThreat = some "EmDashPattern")).length ≥ 1 := by
   decide
 
 theorem covers_statistical_token_choice :
     (rows.filter (fun r =>
-      r.expectedSubThreat = some "StatisticalTokenChoice")).size ≥ 2 := by
+      r.expectedSubThreat = some "StatisticalTokenChoice")).length ≥ 2 := by
   decide
 
 theorem covers_unknown :
     (rows.filter (fun r =>
-      r.expectedSubThreat = some "Unknown")).size ≥ 3 := by
+      r.expectedSubThreat = some "Unknown")).length ≥ 3 := by
   decide
 
 /-- Every constructor of `SubThreat` has at least one fixture
@@ -144,8 +144,8 @@ theorem covers_unknown :
     it.  Each entry is the string returned by
     `Classification.tag` for the corresponding constructor. -/
 theorem every_subthreat_has_fixture_row :
-    let expectedSubThreats : Array String :=
-      #[ "NnbspBoundary"
+    let expectedSubThreats : List String :=
+      [ "NnbspBoundary"
        , "VariationSelectorCarrier"
        , "ZwjNonEmoji"
        , "DefaultIgnorableCarrier"

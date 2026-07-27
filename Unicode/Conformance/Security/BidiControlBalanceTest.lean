@@ -29,7 +29,7 @@ def rawFixture : String :=
   include_str "../../Ucd/Security/BidiControlBalanceTest.txt"
 
 /-- All parsed rows from the bundled fixture. -/
-def rows : Array Row := parseFixture rawFixture
+def rows : List Row := parseFixture rawFixture
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 Per-family classification-name mapping
@@ -41,7 +41,7 @@ def projectClassify
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
 /-- Project a `Classification` to the positions array. -/
-def projectPositions (c : Classification) : Array Nat :=
+def projectPositions (c : Classification) : List Nat :=
   c.positions
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -79,25 +79,25 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate (catches fixture corruption / accidental rewrites). -/
-theorem row_count : rows.size = 27 := by decide
+theorem row_count : rows.length = 27 := by decide
 
 /-- Section coverage gates. -/
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 7 := by decide
+    (rows.filter (·.sectionName = "Clear")).length ≥ 7 := by decide
 
 theorem covers_unbalanced_embedding :
-    (rows.filter (·.sectionName = "UnbalancedEmbedding")).size ≥ 7 := by
+    (rows.filter (·.sectionName = "UnbalancedEmbedding")).length ≥ 7 := by
   decide
 
 theorem covers_unbalanced_isolate :
-    (rows.filter (·.sectionName = "UnbalancedIsolate")).size ≥ 6 := by
+    (rows.filter (·.sectionName = "UnbalancedIsolate")).length ≥ 6 := by
   decide
 
 theorem covers_orphan_pop :
-    (rows.filter (·.sectionName = "OrphanPop")).size ≥ 6 := by decide
+    (rows.filter (·.sectionName = "OrphanPop")).length ≥ 6 := by decide
 
 theorem covers_depth_exceeded :
-    (rows.filter (·.sectionName = "DepthExceeded")).size ≥ 1 := by
+    (rows.filter (·.sectionName = "DepthExceeded")).length ≥ 1 := by
   decide
 
 /-- The actual Trojan Source attack codepoint (RLO) is caught
@@ -105,7 +105,7 @@ theorem covers_depth_exceeded :
     was discovered and fixed during C5 development
     (Unicode.TrojanSource.opensEmbedding originally omitted RLO). -/
 theorem detect_rlo_attack :
-    (detect #[0x69, 0x66, 0x20, 0x202E, 0x29, 0x7B]).classify.tag
+    (detect [0x69, 0x66, 0x20, 0x202E, 0x29, 0x7B]).classify.tag
       = some "UnbalancedEmbedding" := by decide
 
 end Unicode.Conformance.Security.BidiControlBalanceTest

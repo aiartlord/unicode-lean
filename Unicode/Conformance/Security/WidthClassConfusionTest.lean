@@ -29,7 +29,7 @@ open Unicode.Security.Form.WidthClassConfusion
 def rawFixture : String :=
   include_str "../../Ucd/Security/WidthClassConfusionTest.txt"
 
-def rows : Array Row := parseFixture rawFixture
+def rows : List Row := parseFixture rawFixture
 
 /-- Project an `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
@@ -37,7 +37,7 @@ def projectClassify
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
 /-- Project an `Classification` to the positions array. -/
-def projectPositions (c : Classification) : Array Nat :=
+def projectPositions (c : Classification) : List Nat :=
   c.positions
 
 /-- Validate the F5 verdict's metadata fields against the row's
@@ -65,17 +65,17 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 22 := by decide
+theorem row_count : rows.length = 22 := by decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by decide
+    (rows.filter (·.sectionName = "Clear")).length ≥ 8 := by decide
 
 theorem covers_fullwidth :
-    (rows.filter (·.sectionName = "FullwidthFold")).size ≥ 7 := by
+    (rows.filter (·.sectionName = "FullwidthFold")).length ≥ 7 := by
   decide
 
 theorem covers_halfwidth :
-    (rows.filter (·.sectionName = "HalfwidthFold")).size ≥ 6 := by
+    (rows.filter (·.sectionName = "HalfwidthFold")).length ≥ 6 := by
   decide
 
 end Unicode.Conformance.Security.WidthClassConfusionTest

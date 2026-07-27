@@ -30,7 +30,7 @@ def rawFixture : String :=
   include_str "../../Ucd/Security/ZeroWidthPayloadTest.txt"
 
 /-- All parsed rows from the bundled fixture. -/
-def rows : Array Row := parseFixture rawFixture
+def rows : List Row := parseFixture rawFixture
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 Per-family classification-name mapping
@@ -42,7 +42,7 @@ def projectClassify
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
 /-- Project a `Classification` to the positions array. -/
-def projectPositions (c : Classification) : Array Nat :=
+def projectPositions (c : Classification) : List Nat :=
   c.positions
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -79,30 +79,30 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate (catches fixture corruption / accidental rewrites). -/
-theorem row_count : rows.size = 28 := by decide
+theorem row_count : rows.length = 28 := by decide
 
 /-- Section coverage gates. -/
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by decide
+    (rows.filter (·.sectionName = "Clear")).length ≥ 8 := by decide
 
 theorem covers_binary_payload :
-    (rows.filter (·.sectionName = "BinaryPayload")).size ≥ 5 := by
+    (rows.filter (·.sectionName = "BinaryPayload")).length ≥ 5 := by
   decide
 
 theorem covers_word_joiner :
-    (rows.filter (·.sectionName = "WordJoinerInjection")).size ≥ 4 := by
+    (rows.filter (·.sectionName = "WordJoinerInjection")).length ≥ 4 := by
   decide
 
 theorem covers_ai_watermark :
-    (rows.filter (·.sectionName = "AIWatermarkNNBSP")).size ≥ 2 := by
+    (rows.filter (·.sectionName = "AIWatermarkNNBSP")).length ≥ 2 := by
   decide
 
 theorem covers_bare_zero_width :
-    (rows.filter (·.sectionName = "BareZeroWidth")).size ≥ 4 := by
+    (rows.filter (·.sectionName = "BareZeroWidth")).length ≥ 4 := by
   decide
 
 theorem covers_annotation_misuse :
-    (rows.filter (·.sectionName = "AnnotationMisuse")).size ≥ 5 := by
+    (rows.filter (·.sectionName = "AnnotationMisuse")).length ≥ 5 := by
   decide
 
 end Unicode.Conformance.Security.ZeroWidthPayloadTest

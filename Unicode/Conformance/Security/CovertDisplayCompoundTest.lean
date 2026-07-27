@@ -31,7 +31,7 @@ open Unicode.Security.Boundary.CovertDisplayCompound
 def rawFixture : String :=
   include_str "../../Ucd/Security/CovertDisplayCompoundTest.txt"
 
-def rows : Array Row := parseFixture rawFixture
+def rows : List Row := parseFixture rawFixture
 
 /-- Project an `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
@@ -39,7 +39,7 @@ def projectClassify
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
 /-- Project an `Classification` to the positions array. -/
-def projectPositions (c : Classification) : Array Nat :=
+def projectPositions (c : Classification) : List Nat :=
   c.positions
 
 /-- Run `detect` on the row's input and check the verdict against
@@ -57,17 +57,17 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 21 := by decide
+theorem row_count : rows.length = 21 := by decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 7 := by decide
+    (rows.filter (·.sectionName = "Clear")).length ≥ 7 := by decide
 
 theorem covers_unregistered_vs :
-    (rows.filter (·.sectionName = "BidiPlusUnregisteredVs")).size ≥ 6 := by
+    (rows.filter (·.sectionName = "BidiPlusUnregisteredVs")).length ≥ 6 := by
   decide
 
 theorem covers_tag_block :
-    (rows.filter (·.sectionName = "BidiPlusTagBlock")).size ≥ 7 := by
+    (rows.filter (·.sectionName = "BidiPlusTagBlock")).length ≥ 7 := by
   decide
 
 end Unicode.Conformance.Security.CovertDisplayCompoundTest

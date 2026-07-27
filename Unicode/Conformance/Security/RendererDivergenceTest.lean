@@ -26,7 +26,7 @@ open Unicode.Security.Display.RendererDivergence
 def rawFixture : String :=
   include_str "../../Ucd/Security/RendererDivergenceTest.txt"
 
-def rows : Array Row := parseFixture rawFixture
+def rows : List Row := parseFixture rawFixture
 
 /-- Project a `Classification` to `(ClassificationKind, sub-threat-tag)`. -/
 def projectClassify
@@ -34,7 +34,7 @@ def projectClassify
   if c.isClear then (.clear, none) else (.hazard, c.tag)
 
 /-- Project a `Classification` to the positions array. -/
-def projectPositions (c : Classification) : Array Nat :=
+def projectPositions (c : Classification) : List Nat :=
   c.positions
 
 /-- Validate the D4 verdict's metadata fields against the row's
@@ -66,29 +66,29 @@ def verifyRow (r : Row) : Bool :=
 theorem all_rows_pass : rows.all verifyRow = true := by decide
 
 /-- Row-count gate. -/
-theorem row_count : rows.size = 27 := by decide
+theorem row_count : rows.length = 27 := by decide
 
 theorem covers_clear :
-    (rows.filter (·.sectionName = "Clear")).size ≥ 8 := by decide
+    (rows.filter (·.sectionName = "Clear")).length ≥ 8 := by decide
 
 theorem covers_vs :
-    (rows.filter (·.sectionName = "VariationSelectorVariance")).size ≥ 5 := by
+    (rows.filter (·.sectionName = "VariationSelectorVariance")).length ≥ 5 := by
   decide
 
 theorem covers_unregistered_zwj :
-    (rows.filter (·.sectionName = "UnregisteredZwjVariance")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "UnregisteredZwjVariance")).length ≥ 3 := by
   decide
 
 theorem covers_combining_overflow :
-    (rows.filter (·.sectionName = "CombiningStackOverflow")).size ≥ 4 := by
+    (rows.filter (·.sectionName = "CombiningStackOverflow")).length ≥ 4 := by
   decide
 
 theorem covers_fullwidth :
-    (rows.filter (·.sectionName = "FullwidthVariance")).size ≥ 4 := by
+    (rows.filter (·.sectionName = "FullwidthVariance")).length ≥ 4 := by
   decide
 
 theorem covers_mixed_direction :
-    (rows.filter (·.sectionName = "MixedDirectionVariance")).size ≥ 3 := by
+    (rows.filter (·.sectionName = "MixedDirectionVariance")).length ≥ 3 := by
   decide
 
 end Unicode.Conformance.Security.RendererDivergenceTest
