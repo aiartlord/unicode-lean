@@ -66,8 +66,8 @@ def parseRow (rawLine : String) : Option (Nat × Nat × Vo) :=
 def verticalOrientationRaw : String := include_str "../Ucd/VerticalOrientation.txt"
 
 /-- Per-range Vertical_Orientation assignments, in source order. -/
-def verticalOrientationRanges : Array (Nat × Nat × Vo) :=
-  ((verticalOrientationRaw.splitOn "\n").filterMap parseRow).toArray
+def verticalOrientationRanges : List (Nat × Nat × Vo) :=
+  ((verticalOrientationRaw.splitOn "\n").filterMap parseRow)
 
 /-- Default `Vo` value for codepoints not covered by any explicit
     range, per UAX #44 missing-row convention. -/
@@ -83,7 +83,7 @@ def lookupVo (cp : Nat) : Vo :=
 
 -- Build-time drift gate.
 #eval do
-  unless verticalOrientationRangesList.toArray == verticalOrientationRanges do
+  unless verticalOrientationRangesList == verticalOrientationRanges do
     throw (IO.userError "VerticalOrientation drift: list ≠ parsed")
 
 end Unicode.Generated.VerticalOrientation

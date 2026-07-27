@@ -52,8 +52,8 @@ def parseRow (rawLine : String) : Option (Nat × Nat × EmojiProp) :=
   let stripped : String := (rawLine.takeWhile (· != '#')).toString
   let line := trimS stripped
   if line.isEmpty then none else
-  let fields : Array String := (String.splitOn line ";").toArray
-  if fields.size ≥ 2 then
+  let fields : List String := String.splitOn line ";"
+  if fields.length ≥ 2 then
     let rngField := fields[0]!
     let propField := fields[1]!
     let (lo, hi) := parseRange (trimS rngField)
@@ -68,8 +68,8 @@ def emojiDataRaw : String :=
   include_str "../Ucd/emoji-data.txt"
 
 /-- All parsed (lo, hi, prop) rows. -/
-def parsedRows : Array (Nat × Nat × EmojiProp) :=
-  ((emojiDataRaw.splitOn "\n").filterMap parseRow).toArray
+def parsedRows : List (Nat × Nat × EmojiProp) :=
+  ((emojiDataRaw.splitOn "\n").filterMap parseRow)
 
 /-- Extended_Pictographic ranges (UAX #29 §3 dependency for GB11).
     Filtered from the materialized `parsedRowsList` so kernel reduction
@@ -143,7 +143,7 @@ def isEmojiComponent (cp : Nat) : Bool :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 #eval do
-  unless parsedRowsList.toArray == parsedRows do
+  unless parsedRowsList == parsedRows do
     throw (IO.userError "EmojiData drift: parsedRowsList ≠ parsed parsedRows")
 
 end Unicode.Generated.EmojiData

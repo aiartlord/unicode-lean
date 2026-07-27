@@ -84,14 +84,14 @@ def parseMissingRow
 def eastAsianWidthRaw : String := include_str "../Ucd/EastAsianWidth.txt"
 
 /-! Per-range East_Asian_Width property assignments. -/
-def explicitRanges : Array (Nat × Nat × EastAsianWidthClass) :=
-  ((eastAsianWidthRaw.splitOn "\n").filterMap parseExplicitRow).toArray
+def explicitRanges : List (Nat × Nat × EastAsianWidthClass) :=
+  ((eastAsianWidthRaw.splitOn "\n").filterMap parseExplicitRow)
 
 /-! Default ranges from `@missing:` directives in the source header,
     in source order. The LAST entry whose range contains a codepoint
     wins. -/
-def defaultRanges : Array (Nat × Nat × EastAsianWidthClass) :=
-  ((eastAsianWidthRaw.splitOn "\n").filterMap parseMissingRow).toArray
+def defaultRanges : List (Nat × Nat × EastAsianWidthClass) :=
+  ((eastAsianWidthRaw.splitOn "\n").filterMap parseMissingRow)
 
 /-- East_Asian_Width lookup: explicit ranges first, then the latest
     `@missing:` default range whose interval contains `cp`, then the
@@ -118,9 +118,9 @@ def lookup (cp : Nat) : EastAsianWidthClass :=
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 #eval do
-  unless explicitRangesList.toArray == explicitRanges do
+  unless explicitRangesList == explicitRanges do
     throw (IO.userError "EastAsianWidth drift: explicitRangesList ≠ parsed explicitRanges")
-  unless defaultRangesList.toArray == defaultRanges do
+  unless defaultRangesList == defaultRanges do
     throw (IO.userError "EastAsianWidth drift: defaultRangesList ≠ parsed defaultRanges")
 
 /-- True iff `cp` is East_Asian_Width F (Fullwidth), W (Wide), or

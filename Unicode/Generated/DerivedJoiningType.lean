@@ -69,8 +69,8 @@ def derivedJoiningTypeRaw : String := include_str "../Ucd/DerivedJoiningType.txt
 
 /-- All Joining_Type rows from the derived table. Codepoints not
     covered default to `NonJoining` per the file's `@missing` directive. -/
-def joiningRangesParsed : Array JoiningRow :=
-  ((derivedJoiningTypeRaw.splitOn "\n").filterMap parseRow).toArray
+def joiningRangesParsed : List JoiningRow :=
+  ((derivedJoiningTypeRaw.splitOn "\n").filterMap parseRow)
 
 /-- Look up the Joining_Type of `cp`, returning `NonJoining` for
     codepoints outside the table coverage (the @missing default). -/
@@ -101,7 +101,7 @@ theorem joiningType_A : joiningType 0x0041 = .NonJoining := by decide +kernel
 
 -- Build-time drift gate.
 #eval do
-  unless joiningRangesList.toArray == joiningRangesParsed do
+  unless joiningRangesList == joiningRangesParsed do
     throw (IO.userError "DerivedJoiningType drift: list ≠ parsed")
 
 end Unicode.Generated.DerivedJoiningType
