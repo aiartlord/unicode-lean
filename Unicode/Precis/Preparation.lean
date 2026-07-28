@@ -532,10 +532,7 @@ theorem precis_output_admissible_mapped
       exact hAdm.1
     unfold allAdmissible at hAllAdm
     rw [List.all_eq_true] at hAllAdm
-    rcases List.getElem_of_mem hcp with ⟨i, hi, hElem⟩
-    have := hAllAdm i hi
-    rw [hElem] at this
-    exact this
+    exact hAllAdm cp hcp
   · have hNone : (if isGatePass (precisMap cps) then some (precisMap cps)
                   else none) = some out := h
     rw [if_neg hAdm] at hNone
@@ -559,10 +556,7 @@ theorem precis_output_admissible_preserved
       exact hAdm.1
     unfold allAdmissible at hAllAdm
     rw [List.all_eq_true] at hAllAdm
-    rcases List.getElem_of_mem hcp with ⟨i, hi, hElem⟩
-    have := hAllAdm i hi
-    rw [hElem] at this
-    exact this
+    exact hAllAdm cp hcp
   · have hNone : (if isGatePass (precisMapPreserved cps)
                    then some (precisMapPreserved cps) else none) = some out := h
     rw [if_neg hAdm] at hNone
