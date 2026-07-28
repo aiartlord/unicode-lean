@@ -55,13 +55,13 @@ def chainConvergesUnderBound : Bool :=
 theorem confusable_chain_within_bound :
     chainConvergesUnderBound = true := by
   unfold chainConvergesUnderBound mappingsFactGroupsList
-  simp only [List.all_append, mappingsFactGroup0_chain, mappingsFactGroup1_chain, mappingsFactGroup2_chain, mappingsFactGroup3_chain, mappingsFactGroup4_chain, mappingsFactGroup5_chain, mappingsFactGroup6_chain, mappingsFactGroup7_chain, mappingsFactGroup8_chain, mappingsFactGroup9_chain, mappingsFactGroup10_chain, Bool.true_and, Bool.and_true]
+  simp only [List.all_append, mappingsFactGroup0_chain, mappingsFactGroup1_chain, mappingsFactGroup2_chain, mappingsFactGroup3_chain, mappingsFactGroup4_chain, mappingsFactGroup5_chain, mappingsFactGroup6_chain, mappingsFactGroup7_chain, mappingsFactGroup8_chain, mappingsFactGroup9_chain, mappingsFactGroup10_chain, Bool.and_true]
 
 /-- Every target sequence in the generated table has length <= 18. -/
 theorem mappingsList_expansion_under_bound :
     mappingsFactGroupsList.all (expansionEntryUnderBound 18) = true := by
   unfold mappingsFactGroupsList
-  simp only [List.all_append, mappingsFactGroup0_expansion, mappingsFactGroup1_expansion, mappingsFactGroup2_expansion, mappingsFactGroup3_expansion, mappingsFactGroup4_expansion, mappingsFactGroup5_expansion, mappingsFactGroup6_expansion, mappingsFactGroup7_expansion, mappingsFactGroup8_expansion, mappingsFactGroup9_expansion, mappingsFactGroup10_expansion, Bool.true_and, Bool.and_true]
+  simp only [List.all_append, mappingsFactGroup0_expansion, mappingsFactGroup1_expansion, mappingsFactGroup2_expansion, mappingsFactGroup3_expansion, mappingsFactGroup4_expansion, mappingsFactGroup5_expansion, mappingsFactGroup6_expansion, mappingsFactGroup7_expansion, mappingsFactGroup8_expansion, mappingsFactGroup9_expansion, mappingsFactGroup10_expansion, Bool.and_true]
 
 /-- The maximum target sequence length across the generated confusables table. -/
 def maxConfusableExpansion : Nat :=

@@ -37,11 +37,11 @@ def mappingsFactGroup2 : List (Nat × List Nat) :=
 theorem mappingsFactGroup2_chain :
     mappingsFactGroup2.all chainConvergesEntry = true := by
   unfold mappingsFactGroup2
-  simp only [List.all_append, mappingsChunk20_chain, mappingsChunk21_chain, mappingsChunk22_chain, mappingsChunk23_chain, mappingsChunk24_chain, mappingsChunk25_chain, mappingsChunk26_chain, mappingsChunk27_chain, mappingsChunk28_chain, mappingsChunk29_chain, Bool.true_and, Bool.and_true]
+  simp only [List.all_append, mappingsChunk20_chain, mappingsChunk21_chain, mappingsChunk22_chain, mappingsChunk23_chain, mappingsChunk24_chain, mappingsChunk25_chain, mappingsChunk26_chain, mappingsChunk27_chain, mappingsChunk28_chain, mappingsChunk29_chain, Bool.and_true]
 
 theorem mappingsFactGroup2_expansion :
     mappingsFactGroup2.all (expansionEntryUnderBound 18) = true := by
   unfold mappingsFactGroup2
-  simp only [List.all_append, mappingsChunk20_expansion, mappingsChunk21_expansion, mappingsChunk22_expansion, mappingsChunk23_expansion, mappingsChunk24_expansion, mappingsChunk25_expansion, mappingsChunk26_expansion, mappingsChunk27_expansion, mappingsChunk28_expansion, mappingsChunk29_expansion, Bool.true_and, Bool.and_true]
+  simp only [List.all_append, mappingsChunk20_expansion, mappingsChunk21_expansion, mappingsChunk22_expansion, mappingsChunk23_expansion, mappingsChunk24_expansion, mappingsChunk25_expansion, mappingsChunk26_expansion, mappingsChunk27_expansion, mappingsChunk28_expansion, mappingsChunk29_expansion, Bool.and_true]
 
 end Unicode.Confusables
