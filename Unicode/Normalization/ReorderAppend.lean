@@ -209,7 +209,6 @@ theorem reorder_append_starter_middle
           ++ flushRun (X.foldl stepReorder { emitted := [], currentRun := [] })
           ++ [cp])]
   rw [reorder_eq X]
-  simp
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- SORTNONSTARTERRUN IDEMPOTENCE + APPEND-ABSORBING
@@ -667,7 +666,6 @@ theorem state_reorder_emitted_eq_state_emitted (A : List Nat) :
         = (A.foldl stepReorder initState).emitted
             ++ (flushRun (A.foldl stepReorder initState)) := by
     rw [hReorderEq]
-    simp
   rw [hReorderAToList, List.foldl_append, hStateEmitted]
   have hFlushNonStarter :
       ∀ x ∈ (flushRun (A.foldl stepReorder initState)),
@@ -720,7 +718,6 @@ theorem state_reorder_currentRun_sortedRun_eq (A : List Nat) :
         = (A.foldl stepReorder initState).emitted
             ++ (flushRun (A.foldl stepReorder initState)) := by
     rw [hReorderEq]
-    simp
   have hFlushNonStarter :
       ∀ x ∈ (flushRun (A.foldl stepReorder initState)),
         0 < Lookup.canonicalCombiningClass x := by
@@ -915,7 +912,6 @@ theorem flushRun_swap_strict_max
     flushRun { emitted := E, currentRun := cp :: (Y.reverse ++ R) }
       = flushRun { emitted := E, currentRun := Y.reverse ++ cp :: R } := by
   unfold flushRun
-  congr 1
   have hLhsRev : (cp :: (Y.reverse ++ R)).reverse
                   = R.reverse ++ Y ++ [cp] := by
     simp [List.reverse_cons, List.reverse_append, List.reverse_reverse,
@@ -1176,7 +1172,6 @@ theorem reorder_commutes_strict_max_multi
                                     ++ (C.reverse
                                           ++ (A.foldl stepReorder { emitted := [], currentRun := [] }).currentRun) } := by
     unfold flushRun
-    congr 1
     have hLhsRev :
         (C.reverse
           ++ (Y.reverse
