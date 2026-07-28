@@ -150,22 +150,20 @@ def verifyRow (r : ConformanceRow) : Bool :=
 def partPasses (p : Nat) : Bool :=
   (taggedRows.filter (fun t => t.part = p)).all (fun t => verifyRow t.row)
 
-/-- Part 0 — UAX #15 specific cases (45 rows). -/
-theorem part0_conformance : partPasses 0 = true := by decide
-
-/-- Part 5 — Chained primary composites (38 rows). -/
-theorem part5_conformance : partPasses 5 = true := by decide
-
-/-- Part 3 — PRI #29 test (194 rows). -/
-theorem part3_conformance : partPasses 3 = true := by decide
-
-/-- Part 4 — Canonical closures, excluding Hangul (735 rows). -/
-theorem part4_conformance : partPasses 4 = true := by decide
-
-/-- Part 2 — Canonical Order Test (1936 rows). -/
-theorem part2_conformance : partPasses 2 = true := by decide
-
-/-- Part 1 — Character-by-character test (17086 rows). -/
-theorem part1_conformance : partPasses 1 = true := by decide
+-- Build-time conformance gate. Every parsed row of the official
+-- `NormalizationTest.txt` corpus (Parts 0–5) satisfies `verifyRow` — the
+-- UAX #15 §5 stability and cross-form identities. The fixture is parsed from an
+-- `include_str` string, which the kernel cannot reduce, so the corpus is
+-- validated by the compiled runtime at build time: a divergence throws and fails
+-- the build, mirroring the drift gate in `GraphemeBreakTest`. The kernel-proved
+-- content is the algorithm-correctness proofs under `Unicode.Normalization`
+-- (`toNFC`/`toNFD` idempotence and cross-cancellation, the QuickCheck soundness
+-- suite, the ToNFDAppend row-mirror), which establish that the stability and
+-- cross-form identities `verifyRow` checks hold for every input by theorem — the
+-- gate then confirms our algorithm reproduces Unicode's published columns across
+-- the whole corpus.
+#eval do
+  unless (List.range 6).all partPasses do
+    throw (IO.userError "NormalizationTest: a @Part failed conformance")
 
 end Unicode.Conformance.NormalizationTest
