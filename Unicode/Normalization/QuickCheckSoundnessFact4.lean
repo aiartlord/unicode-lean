@@ -162,9 +162,7 @@ theorem primaryComposite_none_of_qcY (st cp : Nat) (hQC : nfcQCValue cp = .Y) :
     obtain ⟨row, hRowMem, hFEq⟩ := List.exists_of_findSome?_eq_some hFind
     have hAll := QuickCheckFacts.qcY_nonstarter_not_decomp_target
     rw [List.all_eq_true] at hAll
-    rcases List.getElem_of_mem hRowMem with ⟨i, hi, hElem⟩
-    have hRow := hAll i hi
-    rw [hElem] at hRow
+    have hRow := hAll row hRowMem
     split at hFEq
     · next hCond =>
       obtain ⟨hDecomp, hNotExc⟩ := hCond
