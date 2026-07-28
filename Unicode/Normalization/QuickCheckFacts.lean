@@ -172,9 +172,7 @@ theorem qcY_nonstarter_cp_no_decomp
       decide (r.canonicalDecomposition = [])) = true :=
       qcY_nonstarter_rows_no_decomp
     rw [List.all_eq_true] at hAll
-    rcases List.getElem_of_mem hMem with ⟨i, hi, hIEq⟩
-    have hThis := hAll i hi
-    rw [hIEq] at hThis
+    have hThis := hAll src hMem
     simp only [Bool.or_eq_true] at hThis
     rcases hThis with hNot | hEmpty
     · -- hNot contradicts the QC=Y and nonstarter premises.
@@ -229,9 +227,7 @@ theorem qcY_starter_2decomp_cp_composes
                 (r.canonicalDecomposition[1]!) = some r.codepoint)) = true :=
       qcY_starter_2decomp_rows_compose
     rw [List.all_eq_true] at hAll
-    rcases List.getElem_of_mem hMem with ⟨i, hi, hIEq⟩
-    have hThis := hAll i hi
-    rw [hIEq] at hThis
+    have hThis := hAll src hMem
     simp only [Bool.or_eq_true] at hThis
     rcases hThis with hNot | hGood
     · -- hNot is the negated conjunction; derive contradiction directly
