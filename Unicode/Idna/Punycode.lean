@@ -215,6 +215,13 @@ def decode (input : String) : Option (List Nat) :=
 -- §6 RFC 3492 §7.1 SAMPLE STRINGS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+-- The sample encodings run the RFC 3492 main loop, whose bias variable climbs
+-- to the largest non-basic codepoint (tens of thousands of iterations, each
+-- scanning the whole input). Closing these with `decide +kernel` runs that loop
+-- in the kernel with GMP-backed Nat arithmetic and bounded memory, instead of
+-- the elaborator whnf which retains a thunk per step.
+set_option maxRecDepth 100000
+
 /-- Empty input round-trips trivially. -/
 theorem encode_empty : encode [] = some "" := by decide
 theorem decode_empty : decode "" = some [] := by decide
@@ -223,23 +230,23 @@ theorem decode_empty : decode "" = some [] := by decide
 theorem encode_sample_B :
     encode [0x4ED6, 0x4EEC, 0x4E3A, 0x4EC0, 0x4E48,
              0x4E0D, 0x8BF4, 0x4E2D, 0x6587]
-      = some "ihqwcrb4cv8a8dqg056pqjye" := by decide
+      = some "ihqwcrb4cv8a8dqg056pqjye" := by decide +kernel
 
 theorem decode_sample_B :
     decode "ihqwcrb4cv8a8dqg056pqjye"
       = some [0x4ED6, 0x4EEC, 0x4E3A, 0x4EC0, 0x4E48,
-               0x4E0D, 0x8BF4, 0x4E2D, 0x6587] := by decide
+               0x4E0D, 0x8BF4, 0x4E2D, 0x6587] := by decide +kernel
 
 /-- (C) Chinese (traditional). -/
 theorem encode_sample_C :
     encode [0x4ED6, 0x5011, 0x7232, 0x4EC0, 0x9EBD,
              0x4E0D, 0x8AAA, 0x4E2D, 0x6587]
-      = some "ihqwctvzc91f659drss3x8bo0yb" := by decide
+      = some "ihqwctvzc91f659drss3x8bo0yb" := by decide +kernel
 
 theorem decode_sample_C :
     decode "ihqwctvzc91f659drss3x8bo0yb"
       = some [0x4ED6, 0x5011, 0x7232, 0x4EC0, 0x9EBD,
-               0x4E0D, 0x8AAA, 0x4E2D, 0x6587] := by decide
+               0x4E0D, 0x8AAA, 0x4E2D, 0x6587] := by decide +kernel
 
 /-- (J) Spanish: mixed basic and non-basic codepoints. -/
 theorem encode_sample_J :
@@ -248,7 +255,7 @@ theorem encode_sample_J :
              0x6D, 0x70, 0x6C, 0x65, 0x6D, 0x65, 0x6E, 0x74,
              0x65, 0x68, 0x61, 0x62, 0x6C, 0x61, 0x72, 0x65,
              0x6E, 0x45, 0x73, 0x70, 0x61, 0xF1, 0x6F, 0x6C]
-      = some "PorqunopuedensimplementehablarenEspaol-fmd56a" := by decide
+      = some "PorqunopuedensimplementehablarenEspaol-fmd56a" := by decide +kernel
 
 theorem decode_sample_J :
     decode "PorqunopuedensimplementehablarenEspaol-fmd56a"
@@ -256,6 +263,6 @@ theorem decode_sample_J :
                0x70, 0x75, 0x65, 0x64, 0x65, 0x6E, 0x73, 0x69,
                0x6D, 0x70, 0x6C, 0x65, 0x6D, 0x65, 0x6E, 0x74,
                0x65, 0x68, 0x61, 0x62, 0x6C, 0x61, 0x72, 0x65,
-               0x6E, 0x45, 0x73, 0x70, 0x61, 0xF1, 0x6F, 0x6C] := by decide
+               0x6E, 0x45, 0x73, 0x70, 0x61, 0xF1, 0x6F, 0x6C] := by decide +kernel
 
 end Unicode.Idna.Punycode
