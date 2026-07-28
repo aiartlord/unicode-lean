@@ -213,7 +213,7 @@ theorem decomposeSequence_preserves_non_caseFoldSource
     ∀ j ∈ Decompose.decomposeSequence cps, isCaseFoldSource j = false := by
   intro j hj
   unfold Decompose.decomposeSequence at hj
-  obtain ⟨x, hxIn, hxF⟩ := mem_foldl_append Decompose.fullCanonicalDecompose cps j hj
+  obtain ⟨x, hxIn, hxF⟩ := List.mem_flatMap.mp hj
   exact fullCanonicalDecompose_preserves_non_caseFoldSource x (h x hxIn) j hxF
 
 /-- **`toNFD` preserves non-case-fold-source.** Pipelines
@@ -255,12 +255,7 @@ theorem foldl_caseFold_init_distrib (b : List Nat) (init : List Nat) :
 /-- **`caseFold` distributes over `++`.** -/
 theorem caseFold_append (a b : List Nat) :
     caseFold (a ++ b) = caseFold a ++ caseFold b := by
-  show (a ++ b).foldl (fun acc cp => acc ++ caseFoldCodepoint cp) [] =
-       a.foldl (fun acc cp => acc ++ caseFoldCodepoint cp) [] ++
-       b.foldl (fun acc cp => acc ++ caseFoldCodepoint cp) []
-  rw [List.foldl_append]
-  exact foldl_caseFold_init_distrib b
-    (a.foldl (fun acc cp => acc ++ caseFoldCodepoint cp) [])
+  simp only [caseFold, List.flatMap_append]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- REORDER MEMBERSHIP (IN → OUT)
@@ -526,8 +521,7 @@ theorem caseFoldNfcRoundtripFixed_holds :
         rw [hEq] at hDecSing; exact hDecSing
       have hDecAll : d ∈ Decompose.decomposeSequence (NFC.toNFC (caseFold cs)) := by
         unfold Decompose.decomposeSequence
-        exact mem_foldl_append_of Decompose.fullCanonicalDecompose (NFC.toNFC (caseFold cs))
-          c hc d hFCDc
+        exact List.mem_flatMap.mpr ⟨c, hc, hFCDc⟩
       have hToNFDall : d ∈ NFC.toNFD (NFC.toNFC (caseFold cs)) :=
         reorder_mem_of_mem (Decompose.decomposeSequence (NFC.toNFC (caseFold cs))) d hDecAll
       rw [ComposeInversion.toNFD_toNFC_eq_toNFD] at hToNFDall
