@@ -175,6 +175,39 @@ scripts/lean-cache-stages.py \
   --timeout-sec 0
 ```
 
+The `UnicodeUca` product root (Stage 5) closes its collation spot-checks through
+a kernel-reducible DUCET mirror, not the runtime lookup. `Unicode.Uca.Lookup`
+carries both paths: the runtime `matchAt`/`resolveAt` read the `Std.HashMap`
+`ducetIndex` and use `Id.run`/`for`, which the kernel cannot reduce, and the
+mirror `matchAtList`/`resolveAtList` do the same lookup structurally over
+`ducetEntriesList` so `decide +kernel` can evaluate them. `Unicode.Uca.SortKey`
+drives its `sortKey` pipeline through `matchAtList`, so the `ucaCompare` and
+`resolveAtList` spot-checks are kernel-checked. These are heavy: built one module
+at a time with `LEAN_NUM_THREADS=1` and `JOBS=1`, `Unicode.Uca.Lookup` built in
+349 s and `Unicode.Uca.SortKey` in 795 s. `Lookup` caches before `SortKey`
+automatically through the import graph; build it first when replaying a single
+module:
+
+```bash
+scripts/lean-cache-stages.py \
+  --preset product \
+  --only-module Unicode.Uca.Lookup \
+  --run \
+  --resume \
+  --max-vmem-gb 0 \
+  --max-rss-gb 40 \
+  --timeout-sec 0
+
+scripts/lean-cache-stages.py \
+  --preset product \
+  --only-module Unicode.Uca.SortKey \
+  --run \
+  --resume \
+  --max-vmem-gb 0 \
+  --max-rss-gb 40 \
+  --timeout-sec 0
+```
+
 Current implemented support:
 
 - `scripts/audit-lean-root-boundaries.py` derives root closures and a
