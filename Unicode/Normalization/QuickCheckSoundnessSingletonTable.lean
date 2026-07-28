@@ -35,7 +35,7 @@ theorem qcY_starter_nontrivial_singleton_nfc_id_table :
       decide (row.canonicalDecomposition.length = 0) ||
       decide (toNFC [row.codepoint] = [row.codepoint])) = true := by
   unfold UnicodeData.rows
-  rw [List.all_toArray, List.all_eq_true]
+  rw [List.all_eq_true]
   intro row hMem
   have hCovered :=
     List.all_eq_true.mp
