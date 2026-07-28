@@ -78,9 +78,9 @@ def collateGo : Nat → List Nat → List Bool → Nat → List CollationElement
     else if (consumed[i]?.getD true) then
       collateGo fuel cps consumed (i + 1) acc
     else
-      let step := matchAt cps consumed i
+      let step := matchAtList cps consumed i
       let consumed' := step.consumed.foldl
-        (fun c k => if hk : k < c.length then c.set k true else c)
+        (fun c k => if k < c.length then c.set k true else c)
         consumed
       collateGo fuel cps consumed' (i + 1) (acc ++ step.ces)
 
@@ -112,59 +112,56 @@ def collationElementsOf (cps : List Nat) : List CollationElement :=
       * a non-variable element with `primary ≠ 0` is kept unchanged
         with L4 = 0xFFFF and clears the carry. -/
 def applyVariable (handling : VariableHandling)
-    (ces : List CollationElement) : List (CollationElement × Nat) := Id.run do
-  let mut acc : List (CollationElement × Nat) := []
-  let mut shiftedCarry : Bool := false
-  for ce in ces do
-    match handling with
-    | .nonIgnorable =>
-      acc := acc ++ [(ce, 0xFFFF)]
-    | .blanked =>
-      -- Variable elements zeroed completely; ignorable-after-variable
-      -- elements also zeroed. No L4 emitted (every entry's quaternary
-      -- weight is 0 so `quaternaries` filters them all out).
-      if ce.isVariable then
-        let zeroed : CollationElement := ⟨0, 0, 0, false⟩
-        acc := acc ++ [(zeroed, 0)]
-        shiftedCarry := true
-      else if ce.primary = 0 ∧ ce.secondary = 0 ∧ ce.tertiary = 0 then
-        let zeroed : CollationElement := ⟨0, 0, 0, false⟩
-        acc := acc ++ [(zeroed, 0)]
-      else if ce.primary = 0 then
-        if shiftedCarry then
+    (ces : List CollationElement) : List (CollationElement × Nat) :=
+  (ces.foldl
+    (fun (st : List (CollationElement × Nat) × Bool) ce =>
+      let acc := st.fst
+      let shiftedCarry := st.snd
+      match handling with
+      | .nonIgnorable =>
+        (acc ++ [(ce, 0xFFFF)], shiftedCarry)
+      | .blanked =>
+        -- Variable elements zeroed completely; ignorable-after-variable
+        -- elements also zeroed. No L4 emitted (every entry's quaternary
+        -- weight is 0 so `quaternaries` filters them all out).
+        if ce.isVariable then
           let zeroed : CollationElement := ⟨0, 0, 0, false⟩
-          acc := acc ++ [(zeroed, 0)]
-        else
-          acc := acc ++ [(ce, 0)]
-      else
-        acc := acc ++ [(ce, 0)]
-        shiftedCarry := false
-    | .shifted | .shiftTrimmed =>
-      if ce.isVariable then
-        let zeroed : CollationElement := ⟨0, 0, 0, true⟩
-        acc := acc ++ [(zeroed, ce.primary)]
-        shiftedCarry := true
-      else if ce.primary = 0 ∧ ce.secondary = 0 ∧ ce.tertiary = 0 then
-        let zeroed : CollationElement := ⟨0, 0, 0, false⟩
-        acc := acc ++ [(zeroed, 0)]
-      else if ce.primary = 0 then
-        if shiftedCarry then
+          (acc ++ [(zeroed, 0)], true)
+        else if ce.primary = 0 ∧ ce.secondary = 0 ∧ ce.tertiary = 0 then
           let zeroed : CollationElement := ⟨0, 0, 0, false⟩
-          acc := acc ++ [(zeroed, 0)]
+          (acc ++ [(zeroed, 0)], shiftedCarry)
+        else if ce.primary = 0 then
+          if shiftedCarry then
+            let zeroed : CollationElement := ⟨0, 0, 0, false⟩
+            (acc ++ [(zeroed, 0)], shiftedCarry)
+          else
+            (acc ++ [(ce, 0)], shiftedCarry)
         else
-          acc := acc ++ [(ce, 0xFFFF)]
-      else
-        -- A non-variable CE with primary ≠ 0 normally gets L4 = FFFF.
-        -- The exception: a "primary-only trail" (S = T = 0) — the
-        -- second CE of an implicit-weight pair (UTS #10 §10.1.3) or
-        -- of an explicit DUCET expansion like U+3358's third CE
-        -- `[F0B9.0000.0000]`. Such CEs are suppressed at L4 (=0) so
-        -- the L4 sequence carries one weight per "real" CE rather
-        -- than one per element of the expansion.
-        let l4 := if ce.secondary = 0 ∧ ce.tertiary = 0 then 0 else 0xFFFF
-        acc := acc ++ [(ce, l4)]
-        shiftedCarry := false
-  return acc
+          (acc ++ [(ce, 0)], false)
+      | .shifted | .shiftTrimmed =>
+        if ce.isVariable then
+          let zeroed : CollationElement := ⟨0, 0, 0, true⟩
+          (acc ++ [(zeroed, ce.primary)], true)
+        else if ce.primary = 0 ∧ ce.secondary = 0 ∧ ce.tertiary = 0 then
+          let zeroed : CollationElement := ⟨0, 0, 0, false⟩
+          (acc ++ [(zeroed, 0)], shiftedCarry)
+        else if ce.primary = 0 then
+          if shiftedCarry then
+            let zeroed : CollationElement := ⟨0, 0, 0, false⟩
+            (acc ++ [(zeroed, 0)], shiftedCarry)
+          else
+            (acc ++ [(ce, 0xFFFF)], shiftedCarry)
+        else
+          -- A non-variable CE with primary ≠ 0 normally gets L4 = FFFF.
+          -- The exception: a "primary-only trail" (S = T = 0) — the
+          -- second CE of an implicit-weight pair (UTS #10 §10.1.3) or
+          -- of an explicit DUCET expansion like U+3358's third CE
+          -- `[F0B9.0000.0000]`. Such CEs are suppressed at L4 (=0) so
+          -- the L4 sequence carries one weight per "real" CE rather
+          -- than one per element of the expansion.
+          let l4 := if ce.secondary = 0 ∧ ce.tertiary = 0 then 0 else 0xFFFF
+          (acc ++ [(ce, l4)], false))
+    ([], false)).fst
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §3 SORT-KEY ASSEMBLY  (UTS #10 §4.5)
@@ -202,11 +199,8 @@ def sep : Nat := 0
 
 /-- Drop trailing 0xFFFF entries from the L4 sequence per the
     Shift-Trimmed policy (UTS #10 §4.4.4). -/
-def trimTrailingFFFF (xs : List Nat) : List Nat := Id.run do
-  let mut last : Nat := xs.length
-  while last > 0 ∧ xs[last - 1]? = some 0xFFFF do
-    last := last - 1
-  return xs.take last
+def trimTrailingFFFF (xs : List Nat) : List Nat :=
+  (xs.reverse.dropWhile (· = 0xFFFF)).reverse
 
 /-- Assemble the full sort key from a codepoint sequence under the
     given variable-handling policy. The pipeline normalises to NFD
@@ -264,30 +258,30 @@ def ucaCompare (handling : VariableHandling) (a b : List Nat) : Ordering :=
 
 /-- "a" < "b" under either policy. -/
 theorem ucaCompare_a_b_nonIgnorable :
-    ucaCompare .nonIgnorable [0x0061] [0x0062] = .lt := by decide
+    ucaCompare .nonIgnorable [0x0061] [0x0062] = .lt := by decide +kernel
 
 theorem ucaCompare_a_b_shifted :
-    ucaCompare .shifted [0x0061] [0x0062] = .lt := by decide
+    ucaCompare .shifted [0x0061] [0x0062] = .lt := by decide +kernel
 
 /-- "a" = "A" at primary level, but "a" < "A" lexicographically because
     of the L3 (case) tiebreak: 'a' has tertiary 0x0002, 'A' has 0x0008,
     so "a" sorts before "A". -/
 theorem ucaCompare_a_A :
-    ucaCompare .nonIgnorable [0x0061] [0x0041] = .lt := by decide
+    ucaCompare .nonIgnorable [0x0061] [0x0041] = .lt := by decide +kernel
 
 /-- "à" (U+00E0) and "à" (U+0061 U+0300) produce equal sort keys
     after NFD normalisation — that is the canonical-equivalence
     invariant promised by UCA §1.4. -/
 theorem ucaCompare_canonical_equivalence :
-    ucaCompare .nonIgnorable [0x00E0] [0x0061, 0x0300] = .eq := by decide
+    ucaCompare .nonIgnorable [0x00E0] [0x0061, 0x0300] = .eq := by decide +kernel
 
 /-- "a" < "b" under blanked policy too. -/
 theorem ucaCompare_a_b_blanked :
-    ucaCompare .blanked [0x0061] [0x0062] = .lt := by decide
+    ucaCompare .blanked [0x0061] [0x0062] = .lt := by decide +kernel
 
 /-- "a" < "b" under shift-trimmed policy. -/
 theorem ucaCompare_a_b_shiftTrimmed :
-    ucaCompare .shiftTrimmed [0x0061] [0x0062] = .lt := by decide
+    ucaCompare .shiftTrimmed [0x0061] [0x0062] = .lt := by decide +kernel
 
 /-- Under `blanked`, `"a-b"` and `"ab"` collate equally because the
     hyphen is a variable element zeroed at every level. Under
@@ -295,11 +289,11 @@ theorem ucaCompare_a_b_shiftTrimmed :
     makes the two strings unequal. -/
 theorem blanked_collapses_punctuation :
     ucaCompare .blanked [0x0061, 0x002D, 0x0062] [0x0061, 0x0062]
-      = .eq := by decide
+      = .eq := by decide +kernel
 
 theorem nonIgnorable_distinguishes_punctuation :
     ucaCompare .nonIgnorable [0x0061, 0x002D, 0x0062] [0x0061, 0x0062]
-      ≠ .eq := by decide
+      ≠ .eq := by decide +kernel
 
 /-- `trimTrailingFFFF` drops the trailing run; `shiftTrimmed`
     differs from `shifted` only in producing the trimmed L4. -/
