@@ -150,20 +150,23 @@ def verifyRow (r : ConformanceRow) : Bool :=
 def partPasses (p : Nat) : Bool :=
   (taggedRows.filter (fun t => t.part = p)).all (fun t => verifyRow t.row)
 
--- Build-time conformance gate. Every parsed row of the official
--- `NormalizationTest.txt` corpus (Parts 0–5) satisfies `verifyRow` — the
--- UAX #15 §5 stability and cross-form identities. The fixture is parsed from an
--- `include_str` string, which the kernel cannot reduce, so the corpus is
--- validated by the compiled runtime at build time: a divergence throws and fails
--- the build, mirroring the drift gate in `GraphemeBreakTest`. The kernel-proved
--- content is the algorithm-correctness proofs under `Unicode.Normalization`
+-- Opt-in conformance gate. On a heavy build (`UNICODE_BUILD_HEAVY=1`, the flag
+-- `build-full-conformance.sh` sets) the compiled runtime checks every parsed row
+-- of the official `NormalizationTest.txt` corpus (Parts 0–5, 20034 rows) against
+-- `verifyRow` — the UAX #15 §5 stability and cross-form identities — and throws
+-- on divergence, failing the build. Ordinary builds skip the full-corpus run so
+-- the module compiles without evaluating the pipeline over the whole corpus; the
+-- fixture parse is not kernel-reducible, so there is no kernel `decide` over it.
+-- The kernel-proved content is the algorithm-correctness proofs under
+-- `Unicode.Normalization`
 -- (`toNFC`/`toNFD` idempotence and cross-cancellation, the QuickCheck soundness
 -- suite, the ToNFDAppend row-mirror), which establish that the stability and
 -- cross-form identities `verifyRow` checks hold for every input by theorem — the
 -- gate then confirms our algorithm reproduces Unicode's published columns across
 -- the whole corpus.
-#eval do
-  unless (List.range 6).all partPasses do
-    throw (IO.userError "NormalizationTest: a @Part failed conformance")
+#eval show IO Unit from do
+  if (← IO.getEnv "UNICODE_BUILD_HEAVY") == some "1" then
+    unless (List.range 6).all partPasses do
+      throw (IO.userError "NormalizationTest: a @Part failed conformance")
 
 end Unicode.Conformance.NormalizationTest
