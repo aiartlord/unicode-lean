@@ -367,7 +367,7 @@ theorem effPrevPairUpdate_foldl (l : List LBClass) :
     · cases hhd : (effClassesRev m.reverse).head? with
       | none => simp_all [isCMZWJ_AL]
       | some val => by_cases hbl : lb9BlocksAbsorb val = true <;> simp_all [isCMZWJ_AL]
-    · cases hhd : (effClassesRev m.reverse).head? <;> simp_all [isCMZWJ_AL]
+    · cases hhd : (effClassesRev m.reverse).head? <;> simp_all
 
 /-- **Prev-pair field characterisation.** The `(effPrev, effPrevPrev)` the decision
     reads at position `i` are the last two LB9/LB10-effective classes of the first
@@ -426,13 +426,13 @@ theorem riPairUpdate_foldl (l : List LBClass) :
     rw [hrev, effClassesRev]
     by_cases hc : isCMZWJ c = true
     · cases hhd : (effClassesRev m.reverse).head? with
-      | none => simp_all [isCMZWJ_AL, isRI, List.takeWhile_cons]
+      | none => simp_all [isCMZWJ_AL, isRI]
       | some val =>
         by_cases hbl : lb9BlocksAbsorb val = true <;>
-          simp_all [isCMZWJ_AL, isRI, List.takeWhile_cons]
+          simp_all [isCMZWJ_AL, isRI]
     · by_cases hri : c == LBClass.RI <;>
         cases hhd : (effClassesRev m.reverse).head? <;>
-        simp_all [isCMZWJ_AL, isRI, List.takeWhile_cons]
+        simp_all [isRI]
 
 theorem buildSnapshots_riPair (cps : List Nat) (lits : List LBClass) (i : Nat)
     (h : i < ((List.range cps.length).zip lits).length) :
@@ -502,13 +502,13 @@ theorem noSpPairUpdate_foldl (l : List LBClass) :
     rw [hrev, effClassesRev]
     by_cases hc : isCMZWJ c = true
     · cases hhd : (effClassesRev m.reverse).head? with
-      | none => simp_all [isCMZWJ_AL, isNotSP, List.find?_cons]
+      | none => simp_all [isCMZWJ_AL, isNotSP]
       | some val =>
         by_cases hbl : lb9BlocksAbsorb val = true <;>
-          simp_all [isCMZWJ_AL, isNotSP, List.find?_cons]
+          simp_all [isCMZWJ_AL, isNotSP]
     · by_cases hsp : c == LBClass.SP <;>
         cases hhd : (effClassesRev m.reverse).head? <;>
-        simp_all [isCMZWJ_AL, isNotSP, List.find?_cons]
+        simp_all [isNotSP]
 
 theorem buildSnapshots_noSpPair (cps : List Nat) (lits : List LBClass) (i : Nat)
     (h : i < ((List.range cps.length).zip lits).length) :
@@ -586,7 +586,7 @@ theorem nuPairUpdate_foldl (l : List LBClass) :
         by_cases hbl : lb9BlocksAbsorb val = true <;>
           simp_all [isCMZWJ_AL, isNuTail, inNuChainSpec]
     · cases hhd : (effClassesRev m.reverse).head? <;>
-        simp_all [isCMZWJ_AL, isNuTail, inNuChainSpec, Bool.and_comm]
+        simp_all [isNuTail, inNuChainSpec, Bool.and_comm]
 
 theorem buildSnapshots_nuPair (cps : List Nat) (lits : List LBClass) (i : Nat)
     (h : i < ((List.range cps.length).zip lits).length) :
@@ -660,7 +660,7 @@ theorem cpPairUpdate_foldl (l : List (Nat × LBClass)) :
       | none => simp_all [isCMZWJ_AL]
       | some val =>
         by_cases hbl : lb9BlocksAbsorb val.2 = true <;> simp_all [isCMZWJ_AL]
-    · cases hhd : (effClassesRevP m.reverse).head? <;> simp_all [isCMZWJ_AL]
+    · cases hhd : (effClassesRevP m.reverse).head? <;> simp_all
 
 theorem buildSnapshots_cpPair (cps : List Nat) (lits : List LBClass) (i : Nat)
     (h : i < ((List.range cps.length).zip lits).length) :
@@ -724,7 +724,7 @@ theorem cpTripleUpdate_foldl (l : List (Nat × LBClass)) :
       | none => simp_all [isCMZWJ_AL]
       | some val =>
         by_cases hbl : lb9BlocksAbsorb val.2 = true <;> simp_all [isCMZWJ_AL]
-    · cases hhd : (effClassesRevP m.reverse).head? <;> simp_all [isCMZWJ_AL]
+    · cases hhd : (effClassesRevP m.reverse).head? <;> simp_all
 
 /-- **Prev-prev-codepoint field characterisation.** The `effPrevPrevCp` the decision
     reads at position `i` is the code point of the second-to-last effective segment
@@ -807,7 +807,7 @@ theorem piPairUpdate_foldl (l : List (Nat × LBClass)) :
         by_cases hbl : lb9BlocksAbsorb val.2 = true <;>
           simp_all [isCMZWJ_AL, inPiWindowSpec, isPiQuote]
     · cases hhd : (effClassesRevP m.reverse).head? <;>
-        simp_all [isCMZWJ_AL, inPiWindowSpec]
+        simp_all [inPiWindowSpec]
 
 theorem buildSnapshots_piPair (cps : List Nat) (lits : List LBClass) (i : Nat)
     (h : i < ((List.range cps.length).zip lits).length) :
@@ -841,7 +841,7 @@ theorem lineBreaks_toList (cps : List Nat) :
         (fun i => shouldBreakBefore cps (cps.map lookupResolved)
           (buildSnapshots cps (cps.map lookupResolved)) i)
       ++ [true] := by
-  unfold lineBreaks
+  simp only [lineBreaks]
   rw [PrefixScan.foldl_push_map_toList]
   simp
 
