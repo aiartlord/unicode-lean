@@ -31,7 +31,7 @@ theorem nonNonAsciiZs_decomp_no_nonAsciiZs :
     unfold UnicodeData.rowsList
     simp only [List.all_append]
     decide +kernel
-  simpa [UnicodeData.rows, List.all_toArray] using h
+  simpa [UnicodeData.rows] using h
 
 -- The Hangul-decomposition "no non-ASCII Zs" facts are proven structurally in
 -- `ZsPreservation` (`decomposeSyllable_output_no_nonAsciiZs`): the decomposition
