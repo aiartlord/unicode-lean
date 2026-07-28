@@ -23,11 +23,11 @@ def mappingsFactGroup10 : List (Nat × List Nat) :=
 theorem mappingsFactGroup10_chain :
     mappingsFactGroup10.all chainConvergesEntry = true := by
   unfold mappingsFactGroup10
-  simp only [List.all_append, mappingsChunk100_chain, mappingsChunk101_chain, mappingsChunk102_chain, Bool.true_and, Bool.and_true]
+  simp only [List.all_append, mappingsChunk100_chain, mappingsChunk101_chain, mappingsChunk102_chain, Bool.and_true]
 
 theorem mappingsFactGroup10_expansion :
     mappingsFactGroup10.all (expansionEntryUnderBound 18) = true := by
   unfold mappingsFactGroup10
-  simp only [List.all_append, mappingsChunk100_expansion, mappingsChunk101_expansion, mappingsChunk102_expansion, Bool.true_and, Bool.and_true]
+  simp only [List.all_append, mappingsChunk100_expansion, mappingsChunk101_expansion, mappingsChunk102_expansion, Bool.and_true]
 
 end Unicode.Confusables
