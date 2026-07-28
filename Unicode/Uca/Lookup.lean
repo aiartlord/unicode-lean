@@ -315,6 +315,82 @@ def resolveAtList (cps : List Nat) (start : Nat) : DucetEntry × Nat :=
     | some cp => (implicitEntry cp, 1)
     | none    => (implicitEntry 0, 0)
 
+/-- Bucket of DUCET entries whose key starts with `cp`, taken over the pinned
+    `ducetEntriesList`. The kernel-reducible counterpart of `bucketFor`, which
+    reads the `Std.HashMap` index. -/
+def bucketForList (cp : Nat) : List DucetEntry :=
+  ducetEntriesList.filter (fun e => e.key[0]? = some cp)
+
+/-- Kernel-reducible counterpart of `matchesAt`: `key` prefixes `cps[start..]`. -/
+def matchesAtList (cps : List Nat) (start : Nat) (key : List Nat) : Bool :=
+  key.isPrefixOf (cps.drop start)
+
+/-- Discontiguous-extension walk for `matchAtList` (UTS #10 §7.2 S2.1.1–S2.1.3),
+    fuel-bounded structural recursion mirroring the `for step in [0:n]` loop of
+    `matchAt`. State is `(j, maxSkippedCCC, bestEntry, bestKey, consumedHere)`;
+    returns the extended `(bestEntry, consumedHere)`. -/
+def matchExtendGo (cps : List Nat) (consumed : List Bool) (bucket : List DucetEntry) :
+    Nat → (Nat × Nat × DucetEntry × List Nat × List Nat) → (DucetEntry × List Nat)
+  | 0,      st => (st.2.2.1, st.2.2.2.2)
+  | fuel+1, st =>
+    let j             := st.1
+    let maxSkippedCCC := st.2.1
+    let bestEntry     := st.2.2.1
+    let bestKey       := st.2.2.2.1
+    let consumedHere  := st.2.2.2.2
+    if j ≥ cps.length then (bestEntry, consumedHere)
+    else if (consumed[j]?.getD true) then
+      matchExtendGo cps consumed bucket fuel
+        (j + 1, maxSkippedCCC, bestEntry, bestKey, consumedHere)
+    else
+      match cps[j]? with
+      | none   => (bestEntry, consumedHere)
+      | some c =>
+        let cCCC := Unicode.Normalization.Lookup.canonicalCombiningClass c
+        if cCCC = 0 then (bestEntry, consumedHere)
+        else if cCCC > maxSkippedCCC then
+          match findInBucket bucket (bestKey ++ [c]) with
+          | some entry =>
+            matchExtendGo cps consumed bucket fuel
+              (j + 1, 0, entry, bestKey ++ [c], consumedHere ++ [j])
+          | none       =>
+            matchExtendGo cps consumed bucket fuel
+              (j + 1, cCCC, bestEntry, bestKey, consumedHere)
+        else
+          matchExtendGo cps consumed bucket fuel
+            (j + 1, maxSkippedCCC, bestEntry, bestKey, consumedHere)
+
+/-- Kernel-reducible mirror of `matchAt`: the full one-step DUCET walk with the
+    longest-contiguous phase and the discontiguous non-starter extension, over
+    `ducetEntriesList` and structural recursion so `decide +kernel` evaluates
+    it. Agrees with `matchAt` position by position. -/
+def matchAtList (cps : List Nat) (consumed : List Bool) (start : Nat) : MatchStep :=
+  match cps[start]? with
+  | none    => ⟨[], [start]⟩
+  | some cp =>
+    let bucket := bucketForList cp
+    -- Phase 1: longest contiguous key that is unconsumed at every position.
+    let phase1 : DucetEntry × List Nat × Nat × Bool :=
+      bucket.foldl
+        (fun (st : DucetEntry × List Nat × Nat × Bool) entry =>
+          let bestLen  := st.2.2.1
+          let gotMatch := st.2.2.2
+          if matchesAtList cps start entry.key
+              ∧ ((List.range entry.key.length).all
+                  (fun k => !((consumed[start + k]?).getD false)))
+              ∧ (!gotMatch ∨ entry.key.length > bestLen) then
+            (entry, entry.key, entry.key.length, true)
+          else st)
+        (implicitEntry cp, [cp], 1, false)
+    let bestEntry := phase1.1
+    let bestKey   := phase1.2.1
+    let bestLen   := phase1.2.2.1
+    let consumedHere := (List.range bestLen).map (fun k => start + k)
+    -- Phase 2: discontiguous extension by unblocked non-starters.
+    let extended := matchExtendGo cps consumed bucket cps.length
+      (start + bestLen, 0, bestEntry, bestKey, consumedHere)
+    ⟨extended.1.ces, extended.2⟩
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 SPOT CHECKS
 -- ═══════════════════════════════════════════════════════════════════════════════
