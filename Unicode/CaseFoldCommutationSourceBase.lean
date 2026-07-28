@@ -18,7 +18,7 @@ def sourceCommP (entry : Nat × List Nat) : Bool :=
           NFC.toNFD (caseFold (NFC.toNFD [entry.1])))
 
 def sourcePointwiseP (entry : Nat × List Nat) : Bool :=
-  decide (NFC.toNFD entry.2.toList =
+  decide (NFC.toNFD entry.2 =
           NFC.toNFD (caseFold (NFC.toNFD [entry.1])))
 
 end Unicode.CaseFoldCommutation
