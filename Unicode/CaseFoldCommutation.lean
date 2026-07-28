@@ -278,7 +278,7 @@ theorem decomposeSequence_preserves_non_caseFoldSource
     ∀ j ∈ Decompose.decomposeSequence cps, isCaseFoldSource j = false := by
   intro j hj
   unfold Decompose.decomposeSequence at hj
-  obtain ⟨x, hxIn, hxF⟩ := mem_foldl_append Decompose.fullCanonicalDecompose cps j hj
+  obtain ⟨x, hxIn, hxF⟩ := List.mem_flatMap.mp hj
   exact fullCanonicalDecompose_preserves_non_caseFoldSource x (h x hxIn) j hxF
 
 theorem toNFD_preserves_non_caseFoldSource
