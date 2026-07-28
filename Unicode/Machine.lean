@@ -213,6 +213,15 @@ theorem array_foldl_step_le {α : Type} (g : Nat → α → Nat)
     as.foldl g n ≤ n + as.length :=
   foldl_step_le g hg n as
 
+/-- Zero-start list form: a fold from `0` over a list whose step increases the
+    accumulator by at most one is bounded by the list length. Detectors that
+    tally over the input list directly inherit `count ≤ length`. -/
+theorem foldl_step_le_length {α : Type} (g : Nat → α → Nat)
+    (hg : ∀ (m : Nat) (x : α), g m x ≤ m + 1) (as : List α) :
+    as.foldl g 0 ≤ as.length := by
+  have h := array_foldl_step_le g hg 0 as
+  simpa using h
+
 /-- Position-scan form: a fold over `List.range n` from `0` whose step increases
     the accumulator by at most one is bounded by `n`. Detectors that scan input
     positions and tally at most one per position inherit `count ≤ length`. -/

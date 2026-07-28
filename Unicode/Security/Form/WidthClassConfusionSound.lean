@@ -18,9 +18,8 @@ open Unicode.Machine.AbstractMachine
 theorem fullwidthFoldCount_le_size (input : List Nat) :
     fullwidthFoldCount input ≤ input.length := by
   unfold fullwidthFoldCount
-  apply array_range_foldl_step_le
+  apply foldl_step_le_length
   intro m i
-  dsimp only
   repeat' split
   all_goals omega
 
@@ -28,9 +27,8 @@ theorem fullwidthFoldCount_le_size (input : List Nat) :
 theorem halfwidthFoldCount_le_size (input : List Nat) :
     halfwidthFoldCount input ≤ input.length := by
   unfold halfwidthFoldCount
-  apply array_range_foldl_step_le
+  apply foldl_step_le_length
   intro m i
-  dsimp only
   repeat' split
   all_goals omega
 
