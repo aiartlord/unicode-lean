@@ -165,10 +165,7 @@ theorem precis_output_admissible_opaque
       exact hAdm.1
     unfold allOpaqueAdmissible at hAllAdm
     rw [List.all_eq_true] at hAllAdm
-    rcases List.getElem_of_mem hcp with ⟨i, hi, hElem⟩
-    have := hAllAdm i hi
-    rw [hElem] at this
-    exact this
+    exact hAllAdm cp hcp
   · have hNone : (if isOpaqueGatePass (precisMapOpaque cps)
                    then some (precisMapOpaque cps) else none) = some out := h
     rw [if_neg hAdm] at hNone
