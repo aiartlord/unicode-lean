@@ -133,7 +133,7 @@ theorem decomposeSyllable_output_no_nonAsciiZs
   cases hc : nonAsciiZsCodepoints.contains j with
   | false => rfl
   | true =>
-    have hmem := List.mem_of_contains_eq_true hc
+    have hmem : j ∈ nonAsciiZsCodepoints := by simpa using hc
     unfold nonAsciiZsCodepoints at hmem
     simp at hmem
     omega
@@ -157,18 +157,14 @@ theorem canonicalDecomposition_output_no_nonAsciiZs
       simpa [UnicodeData.rows] using hSrcMem
     have hTable := nonNonAsciiZs_decomp_no_nonAsciiZs
     rw [List.all_eq_true] at hTable
-    rcases List.getElem_of_mem hSrcRows with ⟨i, hi, hElem⟩
-    have hEntry := hTable i hi
-    rw [hElem] at hEntry
+    have hEntry := hTable src hSrcRows
     simp only [Bool.or_eq_true] at hEntry
     rcases hEntry with hSrcZs | hTgtAllNonZs
     · rw [hSrcCp, hRowCp, hCp] at hSrcZs
       exact Bool.noConfusion hSrcZs
     · rw [List.all_eq_true] at hTgtAllNonZs
       rw [← hSrcDecomp] at hj
-      rcases List.getElem_of_mem hj with ⟨k, hk, hElemJ⟩
-      have hBool := hTgtAllNonZs k hk
-      rw [hElemJ] at hBool
+      have hBool := hTgtAllNonZs j hj
       simpa using hBool
   · simp at hj
 
@@ -263,7 +259,7 @@ theorem decomposeSequence_preserves_no_nonAsciiZs
     ∀ j ∈ Decompose.decomposeSequence cps, isNonAsciiZs j = false := by
   intro j hj
   unfold Decompose.decomposeSequence at hj
-  obtain ⟨x, hxIn, hxF⟩ := mem_foldl_append Decompose.fullCanonicalDecompose cps j hj
+  obtain ⟨x, hxIn, hxF⟩ := List.mem_flatMap.mp hj
   unfold Decompose.fullCanonicalDecompose at hxF
   exact fullCanonicalDecomposeFuel_preserves_no_nonAsciiZs Decompose.maxDepth x
     (h x hxIn) j hxF
@@ -305,20 +301,18 @@ theorem toNFC_preserves_no_nonAsciiZs
     exfalso
     have hCinZs : c ∈ nonAsciiZsCodepoints := by
       unfold isNonAsciiZs at hZsC
-      exact List.mem_of_contains_eq_true hZsC
+      simpa using hZsC
     have hTable := nonAsciiZs_fullDecompose_contains_nonAsciiZs
     rw [List.all_eq_true] at hTable
     have hAtI := hTable c hCinZs
     rw [List.any_eq_true] at hAtI
     obtain ⟨idx, hIdx, hIsZs⟩ := hAtI
-    let d : Nat := (Decompose.fullCanonicalDecompose c)[idx]
-    have hdInDecomp : d ∈ Decompose.fullCanonicalDecompose c :=
-      List.getElem_mem hIdx
+    let d : Nat := idx
+    have hdInDecomp : d ∈ Decompose.fullCanonicalDecompose c := hIdx
     have hdIsZs : isNonAsciiZs d = true := hIsZs
     have hdInDecSeq : d ∈ Decompose.decomposeSequence (toNFC cps) := by
       unfold Decompose.decomposeSequence
-      exact mem_foldl_append_of Decompose.fullCanonicalDecompose (toNFC cps)
-        c hc d hdInDecomp
+      exact List.mem_flatMap.mpr ⟨c, hc, hdInDecomp⟩
     have hdInNfd : d ∈ NFC.toNFD (toNFC cps) := by
       unfold NFC.toNFD
       exact Unicode.CaseFoldRoundtrip.reorder_mem_of_mem
