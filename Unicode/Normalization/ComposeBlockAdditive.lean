@@ -297,7 +297,6 @@ theorem compose_qcY_starter_block_additive
     unfold Compose.compose
     rw [List.foldl_append]
     rw [compose_qcY_starter_block_additive_list A head rest hHeadCcc' hHeadQC']
-    simp
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §8 COMPOSE-SNOC LINEARITY FOR QC=Y EXTENSION
@@ -331,8 +330,7 @@ theorem step_qcY_linear
   by_cases hCcc : Lookup.canonicalCombiningClass cp = 0
   · -- Starter cp: post-step state is `⟨flushCompose s, some cp, [], 0⟩`.
     rw [stepCompose_qcY_starter_flush s cp hValid hCcc hQC]
-    show Compose.flushCompose s ++ [cp] = Compose.flushCompose s ++ [cp]
-    rfl
+    simp [Compose.flushCompose]
   · -- Non-starter cp. Case on starter.
     obtain ⟨⟨hStarterBuffer, hBufferCCC⟩, hStarterMax⟩ := hValid
     clear hBufferCCC
@@ -386,6 +384,5 @@ theorem compose_qcY_linear
   rw [step_qcY_linear
           (X.foldl Compose.stepCompose Compose.initialState) cp
           (foldl_stepCompose_strongValid_array X) hQC]
-  simp
 
 end Unicode.Normalization.ComposeBlockAdditive
