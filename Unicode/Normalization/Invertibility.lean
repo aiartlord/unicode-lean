@@ -170,7 +170,9 @@ theorem primaryComposite_canonicalDecomposition_nonHangul
   · next hCond =>
     obtain ⟨hDec, hNotExc⟩ := hCond
     simp only [Option.some.injEq] at hFEq
-    rcases List.getElem_of_mem hRowMem with ⟨idx, hIdx, hRowEq⟩
+    have hRowMemArr : row ∈ UnicodeData.rows := by
+      simpa [UnicodeData.rows] using hRowMem
+    rcases List.getElem_of_mem hRowMemArr with ⟨idx, hIdx, hRowEq⟩
     unfold Lookup.canonicalDecomposition
     cases hLookup : Lookup.lookupRow p with
     | none =>
