@@ -232,7 +232,7 @@ theorem compose_buffer_ccc_bound
         Lookup.canonicalCombiningClass r ≤ Lookup.canonicalCombiningClass cp :=
     hasSortedRunsBool_run_le_snoc
       (Z.foldl Compose.stepCompose Compose.initialState).buffer.reverse
-      ((Z.foldl Compose.stepCompose Compose.initialState).emitted.toList
+      ((Z.foldl Compose.stepCompose Compose.initialState).emitted
         ++ [st])
       cp hHSR hRevPos hCpPos
   exact hRunBound m (List.mem_reverse.mpr hMem)

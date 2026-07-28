@@ -101,7 +101,7 @@ theorem singleton_sound_pair_full
   unfold toNFD
   rw [hDS, hR]
   show (Compose.flushCompose
-          (([d, e] : List Nat).foldl Compose.stepCompose Compose.initialState)).toList
+          (([d, e] : List Nat).foldl Compose.stepCompose Compose.initialState))
       = [cp]
   have hFold2 : ([d, e] : List Nat).foldl Compose.stepCompose Compose.initialState
               = Compose.stepCompose (Compose.stepCompose Compose.initialState d) e := by

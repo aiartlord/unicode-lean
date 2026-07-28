@@ -45,7 +45,7 @@ theorem singleton_sound_atomic
   unfold toNFD
   rw [hDS, hR]
   show (Compose.flushCompose
-          (([cp] : List Nat).foldl Compose.stepCompose Compose.initialState)).toList
+          (([cp] : List Nat).foldl Compose.stepCompose Compose.initialState))
       = [cp]
   simp only [List.foldl_cons, List.foldl_nil]
   rw [Compose.stepCompose.eq_def]
