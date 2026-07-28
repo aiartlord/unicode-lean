@@ -80,9 +80,7 @@ theorem singleton_sound_nontrivial
   have hTable :=
     QuickCheckSoundnessSingletonTable.qcY_starter_nontrivial_singleton_nfc_id_table
   rw [List.all_eq_true] at hTable
-  rcases List.getElem_of_mem hRowMem with ⟨i, hi, hElem⟩
-  have hRowFact := hTable i hi
-  rw [hElem] at hRowFact
+  have hRowFact := hTable src hRowMem
   rw [hSrcCpEq] at hRowFact
   -- The five-disjunct boolean fact reduces. Substitute the per-codepoint
   -- hypotheses to collapse all but the last (toNFC = id) disjunct.

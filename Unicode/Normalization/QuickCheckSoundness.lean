@@ -195,9 +195,7 @@ theorem primaryComposite_none_of_qcY_nonstarter
     obtain ⟨row, hRowMem, hFEq⟩ := List.exists_of_findSome?_eq_some hFind
     have hAll := qcY_nonstarter_not_decomp_target
     rw [List.all_eq_true] at hAll
-    rcases List.getElem_of_mem hRowMem with ⟨i, hi, hElem⟩
-    have hRow := hAll i hi
-    rw [hElem] at hRow
+    have hRow := hAll row hRowMem
     split at hFEq
     · next hCond =>
       obtain ⟨hDecomp, hNotExc⟩ := hCond
@@ -279,7 +277,7 @@ theorem singleton_sound_nonstarter
   -- flushCompose with starter=none returns emitted ++ buffer.reverse = [cp].
   have hCccNe : ¬ Lookup.canonicalCombiningClass cp = 0 := by omega
   show (Compose.flushCompose
-          (([cp] : List Nat).foldl Compose.stepCompose Compose.initialState)).toList
+          (([cp] : List Nat).foldl Compose.stepCompose Compose.initialState))
       = [cp]
   simp only [List.foldl_cons, List.foldl_nil]
   rw [Compose.stepCompose.eq_def]
