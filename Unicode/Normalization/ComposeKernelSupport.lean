@@ -508,6 +508,7 @@ theorem foldl_all_nonstarter_eq
     obtain ⟨E, st, B, M⟩ := S
     simp at hSStarter
     rw [hSStarter]
+    rfl
   | cons x rest ih =>
     intros S hSStarter hAllPos
     have hXpos : 0 < Lookup.canonicalCombiningClass x :=
@@ -535,7 +536,7 @@ theorem foldl_all_nonstarter_eq
         hStepStarter hRestPos
     rw [hIhResult]
     congr 1
-    rw [List.append_assoc]
+    rw [List.append_assoc, List.singleton_append]
 
 /-- `compose Z = Z` when `Z` is all non-starters. -/
 theorem compose_id_when_all_nonstarter
