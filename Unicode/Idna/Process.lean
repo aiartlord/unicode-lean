@@ -423,54 +423,60 @@ def toAsciiTransitional (input : List Nat) (opts : Options := defaultOptions) :
 -- §6 SAMPLE DOMAINS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+-- The sample-domain checks reduce the full IDNA pipeline over concrete label
+-- lists; the "xn--" vectors drive the Punycode loop, which climbs to the
+-- largest non-basic codepoint. Close them with decide +kernel (kernel Nat, no
+-- whnf thunk per step) under a raised recursion depth for the List traversal.
+set_option maxRecDepth 100000
+
 /-- "example.com" round-trips identically — pure ASCII. -/
 theorem toUnicode_example :
     toUnicode (stringToCps "example.com")
       = { output := stringToCps "example.com", hasErrors := false } := by
-  decide
+  decide +kernel
 
 theorem toAscii_example :
     toAscii (stringToCps "example.com")
       = { output := stringToCps "example.com", hasErrors := false } := by
-  decide
+  decide +kernel
 
 /-- "EXAMPLE.COM" → "example.com" via case-folding. -/
 theorem toUnicode_EXAMPLE :
     toUnicode (stringToCps "EXAMPLE.COM")
       = { output := stringToCps "example.com", hasErrors := false } := by
-  decide
+  decide +kernel
 
 theorem toAscii_EXAMPLE :
     toAscii (stringToCps "EXAMPLE.COM")
       = { output := stringToCps "example.com", hasErrors := false } := by
-  decide
+  decide +kernel
 
 /-- "fass.de" round-trips identically. -/
 theorem toAscii_fass :
     toAscii (stringToCps "fass.de")
       = { output := stringToCps "fass.de", hasErrors := false } := by
-  decide
+  decide +kernel
 
 /-- IdnaTestV2 vector: "faß.de" → "xn--fa-hia.de" non-transitionally
     (sharp s is kept under non-transitional, then Punycode-encoded). -/
 theorem toAscii_faß :
     toAscii ([0x0066, 0x0061, 0x00DF, 0x002E, 0x0064, 0x0065])
       = { output := stringToCps "xn--fa-hia.de", hasErrors := false } := by
-  decide
+  decide +kernel
 
 /-- IdnaTestV2 vector: "Faß.de" → "faß.de" under ToUnicode. -/
 theorem toUnicode_Faß :
     toUnicode ([0x0046, 0x0061, 0x00DF, 0x002E, 0x0064, 0x0065])
       = { output := [0x0066, 0x0061, 0x00DF, 0x002E, 0x0064, 0x0065],
           hasErrors := false } := by
-  decide
+  decide +kernel
 
 /-- IdnaTestV2 vector: "faß.de" → "fass.de" under transitional ToASCII
     (sharp s is mapped to "ss"). -/
 theorem toAsciiTransitional_faß :
     toAsciiTransitional ([0x0066, 0x0061, 0x00DF, 0x002E, 0x0064, 0x0065])
       = { output := stringToCps "fass.de", hasErrors := false } := by
-  decide
+  decide +kernel
 
 /-- A pre-encoded "xn--" label round-trips back to the original
     Unicode codepoints under ToUnicode. -/
@@ -480,6 +486,6 @@ theorem toUnicode_xn_traditional_chinese :
                       0x4E0D, 0x8AAA, 0x4E2D, 0x6587, 0x002E]
                     ++ stringToCps "example",
           hasErrors := false } := by
-  decide
+  decide +kernel
 
 end Unicode.Idna.Process
