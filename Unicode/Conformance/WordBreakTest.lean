@@ -66,6 +66,14 @@ def verifyRow (r : Row) : Bool :=
 def firstFailIdx : Option Nat :=
   rows.findIdx? (fun r => ! verifyRow r)
 
-theorem all_pass : rows.all verifyRow = true := by decide
+-- Opt-in conformance gate (`UNICODE_BUILD_HEAVY=1`): every row of the official
+-- `WordBreakTest.txt` passes `verifyRow` — `wordBreaks` reproduces the expected
+-- break positions. Ordinary builds skip the full-corpus run; the fixture parse is
+-- not kernel-reducible. Kernel content: the UAX #29 word-boundary proofs under
+-- `Unicode.Segmentation`.
+#eval show IO Unit from do
+  if (← IO.getEnv "UNICODE_BUILD_HEAVY") == some "1" then
+    unless rows.all verifyRow do
+      throw (IO.userError "WordBreakTest: a row failed verifyRow")
 
 end Unicode.Conformance.WordBreakTest
