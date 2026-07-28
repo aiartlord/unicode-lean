@@ -470,7 +470,7 @@ theorem wordBreaks_toList (cps : List Nat) :
           (buildEffPrev (cps.map lookupWB)) (buildEffNext (cps.map lookupWB))
           (buildEffRiRun (cps.map lookupWB)) i)
       ++ [true] := by
-  unfold wordBreaks
+  simp only [wordBreaks]
   rw [PrefixScan.foldl_push_map_toList]
   simp
 
