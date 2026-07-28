@@ -61,7 +61,6 @@ theorem compose_output_form_active
         ++ (Z.foldl Compose.stepCompose Compose.initialState).buffer.reverse := by
   unfold Compose.compose Compose.flushCompose
   rw [hSt]
-  simp
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 ADJACENT-PAIR HSR EXTRACTION
