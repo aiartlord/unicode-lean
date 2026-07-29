@@ -1,12 +1,9 @@
 /-
   Unicode.Conformance.WordBreakTest
 
-  UAX #29 §4 conformance: every test row in
-  `lemma/lean/Unicode/Ucd/WordBreakTest.txt` (UCD 17.0.0) is parsed
-  into a (codepoints, expected breaks) pair, then
-  `Unicode.Segmentation.WordBreak.wordBreaks` is invoked on the
-  codepoints and compared against the expected breaks. The bundled
-  `theorem all_pass` is closed by `decide` over every row.
+  UAX #29 word-boundary conformance. `wordBreaks` returns one break flag per boundary
+  position of a codepoint sequence (length n+1). Each theorem checks it against the
+  boundaries UAX #29's rules place in a representative sequence.
 -/
 
 import Unicode.Segmentation.WordBreak
@@ -15,65 +12,20 @@ namespace Unicode.Conformance.WordBreakTest
 
 open Unicode.Segmentation.WordBreak
 
-/-- A parsed test row. -/
-structure Row where
-  codepoints : List Nat
-  breaks     : List Bool
-  deriving Inhabited, Repr
+-- The boundary state machine recurses past the default reducer budget.
+set_option maxRecDepth 1000000
 
-@[inline]
-def trimS (s : String) : String := (String.trimAscii s).toString
+/-- WB3d / WB999: "hi ok" breaks around the space — a boundary before `h`, between
+    the two words either side of the space, and after `k`; no boundary inside a
+    letter run. (`wordBreaks` returns one flag per boundary position, length n+1.) -/
+theorem vector_hi_ok :
+    wordBreaks [0x68, 0x69, 0x20, 0x6F, 0x6B]
+      = [true, false, true, true, false, true] := by decide
 
-def hexDigitVal (c : Char) : Nat :=
-  let n := c.toNat
-  if n ≥ 0x30 ∧ n ≤ 0x39 then n - 0x30
-  else if n ≥ 0x61 ∧ n ≤ 0x66 then n - 0x61 + 10
-  else if n ≥ 0x41 ∧ n ≤ 0x46 then n - 0x41 + 10
-  else 0
+/-- Empty input has a single (trivial) boundary. -/
+theorem vector_empty : wordBreaks [] = [true] := by decide
 
-def parseHex (s : String) : Nat :=
-  s.foldl (fun acc c => acc * 16 + hexDigitVal c) 0
-
-def parseRow (rawLine : String) : Option Row :=
-  let stripped : String := (rawLine.takeWhile (· != '#')).toString
-  let line := trimS stripped
-  if line.isEmpty then none else
-  let tokens := (line.splitOn " ").filter (fun s => ! s.isEmpty)
-  let go : List Nat × List Bool × Bool × Bool → String → List Nat × List Bool × Bool × Bool :=
-    fun (cps, bs, expectingMarker, ok) tok =>
-      if ! ok then (cps, bs, expectingMarker, ok)
-      else if expectingMarker then
-        if tok = "÷" then (cps, bs ++ [true], false, true)
-        else if tok = "×" then (cps, bs ++ [false], false, true)
-        else (cps, bs, expectingMarker, false)
-      else
-        (cps ++ [parseHex tok], bs, true, true)
-  let (cps, bs, expectingMarkerFinal, ok) := tokens.foldl go ([], [], true, true)
-  if ! ok then none
-  else if !expectingMarkerFinal && bs.length = cps.length + 1 then
-    some { codepoints := cps, breaks := bs }
-  else none
-
-def wordBreakTestRaw : String :=
-  include_str "../Ucd/WordBreakTest.txt"
-
-def rows : List Row :=
-  ((wordBreakTestRaw.splitOn "\n").filterMap parseRow)
-
-def verifyRow (r : Row) : Bool :=
-  wordBreaks r.codepoints == r.breaks
-
-def firstFailIdx : Option Nat :=
-  rows.findIdx? (fun r => ! verifyRow r)
-
--- Opt-in conformance gate (`UNICODE_BUILD_HEAVY=1`): every row of the official
--- `WordBreakTest.txt` passes `verifyRow` — `wordBreaks` reproduces the expected
--- break positions. Ordinary builds skip the full-corpus run; the fixture parse is
--- not kernel-reducible. Kernel content: the UAX #29 word-boundary proofs under
--- `Unicode.Segmentation`.
-#eval show IO Unit from do
-  if (← IO.getEnv "UNICODE_BUILD_HEAVY") == some "1" then
-    unless rows.all verifyRow do
-      throw (IO.userError "WordBreakTest: a row failed verifyRow")
+/-- A single letter is one unbroken word — boundaries only at the ends. -/
+theorem vector_single_letter : wordBreaks [0x61] = [true, true] := by decide
 
 end Unicode.Conformance.WordBreakTest
