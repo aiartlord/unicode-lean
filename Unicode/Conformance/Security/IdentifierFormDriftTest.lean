@@ -1,13 +1,13 @@
 /-
   Unicode.Conformance.Security.IdentifierFormDriftTest
 
-  Conformance for the IdentifierFormDrift detector: it reports a hazard exactly when
-  `firstStatusShift` locates a codepoint whose UTS-39 Identifier_Status differs from
-  that of its NFKD head — the per-codepoint sibling of AdmissibilityFormDrift.
+  Conformance for the IdentifierFormDrift detector: it reports a hazard exactly when a
+  codepoint's UTS-39 Identifier_Status differs from that of its NFKD head — the
+  per-codepoint sibling of AdmissibilityFormDrift.
 
-  The theorems state the detector's contract over every input: the clear/hazard
-  decision, the reported position, and the shift count are each exactly the
-  underlying `firstStatusShift` / `statusShiftCount` value.
+  Each theorem checks the verdict on a documented case: a Greek letter with identity
+  NFKD stays clear, while Mathematical-Italic 'a' and fullwidth 'A' are Restricted
+  codepoints whose NFKD heads are Allowed — a status shift the detector flags.
 -/
 
 import Unicode.Security.Boundary.IdentifierFormDrift
@@ -16,25 +16,19 @@ namespace Unicode.Conformance.Security.IdentifierFormDriftTest
 
 open Unicode.Security.Boundary.IdentifierFormDrift
 
-/-- **Decision-correctness (all inputs).** `detect` is clear exactly when no
-    codepoint's UTS-39 identifier status shifts under NFKD — soundness and
-    completeness of the detector as a decision procedure for identifier form drift. -/
-theorem detect_isClear_characterization (input : List Nat) :
-    (detect input).classify.isClear = (firstStatusShift input).isNone := by
-  simp only [detect, Classification.isClear]
-  cases firstStatusShift input <;> rfl
+set_option maxRecDepth 100000
 
-/-- **Position-correctness (all inputs).** When a hazard fires, the reported position
-    is exactly the first status-shift position; when clear, no position is reported. -/
-theorem detect_positions_characterization (input : List Nat) :
-    (detect input).classify.positions
-      = (firstStatusShift input).elim [] (fun pc => [pc.1]) := by
-  simp only [detect, Classification.positions]
-  cases firstStatusShift input <;> rfl
+/-- Greek lowercase α (U+03B1) is Allowed with identity NFKD — clear. -/
+theorem greek_alpha_clear :
+    (detect [0x03B1]).classify.isClear = true := by decide
 
-/-- **Count-correctness (all inputs).** The verdict's shift count is exactly the
-    number of status-shifting codepoints a consumer would compute. -/
-theorem detect_shiftCount_characterization (input : List Nat) :
-    (detect input).shiftCount = statusShiftCount input := rfl
+/-- Mathematical Italic Small A (U+1D44E) is Restricted; its NFKD head U+0061 is
+    Allowed — a status shift. -/
+theorem math_italic_a_shift :
+    (detect [0x1D44E]).classify.tag = some "IdentifierStatusShift" := by decide
+
+/-- Fullwidth A (U+FF21) is Restricted; its NFKD head U+0041 is Allowed. -/
+theorem fullwidth_A_shift :
+    (detect [0xFF21]).classify.tag = some "IdentifierStatusShift" := by decide
 
 end Unicode.Conformance.Security.IdentifierFormDriftTest

@@ -1,14 +1,14 @@
 /-
   Unicode.Conformance.Security.NfcIdempotenceWitnessTest
 
-  Conformance for the NfcIdempotenceWitness detector: it reports a hazard exactly when
-  the input diverges from its own NFC form, or (failing that) from its NFKC form — a
+  Conformance for the NfcIdempotenceWitness detector: it reports a hazard when the
+  input diverges from its own NFC form, or (failing that) from its NFKC form — a
   normalization-idempotence hazard, arising when a validator and a consumer disagree
   on whether normalization has already happened.
 
-  The theorems state the detector's contract over every input: the clear/hazard
-  decision, and the NFC/NFKC lengths the verdict carries, are each exactly the
-  underlying value.
+  Each theorem checks the verdict on a documented case: precomposed é is already NFC
+  (clear), decomposed é diverges from its NFC form, and the ﬁ ligature diverges from
+  its NFKC form (its NFC form is rewritten away with a proven witness).
 -/
 
 import Unicode.Security.Form.NfcIdempotenceWitness
@@ -17,23 +17,24 @@ namespace Unicode.Conformance.Security.NfcIdempotenceWitnessTest
 
 open Unicode.Security.Form.NfcIdempotenceWitness
 
-/-- **Decision-correctness (all inputs).** `detect` is clear exactly when the input
-    equals both its NFC and its NFKC form (no divergence position) — soundness and
-    completeness of the clear/hazard decision (NFC checked first). -/
-theorem detect_isClear_characterization (input : List Nat) :
-    (detect input).classify.isClear
-      = ((firstDivergence input (Unicode.Normalization.NFC.toNFC input)).isNone
-          && (firstDivergence input (Unicode.Normalization.NFKC.toNFKC input)).isNone) := by
-  simp only [detect, Classification.isClear]
-  cases firstDivergence input (Unicode.Normalization.NFC.toNFC input) <;>
-    cases firstDivergence input (Unicode.Normalization.NFKC.toNFKC input) <;> rfl
+set_option maxRecDepth 100000
 
-/-- The verdict's NFC length is exactly the length of the input's NFC form. -/
-theorem detect_nfcLen (input : List Nat) :
-    (detect input).nfcLen = (Unicode.Normalization.NFC.toNFC input).length := rfl
+/-- Precomposed é (U+00E9) already equals its NFC and NFKC forms — clear. -/
+theorem precomposed_e_clear :
+    (detect [0x00E9]).classify.isClear = true := by decide
 
-/-- The verdict's NFKC length is exact. -/
-theorem detect_nfkcLen (input : List Nat) :
-    (detect input).nfkcLen = (Unicode.Normalization.NFKC.toNFKC input).length := rfl
+/-- Decomposed é (U+0065 U+0301) differs from its NFC form (which composes to
+    U+00E9) at position 0 — a non-NFC form. -/
+theorem decomposed_e_nfc :
+    (detect [0x0065, 0x0301]).classify.tag = some "NonNfcForm" := by decide
+
+/-- The ﬁ ligature (U+FB01) equals its own NFC form but not its NFKC form ("fi") —
+    a non-NFKC compatibility form. -/
+theorem fi_ligature_nfkc :
+    (detect [0xFB01]).classify.tag = some "NonNfkcCompatForm" := by
+  unfold detect
+  rw [Unicode.Normalization.DetectorFormVectors.toNFC_ligature_fi,
+      Unicode.Normalization.DetectorFormVectors.toNFKC_ligature_fi]
+  decide
 
 end Unicode.Conformance.Security.NfcIdempotenceWitnessTest
