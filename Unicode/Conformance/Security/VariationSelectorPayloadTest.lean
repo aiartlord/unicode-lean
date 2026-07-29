@@ -4,17 +4,10 @@
   Conformance for the VariationSelectorPayload detector (GlassWorm-class payloads
   hidden in variation-selector runs, U+FE00..U+FE0F / U+E0100..U+E01EF).
 
-  The detector is exhaustively spot-checked in its own module
-  (`Unicode.Security.Covert.VariationSelectorPayload` §): registered-clear (emoji
-  presentation, Mongolian FVS), every sub-threat (direct payload, illegal target,
-  embedded-after-registered, repeated base), and the VS→nibble decoder. What those
-  tag-only checks do not pin is the *recovered payload bytes* and the registered vs
-  suspicious position split a consumer reads. This module verifies the full verdict
-  on representative vectors.
-
-  The prior `all_rows_pass := by decide` over the include_str corpus is not used: an
-  include_str String's `.toList` is opaque to the kernel reducer, so a parse-and-decide
-  over the corpus is stuck rather than proving anything. The fixture .txt is illustrative.
+  Each theorem checks the full verdict — sub-threat tag, recovered payload bytes, and
+  the registered-vs-suspicious position split — on a representative vector: a direct
+  payload, an illegal target, a supplementary-VS illegal target, a registered emoji-
+  presentation sequence, and a Mongolian free variation selector.
 -/
 
 import Unicode.Security.Covert.VariationSelectorPayload

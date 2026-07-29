@@ -1,19 +1,13 @@
 /-
   Unicode.Conformance.Security.CovertDisplayCompoundTest
 
-  Conformance for the CovertDisplayCompound detector (a bidi control co-occurring with
-  an unregistered variation selector or a tag-block codepoint — a compound covert-
-  display hazard combining two hiding channels).
+  Conformance for the CovertDisplayCompound detector: it flags a compound covert-
+  display hazard when a bidi control co-occurs with a suspicious variation selector or
+  a tag-block codepoint — two hiding channels combined.
 
-  The detector is a match-chain composition: `detect` is clear unless a bidi control
-  is present AND it co-occurs with a suspicious variation selector or a tag-block
-  codepoint. We verify its contract over EVERY input, structurally, with no corpus
-  reduction — the position predicates stay opaque. Representative vectors are proven
-  in the detector module.
-
-  The prior `all_rows_pass := by decide` over the include_str corpus is not used: an
-  include_str String's `.toList` is opaque to the kernel reducer, so a parse-and-decide
-  over the corpus is stuck rather than proving anything. The fixture .txt is illustrative.
+  `detect_isClear_characterization` states the detector's contract over every input:
+  the verdict is clear unless a bidi control is present and it co-occurs with a
+  suspicious variation selector or a tag-block codepoint.
 -/
 
 import Unicode.Security.Boundary.CovertDisplayCompound

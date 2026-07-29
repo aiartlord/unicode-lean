@@ -1,20 +1,15 @@
 /-
   Unicode.Conformance.Security.SourceDisplayDivergenceTest
 
-  Conformance for the SourceDisplayDivergence detector (D1) — the compound detector
-  that composes TagBlockPayload (C1), VariationSelectorPayload (C2), ZeroWidthPayload
-  (C3), BidiControlBalance (C5), and HomoglyphConfusable (I1) on one codepoint stream
-  and reports when the source bytes and the displayed glyphs diverge.
+  Conformance for the SourceDisplayDivergence detector — the compound detector that
+  composes TagBlockPayload, VariationSelectorPayload, ZeroWidthPayload,
+  BidiControlBalance, and HomoglyphConfusable on one codepoint stream and reports when
+  the source bytes and the displayed glyphs diverge.
 
-  Each vector below fires exactly one constituent family, so this doubles as a
-  per-family priority regression check. The proofs strip the homoglyph sub-detector's
-  NFC pipeline the efficient way — rewriting the NFC form away with `toNFC_id_of_starters`
-  and per-pair `primaryComposite?_none_of_all_ne` witnesses (the same recipe the
-  detector module uses), leaving only a cheap `decide`. No corpus is reduced.
-
-  The prior `all_rows_pass := by decide` over the include_str corpus is not used: an
-  include_str String's `.toList` is opaque to the kernel reducer, so a parse-and-decide
-  over the corpus is stuck rather than proving anything. The fixture .txt is illustrative.
+  Each theorem exercises a vector that fires exactly one constituent detector, so the
+  set also checks the priority ordering among them. The homoglyph sub-detector's NFC
+  form is rewritten away with `toNFC_id_of_starters` and per-pair
+  `primaryComposite?_none_of_all_ne` witnesses, leaving a cheap `decide`.
 -/
 
 import Unicode.Security.Display.SourceDisplayDivergence
@@ -44,7 +39,8 @@ theorem tag_block_family_verdict :
   simp only [detect, hi1]
   decide
 
-/-- A pure variation-selector payload (Latin A + VS16) fires the C2 family only. -/
+/-- A pure variation-selector payload (Latin A + VS16) fires the VariationSelectorPayload
+    family only. -/
 theorem variation_selector_family_verdict :
     (detect [0x0041, 0xFE0F]).classify.tag = some "VariationSelector" := by
   have hds : hasDecompositionSwap [0x0041, 0xFE0F] = false := by
@@ -60,7 +56,8 @@ theorem variation_selector_family_verdict :
   simp only [detect, hi1]
   decide
 
-/-- A pure zero-width payload (Latin H + ZWSP + i) fires the C3 family only. -/
+/-- A pure zero-width payload (Latin H + ZWSP + i) fires the ZeroWidthPayload family
+    only. -/
 theorem zero_width_family_verdict :
     (detect [0x0048, 0x200B, 0x69]).classify.tag = some "ZeroWidth" := by
   have hds : hasDecompositionSwap [0x0048, 0x200B, 0x69] = false := by

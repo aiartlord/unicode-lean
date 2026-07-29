@@ -1,19 +1,13 @@
 /-
   Unicode.Conformance.Security.ConfusableBidiCompoundTest
 
-  Conformance for the ConfusableBidiCompound detector (a confusable codepoint that
-  co-occurs with a bidi override or isolate — a compound spoofing hazard stronger
-  than either signal alone).
+  Conformance for the ConfusableBidiCompound detector: it flags a compound spoofing
+  hazard when a confusable codepoint co-occurs with a bidi override or isolate —
+  stronger than either signal alone.
 
-  The detector is a match-chain composition: `detect` is clear unless a confusable is
-  present AND it co-occurs with a bidi override or isolate. We verify its contract
-  over EVERY input, structurally, with no corpus reduction — the position predicates
-  stay opaque, so no confusable-skeleton computation is reduced. Representative
-  vectors are proven in the detector module.
-
-  The prior `all_rows_pass := by decide` over the include_str corpus is not used: an
-  include_str String's `.toList` is opaque to the kernel reducer, so a parse-and-decide
-  over the corpus is stuck rather than proving anything. The fixture .txt is illustrative.
+  `detect_isClear_characterization` states the detector's contract over every input:
+  the verdict is clear unless a confusable is present and it co-occurs with a bidi
+  override or isolate.
 -/
 
 import Unicode.Security.Boundary.ConfusableBidiCompound

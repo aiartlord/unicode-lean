@@ -1,18 +1,13 @@
 /-
   Unicode.Conformance.Security.FilenameDisguiseTest
 
-  Conformance for the FilenameDisguise detector (filenames disguised via RLO extension
-  flips, fullwidth/combining marks in the extension, or multiple extensions — the
-  classic `document<RLO>txt.exe` Trojan-attachment hazard).
+  Conformance for the FilenameDisguise detector: filenames disguised via RLO extension
+  flips, fullwidth or combining marks in the extension, or multiple extensions — the
+  classic `document<RLO>txt.exe` Trojan-attachment hazard.
 
-  The detector is exhaustively spot-checked in its own module (§): plain/no-extension/
-  multi-segment clears and every sub-threat. This module verifies the full verdict —
-  tag plus the bidi-control and fullwidth-in-extension counts a consumer reads — on
-  representative vectors.
-
-  The prior `all_rows_pass := by decide` over the include_str corpus is not used: an
-  include_str String's `.toList` is opaque to the kernel reducer, so a parse-and-decide
-  over the corpus is stuck rather than proving anything. The fixture .txt is illustrative.
+  Each theorem checks the full verdict — sub-threat tag together with the bidi-control
+  and fullwidth-in-extension counts — on a representative vector: an RLO flip, a
+  fullwidth extension, and a plain `document.txt` clear.
 -/
 
 import Unicode.Security.Display.FilenameDisguise

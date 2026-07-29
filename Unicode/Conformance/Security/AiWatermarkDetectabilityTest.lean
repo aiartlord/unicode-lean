@@ -1,16 +1,12 @@
 /-
   Unicode.Conformance.Security.AiWatermarkDetectabilityTest
 
-  Conformance for the AiWatermarkDetectability detector (statistical-watermark markers
-  smuggled as NNBSP boundaries or variation-selector carriers in otherwise-plain text).
+  Conformance for the AiWatermarkDetectability detector: statistical-watermark markers
+  smuggled as NNBSP boundaries or variation-selector carriers in otherwise-plain text.
 
-  The detector is exhaustively spot-checked in its own module (§): ASCII/Han clears and
-  every marker sub-threat. This module verifies the full verdict — tag, marker
-  positions, and marker count — on representative vectors.
-
-  The prior `all_rows_pass := by decide` over the include_str corpus is not used: an
-  include_str String's `.toList` is opaque to the kernel reducer, so a parse-and-decide
-  over the corpus is stuck rather than proving anything. The fixture .txt is illustrative.
+  Each theorem checks the full verdict — sub-threat tag together with the marker count
+  and marker positions — on a representative vector: an NNBSP boundary marker, a
+  variation-selector carrier, and a plain-ASCII clear.
 -/
 
 import Unicode.Security.Crypto.AiWatermarkDetectability

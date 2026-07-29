@@ -4,16 +4,10 @@
   Conformance for the SurrogateReassembly detector (CESU-8 / overlong / truncated /
   invalid UTF-8 byte-stream hazards).
 
-  The detector is exhaustively spot-checked in its own module
-  (`Unicode.Security.Covert.SurrogateReassembly` §): valid UTF-8 clears (ASCII, é,
-  Han, emoji) and every sub-threat (overlong, CESU-8 surrogate, truncated, invalid
-  start byte, lone continuation). What those tag-only checks do not pin is the
-  verdict metadata — the byte count and first-invalid offset a consumer reads. This
-  module verifies the full verdict on representative byte streams.
-
-  The prior `all_rows_pass := by decide` over the include_str corpus is not used: an
-  include_str String's `.toList` is opaque to the kernel reducer, so a parse-and-decide
-  over the corpus is stuck rather than proving anything. The fixture .txt is illustrative.
+  Each theorem checks the full verdict — sub-threat tag together with the byte count
+  and first-invalid offset — on a representative byte stream: a 3-byte overlong, a
+  CESU-8 surrogate, a truncated 4-byte sequence, an invalid start byte, and a valid
+  emoji.
 -/
 
 import Unicode.Security.Covert.SurrogateReassembly

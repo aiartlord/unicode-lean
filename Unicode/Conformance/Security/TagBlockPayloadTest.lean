@@ -1,20 +1,13 @@
 /-
   Unicode.Conformance.Security.TagBlockPayloadTest
 
-  Conformance for the TagBlockPayload detector (Goodside / Cisco / AWS-class
-  invisible payloads in the Unicode tag block U+E0000..U+E007F).
+  Conformance for the TagBlockPayload detector (Goodside / Cisco / AWS-class invisible
+  payloads in the Unicode tag block U+E0000..U+E007F).
 
-  The detector is exhaustively spot-checked in its own module
-  (`Unicode.Security.Covert.TagBlockPayload` §6): every sub-threat (direct ASCII,
-  language-tag revival, mixed block, bare tag) and the tag→ASCII decoder bijection
-  have concrete proofs. What those tag-only checks do not pin is the *recovered
-  payload* and tag inventory a consumer reads. This module verifies the full verdict
-  — tag, decoded ASCII, tag count, positions — on the documented attack vectors,
-  including Goodside's January 2024 "Print 'pwned'" chain.
-
-  The prior `all_rows_pass := by decide` over the include_str corpus is not used: an
-  include_str String's `.toList` is opaque to the kernel reducer, so a parse-and-decide
-  over the corpus is stuck rather than proving anything. The fixture .txt is illustrative.
+  Each theorem checks the full verdict — sub-threat tag, recovered ASCII payload, tag
+  count, and tag positions — on a documented attack vector: a direct-ASCII payload,
+  Goodside's January 2024 "Print 'pwned'" chain, a language-tag revival, and a mixed
+  block hiding a payload inside visible text.
 -/
 
 import Unicode.Security.Covert.TagBlockPayload

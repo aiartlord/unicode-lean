@@ -1,18 +1,13 @@
 /-
   Unicode.Conformance.Security.RendererDivergenceTest
 
-  Conformance for the RendererDivergence detector (input that renders differently
+  Conformance for the RendererDivergence detector: input that renders differently
   across engines — combining-mark stacks (Zalgo), variation-selector variance,
-  unregistered ZWJ, fullwidth variance, mixed-direction variance).
+  unregistered ZWJ, fullwidth variance, mixed-direction variance.
 
-  The detector is exhaustively spot-checked in its own module (§): ASCII/Han clears
-  and every sub-threat. What those tag-only checks do not pin is the quantitative
-  verdict metadata (VS/combining/fullwidth counts, direction counts) a consumer reads.
-  This module verifies the full verdict on representative vectors.
-
-  The prior `all_rows_pass := by decide` over the include_str corpus is not used: an
-  include_str String's `.toList` is opaque to the kernel reducer, so a parse-and-decide
-  over the corpus is stuck rather than proving anything. The fixture .txt is illustrative.
+  Each theorem checks the full verdict — sub-threat tag together with the VS /
+  combining / fullwidth counts — on a representative vector: a fullwidth-variance case
+  and an ASCII clear.
 -/
 
 import Unicode.Security.Display.RendererDivergence

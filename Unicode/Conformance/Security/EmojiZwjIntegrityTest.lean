@@ -1,18 +1,13 @@
 /-
   Unicode.Conformance.Security.EmojiZwjIntegrityTest
 
-  Conformance for the EmojiZwjIntegrity detector (malformed / forged emoji-ZWJ
+  Conformance for the EmojiZwjIntegrity detector: malformed or forged emoji-ZWJ
   sequences — double ZWJ, non-emoji injection, skin-tone overflow, unregistered
-  sequences), where a registered RGI sequence is always clear.
+  sequences — where a registered RGI sequence is always clear.
 
-  The detector is exhaustively spot-checked in its own module (§): registered-RGI and
-  single-skin-tone clears and every sub-threat. What those tag-only checks do not pin
-  is the RGI-registration flag a consumer reads to decide sanctioning. This module
-  verifies the full verdict on representative vectors.
-
-  The prior `all_rows_pass := by decide` over the include_str corpus is not used: an
-  include_str String's `.toList` is opaque to the kernel reducer, so a parse-and-decide
-  over the corpus is stuck rather than proving anything. The fixture .txt is illustrative.
+  Each theorem checks the full verdict — sub-threat tag together with the RGI-
+  registration flag — on a representative vector: a double ZWJ, a non-emoji injection,
+  an unregistered join, and a registered RGI family sequence.
 -/
 
 import Unicode.Security.Identity.EmojiZwjIntegrity
