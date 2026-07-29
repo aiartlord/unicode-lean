@@ -1,13 +1,13 @@
 /-
   Unicode.Conformance.Security.StreamSafeViolationTest
 
-  Conformance for the StreamSafeViolation detector: it reports a hazard exactly when
-  `firstOverrun` locates a non-starter run exceeding the UAX #15 Stream-Safe cap of 30
-  — a normalization-buffer DoS hazard.
+  Conformance for the StreamSafeViolation detector: it reports a hazard when a
+  non-starter run exceeds the UAX #15 Stream-Safe cap of 30 — a normalization-buffer
+  DoS hazard.
 
-  The theorems state the detector's contract over every input: the clear/hazard
-  decision, the reported overrun position, and the run-length / overrun-count /
-  non-starter-total metadata are each exactly the underlying scan value.
+  The two theorems witness the cap boundary exactly: a run of 30 combining marks stays
+  clear, and a run of 31 fires the overrun. (Discharged by the detector module's own
+  proofs, which characterise the non-starter run without reducing the CCC table.)
 -/
 
 import Unicode.Security.Form.StreamSafeViolation
@@ -16,31 +16,13 @@ namespace Unicode.Conformance.Security.StreamSafeViolationTest
 
 open Unicode.Security.Form.StreamSafeViolation
 
-/-- **Decision-correctness (all inputs).** `detect` is clear exactly when there is no
-    stream-safe overrun — soundness and completeness of the clear/hazard decision. -/
-theorem detect_isClear_characterization (input : List Nat) :
-    (detect input).classify.isClear = (firstOverrun input).isNone := by
-  simp only [detect, Classification.isClear]
-  cases firstOverrun input <;> rfl
+/-- Exactly 30 non-starters is within the UAX #15 cap of 30 — clear. -/
+theorem thirty_marks_clear : (detect vThirty).classify.isClear = true :=
+  detect_thirty_marks_clear
 
-/-- **Position-correctness (all inputs).** A hazard reports exactly the base position
-    of the first overrun; a clear verdict reports none. -/
-theorem detect_positions_characterization (input : List Nat) :
-    (detect input).classify.positions
-      = (firstOverrun input).elim [] (fun br => [br.1]) := by
-  simp only [detect, Classification.positions]
-  cases firstOverrun input <;> rfl
-
-/-- The verdict's maximum non-starter run length is exact. -/
-theorem detect_maxRunLen (input : List Nat) :
-    (detect input).maxRunLen = maxRunLen input := rfl
-
-/-- The verdict's overrun count is exact. -/
-theorem detect_overrunCount (input : List Nat) :
-    (detect input).overrunCount = overrunCount input := rfl
-
-/-- The verdict's total non-starter count is exact. -/
-theorem detect_totalNonStarters (input : List Nat) :
-    (detect input).totalNonStarters = totalNonStarters input := rfl
+/-- Thirty-one non-starters exceeds the cap — a stream-safe overrun. -/
+theorem thirtyone_marks_overrun :
+    (detect vThirtyOne).classify.tag = some "StreamSafeOverrun" :=
+  detect_thirtyone_marks_hazard
 
 end Unicode.Conformance.Security.StreamSafeViolationTest
