@@ -1,19 +1,13 @@
 /-
   Unicode.Conformance.Security.RtlInjectionTest
 
-  Conformance for the RtlInjection detector (strong right-to-left characters or bidi
+  Conformance for the RtlInjection detector: strong right-to-left characters or bidi
   controls that hijack the display order of a left-to-right field — RTL-injection /
-  field-takeover hazards).
+  field-takeover hazards.
 
-  The detector is exhaustively spot-checked in its own module (§): ASCII/digit/legit-
-  Cyrillic clears and every sub-threat. What those tag-only checks do not pin is the
-  quantitative verdict metadata (strong-direction counts, bidi-control count, longest
-  RTL run) a consumer reads. This module verifies the full verdict on representative
-  vectors.
-
-  The prior `all_rows_pass := by decide` over the include_str corpus is not used: an
-  include_str String's `.toList` is opaque to the kernel reducer, so a parse-and-decide
-  over the corpus is stuck rather than proving anything. The fixture .txt is illustrative.
+  Each theorem checks the full verdict — sub-threat tag together with the strong-
+  direction and bidi-control counts — on a representative vector: an RLO injected into
+  an LTR field, a strong-RTL field takeover, and a plain-ASCII clear.
 -/
 
 import Unicode.Security.Display.RtlInjection

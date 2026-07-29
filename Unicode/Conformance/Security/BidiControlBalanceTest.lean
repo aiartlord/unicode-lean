@@ -1,22 +1,14 @@
 /-
   Unicode.Conformance.Security.BidiControlBalanceTest
 
-  Conformance for the BidiControlBalance detector (Trojan-Source /
-  CVE-2021-42574 / CVE-2021-42694).
+  Conformance for the BidiControlBalance detector (Trojan-Source, CVE-2021-42574 /
+  CVE-2021-42694). The detector walks a per-type bidi stack and classifies unbalanced
+  embeddings, unbalanced isolates, orphan pops, and depth-exceeded nesting.
 
-  The detector walks the input with a per-type bidi stack and is exhaustively
-  spot-checked in its own module (`Unicode.Security.Covert.BidiControlBalance` §5)
-  — every section (balanced clear, lone opener, orphan pop, depth-exceeded) has a
-  concrete `decide` proof, each cheap because bidi-control balancing needs no
-  normalization or table lookup. What those checks do not pin is the *quantitative*
-  verdict metadata — the open/pop counts and orphan positions a downstream consumer
-  reads. This module verifies the full verdict (tag + counts + positions) on the
-  documented CVE attack vectors, discharged by `decide` on concrete literal inputs.
-
-  The prior `all_rows_pass : rows.all verifyRow := by decide` over the bundled
-  `BidiControlBalanceTest.txt` is not used: an `include_str` String's `.toList` is
-  opaque to the kernel reducer, so a parse-and-`decide` over the corpus is stuck
-  rather than proving anything. The fixture .txt remains illustrative external data.
+  Each theorem checks the full verdict — sub-threat tag together with the open/pop
+  counts and orphan positions — on a documented CVE attack vector: the Trojan-Source
+  RLO, the isolate-override, an orphan PDF, a 126-deep nesting, and a legitimate
+  balanced RTL run.
 -/
 
 import Unicode.Security.Covert.BidiControlBalance

@@ -4,17 +4,10 @@
   Conformance for the ZeroWidthPayload detector (covert payloads in zero-width /
   no-glyph codepoints).
 
-  The detector is exhaustively spot-checked in its own module
-  (`Unicode.Security.Covert.ZeroWidthPayload` §7) — every sub-threat (binary payload,
-  word-joiner injection, AI-watermark NNBSP, bare zero-width, annotation misuse) plus
-  the RGI-emoji-ZWJ sanctioning has a concrete `decide` proof, each cheap because the
-  scan is pure codepoint classification. What those tag-only checks do not pin is the
-  *quantitative* verdict metadata — the per-class counts and suspicious positions a
-  consumer reads. This module verifies the full verdict on representative vectors.
-
-  The prior `all_rows_pass := by decide` over the include_str corpus is not used: an
-  include_str String's `.toList` is opaque to the kernel reducer, so a parse-and-decide
-  over the corpus is stuck rather than proving anything. The fixture .txt is illustrative.
+  Each theorem checks the full verdict — sub-threat tag together with the per-class
+  counts and suspicious positions — on a representative vector: a binary payload, a
+  word-joiner injection, an AI-watermark NNBSP burst, an annotation misuse, and a
+  sanctioned RGI emoji-ZWJ sequence.
 -/
 
 import Unicode.Security.Covert.ZeroWidthPayload

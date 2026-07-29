@@ -1,17 +1,13 @@
 /-
   Unicode.Conformance.Security.StreamSafeViolationTest
 
-  Conformance for the StreamSafeViolation detector (a non-starter run exceeding the
-  UAX #15 Stream-Safe cap of 30 — a normalization-buffer DoS / stream-safe hazard).
+  Conformance for the StreamSafeViolation detector: it reports a hazard exactly when
+  `firstOverrun` locates a non-starter run exceeding the UAX #15 Stream-Safe cap of 30
+  — a normalization-buffer DoS hazard.
 
-  The detector is a predicate composition: `detect` reports a hazard exactly when
-  `firstOverrun` locates a non-starter run past the cap. We verify its contract over
-  EVERY input, structurally, with no corpus reduction — `firstOverrun` stays opaque.
-  Representative vectors are proven in the detector module.
-
-  The prior `all_rows_pass := by decide` over the include_str corpus is not used: an
-  include_str String's `.toList` is opaque to the kernel reducer, so a parse-and-decide
-  over the corpus is stuck rather than proving anything. The fixture .txt is illustrative.
+  The theorems state the detector's contract over every input: the clear/hazard
+  decision, the reported overrun position, and the run-length / overrun-count /
+  non-starter-total metadata are each exactly the underlying scan value.
 -/
 
 import Unicode.Security.Form.StreamSafeViolation

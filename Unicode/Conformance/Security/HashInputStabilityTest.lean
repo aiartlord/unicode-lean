@@ -1,19 +1,14 @@
 /-
   Unicode.Conformance.Security.HashInputStabilityTest
 
-  Conformance for the HashInputStability detector (input whose hash is unstable under
-  canonicalisation — trailing whitespace and normalization drift that make two
-  "equal" strings hash differently, a hash-collision / bypass hazard).
+  Conformance for the HashInputStability detector: input whose hash is unstable under
+  canonicalisation — trailing whitespace and normalization drift that make two "equal"
+  strings hash differently (a hash-collision / bypass hazard).
 
-  The detector normalises via NFC; its spot-checks in the detector module discharge
-  the pipeline the efficient way — `unfold` the detector and rewrite the NFC form away
-  with the proven `toNFC_id_lowAscii` witness (the input is low-ASCII, so NFC is the
-  identity), leaving only a cheap `decide`. This module re-states representative full
-  verdicts as conformance assertions using the same technique — no corpus reduction.
-
-  The prior `all_rows_pass := by decide` over the include_str corpus is not used: an
-  include_str String's `.toList` is opaque to the kernel reducer, so a parse-and-decide
-  over the corpus is stuck rather than proving anything. The fixture .txt is illustrative.
+  Each theorem checks the full verdict — sub-threat tag together with the stable size
+  and positions — on a representative vector: a trailing space, a trailing CRLF, and a
+  stable lowercase-ASCII clear. The NFC form is rewritten away with `toNFC_id_lowAscii`
+  (each input is low-ASCII, so NFC is the identity), leaving a cheap `decide`.
 -/
 
 import Unicode.Security.Crypto.HashInputStability

@@ -1,35 +1,15 @@
 /-
   Unicode.Conformance.Security.AdmissibilityFormDriftTest
 
-  Conformance for the AdmissibilityFormDrift detector.
+  Conformance for the AdmissibilityFormDrift detector: it flags a hazard exactly when
+  a string's UTS-39 identifier admissibility changes under NFKC, composing
+  `isAllowedIdentifier` with `NFKC.toNFKC`.
 
-  This detector is correct by construction: `detect` flags a hazard exactly when a
-  string's UTS-39 identifier admissibility changes under NFKC. Its substance lives
-  entirely in two primitives proven elsewhere — `isAllowedIdentifier` (the UTS-39
-  status-table lookup, in `Unicode.Identifier`) and `NFKC.toNFKC` (normalization,
-  in `Unicode.Normalization.NFKC`). The composition itself is a three-line function
-  with no independent content to enumerate.
-
-  Accordingly the verification here is the detector's **contract, stated over every
-  input** and discharged structurally (no corpus reduction):
-
-    * `detect_isClear_characterization` — the verdict is clear iff the admissibility
-      predicate agrees on the input and its NFKC form; i.e. the detector is a sound
-      and complete decision procedure for the drift predicate.
+    * `detect_isClear_characterization` — the verdict is clear iff the input and its
+      NFKC form agree on admissibility: soundness and completeness of the detector as
+      a decision procedure for the drift predicate.
     * `detect_records_input_admissibility` / `detect_records_nfkc_admissibility` —
-      the booleans the verdict carries downstream are exactly the two predicate
-      evaluations, so consumers reading a hazard get faithful data.
-
-  Representative attack-vector behaviour (ASCII clear, `ﬁ`-ligature drift, decomposed
-  Hangul-jamo drift) is verified in the detector module itself — `detect_ascii_clear`,
-  `detect_fi_ligature_drift`, `detect_jamo_sequence_drift` — each proven the efficient
-  way: `unfold detect` then rewrite the NFKC form away with a proven normalization
-  witness (`toNFKC_id_of_starters` / `DetectorFormVectors.toNFKC_*`), leaving only the
-  cheap admissibility scan for `decide`. Re-`decide`ing raw `toNFKC` per row would cost
-  ~3.4 GB each with no proof content the contract theorem does not already give for all
-  inputs. The `AdmissibilityFormDriftTest.txt` fixture is illustrative external data;
-  it is not reduced in the kernel (an `include_str` String's `.toList` is opaque to the
-  reducer, so a parse-and-`decide` over it gets stuck rather than proving anything).
+      the booleans the verdict carries are exactly the two admissibility evaluations.
 -/
 
 import Unicode.Security.Boundary.AdmissibilityFormDrift
@@ -43,7 +23,7 @@ open Unicode.Security.Boundary.AdmissibilityFormDrift
     when the input and its NFKC form agree on UTS-39 identifier admissibility — it
     flags the admissibility-form-drift hazard precisely when that predicate flips.
     This is the soundness and completeness of the detector as a decision procedure;
-    together with correctness of the two primitives it fully characterises the X4
+    together with correctness of the two primitives it fully characterises the
     detector, with no per-row corpus reduction. -/
 theorem detect_isClear_characterization (input : List Nat) :
     (detect input).classify.isClear

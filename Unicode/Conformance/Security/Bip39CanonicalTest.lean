@@ -1,17 +1,13 @@
 /-
   Unicode.Conformance.Security.Bip39CanonicalTest
 
-  Conformance for the Bip39Canonical detector (BIP-39 mnemonic canonicalisation
-  hazards — mixed case, whitespace anomalies, and non-NFKD forms that would produce a
-  different seed than the canonical mnemonic, a wallet-loss / theft hazard).
+  Conformance for the Bip39Canonical detector: BIP-39 mnemonic canonicalisation
+  hazards — mixed case, whitespace anomalies, and non-NFKD forms that would derive a
+  different seed than the canonical mnemonic (a wallet-loss / theft hazard).
 
-  The detector is spot-checked in its own module and vectors file. This module
-  re-states representative full verdicts as conformance assertions, discharged by
-  `decide +kernel` on concrete literal mnemonics.
-
-  The prior `all_rows_pass := by decide` over the include_str corpus is not used: an
-  include_str String's `.toList` is opaque to the kernel reducer, so a parse-and-decide
-  over the corpus is stuck rather than proving anything. The fixture .txt is illustrative.
+  Each theorem checks the detector's verdict on a representative mnemonic: a
+  capitalised word, a leading space, a compatibility ligature, and an empty (clear)
+  input.
 -/
 
 import Unicode.Security.Crypto.Bip39Canonical

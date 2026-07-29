@@ -1,17 +1,13 @@
 /-
   Unicode.Conformance.Security.SkinToneVariationForgeryTest
 
-  Conformance for the SkinToneVariationForgery detector (stacked / mistargeted skin-
-  tone modifiers or forced text-presentation on emoji — an emoji-forgery hazard).
+  Conformance for the SkinToneVariationForgery detector: it flags an emoji-forgery
+  hazard on stacked or mistargeted skin-tone modifiers, or forced text-presentation on
+  emoji.
 
-  The detector is a match-chain composition: `detect` is clear unless it finds stacked
-  skin tones, an invalid skin-tone target, or a forced text style. We verify its
-  contract over EVERY input, structurally, with no corpus reduction — the scan
-  predicates stay opaque. Representative vectors are proven in the detector module.
-
-  The prior `all_rows_pass := by decide` over the include_str corpus is not used: an
-  include_str String's `.toList` is opaque to the kernel reducer, so a parse-and-decide
-  over the corpus is stuck rather than proving anything. The fixture .txt is illustrative.
+  `detect_isClear_characterization` states the detector's contract over every input:
+  the verdict is clear unless there are stacked skin tones, an invalid skin-tone
+  target, or a forced text style.
 -/
 
 import Unicode.Security.Identity.SkinToneVariationForgery

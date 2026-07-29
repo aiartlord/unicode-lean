@@ -1,19 +1,13 @@
 /-
   Unicode.Conformance.Security.LocaleCaseInversionTest
 
-  Conformance for the LocaleCaseInversion detector (a codepoint whose case mapping
-  diverges under the Turkish or Lithuanian tailored casing rules — a locale-dependent
-  case-inversion hazard, e.g. dotless-i attacks).
+  Conformance for the LocaleCaseInversion detector: it reports a hazard exactly when
+  `firstLocaleDivergence` finds a codepoint whose case mapping diverges under the
+  Turkish or Lithuanian tailored casing rules — a locale-dependent case-inversion
+  hazard (e.g. dotless-i attacks).
 
-  The detector is a predicate composition: `detect` reports a hazard exactly when
-  `firstLocaleDivergence` finds a divergence under the Turkish or Lithuanian locale.
-  We verify its contract over EVERY input, structurally, with no corpus reduction —
-  the divergence predicates stay opaque, so no casing is reduced. Representative
-  vectors are proven in the detector module.
-
-  The prior `all_rows_pass := by decide` over the include_str corpus is not used: an
-  include_str String's `.toList` is opaque to the kernel reducer, so a parse-and-decide
-  over the corpus is stuck rather than proving anything. The fixture .txt is illustrative.
+  `detect_isClear_characterization` states the detector's contract over every input:
+  the verdict is clear iff neither locale exhibits a divergence.
 -/
 
 import Unicode.Security.Form.LocaleCaseInversion

@@ -1,19 +1,13 @@
 /-
   Unicode.Conformance.Security.CaseExpansionMismatchTest
 
-  Conformance for the CaseExpansionMismatch detector (a codepoint whose upper- or
-  lower-case mapping expands to more than one codepoint — a case-folding length
-  hazard exploited to smuggle length past validators).
+  Conformance for the CaseExpansionMismatch detector: it reports a hazard exactly when
+  `firstUpperExpansion` or `firstLowerExpansion` locates a codepoint whose case mapping
+  expands to more than one codepoint — a case-folding length hazard.
 
-  The detector is a predicate composition: `detect` reports a hazard exactly when
-  `firstUpperExpansion` or `firstLowerExpansion` locates an expanding codepoint. We
-  verify its contract over EVERY input, structurally, with no corpus reduction — the
-  `firstUpper/LowerExpansion` predicates stay opaque, so no case mapping is reduced.
-  Representative vectors are proven in the detector module.
-
-  The prior `all_rows_pass := by decide` over the include_str corpus is not used: an
-  include_str String's `.toList` is opaque to the kernel reducer, so a parse-and-decide
-  over the corpus is stuck rather than proving anything. The fixture .txt is illustrative.
+  The theorems state the detector's contract over every input: the clear/hazard
+  decision, and the upper/lower expansion counts and maximum expansion length the
+  verdict carries, are each exactly the underlying scan value.
 -/
 
 import Unicode.Security.Form.CaseExpansionMismatch

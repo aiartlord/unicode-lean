@@ -1,20 +1,14 @@
 /-
   Unicode.Conformance.Security.NormalizationBombTest
 
-  Conformance for the NormalizationBomb detector (input that expands explosively under
-  normalization — a decompression-bomb / DoS hazard, either a single codepoint that
-  blows up or a whole-string NFKD/NFD expansion ratio past threshold).
+  Conformance for the NormalizationBomb detector: it reports a hazard when the input
+  expands explosively under normalization — a decompression-bomb / DoS hazard — by a
+  fixed priority: a per-codepoint blow-up, else an NFKD expansion ratio over
+  `nfkdRatioPct`, else an NFD ratio over `nfdRatioPct`, else clear.
 
-  The detector is a predicate composition with a fixed priority: a per-codepoint
-  blow-up, else an NFKD ratio over `nfkdRatioPct`, else an NFD ratio over
-  `nfdRatioPct`, else clear. We verify its contract over EVERY input, structurally,
-  with no corpus reduction — the blow-up predicate and the ratio functions stay
-  opaque, so no normalization is reduced. Representative vectors are in the detector
-  module.
-
-  The prior `all_rows_pass := by decide` over the include_str corpus is not used: an
-  include_str String's `.toList` is opaque to the kernel reducer, so a parse-and-decide
-  over the corpus is stuck rather than proving anything. The fixture .txt is illustrative.
+  The theorems state the detector's contract over every input: the clear/hazard
+  decision honours that priority, and the NFD/NFKD/input lengths and per-codepoint
+  expansion the verdict carries are each exact.
 -/
 
 import Unicode.Security.Form.NormalizationBomb

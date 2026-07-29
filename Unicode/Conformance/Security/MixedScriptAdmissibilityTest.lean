@@ -5,14 +5,9 @@
   restricted-status confusables — Latin/Cyrillic, Latin/Greek, and Restricted-status
   codepoint hazards).
 
-  The detector is exhaustively spot-checked in its own module (§): single-script
-  clears and every mixed-script sub-threat. What those tag-only checks do not pin is
-  the per-script boolean metadata (hasLatin/hasCyrillic/hasGreek) a consumer reads.
-  This module verifies the full verdict on representative vectors.
-
-  The prior `all_rows_pass := by decide` over the include_str corpus is not used: an
-  include_str String's `.toList` is opaque to the kernel reducer, so a parse-and-decide
-  over the corpus is stuck rather than proving anything. The fixture .txt is illustrative.
+  Each theorem checks the full verdict — sub-threat tag together with the per-script
+  presence booleans — on a representative vector: a Latin/Cyrillic mix, a Latin/Greek
+  mix, a lone Restricted-status codepoint, and a single-script clear.
 -/
 
 import Unicode.Security.Identity.MixedScriptAdmissibility

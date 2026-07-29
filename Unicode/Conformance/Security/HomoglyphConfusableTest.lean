@@ -5,14 +5,9 @@
   homoglyph spoofing — target-name matches, mathematical-alphanumeric look-alikes,
   cross-script mixes, and low restriction level).
 
-  The detector is exhaustively spot-checked in its own module (§): legitimate clears
-  and every sub-threat, each proven by reducing the confusable skeleton / restriction
-  level in the kernel (`decide +kernel`). This module re-states representative full
-  verdicts as conformance assertions.
-
-  The prior `all_rows_pass := by decide` over the include_str corpus is not used: an
-  include_str String's `.toList` is opaque to the kernel reducer, so a parse-and-decide
-  over the corpus is stuck rather than proving anything. The fixture .txt is illustrative.
+  Each theorem checks the detector's verdict on a representative vector — a
+  mathematical-alphanumeric look-alike and a single-script clear — with the confusable
+  skeleton and restriction level reduced in the kernel.
 -/
 
 import Unicode.Security.Identity.HomoglyphConfusable

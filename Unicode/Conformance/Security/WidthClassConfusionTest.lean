@@ -1,19 +1,14 @@
 /-
   Unicode.Conformance.Security.WidthClassConfusionTest
 
-  Conformance for the WidthClassConfusion detector (fullwidth / halfwidth compatibility
-  forms that NFKD-fold to a narrower/wider ASCII or Kana class — a display/identifier
-  width-confusion hazard).
+  Conformance for the WidthClassConfusion detector: it reports a hazard exactly when
+  `firstFullwidthFold` or `firstHalfwidthFold` locates a fullwidth/halfwidth
+  compatibility form that NFKD-folds to a narrower or wider class — a width-confusion
+  hazard.
 
-  The detector is a predicate composition: `detect` reports a hazard exactly when
-  `firstFullwidthFold` or `firstHalfwidthFold` locates a folding codepoint. We verify
-  its contract over EVERY input, structurally, with no corpus reduction — the fold
-  predicates stay opaque, so no NFKD is reduced. Representative vectors are in the
-  detector module.
-
-  The prior `all_rows_pass := by decide` over the include_str corpus is not used: an
-  include_str String's `.toList` is opaque to the kernel reducer, so a parse-and-decide
-  over the corpus is stuck rather than proving anything. The fixture .txt is illustrative.
+  The theorems state the detector's contract over every input: the clear/hazard
+  decision and the fullwidth/halfwidth fold counts are each exactly the underlying
+  scan value.
 -/
 
 import Unicode.Security.Form.WidthClassConfusion
