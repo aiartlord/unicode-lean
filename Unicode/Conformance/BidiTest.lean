@@ -15,6 +15,11 @@ open Unicode.Bidi.Algorithm
 
 set_option maxRecDepth 1000000
 
+/-- **Binary paragraph level, all inputs.** P2/P3 assigns every paragraph base level 0
+    (LTR) or 1 (RTL) — never higher. -/
+theorem paragraph_level_binary (cps : List Nat) : paragraphLevel cps ≤ 1 :=
+  paragraphLevel_le_one cps
+
 /-- A Latin run resolves to paragraph level 0 (left-to-right). -/
 theorem vector_latin_ltr : paragraphLevel [0x41, 0x42] = 0 := by decide
 

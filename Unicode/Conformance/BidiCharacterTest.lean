@@ -15,6 +15,11 @@ open Unicode.Bidi.Algorithm
 
 set_option maxRecDepth 1000000
 
+/-- **Binary paragraph level, all inputs.** P2/P3 assigns every paragraph base level 0
+    (LTR) or 1 (RTL) — never higher. -/
+theorem paragraph_level_binary (cps : List Nat) : paragraphLevel cps ≤ 1 :=
+  paragraphLevel_le_one cps
+
 /-- A Hebrew word followed by ASCII resolves to RTL: the first strong character is
     Hebrew, so P2/P3 give paragraph level 1. -/
 theorem vector_hebrew_then_latin :
