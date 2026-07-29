@@ -14,6 +14,12 @@ open Unicode.Segmentation.LineBreak
 
 set_option maxRecDepth 1000000
 
+/-- **Well-formedness, all inputs.** `lineBreaks` yields exactly one break flag per
+    boundary position — `cps.length + 1` of them — so every position is decided. -/
+theorem breaks_well_formed (cps : List Nat) :
+    (lineBreaks cps).length = cps.length + 1 :=
+  lineBreaks_length cps
+
 /-- LB7 / LB18: a break opportunity opens after the space in "a b" (SP is a break
     class), and there is a mandatory break at the end; no break before the space or
     inside a letter. (`lineBreaks` returns one flag per boundary position.) -/

@@ -469,4 +469,23 @@ def lineBreaks (cps : List Nat) : List Bool :=
   let bs := (List.range n).foldl go []
   bs ++ [true]                               -- LB3
 
+/-- Folding a one-element append over a list grows the accumulator by exactly the
+    list's length. -/
+private theorem foldl_append_singleton_length {α β : Type} (f : β → α)
+    (l : List β) (init : List α) :
+    (l.foldl (fun acc x => acc ++ [f x]) init).length = init.length + l.length := by
+  induction l generalizing init with
+  | nil => simp
+  | cons head tail ih =>
+    simp only [List.foldl_cons, ih, List.length_append, List.length_cons,
+      List.length_nil]
+    omega
+
+/-- **Output well-formedness (all inputs).** `lineBreaks` returns exactly one
+    break-opportunity flag per boundary position — `cps.length + 1` flags. -/
+theorem lineBreaks_length (cps : List Nat) :
+    (lineBreaks cps).length = cps.length + 1 := by
+  simp only [lineBreaks, List.length_append, foldl_append_singleton_length,
+    List.length_range, List.length_cons, List.length_nil, Nat.zero_add]
+
 end Unicode.Segmentation.LineBreak
