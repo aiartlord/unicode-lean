@@ -15,6 +15,12 @@ open Unicode.Segmentation.WordBreak
 -- The boundary state machine recurses past the default reducer budget.
 set_option maxRecDepth 1000000
 
+/-- **Well-formedness, all inputs.** `wordBreaks` yields exactly one break flag per
+    boundary position — `cps.length + 1` of them — so every position is decided. -/
+theorem breaks_well_formed (cps : List Nat) :
+    (wordBreaks cps).length = cps.length + 1 :=
+  wordBreaks_length cps
+
 /-- WB3d / WB999: "hi ok" breaks around the space — a boundary before `h`, between
     the two words either side of the space, and after `k`; no boundary inside a
     letter run. (`wordBreaks` returns one flag per boundary position, length n+1.) -/
