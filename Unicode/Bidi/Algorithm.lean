@@ -128,6 +128,15 @@ def paragraphLevel (cps : List Nat) : Level :=
   | some .LRE | some .LRO | some .RLE | some .RLO | some .PDF
   | some .LRI | some .RLI | some .FSI | some .PDI => 0
 
+/-- **Paragraph level is binary (all inputs).** UAX #9 P2/P3 assigns every paragraph a
+    base level of 0 (LTR) or 1 (RTL) — the level of the first strong character, else 0
+    — so `paragraphLevel` never exceeds 1. -/
+theorem paragraphLevel_le_one (cps : List Nat) : paragraphLevel cps ≤ 1 := by
+  unfold paragraphLevel
+  cases firstStrongIgnoringIsolates cps with
+  | none => decide
+  | some cls => cases cls <;> decide
+
 /-- P2 + P3: paragraph base direction. -/
 def paragraphDirection (cps : List Nat) : Direction :=
   if paragraphLevel cps = 0 then .LTR else .RTL
