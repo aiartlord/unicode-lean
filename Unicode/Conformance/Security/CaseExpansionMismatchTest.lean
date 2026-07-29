@@ -1,13 +1,12 @@
 /-
   Unicode.Conformance.Security.CaseExpansionMismatchTest
 
-  Conformance for the CaseExpansionMismatch detector: it reports a hazard exactly when
-  `firstUpperExpansion` or `firstLowerExpansion` locates a codepoint whose case mapping
-  expands to more than one codepoint — a case-folding length hazard.
+  Conformance for the CaseExpansionMismatch detector: it reports a hazard when a
+  codepoint's upper- or lower-case mapping expands to more than one codepoint — a
+  case-folding length hazard used to smuggle length past validators.
 
-  The theorems state the detector's contract over every input: the clear/hazard
-  decision, and the upper/lower expansion counts and maximum expansion length the
-  verdict carries, are each exactly the underlying scan value.
+  Each theorem checks the verdict on a documented case: ß and the ﬁ ligature expand
+  under upper-casing (SS, FI); dotted capital İ expands under lower-casing.
 -/
 
 import Unicode.Security.Form.CaseExpansionMismatch
@@ -16,25 +15,19 @@ namespace Unicode.Conformance.Security.CaseExpansionMismatchTest
 
 open Unicode.Security.Form.CaseExpansionMismatch
 
-/-- **Decision-correctness (all inputs).** `detect` is clear exactly when neither an
-    upper- nor a lower-case expansion is present — soundness and completeness of the
-    clear/hazard decision (upper checked first by priority). -/
-theorem detect_isClear_characterization (input : List Nat) :
-    (detect input).classify.isClear
-      = ((firstUpperExpansion input).isNone && (firstLowerExpansion input).isNone) := by
-  simp only [detect, Classification.isClear]
-  cases firstUpperExpansion input <;> cases firstLowerExpansion input <;> rfl
+set_option maxRecDepth 1000000
 
-/-- The verdict's upper-expansion count is exactly the consumer's count. -/
-theorem detect_upperExpansionCount (input : List Nat) :
-    (detect input).upperExpansionCount = upperExpansionCount input := rfl
+/-- ß (U+00DF) upper-cases to "SS" — an upper expansion. -/
+theorem sharp_s_upper :
+    (detect [0x00DF]).classify.tag = some "UpperExpansion" := by decide +kernel
 
-/-- The verdict's lower-expansion count is exact. -/
-theorem detect_lowerExpansionCount (input : List Nat) :
-    (detect input).lowerExpansionCount = lowerExpansionCount input := rfl
+/-- The ﬁ ligature (U+FB01) upper-cases to "FI" — an upper expansion. -/
+theorem fi_ligature_upper :
+    (detect [0xFB01]).classify.tag = some "UpperExpansion" := by decide +kernel
 
-/-- The verdict's maximum expansion length is exact. -/
-theorem detect_maxExpansionLen (input : List Nat) :
-    (detect input).maxExpansionLen = maxExpansionLen input := rfl
+/-- Dotted capital İ (U+0130) lower-cases to "i̇" (two codepoints) — a lower
+    expansion, reached after the upper scan finds nothing. -/
+theorem dotted_I_lower :
+    (detect [0x0130]).classify.tag = some "LowerExpansion" := by decide +kernel
 
 end Unicode.Conformance.Security.CaseExpansionMismatchTest

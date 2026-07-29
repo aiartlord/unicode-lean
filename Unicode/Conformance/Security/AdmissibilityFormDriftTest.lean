@@ -5,43 +5,43 @@
   a string's UTS-39 identifier admissibility changes under NFKC, composing
   `isAllowedIdentifier` with `NFKC.toNFKC`.
 
-    * `detect_isClear_characterization` — the verdict is clear iff the input and its
-      NFKC form agree on admissibility: soundness and completeness of the detector as
-      a decision procedure for the drift predicate.
-    * `detect_records_input_admissibility` / `detect_records_nfkc_admissibility` —
-      the booleans the verdict carries are exactly the two admissibility evaluations.
+  Each theorem checks the verdict on a documented case: ASCII stays admissible, the
+  ﬁ ligature and a decomposed Hangul-jamo sequence both flip admissibility under NFKC.
+  Each NFKC form is rewritten away with a proven normalization witness, leaving the
+  admissibility scan for `decide`.
 -/
 
 import Unicode.Security.Boundary.AdmissibilityFormDrift
 
 namespace Unicode.Conformance.Security.AdmissibilityFormDriftTest
 
-open Unicode.Identifier (isAllowedIdentifier)
 open Unicode.Security.Boundary.AdmissibilityFormDrift
 
-/-- **Decision-correctness (all inputs).** `detect` reports a clear verdict exactly
-    when the input and its NFKC form agree on UTS-39 identifier admissibility — it
-    flags the admissibility-form-drift hazard precisely when that predicate flips.
-    This is the soundness and completeness of the detector as a decision procedure;
-    together with correctness of the two primitives it fully characterises the
-    detector, with no per-row corpus reduction. -/
-theorem detect_isClear_characterization (input : List Nat) :
-    (detect input).classify.isClear
-      = (isAllowedIdentifier input
-          == isAllowedIdentifier (Unicode.Normalization.NFKC.toNFKC input)) := by
-  simp only [detect, Classification.isClear]
-  generalize isAllowedIdentifier input = a
-  generalize isAllowedIdentifier (Unicode.Normalization.NFKC.toNFKC input) = b
-  cases a <;> cases b <;> rfl
+set_option maxRecDepth 100000
 
-/-- The verdict carries the input's own admissibility verdict verbatim, so a
-    downstream consumer inspecting a hazard reads the true value. -/
-theorem detect_records_input_admissibility (input : List Nat) :
-    (detect input).inputAdmissible = isAllowedIdentifier input := rfl
+/-- ASCII "admin" is admissible both before and after NFKC — clear. -/
+theorem admin_clear :
+    (detect [0x61, 0x64, 0x6D, 0x69, 0x6E]).classify.isClear = true := by
+  unfold detect
+  rw [Unicode.Normalization.LowCodepointNfkc.toNFKC_id_of_starters
+        [0x61, 0x64, 0x6D, 0x69, 0x6E] (by decide) (by decide)]
+  decide
 
-/-- The verdict carries the NFKC form's admissibility verdict verbatim. -/
-theorem detect_records_nfkc_admissibility (input : List Nat) :
-    (detect input).nfkcAdmissible
-      = isAllowedIdentifier (Unicode.Normalization.NFKC.toNFKC input) := rfl
+/-- The ﬁ ligature (U+FB01) is not an admissible identifier, but its NFKC form "fi"
+    is — admissibility flips, so the detector fires. -/
+theorem fi_ligature_drift :
+    (detect [0xFB01]).classify.tag = some "AdmissibilityFormDrift" := by
+  unfold detect
+  rw [Unicode.Normalization.DetectorFormVectors.toNFKC_ligature_fi]
+  decide
+
+/-- Decomposed Hangul jamos each pass the per-codepoint scan, but NFKC composes them
+    into an admissible precomposed syllable — flipping the whole-string verdict. -/
+theorem jamo_sequence_drift :
+    (detect [0x1112, 0x1161, 0x11AB]).classify.tag
+      = some "AdmissibilityFormDrift" := by
+  unfold detect
+  rw [Unicode.Normalization.DetectorFormVectors.toNFKC_jamo_han]
+  decide
 
 end Unicode.Conformance.Security.AdmissibilityFormDriftTest

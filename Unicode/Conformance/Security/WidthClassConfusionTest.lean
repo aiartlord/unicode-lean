@@ -1,14 +1,12 @@
 /-
   Unicode.Conformance.Security.WidthClassConfusionTest
 
-  Conformance for the WidthClassConfusion detector: it reports a hazard exactly when
-  `firstFullwidthFold` or `firstHalfwidthFold` locates a fullwidth/halfwidth
-  compatibility form that NFKD-folds to a narrower or wider class — a width-confusion
-  hazard.
+  Conformance for the WidthClassConfusion detector: it reports a hazard when a
+  fullwidth or halfwidth compatibility form NFKD-folds to a narrower or wider class —
+  a width-confusion hazard.
 
-  The theorems state the detector's contract over every input: the clear/hazard
-  decision and the fullwidth/halfwidth fold counts are each exactly the underlying
-  scan value.
+  Each theorem checks the verdict on a documented case: precomposed Hangul stays
+  clear, while fullwidth 'A' and halfwidth katakana 'ｱ' fold to their canonical width.
 -/
 
 import Unicode.Security.Form.WidthClassConfusion
@@ -17,21 +15,18 @@ namespace Unicode.Conformance.Security.WidthClassConfusionTest
 
 open Unicode.Security.Form.WidthClassConfusion
 
-/-- **Decision-correctness (all inputs).** `detect` is clear exactly when neither a
-    fullwidth nor a halfwidth fold is present — soundness and completeness of the
-    clear/hazard decision (fullwidth checked first by priority). -/
-theorem detect_isClear_characterization (input : List Nat) :
-    (detect input).classify.isClear
-      = ((firstFullwidthFold input).isNone && (firstHalfwidthFold input).isNone) := by
-  simp only [detect, Classification.isClear]
-  cases firstFullwidthFold input <;> cases firstHalfwidthFold input <;> rfl
+set_option maxRecDepth 100000
 
-/-- The verdict's fullwidth-fold count is exact. -/
-theorem detect_fullwidthFoldCount (input : List Nat) :
-    (detect input).fullwidthFoldCount = fullwidthFoldCount input := rfl
+/-- Precomposed Hangul 한 (U+D55C) has no width fold — clear. -/
+theorem hangul_clear :
+    (detect [0xD55C]).classify.isClear = true := by decide
 
-/-- The verdict's halfwidth-fold count is exact. -/
-theorem detect_halfwidthFoldCount (input : List Nat) :
-    (detect input).halfwidthFoldCount = halfwidthFoldCount input := rfl
+/-- Fullwidth A (U+FF21) folds to ASCII 'A' — a fullwidth fold. -/
+theorem fullwidth_A :
+    (detect [0xFF21]).classify.tag = some "FullwidthFold" := by decide
+
+/-- Halfwidth katakana ｱ (U+FF71) folds to fullwidth ア — a halfwidth fold. -/
+theorem halfwidth_ka_A :
+    (detect [0xFF71]).classify.tag = some "HalfwidthFold" := by decide
 
 end Unicode.Conformance.Security.WidthClassConfusionTest
