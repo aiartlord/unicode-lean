@@ -258,7 +258,7 @@ private theorem compareLexAux_refl (fuel : Nat) (xs : List Nat) (i : Nat) :
     cases hx : xs[i]? with
     | none => rfl
     | some x =>
-      simp only [hx, Nat.lt_irrefl, if_false, gt_iff_lt]
+      simp only [Nat.lt_irrefl, if_false, gt_iff_lt]
       exact ih (i + 1)
 
 /-- **Reflexivity (all inputs).** The lexicographic key comparator ranks any key equal
