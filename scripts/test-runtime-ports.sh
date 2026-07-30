@@ -18,6 +18,9 @@ run_dotnet=1
 run_swift=1
 run_zig=1
 jobs="${JOBS:-2}"
+rust_dir="${UNICODE_RUST_DIR:-ports/rust}"
+cpp_dir="${UNICODE_CPP_DIR:-ports/cpp}"
+python_dir="${UNICODE_PYTHON_DIR:-ports/python}"
 haskell_dir="${UNICODE_HASKELL_DIR:-ports/haskell}"
 jvm_dir="${UNICODE_JVM_DIR:-ports/jvm}"
 go_dir="${UNICODE_GO_DIR:-ports/go}"
@@ -76,7 +79,8 @@ Environment:
   UNICODE_HASKELL_DIR=PATH
                  Haskell port directory (default: ports/haskell).
   UNICODE_PYTHON_DATA_DIR=PATH
-                 Python vendored data directory (default: src/unicode_python/data).
+                 Python vendored data directory
+                 (default: ports/python/src/unicode_python/data).
   UNICODE_JVM_DIR=PATH
                  JVM port directory (default: ports/jvm).
   UNICODE_GO_DIR=PATH
@@ -316,9 +320,9 @@ if [[ "$run_rust" -eq 1 ]]; then
     fi
   fi
   if [[ "$mode" == "all" ]]; then
-    cargo test --quiet
+    cargo test --quiet --manifest-path "$rust_dir/Cargo.toml"
   else
-    cargo test --quiet \
+    cargo test --quiet --manifest-path "$rust_dir/Cargo.toml" \
       --lib \
       --test bom \
       --test identifier \
@@ -332,20 +336,23 @@ if [[ "$run_rust" -eq 1 ]]; then
       --test utf32 \
       --test utf8 \
       --test validated_utf8
-    cargo test --quiet --doc
+    cargo test --quiet --manifest-path "$rust_dir/Cargo.toml" --doc
   fi
 fi
 
 if [[ "$run_python" -eq 1 ]]; then
   echo "== python runtime =="
-  PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src pytest -q
+  (
+    cd "$python_dir"
+    PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src pytest -q
+  )
 fi
 
 if [[ "$run_cpp" -eq 1 ]]; then
   echo "== cpp runtime =="
-  cmake -Wno-deprecated -S . -B build -G Ninja -DUNICODE_CPP_BUILD_TESTS=ON
-  cmake --build build --parallel "$jobs"
-  ctest --test-dir build --output-on-failure --quiet
+  cmake -Wno-deprecated -S "$cpp_dir" -B "$cpp_dir/build" -G Ninja -DUNICODE_CPP_BUILD_TESTS=ON
+  cmake --build "$cpp_dir/build" --parallel "$jobs"
+  ctest --test-dir "$cpp_dir/build" --output-on-failure --quiet
 fi
 
 if [[ "$run_haskell" -eq 1 ]]; then

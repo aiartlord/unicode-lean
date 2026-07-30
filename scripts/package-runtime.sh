@@ -16,7 +16,7 @@ esac
 
 mkdir -p "$dist_abs"
 
-version="$(awk -F '"' '/^version = / { print $2; exit }' Cargo.toml)"
+version="$(awk -F '"' '/^version = / { print $2; exit }' ports/rust/Cargo.toml)"
 commit="$(git rev-parse --verify HEAD 2>/dev/null || printf 'unknown')"
 tree_state="clean"
 if [[ -n "$(git status --porcelain --untracked-files=normal 2>/dev/null)" ]]; then
@@ -28,10 +28,10 @@ echo "== rust cli install =="
 scripts/install-unicode-security.sh "$dist_abs/rust"
 
 echo "== python wheel/sdist =="
-python -m build --no-isolation --outdir "$dist_abs/python"
+python -m build --no-isolation --outdir "$dist_abs/python" ports/python
 
 echo "== cpp header install tree =="
-cmake -Wno-deprecated -S . -B build/package-cpp \
+cmake -Wno-deprecated -S ports/cpp -B build/package-cpp \
   -DUNICODE_CPP_BUILD_TESTS=OFF \
   -DCMAKE_INSTALL_PREFIX="$dist_abs/cpp"
 cmake --build build/package-cpp --parallel "$jobs"
