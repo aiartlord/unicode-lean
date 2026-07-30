@@ -9,8 +9,9 @@ import { configureSecurityDataReader } from "./security-core.js";
 // anchor. The reader below hashes each table's raw bytes at load and refuses to
 // serve (throws) on any mismatch or unpinned table, so a rolled-back, corrupted,
 // or tampered data file on a deployed node fails closed instead of silently
-// mis-classifying. Keep in sync with ports/typescript/src/data/SHA256SUMS and
-// the canonical data/SHA256SUMS; the runtime-data build gate enforces that sync.
+// mis-classifying. Keep in sync with the vendored src/data/SHA256SUMS manifest
+// and the canonical repository data/SHA256SUMS; the runtime-data build gate
+// enforces that sync.
 const PINNED_TABLE_DIGESTS = new Map([
   ["CaseFolding.txt", "ff8d8fefbf123574205085d6714c36149eb946d717a0c585c27f0f4ef58c4183"],
   ["confusables.txt", "091c7f82fc39ef208faf8f94d29c244de99254675e09de163160c810d13ef22a"],
