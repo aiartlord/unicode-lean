@@ -12,7 +12,9 @@ cd "$(dirname "$0")/.."
 
 mode="check"
 haskell_dir="${UNICODE_HASKELL_DIR:-ports/haskell}"
-python_data_dir="${UNICODE_PYTHON_DATA_DIR:-src/unicode_python/data}"
+rust_dir="${UNICODE_RUST_DIR:-ports/rust}"
+cpp_dir="${UNICODE_CPP_DIR:-ports/cpp}"
+python_data_dir="${UNICODE_PYTHON_DATA_DIR:-ports/python/src/unicode_python/data}"
 jvm_dir="${UNICODE_JVM_DIR:-ports/jvm}"
 go_dir="${UNICODE_GO_DIR:-ports/go}"
 typescript_dir="${UNICODE_TYPESCRIPT_DIR:-ports/typescript}"
@@ -37,6 +39,22 @@ root_manifest_files=(
 )
 
 python_files=(
+  CaseFolding.txt
+  CompositionExclusions.txt
+  DerivedCoreProperties.txt
+  IdentifierStatus.txt
+  KnownAttackTargets.txt
+  PropertyValueAliases.txt
+  ScriptExtensions.txt
+  Scripts.txt
+  StandardizedVariants.txt
+  UnicodeData.txt
+  confusables.txt
+  emoji-variation-sequences.txt
+)
+
+# The Rust crate compile-time include_str!s the full canonical set.
+rust_files=(
   CaseFolding.txt
   CompositionExclusions.txt
   DerivedCoreProperties.txt
@@ -217,6 +235,22 @@ check_python() {
   done
 }
 
+sync_rust() {
+  local file
+  for file in "${rust_files[@]}"; do
+    copy_file "data/$file" "$rust_dir/data/$file"
+  done
+  write_manifest "$rust_dir/data" "${rust_files[@]}"
+}
+
+check_rust() {
+  local file
+  for file in "${rust_files[@]}"; do
+    check_same_file "data/$file" "$rust_dir/data/$file"
+  done
+  check_manifest "$rust_dir/data"
+}
+
 sync_haskell() {
   sync_haskell_version
   copy_file data/UnicodeData.txt "$haskell_dir/data/UnicodeData.txt"
@@ -356,6 +390,7 @@ check_zig() {
 if [[ "$mode" == "apply" ]]; then
   write_manifest data "${root_manifest_files[@]}"
   sync_python
+  sync_rust
   sync_haskell
   sync_go
   sync_jvm
@@ -368,6 +403,7 @@ if [[ "$mode" == "apply" ]]; then
 else
   check_manifest data
   check_python
+  check_rust
   check_haskell
   check_go
   check_jvm

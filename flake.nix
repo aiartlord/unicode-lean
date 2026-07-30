@@ -49,8 +49,8 @@
         unicodeSecurity = pkgs.rustPlatform.buildRustPackage {
           pname = "unicode-security";
           version = runtimeVersion;
-          src = ./.;
-          cargoLock.lockFile = ./Cargo.lock;
+          src = ./ports/rust;
+          cargoLock.lockFile = ./ports/rust/Cargo.lock;
           cargoBuildFlags = [ "--bin" "unicode-security" ];
           doCheck = false;
         };
@@ -59,7 +59,7 @@
           pname = "unicode-python";
           version = runtimeVersion;
           pyproject = true;
-          src = ./.;
+          src = ./ports/python;
           build-system = [ pkgs.python3Packages.hatchling ];
           doCheck = false;
           pythonImportsCheck = [ "unicode_python" ];
