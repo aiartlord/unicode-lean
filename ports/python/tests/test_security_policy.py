@@ -21,25 +21,25 @@ from unicode_python.security.policy import (
 
 
 FIXTURE_PATH = (
-    Path(__file__).resolve().parents[1]
+    Path(__file__).resolve().parents[3]
     / "fixtures"
     / "security"
     / "policy_contract.json"
 )
 VERDICT_FIXTURE_PATH = (
-    Path(__file__).resolve().parents[1]
+    Path(__file__).resolve().parents[3]
     / "fixtures"
     / "security"
     / "verdict_contract.json"
 )
 DECODE_FIXTURE_PATH = (
-    Path(__file__).resolve().parents[1]
+    Path(__file__).resolve().parents[3]
     / "fixtures"
     / "security"
     / "decode_contract.json"
 )
 MULTIENCODING_DECODE_FIXTURE_PATH = (
-    Path(__file__).resolve().parents[1]
+    Path(__file__).resolve().parents[3]
     / "fixtures"
     / "security"
     / "decode_multiencoding_contract.json"
