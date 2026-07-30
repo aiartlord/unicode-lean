@@ -83,13 +83,13 @@ require_tracked() {
 }
 
 required_paths=(
-  Cargo.toml
-  Cargo.lock
-  pyproject.toml
-  CMakeLists.txt
-  include/unicode_cpp/utf8.hpp
-  include/unicode_cpp/security/policy.hpp
-  include/unicode_cpp/security/covert/variation_selector_pairs.hpp
+  ports/rust/Cargo.toml
+  ports/rust/Cargo.lock
+  ports/python/pyproject.toml
+  ports/cpp/CMakeLists.txt
+  ports/cpp/include/unicode_cpp/utf8.hpp
+  ports/cpp/include/unicode_cpp/security/policy.hpp
+  ports/cpp/include/unicode_cpp/security/covert/variation_selector_pairs.hpp
   ports/haskell/unicode-haskell.cabal
   ports/haskell/data/CaseFolding.txt
   ports/haskell/data/confusables.txt

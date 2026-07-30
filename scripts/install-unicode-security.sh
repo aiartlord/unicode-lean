@@ -24,7 +24,7 @@ if [[ "${RUST_WARNINGS:-0}" != "1" ]]; then
     export RUSTFLAGS="-Awarnings"
   fi
 fi
-cargo install --path . --bin unicode-security --root "$prefix_abs" --force --locked
+cargo install --path ports/rust --bin unicode-security --root "$prefix_abs" --force --locked
 
 bin="$prefix_abs/bin/unicode-security"
 if [[ ! -x "$bin" ]]; then
@@ -45,7 +45,7 @@ if [[ "$smoke" != "$expected" ]]; then
   exit 1
 fi
 
-version="$(awk -F '"' '/^version = / { print $2; exit }' Cargo.toml)"
+version="$(awk -F '"' '/^version = / { print $2; exit }' ports/rust/Cargo.toml)"
 cat > "$prefix_abs/UNICODE_SECURITY_INSTALL.txt" <<INSTALL
 unicode-security CLI install
 

@@ -28,9 +28,12 @@ Current and planned language surfaces:
 
 Current non-Lean paths in this checkout:
 
-- Rust crate: `Cargo.toml`, `src/*.rs`, `src/security/**`, `tests/*.rs`
-- C++ interface: `CMakeLists.txt`, `include/unicode_cpp/**`, `test/*.cpp`
-- Python package: `pyproject.toml`, `src/unicode_python/**`, `tests/*.py`
+- Rust crate: `ports/rust/Cargo.toml`, `ports/rust/src/**`,
+  `ports/rust/tests/*.rs`, vendored `ports/rust/data/**`
+- C++ interface: `ports/cpp/CMakeLists.txt`, `ports/cpp/include/unicode_cpp/**`,
+  `ports/cpp/test/*.cpp`, vendored `ports/cpp/data/**`
+- Python package: `ports/python/pyproject.toml`,
+  `ports/python/src/unicode_python/**`, `ports/python/tests/*.py`
 - Haskell package: `ports/haskell/unicode-haskell.cabal`,
   `ports/haskell/src/**`, `ports/haskell/test/**`
 - Go package: `ports/go/go.mod`, `ports/go/security/**`
@@ -305,7 +308,7 @@ The current shared fixture set is:
   precomposed/decomposed NFD skeleton equivalence, decomposed combining-sequence
   swaps, and Latin/Greek/Cyrillic script mixing. Python vendors the same
   UCD/security text inputs under
-  `src/unicode_python/data`, and `scripts/check-runtime-data.sh` compares those
+  `ports/python/src/unicode_python/data`, and `scripts/check-runtime-data.sh` compares those
   files byte-for-byte with the canonical `data/` symlink targets. JVM, Go,
   TypeScript, .NET, Swift, and Zig pin their vendored bytes with port-local
   `SHA256SUMS` manifests. Zig checks that its generated lookup tables are
@@ -392,8 +395,8 @@ explicitly supplied cross-port differential corpus via `--corpus PATH`.
 ## Rust Warning Policy
 
 The Rust crate keeps public API documentation linting visible with
-`missing_docs = "warn"` in `Cargo.toml` and `#![warn(missing_docs)]` in
-`src/lib.rs`. The runtime smoke gate and CLI installer suppress warning output
+`missing_docs = "warn"` in `ports/rust/Cargo.toml` and `#![warn(missing_docs)]` in
+`ports/rust/src/lib.rs`. The runtime smoke gate and CLI installer suppress warning output
 by default so consumer-facing checks stay readable; set `RUST_WARNINGS=1` when
 burning down public API docs or auditing the warning set.
 

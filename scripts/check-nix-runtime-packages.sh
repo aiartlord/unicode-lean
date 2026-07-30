@@ -100,13 +100,13 @@ require_dir() {
   [[ -d "$path" ]] || fail "missing directory: $path"
 }
 
-require_tracked Cargo.toml
-require_tracked Cargo.lock
-require_tracked pyproject.toml
-require_tracked CMakeLists.txt
-require_tracked include/unicode_cpp/utf8.hpp
-require_tracked include/unicode_cpp/security/policy.hpp
-require_tracked include/unicode_cpp/security/covert/variation_selector_pairs.hpp
+require_tracked ports/rust/Cargo.toml
+require_tracked ports/rust/Cargo.lock
+require_tracked ports/python/pyproject.toml
+require_tracked ports/cpp/CMakeLists.txt
+require_tracked ports/cpp/include/unicode_cpp/utf8.hpp
+require_tracked ports/cpp/include/unicode_cpp/security/policy.hpp
+require_tracked ports/cpp/include/unicode_cpp/security/covert/variation_selector_pairs.hpp
 require_tracked ports/haskell/unicode-haskell.cabal
 require_tracked ports/haskell/testdata/fixtures/security/policy_contract.json
 require_tracked ports/haskell/testdata/fixtures/security/detectors/homoglyph_confusable.json

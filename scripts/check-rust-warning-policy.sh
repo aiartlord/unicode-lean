@@ -10,11 +10,11 @@ fail() {
   exit 1
 }
 
-grep -Fqx 'missing_docs = "warn"' Cargo.toml \
-  || fail "Cargo.toml must keep Rust missing_docs at warn while public docs are burned down"
+grep -Fqx 'missing_docs = "warn"' ports/rust/Cargo.toml \
+  || fail "ports/rust/Cargo.toml must keep Rust missing_docs at warn while public docs are burned down"
 
-grep -Fqx '#![warn(missing_docs)]' src/lib.rs \
-  || fail "src/lib.rs must keep Rust missing_docs visible for public API burn-down"
+grep -Fqx '#![warn(missing_docs)]' ports/rust/src/lib.rs \
+  || fail "ports/rust/src/lib.rs must keep Rust missing_docs visible for public API burn-down"
 
 grep -Fq 'RUST_WARNINGS' scripts/test-runtime-ports.sh \
   || fail "runtime port gate must expose RUST_WARNINGS=1 for Rust warning inspection"
