@@ -69,6 +69,21 @@ rust_files=(
   emoji-variation-sequences.txt
 )
 
+# The C++ header package loads exactly these ten via ucd::Tables::load_from_dir
+# and Database::load_from_dir (the CMake install foreach mirrors this set).
+cpp_files=(
+  CaseFolding.txt
+  CompositionExclusions.txt
+  DerivedCoreProperties.txt
+  IdentifierStatus.txt
+  KnownAttackTargets.txt
+  PropertyValueAliases.txt
+  ScriptExtensions.txt
+  Scripts.txt
+  UnicodeData.txt
+  confusables.txt
+)
+
 haskell_files=(
   CaseFolding.txt
   UnicodeData.txt
@@ -251,6 +266,22 @@ check_rust() {
   check_manifest "$rust_dir/data"
 }
 
+sync_cpp() {
+  local file
+  for file in "${cpp_files[@]}"; do
+    copy_file "data/$file" "$cpp_dir/data/$file"
+  done
+  write_manifest "$cpp_dir/data" "${cpp_files[@]}"
+}
+
+check_cpp() {
+  local file
+  for file in "${cpp_files[@]}"; do
+    check_same_file "data/$file" "$cpp_dir/data/$file"
+  done
+  check_manifest "$cpp_dir/data"
+}
+
 sync_haskell() {
   sync_haskell_version
   copy_file data/UnicodeData.txt "$haskell_dir/data/UnicodeData.txt"
@@ -391,6 +422,7 @@ if [[ "$mode" == "apply" ]]; then
   write_manifest data "${root_manifest_files[@]}"
   sync_python
   sync_rust
+  sync_cpp
   sync_haskell
   sync_go
   sync_jvm
@@ -404,6 +436,7 @@ else
   check_manifest data
   check_python
   check_rust
+  check_cpp
   check_haskell
   check_go
   check_jvm

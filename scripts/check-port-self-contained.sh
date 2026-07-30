@@ -29,39 +29,44 @@ reject_runtime_pattern() {
 }
 
 echo "== rust crate =="
-require_file Cargo.toml
-require_file Cargo.lock
-require_file data/confusables.txt
-require_file data/CaseFolding.txt
-require_file data/KnownAttackTargets.txt
-require_file data/StandardizedVariants.txt
-require_file data/emoji-variation-sequences.txt
+require_file ports/rust/Cargo.toml
+require_file ports/rust/Cargo.lock
+require_file ports/rust/data/confusables.txt
+require_file ports/rust/data/CaseFolding.txt
+require_file ports/rust/data/KnownAttackTargets.txt
+require_file ports/rust/data/StandardizedVariants.txt
+require_file ports/rust/data/emoji-variation-sequences.txt
+require_file ports/rust/data/SHA256SUMS
 
 echo "== python package =="
-require_file pyproject.toml
-require_file src/unicode_python/data/confusables.txt
-require_file src/unicode_python/data/CaseFolding.txt
-require_file src/unicode_python/data/KnownAttackTargets.txt
-require_file src/unicode_python/data/StandardizedVariants.txt
-require_file src/unicode_python/data/emoji-variation-sequences.txt
+require_file ports/python/pyproject.toml
+require_file ports/python/src/unicode_python/data/confusables.txt
+require_file ports/python/src/unicode_python/data/CaseFolding.txt
+require_file ports/python/src/unicode_python/data/KnownAttackTargets.txt
+require_file ports/python/src/unicode_python/data/StandardizedVariants.txt
+require_file ports/python/src/unicode_python/data/emoji-variation-sequences.txt
 reject_runtime_pattern \
   "python package" \
   '(fixtures/security|/fixtures|ports/|Unicode/|"\.\./|'\''\.\./)' \
-  src/unicode_python/*.py \
-  src/unicode_python/security
+  ports/python/src/unicode_python/*.py \
+  ports/python/src/unicode_python/security
 
 echo "== cpp header package =="
-require_file CMakeLists.txt
-require_file include/unicode_cpp/security/covert/variation_selector_pairs.hpp
-grep -Fq 'file(REAL_PATH' CMakeLists.txt \
+require_file ports/cpp/CMakeLists.txt
+require_file ports/cpp/data/confusables.txt
+require_file ports/cpp/data/CaseFolding.txt
+require_file ports/cpp/data/KnownAttackTargets.txt
+require_file ports/cpp/data/SHA256SUMS
+require_file ports/cpp/include/unicode_cpp/security/covert/variation_selector_pairs.hpp
+grep -Fq 'file(REAL_PATH' ports/cpp/CMakeLists.txt \
   || fail "C++ package does not resolve runtime data symlinks before install"
 # shellcheck disable=SC2016
-grep -Fq 'DESTINATION ${CMAKE_INSTALL_DATADIR}/unicode_cpp/data' CMakeLists.txt \
+grep -Fq 'DESTINATION ${CMAKE_INSTALL_DATADIR}/unicode_cpp/data' ports/cpp/CMakeLists.txt \
   || fail "C++ package does not install its runtime data files"
 reject_runtime_pattern \
   "cpp installed headers" \
   '("\.\./|data/StandardizedVariants|data/emoji-variation-sequences|fixtures/security)' \
-  include/unicode_cpp
+  ports/cpp/include/unicode_cpp
 
 echo "== haskell package =="
 require_file ports/haskell/unicode-haskell.cabal
