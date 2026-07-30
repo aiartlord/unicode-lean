@@ -248,9 +248,34 @@ def compareLexAux : Nat → List Nat → List Nat → Nat → Ordering
 def compareLex (xs ys : List Nat) : Ordering :=
   compareLexAux (max xs.length ys.length + 1) xs ys 0
 
+/-- `compareLexAux` reports equality when both operands are the same key. -/
+private theorem compareLexAux_refl (fuel : Nat) (xs : List Nat) (i : Nat) :
+    compareLexAux fuel xs xs i = .eq := by
+  induction fuel generalizing i with
+  | zero => rfl
+  | succ f ih =>
+    unfold compareLexAux
+    cases hx : xs[i]? with
+    | none => rfl
+    | some x =>
+      simp only [hx, Nat.lt_irrefl, if_false, gt_iff_lt]
+      exact ih (i + 1)
+
+/-- **Reflexivity (all inputs).** The lexicographic key comparator ranks any key equal
+    to itself. -/
+theorem compareLex_refl (xs : List Nat) : compareLex xs xs = .eq := by
+  unfold compareLex
+  exact compareLexAux_refl (max xs.length xs.length + 1) xs 0
+
 /-- UCA comparison under the chosen variable-handling policy. -/
 def ucaCompare (handling : VariableHandling) (a b : List Nat) : Ordering :=
   compareLex (sortKey handling a) (sortKey handling b)
+
+/-- **Reflexivity of the collation order (all inputs).** Every string compares equal to
+    itself under UCA — the reflexivity axiom of the total preorder the algorithm defines. -/
+theorem ucaCompare_refl (handling : VariableHandling) (a : List Nat) :
+    ucaCompare handling a a = .eq :=
+  compareLex_refl (sortKey handling a)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 SPOT CHECKS
