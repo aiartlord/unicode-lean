@@ -11,7 +11,7 @@
       "expected_sub_threat": "CrossScriptMix",
       "restriction_low_emitted": false,
       "required_findings": [
-        "unicode.security.I.mixed-script-admissibility.CrossScriptMix"
+        "unicode.security.I.mixed-script-admissibility.ScriptMixOther"
       ]
     },
     {
@@ -21,7 +21,7 @@
       "expected_sub_threat": "CrossScriptMix",
       "restriction_low_emitted": false,
       "required_findings": [
-        "unicode.security.I.mixed-script-admissibility.CrossScriptMix"
+        "unicode.security.I.mixed-script-admissibility.ScriptMixOther"
       ]
     }
   ]

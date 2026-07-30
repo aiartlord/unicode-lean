@@ -464,3 +464,17 @@ def has_mixed_script_admissibility(input_cps: list[int]) -> bool:
     """Return True when the input violates the mixed-script policy."""
     union = ucd.string_script_union(input_cps)
     return len(union) >= 2 and not ucd.is_highly_restrictive(input_cps)
+
+
+def mixed_script_subthreat(input_cps: list[int]) -> str:
+    """Specific script-collision sub-threat, matching the Lean source of truth.
+
+    Latin/Cyrillic and Latin/Greek are named explicitly (Cyrillic before Greek);
+    every other multi-script mix is ``ScriptMixOther``.
+    """
+    union = ucd.string_script_union(input_cps)
+    if "Latn" in union and "Cyrl" in union:
+        return "LatinCyrillic"
+    if "Latn" in union and "Grek" in union:
+        return "LatinGreek"
+    return "ScriptMixOther"

@@ -826,10 +826,13 @@ scan_with_identity_database(Profile profile, Mode mode,
     }
     if (homoglyph_confusable::has_mixed_script_admissibility(input,
                                                              *identity_db)) {
-      detail::push_finding(findings, Family::MixedScriptAdmissibility,
-                           ClassificationKind::Hazard,
-                           std::optional<std::string>{"CrossScriptMix"},
-                           detail::full_span_positions(input.size()));
+      detail::push_finding(
+          findings, Family::MixedScriptAdmissibility,
+          ClassificationKind::Hazard,
+          std::optional<std::string>{
+              homoglyph_confusable::mixed_script_subthreat(input,
+                                                           *identity_db)},
+          detail::full_span_positions(input.size()));
     }
   }
 

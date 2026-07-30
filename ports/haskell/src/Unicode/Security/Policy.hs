@@ -598,16 +598,30 @@ homoglyphFinding input
 mixedScriptAdmissibilityFinding :: [Int] -> [Finding]
 mixedScriptAdmissibilityFinding input
   | hasCrossScriptMix input =
-      [ Finding
-          { findingCode = reasonCode FamilyMixedScriptAdmissibility "CrossScriptMix"
-          , findingFamily = FamilyMixedScriptAdmissibility
-          , findingSeverity = 2
-          , findingPositions = [0 .. length input - 1]
-          , findingSubThreat = "CrossScriptMix"
-          , findingDetail = familyTag FamilyMixedScriptAdmissibility
-          }
-      ]
+      let sub = mixedScriptSubThreat input
+       in [ Finding
+              { findingCode = reasonCode FamilyMixedScriptAdmissibility sub
+              , findingFamily = FamilyMixedScriptAdmissibility
+              , findingSeverity = 2
+              , findingPositions = [0 .. length input - 1]
+              , findingSubThreat = sub
+              , findingDetail = familyTag FamilyMixedScriptAdmissibility
+              }
+          ]
   | otherwise = []
+
+-- The specific script-collision sub-threat, matching the Lean source of truth:
+-- Latin/Cyrillic and Latin/Greek are named explicitly (Cyrillic before Greek);
+-- every other multi-script mix is ScriptMixOther.
+mixedScriptSubThreat :: [Int] -> String
+mixedScriptSubThreat input
+  | has "Latn" && has "Cyrl" = "LatinCyrillic"
+  | has "Latn" && has "Grek" = "LatinGreek"
+  | otherwise = "ScriptMixOther"
+  where
+    scripts = foldl addUnique [] (mapMaybe scriptClass input)
+    addUnique acc s = if s `elem` acc then acc else s : acc
+    has s = s `elem` scripts
 
 isMathAlphanumeric :: Int -> Bool
 isMathAlphanumeric cp = cp >= 0x1D400 && cp <= 0x1D7FF

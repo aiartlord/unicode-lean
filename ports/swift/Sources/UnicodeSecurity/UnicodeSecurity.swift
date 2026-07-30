@@ -341,7 +341,7 @@ private func homoglyphConfusableFinding(_ input: [Int]) -> Finding? {
 
 private func mixedScriptAdmissibilityFinding(_ input: [Int]) -> Finding? {
     guard hasCrossScriptMix(input) else { return nil }
-    return makeFinding(family: Family.mixedScriptAdmissibility, subThreat: "CrossScriptMix", positions: fullSpanPositions(input))
+    return makeFinding(family: Family.mixedScriptAdmissibility, subThreat: mixedScriptSubThreat(input), positions: fullSpanPositions(input))
 }
 
 private func homoglyphTargetMatch(_ input: [Int]) -> String? {
@@ -678,6 +678,20 @@ private func composeHangulPair(_ first: Int, _ second: Int) -> Bool {
 
 private func hasCrossScriptMix(_ input: [Int]) -> Bool {
     Set(input.compactMap(scriptClass)).count >= 2
+}
+
+// The specific script-collision sub-threat, matching the Lean source of truth:
+// Latin/Cyrillic and Latin/Greek are named explicitly (Cyrillic before Greek);
+// every other multi-script mix is ScriptMixOther.
+private func mixedScriptSubThreat(_ input: [Int]) -> String {
+    let seen = Set(input.compactMap(scriptClass))
+    if seen.contains("Latn") && seen.contains("Cyrl") {
+        return "LatinCyrillic"
+    }
+    if seen.contains("Latn") && seen.contains("Grek") {
+        return "LatinGreek"
+    }
+    return "ScriptMixOther"
 }
 
 private func scriptClass(_ cp: Int) -> String? {

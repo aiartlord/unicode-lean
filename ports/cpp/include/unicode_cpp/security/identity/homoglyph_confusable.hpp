@@ -53,6 +53,7 @@
 #ifndef UNICODE_CPP_SECURITY_HOMOGLYPH_CONFUSABLE_HPP
 #define UNICODE_CPP_SECURITY_HOMOGLYPH_CONFUSABLE_HPP
 
+#include <algorithm>
 #include <cctype>
 #include <charconv>
 #include <cstdint>
@@ -541,6 +542,25 @@ inline bool has_mixed_script_admissibility(std::span<const std::uint32_t> input,
   const auto script_union = ucd::string_script_union(db.tables, input);
   return script_union.size() >= 2 &&
          !ucd::is_highly_restrictive(db.tables, input);
+}
+
+// The specific script-collision sub-threat, matching the Lean source of truth:
+// Latin/Cyrillic and Latin/Greek are named explicitly (Cyrillic before Greek);
+// every other multi-script mix is ScriptMixOther.
+inline std::string mixed_script_subthreat(std::span<const std::uint32_t> input,
+                                          const Database &db) {
+  const auto script_union = ucd::string_script_union(db.tables, input);
+  const auto has = [&](const std::string &s) {
+    return std::find(script_union.begin(), script_union.end(), s) !=
+           script_union.end();
+  };
+  if (has("Latn") && has("Cyrl")) {
+    return "LatinCyrillic";
+  }
+  if (has("Latn") && has("Grek")) {
+    return "LatinGreek";
+  }
+  return "ScriptMixOther";
 }
 
 } // namespace unicode_cpp::security::homoglyph_confusable
