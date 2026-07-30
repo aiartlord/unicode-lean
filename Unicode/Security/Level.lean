@@ -215,7 +215,7 @@ def looksLikeByteStream (input : List Nat) : Bool :=
 /-- Admission-relevant hazard bit for one detector family.
 
     This is deliberately factored per family instead of computing
-    `runAll input` and filtering its 26 results.  The public reporting
+    `runAll input` and filtering its 27 results.  The public reporting
     surface remains `runAll`; the admission predicate only needs the
     hazards in the declared rejection set, so evaluating unrelated
     detectors is avoidable proof-engineering cost. -/
@@ -235,6 +235,8 @@ def familyHazard (family : Family) (input : List Nat) : Bool :=
         false
   | .bidiControlBalance =>
       !(Unicode.Security.Covert.BidiControlBalance.detect input).classify.isClear
+  | .noncharacterControl =>
+      !(Unicode.Security.Covert.NoncharacterControl.detect input).classify.isClear
   | .homoglyphConfusable =>
       !(Unicode.Security.Identity.HomoglyphConfusable.detect input).classify.isClear
   | .mixedScriptAdmissibility =>

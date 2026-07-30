@@ -2,7 +2,7 @@
   Unicode.Security.RunAll
 
   Aggregator over every Security Conformance Layer detector.  Folds
-  the 26 per-family `detect` functions into a uniform
+  the 27 per-family `detect` functions into a uniform
   `List FamilyResult` shape so downstream consumers can call once
   and receive a structured per-family inventory of verdicts on a
   single input.
@@ -73,7 +73,7 @@ def looksLikeByteStream (input : List Nat) : Bool :=
 
 /-- Run every Security Conformance Layer detector on `input` and
     return a `FamilyResult` per family.  The output array has exactly
-    26 entries, one per family, in declaration order grouped by
+    27 entries, one per family, in declaration order grouped by
     layer.
 
     SurrogateReassembly is only invoked when `input` looks
@@ -99,6 +99,7 @@ def runAll (input : List Nat) : List FamilyResult :=
          firstInvalidOffset := none }
         : Unicode.Security.Covert.SurrogateReassembly.Verdict)
   let c5 := Unicode.Security.Covert.BidiControlBalance.detect        input
+  let c6 := Unicode.Security.Covert.NoncharacterControl.detect       input
   let i1 := Unicode.Security.Identity.HomoglyphConfusable.detect     input
   let i2 := Unicode.Security.Identity.MixedScriptAdmissibility.detect input
   let i3 := Unicode.Security.Identity.EmojiZwjIntegrity.detect       input
@@ -125,6 +126,7 @@ def runAll (input : List Nat) : List FamilyResult :=
      mkResult .zeroWidthPayload         c3.classify.isClear c3.classify.tag c3.classify.positions,
      mkResult .surrogateReassembly      c4.classify.isClear c4.classify.tag c4.classify.positions,
      mkResult .bidiControlBalance       c5.classify.isClear c5.classify.tag c5.classify.positions,
+     mkResult .noncharacterControl      c6.classify.isClear c6.classify.tag c6.classify.positions,
      mkResult .homoglyphConfusable      i1.classify.isClear i1.classify.tag i1.classify.positions,
      mkResult .mixedScriptAdmissibility i2.classify.isClear i2.classify.tag i2.classify.positions,
      mkResult .emojiZwjIntegrity        i3.classify.isClear i3.classify.tag i3.classify.positions,
@@ -170,8 +172,8 @@ def anyHazard (input : List Nat) : Bool :=
 -- §1 Shape invariants
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- `runAll` always returns exactly 26 entries, one per family. -/
-theorem runAll_size (input : List Nat) : (runAll input).length = 26 := by
+/-- `runAll` always returns exactly 27 entries, one per family. -/
+theorem runAll_size (input : List Nat) : (runAll input).length = 27 := by
   unfold runAll
   rfl
 
@@ -179,7 +181,7 @@ theorem runAll_size (input : List Nat) : (runAll input).length = 26 := by
 -- §2 Spot checks
 -- ═══════════════════════════════════════════════════════════════════════════════
 
--- The concrete-input checks below reduce the full 26-family detector sweep
+-- The concrete-input checks below reduce the full 27-family detector sweep
 -- over a codepoint list; the structural List recursion runs deeper than the
 -- default elaborator limit, so raise it for this section.
 set_option maxRecDepth 100000

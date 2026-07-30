@@ -23,6 +23,7 @@ import Unicode.Security.Covert.TagBlockPayload
 import Unicode.Security.Covert.BidiControlBalance
 import Unicode.Security.Covert.ZeroWidthPayload
 import Unicode.Security.Covert.SurrogateReassembly
+import Unicode.Security.Covert.NoncharacterControl
 import Unicode.Security.Identity.HomoglyphConfusable
 import Unicode.Security.Identity.HomoglyphConfusableSkeletonGate
 import Unicode.Security.Identity.MixedScriptAdmissibility

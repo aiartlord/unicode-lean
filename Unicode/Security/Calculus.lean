@@ -14,7 +14,7 @@
 
   ## What this file defines
 
-    * `Family`            — enumeration of the 26 detector modules
+    * `Family`            — enumeration of the 27 detector modules
     * `Severity`          — ordered severity vocabulary
     * `AdversaryTier`     — five-tier adversary capability hierarchy
     * `ClassificationKind` — verdict shape sans family-specific payload
@@ -35,7 +35,7 @@ namespace Unicode.Security.Calculus
 -- §1 Family enumeration
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Enumeration of the 26 detector modules.  Each constructor
+/-- Enumeration of the 27 detector modules.  Each constructor
     names one detector; the order is the order in which
     `Unicode.Security.RunAll.runAll` walks them, and it is also
     the priority order callers can rely on when composing
@@ -46,6 +46,7 @@ inductive Family where
   | zeroWidthPayload
   | surrogateReassembly
   | bidiControlBalance
+  | noncharacterControl
   | homoglyphConfusable
   | mixedScriptAdmissibility
   | emojiZwjIntegrity
