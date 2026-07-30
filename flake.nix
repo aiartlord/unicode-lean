@@ -68,7 +68,7 @@
         unicodeCpp = pkgs.stdenv.mkDerivation {
           pname = "unicode-cpp";
           version = runtimeVersion;
-          src = ./.;
+          src = ./ports/cpp;
           nativeBuildInputs = [ pkgs.cmake ];
           cmakeFlags = [ "-DUNICODE_CPP_BUILD_TESTS=OFF" ];
         };
