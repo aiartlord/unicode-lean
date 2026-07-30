@@ -12,14 +12,14 @@
       "name": "latin-greek-script-mix",
       "input": [97, 98, 945, 946],
       "required_findings": [
-        "unicode.security.I.mixed-script-admissibility.CrossScriptMix"
+        "unicode.security.I.mixed-script-admissibility.LatinGreek"
       ]
     },
     {
       "name": "latin-cyrillic-target-match-also-mixed",
       "input": [78, 101, 116, 104, 101, 114, 1077, 117, 109],
       "required_findings": [
-        "unicode.security.I.mixed-script-admissibility.CrossScriptMix"
+        "unicode.security.I.mixed-script-admissibility.LatinCyrillic"
       ]
     }
   ]

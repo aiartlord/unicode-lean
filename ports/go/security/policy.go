@@ -393,15 +393,30 @@ func homoglyphConfusableFinding(input []uint32) (Finding, bool) {
 }
 
 func mixedScriptAdmissibilityFinding(input []uint32) (Finding, bool) {
-	if !hasCrossScriptMix(input) {
+	seen := map[string]bool{}
+	for _, cp := range input {
+		if script, ok := scriptClass(cp); ok {
+			seen[script] = true
+		}
+	}
+	if len(seen) < 2 {
 		return Finding{}, false
 	}
+	// Name the specific script collision to match the Lean source of truth.
+	// Priority follows Lean: Latin/Cyrillic before Latin/Greek.
+	subThreat := "ScriptMixOther"
+	switch {
+	case seen["Latn"] && seen["Cyrl"]:
+		subThreat = "LatinCyrillic"
+	case seen["Latn"] && seen["Grek"]:
+		subThreat = "LatinGreek"
+	}
 	return Finding{
-		Code:      reasonCode(FamilyMixedScript, "CrossScriptMix"),
+		Code:      reasonCode(FamilyMixedScript, subThreat),
 		Family:    FamilyMixedScript,
 		Severity:  2,
 		Positions: fullSpanPositions(input),
-		SubThreat: "CrossScriptMix",
+		SubThreat: subThreat,
 		Detail:    string(FamilyMixedScript),
 	}, true
 }

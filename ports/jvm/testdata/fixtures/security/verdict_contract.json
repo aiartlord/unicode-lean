@@ -243,11 +243,11 @@
             "detail": "homoglyph-confusable"
           },
           {
-            "code": "unicode.security.I.mixed-script-admissibility.CrossScriptMix",
+            "code": "unicode.security.I.mixed-script-admissibility.LatinCyrillic",
             "family": "mixed-script-admissibility",
             "severity": 2,
             "positions": [0, 1, 2, 3, 4, 5, 6, 7, 8],
-            "sub_threat": "CrossScriptMix",
+            "sub_threat": "LatinCyrillic",
             "detail": "mixed-script-admissibility"
           }
         ],
@@ -289,11 +289,11 @@
         "input": [97, 98, 945, 946],
         "findings": [
           {
-            "code": "unicode.security.I.mixed-script-admissibility.CrossScriptMix",
+            "code": "unicode.security.I.mixed-script-admissibility.LatinGreek",
             "family": "mixed-script-admissibility",
             "severity": 2,
             "positions": [0, 1, 2, 3],
-            "sub_threat": "CrossScriptMix",
+            "sub_threat": "LatinGreek",
             "detail": "mixed-script-admissibility"
           }
         ],

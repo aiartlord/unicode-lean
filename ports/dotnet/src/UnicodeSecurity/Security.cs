@@ -289,7 +289,7 @@ public static class Security
 
     private static Finding? MixedScriptAdmissibilityFinding(List<int> input) =>
         HasCrossScriptMix(input)
-            ? MakeFinding(Family.MixedScriptAdmissibility, "CrossScriptMix", FullSpanPositions(input))
+            ? MakeFinding(Family.MixedScriptAdmissibility, MixedScriptSubThreat(input), FullSpanPositions(input))
             : null;
 
     private static string? HomoglyphTargetMatch(List<int> input)
@@ -555,6 +555,22 @@ public static class Security
             if (script is not null) seen.Add(script);
         }
         return seen.Count >= 2;
+    }
+
+    // The specific script-collision sub-threat, matching the Lean source of truth:
+    // Latin/Cyrillic and Latin/Greek are named explicitly (Cyrillic before Greek);
+    // every other multi-script mix is ScriptMixOther.
+    private static string MixedScriptSubThreat(List<int> input)
+    {
+        var seen = new HashSet<string>();
+        foreach (var cp in input)
+        {
+            var script = ScriptClass(cp);
+            if (script is not null) seen.Add(script);
+        }
+        if (seen.Contains("Latn") && seen.Contains("Cyrl")) return "LatinCyrillic";
+        if (seen.Contains("Latn") && seen.Contains("Grek")) return "LatinGreek";
+        return "ScriptMixOther";
     }
 
     private static string? ScriptClass(int cp)

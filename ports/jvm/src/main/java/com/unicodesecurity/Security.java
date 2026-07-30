@@ -313,7 +313,7 @@ public final class Security {
 
   private static Finding mixedScriptAdmissibilityFinding(List<Integer> input) {
     if (!hasCrossScriptMix(input)) return null;
-    return makeFinding(Family.MIXED_SCRIPT_ADMISSIBILITY, "CrossScriptMix", fullSpanPositions(input));
+    return makeFinding(Family.MIXED_SCRIPT_ADMISSIBILITY, mixedScriptSubThreat(input), fullSpanPositions(input));
   }
 
   private static String homoglyphTargetMatch(List<Integer> input) {
@@ -578,6 +578,20 @@ public final class Security {
       if (script != null) seen.add(script);
     }
     return seen.size() >= 2;
+  }
+
+  // The specific script-collision sub-threat, matching the Lean source of truth:
+  // Latin/Cyrillic and Latin/Greek are named explicitly (Cyrillic before Greek);
+  // every other multi-script mix is ScriptMixOther.
+  private static String mixedScriptSubThreat(List<Integer> input) {
+    Set<String> seen = new HashSet<>();
+    for (int cp : input) {
+      String script = scriptClass(cp);
+      if (script != null) seen.add(script);
+    }
+    if (seen.contains("Latn") && seen.contains("Cyrl")) return "LatinCyrillic";
+    if (seen.contains("Latn") && seen.contains("Grek")) return "LatinGreek";
+    return "ScriptMixOther";
   }
 
   private static String scriptClass(int cp) {

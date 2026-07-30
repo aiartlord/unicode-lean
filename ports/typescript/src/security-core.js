@@ -433,7 +433,7 @@ function mixedScriptAdmissibilityFinding(input) {
   if (!hasCrossScriptMix(input)) {
     return null;
   }
-  return makeFinding(Family.MixedScriptAdmissibility, "CrossScriptMix", fullSpanPositions(input));
+  return makeFinding(Family.MixedScriptAdmissibility, mixedScriptSubThreat(input), fullSpanPositions(input));
 }
 
 function homoglyphTargetMatch(input) {
@@ -729,6 +729,26 @@ function hasCrossScriptMix(input) {
     }
   }
   return seen.size >= 2;
+}
+
+// The specific script-collision sub-threat, matching the Lean source of truth:
+// Latin/Cyrillic and Latin/Greek are named explicitly (Cyrillic before Greek);
+// every other multi-script mix is ScriptMixOther.
+function mixedScriptSubThreat(input) {
+  const seen = new Set();
+  for (const cp of input) {
+    const script = scriptClass(cp);
+    if (script !== null) {
+      seen.add(script);
+    }
+  }
+  if (seen.has("Latn") && seen.has("Cyrl")) {
+    return "LatinCyrillic";
+  }
+  if (seen.has("Latn") && seen.has("Grek")) {
+    return "LatinGreek";
+  }
+  return "ScriptMixOther";
 }
 
 function scriptClass(cp) {

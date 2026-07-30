@@ -739,7 +739,7 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
             &mut findings,
             Family::MixedScriptAdmissibility,
             ClassificationKind::Hazard,
-            Some("CrossScriptMix"),
+            Some(homoglyph_confusable::mixed_script_subthreat(input)),
             (0..input.len()).collect(),
         );
     }

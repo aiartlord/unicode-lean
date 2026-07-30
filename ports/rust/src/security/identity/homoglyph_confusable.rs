@@ -54,6 +54,21 @@ pub fn has_mixed_script_admissibility(input: &[u32]) -> bool {
     union.len() >= 2 && !ucd::is_highly_restrictive(input)
 }
 
+/// The specific script-collision sub-threat, matching the Lean source of truth:
+/// Latin/Cyrillic and Latin/Greek are named explicitly (Cyrillic before Greek),
+/// every other multi-script mix is `ScriptMixOther`.
+pub fn mixed_script_subthreat(input: &[u32]) -> &'static str {
+    let union = ucd::string_script_union(input);
+    let has = |s: &str| union.iter().any(|x| x == s);
+    if has("Latn") && has("Cyrl") {
+        "LatinCyrillic"
+    } else if has("Latn") && has("Grek") {
+        "LatinGreek"
+    } else {
+        "ScriptMixOther"
+    }
+}
+
 fn parse_codepoints(field: &str) -> Vec<u32> {
     field.split_whitespace().filter_map(parse_hex).collect()
 }

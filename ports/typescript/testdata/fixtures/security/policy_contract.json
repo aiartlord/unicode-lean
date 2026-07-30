@@ -88,7 +88,7 @@
       "action": "reject",
       "required_findings": [
         "unicode.security.I.homoglyph-confusable.TargetMatch",
-        "unicode.security.I.mixed-script-admissibility.CrossScriptMix"
+        "unicode.security.I.mixed-script-admissibility.LatinCyrillic"
       ]
     },
     {
@@ -108,7 +108,7 @@
       "input": [97, 98, 945, 946],
       "action": "reject",
       "required_findings": [
-        "unicode.security.I.mixed-script-admissibility.CrossScriptMix"
+        "unicode.security.I.mixed-script-admissibility.LatinGreek"
       ]
     },
     {

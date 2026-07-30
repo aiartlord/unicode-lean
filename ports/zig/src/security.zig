@@ -644,16 +644,40 @@ fn homoglyphConfusableFinding(input: []const u32) ?Finding {
     };
 }
 
+// The specific script-collision sub-threat, matching the Lean source of truth:
+// Latin/Cyrillic and Latin/Greek are named explicitly (Cyrillic before Greek);
+// every other multi-script mix is ScriptMixOther.
+fn mixedScriptSubthreat(input: []const u32) []const u8 {
+    var has_latin = false;
+    var has_greek = false;
+    var has_cyrillic = false;
+    for (input) |cp| {
+        if (isLatinScript(cp)) has_latin = true;
+        if (isGreekScript(cp)) has_greek = true;
+        if (isCyrillicScript(cp)) has_cyrillic = true;
+    }
+    if (has_latin and has_cyrillic) return "LatinCyrillic";
+    if (has_latin and has_greek) return "LatinGreek";
+    return "ScriptMixOther";
+}
+
 fn mixedScriptAdmissibilityFinding(input: []const u32) ?Finding {
     if (!hasCrossScriptMix(input)) return null;
     const positions = fullSpanPositions(input);
+    const sub = mixedScriptSubthreat(input);
+    const code = if (std.mem.eql(u8, sub, "LatinCyrillic"))
+        "unicode.security.I.mixed-script-admissibility.LatinCyrillic"
+    else if (std.mem.eql(u8, sub, "LatinGreek"))
+        "unicode.security.I.mixed-script-admissibility.LatinGreek"
+    else
+        "unicode.security.I.mixed-script-admissibility.ScriptMixOther";
     return .{
-        .code = "unicode.security.I.mixed-script-admissibility.CrossScriptMix",
+        .code = code,
         .family = .mixed_script_admissibility,
         .severity = 2,
         .positions = positions.items,
         .position_count = positions.len,
-        .sub_threat = "CrossScriptMix",
+        .sub_threat = sub,
         .detail = "mixed-script-admissibility",
     };
 }

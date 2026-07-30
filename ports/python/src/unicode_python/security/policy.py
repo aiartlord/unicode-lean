@@ -543,7 +543,7 @@ def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
             findings,
             Family.MIXED_SCRIPT_ADMISSIBILITY,
             ClassificationKind.HAZARD,
-            "CrossScriptMix",
+            homoglyph_confusable.mixed_script_subthreat(input_cps),
             list(range(len(input_cps))),
         )
 
