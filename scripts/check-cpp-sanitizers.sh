@@ -59,7 +59,7 @@ done
 
 if [[ -n "$corpus_path" && ! -f "$corpus_path" ]]; then
   echo "missing differential corpus: $corpus_path" >&2
-  echo "generate one with: cargo test --test diff_runner --release diff_gen_corpus -- --nocapture" >&2
+  echo "generate one with: cargo test --manifest-path ports/rust/Cargo.toml --test diff_runner --release diff_gen_corpus -- --nocapture" >&2
   exit 1
 fi
 
@@ -67,7 +67,7 @@ sanitize_cxx_flags=("-fsanitize=address,undefined" "-fno-sanitize-recover=all" "
 sanitize_link_flags=("-fsanitize=address,undefined")
 
 echo "== configure C++ sanitizer build =="
-cmake -Wno-deprecated -S . -B "$build_dir" -G Ninja \
+cmake -Wno-deprecated -S ports/cpp -B "$build_dir" -G Ninja \
   -DCMAKE_CXX_FLAGS="${sanitize_cxx_flags[*]}" \
   -DCMAKE_EXE_LINKER_FLAGS="${sanitize_link_flags[*]}" \
   -DUNICODE_CPP_BUILD_TESTS=ON

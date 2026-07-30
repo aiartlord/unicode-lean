@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "family": "zero-width-payload",
+  "cases": [
+    {
+      "name": "ascii-clear",
+      "input": [97, 98],
+      "required_findings": []
+    },
+    {
+      "name": "bare-zero-width",
+      "input": [97, 8203, 98],
+      "required_findings": [
+        "unicode.security.C.zero-width-payload.BareZeroWidth"
+      ]
+    }
+  ]
+}
