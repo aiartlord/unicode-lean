@@ -103,6 +103,20 @@ check_zig_fixture_copy() {
   }
 }
 
+check_cpp_fixture_copy() {
+  local rel="$1"
+  local source="fixtures/security/$rel"
+  local copy="ports/cpp/testdata/fixtures/security/$rel"
+  [[ -f "$copy" ]] || {
+    echo "FATAL: missing C++ fixture copy: $copy" >&2
+    exit 1
+  }
+  cmp -s "$source" "$copy" || {
+    echo "FATAL: C++ fixture copy drifted from fixtures/security/$rel" >&2
+    exit 1
+  }
+}
+
 for rel in \
   policy_contract.json \
   verdict_contract.json \
@@ -117,6 +131,7 @@ for rel in \
   detectors/zero_width_payload.json
 do
   check_haskell_fixture_copy "$rel"
+  check_cpp_fixture_copy "$rel"
   check_go_fixture_copy "$rel"
   check_jvm_fixture_copy "$rel"
   check_typescript_fixture_copy "$rel"
@@ -125,7 +140,7 @@ do
   check_zig_fixture_copy "$rel"
 done
 
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 - <<'PY'
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=ports/python/src python3 - <<'PY'
 import json
 from pathlib import Path
 

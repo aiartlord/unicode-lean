@@ -22,6 +22,6 @@ scripts/check-policy-contract.sh
 scripts/check-runtime-data.sh
 scripts/check-port-self-contained.sh
 
-cargo build --locked --bin unicode-security
+cargo build --locked --manifest-path ports/rust/Cargo.toml --bin unicode-security
 
 echo "clean: runtime build completed without Lean"

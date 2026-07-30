@@ -556,12 +556,12 @@ TEST_CASE("Policy — bidi source enforce rejects") {
 }
 
 TEST_CASE("Policy — shared UTF-8 decode contract fixture") {
-  check_decode_fixture("fixtures/security/decode_contract.json",
+  check_decode_fixture("testdata/fixtures/security/decode_contract.json",
                        "unicode-security-decode-v0");
 }
 
 TEST_CASE("Policy — shared UTF-16/UTF-32 decode contract fixture") {
-  check_decode_fixture("fixtures/security/decode_multiencoding_contract.json",
+  check_decode_fixture("testdata/fixtures/security/decode_multiencoding_contract.json",
                        "unicode-security-multiencoding-decode-v0");
 }
 
