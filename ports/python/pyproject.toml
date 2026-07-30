@@ -29,10 +29,7 @@ packages = ["src/unicode_python"]
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "/fixtures/security",
-    "/LICENSE",
     "/pyproject.toml",
-    "/README.md",
     "/src/unicode_python",
 ]
 
