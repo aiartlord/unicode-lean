@@ -37,6 +37,7 @@ import Unicode.Conformance.EmojiTest
 import Unicode.Conformance.Security.AdmissibilityFormDriftTest
 import Unicode.Conformance.Security.AiWatermarkDetectabilityTest
 import Unicode.Conformance.Security.BidiControlBalanceTest
+import Unicode.Conformance.Security.NoncharacterControlTest
 import Unicode.Conformance.Security.Bip39CanonicalTest
 import Unicode.Conformance.Security.CaseExpansionMismatchTest
 import Unicode.Conformance.Security.ConfusableBidiCompoundTest

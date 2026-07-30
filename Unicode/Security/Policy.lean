@@ -121,6 +121,7 @@ def layerCode : Family → String
   | .variationSelectorPayload
   | .zeroWidthPayload
   | .surrogateReassembly
+  | .noncharacterControl
   | .bidiControlBalance       => "C"
   | .homoglyphConfusable
   | .mixedScriptAdmissibility
@@ -150,6 +151,7 @@ def slug : Family → String
   | .variationSelectorPayload => "variation-selector-payload"
   | .zeroWidthPayload         => "zero-width-payload"
   | .surrogateReassembly      => "surrogate-reassembly"
+  | .noncharacterControl      => "noncharacter-control"
   | .bidiControlBalance       => "bidi-control-balance"
   | .homoglyphConfusable      => "homoglyph-confusable"
   | .mixedScriptAdmissibility => "mixed-script-admissibility"
