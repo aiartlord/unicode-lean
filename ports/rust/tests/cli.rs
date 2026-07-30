@@ -24,7 +24,7 @@ fn temp_file(name: &str, bytes: &[u8]) -> std::path::PathBuf {
 }
 
 fn fixture(name: &str) -> String {
-    fs::read_to_string(format!("fixtures/security/cli/{name}")).expect("read cli fixture")
+    fs::read_to_string(format!("testdata/fixtures/security/cli/{name}")).expect("read cli fixture")
 }
 
 fn scan_file_json(
