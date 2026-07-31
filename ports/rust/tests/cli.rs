@@ -161,10 +161,16 @@ fn free_loopback_addr() -> String {
 
 fn server_test_lock() -> MutexGuard<'static, ()> {
     static SERVER_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    SERVER_TEST_LOCK
-        .get_or_init(|| Mutex::new(()))
-        .lock()
-        .expect("server test lock")
+    // This mutex serializes the server integration tests (each spawns a
+    // real listener). Recover the guard from a poisoned mutex rather than
+    // propagating the panic: if one server test panics while holding the
+    // lock (e.g. a startup timeout under heavy parallel load), the guarded
+    // state is just `()`, so the remaining tests must still run instead of
+    // cascade-failing on a poisoned lock.
+    match SERVER_TEST_LOCK.get_or_init(|| Mutex::new(())).lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
 }
 
 fn spawn_server(extra_args: &[&str]) -> ServeProcess {
