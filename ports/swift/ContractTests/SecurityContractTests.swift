@@ -4,6 +4,7 @@ import UnicodeSecurity
 @main
 struct SecurityContractRunner {
     static func main() throws {
+        try testConfusableBidiCompound()
         try testSurrogateReassembly()
         try testRtlInjection()
         try testPolicyContract()
@@ -12,6 +13,22 @@ struct SecurityContractRunner {
         try testMultiEncodingDecodeContract()
         try testDetectorFixtures()
         print("clean: Swift contract tests pass")
+    }
+
+    // Pins the confusable-bidi-compound detector against the detect_* spot-check
+    // theorems in Unicode/Security/Boundary/ConfusableBidiCompound.lean.
+    private static func testConfusableBidiCompound() throws {
+        let cases: [(String, [Int], String?)] = [
+            ("clear-empty", [], nil),
+            ("clear-ascii-hello", [0x48, 0x65, 0x6C, 0x6C, 0x6F], nil),
+            ("clear-override-no-confusable", [0x202E, 0x0041, 0x0042, 0x0043], nil),
+            ("clear-confusable-no-bidi", [0x0430], nil),
+            ("override-cyrillic-a", [0x202E, 0x0430], "ConfusableInOverride"),
+            ("isolate-greek-o", [0x2066, 0x03BF], "ConfusableInIsolate"),
+        ]
+        for (name, input, want) in cases {
+            try expectEqual(confusableBidiCompoundDetect(input).subThreat, want, "confusable-bidi-compound \(name)")
+        }
     }
 
     // Pins the surrogate-reassembly detector against the detect_* spot-check

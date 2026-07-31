@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "unicode_cpp/noncharacters.hpp"
+#include "unicode_cpp/security/boundary/confusable_bidi_compound.hpp"
 #include "unicode_cpp/security/calculus.hpp"
 #include "unicode_cpp/security/covert/bidi_control_balance.hpp"
 #include "unicode_cpp/security/covert/surrogate_reassembly.hpp"
@@ -850,6 +851,14 @@ scan_with_identity_database(Profile profile, Mode mode,
       detail::push_finding(findings, Family::RtlInjection,
                            ClassificationKind::Hazard, rtl_result.sub,
                            rtl_result.positions);
+    }
+
+    const auto compound_result =
+        boundary::confusable_bidi_compound::detect(input, *identity_db);
+    if (compound_result.sub) {
+      detail::push_finding(findings, Family::ConfusableBidiCompound,
+                           ClassificationKind::Hazard, compound_result.sub,
+                           compound_result.positions);
     }
   }
 

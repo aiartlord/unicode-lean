@@ -121,6 +121,7 @@ pub const Family = enum {
     homoglyph_confusable,
     mixed_script_admissibility,
     rtl_injection,
+    confusable_bidi_compound,
 
     pub fn tag(self: Family) []const u8 {
         return switch (self) {
@@ -136,6 +137,7 @@ pub const Family = enum {
             .homoglyph_confusable => "homoglyph-confusable",
             .mixed_script_admissibility => "mixed-script-admissibility",
             .rtl_injection => "rtl-injection",
+            .confusable_bidi_compound => "confusable-bidi-compound",
         };
     }
 };
@@ -155,7 +157,7 @@ pub const Finding = struct {
     detail: []const u8,
 };
 
-pub const MaxFindings = 9;
+pub const MaxFindings = 10;
 
 pub const FindingList = struct {
     items: [MaxFindings]Finding = undefined,
@@ -424,6 +426,9 @@ fn detect(input: []const u32) FindingList {
     if (rtlInjectionFinding(input)) |finding| {
         findings.append(finding);
     }
+    if (confusableBidiCompoundFinding(input)) |finding| {
+        findings.append(finding);
+    }
 
     return findings;
 }
@@ -446,7 +451,7 @@ fn decide(profile: Profile, mode: Mode, findings: FindingList) Action {
 fn blocks(level: PolicyLevel, family: Family) bool {
     return switch (level) {
         .restrictive, .moderate => switch (family) {
-            .malformed_utf8, .malformed_utf16, .malformed_utf32, .tag_block_payload, .variation_selector_payload, .zero_width_payload, .surrogate_reassembly, .bidi_control_balance, .noncharacter_control, .homoglyph_confusable, .mixed_script_admissibility, .rtl_injection => true,
+            .malformed_utf8, .malformed_utf16, .malformed_utf32, .tag_block_payload, .variation_selector_payload, .zero_width_payload, .surrogate_reassembly, .bidi_control_balance, .noncharacter_control, .homoglyph_confusable, .mixed_script_admissibility, .rtl_injection, .confusable_bidi_compound => true,
         },
         .minimal => family == .malformed_utf8 or family == .malformed_utf16 or family == .malformed_utf32 or family == .surrogate_reassembly or family == .bidi_control_balance or family == .noncharacter_control,
     };
@@ -832,6 +837,88 @@ fn rtlInjectionFinding(input: []const u32) ?Finding {
     const run = longestRtlRun(input);
     if (run.len >= 4) return rtlInjectionAt("MixedOverflow", run.start);
     return rtlInjectionAt("StrongRTLInLTR", rtl_index);
+}
+
+// -- confusable-bidi-compound ----------------------------------------------
+//
+// Direct port of ports/rust/src/security/boundary/confusable_bidi_compound.rs,
+// itself a port of Unicode/Security/Boundary/ConfusableBidiCompound.lean. A
+// confusable (homoglyph) codepoint co-located with a bidi format control is
+// materially more dangerous than either alone: the homoglyph disguises an
+// identifier while the bidi control reorders how a reviewer reads it. The
+// finding fires only when both are present. The confusable-source predicate
+// reads the same confusables table the homoglyph detector uses; the bidi
+// predicates split the format-controls into the override class
+// (LRE/RLE/LRO/RLO/PDF, 0x202A..0x202E) and the isolate class
+// (LRI/RLI/FSI/PDI, 0x2066..0x2069).
+
+// True iff cp is a confusable source per UTS #39 §4 — i.e. it has a row in
+// confusables.txt mapping it to a different skeleton sequence. Reuses the
+// generated, source-sorted confusables table via binary search.
+fn isConfusableSource(cp: u32) bool {
+    var lo: usize = 0;
+    var hi: usize = confusables_data.entries.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        const entry = confusables_data.entries[mid];
+        if (cp < entry.src) {
+            hi = mid;
+        } else if (cp > entry.src) {
+            lo = mid + 1;
+        } else {
+            return true;
+        }
+    }
+    return false;
+}
+
+// True iff cp is an isolate-class bidi control (LRI, RLI, FSI, PDI).
+fn isBidiIsolateControl(cp: u32) bool {
+    return cp >= 0x2066 and cp <= 0x2069;
+}
+
+fn firstPositionWhere(input: []const u32, comptime pred: fn (u32) bool) ?usize {
+    for (input, 0..) |cp, index| {
+        if (pred(cp)) return index;
+    }
+    return null;
+}
+
+fn confusableBidiCompoundReasonCode(sub_threat: []const u8) []const u8 {
+    if (std.mem.eql(u8, sub_threat, "ConfusableInOverride")) {
+        return "unicode.security.X.confusable-bidi-compound.ConfusableInOverride";
+    }
+    return "unicode.security.X.confusable-bidi-compound.ConfusableInIsolate";
+}
+
+fn confusableBidiCompoundAt(sub_threat: []const u8, confusable_pos: usize, bidi_pos: usize) Finding {
+    var positions: [16]usize = undefined;
+    positions[0] = confusable_pos;
+    positions[1] = bidi_pos;
+    return .{
+        .code = confusableBidiCompoundReasonCode(sub_threat),
+        .family = .confusable_bidi_compound,
+        .severity = 2,
+        .positions = positions,
+        .position_count = 2,
+        .sub_threat = sub_threat,
+        .detail = "confusable-bidi-compound",
+    };
+}
+
+// Detect a confusable codepoint sharing the input with a bidi control. Priority
+// mirrors the spec: with a confusable present, an override-class control fires
+// ConfusableInOverride; otherwise an isolate-class control fires
+// ConfusableInIsolate; otherwise clear.
+fn confusableBidiCompoundFinding(input: []const u32) ?Finding {
+    const confusable_pos = firstPositionWhere(input, isConfusableSource) orelse return null;
+    if (firstPositionWhere(input, isBidiEmbeddingControl)) |bidi_pos| {
+        return confusableBidiCompoundAt("ConfusableInOverride", confusable_pos, bidi_pos);
+    }
+    if (firstPositionWhere(input, isBidiIsolateControl)) |bidi_pos| {
+        return confusableBidiCompoundAt("ConfusableInIsolate", confusable_pos, bidi_pos);
+    }
+    return null;
 }
 
 fn fullSpanPositions(input: []const u32) Positions {

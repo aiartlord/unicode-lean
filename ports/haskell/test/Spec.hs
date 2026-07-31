@@ -24,6 +24,7 @@ import qualified ValidatedUtf8Spec
 import qualified OpaqueBlobSpec
 import qualified IdentifierSpec
 import qualified PolicySpec
+import qualified ConfusableBidiCompoundSpec
 
 main :: IO ()
 main = defaultMain $
@@ -40,4 +41,5 @@ main = defaultMain $
     , OpaqueBlobSpec.tests
     , IdentifierSpec.tests
     , PolicySpec.tests
+    , ConfusableBidiCompoundSpec.tests
     ]

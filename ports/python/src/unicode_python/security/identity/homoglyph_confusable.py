@@ -125,6 +125,15 @@ def known_attack_targets() -> list[str]:
     return _KNOWN_ATTACK_TARGETS
 
 
+def is_confusable_source(cp: int) -> bool:
+    """True iff ``cp`` is a confusable source — it has a row in
+    confusables.txt mapping it to a different skeleton.  Mirrors
+    ``Unicode.Confusables.lookupConfusable?(cp).isSome``.  Plain ASCII
+    letters return ``False``; homoglyph forms (Cyrillic а, Greek ο,
+    math-italic letters, …) return ``True``."""
+    return cp in confusables_map()
+
+
 # ─────────────────────────────────────────────────────────────────────
 # Skeleton machinery
 # ─────────────────────────────────────────────────────────────────────

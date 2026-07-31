@@ -1,6 +1,7 @@
 using System.Text.Json;
 using UnicodeSecurity;
 
+TestConfusableBidiCompoundVectors();
 TestSurrogateReassemblyVectors();
 TestRtlInjectionVectors();
 TestPolicyContract();
@@ -9,6 +10,31 @@ TestUtf8DecodeContract();
 TestMultiEncodingDecodeContract();
 TestDetectorFixtures();
 Console.WriteLine("clean: .NET contract tests pass");
+
+// Direct spot-check of the confusable-bidi-compound detector, mirroring the
+// detect_* spot-check theorems in
+// Unicode/Security/Boundary/ConfusableBidiCompound.lean and the Rust port's
+// tests. Runs first so its result is visible before every other test. Sub ==
+// null means a clear input; otherwise it is the compound sub-threat tag.
+static void TestConfusableBidiCompoundVectors()
+{
+    var vectors = new (int[] Input, string? Sub)[]
+    {
+        (System.Array.Empty<int>(), null),
+        (new[] { 0x48, 0x65, 0x6C, 0x6C, 0x6F }, null),
+        (new[] { 0x202E, 0x0041, 0x0042, 0x0043 }, null),
+        (new[] { 0x0430 }, null),
+        (new[] { 0x202E, 0x0430 }, "ConfusableInOverride"),
+        (new[] { 0x2066, 0x03BF }, "ConfusableInIsolate"),
+    };
+    foreach (var (input, expected) in vectors)
+    {
+        var (actual, _) = Security.ConfusableBidiCompoundDetect(input);
+        var name = "confusable-bidi-compound [" + string.Join(",", input.Select(cp => "0x" + cp.ToString("X"))) + "]";
+        AssertEqual(expected ?? "<clear>", actual ?? "<clear>", name);
+    }
+    Console.WriteLine("clean: .NET confusable-bidi-compound 6-vector spot-check passes");
+}
 
 // Direct spot-check of the surrogate-reassembly detector, mirroring the
 // detect_* spot-check theorems in Unicode/Security/Covert/SurrogateReassembly.lean

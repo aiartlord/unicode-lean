@@ -45,18 +45,19 @@ const (
 type Family string
 
 const (
-	FamilyMalformedUTF8       Family = "malformed-utf8"
-	FamilyMalformedUTF16      Family = "malformed-utf16"
-	FamilyMalformedUTF32      Family = "malformed-utf32"
-	FamilyTagBlockPayload     Family = "tag-block-payload"
-	FamilyVariationSelector   Family = "variation-selector-payload"
-	FamilyZeroWidthPayload    Family = "zero-width-payload"
-	FamilySurrogateReassembly Family = "surrogate-reassembly"
-	FamilyBidiControlBalance  Family = "bidi-control-balance"
-	FamilyNoncharacterControl Family = "noncharacter-control"
-	FamilyHomoglyphConfusable Family = "homoglyph-confusable"
-	FamilyMixedScript         Family = "mixed-script-admissibility"
-	FamilyRtlInjection        Family = "rtl-injection"
+	FamilyMalformedUTF8          Family = "malformed-utf8"
+	FamilyMalformedUTF16         Family = "malformed-utf16"
+	FamilyMalformedUTF32         Family = "malformed-utf32"
+	FamilyTagBlockPayload        Family = "tag-block-payload"
+	FamilyVariationSelector      Family = "variation-selector-payload"
+	FamilyZeroWidthPayload       Family = "zero-width-payload"
+	FamilySurrogateReassembly    Family = "surrogate-reassembly"
+	FamilyBidiControlBalance     Family = "bidi-control-balance"
+	FamilyNoncharacterControl    Family = "noncharacter-control"
+	FamilyHomoglyphConfusable    Family = "homoglyph-confusable"
+	FamilyMixedScript            Family = "mixed-script-admissibility"
+	FamilyRtlInjection           Family = "rtl-injection"
+	FamilyConfusableBidiCompound Family = "confusable-bidi-compound"
 )
 
 type ProfilePolicy struct {
@@ -166,6 +167,9 @@ func detect(input []uint32) []Finding {
 	if finding, ok := rtlInjectionFinding(input); ok {
 		findings = append(findings, finding)
 	}
+	if finding, ok := confusableBidiCompoundFinding(input); ok {
+		findings = append(findings, finding)
+	}
 
 	return findings
 }
@@ -206,7 +210,8 @@ func blocks(level PolicyLevel, family Family) bool {
 			family == FamilyNoncharacterControl ||
 			family == FamilySurrogateReassembly ||
 			family == FamilyHomoglyphConfusable ||
-			family == FamilyMixedScript
+			family == FamilyMixedScript ||
+			family == FamilyConfusableBidiCompound
 	case PolicyModerate:
 		return family == FamilyMalformedUTF8 ||
 			family == FamilyMalformedUTF16 ||
@@ -218,7 +223,8 @@ func blocks(level PolicyLevel, family Family) bool {
 			family == FamilyNoncharacterControl ||
 			family == FamilySurrogateReassembly ||
 			family == FamilyHomoglyphConfusable ||
-			family == FamilyMixedScript
+			family == FamilyMixedScript ||
+			family == FamilyConfusableBidiCompound
 	case PolicyMinimal:
 		return family == FamilyMalformedUTF8 ||
 			family == FamilyMalformedUTF16 ||
@@ -237,7 +243,8 @@ func blocks(level PolicyLevel, family Family) bool {
 			family == FamilyNoncharacterControl ||
 			family == FamilySurrogateReassembly ||
 			family == FamilyHomoglyphConfusable ||
-			family == FamilyMixedScript
+			family == FamilyMixedScript ||
+			family == FamilyConfusableBidiCompound
 	}
 }
 
@@ -481,6 +488,8 @@ func layer(family Family) string {
 		return "I"
 	case FamilyRtlInjection:
 		return "D"
+	case FamilyConfusableBidiCompound:
+		return "X"
 	default:
 		return "C"
 	}

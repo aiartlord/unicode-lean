@@ -142,6 +142,26 @@ test("surrogate-reassembly detector matches Lean spot-checks", () => {
   }
 });
 
+test("confusable-bidi-compound detector matches Lean spot-checks", () => {
+  const cases = [
+    ["clear-empty", [], null],
+    ["clear-ascii", [0x48, 0x65, 0x6c, 0x6c, 0x6f], null],
+    ["clear-override-no-confusable", [0x202e, 0x0041, 0x0042, 0x0043], null],
+    ["clear-confusable-no-bidi", [0x0430], null],
+    ["confusable-in-override", [0x202e, 0x0430], "ConfusableInOverride"],
+    ["confusable-in-isolate", [0x2066, 0x03bf], "ConfusableInIsolate"],
+  ];
+  for (const [name, input, want] of cases) {
+    const verdict = scan("gateway-header", "observe", input);
+    const finding = verdict.findings.find((f) => f.family === "confusable-bidi-compound");
+    const got = finding ? finding.sub_threat : null;
+    assert.equal(got, want, name);
+    if (want !== null) {
+      assert.equal(finding.code, `unicode.security.X.confusable-bidi-compound.${want}`, name);
+    }
+  }
+});
+
 function scanEncodedCase(entry) {
   switch (entry.encoding) {
     case "utf-8":

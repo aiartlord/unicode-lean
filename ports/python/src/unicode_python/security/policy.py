@@ -12,6 +12,7 @@ from ..noncharacters import is_noncharacter
 from ..strict import Utf8RejectKind
 from ..utf8 import decode_to_codepoints, first_invalid_utf8_offset
 from .calculus import ClassificationKind, Family, Severity
+from .boundary import confusable_bidi_compound
 from .display import rtl_injection
 from .covert import (
     bidi_control_balance,
@@ -566,6 +567,16 @@ def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
             ClassificationKind.HAZARD,
             rtl.sub,
             list(rtl.positions),
+        )
+
+    confusable_bidi = confusable_bidi_compound.detect(input_cps)
+    if confusable_bidi.sub is not None:
+        _append_finding(
+            findings,
+            Family.CONFUSABLE_BIDI_COMPOUND,
+            ClassificationKind.HAZARD,
+            confusable_bidi.sub,
+            list(confusable_bidi.positions),
         )
 
     return Verdict(

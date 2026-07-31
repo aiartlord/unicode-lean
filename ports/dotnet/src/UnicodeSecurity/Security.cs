@@ -53,6 +53,7 @@ public static class Security
         public const string HomoglyphConfusable = "homoglyph-confusable";
         public const string MixedScriptAdmissibility = "mixed-script-admissibility";
         public const string RtlInjection = "rtl-injection";
+        public const string ConfusableBidiCompound = "confusable-bidi-compound";
     }
 
     public sealed record Finding(
@@ -150,6 +151,8 @@ public static class Security
         if (mixedScript is not null) findings.Add(mixedScript);
         var rtl = RtlInjectionFinding(input);
         if (rtl is not null) findings.Add(rtl);
+        var compound = ConfusableBidiCompoundFinding(input);
+        if (compound is not null) findings.Add(compound);
         return findings;
     }
 
@@ -191,7 +194,7 @@ public static class Security
             or Family.TagBlockPayload or Family.VariationSelectorPayload or Family.ZeroWidthPayload
             or Family.SurrogateReassembly
             or Family.BidiControlBalance or Family.NoncharacterControl or Family.HomoglyphConfusable
-            or Family.MixedScriptAdmissibility;
+            or Family.MixedScriptAdmissibility or Family.ConfusableBidiCompound;
     }
 
     private static Verdict MalformedDecodeVerdict(string profile, string mode, string family, string subThreat, int offset)
@@ -211,6 +214,7 @@ public static class Security
         {
             Family.HomoglyphConfusable or Family.MixedScriptAdmissibility => "I",
             Family.RtlInjection => "D",
+            Family.ConfusableBidiCompound => "X",
             _ => "C",
         };
 
@@ -347,6 +351,55 @@ public static class Security
     {
         var (sub, positions) = RtlInjectionDetect(input);
         return sub is null ? null : MakeFinding(Family.RtlInjection, sub, positions);
+    }
+
+    // Confusable-in-bidi-context compound detection (CVE-2021-42574 class) — a
+    // direct port of Unicode/Security/Boundary/ConfusableBidiCompound.lean. A
+    // confusable codepoint co-located with a bidi format-control is materially
+    // more dangerous than either alone: the homoglyph disguises an identifier
+    // while the bidi control reorders how a reviewer reads it, so the detector
+    // fires only when both are present. With a confusable at some position, an
+    // override-class control (LRE / RLE / LRO / RLO / PDF) fires
+    // ConfusableInOverride; otherwise an isolate-class control (LRI / RLI /
+    // FSI / PDI) fires ConfusableInIsolate; otherwise the input is clear. The
+    // positions are [confusablePos, bidiPos]. The confusable-source predicate
+    // reuses the confusables table the homoglyph detector consults. Exposed for
+    // direct spot-check testing, mirroring the sibling detectors.
+    public static (string? Sub, IReadOnlyList<int> Positions) ConfusableBidiCompoundDetect(IReadOnlyList<int> input)
+    {
+        var confusablePos = FirstPosition(input, IsConfusableSource);
+        if (confusablePos < 0) return (null, System.Array.Empty<int>());
+        var overridePos = FirstPosition(input, IsBidiEmbeddingControl);
+        if (overridePos >= 0) return ("ConfusableInOverride", new List<int> { confusablePos, overridePos });
+        var isolatePos = FirstPosition(input, IsBidiIsolateControl);
+        if (isolatePos >= 0) return ("ConfusableInIsolate", new List<int> { confusablePos, isolatePos });
+        return (null, System.Array.Empty<int>());
+    }
+
+    private static Finding? ConfusableBidiCompoundFinding(List<int> input)
+    {
+        var (sub, positions) = ConfusableBidiCompoundDetect(input);
+        return sub is null ? null : MakeFinding(Family.ConfusableBidiCompound, sub, positions);
+    }
+
+    // True iff cp is a source key in confusables.txt — i.e. it maps to a
+    // different skeleton sequence per UTS #39 §4. Shares the confusables table
+    // the homoglyph detector consults. Plain ASCII letters are not sources;
+    // only homoglyph forms (Cyrillic а, Greek ο, ...) are.
+    private static bool IsConfusableSource(int cp) => ConfusablesMap().ContainsKey(cp);
+
+    // True iff cp is an isolate-class bidi control (LRI, RLI, FSI, PDI). The
+    // override-class controls (LRE / RLE / LRO / RLO / PDF, U+202A..U+202E)
+    // reuse IsBidiEmbeddingControl.
+    private static bool IsBidiIsolateControl(int cp) => cp is >= 0x2066 and <= 0x2069;
+
+    private static int FirstPosition(IReadOnlyList<int> input, Func<int, bool> predicate)
+    {
+        for (var index = 0; index < input.Count; index++)
+        {
+            if (predicate(input[index])) return index;
+        }
+        return -1;
     }
 
     // Surrogate-reassembly / malformed-byte-stream detection — a direct port

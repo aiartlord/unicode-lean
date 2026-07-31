@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "unicode_cpp/security/boundary/confusable_bidi_compound.hpp"
 #include "unicode_cpp/security/calculus.hpp"
 #include "unicode_cpp/security/covert/bidi_control_balance.hpp"
 #include "unicode_cpp/security/covert/tag_block_payload.hpp"
@@ -1171,4 +1172,63 @@ TEST_CASE("RtlInjection — four-char Hebrew run fires MixedOverflow") {
       display::rtl_injection::detect(test_database().tables, as_span(in));
   REQUIRE(v.sub.has_value());
   CHECK(*v.sub == "MixedOverflow");
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// ConfusableBidiCompound
+//
+// Ground truth: the detect_* spot-check theorems in
+// Unicode/Security/Boundary/ConfusableBidiCompound.lean, mirrored by the
+// Rust port's tests in confusable_bidi_compound.rs.
+// ─────────────────────────────────────────────────────────────────────
+
+TEST_CASE("ConfusableBidiCompound — empty input is clear") {
+  std::vector<std::uint32_t> in;
+  auto v = boundary::confusable_bidi_compound::detect(as_span(in),
+                                                      test_database());
+  CHECK_FALSE(v.sub.has_value());
+}
+
+TEST_CASE("ConfusableBidiCompound — pure ASCII 'Hello' is clear") {
+  std::vector<std::uint32_t> in = {0x48, 0x65, 0x6C, 0x6C, 0x6F};
+  auto v = boundary::confusable_bidi_compound::detect(as_span(in),
+                                                      test_database());
+  CHECK_FALSE(v.sub.has_value());
+}
+
+TEST_CASE("ConfusableBidiCompound — override bidi without confusable is clear") {
+  // RLO + plain ASCII A B C — bidi present, no confusable source.
+  std::vector<std::uint32_t> in = {0x202E, 0x0041, 0x0042, 0x0043};
+  auto v = boundary::confusable_bidi_compound::detect(as_span(in),
+                                                      test_database());
+  CHECK_FALSE(v.sub.has_value());
+}
+
+TEST_CASE("ConfusableBidiCompound — Cyrillic 'а' alone is clear") {
+  // Confusable source but no bidi control.
+  std::vector<std::uint32_t> in = {0x0430};
+  auto v = boundary::confusable_bidi_compound::detect(as_span(in),
+                                                      test_database());
+  CHECK_FALSE(v.sub.has_value());
+}
+
+TEST_CASE("ConfusableBidiCompound — RLO + Cyrillic 'а' fires ConfusableInOverride") {
+  // RLO (override) + Cyrillic а (confusable) — the canonical
+  // Trojan-Source + IDN-homograph compound.
+  std::vector<std::uint32_t> in = {0x202E, 0x0430};
+  auto v = boundary::confusable_bidi_compound::detect(as_span(in),
+                                                      test_database());
+  REQUIRE(v.sub.has_value());
+  CHECK(*v.sub == "ConfusableInOverride");
+  CHECK(v.positions == std::vector<std::size_t>{1, 0});
+}
+
+TEST_CASE("ConfusableBidiCompound — LRI + Greek 'ο' fires ConfusableInIsolate") {
+  // LRI (isolate) + Greek ο (confusable) — the isolate-class soft compound.
+  std::vector<std::uint32_t> in = {0x2066, 0x03BF};
+  auto v = boundary::confusable_bidi_compound::detect(as_span(in),
+                                                      test_database());
+  REQUIRE(v.sub.has_value());
+  CHECK(*v.sub == "ConfusableInIsolate");
+  CHECK(v.positions == std::vector<std::size_t>{1, 0});
 }

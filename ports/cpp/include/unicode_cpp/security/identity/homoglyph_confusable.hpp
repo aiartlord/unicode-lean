@@ -281,6 +281,17 @@ inline Database Database::load_from_dir(const std::filesystem::path &dir) {
   return parse(conf, targ, ucd::Tables::load_from_dir(dir));
 }
 
+// True iff cp is a confusable source per UTS #39 §4 — it has a row in
+// confusables.txt mapping it to a (different) skeleton sequence.  Membership
+// test against the same parsed confusables map the skeleton pipeline consumes;
+// no separate table.  Mirrors Unicode.Confusables.lookupConfusable?(cp).isSome
+// and the Rust homoglyph_confusable::is_confusable_source.  Plain ASCII letters
+// return false; homoglyph forms (Cyrillic а, Greek ο, mathematical-italic
+// letters, …) return true.
+inline bool is_confusable_source(const Database &db, std::uint32_t cp) {
+  return db.confusables.find(cp) != db.confusables.end();
+}
+
 // Inner substitution step of the UTS #39 skeleton — replaces each
 // codepoint by its confusables target sequence (codepoints absent
 // from the table are kept).  Not the full skeleton; the case-folded

@@ -19,6 +19,7 @@ module Unicode.Security.Policy
   , modeTag
   , profileTag
   , familyTag
+  , isConfusableSource
   , policyOfProfile
   , scan
   , scanUtf8
@@ -138,6 +139,7 @@ data Family
   | FamilyHomoglyphConfusable
   | FamilyMixedScriptAdmissibility
   | FamilyRtlInjection
+  | FamilyConfusableBidiCompound
   deriving stock (Eq, Show, Ord)
 
 familyTag :: Family -> String
@@ -153,6 +155,7 @@ familyTag FamilyNoncharacterControl = "noncharacter-control"
 familyTag FamilyHomoglyphConfusable = "homoglyph-confusable"
 familyTag FamilyMixedScriptAdmissibility = "mixed-script-admissibility"
 familyTag FamilyRtlInjection = "rtl-injection"
+familyTag FamilyConfusableBidiCompound = "confusable-bidi-compound"
 
 data ProfilePolicy = ProfilePolicy
   { policyLevel      :: PolicyLevel
@@ -361,6 +364,7 @@ detect input =
     ++ homoglyphFinding input
     ++ mixedScriptAdmissibilityFinding input
     ++ rtlInjectionFinding input
+    ++ confusableBidiCompoundFinding input
 
 tagBlockFinding :: [Int] -> [Finding]
 tagBlockFinding input =
@@ -511,6 +515,7 @@ blocks PolicyRestrictive FamilyNoncharacterControl = True
 blocks PolicyRestrictive FamilyHomoglyphConfusable = True
 blocks PolicyRestrictive FamilyMixedScriptAdmissibility = True
 blocks PolicyRestrictive FamilyRtlInjection = True
+blocks PolicyRestrictive FamilyConfusableBidiCompound = True
 blocks PolicyModerate FamilyTagBlockPayload       = True
 blocks PolicyModerate FamilyMalformedUtf8         = True
 blocks PolicyModerate FamilyMalformedUtf16        = True
@@ -523,6 +528,7 @@ blocks PolicyModerate FamilyNoncharacterControl = True
 blocks PolicyModerate FamilyHomoglyphConfusable = True
 blocks PolicyModerate FamilyMixedScriptAdmissibility = True
 blocks PolicyModerate FamilyRtlInjection = True
+blocks PolicyModerate FamilyConfusableBidiCompound = True
 blocks PolicyMinimal FamilyBidiControlBalance     = True
 blocks PolicyMinimal FamilySurrogateReassembly    = True
 blocks PolicyMinimal FamilyMalformedUtf8          = True
@@ -535,6 +541,7 @@ blocks PolicyMinimal FamilyZeroWidthPayload       = False
 blocks PolicyMinimal FamilyHomoglyphConfusable    = False
 blocks PolicyMinimal FamilyMixedScriptAdmissibility = False
 blocks PolicyMinimal FamilyRtlInjection           = False
+blocks PolicyMinimal FamilyConfusableBidiCompound = False
 
 positionsWhere :: (Int -> Bool) -> [Int] -> [Int]
 positionsWhere predicate input =
@@ -1055,6 +1062,66 @@ firstStrongChar input =
       | isStrongLtr cp = Just False
       | otherwise = Nothing
 
+-- ─────────────────────────────────────────────────────────────────────
+-- Confusable-in-bidi-context compound (boundary layer, reason-code
+-- letter "X").
+--
+-- Direct port of @Unicode/Security/Boundary/ConfusableBidiCompound.lean@.
+-- A confusable (homoglyph) codepoint co-located with a bidi format-control
+-- is materially more dangerous than either alone: the homoglyph disguises
+-- an identifier while the bidi control reorders how a reviewer reads it.
+-- This detector fires only when both are present, reusing the same
+-- 'confusablesMap' the homoglyph detector consults.
+-- ─────────────────────────────────────────────────────────────────────
+
+-- | True iff @cp@ is a confusable source per UTS #39 §4 — it has a row in
+-- confusables.txt mapping it to a different skeleton sequence. Plain ASCII
+-- letters return 'False'; homoglyph forms (Cyrillic а, Greek ο, 'm'→"rn",
+-- etc.) return 'True'.
+isConfusableSource :: Int -> Bool
+isConfusableSource cp = Map.member cp confusablesMap
+
+-- | True iff @cp@ is an override-class bidi control (LRE, RLE, LRO, RLO, PDF).
+isOverride :: Int -> Bool
+isOverride cp = cp >= 0x202A && cp <= 0x202E
+
+-- | True iff @cp@ is an isolate-class bidi control (LRI, RLI, FSI, PDI).
+isIsolate :: Int -> Bool
+isIsolate cp = cp >= 0x2066 && cp <= 0x2069
+
+-- | Detect a confusable codepoint sharing the input with a bidi control.
+-- Priority mirrors the spec: with a confusable present, an override-class
+-- control fires @ConfusableInOverride@; otherwise an isolate-class control
+-- fires @ConfusableInIsolate@; otherwise clear. Positions are
+-- @[confusablePos, bidiPos]@.
+confusableBidiCompoundFinding :: [Int] -> [Finding]
+confusableBidiCompoundFinding input =
+  case firstPos isConfusableSource input of
+    Nothing -> []
+    Just confusablePos ->
+      case firstPos isOverride input of
+        Just bidiPos -> [makeFinding "ConfusableInOverride" [confusablePos, bidiPos]]
+        Nothing ->
+          case firstPos isIsolate input of
+            Just bidiPos -> [makeFinding "ConfusableInIsolate" [confusablePos, bidiPos]]
+            Nothing -> []
+  where
+    makeFinding :: String -> [Int] -> Finding
+    makeFinding subThreat positions =
+      Finding
+        { findingCode = reasonCode FamilyConfusableBidiCompound subThreat
+        , findingFamily = FamilyConfusableBidiCompound
+        , findingSeverity = 2
+        , findingPositions = positions
+        , findingSubThreat = subThreat
+        , findingDetail = familyTag FamilyConfusableBidiCompound
+        }
+
+-- | First input position whose codepoint satisfies the predicate.
+firstPos :: (Int -> Bool) -> [Int] -> Maybe Int
+firstPos predicate input =
+  listToMaybe [ index | (index, cp) <- zip [0 ..] input, predicate cp ]
+
 reasonCode :: Family -> String -> String
 reasonCode family subThreat =
   "unicode.security." ++ layer family ++ "." ++ familyTag family ++ "." ++ subThreat
@@ -1072,6 +1139,7 @@ layer FamilyNoncharacterControl = "C"
 layer FamilyHomoglyphConfusable = "I"
 layer FamilyMixedScriptAdmissibility = "I"
 layer FamilyRtlInjection = "D"
+layer FamilyConfusableBidiCompound = "X"
 
 utf8RejectTag :: Utf8RejectKind -> String
 utf8RejectTag InvalidStartByte = "InvalidStartByte"

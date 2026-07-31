@@ -431,3 +431,33 @@ test "surrogate-reassembly ground truth vectors" {
     try std.testing.expectEqual(@as(?[]const u8, null), surrogateSubThreat(&[_]u32{0x1F600}));
     try std.testing.expectEqual(@as(?[]const u8, null), surrogateSubThreat(&[_]u32{ 0x41, 0x100 }));
 }
+
+// Ground-truth vectors for the confusable-bidi-compound detector, mirroring the
+// `detect_*` spot-check theorems in
+// Unicode/Security/Boundary/ConfusableBidiCompound.lean (each proven by
+// `decide`) and the port at
+// ports/rust/src/security/boundary/confusable_bidi_compound.rs. Exercised
+// through the public `scan` API: the reported sub_threat of the single
+// confusable_bidi_compound finding must match, and a clear input (no confusable,
+// or a confusable with no bidi control) must produce none.
+fn confusableBidiSubThreat(input: []const u32) ?[]const u8 {
+    const verdict = security.scan(.gateway_header, .observe, input);
+    for (verdict.findings.items[0..verdict.findings.len]) |finding| {
+        if (finding.family == .confusable_bidi_compound) return finding.sub_threat;
+    }
+    return null;
+}
+
+test "confusable-bidi-compound ground truth vectors" {
+    // Empty and pure ASCII: no confusable source.
+    try std.testing.expectEqual(@as(?[]const u8, null), confusableBidiSubThreat(&[_]u32{}));
+    try std.testing.expectEqual(@as(?[]const u8, null), confusableBidiSubThreat(&[_]u32{ 0x48, 0x65, 0x6C, 0x6C, 0x6F }));
+    // Override bidi + plain ASCII A B C: no confusable source.
+    try std.testing.expectEqual(@as(?[]const u8, null), confusableBidiSubThreat(&[_]u32{ 0x202E, 0x0041, 0x0042, 0x0043 }));
+    // Cyrillic а alone: confusable but no bidi control.
+    try std.testing.expectEqual(@as(?[]const u8, null), confusableBidiSubThreat(&[_]u32{0x0430}));
+    // RLO (override) + Cyrillic а (confusable) → ConfusableInOverride.
+    try std.testing.expectEqualStrings("ConfusableInOverride", confusableBidiSubThreat(&[_]u32{ 0x202E, 0x0430 }).?);
+    // LRI (isolate) + Greek ο (confusable) → ConfusableInIsolate.
+    try std.testing.expectEqualStrings("ConfusableInIsolate", confusableBidiSubThreat(&[_]u32{ 0x2066, 0x03BF }).?);
+}

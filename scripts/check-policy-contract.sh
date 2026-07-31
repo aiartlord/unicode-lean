@@ -123,6 +123,7 @@ for rel in \
   decode_contract.json \
   decode_multiencoding_contract.json \
   detectors/bidi_control_balance.json \
+  detectors/confusable_bidi_compound.json \
   detectors/homoglyph_confusable.json \
   detectors/mixed_script_admissibility.json \
   detectors/noncharacter_control.json \

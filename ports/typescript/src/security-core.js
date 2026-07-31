@@ -45,6 +45,7 @@ export const Family = Object.freeze({
   HomoglyphConfusable: "homoglyph-confusable",
   MixedScriptAdmissibility: "mixed-script-admissibility",
   RtlInjection: "rtl-injection",
+  ConfusableBidiCompound: "confusable-bidi-compound",
 });
 
 let confusablesMapCache;
@@ -212,6 +213,10 @@ function detect(input) {
   if (rtl !== null) {
     findings.push(rtl);
   }
+  const confusableBidi = confusableBidiCompoundFinding(input);
+  if (confusableBidi !== null) {
+    findings.push(confusableBidi);
+  }
 
   return findings;
 }
@@ -280,7 +285,8 @@ function blocks(level, family) {
     family === Family.BidiControlBalance ||
     family === Family.NoncharacterControl ||
     family === Family.HomoglyphConfusable ||
-    family === Family.MixedScriptAdmissibility
+    family === Family.MixedScriptAdmissibility ||
+    family === Family.ConfusableBidiCompound
   );
 }
 
@@ -329,6 +335,9 @@ function layer(family) {
   }
   if (family === Family.RtlInjection) {
     return "D";
+  }
+  if (family === Family.ConfusableBidiCompound) {
+    return "X";
   }
   return "C";
 }
@@ -602,6 +611,57 @@ function rtlInjectionFinding(input) {
     return null;
   }
   return makeFinding(Family.RtlInjection, result.sub, result.positions);
+}
+
+// Confusable-in-bidi-context compound detection (CVE-2021-42574 class) — a
+// direct port of Unicode/Security/Boundary/ConfusableBidiCompound.lean. A
+// confusable (homoglyph) codepoint co-located with a bidi format-control is
+// materially more dangerous than either alone: the homoglyph disguises an
+// identifier while the bidi control reorders how a reviewer reads it. The
+// finding fires only when both are present, reporting the offending positions
+// as [confusablePos, bidiPos]. Override-class controls (LRE/RLE/LRO/RLO/PDF)
+// take priority over isolate-class controls (LRI/RLI/FSI/PDI).
+
+// True iff cp is a confusable source per UTS #39 §4 — i.e. it has a row in
+// confusables.txt mapping it to a different skeleton sequence. Reuses the same
+// confusables map the homoglyph detector reads.
+function isConfusableSource(cp) {
+  return confusablesMap().has(cp);
+}
+
+// True iff cp is an override-class bidi control (LRE, RLE, LRO, RLO, PDF).
+function isOverride(cp) {
+  return cp >= 0x202a && cp <= 0x202e;
+}
+
+// True iff cp is an isolate-class bidi control (LRI, RLI, FSI, PDI).
+function isIsolate(cp) {
+  return cp >= 0x2066 && cp <= 0x2069;
+}
+
+function firstPositionWhere(input, pred) {
+  for (let index = 0; index < input.length; index += 1) {
+    if (pred(input[index])) {
+      return index;
+    }
+  }
+  return null;
+}
+
+function confusableBidiCompoundFinding(input) {
+  const confusablePos = firstPositionWhere(input, isConfusableSource);
+  if (confusablePos === null) {
+    return null;
+  }
+  const overridePos = firstPositionWhere(input, isOverride);
+  if (overridePos !== null) {
+    return makeFinding(Family.ConfusableBidiCompound, "ConfusableInOverride", [confusablePos, overridePos]);
+  }
+  const isolatePos = firstPositionWhere(input, isIsolate);
+  if (isolatePos !== null) {
+    return makeFinding(Family.ConfusableBidiCompound, "ConfusableInIsolate", [confusablePos, isolatePos]);
+  }
+  return null;
 }
 
 function homoglyphTargetMatch(input) {

@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "family": "confusable-bidi-compound",
+  "cases": [
+    {
+      "name": "clear-empty",
+      "input": [],
+      "required_findings": []
+    },
+    {
+      "name": "clear-ascii",
+      "input": [72, 101, 108, 108, 111],
+      "required_findings": []
+    },
+    {
+      "name": "clear-rlo-no-confusable",
+      "input": [8238, 65, 66, 67],
+      "required_findings": []
+    },
+    {
+      "name": "clear-cyrillic-no-bidi",
+      "input": [1072],
+      "required_findings": []
+    },
+    {
+      "name": "confusable-in-override",
+      "input": [8238, 1072],
+      "required_findings": [
+        "unicode.security.X.confusable-bidi-compound.ConfusableInOverride"
+      ]
+    },
+    {
+      "name": "confusable-in-isolate",
+      "input": [8294, 959],
+      "required_findings": [
+        "unicode.security.X.confusable-bidi-compound.ConfusableInIsolate"
+      ]
+    }
+  ]
+}

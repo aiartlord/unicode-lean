@@ -6,7 +6,7 @@ along with the shared verdict vocabulary (``Family``, ``Severity``,
 ``KeyValueAttribution``).
 """
 
-from . import covert, identity, policy
+from . import boundary, covert, identity, policy
 from .calculus import (
     AdversaryTier,
     ClassificationKind,
@@ -64,6 +64,7 @@ __all__ = [
     "Severity",
     "Verdict",
     "blocking_findings",
+    "boundary",
     "covert",
     "default_severity",
     "family_blocks",

@@ -41,6 +41,7 @@ public enum Family {
     public static let homoglyphConfusable = "homoglyph-confusable"
     public static let mixedScriptAdmissibility = "mixed-script-admissibility"
     public static let rtlInjection = "rtl-injection"
+    public static let confusableBidiCompound = "confusable-bidi-compound"
 }
 
 public struct Finding: Equatable {
@@ -172,6 +173,9 @@ private func detect(_ input: [Int]) -> [Finding] {
     if let rtl = rtlInjectionFinding(input) {
         findings.append(rtl)
     }
+    if let compound = confusableBidiCompoundFinding(input) {
+        findings.append(compound)
+    }
     return findings
 }
 
@@ -217,7 +221,8 @@ private func blocks(_ level: PolicyLevel, _ family: String) -> Bool {
         family == Family.variationSelectorPayload || family == Family.zeroWidthPayload ||
         family == Family.surrogateReassembly ||
         family == Family.bidiControlBalance || family == Family.noncharacterControl ||
-        family == Family.homoglyphConfusable || family == Family.mixedScriptAdmissibility
+        family == Family.homoglyphConfusable || family == Family.mixedScriptAdmissibility ||
+        family == Family.confusableBidiCompound
 }
 
 private func malformedDecodeVerdict(profile: String, mode: String, family: String, subThreat: String, offset: Int) -> Verdict {
@@ -253,6 +258,9 @@ private func layer(_ family: String) -> String {
     }
     if family == Family.rtlInjection {
         return "D"
+    }
+    if family == Family.confusableBidiCompound {
+        return "X"
     }
     return "C"
 }
@@ -399,6 +407,60 @@ private func rtlInjectionFinding(_ input: [Int]) -> Finding? {
     let result = rtlInjectionDetect(input)
     guard let subThreat = result.subThreat else { return nil }
     return makeFinding(family: Family.rtlInjection, subThreat: subThreat, positions: result.positions)
+}
+
+/// Sub-threat and offending positions of a confusable-bidi-compound scan; nil
+/// sub-threat means clear. Positions carry [confusablePos, bidiPos].
+public struct ConfusableBidiCompoundResult: Equatable {
+    public let subThreat: String?
+    public let positions: [Int]
+}
+
+// Confusable-in-bidi-context compound detection (layer X, CVE-2021-42574
+// class) — a direct port of Unicode/Security/Boundary/ConfusableBidiCompound.lean.
+// A confusable (homoglyph) codepoint co-located with a bidi format-control is
+// materially more dangerous than either alone: the homoglyph disguises an
+// identifier while the bidi control reorders how a reviewer reads it. The
+// detector fires only when both are present. Priority mirrors the spec: with a
+// confusable present, an override-class control (LRE/RLE/LRO/RLO/PDF) fires
+// ConfusableInOverride; otherwise an isolate-class control (LRI/RLI/FSI/PDI)
+// fires ConfusableInIsolate; otherwise clear. Exposed for direct spot-check
+// testing, mirroring the Rust/Python/C++ detectors.
+public func confusableBidiCompoundDetect(_ input: [Int]) -> ConfusableBidiCompoundResult {
+    guard let confusablePos = input.firstIndex(where: isConfusableSource) else {
+        return ConfusableBidiCompoundResult(subThreat: nil, positions: [])
+    }
+    if let overridePos = input.firstIndex(where: isConfusableBidiOverride) {
+        return ConfusableBidiCompoundResult(subThreat: "ConfusableInOverride", positions: [confusablePos, overridePos])
+    }
+    if let isolatePos = input.firstIndex(where: isConfusableBidiIsolate) {
+        return ConfusableBidiCompoundResult(subThreat: "ConfusableInIsolate", positions: [confusablePos, isolatePos])
+    }
+    return ConfusableBidiCompoundResult(subThreat: nil, positions: [])
+}
+
+private func confusableBidiCompoundFinding(_ input: [Int]) -> Finding? {
+    let result = confusableBidiCompoundDetect(input)
+    guard let subThreat = result.subThreat else { return nil }
+    return makeFinding(family: Family.confusableBidiCompound, subThreat: subThreat, positions: result.positions)
+}
+
+/// True iff `cp` is a confusable source per UTS #39 §4 — it has a row in
+/// confusables.txt mapping it to a different skeleton sequence. Mirrors
+/// Unicode.Confusables.lookupConfusable?(cp).isSome. Reuses the shared
+/// confusables map that backs the homoglyph detector's skeleton substitution.
+public func isConfusableSource(_ cp: Int) -> Bool {
+    confusablesMap()[cp] != nil
+}
+
+/// True iff `cp` is an override-class bidi control (LRE, RLE, LRO, RLO, PDF).
+private func isConfusableBidiOverride(_ cp: Int) -> Bool {
+    cp >= 0x202a && cp <= 0x202e
+}
+
+/// True iff `cp` is an isolate-class bidi control (LRI, RLI, FSI, PDI).
+private func isConfusableBidiIsolate(_ cp: Int) -> Bool {
+    cp >= 0x2066 && cp <= 0x2069
 }
 
 private func isBidiFormatControl(_ cp: Int) -> Bool {

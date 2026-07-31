@@ -10,6 +10,7 @@ import java.util.Objects;
 
 public final class SecurityContractTest {
   public static void main(String[] args) throws Exception {
+    testConfusableBidiCompound();
     testSurrogateReassembly();
     testRtlInjection();
     testPolicyContract();
@@ -17,6 +18,28 @@ public final class SecurityContractTest {
     testUtf8DecodeContract();
     testMultiEncodingDecodeContract();
     testDetectorFixtures();
+  }
+
+  // Pins the confusable-bidi-compound detector against the detect_* spot-check
+  // theorems in Unicode/Security/Boundary/ConfusableBidiCompound.lean. Runs
+  // first so its result shows before the shared contract tests.
+  private static void testConfusableBidiCompound() {
+    int[][] inputs = {
+      {},
+      {0x48, 0x65, 0x6C, 0x6C, 0x6F},
+      {0x202E, 0x0041, 0x0042, 0x0043},
+      {0x0430},
+      {0x202E, 0x0430},
+      {0x2066, 0x03BF},
+    };
+    String[] wants = {null, null, null, null, "ConfusableInOverride", "ConfusableInIsolate"};
+    for (int i = 0; i < inputs.length; i++) {
+      List<Integer> input = new ArrayList<>();
+      for (int cp : inputs[i]) input.add(cp);
+      Security.ConfusableBidiCompoundResult result = Security.confusableBidiCompoundDetect(input);
+      assertEquals(wants[i], result.subThreat(), "confusable-bidi-compound case " + i);
+    }
+    System.out.println("clean: confusable-bidi-compound spot checks pass (" + inputs.length + " vectors)");
   }
 
   // Pins the surrogate-reassembly detector against the detect_* spot-check

@@ -57,6 +57,7 @@ public final class Security {
     public static final String HOMOGLYPH_CONFUSABLE = "homoglyph-confusable";
     public static final String MIXED_SCRIPT_ADMISSIBILITY = "mixed-script-admissibility";
     public static final String RTL_INJECTION = "rtl-injection";
+    public static final String CONFUSABLE_BIDI_COMPOUND = "confusable-bidi-compound";
     private Family() {}
   }
 
@@ -173,6 +174,8 @@ public final class Security {
     if (mixedScript != null) findings.add(mixedScript);
     Finding rtl = rtlInjectionFinding(input);
     if (rtl != null) findings.add(rtl);
+    Finding confusableBidi = confusableBidiCompoundFinding(input);
+    if (confusableBidi != null) findings.add(confusableBidi);
     return findings;
   }
 
@@ -212,6 +215,7 @@ public final class Security {
         family.equals(Family.MALFORMED_UTF32) || family.equals(Family.TAG_BLOCK_PAYLOAD) ||
         family.equals(Family.VARIATION_SELECTOR_PAYLOAD) || family.equals(Family.ZERO_WIDTH_PAYLOAD) ||
         family.equals(Family.SURROGATE_REASSEMBLY) ||
+        family.equals(Family.CONFUSABLE_BIDI_COMPOUND) ||
         family.equals(Family.BIDI_CONTROL_BALANCE) || family.equals(Family.NONCHARACTER_CONTROL) ||
         family.equals(Family.HOMOGLYPH_CONFUSABLE) ||
         family.equals(Family.MIXED_SCRIPT_ADMISSIBILITY);
@@ -237,6 +241,9 @@ public final class Security {
     }
     if (family.equals(Family.RTL_INJECTION)) {
       return "D";
+    }
+    if (family.equals(Family.CONFUSABLE_BIDI_COMPOUND)) {
+      return "X";
     }
     return "C";
   }
@@ -434,6 +441,61 @@ public final class Security {
     RtlInjectionResult result = rtlInjectionDetect(input);
     if (result.subThreat() == null) return null;
     return makeFinding(Family.RTL_INJECTION, result.subThreat(), result.positions());
+  }
+
+  /** Sub-threat and offending positions of a confusable-bidi-compound scan; null sub-threat means clear. */
+  public record ConfusableBidiCompoundResult(String subThreat, List<Integer> positions) {}
+
+  // Cross-layer identity-times-display compound detection — a direct port of
+  // Unicode/Security/Boundary/ConfusableBidiCompound.lean. A confusable
+  // (homoglyph) codepoint co-located with a bidi format-control is materially
+  // more dangerous than either alone: the homoglyph disguises an identifier
+  // while the bidi control reorders how a reviewer reads it. This fires only
+  // when both are present. With a confusable present, an override-class control
+  // (LRE/RLE/LRO/RLO/PDF) fires ConfusableInOverride; otherwise an isolate-class
+  // control (LRI/RLI/FSI/PDI) fires ConfusableInIsolate; otherwise clear.
+  // Exposed for direct spot-check testing, mirroring the Rust/Python/C++ detectors.
+  public static ConfusableBidiCompoundResult confusableBidiCompoundDetect(List<Integer> input) {
+    int confusablePos = firstPositionWhere(input, Security::isConfusableSource);
+    if (confusablePos < 0) return new ConfusableBidiCompoundResult(null, List.of());
+    int overridePos = firstPositionWhere(input, Security::isConfusableBidiOverride);
+    if (overridePos >= 0) {
+      return new ConfusableBidiCompoundResult("ConfusableInOverride", List.of(confusablePos, overridePos));
+    }
+    int isolatePos = firstPositionWhere(input, Security::isConfusableBidiIsolate);
+    if (isolatePos >= 0) {
+      return new ConfusableBidiCompoundResult("ConfusableInIsolate", List.of(confusablePos, isolatePos));
+    }
+    return new ConfusableBidiCompoundResult(null, List.of());
+  }
+
+  private static Finding confusableBidiCompoundFinding(List<Integer> input) {
+    ConfusableBidiCompoundResult result = confusableBidiCompoundDetect(input);
+    if (result.subThreat() == null) return null;
+    return makeFinding(Family.CONFUSABLE_BIDI_COMPOUND, result.subThreat(), result.positions());
+  }
+
+  // True iff cp is a confusable source per UTS #39 §4 — it has a row in
+  // confusables.txt. The same table the homoglyph detector consumes.
+  private static boolean isConfusableSource(int cp) {
+    return confusablesMap().containsKey(cp);
+  }
+
+  // True iff cp is an override-class bidi control (LRE, RLE, LRO, RLO, PDF).
+  private static boolean isConfusableBidiOverride(int cp) {
+    return cp >= 0x202A && cp <= 0x202E;
+  }
+
+  // True iff cp is an isolate-class bidi control (LRI, RLI, FSI, PDI).
+  private static boolean isConfusableBidiIsolate(int cp) {
+    return cp >= 0x2066 && cp <= 0x2069;
+  }
+
+  private static int firstPositionWhere(List<Integer> input, IntPredicate predicate) {
+    for (int i = 0; i < input.size(); i++) {
+      if (predicate.test(input.get(i))) return i;
+    }
+    return -1;
   }
 
   private static boolean isBidiFormatControl(int cp) {
