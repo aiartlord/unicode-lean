@@ -143,6 +143,8 @@ jvm_files=(
 dotnet_files=(
   "${homoglyph_files[@]}"
   DerivedBidiClass.txt
+  UnicodeData.txt
+  CompositionExclusions.txt
 )
 
 swift_files=(

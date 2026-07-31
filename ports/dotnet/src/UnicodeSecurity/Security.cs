@@ -86,6 +86,9 @@ public static class Security
     private static List<string>? knownTargets;
     private static HashSet<long>? legalVariationPairs;
     private static BidiTable? bidiTable;
+    private static Dictionary<int, NormEntry>? unicodeDataMap;
+    private static HashSet<int>? compositionExclusions;
+    private static Dictionary<long, int>? compositionTable;
 
     public static Verdict Scan(string profile, string mode, IEnumerable<int> input)
     {
@@ -598,30 +601,249 @@ public static class Security
         return output;
     }
 
-    private static List<int> ToNfdCodepoints(List<int> input) =>
-        CodepointsFromString(CodepointsToString(input).Normalize(NormalizationForm.FormD));
+    // ── Canonical / compatibility normalization from the pinned UCD tables ──
+    // NFD/NFKD/NFKC are computed from UnicodeData.txt (field-3 CCC, field-5
+    // decompositions) and CompositionExclusions.txt, mirroring
+    // Unicode.Normalization.{Decompose,Reorder,Compose,NFKD,NFKC} and the verified
+    // from-tables ports. Independent of string.Normalize, whose Unicode version
+    // tracks the .NET runtime (ICU) rather than the pinned UCD.
 
-    // Compatibility decomposition (NFKD). The detector layer normalizes with
-    // canonical NFD; NFKD additionally applies the compatibility mappings
-    // (field-5 <tag> entries in UnicodeData), matching Unicode.Normalization.NFKD
-    // and the Rust port's to_nfkd. Built on the same string.Normalize path the
-    // port already uses for NFD, with NormalizationForm.FormKD.
-    public static IReadOnlyList<int> ToNfkd(IEnumerable<int> input) =>
-        CodepointsFromString(CodepointsToString(input.ToList()).Normalize(NormalizationForm.FormKD));
+    private const int HangulSBase = 0xAC00;
+    private const int HangulLBase = 0x1100;
+    private const int HangulVBase = 0x1161;
+    private const int HangulTBase = 0x11A7;
+    private const int HangulLCount = 19;
+    private const int HangulVCount = 21;
+    private const int HangulTCount = 28;
+    private const int HangulNCount = HangulVCount * HangulTCount;
+    private const int HangulSCount = HangulLCount * HangulNCount;
 
-    // Compatibility composition (NFKC): NFKD followed by canonical composition,
-    // matching Unicode.Normalization.NFKC and the Rust port's to_nfkc. Built on
-    // the same string.Normalize path the port uses for NFD/NFC, with
-    // NormalizationForm.FormKC.
-    public static IReadOnlyList<int> ToNfkc(IEnumerable<int> input) =>
-        CodepointsFromString(CodepointsToString(input.ToList()).Normalize(NormalizationForm.FormKC));
+    // One UnicodeData row's normalization fields: CCC and the canonical /
+    // compatibility decompositions (null when absent). A field-5 mapping with a
+    // <tag> prefix is a compatibility mapping; without a tag it is canonical.
+    private sealed record NormEntry(int Ccc, List<int>? Canonical, List<int>? Compat);
 
-    private static string CodepointsToString(List<int> input)
+    private static Dictionary<int, NormEntry> ParseUnicodeData(string raw)
     {
-        var builder = new StringBuilder();
-        foreach (var cp in input) builder.Append(char.ConvertFromUtf32(cp));
-        return builder.ToString();
+        var result = new Dictionary<int, NormEntry>();
+        foreach (var line in raw.Split('\n'))
+        {
+            if (line.Length == 0) continue;
+            var f = line.Split(';');
+            if (f.Length < 6) continue;
+            var cp = ParseHex(f[0]);
+            if (cp is null) continue;
+            var ccc = int.TryParse(f[3].Trim(), out var value) ? value : 0;
+            var decomp = f[5].Trim();
+            List<int>? canonical = null;
+            List<int>? compat = null;
+            if (decomp.Length != 0)
+            {
+                if (decomp.StartsWith('<'))
+                    compat = ParseCodepointField(decomp[(decomp.IndexOf('>') + 1)..]);
+                else
+                    canonical = ParseCodepointField(decomp);
+            }
+            result[cp.Value] = new NormEntry(ccc, canonical, compat);
+        }
+        return result;
     }
+
+    private static HashSet<int> ParseCompositionExclusions(string raw)
+    {
+        var result = new HashSet<int>();
+        foreach (var line in raw.Split('\n'))
+        {
+            var hash = line.IndexOf('#');
+            var body = (hash >= 0 ? line[..hash] : line).Trim();
+            if (body.Length == 0) continue;
+            var cp = ParseHex(body);
+            if (cp is not null) result.Add(cp.Value);
+        }
+        return result;
+    }
+
+    private static Dictionary<int, NormEntry> UnicodeDataMap()
+    {
+        unicodeDataMap ??= ParseUnicodeData(ReadDataFile("UnicodeData.txt"));
+        return unicodeDataMap;
+    }
+
+    private static HashSet<int> CompositionExclusions()
+    {
+        compositionExclusions ??= ParseCompositionExclusions(ReadDataFile("CompositionExclusions.txt"));
+        return compositionExclusions;
+    }
+
+    private static int CanonicalCombiningClass(int cp) =>
+        UnicodeDataMap().TryGetValue(cp, out var entry) ? entry.Ccc : 0;
+
+    private static long ComposeKey(int d, int c) => ((long)d << 32) | (uint)c;
+
+    // Canonical composition table: inverse of the two-codepoint canonical
+    // decompositions, excluding singleton decompositions, Composition-Exclusion
+    // codepoints, and pairs whose first element is a non-starter (CCC != 0).
+    private static Dictionary<long, int> CompositionTable()
+    {
+        if (compositionTable is null)
+        {
+            var table = new Dictionary<long, int>();
+            var exclusions = CompositionExclusions();
+            foreach (var (cp, entry) in UnicodeDataMap())
+            {
+                var decomp = entry.Canonical;
+                if (decomp is null || decomp.Count != 2) continue;
+                if (exclusions.Contains(cp)) continue;
+                if (CanonicalCombiningClass(decomp[0]) != 0) continue;
+                table[ComposeKey(decomp[0], decomp[1])] = cp;
+            }
+            compositionTable = table;
+        }
+        return compositionTable;
+    }
+
+    private static bool HangulDecompose(int cp, List<int> output)
+    {
+        if (cp < HangulSBase || cp >= HangulSBase + HangulSCount) return false;
+        var sIndex = cp - HangulSBase;
+        output.Add(HangulLBase + sIndex / HangulNCount);
+        output.Add(HangulVBase + (sIndex % HangulNCount) / HangulTCount);
+        var tIndex = sIndex % HangulTCount;
+        if (tIndex != 0) output.Add(HangulTBase + tIndex);
+        return true;
+    }
+
+    private static int? HangulCompose(int a, int b)
+    {
+        if (a >= HangulLBase && a < HangulLBase + HangulLCount
+            && b >= HangulVBase && b < HangulVBase + HangulVCount)
+        {
+            var lIndex = a - HangulLBase;
+            var vIndex = b - HangulVBase;
+            return HangulSBase + (lIndex * HangulVCount + vIndex) * HangulTCount;
+        }
+        if (a >= HangulSBase && a < HangulSBase + HangulSCount
+            && (a - HangulSBase) % HangulTCount == 0
+            && b > HangulTBase && b < HangulTBase + HangulTCount)
+        {
+            return a + (b - HangulTBase);
+        }
+        return null;
+    }
+
+    private static void DecomposeOne(int cp, List<int> output)
+    {
+        if (HangulDecompose(cp, output)) return;
+        if (UnicodeDataMap().TryGetValue(cp, out var entry) && entry.Canonical is not null)
+        {
+            foreach (var child in entry.Canonical) DecomposeOne(child, output);
+            return;
+        }
+        output.Add(cp);
+    }
+
+    private static void CompatDecomposeOne(int cp, List<int> output)
+    {
+        if (HangulDecompose(cp, output)) return;
+        if (UnicodeDataMap().TryGetValue(cp, out var entry))
+        {
+            if (entry.Compat is not null)
+            {
+                foreach (var child in entry.Compat) CompatDecomposeOne(child, output);
+                return;
+            }
+            if (entry.Canonical is not null)
+            {
+                foreach (var child in entry.Canonical) CompatDecomposeOne(child, output);
+                return;
+            }
+        }
+        output.Add(cp);
+    }
+
+    // Stable canonical ordering: sort each non-starter run by CCC, preserving the
+    // relative order of equal-CCC codepoints (insertion sort that swaps only on a
+    // strict CCC decrease and never crosses a starter).
+    private static void CanonicalOrder(List<int> values)
+    {
+        for (var index = 1; index < values.Count; index++)
+        {
+            var currentCcc = CanonicalCombiningClass(values[index]);
+            if (currentCcc == 0) continue;
+            for (var j = index; j > 0; j--)
+            {
+                var previousCcc = CanonicalCombiningClass(values[j - 1]);
+                if (previousCcc == 0 || previousCcc <= currentCcc) break;
+                (values[j - 1], values[j]) = (values[j], values[j - 1]);
+            }
+        }
+    }
+
+    // Canonical composition (UAX #15 D115), matching Unicode.Normalization.Compose
+    // and the D115-corrected blocked rule shared by the from-tables ports.
+    private static List<int> CanonicalCompose(List<int> seq)
+    {
+        if (seq.Count == 0) return new List<int>();
+        var table = CompositionTable();
+        var output = new List<int>();
+        var starterIndex = -1;
+        var lastCcc = -1;
+        foreach (var cp in seq)
+        {
+            var cpCcc = CanonicalCombiningClass(cp);
+            if (starterIndex >= 0)
+            {
+                var starter = output[starterIndex];
+                var composed = HangulCompose(starter, cp);
+                if (composed is null && table.TryGetValue(ComposeKey(starter, cp), out var mapped))
+                    composed = mapped;
+                // Blocked check (UAX #15 D115): lastCcc != 0 means a combiner is
+                // buffered between the active starter and this candidate. A starter
+                // candidate (cpCcc == 0) is blocked outright by any buffered combiner;
+                // a non-starter is blocked when the buffered combiner has CCC >= its own.
+                var blocked = lastCcc != 0 && (cpCcc == 0 || lastCcc >= cpCcc);
+                if (!blocked && composed is not null)
+                {
+                    output[starterIndex] = composed.Value;
+                    continue;
+                }
+            }
+            output.Add(cp);
+            if (cpCcc == 0)
+            {
+                starterIndex = output.Count - 1;
+                lastCcc = 0;
+            }
+            else
+            {
+                lastCcc = cpCcc;
+            }
+        }
+        return output;
+    }
+
+    private static List<int> ToNfdCodepoints(List<int> input)
+    {
+        var output = new List<int>();
+        foreach (var cp in input) DecomposeOne(cp, output);
+        CanonicalOrder(output);
+        return output;
+    }
+
+    private static List<int> ToNfkdCodepoints(IEnumerable<int> input)
+    {
+        var output = new List<int>();
+        foreach (var cp in input) CompatDecomposeOne(EnsureCodepoint(cp), output);
+        CanonicalOrder(output);
+        return output;
+    }
+
+    // Compatibility decomposition (NFKD), matching Unicode.Normalization.NFKD.
+    public static IReadOnlyList<int> ToNfkd(IEnumerable<int> input) => ToNfkdCodepoints(input);
+
+    // NFKD followed by canonical composition, matching Unicode.Normalization.NFKC.
+    public static IReadOnlyList<int> ToNfkc(IEnumerable<int> input) =>
+        CanonicalCompose(ToNfkdCodepoints(input));
 
     private static Dictionary<int, List<int>> ConfusablesMap()
     {
@@ -849,6 +1071,8 @@ public static class Security
             ["StandardizedVariants.txt"] = "f55100b2fb11d3d75a37b8c1ab752192dbd1c4b12328c5ec6b38e3807c0ca597",
             ["emoji-variation-sequences.txt"] = "bb3d09ef03f206012c7532dd52dc0a21c9efddba0135ea4cf0d9201b8b9bba7e",
             ["DerivedBidiClass.txt"] = "4867b4b7f0731ed1bfcd34cc6251211ff1542541fce0734b6fbda139ee80b3a4",
+            ["UnicodeData.txt"] = "2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c",
+            ["CompositionExclusions.txt"] = "2f239196ef3b5b61db5cc476e9bd80f534d15aa1b74e1be1dea5d042a344c85f",
         };
 
     private static string ReadDataFile(string name)
