@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "src" / "data" / "confusables.txt"
 OUTPUT = ROOT / "src" / "confusables_data.zig"
 UNICODE_DATA_SOURCE = ROOT / "src" / "data" / "UnicodeData.txt"
+COMPOSITION_EXCLUSIONS_SOURCE = ROOT / "src" / "data" / "CompositionExclusions.txt"
 NORMALIZATION_OUTPUT = ROOT / "src" / "normalization_data.zig"
 CASE_FOLDING_SOURCE = ROOT / "src" / "data" / "CaseFolding.txt"
 CASE_FOLDING_OUTPUT = ROOT / "src" / "case_folding_data.zig"
@@ -72,8 +73,17 @@ def render(entries: dict[int, list[int]]) -> str:
     return "\n".join(lines)
 
 
-def parse_unicode_data(text: str) -> dict[int, tuple[int, list[int]]]:
-    entries: dict[int, tuple[int, list[int]]] = {}
+def parse_unicode_data(text: str) -> dict[int, tuple[int, list[int], list[int]]]:
+    """Parse UnicodeData.txt into ``cp -> (ccc, canonical, compat)``.
+
+    Field 5 carries the character decomposition mapping.  A leading
+    ``<tag>`` marks a compatibility decomposition (NFKD/NFKC only); the tag
+    is stripped and the codepoints kept in ``compat``.  Without a tag the
+    mapping is canonical (NFD/NFC) and kept in ``canonical``.  A row is
+    retained whenever it carries a non-zero combining class or either
+    decomposition, so compatibility-only characters (fullwidth forms,
+    ligatures, circled digits) are present for NFKD/NFKC."""
+    entries: dict[int, tuple[int, list[int], list[int]]] = {}
     for raw_line in text.splitlines():
         fields = raw_line.split(";")
         if len(fields) < 6:
@@ -84,40 +94,111 @@ def parse_unicode_data(text: str) -> dict[int, tuple[int, list[int]]]:
         except ValueError:
             continue
         decomp_field = fields[5].strip()
-        decomp: list[int] = []
-        if decomp_field and not decomp_field.startswith("<"):
-            try:
-                decomp = parse_codepoints(decomp_field)
-            except ValueError:
-                decomp = []
-        if ccc != 0 or decomp:
-            entries[cp] = (ccc, decomp)
+        canonical: list[int] = []
+        compat: list[int] = []
+        if decomp_field:
+            if decomp_field.startswith("<"):
+                after_tag = decomp_field.split(">", 1)[1] if ">" in decomp_field else decomp_field
+                try:
+                    compat = parse_codepoints(after_tag.strip())
+                except ValueError:
+                    compat = []
+            else:
+                try:
+                    canonical = parse_codepoints(decomp_field)
+                except ValueError:
+                    canonical = []
+        if ccc != 0 or canonical or compat:
+            entries[cp] = (ccc, canonical, compat)
     return entries
 
 
-def render_normalization(entries: dict[int, tuple[int, list[int]]]) -> str:
+def parse_composition_exclusions(text: str) -> set[int]:
+    """Parse CompositionExclusions.txt into a set of excluded codepoints.
+
+    Each data line names one codepoint that must never recompose during
+    canonical composition (NFC/NFKC)."""
+    out: set[int] = set()
+    for raw_line in text.splitlines():
+        body = raw_line.split("#", 1)[0].strip()
+        if not body:
+            continue
+        try:
+            out.add(int(body, 16))
+        except ValueError:
+            continue
+    return out
+
+
+def build_composition_table(
+    entries: dict[int, tuple[int, list[int], list[int]]],
+    exclusions: set[int],
+) -> dict[tuple[int, int], int]:
+    """Invert the canonical decompositions into a ``(a, b) -> c`` composition
+    table.  A pair contributes only when the composite has a two-codepoint
+    canonical decomposition, is absent from the exclusion set, and its first
+    element is a starter (combining class zero) — the UAX #15 primary
+    composite rule mirrored from the Rust port's ``build_composition_table``."""
+    out: dict[tuple[int, int], int] = {}
+    for cp, (_ccc, canonical, _compat) in entries.items():
+        if len(canonical) == 2 and cp not in exclusions:
+            first_ccc = entries.get(canonical[0], (0, [], []))[0]
+            if first_ccc == 0:
+                out[(canonical[0], canonical[1])] = cp
+    return out
+
+
+def _decomp_literal(decomp: list[int]) -> str:
+    if not decomp:
+        return "&[_]u32{}"
+    if len(decomp) == 1:
+        return f"&[_]u32{{{zig_hex(decomp[0])}}}"
+    values = ", ".join(zig_hex(part) for part in decomp)
+    return f"&[_]u32{{ {values} }}"
+
+
+def render_normalization(
+    entries: dict[int, tuple[int, list[int], list[int]]],
+    compositions: dict[tuple[int, int], int],
+) -> str:
     lines = [
         "// GENERATED FILE - DO NOT EDIT.",
-        "// Source: src/data/UnicodeData.txt",
+        "// Source: src/data/UnicodeData.txt, src/data/CompositionExclusions.txt",
         "",
         "pub const Entry = struct {",
         "    cp: u32,",
         "    ccc: u8,",
         "    decomp: []const u32,",
+        "    compat: []const u32,",
         "};",
         "",
         "pub const entries = [_]Entry{",
     ]
-    for cp, (ccc, decomp) in sorted(entries.items()):
-        if not decomp:
-            array_literal = "&[_]u32{}"
-        elif len(decomp) == 1:
-            array_literal = f"&[_]u32{{{zig_hex(decomp[0])}}}"
-        else:
-            values = ", ".join(zig_hex(part) for part in decomp)
-            array_literal = f"&[_]u32{{ {values} }}"
+    for cp, (ccc, decomp, compat) in sorted(entries.items()):
         lines.append(
-            f"    .{{ .cp = {zig_hex(cp)}, .ccc = {ccc}, .decomp = {array_literal} }},"
+            f"    .{{ .cp = {zig_hex(cp)}, .ccc = {ccc}, "
+            f".decomp = {_decomp_literal(decomp)}, "
+            f".compat = {_decomp_literal(compat)} }},"
+        )
+    lines.append("};")
+    lines.append("")
+    lines.append("pub const Composition = struct {")
+    lines.append("    a: u32,")
+    lines.append("    b: u32,")
+    lines.append("    c: u32,")
+    lines.append("};")
+    lines.append("")
+    lines.append(
+        "// Canonical composition pairs: the inverse of every two-codepoint"
+    )
+    lines.append(
+        "// canonical decomposition minus CompositionExclusions.txt, sorted by"
+    )
+    lines.append("// (a, b) for binary search.")
+    lines.append("pub const compositions = [_]Composition{")
+    for (a, b), c in sorted(compositions.items()):
+        lines.append(
+            f"    .{{ .a = {zig_hex(a)}, .b = {zig_hex(b)}, .c = {zig_hex(c)} }},"
         )
     lines.extend(["};", ""])
     return "\n".join(lines)
@@ -290,7 +371,15 @@ def main() -> None:
     normalization_entries = parse_unicode_data(
         UNICODE_DATA_SOURCE.read_text(encoding="utf-8")
     )
-    normalization_output = render_normalization(normalization_entries)
+    composition_exclusions = parse_composition_exclusions(
+        COMPOSITION_EXCLUSIONS_SOURCE.read_text(encoding="utf-8")
+    )
+    composition_table = build_composition_table(
+        normalization_entries, composition_exclusions
+    )
+    normalization_output = render_normalization(
+        normalization_entries, composition_table
+    )
     case_folding_entries = parse_case_folding(
         CASE_FOLDING_SOURCE.read_text(encoding="utf-8")
     )
@@ -321,6 +410,7 @@ def main() -> None:
             "clean: Zig generated Unicode tables match generator output "
             f"({len(entries)} confusables, "
             f"{len(normalization_entries)} normalization entries, "
+            f"{len(composition_table)} composition pairs, "
             f"{len(case_folding_entries)} case-folding entries, "
             f"{len(bidi_explicit)} bidi explicit ranges, "
             f"{len(bidi_defaults)} bidi default ranges)"
@@ -334,7 +424,8 @@ def main() -> None:
     print(f"generated {OUTPUT.relative_to(ROOT)} from {len(entries)} entries")
     print(
         f"generated {NORMALIZATION_OUTPUT.relative_to(ROOT)} "
-        f"from {len(normalization_entries)} entries"
+        f"from {len(normalization_entries)} entries "
+        f"and {len(composition_table)} composition pairs"
     )
     print(
         f"generated {CASE_FOLDING_OUTPUT.relative_to(ROOT)} "

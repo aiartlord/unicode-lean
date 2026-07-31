@@ -94,6 +94,17 @@ pub fn build(b: *std.Build) void {
     const run_tests = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run runtime-port tests");
     test_step.dependOn(&run_tests.step);
+
+    // Unit tests defined inside the security module itself (e.g. the
+    // NFKD/NFKC/NFC known-answer vectors) run from a dedicated test
+    // artifact rooted at the module source, since the contract test above
+    // only discovers tests declared in its own root file.
+    const unit_tests = b.addTest(.{
+        .name = "unicode_security_unit_tests",
+        .root_module = module,
+    });
+    const run_unit_tests = b.addRunArtifact(unit_tests);
+    test_step.dependOn(&run_unit_tests.step);
 }
 
 fn readFixture(b: *std.Build, path: []const u8) []const u8 {

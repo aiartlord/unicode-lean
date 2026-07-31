@@ -610,6 +610,20 @@ private func toNfdCodepoints(_ input: [Int]) -> [Int] {
     codepointsFromString(stringFromCodepoints(input).decomposedStringWithCanonicalMapping)
 }
 
+// Compatibility decomposition (NFKD), mirroring Unicode.Normalization.NFKD:
+// full compatibility decomposition followed by canonical ordering. Built on the
+// same Foundation normalization primitive the canonical NFD path uses, so the
+// two forms stay consistent within this port.
+public func toNfkd(_ input: [Int]) -> [Int] {
+    codepointsFromString(stringFromCodepoints(input).decomposedStringWithCompatibilityMapping)
+}
+
+// Compatibility composition (NFKC), mirroring Unicode.Normalization.NFKC:
+// the NFKD form recomposed by canonical composition.
+public func toNfkc(_ input: [Int]) -> [Int] {
+    codepointsFromString(stringFromCodepoints(input).precomposedStringWithCompatibilityMapping)
+}
+
 private func stringFromCodepoints(_ input: [Int]) -> String {
     String(String.UnicodeScalarView(input.compactMap(UnicodeScalar.init)))
 }

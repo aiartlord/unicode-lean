@@ -10,6 +10,7 @@ TestVerdictContract();
 TestUtf8DecodeContract();
 TestMultiEncodingDecodeContract();
 TestDetectorFixtures();
+TestCompatNormalizationVectors();
 Console.WriteLine("clean: .NET contract tests pass");
 
 // Direct spot-check of the covert-display-compound detector, mirroring the
@@ -215,6 +216,41 @@ static void TestDetectorFixtures()
             }
         }
     }
+}
+
+// Direct spot-check of compatibility normalization (NFKD / NFKC), mirroring
+// Unicode.Normalization.NFKD / NFKC and the Rust port's to_nfkd / to_nfkc.
+// NFKC applies the compatibility mappings and then composes; NFKD stops after
+// compatibility decomposition.
+static void TestCompatNormalizationVectors()
+{
+    var nfkc = new (int[] Input, int[] Expected)[]
+    {
+        (new[] { 0xFB01 }, new[] { 0x66, 0x69 }),
+        (new[] { 0x2460 }, new[] { 0x31 }),
+        (new[] { 0xFF21 }, new[] { 0x41 }),
+        (new[] { 0x00E9 }, new[] { 0x00E9 }),
+        (new[] { 0x0065, 0x0301 }, new[] { 0x00E9 }),
+        (new[] { 0x1112, 0x1161, 0x11AB }, new[] { 0xD55C }),
+    };
+    foreach (var (input, expected) in nfkc)
+    {
+        var actual = Security.ToNfkc(input);
+        var name = "ToNfkc [" + string.Join(",", input.Select(cp => "0x" + cp.ToString("X"))) + "]";
+        AssertSequence(expected, actual, name);
+    }
+    var nfkd = new (int[] Input, int[] Expected)[]
+    {
+        (new[] { 0xFF21 }, new[] { 0x41 }),
+        (new[] { 0x00E9 }, new[] { 0x0065, 0x0301 }),
+    };
+    foreach (var (input, expected) in nfkd)
+    {
+        var actual = Security.ToNfkd(input);
+        var name = "ToNfkd [" + string.Join(",", input.Select(cp => "0x" + cp.ToString("X"))) + "]";
+        AssertSequence(expected, actual, name);
+    }
+    Console.WriteLine("clean: .NET NFKD/NFKC 8-vector spot-check passes");
 }
 
 static void AssertDecodeEntry(JsonElement entry, Security.Verdict verdict)

@@ -784,6 +784,14 @@ function toNfdCodepoints(input) {
   return codepointsFromString(stringFromCodepoints(input).normalize("NFD"));
 }
 
+export function toNfkdCodepoints(input) {
+  return codepointsFromString(stringFromCodepoints(input).normalize("NFKD"));
+}
+
+export function toNfkcCodepoints(input) {
+  return codepointsFromString(stringFromCodepoints(input).normalize("NFKC"));
+}
+
 function stringFromCodepoints(input) {
   let out = "";
   for (const cp of input) {

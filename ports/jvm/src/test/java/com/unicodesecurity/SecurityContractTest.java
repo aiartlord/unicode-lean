@@ -11,6 +11,7 @@ import java.util.Objects;
 public final class SecurityContractTest {
   public static void main(String[] args) throws Exception {
     testCovertDisplayCompound();
+    testNfkNormalization();
     testConfusableBidiCompound();
     testSurrogateReassembly();
     testRtlInjection();
@@ -41,6 +42,51 @@ public final class SecurityContractTest {
       assertEquals(wants[i], result.subThreat(), "covert-display-compound case " + i);
     }
     System.out.println("clean: covert-display-compound spot checks pass (" + inputs.length + " vectors)");
+  }
+
+  // Pins Security.toNfkd / Security.toNfkc against Unicode.Normalization.NFKD
+  // and NFKC, matching the vectors exercised by the Rust port's to_nfkd /
+  // to_nfkc: compatibility decomposition (ligature, circled digit, fullwidth),
+  // canonical identity, canonical composition, and Hangul syllable composition.
+  private static void testNfkNormalization() {
+    int[][] nfkcInputs = {
+      {0xFB01},
+      {0x2460},
+      {0xFF21},
+      {0x00E9},
+      {0x0065, 0x0301},
+      {0x1112, 0x1161, 0x11AB},
+    };
+    int[][] nfkcWants = {
+      {0x66, 0x69},
+      {0x31},
+      {0x41},
+      {0x00E9},
+      {0x00E9},
+      {0xD55C},
+    };
+    for (int i = 0; i < nfkcInputs.length; i++) {
+      assertEquals(intList(nfkcWants[i]), Security.toNfkc(intList(nfkcInputs[i])), "toNfkc case " + i);
+    }
+    int[][] nfkdInputs = {
+      {0xFF21},
+      {0x00E9},
+    };
+    int[][] nfkdWants = {
+      {0x41},
+      {0x0065, 0x0301},
+    };
+    for (int i = 0; i < nfkdInputs.length; i++) {
+      assertEquals(intList(nfkdWants[i]), Security.toNfkd(intList(nfkdInputs[i])), "toNfkd case " + i);
+    }
+    System.out.println("clean: NFKD/NFKC normalization spot checks pass ("
+        + (nfkcInputs.length + nfkdInputs.length) + " vectors)");
+  }
+
+  private static List<Integer> intList(int[] codepoints) {
+    List<Integer> out = new ArrayList<>();
+    for (int cp : codepoints) out.add(cp);
+    return out;
   }
 
   // Pins the confusable-bidi-compound detector against the detect_* spot-check

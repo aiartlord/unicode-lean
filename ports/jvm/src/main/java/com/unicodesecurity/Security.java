@@ -633,6 +633,24 @@ public final class Security {
     return codepointsFromString(Normalizer.normalize(text, Normalizer.Form.NFD));
   }
 
+  // Compatibility decomposition, matching Unicode.Normalization.NFKD. Mirrors
+  // the NFD path above but selects the compatibility form, so field-5 `<tag>`
+  // decompositions in UnicodeData are applied and canonical ordering restored.
+  public static List<Integer> toNfkd(List<Integer> input) {
+    StringBuilder text = new StringBuilder();
+    for (int cp : input) text.appendCodePoint(ensureCodepoint(cp));
+    return codepointsFromString(Normalizer.normalize(text, Normalizer.Form.NFKD));
+  }
+
+  // Compatibility decomposition followed by canonical composition, matching
+  // Unicode.Normalization.NFKC. Same builtin-Normalizer approach as the NFD
+  // path, selecting the composing compatibility form.
+  public static List<Integer> toNfkc(List<Integer> input) {
+    StringBuilder text = new StringBuilder();
+    for (int cp : input) text.appendCodePoint(ensureCodepoint(cp));
+    return codepointsFromString(Normalizer.normalize(text, Normalizer.Form.NFKC));
+  }
+
   private static synchronized Map<Integer, List<Integer>> confusablesMap() {
     if (confusablesMap == null) confusablesMap = parseConfusables(readResource("confusables.txt"));
     return confusablesMap;

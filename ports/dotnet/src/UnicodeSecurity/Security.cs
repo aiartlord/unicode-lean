@@ -595,6 +595,21 @@ public static class Security
     private static List<int> ToNfdCodepoints(List<int> input) =>
         CodepointsFromString(CodepointsToString(input).Normalize(NormalizationForm.FormD));
 
+    // Compatibility decomposition (NFKD). The detector layer normalizes with
+    // canonical NFD; NFKD additionally applies the compatibility mappings
+    // (field-5 <tag> entries in UnicodeData), matching Unicode.Normalization.NFKD
+    // and the Rust port's to_nfkd. Built on the same string.Normalize path the
+    // port already uses for NFD, with NormalizationForm.FormKD.
+    public static IReadOnlyList<int> ToNfkd(IEnumerable<int> input) =>
+        CodepointsFromString(CodepointsToString(input.ToList()).Normalize(NormalizationForm.FormKD));
+
+    // Compatibility composition (NFKC): NFKD followed by canonical composition,
+    // matching Unicode.Normalization.NFKC and the Rust port's to_nfkc. Built on
+    // the same string.Normalize path the port uses for NFD/NFC, with
+    // NormalizationForm.FormKC.
+    public static IReadOnlyList<int> ToNfkc(IEnumerable<int> input) =>
+        CodepointsFromString(CodepointsToString(input.ToList()).Normalize(NormalizationForm.FormKC));
+
     private static string CodepointsToString(List<int> input)
     {
         var builder = new StringBuilder();

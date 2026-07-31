@@ -11,6 +11,8 @@ import {
   scanUtf32LE,
   verdictJson,
   verdictToWire,
+  toNfkdCodepoints,
+  toNfkcCodepoints,
 } from "../src/security.js";
 import { instantiateSecurity as instantiateEdgeSecurity } from "../src/edge.js";
 
@@ -238,4 +240,22 @@ test("rtl-injection detector matches Lean spot-checks", () => {
     const got = finding ? finding.sub_threat : null;
     assert.equal(got, want, name);
   }
+});
+
+test("NFKC normalization matches Lean/Rust reference vectors", () => {
+  assert.deepEqual(toNfkcCodepoints([0xfb01]), [0x66, 0x69], "fi ligature");
+  assert.deepEqual(toNfkcCodepoints([0x2460]), [0x31], "circled digit one");
+  assert.deepEqual(toNfkcCodepoints([0xff21]), [0x41], "fullwidth A");
+  assert.deepEqual(toNfkcCodepoints([0x00e9]), [0x00e9], "precomposed e-acute");
+  assert.deepEqual(toNfkcCodepoints([0x0065, 0x0301]), [0x00e9], "e + combining acute");
+  assert.deepEqual(
+    toNfkcCodepoints([0x1112, 0x1161, 0x11ab]),
+    [0xd55c],
+    "hangul jamo composition",
+  );
+});
+
+test("NFKD normalization matches Lean/Rust reference vectors", () => {
+  assert.deepEqual(toNfkdCodepoints([0xff21]), [0x41], "fullwidth A");
+  assert.deepEqual(toNfkdCodepoints([0x00e9]), [0x0065, 0x0301], "e-acute decomposition");
 });

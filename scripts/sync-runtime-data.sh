@@ -112,12 +112,14 @@ go_files=(
   "${homoglyph_files[@]}"
   UnicodeData.txt
   DerivedBidiClass.txt
+  CompositionExclusions.txt
 )
 
 zig_files=(
   "${homoglyph_files[@]}"
   UnicodeData.txt
   DerivedBidiClass.txt
+  CompositionExclusions.txt
 )
 
 # The remaining runtime ports read Bidi_Class from DerivedBidiClass.txt

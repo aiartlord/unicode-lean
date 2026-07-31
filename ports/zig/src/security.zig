@@ -1204,6 +1204,139 @@ fn hangulDecomposition(cp: u32) ?HangulDecomposition {
     return .{ .items = .{ l, v, t_base + t_index }, .len = 3 };
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Full compatibility decomposition and canonical composition (NFKD/NFKC).
+//
+// Mirrors the Rust identity port (`security/identity/ucd.rs`) and the Lean
+// `Unicode.Normalization.NFKD`/`NFKC` specifications.  NFKD applies the
+// recursive compatibility decomposition followed by canonical reordering;
+// NFKC recomposes that result with the canonical composition pass.
+// ─────────────────────────────────────────────────────────────────────
+
+/// Recursively decompose `cp` using its compatibility mapping when present,
+/// otherwise its canonical mapping, otherwise Hangul algorithmic
+/// decomposition — the full decomposition of UAX #15 for NFKD.
+fn appendCompatDecomposition(out: *CpBuffer, cp: u32) bool {
+    if (hangulDecomposition(cp)) |jamo| return out.appendSlice(jamo.slice());
+    if (normalizationEntry(cp)) |entry| {
+        if (entry.compat.len > 0) {
+            for (entry.compat) |part| {
+                if (!appendCompatDecomposition(out, part)) return false;
+            }
+            return true;
+        }
+        if (entry.decomp.len > 0) {
+            for (entry.decomp) |part| {
+                if (!appendCompatDecomposition(out, part)) return false;
+            }
+            return true;
+        }
+    }
+    return out.append(cp);
+}
+
+/// UAX #15 NFKD — full compatibility decompose + canonical reorder.
+fn toNFKD(input: []const u32) ?CpBuffer {
+    var out = CpBuffer{};
+    for (input) |cp| {
+        if (!appendCompatDecomposition(&out, cp)) return null;
+    }
+    canonicalOrder(&out);
+    return out;
+}
+
+/// Algorithmic Hangul composition (UAX #15): L + V → LV, and LV + T → LVT.
+fn hangulComposition(a: u32, b: u32) ?u32 {
+    const s_base = 0xAC00;
+    const l_base = 0x1100;
+    const v_base = 0x1161;
+    const t_base = 0x11A7;
+    const l_count = 19;
+    const v_count = 21;
+    const t_count = 28;
+    const n_count = v_count * t_count;
+    const s_count = l_count * n_count;
+
+    if (a >= l_base and a < l_base + l_count and b >= v_base and b < v_base + v_count) {
+        const l_index = a - l_base;
+        const v_index = b - v_base;
+        return s_base + (l_index * v_count + v_index) * t_count;
+    }
+    if (a >= s_base and a < s_base + s_count and (a - s_base) % t_count == 0 and
+        b > t_base and b < t_base + t_count)
+    {
+        return a + (b - t_base);
+    }
+    return null;
+}
+
+/// Look up the primary composite of the starter/combiner pair `(a, b)` in
+/// the generated composition table, which is sorted lexicographically by
+/// `(a, b)`.
+fn compositionEntry(a: u32, b: u32) ?u32 {
+    var lo: usize = 0;
+    var hi: usize = normalization_data.compositions.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        const entry = normalization_data.compositions[mid];
+        if (a < entry.a or (a == entry.a and b < entry.b)) {
+            hi = mid;
+        } else if (a > entry.a or (a == entry.a and b > entry.b)) {
+            lo = mid + 1;
+        } else {
+            return entry.c;
+        }
+    }
+    return null;
+}
+
+/// UAX #15 canonical composition pass: fold each combiner into the most
+/// recent starter it is not blocked from, preferring Hangul composition
+/// then the composition table.  Operates on an already reordered sequence.
+fn canonicalCompose(seq: []const u32) ?CpBuffer {
+    var out = CpBuffer{};
+    var starter_idx: ?usize = null;
+    var last_ccc: i32 = -1;
+
+    for (seq) |cp| {
+        const cp_ccc: i32 = canonicalCombiningClass(cp);
+
+        if (starter_idx) |si| {
+            const starter = out.items[si];
+            const composed = hangulComposition(starter, cp) orelse compositionEntry(starter, cp);
+            const blocked = cp_ccc != 0 and last_ccc != 0 and last_ccc >= cp_ccc;
+            if (!blocked) {
+                if (composed) |c| {
+                    out.items[si] = c;
+                    continue;
+                }
+            }
+        }
+
+        if (!out.append(cp)) return null;
+        if (cp_ccc == 0) {
+            starter_idx = out.len - 1;
+            last_ccc = 0;
+        } else {
+            last_ccc = cp_ccc;
+        }
+    }
+
+    return out;
+}
+
+/// UAX #15 NFC — canonical decompose + reorder + canonical recompose.
+fn toNFC(input: []const u32) ?CpBuffer {
+    const nfd = toNFD(input) orelse return null;
+    return canonicalCompose(nfd.slice());
+}
+
+/// UAX #15 NFKC — NFKD followed by canonical recomposition.
+fn toNFKC(input: []const u32) ?CpBuffer {
+    const nfkd = toNFKD(input) orelse return null;
+    return canonicalCompose(nfkd.slice());
+}
+
 fn confusableReplacement(cp: u32, out: *CpBuffer) bool {
     var lo: usize = 0;
     var hi: usize = confusables_data.entries.len;
@@ -1750,4 +1883,51 @@ fn malformedUtf32ReasonCode(sub_threat: []const u8) []const u8 {
         return "unicode.security.C.malformed-utf32.SurrogateCodepoint";
     }
     return "unicode.security.C.malformed-utf32.CodepointBeyondMax";
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// NFKD / NFKC / NFC known-answer tests (UAX #15).  Mirrors the Rust
+// identity port's `nfkc_nfkd_tests`.
+// ─────────────────────────────────────────────────────────────────────
+
+fn expectNormalization(
+    comptime func: fn ([]const u32) ?CpBuffer,
+    input: []const u32,
+    expected: []const u32,
+) !void {
+    const result = func(input) orelse return error.NormalizationFailed;
+    try std.testing.expect(cpSlicesEqual(result.slice(), expected));
+}
+
+test "toNFKC known vectors" {
+    // ﬁ ligature (U+FB01) → "fi".
+    try expectNormalization(toNFKC, &[_]u32{0xFB01}, &[_]u32{ 0x66, 0x69 });
+    // ① circled digit one (U+2460) → "1".
+    try expectNormalization(toNFKC, &[_]u32{0x2460}, &[_]u32{0x31});
+    // Fullwidth A (U+FF21) → "A".
+    try expectNormalization(toNFKC, &[_]u32{0xFF21}, &[_]u32{0x41});
+    // Precomposed é (U+00E9) stays é under NFKC.
+    try expectNormalization(toNFKC, &[_]u32{0x00E9}, &[_]u32{0x00E9});
+    // Decomposed e + combining acute → é under NFKC.
+    try expectNormalization(toNFKC, &[_]u32{ 0x0065, 0x0301 }, &[_]u32{0x00E9});
+    // Hangul jamo L+V+T → precomposed syllable 한 (U+D55C).
+    try expectNormalization(toNFKC, &[_]u32{ 0x1112, 0x1161, 0x11AB }, &[_]u32{0xD55C});
+    // Plain ASCII unchanged.
+    try expectNormalization(toNFKC, &[_]u32{ 0x48, 0x69 }, &[_]u32{ 0x48, 0x69 });
+}
+
+test "toNFKD known vectors" {
+    // Fullwidth A → "A" (compatibility decomposition, no recomposition).
+    try expectNormalization(toNFKD, &[_]u32{0xFF21}, &[_]u32{0x41});
+    // ﬁ → "fi".
+    try expectNormalization(toNFKD, &[_]u32{0xFB01}, &[_]u32{ 0x66, 0x69 });
+    // Precomposed é → e + combining acute under NFKD.
+    try expectNormalization(toNFKD, &[_]u32{0x00E9}, &[_]u32{ 0x0065, 0x0301 });
+}
+
+test "toNFC recomposition" {
+    // Decomposed e + combining acute → precomposed é under NFC.
+    try expectNormalization(toNFC, &[_]u32{ 0x0065, 0x0301 }, &[_]u32{0x00E9});
+    // Hangul jamo L+V+T → precomposed syllable 한 under NFC.
+    try expectNormalization(toNFC, &[_]u32{ 0x1112, 0x1161, 0x11AB }, &[_]u32{0xD55C});
 }

@@ -59,6 +59,10 @@ enum class BidiStrong : std::uint8_t { R, Al, L, Other };
 struct UcdEntry {
     std::uint8_t ccc;
     std::vector<std::uint32_t> canonical_decomp;  // empty if none
+    // Compatibility decomposition (field 5 with a `<tag>` prefix), tag
+    // stripped.  Used by NFKD/NFKC only; empty when the row has a
+    // canonical decomposition or none at all.
+    std::vector<std::uint32_t> compat_decomp;  // empty if none
 };
 
 // One range row parsed from DerivedBidiClass.txt: [lo, hi] carries the
@@ -285,23 +289,43 @@ inline void parse_unicode_data(
             throw std::runtime_error(msg.str());
         }
 
-        // Canonical decomposition (skip compatibility decomps marked with '<…>').
+        // Decomposition field.  A leading `<tag>` marks a compatibility
+        // decomposition (kept for NFKD/NFKC only, tag stripped); anything
+        // else is a canonical decomposition (kept for NFD/NFC/NFKD/NFKC).
         std::string_view decomp_field = trim(fields[5]);
         std::vector<std::uint32_t> canonical_decomp;
-        if (!decomp_field.empty() && decomp_field.front() != '<') {
+        std::vector<std::uint32_t> compat_decomp;
+        if (!decomp_field.empty()) {
+            const bool is_compat = decomp_field.front() == '<';
+            std::string_view codepoints_field = decomp_field;
+            if (is_compat) {
+                // Strip the leading `<tag>` prefix, keep the codepoints.
+                std::size_t close = decomp_field.find('>');
+                if (close != std::string_view::npos) {
+                    codepoints_field = decomp_field.substr(close + 1);
+                }
+            }
+            std::vector<std::uint32_t> parts;
             std::size_t tok_start = 0;
-            for (std::size_t i = 0; i <= decomp_field.size(); ++i) {
-                if (i == decomp_field.size()
+            for (std::size_t i = 0; i <= codepoints_field.size(); ++i) {
+                if (i == codepoints_field.size()
                     || std::isspace(
-                        static_cast<unsigned char>(decomp_field[i]))) {
+                        static_cast<unsigned char>(codepoints_field[i]))) {
                     if (i > tok_start) {
                         auto tok =
-                            decomp_field.substr(tok_start, i - tok_start);
+                            codepoints_field.substr(tok_start, i - tok_start);
                         if (auto val = parse_hex_u32(tok)) {
-                            canonical_decomp.push_back(*val);
+                            parts.push_back(*val);
                         }
                     }
                     tok_start = i + 1;
+                }
+            }
+            if (!parts.empty()) {
+                if (is_compat) {
+                    compat_decomp = std::move(parts);
+                } else {
+                    canonical_decomp = std::move(parts);
                 }
             }
         }
@@ -310,6 +334,7 @@ inline void parse_unicode_data(
             UcdEntry{
                 static_cast<std::uint8_t>(ccc_val),
                 std::move(canonical_decomp),
+                std::move(compat_decomp),
             });
     });
 }
@@ -789,6 +814,57 @@ inline std::vector<std::uint32_t> to_nfd(
     auto seq = canonical_decompose(t, input);
     canonical_reorder(t, seq);
     return seq;
+}
+
+// Recursively decompose `cp` using its compatibility mapping when present,
+// otherwise its canonical mapping, otherwise Hangul algorithmic
+// decomposition — the full decomposition of UAX #15 for NFKD.
+inline void compat_decompose_one(
+    const Tables& t, std::uint32_t cp,
+    std::vector<std::uint32_t>& out) {
+    if (hangul_decompose(cp, out)) return;
+    auto it = t.ucd.find(cp);
+    if (it != t.ucd.end()) {
+        if (!it->second.compat_decomp.empty()) {
+            for (std::uint32_t child : it->second.compat_decomp) {
+                compat_decompose_one(t, child, out);
+            }
+            return;
+        }
+        if (!it->second.canonical_decomp.empty()) {
+            for (std::uint32_t child : it->second.canonical_decomp) {
+                compat_decompose_one(t, child, out);
+            }
+            return;
+        }
+    }
+    out.push_back(cp);
+}
+
+inline std::vector<std::uint32_t> compat_decompose(
+    const Tables& t, std::span<const std::uint32_t> input) {
+    std::vector<std::uint32_t> out;
+    out.reserve(input.size());
+    for (std::uint32_t cp : input) {
+        compat_decompose_one(t, cp, out);
+    }
+    return out;
+}
+
+/// UAX #15 NFKD — full compatibility decompose + canonical reorder,
+/// without the recomposition pass.
+inline std::vector<std::uint32_t> to_nfkd(
+    const Tables& t, std::span<const std::uint32_t> input) {
+    auto seq = compat_decompose(t, input);
+    canonical_reorder(t, seq);
+    return seq;
+}
+
+/// UAX #15 NFKC — NFKD followed by canonical recomposition.
+inline std::vector<std::uint32_t> to_nfkc(
+    const Tables& t, std::span<const std::uint32_t> input) {
+    auto nfkd = to_nfkd(t, input);
+    return canonical_compose(t, nfkd);
 }
 
 /// UAX #44 Default_Ignorable_Code_Point predicate.  True for

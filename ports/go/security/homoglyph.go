@@ -27,6 +27,9 @@ var emojiVariationSequencesRaw string
 //go:embed data/UnicodeData.txt
 var unicodeDataRaw string
 
+//go:embed data/CompositionExclusions.txt
+var compositionExclusionsRaw string
+
 var (
 	confusablesOnce sync.Once
 	confusablesData map[uint32][]uint32
@@ -38,11 +41,18 @@ var (
 	variationPairs  map[[2]uint32]struct{}
 	normalOnce      sync.Once
 	normalData      normalizationData
+	composeOnce     sync.Once
+	composeTable    map[[2]uint32]uint32
 )
 
 type normalizationData struct {
-	ccc    map[uint32]uint8
+	ccc map[uint32]uint8
+	// Canonical decomposition (field 5 without a `<tag>` prefix). Used by
+	// NFD/NFC.
 	decomp map[uint32][]uint32
+	// Compatibility decomposition (field 5 with a `<tag>` prefix), tag
+	// stripped. Used by NFKD/NFKC only.
+	compat map[uint32][]uint32
 }
 
 func homoglyphTargetMatch(input []uint32) (string, bool) {
@@ -174,6 +184,7 @@ func parseUnicodeData(raw string) normalizationData {
 	out := normalizationData{
 		ccc:    make(map[uint32]uint8),
 		decomp: make(map[uint32][]uint32),
+		compat: make(map[uint32][]uint32),
 	}
 	for _, rawLine := range strings.Split(raw, "\n") {
 		fields := strings.Split(rawLine, ";")
@@ -188,7 +199,20 @@ func parseUnicodeData(raw string) normalizationData {
 			out.ccc[cp] = ccc
 		}
 		decompField := strings.TrimSpace(fields[5])
-		if decompField == "" || strings.HasPrefix(decompField, "<") {
+		if decompField == "" {
+			continue
+		}
+		if strings.HasPrefix(decompField, "<") {
+			// Compatibility decomposition: strip the `<tag>` prefix and
+			// keep the codepoints for NFKD/NFKC (not NFD/NFC).
+			afterTag := decompField
+			if _, rest, found := strings.Cut(decompField, ">"); found {
+				afterTag = rest
+			}
+			compat := parseCodepointField(afterTag)
+			if len(compat) > 0 {
+				out.compat[cp] = compat
+			}
 			continue
 		}
 		decomp := parseCodepointField(decompField)

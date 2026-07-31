@@ -13,6 +13,7 @@ struct SecurityContractRunner {
         try testUtf8DecodeContract()
         try testMultiEncodingDecodeContract()
         try testDetectorFixtures()
+        try testCompatibilityNormalization()
         print("clean: Swift contract tests pass")
     }
 
@@ -200,6 +201,32 @@ struct SecurityContractRunner {
             let finding = verdict.findings.first { $0.code == code }
             try expect(finding != nil, "\(try string(entry, "name")): missing positions for \(code)")
             try expectEqual(finding?.positions, positions, "\(try string(entry, "name")): \(code)")
+        }
+    }
+
+    // Pins the compatibility-normalization API against Unicode.Normalization.NFKD
+    // and Unicode.Normalization.NFKC: NFKC folds compatibility variants (ligature,
+    // circled digit, fullwidth) to their canonical composites while leaving already
+    // composed canonical forms untouched, and NFKD expands them to compatibility
+    // decompositions in canonical order.
+    private static func testCompatibilityNormalization() throws {
+        let nfkcCases: [(String, [Int], [Int])] = [
+            ("ligature-fi", [0xFB01], [0x66, 0x69]),
+            ("circled-one", [0x2460], [0x31]),
+            ("fullwidth-A", [0xFF21], [0x41]),
+            ("precomposed-e-acute", [0x00E9], [0x00E9]),
+            ("decomposed-e-acute", [0x0065, 0x0301], [0x00E9]),
+            ("hangul-han", [0x1112, 0x1161, 0x11AB], [0xD55C]),
+        ]
+        for (name, input, want) in nfkcCases {
+            try expectEqual(toNfkc(input), want, "toNfkc \(name)")
+        }
+        let nfkdCases: [(String, [Int], [Int])] = [
+            ("fullwidth-A", [0xFF21], [0x41]),
+            ("precomposed-e-acute", [0x00E9], [0x0065, 0x0301]),
+        ]
+        for (name, input, want) in nfkdCases {
+            try expectEqual(toNfkd(input), want, "toNfkd \(name)")
         }
     }
 }

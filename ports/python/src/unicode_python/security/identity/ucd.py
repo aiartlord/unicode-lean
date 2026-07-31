@@ -60,6 +60,10 @@ def _parse_range_field(s: str) -> tuple[int, int]:
 class UcdEntry:
     ccc: int
     canonical_decomp: tuple[int, ...] | None
+    # Compatibility decomposition (field 5 with a ``<tag>`` prefix),
+    # tag stripped.  Used by NFKD/NFKC only; ``None`` when the row has
+    # a canonical decomposition or none at all.
+    compat_decomp: tuple[int, ...] | None
 
 
 def _parse_unicode_data() -> dict[int, UcdEntry]:
@@ -81,18 +85,27 @@ def _parse_unicode_data() -> dict[int, UcdEntry]:
                 f"U+{cp:04X} is not an integer"
             ) from err
         decomp_field = fields[5].strip()
-        if not decomp_field:
-            canonical_decomp: tuple[int, ...] | None = None
-        elif decomp_field.startswith("<"):
-            # Compatibility decomposition — skip for NFC.
-            canonical_decomp = None
-        else:
-            canonical_decomp = tuple(
-                _parse_hex(tok) for tok in decomp_field.split()
-            )
-            if not canonical_decomp:
-                canonical_decomp = None
-        out[cp] = UcdEntry(ccc=ccc, canonical_decomp=canonical_decomp)
+        canonical_decomp: tuple[int, ...] | None = None
+        compat_decomp: tuple[int, ...] | None = None
+        if decomp_field:
+            if decomp_field.startswith("<"):
+                # Compatibility decomposition: strip the ``<tag>``
+                # prefix, keep the codepoints for NFKD/NFKC (not
+                # NFD/NFC).
+                gt = decomp_field.find(">")
+                after_tag = decomp_field if gt < 0 else decomp_field[gt + 1 :]
+                parts = tuple(_parse_hex(tok) for tok in after_tag.split())
+                if parts:
+                    compat_decomp = parts
+            else:
+                parts = tuple(_parse_hex(tok) for tok in decomp_field.split())
+                if parts:
+                    canonical_decomp = parts
+        out[cp] = UcdEntry(
+            ccc=ccc,
+            canonical_decomp=canonical_decomp,
+            compat_decomp=compat_decomp,
+        )
     return out
 
 
@@ -431,6 +444,50 @@ def to_nfd(input_cps: list[int]) -> list[int]:
     decomposed = _canonical_decompose(input_cps)
     _canonical_reorder(decomposed)
     return decomposed
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Full compatibility decomposition (NFKD/NFKC)
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _compat_decompose_one(cp: int, out: list[int]) -> None:
+    """Recursively decompose ``cp`` using its compatibility mapping when
+    present, otherwise its canonical mapping, otherwise Hangul
+    algorithmic decomposition — the full decomposition of UAX #15 for
+    NFKD."""
+    if _hangul_decompose(cp, out):
+        return
+    entry = ucd_table().get(cp)
+    if entry is not None:
+        if entry.compat_decomp is not None:
+            for child in entry.compat_decomp:
+                _compat_decompose_one(child, out)
+            return
+        if entry.canonical_decomp is not None:
+            for child in entry.canonical_decomp:
+                _compat_decompose_one(child, out)
+            return
+    out.append(cp)
+
+
+def _compat_decompose(input_cps: list[int]) -> list[int]:
+    out: list[int] = []
+    for cp in input_cps:
+        _compat_decompose_one(cp, out)
+    return out
+
+
+def to_nfkd(input_cps: list[int]) -> list[int]:
+    """UAX #15 NFKD — full compatibility decompose + canonical reorder."""
+    decomposed = _compat_decompose(input_cps)
+    _canonical_reorder(decomposed)
+    return decomposed
+
+
+def to_nfkc(input_cps: list[int]) -> list[int]:
+    """UAX #15 NFKC — NFKD followed by canonical recomposition."""
+    return _canonical_compose(to_nfkd(input_cps))
 
 
 # ─────────────────────────────────────────────────────────────────────
