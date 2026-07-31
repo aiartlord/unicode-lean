@@ -37,6 +37,16 @@ root_manifest_files=(
   SpecialCasing.txt
   StandardizedVariants.txt
   UnicodeData.txt
+  bip39/chinese_simplified.txt
+  bip39/chinese_traditional.txt
+  bip39/czech.txt
+  bip39/english.txt
+  bip39/french.txt
+  bip39/italian.txt
+  bip39/japanese.txt
+  bip39/korean.txt
+  bip39/portuguese.txt
+  bip39/spanish.txt
   UCD-VERSION
 )
 
@@ -55,6 +65,16 @@ python_files=(
   UnicodeData.txt
   confusables.txt
   emoji-variation-sequences.txt
+  bip39/chinese_simplified.txt
+  bip39/chinese_traditional.txt
+  bip39/czech.txt
+  bip39/english.txt
+  bip39/french.txt
+  bip39/italian.txt
+  bip39/japanese.txt
+  bip39/korean.txt
+  bip39/portuguese.txt
+  bip39/spanish.txt
 )
 
 # The Rust crate compile-time include_str!s the full canonical set.
