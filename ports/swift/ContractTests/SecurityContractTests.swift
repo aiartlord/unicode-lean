@@ -4,6 +4,7 @@ import UnicodeSecurity
 @main
 struct SecurityContractRunner {
     static func main() throws {
+        try testSurrogateReassembly()
         try testRtlInjection()
         try testPolicyContract()
         try testVerdictContract()
@@ -11,6 +12,38 @@ struct SecurityContractRunner {
         try testMultiEncodingDecodeContract()
         try testDetectorFixtures()
         print("clean: Swift contract tests pass")
+    }
+
+    // Pins the surrogate-reassembly detector against the detect_* spot-check
+    // theorems in Unicode/Security/Covert/SurrogateReassembly.lean. Each byte
+    // stream is scanned; the surrogate-reassembly finding's sub-threat (or its
+    // absence, for a clear input) must match the Lean verdict.
+    private static func testSurrogateReassembly() throws {
+        let cases: [(String, [Int], String?)] = [
+            ("clear-empty", [], nil),
+            ("clear-ascii", [0x48, 0x65, 0x6C, 0x6C, 0x6F], nil),
+            ("clear-e-acute", [0xC3, 0xA9], nil),
+            ("clear-han", [0xE4, 0xB8, 0xAD], nil),
+            ("clear-emoji", [0xF0, 0x9F, 0x98, 0x80], nil),
+            ("invalid-start-c080", [0xC0, 0x80], "InvalidStartByte"),
+            ("invalid-start-c0af", [0xC0, 0xAF], "InvalidStartByte"),
+            ("invalid-start-fe", [0xFE], "InvalidStartByte"),
+            ("invalid-start-lone-cont", [0x80], "InvalidStartByte"),
+            ("invalid-start-ff", [0xFF], "InvalidStartByte"),
+            ("overlong-3byte", [0xE0, 0x80, 0xAF], "Overlong"),
+            ("overlong-4byte", [0xF0, 0x80, 0x80, 0xAF], "Overlong"),
+            ("cesu8-surrogate", [0xED, 0xA0, 0x80], "Cesu8"),
+            ("cesu8-surrogate-high", [0xED, 0xAF, 0xBF], "Cesu8"),
+            ("truncated-2byte", [0xC3], "Truncated"),
+            ("truncated-4byte", [0xF0, 0x9F, 0x98], "Truncated"),
+            ("non-byte-stream-emoji", [0x1F600], nil),
+            ("non-byte-stream-mixed", [0x41, 0x100], nil),
+        ]
+        for (name, input, want) in cases {
+            let verdict = scan(profile: Profile.gatewayHeader, mode: Mode.observe, input: input)
+            let sub = verdict.findings.first { $0.family == Family.surrogateReassembly }?.subThreat
+            try expectEqual(sub, want, "surrogate-reassembly \(name)")
+        }
     }
 
     // Pins the RTL-injection detector against the detect_* spot-check

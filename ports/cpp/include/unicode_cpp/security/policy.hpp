@@ -19,6 +19,7 @@
 #include "unicode_cpp/noncharacters.hpp"
 #include "unicode_cpp/security/calculus.hpp"
 #include "unicode_cpp/security/covert/bidi_control_balance.hpp"
+#include "unicode_cpp/security/covert/surrogate_reassembly.hpp"
 #include "unicode_cpp/security/covert/tag_block_payload.hpp"
 #include "unicode_cpp/security/covert/variation_selector_payload.hpp"
 #include "unicode_cpp/security/covert/zero_width_payload.hpp"
@@ -789,6 +790,13 @@ scan_with_identity_database(Profile profile, Mode mode,
                 *zw_result.sub)}
           : std::nullopt,
       zw_result.zero_width_positions);
+
+  const auto surrogate_result = surrogate_reassembly::detect(input);
+  if (surrogate_result.sub) {
+    detail::push_finding(findings, Family::SurrogateReassembly,
+                         ClassificationKind::Hazard, surrogate_result.sub,
+                         surrogate_result.positions);
+  }
 
   const auto bidi_result = bidi_control_balance::detect(input);
   detail::push_finding(

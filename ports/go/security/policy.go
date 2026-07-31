@@ -51,6 +51,7 @@ const (
 	FamilyTagBlockPayload     Family = "tag-block-payload"
 	FamilyVariationSelector   Family = "variation-selector-payload"
 	FamilyZeroWidthPayload    Family = "zero-width-payload"
+	FamilySurrogateReassembly Family = "surrogate-reassembly"
 	FamilyBidiControlBalance  Family = "bidi-control-balance"
 	FamilyNoncharacterControl Family = "noncharacter-control"
 	FamilyHomoglyphConfusable Family = "homoglyph-confusable"
@@ -140,6 +141,10 @@ func detect(input []uint32) []Finding {
 		})
 	}
 
+	if finding, ok := surrogateReassemblyFinding(input); ok {
+		findings = append(findings, finding)
+	}
+
 	if positions := positionsWhere(input, isBidiEmbeddingControl); len(positions) > 0 {
 		findings = append(findings, Finding{
 			Code:      reasonCode(FamilyBidiControlBalance, "UnbalancedEmbedding"),
@@ -199,6 +204,7 @@ func blocks(level PolicyLevel, family Family) bool {
 			family == FamilyZeroWidthPayload ||
 			family == FamilyBidiControlBalance ||
 			family == FamilyNoncharacterControl ||
+			family == FamilySurrogateReassembly ||
 			family == FamilyHomoglyphConfusable ||
 			family == FamilyMixedScript
 	case PolicyModerate:
@@ -210,12 +216,14 @@ func blocks(level PolicyLevel, family Family) bool {
 			family == FamilyZeroWidthPayload ||
 			family == FamilyBidiControlBalance ||
 			family == FamilyNoncharacterControl ||
+			family == FamilySurrogateReassembly ||
 			family == FamilyHomoglyphConfusable ||
 			family == FamilyMixedScript
 	case PolicyMinimal:
 		return family == FamilyMalformedUTF8 ||
 			family == FamilyMalformedUTF16 ||
 			family == FamilyMalformedUTF32 ||
+			family == FamilySurrogateReassembly ||
 			family == FamilyBidiControlBalance ||
 			family == FamilyNoncharacterControl
 	default:
@@ -227,6 +235,7 @@ func blocks(level PolicyLevel, family Family) bool {
 			family == FamilyZeroWidthPayload ||
 			family == FamilyBidiControlBalance ||
 			family == FamilyNoncharacterControl ||
+			family == FamilySurrogateReassembly ||
 			family == FamilyHomoglyphConfusable ||
 			family == FamilyMixedScript
 	}
@@ -466,7 +475,7 @@ func reasonCode(family Family, subThreat string) string {
 
 func layer(family Family) string {
 	switch family {
-	case FamilyMalformedUTF8, FamilyMalformedUTF16, FamilyMalformedUTF32, FamilyTagBlockPayload, FamilyVariationSelector, FamilyZeroWidthPayload, FamilyBidiControlBalance, FamilyNoncharacterControl:
+	case FamilyMalformedUTF8, FamilyMalformedUTF16, FamilyMalformedUTF32, FamilyTagBlockPayload, FamilyVariationSelector, FamilyZeroWidthPayload, FamilySurrogateReassembly, FamilyBidiControlBalance, FamilyNoncharacterControl:
 		return "C"
 	case FamilyHomoglyphConfusable, FamilyMixedScript:
 		return "I"

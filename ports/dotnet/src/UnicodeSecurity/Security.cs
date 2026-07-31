@@ -47,6 +47,7 @@ public static class Security
         public const string TagBlockPayload = "tag-block-payload";
         public const string VariationSelectorPayload = "variation-selector-payload";
         public const string ZeroWidthPayload = "zero-width-payload";
+        public const string SurrogateReassembly = "surrogate-reassembly";
         public const string BidiControlBalance = "bidi-control-balance";
         public const string NoncharacterControl = "noncharacter-control";
         public const string HomoglyphConfusable = "homoglyph-confusable";
@@ -138,6 +139,8 @@ public static class Security
         if (variation is not null) findings.Add(variation);
         var zeroWidth = PositionsWhere(input, IsZeroWidthPayload);
         if (zeroWidth.Count > 0) findings.Add(MakeFinding(Family.ZeroWidthPayload, "BareZeroWidth", zeroWidth));
+        var surrogate = SurrogateReassemblyFinding(input);
+        if (surrogate is not null) findings.Add(surrogate);
         var bidi = PositionsWhere(input, IsBidiEmbeddingControl);
         if (bidi.Count > 0) findings.Add(MakeFinding(Family.BidiControlBalance, "UnbalancedEmbedding", bidi));
         findings.AddRange(NoncharacterControlFindings(input));
@@ -181,10 +184,12 @@ public static class Security
         if (level == PolicyLevel.Minimal)
         {
             return family is Family.MalformedUtf8 or Family.MalformedUtf16 or Family.MalformedUtf32
+                or Family.SurrogateReassembly
                 or Family.BidiControlBalance or Family.NoncharacterControl;
         }
         return family is Family.MalformedUtf8 or Family.MalformedUtf16 or Family.MalformedUtf32
             or Family.TagBlockPayload or Family.VariationSelectorPayload or Family.ZeroWidthPayload
+            or Family.SurrogateReassembly
             or Family.BidiControlBalance or Family.NoncharacterControl or Family.HomoglyphConfusable
             or Family.MixedScriptAdmissibility;
     }
@@ -343,6 +348,51 @@ public static class Security
         var (sub, positions) = RtlInjectionDetect(input);
         return sub is null ? null : MakeFinding(Family.RtlInjection, sub, positions);
     }
+
+    // Surrogate-reassembly / malformed-byte-stream detection — a direct port
+    // of Unicode/Security/Covert/SurrogateReassembly.lean. The codepoint list
+    // is treated as a byte stream (one octet per entry); the family only
+    // applies when every entry fits in one octet (< 0x100), matching the
+    // looksLikeByteStream gate. When it applies, the shared strict UTF-8
+    // validator (FirstInvalidUtf8) surfaces the first violation, whose reject
+    // kind is projected onto a covert-layer sub-threat. Sub == null means a
+    // clear input (well-formed, or not a byte stream). Exposed for direct
+    // spot-check testing, mirroring the Rust/Python/C++ detectors.
+    public static (string? Sub, IReadOnlyList<int> Positions) SurrogateReassemblyDetect(IReadOnlyList<int> input)
+    {
+        if (!LooksLikeByteStream(input)) return (null, System.Array.Empty<int>());
+        var bytes = new byte[input.Count];
+        for (var index = 0; index < input.Count; index++) bytes[index] = (byte)input[index];
+        var failure = FirstInvalidUtf8(bytes);
+        return failure is null
+            ? (null, System.Array.Empty<int>())
+            : (SubThreatOfRejectKind(failure.SubThreat), new List<int> { failure.Offset });
+    }
+
+    private static Finding? SurrogateReassemblyFinding(List<int> input)
+    {
+        var (sub, positions) = SurrogateReassemblyDetect(input);
+        return sub is null ? null : MakeFinding(Family.SurrogateReassembly, sub, positions);
+    }
+
+    // True iff every entry fits in one octet — the looksLikeByteStream gate. A
+    // codepoint list containing any value >= 0x100 is not a byte stream, and
+    // running the UTF-8 validator on it would be meaningless.
+    private static bool LooksLikeByteStream(IReadOnlyList<int> input) => input.All(cp => cp < 0x100);
+
+    // Project a strict-UTF-8 reject kind onto its surrogate-reassembly
+    // sub-threat tag, mirroring subThreatOfRejectKind in the Lean spec. These
+    // tags DIFFER from the malformed-utf8 family's reject-kind strings.
+    private static string SubThreatOfRejectKind(string kind) => kind switch
+    {
+        "OverlongEncoding" => "Overlong",
+        "SurrogateCodepoint" => "Cesu8",
+        "TruncatedSequence" => "Truncated",
+        "InvalidStartByte" => "InvalidStartByte",
+        "InvalidContinuationByte" => "InvalidContinuation",
+        "CodepointBeyondMax" => "CodepointBeyondMax",
+        var other => throw new InvalidOperationException($"unknown UTF-8 reject kind: {other}"),
+    };
 
     private static bool IsBidiFormatControl(int cp) =>
         cp is >= 0x202A and <= 0x202E || cp is >= 0x2066 and <= 0x2069;

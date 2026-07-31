@@ -384,3 +384,50 @@ test "rtl-injection ground truth vectors" {
     try std.testing.expectEqualStrings("StrongRTLInLTR", rtlSubThreat(&[_]u32{ 0x41, 0x42, 0x05D0, 0x44 }).?);
     try std.testing.expectEqualStrings("MixedOverflow", rtlSubThreat(&[_]u32{ 0x41, 0x42, 0x05D0, 0x05D1, 0x05D2, 0x05D3, 0x44 }).?);
 }
+
+// Ground-truth vectors for the surrogate-reassembly detector, mirroring the
+// `detect_*` spot-check theorems in
+// Unicode/Security/Covert/SurrogateReassembly.lean (each proven by `decide`)
+// and the port at ports/rust/src/security/covert/surrogate_reassembly.rs.
+// Exercised through the public `scan` API: the reported sub_threat of the
+// single surrogate_reassembly finding must match, and a clear input (either
+// well-formed UTF-8 or not a byte stream) must produce none.
+fn surrogateSubThreat(input: []const u32) ?[]const u8 {
+    const verdict = security.scan(.gateway_header, .observe, input);
+    for (verdict.findings.items[0..verdict.findings.len]) |finding| {
+        if (finding.family == .surrogate_reassembly) return finding.sub_threat;
+    }
+    return null;
+}
+
+test "surrogate-reassembly ground truth vectors" {
+    // Clear: empty, ASCII, and well-formed multi-byte UTF-8 encodings.
+    try std.testing.expectEqual(@as(?[]const u8, null), surrogateSubThreat(&[_]u32{}));
+    try std.testing.expectEqual(@as(?[]const u8, null), surrogateSubThreat(&[_]u32{ 0x48, 0x65, 0x6C, 0x6C, 0x6F }));
+    try std.testing.expectEqual(@as(?[]const u8, null), surrogateSubThreat(&[_]u32{ 0xC3, 0xA9 })); // é
+    try std.testing.expectEqual(@as(?[]const u8, null), surrogateSubThreat(&[_]u32{ 0xE4, 0xB8, 0xAD })); // 中
+    try std.testing.expectEqual(@as(?[]const u8, null), surrogateSubThreat(&[_]u32{ 0xF0, 0x9F, 0x98, 0x80 })); // 😀
+
+    // Invalid start byte.
+    try std.testing.expectEqualStrings("InvalidStartByte", surrogateSubThreat(&[_]u32{ 0xC0, 0x80 }).?);
+    try std.testing.expectEqualStrings("InvalidStartByte", surrogateSubThreat(&[_]u32{ 0xC0, 0xAF }).?);
+    try std.testing.expectEqualStrings("InvalidStartByte", surrogateSubThreat(&[_]u32{0xFE}).?);
+    try std.testing.expectEqualStrings("InvalidStartByte", surrogateSubThreat(&[_]u32{0x80}).?);
+    try std.testing.expectEqualStrings("InvalidStartByte", surrogateSubThreat(&[_]u32{0xFF}).?);
+
+    // Overlong encodings.
+    try std.testing.expectEqualStrings("Overlong", surrogateSubThreat(&[_]u32{ 0xE0, 0x80, 0xAF }).?);
+    try std.testing.expectEqualStrings("Overlong", surrogateSubThreat(&[_]u32{ 0xF0, 0x80, 0x80, 0xAF }).?);
+
+    // CESU-8 / surrogate codepoints.
+    try std.testing.expectEqualStrings("Cesu8", surrogateSubThreat(&[_]u32{ 0xED, 0xA0, 0x80 }).?);
+    try std.testing.expectEqualStrings("Cesu8", surrogateSubThreat(&[_]u32{ 0xED, 0xAF, 0xBF }).?);
+
+    // Truncated sequences.
+    try std.testing.expectEqualStrings("Truncated", surrogateSubThreat(&[_]u32{0xC3}).?);
+    try std.testing.expectEqualStrings("Truncated", surrogateSubThreat(&[_]u32{ 0xF0, 0x9F, 0x98 }).?);
+
+    // Not a byte stream (any codepoint >= 0x100) → the family does not apply.
+    try std.testing.expectEqual(@as(?[]const u8, null), surrogateSubThreat(&[_]u32{0x1F600}));
+    try std.testing.expectEqual(@as(?[]const u8, null), surrogateSubThreat(&[_]u32{ 0x41, 0x100 }));
+}

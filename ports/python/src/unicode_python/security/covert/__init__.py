@@ -9,6 +9,7 @@ controls.
 
 from . import (
     bidi_control_balance,
+    surrogate_reassembly,
     tag_block_payload,
     variation_selector_payload,
     zero_width_payload,
@@ -16,6 +17,7 @@ from . import (
 
 __all__ = [
     "bidi_control_balance",
+    "surrogate_reassembly",
     "tag_block_payload",
     "variation_selector_payload",
     "zero_width_payload",

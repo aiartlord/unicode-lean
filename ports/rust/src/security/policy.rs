@@ -6,8 +6,10 @@
 use crate::noncharacters;
 use crate::security::calculus::{ClassificationKind, Family, Severity};
 use crate::security::covert::{
-    bidi_control_balance, tag_block_payload, variation_selector_payload, zero_width_payload,
+    bidi_control_balance, surrogate_reassembly, tag_block_payload, variation_selector_payload,
+    zero_width_payload,
 };
+use crate::security::boundary::confusable_bidi_compound;
 use crate::security::display::rtl_injection;
 use crate::security::identity::homoglyph_confusable;
 use crate::strict::Utf8RejectKind;
@@ -692,6 +694,17 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
         zw.zero_width_positions,
     );
 
+    let surrogate = surrogate_reassembly::detect(input);
+    if let Some(sub) = surrogate.sub {
+        push_finding(
+            &mut findings,
+            Family::SurrogateReassembly,
+            ClassificationKind::Hazard,
+            Some(sub),
+            surrogate.positions,
+        );
+    }
+
     let bidi = bidi_control_balance::detect(input);
     push_finding(
         &mut findings,
@@ -753,6 +766,17 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
             ClassificationKind::Hazard,
             Some(sub),
             rtl.positions,
+        );
+    }
+
+    let confusable_bidi = confusable_bidi_compound::detect(input);
+    if let Some(sub) = confusable_bidi.sub {
+        push_finding(
+            &mut findings,
+            Family::ConfusableBidiCompound,
+            ClassificationKind::Hazard,
+            Some(sub),
+            confusable_bidi.positions,
         );
     }
 

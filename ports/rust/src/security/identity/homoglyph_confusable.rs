@@ -104,6 +104,15 @@ fn confusables_map() -> &'static HashMap<u32, Vec<u32>> {
     })
 }
 
+/// True iff `cp` is a confusable source per UTS #39 §4 — it has a row in
+/// confusables.txt mapping it to a different skeleton. Mirrors
+/// `Unicode.Confusables.lookupConfusable?(cp).isSome`. Plain ASCII letters
+/// return `false`; homoglyph forms (Cyrillic а, Greek ο, math-italic
+/// letters, …) return `true`.
+pub fn is_confusable_source(cp: u32) -> bool {
+    confusables_map().contains_key(&cp)
+}
+
 fn known_attack_targets() -> &'static Vec<String> {
     static TARGETS: OnceLock<Vec<String>> = OnceLock::new();
     TARGETS.get_or_init(|| {

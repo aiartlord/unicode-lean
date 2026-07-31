@@ -7,6 +7,7 @@
 //! controls.
 
 pub mod bidi_control_balance;
+pub mod surrogate_reassembly;
 pub mod tag_block_payload;
 pub mod variation_selector_payload;
 pub mod zero_width_payload;

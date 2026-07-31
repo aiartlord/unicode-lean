@@ -104,6 +104,44 @@ test("edge entry works with injected data", async () => {
   assert.ok(hasFinding(verdict.findings, "unicode.security.I.homoglyph-confusable.TargetMatch"));
 });
 
+test("surrogate-reassembly detector matches Lean spot-checks", () => {
+  const cases = [
+    // Clear: empty, ASCII, and well-formed multi-byte UTF-8.
+    ["clear-empty", [], null],
+    ["clear-ascii", [0x48, 0x65, 0x6c, 0x6c, 0x6f], null],
+    ["clear-e-acute", [0xc3, 0xa9], null],
+    ["clear-han", [0xe4, 0xb8, 0xad], null],
+    ["clear-emoji", [0xf0, 0x9f, 0x98, 0x80], null],
+    // Invalid start byte (0xC0/0xC1 forbidden, lone continuation, 0xFE/0xFF).
+    ["modified-utf8-null", [0xc0, 0x80], "InvalidStartByte"],
+    ["modified-utf8-slash", [0xc0, 0xaf], "InvalidStartByte"],
+    ["byte-fe", [0xfe], "InvalidStartByte"],
+    ["lone-continuation", [0x80], "InvalidStartByte"],
+    ["byte-ff", [0xff], "InvalidStartByte"],
+    // Overlong encodings.
+    ["overlong-slash-3byte", [0xe0, 0x80, 0xaf], "Overlong"],
+    ["overlong-slash-4byte", [0xf0, 0x80, 0x80, 0xaf], "Overlong"],
+    // CESU-8 / surrogate codepoints.
+    ["cesu8-surrogate", [0xed, 0xa0, 0x80], "Cesu8"],
+    ["cesu8-surrogate-high", [0xed, 0xaf, 0xbf], "Cesu8"],
+    // Truncated sequences.
+    ["truncated-2byte", [0xc3], "Truncated"],
+    ["truncated-4byte", [0xf0, 0x9f, 0x98], "Truncated"],
+    // Non-byte-stream input (any codepoint >= 0x100): family does not apply.
+    ["non-byte-stream-emoji", [0x1f600], null],
+    ["non-byte-stream-mixed", [0x41, 0x100], null],
+  ];
+  for (const [name, input, want] of cases) {
+    const verdict = scan("gateway-header", "observe", input);
+    const finding = verdict.findings.find((f) => f.family === "surrogate-reassembly");
+    const got = finding ? finding.sub_threat : null;
+    assert.equal(got, want, name);
+    if (want !== null) {
+      assert.equal(finding.code, `unicode.security.C.surrogate-reassembly.${want}`, name);
+    }
+  }
+});
+
 function scanEncodedCase(entry) {
   switch (entry.encoding) {
     case "utf-8":

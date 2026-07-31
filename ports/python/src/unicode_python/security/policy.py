@@ -15,6 +15,7 @@ from .calculus import ClassificationKind, Family, Severity
 from .display import rtl_injection
 from .covert import (
     bidi_control_balance,
+    surrogate_reassembly,
     tag_block_payload,
     variation_selector_payload,
     zero_width_payload,
@@ -497,6 +498,15 @@ def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
         zw.kind,
         zero_width_payload.sub_threat_tag(zw.sub) if zw.sub else None,
         zw.zero_width_positions,
+    )
+
+    sr = surrogate_reassembly.detect(input_cps)
+    _append_finding(
+        findings,
+        Family.SURROGATE_REASSEMBLY,
+        sr.kind,
+        surrogate_reassembly.sub_threat_tag(sr.sub) if sr.sub else None,
+        sr.positions,
     )
 
     bidi = bidi_control_balance.detect(input_cps)

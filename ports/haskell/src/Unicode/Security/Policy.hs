@@ -132,6 +132,7 @@ data Family
   | FamilyTagBlockPayload
   | FamilyVariationSelectorPayload
   | FamilyZeroWidthPayload
+  | FamilySurrogateReassembly
   | FamilyBidiControlBalance
   | FamilyNoncharacterControl
   | FamilyHomoglyphConfusable
@@ -146,6 +147,7 @@ familyTag FamilyMalformedUtf32 = "malformed-utf32"
 familyTag FamilyTagBlockPayload    = "tag-block-payload"
 familyTag FamilyVariationSelectorPayload = "variation-selector-payload"
 familyTag FamilyZeroWidthPayload   = "zero-width-payload"
+familyTag FamilySurrogateReassembly = "surrogate-reassembly"
 familyTag FamilyBidiControlBalance = "bidi-control-balance"
 familyTag FamilyNoncharacterControl = "noncharacter-control"
 familyTag FamilyHomoglyphConfusable = "homoglyph-confusable"
@@ -353,6 +355,7 @@ detect input =
   tagBlockFinding input
     ++ variationSelectorFinding input
     ++ zeroWidthFinding input
+    ++ surrogateReassemblyFinding input
     ++ bidiFinding input
     ++ noncharacterControlFindings input
     ++ homoglyphFinding input
@@ -388,6 +391,49 @@ zeroWidthFinding input =
           , findingDetail = familyTag FamilyZeroWidthPayload
           }
       ]
+
+-- | Surrogate-reassembly \/ malformed-byte-stream detection (layer C).
+-- Direct port of @Unicode.Security.Covert.SurrogateReassembly@. The
+-- codepoint list is treated as a byte stream (one octet per entry); the
+-- family only applies when every entry is a byte (@< 0x100@), matching the
+-- @looksLikeByteStream@ gate. When the shared strict UTF-8 decoder rejects
+-- the byte stream, the first violation is projected onto a covert-layer
+-- sub-threat at its byte offset. A well-formed stream — or an input that is
+-- not a byte stream — is clear.
+surrogateReassemblyFinding :: [Int] -> [Finding]
+surrogateReassemblyFinding input
+  | not (looksLikeByteStream input) = []
+  | otherwise =
+      case Utf8.firstInvalidUtf8Offset (BS.pack (map fromIntegral input)) of
+        Nothing -> []
+        Just (offset, kind) ->
+          let subThreat = surrogateReassemblySubThreat kind
+          in [ Finding
+                 { findingCode = reasonCode FamilySurrogateReassembly subThreat
+                 , findingFamily = FamilySurrogateReassembly
+                 , findingSeverity = 2
+                 , findingPositions = [offset]
+                 , findingSubThreat = subThreat
+                 , findingDetail = familyTag FamilySurrogateReassembly
+                 }
+             ]
+
+-- | True iff every entry fits in one octet — the @looksLikeByteStream@
+-- gate. A codepoint list containing any value @>= 0x100@ is not a byte
+-- stream, so running the UTF-8 decoder on it would be meaningless.
+looksLikeByteStream :: [Int] -> Bool
+looksLikeByteStream = all (\cp -> cp >= 0 && cp < 0x100)
+
+-- | Project a 'Utf8RejectKind' onto its surrogate-reassembly sub-threat
+-- tag. These tags DIFFER from the malformed-utf8 reject tags emitted by
+-- 'utf8RejectTag'; mirrors @subThreatOfRejectKind@ in the Lean spec.
+surrogateReassemblySubThreat :: Utf8RejectKind -> String
+surrogateReassemblySubThreat OverlongEncoding        = "Overlong"
+surrogateReassemblySubThreat SurrogateCodepoint      = "Cesu8"
+surrogateReassemblySubThreat TruncatedSequence       = "Truncated"
+surrogateReassemblySubThreat InvalidStartByte        = "InvalidStartByte"
+surrogateReassemblySubThreat InvalidContinuationByte = "InvalidContinuation"
+surrogateReassemblySubThreat CodepointBeyondMax      = "CodepointBeyondMax"
 
 variationSelectorFinding :: [Int] -> [Finding]
 variationSelectorFinding input =
@@ -459,6 +505,7 @@ blocks PolicyRestrictive FamilyMalformedUtf16     = True
 blocks PolicyRestrictive FamilyMalformedUtf32     = True
 blocks PolicyRestrictive FamilyVariationSelectorPayload = True
 blocks PolicyRestrictive FamilyZeroWidthPayload   = True
+blocks PolicyRestrictive FamilySurrogateReassembly = True
 blocks PolicyRestrictive FamilyBidiControlBalance = True
 blocks PolicyRestrictive FamilyNoncharacterControl = True
 blocks PolicyRestrictive FamilyHomoglyphConfusable = True
@@ -470,12 +517,14 @@ blocks PolicyModerate FamilyMalformedUtf16        = True
 blocks PolicyModerate FamilyMalformedUtf32        = True
 blocks PolicyModerate FamilyVariationSelectorPayload = True
 blocks PolicyModerate FamilyZeroWidthPayload      = True
+blocks PolicyModerate FamilySurrogateReassembly   = True
 blocks PolicyModerate FamilyBidiControlBalance    = True
 blocks PolicyModerate FamilyNoncharacterControl = True
 blocks PolicyModerate FamilyHomoglyphConfusable = True
 blocks PolicyModerate FamilyMixedScriptAdmissibility = True
 blocks PolicyModerate FamilyRtlInjection = True
 blocks PolicyMinimal FamilyBidiControlBalance     = True
+blocks PolicyMinimal FamilySurrogateReassembly    = True
 blocks PolicyMinimal FamilyMalformedUtf8          = True
 blocks PolicyMinimal FamilyMalformedUtf16         = True
 blocks PolicyMinimal FamilyMalformedUtf32         = True
@@ -1017,6 +1066,7 @@ layer FamilyMalformedUtf16     = "C"
 layer FamilyMalformedUtf32     = "C"
 layer FamilyVariationSelectorPayload = "C"
 layer FamilyZeroWidthPayload   = "C"
+layer FamilySurrogateReassembly = "C"
 layer FamilyBidiControlBalance = "C"
 layer FamilyNoncharacterControl = "C"
 layer FamilyHomoglyphConfusable = "I"

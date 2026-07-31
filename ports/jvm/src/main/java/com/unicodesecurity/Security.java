@@ -51,6 +51,7 @@ public final class Security {
     public static final String TAG_BLOCK_PAYLOAD = "tag-block-payload";
     public static final String VARIATION_SELECTOR_PAYLOAD = "variation-selector-payload";
     public static final String ZERO_WIDTH_PAYLOAD = "zero-width-payload";
+    public static final String SURROGATE_REASSEMBLY = "surrogate-reassembly";
     public static final String BIDI_CONTROL_BALANCE = "bidi-control-balance";
     public static final String NONCHARACTER_CONTROL = "noncharacter-control";
     public static final String HOMOGLYPH_CONFUSABLE = "homoglyph-confusable";
@@ -161,6 +162,8 @@ public final class Security {
     if (variation != null) findings.add(variation);
     List<Integer> zeroWidth = positionsWhere(input, Security::isZeroWidthPayload);
     if (!zeroWidth.isEmpty()) findings.add(makeFinding(Family.ZERO_WIDTH_PAYLOAD, "BareZeroWidth", zeroWidth));
+    Finding surrogate = surrogateReassemblyFinding(input);
+    if (surrogate != null) findings.add(surrogate);
     List<Integer> bidi = positionsWhere(input, Security::isBidiEmbeddingControl);
     if (!bidi.isEmpty()) findings.add(makeFinding(Family.BIDI_CONTROL_BALANCE, "UnbalancedEmbedding", bidi));
     findings.addAll(noncharacterControlFindings(input));
@@ -201,12 +204,14 @@ public final class Security {
   private static boolean blocks(PolicyLevel level, String family) {
     if (level == PolicyLevel.MINIMAL) {
       return family.equals(Family.MALFORMED_UTF8) || family.equals(Family.MALFORMED_UTF16) ||
-          family.equals(Family.MALFORMED_UTF32) || family.equals(Family.BIDI_CONTROL_BALANCE) ||
+          family.equals(Family.MALFORMED_UTF32) || family.equals(Family.SURROGATE_REASSEMBLY) ||
+          family.equals(Family.BIDI_CONTROL_BALANCE) ||
           family.equals(Family.NONCHARACTER_CONTROL);
     }
     return family.equals(Family.MALFORMED_UTF8) || family.equals(Family.MALFORMED_UTF16) ||
         family.equals(Family.MALFORMED_UTF32) || family.equals(Family.TAG_BLOCK_PAYLOAD) ||
         family.equals(Family.VARIATION_SELECTOR_PAYLOAD) || family.equals(Family.ZERO_WIDTH_PAYLOAD) ||
+        family.equals(Family.SURROGATE_REASSEMBLY) ||
         family.equals(Family.BIDI_CONTROL_BALANCE) || family.equals(Family.NONCHARACTER_CONTROL) ||
         family.equals(Family.HOMOGLYPH_CONFUSABLE) ||
         family.equals(Family.MIXED_SCRIPT_ADMISSIBILITY);
@@ -308,6 +313,58 @@ public final class Security {
 
   private static boolean isBidiEmbeddingControl(int cp) {
     return cp >= 0x202A && cp <= 0x202E;
+  }
+
+  /** Sub-threat and byte offset of a surrogate-reassembly scan; null sub-threat means clear. */
+  public record SurrogateReassemblyResult(String subThreat, List<Integer> positions) {}
+
+  // Surrogate-reassembly / malformed-byte-stream detection for a codepoint
+  // list shaped as a byte stream — a direct port of
+  // Unicode/Security/Covert/SurrogateReassembly.lean. Exposed for direct
+  // spot-check testing, mirroring the Rust/Python/C++ detectors. The family
+  // only applies when every entry is a byte (< 0x100); the verdict projects
+  // the first UTF-8 violation found by the shared strict decoder onto a
+  // covert-layer sub-threat.
+  public static SurrogateReassemblyResult surrogateReassemblyDetect(List<Integer> input) {
+    if (!looksLikeByteStream(input)) return new SurrogateReassemblyResult(null, List.of());
+    byte[] bytes = new byte[input.size()];
+    for (int i = 0; i < input.size(); i++) bytes[i] = (byte) (int) input.get(i);
+    DecodeFailure failure = firstInvalidUtf8(bytes);
+    if (failure == null) return new SurrogateReassemblyResult(null, List.of());
+    return new SurrogateReassemblyResult(surrogateSubThreatOfRejectKind(failure.subThreat()), List.of(failure.offset()));
+  }
+
+  private static Finding surrogateReassemblyFinding(List<Integer> input) {
+    SurrogateReassemblyResult result = surrogateReassemblyDetect(input);
+    if (result.subThreat() == null) return null;
+    return makeFinding(Family.SURROGATE_REASSEMBLY, result.subThreat(), result.positions());
+  }
+
+  // The looksLikeByteStream gate: a codepoint-array input containing any
+  // value >= 0x100 is not a byte stream, and running the UTF-8 decoder on it
+  // would be meaningless.
+  private static boolean looksLikeByteStream(List<Integer> input) {
+    for (int cp : input) {
+      if (cp >= 0x100) return false;
+    }
+    return true;
+  }
+
+  // Project the shared strict UTF-8 reject kind onto its surrogate-reassembly
+  // sub-threat tag. These tags deliberately differ from the malformed-utf8
+  // tags (which reuse the raw reject-kind names) so the covert-layer verdict
+  // reads in the CESU-8 / overlong / truncation vocabulary of the threat
+  // model. Mirrors subThreatOfRejectKind in the Lean spec.
+  private static String surrogateSubThreatOfRejectKind(String rejectKind) {
+    return switch (rejectKind) {
+      case "OverlongEncoding" -> "Overlong";
+      case "SurrogateCodepoint" -> "Cesu8";
+      case "TruncatedSequence" -> "Truncated";
+      case "InvalidStartByte" -> "InvalidStartByte";
+      case "InvalidContinuationByte" -> "InvalidContinuation";
+      case "CodepointBeyondMax" -> "CodepointBeyondMax";
+      default -> throw new IllegalStateException("unknown UTF-8 reject kind: " + rejectKind);
+    };
   }
 
   private static List<Finding> noncharacterControlFindings(List<Integer> input) {

@@ -115,6 +115,7 @@ pub const Family = enum {
     tag_block_payload,
     variation_selector_payload,
     zero_width_payload,
+    surrogate_reassembly,
     bidi_control_balance,
     noncharacter_control,
     homoglyph_confusable,
@@ -129,6 +130,7 @@ pub const Family = enum {
             .tag_block_payload => "tag-block-payload",
             .variation_selector_payload => "variation-selector-payload",
             .zero_width_payload => "zero-width-payload",
+            .surrogate_reassembly => "surrogate-reassembly",
             .bidi_control_balance => "bidi-control-balance",
             .noncharacter_control => "noncharacter-control",
             .homoglyph_confusable => "homoglyph-confusable",
@@ -396,6 +398,10 @@ fn detect(input: []const u32) FindingList {
         });
     }
 
+    if (surrogateReassemblyFinding(input)) |finding| {
+        findings.append(finding);
+    }
+
     if (positionsWhere(input, isBidiEmbeddingControl)) |positions| {
         findings.append(.{
             .code = "unicode.security.C.bidi-control-balance.UnbalancedEmbedding",
@@ -440,9 +446,9 @@ fn decide(profile: Profile, mode: Mode, findings: FindingList) Action {
 fn blocks(level: PolicyLevel, family: Family) bool {
     return switch (level) {
         .restrictive, .moderate => switch (family) {
-            .malformed_utf8, .malformed_utf16, .malformed_utf32, .tag_block_payload, .variation_selector_payload, .zero_width_payload, .bidi_control_balance, .noncharacter_control, .homoglyph_confusable, .mixed_script_admissibility, .rtl_injection => true,
+            .malformed_utf8, .malformed_utf16, .malformed_utf32, .tag_block_payload, .variation_selector_payload, .zero_width_payload, .surrogate_reassembly, .bidi_control_balance, .noncharacter_control, .homoglyph_confusable, .mixed_script_admissibility, .rtl_injection => true,
         },
-        .minimal => family == .malformed_utf8 or family == .malformed_utf16 or family == .malformed_utf32 or family == .bidi_control_balance or family == .noncharacter_control,
+        .minimal => family == .malformed_utf8 or family == .malformed_utf16 or family == .malformed_utf32 or family == .surrogate_reassembly or family == .bidi_control_balance or family == .noncharacter_control,
     };
 }
 
@@ -1307,7 +1313,7 @@ fn malformedDecodeVerdict(
     };
 }
 
-fn firstInvalidUtf8Offset(bytes: []const u8) ?Utf8Invalid {
+fn firstInvalidUtf8Offset(bytes: anytype) ?Utf8Invalid {
     var in_sequence = false;
     var remaining: u8 = 0;
     var accum: u32 = 0;
@@ -1505,6 +1511,60 @@ fn malformedUtf8ReasonCode(kind: Utf8RejectKind) []const u8 {
         .truncated_sequence => "unicode.security.C.malformed-utf8.TruncatedSequence",
         .invalid_start_byte => "unicode.security.C.malformed-utf8.InvalidStartByte",
         .invalid_continuation_byte => "unicode.security.C.malformed-utf8.InvalidContinuationByte",
+    };
+}
+
+/// Surrogate-reassembly sub-threat tag for a strict-UTF-8 rejection kind.
+/// These tags DIFFER from the malformed-utf8 tags: a covert byte stream
+/// disguised inside a codepoint list is a distinct threat from a raw
+/// malformed wire encoding. Mirrors `subThreatOfRejectKind` in
+/// `Unicode/Security/Covert/SurrogateReassembly.lean`.
+fn surrogateReassemblyTag(kind: Utf8RejectKind) []const u8 {
+    return switch (kind) {
+        .overlong_encoding => "Overlong",
+        .surrogate_codepoint => "Cesu8",
+        .truncated_sequence => "Truncated",
+        .invalid_start_byte => "InvalidStartByte",
+        .invalid_continuation_byte => "InvalidContinuation",
+        .codepoint_beyond_max => "CodepointBeyondMax",
+    };
+}
+
+fn surrogateReassemblyReasonCode(kind: Utf8RejectKind) []const u8 {
+    return switch (kind) {
+        .overlong_encoding => "unicode.security.C.surrogate-reassembly.Overlong",
+        .surrogate_codepoint => "unicode.security.C.surrogate-reassembly.Cesu8",
+        .truncated_sequence => "unicode.security.C.surrogate-reassembly.Truncated",
+        .invalid_start_byte => "unicode.security.C.surrogate-reassembly.InvalidStartByte",
+        .invalid_continuation_byte => "unicode.security.C.surrogate-reassembly.InvalidContinuation",
+        .codepoint_beyond_max => "unicode.security.C.surrogate-reassembly.CodepointBeyondMax",
+    };
+}
+
+/// Detect a malformed UTF-8 byte stream hidden inside a codepoint list.
+///
+/// Only applies to byte-stream-shaped input — every codepoint must fit in a
+/// single octet (`< 0x100`), matching the `looksLikeByteStream` gate in
+/// `Unicode/Security/Covert/SurrogateReassembly.lean`. When the gate holds,
+/// the codepoints are treated as bytes and passed through the shared strict
+/// UTF-8 validator; the first rejection is projected onto a covert-layer
+/// sub-threat at its byte offset. Non-byte-stream input, or a well-formed
+/// stream, yields no finding.
+fn surrogateReassemblyFinding(input: []const u32) ?Finding {
+    for (input) |cp| {
+        if (cp >= 0x100) return null;
+    }
+    const invalid = firstInvalidUtf8Offset(input) orelse return null;
+    var positions: [16]usize = undefined;
+    positions[0] = invalid.offset;
+    return .{
+        .code = surrogateReassemblyReasonCode(invalid.kind),
+        .family = .surrogate_reassembly,
+        .severity = 2,
+        .positions = positions,
+        .position_count = 1,
+        .sub_threat = surrogateReassemblyTag(invalid.kind),
+        .detail = "surrogate-reassembly",
     };
 }
 

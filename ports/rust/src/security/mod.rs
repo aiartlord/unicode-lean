@@ -5,6 +5,7 @@
 //! vocabulary from [`calculus`] and refine it into family-specific
 //! verdict structures.
 
+pub mod boundary;
 pub mod calculus;
 pub mod covert;
 pub mod display;

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using UnicodeSecurity;
 
+TestSurrogateReassemblyVectors();
 TestRtlInjectionVectors();
 TestPolicyContract();
 TestVerdictContract();
@@ -8,6 +9,43 @@ TestUtf8DecodeContract();
 TestMultiEncodingDecodeContract();
 TestDetectorFixtures();
 Console.WriteLine("clean: .NET contract tests pass");
+
+// Direct spot-check of the surrogate-reassembly detector, mirroring the
+// detect_* spot-check theorems in Unicode/Security/Covert/SurrogateReassembly.lean
+// and the Rust port's tests. Runs first so its result is visible before every
+// other test. Sub == null means a clear input (well-formed, or not a byte
+// stream); otherwise it is the malformed-UTF-8 sub-threat tag.
+static void TestSurrogateReassemblyVectors()
+{
+    var vectors = new (int[] Input, string? Sub)[]
+    {
+        (System.Array.Empty<int>(), null),
+        (new[] { 0x48, 0x65, 0x6C, 0x6C, 0x6F }, null),
+        (new[] { 0xC3, 0xA9 }, null),
+        (new[] { 0xE4, 0xB8, 0xAD }, null),
+        (new[] { 0xF0, 0x9F, 0x98, 0x80 }, null),
+        (new[] { 0xC0, 0x80 }, "InvalidStartByte"),
+        (new[] { 0xC0, 0xAF }, "InvalidStartByte"),
+        (new[] { 0xFE }, "InvalidStartByte"),
+        (new[] { 0x80 }, "InvalidStartByte"),
+        (new[] { 0xFF }, "InvalidStartByte"),
+        (new[] { 0xE0, 0x80, 0xAF }, "Overlong"),
+        (new[] { 0xF0, 0x80, 0x80, 0xAF }, "Overlong"),
+        (new[] { 0xED, 0xA0, 0x80 }, "Cesu8"),
+        (new[] { 0xED, 0xAF, 0xBF }, "Cesu8"),
+        (new[] { 0xC3 }, "Truncated"),
+        (new[] { 0xF0, 0x9F, 0x98 }, "Truncated"),
+        (new[] { 0x1F600 }, null),
+        (new[] { 0x41, 0x100 }, null),
+    };
+    foreach (var (input, expected) in vectors)
+    {
+        var (actual, _) = Security.SurrogateReassemblyDetect(input);
+        var name = "surrogate-reassembly [" + string.Join(",", input.Select(cp => "0x" + cp.ToString("X"))) + "]";
+        AssertEqual(expected ?? "<clear>", actual ?? "<clear>", name);
+    }
+    Console.WriteLine("clean: .NET surrogate-reassembly 18-vector spot-check passes");
+}
 
 // Direct spot-check of the rtl-injection detector's DerivedBidiClass-backed
 // strong-Bidi lookup, mirroring the Rust/Python/C++ port tests. Runs first so

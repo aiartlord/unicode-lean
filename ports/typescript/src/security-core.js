@@ -39,6 +39,7 @@ export const Family = Object.freeze({
   TagBlockPayload: "tag-block-payload",
   VariationSelectorPayload: "variation-selector-payload",
   ZeroWidthPayload: "zero-width-payload",
+  SurrogateReassembly: "surrogate-reassembly",
   BidiControlBalance: "bidi-control-balance",
   NoncharacterControl: "noncharacter-control",
   HomoglyphConfusable: "homoglyph-confusable",
@@ -187,6 +188,11 @@ function detect(input) {
     findings.push(makeFinding(Family.ZeroWidthPayload, "BareZeroWidth", zeroWidthPositions));
   }
 
+  const surrogateReassembly = surrogateReassemblyFinding(input);
+  if (surrogateReassembly !== null) {
+    findings.push(surrogateReassembly);
+  }
+
   const bidiPositions = positionsWhere(input, isBidiEmbeddingControl);
   if (bidiPositions.length > 0) {
     findings.push(makeFinding(Family.BidiControlBalance, "UnbalancedEmbedding", bidiPositions));
@@ -258,6 +264,7 @@ function blocks(level, family) {
       family === Family.MalformedUtf8 ||
       family === Family.MalformedUtf16 ||
       family === Family.MalformedUtf32 ||
+      family === Family.SurrogateReassembly ||
       family === Family.BidiControlBalance ||
       family === Family.NoncharacterControl
     );
@@ -269,6 +276,7 @@ function blocks(level, family) {
     family === Family.TagBlockPayload ||
     family === Family.VariationSelectorPayload ||
     family === Family.ZeroWidthPayload ||
+    family === Family.SurrogateReassembly ||
     family === Family.BidiControlBalance ||
     family === Family.NoncharacterControl ||
     family === Family.HomoglyphConfusable ||
@@ -409,6 +417,50 @@ function isZeroWidthPayload(cp) {
 
 function isBidiEmbeddingControl(cp) {
   return cp >= 0x202a && cp <= 0x202e;
+}
+
+// Surrogate-reassembly / malformed-byte-stream detection — a direct port of
+// Unicode/Security/Covert/SurrogateReassembly.lean. The family only applies to
+// byte-stream-shaped input (every codepoint < 0x100, the looksLikeByteStream
+// gate); it then runs the shared strict UTF-8 validator and projects the first
+// violation onto a covert-layer sub-threat. The sub-threat tags differ from the
+// malformed-utf8 reject-kind tags and are not reused.
+function looksLikeByteStream(input) {
+  return input.every((cp) => cp < 0x100);
+}
+
+function surrogateSubThreatOfRejectKind(kind) {
+  switch (kind) {
+    case "OverlongEncoding":
+      return "Overlong";
+    case "SurrogateCodepoint":
+      return "Cesu8";
+    case "TruncatedSequence":
+      return "Truncated";
+    case "InvalidStartByte":
+      return "InvalidStartByte";
+    case "InvalidContinuationByte":
+      return "InvalidContinuation";
+    case "CodepointBeyondMax":
+      return "CodepointBeyondMax";
+    default:
+      throw new Error(`unknown UTF-8 reject kind: ${kind}`);
+  }
+}
+
+function surrogateReassemblyFinding(input) {
+  if (!looksLikeByteStream(input)) {
+    return null;
+  }
+  const invalid = firstInvalidUtf8(input);
+  if (invalid === null) {
+    return null;
+  }
+  return makeFinding(
+    Family.SurrogateReassembly,
+    surrogateSubThreatOfRejectKind(invalid.subThreat),
+    [invalid.offset],
+  );
 }
 
 function noncharacterControlFindings(input) {

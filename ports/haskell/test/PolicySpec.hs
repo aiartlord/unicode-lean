@@ -36,7 +36,46 @@ tests = testGroup "Unicode.Security.Policy"
   , testCase "verdict JSON contract fixture" verdictContractFixture
   , testCase "detector fixtures" detectorFixtures
   , testCase "rtl-injection vectors" rtlInjectionVectors
+  , testCase "surrogate-reassembly vectors" surrogateReassemblyVectors
   ]
+
+-- Ground truth: the @detect_*@ spot-check theorems in
+-- @Unicode/Security/Covert/SurrogateReassembly.lean@, each proven by
+-- @decide@, mirrored by the Rust port's @surrogate_reassembly@ tests.
+-- 'Nothing' means the input is clear of any surrogate-reassembly finding —
+-- either well-formed UTF-8, or not a byte stream at all.
+surrogateReassemblyVectors :: Assertion
+surrogateReassemblyVectors =
+  mapM_ check
+    [ ([], Nothing)
+    , ([0x48, 0x65, 0x6C, 0x6C, 0x6F], Nothing)
+    , ([0xC3, 0xA9], Nothing)
+    , ([0xE4, 0xB8, 0xAD], Nothing)
+    , ([0xF0, 0x9F, 0x98, 0x80], Nothing)
+    , ([0xC0, 0x80], Just "InvalidStartByte")
+    , ([0xC0, 0xAF], Just "InvalidStartByte")
+    , ([0xFE], Just "InvalidStartByte")
+    , ([0x80], Just "InvalidStartByte")
+    , ([0xFF], Just "InvalidStartByte")
+    , ([0xE0, 0x80, 0xAF], Just "Overlong")
+    , ([0xF0, 0x80, 0x80, 0xAF], Just "Overlong")
+    , ([0xED, 0xA0, 0x80], Just "Cesu8")
+    , ([0xED, 0xAF, 0xBF], Just "Cesu8")
+    , ([0xC3], Just "Truncated")
+    , ([0xF0, 0x9F, 0x98], Just "Truncated")
+    , ([0x1F600], Nothing)
+    , ([0x41, 0x100], Nothing)
+    ]
+  where
+    check :: ([Int], Maybe String) -> Assertion
+    check (input, expected) =
+      let verdict = Policy.scan Policy.ProfileGatewayHeader Policy.ModeObserve input
+          subThreats =
+            [ Policy.findingSubThreat finding
+            | finding <- Policy.verdictFindings verdict
+            , Policy.findingFamily finding == Policy.FamilySurrogateReassembly
+            ]
+      in assertEqual (show input) (maybe [] (: []) expected) subThreats
 
 -- Ground truth: the @detect_*@ spot-check theorems in
 -- @Unicode/Security/Display/RtlInjection.lean@, each proven by @decide@.

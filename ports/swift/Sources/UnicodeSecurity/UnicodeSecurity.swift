@@ -35,6 +35,7 @@ public enum Family {
     public static let tagBlockPayload = "tag-block-payload"
     public static let variationSelectorPayload = "variation-selector-payload"
     public static let zeroWidthPayload = "zero-width-payload"
+    public static let surrogateReassembly = "surrogate-reassembly"
     public static let bidiControlBalance = "bidi-control-balance"
     public static let noncharacterControl = "noncharacter-control"
     public static let homoglyphConfusable = "homoglyph-confusable"
@@ -154,6 +155,9 @@ private func detect(_ input: [Int]) -> [Finding] {
     if !zeroWidth.isEmpty {
         findings.append(makeFinding(family: Family.zeroWidthPayload, subThreat: "BareZeroWidth", positions: zeroWidth))
     }
+    if let surrogate = surrogateReassemblyFinding(input) {
+        findings.append(surrogate)
+    }
     let bidi = positionsWhere(input, isBidiEmbeddingControl)
     if !bidi.isEmpty {
         findings.append(makeFinding(family: Family.bidiControlBalance, subThreat: "UnbalancedEmbedding", positions: bidi))
@@ -204,12 +208,14 @@ private func policyOfProfile(_ profile: String) -> ProfilePolicy {
 private func blocks(_ level: PolicyLevel, _ family: String) -> Bool {
     if level == .minimal {
         return family == Family.malformedUtf8 || family == Family.malformedUtf16 ||
-            family == Family.malformedUtf32 || family == Family.bidiControlBalance ||
+            family == Family.malformedUtf32 || family == Family.surrogateReassembly ||
+            family == Family.bidiControlBalance ||
             family == Family.noncharacterControl
     }
     return family == Family.malformedUtf8 || family == Family.malformedUtf16 ||
         family == Family.malformedUtf32 || family == Family.tagBlockPayload ||
         family == Family.variationSelectorPayload || family == Family.zeroWidthPayload ||
+        family == Family.surrogateReassembly ||
         family == Family.bidiControlBalance || family == Family.noncharacterControl ||
         family == Family.homoglyphConfusable || family == Family.mixedScriptAdmissibility
 }
@@ -1005,6 +1011,43 @@ private func readUint32(_ input: [UInt8], _ offset: Int, _ order: ByteOrder) -> 
         return (Int(input[offset]) << 24) | (Int(input[offset + 1]) << 16) | (Int(input[offset + 2]) << 8) | Int(input[offset + 3])
     }
     return Int(input[offset]) | (Int(input[offset + 1]) << 8) | (Int(input[offset + 2]) << 16) | (Int(input[offset + 3]) << 24)
+}
+
+// Surrogate-reassembly / malformed-byte-stream detection (layer C). A direct
+// port of Unicode/Security/Covert/SurrogateReassembly.lean. The codepoint list
+// is treated as a byte stream, one octet per entry; the family only applies when
+// every entry is a byte (< 0x100), matching the looksLikeByteStream gate. When
+// the stream is not well-formed UTF-8 under the shared strict decoder, the first
+// violation is projected onto a covert-layer sub-threat at its byte offset. An
+// adversary hides intent in a byte stream that is not valid UTF-8 — an overlong
+// encoding, a CESU-8 / surrogate codepoint, a truncated sequence, an invalid
+// start or continuation byte, or a value beyond U+10FFFF — betting a lenient
+// decoder will "reassemble" it into something the scanner never saw in codepoint
+// form.
+private func surrogateReassemblyFinding(_ input: [Int]) -> Finding? {
+    guard input.allSatisfy({ $0 < 0x100 }) else { return nil }
+    let bytes = input.map { UInt8($0) }
+    guard let failure = firstInvalidUtf8(bytes) else { return nil }
+    return makeFinding(
+        family: Family.surrogateReassembly,
+        subThreat: surrogateReassemblySubThreat(failure.subThreat),
+        positions: [failure.offset]
+    )
+}
+
+// Project a strict UTF-8 reject kind onto its surrogate-reassembly sub-threat,
+// mirroring subThreatOfRejectKind in the Lean spec. These tags are deliberately
+// distinct from the malformed-utf8 decode tags carried by firstInvalidUtf8.
+private func surrogateReassemblySubThreat(_ rejectKind: String) -> String {
+    switch rejectKind {
+    case "OverlongEncoding": return "Overlong"
+    case "SurrogateCodepoint": return "Cesu8"
+    case "TruncatedSequence": return "Truncated"
+    case "InvalidStartByte": return "InvalidStartByte"
+    case "InvalidContinuationByte": return "InvalidContinuation"
+    case "CodepointBeyondMax": return "CodepointBeyondMax"
+    default: return rejectKind
+    }
 }
 
 private func firstInvalidUtf8(_ input: [UInt8]) -> DecodeFailure? {

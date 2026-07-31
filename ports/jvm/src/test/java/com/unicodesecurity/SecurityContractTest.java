@@ -10,12 +10,54 @@ import java.util.Objects;
 
 public final class SecurityContractTest {
   public static void main(String[] args) throws Exception {
+    testSurrogateReassembly();
     testRtlInjection();
     testPolicyContract();
     testVerdictContract();
     testUtf8DecodeContract();
     testMultiEncodingDecodeContract();
     testDetectorFixtures();
+  }
+
+  // Pins the surrogate-reassembly detector against the detect_* spot-check
+  // theorems in Unicode/Security/Covert/SurrogateReassembly.lean. Runs first
+  // so its result shows before the shared contract tests.
+  private static void testSurrogateReassembly() {
+    int[][] inputs = {
+      {},
+      {0x48, 0x65, 0x6C, 0x6C, 0x6F},
+      {0xC3, 0xA9},
+      {0xE4, 0xB8, 0xAD},
+      {0xF0, 0x9F, 0x98, 0x80},
+      {0xC0, 0x80},
+      {0xC0, 0xAF},
+      {0xFE},
+      {0x80},
+      {0xFF},
+      {0xE0, 0x80, 0xAF},
+      {0xF0, 0x80, 0x80, 0xAF},
+      {0xED, 0xA0, 0x80},
+      {0xED, 0xAF, 0xBF},
+      {0xC3},
+      {0xF0, 0x9F, 0x98},
+      {0x1F600},
+      {0x41, 0x100},
+    };
+    String[] wants = {
+      null, null, null, null, null,
+      "InvalidStartByte", "InvalidStartByte", "InvalidStartByte", "InvalidStartByte", "InvalidStartByte",
+      "Overlong", "Overlong",
+      "Cesu8", "Cesu8",
+      "Truncated", "Truncated",
+      null, null,
+    };
+    for (int i = 0; i < inputs.length; i++) {
+      List<Integer> input = new ArrayList<>();
+      for (int cp : inputs[i]) input.add(cp);
+      Security.SurrogateReassemblyResult result = Security.surrogateReassemblyDetect(input);
+      assertEquals(wants[i], result.subThreat(), "surrogate-reassembly case " + i);
+    }
+    System.out.println("clean: surrogate-reassembly spot checks pass (" + inputs.length + " vectors)");
   }
 
   // Pins the RTL-injection detector against the detect_* spot-check
