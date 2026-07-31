@@ -57,6 +57,11 @@ let bidiTableCache;
 let unicodeDataCache;
 let compositionExclusionsCache;
 let compositionTableCache;
+let specialCasingCache;
+let simpleLowerCache;
+let simpleUpperCache;
+let casedRangesCache;
+let softDottedRangesCache;
 let dataReader = null;
 
 export function configureSecurityDataReader(reader) {
@@ -72,6 +77,11 @@ export function configureSecurityDataReader(reader) {
   unicodeDataCache = undefined;
   compositionExclusionsCache = undefined;
   compositionTableCache = undefined;
+  specialCasingCache = undefined;
+  simpleLowerCache = undefined;
+  simpleUpperCache = undefined;
+  casedRangesCache = undefined;
+  softDottedRangesCache = undefined;
 }
 
 export function configureSecurityData(data) {
@@ -83,6 +93,8 @@ export function configureSecurityData(data) {
   const derivedBidiClass = requiredSecurityData(data, "derivedBidiClass");
   const unicodeData = requiredSecurityData(data, "unicodeData");
   const compositionExclusions = requiredSecurityData(data, "compositionExclusions");
+  const derivedCoreProperties = requiredSecurityData(data, "derivedCoreProperties");
+  const specialCasing = requiredSecurityData(data, "specialCasing");
   configureSecurityDataReader((name) => {
     if (name === "confusables.txt") {
       return confusables;
@@ -107,6 +119,12 @@ export function configureSecurityData(data) {
     }
     if (name === "CompositionExclusions.txt") {
       return compositionExclusions;
+    }
+    if (name === "DerivedCoreProperties.txt") {
+      return derivedCoreProperties;
+    }
+    if (name === "SpecialCasing.txt") {
+      return specialCasing;
     }
     throw new Error(`unknown security data file: ${name}`);
   });
@@ -1080,6 +1098,278 @@ export function toNfkdCodepoints(input) {
 
 export function toNfkcCodepoints(input) {
   return canonicalCompose(toNfkdCodepoints(input));
+}
+
+// ── UAX #21 case mapping (toLower / toUpper) from the pinned UCD tables ──────
+// Mirrors Unicode.Casing: full case mappings from SpecialCasing.txt (one-to-many
+// and context/locale rows) over the simple mappings in UnicodeData.txt fields
+// 13/12, with the context predicates (Final_Sigma, After_Soft_Dotted,
+// More_Above, Not_Before_Dot, After_I) driven by CCC and the Cased / Soft_Dotted
+// properties from DerivedCoreProperties.txt. Independent of the runtime's
+// String.prototype.toLowerCase, whose Unicode version tracks the JS engine.
+
+const LOCALE_CONDITIONS = new Set(["tr", "az", "lt"]);
+
+function parseSpecialCasing(raw) {
+  const rows = new Map();
+  for (const rawLine of raw.split("\n")) {
+    const line = rawLine.split("#", 1)[0].trim();
+    if (line === "") {
+      continue;
+    }
+    const fields = line.split(";").map((f) => f.trim());
+    if (fields.length < 4) {
+      continue;
+    }
+    const hexList = (s) =>
+      s === "" ? [] : s.split(/\s+/).map((h) => parseInt(h, 16));
+    const code = parseInt(fields[0], 16);
+    const row = {
+      lower: hexList(fields[1]),
+      title: hexList(fields[2]),
+      upper: hexList(fields[3]),
+      conditions: fields.length > 4 && fields[4] !== "" ? fields[4].split(/\s+/) : [],
+    };
+    if (!rows.has(code)) {
+      rows.set(code, []);
+    }
+    rows.get(code).push(row);
+  }
+  return rows;
+}
+
+function specialCasingRows() {
+  if (specialCasingCache === undefined) {
+    specialCasingCache = parseSpecialCasing(readDataFile("SpecialCasing.txt"));
+  }
+  return specialCasingCache;
+}
+
+// Simple case mappings from UnicodeData.txt fields 13 (lowercase) / 12
+// (uppercase); a codepoint absent from a map cases to itself.
+function parseSimpleCaseMappings() {
+  const lower = new Map();
+  const upper = new Map();
+  for (const line of readDataFile("UnicodeData.txt").split("\n")) {
+    if (line === "") {
+      continue;
+    }
+    const fields = line.split(";");
+    if (fields.length < 15) {
+      continue;
+    }
+    const cp = parseInt(fields[0], 16);
+    if (fields[12] !== "") {
+      upper.set(cp, parseInt(fields[12], 16));
+    }
+    if (fields[13] !== "") {
+      lower.set(cp, parseInt(fields[13], 16));
+    }
+  }
+  return { lower, upper };
+}
+
+function simpleLowercase(cp) {
+  if (simpleLowerCache === undefined) {
+    const maps = parseSimpleCaseMappings();
+    simpleLowerCache = maps.lower;
+    simpleUpperCache = maps.upper;
+  }
+  const mapped = simpleLowerCache.get(cp);
+  return mapped === undefined ? cp : mapped;
+}
+
+function simpleUppercase(cp) {
+  if (simpleUpperCache === undefined) {
+    const maps = parseSimpleCaseMappings();
+    simpleLowerCache = maps.lower;
+    simpleUpperCache = maps.upper;
+  }
+  const mapped = simpleUpperCache.get(cp);
+  return mapped === undefined ? cp : mapped;
+}
+
+function parseDerivedProperty(name) {
+  const out = [];
+  for (const rawLine of readDataFile("DerivedCoreProperties.txt").split("\n")) {
+    const line = rawLine.split("#", 1)[0].trim();
+    if (line === "") {
+      continue;
+    }
+    const parts = line.split(";");
+    if (parts.length < 2 || parts[1].trim() !== name) {
+      continue;
+    }
+    const field = parts[0].trim();
+    const dots = field.indexOf("..");
+    if (dots < 0) {
+      const cp = parseInt(field, 16);
+      out.push([cp, cp]);
+    } else {
+      out.push([parseInt(field.slice(0, dots), 16), parseInt(field.slice(dots + 2), 16)]);
+    }
+  }
+  return out;
+}
+
+function inRanges(ranges, cp) {
+  return ranges.some(([lo, hi]) => lo <= cp && cp <= hi);
+}
+
+function isCased(cp) {
+  if (casedRangesCache === undefined) {
+    casedRangesCache = parseDerivedProperty("Cased");
+  }
+  return inRanges(casedRangesCache, cp);
+}
+
+function isSoftDotted(cp) {
+  if (softDottedRangesCache === undefined) {
+    softDottedRangesCache = parseDerivedProperty("Soft_Dotted");
+  }
+  return inRanges(softDottedRangesCache, cp);
+}
+
+// Context predicates (UAX #21). revPrefix is the preceding codepoints
+// nearest-first; suffix the strictly-following ones.
+function moreAboveAfter(suffix) {
+  for (const cp of suffix) {
+    const c = canonicalCombiningClass(cp);
+    if (c === 230) return true;
+    if (c === 0) return false;
+  }
+  return false;
+}
+
+function afterSoftDotted(revPrefix) {
+  for (const cp of revPrefix) {
+    if (isSoftDotted(cp)) return true;
+    const c = canonicalCombiningClass(cp);
+    if (c === 0 || c === 230) return false;
+  }
+  return false;
+}
+
+function afterI(revPrefix) {
+  for (const cp of revPrefix) {
+    if (cp === 0x0049) return true;
+    const c = canonicalCombiningClass(cp);
+    if (c === 0 || c === 230) return false;
+  }
+  return false;
+}
+
+function beforeDot(suffix) {
+  for (const cp of suffix) {
+    if (cp === 0x0307) return true;
+    if (canonicalCombiningClass(cp) === 0) return false;
+  }
+  return false;
+}
+
+function hasCasedBefore(revPrefix) {
+  for (const cp of revPrefix) {
+    if (isCased(cp)) return true;
+    if (canonicalCombiningClass(cp) === 0) return false;
+  }
+  return false;
+}
+
+function hasCasedAfter(suffix) {
+  for (const cp of suffix) {
+    if (isCased(cp)) return true;
+    if (canonicalCombiningClass(cp) === 0) return false;
+  }
+  return false;
+}
+
+function finalSigma(revPrefix, suffix) {
+  return hasCasedBefore(revPrefix) && !hasCasedAfter(suffix);
+}
+
+function localeMatches(locale, conditions) {
+  if (!conditions.some((c) => LOCALE_CONDITIONS.has(c))) {
+    return true;
+  }
+  return conditions.some(
+    (c) =>
+      (c === "tr" && locale === "turkish") ||
+      (c === "az" && locale === "azeri") ||
+      (c === "lt" && locale === "lithuanian"),
+  );
+}
+
+function conditionsHold(locale, revPrefix, suffix, conditions) {
+  if (!localeMatches(locale, conditions)) {
+    return false;
+  }
+  for (const c of conditions) {
+    if (LOCALE_CONDITIONS.has(c)) continue;
+    let ok;
+    if (c === "Final_Sigma") ok = finalSigma(revPrefix, suffix);
+    else if (c === "Not_Final_Sigma") ok = !finalSigma(revPrefix, suffix);
+    else if (c === "After_Soft_Dotted") ok = afterSoftDotted(revPrefix);
+    else if (c === "More_Above") ok = moreAboveAfter(suffix);
+    else if (c === "Not_Before_Dot") ok = !beforeDot(suffix);
+    else if (c === "After_I") ok = afterI(revPrefix);
+    else ok = false; // unrecognised context token
+    if (!ok) return false;
+  }
+  return true;
+}
+
+function findSpecialRow(locale, revPrefix, suffix, cp) {
+  const candidates = specialCasingRows().get(cp);
+  if (candidates === undefined) {
+    return null;
+  }
+  for (const row of candidates) {
+    if (row.conditions.length > 0 && conditionsHold(locale, revPrefix, suffix, row.conditions)) {
+      return row;
+    }
+  }
+  for (const row of candidates) {
+    if (row.conditions.length === 0) {
+      return row;
+    }
+  }
+  return null;
+}
+
+// Lowercase a codepoint sequence under `locale` (default when omitted).
+export function toLowerCodepoints(input, locale = "default") {
+  const out = [];
+  const revPrefix = [];
+  for (let index = 0; index < input.length; index += 1) {
+    const cp = input[index];
+    const suffix = input.slice(index + 1);
+    const row = findSpecialRow(locale, revPrefix, suffix, cp);
+    if (row !== null) {
+      out.push(...row.lower);
+    } else {
+      out.push(simpleLowercase(cp));
+    }
+    revPrefix.unshift(cp);
+  }
+  return out;
+}
+
+// Uppercase a codepoint sequence under `locale` (default when omitted).
+export function toUpperCodepoints(input, locale = "default") {
+  const out = [];
+  const revPrefix = [];
+  for (let index = 0; index < input.length; index += 1) {
+    const cp = input[index];
+    const suffix = input.slice(index + 1);
+    const row = findSpecialRow(locale, revPrefix, suffix, cp);
+    if (row !== null) {
+      out.push(...row.upper);
+    } else {
+      out.push(simpleUppercase(cp));
+    }
+    revPrefix.unshift(cp);
+  }
+  return out;
 }
 
 function stringFromCodepoints(input) {

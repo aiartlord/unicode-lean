@@ -101,6 +101,8 @@ test("edge entry works with injected data", async () => {
       derivedBidiClass: readFileSync(new URL("../src/data/DerivedBidiClass.txt", import.meta.url), "utf8"),
       unicodeData: readFileSync(new URL("../src/data/UnicodeData.txt", import.meta.url), "utf8"),
       compositionExclusions: readFileSync(new URL("../src/data/CompositionExclusions.txt", import.meta.url), "utf8"),
+      derivedCoreProperties: readFileSync(new URL("../src/data/DerivedCoreProperties.txt", import.meta.url), "utf8"),
+      specialCasing: readFileSync(new URL("../src/data/SpecialCasing.txt", import.meta.url), "utf8"),
     },
   });
   const verdict = security.scan("gateway-header", "enforce", [78, 101, 116, 104, 101, 114, 1077, 117, 109]);

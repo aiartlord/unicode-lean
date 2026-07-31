@@ -133,6 +133,8 @@ typescript_files=(
   DerivedBidiClass.txt
   UnicodeData.txt
   CompositionExclusions.txt
+  DerivedCoreProperties.txt
+  SpecialCasing.txt
 )
 
 jvm_files=(
