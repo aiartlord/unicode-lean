@@ -80,36 +80,6 @@ unicode-lean/
 
 `nix run` prints the live file / theorem inventory.
 
-## Guarantees
-
-* **No intentional incomplete-proof placeholders** — proven, not assumed.
-* **Zero project-local `axiom`** — only Lean 4 core's `propext`,
-  `Quot.sound`, and `Classical.choice` are in the trusted base.
-* **Zero runtime escape** — no `unsafe`, `unsafePerformIO`,
-  `unsafeCast`, `Lean.ofReduceBool`, or `Lean.reduceBool`.
-* **Zero Mathlib dependency** — Lean 4 core only; auditable from
-  first principles.
-* **Pinned UCD source** — UCD 17.0.0 files vendored under
-  `Unicode/Ucd/` and SHA-256-pinned in `Unicode/Ucd/SHA256SUMS`.
-  `include_str` embeds the bytes at build time; CI rejects drift.
-* **`autoImplicit := false`** — explicit universes, explicit types,
-  no implicit-argument inference at type-class boundaries.
-* **Reproducible** — back-to-back `lake build` runs produce
-  byte-identical `.olean` files. The nightly `reproducibility`
-  workflow verifies this and publishes the SHA-256 manifest as an
-  `oleans-sha256-<commit-sha>` build artifact for downstream
-  auditors.
-
-The source-level guards for proof gaps, project-local axioms, orphan modules,
-and UCD hash drift live under `scripts/`
-and run on every push and pull request via the `ci / hardening`
-workflow.  Two additional guards specific to the Security
-Conformance Layer (`check-security-coverage.sh`,
-`check-security-hashes.sh`) verify that every detector module has a
-paired fixture-driven harness and that every fixture matches its
-SHA-256 pin.  `security-perf-report.sh` produces the per-family
-build-time wall clock.
-
 ## Security Conformance Layer
 
 The `Unicode.Security.*` tree sits below the UAX / UTS conformance
