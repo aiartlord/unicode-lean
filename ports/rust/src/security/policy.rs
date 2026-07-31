@@ -9,7 +9,7 @@ use crate::security::covert::{
     bidi_control_balance, surrogate_reassembly, tag_block_payload, variation_selector_payload,
     zero_width_payload,
 };
-use crate::security::boundary::confusable_bidi_compound;
+use crate::security::boundary::{confusable_bidi_compound, covert_display_compound};
 use crate::security::display::rtl_injection;
 use crate::security::identity::homoglyph_confusable;
 use crate::strict::Utf8RejectKind;
@@ -777,6 +777,17 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
             ClassificationKind::Hazard,
             Some(sub),
             confusable_bidi.positions,
+        );
+    }
+
+    let covert_display = covert_display_compound::detect(input);
+    if let Some(sub) = covert_display.sub {
+        push_finding(
+            &mut findings,
+            Family::CovertDisplayCompound,
+            ClassificationKind::Hazard,
+            Some(sub),
+            covert_display.positions,
         );
     }
 

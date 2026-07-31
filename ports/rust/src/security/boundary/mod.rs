@@ -7,3 +7,4 @@
 //! signals coincide.
 
 pub mod confusable_bidi_compound;
+pub mod covert_display_compound;
