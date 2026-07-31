@@ -136,6 +136,8 @@ typescript_files=(
 jvm_files=(
   "${homoglyph_files[@]}"
   DerivedBidiClass.txt
+  UnicodeData.txt
+  CompositionExclusions.txt
 )
 
 dotnet_files=(

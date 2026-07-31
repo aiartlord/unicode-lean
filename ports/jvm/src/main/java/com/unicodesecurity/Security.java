@@ -3,7 +3,6 @@ package com.unicodesecurity;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -95,6 +94,9 @@ public final class Security {
   private static List<String> knownTargets;
   private static Set<Long> legalVariationPairs;
   private static BidiTable bidiTable;
+  private static Map<Integer, NormEntry> unicodeDataMap;
+  private static Set<Integer> compositionExclusions;
+  private static Map<Long, Integer> compositionTable;
 
   private Security() {}
 
@@ -633,28 +635,240 @@ public final class Security {
     return out;
   }
 
+  // ── Canonical / compatibility normalization from the pinned UCD tables ──
+  // NFD/NFKD/NFKC are computed from UnicodeData.txt (field-3 CCC, field-5
+  // decompositions) and CompositionExclusions.txt, mirroring
+  // Unicode.Normalization.{Decompose,Reorder,Compose,NFKD,NFKC} and the verified
+  // from-tables ports. Independent of java.text.Normalizer, whose Unicode
+  // version tracks the JDK rather than the pinned UCD.
+
+  private static final int HANGUL_S_BASE = 0xAC00;
+  private static final int HANGUL_L_BASE = 0x1100;
+  private static final int HANGUL_V_BASE = 0x1161;
+  private static final int HANGUL_T_BASE = 0x11A7;
+  private static final int HANGUL_L_COUNT = 19;
+  private static final int HANGUL_V_COUNT = 21;
+  private static final int HANGUL_T_COUNT = 28;
+  private static final int HANGUL_N_COUNT = HANGUL_V_COUNT * HANGUL_T_COUNT;
+  private static final int HANGUL_S_COUNT = HANGUL_L_COUNT * HANGUL_N_COUNT;
+
+  // One UnicodeData row's normalization fields: CCC and the canonical /
+  // compatibility decompositions (null when absent). A field-5 mapping with a
+  // <tag> prefix is a compatibility mapping; without a tag it is canonical.
+  private record NormEntry(int ccc, List<Integer> canonical, List<Integer> compat) {}
+
+  private static List<Integer> parseHexList(String field) {
+    List<Integer> out = new ArrayList<>();
+    for (String token : field.trim().split("\\s+")) {
+      Integer cp = parseHex(token);
+      if (cp != null) out.add(cp);
+    }
+    return out;
+  }
+
+  private static Map<Integer, NormEntry> parseUnicodeData(String raw) {
+    Map<Integer, NormEntry> out = new HashMap<>();
+    for (String line : raw.split("\n", -1)) {
+      if (line.isEmpty()) continue;
+      String[] f = line.split(";", -1);
+      if (f.length < 6) continue;
+      Integer cp = parseHex(f[0]);
+      if (cp == null) continue;
+      int ccc;
+      try {
+        ccc = Integer.parseInt(f[3].trim());
+      } catch (NumberFormatException e) {
+        ccc = 0;
+      }
+      String decomp = f[5].trim();
+      List<Integer> canonical = null;
+      List<Integer> compat = null;
+      if (!decomp.isEmpty()) {
+        if (decomp.startsWith("<")) {
+          compat = parseHexList(decomp.substring(decomp.indexOf('>') + 1));
+        } else {
+          canonical = parseHexList(decomp);
+        }
+      }
+      out.put(cp, new NormEntry(ccc, canonical, compat));
+    }
+    return out;
+  }
+
+  private static Set<Integer> parseCompositionExclusions(String raw) {
+    Set<Integer> out = new HashSet<>();
+    for (String line : raw.split("\n", -1)) {
+      int hash = line.indexOf('#');
+      String body = (hash >= 0 ? line.substring(0, hash) : line).trim();
+      if (body.isEmpty()) continue;
+      Integer cp = parseHex(body);
+      if (cp != null) out.add(cp);
+    }
+    return out;
+  }
+
+  private static synchronized Map<Integer, NormEntry> unicodeDataMap() {
+    if (unicodeDataMap == null) unicodeDataMap = parseUnicodeData(readResource("UnicodeData.txt"));
+    return unicodeDataMap;
+  }
+
+  private static synchronized Set<Integer> compositionExclusions() {
+    if (compositionExclusions == null) {
+      compositionExclusions = parseCompositionExclusions(readResource("CompositionExclusions.txt"));
+    }
+    return compositionExclusions;
+  }
+
+  private static int canonicalCombiningClass(int cp) {
+    NormEntry e = unicodeDataMap().get(cp);
+    return e == null ? 0 : e.ccc();
+  }
+
+  private static long composeKey(int d, int c) {
+    return ((long) d << 32) | (c & 0xFFFFFFFFL);
+  }
+
+  // Canonical composition table: inverse of the two-codepoint canonical
+  // decompositions, excluding singleton decompositions, Composition-Exclusion
+  // codepoints, and pairs whose first element is a non-starter (CCC != 0).
+  private static synchronized Map<Long, Integer> compositionTable() {
+    if (compositionTable == null) {
+      Map<Long, Integer> table = new HashMap<>();
+      Set<Integer> exclusions = compositionExclusions();
+      for (Map.Entry<Integer, NormEntry> en : unicodeDataMap().entrySet()) {
+        List<Integer> decomp = en.getValue().canonical();
+        if (decomp == null || decomp.size() != 2) continue;
+        int cp = en.getKey();
+        if (exclusions.contains(cp)) continue;
+        if (canonicalCombiningClass(decomp.get(0)) != 0) continue;
+        table.put(composeKey(decomp.get(0), decomp.get(1)), cp);
+      }
+      compositionTable = table;
+    }
+    return compositionTable;
+  }
+
+  private static boolean hangulDecompose(int cp, List<Integer> out) {
+    if (cp < HANGUL_S_BASE || cp >= HANGUL_S_BASE + HANGUL_S_COUNT) return false;
+    int sIndex = cp - HANGUL_S_BASE;
+    out.add(HANGUL_L_BASE + sIndex / HANGUL_N_COUNT);
+    out.add(HANGUL_V_BASE + (sIndex % HANGUL_N_COUNT) / HANGUL_T_COUNT);
+    int tIndex = sIndex % HANGUL_T_COUNT;
+    if (tIndex != 0) out.add(HANGUL_T_BASE + tIndex);
+    return true;
+  }
+
+  private static Integer hangulCompose(int a, int b) {
+    if (a >= HANGUL_L_BASE && a < HANGUL_L_BASE + HANGUL_L_COUNT
+        && b >= HANGUL_V_BASE && b < HANGUL_V_BASE + HANGUL_V_COUNT) {
+      int lIndex = a - HANGUL_L_BASE;
+      int vIndex = b - HANGUL_V_BASE;
+      return HANGUL_S_BASE + (lIndex * HANGUL_V_COUNT + vIndex) * HANGUL_T_COUNT;
+    }
+    if (a >= HANGUL_S_BASE && a < HANGUL_S_BASE + HANGUL_S_COUNT
+        && (a - HANGUL_S_BASE) % HANGUL_T_COUNT == 0
+        && b > HANGUL_T_BASE && b < HANGUL_T_BASE + HANGUL_T_COUNT) {
+      return a + (b - HANGUL_T_BASE);
+    }
+    return null;
+  }
+
+  private static void decomposeOne(int cp, List<Integer> out) {
+    if (hangulDecompose(cp, out)) return;
+    NormEntry e = unicodeDataMap().get(cp);
+    if (e != null && e.canonical() != null) {
+      for (int child : e.canonical()) decomposeOne(child, out);
+      return;
+    }
+    out.add(cp);
+  }
+
+  private static void compatDecomposeOne(int cp, List<Integer> out) {
+    if (hangulDecompose(cp, out)) return;
+    NormEntry e = unicodeDataMap().get(cp);
+    if (e != null) {
+      if (e.compat() != null) {
+        for (int child : e.compat()) compatDecomposeOne(child, out);
+        return;
+      }
+      if (e.canonical() != null) {
+        for (int child : e.canonical()) compatDecomposeOne(child, out);
+        return;
+      }
+    }
+    out.add(cp);
+  }
+
+  // Stable canonical ordering: sort each non-starter run by CCC, preserving the
+  // relative order of equal-CCC codepoints (insertion sort that swaps only on a
+  // strict CCC decrease and never crosses a starter).
+  private static void canonicalOrder(List<Integer> values) {
+    for (int index = 1; index < values.size(); index++) {
+      int currentCcc = canonicalCombiningClass(values.get(index));
+      if (currentCcc == 0) continue;
+      for (int j = index; j > 0; j--) {
+        int previousCcc = canonicalCombiningClass(values.get(j - 1));
+        if (previousCcc == 0 || previousCcc <= currentCcc) break;
+        int tmp = values.get(j - 1);
+        values.set(j - 1, values.get(j));
+        values.set(j, tmp);
+      }
+    }
+  }
+
+  // Canonical composition (UAX #15 D115), matching Unicode.Normalization.Compose
+  // and the D115-corrected blocked rule shared by the from-tables ports.
+  private static List<Integer> canonicalCompose(List<Integer> seq) {
+    if (seq.isEmpty()) return new ArrayList<>();
+    Map<Long, Integer> table = compositionTable();
+    List<Integer> out = new ArrayList<>();
+    int starterIndex = -1;
+    int lastCcc = -1;
+    for (int cp : seq) {
+      int cpCcc = canonicalCombiningClass(cp);
+      if (starterIndex >= 0) {
+        int starter = out.get(starterIndex);
+        Integer composed = hangulCompose(starter, cp);
+        if (composed == null) composed = table.get(composeKey(starter, cp));
+        // Blocked check (UAX #15 D115): lastCcc != 0 means a combiner is
+        // buffered between the active starter and this candidate. A starter
+        // candidate (cpCcc == 0) is blocked outright by any buffered combiner;
+        // a non-starter is blocked when the buffered combiner has CCC >= its own.
+        boolean blocked = lastCcc != 0 && (cpCcc == 0 || lastCcc >= cpCcc);
+        if (!blocked && composed != null) {
+          out.set(starterIndex, composed);
+          continue;
+        }
+      }
+      out.add(cp);
+      if (cpCcc == 0) {
+        starterIndex = out.size() - 1;
+        lastCcc = 0;
+      } else {
+        lastCcc = cpCcc;
+      }
+    }
+    return out;
+  }
+
   private static List<Integer> toNfdCodepoints(List<Integer> input) {
-    StringBuilder text = new StringBuilder();
-    for (int cp : input) text.appendCodePoint(cp);
-    return codepointsFromString(Normalizer.normalize(text, Normalizer.Form.NFD));
+    List<Integer> out = new ArrayList<>();
+    for (int cp : input) decomposeOne(cp, out);
+    canonicalOrder(out);
+    return out;
   }
 
-  // Compatibility decomposition, matching Unicode.Normalization.NFKD. Mirrors
-  // the NFD path above but selects the compatibility form, so field-5 `<tag>`
-  // decompositions in UnicodeData are applied and canonical ordering restored.
+  // Compatibility decomposition (NFKD), matching Unicode.Normalization.NFKD.
   public static List<Integer> toNfkd(List<Integer> input) {
-    StringBuilder text = new StringBuilder();
-    for (int cp : input) text.appendCodePoint(ensureCodepoint(cp));
-    return codepointsFromString(Normalizer.normalize(text, Normalizer.Form.NFKD));
+    List<Integer> out = new ArrayList<>();
+    for (int cp : input) compatDecomposeOne(ensureCodepoint(cp), out);
+    canonicalOrder(out);
+    return out;
   }
 
-  // Compatibility decomposition followed by canonical composition, matching
-  // Unicode.Normalization.NFKC. Same builtin-Normalizer approach as the NFD
-  // path, selecting the composing compatibility form.
+  // NFKD followed by canonical composition, matching Unicode.Normalization.NFKC.
   public static List<Integer> toNfkc(List<Integer> input) {
-    StringBuilder text = new StringBuilder();
-    for (int cp : input) text.appendCodePoint(ensureCodepoint(cp));
-    return codepointsFromString(Normalizer.normalize(text, Normalizer.Form.NFKC));
+    return canonicalCompose(toNfkd(input));
   }
 
   private static synchronized Map<Integer, List<Integer>> confusablesMap() {
@@ -879,7 +1093,9 @@ public final class Security {
       "KnownAttackTargets.txt", "47acf87f48e23c2e3ddfb5aed877965fbe29142e61f6f85c4ee7db90c0684947",
       "StandardizedVariants.txt", "f55100b2fb11d3d75a37b8c1ab752192dbd1c4b12328c5ec6b38e3807c0ca597",
       "emoji-variation-sequences.txt", "bb3d09ef03f206012c7532dd52dc0a21c9efddba0135ea4cf0d9201b8b9bba7e",
-      "DerivedBidiClass.txt", "4867b4b7f0731ed1bfcd34cc6251211ff1542541fce0734b6fbda139ee80b3a4");
+      "DerivedBidiClass.txt", "4867b4b7f0731ed1bfcd34cc6251211ff1542541fce0734b6fbda139ee80b3a4",
+      "UnicodeData.txt", "2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c",
+      "CompositionExclusions.txt", "2f239196ef3b5b61db5cc476e9bd80f534d15aa1b74e1be1dea5d042a344c85f");
 
   private static String sha256Hex(byte[] bytes) {
     try {
