@@ -34,6 +34,7 @@ root_manifest_files=(
   PropertyValueAliases.txt
   ScriptExtensions.txt
   Scripts.txt
+  SpecialCasing.txt
   StandardizedVariants.txt
   UnicodeData.txt
   UCD-VERSION
@@ -49,6 +50,7 @@ python_files=(
   PropertyValueAliases.txt
   ScriptExtensions.txt
   Scripts.txt
+  SpecialCasing.txt
   StandardizedVariants.txt
   UnicodeData.txt
   confusables.txt
