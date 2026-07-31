@@ -40,6 +40,10 @@ fn strip_comment_and_trim(line: &str) -> &str {
 pub struct UcdEntry {
     pub ccc: u8,
     pub canonical_decomp: Option<Vec<u32>>,
+    /// Compatibility decomposition (field 5 with a `<tag>` prefix), tag
+    /// stripped.  Used by NFKD/NFKC only; `None` when the row has a
+    /// canonical decomposition or none at all.
+    pub compat_decomp: Option<Vec<u32>>,
 }
 
 fn parse_unicode_data() -> HashMap<u32, UcdEntry> {
@@ -65,27 +69,37 @@ fn parse_unicode_data() -> HashMap<u32, UcdEntry> {
             ),
         };
         let decomp_field = fields[5].trim();
-        let canonical_decomp = if decomp_field.is_empty() {
-            None
-        } else if decomp_field.starts_with('<') {
-            // Compatibility decomposition — skip for NFC.
-            None
-        } else {
-            let parts: Vec<u32> = decomp_field
-                .split_whitespace()
-                .filter_map(parse_hex)
-                .collect();
-            if parts.is_empty() {
-                None
+        let mut canonical_decomp = None;
+        let mut compat_decomp = None;
+        if !decomp_field.is_empty() {
+            if decomp_field.starts_with('<') {
+                // Compatibility decomposition: strip the `<tag>` prefix,
+                // keep the codepoints for NFKD/NFKC (not NFD/NFC).
+                let after_tag = decomp_field
+                    .split_once('>')
+                    .map(|(_, rest)| rest)
+                    .unwrap_or(decomp_field);
+                let parts: Vec<u32> =
+                    after_tag.split_whitespace().filter_map(parse_hex).collect();
+                if !parts.is_empty() {
+                    compat_decomp = Some(parts);
+                }
             } else {
-                Some(parts)
+                let parts: Vec<u32> = decomp_field
+                    .split_whitespace()
+                    .filter_map(parse_hex)
+                    .collect();
+                if !parts.is_empty() {
+                    canonical_decomp = Some(parts);
+                }
             }
-        };
+        }
         out.insert(
             cp,
             UcdEntry {
                 ccc,
                 canonical_decomp,
+                compat_decomp,
             },
         );
     }
@@ -441,6 +455,55 @@ pub fn to_nfd(input: &[u32]) -> Vec<u32> {
     let mut seq = canonical_decompose(input);
     canonical_reorder(&mut seq);
     seq
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Full compatibility decomposition (NFKD/NFKC)
+// ─────────────────────────────────────────────────────────────────────
+
+/// Recursively decompose `cp` using its compatibility mapping when present,
+/// otherwise its canonical mapping, otherwise Hangul algorithmic
+/// decomposition — the full decomposition of UAX #15 for NFKD.
+fn compat_decompose_one(cp: u32, out: &mut Vec<u32>) {
+    if hangul_decompose(cp, out) {
+        return;
+    }
+    if let Some(entry) = ucd_table().get(&cp) {
+        if let Some(ref decomp) = entry.compat_decomp {
+            for &child in decomp {
+                compat_decompose_one(child, out);
+            }
+            return;
+        }
+        if let Some(ref decomp) = entry.canonical_decomp {
+            for &child in decomp {
+                compat_decompose_one(child, out);
+            }
+            return;
+        }
+    }
+    out.push(cp);
+}
+
+fn compat_decompose(input: &[u32]) -> Vec<u32> {
+    let mut out = Vec::with_capacity(input.len());
+    for &cp in input {
+        compat_decompose_one(cp, &mut out);
+    }
+    out
+}
+
+/// UAX #15 NFKD — full compatibility decompose + canonical reorder.
+pub fn to_nfkd(input: &[u32]) -> Vec<u32> {
+    let mut seq = compat_decompose(input);
+    canonical_reorder(&mut seq);
+    seq
+}
+
+/// UAX #15 NFKC — NFKD followed by canonical recomposition.
+pub fn to_nfkc(input: &[u32]) -> Vec<u32> {
+    let nfkd = to_nfkd(input);
+    canonical_compose(&nfkd)
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -940,5 +1003,38 @@ pub fn restriction_level(cps: &[u32]) -> RestrictionLevel {
         RestrictionLevel::MinimallyRestrictive
     } else {
         RestrictionLevel::Unrestricted
+    }
+}
+
+#[cfg(test)]
+mod nfkc_nfkd_tests {
+    use super::{to_nfkc, to_nfkd};
+
+    #[test]
+    fn nfkc_known_vectors() {
+        // ﬁ ligature (U+FB01) → "fi"
+        assert_eq!(to_nfkc(&[0xFB01]), vec![0x66, 0x69]);
+        // ① circled digit one (U+2460) → "1"
+        assert_eq!(to_nfkc(&[0x2460]), vec![0x31]);
+        // Fullwidth A (U+FF21) → "A"
+        assert_eq!(to_nfkc(&[0xFF21]), vec![0x41]);
+        // Precomposed é (U+00E9) stays é under NFKC.
+        assert_eq!(to_nfkc(&[0x00E9]), vec![0x00E9]);
+        // Decomposed e + combining acute → é under NFKC.
+        assert_eq!(to_nfkc(&[0x0065, 0x0301]), vec![0x00E9]);
+        // Hangul jamo L+V+T → precomposed syllable 한 (U+D55C).
+        assert_eq!(to_nfkc(&[0x1112, 0x1161, 0x11AB]), vec![0xD55C]);
+        // Plain ASCII unchanged.
+        assert_eq!(to_nfkc(&[0x48, 0x69]), vec![0x48, 0x69]);
+    }
+
+    #[test]
+    fn nfkd_known_vectors() {
+        // Fullwidth A → "A" (compatibility decomposition, no recomposition).
+        assert_eq!(to_nfkd(&[0xFF21]), vec![0x41]);
+        // ﬁ → "fi".
+        assert_eq!(to_nfkd(&[0xFB01]), vec![0x66, 0x69]);
+        // Precomposed é → e + combining acute under NFKD.
+        assert_eq!(to_nfkd(&[0x00E9]), vec![0x0065, 0x0301]);
     }
 }
