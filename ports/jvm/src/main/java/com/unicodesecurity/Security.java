@@ -330,31 +330,37 @@ public final class Security {
   /** Sub-threat and byte offset of a surrogate-reassembly scan; null sub-threat means clear. */
   public record SurrogateReassemblyResult(String subThreat, List<Integer> positions) {}
 
-  // Surrogate-reassembly / malformed-byte-stream detection for a codepoint
-  // list shaped as a byte stream — a direct port of
-  // Unicode/Security/Covert/SurrogateReassembly.lean. Exposed for direct
-  // spot-check testing, mirroring the Rust/Python/C++ detectors. The family
-  // only applies when every entry is a byte (< 0x100); the verdict projects
-  // the first UTF-8 violation found by the shared strict decoder onto a
-  // covert-layer sub-threat.
+  // Surrogate-reassembly / malformed-byte-stream detection — a direct port of
+  // Unicode/Security/Covert/SurrogateReassembly.lean's module `detect`. Exposed
+  // for direct spot-check testing, mirroring the Rust/Python/C++ detectors. The
+  // codepoint list is treated as a byte stream: any value > 0xFF is clamped to
+  // 0xFF (never a valid UTF-8 start byte), exactly as the Lean toBytes helper
+  // does, so out-of-range values surface as a malformed stream rather than being
+  // dropped. The verdict projects the first UTF-8 violation found by the shared
+  // strict decoder onto a covert-layer sub-threat. The byte-stream gate lives in
+  // the scan orchestrator (looksLikeByteStream), mirroring runAll.
   public static SurrogateReassemblyResult surrogateReassemblyDetect(List<Integer> input) {
-    if (!looksLikeByteStream(input)) return new SurrogateReassemblyResult(null, List.of());
     byte[] bytes = new byte[input.size()];
-    for (int i = 0; i < input.size(); i++) bytes[i] = (byte) (int) input.get(i);
+    for (int i = 0; i < input.size(); i++) bytes[i] = input.get(i) > 0xFF ? (byte) 0xFF : (byte) (int) input.get(i);
     DecodeFailure failure = firstInvalidUtf8(bytes);
     if (failure == null) return new SurrogateReassemblyResult(null, List.of());
     return new SurrogateReassemblyResult(surrogateSubThreatOfRejectKind(failure.subThreat()), List.of(failure.offset()));
   }
 
+  // Scan-orchestrator wrapper. Mirrors runAll: SurrogateReassembly only applies
+  // to byte-stream input (every codepoint <= 0xFF); on codepoint-array input the
+  // family is clear.
   private static Finding surrogateReassemblyFinding(List<Integer> input) {
+    if (!looksLikeByteStream(input)) return null;
     SurrogateReassemblyResult result = surrogateReassemblyDetect(input);
     if (result.subThreat() == null) return null;
     return makeFinding(Family.SURROGATE_REASSEMBLY, result.subThreat(), result.positions());
   }
 
-  // The looksLikeByteStream gate: a codepoint-array input containing any
-  // value >= 0x100 is not a byte stream, and running the UTF-8 decoder on it
-  // would be meaningless.
+  // The looksLikeByteStream gate from Unicode/Security/RunAll.lean: a
+  // codepoint-array input containing any value >= 0x100 is not a byte stream;
+  // the scan orchestrator uses this to skip the family on such inputs, exactly
+  // as runAll does.
   private static boolean looksLikeByteStream(List<Integer> input) {
     for (int cp : input) {
       if (cp >= 0x100) return false;

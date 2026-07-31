@@ -39,8 +39,11 @@ func TestSurrogateReassemblyVectors(t *testing.T) {
 		{"truncated-2byte", []uint32{0xC3}, "Truncated"},
 		{"truncated-4byte", []uint32{0xF0, 0x9F, 0x98}, "Truncated"},
 
-		{"non-byte-stream-emoji-codepoint", []uint32{0x1F600}, ""},
-		{"non-byte-stream-mixed", []uint32{0x41, 0x100}, ""},
+		// The unit detect clamps values > 0xFF to 0xFF (mirroring the Lean
+		// toBytes helper), which the strict decoder rejects as an invalid
+		// start byte. The scan orchestrator gates these out (see below).
+		{"non-byte-stream-emoji-codepoint", []uint32{0x1F600}, "InvalidStartByte"},
+		{"non-byte-stream-mixed", []uint32{0x41, 0x100}, "InvalidStartByte"},
 	}
 
 	for _, tc := range cases {
@@ -48,5 +51,20 @@ func TestSurrogateReassemblyVectors(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("%s: sub(%v) = %q, want %q", tc.name, tc.input, got, tc.want)
 		}
+	}
+}
+
+// TestSurrogateReassemblyByteStreamGate pins that the scan-orchestrator
+// wrapper skips the family on non-byte-stream input (mirroring runAll),
+// even though the unit detect clamps such input to a malformed byte.
+func TestSurrogateReassemblyByteStreamGate(t *testing.T) {
+	for _, input := range [][]uint32{{0x1F600}, {0x41, 0x100}} {
+		if _, ok := surrogateReassemblyFinding(input); ok {
+			t.Errorf("surrogateReassemblyFinding(%v) fired; want gated (no finding)", input)
+		}
+	}
+	// A genuine byte-stream violation still produces a finding.
+	if _, ok := surrogateReassemblyFinding([]uint32{0xC0, 0x80}); !ok {
+		t.Errorf("surrogateReassemblyFinding([0xC0 0x80]) did not fire; want InvalidStartByte")
 	}
 }

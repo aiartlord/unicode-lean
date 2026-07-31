@@ -407,23 +407,39 @@ zeroWidthFinding input =
 -- the byte stream, the first violation is projected onto a covert-layer
 -- sub-threat at its byte offset. A well-formed stream — or an input that is
 -- not a byte stream — is clear.
+-- | Module-faithful detect, mirroring
+-- @Unicode.Security.Covert.SurrogateReassembly.detect@. Any value @> 0xFF@ is
+-- clamped to @0xFF@ (never a valid UTF-8 start byte), exactly as the Lean
+-- @toBytes@ helper does, so out-of-range values surface as a malformed stream
+-- rather than being dropped. The byte-stream gate lives in the scan
+-- orchestrator (@looksLikeByteStream@), mirroring @runAll@.
+surrogateReassemblyDetect :: [Int] -> Maybe (String, [Int])
+surrogateReassemblyDetect input =
+  case Utf8.firstInvalidUtf8Offset (BS.pack (map clampByte input)) of
+    Nothing -> Nothing
+    Just (offset, kind) -> Just (surrogateReassemblySubThreat kind, [offset])
+  where
+    clampByte cp = fromIntegral (min cp 0xFF)
+
+-- | Scan-orchestrator wrapper. Mirrors @runAll@: SurrogateReassembly only
+-- applies to byte-stream input (every codepoint @<= 0xFF@); on codepoint-array
+-- input the family is clear.
 surrogateReassemblyFinding :: [Int] -> [Finding]
 surrogateReassemblyFinding input
   | not (looksLikeByteStream input) = []
   | otherwise =
-      case Utf8.firstInvalidUtf8Offset (BS.pack (map fromIntegral input)) of
+      case surrogateReassemblyDetect input of
         Nothing -> []
-        Just (offset, kind) ->
-          let subThreat = surrogateReassemblySubThreat kind
-          in [ Finding
-                 { findingCode = reasonCode FamilySurrogateReassembly subThreat
-                 , findingFamily = FamilySurrogateReassembly
-                 , findingSeverity = 2
-                 , findingPositions = [offset]
-                 , findingSubThreat = subThreat
-                 , findingDetail = familyTag FamilySurrogateReassembly
-                 }
-             ]
+        Just (subThreat, positions) ->
+          [ Finding
+              { findingCode = reasonCode FamilySurrogateReassembly subThreat
+              , findingFamily = FamilySurrogateReassembly
+              , findingSeverity = 2
+              , findingPositions = positions
+              , findingSubThreat = subThreat
+              , findingDetail = familyTag FamilySurrogateReassembly
+              }
+          ]
 
 -- | True iff every entry fits in one octet — the @looksLikeByteStream@
 -- gate. A codepoint list containing any value @>= 0x100@ is not a byte

@@ -88,8 +88,11 @@ static void TestSurrogateReassemblyVectors()
         (new[] { 0xED, 0xAF, 0xBF }, "Cesu8"),
         (new[] { 0xC3 }, "Truncated"),
         (new[] { 0xF0, 0x9F, 0x98 }, "Truncated"),
-        (new[] { 0x1F600 }, null),
-        (new[] { 0x41, 0x100 }, null),
+        // The unit detect clamps values > 0xFF to 0xFF (mirroring the Lean
+        // toBytes helper), so it surfaces InvalidStartByte. The scan
+        // orchestrator gates these out (mirroring runAll).
+        (new[] { 0x1F600 }, "InvalidStartByte"),
+        (new[] { 0x41, 0x100 }, "InvalidStartByte"),
     };
     foreach (var (input, expected) in vectors)
     {

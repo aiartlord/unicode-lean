@@ -51,9 +51,18 @@ TEST_CASE("SurrogateReassembly — truncated sequences") {
   CHECK(sub({0xF0, 0x9F, 0x98}) == std::optional<std::string>{"Truncated"});
 }
 
-TEST_CASE("SurrogateReassembly — non-byte-stream input is clear") {
-  // Any entry >= 0x100 means this is a codepoint array, not a byte
-  // stream, so the family does not apply.
-  CHECK(sub({0x1F600}) == std::nullopt);
-  CHECK(sub({0x41, 0x100}) == std::nullopt);
+static bool byte_stream(const std::vector<std::uint32_t> &input) {
+  return sr::looks_like_byte_stream(
+      std::span<const std::uint32_t>{input.data(), input.size()});
+}
+
+TEST_CASE("SurrogateReassembly — non-byte-stream unit clamps, scan gates") {
+  // The module `detect` clamps any value > 0xFF to 0xFF (mirroring the Lean
+  // `toBytes` helper), which the strict decoder rejects as an invalid start
+  // byte.  The scan orchestrator gates such input out via
+  // `looks_like_byte_stream` (mirroring `runAll`).
+  CHECK(sub({0x1F600}) == std::optional<std::string>{"InvalidStartByte"});
+  CHECK(sub({0x41, 0x100}) == std::optional<std::string>{"InvalidStartByte"});
+  CHECK(byte_stream({0x1F600}) == false);
+  CHECK(byte_stream({0x41, 0xFF}) == true);
 }

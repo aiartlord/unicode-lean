@@ -30,9 +30,10 @@ from ..calculus import ClassificationKind
 
 def looks_like_byte_stream(input_cps: list[int]) -> bool:
     """True iff every entry fits in one octet — the
-    ``looksLikeByteStream`` gate.  A codepoint list containing any
-    value ``>= 0x100`` is not a byte stream, and running the UTF-8
-    decoder on it would be meaningless.
+    ``looksLikeByteStream`` gate from ``Unicode/Security/RunAll.lean``.
+    A codepoint list containing any value ``>= 0x100`` is not a byte
+    stream; the scan orchestrator uses this to skip the family on such
+    inputs, exactly as ``runAll`` does.
     """
     return all(cp < 0x100 for cp in input_cps)
 
@@ -77,14 +78,19 @@ def sub_threat_tag(sub: str) -> str:
 
 
 def detect(input_cps: list[int]) -> Verdict:
-    """Detect a malformed UTF-8 byte stream hidden in a codepoint
-    list.  Only applies to byte-stream-shaped input (every entry
-    ``< 0x100``); otherwise clear.  Reports the sub-threat of the
-    first violation at its byte offset.
+    """Detect a malformed UTF-8 byte stream in a codepoint list,
+    mirroring the Lean module
+    ``Unicode.Security.Covert.SurrogateReassembly.detect``.  The input
+    is treated as a byte stream: any value ``> 0xFF`` is clamped to
+    ``0xFF`` (never a valid UTF-8 start byte), exactly as the Lean
+    ``toBytes`` helper does, so out-of-range values surface as a
+    malformed stream rather than being dropped.  Reports the sub-threat
+    of the first violation at its byte offset.  The byte-stream gate
+    lives in the scan orchestrator (:func:`looks_like_byte_stream`),
+    mirroring ``runAll`` in the Lean spec.
     """
-    if not looks_like_byte_stream(input_cps):
-        return Verdict(kind=ClassificationKind.CLEAR)
-    invalid = first_invalid_utf8_offset(bytes(input_cps))
+    clamped = bytes(0xFF if cp > 0xFF else cp for cp in input_cps)
+    invalid = first_invalid_utf8_offset(clamped)
     if invalid is None:
         return Verdict(kind=ClassificationKind.CLEAR)
     offset, kind = invalid

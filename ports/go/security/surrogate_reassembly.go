@@ -17,9 +17,10 @@ package security
 // covert-layer sub-threat, distinct from the malformed-utf8 tags.
 
 // looksLikeByteStream reports whether every entry fits in one octet — the
-// looksLikeByteStream gate. A codepoint list containing any value >= 0x100
-// is not a byte stream, and running the UTF-8 decoder on it would be
-// meaningless.
+// looksLikeByteStream gate from Unicode/Security/RunAll.lean. A codepoint
+// list containing any value >= 0x100 is not a byte stream; the scan
+// orchestrator uses this to skip the family on such inputs, exactly as
+// runAll does.
 func looksLikeByteStream(input []uint32) bool {
 	for _, cp := range input {
 		if cp >= 0x100 {
@@ -52,18 +53,22 @@ func subThreatOfRejectKind(kind utf8RejectKind) string {
 	}
 }
 
-// surrogateReassemblyDetect treats input as a byte stream (one octet per
-// entry) and reports the sub-threat of the first UTF-8 violation together
-// with its byte offset. Only byte-stream-shaped input (every entry
-// < 0x100) is examined; anything else, and any well-formed stream, is
-// clear (ok == false).
+// surrogateReassemblyDetect treats input as a byte stream and reports the
+// sub-threat of the first UTF-8 violation together with its byte offset,
+// mirroring the Lean module SurrogateReassembly.detect. Any value > 0xFF is
+// clamped to 0xFF (never a valid UTF-8 start byte), exactly as the Lean
+// toBytes helper does, so out-of-range values surface as a malformed stream
+// rather than being dropped. A well-formed stream is clear (ok == false).
+// The byte-stream gate lives in the scan orchestrator (looksLikeByteStream),
+// mirroring runAll.
 func surrogateReassemblyDetect(input []uint32) (string, []int, bool) {
-	if !looksLikeByteStream(input) {
-		return "", nil, false
-	}
 	bytes := make([]byte, len(input))
 	for i, cp := range input {
-		bytes[i] = byte(cp)
+		if cp > 0xFF {
+			bytes[i] = 0xFF
+		} else {
+			bytes[i] = byte(cp)
+		}
 	}
 	offset, kind, invalid := firstInvalidUTF8Offset(bytes)
 	if !invalid {
@@ -73,6 +78,11 @@ func surrogateReassemblyDetect(input []uint32) (string, []int, bool) {
 }
 
 func surrogateReassemblyFinding(input []uint32) (Finding, bool) {
+	// Mirror runAll: SurrogateReassembly only applies to byte-stream input
+	// (every codepoint <= 0xFF); on codepoint-array input the family is clear.
+	if !looksLikeByteStream(input) {
+		return Finding{}, false
+	}
 	subThreat, positions, ok := surrogateReassemblyDetect(input)
 	if !ok {
 		return Finding{}, false

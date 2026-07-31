@@ -1840,20 +1840,34 @@ fn surrogateReassemblyReasonCode(kind: Utf8RejectKind) []const u8 {
     };
 }
 
-/// Detect a malformed UTF-8 byte stream hidden inside a codepoint list.
-///
-/// Only applies to byte-stream-shaped input — every codepoint must fit in a
-/// single octet (`< 0x100`), matching the `looksLikeByteStream` gate in
-/// `Unicode/Security/Covert/SurrogateReassembly.lean`. When the gate holds,
-/// the codepoints are treated as bytes and passed through the shared strict
-/// UTF-8 validator; the first rejection is projected onto a covert-layer
-/// sub-threat at its byte offset. Non-byte-stream input, or a well-formed
-/// stream, yields no finding.
-fn surrogateReassemblyFinding(input: []const u32) ?Finding {
+/// Byte-stream gate from `Unicode/Security/RunAll.lean`: true iff every entry
+/// fits in one octet. The scan orchestrator uses this to skip the family on
+/// codepoint-array input, exactly as `runAll` does.
+fn looksLikeByteStream(input: []const u32) bool {
     for (input) |cp| {
-        if (cp >= 0x100) return null;
+        if (cp >= 0x100) return false;
     }
-    const invalid = firstInvalidUtf8Offset(input) orelse return null;
+    return true;
+}
+
+/// Detect a malformed UTF-8 byte stream, mirroring the Lean module
+/// `SurrogateReassembly.detect`. The strict validator treats each codepoint
+/// as a byte; any value > 0xFF is rejected identically to the Lean `toBytes`
+/// clamp to 0xFF (both are invalid UTF-8 at every position), so no separate
+/// clamp is needed. Returns the first rejection, or null for a well-formed
+/// stream. The byte-stream gate lives in the scan orchestrator
+/// (`looksLikeByteStream`), mirroring `runAll`.
+fn surrogateReassemblyDetect(input: []const u32) ?Utf8Invalid {
+    return firstInvalidUtf8Offset(input);
+}
+
+/// Scan-orchestrator wrapper. Mirrors `runAll`: SurrogateReassembly only
+/// applies to byte-stream-shaped input (every codepoint <= 0xFF); on
+/// codepoint-array input the family is skipped. The first rejection is
+/// projected onto a covert-layer sub-threat at its byte offset.
+fn surrogateReassemblyFinding(input: []const u32) ?Finding {
+    if (!looksLikeByteStream(input)) return null;
+    const invalid = surrogateReassemblyDetect(input) orelse return null;
     var positions: [16]usize = undefined;
     positions[0] = invalid.offset;
     return .{

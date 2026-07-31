@@ -501,7 +501,12 @@ def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
         zw.zero_width_positions,
     )
 
-    sr = surrogate_reassembly.detect(input_cps)
+    # Mirror `runAll`: SurrogateReassembly only applies to byte-stream input
+    # (every codepoint <= 0xFF); on codepoint-array input the family is clear.
+    if surrogate_reassembly.looks_like_byte_stream(input_cps):
+        sr = surrogate_reassembly.detect(input_cps)
+    else:
+        sr = surrogate_reassembly.Verdict(kind=ClassificationKind.CLEAR)
     _append_finding(
         findings,
         Family.SURROGATE_REASSEMBLY,

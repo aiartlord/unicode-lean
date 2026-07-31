@@ -135,13 +135,16 @@ public final class SecurityContractTest {
       {0x1F600},
       {0x41, 0x100},
     };
+    // The unit detect clamps values > 0xFF to 0xFF (mirroring the Lean toBytes
+    // helper), so the final two non-byte-stream cases surface InvalidStartByte.
+    // The scan orchestrator gates these out (mirroring runAll).
     String[] wants = {
       null, null, null, null, null,
       "InvalidStartByte", "InvalidStartByte", "InvalidStartByte", "InvalidStartByte", "InvalidStartByte",
       "Overlong", "Overlong",
       "Cesu8", "Cesu8",
       "Truncated", "Truncated",
-      null, null,
+      "InvalidStartByte", "InvalidStartByte",
     };
     for (int i = 0; i < inputs.length; i++) {
       List<Integer> input = new ArrayList<>();

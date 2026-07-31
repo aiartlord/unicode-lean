@@ -26,9 +26,11 @@ pub struct Detection {
 }
 
 /// True iff every entry fits in one octet — the `looksLikeByteStream`
-/// gate.  A codepoint-array input containing any value `>= 0x100` is not a
-/// byte stream, and running the UTF-8 decoder on it would be meaningless.
-fn looks_like_byte_stream(input: &[u32]) -> bool {
+/// gate from `Unicode/Security/RunAll.lean`.  A codepoint-array input
+/// containing any value `>= 0x100` is not a byte stream; the scan
+/// orchestrator uses this to skip the family on such inputs, exactly as
+/// `runAll` does.
+pub fn looks_like_byte_stream(input: &[u32]) -> bool {
     input.iter().all(|&cp| cp < 0x100)
 }
 
@@ -45,18 +47,19 @@ fn sub_threat_of_reject_kind(kind: Utf8RejectKind) -> &'static str {
     }
 }
 
-/// Detect a malformed UTF-8 byte stream hidden in a codepoint list.  Only
-/// applies to byte-stream-shaped input (every entry `< 0x100`); otherwise
-/// clear.  Reports the sub-threat of the first violation at its byte
-/// offset.
+/// Detect a malformed UTF-8 byte stream in a codepoint list, mirroring the
+/// Lean module `Unicode.Security.Covert.SurrogateReassembly.detect`.  The
+/// input is treated as a byte stream: any value `> 0xFF` is clamped to
+/// `0xFF` (never a valid UTF-8 start byte), exactly as the Lean `toBytes`
+/// helper does, so out-of-range values surface as a malformed stream rather
+/// than being dropped.  Reports the sub-threat of the first violation at its
+/// byte offset.  The byte-stream gate lives in the scan orchestrator
+/// (`looks_like_byte_stream`), mirroring `runAll` in the Lean spec.
 pub fn detect(input: &[u32]) -> Detection {
-    if !looks_like_byte_stream(input) {
-        return Detection {
-            sub: None,
-            positions: Vec::new(),
-        };
-    }
-    let bytes: Vec<u8> = input.iter().map(|&cp| cp as u8).collect();
+    let bytes: Vec<u8> = input
+        .iter()
+        .map(|&cp| if cp > 0xFF { 0xFF } else { cp as u8 })
+        .collect();
     match first_invalid_utf8_offset(&bytes) {
         None => Detection {
             sub: None,
@@ -117,10 +120,20 @@ mod tests {
     }
 
     #[test]
-    fn non_byte_stream_is_clear() {
-        // Any entry >= 0x100 means this is a codepoint array, not a byte
-        // stream, so the family does not apply.
-        assert_eq!(sub(&[0x1F600]), None);
-        assert_eq!(sub(&[0x41, 0x100]), None);
+    fn non_byte_stream_clamps_to_ff() {
+        // The module clamps any value > 0xFF to 0xFF (mirroring the Lean
+        // `toBytes` helper), which the strict decoder rejects as an invalid
+        // start byte.  The scan orchestrator gates these inputs out via
+        // `looks_like_byte_stream` before calling `detect`.
+        assert_eq!(sub(&[0x1F600]), Some("InvalidStartByte"));
+        assert_eq!(sub(&[0x41, 0x100]), Some("InvalidStartByte"));
+    }
+
+    #[test]
+    fn byte_stream_gate() {
+        use super::looks_like_byte_stream;
+        assert!(looks_like_byte_stream(&[0x41, 0xFF]));
+        assert!(!looks_like_byte_stream(&[0x1F600]));
+        assert!(!looks_like_byte_stream(&[0x41, 0x100]));
     }
 }

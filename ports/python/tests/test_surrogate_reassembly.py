@@ -129,13 +129,17 @@ def test_truncated_4byte() -> None:
     assert _sub_via_scan([0xF0, 0x9F, 0x98]) == "Truncated"
 
 
-# ── non-byte-stream: family does not apply ───────────────────────────
+# ── non-byte-stream ──────────────────────────────────────────────────
+# The module `detect` clamps any value > 0xFF to 0xFF (mirroring the Lean
+# `toBytes` helper), so a direct unit call surfaces InvalidStartByte. The
+# scan orchestrator gates the family out on non-byte-stream input (mirroring
+# `runAll`), so it stays clear end-to-end.
 
-def test_astral_codepoint_is_clear() -> None:
-    assert _sub([0x1F600]) is None
+def test_astral_codepoint_clamps_at_unit_gated_at_scan() -> None:
+    assert _sub([0x1F600]) == "InvalidStartByte"
     assert _sub_via_scan([0x1F600]) is None
 
 
-def test_mixed_codepoint_array_is_clear() -> None:
-    assert _sub([0x41, 0x100]) is None
+def test_mixed_codepoint_array_clamps_at_unit_gated_at_scan() -> None:
+    assert _sub([0x41, 0x100]) == "InvalidStartByte"
     assert _sub_via_scan([0x41, 0x100]) is None

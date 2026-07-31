@@ -1154,14 +1154,36 @@ private func readUint32(_ input: [UInt8], _ offset: Int, _ order: ByteOrder) -> 
 // start or continuation byte, or a value beyond U+10FFFF — betting a lenient
 // decoder will "reassemble" it into something the scanner never saw in codepoint
 // form.
-private func surrogateReassemblyFinding(_ input: [Int]) -> Finding? {
-    guard input.allSatisfy({ $0 < 0x100 }) else { return nil }
-    let bytes = input.map { UInt8($0) }
+// Module-faithful detect, mirroring the Lean module
+// SurrogateReassembly.detect. Any value > 0xFF is clamped to 0xFF (never a valid
+// UTF-8 start byte), exactly as the Lean toBytes helper does, so out-of-range
+// values surface as a malformed stream rather than being dropped. The
+// byte-stream gate lives in the scan orchestrator (looksLikeByteStream),
+// mirroring runAll.
+private func surrogateReassemblyDetect(_ input: [Int]) -> (sub: String, positions: [Int])? {
+    let bytes = input.map { UInt8($0 > 0xFF ? 0xFF : $0) }
     guard let failure = firstInvalidUtf8(bytes) else { return nil }
+    return (surrogateReassemblySubThreat(failure.subThreat), [failure.offset])
+}
+
+// The looksLikeByteStream gate from Unicode/Security/RunAll.lean: a
+// codepoint-array input containing any value >= 0x100 is not a byte stream; the
+// scan orchestrator uses this to skip the family on such inputs, exactly as
+// runAll does.
+private func looksLikeByteStream(_ input: [Int]) -> Bool {
+    input.allSatisfy { $0 < 0x100 }
+}
+
+// Scan-orchestrator wrapper. Mirrors runAll: SurrogateReassembly only applies to
+// byte-stream input (every codepoint <= 0xFF); on codepoint-array input the
+// family is clear.
+private func surrogateReassemblyFinding(_ input: [Int]) -> Finding? {
+    guard looksLikeByteStream(input) else { return nil }
+    guard let detection = surrogateReassemblyDetect(input) else { return nil }
     return makeFinding(
         family: Family.surrogateReassembly,
-        subThreat: surrogateReassemblySubThreat(failure.subThreat),
-        positions: [failure.offset]
+        subThreat: detection.sub,
+        positions: detection.positions
     )
 }
 

@@ -49,9 +49,10 @@ struct Detection {
 };
 
 // True iff every entry fits in one octet — the `looksLikeByteStream`
-// gate.  A codepoint-array input containing any value `>= 0x100` is
-// not a byte stream, and running the UTF-8 decoder on it would be
-// meaningless.
+// gate from `Unicode/Security/RunAll.lean`.  A codepoint-array input
+// containing any value `>= 0x100` is not a byte stream; the scan
+// orchestrator uses this to skip the family on such inputs, exactly as
+// `runAll` does.
 inline bool looks_like_byte_stream(std::span<const std::uint32_t> input) {
   for (std::uint32_t cp : input) {
     if (cp >= 0x100u)
@@ -80,18 +81,20 @@ constexpr std::string_view sub_threat_of_reject_kind(Utf8RejectKind kind) {
   return "InvalidStartByte";
 }
 
-// Detect a malformed UTF-8 byte stream hidden in a codepoint list.
-// Only applies to byte-stream-shaped input (every entry `< 0x100`);
-// otherwise clear.  Reports the sub-threat of the first violation
-// at its byte offset.
+// Detect a malformed UTF-8 byte stream in a codepoint list, mirroring
+// the Lean module `SurrogateReassembly.detect`.  Any value `> 0xFF` is
+// clamped to `0xFF` (never a valid UTF-8 start byte), exactly as the
+// Lean `toBytes` helper does, so out-of-range values surface as a
+// malformed stream rather than being dropped.  Reports the sub-threat
+// of the first violation at its byte offset.  The byte-stream gate
+// lives in the scan orchestrator (`looks_like_byte_stream`), mirroring
+// `runAll`.
 inline Detection detect(std::span<const std::uint32_t> input) {
-  if (!looks_like_byte_stream(input)) {
-    return Detection{std::nullopt, {}};
-  }
   std::vector<std::uint8_t> bytes;
   bytes.reserve(input.size());
   for (std::uint32_t cp : input) {
-    bytes.push_back(static_cast<std::uint8_t>(cp));
+    bytes.push_back(cp > 0xFFu ? static_cast<std::uint8_t>(0xFFu)
+                              : static_cast<std::uint8_t>(cp));
   }
   const auto invalid = unicode_cpp::first_invalid_utf8_offset(
       std::span<const std::uint8_t>{bytes.data(), bytes.size()});

@@ -463,19 +463,36 @@ function surrogateSubThreatOfRejectKind(kind) {
   }
 }
 
+// Module-faithful detect, mirroring
+// Unicode/Security/Covert/SurrogateReassembly.lean's `detect`. Any value > 0xFF
+// is clamped to 0xFF (never a valid UTF-8 start byte), exactly as the Lean
+// `toBytes` helper does, so out-of-range values surface as a malformed stream
+// rather than being dropped. The byte-stream gate lives in the scan
+// orchestrator (looksLikeByteStream), mirroring runAll.
+function surrogateReassemblyDetect(input) {
+  const clamped = input.map((cp) => (cp > 0xff ? 0xff : cp));
+  const invalid = firstInvalidUtf8(clamped);
+  if (invalid === null) {
+    return null;
+  }
+  return {
+    sub: surrogateSubThreatOfRejectKind(invalid.subThreat),
+    positions: [invalid.offset],
+  };
+}
+
+// Scan-orchestrator wrapper. Mirrors runAll: SurrogateReassembly only applies
+// to byte-stream input (every codepoint <= 0xFF); on codepoint-array input the
+// family is clear.
 function surrogateReassemblyFinding(input) {
   if (!looksLikeByteStream(input)) {
     return null;
   }
-  const invalid = firstInvalidUtf8(input);
-  if (invalid === null) {
+  const detection = surrogateReassemblyDetect(input);
+  if (detection === null) {
     return null;
   }
-  return makeFinding(
-    Family.SurrogateReassembly,
-    surrogateSubThreatOfRejectKind(invalid.subThreat),
-    [invalid.offset],
-  );
+  return makeFinding(Family.SurrogateReassembly, detection.sub, detection.positions);
 }
 
 function noncharacterControlFindings(input) {

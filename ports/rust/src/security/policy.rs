@@ -694,15 +694,19 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
         zw.zero_width_positions,
     );
 
-    let surrogate = surrogate_reassembly::detect(input);
-    if let Some(sub) = surrogate.sub {
-        push_finding(
-            &mut findings,
-            Family::SurrogateReassembly,
-            ClassificationKind::Hazard,
-            Some(sub),
-            surrogate.positions,
-        );
+    // Mirror `runAll`: SurrogateReassembly only applies to byte-stream input
+    // (every codepoint <= 0xFF); on codepoint-array input the family is skipped.
+    if surrogate_reassembly::looks_like_byte_stream(input) {
+        let surrogate = surrogate_reassembly::detect(input);
+        if let Some(sub) = surrogate.sub {
+            push_finding(
+                &mut findings,
+                Family::SurrogateReassembly,
+                ClassificationKind::Hazard,
+                Some(sub),
+                surrogate.positions,
+            );
+        }
     }
 
     let bidi = bidi_control_balance::detect(input);

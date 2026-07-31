@@ -457,34 +457,40 @@ public static class Security
     }
 
     // Surrogate-reassembly / malformed-byte-stream detection — a direct port
-    // of Unicode/Security/Covert/SurrogateReassembly.lean. The codepoint list
-    // is treated as a byte stream (one octet per entry); the family only
-    // applies when every entry fits in one octet (< 0x100), matching the
-    // looksLikeByteStream gate. When it applies, the shared strict UTF-8
-    // validator (FirstInvalidUtf8) surfaces the first violation, whose reject
-    // kind is projected onto a covert-layer sub-threat. Sub == null means a
-    // clear input (well-formed, or not a byte stream). Exposed for direct
-    // spot-check testing, mirroring the Rust/Python/C++ detectors.
+    // of Unicode/Security/Covert/SurrogateReassembly.lean's module `detect`.
+    // The codepoint list is treated as a byte stream: any value > 0xFF is
+    // clamped to 0xFF (never a valid UTF-8 start byte), exactly as the Lean
+    // toBytes helper does, so out-of-range values surface as a malformed stream
+    // rather than being dropped. The shared strict UTF-8 validator
+    // (FirstInvalidUtf8) surfaces the first violation, whose reject kind is
+    // projected onto a covert-layer sub-threat. Sub == null means a well-formed
+    // stream. The byte-stream gate lives in the scan orchestrator
+    // (LooksLikeByteStream), mirroring runAll. Exposed for direct spot-check
+    // testing, mirroring the Rust/Python/C++ detectors.
     public static (string? Sub, IReadOnlyList<int> Positions) SurrogateReassemblyDetect(IReadOnlyList<int> input)
     {
-        if (!LooksLikeByteStream(input)) return (null, System.Array.Empty<int>());
         var bytes = new byte[input.Count];
-        for (var index = 0; index < input.Count; index++) bytes[index] = (byte)input[index];
+        for (var index = 0; index < input.Count; index++) bytes[index] = input[index] > 0xFF ? (byte)0xFF : (byte)input[index];
         var failure = FirstInvalidUtf8(bytes);
         return failure is null
             ? (null, System.Array.Empty<int>())
             : (SubThreatOfRejectKind(failure.SubThreat), new List<int> { failure.Offset });
     }
 
+    // Scan-orchestrator wrapper. Mirrors runAll: SurrogateReassembly only
+    // applies to byte-stream input (every codepoint <= 0xFF); on codepoint-array
+    // input the family is clear.
     private static Finding? SurrogateReassemblyFinding(List<int> input)
     {
+        if (!LooksLikeByteStream(input)) return null;
         var (sub, positions) = SurrogateReassemblyDetect(input);
         return sub is null ? null : MakeFinding(Family.SurrogateReassembly, sub, positions);
     }
 
-    // True iff every entry fits in one octet — the looksLikeByteStream gate. A
-    // codepoint list containing any value >= 0x100 is not a byte stream, and
-    // running the UTF-8 validator on it would be meaningless.
+    // True iff every entry fits in one octet — the looksLikeByteStream gate
+    // from Unicode/Security/RunAll.lean. A codepoint list containing any value
+    // >= 0x100 is not a byte stream; the scan orchestrator uses this to skip
+    // the family on such inputs, exactly as runAll does.
     private static bool LooksLikeByteStream(IReadOnlyList<int> input) => input.All(cp => cp < 0x100);
 
     // Project a strict-UTF-8 reject kind onto its surrogate-reassembly

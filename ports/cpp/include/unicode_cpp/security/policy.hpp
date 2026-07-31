@@ -793,11 +793,15 @@ scan_with_identity_database(Profile profile, Mode mode,
           : std::nullopt,
       zw_result.zero_width_positions);
 
-  const auto surrogate_result = surrogate_reassembly::detect(input);
-  if (surrogate_result.sub) {
-    detail::push_finding(findings, Family::SurrogateReassembly,
-                         ClassificationKind::Hazard, surrogate_result.sub,
-                         surrogate_result.positions);
+  // Mirror `runAll`: SurrogateReassembly only applies to byte-stream input
+  // (every codepoint <= 0xFF); on codepoint-array input the family is clear.
+  if (surrogate_reassembly::looks_like_byte_stream(input)) {
+    const auto surrogate_result = surrogate_reassembly::detect(input);
+    if (surrogate_result.sub) {
+      detail::push_finding(findings, Family::SurrogateReassembly,
+                           ClassificationKind::Hazard, surrogate_result.sub,
+                           surrogate_result.positions);
+    }
   }
 
   const auto bidi_result = bidi_control_balance::detect(input);
