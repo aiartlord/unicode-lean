@@ -263,6 +263,7 @@ test "shared detector fixtures" {
     try checkDetectorFixture(contract_options.noncharacter_control_json);
     try checkDetectorFixture(contract_options.homoglyph_confusable_json);
     try checkDetectorFixture(contract_options.mixed_script_admissibility_json);
+    try checkDetectorFixture(contract_options.rtl_injection_json);
 }
 
 fn positionsMatchCode(findings: security.FindingList, code: []const u8, expected: []const usize) bool {
@@ -358,4 +359,28 @@ fn containsFamily(findings: security.FindingList, family: []const u8) bool {
         }
     }
     return false;
+}
+
+// Ground-truth vectors for the rtl-injection detector, mirroring the
+// `detect_*` spot-check theorems in
+// Unicode/Security/Display/RtlInjection.lean (each proven by `decide`) and
+// the port at ports/rust/src/security/display/rtl_injection.rs. Exercised
+// through the public `scan` API: the reported sub_threat of the single
+// rtl_injection finding must match, and a clear input must produce none.
+fn rtlSubThreat(input: []const u32) ?[]const u8 {
+    const verdict = security.scan(.gateway_header, .observe, input);
+    for (verdict.findings.items[0..verdict.findings.len]) |finding| {
+        if (finding.family == .rtl_injection) return finding.sub_threat;
+    }
+    return null;
+}
+
+test "rtl-injection ground truth vectors" {
+    try std.testing.expectEqual(@as(?[]const u8, null), rtlSubThreat(&[_]u32{ 0x30, 0x31, 0x32, 0x33 }));
+    try std.testing.expectEqual(@as(?[]const u8, null), rtlSubThreat(&[_]u32{0x043F}));
+    try std.testing.expectEqualStrings("RloInLTRField", rtlSubThreat(&[_]u32{ 0x41, 0x202E, 0x42 }).?);
+    try std.testing.expectEqualStrings("FieldTakeover", rtlSubThreat(&[_]u32{ 0x05D0, 0x42, 0x43 }).?);
+    try std.testing.expectEqualStrings("FieldTakeover", rtlSubThreat(&[_]u32{ 0x0627, 0x42, 0x43 }).?);
+    try std.testing.expectEqualStrings("StrongRTLInLTR", rtlSubThreat(&[_]u32{ 0x41, 0x42, 0x05D0, 0x44 }).?);
+    try std.testing.expectEqualStrings("MixedOverflow", rtlSubThreat(&[_]u32{ 0x41, 0x42, 0x05D0, 0x05D1, 0x05D2, 0x05D3, 0x44 }).?);
 }

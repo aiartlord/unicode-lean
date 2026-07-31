@@ -55,6 +55,7 @@ public final class Security {
     public static final String NONCHARACTER_CONTROL = "noncharacter-control";
     public static final String HOMOGLYPH_CONFUSABLE = "homoglyph-confusable";
     public static final String MIXED_SCRIPT_ADMISSIBILITY = "mixed-script-admissibility";
+    public static final String RTL_INJECTION = "rtl-injection";
     private Family() {}
   }
 
@@ -76,10 +77,21 @@ public final class Security {
 
   private enum ByteOrder { BIG, LITTLE }
 
+  // The strong Bidi_Class distinction the display layer needs. Every
+  // non-strong Bidi_Class collapses to OTHER.
+  private enum BidiStrong { R, AL, L, OTHER }
+
+  private record BidiRange(int lo, int hi, BidiStrong cls) {}
+
+  // Explicit ranges (sorted by lo) and @missing default ranges (in file
+  // order; the last match wins), parsed from DerivedBidiClass.txt.
+  private record BidiTable(List<BidiRange> explicit, List<BidiRange> defaults) {}
+
   private static Map<Integer, List<Integer>> confusablesMap;
   private static Map<Integer, List<Integer>> caseFoldingMap;
   private static List<String> knownTargets;
   private static Set<Long> legalVariationPairs;
+  private static BidiTable bidiTable;
 
   private Security() {}
 
@@ -156,6 +168,8 @@ public final class Security {
     if (homoglyph != null) findings.add(homoglyph);
     Finding mixedScript = mixedScriptAdmissibilityFinding(input);
     if (mixedScript != null) findings.add(mixedScript);
+    Finding rtl = rtlInjectionFinding(input);
+    if (rtl != null) findings.add(rtl);
     return findings;
   }
 
@@ -212,8 +226,14 @@ public final class Security {
   }
 
   private static String layer(String family) {
-    return family.equals(Family.HOMOGLYPH_CONFUSABLE) ||
-        family.equals(Family.MIXED_SCRIPT_ADMISSIBILITY) ? "I" : "C";
+    if (family.equals(Family.HOMOGLYPH_CONFUSABLE)
+        || family.equals(Family.MIXED_SCRIPT_ADMISSIBILITY)) {
+      return "I";
+    }
+    if (family.equals(Family.RTL_INJECTION)) {
+      return "D";
+    }
+    return "C";
   }
 
   private static List<Integer> positionsWhere(List<Integer> input, IntPredicate predicate) {
@@ -316,6 +336,76 @@ public final class Security {
     return makeFinding(Family.MIXED_SCRIPT_ADMISSIBILITY, mixedScriptSubThreat(input), fullSpanPositions(input));
   }
 
+  /** Sub-threat and offending positions of an RTL-injection scan; null sub-threat means clear. */
+  public record RtlInjectionResult(String subThreat, List<Integer> positions) {}
+
+  // Right-to-left injection detection for LTR-declared fields — a direct
+  // port of Unicode/Security/Display/RtlInjection.lean. Exposed for direct
+  // spot-check testing, mirroring the Rust/Python/C++ detectors.
+  public static RtlInjectionResult rtlInjectionDetect(List<Integer> input) {
+    int strongRtl = 0;
+    for (int cp : input) {
+      if (isStrongRtl(cp)) strongRtl++;
+    }
+    int[] run = longestRtlRun(input);
+    int runLen = run[0];
+    int runStart = run[1];
+
+    // Phase 1: bidi format-control trumps all.
+    for (int index = 0; index < input.size(); index++) {
+      if (isBidiFormatControl(input.get(index))) {
+        return new RtlInjectionResult("RloInLTRField", List.of(index));
+      }
+    }
+
+    // Phase 2: leading-RTL field-direction takeover.
+    for (int index = 0; index < input.size(); index++) {
+      if (isStrongRtl(input.get(index))) return new RtlInjectionResult("FieldTakeover", List.of(index));
+      if (isStrongLtr(input.get(index))) break;
+    }
+
+    // Phase 3: mid-stream strong-RTL.
+    if (strongRtl == 0) return new RtlInjectionResult(null, List.of());
+    if (runLen >= 4) return new RtlInjectionResult("MixedOverflow", List.of(runStart));
+    for (int index = 0; index < input.size(); index++) {
+      if (isStrongRtl(input.get(index))) return new RtlInjectionResult("StrongRTLInLTR", List.of(index));
+    }
+    return new RtlInjectionResult(null, List.of());
+  }
+
+  private static Finding rtlInjectionFinding(List<Integer> input) {
+    RtlInjectionResult result = rtlInjectionDetect(input);
+    if (result.subThreat() == null) return null;
+    return makeFinding(Family.RTL_INJECTION, result.subThreat(), result.positions());
+  }
+
+  private static boolean isBidiFormatControl(int cp) {
+    return (cp >= 0x202A && cp <= 0x202E) || (cp >= 0x2066 && cp <= 0x2069);
+  }
+
+  // Longest consecutive run of strong-RTL codepoints: {length, start};
+  // {0, 0} when there are none.
+  private static int[] longestRtlRun(List<Integer> input) {
+    int longest = 0;
+    int longestStart = 0;
+    int current = 0;
+    int currentStart = 0;
+    for (int index = 0; index < input.size(); index++) {
+      if (isStrongRtl(input.get(index))) {
+        int newStart = current == 0 ? index : currentStart;
+        current++;
+        currentStart = newStart;
+        if (current > longest) {
+          longest = current;
+          longestStart = newStart;
+        }
+      } else {
+        current = 0;
+      }
+    }
+    return new int[] {longest, longestStart};
+  }
+
   private static String homoglyphTargetMatch(List<Integer> input) {
     List<Integer> inputLetters = letterSkeleton(input);
     for (String target : knownTargets()) {
@@ -379,6 +469,118 @@ public final class Security {
   private static synchronized Map<Integer, List<Integer>> caseFoldingMap() {
     if (caseFoldingMap == null) caseFoldingMap = parseCaseFolding(readResource("CaseFolding.txt"));
     return caseFoldingMap;
+  }
+
+  private static synchronized BidiTable bidiTable() {
+    if (bidiTable == null) bidiTable = parseDerivedBidi(readResource("DerivedBidiClass.txt"));
+    return bidiTable;
+  }
+
+  // Mirrors Unicode.Generated.DerivedBidiClass.lookup. Explicit ranges come
+  // from DATA lines `LO..HI ; SHORT # ...` or `CP ; SHORT # ...`; @missing
+  // default ranges come from COMMENT lines `# @missing: LO..HI; Long_Name`.
+  // Only the strong distinction (R, AL, L) is retained — every other
+  // Bidi_Class collapses to OTHER.
+  private static BidiTable parseDerivedBidi(String raw) {
+    List<BidiRange> explicit = new ArrayList<>();
+    List<BidiRange> defaults = new ArrayList<>();
+    for (String line : raw.split("\n", -1)) {
+      String missingMarker = "# @missing:";
+      int missingIdx = line.indexOf(missingMarker);
+      if (missingIdx >= 0) {
+        // `# @missing: LO..HI; Long_Class_Name`
+        String rest = line.substring(missingIdx + missingMarker.length());
+        int semi = rest.indexOf(';');
+        if (semi >= 0) {
+          int[] range = parseRangeField(rest.substring(0, semi));
+          if (range != null) {
+            defaults.add(new BidiRange(range[0], range[1], strongOfLong(rest.substring(semi + 1).trim())));
+          }
+        }
+        continue;
+      }
+      int hash = line.indexOf('#');
+      String body = (hash >= 0 ? line.substring(0, hash) : line).trim();
+      if (body.isEmpty()) continue;
+      // `LO..HI ; SHORT` or `CP ; SHORT`
+      int semi = body.indexOf(';');
+      if (semi < 0) continue;
+      int[] range = parseRangeField(body.substring(0, semi));
+      if (range != null) {
+        explicit.add(new BidiRange(range[0], range[1], strongOfShort(body.substring(semi + 1).trim())));
+      }
+    }
+    explicit.sort(java.util.Comparator.comparingInt(BidiRange::lo));
+    return new BidiTable(List.copyOf(explicit), List.copyOf(defaults));
+  }
+
+  private static BidiStrong strongOfShort(String token) {
+    return switch (token) {
+      case "R" -> BidiStrong.R;
+      case "AL" -> BidiStrong.AL;
+      case "L" -> BidiStrong.L;
+      default -> BidiStrong.OTHER;
+    };
+  }
+
+  private static BidiStrong strongOfLong(String token) {
+    return switch (token) {
+      case "Right_To_Left" -> BidiStrong.R;
+      case "Arabic_Letter" -> BidiStrong.AL;
+      case "Left_To_Right" -> BidiStrong.L;
+      default -> BidiStrong.OTHER;
+    };
+  }
+
+  // `LO..HI` or a single `CP`, both hex; null on malformed input.
+  private static int[] parseRangeField(String s) {
+    String t = s.trim();
+    int dots = t.indexOf("..");
+    try {
+      if (dots >= 0) {
+        int a = Integer.parseInt(t.substring(0, dots).trim(), 16);
+        int b = Integer.parseInt(t.substring(dots + 2).trim(), 16);
+        return new int[] {a, b};
+      }
+      int a = Integer.parseInt(t, 16);
+      return new int[] {a, a};
+    } catch (NumberFormatException ex) {
+      return null;
+    }
+  }
+
+  // Full Bidi_Class lookup (strong distinction only): binary-search the
+  // sorted explicit ranges first, then the last matching @missing default,
+  // then L. Mirrors Unicode.Generated.DerivedBidiClass.lookup.
+  private static BidiStrong bidiStrong(int cp) {
+    List<BidiRange> explicit = bidiTable().explicit();
+    int lo = 0;
+    int hi = explicit.size();
+    while (lo < hi) {
+      int mid = lo + (hi - lo) / 2;
+      BidiRange row = explicit.get(mid);
+      if (cp < row.lo()) {
+        hi = mid;
+      } else if (cp > row.hi()) {
+        lo = mid + 1;
+      } else {
+        return row.cls();
+      }
+    }
+    BidiStrong result = BidiStrong.L;
+    for (BidiRange row : bidiTable().defaults()) {
+      if (row.lo() <= cp && cp <= row.hi()) result = row.cls();
+    }
+    return result;
+  }
+
+  private static boolean isStrongRtl(int cp) {
+    BidiStrong bidi = bidiStrong(cp);
+    return bidi == BidiStrong.R || bidi == BidiStrong.AL;
+  }
+
+  private static boolean isStrongLtr(int cp) {
+    return bidiStrong(cp) == BidiStrong.L;
   }
 
   private static synchronized List<String> knownTargets() {
@@ -480,7 +682,8 @@ public final class Security {
       "confusables.txt", "091c7f82fc39ef208faf8f94d29c244de99254675e09de163160c810d13ef22a",
       "KnownAttackTargets.txt", "47acf87f48e23c2e3ddfb5aed877965fbe29142e61f6f85c4ee7db90c0684947",
       "StandardizedVariants.txt", "f55100b2fb11d3d75a37b8c1ab752192dbd1c4b12328c5ec6b38e3807c0ca597",
-      "emoji-variation-sequences.txt", "bb3d09ef03f206012c7532dd52dc0a21c9efddba0135ea4cf0d9201b8b9bba7e");
+      "emoji-variation-sequences.txt", "bb3d09ef03f206012c7532dd52dc0a21c9efddba0135ea4cf0d9201b8b9bba7e",
+      "DerivedBidiClass.txt", "4867b4b7f0731ed1bfcd34cc6251211ff1542541fce0734b6fbda139ee80b3a4");
 
   private static String sha256Hex(byte[] bytes) {
     try {

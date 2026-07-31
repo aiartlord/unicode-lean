@@ -10,11 +10,33 @@ import java.util.Objects;
 
 public final class SecurityContractTest {
   public static void main(String[] args) throws Exception {
+    testRtlInjection();
     testPolicyContract();
     testVerdictContract();
     testUtf8DecodeContract();
     testMultiEncodingDecodeContract();
     testDetectorFixtures();
+  }
+
+  // Pins the RTL-injection detector against the detect_* spot-check
+  // theorems in Unicode/Security/Display/RtlInjection.lean.
+  private static void testRtlInjection() {
+    int[][] inputs = {
+      {0x30, 0x31, 0x32, 0x33},
+      {0x043F},
+      {0x41, 0x202E, 0x42},
+      {0x05D0, 0x42, 0x43},
+      {0x0627, 0x42, 0x43},
+      {0x41, 0x42, 0x05D0, 0x44},
+      {0x41, 0x42, 0x05D0, 0x05D1, 0x05D2, 0x05D3, 0x44},
+    };
+    String[] wants = {null, null, "RloInLTRField", "FieldTakeover", "FieldTakeover", "StrongRTLInLTR", "MixedOverflow"};
+    for (int i = 0; i < inputs.length; i++) {
+      java.util.List<Integer> input = new java.util.ArrayList<>();
+      for (int cp : inputs[i]) input.add(cp);
+      Security.RtlInjectionResult result = Security.rtlInjectionDetect(input);
+      assertEquals(wants[i], result.subThreat(), "rtl-injection case " + i);
+    }
   }
 
   private static void testPolicyContract() throws IOException {

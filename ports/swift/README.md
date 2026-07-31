@@ -27,5 +27,7 @@ Raw-byte entry points are available for UTF-8, UTF-16BE/LE, and UTF-32BE/LE.
 
 Runtime data is vendored under
 `Sources/UnicodeSecurity/Resources/Data/`: `CaseFolding.txt`,
-`confusables.txt`, `KnownAttackTargets.txt`, `StandardizedVariants.txt`, and
-`emoji-variation-sequences.txt`.
+`confusables.txt`, `KnownAttackTargets.txt`, `StandardizedVariants.txt`,
+`emoji-variation-sequences.txt`, and `DerivedBidiClass.txt` (read for
+`Bidi_Class` via the explicit-range → `@missing`-default → `L` lookup that
+mirrors Lean).

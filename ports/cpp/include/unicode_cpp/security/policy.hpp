@@ -22,6 +22,7 @@
 #include "unicode_cpp/security/covert/tag_block_payload.hpp"
 #include "unicode_cpp/security/covert/variation_selector_payload.hpp"
 #include "unicode_cpp/security/covert/zero_width_payload.hpp"
+#include "unicode_cpp/security/display/rtl_injection.hpp"
 #include "unicode_cpp/security/identity/homoglyph_confusable.hpp"
 #include "unicode_cpp/utf8.hpp"
 
@@ -833,6 +834,14 @@ scan_with_identity_database(Profile profile, Mode mode,
               homoglyph_confusable::mixed_script_subthreat(input,
                                                            *identity_db)},
           detail::full_span_positions(input.size()));
+    }
+
+    const auto rtl_result =
+        display::rtl_injection::detect(identity_db->tables, input);
+    if (rtl_result.sub) {
+      detail::push_finding(findings, Family::RtlInjection,
+                           ClassificationKind::Hazard, rtl_result.sub,
+                           rtl_result.positions);
     }
   }
 

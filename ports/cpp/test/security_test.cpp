@@ -18,6 +18,7 @@
 #include "unicode_cpp/security/covert/tag_block_payload.hpp"
 #include "unicode_cpp/security/covert/variation_selector_payload.hpp"
 #include "unicode_cpp/security/covert/zero_width_payload.hpp"
+#include "unicode_cpp/security/display/rtl_injection.hpp"
 #include "unicode_cpp/security/identity/homoglyph_confusable.hpp"
 #include "unicode_cpp/security/policy.hpp"
 
@@ -1112,4 +1113,62 @@ TEST_CASE("HomoglyphConfusable — pure Greek 'λόγος' is clear") {
   std::vector<std::uint32_t> in = {0x03BB, 0x03CC, 0x03B3, 0x03BF, 0x03C2};
   auto v = homoglyph_confusable::detect(as_span(in), test_database());
   CHECK(v.kind == ClassificationKind::Clear);
+}
+
+// RtlInjection — ground truth is the detect_* spot-check theorems in
+// Unicode/Security/Display/RtlInjection.lean, each proven by decide.
+
+TEST_CASE("RtlInjection — pure digits are clear") {
+  std::vector<std::uint32_t> in = {0x30, 0x31, 0x32, 0x33};
+  auto v =
+      display::rtl_injection::detect(test_database().tables, as_span(in));
+  CHECK_FALSE(v.sub.has_value());
+}
+
+TEST_CASE("RtlInjection — single Cyrillic letter is clear (strong LTR)") {
+  std::vector<std::uint32_t> in = {0x043F};
+  auto v =
+      display::rtl_injection::detect(test_database().tables, as_span(in));
+  CHECK_FALSE(v.sub.has_value());
+}
+
+TEST_CASE("RtlInjection — RLO in field fires RloInLTRField") {
+  std::vector<std::uint32_t> in = {0x41, 0x202E, 0x42};
+  auto v =
+      display::rtl_injection::detect(test_database().tables, as_span(in));
+  REQUIRE(v.sub.has_value());
+  CHECK(*v.sub == "RloInLTRField");
+}
+
+TEST_CASE("RtlInjection — leading Hebrew fires FieldTakeover") {
+  std::vector<std::uint32_t> in = {0x05D0, 0x42, 0x43};
+  auto v =
+      display::rtl_injection::detect(test_database().tables, as_span(in));
+  REQUIRE(v.sub.has_value());
+  CHECK(*v.sub == "FieldTakeover");
+}
+
+TEST_CASE("RtlInjection — leading Arabic (AL) fires FieldTakeover") {
+  std::vector<std::uint32_t> in = {0x0627, 0x42, 0x43};
+  auto v =
+      display::rtl_injection::detect(test_database().tables, as_span(in));
+  REQUIRE(v.sub.has_value());
+  CHECK(*v.sub == "FieldTakeover");
+}
+
+TEST_CASE("RtlInjection — mid-stream Hebrew fires StrongRTLInLTR") {
+  std::vector<std::uint32_t> in = {0x41, 0x42, 0x05D0, 0x44};
+  auto v =
+      display::rtl_injection::detect(test_database().tables, as_span(in));
+  REQUIRE(v.sub.has_value());
+  CHECK(*v.sub == "StrongRTLInLTR");
+}
+
+TEST_CASE("RtlInjection — four-char Hebrew run fires MixedOverflow") {
+  std::vector<std::uint32_t> in = {0x41, 0x42, 0x05D0, 0x05D1,
+                                   0x05D2, 0x05D3, 0x44};
+  auto v =
+      display::rtl_injection::detect(test_database().tables, as_span(in));
+  REQUIRE(v.sub.has_value());
+  CHECK(*v.sub == "MixedOverflow");
 }

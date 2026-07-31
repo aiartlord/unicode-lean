@@ -1,12 +1,38 @@
 using System.Text.Json;
 using UnicodeSecurity;
 
+TestRtlInjectionVectors();
 TestPolicyContract();
 TestVerdictContract();
 TestUtf8DecodeContract();
 TestMultiEncodingDecodeContract();
 TestDetectorFixtures();
 Console.WriteLine("clean: .NET contract tests pass");
+
+// Direct spot-check of the rtl-injection detector's DerivedBidiClass-backed
+// strong-Bidi lookup, mirroring the Rust/Python/C++ port tests. Runs first so
+// its result is visible before the shared contract tests. Sub == null means a
+// clear input; otherwise it is the highest-priority sub-threat.
+static void TestRtlInjectionVectors()
+{
+    var vectors = new (int[] Input, string? Sub)[]
+    {
+        (new[] { 0x30, 0x31, 0x32, 0x33 }, null),
+        (new[] { 0x043F }, null),
+        (new[] { 0x41, 0x202E, 0x42 }, "RloInLTRField"),
+        (new[] { 0x05D0, 0x42, 0x43 }, "FieldTakeover"),
+        (new[] { 0x0627, 0x42, 0x43 }, "FieldTakeover"),
+        (new[] { 0x41, 0x42, 0x05D0, 0x44 }, "StrongRTLInLTR"),
+        (new[] { 0x41, 0x42, 0x05D0, 0x05D1, 0x05D2, 0x05D3, 0x44 }, "MixedOverflow"),
+    };
+    foreach (var (input, expected) in vectors)
+    {
+        var (actual, _) = Security.RtlInjectionDetect(input);
+        var name = "rtl-injection [" + string.Join(",", input.Select(cp => "0x" + cp.ToString("X"))) + "]";
+        AssertEqual(expected ?? "<clear>", actual ?? "<clear>", name);
+    }
+    Console.WriteLine("clean: .NET rtl-injection 7-vector spot-check passes");
+}
 
 static void TestPolicyContract()
 {

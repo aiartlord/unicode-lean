@@ -304,6 +304,37 @@ func hasFinding(findings []Finding, code string) bool {
 	return false
 }
 
+// TestRtlInjection pins the detector against the detect_* spot-check
+// theorems in Unicode/Security/Display/RtlInjection.lean, each proven
+// there by decide.
+func TestRtlInjection(t *testing.T) {
+	cases := []struct {
+		name  string
+		input []uint32
+		want  string // "" means clear
+	}{
+		{"clear-digits", []uint32{0x30, 0x31, 0x32, 0x33}, ""},
+		{"clear-cyrillic", []uint32{0x043F}, ""},
+		{"rlo-in-ltr", []uint32{0x41, 0x202E, 0x42}, "RloInLTRField"},
+		{"field-takeover-hebrew", []uint32{0x05D0, 0x42, 0x43}, "FieldTakeover"},
+		{"field-takeover-arabic", []uint32{0x0627, 0x42, 0x43}, "FieldTakeover"},
+		{"mid-stream-hebrew", []uint32{0x41, 0x42, 0x05D0, 0x44}, "StrongRTLInLTR"},
+		{"overflow-hebrew", []uint32{0x41, 0x42, 0x05D0, 0x05D1, 0x05D2, 0x05D3, 0x44}, "MixedOverflow"},
+	}
+	for _, tc := range cases {
+		verdict := Scan(ProfileGatewayHeader, ModeObserve, tc.input)
+		got := ""
+		for _, finding := range verdict.Findings {
+			if finding.Family == FamilyRtlInjection {
+				got = finding.SubThreat
+			}
+		}
+		if got != tc.want {
+			t.Fatalf("%s: rtl-injection sub-threat got %q want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
 func hasFamilyFinding(findings []Finding, family Family) bool {
 	for _, finding := range findings {
 		if finding.Family == family {

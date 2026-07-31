@@ -2,6 +2,7 @@ const std = @import("std");
 const confusables_data = @import("confusables_data.zig");
 const case_folding_data = @import("case_folding_data.zig");
 const normalization_data = @import("normalization_data.zig");
+const bidi_class_data = @import("bidi_class_data.zig");
 
 const known_attack_targets_raw = @embedFile("data/KnownAttackTargets.txt");
 const standardized_variants_raw = @embedFile("data/StandardizedVariants.txt");
@@ -118,6 +119,7 @@ pub const Family = enum {
     noncharacter_control,
     homoglyph_confusable,
     mixed_script_admissibility,
+    rtl_injection,
 
     pub fn tag(self: Family) []const u8 {
         return switch (self) {
@@ -131,6 +133,7 @@ pub const Family = enum {
             .noncharacter_control => "noncharacter-control",
             .homoglyph_confusable => "homoglyph-confusable",
             .mixed_script_admissibility => "mixed-script-admissibility",
+            .rtl_injection => "rtl-injection",
         };
     }
 };
@@ -412,6 +415,9 @@ fn detect(input: []const u32) FindingList {
     if (mixedScriptAdmissibilityFinding(input)) |finding| {
         findings.append(finding);
     }
+    if (rtlInjectionFinding(input)) |finding| {
+        findings.append(finding);
+    }
 
     return findings;
 }
@@ -434,7 +440,7 @@ fn decide(profile: Profile, mode: Mode, findings: FindingList) Action {
 fn blocks(level: PolicyLevel, family: Family) bool {
     return switch (level) {
         .restrictive, .moderate => switch (family) {
-            .malformed_utf8, .malformed_utf16, .malformed_utf32, .tag_block_payload, .variation_selector_payload, .zero_width_payload, .bidi_control_balance, .noncharacter_control, .homoglyph_confusable, .mixed_script_admissibility => true,
+            .malformed_utf8, .malformed_utf16, .malformed_utf32, .tag_block_payload, .variation_selector_payload, .zero_width_payload, .bidi_control_balance, .noncharacter_control, .homoglyph_confusable, .mixed_script_admissibility, .rtl_injection => true,
         },
         .minimal => family == .malformed_utf8 or family == .malformed_utf16 or family == .malformed_utf32 or family == .bidi_control_balance or family == .noncharacter_control,
     };
@@ -680,6 +686,146 @@ fn mixedScriptAdmissibilityFinding(input: []const u32) ?Finding {
         .sub_threat = sub,
         .detail = "mixed-script-admissibility",
     };
+}
+
+// -- rtl-injection ---------------------------------------------------------
+//
+// Direct port of ports/rust/src/security/display/rtl_injection.rs, itself a
+// port of Unicode/Security/Display/RtlInjection.lean. Strong directionality
+// reads Bidi_Class from bidi_class_data.zig, mirroring the spec's lookup:
+// the explicit ranges (binary search) take priority, then the @missing
+// defaults where the last covering range wins, then Left_To_Right.
+
+fn bidiStrong(cp: u32) bidi_class_data.Strong {
+    const explicit = bidi_class_data.explicit;
+    var low: usize = 0;
+    var high: usize = explicit.len;
+    while (low < high) {
+        const mid = low + (high - low) / 2;
+        const range = explicit[mid];
+        if (cp < range.start) {
+            high = mid;
+        } else if (cp > range.end) {
+            low = mid + 1;
+        } else {
+            return range.class;
+        }
+    }
+    var result: ?bidi_class_data.Strong = null;
+    for (bidi_class_data.defaults) |range| {
+        if (cp >= range.start and cp <= range.end) result = range.class;
+    }
+    return result orelse .l;
+}
+
+fn isStrongRtl(cp: u32) bool {
+    const class = bidiStrong(cp);
+    return class == .r or class == .al;
+}
+
+fn isStrongLtr(cp: u32) bool {
+    return bidiStrong(cp) == .l;
+}
+
+fn isBidiFormatControl(cp: u32) bool {
+    return (cp >= 0x202A and cp <= 0x202E) or (cp >= 0x2066 and cp <= 0x2069);
+}
+
+const RtlRun = struct {
+    len: usize,
+    start: usize,
+};
+
+// Length and starting position of the longest consecutive run of strong-RTL
+// codepoints; {0, 0} when there are none.
+fn longestRtlRun(input: []const u32) RtlRun {
+    var longest: usize = 0;
+    var longest_start: usize = 0;
+    var current: usize = 0;
+    var current_start: usize = 0;
+    for (input, 0..) |cp, index| {
+        if (isStrongRtl(cp)) {
+            const new_start = if (current == 0) index else current_start;
+            current += 1;
+            current_start = new_start;
+            if (current > longest) {
+                longest = current;
+                longest_start = new_start;
+            }
+        } else {
+            current = 0;
+        }
+    }
+    return .{ .len = longest, .start = longest_start };
+}
+
+fn rtlInjectionReasonCode(sub_threat: []const u8) []const u8 {
+    if (std.mem.eql(u8, sub_threat, "RloInLTRField")) {
+        return "unicode.security.D.rtl-injection.RloInLTRField";
+    }
+    if (std.mem.eql(u8, sub_threat, "FieldTakeover")) {
+        return "unicode.security.D.rtl-injection.FieldTakeover";
+    }
+    if (std.mem.eql(u8, sub_threat, "MixedOverflow")) {
+        return "unicode.security.D.rtl-injection.MixedOverflow";
+    }
+    return "unicode.security.D.rtl-injection.StrongRTLInLTR";
+}
+
+fn rtlInjectionAt(sub_threat: []const u8, position: usize) Finding {
+    var positions: [16]usize = undefined;
+    positions[0] = position;
+    return .{
+        .code = rtlInjectionReasonCode(sub_threat),
+        .family = .rtl_injection,
+        .severity = 2,
+        .positions = positions,
+        .position_count = 1,
+        .sub_threat = sub_threat,
+        .detail = "rtl-injection",
+    };
+}
+
+const FirstStrong = struct {
+    index: usize,
+    rtl: bool,
+};
+
+// Detect right-to-left injection in an LTR-declared field. Priority mirrors
+// the spec exactly: (1) any bidi format-control anywhere fires
+// RloInLTRField; otherwise (2) a leading strong-RTL codepoint fires
+// FieldTakeover; otherwise (3) mid-stream strong-RTL is classified by run
+// length (>= 4 is MixedOverflow, shorter is StrongRTLInLTR).
+fn rtlInjectionFinding(input: []const u32) ?Finding {
+    for (input, 0..) |cp, index| {
+        if (isBidiFormatControl(cp)) return rtlInjectionAt("RloInLTRField", index);
+    }
+
+    var first_strong: ?FirstStrong = null;
+    for (input, 0..) |cp, index| {
+        if (isStrongRtl(cp)) {
+            first_strong = .{ .index = index, .rtl = true };
+            break;
+        } else if (isStrongLtr(cp)) {
+            first_strong = .{ .index = index, .rtl = false };
+            break;
+        }
+    }
+    if (first_strong) |strong| {
+        if (strong.rtl) return rtlInjectionAt("FieldTakeover", strong.index);
+    }
+
+    var first_rtl: ?usize = null;
+    for (input, 0..) |cp, index| {
+        if (isStrongRtl(cp)) {
+            first_rtl = index;
+            break;
+        }
+    }
+    const rtl_index = first_rtl orelse return null;
+    const run = longestRtlRun(input);
+    if (run.len >= 4) return rtlInjectionAt("MixedOverflow", run.start);
+    return rtlInjectionAt("StrongRTLInLTR", rtl_index);
 }
 
 fn fullSpanPositions(input: []const u32) Positions {

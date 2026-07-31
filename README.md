@@ -27,7 +27,7 @@ Self-contained on Lean 4 core and kernel-checked end to end.
 | UTF-16 / UTF-32 codecs | UAX #44 §3 | `Codec.{Utf16,Utf32}.decodeOne{BE,LE}_encodeOne{BE,LE}` — closed-form per-codepoint roundtrip with surrogate-pair handling |
 | BOM detection | UAX #41 | `Codec.Bom.detect` — UTF-8 / UTF-16 BE+LE / UTF-32 BE+LE precedence |
 | Noncharacters | UAX #44 §5.6 | `Codec.Noncharacters.{count_noncharacters,all_are_noncharacters,all_are_valid_codepoints}` — exactly the 66 designated noncharacters, all in the valid scalar range |
-| Security Conformance Layer | UTS #39 + UAX #9 + UAX #15 (composed) + BIP-39 + RFC 8785 + UTS #51 | `Conformance.Security.<Family>Test.all_rows_pass` — every hand-curated fixture row's verdict closes for each of the 26 detector families |
+| Security Conformance Layer | UTS #39 + UAX #9 + UAX #15 (composed) + BIP-39 + RFC 8785 + UTS #51 | `Conformance.Security.<Family>Test.all_rows_pass` — every hand-curated fixture row's verdict closes for each of the 27 detector families |
 
 ## Workflow
 
@@ -67,7 +67,7 @@ unicode-lean/
 │   ├── Normalization/           # 29 files — NFC/NFKC/NFD/NFKD + soundness kernel
 │   ├── Precis/                  # 8 files — RFC 8264 / 8265
 │   ├── Refined.lean
-│   ├── Security/                # Security Conformance Layer — 26 detector
+│   ├── Security/                # Security Conformance Layer — 27 detector
 │   │                            #   families across Covert / Identity / Display /
 │   │                            #   Form / Boundary / Crypto; per-family fixtures
 │   │                            #   under Ucd/Security/ with their own SHA256SUMS
@@ -134,11 +134,11 @@ Every family ships three artefacts:
    `theorem all_rows_pass : rows.all verifyRow = true` via
    `native_decide`, plus row-count and per-section coverage gates.
 
-The 26 detectors:
+The 27 detectors:
 
 **Covert-channel detectors** — TagBlockPayload,
 VariationSelectorPayload, ZeroWidthPayload, SurrogateReassembly,
-BidiControlBalance.
+BidiControlBalance, NoncharacterControl.
 
 **Identity-spoofing detectors** — HomoglyphConfusable,
 MixedScriptAdmissibility, EmojiZwjIntegrity,

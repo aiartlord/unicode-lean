@@ -49,9 +49,26 @@ struct PairHash {
 // UcdEntry — one row of UnicodeData.txt
 // ─────────────────────────────────────────────────────────────────────
 
+// The subset of Bidi_Class values the security layer distinguishes:
+// the two strong-RTL classes (R, AL), strong-LTR (L), and everything
+// else collapsed to Other.  Mirrors the strong distinction retained by
+// Unicode.Generated.DerivedBidiClass.lookup as consumed by
+// Unicode/Security/Display/RtlInjection.lean.
+enum class BidiStrong : std::uint8_t { R, Al, L, Other };
+
 struct UcdEntry {
     std::uint8_t ccc;
     std::vector<std::uint32_t> canonical_decomp;  // empty if none
+};
+
+// One range row parsed from DerivedBidiClass.txt: [lo, hi] carries the
+// strong Bidi_Class distinction.  Explicit rows come from DATA lines and
+// are sorted by lo for binary search; default rows come from `@missing`
+// comment lines and are kept in file order (last match wins).
+struct BidiRange {
+    std::uint32_t lo;
+    std::uint32_t hi;
+    BidiStrong cls;
 };
 
 // ─────────────────────────────────────────────────────────────────────
@@ -110,6 +127,10 @@ struct Tables {
         case_folding;
     std::vector<std::pair<std::uint32_t, std::uint32_t>>
         default_ignorable_ranges;
+    // DerivedBidiClass.txt strong-class ranges.  Explicit rows sorted by
+    // lo; default (`@missing`) rows in file order.
+    std::vector<BidiRange> bidi_explicit;
+    std::vector<BidiRange> bidi_default;
 
     static Tables load_from_dir(const std::filesystem::path& dir);
     static Tables parse(
@@ -120,7 +141,8 @@ struct Tables {
         std::string_view identifier_status_text,
         std::string_view property_value_aliases_text,
         std::string_view case_folding_text,
-        std::string_view derived_core_properties_text);
+        std::string_view derived_core_properties_text,
+        std::string_view derived_bidi_class_text);
 };
 
 // ─────────────────────────────────────────────────────────────────────
@@ -477,6 +499,60 @@ inline void parse_case_folding(
     });
 }
 
+// Map a DerivedBidiClass.txt short class token to the strong subset.
+inline BidiStrong strong_of_short(std::string_view token) {
+    if (token == "R") return BidiStrong::R;
+    if (token == "AL") return BidiStrong::Al;
+    if (token == "L") return BidiStrong::L;
+    return BidiStrong::Other;
+}
+
+// Map an `@missing` long class name to the strong subset.
+inline BidiStrong strong_of_long(std::string_view name) {
+    if (name == "Right_To_Left") return BidiStrong::R;
+    if (name == "Arabic_Letter") return BidiStrong::Al;
+    if (name == "Left_To_Right") return BidiStrong::L;
+    return BidiStrong::Other;
+}
+
+// Parse DerivedBidiClass.txt into explicit + default (`@missing`) ranges.
+// Mirrors Unicode.Generated.DerivedBidiClass explicitRanges/defaultRanges:
+// DATA lines `LO..HI ; SHORT` (or `CP ; SHORT`) yield explicit rows,
+// sorted by lo; `# @missing: LO..HI; Long_Name` comment lines yield
+// default rows, kept in file order.
+inline void parse_derived_bidi(
+    std::string_view text,
+    std::vector<BidiRange>& explicit_ranges,
+    std::vector<BidiRange>& default_ranges) {
+    constexpr std::string_view kMissing = "# @missing:";
+    for_each_line(text, [&](std::string_view line) {
+        if (line.substr(0, kMissing.size()) == kMissing) {
+            // `# @missing: LO..HI; Long_Class_Name`
+            std::string_view rest = line.substr(kMissing.size());
+            std::size_t semi = rest.find(';');
+            if (semi == std::string_view::npos) return;
+            auto rng = parse_range_field(rest.substr(0, semi));
+            default_ranges.push_back(BidiRange{
+                rng.first, rng.second,
+                strong_of_long(trim(rest.substr(semi + 1)))});
+            return;
+        }
+        std::size_t hash = line.find('#');
+        std::string_view body =
+            hash == std::string_view::npos ? line : line.substr(0, hash);
+        body = trim(body);
+        if (body.empty()) return;
+        std::size_t semi = body.find(';');
+        if (semi == std::string_view::npos) return;
+        auto rng = parse_range_field(body.substr(0, semi));
+        explicit_ranges.push_back(BidiRange{
+            rng.first, rng.second,
+            strong_of_short(trim(body.substr(semi + 1)))});
+    });
+    std::sort(explicit_ranges.begin(), explicit_ranges.end(),
+        [](const BidiRange& a, const BidiRange& b) { return a.lo < b.lo; });
+}
+
 }  // namespace detail
 
 inline Tables Tables::parse(
@@ -487,7 +563,8 @@ inline Tables Tables::parse(
     std::string_view identifier_status_text,
     std::string_view property_value_aliases_text,
     std::string_view case_folding_text,
-    std::string_view derived_core_properties_text) {
+    std::string_view derived_core_properties_text,
+    std::string_view derived_bidi_class_text) {
     Tables t;
     detail::parse_unicode_data(unicode_data_text, t.ucd);
     detail::parse_composition_exclusions(
@@ -504,6 +581,8 @@ inline Tables Tables::parse(
     detail::parse_case_folding(case_folding_text, t.case_folding);
     detail::parse_default_ignorable(
         derived_core_properties_text, t.default_ignorable_ranges);
+    detail::parse_derived_bidi(
+        derived_bidi_class_text, t.bidi_explicit, t.bidi_default);
     return t;
 }
 
@@ -516,7 +595,8 @@ inline Tables Tables::load_from_dir(const std::filesystem::path& dir) {
         detail::read_file(dir / "IdentifierStatus.txt"),
         detail::read_file(dir / "PropertyValueAliases.txt"),
         detail::read_file(dir / "CaseFolding.txt"),
-        detail::read_file(dir / "DerivedCoreProperties.txt"));
+        detail::read_file(dir / "DerivedCoreProperties.txt"),
+        detail::read_file(dir / "DerivedBidiClass.txt"));
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -525,6 +605,46 @@ inline Tables Tables::load_from_dir(const std::filesystem::path& dir) {
 
 inline std::uint8_t ccc(const Tables& t, std::uint32_t cp) {
     return detail::ccc_lookup(t.ucd, cp);
+}
+
+// Full Bidi_Class lookup (strong distinction only), mirroring
+// Unicode.Generated.DerivedBidiClass.lookup: (1) binary-search the sorted
+// explicit ranges — a hit wins; (2) otherwise scan the `@missing` default
+// ranges in file order, last match winning; (3) otherwise L.
+inline BidiStrong bidi_strong(const Tables& t, std::uint32_t cp) {
+    // Binary search the sorted explicit ranges.
+    std::size_t lo = 0;
+    std::size_t hi = t.bidi_explicit.size();
+    while (lo < hi) {
+        std::size_t mid = lo + (hi - lo) / 2;
+        const BidiRange& r = t.bidi_explicit[mid];
+        if (cp < r.lo) {
+            hi = mid;
+        } else if (cp > r.hi) {
+            lo = mid + 1;
+        } else {
+            return r.cls;
+        }
+    }
+    // No explicit row: last matching `@missing` default wins, else L.
+    BidiStrong result = BidiStrong::L;
+    for (const BidiRange& r : t.bidi_default) {
+        if (r.lo <= cp && cp <= r.hi) {
+            result = r.cls;
+        }
+    }
+    return result;
+}
+
+// True iff cp's Bidi_Class is strong RTL (R or AL).
+inline bool is_strong_rtl(const Tables& t, std::uint32_t cp) {
+    const BidiStrong s = bidi_strong(t, cp);
+    return s == BidiStrong::R || s == BidiStrong::Al;
+}
+
+// True iff cp's Bidi_Class is strong LTR (L).
+inline bool is_strong_ltr(const Tables& t, std::uint32_t cp) {
+    return bidi_strong(t, cp) == BidiStrong::L;
 }
 
 // Hangul algorithmic decomposition + composition (UAX #15 § 1.3).

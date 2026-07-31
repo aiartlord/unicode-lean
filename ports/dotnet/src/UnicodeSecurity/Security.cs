@@ -51,6 +51,7 @@ public static class Security
         public const string NoncharacterControl = "noncharacter-control";
         public const string HomoglyphConfusable = "homoglyph-confusable";
         public const string MixedScriptAdmissibility = "mixed-script-admissibility";
+        public const string RtlInjection = "rtl-injection";
     }
 
     public sealed record Finding(
@@ -81,6 +82,7 @@ public static class Security
     private static Dictionary<int, List<int>>? caseFoldingMap;
     private static List<string>? knownTargets;
     private static HashSet<long>? legalVariationPairs;
+    private static BidiTable? bidiTable;
 
     public static Verdict Scan(string profile, string mode, IEnumerable<int> input)
     {
@@ -143,6 +145,8 @@ public static class Security
         if (homoglyph is not null) findings.Add(homoglyph);
         var mixedScript = MixedScriptAdmissibilityFinding(input);
         if (mixedScript is not null) findings.Add(mixedScript);
+        var rtl = RtlInjectionFinding(input);
+        if (rtl is not null) findings.Add(rtl);
         return findings;
     }
 
@@ -198,7 +202,12 @@ public static class Security
         $"unicode.security.{Layer(family)}.{family}.{subThreat}";
 
     private static string Layer(string family) =>
-        family is Family.HomoglyphConfusable or Family.MixedScriptAdmissibility ? "I" : "C";
+        family switch
+        {
+            Family.HomoglyphConfusable or Family.MixedScriptAdmissibility => "I",
+            Family.RtlInjection => "D",
+            _ => "C",
+        };
 
     private static List<int> PositionsWhere(List<int> input, Func<int, bool> predicate)
     {
@@ -292,6 +301,79 @@ public static class Security
             ? MakeFinding(Family.MixedScriptAdmissibility, MixedScriptSubThreat(input), FullSpanPositions(input))
             : null;
 
+    // Right-to-left injection detection for LTR-declared fields — a direct
+    // port of Unicode/Security/Display/RtlInjection.lean. Returns the
+    // highest-priority sub-threat and the offending positions, or null for
+    // a clear input. Exposed for direct spot-check testing, mirroring the
+    // Rust/Python/C++ detectors.
+    public static (string? Sub, IReadOnlyList<int> Positions) RtlInjectionDetect(IReadOnlyList<int> input)
+    {
+        var strongRtl = 0;
+        foreach (var cp in input)
+        {
+            if (IsStrongRtl(cp)) strongRtl++;
+        }
+        var (runLen, runStart) = LongestRtlRun(input);
+
+        // Phase 1: bidi format-control trumps all.
+        for (var index = 0; index < input.Count; index++)
+        {
+            if (IsBidiFormatControl(input[index])) return ("RloInLTRField", new List<int> { index });
+        }
+
+        // Phase 2: leading-RTL field-direction takeover.
+        for (var index = 0; index < input.Count; index++)
+        {
+            if (IsStrongRtl(input[index])) return ("FieldTakeover", new List<int> { index });
+            if (IsStrongLtr(input[index])) break;
+        }
+
+        // Phase 3: mid-stream strong-RTL.
+        if (strongRtl == 0) return (null, System.Array.Empty<int>());
+        if (runLen >= 4) return ("MixedOverflow", new List<int> { runStart });
+        for (var index = 0; index < input.Count; index++)
+        {
+            if (IsStrongRtl(input[index])) return ("StrongRTLInLTR", new List<int> { index });
+        }
+        return (null, System.Array.Empty<int>());
+    }
+
+    private static Finding? RtlInjectionFinding(List<int> input)
+    {
+        var (sub, positions) = RtlInjectionDetect(input);
+        return sub is null ? null : MakeFinding(Family.RtlInjection, sub, positions);
+    }
+
+    private static bool IsBidiFormatControl(int cp) =>
+        cp is >= 0x202A and <= 0x202E || cp is >= 0x2066 and <= 0x2069;
+
+    private static (int Length, int Start) LongestRtlRun(IReadOnlyList<int> input)
+    {
+        var longest = 0;
+        var longestStart = 0;
+        var current = 0;
+        var currentStart = 0;
+        for (var index = 0; index < input.Count; index++)
+        {
+            if (IsStrongRtl(input[index]))
+            {
+                var newStart = current == 0 ? index : currentStart;
+                current++;
+                currentStart = newStart;
+                if (current > longest)
+                {
+                    longest = current;
+                    longestStart = newStart;
+                }
+            }
+            else
+            {
+                current = 0;
+            }
+        }
+        return (longest, longestStart);
+    }
+
     private static string? HomoglyphTargetMatch(List<int> input)
     {
         var inputLetters = LetterSkeleton(input);
@@ -374,6 +456,124 @@ public static class Security
         if (caseFoldingMap is null) caseFoldingMap = ParseCaseFolding(ReadDataFile("CaseFolding.txt"));
         return caseFoldingMap;
     }
+
+    // The strong Bidi_Class distinction the display layer needs. Every
+    // Bidi_Class that is not R, AL, or L collapses to Other, matching
+    // Unicode.Generated.DerivedBidiClass and the Rust/Python/C++ ports.
+    private enum BidiStrong { R, Al, L, Other }
+
+    private sealed record BidiRange(int Lo, int Hi, BidiStrong Class);
+
+    // Explicit ranges (sorted by lower bound) win first; otherwise the last
+    // matching @missing default range wins; otherwise the codepoint is L.
+    private sealed record BidiTable(IReadOnlyList<BidiRange> Explicit, IReadOnlyList<BidiRange> Defaults);
+
+    private static BidiTable BidiClassTable()
+    {
+        if (bidiTable is null) bidiTable = ParseDerivedBidi(ReadDataFile("DerivedBidiClass.txt"));
+        return bidiTable;
+    }
+
+    private static BidiStrong StrongOfShort(string token) => token switch
+    {
+        "R" => BidiStrong.R,
+        "AL" => BidiStrong.Al,
+        "L" => BidiStrong.L,
+        _ => BidiStrong.Other,
+    };
+
+    private static BidiStrong StrongOfLong(string token) => token switch
+    {
+        "Right_To_Left" => BidiStrong.R,
+        "Arabic_Letter" => BidiStrong.Al,
+        "Left_To_Right" => BidiStrong.L,
+        _ => BidiStrong.Other,
+    };
+
+    private static (int Lo, int Hi)? ParseRangeField(string field)
+    {
+        var s = field.Trim();
+        var idx = s.IndexOf("..", StringComparison.Ordinal);
+        if (idx >= 0)
+        {
+            var a = ParseHex(s.Substring(0, idx));
+            var b = ParseHex(s.Substring(idx + 2));
+            return a is null || b is null ? null : (a.Value, b.Value);
+        }
+        var single = ParseHex(s);
+        return single is null ? null : (single.Value, single.Value);
+    }
+
+    // Mirror of Unicode.Generated.DerivedBidiClass: DATA lines
+    // `LO..HI ; SHORT # ...` (or `CP ; SHORT # ...`) become explicit ranges
+    // sorted by lower bound; `# @missing: LO..HI; Long_Name` comment lines
+    // become default ranges kept in file order. Only the strong distinction
+    // (R, AL, L) is retained; every other class collapses to Other.
+    private static BidiTable ParseDerivedBidi(string raw)
+    {
+        const string missingPrefix = "# @missing:";
+        var explicitRanges = new List<BidiRange>();
+        var defaults = new List<BidiRange>();
+        foreach (var line in raw.Split('\n'))
+        {
+            if (line.StartsWith(missingPrefix, StringComparison.Ordinal))
+            {
+                var rest = line.Substring(missingPrefix.Length);
+                var semi = rest.IndexOf(';');
+                if (semi >= 0)
+                {
+                    var range = ParseRangeField(rest.Substring(0, semi));
+                    if (range is not null)
+                    {
+                        defaults.Add(new BidiRange(range.Value.Lo, range.Value.Hi, StrongOfLong(rest.Substring(semi + 1).Trim())));
+                    }
+                }
+                continue;
+            }
+            var hash = line.IndexOf('#');
+            var body = (hash >= 0 ? line.Substring(0, hash) : line).Trim();
+            if (body.Length == 0) continue;
+            var sep = body.IndexOf(';');
+            if (sep < 0) continue;
+            var explicitRange = ParseRangeField(body.Substring(0, sep));
+            if (explicitRange is not null)
+            {
+                explicitRanges.Add(new BidiRange(explicitRange.Value.Lo, explicitRange.Value.Hi, StrongOfShort(body.Substring(sep + 1).Trim())));
+            }
+        }
+        explicitRanges.Sort((left, right) => left.Lo.CompareTo(right.Lo));
+        return new BidiTable(explicitRanges, defaults);
+    }
+
+    // Full Bidi_Class lookup (strong distinction only): binary-search the
+    // sorted explicit ranges first, then take the last matching @missing
+    // default, then fall back to L.
+    private static BidiStrong BidiStrongOf(int cp)
+    {
+        var table = BidiClassTable();
+        var ranges = table.Explicit;
+        int lo = 0, hi = ranges.Count;
+        while (lo < hi)
+        {
+            var mid = lo + (hi - lo) / 2;
+            var row = ranges[mid];
+            if (cp < row.Lo) hi = mid;
+            else if (cp > row.Hi) lo = mid + 1;
+            else return row.Class;
+        }
+        var result = BidiStrong.L;
+        foreach (var row in table.Defaults)
+        {
+            if (row.Lo <= cp && cp <= row.Hi) result = row.Class;
+        }
+        return result;
+    }
+
+    private static bool IsStrongRtl(int cp) =>
+        BidiStrongOf(cp) is BidiStrong.R or BidiStrong.Al;
+
+    private static bool IsStrongLtr(int cp) =>
+        BidiStrongOf(cp) == BidiStrong.L;
 
     private static List<string> KnownTargets()
     {
@@ -470,6 +670,7 @@ public static class Security
             ["KnownAttackTargets.txt"] = "47acf87f48e23c2e3ddfb5aed877965fbe29142e61f6f85c4ee7db90c0684947",
             ["StandardizedVariants.txt"] = "f55100b2fb11d3d75a37b8c1ab752192dbd1c4b12328c5ec6b38e3807c0ca597",
             ["emoji-variation-sequences.txt"] = "bb3d09ef03f206012c7532dd52dc0a21c9efddba0135ea4cf0d9201b8b9bba7e",
+            ["DerivedBidiClass.txt"] = "4867b4b7f0731ed1bfcd34cc6251211ff1542541fce0734b6fbda139ee80b3a4",
         };
 
     private static string ReadDataFile(string name)

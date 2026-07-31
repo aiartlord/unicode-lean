@@ -15,6 +15,8 @@ UNICODE_DATA_SOURCE = ROOT / "src" / "data" / "UnicodeData.txt"
 NORMALIZATION_OUTPUT = ROOT / "src" / "normalization_data.zig"
 CASE_FOLDING_SOURCE = ROOT / "src" / "data" / "CaseFolding.txt"
 CASE_FOLDING_OUTPUT = ROOT / "src" / "case_folding_data.zig"
+BIDI_SOURCE = ROOT / "src" / "data" / "DerivedBidiClass.txt"
+BIDI_OUTPUT = ROOT / "src" / "bidi_class_data.zig"
 
 
 def parse_codepoints(field: str) -> list[int]:
@@ -121,6 +123,112 @@ def render_normalization(entries: dict[int, tuple[int, list[int]]]) -> str:
     return "\n".join(lines)
 
 
+def _bidi_range_bounds(field: str) -> tuple[int, int]:
+    """Parse a DerivedBidiClass range field, either ``LO..HI`` or a single
+    ``CP``, into inclusive (lo, hi) integer bounds."""
+    field = field.strip()
+    if ".." in field:
+        lo_text, hi_text = field.split("..", 1)
+        return int(lo_text, 16), int(hi_text, 16)
+    cp = int(field, 16)
+    return cp, cp
+
+
+def _map_bidi_short(short: str) -> str:
+    """Map a DerivedBidiClass abbreviation to the four-value Strong tag.
+    Only R, AL, and L carry directional weight; everything else collapses
+    to ``other`` so that binary search over the explicit ranges reproduces
+    the spec's Bidi_Class lookup for non-strong codepoints."""
+    return {"R": "r", "AL": "al", "L": "l"}.get(short, "other")
+
+
+def _map_bidi_long(name: str) -> str:
+    """Map a DerivedBidiClass ``@missing`` long name to the Strong tag."""
+    return {
+        "Right_To_Left": "r",
+        "Arabic_Letter": "al",
+        "Left_To_Right": "l",
+    }.get(name, "other")
+
+
+def parse_derived_bidi(
+    text: str,
+) -> tuple[list[tuple[int, int, str]], list[tuple[int, int, str]]]:
+    """Parse DerivedBidiClass.txt into two range tables.
+
+    ``explicit`` holds ``(lo, hi, tag)`` from DATA lines
+    (``LO..HI ; SHORT # ...`` or ``CP ; SHORT # ...``), sorted by ``lo``.
+    ``defaults`` holds ``(lo, hi, tag)`` from ``# @missing: LO..HI; Long_Name``
+    comment lines, in file order. Both mirror
+    ``Unicode.Generated.DerivedBidiClass``."""
+    explicit: list[tuple[int, int, str]] = []
+    defaults: list[tuple[int, int, str]] = []
+    for raw_line in text.splitlines():
+        if "@missing:" in raw_line:
+            _prefix, rest = raw_line.split("@missing:", 1)
+            parts = rest.split(";")
+            if len(parts) < 2:
+                continue
+            try:
+                lo, hi = _bidi_range_bounds(parts[0])
+            except ValueError:
+                continue
+            defaults.append((lo, hi, _map_bidi_long(parts[1].strip())))
+            continue
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        fields = stripped.split(";")
+        if len(fields) < 2:
+            continue
+        short = fields[1].split("#", 1)[0].strip()
+        try:
+            lo, hi = _bidi_range_bounds(fields[0])
+        except ValueError:
+            continue
+        explicit.append((lo, hi, _map_bidi_short(short)))
+    explicit.sort(key=lambda row: row[0])
+    return explicit, defaults
+
+
+def render_bidi_class(
+    explicit: list[tuple[int, int, str]],
+    defaults: list[tuple[int, int, str]],
+) -> str:
+    lines = [
+        "// GENERATED FILE - DO NOT EDIT.",
+        "// Source: src/data/DerivedBidiClass.txt",
+        "",
+        "pub const Strong = enum { r, al, l, other };",
+        "",
+        "pub const Range = struct {",
+        "    start: u32,",
+        "    end: u32,",
+        "    class: Strong,",
+        "};",
+        "",
+        "// Explicit Bidi_Class ranges from DATA lines, sorted by start.",
+        "// Binary search over this table takes priority in the lookup.",
+        "pub const explicit = [_]Range{",
+    ]
+    for start, end, cls in explicit:
+        lines.append(
+            f"    .{{ .start = {zig_hex(start)}, .end = {zig_hex(end)}, "
+            f".class = .{cls} }},"
+        )
+    lines.append("};")
+    lines.append("")
+    lines.append("// Default (@missing) ranges in file order; the last match wins.")
+    lines.append("pub const defaults = [_]Range{")
+    for start, end, cls in defaults:
+        lines.append(
+            f"    .{{ .start = {zig_hex(start)}, .end = {zig_hex(end)}, "
+            f".class = .{cls} }},"
+        )
+    lines.extend(["};", ""])
+    return "\n".join(lines)
+
+
 def parse_case_folding(text: str) -> dict[int, list[int]]:
     entries: dict[int, list[int]] = {}
     for raw_line in text.splitlines():
@@ -187,15 +295,21 @@ def main() -> None:
         CASE_FOLDING_SOURCE.read_text(encoding="utf-8")
     )
     case_folding_output = render_case_folding(case_folding_entries)
+    bidi_explicit, bidi_defaults = parse_derived_bidi(
+        BIDI_SOURCE.read_text(encoding="utf-8")
+    )
+    bidi_output = render_bidi_class(bidi_explicit, bidi_defaults)
 
     if args.check:
         actual = OUTPUT.read_text(encoding="utf-8")
         actual_normalization = NORMALIZATION_OUTPUT.read_text(encoding="utf-8")
         actual_case_folding = CASE_FOLDING_OUTPUT.read_text(encoding="utf-8")
+        actual_bidi = BIDI_OUTPUT.read_text(encoding="utf-8")
         if (
             actual != output
             or actual_normalization != normalization_output
             or actual_case_folding != case_folding_output
+            or actual_bidi != bidi_output
         ):
             print(
                 "FATAL: Zig generated data is stale; "
@@ -207,13 +321,16 @@ def main() -> None:
             "clean: Zig generated Unicode tables match generator output "
             f"({len(entries)} confusables, "
             f"{len(normalization_entries)} normalization entries, "
-            f"{len(case_folding_entries)} case-folding entries)"
+            f"{len(case_folding_entries)} case-folding entries, "
+            f"{len(bidi_explicit)} bidi explicit ranges, "
+            f"{len(bidi_defaults)} bidi default ranges)"
         )
         return
 
     OUTPUT.write_text(output, encoding="utf-8")
     NORMALIZATION_OUTPUT.write_text(normalization_output, encoding="utf-8")
     CASE_FOLDING_OUTPUT.write_text(case_folding_output, encoding="utf-8")
+    BIDI_OUTPUT.write_text(bidi_output, encoding="utf-8")
     print(f"generated {OUTPUT.relative_to(ROOT)} from {len(entries)} entries")
     print(
         f"generated {NORMALIZATION_OUTPUT.relative_to(ROOT)} "
@@ -222,6 +339,11 @@ def main() -> None:
     print(
         f"generated {CASE_FOLDING_OUTPUT.relative_to(ROOT)} "
         f"from {len(case_folding_entries)} entries"
+    )
+    print(
+        f"generated {BIDI_OUTPUT.relative_to(ROOT)} "
+        f"from {len(bidi_explicit)} explicit ranges "
+        f"and {len(bidi_defaults)} default ranges"
     )
 
 

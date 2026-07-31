@@ -35,10 +35,10 @@ import Data.Bits (shiftL, xor, (.|.))
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.Char (isSpace, ord)
-import Data.List (dropWhileEnd, intercalate)
+import Data.List (dropWhileEnd, find, intercalate)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import Data.Maybe (isJust, mapMaybe)
+import Data.Maybe (isJust, listToMaybe, mapMaybe)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Numeric (readHex)
@@ -57,6 +57,11 @@ import Unicode.Codec.Strict
   )
 import qualified Unicode.Normalization.Lookup as NormalizationLookup
 import qualified Unicode.Generated.UnicodeData as UnicodeData
+import Unicode.Generated.DerivedBidiClass
+  ( BidiStrong (BidiAL, BidiL, BidiOther, BidiR)
+  , defaultRanges
+  , explicitRanges
+  )
 import qualified Unicode.Normalization.Hangul as Hangul
 
 import Paths_unicode_haskell (getDataFileName)
@@ -131,6 +136,7 @@ data Family
   | FamilyNoncharacterControl
   | FamilyHomoglyphConfusable
   | FamilyMixedScriptAdmissibility
+  | FamilyRtlInjection
   deriving stock (Eq, Show, Ord)
 
 familyTag :: Family -> String
@@ -144,6 +150,7 @@ familyTag FamilyBidiControlBalance = "bidi-control-balance"
 familyTag FamilyNoncharacterControl = "noncharacter-control"
 familyTag FamilyHomoglyphConfusable = "homoglyph-confusable"
 familyTag FamilyMixedScriptAdmissibility = "mixed-script-admissibility"
+familyTag FamilyRtlInjection = "rtl-injection"
 
 data ProfilePolicy = ProfilePolicy
   { policyLevel      :: PolicyLevel
@@ -350,6 +357,7 @@ detect input =
     ++ noncharacterControlFindings input
     ++ homoglyphFinding input
     ++ mixedScriptAdmissibilityFinding input
+    ++ rtlInjectionFinding input
 
 tagBlockFinding :: [Int] -> [Finding]
 tagBlockFinding input =
@@ -455,6 +463,7 @@ blocks PolicyRestrictive FamilyBidiControlBalance = True
 blocks PolicyRestrictive FamilyNoncharacterControl = True
 blocks PolicyRestrictive FamilyHomoglyphConfusable = True
 blocks PolicyRestrictive FamilyMixedScriptAdmissibility = True
+blocks PolicyRestrictive FamilyRtlInjection = True
 blocks PolicyModerate FamilyTagBlockPayload       = True
 blocks PolicyModerate FamilyMalformedUtf8         = True
 blocks PolicyModerate FamilyMalformedUtf16        = True
@@ -465,6 +474,7 @@ blocks PolicyModerate FamilyBidiControlBalance    = True
 blocks PolicyModerate FamilyNoncharacterControl = True
 blocks PolicyModerate FamilyHomoglyphConfusable = True
 blocks PolicyModerate FamilyMixedScriptAdmissibility = True
+blocks PolicyModerate FamilyRtlInjection = True
 blocks PolicyMinimal FamilyBidiControlBalance     = True
 blocks PolicyMinimal FamilyMalformedUtf8          = True
 blocks PolicyMinimal FamilyMalformedUtf16         = True
@@ -475,6 +485,7 @@ blocks PolicyMinimal FamilyVariationSelectorPayload = False
 blocks PolicyMinimal FamilyZeroWidthPayload       = False
 blocks PolicyMinimal FamilyHomoglyphConfusable    = False
 blocks PolicyMinimal FamilyMixedScriptAdmissibility = False
+blocks PolicyMinimal FamilyRtlInjection           = False
 
 positionsWhere :: (Int -> Bool) -> [Int] -> [Int]
 positionsWhere predicate input =
@@ -876,6 +887,125 @@ parseHexInt text =
     [(value, rest)] | all isSpace rest -> Just value
     _                                 -> Nothing
 
+-- ─────────────────────────────────────────────────────────────────────
+-- Right-to-left injection (display layer, reason-code letter "D").
+--
+-- Direct port of @Unicode/Security/Display/RtlInjection.lean@. Strong
+-- Bidi_Class is read from the bundled DerivedBidiClass.txt via
+-- 'Unicode.Generated.DerivedBidiClass', mirroring the spec's lookup:
+-- an explicit range wins; otherwise the last matching @\@missing@
+-- default wins; otherwise the codepoint is @L@.
+-- ─────────────────────────────────────────────────────────────────────
+
+-- | Strong Bidi_Class of a codepoint: explicit range first, then the
+-- last matching @\@missing@ default, then @L@.
+bidiStrong :: Int -> BidiStrong
+bidiStrong cp =
+  case find inRange explicitRanges of
+    Just (_lo, _hi, cls) -> cls
+    Nothing -> foldl pickDefault BidiL defaultRanges
+  where
+    inRange (lo, hi, _cls) = lo <= cp && cp <= hi
+    pickDefault acc (lo, hi, cls) = if lo <= cp && cp <= hi then cls else acc
+
+-- | True iff the codepoint's Bidi_Class is strong RTL (R or AL).
+isStrongRtl :: Int -> Bool
+isStrongRtl cp =
+  case bidiStrong cp of
+    BidiR     -> True
+    BidiAL    -> True
+    BidiL     -> False
+    BidiOther -> False
+
+-- | True iff the codepoint's Bidi_Class is strong LTR (L).
+isStrongLtr :: Int -> Bool
+isStrongLtr cp = bidiStrong cp == BidiL
+
+-- | The bidi format-controls: the embedding\/override block
+-- U+202A..U+202E and the isolate block U+2066..U+2069.
+isBidiFormatControl :: Int -> Bool
+isBidiFormatControl cp =
+  (cp >= 0x202A && cp <= 0x202E) || (cp >= 0x2066 && cp <= 0x2069)
+
+-- | Length of the longest consecutive run of strong-RTL codepoints,
+-- together with that run's starting index; @(0, 0)@ when there are
+-- none.
+longestRtlRun :: [Int] -> (Int, Int)
+longestRtlRun input =
+  let (_index, _current, _currentStart, longest, longestStart) =
+        foldl step (0, 0, 0, 0, 0) input
+  in (longest, longestStart)
+  where
+    step (index, current, currentStart, longest, longestStart) cp =
+      if isStrongRtl cp
+        then
+          let newStart = if current == 0 then index else currentStart
+              current' = current + 1
+          in if current' > longest
+               then (index + 1, current', newStart, current', newStart)
+               else (index + 1, current', newStart, longest, longestStart)
+        else (index + 1, 0, currentStart, longest, longestStart)
+
+-- | Detect right-to-left injection in an LTR-declared field. Priority
+-- mirrors the spec exactly: (1) any bidi format-control anywhere fires
+-- @RloInLTRField@; otherwise (2) a leading strong-RTL codepoint fires
+-- @FieldTakeover@; otherwise (3) mid-stream strong-RTL is classified by
+-- run length — a run of four or more is @MixedOverflow@ at the run
+-- start, a shorter run is @StrongRTLInLTR@ at the first strong-RTL
+-- codepoint.
+rtlInjectionFinding :: [Int] -> [Finding]
+rtlInjectionFinding input =
+  case firstBidiControlPos input of
+    Just pos -> [makeFinding "RloInLTRField" [pos]]
+    Nothing ->
+      case firstStrongChar input of
+        Just (pos, True) -> [makeFinding "FieldTakeover" [pos]]
+        _leadingLtrOrNone -> phase3
+  where
+    strongRtlCount = length (filter isStrongRtl input)
+    (runLen, runStart) = longestRtlRun input
+
+    phase3
+      | strongRtlCount == 0 = []
+      | runLen >= 4 = [makeFinding "MixedOverflow" [runStart]]
+      | otherwise =
+          case firstStrongRtlPos input of
+            Just pos -> [makeFinding "StrongRTLInLTR" [pos]]
+            Nothing  -> []
+
+    makeFinding :: String -> [Int] -> Finding
+    makeFinding subThreat positions =
+      Finding
+        { findingCode = reasonCode FamilyRtlInjection subThreat
+        , findingFamily = FamilyRtlInjection
+        , findingSeverity = 2
+        , findingPositions = positions
+        , findingSubThreat = subThreat
+        , findingDetail = familyTag FamilyRtlInjection
+        }
+
+firstBidiControlPos :: [Int] -> Maybe Int
+firstBidiControlPos input =
+  listToMaybe [ index | (index, cp) <- zip [0 ..] input, isBidiFormatControl cp ]
+
+firstStrongRtlPos :: [Int] -> Maybe Int
+firstStrongRtlPos input =
+  listToMaybe [ index | (index, cp) <- zip [0 ..] input, isStrongRtl cp ]
+
+-- | Index and RTL-ness of the first strong (L, R, or AL) codepoint.
+firstStrongChar :: [Int] -> Maybe (Int, Bool)
+firstStrongChar input =
+  listToMaybe
+    [ (index, isRtl)
+    | (index, cp) <- zip [0 ..] input
+    , Just isRtl <- [strongDirection cp]
+    ]
+  where
+    strongDirection cp
+      | isStrongRtl cp = Just True
+      | isStrongLtr cp = Just False
+      | otherwise = Nothing
+
 reasonCode :: Family -> String -> String
 reasonCode family subThreat =
   "unicode.security." ++ layer family ++ "." ++ familyTag family ++ "." ++ subThreat
@@ -891,6 +1021,7 @@ layer FamilyBidiControlBalance = "C"
 layer FamilyNoncharacterControl = "C"
 layer FamilyHomoglyphConfusable = "I"
 layer FamilyMixedScriptAdmissibility = "I"
+layer FamilyRtlInjection = "D"
 
 utf8RejectTag :: Utf8RejectKind -> String
 utf8RejectTag InvalidStartByte = "InvalidStartByte"

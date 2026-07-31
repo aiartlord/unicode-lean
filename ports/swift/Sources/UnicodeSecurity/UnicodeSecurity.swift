@@ -39,6 +39,7 @@ public enum Family {
     public static let noncharacterControl = "noncharacter-control"
     public static let homoglyphConfusable = "homoglyph-confusable"
     public static let mixedScriptAdmissibility = "mixed-script-admissibility"
+    public static let rtlInjection = "rtl-injection"
 }
 
 public struct Finding: Equatable {
@@ -71,6 +72,7 @@ private var confusablesMapCache: [Int: [Int]]?
 private var caseFoldingCache: [Int: [Int]]?
 private var attackTargetsCache: [String]?
 private var legalVariationPairsCache: Set<String>?
+private var bidiTableCache: BidiTable?
 
 public func scan(profile: String, mode: String, input: [Int]) -> Verdict {
     let codepoints = input.map(ensureCodepoint)
@@ -163,6 +165,9 @@ private func detect(_ input: [Int]) -> [Finding] {
     if let mixedScript = mixedScriptAdmissibilityFinding(input) {
         findings.append(mixedScript)
     }
+    if let rtl = rtlInjectionFinding(input) {
+        findings.append(rtl)
+    }
     return findings
 }
 
@@ -237,7 +242,13 @@ private func reasonCode(family: String, subThreat: String) -> String {
 }
 
 private func layer(_ family: String) -> String {
-    family == Family.homoglyphConfusable || family == Family.mixedScriptAdmissibility ? "I" : "C"
+    if family == Family.homoglyphConfusable || family == Family.mixedScriptAdmissibility {
+        return "I"
+    }
+    if family == Family.rtlInjection {
+        return "D"
+    }
+    return "C"
 }
 
 private func positionsWhere(_ input: [Int], _ predicate: (Int) -> Bool) -> [Int] {
@@ -344,6 +355,73 @@ private func mixedScriptAdmissibilityFinding(_ input: [Int]) -> Finding? {
     return makeFinding(family: Family.mixedScriptAdmissibility, subThreat: mixedScriptSubThreat(input), positions: fullSpanPositions(input))
 }
 
+/// Sub-threat and offending positions of an RTL-injection scan; nil sub-threat means clear.
+public struct RtlInjectionResult: Equatable {
+    public let subThreat: String?
+    public let positions: [Int]
+}
+
+// Right-to-left injection detection for LTR-declared fields — a direct
+// port of Unicode/Security/Display/RtlInjection.lean. Exposed for direct
+// spot-check testing, mirroring the Rust/Python/C++ detectors.
+public func rtlInjectionDetect(_ input: [Int]) -> RtlInjectionResult {
+    var strongRtl = 0
+    for cp in input where isStrongRtl(cp) { strongRtl += 1 }
+    let (runLen, runStart) = longestRtlRun(input)
+
+    // Phase 1: bidi format-control trumps all.
+    for (index, cp) in input.enumerated() where isBidiFormatControl(cp) {
+        return RtlInjectionResult(subThreat: "RloInLTRField", positions: [index])
+    }
+
+    // Phase 2: leading-RTL field-direction takeover.
+    for (index, cp) in input.enumerated() {
+        if isStrongRtl(cp) { return RtlInjectionResult(subThreat: "FieldTakeover", positions: [index]) }
+        if isStrongLtr(cp) { break }
+    }
+
+    // Phase 3: mid-stream strong-RTL.
+    if strongRtl == 0 { return RtlInjectionResult(subThreat: nil, positions: []) }
+    if runLen >= 4 { return RtlInjectionResult(subThreat: "MixedOverflow", positions: [runStart]) }
+    for (index, cp) in input.enumerated() where isStrongRtl(cp) {
+        return RtlInjectionResult(subThreat: "StrongRTLInLTR", positions: [index])
+    }
+    return RtlInjectionResult(subThreat: nil, positions: [])
+}
+
+private func rtlInjectionFinding(_ input: [Int]) -> Finding? {
+    let result = rtlInjectionDetect(input)
+    guard let subThreat = result.subThreat else { return nil }
+    return makeFinding(family: Family.rtlInjection, subThreat: subThreat, positions: result.positions)
+}
+
+private func isBidiFormatControl(_ cp: Int) -> Bool {
+    (cp >= 0x202A && cp <= 0x202E) || (cp >= 0x2066 && cp <= 0x2069)
+}
+
+// Longest consecutive run of strong-RTL codepoints and its start;
+// (0, 0) when there are none.
+private func longestRtlRun(_ input: [Int]) -> (Int, Int) {
+    var longest = 0
+    var longestStart = 0
+    var current = 0
+    var currentStart = 0
+    for (index, cp) in input.enumerated() {
+        if isStrongRtl(cp) {
+            let newStart = current == 0 ? index : currentStart
+            current += 1
+            currentStart = newStart
+            if current > longest {
+                longest = current
+                longestStart = newStart
+            }
+        } else {
+            current = 0
+        }
+    }
+    return (longest, longestStart)
+}
+
 private func homoglyphTargetMatch(_ input: [Int]) -> String? {
     let inputLetters = letterSkeleton(input)
     for target in knownAttackTargets() {
@@ -426,6 +504,126 @@ private func caseFoldingMap() -> [Int: [Int]] {
     let parsed = parseCaseFolding(readDataFile("CaseFolding.txt"))
     caseFoldingCache = parsed
     return parsed
+}
+
+// Strong Bidi_Class lookup, mirroring Unicode.Generated.DerivedBidiClass.lookup:
+// an explicit range wins; otherwise the last matching @missing default range
+// wins; otherwise the codepoint is L. Only the strong distinction (R, AL, L) is
+// retained — every other Bidi_Class collapses to Other.
+private enum BidiStrong: Equatable {
+    case r
+    case al
+    case l
+    case other
+}
+
+private struct BidiRange {
+    let lo: Int
+    let hi: Int
+    let cls: BidiStrong
+}
+
+// Explicit ranges (sorted by lower bound) and @missing default ranges (in file
+// order; the last match wins), parsed from DerivedBidiClass.txt.
+private struct BidiTable {
+    let explicit: [BidiRange]
+    let defaults: [BidiRange]
+}
+
+private func strongOfShort(_ token: String) -> BidiStrong {
+    switch token {
+    case "R": return .r
+    case "AL": return .al
+    case "L": return .l
+    default: return .other
+    }
+}
+
+private func strongOfLong(_ token: String) -> BidiStrong {
+    switch token {
+    case "Right_To_Left": return .r
+    case "Arabic_Letter": return .al
+    case "Left_To_Right": return .l
+    default: return .other
+    }
+}
+
+// Parse "LO..HI" or a single "CP" into an inclusive (lo, hi) pair.
+private func parseBidiRangeField(_ field: String) -> (Int, Int)? {
+    let s = field.trimmingCharacters(in: .whitespaces)
+    if let dots = s.range(of: "..") {
+        guard let a = parseHex(String(s[s.startIndex..<dots.lowerBound])),
+              let b = parseHex(String(s[dots.upperBound...])) else { return nil }
+        return (a, b)
+    }
+    guard let a = parseHex(s) else { return nil }
+    return (a, a)
+}
+
+// Explicit ranges come from DATA lines "LO..HI ; SHORT # ..." or "CP ; SHORT #
+// ..."; default ranges come from comment lines "# @missing: LO..HI; Long_Name".
+private func parseDerivedBidi(_ raw: String) -> BidiTable {
+    let missingPrefix = "# @missing:"
+    var explicit: [BidiRange] = []
+    var defaults: [BidiRange] = []
+    for line in raw.split(separator: "\n", omittingEmptySubsequences: false) {
+        if line.hasPrefix(missingPrefix) {
+            let rest = line.dropFirst(missingPrefix.count)
+            let parts = rest.split(separator: ";", maxSplits: 1, omittingEmptySubsequences: false)
+            if parts.count == 2, let (lo, hi) = parseBidiRangeField(String(parts[0])) {
+                defaults.append(BidiRange(lo: lo, hi: hi, cls: strongOfLong(parts[1].trimmingCharacters(in: .whitespaces))))
+            }
+            continue
+        }
+        let body = line.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0].trimmingCharacters(in: .whitespaces)
+        if body.isEmpty { continue }
+        let fields = body.split(separator: ";", maxSplits: 1, omittingEmptySubsequences: false)
+        if fields.count == 2, let (lo, hi) = parseBidiRangeField(String(fields[0])) {
+            explicit.append(BidiRange(lo: lo, hi: hi, cls: strongOfShort(fields[1].trimmingCharacters(in: .whitespaces))))
+        }
+    }
+    explicit.sort { $0.lo < $1.lo }
+    return BidiTable(explicit: explicit, defaults: defaults)
+}
+
+private func bidiTable() -> BidiTable {
+    if let cached = bidiTableCache { return cached }
+    let parsed = parseDerivedBidi(readDataFile("DerivedBidiClass.txt"))
+    bidiTableCache = parsed
+    return parsed
+}
+
+// Full Bidi_Class lookup (strong distinction only): binary-search the sorted
+// explicit ranges first, then the last matching @missing default, then L.
+private func bidiStrong(_ cp: Int) -> BidiStrong {
+    let table = bidiTable()
+    var lo = 0
+    var hi = table.explicit.count
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2
+        let range = table.explicit[mid]
+        if cp < range.lo {
+            hi = mid
+        } else if cp > range.hi {
+            lo = mid + 1
+        } else {
+            return range.cls
+        }
+    }
+    var result: BidiStrong = .l
+    for range in table.defaults where range.lo <= cp && cp <= range.hi {
+        result = range.cls
+    }
+    return result
+}
+
+private func isStrongRtl(_ cp: Int) -> Bool {
+    let strong = bidiStrong(cp)
+    return strong == .r || strong == .al
+}
+
+private func isStrongLtr(_ cp: Int) -> Bool {
+    bidiStrong(cp) == .l
 }
 
 private func knownAttackTargets() -> [String] {
@@ -587,6 +785,7 @@ private let pinnedTableDigests: [String: String] = [
     "KnownAttackTargets.txt": "47acf87f48e23c2e3ddfb5aed877965fbe29142e61f6f85c4ee7db90c0684947",
     "StandardizedVariants.txt": "f55100b2fb11d3d75a37b8c1ab752192dbd1c4b12328c5ec6b38e3807c0ca597",
     "emoji-variation-sequences.txt": "bb3d09ef03f206012c7532dd52dc0a21c9efddba0135ea4cf0d9201b8b9bba7e",
+    "DerivedBidiClass.txt": "4867b4b7f0731ed1bfcd34cc6251211ff1542541fce0734b6fbda139ee80b3a4",
 ]
 
 private func readDataFile(_ name: String) -> String {

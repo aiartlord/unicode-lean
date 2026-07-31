@@ -26,6 +26,7 @@ root_manifest_files=(
   CaseFolding.txt
   CompositionExclusions.txt
   confusables.txt
+  DerivedBidiClass.txt
   DerivedCoreProperties.txt
   emoji-variation-sequences.txt
   IdentifierStatus.txt
@@ -41,6 +42,7 @@ root_manifest_files=(
 python_files=(
   CaseFolding.txt
   CompositionExclusions.txt
+  DerivedBidiClass.txt
   DerivedCoreProperties.txt
   IdentifierStatus.txt
   KnownAttackTargets.txt
@@ -57,6 +59,7 @@ python_files=(
 rust_files=(
   CaseFolding.txt
   CompositionExclusions.txt
+  DerivedBidiClass.txt
   DerivedCoreProperties.txt
   IdentifierStatus.txt
   KnownAttackTargets.txt
@@ -74,6 +77,7 @@ rust_files=(
 cpp_files=(
   CaseFolding.txt
   CompositionExclusions.txt
+  DerivedBidiClass.txt
   DerivedCoreProperties.txt
   IdentifierStatus.txt
   KnownAttackTargets.txt
@@ -87,6 +91,7 @@ cpp_files=(
 haskell_files=(
   CaseFolding.txt
   UnicodeData.txt
+  DerivedBidiClass.txt
   CompositionExclusions.txt
   DerivedNormalizationProps.txt
   confusables.txt
@@ -106,11 +111,37 @@ homoglyph_files=(
 go_files=(
   "${homoglyph_files[@]}"
   UnicodeData.txt
+  DerivedBidiClass.txt
 )
 
 zig_files=(
   "${homoglyph_files[@]}"
   UnicodeData.txt
+  DerivedBidiClass.txt
+)
+
+# The remaining runtime ports read Bidi_Class from DerivedBidiClass.txt
+# (the same pinned table Lean reads: explicit ranges, then @missing
+# defaults, then the L fallback), so each bundles the homoglyph set plus
+# DerivedBidiClass.txt.
+typescript_files=(
+  "${homoglyph_files[@]}"
+  DerivedBidiClass.txt
+)
+
+jvm_files=(
+  "${homoglyph_files[@]}"
+  DerivedBidiClass.txt
+)
+
+dotnet_files=(
+  "${homoglyph_files[@]}"
+  DerivedBidiClass.txt
+)
+
+swift_files=(
+  "${homoglyph_files[@]}"
+  DerivedBidiClass.txt
 )
 
 usage() {
@@ -285,6 +316,7 @@ check_cpp() {
 sync_haskell() {
   sync_haskell_version
   copy_file data/UnicodeData.txt "$haskell_dir/data/UnicodeData.txt"
+  copy_file data/DerivedBidiClass.txt "$haskell_dir/data/DerivedBidiClass.txt"
   copy_file data/CaseFolding.txt "$haskell_dir/data/CaseFolding.txt"
   copy_file data/CompositionExclusions.txt "$haskell_dir/data/CompositionExclusions.txt"
   copy_file Unicode/Ucd/DerivedNormalizationProps.txt "$haskell_dir/data/DerivedNormalizationProps.txt"
@@ -304,6 +336,7 @@ sync_haskell() {
 check_haskell() {
   check_same_version_keys data/UCD-VERSION "$haskell_dir/data/UCD-VERSION"
   check_same_file data/UnicodeData.txt "$haskell_dir/data/UnicodeData.txt"
+  check_same_file data/DerivedBidiClass.txt "$haskell_dir/data/DerivedBidiClass.txt"
   check_same_file data/CaseFolding.txt "$haskell_dir/data/CaseFolding.txt"
   check_same_file data/CompositionExclusions.txt "$haskell_dir/data/CompositionExclusions.txt"
   check_same_file Unicode/Ucd/DerivedNormalizationProps.txt "$haskell_dir/data/DerivedNormalizationProps.txt"
@@ -332,15 +365,15 @@ check_go() {
 
 sync_jvm() {
   local file
-  for file in "${homoglyph_files[@]}"; do
+  for file in "${jvm_files[@]}"; do
     copy_file "data/$file" "$jvm_dir/src/main/resources/com/unicodesecurity/data/$file"
   done
-  write_manifest "$jvm_dir/src/main/resources/com/unicodesecurity/data" "${homoglyph_files[@]}"
+  write_manifest "$jvm_dir/src/main/resources/com/unicodesecurity/data" "${jvm_files[@]}"
 }
 
 check_jvm() {
   local file
-  for file in "${homoglyph_files[@]}"; do
+  for file in "${jvm_files[@]}"; do
     check_same_file "data/$file" "$jvm_dir/src/main/resources/com/unicodesecurity/data/$file"
   done
   check_manifest "$jvm_dir/src/main/resources/com/unicodesecurity/data"
@@ -348,15 +381,15 @@ check_jvm() {
 
 sync_typescript() {
   local file
-  for file in "${homoglyph_files[@]}"; do
+  for file in "${typescript_files[@]}"; do
     copy_file "data/$file" "$typescript_dir/src/data/$file"
   done
-  write_manifest "$typescript_dir/src/data" "${homoglyph_files[@]}"
+  write_manifest "$typescript_dir/src/data" "${typescript_files[@]}"
 }
 
 check_typescript() {
   local file
-  for file in "${homoglyph_files[@]}"; do
+  for file in "${typescript_files[@]}"; do
     check_same_file "data/$file" "$typescript_dir/src/data/$file"
   done
   check_manifest "$typescript_dir/src/data"
@@ -364,15 +397,15 @@ check_typescript() {
 
 sync_dotnet() {
   local file
-  for file in "${homoglyph_files[@]}"; do
+  for file in "${dotnet_files[@]}"; do
     copy_file "data/$file" "$dotnet_dir/Data/$file"
   done
-  write_manifest "$dotnet_dir/Data" "${homoglyph_files[@]}"
+  write_manifest "$dotnet_dir/Data" "${dotnet_files[@]}"
 }
 
 check_dotnet() {
   local file
-  for file in "${homoglyph_files[@]}"; do
+  for file in "${dotnet_files[@]}"; do
     check_same_file "data/$file" "$dotnet_dir/Data/$file"
   done
   check_manifest "$dotnet_dir/Data"
@@ -380,15 +413,15 @@ check_dotnet() {
 
 sync_swift() {
   local file
-  for file in "${homoglyph_files[@]}"; do
+  for file in "${swift_files[@]}"; do
     copy_file "data/$file" "$swift_dir/Sources/UnicodeSecurity/Resources/Data/$file"
   done
-  write_manifest "$swift_dir/Sources/UnicodeSecurity/Resources/Data" "${homoglyph_files[@]}"
+  write_manifest "$swift_dir/Sources/UnicodeSecurity/Resources/Data" "${swift_files[@]}"
 }
 
 check_swift() {
   local file
-  for file in "${homoglyph_files[@]}"; do
+  for file in "${swift_files[@]}"; do
     check_same_file "data/$file" "$swift_dir/Sources/UnicodeSecurity/Resources/Data/$file"
   done
   check_manifest "$swift_dir/Sources/UnicodeSecurity/Resources/Data"

@@ -109,6 +109,126 @@ pub fn ccc(cp: u32) -> u8 {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// DerivedBidiClass.txt — strong Bidi_Class lookup
+//
+// Mirrors `Unicode.Generated.DerivedBidiClass.lookup`: an explicit range
+// wins; otherwise the last matching `@missing` default range wins;
+// otherwise the codepoint is `L`.  Only the strong distinction (R, AL, L)
+// is retained — every other Bidi_Class collapses to `Other`.
+// ─────────────────────────────────────────────────────────────────────
+
+const DERIVED_BIDI_RAW: &str = include_str!("../../../data/DerivedBidiClass.txt");
+
+/// The strong Bidi_Class distinction the display layer needs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BidiStrong {
+    R,
+    Al,
+    L,
+    Other,
+}
+
+/// Explicit ranges (sorted by lower bound) and `@missing` default ranges
+/// (in file order; the last match wins), parsed from DerivedBidiClass.txt.
+pub struct BidiTable {
+    explicit: Vec<(u32, u32, BidiStrong)>,
+    defaults: Vec<(u32, u32, BidiStrong)>,
+}
+
+fn strong_of_short(token: &str) -> BidiStrong {
+    match token {
+        "R" => BidiStrong::R,
+        "AL" => BidiStrong::Al,
+        "L" => BidiStrong::L,
+        _ => BidiStrong::Other,
+    }
+}
+
+fn strong_of_long(token: &str) -> BidiStrong {
+    match token {
+        "Right_To_Left" => BidiStrong::R,
+        "Arabic_Letter" => BidiStrong::Al,
+        "Left_To_Right" => BidiStrong::L,
+        _ => BidiStrong::Other,
+    }
+}
+
+fn parse_derived_bidi() -> BidiTable {
+    let mut explicit: Vec<(u32, u32, BidiStrong)> = Vec::new();
+    let mut defaults: Vec<(u32, u32, BidiStrong)> = Vec::new();
+    for line in DERIVED_BIDI_RAW.lines() {
+        if let Some(rest) = line.strip_prefix("# @missing:") {
+            // `# @missing: LO..HI; Long_Class_Name`
+            if let Some((range, cls)) = rest.split_once(';') {
+                if let Some((lo, hi)) = parse_range_field(range) {
+                    defaults.push((lo, hi, strong_of_long(cls.trim())));
+                }
+            }
+            continue;
+        }
+        let body = match line.split_once('#') {
+            Some((before, _)) => before,
+            None => line,
+        };
+        let body = body.trim();
+        if body.is_empty() {
+            continue;
+        }
+        // `LO..HI ; SHORT` or `CP ; SHORT`
+        if let Some((range, cls)) = body.split_once(';') {
+            if let Some((lo, hi)) = parse_range_field(range) {
+                explicit.push((lo, hi, strong_of_short(cls.trim())));
+            }
+        }
+    }
+    explicit.sort_by_key(|entry| entry.0);
+    BidiTable { explicit, defaults }
+}
+
+pub fn bidi_table() -> &'static BidiTable {
+    static T: OnceLock<BidiTable> = OnceLock::new();
+    T.get_or_init(parse_derived_bidi)
+}
+
+/// Full `Bidi_Class` lookup (strong distinction only): explicit range
+/// first, then the last matching `@missing` default, then `L`.
+pub fn bidi_strong(cp: u32) -> BidiStrong {
+    let table = bidi_table();
+    // Binary search the sorted explicit ranges.
+    let mut lo = 0usize;
+    let mut hi = table.explicit.len();
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        let (rlo, rhi, cls) = table.explicit[mid];
+        if cp < rlo {
+            hi = mid;
+        } else if cp > rhi {
+            lo = mid + 1;
+        } else {
+            return cls;
+        }
+    }
+    // No explicit row: last matching `@missing` default wins, else `L`.
+    let mut result = BidiStrong::L;
+    for &(rlo, rhi, cls) in &table.defaults {
+        if rlo <= cp && cp <= rhi {
+            result = cls;
+        }
+    }
+    result
+}
+
+/// True iff the codepoint's `Bidi_Class` is strong RTL (R or AL).
+pub fn is_strong_rtl(cp: u32) -> bool {
+    matches!(bidi_strong(cp), BidiStrong::R | BidiStrong::Al)
+}
+
+/// True iff the codepoint's `Bidi_Class` is strong LTR (L).
+pub fn is_strong_ltr(cp: u32) -> bool {
+    matches!(bidi_strong(cp), BidiStrong::L)
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // CompositionExclusions.txt — codepoints that must not recompose
 // ─────────────────────────────────────────────────────────────────────
 
