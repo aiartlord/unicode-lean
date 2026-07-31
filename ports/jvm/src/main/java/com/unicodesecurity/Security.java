@@ -331,7 +331,7 @@ public final class Security {
   public record SurrogateReassemblyResult(String subThreat, List<Integer> positions) {}
 
   // Surrogate-reassembly / malformed-byte-stream detection — a direct port of
-  // Unicode/Security/Covert/SurrogateReassembly.lean's module `detect`. Exposed
+  // Unicode.Security.Covert.SurrogateReassembly's module `detect`. Exposed
   // for direct spot-check testing, mirroring the Rust/Python/C++ detectors. The
   // codepoint list is treated as a byte stream: any value > 0xFF is clamped to
   // 0xFF (never a valid UTF-8 start byte), exactly as the Lean toBytes helper
@@ -357,7 +357,7 @@ public final class Security {
     return makeFinding(Family.SURROGATE_REASSEMBLY, result.subThreat(), result.positions());
   }
 
-  // The looksLikeByteStream gate from Unicode/Security/RunAll.lean: a
+  // The looksLikeByteStream gate from Unicode.Security.RunAll: a
   // codepoint-array input containing any value >= 0x100 is not a byte stream;
   // the scan orchestrator uses this to skip the family on such inputs, exactly
   // as runAll does.
@@ -415,7 +415,7 @@ public final class Security {
   public record RtlInjectionResult(String subThreat, List<Integer> positions) {}
 
   // Right-to-left injection detection for LTR-declared fields — a direct
-  // port of Unicode/Security/Display/RtlInjection.lean. Exposed for direct
+  // port of Unicode.Security.Display.RtlInjection. Exposed for direct
   // spot-check testing, mirroring the Rust/Python/C++ detectors.
   public static RtlInjectionResult rtlInjectionDetect(List<Integer> input) {
     int strongRtl = 0;
@@ -458,7 +458,7 @@ public final class Security {
   public record ConfusableBidiCompoundResult(String subThreat, List<Integer> positions) {}
 
   // Cross-layer identity-times-display compound detection — a direct port of
-  // Unicode/Security/Boundary/ConfusableBidiCompound.lean. A confusable
+  // Unicode.Security.Boundary.ConfusableBidiCompound. A confusable
   // (homoglyph) codepoint co-located with a bidi format-control is materially
   // more dangerous than either alone: the homoglyph disguises an identifier
   // while the bidi control reorders how a reviewer reads it. This fires only
@@ -506,7 +506,7 @@ public final class Security {
   public record CovertDisplayCompoundResult(String subThreat, List<Integer> positions) {}
 
   // Tier-compound display-times-covert-channel detection — a direct port of
-  // Unicode/Security/Boundary/CovertDisplayCompound.lean. A bidi format-control
+  // Unicode.Security.Boundary.CovertDisplayCompound. A bidi format-control
   // that reorders the visible glyphs is materially more dangerous when the same
   // input also carries a covert channel — an unregistered variation selector or
   // a tag-block character — because the reorder hides where the covert payload

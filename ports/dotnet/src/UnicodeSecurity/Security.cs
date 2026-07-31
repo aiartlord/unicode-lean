@@ -315,7 +315,7 @@ public static class Security
             : null;
 
     // Right-to-left injection detection for LTR-declared fields — a direct
-    // port of Unicode/Security/Display/RtlInjection.lean. Returns the
+    // port of Unicode.Security.Display.RtlInjection. Returns the
     // highest-priority sub-threat and the offending positions, or null for
     // a clear input. Exposed for direct spot-check testing, mirroring the
     // Rust/Python/C++ detectors.
@@ -358,7 +358,7 @@ public static class Security
     }
 
     // Confusable-in-bidi-context compound detection (CVE-2021-42574 class) — a
-    // direct port of Unicode/Security/Boundary/ConfusableBidiCompound.lean. A
+    // direct port of Unicode.Security.Boundary.ConfusableBidiCompound. A
     // confusable codepoint co-located with a bidi format-control is materially
     // more dangerous than either alone: the homoglyph disguises an identifier
     // while the bidi control reorders how a reviewer reads it, so the detector
@@ -387,7 +387,7 @@ public static class Security
     }
 
     // Covert-display compound detection — a direct port of
-    // Unicode/Security/Boundary/CovertDisplayCompound.lean. A bidi
+    // Unicode.Security.Boundary.CovertDisplayCompound. A bidi
     // format-control that reorders the visible glyphs is materially more
     // dangerous when the same input also carries a covert channel — an
     // unregistered variation selector or a tag-block character — because the
@@ -457,7 +457,7 @@ public static class Security
     }
 
     // Surrogate-reassembly / malformed-byte-stream detection — a direct port
-    // of Unicode/Security/Covert/SurrogateReassembly.lean's module `detect`.
+    // of Unicode.Security.Covert.SurrogateReassembly's module `detect`.
     // The codepoint list is treated as a byte stream: any value > 0xFF is
     // clamped to 0xFF (never a valid UTF-8 start byte), exactly as the Lean
     // toBytes helper does, so out-of-range values surface as a malformed stream
@@ -488,7 +488,7 @@ public static class Security
     }
 
     // True iff every entry fits in one octet — the looksLikeByteStream gate
-    // from Unicode/Security/RunAll.lean. A codepoint list containing any value
+    // from Unicode.Security.RunAll. A codepoint list containing any value
     // >= 0x100 is not a byte stream; the scan orchestrator uses this to skip
     // the family on such inputs, exactly as runAll does.
     private static bool LooksLikeByteStream(IReadOnlyList<int> input) => input.All(cp => cp < 0x100);

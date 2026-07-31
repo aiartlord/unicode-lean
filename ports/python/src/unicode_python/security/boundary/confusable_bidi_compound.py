@@ -6,7 +6,7 @@ materially more dangerous than either alone: the homoglyph disguises an
 identifier while the bidi control reorders how a reviewer reads it.
 This detector fires only when both are present.
 
-Direct port of ``Unicode/Security/Boundary/ConfusableBidiCompound.lean``.
+Direct port of ``Unicode.Security.Boundary.ConfusableBidiCompound``.
 The confusable-source predicate reads confusables.txt (via
 :func:`unicode_python.security.identity.homoglyph_confusable.is_confusable_source`);
 the bidi predicates split the format-controls into the override class

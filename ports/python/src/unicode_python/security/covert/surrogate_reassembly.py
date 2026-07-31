@@ -7,11 +7,11 @@ continuation byte, or a value beyond U+10FFFF — betting a lenient
 decoder will "reassemble" it into something the security scanner
 never saw in codepoint form.
 
-Direct port of ``Unicode/Security/Covert/SurrogateReassembly.lean``.
+Direct port of ``Unicode.Security.Covert.SurrogateReassembly``.
 The input codepoint list is treated as a byte stream (one octet per
 entry); the family only applies when every entry is a byte
 (``< 0x100``), matching the ``looksLikeByteStream`` gate in
-``Unicode/Security/RunAll.lean``.  The verdict projects the first
+``Unicode.Security.RunAll``.  The verdict projects the first
 UTF-8 violation found by the shared strict decoder
 (:func:`unicode_python.utf8.first_invalid_utf8_offset`) onto a
 covert-layer sub-threat.
@@ -30,7 +30,7 @@ from ..calculus import ClassificationKind
 
 def looks_like_byte_stream(input_cps: list[int]) -> bool:
     """True iff every entry fits in one octet — the
-    ``looksLikeByteStream`` gate from ``Unicode/Security/RunAll.lean``.
+    ``looksLikeByteStream`` gate from ``Unicode.Security.RunAll``.
     A codepoint list containing any value ``>= 0x100`` is not a byte
     stream; the scan orchestrator uses this to skip the family on such
     inputs, exactly as ``runAll`` does.

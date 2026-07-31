@@ -449,7 +449,7 @@ function isBidiEmbeddingControl(cp) {
 }
 
 // Surrogate-reassembly / malformed-byte-stream detection — a direct port of
-// Unicode/Security/Covert/SurrogateReassembly.lean. The family only applies to
+// Unicode.Security.Covert.SurrogateReassembly. The family only applies to
 // byte-stream-shaped input (every codepoint < 0x100, the looksLikeByteStream
 // gate); it then runs the shared strict UTF-8 validator and projects the first
 // violation onto a covert-layer sub-threat. The sub-threat tags differ from the
@@ -478,7 +478,7 @@ function surrogateSubThreatOfRejectKind(kind) {
 }
 
 // Module-faithful detect, mirroring
-// Unicode/Security/Covert/SurrogateReassembly.lean's `detect`. Any value > 0xFF
+// Unicode.Security.Covert.SurrogateReassembly's `detect`. Any value > 0xFF
 // is clamped to 0xFF (never a valid UTF-8 start byte), exactly as the Lean
 // `toBytes` helper does, so out-of-range values surface as a malformed stream
 // rather than being dropped. The byte-stream gate lives in the scan
@@ -552,7 +552,7 @@ function mixedScriptAdmissibilityFinding(input) {
 }
 
 // Right-to-left injection detection for LTR-declared fields — a direct
-// port of Unicode/Security/Display/RtlInjection.lean. The strong-RTL /
+// port of Unicode.Security.Display.RtlInjection. The strong-RTL /
 // strong-LTR predicates read Bidi_Class from the bundled
 // DerivedBidiClass.txt, mirroring Unicode.Generated.DerivedBidiClass.lookup.
 
@@ -651,7 +651,7 @@ function rtlInjectionFinding(input) {
 }
 
 // Confusable-in-bidi-context compound detection (CVE-2021-42574 class) — a
-// direct port of Unicode/Security/Boundary/ConfusableBidiCompound.lean. A
+// direct port of Unicode.Security.Boundary.ConfusableBidiCompound. A
 // confusable (homoglyph) codepoint co-located with a bidi format-control is
 // materially more dangerous than either alone: the homoglyph disguises an
 // identifier while the bidi control reorders how a reviewer reads it. The
@@ -702,7 +702,7 @@ function confusableBidiCompoundFinding(input) {
 }
 
 // Covert-display compound detection — a direct port of
-// Unicode/Security/Boundary/CovertDisplayCompound.lean. A bidi format-control
+// Unicode.Security.Boundary.CovertDisplayCompound. A bidi format-control
 // that reorders the visible glyphs is materially more dangerous when the same
 // input also carries a covert channel — an unregistered variation selector or a
 // tag-block character — because the reorder hides where the covert payload

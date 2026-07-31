@@ -8,7 +8,7 @@ tag-block character — because the reorder hides where the covert payload
 sits.  This detector fires only when a bidi control coincides with one of
 those covert classes.
 
-Direct port of ``Unicode/Security/Boundary/CovertDisplayCompound.lean``.
+Direct port of ``Unicode.Security.Boundary.CovertDisplayCompound``.
 A "suspicious VS" is a variation selector that does not form a registered
 (base, VS) pair (StandardizedVariants / emoji-variation-sequences), the
 ``.suspicious`` case of the variation-selector classifier.

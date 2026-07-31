@@ -7,7 +7,7 @@ username box, a filename, a source-code token.  A bidi-aware renderer
 reorders the visible glyphs, so what the reviewer reads differs from
 the logical byte order the machine acts on.
 
-Direct port of ``Unicode/Security/Display/RtlInjection.lean``.  The four
+Direct port of ``Unicode.Security.Display.RtlInjection``.  The four
 sub-threats, their priority, and the reported positions match that
 module's ``detect`` exactly; the strong-RTL / strong-LTR predicates read
 ``Bidi_Class`` from the bundled ``DerivedBidiClass.txt`` (see

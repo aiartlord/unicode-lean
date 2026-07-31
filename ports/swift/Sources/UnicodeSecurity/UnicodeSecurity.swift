@@ -380,7 +380,7 @@ public struct RtlInjectionResult: Equatable {
 }
 
 // Right-to-left injection detection for LTR-declared fields — a direct
-// port of Unicode/Security/Display/RtlInjection.lean. Exposed for direct
+// port of Unicode.Security.Display.RtlInjection. Exposed for direct
 // spot-check testing, mirroring the Rust/Python/C++ detectors.
 public func rtlInjectionDetect(_ input: [Int]) -> RtlInjectionResult {
     var strongRtl = 0
@@ -421,7 +421,7 @@ public struct ConfusableBidiCompoundResult: Equatable {
 }
 
 // Confusable-in-bidi-context compound detection (layer X, CVE-2021-42574
-// class) — a direct port of Unicode/Security/Boundary/ConfusableBidiCompound.lean.
+// class) — a direct port of Unicode.Security.Boundary.ConfusableBidiCompound.
 // A confusable (homoglyph) codepoint co-located with a bidi format-control is
 // materially more dangerous than either alone: the homoglyph disguises an
 // identifier while the bidi control reorders how a reviewer reads it. The
@@ -479,7 +479,7 @@ public struct CovertDisplayCompoundResult: Equatable {
 }
 
 // Covert-display compound detection (layer X) — a direct port of
-// Unicode/Security/Boundary/CovertDisplayCompound.lean. A bidi format-control
+// Unicode.Security.Boundary.CovertDisplayCompound. A bidi format-control
 // that reorders the visible glyphs is materially more dangerous when the same
 // input also carries a covert channel — an unregistered variation selector or a
 // tag-block character — because the reorder hides where the covert payload sits.
@@ -1144,7 +1144,7 @@ private func readUint32(_ input: [UInt8], _ offset: Int, _ order: ByteOrder) -> 
 }
 
 // Surrogate-reassembly / malformed-byte-stream detection (layer C). A direct
-// port of Unicode/Security/Covert/SurrogateReassembly.lean. The codepoint list
+// port of Unicode.Security.Covert.SurrogateReassembly. The codepoint list
 // is treated as a byte stream, one octet per entry; the family only applies when
 // every entry is a byte (< 0x100), matching the looksLikeByteStream gate. When
 // the stream is not well-formed UTF-8 under the shared strict decoder, the first
@@ -1166,7 +1166,7 @@ private func surrogateReassemblyDetect(_ input: [Int]) -> (sub: String, position
     return (surrogateReassemblySubThreat(failure.subThreat), [failure.offset])
 }
 
-// The looksLikeByteStream gate from Unicode/Security/RunAll.lean: a
+// The looksLikeByteStream gate from Unicode.Security.RunAll: a
 // codepoint-array input containing any value >= 0x100 is not a byte stream; the
 // scan orchestrator uses this to skip the family on such inputs, exactly as
 // runAll does.
