@@ -150,6 +150,8 @@ dotnet_files=(
 swift_files=(
   "${homoglyph_files[@]}"
   DerivedBidiClass.txt
+  UnicodeData.txt
+  CompositionExclusions.txt
 )
 
 usage() {

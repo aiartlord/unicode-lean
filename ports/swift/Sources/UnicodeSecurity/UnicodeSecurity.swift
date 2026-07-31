@@ -76,6 +76,9 @@ private var caseFoldingCache: [Int: [Int]]?
 private var attackTargetsCache: [String]?
 private var legalVariationPairsCache: Set<String>?
 private var bidiTableCache: BidiTable?
+private var unicodeDataCache: [Int: NormEntry]?
+private var compositionExclusionsCache: Set<Int>?
+private var compositionTableCache: [Int: Int]?
 
 public func scan(profile: String, mode: String, input: [Int]) -> Verdict {
     let codepoints = input.map(ensureCodepoint)
@@ -606,26 +609,227 @@ private func caseFoldCodepoints(_ input: [Int]) -> [Int] {
     return out
 }
 
+// ── Canonical / compatibility normalization from the pinned UCD tables ──────
+// NFD/NFKD/NFKC are computed from UnicodeData.txt (field-3 CCC, field-5
+// decompositions) and CompositionExclusions.txt, mirroring
+// Unicode.Normalization.{Decompose,Reorder,Compose,NFKD,NFKC} and the verified
+// from-tables ports. Independent of Foundation's decomposed/precomposed string
+// APIs, whose Unicode version tracks the OS ICU rather than the pinned UCD.
+
+private let hangulSBase = 0xAC00
+private let hangulLBase = 0x1100
+private let hangulVBase = 0x1161
+private let hangulTBase = 0x11A7
+private let hangulLCount = 19
+private let hangulVCount = 21
+private let hangulTCount = 28
+private let hangulNCount = 21 * 28
+private let hangulSCount = 19 * 21 * 28
+
+// One UnicodeData row's normalization fields: CCC and the canonical /
+// compatibility decompositions (nil when absent). A field-5 mapping with a
+// <tag> prefix is a compatibility mapping; without a tag it is canonical.
+private struct NormEntry {
+    let ccc: Int
+    let canonical: [Int]?
+    let compat: [Int]?
+}
+
+private func parseUnicodeData(_ raw: String) -> [Int: NormEntry] {
+    var out: [Int: NormEntry] = [:]
+    for line in raw.split(separator: "\n", omittingEmptySubsequences: false) {
+        if line.isEmpty { continue }
+        let f = line.split(separator: ";", omittingEmptySubsequences: false).map(String.init)
+        if f.count < 6 { continue }
+        guard let cp = parseHex(f[0]) else { continue }
+        let ccc = Int(f[3].trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+        let decomp = f[5].trimmingCharacters(in: .whitespacesAndNewlines)
+        var canonical: [Int]? = nil
+        var compat: [Int]? = nil
+        if !decomp.isEmpty {
+            if decomp.hasPrefix("<") {
+                if let gt = decomp.firstIndex(of: ">") {
+                    compat = parseCodepointField(String(decomp[decomp.index(after: gt)...]))
+                }
+            } else {
+                canonical = parseCodepointField(decomp)
+            }
+        }
+        out[cp] = NormEntry(ccc: ccc, canonical: canonical, compat: compat)
+    }
+    return out
+}
+
+private func parseCompositionExclusions(_ raw: String) -> Set<Int> {
+    var out: Set<Int> = []
+    for line in raw.split(separator: "\n", omittingEmptySubsequences: false) {
+        let body = String(line.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false).first ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if body.isEmpty { continue }
+        if let cp = parseHex(body) { out.insert(cp) }
+    }
+    return out
+}
+
+private func unicodeDataMap() -> [Int: NormEntry] {
+    if let cached = unicodeDataCache { return cached }
+    let parsed = parseUnicodeData(readDataFile("UnicodeData.txt"))
+    unicodeDataCache = parsed
+    return parsed
+}
+
+private func compositionExclusions() -> Set<Int> {
+    if let cached = compositionExclusionsCache { return cached }
+    let parsed = parseCompositionExclusions(readDataFile("CompositionExclusions.txt"))
+    compositionExclusionsCache = parsed
+    return parsed
+}
+
+private func canonicalCombiningClass(_ cp: Int) -> Int {
+    unicodeDataMap()[cp]?.ccc ?? 0
+}
+
+private func composeKey(_ d: Int, _ c: Int) -> Int { (d << 21) | c }
+
+// Canonical composition table: inverse of the two-codepoint canonical
+// decompositions, excluding singleton decompositions, Composition-Exclusion
+// codepoints, and pairs whose first element is a non-starter (CCC != 0).
+private func compositionTable() -> [Int: Int] {
+    if let cached = compositionTableCache { return cached }
+    var table: [Int: Int] = [:]
+    let exclusions = compositionExclusions()
+    for (cp, entry) in unicodeDataMap() {
+        guard let decomp = entry.canonical, decomp.count == 2 else { continue }
+        if exclusions.contains(cp) { continue }
+        if canonicalCombiningClass(decomp[0]) != 0 { continue }
+        table[composeKey(decomp[0], decomp[1])] = cp
+    }
+    compositionTableCache = table
+    return table
+}
+
+private func hangulDecompose(_ cp: Int, _ out: inout [Int]) -> Bool {
+    if cp < hangulSBase || cp >= hangulSBase + hangulSCount { return false }
+    let sIndex = cp - hangulSBase
+    out.append(hangulLBase + sIndex / hangulNCount)
+    out.append(hangulVBase + (sIndex % hangulNCount) / hangulTCount)
+    let tIndex = sIndex % hangulTCount
+    if tIndex != 0 { out.append(hangulTBase + tIndex) }
+    return true
+}
+
+private func hangulCompose(_ a: Int, _ b: Int) -> Int? {
+    if a >= hangulLBase && a < hangulLBase + hangulLCount
+        && b >= hangulVBase && b < hangulVBase + hangulVCount {
+        let lIndex = a - hangulLBase
+        let vIndex = b - hangulVBase
+        return hangulSBase + (lIndex * hangulVCount + vIndex) * hangulTCount
+    }
+    if a >= hangulSBase && a < hangulSBase + hangulSCount
+        && (a - hangulSBase) % hangulTCount == 0
+        && b > hangulTBase && b < hangulTBase + hangulTCount {
+        return a + (b - hangulTBase)
+    }
+    return nil
+}
+
+private func decomposeOne(_ cp: Int, _ out: inout [Int]) {
+    if hangulDecompose(cp, &out) { return }
+    if let entry = unicodeDataMap()[cp], let canonical = entry.canonical {
+        for child in canonical { decomposeOne(child, &out) }
+        return
+    }
+    out.append(cp)
+}
+
+private func compatDecomposeOne(_ cp: Int, _ out: inout [Int]) {
+    if hangulDecompose(cp, &out) { return }
+    if let entry = unicodeDataMap()[cp] {
+        if let compat = entry.compat {
+            for child in compat { compatDecomposeOne(child, &out) }
+            return
+        }
+        if let canonical = entry.canonical {
+            for child in canonical { compatDecomposeOne(child, &out) }
+            return
+        }
+    }
+    out.append(cp)
+}
+
+// Stable canonical ordering: sort each non-starter run by CCC, preserving the
+// relative order of equal-CCC codepoints (insertion sort that swaps only on a
+// strict CCC decrease and never crosses a starter).
+private func canonicalOrder(_ values: inout [Int]) {
+    var index = 1
+    while index < values.count {
+        let currentCcc = canonicalCombiningClass(values[index])
+        if currentCcc != 0 {
+            var j = index
+            while j > 0 {
+                let previousCcc = canonicalCombiningClass(values[j - 1])
+                if previousCcc == 0 || previousCcc <= currentCcc { break }
+                values.swapAt(j - 1, j)
+                j -= 1
+            }
+        }
+        index += 1
+    }
+}
+
+// Canonical composition (UAX #15 D115), mirroring Unicode.Normalization.Compose
+// and the D115-corrected blocked rule shared by the from-tables ports.
+private func canonicalCompose(_ seq: [Int]) -> [Int] {
+    if seq.isEmpty { return [] }
+    let table = compositionTable()
+    var out: [Int] = []
+    var starterIndex = -1
+    var lastCcc = -1
+    for cp in seq {
+        let cpCcc = canonicalCombiningClass(cp)
+        if starterIndex >= 0 {
+            let starter = out[starterIndex]
+            var composed = hangulCompose(starter, cp)
+            if composed == nil { composed = table[composeKey(starter, cp)] }
+            // Blocked check (UAX #15 D115): lastCcc != 0 means a combiner is
+            // buffered between the active starter and this candidate. A starter
+            // candidate (cpCcc == 0) is blocked outright by any buffered combiner;
+            // a non-starter is blocked when the buffered combiner has CCC >= its own.
+            let blocked = lastCcc != 0 && (cpCcc == 0 || lastCcc >= cpCcc)
+            if !blocked, let composedValue = composed {
+                out[starterIndex] = composedValue
+                continue
+            }
+        }
+        out.append(cp)
+        if cpCcc == 0 {
+            starterIndex = out.count - 1
+            lastCcc = 0
+        } else {
+            lastCcc = cpCcc
+        }
+    }
+    return out
+}
+
 private func toNfdCodepoints(_ input: [Int]) -> [Int] {
-    codepointsFromString(stringFromCodepoints(input).decomposedStringWithCanonicalMapping)
+    var out: [Int] = []
+    for cp in input { decomposeOne(cp, &out) }
+    canonicalOrder(&out)
+    return out
 }
 
-// Compatibility decomposition (NFKD), mirroring Unicode.Normalization.NFKD:
-// full compatibility decomposition followed by canonical ordering. Built on the
-// same Foundation normalization primitive the canonical NFD path uses, so the
-// two forms stay consistent within this port.
+// Compatibility decomposition (NFKD), mirroring Unicode.Normalization.NFKD.
 public func toNfkd(_ input: [Int]) -> [Int] {
-    codepointsFromString(stringFromCodepoints(input).decomposedStringWithCompatibilityMapping)
+    var out: [Int] = []
+    for cp in input { compatDecomposeOne(ensureCodepoint(cp), &out) }
+    canonicalOrder(&out)
+    return out
 }
 
-// Compatibility composition (NFKC), mirroring Unicode.Normalization.NFKC:
-// the NFKD form recomposed by canonical composition.
+// NFKD followed by canonical composition, mirroring Unicode.Normalization.NFKC.
 public func toNfkc(_ input: [Int]) -> [Int] {
-    codepointsFromString(stringFromCodepoints(input).precomposedStringWithCompatibilityMapping)
-}
-
-private func stringFromCodepoints(_ input: [Int]) -> String {
-    String(String.UnicodeScalarView(input.compactMap(UnicodeScalar.init)))
+    canonicalCompose(toNfkd(input))
 }
 
 private func confusablesMap() -> [Int: [Int]] {
@@ -922,6 +1126,8 @@ private let pinnedTableDigests: [String: String] = [
     "StandardizedVariants.txt": "f55100b2fb11d3d75a37b8c1ab752192dbd1c4b12328c5ec6b38e3807c0ca597",
     "emoji-variation-sequences.txt": "bb3d09ef03f206012c7532dd52dc0a21c9efddba0135ea4cf0d9201b8b9bba7e",
     "DerivedBidiClass.txt": "4867b4b7f0731ed1bfcd34cc6251211ff1542541fce0734b6fbda139ee80b3a4",
+    "UnicodeData.txt": "2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c",
+    "CompositionExclusions.txt": "2f239196ef3b5b61db5cc476e9bd80f534d15aa1b74e1be1dea5d042a344c85f",
 ]
 
 private func readDataFile(_ name: String) -> String {
