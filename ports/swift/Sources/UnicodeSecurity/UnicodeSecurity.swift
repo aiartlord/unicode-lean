@@ -42,6 +42,7 @@ public enum Family {
     public static let mixedScriptAdmissibility = "mixed-script-admissibility"
     public static let rtlInjection = "rtl-injection"
     public static let confusableBidiCompound = "confusable-bidi-compound"
+    public static let covertDisplayCompound = "covert-display-compound"
 }
 
 public struct Finding: Equatable {
@@ -176,6 +177,9 @@ private func detect(_ input: [Int]) -> [Finding] {
     if let compound = confusableBidiCompoundFinding(input) {
         findings.append(compound)
     }
+    if let covert = covertDisplayCompoundFinding(input) {
+        findings.append(covert)
+    }
     return findings
 }
 
@@ -222,7 +226,7 @@ private func blocks(_ level: PolicyLevel, _ family: String) -> Bool {
         family == Family.surrogateReassembly ||
         family == Family.bidiControlBalance || family == Family.noncharacterControl ||
         family == Family.homoglyphConfusable || family == Family.mixedScriptAdmissibility ||
-        family == Family.confusableBidiCompound
+        family == Family.confusableBidiCompound || family == Family.covertDisplayCompound
 }
 
 private func malformedDecodeVerdict(profile: String, mode: String, family: String, subThreat: String, offset: Int) -> Verdict {
@@ -259,7 +263,7 @@ private func layer(_ family: String) -> String {
     if family == Family.rtlInjection {
         return "D"
     }
-    if family == Family.confusableBidiCompound {
+    if family == Family.confusableBidiCompound || family == Family.covertDisplayCompound {
         return "X"
     }
     return "C"
@@ -465,6 +469,56 @@ private func isConfusableBidiIsolate(_ cp: Int) -> Bool {
 
 private func isBidiFormatControl(_ cp: Int) -> Bool {
     (cp >= 0x202A && cp <= 0x202E) || (cp >= 0x2066 && cp <= 0x2069)
+}
+
+/// Sub-threat and offending positions of a covert-display-compound scan; nil
+/// sub-threat means clear. Positions carry [bidiPos, covertPos].
+public struct CovertDisplayCompoundResult: Equatable {
+    public let subThreat: String?
+    public let positions: [Int]
+}
+
+// Covert-display compound detection (layer X) — a direct port of
+// Unicode/Security/Boundary/CovertDisplayCompound.lean. A bidi format-control
+// that reorders the visible glyphs is materially more dangerous when the same
+// input also carries a covert channel — an unregistered variation selector or a
+// tag-block character — because the reorder hides where the covert payload sits.
+// The detector fires only when a bidi control coincides with one of those
+// covert classes. Priority mirrors the spec: with a bidi control present, a
+// suspicious variation selector fires BidiPlusUnregisteredVs; otherwise a
+// tag-block character fires BidiPlusTagBlock; otherwise clear. Exposed for
+// direct spot-check testing, mirroring the Rust/Python/C++ detectors.
+public func covertDisplayCompoundDetect(_ input: [Int]) -> CovertDisplayCompoundResult {
+    guard let bidiPos = input.firstIndex(where: isBidiFormatControl) else {
+        return CovertDisplayCompoundResult(subThreat: nil, positions: [])
+    }
+    if let vsPos = firstSuspiciousVariationSelector(input) {
+        return CovertDisplayCompoundResult(subThreat: "BidiPlusUnregisteredVs", positions: [bidiPos, vsPos])
+    }
+    if let tagPos = input.firstIndex(where: isCovertTagBlockChar) {
+        return CovertDisplayCompoundResult(subThreat: "BidiPlusTagBlock", positions: [bidiPos, tagPos])
+    }
+    return CovertDisplayCompoundResult(subThreat: nil, positions: [])
+}
+
+private func covertDisplayCompoundFinding(_ input: [Int]) -> Finding? {
+    let result = covertDisplayCompoundDetect(input)
+    guard let subThreat = result.subThreat else { return nil }
+    return makeFinding(family: Family.covertDisplayCompound, subThreat: subThreat, positions: result.positions)
+}
+
+/// True iff `cp` is in the tag-block range U+E0000..U+E007F.
+private func isCovertTagBlockChar(_ cp: Int) -> Bool {
+    cp >= 0xE0000 && cp <= 0xE007F
+}
+
+/// First position holding a suspicious variation selector — a VS that does not
+/// form a registered (base, VS) pair with its predecessor. Mirrors the
+/// `.suspicious` case of the Lean `classifyPositions`.
+private func firstSuspiciousVariationSelector(_ input: [Int]) -> Int? {
+    input.indices.first { index in
+        isVariationSelector(input[index]) && !isRegisteredVariationPosition(input, index)
+    }
 }
 
 // Longest consecutive run of strong-RTL codepoints and its start;

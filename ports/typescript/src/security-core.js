@@ -46,6 +46,7 @@ export const Family = Object.freeze({
   MixedScriptAdmissibility: "mixed-script-admissibility",
   RtlInjection: "rtl-injection",
   ConfusableBidiCompound: "confusable-bidi-compound",
+  CovertDisplayCompound: "covert-display-compound",
 });
 
 let confusablesMapCache;
@@ -217,6 +218,10 @@ function detect(input) {
   if (confusableBidi !== null) {
     findings.push(confusableBidi);
   }
+  const covertDisplay = covertDisplayCompoundFinding(input);
+  if (covertDisplay !== null) {
+    findings.push(covertDisplay);
+  }
 
   return findings;
 }
@@ -286,7 +291,8 @@ function blocks(level, family) {
     family === Family.NoncharacterControl ||
     family === Family.HomoglyphConfusable ||
     family === Family.MixedScriptAdmissibility ||
-    family === Family.ConfusableBidiCompound
+    family === Family.ConfusableBidiCompound ||
+    family === Family.CovertDisplayCompound
   );
 }
 
@@ -336,7 +342,7 @@ function layer(family) {
   if (family === Family.RtlInjection) {
     return "D";
   }
-  if (family === Family.ConfusableBidiCompound) {
+  if (family === Family.ConfusableBidiCompound || family === Family.CovertDisplayCompound) {
     return "X";
   }
   return "C";
@@ -660,6 +666,50 @@ function confusableBidiCompoundFinding(input) {
   const isolatePos = firstPositionWhere(input, isIsolate);
   if (isolatePos !== null) {
     return makeFinding(Family.ConfusableBidiCompound, "ConfusableInIsolate", [confusablePos, isolatePos]);
+  }
+  return null;
+}
+
+// Covert-display compound detection — a direct port of
+// Unicode/Security/Boundary/CovertDisplayCompound.lean. A bidi format-control
+// that reorders the visible glyphs is materially more dangerous when the same
+// input also carries a covert channel — an unregistered variation selector or a
+// tag-block character — because the reorder hides where the covert payload
+// sits. The finding fires only when a bidi control coincides with one of those
+// covert classes, reporting [bidiPos, covertPos]. A suspicious variation
+// selector (one that does not form a registered pair) takes priority over a
+// tag-block character.
+
+// True iff cp is in the tag-block range U+E0000..U+E007F.
+function isTagBlockChar(cp) {
+  return cp >= 0xe0000 && cp <= 0xe007f;
+}
+
+// First position holding a suspicious variation selector — a VS that does not
+// form a registered (base, VS) pair with its predecessor. Mirrors the
+// .suspicious case of the Lean classifyPositions and reuses the same registered
+// -pair check the variation-selector detector reads.
+function firstSuspiciousVsPos(input) {
+  for (let index = 0; index < input.length; index += 1) {
+    if (isVariationSelector(input[index]) && !isRegisteredVariationPosition(input, index)) {
+      return index;
+    }
+  }
+  return null;
+}
+
+function covertDisplayCompoundFinding(input) {
+  const bidiPos = firstPositionWhere(input, isBidiFormatControl);
+  if (bidiPos === null) {
+    return null;
+  }
+  const vsPos = firstSuspiciousVsPos(input);
+  if (vsPos !== null) {
+    return makeFinding(Family.CovertDisplayCompound, "BidiPlusUnregisteredVs", [bidiPos, vsPos]);
+  }
+  const tagPos = firstPositionWhere(input, isTagBlockChar);
+  if (tagPos !== null) {
+    return makeFinding(Family.CovertDisplayCompound, "BidiPlusTagBlock", [bidiPos, tagPos]);
   }
   return null;
 }

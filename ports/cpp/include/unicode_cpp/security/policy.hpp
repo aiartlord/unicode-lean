@@ -18,6 +18,7 @@
 
 #include "unicode_cpp/noncharacters.hpp"
 #include "unicode_cpp/security/boundary/confusable_bidi_compound.hpp"
+#include "unicode_cpp/security/boundary/covert_display_compound.hpp"
 #include "unicode_cpp/security/calculus.hpp"
 #include "unicode_cpp/security/covert/bidi_control_balance.hpp"
 #include "unicode_cpp/security/covert/surrogate_reassembly.hpp"
@@ -859,6 +860,15 @@ scan_with_identity_database(Profile profile, Mode mode,
       detail::push_finding(findings, Family::ConfusableBidiCompound,
                            ClassificationKind::Hazard, compound_result.sub,
                            compound_result.positions);
+    }
+
+    const auto covert_display_result =
+        boundary::covert_display_compound::detect(input);
+    if (covert_display_result.sub) {
+      detail::push_finding(findings, Family::CovertDisplayCompound,
+                           ClassificationKind::Hazard,
+                           covert_display_result.sub,
+                           covert_display_result.positions);
     }
   }
 

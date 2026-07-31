@@ -1,6 +1,7 @@
 using System.Text.Json;
 using UnicodeSecurity;
 
+TestCovertDisplayCompoundVectors();
 TestConfusableBidiCompoundVectors();
 TestSurrogateReassemblyVectors();
 TestRtlInjectionVectors();
@@ -10,6 +11,31 @@ TestUtf8DecodeContract();
 TestMultiEncodingDecodeContract();
 TestDetectorFixtures();
 Console.WriteLine("clean: .NET contract tests pass");
+
+// Direct spot-check of the covert-display-compound detector, mirroring the
+// detect_* spot-check theorems in
+// Unicode/Security/Boundary/CovertDisplayCompound.lean and the Rust port's
+// tests. Runs first so its result is visible before every other test. Sub ==
+// null means a clear input; otherwise it is the compound sub-threat tag.
+static void TestCovertDisplayCompoundVectors()
+{
+    var vectors = new (int[] Input, string? Sub)[]
+    {
+        (System.Array.Empty<int>(), null),
+        (new[] { 0x48, 0x65, 0x6C, 0x6C, 0x6F }, null),
+        (new[] { 0x202E }, null),
+        (new[] { 0x0041, 0xFE00 }, null),
+        (new[] { 0x202E, 0x0041, 0xFE00 }, "BidiPlusUnregisteredVs"),
+        (new[] { 0x202E, 0x0041, 0xE0001 }, "BidiPlusTagBlock"),
+    };
+    foreach (var (input, expected) in vectors)
+    {
+        var (actual, _) = Security.CovertDisplayCompoundDetect(input);
+        var name = "covert-display-compound [" + string.Join(",", input.Select(cp => "0x" + cp.ToString("X"))) + "]";
+        AssertEqual(expected ?? "<clear>", actual ?? "<clear>", name);
+    }
+    Console.WriteLine("clean: .NET covert-display-compound 6-vector spot-check passes");
+}
 
 // Direct spot-check of the confusable-bidi-compound detector, mirroring the
 // detect_* spot-check theorems in

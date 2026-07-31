@@ -4,6 +4,7 @@ import UnicodeSecurity
 @main
 struct SecurityContractRunner {
     static func main() throws {
+        try testCovertDisplayCompound()
         try testConfusableBidiCompound()
         try testSurrogateReassembly()
         try testRtlInjection()
@@ -13,6 +14,22 @@ struct SecurityContractRunner {
         try testMultiEncodingDecodeContract()
         try testDetectorFixtures()
         print("clean: Swift contract tests pass")
+    }
+
+    // Pins the covert-display-compound detector against the detect_* spot-check
+    // theorems in Unicode/Security/Boundary/CovertDisplayCompound.lean.
+    private static func testCovertDisplayCompound() throws {
+        let cases: [(String, [Int], String?)] = [
+            ("clear-empty", [], nil),
+            ("clear-ascii-hello", [0x48, 0x65, 0x6C, 0x6C, 0x6F], nil),
+            ("clear-rlo-alone", [0x202E], nil),
+            ("clear-vs-no-bidi", [0x0041, 0xFE00], nil),
+            ("bidi-plus-unregistered-vs", [0x202E, 0x0041, 0xFE00], "BidiPlusUnregisteredVs"),
+            ("bidi-plus-tag-block", [0x202E, 0x0041, 0xE0001], "BidiPlusTagBlock"),
+        ]
+        for (name, input, want) in cases {
+            try expectEqual(covertDisplayCompoundDetect(input).subThreat, want, "covert-display-compound \(name)")
+        }
     }
 
     // Pins the confusable-bidi-compound detector against the detect_* spot-check

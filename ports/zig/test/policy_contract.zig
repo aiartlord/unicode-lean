@@ -461,3 +461,33 @@ test "confusable-bidi-compound ground truth vectors" {
     // LRI (isolate) + Greek ο (confusable) → ConfusableInIsolate.
     try std.testing.expectEqualStrings("ConfusableInIsolate", confusableBidiSubThreat(&[_]u32{ 0x2066, 0x03BF }).?);
 }
+
+// Ground-truth vectors for the covert-display-compound detector, mirroring the
+// `detect_*` spot-check theorems in
+// Unicode/Security/Boundary/CovertDisplayCompound.lean (each proven by
+// `decide`) and the port at
+// ports/rust/src/security/boundary/covert_display_compound.rs. Exercised
+// through the public `scan` API: the reported sub_threat of the single
+// covert_display_compound finding must match, and a clear input (no bidi
+// control, or a bidi control with no covert channel) must produce none.
+fn covertDisplaySubThreat(input: []const u32) ?[]const u8 {
+    const verdict = security.scan(.gateway_header, .observe, input);
+    for (verdict.findings.items[0..verdict.findings.len]) |finding| {
+        if (finding.family == .covert_display_compound) return finding.sub_threat;
+    }
+    return null;
+}
+
+test "covert-display-compound ground truth vectors" {
+    // Empty and pure ASCII: no bidi control.
+    try std.testing.expectEqual(@as(?[]const u8, null), covertDisplaySubThreat(&[_]u32{}));
+    try std.testing.expectEqual(@as(?[]const u8, null), covertDisplaySubThreat(&[_]u32{ 0x48, 0x65, 0x6C, 0x6C, 0x6F })); // "Hello"
+    // RLO alone: bidi control but no covert channel.
+    try std.testing.expectEqual(@as(?[]const u8, null), covertDisplaySubThreat(&[_]u32{0x202E}));
+    // A + VS1 alone: suspicious VS but no bidi control.
+    try std.testing.expectEqual(@as(?[]const u8, null), covertDisplaySubThreat(&[_]u32{ 0x0041, 0xFE00 }));
+    // RLO + A + VS1: the VS is not a registered (A, VS1) pair.
+    try std.testing.expectEqualStrings("BidiPlusUnregisteredVs", covertDisplaySubThreat(&[_]u32{ 0x202E, 0x0041, 0xFE00 }).?);
+    // RLO + A + tag char: no suspicious VS, so the tag-block class fires.
+    try std.testing.expectEqualStrings("BidiPlusTagBlock", covertDisplaySubThreat(&[_]u32{ 0x202E, 0x0041, 0xE0001 }).?);
+}

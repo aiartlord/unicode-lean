@@ -58,6 +58,7 @@ public final class Security {
     public static final String MIXED_SCRIPT_ADMISSIBILITY = "mixed-script-admissibility";
     public static final String RTL_INJECTION = "rtl-injection";
     public static final String CONFUSABLE_BIDI_COMPOUND = "confusable-bidi-compound";
+    public static final String COVERT_DISPLAY_COMPOUND = "covert-display-compound";
     private Family() {}
   }
 
@@ -176,6 +177,8 @@ public final class Security {
     if (rtl != null) findings.add(rtl);
     Finding confusableBidi = confusableBidiCompoundFinding(input);
     if (confusableBidi != null) findings.add(confusableBidi);
+    Finding covertDisplay = covertDisplayCompoundFinding(input);
+    if (covertDisplay != null) findings.add(covertDisplay);
     return findings;
   }
 
@@ -216,6 +219,7 @@ public final class Security {
         family.equals(Family.VARIATION_SELECTOR_PAYLOAD) || family.equals(Family.ZERO_WIDTH_PAYLOAD) ||
         family.equals(Family.SURROGATE_REASSEMBLY) ||
         family.equals(Family.CONFUSABLE_BIDI_COMPOUND) ||
+        family.equals(Family.COVERT_DISPLAY_COMPOUND) ||
         family.equals(Family.BIDI_CONTROL_BALANCE) || family.equals(Family.NONCHARACTER_CONTROL) ||
         family.equals(Family.HOMOGLYPH_CONFUSABLE) ||
         family.equals(Family.MIXED_SCRIPT_ADMISSIBILITY);
@@ -242,7 +246,8 @@ public final class Security {
     if (family.equals(Family.RTL_INJECTION)) {
       return "D";
     }
-    if (family.equals(Family.CONFUSABLE_BIDI_COMPOUND)) {
+    if (family.equals(Family.CONFUSABLE_BIDI_COMPOUND)
+        || family.equals(Family.COVERT_DISPLAY_COMPOUND)) {
       return "X";
     }
     return "C";
@@ -489,6 +494,54 @@ public final class Security {
   // True iff cp is an isolate-class bidi control (LRI, RLI, FSI, PDI).
   private static boolean isConfusableBidiIsolate(int cp) {
     return cp >= 0x2066 && cp <= 0x2069;
+  }
+
+  /** Sub-threat and offending positions of a covert-display-compound scan; null sub-threat means clear. */
+  public record CovertDisplayCompoundResult(String subThreat, List<Integer> positions) {}
+
+  // Tier-compound display-times-covert-channel detection — a direct port of
+  // Unicode/Security/Boundary/CovertDisplayCompound.lean. A bidi format-control
+  // that reorders the visible glyphs is materially more dangerous when the same
+  // input also carries a covert channel — an unregistered variation selector or
+  // a tag-block character — because the reorder hides where the covert payload
+  // sits. This fires only when a bidi control coincides with one of those covert
+  // classes. With a bidi control present, a suspicious variation selector fires
+  // BidiPlusUnregisteredVs; otherwise a tag-block character fires
+  // BidiPlusTagBlock; otherwise clear. Exposed for direct spot-check testing,
+  // mirroring the Rust/Python/C++ detectors.
+  public static CovertDisplayCompoundResult covertDisplayCompoundDetect(List<Integer> input) {
+    int bidiPos = firstPositionWhere(input, Security::isBidiFormatControl);
+    if (bidiPos < 0) return new CovertDisplayCompoundResult(null, List.of());
+    int vsPos = firstSuspiciousVsPos(input);
+    if (vsPos >= 0) {
+      return new CovertDisplayCompoundResult("BidiPlusUnregisteredVs", List.of(bidiPos, vsPos));
+    }
+    int tagPos = firstPositionWhere(input, Security::isTagBlockChar);
+    if (tagPos >= 0) {
+      return new CovertDisplayCompoundResult("BidiPlusTagBlock", List.of(bidiPos, tagPos));
+    }
+    return new CovertDisplayCompoundResult(null, List.of());
+  }
+
+  private static Finding covertDisplayCompoundFinding(List<Integer> input) {
+    CovertDisplayCompoundResult result = covertDisplayCompoundDetect(input);
+    if (result.subThreat() == null) return null;
+    return makeFinding(Family.COVERT_DISPLAY_COMPOUND, result.subThreat(), result.positions());
+  }
+
+  // True iff cp is in the tag-block range U+E0000..U+E007F.
+  private static boolean isTagBlockChar(int cp) {
+    return cp >= 0xE0000 && cp <= 0xE007F;
+  }
+
+  // First position holding a suspicious variation selector — a VS that does not
+  // form a registered (base, VS) pair with its predecessor. Mirrors the
+  // .suspicious case of the Lean classifyPositions; -1 when there is none.
+  private static int firstSuspiciousVsPos(List<Integer> input) {
+    for (int i = 0; i < input.size(); i++) {
+      if (isVariationSelector(input.get(i)) && !isRegisteredVariationPosition(input, i)) return i;
+    }
+    return -1;
   }
 
   private static int firstPositionWhere(List<Integer> input, IntPredicate predicate) {

@@ -99,6 +99,7 @@ test-suite unicode-haskell-test
       OpaqueBlobSpec
       PolicySpec
       ConfusableBidiCompoundSpec
+      CovertDisplayCompoundSpec
       Utf8Spec
       Utf16Spec
       Utf32Spec

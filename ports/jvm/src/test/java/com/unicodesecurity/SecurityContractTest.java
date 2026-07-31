@@ -10,6 +10,7 @@ import java.util.Objects;
 
 public final class SecurityContractTest {
   public static void main(String[] args) throws Exception {
+    testCovertDisplayCompound();
     testConfusableBidiCompound();
     testSurrogateReassembly();
     testRtlInjection();
@@ -18,6 +19,28 @@ public final class SecurityContractTest {
     testUtf8DecodeContract();
     testMultiEncodingDecodeContract();
     testDetectorFixtures();
+  }
+
+  // Pins the covert-display-compound detector against the detect_* spot-check
+  // theorems in Unicode/Security/Boundary/CovertDisplayCompound.lean. Runs
+  // first so its result shows before the shared contract tests.
+  private static void testCovertDisplayCompound() {
+    int[][] inputs = {
+      {},
+      {0x48, 0x65, 0x6C, 0x6C, 0x6F},
+      {0x202E},
+      {0x0041, 0xFE00},
+      {0x202E, 0x0041, 0xFE00},
+      {0x202E, 0x0041, 0xE0001},
+    };
+    String[] wants = {null, null, null, null, "BidiPlusUnregisteredVs", "BidiPlusTagBlock"};
+    for (int i = 0; i < inputs.length; i++) {
+      List<Integer> input = new ArrayList<>();
+      for (int cp : inputs[i]) input.add(cp);
+      Security.CovertDisplayCompoundResult result = Security.covertDisplayCompoundDetect(input);
+      assertEquals(wants[i], result.subThreat(), "covert-display-compound case " + i);
+    }
+    System.out.println("clean: covert-display-compound spot checks pass (" + inputs.length + " vectors)");
   }
 
   // Pins the confusable-bidi-compound detector against the detect_* spot-check

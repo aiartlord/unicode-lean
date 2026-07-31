@@ -4,11 +4,14 @@ Compound detectors that fire only when hazards from two distinct
 single-layer families co-occur — each member is materially more
 dangerous than either of its constituents alone.  The confusable-in-
 bidi-context compound (a homoglyph codepoint sharing an input with a
-bidi format-control, CVE-2021-42574 class) is the first member.
+bidi format-control, CVE-2021-42574 class) is the first member; the
+covert-display compound (a bidi control co-located with an unregistered
+variation selector or a tag-block character) is the second.
 """
 
-from . import confusable_bidi_compound
+from . import confusable_bidi_compound, covert_display_compound
 
 __all__ = [
     "confusable_bidi_compound",
+    "covert_display_compound",
 ]

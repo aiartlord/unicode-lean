@@ -140,6 +140,7 @@ data Family
   | FamilyMixedScriptAdmissibility
   | FamilyRtlInjection
   | FamilyConfusableBidiCompound
+  | FamilyCovertDisplayCompound
   deriving stock (Eq, Show, Ord)
 
 familyTag :: Family -> String
@@ -156,6 +157,7 @@ familyTag FamilyHomoglyphConfusable = "homoglyph-confusable"
 familyTag FamilyMixedScriptAdmissibility = "mixed-script-admissibility"
 familyTag FamilyRtlInjection = "rtl-injection"
 familyTag FamilyConfusableBidiCompound = "confusable-bidi-compound"
+familyTag FamilyCovertDisplayCompound = "covert-display-compound"
 
 data ProfilePolicy = ProfilePolicy
   { policyLevel      :: PolicyLevel
@@ -365,6 +367,7 @@ detect input =
     ++ mixedScriptAdmissibilityFinding input
     ++ rtlInjectionFinding input
     ++ confusableBidiCompoundFinding input
+    ++ covertDisplayCompoundFinding input
 
 tagBlockFinding :: [Int] -> [Finding]
 tagBlockFinding input =
@@ -516,6 +519,7 @@ blocks PolicyRestrictive FamilyHomoglyphConfusable = True
 blocks PolicyRestrictive FamilyMixedScriptAdmissibility = True
 blocks PolicyRestrictive FamilyRtlInjection = True
 blocks PolicyRestrictive FamilyConfusableBidiCompound = True
+blocks PolicyRestrictive FamilyCovertDisplayCompound = True
 blocks PolicyModerate FamilyTagBlockPayload       = True
 blocks PolicyModerate FamilyMalformedUtf8         = True
 blocks PolicyModerate FamilyMalformedUtf16        = True
@@ -529,6 +533,7 @@ blocks PolicyModerate FamilyHomoglyphConfusable = True
 blocks PolicyModerate FamilyMixedScriptAdmissibility = True
 blocks PolicyModerate FamilyRtlInjection = True
 blocks PolicyModerate FamilyConfusableBidiCompound = True
+blocks PolicyModerate FamilyCovertDisplayCompound = True
 blocks PolicyMinimal FamilyBidiControlBalance     = True
 blocks PolicyMinimal FamilySurrogateReassembly    = True
 blocks PolicyMinimal FamilyMalformedUtf8          = True
@@ -542,6 +547,7 @@ blocks PolicyMinimal FamilyHomoglyphConfusable    = False
 blocks PolicyMinimal FamilyMixedScriptAdmissibility = False
 blocks PolicyMinimal FamilyRtlInjection           = False
 blocks PolicyMinimal FamilyConfusableBidiCompound = False
+blocks PolicyMinimal FamilyCovertDisplayCompound  = False
 
 positionsWhere :: (Int -> Bool) -> [Int] -> [Int]
 positionsWhere predicate input =
@@ -1122,6 +1128,63 @@ firstPos :: (Int -> Bool) -> [Int] -> Maybe Int
 firstPos predicate input =
   listToMaybe [ index | (index, cp) <- zip [0 ..] input, predicate cp ]
 
+-- ─────────────────────────────────────────────────────────────────────
+-- Covert-display compound (boundary layer, reason-code letter "X").
+--
+-- Direct port of @Unicode/Security/Boundary/CovertDisplayCompound.lean@.
+-- A bidi format-control that reorders the visible glyphs is materially
+-- more dangerous when the same input also carries a covert channel — an
+-- unregistered variation selector or a tag-block character — because the
+-- reorder hides where the covert payload sits. This detector fires only
+-- when a bidi control coincides with one of those covert classes,
+-- reusing 'isBidiFormatControl', 'isVariationSelector', and
+-- 'isRegisteredVariationPosition'.
+-- ─────────────────────────────────────────────────────────────────────
+
+-- | True iff @cp@ is in the tag-block range U+E0000..U+E007F.
+isTagBlockChar :: Int -> Bool
+isTagBlockChar cp = cp >= 0xE0000 && cp <= 0xE007F
+
+-- | First input position holding a suspicious variation selector — a VS
+-- that does not form a registered (base, VS) pair with its predecessor.
+-- Mirrors the @.suspicious@ case of the Lean @classifyPositions@.
+firstSuspiciousVsPos :: [Int] -> Maybe Int
+firstSuspiciousVsPos input =
+  listToMaybe
+    [ index
+    | (index, cp) <- zip [0 ..] input
+    , isVariationSelector cp
+    , not (isRegisteredVariationPosition input index)
+    ]
+
+-- | Detect a bidi control co-located with a covert channel. Priority
+-- mirrors the spec: a bidi format-control must be present; then a
+-- suspicious VS fires @BidiPlusUnregisteredVs@; otherwise a tag-block
+-- character fires @BidiPlusTagBlock@; otherwise clear. Positions are
+-- @[bidiPos, covertPos]@.
+covertDisplayCompoundFinding :: [Int] -> [Finding]
+covertDisplayCompoundFinding input =
+  case firstPos isBidiFormatControl input of
+    Nothing -> []
+    Just bidiPos ->
+      case firstSuspiciousVsPos input of
+        Just vsPos -> [makeFinding "BidiPlusUnregisteredVs" [bidiPos, vsPos]]
+        Nothing ->
+          case firstPos isTagBlockChar input of
+            Just tagPos -> [makeFinding "BidiPlusTagBlock" [bidiPos, tagPos]]
+            Nothing -> []
+  where
+    makeFinding :: String -> [Int] -> Finding
+    makeFinding subThreat positions =
+      Finding
+        { findingCode = reasonCode FamilyCovertDisplayCompound subThreat
+        , findingFamily = FamilyCovertDisplayCompound
+        , findingSeverity = 2
+        , findingPositions = positions
+        , findingSubThreat = subThreat
+        , findingDetail = familyTag FamilyCovertDisplayCompound
+        }
+
 reasonCode :: Family -> String -> String
 reasonCode family subThreat =
   "unicode.security." ++ layer family ++ "." ++ familyTag family ++ "." ++ subThreat
@@ -1140,6 +1203,7 @@ layer FamilyHomoglyphConfusable = "I"
 layer FamilyMixedScriptAdmissibility = "I"
 layer FamilyRtlInjection = "D"
 layer FamilyConfusableBidiCompound = "X"
+layer FamilyCovertDisplayCompound = "X"
 
 utf8RejectTag :: Utf8RejectKind -> String
 utf8RejectTag InvalidStartByte = "InvalidStartByte"

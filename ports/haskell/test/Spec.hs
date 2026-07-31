@@ -25,6 +25,7 @@ import qualified OpaqueBlobSpec
 import qualified IdentifierSpec
 import qualified PolicySpec
 import qualified ConfusableBidiCompoundSpec
+import qualified CovertDisplayCompoundSpec
 
 main :: IO ()
 main = defaultMain $
@@ -42,4 +43,5 @@ main = defaultMain $
     , IdentifierSpec.tests
     , PolicySpec.tests
     , ConfusableBidiCompoundSpec.tests
+    , CovertDisplayCompoundSpec.tests
     ]

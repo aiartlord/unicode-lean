@@ -162,6 +162,26 @@ test("confusable-bidi-compound detector matches Lean spot-checks", () => {
   }
 });
 
+test("covert-display-compound detector matches Lean spot-checks", () => {
+  const cases = [
+    ["clear-empty", [], null],
+    ["clear-ascii", [0x48, 0x65, 0x6c, 0x6c, 0x6f], null],
+    ["clear-rlo-alone", [0x202e], null],
+    ["clear-vs-no-bidi", [0x0041, 0xfe00], null],
+    ["bidi-plus-unregistered-vs", [0x202e, 0x0041, 0xfe00], "BidiPlusUnregisteredVs"],
+    ["bidi-plus-tag-block", [0x202e, 0x0041, 0xe0001], "BidiPlusTagBlock"],
+  ];
+  for (const [name, input, want] of cases) {
+    const verdict = scan("gateway-header", "observe", input);
+    const finding = verdict.findings.find((f) => f.family === "covert-display-compound");
+    const got = finding ? finding.sub_threat : null;
+    assert.equal(got, want, name);
+    if (want !== null) {
+      assert.equal(finding.code, `unicode.security.X.covert-display-compound.${want}`, name);
+    }
+  }
+});
+
 function scanEncodedCase(entry) {
   switch (entry.encoding) {
     case "utf-8":

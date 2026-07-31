@@ -58,6 +58,7 @@ const (
 	FamilyMixedScript            Family = "mixed-script-admissibility"
 	FamilyRtlInjection           Family = "rtl-injection"
 	FamilyConfusableBidiCompound Family = "confusable-bidi-compound"
+	FamilyCovertDisplayCompound  Family = "covert-display-compound"
 )
 
 type ProfilePolicy struct {
@@ -170,6 +171,9 @@ func detect(input []uint32) []Finding {
 	if finding, ok := confusableBidiCompoundFinding(input); ok {
 		findings = append(findings, finding)
 	}
+	if finding, ok := covertDisplayCompoundFinding(input); ok {
+		findings = append(findings, finding)
+	}
 
 	return findings
 }
@@ -211,7 +215,8 @@ func blocks(level PolicyLevel, family Family) bool {
 			family == FamilySurrogateReassembly ||
 			family == FamilyHomoglyphConfusable ||
 			family == FamilyMixedScript ||
-			family == FamilyConfusableBidiCompound
+			family == FamilyConfusableBidiCompound ||
+			family == FamilyCovertDisplayCompound
 	case PolicyModerate:
 		return family == FamilyMalformedUTF8 ||
 			family == FamilyMalformedUTF16 ||
@@ -224,7 +229,8 @@ func blocks(level PolicyLevel, family Family) bool {
 			family == FamilySurrogateReassembly ||
 			family == FamilyHomoglyphConfusable ||
 			family == FamilyMixedScript ||
-			family == FamilyConfusableBidiCompound
+			family == FamilyConfusableBidiCompound ||
+			family == FamilyCovertDisplayCompound
 	case PolicyMinimal:
 		return family == FamilyMalformedUTF8 ||
 			family == FamilyMalformedUTF16 ||
@@ -244,7 +250,8 @@ func blocks(level PolicyLevel, family Family) bool {
 			family == FamilySurrogateReassembly ||
 			family == FamilyHomoglyphConfusable ||
 			family == FamilyMixedScript ||
-			family == FamilyConfusableBidiCompound
+			family == FamilyConfusableBidiCompound ||
+			family == FamilyCovertDisplayCompound
 	}
 }
 
@@ -488,7 +495,7 @@ func layer(family Family) string {
 		return "I"
 	case FamilyRtlInjection:
 		return "D"
-	case FamilyConfusableBidiCompound:
+	case FamilyConfusableBidiCompound, FamilyCovertDisplayCompound:
 		return "X"
 	default:
 		return "C"

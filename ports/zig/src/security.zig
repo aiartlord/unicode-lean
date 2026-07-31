@@ -122,6 +122,7 @@ pub const Family = enum {
     mixed_script_admissibility,
     rtl_injection,
     confusable_bidi_compound,
+    covert_display_compound,
 
     pub fn tag(self: Family) []const u8 {
         return switch (self) {
@@ -138,6 +139,7 @@ pub const Family = enum {
             .mixed_script_admissibility => "mixed-script-admissibility",
             .rtl_injection => "rtl-injection",
             .confusable_bidi_compound => "confusable-bidi-compound",
+            .covert_display_compound => "covert-display-compound",
         };
     }
 };
@@ -157,7 +159,7 @@ pub const Finding = struct {
     detail: []const u8,
 };
 
-pub const MaxFindings = 10;
+pub const MaxFindings = 11;
 
 pub const FindingList = struct {
     items: [MaxFindings]Finding = undefined,
@@ -429,6 +431,9 @@ fn detect(input: []const u32) FindingList {
     if (confusableBidiCompoundFinding(input)) |finding| {
         findings.append(finding);
     }
+    if (covertDisplayCompoundFinding(input)) |finding| {
+        findings.append(finding);
+    }
 
     return findings;
 }
@@ -451,7 +456,7 @@ fn decide(profile: Profile, mode: Mode, findings: FindingList) Action {
 fn blocks(level: PolicyLevel, family: Family) bool {
     return switch (level) {
         .restrictive, .moderate => switch (family) {
-            .malformed_utf8, .malformed_utf16, .malformed_utf32, .tag_block_payload, .variation_selector_payload, .zero_width_payload, .surrogate_reassembly, .bidi_control_balance, .noncharacter_control, .homoglyph_confusable, .mixed_script_admissibility, .rtl_injection, .confusable_bidi_compound => true,
+            .malformed_utf8, .malformed_utf16, .malformed_utf32, .tag_block_payload, .variation_selector_payload, .zero_width_payload, .surrogate_reassembly, .bidi_control_balance, .noncharacter_control, .homoglyph_confusable, .mixed_script_admissibility, .rtl_injection, .confusable_bidi_compound, .covert_display_compound => true,
         },
         .minimal => family == .malformed_utf8 or family == .malformed_utf16 or family == .malformed_utf32 or family == .surrogate_reassembly or family == .bidi_control_balance or family == .noncharacter_control,
     };
@@ -917,6 +922,75 @@ fn confusableBidiCompoundFinding(input: []const u32) ?Finding {
     }
     if (firstPositionWhere(input, isBidiIsolateControl)) |bidi_pos| {
         return confusableBidiCompoundAt("ConfusableInIsolate", confusable_pos, bidi_pos);
+    }
+    return null;
+}
+
+// -- covert-display-compound -----------------------------------------------
+//
+// Direct port of ports/rust/src/security/boundary/covert_display_compound.rs,
+// itself a port of Unicode/Security/Boundary/CovertDisplayCompound.lean. A bidi
+// format-control that reorders the visible glyphs is materially more dangerous
+// when the same input also carries a covert channel — an unregistered variation
+// selector or a tag-block character — because the reorder hides where the
+// covert payload sits. The finding fires only when a bidi control coincides
+// with one of those covert classes. The bidi predicate covers both the
+// override/embedding class (0x202A..0x202E) and the isolate class
+// (0x2066..0x2069) via the shared isBidiFormatControl; the suspicious-VS class
+// reuses isVariationSelector / isRegisteredVariationPair.
+
+// True iff cp is a tag-block character in the range U+E0000..U+E007F.
+fn isTagBlockChar(cp: u32) bool {
+    return cp >= 0xE0000 and cp <= 0xE007F;
+}
+
+// First position holding a suspicious variation selector — a VS that does not
+// form a registered (base, VS) pair with its predecessor. Mirrors the
+// `.suspicious` case of the Lean classifyPositions.
+fn firstSuspiciousVsPos(input: []const u32) ?usize {
+    for (input, 0..) |cp, index| {
+        if (isVariationSelector(cp) and
+            !(index > 0 and isRegisteredVariationPair(input[index - 1], cp)))
+        {
+            return index;
+        }
+    }
+    return null;
+}
+
+fn covertDisplayCompoundReasonCode(sub_threat: []const u8) []const u8 {
+    if (std.mem.eql(u8, sub_threat, "BidiPlusUnregisteredVs")) {
+        return "unicode.security.X.covert-display-compound.BidiPlusUnregisteredVs";
+    }
+    return "unicode.security.X.covert-display-compound.BidiPlusTagBlock";
+}
+
+fn covertDisplayCompoundAt(sub_threat: []const u8, bidi_pos: usize, covert_pos: usize) Finding {
+    var positions: [16]usize = undefined;
+    positions[0] = bidi_pos;
+    positions[1] = covert_pos;
+    return .{
+        .code = covertDisplayCompoundReasonCode(sub_threat),
+        .family = .covert_display_compound,
+        .severity = 2,
+        .positions = positions,
+        .position_count = 2,
+        .sub_threat = sub_threat,
+        .detail = "covert-display-compound",
+    };
+}
+
+// Detect a bidi control co-located with a covert channel. Priority mirrors the
+// spec: a bidi control must be present; then a suspicious VS fires
+// BidiPlusUnregisteredVs; otherwise a tag-block character fires
+// BidiPlusTagBlock; otherwise clear.
+fn covertDisplayCompoundFinding(input: []const u32) ?Finding {
+    const bidi_pos = firstPositionWhere(input, isBidiFormatControl) orelse return null;
+    if (firstSuspiciousVsPos(input)) |vs_pos| {
+        return covertDisplayCompoundAt("BidiPlusUnregisteredVs", bidi_pos, vs_pos);
+    }
+    if (firstPositionWhere(input, isTagBlockChar)) |tag_pos| {
+        return covertDisplayCompoundAt("BidiPlusTagBlock", bidi_pos, tag_pos);
     }
     return null;
 }

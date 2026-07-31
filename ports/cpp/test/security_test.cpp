@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "unicode_cpp/security/boundary/confusable_bidi_compound.hpp"
+#include "unicode_cpp/security/boundary/covert_display_compound.hpp"
 #include "unicode_cpp/security/calculus.hpp"
 #include "unicode_cpp/security/covert/bidi_control_balance.hpp"
 #include "unicode_cpp/security/covert/tag_block_payload.hpp"
@@ -1231,4 +1232,56 @@ TEST_CASE("ConfusableBidiCompound — LRI + Greek 'ο' fires ConfusableInIsolate
   REQUIRE(v.sub.has_value());
   CHECK(*v.sub == "ConfusableInIsolate");
   CHECK(v.positions == std::vector<std::size_t>{1, 0});
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// CovertDisplayCompound
+//
+// Ground truth: the detect_* spot-check theorems in
+// Unicode/Security/Boundary/CovertDisplayCompound.lean, mirrored by the
+// Rust port's tests in covert_display_compound.rs.
+// ─────────────────────────────────────────────────────────────────────
+
+TEST_CASE("CovertDisplayCompound — empty input is clear") {
+  std::vector<std::uint32_t> in;
+  auto v = boundary::covert_display_compound::detect(as_span(in));
+  CHECK_FALSE(v.sub.has_value());
+}
+
+TEST_CASE("CovertDisplayCompound — pure ASCII 'Hello' is clear") {
+  std::vector<std::uint32_t> in = {0x48, 0x65, 0x6C, 0x6C, 0x6F};
+  auto v = boundary::covert_display_compound::detect(as_span(in));
+  CHECK_FALSE(v.sub.has_value());
+}
+
+TEST_CASE("CovertDisplayCompound — RLO alone is clear") {
+  // Bidi control present but no covert channel.
+  std::vector<std::uint32_t> in = {0x202E};
+  auto v = boundary::covert_display_compound::detect(as_span(in));
+  CHECK_FALSE(v.sub.has_value());
+}
+
+TEST_CASE("CovertDisplayCompound — A + VS1 alone is clear") {
+  // Suspicious VS present but no bidi control.
+  std::vector<std::uint32_t> in = {0x0041, 0xFE00};
+  auto v = boundary::covert_display_compound::detect(as_span(in));
+  CHECK_FALSE(v.sub.has_value());
+}
+
+TEST_CASE("CovertDisplayCompound — RLO + A + VS1 fires BidiPlusUnregisteredVs") {
+  // RLO (bidi) + A + VS1 — the VS is not a registered (A, VS1) pair.
+  std::vector<std::uint32_t> in = {0x202E, 0x0041, 0xFE00};
+  auto v = boundary::covert_display_compound::detect(as_span(in));
+  REQUIRE(v.sub.has_value());
+  CHECK(*v.sub == "BidiPlusUnregisteredVs");
+  CHECK(v.positions == std::vector<std::size_t>{0, 2});
+}
+
+TEST_CASE("CovertDisplayCompound — RLO + A + tag char fires BidiPlusTagBlock") {
+  // RLO (bidi) + A + tag char — no suspicious VS, so the tag-block class fires.
+  std::vector<std::uint32_t> in = {0x202E, 0x0041, 0xE0001};
+  auto v = boundary::covert_display_compound::detect(as_span(in));
+  REQUIRE(v.sub.has_value());
+  CHECK(*v.sub == "BidiPlusTagBlock");
+  CHECK(v.positions == std::vector<std::size_t>{0, 2});
 }

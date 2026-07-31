@@ -54,6 +54,7 @@ public static class Security
         public const string MixedScriptAdmissibility = "mixed-script-admissibility";
         public const string RtlInjection = "rtl-injection";
         public const string ConfusableBidiCompound = "confusable-bidi-compound";
+        public const string CovertDisplayCompound = "covert-display-compound";
     }
 
     public sealed record Finding(
@@ -153,6 +154,8 @@ public static class Security
         if (rtl is not null) findings.Add(rtl);
         var compound = ConfusableBidiCompoundFinding(input);
         if (compound is not null) findings.Add(compound);
+        var covertDisplay = CovertDisplayCompoundFinding(input);
+        if (covertDisplay is not null) findings.Add(covertDisplay);
         return findings;
     }
 
@@ -194,7 +197,8 @@ public static class Security
             or Family.TagBlockPayload or Family.VariationSelectorPayload or Family.ZeroWidthPayload
             or Family.SurrogateReassembly
             or Family.BidiControlBalance or Family.NoncharacterControl or Family.HomoglyphConfusable
-            or Family.MixedScriptAdmissibility or Family.ConfusableBidiCompound;
+            or Family.MixedScriptAdmissibility or Family.ConfusableBidiCompound
+            or Family.CovertDisplayCompound;
     }
 
     private static Verdict MalformedDecodeVerdict(string profile, string mode, string family, string subThreat, int offset)
@@ -214,7 +218,7 @@ public static class Security
         {
             Family.HomoglyphConfusable or Family.MixedScriptAdmissibility => "I",
             Family.RtlInjection => "D",
-            Family.ConfusableBidiCompound => "X",
+            Family.ConfusableBidiCompound or Family.CovertDisplayCompound => "X",
             _ => "C",
         };
 
@@ -244,7 +248,7 @@ public static class Security
     private static bool IsVariationSelector(int cp) =>
         cp is >= 0xFE00 and <= 0xFE0F || cp is >= 0xE0100 and <= 0xE01EF || cp is >= 0x180B and <= 0x180D;
 
-    private static bool IsRegisteredVariationPosition(List<int> input, int position) =>
+    private static bool IsRegisteredVariationPosition(IReadOnlyList<int> input, int position) =>
         position > 0 && LegalVariationPairs().Contains(VariationPairKey(input[position - 1], input[position]));
 
     private static int? VariationSelectorNibble(int cp)
@@ -380,6 +384,56 @@ public static class Security
     {
         var (sub, positions) = ConfusableBidiCompoundDetect(input);
         return sub is null ? null : MakeFinding(Family.ConfusableBidiCompound, sub, positions);
+    }
+
+    // Covert-display compound detection — a direct port of
+    // Unicode/Security/Boundary/CovertDisplayCompound.lean. A bidi
+    // format-control that reorders the visible glyphs is materially more
+    // dangerous when the same input also carries a covert channel — an
+    // unregistered variation selector or a tag-block character — because the
+    // reorder hides where the covert payload sits. The detector fires only
+    // when a bidi control coincides with one of those covert classes. With a
+    // bidi format-control present, a suspicious VS (a variation selector that
+    // does not form a registered (base, VS) pair) fires BidiPlusUnregisteredVs;
+    // otherwise a tag-block character (U+E0000..U+E007F) fires
+    // BidiPlusTagBlock; otherwise the input is clear. The positions are
+    // [bidiPos, covertPos]. The bidi predicate reuses IsBidiFormatControl and
+    // the VS predicates reuse IsVariationSelector / IsRegisteredVariationPosition
+    // shared with the variation-selector-payload detector. Exposed for direct
+    // spot-check testing, mirroring the sibling detectors.
+    public static (string? Sub, IReadOnlyList<int> Positions) CovertDisplayCompoundDetect(IReadOnlyList<int> input)
+    {
+        var bidiPos = FirstPosition(input, IsBidiFormatControl);
+        if (bidiPos < 0) return (null, System.Array.Empty<int>());
+        var vsPos = FirstSuspiciousVsPos(input);
+        if (vsPos >= 0) return ("BidiPlusUnregisteredVs", new List<int> { bidiPos, vsPos });
+        var tagPos = FirstPosition(input, IsTagBlockChar);
+        if (tagPos >= 0) return ("BidiPlusTagBlock", new List<int> { bidiPos, tagPos });
+        return (null, System.Array.Empty<int>());
+    }
+
+    private static Finding? CovertDisplayCompoundFinding(List<int> input)
+    {
+        var (sub, positions) = CovertDisplayCompoundDetect(input);
+        return sub is null ? null : MakeFinding(Family.CovertDisplayCompound, sub, positions);
+    }
+
+    // True iff cp is in the tag-block range U+E0000..U+E007F. Distinct from
+    // IsTagBlockAsciiPayload (U+E0020..U+E007E), which the tag-block-payload
+    // detector uses for the printable-ASCII subrange.
+    private static bool IsTagBlockChar(int cp) => cp is >= 0xE0000 and <= 0xE007F;
+
+    // First position holding a suspicious variation selector — a VS that does
+    // not form a registered (base, VS) pair with its predecessor. Mirrors the
+    // .suspicious case of the Lean classifyPositions; reuses the shared
+    // IsVariationSelector and IsRegisteredVariationPosition predicates.
+    private static int FirstSuspiciousVsPos(IReadOnlyList<int> input)
+    {
+        for (var index = 0; index < input.Count; index++)
+        {
+            if (IsVariationSelector(input[index]) && !IsRegisteredVariationPosition(input, index)) return index;
+        }
+        return -1;
     }
 
     // True iff cp is a source key in confusables.txt — i.e. it maps to a
