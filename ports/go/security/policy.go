@@ -55,6 +55,7 @@ const (
 	FamilyNoncharacterControl Family = "noncharacter-control"
 	FamilyHomoglyphConfusable Family = "homoglyph-confusable"
 	FamilyMixedScript         Family = "mixed-script-admissibility"
+	FamilyRtlInjection        Family = "rtl-injection"
 )
 
 type ProfilePolicy struct {
@@ -155,6 +156,9 @@ func detect(input []uint32) []Finding {
 		findings = append(findings, finding)
 	}
 	if finding, ok := mixedScriptAdmissibilityFinding(input); ok {
+		findings = append(findings, finding)
+	}
+	if finding, ok := rtlInjectionFinding(input); ok {
 		findings = append(findings, finding)
 	}
 
@@ -466,6 +470,8 @@ func layer(family Family) string {
 		return "C"
 	case FamilyHomoglyphConfusable, FamilyMixedScript:
 		return "I"
+	case FamilyRtlInjection:
+		return "D"
 	default:
 		return "C"
 	}

@@ -7,6 +7,7 @@
 
 pub mod calculus;
 pub mod covert;
+pub mod display;
 pub mod identity;
 pub mod policy;
 

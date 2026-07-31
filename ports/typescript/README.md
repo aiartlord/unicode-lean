@@ -29,8 +29,10 @@ copy as well as from this checkout.
 
 Runtime data is vendored under `src/data/` and pinned by
 `src/data/SHA256SUMS`: `CaseFolding.txt`, `confusables.txt`,
-`KnownAttackTargets.txt`, `StandardizedVariants.txt`, and
-`emoji-variation-sequences.txt`.
+`KnownAttackTargets.txt`, `StandardizedVariants.txt`,
+`emoji-variation-sequences.txt`, and `DerivedBidiClass.txt` (read for
+`Bidi_Class` via the explicit-range → `@missing`-default → `L` lookup that
+mirrors Lean).
 
 Run from the repository root:
 

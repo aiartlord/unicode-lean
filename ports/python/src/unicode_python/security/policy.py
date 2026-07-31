@@ -12,6 +12,7 @@ from ..noncharacters import is_noncharacter
 from ..strict import Utf8RejectKind
 from ..utf8 import decode_to_codepoints, first_invalid_utf8_offset
 from .calculus import ClassificationKind, Family, Severity
+from .display import rtl_injection
 from .covert import (
     bidi_control_balance,
     tag_block_payload,
@@ -545,6 +546,16 @@ def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
             ClassificationKind.HAZARD,
             homoglyph_confusable.mixed_script_subthreat(input_cps),
             list(range(len(input_cps))),
+        )
+
+    rtl = rtl_injection.detect(input_cps)
+    if rtl.sub is not None:
+        _append_finding(
+            findings,
+            Family.RTL_INJECTION,
+            ClassificationKind.HAZARD,
+            rtl.sub,
+            list(rtl.positions),
         )
 
     return Verdict(

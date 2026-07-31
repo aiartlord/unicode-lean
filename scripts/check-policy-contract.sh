@@ -126,6 +126,7 @@ for rel in \
   detectors/homoglyph_confusable.json \
   detectors/mixed_script_admissibility.json \
   detectors/noncharacter_control.json \
+  detectors/rtl_injection.json \
   detectors/tag_block_payload.json \
   detectors/variation_selector_payload.json \
   detectors/zero_width_payload.json

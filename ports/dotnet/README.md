@@ -29,5 +29,7 @@ scripts/test-runtime-ports.sh --dotnet-only
 
 The port vendors `CaseFolding.txt`, `confusables.txt`,
 `KnownAttackTargets.txt`, `StandardizedVariants.txt`,
-`emoji-variation-sequences.txt`, and local copies of the shared contract
-fixtures so the package can be tested from an installed or copied package tree.
+`emoji-variation-sequences.txt`, `DerivedBidiClass.txt` (read for `Bidi_Class`
+via the explicit-range → `@missing`-default → `L` lookup that mirrors Lean),
+and local copies of the shared contract fixtures so the package can be tested
+from an installed or copied package tree.

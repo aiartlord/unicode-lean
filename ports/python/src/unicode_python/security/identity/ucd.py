@@ -121,6 +121,127 @@ def ccc(cp: int) -> int:
 
 
 # ─────────────────────────────────────────────────────────────────────
+# DerivedBidiClass.txt — strong Bidi_Class lookup
+#
+# Mirrors ``Unicode.Generated.DerivedBidiClass.lookup``: an explicit range
+# wins; otherwise the last matching ``@missing`` default range wins;
+# otherwise the codepoint is ``L``.  Only the strong distinction (R, AL,
+# L) is retained — every other Bidi_Class collapses to ``Other``.
+# ─────────────────────────────────────────────────────────────────────
+
+
+class BidiStrong(Enum):
+    """The strong ``Bidi_Class`` distinction the display layer needs."""
+
+    R = "R"
+    AL = "AL"
+    L = "L"
+    OTHER = "Other"
+
+
+@dataclass(frozen=True, slots=True)
+class _BidiTable:
+    """Explicit ranges (sorted by lower bound) and ``@missing`` default
+    ranges (in file order; the last match wins), parsed from
+    DerivedBidiClass.txt."""
+
+    explicit: tuple[tuple[int, int, BidiStrong], ...]
+    defaults: tuple[tuple[int, int, BidiStrong], ...]
+
+
+def _strong_of_short(token: str) -> BidiStrong:
+    if token == "R":
+        return BidiStrong.R
+    if token == "AL":
+        return BidiStrong.AL
+    if token == "L":
+        return BidiStrong.L
+    return BidiStrong.OTHER
+
+
+def _strong_of_long(token: str) -> BidiStrong:
+    if token == "Right_To_Left":
+        return BidiStrong.R
+    if token == "Arabic_Letter":
+        return BidiStrong.AL
+    if token == "Left_To_Right":
+        return BidiStrong.L
+    return BidiStrong.OTHER
+
+
+def _parse_derived_bidi() -> _BidiTable:
+    text = _read_data_file("DerivedBidiClass.txt")
+    explicit: list[tuple[int, int, BidiStrong]] = []
+    defaults: list[tuple[int, int, BidiStrong]] = []
+    for line in text.splitlines():
+        missing_prefix = "# @missing:"
+        if line.startswith(missing_prefix):
+            # ``# @missing: LO..HI; Long_Class_Name``
+            rest = line[len(missing_prefix) :]
+            semi = rest.find(";")
+            if semi < 0:
+                continue
+            lo, hi = _parse_range_field(rest[:semi])
+            defaults.append((lo, hi, _strong_of_long(rest[semi + 1 :].strip())))
+            continue
+        body = _strip_comment_and_trim(line)
+        if not body:
+            continue
+        # ``LO..HI ; SHORT`` or ``CP ; SHORT``
+        semi = body.find(";")
+        if semi < 0:
+            continue
+        lo, hi = _parse_range_field(body[:semi])
+        explicit.append((lo, hi, _strong_of_short(body[semi + 1 :].strip())))
+    explicit.sort(key=lambda entry: entry[0])
+    return _BidiTable(explicit=tuple(explicit), defaults=tuple(defaults))
+
+
+_BIDI_TABLE: _BidiTable | None = None
+
+
+def _bidi_table() -> _BidiTable:
+    global _BIDI_TABLE
+    if _BIDI_TABLE is None:
+        _BIDI_TABLE = _parse_derived_bidi()
+    return _BIDI_TABLE
+
+
+def bidi_strong(cp: int) -> BidiStrong:
+    """Full ``Bidi_Class`` lookup (strong distinction only): explicit
+    range first, then the last matching ``@missing`` default, then ``L``."""
+    table = _bidi_table()
+    # Binary-search the sorted explicit ranges.
+    lo = 0
+    hi = len(table.explicit)
+    while lo < hi:
+        mid = lo + (hi - lo) // 2
+        rlo, rhi, cls = table.explicit[mid]
+        if cp < rlo:
+            hi = mid
+        elif cp > rhi:
+            lo = mid + 1
+        else:
+            return cls
+    # No explicit row: last matching ``@missing`` default wins, else ``L``.
+    result = BidiStrong.L
+    for rlo, rhi, cls in table.defaults:
+        if rlo <= cp <= rhi:
+            result = cls
+    return result
+
+
+def is_strong_rtl(cp: int) -> bool:
+    """True iff ``cp`` has ``Bidi_Class`` R or AL (strong RTL)."""
+    return bidi_strong(cp) in (BidiStrong.R, BidiStrong.AL)
+
+
+def is_strong_ltr(cp: int) -> bool:
+    """True iff ``cp`` has ``Bidi_Class`` L (strong LTR)."""
+    return bidi_strong(cp) is BidiStrong.L
+
+
+# ─────────────────────────────────────────────────────────────────────
 # CompositionExclusions.txt — codepoints that must not recompose
 # ─────────────────────────────────────────────────────────────────────
 

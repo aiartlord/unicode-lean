@@ -4,12 +4,30 @@ import UnicodeSecurity
 @main
 struct SecurityContractRunner {
     static func main() throws {
+        try testRtlInjection()
         try testPolicyContract()
         try testVerdictContract()
         try testUtf8DecodeContract()
         try testMultiEncodingDecodeContract()
         try testDetectorFixtures()
         print("clean: Swift contract tests pass")
+    }
+
+    // Pins the RTL-injection detector against the detect_* spot-check
+    // theorems in Unicode/Security/Display/RtlInjection.lean.
+    private static func testRtlInjection() throws {
+        let cases: [(String, [Int], String?)] = [
+            ("clear-digits", [0x30, 0x31, 0x32, 0x33], nil),
+            ("clear-cyrillic", [0x043F], nil),
+            ("rlo-in-ltr", [0x41, 0x202E, 0x42], "RloInLTRField"),
+            ("field-takeover-hebrew", [0x05D0, 0x42, 0x43], "FieldTakeover"),
+            ("field-takeover-arabic", [0x0627, 0x42, 0x43], "FieldTakeover"),
+            ("mid-stream-hebrew", [0x41, 0x42, 0x05D0, 0x44], "StrongRTLInLTR"),
+            ("overflow-hebrew", [0x41, 0x42, 0x05D0, 0x05D1, 0x05D2, 0x05D3, 0x44], "MixedOverflow"),
+        ]
+        for (name, input, want) in cases {
+            try expectEqual(rtlInjectionDetect(input).subThreat, want, "rtl-injection \(name)")
+        }
     }
 
     private static func testPolicyContract() throws {

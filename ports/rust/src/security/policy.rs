@@ -8,6 +8,7 @@ use crate::security::calculus::{ClassificationKind, Family, Severity};
 use crate::security::covert::{
     bidi_control_balance, tag_block_payload, variation_selector_payload, zero_width_payload,
 };
+use crate::security::display::rtl_injection;
 use crate::security::identity::homoglyph_confusable;
 use crate::strict::Utf8RejectKind;
 use crate::utf8::{decode_to_codepoints, first_invalid_utf8_offset};
@@ -741,6 +742,17 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
             ClassificationKind::Hazard,
             Some(homoglyph_confusable::mixed_script_subthreat(input)),
             (0..input.len()).collect(),
+        );
+    }
+
+    let rtl = rtl_injection::detect(input);
+    if let Some(sub) = rtl.sub {
+        push_finding(
+            &mut findings,
+            Family::RtlInjection,
+            ClassificationKind::Hazard,
+            Some(sub),
+            rtl.positions,
         );
     }
 

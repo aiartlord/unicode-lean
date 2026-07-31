@@ -43,12 +43,14 @@ export const Family = Object.freeze({
   NoncharacterControl: "noncharacter-control",
   HomoglyphConfusable: "homoglyph-confusable",
   MixedScriptAdmissibility: "mixed-script-admissibility",
+  RtlInjection: "rtl-injection",
 });
 
 let confusablesMapCache;
 let caseFoldingMapCache;
 let attackTargetsCache;
 let legalVariationPairsCache;
+let bidiTableCache;
 let dataReader = null;
 
 export function configureSecurityDataReader(reader) {
@@ -60,6 +62,7 @@ export function configureSecurityDataReader(reader) {
   caseFoldingMapCache = undefined;
   attackTargetsCache = undefined;
   legalVariationPairsCache = undefined;
+  bidiTableCache = undefined;
 }
 
 export function configureSecurityData(data) {
@@ -68,6 +71,7 @@ export function configureSecurityData(data) {
   const knownAttackTargets = requiredSecurityData(data, "knownAttackTargets");
   const standardizedVariants = String(data?.standardizedVariants ?? "");
   const emojiVariationSequences = String(data?.emojiVariationSequences ?? "");
+  const derivedBidiClass = requiredSecurityData(data, "derivedBidiClass");
   configureSecurityDataReader((name) => {
     if (name === "confusables.txt") {
       return confusables;
@@ -83,6 +87,9 @@ export function configureSecurityData(data) {
     }
     if (name === "emoji-variation-sequences.txt") {
       return emojiVariationSequences;
+    }
+    if (name === "DerivedBidiClass.txt") {
+      return derivedBidiClass;
     }
     throw new Error(`unknown security data file: ${name}`);
   });
@@ -195,6 +202,10 @@ function detect(input) {
   if (mixedScript !== null) {
     findings.push(mixedScript);
   }
+  const rtl = rtlInjectionFinding(input);
+  if (rtl !== null) {
+    findings.push(rtl);
+  }
 
   return findings;
 }
@@ -305,7 +316,13 @@ function reasonCode(family, subThreat) {
 }
 
 function layer(family) {
-  return family === Family.HomoglyphConfusable || family === Family.MixedScriptAdmissibility ? "I" : "C";
+  if (family === Family.HomoglyphConfusable || family === Family.MixedScriptAdmissibility) {
+    return "I";
+  }
+  if (family === Family.RtlInjection) {
+    return "D";
+  }
+  return "C";
 }
 
 function positionsWhere(input, pred) {
@@ -436,6 +453,105 @@ function mixedScriptAdmissibilityFinding(input) {
   return makeFinding(Family.MixedScriptAdmissibility, mixedScriptSubThreat(input), fullSpanPositions(input));
 }
 
+// Right-to-left injection detection for LTR-declared fields — a direct
+// port of Unicode/Security/Display/RtlInjection.lean. The strong-RTL /
+// strong-LTR predicates read Bidi_Class from the bundled
+// DerivedBidiClass.txt, mirroring Unicode.Generated.DerivedBidiClass.lookup.
+
+function isBidiFormatControl(cp) {
+  return (
+    (cp >= 0x202a && cp <= 0x202e) || (cp >= 0x2066 && cp <= 0x2069)
+  );
+}
+
+function isStrongRtl(cp) {
+  const bidi = bidiStrong(cp);
+  return bidi === "R" || bidi === "AL";
+}
+
+function isStrongLtr(cp) {
+  return bidiStrong(cp) === "L";
+}
+
+function longestRtlRun(input) {
+  let longest = 0;
+  let longestStart = 0;
+  let current = 0;
+  let currentStart = 0;
+  for (let index = 0; index < input.length; index += 1) {
+    if (isStrongRtl(input[index])) {
+      const newStart = current === 0 ? index : currentStart;
+      current += 1;
+      currentStart = newStart;
+      if (current > longest) {
+        longest = current;
+        longestStart = newStart;
+      }
+    } else {
+      current = 0;
+    }
+  }
+  return [longest, longestStart];
+}
+
+function firstStrongChar(input) {
+  for (let index = 0; index < input.length; index += 1) {
+    if (isStrongRtl(input[index])) {
+      return [index, true];
+    }
+    if (isStrongLtr(input[index])) {
+      return [index, false];
+    }
+  }
+  return null;
+}
+
+function rtlInjectionPhase3(input, strongRtl, runLen, runStart) {
+  if (strongRtl === 0) {
+    return null;
+  }
+  if (runLen >= 4) {
+    return { sub: "MixedOverflow", positions: [runStart] };
+  }
+  for (let index = 0; index < input.length; index += 1) {
+    if (isStrongRtl(input[index])) {
+      return { sub: "StrongRTLInLTR", positions: [index] };
+    }
+  }
+  // Unreachable when strongRtl > 0.
+  return null;
+}
+
+function rtlInjectionFinding(input) {
+  let strongRtl = 0;
+  for (const cp of input) {
+    if (isStrongRtl(cp)) {
+      strongRtl += 1;
+    }
+  }
+  const [runLen, runStart] = longestRtlRun(input);
+
+  // Phase 1: bidi format-control trumps all.
+  for (let index = 0; index < input.length; index += 1) {
+    if (isBidiFormatControl(input[index])) {
+      return makeFinding(Family.RtlInjection, "RloInLTRField", [index]);
+    }
+  }
+
+  // Phase 2: leading-RTL field-direction takeover.
+  const strong = firstStrongChar(input);
+  let result;
+  if (strong !== null && strong[1]) {
+    result = { sub: "FieldTakeover", positions: [strong[0]] };
+  } else {
+    result = rtlInjectionPhase3(input, strongRtl, runLen, runStart);
+  }
+  if (result === null) {
+    return null;
+  }
+  return makeFinding(Family.RtlInjection, result.sub, result.positions);
+}
+
 function homoglyphTargetMatch(input) {
   const inputLetters = letterSkeleton(input);
   for (const target of knownAttackTargets()) {
@@ -526,6 +642,130 @@ function caseFoldingMap() {
     caseFoldingMapCache = parseCaseFolding(readDataFile("CaseFolding.txt"));
   }
   return caseFoldingMapCache;
+}
+
+function bidiTable() {
+  if (bidiTableCache === undefined) {
+    bidiTableCache = parseDerivedBidi(readDataFile("DerivedBidiClass.txt"));
+  }
+  return bidiTableCache;
+}
+
+// Parse DerivedBidiClass.txt into two range lists, mirroring
+// Unicode.Generated.DerivedBidiClass.lookup. Explicit ranges come from the
+// DATA lines `LO..HI ; SHORT # ...` (or `CP ; SHORT # ...`), sorted by lower
+// bound; default ranges come from the `# @missing: LO..HI; Long_Name` comment
+// lines and are kept in file order (the last match wins). Only the strong
+// distinction (R, AL, L) is retained — every other Bidi_Class collapses to
+// "Other". SHORT tokens map R→R, AL→AL, L→L, else→Other; long @missing names
+// map Right_To_Left→R, Arabic_Letter→AL, Left_To_Right→L, else→Other.
+function parseDerivedBidi(raw) {
+  const missingPrefix = "# @missing:";
+  const explicit = [];
+  const defaults = [];
+  for (const line of raw.split("\n")) {
+    if (line.startsWith(missingPrefix)) {
+      const rest = line.slice(missingPrefix.length);
+      const semi = rest.indexOf(";");
+      if (semi === -1) {
+        continue;
+      }
+      const range = parseBidiRange(rest.slice(0, semi));
+      if (range === null) {
+        continue;
+      }
+      defaults.push([range[0], range[1], strongOfLong(rest.slice(semi + 1).trim())]);
+      continue;
+    }
+    const hash = line.indexOf("#");
+    const body = (hash === -1 ? line : line.slice(0, hash)).trim();
+    if (body === "") {
+      continue;
+    }
+    const semi = body.indexOf(";");
+    if (semi === -1) {
+      continue;
+    }
+    const range = parseBidiRange(body.slice(0, semi));
+    if (range === null) {
+      continue;
+    }
+    explicit.push([range[0], range[1], strongOfShort(body.slice(semi + 1).trim())]);
+  }
+  explicit.sort((left, right) => left[0] - right[0]);
+  return { explicit, defaults };
+}
+
+function parseBidiRange(field) {
+  const text = field.trim();
+  const dots = text.indexOf("..");
+  if (dots !== -1) {
+    const lo = parseHex(text.slice(0, dots));
+    const hi = parseHex(text.slice(dots + 2));
+    if (lo === null || hi === null) {
+      return null;
+    }
+    return [lo, hi];
+  }
+  const cp = parseHex(text);
+  if (cp === null) {
+    return null;
+  }
+  return [cp, cp];
+}
+
+function strongOfShort(token) {
+  if (token === "R") {
+    return "R";
+  }
+  if (token === "AL") {
+    return "AL";
+  }
+  if (token === "L") {
+    return "L";
+  }
+  return "Other";
+}
+
+function strongOfLong(token) {
+  if (token === "Right_To_Left") {
+    return "R";
+  }
+  if (token === "Arabic_Letter") {
+    return "AL";
+  }
+  if (token === "Left_To_Right") {
+    return "L";
+  }
+  return "Other";
+}
+
+// Full Bidi_Class lookup (strong distinction only): binary-search the sorted
+// explicit ranges first; on a miss, take the last matching @missing default
+// range; otherwise fall back to "L".
+function bidiStrong(cp) {
+  const table = bidiTable();
+  const explicit = table.explicit;
+  let lo = 0;
+  let hi = explicit.length;
+  while (lo < hi) {
+    const mid = lo + ((hi - lo) >> 1);
+    const [rlo, rhi, cls] = explicit[mid];
+    if (cp < rlo) {
+      hi = mid;
+    } else if (cp > rhi) {
+      lo = mid + 1;
+    } else {
+      return cls;
+    }
+  }
+  let result = "L";
+  for (const [rlo, rhi, cls] of table.defaults) {
+    if (rlo <= cp && cp <= rhi) {
+      result = cls;
+    }
+  }
+  return result;
 }
 
 function knownAttackTargets() {

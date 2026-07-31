@@ -195,6 +195,14 @@
             "positions": [3],
             "sub_threat": "UnbalancedEmbedding",
             "detail": "bidi-control-balance"
+          },
+          {
+            "code": "unicode.security.D.rtl-injection.RloInLTRField",
+            "family": "rtl-injection",
+            "severity": 2,
+            "positions": [3],
+            "sub_threat": "RloInLTRField",
+            "detail": "rtl-injection"
           }
         ],
         "normalized": null

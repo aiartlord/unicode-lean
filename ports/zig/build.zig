@@ -79,6 +79,11 @@ pub fn build(b: *std.Build) void {
         "mixed_script_admissibility_json",
         readFixture(b, "testdata/fixtures/security/detectors/mixed_script_admissibility.json"),
     );
+    contract_options.addOption(
+        []const u8,
+        "rtl_injection_json",
+        readFixture(b, "testdata/fixtures/security/detectors/rtl_injection.json"),
+    );
     test_module.addOptions("contract_options", contract_options);
 
     const tests = b.addTest(.{

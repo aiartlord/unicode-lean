@@ -122,7 +122,12 @@ def families : List GenFamily := [
       { name := "fullwidth-variance", input := [0xFF21] } ] },
   { slug := "rtl-injection", cases := [
       { name := "clear-digits",      input := [0x30, 0x31, 0x32, 0x33] },
-      { name := "rlo-in-ltr",        input := [0x41, 0x202E, 0x42] } ] },
+      { name := "clear-cyrillic",    input := [0x043F] },
+      { name := "rlo-in-ltr",        input := [0x41, 0x202E, 0x42] },
+      { name := "field-takeover-hebrew", input := [0x05D0, 0x42, 0x43] },
+      { name := "field-takeover-arabic", input := [0x0627, 0x42, 0x43] },
+      { name := "mid-stream-hebrew", input := [0x41, 0x42, 0x05D0, 0x44] },
+      { name := "overflow-hebrew",   input := [0x41, 0x42, 0x05D0, 0x05D1, 0x05D2, 0x05D3, 0x44] } ] },
   { slug := "filename-disguise", cases := [
       { name := "clear-foo",         input := [0x66, 0x6F, 0x6F] },
       { name := "rlo-flip",          input := [0x64, 0x6F, 0x63, 0x75, 0x6D, 0x65, 0x6E, 0x74, 0x202E, 0x74, 0x78, 0x74, 0x2E, 0x65, 0x78, 0x65] } ] },

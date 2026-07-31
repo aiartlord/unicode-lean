@@ -69,6 +69,7 @@ library
       Unicode.Codec.Utf32
       Unicode.Codec.ValidatedUtf8
       Unicode.Generated.CompositionExclusions
+      Unicode.Generated.DerivedBidiClass
       Unicode.Generated.DerivedNormalizationProps
       Unicode.Generated.UnicodeData
       Unicode.Normalization.Hangul

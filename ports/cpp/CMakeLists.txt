@@ -39,6 +39,7 @@ install(DIRECTORY include/unicode_cpp
 foreach(UNICODE_CPP_DATA_FILE IN ITEMS
     CaseFolding.txt
     CompositionExclusions.txt
+    DerivedBidiClass.txt
     DerivedCoreProperties.txt
     IdentifierStatus.txt
     KnownAttackTargets.txt

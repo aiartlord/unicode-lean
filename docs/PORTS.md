@@ -247,6 +247,33 @@ Current shared v0 detector fixture families:
 - `homoglyph-confusable` identity sub-threat slice:
   `TargetMatch`, `MathAlpha`, `WidthClass`, `DecompositionSwap`, and
   `CrossScriptMix`
+- `mixed-script-admissibility` script-collision slice:
+  `LatinCyrillic`, `LatinGreek`, and `ScriptMixOther`
+
+## Detector Family Build-Out
+
+`Unicode.Security.Calculus` defines the full detector-family vocabulary
+(27 families across the covert, identity, display, form, boundary, and
+crypto layers). The runtime ports ship a subset of that vocabulary; the v0
+fixture families above are the families every port currently emits and
+agrees on. The remaining families are proven in Lean and reserved in each
+port's reason-code namespace, and are being brought into the ports one
+family at a time.
+
+Each family lands as an **atomic** step across all ports: the shared
+`policy_contract.json` and `verdict_contract.json` fixtures encode the
+*combined* verdict for an input, so a new family that fires on an input
+already covered by those fixtures shifts their expected findings. A family
+is therefore not promoted into the shared fixtures until every runtime port
+emits it; the sequence per family is (1) generate the family's fixture from
+Lean via `scripts/gen-security-fixtures.lean`, (2) implement `detect` in
+every port faithfully from the Lean spec, (3) vendor any newly required UCD
+data into each port, (4) verify every port against the Lean-generated
+fixture, (5) update the shared contract fixtures, (6) land the whole family
+together.
+
+Reason-code layer letters follow `Family.layerCode`: `C` covert, `I`
+identity, `D` display, `F` form, `X` compound, `K` crypto.
 
 ## Shared Fixtures
 
@@ -295,15 +322,24 @@ The current shared fixture set is:
   surrogate failures, decoded input, and byte-offset positions.
 - `fixtures/security/detectors/*.json` — per-detector fixture files for the
   shared runtime families, including the data-backed
-  `homoglyph-confusable` `identity-subthreat-v0` slice. The lighter ports vendor
-  `CaseFolding.txt`, `confusables.txt`, `KnownAttackTargets.txt`,
-  `StandardizedVariants.txt`, and `emoji-variation-sequences.txt`. Haskell,
-  JVM, Go, TypeScript, .NET, and Swift parse the vendored maps directly; Zig
-  uses `ports/zig/src/confusables_data.zig` and
-  `ports/zig/src/case_folding_data.zig`, generated from the vendored UTS #39
-  files by `ports/zig/tools/generate_confusables_data.py`. Go and Zig also
-  vendor `UnicodeData.txt` for the UTS #39 NFD skeleton bracket; Zig generates
-  `ports/zig/src/normalization_data.zig` from that file for canonical
+  `homoglyph-confusable` `identity-subthreat-v0` slice. Every runtime-loading
+  port vendors `CaseFolding.txt`, `confusables.txt`, `KnownAttackTargets.txt`,
+  `StandardizedVariants.txt`, `emoji-variation-sequences.txt`, and
+  `DerivedBidiClass.txt`; the reference ports (Rust, Python, C++, Go, Haskell,
+  Zig) additionally vendor `UnicodeData.txt` for `Canonical_Combining_Class`
+  and canonical decomposition. `DerivedBidiClass.txt` backs the full-fidelity
+  display-layer model: `rtl-injection` reads `Bidi_Class` from the same pinned
+  table Lean reads, resolved by the identical rule —
+  `Unicode.Generated.DerivedBidiClass.lookup`: an explicit range wins,
+  otherwise the last matching `@missing` default range wins, otherwise the
+  codepoint is `L` — rather than approximating with hand-coded ranges or
+  `UnicodeData.txt` field 4 (which omits the CJK/Hangul range interiors and the
+  RTL-block `@missing` defaults). Haskell, JVM, Go, TypeScript, .NET, and Swift
+  parse the vendored tables directly; Zig uses `ports/zig/src/confusables_data.zig`,
+  `ports/zig/src/case_folding_data.zig`, and `ports/zig/src/bidi_class_data.zig`,
+  generated from the vendored files by
+  `ports/zig/tools/generate_confusables_data.py`, and generates
+  `ports/zig/src/normalization_data.zig` from `UnicodeData.txt` for canonical
   decomposition and combining-class lookup. The shared v0 slice also covers
   precomposed/decomposed NFD skeleton equivalence, decomposed combining-sequence
   swaps, and Latin/Greek/Cyrillic script mixing. Python vendors the same

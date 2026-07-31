@@ -35,7 +35,33 @@ tests = testGroup "Unicode.Security.Policy"
   , testCase "multi-encoding decode contract fixture" multiencodingDecodeContractFixture
   , testCase "verdict JSON contract fixture" verdictContractFixture
   , testCase "detector fixtures" detectorFixtures
+  , testCase "rtl-injection vectors" rtlInjectionVectors
   ]
+
+-- Ground truth: the @detect_*@ spot-check theorems in
+-- @Unicode/Security/Display/RtlInjection.lean@, each proven by @decide@.
+-- 'Nothing' means the input is clear of any rtl-injection finding.
+rtlInjectionVectors :: Assertion
+rtlInjectionVectors =
+  mapM_ check
+    [ ([0x30, 0x31, 0x32, 0x33], Nothing)
+    , ([0x043F], Nothing)
+    , ([0x41, 0x202E, 0x42], Just "RloInLTRField")
+    , ([0x05D0, 0x42, 0x43], Just "FieldTakeover")
+    , ([0x0627, 0x42, 0x43], Just "FieldTakeover")
+    , ([0x41, 0x42, 0x05D0, 0x44], Just "StrongRTLInLTR")
+    , ([0x41, 0x42, 0x05D0, 0x05D1, 0x05D2, 0x05D3, 0x44], Just "MixedOverflow")
+    ]
+  where
+    check :: ([Int], Maybe String) -> Assertion
+    check (input, expected) =
+      let verdict = Policy.scan Policy.ProfileGatewayHeader Policy.ModeObserve input
+          subThreats =
+            [ Policy.findingSubThreat finding
+            | finding <- Policy.verdictFindings verdict
+            , Policy.findingFamily finding == Policy.FamilyRtlInjection
+            ]
+      in assertEqual (show input) (maybe [] (: []) expected) subThreats
 
 reasonCodesStable :: Assertion
 reasonCodesStable = do

@@ -96,6 +96,7 @@ test("edge entry works with injected data", async () => {
       confusables: readFileSync(new URL("../src/data/confusables.txt", import.meta.url), "utf8"),
       caseFolding: readFileSync(new URL("../src/data/CaseFolding.txt", import.meta.url), "utf8"),
       knownAttackTargets: readFileSync(new URL("../src/data/KnownAttackTargets.txt", import.meta.url), "utf8"),
+      derivedBidiClass: readFileSync(new URL("../src/data/DerivedBidiClass.txt", import.meta.url), "utf8"),
     },
   });
   const verdict = security.scan("gateway-header", "enforce", [78, 101, 116, 104, 101, 114, 1077, 117, 109]);
@@ -142,3 +143,21 @@ function hasFinding(findings, code) {
 function hasFamilyFinding(findings, family) {
   return findings.some((finding) => finding.family === family);
 }
+
+test("rtl-injection detector matches Lean spot-checks", () => {
+  const cases = [
+    ["clear-digits", [0x30, 0x31, 0x32, 0x33], null],
+    ["clear-cyrillic", [0x043f], null],
+    ["rlo-in-ltr", [0x41, 0x202e, 0x42], "RloInLTRField"],
+    ["field-takeover-hebrew", [0x05d0, 0x42, 0x43], "FieldTakeover"],
+    ["field-takeover-arabic", [0x0627, 0x42, 0x43], "FieldTakeover"],
+    ["mid-stream-hebrew", [0x41, 0x42, 0x05d0, 0x44], "StrongRTLInLTR"],
+    ["overflow-hebrew", [0x41, 0x42, 0x05d0, 0x05d1, 0x05d2, 0x05d3, 0x44], "MixedOverflow"],
+  ];
+  for (const [name, input, want] of cases) {
+    const verdict = scan("gateway-header", "observe", input);
+    const finding = verdict.findings.find((f) => f.family === "rtl-injection");
+    const got = finding ? finding.sub_threat : null;
+    assert.equal(got, want, name);
+  }
+});
