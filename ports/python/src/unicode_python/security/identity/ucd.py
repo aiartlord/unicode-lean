@@ -415,9 +415,12 @@ def _canonical_compose(seq: list[int]) -> list[int]:
             composed = _hangul_compose(starter, cp)
             if composed is None:
                 composed = comp.get((starter, cp))
-            blocked = (
-                cp_ccc != 0 and last_ccc != 0 and last_ccc >= cp_ccc
-            )
+            # Blocked check (UAX #15 D115): last_ccc != 0 means a combiner is
+            # buffered between the active starter and this candidate. A
+            # starter candidate (cp_ccc == 0) is blocked outright by any
+            # buffered combiner; a non-starter is blocked when the buffered
+            # combiner has CCC >= its own.
+            blocked = last_ccc != 0 and (cp_ccc == 0 or last_ccc >= cp_ccc)
             if not blocked and composed is not None:
                 out[starter_idx] = composed
                 continue

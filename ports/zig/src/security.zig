@@ -1304,7 +1304,12 @@ fn canonicalCompose(seq: []const u32) ?CpBuffer {
         if (starter_idx) |si| {
             const starter = out.items[si];
             const composed = hangulComposition(starter, cp) orelse compositionEntry(starter, cp);
-            const blocked = cp_ccc != 0 and last_ccc != 0 and last_ccc >= cp_ccc;
+            // Blocked check (UAX #15 D115): last_ccc != 0 means a combiner is
+            // buffered between the active starter and this candidate. A
+            // starter candidate (cp_ccc == 0) is blocked outright by any
+            // buffered combiner; a non-starter is blocked when the buffered
+            // combiner has CCC >= its own.
+            const blocked = last_ccc != 0 and (cp_ccc == 0 or last_ccc >= cp_ccc);
             if (!blocked) {
                 if (composed) |c| {
                     out.items[si] = c;
@@ -1930,4 +1935,17 @@ test "toNFC recomposition" {
     try expectNormalization(toNFC, &[_]u32{ 0x0065, 0x0301 }, &[_]u32{0x00E9});
     // Hangul jamo L+V+T → precomposed syllable 한 under NFC.
     try expectNormalization(toNFC, &[_]u32{ 0x1112, 0x1161, 0x11AB }, &[_]u32{0xD55C});
+}
+
+test "toNFC honors UAX #15 D115 blocking" {
+    // Matches the Lean spec Unicode.Normalization.Compose.stepCompose: a
+    // starter candidate is blocked from the active starter by any buffered
+    // non-starter between them. Hangul L + combining grave (CCC 230) + V —
+    // the grave blocks the L+V syllable composition across it.
+    try expectNormalization(toNFC, &[_]u32{ 0x1100, 0x0300, 0x1161 }, &[_]u32{ 0x1100, 0x0300, 0x1161 });
+    // The same jamo without the intervening mark compose to U+AC00.
+    try expectNormalization(toNFC, &[_]u32{ 0x1100, 0x1161 }, &[_]u32{0xAC00});
+    // A + below(CCC 220) + grave(CCC 230): the higher-CCC grave is not
+    // blocked and composes to À; the lower-CCC mark stays buffered.
+    try expectNormalization(toNFC, &[_]u32{ 0x0041, 0x0316, 0x0300 }, &[_]u32{ 0x00C0, 0x0316 });
 }

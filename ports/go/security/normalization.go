@@ -107,9 +107,12 @@ func canonicalCompose(seq []uint32) []uint32 {
 			if !ok {
 				composed, ok = table[[2]uint32{starter, cp}]
 			}
-			// A candidate combiner is blocked when a preceding combiner has
-			// a CCC that is nonzero and not less than the candidate's CCC.
-			blocked := cpCCC != 0 && lastCCC != 0 && lastCCC >= cpCCC
+			// Blocked check (UAX #15 D115): lastCCC != 0 means a combiner is
+			// buffered between the active starter and this candidate. A
+			// non-starter candidate is blocked when that buffered combiner
+			// has CCC >= its own; a starter candidate (cpCCC == 0) is blocked
+			// outright by any buffered combiner.
+			blocked := lastCCC != 0 && (cpCCC == 0 || lastCCC >= cpCCC)
 			if !blocked && ok {
 				out[starterIndex] = composed
 				// lastCCC is unchanged: the combiner was absorbed into the

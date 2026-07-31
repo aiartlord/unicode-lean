@@ -33,3 +33,22 @@ def test_to_nfkd_known_vectors() -> None:
     assert ucd.to_nfkd([0xFB01]) == [0x66, 0x69]
     # Precomposed é → e + combining acute under NFKD.
     assert ucd.to_nfkd([0x00E9]) == [0x0065, 0x0301]
+
+
+def test_compose_blocking_d115() -> None:
+    """Canonical composition honors the UAX #15 D115 blocking rule,
+    matching the Lean spec ``Unicode.Normalization.Compose.stepCompose``.
+
+    A starter candidate is blocked from the active starter by any
+    buffered non-starter between them; a non-starter is blocked only by
+    a buffered combiner whose CCC is >= its own."""
+    # Hangul L + combining grave (CCC 230) + Hangul V: the grave stands
+    # between L and V, so V is blocked and L+V must NOT compose to U+AC00.
+    assert ucd.to_nfc([0x1100, 0x0300, 0x1161]) == [0x1100, 0x0300, 0x1161]
+    # Same jamo without the intervening mark composes normally.
+    assert ucd.to_nfc([0x1100, 0x1161]) == [0xAC00]
+    assert ucd.to_nfc([0x1100, 0x1161, 0x11A8]) == [0xAC01]
+    # A + combining-below (CCC 220) + combining-grave (CCC 230): grave has
+    # the higher CCC, so it is not blocked and composes with A to À, while
+    # the lower-CCC below-mark remains buffered.
+    assert ucd.to_nfc([0x0041, 0x0316, 0x0300]) == [0x00C0, 0x0316]

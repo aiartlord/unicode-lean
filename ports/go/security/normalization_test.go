@@ -44,6 +44,15 @@ func TestNFCKnownVectors(t *testing.T) {
 		{"fi ligature unchanged", []uint32{0xFB01}, []uint32{0xFB01}},
 		// Hangul jamo L+V+T recompose to 한 (U+D55C) under NFC.
 		{"hangul jamo", []uint32{0x1112, 0x1161, 0x11AB}, []uint32{0xD55C}},
+		// UAX #15 D115 blocking (matches Lean stepCompose): a combining
+		// grave (CCC 230) between Hangul L and V blocks the L+V syllable
+		// composition, so nothing recomposes across it.
+		{"hangul L+mark+V blocked", []uint32{0x1100, 0x0300, 0x1161}, []uint32{0x1100, 0x0300, 0x1161}},
+		// The same jamo without the intervening mark compose to U+AC00.
+		{"hangul L+V", []uint32{0x1100, 0x1161}, []uint32{0xAC00}},
+		// A + below(CCC 220) + grave(CCC 230): the higher-CCC grave is not
+		// blocked and composes to À; the lower-CCC mark stays buffered.
+		{"a below grave", []uint32{0x0041, 0x0316, 0x0300}, []uint32{0x00C0, 0x0316}},
 	}
 	for _, tc := range cases {
 		got := toNFC(tc.in)

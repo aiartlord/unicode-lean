@@ -780,9 +780,14 @@ inline std::vector<std::uint32_t> canonical_compose(
                     std::make_pair(starter, cp));
                 if (it != t.composition_table.end()) composed = it->second;
             }
+            // Blocked check (UAX #15 D115): last_ccc != 0 means a combiner is
+            // buffered between the active starter and this candidate. A
+            // starter candidate (cp_ccc == 0) is blocked outright by any
+            // buffered combiner; a non-starter is blocked when the buffered
+            // combiner has CCC >= its own.
             const bool blocked =
-                cp_ccc != 0 && last_ccc != 0
-                && last_ccc >= static_cast<int>(cp_ccc);
+                last_ccc != 0
+                && (cp_ccc == 0 || last_ccc >= static_cast<int>(cp_ccc));
             if (!blocked && composed) {
                 out[*starter_idx] = *composed;
                 continue;

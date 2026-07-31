@@ -416,9 +416,13 @@ fn canonical_compose(seq: &[u32]) -> Vec<u32> {
             let composed =
                 hangul_compose(starter, cp).or_else(|| comp.get(&(starter, cp)).copied());
 
-            // Blocked check: if last_ccc != 0 and last_ccc >= cp_ccc,
-            // the candidate is blocked from composition with starter.
-            let blocked = cp_ccc != 0 && last_ccc != 0 && last_ccc >= cp_ccc as i32;
+            // Blocked check (UAX #15 D115): last_ccc != 0 means a combiner
+            // is buffered between the active starter and this candidate. A
+            // non-starter candidate is blocked when that buffered combiner
+            // has CCC >= its own; a starter candidate (cp_ccc == 0) is
+            // blocked outright by any buffered combiner.
+            let blocked =
+                last_ccc != 0 && (cp_ccc == 0 || last_ccc >= cp_ccc as i32);
 
             if !blocked {
                 if let Some(c) = composed {
@@ -1008,7 +1012,7 @@ pub fn restriction_level(cps: &[u32]) -> RestrictionLevel {
 
 #[cfg(test)]
 mod nfkc_nfkd_tests {
-    use super::{to_nfkc, to_nfkd};
+    use super::{to_nfc, to_nfkc, to_nfkd};
 
     #[test]
     fn nfkc_known_vectors() {
@@ -1036,5 +1040,26 @@ mod nfkc_nfkd_tests {
         assert_eq!(to_nfkd(&[0xFB01]), vec![0x66, 0x69]);
         // Precomposed é → e + combining acute under NFKD.
         assert_eq!(to_nfkd(&[0x00E9]), vec![0x0065, 0x0301]);
+    }
+
+    #[test]
+    fn compose_blocking_d115() {
+        // UAX #15 D115 blocking, matching the Lean spec
+        // `Unicode.Normalization.Compose.stepCompose`: a starter candidate
+        // is blocked from the active starter by any buffered non-starter
+        // between them. Hangul L + combining grave (CCC 230) + Hangul V —
+        // the grave stands between L and V, so L+V must NOT compose to
+        // U+AC00 across it.
+        assert_eq!(
+            to_nfc(&[0x1100, 0x0300, 0x1161]),
+            vec![0x1100, 0x0300, 0x1161]
+        );
+        // The same jamo without the intervening mark compose normally.
+        assert_eq!(to_nfc(&[0x1100, 0x1161]), vec![0xAC00]);
+        assert_eq!(to_nfc(&[0x1100, 0x1161, 0x11A8]), vec![0xAC01]);
+        // A + combining-below (CCC 220) + combining-grave (CCC 230): the
+        // grave has the higher CCC, so it is not blocked and composes with
+        // A to À, while the lower-CCC below-mark remains buffered.
+        assert_eq!(to_nfc(&[0x0041, 0x0316, 0x0300]), vec![0x00C0, 0x0316]);
     }
 }

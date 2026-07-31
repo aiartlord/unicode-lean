@@ -19,6 +19,7 @@
 namespace {
 
 using unicode_cpp::security::ucd::Tables;
+using unicode_cpp::security::ucd::to_nfc;
 using unicode_cpp::security::ucd::to_nfkc;
 using unicode_cpp::security::ucd::to_nfkd;
 
@@ -83,4 +84,21 @@ TEST_CASE("NFKD — known compatibility vectors") {
     // Precomposed é (U+00E9) → e + combining acute under NFKD.
     CHECK(to_nfkd(t, as_span({0x00E9}))
           == std::vector<std::uint32_t>{0x0065, 0x0301});
+}
+
+TEST_CASE("NFC — UAX #15 D115 blocking") {
+    const Tables& t = test_tables();
+    // Matches the Lean spec Unicode.Normalization.Compose.stepCompose: a
+    // starter candidate is blocked from the active starter by any buffered
+    // non-starter between them. Hangul L + combining grave (CCC 230) + V —
+    // the grave blocks the L+V syllable composition across it.
+    CHECK(to_nfc(t, as_span({0x1100, 0x0300, 0x1161}))
+          == std::vector<std::uint32_t>{0x1100, 0x0300, 0x1161});
+    // The same jamo without the intervening mark compose to U+AC00.
+    CHECK(to_nfc(t, as_span({0x1100, 0x1161}))
+          == std::vector<std::uint32_t>{0xAC00});
+    // A + below (CCC 220) + grave (CCC 230): the higher-CCC grave is not
+    // blocked and composes to À; the lower-CCC mark stays buffered.
+    CHECK(to_nfc(t, as_span({0x0041, 0x0316, 0x0300}))
+          == std::vector<std::uint32_t>{0x00C0, 0x0316});
 }
