@@ -54,6 +54,9 @@ let caseFoldingMapCache;
 let attackTargetsCache;
 let legalVariationPairsCache;
 let bidiTableCache;
+let unicodeDataCache;
+let compositionExclusionsCache;
+let compositionTableCache;
 let dataReader = null;
 
 export function configureSecurityDataReader(reader) {
@@ -66,6 +69,9 @@ export function configureSecurityDataReader(reader) {
   attackTargetsCache = undefined;
   legalVariationPairsCache = undefined;
   bidiTableCache = undefined;
+  unicodeDataCache = undefined;
+  compositionExclusionsCache = undefined;
+  compositionTableCache = undefined;
 }
 
 export function configureSecurityData(data) {
@@ -75,6 +81,8 @@ export function configureSecurityData(data) {
   const standardizedVariants = String(data?.standardizedVariants ?? "");
   const emojiVariationSequences = String(data?.emojiVariationSequences ?? "");
   const derivedBidiClass = requiredSecurityData(data, "derivedBidiClass");
+  const unicodeData = requiredSecurityData(data, "unicodeData");
+  const compositionExclusions = requiredSecurityData(data, "compositionExclusions");
   configureSecurityDataReader((name) => {
     if (name === "confusables.txt") {
       return confusables;
@@ -93,6 +101,12 @@ export function configureSecurityData(data) {
     }
     if (name === "DerivedBidiClass.txt") {
       return derivedBidiClass;
+    }
+    if (name === "UnicodeData.txt") {
+      return unicodeData;
+    }
+    if (name === "CompositionExclusions.txt") {
+      return compositionExclusions;
     }
     throw new Error(`unknown security data file: ${name}`);
   });
@@ -797,16 +811,275 @@ function caseFoldCodepoints(input) {
   return out;
 }
 
+// ── Canonical / compatibility normalization from the pinned UCD tables ──────
+// Mirrors Unicode.Normalization.{Decompose,Reorder,Compose,NFKD,NFKC} and the
+// verified Rust reference port. NFD/NFKD/NFKC are computed from UnicodeData.txt
+// (field-3 CCC, field-5 decompositions) and CompositionExclusions.txt, NOT
+// String.prototype.normalize, whose Unicode version tracks the JS runtime (ICU)
+// rather than the pinned UCD.
+
+const HANGUL_S_BASE = 0xac00;
+const HANGUL_L_BASE = 0x1100;
+const HANGUL_V_BASE = 0x1161;
+const HANGUL_T_BASE = 0x11a7;
+const HANGUL_L_COUNT = 19;
+const HANGUL_V_COUNT = 21;
+const HANGUL_T_COUNT = 28;
+const HANGUL_N_COUNT = HANGUL_V_COUNT * HANGUL_T_COUNT;
+const HANGUL_S_COUNT = HANGUL_L_COUNT * HANGUL_N_COUNT;
+
+// Parse UnicodeData.txt into cp -> { ccc, canonical, compat }. The field-5
+// decomposition carries a <tag> prefix for compatibility mappings; a mapping
+// with no tag is canonical.
+function parseUnicodeData(raw) {
+  const out = new Map();
+  for (const rawLine of raw.split("\n")) {
+    if (rawLine === "") {
+      continue;
+    }
+    const fields = rawLine.split(";");
+    if (fields.length < 6) {
+      continue;
+    }
+    const cp = parseHex(fields[0]);
+    if (cp === null) {
+      continue;
+    }
+    const ccc = parseInt(fields[3], 10);
+    const decomp = fields[5].trim();
+    let canonical = null;
+    let compat = null;
+    if (decomp !== "") {
+      if (decomp.startsWith("<")) {
+        compat = decomp
+          .slice(decomp.indexOf(">") + 1)
+          .trim()
+          .split(/\s+/)
+          .map((h) => parseInt(h, 16));
+      } else {
+        canonical = decomp.split(/\s+/).map((h) => parseInt(h, 16));
+      }
+    }
+    out.set(cp, { ccc: Number.isNaN(ccc) ? 0 : ccc, canonical, compat });
+  }
+  return out;
+}
+
+function parseCompositionExclusions(raw) {
+  const out = new Set();
+  for (const rawLine of raw.split("\n")) {
+    const body = rawLine.split("#", 1)[0].trim();
+    if (body === "") {
+      continue;
+    }
+    const cp = parseHex(body);
+    if (cp !== null) {
+      out.add(cp);
+    }
+  }
+  return out;
+}
+
+function unicodeDataMap() {
+  if (unicodeDataCache === undefined) {
+    unicodeDataCache = parseUnicodeData(readDataFile("UnicodeData.txt"));
+  }
+  return unicodeDataCache;
+}
+
+function compositionExclusionsSet() {
+  if (compositionExclusionsCache === undefined) {
+    compositionExclusionsCache = parseCompositionExclusions(
+      readDataFile("CompositionExclusions.txt"),
+    );
+  }
+  return compositionExclusionsCache;
+}
+
+function canonicalCombiningClass(cp) {
+  const entry = unicodeDataMap().get(cp);
+  return entry === undefined ? 0 : entry.ccc;
+}
+
+// Composition table: inverse of the two-codepoint canonical decompositions,
+// excluding singleton decompositions, Composition-Exclusion codepoints, and
+// pairs whose first element is a non-starter (CCC != 0). Keyed "d,c".
+function compositionTable() {
+  if (compositionTableCache === undefined) {
+    const table = new Map();
+    const exclusions = compositionExclusionsSet();
+    for (const [cp, entry] of unicodeDataMap()) {
+      const decomp = entry.canonical;
+      if (decomp === null || decomp.length !== 2) {
+        continue;
+      }
+      if (exclusions.has(cp)) {
+        continue;
+      }
+      if (canonicalCombiningClass(decomp[0]) !== 0) {
+        continue;
+      }
+      table.set(`${decomp[0]},${decomp[1]}`, cp);
+    }
+    compositionTableCache = table;
+  }
+  return compositionTableCache;
+}
+
+function hangulDecompose(cp, out) {
+  if (cp < HANGUL_S_BASE || cp >= HANGUL_S_BASE + HANGUL_S_COUNT) {
+    return false;
+  }
+  const sIndex = cp - HANGUL_S_BASE;
+  out.push(HANGUL_L_BASE + Math.floor(sIndex / HANGUL_N_COUNT));
+  out.push(HANGUL_V_BASE + Math.floor((sIndex % HANGUL_N_COUNT) / HANGUL_T_COUNT));
+  const tIndex = sIndex % HANGUL_T_COUNT;
+  if (tIndex !== 0) {
+    out.push(HANGUL_T_BASE + tIndex);
+  }
+  return true;
+}
+
+function hangulCompose(a, b) {
+  if (
+    a >= HANGUL_L_BASE &&
+    a < HANGUL_L_BASE + HANGUL_L_COUNT &&
+    b >= HANGUL_V_BASE &&
+    b < HANGUL_V_BASE + HANGUL_V_COUNT
+  ) {
+    const lIndex = a - HANGUL_L_BASE;
+    const vIndex = b - HANGUL_V_BASE;
+    return HANGUL_S_BASE + (lIndex * HANGUL_V_COUNT + vIndex) * HANGUL_T_COUNT;
+  }
+  if (
+    a >= HANGUL_S_BASE &&
+    a < HANGUL_S_BASE + HANGUL_S_COUNT &&
+    (a - HANGUL_S_BASE) % HANGUL_T_COUNT === 0 &&
+    b > HANGUL_T_BASE &&
+    b < HANGUL_T_BASE + HANGUL_T_COUNT
+  ) {
+    return a + (b - HANGUL_T_BASE);
+  }
+  return null;
+}
+
+function decomposeOne(cp, out) {
+  if (hangulDecompose(cp, out)) {
+    return;
+  }
+  const entry = unicodeDataMap().get(cp);
+  if (entry !== undefined && entry.canonical !== null) {
+    for (const child of entry.canonical) {
+      decomposeOne(child, out);
+    }
+    return;
+  }
+  out.push(cp);
+}
+
+function compatDecomposeOne(cp, out) {
+  if (hangulDecompose(cp, out)) {
+    return;
+  }
+  const entry = unicodeDataMap().get(cp);
+  if (entry !== undefined) {
+    if (entry.compat !== null) {
+      for (const child of entry.compat) {
+        compatDecomposeOne(child, out);
+      }
+      return;
+    }
+    if (entry.canonical !== null) {
+      for (const child of entry.canonical) {
+        compatDecomposeOne(child, out);
+      }
+      return;
+    }
+  }
+  out.push(cp);
+}
+
+// Stable canonical ordering: sort each non-starter run by CCC, preserving the
+// relative order of equal-CCC codepoints (insertion sort that swaps only on a
+// strict CCC decrease and never crosses a starter).
+function canonicalOrder(values) {
+  for (let index = 1; index < values.length; index += 1) {
+    const currentCcc = canonicalCombiningClass(values[index]);
+    if (currentCcc === 0) {
+      continue;
+    }
+    for (let j = index; j > 0; j -= 1) {
+      const previousCcc = canonicalCombiningClass(values[j - 1]);
+      if (previousCcc === 0 || previousCcc <= currentCcc) {
+        break;
+      }
+      const tmp = values[j - 1];
+      values[j - 1] = values[j];
+      values[j] = tmp;
+    }
+  }
+}
+
+// Canonical composition (UAX #15 D115), matching Unicode.Normalization.Compose
+// and the D115-corrected blocked rule shared by the from-tables ports.
+function canonicalCompose(seq) {
+  if (seq.length === 0) {
+    return [];
+  }
+  const table = compositionTable();
+  const out = [];
+  let starterIndex = -1;
+  let lastCcc = -1;
+  for (const cp of seq) {
+    const cpCcc = canonicalCombiningClass(cp);
+    if (starterIndex >= 0) {
+      const starter = out[starterIndex];
+      let composed = hangulCompose(starter, cp);
+      if (composed === null) {
+        const mapped = table.get(`${starter},${cp}`);
+        composed = mapped === undefined ? null : mapped;
+      }
+      // Blocked check (UAX #15 D115): lastCcc !== 0 means a combiner is
+      // buffered between the active starter and this candidate. A starter
+      // candidate (cpCcc === 0) is blocked outright by any buffered combiner;
+      // a non-starter is blocked when the buffered combiner has CCC >= its own.
+      const blocked = lastCcc !== 0 && (cpCcc === 0 || lastCcc >= cpCcc);
+      if (!blocked && composed !== null) {
+        out[starterIndex] = composed;
+        continue;
+      }
+    }
+    out.push(cp);
+    if (cpCcc === 0) {
+      starterIndex = out.length - 1;
+      lastCcc = 0;
+    } else {
+      lastCcc = cpCcc;
+    }
+  }
+  return out;
+}
+
 function toNfdCodepoints(input) {
-  return codepointsFromString(stringFromCodepoints(input).normalize("NFD"));
+  const out = [];
+  for (const cp of input) {
+    decomposeOne(cp, out);
+  }
+  canonicalOrder(out);
+  return out;
 }
 
 export function toNfkdCodepoints(input) {
-  return codepointsFromString(stringFromCodepoints(input).normalize("NFKD"));
+  const out = [];
+  for (const cp of input) {
+    compatDecomposeOne(cp, out);
+  }
+  canonicalOrder(out);
+  return out;
 }
 
 export function toNfkcCodepoints(input) {
-  return codepointsFromString(stringFromCodepoints(input).normalize("NFKC"));
+  return canonicalCompose(toNfkdCodepoints(input));
 }
 
 function stringFromCodepoints(input) {

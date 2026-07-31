@@ -129,6 +129,8 @@ zig_files=(
 typescript_files=(
   "${homoglyph_files[@]}"
   DerivedBidiClass.txt
+  UnicodeData.txt
+  CompositionExclusions.txt
 )
 
 jvm_files=(
