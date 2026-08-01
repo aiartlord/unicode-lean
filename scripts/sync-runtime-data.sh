@@ -88,6 +88,7 @@ rust_files=(
   PropertyValueAliases.txt
   ScriptExtensions.txt
   Scripts.txt
+  SpecialCasing.txt
   StandardizedVariants.txt
   UnicodeData.txt
   confusables.txt

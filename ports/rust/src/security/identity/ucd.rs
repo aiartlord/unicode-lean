@@ -1063,3 +1063,310 @@ mod nfkc_nfkd_tests {
         assert_eq!(to_nfc(&[0x0041, 0x0316, 0x0300]), vec![0x00C0, 0x0316]);
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// UAX #21 case mapping (to_lower) from SpecialCasing.txt + UnicodeData
+// simple lowercase (field 13), mirroring Unicode.Casing. Keystone for
+// bip39-canonical's default-locale canonicalisation.
+// ─────────────────────────────────────────────────────────────────────
+
+const SPECIAL_CASING_RAW: &str = include_str!("../../../data/SpecialCasing.txt");
+
+/// The locales `SpecialCasing.txt` distinguishes. `Default` covers everything
+/// not tagged Turkish / Azeri / Lithuanian.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Locale {
+    /// Everything not tagged tr / az / lt.
+    Default,
+    /// Turkish (`tr`).
+    Turkish,
+    /// Azeri (`az`).
+    Azeri,
+    /// Lithuanian (`lt`).
+    Lithuanian,
+}
+
+struct CasingRow {
+    lower: Vec<u32>,
+    conditions: Vec<String>,
+}
+
+fn parse_codepoint_list(field: &str) -> Vec<u32> {
+    field.split_whitespace().filter_map(parse_hex).collect()
+}
+
+fn parse_special_casing() -> HashMap<u32, Vec<CasingRow>> {
+    let mut rows: HashMap<u32, Vec<CasingRow>> = HashMap::new();
+    for line in SPECIAL_CASING_RAW.lines() {
+        let stripped = strip_comment_and_trim(line);
+        if stripped.is_empty() {
+            continue;
+        }
+        let fields: Vec<&str> = stripped.split(';').map(|f| f.trim()).collect();
+        if fields.len() < 4 {
+            continue;
+        }
+        let code = match parse_hex(fields[0]) {
+            Some(cp) => cp,
+            None => continue,
+        };
+        let conditions: Vec<String> = if fields.len() > 4 && !fields[4].is_empty() {
+            fields[4].split_whitespace().map(|t| t.to_string()).collect()
+        } else {
+            Vec::new()
+        };
+        rows.entry(code).or_default().push(CasingRow {
+            lower: parse_codepoint_list(fields[1]),
+            conditions,
+        });
+    }
+    rows
+}
+
+fn special_casing_rows() -> &'static HashMap<u32, Vec<CasingRow>> {
+    static T: OnceLock<HashMap<u32, Vec<CasingRow>>> = OnceLock::new();
+    T.get_or_init(parse_special_casing)
+}
+
+fn parse_simple_lowercase() -> HashMap<u32, u32> {
+    let mut lower = HashMap::new();
+    for line in UNICODE_DATA_RAW.lines() {
+        let fields: Vec<&str> = line.split(';').collect();
+        if fields.len() < 15 {
+            continue;
+        }
+        if let (Some(cp), false) = (parse_hex(fields[0]), fields[13].is_empty()) {
+            if let Some(l) = parse_hex(fields[13]) {
+                lower.insert(cp, l);
+            }
+        }
+    }
+    lower
+}
+
+fn simple_lowercase_table() -> &'static HashMap<u32, u32> {
+    static T: OnceLock<HashMap<u32, u32>> = OnceLock::new();
+    T.get_or_init(parse_simple_lowercase)
+}
+
+fn simple_lowercase(cp: u32) -> u32 {
+    *simple_lowercase_table().get(&cp).unwrap_or(&cp)
+}
+
+fn parse_casing_property(name: &str) -> Vec<(u32, u32)> {
+    let mut out = Vec::new();
+    for line in DERIVED_CORE_PROPERTIES_RAW.lines() {
+        let stripped = strip_comment_and_trim(line);
+        if stripped.is_empty() {
+            continue;
+        }
+        let parts: Vec<&str> = stripped.splitn(2, ';').collect();
+        if parts.len() < 2 || parts[1].trim() != name {
+            continue;
+        }
+        if let Some(range) = parse_range_field(parts[0]) {
+            out.push(range);
+        }
+    }
+    out
+}
+
+fn cased_ranges() -> &'static Vec<(u32, u32)> {
+    static T: OnceLock<Vec<(u32, u32)>> = OnceLock::new();
+    T.get_or_init(|| parse_casing_property("Cased"))
+}
+
+fn soft_dotted_ranges() -> &'static Vec<(u32, u32)> {
+    static T: OnceLock<Vec<(u32, u32)>> = OnceLock::new();
+    T.get_or_init(|| parse_casing_property("Soft_Dotted"))
+}
+
+fn in_ranges(ranges: &[(u32, u32)], cp: u32) -> bool {
+    ranges.iter().any(|&(lo, hi)| lo <= cp && cp <= hi)
+}
+
+fn is_cased(cp: u32) -> bool {
+    in_ranges(cased_ranges(), cp)
+}
+
+fn is_soft_dotted(cp: u32) -> bool {
+    in_ranges(soft_dotted_ranges(), cp)
+}
+
+// Context predicates (UAX #21). `rev_prefix` is the preceding codepoints
+// nearest-first; `suffix` the strictly-following ones.
+
+fn more_above_after(suffix: &[u32]) -> bool {
+    for &cp in suffix {
+        let c = ccc(cp);
+        if c == 230 {
+            return true;
+        }
+        if c == 0 {
+            return false;
+        }
+    }
+    false
+}
+
+fn after_soft_dotted(rev_prefix: &[u32]) -> bool {
+    for &cp in rev_prefix {
+        if is_soft_dotted(cp) {
+            return true;
+        }
+        let c = ccc(cp);
+        if c == 0 || c == 230 {
+            return false;
+        }
+    }
+    false
+}
+
+fn after_i(rev_prefix: &[u32]) -> bool {
+    for &cp in rev_prefix {
+        if cp == 0x0049 {
+            return true;
+        }
+        let c = ccc(cp);
+        if c == 0 || c == 230 {
+            return false;
+        }
+    }
+    false
+}
+
+fn before_dot(suffix: &[u32]) -> bool {
+    for &cp in suffix {
+        if cp == 0x0307 {
+            return true;
+        }
+        if ccc(cp) == 0 {
+            return false;
+        }
+    }
+    false
+}
+
+fn has_cased_before(rev_prefix: &[u32]) -> bool {
+    for &cp in rev_prefix {
+        if is_cased(cp) {
+            return true;
+        }
+        if ccc(cp) == 0 {
+            return false;
+        }
+    }
+    false
+}
+
+fn has_cased_after(suffix: &[u32]) -> bool {
+    for &cp in suffix {
+        if is_cased(cp) {
+            return true;
+        }
+        if ccc(cp) == 0 {
+            return false;
+        }
+    }
+    false
+}
+
+fn final_sigma(rev_prefix: &[u32], suffix: &[u32]) -> bool {
+    has_cased_before(rev_prefix) && !has_cased_after(suffix)
+}
+
+fn is_locale_condition(condition: &str) -> bool {
+    condition == "tr" || condition == "az" || condition == "lt"
+}
+
+fn locale_matches(locale: Locale, conditions: &[String]) -> bool {
+    if !conditions.iter().any(|c| is_locale_condition(c)) {
+        return true;
+    }
+    conditions.iter().any(|c| {
+        (c == "tr" && locale == Locale::Turkish)
+            || (c == "az" && locale == Locale::Azeri)
+            || (c == "lt" && locale == Locale::Lithuanian)
+    })
+}
+
+fn conditions_hold(
+    locale: Locale,
+    rev_prefix: &[u32],
+    suffix: &[u32],
+    conditions: &[String],
+) -> bool {
+    if !locale_matches(locale, conditions) {
+        return false;
+    }
+    for c in conditions {
+        if is_locale_condition(c) {
+            continue;
+        }
+        let ok = match c.as_str() {
+            "Final_Sigma" => final_sigma(rev_prefix, suffix),
+            "Not_Final_Sigma" => !final_sigma(rev_prefix, suffix),
+            "After_Soft_Dotted" => after_soft_dotted(rev_prefix),
+            "More_Above" => more_above_after(suffix),
+            "Not_Before_Dot" => !before_dot(suffix),
+            "After_I" => after_i(rev_prefix),
+            _ => false,
+        };
+        if !ok {
+            return false;
+        }
+    }
+    true
+}
+
+fn find_special_row(
+    locale: Locale,
+    rev_prefix: &[u32],
+    suffix: &[u32],
+    cp: u32,
+) -> Option<&'static CasingRow> {
+    let candidates = special_casing_rows().get(&cp)?;
+    for row in candidates {
+        if !row.conditions.is_empty() && conditions_hold(locale, rev_prefix, suffix, &row.conditions)
+        {
+            return Some(row);
+        }
+    }
+    candidates.iter().find(|row| row.conditions.is_empty())
+}
+
+/// Lowercase a codepoint sequence under `locale` (UAX #21 full case mapping):
+/// SpecialCasing rows where their conditions hold, else the simple lowercase
+/// mapping. Computed from the pinned UCD tables, not the runtime.
+pub fn to_lower(locale: Locale, cps: &[u32]) -> Vec<u32> {
+    let mut out = Vec::new();
+    let mut rev_prefix: Vec<u32> = Vec::new();
+    for (index, &cp) in cps.iter().enumerate() {
+        let suffix = &cps[index + 1..];
+        match find_special_row(locale, &rev_prefix, suffix, cp) {
+            Some(row) => out.extend_from_slice(&row.lower),
+            None => out.push(simple_lowercase(cp)),
+        }
+        rev_prefix.insert(0, cp);
+    }
+    out
+}
+
+#[cfg(test)]
+mod casing_tests {
+    use super::{to_lower, Locale};
+
+    #[test]
+    fn to_lower_spot_checks() {
+        // Ground truth: the Unicode.Casing spot-check theorems.
+        assert_eq!(
+            to_lower(Locale::Default, &[0x48, 0x65, 0x6C, 0x6C, 0x6F]),
+            vec![0x68, 0x65, 0x6C, 0x6C, 0x6F]
+        );
+        assert_eq!(to_lower(Locale::Default, &[0x0049]), vec![0x0069]);
+        assert_eq!(to_lower(Locale::Turkish, &[0x0049]), vec![0x0131]);
+        assert_eq!(to_lower(Locale::Azeri, &[0x0049]), vec![0x0131]);
+        assert_eq!(to_lower(Locale::Turkish, &[0x0130]), vec![0x0069]);
+        assert_eq!(to_lower(Locale::Default, &[0x0130]), vec![0x0069, 0x0307]);
+    }
+}
