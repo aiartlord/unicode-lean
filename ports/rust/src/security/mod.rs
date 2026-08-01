@@ -8,6 +8,7 @@
 pub mod boundary;
 pub mod calculus;
 pub mod covert;
+pub mod crypto;
 pub mod display;
 pub mod identity;
 pub mod policy;
