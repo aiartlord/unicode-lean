@@ -3,6 +3,8 @@ const confusables_data = @import("confusables_data.zig");
 const case_folding_data = @import("case_folding_data.zig");
 const normalization_data = @import("normalization_data.zig");
 const bidi_class_data = @import("bidi_class_data.zig");
+const casing_data = @import("casing_data.zig");
+const bip39_data = @import("bip39_data.zig");
 
 const known_attack_targets_raw = @embedFile("data/KnownAttackTargets.txt");
 const standardized_variants_raw = @embedFile("data/StandardizedVariants.txt");
@@ -1405,6 +1407,466 @@ fn cpSlicesEqual(a: []const u32, b: []const u32) bool {
     return true;
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// UAX #21 case mapping (toLower), mirroring Unicode.Casing.
+//
+// Full lowercase mappings come from SpecialCasing.txt (one-to-many and
+// context/locale-dependent rows); the simple lowercase fallback is
+// UnicodeData.txt field 13. Context predicates (Final_Sigma,
+// After_Soft_Dotted, More_Above, Not_Before_Dot, After_I) read canonical
+// combining class plus the Cased and Soft_Dotted ranges from
+// DerivedCoreProperties.txt — mirroring the Lean-generated tables, whose
+// soft_dotted set is empty, so After_Soft_Dotted is always false. This is
+// the shared primitive the bip39-canonical detector lowercases through. Like
+// the rest of this bounded port, the result is materialised in a CpBuffer
+// (capacity MaxSkeletonLen); an input that overflows lowercases to null.
+// ─────────────────────────────────────────────────────────────────────
+
+pub const CasingLocale = enum { default, turkish, azeri, lithuanian };
+
+fn simpleLowercase(cp: u32) u32 {
+    var lo: usize = 0;
+    var hi: usize = casing_data.simple_lower.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        const entry = casing_data.simple_lower[mid];
+        if (cp < entry.cp) {
+            hi = mid;
+        } else if (cp > entry.cp) {
+            lo = mid + 1;
+        } else {
+            return entry.lower;
+        }
+    }
+    return cp;
+}
+
+// Membership in a sorted, disjoint range table (Cased / Soft_Dotted).
+fn inCasingRange(ranges: []const casing_data.Range, cp: u32) bool {
+    var lo: usize = 0;
+    var hi: usize = ranges.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        const range = ranges[mid];
+        if (cp < range.start) {
+            hi = mid;
+        } else if (cp > range.end) {
+            lo = mid + 1;
+        } else {
+            return true;
+        }
+    }
+    return false;
+}
+
+fn isCased(cp: u32) bool {
+    return inCasingRange(casing_data.cased[0..], cp);
+}
+
+fn isSoftDotted(cp: u32) bool {
+    return inCasingRange(casing_data.soft_dotted[0..], cp);
+}
+
+// Context predicates (UAX #21). `prefix` is the forward-ordered preceding
+// codepoints (walked nearest-first, i.e. from the end); `suffix` the
+// strictly-following ones (walked in order).
+fn moreAboveAfter(suffix: []const u32) bool {
+    for (suffix) |cp| {
+        const c = canonicalCombiningClass(cp);
+        if (c == 230) return true;
+        if (c == 0) return false;
+    }
+    return false;
+}
+
+fn afterSoftDotted(prefix: []const u32) bool {
+    var k = prefix.len;
+    while (k > 0) {
+        k -= 1;
+        const cp = prefix[k];
+        if (isSoftDotted(cp)) return true;
+        const c = canonicalCombiningClass(cp);
+        if (c == 0 or c == 230) return false;
+    }
+    return false;
+}
+
+fn afterI(prefix: []const u32) bool {
+    var k = prefix.len;
+    while (k > 0) {
+        k -= 1;
+        const cp = prefix[k];
+        if (cp == 0x0049) return true;
+        const c = canonicalCombiningClass(cp);
+        if (c == 0 or c == 230) return false;
+    }
+    return false;
+}
+
+fn beforeDot(suffix: []const u32) bool {
+    for (suffix) |cp| {
+        if (cp == 0x0307) return true;
+        if (canonicalCombiningClass(cp) == 0) return false;
+    }
+    return false;
+}
+
+fn hasCasedBefore(prefix: []const u32) bool {
+    var k = prefix.len;
+    while (k > 0) {
+        k -= 1;
+        const cp = prefix[k];
+        if (isCased(cp)) return true;
+        if (canonicalCombiningClass(cp) == 0) return false;
+    }
+    return false;
+}
+
+fn hasCasedAfter(suffix: []const u32) bool {
+    for (suffix) |cp| {
+        if (isCased(cp)) return true;
+        if (canonicalCombiningClass(cp) == 0) return false;
+    }
+    return false;
+}
+
+fn finalSigma(prefix: []const u32, suffix: []const u32) bool {
+    return hasCasedBefore(prefix) and !hasCasedAfter(suffix);
+}
+
+fn isLocaleCondition(cond: []const u8) bool {
+    return std.mem.eql(u8, cond, "tr") or
+        std.mem.eql(u8, cond, "az") or
+        std.mem.eql(u8, cond, "lt");
+}
+
+fn casingLocaleMatches(locale: CasingLocale, conditions: []const []const u8) bool {
+    var has_locale = false;
+    for (conditions) |cond| {
+        if (isLocaleCondition(cond)) {
+            has_locale = true;
+            break;
+        }
+    }
+    if (!has_locale) return true;
+    for (conditions) |cond| {
+        if (std.mem.eql(u8, cond, "tr") and locale == .turkish) return true;
+        if (std.mem.eql(u8, cond, "az") and locale == .azeri) return true;
+        if (std.mem.eql(u8, cond, "lt") and locale == .lithuanian) return true;
+    }
+    return false;
+}
+
+fn casingConditionsHold(
+    locale: CasingLocale,
+    prefix: []const u32,
+    suffix: []const u32,
+    conditions: []const []const u8,
+) bool {
+    if (!casingLocaleMatches(locale, conditions)) return false;
+    for (conditions) |cond| {
+        if (isLocaleCondition(cond)) continue;
+        const ok = if (std.mem.eql(u8, cond, "Final_Sigma"))
+            finalSigma(prefix, suffix)
+        else if (std.mem.eql(u8, cond, "Not_Final_Sigma"))
+            !finalSigma(prefix, suffix)
+        else if (std.mem.eql(u8, cond, "After_Soft_Dotted"))
+            afterSoftDotted(prefix)
+        else if (std.mem.eql(u8, cond, "More_Above"))
+            moreAboveAfter(suffix)
+        else if (std.mem.eql(u8, cond, "Not_Before_Dot"))
+            !beforeDot(suffix)
+        else if (std.mem.eql(u8, cond, "After_I"))
+            afterI(prefix)
+        else
+            false;
+        if (!ok) return false;
+    }
+    return true;
+}
+
+// UAX #21: a conditional SpecialCasing row whose conditions hold outranks the
+// unconditional row for the same codepoint (first matching conditional in file
+// order wins); with no special row the simple lowercase mapping applies.
+fn findSpecialLower(
+    locale: CasingLocale,
+    prefix: []const u32,
+    suffix: []const u32,
+    cp: u32,
+) ?[]const u32 {
+    for (casing_data.special) |row| {
+        if (row.code != cp) continue;
+        if (row.conditions.len != 0 and
+            casingConditionsHold(locale, prefix, suffix, row.conditions))
+        {
+            return row.lower;
+        }
+    }
+    for (casing_data.special) |row| {
+        if (row.code == cp and row.conditions.len == 0) return row.lower;
+    }
+    return null;
+}
+
+/// Lowercase a codepoint sequence under `locale` (UAX #21 full mapping),
+/// mirroring `Unicode.Casing.toLower`. Returns null if the result overflows
+/// the bounded CpBuffer.
+pub fn toLower(locale: CasingLocale, cps: []const u32) ?CpBuffer {
+    var out = CpBuffer{};
+    for (cps, 0..) |cp, i| {
+        const prefix = cps[0..i];
+        const suffix = cps[i + 1 ..];
+        if (findSpecialLower(locale, prefix, suffix, cp)) |lower| {
+            if (!out.appendSlice(lower)) return null;
+        } else {
+            if (!out.append(simpleLowercase(cp))) return null;
+        }
+    }
+    return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// BIP-39 canonical-form detector (crypto layer), mirroring
+// Unicode.Security.Crypto.Bip39Canonical.
+//
+// Canonical form = NFKD -> toLower(default) -> collapse BIP-39 whitespace runs
+// to a single U+0020 -> trim leading/trailing U+0020. The detector runs six
+// probes in priority order (first hit wins): trailing whitespace, mixed case,
+// whitespace anomaly, non-NFKD input, wordlist mismatch, then language
+// resolution over the ten 2,048-word BIP-39 wordlists. Normalisation is bounded
+// by the CpBuffer capacity, matching every other normalization consumer here.
+// ─────────────────────────────────────────────────────────────────────
+
+pub const Bip39CanonicalResult = struct {
+    sub_threat: ?[]const u8 = null,
+    positions: [1]usize = undefined,
+    position_count: usize = 0,
+    language: []const u8 = "english",
+    canonical: CpBuffer = .{},
+    word_count: usize = 0,
+};
+
+fn isBip39Whitespace(cp: u32) bool {
+    return cp == 0x0020 or cp == 0x3000;
+}
+
+fn collapseBip39Whitespace(cps: []const u32) ?CpBuffer {
+    var out = CpBuffer{};
+    var in_ws = false;
+    for (cps) |cp| {
+        if (isBip39Whitespace(cp)) {
+            if (!in_ws) {
+                if (!out.append(0x0020)) return null;
+            }
+            in_ws = true;
+        } else {
+            if (!out.append(cp)) return null;
+            in_ws = false;
+        }
+    }
+    return out;
+}
+
+fn trimBip39(buffer: *const CpBuffer) CpBuffer {
+    const s = buffer.slice();
+    var start: usize = 0;
+    var end: usize = s.len;
+    while (start < end and s[start] == 0x0020) start += 1;
+    while (end > start and s[end - 1] == 0x0020) end -= 1;
+    var out = CpBuffer{};
+    var i = start;
+    while (i < end) : (i += 1) {
+        _ = out.append(s[i]);
+    }
+    return out;
+}
+
+fn bip39CanonicalForm(input: []const u32) ?CpBuffer {
+    const nfkd = toNFKD(input) orelse return null;
+    const lowered = toLower(.default, nfkd.slice()) orelse return null;
+    const collapsed = collapseBip39Whitespace(lowered.slice()) orelse return null;
+    return trimBip39(&collapsed);
+}
+
+fn cpSeqLess(a: []const u32, b: []const u32) bool {
+    const n = @min(a.len, b.len);
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        if (a[i] < b[i]) return true;
+        if (a[i] > b[i]) return false;
+    }
+    return a.len < b.len;
+}
+
+fn wordInList(words: []const []const u32, word: []const u32) bool {
+    var lo: usize = 0;
+    var hi: usize = words.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        const entry = words[mid];
+        if (cpSeqLess(word, entry)) {
+            hi = mid;
+        } else if (cpSeqLess(entry, word)) {
+            lo = mid + 1;
+        } else {
+            return true;
+        }
+    }
+    return false;
+}
+
+fn anyLanguageContains(word: []const u32) bool {
+    for (bip39_data.languages) |lang| {
+        if (wordInList(lang.words, word)) return true;
+    }
+    return false;
+}
+
+fn countBip39Words(canonical: []const u32) usize {
+    var count: usize = 0;
+    var in_word = false;
+    for (canonical) |cp| {
+        if (cp == 0x0020) {
+            in_word = false;
+        } else {
+            if (!in_word) count += 1;
+            in_word = true;
+        }
+    }
+    return count;
+}
+
+// Index of the first canonical word absent from every wordlist, or null.
+fn firstUnknownWordIndex(canonical: []const u32) ?usize {
+    var word_index: usize = 0;
+    var i: usize = 0;
+    while (i < canonical.len) {
+        if (canonical[i] == 0x0020) {
+            i += 1;
+            continue;
+        }
+        const start = i;
+        while (i < canonical.len and canonical[i] != 0x0020) i += 1;
+        if (!anyLanguageContains(canonical[start..i])) return word_index;
+        word_index += 1;
+    }
+    return null;
+}
+
+fn allWordsInList(canonical: []const u32, words: []const []const u32) bool {
+    var i: usize = 0;
+    while (i < canonical.len) {
+        if (canonical[i] == 0x0020) {
+            i += 1;
+            continue;
+        }
+        const start = i;
+        while (i < canonical.len and canonical[i] != 0x0020) i += 1;
+        if (!wordInList(words, canonical[start..i])) return false;
+    }
+    return true;
+}
+
+// The first language whose wordlist covers every word, else null. Empty input
+// resolves to English (every predicate holds vacuously), matching the Lean
+// findSome? over allLanguages.
+fn bip39UniqueLanguage(canonical: []const u32) ?[]const u8 {
+    for (bip39_data.languages) |lang| {
+        if (allWordsInList(canonical, lang.words)) return lang.name;
+    }
+    return null;
+}
+
+fn countTrailingBip39Whitespace(input: []const u32) usize {
+    var count: usize = 0;
+    var k = input.len;
+    while (k > 0) {
+        k -= 1;
+        if (isBip39Whitespace(input[k])) count += 1 else break;
+    }
+    return count;
+}
+
+fn firstUppercasePos(input: []const u32) ?usize {
+    for (input, 0..) |cp, i| {
+        if (cp >= 0x41 and cp <= 0x5A) return i;
+    }
+    return null;
+}
+
+// First position of a leading or consecutive BIP-39 whitespace run; a single
+// internal separator does not fire.
+fn firstWhitespaceRunPos(input: []const u32) ?usize {
+    for (input, 0..) |cp, i| {
+        if (isBip39Whitespace(cp)) {
+            if (i == 0) return i;
+            if (i + 1 < input.len and isBip39Whitespace(input[i + 1])) return i;
+        }
+    }
+    return null;
+}
+
+// First position at which `a` and `b` differ (in element, or one ends);
+// callers invoke it only when the two sequences are known to differ.
+fn firstDivergence(a: []const u32, b: []const u32) usize {
+    const n = @min(a.len, b.len);
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        if (a[i] != b[i]) return i;
+    }
+    return n;
+}
+
+/// Detect a non-canonical or wordlist-mismatched BIP-39 mnemonic, mirroring
+/// `Unicode.Security.Crypto.Bip39Canonical.detect`.
+pub fn bip39CanonicalDetect(input: []const u32) Bip39CanonicalResult {
+    const canonical_buf = bip39CanonicalForm(input) orelse CpBuffer{};
+    var result = Bip39CanonicalResult{
+        .canonical = canonical_buf,
+        .word_count = countBip39Words(canonical_buf.slice()),
+    };
+
+    const trailing = countTrailingBip39Whitespace(input);
+    if (trailing > 0) {
+        result.sub_threat = "TrailingWhitespace";
+        result.positions[0] = input.len - trailing;
+        result.position_count = 1;
+        return result;
+    }
+    if (firstUppercasePos(input)) |pos| {
+        result.sub_threat = "MixedCase";
+        result.positions[0] = pos;
+        result.position_count = 1;
+        return result;
+    }
+    if (firstWhitespaceRunPos(input)) |pos| {
+        result.sub_threat = "WhitespaceAnomaly";
+        result.positions[0] = pos;
+        result.position_count = 1;
+        return result;
+    }
+    if (toNFKD(input)) |nfkd| {
+        if (!cpSlicesEqual(input, nfkd.slice())) {
+            result.sub_threat = "NonNFKD";
+            result.positions[0] = firstDivergence(input, nfkd.slice());
+            result.position_count = 1;
+            return result;
+        }
+    }
+    if (firstUnknownWordIndex(canonical_buf.slice())) |idx| {
+        result.sub_threat = "WordlistMismatch";
+        result.positions[0] = idx;
+        result.position_count = 1;
+        return result;
+    }
+    if (bip39UniqueLanguage(canonical_buf.slice())) |lang| {
+        result.language = lang;
+        return result;
+    }
+    result.sub_threat = "LanguageAmbiguous";
+    return result;
+}
+
 fn ctCpSlicesEqual(a: []const u32, b: []const u32) bool {
     if (a.len != b.len) return false;
     var acc: u32 = 0;
@@ -1962,4 +2424,59 @@ test "toNFC honors UAX #15 D115 blocking" {
     // A + below(CCC 220) + grave(CCC 230): the higher-CCC grave is not
     // blocked and composes to À; the lower-CCC mark stays buffered.
     try expectNormalization(toNFC, &[_]u32{ 0x0041, 0x0316, 0x0300 }, &[_]u32{ 0x00C0, 0x0316 });
+}
+
+fn expectToLower(locale: CasingLocale, input: []const u32, expected: []const u32) !void {
+    const result = toLower(locale, input) orelse return error.ToLowerFailed;
+    try std.testing.expect(cpSlicesEqual(result.slice(), expected));
+}
+
+test "toLower ground-truth theorems" {
+    // Mirrors the toLower_* theorems in Unicode/Casing.lean.
+    try expectToLower(.default, &[_]u32{ 0x48, 0x65, 0x6C, 0x6C, 0x6F }, &[_]u32{ 0x68, 0x65, 0x6C, 0x6C, 0x6F });
+    try expectToLower(.default, &[_]u32{0x0049}, &[_]u32{0x0069});
+    try expectToLower(.turkish, &[_]u32{0x0049}, &[_]u32{0x0131});
+    try expectToLower(.azeri, &[_]u32{0x0049}, &[_]u32{0x0131});
+    try expectToLower(.turkish, &[_]u32{0x0130}, &[_]u32{0x0069});
+    try expectToLower(.default, &[_]u32{0x0130}, &[_]u32{ 0x0069, 0x0307 });
+}
+
+fn expectBip39Sub(input: []const u32, expected: []const u8) !void {
+    const result = bip39CanonicalDetect(input);
+    try std.testing.expect(result.sub_threat != null);
+    try std.testing.expect(std.mem.eql(u8, result.sub_threat.?, expected));
+}
+
+test "bip39 canonical detect spot-checks" {
+    // Mirrors the detect ground-truth vectors in
+    // Unicode/Security/Crypto/Bip39Canonical.lean.
+    const abandon = [_]u32{ 0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E };
+    const about = [_]u32{ 0x61, 0x62, 0x6F, 0x75, 0x74 };
+    const sp = [_]u32{0x20};
+
+    const trailing = abandon ++ sp;
+    try expectBip39Sub(&trailing, "TrailingWhitespace");
+    try std.testing.expect(bip39CanonicalDetect(&trailing).positions[0] == 7);
+
+    const mixed = [_]u32{ 0x41, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E };
+    try expectBip39Sub(&mixed, "MixedCase");
+    const double_space = abandon ++ sp ++ sp ++ about;
+    try expectBip39Sub(&double_space, "WhitespaceAnomaly");
+    const leading = sp ++ abandon;
+    try expectBip39Sub(&leading, "WhitespaceAnomaly");
+    try expectBip39Sub(&[_]u32{0xFB00}, "NonNFKD");
+    try expectBip39Sub(&[_]u32{ 0x61, 0x00A0, 0x62 }, "NonNFKD");
+    try expectBip39Sub(&[_]u32{ 0x71, 0x7A, 0x71, 0x7A }, "WordlistMismatch");
+
+    const empty = [_]u32{};
+    const empty_result = bip39CanonicalDetect(&empty);
+    try std.testing.expect(empty_result.sub_threat == null);
+    try std.testing.expect(std.mem.eql(u8, empty_result.language, "english"));
+
+    // Eleven "abandon" words plus "about": a well-formed 12-word English mnemonic.
+    const mnemonic = ((abandon ++ sp) ** 11) ++ about;
+    const verdict = bip39CanonicalDetect(&mnemonic);
+    try std.testing.expect(verdict.sub_threat == null);
+    try std.testing.expect(std.mem.eql(u8, verdict.language, "english"));
+    try std.testing.expect(verdict.word_count == 12);
 }
