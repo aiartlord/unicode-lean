@@ -94,6 +94,7 @@ library
       Unicode.Segmentation.Grapheme
       Unicode.Segmentation.GraphemeTables
       Unicode.Security.Crypto.Bip39Canonical
+      Unicode.Security.Form.LocaleCaseInversion
       Unicode.Security.Policy
   other-modules:
       Paths_unicode_haskell
@@ -114,6 +115,7 @@ test-suite unicode-haskell-test
       HangulSpec
       GraphemeSpec
       IdentifierSpec
+      LocaleCaseInversionSpec
       LookupSpec
       NFKDSpec
       NoncharactersSpec

@@ -282,7 +282,7 @@ def _find_special_row(
     return None
 
 
-def _lower_codepoint(
+def lower_codepoint(
     loc: Locale, rev_prefix: list[int], suffix: list[int], cp: int
 ) -> list[int]:
     row = _find_special_row(loc, rev_prefix, suffix, cp)
@@ -306,7 +306,7 @@ def to_lower(loc: Locale, cps: list[int]) -> list[int]:
     rev_prefix: list[int] = []
     for index, cp in enumerate(cps):
         suffix = cps[index + 1 :]
-        out.extend(_lower_codepoint(loc, rev_prefix, suffix, cp))
+        out.extend(lower_codepoint(loc, rev_prefix, suffix, cp))
         rev_prefix.insert(0, cp)
     return out
 

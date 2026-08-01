@@ -34,7 +34,7 @@ Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 | WidthClassConfusion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Bip39Canonical | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | SourceDisplayDivergence | ✓ | – | – | – | – | – | – | – | – | – |
-| LocaleCaseInversion | ✓ | – | – | – | – | – | – | – | – | – |
+| LocaleCaseInversion | ✓ | ✓ | – | – | – | – | – | – | – | ✓ |
 | CaseExpansionMismatch | – | – | – | – | – | – | – | – | – | – |
 | NfcIdempotenceWitness | – | – | – | – | – | – | – | – | – | – |
 | NormalizationBomb | – | – | – | – | – | – | – | – | – | – |
@@ -48,20 +48,22 @@ Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 | HashInputStability | – | – | – | – | – | – | – | – | – | – |
 | AiWatermarkDetectability | – | – | – | – | – | – | – | – | – | – |
 
-**Totals:** rust 15/27 · all other ports 13/27 · overall 132/270 cells. The 13
-core families are complete and vouched across every port; everything below the
-line is spec-proven in Lean but not yet ported.
+**Totals:** rust 15/27 · python 14/27 · haskell 14/27 · other ports 13/27 ·
+overall 134/270 cells. The 13 core families are complete and vouched across every
+port; everything below the line is spec-proven in Lean but not yet ported.
 
 ## Remaining work
 
-14 detector families are unported (12 in no port at all, plus SourceDisplayDivergence
-and LocaleCaseInversion which have only rust references). Each needs a reference
+14 detector families are unported or partially ported. Each needs a reference
 implementation verified against the Lean `detect_*` theorems, then a fan-out to all
 ten ports, each vouched.
 
-**Reference-only (2):** SourceDisplayDivergence
-(`display/source_display_divergence.rs`) and LocaleCaseInversion
-(`form/locale_case_inversion.rs`) — rust references exist and are vouched; each
+**Fan-out in progress (1):** LocaleCaseInversion — implemented and vouched in
+rust, python, and haskell; the remaining seven ports (cpp, go, jvm, typescript,
+dotnet, swift, zig) are pending.
+
+**Reference-only (1):** SourceDisplayDivergence
+(`display/source_display_divergence.rs`) — rust reference exists and is vouched;
 needs fan-out to the other nine ports.
 
 **Not started in any port (12):** CaseExpansionMismatch, NfcIdempotenceWitness,

@@ -20,6 +20,7 @@ import qualified BomSpec
 import qualified CasingSpec
 import qualified GraphemeSpec
 import qualified HangulSpec
+import qualified LocaleCaseInversionSpec
 import qualified LookupSpec
 import qualified NFKDSpec
 import qualified NoncharactersSpec
@@ -41,6 +42,7 @@ main = defaultMain $
     , CasingSpec.tests
     , GraphemeSpec.tests
     , HangulSpec.tests
+    , LocaleCaseInversionSpec.tests
     , LookupSpec.tests
     , NFKDSpec.tests
     , NoncharactersSpec.tests

@@ -19,6 +19,7 @@ same NOINLINE runtime-table idiom the security layer already uses.
 module Unicode.Casing
   ( Locale (Default, Turkish, Azeri, Lithuanian)
   , toLower
+  , lowerCodepoint
   ) where
 
 import Data.Char (isSpace)
