@@ -1067,6 +1067,50 @@ public static class Security
         return new NormalizationBombResult(null, new List<int>());
     }
 
+    // ── nfc-idempotence-witness: inputs not already in NFC (or NFKC) form ──────
+    // Mirrors Unicode.Security.Form.NfcIdempotenceWitness. Inputs that are not
+    // already in NFC (or, failing that, not in NFKC) — the silent
+    // normalization-drift class where a signer and verifier pick different
+    // canonical forms and their hashes diverge. Compares input element-wise
+    // against its NFC and NFKC forms, reporting the first divergent position: a
+    // mismatch against NFC is NonNfcForm; a sequence already in NFC but not NFKC
+    // is NonNfkcCompatForm.
+
+    /// <summary>First index at which two sequences diverge (in element, or one
+    /// ends); null when identical.</summary>
+    private static int? FirstDivergence(IReadOnlyList<int> a, IReadOnlyList<int> b)
+    {
+        var common = Math.Min(a.Count, b.Count);
+        for (var i = 0; i < common; i++)
+        {
+            if (a[i] != b[i]) return i;
+        }
+        if (a.Count != b.Count) return common;
+        return null;
+    }
+
+    /// <summary>One NFC-idempotence-witness scan result. <c>SubThreat</c> is null
+    /// for a clear input (already in NFC and NFKC); else the divergence tag with
+    /// its first position in <c>Positions</c>.</summary>
+    public sealed record NfcIdempotenceWitnessResult(string? SubThreat, List<int> Positions);
+
+    /// <summary>Detect an input that is not in canonical (NFC), or not in
+    /// compatibility (NFKC), form. NFC divergence takes priority over NFKC.</summary>
+    public static NfcIdempotenceWitnessResult NfcIdempotenceWitnessDetect(List<int> input)
+    {
+        var nfc = ToNfc(input);
+        if (FirstDivergence(input, nfc) is int p)
+        {
+            return new NfcIdempotenceWitnessResult("NonNfcForm", new List<int> { p });
+        }
+        var nfkc = ToNfkc(input).ToList();
+        if (FirstDivergence(input, nfkc) is int q)
+        {
+            return new NfcIdempotenceWitnessResult("NonNfkcCompatForm", new List<int> { q });
+        }
+        return new NfcIdempotenceWitnessResult(null, new List<int>());
+    }
+
     // ── bip39-canonical: BIP-39 mnemonic canonicalisation + wordlist checks ────
     // Mirrors Unicode.Security.Crypto.Bip39Canonical.
 
@@ -1421,6 +1465,10 @@ public static class Security
     // NFKD followed by canonical composition, matching Unicode.Normalization.NFKC.
     public static IReadOnlyList<int> ToNfkc(IEnumerable<int> input) =>
         CanonicalCompose(ToNfkdCodepoints(input));
+
+    // NFD followed by canonical composition, matching Unicode.Normalization.NFC.
+    private static List<int> ToNfc(List<int> input) =>
+        CanonicalCompose(ToNfdCodepoints(input)).ToList();
 
     private static Dictionary<int, List<int>> ConfusablesMap()
     {

@@ -16,6 +16,7 @@ public final class SecurityContractTest {
     testBip39();
     testLocaleCaseInversion();
     testNormalizationBomb();
+    testNfcIdempotenceWitness();
     testConfusableBidiCompound();
     testSurrogateReassembly();
     testRtlInjection();
@@ -196,6 +197,32 @@ public final class SecurityContractTest {
     assertEquals("NfdHighExpansion",
         Security.normalizationBombDetect(intList(new int[] {0x1F82})).subThreat(), "bomb greek nfd ratio");
     System.out.println("clean: JVM normalization-bomb detect spot-check passes");
+  }
+
+  // Pins the NFC-idempotence-witness detector against the detect_* spot-check
+  // theorems in Unicode/Security/Form/NfcIdempotenceWitness.lean, matching the
+  // vectors exercised by the Rust port's tests: empty and ASCII are clear, the
+  // precomposed e-acute is clear, the decomposed sequence fires NonNfcForm at
+  // position 0, and the fi ligature fires NonNfkcCompatForm.
+  private static void testNfcIdempotenceWitness() {
+    assertEquals(null,
+        Security.nfcIdempotenceWitnessDetect(intList(new int[] {})).subThreat(), "nfc-witness empty");
+    assertEquals(null,
+        Security.nfcIdempotenceWitnessDetect(intList(new int[] {0x48, 0x65, 0x6C, 0x6C, 0x6F})).subThreat(),
+        "nfc-witness ascii");
+    assertEquals(null,
+        Security.nfcIdempotenceWitnessDetect(intList(new int[] {0x00E9})).subThreat(),
+        "nfc-witness precomposed e-acute");
+    assertEquals("NonNfcForm",
+        Security.nfcIdempotenceWitnessDetect(intList(new int[] {0x0065, 0x0301})).subThreat(),
+        "nfc-witness decomposed e-acute");
+    assertEquals(List.of(0),
+        Security.nfcIdempotenceWitnessDetect(intList(new int[] {0x0065, 0x0301})).positions(),
+        "nfc-witness decomposed e-acute pos");
+    assertEquals("NonNfkcCompatForm",
+        Security.nfcIdempotenceWitnessDetect(intList(new int[] {0xFB01})).subThreat(),
+        "nfc-witness fi ligature");
+    System.out.println("clean: JVM nfc-idempotence-witness detect spot-check passes");
   }
 
   private static List<Integer> intList(int[] codepoints) {

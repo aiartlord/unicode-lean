@@ -1999,6 +1999,47 @@ pub fn normalizationBombDetect(input: []const u32) NormalizationBombResult {
     return result;
 }
 
+pub const NfcIdempotenceWitnessResult = struct {
+    sub_threat: ?[]const u8 = null,
+    positions: [1]usize = undefined,
+    position_count: usize = 0,
+};
+
+// First index at which two sequences diverge (in element, or one ends);
+// null when identical.
+fn nfcFirstDivergence(a: []const u32, b: []const u32) ?usize {
+    const common = @min(a.len, b.len);
+    var i: usize = 0;
+    while (i < common) : (i += 1) {
+        if (a[i] != b[i]) return i;
+    }
+    if (a.len != b.len) return common;
+    return null;
+}
+
+/// Detect an input that is not in canonical (NFC), or not in compatibility
+/// (NFKC), form. NFC divergence takes priority over NFKC. A normalization
+/// overflow of the bounded buffer (impossible for the small inputs here) is
+/// treated as clear.
+pub fn nfcIdempotenceWitnessDetect(input: []const u32) NfcIdempotenceWitnessResult {
+    var result = NfcIdempotenceWitnessResult{};
+    const nfc = toNFC(input) orelse return result;
+    if (nfcFirstDivergence(input, nfc.slice())) |pos| {
+        result.sub_threat = "NonNfcForm";
+        result.positions[0] = pos;
+        result.position_count = 1;
+        return result;
+    }
+    const nfkc = toNFKC(input) orelse return result;
+    if (nfcFirstDivergence(input, nfkc.slice())) |pos| {
+        result.sub_threat = "NonNfkcCompatForm";
+        result.positions[0] = pos;
+        result.position_count = 1;
+        return result;
+    }
+    return result;
+}
+
 fn ctCpSlicesEqual(a: []const u32, b: []const u32) bool {
     if (a.len != b.len) return false;
     var acc: u32 = 0;
@@ -2656,4 +2697,25 @@ test "normalization-bomb detect spot-checks" {
     try std.testing.expect(normalizationBombDetect(&[_]u32{0xFDFA}).positions[0] == 0);
     try expectNormalizationBombSub(&[_]u32{0xFDFB}, "NfkdHighExpansion");
     try expectNormalizationBombSub(&[_]u32{0x1F82}, "NfdHighExpansion");
+}
+
+fn expectNfcIdempotenceWitnessSub(input: []const u32, expected: ?[]const u8) !void {
+    const result = nfcIdempotenceWitnessDetect(input);
+    if (expected) |want| {
+        try std.testing.expect(result.sub_threat != null);
+        try std.testing.expect(std.mem.eql(u8, result.sub_threat.?, want));
+    } else {
+        try std.testing.expect(result.sub_threat == null);
+    }
+}
+
+test "nfc-idempotence-witness detect spot-checks" {
+    // Mirrors the detect_* ground-truth theorems in
+    // Unicode/Security/Form/NfcIdempotenceWitness.lean.
+    try expectNfcIdempotenceWitnessSub(&[_]u32{}, null);
+    try expectNfcIdempotenceWitnessSub(&[_]u32{ 0x48, 0x65, 0x6C, 0x6C, 0x6F }, null);
+    try expectNfcIdempotenceWitnessSub(&[_]u32{0x00E9}, null); // precomposed é
+    try expectNfcIdempotenceWitnessSub(&[_]u32{ 0x0065, 0x0301 }, "NonNfcForm"); // e + combining acute
+    try std.testing.expect(nfcIdempotenceWitnessDetect(&[_]u32{ 0x0065, 0x0301 }).positions[0] == 0);
+    try expectNfcIdempotenceWitnessSub(&[_]u32{0xFB01}, "NonNfkcCompatForm"); // fi ligature
 }

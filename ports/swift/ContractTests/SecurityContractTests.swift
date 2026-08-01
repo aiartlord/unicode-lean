@@ -10,6 +10,7 @@ struct SecurityContractRunner {
         try testRtlInjection()
         try testLocaleCaseInversion()
         try testNormalizationBomb()
+        try testNfcIdempotenceWitness()
         try testPolicyContract()
         try testVerdictContract()
         try testUtf8DecodeContract()
@@ -162,6 +163,15 @@ struct SecurityContractRunner {
         try expectEqual(normalizationBombDetect([0xFDFA]).positions, [0], "normalization-bomb arabic-ligature pos")
         try expectEqual(normalizationBombDetect([0xFDFB]).subThreat, "NfkdHighExpansion", "normalization-bomb fdfb")
         try expectEqual(normalizationBombDetect([0x1F82]).subThreat, "NfdHighExpansion", "normalization-bomb greek-extended")
+    }
+
+    private static func testNfcIdempotenceWitness() throws {
+        try expectEqual(nfcIdempotenceWitnessDetect([]).subThreat, nil, "nfc-idempotence empty")
+        try expectEqual(nfcIdempotenceWitnessDetect([0x48, 0x65, 0x6C, 0x6C, 0x6F]).subThreat, nil, "nfc-idempotence ascii")
+        try expectEqual(nfcIdempotenceWitnessDetect([0x00E9]).subThreat, nil, "nfc-idempotence precomposed-e-acute")
+        try expectEqual(nfcIdempotenceWitnessDetect([0x0065, 0x0301]).subThreat, "NonNfcForm", "nfc-idempotence decomposed-e-acute")
+        try expectEqual(nfcIdempotenceWitnessDetect([0x0065, 0x0301]).positions, [0], "nfc-idempotence decomposed-e-acute pos")
+        try expectEqual(nfcIdempotenceWitnessDetect([0xFB01]).subThreat, "NonNfkcCompatForm", "nfc-idempotence fi-ligature")
     }
 
     private static func testPolicyContract() throws {

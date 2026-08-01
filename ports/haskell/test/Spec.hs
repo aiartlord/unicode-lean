@@ -22,6 +22,7 @@ import qualified GraphemeSpec
 import qualified HangulSpec
 import qualified LocaleCaseInversionSpec
 import qualified LookupSpec
+import qualified NfcIdempotenceWitnessSpec
 import qualified NFKDSpec
 import qualified NoncharactersSpec
 import qualified NormalizationBombSpec
@@ -45,6 +46,7 @@ main = defaultMain $
     , HangulSpec.tests
     , LocaleCaseInversionSpec.tests
     , LookupSpec.tests
+    , NfcIdempotenceWitnessSpec.tests
     , NFKDSpec.tests
     , NoncharactersSpec.tests
     , NormalizationBombSpec.tests

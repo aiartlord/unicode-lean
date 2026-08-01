@@ -837,6 +837,11 @@ public func toNfkc(_ input: [Int]) -> [Int] {
     canonicalCompose(toNfkd(input))
 }
 
+// NFD followed by canonical composition, mirroring Unicode.Normalization.NFC.
+private func toNfc(_ input: [Int]) -> [Int] {
+    canonicalCompose(toNfdCodepoints(input))
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // UAX #21 case mapping (toLower), mirroring Unicode.Casing.
 //
@@ -2131,4 +2136,52 @@ public func normalizationBombDetect(_ input: [Int]) -> NormalizationBombResult {
         return NormalizationBombResult(subThreat: "NfdHighExpansion", positions: [])
     }
     return NormalizationBombResult(subThreat: nil, positions: [])
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// NFC-idempotence-witness detection — inputs that are not already in NFC
+// (or, failing that, not in NFKC), the silent normalization-drift class
+// where a signer and verifier pick different canonical forms and their
+// hashes diverge.
+//
+// Direct port of `Unicode/Security/Form/NfcIdempotenceWitness.lean`.
+// Compares `input` element-wise against `toNfc(input)` and `toNfkc(input)`,
+// reporting the first divergent position: a mismatch against NFC is
+// `NonNfcForm`; a sequence already in NFC but not NFKC is
+// `NonNfkcCompatForm`.
+// ─────────────────────────────────────────────────────────────────────
+
+/// One NFC-idempotence-witness scan result. `subThreat` is `nil` for a clear
+/// input (already in NFC and NFKC), else the divergence tag with its first
+/// position.
+public struct NfcIdempotenceWitnessResult: Equatable {
+    /// The sub-threat tag, or `nil` when the input is already NFC- and NFKC-stable.
+    public let subThreat: String?
+    /// The first divergent position (empty when clear).
+    public let positions: [Int]
+}
+
+/// First index at which two sequences diverge (in element, or one ends);
+/// `nil` when identical.
+private func firstDivergence(_ a: [Int], _ b: [Int]) -> Int? {
+    let common = min(a.count, b.count)
+    for i in 0..<common {
+        if a[i] != b[i] { return i }
+    }
+    if a.count != b.count { return common }
+    return nil
+}
+
+/// Detect an input that is not in canonical (NFC), or not in compatibility
+/// (NFKC), form. NFC divergence takes priority over NFKC.
+public func nfcIdempotenceWitnessDetect(_ input: [Int]) -> NfcIdempotenceWitnessResult {
+    let nfc = toNfc(input)
+    if let pos = firstDivergence(input, nfc) {
+        return NfcIdempotenceWitnessResult(subThreat: "NonNfcForm", positions: [pos])
+    }
+    let nfkc = toNfkc(input)
+    if let pos = firstDivergence(input, nfkc) {
+        return NfcIdempotenceWitnessResult(subThreat: "NonNfkcCompatForm", positions: [pos])
+    }
+    return NfcIdempotenceWitnessResult(subThreat: nil, positions: [])
 }

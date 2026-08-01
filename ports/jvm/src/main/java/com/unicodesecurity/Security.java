@@ -1075,6 +1075,42 @@ public final class Security {
     return new NormalizationBombResult(null, List.of());
   }
 
+  /** One NFC-idempotence-witness scan result. {@code subThreat} is null for a
+   *  clear input (already in NFC and NFKC), else the divergence tag with its
+   *  first position in {@code positions}. */
+  public record NfcIdempotenceWitnessResult(String subThreat, List<Integer> positions) {}
+
+  /** First index at which two sequences diverge (in element, or one ends);
+   *  null when identical. */
+  private static Integer firstDivergence(List<Integer> a, List<Integer> b) {
+    int common = Math.min(a.size(), b.size());
+    for (int i = 0; i < common; i++) {
+      if (!a.get(i).equals(b.get(i))) {
+        return i;
+      }
+    }
+    if (a.size() != b.size()) {
+      return common;
+    }
+    return null;
+  }
+
+  /** Detect an input that is not in canonical (NFC), or not in compatibility
+   *  (NFKC), form. NFC divergence takes priority over NFKC. */
+  public static NfcIdempotenceWitnessResult nfcIdempotenceWitnessDetect(List<Integer> input) {
+    List<Integer> nfc = toNfc(input);
+    Integer nfcPos = firstDivergence(input, nfc);
+    if (nfcPos != null) {
+      return new NfcIdempotenceWitnessResult("NonNfcForm", List.of(nfcPos));
+    }
+    List<Integer> nfkc = toNfkc(input);
+    Integer nfkcPos = firstDivergence(input, nfkc);
+    if (nfkcPos != null) {
+      return new NfcIdempotenceWitnessResult("NonNfkcCompatForm", List.of(nfkcPos));
+    }
+    return new NfcIdempotenceWitnessResult(null, List.of());
+  }
+
   // ── bip39-canonical: BIP-39 mnemonic canonicalisation + wordlist checks ────
   // Mirrors Unicode.Security.Crypto.Bip39Canonical.
 
@@ -1364,6 +1400,11 @@ public final class Security {
   // NFKD followed by canonical composition, matching Unicode.Normalization.NFKC.
   public static List<Integer> toNfkc(List<Integer> input) {
     return canonicalCompose(toNfkd(input));
+  }
+
+  // NFD followed by canonical composition, matching Unicode.Normalization.NFC.
+  public static List<Integer> toNfc(List<Integer> input) {
+    return canonicalCompose(toNfdCodepoints(input));
   }
 
   private static synchronized Map<Integer, List<Integer>> confusablesMap() {

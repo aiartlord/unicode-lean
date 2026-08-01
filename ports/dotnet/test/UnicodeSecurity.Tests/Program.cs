@@ -15,6 +15,7 @@ TestCasing();
 TestBip39();
 TestLocaleCaseInversion();
 TestNormalizationBomb();
+TestNfcIdempotenceWitness();
 Console.WriteLine("clean: .NET contract tests pass");
 
 // Direct spot-check of the covert-display-compound detector, mirroring the
@@ -394,6 +395,21 @@ static void TestNormalizationBomb()
     AssertEqual("NfkdHighExpansion", Sub(new List<int> { 0xFDFB }), "norm-bomb fdfb nfkd");
     AssertEqual("NfdHighExpansion", Sub(new List<int> { 0x1F82 }), "norm-bomb greek nfd");
     Console.WriteLine("clean: .NET normalization-bomb detect spot-check passes");
+}
+
+// Ground truth: the detect_* spot-check theorems in
+// Unicode/Security/Form/NfcIdempotenceWitness.lean and the Rust port's tests.
+static void TestNfcIdempotenceWitness()
+{
+    string? Sub(List<int> input) => Security.NfcIdempotenceWitnessDetect(input).SubThreat;
+
+    AssertEqual<string?>(null, Sub(new List<int>()), "nfc-witness empty");
+    AssertEqual<string?>(null, Sub(new List<int> { 0x48, 0x65, 0x6C, 0x6C, 0x6F }), "nfc-witness ascii");
+    AssertEqual<string?>(null, Sub(new List<int> { 0x00E9 }), "nfc-witness precomposed-e-acute");
+    AssertEqual("NonNfcForm", Sub(new List<int> { 0x0065, 0x0301 }), "nfc-witness decomposed-e-acute");
+    AssertSequence(new[] { 0 }, Security.NfcIdempotenceWitnessDetect(new List<int> { 0x0065, 0x0301 }).Positions, "nfc-witness decomposed-e-acute pos");
+    AssertEqual("NonNfkcCompatForm", Sub(new List<int> { 0xFB01 }), "nfc-witness fi-ligature");
+    Console.WriteLine("clean: .NET nfc-idempotence-witness detect spot-check passes");
 }
 
 static void AssertEqual<T>(T expected, T actual, string message)

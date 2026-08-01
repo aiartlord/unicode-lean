@@ -1097,6 +1097,10 @@ export function toNfkdCodepoints(input) {
   return out;
 }
 
+export function toNfcCodepoints(input) {
+  return canonicalCompose(toNfdCodepoints(input));
+}
+
 export function toNfkcCodepoints(input) {
   return canonicalCompose(toNfkdCodepoints(input));
 }
@@ -1469,6 +1473,39 @@ export function normalizationBombDetect(input) {
   }
   if (nfdRatioPct(input) > NFD_RATIO_PCT) {
     return { sub: "NfdHighExpansion", positions: [] };
+  }
+  return { sub: null, positions: [] };
+}
+
+// ── nfc-idempotence-witness: inputs not already in NFC (or, failing that, NFKC) ─
+// Mirrors Unicode.Security.Form.NfcIdempotenceWitness. Compares the input
+// element-wise against toNfc(input) and toNfkc(input), reporting the first
+// divergent position: a mismatch against NFC is NonNfcForm; a sequence already
+// in NFC but not NFKC is NonNfkcCompatForm. NFC divergence takes priority.
+
+function firstDivergence(a, b) {
+  const common = Math.min(a.length, b.length);
+  for (let i = 0; i < common; i += 1) {
+    if (a[i] !== b[i]) {
+      return i;
+    }
+  }
+  if (a.length !== b.length) {
+    return common;
+  }
+  return null;
+}
+
+export function nfcIdempotenceWitnessDetect(input) {
+  const nfc = toNfcCodepoints(input);
+  const nfcPos = firstDivergence(input, nfc);
+  if (nfcPos !== null) {
+    return { sub: "NonNfcForm", positions: [nfcPos] };
+  }
+  const nfkc = toNfkcCodepoints(input);
+  const nfkcPos = firstDivergence(input, nfkc);
+  if (nfkcPos !== null) {
+    return { sub: "NonNfkcCompatForm", positions: [nfkcPos] };
   }
   return { sub: null, positions: [] };
 }

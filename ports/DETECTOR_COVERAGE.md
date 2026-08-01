@@ -36,7 +36,7 @@ Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 | SourceDisplayDivergence | ✓ | – | – | – | – | – | – | – | – | – |
 | LocaleCaseInversion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | CaseExpansionMismatch | – | – | – | – | – | – | – | – | – | – |
-| NfcIdempotenceWitness | ✓ | – | – | – | – | – | – | – | – | – |
+| NfcIdempotenceWitness | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | NormalizationBomb | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | StreamSafeViolation | – | – | – | – | – | – | – | – | – | – |
 | IdentifierFormDrift | – | – | – | – | – | – | – | – | – | – |
@@ -48,23 +48,23 @@ Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 | HashInputStability | – | – | – | – | – | – | – | – | – | – |
 | AiWatermarkDetectability | – | – | – | – | – | – | – | – | – | – |
 
-**Totals:** rust 16/27 · all other ports 15/27 · overall 151/270 cells. The 13
-core families plus LocaleCaseInversion and NormalizationBomb are complete and
-vouched across every port; everything below the line is spec-proven in Lean but
-not yet ported.
+**Totals:** rust 17/27 · all other ports 16/27 · overall 161/270 cells. The 13
+core families plus LocaleCaseInversion, NormalizationBomb, and
+NfcIdempotenceWitness are complete and vouched across every port; everything
+below the line is spec-proven in Lean but not yet ported.
 
 ## Remaining work
 
-12 detector families are unported. Each needs a reference implementation verified
+11 detector families are unported. Each needs a reference implementation verified
 against the Lean `detect_*` theorems, then a fan-out to all ten ports, each vouched.
 
 **Reference-only (1):** SourceDisplayDivergence
 (`display/source_display_divergence.rs`) — rust reference exists and is vouched;
 needs fan-out to the other nine ports.
 
-**Not started in any port (11):** CaseExpansionMismatch, NfcIdempotenceWitness,
-StreamSafeViolation, IdentifierFormDrift, AdmissibilityFormDrift,
-EmojiZwjIntegrity, SkinToneVariationForgery, FilenameDisguise, RendererDivergence,
+**Not started in any port (10):** CaseExpansionMismatch, StreamSafeViolation,
+IdentifierFormDrift, AdmissibilityFormDrift, EmojiZwjIntegrity,
+SkinToneVariationForgery, FilenameDisguise, RendererDivergence,
 HashInputStability, AiWatermarkDetectability.
 
 **Bip39 scan-wiring (follow-up):** Bip39Canonical ships standalone and
