@@ -1867,6 +1867,71 @@ pub fn bip39CanonicalDetect(input: []const u32) Bip39CanonicalResult {
     return result;
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Locale-case-inversion detector (Tier A2), mirroring
+// Unicode.Security.Form.LocaleCaseInversion.
+//
+// Detects inputs whose lowercase fold inverts across locales — the
+// homograph-via-locale attack (CVE-2007-6692, CVE-2021-30245). Compares
+// per-position lowerCodepoint under each locale against the default (Turkish
+// before Lithuanian) rather than diffing whole-string toLower, so the
+// SpecialCasing context predicates evaluate with full context.
+// ─────────────────────────────────────────────────────────────────────
+
+pub const LocaleCaseInversionResult = struct {
+    sub_threat: ?[]const u8 = null,
+    positions: [1]usize = undefined,
+    position_count: usize = 0,
+};
+
+// First input position whose lowercase mapping under `locale` differs from the
+// default-locale mapping. A single codepoint's lowercase is at most a short
+// slice — the special-row slice comes straight from the static table, and the
+// simple-lowercase fallback fits a one-element scratch buffer.
+fn firstLocaleDivergence(locale: CasingLocale, input: []const u32) ?usize {
+    var i: usize = 0;
+    while (i < input.len) : (i += 1) {
+        const prefix = input[0..i];
+        const suffix = input[i + 1 ..];
+        var default_scratch: [1]u32 = undefined;
+        var locale_scratch: [1]u32 = undefined;
+        const default_lower = if (findSpecialLower(.default, prefix, suffix, input[i])) |lower|
+            lower
+        else default_blk: {
+            default_scratch[0] = simpleLowercase(input[i]);
+            break :default_blk default_scratch[0..1];
+        };
+        const locale_lower = if (findSpecialLower(locale, prefix, suffix, input[i])) |lower|
+            lower
+        else locale_blk: {
+            locale_scratch[0] = simpleLowercase(input[i]);
+            break :locale_blk locale_scratch[0..1];
+        };
+        if (!cpSlicesEqual(default_lower, locale_lower)) return i;
+    }
+    return null;
+}
+
+/// Detect an input whose lowercase fold inverts across locales. Turkish
+/// divergence takes priority; Lithuanian is reached only when no Turkish
+/// divergence is found.
+pub fn localeCaseInversionDetect(input: []const u32) LocaleCaseInversionResult {
+    var result = LocaleCaseInversionResult{};
+    if (firstLocaleDivergence(.turkish, input)) |pos| {
+        result.sub_threat = "TurkishCaseDivergence";
+        result.positions[0] = pos;
+        result.position_count = 1;
+        return result;
+    }
+    if (firstLocaleDivergence(.lithuanian, input)) |pos| {
+        result.sub_threat = "LithuanianCaseDivergence";
+        result.positions[0] = pos;
+        result.position_count = 1;
+        return result;
+    }
+    return result;
+}
+
 fn ctCpSlicesEqual(a: []const u32, b: []const u32) bool {
     if (a.len != b.len) return false;
     var acc: u32 = 0;
@@ -2479,4 +2544,26 @@ test "bip39 canonical detect spot-checks" {
     try std.testing.expect(verdict.sub_threat == null);
     try std.testing.expect(std.mem.eql(u8, verdict.language, "english"));
     try std.testing.expect(verdict.word_count == 12);
+}
+
+fn expectLocaleCaseSub(input: []const u32, expected: ?[]const u8) !void {
+    const result = localeCaseInversionDetect(input);
+    if (expected) |want| {
+        try std.testing.expect(result.sub_threat != null);
+        try std.testing.expect(std.mem.eql(u8, result.sub_threat.?, want));
+    } else {
+        try std.testing.expect(result.sub_threat == null);
+    }
+}
+
+test "locale-case-inversion detect spot-checks" {
+    // Mirrors the detect_* ground-truth theorems in
+    // Unicode/Security/Form/LocaleCaseInversion.lean.
+    try expectLocaleCaseSub(&[_]u32{}, null);
+    try expectLocaleCaseSub(&[_]u32{ 0x48, 0x65, 0x6C, 0x6C, 0x6F }, null);
+    try expectLocaleCaseSub(&[_]u32{0x0049}, "TurkishCaseDivergence");
+    try std.testing.expect(localeCaseInversionDetect(&[_]u32{0x0049}).positions[0] == 0);
+    try expectLocaleCaseSub(&[_]u32{0x0130}, "TurkishCaseDivergence");
+    try expectLocaleCaseSub(&[_]u32{ 0x0049, 0x0300 }, "TurkishCaseDivergence");
+    try expectLocaleCaseSub(&[_]u32{ 0x004A, 0x0300 }, "LithuanianCaseDivergence");
 }

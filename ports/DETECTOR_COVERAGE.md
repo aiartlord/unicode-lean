@@ -34,7 +34,7 @@ Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 | WidthClassConfusion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Bip39Canonical | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | SourceDisplayDivergence | ✓ | – | – | – | – | – | – | – | – | – |
-| LocaleCaseInversion | ✓ | ✓ | ✓ | ✓ | – | ✓ | – | – | – | ✓ |
+| LocaleCaseInversion | ✓ | ✓ | ✓ | ✓ | – | ✓ | – | – | ✓ | ✓ |
 | CaseExpansionMismatch | – | – | – | – | – | – | – | – | – | – |
 | NfcIdempotenceWitness | – | – | – | – | – | – | – | – | – | – |
 | NormalizationBomb | – | – | – | – | – | – | – | – | – | – |
