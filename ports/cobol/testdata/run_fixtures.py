@@ -40,6 +40,17 @@ def run(op, profile, mode, values):
     return {"action": action, "codes": codes, "positions": positions, "input": input_values}
 
 
+def run_lines(op, values):
+    arg = ",".join(str(v) for v in values)
+    proc = subprocess.run(
+        [str(BIN), op, "gateway-header", "observe", arg],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    )
+    return proc.stdout.splitlines()
+
+
 def require(condition, message):
     if not condition:
         raise AssertionError(message)
@@ -200,6 +211,93 @@ def check_generated_tables():
     )
 
 
+BLOB_VECTORS = [
+    ("ascii", [65], True),
+    ("empty", [], True),
+    ("two-byte", [195, 169], True),
+    ("three-byte", [226, 130, 172], True),
+    ("four-byte", [240, 159, 152, 128], True),
+    ("overlong-c0-80", [192, 128], False),
+    ("surrogate-ed-a0-80", [237, 160, 128], False),
+    ("truncated-two-byte", [195], False),
+    ("lone-continuation", [169], False),
+    ("beyond-max-f4-90", [244, 144, 128, 128], False),
+]
+
+
+def check_opaque_blob():
+    count = 0
+    for name, byts, valid in BLOB_VECTORS:
+        lines = run_lines("is-utf8-blob", byts)
+        require(len(lines) >= 1 and lines[0].startswith("BLOB "),
+                f"opaque-blob/{name} malformed output {lines}")
+        got = lines[0].split(" ", 1)[1]
+        want = "valid" if valid else "invalid"
+        require(got == want, f"opaque-blob/{name} got {got} want {want}")
+        count += 1
+    return count
+
+
+def check_validated_utf8():
+    count = 0
+    for name, byts, valid in BLOB_VECTORS:
+        lines = run_lines("validate-utf8", byts)
+        require(len(lines) >= 1 and lines[0].startswith("VALIDATE "),
+                f"validated-utf8/{name} malformed output {lines}")
+        got = lines[0].split(" ", 1)[1]
+        want = "valid" if valid else "invalid"
+        require(got == want, f"validated-utf8/{name} got {got} want {want}")
+        if valid:
+            byte_lines = [ln for ln in lines if ln.startswith("BYTES")]
+            require(len(byte_lines) == 1, f"validated-utf8/{name} missing BYTES echo {lines}")
+            rest = byte_lines[0][len("BYTES"):].strip()
+            echoed = [int(x) for x in rest.split(",") if x]
+            require(echoed == byts,
+                    f"validated-utf8/{name} echo {echoed} != input {byts}")
+        else:
+            require(all(not ln.startswith("BYTES") for ln in lines),
+                    f"validated-utf8/{name} echoed bytes for invalid input {lines}")
+        count += 1
+    return count
+
+
+def parse_grapheme_break_test(path):
+    cases = []
+    with path.open("r", encoding="utf-8") as f:
+        for raw in f:
+            body = raw.split("#", 1)[0].strip()
+            if not body:
+                continue
+            cps = []
+            boundaries = []
+            for token in body.split():
+                if token == "÷":
+                    boundaries.append(len(cps))
+                elif token == "×":
+                    pass
+                else:
+                    cps.append(int(token, 16))
+            cases.append((cps, boundaries))
+    return cases
+
+
+def check_grapheme():
+    path = Path(__file__).resolve().parent / "GraphemeBreakTest.txt"
+    cases = parse_grapheme_break_test(path)
+    require(cases, "GraphemeBreakTest.txt produced no cases")
+    count = 0
+    for cps, expected in cases:
+        lines = run_lines("grapheme", cps)
+        bound_lines = [ln for ln in lines if ln.startswith("BOUNDARIES")]
+        require(len(bound_lines) == 1, f"grapheme {cps} missing BOUNDARIES {lines}")
+        rest = bound_lines[0][len("BOUNDARIES"):].strip()
+        got = [int(x) for x in rest.split(",") if x]
+        require(got == expected,
+                f"grapheme {cps} boundaries {got} != expected {expected}")
+        count += 1
+    return count
+
+
 def main():
     check_policy()
     check_decode()
@@ -208,6 +306,12 @@ def main():
     check_detectors()
     check_forms_and_bip39()
     check_generated_tables()
+    blob_count = check_opaque_blob()
+    validated_count = check_validated_utf8()
+    grapheme_count = check_grapheme()
+    print(f"opaque-blob checks: {blob_count}")
+    print(f"validated-utf8 checks: {validated_count}")
+    print(f"grapheme (GraphemeBreakTest.txt) checks: {grapheme_count}")
     print("ok: cobol unicode security fixture tests pass")
 
 

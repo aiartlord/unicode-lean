@@ -19,6 +19,11 @@ spl_autoload_register(static function (string $class): void {
         'UnicodePhp\\Security\\Identity\\Locale' => __DIR__ . '/Security/Identity/Ucd.php',
         'UnicodePhp\\Security\\Identity\\BidiStrong' => __DIR__ . '/Security/Identity/Ucd.php',
         'UnicodePhp\\Security\\Identity\\RestrictionLevel' => __DIR__ . '/Security/Identity/Ucd.php',
+        'UnicodePhp\\Segmentation\\Gcb' => __DIR__ . '/Segmentation/GraphemeTables.php',
+        'UnicodePhp\\Segmentation\\Incb' => __DIR__ . '/Segmentation/GraphemeTables.php',
+        'UnicodePhp\\Segmentation\\EpicState' => __DIR__ . '/Segmentation/Grapheme.php',
+        'UnicodePhp\\Segmentation\\IncbState' => __DIR__ . '/Segmentation/Grapheme.php',
+        'UnicodePhp\\Segmentation\\GraphemeState' => __DIR__ . '/Segmentation/Grapheme.php',
     ];
     if (isset($shared[$class])) {
         require $shared[$class];

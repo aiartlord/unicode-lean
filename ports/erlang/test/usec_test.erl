@@ -10,7 +10,66 @@ run() ->
     multiencoding_contract(),
     form_and_bip39(),
     opaque_blob_tests(),
+    grapheme_tests(),
     io:format("ok: erlang unicode security tests pass~n").
+
+grapheme_tests() ->
+    %% Core UAX #29 vectors mirroring the rust segmentation tests.
+    assert_eq([true, true, true, true],
+              usec_grapheme:grapheme_breaks([16#61, 16#62, 16#63]), gb_ascii),
+    assert_eq(3, length(usec_grapheme:grapheme_clusters([16#61, 16#62, 16#63])), gb_ascii_clusters),
+    assert_eq([true, false, true],
+              usec_grapheme:grapheme_breaks([16#65, 16#0301]), gb_combining),
+    assert_eq(1, length(usec_grapheme:grapheme_clusters([16#65, 16#0301])), gb_combining_clusters),
+    assert_eq([true, false, true],
+              usec_grapheme:grapheme_breaks([16#0D, 16#0A]), gb_crlf),
+    assert_eq([true, false, true],
+              usec_grapheme:grapheme_breaks([16#1F1EF, 16#1F1F5]), gb_flag),
+    assert_eq(1, length(usec_grapheme:grapheme_clusters([16#1F1EF, 16#1F1F5])), gb_flag_clusters),
+    assert_eq(2, length(usec_grapheme:grapheme_clusters([16#1F1EF, 16#1F1F5, 16#1F1FA, 16#1F1F8])),
+              gb_four_flags_clusters),
+    assert_eq(1, length(usec_grapheme:grapheme_clusters([16#1F468, 16#200D, 16#1F469, 16#200D, 16#1F467])),
+              gb_zwj_family_clusters),
+    %% Full GraphemeBreakTest.txt conformance: every div/x boundary must match.
+    {ok, Bin} = file:read_file(filename:join(["test", "fixtures", "GraphemeBreakTest.txt"])),
+    Lines = binary:split(Bin, <<"\n">>, [global]),
+    Count = lists:foldl(fun run_gbt_line/2, 0, Lines),
+    assert_eq(766, Count, grapheme_break_test_row_count),
+    io:format("  grapheme: validated ~p GraphemeBreakTest.txt rows~n", [Count]).
+
+%% Parse one GraphemeBreakTest.txt line and assert grapheme_breaks matches its
+%% div/x markers. Non-data lines (comments, blanks) contribute nothing.
+run_gbt_line(Line, Acc) ->
+    Pattern = case binary:split(Line, <<"#">>) of
+                  [P | _Comment] -> P;
+                  [] -> <<>>
+              end,
+    Tokens = [T || T <- binary:split(Pattern, [<<" ">>, <<"\t">>, <<"\r">>], [global]), T =/= <<>>],
+    case Tokens of
+        [] ->
+            Acc;
+        _ ->
+            {Cps, Breaks} = parse_gbt_tokens(Tokens, [], []),
+            Got = usec_grapheme:grapheme_breaks(Cps),
+            assert_eq(Breaks, Got, {gbt_row, Line}),
+            Acc + 1
+    end.
+
+%% Tokens alternate boundary-marker, code point, marker, ..., marker. Markers
+%% become the expected boundary mask; hex tokens become the code point list.
+parse_gbt_tokens([], Cps, Breaks) ->
+    {lists:reverse(Cps), lists:reverse(Breaks)};
+parse_gbt_tokens([Tok | Rest], Cps, Breaks) ->
+    case gbt_marker(Tok) of
+        {boundary, B} -> parse_gbt_tokens(Rest, Cps, [B | Breaks]);
+        codepoint -> parse_gbt_tokens(Rest, [binary_to_integer(Tok, 16) | Cps], Breaks)
+    end.
+
+%% U+00F7 DIVISION SIGN (div, C3 B7) marks a break; U+00D7 MULTIPLICATION SIGN
+%% (x, C3 97) marks no break. Anything else is a hex code point token.
+gbt_marker(<<16#C3, 16#B7>>) -> {boundary, true};
+gbt_marker(<<16#C3, 16#97>>) -> {boundary, false};
+gbt_marker(_Other) -> codepoint.
 
 opaque_blob_tests() ->
     assert(usec_opaque_blob:is_utf8_blob([16#48, 16#69]), blob_ascii),
