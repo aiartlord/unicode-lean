@@ -105,6 +105,22 @@ pub fn build(b: *std.Build) void {
     });
     const run_unit_tests = b.addRunArtifact(unit_tests);
     test_step.dependOn(&run_unit_tests.step);
+
+    // Byte-layer refinement tests (opaque-blob + validated-utf8) live in
+    // their own source file and run from a dedicated test artifact rooted
+    // at that file, since the artifacts above only discover tests in their
+    // own root graphs.
+    const opaque_blob_module = b.createModule(.{
+        .root_source_file = b.path("src/opaque_blob.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    const opaque_blob_tests = b.addTest(.{
+        .name = "unicode_opaque_blob_tests",
+        .root_module = opaque_blob_module,
+    });
+    const run_opaque_blob_tests = b.addRunArtifact(opaque_blob_tests);
+    test_step.dependOn(&run_opaque_blob_tests.step);
 }
 
 fn readFixture(b: *std.Build, path: []const u8) []const u8 {

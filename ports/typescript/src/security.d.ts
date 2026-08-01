@@ -57,3 +57,23 @@ export declare const scanUTF32LE: typeof scanUtf32LE;
 export declare function verdictToWire(verdict: Verdict): Verdict;
 export declare function verdictJson(verdict: Verdict): string;
 export declare const verdictJSON: typeof verdictJson;
+
+export type ByteInput = Uint8Array | number[] | Iterable<number>;
+
+export declare function isUtf8Blob(data: ByteInput): boolean;
+
+export declare class Utf8Blob {
+  private constructor();
+  readonly value: number[];
+  readonly maxBytes: number;
+  static of(data: ByteInput, maxBytes: number): Utf8Blob | null;
+  bytes(): number[];
+}
+
+export declare class ValidatedUtf8 {
+  private constructor();
+  readonly value: number[];
+  static validate(data: ByteInput): ValidatedUtf8 | null;
+  asBytes(): number[];
+  unwrap(): number[];
+}

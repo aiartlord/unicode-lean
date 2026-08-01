@@ -114,6 +114,15 @@ public final class Security {
     return scan(profile, mode, decodeUtf8ToCodepoints(input));
   }
 
+  // Strict RFC 3629 UTF-8 validity, decided by the shared decoder state machine
+  // (firstInvalidUtf8 / utf8DecodeStep) that scanUtf8 and the surrogate-reassembly
+  // detector already route through. Overlong forms, surrogate codepoints, values
+  // beyond U+10FFFF, and truncated sequences all reject. This is the byte-layer
+  // predicate that Utf8Blob and ValidatedUtf8 refine over.
+  public static boolean isValidUtf8(byte[] bytes) {
+    return firstInvalidUtf8(bytes) == null;
+  }
+
   public static Verdict scanUtf16BE(String profile, String mode, byte[] input) {
     return scanUtf16(profile, mode, input, ByteOrder.BIG);
   }

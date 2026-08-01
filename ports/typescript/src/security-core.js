@@ -2305,3 +2305,93 @@ function ensureByte(value) {
   }
   return value;
 }
+
+// Byte-layer refinement types.
+//
+// These layer over the same strict RFC 3629 UTF-8 validator the scanners use
+// (firstInvalidUtf8, whose overlong / surrogate / out-of-range rejects are the
+// blessed source of validity — never the host TextDecoder). No character-class
+// or codepoint filtering happens here beyond structural UTF-8 validity; hardened
+// identifier and printable profiles layer on top of these predicates.
+
+// Guards the refinement-type constructors so the only entry points are the
+// static smart constructors below, mirroring the private Rust constructors.
+const REFINEMENT_BRAND = Symbol("unicode-security/byte-refinement");
+
+// Structurally valid UTF-8 predicate, decoupled from any size bound. Exposed
+// under the "blob" name so the framing — no character-class hardening — is
+// explicit at the call site. Accepts a Uint8Array or a number[] of bytes.
+export function isUtf8Blob(data) {
+  const bytes = Array.from(data, ensureByte);
+  return firstInvalidUtf8(bytes) === null;
+}
+
+// A byte sequence carrying its size bound and UTF-8 validity claim. Build one
+// only via Utf8Blob.of; the direct constructor is guarded.
+export class Utf8Blob {
+  constructor(brand, value, maxBytes) {
+    if (brand !== REFINEMENT_BRAND) {
+      throw new TypeError("Utf8Blob is constructed via Utf8Blob.of");
+    }
+    this.value = value;
+    this.maxBytes = maxBytes;
+    Object.freeze(this);
+  }
+
+  // Build a Utf8Blob under the size bound maxBytes. Returns null when either the
+  // bound or UTF-8 validity is violated.
+  static of(data, maxBytes) {
+    if (!Number.isInteger(maxBytes) || maxBytes < 0) {
+      throw new RangeError(`invalid maxBytes bound: ${maxBytes}`);
+    }
+    const bytes = Object.freeze(Array.from(data, ensureByte));
+    if (bytes.length > maxBytes) {
+      return null;
+    }
+    if (firstInvalidUtf8(bytes) !== null) {
+      return null;
+    }
+    return new Utf8Blob(REFINEMENT_BRAND, bytes, maxBytes);
+  }
+
+  // The underlying bytes.
+  bytes() {
+    return this.value;
+  }
+}
+
+// A byte sequence validated as strict RFC 3629 UTF-8. The validity claim is
+// pinned at the module boundary: validate is the only way to build one, so a
+// downstream consumer that wants the raw bytes has to explicitly unwrap — which
+// reads as "I am consuming the RFC 3629 claim here".
+export class ValidatedUtf8 {
+  constructor(brand, value) {
+    if (brand !== REFINEMENT_BRAND) {
+      throw new TypeError("ValidatedUtf8 is constructed via ValidatedUtf8.validate");
+    }
+    this.value = value;
+    Object.freeze(this);
+  }
+
+  // Validate a byte sequence and, on success, return a ValidatedUtf8 carrying
+  // the RFC 3629 validity claim. Returns null when the bytes fail the strict
+  // state machine.
+  static validate(data) {
+    const bytes = Object.freeze(Array.from(data, ensureByte));
+    if (firstInvalidUtf8(bytes) !== null) {
+      return null;
+    }
+    return new ValidatedUtf8(REFINEMENT_BRAND, bytes);
+  }
+
+  // Borrow the validated bytes; the validity claim stays carried by this value.
+  asBytes() {
+    return this.value;
+  }
+
+  // Consume the validity claim, returning the underlying bytes. After this call
+  // the caller owns the "these bytes are RFC 3629 valid" reasoning.
+  unwrap() {
+    return this.value;
+  }
+}

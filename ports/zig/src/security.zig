@@ -2313,6 +2313,16 @@ fn firstInvalidUtf8Offset(bytes: anytype) ?Utf8Invalid {
     return null;
 }
 
+/// Structural UTF-8 validity under the strict RFC 3629 decoder state
+/// machine: `bytes` is valid exactly when the shared
+/// `firstInvalidUtf8Offset` scanner finds no rejection. Overlong forms,
+/// surrogate codepoints, codepoints beyond U+10FFFF, truncated
+/// sequences, and stray start/continuation bytes are all rejected. The
+/// byte-layer refinements in `opaque_blob.zig` layer on this predicate.
+pub fn isValidUtf8(bytes: []const u8) bool {
+    return firstInvalidUtf8Offset(bytes) == null;
+}
+
 fn decodeUtf8ToCodepoints(bytes: []const u8, out: []u32) usize {
     var out_len: usize = 0;
     var index: usize = 0;

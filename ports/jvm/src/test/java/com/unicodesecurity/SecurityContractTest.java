@@ -4,9 +4,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 public final class SecurityContractTest {
   public static void main(String[] args) throws Exception {
@@ -24,7 +26,65 @@ public final class SecurityContractTest {
     testVerdictContract();
     testUtf8DecodeContract();
     testMultiEncodingDecodeContract();
+    testByteLayerRefinements();
     testDetectorFixtures();
+  }
+
+  // Pins the byte-layer refinement types Utf8Blob and ValidatedUtf8 against the
+  // Rust port's opaque_blob / validated_utf8 modules. Both refine over the shared
+  // strict RFC 3629 decoder (Security.isValidUtf8), so overlong and surrogate
+  // forms reject at the byte boundary and never reach the codepoint scanner.
+  private static void testByteLayerRefinements() {
+    byte[] ascii = {(byte) 0x41};
+    byte[] twoByte = {(byte) 0xC3, (byte) 0xA9};                             // U+00E9
+    byte[] fourByte = {(byte) 0xF0, (byte) 0x9F, (byte) 0x98, (byte) 0x80};  // U+1F600
+    byte[] overlong = {(byte) 0xC0, (byte) 0x80};                           // overlong NUL
+    byte[] surrogate = {(byte) 0xED, (byte) 0xA0, (byte) 0x80};              // U+D800
+    byte[] empty = {};
+
+    // Predicate mirrors is_utf8_blob: strict validity, nothing more.
+    assertTrue(Utf8Blob.isUtf8Blob(ascii), "isUtf8Blob accepts ascii");
+    assertTrue(Utf8Blob.isUtf8Blob(twoByte), "isUtf8Blob accepts 2-byte");
+    assertTrue(Utf8Blob.isUtf8Blob(fourByte), "isUtf8Blob accepts 4-byte");
+    assertTrue(Utf8Blob.isUtf8Blob(empty), "isUtf8Blob accepts empty");
+    assertTrue(!Utf8Blob.isUtf8Blob(overlong), "isUtf8Blob rejects overlong C0 80");
+    assertTrue(!Utf8Blob.isUtf8Blob(surrogate), "isUtf8Blob rejects surrogate ED A0 80");
+
+    // Utf8Blob.of: bound + validity gate, bytes preserved on the happy path.
+    Optional<Utf8Blob> asciiBlob = Utf8Blob.of(ascii, 8);
+    assertTrue(asciiBlob.isPresent(), "Utf8Blob.of accepts ascii under bound");
+    assertTrue(Arrays.equals(ascii, asciiBlob.get().bytes()), "Utf8Blob preserves ascii bytes");
+    assertEquals(8, asciiBlob.get().maxBytes(), "Utf8Blob preserves declared bound");
+    assertTrue(Utf8Blob.of(twoByte, 2).isPresent(), "Utf8Blob.of accepts 2-byte at exact bound");
+    assertTrue(Utf8Blob.of(fourByte, 4).isPresent(), "Utf8Blob.of accepts 4-byte at exact bound");
+
+    // Over-bound rejects even though the bytes are structurally valid.
+    assertTrue(Utf8Blob.of(fourByte, 3).isEmpty(), "Utf8Blob.of rejects over-bound valid bytes");
+    // Invalid bytes reject regardless of a generous bound.
+    assertTrue(Utf8Blob.of(overlong, 64).isEmpty(), "Utf8Blob.of rejects overlong");
+    assertTrue(Utf8Blob.of(surrogate, 64).isEmpty(), "Utf8Blob.of rejects surrogate");
+    // Empty accepted under any bound, including zero.
+    assertTrue(Utf8Blob.of(empty, 0).isPresent(), "Utf8Blob.of accepts empty at bound 0");
+    assertTrue(Utf8Blob.of(empty, 100).isPresent(), "Utf8Blob.of accepts empty at bound 100");
+
+    // Defensive copy: mutating the caller's array cannot corrupt the blob.
+    byte[] mutable = {(byte) 0x41};
+    Utf8Blob captured = Utf8Blob.of(mutable, 4).orElseThrow();
+    mutable[0] = (byte) 0x42;
+    assertEquals(0x41, captured.bytes()[0] & 0xFF, "Utf8Blob copies its bytes defensively");
+
+    // ValidatedUtf8.validate: strict-decoder gate, unwrap/asBytes roundtrip.
+    Optional<ValidatedUtf8> validated = ValidatedUtf8.validate(fourByte);
+    assertTrue(validated.isPresent(), "ValidatedUtf8.validate accepts 4-byte");
+    assertTrue(Arrays.equals(fourByte, validated.get().asBytes()), "ValidatedUtf8.asBytes roundtrip");
+    assertTrue(Arrays.equals(fourByte, validated.get().unwrap()), "ValidatedUtf8.unwrap roundtrip");
+    assertTrue(ValidatedUtf8.validate(ascii).isPresent(), "ValidatedUtf8.validate accepts ascii");
+    assertTrue(ValidatedUtf8.validate(twoByte).isPresent(), "ValidatedUtf8.validate accepts 2-byte");
+    assertTrue(ValidatedUtf8.validate(empty).isPresent(), "ValidatedUtf8.validate accepts empty");
+    assertTrue(ValidatedUtf8.validate(overlong).isEmpty(), "ValidatedUtf8.validate rejects overlong");
+    assertTrue(ValidatedUtf8.validate(surrogate).isEmpty(), "ValidatedUtf8.validate rejects surrogate");
+
+    System.out.println("clean: byte-layer refinement spot checks pass (Utf8Blob + ValidatedUtf8)");
   }
 
   // Pins the covert-display-compound detector against the detect_* spot-check

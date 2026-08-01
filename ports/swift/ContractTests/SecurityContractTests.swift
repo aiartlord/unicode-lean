@@ -19,6 +19,7 @@ struct SecurityContractRunner {
         try testCompatibilityNormalization()
         try testCasing()
         try testBip39Canonical()
+        try testOpaqueBlob()
         print("clean: Swift contract tests pass")
     }
 
@@ -204,6 +205,32 @@ struct SecurityContractRunner {
             let expected = try canonicalJson(try dictionary(entry, "verdict"))
             try expectEqual(verdictJson(verdict), expected, try string(entry, "name"))
         }
+    }
+
+    // Pins the Utf8Blob / ValidatedUtf8 byte-layer refinements against the
+    // strict RFC 3629 validator.
+    private static func testOpaqueBlob() throws {
+        try expect(isUtf8Blob([0x48, 0x69]), "blob ascii")
+        try expect(isUtf8Blob([0xC3, 0xA9]), "blob 2-byte")
+        try expect(isUtf8Blob([0xF0, 0x9F, 0x98, 0x80]), "blob 4-byte")
+        try expect(!isUtf8Blob([0xC0, 0x80]), "blob overlong rejected")
+        try expect(!isUtf8Blob([0xED, 0xA0, 0x80]), "blob surrogate rejected")
+
+        guard let within = Utf8Blob.of([0x48, 0x69], maxBytes: 16) else {
+            throw TestError.message("blob within bound returned nil")
+        }
+        try expectEqual(within.value, [0x48, 0x69], "blob value")
+        try expectEqual(within.maxBytes, 16, "blob maxBytes")
+        try expect(Utf8Blob.of([0x48, 0x69, 0x21], maxBytes: 2) == nil, "blob over bound")
+        try expect(Utf8Blob.of([0xC0, 0x80], maxBytes: 16) == nil, "blob malformed")
+        try expect(Utf8Blob.of([], maxBytes: 32) != nil, "blob empty any bound")
+
+        guard let validated = ValidatedUtf8.validate([0xC3, 0xA9]) else {
+            throw TestError.message("validated rejected valid input")
+        }
+        try expectEqual(validated.asBytes(), [0xC3, 0xA9], "validated asBytes")
+        try expectEqual(ValidatedUtf8.unwrap(validated), [0xC3, 0xA9], "validated unwrap")
+        try expect(ValidatedUtf8.validate([0xED, 0xA0, 0x80]) == nil, "validated rejects malformed")
     }
 
     private static func testUtf8DecodeContract() throws {

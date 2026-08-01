@@ -2185,3 +2185,68 @@ public func nfcIdempotenceWitnessDetect(_ input: [Int]) -> NfcIdempotenceWitness
     }
     return NfcIdempotenceWitnessResult(subThreat: nil, positions: [])
 }
+
+// MARK: - Byte-layer refinements
+
+/// Opaque-blob predicate: structurally valid UTF-8. Named so the "blob" framing
+/// — no character-class hardening — is explicit at the call site.
+public func isUtf8Blob(_ data: [UInt8]) -> Bool {
+    return firstInvalidUtf8(data) == nil
+}
+
+/// A byte sequence carrying its size bound and UTF-8 validity claim. Construct
+/// via `Utf8Blob.of(_:maxBytes:)`. No character-class filtering beyond UTF-8
+/// validity; hardened profiles layer on top of this predicate.
+public struct Utf8Blob {
+    public let value: [UInt8]
+    public let maxBytes: Int
+
+    private init(value: [UInt8], maxBytes: Int) {
+        self.value = value
+        self.maxBytes = maxBytes
+    }
+
+    /// Build a `Utf8Blob` under the size bound `maxBytes`. Returns `nil` when
+    /// either the bound or UTF-8 validity is violated.
+    public static func of(_ data: [UInt8], maxBytes: Int) -> Utf8Blob? {
+        if data.count > maxBytes {
+            return nil
+        }
+        if !isUtf8Blob(data) {
+            return nil
+        }
+        return Utf8Blob(value: data, maxBytes: maxBytes)
+    }
+}
+
+/// Refinement type for bytes validated as strict RFC 3629 UTF-8. The validity
+/// claim is pinned at the module boundary: the only way to build one is via
+/// `validate(_:)`, which routes through the strict decoder. A consumer that
+/// wants the raw bytes calls `unwrap(_:)`.
+public struct ValidatedUtf8 {
+    private let bytes: [UInt8]
+
+    private init(bytes: [UInt8]) {
+        self.bytes = bytes
+    }
+
+    /// Validate `data` and, on success, return a `ValidatedUtf8` carrying the
+    /// RFC 3629 validity claim. Returns `nil` when the bytes fail the strict
+    /// state machine.
+    public static func validate(_ data: [UInt8]) -> ValidatedUtf8? {
+        if firstInvalidUtf8(data) != nil {
+            return nil
+        }
+        return ValidatedUtf8(bytes: data)
+    }
+
+    /// Borrow the validated bytes.
+    public func asBytes() -> [UInt8] {
+        return bytes
+    }
+
+    /// Consume the validity claim, returning the underlying bytes.
+    public static func unwrap(_ validated: ValidatedUtf8) -> [UInt8] {
+        return validated.bytes
+    }
+}
