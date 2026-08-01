@@ -2,11 +2,16 @@
 
 Tracks which of the 30 Lean-proven security-detector families are implemented
 in each of the 10 language ports. The Lean spec under `Unicode/Security/` is the
-source of truth; each port cell is "done" only when the detector is implemented
-byte-faithfully **and** vouched (built + its ground-truth vectors run, not merely
-compiled).
+source of truth and all 30 families are proven there; a port cell is "done" only
+when the detector is implemented byte-faithfully **and** vouched (built + its
+ground-truth vectors run, not merely compiled).
 
-Legend: `✓` implemented + vouched · `–` not yet ported
+> Accuracy note: the `Family`/`Calculus` enums in every port declare **all 30
+> family names as taxonomy**, independent of whether a detector exists. Coverage
+> below is counted from real detector implementations (a detect function/file
+> emitting the family's sub-threats), never from an enum entry or a fixture file.
+
+Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 
 | Family (Lean module) | rust | python | cpp | go | jvm | ts | dotnet | swift | zig | haskell |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
@@ -23,64 +28,78 @@ Legend: `✓` implemented + vouched · `–` not yet ported
 | CovertDisplayCompound | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | WidthClassConfusion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Bip39Canonical | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| SourceDisplayDivergence | ✓ | ✓ | ✓ | – | – | – | – | – | – | – |
-| LocaleCaseInversion | ✓ | ✓ | ✓ | – | – | – | – | – | – | – |
-| CaseExpansionMismatch | ✓ | ✓ | ✓ | – | – | – | – | – | – | – |
-| NfcIdempotenceWitness | ✓ | ✓ | ✓ | – | – | – | – | – | – | – |
-| NormalizationBomb | ✓ | ✓ | ✓ | – | – | – | – | – | – | – |
-| IdentifierFormDrift | ✓ | ✓ | ✓ | – | – | – | – | – | – | – |
-| AdmissibilityFormDrift | ✓ | ✓ | ✓ | – | – | – | – | – | – | – |
-| EmojiZwjIntegrity | ✓ | ✓ | ✓ | – | – | – | – | – | – | – |
-| SkinToneVariationForgery | ✓ | ✓ | ✓ | – | – | – | – | – | – | – |
-| FilenameDisguise | ✓ | ✓ | ✓ | – | – | – | – | – | – | – |
-| RendererDivergence | ✓ | ✓ | ✓ | – | – | – | – | – | – | – |
-| HashInputStability | ✓ | ✓ | ✓ | – | – | – | – | – | – | – |
-| StreamSafeViolation | ✓ | ✓ | ✓ | – | – | – | – | – | – | – |
-| AiWatermarkDetectability | ✓ | ✓ | ✓ | – | – | – | – | – | – | – |
+| SourceDisplayDivergence | ✓ | – | – | – | – | – | – | – | – | – |
+| LocaleCaseInversion | – | – | – | – | – | – | – | – | – | – |
+| CaseExpansionMismatch | – | – | – | – | – | – | – | – | – | – |
+| NfcIdempotenceWitness | – | – | – | – | – | – | – | – | – | – |
+| NormalizationBomb | – | – | – | – | – | – | – | – | – | – |
+| IdentifierFormDrift | – | – | – | – | – | – | – | – | – | – |
+| AdmissibilityFormDrift | – | – | – | – | – | – | – | – | – | – |
+| EmojiZwjIntegrity | – | – | – | – | – | – | – | – | – | – |
+| SkinToneVariationForgery | – | – | – | – | – | – | – | – | – | – |
+| FilenameDisguise | – | – | – | – | – | – | – | – | – | – |
+| RendererDivergence | – | – | – | – | – | – | – | – | – | – |
+| HashInputStability | – | – | – | – | – | – | – | – | – | – |
+| StreamSafeViolation | – | – | – | – | – | – | – | – | – | – |
+| AiWatermarkDetectability | – | – | – | – | – | – | – | – | – | – |
 | GlitchTokenScan | – | – | – | – | – | – | – | – | – | – |
 | WordlistOrder | – | – | – | – | – | – | – | – | – | – |
 | EmojiPresentationRegistry | – | – | – | – | – | – | – | – | – | – |
 
-**Totals:** rust/python/cpp 27/30 · go/jvm/ts/dotnet/swift/zig/haskell 13/30 ·
-overall 164/300 cells.
+**Totals:** rust 14/30 · all other ports 13/30 · overall 131/300 cells. The 13
+core families are complete and vouched across every port; everything below the
+line is spec-proven in Lean but not yet ported.
 
-## The three remaining tiers of work
+## Remaining work
 
-1. **Fan-out (14 families → 7 ports each = 98 cells).** These live in the
-   reference trio (rust/python/cpp) but not the other seven ports. The Rust
-   implementation is the reference; each port transliterates it and pins the
-   same Lean ground-truth vectors. Casing-dependent families
-   (LocaleCaseInversion, CaseExpansionMismatch) build on the `toLower`/`toUpper`
-   keystone already present in all ten ports.
+The bulk of the 30-family vision is still ahead. 17 families are unported (16 in
+no port at all, plus SourceDisplayDivergence which has only a rust reference).
+Each unported family needs: a reference implementation verified against the Lean
+`detect_*` theorems, then a fan-out to all ten ports, each vouched.
 
-2. **Net-new (3 families → 10 ports each = 30 cells).** GlitchTokenScan,
-   WordlistOrder, and EmojiPresentationRegistry are not yet in any port. Each
-   needs the Rust reference written + verified against the Lean spec first, then
-   fanned out.
+**Not started in any port (16):** LocaleCaseInversion, CaseExpansionMismatch,
+NfcIdempotenceWitness, NormalizationBomb, IdentifierFormDrift,
+AdmissibilityFormDrift, EmojiZwjIntegrity, SkinToneVariationForgery,
+FilenameDisguise, RendererDivergence, HashInputStability, StreamSafeViolation,
+AiWatermarkDetectability, GlitchTokenScan, WordlistOrder,
+EmojiPresentationRegistry.
 
-3. **Bip39 scan-wiring (follow-up).** Bip39Canonical ships as a standalone,
-   crypto-context-gated detector in all ten ports; it is deliberately **not**
-   part of the default sweep. Wiring it behind a crypto-context gate in each
-   port's `scan`, plus a shared `fixtures/security/detectors/bip39_canonical.json`,
-   remains outstanding.
+**Reference-only (1):** SourceDisplayDivergence — rust
+`display/source_display_divergence.rs` exists; needs wiring review + fan-out to
+the other nine ports.
+
+**Bip39 scan-wiring (follow-up):** Bip39Canonical ships standalone and
+crypto-context-gated in all ten ports; it is deliberately not part of the default
+sweep. Wiring it behind a crypto-context gate in each port's `scan`, plus a
+shared `fixtures/security/detectors/bip39_canonical.json`, remains outstanding.
+
+## Casing keystone (already landed)
+
+`toLower` (UAX #21) is implemented and vouched in all ten ports — the shared
+primitive LocaleCaseInversion and CaseExpansionMismatch build on. So those two
+families skip the "build the casing dependency" step and go straight to the
+divergence-scan detector.
 
 ## Method (proven on rtl-injection, surrogate-reassembly, bip39, casing)
 
-1. Write/confirm the Rust reference against the Lean `detect_*` theorems.
-2. Transliterate to each remaining port, pinning the identical spot-check
-   vectors; keep the port's existing detector conventions (result struct,
-   sub-threat tag strings, module wiring).
+1. Write the reference implementation (Rust first) against the Lean `detect_*`
+   theorems; confirm every spot-check vector.
+2. Transliterate to each remaining port, pinning the identical vectors; keep the
+   port's existing detector conventions (result struct, sub-threat tag strings,
+   module wiring).
 3. Vouch each port by building and running its tests — `nix build .#unicode-<lang>`
-   where the derivation tests (go/jvm/dotnet/zig/swift/haskell), or `cargo test` /
-   `ctest` / native runners (rust/cpp/python/ts) — never "compiled, therefore
-   done".
-4. Update this matrix cell to `✓` only after the vouch passes.
+   for the ports whose derivation tests (go/jvm/dotnet/zig/swift/haskell), or
+   `cargo test` / `ctest` / native runners (rust/cpp/python/ts) — never
+   "compiled, therefore done".
+4. Flip this matrix cell to `✓` only after the vouch passes.
 
-## Suggested next order (hardest → easiest within the fan-out tier)
+## Suggested order
 
-AiWatermarkDetectability → NormalizationBomb → AdmissibilityFormDrift →
-IdentifierFormDrift → NfcIdempotenceWitness → EmojiZwjIntegrity →
-SkinToneVariationForgery → SourceDisplayDivergence → FilenameDisguise →
-RendererDivergence → HashInputStability → StreamSafeViolation →
-LocaleCaseInversion → CaseExpansionMismatch (the last two reuse the casing
-keystone directly).
+Start with the casing-dependent pair (LocaleCaseInversion, CaseExpansionMismatch)
+while the casing keystone is fresh, then proceed through the remaining families by
+dependency depth: the pure-scan detectors (StreamSafeViolation, HashInputStability,
+FilenameDisguise, RendererDivergence) before the ones that need new tables
+(EmojiZwjIntegrity, SkinToneVariationForgery, EmojiPresentationRegistry,
+GlitchTokenScan, WordlistOrder) or heavier normalization machinery
+(NormalizationBomb, NfcIdempotenceWitness, AdmissibilityFormDrift,
+IdentifierFormDrift, AiWatermarkDetectability).
