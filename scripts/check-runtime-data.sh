@@ -26,6 +26,7 @@ ruby_data_dir="${UNICODE_RUBY_DATA_DIR:-ports/ruby/data}"
 lua_data_dir="${UNICODE_LUA_DATA_DIR:-ports/lua/data}"
 php_data_dir="${UNICODE_PHP_DATA_DIR:-ports/php/data}"
 elixir_data_dir="${UNICODE_ELIXIR_DATA_DIR:-ports/elixir/priv/data}"
+erlang_data_dir="${UNICODE_ERLANG_DATA_DIR:-ports/erlang/priv/data}"
 
 usage() {
   cat <<'USAGE'
@@ -67,6 +68,7 @@ Environment:
   UNICODE_LUA_DATA_DIR=PATH
   UNICODE_PHP_DATA_DIR=PATH
   UNICODE_ELIXIR_DATA_DIR=PATH
+  UNICODE_ERLANG_DATA_DIR=PATH
 USAGE
 }
 
@@ -341,6 +343,9 @@ check_vendored_data_dir PHP "$php_data_dir"
 
 echo "== elixir runtime data =="
 check_vendored_data_dir Elixir "$elixir_data_dir"
+
+echo "== erlang runtime data =="
+check_vendored_data_dir Erlang "$erlang_data_dir"
 
 echo "== embedded port digest sync =="
 scripts/check-port-pinned-digests.sh

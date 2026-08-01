@@ -52,6 +52,7 @@
           pkgs.ruby
           pkgs.lua5_4
           pkgs.php
+          pkgs.beamPackages.erlang
           pkgs.beamPackages.elixir
           pkgs.dotnet-sdk_8
           pkgs.swift
@@ -230,6 +231,25 @@
           '';
         };
 
+        unicodeErlang = pkgs.stdenv.mkDerivation {
+          pname = "unicode-erlang";
+          version = runtimeVersion;
+          src = ./ports/erlang;
+          nativeBuildInputs = [ pkgs.beamPackages.erlang ];
+          dontConfigure = true;
+          buildPhase = ''
+            runHook preBuild
+            bash scripts/test.sh
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/share/unicode-erlang
+            cp -R priv scripts src test $out/share/unicode-erlang/
+            runHook postInstall
+          '';
+        };
+
         unicodeDotnet = pkgs.stdenv.mkDerivation {
           pname = "unicode-dotnet";
           version = runtimeVersion;
@@ -381,6 +401,7 @@
         packages.unicode-lua = unicodeLua;
         packages.unicode-php = unicodePhp;
         packages.unicode-elixir = unicodeElixir;
+        packages.unicode-erlang = unicodeErlang;
         packages.unicode-dotnet = unicodeDotnet;
         packages.unicode-swift = unicodeSwift;
         packages.unicode-zig = unicodeZig;
