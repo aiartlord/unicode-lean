@@ -82,6 +82,7 @@ export function configureSecurityDataReader(reader) {
   simpleUpperCache = undefined;
   casedRangesCache = undefined;
   softDottedRangesCache = undefined;
+  bip39WordlistCache = undefined;
 }
 
 export function configureSecurityData(data) {
@@ -1370,6 +1371,197 @@ export function toUpperCodepoints(input, locale = "default") {
     revPrefix.unshift(cp);
   }
   return out;
+}
+
+// ── bip39-canonical: BIP-39 mnemonic canonicalisation + wordlist checks ──────
+// Mirrors Unicode.Security.Crypto.Bip39Canonical. Canonical form is
+// NFKD -> toLower(default) -> collapse BIP-39 whitespace -> trim; detect runs
+// six probes in priority order over the input and its canonical words.
+
+// Declaration order matches Unicode.Generated.BIP39.allLanguages (English
+// first, so a multi-wordlist-covered input resolves to English).
+const BIP39_LANGUAGES = [
+  "english",
+  "japanese",
+  "korean",
+  "spanish",
+  "chinese_simplified",
+  "chinese_traditional",
+  "french",
+  "italian",
+  "czech",
+  "portuguese",
+];
+
+let bip39WordlistCache;
+
+function bip39Wordlist(language) {
+  if (bip39WordlistCache === undefined) {
+    bip39WordlistCache = new Map();
+  }
+  let entries = bip39WordlistCache.get(language);
+  if (entries === undefined) {
+    const raw = readDataFile(`bip39/${language}.txt`);
+    entries = new Set();
+    for (const line of raw.split("\n")) {
+      if (line !== "") {
+        entries.add([...line].map((ch) => ch.codePointAt(0)).join(","));
+      }
+    }
+    bip39WordlistCache.set(language, entries);
+  }
+  return entries;
+}
+
+function isInWordlist(language, word) {
+  return bip39Wordlist(language).has(word.join(","));
+}
+
+function wordlistsContaining(word) {
+  return BIP39_LANGUAGES.filter((language) => isInWordlist(language, word));
+}
+
+function uniqueLanguage(words) {
+  for (const language of BIP39_LANGUAGES) {
+    if (words.every((word) => isInWordlist(language, word))) {
+      return language;
+    }
+  }
+  return null;
+}
+
+function isBip39Whitespace(cp) {
+  return cp === 0x0020 || cp === 0x3000;
+}
+
+function collapseWhitespaceToSingle(cps) {
+  const out = [];
+  let inWs = false;
+  for (const cp of cps) {
+    if (isBip39Whitespace(cp)) {
+      if (!inWs) {
+        out.push(0x0020);
+      }
+      inWs = true;
+    } else {
+      out.push(cp);
+      inWs = false;
+    }
+  }
+  return out;
+}
+
+function trimLeadingTrailing(cps) {
+  let start = 0;
+  let end = cps.length;
+  while (start < end && cps[start] === 0x0020) start += 1;
+  while (end > start && cps[end - 1] === 0x0020) end -= 1;
+  return cps.slice(start, end);
+}
+
+export function bip39Canonical(cps) {
+  return trimLeadingTrailing(
+    collapseWhitespaceToSingle(toLowerCodepoints(toNfkdCodepoints(cps), "default")),
+  );
+}
+
+function splitBip39Words(canonical) {
+  const words = [];
+  let current = [];
+  for (const cp of canonical) {
+    if (cp === 0x0020) {
+      if (current.length > 0) {
+        words.push(current);
+        current = [];
+      }
+    } else {
+      current.push(cp);
+    }
+  }
+  if (current.length > 0) {
+    words.push(current);
+  }
+  return words;
+}
+
+function countTrailingWhitespace(cps) {
+  let count = 0;
+  for (let i = cps.length - 1; i >= 0; i -= 1) {
+    if (isBip39Whitespace(cps[i])) count += 1;
+    else break;
+  }
+  return count;
+}
+
+function firstUppercasePos(cps) {
+  for (let i = 0; i < cps.length; i += 1) {
+    if (cps[i] >= 0x41 && cps[i] <= 0x5a) return i;
+  }
+  return null;
+}
+
+function firstWhitespaceRunPos(cps) {
+  for (let i = 0; i < cps.length; i += 1) {
+    if (isBip39Whitespace(cps[i])) {
+      if (i === 0) return i;
+      if (i + 1 < cps.length && isBip39Whitespace(cps[i + 1])) return i;
+    }
+  }
+  return null;
+}
+
+function firstArrayDivergence(a, b) {
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i += 1) {
+    if (a[i] !== b[i]) return i;
+  }
+  if (a.length !== b.length) return n;
+  return null;
+}
+
+function arraysEqual(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+// Detect a non-canonical or wordlist-mismatched BIP-39 mnemonic. Six probes in
+// priority order (first hit wins), mirroring Bip39Canonical.detect.
+export function bip39Detect(cps) {
+  const canonical = bip39Canonical(cps);
+  const words = splitBip39Words(canonical);
+
+  const trailingCount = countTrailingWhitespace(cps);
+  const uppercasePos = firstUppercasePos(cps);
+  const whitespacePos = firstWhitespaceRunPos(cps);
+  const nfkd = toNfkdCodepoints(cps);
+  const nonNfkdPos = arraysEqual(cps, nfkd) ? null : firstArrayDivergence(cps, nfkd);
+
+  const wordlistsPerWord = words.map(wordlistsContaining);
+  const firstUnknownIdx = wordlistsPerWord.findIndex((langs) => langs.length === 0);
+
+  let classify;
+  if (trailingCount > 0) {
+    classify = { isClear: false, language: null, sub: "TrailingWhitespace", positions: [cps.length - trailingCount] };
+  } else if (uppercasePos !== null) {
+    classify = { isClear: false, language: null, sub: "MixedCase", positions: [uppercasePos] };
+  } else if (whitespacePos !== null) {
+    classify = { isClear: false, language: null, sub: "WhitespaceAnomaly", positions: [whitespacePos] };
+  } else if (nonNfkdPos !== null) {
+    classify = { isClear: false, language: null, sub: "NonNFKD", positions: [nonNfkdPos] };
+  } else if (firstUnknownIdx !== -1) {
+    classify = { isClear: false, language: null, sub: "WordlistMismatch", positions: [firstUnknownIdx] };
+  } else {
+    const unique = uniqueLanguage(words);
+    if (unique !== null) {
+      classify = { isClear: true, language: unique, sub: null, positions: [] };
+    } else {
+      classify = { isClear: false, language: null, sub: "LanguageAmbiguous", positions: [] };
+    }
+  }
+  return { input: cps, classify, canonicalForm: canonical, wordCount: words.length };
 }
 
 function stringFromCodepoints(input) {
