@@ -1,7 +1,7 @@
 # Detector coverage matrix — Unicode security families × language ports
 
 Tracks which of the 27 Lean-proven security-detector families are implemented in
-each of the 10 language ports. The Lean spec under `Unicode/Security/` is the
+each vouched language port. The Lean spec under `Unicode/Security/` is the
 source of truth and all 27 families are proven there; a port cell is "done" only
 when the detector is implemented byte-faithfully **and** vouched (built + its
 ground-truth vectors run, not merely compiled).
@@ -18,49 +18,66 @@ ground-truth vectors run, not merely compiled).
 
 Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 
-| Family (Lean module) | rust | python | cpp | go | jvm | ts | dotnet | swift | zig | haskell |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| TagBlockPayload | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| VariationSelectorPayload | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| ZeroWidthPayload | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| SurrogateReassembly | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| BidiControlBalance | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| NoncharacterControl | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| HomoglyphConfusable | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| MixedScriptAdmissibility | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| RtlInjection | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| ConfusableBidiCompound | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| CovertDisplayCompound | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| WidthClassConfusion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Bip39Canonical | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| SourceDisplayDivergence | ✓ | – | – | – | – | – | – | – | – | – |
-| LocaleCaseInversion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| CaseExpansionMismatch | – | – | – | – | – | – | – | – | – | – |
-| NfcIdempotenceWitness | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| NormalizationBomb | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| StreamSafeViolation | – | – | – | – | – | – | – | – | – | – |
-| IdentifierFormDrift | – | – | – | – | – | – | – | – | – | – |
-| AdmissibilityFormDrift | – | – | – | – | – | – | – | – | – | – |
-| EmojiZwjIntegrity | – | – | – | – | – | – | – | – | – | – |
-| SkinToneVariationForgery | – | – | – | – | – | – | – | – | – | – |
-| FilenameDisguise | – | – | – | – | – | – | – | – | – | – |
-| RendererDivergence | – | – | – | – | – | – | – | – | – | – |
-| HashInputStability | – | – | – | – | – | – | – | – | – | – |
-| AiWatermarkDetectability | – | – | – | – | – | – | – | – | – | – |
+| Family (Lean module) | rust | python | cpp | go | jvm | ts | dotnet | swift | zig | haskell | ruby | lua | php |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| TagBlockPayload | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| VariationSelectorPayload | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| ZeroWidthPayload | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| SurrogateReassembly | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| BidiControlBalance | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| NoncharacterControl | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| HomoglyphConfusable | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| MixedScriptAdmissibility | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| RtlInjection | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| ConfusableBidiCompound | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| CovertDisplayCompound | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| WidthClassConfusion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Bip39Canonical | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| SourceDisplayDivergence | ✓ | – | – | – | – | – | – | – | – | – | – | – | – |
+| LocaleCaseInversion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| CaseExpansionMismatch | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| NfcIdempotenceWitness | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| NormalizationBomb | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| StreamSafeViolation | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| IdentifierFormDrift | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| AdmissibilityFormDrift | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| EmojiZwjIntegrity | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| SkinToneVariationForgery | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| FilenameDisguise | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| RendererDivergence | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| HashInputStability | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| AiWatermarkDetectability | – | – | – | – | – | – | – | – | – | – | – | – | – |
 
-**Totals:** rust 17/27 · all other ports 16/27 · overall 161/270 cells. The 13
-core families plus LocaleCaseInversion, NormalizationBomb, and
-NfcIdempotenceWitness are complete and vouched across every port; everything
-below the line is spec-proven in Lean but not yet ported.
+**Totals:** rust 17/27 · all other vouched ports 16/27 · overall 209/351
+cells. The 13 core families plus LocaleCaseInversion, NormalizationBomb, and
+NfcIdempotenceWitness are complete and vouched across every listed port;
+everything below the line is spec-proven in Lean but not yet ported.
+
+## Interrupted new-port inventory
+
+The following language-family ports exist in the worktree but are **not** counted
+in the matrix until their source, policy wiring, and native fixture tests are
+complete. Many of these directories already contain copied `testdata/fixtures`;
+fixture presence is not coverage.
+
+| Port | Current source state | Counted? | Next completion target |
+|---|---|:--:|---|
+| ruby | Vouched at the 16/27 non-Rust baseline: native policy/decode/verdict fixture tests, shared detector fixture tests, form-detector vectors, Bip39Canonical vectors, and vendored-data parity pass. | yes | Track the new files so `nix build .#unicode-ruby` can vouch the flake package path. |
+| lua | Vouched at the 16/27 non-Rust baseline: native policy/decode/verdict fixture tests, shared detector fixture tests, form-detector vectors, Bip39Canonical vectors, and vendored-data parity pass. | yes | Track the new files so `nix build .#unicode-lua` can vouch the flake package path. |
+| php | Vouched at the 16/27 non-Rust baseline: native policy/decode/verdict fixture tests, shared detector fixture tests, form-detector vectors, Bip39Canonical vectors, and vendored-data parity pass. | yes | Track the new files so `nix build .#unicode-php` can vouch the flake package path. |
+| elixir | Early implementation: TagBlockPayload plus UCD/casing/noncharacter/UTF-8 support. No policy aggregator or native contract harness. | no | Continue core covert detectors, then policy and fixture tests. |
+| erlang | Support only: calculus/data/json/UCD/UTF-8 modules. No detector implementations found. | no | Start detector modules from the core covert layer. |
+| cobol | Data and fixture copies only. No COBOL source implementation found. | no | Establish package/source layout, then begin core covert detectors. |
 
 ## Remaining work
 
 11 detector families are unported. Each needs a reference implementation verified
-against the Lean `detect_*` theorems, then a fan-out to all ten ports, each vouched.
+against the Lean `detect_*` theorems, then a fan-out to all listed ports, each
+vouched.
 
 **Reference-only (1):** SourceDisplayDivergence
 (`display/source_display_divergence.rs`) — rust reference exists and is vouched;
-needs fan-out to the other nine ports.
+needs fan-out to the other 12 listed ports.
 
 **Not started in any port (10):** CaseExpansionMismatch, StreamSafeViolation,
 IdentifierFormDrift, AdmissibilityFormDrift, EmojiZwjIntegrity,
@@ -68,13 +85,13 @@ SkinToneVariationForgery, FilenameDisguise, RendererDivergence,
 HashInputStability, AiWatermarkDetectability.
 
 **Bip39 scan-wiring (follow-up):** Bip39Canonical ships standalone and
-crypto-context-gated in all ten ports; it is deliberately not part of the default
+crypto-context-gated in all listed ports; it is deliberately not part of the default
 sweep. Wiring it behind a crypto-context gate in each port's `scan`, plus a shared
 `fixtures/security/detectors/bip39_canonical.json`, remains outstanding.
 
 ## Casing keystone (already landed)
 
-`toLower` (UAX #21) is implemented and vouched in all ten ports — the shared
+`toLower` (UAX #21) is implemented and vouched in all listed ports — the shared
 primitive LocaleCaseInversion and CaseExpansionMismatch build on. Those two
 families skip the "build the casing dependency" step and go straight to the
 divergence-scan detector.

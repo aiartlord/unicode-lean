@@ -1,0 +1,135 @@
+{
+  "schema": 1,
+  "contract": "unicode-security-policy-v0",
+  "cases": [
+    {
+      "name": "ascii-gateway-enforce",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input": [72, 101, 108, 108, 111],
+      "action": "allow",
+      "required_findings": []
+    },
+    {
+      "name": "noncharacter-gateway-reject",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input": [64976],
+      "action": "reject",
+      "required_findings": [
+        "unicode.security.C.noncharacter-control.Noncharacter"
+      ]
+    },
+    {
+      "name": "tag-block-gateway-reject",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input": [917569, 917570],
+      "action": "reject",
+      "required_findings": [
+        "unicode.security.C.tag-block-payload.DirectAscii"
+      ]
+    },
+    {
+      "name": "tag-block-gateway-observe",
+      "profile": "gateway-header",
+      "mode": "observe",
+      "input": [917569, 917570],
+      "action": "observe",
+      "required_findings": [
+        "unicode.security.C.tag-block-payload.DirectAscii"
+      ]
+    },
+    {
+      "name": "tag-block-username-quarantine",
+      "profile": "username",
+      "mode": "enforce",
+      "input": [917569, 917570],
+      "action": "quarantine",
+      "required_findings": [
+        "unicode.security.C.tag-block-payload.DirectAscii"
+      ]
+    },
+    {
+      "name": "zero-width-display-name-report-only",
+      "profile": "display-name",
+      "mode": "enforce",
+      "input": [97, 8203, 98],
+      "action": "allow",
+      "required_findings": [
+        "unicode.security.C.zero-width-payload.BareZeroWidth"
+      ]
+    },
+    {
+      "name": "zero-width-source-strict-reject",
+      "profile": "source-code",
+      "mode": "strict",
+      "input": [97, 8203, 98],
+      "action": "reject",
+      "required_findings": [
+        "unicode.security.C.zero-width-payload.BareZeroWidth"
+      ]
+    },
+    {
+      "name": "bidi-source-reject",
+      "profile": "source-code",
+      "mode": "enforce",
+      "input": [105, 102, 32, 8238, 41, 123],
+      "action": "reject",
+      "required_findings": [
+        "unicode.security.C.bidi-control-balance.UnbalancedEmbedding"
+      ]
+    },
+    {
+      "name": "nethereum-targetmatch-gateway-reject",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input": [78, 101, 116, 104, 101, 114, 1077, 117, 109],
+      "action": "reject",
+      "required_findings": [
+        "unicode.security.I.homoglyph-confusable.TargetMatch",
+        "unicode.security.I.mixed-script-admissibility.LatinCyrillic"
+      ]
+    },
+    {
+      "name": "decomposition-swap-gateway-reject",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input": [101, 769],
+      "action": "reject",
+      "required_findings": [
+        "unicode.security.I.homoglyph-confusable.DecompositionSwap"
+      ]
+    },
+    {
+      "name": "cross-script-gateway-reject",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input": [97, 98, 945, 946],
+      "action": "reject",
+      "required_findings": [
+        "unicode.security.I.mixed-script-admissibility.LatinGreek"
+      ]
+    },
+    {
+      "name": "math-alpha-gateway-reject",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input": [119808],
+      "action": "reject",
+      "required_findings": [
+        "unicode.security.I.homoglyph-confusable.MathAlpha"
+      ]
+    },
+    {
+      "name": "fullwidth-gateway-reject",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input": [65313],
+      "action": "reject",
+      "required_findings": [
+        "unicode.security.I.homoglyph-confusable.WidthClass"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+<?php
+
+declare(strict_types=1);
+
+// PSR-4-style autoloader for the `UnicodePhp` namespace, mapping to this
+// `src/` directory. No Composer / network dependency: the security suite is a
+// self-contained deployment surface that reads only files under `ports/php/`.
+
+spl_autoload_register(static function (string $class): void {
+    $shared = [
+        'UnicodePhp\\Utf8RejectKind' => __DIR__ . '/Strict.php',
+        'UnicodePhp\\Security\\Family' => __DIR__ . '/Security/Calculus.php',
+        'UnicodePhp\\Security\\Severity' => __DIR__ . '/Security/Calculus.php',
+        'UnicodePhp\\Security\\AdversaryTier' => __DIR__ . '/Security/Calculus.php',
+        'UnicodePhp\\Security\\ClassificationKind' => __DIR__ . '/Security/Calculus.php',
+        'UnicodePhp\\Security\\Calculus' => __DIR__ . '/Security/Calculus.php',
+        'UnicodePhp\\Security\\HazardPosition' => __DIR__ . '/Security/Calculus.php',
+        'UnicodePhp\\Security\\KeyValueAttribution' => __DIR__ . '/Security/Calculus.php',
+        'UnicodePhp\\Security\\Identity\\Locale' => __DIR__ . '/Security/Identity/Ucd.php',
+        'UnicodePhp\\Security\\Identity\\BidiStrong' => __DIR__ . '/Security/Identity/Ucd.php',
+        'UnicodePhp\\Security\\Identity\\RestrictionLevel' => __DIR__ . '/Security/Identity/Ucd.php',
+    ];
+    if (isset($shared[$class])) {
+        require $shared[$class];
+        return;
+    }
+
+    $prefix = 'UnicodePhp\\';
+    $prefixLength = strlen($prefix);
+    if (strncmp($class, $prefix, $prefixLength) !== 0) {
+        return;
+    }
+    $relative = substr($class, $prefixLength);
+    $path = __DIR__ . '/' . str_replace('\\', '/', $relative) . '.php';
+    if (is_file($path)) {
+        require $path;
+    }
+});

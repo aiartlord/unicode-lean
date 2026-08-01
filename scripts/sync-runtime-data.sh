@@ -21,6 +21,9 @@ typescript_dir="${UNICODE_TYPESCRIPT_DIR:-ports/typescript}"
 dotnet_dir="${UNICODE_DOTNET_DIR:-ports/dotnet}"
 swift_dir="${UNICODE_SWIFT_DIR:-ports/swift}"
 zig_dir="${UNICODE_ZIG_DIR:-ports/zig}"
+ruby_dir="${UNICODE_RUBY_DIR:-ports/ruby}"
+lua_dir="${UNICODE_LUA_DIR:-ports/lua}"
+php_dir="${UNICODE_PHP_DIR:-ports/php}"
 
 root_manifest_files=(
   CaseFolding.txt
@@ -299,6 +302,41 @@ swift_files=(
   bip39/spanish.txt
 )
 
+ruby_files=(
+  CaseFolding.txt
+  CompositionExclusions.txt
+  DerivedBidiClass.txt
+  DerivedCoreProperties.txt
+  IdentifierStatus.txt
+  KnownAttackTargets.txt
+  PropertyValueAliases.txt
+  ScriptExtensions.txt
+  Scripts.txt
+  SpecialCasing.txt
+  StandardizedVariants.txt
+  UnicodeData.txt
+  confusables.txt
+  emoji-variation-sequences.txt
+  bip39/chinese_simplified.txt
+  bip39/chinese_traditional.txt
+  bip39/czech.txt
+  bip39/english.txt
+  bip39/french.txt
+  bip39/italian.txt
+  bip39/japanese.txt
+  bip39/korean.txt
+  bip39/portuguese.txt
+  bip39/spanish.txt
+)
+
+lua_files=(
+  "${ruby_files[@]}"
+)
+
+php_files=(
+  "${ruby_files[@]}"
+)
+
 usage() {
   cat <<'USAGE'
 Usage: scripts/sync-runtime-data.sh [--check|--apply]
@@ -319,6 +357,9 @@ Environment:
   UNICODE_DOTNET_DIR=PATH
   UNICODE_SWIFT_DIR=PATH
   UNICODE_ZIG_DIR=PATH
+  UNICODE_RUBY_DIR=PATH
+  UNICODE_LUA_DIR=PATH
+  UNICODE_PHP_DIR=PATH
 
 Notes:
   - This script does not download Unicode data.
@@ -614,6 +655,26 @@ check_zig() {
   )
 }
 
+sync_data_dir() {
+  local dir="$1"
+  shift
+  local file
+  for file in "$@"; do
+    copy_file "data/$file" "$dir/$file"
+  done
+  write_manifest "$dir" "$@"
+}
+
+check_data_dir() {
+  local dir="$1"
+  shift
+  local file
+  for file in "$@"; do
+    check_same_file "data/$file" "$dir/$file"
+  done
+  check_manifest "$dir"
+}
+
 if [[ "$mode" == "apply" ]]; then
   write_manifest data "${root_manifest_files[@]}"
   sync_python
@@ -626,6 +687,9 @@ if [[ "$mode" == "apply" ]]; then
   sync_dotnet
   sync_swift
   sync_zig
+  sync_data_dir "$ruby_dir/data" "${ruby_files[@]}"
+  sync_data_dir "$lua_dir/data" "${lua_files[@]}"
+  sync_data_dir "$php_dir/data" "${php_files[@]}"
   scripts/check-runtime-data.sh
   echo "clean: runtime data synchronized from canonical UCD inputs"
 else
@@ -640,6 +704,9 @@ else
   check_dotnet
   check_swift
   check_zig
+  check_data_dir "$ruby_dir/data" "${ruby_files[@]}"
+  check_data_dir "$lua_dir/data" "${lua_files[@]}"
+  check_data_dir "$php_dir/data" "${php_files[@]}"
   scripts/check-runtime-data.sh
   echo "clean: runtime data sync check passed"
 fi

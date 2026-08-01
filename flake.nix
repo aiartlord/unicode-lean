@@ -49,6 +49,9 @@
           pkgs.go
           pkgs.jdk
           pkgs.nodejs
+          pkgs.ruby
+          pkgs.lua5_4
+          pkgs.php
           pkgs.dotnet-sdk_8
           pkgs.swift
           pkgs.swiftpm
@@ -141,6 +144,65 @@
             runHook preInstall
             mkdir -p $out/share/unicode-typescript
             cp -R README.md package.json src test testdata $out/share/unicode-typescript/
+            runHook postInstall
+          '';
+        };
+
+        unicodeRuby = pkgs.stdenv.mkDerivation {
+          pname = "unicode-ruby";
+          version = runtimeVersion;
+          src = ./ports/ruby;
+          nativeBuildInputs = [ pkgs.ruby ];
+          dontConfigure = true;
+          buildPhase = ''
+            runHook preBuild
+            find lib -name '*.rb' -print0 | xargs -0 -n1 ruby -c
+            bash scripts/test.sh
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/share/unicode-ruby
+            cp -R data lib scripts test testdata $out/share/unicode-ruby/
+            runHook postInstall
+          '';
+        };
+
+        unicodeLua = pkgs.stdenv.mkDerivation {
+          pname = "unicode-lua";
+          version = runtimeVersion;
+          src = ./ports/lua;
+          nativeBuildInputs = [ pkgs.lua5_4 ];
+          dontConfigure = true;
+          buildPhase = ''
+            runHook preBuild
+            bash scripts/test.sh
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/share/unicode-lua
+            cp -R data scripts src test testdata $out/share/unicode-lua/
+            runHook postInstall
+          '';
+        };
+
+        unicodePhp = pkgs.stdenv.mkDerivation {
+          pname = "unicode-php";
+          version = runtimeVersion;
+          src = ./ports/php;
+          nativeBuildInputs = [ pkgs.php ];
+          dontConfigure = true;
+          buildPhase = ''
+            runHook preBuild
+            find src test -name '*.php' -print0 | xargs -0 -n1 php -l
+            bash scripts/test.sh
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/share/unicode-php
+            cp -R data scripts src test testdata $out/share/unicode-php/
             runHook postInstall
           '';
         };
@@ -292,6 +354,9 @@
         packages.unicode-jvm = unicodeJvm;
         packages.unicode-go = unicodeGo;
         packages.unicode-typescript = unicodeTypescript;
+        packages.unicode-ruby = unicodeRuby;
+        packages.unicode-lua = unicodeLua;
+        packages.unicode-php = unicodePhp;
         packages.unicode-dotnet = unicodeDotnet;
         packages.unicode-swift = unicodeSwift;
         packages.unicode-zig = unicodeZig;

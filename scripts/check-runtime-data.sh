@@ -22,6 +22,9 @@ typescript_dir="${UNICODE_TYPESCRIPT_DIR:-ports/typescript}"
 dotnet_dir="${UNICODE_DOTNET_DIR:-ports/dotnet}"
 swift_dir="${UNICODE_SWIFT_DIR:-ports/swift}"
 zig_dir="${UNICODE_ZIG_DIR:-ports/zig}"
+ruby_data_dir="${UNICODE_RUBY_DATA_DIR:-ports/ruby/data}"
+lua_data_dir="${UNICODE_LUA_DATA_DIR:-ports/lua/data}"
+php_data_dir="${UNICODE_PHP_DATA_DIR:-ports/php/data}"
 
 usage() {
   cat <<'USAGE'
@@ -59,6 +62,9 @@ Environment:
   UNICODE_DOTNET_DIR=PATH
   UNICODE_SWIFT_DIR=PATH
   UNICODE_ZIG_DIR=PATH
+  UNICODE_RUBY_DATA_DIR=PATH
+  UNICODE_LUA_DATA_DIR=PATH
+  UNICODE_PHP_DATA_DIR=PATH
 USAGE
 }
 
@@ -181,6 +187,44 @@ while [[ $# -gt 0 ]]; do
   shift
 done
 
+check_vendored_data_dir() {
+  local label="$1"
+  local dir="$2"
+  if [[ ! -d "$dir" ]]; then
+    echo "missing $label data directory at $dir" >&2
+    exit 1
+  fi
+  if [[ ! -f "$dir/SHA256SUMS" ]]; then
+    echo "missing $label SHA256SUMS at $dir/SHA256SUMS" >&2
+    exit 1
+  fi
+  (
+    cd "$dir"
+    sha256sum -c --strict --quiet SHA256SUMS
+  )
+  local count=0
+  while IFS= read -r vendored_file; do
+    local rel="${vendored_file#"$dir"/}"
+    local canonical_file="data/$rel"
+    if [[ ! -e "$canonical_file" ]]; then
+      echo "missing canonical runtime data file for $label vendored data: $canonical_file" >&2
+      exit 1
+    fi
+    if ! cmp -s "$canonical_file" "$vendored_file"; then
+      echo "$label vendored data drift: $vendored_file differs from $canonical_file" >&2
+      echo "refresh with: scripts/sync-runtime-data.sh --apply" >&2
+      exit 1
+    fi
+    count=$((count + 1))
+  done < <(find "$dir" -type f ! -name SHA256SUMS | sort)
+
+  if [[ "$count" -eq 0 ]]; then
+    echo "FATAL: no $label vendored data files found under $dir" >&2
+    exit 1
+  fi
+  echo "clean: $label runtime data matches canonical data/ inputs ($count file(s))"
+}
+
 if [[ "$run_haskell" -eq 1 ]]; then
   echo "== haskell runtime data =="
   if [[ ! -x "$haskell_dir/scripts/check-ucd-hashes.sh" ]]; then
@@ -283,6 +327,15 @@ if [[ "$run_zig" -eq 1 ]]; then
   "$zig_dir/scripts/check-data-hashes.sh"
   "$zig_dir/scripts/check-generated-confusables.sh"
 fi
+
+echo "== ruby runtime data =="
+check_vendored_data_dir Ruby "$ruby_data_dir"
+
+echo "== lua runtime data =="
+check_vendored_data_dir Lua "$lua_data_dir"
+
+echo "== php runtime data =="
+check_vendored_data_dir PHP "$php_data_dir"
 
 echo "== embedded port digest sync =="
 scripts/check-port-pinned-digests.sh

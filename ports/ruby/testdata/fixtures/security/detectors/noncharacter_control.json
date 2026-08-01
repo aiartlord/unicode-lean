@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "family": "noncharacter-control",
+  "cases": [
+    {
+      "name": "ascii-clear",
+      "input": [72, 101, 108, 108, 111],
+      "required_findings": []
+    },
+    {
+      "name": "bmp-noncharacter",
+      "input": [64976],
+      "required_findings": [
+        "unicode.security.C.noncharacter-control.Noncharacter"
+      ]
+    },
+    {
+      "name": "plane-end-noncharacter",
+      "input": [1114111],
+      "required_findings": [
+        "unicode.security.C.noncharacter-control.Noncharacter"
+      ]
+    },
+    {
+      "name": "c0-control",
+      "input": [65, 0, 66],
+      "required_findings": [
+        "unicode.security.C.noncharacter-control.C0Control"
+      ]
+    },
+    {
+      "name": "c1-control",
+      "input": [65, 128, 66],
+      "required_findings": [
+        "unicode.security.C.noncharacter-control.C1Control"
+      ]
+    },
+    {
+      "name": "structured-whitespace-clear",
+      "input": [65, 9, 10, 13, 66],
+      "required_findings": []
+    }
+  ]
+}
