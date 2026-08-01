@@ -1,3 +1,4 @@
+local unpack = table.unpack or unpack
 local h = require("test_helper")
 local locale = require("unicode_lua.security.form.locale_case_inversion")
 local nfc = require("unicode_lua.security.form.nfc_idempotence_witness")
@@ -38,9 +39,9 @@ local abandon = { 0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E }
 local about = { 0x61, 0x62, 0x6F, 0x75, 0x74 }
 h.assert_equal(bip39.bip39_canonical({ 0x61, 0x20, 0x20, 0x62 }), { 0x61, 0x20, 0x62 }, "bip39 collapse")
 h.assert_equal(bip39.bip39_canonical({ 0x41 }), { 0x61 }, "bip39 lower")
-h.assert_equal(bip39.detect({ table.unpack(abandon), 0x20 }).sub, "TrailingWhitespace", "bip39 trailing")
+h.assert_equal(bip39.detect({ unpack(abandon), 0x20 }).sub, "TrailingWhitespace", "bip39 trailing")
 h.assert_equal(bip39.detect({ 0x41, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E }).sub, "MixedCase", "bip39 case")
-local double_ws = { table.unpack(abandon) }
+local double_ws = { unpack(abandon) }
 double_ws[#double_ws + 1] = 0x20
 double_ws[#double_ws + 1] = 0x20
 for _, cp in ipairs(about) do double_ws[#double_ws + 1] = cp end

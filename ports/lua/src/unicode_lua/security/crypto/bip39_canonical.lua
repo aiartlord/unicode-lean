@@ -1,6 +1,17 @@
 local datapath = require("unicode_lua.datapath")
 local casing = require("unicode_lua.security.casing")
 local ucd = require("unicode_lua.security.identity.ucd")
+local utf8mod = require("unicode_lua.utf8")
+
+-- LuaJIT is Lua 5.1: the 5.3 `utf8` stdlib is absent, so decode data-file
+-- lines to codepoints with the port's own UTF-8 decoder.
+local function line_codepoints(line)
+  local bytes = {}
+  for i = 1, #line do
+    bytes[i] = line:byte(i)
+  end
+  return utf8mod.decode_to_codepoints(bytes)
+end
 
 local M = {}
 
@@ -27,10 +38,7 @@ local function wordlist_set(raw)
   local set = {}
   for line in (raw .. "\n"):gmatch("([^\n]*)\n") do
     if line ~= "" then
-      local cps = {}
-      for _, cp in utf8.codes(line) do
-        cps[#cps + 1] = cp
-      end
+      local cps = line_codepoints(line)
       set[key(cps)] = true
     end
   end

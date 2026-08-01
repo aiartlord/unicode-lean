@@ -14,6 +14,7 @@ local covert_display = require("unicode_lua.security.boundary.covert_display_com
 local Family = calculus.Family
 local Severity = calculus.Severity
 local ClassificationKind = calculus.ClassificationKind
+local unpack = table.unpack or unpack
 
 local M = {}
 
@@ -328,7 +329,7 @@ function M.scan(profile, mode, input)
     push_finding(findings, Family.CovertDisplayCompound, ClassificationKind.Hazard, cd.sub, cd.positions)
   end
 
-  return { input = { table.unpack(input) }, profile = profile, mode = mode, action = select_action(profile, mode, findings), findings = findings, normalized = nil }
+  return { input = { unpack(input) }, profile = profile, mode = mode, action = select_action(profile, mode, findings), findings = findings, normalized = nil }
 end
 
 local function malformed_decode_verdict(profile, mode, family, sub, offset)

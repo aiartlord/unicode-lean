@@ -1,7 +1,19 @@
 local datapath = require("unicode_lua.datapath")
 local calculus = require("unicode_lua.security.calculus")
 local ucd = require("unicode_lua.security.identity.ucd")
+local utf8mod = require("unicode_lua.utf8")
 
+-- LuaJIT is Lua 5.1: the 5.3 `utf8` stdlib is absent, so decode data-file
+-- lines to codepoints with the port's own UTF-8 decoder.
+local function line_codepoints(line)
+  local bytes = {}
+  for i = 1, #line do
+    bytes[i] = line:byte(i)
+  end
+  return utf8mod.decode_to_codepoints(bytes)
+end
+
+local unpack = table.unpack or unpack
 local ClassificationKind = calculus.ClassificationKind
 local M = {}
 
@@ -88,7 +100,7 @@ function M.skeleton(input)
 end
 
 function M.iterated_skeleton(input)
-  local current = { table.unpack(input) }
+  local current = { unpack(input) }
   while true do
     local next_value = M.skeleton(current)
     if #next_value == #current then
@@ -134,10 +146,7 @@ local function parse_targets()
   for raw in (datapath.read("KnownAttackTargets.txt") .. "\n"):gmatch("([^\n]*)\n") do
     local line = trim(raw)
     if line ~= "" and line:sub(1, 1) ~= "#" then
-      local cps = {}
-      for _, cp in utf8.codes(line) do
-        cps[#cps + 1] = cp
-      end
+      local cps = line_codepoints(line)
       out[#out + 1] = { name = line, cps = cps, letters = letter_skeleton_from_iterated(M.iterated_skeleton(cps)) }
     end
   end
