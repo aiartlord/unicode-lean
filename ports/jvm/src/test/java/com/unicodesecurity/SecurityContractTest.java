@@ -13,6 +13,7 @@ public final class SecurityContractTest {
     testCovertDisplayCompound();
     testNfkNormalization();
     testCasing();
+    testBip39();
     testConfusableBidiCompound();
     testSurrogateReassembly();
     testRtlInjection();
@@ -101,6 +102,50 @@ public final class SecurityContractTest {
     assertEquals(intList(new int[] {0x0069, 0x0307}),
         Security.toLower(Security.CasingLocale.DEFAULT, intList(new int[] {0x0130})), "toLower dotted-I default");
     System.out.println("clean: JVM toLower 6-theorem spot-check passes");
+  }
+
+  // Ground truth: the detect spot-check theorems in Bip39CanonicalVectorsDetect.
+  private static void testBip39() {
+    List<Integer> abandon = intList(new int[] {0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E});
+    List<Integer> about = intList(new int[] {0x61, 0x62, 0x6F, 0x75, 0x74});
+
+    List<Integer> trailing = new ArrayList<>(abandon);
+    trailing.add(0x20);
+    assertEquals("TrailingWhitespace", Security.bip39CanonicalDetect(trailing).subThreat(), "bip39 trailing");
+    assertEquals(List.of(7), Security.bip39CanonicalDetect(trailing).positions(), "bip39 trailing pos");
+    assertEquals("MixedCase",
+        Security.bip39CanonicalDetect(intList(new int[] {0x41, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E})).subThreat(),
+        "bip39 mixed");
+    List<Integer> dbl = new ArrayList<>(abandon);
+    dbl.add(0x20);
+    dbl.add(0x20);
+    dbl.addAll(about);
+    assertEquals("WhitespaceAnomaly", Security.bip39CanonicalDetect(dbl).subThreat(), "bip39 double");
+    List<Integer> lead = new ArrayList<>();
+    lead.add(0x20);
+    lead.addAll(abandon);
+    assertEquals("WhitespaceAnomaly", Security.bip39CanonicalDetect(lead).subThreat(), "bip39 leading");
+    assertEquals("NonNFKD", Security.bip39CanonicalDetect(intList(new int[] {0xFB00})).subThreat(), "bip39 ligature");
+    assertEquals("NonNFKD",
+        Security.bip39CanonicalDetect(intList(new int[] {0x61, 0x00A0, 0x62})).subThreat(), "bip39 nbsp");
+    assertEquals("WordlistMismatch",
+        Security.bip39CanonicalDetect(intList(new int[] {0x71, 0x7A, 0x71, 0x7A})).subThreat(), "bip39 mismatch");
+
+    Security.Bip39CanonicalResult empty = Security.bip39CanonicalDetect(List.of());
+    assertEquals(null, empty.subThreat(), "bip39 empty sub");
+    assertEquals("english", empty.language(), "bip39 empty lang");
+
+    List<Integer> mnemonic = new ArrayList<>();
+    for (int i = 0; i < 11; i++) {
+      mnemonic.addAll(abandon);
+      mnemonic.add(0x20);
+    }
+    mnemonic.addAll(about);
+    Security.Bip39CanonicalResult verdict = Security.bip39CanonicalDetect(mnemonic);
+    assertEquals(null, verdict.subThreat(), "bip39 12word sub");
+    assertEquals("english", verdict.language(), "bip39 12word lang");
+    assertEquals(12, verdict.wordCount(), "bip39 12word count");
+    System.out.println("clean: JVM bip39-canonical detect spot-check passes");
   }
 
   private static List<Integer> intList(int[] codepoints) {

@@ -958,6 +958,150 @@ public final class Security {
     return out;
   }
 
+  // ── bip39-canonical: BIP-39 mnemonic canonicalisation + wordlist checks ────
+  // Mirrors Unicode.Security.Crypto.Bip39Canonical.
+
+  private static final List<String> BIP39_LANGUAGES = List.of(
+      "english", "japanese", "korean", "spanish", "chinese_simplified",
+      "chinese_traditional", "french", "italian", "czech", "portuguese");
+
+  private static List<Map.Entry<String, Set<List<Integer>>>> bip39WordlistCache;
+
+  private static synchronized List<Map.Entry<String, Set<List<Integer>>>> bip39Wordlists() {
+    if (bip39WordlistCache == null) {
+      List<Map.Entry<String, Set<List<Integer>>>> out = new ArrayList<>();
+      for (String lang : BIP39_LANGUAGES) {
+        Set<List<Integer>> set = new HashSet<>();
+        for (String line : readResource("bip39/" + lang + ".txt").split("\n", -1)) {
+          if (!line.isEmpty()) set.add(line.codePoints().boxed().toList());
+        }
+        out.add(Map.entry(lang, set));
+      }
+      bip39WordlistCache = out;
+    }
+    return bip39WordlistCache;
+  }
+
+  public record Bip39CanonicalResult(
+      String subThreat, List<Integer> positions, String language,
+      List<Integer> canonical, int wordCount) {}
+
+  private static boolean isBip39Whitespace(int cp) {
+    return cp == 0x0020 || cp == 0x3000;
+  }
+
+  private static List<Integer> collapseBip39Whitespace(List<Integer> cps) {
+    List<Integer> out = new ArrayList<>();
+    boolean inWs = false;
+    for (int cp : cps) {
+      if (isBip39Whitespace(cp)) {
+        if (!inWs) out.add(0x0020);
+        inWs = true;
+      } else {
+        out.add(cp);
+        inWs = false;
+      }
+    }
+    return out;
+  }
+
+  private static List<Integer> trimBip39(List<Integer> cps) {
+    int start = 0;
+    int end = cps.size();
+    while (start < end && cps.get(start) == 0x0020) start++;
+    while (end > start && cps.get(end - 1) == 0x0020) end--;
+    return new ArrayList<>(cps.subList(start, end));
+  }
+
+  private static List<Integer> bip39CanonicalForm(List<Integer> cps) {
+    List<Integer> lowered = toLower(CasingLocale.DEFAULT, toNfkd(cps));
+    return trimBip39(collapseBip39Whitespace(lowered));
+  }
+
+  private static List<List<Integer>> bip39SplitWords(List<Integer> cps) {
+    List<List<Integer>> words = new ArrayList<>();
+    List<Integer> current = new ArrayList<>();
+    for (int cp : cps) {
+      if (cp == 0x0020) {
+        if (!current.isEmpty()) {
+          words.add(current);
+          current = new ArrayList<>();
+        }
+      } else {
+        current.add(cp);
+      }
+    }
+    if (!current.isEmpty()) words.add(current);
+    return words;
+  }
+
+  // Six probes in priority order (first hit wins), mirroring
+  // Bip39Canonical.detect.
+  public static Bip39CanonicalResult bip39CanonicalDetect(List<Integer> input) {
+    List<Integer> canonical = bip39CanonicalForm(input);
+    List<List<Integer>> words = bip39SplitWords(canonical);
+    int wordCount = words.size();
+
+    int trailing = 0;
+    for (int i = input.size() - 1; i >= 0; i--) {
+      if (isBip39Whitespace(input.get(i))) trailing++;
+      else break;
+    }
+    if (trailing > 0) {
+      return new Bip39CanonicalResult(
+          "TrailingWhitespace", List.of(input.size() - trailing), null, canonical, wordCount);
+    }
+    for (int i = 0; i < input.size(); i++) {
+      int cp = input.get(i);
+      if (cp >= 0x41 && cp <= 0x5A) {
+        return new Bip39CanonicalResult("MixedCase", List.of(i), null, canonical, wordCount);
+      }
+    }
+    for (int i = 0; i < input.size(); i++) {
+      if (isBip39Whitespace(input.get(i))
+          && (i == 0 || (i + 1 < input.size() && isBip39Whitespace(input.get(i + 1))))) {
+        return new Bip39CanonicalResult("WhitespaceAnomaly", List.of(i), null, canonical, wordCount);
+      }
+    }
+    List<Integer> nfkd = toNfkd(input);
+    if (!input.equals(nfkd)) {
+      int limit = Math.min(input.size(), nfkd.size());
+      int pos = limit;
+      for (int i = 0; i < limit; i++) {
+        if (!input.get(i).equals(nfkd.get(i))) {
+          pos = i;
+          break;
+        }
+      }
+      return new Bip39CanonicalResult("NonNFKD", List.of(pos), null, canonical, wordCount);
+    }
+    for (int idx = 0; idx < words.size(); idx++) {
+      boolean found = false;
+      for (Map.Entry<String, Set<List<Integer>>> entry : bip39Wordlists()) {
+        if (entry.getValue().contains(words.get(idx))) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        return new Bip39CanonicalResult("WordlistMismatch", List.of(idx), null, canonical, wordCount);
+      }
+    }
+    for (Map.Entry<String, Set<List<Integer>>> entry : bip39Wordlists()) {
+      boolean all = true;
+      for (List<Integer> word : words) {
+        if (!entry.getValue().contains(word)) {
+          all = false;
+          break;
+        }
+      }
+      if (all) {
+        return new Bip39CanonicalResult(null, List.of(), entry.getKey(), canonical, wordCount);
+      }
+    }
+    return new Bip39CanonicalResult("LanguageAmbiguous", List.of(), null, canonical, wordCount);
+  }
+
   private static long composeKey(int d, int c) {
     return ((long) d << 32) | (c & 0xFFFFFFFFL);
   }
@@ -1331,7 +1475,17 @@ public final class Security {
       Map.entry("UnicodeData.txt", "2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c"),
       Map.entry("CompositionExclusions.txt", "2f239196ef3b5b61db5cc476e9bd80f534d15aa1b74e1be1dea5d042a344c85f"),
       Map.entry("DerivedCoreProperties.txt", "24c7fed1195c482faaefd5c1e7eb821c5ee1fb6de07ecdbaa64b56a99da22c08"),
-      Map.entry("SpecialCasing.txt", "efc25faf19de21b92c1194c111c932e03d2a5eaf18194e33f1156e96de4c9588"));
+      Map.entry("SpecialCasing.txt", "efc25faf19de21b92c1194c111c932e03d2a5eaf18194e33f1156e96de4c9588"),
+      Map.entry("bip39/chinese_simplified.txt", "5c5942792bd8340cb8b27cd592f1015edf56a8c5b26276ee18a482428e7c5726"),
+      Map.entry("bip39/chinese_traditional.txt", "417b26b3d8500a4ae3d59717d7011952db6fc2fb84b807f3f94ac734e89c1b5f"),
+      Map.entry("bip39/czech.txt", "7e80e161c3e93d9554c2efb78d4e3cebf8fc727e9c52e03b83b94406bdcc95fc"),
+      Map.entry("bip39/english.txt", "2f5eed53a4727b4bf8880d8f3f199efc90e58503646d9ff8eff3a2ed3b24dbda"),
+      Map.entry("bip39/french.txt", "ebc3959ab7801a1df6bac4fa7d970652f1df76b683cd2f4003c941c63d517e59"),
+      Map.entry("bip39/italian.txt", "d392c49fdb700a24cd1fceb237c1f65dcc128f6b34a8aacb58b59384b5c648c2"),
+      Map.entry("bip39/japanese.txt", "2eed0aef492291e061633d7ad8117f1a2b03eb80a29d0e4e3117ac2528d05ffd"),
+      Map.entry("bip39/korean.txt", "9e95f86c167de88f450f0aaf89e87f6624a57f973c67b516e338e8e8b8897f60"),
+      Map.entry("bip39/portuguese.txt", "2685e9c194c82ae67e10ba59d9ea5345a23dc093e92276fc5361f6667d79cd3f"),
+      Map.entry("bip39/spanish.txt", "46846a5a0139d1e3cb77293e521c2865f7bcdb82c44e8d0a06a2cd0ecba48c0b"));
 
   private static String sha256Hex(byte[] bytes) {
     try {
