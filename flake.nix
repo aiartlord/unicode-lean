@@ -4,12 +4,21 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    # Swift 5.10.1 is the only swift in nixpkgs and cannot build from source
+    # against current glibc (2.42 defaults TLS to gnu2; swift's bundled clang-16
+    # rejects `-mtls-dialect=gnu2`), which is why nixpkgs HEAD has no cached
+    # swift. This pin resolves swift to a store path that IS substitutable, so
+    # the swift port builds+tests from a binary rather than a doomed source
+    # build. Only the swift derivation reads this input; everything else tracks
+    # the latest nixpkgs above.
+    nixpkgs-swift.url = "github:NixOS/nixpkgs/0726a0ecb6d4e08f6adced58726b95db924cef57";
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
+  outputs = { self, nixpkgs, nixpkgs-swift, flake-utils }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+        pkgsSwift = nixpkgs-swift.legacyPackages.${system};
         hsPkgs = pkgs.haskell.packages.ghc912;
         hsPortGhc = hsPkgs.ghcWithPackages (hpkgs: [
           hpkgs.QuickCheck
@@ -159,7 +168,7 @@
           '';
         };
 
-        unicodeSwift = pkgs.swiftPackages.stdenv.mkDerivation {
+        unicodeSwift = pkgsSwift.swiftPackages.stdenv.mkDerivation {
           pname = "unicode-swift";
           version = runtimeVersion;
           src = ./ports/swift;
@@ -167,16 +176,18 @@
           # resource directory into the swift module search path; Foundation is a
           # real build input so `import Foundation` resolves on Linux. A bare
           # `nix shell #swift` does NOT wire this and cannot compile the port.
-          nativeBuildInputs = [ pkgs.swift pkgs.swiftpm ];
-          buildInputs = [ pkgs.swiftPackages.Foundation pkgs.swiftPackages.Dispatch ];
+          # swift comes from nixpkgs-swift (a pinned rev with a cached swift),
+          # not the top-level latest nixpkgs whose swift is unbuildable.
+          nativeBuildInputs = [ pkgsSwift.swift pkgsSwift.swiftpm ];
+          buildInputs = [ pkgsSwift.swiftPackages.Foundation pkgsSwift.swiftPackages.Dispatch ];
           dontConfigure = true;
           # swiftpm's Package.swift manifest binary is executed with an rpath
           # that omits libdispatch in this nixpkgs pin; put the Dispatch and
           # Foundation runtime libs on LD_LIBRARY_PATH so the manifest compile
           # and the built test binary both load.
-          swiftRuntimeLibs = pkgs.lib.makeLibraryPath [
-            pkgs.swiftPackages.Dispatch
-            pkgs.swiftPackages.Foundation
+          swiftRuntimeLibs = pkgsSwift.lib.makeLibraryPath [
+            pkgsSwift.swiftPackages.Dispatch
+            pkgsSwift.swiftPackages.Foundation
           ];
           buildPhase = ''
             runHook preBuild
@@ -220,8 +231,8 @@
           installPhase = "true";
         };
 
-        # Lean 4.28.0 toolchain pinned via elan; fetched at build time
-        # because no Lean 4.28.0 derivation exists in nixpkgs yet.
+        # Lean 4.32.0 toolchain (see ./lean-toolchain) pinned via elan; fetched
+        # at build time because no Lean 4.32.0 derivation exists in nixpkgs yet.
         runtimeShell = pkgs.mkShell {
           packages = runtimePackages;
         };
