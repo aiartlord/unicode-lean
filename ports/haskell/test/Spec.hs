@@ -15,7 +15,9 @@ import Test.Tasty (defaultMain, testGroup)
 import qualified Utf8Spec
 import qualified Utf16Spec
 import qualified Utf32Spec
+import qualified Bip39CanonicalSpec
 import qualified BomSpec
+import qualified CasingSpec
 import qualified GraphemeSpec
 import qualified HangulSpec
 import qualified LookupSpec
@@ -34,7 +36,9 @@ main = defaultMain $
     [ Utf8Spec.tests
     , Utf16Spec.tests
     , Utf32Spec.tests
+    , Bip39CanonicalSpec.tests
     , BomSpec.tests
+    , CasingSpec.tests
     , GraphemeSpec.tests
     , HangulSpec.tests
     , LookupSpec.tests

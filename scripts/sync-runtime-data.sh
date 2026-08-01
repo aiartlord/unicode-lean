@@ -138,10 +138,39 @@ haskell_files=(
   DerivedBidiClass.txt
   CompositionExclusions.txt
   DerivedNormalizationProps.txt
+  DerivedCoreProperties.txt
+  SpecialCasing.txt
   confusables.txt
   KnownAttackTargets.txt
   StandardizedVariants.txt
   emoji-variation-sequences.txt
+  bip39/chinese_simplified.txt
+  bip39/chinese_traditional.txt
+  bip39/czech.txt
+  bip39/english.txt
+  bip39/french.txt
+  bip39/italian.txt
+  bip39/japanese.txt
+  bip39/korean.txt
+  bip39/portuguese.txt
+  bip39/spanish.txt
+)
+
+# Casing/bip39 tables the Haskell port loads at runtime, all sourced from
+# the canonical data/ tree (copied by a loop rather than named individually).
+haskell_data_dir_files=(
+  DerivedCoreProperties.txt
+  SpecialCasing.txt
+  bip39/chinese_simplified.txt
+  bip39/chinese_traditional.txt
+  bip39/czech.txt
+  bip39/english.txt
+  bip39/french.txt
+  bip39/italian.txt
+  bip39/japanese.txt
+  bip39/korean.txt
+  bip39/portuguese.txt
+  bip39/spanish.txt
 )
 
 homoglyph_files=(
@@ -450,6 +479,10 @@ sync_haskell() {
   copy_file data/KnownAttackTargets.txt "$haskell_dir/data/KnownAttackTargets.txt"
   copy_file data/StandardizedVariants.txt "$haskell_dir/data/StandardizedVariants.txt"
   copy_file data/emoji-variation-sequences.txt "$haskell_dir/data/emoji-variation-sequences.txt"
+  local file
+  for file in "${haskell_data_dir_files[@]}"; do
+    copy_file "data/$file" "$haskell_dir/data/$file"
+  done
   write_manifest "$haskell_dir/data" "${haskell_files[@]}"
   (
     cd "$haskell_dir"
@@ -470,6 +503,10 @@ check_haskell() {
   check_same_file data/KnownAttackTargets.txt "$haskell_dir/data/KnownAttackTargets.txt"
   check_same_file data/StandardizedVariants.txt "$haskell_dir/data/StandardizedVariants.txt"
   check_same_file data/emoji-variation-sequences.txt "$haskell_dir/data/emoji-variation-sequences.txt"
+  local file
+  for file in "${haskell_data_dir_files[@]}"; do
+    check_same_file "data/$file" "$haskell_dir/data/$file"
+  done
   check_manifest "$haskell_dir/data"
 }
 

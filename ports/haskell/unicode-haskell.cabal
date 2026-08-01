@@ -34,6 +34,18 @@ data-files:
   data/StandardizedVariants.txt
   data/emoji-variation-sequences.txt
   data/UnicodeData.txt
+  data/SpecialCasing.txt
+  data/DerivedCoreProperties.txt
+  data/bip39/chinese_simplified.txt
+  data/bip39/chinese_traditional.txt
+  data/bip39/czech.txt
+  data/bip39/english.txt
+  data/bip39/french.txt
+  data/bip39/italian.txt
+  data/bip39/japanese.txt
+  data/bip39/korean.txt
+  data/bip39/portuguese.txt
+  data/bip39/spanish.txt
 tested-with:        GHC == 9.12.*
 
 common warnings
@@ -60,6 +72,7 @@ library
   import:           warnings
   hs-source-dirs:   src
   exposed-modules:
+      Unicode.Casing
       Unicode.Codec.Bom
       Unicode.Codec.Identifier
       Unicode.Codec.Noncharacters
@@ -80,6 +93,7 @@ library
       Unicode.Normalization.Reorder
       Unicode.Segmentation.Grapheme
       Unicode.Segmentation.GraphemeTables
+      Unicode.Security.Crypto.Bip39Canonical
       Unicode.Security.Policy
   other-modules:
       Paths_unicode_haskell
@@ -94,7 +108,9 @@ test-suite unicode-haskell-test
   hs-source-dirs:   test
   main-is:          Spec.hs
   other-modules:
+      Bip39CanonicalSpec
       BomSpec
+      CasingSpec
       HangulSpec
       GraphemeSpec
       IdentifierSpec
