@@ -12,6 +12,7 @@ public final class SecurityContractTest {
   public static void main(String[] args) throws Exception {
     testCovertDisplayCompound();
     testNfkNormalization();
+    testCasing();
     testConfusableBidiCompound();
     testSurrogateReassembly();
     testRtlInjection();
@@ -81,6 +82,25 @@ public final class SecurityContractTest {
     }
     System.out.println("clean: NFKD/NFKC normalization spot checks pass ("
         + (nfkcInputs.length + nfkdInputs.length) + " vectors)");
+  }
+
+  // Ground truth: the toLower spot-check theorems in Unicode.Casing.
+  private static void testCasing() {
+    assertEquals(
+        intList(new int[] {0x68, 0x65, 0x6C, 0x6C, 0x6F}),
+        Security.toLower(Security.CasingLocale.DEFAULT, intList(new int[] {0x48, 0x65, 0x6C, 0x6C, 0x6F})),
+        "toLower hello");
+    assertEquals(intList(new int[] {0x0069}),
+        Security.toLower(Security.CasingLocale.DEFAULT, intList(new int[] {0x0049})), "toLower I default");
+    assertEquals(intList(new int[] {0x0131}),
+        Security.toLower(Security.CasingLocale.TURKISH, intList(new int[] {0x0049})), "toLower I turkish");
+    assertEquals(intList(new int[] {0x0131}),
+        Security.toLower(Security.CasingLocale.AZERI, intList(new int[] {0x0049})), "toLower I azeri");
+    assertEquals(intList(new int[] {0x0069}),
+        Security.toLower(Security.CasingLocale.TURKISH, intList(new int[] {0x0130})), "toLower dotted-I turkish");
+    assertEquals(intList(new int[] {0x0069, 0x0307}),
+        Security.toLower(Security.CasingLocale.DEFAULT, intList(new int[] {0x0130})), "toLower dotted-I default");
+    System.out.println("clean: JVM toLower 6-theorem spot-check passes");
   }
 
   private static List<Integer> intList(int[] codepoints) {

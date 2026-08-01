@@ -206,6 +206,8 @@ jvm_files=(
   DerivedBidiClass.txt
   UnicodeData.txt
   CompositionExclusions.txt
+  DerivedCoreProperties.txt
+  SpecialCasing.txt
 )
 
 dotnet_files=(

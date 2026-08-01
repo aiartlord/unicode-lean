@@ -724,6 +724,240 @@ public final class Security {
     return e == null ? 0 : e.ccc();
   }
 
+  // ── UAX #21 case mapping (toLower) from the pinned UCD tables ──────────────
+  // Mirrors Unicode.Casing: full case mappings from SpecialCasing.txt over the
+  // simple lowercase in UnicodeData.txt field 13, with the context predicates
+  // (Final_Sigma, After_Soft_Dotted, More_Above, Not_Before_Dot, After_I) driven
+  // by CCC and the Cased / Soft_Dotted properties from DerivedCoreProperties.txt.
+  // Keystone for bip39-canonical; computed from the pinned tables, not the runtime.
+
+  enum CasingLocale {
+    DEFAULT,
+    TURKISH,
+    AZERI,
+    LITHUANIAN
+  }
+
+  private record CasingRow(List<Integer> lower, List<String> conditions) {}
+
+  private static Map<Integer, List<CasingRow>> specialCasingMap;
+  private static Map<Integer, Integer> simpleLowercaseMap;
+  private static List<int[]> casedRanges;
+  private static List<int[]> softDottedRanges;
+
+  private static Map<Integer, List<CasingRow>> parseSpecialCasing(String raw) {
+    Map<Integer, List<CasingRow>> out = new HashMap<>();
+    for (String rawLine : raw.split("\n", -1)) {
+      int hash = rawLine.indexOf('#');
+      String line = (hash >= 0 ? rawLine.substring(0, hash) : rawLine).trim();
+      if (line.isEmpty()) continue;
+      String[] f = line.split(";", -1);
+      if (f.length < 4) continue;
+      Integer code = parseHex(f[0].trim());
+      if (code == null) continue;
+      List<String> conditions = new ArrayList<>();
+      if (f.length > 4 && !f[4].trim().isEmpty()) {
+        for (String tok : f[4].trim().split("\\s+")) conditions.add(tok);
+      }
+      out.computeIfAbsent(code, k -> new ArrayList<>())
+          .add(new CasingRow(parseHexList(f[1]), conditions));
+    }
+    return out;
+  }
+
+  private static synchronized Map<Integer, List<CasingRow>> specialCasing() {
+    if (specialCasingMap == null) specialCasingMap = parseSpecialCasing(readResource("SpecialCasing.txt"));
+    return specialCasingMap;
+  }
+
+  private static Map<Integer, Integer> parseSimpleLowercase(String raw) {
+    Map<Integer, Integer> lower = new HashMap<>();
+    for (String line : raw.split("\n", -1)) {
+      if (line.isEmpty()) continue;
+      String[] f = line.split(";", -1);
+      if (f.length < 15) continue;
+      Integer cp = parseHex(f[0]);
+      if (cp == null) continue;
+      if (!f[13].isEmpty()) {
+        Integer l = parseHex(f[13]);
+        if (l != null) lower.put(cp, l);
+      }
+    }
+    return lower;
+  }
+
+  private static synchronized int simpleLowercase(int cp) {
+    if (simpleLowercaseMap == null) simpleLowercaseMap = parseSimpleLowercase(readResource("UnicodeData.txt"));
+    Integer l = simpleLowercaseMap.get(cp);
+    return l == null ? cp : l;
+  }
+
+  private static List<int[]> parseCasingProperty(String raw, String name) {
+    List<int[]> out = new ArrayList<>();
+    for (String rawLine : raw.split("\n", -1)) {
+      int hash = rawLine.indexOf('#');
+      String line = (hash >= 0 ? rawLine.substring(0, hash) : rawLine).trim();
+      if (line.isEmpty()) continue;
+      String[] parts = line.split(";", 2);
+      if (parts.length < 2 || !parts[1].trim().equals(name)) continue;
+      String field = parts[0].trim();
+      int dots = field.indexOf("..");
+      if (dots < 0) {
+        Integer cp = parseHex(field);
+        if (cp != null) out.add(new int[] {cp, cp});
+      } else {
+        Integer lo = parseHex(field.substring(0, dots).trim());
+        Integer hi = parseHex(field.substring(dots + 2).trim());
+        if (lo != null && hi != null) out.add(new int[] {lo, hi});
+      }
+    }
+    return out;
+  }
+
+  private static synchronized boolean isCased(int cp) {
+    if (casedRanges == null) casedRanges = parseCasingProperty(readResource("DerivedCoreProperties.txt"), "Cased");
+    for (int[] r : casedRanges) if (r[0] <= cp && cp <= r[1]) return true;
+    return false;
+  }
+
+  private static synchronized boolean isSoftDotted(int cp) {
+    if (softDottedRanges == null) softDottedRanges = parseCasingProperty(readResource("DerivedCoreProperties.txt"), "Soft_Dotted");
+    for (int[] r : softDottedRanges) if (r[0] <= cp && cp <= r[1]) return true;
+    return false;
+  }
+
+  private static boolean moreAboveAfter(List<Integer> suffix) {
+    for (int cp : suffix) {
+      int c = canonicalCombiningClass(cp);
+      if (c == 230) return true;
+      if (c == 0) return false;
+    }
+    return false;
+  }
+
+  private static boolean afterSoftDotted(List<Integer> revPrefix) {
+    for (int cp : revPrefix) {
+      if (isSoftDotted(cp)) return true;
+      int c = canonicalCombiningClass(cp);
+      if (c == 0 || c == 230) return false;
+    }
+    return false;
+  }
+
+  private static boolean afterI(List<Integer> revPrefix) {
+    for (int cp : revPrefix) {
+      if (cp == 0x0049) return true;
+      int c = canonicalCombiningClass(cp);
+      if (c == 0 || c == 230) return false;
+    }
+    return false;
+  }
+
+  private static boolean beforeDot(List<Integer> suffix) {
+    for (int cp : suffix) {
+      if (cp == 0x0307) return true;
+      if (canonicalCombiningClass(cp) == 0) return false;
+    }
+    return false;
+  }
+
+  private static boolean hasCasedBefore(List<Integer> revPrefix) {
+    for (int cp : revPrefix) {
+      if (isCased(cp)) return true;
+      if (canonicalCombiningClass(cp) == 0) return false;
+    }
+    return false;
+  }
+
+  private static boolean hasCasedAfter(List<Integer> suffix) {
+    for (int cp : suffix) {
+      if (isCased(cp)) return true;
+      if (canonicalCombiningClass(cp) == 0) return false;
+    }
+    return false;
+  }
+
+  private static boolean finalSigma(List<Integer> revPrefix, List<Integer> suffix) {
+    return hasCasedBefore(revPrefix) && !hasCasedAfter(suffix);
+  }
+
+  private static boolean isLocaleCondition(String condition) {
+    return condition.equals("tr") || condition.equals("az") || condition.equals("lt");
+  }
+
+  private static boolean localeMatches(CasingLocale locale, List<String> conditions) {
+    boolean hasLocale = false;
+    for (String c : conditions) {
+      if (isLocaleCondition(c)) {
+        hasLocale = true;
+        break;
+      }
+    }
+    if (!hasLocale) return true;
+    for (String c : conditions) {
+      if ((c.equals("tr") && locale == CasingLocale.TURKISH)
+          || (c.equals("az") && locale == CasingLocale.AZERI)
+          || (c.equals("lt") && locale == CasingLocale.LITHUANIAN)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static boolean conditionsHold(
+      CasingLocale locale, List<Integer> revPrefix, List<Integer> suffix, List<String> conditions) {
+    if (!localeMatches(locale, conditions)) return false;
+    for (String c : conditions) {
+      if (isLocaleCondition(c)) continue;
+      boolean ok;
+      switch (c) {
+        case "Final_Sigma" -> ok = finalSigma(revPrefix, suffix);
+        case "Not_Final_Sigma" -> ok = !finalSigma(revPrefix, suffix);
+        case "After_Soft_Dotted" -> ok = afterSoftDotted(revPrefix);
+        case "More_Above" -> ok = moreAboveAfter(suffix);
+        case "Not_Before_Dot" -> ok = !beforeDot(suffix);
+        case "After_I" -> ok = afterI(revPrefix);
+        default -> ok = false;
+      }
+      if (!ok) return false;
+    }
+    return true;
+  }
+
+  private static CasingRow findSpecialRow(
+      CasingLocale locale, List<Integer> revPrefix, List<Integer> suffix, int cp) {
+    List<CasingRow> candidates = specialCasing().get(cp);
+    if (candidates == null) return null;
+    for (CasingRow row : candidates) {
+      if (!row.conditions().isEmpty() && conditionsHold(locale, revPrefix, suffix, row.conditions())) {
+        return row;
+      }
+    }
+    for (CasingRow row : candidates) {
+      if (row.conditions().isEmpty()) return row;
+    }
+    return null;
+  }
+
+  // Lowercase a codepoint sequence under locale (UAX #21 full mapping): a
+  // SpecialCasing row where its conditions hold, else the simple lowercase.
+  static List<Integer> toLower(CasingLocale locale, List<Integer> cps) {
+    List<Integer> out = new ArrayList<>();
+    List<Integer> revPrefix = new ArrayList<>();
+    for (int i = 0; i < cps.size(); i++) {
+      int cp = cps.get(i);
+      List<Integer> suffix = cps.subList(i + 1, cps.size());
+      CasingRow row = findSpecialRow(locale, revPrefix, suffix, cp);
+      if (row != null) {
+        out.addAll(row.lower());
+      } else {
+        out.add(simpleLowercase(cp));
+      }
+      revPrefix.add(0, cp);
+    }
+    return out;
+  }
+
   private static long composeKey(int d, int c) {
     return ((long) d << 32) | (c & 0xFFFFFFFFL);
   }
@@ -1087,15 +1321,17 @@ public final class Security {
   // corrupted, or tampered resource on a deployed node fails closed instead of
   // silently mis-classifying. Keep in sync with the port resources' SHA256SUMS
   // and the canonical data/SHA256SUMS.
-  private static final Map<String, String> PINNED_TABLE_DIGESTS = Map.of(
-      "CaseFolding.txt", "ff8d8fefbf123574205085d6714c36149eb946d717a0c585c27f0f4ef58c4183",
-      "confusables.txt", "091c7f82fc39ef208faf8f94d29c244de99254675e09de163160c810d13ef22a",
-      "KnownAttackTargets.txt", "47acf87f48e23c2e3ddfb5aed877965fbe29142e61f6f85c4ee7db90c0684947",
-      "StandardizedVariants.txt", "f55100b2fb11d3d75a37b8c1ab752192dbd1c4b12328c5ec6b38e3807c0ca597",
-      "emoji-variation-sequences.txt", "bb3d09ef03f206012c7532dd52dc0a21c9efddba0135ea4cf0d9201b8b9bba7e",
-      "DerivedBidiClass.txt", "4867b4b7f0731ed1bfcd34cc6251211ff1542541fce0734b6fbda139ee80b3a4",
-      "UnicodeData.txt", "2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c",
-      "CompositionExclusions.txt", "2f239196ef3b5b61db5cc476e9bd80f534d15aa1b74e1be1dea5d042a344c85f");
+  private static final Map<String, String> PINNED_TABLE_DIGESTS = Map.ofEntries(
+      Map.entry("CaseFolding.txt", "ff8d8fefbf123574205085d6714c36149eb946d717a0c585c27f0f4ef58c4183"),
+      Map.entry("confusables.txt", "091c7f82fc39ef208faf8f94d29c244de99254675e09de163160c810d13ef22a"),
+      Map.entry("KnownAttackTargets.txt", "47acf87f48e23c2e3ddfb5aed877965fbe29142e61f6f85c4ee7db90c0684947"),
+      Map.entry("StandardizedVariants.txt", "f55100b2fb11d3d75a37b8c1ab752192dbd1c4b12328c5ec6b38e3807c0ca597"),
+      Map.entry("emoji-variation-sequences.txt", "bb3d09ef03f206012c7532dd52dc0a21c9efddba0135ea4cf0d9201b8b9bba7e"),
+      Map.entry("DerivedBidiClass.txt", "4867b4b7f0731ed1bfcd34cc6251211ff1542541fce0734b6fbda139ee80b3a4"),
+      Map.entry("UnicodeData.txt", "2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c"),
+      Map.entry("CompositionExclusions.txt", "2f239196ef3b5b61db5cc476e9bd80f534d15aa1b74e1be1dea5d042a344c85f"),
+      Map.entry("DerivedCoreProperties.txt", "24c7fed1195c482faaefd5c1e7eb821c5ee1fb6de07ecdbaa64b56a99da22c08"),
+      Map.entry("SpecialCasing.txt", "efc25faf19de21b92c1194c111c932e03d2a5eaf18194e33f1156e96de4c9588"));
 
   private static String sha256Hex(byte[] bytes) {
     try {
