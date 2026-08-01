@@ -3,4 +3,5 @@
 //! `Unicode/Security/Form/*.lean`.
 
 pub mod locale_case_inversion;
+pub mod nfc_idempotence_witness;
 pub mod normalization_bomb;

@@ -36,7 +36,7 @@ Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 | SourceDisplayDivergence | ✓ | – | – | – | – | – | – | – | – | – |
 | LocaleCaseInversion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | CaseExpansionMismatch | – | – | – | – | – | – | – | – | – | – |
-| NfcIdempotenceWitness | – | – | – | – | – | – | – | – | – | – |
+| NfcIdempotenceWitness | ✓ | – | – | – | – | – | – | – | – | – |
 | NormalizationBomb | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | StreamSafeViolation | – | – | – | – | – | – | – | – | – | – |
 | IdentifierFormDrift | – | – | – | – | – | – | – | – | – | – |
