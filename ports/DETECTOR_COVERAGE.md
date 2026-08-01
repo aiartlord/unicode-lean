@@ -37,7 +37,7 @@ Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 | LocaleCaseInversion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | CaseExpansionMismatch | – | – | – | – | – | – | – | – | – | – |
 | NfcIdempotenceWitness | – | – | – | – | – | – | – | – | – | – |
-| NormalizationBomb | – | – | – | – | – | – | – | – | – | – |
+| NormalizationBomb | ✓ | – | – | – | – | – | – | – | – | – |
 | StreamSafeViolation | – | – | – | – | – | – | – | – | – | – |
 | IdentifierFormDrift | – | – | – | – | – | – | – | – | – | – |
 | AdmissibilityFormDrift | – | – | – | – | – | – | – | – | – | – |

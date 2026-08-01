@@ -3,3 +3,4 @@
 //! `Unicode/Security/Form/*.lean`.
 
 pub mod locale_case_inversion;
+pub mod normalization_bomb;
