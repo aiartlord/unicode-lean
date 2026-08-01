@@ -33,6 +33,7 @@ data-files:
   data/KnownAttackTargets.txt
   data/StandardizedVariants.txt
   data/emoji-variation-sequences.txt
+  data/UnicodeData.txt
 tested-with:        GHC == 9.12.*
 
 common warnings
@@ -72,8 +73,11 @@ library
       Unicode.Generated.DerivedBidiClass
       Unicode.Generated.DerivedNormalizationProps
       Unicode.Generated.UnicodeData
+      Unicode.Normalization.CompatDecompose
       Unicode.Normalization.Hangul
       Unicode.Normalization.Lookup
+      Unicode.Normalization.NFKD
+      Unicode.Normalization.Reorder
       Unicode.Segmentation.Grapheme
       Unicode.Segmentation.GraphemeTables
       Unicode.Security.Policy
@@ -95,6 +99,7 @@ test-suite unicode-haskell-test
       GraphemeSpec
       IdentifierSpec
       LookupSpec
+      NFKDSpec
       NoncharactersSpec
       OpaqueBlobSpec
       PolicySpec

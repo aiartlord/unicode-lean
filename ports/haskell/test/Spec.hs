@@ -19,6 +19,7 @@ import qualified BomSpec
 import qualified GraphemeSpec
 import qualified HangulSpec
 import qualified LookupSpec
+import qualified NFKDSpec
 import qualified NoncharactersSpec
 import qualified ValidatedUtf8Spec
 import qualified OpaqueBlobSpec
@@ -37,6 +38,7 @@ main = defaultMain $
     , GraphemeSpec.tests
     , HangulSpec.tests
     , LookupSpec.tests
+    , NFKDSpec.tests
     , NoncharactersSpec.tests
     , ValidatedUtf8Spec.tests
     , OpaqueBlobSpec.tests
