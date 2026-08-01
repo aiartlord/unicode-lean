@@ -18,37 +18,37 @@ ground-truth vectors run, not merely compiled).
 
 Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 
-| Family (Lean module) | rust | python | cpp | go | jvm | ts | dotnet | swift | zig | haskell | ruby | lua | php |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| TagBlockPayload | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| VariationSelectorPayload | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| ZeroWidthPayload | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| SurrogateReassembly | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| BidiControlBalance | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| NoncharacterControl | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| HomoglyphConfusable | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| MixedScriptAdmissibility | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| RtlInjection | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| ConfusableBidiCompound | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| CovertDisplayCompound | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| WidthClassConfusion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Bip39Canonical | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| SourceDisplayDivergence | ✓ | – | – | – | – | – | – | – | – | – | – | – | – |
-| LocaleCaseInversion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| CaseExpansionMismatch | – | – | – | – | – | – | – | – | – | – | – | – | – |
-| NfcIdempotenceWitness | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| NormalizationBomb | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| StreamSafeViolation | – | – | – | – | – | – | – | – | – | – | – | – | – |
-| IdentifierFormDrift | – | – | – | – | – | – | – | – | – | – | – | – | – |
-| AdmissibilityFormDrift | – | – | – | – | – | – | – | – | – | – | – | – | – |
-| EmojiZwjIntegrity | – | – | – | – | – | – | – | – | – | – | – | – | – |
-| SkinToneVariationForgery | – | – | – | – | – | – | – | – | – | – | – | – | – |
-| FilenameDisguise | – | – | – | – | – | – | – | – | – | – | – | – | – |
-| RendererDivergence | – | – | – | – | – | – | – | – | – | – | – | – | – |
-| HashInputStability | – | – | – | – | – | – | – | – | – | – | – | – | – |
-| AiWatermarkDetectability | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| Family (Lean module) | rust | python | cpp | go | jvm | ts | dotnet | swift | zig | haskell | ruby | lua | php | elixir |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| TagBlockPayload | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| VariationSelectorPayload | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| ZeroWidthPayload | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| SurrogateReassembly | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| BidiControlBalance | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| NoncharacterControl | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| HomoglyphConfusable | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| MixedScriptAdmissibility | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| RtlInjection | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| ConfusableBidiCompound | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| CovertDisplayCompound | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| WidthClassConfusion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Bip39Canonical | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| SourceDisplayDivergence | ✓ | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| LocaleCaseInversion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| CaseExpansionMismatch | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| NfcIdempotenceWitness | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| NormalizationBomb | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| StreamSafeViolation | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| IdentifierFormDrift | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| AdmissibilityFormDrift | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| EmojiZwjIntegrity | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| SkinToneVariationForgery | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| FilenameDisguise | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| RendererDivergence | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| HashInputStability | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| AiWatermarkDetectability | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
 
-**Totals:** rust 17/27 · all other vouched ports 16/27 · overall 209/351
+**Totals:** rust 17/27 · all other vouched ports 16/27 · overall 225/378
 cells. The 13 core families plus LocaleCaseInversion, NormalizationBomb, and
 NfcIdempotenceWitness are complete and vouched across every listed port;
 everything below the line is spec-proven in Lean but not yet ported.
@@ -62,10 +62,10 @@ fixture presence is not coverage.
 
 | Port | Current source state | Counted? | Next completion target |
 |---|---|:--:|---|
-| ruby | Vouched at the 16/27 non-Rust baseline: native policy/decode/verdict fixture tests, shared detector fixture tests, form-detector vectors, Bip39Canonical vectors, and vendored-data parity pass. | yes | Track the new files so `nix build .#unicode-ruby` can vouch the flake package path. |
-| lua | Vouched at the 16/27 non-Rust baseline: native policy/decode/verdict fixture tests, shared detector fixture tests, form-detector vectors, Bip39Canonical vectors, and vendored-data parity pass. | yes | Track the new files so `nix build .#unicode-lua` can vouch the flake package path. |
-| php | Vouched at the 16/27 non-Rust baseline: native policy/decode/verdict fixture tests, shared detector fixture tests, form-detector vectors, Bip39Canonical vectors, and vendored-data parity pass. | yes | Track the new files so `nix build .#unicode-php` can vouch the flake package path. |
-| elixir | Early implementation: TagBlockPayload plus UCD/casing/noncharacter/UTF-8 support. No policy aggregator or native contract harness. | no | Continue core covert detectors, then policy and fixture tests. |
+| ruby | Vouched at the 16/27 non-Rust baseline: native policy/decode/verdict fixture tests, shared detector fixture tests, form-detector vectors, Bip39Canonical vectors, vendored-data parity pass, and `nix build .#unicode-ruby`. | yes | Continue only with fixture-backed detector fan-out; do not count copied fixtures as coverage. |
+| lua | Vouched at the 16/27 non-Rust baseline: native policy/decode/verdict fixture tests, shared detector fixture tests, form-detector vectors, Bip39Canonical vectors, vendored-data parity pass, and `nix build .#unicode-lua`. | yes | Continue only with fixture-backed detector fan-out; do not count copied fixtures as coverage. |
+| php | Vouched at the 16/27 non-Rust baseline: native policy/decode/verdict fixture tests, shared detector fixture tests, form-detector vectors, Bip39Canonical vectors, vendored-data parity pass, and `nix build .#unicode-php`. | yes | Continue only with fixture-backed detector fan-out; do not count copied fixtures as coverage. |
+| elixir | Vouched at the 16/27 non-Rust baseline: native policy/decode/verdict fixture tests, shared detector fixture tests, form-detector vectors, Bip39Canonical vectors, vendored-data parity pass, and `nix build .#unicode-elixir`. | yes | Continue only with fixture-backed detector fan-out; do not count copied fixtures as coverage. |
 | erlang | Support only: calculus/data/json/UCD/UTF-8 modules. No detector implementations found. | no | Start detector modules from the core covert layer. |
 | cobol | Data and fixture copies only. No COBOL source implementation found. | no | Establish package/source layout, then begin core covert detectors. |
 
@@ -77,7 +77,7 @@ vouched.
 
 **Reference-only (1):** SourceDisplayDivergence
 (`display/source_display_divergence.rs`) — rust reference exists and is vouched;
-needs fan-out to the other 12 listed ports.
+needs fan-out to the other 13 listed ports.
 
 **Not started in any port (10):** CaseExpansionMismatch, StreamSafeViolation,
 IdentifierFormDrift, AdmissibilityFormDrift, EmojiZwjIntegrity,

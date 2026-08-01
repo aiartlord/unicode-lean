@@ -52,6 +52,7 @@
           pkgs.ruby
           pkgs.lua5_4
           pkgs.php
+          pkgs.beamPackages.elixir
           pkgs.dotnet-sdk_8
           pkgs.swift
           pkgs.swiftpm
@@ -207,6 +208,28 @@
           '';
         };
 
+        unicodeElixir = pkgs.stdenv.mkDerivation {
+          pname = "unicode-elixir";
+          version = runtimeVersion;
+          src = ./ports/elixir;
+          nativeBuildInputs = [ pkgs.beamPackages.elixir ];
+          dontConfigure = true;
+          buildPhase = ''
+            runHook preBuild
+            export HOME=$TMPDIR/home
+            export MIX_HOME=$TMPDIR/mix-home
+            mkdir -p "$HOME" "$MIX_HOME"
+            mix test
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/share/unicode-elixir
+            cp -R lib mix.exs priv scripts test $out/share/unicode-elixir/
+            runHook postInstall
+          '';
+        };
+
         unicodeDotnet = pkgs.stdenv.mkDerivation {
           pname = "unicode-dotnet";
           version = runtimeVersion;
@@ -357,6 +380,7 @@
         packages.unicode-ruby = unicodeRuby;
         packages.unicode-lua = unicodeLua;
         packages.unicode-php = unicodePhp;
+        packages.unicode-elixir = unicodeElixir;
         packages.unicode-dotnet = unicodeDotnet;
         packages.unicode-swift = unicodeSwift;
         packages.unicode-zig = unicodeZig;

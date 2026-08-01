@@ -24,6 +24,7 @@ zig_dir="${UNICODE_ZIG_DIR:-ports/zig}"
 ruby_dir="${UNICODE_RUBY_DIR:-ports/ruby}"
 lua_dir="${UNICODE_LUA_DIR:-ports/lua}"
 php_dir="${UNICODE_PHP_DIR:-ports/php}"
+elixir_dir="${UNICODE_ELIXIR_DIR:-ports/elixir}"
 
 root_manifest_files=(
   CaseFolding.txt
@@ -337,6 +338,10 @@ php_files=(
   "${ruby_files[@]}"
 )
 
+elixir_files=(
+  "${ruby_files[@]}"
+)
+
 usage() {
   cat <<'USAGE'
 Usage: scripts/sync-runtime-data.sh [--check|--apply]
@@ -360,6 +365,7 @@ Environment:
   UNICODE_RUBY_DIR=PATH
   UNICODE_LUA_DIR=PATH
   UNICODE_PHP_DIR=PATH
+  UNICODE_ELIXIR_DIR=PATH
 
 Notes:
   - This script does not download Unicode data.
@@ -690,6 +696,7 @@ if [[ "$mode" == "apply" ]]; then
   sync_data_dir "$ruby_dir/data" "${ruby_files[@]}"
   sync_data_dir "$lua_dir/data" "${lua_files[@]}"
   sync_data_dir "$php_dir/data" "${php_files[@]}"
+  sync_data_dir "$elixir_dir/priv/data" "${elixir_files[@]}"
   scripts/check-runtime-data.sh
   echo "clean: runtime data synchronized from canonical UCD inputs"
 else
@@ -707,6 +714,7 @@ else
   check_data_dir "$ruby_dir/data" "${ruby_files[@]}"
   check_data_dir "$lua_dir/data" "${lua_files[@]}"
   check_data_dir "$php_dir/data" "${php_files[@]}"
+  check_data_dir "$elixir_dir/priv/data" "${elixir_files[@]}"
   scripts/check-runtime-data.sh
   echo "clean: runtime data sync check passed"
 fi

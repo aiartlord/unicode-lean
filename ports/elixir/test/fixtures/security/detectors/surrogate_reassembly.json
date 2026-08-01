@@ -1,0 +1,54 @@
+{
+  "schema": 1,
+  "family": "surrogate-reassembly",
+  "cases": [
+    {
+      "name": "clear-empty",
+      "input": [],
+      "required_findings": []
+    },
+    {
+      "name": "clear-ascii",
+      "input": [72, 101, 108, 108, 111],
+      "required_findings": []
+    },
+    {
+      "name": "clear-valid-utf8-e-acute",
+      "input": [195, 169],
+      "required_findings": []
+    },
+    {
+      "name": "clear-valid-utf8-emoji",
+      "input": [240, 159, 152, 128],
+      "required_findings": []
+    },
+    {
+      "name": "invalid-start-byte",
+      "input": [192, 128],
+      "required_findings": [
+        "unicode.security.C.surrogate-reassembly.InvalidStartByte"
+      ]
+    },
+    {
+      "name": "overlong",
+      "input": [224, 128, 175],
+      "required_findings": [
+        "unicode.security.C.surrogate-reassembly.Overlong"
+      ]
+    },
+    {
+      "name": "cesu8-surrogate",
+      "input": [237, 160, 128],
+      "required_findings": [
+        "unicode.security.C.surrogate-reassembly.Cesu8"
+      ]
+    },
+    {
+      "name": "truncated",
+      "input": [195],
+      "required_findings": [
+        "unicode.security.C.surrogate-reassembly.Truncated"
+      ]
+    }
+  ]
+}
