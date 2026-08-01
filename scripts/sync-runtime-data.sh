@@ -146,6 +146,8 @@ go_files=(
   UnicodeData.txt
   DerivedBidiClass.txt
   CompositionExclusions.txt
+  DerivedCoreProperties.txt
+  SpecialCasing.txt
 )
 
 zig_files=(
