@@ -6,5 +6,6 @@
   </PropertyGroup>
   <ItemGroup>
     <None Include="../../Data/*.txt" Link="Data/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../Data/bip39/*.txt" Link="Data/bip39/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -678,6 +678,458 @@ public static class Security
     private static int CanonicalCombiningClass(int cp) =>
         UnicodeDataMap().TryGetValue(cp, out var entry) ? entry.Ccc : 0;
 
+    // ── UAX #21 case mapping (ToLower) from the pinned UCD tables ──────────────
+    // Mirrors Unicode.Casing: full case mappings from SpecialCasing.txt over the
+    // simple lowercase in UnicodeData.txt field 13, with the context predicates
+    // driven by CCC and the Cased / Soft_Dotted properties from
+    // DerivedCoreProperties.txt. Keystone for bip39-canonical; computed from the
+    // pinned tables, not the runtime.
+
+    /// <summary>SpecialCasing locales; Default covers everything not tagged
+    /// Turkish / Azeri / Lithuanian.</summary>
+    public enum CasingLocale { Default, Turkish, Azeri, Lithuanian }
+
+    private sealed record CasingRow(List<int> Lower, List<string> Conditions);
+
+    private static Dictionary<int, List<CasingRow>>? specialCasingMap;
+    private static Dictionary<int, int>? simpleLowercaseMap;
+    private static List<(int Lo, int Hi)>? casedRanges;
+    private static List<(int Lo, int Hi)>? softDottedRanges;
+
+    private static Dictionary<int, List<CasingRow>> ParseSpecialCasing(string raw)
+    {
+        var result = new Dictionary<int, List<CasingRow>>();
+        foreach (var rawLine in raw.Split('\n'))
+        {
+            var line = rawLine.Split('#', 2)[0].Trim();
+            if (line.Length == 0) continue;
+            var f = line.Split(';');
+            if (f.Length < 4) continue;
+            var code = ParseHex(f[0].Trim());
+            if (code is null) continue;
+            var conditions = new List<string>();
+            if (f.Length > 4 && f[4].Trim().Length != 0)
+            {
+                conditions.AddRange(f[4].Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+            }
+            if (!result.TryGetValue(code.Value, out var list))
+            {
+                list = new List<CasingRow>();
+                result[code.Value] = list;
+            }
+            list.Add(new CasingRow(ParseCodepointField(f[1]), conditions));
+        }
+        return result;
+    }
+
+    private static Dictionary<int, List<CasingRow>> SpecialCasing()
+    {
+        specialCasingMap ??= ParseSpecialCasing(ReadDataFile("SpecialCasing.txt"));
+        return specialCasingMap;
+    }
+
+    private static Dictionary<int, int> ParseSimpleLowercase(string raw)
+    {
+        var lower = new Dictionary<int, int>();
+        foreach (var line in raw.Split('\n'))
+        {
+            if (line.Length == 0) continue;
+            var f = line.Split(';');
+            if (f.Length < 15) continue;
+            var cp = ParseHex(f[0]);
+            if (cp is null) continue;
+            if (f[13].Length != 0)
+            {
+                var l = ParseHex(f[13]);
+                if (l is not null) lower[cp.Value] = l.Value;
+            }
+        }
+        return lower;
+    }
+
+    private static int SimpleLowercase(int cp)
+    {
+        simpleLowercaseMap ??= ParseSimpleLowercase(ReadDataFile("UnicodeData.txt"));
+        return simpleLowercaseMap.TryGetValue(cp, out var l) ? l : cp;
+    }
+
+    private static List<(int Lo, int Hi)> ParseCasingProperty(string name)
+    {
+        var result = new List<(int Lo, int Hi)>();
+        foreach (var rawLine in ReadDataFile("DerivedCoreProperties.txt").Split('\n'))
+        {
+            var line = rawLine.Split('#', 2)[0].Trim();
+            if (line.Length == 0) continue;
+            var parts = line.Split(';', 2);
+            if (parts.Length < 2 || parts[1].Trim() != name) continue;
+            var field = parts[0].Trim();
+            var dots = field.IndexOf("..", StringComparison.Ordinal);
+            if (dots < 0)
+            {
+                var cp = ParseHex(field);
+                if (cp is not null) result.Add((cp.Value, cp.Value));
+            }
+            else
+            {
+                var lo = ParseHex(field[..dots]);
+                var hi = ParseHex(field[(dots + 2)..]);
+                if (lo is not null && hi is not null) result.Add((lo.Value, hi.Value));
+            }
+        }
+        return result;
+    }
+
+    private static bool IsCased(int cp)
+    {
+        casedRanges ??= ParseCasingProperty("Cased");
+        foreach (var (lo, hi) in casedRanges)
+        {
+            if (lo <= cp && cp <= hi) return true;
+        }
+        return false;
+    }
+
+    private static bool IsSoftDotted(int cp)
+    {
+        softDottedRanges ??= ParseCasingProperty("Soft_Dotted");
+        foreach (var (lo, hi) in softDottedRanges)
+        {
+            if (lo <= cp && cp <= hi) return true;
+        }
+        return false;
+    }
+
+    private static bool MoreAboveAfter(List<int> suffix)
+    {
+        foreach (var cp in suffix)
+        {
+            var c = CanonicalCombiningClass(cp);
+            if (c == 230) return true;
+            if (c == 0) return false;
+        }
+        return false;
+    }
+
+    private static bool AfterSoftDotted(List<int> revPrefix)
+    {
+        foreach (var cp in revPrefix)
+        {
+            if (IsSoftDotted(cp)) return true;
+            var c = CanonicalCombiningClass(cp);
+            if (c == 0 || c == 230) return false;
+        }
+        return false;
+    }
+
+    private static bool AfterI(List<int> revPrefix)
+    {
+        foreach (var cp in revPrefix)
+        {
+            if (cp == 0x0049) return true;
+            var c = CanonicalCombiningClass(cp);
+            if (c == 0 || c == 230) return false;
+        }
+        return false;
+    }
+
+    private static bool BeforeDot(List<int> suffix)
+    {
+        foreach (var cp in suffix)
+        {
+            if (cp == 0x0307) return true;
+            if (CanonicalCombiningClass(cp) == 0) return false;
+        }
+        return false;
+    }
+
+    private static bool HasCasedBefore(List<int> revPrefix)
+    {
+        foreach (var cp in revPrefix)
+        {
+            if (IsCased(cp)) return true;
+            if (CanonicalCombiningClass(cp) == 0) return false;
+        }
+        return false;
+    }
+
+    private static bool HasCasedAfter(List<int> suffix)
+    {
+        foreach (var cp in suffix)
+        {
+            if (IsCased(cp)) return true;
+            if (CanonicalCombiningClass(cp) == 0) return false;
+        }
+        return false;
+    }
+
+    private static bool FinalSigma(List<int> revPrefix, List<int> suffix) =>
+        HasCasedBefore(revPrefix) && !HasCasedAfter(suffix);
+
+    private static bool IsLocaleCondition(string condition) =>
+        condition is "tr" or "az" or "lt";
+
+    private static bool LocaleMatches(CasingLocale locale, List<string> conditions)
+    {
+        if (!conditions.Any(IsLocaleCondition)) return true;
+        return conditions.Any(c =>
+            (c == "tr" && locale == CasingLocale.Turkish)
+            || (c == "az" && locale == CasingLocale.Azeri)
+            || (c == "lt" && locale == CasingLocale.Lithuanian));
+    }
+
+    private static bool ConditionsHold(
+        CasingLocale locale, List<int> revPrefix, List<int> suffix, List<string> conditions)
+    {
+        if (!LocaleMatches(locale, conditions)) return false;
+        foreach (var c in conditions)
+        {
+            if (IsLocaleCondition(c)) continue;
+            bool ok = c switch
+            {
+                "Final_Sigma" => FinalSigma(revPrefix, suffix),
+                "Not_Final_Sigma" => !FinalSigma(revPrefix, suffix),
+                "After_Soft_Dotted" => AfterSoftDotted(revPrefix),
+                "More_Above" => MoreAboveAfter(suffix),
+                "Not_Before_Dot" => !BeforeDot(suffix),
+                "After_I" => AfterI(revPrefix),
+                _ => false,
+            };
+            if (!ok) return false;
+        }
+        return true;
+    }
+
+    private static CasingRow? FindSpecialRow(
+        CasingLocale locale, List<int> revPrefix, List<int> suffix, int cp)
+    {
+        if (!SpecialCasing().TryGetValue(cp, out var candidates)) return null;
+        foreach (var row in candidates)
+        {
+            if (row.Conditions.Count > 0 && ConditionsHold(locale, revPrefix, suffix, row.Conditions))
+            {
+                return row;
+            }
+        }
+        foreach (var row in candidates)
+        {
+            if (row.Conditions.Count == 0) return row;
+        }
+        return null;
+    }
+
+    /// <summary>Lowercase a codepoint sequence under <paramref name="locale"/>
+    /// (UAX #21 full mapping): a SpecialCasing row where its conditions hold,
+    /// else the simple lowercase mapping.</summary>
+    public static List<int> ToLower(CasingLocale locale, List<int> cps)
+    {
+        var output = new List<int>();
+        var revPrefix = new List<int>();
+        for (var i = 0; i < cps.Count; i++)
+        {
+            var cp = cps[i];
+            var suffix = cps.GetRange(i + 1, cps.Count - i - 1);
+            var row = FindSpecialRow(locale, revPrefix, suffix, cp);
+            if (row is not null)
+            {
+                output.AddRange(row.Lower);
+            }
+            else
+            {
+                output.Add(SimpleLowercase(cp));
+            }
+            revPrefix.Insert(0, cp);
+        }
+        return output;
+    }
+
+    // ── bip39-canonical: BIP-39 mnemonic canonicalisation + wordlist checks ────
+    // Mirrors Unicode.Security.Crypto.Bip39Canonical.
+
+    private static readonly string[] Bip39Languages =
+    {
+        "english", "japanese", "korean", "spanish", "chinese_simplified",
+        "chinese_traditional", "french", "italian", "czech", "portuguese",
+    };
+
+    private static List<(string Name, HashSet<string> Words)>? bip39WordlistCache;
+
+    private static List<(string Name, HashSet<string> Words)> Bip39Wordlists()
+    {
+        if (bip39WordlistCache is null)
+        {
+            var lists = new List<(string, HashSet<string>)>();
+            foreach (var lang in Bip39Languages)
+            {
+                var set = new HashSet<string>();
+                foreach (var line in ReadDataFile($"bip39/{lang}.txt").Split('\n'))
+                {
+                    if (line.Length != 0) set.Add(line);
+                }
+                lists.Add((lang, set));
+            }
+            bip39WordlistCache = lists;
+        }
+        return bip39WordlistCache;
+    }
+
+    private static string Bip39CpsToKey(List<int> cps)
+    {
+        var sb = new StringBuilder();
+        foreach (var cp in cps) sb.Append(char.ConvertFromUtf32(cp));
+        return sb.ToString();
+    }
+
+    /// <summary>One bip39-canonical scan result. <c>SubThreat</c> is null for a
+    /// clear input (with <c>Language</c> set).</summary>
+    public sealed record Bip39CanonicalResult(
+        string? SubThreat, List<int> Positions, string? Language,
+        List<int> Canonical, int WordCount);
+
+    private static bool IsBip39Whitespace(int cp) => cp == 0x0020 || cp == 0x3000;
+
+    private static List<int> CollapseBip39Whitespace(List<int> cps)
+    {
+        var output = new List<int>();
+        var inWs = false;
+        foreach (var cp in cps)
+        {
+            if (IsBip39Whitespace(cp))
+            {
+                if (!inWs) output.Add(0x0020);
+                inWs = true;
+            }
+            else
+            {
+                output.Add(cp);
+                inWs = false;
+            }
+        }
+        return output;
+    }
+
+    private static List<int> TrimBip39(List<int> cps)
+    {
+        var start = 0;
+        var end = cps.Count;
+        while (start < end && cps[start] == 0x0020) start++;
+        while (end > start && cps[end - 1] == 0x0020) end--;
+        return cps.GetRange(start, end - start);
+    }
+
+    private static List<int> Bip39CanonicalForm(List<int> cps)
+    {
+        var lowered = ToLower(CasingLocale.Default, ToNfkd(cps).ToList());
+        return TrimBip39(CollapseBip39Whitespace(lowered));
+    }
+
+    private static List<List<int>> Bip39SplitWords(List<int> cps)
+    {
+        var words = new List<List<int>>();
+        var current = new List<int>();
+        foreach (var cp in cps)
+        {
+            if (cp == 0x0020)
+            {
+                if (current.Count > 0)
+                {
+                    words.Add(current);
+                    current = new List<int>();
+                }
+            }
+            else
+            {
+                current.Add(cp);
+            }
+        }
+        if (current.Count > 0) words.Add(current);
+        return words;
+    }
+
+    /// <summary>Six probes in priority order (first hit wins), mirroring
+    /// Bip39Canonical.detect.</summary>
+    public static Bip39CanonicalResult Bip39CanonicalDetect(List<int> input)
+    {
+        var canonical = Bip39CanonicalForm(input);
+        var words = Bip39SplitWords(canonical);
+        var wordCount = words.Count;
+
+        var trailing = 0;
+        for (var i = input.Count - 1; i >= 0; i--)
+        {
+            if (IsBip39Whitespace(input[i])) trailing++;
+            else break;
+        }
+        if (trailing > 0)
+        {
+            return new Bip39CanonicalResult(
+                "TrailingWhitespace", new List<int> { input.Count - trailing }, null, canonical, wordCount);
+        }
+        for (var i = 0; i < input.Count; i++)
+        {
+            if (input[i] >= 0x41 && input[i] <= 0x5A)
+            {
+                return new Bip39CanonicalResult("MixedCase", new List<int> { i }, null, canonical, wordCount);
+            }
+        }
+        for (var i = 0; i < input.Count; i++)
+        {
+            if (IsBip39Whitespace(input[i])
+                && (i == 0 || (i + 1 < input.Count && IsBip39Whitespace(input[i + 1]))))
+            {
+                return new Bip39CanonicalResult("WhitespaceAnomaly", new List<int> { i }, null, canonical, wordCount);
+            }
+        }
+        var nfkd = ToNfkd(input).ToList();
+        if (!input.SequenceEqual(nfkd))
+        {
+            var limit = Math.Min(input.Count, nfkd.Count);
+            var pos = limit;
+            for (var i = 0; i < limit; i++)
+            {
+                if (input[i] != nfkd[i])
+                {
+                    pos = i;
+                    break;
+                }
+            }
+            return new Bip39CanonicalResult("NonNFKD", new List<int> { pos }, null, canonical, wordCount);
+        }
+        for (var idx = 0; idx < words.Count; idx++)
+        {
+            var key = Bip39CpsToKey(words[idx]);
+            var found = false;
+            foreach (var (_, set) in Bip39Wordlists())
+            {
+                if (set.Contains(key))
+                {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+            {
+                return new Bip39CanonicalResult("WordlistMismatch", new List<int> { idx }, null, canonical, wordCount);
+            }
+        }
+        foreach (var (name, set) in Bip39Wordlists())
+        {
+            var all = true;
+            foreach (var word in words)
+            {
+                if (!set.Contains(Bip39CpsToKey(word)))
+                {
+                    all = false;
+                    break;
+                }
+            }
+            if (all)
+            {
+                return new Bip39CanonicalResult(null, new List<int>(), name, canonical, wordCount);
+            }
+        }
+        return new Bip39CanonicalResult("LanguageAmbiguous", new List<int>(), null, canonical, wordCount);
+    }
+
     private static long ComposeKey(int d, int c) => ((long)d << 32) | (uint)c;
 
     // Canonical composition table: inverse of the two-codepoint canonical
@@ -1073,6 +1525,18 @@ public static class Security
             ["DerivedBidiClass.txt"] = "4867b4b7f0731ed1bfcd34cc6251211ff1542541fce0734b6fbda139ee80b3a4",
             ["UnicodeData.txt"] = "2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c",
             ["CompositionExclusions.txt"] = "2f239196ef3b5b61db5cc476e9bd80f534d15aa1b74e1be1dea5d042a344c85f",
+            ["DerivedCoreProperties.txt"] = "24c7fed1195c482faaefd5c1e7eb821c5ee1fb6de07ecdbaa64b56a99da22c08",
+            ["SpecialCasing.txt"] = "efc25faf19de21b92c1194c111c932e03d2a5eaf18194e33f1156e96de4c9588",
+            ["bip39/chinese_simplified.txt"] = "5c5942792bd8340cb8b27cd592f1015edf56a8c5b26276ee18a482428e7c5726",
+            ["bip39/chinese_traditional.txt"] = "417b26b3d8500a4ae3d59717d7011952db6fc2fb84b807f3f94ac734e89c1b5f",
+            ["bip39/czech.txt"] = "7e80e161c3e93d9554c2efb78d4e3cebf8fc727e9c52e03b83b94406bdcc95fc",
+            ["bip39/english.txt"] = "2f5eed53a4727b4bf8880d8f3f199efc90e58503646d9ff8eff3a2ed3b24dbda",
+            ["bip39/french.txt"] = "ebc3959ab7801a1df6bac4fa7d970652f1df76b683cd2f4003c941c63d517e59",
+            ["bip39/italian.txt"] = "d392c49fdb700a24cd1fceb237c1f65dcc128f6b34a8aacb58b59384b5c648c2",
+            ["bip39/japanese.txt"] = "2eed0aef492291e061633d7ad8117f1a2b03eb80a29d0e4e3117ac2528d05ffd",
+            ["bip39/korean.txt"] = "9e95f86c167de88f450f0aaf89e87f6624a57f973c67b516e338e8e8b8897f60",
+            ["bip39/portuguese.txt"] = "2685e9c194c82ae67e10ba59d9ea5345a23dc093e92276fc5361f6667d79cd3f",
+            ["bip39/spanish.txt"] = "46846a5a0139d1e3cb77293e521c2865f7bcdb82c44e8d0a06a2cd0ecba48c0b",
         };
 
     private static string ReadDataFile(string name)

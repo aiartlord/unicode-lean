@@ -11,6 +11,8 @@ TestUtf8DecodeContract();
 TestMultiEncodingDecodeContract();
 TestDetectorFixtures();
 TestCompatNormalizationVectors();
+TestCasing();
+TestBip39();
 Console.WriteLine("clean: .NET contract tests pass");
 
 // Direct spot-check of the covert-display-compound detector, mirroring the
@@ -300,6 +302,63 @@ static bool HasFamilyFinding(IReadOnlyList<Security.Finding> findings, string fa
 static void AssertTrue(bool condition, string message)
 {
     if (!condition) throw new Exception(message);
+}
+
+// Ground truth: the toLower spot-check theorems in Unicode.Casing.
+static void TestCasing()
+{
+    AssertSequence(new[] { 0x68, 0x65, 0x6C, 0x6C, 0x6F },
+        Security.ToLower(Security.CasingLocale.Default, new List<int> { 0x48, 0x65, 0x6C, 0x6C, 0x6F }), "toLower hello");
+    AssertSequence(new[] { 0x0069 },
+        Security.ToLower(Security.CasingLocale.Default, new List<int> { 0x0049 }), "toLower I default");
+    AssertSequence(new[] { 0x0131 },
+        Security.ToLower(Security.CasingLocale.Turkish, new List<int> { 0x0049 }), "toLower I turkish");
+    AssertSequence(new[] { 0x0131 },
+        Security.ToLower(Security.CasingLocale.Azeri, new List<int> { 0x0049 }), "toLower I azeri");
+    AssertSequence(new[] { 0x0069 },
+        Security.ToLower(Security.CasingLocale.Turkish, new List<int> { 0x0130 }), "toLower dotted-I turkish");
+    AssertSequence(new[] { 0x0069, 0x0307 },
+        Security.ToLower(Security.CasingLocale.Default, new List<int> { 0x0130 }), "toLower dotted-I default");
+    Console.WriteLine("clean: .NET toLower 6-theorem spot-check passes");
+}
+
+// Ground truth: the detect spot-check theorems in Bip39CanonicalVectorsDetect.
+static void TestBip39()
+{
+    var abandon = new List<int> { 0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E };
+    var about = new List<int> { 0x61, 0x62, 0x6F, 0x75, 0x74 };
+    string? Tag(List<int> input) => Security.Bip39CanonicalDetect(input).SubThreat;
+
+    var trailing = new List<int>(abandon) { 0x20 };
+    AssertEqual("TrailingWhitespace", Tag(trailing), "bip39 trailing");
+    AssertSequence(new[] { 7 }, Security.Bip39CanonicalDetect(trailing).Positions, "bip39 trailing pos");
+    AssertEqual("MixedCase", Tag(new List<int> { 0x41, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E }), "bip39 mixed");
+    var dbl = new List<int>(abandon) { 0x20, 0x20 };
+    dbl.AddRange(about);
+    AssertEqual("WhitespaceAnomaly", Tag(dbl), "bip39 double");
+    var lead = new List<int> { 0x20 };
+    lead.AddRange(abandon);
+    AssertEqual("WhitespaceAnomaly", Tag(lead), "bip39 leading");
+    AssertEqual("NonNFKD", Tag(new List<int> { 0xFB00 }), "bip39 ligature");
+    AssertEqual("NonNFKD", Tag(new List<int> { 0x61, 0x00A0, 0x62 }), "bip39 nbsp");
+    AssertEqual("WordlistMismatch", Tag(new List<int> { 0x71, 0x7A, 0x71, 0x7A }), "bip39 mismatch");
+
+    var empty = Security.Bip39CanonicalDetect(new List<int>());
+    AssertEqual<string?>(null, empty.SubThreat, "bip39 empty sub");
+    AssertEqual("english", empty.Language, "bip39 empty lang");
+
+    var mnemonic = new List<int>();
+    for (var i = 0; i < 11; i++)
+    {
+        mnemonic.AddRange(abandon);
+        mnemonic.Add(0x20);
+    }
+    mnemonic.AddRange(about);
+    var verdict = Security.Bip39CanonicalDetect(mnemonic);
+    AssertEqual<string?>(null, verdict.SubThreat, "bip39 12word sub");
+    AssertEqual("english", verdict.Language, "bip39 12word lang");
+    AssertEqual(12, verdict.WordCount, "bip39 12word count");
+    Console.WriteLine("clean: .NET bip39-canonical detect spot-check passes");
 }
 
 static void AssertEqual<T>(T expected, T actual, string message)
