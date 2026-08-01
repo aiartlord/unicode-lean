@@ -260,6 +260,15 @@ agrees on. The remaining families are proven in Lean and reserved in each
 port's reason-code namespace, and are being brought into the ports one
 family at a time.
 
+The live per-family × per-port status is tracked in
+[`ports/DETECTOR_COVERAGE.md`](../ports/DETECTOR_COVERAGE.md). As of the last
+update, 13 core families are implemented and vouched in all ten ports, plus a
+`toLower` (UAX #21) casing keystone; two further families (SourceDisplayDivergence,
+LocaleCaseInversion) have rust references awaiting fan-out. Note that a port's
+`Family`/`Calculus` enum declares all 27 names as taxonomy regardless of whether
+its detector exists, so coverage must be read from real implementations (the
+matrix), not from the enum.
+
 Each family lands as an **atomic** step across all ports: the shared
 `policy_contract.json` and `verdict_contract.json` fixtures encode the
 *combined* verdict for an input, so a new family that fires on an input

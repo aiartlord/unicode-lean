@@ -7,6 +7,36 @@ on the public surface (a major-version bump signals that a
 theorem name or statement changed in a way downstream consumers
 might depend on).
 
+## Unreleased
+
+Port-side detector build-out. No change to the Lean public theorem surface;
+these entries record the runtime-port implementations, which are verified
+against the same Lean `detect_*` theorems.
+
+### Added — casing keystone and bip39-canonical across all ten ports
+
+- `toLower` (UAX #21 full case mapping — SpecialCasing conditional/locale rows,
+  simple lowercase, and the Cased/Soft_Dotted context predicates) is implemented
+  and vouched in every port (rust, python, cpp, go, jvm, typescript, dotnet,
+  swift, zig, haskell), verified against the six `toLower` ground-truth theorems.
+- The `Bip39Canonical` crypto-layer detector (NFKD → toLower → collapse → trim,
+  then the six priority-ordered probes over the ten BIP-39 wordlists) is
+  implemented and vouched in every port, verified against the detect vectors.
+- The haskell port gained the NFKD normalization foundation it previously lacked
+  (`Reorder`, `CompatDecompose`, `NFKD`) as the dependency bip39 needs.
+
+### Added — LocaleCaseInversion rust reference
+
+- First implementation of the `LocaleCaseInversion` family (Tier A2
+  homograph-via-locale) in the rust port, verified against its six `detect_*`
+  theorems; the reference for the fan-out to the other nine ports.
+
+### Added — detector-coverage tracking matrix
+
+- `ports/DETECTOR_COVERAGE.md` records the per-family × per-port implementation
+  status (13/27 core families vouched in all ports; 14 families still to port),
+  counted from real detector implementations rather than the taxonomy enum.
+
 ## v0.18.0 — 2026-05-13
 
 Wires two SHA-pinned curated data tables to their detector
