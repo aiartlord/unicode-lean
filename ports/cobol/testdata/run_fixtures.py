@@ -151,6 +151,38 @@ def check_forms_and_bip39():
             require(code in got["codes"], f"{op}/{values} missing {code}; got {got['codes']}")
 
 
+def check_generated_tables():
+    variation = run("scan", "gateway-header", "observe", [35, 65038])
+    require(
+        all(".variation-selector-payload." not in code for code in variation["codes"]),
+        f"generated variation table did not clear registered pair; got {variation['codes']}",
+    )
+
+    ignorable = run("scan", "gateway-header", "observe", [65, 847, 66])
+    require(
+        "unicode.security.C.zero-width-payload.BareZeroWidth" in ignorable["codes"],
+        f"generated Default_Ignorable table missed U+034F; got {ignorable['codes']}",
+    )
+
+    scripts = run("scan", "gateway-header", "observe", [42958, 945])
+    require(
+        "unicode.security.I.mixed-script-admissibility.LatinGreek" in scripts["codes"],
+        f"generated Scripts table missed non-ASCII Latin + Greek; got {scripts['codes']}",
+    )
+
+    rtl = run("scan", "gateway-header", "observe", [65, 68192, 66])
+    require(
+        "unicode.security.D.rtl-injection.StrongRTLInLTR" in rtl["codes"],
+        f"generated bidi table missed Old South Arabian RTL; got {rtl['codes']}",
+    )
+
+    confusable = run("scan", "gateway-header", "observe", [8238, 42959])
+    require(
+        "unicode.security.X.confusable-bidi-compound.ConfusableInOverride" in confusable["codes"],
+        f"generated confusables table missed U+A7CF source; got {confusable['codes']}",
+    )
+
+
 def main():
     check_policy()
     check_decode()
@@ -158,6 +190,7 @@ def main():
     check_verdict()
     check_detectors()
     check_forms_and_bip39()
+    check_generated_tables()
     print("ok: cobol unicode security fixture tests pass")
 
 
