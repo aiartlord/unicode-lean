@@ -999,6 +999,74 @@ public static class Security
         return new LocaleCaseInversionResult(null, new List<int>());
     }
 
+    // ── normalization-bomb: NFD/NFKD expansion beyond documented bounds ────────
+    // Mirrors Unicode.Security.Form.NormalizationBomb. Inputs whose NFD or NFKD
+    // expansion exceeds documented bounds — the classic normalization-expansion
+    // DoS. A small input that expands to a very large normalized form exhausts
+    // memory/CPU at the receiving layer (Arabic ligature U+FDFA → 18 codepoints
+    // under NFKD). Three priority-ordered checks: a per-codepoint blow-up scan,
+    // an overall NFKD ratio, an overall NFD ratio. Ratios are expressed in
+    // hundredths to avoid floats.
+
+    /// <summary>Maximum allowed NFKD expansion per single codepoint. Hangul ≤ 3,
+    /// Greek extended forms 4, the largest non-FDFA Arabic ligature (FDFB) 8;
+    /// anything greater than 8 is flagged.</summary>
+    private const int MaxNfkdPerCp = 8;
+
+    /// <summary>Overall-sequence NFD expansion ratio threshold, in hundredths
+    /// (300 = 3×). Pure Hangul sits at exactly 300 and stays clear under strict
+    /// <c>&gt;</c>.</summary>
+    private const int NfdRatioPct = 300;
+
+    /// <summary>Overall-sequence NFKD expansion ratio threshold, in hundredths
+    /// (400 = 4×).</summary>
+    private const int NfkdRatioPct = 400;
+
+    /// <summary>First position whose single-codepoint NFKD expansion exceeds
+    /// <see cref="MaxNfkdPerCp"/>, or null when no codepoint blows up.</summary>
+    private static int? FirstBlowupCp(List<int> input)
+    {
+        for (var i = 0; i < input.Count; i++)
+        {
+            if (ToNfkd(new List<int> { input[i] }).Count > MaxNfkdPerCp) return i;
+        }
+        return null;
+    }
+
+    /// <summary>NFD ratio percentage (<c>100 * nfdLen / inputLen</c>); 0 on empty
+    /// input.</summary>
+    private static int NfdRatioPercent(List<int> input) =>
+        input.Count == 0 ? 0 : ToNfdCodepoints(input).Count * 100 / input.Count;
+
+    /// <summary>NFKD ratio percentage (<c>100 * nfkdLen / inputLen</c>); 0 on
+    /// empty input.</summary>
+    private static int NfkdRatioPercent(List<int> input) =>
+        input.Count == 0 ? 0 : ToNfkd(input).Count * 100 / input.Count;
+
+    /// <summary>One normalization-bomb scan result. <c>SubThreat</c> is null for a
+    /// clear input; a per-codepoint blow-up carries the offending position in
+    /// <c>Positions</c>, the ratio hazards carry no position.</summary>
+    public sealed record NormalizationBombResult(string? SubThreat, List<int> Positions);
+
+    /// <summary>Detect a normalization-expansion bomb. Priority: per-codepoint
+    /// blow-up, then overall NFKD ratio, then overall NFD ratio.</summary>
+    public static NormalizationBombResult NormalizationBombDetect(List<int> input)
+    {
+        if (FirstBlowupCp(input) is int i)
+        {
+            return new NormalizationBombResult("SingleCpBlowup", new List<int> { i });
+        }
+        if (NfkdRatioPercent(input) > NfkdRatioPct)
+        {
+            return new NormalizationBombResult("NfkdHighExpansion", new List<int>());
+        }
+        if (NfdRatioPercent(input) > NfdRatioPct)
+        {
+            return new NormalizationBombResult("NfdHighExpansion", new List<int>());
+        }
+        return new NormalizationBombResult(null, new List<int>());
+    }
+
     // ── bip39-canonical: BIP-39 mnemonic canonicalisation + wordlist checks ────
     // Mirrors Unicode.Security.Crypto.Bip39Canonical.
 

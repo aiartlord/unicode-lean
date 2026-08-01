@@ -15,6 +15,7 @@ public final class SecurityContractTest {
     testCasing();
     testBip39();
     testLocaleCaseInversion();
+    testNormalizationBomb();
     testConfusableBidiCompound();
     testSurrogateReassembly();
     testRtlInjection();
@@ -170,6 +171,31 @@ public final class SecurityContractTest {
         Security.localeCaseInversionDetect(intList(new int[] {0x004A, 0x0300})).subThreat(),
         "lci J grave picks Lithuanian");
     System.out.println("clean: JVM locale-case-inversion detect spot-check passes");
+  }
+
+  // Pins the normalization-bomb detector against the detect_* spot-check
+  // theorems in Unicode/Security/Form/NormalizationBomb.lean, plus the two
+  // ratio-branch shapes the module docstring guarantees (FDFB → NFKD ratio;
+  // a Greek extended form → NFD ratio).
+  private static void testNormalizationBomb() {
+    assertEquals(null,
+        Security.normalizationBombDetect(intList(new int[] {})).subThreat(), "bomb empty");
+    assertEquals(null,
+        Security.normalizationBombDetect(intList(new int[] {0x48, 0x65, 0x6C, 0x6C, 0x6F})).subThreat(),
+        "bomb ascii");
+    assertEquals(null,
+        Security.normalizationBombDetect(intList(new int[] {0xD55C})).subThreat(), "bomb korean");
+    assertEquals(null,
+        Security.normalizationBombDetect(intList(new int[] {0x2460})).subThreat(), "bomb circled one");
+    assertEquals("SingleCpBlowup",
+        Security.normalizationBombDetect(intList(new int[] {0xFDFA})).subThreat(), "bomb arabic ligature");
+    assertEquals(List.of(0),
+        Security.normalizationBombDetect(intList(new int[] {0xFDFA})).positions(), "bomb arabic ligature pos");
+    assertEquals("NfkdHighExpansion",
+        Security.normalizationBombDetect(intList(new int[] {0xFDFB})).subThreat(), "bomb fdfb nfkd ratio");
+    assertEquals("NfdHighExpansion",
+        Security.normalizationBombDetect(intList(new int[] {0x1F82})).subThreat(), "bomb greek nfd ratio");
+    System.out.println("clean: JVM normalization-bomb detect spot-check passes");
   }
 
   private static List<Integer> intList(int[] codepoints) {

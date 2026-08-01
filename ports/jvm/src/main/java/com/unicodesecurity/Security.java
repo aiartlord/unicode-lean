@@ -1007,6 +1007,74 @@ public final class Security {
     return new LocaleCaseInversionResult(null, List.of());
   }
 
+  // ── normalization-bomb: NFD/NFKD expansion beyond documented bounds ────────
+  // Mirrors Unicode.Security.Form.NormalizationBomb (F1), the classic
+  // normalization-expansion DoS: a small input whose normalized form is very
+  // large exhausts memory/CPU at the receiving layer (Arabic ligature U+FDFA →
+  // 18 codepoints under NFKD). Three priority-ordered checks — a per-codepoint
+  // blow-up scan, an overall NFKD ratio, an overall NFD ratio. Ratios are
+  // expressed in hundredths to avoid floats.
+
+  /** Maximum allowed NFKD expansion per single codepoint. Hangul ≤ 3, Greek
+   *  extended forms 4, the largest non-FDFA Arabic ligature (FDFB) 8; anything
+   *  greater than 8 is flagged. */
+  private static final int MAX_NFKD_PER_CP = 8;
+
+  /** Overall-sequence NFD expansion ratio threshold, in hundredths (300 = 3×).
+   *  Pure Hangul sits at exactly 300 and stays clear under strict {@code >}. */
+  private static final int NFD_RATIO_PCT = 300;
+
+  /** Overall-sequence NFKD expansion ratio threshold, in hundredths (400 = 4×). */
+  private static final int NFKD_RATIO_PCT = 400;
+
+  /** One normalization-bomb result: the sub-threat tag (null when clear) and
+   *  the implicated positions (the blow-up codepoint's index; empty for the
+   *  ratio hazards). */
+  public record NormalizationBombResult(String subThreat, List<Integer> positions) {}
+
+  /** First position whose single-codepoint NFKD expansion exceeds
+   *  {@link #MAX_NFKD_PER_CP}; null when none. */
+  private static Integer firstBlowupCp(List<Integer> input) {
+    for (int i = 0; i < input.size(); i++) {
+      if (toNfkd(List.of(input.get(i))).size() > MAX_NFKD_PER_CP) {
+        return i;
+      }
+    }
+    return null;
+  }
+
+  /** NFD ratio percentage ({@code 100 * nfdLen / inputLen}); 0 on empty input. */
+  private static int nfdRatioPct(List<Integer> input) {
+    if (input.isEmpty()) {
+      return 0;
+    }
+    return toNfdCodepoints(input).size() * 100 / input.size();
+  }
+
+  /** NFKD ratio percentage ({@code 100 * nfkdLen / inputLen}); 0 on empty input. */
+  private static int nfkdRatioPct(List<Integer> input) {
+    if (input.isEmpty()) {
+      return 0;
+    }
+    return toNfkd(input).size() * 100 / input.size();
+  }
+
+  /** Detect a normalization-expansion bomb. Priority: per-codepoint blow-up,
+   *  then overall NFKD ratio, then overall NFD ratio. */
+  public static NormalizationBombResult normalizationBombDetect(List<Integer> input) {
+    Integer blowup = firstBlowupCp(input);
+    if (blowup != null) {
+      return new NormalizationBombResult("SingleCpBlowup", List.of(blowup));
+    }
+    if (nfkdRatioPct(input) > NFKD_RATIO_PCT) {
+      return new NormalizationBombResult("NfkdHighExpansion", List.of());
+    }
+    if (nfdRatioPct(input) > NFD_RATIO_PCT) {
+      return new NormalizationBombResult("NfdHighExpansion", List.of());
+    }
+    return new NormalizationBombResult(null, List.of());
+  }
+
   // ── bip39-canonical: BIP-39 mnemonic canonicalisation + wordlist checks ────
   // Mirrors Unicode.Security.Crypto.Bip39Canonical.
 

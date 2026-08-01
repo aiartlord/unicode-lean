@@ -89,12 +89,14 @@ library
       Unicode.Normalization.CompatDecompose
       Unicode.Normalization.Hangul
       Unicode.Normalization.Lookup
+      Unicode.Normalization.NFD
       Unicode.Normalization.NFKD
       Unicode.Normalization.Reorder
       Unicode.Segmentation.Grapheme
       Unicode.Segmentation.GraphemeTables
       Unicode.Security.Crypto.Bip39Canonical
       Unicode.Security.Form.LocaleCaseInversion
+      Unicode.Security.Form.NormalizationBomb
       Unicode.Security.Policy
   other-modules:
       Paths_unicode_haskell
@@ -119,6 +121,7 @@ test-suite unicode-haskell-test
       LookupSpec
       NFKDSpec
       NoncharactersSpec
+      NormalizationBombSpec
       OpaqueBlobSpec
       PolicySpec
       ConfusableBidiCompoundSpec

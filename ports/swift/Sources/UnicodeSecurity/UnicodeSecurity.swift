@@ -2066,3 +2066,69 @@ private func escapeJson(_ value: String) -> String {
     }
     return out
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// Normalization-bomb detector (form layer), mirroring
+// Unicode.Security.Form.NormalizationBomb.
+//
+// Inputs whose NFD or NFKD expansion exceeds documented bounds — the
+// classic normalization-expansion DoS, where a small input expands to a
+// very large normalized form (Arabic ligature U+FDFA -> 18 codepoints
+// under NFKD). Three priority-ordered checks: a per-codepoint blow-up
+// scan, an overall NFKD ratio, an overall NFD ratio. Ratios are expressed
+// in hundredths to avoid floats.
+// ─────────────────────────────────────────────────────────────────────
+
+/// Maximum allowed NFKD expansion per single codepoint. Hangul <= 3, Greek
+/// extended forms 4, the largest non-FDFA Arabic ligature (FDFB) 8;
+/// anything greater than 8 is flagged.
+private let maxNfkdPerCp = 8
+
+/// Overall-sequence NFD expansion ratio threshold, in hundredths (300 =
+/// 3x). Pure Hangul sits at exactly 300 and stays clear under strict `>`.
+private let nfdRatioThresholdPct = 300
+
+/// Overall-sequence NFKD expansion ratio threshold, in hundredths (400 =
+/// 4x).
+private let nfkdRatioThresholdPct = 400
+
+public struct NormalizationBombResult: Equatable {
+    public let subThreat: String?
+    public let positions: [Int]
+}
+
+/// First input position whose single-codepoint NFKD expansion exceeds
+/// `maxNfkdPerCp`, or `nil` when no codepoint blows up.
+private func firstBlowupCp(_ input: [Int]) -> Int? {
+    for index in input.indices {
+        if toNfkd([input[index]]).count > maxNfkdPerCp { return index }
+    }
+    return nil
+}
+
+/// NFD ratio percentage (`100 * nfdLen / inputLen`); 0 on empty input.
+private func nfdRatioPct(_ input: [Int]) -> Int {
+    if input.isEmpty { return 0 }
+    return toNfdCodepoints(input).count * 100 / input.count
+}
+
+/// NFKD ratio percentage (`100 * nfkdLen / inputLen`); 0 on empty input.
+private func nfkdRatioPct(_ input: [Int]) -> Int {
+    if input.isEmpty { return 0 }
+    return toNfkd(input).count * 100 / input.count
+}
+
+/// Detect a normalization-expansion bomb. Priority: per-codepoint blow-up,
+/// then overall NFKD ratio, then overall NFD ratio.
+public func normalizationBombDetect(_ input: [Int]) -> NormalizationBombResult {
+    if let pos = firstBlowupCp(input) {
+        return NormalizationBombResult(subThreat: "SingleCpBlowup", positions: [pos])
+    }
+    if nfkdRatioPct(input) > nfkdRatioThresholdPct {
+        return NormalizationBombResult(subThreat: "NfkdHighExpansion", positions: [])
+    }
+    if nfdRatioPct(input) > nfdRatioThresholdPct {
+        return NormalizationBombResult(subThreat: "NfdHighExpansion", positions: [])
+    }
+    return NormalizationBombResult(subThreat: nil, positions: [])
+}

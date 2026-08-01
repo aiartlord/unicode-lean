@@ -37,7 +37,7 @@ Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 | LocaleCaseInversion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | CaseExpansionMismatch | – | – | – | – | – | – | – | – | – | – |
 | NfcIdempotenceWitness | – | – | – | – | – | – | – | – | – | – |
-| NormalizationBomb | ✓ | – | – | – | – | – | – | – | – | – |
+| NormalizationBomb | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | StreamSafeViolation | – | – | – | – | – | – | – | – | – | – |
 | IdentifierFormDrift | – | – | – | – | – | – | – | – | – | – |
 | AdmissibilityFormDrift | – | – | – | – | – | – | – | – | – | – |
@@ -48,21 +48,22 @@ Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 | HashInputStability | – | – | – | – | – | – | – | – | – | – |
 | AiWatermarkDetectability | – | – | – | – | – | – | – | – | – | – |
 
-**Totals:** rust 15/27 · all other ports 14/27 · overall 141/270 cells. The 13
-core families plus LocaleCaseInversion are complete and vouched across every port;
-everything below the line is spec-proven in Lean but not yet ported.
+**Totals:** rust 16/27 · all other ports 15/27 · overall 151/270 cells. The 13
+core families plus LocaleCaseInversion and NormalizationBomb are complete and
+vouched across every port; everything below the line is spec-proven in Lean but
+not yet ported.
 
 ## Remaining work
 
-13 detector families are unported. Each needs a reference implementation verified
+12 detector families are unported. Each needs a reference implementation verified
 against the Lean `detect_*` theorems, then a fan-out to all ten ports, each vouched.
 
 **Reference-only (1):** SourceDisplayDivergence
 (`display/source_display_divergence.rs`) — rust reference exists and is vouched;
 needs fan-out to the other nine ports.
 
-**Not started in any port (12):** CaseExpansionMismatch, NfcIdempotenceWitness,
-NormalizationBomb, StreamSafeViolation, IdentifierFormDrift, AdmissibilityFormDrift,
+**Not started in any port (11):** CaseExpansionMismatch, NfcIdempotenceWitness,
+StreamSafeViolation, IdentifierFormDrift, AdmissibilityFormDrift,
 EmojiZwjIntegrity, SkinToneVariationForgery, FilenameDisguise, RendererDivergence,
 HashInputStability, AiWatermarkDetectability.
 

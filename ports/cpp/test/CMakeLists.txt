@@ -25,6 +25,7 @@ add_executable(unicode_cpp_tests
     casing_test.cpp
     bip39_test.cpp
     locale_case_inversion_test.cpp
+    normalization_bomb_test.cpp
     surrogate_reassembly_test.cpp)
 target_link_libraries(unicode_cpp_tests
     PRIVATE unicode_cpp::unicode_cpp doctest::doctest)

@@ -1418,6 +1418,61 @@ export function localeCaseInversionDetect(input) {
   return { sub: null, positions: [] };
 }
 
+// ── normalization-bomb: NFD/NFKD expansion DoS detection ─────────────────────
+// Mirrors Unicode.Security.Form.NormalizationBomb. Pure functional: compute NFD
+// and NFKD lengths, then three priority-ordered checks — a per-codepoint blow-up
+// scan, an overall NFKD ratio, an overall NFD ratio. Ratios are expressed in
+// hundredths (integer percent) to avoid floats.
+
+// Maximum allowed NFKD expansion per single codepoint. Hangul <= 3, Greek
+// extended forms 4, the largest non-FDFA Arabic ligature (FDFB) 8; anything
+// greater than 8 is flagged.
+const MAX_NFKD_PER_CP = 8;
+
+// Overall-sequence NFD expansion ratio threshold, in hundredths (300 = 3x).
+// Pure Hangul sits at exactly 300 and stays clear under strict `>`.
+const NFD_RATIO_PCT = 300;
+
+// Overall-sequence NFKD expansion ratio threshold, in hundredths (400 = 4x).
+const NFKD_RATIO_PCT = 400;
+
+function firstBlowupCp(input) {
+  for (let i = 0; i < input.length; i += 1) {
+    if (toNfkdCodepoints([input[i]]).length > MAX_NFKD_PER_CP) {
+      return i;
+    }
+  }
+  return null;
+}
+
+function nfdRatioPct(input) {
+  if (input.length === 0) {
+    return 0;
+  }
+  return Math.floor((toNfdCodepoints(input).length * 100) / input.length);
+}
+
+function nfkdRatioPct(input) {
+  if (input.length === 0) {
+    return 0;
+  }
+  return Math.floor((toNfkdCodepoints(input).length * 100) / input.length);
+}
+
+export function normalizationBombDetect(input) {
+  const blowup = firstBlowupCp(input);
+  if (blowup !== null) {
+    return { sub: "SingleCpBlowup", positions: [blowup] };
+  }
+  if (nfkdRatioPct(input) > NFKD_RATIO_PCT) {
+    return { sub: "NfkdHighExpansion", positions: [] };
+  }
+  if (nfdRatioPct(input) > NFD_RATIO_PCT) {
+    return { sub: "NfdHighExpansion", positions: [] };
+  }
+  return { sub: null, positions: [] };
+}
+
 // ── bip39-canonical: BIP-39 mnemonic canonicalisation + wordlist checks ──────
 // Mirrors Unicode.Security.Crypto.Bip39Canonical. Canonical form is
 // NFKD -> toLower(default) -> collapse BIP-39 whitespace -> trim; detect runs

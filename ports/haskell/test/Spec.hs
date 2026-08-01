@@ -24,6 +24,7 @@ import qualified LocaleCaseInversionSpec
 import qualified LookupSpec
 import qualified NFKDSpec
 import qualified NoncharactersSpec
+import qualified NormalizationBombSpec
 import qualified ValidatedUtf8Spec
 import qualified OpaqueBlobSpec
 import qualified IdentifierSpec
@@ -46,6 +47,7 @@ main = defaultMain $
     , LookupSpec.tests
     , NFKDSpec.tests
     , NoncharactersSpec.tests
+    , NormalizationBombSpec.tests
     , ValidatedUtf8Spec.tests
     , OpaqueBlobSpec.tests
     , IdentifierSpec.tests

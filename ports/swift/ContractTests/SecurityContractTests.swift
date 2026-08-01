@@ -9,6 +9,7 @@ struct SecurityContractRunner {
         try testSurrogateReassembly()
         try testRtlInjection()
         try testLocaleCaseInversion()
+        try testNormalizationBomb()
         try testPolicyContract()
         try testVerdictContract()
         try testUtf8DecodeContract()
@@ -150,6 +151,17 @@ struct SecurityContractRunner {
         try expectEqual(localeCaseInversionDetect([0x0130]).subThreat, "TurkishCaseDivergence", "locale-case-inversion dotted-I")
         try expectEqual(localeCaseInversionDetect([0x0049, 0x0300]).subThreat, "TurkishCaseDivergence", "locale-case-inversion I-grave")
         try expectEqual(localeCaseInversionDetect([0x004A, 0x0300]).subThreat, "LithuanianCaseDivergence", "locale-case-inversion J-grave")
+    }
+
+    private static func testNormalizationBomb() throws {
+        try expectEqual(normalizationBombDetect([]).subThreat, nil, "normalization-bomb empty")
+        try expectEqual(normalizationBombDetect([0x48, 0x65, 0x6C, 0x6C, 0x6F]).subThreat, nil, "normalization-bomb ascii")
+        try expectEqual(normalizationBombDetect([0xD55C]).subThreat, nil, "normalization-bomb korean")
+        try expectEqual(normalizationBombDetect([0x2460]).subThreat, nil, "normalization-bomb circled-one")
+        try expectEqual(normalizationBombDetect([0xFDFA]).subThreat, "SingleCpBlowup", "normalization-bomb arabic-ligature")
+        try expectEqual(normalizationBombDetect([0xFDFA]).positions, [0], "normalization-bomb arabic-ligature pos")
+        try expectEqual(normalizationBombDetect([0xFDFB]).subThreat, "NfkdHighExpansion", "normalization-bomb fdfb")
+        try expectEqual(normalizationBombDetect([0x1F82]).subThreat, "NfdHighExpansion", "normalization-bomb greek-extended")
     }
 
     private static func testPolicyContract() throws {

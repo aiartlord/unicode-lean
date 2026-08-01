@@ -14,6 +14,7 @@ TestCompatNormalizationVectors();
 TestCasing();
 TestBip39();
 TestLocaleCaseInversion();
+TestNormalizationBomb();
 Console.WriteLine("clean: .NET contract tests pass");
 
 // Direct spot-check of the covert-display-compound detector, mirroring the
@@ -376,6 +377,23 @@ static void TestLocaleCaseInversion()
     AssertEqual("TurkishCaseDivergence", Sub(new List<int> { 0x0049, 0x0300 }), "locale-case I-grave turkish-first");
     AssertEqual("LithuanianCaseDivergence", Sub(new List<int> { 0x004A, 0x0300 }), "locale-case J-grave lithuanian");
     Console.WriteLine("clean: .NET locale-case-inversion detect spot-check passes");
+}
+
+// Ground truth: the detect_* spot-check theorems in
+// Unicode/Security/Form/NormalizationBomb.lean and the Rust port's tests.
+static void TestNormalizationBomb()
+{
+    string? Sub(List<int> input) => Security.NormalizationBombDetect(input).SubThreat;
+
+    AssertEqual<string?>(null, Sub(new List<int>()), "norm-bomb empty");
+    AssertEqual<string?>(null, Sub(new List<int> { 0x48, 0x65, 0x6C, 0x6C, 0x6F }), "norm-bomb ascii");
+    AssertEqual<string?>(null, Sub(new List<int> { 0xD55C }), "norm-bomb korean");
+    AssertEqual<string?>(null, Sub(new List<int> { 0x2460 }), "norm-bomb circled-one");
+    AssertEqual("SingleCpBlowup", Sub(new List<int> { 0xFDFA }), "norm-bomb fdfa blowup");
+    AssertSequence(new[] { 0 }, Security.NormalizationBombDetect(new List<int> { 0xFDFA }).Positions, "norm-bomb fdfa pos");
+    AssertEqual("NfkdHighExpansion", Sub(new List<int> { 0xFDFB }), "norm-bomb fdfb nfkd");
+    AssertEqual("NfdHighExpansion", Sub(new List<int> { 0x1F82 }), "norm-bomb greek nfd");
+    Console.WriteLine("clean: .NET normalization-bomb detect spot-check passes");
 }
 
 static void AssertEqual<T>(T expected, T actual, string message)

@@ -13,7 +13,7 @@ under Turkish or Lithuanian; the two folds diverge and the attacker controls
 which is used where.
 
 Detection compares per-position 'lowerCodepoint' under each locale against the
-default, rather than diffing whole-string 'toLower', because 'lowerCodepoint'
+default, rather than diffing whole-string @toLower@, because 'lowerCodepoint'
 evaluates the SpecialCasing context predicates (After_I, More_Above,
 Not_Before_Dot, After_Soft_Dotted, Final_Sigma) with the full surrounding
 context — so a per-position diff is sound under the context-sensitive rules.

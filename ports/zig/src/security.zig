@@ -1932,6 +1932,73 @@ pub fn localeCaseInversionDetect(input: []const u32) LocaleCaseInversionResult {
     return result;
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Normalization-bomb detector (F1), mirroring
+// Unicode.Security.Form.NormalizationBomb.
+//
+// Detects inputs whose NFD or NFKD expansion exceeds documented bounds — the
+// classic normalization-expansion DoS. A small input that expands to a very
+// large normalized form exhausts memory/CPU at the receiving layer (Arabic
+// ligature U+FDFA → 18 codepoints under NFKD). Three priority-ordered checks:
+// a per-codepoint blow-up scan, an overall NFKD ratio, an overall NFD ratio.
+// Ratios are expressed in hundredths to avoid floats.
+// ─────────────────────────────────────────────────────────────────────
+
+// Maximum allowed NFKD expansion per single codepoint. Hangul ≤ 3, Greek
+// extended forms 4, the largest non-FDFA Arabic ligature (FDFB) 8; anything
+// greater than 8 is flagged.
+const MAX_NFKD_PER_CP: usize = 8;
+
+// Overall-sequence NFD expansion ratio threshold, in hundredths (300 = 3×).
+// Pure Hangul sits at exactly 300 and stays clear under strict `>`.
+const NFD_RATIO_PCT: usize = 300;
+
+// Overall-sequence NFKD expansion ratio threshold, in hundredths (400 = 4×).
+const NFKD_RATIO_PCT: usize = 400;
+
+pub const NormalizationBombResult = struct {
+    sub_threat: ?[]const u8 = null,
+    positions: [1]usize = undefined,
+    position_count: usize = 0,
+};
+
+// First position whose single-codepoint NFKD expansion exceeds
+// `MAX_NFKD_PER_CP`. A single codepoint never overflows the bounded buffer, so
+// a null expansion counts as length 0 (which cannot exceed the bound anyway).
+fn firstBlowupCp(input: []const u32) ?usize {
+    var i: usize = 0;
+    while (i < input.len) : (i += 1) {
+        const expand = if (toNFKD(&[_]u32{input[i]})) |buf| buf.slice().len else 0;
+        if (expand > MAX_NFKD_PER_CP) return i;
+    }
+    return null;
+}
+
+/// Detect a normalization-expansion bomb. Priority: per-codepoint blow-up,
+/// then overall NFKD ratio, then overall NFD ratio. An unmeasurable (overflowed)
+/// whole-input expansion is treated as ratio 100% — no hazard.
+pub fn normalizationBombDetect(input: []const u32) NormalizationBombResult {
+    var result = NormalizationBombResult{};
+    if (firstBlowupCp(input)) |pos| {
+        result.sub_threat = "SingleCpBlowup";
+        result.positions[0] = pos;
+        result.position_count = 1;
+        return result;
+    }
+    if (input.len == 0) return result;
+    const nfkd_len = if (toNFKD(input)) |buf| buf.slice().len else input.len;
+    if (nfkd_len * 100 / input.len > NFKD_RATIO_PCT) {
+        result.sub_threat = "NfkdHighExpansion";
+        return result;
+    }
+    const nfd_len = if (toNFD(input)) |buf| buf.slice().len else input.len;
+    if (nfd_len * 100 / input.len > NFD_RATIO_PCT) {
+        result.sub_threat = "NfdHighExpansion";
+        return result;
+    }
+    return result;
+}
+
 fn ctCpSlicesEqual(a: []const u32, b: []const u32) bool {
     if (a.len != b.len) return false;
     var acc: u32 = 0;
@@ -2566,4 +2633,27 @@ test "locale-case-inversion detect spot-checks" {
     try expectLocaleCaseSub(&[_]u32{0x0130}, "TurkishCaseDivergence");
     try expectLocaleCaseSub(&[_]u32{ 0x0049, 0x0300 }, "TurkishCaseDivergence");
     try expectLocaleCaseSub(&[_]u32{ 0x004A, 0x0300 }, "LithuanianCaseDivergence");
+}
+
+fn expectNormalizationBombSub(input: []const u32, expected: ?[]const u8) !void {
+    const result = normalizationBombDetect(input);
+    if (expected) |want| {
+        try std.testing.expect(result.sub_threat != null);
+        try std.testing.expect(std.mem.eql(u8, result.sub_threat.?, want));
+    } else {
+        try std.testing.expect(result.sub_threat == null);
+    }
+}
+
+test "normalization-bomb detect spot-checks" {
+    // Mirrors the detect_* ground-truth theorems in
+    // Unicode/Security/Form/NormalizationBomb.lean.
+    try expectNormalizationBombSub(&[_]u32{}, null);
+    try expectNormalizationBombSub(&[_]u32{ 0x48, 0x65, 0x6C, 0x6C, 0x6F }, null);
+    try expectNormalizationBombSub(&[_]u32{0xD55C}, null); // NFD ratio exactly 300, not > 300
+    try expectNormalizationBombSub(&[_]u32{0x2460}, null); // circled one, NFKD 1×
+    try expectNormalizationBombSub(&[_]u32{0xFDFA}, "SingleCpBlowup");
+    try std.testing.expect(normalizationBombDetect(&[_]u32{0xFDFA}).positions[0] == 0);
+    try expectNormalizationBombSub(&[_]u32{0xFDFB}, "NfkdHighExpansion");
+    try expectNormalizationBombSub(&[_]u32{0x1F82}, "NfdHighExpansion");
 }
