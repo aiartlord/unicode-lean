@@ -1,5 +1,6 @@
 using System.Text.Json;
 using UnicodeSecurity;
+using UnicodeSecurity.Segmentation;
 
 TestCovertDisplayCompoundVectors();
 TestConfusableBidiCompoundVectors();
@@ -16,6 +17,10 @@ TestBip39();
 TestLocaleCaseInversion();
 TestNormalizationBomb();
 TestNfcIdempotenceWitness();
+TestUtf8Blob();
+TestValidatedUtf8();
+TestGraphemeVectors();
+TestGraphemeBreakTestFile();
 Console.WriteLine("clean: .NET contract tests pass");
 
 // Direct spot-check of the covert-display-compound detector, mirroring the
@@ -410,6 +415,125 @@ static void TestNfcIdempotenceWitness()
     AssertSequence(new[] { 0 }, Security.NfcIdempotenceWitnessDetect(new List<int> { 0x0065, 0x0301 }).Positions, "nfc-witness decomposed-e-acute pos");
     AssertEqual("NonNfkcCompatForm", Sub(new List<int> { 0xFB01 }), "nfc-witness fi-ligature");
     Console.WriteLine("clean: .NET nfc-idempotence-witness detect spot-check passes");
+}
+
+// Opaque-blob refinement: structurally valid strict UTF-8 under a size bound,
+// validity routed through Security.IsValidUtf8 (the port's strict decoder),
+// mirroring ports/rust/src/opaque_blob.rs.
+static void TestUtf8Blob()
+{
+    // Accepted: ASCII, 2-byte (é), 4-byte (😀), empty under any bound.
+    AssertTrue(Utf8Blob.Of(new byte[] { 0x41, 0x42 }, 10) is not null, "blob ascii accepted");
+    AssertTrue(Utf8Blob.Of(new byte[] { 0xC3, 0xA9 }, 10) is not null, "blob 2-byte accepted");
+    AssertTrue(Utf8Blob.Of(new byte[] { 0xF0, 0x9F, 0x98, 0x80 }, 10) is not null, "blob 4-byte accepted");
+    AssertTrue(Utf8Blob.Of(System.Array.Empty<byte>(), 0) is not null, "blob empty accepted bound 0");
+    AssertTrue(Utf8Blob.Of(System.Array.Empty<byte>(), 5) is not null, "blob empty accepted bound 5");
+
+    // Rejected: overlong C0 80, surrogate ED A0 80, over-bound.
+    AssertTrue(Utf8Blob.Of(new byte[] { 0xC0, 0x80 }, 10) is null, "blob overlong rejected");
+    AssertTrue(Utf8Blob.Of(new byte[] { 0xED, 0xA0, 0x80 }, 10) is null, "blob surrogate rejected");
+    AssertTrue(Utf8Blob.Of(new byte[] { 0x41, 0x42, 0x43 }, 2) is null, "blob over-bound rejected");
+
+    // Predicate agrees with the smart constructor's validity gate.
+    AssertTrue(Utf8Blob.IsUtf8Blob(new byte[] { 0xC3, 0xA9 }), "blob predicate valid");
+    AssertTrue(!Utf8Blob.IsUtf8Blob(new byte[] { 0xC0, 0x80 }), "blob predicate overlong");
+
+    // Bytes / MaxBytes are carried faithfully.
+    var blob = Utf8Blob.Of(new byte[] { 0x41 }, 5);
+    AssertTrue(blob is not null, "blob single built");
+    AssertSequence(new[] { 0x41 }, blob!.Bytes.Select(b => (int)b).ToList(), "blob bytes roundtrip");
+    AssertEqual(5, blob.MaxBytes, "blob max bytes");
+    Console.WriteLine("clean: .NET utf8-blob refinement spot-check passes");
+}
+
+// ValidatedUtf8 refinement: strict RFC 3629 validity pinned at construction,
+// validity routed through Security.IsValidUtf8, mirroring
+// ports/rust/src/validated_utf8.rs.
+static void TestValidatedUtf8()
+{
+    // Empty and every well-formed width validate.
+    AssertTrue(ValidatedUtf8.Validate(System.Array.Empty<byte>()) is not null, "validated empty accepted");
+    AssertTrue(ValidatedUtf8.Validate(new byte[] { 0x41, 0x42 }) is not null, "validated ascii accepted");
+    AssertTrue(ValidatedUtf8.Validate(new byte[] { 0xE4, 0xB8, 0xAD }) is not null, "validated 3-byte accepted");
+    AssertTrue(ValidatedUtf8.Validate(new byte[] { 0xF0, 0x9F, 0x98, 0x80 }) is not null, "validated 4-byte accepted");
+
+    // Overlong and surrogate forms fail the strict state machine.
+    AssertTrue(ValidatedUtf8.Validate(new byte[] { 0xC0, 0x80 }) is null, "validated overlong rejected");
+    AssertTrue(ValidatedUtf8.Validate(new byte[] { 0xED, 0xA0, 0x80 }) is null, "validated surrogate rejected");
+
+    // Validate + AsBytes + Unwrap roundtrip preserves the exact bytes.
+    var input = new byte[] { 0xF0, 0x9F, 0x98, 0x80, 0x41 };
+    var validated = ValidatedUtf8.Validate(input);
+    AssertTrue(validated is not null, "validated roundtrip built");
+    AssertSequence(input.Select(b => (int)b).ToList(), validated!.AsBytes.Select(b => (int)b).ToList(), "validated as-bytes roundtrip");
+    AssertSequence(input.Select(b => (int)b).ToList(), validated.Unwrap().Select(b => (int)b).ToList(), "validated unwrap roundtrip");
+    Console.WriteLine("clean: .NET validated-utf8 refinement spot-check passes");
+}
+
+// UAX #29 grapheme segmentation targeted vectors, mirroring
+// ports/rust/tests/segmentation.rs and the rust grapheme.rs unit tests.
+static void TestGraphemeVectors()
+{
+    AssertBoolSequence(new[] { true, true, true, true }, Grapheme.GraphemeBreaks(new[] { 0x61, 0x62, 0x63 }), "grapheme abc breaks");
+    AssertBoolSequence(new[] { true, false, true }, Grapheme.GraphemeBreaks(new[] { 0x65, 0x0301 }), "grapheme e+acute breaks");
+    AssertBoolSequence(new[] { true, false, true }, Grapheme.GraphemeBreaks(new[] { 0x0D, 0x0A }), "grapheme CR LF breaks");
+    AssertBoolSequence(new[] { true, false, true }, Grapheme.GraphemeBreaks(new[] { 0x1F1EF, 0x1F1F5 }), "grapheme flag pair breaks");
+
+    AssertEqual(3, Grapheme.GraphemeClusters(new[] { 0x61, 0x62, 0x63 }).Count, "grapheme abc clusters");
+    AssertEqual(1, Grapheme.GraphemeClusters(new[] { 0x65, 0x0301 }).Count, "grapheme e+acute clusters");
+    AssertEqual(1, Grapheme.GraphemeClusters(new[] { 0x1F1EF, 0x1F1F5 }).Count, "grapheme flag pair clusters");
+    AssertEqual(2, Grapheme.GraphemeClusters(new[] { 0x1F1EF, 0x1F1F5, 0x1F1FA, 0x1F1F8 }).Count, "grapheme four RI clusters");
+    AssertEqual(1, Grapheme.GraphemeClusters(new[] { 0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467 }).Count, "grapheme ZWJ family clusters");
+    Console.WriteLine("clean: .NET grapheme targeted-vector spot-check passes");
+}
+
+// Full UAX #29 conformance corpus. Every "÷"/"×"-marked row of the pinned
+// GraphemeBreakTest.txt must reproduce under Grapheme.GraphemeBreaks.
+static void TestGraphemeBreakTestFile()
+{
+    var path = Path.Combine(AppContext.BaseDirectory, "testdata", "GraphemeBreakTest.txt");
+    if (!File.Exists(path)) path = Path.Combine("testdata", "GraphemeBreakTest.txt");
+    var rows = 0;
+    foreach (var raw in File.ReadAllLines(path))
+    {
+        var hash = raw.IndexOf('#');
+        var body = (hash >= 0 ? raw.Substring(0, hash) : raw).Trim();
+        if (body.Length == 0)
+        {
+            continue;
+        }
+        var tokens = body.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+        var codepoints = new List<int>();
+        var expected = new List<bool>();
+        foreach (var token in tokens)
+        {
+            if (token == "÷")
+            {
+                expected.Add(true);
+            }
+            else if (token == "×")
+            {
+                expected.Add(false);
+            }
+            else
+            {
+                codepoints.Add(Convert.ToInt32(token, 16));
+            }
+        }
+        var actual = Grapheme.GraphemeBreaks(codepoints);
+        AssertBoolSequence(expected, actual, $"GraphemeBreakTest row {rows + 1}: [{string.Join(" ", tokens)}]");
+        rows++;
+    }
+    AssertEqual(766, rows, "GraphemeBreakTest row count");
+    Console.WriteLine($"clean: .NET GraphemeBreakTest.txt {rows}-row conformance passes");
+}
+
+static void AssertBoolSequence(IReadOnlyList<bool> expected, IReadOnlyList<bool> actual, string message)
+{
+    if (!expected.SequenceEqual(actual))
+    {
+        throw new Exception($"{message}\nexpected: [{string.Join(",", expected)}]\nactual:   [{string.Join(",", actual)}]");
+    }
 }
 
 static void AssertEqual<T>(T expected, T actual, string message)

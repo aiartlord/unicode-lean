@@ -108,6 +108,19 @@ public static class Security
         return Scan(profile, mode, DecodeUtf8ToCodepoints(bytes));
     }
 
+    // Strict RFC 3629 UTF-8 validity, routed through the same state-machine
+    // decoder (FirstInvalidUtf8) that ScanUtf8 and the surrogate-reassembly
+    // detector use — never through System.Text / Encoding.UTF8. The
+    // byte-refinement types Utf8Blob and ValidatedUtf8 pin their validity claim
+    // to this predicate so overlong forms, surrogate code points, truncated
+    // sequences, and out-of-range code points are all rejected identically to
+    // the scanner's malformed-utf8 family.
+    public static bool IsValidUtf8(IReadOnlyList<byte> input)
+    {
+        var bytes = input as byte[] ?? input.ToArray();
+        return FirstInvalidUtf8(bytes) is null;
+    }
+
     public static Verdict ScanUtf16BE(string profile, string mode, IEnumerable<byte> input) =>
         ScanUtf16(profile, mode, input.ToArray(), ByteOrder.Big);
 
