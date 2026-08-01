@@ -1373,6 +1373,51 @@ export function toUpperCodepoints(input, locale = "default") {
   return out;
 }
 
+// ── locale-case-inversion: lowercase fold that inverts across locales ────────
+// Mirrors Unicode.Security.Form.LocaleCaseInversion (Tier A2, the
+// homograph-via-locale attack). Compares per-position lowerCodepoint across
+// locales rather than diffing whole-string toLower, so the SpecialCasing context
+// predicates evaluate with full context. Turkish divergence before Lithuanian.
+
+function lowerCodepoint(locale, revPrefix, suffix, cp) {
+  const row = findSpecialRow(locale, revPrefix, suffix, cp);
+  return row !== null ? row.lower : [simpleLowercase(cp)];
+}
+
+function codepointsEqual(a, b) {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+function firstLocaleDivergence(locale, input) {
+  const revPrefix = [];
+  for (let index = 0; index < input.length; index += 1) {
+    const cp = input[index];
+    const suffix = input.slice(index + 1);
+    const defaultLower = lowerCodepoint("default", revPrefix, suffix, cp);
+    const localeLower = lowerCodepoint(locale, revPrefix, suffix, cp);
+    if (!codepointsEqual(defaultLower, localeLower)) {
+      return index;
+    }
+    revPrefix.unshift(cp);
+  }
+  return null;
+}
+
+// Detect an input whose lowercase fold inverts across locales. Turkish
+// divergence takes priority; Lithuanian is reached only when no Turkish
+// divergence is found.
+export function localeCaseInversionDetect(input) {
+  const turkish = firstLocaleDivergence("turkish", input);
+  if (turkish !== null) {
+    return { sub: "TurkishCaseDivergence", positions: [turkish] };
+  }
+  const lithuanian = firstLocaleDivergence("lithuanian", input);
+  if (lithuanian !== null) {
+    return { sub: "LithuanianCaseDivergence", positions: [lithuanian] };
+  }
+  return { sub: null, positions: [] };
+}
+
 // ── bip39-canonical: BIP-39 mnemonic canonicalisation + wordlist checks ──────
 // Mirrors Unicode.Security.Crypto.Bip39Canonical. Canonical form is
 // NFKD -> toLower(default) -> collapse BIP-39 whitespace -> trim; detect runs

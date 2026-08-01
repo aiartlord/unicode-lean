@@ -34,7 +34,7 @@ Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 | WidthClassConfusion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Bip39Canonical | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | SourceDisplayDivergence | ✓ | – | – | – | – | – | – | – | – | – |
-| LocaleCaseInversion | ✓ | ✓ | – | – | – | – | – | – | – | ✓ |
+| LocaleCaseInversion | ✓ | ✓ | – | ✓ | – | ✓ | – | – | – | ✓ |
 | CaseExpansionMismatch | – | – | – | – | – | – | – | – | – | – |
 | NfcIdempotenceWitness | – | – | – | – | – | – | – | – | – | – |
 | NormalizationBomb | – | – | – | – | – | – | – | – | – | – |
@@ -48,9 +48,9 @@ Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 | HashInputStability | – | – | – | – | – | – | – | – | – | – |
 | AiWatermarkDetectability | – | – | – | – | – | – | – | – | – | – |
 
-**Totals:** rust 15/27 · python 14/27 · haskell 14/27 · other ports 13/27 ·
-overall 134/270 cells. The 13 core families are complete and vouched across every
-port; everything below the line is spec-proven in Lean but not yet ported.
+**Totals:** rust 15/27 · python/go/typescript/haskell 14/27 · cpp/jvm/dotnet/swift/zig
+13/27 · overall 136/270 cells. The 13 core families are complete and vouched across
+every port; everything below the line is spec-proven in Lean but not yet ported.
 
 ## Remaining work
 
@@ -59,7 +59,7 @@ implementation verified against the Lean `detect_*` theorems, then a fan-out to 
 ten ports, each vouched.
 
 **Fan-out in progress (1):** LocaleCaseInversion — implemented and vouched in
-rust, python, and haskell; the remaining seven ports (cpp, go, jvm, typescript,
+rust, python, go, typescript, and haskell; the remaining four ports (cpp, jvm,
 dotnet, swift, zig) are pending.
 
 **Reference-only (1):** SourceDisplayDivergence
