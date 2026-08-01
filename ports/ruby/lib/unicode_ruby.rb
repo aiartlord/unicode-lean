@@ -27,6 +27,8 @@ end
 require_relative "unicode_ruby/strict"
 require_relative "unicode_ruby/noncharacters"
 require_relative "unicode_ruby/utf8"
+require_relative "unicode_ruby/opaque_blob"
+require_relative "unicode_ruby/validated_utf8"
 require_relative "unicode_ruby/security/calculus"
 require_relative "unicode_ruby/security/identity/ucd"
 require_relative "unicode_ruby/security/covert/tag_block_payload"
