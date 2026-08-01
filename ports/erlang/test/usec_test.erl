@@ -9,7 +9,28 @@ run() ->
     decode_contract(),
     multiencoding_contract(),
     form_and_bip39(),
+    opaque_blob_tests(),
     io:format("ok: erlang unicode security tests pass~n").
+
+opaque_blob_tests() ->
+    assert(usec_opaque_blob:is_utf8_blob([16#48, 16#69]), blob_ascii),
+    assert(usec_opaque_blob:is_utf8_blob([16#C3, 16#A9]), blob_2byte),
+    assert(usec_opaque_blob:is_utf8_blob([16#F0, 16#9F, 16#98, 16#80]), blob_4byte),
+    assert(not usec_opaque_blob:is_utf8_blob([16#C0, 16#80]), blob_overlong),
+    assert(not usec_opaque_blob:is_utf8_blob([16#ED, 16#A0, 16#80]), blob_surrogate),
+    #{value := [16#48, 16#69], max_bytes := 16} = usec_opaque_blob:make([16#48, 16#69], 16),
+    assert_eq(none, usec_opaque_blob:make([16#48, 16#69, 16#21], 2), blob_over_bound),
+    assert_eq(none, usec_opaque_blob:make([16#C0, 16#80], 16), blob_malformed),
+    #{} = usec_opaque_blob:make([], 32),
+    {validated_utf8, [16#C3, 16#A9]} = usec_validated_utf8:validate([16#C3, 16#A9]),
+    assert_eq([16#C3, 16#A9],
+              usec_validated_utf8:as_bytes(usec_validated_utf8:validate([16#C3, 16#A9])),
+              validated_as_bytes),
+    assert_eq([16#C3, 16#A9],
+              usec_validated_utf8:unwrap(usec_validated_utf8:validate([16#C3, 16#A9])),
+              validated_unwrap),
+    assert_eq(none, usec_validated_utf8:validate([16#ED, 16#A0, 16#80]), validated_malformed),
+    ok.
 
 fixture(Rel) ->
     {ok, Bin} = file:read_file(filename:join(["test", "fixtures", "security", Rel])),
