@@ -79,6 +79,11 @@ private var bidiTableCache: BidiTable?
 private var unicodeDataCache: [Int: NormEntry]?
 private var compositionExclusionsCache: Set<Int>?
 private var compositionTableCache: [Int: Int]?
+private var specialCasingCache: [Int: [CasingRow]]?
+private var simpleLowerCache: [Int: Int]?
+private var casedRangesCache: [(Int, Int)]?
+private var softDottedRangesCache: [(Int, Int)]?
+private var bip39WordlistCache: [String: Set<[Int]>]?
 
 public func scan(profile: String, mode: String, input: [Int]) -> Verdict {
     let codepoints = input.map(ensureCodepoint)
@@ -832,6 +837,435 @@ public func toNfkc(_ input: [Int]) -> [Int] {
     canonicalCompose(toNfkd(input))
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// UAX #21 case mapping (toLower), mirroring Unicode.Casing.
+//
+// Full case mappings come from SpecialCasing.txt (one-to-many and
+// context/locale-dependent rows); the simple lowercase fallback is
+// UnicodeData.txt field 13. The context predicates (Final_Sigma,
+// After_Soft_Dotted, More_Above, Not_Before_Dot, After_I) read canonical
+// combining class plus the Cased and Soft_Dotted properties from
+// DerivedCoreProperties.txt. This is the shared primitive the bip39-canonical
+// detector lowercases through.
+// ─────────────────────────────────────────────────────────────────────
+
+/// The locales SpecialCasing.txt distinguishes. `default` covers everything not
+/// tagged Turkish / Azeri / Lithuanian.
+public enum CasingLocale: Equatable {
+    case `default`
+    case turkish
+    case azeri
+    case lithuanian
+}
+
+private struct CasingRow {
+    let lower: [Int]
+    let conditions: [String]
+}
+
+private let casingLocaleConditions: Set<String> = ["tr", "az", "lt"]
+
+private func parseSpecialCasing(_ raw: String) -> [Int: [CasingRow]] {
+    var rows: [Int: [CasingRow]] = [:]
+    for rawLine in raw.split(separator: "\n", omittingEmptySubsequences: false) {
+        let line = String(rawLine.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false).first ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if line.isEmpty { continue }
+        let fields = line.split(separator: ";", omittingEmptySubsequences: false).map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if fields.count < 4 { continue }
+        guard let code = parseHex(fields[0]) else { continue }
+        let lower = fields[1].split(separator: " ").compactMap { parseHex(String($0)) }
+        let conditions = fields.count > 4 && !fields[4].isEmpty
+            ? fields[4].split(separator: " ").map(String.init)
+            : []
+        rows[code, default: []].append(CasingRow(lower: lower, conditions: conditions))
+    }
+    return rows
+}
+
+private func specialCasingRows() -> [Int: [CasingRow]] {
+    if let cached = specialCasingCache { return cached }
+    let parsed = parseSpecialCasing(readDataFile("SpecialCasing.txt"))
+    specialCasingCache = parsed
+    return parsed
+}
+
+private func parseSimpleLowercase(_ raw: String) -> [Int: Int] {
+    var out: [Int: Int] = [:]
+    for line in raw.split(separator: "\n", omittingEmptySubsequences: false) {
+        if line.isEmpty { continue }
+        let f = line.split(separator: ";", omittingEmptySubsequences: false).map(String.init)
+        if f.count < 14 { continue }
+        guard let cp = parseHex(f[0]) else { continue }
+        let lowerField = f[13].trimmingCharacters(in: .whitespacesAndNewlines)
+        if lowerField.isEmpty { continue }
+        if let lower = parseHex(lowerField) { out[cp] = lower }
+    }
+    return out
+}
+
+private func simpleLowerMap() -> [Int: Int] {
+    if let cached = simpleLowerCache { return cached }
+    let parsed = parseSimpleLowercase(readDataFile("UnicodeData.txt"))
+    simpleLowerCache = parsed
+    return parsed
+}
+
+private func simpleLowercase(_ cp: Int) -> Int {
+    simpleLowerMap()[cp] ?? cp
+}
+
+private func parseDerivedProperty(_ raw: String, _ name: String) -> [(Int, Int)] {
+    var out: [(Int, Int)] = []
+    for rawLine in raw.split(separator: "\n", omittingEmptySubsequences: false) {
+        let line = String(rawLine.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false).first ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if line.isEmpty { continue }
+        let parts = line.split(separator: ";", maxSplits: 1, omittingEmptySubsequences: false).map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if parts.count < 2 || parts[1] != name { continue }
+        let field = parts[0]
+        if let dots = field.range(of: "..") {
+            if let lo = parseHex(String(field[field.startIndex..<dots.lowerBound])),
+                let hi = parseHex(String(field[dots.upperBound...])) {
+                out.append((lo, hi))
+            }
+        } else if let cp = parseHex(field) {
+            out.append((cp, cp))
+        }
+    }
+    return out.sorted { $0.0 < $1.0 }
+}
+
+private func casedRanges() -> [(Int, Int)] {
+    if let cached = casedRangesCache { return cached }
+    let parsed = parseDerivedProperty(readDataFile("DerivedCoreProperties.txt"), "Cased")
+    casedRangesCache = parsed
+    return parsed
+}
+
+private func softDottedRanges() -> [(Int, Int)] {
+    if let cached = softDottedRangesCache { return cached }
+    let parsed = parseDerivedProperty(readDataFile("DerivedCoreProperties.txt"), "Soft_Dotted")
+    softDottedRangesCache = parsed
+    return parsed
+}
+
+private func inCasingRanges(_ ranges: [(Int, Int)], _ cp: Int) -> Bool {
+    ranges.contains { cp >= $0.0 && cp <= $0.1 }
+}
+
+private func isCased(_ cp: Int) -> Bool { inCasingRanges(casedRanges(), cp) }
+private func isSoftDotted(_ cp: Int) -> Bool { inCasingRanges(softDottedRanges(), cp) }
+
+// Context predicates (UAX #21). `revPrefix` is the preceding codepoints
+// nearest-first; `suffix` the strictly-following ones.
+
+private func moreAboveAfter(_ suffix: [Int]) -> Bool {
+    for cp in suffix {
+        let c = canonicalCombiningClass(cp)
+        if c == 230 { return true }
+        if c == 0 { return false }
+    }
+    return false
+}
+
+private func afterSoftDotted(_ revPrefix: [Int]) -> Bool {
+    for cp in revPrefix {
+        if isSoftDotted(cp) { return true }
+        let c = canonicalCombiningClass(cp)
+        if c == 0 || c == 230 { return false }
+    }
+    return false
+}
+
+private func afterI(_ revPrefix: [Int]) -> Bool {
+    for cp in revPrefix {
+        if cp == 0x0049 { return true }
+        let c = canonicalCombiningClass(cp)
+        if c == 0 || c == 230 { return false }
+    }
+    return false
+}
+
+private func beforeDot(_ suffix: [Int]) -> Bool {
+    for cp in suffix {
+        if cp == 0x0307 { return true }
+        if canonicalCombiningClass(cp) == 0 { return false }
+    }
+    return false
+}
+
+private func hasCasedBefore(_ revPrefix: [Int]) -> Bool {
+    for cp in revPrefix {
+        if isCased(cp) { return true }
+        if canonicalCombiningClass(cp) == 0 { return false }
+    }
+    return false
+}
+
+private func hasCasedAfter(_ suffix: [Int]) -> Bool {
+    for cp in suffix {
+        if isCased(cp) { return true }
+        if canonicalCombiningClass(cp) == 0 { return false }
+    }
+    return false
+}
+
+private func finalSigma(_ revPrefix: [Int], _ suffix: [Int]) -> Bool {
+    hasCasedBefore(revPrefix) && !hasCasedAfter(suffix)
+}
+
+private func casingLocaleMatches(_ locale: CasingLocale, _ conds: [String]) -> Bool {
+    if !conds.contains(where: { casingLocaleConditions.contains($0) }) { return true }
+    return conds.contains { cond in
+        (cond == "tr" && locale == .turkish)
+            || (cond == "az" && locale == .azeri)
+            || (cond == "lt" && locale == .lithuanian)
+    }
+}
+
+private func casingConditionsHold(
+    _ locale: CasingLocale, _ revPrefix: [Int], _ suffix: [Int], _ conds: [String]
+) -> Bool {
+    if !casingLocaleMatches(locale, conds) { return false }
+    for cond in conds {
+        if casingLocaleConditions.contains(cond) { continue }
+        let ok: Bool
+        switch cond {
+        case "Final_Sigma": ok = finalSigma(revPrefix, suffix)
+        case "Not_Final_Sigma": ok = !finalSigma(revPrefix, suffix)
+        case "After_Soft_Dotted": ok = afterSoftDotted(revPrefix)
+        case "More_Above": ok = moreAboveAfter(suffix)
+        case "Not_Before_Dot": ok = !beforeDot(suffix)
+        case "After_I": ok = afterI(revPrefix)
+        default: ok = false
+        }
+        if !ok { return false }
+    }
+    return true
+}
+
+// UAX #21: a conditional row whose conditions hold outranks the unconditional
+// row for the same codepoint; absent any special row, the simple lowercase
+// mapping applies.
+private func findSpecialCasingRow(
+    _ locale: CasingLocale, _ revPrefix: [Int], _ suffix: [Int], _ cp: Int
+) -> CasingRow? {
+    guard let candidates = specialCasingRows()[cp] else { return nil }
+    for row in candidates where !row.conditions.isEmpty {
+        if casingConditionsHold(locale, revPrefix, suffix, row.conditions) { return row }
+    }
+    for row in candidates where row.conditions.isEmpty {
+        return row
+    }
+    return nil
+}
+
+private func lowerCodepoint(
+    _ locale: CasingLocale, _ revPrefix: [Int], _ suffix: [Int], _ cp: Int
+) -> [Int] {
+    if let row = findSpecialCasingRow(locale, revPrefix, suffix, cp) {
+        return row.lower
+    }
+    return [simpleLowercase(cp)]
+}
+
+/// Lowercase a codepoint sequence under `locale` (UAX #21 full mapping),
+/// mirroring `Unicode.Casing.toLower`.
+public func toLower(_ locale: CasingLocale, _ cps: [Int]) -> [Int] {
+    var out: [Int] = []
+    var revPrefix: [Int] = []
+    for index in cps.indices {
+        let suffix = Array(cps[(index + 1)...])
+        out.append(contentsOf: lowerCodepoint(locale, revPrefix, suffix, cps[index]))
+        revPrefix.insert(cps[index], at: 0)
+    }
+    return out
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// BIP-39 canonical-form detector (crypto layer), mirroring
+// Unicode.Security.Crypto.Bip39Canonical.
+//
+// Canonical form = NFKD -> toLower(default) -> collapse BIP-39 whitespace runs
+// to a single U+0020 -> trim leading/trailing U+0020. The detector runs six
+// probes in priority order (first hit wins): trailing whitespace, mixed case,
+// whitespace anomaly, non-NFKD input, wordlist mismatch, then language
+// resolution over the ten 2,048-word BIP-39 wordlists.
+// ─────────────────────────────────────────────────────────────────────
+
+public struct Bip39CanonicalResult: Equatable {
+    public let subThreat: String?
+    public let positions: [Int]
+    public let language: String
+    public let canonical: [Int]
+    public let wordCount: Int
+}
+
+// Declaration order matching Unicode.Generated.BIP39.allLanguages; English is
+// first, so a mnemonic several wordlists could cover resolves to English exactly
+// as the Lean findSome? over allLanguages does.
+private let bip39Languages: [String] = [
+    "english", "japanese", "korean", "spanish", "chinese_simplified",
+    "chinese_traditional", "french", "italian", "czech", "portuguese",
+]
+
+private func bip39Wordlist(_ lang: String) -> Set<[Int]> {
+    if bip39WordlistCache == nil { bip39WordlistCache = [:] }
+    if let cached = bip39WordlistCache?[lang] { return cached }
+    var entries: Set<[Int]> = []
+    for line in readDataFile("bip39/\(lang).txt").split(separator: "\n", omittingEmptySubsequences: false) {
+        if line.isEmpty { continue }
+        entries.insert(codepointsFromString(String(line)))
+    }
+    bip39WordlistCache?[lang] = entries
+    return entries
+}
+
+private func bip39IsInWordlist(_ lang: String, _ word: [Int]) -> Bool {
+    bip39Wordlist(lang).contains(word)
+}
+
+private func bip39WordlistsContaining(_ word: [Int]) -> [String] {
+    bip39Languages.filter { bip39IsInWordlist($0, word) }
+}
+
+private func bip39UniqueLanguage(_ words: [[Int]]) -> String? {
+    for lang in bip39Languages {
+        if words.allSatisfy({ bip39IsInWordlist(lang, $0) }) { return lang }
+    }
+    return nil
+}
+
+private func bip39SplitWords(_ canonical: [Int]) -> [[Int]] {
+    var words: [[Int]] = []
+    var current: [Int] = []
+    for cp in canonical {
+        if cp == 0x0020 {
+            if !current.isEmpty { words.append(current); current = [] }
+        } else {
+            current.append(cp)
+        }
+    }
+    if !current.isEmpty { words.append(current) }
+    return words
+}
+
+private func isBip39Whitespace(_ cp: Int) -> Bool { cp == 0x0020 || cp == 0x3000 }
+
+private func collapseBip39Whitespace(_ cps: [Int]) -> [Int] {
+    var out: [Int] = []
+    var inWs = false
+    for cp in cps {
+        if isBip39Whitespace(cp) {
+            if !inWs { out.append(0x0020) }
+            inWs = true
+        } else {
+            out.append(cp)
+            inWs = false
+        }
+    }
+    return out
+}
+
+private func trimBip39(_ cps: [Int]) -> [Int] {
+    var start = 0
+    var end = cps.count
+    while start < end && cps[start] == 0x0020 { start += 1 }
+    while end > start && cps[end - 1] == 0x0020 { end -= 1 }
+    return Array(cps[start..<end])
+}
+
+private func bip39CanonicalForm(_ cps: [Int]) -> [Int] {
+    trimBip39(collapseBip39Whitespace(toLower(.default, toNfkd(cps))))
+}
+
+private func bip39CountTrailingWhitespace(_ cps: [Int]) -> Int {
+    var count = 0
+    for cp in cps.reversed() {
+        if isBip39Whitespace(cp) { count += 1 } else { break }
+    }
+    return count
+}
+
+private func bip39FirstUppercasePos(_ cps: [Int]) -> Int? {
+    cps.firstIndex { $0 >= 0x41 && $0 <= 0x5A }
+}
+
+private func bip39FirstWhitespaceRunPos(_ cps: [Int]) -> Int? {
+    for index in cps.indices where isBip39Whitespace(cps[index]) {
+        if index == 0 { return index }
+        if index + 1 < cps.count && isBip39Whitespace(cps[index + 1]) { return index }
+    }
+    return nil
+}
+
+private func bip39FirstArrayDivergence(_ a: [Int], _ b: [Int]) -> Int? {
+    let n = min(a.count, b.count)
+    for index in 0..<n where a[index] != b[index] {
+        return index
+    }
+    if a.count != b.count { return n }
+    return nil
+}
+
+/// Detect a non-canonical or wordlist-mismatched BIP-39 mnemonic, mirroring
+/// `Unicode.Security.Crypto.Bip39Canonical.detect`.
+public func bip39CanonicalDetect(_ input: [Int]) -> Bip39CanonicalResult {
+    let canonical = bip39CanonicalForm(input)
+    let words = bip39SplitWords(canonical)
+
+    let trailingCount = bip39CountTrailingWhitespace(input)
+    let uppercasePos = bip39FirstUppercasePos(input)
+    let whitespacePos = bip39FirstWhitespaceRunPos(input)
+
+    let nfkd = toNfkd(input)
+    let nonNfkdPos = input == nfkd ? nil : bip39FirstArrayDivergence(input, nfkd)
+
+    let wordlistsPerWord = words.map { bip39WordlistsContaining($0) }
+    let firstUnknownIdx = wordlistsPerWord.firstIndex { $0.isEmpty }
+
+    let subThreat: String?
+    let positions: [Int]
+    var language = "english"
+
+    if trailingCount > 0 {
+        subThreat = "TrailingWhitespace"
+        positions = [input.count - trailingCount]
+    } else if let uppercasePos {
+        subThreat = "MixedCase"
+        positions = [uppercasePos]
+    } else if let whitespacePos {
+        subThreat = "WhitespaceAnomaly"
+        positions = [whitespacePos]
+    } else if let nonNfkdPos {
+        subThreat = "NonNFKD"
+        positions = [nonNfkdPos]
+    } else if let firstUnknownIdx {
+        subThreat = "WordlistMismatch"
+        positions = [firstUnknownIdx]
+    } else if let unique = bip39UniqueLanguage(words) {
+        subThreat = nil
+        positions = []
+        language = unique
+    } else {
+        subThreat = "LanguageAmbiguous"
+        positions = []
+    }
+
+    return Bip39CanonicalResult(
+        subThreat: subThreat,
+        positions: positions,
+        language: language,
+        canonical: canonical,
+        wordCount: words.count
+    )
+}
+
 private func confusablesMap() -> [Int: [Int]] {
     if let cached = confusablesMapCache { return cached }
     let parsed = parseConfusables(readDataFile("confusables.txt"))
@@ -1128,13 +1562,46 @@ private let pinnedTableDigests: [String: String] = [
     "DerivedBidiClass.txt": "4867b4b7f0731ed1bfcd34cc6251211ff1542541fce0734b6fbda139ee80b3a4",
     "UnicodeData.txt": "2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c",
     "CompositionExclusions.txt": "2f239196ef3b5b61db5cc476e9bd80f534d15aa1b74e1be1dea5d042a344c85f",
+    "DerivedCoreProperties.txt": "24c7fed1195c482faaefd5c1e7eb821c5ee1fb6de07ecdbaa64b56a99da22c08",
+    "SpecialCasing.txt": "efc25faf19de21b92c1194c111c932e03d2a5eaf18194e33f1156e96de4c9588",
+    "bip39/chinese_simplified.txt": "5c5942792bd8340cb8b27cd592f1015edf56a8c5b26276ee18a482428e7c5726",
+    "bip39/chinese_traditional.txt": "417b26b3d8500a4ae3d59717d7011952db6fc2fb84b807f3f94ac734e89c1b5f",
+    "bip39/czech.txt": "7e80e161c3e93d9554c2efb78d4e3cebf8fc727e9c52e03b83b94406bdcc95fc",
+    "bip39/english.txt": "2f5eed53a4727b4bf8880d8f3f199efc90e58503646d9ff8eff3a2ed3b24dbda",
+    "bip39/french.txt": "ebc3959ab7801a1df6bac4fa7d970652f1df76b683cd2f4003c941c63d517e59",
+    "bip39/italian.txt": "d392c49fdb700a24cd1fceb237c1f65dcc128f6b34a8aacb58b59384b5c648c2",
+    "bip39/japanese.txt": "2eed0aef492291e061633d7ad8117f1a2b03eb80a29d0e4e3117ac2528d05ffd",
+    "bip39/korean.txt": "9e95f86c167de88f450f0aaf89e87f6624a57f973c67b516e338e8e8b8897f60",
+    "bip39/portuguese.txt": "2685e9c194c82ae67e10ba59d9ea5345a23dc093e92276fc5361f6667d79cd3f",
+    "bip39/spanish.txt": "46846a5a0139d1e3cb77293e521c2865f7bcdb82c44e8d0a06a2cd0ecba48c0b",
 ]
+
+// Resolve a pinned data table inside the module bundle. A subdirectory-qualified
+// pinned name (e.g. "bip39/english.txt") is looked up by its basename, which
+// covers a flattened resource layout; the recursive scan fallback covers a layout
+// that instead preserves the Data/… subtree. Basenames are unique across the
+// pinned set, so a basename match is unambiguous.
+private func locateDataResource(_ name: String) -> URL? {
+    let resourceName = name.split(separator: "/").last.map(String.init) ?? name
+    if let url = Bundle.module.url(forResource: resourceName, withExtension: nil) {
+        return url
+    }
+    guard let root = Bundle.module.resourceURL,
+        let walker = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)
+    else {
+        return nil
+    }
+    for case let candidate as URL in walker where candidate.lastPathComponent == resourceName {
+        return candidate
+    }
+    return nil
+}
 
 private func readDataFile(_ name: String) -> String {
     guard let expected = pinnedTableDigests[name] else {
         fatalError("refusing to load unpinned data table: \(name) (fail closed)")
     }
-    guard let url = Bundle.module.url(forResource: name, withExtension: nil) else {
+    guard let url = locateDataResource(name) else {
         fatalError("missing Swift runtime data file: \(name)")
     }
     guard let bytes = try? Data(contentsOf: url) else {

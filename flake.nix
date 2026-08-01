@@ -159,15 +159,39 @@
           '';
         };
 
-        unicodeSwift = pkgs.stdenv.mkDerivation {
+        unicodeSwift = pkgs.swiftPackages.stdenv.mkDerivation {
           pname = "unicode-swift";
           version = runtimeVersion;
           src = ./ports/swift;
+          # swiftpm's setup hook assembles the Foundation/Dispatch/CoreFoundation
+          # resource directory into the swift module search path; Foundation is a
+          # real build input so `import Foundation` resolves on Linux. A bare
+          # `nix shell #swift` does NOT wire this and cannot compile the port.
           nativeBuildInputs = [ pkgs.swift pkgs.swiftpm ];
+          buildInputs = [ pkgs.swiftPackages.Foundation pkgs.swiftPackages.Dispatch ];
           dontConfigure = true;
+          # swiftpm's Package.swift manifest binary is executed with an rpath
+          # that omits libdispatch in this nixpkgs pin; put the Dispatch and
+          # Foundation runtime libs on LD_LIBRARY_PATH so the manifest compile
+          # and the built test binary both load.
+          swiftRuntimeLibs = pkgs.lib.makeLibraryPath [
+            pkgs.swiftPackages.Dispatch
+            pkgs.swiftPackages.Foundation
+          ];
           buildPhase = ''
             runHook preBuild
+            export HOME=$TMPDIR/home
+            mkdir -p "$HOME"
+            export LD_LIBRARY_PATH="$swiftRuntimeLibs''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+            swift build -c release
             runHook postBuild
+          '';
+          doCheck = true;
+          checkPhase = ''
+            runHook preCheck
+            export LD_LIBRARY_PATH="$swiftRuntimeLibs''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+            swift run -c release UnicodeSecurityContractTests
+            runHook postCheck
           '';
           installPhase = ''
             runHook preInstall

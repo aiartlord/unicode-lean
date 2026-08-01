@@ -14,7 +14,48 @@ struct SecurityContractRunner {
         try testMultiEncodingDecodeContract()
         try testDetectorFixtures()
         try testCompatibilityNormalization()
+        try testCasing()
+        try testBip39Canonical()
         print("clean: Swift contract tests pass")
+    }
+
+    // Pins toLower against the toLower_* ground-truth theorems in
+    // Unicode/Casing.lean.
+    private static func testCasing() throws {
+        try expectEqual(toLower(.default, [0x48, 0x65, 0x6C, 0x6C, 0x6F]), [0x68, 0x65, 0x6C, 0x6C, 0x6F], "toLower hello")
+        try expectEqual(toLower(.default, [0x0049]), [0x0069], "toLower I default")
+        try expectEqual(toLower(.turkish, [0x0049]), [0x0131], "toLower I turkish")
+        try expectEqual(toLower(.azeri, [0x0049]), [0x0131], "toLower I azeri")
+        try expectEqual(toLower(.turkish, [0x0130]), [0x0069], "toLower dotted-I turkish")
+        try expectEqual(toLower(.default, [0x0130]), [0x0069, 0x0307], "toLower dotted-I default")
+    }
+
+    // Pins bip39CanonicalDetect against the detect ground-truth theorems in
+    // Unicode/Security/Crypto/Bip39Canonical.lean.
+    private static func testBip39Canonical() throws {
+        let abandon = [0x61, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E]
+        let about = [0x61, 0x62, 0x6F, 0x75, 0x74]
+
+        try expectEqual(bip39CanonicalDetect(abandon + [0x20]).subThreat, "TrailingWhitespace", "bip39 trailing")
+        try expectEqual(bip39CanonicalDetect(abandon + [0x20]).positions, [7], "bip39 trailing pos")
+        try expectEqual(bip39CanonicalDetect([0x41, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E]).subThreat, "MixedCase", "bip39 mixed")
+        try expectEqual(bip39CanonicalDetect(abandon + [0x20, 0x20] + about).subThreat, "WhitespaceAnomaly", "bip39 double")
+        try expectEqual(bip39CanonicalDetect([0x20] + abandon).subThreat, "WhitespaceAnomaly", "bip39 leading")
+        try expectEqual(bip39CanonicalDetect([0xFB00]).subThreat, "NonNFKD", "bip39 ligature")
+        try expectEqual(bip39CanonicalDetect([0x61, 0x00A0, 0x62]).subThreat, "NonNFKD", "bip39 nbsp")
+        try expectEqual(bip39CanonicalDetect([0x71, 0x7A, 0x71, 0x7A]).subThreat, "WordlistMismatch", "bip39 mismatch")
+
+        let empty = bip39CanonicalDetect([])
+        try expectEqual(empty.subThreat, nil, "bip39 empty sub")
+        try expectEqual(empty.language, "english", "bip39 empty lang")
+
+        var mnemonic: [Int] = []
+        for _ in 0..<11 { mnemonic += abandon + [0x20] }
+        mnemonic += about
+        let verdict = bip39CanonicalDetect(mnemonic)
+        try expectEqual(verdict.subThreat, nil, "bip39 12word sub")
+        try expectEqual(verdict.language, "english", "bip39 12word lang")
+        try expectEqual(verdict.wordCount, 12, "bip39 12word count")
     }
 
     // Pins the covert-display-compound detector against the detect_* spot-check
