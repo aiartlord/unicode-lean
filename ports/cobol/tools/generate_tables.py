@@ -95,6 +95,16 @@ def parse_confusable_sources():
     return sorted(values)
 
 
+def parse_bip39_word_keys():
+    keys = set()
+    for path in sorted((DATA / "bip39").glob("*.txt")):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            word = line.strip()
+            if word:
+                keys.add(",".join(str(ord(ch)) for ch in word))
+    return sorted(keys)
+
+
 def emit_range_eval(path, ranges, success_line):
     lines = ["EVALUATE TRUE"]
     for lo, hi in ranges:
@@ -138,6 +148,15 @@ def emit_script_flags(path, script_ranges):
     path.write_text("\n".join(lines) + "\n", encoding="ascii")
 
 
+def emit_bip39_words(path, keys):
+    lines = ["EVALUATE FUNCTION TRIM(WORD-KEY)"]
+    for key in keys:
+        lines.append(f"    WHEN \"{key}\"")
+    lines.append("        MOVE 1 TO TABLE-FLAG")
+    lines.append("END-EVALUATE.")
+    path.write_text("\n".join(lines) + "\n", encoding="ascii")
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     emit_variation_pairs(OUT / "legal_variation.cpy", parse_variation_pairs())
@@ -149,6 +168,7 @@ def main():
         parse_property_ranges(DATA / "DerivedCoreProperties.txt", {"Default_Ignorable_Code_Point"}),
         "MOVE 1 TO TABLE-FLAG",
     )
+    emit_bip39_words(OUT / "bip39_words.cpy", parse_bip39_word_keys())
     print("generated COBOL Unicode lookup copybooks")
 
 

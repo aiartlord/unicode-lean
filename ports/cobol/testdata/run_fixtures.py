@@ -45,6 +45,10 @@ def require(condition, message):
         raise AssertionError(message)
 
 
+def cps(text):
+    return [ord(ch) for ch in text]
+
+
 def check_policy():
     fixture = load("policy_contract.json")
     for case in fixture["cases"]:
@@ -149,6 +153,19 @@ def check_forms_and_bip39():
         got = run(op, "gateway-header", "observe", values)
         for code in required:
             require(code in got["codes"], f"{op}/{values} missing {code}; got {got['codes']}")
+
+    mnemonic = cps(" ".join(["abandon"] * 11 + ["about"]))
+    valid = run("bip39", "gateway-header", "observe", mnemonic)
+    require(
+        all(".bip39-canonical." not in code for code in valid["codes"]),
+        f"valid generated English BIP39 mnemonic should clear; got {valid['codes']}",
+    )
+
+    multilingual = run("bip39", "gateway-header", "observe", cps("abeja"))
+    require(
+        all(".bip39-canonical." not in code for code in multilingual["codes"]),
+        f"generated multilingual BIP39 word should clear; got {multilingual['codes']}",
+    )
 
 
 def check_generated_tables():
