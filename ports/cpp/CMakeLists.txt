@@ -46,6 +46,7 @@ foreach(UNICODE_CPP_DATA_FILE IN ITEMS
     PropertyValueAliases.txt
     ScriptExtensions.txt
     Scripts.txt
+    SpecialCasing.txt
     UnicodeData.txt
     confusables.txt)
     file(REAL_PATH
@@ -55,3 +56,8 @@ foreach(UNICODE_CPP_DATA_FILE IN ITEMS
         DESTINATION ${CMAKE_INSTALL_DATADIR}/unicode_cpp/data
         RENAME "${UNICODE_CPP_DATA_FILE}")
 endforeach()
+
+# BIP-39 wordlists (bip39-canonical) ship as a subdirectory of the data dir.
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/data/bip39"
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/unicode_cpp/data
+    FILES_MATCHING PATTERN "*.txt")
