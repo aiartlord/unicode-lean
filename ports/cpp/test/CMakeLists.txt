@@ -22,6 +22,7 @@ add_executable(unicode_cpp_tests
     validated_utf8_test.cpp
     security_test.cpp
     nfkc_nfkd_test.cpp
+    casing_test.cpp
     surrogate_reassembly_test.cpp)
 target_link_libraries(unicode_cpp_tests
     PRIVATE unicode_cpp::unicode_cpp doctest::doctest)

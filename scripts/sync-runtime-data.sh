@@ -117,6 +117,7 @@ cpp_files=(
   PropertyValueAliases.txt
   ScriptExtensions.txt
   Scripts.txt
+  SpecialCasing.txt
   UnicodeData.txt
   confusables.txt
 )
