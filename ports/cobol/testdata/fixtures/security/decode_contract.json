@@ -1,0 +1,152 @@
+{
+  "schema": 1,
+  "contract": "unicode-security-decode-v0",
+  "cases": [
+    {
+      "name": "ascii-gateway-enforce",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input_bytes": [72, 101, 108, 108, 111],
+      "input": [72, 101, 108, 108, 111],
+      "action": "allow",
+      "required_findings": [],
+      "required_positions": []
+    },
+    {
+      "name": "invalid-start-gateway-reject",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input_bytes": [128],
+      "input": [],
+      "action": "reject",
+      "required_findings": [
+        "unicode.security.C.malformed-utf8.InvalidStartByte"
+      ],
+      "required_positions": [
+        {
+          "code": "unicode.security.C.malformed-utf8.InvalidStartByte",
+          "positions": [0]
+        }
+      ]
+    },
+    {
+      "name": "invalid-continuation-gateway-reject",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input_bytes": [194, 0],
+      "input": [],
+      "action": "reject",
+      "required_findings": [
+        "unicode.security.C.malformed-utf8.InvalidContinuationByte"
+      ],
+      "required_positions": [
+        {
+          "code": "unicode.security.C.malformed-utf8.InvalidContinuationByte",
+          "positions": [1]
+        }
+      ]
+    },
+    {
+      "name": "overlong-gateway-reject",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input_bytes": [224, 128, 175],
+      "input": [],
+      "action": "reject",
+      "required_findings": [
+        "unicode.security.C.malformed-utf8.OverlongEncoding"
+      ],
+      "required_positions": [
+        {
+          "code": "unicode.security.C.malformed-utf8.OverlongEncoding",
+          "positions": [0]
+        }
+      ]
+    },
+    {
+      "name": "surrogate-gateway-reject",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input_bytes": [237, 160, 128],
+      "input": [],
+      "action": "reject",
+      "required_findings": [
+        "unicode.security.C.malformed-utf8.SurrogateCodepoint"
+      ],
+      "required_positions": [
+        {
+          "code": "unicode.security.C.malformed-utf8.SurrogateCodepoint",
+          "positions": [2]
+        }
+      ]
+    },
+    {
+      "name": "beyond-max-gateway-reject",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input_bytes": [244, 144, 128, 128],
+      "input": [],
+      "action": "reject",
+      "required_findings": [
+        "unicode.security.C.malformed-utf8.CodepointBeyondMax"
+      ],
+      "required_positions": [
+        {
+          "code": "unicode.security.C.malformed-utf8.CodepointBeyondMax",
+          "positions": [3]
+        }
+      ]
+    },
+    {
+      "name": "truncated-gateway-reject",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input_bytes": [194],
+      "input": [],
+      "action": "reject",
+      "required_findings": [
+        "unicode.security.C.malformed-utf8.TruncatedSequence"
+      ],
+      "required_positions": [
+        {
+          "code": "unicode.security.C.malformed-utf8.TruncatedSequence",
+          "positions": [1]
+        }
+      ]
+    },
+    {
+      "name": "invalid-start-gateway-observe",
+      "profile": "gateway-header",
+      "mode": "observe",
+      "input_bytes": [128],
+      "input": [],
+      "action": "observe",
+      "required_findings": [
+        "unicode.security.C.malformed-utf8.InvalidStartByte"
+      ],
+      "required_positions": [
+        {
+          "code": "unicode.security.C.malformed-utf8.InvalidStartByte",
+          "positions": [0]
+        }
+      ]
+    },
+    {
+      "name": "zero-width-source-strict",
+      "profile": "source-code",
+      "mode": "strict",
+      "input_bytes": [97, 226, 128, 139, 98],
+      "input": [97, 8203, 98],
+      "action": "reject",
+      "required_findings": [
+        "unicode.security.C.zero-width-payload.BareZeroWidth"
+      ],
+      "required_positions": [
+        {
+          "code": "unicode.security.C.zero-width-payload.BareZeroWidth",
+          "positions": [1]
+        }
+      ]
+    }
+  ]
+}

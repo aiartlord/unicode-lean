@@ -26,6 +26,7 @@ lua_dir="${UNICODE_LUA_DIR:-ports/lua}"
 php_dir="${UNICODE_PHP_DIR:-ports/php}"
 elixir_dir="${UNICODE_ELIXIR_DIR:-ports/elixir}"
 erlang_dir="${UNICODE_ERLANG_DIR:-ports/erlang}"
+cobol_dir="${UNICODE_COBOL_DIR:-ports/cobol}"
 
 root_manifest_files=(
   CaseFolding.txt
@@ -347,6 +348,10 @@ erlang_files=(
   "${ruby_files[@]}"
 )
 
+cobol_files=(
+  "${root_manifest_files[@]}"
+)
+
 usage() {
   cat <<'USAGE'
 Usage: scripts/sync-runtime-data.sh [--check|--apply]
@@ -372,6 +377,7 @@ Environment:
   UNICODE_PHP_DIR=PATH
   UNICODE_ELIXIR_DIR=PATH
   UNICODE_ERLANG_DIR=PATH
+  UNICODE_COBOL_DIR=PATH
 
 Notes:
   - This script does not download Unicode data.
@@ -704,6 +710,7 @@ if [[ "$mode" == "apply" ]]; then
   sync_data_dir "$php_dir/data" "${php_files[@]}"
   sync_data_dir "$elixir_dir/priv/data" "${elixir_files[@]}"
   sync_data_dir "$erlang_dir/priv/data" "${erlang_files[@]}"
+  sync_data_dir "$cobol_dir/data" "${cobol_files[@]}"
   scripts/check-runtime-data.sh
   echo "clean: runtime data synchronized from canonical UCD inputs"
 else
@@ -723,6 +730,7 @@ else
   check_data_dir "$php_dir/data" "${php_files[@]}"
   check_data_dir "$elixir_dir/priv/data" "${elixir_files[@]}"
   check_data_dir "$erlang_dir/priv/data" "${erlang_files[@]}"
+  check_data_dir "$cobol_dir/data" "${cobol_files[@]}"
   scripts/check-runtime-data.sh
   echo "clean: runtime data sync check passed"
 fi

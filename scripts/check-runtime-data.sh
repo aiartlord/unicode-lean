@@ -27,6 +27,7 @@ lua_data_dir="${UNICODE_LUA_DATA_DIR:-ports/lua/data}"
 php_data_dir="${UNICODE_PHP_DATA_DIR:-ports/php/data}"
 elixir_data_dir="${UNICODE_ELIXIR_DATA_DIR:-ports/elixir/priv/data}"
 erlang_data_dir="${UNICODE_ERLANG_DATA_DIR:-ports/erlang/priv/data}"
+cobol_data_dir="${UNICODE_COBOL_DATA_DIR:-ports/cobol/data}"
 
 usage() {
   cat <<'USAGE'
@@ -69,6 +70,7 @@ Environment:
   UNICODE_PHP_DATA_DIR=PATH
   UNICODE_ELIXIR_DATA_DIR=PATH
   UNICODE_ERLANG_DATA_DIR=PATH
+  UNICODE_COBOL_DATA_DIR=PATH
 USAGE
 }
 
@@ -346,6 +348,9 @@ check_vendored_data_dir Elixir "$elixir_data_dir"
 
 echo "== erlang runtime data =="
 check_vendored_data_dir Erlang "$erlang_data_dir"
+
+echo "== cobol runtime data =="
+check_vendored_data_dir COBOL "$cobol_data_dir"
 
 echo "== embedded port digest sync =="
 scripts/check-port-pinned-digests.sh

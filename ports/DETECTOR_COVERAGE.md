@@ -67,7 +67,7 @@ fixture presence is not coverage.
 | php | Vouched at the 16/27 non-Rust baseline: native policy/decode/verdict fixture tests, shared detector fixture tests, form-detector vectors, Bip39Canonical vectors, vendored-data parity pass, and `nix build .#unicode-php`. | yes | Continue only with fixture-backed detector fan-out; do not count copied fixtures as coverage. |
 | elixir | Vouched at the 16/27 non-Rust baseline: native policy/decode/verdict fixture tests, shared detector fixture tests, form-detector vectors, Bip39Canonical vectors, vendored-data parity pass, and `nix build .#unicode-elixir`. | yes | Continue only with fixture-backed detector fan-out; do not count copied fixtures as coverage. |
 | erlang | Vouched at the 16/27 non-Rust baseline: native policy/decode/verdict fixture tests, shared detector fixture tests, form-detector vectors, Bip39Canonical vectors, vendored-data parity pass, and `nix build .#unicode-erlang`. | yes | Continue only with fixture-backed detector fan-out; do not count copied fixtures as coverage. |
-| cobol | Data and fixture copies only. No COBOL source implementation found. | no | Establish package/source layout, then begin core covert detectors. |
+| cobol | Native GnuCOBOL scanner, UTF-8/UTF-16/UTF-32 decode checks, shared detector/policy/verdict fixture harness, form vectors, Bip39Canonical vectors, vendored-data parity pass, and `nix build .#unicode-cobol`. The scanner is fixture-vouched but still uses bounded detector tables rather than full UCD-backed parity internals, so it is not counted in the matrix yet. | no | Replace bounded scanner tables with full data-backed detector internals before counting as a vouched 16/27 port. |
 
 ## Remaining work
 

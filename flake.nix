@@ -52,6 +52,7 @@
           pkgs.ruby
           pkgs.lua5_4
           pkgs.php
+          pkgs.gnucobol.bin
           pkgs.beamPackages.erlang
           pkgs.beamPackages.elixir
           pkgs.dotnet-sdk_8
@@ -250,6 +251,25 @@
           '';
         };
 
+        unicodeCobol = pkgs.stdenv.mkDerivation {
+          pname = "unicode-cobol";
+          version = runtimeVersion;
+          src = ./ports/cobol;
+          nativeBuildInputs = [ pkgs.gnucobol.bin pkgs.gcc pkgs.python3 ];
+          dontConfigure = true;
+          buildPhase = ''
+            runHook preBuild
+            bash scripts/test.sh
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/share/unicode-cobol
+            cp -R data scripts src testdata $out/share/unicode-cobol/
+            runHook postInstall
+          '';
+        };
+
         unicodeDotnet = pkgs.stdenv.mkDerivation {
           pname = "unicode-dotnet";
           version = runtimeVersion;
@@ -402,6 +422,7 @@
         packages.unicode-php = unicodePhp;
         packages.unicode-elixir = unicodeElixir;
         packages.unicode-erlang = unicodeErlang;
+        packages.unicode-cobol = unicodeCobol;
         packages.unicode-dotnet = unicodeDotnet;
         packages.unicode-swift = unicodeSwift;
         packages.unicode-zig = unicodeZig;
