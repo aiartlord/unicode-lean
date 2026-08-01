@@ -29,7 +29,7 @@ Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 | WidthClassConfusion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Bip39Canonical | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | SourceDisplayDivergence | ✓ | – | – | – | – | – | – | – | – | – |
-| LocaleCaseInversion | – | – | – | – | – | – | – | – | – | – |
+| LocaleCaseInversion | ✓ | – | – | – | – | – | – | – | – | – |
 | CaseExpansionMismatch | – | – | – | – | – | – | – | – | – | – |
 | NfcIdempotenceWitness | – | – | – | – | – | – | – | – | – | – |
 | NormalizationBomb | – | – | – | – | – | – | – | – | – | – |
@@ -46,7 +46,7 @@ Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 | WordlistOrder | – | – | – | – | – | – | – | – | – | – |
 | EmojiPresentationRegistry | – | – | – | – | – | – | – | – | – | – |
 
-**Totals:** rust 14/30 · all other ports 13/30 · overall 131/300 cells. The 13
+**Totals:** rust 15/30 · all other ports 13/30 · overall 132/300 cells. The 13
 core families are complete and vouched across every port; everything below the
 line is spec-proven in Lean but not yet ported.
 
@@ -57,16 +57,17 @@ no port at all, plus SourceDisplayDivergence which has only a rust reference).
 Each unported family needs: a reference implementation verified against the Lean
 `detect_*` theorems, then a fan-out to all ten ports, each vouched.
 
-**Not started in any port (16):** LocaleCaseInversion, CaseExpansionMismatch,
+**Not started in any port (15):** CaseExpansionMismatch,
 NfcIdempotenceWitness, NormalizationBomb, IdentifierFormDrift,
 AdmissibilityFormDrift, EmojiZwjIntegrity, SkinToneVariationForgery,
 FilenameDisguise, RendererDivergence, HashInputStability, StreamSafeViolation,
 AiWatermarkDetectability, GlitchTokenScan, WordlistOrder,
 EmojiPresentationRegistry.
 
-**Reference-only (1):** SourceDisplayDivergence — rust
-`display/source_display_divergence.rs` exists; needs wiring review + fan-out to
-the other nine ports.
+**Reference-only (2):** SourceDisplayDivergence
+(`display/source_display_divergence.rs`) and LocaleCaseInversion
+(`form/locale_case_inversion.rs`) — rust references exist and are vouched;
+each needs fan-out to the other nine ports.
 
 **Bip39 scan-wiring (follow-up):** Bip39Canonical ships standalone and
 crypto-context-gated in all ten ports; it is deliberately not part of the default

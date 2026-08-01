@@ -1335,6 +1335,18 @@ fn find_special_row(
     candidates.iter().find(|row| row.conditions.is_empty())
 }
 
+/// Lowercase a single codepoint in its full input context (UAX #21): the
+/// SpecialCasing row whose conditions hold, else the simple lowercase mapping.
+/// `rev_prefix` is the preceding codepoints nearest-first; `suffix` the
+/// strictly-following ones. Exposed so context-sensitive detectors (e.g.
+/// locale-case-inversion) can compare per-position mappings across locales.
+pub fn lower_codepoint(locale: Locale, rev_prefix: &[u32], suffix: &[u32], cp: u32) -> Vec<u32> {
+    match find_special_row(locale, rev_prefix, suffix, cp) {
+        Some(row) => row.lower.clone(),
+        None => vec![simple_lowercase(cp)],
+    }
+}
+
 /// Lowercase a codepoint sequence under `locale` (UAX #21 full case mapping):
 /// SpecialCasing rows where their conditions hold, else the simple lowercase
 /// mapping. Computed from the pinned UCD tables, not the runtime.
@@ -1343,10 +1355,7 @@ pub fn to_lower(locale: Locale, cps: &[u32]) -> Vec<u32> {
     let mut rev_prefix: Vec<u32> = Vec::new();
     for (index, &cp) in cps.iter().enumerate() {
         let suffix = &cps[index + 1..];
-        match find_special_row(locale, &rev_prefix, suffix, cp) {
-            Some(row) => out.extend_from_slice(&row.lower),
-            None => out.push(simple_lowercase(cp)),
-        }
+        out.extend_from_slice(&lower_codepoint(locale, &rev_prefix, suffix, cp));
         rev_prefix.insert(0, cp);
     }
     out
