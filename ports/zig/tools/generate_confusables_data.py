@@ -18,6 +18,26 @@ CASE_FOLDING_SOURCE = ROOT / "src" / "data" / "CaseFolding.txt"
 CASE_FOLDING_OUTPUT = ROOT / "src" / "case_folding_data.zig"
 BIDI_SOURCE = ROOT / "src" / "data" / "DerivedBidiClass.txt"
 BIDI_OUTPUT = ROOT / "src" / "bidi_class_data.zig"
+SPECIAL_CASING_SOURCE = ROOT / "src" / "data" / "SpecialCasing.txt"
+DERIVED_CORE_PROPERTIES_SOURCE = ROOT / "src" / "data" / "DerivedCoreProperties.txt"
+CASING_OUTPUT = ROOT / "src" / "casing_data.zig"
+BIP39_DIR = ROOT / "src" / "data" / "bip39"
+BIP39_OUTPUT = ROOT / "src" / "bip39_data.zig"
+
+# BIP-39 wordlist languages in Unicode.Generated.BIP39.allLanguages order;
+# English first so a mnemonic several wordlists could cover resolves to English.
+BIP39_LANGUAGES = [
+    "english",
+    "japanese",
+    "korean",
+    "spanish",
+    "chinese_simplified",
+    "chinese_traditional",
+    "french",
+    "italian",
+    "czech",
+    "portuguese",
+]
 
 
 def parse_codepoints(field: str) -> list[int]:
@@ -357,6 +377,195 @@ def render_case_folding(entries: dict[int, list[int]]) -> str:
     return "\n".join(lines)
 
 
+def parse_simple_lowercase(text: str) -> dict[int, int]:
+    """Parse UnicodeData.txt field 13 (simple lowercase mapping) into
+    ``cp -> lower``; codepoints without a mapping lowercase to themselves and
+    are omitted."""
+    out: dict[int, int] = {}
+    for raw_line in text.splitlines():
+        if not raw_line:
+            continue
+        fields = raw_line.split(";")
+        if len(fields) < 14:
+            continue
+        lower_field = fields[13].strip()
+        if not lower_field:
+            continue
+        try:
+            out[int(fields[0], 16)] = int(lower_field, 16)
+        except ValueError:
+            continue
+    return out
+
+
+def parse_special_casing(text: str) -> list[tuple[int, list[int], list[str]]]:
+    """Parse SpecialCasing.txt into ``(code, lower, conditions)`` rows in file
+    order (per codepoint, the file lists conditional rows before the
+    unconditional fallback, and toLower keeps that order). Only the lowercase
+    mapping (field 1) and the condition list (field 4) are retained."""
+    rows: list[tuple[int, list[int], list[str]]] = []
+    for raw_line in text.splitlines():
+        body = raw_line.split("#", 1)[0].strip()
+        if not body:
+            continue
+        fields = [f.strip() for f in body.split(";")]
+        if len(fields) < 4:
+            continue
+        try:
+            code = int(fields[0], 16)
+            lower = parse_codepoints(fields[1])
+        except ValueError:
+            continue
+        conditions = fields[4].split() if len(fields) > 4 and fields[4] else []
+        rows.append((code, lower, conditions))
+    return rows
+
+
+def parse_derived_property(text: str, name: str) -> list[tuple[int, int]]:
+    """Parse DerivedCoreProperties.txt into inclusive ``(lo, hi)`` ranges for a
+    single property (``Cased`` or ``Soft_Dotted``), sorted by ``lo``."""
+    out: list[tuple[int, int]] = []
+    for raw_line in text.splitlines():
+        body = raw_line.split("#", 1)[0].strip()
+        if not body:
+            continue
+        parts = body.split(";")
+        if len(parts) < 2 or parts[1].strip() != name:
+            continue
+        field = parts[0].strip()
+        if ".." in field:
+            lo_text, hi_text = field.split("..", 1)
+            try:
+                out.append((int(lo_text, 16), int(hi_text, 16)))
+            except ValueError:
+                continue
+        else:
+            try:
+                cp = int(field, 16)
+            except ValueError:
+                continue
+            out.append((cp, cp))
+    out.sort(key=lambda row: row[0])
+    return out
+
+
+def _u32_slice_literal(values: list[int]) -> str:
+    if not values:
+        return "&[_]u32{}"
+    if len(values) == 1:
+        return f"&[_]u32{{{zig_hex(values[0])}}}"
+    joined = ", ".join(zig_hex(v) for v in values)
+    return f"&[_]u32{{ {joined} }}"
+
+
+def render_casing(
+    simple_lower: dict[int, int],
+    special: list[tuple[int, list[int], list[str]]],
+    cased: list[tuple[int, int]],
+    soft_dotted: list[tuple[int, int]],
+) -> str:
+    lines = [
+        "// GENERATED FILE - DO NOT EDIT.",
+        "// Source: src/data/UnicodeData.txt, src/data/SpecialCasing.txt,",
+        "//         src/data/DerivedCoreProperties.txt",
+        "",
+        "pub const SimpleLower = struct {",
+        "    cp: u32,",
+        "    lower: u32,",
+        "};",
+        "",
+        "// Simple lowercase mappings (UnicodeData.txt field 13), sorted by cp.",
+        "pub const simple_lower = [_]SimpleLower{",
+    ]
+    for cp, lower in sorted(simple_lower.items()):
+        lines.append(f"    .{{ .cp = {zig_hex(cp)}, .lower = {zig_hex(lower)} }},")
+    lines.append("};")
+    lines.append("")
+    lines.append("pub const SpecialRow = struct {")
+    lines.append("    code: u32,")
+    lines.append("    lower: []const u32,")
+    lines.append("    conditions: []const []const u8,")
+    lines.append("};")
+    lines.append("")
+    lines.append(
+        "// SpecialCasing.txt rows, sorted by code (stable, so the per-code file"
+    )
+    lines.append(
+        "// order of conditional rows is preserved for first-match priority)."
+    )
+    lines.append("pub const special = [_]SpecialRow{")
+    for code, lower, conditions in sorted(special, key=lambda row: row[0]):
+        if conditions:
+            conds = ", ".join(f'"{token}"' for token in conditions)
+            cond_literal = f"&[_][]const u8{{ {conds} }}"
+        else:
+            cond_literal = "&[_][]const u8{}"
+        lines.append(
+            f"    .{{ .code = {zig_hex(code)}, "
+            f".lower = {_u32_slice_literal(lower)}, "
+            f".conditions = {cond_literal} }},"
+        )
+    lines.append("};")
+    lines.append("")
+    lines.append("pub const Range = struct {")
+    lines.append("    start: u32,")
+    lines.append("    end: u32,")
+    lines.append("};")
+    lines.append("")
+    lines.append("// Cased ranges (DerivedCoreProperties.txt), sorted by start.")
+    lines.append("pub const cased = [_]Range{")
+    for start, end in cased:
+        lines.append(f"    .{{ .start = {zig_hex(start)}, .end = {zig_hex(end)} }},")
+    lines.append("};")
+    lines.append("")
+    lines.append("// Soft_Dotted ranges (DerivedCoreProperties.txt), sorted by start.")
+    lines.append("pub const soft_dotted = [_]Range{")
+    for start, end in soft_dotted:
+        lines.append(f"    .{{ .start = {zig_hex(start)}, .end = {zig_hex(end)} }},")
+    lines.extend(["};", ""])
+    return "\n".join(lines)
+
+
+def parse_bip39_wordlists() -> dict[str, list[list[int]]]:
+    """Read each BIP-39 wordlist into a list of codepoint sequences, one per
+    non-empty line, preserving file order (the wordlists are already sorted)."""
+    out: dict[str, list[list[int]]] = {}
+    for lang in BIP39_LANGUAGES:
+        text = (BIP39_DIR / f"{lang}.txt").read_text(encoding="utf-8")
+        words = [[ord(ch) for ch in line] for line in text.split("\n") if line != ""]
+        out[lang] = words
+    return out
+
+
+def render_bip39(wordlists: dict[str, list[list[int]]]) -> str:
+    lines = [
+        "// GENERATED FILE - DO NOT EDIT.",
+        "// Source: src/data/bip39/*.txt",
+        "",
+        "pub const Wordlist = struct {",
+        "    name: []const u8,",
+        "    words: []const []const u32,",
+        "};",
+        "",
+    ]
+    # Each wordlist is emitted sorted lexicographically by codepoint sequence so
+    # membership can binary-search; the language table below keeps allLanguages
+    # order for language resolution.
+    for lang in BIP39_LANGUAGES:
+        words = sorted(wordlists[lang])
+        lines.append(f"const {lang}_words = [_][]const u32{{")
+        for word in words:
+            lines.append(f"    {_u32_slice_literal(word)},")
+        lines.append("};")
+        lines.append("")
+    lines.append("// BIP-39 languages in Unicode.Generated.BIP39.allLanguages order.")
+    lines.append("pub const languages = [_]Wordlist{")
+    for lang in BIP39_LANGUAGES:
+        lines.append(f'    .{{ .name = "{lang}", .words = &{lang}_words }},')
+    lines.extend(["};", ""])
+    return "\n".join(lines)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate Zig Unicode lookup tables.")
     parser.add_argument(
@@ -388,17 +597,33 @@ def main() -> None:
         BIDI_SOURCE.read_text(encoding="utf-8")
     )
     bidi_output = render_bidi_class(bidi_explicit, bidi_defaults)
+    simple_lower = parse_simple_lowercase(
+        UNICODE_DATA_SOURCE.read_text(encoding="utf-8")
+    )
+    special_casing = parse_special_casing(
+        SPECIAL_CASING_SOURCE.read_text(encoding="utf-8")
+    )
+    derived_core = DERIVED_CORE_PROPERTIES_SOURCE.read_text(encoding="utf-8")
+    cased = parse_derived_property(derived_core, "Cased")
+    soft_dotted = parse_derived_property(derived_core, "Soft_Dotted")
+    casing_output = render_casing(simple_lower, special_casing, cased, soft_dotted)
+    bip39_wordlists = parse_bip39_wordlists()
+    bip39_output = render_bip39(bip39_wordlists)
 
     if args.check:
         actual = OUTPUT.read_text(encoding="utf-8")
         actual_normalization = NORMALIZATION_OUTPUT.read_text(encoding="utf-8")
         actual_case_folding = CASE_FOLDING_OUTPUT.read_text(encoding="utf-8")
         actual_bidi = BIDI_OUTPUT.read_text(encoding="utf-8")
+        actual_casing = CASING_OUTPUT.read_text(encoding="utf-8")
+        actual_bip39 = BIP39_OUTPUT.read_text(encoding="utf-8")
         if (
             actual != output
             or actual_normalization != normalization_output
             or actual_case_folding != case_folding_output
             or actual_bidi != bidi_output
+            or actual_casing != casing_output
+            or actual_bip39 != bip39_output
         ):
             print(
                 "FATAL: Zig generated data is stale; "
@@ -413,7 +638,10 @@ def main() -> None:
             f"{len(composition_table)} composition pairs, "
             f"{len(case_folding_entries)} case-folding entries, "
             f"{len(bidi_explicit)} bidi explicit ranges, "
-            f"{len(bidi_defaults)} bidi default ranges)"
+            f"{len(bidi_defaults)} bidi default ranges, "
+            f"{len(simple_lower)} simple-lowercase mappings, "
+            f"{len(special_casing)} special-casing rows, "
+            f"{sum(len(w) for w in bip39_wordlists.values())} bip39 words)"
         )
         return
 
@@ -421,6 +649,8 @@ def main() -> None:
     NORMALIZATION_OUTPUT.write_text(normalization_output, encoding="utf-8")
     CASE_FOLDING_OUTPUT.write_text(case_folding_output, encoding="utf-8")
     BIDI_OUTPUT.write_text(bidi_output, encoding="utf-8")
+    CASING_OUTPUT.write_text(casing_output, encoding="utf-8")
+    BIP39_OUTPUT.write_text(bip39_output, encoding="utf-8")
     print(f"generated {OUTPUT.relative_to(ROOT)} from {len(entries)} entries")
     print(
         f"generated {NORMALIZATION_OUTPUT.relative_to(ROOT)} "
@@ -435,6 +665,17 @@ def main() -> None:
         f"generated {BIDI_OUTPUT.relative_to(ROOT)} "
         f"from {len(bidi_explicit)} explicit ranges "
         f"and {len(bidi_defaults)} default ranges"
+    )
+    print(
+        f"generated {CASING_OUTPUT.relative_to(ROOT)} "
+        f"from {len(simple_lower)} simple-lowercase mappings, "
+        f"{len(special_casing)} special-casing rows, "
+        f"{len(cased)} Cased ranges, {len(soft_dotted)} Soft_Dotted ranges"
+    )
+    print(
+        f"generated {BIP39_OUTPUT.relative_to(ROOT)} "
+        f"from {sum(len(w) for w in bip39_wordlists.values())} words "
+        f"across {len(bip39_wordlists)} languages"
     )
 
 
