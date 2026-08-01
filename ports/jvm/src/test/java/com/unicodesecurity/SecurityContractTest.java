@@ -14,6 +14,7 @@ public final class SecurityContractTest {
     testNfkNormalization();
     testCasing();
     testBip39();
+    testLocaleCaseInversion();
     testConfusableBidiCompound();
     testSurrogateReassembly();
     testRtlInjection();
@@ -146,6 +147,29 @@ public final class SecurityContractTest {
     assertEquals("english", verdict.language(), "bip39 12word lang");
     assertEquals(12, verdict.wordCount(), "bip39 12word count");
     System.out.println("clean: JVM bip39-canonical detect spot-check passes");
+  }
+
+  // Ground truth: the detect_* spot-check theorems in
+  // Unicode/Security/Form/LocaleCaseInversion.lean.
+  private static void testLocaleCaseInversion() {
+    assertEquals(null,
+        Security.localeCaseInversionDetect(intList(new int[] {})).subThreat(), "lci empty");
+    assertEquals(null,
+        Security.localeCaseInversionDetect(intList(new int[] {0x48, 0x65, 0x6C, 0x6C, 0x6F})).subThreat(),
+        "lci ascii");
+    assertEquals("TurkishCaseDivergence",
+        Security.localeCaseInversionDetect(intList(new int[] {0x0049})).subThreat(), "lci capital I");
+    assertEquals(List.of(0),
+        Security.localeCaseInversionDetect(intList(new int[] {0x0049})).positions(), "lci capital I pos");
+    assertEquals("TurkishCaseDivergence",
+        Security.localeCaseInversionDetect(intList(new int[] {0x0130})).subThreat(), "lci dotted I");
+    assertEquals("TurkishCaseDivergence",
+        Security.localeCaseInversionDetect(intList(new int[] {0x0049, 0x0300})).subThreat(),
+        "lci I grave picks Turkish");
+    assertEquals("LithuanianCaseDivergence",
+        Security.localeCaseInversionDetect(intList(new int[] {0x004A, 0x0300})).subThreat(),
+        "lci J grave picks Lithuanian");
+    System.out.println("clean: JVM locale-case-inversion detect spot-check passes");
   }
 
   private static List<Integer> intList(int[] codepoints) {

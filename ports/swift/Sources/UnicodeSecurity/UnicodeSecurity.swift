@@ -1088,6 +1088,51 @@ public func toLower(_ locale: CasingLocale, _ cps: [Int]) -> [Int] {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Locale-case-inversion detector (UAX #21 / Tier A2), mirroring
+// Unicode.Security.Form.LocaleCaseInversion. Inputs whose lowercase fold
+// inverts across locales — the homograph-via-locale attack (CVE-2007-6692,
+// CVE-2021-30245, the Spotify "İSTANBUL" / "iSTANBUL" incident class).
+//
+// Detection compares per-position lowerCodepoint under each locale against
+// the default, rather than diffing whole-string toLower, because
+// lowerCodepoint evaluates the SpecialCasing context predicates with full
+// surrounding context. Turkish divergence takes priority over Lithuanian
+// (SpecialCasing has no az-only codepoint, so Turkish covers Azeri).
+// ─────────────────────────────────────────────────────────────────────
+
+public struct LocaleCaseInversionResult: Equatable {
+    public let subThreat: String?
+    public let positions: [Int]
+}
+
+/// First input position whose `lowerCodepoint` under `locale` differs from
+/// the default-locale result, or `nil` when the folds agree everywhere.
+private func firstLocaleDivergence(_ locale: CasingLocale, _ input: [Int]) -> Int? {
+    var revPrefix: [Int] = []
+    for index in input.indices {
+        let suffix = Array(input[(index + 1)...])
+        let defaultLower = lowerCodepoint(.default, revPrefix, suffix, input[index])
+        let localeLower = lowerCodepoint(locale, revPrefix, suffix, input[index])
+        if defaultLower != localeLower { return index }
+        revPrefix.insert(input[index], at: 0)
+    }
+    return nil
+}
+
+/// Detect an input whose lowercase fold inverts across locales. Turkish
+/// divergence takes priority; Lithuanian is reached only when no Turkish
+/// divergence is found.
+public func localeCaseInversionDetect(_ input: [Int]) -> LocaleCaseInversionResult {
+    if let pos = firstLocaleDivergence(.turkish, input) {
+        return LocaleCaseInversionResult(subThreat: "TurkishCaseDivergence", positions: [pos])
+    }
+    if let pos = firstLocaleDivergence(.lithuanian, input) {
+        return LocaleCaseInversionResult(subThreat: "LithuanianCaseDivergence", positions: [pos])
+    }
+    return LocaleCaseInversionResult(subThreat: nil, positions: [])
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // BIP-39 canonical-form detector (crypto layer), mirroring
 // Unicode.Security.Crypto.Bip39Canonical.
 //

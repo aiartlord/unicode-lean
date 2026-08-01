@@ -8,6 +8,7 @@ struct SecurityContractRunner {
         try testConfusableBidiCompound()
         try testSurrogateReassembly()
         try testRtlInjection()
+        try testLocaleCaseInversion()
         try testPolicyContract()
         try testVerdictContract()
         try testUtf8DecodeContract()
@@ -137,6 +138,18 @@ struct SecurityContractRunner {
         for (name, input, want) in cases {
             try expectEqual(rtlInjectionDetect(input).subThreat, want, "rtl-injection \(name)")
         }
+    }
+
+    // Pins the locale-case-inversion detector against the detect_* spot-check
+    // theorems in Unicode/Security/Form/LocaleCaseInversion.lean.
+    private static func testLocaleCaseInversion() throws {
+        try expectEqual(localeCaseInversionDetect([]).subThreat, nil, "locale-case-inversion empty")
+        try expectEqual(localeCaseInversionDetect([0x48, 0x65, 0x6C, 0x6C, 0x6F]).subThreat, nil, "locale-case-inversion ascii")
+        try expectEqual(localeCaseInversionDetect([0x0049]).subThreat, "TurkishCaseDivergence", "locale-case-inversion capital-I")
+        try expectEqual(localeCaseInversionDetect([0x0049]).positions, [0], "locale-case-inversion capital-I pos")
+        try expectEqual(localeCaseInversionDetect([0x0130]).subThreat, "TurkishCaseDivergence", "locale-case-inversion dotted-I")
+        try expectEqual(localeCaseInversionDetect([0x0049, 0x0300]).subThreat, "TurkishCaseDivergence", "locale-case-inversion I-grave")
+        try expectEqual(localeCaseInversionDetect([0x004A, 0x0300]).subThreat, "LithuanianCaseDivergence", "locale-case-inversion J-grave")
     }
 
     private static func testPolicyContract() throws {

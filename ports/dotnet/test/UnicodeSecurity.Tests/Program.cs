@@ -13,6 +13,7 @@ TestDetectorFixtures();
 TestCompatNormalizationVectors();
 TestCasing();
 TestBip39();
+TestLocaleCaseInversion();
 Console.WriteLine("clean: .NET contract tests pass");
 
 // Direct spot-check of the covert-display-compound detector, mirroring the
@@ -359,6 +360,22 @@ static void TestBip39()
     AssertEqual("english", verdict.Language, "bip39 12word lang");
     AssertEqual(12, verdict.WordCount, "bip39 12word count");
     Console.WriteLine("clean: .NET bip39-canonical detect spot-check passes");
+}
+
+// Ground truth: the detect_* spot-check theorems in
+// Unicode/Security/Form/LocaleCaseInversion.lean and the Rust/Go ports' tests.
+static void TestLocaleCaseInversion()
+{
+    string? Sub(List<int> input) => Security.LocaleCaseInversionDetect(input).SubThreat;
+
+    AssertEqual<string?>(null, Sub(new List<int>()), "locale-case empty");
+    AssertEqual<string?>(null, Sub(new List<int> { 0x48, 0x65, 0x6C, 0x6C, 0x6F }), "locale-case ascii");
+    AssertEqual("TurkishCaseDivergence", Sub(new List<int> { 0x0049 }), "locale-case capital-I turkish");
+    AssertSequence(new[] { 0 }, Security.LocaleCaseInversionDetect(new List<int> { 0x0049 }).Positions, "locale-case capital-I pos");
+    AssertEqual("TurkishCaseDivergence", Sub(new List<int> { 0x0130 }), "locale-case dotted-I turkish");
+    AssertEqual("TurkishCaseDivergence", Sub(new List<int> { 0x0049, 0x0300 }), "locale-case I-grave turkish-first");
+    AssertEqual("LithuanianCaseDivergence", Sub(new List<int> { 0x004A, 0x0300 }), "locale-case J-grave lithuanian");
+    Console.WriteLine("clean: .NET locale-case-inversion detect spot-check passes");
 }
 
 static void AssertEqual<T>(T expected, T actual, string message)

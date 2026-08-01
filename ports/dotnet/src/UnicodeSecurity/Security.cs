@@ -942,6 +942,63 @@ public static class Security
         return output;
     }
 
+    // ── locale-case-inversion: per-position lowercase divergence across locales ─
+    // Mirrors Unicode.Security.Form.LocaleCaseInversion. Inputs whose lowercase
+    // fold inverts across locales — the homograph-via-locale attack
+    // (CVE-2007-6692, CVE-2021-30245, the Spotify "İSTANBUL" / "iSTANBUL"
+    // incident class). Compares per-position lowercase under each locale against
+    // the default, so the SpecialCasing context predicates read full context.
+
+    /// <summary>Lowercase a single codepoint in its full input context: the
+    /// SpecialCasing row whose conditions hold, else the simple lowercase
+    /// mapping.</summary>
+    private static List<int> LowerCodepoint(
+        CasingLocale locale, List<int> revPrefix, List<int> suffix, int cp)
+    {
+        var row = FindSpecialRow(locale, revPrefix, suffix, cp);
+        if (row is not null) return row.Lower;
+        return new List<int> { SimpleLowercase(cp) };
+    }
+
+    /// <summary>First input position whose <see cref="LowerCodepoint"/> under
+    /// <paramref name="locale"/> differs from the default-locale result, or null
+    /// when the two folds agree at every position.</summary>
+    private static int? FirstLocaleDivergence(CasingLocale locale, List<int> input)
+    {
+        var revPrefix = new List<int>();
+        for (var i = 0; i < input.Count; i++)
+        {
+            var cp = input[i];
+            var suffix = input.GetRange(i + 1, input.Count - i - 1);
+            var defaultLower = LowerCodepoint(CasingLocale.Default, revPrefix, suffix, cp);
+            var localeLower = LowerCodepoint(locale, revPrefix, suffix, cp);
+            if (!defaultLower.SequenceEqual(localeLower)) return i;
+            revPrefix.Insert(0, cp);
+        }
+        return null;
+    }
+
+    /// <summary>One locale-case-inversion scan result. <c>SubThreat</c> is null
+    /// for a clear input, else the divergent locale's tag with the first
+    /// divergent input position in <c>Positions</c>.</summary>
+    public sealed record LocaleCaseInversionResult(string? SubThreat, List<int> Positions);
+
+    /// <summary>Detect an input whose lowercase fold inverts across locales.
+    /// Turkish divergence takes priority (covering Azeri); Lithuanian is reached
+    /// only when no Turkish divergence is found.</summary>
+    public static LocaleCaseInversionResult LocaleCaseInversionDetect(List<int> input)
+    {
+        if (FirstLocaleDivergence(CasingLocale.Turkish, input) is int turkishPos)
+        {
+            return new LocaleCaseInversionResult("TurkishCaseDivergence", new List<int> { turkishPos });
+        }
+        if (FirstLocaleDivergence(CasingLocale.Lithuanian, input) is int lithuanianPos)
+        {
+            return new LocaleCaseInversionResult("LithuanianCaseDivergence", new List<int> { lithuanianPos });
+        }
+        return new LocaleCaseInversionResult(null, new List<int>());
+    }
+
     // ── bip39-canonical: BIP-39 mnemonic canonicalisation + wordlist checks ────
     // Mirrors Unicode.Security.Crypto.Bip39Canonical.
 

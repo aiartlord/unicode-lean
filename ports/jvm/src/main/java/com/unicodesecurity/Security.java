@@ -958,6 +958,55 @@ public final class Security {
     return out;
   }
 
+  // ── locale-case-inversion: lowercase fold that inverts across locales ──────
+  // Mirrors Unicode.Security.Form.LocaleCaseInversion (Tier A2, the
+  // homograph-via-locale attack). Compares per-position lowerCodepoint across
+  // locales rather than diffing whole-string toLower, so the SpecialCasing
+  // context predicates evaluate with full context. Turkish before Lithuanian.
+
+  /** One locale-case-inversion result: the divergent-locale tag (null when
+   *  clear) and the first divergent input position. */
+  public record LocaleCaseInversionResult(String subThreat, List<Integer> positions) {}
+
+  private static List<Integer> lowerCodepoint(
+      CasingLocale locale, List<Integer> revPrefix, List<Integer> suffix, int cp) {
+    CasingRow row = findSpecialRow(locale, revPrefix, suffix, cp);
+    if (row != null) {
+      return row.lower();
+    }
+    return List.of(simpleLowercase(cp));
+  }
+
+  private static Integer firstLocaleDivergence(CasingLocale locale, List<Integer> input) {
+    List<Integer> revPrefix = new ArrayList<>();
+    for (int i = 0; i < input.size(); i++) {
+      int cp = input.get(i);
+      List<Integer> suffix = input.subList(i + 1, input.size());
+      List<Integer> defaultLower = lowerCodepoint(CasingLocale.DEFAULT, revPrefix, suffix, cp);
+      List<Integer> localeLower = lowerCodepoint(locale, revPrefix, suffix, cp);
+      if (!defaultLower.equals(localeLower)) {
+        return i;
+      }
+      revPrefix.add(0, cp);
+    }
+    return null;
+  }
+
+  /** Detect an input whose lowercase fold inverts across locales. Turkish
+   *  divergence takes priority; Lithuanian is reached only when no Turkish
+   *  divergence is found. */
+  public static LocaleCaseInversionResult localeCaseInversionDetect(List<Integer> input) {
+    Integer turkish = firstLocaleDivergence(CasingLocale.TURKISH, input);
+    if (turkish != null) {
+      return new LocaleCaseInversionResult("TurkishCaseDivergence", List.of(turkish));
+    }
+    Integer lithuanian = firstLocaleDivergence(CasingLocale.LITHUANIAN, input);
+    if (lithuanian != null) {
+      return new LocaleCaseInversionResult("LithuanianCaseDivergence", List.of(lithuanian));
+    }
+    return new LocaleCaseInversionResult(null, List.of());
+  }
+
   // ── bip39-canonical: BIP-39 mnemonic canonicalisation + wordlist checks ────
   // Mirrors Unicode.Security.Crypto.Bip39Canonical.
 
