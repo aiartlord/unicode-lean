@@ -18,6 +18,7 @@
          bidi_strong/1, is_strong_rtl/1, is_strong_ltr/1,
          script_of/1, resolve_scripts/1, string_script_union/1,
          is_default_ignorable/1, is_white_space/1, is_id_allowed/1,
+         is_default_identifier/1, is_allowed_identifier/1,
          is_highly_restrictive/1, restriction_level/1]).
 
 -export_type([restriction_level/0, bidi_strong/0]).
@@ -624,6 +625,71 @@ parse_default_ignorable() ->
 -spec is_default_ignorable(non_neg_integer()) -> boolean().
 is_default_ignorable(Cp) ->
     in_ranges(default_ignorable_ranges(), Cp).
+
+%% ─────────────────────────────────────────────────────────────────────
+%% DerivedCoreProperties.txt — XID_Start / XID_Continue ranges
+%%
+%% UAX #31 default-identifier machinery + UTS #39 whole-string admissibility,
+%% mirroring `Unicode.Identifier'. XID_Start / XID_Continue are parsed from the
+%% same bundled DerivedCoreProperties.txt the Default_Ignorable ranges come
+%% from, using the same range-per-property extraction; `is_id_allowed/1' (above)
+%% supplies the per-codepoint UTS #39 Identifier_Status = Allowed test.
+%% ─────────────────────────────────────────────────────────────────────
+
+%% @doc Ranges of every codepoint carrying derived-core property `Name' in
+%% DerivedCoreProperties.txt, sorted by lower bound. `Name' is the exact
+%% property token as it appears in field 2 (e.g. `<<"XID_Start">>').
+parse_derived_core_ranges(Name) ->
+    Ls = lines(usec_data:read_file("DerivedCoreProperties.txt")),
+    Ranges = lists:foldl(
+               fun(Line, Acc) ->
+                       case strip_comment_and_trim(Line) of
+                           <<>> -> Acc;
+                           Stripped ->
+                               case binary:split(Stripped, <<";">>) of
+                                   [RangeB, PropB] ->
+                                       case string:trim(PropB) of
+                                           Name -> [parse_range_field(RangeB) | Acc];
+                                           _ -> Acc
+                                       end;
+                                   _ -> Acc
+                               end
+                       end
+               end, [], Ls),
+    lists:sort(fun({Lo1, _}, {Lo2, _}) -> Lo1 =< Lo2 end, Ranges).
+
+xid_start_ranges() ->
+    usec_data:cached(xid_start, fun() -> parse_derived_core_ranges(<<"XID_Start">>) end).
+
+xid_continue_ranges() ->
+    usec_data:cached(xid_continue, fun() -> parse_derived_core_ranges(<<"XID_Continue">>) end).
+
+is_xid_start(Cp) -> in_ranges(xid_start_ranges(), Cp).
+
+is_xid_continue(Cp) -> in_ranges(xid_continue_ranges(), Cp).
+
+%% @doc UAX #31 default identifier start: `XID_Start' or `U+005F LOW LINE'.
+is_default_id_start(Cp) -> is_xid_start(Cp) orelse Cp =:= 16#005F.
+
+%% @doc UAX #31 default identifier continue: `XID_Continue'.
+is_default_id_continue(Cp) -> is_xid_continue(Cp).
+
+%% @doc True iff `Cps' is a well-formed UAX #31 default identifier: a non-empty
+%% sequence whose first codepoint is a default-id start and whose remaining
+%% codepoints are default-id continues. The empty sequence is not an identifier.
+-spec is_default_identifier([non_neg_integer()]) -> boolean().
+is_default_identifier([]) -> false;
+is_default_identifier([First | Rest]) ->
+    is_default_id_start(First)
+        andalso lists:all(fun(Cp) -> is_default_id_continue(Cp) end, Rest).
+
+%% @doc True iff `Cps' is a well-formed default identifier AND every codepoint
+%% has `Identifier_Status = Allowed' per UTS #39 — the whole-string
+%% admissibility predicate `isAllowedIdentifier'. Reuses `is_id_allowed/1'.
+-spec is_allowed_identifier([non_neg_integer()]) -> boolean().
+is_allowed_identifier(Cps) ->
+    is_default_identifier(Cps)
+        andalso lists:all(fun(Cp) -> is_id_allowed(Cp) end, Cps).
 
 -spec is_white_space(non_neg_integer()) -> boolean().
 is_white_space(Cp) ->

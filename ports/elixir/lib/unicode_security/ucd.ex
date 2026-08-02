@@ -663,6 +663,70 @@ defmodule UnicodeSecurity.Ucd do
   @spec id_allowed?(integer()) :: boolean()
   def id_allowed?(cp), do: find_range(id_allowed_ranges(), cp) == true
 
+  # ── DerivedCoreProperties.txt — XID_Start / XID_Continue ───────────────
+  # UAX #31 default-identifier property ranges, parsed exactly the way the
+  # Cased / Soft_Dotted / Default_Ignorable_Code_Point ranges are: one
+  # `LO..HI ; Property` (or single-codepoint) row per line, comments and
+  # blanks dropped, the surviving ranges sorted by lower bound.
+
+  defp derived_core_ranges(name) do
+    Data.cached({:derived_core_ranges, name}, fn ->
+      Data.read("DerivedCoreProperties.txt")
+      |> String.split("\n")
+      |> Enum.reduce([], fn line, acc ->
+        case strip_comment_and_trim(line) do
+          "" ->
+            acc
+
+          stripped ->
+            case String.split(stripped, ";", parts: 2) do
+              [range, prop] ->
+                if String.trim(prop) == name do
+                  {lo, hi} = parse_range_field(range)
+                  [{lo, hi, true} | acc]
+                else
+                  acc
+                end
+
+              [_single] ->
+                acc
+            end
+        end
+      end)
+      |> Enum.sort_by(fn {lo, _hi, _v} -> lo end)
+      |> List.to_tuple()
+    end)
+  end
+
+  defp xid_start?(cp), do: find_range(derived_core_ranges("XID_Start"), cp) == true
+  defp xid_continue?(cp), do: find_range(derived_core_ranges("XID_Continue"), cp) == true
+
+  # UAX #31 default identifier start: `XID_Start` or `U+005F LOW LINE`.
+  defp default_id_start?(cp), do: xid_start?(cp) or cp == 0x005F
+  # UAX #31 default identifier continue: `XID_Continue`.
+  defp default_id_continue?(cp), do: xid_continue?(cp)
+
+  @doc """
+  True iff `cps` is a well-formed UAX #31 default identifier: a non-empty
+  sequence whose first codepoint is a default-id start and whose remaining
+  codepoints are default-id continues. Built from the bundled
+  `DerivedCoreProperties.txt` XID_Start / XID_Continue ranges.
+  """
+  @spec default_identifier?([integer()]) :: boolean()
+  def default_identifier?([]), do: false
+
+  def default_identifier?([first | rest]),
+    do: default_id_start?(first) and Enum.all?(rest, &default_id_continue?/1)
+
+  @doc """
+  True iff `cps` is a well-formed default identifier AND every codepoint has
+  `Identifier_Status = Allowed` per UTS #39 — the whole-string admissibility
+  predicate `isAllowedIdentifier`. Reuses the port's own `id_allowed?/1`.
+  """
+  @spec allowed_identifier?([integer()]) :: boolean()
+  def allowed_identifier?(cps),
+    do: default_identifier?(cps) and Enum.all?(cps, &id_allowed?/1)
+
   # ── DerivedCoreProperties.txt — Default_Ignorable_Code_Point ───────────
 
   defp default_ignorable_ranges do

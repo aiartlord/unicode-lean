@@ -102,6 +102,7 @@ library
       Unicode.Segmentation.GraphemeTables
       Unicode.Security.Crypto.AiWatermarkDetectability
       Unicode.Security.Crypto.Bip39Canonical
+      Unicode.Security.Boundary.AdmissibilityFormDrift
       Unicode.Security.Boundary.IdentifierFormDrift
       Unicode.Security.Crypto.HashInputStability
       Unicode.Security.Display.RendererDivergence
@@ -150,6 +151,7 @@ test-suite unicode-haskell-test
       EmojiZwjIntegritySpec
       RendererDivergenceSpec
       FilenameDisguiseSpec
+      AdmissibilityFormDriftSpec
       IdentifierFormDriftSpec
       SkinToneVariationForgerySpec
       Utf8Spec

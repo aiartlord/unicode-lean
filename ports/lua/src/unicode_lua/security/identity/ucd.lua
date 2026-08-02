@@ -806,6 +806,108 @@ function M.is_default_ignorable(cp)
   return false
 end
 
+-- ─────────────────────────────────────────────────────────────────────
+-- DerivedCoreProperties.txt — UAX #31 XID_Start / XID_Continue ranges
+-- ─────────────────────────────────────────────────────────────────────
+
+-- Parse one binary property's ranges from DerivedCoreProperties.txt, mirroring
+-- the Default_Ignorable parser above (the only difference is the property name).
+local function parse_dcp_property(name)
+  local text = datapath.read("DerivedCoreProperties.txt")
+  local out = {}
+  for line in iter_lines(text) do
+    local stripped = strip_comment_and_trim(line)
+    if stripped ~= "" then
+      local semi = stripped:find(";", 1, true)
+      if semi ~= nil and trim(stripped:sub(semi + 1)) == name then
+        local lo, hi = parse_range_field(stripped:sub(1, semi - 1))
+        out[#out + 1] = { lo, hi }
+      end
+    end
+  end
+  table.sort(out, function(a, b) return a[1] < b[1] end)
+  return out
+end
+
+local _xid_start = nil
+local _xid_continue = nil
+
+local function xid_start_ranges()
+  if _xid_start == nil then
+    _xid_start = parse_dcp_property("XID_Start")
+  end
+  return _xid_start
+end
+
+local function xid_continue_ranges()
+  if _xid_continue == nil then
+    _xid_continue = parse_dcp_property("XID_Continue")
+  end
+  return _xid_continue
+end
+
+local function in_ranges(ranges, cp)
+  local idx = partition_point(ranges, function(r) return r[1] end, cp)
+  if idx > 0 then
+    local entry = ranges[idx]
+    if cp <= entry[2] then
+      return true
+    end
+  end
+  return false
+end
+
+local function is_xid_start(cp)
+  return in_ranges(xid_start_ranges(), cp)
+end
+
+local function is_xid_continue(cp)
+  return in_ranges(xid_continue_ranges(), cp)
+end
+
+-- UAX #31 default identifier start: `XID_Start` or `U+005F LOW LINE`.
+local function is_default_id_start(cp)
+  return is_xid_start(cp) or cp == 0x005F
+end
+
+-- UAX #31 default identifier continue: `XID_Continue`.
+local function is_default_id_continue(cp)
+  return is_xid_continue(cp)
+end
+
+-- True iff `cps` is a well-formed UAX #31 default identifier: a non-empty
+-- sequence whose first codepoint is a default-id start and whose remaining
+-- codepoints are default-id continues.
+function M.is_default_identifier(cps)
+  if #cps == 0 then
+    return false
+  end
+  if not is_default_id_start(cps[1]) then
+    return false
+  end
+  for i = 2, #cps do
+    if not is_default_id_continue(cps[i]) then
+      return false
+    end
+  end
+  return true
+end
+
+-- True iff `cps` is a well-formed default identifier AND every codepoint has
+-- `Identifier_Status = Allowed` per UTS #39 (the whole-string admissibility
+-- predicate `isAllowedIdentifier`).
+function M.is_allowed_identifier(cps)
+  if not M.is_default_identifier(cps) then
+    return false
+  end
+  for _, cp in ipairs(cps) do
+    if not M.is_id_allowed(cp) then
+      return false
+    end
+  end
+  return true
+end
+
 -- UCD PropList.txt White_Space (hardcoded — small, stable range table).
 function M.is_white_space(cp)
   return (cp >= 0x0009 and cp <= 0x000D)

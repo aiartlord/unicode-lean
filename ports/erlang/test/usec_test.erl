@@ -16,6 +16,7 @@ run() ->
     renderer_divergence_tests(),
     filename_disguise_tests(),
     identifier_form_drift_tests(),
+    admissibility_form_drift_tests(),
     case_expansion_mismatch_tests(),
     skin_tone_variation_forgery_tests(),
     opaque_blob_tests(),
@@ -787,6 +788,62 @@ identifier_form_drift_tests() ->
               usec_policy:reason_code(identifier_form_drift, <<"IdentifierStatusShift">>), ifd_reason_code),
 
     io:format("  identifier-form-drift: fixture + 8 spot-checks + 1 reason-code pass~n").
+
+%% Reason code the detect verdict would emit for a given input, or `none' when
+%% clear. Mirrors how the finding wiring lifts a classification tag into a code.
+afd_code(Input) ->
+    C = maps:get(classify, usec_admissibility_form_drift:detect(Input)),
+    case usec_admissibility_form_drift:classify_tag(C) of
+        none -> none;
+        Tag -> usec_policy:reason_code(admissibility_form_drift, Tag)
+    end.
+
+%% The classification tag for an input, or `none' when clear.
+afd_tag(Input) ->
+    usec_admissibility_form_drift:classify_tag(maps:get(classify, usec_admissibility_form_drift:detect(Input))).
+
+admissibility_form_drift_tests() ->
+    %% ── Shared context-free fixture, run through detect. ────────────────
+    F = fixture(filename:join("detectors", "admissibility_form_drift.json")),
+    assert_eq(<<"admissibility-form-drift">>, maps:get(<<"family">>, F), afd_fixture_family),
+    lists:foreach(fun(Case) ->
+                          Input = maps:get(<<"input">>, Case),
+                          Label = {afd_fixture, maps:get(<<"name">>, Case)},
+                          Required = maps:get(<<"required_findings">>, Case),
+                          Codes = case afd_code(Input) of
+                                      none -> [];
+                                      Code -> [Code]
+                                  end,
+                          lists:foreach(fun(Req) -> assert(lists:member(Req, Codes), Label) end, Required),
+                          case Required of
+                              [] -> assert(Codes =:= [], Label);
+                              _ -> ok
+                          end
+                  end, maps:get(<<"cases">>, F)),
+
+    %% ── detect spot checks (the rust #[test] cases). ────────────────────
+    %% detect_empty_clear — both admissibility calls return false, so they agree.
+    assert(usec_admissibility_form_drift:is_clear(maps:get(classify, usec_admissibility_form_drift:detect([]))), afd_empty_clear),
+    assert_eq(none, afd_tag([]), afd_empty_tag),
+    %% detect_ascii_clear — "admin"; admissible on both sides (NFKC identity).
+    AdminV = usec_admissibility_form_drift:detect([16#61, 16#64, 16#6D, 16#69, 16#6E]),
+    assert(usec_admissibility_form_drift:is_clear(maps:get(classify, AdminV)), afd_ascii_clear),
+    assert(maps:get(input_admissible, AdminV), afd_ascii_input_admissible),
+    assert(maps:get(nfkc_admissible, AdminV), afd_ascii_nfkc_admissible),
+    %% detect_fi_ligature_drift — ﬁ (U+FB01) Restricted (inadmissible), NFKC → "fi".
+    FiV = usec_admissibility_form_drift:detect([16#FB01]),
+    assert_eq(<<"AdmissibilityFormDrift">>, usec_admissibility_form_drift:classify_tag(maps:get(classify, FiV)), afd_fi_ligature_tag),
+    assert(not maps:get(input_admissible, FiV), afd_fi_input_inadmissible),
+    assert(maps:get(nfkc_admissible, FiV), afd_fi_nfkc_admissible),
+    assert_eq([], usec_admissibility_form_drift:classify_positions(maps:get(classify, FiV)), afd_fi_positions_empty),
+    %% detect_jamo_sequence_drift — decomposed Hangul jamos [U+1112, U+1161,
+    %% U+11AB] inadmissible, NFKC composes them to U+D55C 한 (admissible).
+    assert_eq(<<"AdmissibilityFormDrift">>, afd_tag([16#1112, 16#1161, 16#11AB]), afd_jamo_sequence_tag),
+    %% reason_code_is_stable — the composed reason code for the sole sub-threat.
+    assert_eq(<<"unicode.security.X.admissibility-form-drift.AdmissibilityFormDrift">>,
+              usec_policy:reason_code(admissibility_form_drift, <<"AdmissibilityFormDrift">>), afd_reason_code),
+
+    io:format("  admissibility-form-drift: fixture + 4 spot-checks + 1 reason-code pass~n").
 
 fixture(Rel) ->
     {ok, Bin} = file:read_file(filename:join(["test", "fixtures", "security", Rel])),
