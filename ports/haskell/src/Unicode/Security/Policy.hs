@@ -20,6 +20,7 @@ module Unicode.Security.Policy
   , profileTag
   , familyTag
   , isConfusableSource
+  , isDefaultIgnorableCodepoint
   , policyOfProfile
   , scan
   , scanUtf8

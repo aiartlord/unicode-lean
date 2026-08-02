@@ -166,6 +166,114 @@ WORKING-STORAGE SECTION.
 01 KEY-CP PIC 9(9) COMP-5.
 01 KEY-CCC PIC 9(4) COMP-5.
 01 SORT-STOP PIC 9 VALUE 0.
+*> ── ai-watermark-detectability (K) marker tables + context ────────────
+01 IS-EMOJI-FLAG PIC 9 COMP-5 VALUE 0.
+01 AW-ZWSP-TOL PIC 9(5) COMP-5 VALUE 0.
+01 AW-ADV-TOL PIC 9(5) COMP-5 VALUE 0.
+01 AWD-DONE PIC 9 VALUE 0.
+01 AWD-ARITH-OK PIC 9 VALUE 0.
+01 AWD-HAS-STRAIGHT PIC 9 VALUE 0.
+01 AWD-HAS-HYPHEN PIC 9 VALUE 0.
+01 AWD-PREV-EMOJI PIC 9 VALUE 0.
+01 AWD-NEXT-EMOJI PIC 9 VALUE 0.
+01 AWD-IS-VS PIC 9 VALUE 0.
+01 AWD-IS-ZWJ PIC 9 VALUE 0.
+01 AWD-IS-DI PIC 9 VALUE 0.
+01 AWD-VOCAB-FOUND PIC 9 VALUE 0.
+01 AWD-VOCAB-POS PIC 9(9) COMP-5 VALUE 0.
+01 AWD-CATEGORY PIC 9(5) COMP-5 VALUE 0.
+01 AWD-TOTAL PIC 9(9) COMP-5 VALUE 0.
+01 AWD-FIRST-GAP PIC 9(9) COMP-5 VALUE 0.
+01 AWD-GAP PIC 9(9) COMP-5 VALUE 0.
+01 AWD-MATCH PIC 9 VALUE 0.
+01 AWD-ALLEQ PIC 9 VALUE 0.
+01 AWD-MAX-START PIC 9(9) COMP-5 VALUE 0.
+01 AWD-BYTE PIC 9(9) COMP-5 VALUE 0.
+01 VDX PIC 9(5) COMP-5.
+01 SDX PIC 9(9) COMP-5.
+01 PAT-LEN PIC 9(2) COMP-5.
+01 AWD-NNBSP-N PIC 9(5) COMP-5 VALUE 0.
+01 AWD-NNBSP-TABLE.
+   05 AWD-NNBSP OCCURS 4096 TIMES PIC 9(9) COMP-5.
+01 AWD-ZWSP-N PIC 9(5) COMP-5 VALUE 0.
+01 AWD-ZWSP-TABLE.
+   05 AWD-ZWSP OCCURS 4096 TIMES PIC 9(9) COMP-5.
+01 AWD-VS-N PIC 9(5) COMP-5 VALUE 0.
+01 AWD-VS-TABLE.
+   05 AWD-VS OCCURS 4096 TIMES PIC 9(9) COMP-5.
+01 AWD-ZWJ-N PIC 9(5) COMP-5 VALUE 0.
+01 AWD-ZWJ-TABLE.
+   05 AWD-ZWJ OCCURS 4096 TIMES PIC 9(9) COMP-5.
+01 AWD-CURLY-N PIC 9(5) COMP-5 VALUE 0.
+01 AWD-CURLY-TABLE.
+   05 AWD-CURLY OCCURS 4096 TIMES PIC 9(9) COMP-5.
+01 AWD-EMDASH-N PIC 9(5) COMP-5 VALUE 0.
+01 AWD-EMDASH-TABLE.
+   05 AWD-EMDASH OCCURS 4096 TIMES PIC 9(9) COMP-5.
+01 AWD-DI-N PIC 9(5) COMP-5 VALUE 0.
+01 AWD-DI-TABLE.
+   05 AWD-DI OCCURS 4096 TIMES PIC 9(9) COMP-5.
+01 AWD-INVIS-N PIC 9(5) COMP-5 VALUE 0.
+01 AWD-INVIS-TABLE.
+   05 AWD-INVIS OCCURS 4096 TIMES PIC 9(9) COMP-5.
+01 AWD-SEL-N PIC 9(5) COMP-5 VALUE 0.
+01 AWD-SEL-TABLE.
+   05 AWD-SEL OCCURS 4096 TIMES PIC 9(9) COMP-5.
+01 VOCAB-RAW.
+   05 FILLER PIC X(26) VALUE "05delve                   ".
+   05 FILLER PIC X(26) VALUE "07delving                 ".
+   05 FILLER PIC X(26) VALUE "08tapestry                ".
+   05 FILLER PIC X(26) VALUE "09intricate               ".
+   05 FILLER PIC X(26) VALUE "07nuanced                 ".
+   05 FILLER PIC X(26) VALUE "08moreover                ".
+   05 FILLER PIC X(26) VALUE "11furthermore             ".
+   05 FILLER PIC X(26) VALUE "05realm                   ".
+   05 FILLER PIC X(26) VALUE "09elucidate               ".
+   05 FILLER PIC X(26) VALUE "10showcasing              ".
+   05 FILLER PIC X(26) VALUE "11underscores             ".
+   05 FILLER PIC X(26) VALUE "11underscored             ".
+   05 FILLER PIC X(26) VALUE "07pivotal                 ".
+   05 FILLER PIC X(26) VALUE "07bolster                 ".
+   05 FILLER PIC X(26) VALUE "12multifaceted            ".
+   05 FILLER PIC X(26) VALUE "09testament               ".
+   05 FILLER PIC X(26) VALUE "06foster                  ".
+   05 FILLER PIC X(26) VALUE "08holistic                ".
+   05 FILLER PIC X(26) VALUE "08paradigm                ".
+   05 FILLER PIC X(26) VALUE "14transformative          ".
+   05 FILLER PIC X(26) VALUE "09spearhead               ".
+   05 FILLER PIC X(26) VALUE "10meticulous              ".
+   05 FILLER PIC X(26) VALUE "12meticulously            ".
+   05 FILLER PIC X(26) VALUE "07empower                 ".
+   05 FILLER PIC X(26) VALUE "10empowering              ".
+   05 FILLER PIC X(26) VALUE "08profound                ".
+   05 FILLER PIC X(26) VALUE "10profoundly              ".
+   05 FILLER PIC X(26) VALUE "10compelling              ".
+   05 FILLER PIC X(26) VALUE "13comprehensive           ".
+   05 FILLER PIC X(26) VALUE "07crucial                 ".
+   05 FILLER PIC X(26) VALUE "08daunting                ".
+   05 FILLER PIC X(26) VALUE "06robust                  ".
+   05 FILLER PIC X(26) VALUE "10streamline              ".
+   05 FILLER PIC X(26) VALUE "06enrich                  ".
+   05 FILLER PIC X(26) VALUE "09exemplify               ".
+   05 FILLER PIC X(26) VALUE "11captivating             ".
+   05 FILLER PIC X(26) VALUE "10discerning              ".
+   05 FILLER PIC X(26) VALUE "09mesmerize               ".
+   05 FILLER PIC X(26) VALUE "11intricately             ".
+   05 FILLER PIC X(26) VALUE "05imbue                   ".
+   05 FILLER PIC X(26) VALUE "20plays a crucial role    ".
+   05 FILLER PIC X(26) VALUE "20plays a pivotal role    ".
+   05 FILLER PIC X(26) VALUE "23it is important to note ".
+   05 FILLER PIC X(26) VALUE "18it is worth noting      ".
+   05 FILLER PIC X(26) VALUE "13in conclusion           ".
+   05 FILLER PIC X(26) VALUE "10in essence              ".
+   05 FILLER PIC X(26) VALUE "10delve into              ".
+   05 FILLER PIC X(26) VALUE "12delving into            ".
+   05 FILLER PIC X(26) VALUE "11tapestry of             ".
+   05 FILLER PIC X(26) VALUE "08realm of                ".
+01 VOCAB-TABLE REDEFINES VOCAB-RAW.
+   05 VOCAB-ENTRY OCCURS 50 TIMES.
+      10 VOCAB-LEN PIC 9(2).
+      10 VOCAB-CHARS PIC X(24).
 
 PROCEDURE DIVISION.
 MAIN.
@@ -223,7 +331,11 @@ MAIN.
                         IF OP-NAME = "hash-input-stability"
                             PERFORM SCAN-HASH-INPUT-STABILITY
                         ELSE
-                            PERFORM SCAN-CORE
+                            IF OP-NAME = "ai-watermark-detectability"
+                                PERFORM SCAN-AI-WATERMARK
+                            ELSE
+                                PERFORM SCAN-CORE
+                            END-IF
                         END-IF
                     END-IF
                 END-IF
@@ -1470,6 +1582,292 @@ ADD-BIDI-POS-FINDING.
         END-IF
     END-PERFORM
     MOVE POS-TEXT TO FINDING-POS(FINDING-COUNT).
+
+SCAN-AI-WATERMARK.
+    PERFORM PARSE-AWD-CONTEXT
+    PERFORM COLLECT-AWD-MARKERS
+    PERFORM FIND-AWD-VOCAB
+    COMPUTE AWD-CATEGORY =
+        FUNCTION MAX(0, FUNCTION MIN(1, AWD-NNBSP-N))
+        + FUNCTION MAX(0, FUNCTION MIN(1, AWD-VS-N))
+        + FUNCTION MAX(0, FUNCTION MIN(1, AWD-ZWJ-N))
+        + FUNCTION MAX(0, FUNCTION MIN(1, AWD-DI-N))
+    COMPUTE AWD-TOTAL = AWD-NNBSP-N + AWD-VS-N + AWD-ZWJ-N + AWD-DI-N
+    MOVE 0 TO AWD-DONE
+    IF AWD-NNBSP-N >= 3
+        PERFORM COPY-NNBSP-TO-SEL
+        MOVE AW-ADV-TOL TO AWD-GAP
+        PERFORM CHECK-AWD-ARITH
+        IF AWD-ARITH-OK = 1
+            MOVE "unicode.security.K.ai-watermark-detectability.Adversarial" TO TEMP-CODE
+            PERFORM ADD-AWD-FINDING
+            MOVE 1 TO AWD-DONE
+        END-IF
+    END-IF
+    IF AWD-DONE = 0 AND AWD-ZWSP-N >= 3
+        PERFORM COPY-ZWSP-TO-SEL
+        MOVE AW-ZWSP-TOL TO AWD-GAP
+        PERFORM CHECK-AWD-ARITH
+        IF AWD-ARITH-OK = 1
+            MOVE "unicode.security.K.ai-watermark-detectability.Gpt5ZwspModulo" TO TEMP-CODE
+            PERFORM ADD-AWD-FINDING
+            MOVE 1 TO AWD-DONE
+        END-IF
+    END-IF
+    IF AWD-DONE = 0 AND AWD-CATEGORY >= 2
+        PERFORM COPY-INVIS-TO-SEL
+        MOVE "unicode.security.K.ai-watermark-detectability.Unknown" TO TEMP-CODE
+        PERFORM ADD-AWD-FINDING
+        MOVE 1 TO AWD-DONE
+    END-IF
+    IF AWD-DONE = 0 AND AWD-NNBSP-N > 0
+        PERFORM COPY-NNBSP-TO-SEL
+        MOVE "unicode.security.K.ai-watermark-detectability.NnbspBoundary" TO TEMP-CODE
+        PERFORM ADD-AWD-FINDING
+        MOVE 1 TO AWD-DONE
+    END-IF
+    IF AWD-DONE = 0 AND AWD-VS-N > 0
+        PERFORM COPY-VS-TO-SEL
+        MOVE "unicode.security.K.ai-watermark-detectability.VariationSelectorCarrier" TO TEMP-CODE
+        PERFORM ADD-AWD-FINDING
+        MOVE 1 TO AWD-DONE
+    END-IF
+    IF AWD-DONE = 0 AND AWD-ZWJ-N > 0
+        PERFORM COPY-ZWJ-TO-SEL
+        MOVE "unicode.security.K.ai-watermark-detectability.ZwjNonEmoji" TO TEMP-CODE
+        PERFORM ADD-AWD-FINDING
+        MOVE 1 TO AWD-DONE
+    END-IF
+    IF AWD-DONE = 0 AND AWD-CURLY-N >= 2 AND AWD-HAS-STRAIGHT = 0
+        PERFORM COPY-CURLY-TO-SEL
+        MOVE "unicode.security.K.ai-watermark-detectability.SmartQuoteAlternation" TO TEMP-CODE
+        PERFORM ADD-AWD-FINDING
+        MOVE 1 TO AWD-DONE
+    END-IF
+    IF AWD-DONE = 0 AND AWD-EMDASH-N >= 2 AND AWD-HAS-HYPHEN = 0
+        PERFORM COPY-EMDASH-TO-SEL
+        MOVE "unicode.security.K.ai-watermark-detectability.EmDashPattern" TO TEMP-CODE
+        PERFORM ADD-AWD-FINDING
+        MOVE 1 TO AWD-DONE
+    END-IF
+    IF AWD-DONE = 0 AND AWD-VOCAB-FOUND = 1
+        MOVE 1 TO AWD-SEL-N
+        MOVE AWD-VOCAB-POS TO AWD-SEL(1)
+        MOVE "unicode.security.K.ai-watermark-detectability.StatisticalTokenChoice" TO TEMP-CODE
+        PERFORM ADD-AWD-FINDING
+        MOVE 1 TO AWD-DONE
+    END-IF
+    IF AWD-DONE = 0 AND AWD-DI-N > 0
+        PERFORM COPY-DI-TO-SEL
+        MOVE "unicode.security.K.ai-watermark-detectability.DefaultIgnorableCarrier" TO TEMP-CODE
+        PERFORM ADD-AWD-FINDING
+        MOVE 1 TO AWD-DONE
+    END-IF.
+
+PARSE-AWD-CONTEXT.
+    MOVE 0 TO AW-ZWSP-TOL AW-ADV-TOL
+    IF FUNCTION TRIM(ENC-ARG) NOT = " " AND FUNCTION TRIM(ENC-ARG) NOT = "-"
+        COMPUTE AW-ZWSP-TOL = FUNCTION NUMVAL(ENC-ARG)
+    END-IF
+    IF FUNCTION TRIM(RFC-ARG) NOT = " " AND FUNCTION TRIM(RFC-ARG) NOT = "-"
+        COMPUTE AW-ADV-TOL = FUNCTION NUMVAL(RFC-ARG)
+    END-IF.
+
+COLLECT-AWD-MARKERS.
+    MOVE 0 TO AWD-NNBSP-N AWD-ZWSP-N AWD-VS-N AWD-ZWJ-N
+    MOVE 0 TO AWD-CURLY-N AWD-EMDASH-N AWD-DI-N AWD-INVIS-N
+    MOVE 0 TO AWD-HAS-STRAIGHT AWD-HAS-HYPHEN
+    PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
+        MOVE CP(IDX) TO CUR-CP
+        COMPUTE POS-IDX = IDX - 1
+        IF CUR-CP = 8239
+            ADD 1 TO AWD-NNBSP-N
+            MOVE POS-IDX TO AWD-NNBSP(AWD-NNBSP-N)
+        END-IF
+        IF CUR-CP = 8203
+            ADD 1 TO AWD-ZWSP-N
+            MOVE POS-IDX TO AWD-ZWSP(AWD-ZWSP-N)
+        END-IF
+        IF CUR-CP = 34 OR CUR-CP = 39
+            MOVE 1 TO AWD-HAS-STRAIGHT
+        END-IF
+        IF CUR-CP = 45
+            MOVE 1 TO AWD-HAS-HYPHEN
+        END-IF
+        IF CUR-CP = 8212
+            ADD 1 TO AWD-EMDASH-N
+            MOVE POS-IDX TO AWD-EMDASH(AWD-EMDASH-N)
+        END-IF
+        IF CUR-CP = 8216 OR CUR-CP = 8217 OR CUR-CP = 8220 OR CUR-CP = 8221
+            ADD 1 TO AWD-CURLY-N
+            MOVE POS-IDX TO AWD-CURLY(AWD-CURLY-N)
+        END-IF
+        PERFORM CLASSIFY-AWD-MARKER
+    END-PERFORM.
+
+CLASSIFY-AWD-MARKER.
+    MOVE 0 TO FOUND-FLAG
+    MOVE CUR-CP TO LOOKUP-CP
+    PERFORM IS-DEFAULT-IGNORABLE
+    MOVE TABLE-FLAG TO AWD-IS-DI
+    IF (CUR-CP >= 65024 AND CUR-CP <= 65039) OR (CUR-CP >= 917760 AND CUR-CP <= 917999)
+        MOVE 1 TO AWD-IS-VS
+    ELSE
+        MOVE 0 TO AWD-IS-VS
+    END-IF
+    IF CUR-CP = 8205
+        MOVE 1 TO AWD-IS-ZWJ
+    ELSE
+        MOVE 0 TO AWD-IS-ZWJ
+    END-IF
+    IF CUR-CP = 8239 OR AWD-IS-VS = 1 OR AWD-IS-ZWJ = 1 OR AWD-IS-DI = 1
+        ADD 1 TO AWD-INVIS-N
+        MOVE POS-IDX TO AWD-INVIS(AWD-INVIS-N)
+    END-IF
+    IF AWD-IS-VS = 1 OR AWD-IS-ZWJ = 1
+        PERFORM AWD-EMOJI-ADJACENT
+        IF FOUND-FLAG = 0
+            IF AWD-IS-VS = 1
+                ADD 1 TO AWD-VS-N
+                MOVE POS-IDX TO AWD-VS(AWD-VS-N)
+            ELSE
+                ADD 1 TO AWD-ZWJ-N
+                MOVE POS-IDX TO AWD-ZWJ(AWD-ZWJ-N)
+            END-IF
+        END-IF
+    END-IF
+    IF AWD-IS-DI = 1 AND AWD-IS-VS = 0 AND AWD-IS-ZWJ = 0
+        ADD 1 TO AWD-DI-N
+        MOVE POS-IDX TO AWD-DI(AWD-DI-N)
+    END-IF.
+
+AWD-EMOJI-ADJACENT.
+    MOVE 0 TO AWD-PREV-EMOJI AWD-NEXT-EMOJI
+    IF IDX > 1
+        MOVE CP(IDX - 1) TO LOOKUP-CP
+        PERFORM IS-EMOJI
+        MOVE IS-EMOJI-FLAG TO AWD-PREV-EMOJI
+    END-IF
+    IF IDX < CP-COUNT
+        MOVE CP(IDX + 1) TO LOOKUP-CP
+        PERFORM IS-EMOJI
+        MOVE IS-EMOJI-FLAG TO AWD-NEXT-EMOJI
+    END-IF
+    IF AWD-PREV-EMOJI = 1 OR AWD-NEXT-EMOJI = 1
+        MOVE 1 TO FOUND-FLAG
+    ELSE
+        MOVE 0 TO FOUND-FLAG
+    END-IF.
+
+CHECK-AWD-ARITH.
+    MOVE 1 TO AWD-ARITH-OK
+    IF AWD-SEL-N >= 2
+        COMPUTE AWD-FIRST-GAP = AWD-SEL(2) - AWD-SEL(1)
+        PERFORM VARYING JDX FROM 1 BY 1 UNTIL JDX >= AWD-SEL-N OR AWD-ARITH-OK = 0
+            COMPUTE AWD-BYTE = AWD-SEL(JDX + 1) - AWD-SEL(JDX)
+            IF NOT (AWD-BYTE <= AWD-FIRST-GAP + AWD-GAP
+                    AND AWD-FIRST-GAP <= AWD-BYTE + AWD-GAP)
+                MOVE 0 TO AWD-ARITH-OK
+            END-IF
+        END-PERFORM
+    END-IF.
+
+FIND-AWD-VOCAB.
+    MOVE 0 TO AWD-VOCAB-FOUND
+    PERFORM VARYING VDX FROM 1 BY 1 UNTIL VDX > 50 OR AWD-VOCAB-FOUND = 1
+        MOVE VOCAB-LEN(VDX) TO PAT-LEN
+        PERFORM MATCH-AWD-VOCAB
+        IF AWD-MATCH = 1
+            MOVE 1 TO AWD-VOCAB-FOUND
+        END-IF
+    END-PERFORM.
+
+MATCH-AWD-VOCAB.
+    MOVE 0 TO AWD-MATCH
+    IF PAT-LEN > 0 AND PAT-LEN <= CP-COUNT
+        COMPUTE AWD-MAX-START = CP-COUNT - PAT-LEN + 1
+        PERFORM VARYING SDX FROM 1 BY 1 UNTIL SDX > AWD-MAX-START OR AWD-MATCH = 1
+            MOVE 1 TO AWD-ALLEQ
+            PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > PAT-LEN OR AWD-ALLEQ = 0
+                COMPUTE AWD-BYTE =
+                    FUNCTION ORD(VOCAB-CHARS(VDX)(KDX:1)) - 1
+                COMPUTE PDX = SDX + KDX - 1
+                IF CP(PDX) NOT = AWD-BYTE
+                    MOVE 0 TO AWD-ALLEQ
+                END-IF
+            END-PERFORM
+            IF AWD-ALLEQ = 1
+                MOVE 1 TO AWD-MATCH
+                COMPUTE AWD-VOCAB-POS = SDX - 1
+            END-IF
+        END-PERFORM
+    END-IF.
+
+COPY-NNBSP-TO-SEL.
+    MOVE AWD-NNBSP-N TO AWD-SEL-N
+    PERFORM VARYING JDX FROM 1 BY 1 UNTIL JDX > AWD-NNBSP-N
+        MOVE AWD-NNBSP(JDX) TO AWD-SEL(JDX)
+    END-PERFORM.
+
+COPY-ZWSP-TO-SEL.
+    MOVE AWD-ZWSP-N TO AWD-SEL-N
+    PERFORM VARYING JDX FROM 1 BY 1 UNTIL JDX > AWD-ZWSP-N
+        MOVE AWD-ZWSP(JDX) TO AWD-SEL(JDX)
+    END-PERFORM.
+
+COPY-VS-TO-SEL.
+    MOVE AWD-VS-N TO AWD-SEL-N
+    PERFORM VARYING JDX FROM 1 BY 1 UNTIL JDX > AWD-VS-N
+        MOVE AWD-VS(JDX) TO AWD-SEL(JDX)
+    END-PERFORM.
+
+COPY-ZWJ-TO-SEL.
+    MOVE AWD-ZWJ-N TO AWD-SEL-N
+    PERFORM VARYING JDX FROM 1 BY 1 UNTIL JDX > AWD-ZWJ-N
+        MOVE AWD-ZWJ(JDX) TO AWD-SEL(JDX)
+    END-PERFORM.
+
+COPY-CURLY-TO-SEL.
+    MOVE AWD-CURLY-N TO AWD-SEL-N
+    PERFORM VARYING JDX FROM 1 BY 1 UNTIL JDX > AWD-CURLY-N
+        MOVE AWD-CURLY(JDX) TO AWD-SEL(JDX)
+    END-PERFORM.
+
+COPY-EMDASH-TO-SEL.
+    MOVE AWD-EMDASH-N TO AWD-SEL-N
+    PERFORM VARYING JDX FROM 1 BY 1 UNTIL JDX > AWD-EMDASH-N
+        MOVE AWD-EMDASH(JDX) TO AWD-SEL(JDX)
+    END-PERFORM.
+
+COPY-DI-TO-SEL.
+    MOVE AWD-DI-N TO AWD-SEL-N
+    PERFORM VARYING JDX FROM 1 BY 1 UNTIL JDX > AWD-DI-N
+        MOVE AWD-DI(JDX) TO AWD-SEL(JDX)
+    END-PERFORM.
+
+COPY-INVIS-TO-SEL.
+    MOVE AWD-INVIS-N TO AWD-SEL-N
+    PERFORM VARYING JDX FROM 1 BY 1 UNTIL JDX > AWD-INVIS-N
+        MOVE AWD-INVIS(JDX) TO AWD-SEL(JDX)
+    END-PERFORM.
+
+ADD-AWD-FINDING.
+    ADD 1 TO FINDING-COUNT
+    MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
+    MOVE SPACES TO POS-TEXT
+    PERFORM VARYING JDX FROM 1 BY 1 UNTIL JDX > AWD-SEL-N
+        MOVE AWD-SEL(JDX) TO POS-NUM
+        IF JDX = 1
+            STRING FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
+        ELSE
+            STRING FUNCTION TRIM(POS-TEXT) DELIMITED BY SIZE "," DELIMITED BY SIZE FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
+        END-IF
+    END-PERFORM
+    MOVE POS-TEXT TO FINDING-POS(FINDING-COUNT).
+
+IS-EMOJI.
+    MOVE 0 TO IS-EMOJI-FLAG
+    COPY "src/generated/is_emoji.cpy".
 
 SELECT-ACTION.
     MOVE 0 TO BLOCKING-FLAG

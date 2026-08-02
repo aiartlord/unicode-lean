@@ -33,6 +33,7 @@ data-files:
   data/KnownAttackTargets.txt
   data/StandardizedVariants.txt
   data/emoji-variation-sequences.txt
+  data/emoji-data.txt
   data/UnicodeData.txt
   data/SpecialCasing.txt
   data/DerivedCoreProperties.txt
@@ -97,6 +98,7 @@ library
       Unicode.Normalization.Reorder
       Unicode.Segmentation.Grapheme
       Unicode.Segmentation.GraphemeTables
+      Unicode.Security.Crypto.AiWatermarkDetectability
       Unicode.Security.Crypto.Bip39Canonical
       Unicode.Security.Crypto.HashInputStability
       Unicode.Security.Form.LocaleCaseInversion
@@ -116,6 +118,7 @@ test-suite unicode-haskell-test
   hs-source-dirs:   test
   main-is:          Spec.hs
   other-modules:
+      AiWatermarkDetectabilitySpec
       Bip39CanonicalSpec
       HashInputStabilitySpec
       BomSpec

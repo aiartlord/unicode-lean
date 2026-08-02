@@ -376,6 +376,11 @@ def main():
         parse_property_ranges(DATA / "emoji-data.txt", {"Extended_Pictographic"}),
         "MOVE 1 TO IS-EP-FLAG",
     )
+    emit_range_eval(
+        OUT / "is_emoji.cpy",
+        parse_property_ranges(DATA / "emoji-data.txt", {"Emoji"}),
+        "MOVE 1 TO IS-EMOJI-FLAG",
+    )
     ucd = parse_unicode_data()
     exclusions = parse_composition_exclusions()
     emit_ccc_class(OUT / "ccc_class.cpy", ucd)

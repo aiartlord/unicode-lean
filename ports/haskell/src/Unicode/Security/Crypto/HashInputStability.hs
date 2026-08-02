@@ -118,7 +118,7 @@ rfcRuleFromTag _unrecognised               = Nothing
 
 -- | Sub-threats this detector can fire. Two probes fire from the raw input
 -- alone ('TrailingWhitespace', 'NormalizationDrift'); the other four require
--- the corresponding 'Context' field to be set.
+-- the corresponding @Context@ field to be set.
 data SubThreat
   = -- | Input diverges from its NFC form; the 'Int' is the first diverging
     -- codepoint index.

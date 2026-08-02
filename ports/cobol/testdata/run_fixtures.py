@@ -229,6 +229,62 @@ def check_hash_input_stability():
     return len(fixture["cases"]), len(context_vectors)
 
 
+AWD_BASE = "unicode.security.K.ai-watermark-detectability."
+
+
+def run_awd(values, zwsp_tol="-", adv_tol="-"):
+    arg = ",".join(str(v) for v in values)
+    proc = subprocess.run(
+        [str(BIN), "ai-watermark-detectability", "gateway-header", "observe",
+         arg, str(zwsp_tol), str(adv_tol)],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    )
+    codes = []
+    positions = {}
+    for line in proc.stdout.splitlines():
+        parts = line.split(" ", 2)
+        if parts and parts[0] == "FINDING":
+            code = parts[1]
+            codes.append(code)
+            positions[code] = [int(x) for x in parts[2].split(",") if x] if len(parts) > 2 else []
+    return {"codes": codes, "positions": positions}
+
+
+def check_ai_watermark_detectability():
+    # 1. Shared context-free fixture (the empty-Context vectors).
+    fixture = load("detectors/ai_watermark_detectability.json")
+    for case in fixture["cases"]:
+        got = run_awd(case["input"])
+        for code in case["required_findings"]:
+            require(code in got["codes"],
+                    f"awd/{case['name']} missing {code}; got {got['codes']}")
+        if not case["required_findings"]:
+            require(all(".ai-watermark-detectability." not in code for code in got["codes"]),
+                    f"awd/{case['name']} unexpected finding; got {got['codes']}")
+
+    # 2. The two Context-tolerance vectors from the Rust reference's `#[test]`
+    #    module: `detect_zwsp_jittered_tolerant_fires` (zwsp tol 1 fires the
+    #    modulo probe on a jittered progression) and
+    #    `detect_with_context_default_matches_detect` (the empty Context agrees
+    #    with bare `detect`).
+    jittered = [0x61, 0x200B, 0x62, 0x200B, 0x63, 0x64, 0x200B, 0x65]
+    got = run_awd(jittered, zwsp_tol=1)
+    code = AWD_BASE + "Gpt5ZwspModulo"
+    require(code in got["codes"],
+            f"awd-ctx/zwsp-jittered-tolerant missing {code}; got {got['codes']}")
+
+    nnbsp = [0x61, 0x202F, 0x62]
+    default_ctx = run_awd(nnbsp, zwsp_tol=0, adv_tol=0)
+    bare = run_awd(nnbsp)
+    require(default_ctx["codes"] == bare["codes"],
+            f"awd-ctx/default-matches codes {default_ctx['codes']} != {bare['codes']}")
+    require(AWD_BASE + "NnbspBoundary" in default_ctx["codes"],
+            f"awd-ctx/default-matches missing NnbspBoundary; got {default_ctx['codes']}")
+    return len(fixture["cases"]), 2
+
+
 def check_forms_and_bip39():
     cases = [
         ("forms", [], []),
@@ -392,6 +448,7 @@ def main():
     check_verdict()
     check_detectors()
     his_fixture_count, his_context_count = check_hash_input_stability()
+    awd_fixture_count, awd_context_count = check_ai_watermark_detectability()
     check_forms_and_bip39()
     check_generated_tables()
     blob_count = check_opaque_blob()
@@ -402,6 +459,8 @@ def main():
     print(f"grapheme (GraphemeBreakTest.txt) checks: {grapheme_count}")
     print(f"hash-input-stability shared-fixture vectors: {his_fixture_count}")
     print(f"hash-input-stability context vectors: {his_context_count}")
+    print(f"ai-watermark-detectability shared-fixture vectors: {awd_fixture_count}")
+    print(f"ai-watermark-detectability context vectors: {awd_context_count}")
     print("ok: cobol unicode security fixture tests pass")
 
 
