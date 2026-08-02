@@ -28,6 +28,7 @@ import qualified NfcIdempotenceWitnessSpec
 import qualified NFKDSpec
 import qualified NoncharactersSpec
 import qualified NormalizationBombSpec
+import qualified StreamSafeViolationSpec
 import qualified ValidatedUtf8Spec
 import qualified OpaqueBlobSpec
 import qualified IdentifierSpec
@@ -54,6 +55,7 @@ main = defaultMain $
     , NFKDSpec.tests
     , NoncharactersSpec.tests
     , NormalizationBombSpec.tests
+    , StreamSafeViolationSpec.tests
     , ValidatedUtf8Spec.tests
     , OpaqueBlobSpec.tests
     , IdentifierSpec.tests

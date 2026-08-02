@@ -322,6 +322,49 @@ def check_forms_and_bip39():
     )
 
 
+SS_BASE = "unicode.security.F.stream-safe-violation."
+
+
+def check_stream_safe_violation():
+    # 1. The five shared detector vectors.
+    fixture = load("detectors/stream_safe_violation.json")
+    for case in fixture["cases"]:
+        got = run("stream-safe-violation", "gateway-header", "observe", case["input"])
+        for code in case["required_findings"]:
+            require(code in got["codes"],
+                    f"ss/{case['name']} missing {code}; got {got['codes']}")
+        if not case["required_findings"]:
+            require(all(".stream-safe-violation." not in code for code in got["codes"]),
+                    f"ss/{case['name']} unexpected finding; got {got['codes']}")
+
+    # 2. The 30/31 non-starter-run boundary (U+0301, CCC=230). 30 marks after a
+    #    starter stays clear under strict `>`; 31 fires StreamSafeOverrun with
+    #    base_pos = the run's first codepoint index (1). A bare 31-mark run
+    #    (no leading starter) reports base_pos 0.
+    acute = 0x0301
+    overrun = SS_BASE + "StreamSafeOverrun"
+
+    thirty = run("stream-safe-violation", "gateway-header", "observe",
+                 [0x61] + [acute] * 30)
+    require(all(".stream-safe-violation." not in c for c in thirty["codes"]),
+            f"ss/thirty-boundary expected clear; got {thirty['codes']}")
+
+    thirtyone = run("stream-safe-violation", "gateway-header", "observe",
+                    [0x61] + [acute] * 31)
+    require(overrun in thirtyone["codes"],
+            f"ss/thirtyone missing {overrun}; got {thirtyone['codes']}")
+    require(thirtyone["positions"].get(overrun) == [1],
+            f"ss/thirtyone positions {thirtyone['positions'].get(overrun)} != [1]")
+
+    bare = run("stream-safe-violation", "gateway-header", "observe", [acute] * 31)
+    require(overrun in bare["codes"],
+            f"ss/bare-run missing {overrun}; got {bare['codes']}")
+    require(bare["positions"].get(overrun) == [0],
+            f"ss/bare-run positions {bare['positions'].get(overrun)} != [0]")
+
+    return len(fixture["cases"]) + 3
+
+
 def check_generated_tables():
     variation = run("scan", "gateway-header", "observe", [35, 65038])
     require(
@@ -450,6 +493,7 @@ def main():
     his_fixture_count, his_context_count = check_hash_input_stability()
     awd_fixture_count, awd_context_count = check_ai_watermark_detectability()
     check_forms_and_bip39()
+    ss_count = check_stream_safe_violation()
     check_generated_tables()
     blob_count = check_opaque_blob()
     validated_count = check_validated_utf8()
@@ -461,6 +505,7 @@ def main():
     print(f"hash-input-stability context vectors: {his_context_count}")
     print(f"ai-watermark-detectability shared-fixture vectors: {awd_fixture_count}")
     print(f"ai-watermark-detectability context vectors: {awd_context_count}")
+    print(f"stream-safe-violation checks: {ss_count}")
     print("ok: cobol unicode security fixture tests pass")
 
 

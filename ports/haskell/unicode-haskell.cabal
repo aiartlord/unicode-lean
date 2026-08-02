@@ -104,6 +104,7 @@ library
       Unicode.Security.Form.LocaleCaseInversion
       Unicode.Security.Form.NfcIdempotenceWitness
       Unicode.Security.Form.NormalizationBomb
+      Unicode.Security.Form.StreamSafeViolation
       Unicode.Security.Policy
   other-modules:
       Paths_unicode_haskell
@@ -132,6 +133,7 @@ test-suite unicode-haskell-test
       NFKDSpec
       NoncharactersSpec
       NormalizationBombSpec
+      StreamSafeViolationSpec
       OpaqueBlobSpec
       PolicySpec
       ConfusableBidiCompoundSpec

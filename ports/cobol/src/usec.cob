@@ -166,6 +166,13 @@ WORKING-STORAGE SECTION.
 01 KEY-CP PIC 9(9) COMP-5.
 01 KEY-CCC PIC 9(4) COMP-5.
 01 SORT-STOP PIC 9 VALUE 0.
+*> ── stream-safe-violation (F) non-starter run scan ────────────────────
+01 SS-LIMIT PIC 9(5) COMP-5 VALUE 30.
+01 SS-IN-RUN PIC 9 VALUE 0.
+01 SS-RUN-START PIC 9(5) COMP-5 VALUE 0.
+01 SS-RUN-LEN PIC 9(5) COMP-5 VALUE 0.
+01 SS-BASE-POS PIC 9(9) COMP-5 VALUE 0.
+01 SS-FIRED PIC 9 VALUE 0.
 *> ── ai-watermark-detectability (K) marker tables + context ────────────
 01 IS-EMOJI-FLAG PIC 9 COMP-5 VALUE 0.
 01 AW-ZWSP-TOL PIC 9(5) COMP-5 VALUE 0.
@@ -334,7 +341,11 @@ MAIN.
                             IF OP-NAME = "ai-watermark-detectability"
                                 PERFORM SCAN-AI-WATERMARK
                             ELSE
-                                PERFORM SCAN-CORE
+                                IF OP-NAME = "stream-safe-violation"
+                                    PERFORM SCAN-STREAM-SAFE
+                                ELSE
+                                    PERFORM SCAN-CORE
+                                END-IF
                             END-IF
                         END-IF
                     END-IF
@@ -1868,6 +1879,40 @@ ADD-AWD-FINDING.
 IS-EMOJI.
     MOVE 0 TO IS-EMOJI-FLAG
     COPY "src/generated/is_emoji.cpy".
+
+SCAN-STREAM-SAFE.
+*> UAX #15 §13 Stream-Safe Text Format: a codepoint is a non-starter iff
+*> its Canonical_Combining_Class is non-zero (D49). Fire StreamSafeOverrun
+*> on the first maximal non-starter run whose length exceeds the limit of
+*> 30; the reported position is that run's first (0-based) codepoint index.
+    MOVE 0 TO SS-IN-RUN SS-RUN-LEN SS-RUN-START SS-BASE-POS SS-FIRED
+    PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT OR SS-FIRED = 1
+        MOVE CP(IDX) TO LOOKUP-CP
+        PERFORM LOOKUP-CCC
+        IF CCC-VAL NOT = 0
+            IF SS-IN-RUN = 0
+                MOVE 1 TO SS-IN-RUN
+                MOVE IDX TO SS-RUN-START
+                MOVE 0 TO SS-RUN-LEN
+            END-IF
+            ADD 1 TO SS-RUN-LEN
+            IF SS-RUN-LEN > SS-LIMIT
+                COMPUTE SS-BASE-POS = SS-RUN-START - 1
+                MOVE 1 TO SS-FIRED
+            END-IF
+        ELSE
+            MOVE 0 TO SS-IN-RUN
+            MOVE 0 TO SS-RUN-LEN
+        END-IF
+    END-PERFORM
+    IF SS-FIRED = 1
+        MOVE "unicode.security.F.stream-safe-violation.StreamSafeOverrun" TO TEMP-CODE
+        MOVE SS-BASE-POS TO POS-NUM
+        MOVE FUNCTION TRIM(POS-NUM) TO POS-TEXT
+        ADD 1 TO FINDING-COUNT
+        MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
+        MOVE POS-TEXT TO FINDING-POS(FINDING-COUNT)
+    END-IF.
 
 SELECT-ACTION.
     MOVE 0 TO BLOCKING-FLAG

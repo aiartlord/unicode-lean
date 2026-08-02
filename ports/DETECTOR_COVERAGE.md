@@ -38,7 +38,7 @@ Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 | CaseExpansionMismatch | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
 | NfcIdempotenceWitness | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | NormalizationBomb | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| StreamSafeViolation | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| StreamSafeViolation | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | IdentifierFormDrift | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
 | AdmissibilityFormDrift | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
 | EmojiZwjIntegrity | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
@@ -48,11 +48,11 @@ Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 | HashInputStability | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | AiWatermarkDetectability | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-**Totals:** rust 19/27 · all other vouched ports 18/27 · overall 289/432
+**Totals:** rust 20/27 · all other vouched ports 19/27 · overall 305/432
 cells. The 13 core families plus LocaleCaseInversion, NormalizationBomb,
-NfcIdempotenceWitness, HashInputStability, and AiWatermarkDetectability are complete and vouched across
-every listed port; everything below the line is spec-proven in Lean but not
-yet ported.
+NfcIdempotenceWitness, HashInputStability, AiWatermarkDetectability, and
+StreamSafeViolation are complete and vouched across every listed port;
+everything below the line is spec-proven in Lean but not yet ported.
 
 ## Interrupted new-port inventory
 
@@ -72,7 +72,7 @@ fixture presence is not coverage.
 
 ## Remaining work
 
-9 detector families are unported. Each needs a reference implementation verified
+8 detector families are unported. Each needs a reference implementation verified
 against the Lean `detect_*` theorems, then a fan-out to all listed ports, each
 vouched.
 
@@ -80,7 +80,7 @@ vouched.
 (`display/source_display_divergence.rs`) — rust reference exists and is vouched;
 needs fan-out to the other 15 listed ports.
 
-**Not started in any port (8):** CaseExpansionMismatch, StreamSafeViolation,
+**Not started in any port (7):** CaseExpansionMismatch,
 IdentifierFormDrift, AdmissibilityFormDrift, EmojiZwjIntegrity,
 SkinToneVariationForgery, FilenameDisguise, RendererDivergence.
 
@@ -111,11 +111,8 @@ divergence-scan detector.
 
 ## Suggested order
 
-Fan out the two casing-dependent families that already have rust references
-(LocaleCaseInversion, then CaseExpansionMismatch once its reference lands) while
-the casing keystone is fresh, then proceed through the remaining families by
-dependency depth: the pure-scan detectors (StreamSafeViolation, HashInputStability,
-FilenameDisguise, RendererDivergence) before the ones that need new tables
-(EmojiZwjIntegrity, SkinToneVariationForgery) or heavier normalization machinery
-(NormalizationBomb, NfcIdempotenceWitness, AdmissibilityFormDrift,
-IdentifierFormDrift, AiWatermarkDetectability).
+Fan out CaseExpansionMismatch once its reference lands (the casing keystone
+`toLower` is already in place), then proceed through the remaining families by
+dependency depth: the pure-scan detector FilenameDisguise (and RendererDivergence)
+before the ones that need new tables (EmojiZwjIntegrity, SkinToneVariationForgery)
+or heavier normalization machinery (AdmissibilityFormDrift, IdentifierFormDrift).

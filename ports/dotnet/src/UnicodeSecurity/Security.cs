@@ -57,6 +57,7 @@ public static partial class Security
         public const string CovertDisplayCompound = "covert-display-compound";
         public const string HashInputStability = "hash-input-stability";
         public const string AiWatermarkDetectability = "ai-watermark-detectability";
+        public const string StreamSafeViolation = "stream-safe-violation";
     }
 
     public sealed record Finding(
@@ -238,6 +239,7 @@ public static partial class Security
             Family.RtlInjection => "D",
             Family.ConfusableBidiCompound or Family.CovertDisplayCompound => "X",
             Family.HashInputStability or Family.AiWatermarkDetectability => "K",
+            Family.StreamSafeViolation => "F",
             _ => "C",
         };
 

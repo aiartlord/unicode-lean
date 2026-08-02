@@ -23,6 +23,8 @@ TestHashInputStabilityFixture();
 TestHashInputStabilityContextVectors();
 TestAiWatermarkDetectabilityFixture();
 TestAiWatermarkDetectabilityContextVectors();
+TestStreamSafeViolationFixture();
+TestStreamSafeViolationBoundary();
 TestUtf8Blob();
 TestValidatedUtf8();
 TestGraphemeVectors();
@@ -564,6 +566,80 @@ static void TestHashInputStabilityContextVectors()
     AssertEqual<His.RfcRule?>(null, Security.HashInputStability.FromTag("nope"), "his rfc-rule unknown tag");
 
     Console.WriteLine("clean: .NET hash-input-stability 21-vector context spot-check passes");
+}
+
+// Ground truth: the shared context-free detector fixture
+// fixtures/security/detectors/stream_safe_violation.json, run through
+// Security.StreamSafeViolation.Detect. Each case's required_findings is the
+// fully-qualified reason code
+// (unicode.security.F.stream-safe-violation.<tag>); an empty list means the
+// input must classify Clear. Mirrors the Rust port's detect spot checks.
+static void TestStreamSafeViolationFixture()
+{
+    using var detector = LoadFixture("detectors/stream_safe_violation.json");
+    AssertEqual(1, detector.RootElement.GetProperty("schema").GetInt32(), "stream-safe-violation schema");
+    AssertEqual("stream-safe-violation", String(detector.RootElement, "family"), "stream-safe-violation family");
+    var cases = 0;
+    foreach (var entry in detector.RootElement.GetProperty("cases").EnumerateArray())
+    {
+        var name = String(entry, "name");
+        var input = Ints(entry.GetProperty("input"));
+        var verdict = Security.StreamSafeViolation.Detect(input);
+        var required = Strings(entry.GetProperty("required_findings")).ToList();
+        if (required.Count == 0)
+        {
+            AssertTrue(verdict.Classify.IsClear, $"stream-safe-violation {name}: expected clear, got {verdict.Classify.Tag}");
+        }
+        else
+        {
+            foreach (var code in required)
+            {
+                AssertEqual<string?>(code, verdict.Classify.ReasonCode, $"stream-safe-violation {name}: reason code");
+            }
+        }
+        cases++;
+    }
+    Console.WriteLine($"clean: .NET stream-safe-violation {cases}-case shared-fixture detect passes");
+}
+
+// The strict > 30 boundary and the run-inventory summaries, mirroring the Rust
+// port's detect_thirty_marks_clear / detect_thirtyone_marks_hazard tests. "a"
+// (CCC = 0, a starter) followed by n combining acute accents U+0301 (CCC = 230,
+// non-starters): 30 stays clear under strict >, 31 fires StreamSafeOverrun with
+// firstOverrun = (1, 31) and positions [1].
+static void TestStreamSafeViolationBoundary()
+{
+    const int acute = 0x0301;
+    List<int> APlusMarks(int n)
+    {
+        var v = new List<int> { 0x61 };
+        for (var i = 0; i < n; i++) v.Add(acute);
+        return v;
+    }
+
+    var thirty = Security.StreamSafeViolation.Detect(APlusMarks(30));
+    AssertTrue(thirty.Classify.IsClear, "stream-safe 30-marks clear");
+    AssertEqual<string?>(null, thirty.Classify.Tag, "stream-safe 30-marks tag");
+    AssertEqual(30, thirty.MaxRunLength, "stream-safe 30-marks max-run");
+    AssertEqual(0, thirty.OverrunCountValue, "stream-safe 30-marks overrun-count");
+    AssertEqual(30, thirty.TotalNonStartersValue, "stream-safe 30-marks total");
+
+    var thirtyOne = Security.StreamSafeViolation.Detect(APlusMarks(31));
+    AssertTrue(!thirtyOne.Classify.IsClear, "stream-safe 31-marks hazard");
+    AssertEqual<string?>("StreamSafeOverrun", thirtyOne.Classify.Tag, "stream-safe 31-marks tag");
+    AssertSequence(new[] { 1 }, thirtyOne.Classify.Positions, "stream-safe 31-marks pos");
+    AssertEqual<string?>("unicode.security.F.stream-safe-violation.StreamSafeOverrun", thirtyOne.Classify.ReasonCode, "stream-safe 31-marks reason code");
+    var overrun = thirtyOne.Classify as Security.StreamSafeViolation.Hazard;
+    AssertTrue(overrun is not null, "stream-safe 31-marks hazard shape");
+    var sub = overrun!.Sub as Security.StreamSafeViolation.StreamSafeOverrun;
+    AssertTrue(sub is not null, "stream-safe 31-marks sub-threat shape");
+    AssertEqual(1, sub!.BasePos, "stream-safe 31-marks base-pos");
+    AssertEqual(31, sub.RunLen, "stream-safe 31-marks run-len");
+    AssertEqual(31, thirtyOne.MaxRunLength, "stream-safe 31-marks max-run");
+    AssertEqual(1, thirtyOne.OverrunCountValue, "stream-safe 31-marks overrun-count");
+    AssertEqual(31, thirtyOne.TotalNonStartersValue, "stream-safe 31-marks total");
+
+    Console.WriteLine("clean: .NET stream-safe-violation 30/31 boundary + run-inventory spot-check passes");
 }
 
 // Ground truth: the shared context-free detector fixture
