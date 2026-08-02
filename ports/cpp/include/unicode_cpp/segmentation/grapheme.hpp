@@ -33,6 +33,13 @@ inline Gcb lookup_gcb(std::uint32_t cp) {
   return Gcb::Other;
 }
 
+// Whether cp has Grapheme_Cluster_Break = Extend. The display-layer
+// RendererDivergence detector counts combining marks by this class; exposing a
+// named wrapper mirrors the Rust reference's grapheme::is_grapheme_extend.
+inline bool is_grapheme_extend(std::uint32_t cp) {
+  return lookup_gcb(cp) == Gcb::Extend;
+}
+
 // Indic_Conjunct_Break class of cp, Incb::None when uncovered.
 inline Incb lookup_incb(std::uint32_t cp) {
   for (const auto &r : kIncbRanges) {

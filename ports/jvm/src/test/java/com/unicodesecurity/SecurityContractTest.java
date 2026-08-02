@@ -22,6 +22,7 @@ public final class SecurityContractTest {
     testHashInputStability();
     testAiWatermarkDetectability();
     testEmojiZwjIntegrity();
+    testRendererDivergence();
     testStreamSafeViolation();
     testConfusableBidiCompound();
     testSurrogateReassembly();
@@ -646,6 +647,120 @@ public final class SecurityContractTest {
     specVectors++;
 
     System.out.println("clean: JVM emoji-zwj-integrity passes (" + fixtureCases
+        + " fixture cases + " + specVectors + " spec vectors)");
+  }
+
+  // Pins the display-layer RendererDivergence detector against the verified Rust
+  // reference ports/rust/src/security/display/renderer_divergence.rs. Two
+  // independent sources of truth are exercised: (a) the shared context-free
+  // fixture detectors/renderer_divergence.json, run through
+  // RendererDivergence.detect and checked against the fixture reason codes; (b)
+  // the detect spot-checks and priority-ladder structure checks transcribed from
+  // the Rust test module. Every predicate the detector consumes is the port's
+  // own SHA-pinned table, never a host rendering/shaping/ICU library: the
+  // variation-selector set (Security.isVariationSelector), the grapheme
+  // GCB=Extend class (Security.isGraphemeExtend, Grapheme_Extend ∪ emoji-modifier
+  // from DerivedCoreProperties.txt), the registered RGI ZWJ registry
+  // (EmojiZwjIntegrity.isRegisteredZwjSequence over emoji-zwj-sequences.txt), and
+  // the strong-bidi classes over DerivedBidiClass.txt (via RtlInjection's own
+  // Security.isStrongLtr / Security.isStrongRtl).
+  private static void testRendererDivergence() throws IOException {
+    // (a) Shared context-free fixture through detect.
+    Map<String, Object> detector = fixture("detectors/renderer_divergence.json");
+    assertEquals(1, intValue(detector.get("schema")), "renderer-divergence schema");
+    assertEquals("renderer-divergence", string(detector, "family"), "renderer-divergence family");
+    int fixtureCases = 0;
+    for (Map<String, Object> entry : objects(detector.get("cases"))) {
+      RendererDivergence.Verdict verdict = RendererDivergence.detect(ints(entry.get("input")));
+      String code = RendererDivergence.reasonCode(verdict.classify());
+      List<String> required = strings(entry.get("required_findings"));
+      if (required.isEmpty()) {
+        assertEquals(null, code, "renderer-divergence " + string(entry, "name") + " should be clear");
+      } else {
+        assertEquals(1, required.size(),
+            "renderer-divergence " + string(entry, "name") + " single finding");
+        assertEquals(required.get(0), code, "renderer-divergence " + string(entry, "name"));
+      }
+      fixtureCases++;
+    }
+
+    // (b) detect spot-checks and priority-ladder structure checks transcribed
+    // one-for-one from the Rust test module.
+    int specVectors = 0;
+
+    // detect_empty_clear
+    assertTrue(RendererDivergence.detect(intList(new int[] {})).classify().isClear(),
+        "rd empty clear");
+    specVectors++;
+
+    // detect_ascii_clear
+    assertTrue(
+        RendererDivergence.detect(intList(new int[] {0x48, 0x65, 0x6C, 0x6C, 0x6F})).classify().isClear(),
+        "rd ascii clear");
+    specVectors++;
+
+    // detect_han_clear
+    assertTrue(RendererDivergence.detect(intList(new int[] {0x4E2D, 0x6587})).classify().isClear(),
+        "rd han clear");
+    specVectors++;
+
+    // detect_vs_variance — a single VS (FE0F) after an emoji.
+    assertEquals("VariationSelectorVariance",
+        RendererDivergence.detect(intList(new int[] {0x1F600, 0xFE0F})).classify().tag(),
+        "rd vs variance tag");
+    specVectors++;
+
+    // detect_rgi_family_clear — a registered RGI family ZWJ sequence.
+    RendererDivergence.Verdict rgi = RendererDivergence.detect(
+        intList(new int[] {0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466}));
+    assertTrue(rgi.classify().isClear(), "rd rgi family clear");
+    assertTrue(rgi.hasZwj(), "rd rgi family hasZwj");
+    specVectors++;
+
+    // detect_unregistered_zwj_variance — man + ZWJ + woman, not in RGI.
+    assertEquals("UnregisteredZwjVariance",
+        RendererDivergence.detect(intList(new int[] {0x1F468, 0x200D, 0x1F469})).classify().tag(),
+        "rd unregistered zwj variance tag");
+    specVectors++;
+
+    // detect_zalgo_variance — a 4-deep combining stack.
+    RendererDivergence.Verdict zalgo =
+        RendererDivergence.detect(intList(new int[] {0x0061, 0x0301, 0x0302, 0x0303, 0x0304}));
+    assertEquals("CombiningStackOverflow", zalgo.classify().tag(), "rd zalgo tag");
+    assertEquals(List.of(0), zalgo.classify().positions(), "rd zalgo positions");
+    assertEquals(4, zalgo.combiningCount(), "rd zalgo combining count");
+    specVectors++;
+
+    // detect_fullwidth_variance — fullwidth 'A'.
+    assertEquals("FullwidthVariance",
+        RendererDivergence.detect(intList(new int[] {0xFF21})).classify().tag(),
+        "rd fullwidth variance tag");
+    specVectors++;
+
+    // detect_mixed_direction — Latin + Hebrew in one input.
+    RendererDivergence.Verdict mixed =
+        RendererDivergence.detect(intList(new int[] {0x41, 0x42, 0x05D0, 0x05D1}));
+    assertEquals("MixedDirectionVariance", mixed.classify().tag(), "rd mixed direction tag");
+    assertTrue(mixed.strongLtrCount() > 0 && mixed.strongRtlCount() > 0,
+        "rd mixed direction strong counts");
+    specVectors++;
+
+    // combining_stack_beats_vs — a combining stack outranks a later VS.
+    assertEquals("CombiningStackOverflow",
+        RendererDivergence.detect(intList(new int[] {0x0061, 0x0301, 0x0302, 0x0303, 0x0304, 0xFE0F}))
+            .classify().tag(),
+        "rd combining stack beats vs");
+    specVectors++;
+
+    // three_marks_below_threshold — exactly three marks is below the threshold.
+    assertTrue(
+        !"CombiningStackOverflow".equals(
+            RendererDivergence.detect(intList(new int[] {0x0061, 0x0301, 0x0302, 0x0303}))
+                .classify().tag()),
+        "rd three marks below threshold");
+    specVectors++;
+
+    System.out.println("clean: JVM renderer-divergence passes (" + fixtureCases
         + " fixture cases + " + specVectors + " spec vectors)");
   }
 

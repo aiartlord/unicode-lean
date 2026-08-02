@@ -4,6 +4,7 @@ using UnicodeSecurity.Segmentation;
 using His = UnicodeSecurity.Security.HashInputStability;
 using Awd = UnicodeSecurity.Security.AiWatermarkDetectability;
 using Ezwj = UnicodeSecurity.Security.EmojiZwjIntegrity;
+using Rd = UnicodeSecurity.Security.RendererDivergence;
 
 TestCovertDisplayCompoundVectors();
 TestConfusableBidiCompoundVectors();
@@ -26,6 +27,8 @@ TestAiWatermarkDetectabilityFixture();
 TestAiWatermarkDetectabilityContextVectors();
 TestEmojiZwjIntegrityFixture();
 TestEmojiZwjIntegritySpotChecks();
+TestRendererDivergenceFixture();
+TestRendererDivergenceSpotChecks();
 TestStreamSafeViolationFixture();
 TestStreamSafeViolationBoundary();
 TestUtf8Blob();
@@ -903,6 +906,101 @@ static void TestEmojiZwjIntegritySpotChecks()
     AssertEqual<string?>("DoubleZWJ", Tag(new[] { 0x1F468, 0x200D, 0x200D, 0x1F466 }), "ezwj double-beats-unregistered tag");
 
     Console.WriteLine("clean: .NET emoji-zwj-integrity data + detect + structural spot-check passes");
+}
+
+// Ground truth: the shared context-free detector fixture
+// fixtures/security/detectors/renderer_divergence.json, run through
+// Security.RendererDivergence.Detect. Each case's required_findings is the
+// fully-qualified reason code
+// (unicode.security.D.renderer-divergence.<tag>); an empty list means the input
+// must classify Clear. Mirrors the Rust port's §5 detect spot checks.
+static void TestRendererDivergenceFixture()
+{
+    using var detector = LoadFixture("detectors/renderer_divergence.json");
+    AssertEqual(1, detector.RootElement.GetProperty("schema").GetInt32(), "renderer-divergence schema");
+    AssertEqual("renderer-divergence", String(detector.RootElement, "family"), "renderer-divergence family");
+    var cases = 0;
+    foreach (var entry in detector.RootElement.GetProperty("cases").EnumerateArray())
+    {
+        var name = String(entry, "name");
+        var input = Ints(entry.GetProperty("input"));
+        var verdict = Rd.Detect(input);
+        var required = Strings(entry.GetProperty("required_findings")).ToList();
+        if (required.Count == 0)
+        {
+            AssertTrue(verdict.Classify.IsClear, $"renderer-divergence {name}: expected clear, got {verdict.Classify.Tag}");
+        }
+        else
+        {
+            foreach (var code in required)
+            {
+                AssertEqual<string?>(code, verdict.Classify.ReasonCode, $"renderer-divergence {name}: reason code");
+            }
+        }
+        cases++;
+    }
+    Console.WriteLine($"clean: .NET renderer-divergence {cases}-case shared-fixture detect passes");
+}
+
+// Ground truth: the data-layer sanity, §5 detect spot-check, and structural
+// priority-ladder tests in the Rust port's renderer_divergence.rs test module.
+// The variation-selector set is reused from the variation-selector-payload
+// detector, the grapheme Extend class from the UAX #29 segmenter, the registered
+// RGI ZWJ set from the emoji-zwj-integrity detector, and the strong-bidi classes
+// from the rtl-injection detector — never a host rendering / shaping library.
+static void TestRendererDivergenceSpotChecks()
+{
+    string? Tag(int[] input) => Rd.Detect(input).Classify.Tag;
+
+    // ── data-layer sanity (reused predicates) ────────────────────────────
+    AssertTrue(Rd.IsVariationSelector(0xFE0F), "rd vs FE0F");
+    AssertTrue(Rd.IsVariationSelector(0xE0100), "rd vs E0100");
+    AssertTrue(!Rd.IsVariationSelector(0x0041), "rd vs non-A");
+    AssertTrue(Rd.IsGraphemeExtend(0x0301), "rd extend combining-acute");
+    AssertTrue(!Rd.IsGraphemeExtend(0x0061), "rd extend non-a");
+    AssertTrue(Rd.IsFullwidthHalfwidth(0xFF21), "rd fullwidth A");
+    AssertTrue(!Rd.IsFullwidthHalfwidth(0x0041), "rd fullwidth non-A");
+    AssertTrue(Rd.IsZwj(0x200D), "rd zwj");
+
+    // ── §5 detect spot checks (one per Lean/Rust theorem) ────────────────
+    // detect_empty_clear
+    AssertTrue(Rd.Detect(System.Array.Empty<int>()).Classify.IsClear, "rd empty clear");
+    // detect_ascii_clear
+    AssertTrue(Rd.Detect(new[] { 0x48, 0x65, 0x6C, 0x6C, 0x6F }).Classify.IsClear, "rd ascii clear");
+    // detect_han_clear
+    AssertTrue(Rd.Detect(new[] { 0x4E2D, 0x6587 }).Classify.IsClear, "rd han clear");
+    // detect_vs_variance
+    AssertEqual<string?>("VariationSelectorVariance", Tag(new[] { 0x1F600, 0xFE0F }), "rd vs-variance tag");
+    // detect_rgi_family_clear
+    var rgiFamily = Rd.Detect(new[] { 0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466 });
+    AssertTrue(rgiFamily.Classify.IsClear, "rd rgi-family clear");
+    AssertTrue(rgiFamily.HasZwj, "rd rgi-family has-zwj");
+    // detect_unregistered_zwj_variance
+    AssertEqual<string?>("UnregisteredZwjVariance", Tag(new[] { 0x1F468, 0x200D, 0x1F469 }), "rd unregistered-zwj tag");
+    // detect_zalgo_variance
+    var zalgo = Rd.Detect(new[] { 0x0061, 0x0301, 0x0302, 0x0303, 0x0304 });
+    AssertEqual<string?>("CombiningStackOverflow", zalgo.Classify.Tag, "rd zalgo tag");
+    AssertSequence(new[] { 0 }, zalgo.Classify.Positions, "rd zalgo positions");
+    AssertEqual(4, zalgo.CombiningCount, "rd zalgo combining-count");
+    // detect_fullwidth_variance
+    AssertEqual<string?>("FullwidthVariance", Tag(new[] { 0xFF21 }), "rd fullwidth tag");
+    // detect_mixed_direction
+    var mixed = Rd.Detect(new[] { 0x41, 0x42, 0x05D0, 0x05D1 });
+    AssertEqual<string?>("MixedDirectionVariance", mixed.Classify.Tag, "rd mixed-direction tag");
+    AssertTrue(mixed.StrongLtrCount > 0 && mixed.StrongRtlCount > 0, "rd mixed-direction counts");
+
+    // ── priority-ladder structural checks ────────────────────────────────
+    // A combining stack outranks a variation selector present later.
+    AssertEqual<string?>(
+        "CombiningStackOverflow",
+        Tag(new[] { 0x0061, 0x0301, 0x0302, 0x0303, 0x0304, 0xFE0F }),
+        "rd combining-stack-beats-vs");
+    // Exactly three combining marks is below the stack threshold — no overflow.
+    AssertTrue(
+        Tag(new[] { 0x0061, 0x0301, 0x0302, 0x0303 }) != "CombiningStackOverflow",
+        "rd three-marks-below-threshold");
+
+    Console.WriteLine("clean: .NET renderer-divergence data + detect + structural spot-check passes");
 }
 
 // Opaque-blob refinement: structurally valid strict UTF-8 under a size bound,

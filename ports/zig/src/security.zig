@@ -11,6 +11,7 @@ const standardized_variants_raw = @embedFile("data/StandardizedVariants.txt");
 const emoji_variation_sequences_raw = @embedFile("data/emoji-variation-sequences.txt");
 const emoji_data_raw = @embedFile("data/emoji-data.txt");
 const emoji_zwj_sequences_raw = @embedFile("data/emoji-zwj-sequences.txt");
+const derived_core_properties_raw = @embedFile("data/DerivedCoreProperties.txt");
 const MaxSkeletonLen = 128;
 
 pub const Action = enum {
@@ -3484,6 +3485,416 @@ pub const emoji_zwj_integrity = struct {
 };
 
 // ─────────────────────────────────────────────────────────────────────
+// Grapheme_Cluster_Break = Extend predicate (reused by RendererDivergence).
+//
+// The port carries no precompiled Grapheme_Cluster_Break table, so the
+// GCB = Extend class is derived from the two bundled property tables the
+// standard's GCB assignment draws it from (UAX #29 §3.1): a codepoint is
+// GCB = Extend iff it has Grapheme_Extend = Yes (parsed from the bundled
+// data/DerivedCoreProperties.txt) or Emoji_Modifier = Yes (the port's own
+// inline U+1F3FB..U+1F3FF range, reused from emoji_zwj_integrity). This
+// union is byte-identical to the canonical GCB Extend range set: the joiner
+// U+200D is not Grapheme_Extend (it is GCB = ZWJ, its own class) and so is
+// excluded, matching the Standard. No host segmentation library is consulted.
+// ─────────────────────────────────────────────────────────────────────
+
+/// True iff cp has Grapheme_Extend = Yes per the bundled
+/// data/DerivedCoreProperties.txt. Scans the embedded table's Grapheme_Extend
+/// rows on each call, mirroring the port's runtime property-parse idiom (see
+/// emoji_zwj_integrity.isEmoji). Each non-comment row is
+/// `<range> ; <property> # <comment>`; only rows whose property is exactly
+/// Grapheme_Extend are kept.
+fn hasGraphemeExtendProperty(cp: u32) bool {
+    var offset: usize = 0;
+    while (nextLine(derived_core_properties_raw, &offset)) |raw_line| {
+        const body = if (std.mem.indexOfScalar(u8, raw_line, '#')) |idx| raw_line[0..idx] else raw_line;
+        const stripped = trimAscii(body);
+        if (stripped.len == 0) continue;
+        var fields = std.mem.splitScalar(u8, stripped, ';');
+        const range_field = fields.next() orelse continue;
+        const prop_field = fields.next() orelse continue;
+        if (!std.mem.eql(u8, trimAscii(prop_field), "Grapheme_Extend")) continue;
+        const range = trimAscii(range_field);
+        if (std.mem.indexOf(u8, range, "..")) |dot_idx| {
+            const lo = parseHexU32(trimAscii(range[0..dot_idx])) orelse continue;
+            const hi = parseHexU32(trimAscii(range[dot_idx + 2 ..])) orelse continue;
+            if (lo <= cp and cp <= hi) return true;
+        } else {
+            const single = parseHexU32(range) orelse continue;
+            if (single == cp) return true;
+        }
+    }
+    return false;
+}
+
+/// True iff cp has Grapheme_Cluster_Break = Extend — the combining-mark class
+/// UAX #29 GB9 attaches to a preceding base. Grapheme_Extend ∪ Emoji_Modifier.
+fn isGraphemeExtend(cp: u32) bool {
+    return hasGraphemeExtendProperty(cp) or emoji_zwj_integrity.isEmojiModifier(cp);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// RendererDivergence detector (display layer D), mirroring
+// Unicode.Security.Display.RendererDivergence and its byte-faithful Rust port
+// ports/rust/src/security/display/renderer_divergence.rs.
+//
+// An adversary crafts content that renders one way in the auditor's renderer
+// (a benign glyph or an empty span) and a different way in the consumer's
+// renderer (a misleading glyph, a wider glyph, or a different sequence). This
+// is the "fingerprint stability" family — clear inputs render the same across
+// the renderer cohort the Standard documents as stable. The detector draws a
+// three-value split surfaced through the clear/hazard carrier: an input is
+// clear when none of the documented variance triggers fire, else it is
+// classified by the first trigger in priority order.
+//
+// It reuses the port's own tables — the variation-selector set (file-scope
+// isVariationSelector), the grapheme Extend class (isGraphemeExtend, above),
+// the RGI ZWJ registry (emoji_zwj_integrity.isRegisteredZwjSequence), and the
+// strong-bidi classes (file-scope isStrongLtr / isStrongRtl from the
+// rtl-injection detector) — never a host rendering or shaping library.
+//
+// Sub-threats (priority order):
+//   1. CombiningStackOverflow    Zalgo-like combining-mark stack >= 4 on a base.
+//   2. VariationSelectorVariance any variation selector present.
+//   3. UnregisteredZwjVariance   ZWJ-containing input not in the RGI ZWJ set.
+//   4. FullwidthVariance         a fullwidth/halfwidth codepoint present.
+//   5. MixedDirectionVariance    both strong-LTR and strong-RTL codepoints.
+// ─────────────────────────────────────────────────────────────────────
+
+pub const renderer_divergence = struct {
+    /// The combining-mark stack depth (on a single base) at or beyond which the
+    /// input is treated as a Zalgo-style rendering-variance hazard.
+    pub const MIN_COMBINING_STACK: usize = 4;
+
+    /// The ZERO WIDTH JOINER codepoint.
+    pub const ZWJ: u32 = 0x200D;
+
+    /// Upper bound on the number of implicated positions a hazard can carry
+    /// before the bounded buffer saturates. This detector reports at most one
+    /// position per hazard; the cap mirrors the port's other bounded position
+    /// buffers. Inputs that would exceed it saturate silently, which cannot
+    /// change a classification tag.
+    const MAX_POSITIONS: usize = 512;
+
+    /// Bounded position buffer — a hazard's implicated codepoint indices.
+    const PosBuffer = struct {
+        items: [MAX_POSITIONS]usize = undefined,
+        len: usize = 0,
+
+        fn append(self: *PosBuffer, p: usize) void {
+            if (self.len >= self.items.len) return;
+            self.items[self.len] = p;
+            self.len += 1;
+        }
+
+        fn slice(self: *const PosBuffer) []const usize {
+            return self.items[0..self.len];
+        }
+    };
+
+    // ── §3 Core predicates (all reuse the port's own tables) ──────────────
+    //
+    // The variation-selector set, the GCB Extend class, and the fullwidth /
+    // halfwidth block are the file-scope predicates isVariationSelector /
+    // isGraphemeExtend / isFullwidthHalfwidth, bound here under distinct alias
+    // names so the reuse is explicit and the file-scope declarations stay
+    // reachable — a same-named container method would collide with them (Zig
+    // reports an ambiguous reference). isZwj is the detector's own inline check.
+
+    /// The port's file-scope variation-selector predicate (VS ranges
+    /// U+FE00..U+FE0F, U+E0100..U+E01EF, U+180B..U+180D) — the same one the
+    /// variation-selector-payload detector uses.
+    const vsPredicate = isVariationSelector;
+
+    /// The port's file-scope GCB Extend predicate (Grapheme_Extend ∪
+    /// Emoji_Modifier), defined above this struct.
+    const gcbExtendPredicate = isGraphemeExtend;
+
+    /// The port's file-scope Halfwidth/Fullwidth Forms predicate
+    /// (U+FF01..U+FFEF), the same one the homoglyph-confusable detector uses.
+    const fwPredicate = isFullwidthHalfwidth;
+
+    /// True iff cp is the ZWJ codepoint.
+    pub fn isZwj(cp: u32) bool {
+        return cp == ZWJ;
+    }
+
+    // ── §4 Sub-detectors ─────────────────────────────────────────────────
+
+    fn countVs(input: []const u32) usize {
+        var count: usize = 0;
+        for (input) |cp| {
+            if (vsPredicate(cp)) count += 1;
+        }
+        return count;
+    }
+
+    fn countCombining(input: []const u32) usize {
+        var count: usize = 0;
+        for (input) |cp| {
+            if (gcbExtendPredicate(cp)) count += 1;
+        }
+        return count;
+    }
+
+    fn countFullwidth(input: []const u32) usize {
+        var count: usize = 0;
+        for (input) |cp| {
+            if (fwPredicate(cp)) count += 1;
+        }
+        return count;
+    }
+
+    fn inputHasZwj(input: []const u32) bool {
+        for (input) |cp| {
+            if (isZwj(cp)) return true;
+        }
+        return false;
+    }
+
+    fn countStrongLtr(input: []const u32) usize {
+        var count: usize = 0;
+        for (input) |cp| {
+            if (isStrongLtr(cp)) count += 1;
+        }
+        return count;
+    }
+
+    fn countStrongRtl(input: []const u32) usize {
+        var count: usize = 0;
+        for (input) |cp| {
+            if (isStrongRtl(cp)) count += 1;
+        }
+        return count;
+    }
+
+    /// Position and codepoint of the first variation selector.
+    const VsHit = struct { pos: usize, cp: u32 };
+    fn firstVsPos(input: []const u32) ?VsHit {
+        for (input, 0..) |cp, idx| {
+            if (vsPredicate(cp)) return VsHit{ .pos = idx, .cp = cp };
+        }
+        return null;
+    }
+
+    /// Position of the first ZWJ.
+    fn firstZwjPos(input: []const u32) ?usize {
+        for (input, 0..) |cp, idx| {
+            if (isZwj(cp)) return idx;
+        }
+        return null;
+    }
+
+    /// Position and codepoint of the first fullwidth/halfwidth codepoint.
+    const FwHit = struct { pos: usize, cp: u32 };
+    fn firstFullwidthPos(input: []const u32) ?FwHit {
+        for (input, 0..) |cp, idx| {
+            if (fwPredicate(cp)) return FwHit{ .pos = idx, .cp = cp };
+        }
+        return null;
+    }
+
+    /// The first base position (a non-Extend codepoint) immediately followed by
+    /// exactly min_stack consecutive Extend codepoints. Returns
+    /// (base_pos, min_stack) on hit.
+    const StackHit = struct { base_pos: usize, stack_len: usize };
+    fn firstCombiningStack(input: []const u32, min_stack: usize) ?StackHit {
+        for (input, 0..) |cp, idx| {
+            if (!gcbExtendPredicate(cp)) {
+                const start = idx + 1;
+                if (start + min_stack <= input.len) {
+                    var all_extend = true;
+                    var k: usize = 0;
+                    while (k < min_stack) : (k += 1) {
+                        if (!gcbExtendPredicate(input[start + k])) {
+                            all_extend = false;
+                            break;
+                        }
+                    }
+                    if (all_extend) return StackHit{ .base_pos = idx, .stack_len = min_stack };
+                }
+            }
+        }
+        return null;
+    }
+
+    // ── §2 Types ─────────────────────────────────────────────────────────
+
+    /// Sub-threat enumeration, in priority order.
+    pub const SubThreat = union(enum) {
+        /// A combining-mark stack of stack_len marks on the base at base_pos.
+        combining_stack_overflow: struct { base_pos: usize, stack_len: usize },
+        /// A variation selector at first_vs_pos (codepoint first_vs_cp).
+        variation_selector_variance: struct { first_vs_pos: usize, first_vs_cp: u32 },
+        /// A ZWJ-containing input not present in the registered RGI ZWJ set.
+        unregistered_zwj_variance: struct { first_zwj_pos: usize },
+        /// A fullwidth/halfwidth codepoint at first_fw_pos (codepoint first_fw_cp).
+        fullwidth_variance: struct { first_fw_pos: usize, first_fw_cp: u32 },
+        /// Both strong-LTR and strong-RTL codepoints in one input.
+        mixed_direction_variance: struct { ltr_count: usize, rtl_count: usize },
+
+        /// Human-facing classification tag for this sub-threat.
+        pub fn tag(self: SubThreat) []const u8 {
+            return switch (self) {
+                .combining_stack_overflow => "CombiningStackOverflow",
+                .variation_selector_variance => "VariationSelectorVariance",
+                .unregistered_zwj_variance => "UnregisteredZwjVariance",
+                .fullwidth_variance => "FullwidthVariance",
+                .mixed_direction_variance => "MixedDirectionVariance",
+            };
+        }
+
+        /// Fully-qualified reason code for this sub-threat, matching the shared
+        /// fixture's required_findings entry.
+        pub fn reasonCode(self: SubThreat) []const u8 {
+            return switch (self) {
+                .combining_stack_overflow => "unicode.security.D.renderer-divergence.CombiningStackOverflow",
+                .variation_selector_variance => "unicode.security.D.renderer-divergence.VariationSelectorVariance",
+                .unregistered_zwj_variance => "unicode.security.D.renderer-divergence.UnregisteredZwjVariance",
+                .fullwidth_variance => "unicode.security.D.renderer-divergence.FullwidthVariance",
+                .mixed_direction_variance => "unicode.security.D.renderer-divergence.MixedDirectionVariance",
+            };
+        }
+    };
+
+    /// Top-level classification (stable = clear).
+    pub const Classification = union(enum) {
+        /// Rendering is consistent across the documented renderer cohort.
+        clear,
+        /// A documented variance mode fired: the sub-threat, the implicated
+        /// positions, and the (always-empty for this detector) decoded-byte
+        /// projection, kept for shape parity with the Lean Classification.hazard.
+        hazard: struct { sub: SubThreat, positions: PosBuffer, decoded: []const u8 = &[_]u8{} },
+
+        /// True iff the classification is clear (i.e. stable).
+        pub fn isClear(self: Classification) bool {
+            return switch (self) {
+                .clear => true,
+                .hazard => false,
+            };
+        }
+
+        /// Human-facing tag for a hazard, or null when clear.
+        pub fn tag(self: Classification) ?[]const u8 {
+            return switch (self) {
+                .clear => null,
+                .hazard => |h| h.sub.tag(),
+            };
+        }
+
+        /// Fully-qualified reason code for a hazard, or null when clear.
+        pub fn reasonCode(self: Classification) ?[]const u8 {
+            return switch (self) {
+                .clear => null,
+                .hazard => |h| h.sub.reasonCode(),
+            };
+        }
+
+        /// Implicated positions (empty when clear).
+        pub fn positions(self: *const Classification) []const usize {
+            switch (self.*) {
+                .clear => return &[_]usize{},
+                .hazard => return self.hazard.positions.slice(),
+            }
+        }
+    };
+
+    /// Verdict — the structured output of detect (mirrors the Lean Verdict).
+    pub const Verdict = struct {
+        /// The scanned input codepoints.
+        input: []const u32,
+        /// The classification verdict.
+        classify: Classification,
+        /// Count of variation selectors.
+        vs_count: usize,
+        /// Count of combining (Extend) marks.
+        combining_count: usize,
+        /// Count of fullwidth/halfwidth codepoints.
+        fullwidth_count: usize,
+        /// Whether the input contains any ZWJ.
+        has_zwj: bool,
+        /// Count of strong-LTR codepoints.
+        strong_ltr_count: usize,
+        /// Count of strong-RTL codepoints.
+        strong_rtl_count: usize,
+    };
+
+    // ── §5 Top-level detection ───────────────────────────────────────────
+
+    /// The RendererDivergence detection function.
+    pub fn detect(input: []const u32) @This().Verdict {
+        const vs_count = countVs(input);
+        const combining_count = countCombining(input);
+        const fullwidth_count = countFullwidth(input);
+        const has_zwj = inputHasZwj(input);
+        const ltr_count = countStrongLtr(input);
+        const rtl_count = countStrongRtl(input);
+
+        const classification: Classification = blk: {
+            // Priority 1: combining-mark stack overflow (Zalgo).
+            if (firstCombiningStack(input, MIN_COMBINING_STACK)) |hit| {
+                var pos = PosBuffer{};
+                pos.append(hit.base_pos);
+                break :blk .{ .hazard = .{
+                    .sub = .{ .combining_stack_overflow = .{ .base_pos = hit.base_pos, .stack_len = hit.stack_len } },
+                    .positions = pos,
+                } };
+            }
+            // Priority 2: any variation selector triggers presentation variance.
+            if (firstVsPos(input)) |hit| {
+                var pos = PosBuffer{};
+                pos.append(hit.pos);
+                break :blk .{ .hazard = .{
+                    .sub = .{ .variation_selector_variance = .{ .first_vs_pos = hit.pos, .first_vs_cp = hit.cp } },
+                    .positions = pos,
+                } };
+            }
+            // Priority 3: ZWJ-containing input not in the registered RGI set.
+            if (has_zwj and !emoji_zwj_integrity.isRegisteredZwjSequence(input)) {
+                if (firstZwjPos(input)) |pos_idx| {
+                    var pos = PosBuffer{};
+                    pos.append(pos_idx);
+                    break :blk .{ .hazard = .{
+                        .sub = .{ .unregistered_zwj_variance = .{ .first_zwj_pos = pos_idx } },
+                        .positions = pos,
+                    } };
+                } else {
+                    break :blk .{ .clear = {} };
+                }
+            }
+            // Priority 4: fullwidth/halfwidth.
+            if (firstFullwidthPos(input)) |hit| {
+                var pos = PosBuffer{};
+                pos.append(hit.pos);
+                break :blk .{ .hazard = .{
+                    .sub = .{ .fullwidth_variance = .{ .first_fw_pos = hit.pos, .first_fw_cp = hit.cp } },
+                    .positions = pos,
+                } };
+            }
+            // Priority 5: mixed direction.
+            if (ltr_count > 0 and rtl_count > 0) {
+                break :blk .{ .hazard = .{
+                    .sub = .{ .mixed_direction_variance = .{ .ltr_count = ltr_count, .rtl_count = rtl_count } },
+                    .positions = PosBuffer{},
+                } };
+            }
+            break :blk .{ .clear = {} };
+        };
+
+        return @This().Verdict{
+            .input = input,
+            .classify = classification,
+            .vs_count = vs_count,
+            .combining_count = combining_count,
+            .fullwidth_count = fullwidth_count,
+            .has_zwj = has_zwj,
+            .strong_ltr_count = ltr_count,
+            .strong_rtl_count = rtl_count,
+        };
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────
 // Locale-case-inversion detector (Tier A2), mirroring
 // Unicode.Security.Form.LocaleCaseInversion.
 //
@@ -5001,5 +5412,125 @@ test "emoji-zwj-integrity structural checks" {
     {
         const v = Ezwj.detect(&[_]u32{ 0x1F468, 0x200D, 0x200D, 0x1F466 });
         try std.testing.expectEqualStrings("DoubleZWJ", v.classify.tag().?);
+    }
+}
+
+// ── renderer-divergence (display layer D) ────────────────────────────────
+
+const Rd = renderer_divergence;
+
+fn rdReason(input: []const u32) ?[]const u8 {
+    return Rd.detect(input).classify.reasonCode();
+}
+
+fn expectRdReason(input: []const u32, want: []const u8) !void {
+    const r = rdReason(input);
+    try std.testing.expect(r != null);
+    try std.testing.expectEqualStrings(want, r.?);
+}
+
+test "renderer-divergence GCB Extend predicate reuse" {
+    // The derived GCB = Extend class (Grapheme_Extend ∪ Emoji_Modifier) is
+    // byte-identical to the canonical GCB Extend range set; a spot check of the
+    // ranges the fixtures exercise plus the ZWJ exclusion.
+    try std.testing.expect(isGraphemeExtend(0x0301)); // COMBINING ACUTE ACCENT
+    try std.testing.expect(isGraphemeExtend(0x0304)); // COMBINING MACRON
+    try std.testing.expect(isGraphemeExtend(0x1F3FB)); // EMOJI MODIFIER FITZPATRICK-1
+    try std.testing.expect(!isGraphemeExtend(0x0061)); // LATIN SMALL LETTER A
+    try std.testing.expect(!isGraphemeExtend(0x200D)); // ZWJ is GCB = ZWJ, not Extend
+    // The variation-selector predicate reused from the port is the 3-range one.
+    try std.testing.expect(Rd.vsPredicate(0xFE0F));
+    try std.testing.expect(Rd.vsPredicate(0x180B));
+    try std.testing.expect(Rd.vsPredicate(0xE0100));
+    try std.testing.expect(!Rd.vsPredicate(0x1F600));
+}
+
+test "renderer-divergence shared fixture vectors" {
+    // The 9 rows of the shared context-free fixture
+    // (fixtures/security/detectors/renderer_divergence.json), inputs given as
+    // codepoints. Clear rows assert isClear; hazard rows assert the fully
+    // qualified reason code from required_findings.
+
+    // empty-clear.
+    {
+        const v = Rd.detect(&[_]u32{});
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expectEqual(@as(?[]const u8, null), v.classify.tag());
+        try std.testing.expectEqualSlices(usize, &[_]usize{}, v.classify.positions());
+    }
+    // ascii-hello-clear.
+    try std.testing.expect(Rd.detect(&[_]u32{ 72, 101, 108, 108, 111 }).classify.isClear());
+    // han-clear.
+    try std.testing.expect(Rd.detect(&[_]u32{ 20013, 25991 }).classify.isClear());
+    // family-of-four-rgi-clear.
+    {
+        const v = Rd.detect(&[_]u32{ 128104, 8205, 128105, 8205, 128103, 8205, 128102 });
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expect(v.has_zwj);
+    }
+    // variation-selector-variance.
+    try expectRdReason(&[_]u32{ 128512, 65039 }, "unicode.security.D.renderer-divergence.VariationSelectorVariance");
+    // unregistered-zwj-variance.
+    try expectRdReason(&[_]u32{ 128104, 8205, 128105 }, "unicode.security.D.renderer-divergence.UnregisteredZwjVariance");
+    // combining-stack-overflow-zalgo.
+    try expectRdReason(&[_]u32{ 97, 769, 770, 771, 772 }, "unicode.security.D.renderer-divergence.CombiningStackOverflow");
+    // fullwidth-variance.
+    try expectRdReason(&[_]u32{65313}, "unicode.security.D.renderer-divergence.FullwidthVariance");
+    // mixed-direction-variance.
+    try expectRdReason(&[_]u32{ 65, 66, 1488, 1489 }, "unicode.security.D.renderer-divergence.MixedDirectionVariance");
+}
+
+test "renderer-divergence detect spot checks" {
+    // The 9 Rust §5 detect spot checks (one per Lean theorem).
+
+    // detect_empty_clear.
+    try std.testing.expect(Rd.detect(&[_]u32{}).classify.isClear());
+    // detect_ascii_clear.
+    try std.testing.expect(Rd.detect(&[_]u32{ 0x48, 0x65, 0x6C, 0x6C, 0x6F }).classify.isClear());
+    // detect_han_clear.
+    try std.testing.expect(Rd.detect(&[_]u32{ 0x4E2D, 0x6587 }).classify.isClear());
+    // detect_vs_variance — a single VS (FE0F) after an emoji.
+    try std.testing.expectEqualStrings("VariationSelectorVariance", Rd.detect(&[_]u32{ 0x1F600, 0xFE0F }).classify.tag().?);
+    // detect_rgi_family_clear — a registered RGI family ZWJ sequence.
+    {
+        const v = Rd.detect(&[_]u32{ 0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466 });
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expect(v.has_zwj);
+    }
+    // detect_unregistered_zwj_variance — man + ZWJ + woman, not in RGI.
+    try std.testing.expectEqualStrings("UnregisteredZwjVariance", Rd.detect(&[_]u32{ 0x1F468, 0x200D, 0x1F469 }).classify.tag().?);
+    // detect_zalgo_variance — a 4-deep combining stack.
+    {
+        const v = Rd.detect(&[_]u32{ 0x0061, 0x0301, 0x0302, 0x0303, 0x0304 });
+        try std.testing.expectEqualStrings("CombiningStackOverflow", v.classify.tag().?);
+        try std.testing.expectEqualSlices(usize, &[_]usize{0}, v.classify.positions());
+        try std.testing.expect(v.combining_count == 4);
+    }
+    // detect_fullwidth_variance — fullwidth 'A'.
+    try std.testing.expectEqualStrings("FullwidthVariance", Rd.detect(&[_]u32{0xFF21}).classify.tag().?);
+    // detect_mixed_direction — Latin + Hebrew in one input.
+    {
+        const v = Rd.detect(&[_]u32{ 0x41, 0x42, 0x05D0, 0x05D1 });
+        try std.testing.expectEqualStrings("MixedDirectionVariance", v.classify.tag().?);
+        try std.testing.expect(v.strong_ltr_count > 0 and v.strong_rtl_count > 0);
+    }
+}
+
+test "renderer-divergence structural checks" {
+    // The 2 Rust priority-ladder structural checks.
+
+    // combining_stack_beats_vs — a combining stack outranks a later VS.
+    {
+        const v = Rd.detect(&[_]u32{ 0x0061, 0x0301, 0x0302, 0x0303, 0x0304, 0xFE0F });
+        try std.testing.expectEqualStrings("CombiningStackOverflow", v.classify.tag().?);
+        try std.testing.expect(v.classify.hazard.sub.combining_stack_overflow.base_pos == 0);
+        try std.testing.expect(v.classify.hazard.sub.combining_stack_overflow.stack_len == Rd.MIN_COMBINING_STACK);
+    }
+
+    // three_marks_below_threshold — exactly three marks is below the threshold.
+    {
+        const v = Rd.detect(&[_]u32{ 0x0061, 0x0301, 0x0302, 0x0303 });
+        const t = v.classify.tag();
+        try std.testing.expect(t == null or !std.mem.eql(u8, t.?, "CombiningStackOverflow"));
     }
 }

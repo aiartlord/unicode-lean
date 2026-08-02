@@ -301,7 +301,10 @@ public final class Security {
     return makeFinding(Family.VARIATION_SELECTOR_PAYLOAD, subThreat, positions);
   }
 
-  private static boolean isVariationSelector(int cp) {
+  // Variation-selector membership (FE00..FE0F, E0100..E01EF, 180B..180D).
+  // Package-private so the sibling display-layer detector RendererDivergence
+  // reuses this exact predicate rather than a host font/shaping library.
+  static boolean isVariationSelector(int cp) {
     return (cp >= 0xFE00 && cp <= 0xFE0F) || (cp >= 0xE0100 && cp <= 0xE01EF) || (cp >= 0x180B && cp <= 0x180D);
   }
 
@@ -773,6 +776,7 @@ public final class Security {
   private static Map<Integer, Integer> simpleLowercaseMap;
   private static List<int[]> casedRanges;
   private static List<int[]> softDottedRanges;
+  private static List<int[]> graphemeExtendRanges;
 
   private static Map<Integer, List<CasingRow>> parseSpecialCasing(String raw) {
     Map<Integer, List<CasingRow>> out = new HashMap<>();
@@ -853,6 +857,22 @@ public final class Security {
     if (softDottedRanges == null) softDottedRanges = parseCasingProperty(readResource("DerivedCoreProperties.txt"), "Soft_Dotted");
     for (int[] r : softDottedRanges) if (r[0] <= cp && cp <= r[1]) return true;
     return false;
+  }
+
+  // Grapheme_Cluster_Break = Extend, derived from the port's own pinned tables:
+  // the Grapheme_Extend property ranges in DerivedCoreProperties.txt unioned
+  // with the emoji skin-tone modifiers (Emoji_Modifier, U+1F3FB..U+1F3FF via
+  // EmojiZwjIntegrity.isEmojiModifier). That union equals canonical UAX #29
+  // GCB=Extend — ZWJ is its own break class and is excluded (Grapheme_Extend
+  // lists U+200C but not U+200D). Package-private so the sibling display-layer
+  // detector RendererDivergence reuses the port's tables, never a host
+  // segmentation library. Mirrors the Rust reference's grapheme::is_grapheme_extend.
+  static synchronized boolean isGraphemeExtend(int cp) {
+    if (graphemeExtendRanges == null) {
+      graphemeExtendRanges = parseCasingProperty(readResource("DerivedCoreProperties.txt"), "Grapheme_Extend");
+    }
+    for (int[] r : graphemeExtendRanges) if (r[0] <= cp && cp <= r[1]) return true;
+    return EmojiZwjIntegrity.isEmojiModifier(cp);
   }
 
   private static boolean moreAboveAfter(List<Integer> suffix) {
@@ -1549,12 +1569,16 @@ public final class Security {
     return result;
   }
 
-  private static boolean isStrongRtl(int cp) {
+  // Strong-RTL / strong-LTR Bidi_Class predicates over the port's pinned
+  // DerivedBidiClass table. Package-private so the sibling display-layer
+  // detector RendererDivergence reuses these exact predicates (its
+  // MixedDirectionVariance mode) rather than a host bidi library.
+  static boolean isStrongRtl(int cp) {
     BidiStrong bidi = bidiStrong(cp);
     return bidi == BidiStrong.R || bidi == BidiStrong.AL;
   }
 
-  private static boolean isStrongLtr(int cp) {
+  static boolean isStrongLtr(int cp) {
     return bidiStrong(cp) == BidiStrong.L;
   }
 
