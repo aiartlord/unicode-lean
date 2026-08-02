@@ -1220,6 +1220,55 @@ fn is_soft_dotted(cp: u32) -> bool {
     in_ranges(soft_dotted_ranges(), cp)
 }
 
+// UAX #31 default identifier + UTS #39 whole-string admissibility, mirroring
+// Unicode.Identifier. XID_Start / XID_Continue come from DerivedCoreProperties;
+// `is_id_allowed` (above) is the per-codepoint UTS #39 Identifier_Status test.
+
+fn xid_start_ranges() -> &'static Vec<(u32, u32)> {
+    static T: OnceLock<Vec<(u32, u32)>> = OnceLock::new();
+    T.get_or_init(|| parse_casing_property("XID_Start"))
+}
+
+fn xid_continue_ranges() -> &'static Vec<(u32, u32)> {
+    static T: OnceLock<Vec<(u32, u32)>> = OnceLock::new();
+    T.get_or_init(|| parse_casing_property("XID_Continue"))
+}
+
+fn is_xid_start(cp: u32) -> bool {
+    in_ranges(xid_start_ranges(), cp)
+}
+
+fn is_xid_continue(cp: u32) -> bool {
+    in_ranges(xid_continue_ranges(), cp)
+}
+
+/// UAX #31 default identifier start: `XID_Start` or `U+005F LOW LINE`.
+fn is_default_id_start(cp: u32) -> bool {
+    is_xid_start(cp) || cp == 0x005F
+}
+
+/// UAX #31 default identifier continue: `XID_Continue`.
+fn is_default_id_continue(cp: u32) -> bool {
+    is_xid_continue(cp)
+}
+
+/// True iff `cps` is a well-formed UAX #31 default identifier: a non-empty
+/// sequence whose first codepoint is a default-id start and whose remaining
+/// codepoints are default-id continues.
+pub fn is_default_identifier(cps: &[u32]) -> bool {
+    match cps.split_first() {
+        None => false,
+        Some((first, rest)) => is_default_id_start(*first) && rest.iter().all(|&cp| is_default_id_continue(cp)),
+    }
+}
+
+/// True iff `cps` is a well-formed default identifier AND every codepoint has
+/// `Identifier_Status = Allowed` per UTS #39 (the whole-string admissibility
+/// predicate `isAllowedIdentifier`).
+pub fn is_allowed_identifier(cps: &[u32]) -> bool {
+    is_default_identifier(cps) && cps.iter().all(|&cp| is_id_allowed(cp))
+}
+
 // Context predicates (UAX #21). `rev_prefix` is the preceding codepoints
 // nearest-first; `suffix` the strictly-following ones.
 

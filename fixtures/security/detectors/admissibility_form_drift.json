@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "family": "admissibility-form-drift",
+  "cases": [
+    {
+      "name": "empty-clear",
+      "input": [],
+      "required_findings": []
+    },
+    {
+      "name": "ascii-admin-clear",
+      "input": [97, 100, 109, 105, 110],
+      "required_findings": []
+    },
+    {
+      "name": "fi-ligature-drift",
+      "input": [64257],
+      "required_findings": [
+        "unicode.security.X.admissibility-form-drift.AdmissibilityFormDrift"
+      ]
+    },
+    {
+      "name": "jamo-sequence-drift",
+      "input": [4370, 4449, 4523],
+      "required_findings": [
+        "unicode.security.X.admissibility-form-drift.AdmissibilityFormDrift"
+      ]
+    }
+  ]
+}

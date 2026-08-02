@@ -6,6 +6,7 @@
 //! admissibility predicates — to catch attacks that only appear when two
 //! signals coincide.
 
+pub mod admissibility_form_drift;
 pub mod confusable_bidi_compound;
 pub mod covert_display_compound;
 pub mod identifier_form_drift;

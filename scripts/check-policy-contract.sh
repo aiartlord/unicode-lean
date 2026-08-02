@@ -335,6 +335,7 @@ non_default_scan_detectors = {
     "identifier_form_drift",
     "skin_tone_variation_forgery",
     "case_expansion_mismatch",
+    "admissibility_form_drift",
 }
 
 for detector_fixture in detector_fixtures:
