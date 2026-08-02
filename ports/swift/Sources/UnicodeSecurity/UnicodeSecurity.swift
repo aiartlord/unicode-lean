@@ -51,6 +51,7 @@ public enum Family {
     public static let filenameDisguise = "filename-disguise"
     public static let identifierFormDrift = "identifier-form-drift"
     public static let skinToneVariationForgery = "skin-tone-variation-forgery"
+    public static let caseExpansionMismatch = "case-expansion-mismatch"
 }
 
 public struct Finding: Equatable {
@@ -89,6 +90,7 @@ private var compositionExclusionsCache: Set<Int>?
 private var compositionTableCache: [Int: Int]?
 private var specialCasingCache: [Int: [CasingRow]]?
 private var simpleLowerCache: [Int: Int]?
+private var simpleUpperCache: [Int: Int]?
 private var casedRangesCache: [(Int, Int)]?
 private var softDottedRangesCache: [(Int, Int)]?
 private var identifierAllowedRangesCache: [(Int, Int)]?
@@ -298,7 +300,7 @@ private func layer(_ family: String) -> String {
     if family == Family.hashInputStability || family == Family.aiWatermarkDetectability {
         return "K"
     }
-    if family == Family.streamSafeViolation {
+    if family == Family.streamSafeViolation || family == Family.caseExpansionMismatch {
         return "F"
     }
     return "C"
@@ -892,6 +894,7 @@ public enum CasingLocale: Equatable {
 
 private struct CasingRow {
     let lower: [Int]
+    let upper: [Int]
     let conditions: [String]
 }
 
@@ -909,10 +912,14 @@ private func parseSpecialCasing(_ raw: String) -> [Int: [CasingRow]] {
         if fields.count < 4 { continue }
         guard let code = parseHex(fields[0]) else { continue }
         let lower = fields[1].split(separator: " ").compactMap { parseHex(String($0)) }
+        // SpecialCasing.txt columns are `code; lower; title; upper; conditions`
+        // (0-based): the uppercase full mapping is field 3, alongside the
+        // lowercase field 1 read above.
+        let upper = fields[3].split(separator: " ").compactMap { parseHex(String($0)) }
         let conditions = fields.count > 4 && !fields[4].isEmpty
             ? fields[4].split(separator: " ").map(String.init)
             : []
-        rows[code, default: []].append(CasingRow(lower: lower, conditions: conditions))
+        rows[code, default: []].append(CasingRow(lower: lower, upper: upper, conditions: conditions))
     }
     return rows
 }
@@ -947,6 +954,34 @@ private func simpleLowerMap() -> [Int: Int] {
 
 private func simpleLowercase(_ cp: Int) -> Int {
     simpleLowerMap()[cp] ?? cp
+}
+
+// The simple uppercase mapping is UnicodeData.txt field 12 (0-based), the
+// mirror of the simple lowercase field 13 parsed above. It is the fallback for
+// codepoints with no context/locale-dependent SpecialCasing uppercase row.
+private func parseSimpleUppercase(_ raw: String) -> [Int: Int] {
+    var out: [Int: Int] = [:]
+    for line in raw.split(separator: "\n", omittingEmptySubsequences: false) {
+        if line.isEmpty { continue }
+        let f = line.split(separator: ";", omittingEmptySubsequences: false).map(String.init)
+        if f.count < 13 { continue }
+        guard let cp = parseHex(f[0]) else { continue }
+        let upperField = f[12].trimmingCharacters(in: .whitespacesAndNewlines)
+        if upperField.isEmpty { continue }
+        if let upper = parseHex(upperField) { out[cp] = upper }
+    }
+    return out
+}
+
+private func simpleUpperMap() -> [Int: Int] {
+    if let cached = simpleUpperCache { return cached }
+    let parsed = parseSimpleUppercase(readDataFile("UnicodeData.txt"))
+    simpleUpperCache = parsed
+    return parsed
+}
+
+private func simpleUppercase(_ cp: Int) -> Int {
+    simpleUpperMap()[cp] ?? cp
 }
 
 private func parseDerivedProperty(_ raw: String, _ name: String) -> [(Int, Int)] {
@@ -1124,6 +1159,32 @@ private func lowerCodepoint(
     return [simpleLowercase(cp)]
 }
 
+// The UAX #21 default uppercase full mapping of `cp` in the given context,
+// mirroring `lowerCodepoint`: a SpecialCasing uppercase row whose conditions
+// hold outranks the simple uppercase mapping, reusing the same shared
+// context machinery (`findSpecialCasingRow` / `casingConditionsHold`).
+private func upperCodepoint(
+    _ locale: CasingLocale, _ revPrefix: [Int], _ suffix: [Int], _ cp: Int
+) -> [Int] {
+    if let row = findSpecialCasingRow(locale, revPrefix, suffix, cp) {
+        return row.upper
+    }
+    return [simpleUppercase(cp)]
+}
+
+/// Uppercase a codepoint sequence under `locale` (UAX #21 full mapping),
+/// mirroring `toLower`.
+public func toUpper(_ locale: CasingLocale, _ cps: [Int]) -> [Int] {
+    var out: [Int] = []
+    var revPrefix: [Int] = []
+    for index in cps.indices {
+        let suffix = Array(cps[(index + 1)...])
+        out.append(contentsOf: upperCodepoint(locale, revPrefix, suffix, cps[index]))
+        revPrefix.insert(cps[index], at: 0)
+    }
+    return out
+}
+
 /// Lowercase a codepoint sequence under `locale` (UAX #21 full mapping),
 /// mirroring `Unicode.Casing.toLower`.
 public func toLower(_ locale: CasingLocale, _ cps: [Int]) -> [Int] {
@@ -1180,6 +1241,184 @@ public func localeCaseInversionDetect(_ input: [Int]) -> LocaleCaseInversionResu
         return LocaleCaseInversionResult(subThreat: "LithuanianCaseDivergence", positions: [pos])
     }
     return LocaleCaseInversionResult(subThreat: nil, positions: [])
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// CaseExpansionMismatch — codepoints whose UAX #21 default-locale case
+// mapping changes the codepoint count (form-layer detector), mirroring
+// Unicode.Security.Form.CaseExpansionMismatch.
+//
+// An attacker submits text whose case-mapped form has a different codepoint
+// count than the input. A receiver that fixes a 16-byte username column and
+// stores the uppercase form overflows when the user picks "ßßßßßßßß"
+// (8 in -> 16 stored); a receiver that checks len(stored) == len(input)
+// rejects valid case-insensitive logins whose names expand under folding.
+// Examples: ß (U+00DF) toUpper -> "SS", ﬁ (U+FB01) toUpper -> "FI",
+// İ (U+0130) toLower under default -> "i" + U+0307.
+//
+// Distinct from LocaleCaseInversion (case mapping that changes ACROSS
+// locales): this fires on shapes whose mapping is locale-stable but
+// length-changing under the default locale itself. It reuses the port's own
+// UAX #21 case mapping (upperCodepoint / lowerCodepoint, which evaluate the
+// SpecialCasing context predicates), never a host casing library.
+//
+// Sub-threats (priority order):
+//   1. UpperExpansion — first position whose default upperCodepoint yields > 1 cp.
+//   2. LowerExpansion — first position whose default lowerCodepoint yields > 1 cp
+//      (reached only when no upper expansion fires first).
+// ─────────────────────────────────────────────────────────────────────
+
+/// Sub-threat enumeration for CaseExpansionMismatch, in priority order.
+public enum CaseExpansionMismatchSubThreat: Equatable {
+    /// A codepoint whose default uppercase mapping expands, at `basePos`.
+    /// `cp` is the expanding codepoint; `expansionLen` is the uppercase
+    /// expansion length (> 1).
+    case upperExpansion(basePos: Int, cp: Int, expansionLen: Int)
+    /// A codepoint whose default lowercase mapping expands, at `basePos`.
+    /// `cp` is the expanding codepoint; `expansionLen` is the lowercase
+    /// expansion length (> 1).
+    case lowerExpansion(basePos: Int, cp: Int, expansionLen: Int)
+
+    /// Human-facing classification tag for this sub-threat.
+    public var tag: String {
+        switch self {
+        case .upperExpansion: return "UpperExpansion"
+        case .lowerExpansion: return "LowerExpansion"
+        }
+    }
+}
+
+/// Top-level CaseExpansionMismatch classification.
+public enum CaseExpansionMismatchClassification: Equatable {
+    /// No case-mapped expansion present.
+    case clear
+    /// An expansion fired: the sub-threat, its implicated positions, and any
+    /// decoded bytes (always empty for this detector — the field mirrors the
+    /// spec's `Classification.hazard` shape).
+    case hazard(sub: CaseExpansionMismatchSubThreat, positions: [Int], decoded: [UInt8])
+
+    /// True iff the input is clear.
+    public var isClear: Bool {
+        switch self {
+        case .clear: return true
+        case .hazard: return false
+        }
+    }
+
+    /// Human-facing tag for a hazard, or `nil` when clear.
+    public var tag: String? {
+        switch self {
+        case .clear: return nil
+        case .hazard(let sub, _, _): return sub.tag
+        }
+    }
+
+    /// Implicated positions (empty when clear).
+    public var positions: [Int] {
+        switch self {
+        case .clear: return []
+        case .hazard(_, let positions, _): return positions
+        }
+    }
+}
+
+/// Verdict — the structured output of `caseExpansionMismatchDetect`. The
+/// per-position summaries (`upperExpansionCount`, `lowerExpansionCount`,
+/// `maxExpansionLen`) let downstream callers size the buffer pressure a
+/// case-mapping receiver would see.
+public struct CaseExpansionMismatchVerdict: Equatable {
+    /// The scanned input codepoints.
+    public let input: [Int]
+    /// The classification verdict.
+    public let classify: CaseExpansionMismatchClassification
+    /// Count of positions whose default uppercase mapping expands.
+    public let upperExpansionCount: Int
+    /// Count of positions whose default lowercase mapping expands.
+    public let lowerExpansionCount: Int
+    /// Maximum case-mapped expansion length across all positions (upper or lower).
+    public let maxExpansionLen: Int
+}
+
+/// The default-locale uppercase expansion length at position `i`, evaluating
+/// the SpecialCasing context (preceding codepoints nearest-first, following
+/// ones).
+private func caseExpansionUpperLenAt(_ input: [Int], _ i: Int) -> Int {
+    let revPrefix = Array(input[..<i].reversed())
+    let suffix = Array(input[(i + 1)...])
+    return upperCodepoint(.default, revPrefix, suffix, input[i]).count
+}
+
+/// The default-locale lowercase expansion length at position `i`.
+private func caseExpansionLowerLenAt(_ input: [Int], _ i: Int) -> Int {
+    let revPrefix = Array(input[..<i].reversed())
+    let suffix = Array(input[(i + 1)...])
+    return lowerCodepoint(.default, revPrefix, suffix, input[i]).count
+}
+
+/// First position whose default uppercase mapping expands to > 1 codepoint.
+private func caseExpansionFirstUpper(_ input: [Int]) -> (Int, Int, Int)? {
+    for i in input.indices {
+        let len = caseExpansionUpperLenAt(input, i)
+        if len > 1 { return (i, input[i], len) }
+    }
+    return nil
+}
+
+/// First position whose default lowercase mapping expands to > 1 codepoint.
+private func caseExpansionFirstLower(_ input: [Int]) -> (Int, Int, Int)? {
+    for i in input.indices {
+        let len = caseExpansionLowerLenAt(input, i)
+        if len > 1 { return (i, input[i], len) }
+    }
+    return nil
+}
+
+private func caseExpansionUpperCount(_ input: [Int]) -> Int {
+    input.indices.filter { caseExpansionUpperLenAt(input, $0) > 1 }.count
+}
+
+private func caseExpansionLowerCount(_ input: [Int]) -> Int {
+    input.indices.filter { caseExpansionLowerLenAt(input, $0) > 1 }.count
+}
+
+private func caseExpansionMaxLen(_ input: [Int]) -> Int {
+    input.indices
+        .map { max(caseExpansionUpperLenAt(input, $0), caseExpansionLowerLenAt(input, $0)) }
+        .max() ?? 0
+}
+
+/// The CaseExpansionMismatch detection function. Fires `UpperExpansion` on the
+/// first position whose default uppercase mapping expands; otherwise
+/// `LowerExpansion` on the first position whose default lowercase mapping
+/// expands; otherwise clear.
+public func caseExpansionMismatchDetect(_ input: [Int]) -> CaseExpansionMismatchVerdict {
+    let classification: CaseExpansionMismatchClassification
+    if let (pos, cp, len) = caseExpansionFirstUpper(input) {
+        classification = .hazard(
+            sub: .upperExpansion(basePos: pos, cp: cp, expansionLen: len),
+            positions: [pos],
+            decoded: [])
+    } else if let (pos, cp, len) = caseExpansionFirstLower(input) {
+        classification = .hazard(
+            sub: .lowerExpansion(basePos: pos, cp: cp, expansionLen: len),
+            positions: [pos],
+            decoded: [])
+    } else {
+        classification = .clear
+    }
+    return CaseExpansionMismatchVerdict(
+        input: input,
+        classify: classification,
+        upperExpansionCount: caseExpansionUpperCount(input),
+        lowerExpansionCount: caseExpansionLowerCount(input),
+        maxExpansionLen: caseExpansionMaxLen(input))
+}
+
+/// Stable reason code for a case-expansion-mismatch sub-threat tag, routed
+/// through the shared reason-code builder:
+/// `unicode.security.F.case-expansion-mismatch.<tag>`.
+public func caseExpansionMismatchReasonCode(_ subThreat: String) -> String {
+    reasonCode(family: Family.caseExpansionMismatch, subThreat: subThreat)
 }
 
 // ─────────────────────────────────────────────────────────────────────

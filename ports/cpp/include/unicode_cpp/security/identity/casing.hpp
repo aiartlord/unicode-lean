@@ -30,15 +30,18 @@ enum class Locale { Default, Turkish, Azeri, Lithuanian };
 
 struct CasingRow {
     std::vector<std::uint32_t> lower;
+    std::vector<std::uint32_t> upper;
     std::vector<std::string> conditions;
 };
 
-// Casing tables loaded from SpecialCasing.txt + UnicodeData.txt (field 13) +
+// Casing tables loaded from SpecialCasing.txt (lower = field 1, upper = field 3)
+// + UnicodeData.txt (simple lowercase = field 13, simple uppercase = field 12) +
 // DerivedCoreProperties.txt (Cased / Soft_Dotted). CCC comes from a separately
 // loaded ucd::Tables.
 struct CasingData {
     std::unordered_map<std::uint32_t, std::vector<CasingRow>> special_casing;
     std::unordered_map<std::uint32_t, std::uint32_t> simple_lowercase;
+    std::unordered_map<std::uint32_t, std::uint32_t> simple_uppercase;
     std::vector<std::pair<std::uint32_t, std::uint32_t>> cased_ranges;
     std::vector<std::pair<std::uint32_t, std::uint32_t>> soft_dotted_ranges;
 
@@ -111,6 +114,7 @@ inline CasingData CasingData::parse(
         if (!code) return;
         CasingRow row;
         row.lower = detail::parse_codepoint_list(fields[1]);
+        row.upper = detail::parse_codepoint_list(fields[3]);
         if (fields.size() > 4) {
             std::string_view cond = ucd::detail::trim(fields[4]);
             std::size_t i = 0;
@@ -132,7 +136,8 @@ inline CasingData CasingData::parse(
         c.special_casing[*code].push_back(std::move(row));
     });
 
-    // Simple lowercase from UnicodeData.txt field 13.
+    // Simple lowercase from UnicodeData.txt field 13; simple uppercase from
+    // field 12.
     ucd::detail::for_each_line(unicode_data_text, [&](std::string_view line) {
         if (line.empty()) return;
         auto fields = detail::split_semicolons(line);
@@ -142,6 +147,11 @@ inline CasingData CasingData::parse(
         if (!fields[13].empty()) {
             if (auto low = ucd::detail::parse_hex_u32(fields[13])) {
                 c.simple_lowercase[*cp] = *low;
+            }
+        }
+        if (!fields[12].empty()) {
+            if (auto up = ucd::detail::parse_hex_u32(fields[12])) {
+                c.simple_uppercase[*cp] = *up;
             }
         }
     });
@@ -180,6 +190,11 @@ inline bool in_ranges(
 inline std::uint32_t simple_lowercase(const CasingData& c, std::uint32_t cp) {
     auto it = c.simple_lowercase.find(cp);
     return it == c.simple_lowercase.end() ? cp : it->second;
+}
+
+inline std::uint32_t simple_uppercase(const CasingData& c, std::uint32_t cp) {
+    auto it = c.simple_uppercase.find(cp);
+    return it == c.simple_uppercase.end() ? cp : it->second;
 }
 
 // Context predicates (UAX #21). rev_prefix is the preceding codepoints

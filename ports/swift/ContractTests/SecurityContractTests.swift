@@ -22,6 +22,7 @@ struct SecurityContractRunner {
         try testHashInputStability()
         try testAiWatermarkDetectability()
         try testStreamSafeViolation()
+        try testCaseExpansionMismatch()
         try testEmojiZwjIntegrity()
         try testRendererDivergence()
         try testFilenameDisguise()
@@ -331,6 +332,82 @@ struct SecurityContractRunner {
             streamSafeViolationReasonCode("StreamSafeOverrun"),
             "unicode.security.F.stream-safe-violation.StreamSafeOverrun",
             "stream-safe-violation reason code")
+    }
+
+    // Pins caseExpansionMismatchDetect against the detect_* ground-truth
+    // theorems in Unicode/Security/Form/CaseExpansionMismatch.lean and the
+    // verified Rust reference: the shared context-free fixture runs through
+    // detect, plus the per-theorem spot checks and the mid-string
+    // first-expansion-position case are asserted directly.
+    private static func testCaseExpansionMismatch() throws {
+        // Shared context-free fixture through detect. required_findings carries
+        // full reason codes (unicode.security.F.case-expansion-mismatch.<Tag>);
+        // an empty list means clear.
+        let fixture = try loadFixture("detectors/case_expansion_mismatch.json")
+        try expectEqual(fixture["schema"] as? Int, 1, "case-expansion-mismatch schema")
+        try expectEqual(try string(fixture, "family"), "case-expansion-mismatch", "case-expansion-mismatch family")
+        for entry in try array(fixture, "cases") {
+            let name = try string(entry, "name")
+            let input = try intArray(entry, "input")
+            let required = try stringArray(entry, "required_findings")
+            if let tag = caseExpansionMismatchDetect(input).classify.tag {
+                let code = caseExpansionMismatchReasonCode(tag)
+                try expect(required.contains(code), "case-expansion-mismatch \(name): expected \(code) in \(required)")
+            } else {
+                try expect(required.isEmpty, "case-expansion-mismatch \(name): expected clear, got \(required)")
+            }
+        }
+
+        // ── §5 detect spot checks (one per Rust/Lean theorem). ──────────────
+        // detect_empty_clear
+        try expect(caseExpansionMismatchDetect([]).classify.isClear, "case-expansion-mismatch empty clear")
+
+        // detect_ascii_clear — "Hello"; every ASCII cp case-maps to a single cp.
+        let hello = caseExpansionMismatchDetect([0x48, 0x65, 0x6C, 0x6C, 0x6F])
+        try expect(hello.classify.isClear, "case-expansion-mismatch ascii clear")
+        try expectEqual(hello.maxExpansionLen, 1, "case-expansion-mismatch ascii maxExpansionLen")
+
+        // detect_sharp_s_upper — ß (U+00DF) toUpper → "SS".
+        let sharpS = caseExpansionMismatchDetect([0x00DF])
+        try expectEqual(sharpS.classify.tag, "UpperExpansion", "case-expansion-mismatch sharp-s tag")
+        try expectEqual(sharpS.classify.positions, [0], "case-expansion-mismatch sharp-s positions")
+        try expectEqual(sharpS.upperExpansionCount, 1, "case-expansion-mismatch sharp-s upperExpansionCount")
+        try expectEqual(sharpS.maxExpansionLen, 2, "case-expansion-mismatch sharp-s maxExpansionLen")
+
+        // detect_fi_ligature_upper — ﬁ (U+FB01) toUpper → "FI".
+        try expectEqual(
+            caseExpansionMismatchDetect([0xFB01]).classify.tag,
+            "UpperExpansion", "case-expansion-mismatch fi-ligature tag")
+
+        // detect_ffi_ligature_len3 — ﬃ (U+FB03) toUpper → "FFI" (length 3).
+        let ffi = caseExpansionMismatchDetect([0xFB03])
+        try expectEqual(ffi.classify.tag, "UpperExpansion", "case-expansion-mismatch ffi-ligature tag")
+        try expectEqual(ffi.maxExpansionLen, 3, "case-expansion-mismatch ffi-ligature maxExpansionLen")
+
+        // detect_dotted_I_lower — İ (U+0130) toLower under default → "i" + U+0307;
+        // no upper expansion, so the detector falls through to the lower scan.
+        let dottedI = caseExpansionMismatchDetect([0x0130])
+        try expectEqual(dottedI.classify.tag, "LowerExpansion", "case-expansion-mismatch dotted-I tag")
+        try expectEqual(dottedI.lowerExpansionCount, 1, "case-expansion-mismatch dotted-I lowerExpansionCount")
+
+        // detect_reports_first_expansion_position — leading ASCII "a" then ß:
+        // the upper expansion is reported at position 1.
+        let midString = caseExpansionMismatchDetect([0x61, 0x00DF])
+        try expectEqual(midString.classify.positions, [1], "case-expansion-mismatch mid-string positions")
+        try expectEqual(
+            midString.classify,
+            .hazard(sub: .upperExpansion(basePos: 1, cp: 0x00DF, expansionLen: 2), positions: [1], decoded: []),
+            "case-expansion-mismatch mid-string classification")
+
+        // Reason-code shape for each sub-threat.
+        try expectEqual(
+            caseExpansionMismatchReasonCode("UpperExpansion"),
+            "unicode.security.F.case-expansion-mismatch.UpperExpansion",
+            "case-expansion-mismatch upper reason code")
+        try expectEqual(
+            caseExpansionMismatchReasonCode("LowerExpansion"),
+            "unicode.security.F.case-expansion-mismatch.LowerExpansion",
+            "case-expansion-mismatch lower reason code")
     }
 
     // Pins emojiZwjIntegrityDetect against the ground-truth theorems in

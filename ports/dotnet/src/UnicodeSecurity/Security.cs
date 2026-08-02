@@ -58,6 +58,7 @@ public static partial class Security
         public const string HashInputStability = "hash-input-stability";
         public const string AiWatermarkDetectability = "ai-watermark-detectability";
         public const string StreamSafeViolation = "stream-safe-violation";
+        public const string CaseExpansionMismatch = "case-expansion-mismatch";
         public const string EmojiZwjIntegrity = "emoji-zwj-integrity";
         public const string RendererDivergence = "renderer-divergence";
         public const string FilenameDisguise = "filename-disguise";
@@ -245,7 +246,7 @@ public static partial class Security
             Family.RtlInjection or Family.RendererDivergence or Family.FilenameDisguise => "D",
             Family.ConfusableBidiCompound or Family.CovertDisplayCompound or Family.IdentifierFormDrift => "X",
             Family.HashInputStability or Family.AiWatermarkDetectability => "K",
-            Family.StreamSafeViolation => "F",
+            Family.StreamSafeViolation or Family.CaseExpansionMismatch => "F",
             _ => "C",
         };
 
@@ -713,10 +714,11 @@ public static partial class Security
     /// Turkish / Azeri / Lithuanian.</summary>
     public enum CasingLocale { Default, Turkish, Azeri, Lithuanian }
 
-    private sealed record CasingRow(List<int> Lower, List<string> Conditions);
+    private sealed record CasingRow(List<int> Lower, List<int> Upper, List<string> Conditions);
 
     private static Dictionary<int, List<CasingRow>>? specialCasingMap;
     private static Dictionary<int, int>? simpleLowercaseMap;
+    private static Dictionary<int, int>? simpleUppercaseMap;
     private static List<(int Lo, int Hi)>? casedRanges;
     private static List<(int Lo, int Hi)>? softDottedRanges;
 
@@ -741,7 +743,10 @@ public static partial class Security
                 list = new List<CasingRow>();
                 result[code.Value] = list;
             }
-            list.Add(new CasingRow(ParseCodepointField(f[1]), conditions));
+            // Field layout (0-based): code(0); lower(1); title(2); upper(3);
+            // conditions(4). Capture both the lowercase (field 1) and uppercase
+            // (field 3) full mappings so the SpecialCasing context drives either.
+            list.Add(new CasingRow(ParseCodepointField(f[1]), ParseCodepointField(f[3]), conditions));
         }
         return result;
     }
@@ -775,6 +780,33 @@ public static partial class Security
     {
         simpleLowercaseMap ??= ParseSimpleLowercase(ReadDataFile("UnicodeData.txt"));
         return simpleLowercaseMap.TryGetValue(cp, out var l) ? l : cp;
+    }
+
+    private static Dictionary<int, int> ParseSimpleUppercase(string raw)
+    {
+        var upper = new Dictionary<int, int>();
+        foreach (var line in raw.Split('\n'))
+        {
+            if (line.Length == 0) continue;
+            var f = line.Split(';');
+            if (f.Length < 15) continue;
+            var cp = ParseHex(f[0]);
+            if (cp is null) continue;
+            // Field 12 (0-based) is the simple uppercase mapping, the uppercase
+            // counterpart of the simple lowercase in field 13.
+            if (f[12].Length != 0)
+            {
+                var u = ParseHex(f[12]);
+                if (u is not null) upper[cp.Value] = u.Value;
+            }
+        }
+        return upper;
+    }
+
+    private static int SimpleUppercase(int cp)
+    {
+        simpleUppercaseMap ??= ParseSimpleUppercase(ReadDataFile("UnicodeData.txt"));
+        return simpleUppercaseMap.TryGetValue(cp, out var u) ? u : cp;
     }
 
     private static List<(int Lo, int Hi)> ParseCasingProperty(string name)
@@ -982,6 +1014,18 @@ public static partial class Security
         var row = FindSpecialRow(locale, revPrefix, suffix, cp);
         if (row is not null) return row.Lower;
         return new List<int> { SimpleLowercase(cp) };
+    }
+
+    /// <summary>Uppercase a single codepoint in its full input context: the
+    /// SpecialCasing row whose conditions hold (its uppercase column), else the
+    /// simple uppercase mapping. Mirrors <see cref="LowerCodepoint"/> exactly,
+    /// returning the uppercase side of the same context-resolved row.</summary>
+    private static List<int> UpperCodepoint(
+        CasingLocale locale, List<int> revPrefix, List<int> suffix, int cp)
+    {
+        var row = FindSpecialRow(locale, revPrefix, suffix, cp);
+        if (row is not null) return row.Upper;
+        return new List<int> { SimpleUppercase(cp) };
     }
 
     /// <summary>First input position whose <see cref="LowerCodepoint"/> under

@@ -28,6 +28,7 @@ add_executable(unicode_cpp_tests
     ai_watermark_detectability_test.cpp
     emoji_zwj_integrity_test.cpp
     locale_case_inversion_test.cpp
+    case_expansion_mismatch_test.cpp
     normalization_bomb_test.cpp
     nfc_idempotence_witness_test.cpp
     stream_safe_violation_test.cpp

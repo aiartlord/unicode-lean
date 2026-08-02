@@ -40,6 +40,8 @@ TestIdentifierFormDriftFixture();
 TestIdentifierFormDriftSpotChecks();
 TestStreamSafeViolationFixture();
 TestStreamSafeViolationBoundary();
+TestCaseExpansionMismatchFixture();
+TestCaseExpansionMismatchSpotChecks();
 TestUtf8Blob();
 TestValidatedUtf8();
 TestGraphemeVectors();
@@ -655,6 +657,88 @@ static void TestStreamSafeViolationBoundary()
     AssertEqual(31, thirtyOne.TotalNonStartersValue, "stream-safe 31-marks total");
 
     Console.WriteLine("clean: .NET stream-safe-violation 30/31 boundary + run-inventory spot-check passes");
+}
+
+// Ground truth: the shared context-free detector fixture
+// detectors/case_expansion_mismatch.json, run through
+// Security.CaseExpansionMismatch.Detect. Each case's required_findings is the
+// fully-qualified reason code
+// (unicode.security.F.case-expansion-mismatch.<tag>); an empty list means the
+// input must classify Clear. Mirrors the Rust port's detect spot checks.
+static void TestCaseExpansionMismatchFixture()
+{
+    using var detector = LoadFixture("detectors/case_expansion_mismatch.json");
+    AssertEqual(1, detector.RootElement.GetProperty("schema").GetInt32(), "case-expansion-mismatch schema");
+    AssertEqual("case-expansion-mismatch", String(detector.RootElement, "family"), "case-expansion-mismatch family");
+    var cases = 0;
+    foreach (var entry in detector.RootElement.GetProperty("cases").EnumerateArray())
+    {
+        var name = String(entry, "name");
+        var input = Ints(entry.GetProperty("input"));
+        var verdict = Security.CaseExpansionMismatch.Detect(input);
+        var required = Strings(entry.GetProperty("required_findings")).ToList();
+        if (required.Count == 0)
+        {
+            AssertTrue(verdict.Classify.IsClear, $"case-expansion-mismatch {name}: expected clear, got {verdict.Classify.Tag}");
+        }
+        else
+        {
+            foreach (var code in required)
+            {
+                AssertEqual<string?>(code, verdict.Classify.ReasonCode, $"case-expansion-mismatch {name}: reason code");
+            }
+        }
+        cases++;
+    }
+    Console.WriteLine($"clean: .NET case-expansion-mismatch {cases}-case shared-fixture detect passes");
+}
+
+// The Rust port's detect spot checks: empty / "Hello" ASCII clear; ß U+00DF →
+// UpperExpansion (SS, len 2); ﬁ U+FB01 → UpperExpansion (FI); ﬃ U+FB03 →
+// UpperExpansion with maxExpansionLen 3 (FFI); İ U+0130 → LowerExpansion (the
+// default fold i + U+0307, reached only when no upper expansion fires); and the
+// mid-string position case [0x61, 0x00DF], whose upper expansion is reported at
+// position 1.
+static void TestCaseExpansionMismatchSpotChecks()
+{
+    string? Tag(int[] input) => Security.CaseExpansionMismatch.Detect(input).Classify.Tag;
+
+    var empty = Security.CaseExpansionMismatch.Detect(System.Array.Empty<int>());
+    AssertTrue(empty.Classify.IsClear, "case-expansion empty clear");
+    AssertEqual(0, empty.MaxExpansionLenValue, "case-expansion empty max-len");
+
+    var hello = Security.CaseExpansionMismatch.Detect(new[] { 0x48, 0x65, 0x6C, 0x6C, 0x6F });
+    AssertTrue(hello.Classify.IsClear, "case-expansion hello clear");
+    AssertEqual(1, hello.MaxExpansionLenValue, "case-expansion hello max-len");
+
+    var sharpS = Security.CaseExpansionMismatch.Detect(new[] { 0x00DF });
+    AssertEqual<string?>("UpperExpansion", sharpS.Classify.Tag, "case-expansion sharp-s tag");
+    AssertSequence(new[] { 0 }, sharpS.Classify.Positions, "case-expansion sharp-s pos");
+    AssertEqual(1, sharpS.UpperExpansionCountValue, "case-expansion sharp-s upper-count");
+    AssertEqual(2, sharpS.MaxExpansionLenValue, "case-expansion sharp-s max-len");
+
+    AssertEqual<string?>("UpperExpansion", Tag(new[] { 0xFB01 }), "case-expansion fi tag");
+
+    var ffi = Security.CaseExpansionMismatch.Detect(new[] { 0xFB03 });
+    AssertEqual<string?>("UpperExpansion", ffi.Classify.Tag, "case-expansion ffi tag");
+    AssertEqual(3, ffi.MaxExpansionLenValue, "case-expansion ffi max-len");
+
+    var dottedI = Security.CaseExpansionMismatch.Detect(new[] { 0x0130 });
+    AssertEqual<string?>("LowerExpansion", dottedI.Classify.Tag, "case-expansion dotted-I tag");
+    AssertEqual(1, dottedI.LowerExpansionCountValue, "case-expansion dotted-I lower-count");
+
+    var midString = Security.CaseExpansionMismatch.Detect(new[] { 0x61, 0x00DF });
+    AssertSequence(new[] { 1 }, midString.Classify.Positions, "case-expansion mid-string pos");
+    AssertEqual<string?>("UpperExpansion", midString.Classify.Tag, "case-expansion mid-string tag");
+
+    AssertEqual<string?>(
+        "unicode.security.F.case-expansion-mismatch.UpperExpansion",
+        sharpS.Classify.ReasonCode, "case-expansion sharp-s reason code");
+    AssertEqual<string?>(
+        "unicode.security.F.case-expansion-mismatch.LowerExpansion",
+        dottedI.Classify.ReasonCode, "case-expansion dotted-I reason code");
+
+    Console.WriteLine("clean: .NET case-expansion-mismatch detect spot-check passes");
 }
 
 // Ground truth: the shared context-free detector fixture

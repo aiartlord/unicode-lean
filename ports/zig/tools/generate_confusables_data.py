@@ -398,12 +398,34 @@ def parse_simple_lowercase(text: str) -> dict[int, int]:
     return out
 
 
-def parse_special_casing(text: str) -> list[tuple[int, list[int], list[str]]]:
-    """Parse SpecialCasing.txt into ``(code, lower, conditions)`` rows in file
-    order (per codepoint, the file lists conditional rows before the
-    unconditional fallback, and toLower keeps that order). Only the lowercase
-    mapping (field 1) and the condition list (field 4) are retained."""
-    rows: list[tuple[int, list[int], list[str]]] = []
+def parse_simple_uppercase(text: str) -> dict[int, int]:
+    """Parse UnicodeData.txt field 12 (simple uppercase mapping) into
+    ``cp -> upper``; codepoints without a mapping uppercase to themselves and
+    are omitted."""
+    out: dict[int, int] = {}
+    for raw_line in text.splitlines():
+        if not raw_line:
+            continue
+        fields = raw_line.split(";")
+        if len(fields) < 13:
+            continue
+        upper_field = fields[12].strip()
+        if not upper_field:
+            continue
+        try:
+            out[int(fields[0], 16)] = int(upper_field, 16)
+        except ValueError:
+            continue
+    return out
+
+
+def parse_special_casing(text: str) -> list[tuple[int, list[int], list[int], list[str]]]:
+    """Parse SpecialCasing.txt into ``(code, lower, upper, conditions)`` rows in
+    file order (per codepoint, the file lists conditional rows before the
+    unconditional fallback, and toLower/toUpper keep that order). The lowercase
+    mapping (field 1), the uppercase mapping (field 3), and the condition list
+    (field 4) are retained."""
+    rows: list[tuple[int, list[int], list[int], list[str]]] = []
     for raw_line in text.splitlines():
         body = raw_line.split("#", 1)[0].strip()
         if not body:
@@ -414,10 +436,11 @@ def parse_special_casing(text: str) -> list[tuple[int, list[int], list[str]]]:
         try:
             code = int(fields[0], 16)
             lower = parse_codepoints(fields[1])
+            upper = parse_codepoints(fields[3])
         except ValueError:
             continue
         conditions = fields[4].split() if len(fields) > 4 and fields[4] else []
-        rows.append((code, lower, conditions))
+        rows.append((code, lower, upper, conditions))
     return rows
 
 
@@ -460,7 +483,8 @@ def _u32_slice_literal(values: list[int]) -> str:
 
 def render_casing(
     simple_lower: dict[int, int],
-    special: list[tuple[int, list[int], list[str]]],
+    simple_upper: dict[int, int],
+    special: list[tuple[int, list[int], list[int], list[str]]],
     cased: list[tuple[int, int]],
     soft_dotted: list[tuple[int, int]],
 ) -> str:
@@ -494,7 +518,7 @@ def render_casing(
         "// order of conditional rows is preserved for first-match priority)."
     )
     lines.append("pub const special = [_]SpecialRow{")
-    for code, lower, conditions in sorted(special, key=lambda row: row[0]):
+    for code, lower, _upper, conditions in sorted(special, key=lambda row: row[0]):
         if conditions:
             conds = ", ".join(f'"{token}"' for token in conditions)
             cond_literal = f"&[_][]const u8{{ {conds} }}"
@@ -503,6 +527,44 @@ def render_casing(
         lines.append(
             f"    .{{ .code = {zig_hex(code)}, "
             f".lower = {_u32_slice_literal(lower)}, "
+            f".conditions = {cond_literal} }},"
+        )
+    lines.append("};")
+    lines.append("")
+    lines.append("pub const SimpleUpper = struct {")
+    lines.append("    cp: u32,")
+    lines.append("    upper: u32,")
+    lines.append("};")
+    lines.append("")
+    lines.append("// Simple uppercase mappings (UnicodeData.txt field 12), sorted by cp.")
+    lines.append("pub const simple_upper = [_]SimpleUpper{")
+    for cp, upper in sorted(simple_upper.items()):
+        lines.append(f"    .{{ .cp = {zig_hex(cp)}, .upper = {zig_hex(upper)} }},")
+    lines.append("};")
+    lines.append("")
+    lines.append("pub const SpecialUpperRow = struct {")
+    lines.append("    code: u32,")
+    lines.append("    upper: []const u32,")
+    lines.append("    conditions: []const []const u8,")
+    lines.append("};")
+    lines.append("")
+    lines.append(
+        "// SpecialCasing.txt rows, uppercase column (field 3), sorted by code"
+    )
+    lines.append(
+        "// (stable, so the per-code file order of conditional rows is preserved"
+    )
+    lines.append("// for first-match priority) — parallel to `special`.")
+    lines.append("pub const special_upper = [_]SpecialUpperRow{")
+    for code, _lower, upper, conditions in sorted(special, key=lambda row: row[0]):
+        if conditions:
+            conds = ", ".join(f'"{token}"' for token in conditions)
+            cond_literal = f"&[_][]const u8{{ {conds} }}"
+        else:
+            cond_literal = "&[_][]const u8{}"
+        lines.append(
+            f"    .{{ .code = {zig_hex(code)}, "
+            f".upper = {_u32_slice_literal(upper)}, "
             f".conditions = {cond_literal} }},"
         )
     lines.append("};")
@@ -597,16 +659,18 @@ def main() -> None:
         BIDI_SOURCE.read_text(encoding="utf-8")
     )
     bidi_output = render_bidi_class(bidi_explicit, bidi_defaults)
-    simple_lower = parse_simple_lowercase(
-        UNICODE_DATA_SOURCE.read_text(encoding="utf-8")
-    )
+    unicode_data_text = UNICODE_DATA_SOURCE.read_text(encoding="utf-8")
+    simple_lower = parse_simple_lowercase(unicode_data_text)
+    simple_upper = parse_simple_uppercase(unicode_data_text)
     special_casing = parse_special_casing(
         SPECIAL_CASING_SOURCE.read_text(encoding="utf-8")
     )
     derived_core = DERIVED_CORE_PROPERTIES_SOURCE.read_text(encoding="utf-8")
     cased = parse_derived_property(derived_core, "Cased")
     soft_dotted = parse_derived_property(derived_core, "Soft_Dotted")
-    casing_output = render_casing(simple_lower, special_casing, cased, soft_dotted)
+    casing_output = render_casing(
+        simple_lower, simple_upper, special_casing, cased, soft_dotted
+    )
     bip39_wordlists = parse_bip39_wordlists()
     bip39_output = render_bip39(bip39_wordlists)
 

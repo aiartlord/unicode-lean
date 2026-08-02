@@ -774,10 +774,11 @@ public final class Security {
     LITHUANIAN
   }
 
-  private record CasingRow(List<Integer> lower, List<String> conditions) {}
+  private record CasingRow(List<Integer> lower, List<Integer> upper, List<String> conditions) {}
 
   private static Map<Integer, List<CasingRow>> specialCasingMap;
   private static Map<Integer, Integer> simpleLowercaseMap;
+  private static Map<Integer, Integer> simpleUppercaseMap;
   private static List<int[]> casedRanges;
   private static List<int[]> softDottedRanges;
   private static List<int[]> graphemeExtendRanges;
@@ -798,7 +799,7 @@ public final class Security {
         for (String tok : f[4].trim().split("\\s+")) conditions.add(tok);
       }
       out.computeIfAbsent(code, k -> new ArrayList<>())
-          .add(new CasingRow(parseHexList(f[1]), conditions));
+          .add(new CasingRow(parseHexList(f[1]), parseHexList(f[3]), conditions));
     }
     return out;
   }
@@ -828,6 +829,28 @@ public final class Security {
     if (simpleLowercaseMap == null) simpleLowercaseMap = parseSimpleLowercase(readResource("UnicodeData.txt"));
     Integer l = simpleLowercaseMap.get(cp);
     return l == null ? cp : l;
+  }
+
+  private static Map<Integer, Integer> parseSimpleUppercase(String raw) {
+    Map<Integer, Integer> upper = new HashMap<>();
+    for (String line : raw.split("\n", -1)) {
+      if (line.isEmpty()) continue;
+      String[] f = line.split(";", -1);
+      if (f.length < 15) continue;
+      Integer cp = parseHex(f[0]);
+      if (cp == null) continue;
+      if (!f[12].isEmpty()) {
+        Integer u = parseHex(f[12]);
+        if (u != null) upper.put(cp, u);
+      }
+    }
+    return upper;
+  }
+
+  private static synchronized int simpleUppercase(int cp) {
+    if (simpleUppercaseMap == null) simpleUppercaseMap = parseSimpleUppercase(readResource("UnicodeData.txt"));
+    Integer u = simpleUppercaseMap.get(cp);
+    return u == null ? cp : u;
   }
 
   private static List<int[]> parseCasingProperty(String raw, String name) {
@@ -1037,13 +1060,30 @@ public final class Security {
    *  clear) and the first divergent input position. */
   public record LocaleCaseInversionResult(String subThreat, List<Integer> positions) {}
 
-  private static List<Integer> lowerCodepoint(
+  // Package-private so the sibling form-layer detector CaseExpansionMismatch can
+  // reuse the port's own UAX #21 case mapping (with the SpecialCasing context
+  // predicates already evaluated), never a host casing library.
+  static List<Integer> lowerCodepoint(
       CasingLocale locale, List<Integer> revPrefix, List<Integer> suffix, int cp) {
     CasingRow row = findSpecialRow(locale, revPrefix, suffix, cp);
     if (row != null) {
       return row.lower();
     }
     return List.of(simpleLowercase(cp));
+  }
+
+  // The UAX #21 full uppercase mapping of a single codepoint in context — the
+  // exact mirror of lowerCodepoint, returning the SpecialCasing row's uppercase
+  // column (parsed from field 3) where its conditions hold, else the simple
+  // uppercase (UnicodeData field 12). Reuses the same findSpecialRow /
+  // conditionsHold machinery as the lowercase path.
+  static List<Integer> upperCodepoint(
+      CasingLocale locale, List<Integer> revPrefix, List<Integer> suffix, int cp) {
+    CasingRow row = findSpecialRow(locale, revPrefix, suffix, cp);
+    if (row != null) {
+      return row.upper();
+    }
+    return List.of(simpleUppercase(cp));
   }
 
   private static Integer firstLocaleDivergence(CasingLocale locale, List<Integer> input) {

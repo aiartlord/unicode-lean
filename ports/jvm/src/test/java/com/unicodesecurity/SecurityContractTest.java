@@ -27,6 +27,7 @@ public final class SecurityContractTest {
     testFilenameDisguise();
     testIdentifierFormDrift();
     testStreamSafeViolation();
+    testCaseExpansionMismatch();
     testConfusableBidiCompound();
     testSurrogateReassembly();
     testRtlInjection();
@@ -1260,6 +1261,114 @@ public final class SecurityContractTest {
     out.add(0x61);
     for (int i = 0; i < n; i++) out.add(mark);
     return out;
+  }
+
+  // Pins the form-layer CaseExpansionMismatch detector against the verified Rust
+  // reference ports/rust/src/security/form/case_expansion_mismatch.rs. Two
+  // independent sources of truth are exercised: (a) the shared context-free
+  // fixture detectors/case_expansion_mismatch.json, run through
+  // CaseExpansionMismatch.detect and checked against the fixture reason codes;
+  // (b) the classification, count, and expansion-length spot-checks transcribed
+  // from the Rust test module — empty and "Hello" ASCII stay clear; U+00DF ß
+  // toUpper → "SS" fires UpperExpansion (len 2); U+FB01 ﬁ and U+FB03 ﬃ (len 3)
+  // fire UpperExpansion; U+0130 İ has no upper expansion and falls through to
+  // LowerExpansion; and a leading ASCII then ß reports the expansion at
+  // position 1. The detector reads its case mapping from the port's own
+  // Security.upperCodepoint / Security.lowerCodepoint (the extended SpecialCasing
+  // upper column + UnicodeData simple-uppercase), never a host casing library.
+  private static void testCaseExpansionMismatch() throws IOException {
+    // (a) Shared context-free fixture through detect.
+    Map<String, Object> detector = fixture("detectors/case_expansion_mismatch.json");
+    assertEquals(1, intValue(detector.get("schema")), "case-expansion-mismatch schema");
+    assertEquals("case-expansion-mismatch", string(detector, "family"), "case-expansion-mismatch family");
+    int fixtureCases = 0;
+    for (Map<String, Object> entry : objects(detector.get("cases"))) {
+      CaseExpansionMismatch.Verdict verdict = CaseExpansionMismatch.detect(ints(entry.get("input")));
+      String code = CaseExpansionMismatch.reasonCode(verdict.classify());
+      List<String> required = strings(entry.get("required_findings"));
+      if (required.isEmpty()) {
+        assertEquals(null, code, "case-expansion-mismatch " + string(entry, "name") + " should be clear");
+      } else {
+        assertEquals(1, required.size(), "case-expansion-mismatch " + string(entry, "name") + " single finding");
+        assertEquals(required.get(0), code, "case-expansion-mismatch " + string(entry, "name"));
+      }
+      fixtureCases++;
+    }
+
+    // (b) Classification / count / length spot-checks from the Rust test module.
+    int structureVectors = 0;
+
+    // detect_empty_clear: empty input is clear; max expansion length zero.
+    CaseExpansionMismatch.Verdict empty = CaseExpansionMismatch.detect(intList(new int[] {}));
+    assertTrue(empty.classify().isClear(), "cem empty clear");
+    assertEquals(null, empty.classify().tag(), "cem empty tag");
+    assertEquals(0, empty.maxExpansionLen(), "cem empty maxExpansionLen");
+    structureVectors++;
+
+    // detect_ascii_clear: "Hello" — every ASCII cp case-maps to a single cp.
+    CaseExpansionMismatch.Verdict hello =
+        CaseExpansionMismatch.detect(intList(new int[] {0x48, 0x65, 0x6C, 0x6C, 0x6F}));
+    assertTrue(hello.classify().isClear(), "cem ascii clear");
+    assertEquals(1, hello.maxExpansionLen(), "cem ascii maxExpansionLen");
+    structureVectors++;
+
+    // detect_sharp_s_upper: ß (U+00DF) toUpper → "SS".
+    CaseExpansionMismatch.Verdict sharpS = CaseExpansionMismatch.detect(intList(new int[] {0x00DF}));
+    assertEquals("UpperExpansion", sharpS.classify().tag(), "cem sharp-s tag");
+    assertEquals(List.of(0), sharpS.classify().positions(), "cem sharp-s positions");
+    assertEquals(1, sharpS.upperExpansionCount(), "cem sharp-s upperExpansionCount");
+    assertEquals(2, sharpS.maxExpansionLen(), "cem sharp-s maxExpansionLen");
+    CaseExpansionMismatch.Hazard sharpHz = (CaseExpansionMismatch.Hazard) sharpS.classify();
+    CaseExpansionMismatch.UpperExpansion sharpSub =
+        (CaseExpansionMismatch.UpperExpansion) sharpHz.sub();
+    assertEquals(0, sharpSub.basePos(), "cem sharp-s basePos");
+    assertEquals(0x00DF, sharpSub.cp(), "cem sharp-s cp");
+    assertEquals(2, sharpSub.expansionLen(), "cem sharp-s expansionLen");
+    assertEquals(List.of(), sharpHz.decoded(), "cem sharp-s decoded empty");
+    structureVectors++;
+
+    // detect_fi_ligature_upper: ﬁ (U+FB01) toUpper → "FI".
+    CaseExpansionMismatch.Verdict fi = CaseExpansionMismatch.detect(intList(new int[] {0xFB01}));
+    assertEquals("UpperExpansion", fi.classify().tag(), "cem fi-ligature tag");
+    structureVectors++;
+
+    // detect_ffi_ligature_len3: ﬃ (U+FB03) toUpper → "FFI" (length 3).
+    CaseExpansionMismatch.Verdict ffi = CaseExpansionMismatch.detect(intList(new int[] {0xFB03}));
+    assertEquals("UpperExpansion", ffi.classify().tag(), "cem ffi-ligature tag");
+    assertEquals(3, ffi.maxExpansionLen(), "cem ffi-ligature maxExpansionLen");
+    structureVectors++;
+
+    // detect_dotted_I_lower: İ (U+0130) has no upper expansion; toLower under the
+    // default locale → "i + 0307", so the detector falls through to the lower scan.
+    CaseExpansionMismatch.Verdict dottedI = CaseExpansionMismatch.detect(intList(new int[] {0x0130}));
+    assertEquals("LowerExpansion", dottedI.classify().tag(), "cem dotted-I tag");
+    assertEquals(1, dottedI.lowerExpansionCount(), "cem dotted-I lowerExpansionCount");
+    structureVectors++;
+
+    // detect_reports_first_expansion_position: a leading ASCII then ß reports the
+    // upper expansion at position 1.
+    CaseExpansionMismatch.Verdict midString =
+        CaseExpansionMismatch.detect(intList(new int[] {0x61, 0x00DF}));
+    assertEquals(List.of(1), midString.classify().positions(), "cem mid-string positions");
+    structureVectors++;
+
+    // reason_code_is_stable: the composed reason code for each sub-threat.
+    assertEquals("unicode.security.F.case-expansion-mismatch.UpperExpansion",
+        CaseExpansionMismatch.reasonCode(
+            new CaseExpansionMismatch.Hazard(
+                new CaseExpansionMismatch.UpperExpansion(0, 0x00DF, 2), List.of(0), List.of())),
+        "cem reason code upper");
+    assertEquals("unicode.security.F.case-expansion-mismatch.LowerExpansion",
+        CaseExpansionMismatch.reasonCode(
+            new CaseExpansionMismatch.Hazard(
+                new CaseExpansionMismatch.LowerExpansion(0, 0x0130, 2), List.of(0), List.of())),
+        "cem reason code lower");
+    assertEquals(null, CaseExpansionMismatch.reasonCode(new CaseExpansionMismatch.Clear()),
+        "cem reason code clear");
+    structureVectors++;
+
+    System.out.println("clean: JVM case-expansion-mismatch passes (" + fixtureCases
+        + " fixture cases + " + structureVectors + " structure vectors)");
   }
 
   private static void assertHisCtx(HashInputStability.Context ctx, int[] input,

@@ -1630,6 +1630,98 @@ pub fn toLower(locale: CasingLocale, cps: []const u32) ?CpBuffer {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// UAX #21 uppercase mapping (upperCodepoint), the additive mirror of the
+// lowercase path above. Full uppercase mappings come from SpecialCasing.txt
+// (one-to-many and context/locale-dependent rows — the uppercase column, i.e.
+// field 3, `code; lower; title; upper; conditions`); the simple uppercase
+// fallback is UnicodeData.txt field 12. Both companion tables (special_upper /
+// simple_upper) sit alongside their lowercase counterparts in the generated
+// casing data, parsed the same way. The SpecialCasing context predicates
+// (Final_Sigma, After_Soft_Dotted, More_Above, Not_Before_Dot, After_I) and
+// the locale gate are shared verbatim with the lowercase path
+// (casingConditionsHold), so this is purely additive: the lowercase mapping is
+// untouched. This is the primitive the case-expansion-mismatch detector maps
+// each position through to see whether the codepoint count changes.
+// ─────────────────────────────────────────────────────────────────────
+
+fn simpleUppercase(cp: u32) u32 {
+    var lo: usize = 0;
+    var hi: usize = casing_data.simple_upper.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        const entry = casing_data.simple_upper[mid];
+        if (cp < entry.cp) {
+            hi = mid;
+        } else if (cp > entry.cp) {
+            lo = mid + 1;
+        } else {
+            return entry.upper;
+        }
+    }
+    return cp;
+}
+
+// UAX #21: a conditional SpecialCasing row whose conditions hold outranks the
+// unconditional row for the same codepoint (first matching conditional in file
+// order wins); with no special row the simple uppercase mapping applies. Mirrors
+// findSpecialLower over the uppercase column, reusing casingConditionsHold.
+fn findSpecialUpper(
+    locale: CasingLocale,
+    prefix: []const u32,
+    suffix: []const u32,
+    cp: u32,
+) ?[]const u32 {
+    for (casing_data.special_upper) |row| {
+        if (row.code != cp) continue;
+        if (row.conditions.len != 0 and
+            casingConditionsHold(locale, prefix, suffix, row.conditions))
+        {
+            return row.upper;
+        }
+    }
+    for (casing_data.special_upper) |row| {
+        if (row.code == cp and row.conditions.len == 0) return row.upper;
+    }
+    return null;
+}
+
+/// The UAX #21 full uppercase mapping of the codepoint at one position in
+/// context, mirroring the port's lowercase composition (findSpecialLower orelse
+/// simpleLowercase). `prefix` is the forward-ordered preceding codepoints and
+/// `suffix` the strictly-following ones — the same context convention the
+/// lowercase predicates consume. Returns the static SpecialCasing uppercase
+/// slice when a row applies, else the single simple uppercase codepoint written
+/// into `scratch`. The mapped length (not the value) is what the
+/// case-expansion-mismatch detector inspects.
+fn upperCodepoint(
+    locale: CasingLocale,
+    prefix: []const u32,
+    suffix: []const u32,
+    cp: u32,
+    scratch: *[1]u32,
+) []const u32 {
+    if (findSpecialUpper(locale, prefix, suffix, cp)) |upper| return upper;
+    scratch[0] = simpleUppercase(cp);
+    return scratch[0..1];
+}
+
+/// The UAX #21 full lowercase mapping of the codepoint at one position in
+/// context, the sibling of upperCodepoint (findSpecialLower orelse
+/// simpleLowercase). Exposed so the case-expansion-mismatch detector maps upper
+/// and lower through the same shape.
+fn lowerCodepoint(
+    locale: CasingLocale,
+    prefix: []const u32,
+    suffix: []const u32,
+    cp: u32,
+    scratch: *[1]u32,
+) []const u32 {
+    if (findSpecialLower(locale, prefix, suffix, cp)) |lower| return lower;
+    scratch[0] = simpleLowercase(cp);
+    return scratch[0..1];
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // BIP-39 canonical-form detector (crypto layer), mirroring
 // Unicode.Security.Crypto.Bip39Canonical.
 //
@@ -4799,6 +4891,220 @@ pub fn localeCaseInversionDetect(input: []const u32) LocaleCaseInversionResult {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// CaseExpansionMismatch detector (form layer F), mirroring
+// Unicode.Security.Form.CaseExpansionMismatch and the verified Rust port.
+//
+// Detects text whose default-locale case mapping changes the codepoint count.
+// A receiver that fixes a username column and stores toUpper(username) overflows
+// when the user picks "ßßßßßßßß" (8 in → 16 stored); a receiver that checks
+// len(stored) == len(input) rejects valid case-insensitive logins whose names
+// expand under folding. Examples: U+00DF ß → "SS", U+FB01 ﬁ → "FI", U+0130 İ →
+// toLower "i̇" (i + U+0307). Distinct from LocaleCaseInversion (mapping that
+// changes ACROSS locales): this fires on shapes whose mapping is locale-stable
+// but length-changing under the default locale itself.
+//
+// Each position is mapped through the port's own upperCodepoint / lowerCodepoint
+// (which evaluate the SpecialCasing context predicates), never a host casing
+// library. Sub-threats, priority order:
+//   1. UpperExpansion — first position whose default upperCodepoint yields > 1 cp.
+//   2. LowerExpansion — first position whose default lowerCodepoint yields > 1 cp
+//      (reached only when no upper expansion fires first).
+// ─────────────────────────────────────────────────────────────────────
+
+pub const case_expansion_mismatch = struct {
+    // ── §1 Per-position expansion scan ───────────────────────────────────
+
+    /// The default-locale uppercase expansion length at position `i`, evaluating
+    /// the SpecialCasing context (preceding codepoints, following ones).
+    fn upperLenAt(input: []const u32, i: usize) usize {
+        var scratch: [1]u32 = undefined;
+        return upperCodepoint(.default, input[0..i], input[i + 1 ..], input[i], &scratch).len;
+    }
+
+    /// The default-locale lowercase expansion length at position `i`.
+    fn lowerLenAt(input: []const u32, i: usize) usize {
+        var scratch: [1]u32 = undefined;
+        return lowerCodepoint(.default, input[0..i], input[i + 1 ..], input[i], &scratch).len;
+    }
+
+    /// First position whose default uppercase mapping expands to > 1 codepoint,
+    /// as (base_pos, cp, expansion_len).
+    fn firstUpperExpansion(input: []const u32) ?struct { base_pos: usize, cp: u32, expansion_len: usize } {
+        for (input, 0..) |cp, i| {
+            const len = upperLenAt(input, i);
+            if (len > 1) return .{ .base_pos = i, .cp = cp, .expansion_len = len };
+        }
+        return null;
+    }
+
+    /// First position whose default lowercase mapping expands to > 1 codepoint.
+    fn firstLowerExpansion(input: []const u32) ?struct { base_pos: usize, cp: u32, expansion_len: usize } {
+        for (input, 0..) |cp, i| {
+            const len = lowerLenAt(input, i);
+            if (len > 1) return .{ .base_pos = i, .cp = cp, .expansion_len = len };
+        }
+        return null;
+    }
+
+    /// Number of positions whose default uppercase mapping expands.
+    fn upperExpansionCount(input: []const u32) usize {
+        var acc: usize = 0;
+        var i: usize = 0;
+        while (i < input.len) : (i += 1) {
+            if (upperLenAt(input, i) > 1) acc += 1;
+        }
+        return acc;
+    }
+
+    /// Number of positions whose default lowercase mapping expands.
+    fn lowerExpansionCount(input: []const u32) usize {
+        var acc: usize = 0;
+        var i: usize = 0;
+        while (i < input.len) : (i += 1) {
+            if (lowerLenAt(input, i) > 1) acc += 1;
+        }
+        return acc;
+    }
+
+    /// Maximum case-mapped expansion length across all positions (upper or
+    /// lower); 0 for empty input.
+    fn maxExpansionLen(input: []const u32) usize {
+        var acc: usize = 0;
+        var i: usize = 0;
+        while (i < input.len) : (i += 1) {
+            const u = upperLenAt(input, i);
+            const l = lowerLenAt(input, i);
+            const m = if (u > l) u else l;
+            if (m > acc) acc = m;
+        }
+        return acc;
+    }
+
+    // ── §2 Types ─────────────────────────────────────────────────────────
+
+    /// Sub-threats this detector can fire, in priority order.
+    pub const SubThreat = union(enum) {
+        /// A codepoint whose default uppercase mapping expands, at base_pos.
+        upper_expansion: struct { base_pos: usize, cp: u32, expansion_len: usize },
+        /// A codepoint whose default lowercase mapping expands, at base_pos.
+        lower_expansion: struct { base_pos: usize, cp: u32, expansion_len: usize },
+
+        /// Human-facing classification tag for this sub-threat.
+        pub fn tag(self: SubThreat) []const u8 {
+            return switch (self) {
+                .upper_expansion => "UpperExpansion",
+                .lower_expansion => "LowerExpansion",
+            };
+        }
+
+        /// Fully-qualified reason code for this sub-threat, matching the shared
+        /// fixture's required_findings entry.
+        pub fn reasonCode(self: SubThreat) []const u8 {
+            return switch (self) {
+                .upper_expansion => "unicode.security.F.case-expansion-mismatch.UpperExpansion",
+                .lower_expansion => "unicode.security.F.case-expansion-mismatch.LowerExpansion",
+            };
+        }
+    };
+
+    /// Top-level classification.
+    pub const Classification = union(enum) {
+        /// No case-mapped expansion present.
+        clear,
+        /// An expansion fired: the sub-threat, its implicated positions, and any
+        /// decoded bytes (always empty for this detector — the field mirrors the
+        /// spec's Classification.hazard shape). One expansion implicates exactly
+        /// one position, so the buffer is single-slot.
+        hazard: struct { sub: SubThreat, positions: [1]usize, decoded: []const u8 = &[_]u8{} },
+
+        /// True iff the input is clear.
+        pub fn isClear(self: Classification) bool {
+            return switch (self) {
+                .clear => true,
+                .hazard => false,
+            };
+        }
+
+        /// Human-facing tag for a hazard, or null when clear.
+        pub fn tag(self: Classification) ?[]const u8 {
+            return switch (self) {
+                .clear => null,
+                .hazard => |h| h.sub.tag(),
+            };
+        }
+
+        /// Fully-qualified reason code for a hazard, or null when clear.
+        pub fn reasonCode(self: Classification) ?[]const u8 {
+            return switch (self) {
+                .clear => null,
+                .hazard => |h| h.sub.reasonCode(),
+            };
+        }
+
+        /// Implicated positions (empty when clear).
+        pub fn positions(self: *const Classification) []const usize {
+            switch (self.*) {
+                .clear => return &[_]usize{},
+                .hazard => return self.hazard.positions[0..],
+            }
+        }
+    };
+
+    /// Verdict — the structured output of detect. The expansion summaries expose
+    /// how many positions expand under each mapping and the widest expansion, so
+    /// a caller can size the storage-overflow / length-mismatch pressure a
+    /// case-folding receiver would see.
+    pub const Verdict = struct {
+        /// The scanned input codepoints.
+        input: []const u32,
+        /// The classification verdict.
+        classify: Classification,
+        /// Count of positions whose default uppercase mapping expands.
+        upper_expansion_count: usize,
+        /// Count of positions whose default lowercase mapping expands.
+        lower_expansion_count: usize,
+        /// Maximum case-mapped expansion length across all positions.
+        max_expansion_len: usize,
+    };
+
+    // ── §3 Top-level detection ───────────────────────────────────────────
+
+    /// The CaseExpansionMismatch detection function. Fires UpperExpansion on the
+    /// first position whose default uppercase mapping expands; otherwise
+    /// LowerExpansion on the first position whose default lowercase mapping
+    /// expands; otherwise Clear.
+    pub fn detect(input: []const u32) @This().Verdict {
+        const classification: Classification = if (firstUpperExpansion(input)) |hit|
+            .{ .hazard = .{
+                .sub = .{ .upper_expansion = .{
+                    .base_pos = hit.base_pos,
+                    .cp = hit.cp,
+                    .expansion_len = hit.expansion_len,
+                } },
+                .positions = .{hit.base_pos},
+            } }
+        else if (firstLowerExpansion(input)) |hit|
+            .{ .hazard = .{
+                .sub = .{ .lower_expansion = .{
+                    .base_pos = hit.base_pos,
+                    .cp = hit.cp,
+                    .expansion_len = hit.expansion_len,
+                } },
+                .positions = .{hit.base_pos},
+            } }
+        else
+            .{ .clear = {} };
+        return @This().Verdict{
+            .input = input,
+            .classify = classification,
+            .upper_expansion_count = upperExpansionCount(input),
+            .lower_expansion_count = lowerExpansionCount(input),
+            .max_expansion_len = maxExpansionLen(input),
+        };
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────
 // Normalization-bomb detector (F1), mirroring
 // Unicode.Security.Form.NormalizationBomb.
 //
@@ -5934,6 +6240,80 @@ test "ai-watermark-detectability cue-class coverage" {
         try std.testing.expect(probed);
     }
     try std.testing.expectEqual(@as(?Aw.CueClass, null), (Aw.SubThreat{ .unknown = .{ .anomaly_marker = 0 } }).cueClass());
+}
+
+// ── case-expansion-mismatch (form layer) ─────────────────────────────────
+
+const Cem = case_expansion_mismatch;
+
+test "case-expansion-mismatch shared fixture vectors" {
+    // Mirrors the detect_* theorems in
+    // Unicode/Security/Form/CaseExpansionMismatch.lean and its Rust port. Every
+    // vector below is a row of the shared context-free case-expansion-mismatch
+    // detector fixture (codepoints in the JSON are decimal).
+
+    // empty-clear.
+    {
+        const v = Cem.detect(&[_]u32{});
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expectEqual(@as(?[]const u8, null), v.classify.reasonCode());
+        try std.testing.expect(v.max_expansion_len == 0);
+    }
+
+    // ascii-hello-clear: "Hello" — every ASCII codepoint case-maps to one cp.
+    {
+        const v = Cem.detect(&[_]u32{ 0x48, 0x65, 0x6C, 0x6C, 0x6F });
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expect(v.max_expansion_len == 1);
+    }
+
+    // sharp-s-upper: ß (U+00DF) toUpper → "SS".
+    {
+        const v = Cem.detect(&[_]u32{0x00DF});
+        try std.testing.expectEqualStrings("UpperExpansion", v.classify.tag().?);
+        try std.testing.expectEqualStrings(
+            "unicode.security.F.case-expansion-mismatch.UpperExpansion",
+            v.classify.reasonCode().?,
+        );
+        try std.testing.expectEqualSlices(usize, &[_]usize{0}, v.classify.positions());
+        try std.testing.expect(v.upper_expansion_count == 1);
+        try std.testing.expect(v.max_expansion_len == 2);
+    }
+
+    // fi-ligature-upper: ﬁ (U+FB01) toUpper → "FI".
+    {
+        const v = Cem.detect(&[_]u32{0xFB01});
+        try std.testing.expectEqualStrings(
+            "unicode.security.F.case-expansion-mismatch.UpperExpansion",
+            v.classify.reasonCode().?,
+        );
+    }
+
+    // ffi-ligature-upper: ﬃ (U+FB03) toUpper → "FFI" (length 3).
+    {
+        const v = Cem.detect(&[_]u32{0xFB03});
+        try std.testing.expectEqualStrings("UpperExpansion", v.classify.tag().?);
+        try std.testing.expect(v.max_expansion_len == 3);
+    }
+
+    // dotted-I-lower: İ (U+0130) has no upper expansion (upper is identity), so
+    // the scan falls through to the lower mapping → "i + U+0307".
+    {
+        const v = Cem.detect(&[_]u32{0x0130});
+        try std.testing.expectEqualStrings("LowerExpansion", v.classify.tag().?);
+        try std.testing.expectEqualStrings(
+            "unicode.security.F.case-expansion-mismatch.LowerExpansion",
+            v.classify.reasonCode().?,
+        );
+        try std.testing.expect(v.lower_expansion_count == 1);
+    }
+}
+
+test "case-expansion-mismatch reports first-expansion position" {
+    // A leading ASCII then ß: the upper expansion is reported at position 1.
+    const v = Cem.detect(&[_]u32{ 0x61, 0x00DF });
+    try std.testing.expectEqualStrings("UpperExpansion", v.classify.tag().?);
+    try std.testing.expectEqualSlices(usize, &[_]usize{1}, v.classify.positions());
 }
 
 // ── stream-safe-violation (form layer) ──────────────────────────────────
