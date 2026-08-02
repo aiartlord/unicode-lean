@@ -46,11 +46,11 @@ Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 | FilenameDisguise | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
 | RendererDivergence | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
 | HashInputStability | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| AiWatermarkDetectability | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| AiWatermarkDetectability | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-**Totals:** rust 18/27 · all other vouched ports 17/27 · overall 273/432
+**Totals:** rust 19/27 · all other vouched ports 18/27 · overall 289/432
 cells. The 13 core families plus LocaleCaseInversion, NormalizationBomb,
-NfcIdempotenceWitness, and HashInputStability are complete and vouched across
+NfcIdempotenceWitness, HashInputStability, and AiWatermarkDetectability are complete and vouched across
 every listed port; everything below the line is spec-proven in Lean but not
 yet ported.
 
@@ -68,11 +68,11 @@ fixture presence is not coverage.
 | php | Vouched at the 16/27 non-Rust baseline: native policy/decode/verdict fixture tests, shared detector fixture tests, form-detector vectors, Bip39Canonical vectors, vendored-data parity pass, and `nix build .#unicode-php`. | yes | Continue only with fixture-backed detector fan-out; do not count copied fixtures as coverage. |
 | elixir | Vouched at the 16/27 non-Rust baseline: native policy/decode/verdict fixture tests, shared detector fixture tests, form-detector vectors, Bip39Canonical vectors, vendored-data parity pass, and `nix build .#unicode-elixir`. | yes | Continue only with fixture-backed detector fan-out; do not count copied fixtures as coverage. |
 | erlang | Vouched at the 16/27 non-Rust baseline: native policy/decode/verdict fixture tests, shared detector fixture tests, form-detector vectors, Bip39Canonical vectors, vendored-data parity pass, and `nix build .#unicode-erlang`. | yes | Continue only with fixture-backed detector fan-out; do not count copied fixtures as coverage. |
-| cobol | Native GnuCOBOL scanner, UTF-8/UTF-16/UTF-32 decode checks, shared detector/policy/verdict fixture harness, form vectors, Bip39Canonical vectors, vendored-data parity pass, and `nix build .#unicode-cobol`. Variation-pair, Default_Ignorable, Scripts, DerivedBidiClass, confusable-source, and BIP39 wordlist membership lookups are generated from vendored data. Homoglyph target skeletons plus normalization/casing expansion are still bounded, so it is not counted in the matrix yet. | no | Replace the remaining bounded internals with full data-backed detector logic before counting as a vouched 16/27 port. |
+| cobol | Native GnuCOBOL scanner, UTF-8/UTF-16/UTF-32 decode checks, shared detector/policy/verdict fixture harness, form vectors, Bip39Canonical vectors, vendored-data parity pass, and `nix build .#unicode-cobol`. Variation-pair, Default_Ignorable, Scripts, DerivedBidiClass, confusable-source, BIP39 wordlist, and emoji membership lookups are generated from vendored data. Normalization is now a full general NFC engine (DECOMPOSE → REORDER → COMPOSE from UnicodeData/CompositionExclusions), added with HashInputStability. Counted at the same fixture-vouched 17/27 baseline as the other new ports. | yes | Deepen the homoglyph target-skeleton iteration to remove its remaining bound; this is a refinement, not a fixture-coverage gap. |
 
 ## Remaining work
 
-10 detector families are unported. Each needs a reference implementation verified
+9 detector families are unported. Each needs a reference implementation verified
 against the Lean `detect_*` theorems, then a fan-out to all listed ports, each
 vouched.
 
@@ -80,10 +80,9 @@ vouched.
 (`display/source_display_divergence.rs`) — rust reference exists and is vouched;
 needs fan-out to the other 15 listed ports.
 
-**Not started in any port (9):** CaseExpansionMismatch, StreamSafeViolation,
+**Not started in any port (8):** CaseExpansionMismatch, StreamSafeViolation,
 IdentifierFormDrift, AdmissibilityFormDrift, EmojiZwjIntegrity,
-SkinToneVariationForgery, FilenameDisguise, RendererDivergence,
-AiWatermarkDetectability.
+SkinToneVariationForgery, FilenameDisguise, RendererDivergence.
 
 **Bip39 scan-wiring (follow-up):** Bip39Canonical ships standalone and
 crypto-context-gated in all listed ports; it is deliberately not part of the default

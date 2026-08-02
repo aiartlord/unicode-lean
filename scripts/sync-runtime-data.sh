@@ -35,6 +35,7 @@ root_manifest_files=(
   DerivedBidiClass.txt
   DerivedCoreProperties.txt
   emoji-variation-sequences.txt
+  emoji-data.txt
   IdentifierStatus.txt
   KnownAttackTargets.txt
   PropertyValueAliases.txt
@@ -71,6 +72,7 @@ python_files=(
   UnicodeData.txt
   confusables.txt
   emoji-variation-sequences.txt
+  emoji-data.txt
   bip39/chinese_simplified.txt
   bip39/chinese_traditional.txt
   bip39/czech.txt
@@ -99,6 +101,7 @@ rust_files=(
   UnicodeData.txt
   confusables.txt
   emoji-variation-sequences.txt
+  emoji-data.txt
   bip39/chinese_simplified.txt
   bip39/chinese_traditional.txt
   bip39/czech.txt
@@ -126,6 +129,7 @@ cpp_files=(
   SpecialCasing.txt
   UnicodeData.txt
   confusables.txt
+  emoji-data.txt
   bip39/chinese_simplified.txt
   bip39/chinese_traditional.txt
   bip39/czech.txt
@@ -150,6 +154,7 @@ haskell_files=(
   KnownAttackTargets.txt
   StandardizedVariants.txt
   emoji-variation-sequences.txt
+  emoji-data.txt
   bip39/chinese_simplified.txt
   bip39/chinese_traditional.txt
   bip39/czech.txt
@@ -185,6 +190,7 @@ homoglyph_files=(
   KnownAttackTargets.txt
   StandardizedVariants.txt
   emoji-variation-sequences.txt
+  emoji-data.txt
 )
 
 go_files=(
@@ -320,6 +326,7 @@ ruby_files=(
   UnicodeData.txt
   confusables.txt
   emoji-variation-sequences.txt
+  emoji-data.txt
   bip39/chinese_simplified.txt
   bip39/chinese_traditional.txt
   bip39/czech.txt
@@ -350,6 +357,7 @@ erlang_files=(
 
 cobol_files=(
   "${root_manifest_files[@]}"
+  GraphemeBreakProperty.txt
 )
 
 usage() {
