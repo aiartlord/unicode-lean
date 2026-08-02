@@ -667,6 +667,16 @@ def main():
         parse_property_ranges(DATA / "IdentifierStatus.txt", {"Allowed"}),
         "MOVE 1 TO TABLE-FLAG",
     )
+    emit_range_eval(
+        OUT / "xid_start.cpy",
+        parse_property_ranges(DATA / "DerivedCoreProperties.txt", {"XID_Start"}),
+        "MOVE 1 TO TABLE-FLAG",
+    )
+    emit_range_eval(
+        OUT / "xid_continue.cpy",
+        parse_property_ranges(DATA / "DerivedCoreProperties.txt", {"XID_Continue"}),
+        "MOVE 1 TO TABLE-FLAG",
+    )
     emit_special_casing(OUT / "special_casing.cpy", parse_special_casing())
     simple_upper, simple_lower = parse_simple_case()
     emit_simple_case(OUT / "simple_upper.cpy", simple_upper, "SC-SIMPLE-UP")

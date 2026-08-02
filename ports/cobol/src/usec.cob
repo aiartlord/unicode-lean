@@ -280,6 +280,26 @@ WORKING-STORAGE SECTION.
 01 IFD-CUR-CP PIC 9(9) COMP-5 VALUE 0.
 01 IFD-CP-ALLOWED PIC 9 VALUE 0.
 01 IFD-HEAD-ALLOWED PIC 9 VALUE 0.
+*> ── admissibility-form-drift (X) whole-string admissibility scan state ─
+*> The sole sub-threat is AdmissibilityFormDrift (AFD-CLASS 1): the UAX #31
+*> whole-string default-identifier ∧ UTS #39 Allowed predicate evaluated on
+*> the input differs from the same predicate on its NFKC form. AFD-CP holds
+*> whichever sequence the predicate is currently ranging over (the input, or
+*> the NFKC form built into NFC-CP); AFD-SEQ-COUNT is its length. AFD-IN-OK
+*> and AFD-NFKC-OK are the two admissibility verdicts; a drift is any input on
+*> which they disagree. No position is reported — the predicate is whole-string.
+01 AFD-SEQ-COUNT PIC 9(5) COMP-5 VALUE 0.
+01 AFD-SEQ-TABLE.
+   05 AFD-CP OCCURS 16384 TIMES PIC 9(9) COMP-5.
+01 AFD-IDX PIC 9(5) COMP-5 VALUE 0.
+01 AFD-IN-OK PIC 9 VALUE 0.
+01 AFD-NFKC-OK PIC 9 VALUE 0.
+01 AFD-ID-RESULT PIC 9 VALUE 0.
+01 AFD-DEFAULT-ID PIC 9 VALUE 0.
+01 AFD-ALL-ALLOWED PIC 9 VALUE 0.
+01 AFD-START-OK PIC 9 VALUE 0.
+01 AFD-CONTINUE-OK PIC 9 VALUE 0.
+01 AFD-CLASS PIC 9 VALUE 0.
 *> ── skin-tone-variation-forgery (I) modifier/VS-abuse ladder state ────
 *> The priority-ordered classification (0 clear, 1 StackedSkinTones,
 *> 2 InvalidSkinToneTarget, 3 ForcedTextStyle), the base position of the
@@ -484,7 +504,11 @@ MAIN.
                                                         IF OP-NAME = "case-expansion-mismatch"
                                                             PERFORM SCAN-CASE-EXPANSION-MISMATCH
                                                         ELSE
-                                                            PERFORM SCAN-CORE
+                                                            IF OP-NAME = "admissibility-form-drift"
+                                                                PERFORM SCAN-ADMISSIBILITY-FORM-DRIFT
+                                                            ELSE
+                                                                PERFORM SCAN-CORE
+                                                            END-IF
                                                         END-IF
                                                     END-IF
                                                 END-IF
@@ -1525,6 +1549,26 @@ COMPUTE-NFC.
     PERFORM DECOMPOSE-INPUT
     PERFORM REORDER-NFD
     PERFORM COMPOSE-NFD.
+
+COMPUTE-NFKC.
+*> NFKC of the input into NFC-CP/NFC-COUNT: compatibility-decompose (NFKD)
+*> the whole input, canonically reorder, then canonically compose. Reuses the
+*> port's own COMPAT-DECOMPOSE-ONE, REORDER-NFD, and COMPOSE-NFD — the same
+*> pieces COMPUTE-NFC and the identifier-form-drift NFKD head use — so no host
+*> normalization library is involved.
+    PERFORM DECOMPOSE-INPUT-COMPAT
+    PERFORM REORDER-NFD
+    PERFORM COMPOSE-NFD.
+
+DECOMPOSE-INPUT-COMPAT.
+*> Full NFKD (compatibility) decomposition of every input codepoint appended
+*> into the shared NFD scratch, mirroring DECOMPOSE-INPUT but following the
+*> compatibility mapping via COMPAT-DECOMPOSE-ONE.
+    MOVE 0 TO NFD-COUNT
+    PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
+        MOVE CP(IDX) TO CUR-CP
+        PERFORM COMPAT-DECOMPOSE-ONE
+    END-PERFORM.
 
 DECOMPOSE-INPUT.
     MOVE 0 TO NFD-COUNT
@@ -2622,6 +2666,125 @@ IFD-EMIT-ONE.
     ADD 1 TO FINDING-COUNT
     MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
     MOVE FUNCTION TRIM(POS-NUM) TO FINDING-POS(FINDING-COUNT).
+
+SCAN-ADMISSIBILITY-FORM-DRIFT.
+*> Cross-layer identifier-admissibility x form-drift detector. Byte-faithful
+*> transliteration of the verified Rust reference detect. The whole-string
+*> UAX #31 / UTS #39 admissibility predicate IS-ALLOWED-IDENTIFIER is evaluated
+*> once on the input and once on its NFKC form; the sole sub-threat
+*> AdmissibilityFormDrift fires whenever the two verdicts disagree. This is the
+*> string-level complement of identifier-form-drift: a decomposed Hangul jamo
+*> sequence passes the per-codepoint status scan cleanly yet is rejected here,
+*> because the jamo run is not an allowed identifier while its NFKC composition
+*> into a precomposed syllable is. It reuses the port's own admissibility
+*> predicate and its own NFKC pipeline (COMPUTE-NFKC = NFKD then canonical
+*> compose); never a host normalization or identifier library. No position is
+*> reported — the predicate is whole-string.
+    PERFORM COMPUTE-NFKC
+    MOVE CP-COUNT TO AFD-SEQ-COUNT
+    PERFORM VARYING AFD-IDX FROM 1 BY 1 UNTIL AFD-IDX > CP-COUNT
+        MOVE CP(AFD-IDX) TO AFD-CP(AFD-IDX)
+    END-PERFORM
+    PERFORM IS-ALLOWED-IDENTIFIER
+    MOVE AFD-ID-RESULT TO AFD-IN-OK
+    MOVE NFC-COUNT TO AFD-SEQ-COUNT
+    PERFORM VARYING AFD-IDX FROM 1 BY 1 UNTIL AFD-IDX > NFC-COUNT
+        MOVE NFC-CP(AFD-IDX) TO AFD-CP(AFD-IDX)
+    END-PERFORM
+    PERFORM IS-ALLOWED-IDENTIFIER
+    MOVE AFD-ID-RESULT TO AFD-NFKC-OK
+    IF AFD-IN-OK = AFD-NFKC-OK
+        MOVE 0 TO AFD-CLASS
+    ELSE
+        MOVE 1 TO AFD-CLASS
+    END-IF
+    PERFORM AFD-EMIT.
+
+IS-ALLOWED-IDENTIFIER.
+*> UAX #31 whole-string default identifier AND every codepoint UTS #39 Allowed,
+*> over the AFD-CP scratch (indices 1..AFD-SEQ-COUNT). Mirrors the reference
+*> is_allowed_identifier = is_default_identifier ∧ all is_id_allowed. Result in
+*> AFD-ID-RESULT (1 admissible, 0 not).
+    PERFORM IS-DEFAULT-IDENTIFIER
+    IF AFD-DEFAULT-ID = 0
+        MOVE 0 TO AFD-ID-RESULT
+    ELSE
+        MOVE 1 TO AFD-ALL-ALLOWED
+        PERFORM VARYING AFD-IDX FROM 1 BY 1
+                UNTIL AFD-IDX > AFD-SEQ-COUNT OR AFD-ALL-ALLOWED = 0
+            MOVE AFD-CP(AFD-IDX) TO LOOKUP-CP
+            PERFORM IS-ID-ALLOWED
+            IF TABLE-FLAG = 0
+                MOVE 0 TO AFD-ALL-ALLOWED
+            END-IF
+        END-PERFORM
+        MOVE AFD-ALL-ALLOWED TO AFD-ID-RESULT
+    END-IF.
+
+IS-DEFAULT-IDENTIFIER.
+*> Non-empty sequence whose first codepoint is a default-id start and whose
+*> remaining codepoints are all default-id continue. Result in AFD-DEFAULT-ID.
+    IF AFD-SEQ-COUNT = 0
+        MOVE 0 TO AFD-DEFAULT-ID
+    ELSE
+        MOVE AFD-CP(1) TO LOOKUP-CP
+        PERFORM IS-DEFAULT-ID-START
+        IF AFD-START-OK = 0
+            MOVE 0 TO AFD-DEFAULT-ID
+        ELSE
+            MOVE 1 TO AFD-DEFAULT-ID
+            PERFORM VARYING AFD-IDX FROM 2 BY 1
+                    UNTIL AFD-IDX > AFD-SEQ-COUNT OR AFD-DEFAULT-ID = 0
+                MOVE AFD-CP(AFD-IDX) TO LOOKUP-CP
+                PERFORM IS-DEFAULT-ID-CONTINUE
+                IF AFD-CONTINUE-OK = 0
+                    MOVE 0 TO AFD-DEFAULT-ID
+                END-IF
+            END-PERFORM
+        END-IF
+    END-IF.
+
+IS-DEFAULT-ID-START.
+*> UAX #31 default identifier start of LOOKUP-CP: XID_Start (from the bundled
+*> DerivedCoreProperties ranges) or U+005F LOW LINE. Result in AFD-START-OK.
+    MOVE 0 TO TABLE-FLAG
+    COPY "src/generated/xid_start.cpy".
+    IF TABLE-FLAG = 1 OR LOOKUP-CP = 95
+        MOVE 1 TO AFD-START-OK
+    ELSE
+        MOVE 0 TO AFD-START-OK
+    END-IF.
+
+IS-DEFAULT-ID-CONTINUE.
+*> UAX #31 default identifier continue of LOOKUP-CP: XID_Continue (from the
+*> bundled DerivedCoreProperties ranges). Result in AFD-CONTINUE-OK.
+    MOVE 0 TO TABLE-FLAG
+    COPY "src/generated/xid_continue.cpy".
+    MOVE TABLE-FLAG TO AFD-CONTINUE-OK.
+
+AFD-EMIT.
+*> Emit the reason code for the classification. AFD-CLASS 0 is clear and 1 is
+*> the sole sub-threat AdmissibilityFormDrift; WHEN OTHER is unreachable and
+*> signals a defect rather than silently falling through.
+    EVALUATE AFD-CLASS
+        WHEN 0
+            CONTINUE
+        WHEN 1
+            MOVE "unicode.security.X.admissibility-form-drift.AdmissibilityFormDrift"
+                TO TEMP-CODE
+            PERFORM AFD-EMIT-ONE
+        WHEN OTHER
+            DISPLAY "ERROR admissibility-form-drift unreachable classification "
+                FUNCTION TRIM(AFD-CLASS)
+            MOVE 1 TO RETURN-CODE
+    END-EVALUATE.
+
+AFD-EMIT-ONE.
+*> Whole-string finding with no implicated positions (the predicate is
+*> whole-string), so FINDING-POS is left empty.
+    ADD 1 TO FINDING-COUNT
+    MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
+    MOVE SPACES TO FINDING-POS(FINDING-COUNT).
 
 SCAN-SKIN-TONE-VARIATION-FORGERY.
 *> UTS #51 SkinToneVariationForgery (identity-layer detector). Byte-faithful

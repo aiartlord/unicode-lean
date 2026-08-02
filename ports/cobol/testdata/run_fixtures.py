@@ -560,6 +560,50 @@ def check_identifier_form_drift():
     return len(fixture["cases"]), len(spot), 1
 
 
+AFD_BASE = "unicode.security.X.admissibility-form-drift."
+
+
+def run_afd(values):
+    return run("admissibility-form-drift", "gateway-header", "observe", values)
+
+
+def check_admissibility_form_drift():
+    # 1. The 4 shared context-free fixture vectors.
+    fixture = load("detectors/admissibility_form_drift.json")
+    for case in fixture["cases"]:
+        got = run_afd(case["input"])
+        for code in case["required_findings"]:
+            require(code in got["codes"],
+                    f"afd/{case['name']} missing {code}; got {got['codes']}")
+        if not case["required_findings"]:
+            require(all(".admissibility-form-drift." not in code for code in got["codes"]),
+                    f"afd/{case['name']} unexpected finding; got {got['codes']}")
+
+    # 2. Spot-checks transcribed verbatim from the verified Rust reference's
+    #    `#[test]` module: empty clears (both admissibility calls false, so they
+    #    agree); "admin" clears (admissible on both sides, NFKC is identity);
+    #    fi-ligature U+FB01 drifts (Restricted input, its NFKC form "fi" is
+    #    admissible); decomposed Hangul jamos [U+1112, U+1161, U+11AB] drift
+    #    (inadmissible run, NFKC composes to U+D55C which is admissible).
+    #    tag = "AdmissibilityFormDrift" or None for Clear.
+    spot = [
+        ("empty", [], None),
+        ("admin", [0x61, 0x64, 0x6D, 0x69, 0x6E], None),
+        ("fi-ligature", [0xFB01], "AdmissibilityFormDrift"),
+        ("jamo-sequence", [0x1112, 0x1161, 0x11AB], "AdmissibilityFormDrift"),
+    ]
+    for name, values, tag in spot:
+        got = run_afd(values)
+        afd_codes = [c for c in got["codes"] if ".admissibility-form-drift." in c]
+        if tag is None:
+            require(not afd_codes, f"afd-spot/{name} expected clear; got {afd_codes}")
+        else:
+            code = AFD_BASE + tag
+            require(code in got["codes"], f"afd-spot/{name} missing {code}; got {got['codes']}")
+
+    return len(fixture["cases"]), len(spot)
+
+
 STV_BASE = "unicode.security.I.skin-tone-variation-forgery."
 
 
@@ -884,6 +928,7 @@ def main():
     rd_fixture_count, rd_spot_count, rd_struct_count = check_renderer_divergence()
     fd_fixture_count, fd_spot_count, fd_struct_count = check_filename_disguise()
     ifd_fixture_count, ifd_spot_count, ifd_struct_count = check_identifier_form_drift()
+    afd_fixture_count, afd_spot_count = check_admissibility_form_drift()
     stv_fixture_count, stv_spot_count, stv_struct_count = check_skin_tone_variation_forgery()
     cem_fixture_count, cem_spot_count, cem_struct_count = check_case_expansion_mismatch()
     check_forms_and_bip39()
@@ -912,6 +957,8 @@ def main():
     print(f"identifier-form-drift shared-fixture vectors: {ifd_fixture_count}")
     print(f"identifier-form-drift spot-checks: {ifd_spot_count}")
     print(f"identifier-form-drift structural checks: {ifd_struct_count}")
+    print(f"admissibility-form-drift shared-fixture vectors: {afd_fixture_count}")
+    print(f"admissibility-form-drift spot-checks: {afd_spot_count}")
     print(f"skin-tone-variation-forgery shared-fixture vectors: {stv_fixture_count}")
     print(f"skin-tone-variation-forgery spot-checks: {stv_spot_count}")
     print(f"skin-tone-variation-forgery structural checks: {stv_struct_count}")

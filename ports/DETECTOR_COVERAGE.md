@@ -40,7 +40,7 @@ Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 | NormalizationBomb | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | StreamSafeViolation | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | IdentifierFormDrift | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| AdmissibilityFormDrift | ✓ | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| AdmissibilityFormDrift | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | EmojiZwjIntegrity | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | SkinToneVariationForgery | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | FilenameDisguise | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -48,14 +48,14 @@ Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 | HashInputStability | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | AiWatermarkDetectability | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-**Totals:** rust 27/27 · all other vouched ports 25/27 · overall 402/432
+**Totals:** rust 27/27 · all other vouched ports 26/27 · overall 417/432
 cells. The 13 core families plus LocaleCaseInversion, NormalizationBomb,
 NfcIdempotenceWitness, HashInputStability, AiWatermarkDetectability,
 StreamSafeViolation, EmojiZwjIntegrity, RendererDivergence, FilenameDisguise,
-IdentifierFormDrift, SkinToneVariationForgery, and CaseExpansionMismatch are
-complete and vouched across every listed port. Rust additionally carries the
-SourceDisplayDivergence and AdmissibilityFormDrift references; those two await
-their 15-port fan-out (AdmissibilityFormDrift's is in progress).
+IdentifierFormDrift, SkinToneVariationForgery, CaseExpansionMismatch, and
+AdmissibilityFormDrift are complete and vouched across every listed port. The
+only remaining gap is SourceDisplayDivergence, whose rust reference is vouched
+and awaits its 15-port fan-out.
 
 ## Interrupted new-port inventory
 
@@ -75,15 +75,15 @@ fixture presence is not coverage.
 
 ## Remaining work
 
-2 detector families remain to fan out. Both have a rust reference verified
-against the Lean `detect_*` theorems; each needs the fan-out to the other 15
-listed ports, each vouched. No family is unstarted.
+1 detector family remains to fan out. Its rust reference is verified against the
+Lean `detect_*` theorems; it needs the fan-out to the other 15 listed ports,
+each vouched. No family is unstarted.
 
-**Reference-only (2):**
-- SourceDisplayDivergence (`display/source_display_divergence.rs`) — rust
-  reference vouched; needs fan-out to the other 15 listed ports.
-- AdmissibilityFormDrift (`boundary/admissibility_form_drift.rs`) — rust
-  reference vouched; 15-port fan-out in progress.
+**Reference-only (1):**
+- SourceDisplayDivergence (`display/source_display_divergence.rs`) — an
+  aggregator over the five constituent detectors (tag-block, variation-selector,
+  zero-width, bidi-control, homoglyph), all of which are already complete in
+  every port; rust reference vouched; needs the 15-port fan-out.
 
 **Bip39 scan-wiring (follow-up):** Bip39Canonical ships standalone and
 crypto-context-gated in all listed ports; it is deliberately not part of the default
