@@ -45,13 +45,15 @@ Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 | SkinToneVariationForgery | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
 | FilenameDisguise | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
 | RendererDivergence | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
-| HashInputStability | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| HashInputStability | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | AiWatermarkDetectability | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
 
-**Totals:** rust 17/27 · all other vouched ports 16/27 · overall 241/405
-cells. The 13 core families plus LocaleCaseInversion, NormalizationBomb, and
-NfcIdempotenceWitness are complete and vouched across every listed port;
-everything below the line is spec-proven in Lean but not yet ported.
+**Totals:** rust 18/27 · all other vouched ports 17/27 · overall 256/405
+cells. The 13 core families plus LocaleCaseInversion, NormalizationBomb,
+NfcIdempotenceWitness, and HashInputStability are complete and vouched across
+every listed port; everything below the line is spec-proven in Lean but not
+yet ported. The COBOL port, not tracked as a column here, carries the same
+complete set.
 
 ## Interrupted new-port inventory
 
@@ -71,7 +73,7 @@ fixture presence is not coverage.
 
 ## Remaining work
 
-11 detector families are unported. Each needs a reference implementation verified
+10 detector families are unported. Each needs a reference implementation verified
 against the Lean `detect_*` theorems, then a fan-out to all listed ports, each
 vouched.
 
@@ -79,10 +81,10 @@ vouched.
 (`display/source_display_divergence.rs`) — rust reference exists and is vouched;
 needs fan-out to the other 14 listed ports.
 
-**Not started in any port (10):** CaseExpansionMismatch, StreamSafeViolation,
+**Not started in any port (9):** CaseExpansionMismatch, StreamSafeViolation,
 IdentifierFormDrift, AdmissibilityFormDrift, EmojiZwjIntegrity,
 SkinToneVariationForgery, FilenameDisguise, RendererDivergence,
-HashInputStability, AiWatermarkDetectability.
+AiWatermarkDetectability.
 
 **Bip39 scan-wiring (follow-up):** Bip39Canonical ships standalone and
 crypto-context-gated in all listed ports; it is deliberately not part of the default
