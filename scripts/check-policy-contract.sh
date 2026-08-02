@@ -333,6 +333,7 @@ non_default_scan_detectors = {
     "renderer_divergence",
     "filename_disguise",
     "identifier_form_drift",
+    "skin_tone_variation_forgery",
 }
 
 for detector_fixture in detector_fixtures:

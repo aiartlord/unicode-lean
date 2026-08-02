@@ -8,4 +8,5 @@
 
 pub mod emoji_zwj_integrity;
 pub mod homoglyph_confusable;
+pub mod skin_tone_variation_forgery;
 pub mod ucd;
