@@ -16,6 +16,7 @@ run() ->
     renderer_divergence_tests(),
     filename_disguise_tests(),
     identifier_form_drift_tests(),
+    skin_tone_variation_forgery_tests(),
     opaque_blob_tests(),
     grapheme_tests(),
     io:format("ok: erlang unicode security tests pass~n").
@@ -606,6 +607,69 @@ ifd_code(Input) ->
 %% The classification tag for an input, or `none' when clear.
 ifd_tag(Input) ->
     usec_identifier_form_drift:classify_tag(maps:get(classify, usec_identifier_form_drift:detect(Input))).
+
+%% The composed reason code for an input's classification, or `none' when clear.
+stvf_code(Input) ->
+    C = maps:get(classify, usec_skin_tone_variation_forgery:detect(Input)),
+    case usec_skin_tone_variation_forgery:classify_tag(C) of
+        none -> none;
+        Tag -> usec_policy:reason_code(skin_tone_variation_forgery, Tag)
+    end.
+
+%% The classification tag for an input, or `none' when clear.
+stvf_tag(Input) ->
+    usec_skin_tone_variation_forgery:classify_tag(maps:get(classify, usec_skin_tone_variation_forgery:detect(Input))).
+
+skin_tone_variation_forgery_tests() ->
+    %% ── Shared context-free fixture, run through detect. ────────────────
+    F = fixture(filename:join("detectors", "skin_tone_variation_forgery.json")),
+    assert_eq(<<"skin-tone-variation-forgery">>, maps:get(<<"family">>, F), stvf_fixture_family),
+    lists:foreach(fun(Case) ->
+                          Input = maps:get(<<"input">>, Case),
+                          Label = {stvf_fixture, maps:get(<<"name">>, Case)},
+                          Required = maps:get(<<"required_findings">>, Case),
+                          Codes = case stvf_code(Input) of
+                                      none -> [];
+                                      Code -> [Code]
+                                  end,
+                          lists:foreach(fun(Req) -> assert(lists:member(Req, Codes), Label) end, Required),
+                          case Required of
+                              [] -> assert(Codes =:= [], Label);
+                              _ -> ok
+                          end
+                  end, maps:get(<<"cases">>, F)),
+
+    %% ── §6 detect spot checks (the rust #[test] cases). ─────────────────
+    %% detect_empty_clear
+    assert(usec_skin_tone_variation_forgery:is_clear(maps:get(classify, usec_skin_tone_variation_forgery:detect([]))), stvf_empty_clear),
+    assert_eq(none, stvf_tag([]), stvf_empty_tag),
+    %% detect_ascii_clear — "He"
+    assert(usec_skin_tone_variation_forgery:is_clear(maps:get(classify, usec_skin_tone_variation_forgery:detect([16#48, 16#65]))), stvf_ascii_clear),
+    %% detect_plain_emoji_clear — grinning face
+    assert(usec_skin_tone_variation_forgery:is_clear(maps:get(classify, usec_skin_tone_variation_forgery:detect([16#1F600]))), stvf_plain_emoji_clear),
+    %% detect_wave_skin_tone_clear — waving hand (a modifier base) + one skin tone
+    WaveV = usec_skin_tone_variation_forgery:detect([16#1F44B, 16#1F3FB]),
+    assert(usec_skin_tone_variation_forgery:is_clear(maps:get(classify, WaveV)), stvf_wave_clear),
+    assert_eq(1, maps:get(skin_tone_count, WaveV), stvf_wave_skin_tone_count),
+    %% detect_stacked_skin_tones — waving hand + two skin tones
+    StackV = usec_skin_tone_variation_forgery:detect([16#1F44B, 16#1F3FB, 16#1F3FC]),
+    assert_eq(<<"StackedSkinTones">>, usec_skin_tone_variation_forgery:classify_tag(maps:get(classify, StackV)), stvf_stacked_tag),
+    assert_eq([1, 2], usec_skin_tone_variation_forgery:classify_positions(maps:get(classify, StackV)), stvf_stacked_positions),
+    %% detect_invalid_target_ascii — skin tone on ASCII 'A'
+    InvaV = usec_skin_tone_variation_forgery:detect([16#0041, 16#1F3FB]),
+    assert_eq(<<"InvalidSkinToneTarget">>, usec_skin_tone_variation_forgery:classify_tag(maps:get(classify, InvaV)), stvf_invalid_ascii_tag),
+    assert_eq([1], usec_skin_tone_variation_forgery:classify_positions(maps:get(classify, InvaV)), stvf_invalid_ascii_positions),
+    %% detect_invalid_target_smiley — skin tone on grinning face (not a modifier base)
+    assert_eq(<<"InvalidSkinToneTarget">>, stvf_tag([16#1F600, 16#1F3FB]), stvf_invalid_smiley_tag),
+    %% detect_forced_text_style — VS15 on grinning face (Emoji_Presentation)
+    ForcedV = usec_skin_tone_variation_forgery:detect([16#1F600, 16#FE0E]),
+    assert_eq(<<"ForcedTextStyle">>, usec_skin_tone_variation_forgery:classify_tag(maps:get(classify, ForcedV)), stvf_forced_tag),
+    assert_eq(1, maps:get(variation_selector15_count, ForcedV), stvf_forced_vs15_count),
+    %% reason_code_is_stable — the composed reason code
+    assert_eq(<<"unicode.security.I.skin-tone-variation-forgery.StackedSkinTones">>,
+              usec_policy:reason_code(skin_tone_variation_forgery, <<"StackedSkinTones">>), stvf_reason_code),
+
+    io:format("  skin-tone-variation-forgery: fixture + 8 spot-checks + 1 reason-code pass~n").
 
 identifier_form_drift_tests() ->
     %% ── Shared context-free fixture, run through detect. ────────────────

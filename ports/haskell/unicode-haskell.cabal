@@ -111,6 +111,7 @@ library
       Unicode.Security.Form.NormalizationBomb
       Unicode.Security.Form.StreamSafeViolation
       Unicode.Security.Identity.EmojiZwjIntegrity
+      Unicode.Security.Identity.SkinToneVariationForgery
       Unicode.Security.Policy
   other-modules:
       Paths_unicode_haskell
@@ -148,6 +149,7 @@ test-suite unicode-haskell-test
       RendererDivergenceSpec
       FilenameDisguiseSpec
       IdentifierFormDriftSpec
+      SkinToneVariationForgerySpec
       Utf8Spec
       Utf16Spec
       Utf32Spec

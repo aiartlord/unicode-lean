@@ -39,6 +39,7 @@ import qualified EmojiZwjIntegritySpec
 import qualified RendererDivergenceSpec
 import qualified FilenameDisguiseSpec
 import qualified IdentifierFormDriftSpec
+import qualified SkinToneVariationForgerySpec
 
 main :: IO ()
 main = defaultMain $
@@ -70,4 +71,5 @@ main = defaultMain $
     , RendererDivergenceSpec.tests
     , FilenameDisguiseSpec.tests
     , IdentifierFormDriftSpec.tests
+    , SkinToneVariationForgerySpec.tests
     ]
