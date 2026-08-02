@@ -3,7 +3,7 @@ namespace UnicodeSecurity;
 // emoji-zwj-integrity (I layer, detector I3) — detection of malformed /
 // unsanctioned emoji ZWJ-sequence shapes per UTS #51.
 //
-// Direct port of ports/rust/src/security/identity/emoji_zwj_integrity.rs,
+// Direct port of the verified Rust reference implementation,
 // itself a byte-faithful transliteration of
 // Unicode/Security/Identity/EmojiZwjIntegrity.lean.
 //

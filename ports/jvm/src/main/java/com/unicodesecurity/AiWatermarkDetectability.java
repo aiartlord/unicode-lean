@@ -12,7 +12,7 @@ import java.util.Optional;
  *
  * <p>Direct port of {@code Unicode/Security/Crypto/AiWatermarkDetectability.lean},
  * transliterated byte-faithfully from the verified Rust reference
- * {@code ports/rust/src/security/crypto/ai_watermark_detectability.rs}.
+ * implementation.
  *
  * <p>Threat model — provenance-attribution attacker. An input either (a) carries
  * an AI provider's watermark codepoints (a legitimate provenance marker) or

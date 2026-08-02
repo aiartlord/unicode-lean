@@ -35,6 +35,7 @@ import qualified IdentifierSpec
 import qualified PolicySpec
 import qualified ConfusableBidiCompoundSpec
 import qualified CovertDisplayCompoundSpec
+import qualified EmojiZwjIntegritySpec
 
 main :: IO ()
 main = defaultMain $
@@ -62,4 +63,5 @@ main = defaultMain $
     , PolicySpec.tests
     , ConfusableBidiCompoundSpec.tests
     , CovertDisplayCompoundSpec.tests
+    , EmojiZwjIntegritySpec.tests
     ]

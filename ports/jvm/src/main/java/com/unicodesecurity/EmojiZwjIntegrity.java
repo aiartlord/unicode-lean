@@ -13,7 +13,7 @@ import java.util.Set;
  *
  * <p>Direct port of {@code Unicode/Security/Identity/EmojiZwjIntegrity.lean},
  * transliterated byte-faithfully from the verified Rust reference
- * {@code ports/rust/src/security/identity/emoji_zwj_integrity.rs}.
+ * implementation.
  *
  * <p>Threat model. An adversary crafts an emoji-shaped codepoint sequence
  * containing one or more {@code U+200D} ZERO WIDTH JOINERs but violating the

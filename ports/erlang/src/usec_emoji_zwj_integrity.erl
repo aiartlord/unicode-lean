@@ -3,7 +3,7 @@
 %% is this emoji-shaped codepoint sequence a sanctioned RGI ZWJ sequence, or a
 %% renderer-dependent shape whose divergence is an attack surface?
 %%
-%% Direct port of `ports/rust/src/security/identity/emoji_zwj_integrity.rs`
+%% Direct port of the verified Rust reference implementation
 %% (itself a port of `Unicode/Security/Identity/EmojiZwjIntegrity.lean`).
 %%
 %% Threat model. An adversary crafts an emoji-shaped codepoint sequence

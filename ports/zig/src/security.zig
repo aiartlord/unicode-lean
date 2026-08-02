@@ -10,6 +10,7 @@ const known_attack_targets_raw = @embedFile("data/KnownAttackTargets.txt");
 const standardized_variants_raw = @embedFile("data/StandardizedVariants.txt");
 const emoji_variation_sequences_raw = @embedFile("data/emoji-variation-sequences.txt");
 const emoji_data_raw = @embedFile("data/emoji-data.txt");
+const emoji_zwj_sequences_raw = @embedFile("data/emoji-zwj-sequences.txt");
 const MaxSkeletonLen = 128;
 
 pub const Action = enum {
@@ -3114,6 +3115,375 @@ pub const stream_safe_violation = struct {
 };
 
 // ─────────────────────────────────────────────────────────────────────
+// EmojiZwjIntegrity (identity layer I3), mirroring
+// Unicode.Security.Identity.EmojiZwjIntegrity and the verified Rust port
+// ports/rust/src/security/identity/emoji_zwj_integrity.rs.
+//
+// An adversary crafts an emoji-shaped codepoint sequence containing one or
+// more U+200D ZERO WIDTH JOINERs but violating the sanctioned RGI ZWJ-sequence
+// shape (UTS #51) — by exceeding the RGI length cap, joining a non-emoji
+// codepoint, emitting adjacent ZWJ pairs, or overflowing the skin-tone count.
+// Any non-RGI ZWJ-containing sequence is renderer-dependent, and that renderer
+// divergence is the attack surface.
+//
+// The registered RGI set and the ZWJ alphabet are parsed from the port's own
+// bundled data/emoji-zwj-sequences.txt (never a host emoji library), scanned on
+// each call in the port's runtime data-parse idiom (see isEmoji above). The
+// skin-tone predicate is the inline U+1F3FB..U+1F3FF modifier range.
+//
+// Algorithm (one pass over input): collect ZWJ positions and the skin-tone
+// count; short-circuit Clear when there are no ZWJs and the skin-tone count is
+// at most 1; a registered RGI sequence is always Clear; otherwise the priority
+// ladder DoubleZWJ → NonEmojiInjection → OverLength → SkinToneOverflow →
+// UnregisteredSequence.
+// ─────────────────────────────────────────────────────────────────────
+
+pub const emoji_zwj_integrity = struct {
+    /// Conservative cap on the length of a sanctioned RGI ZWJ sequence
+    /// (maxRgiLength in the Lean spec). The longest current entry (a four-person
+    /// family with skin tones) reaches ~13-14 codepoints; 16 is a safe upper
+    /// bound.
+    pub const MAX_RGI_LENGTH: usize = 16;
+
+    /// The ZERO WIDTH JOINER codepoint.
+    pub const ZWJ: u32 = 0x200D;
+
+    /// Upper bound on the codepoint count of a single parsed RGI row's sequence
+    /// field. The longest current entry is ~13-14 codepoints; 64 is a safe cap
+    /// for the row scratch buffer. A row whose sequence exceeds this is treated
+    /// as unparseable (it cannot be a registered target for any bounded input).
+    const MAX_ROW_LEN: usize = 64;
+
+    /// Upper bound on the number of implicated positions a hazard can carry
+    /// before the bounded buffer saturates. Positions are a subset of input
+    /// indices; the cap mirrors the port's other bounded position buffers
+    /// (ai_watermark_detectability). Inputs longer than this saturate silently,
+    /// which cannot change a classification tag.
+    const MAX_POSITIONS: usize = 512;
+
+    /// Bounded position buffer — a hazard's implicated codepoint indices.
+    const PosBuffer = struct {
+        items: [MAX_POSITIONS]usize = undefined,
+        len: usize = 0,
+
+        fn append(self: *PosBuffer, p: usize) void {
+            if (self.len >= self.items.len) return;
+            self.items[self.len] = p;
+            self.len += 1;
+        }
+
+        fn slice(self: *const PosBuffer) []const usize {
+            return self.items[0..self.len];
+        }
+    };
+
+    // ── §3 RGI ZWJ-sequence data (bundled data/emoji-zwj-sequences.txt) ───
+
+    /// Parse one data row's leading codepoint field into buf. Returns the count
+    /// of codepoints, or null if the row is a comment/blank, has an empty
+    /// sequence field, or contains a malformed / over-long token run. Mirrors
+    /// parse_zwj_sequences: the body is the text before '#', the sequence is the
+    /// field before the first ';', tokens are space-separated hex codepoints.
+    fn parseRow(raw_line: []const u8, buf: *[MAX_ROW_LEN]u32) ?usize {
+        const body = if (std.mem.indexOfScalar(u8, raw_line, '#')) |idx| raw_line[0..idx] else raw_line;
+        const stripped = trimAscii(body);
+        if (stripped.len == 0) return null;
+        var fields = std.mem.splitScalar(u8, stripped, ';');
+        const seq_field = fields.next() orelse return null;
+        var count: usize = 0;
+        var toks = std.mem.tokenizeAny(u8, seq_field, " \t\r\n");
+        while (toks.next()) |tok| {
+            const cp = parseHexU32(tok) orelse return null;
+            if (count >= buf.len) return null;
+            buf[count] = cp;
+            count += 1;
+        }
+        if (count == 0) return null;
+        return count;
+    }
+
+    /// True iff cps is exactly a registered RGI ZWJ sequence. Scans the bundled
+    /// table on each call, comparing cps against each row's parsed sequence.
+    pub fn isRegisteredZwjSequence(cps: []const u32) bool {
+        var buf: [MAX_ROW_LEN]u32 = undefined;
+        var offset: usize = 0;
+        while (nextLine(emoji_zwj_sequences_raw, &offset)) |raw_line| {
+            const count = parseRow(raw_line, &buf) orelse continue;
+            if (cpSlicesEqual(buf[0..count], cps)) return true;
+        }
+        return false;
+    }
+
+    /// True iff cp appears at some position of a registered RGI ZWJ sequence,
+    /// excluding the joiner U+200D itself — the ZWJ alphabet, the canonical
+    /// "what may flank a ZWJ?" predicate. Scans the bundled table on each call.
+    pub fn isEmojiTarget(cp: u32) bool {
+        if (cp == ZWJ) return false;
+        var buf: [MAX_ROW_LEN]u32 = undefined;
+        var offset: usize = 0;
+        while (nextLine(emoji_zwj_sequences_raw, &offset)) |raw_line| {
+            const count = parseRow(raw_line, &buf) orelse continue;
+            for (buf[0..count]) |row_cp| {
+                if (row_cp != ZWJ and row_cp == cp) return true;
+            }
+        }
+        return false;
+    }
+
+    // ── §4 Core predicates ───────────────────────────────────────────────
+
+    /// True iff cp is the ZWJ codepoint.
+    pub fn isZwj(cp: u32) bool {
+        return cp == ZWJ;
+    }
+
+    /// True iff cp is an emoji skin-tone modifier (U+1F3FB..U+1F3FF). The port's
+    /// inline modifier range; no host emoji library is consulted.
+    pub fn isEmojiModifier(cp: u32) bool {
+        return cp >= 0x1F3FB and cp <= 0x1F3FF;
+    }
+
+    /// Positions of every ZWJ in input.
+    fn zwjPositions(input: []const u32) PosBuffer {
+        var out = PosBuffer{};
+        for (input, 0..) |cp, idx| {
+            if (isZwj(cp)) out.append(idx);
+        }
+        return out;
+    }
+
+    /// Count of skin-tone modifier codepoints.
+    fn skinToneCount(input: []const u32) usize {
+        var count: usize = 0;
+        for (input) |cp| {
+            if (isEmojiModifier(cp)) count += 1;
+        }
+        return count;
+    }
+
+    /// Positions of the first ZWJ in each ZWJ-ZWJ adjacent pair.
+    fn doubleZwjPositions(input: []const u32) PosBuffer {
+        var out = PosBuffer{};
+        var idx: usize = 0;
+        while (idx < input.len) : (idx += 1) {
+            if (idx + 1 < input.len) {
+                if (isZwj(input[idx]) and isZwj(input[idx + 1])) out.append(idx);
+            }
+        }
+        return out;
+    }
+
+    /// A ZWJ flanked by a non-emoji codepoint (or sitting at an input edge), as
+    /// (zwj_pos, offending_cp).
+    const Injection = struct { zwj_pos: usize, non_emoji_cp: u32 };
+
+    /// The first ZWJ position where either neighbour is a non-emoji codepoint. A
+    /// ZWJ at an input edge (no preceding or no following codepoint) is itself an
+    /// injection-class hazard, reported with offending codepoint 0.
+    fn firstNonEmojiInjection(input: []const u32) ?Injection {
+        var idx: usize = 0;
+        while (idx < input.len) : (idx += 1) {
+            if (!isZwj(input[idx])) continue;
+            const prev: ?u32 = if (idx == 0) null else input[idx - 1];
+            const next: ?u32 = if (idx + 1 < input.len) input[idx + 1] else null;
+            if (prev) |prev_cp| {
+                if (next) |next_cp| {
+                    if (!isEmojiTarget(prev_cp)) {
+                        return Injection{ .zwj_pos = idx, .non_emoji_cp = prev_cp };
+                    } else if (!isEmojiTarget(next_cp)) {
+                        return Injection{ .zwj_pos = idx, .non_emoji_cp = next_cp };
+                    }
+                } else {
+                    // (Some prev, None next): trailing-edge ZWJ.
+                    return Injection{ .zwj_pos = idx, .non_emoji_cp = 0 };
+                }
+            } else {
+                // (None prev, _): leading-edge ZWJ.
+                return Injection{ .zwj_pos = idx, .non_emoji_cp = 0 };
+            }
+        }
+        return null;
+    }
+
+    // ── §2 Types ─────────────────────────────────────────────────────────
+
+    /// Sub-threat enumeration, in priority order.
+    pub const SubThreat = union(enum) {
+        /// ZWJ-ZWJ adjacency; positions are the first ZWJ of each adjacent pair.
+        double_zwj: struct { positions: PosBuffer },
+        /// A ZWJ flanked by a non-emoji codepoint (or at an input edge). zwj_pos
+        /// is the offending ZWJ; non_emoji_cp is the flanking codepoint (0 for an
+        /// edge ZWJ).
+        non_emoji_injection: struct { zwj_pos: usize, non_emoji_cp: u32 },
+        /// The sequence is longer than MAX_RGI_LENGTH. length is the observed
+        /// length; max_length is the cap that was exceeded.
+        over_length: struct { length: usize, max_length: usize },
+        /// Five or more skin-tone modifiers (the family-emoji maximum is four).
+        skin_tone_overflow: struct { count: usize },
+        /// ZWJs are present and no other sub-threat matched, but the sequence is
+        /// not registered. chain_len is the length of the unregistered ZWJ chain.
+        unregistered_sequence: struct { chain_len: usize },
+
+        /// Human-facing classification tag for this sub-threat.
+        pub fn tag(self: SubThreat) []const u8 {
+            return switch (self) {
+                .double_zwj => "DoubleZWJ",
+                .non_emoji_injection => "NonEmojiInjection",
+                .over_length => "OverLength",
+                .skin_tone_overflow => "SkinToneOverflow",
+                .unregistered_sequence => "UnregisteredSequence",
+            };
+        }
+
+        /// Fully-qualified reason code for this sub-threat, matching the shared
+        /// fixture's required_findings entry.
+        pub fn reasonCode(self: SubThreat) []const u8 {
+            return switch (self) {
+                .double_zwj => "unicode.security.I.emoji-zwj-integrity.DoubleZWJ",
+                .non_emoji_injection => "unicode.security.I.emoji-zwj-integrity.NonEmojiInjection",
+                .over_length => "unicode.security.I.emoji-zwj-integrity.OverLength",
+                .skin_tone_overflow => "unicode.security.I.emoji-zwj-integrity.SkinToneOverflow",
+                .unregistered_sequence => "unicode.security.I.emoji-zwj-integrity.UnregisteredSequence",
+            };
+        }
+    };
+
+    /// Top-level classification.
+    pub const Classification = union(enum) {
+        /// A well-formed or non-ZWJ input.
+        clear,
+        /// A hazard: the fired sub-threat, the implicated positions, and the
+        /// (always-empty for this detector) decoded-byte projection, kept for
+        /// shape parity with the Lean Classification.hazard.
+        hazard: struct { sub: SubThreat, positions: PosBuffer, decoded: []const u8 = &[_]u8{} },
+
+        /// True iff the classification is clear.
+        pub fn isClear(self: Classification) bool {
+            return switch (self) {
+                .clear => true,
+                .hazard => false,
+            };
+        }
+
+        /// Human-facing tag for a hazard, or null when clear.
+        pub fn tag(self: Classification) ?[]const u8 {
+            return switch (self) {
+                .clear => null,
+                .hazard => |h| h.sub.tag(),
+            };
+        }
+
+        /// Fully-qualified reason code for a hazard, or null when clear.
+        pub fn reasonCode(self: Classification) ?[]const u8 {
+            return switch (self) {
+                .clear => null,
+                .hazard => |h| h.sub.reasonCode(),
+            };
+        }
+
+        /// Implicated positions (empty when clear).
+        pub fn positions(self: *const Classification) []const usize {
+            switch (self.*) {
+                .clear => return &[_]usize{},
+                .hazard => return self.hazard.positions.slice(),
+            }
+        }
+    };
+
+    /// Verdict — the structured output of detect (mirrors the Lean Verdict).
+    pub const Verdict = struct {
+        /// The scanned input codepoints.
+        input: []const u32,
+        /// The classification verdict.
+        classify: Classification,
+        /// Positions of every ZWJ in the input.
+        zwj_positions: PosBuffer,
+        /// The chain length (0 when there are no ZWJs, else the input length).
+        chain_length: usize,
+        /// True iff the input is exactly a registered RGI ZWJ sequence.
+        is_registered_rgi: bool,
+        /// Count of skin-tone modifier codepoints (U+1F3FB..U+1F3FF).
+        skin_tone_count: usize,
+    };
+
+    // ── §5 Top-level detection ───────────────────────────────────────────
+
+    /// The EmojiZwjIntegrity detection function.
+    pub fn detect(input: []const u32) @This().Verdict {
+        const zwjs = zwjPositions(input);
+        const st_count = skinToneCount(input);
+        const is_rgi = isRegisteredZwjSequence(input);
+        const chain_len: usize = if (zwjs.len == 0) 0 else input.len;
+
+        if (zwjs.len == 0 and st_count <= 1) {
+            return @This().Verdict{
+                .input = input,
+                .classify = .{ .clear = {} },
+                .zwj_positions = PosBuffer{},
+                .chain_length = 0,
+                .is_registered_rgi = is_rgi,
+                .skin_tone_count = st_count,
+            };
+        }
+
+        const classification: Classification = blk: {
+            if (is_rgi) {
+                // Phase 3: a registered RGI sequence is always clear.
+                break :blk .{ .clear = {} };
+            }
+            // Phase 4.1: ZWJ-ZWJ adjacency.
+            const dzwj = doubleZwjPositions(input);
+            if (dzwj.len != 0) {
+                break :blk .{ .hazard = .{
+                    .sub = .{ .double_zwj = .{ .positions = dzwj } },
+                    .positions = dzwj,
+                } };
+            }
+            // Phase 4.2: ZWJ adjacent to a non-emoji codepoint.
+            if (firstNonEmojiInjection(input)) |hit| {
+                var pos = PosBuffer{};
+                pos.append(hit.zwj_pos);
+                break :blk .{ .hazard = .{
+                    .sub = .{ .non_emoji_injection = .{ .zwj_pos = hit.zwj_pos, .non_emoji_cp = hit.non_emoji_cp } },
+                    .positions = pos,
+                } };
+            }
+            // Phase 4.3: length cap.
+            if (input.len > MAX_RGI_LENGTH) {
+                break :blk .{ .hazard = .{
+                    .sub = .{ .over_length = .{ .length = input.len, .max_length = MAX_RGI_LENGTH } },
+                    .positions = PosBuffer{},
+                } };
+            }
+            // Phase 4.4: skin-tone overflow.
+            if (st_count >= 5) {
+                break :blk .{ .hazard = .{
+                    .sub = .{ .skin_tone_overflow = .{ .count = st_count } },
+                    .positions = PosBuffer{},
+                } };
+            }
+            // Phase 4.5: catch-all for unregistered ZWJ sequences.
+            if (zwjs.len != 0) {
+                break :blk .{ .hazard = .{
+                    .sub = .{ .unregistered_sequence = .{ .chain_len = input.len } },
+                    .positions = zwjs,
+                } };
+            }
+            break :blk .{ .clear = {} };
+        };
+
+        return @This().Verdict{
+            .input = input,
+            .classify = classification,
+            .zwj_positions = zwjs,
+            .chain_length = chain_len,
+            .is_registered_rgi = is_rgi,
+            .skin_tone_count = st_count,
+        };
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────
 // Locale-case-inversion detector (Tier A2), mirroring
 // Unicode.Security.Form.LocaleCaseInversion.
 //
@@ -4020,7 +4390,7 @@ fn expectCtxHazard(ctx: His.Context, input: []const u32, want_tag: []const u8, w
 
 test "hash-input-stability detect spot checks" {
     // Mirrors the §8 detect spot checks (shared context-free fixture vectors in
-    // fixtures/security/detectors/hash_input_stability.json).
+    // the shared hash_input_stability.json detector fixture).
     try std.testing.expect(His.detect(&[_]u32{}).classify.isClear()); // empty-clear
     try std.testing.expect(His.detect(&[_]u32{ 0x61, 0x62, 0x63 }).classify.isClear()); // ascii-idempotent-clear
 
@@ -4172,7 +4542,7 @@ test "ai-watermark-detectability probe spot checks" {
 
 test "ai-watermark-detectability detect spot checks" {
     // Mirrors the §6 detect spot checks (shared context-free fixture vectors in
-    // fixtures/security/detectors/ai_watermark_detectability.json).
+    // the shared ai_watermark_detectability.json detector fixture).
     try std.testing.expect(Aw.detect(&[_]u32{}).classify.isClear()); // empty-clear
     try std.testing.expect(Aw.detect(&[_]u32{ 0x61, 0x62, 0x63 }).classify.isClear()); // ascii-clear
     try std.testing.expect(Aw.detect(&[_]u32{ 0x4E2D, 0x6587 }).classify.isClear()); // han-clear
@@ -4335,7 +4705,7 @@ test "stream-safe-violation shared fixture vectors" {
     // Mirrors the detect_* theorems in
     // Unicode/Security/Form/StreamSafeViolation.lean and its Rust port. Every
     // vector below is a row of the shared context-free fixture
-    // (fixtures/security/detectors/stream_safe_violation.json).
+    // (the shared stream_safe_violation.json detector fixture).
 
     // empty-clear.
     {
@@ -4450,5 +4820,186 @@ test "stream-safe-violation run-inventory structure" {
         try std.testing.expect(v.max_run_len == 31);
         try std.testing.expect(v.overrun_count == 1);
         try std.testing.expect(v.total_non_starters == 36);
+    }
+}
+
+// ── emoji-zwj-integrity (identity layer) ─────────────────────────────────
+
+const Ezwj = emoji_zwj_integrity;
+
+fn ezwjReason(input: []const u32) ?[]const u8 {
+    return Ezwj.detect(input).classify.reasonCode();
+}
+
+fn expectEzwjReason(input: []const u32, want: []const u8) !void {
+    const r = ezwjReason(input);
+    try std.testing.expect(r != null);
+    try std.testing.expectEqualStrings(want, r.?);
+}
+
+test "emoji-zwj-integrity data-layer sanity" {
+    // Mirrors the Rust data-layer sanity #[test]s.
+    try std.testing.expect(Ezwj.isEmojiModifier(0x1F3FB));
+    try std.testing.expect(Ezwj.isEmojiModifier(0x1F3FF));
+    try std.testing.expect(!Ezwj.isEmojiModifier(0x1F3FA));
+    try std.testing.expect(!Ezwj.isEmojiModifier(0x1F600));
+
+    // U+2764 HEAVY BLACK HEART appears in couple-with-heart RGI sequences.
+    try std.testing.expect(Ezwj.isEmojiTarget(0x2764));
+    // U+1F468 MAN appears in family/couple RGI sequences.
+    try std.testing.expect(Ezwj.isEmojiTarget(0x1F468));
+    // U+1F600 GRINNING FACE appears in no registered RGI ZWJ sequence.
+    try std.testing.expect(!Ezwj.isEmojiTarget(0x1F600));
+    // The joiner itself is excluded from the alphabet.
+    try std.testing.expect(!Ezwj.isEmojiTarget(Ezwj.ZWJ));
+
+    // MAN + ZWJ + LAPTOP (man technologist) is a registered RGI sequence.
+    try std.testing.expect(Ezwj.isRegisteredZwjSequence(&[_]u32{ 0x1F468, 0x200D, 0x1F4BB }));
+    // MAN + ZWJ + WOMAN is not a registered RGI sequence.
+    try std.testing.expect(!Ezwj.isRegisteredZwjSequence(&[_]u32{ 0x1F468, 0x200D, 0x1F469 }));
+}
+
+test "emoji-zwj-integrity shared fixture vectors" {
+    // The 12 rows of the shared context-free fixture
+    // (the shared emoji_zwj_integrity.json detector fixture), inputs given as
+    // codepoints. Clear rows assert isClear; hazard rows assert the fully
+    // qualified reason code from required_findings.
+
+    // empty-clear.
+    {
+        const v = Ezwj.detect(&[_]u32{});
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expectEqual(@as(?[]const u8, null), v.classify.tag());
+        try std.testing.expectEqualSlices(usize, &[_]usize{}, v.classify.positions());
+        try std.testing.expect(v.chain_length == 0);
+        try std.testing.expect(v.skin_tone_count == 0);
+    }
+    // ascii-hello-clear.
+    try std.testing.expect(Ezwj.detect(&[_]u32{ 72, 101, 108, 108, 111 }).classify.isClear());
+    // plain-emoji-clear.
+    try std.testing.expect(Ezwj.detect(&[_]u32{128512}).classify.isClear());
+    // one-skintone-clear.
+    {
+        const v = Ezwj.detect(&[_]u32{ 128075, 127995 });
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expect(v.skin_tone_count == 1);
+    }
+    // family-of-four-rgi-clear.
+    {
+        const v = Ezwj.detect(&[_]u32{ 128104, 8205, 128105, 8205, 128103, 8205, 128102 });
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expect(v.is_registered_rgi);
+    }
+    // man-technologist-rgi-clear.
+    try std.testing.expect(Ezwj.detect(&[_]u32{ 128104, 8205, 128187 }).classify.isClear());
+    // double-zwj-hazard.
+    try expectEzwjReason(&[_]u32{ 128512, 8205, 8205, 128512 }, "unicode.security.I.emoji-zwj-integrity.DoubleZWJ");
+    // non-emoji-injection-ascii-hazard.
+    try expectEzwjReason(&[_]u32{ 128512, 8205, 97 }, "unicode.security.I.emoji-zwj-integrity.NonEmojiInjection");
+    // grinning-laptop-non-emoji-injection-hazard.
+    try expectEzwjReason(&[_]u32{ 128512, 8205, 128187 }, "unicode.security.I.emoji-zwj-integrity.NonEmojiInjection");
+    // skin-tone-overflow-hazard.
+    try expectEzwjReason(&[_]u32{ 128075, 127995, 127996, 127997, 127998, 127999 }, "unicode.security.I.emoji-zwj-integrity.SkinToneOverflow");
+    // unregistered-man-woman-hazard.
+    try expectEzwjReason(&[_]u32{ 128104, 8205, 128105 }, "unicode.security.I.emoji-zwj-integrity.UnregisteredSequence");
+    // over-length-chain-hazard.
+    try expectEzwjReason(
+        &[_]u32{ 128104, 8205, 128104, 8205, 128104, 8205, 128104, 8205, 128104, 8205, 128104, 8205, 128104, 8205, 128104, 8205, 128104 },
+        "unicode.security.I.emoji-zwj-integrity.OverLength",
+    );
+}
+
+test "emoji-zwj-integrity detect spot checks" {
+    // The 11 Rust §5 detect spot checks (one per Lean theorem).
+
+    // detect_empty_clear.
+    {
+        const v = Ezwj.detect(&[_]u32{});
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expectEqual(@as(?[]const u8, null), v.classify.tag());
+        try std.testing.expectEqualSlices(usize, &[_]usize{}, v.zwj_positions.slice());
+        try std.testing.expect(v.chain_length == 0);
+        try std.testing.expect(v.skin_tone_count == 0);
+    }
+    // detect_ascii_clear.
+    try std.testing.expect(Ezwj.detect(&[_]u32{ 0x48, 0x65, 0x6C, 0x6C, 0x6F }).classify.isClear());
+    // detect_plain_emoji_clear.
+    try std.testing.expect(Ezwj.detect(&[_]u32{0x1F600}).classify.isClear());
+    // detect_one_skintone_clear.
+    {
+        const v = Ezwj.detect(&[_]u32{ 0x1F44B, 0x1F3FB });
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expect(v.skin_tone_count == 1);
+    }
+    // detect_family_rgi_clear.
+    {
+        const v = Ezwj.detect(&[_]u32{ 0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466 });
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expect(v.is_registered_rgi);
+    }
+    // detect_double_zwj.
+    {
+        const v = Ezwj.detect(&[_]u32{ 0x1F600, 0x200D, 0x200D, 0x1F600 });
+        try std.testing.expectEqualStrings("DoubleZWJ", v.classify.tag().?);
+        try std.testing.expectEqualSlices(usize, &[_]usize{1}, v.classify.positions());
+    }
+    // detect_non_emoji_injection.
+    {
+        const v = Ezwj.detect(&[_]u32{ 0x1F600, 0x200D, 0x0061 });
+        try std.testing.expectEqualStrings("NonEmojiInjection", v.classify.tag().?);
+    }
+    // detect_skin_tone_overflow.
+    {
+        const v = Ezwj.detect(&[_]u32{ 0x1F44B, 0x1F3FB, 0x1F3FC, 0x1F3FD, 0x1F3FE, 0x1F3FF });
+        try std.testing.expectEqualStrings("SkinToneOverflow", v.classify.tag().?);
+        try std.testing.expect(v.skin_tone_count == 5);
+    }
+    // detect_man_laptop_registered_clear.
+    try std.testing.expect(Ezwj.detect(&[_]u32{ 0x1F468, 0x200D, 0x1F4BB }).classify.isClear());
+    // detect_unregistered.
+    {
+        const v = Ezwj.detect(&[_]u32{ 0x1F468, 0x200D, 0x1F469 });
+        try std.testing.expectEqualStrings("UnregisteredSequence", v.classify.tag().?);
+    }
+    // detect_grinning_laptop_non_emoji_injection.
+    try std.testing.expectEqualStrings("NonEmojiInjection", Ezwj.detect(&[_]u32{ 0x1F600, 0x200D, 0x1F4BB }).classify.tag().?);
+}
+
+test "emoji-zwj-integrity structural checks" {
+    // The 3 Rust structural checks that follow from the priority ladder.
+
+    // over_length_fires_past_cap — 9 men joined by 8 ZWJs = 17 codepoints.
+    {
+        var input: [17]u32 = undefined;
+        var w: usize = 0;
+        var i: usize = 0;
+        while (i < 9) : (i += 1) {
+            if (i > 0) {
+                input[w] = 0x200D;
+                w += 1;
+            }
+            input[w] = 0x1F468;
+            w += 1;
+        }
+        try std.testing.expect(w == 17);
+        const v = Ezwj.detect(&input);
+        try std.testing.expectEqualStrings("OverLength", v.classify.tag().?);
+        try std.testing.expect(v.classify.hazard.sub.over_length.length == 17);
+        try std.testing.expect(v.classify.hazard.sub.over_length.max_length == Ezwj.MAX_RGI_LENGTH);
+        try std.testing.expectEqualSlices(usize, &[_]usize{}, v.classify.positions());
+    }
+
+    // trailing_zwj_is_injection — a ZWJ at the trailing edge of input.
+    {
+        const v = Ezwj.detect(&[_]u32{ 0x1F468, 0x200D });
+        try std.testing.expectEqualStrings("NonEmojiInjection", v.classify.tag().?);
+        try std.testing.expectEqualSlices(usize, &[_]usize{1}, v.classify.positions());
+        try std.testing.expect(v.classify.hazard.sub.non_emoji_injection.non_emoji_cp == 0);
+    }
+
+    // double_zwj_beats_unregistered — man ZWJ ZWJ boy: adjacent ZWJs present.
+    {
+        const v = Ezwj.detect(&[_]u32{ 0x1F468, 0x200D, 0x200D, 0x1F466 });
+        try std.testing.expectEqualStrings("DoubleZWJ", v.classify.tag().?);
     }
 }

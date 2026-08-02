@@ -4,7 +4,7 @@ Description : Stream-Safe-Text-Format-violation detector (F2).
 
 Haskell port of @Unicode.Security.Form.StreamSafeViolation@ from unicode-lean,
 transliterated from the verified Rust reference
-@ports/rust/src/security/form/stream_safe_violation.rs@.
+implementation.
 
 Detects inputs whose consecutive non-starter run exceeds the UAX #15 §13
 @streamSafeLimit@ of 30. Such an input (the canonical "Zalgo" shape, a single

@@ -5,7 +5,7 @@ protocol?
 
 Direct port of ``Unicode.Security.Crypto.AiWatermarkDetectability`` (and a
 faithful transliteration of the verified Rust reference
-``ports/rust/src/security/crypto/ai_watermark_detectability.rs``).
+implementation).
 
 Threat model — provenance-attribution attacker. An input either (a) carries an
 AI provider's watermark codepoints (a legitimate provenance marker) or (b)

@@ -2,8 +2,8 @@
 ZWJ-sequence shapes per UTS #51 (the identity-layer detector I3).
 
 Byte-faithful transliteration of the verified Rust reference
-``ports/rust/src/security/identity/emoji_zwj_integrity.rs`` (itself a
-transliteration of ``Unicode.Security.Identity.EmojiZwjIntegrity``).
+implementation (itself a transliteration of
+``Unicode.Security.Identity.EmojiZwjIntegrity``).
 
 Threat model. An adversary crafts an emoji-shaped codepoint sequence
 containing one or more ``U+200D`` ZERO WIDTH JOINERs but violating the

@@ -4,7 +4,7 @@ Description : Character-level detector for AI-watermark codepoint patterns.
 
 Haskell port of @Unicode.Security.Crypto.AiWatermarkDetectability@ from
 unicode-lean, transliterated from the verified Rust reference
-@ports/rust/src/security/crypto/ai_watermark_detectability.rs@.
+implementation.
 
 Answers the question: does this input contain markers attributable to a
 watermarking protocol? The threat model is a provenance-attribution

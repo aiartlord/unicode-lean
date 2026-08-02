@@ -3,7 +3,7 @@ form.
 
 Direct port of ``Unicode.Security.Crypto.HashInputStability`` (and a faithful
 transliteration of the verified Rust reference
-``ports/rust/src/security/crypto/hash_input_stability.rs``). Per UTS #39 §6.1 +
+implementation). Per UTS #39 §6.1 +
 RFC 4880 / 9580 + RFC 8785, an input hashed by a signer must be byte-identical
 to the input hashed by the verifier; if the two ends pick different canonical
 forms (NFC vs NFD, trim policy, line-ending convention) the resulting hashes

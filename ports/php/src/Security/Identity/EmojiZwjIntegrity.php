@@ -6,7 +6,7 @@ declare(strict_types=1);
 // shapes per UTS #51 (the identity-layer detector I3).
 //
 // Byte-faithful port of the verified rust reference
-// `ports/rust/src/security/identity/emoji_zwj_integrity.rs` and of
+// implementation and of
 // `Unicode/Security/Identity/EmojiZwjIntegrity.lean`.
 //
 // Threat model. An adversary crafts an emoji-shaped codepoint sequence

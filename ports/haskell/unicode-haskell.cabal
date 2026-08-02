@@ -34,6 +34,7 @@ data-files:
   data/StandardizedVariants.txt
   data/emoji-variation-sequences.txt
   data/emoji-data.txt
+  data/emoji-zwj-sequences.txt
   data/UnicodeData.txt
   data/SpecialCasing.txt
   data/DerivedCoreProperties.txt
@@ -105,6 +106,7 @@ library
       Unicode.Security.Form.NfcIdempotenceWitness
       Unicode.Security.Form.NormalizationBomb
       Unicode.Security.Form.StreamSafeViolation
+      Unicode.Security.Identity.EmojiZwjIntegrity
       Unicode.Security.Policy
   other-modules:
       Paths_unicode_haskell
@@ -138,6 +140,7 @@ test-suite unicode-haskell-test
       PolicySpec
       ConfusableBidiCompoundSpec
       CovertDisplayCompoundSpec
+      EmojiZwjIntegritySpec
       Utf8Spec
       Utf16Spec
       Utf32Spec

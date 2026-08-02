@@ -1,5 +1,5 @@
 {
-  "module_steps": 249,
+  "module_steps": 262,
   "preset": "product",
   "roots": [
     {
@@ -33,9 +33,9 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 5483607,
-      "decide_kernel": 527,
-      "modules": 123,
+      "bytes": 5429226,
+      "decide_kernel": 523,
+      "modules": 121,
       "row_refs": 2739,
       "stage": "stage-1-generated-base"
     },
@@ -44,10 +44,10 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 275197,
-      "decide_kernel": 63,
+      "bytes": 277245,
+      "decide_kernel": 69,
       "modules": 15,
-      "row_refs": 127,
+      "row_refs": 135,
       "stage": "stage-2-normalization-runtime"
     },
     {
@@ -55,10 +55,10 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 547529,
-      "decide_kernel": 163,
-      "modules": 41,
-      "row_refs": 18,
+      "bytes": 561261,
+      "decide_kernel": 132,
+      "modules": 43,
+      "row_refs": 24,
       "stage": "stage-3-runtime-property-tables"
     },
     {
@@ -77,9 +77,9 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 3568139,
-      "decide_kernel": 240,
-      "modules": 69,
+      "bytes": 4137250,
+      "decide_kernel": 282,
+      "modules": 82,
       "row_refs": 2,
       "stage": "stage-5-product-domain"
     }

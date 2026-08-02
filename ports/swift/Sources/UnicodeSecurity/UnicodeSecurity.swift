@@ -46,6 +46,7 @@ public enum Family {
     public static let hashInputStability = "hash-input-stability"
     public static let aiWatermarkDetectability = "ai-watermark-detectability"
     public static let streamSafeViolation = "stream-safe-violation"
+    public static let emojiZwjIntegrity = "emoji-zwj-integrity"
 }
 
 public struct Finding: Equatable {
@@ -88,6 +89,8 @@ private var casedRangesCache: [(Int, Int)]?
 private var softDottedRangesCache: [(Int, Int)]?
 private var bip39WordlistCache: [String: Set<[Int]>]?
 private var emojiRangesCache: [(Int, Int)]?
+private var emojiZwjSequencesCache: [[Int]]?
+private var emojiZwjAlphabetCache: Set<Int>?
 
 public func scan(profile: String, mode: String, input: [Int]) -> Verdict {
     let codepoints = input.map(ensureCodepoint)
@@ -269,7 +272,9 @@ private func reasonCode(family: String, subThreat: String) -> String {
 }
 
 private func layer(_ family: String) -> String {
-    if family == Family.homoglyphConfusable || family == Family.mixedScriptAdmissibility {
+    if family == Family.homoglyphConfusable || family == Family.mixedScriptAdmissibility
+        || family == Family.emojiZwjIntegrity
+    {
         return "I"
     }
     if family == Family.rtlInjection {
@@ -1625,6 +1630,7 @@ private let pinnedTableDigests: [String: String] = [
     "DerivedCoreProperties.txt": "24c7fed1195c482faaefd5c1e7eb821c5ee1fb6de07ecdbaa64b56a99da22c08",
     "SpecialCasing.txt": "efc25faf19de21b92c1194c111c932e03d2a5eaf18194e33f1156e96de4c9588",
     "emoji-data.txt": "2cb2bb9455cda83e8481541ecf5b6dfda66a3bb89efa3fa7c5297eccf607b72b",
+    "emoji-zwj-sequences.txt": "5b25441daed2322b068c5e70cda522946a4f0274df864445a1965a92e5fc5cad",
     "bip39/chinese_simplified.txt": "5c5942792bd8340cb8b27cd592f1015edf56a8c5b26276ee18a482428e7c5726",
     "bip39/chinese_traditional.txt": "417b26b3d8500a4ae3d59717d7011952db6fc2fb84b807f3f94ac734e89c1b5f",
     "bip39/czech.txt": "7e80e161c3e93d9554c2efb78d4e3cebf8fc727e9c52e03b83b94406bdcc95fc",
@@ -3376,4 +3382,303 @@ public func streamSafeViolationDetect(_ input: [Int]) -> StreamSafeViolationVerd
 /// `unicode.security.F.stream-safe-violation.<tag>`.
 public func streamSafeViolationReasonCode(_ subThreat: String) -> String {
     reasonCode(family: Family.streamSafeViolation, subThreat: subThreat)
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// emoji-zwj-integrity — malformed / unsanctioned emoji ZWJ-sequence
+// detection per UTS #51 (the identity-layer detector I3).
+//
+// Direct port of Unicode/Security/Identity/EmojiZwjIntegrity.lean, mirroring
+// the verified Rust reference. An adversary crafts an emoji-shaped codepoint
+// sequence containing one or more U+200D ZERO WIDTH JOINERs but violating the
+// sanctioned RGI ZWJ-sequence shape — exceeding the RGI length cap, joining a
+// non-emoji codepoint, emitting adjacent ZWJ pairs, or overflowing the
+// skin-tone count. Any non-RGI ZWJ-containing sequence is renderer-dependent,
+// and that renderer divergence is the attack surface.
+//
+// Sanctioning data. UTS #51 defines the RGI ZWJ sequences in
+// emoji-zwj-sequences.txt, bundled in the port's own Resources/Data tree
+// (never a host emoji library). The registered set gives both the exact-match
+// membership test (emojiZwjIsRegisteredSequence) and the ZWJ alphabet — every
+// distinct codepoint occurring at any position of any registered sequence,
+// excluding the joiner — which is the canonical "what may flank a ZWJ?"
+// predicate (emojiZwjIsEmojiTarget).
+// ─────────────────────────────────────────────────────────────────────
+
+/// Conservative cap on the length of a sanctioned RGI ZWJ sequence
+/// (`maxRgiLength` in the Lean spec). The longest current entry (a four-person
+/// family with skin tones) reaches ~13-14 codepoints; 16 is a safe upper bound.
+public let emojiZwjMaxRgiLength: Int = 16
+
+/// The ZERO WIDTH JOINER codepoint.
+public let emojiZwjZwj: Int = 0x200D
+
+/// Sub-threat enumeration for emoji-zwj-integrity, in priority order.
+public enum EmojiZwjIntegritySubThreat: Equatable {
+    /// ZWJ-ZWJ adjacency; `positions` are the first ZWJ of each adjacent pair.
+    case doubleZwj(positions: [Int])
+    /// A ZWJ flanked by a non-emoji codepoint (or sitting at an input edge).
+    /// `nonEmojiCp` is the offending codepoint (0 for an edge ZWJ).
+    case nonEmojiInjection(zwjPos: Int, nonEmojiCp: Int)
+    /// The sequence is longer than `emojiZwjMaxRgiLength`.
+    case overLength(length: Int, maxLength: Int)
+    /// Five or more skin-tone modifiers (the family-emoji maximum is four).
+    case skinToneOverflow(count: Int)
+    /// ZWJs are present and no other sub-threat matched, but the sequence is
+    /// not a registered RGI ZWJ sequence.
+    case unregisteredSequence(chainLen: Int)
+
+    /// Fixture-row tag string for this sub-threat (matches `SubThreat.tag`).
+    public var tag: String {
+        switch self {
+        case .doubleZwj: return "DoubleZWJ"
+        case .nonEmojiInjection: return "NonEmojiInjection"
+        case .overLength: return "OverLength"
+        case .skinToneOverflow: return "SkinToneOverflow"
+        case .unregisteredSequence: return "UnregisteredSequence"
+        }
+    }
+}
+
+/// Top-level classification for emoji-zwj-integrity.
+public enum EmojiZwjIntegrityClassification: Equatable {
+    /// A well-formed or non-ZWJ input.
+    case clear
+    /// A hazard: the fired sub-threat, the implicated positions, and the
+    /// (always-empty for this detector) decoded-byte projection, kept for shape
+    /// parity with the Lean `Classification.hazard`.
+    case hazard(sub: EmojiZwjIntegritySubThreat, positions: [Int], decoded: [UInt8])
+
+    /// True iff the classification is `clear`.
+    public var isClear: Bool {
+        switch self {
+        case .clear: return true
+        case .hazard: return false
+        }
+    }
+
+    /// Human-facing tag for a hazard, or `nil` when clear.
+    public var tag: String? {
+        switch self {
+        case .clear: return nil
+        case .hazard(let sub, _, _): return sub.tag
+        }
+    }
+
+    /// Implicated positions (empty when clear).
+    public var positions: [Int] {
+        switch self {
+        case .clear: return []
+        case .hazard(_, let positions, _): return positions
+        }
+    }
+}
+
+/// The structured output of `emojiZwjIntegrityDetect` (mirrors the Lean `Verdict`).
+public struct EmojiZwjIntegrityVerdict: Equatable {
+    /// The scanned input codepoints.
+    public let input: [Int]
+    /// The classification verdict.
+    public let classify: EmojiZwjIntegrityClassification
+    /// Positions of every ZWJ in the input.
+    public let zwjPositions: [Int]
+    /// The chain length (0 when there are no ZWJs, else the input length).
+    public let chainLength: Int
+    /// True iff the input is exactly a registered RGI ZWJ sequence.
+    public let isRegisteredRgi: Bool
+    /// Count of skin-tone modifier codepoints (U+1F3FB..U+1F3FF).
+    public let skinToneCount: Int
+}
+
+/// Parse the registered RGI ZWJ sequences from emoji-zwj-sequences.txt via the
+/// port's own text-file reader (the same integrity-checked `readDataFile` the
+/// AiWatermark emoji-data reader uses — never a host emoji/ICU library). Each
+/// non-comment row is `<cp> <cp> ... ; RGI_Emoji_ZWJ_Sequence ; <desc> # <cmt>`;
+/// the codepoint list is the whitespace-separated hex field before the first `;`.
+private func emojiZwjSequences() -> [[Int]] {
+    if let cached = emojiZwjSequencesCache { return cached }
+    var out: [[Int]] = []
+    let raw = readDataFile("emoji-zwj-sequences.txt")
+    for rawLine in raw.split(separator: "\n", omittingEmptySubsequences: false) {
+        let body = String(
+            rawLine.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false).first ?? "")
+        let stripped = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        if stripped.isEmpty { continue }
+        let seqField = String(
+            stripped.split(separator: ";", maxSplits: 1, omittingEmptySubsequences: false).first ?? "")
+        var seq: [Int] = []
+        var parsedOk = true
+        for token in seqField.split(separator: " ", omittingEmptySubsequences: true) {
+            if let cp = parseHex(String(token)) {
+                seq.append(cp)
+            } else {
+                parsedOk = false
+                break
+            }
+        }
+        if parsedOk && !seq.isEmpty {
+            out.append(seq)
+        }
+    }
+    emojiZwjSequencesCache = out
+    return out
+}
+
+/// The ZWJ alphabet: every distinct codepoint occurring at any position of any
+/// registered RGI ZWJ sequence, excluding the joiner U+200D itself.
+private func emojiZwjAlphabet() -> Set<Int> {
+    if let cached = emojiZwjAlphabetCache { return cached }
+    var set: Set<Int> = []
+    for seq in emojiZwjSequences() {
+        for cp in seq where cp != emojiZwjZwj {
+            set.insert(cp)
+        }
+    }
+    emojiZwjAlphabetCache = set
+    return set
+}
+
+/// True iff `cps` is exactly a registered RGI ZWJ sequence.
+public func emojiZwjIsRegisteredSequence(_ cps: [Int]) -> Bool {
+    emojiZwjSequences().contains { $0 == cps }
+}
+
+/// True iff `cp` appears at some position of a registered RGI ZWJ sequence
+/// (the canonical "what may flank a ZWJ?" predicate).
+public func emojiZwjIsEmojiTarget(_ cp: Int) -> Bool {
+    emojiZwjAlphabet().contains(cp)
+}
+
+/// True iff `cp` is the ZWJ codepoint.
+public func emojiZwjIsZwj(_ cp: Int) -> Bool {
+    cp == emojiZwjZwj
+}
+
+/// True iff `cp` is an emoji skin-tone modifier (U+1F3FB..U+1F3FF).
+public func emojiZwjIsEmojiModifier(_ cp: Int) -> Bool {
+    cp >= 0x1F3FB && cp <= 0x1F3FF
+}
+
+/// Positions of every ZWJ in `input`.
+private func emojiZwjPositions(_ input: [Int]) -> [Int] {
+    input.indices.filter { emojiZwjIsZwj(input[$0]) }
+}
+
+/// Count of skin-tone modifier codepoints.
+private func emojiZwjSkinToneCount(_ input: [Int]) -> Int {
+    input.filter { emojiZwjIsEmojiModifier($0) }.count
+}
+
+/// Positions of the first ZWJ in each ZWJ-ZWJ adjacent pair.
+private func emojiZwjDoublePositions(_ input: [Int]) -> [Int] {
+    var out: [Int] = []
+    for idx in input.indices {
+        if idx + 1 < input.count {
+            let cp = input[idx]
+            let nextCp = input[idx + 1]
+            if emojiZwjIsZwj(cp) && emojiZwjIsZwj(nextCp) {
+                out.append(idx)
+            }
+        }
+    }
+    return out
+}
+
+/// The first ZWJ position where either neighbour is a non-emoji codepoint, as
+/// `(zwjPos, offendingCp)`. A ZWJ at an input edge (no preceding or no following
+/// codepoint) is itself an injection-class hazard, reported with offending
+/// codepoint 0.
+private func emojiZwjFirstNonEmojiInjection(_ input: [Int]) -> (Int, Int)? {
+    for idx in input.indices {
+        if !emojiZwjIsZwj(input[idx]) { continue }
+        let prev: Int? = idx == 0 ? nil : input[idx - 1]
+        let next: Int? = idx + 1 < input.count ? input[idx + 1] : nil
+        switch (prev, next) {
+        case (.some(let prevCp), .some(let nextCp)):
+            if !emojiZwjIsEmojiTarget(prevCp) {
+                return (idx, prevCp)
+            } else if !emojiZwjIsEmojiTarget(nextCp) {
+                return (idx, nextCp)
+            }
+        case (.none, .some), (.none, .none):
+            return (idx, 0)
+        case (.some, .none):
+            return (idx, 0)
+        }
+    }
+    return nil
+}
+
+/// The emoji-zwj-integrity detection function. Mirrors the Lean/Rust `detect`:
+/// short-circuits `clear` when there are no ZWJs and the skin-tone count is at
+/// most 1; a registered RGI sequence is always `clear`; otherwise the priority
+/// ladder DoubleZWJ -> NonEmojiInjection -> OverLength -> SkinToneOverflow ->
+/// UnregisteredSequence fires.
+public func emojiZwjIntegrityDetect(_ input: [Int]) -> EmojiZwjIntegrityVerdict {
+    let zwjs = emojiZwjPositions(input)
+    let stCount = emojiZwjSkinToneCount(input)
+    let isRgi = emojiZwjIsRegisteredSequence(input)
+    let chainLen = zwjs.isEmpty ? 0 : input.count
+
+    if zwjs.isEmpty && stCount <= 1 {
+        return EmojiZwjIntegrityVerdict(
+            input: input,
+            classify: .clear,
+            zwjPositions: [],
+            chainLength: 0,
+            isRegisteredRgi: isRgi,
+            skinToneCount: stCount)
+    }
+
+    let classification: EmojiZwjIntegrityClassification
+    if isRgi {
+        // Phase 3: a registered RGI sequence is always clear.
+        classification = .clear
+    } else {
+        // Phase 4.1: ZWJ-ZWJ adjacency.
+        let dzwj = emojiZwjDoublePositions(input)
+        if !dzwj.isEmpty {
+            classification = .hazard(
+                sub: .doubleZwj(positions: dzwj), positions: dzwj, decoded: [])
+        } else if let (zwjPos, offendCp) = emojiZwjFirstNonEmojiInjection(input) {
+            // Phase 4.2: ZWJ adjacent to a non-emoji codepoint.
+            classification = .hazard(
+                sub: .nonEmojiInjection(zwjPos: zwjPos, nonEmojiCp: offendCp),
+                positions: [zwjPos],
+                decoded: [])
+        } else if input.count > emojiZwjMaxRgiLength {
+            // Phase 4.3: length cap.
+            classification = .hazard(
+                sub: .overLength(length: input.count, maxLength: emojiZwjMaxRgiLength),
+                positions: [],
+                decoded: [])
+        } else if stCount >= 5 {
+            // Phase 4.4: skin-tone overflow.
+            classification = .hazard(
+                sub: .skinToneOverflow(count: stCount), positions: [], decoded: [])
+        } else if !zwjs.isEmpty {
+            // Phase 4.5: catch-all for unregistered ZWJ sequences.
+            classification = .hazard(
+                sub: .unregisteredSequence(chainLen: input.count),
+                positions: zwjs,
+                decoded: [])
+        } else {
+            classification = .clear
+        }
+    }
+
+    return EmojiZwjIntegrityVerdict(
+        input: input,
+        classify: classification,
+        zwjPositions: zwjs,
+        chainLength: chainLen,
+        isRegisteredRgi: isRgi,
+        skinToneCount: stCount)
+}
+
+/// Stable reason code for an emoji-zwj-integrity sub-threat tag, routed through
+/// the shared reason-code builder:
+/// `unicode.security.I.emoji-zwj-integrity.<tag>`.
+public func emojiZwjIntegrityReasonCode(_ subThreat: String) -> String {
+    reasonCode(family: Family.emojiZwjIntegrity, subThreat: subThreat)
 }

@@ -13,7 +13,7 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 4598403,
+      "bytes": 4567953,
       "decide_kernel": 520,
       "modules": 117,
       "row_refs": 2174,
@@ -24,10 +24,10 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 275197,
-      "decide_kernel": 63,
+      "bytes": 277245,
+      "decide_kernel": 69,
       "modules": 15,
-      "row_refs": 127,
+      "row_refs": 135,
       "stage": "stage-2-normalization-runtime"
     },
     {
@@ -35,8 +35,8 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 547529,
-      "decide_kernel": 163,
+      "bytes": 543700,
+      "decide_kernel": 128,
       "modules": 41,
       "row_refs": 18,
       "stage": "stage-3-runtime-property-tables"

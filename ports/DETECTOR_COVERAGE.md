@@ -41,18 +41,19 @@ Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 | StreamSafeViolation | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | IdentifierFormDrift | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
 | AdmissibilityFormDrift | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
-| EmojiZwjIntegrity | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| EmojiZwjIntegrity | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | SkinToneVariationForgery | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
 | FilenameDisguise | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
 | RendererDivergence | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
 | HashInputStability | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | AiWatermarkDetectability | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-**Totals:** rust 20/27 · all other vouched ports 19/27 · overall 305/432
+**Totals:** rust 21/27 · all other vouched ports 20/27 · overall 321/432
 cells. The 13 core families plus LocaleCaseInversion, NormalizationBomb,
-NfcIdempotenceWitness, HashInputStability, AiWatermarkDetectability, and
-StreamSafeViolation are complete and vouched across every listed port;
-everything below the line is spec-proven in Lean but not yet ported.
+NfcIdempotenceWitness, HashInputStability, AiWatermarkDetectability,
+StreamSafeViolation, and EmojiZwjIntegrity are complete and vouched across
+every listed port; everything below the line is spec-proven in Lean but not
+yet ported.
 
 ## Interrupted new-port inventory
 
@@ -72,7 +73,7 @@ fixture presence is not coverage.
 
 ## Remaining work
 
-8 detector families are unported. Each needs a reference implementation verified
+7 detector families are unported. Each needs a reference implementation verified
 against the Lean `detect_*` theorems, then a fan-out to all listed ports, each
 vouched.
 
@@ -80,8 +81,8 @@ vouched.
 (`display/source_display_divergence.rs`) — rust reference exists and is vouched;
 needs fan-out to the other 15 listed ports.
 
-**Not started in any port (7):** CaseExpansionMismatch,
-IdentifierFormDrift, AdmissibilityFormDrift, EmojiZwjIntegrity,
+**Not started in any port (6):** CaseExpansionMismatch,
+IdentifierFormDrift, AdmissibilityFormDrift,
 SkinToneVariationForgery, FilenameDisguise, RendererDivergence.
 
 **Bip39 scan-wiring (follow-up):** Bip39Canonical ships standalone and

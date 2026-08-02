@@ -13,7 +13,7 @@ import java.util.List;
  *
  * <p>Direct port of {@code Unicode/Security/Form/StreamSafeViolation.lean},
  * transliterated byte-faithfully from the verified Rust reference
- * {@code ports/rust/src/security/form/stream_safe_violation.rs}. UAX #15
+ * implementation. UAX #15
  * &sect;13 defines Stream-Safe Text Format as the remediation: insert U+034F
  * COMBINING GRAPHEME JOINER (a starter) after every 30 consecutive
  * non-starters, which bounds the normalization buffer. {@code

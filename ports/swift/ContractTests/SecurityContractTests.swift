@@ -22,6 +22,7 @@ struct SecurityContractRunner {
         try testHashInputStability()
         try testAiWatermarkDetectability()
         try testStreamSafeViolation()
+        try testEmojiZwjIntegrity()
         try testOpaqueBlob()
         print("clean: Swift contract tests pass")
     }
@@ -326,6 +327,126 @@ struct SecurityContractRunner {
             streamSafeViolationReasonCode("StreamSafeOverrun"),
             "unicode.security.F.stream-safe-violation.StreamSafeOverrun",
             "stream-safe-violation reason code")
+    }
+
+    // Pins emojiZwjIntegrityDetect against the ground-truth theorems in
+    // Unicode/Security/Identity/EmojiZwjIntegrity.lean and the verified Rust
+    // reference: the shared context-free fixture runs through detect, plus the
+    // 11 Rust spot-checks and 3 structural checks are asserted directly.
+    private static func testEmojiZwjIntegrity() throws {
+        // Shared context-free fixture through detect. required_findings carries
+        // full reason codes (unicode.security.I.emoji-zwj-integrity.<Tag>);
+        // an empty list means clear.
+        let fixture = try loadFixture("detectors/emoji_zwj_integrity.json")
+        try expectEqual(fixture["schema"] as? Int, 1, "emoji-zwj-integrity schema")
+        try expectEqual(try string(fixture, "family"), "emoji-zwj-integrity", "emoji-zwj-integrity family")
+        for entry in try array(fixture, "cases") {
+            let name = try string(entry, "name")
+            let input = try intArray(entry, "input")
+            let required = try stringArray(entry, "required_findings")
+            if let tag = emojiZwjIntegrityDetect(input).classify.tag {
+                let code = emojiZwjIntegrityReasonCode(tag)
+                try expect(required.contains(code), "emoji-zwj-integrity \(name): expected \(code) in \(required)")
+            } else {
+                try expect(required.isEmpty, "emoji-zwj-integrity \(name): expected clear, got \(required)")
+            }
+        }
+
+        // ── data-layer sanity (mirrors the Rust data-layer tests). ──────────
+        try expect(emojiZwjIsEmojiModifier(0x1F3FB), "emoji-zwj modifier low bound")
+        try expect(emojiZwjIsEmojiModifier(0x1F3FF), "emoji-zwj modifier high bound")
+        try expect(!emojiZwjIsEmojiModifier(0x1F3FA), "emoji-zwj modifier below range")
+        try expect(!emojiZwjIsEmojiModifier(0x1F600), "emoji-zwj modifier grinning excluded")
+        // U+2764 HEAVY BLACK HEART and U+1F468 MAN appear in registered RGI
+        // sequences; U+1F600 GRINNING FACE does not; the joiner is excluded.
+        try expect(emojiZwjIsEmojiTarget(0x2764), "emoji-zwj alphabet admits heart")
+        try expect(emojiZwjIsEmojiTarget(0x1F468), "emoji-zwj alphabet admits man")
+        try expect(!emojiZwjIsEmojiTarget(0x1F600), "emoji-zwj alphabet rejects grinning")
+        try expect(!emojiZwjIsEmojiTarget(emojiZwjZwj), "emoji-zwj alphabet excludes joiner")
+        // MAN + ZWJ + LAPTOP is registered; MAN + ZWJ + WOMAN is not.
+        try expect(
+            emojiZwjIsRegisteredSequence([0x1F468, 0x200D, 0x1F4BB]),
+            "emoji-zwj man-technologist registered")
+        try expect(
+            !emojiZwjIsRegisteredSequence([0x1F468, 0x200D, 0x1F469]),
+            "emoji-zwj man-woman unregistered")
+
+        // ── §5 detect spot checks (one per Rust/Lean theorem). ──────────────
+        // detect_empty_clear
+        let empty = emojiZwjIntegrityDetect([])
+        try expect(empty.classify.isClear, "emoji-zwj empty clear")
+        try expectEqual(empty.classify.tag, nil, "emoji-zwj empty tag")
+        try expectEqual(empty.zwjPositions, [], "emoji-zwj empty positions")
+        try expectEqual(empty.chainLength, 0, "emoji-zwj empty chainLength")
+        try expectEqual(empty.skinToneCount, 0, "emoji-zwj empty skinToneCount")
+        // detect_ascii_clear
+        try expect(
+            emojiZwjIntegrityDetect([0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear,
+            "emoji-zwj ascii clear")
+        // detect_plain_emoji_clear
+        try expect(emojiZwjIntegrityDetect([0x1F600]).classify.isClear, "emoji-zwj plain emoji clear")
+        // detect_one_skintone_clear
+        let oneSkin = emojiZwjIntegrityDetect([0x1F44B, 0x1F3FB])
+        try expect(oneSkin.classify.isClear, "emoji-zwj one skintone clear")
+        try expectEqual(oneSkin.skinToneCount, 1, "emoji-zwj one skintone count")
+        // detect_family_rgi_clear
+        let family = emojiZwjIntegrityDetect([0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466])
+        try expect(family.classify.isClear, "emoji-zwj family rgi clear")
+        try expect(family.isRegisteredRgi, "emoji-zwj family rgi registered")
+        // detect_double_zwj
+        let dbl = emojiZwjIntegrityDetect([0x1F600, 0x200D, 0x200D, 0x1F600])
+        try expectEqual(dbl.classify.tag, "DoubleZWJ", "emoji-zwj double zwj tag")
+        try expectEqual(dbl.classify.positions, [1], "emoji-zwj double zwj positions")
+        // detect_non_emoji_injection
+        try expectEqual(
+            emojiZwjIntegrityDetect([0x1F600, 0x200D, 0x0061]).classify.tag,
+            "NonEmojiInjection", "emoji-zwj non-emoji injection tag")
+        // detect_skin_tone_overflow
+        let overflow = emojiZwjIntegrityDetect([0x1F44B, 0x1F3FB, 0x1F3FC, 0x1F3FD, 0x1F3FE, 0x1F3FF])
+        try expectEqual(overflow.classify.tag, "SkinToneOverflow", "emoji-zwj skin overflow tag")
+        try expectEqual(overflow.skinToneCount, 5, "emoji-zwj skin overflow count")
+        // detect_man_laptop_registered_clear
+        try expect(
+            emojiZwjIntegrityDetect([0x1F468, 0x200D, 0x1F4BB]).classify.isClear,
+            "emoji-zwj man-laptop registered clear")
+        // detect_unregistered
+        try expectEqual(
+            emojiZwjIntegrityDetect([0x1F468, 0x200D, 0x1F469]).classify.tag,
+            "UnregisteredSequence", "emoji-zwj unregistered tag")
+        // detect_grinning_laptop_non_emoji_injection
+        try expectEqual(
+            emojiZwjIntegrityDetect([0x1F600, 0x200D, 0x1F4BB]).classify.tag,
+            "NonEmojiInjection", "emoji-zwj grinning-laptop injection tag")
+
+        // ── structural checks (follow from the priority ladder). ────────────
+        // A 9-man / 8-ZWJ chain (17 codepoints) exceeds the cap and, hitting no
+        // earlier sub-threat, surfaces as OverLength.
+        var overLen: [Int] = []
+        for i in 0..<9 {
+            if i > 0 { overLen.append(0x200D) }
+            overLen.append(0x1F468)
+        }
+        try expectEqual(overLen.count, 17, "emoji-zwj over-length input size")
+        let ol = emojiZwjIntegrityDetect(overLen)
+        try expectEqual(ol.classify.tag, "OverLength", "emoji-zwj over-length tag")
+        try expectEqual(
+            ol.classify,
+            .hazard(sub: .overLength(length: 17, maxLength: emojiZwjMaxRgiLength), positions: [], decoded: []),
+            "emoji-zwj over-length classification")
+        // A ZWJ at the trailing edge is an injection-class hazard at position 1.
+        let trailing = emojiZwjIntegrityDetect([0x1F468, 0x200D])
+        try expectEqual(trailing.classify.tag, "NonEmojiInjection", "emoji-zwj trailing zwj tag")
+        try expectEqual(trailing.classify.positions, [1], "emoji-zwj trailing zwj positions")
+        // Double-ZWJ wins over the unregistered catch-all (priority order).
+        try expectEqual(
+            emojiZwjIntegrityDetect([0x1F468, 0x200D, 0x200D, 0x1F466]).classify.tag,
+            "DoubleZWJ", "emoji-zwj double beats unregistered")
+
+        // Reason-code shape.
+        try expectEqual(
+            emojiZwjIntegrityReasonCode("DoubleZWJ"),
+            "unicode.security.I.emoji-zwj-integrity.DoubleZWJ",
+            "emoji-zwj reason code")
     }
 
     // Pins the covert-display-compound detector against the detect_* spot-check

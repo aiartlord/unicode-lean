@@ -4,8 +4,7 @@ defmodule UnicodeSecurity.Identity.EmojiZwjIntegrity do
   shapes per UTS #51 (the identity-layer detector I3).
 
   Direct port of `Unicode/Security/Identity/EmojiZwjIntegrity.lean` (via the
-  verified rust reference
-  `ports/rust/src/security/identity/emoji_zwj_integrity.rs`).
+  verified rust reference implementation).
 
   Threat model. An adversary crafts an emoji-shaped codepoint sequence
   containing one or more `U+200D` ZERO WIDTH JOINERs but violating the

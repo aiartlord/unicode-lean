@@ -14,7 +14,7 @@ import java.util.Optional;
  *
  * <p>Direct port of {@code Unicode/Security/Crypto/HashInputStability.lean},
  * transliterated byte-faithfully from the verified Rust reference
- * {@code ports/rust/src/security/crypto/hash_input_stability.rs}. The canonical
+ * implementation. The canonical
  * (hash-stable) form is {@code trimTrailing(toNfc(input))}, where
  * {@code trimTrailing} strips only ASCII whitespace {U+0020, U+0009, U+000A,
  * U+000D}; Unicode whitespace (U+00A0, U+2000..U+200A, U+3000) is content and is

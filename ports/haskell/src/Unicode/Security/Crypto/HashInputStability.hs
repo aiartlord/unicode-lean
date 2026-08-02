@@ -4,7 +4,7 @@ Description : Hash-input-stability detector — canonical hash-input form.
 
 Haskell port of @Unicode.Security.Crypto.HashInputStability@ from
 unicode-lean, transliterated from the verified Rust reference
-@ports/rust/src/security/crypto/hash_input_stability.rs@.
+implementation.
 
 Per UTS #39 §6.1 + RFC 4880 / 9580 + RFC 8785, an input hashed by a signer
 must be byte-identical to the input hashed by the verifier; if the two ends
