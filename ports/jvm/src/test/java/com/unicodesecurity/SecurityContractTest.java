@@ -24,6 +24,7 @@ public final class SecurityContractTest {
     testEmojiZwjIntegrity();
     testRendererDivergence();
     testFilenameDisguise();
+    testIdentifierFormDrift();
     testStreamSafeViolation();
     testConfusableBidiCompound();
     testSurrogateReassembly();
@@ -881,6 +882,110 @@ public final class SecurityContractTest {
     specVectors++;
 
     System.out.println("clean: JVM filename-disguise passes (" + fixtureCases
+        + " fixture cases + " + specVectors + " spec vectors)");
+  }
+
+  // Pins the boundary-layer IdentifierFormDrift detector against the verified
+  // Rust reference implementation. Two independent sources of truth are
+  // exercised: (a) the shared context-free fixture
+  // detectors/identifier_form_drift.json, run through IdentifierFormDrift.detect
+  // and checked against the fixture reason codes; (b) the detect spot-checks and
+  // the mid-string first-shift-position check transcribed one-for-one from the
+  // Rust test module. Both predicates the detector consumes are the port's own
+  // SHA-pinned pipeline, never a host normalization or identifier library: the
+  // UTS #39 Identifier_Status = Allowed set (Security.isIdAllowed over the
+  // bundled IdentifierStatus.txt) and the UAX #15 compatibility decomposition
+  // (Security.toNfkd). U+1D44E / U+FF21 / U+24B6 / U+FB01 / U+2163 are Restricted
+  // whose NFKD heads (a / A / A / f / I) are Allowed, so each shifts; ASCII
+  // letters and Greek α are Allowed with identity NFKD, so they clear.
+  private static void testIdentifierFormDrift() throws IOException {
+    // (a) Shared context-free fixture through detect.
+    Map<String, Object> detector = fixture("detectors/identifier_form_drift.json");
+    assertEquals(1, intValue(detector.get("schema")), "identifier-form-drift schema");
+    assertEquals("identifier-form-drift", string(detector, "family"), "identifier-form-drift family");
+    int fixtureCases = 0;
+    for (Map<String, Object> entry : objects(detector.get("cases"))) {
+      IdentifierFormDrift.Verdict verdict = IdentifierFormDrift.detect(ints(entry.get("input")));
+      String code = IdentifierFormDrift.reasonCode(verdict.classify());
+      List<String> required = strings(entry.get("required_findings"));
+      if (required.isEmpty()) {
+        assertEquals(null, code, "identifier-form-drift " + string(entry, "name") + " should be clear");
+      } else {
+        assertEquals(1, required.size(),
+            "identifier-form-drift " + string(entry, "name") + " single finding");
+        assertEquals(required.get(0), code, "identifier-form-drift " + string(entry, "name"));
+      }
+      fixtureCases++;
+    }
+
+    // (b) detect spot-checks and the mid-string first-shift-position check
+    // transcribed one-for-one from the Rust test module.
+    int specVectors = 0;
+
+    // detect_empty_clear
+    assertTrue(IdentifierFormDrift.detect(intList(new int[] {})).classify().isClear(),
+        "ifd empty clear");
+    specVectors++;
+
+    // detect_ascii_clear — "Hello"; every ASCII letter is Allowed, identity NFKD.
+    IdentifierFormDrift.Verdict ascii =
+        IdentifierFormDrift.detect(intList(new int[] {0x48, 0x65, 0x6C, 0x6C, 0x6F}));
+    assertTrue(ascii.classify().isClear(), "ifd ascii clear");
+    assertEquals(0, ascii.shiftCount(), "ifd ascii shift count");
+    specVectors++;
+
+    // detect_greek_alpha_clear — α is Allowed with identity NFKD.
+    assertTrue(IdentifierFormDrift.detect(intList(new int[] {0x03B1})).classify().isClear(),
+        "ifd greek alpha clear");
+    specVectors++;
+
+    // detect_math_italic_a_shift — U+1D44E Restricted, NFKD head U+0061 Allowed.
+    IdentifierFormDrift.Verdict math = IdentifierFormDrift.detect(intList(new int[] {0x1D44E}));
+    assertEquals("IdentifierStatusShift", math.classify().tag(), "ifd math italic a tag");
+    assertEquals(List.of(0), math.classify().positions(), "ifd math italic a positions");
+    assertEquals(1, math.shiftCount(), "ifd math italic a shift count");
+    specVectors++;
+
+    // detect_fullwidth_A_shift — U+FF21 Restricted, NFKD head U+0041 Allowed.
+    assertEquals("IdentifierStatusShift",
+        IdentifierFormDrift.detect(intList(new int[] {0xFF21})).classify().tag(),
+        "ifd fullwidth A tag");
+    specVectors++;
+
+    // detect_circled_A_shift — U+24B6 CIRCLED LATIN CAPITAL LETTER A → Restricted → Allowed (A).
+    assertEquals("IdentifierStatusShift",
+        IdentifierFormDrift.detect(intList(new int[] {0x24B6})).classify().tag(),
+        "ifd circled A tag");
+    specVectors++;
+
+    // detect_fi_ligature_shift — U+FB01 'ﬁ' ligature → Restricted → Allowed (f).
+    assertEquals("IdentifierStatusShift",
+        IdentifierFormDrift.detect(intList(new int[] {0xFB01})).classify().tag(),
+        "ifd fi ligature tag");
+    specVectors++;
+
+    // detect_roman_iv_shift — U+2163 ROMAN NUMERAL FOUR → Restricted → Allowed (I).
+    assertEquals("IdentifierStatusShift",
+        IdentifierFormDrift.detect(intList(new int[] {0x2163})).classify().tag(),
+        "ifd roman iv tag");
+    specVectors++;
+
+    // detect_reports_first_shift_position — "ab" + U+1D44E: positions 0,1 clear,
+    // position 2 shifts.
+    IdentifierFormDrift.Verdict mid =
+        IdentifierFormDrift.detect(intList(new int[] {0x61, 0x62, 0x1D44E}));
+    assertEquals(List.of(2), mid.classify().positions(), "ifd first shift position");
+    assertEquals(1, mid.shiftCount(), "ifd first shift count");
+    specVectors++;
+
+    // reason_code_is_stable — the composed reason code for the sole sub-threat.
+    assertEquals("unicode.security.X.identifier-form-drift.IdentifierStatusShift",
+        IdentifierFormDrift.reasonCode(
+            IdentifierFormDrift.detect(intList(new int[] {0x1D44E})).classify()),
+        "ifd reason code stable");
+    specVectors++;
+
+    System.out.println("clean: JVM identifier-form-drift passes (" + fixtureCases
         + " fixture cases + " + specVectors + " spec vectors)");
   }
 

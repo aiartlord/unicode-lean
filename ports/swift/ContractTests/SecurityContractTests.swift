@@ -25,6 +25,7 @@ struct SecurityContractRunner {
         try testEmojiZwjIntegrity()
         try testRendererDivergence()
         try testFilenameDisguise()
+        try testIdentifierFormDrift()
         try testOpaqueBlob()
         print("clean: Swift contract tests pass")
     }
@@ -608,6 +609,73 @@ struct SecurityContractRunner {
             filenameDisguiseReasonCode("RloFlip"),
             "unicode.security.D.filename-disguise.RloFlip",
             "filename-disguise reason code")
+    }
+
+    // Pins identifierFormDriftDetect against the ground-truth theorems in
+    // Unicode/Security/Boundary/IdentifierFormDrift.lean and the verified Rust
+    // reference: the shared context-free fixture runs through detect, plus the
+    // per-theorem spot checks and the mid-string first-shift-position case.
+    private static func testIdentifierFormDrift() throws {
+        // Shared context-free fixture through detect. required_findings carries
+        // full reason codes (unicode.security.X.identifier-form-drift.<Tag>);
+        // an empty list means clear.
+        let fixture = try loadFixture("detectors/identifier_form_drift.json")
+        try expectEqual(fixture["schema"] as? Int, 1, "identifier-form-drift schema")
+        try expectEqual(try string(fixture, "family"), "identifier-form-drift", "identifier-form-drift family")
+        for entry in try array(fixture, "cases") {
+            let name = try string(entry, "name")
+            let input = try intArray(entry, "input")
+            let required = try stringArray(entry, "required_findings")
+            if let tag = identifierFormDriftDetect(input).classify.tag {
+                let code = identifierFormDriftReasonCode(tag)
+                try expect(required.contains(code), "identifier-form-drift \(name): expected \(code) in \(required)")
+            } else {
+                try expect(required.isEmpty, "identifier-form-drift \(name): expected clear, got \(required)")
+            }
+        }
+
+        // ── §5 detect spot checks (one per Rust/Lean theorem). ──────────────
+        // detect_empty_clear
+        try expect(identifierFormDriftDetect([]).classify.isClear, "identifier-form-drift empty clear")
+        // detect_ascii_clear — "Hello"; every ASCII letter Allowed, identity NFKD.
+        let hello = identifierFormDriftDetect([0x48, 0x65, 0x6C, 0x6C, 0x6F])
+        try expect(hello.classify.isClear, "identifier-form-drift ascii clear")
+        try expectEqual(hello.shiftCount, 0, "identifier-form-drift ascii shift count")
+        // detect_greek_alpha_clear — α Allowed with identity NFKD.
+        try expect(identifierFormDriftDetect([0x03B1]).classify.isClear, "identifier-form-drift greek alpha clear")
+        // detect_math_italic_a_shift — U+1D44E Restricted, NFKD head U+0061 Allowed.
+        let mathA = identifierFormDriftDetect([0x1D44E])
+        try expectEqual(mathA.classify.tag, "IdentifierStatusShift", "identifier-form-drift math italic a tag")
+        try expectEqual(mathA.classify.positions, [0], "identifier-form-drift math italic a positions")
+        try expectEqual(mathA.shiftCount, 1, "identifier-form-drift math italic a shift count")
+        // detect_fullwidth_A_shift — U+FF21 Restricted, NFKD head U+0041 Allowed.
+        try expectEqual(
+            identifierFormDriftDetect([0xFF21]).classify.tag,
+            "IdentifierStatusShift", "identifier-form-drift fullwidth A tag")
+        // detect_circled_A_shift — U+24B6 Restricted, NFKD head U+0041 Allowed.
+        try expectEqual(
+            identifierFormDriftDetect([0x24B6]).classify.tag,
+            "IdentifierStatusShift", "identifier-form-drift circled A tag")
+        // detect_fi_ligature_shift — U+FB01 Restricted, NFKD head U+0066 Allowed.
+        try expectEqual(
+            identifierFormDriftDetect([0xFB01]).classify.tag,
+            "IdentifierStatusShift", "identifier-form-drift fi ligature tag")
+        // detect_roman_iv_shift — U+2163 Restricted, NFKD head U+0049 Allowed.
+        try expectEqual(
+            identifierFormDriftDetect([0x2163]).classify.tag,
+            "IdentifierStatusShift", "identifier-form-drift roman iv tag")
+
+        // detect_reports_first_shift_position — "ab" + U+1D44E: positions 0,1 are
+        // Allowed/identity, position 2 shifts.
+        let midString = identifierFormDriftDetect([0x61, 0x62, 0x1D44E])
+        try expectEqual(midString.classify.positions, [2], "identifier-form-drift mid-string positions")
+        try expectEqual(midString.shiftCount, 1, "identifier-form-drift mid-string shift count")
+
+        // Reason-code shape.
+        try expectEqual(
+            identifierFormDriftReasonCode("IdentifierStatusShift"),
+            "unicode.security.X.identifier-form-drift.IdentifierStatusShift",
+            "identifier-form-drift reason code")
     }
 
     // Pins the covert-display-compound detector against the detect_* spot-check

@@ -33,7 +33,8 @@ add_executable(unicode_cpp_tests
     stream_safe_violation_test.cpp
     surrogate_reassembly_test.cpp
     renderer_divergence_test.cpp
-    filename_disguise_test.cpp)
+    filename_disguise_test.cpp
+    identifier_form_drift_test.cpp)
 target_link_libraries(unicode_cpp_tests
     PRIVATE unicode_cpp::unicode_cpp doctest::doctest)
 

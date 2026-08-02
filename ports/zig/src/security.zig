@@ -12,6 +12,7 @@ const emoji_variation_sequences_raw = @embedFile("data/emoji-variation-sequences
 const emoji_data_raw = @embedFile("data/emoji-data.txt");
 const emoji_zwj_sequences_raw = @embedFile("data/emoji-zwj-sequences.txt");
 const derived_core_properties_raw = @embedFile("data/DerivedCoreProperties.txt");
+const identifier_status_raw = @embedFile("data/IdentifierStatus.txt");
 const MaxSkeletonLen = 128;
 
 pub const Action = enum {
@@ -3534,6 +3535,48 @@ fn isGraphemeExtend(cp: u32) bool {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// UTS #39 Identifier_Status = Allowed predicate.
+//
+// The port carries no precompiled Identifier_Status table, so the Allowed
+// set is derived at runtime from the bundled data/IdentifierStatus.txt (UCD
+// 17.0.0), scanned on each call exactly as isGraphemeExtend scans
+// DerivedCoreProperties.txt. Every non-comment row is
+// `<range> ; Identifier_Status # comment`; only the value Allowed is listed,
+// and by the table's `@missing: 0000..10FFFF; Restricted` default every code
+// point not covered by an Allowed row is Restricted. The predicate therefore
+// keeps rows whose value is exactly Allowed and reports membership. No host
+// identifier library is consulted.
+// ─────────────────────────────────────────────────────────────────────
+
+/// True iff cp has Identifier_Status = Allowed per the bundled
+/// data/IdentifierStatus.txt. Mirrors the port's runtime property-parse idiom
+/// (see hasGraphemeExtendProperty): split each row on ';', keep only rows whose
+/// value field is exactly Allowed, and test the code point against the row's
+/// single value or `lo..hi` range.
+fn isIdAllowed(cp: u32) bool {
+    var offset: usize = 0;
+    while (nextLine(identifier_status_raw, &offset)) |raw_line| {
+        const body = if (std.mem.indexOfScalar(u8, raw_line, '#')) |idx| raw_line[0..idx] else raw_line;
+        const stripped = trimAscii(body);
+        if (stripped.len == 0) continue;
+        var fields = std.mem.splitScalar(u8, stripped, ';');
+        const range_field = fields.next() orelse continue;
+        const status_field = fields.next() orelse continue;
+        if (!std.mem.eql(u8, trimAscii(status_field), "Allowed")) continue;
+        const range = trimAscii(range_field);
+        if (std.mem.indexOf(u8, range, "..")) |dot_idx| {
+            const lo = parseHexU32(trimAscii(range[0..dot_idx])) orelse continue;
+            const hi = parseHexU32(trimAscii(range[dot_idx + 2 ..])) orelse continue;
+            if (lo <= cp and cp <= hi) return true;
+        } else {
+            const single = parseHexU32(range) orelse continue;
+            if (single == cp) return true;
+        }
+    }
+    return false;
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // RendererDivergence detector (display layer D), mirroring
 // Unicode.Security.Display.RendererDivergence and its byte-faithful Rust port
 // ports/rust/src/security/display/renderer_divergence.rs.
@@ -4194,6 +4237,174 @@ pub const filename_disguise = struct {
             .bidi_control_count = bidi_count,
             .fullwidth_in_ext = fw_in_ext,
             .combining_in_ext = ext_in_ext,
+        };
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────
+// IdentifierFormDrift detector (boundary layer X), mirroring
+// Unicode.Security.Boundary.IdentifierFormDrift and its byte-faithful Rust
+// reference implementation.
+//
+// Threat model. A two-system bypass: an identity validator and a form
+// normaliser disagree about a codepoint. Stage A runs the UTS #39
+// Identifier_Status check before normalisation and rejects, say, U+1D44E
+// MATHEMATICAL ITALIC SMALL A (Restricted); stage B normalises first and then
+// runs the same check, seeing U+0061 'a' (Allowed) and accepting. The attacker
+// controls which stage processes the input and exploits the disagreement. The
+// same shape covers fullwidth (U+FF21), circled (U+24B6), ligature (U+FB01),
+// and Roman-numeral (U+2163) compatibility forms.
+//
+// The detector fires on the form transition itself — it reports the first input
+// position whose Identifier_Status differs from the Identifier_Status of that
+// codepoint's NFKD head, and the verdict carries the total shift count.
+//
+// It reuses the port's own tables — the UTS #39 Identifier_Status = Allowed
+// predicate (file-scope isIdAllowed, parsing the bundled
+// data/IdentifierStatus.txt) and the NFKD pipeline (file-scope toNFKD, UAX #15
+// compatibility decompose + canonical reorder) — never a host normalization or
+// identifier library.
+//
+// Sub-threat (direction-agnostic):
+//   IdentifierStatusShift — the first input position whose Identifier_Status
+//   differs from its NFKD-head's. There is exactly one sub-threat.
+// ─────────────────────────────────────────────────────────────────────
+
+pub const identifier_form_drift = struct {
+    /// The port's file-scope UTS #39 Identifier_Status = Allowed predicate,
+    /// bound here under a distinct alias so the reuse is explicit. A same-named
+    /// container method would shadow the file-scope declaration.
+    const idAllowedPredicate = isIdAllowed;
+
+    /// The port's file-scope UAX #15 NFKD normaliser, aliased for the same
+    /// reason. Returns null only on unbounded expansion (its buffer saturates),
+    /// which nfkdHeadAllowed treats as the empty case.
+    const nfkdNormalize = toNFKD;
+
+    // ── §1 Types ─────────────────────────────────────────────────────────
+
+    /// Sub-threat enumeration. Exactly one variant.
+    pub const SubThreat = union(enum) {
+        /// A codepoint at base_pos whose Identifier_Status differs from its
+        /// NFKD-head's (codepoint cp).
+        identifier_status_shift: struct { base_pos: usize, cp: u32 },
+
+        /// Human-facing classification tag for this sub-threat.
+        pub fn tag(self: SubThreat) []const u8 {
+            return switch (self) {
+                .identifier_status_shift => "IdentifierStatusShift",
+            };
+        }
+
+        /// Fully-qualified reason code for this sub-threat.
+        pub fn reasonCode(self: SubThreat) []const u8 {
+            return switch (self) {
+                .identifier_status_shift => "unicode.security.X.identifier-form-drift.IdentifierStatusShift",
+            };
+        }
+    };
+
+    /// Top-level classification (clear = no status shift present).
+    pub const Classification = union(enum) {
+        /// No status shift present.
+        clear,
+        /// A status shift fired: the sub-threat, the implicated positions, and
+        /// the (always-empty for this detector) decoded-byte projection, kept
+        /// for shape parity with the Lean Classification.hazard.
+        hazard: struct { sub: SubThreat, positions: [1]usize, decoded: []const u8 = &[_]u8{} },
+
+        /// True iff the classification is clear.
+        pub fn isClear(self: Classification) bool {
+            return switch (self) {
+                .clear => true,
+                .hazard => false,
+            };
+        }
+
+        /// Human-facing tag for a hazard, or null when clear.
+        pub fn tag(self: Classification) ?[]const u8 {
+            return switch (self) {
+                .clear => null,
+                .hazard => |h| h.sub.tag(),
+            };
+        }
+
+        /// Fully-qualified reason code for a hazard, or null when clear.
+        pub fn reasonCode(self: Classification) ?[]const u8 {
+            return switch (self) {
+                .clear => null,
+                .hazard => |h| h.sub.reasonCode(),
+            };
+        }
+
+        /// Implicated positions (empty when clear).
+        pub fn positions(self: *const Classification) []const usize {
+            switch (self.*) {
+                .clear => return &[_]usize{},
+                .hazard => return self.hazard.positions[0..1],
+            }
+        }
+    };
+
+    /// Verdict — the structured output of detect (mirrors the Lean Verdict).
+    pub const Verdict = struct {
+        /// The scanned input codepoints.
+        input: []const u32,
+        /// The classification verdict.
+        classify: Classification,
+        /// Total count of positions whose status shifts under NFKD.
+        shift_count: usize,
+    };
+
+    // ── §2 Core predicates (reuse the port's own tables) ─────────────────
+
+    /// Identifier_Status = Allowed of the first codepoint of cp's NFKD form, or
+    /// cp's own status when NFKD is empty (defensive — toNFKD is total and
+    /// returns at least [cp]; it yields null only on buffer saturation, handled
+    /// here as the empty case). Reuses the port's own predicate and NFKD.
+    pub fn nfkdHeadAllowed(cp: u32) bool {
+        if (nfkdNormalize(&[_]u32{cp})) |nfkd| {
+            if (nfkd.len > 0) return idAllowedPredicate(nfkd.items[0]);
+        }
+        return idAllowedPredicate(cp);
+    }
+
+    // ── §3 Sub-detectors ─────────────────────────────────────────────────
+
+    /// Position and codepoint of the first input position whose isIdAllowed
+    /// differs from its NFKD-head's.
+    const ShiftHit = struct { pos: usize, cp: u32 };
+    fn firstStatusShift(input: []const u32) ?ShiftHit {
+        for (input, 0..) |cp, idx| {
+            if (idAllowedPredicate(cp) != nfkdHeadAllowed(cp)) {
+                return ShiftHit{ .pos = idx, .cp = cp };
+            }
+        }
+        return null;
+    }
+
+    /// Total count of input positions where the per-cp status shifts under NFKD.
+    fn statusShiftCount(input: []const u32) usize {
+        var count: usize = 0;
+        for (input) |cp| {
+            if (idAllowedPredicate(cp) != nfkdHeadAllowed(cp)) count += 1;
+        }
+        return count;
+    }
+
+    // ── §4 Top-level detection ───────────────────────────────────────────
+
+    /// The IdentifierFormDrift detection function.
+    pub fn detect(input: []const u32) @This().Verdict {
+        const classification: Classification = if (firstStatusShift(input)) |hit| .{ .hazard = .{
+            .sub = .{ .identifier_status_shift = .{ .base_pos = hit.pos, .cp = hit.cp } },
+            .positions = [1]usize{hit.pos},
+        } } else .{ .clear = {} };
+
+        return @This().Verdict{
+            .input = input,
+            .classify = classification,
+            .shift_count = statusShiftCount(input),
         };
     }
 };
@@ -5959,4 +6170,102 @@ test "filename-disguise structural checks" {
         try std.testing.expect(v.fullwidth_in_ext == 1);
         try std.testing.expect(v.bidi_control_count == 1);
     }
+}
+
+const Ifd = identifier_form_drift;
+
+fn ifdTag(input: []const u32) ?[]const u8 {
+    return Ifd.detect(input).classify.tag();
+}
+
+fn ifdReason(input: []const u32) ?[]const u8 {
+    return Ifd.detect(input).classify.reasonCode();
+}
+
+fn expectIfdReason(input: []const u32, want: []const u8) !void {
+    const r = ifdReason(input);
+    try std.testing.expect(r != null);
+    try std.testing.expectEqualStrings(want, r.?);
+}
+
+test "identifier-form-drift predicate reuse" {
+    // The detector reuses the port's own file-scope predicates, aliased inside
+    // the struct: the UTS #39 Identifier_Status = Allowed set and the UAX #15
+    // NFKD normaliser. Spot-check each alias.
+    try std.testing.expect(Ifd.idAllowedPredicate(0x0061)); // 'a' — Allowed
+    try std.testing.expect(Ifd.idAllowedPredicate(0x03B1)); // Greek α — Allowed
+    try std.testing.expect(!Ifd.idAllowedPredicate(0x1D44E)); // math italic a — Restricted
+    try std.testing.expect(!Ifd.idAllowedPredicate(0xFF21)); // fullwidth A — Restricted
+    // NFKD head of U+1D44E is U+0061 'a' (Allowed); of U+FF21 is U+0041 'A'.
+    try std.testing.expect(Ifd.nfkdHeadAllowed(0x1D44E));
+    try std.testing.expect(Ifd.nfkdHeadAllowed(0xFF21));
+    // Allowed codepoints with identity NFKD keep their Allowed head.
+    try std.testing.expect(Ifd.nfkdHeadAllowed(0x0061));
+    try std.testing.expect(Ifd.nfkdHeadAllowed(0x03B1));
+}
+
+test "identifier-form-drift shared fixture vectors" {
+    // The 8 rows of the shared context-free fixture, inputs given as decimal
+    // codepoints. Clear rows assert isClear; hazard rows assert the fully
+    // qualified reason code from required_findings.
+
+    // empty-clear.
+    {
+        const v = Ifd.detect(&[_]u32{});
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expectEqual(@as(?[]const u8, null), v.classify.tag());
+        try std.testing.expectEqualSlices(usize, &[_]usize{}, v.classify.positions());
+    }
+    // ascii-hello-clear (72,101,108,108,111).
+    try std.testing.expect(Ifd.detect(&[_]u32{ 72, 101, 108, 108, 111 }).classify.isClear());
+    // greek-alpha-clear (945).
+    try std.testing.expect(Ifd.detect(&[_]u32{945}).classify.isClear());
+    // math-italic-a-shift (119886 = U+1D44E).
+    try expectIfdReason(&[_]u32{119886}, "unicode.security.X.identifier-form-drift.IdentifierStatusShift");
+    // fullwidth-A-shift (65313 = U+FF21).
+    try expectIfdReason(&[_]u32{65313}, "unicode.security.X.identifier-form-drift.IdentifierStatusShift");
+    // circled-A-shift (9398 = U+24B6).
+    try expectIfdReason(&[_]u32{9398}, "unicode.security.X.identifier-form-drift.IdentifierStatusShift");
+    // fi-ligature-shift (64257 = U+FB01).
+    try expectIfdReason(&[_]u32{64257}, "unicode.security.X.identifier-form-drift.IdentifierStatusShift");
+    // roman-iv-shift (8547 = U+2163).
+    try expectIfdReason(&[_]u32{8547}, "unicode.security.X.identifier-form-drift.IdentifierStatusShift");
+}
+
+test "identifier-form-drift detect spot checks" {
+    // The Rust §5 detect spot checks (one per Lean theorem).
+
+    // detect_empty_clear.
+    try std.testing.expect(Ifd.detect(&[_]u32{}).classify.isClear());
+    // detect_ascii_clear — "Hello"; every ASCII letter is Allowed, identity NFKD.
+    {
+        const v = Ifd.detect(&[_]u32{ 0x48, 0x65, 0x6C, 0x6C, 0x6F });
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expectEqual(@as(usize, 0), v.shift_count);
+    }
+    // detect_greek_alpha_clear — α is Allowed with identity NFKD.
+    try std.testing.expect(Ifd.detect(&[_]u32{0x03B1}).classify.isClear());
+    // detect_math_italic_a_shift — U+1D44E Restricted, NFKD head U+0061 Allowed.
+    {
+        const v = Ifd.detect(&[_]u32{0x1D44E});
+        try std.testing.expectEqualStrings("IdentifierStatusShift", v.classify.tag().?);
+        try std.testing.expectEqualSlices(usize, &[_]usize{0}, v.classify.positions());
+        try std.testing.expectEqual(@as(usize, 1), v.shift_count);
+    }
+    // detect_fullwidth_A_shift — U+FF21 Restricted, NFKD head U+0041 Allowed.
+    try std.testing.expectEqualStrings("IdentifierStatusShift", ifdTag(&[_]u32{0xFF21}).?);
+    // detect_circled_A_shift — U+24B6 → Restricted → Allowed (A).
+    try std.testing.expectEqualStrings("IdentifierStatusShift", ifdTag(&[_]u32{0x24B6}).?);
+    // detect_fi_ligature_shift — U+FB01 'ﬁ' → Restricted → Allowed (f).
+    try std.testing.expectEqualStrings("IdentifierStatusShift", ifdTag(&[_]u32{0xFB01}).?);
+    // detect_roman_iv_shift — U+2163 ROMAN NUMERAL FOUR → Restricted → Allowed (I).
+    try std.testing.expectEqualStrings("IdentifierStatusShift", ifdTag(&[_]u32{0x2163}).?);
+}
+
+test "identifier-form-drift reports first shift position" {
+    // A shift embedded mid-string reports the first shifting position, not 0.
+    // "ab" + U+1D44E: positions 0,1 are Allowed/identity, position 2 shifts.
+    const v = Ifd.detect(&[_]u32{ 0x61, 0x62, 0x1D44E });
+    try std.testing.expectEqualSlices(usize, &[_]usize{2}, v.classify.positions());
+    try std.testing.expectEqual(@as(usize, 1), v.shift_count);
 }

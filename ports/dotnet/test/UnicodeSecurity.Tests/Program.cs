@@ -6,6 +6,7 @@ using Awd = UnicodeSecurity.Security.AiWatermarkDetectability;
 using Ezwj = UnicodeSecurity.Security.EmojiZwjIntegrity;
 using Rd = UnicodeSecurity.Security.RendererDivergence;
 using Fd = UnicodeSecurity.Security.FilenameDisguise;
+using Ifd = UnicodeSecurity.Security.IdentifierFormDrift;
 
 TestCovertDisplayCompoundVectors();
 TestConfusableBidiCompoundVectors();
@@ -32,6 +33,8 @@ TestRendererDivergenceFixture();
 TestRendererDivergenceSpotChecks();
 TestFilenameDisguiseFixture();
 TestFilenameDisguiseSpotChecks();
+TestIdentifierFormDriftFixture();
+TestIdentifierFormDriftSpotChecks();
 TestStreamSafeViolationFixture();
 TestStreamSafeViolationBoundary();
 TestUtf8Blob();
@@ -1031,6 +1034,79 @@ static void TestFilenameDisguiseFixture()
         cases++;
     }
     Console.WriteLine($"clean: .NET filename-disguise {cases}-case shared-fixture detect passes");
+}
+static void TestIdentifierFormDriftFixture()
+{
+    using var detector = LoadFixture("detectors/identifier_form_drift.json");
+    AssertEqual(1, detector.RootElement.GetProperty("schema").GetInt32(), "identifier-form-drift schema");
+    AssertEqual("identifier-form-drift", String(detector.RootElement, "family"), "identifier-form-drift family");
+    var cases = 0;
+    foreach (var entry in detector.RootElement.GetProperty("cases").EnumerateArray())
+    {
+        var name = String(entry, "name");
+        var input = Ints(entry.GetProperty("input"));
+        var verdict = Ifd.Detect(input);
+        var required = Strings(entry.GetProperty("required_findings")).ToList();
+        if (required.Count == 0)
+        {
+            AssertTrue(verdict.Classify.IsClear, $"identifier-form-drift {name}: expected clear, got {verdict.Classify.Tag}");
+        }
+        else
+        {
+            foreach (var code in required)
+            {
+                AssertEqual<string?>(code, verdict.Classify.ReasonCode, $"identifier-form-drift {name}: reason code");
+            }
+        }
+        cases++;
+    }
+    Console.WriteLine($"clean: .NET identifier-form-drift {cases}-case shared-fixture detect passes");
+}
+static void TestIdentifierFormDriftSpotChecks()
+{
+    string? Tag(int[] input) => Ifd.Detect(input).Classify.Tag;
+
+    // ── data-layer sanity (reused UTS #39 Identifier_Status + NFKD) ───────
+    AssertTrue(Ifd.IsIdAllowed(0x0061), "ifd allowed lowercase-a");
+    AssertTrue(Ifd.IsIdAllowed(0x03B1), "ifd allowed greek-alpha");
+    AssertTrue(!Ifd.IsIdAllowed(0x1D44E), "ifd restricted math-italic-a");
+    AssertTrue(!Ifd.IsIdAllowed(0xFF21), "ifd restricted fullwidth-A");
+    AssertTrue(Ifd.NfkdHeadAllowed(0x1D44E), "ifd nfkd-head math-italic-a allowed (→ a)");
+    AssertTrue(Ifd.NfkdHeadAllowed(0xFF21), "ifd nfkd-head fullwidth-A allowed (→ A)");
+
+    // ── §4 detect spot checks (one per Lean/Rust theorem) ─────────────────
+    // detect_empty_clear
+    AssertTrue(Ifd.Detect(System.Array.Empty<int>()).Classify.IsClear, "ifd empty clear");
+    // detect_ascii_clear — "Hello"; every ASCII letter is Allowed, identity NFKD.
+    var hello = Ifd.Detect(new[] { 0x48, 0x65, 0x6C, 0x6C, 0x6F });
+    AssertTrue(hello.Classify.IsClear, "ifd ascii-hello clear");
+    AssertEqual(0, hello.ShiftCount, "ifd ascii-hello shift-count");
+    // detect_greek_alpha_clear — α is Allowed with identity NFKD.
+    AssertTrue(Ifd.Detect(new[] { 0x03B1 }).Classify.IsClear, "ifd greek-alpha clear");
+    // detect_math_italic_a_shift — U+1D44E Restricted, NFKD head U+0061 Allowed.
+    var mia = Ifd.Detect(new[] { 0x1D44E });
+    AssertEqual<string?>("IdentifierStatusShift", mia.Classify.Tag, "ifd math-italic-a tag");
+    AssertSequence(new[] { 0 }, mia.Classify.Positions, "ifd math-italic-a positions");
+    AssertEqual(1, mia.ShiftCount, "ifd math-italic-a shift-count");
+    // detect_fullwidth_A_shift — U+FF21 Restricted, NFKD head U+0041 Allowed.
+    AssertEqual<string?>("IdentifierStatusShift", Tag(new[] { 0xFF21 }), "ifd fullwidth-A tag");
+    // detect_circled_A_shift — U+24B6 CIRCLED LATIN CAPITAL LETTER A → A.
+    AssertEqual<string?>("IdentifierStatusShift", Tag(new[] { 0x24B6 }), "ifd circled-A tag");
+    // detect_fi_ligature_shift — U+FB01 'ﬁ' ligature → f.
+    AssertEqual<string?>("IdentifierStatusShift", Tag(new[] { 0xFB01 }), "ifd fi-ligature tag");
+    // detect_roman_iv_shift — U+2163 ROMAN NUMERAL FOUR → I.
+    AssertEqual<string?>("IdentifierStatusShift", Tag(new[] { 0x2163 }), "ifd roman-iv tag");
+    // detect_reports_first_shift_position — "ab" + U+1D44E: first shift at position 2.
+    var mid = Ifd.Detect(new[] { 0x61, 0x62, 0x1D44E });
+    AssertSequence(new[] { 2 }, mid.Classify.Positions, "ifd mid-string positions");
+    AssertEqual(1, mid.ShiftCount, "ifd mid-string shift-count");
+    // reason_code_is_stable — the composed reason code for the sole sub-threat.
+    AssertEqual<string?>(
+        "unicode.security.X.identifier-form-drift.IdentifierStatusShift",
+        mia.Classify.ReasonCode,
+        "ifd reason code");
+
+    Console.WriteLine("clean: .NET identifier-form-drift detect spot-check passes");
 }
 static void TestFilenameDisguiseSpotChecks()
 {

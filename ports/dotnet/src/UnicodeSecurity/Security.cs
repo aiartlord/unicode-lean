@@ -61,6 +61,7 @@ public static partial class Security
         public const string EmojiZwjIntegrity = "emoji-zwj-integrity";
         public const string RendererDivergence = "renderer-divergence";
         public const string FilenameDisguise = "filename-disguise";
+        public const string IdentifierFormDrift = "identifier-form-drift";
     }
 
     public sealed record Finding(
@@ -240,7 +241,7 @@ public static partial class Security
         {
             Family.HomoglyphConfusable or Family.MixedScriptAdmissibility or Family.EmojiZwjIntegrity => "I",
             Family.RtlInjection or Family.RendererDivergence or Family.FilenameDisguise => "D",
-            Family.ConfusableBidiCompound or Family.CovertDisplayCompound => "X",
+            Family.ConfusableBidiCompound or Family.CovertDisplayCompound or Family.IdentifierFormDrift => "X",
             Family.HashInputStability or Family.AiWatermarkDetectability => "K",
             Family.StreamSafeViolation => "F",
             _ => "C",
@@ -1720,6 +1721,7 @@ public static partial class Security
             ["UnicodeData.txt"] = "2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c",
             ["CompositionExclusions.txt"] = "2f239196ef3b5b61db5cc476e9bd80f534d15aa1b74e1be1dea5d042a344c85f",
             ["DerivedCoreProperties.txt"] = "24c7fed1195c482faaefd5c1e7eb821c5ee1fb6de07ecdbaa64b56a99da22c08",
+            ["IdentifierStatus.txt"] = "617228a16da13850bf8af28b6cd08f5e9b6595d2eb60404fe6eee2c85b4e4a35",
             ["SpecialCasing.txt"] = "efc25faf19de21b92c1194c111c932e03d2a5eaf18194e33f1156e96de4c9588",
             ["emoji-data.txt"] = "2cb2bb9455cda83e8481541ecf5b6dfda66a3bb89efa3fa7c5297eccf607b72b",
             ["emoji-zwj-sequences.txt"] = "5b25441daed2322b068c5e70cda522946a4f0274df864445a1965a92e5fc5cad",

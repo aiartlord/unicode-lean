@@ -221,6 +221,7 @@ go_files=(
 
 zig_files=(
   "${homoglyph_files[@]}"
+  IdentifierStatus.txt
   UnicodeData.txt
   DerivedBidiClass.txt
   CompositionExclusions.txt
@@ -264,6 +265,7 @@ typescript_files=(
 
 jvm_files=(
   "${homoglyph_files[@]}"
+  IdentifierStatus.txt
   DerivedBidiClass.txt
   UnicodeData.txt
   CompositionExclusions.txt
@@ -283,6 +285,7 @@ jvm_files=(
 
 dotnet_files=(
   "${homoglyph_files[@]}"
+  IdentifierStatus.txt
   DerivedBidiClass.txt
   UnicodeData.txt
   CompositionExclusions.txt
@@ -302,6 +305,7 @@ dotnet_files=(
 
 swift_files=(
   "${homoglyph_files[@]}"
+  IdentifierStatus.txt
   DerivedBidiClass.txt
   UnicodeData.txt
   CompositionExclusions.txt

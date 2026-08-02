@@ -49,6 +49,7 @@ public enum Family {
     public static let emojiZwjIntegrity = "emoji-zwj-integrity"
     public static let rendererDivergence = "renderer-divergence"
     public static let filenameDisguise = "filename-disguise"
+    public static let identifierFormDrift = "identifier-form-drift"
 }
 
 public struct Finding: Equatable {
@@ -89,6 +90,7 @@ private var specialCasingCache: [Int: [CasingRow]]?
 private var simpleLowerCache: [Int: Int]?
 private var casedRangesCache: [(Int, Int)]?
 private var softDottedRangesCache: [(Int, Int)]?
+private var identifierAllowedRangesCache: [(Int, Int)]?
 private var bip39WordlistCache: [String: Set<[Int]>]?
 private var emojiRangesCache: [(Int, Int)]?
 private var emojiZwjSequencesCache: [[Int]]?
@@ -285,7 +287,9 @@ private func layer(_ family: String) -> String {
     {
         return "D"
     }
-    if family == Family.confusableBidiCompound || family == Family.covertDisplayCompound {
+    if family == Family.confusableBidiCompound || family == Family.covertDisplayCompound
+        || family == Family.identifierFormDrift
+    {
         return "X"
     }
     if family == Family.hashInputStability || family == Family.aiWatermarkDetectability {
@@ -983,6 +987,24 @@ private func inCasingRanges(_ ranges: [(Int, Int)], _ cp: Int) -> Bool {
     ranges.contains { cp >= $0.0 && cp <= $0.1 }
 }
 
+// UTS #39 Identifier_Status = Allowed range set, parsed from IdentifierStatus.txt
+// (read through the same integrity-checked `readDataFile` the other tables use).
+// The file enumerates only the Allowed codepoints (one value column, "Allowed");
+// every codepoint absent from these ranges is Restricted. This is the shared
+// primitive that IdentifierFormDrift consults; it mirrors the from-tables ports'
+// `is_id_allowed` predicate.
+private func identifierAllowedRanges() -> [(Int, Int)] {
+    if let cached = identifierAllowedRangesCache { return cached }
+    let parsed = parseDerivedProperty(readDataFile("IdentifierStatus.txt"), "Allowed")
+    identifierAllowedRangesCache = parsed
+    return parsed
+}
+
+/// True iff `cp` has UTS #39 `Identifier_Status = Allowed`.
+private func isIdAllowed(_ cp: Int) -> Bool {
+    inCasingRanges(identifierAllowedRanges(), cp)
+}
+
 private func isCased(_ cp: Int) -> Bool { inCasingRanges(casedRanges(), cp) }
 private func isSoftDotted(_ cp: Int) -> Bool { inCasingRanges(softDottedRanges(), cp) }
 
@@ -1633,6 +1655,7 @@ private let pinnedTableDigests: [String: String] = [
     "UnicodeData.txt": "2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c",
     "CompositionExclusions.txt": "2f239196ef3b5b61db5cc476e9bd80f534d15aa1b74e1be1dea5d042a344c85f",
     "DerivedCoreProperties.txt": "24c7fed1195c482faaefd5c1e7eb821c5ee1fb6de07ecdbaa64b56a99da22c08",
+    "IdentifierStatus.txt": "617228a16da13850bf8af28b6cd08f5e9b6595d2eb60404fe6eee2c85b4e4a35",
     "SpecialCasing.txt": "efc25faf19de21b92c1194c111c932e03d2a5eaf18194e33f1156e96de4c9588",
     "emoji-data.txt": "2cb2bb9455cda83e8481541ecf5b6dfda66a3bb89efa3fa7c5297eccf607b72b",
     "emoji-zwj-sequences.txt": "5b25441daed2322b068c5e70cda522946a4f0274df864445a1965a92e5fc5cad",
@@ -4185,4 +4208,147 @@ public func filenameDisguiseDetect(_ input: [Int]) -> FilenameDisguiseVerdict {
 /// shared reason-code builder: `unicode.security.D.filename-disguise.<tag>`.
 public func filenameDisguiseReasonCode(_ subThreat: String) -> String {
     reasonCode(family: Family.filenameDisguise, subThreat: subThreat)
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// IdentifierFormDrift — cross-layer identifier × form drift (boundary-layer
+// detector, layer X).
+//
+// Byte-faithful transliteration of the verified Rust reference implementation.
+//
+// Threat model. Tier A₂ two-system bypass. An identity validator and a form
+// normalizer disagree about a codepoint: stage A runs the UTS #39
+// Identifier_Status check before normalisation and rejects, say, U+1D44E
+// MATHEMATICAL ITALIC SMALL A (Restricted); stage B normalises first and then
+// runs the same check, seeing U+0061 'a' (Allowed) and accepting. The attacker
+// controls which stage processes the input and exploits the disagreement. The
+// same shape covers fullwidth (U+FF21), circled (U+24B6), ligature (U+FB01),
+// and Roman-numeral (U+2163) compatibility forms.
+//
+// The detector fires on the form transition itself — it reports every input
+// position whose Identifier_Status differs from the Identifier_Status of that
+// codepoint's NFKD head. This is orthogonal to the single-form identity-spoofing
+// detectors (which examine the input under one form) and stronger than a
+// form-of-input fold (it asks whether the identifier verdict changes, not whether
+// any output bit changes).
+//
+// Note on Hangul: precomposed syllables are Allowed while their NFKD-head jamos
+// are Restricted, so pure Korean text fires; callers intending to accept Korean
+// identifiers should apply NFC before evaluating admissibility.
+//
+// It reuses the port's own UTS #39 Identifier_Status predicate (`isIdAllowed`)
+// and NFKD pipeline (`toNfkd`), never a host normalization or identifier library.
+//
+// Sub-threat (direction-agnostic):
+//   IdentifierStatusShift — the first input position whose Identifier_Status
+//   differs from its NFKD-head's. The verdict carries the total shift count.
+// ─────────────────────────────────────────────────────────────────────
+
+/// Sub-threat enumeration for IdentifierFormDrift.
+public enum IdentifierFormDriftSubThreat: Equatable {
+    /// A codepoint at `basePos` whose `Identifier_Status` differs from its
+    /// NFKD-head's (codepoint `cp`).
+    case identifierStatusShift(basePos: Int, cp: Int)
+
+    /// Fixture-row tag string for this sub-threat (matches `SubThreat.tag`).
+    public var tag: String {
+        switch self {
+        case .identifierStatusShift: return "IdentifierStatusShift"
+        }
+    }
+}
+
+/// Top-level classification for IdentifierFormDrift.
+public enum IdentifierFormDriftClassification: Equatable {
+    /// No status shift present.
+    case clear
+    /// A status shift fired: the sub-threat, the implicated positions, and the
+    /// (always-empty for this detector) decoded-byte projection, kept for shape
+    /// parity with the Lean `Classification.hazard`.
+    case hazard(sub: IdentifierFormDriftSubThreat, positions: [Int], decoded: [UInt8])
+
+    /// True iff the classification is `clear`.
+    public var isClear: Bool {
+        switch self {
+        case .clear: return true
+        case .hazard: return false
+        }
+    }
+
+    /// Human-facing tag for a hazard, or `nil` when clear.
+    public var tag: String? {
+        switch self {
+        case .clear: return nil
+        case .hazard(let sub, _, _): return sub.tag
+        }
+    }
+
+    /// Implicated positions (empty when clear).
+    public var positions: [Int] {
+        switch self {
+        case .clear: return []
+        case .hazard(_, let positions, _): return positions
+        }
+    }
+}
+
+/// The structured output of `identifierFormDriftDetect` (mirrors the Lean `Verdict`).
+public struct IdentifierFormDriftVerdict: Equatable {
+    /// The scanned input codepoints.
+    public let input: [Int]
+    /// The classification verdict.
+    public let classify: IdentifierFormDriftClassification
+    /// Total count of positions whose status shifts under NFKD.
+    public let shiftCount: Int
+}
+
+/// `Identifier_Status = Allowed` of the first codepoint of `cp`'s NFKD form, or
+/// `cp`'s own status when NFKD is empty (defensive — `toNfkd` is total and
+/// returns at least `[cp]`). Reuses the port's own UTS #39 predicate and NFKD.
+private func identifierFormDriftNfkdHeadAllowed(_ cp: Int) -> Bool {
+    if let head = toNfkd([cp]).first {
+        return isIdAllowed(head)
+    }
+    return isIdAllowed(cp)
+}
+
+/// First input position whose `isIdAllowed` differs from its NFKD-head's.
+private func identifierFormDriftFirstStatusShift(_ input: [Int]) -> (Int, Int)? {
+    for (idx, cp) in input.enumerated()
+    where isIdAllowed(cp) != identifierFormDriftNfkdHeadAllowed(cp) {
+        return (idx, cp)
+    }
+    return nil
+}
+
+/// Total count of input positions where the per-cp status shifts under NFKD.
+private func identifierFormDriftStatusShiftCount(_ input: [Int]) -> Int {
+    input.filter { isIdAllowed($0) != identifierFormDriftNfkdHeadAllowed($0) }.count
+}
+
+/// The IdentifierFormDrift detection function. Mirrors the Lean/Rust `detect`:
+/// reports the first status-shifting position as `IdentifierStatusShift`, else
+/// `clear`; the verdict always carries the total shift count.
+public func identifierFormDriftDetect(_ input: [Int]) -> IdentifierFormDriftVerdict {
+    let classification: IdentifierFormDriftClassification
+    if let (pos, cp) = identifierFormDriftFirstStatusShift(input) {
+        classification = .hazard(
+            sub: .identifierStatusShift(basePos: pos, cp: cp),
+            positions: [pos],
+            decoded: [])
+    } else {
+        classification = .clear
+    }
+
+    return IdentifierFormDriftVerdict(
+        input: input,
+        classify: classification,
+        shiftCount: identifierFormDriftStatusShiftCount(input))
+}
+
+/// Stable reason code for an identifier-form-drift sub-threat tag, routed through
+/// the shared reason-code builder:
+/// `unicode.security.X.identifier-form-drift.<tag>`.
+public func identifierFormDriftReasonCode(_ subThreat: String) -> String {
+    reasonCode(family: Family.identifierFormDrift, subThreat: subThreat)
 }

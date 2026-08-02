@@ -781,6 +781,7 @@ public final class Security {
   private static List<int[]> casedRanges;
   private static List<int[]> softDottedRanges;
   private static List<int[]> graphemeExtendRanges;
+  private static List<int[]> identifierAllowedRanges;
 
   private static Map<Integer, List<CasingRow>> parseSpecialCasing(String raw) {
     Map<Integer, List<CasingRow>> out = new HashMap<>();
@@ -877,6 +878,21 @@ public final class Security {
     }
     for (int[] r : graphemeExtendRanges) if (r[0] <= cp && cp <= r[1]) return true;
     return EmojiZwjIntegrity.isEmojiModifier(cp);
+  }
+
+  // UTS #39 Identifier_Status = Allowed, parsed from the bundled
+  // IdentifierStatus.txt. The file enumerates only the Allowed set; every
+  // codepoint outside it is Restricted by default (the table's @missing line
+  // maps 0000..10FFFF to Restricted). Package-private so the boundary-layer
+  // detector IdentifierFormDrift reuses the port's own SHA-pinned table rather
+  // than a host identifier or normalization library. Reuses the same range-set
+  // parse idiom as the Cased / Soft_Dotted / Grapheme_Extend properties.
+  static synchronized boolean isIdAllowed(int cp) {
+    if (identifierAllowedRanges == null) {
+      identifierAllowedRanges = parseCasingProperty(readResource("IdentifierStatus.txt"), "Allowed");
+    }
+    for (int[] r : identifierAllowedRanges) if (r[0] <= cp && cp <= r[1]) return true;
+    return false;
   }
 
   private static boolean moreAboveAfter(List<Integer> suffix) {
@@ -1692,6 +1708,7 @@ public final class Security {
       Map.entry("UnicodeData.txt", "2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c"),
       Map.entry("CompositionExclusions.txt", "2f239196ef3b5b61db5cc476e9bd80f534d15aa1b74e1be1dea5d042a344c85f"),
       Map.entry("DerivedCoreProperties.txt", "24c7fed1195c482faaefd5c1e7eb821c5ee1fb6de07ecdbaa64b56a99da22c08"),
+      Map.entry("IdentifierStatus.txt", "617228a16da13850bf8af28b6cd08f5e9b6595d2eb60404fe6eee2c85b4e4a35"),
       Map.entry("SpecialCasing.txt", "efc25faf19de21b92c1194c111c932e03d2a5eaf18194e33f1156e96de4c9588"),
       Map.entry("bip39/chinese_simplified.txt", "5c5942792bd8340cb8b27cd592f1015edf56a8c5b26276ee18a482428e7c5726"),
       Map.entry("bip39/chinese_traditional.txt", "417b26b3d8500a4ae3d59717d7011952db6fc2fb84b807f3f94ac734e89c1b5f"),
