@@ -58,6 +58,7 @@ public static partial class Security
         public const string HashInputStability = "hash-input-stability";
         public const string AiWatermarkDetectability = "ai-watermark-detectability";
         public const string StreamSafeViolation = "stream-safe-violation";
+        public const string EmojiZwjIntegrity = "emoji-zwj-integrity";
     }
 
     public sealed record Finding(
@@ -235,7 +236,7 @@ public static partial class Security
     private static string Layer(string family) =>
         family switch
         {
-            Family.HomoglyphConfusable or Family.MixedScriptAdmissibility => "I",
+            Family.HomoglyphConfusable or Family.MixedScriptAdmissibility or Family.EmojiZwjIntegrity => "I",
             Family.RtlInjection => "D",
             Family.ConfusableBidiCompound or Family.CovertDisplayCompound => "X",
             Family.HashInputStability or Family.AiWatermarkDetectability => "K",
@@ -1719,6 +1720,7 @@ public static partial class Security
             ["DerivedCoreProperties.txt"] = "24c7fed1195c482faaefd5c1e7eb821c5ee1fb6de07ecdbaa64b56a99da22c08",
             ["SpecialCasing.txt"] = "efc25faf19de21b92c1194c111c932e03d2a5eaf18194e33f1156e96de4c9588",
             ["emoji-data.txt"] = "2cb2bb9455cda83e8481541ecf5b6dfda66a3bb89efa3fa7c5297eccf607b72b",
+            ["emoji-zwj-sequences.txt"] = "5b25441daed2322b068c5e70cda522946a4f0274df864445a1965a92e5fc5cad",
             ["bip39/chinese_simplified.txt"] = "5c5942792bd8340cb8b27cd592f1015edf56a8c5b26276ee18a482428e7c5726",
             ["bip39/chinese_traditional.txt"] = "417b26b3d8500a4ae3d59717d7011952db6fc2fb84b807f3f94ac734e89c1b5f",
             ["bip39/czech.txt"] = "7e80e161c3e93d9554c2efb78d4e3cebf8fc727e9c52e03b83b94406bdcc95fc",

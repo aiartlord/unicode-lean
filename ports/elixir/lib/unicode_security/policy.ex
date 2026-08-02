@@ -20,7 +20,7 @@ defmodule UnicodeSecurity.Policy do
     NormalizationBomb,
     StreamSafeViolation
   }
-  alias UnicodeSecurity.Identity.HomoglyphConfusable
+  alias UnicodeSecurity.Identity.{EmojiZwjIntegrity, HomoglyphConfusable}
 
   @profiles [
     "gateway-header",
@@ -307,6 +307,23 @@ defmodule UnicodeSecurity.Policy do
             positions_all(input)
           ),
         else: findings
+
+    ez = EmojiZwjIntegrity.detect(input)
+
+    findings =
+      case EmojiZwjIntegrity.classification_tag(ez.classify) do
+        nil ->
+          findings
+
+        ez_tag ->
+          push_finding(
+            findings,
+            :emoji_zwj_integrity,
+            :hazard,
+            ez_tag,
+            EmojiZwjIntegrity.classification_positions(ez.classify)
+          )
+      end
 
     rtl = RtlInjection.detect(input)
 

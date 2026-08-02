@@ -226,6 +226,21 @@ WORKING-STORAGE SECTION.
 01 AWD-SEL-N PIC 9(5) COMP-5 VALUE 0.
 01 AWD-SEL-TABLE.
    05 AWD-SEL OCCURS 4096 TIMES PIC 9(9) COMP-5.
+*> ── emoji-zwj-integrity (I3) ZWJ-sequence scan state ──────────────────
+01 EZ-ZWJ-N PIC 9(5) COMP-5 VALUE 0.
+01 EZ-ZWJ-TABLE.
+   05 EZ-ZWJ OCCURS 4096 TIMES PIC 9(9) COMP-5.
+01 EZ-SKIN-N PIC 9(5) COMP-5 VALUE 0.
+01 EZ-IS-RGI PIC 9 VALUE 0.
+01 EZ-DONE PIC 9 VALUE 0.
+01 EZ-INJ-FOUND PIC 9 VALUE 0.
+01 EZ-INJ-POS PIC 9(9) COMP-5 VALUE 0.
+01 EZ-PREV-TARGET PIC 9 VALUE 0.
+01 EZ-NEXT-TARGET PIC 9 VALUE 0.
+01 EZ-POS-N PIC 9(5) COMP-5 VALUE 0.
+01 EZ-POS-TABLE.
+   05 EZ-POS OCCURS 4096 TIMES PIC 9(9) COMP-5.
+01 SEQ-KEY PIC X(256).
 01 VOCAB-RAW.
    05 FILLER PIC X(26) VALUE "05delve                   ".
    05 FILLER PIC X(26) VALUE "07delving                 ".
@@ -344,7 +359,11 @@ MAIN.
                                 IF OP-NAME = "stream-safe-violation"
                                     PERFORM SCAN-STREAM-SAFE
                                 ELSE
-                                    PERFORM SCAN-CORE
+                                    IF OP-NAME = "emoji-zwj-integrity"
+                                        PERFORM SCAN-EMOJI-ZWJ
+                                    ELSE
+                                        PERFORM SCAN-CORE
+                                    END-IF
                                 END-IF
                             END-IF
                         END-IF
@@ -1913,6 +1932,163 @@ SCAN-STREAM-SAFE.
         MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
         MOVE POS-TEXT TO FINDING-POS(FINDING-COUNT)
     END-IF.
+
+SCAN-EMOJI-ZWJ.
+*> UTS #51 EmojiZwjIntegrity (identity-layer detector I3). Byte-faithful
+*> transliteration of the verified Rust reference `detect`: Phase 1 collects
+*> ZWJ positions (0-based) and the skin-tone count; Phase 2 short-circuits
+*> Clear when there is no ZWJ and at most one skin tone; Phase 3 clears any
+*> exactly-registered RGI sequence; Phase 4 walks the priority ladder
+*> DoubleZWJ -> NonEmojiInjection -> OverLength -> SkinToneOverflow ->
+*> UnregisteredSequence. The registered set and the ZWJ alphabet are parsed
+*> from the port's own bundled data/emoji-zwj-sequences.txt.
+    MOVE 0 TO EZ-ZWJ-N EZ-SKIN-N EZ-DONE
+    PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
+        IF CP(IDX) = 8205
+            ADD 1 TO EZ-ZWJ-N
+            COMPUTE EZ-ZWJ(EZ-ZWJ-N) = IDX - 1
+        END-IF
+        IF CP(IDX) >= 127995 AND CP(IDX) <= 127999
+            ADD 1 TO EZ-SKIN-N
+        END-IF
+    END-PERFORM
+    PERFORM BUILD-SEQ-KEY
+    PERFORM IS-ZWJ-REGISTERED
+    MOVE TABLE-FLAG TO EZ-IS-RGI
+    IF EZ-ZWJ-N = 0 AND EZ-SKIN-N <= 1
+        CONTINUE
+    ELSE
+        IF EZ-IS-RGI = 1
+            CONTINUE
+        ELSE
+            PERFORM EZ-LADDER
+        END-IF
+    END-IF.
+
+EZ-LADDER.
+*> Priority 1: ZWJ-ZWJ adjacency; report the first ZWJ of each adjacent pair.
+    PERFORM EZ-COLLECT-DOUBLE
+    IF EZ-POS-N > 0
+        MOVE "unicode.security.I.emoji-zwj-integrity.DoubleZWJ" TO TEMP-CODE
+        PERFORM EZ-ADD-FINDING
+        MOVE 1 TO EZ-DONE
+    END-IF
+*> Priority 2: a ZWJ flanked by a non-emoji codepoint or sitting at an edge.
+    IF EZ-DONE = 0
+        PERFORM EZ-FIND-INJECTION
+        IF EZ-INJ-FOUND = 1
+            MOVE "unicode.security.I.emoji-zwj-integrity.NonEmojiInjection"
+                TO TEMP-CODE
+            MOVE 1 TO EZ-POS-N
+            MOVE EZ-INJ-POS TO EZ-POS(1)
+            PERFORM EZ-ADD-FINDING
+            MOVE 1 TO EZ-DONE
+        END-IF
+    END-IF
+*> Priority 3: the sequence is longer than the RGI cap of 16.
+    IF EZ-DONE = 0
+        IF CP-COUNT > 16
+            MOVE "unicode.security.I.emoji-zwj-integrity.OverLength"
+                TO TEMP-CODE
+            MOVE 0 TO EZ-POS-N
+            PERFORM EZ-ADD-FINDING
+            MOVE 1 TO EZ-DONE
+        END-IF
+    END-IF
+*> Priority 4: five or more skin-tone modifiers (family maximum is four).
+    IF EZ-DONE = 0
+        IF EZ-SKIN-N >= 5
+            MOVE "unicode.security.I.emoji-zwj-integrity.SkinToneOverflow"
+                TO TEMP-CODE
+            MOVE 0 TO EZ-POS-N
+            PERFORM EZ-ADD-FINDING
+            MOVE 1 TO EZ-DONE
+        END-IF
+    END-IF
+*> Priority 5: ZWJs present but the sequence is not registered.
+    IF EZ-DONE = 0
+        IF EZ-ZWJ-N > 0
+            MOVE "unicode.security.I.emoji-zwj-integrity.UnregisteredSequence"
+                TO TEMP-CODE
+            MOVE EZ-ZWJ-N TO EZ-POS-N
+            PERFORM VARYING JDX FROM 1 BY 1 UNTIL JDX > EZ-ZWJ-N
+                MOVE EZ-ZWJ(JDX) TO EZ-POS(JDX)
+            END-PERFORM
+            PERFORM EZ-ADD-FINDING
+            MOVE 1 TO EZ-DONE
+        END-IF
+    END-IF.
+
+EZ-COLLECT-DOUBLE.
+    MOVE 0 TO EZ-POS-N
+    PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
+        IF IDX < CP-COUNT
+            IF CP(IDX) = 8205 AND CP(IDX + 1) = 8205
+                ADD 1 TO EZ-POS-N
+                COMPUTE EZ-POS(EZ-POS-N) = IDX - 1
+            END-IF
+        END-IF
+    END-PERFORM.
+
+EZ-FIND-INJECTION.
+*> First ZWJ whose preceding or following codepoint is not in the RGI ZWJ
+*> alphabet; a ZWJ at an input edge (no preceding or no following codepoint)
+*> is itself an injection-class hazard.
+    MOVE 0 TO EZ-INJ-FOUND
+    MOVE 1 TO IDX
+    PERFORM UNTIL IDX > CP-COUNT OR EZ-INJ-FOUND = 1
+        IF CP(IDX) = 8205
+            IF IDX = 1 OR IDX = CP-COUNT
+                MOVE 1 TO EZ-INJ-FOUND
+                COMPUTE EZ-INJ-POS = IDX - 1
+            ELSE
+                MOVE CP(IDX - 1) TO LOOKUP-CP
+                PERFORM IS-ZWJ-TARGET
+                MOVE TABLE-FLAG TO EZ-PREV-TARGET
+                MOVE CP(IDX + 1) TO LOOKUP-CP
+                PERFORM IS-ZWJ-TARGET
+                MOVE TABLE-FLAG TO EZ-NEXT-TARGET
+                IF EZ-PREV-TARGET = 0 OR EZ-NEXT-TARGET = 0
+                    MOVE 1 TO EZ-INJ-FOUND
+                    COMPUTE EZ-INJ-POS = IDX - 1
+                END-IF
+            END-IF
+        END-IF
+        ADD 1 TO IDX
+    END-PERFORM.
+
+BUILD-SEQ-KEY.
+    MOVE SPACES TO SEQ-KEY
+    PERFORM VARYING JDX FROM 1 BY 1 UNTIL JDX > CP-COUNT
+        MOVE CP(JDX) TO POS-NUM
+        IF JDX = 1
+            STRING FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO SEQ-KEY
+        ELSE
+            STRING FUNCTION TRIM(SEQ-KEY) DELIMITED BY SIZE "," DELIMITED BY SIZE FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO SEQ-KEY
+        END-IF
+    END-PERFORM.
+
+EZ-ADD-FINDING.
+    ADD 1 TO FINDING-COUNT
+    MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
+    MOVE SPACES TO POS-TEXT
+    PERFORM VARYING JDX FROM 1 BY 1 UNTIL JDX > EZ-POS-N
+        MOVE EZ-POS(JDX) TO POS-NUM
+        IF JDX = 1
+            STRING FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
+        ELSE
+            STRING FUNCTION TRIM(POS-TEXT) DELIMITED BY SIZE "," DELIMITED BY SIZE FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
+        END-IF
+    END-PERFORM
+    MOVE POS-TEXT TO FINDING-POS(FINDING-COUNT).
+
+IS-ZWJ-REGISTERED.
+    MOVE 0 TO TABLE-FLAG
+    COPY "src/generated/zwj_registered.cpy".
+
+IS-ZWJ-TARGET.
+    MOVE 0 TO TABLE-FLAG
+    COPY "src/generated/zwj_alphabet.cpy".
 
 SELECT-ACTION.
     MOVE 0 TO BLOCKING-FLAG

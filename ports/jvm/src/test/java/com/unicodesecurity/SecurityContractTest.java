@@ -21,6 +21,7 @@ public final class SecurityContractTest {
     testNfcIdempotenceWitness();
     testHashInputStability();
     testAiWatermarkDetectability();
+    testEmojiZwjIntegrity();
     testStreamSafeViolation();
     testConfusableBidiCompound();
     testSurrogateReassembly();
@@ -490,6 +491,162 @@ public final class SecurityContractTest {
 
     System.out.println("clean: JVM ai-watermark-detectability passes (" + fixtureCases
         + " fixture cases + " + contextVectors + " context vectors)");
+  }
+
+  // Pins the emoji-zwj-integrity detector (identity-layer I3) against the
+  // verified Rust reference ports/rust/src/security/identity/emoji_zwj_integrity.rs.
+  // Two independent sources of truth are exercised: (a) the shared context-free
+  // fixture detectors/emoji_zwj_integrity.json, run through
+  // EmojiZwjIntegrity.detect and checked against the fixture reason codes; (b)
+  // the detect spot-checks and priority-ladder structure checks transcribed from
+  // the Rust test module. The registered-RGI set and ZWJ alphabet are parsed
+  // from the port's own SHA-pinned data/emoji-zwj-sequences.txt (never a host
+  // emoji/ICU library, never String normalization); the skin-tone-modifier range
+  // U+1F3FB..U+1F3FF is the port's own EmojiZwjIntegrity.isEmojiModifier.
+  private static void testEmojiZwjIntegrity() throws IOException {
+    // (a) Shared context-free fixture through detect.
+    Map<String, Object> detector = fixture("detectors/emoji_zwj_integrity.json");
+    assertEquals(1, intValue(detector.get("schema")), "emoji-zwj-integrity schema");
+    assertEquals("emoji-zwj-integrity", string(detector, "family"), "emoji-zwj-integrity family");
+    int fixtureCases = 0;
+    for (Map<String, Object> entry : objects(detector.get("cases"))) {
+      EmojiZwjIntegrity.Verdict verdict = EmojiZwjIntegrity.detect(ints(entry.get("input")));
+      String code = EmojiZwjIntegrity.reasonCode(verdict.classify());
+      List<String> required = strings(entry.get("required_findings"));
+      if (required.isEmpty()) {
+        assertEquals(null, code, "emoji-zwj-integrity " + string(entry, "name") + " should be clear");
+      } else {
+        assertEquals(1, required.size(),
+            "emoji-zwj-integrity " + string(entry, "name") + " single finding");
+        assertEquals(required.get(0), code, "emoji-zwj-integrity " + string(entry, "name"));
+      }
+      fixtureCases++;
+    }
+
+    // (b) Data-layer sanity, detect spot-checks, and priority-ladder structure
+    // checks transcribed one-for-one from the Rust test module.
+    int specVectors = 0;
+
+    // is_emoji_modifier_checks
+    assertTrue(EmojiZwjIntegrity.isEmojiModifier(0x1F3FB), "ezwj modifier 1F3FB");
+    assertTrue(EmojiZwjIntegrity.isEmojiModifier(0x1F3FF), "ezwj modifier 1F3FF");
+    assertTrue(!EmojiZwjIntegrity.isEmojiModifier(0x1F3FA), "ezwj non-modifier 1F3FA");
+    assertTrue(!EmojiZwjIntegrity.isEmojiModifier(0x1F600), "ezwj non-modifier 1F600");
+    specVectors++;
+
+    // zwj_alphabet_admits_heart_rejects_grinning
+    assertTrue(EmojiZwjIntegrity.isEmojiTarget(0x2764), "ezwj alphabet admits heart");
+    assertTrue(EmojiZwjIntegrity.isEmojiTarget(0x1F468), "ezwj alphabet admits man");
+    assertTrue(!EmojiZwjIntegrity.isEmojiTarget(0x1F600), "ezwj alphabet rejects grinning");
+    assertTrue(!EmojiZwjIntegrity.isEmojiTarget(EmojiZwjIntegrity.ZWJ), "ezwj alphabet excludes joiner");
+    specVectors++;
+
+    // registered_membership_is_exact
+    assertTrue(EmojiZwjIntegrity.isRegisteredZwjSequence(intList(new int[] {0x1F468, 0x200D, 0x1F4BB})),
+        "ezwj man-technologist registered");
+    assertTrue(!EmojiZwjIntegrity.isRegisteredZwjSequence(intList(new int[] {0x1F468, 0x200D, 0x1F469})),
+        "ezwj man-woman unregistered");
+    specVectors++;
+
+    // detect_empty_clear
+    EmojiZwjIntegrity.Verdict empty = EmojiZwjIntegrity.detect(intList(new int[] {}));
+    assertTrue(empty.classify().isClear(), "ezwj empty clear");
+    assertEquals(null, empty.classify().tag(), "ezwj empty tag");
+    assertEquals(List.of(), empty.zwjPositions(), "ezwj empty zwjPositions");
+    assertEquals(0, empty.chainLength(), "ezwj empty chainLength");
+    assertEquals(0, empty.skinToneCount(), "ezwj empty skinToneCount");
+    specVectors++;
+
+    // detect_ascii_clear
+    assertTrue(EmojiZwjIntegrity.detect(intList(new int[] {0x48, 0x65, 0x6C, 0x6C, 0x6F})).classify().isClear(),
+        "ezwj ascii clear");
+    specVectors++;
+
+    // detect_plain_emoji_clear
+    assertTrue(EmojiZwjIntegrity.detect(intList(new int[] {0x1F600})).classify().isClear(),
+        "ezwj plain emoji clear");
+    specVectors++;
+
+    // detect_one_skintone_clear
+    EmojiZwjIntegrity.Verdict oneSkin = EmojiZwjIntegrity.detect(intList(new int[] {0x1F44B, 0x1F3FB}));
+    assertTrue(oneSkin.classify().isClear(), "ezwj one skintone clear");
+    assertEquals(1, oneSkin.skinToneCount(), "ezwj one skintone count");
+    specVectors++;
+
+    // detect_family_rgi_clear
+    EmojiZwjIntegrity.Verdict family = EmojiZwjIntegrity.detect(
+        intList(new int[] {0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466}));
+    assertTrue(family.classify().isClear(), "ezwj family rgi clear");
+    assertTrue(family.isRegisteredRgi(), "ezwj family rgi registered");
+    specVectors++;
+
+    // detect_double_zwj
+    EmojiZwjIntegrity.Verdict dzwj = EmojiZwjIntegrity.detect(intList(new int[] {0x1F600, 0x200D, 0x200D, 0x1F600}));
+    assertEquals("DoubleZWJ", dzwj.classify().tag(), "ezwj double zwj tag");
+    assertEquals(List.of(1), dzwj.classify().positions(), "ezwj double zwj positions");
+    specVectors++;
+
+    // detect_non_emoji_injection
+    assertEquals("NonEmojiInjection",
+        EmojiZwjIntegrity.detect(intList(new int[] {0x1F600, 0x200D, 0x0061})).classify().tag(),
+        "ezwj non-emoji injection tag");
+    specVectors++;
+
+    // detect_skin_tone_overflow
+    EmojiZwjIntegrity.Verdict overflow = EmojiZwjIntegrity.detect(
+        intList(new int[] {0x1F44B, 0x1F3FB, 0x1F3FC, 0x1F3FD, 0x1F3FE, 0x1F3FF}));
+    assertEquals("SkinToneOverflow", overflow.classify().tag(), "ezwj skin tone overflow tag");
+    assertEquals(5, overflow.skinToneCount(), "ezwj skin tone overflow count");
+    specVectors++;
+
+    // detect_man_laptop_registered_clear
+    assertTrue(EmojiZwjIntegrity.detect(intList(new int[] {0x1F468, 0x200D, 0x1F4BB})).classify().isClear(),
+        "ezwj man laptop registered clear");
+    specVectors++;
+
+    // detect_unregistered
+    assertEquals("UnregisteredSequence",
+        EmojiZwjIntegrity.detect(intList(new int[] {0x1F468, 0x200D, 0x1F469})).classify().tag(),
+        "ezwj unregistered tag");
+    specVectors++;
+
+    // detect_grinning_laptop_non_emoji_injection
+    assertEquals("NonEmojiInjection",
+        EmojiZwjIntegrity.detect(intList(new int[] {0x1F600, 0x200D, 0x1F4BB})).classify().tag(),
+        "ezwj grinning laptop non-emoji injection tag");
+    specVectors++;
+
+    // over_length_fires_past_cap — 9 men joined by 8 ZWJs = 17 codepoints (> cap).
+    List<Integer> longChain = new ArrayList<>();
+    for (int i = 0; i < 9; i++) {
+      if (i > 0) longChain.add(0x200D);
+      longChain.add(0x1F468);
+    }
+    assertEquals(17, longChain.size(), "ezwj over-length chain size");
+    EmojiZwjIntegrity.Verdict overLen = EmojiZwjIntegrity.detect(longChain);
+    assertEquals("OverLength", overLen.classify().tag(), "ezwj over-length tag");
+    EmojiZwjIntegrity.Hazard overLenHz = (EmojiZwjIntegrity.Hazard) overLen.classify();
+    EmojiZwjIntegrity.OverLength overLenSub = (EmojiZwjIntegrity.OverLength) overLenHz.sub();
+    assertEquals(17, overLenSub.length(), "ezwj over-length length");
+    assertEquals(EmojiZwjIntegrity.MAX_RGI_LENGTH, overLenSub.maxLength(), "ezwj over-length cap");
+    assertEquals(List.of(), overLenHz.positions(), "ezwj over-length positions empty");
+    assertEquals(List.of(), overLenHz.decoded(), "ezwj over-length decoded empty");
+    specVectors++;
+
+    // trailing_zwj_is_injection — a ZWJ at the trailing edge.
+    EmojiZwjIntegrity.Verdict trailing = EmojiZwjIntegrity.detect(intList(new int[] {0x1F468, 0x200D}));
+    assertEquals("NonEmojiInjection", trailing.classify().tag(), "ezwj trailing zwj tag");
+    assertEquals(List.of(1), trailing.classify().positions(), "ezwj trailing zwj positions");
+    specVectors++;
+
+    // double_zwj_beats_unregistered — priority order (man ZWJ ZWJ boy).
+    assertEquals("DoubleZWJ",
+        EmojiZwjIntegrity.detect(intList(new int[] {0x1F468, 0x200D, 0x200D, 0x1F466})).classify().tag(),
+        "ezwj double beats unregistered");
+    specVectors++;
+
+    System.out.println("clean: JVM emoji-zwj-integrity passes (" + fixtureCases
+        + " fixture cases + " + specVectors + " spec vectors)");
   }
 
   // Pins the stream-safe-violation detector against the verified Rust reference

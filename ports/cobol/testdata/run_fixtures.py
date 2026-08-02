@@ -285,6 +285,98 @@ def check_ai_watermark_detectability():
     return len(fixture["cases"]), 2
 
 
+EZWJ_BASE = "unicode.security.I.emoji-zwj-integrity."
+
+
+def run_ezwj(values):
+    arg = ",".join(str(v) for v in values)
+    proc = subprocess.run(
+        [str(BIN), "emoji-zwj-integrity", "gateway-header", "observe", arg],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    )
+    codes = []
+    positions = {}
+    for line in proc.stdout.splitlines():
+        parts = line.split(" ", 2)
+        if parts and parts[0] == "FINDING":
+            code = parts[1]
+            codes.append(code)
+            positions[code] = [int(x) for x in parts[2].split(",") if x] if len(parts) > 2 else []
+    return {"codes": codes, "positions": positions}
+
+
+def check_emoji_zwj_integrity():
+    # 1. The 12 shared context-free fixture vectors.
+    fixture = load("detectors/emoji_zwj_integrity.json")
+    for case in fixture["cases"]:
+        got = run_ezwj(case["input"])
+        for code in case["required_findings"]:
+            require(code in got["codes"],
+                    f"ezwj/{case['name']} missing {code}; got {got['codes']}")
+        if not case["required_findings"]:
+            require(all(".emoji-zwj-integrity." not in code for code in got["codes"]),
+                    f"ezwj/{case['name']} unexpected finding; got {got['codes']}")
+
+    # 2. The 11 spot-checks transcribed verbatim from the Rust reference's
+    #    `#[test]` module (empty / ascii / plain-emoji / one-skintone /
+    #    family-rgi / double-zwj / non-emoji-injection / skin-tone-overflow /
+    #    man-laptop-registered / unregistered / grinning-laptop). tag = suffix
+    #    or None for Clear; pos = expected positions or None to skip.
+    spot = [
+        ("empty", [], None, None),
+        ("ascii", [0x48, 0x65, 0x6C, 0x6C, 0x6F], None, None),
+        ("plain-emoji", [0x1F600], None, None),
+        ("one-skintone", [0x1F44B, 0x1F3FB], None, None),
+        ("family-rgi", [0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466], None, None),
+        ("double-zwj", [0x1F600, 0x200D, 0x200D, 0x1F600], "DoubleZWJ", [1]),
+        ("non-emoji-injection", [0x1F600, 0x200D, 0x0061], "NonEmojiInjection", None),
+        ("skin-tone-overflow", [0x1F44B, 0x1F3FB, 0x1F3FC, 0x1F3FD, 0x1F3FE, 0x1F3FF],
+         "SkinToneOverflow", []),
+        ("man-laptop-registered", [0x1F468, 0x200D, 0x1F4BB], None, None),
+        ("unregistered", [0x1F468, 0x200D, 0x1F469], "UnregisteredSequence", None),
+        ("grinning-laptop", [0x1F600, 0x200D, 0x1F4BB], "NonEmojiInjection", None),
+    ]
+    for name, values, tag, expected_pos in spot:
+        got = run_ezwj(values)
+        ez_codes = [c for c in got["codes"] if ".emoji-zwj-integrity." in c]
+        if tag is None:
+            require(not ez_codes, f"ezwj-spot/{name} expected clear; got {ez_codes}")
+        else:
+            code = EZWJ_BASE + tag
+            require(code in got["codes"], f"ezwj-spot/{name} missing {code}; got {got['codes']}")
+            if expected_pos is not None:
+                require(got["positions"].get(code) == expected_pos,
+                        f"ezwj-spot/{name} positions {got['positions'].get(code)} != {expected_pos}")
+
+    # 3. Structural checks on the priority order: an over-length chain past the
+    #    cap, a trailing-ZWJ injection, and DoubleZWJ outranking the
+    #    unregistered catch-all.
+    over = [0x1F468]
+    for _ in range(8):
+        over.append(0x200D)
+        over.append(0x1F468)
+    require(len(over) == 17, f"ezwj over-length vector wrong length {len(over)}")
+    got = run_ezwj(over)
+    require(EZWJ_BASE + "OverLength" in got["codes"],
+            f"ezwj-struct/over-length missing OverLength; got {got['codes']}")
+    require(got["positions"].get(EZWJ_BASE + "OverLength") == [],
+            f"ezwj-struct/over-length positions {got['positions'].get(EZWJ_BASE + 'OverLength')} != []")
+
+    trailing = run_ezwj([0x1F468, 0x200D])
+    require(EZWJ_BASE + "NonEmojiInjection" in trailing["codes"],
+            f"ezwj-struct/trailing-zwj missing NonEmojiInjection; got {trailing['codes']}")
+    require(trailing["positions"].get(EZWJ_BASE + "NonEmojiInjection") == [1],
+            f"ezwj-struct/trailing-zwj positions {trailing['positions'].get(EZWJ_BASE + 'NonEmojiInjection')} != [1]")
+
+    beats = run_ezwj([0x1F468, 0x200D, 0x200D, 0x1F466])
+    require(EZWJ_BASE + "DoubleZWJ" in beats["codes"],
+            f"ezwj-struct/double-outranks-unregistered missing DoubleZWJ; got {beats['codes']}")
+
+    return len(fixture["cases"]), len(spot), 3
+
+
 def check_forms_and_bip39():
     cases = [
         ("forms", [], []),
@@ -492,6 +584,7 @@ def main():
     check_detectors()
     his_fixture_count, his_context_count = check_hash_input_stability()
     awd_fixture_count, awd_context_count = check_ai_watermark_detectability()
+    ezwj_fixture_count, ezwj_spot_count, ezwj_struct_count = check_emoji_zwj_integrity()
     check_forms_and_bip39()
     ss_count = check_stream_safe_violation()
     check_generated_tables()
@@ -506,6 +599,9 @@ def main():
     print(f"ai-watermark-detectability shared-fixture vectors: {awd_fixture_count}")
     print(f"ai-watermark-detectability context vectors: {awd_context_count}")
     print(f"stream-safe-violation checks: {ss_count}")
+    print(f"emoji-zwj-integrity shared-fixture vectors: {ezwj_fixture_count}")
+    print(f"emoji-zwj-integrity spot-checks: {ezwj_spot_count}")
+    print(f"emoji-zwj-integrity structural checks: {ezwj_struct_count}")
     print("ok: cobol unicode security fixture tests pass")
 
 

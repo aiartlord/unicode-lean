@@ -83,6 +83,47 @@ def parse_variation_pairs():
     return sorted(pairs)
 
 
+def parse_zwj_sequences():
+    """Registered RGI ZWJ sequences from emoji-zwj-sequences.txt.
+
+    Each data row is `<cp> <cp> ... ; RGI_Emoji_ZWJ_Sequence ; <desc> # <cmt>`;
+    the sequence is the space-separated hex codepoints before the first `;`.
+    Mirrors the verified Rust reference `parse_zwj_sequences` byte for byte.
+    """
+    out = []
+    for raw_line in (DATA / "emoji-zwj-sequences.txt").read_text(encoding="utf-8").splitlines():
+        body = strip_comment(raw_line)
+        if not body:
+            continue
+        seq_field = body.split(";", 1)[0]
+        seq = []
+        parsed_ok = True
+        for token in seq_field.split():
+            try:
+                seq.append(int(token, 16))
+            except ValueError:
+                parsed_ok = False
+                break
+        if parsed_ok and seq:
+            out.append(seq)
+    return out
+
+
+def emit_zwj_registered(path, sequences):
+    keys = sorted({",".join(str(cp) for cp in seq) for seq in sequences})
+    lines = ["EVALUATE FUNCTION TRIM(SEQ-KEY)"]
+    for key in keys:
+        lines.append(f"    WHEN \"{key}\"")
+    lines.append("        MOVE 1 TO TABLE-FLAG")
+    lines.append("END-EVALUATE.")
+    path.write_text("\n".join(lines) + "\n", encoding="ascii")
+
+
+def zwj_alphabet(sequences):
+    ZWJ = 0x200D
+    return sorted({cp for seq in sequences for cp in seq if cp != ZWJ})
+
+
 def parse_confusable_sources():
     values = set()
     for line in (DATA / "confusables.txt").read_text(encoding="utf-8").splitlines():
@@ -381,6 +422,9 @@ def main():
         parse_property_ranges(DATA / "emoji-data.txt", {"Emoji"}),
         "MOVE 1 TO IS-EMOJI-FLAG",
     )
+    zwj_sequences = parse_zwj_sequences()
+    emit_zwj_registered(OUT / "zwj_registered.cpy", zwj_sequences)
+    emit_value_eval(OUT / "zwj_alphabet.cpy", zwj_alphabet(zwj_sequences), "MOVE 1 TO TABLE-FLAG")
     ucd = parse_unicode_data()
     exclusions = parse_composition_exclusions()
     emit_ccc_class(OUT / "ccc_class.cpy", ucd)

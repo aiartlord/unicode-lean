@@ -5,6 +5,7 @@
          scan_default/2, scan_forms/3, scan_bip39/3, scan_hash_input_stability/3,
          scan_stream_safe_violation/3,
          scan_ai_watermark_detectability/3,
+         scan_emoji_zwj_integrity/3,
          verdict_to_wire/1, verdict_to_json/1, finding_to_wire/1]).
 
 policy_of_profile(<<"gateway-header">>) -> #{level => restrictive, crypto => non_crypto, quarantine => false};
@@ -185,6 +186,15 @@ scan_ai_watermark_detectability(Profile, Mode, Input) ->
     F = case usec_ai_watermark_detectability:classify_tag(C) of
             none -> [];
             Sub -> push_finding([], ai_watermark_detectability, hazard, Sub, usec_ai_watermark_detectability:classify_positions(C))
+        end,
+    verdict(Profile, Mode, Input, F, null).
+
+scan_emoji_zwj_integrity(Profile, Mode, Input) ->
+    V = usec_emoji_zwj_integrity:detect(Input),
+    C = maps:get(classify, V),
+    F = case usec_emoji_zwj_integrity:classify_tag(C) of
+            none -> [];
+            Sub -> push_finding([], emoji_zwj_integrity, hazard, Sub, usec_emoji_zwj_integrity:classify_positions(C))
         end,
     verdict(Profile, Mode, Input, F, null).
 

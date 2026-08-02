@@ -3,6 +3,7 @@ using UnicodeSecurity;
 using UnicodeSecurity.Segmentation;
 using His = UnicodeSecurity.Security.HashInputStability;
 using Awd = UnicodeSecurity.Security.AiWatermarkDetectability;
+using Ezwj = UnicodeSecurity.Security.EmojiZwjIntegrity;
 
 TestCovertDisplayCompoundVectors();
 TestConfusableBidiCompoundVectors();
@@ -23,6 +24,8 @@ TestHashInputStabilityFixture();
 TestHashInputStabilityContextVectors();
 TestAiWatermarkDetectabilityFixture();
 TestAiWatermarkDetectabilityContextVectors();
+TestEmojiZwjIntegrityFixture();
+TestEmojiZwjIntegritySpotChecks();
 TestStreamSafeViolationFixture();
 TestStreamSafeViolationBoundary();
 TestUtf8Blob();
@@ -785,6 +788,121 @@ static void TestAiWatermarkDetectabilityContextVectors()
     AssertEqual<Awd.CueClass?>(null, new Awd.Unknown(0).Cue, "awd unknown has no cue class");
 
     Console.WriteLine("clean: .NET ai-watermark-detectability 34-vector context spot-check passes");
+}
+
+// Ground truth: the shared context-free detector fixture
+// fixtures/security/detectors/emoji_zwj_integrity.json, run through
+// Security.EmojiZwjIntegrity.Detect. Each case's required_findings is the
+// fully-qualified reason code
+// (unicode.security.I.emoji-zwj-integrity.<tag>); an empty list means the input
+// must classify Clear. Mirrors the Rust port's §5 detect spot checks.
+static void TestEmojiZwjIntegrityFixture()
+{
+    using var detector = LoadFixture("detectors/emoji_zwj_integrity.json");
+    AssertEqual(1, detector.RootElement.GetProperty("schema").GetInt32(), "emoji-zwj-integrity schema");
+    AssertEqual("emoji-zwj-integrity", String(detector.RootElement, "family"), "emoji-zwj-integrity family");
+    var cases = 0;
+    foreach (var entry in detector.RootElement.GetProperty("cases").EnumerateArray())
+    {
+        var name = String(entry, "name");
+        var input = Ints(entry.GetProperty("input"));
+        var verdict = Ezwj.Detect(input);
+        var required = Strings(entry.GetProperty("required_findings")).ToList();
+        if (required.Count == 0)
+        {
+            AssertTrue(verdict.Classify.IsClear, $"emoji-zwj-integrity {name}: expected clear, got {verdict.Classify.Tag}");
+        }
+        else
+        {
+            foreach (var code in required)
+            {
+                AssertEqual<string?>(code, verdict.Classify.ReasonCode, $"emoji-zwj-integrity {name}: reason code");
+            }
+        }
+        cases++;
+    }
+    Console.WriteLine($"clean: .NET emoji-zwj-integrity {cases}-case shared-fixture detect passes");
+}
+
+// Ground truth: the data-layer sanity, §5 detect spot-check, and structural
+// tests in the Rust port's emoji_zwj_integrity.rs test module. The registered
+// RGI set and the ZWJ alphabet are parsed from the bundled
+// Data/emoji-zwj-sequences.txt; the emoji-modifier range is inlined
+// (U+1F3FB..U+1F3FF), never a host emoji / normalization library.
+static void TestEmojiZwjIntegritySpotChecks()
+{
+    string? Tag(int[] input) => Ezwj.Detect(input).Classify.Tag;
+
+    // ── data-layer sanity ────────────────────────────────────────────────
+    AssertTrue(Ezwj.IsEmojiModifier(0x1F3FB), "ezwj modifier lo");
+    AssertTrue(Ezwj.IsEmojiModifier(0x1F3FF), "ezwj modifier hi");
+    AssertTrue(!Ezwj.IsEmojiModifier(0x1F3FA), "ezwj modifier below");
+    AssertTrue(!Ezwj.IsEmojiModifier(0x1F600), "ezwj modifier grinning");
+
+    AssertTrue(Ezwj.IsEmojiTarget(0x2764), "ezwj alphabet heart");
+    AssertTrue(Ezwj.IsEmojiTarget(0x1F468), "ezwj alphabet man");
+    AssertTrue(!Ezwj.IsEmojiTarget(0x1F600), "ezwj alphabet grinning");
+    AssertTrue(!Ezwj.IsEmojiTarget(Ezwj.Zwj), "ezwj alphabet excludes joiner");
+
+    AssertTrue(Ezwj.IsRegisteredZwjSequence(new[] { 0x1F468, 0x200D, 0x1F4BB }), "ezwj registered man-technologist");
+    AssertTrue(!Ezwj.IsRegisteredZwjSequence(new[] { 0x1F468, 0x200D, 0x1F469 }), "ezwj unregistered man-woman");
+
+    // ── §5 detect spot checks (one per Lean theorem) ─────────────────────
+    var empty = Ezwj.Detect(System.Array.Empty<int>());
+    AssertTrue(empty.Classify.IsClear, "ezwj empty clear");
+    AssertEqual<string?>(null, empty.Classify.Tag, "ezwj empty tag");
+    AssertSequence(System.Array.Empty<int>(), empty.ZwjPositions, "ezwj empty zwj-positions");
+    AssertEqual(0, empty.ChainLength, "ezwj empty chain-length");
+    AssertEqual(0, empty.SkinToneCount, "ezwj empty skin-tone-count");
+
+    AssertTrue(Ezwj.Detect(new[] { 0x48, 0x65, 0x6C, 0x6C, 0x6F }).Classify.IsClear, "ezwj ascii clear");
+    AssertTrue(Ezwj.Detect(new[] { 0x1F600 }).Classify.IsClear, "ezwj plain-emoji clear");
+
+    var oneSkin = Ezwj.Detect(new[] { 0x1F44B, 0x1F3FB });
+    AssertTrue(oneSkin.Classify.IsClear, "ezwj one-skintone clear");
+    AssertEqual(1, oneSkin.SkinToneCount, "ezwj one-skintone count");
+
+    var family = Ezwj.Detect(new[] { 0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466 });
+    AssertTrue(family.Classify.IsClear, "ezwj family-rgi clear");
+    AssertTrue(family.IsRegisteredRgi, "ezwj family-rgi registered");
+
+    var dbl = Ezwj.Detect(new[] { 0x1F600, 0x200D, 0x200D, 0x1F600 });
+    AssertEqual<string?>("DoubleZWJ", dbl.Classify.Tag, "ezwj double-zwj tag");
+    AssertSequence(new[] { 1 }, dbl.Classify.Positions, "ezwj double-zwj pos");
+
+    AssertEqual<string?>("NonEmojiInjection", Tag(new[] { 0x1F600, 0x200D, 0x0061 }), "ezwj non-emoji-injection tag");
+
+    var overflow = Ezwj.Detect(new[] { 0x1F44B, 0x1F3FB, 0x1F3FC, 0x1F3FD, 0x1F3FE, 0x1F3FF });
+    AssertEqual<string?>("SkinToneOverflow", overflow.Classify.Tag, "ezwj skin-tone-overflow tag");
+    AssertEqual(5, overflow.SkinToneCount, "ezwj skin-tone-overflow count");
+
+    AssertTrue(Ezwj.Detect(new[] { 0x1F468, 0x200D, 0x1F4BB }).Classify.IsClear, "ezwj man-laptop-registered clear");
+    AssertEqual<string?>("UnregisteredSequence", Tag(new[] { 0x1F468, 0x200D, 0x1F469 }), "ezwj unregistered tag");
+    AssertEqual<string?>("NonEmojiInjection", Tag(new[] { 0x1F600, 0x200D, 0x1F4BB }), "ezwj grinning-laptop tag");
+
+    // ── structural checks (follow from the priority ladder) ──────────────
+    // 9 men joined by 8 ZWJs = 17 codepoints (> MaxRgiLength).
+    var over = new List<int>();
+    for (var i = 0; i < 9; i++)
+    {
+        if (i > 0) over.Add(0x200D);
+        over.Add(0x1F468);
+    }
+    AssertEqual(17, over.Count, "ezwj over-length input size");
+    var overVerdict = Ezwj.Detect(over);
+    AssertEqual<string?>("OverLength", overVerdict.Classify.Tag, "ezwj over-length tag");
+    var overSub = (overVerdict.Classify as Ezwj.Hazard)?.Sub as Ezwj.OverLength;
+    AssertTrue(overSub is not null, "ezwj over-length sub shape");
+    AssertEqual(17, overSub!.Length, "ezwj over-length length");
+    AssertEqual(16, overSub.MaxLength, "ezwj over-length max-length");
+
+    var trailing = Ezwj.Detect(new[] { 0x1F468, 0x200D });
+    AssertEqual<string?>("NonEmojiInjection", trailing.Classify.Tag, "ezwj trailing-zwj tag");
+    AssertSequence(new[] { 1 }, trailing.Classify.Positions, "ezwj trailing-zwj pos");
+
+    AssertEqual<string?>("DoubleZWJ", Tag(new[] { 0x1F468, 0x200D, 0x200D, 0x1F466 }), "ezwj double-beats-unregistered tag");
+
+    Console.WriteLine("clean: .NET emoji-zwj-integrity data + detect + structural spot-check passes");
 }
 
 // Opaque-blob refinement: structurally valid strict UTF-8 under a size bound,

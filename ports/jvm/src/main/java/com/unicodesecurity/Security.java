@@ -55,6 +55,7 @@ public final class Security {
     public static final String NONCHARACTER_CONTROL = "noncharacter-control";
     public static final String HOMOGLYPH_CONFUSABLE = "homoglyph-confusable";
     public static final String MIXED_SCRIPT_ADMISSIBILITY = "mixed-script-admissibility";
+    public static final String EMOJI_ZWJ_INTEGRITY = "emoji-zwj-integrity";
     public static final String RTL_INJECTION = "rtl-injection";
     public static final String CONFUSABLE_BIDI_COMPOUND = "confusable-bidi-compound";
     public static final String COVERT_DISPLAY_COMPOUND = "covert-display-compound";
@@ -254,7 +255,8 @@ public final class Security {
 
   private static String layer(String family) {
     if (family.equals(Family.HOMOGLYPH_CONFUSABLE)
-        || family.equals(Family.MIXED_SCRIPT_ADMISSIBILITY)) {
+        || family.equals(Family.MIXED_SCRIPT_ADMISSIBILITY)
+        || family.equals(Family.EMOJI_ZWJ_INTEGRITY)) {
       return "I";
     }
     if (family.equals(Family.RTL_INJECTION)) {
@@ -1657,6 +1659,7 @@ public final class Security {
       Map.entry("StandardizedVariants.txt", "f55100b2fb11d3d75a37b8c1ab752192dbd1c4b12328c5ec6b38e3807c0ca597"),
       Map.entry("emoji-variation-sequences.txt", "bb3d09ef03f206012c7532dd52dc0a21c9efddba0135ea4cf0d9201b8b9bba7e"),
       Map.entry("emoji-data.txt", "2cb2bb9455cda83e8481541ecf5b6dfda66a3bb89efa3fa7c5297eccf607b72b"),
+      Map.entry("emoji-zwj-sequences.txt", "5b25441daed2322b068c5e70cda522946a4f0274df864445a1965a92e5fc5cad"),
       Map.entry("DerivedBidiClass.txt", "4867b4b7f0731ed1bfcd34cc6251211ff1542541fce0734b6fbda139ee80b3a4"),
       Map.entry("UnicodeData.txt", "2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c"),
       Map.entry("CompositionExclusions.txt", "2f239196ef3b5b61db5cc476e9bd80f534d15aa1b74e1be1dea5d042a344c85f"),

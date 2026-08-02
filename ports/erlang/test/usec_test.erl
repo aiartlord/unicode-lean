@@ -12,6 +12,7 @@ run() ->
     hash_input_stability_tests(),
     stream_safe_tests(),
     ai_watermark_tests(),
+    emoji_zwj_integrity_tests(),
     opaque_blob_tests(),
     grapheme_tests(),
     io:format("ok: erlang unicode security tests pass~n").
@@ -346,6 +347,107 @@ ai_watermark_tests() ->
     assert_eq(none, usec_ai_watermark_detectability:cue_class({unknown, 0}), aw_unknown_no_cue_class),
 
     io:format("  ai-watermark-detectability: fixture + 2 tolerance vectors pass~n").
+
+%% Reason code the detect verdict would emit for a given input, or `none' when
+%% clear. Mirrors usec_policy:scan_emoji_zwj_integrity's finding wiring.
+ezwj_code(Input) ->
+    C = maps:get(classify, usec_emoji_zwj_integrity:detect(Input)),
+    case usec_emoji_zwj_integrity:classify_tag(C) of
+        none -> none;
+        Tag -> usec_policy:reason_code(emoji_zwj_integrity, Tag)
+    end.
+
+%% The classification tag for an input, or `none' when clear.
+ezwj_tag(Input) ->
+    usec_emoji_zwj_integrity:classify_tag(maps:get(classify, usec_emoji_zwj_integrity:detect(Input))).
+
+emoji_zwj_integrity_tests() ->
+    %% ── Shared context-free fixture, run through detect. ────────────────
+    F = fixture(filename:join("detectors", "emoji_zwj_integrity.json")),
+    assert_eq(<<"emoji-zwj-integrity">>, maps:get(<<"family">>, F), ezwj_fixture_family),
+    lists:foreach(fun(Case) ->
+                          Input = maps:get(<<"input">>, Case),
+                          Label = {ezwj_fixture, maps:get(<<"name">>, Case)},
+                          Required = maps:get(<<"required_findings">>, Case),
+                          Codes = case ezwj_code(Input) of
+                                      none -> [];
+                                      Code -> [Code]
+                                  end,
+                          lists:foreach(fun(Req) -> assert(lists:member(Req, Codes), Label) end, Required),
+                          case Required of
+                              [] -> assert(Codes =:= [], Label);
+                              _ -> ok
+                          end
+                  end, maps:get(<<"cases">>, F)),
+
+    %% ── Data-layer sanity (rust is_emoji_modifier_checks /
+    %%    zwj_alphabet_admits_heart_rejects_grinning /
+    %%    registered_membership_is_exact). ────────────────────────────────
+    assert(usec_emoji_zwj_integrity:is_emoji_modifier(16#1F3FB), ezwj_modifier_lo),
+    assert(usec_emoji_zwj_integrity:is_emoji_modifier(16#1F3FF), ezwj_modifier_hi),
+    assert(not usec_emoji_zwj_integrity:is_emoji_modifier(16#1F3FA), ezwj_modifier_below),
+    assert(not usec_emoji_zwj_integrity:is_emoji_modifier(16#1F600), ezwj_modifier_face),
+    assert(usec_emoji_zwj_integrity:is_emoji_target(16#2764), ezwj_target_heart),
+    assert(usec_emoji_zwj_integrity:is_emoji_target(16#1F468), ezwj_target_man),
+    assert(not usec_emoji_zwj_integrity:is_emoji_target(16#1F600), ezwj_target_grinning),
+    assert(not usec_emoji_zwj_integrity:is_emoji_target(16#200D), ezwj_target_zwj_excluded),
+    assert(usec_emoji_zwj_integrity:is_registered_zwj_sequence([16#1F468, 16#200D, 16#1F4BB]), ezwj_registered_man_laptop),
+    assert(not usec_emoji_zwj_integrity:is_registered_zwj_sequence([16#1F468, 16#200D, 16#1F469]), ezwj_unregistered_man_woman),
+
+    %% ── §5 detect spot checks (the 11 rust #[test] cases). ──────────────
+    %% detect_empty_clear
+    EmptyV = usec_emoji_zwj_integrity:detect([]),
+    assert(usec_emoji_zwj_integrity:is_clear(maps:get(classify, EmptyV)), ezwj_empty_clear),
+    assert_eq(none, ezwj_tag([]), ezwj_empty_tag),
+    assert_eq([], maps:get(zwj_positions, EmptyV), ezwj_empty_zwj_positions),
+    assert_eq(0, maps:get(chain_length, EmptyV), ezwj_empty_chain_length),
+    assert_eq(0, maps:get(skin_tone_count, EmptyV), ezwj_empty_skin_tone_count),
+    %% detect_ascii_clear
+    assert_eq(none, ezwj_tag([16#48, 16#65, 16#6C, 16#6C, 16#6F]), ezwj_ascii_clear),
+    %% detect_plain_emoji_clear
+    assert_eq(none, ezwj_tag([16#1F600]), ezwj_plain_emoji_clear),
+    %% detect_one_skintone_clear — a base plus a single skin-tone (count = 1).
+    OneSkinV = usec_emoji_zwj_integrity:detect([16#1F44B, 16#1F3FB]),
+    assert(usec_emoji_zwj_integrity:is_clear(maps:get(classify, OneSkinV)), ezwj_one_skintone_clear),
+    assert_eq(1, maps:get(skin_tone_count, OneSkinV), ezwj_one_skintone_count),
+    %% detect_family_rgi_clear — man + woman + girl + boy via ZWJs (registered).
+    FamilyV = usec_emoji_zwj_integrity:detect([16#1F468, 16#200D, 16#1F469, 16#200D, 16#1F467, 16#200D, 16#1F466]),
+    assert(usec_emoji_zwj_integrity:is_clear(maps:get(classify, FamilyV)), ezwj_family_rgi_clear),
+    assert_eq(true, maps:get(is_registered_rgi, FamilyV), ezwj_family_is_rgi),
+    %% detect_double_zwj — ZWJ + ZWJ adjacency.
+    DoubleV = usec_emoji_zwj_integrity:detect([16#1F600, 16#200D, 16#200D, 16#1F600]),
+    assert_eq(<<"DoubleZWJ">>, usec_emoji_zwj_integrity:classify_tag(maps:get(classify, DoubleV)), ezwj_double_tag),
+    assert_eq([1], usec_emoji_zwj_integrity:classify_positions(maps:get(classify, DoubleV)), ezwj_double_positions),
+    %% detect_non_emoji_injection — ZWJ joining ASCII 'a'.
+    assert_eq(<<"NonEmojiInjection">>, ezwj_tag([16#1F600, 16#200D, 16#0061]), ezwj_non_emoji_injection),
+    %% detect_skin_tone_overflow — five skin-tone modifiers.
+    OverflowV = usec_emoji_zwj_integrity:detect([16#1F44B, 16#1F3FB, 16#1F3FC, 16#1F3FD, 16#1F3FE, 16#1F3FF]),
+    assert_eq(<<"SkinToneOverflow">>, usec_emoji_zwj_integrity:classify_tag(maps:get(classify, OverflowV)), ezwj_skin_tone_overflow),
+    assert_eq(5, maps:get(skin_tone_count, OverflowV), ezwj_skin_tone_overflow_count),
+    %% detect_man_laptop_registered_clear — man technologist (registered).
+    assert_eq(none, ezwj_tag([16#1F468, 16#200D, 16#1F4BB]), ezwj_man_laptop_clear),
+    %% detect_unregistered — man + ZWJ + woman: both flanks are RGI-alphabet but
+    %% the joined sequence is not registered.
+    assert_eq(<<"UnregisteredSequence">>, ezwj_tag([16#1F468, 16#200D, 16#1F469]), ezwj_unregistered),
+    %% detect_grinning_laptop_non_emoji_injection — grinning face is not a valid
+    %% ZWJ-join target, so this surfaces as NonEmojiInjection.
+    assert_eq(<<"NonEmojiInjection">>, ezwj_tag([16#1F600, 16#200D, 16#1F4BB]), ezwj_grinning_laptop),
+
+    %% ── Structural checks (follow from the priority ladder). ────────────
+    %% Over-length: 9 men joined by 8 ZWJs = 17 codepoints (> MAX_RGI_LENGTH).
+    OverLenInput = lists:droplast(lists:append([[16#1F468, 16#200D] || _N <- lists:seq(1, 9)])),
+    assert_eq(17, length(OverLenInput), ezwj_over_length_input_len),
+    OverLenV = usec_emoji_zwj_integrity:detect(OverLenInput),
+    assert_eq(<<"OverLength">>, usec_emoji_zwj_integrity:classify_tag(maps:get(classify, OverLenV)), ezwj_over_length_tag),
+    assert_eq({hazard, {over_length, 17, 16}, [], []}, maps:get(classify, OverLenV), ezwj_over_length_classify),
+    %% Trailing-edge ZWJ is an injection-class hazard.
+    TrailingV = usec_emoji_zwj_integrity:detect([16#1F468, 16#200D]),
+    assert_eq(<<"NonEmojiInjection">>, usec_emoji_zwj_integrity:classify_tag(maps:get(classify, TrailingV)), ezwj_trailing_tag),
+    assert_eq([1], usec_emoji_zwj_integrity:classify_positions(maps:get(classify, TrailingV)), ezwj_trailing_positions),
+    %% Double-ZWJ wins over the unregistered catch-all (priority order).
+    assert_eq(<<"DoubleZWJ">>, ezwj_tag([16#1F468, 16#200D, 16#200D, 16#1F466]), ezwj_double_beats_unregistered),
+
+    io:format("  emoji-zwj-integrity: fixture + 11 spot-checks + 3 structural pass~n").
 
 fixture(Rel) ->
     {ok, Bin} = file:read_file(filename:join(["test", "fixtures", "security", Rel])),
