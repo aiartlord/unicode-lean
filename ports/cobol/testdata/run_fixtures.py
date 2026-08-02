@@ -618,6 +618,61 @@ def check_skin_tone_variation_forgery():
     return len(fixture["cases"]), len(spot), 1
 
 
+CEM_BASE = "unicode.security.F.case-expansion-mismatch."
+
+
+def run_cem(values):
+    return run("case-expansion-mismatch", "gateway-header", "observe", values)
+
+
+def check_case_expansion_mismatch():
+    # 1. The 6 shared context-free fixture vectors.
+    fixture = load("detectors/case_expansion_mismatch.json")
+    for case in fixture["cases"]:
+        got = run_cem(case["input"])
+        for code in case["required_findings"]:
+            require(code in got["codes"],
+                    f"cem/{case['name']} missing {code}; got {got['codes']}")
+        if not case["required_findings"]:
+            require(all(".case-expansion-mismatch." not in code for code in got["codes"]),
+                    f"cem/{case['name']} unexpected finding; got {got['codes']}")
+
+    # 2. Spot-checks transcribed verbatim from the Rust reference's `#[test]`
+    #    module: empty / "Hello" ASCII clear (every ASCII cp case-maps to one
+    #    cp); ss-sharp U+00DF toUpper -> "SS", fi-ligature U+FB01 toUpper -> "FI",
+    #    ffi-ligature U+FB03 toUpper -> "FFI" all UpperExpansion; dotted-I U+0130
+    #    toLower under default -> "i + 0307" LowerExpansion (no upper expansion,
+    #    so the detector falls through to the lower scan). tag = suffix or None
+    #    for Clear; pos = expected positions or None to skip.
+    spot = [
+        ("empty", [], None, None),
+        ("hello", [0x48, 0x65, 0x6C, 0x6C, 0x6F], None, None),
+        ("sharp-s-upper", [0x00DF], "UpperExpansion", [0]),
+        ("fi-ligature-upper", [0xFB01], "UpperExpansion", None),
+        ("ffi-ligature-upper", [0xFB03], "UpperExpansion", None),
+        ("dotted-I-lower", [0x0130], "LowerExpansion", None),
+    ]
+    for name, values, tag, expected_pos in spot:
+        got = run_cem(values)
+        cem_codes = [c for c in got["codes"] if ".case-expansion-mismatch." in c]
+        if tag is None:
+            require(not cem_codes, f"cem-spot/{name} expected clear; got {cem_codes}")
+        else:
+            code = CEM_BASE + tag
+            require(code in got["codes"], f"cem-spot/{name} missing {code}; got {got['codes']}")
+            if expected_pos is not None:
+                require(got["positions"].get(code) == expected_pos,
+                        f"cem-spot/{name} positions {got['positions'].get(code)} != {expected_pos}")
+
+    # 3. A leading ASCII then ß: the uppercase expansion is reported at
+    #    position 1, not 0 — the first expanding position, not the first cp.
+    mid = run_cem([0x61, 0x00DF])
+    require(mid["positions"].get(CEM_BASE + "UpperExpansion") == [1],
+            f"cem-struct/mid-string positions {mid['positions']} != [1]")
+
+    return len(fixture["cases"]), len(spot), 1
+
+
 def check_forms_and_bip39():
     cases = [
         ("forms", [], []),
@@ -830,6 +885,7 @@ def main():
     fd_fixture_count, fd_spot_count, fd_struct_count = check_filename_disguise()
     ifd_fixture_count, ifd_spot_count, ifd_struct_count = check_identifier_form_drift()
     stv_fixture_count, stv_spot_count, stv_struct_count = check_skin_tone_variation_forgery()
+    cem_fixture_count, cem_spot_count, cem_struct_count = check_case_expansion_mismatch()
     check_forms_and_bip39()
     ss_count = check_stream_safe_violation()
     check_generated_tables()
@@ -859,6 +915,9 @@ def main():
     print(f"skin-tone-variation-forgery shared-fixture vectors: {stv_fixture_count}")
     print(f"skin-tone-variation-forgery spot-checks: {stv_spot_count}")
     print(f"skin-tone-variation-forgery structural checks: {stv_struct_count}")
+    print(f"case-expansion-mismatch shared-fixture vectors: {cem_fixture_count}")
+    print(f"case-expansion-mismatch spot-checks: {cem_spot_count}")
+    print(f"case-expansion-mismatch structural checks: {cem_struct_count}")
     print("ok: cobol unicode security fixture tests pass")
 
 

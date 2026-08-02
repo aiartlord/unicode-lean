@@ -480,6 +480,144 @@ def emit_composition(path, table, exclusions):
     path.write_text("\n".join(lines) + "\n", encoding="ascii")
 
 
+# ─────────────────────────────────────────────────────────────────────
+# UAX #21 case mapping tables. These mirror the verified Rust reference
+# `security/identity/ucd.rs` casing machinery so the COBOL side evaluates the
+# real context-sensitive `upper_codepoint` / `lower_codepoint`: the full
+# SpecialCasing rows (selected at runtime by evaluating the context conditions
+# against the surrounding text), the simple upper/lower mappings, and the Cased
+# and Soft_Dotted membership sets the context predicates consult.
+# ─────────────────────────────────────────────────────────────────────
+
+# Locale tags -> the SC-LOCALE discriminant the COBOL side carries (0 = Default).
+SPECIAL_CASING_LOCALE = {"tr": 1, "az": 2, "lt": 3}
+
+# Non-locale UAX #21 conditions -> the COBOL context-flag test that expresses
+# them. Mirrors `conditions_hold` in the Rust reference.
+SPECIAL_CASING_CONTEXT = {
+    "Final_Sigma": "SC-FINAL-SIGMA = 1",
+    "Not_Final_Sigma": "SC-FINAL-SIGMA = 0",
+    "After_Soft_Dotted": "SC-AFTER-SOFT-DOTTED = 1",
+    "After_I": "SC-AFTER-I = 1",
+    "More_Above": "SC-MORE-ABOVE = 1",
+    "Not_Before_Dot": "SC-BEFORE-DOT = 0",
+}
+
+
+def parse_special_casing():
+    """code -> ordered SpecialCasing rows [(lower_seq, upper_seq, conditions)].
+
+    Columns are ``code; lower; title; upper; conditions``: the lowercase mapping
+    is field 1, the uppercase mapping field 3, and the space-separated condition
+    list field 4. Rows are reordered per code so conditional rows (in file order)
+    precede the unconditional one, matching `find_special_row`, which returns the
+    first conditional row whose conditions hold and only then the unconditional
+    fallback."""
+    rows = {}
+    for line in (DATA / "SpecialCasing.txt").read_text(encoding="utf-8").splitlines():
+        body = strip_comment(line)
+        if not body:
+            continue
+        fields = [part.strip() for part in body.split(";")]
+        if len(fields) < 4:
+            continue
+        code = int(fields[0], 16)
+        lower = codepoints(fields[1])
+        upper = codepoints(fields[3])
+        conditions = fields[4].split() if len(fields) > 4 and fields[4] else []
+        rows.setdefault(code, []).append((lower, upper, conditions))
+    for code in rows:
+        rows[code] = sorted(rows[code], key=lambda row: 0 if row[2] else 1)
+    return rows
+
+
+def special_casing_guard(conditions):
+    """The COBOL boolean expression under which a SpecialCasing row applies:
+    `locale_matches` (any locale tag matches SC-LOCALE; rows with no locale tag
+    match every locale) ANDed with each context predicate from `conditions_hold`."""
+    locale = [token for token in conditions if token in SPECIAL_CASING_LOCALE]
+    context = [token for token in conditions if token not in SPECIAL_CASING_LOCALE]
+    parts = []
+    if locale:
+        matches = " OR ".join(f"SC-LOCALE = {SPECIAL_CASING_LOCALE[token]}" for token in locale)
+        parts.append(f"({matches})" if len(locale) > 1 else matches)
+    for token in context:
+        parts.append(SPECIAL_CASING_CONTEXT[token])
+    return " AND ".join(parts)
+
+
+def emit_special_casing(path, rows):
+    """The `find_special_row` body: one WHEN per SpecialCasing code, each row an
+    IF guarded by SC-FOUND = 0 (first-match wins) plus its condition guard, that
+    stores the matched row's uppercase and lowercase sequences and marks
+    SC-FOUND. Codepoints with no SpecialCasing entry leave SC-FOUND = 0."""
+    lines = ["EVALUATE LOOKUP-CP"]
+    for code in sorted(rows):
+        lines.append(f"    WHEN {code}")
+        for lower, upper, conditions in rows[code]:
+            guard = special_casing_guard(conditions)
+            test = "SC-FOUND = 0" if not guard else f"SC-FOUND = 0 AND {guard}"
+            lines.append(f"        IF {test}")
+            lines.append(f"            MOVE {len(upper)} TO SC-UPPER-LEN")
+            for slot, cp in enumerate(upper, start=1):
+                lines.append(f"            MOVE {cp} TO SC-UPPER ({slot})")
+            lines.append(f"            MOVE {len(lower)} TO SC-LOWER-LEN")
+            for slot, cp in enumerate(lower, start=1):
+                lines.append(f"            MOVE {cp} TO SC-LOWER ({slot})")
+            lines.append("            MOVE 1 TO SC-FOUND")
+            lines.append("        END-IF")
+    lines.append("END-EVALUATE.")
+    path.write_text("\n".join(lines) + "\n", encoding="ascii")
+
+
+def parse_simple_case():
+    """(simple_upper, simple_lower) codepoint maps from UnicodeData: the simple
+    uppercase mapping is field 12 and the simple lowercase mapping is field 13,
+    each a single codepoint (so neither ever changes the codepoint count)."""
+    upper = {}
+    lower = {}
+    for line in (DATA / "UnicodeData.txt").read_text(encoding="utf-8").splitlines():
+        fields = line.split(";")
+        if len(fields) < 15:
+            continue
+        cp = int(fields[0], 16)
+        if fields[12]:
+            upper[cp] = int(fields[12], 16)
+        if fields[13]:
+            lower[cp] = int(fields[13], 16)
+    return upper, lower
+
+
+def emit_simple_case(path, mapping, target):
+    """Simple case mapping: one WHEN per codepoint that carries a mapping; every
+    other codepoint keeps the identity value the COBOL reset supplies."""
+    lines = ["EVALUATE LOOKUP-CP"]
+    for cp in sorted(mapping):
+        lines.append(f"    WHEN {cp}")
+        lines.append(f"        MOVE {mapping[cp]} TO {target}")
+    lines.append("END-EVALUATE.")
+    path.write_text("\n".join(lines) + "\n", encoding="ascii")
+
+
+def emit_membership(path, ranges, success_line):
+    """A range-membership copybook that may be empty. When the property has no
+    ranges in the bundled data (as Soft_Dotted has none in DerivedCoreProperties,
+    matching the Rust reference's empty Soft_Dotted set) the copybook is a bare
+    CONTINUE, so the enclosing reset-to-zero stands."""
+    if not ranges:
+        path.write_text("CONTINUE.\n", encoding="ascii")
+        return
+    lines = ["EVALUATE TRUE"]
+    for lo, hi in ranges:
+        if lo == hi:
+            lines.append(f"    WHEN LOOKUP-CP = {lo}")
+        else:
+            lines.append(f"    WHEN LOOKUP-CP >= {lo} AND LOOKUP-CP <= {hi}")
+    lines.append(f"        {success_line}")
+    lines.append("END-EVALUATE.")
+    path.write_text("\n".join(lines) + "\n", encoding="ascii")
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     emit_variation_pairs(OUT / "legal_variation.cpy", parse_variation_pairs())
@@ -528,6 +666,20 @@ def main():
         OUT / "id_allowed.cpy",
         parse_property_ranges(DATA / "IdentifierStatus.txt", {"Allowed"}),
         "MOVE 1 TO TABLE-FLAG",
+    )
+    emit_special_casing(OUT / "special_casing.cpy", parse_special_casing())
+    simple_upper, simple_lower = parse_simple_case()
+    emit_simple_case(OUT / "simple_upper.cpy", simple_upper, "SC-SIMPLE-UP")
+    emit_simple_case(OUT / "simple_lower.cpy", simple_lower, "SC-SIMPLE-LO")
+    emit_membership(
+        OUT / "cased.cpy",
+        parse_property_ranges(DATA / "DerivedCoreProperties.txt", {"Cased"}),
+        "MOVE 1 TO SC-CASED",
+    )
+    emit_membership(
+        OUT / "soft_dotted.cpy",
+        parse_property_ranges(DATA / "DerivedCoreProperties.txt", {"Soft_Dotted"}),
+        "MOVE 1 TO SC-SOFT-DOTTED",
     )
     print("generated COBOL Unicode lookup copybooks")
 

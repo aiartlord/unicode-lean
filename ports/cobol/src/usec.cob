@@ -292,6 +292,62 @@ WORKING-STORAGE SECTION.
 01 STV-POS PIC 9(9) COMP-5 VALUE 0.
 01 STV-MOD1 PIC 9(9) COMP-5 VALUE 0.
 01 STV-MOD2 PIC 9(9) COMP-5 VALUE 0.
+*> ── UAX #21 full case mapping (used by case-expansion-mismatch) ───────
+*> The port's own context-sensitive upper_codepoint / lower_codepoint, mirroring
+*> the verified Rust reference ucd casing. SC-LOCALE is the locale discriminant
+*> (0 Default, 1 tr, 2 az, 3 lt). find_special_row fills SC-UPPER / SC-LOWER (up
+*> to three codepoints each) and SC-FOUND from the generated SpecialCasing rows;
+*> SC-SIMPLE-UP / SC-SIMPLE-LO carry the simple mappings used when no row matches.
+*> SC-CASED / SC-SOFT-DOTTED are the membership sets the context predicates read.
+*> SC-FINAL-SIGMA .. SC-BEFORE-DOT are the five UAX #21 context flags, computed
+*> per position from the surrounding text; SC-HAS-CASED-BEFORE / -AFTER are the
+*> Final_Sigma sub-terms; SC-SCAN-* drive the prefix/suffix walks.
+01 SC-LOCALE PIC 9 VALUE 0.
+01 SC-FOUND PIC 9 VALUE 0.
+01 SC-UPPER-LEN PIC 9 VALUE 0.
+01 SC-UPPER-SEQ.
+   05 SC-UPPER PIC 9(9) COMP-5 OCCURS 3 TIMES.
+01 SC-LOWER-LEN PIC 9 VALUE 0.
+01 SC-LOWER-SEQ.
+   05 SC-LOWER PIC 9(9) COMP-5 OCCURS 3 TIMES.
+01 SC-SIMPLE-UP PIC 9(9) COMP-5 VALUE 0.
+01 SC-SIMPLE-LO PIC 9(9) COMP-5 VALUE 0.
+01 SC-CASED PIC 9 VALUE 0.
+01 SC-SOFT-DOTTED PIC 9 VALUE 0.
+01 SC-FINAL-SIGMA PIC 9 VALUE 0.
+01 SC-AFTER-SOFT-DOTTED PIC 9 VALUE 0.
+01 SC-AFTER-I PIC 9 VALUE 0.
+01 SC-MORE-ABOVE PIC 9 VALUE 0.
+01 SC-BEFORE-DOT PIC 9 VALUE 0.
+01 SC-HAS-CASED-BEFORE PIC 9 VALUE 0.
+01 SC-HAS-CASED-AFTER PIC 9 VALUE 0.
+01 SC-SCAN-STOP PIC 9 VALUE 0.
+01 SC-SCAN-IDX PIC S9(9) COMP-5 VALUE 0.
+01 SC-COPY-IDX PIC 9 VALUE 0.
+*> upper_codepoint / lower_codepoint results at a position: the real mapped
+*> sequence UC-CP(1..UC-LEN) / LC-CP(1..LC-LEN) whose length the detector reads.
+01 UC-LEN PIC 9 VALUE 0.
+01 UC-SEQ.
+   05 UC-CP PIC 9(9) COMP-5 OCCURS 3 TIMES.
+01 LC-LEN PIC 9 VALUE 0.
+01 LC-SEQ.
+   05 LC-CP PIC 9(9) COMP-5 OCCURS 3 TIMES.
+*> ── case-expansion-mismatch (F) classification state ──────────────────
+*> The priority-ordered classification (0 clear, 1 UpperExpansion, 2
+*> LowerExpansion), the 0-indexed base positions of the first uppercase and first
+*> lowercase expansion, the total expansion counts per direction, and the maximum
+*> mapped length across the input — the projection of the reference Verdict
+*> (input, classify, upper/lower expansion counts, max expansion length).
+01 CE-CLASS PIC 9 VALUE 0.
+01 CE-UPPER-FOUND PIC 9 VALUE 0.
+01 CE-LOWER-FOUND PIC 9 VALUE 0.
+01 CE-UPPER-POS PIC 9(9) COMP-5 VALUE 0.
+01 CE-LOWER-POS PIC 9(9) COMP-5 VALUE 0.
+01 CE-POS PIC 9(9) COMP-5 VALUE 0.
+01 CE-UPPER-COUNT PIC 9(5) COMP-5 VALUE 0.
+01 CE-LOWER-COUNT PIC 9(5) COMP-5 VALUE 0.
+01 CE-MAX-LEN PIC 9(4) COMP-5 VALUE 0.
+01 CE-IDX PIC 9(5) COMP-5 VALUE 0.
 01 VOCAB-RAW.
    05 FILLER PIC X(26) VALUE "05delve                   ".
    05 FILLER PIC X(26) VALUE "07delving                 ".
@@ -425,7 +481,11 @@ MAIN.
                                                     IF OP-NAME = "skin-tone-variation-forgery"
                                                         PERFORM SCAN-SKIN-TONE-VARIATION-FORGERY
                                                     ELSE
-                                                        PERFORM SCAN-CORE
+                                                        IF OP-NAME = "case-expansion-mismatch"
+                                                            PERFORM SCAN-CASE-EXPANSION-MISMATCH
+                                                        ELSE
+                                                            PERFORM SCAN-CORE
+                                                        END-IF
                                                     END-IF
                                                 END-IF
                                             END-IF
@@ -2688,6 +2748,300 @@ STV-EMIT-STACKED.
     MOVE POS-IDX TO POS-NUM
     STRING FUNCTION TRIM(POS-TEXT) DELIMITED BY SIZE "," DELIMITED BY SIZE FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
     MOVE POS-TEXT TO FINDING-POS(FINDING-COUNT).
+
+SCAN-CASE-EXPANSION-MISMATCH.
+*> CaseExpansionMismatch (form-layer detector). Byte-faithful transliteration of
+*> the verified Rust reference security/form/case_expansion_mismatch.rs. An
+*> attacker submits text whose default-locale UAX #21 case mapping changes the
+*> codepoint count: a receiver that fixes a column width and stores toUpper of a
+*> username overflows on "ß" (1 in, "SS" 2 out), and one that checks equal length
+*> rejects valid case-insensitive logins whose names expand under folding. At each
+*> position it builds the surrounding context (rev_prefix = the earlier codepoints
+*> nearest-first, suffix = the later ones) and calls the port's own context-
+*> sensitive UPPER-CODEPOINT / LOWER-CODEPOINT, firing UpperExpansion (priority 1)
+*> at the first position whose uppercase mapping yields more than one codepoint,
+*> else LowerExpansion at the first whose lowercase mapping expands, else Clear.
+*> It reuses the port's own UAX #21 case mapping (the generated SpecialCasing rows
+*> plus simple mappings, selected by evaluating the context conditions); never a
+*> host casing library.
+    MOVE 0 TO CE-CLASS CE-UPPER-FOUND CE-LOWER-FOUND CE-POS
+    MOVE 0 TO CE-UPPER-POS CE-LOWER-POS
+    MOVE 0 TO CE-UPPER-COUNT CE-LOWER-COUNT CE-MAX-LEN
+    MOVE 0 TO SC-LOCALE
+*> One pass gathers the verdict projection: per-direction expansion counts, the
+*> first expanding position in each direction, and the maximum mapped length.
+    PERFORM VARYING CE-IDX FROM 1 BY 1 UNTIL CE-IDX > CP-COUNT
+        PERFORM COMPUTE-CASE-CONTEXT
+        PERFORM UPPER-CODEPOINT
+        PERFORM LOWER-CODEPOINT
+        IF UC-LEN > 1
+            ADD 1 TO CE-UPPER-COUNT
+            IF CE-UPPER-FOUND = 0
+                COMPUTE CE-UPPER-POS = CE-IDX - 1
+                MOVE 1 TO CE-UPPER-FOUND
+            END-IF
+        END-IF
+        IF LC-LEN > 1
+            ADD 1 TO CE-LOWER-COUNT
+            IF CE-LOWER-FOUND = 0
+                COMPUTE CE-LOWER-POS = CE-IDX - 1
+                MOVE 1 TO CE-LOWER-FOUND
+            END-IF
+        END-IF
+        IF UC-LEN > LC-LEN
+            IF UC-LEN > CE-MAX-LEN
+                MOVE UC-LEN TO CE-MAX-LEN
+            END-IF
+        ELSE
+            IF LC-LEN > CE-MAX-LEN
+                MOVE LC-LEN TO CE-MAX-LEN
+            END-IF
+        END-IF
+    END-PERFORM
+*> Priority: an uppercase expansion anywhere outranks a lowercase one.
+    IF CE-UPPER-FOUND = 1
+        MOVE 1 TO CE-CLASS
+        MOVE CE-UPPER-POS TO CE-POS
+    ELSE
+        IF CE-LOWER-FOUND = 1
+            MOVE 2 TO CE-CLASS
+            MOVE CE-LOWER-POS TO CE-POS
+        END-IF
+    END-IF
+    PERFORM CE-EMIT.
+
+CE-EMIT.
+*> Emit the reason code for the classification. Values 0 (Clear), 1
+*> (UpperExpansion), and 2 (LowerExpansion) each have an explicit arm; WHEN OTHER
+*> is unreachable and signals a defect rather than silently falling through.
+    EVALUATE CE-CLASS
+        WHEN 0
+            CONTINUE
+        WHEN 1
+            MOVE "unicode.security.F.case-expansion-mismatch.UpperExpansion" TO TEMP-CODE
+            PERFORM CE-EMIT-ONE
+        WHEN 2
+            MOVE "unicode.security.F.case-expansion-mismatch.LowerExpansion" TO TEMP-CODE
+            PERFORM CE-EMIT-ONE
+        WHEN OTHER
+            DISPLAY "ERROR case-expansion-mismatch unreachable classification "
+                FUNCTION TRIM(CE-CLASS)
+            MOVE 1 TO RETURN-CODE
+    END-EVALUATE.
+
+CE-EMIT-ONE.
+*> Single-position finding at CE-POS (the first expanding position, 0-indexed).
+    MOVE CE-POS TO POS-NUM
+    ADD 1 TO FINDING-COUNT
+    MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
+    MOVE FUNCTION TRIM(POS-NUM) TO FINDING-POS(FINDING-COUNT).
+
+UPPER-CODEPOINT.
+*> upper_codepoint(SC-LOCALE, rev_prefix, suffix, cp): the matched SpecialCasing
+*> row's uppercase column, else the simple uppercase mapping. Returns the actual
+*> mapped sequence in UC-CP(1..UC-LEN). Assumes COMPUTE-CASE-CONTEXT has set the
+*> context flags for position CE-IDX.
+    MOVE CP(CE-IDX) TO LOOKUP-CP
+    PERFORM FIND-SPECIAL-ROW
+    IF SC-FOUND = 1
+        MOVE SC-UPPER-LEN TO UC-LEN
+        PERFORM VARYING SC-COPY-IDX FROM 1 BY 1 UNTIL SC-COPY-IDX > SC-UPPER-LEN
+            MOVE SC-UPPER (SC-COPY-IDX) TO UC-CP (SC-COPY-IDX)
+        END-PERFORM
+    ELSE
+        MOVE CP(CE-IDX) TO LOOKUP-CP
+        PERFORM LOOKUP-SIMPLE-UPPER
+        MOVE 1 TO UC-LEN
+        MOVE SC-SIMPLE-UP TO UC-CP (1)
+    END-IF.
+
+LOWER-CODEPOINT.
+*> lower_codepoint(SC-LOCALE, rev_prefix, suffix, cp): the matched SpecialCasing
+*> row's lowercase column, else the simple lowercase mapping. Returns the actual
+*> mapped sequence in LC-CP(1..LC-LEN).
+    MOVE CP(CE-IDX) TO LOOKUP-CP
+    PERFORM FIND-SPECIAL-ROW
+    IF SC-FOUND = 1
+        MOVE SC-LOWER-LEN TO LC-LEN
+        PERFORM VARYING SC-COPY-IDX FROM 1 BY 1 UNTIL SC-COPY-IDX > SC-LOWER-LEN
+            MOVE SC-LOWER (SC-COPY-IDX) TO LC-CP (SC-COPY-IDX)
+        END-PERFORM
+    ELSE
+        MOVE CP(CE-IDX) TO LOOKUP-CP
+        PERFORM LOOKUP-SIMPLE-LOWER
+        MOVE 1 TO LC-LEN
+        MOVE SC-SIMPLE-LO TO LC-CP (1)
+    END-IF.
+
+FIND-SPECIAL-ROW.
+*> find_special_row(SC-LOCALE, rev_prefix, suffix, cp): scan LOOKUP-CP's
+*> SpecialCasing rows (conditional rows first, in file order, then the
+*> unconditional one) and select the first whose conditions hold under the current
+*> locale and context flags, filling SC-UPPER / SC-LOWER. SC-FOUND stays 0 when
+*> the codepoint has no SpecialCasing entry.
+    MOVE 0 TO SC-FOUND
+    MOVE 0 TO SC-UPPER-LEN SC-LOWER-LEN
+    COPY "src/generated/special_casing.cpy".
+
+LOOKUP-SIMPLE-UPPER.
+*> Simple (single-codepoint) uppercase mapping of LOOKUP-CP from the bundled
+*> UnicodeData; identity when the codepoint carries no mapping.
+    MOVE LOOKUP-CP TO SC-SIMPLE-UP
+    COPY "src/generated/simple_upper.cpy".
+
+LOOKUP-SIMPLE-LOWER.
+*> Simple (single-codepoint) lowercase mapping of LOOKUP-CP from the bundled
+*> UnicodeData; identity when the codepoint carries no mapping.
+    MOVE LOOKUP-CP TO SC-SIMPLE-LO
+    COPY "src/generated/simple_lower.cpy".
+
+IS-CASED.
+*> UCD Cased membership of LOOKUP-CP, from the bundled DerivedCoreProperties.
+    MOVE 0 TO SC-CASED
+    COPY "src/generated/cased.cpy".
+
+IS-SOFT-DOTTED.
+*> UCD Soft_Dotted membership of LOOKUP-CP. DerivedCoreProperties carries no
+*> Soft_Dotted ranges in the bundled UCD, so this set is empty — matching the
+*> Rust reference, whose Soft_Dotted table is likewise empty on this data.
+    MOVE 0 TO SC-SOFT-DOTTED
+    COPY "src/generated/soft_dotted.cpy".
+
+COMPUTE-CASE-CONTEXT.
+*> The five UAX #21 context predicate flags at position CE-IDX, evaluated over
+*> rev_prefix = input[0..CE-IDX-1] nearest-first and suffix = input[CE-IDX+1..].
+    PERFORM CTX-FINAL-SIGMA
+    PERFORM CTX-AFTER-SOFT-DOTTED
+    PERFORM CTX-AFTER-I
+    PERFORM CTX-MORE-ABOVE
+    PERFORM CTX-BEFORE-DOT.
+
+CTX-FINAL-SIGMA.
+*> Final_Sigma: a cased codepoint precedes (has_cased_before) and none follows
+*> before the next boundary (not has_cased_after).
+    PERFORM CTX-HAS-CASED-BEFORE
+    PERFORM CTX-HAS-CASED-AFTER
+    IF SC-HAS-CASED-BEFORE = 1 AND SC-HAS-CASED-AFTER = 0
+        MOVE 1 TO SC-FINAL-SIGMA
+    ELSE
+        MOVE 0 TO SC-FINAL-SIGMA
+    END-IF.
+
+CTX-HAS-CASED-BEFORE.
+*> Walk rev_prefix nearest-first: a Cased codepoint before the first ccc = 0
+*> boundary sets the flag.
+    MOVE 0 TO SC-HAS-CASED-BEFORE SC-SCAN-STOP
+    COMPUTE SC-SCAN-IDX = CE-IDX - 1
+    PERFORM UNTIL SC-SCAN-IDX < 1 OR SC-SCAN-STOP = 1
+        MOVE CP(SC-SCAN-IDX) TO LOOKUP-CP
+        PERFORM IS-CASED
+        IF SC-CASED = 1
+            MOVE 1 TO SC-HAS-CASED-BEFORE
+            MOVE 1 TO SC-SCAN-STOP
+        ELSE
+            PERFORM LOOKUP-CCC
+            IF CCC-VAL = 0
+                MOVE 1 TO SC-SCAN-STOP
+            END-IF
+        END-IF
+        SUBTRACT 1 FROM SC-SCAN-IDX
+    END-PERFORM.
+
+CTX-HAS-CASED-AFTER.
+*> Walk suffix forward: a Cased codepoint before the first ccc = 0 boundary sets
+*> the flag.
+    MOVE 0 TO SC-HAS-CASED-AFTER SC-SCAN-STOP
+    COMPUTE SC-SCAN-IDX = CE-IDX + 1
+    PERFORM UNTIL SC-SCAN-IDX > CP-COUNT OR SC-SCAN-STOP = 1
+        MOVE CP(SC-SCAN-IDX) TO LOOKUP-CP
+        PERFORM IS-CASED
+        IF SC-CASED = 1
+            MOVE 1 TO SC-HAS-CASED-AFTER
+            MOVE 1 TO SC-SCAN-STOP
+        ELSE
+            PERFORM LOOKUP-CCC
+            IF CCC-VAL = 0
+                MOVE 1 TO SC-SCAN-STOP
+            END-IF
+        END-IF
+        ADD 1 TO SC-SCAN-IDX
+    END-PERFORM.
+
+CTX-AFTER-SOFT-DOTTED.
+*> After_Soft_Dotted: a Soft_Dotted codepoint in rev_prefix before the first
+*> ccc in {0, 230} boundary.
+    MOVE 0 TO SC-AFTER-SOFT-DOTTED SC-SCAN-STOP
+    COMPUTE SC-SCAN-IDX = CE-IDX - 1
+    PERFORM UNTIL SC-SCAN-IDX < 1 OR SC-SCAN-STOP = 1
+        MOVE CP(SC-SCAN-IDX) TO LOOKUP-CP
+        PERFORM IS-SOFT-DOTTED
+        IF SC-SOFT-DOTTED = 1
+            MOVE 1 TO SC-AFTER-SOFT-DOTTED
+            MOVE 1 TO SC-SCAN-STOP
+        ELSE
+            PERFORM LOOKUP-CCC
+            IF CCC-VAL = 0 OR CCC-VAL = 230
+                MOVE 1 TO SC-SCAN-STOP
+            END-IF
+        END-IF
+        SUBTRACT 1 FROM SC-SCAN-IDX
+    END-PERFORM.
+
+CTX-AFTER-I.
+*> After_I: U+0049 (LATIN CAPITAL LETTER I) in rev_prefix before the first ccc in
+*> {0, 230} boundary.
+    MOVE 0 TO SC-AFTER-I SC-SCAN-STOP
+    COMPUTE SC-SCAN-IDX = CE-IDX - 1
+    PERFORM UNTIL SC-SCAN-IDX < 1 OR SC-SCAN-STOP = 1
+        IF CP(SC-SCAN-IDX) = 73
+            MOVE 1 TO SC-AFTER-I
+            MOVE 1 TO SC-SCAN-STOP
+        ELSE
+            MOVE CP(SC-SCAN-IDX) TO LOOKUP-CP
+            PERFORM LOOKUP-CCC
+            IF CCC-VAL = 0 OR CCC-VAL = 230
+                MOVE 1 TO SC-SCAN-STOP
+            END-IF
+        END-IF
+        SUBTRACT 1 FROM SC-SCAN-IDX
+    END-PERFORM.
+
+CTX-MORE-ABOVE.
+*> More_Above: a ccc = 230 mark in suffix before the first ccc = 0 boundary.
+    MOVE 0 TO SC-MORE-ABOVE SC-SCAN-STOP
+    COMPUTE SC-SCAN-IDX = CE-IDX + 1
+    PERFORM UNTIL SC-SCAN-IDX > CP-COUNT OR SC-SCAN-STOP = 1
+        MOVE CP(SC-SCAN-IDX) TO LOOKUP-CP
+        PERFORM LOOKUP-CCC
+        IF CCC-VAL = 230
+            MOVE 1 TO SC-MORE-ABOVE
+            MOVE 1 TO SC-SCAN-STOP
+        ELSE
+            IF CCC-VAL = 0
+                MOVE 1 TO SC-SCAN-STOP
+            END-IF
+        END-IF
+        ADD 1 TO SC-SCAN-IDX
+    END-PERFORM.
+
+CTX-BEFORE-DOT.
+*> Before_Dot (the base term of Not_Before_Dot): U+0307 in suffix before the
+*> first ccc = 0 boundary.
+    MOVE 0 TO SC-BEFORE-DOT SC-SCAN-STOP
+    COMPUTE SC-SCAN-IDX = CE-IDX + 1
+    PERFORM UNTIL SC-SCAN-IDX > CP-COUNT OR SC-SCAN-STOP = 1
+        IF CP(SC-SCAN-IDX) = 775
+            MOVE 1 TO SC-BEFORE-DOT
+            MOVE 1 TO SC-SCAN-STOP
+        ELSE
+            MOVE CP(SC-SCAN-IDX) TO LOOKUP-CP
+            PERFORM LOOKUP-CCC
+            IF CCC-VAL = 0
+                MOVE 1 TO SC-SCAN-STOP
+            END-IF
+        END-IF
+        ADD 1 TO SC-SCAN-IDX
+    END-PERFORM.
 
 IS-BIDI-FORMAT-CONTROL.
 *> The port's own bidi format-control set — LRE/RLE/PDF/LRO/RLO and the four

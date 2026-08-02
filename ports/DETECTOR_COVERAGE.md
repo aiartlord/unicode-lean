@@ -35,12 +35,12 @@ Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 | Bip39Canonical | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | SourceDisplayDivergence | ✓ | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
 | LocaleCaseInversion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| CaseExpansionMismatch | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| CaseExpansionMismatch | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | NfcIdempotenceWitness | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | NormalizationBomb | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | StreamSafeViolation | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | IdentifierFormDrift | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| AdmissibilityFormDrift | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| AdmissibilityFormDrift | ✓ | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
 | EmojiZwjIntegrity | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | SkinToneVariationForgery | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | FilenameDisguise | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -48,13 +48,14 @@ Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 | HashInputStability | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | AiWatermarkDetectability | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-**Totals:** rust 25/27 · all other vouched ports 24/27 · overall 385/432
+**Totals:** rust 27/27 · all other vouched ports 25/27 · overall 402/432
 cells. The 13 core families plus LocaleCaseInversion, NormalizationBomb,
 NfcIdempotenceWitness, HashInputStability, AiWatermarkDetectability,
 StreamSafeViolation, EmojiZwjIntegrity, RendererDivergence, FilenameDisguise,
-IdentifierFormDrift, and SkinToneVariationForgery are complete and vouched
-across every listed port; everything below the line is spec-proven in Lean but
-not yet ported.
+IdentifierFormDrift, SkinToneVariationForgery, and CaseExpansionMismatch are
+complete and vouched across every listed port. Rust additionally carries the
+SourceDisplayDivergence and AdmissibilityFormDrift references; those two await
+their 15-port fan-out (AdmissibilityFormDrift's is in progress).
 
 ## Interrupted new-port inventory
 
@@ -74,16 +75,15 @@ fixture presence is not coverage.
 
 ## Remaining work
 
-3 detector families are unported. Each needs a reference implementation verified
-against the Lean `detect_*` theorems, then a fan-out to all listed ports, each
-vouched.
+2 detector families remain to fan out. Both have a rust reference verified
+against the Lean `detect_*` theorems; each needs the fan-out to the other 15
+listed ports, each vouched. No family is unstarted.
 
-**Reference-only (1):** SourceDisplayDivergence
-(`display/source_display_divergence.rs`) — rust reference exists and is vouched;
-needs fan-out to the other 15 listed ports.
-
-**Not started in any port (2):** CaseExpansionMismatch,
-AdmissibilityFormDrift.
+**Reference-only (2):**
+- SourceDisplayDivergence (`display/source_display_divergence.rs`) — rust
+  reference vouched; needs fan-out to the other 15 listed ports.
+- AdmissibilityFormDrift (`boundary/admissibility_form_drift.rs`) — rust
+  reference vouched; 15-port fan-out in progress.
 
 **Bip39 scan-wiring (follow-up):** Bip39Canonical ships standalone and
 crypto-context-gated in all listed ports; it is deliberately not part of the default
