@@ -274,6 +274,37 @@ export declare function filenameDisguiseReasonCode(subThreatTag: string): string
 export declare function filenameDisguiseSubThreatTag(sub: FilenameDisguiseSubThreat): string;
 export declare function filenameDisguiseDetect(input: number[]): FilenameDisguiseVerdict;
 
+// ── source-display-divergence (layer D, aggregator) ──────────────────────────
+
+export type SourceDisplayDivergenceSubThreat =
+  | { kind: "TagBlock" }
+  | { kind: "VariationSelector" }
+  | { kind: "ZeroWidth" }
+  | { kind: "BidiControl" }
+  | { kind: "IdentifierHomoglyph" }
+  | { kind: "Compound" };
+
+export interface SourceDisplayDivergenceClassification {
+  isClear: boolean;
+  tag: string | null;
+  sub: SourceDisplayDivergenceSubThreat | null;
+  positions: number[];
+}
+
+export interface SourceDisplayDivergenceVerdict {
+  input: number[];
+  classify: SourceDisplayDivergenceClassification;
+  fired: string[];
+}
+
+export declare function sourceDisplayDivergenceReasonCode(subThreatTag: string): string;
+export declare function sourceDisplayDivergenceSubThreatTag(
+  sub: SourceDisplayDivergenceSubThreat,
+): string;
+export declare function sourceDisplayDivergenceDetect(
+  input: number[],
+): SourceDisplayDivergenceVerdict;
+
 // ── identifier-form-drift (layer X) ──────────────────────────────────────────
 
 export type IdentifierFormDriftSubThreat = {

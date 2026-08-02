@@ -21,6 +21,7 @@ use UnicodePhp\Security\Crypto\HashInputStability;
 use UnicodePhp\Security\Display\FilenameDisguise;
 use UnicodePhp\Security\Display\RendererDivergence;
 use UnicodePhp\Security\Display\RtlInjection;
+use UnicodePhp\Security\Display\SourceDisplayDivergence;
 use UnicodePhp\Security\Form\CaseExpansionMismatch;
 use UnicodePhp\Security\Form\LocaleCaseInversion;
 use UnicodePhp\Security\Form\NfcIdempotenceWitness;
@@ -607,6 +608,17 @@ final class Policy
         $findings = [];
         if (!$r->classify->isClear()) {
             self::pushFinding($findings, Family::RendererDivergence, ClassificationKind::Hazard, $r->classify->tag(), $r->classify->positions());
+        }
+        return new Verdict($input, $profile, $mode, self::selectAction($profile, $mode, $findings), $findings, null);
+    }
+
+    /** @param list<int> $input */
+    public static function scanSourceDisplayDivergence(Profile $profile, Mode $mode, array $input): Verdict
+    {
+        $s = SourceDisplayDivergence::detect($input);
+        $findings = [];
+        if (!$s->classify->isClear()) {
+            self::pushFinding($findings, Family::SourceDisplayDivergence, ClassificationKind::Hazard, $s->classify->tag(), $s->classify->positions());
         }
         return new Verdict($input, $profile, $mode, self::selectAction($profile, $mode, $findings), $findings, null);
     }

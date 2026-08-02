@@ -49,6 +49,7 @@ export const Family = Object.freeze({
   CovertDisplayCompound: "covert-display-compound",
   RendererDivergence: "renderer-divergence",
   FilenameDisguise: "filename-disguise",
+  SourceDisplayDivergence: "source-display-divergence",
   IdentifierFormDrift: "identifier-form-drift",
   AdmissibilityFormDrift: "admissibility-form-drift",
   SkinToneVariationForgery: "skin-tone-variation-forgery",
@@ -414,7 +415,8 @@ function layer(family) {
   if (
     family === Family.RtlInjection ||
     family === Family.RendererDivergence ||
-    family === Family.FilenameDisguise
+    family === Family.FilenameDisguise ||
+    family === Family.SourceDisplayDivergence
   ) {
     return "D";
   }
@@ -3555,6 +3557,133 @@ export function filenameDisguiseDetect(input) {
     fullwidthInExt: fwInExt,
     combiningInExt: extInExt,
   };
+}
+
+// ── source-display-divergence (display-layer AGGREGATOR detector D) ──────────
+//
+// Mirrors Unicode.Security.Display.SourceDisplayDivergence (and the verified
+// Rust display source-display-divergence reference). The aggregate "what a
+// reviewer sees differs from what the machine runs" signal: a single covert or
+// identity trick may look individually benign, but any hit means the rendered
+// source diverges from its logical content, and two or more is a strong
+// compound signal. It runs the port's own five constituent detectors on the
+// same codepoint stream in canonical order and aggregates: zero fire → clear,
+// exactly one → pass-through that family's tag, two or more → "Compound".
+//
+// The constituents reuse this port's own detection logic — the exact predicates
+// and finding builders the default scan already uses — never a new table or a
+// host library:
+//   1. TagBlock            tag-block payload      (isTagBlockAsciiPayload run).
+//   2. VariationSelector   variation-selector     (variationSelectorFinding).
+//   3. ZeroWidth           zero-width payload     (isZeroWidthPayload run).
+//   4. BidiControl         bidi-control balance   (isBidiEmbeddingControl run).
+//   5. IdentifierHomoglyph homoglyph confusable   (homoglyphConfusableFinding).
+//
+// Positions are empty at this layer by the spec (the per-family verdicts carry
+// them); the classification carries only the aggregated sub-threat tag.
+
+// Whether the port's tag-block-payload constituent fires on input (its scan
+// test: any codepoint in the tag-ASCII block).
+function sddTagBlockFired(input) {
+  return positionsWhere(input, isTagBlockAsciiPayload).length > 0;
+}
+
+// Whether the port's variation-selector-payload constituent fires on input.
+function sddVariationSelectorFired(input) {
+  return variationSelectorFinding(input) !== null;
+}
+
+// Whether the port's zero-width-payload constituent fires on input.
+function sddZeroWidthFired(input) {
+  return positionsWhere(input, isZeroWidthPayload).length > 0;
+}
+
+// Whether the port's bidi-control-balance constituent fires on input.
+function sddBidiControlFired(input) {
+  return positionsWhere(input, isBidiEmbeddingControl).length > 0;
+}
+
+// Whether the port's homoglyph-confusable constituent fires on input.
+function sddHomoglyphFired(input) {
+  return homoglyphConfusableFinding(input) !== null;
+}
+
+// Fixture-row tag string for a source-display-divergence sub-threat (mirrors
+// SubThreat.tag). Every arm is explicit; the final arm throws on an
+// unrecognised kind rather than defaulting.
+export function sourceDisplayDivergenceSubThreatTag(sub) {
+  switch (sub.kind) {
+    case "TagBlock":
+      return "TagBlock";
+    case "VariationSelector":
+      return "VariationSelector";
+    case "ZeroWidth":
+      return "ZeroWidth";
+    case "BidiControl":
+      return "BidiControl";
+    case "IdentifierHomoglyph":
+      return "IdentifierHomoglyph";
+    case "Compound":
+      return "Compound";
+    default:
+      throw new Error(`unreachable source-display-divergence sub-threat kind: ${sub.kind}`);
+  }
+}
+
+// Stable reason code for a source-display-divergence sub-threat (layer D).
+export function sourceDisplayDivergenceReasonCode(subThreatTag) {
+  return reasonCode(Family.SourceDisplayDivergence, subThreatTag);
+}
+
+function sourceDisplayDivergenceClearClassify() {
+  return { isClear: true, tag: null, sub: null, positions: [] };
+}
+
+function sourceDisplayDivergenceHazardClassify(sub) {
+  return { isClear: false, tag: sourceDisplayDivergenceSubThreatTag(sub), sub, positions: [] };
+}
+
+// The SourceDisplayDivergence detection function (mirrors the Lean/Rust
+// `detect`). Runs the five constituents in canonical aggregation order,
+// collects the fired family tags, then 0 → clear, 1 → pass-through, 2+ →
+// Compound.
+export function sourceDisplayDivergenceDetect(input) {
+  const cps = Array.from(input);
+
+  // Constituent family tags in canonical aggregation order: tag-block,
+  // variation-selector, zero-width, bidi-control, homoglyph.
+  const fires = [];
+  if (sddTagBlockFired(cps)) {
+    fires.push("TagBlock");
+  }
+  if (sddVariationSelectorFired(cps)) {
+    fires.push("VariationSelector");
+  }
+  if (sddZeroWidthFired(cps)) {
+    fires.push("ZeroWidth");
+  }
+  if (sddBidiControlFired(cps)) {
+    fires.push("BidiControl");
+  }
+  if (sddHomoglyphFired(cps)) {
+    fires.push("IdentifierHomoglyph");
+  }
+
+  let classify;
+  switch (fires.length) {
+    case 0:
+      classify = sourceDisplayDivergenceClearClassify();
+      break;
+    case 1:
+      classify = sourceDisplayDivergenceHazardClassify({ kind: fires[0] });
+      break;
+    default:
+      // Two or more constituents fired — a strong compound signal.
+      classify = sourceDisplayDivergenceHazardClassify({ kind: "Compound" });
+      break;
+  }
+
+  return { input: cps, classify, fired: fires };
 }
 
 // ── identifier-form-drift (boundary-layer detector X) ────────────────────────

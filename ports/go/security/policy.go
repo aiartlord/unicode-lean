@@ -69,6 +69,7 @@ const (
 	FamilySkinToneVariationForgery Family = "skin-tone-variation-forgery"
 	FamilyCaseExpansionMismatch    Family = "case-expansion-mismatch"
 	FamilyAdmissibilityFormDrift   Family = "admissibility-form-drift"
+	FamilySourceDisplayDivergence  Family = "source-display-divergence"
 )
 
 type ProfilePolicy struct {
@@ -503,7 +504,7 @@ func layer(family Family) string {
 		return "C"
 	case FamilyHomoglyphConfusable, FamilyMixedScript, FamilyEmojiZwjIntegrity, FamilySkinToneVariationForgery:
 		return "I"
-	case FamilyRtlInjection, FamilyRendererDivergence, FamilyFilenameDisguise:
+	case FamilyRtlInjection, FamilyRendererDivergence, FamilyFilenameDisguise, FamilySourceDisplayDivergence:
 		return "D"
 	case FamilyConfusableBidiCompound, FamilyCovertDisplayCompound, FamilyIdentifierFormDrift, FamilyAdmissibilityFormDrift:
 		return "X"
