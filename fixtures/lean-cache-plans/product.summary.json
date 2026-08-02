@@ -1,5 +1,5 @@
 {
-  "module_steps": 262,
+  "module_steps": 263,
   "preset": "product",
   "roots": [
     {
@@ -77,9 +77,9 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 4137250,
+      "bytes": 4138310,
       "decide_kernel": 282,
-      "modules": 82,
+      "modules": 83,
       "row_refs": 2,
       "stage": "stage-5-product-domain"
     }
