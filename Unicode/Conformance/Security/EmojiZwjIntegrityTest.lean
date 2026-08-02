@@ -1,13 +1,32 @@
 /-
   Unicode.Conformance.Security.EmojiZwjIntegrityTest
 
-  Conformance for the EmojiZwjIntegrity detector: malformed or forged emoji-ZWJ
-  sequences — double ZWJ, non-emoji injection, skin-tone overflow, unregistered
-  sequences — where a registered RGI sequence is always clear.
+  Conformance certificate for the EmojiZwjIntegrity detector (UTS #51 §2.3,
+  Emoji ZWJ Sequences; identity layer, detector I3).
 
-  Each theorem checks the full verdict — sub-threat tag together with the RGI-
-  registration flag — on a representative vector: a double ZWJ, a non-emoji injection,
-  an unregistered join, and a registered RGI family sequence.
+  Threat model.  An emoji ZWJ sequence binds pictographs together with U+200D
+  ZERO WIDTH JOINER.  A renderer collapses a *registered* RGI sequence into a
+  single glyph, but has no sanctioned rendering for any other ZWJ-bearing shape
+  and falls back — component by component on one platform, into an ad-hoc
+  ligature on another.  An adversary lives in that gap: a doubled joiner, a
+  joiner splicing a non-emoji codepoint into the run, a skin-tone chain beyond
+  the sanctioned count, or a structurally valid join that is simply absent from
+  the registry all let a single byte string display as one innocuous glyph in
+  the reviewer's client and as something else in the victim's.
+
+  What the detector draws.  A sequence that appears verbatim in the RGI registry
+  (`emoji-zwj-sequences.txt`) is always clear; every other ZWJ-bearing input is
+  classified by the first structural fault it exhibits, in priority order
+  DoubleZWJ, NonEmojiInjection, OverLength, SkinToneOverflow, and finally the
+  UnregisteredSequence catch-all.
+
+  The certificate.  `rows` pairs each representative input with the verdict it
+  must draw — the classification `tag` (`none` denoting a clear verdict) and the
+  RGI-registration flag.  `verifyRow` recomputes `detect` and compares both
+  projections, and `all_rows_pass` discharges the entire table in the kernel.
+  A new attack vector is certified by appending one row: the proof obligation,
+  and therefore the coverage this harness guarantees, grows monotonically with
+  the threat catalogue and cannot silently regress.
 -/
 
 import Unicode.Security.Identity.EmojiZwjIntegrity
@@ -18,26 +37,44 @@ open Unicode.Security.Identity.EmojiZwjIntegrity
 
 set_option maxRecDepth 1000000
 
-/-- Two consecutive ZWJs between emoji — malformed (double ZWJ). -/
-theorem double_zwj_verdict :
-    let v := detect [0x1F600, 0x200D, 0x200D, 0x1F600]
-    v.classify.tag = some "DoubleZWJ" ∧ v.isRegisteredRGI = false := by decide +kernel
+-- ── §1  The certificate table ───────────────────────────────────────────────
 
-/-- ZWJ splicing a non-emoji (ASCII 'a') into an emoji sequence — injection. -/
-theorem non_emoji_injection_verdict :
-    let v := detect [0x1F600, 0x200D, 0x0061]
-    v.classify.tag = some "NonEmojiInjection" := by decide +kernel
+/-- One conformance row: an `input` codepoint sequence, the classification
+    `tag` its verdict must carry (`none` for a clear verdict), and the
+    `registeredRGI` flag the verdict must report. -/
+structure Row where
+  input : List Nat
+  tag : Option String
+  registeredRGI : Bool
 
-/-- man + ZWJ + woman is a well-formed ZWJ join but not a registered RGI sequence —
-    flagged as unregistered, RGI flag false. -/
-theorem unregistered_sequence_verdict :
-    let v := detect [0x1F468, 0x200D, 0x1F469]
-    v.classify.tag = some "UnregisteredSequence" ∧ v.isRegisteredRGI = false := by
-  decide +kernel
+/-- The representative attack — and control — vectors this harness certifies. -/
+def rows : List Row :=
+  [ -- A doubled joiner (U+200D U+200D) occurs in no RGI sequence; it is the
+    -- crudest forged join and is caught ahead of every other fault.
+    { input := [0x1F600, 0x200D, 0x200D, 0x1F600],
+      tag := some "DoubleZWJ", registeredRGI := false },
+    -- A joiner splicing ASCII 'a' between pictographs injects a non-emoji into
+    -- the run; a renderer that ligates around it hides the smuggled letter.
+    { input := [0x1F600, 0x200D, 0x0061],
+      tag := some "NonEmojiInjection", registeredRGI := false },
+    -- man + ZWJ + woman is a well-formed join whose glyph pair is nonetheless
+    -- absent from the registry: sanctioned in shape, unsanctioned in fact.
+    { input := [0x1F468, 0x200D, 0x1F469],
+      tag := some "UnregisteredSequence", registeredRGI := false },
+    -- The registered four-person family (man, woman, girl, boy) is the control:
+    -- a genuine RGI entry that must pass clean and report its registration.
+    { input := [0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466],
+      tag := none, registeredRGI := true } ]
 
-/-- The registered RGI family sequence is clear and flagged as registered RGI. -/
-theorem family_rgi_clear_verdict :
-    let v := detect [0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466]
-    v.classify.isClear = true ∧ v.isRegisteredRGI = true := by decide +kernel
+/-- A row passes when `detect` reproduces both projections the row prescribes:
+    the classification tag and the RGI-registration flag. -/
+def verifyRow (r : Row) : Bool :=
+  let v := detect r.input
+  (v.classify.tag == r.tag) && (v.isRegisteredRGI == r.registeredRGI)
+
+-- ── §2  The closed certificate ──────────────────────────────────────────────
+
+/-- Every certified vector draws exactly the verdict the RGI registry demands. -/
+theorem all_rows_pass : rows.all verifyRow = true := by decide +kernel
 
 end Unicode.Conformance.Security.EmojiZwjIntegrityTest
