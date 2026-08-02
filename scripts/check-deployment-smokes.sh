@@ -811,8 +811,15 @@ public final class DeploymentSmoke {
   }
 }
 JAVA
+  # The consumer builds the entire com/unicodesecurity package. Security.java
+  # references sibling detector classes (isGraphemeExtend calls
+  # EmojiZwjIntegrity.isEmojiModifier), so the package is the compilation unit;
+  # no source in it compiles in isolation.
+  mapfile -t jvm_pkg_sources < <(
+    find "$dist_abs/jvm/src/main/java/com/unicodesecurity" -name '*.java' | sort
+  )
   "$javac_bin" -d "$jvm_smoke_dir/classes" \
-    "$dist_abs/jvm/src/main/java/com/unicodesecurity/Security.java" \
+    "${jvm_pkg_sources[@]}" \
     "$jvm_smoke_dir/DeploymentSmoke.java" \
     || fail "JVM consumer compile failed"
   "$java_bin" -cp "$jvm_smoke_dir/classes:$dist_abs/jvm/src/main/resources" DeploymentSmoke \
