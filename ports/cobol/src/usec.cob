@@ -251,6 +251,18 @@ WORKING-STORAGE SECTION.
 01 RD-RTL-COUNT PIC 9(5) COMP-5 VALUE 0.
 01 RD-ALL-EXT PIC 9 VALUE 0.
 01 RD-POS PIC 9(9) COMP-5 VALUE 0.
+*> ── filename-disguise (D) extension-disguise ladder state ─────────────
+*> The priority-ordered classification (0 clear, 1 RloFlip, 2 WidthClassExt,
+*> 3 CombiningInExt, 4 MultipleExtensions), the dot tally, the last-dot index,
+*> and the extension-region start. FD-MIN-DOTS mirrors the reference's
+*> three-extension advisory bound.
+01 FD-MIN-DOTS PIC 9(2) COMP-5 VALUE 3.
+01 FD-CLASS PIC 9 VALUE 0.
+01 FD-DONE PIC 9 VALUE 0.
+01 FD-DOT-COUNT PIC 9(5) COMP-5 VALUE 0.
+01 FD-LAST-DOT PIC 9(9) COMP-5 VALUE 0.
+01 FD-EXT-START PIC 9(9) COMP-5 VALUE 0.
+01 FD-POS PIC 9(9) COMP-5 VALUE 0.
 01 VOCAB-RAW.
    05 FILLER PIC X(26) VALUE "05delve                   ".
    05 FILLER PIC X(26) VALUE "07delving                 ".
@@ -375,7 +387,11 @@ MAIN.
                                         IF OP-NAME = "renderer-divergence"
                                             PERFORM SCAN-RENDERER-DIVERGENCE
                                         ELSE
-                                            PERFORM SCAN-CORE
+                                            IF OP-NAME = "filename-disguise"
+                                                PERFORM SCAN-FILENAME-DISGUISE
+                                            ELSE
+                                                PERFORM SCAN-CORE
+                                            END-IF
                                         END-IF
                                     END-IF
                                 END-IF
@@ -2244,6 +2260,162 @@ RD-EMIT-ONE.
     ADD 1 TO FINDING-COUNT
     MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
     MOVE FUNCTION TRIM(POS-NUM) TO FINDING-POS(FINDING-COUNT).
+
+SCAN-FILENAME-DISGUISE.
+*> Filename/extension disguise detector. Byte-faithful transliteration of the
+*> verified Rust reference security/display/filename_disguise.rs: four disguise
+*> triggers tested in priority order over one filename's codepoints. The visible
+*> extension is the region after the last ASCII dot; a benign-looking name can
+*> hide an executable byte extension when a bidi format-control reorders the
+*> glyphs, or when the extension carries fullwidth/halfwidth or combining
+*> codepoints. The first trigger that holds classifies the input; when none hold
+*> the input is clear (a native-RTL name with no bidi controls clears). It reuses
+*> the port's own predicates only — the bidi format-control set shared with the
+*> rtl-injection and covert-display detectors, the GCB=Extend class from
+*> gcb_class.cpy, and the fullwidth/halfwidth block; never a host filesystem or
+*> rendering library.
+    MOVE 0 TO FD-CLASS FD-DONE FD-POS
+    PERFORM FD-COMPUTE-DOTS
+*> Priority 1: any bidi format-control anywhere in the filename.
+    PERFORM FD-CHECK-BIDI
+*> Priority 2: a fullwidth/halfwidth codepoint at or after the extension start.
+    IF FD-DONE = 0
+        PERFORM FD-CHECK-FULLWIDTH
+    END-IF
+*> Priority 3: a combining (GCB=Extend) codepoint in the extension region.
+    IF FD-DONE = 0
+        PERFORM FD-CHECK-COMBINING
+    END-IF
+*> Priority 4: three or more dot separators (advisory multi-extension).
+    IF FD-DONE = 0
+        PERFORM FD-CHECK-MULTI
+    END-IF
+    PERFORM FD-EMIT.
+
+FD-COMPUTE-DOTS.
+*> Tally every ASCII dot (U+002E), remember the last one's 1-indexed position,
+*> and set the extension-region start. With no dot the start is past the end so
+*> the extension-scoped rungs find nothing.
+    MOVE 0 TO FD-DOT-COUNT FD-LAST-DOT
+    PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
+        IF CP(IDX) = 46
+            ADD 1 TO FD-DOT-COUNT
+            MOVE IDX TO FD-LAST-DOT
+        END-IF
+    END-PERFORM
+    IF FD-LAST-DOT = 0
+        COMPUTE FD-EXT-START = CP-COUNT + 1
+    ELSE
+        COMPUTE FD-EXT-START = FD-LAST-DOT + 1
+    END-IF.
+
+FD-CHECK-BIDI.
+*> First bidi format-control anywhere; reports its 0-indexed position.
+    MOVE 1 TO IDX
+    PERFORM UNTIL IDX > CP-COUNT OR FD-DONE = 1
+        MOVE CP(IDX) TO LOOKUP-CP
+        PERFORM IS-BIDI-FORMAT-CONTROL
+        IF TABLE-FLAG = 1
+            MOVE 1 TO FD-CLASS
+            COMPUTE FD-POS = IDX - 1
+            MOVE 1 TO FD-DONE
+        END-IF
+        ADD 1 TO IDX
+    END-PERFORM.
+
+FD-CHECK-FULLWIDTH.
+*> First codepoint in the Halfwidth and Fullwidth Forms block FF01..FFEF at or
+*> after the extension start.
+    MOVE FD-EXT-START TO IDX
+    PERFORM UNTIL IDX > CP-COUNT OR FD-DONE = 1
+        IF CP(IDX) >= 65281 AND CP(IDX) <= 65519
+            MOVE 2 TO FD-CLASS
+            COMPUTE FD-POS = IDX - 1
+            MOVE 1 TO FD-DONE
+        END-IF
+        ADD 1 TO IDX
+    END-PERFORM.
+
+FD-CHECK-COMBINING.
+*> First GCB=Extend codepoint at or after the extension start; the same GCB
+*> class (5) the renderer-divergence combining-stack rung consults.
+    MOVE FD-EXT-START TO IDX
+    PERFORM UNTIL IDX > CP-COUNT OR FD-DONE = 1
+        MOVE CP(IDX) TO LOOKUP-CP
+        PERFORM LOOKUP-GCB
+        IF GCB-CLASS = 5
+            MOVE 3 TO FD-CLASS
+            COMPUTE FD-POS = IDX - 1
+            MOVE 1 TO FD-DONE
+        END-IF
+        ADD 1 TO IDX
+    END-PERFORM.
+
+FD-CHECK-MULTI.
+*> Three or more dot separators; positions are all dot positions.
+    IF FD-DOT-COUNT >= FD-MIN-DOTS
+        MOVE 4 TO FD-CLASS
+        MOVE 1 TO FD-DONE
+    END-IF.
+
+FD-EMIT.
+*> Emit the reason code for the classification. Every reachable value 0..4 has
+*> an explicit arm; WHEN OTHER is unreachable and signals a defect rather than
+*> silently falling through.
+    EVALUATE FD-CLASS
+        WHEN 0
+            CONTINUE
+        WHEN 1
+            MOVE "unicode.security.D.filename-disguise.RloFlip" TO TEMP-CODE
+            PERFORM FD-EMIT-ONE
+        WHEN 2
+            MOVE "unicode.security.D.filename-disguise.WidthClassExt" TO TEMP-CODE
+            PERFORM FD-EMIT-ONE
+        WHEN 3
+            MOVE "unicode.security.D.filename-disguise.CombiningInExt" TO TEMP-CODE
+            PERFORM FD-EMIT-ONE
+        WHEN 4
+            MOVE "unicode.security.D.filename-disguise.MultipleExtensions" TO TEMP-CODE
+            PERFORM FD-EMIT-DOTS
+        WHEN OTHER
+            DISPLAY "ERROR filename-disguise unreachable classification "
+                FUNCTION TRIM(FD-CLASS)
+            MOVE 1 TO RETURN-CODE
+    END-EVALUATE.
+
+FD-EMIT-ONE.
+*> Single-position finding at FD-POS.
+    MOVE FD-POS TO POS-NUM
+    ADD 1 TO FINDING-COUNT
+    MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
+    MOVE FUNCTION TRIM(POS-NUM) TO FINDING-POS(FINDING-COUNT).
+
+FD-EMIT-DOTS.
+*> Finding whose positions are every ASCII dot in the filename, 0-indexed.
+    ADD 1 TO FINDING-COUNT
+    MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
+    MOVE SPACES TO POS-TEXT
+    PERFORM VARYING JDX FROM 1 BY 1 UNTIL JDX > CP-COUNT
+        IF CP(JDX) = 46
+            COMPUTE POS-IDX = JDX - 1
+            MOVE POS-IDX TO POS-NUM
+            IF FUNCTION LENGTH(FUNCTION TRIM(POS-TEXT)) = 0
+                STRING FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
+            ELSE
+                STRING FUNCTION TRIM(POS-TEXT) DELIMITED BY SIZE "," DELIMITED BY SIZE FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
+            END-IF
+        END-IF
+    END-PERFORM
+    MOVE POS-TEXT TO FINDING-POS(FINDING-COUNT).
+
+IS-BIDI-FORMAT-CONTROL.
+*> The port's own bidi format-control set — LRE/RLE/PDF/LRO/RLO and the four
+*> isolate controls LRI/RLI/FSI/PDI — the same nine codepoints the
+*> rtl-injection and covert-display detectors test.
+    MOVE 0 TO TABLE-FLAG
+    IF LOOKUP-CP = 8234 OR LOOKUP-CP = 8235 OR LOOKUP-CP = 8236 OR LOOKUP-CP = 8237 OR LOOKUP-CP = 8238 OR LOOKUP-CP = 8294 OR LOOKUP-CP = 8295 OR LOOKUP-CP = 8296 OR LOOKUP-CP = 8297
+        MOVE 1 TO TABLE-FLAG
+    END-IF.
 
 IS-VARIATION-SELECTOR.
 *> The port's own variation-selector ranges, shared with DETECT-VARIATION.

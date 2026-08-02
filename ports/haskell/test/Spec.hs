@@ -37,6 +37,7 @@ import qualified ConfusableBidiCompoundSpec
 import qualified CovertDisplayCompoundSpec
 import qualified EmojiZwjIntegritySpec
 import qualified RendererDivergenceSpec
+import qualified FilenameDisguiseSpec
 
 main :: IO ()
 main = defaultMain $
@@ -66,4 +67,5 @@ main = defaultMain $
     , CovertDisplayCompoundSpec.tests
     , EmojiZwjIntegritySpec.tests
     , RendererDivergenceSpec.tests
+    , FilenameDisguiseSpec.tests
     ]

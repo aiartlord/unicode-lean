@@ -14,6 +14,7 @@ run() ->
     ai_watermark_tests(),
     emoji_zwj_integrity_tests(),
     renderer_divergence_tests(),
+    filename_disguise_tests(),
     opaque_blob_tests(),
     grapheme_tests(),
     io:format("ok: erlang unicode security tests pass~n").
@@ -520,6 +521,77 @@ renderer_divergence_tests() ->
     assert(usec_renderer_divergence:classify_tag(maps:get(classify, ThreeV)) =/= <<"CombiningStackOverflow">>, rd_three_below_threshold),
 
     io:format("  renderer-divergence: fixture + 9 spot-checks + 2 structural pass~n").
+
+%% Reason code the detect verdict would emit for a given input, or `none' when
+%% clear. Mirrors how the finding wiring lifts a classification tag into a code.
+fd_code(Input) ->
+    C = maps:get(classify, usec_filename_disguise:detect(Input)),
+    case usec_filename_disguise:classify_tag(C) of
+        none -> none;
+        Tag -> usec_policy:reason_code(filename_disguise, Tag)
+    end.
+
+%% The classification tag for an input, or `none' when clear.
+fd_tag(Input) ->
+    usec_filename_disguise:classify_tag(maps:get(classify, usec_filename_disguise:detect(Input))).
+
+filename_disguise_tests() ->
+    %% ── Shared context-free fixture, run through detect. ────────────────
+    F = fixture(filename:join("detectors", "filename_disguise.json")),
+    assert_eq(<<"filename-disguise">>, maps:get(<<"family">>, F), fd_fixture_family),
+    lists:foreach(fun(Case) ->
+                          Input = maps:get(<<"input">>, Case),
+                          Label = {fd_fixture, maps:get(<<"name">>, Case)},
+                          Required = maps:get(<<"required_findings">>, Case),
+                          Codes = case fd_code(Input) of
+                                      none -> [];
+                                      Code -> [Code]
+                                  end,
+                          lists:foreach(fun(Req) -> assert(lists:member(Req, Codes), Label) end, Required),
+                          case Required of
+                              [] -> assert(Codes =:= [], Label);
+                              _ -> ok
+                          end
+                  end, maps:get(<<"cases">>, F)),
+
+    %% ── §4 detect spot checks (the 10 rust #[test] cases). ──────────────
+    %% detect_empty_clear
+    assert(usec_filename_disguise:is_clear(maps:get(classify, usec_filename_disguise:detect([]))), fd_empty_clear),
+    assert_eq(none, fd_tag([]), fd_empty_tag),
+    %% detect_plain_txt_clear — "document.txt", last dot at index 8.
+    PlainV = usec_filename_disguise:detect([16#64, 16#6F, 16#63, 16#75, 16#6D, 16#65, 16#6E, 16#74, 16#2E, 16#74, 16#78, 16#74]),
+    assert(usec_filename_disguise:is_clear(maps:get(classify, PlainV)), fd_plain_clear),
+    assert_eq(8, maps:get(last_dot_pos, PlainV), fd_plain_last_dot),
+    %% detect_no_extension_clear — "foo", no dot.
+    NoExtV = usec_filename_disguise:detect([16#66, 16#6F, 16#6F]),
+    assert(usec_filename_disguise:is_clear(maps:get(classify, NoExtV)), fd_no_ext_clear),
+    assert_eq(none, maps:get(last_dot_pos, NoExtV), fd_no_ext_last_dot),
+    %% detect_tar_gz_clear — "archive.tar.gz" (2 dots, below the multi-ext bound).
+    assert(usec_filename_disguise:is_clear(maps:get(classify,
+        usec_filename_disguise:detect([16#61, 16#72, 16#63, 16#68, 16#69, 16#76, 16#65, 16#2E, 16#74, 16#61, 16#72, 16#2E, 16#67, 16#7A]))),
+        fd_tar_gz_clear),
+    %% detect_rlo_flip — "document<RLO>txt.exe", control at index 8.
+    RloV = usec_filename_disguise:detect([16#64, 16#6F, 16#63, 16#75, 16#6D, 16#65, 16#6E, 16#74, 16#202E, 16#74, 16#78, 16#74, 16#2E, 16#65, 16#78, 16#65]),
+    assert_eq(<<"RloFlip">>, usec_filename_disguise:classify_tag(maps:get(classify, RloV)), fd_rlo_tag),
+    assert_eq([8], usec_filename_disguise:classify_positions(maps:get(classify, RloV)), fd_rlo_positions),
+    %% detect_fullwidth_exe — "file.ＥＸＥ".
+    assert_eq(<<"WidthClassExt">>, fd_tag([16#66, 16#69, 16#6C, 16#65, 16#2E, 16#FF25, 16#FF38, 16#FF25]), fd_fullwidth_exe),
+    %% detect_combining_in_ext — "file.é xe" (combining acute in the extension).
+    assert_eq(<<"CombiningInExt">>, fd_tag([16#66, 16#69, 16#6C, 16#65, 16#2E, 16#65, 16#0301, 16#78, 16#65]), fd_combining_in_ext),
+    %% detect_triple_extension — "setup.tar.gz.sig".
+    assert_eq(<<"MultipleExtensions">>, fd_tag([16#73, 16#65, 16#74, 16#75, 16#70, 16#2E, 16#74, 16#61, 16#72, 16#2E, 16#67, 16#7A, 16#2E, 16#73, 16#69, 16#67]), fd_triple_extension),
+    %% detect_hebrew_clear — native Hebrew name, no bidi controls.
+    assert(usec_filename_disguise:is_clear(maps:get(classify,
+        usec_filename_disguise:detect([16#05D0, 16#05D1, 16#05D2, 16#2E, 16#74, 16#78, 16#74]))),
+        fd_hebrew_clear),
+    %% detect_isolate_flip — RLI/PDI isolate variant, also RloFlip.
+    assert_eq(<<"RloFlip">>, fd_tag([16#64, 16#6F, 16#63, 16#2067, 16#74, 16#78, 16#74, 16#2E, 16#65, 16#78, 16#65, 16#2069]), fd_isolate_flip),
+
+    %% ── Priority structural check (the rust structural #[test] case). ────
+    %% A bidi control outranks a fullwidth extension present later.
+    assert_eq(<<"RloFlip">>, fd_tag([16#202E, 16#66, 16#2E, 16#FF25]), fd_bidi_beats_fullwidth),
+
+    io:format("  filename-disguise: fixture + 10 spot-checks + 1 structural pass~n").
 
 fixture(Rel) ->
     {ok, Bin} = file:read_file(filename:join(["test", "fixtures", "security", Rel])),

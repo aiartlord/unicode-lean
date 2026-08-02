@@ -440,6 +440,70 @@ def check_renderer_divergence():
     return len(fixture["cases"]), len(spot), 2
 
 
+FD_BASE = "unicode.security.D.filename-disguise."
+
+
+def run_fd(values):
+    return run("filename-disguise", "gateway-header", "observe", values)
+
+
+def check_filename_disguise():
+    # 1. The 10 shared context-free fixture vectors.
+    fixture = load("detectors/filename_disguise.json")
+    for case in fixture["cases"]:
+        got = run_fd(case["input"])
+        for code in case["required_findings"]:
+            require(code in got["codes"],
+                    f"fd/{case['name']} missing {code}; got {got['codes']}")
+        if not case["required_findings"]:
+            require(all(".filename-disguise." not in code for code in got["codes"]),
+                    f"fd/{case['name']} unexpected finding; got {got['codes']}")
+
+    # 2. The 10 spot-checks transcribed verbatim from the Rust reference's
+    #    `#[test]` module (empty / plain-txt / no-ext / tar.gz / hebrew clear,
+    #    rlo-flip, isolate-flip, fullwidth-ext, combining-in-ext,
+    #    triple-extension). tag = suffix or None for Clear; pos = expected
+    #    positions or None to skip.
+    spot = [
+        ("empty", [], None, None),
+        ("plain-txt", [0x64, 0x6F, 0x63, 0x75, 0x6D, 0x65, 0x6E, 0x74, 0x2E, 0x74, 0x78, 0x74],
+         None, None),
+        ("no-ext", [0x66, 0x6F, 0x6F], None, None),
+        ("tar-gz", [0x61, 0x72, 0x63, 0x68, 0x69, 0x76, 0x65, 0x2E, 0x74, 0x61, 0x72, 0x2E, 0x67, 0x7A],
+         None, None),
+        ("hebrew", [0x05D0, 0x05D1, 0x05D2, 0x2E, 0x74, 0x78, 0x74], None, None),
+        ("rlo-flip", [0x64, 0x6F, 0x63, 0x75, 0x6D, 0x65, 0x6E, 0x74, 0x202E, 0x74, 0x78, 0x74,
+                      0x2E, 0x65, 0x78, 0x65], "RloFlip", [8]),
+        ("isolate-flip", [0x64, 0x6F, 0x63, 0x2067, 0x74, 0x78, 0x74, 0x2E, 0x65, 0x78, 0x65, 0x2069],
+         "RloFlip", None),
+        ("fullwidth-ext", [0x66, 0x69, 0x6C, 0x65, 0x2E, 0xFF25, 0xFF38, 0xFF25],
+         "WidthClassExt", None),
+        ("combining-in-ext", [0x66, 0x69, 0x6C, 0x65, 0x2E, 0x65, 0x0301, 0x78, 0x65],
+         "CombiningInExt", None),
+        ("triple-extension", [0x73, 0x65, 0x74, 0x75, 0x70, 0x2E, 0x74, 0x61, 0x72, 0x2E, 0x67, 0x7A,
+                              0x2E, 0x73, 0x69, 0x67], "MultipleExtensions", None),
+    ]
+    for name, values, tag, expected_pos in spot:
+        got = run_fd(values)
+        fd_codes = [c for c in got["codes"] if ".filename-disguise." in c]
+        if tag is None:
+            require(not fd_codes, f"fd-spot/{name} expected clear; got {fd_codes}")
+        else:
+            code = FD_BASE + tag
+            require(code in got["codes"], f"fd-spot/{name} missing {code}; got {got['codes']}")
+            if expected_pos is not None:
+                require(got["positions"].get(code) == expected_pos,
+                        f"fd-spot/{name} positions {got['positions'].get(code)} != {expected_pos}")
+
+    # 3. One structural check on the priority order: a bidi format-control
+    #    outranks a fullwidth extension present later.
+    beats = run_fd([0x202E, 0x66, 0x2E, 0xFF25])
+    require(FD_BASE + "RloFlip" in beats["codes"],
+            f"fd-struct/bidi-beats-fullwidth missing RloFlip; got {beats['codes']}")
+
+    return len(fixture["cases"]), len(spot), 1
+
+
 def check_forms_and_bip39():
     cases = [
         ("forms", [], []),
@@ -649,6 +713,7 @@ def main():
     awd_fixture_count, awd_context_count = check_ai_watermark_detectability()
     ezwj_fixture_count, ezwj_spot_count, ezwj_struct_count = check_emoji_zwj_integrity()
     rd_fixture_count, rd_spot_count, rd_struct_count = check_renderer_divergence()
+    fd_fixture_count, fd_spot_count, fd_struct_count = check_filename_disguise()
     check_forms_and_bip39()
     ss_count = check_stream_safe_violation()
     check_generated_tables()
@@ -669,6 +734,9 @@ def main():
     print(f"renderer-divergence shared-fixture vectors: {rd_fixture_count}")
     print(f"renderer-divergence spot-checks: {rd_spot_count}")
     print(f"renderer-divergence structural checks: {rd_struct_count}")
+    print(f"filename-disguise shared-fixture vectors: {fd_fixture_count}")
+    print(f"filename-disguise spot-checks: {fd_spot_count}")
+    print(f"filename-disguise structural checks: {fd_struct_count}")
     print("ok: cobol unicode security fixture tests pass")
 
 

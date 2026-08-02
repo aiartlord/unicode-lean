@@ -22,6 +22,7 @@ module Unicode.Security.Policy
   , isConfusableSource
   , isDefaultIgnorableCodepoint
   , isVariationSelector
+  , isBidiFormatControl
   , isStrongLtr
   , isStrongRtl
   , policyOfProfile

@@ -43,17 +43,17 @@ Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 | AdmissibilityFormDrift | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
 | EmojiZwjIntegrity | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | SkinToneVariationForgery | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
-| FilenameDisguise | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| FilenameDisguise | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | RendererDivergence | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | HashInputStability | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | AiWatermarkDetectability | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-**Totals:** rust 22/27 · all other vouched ports 21/27 · overall 337/432
+**Totals:** rust 23/27 · all other vouched ports 22/27 · overall 353/432
 cells. The 13 core families plus LocaleCaseInversion, NormalizationBomb,
 NfcIdempotenceWitness, HashInputStability, AiWatermarkDetectability,
-StreamSafeViolation, EmojiZwjIntegrity, and RendererDivergence are complete and
-vouched across every listed port; everything below the line is spec-proven in
-Lean but not yet ported.
+StreamSafeViolation, EmojiZwjIntegrity, RendererDivergence, and FilenameDisguise
+are complete and vouched across every listed port; everything below the line is
+spec-proven in Lean but not yet ported.
 
 ## Interrupted new-port inventory
 
@@ -73,7 +73,7 @@ fixture presence is not coverage.
 
 ## Remaining work
 
-6 detector families are unported. Each needs a reference implementation verified
+5 detector families are unported. Each needs a reference implementation verified
 against the Lean `detect_*` theorems, then a fan-out to all listed ports, each
 vouched.
 
@@ -81,9 +81,9 @@ vouched.
 (`display/source_display_divergence.rs`) — rust reference exists and is vouched;
 needs fan-out to the other 15 listed ports.
 
-**Not started in any port (5):** CaseExpansionMismatch,
+**Not started in any port (4):** CaseExpansionMismatch,
 IdentifierFormDrift, AdmissibilityFormDrift,
-SkinToneVariationForgery, FilenameDisguise.
+SkinToneVariationForgery.
 
 **Bip39 scan-wiring (follow-up):** Bip39Canonical ships standalone and
 crypto-context-gated in all listed ports; it is deliberately not part of the default
