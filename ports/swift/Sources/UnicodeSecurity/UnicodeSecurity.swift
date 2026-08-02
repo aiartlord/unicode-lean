@@ -43,6 +43,7 @@ public enum Family {
     public static let rtlInjection = "rtl-injection"
     public static let confusableBidiCompound = "confusable-bidi-compound"
     public static let covertDisplayCompound = "covert-display-compound"
+    public static let hashInputStability = "hash-input-stability"
 }
 
 public struct Finding: Equatable {
@@ -273,6 +274,9 @@ private func layer(_ family: String) -> String {
     }
     if family == Family.confusableBidiCompound || family == Family.covertDisplayCompound {
         return "X"
+    }
+    if family == Family.hashInputStability {
+        return "K"
     }
     return "C"
 }
@@ -2249,4 +2253,483 @@ public struct ValidatedUtf8 {
     public static func unwrap(_ validated: ValidatedUtf8) -> [UInt8] {
         return validated.bytes
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// hash-input-stability — detection of inputs that are not in canonical
+// hash-input form. Per UTS #39 §6.1 + RFC 4880 / 9580 + RFC 8785, an input
+// hashed by a signer must be byte-identical to the input hashed by the
+// verifier; if the two ends pick different canonical forms (NFC vs NFD, trim
+// policy, line-ending convention) the resulting hashes diverge silently while
+// both sides believe they signed the same content.
+//
+// Direct port of `Unicode/Security/Crypto/HashInputStability.lean`, mirroring
+// the verified Rust reference. The canonical (hash-stable) form is
+// `trimTrailing(toNfc(input))`, where `trimTrailing` strips only ASCII
+// whitespace {U+0020, U+0009, U+000A, U+000D}; Unicode whitespace (U+00A0,
+// U+2000..U+200A, U+3000) is content and is not stripped. NFC is the port's
+// `toNfc`, never a host normaliser.
+//
+// Six probes run in strict priority order (first hit wins):
+//
+//   1. encodingMismatch         (context: declaredEncoding)
+//   2. webhookSignatureDrift    (context: serverBytes)
+//   3. auditLogReinterpretation (context: asWritten)
+//   4. signedMessageRule        (context: rfcRule)
+//   5. trailingWhitespace       (bare input)
+//   6. normalizationDrift       (bare input)
+//   7. clear
+//
+// Context-specific probes fire first because they carry more precise threat
+// information than the generic probes. `hashInputStabilityDetect` is the
+// convenience wrapper `hashInputStabilityDetectWithContext(.default, input)`
+// that leaves the four context-bearing probes silent.
+// ─────────────────────────────────────────────────────────────────────
+
+/// RFC canonicalisation profiles that the `signedMessageRule` probe checks
+/// against. Each case names a specific canonicalisation rule from a published
+/// RFC; callers pass one as `Context.rfcRule` to opt the probe in.
+public enum RfcRule: Equatable {
+    /// RFC 4880 §5.2.4 — detached signatures normalise trailing whitespace.
+    case pgp4880TrailingWhitespace
+    /// RFC 9580 (current OpenPGP) — line-endings normalise to CRLF before signing.
+    case pgp9580LineEnding
+    /// RFC 8785 §3.2.5 — JSON Canonicalization Scheme requires NFC strings.
+    case rfc8785NfcRequirement
+    /// RFC 8259 §7 — JSON strings must escape control characters (U+0000..U+001F).
+    case rfc8259ControlChar
+    /// RFC 7515 §2 — JWS Base64URL; any char outside `[A-Za-z0-9_-]` violates.
+    case rfc7515JwsBase64Url
+    /// RFC 6376 §3.4.4 — DKIM relaxed body canonicalization collapses whitespace runs.
+    case rfc6376DkimRelaxed
+    /// RFC 5751 §3.1.1 — S/MIME canonical text; a bare LF or bare CR violates.
+    case rfc5751SmimeLineEnding
+
+    /// Fixture-string identifier for an `RfcRule` — used by the conformance
+    /// harness's attribution parser to round-trip rule selections.
+    public var tag: String {
+        switch self {
+        case .pgp4880TrailingWhitespace: return "pgp4880TrailingWhitespace"
+        case .pgp9580LineEnding: return "pgp9580LineEnding"
+        case .rfc8785NfcRequirement: return "rfc8785NfcRequirement"
+        case .rfc8259ControlChar: return "rfc8259ControlChar"
+        case .rfc7515JwsBase64Url: return "rfc7515JwsBase64Url"
+        case .rfc6376DkimRelaxed: return "rfc6376DkimRelaxed"
+        case .rfc5751SmimeLineEnding: return "rfc5751SmimeLineEnding"
+        }
+    }
+
+    /// Inverse of `tag`. Returns `nil` for unrecognised strings.
+    public static func fromTag(_ tag: String) -> RfcRule? {
+        switch tag {
+        case "pgp4880TrailingWhitespace": return .pgp4880TrailingWhitespace
+        case "pgp9580LineEnding": return .pgp9580LineEnding
+        case "rfc8785NfcRequirement": return .rfc8785NfcRequirement
+        case "rfc8259ControlChar": return .rfc8259ControlChar
+        case "rfc7515JwsBase64Url": return .rfc7515JwsBase64Url
+        case "rfc6376DkimRelaxed": return .rfc6376DkimRelaxed
+        case "rfc5751SmimeLineEnding": return .rfc5751SmimeLineEnding
+        default: return nil
+        }
+    }
+}
+
+/// Sub-threats this detector can fire. Two probes fire from the raw input alone
+/// (`trailingWhitespace`, `normalizationDrift`); the other four require the
+/// corresponding `Context` field to be set.
+public enum HashInputStabilitySubThreat: Equatable {
+    /// Input diverges from its NFC form at `firstDivergentPos`.
+    case normalizationDrift(firstDivergentPos: Int)
+    /// Input has `count` trailing ASCII-whitespace codepoints.
+    case trailingWhitespace(count: Int)
+    /// Declared encoding disagrees with the codepoint array (or the array holds
+    /// an invalid scalar).
+    case encodingMismatch(declaredEnc: String, detectedEnc: String)
+    /// Input violates the named RFC's canonicalisation rule at `firstPos`.
+    case signedMessageRule(rfcRule: String, firstPos: Int)
+    /// The re-read input differs from `Context.asWritten` at `firstDivergentPos`.
+    case auditLogReinterpretation(firstDivergentPos: Int)
+    /// The client input differs from `Context.serverBytes` at `firstPos`.
+    case webhookSignatureDrift(firstPos: Int)
+
+    /// Human-facing classification tag for this sub-threat.
+    public var tag: String {
+        switch self {
+        case .normalizationDrift: return "NormalizationDrift"
+        case .trailingWhitespace: return "TrailingWhitespace"
+        case .encodingMismatch: return "EncodingMismatch"
+        case .signedMessageRule: return "SignedMessageRule"
+        case .auditLogReinterpretation: return "AuditLogReinterpretation"
+        case .webhookSignatureDrift: return "WebhookSignatureDrift"
+        }
+    }
+}
+
+/// Context passed to `hashInputStabilityDetectWithContext` to enable the four
+/// context-bearing probes. Each field is `nil` by default — the empty context
+/// is the identity case: `hashInputStabilityDetectWithContext(.default, input)`
+/// equals `hashInputStabilityDetect(input)`.
+public struct HashInputStabilityContext: Equatable {
+    /// The encoding label the caller claims their input is in. When set and not
+    /// (case-insensitively) UTF-8, fires `encodingMismatch` immediately.
+    public var declaredEncoding: String?
+    /// The RFC canonicalisation rule the caller is operating under. When set,
+    /// scans `input` for violations and fires `signedMessageRule`.
+    public var rfcRule: RfcRule?
+    /// The original "as-written" form of an audit-log entry whose re-read is
+    /// `input`. When set, fires `auditLogReinterpretation` on first divergence.
+    public var asWritten: [Int]?
+    /// The server-side recomputed bytes for a webhook signature. When set, fires
+    /// `webhookSignatureDrift` on first divergence against `input`.
+    public var serverBytes: [Int]?
+
+    public init(
+        declaredEncoding: String? = nil,
+        rfcRule: RfcRule? = nil,
+        asWritten: [Int]? = nil,
+        serverBytes: [Int]? = nil
+    ) {
+        self.declaredEncoding = declaredEncoding
+        self.rfcRule = rfcRule
+        self.asWritten = asWritten
+        self.serverBytes = serverBytes
+    }
+
+    /// The empty context: all probes silent.
+    public static let `default` = HashInputStabilityContext()
+}
+
+/// Top-level classification.
+public enum HashInputStabilityClassification: Equatable {
+    /// The input is already hash-stable under every enabled probe.
+    case clear
+    /// A hazard was found: the sub-threat and its implicated positions.
+    case hazard(sub: HashInputStabilitySubThreat, positions: [Int])
+
+    /// True iff the input is clear.
+    public var isClear: Bool {
+        switch self {
+        case .clear: return true
+        case .hazard: return false
+        }
+    }
+
+    /// Human-facing tag for a hazard, or `nil` when clear.
+    public var tag: String? {
+        switch self {
+        case .clear: return nil
+        case .hazard(let sub, _): return sub.tag
+        }
+    }
+
+    /// Implicated positions (empty when clear).
+    public var positions: [Int] {
+        switch self {
+        case .clear: return []
+        case .hazard(_, let positions): return positions
+        }
+    }
+}
+
+/// Verdict — the structured output of `hashInputStabilityDetect`. `stableSize`
+/// is the codepoint count of the hash-stable canonical form; downstream callers
+/// compare it against `input.count` to size the byte-drift their hash sees.
+public struct HashInputStabilityVerdict: Equatable {
+    /// The scanned input codepoints.
+    public let input: [Int]
+    /// The classification verdict.
+    public let classify: HashInputStabilityClassification
+    /// The hash-stable canonical form of the input.
+    public let stableForm: [Int]
+    /// Codepoint count of `stableForm`.
+    public let stableSize: Int
+}
+
+// §3 Canonicalisation pipeline.
+
+/// True iff `cp` is an ASCII whitespace codepoint that line-oriented hash-input
+/// protocols treat as framing rather than content: U+0020 SPACE, U+0009 TAB,
+/// U+000A LF, U+000D CR.
+private func hisIsAsciiWhitespace(_ cp: Int) -> Bool {
+    cp == 0x0020 || cp == 0x0009 || cp == 0x000A || cp == 0x000D
+}
+
+/// Count of trailing ASCII whitespace codepoints in `input`.
+private func hisCountTrailingWhitespace(_ input: [Int]) -> Int {
+    var count = 0
+    for cp in input.reversed() {
+        if hisIsAsciiWhitespace(cp) { count += 1 } else { break }
+    }
+    return count
+}
+
+/// Strip trailing ASCII whitespace.
+private func hisTrimTrailing(_ input: [Int]) -> [Int] {
+    let keep = input.count - hisCountTrailingWhitespace(input)
+    return Array(input[0..<keep])
+}
+
+/// The hash-stable form of an input: NFC then trim, in spec order. Reuses the
+/// port's `toNfc`, never a host normaliser.
+public func hashInputStabilityHashStable(_ input: [Int]) -> [Int] {
+    hisTrimTrailing(toNfc(input))
+}
+
+// §5 Priority position-finder.
+
+/// First position at which `a` and `b` diverge, or the length of the shared
+/// prefix when one strictly extends the other. `nil` when identical.
+private func hisFirstArrayDivergence(_ a: [Int], _ b: [Int]) -> Int? {
+    let common = min(a.count, b.count)
+    for i in 0..<common where a[i] != b[i] {
+        return i
+    }
+    if a.count != b.count {
+        return common
+    }
+    return nil
+}
+
+// §6 Context-bearing probes.
+
+/// Lower-case an ASCII letter (U+0041..U+005A → U+0061..U+007A).
+private func hisAsciiLower(_ cp: Int) -> Int {
+    (cp >= 0x41 && cp <= 0x5A) ? cp + 0x20 : cp
+}
+
+/// True iff `label` (after ASCII case-fold) names UTF-8: accepts "utf-8",
+/// "UTF-8", "UTF8", "utf8". Non-ASCII characters pass through unchanged.
+private func hisIsUtf8Label(_ label: String) -> Bool {
+    var normalised = String.UnicodeScalarView()
+    for scalar in label.unicodeScalars {
+        if let lowered = UnicodeScalar(hisAsciiLower(Int(scalar.value))) {
+            normalised.append(lowered)
+        } else {
+            normalised.append(scalar)
+        }
+    }
+    let text = String(normalised)
+    return text == "utf-8" || text == "utf8"
+}
+
+/// True iff `cp` is a valid Unicode scalar value: in `[0, 0x10FFFF]` and not a
+/// surrogate `[0xD800, 0xDFFF]`.
+private func hisIsValidScalar(_ cp: Int) -> Bool {
+    cp <= 0x10FFFF && !(cp >= 0xD800 && cp <= 0xDFFF)
+}
+
+/// First position in `input` holding a codepoint that is not a valid Unicode
+/// scalar, or `nil` if every codepoint is valid.
+private func hisFirstInvalidScalar(_ input: [Int]) -> Int? {
+    input.firstIndex { !hisIsValidScalar($0) }
+}
+
+/// Probe: `encodingMismatch`. Validity is dispatched first — an invalid scalar
+/// fires with `detectedEnc = "invalid"` regardless of the declared label;
+/// otherwise a non-UTF-8 label fires with `detectedEnc = "utf-8"` at position 0.
+/// Returns `(declared, detected, firstPos)` when firing.
+private func hisEncodingMismatchProbe(_ declared: String, _ input: [Int]) -> (String, String, Int)? {
+    if let pos = hisFirstInvalidScalar(input) {
+        return (declared, "invalid", pos)
+    }
+    if hisIsUtf8Label(declared) {
+        return nil
+    }
+    return (declared, "utf-8", 0)
+}
+
+/// Probe: `signedMessageRule` for `pgp4880TrailingWhitespace`. Same condition as
+/// `trailingWhitespace`; returns the first position of the trailing run.
+private func hisPgp4880Violation(_ input: [Int]) -> Int? {
+    let trailing = hisCountTrailingWhitespace(input)
+    if trailing > 0 {
+        return input.count - trailing
+    }
+    return nil
+}
+
+/// Probe: `signedMessageRule` for `pgp9580LineEnding`. First bare LF (U+000A not
+/// preceded by CR) or bare CR (U+000D not followed by LF).
+private func hisPgp9580Violation(_ input: [Int]) -> Int? {
+    for i in input.indices {
+        let cp = input[i]
+        if cp == 0x000A {
+            // LF: violating iff not preceded by CR.
+            let precededByCr = i > 0 && input[i - 1] == 0x000D
+            if !precededByCr { return i }
+        } else if cp == 0x000D {
+            // CR: violating iff not followed by LF.
+            let followedByLf = i + 1 < input.count && input[i + 1] == 0x000A
+            if !followedByLf { return i }
+        }
+    }
+    return nil
+}
+
+/// Probe: `signedMessageRule` for `rfc8785NfcRequirement`. Same condition as
+/// `normalizationDrift`; returns the first NFC divergence position.
+private func hisRfc8785Violation(_ input: [Int]) -> Int? {
+    let nfc = toNfc(input)
+    if input == nfc {
+        return nil
+    }
+    return hisFirstArrayDivergence(input, nfc)
+}
+
+/// Probe: `signedMessageRule` for `rfc8259ControlChar`. First C0 control
+/// (U+0000..U+001F).
+private func hisRfc8259Violation(_ input: [Int]) -> Int? {
+    input.firstIndex { $0 <= 0x1F }
+}
+
+/// True iff `cp` is in the JWS Base64URL alphabet `[A-Za-z0-9_-]`.
+private func hisIsBase64Url(_ cp: Int) -> Bool {
+    (cp >= 0x41 && cp <= 0x5A)       // A-Z
+        || (cp >= 0x61 && cp <= 0x7A) // a-z
+        || (cp >= 0x30 && cp <= 0x39) // 0-9
+        || cp == 0x2D                 // '-'
+        || cp == 0x5F                 // LOW LINE
+}
+
+/// Probe: `signedMessageRule` for `rfc7515JwsBase64Url`. First codepoint outside
+/// `[A-Za-z0-9_-]`.
+private func hisRfc7515Violation(_ input: [Int]) -> Int? {
+    input.firstIndex { !hisIsBase64Url($0) }
+}
+
+/// True iff `cp` is DKIM whitespace: U+0020 SPACE or U+0009 HTAB.
+private func hisIsDkimWhitespace(_ cp: Int) -> Bool {
+    cp == 0x20 || cp == 0x09
+}
+
+/// Probe: `signedMessageRule` for `rfc6376DkimRelaxed`. Position of the second
+/// whitespace codepoint in the first internal whitespace run longer than one.
+private func hisRfc6376Violation(_ input: [Int]) -> Int? {
+    for i in input.indices {
+        let cp = input[i]
+        if hisIsDkimWhitespace(cp) && i > 0 && hisIsDkimWhitespace(input[i - 1]) {
+            return i
+        }
+    }
+    return nil
+}
+
+/// Probe: `signedMessageRule` for `rfc5751SmimeLineEnding`. Reuses the PGP 9580
+/// bare-line-ending rule.
+private func hisRfc5751Violation(_ input: [Int]) -> Int? {
+    hisPgp9580Violation(input)
+}
+
+/// Dispatch the RFC-rule probe. First violation position, or `nil` if clean.
+private func hisRfcRuleViolation(_ rule: RfcRule, _ input: [Int]) -> Int? {
+    switch rule {
+    case .pgp4880TrailingWhitespace: return hisPgp4880Violation(input)
+    case .pgp9580LineEnding: return hisPgp9580Violation(input)
+    case .rfc8785NfcRequirement: return hisRfc8785Violation(input)
+    case .rfc8259ControlChar: return hisRfc8259Violation(input)
+    case .rfc7515JwsBase64Url: return hisRfc7515Violation(input)
+    case .rfc6376DkimRelaxed: return hisRfc6376Violation(input)
+    case .rfc5751SmimeLineEnding: return hisRfc5751Violation(input)
+    }
+}
+
+// §7 Top-level detection.
+
+/// The priority resolver: first hit wins, in the spec's fixed order.
+private func hisClassify(
+    _ encodingHit: (String, String, Int)?,
+    _ webhookHit: Int?,
+    _ auditHit: Int?,
+    _ rfcHit: (RfcRule, Int)?,
+    _ trailingCount: Int,
+    _ inputLen: Int,
+    _ nonNfcPos: Int?
+) -> HashInputStabilityClassification {
+    if let (declared, detected, pos) = encodingHit {
+        return .hazard(
+            sub: .encodingMismatch(declaredEnc: declared, detectedEnc: detected),
+            positions: [pos]
+        )
+    }
+    if let pos = webhookHit {
+        return .hazard(sub: .webhookSignatureDrift(firstPos: pos), positions: [pos])
+    }
+    if let pos = auditHit {
+        return .hazard(sub: .auditLogReinterpretation(firstDivergentPos: pos), positions: [pos])
+    }
+    if let (rule, pos) = rfcHit {
+        return .hazard(sub: .signedMessageRule(rfcRule: rule.tag, firstPos: pos), positions: [pos])
+    }
+    if trailingCount > 0 {
+        let p = inputLen - trailingCount
+        return .hazard(sub: .trailingWhitespace(count: trailingCount), positions: [p])
+    }
+    if let p = nonNfcPos {
+        return .hazard(sub: .normalizationDrift(firstDivergentPos: p), positions: [p])
+    }
+    return .clear
+}
+
+/// The full detection function. Runs all six probes in priority order, with the
+/// context-bearing probes ahead of the generic ones. Mirrors
+/// `Unicode.Security.Crypto.HashInputStability.detectWithContext`.
+public func hashInputStabilityDetectWithContext(
+    _ ctx: HashInputStabilityContext,
+    _ input: [Int]
+) -> HashInputStabilityVerdict {
+    let stable = hashInputStabilityHashStable(input)
+
+    // Probe 1: encodingMismatch.
+    let encodingHit: (String, String, Int)? = ctx.declaredEncoding.flatMap {
+        hisEncodingMismatchProbe($0, input)
+    }
+
+    // Probe 2: webhookSignatureDrift.
+    let webhookHit: Int? = ctx.serverBytes.flatMap { hisFirstArrayDivergence(input, $0) }
+
+    // Probe 3: auditLogReinterpretation.
+    let auditHit: Int? = ctx.asWritten.flatMap { hisFirstArrayDivergence($0, input) }
+
+    // Probe 4: signedMessageRule.
+    let rfcHit: (RfcRule, Int)? = ctx.rfcRule.flatMap { rule in
+        hisRfcRuleViolation(rule, input).map { (rule, $0) }
+    }
+
+    // Probe 5: trailingWhitespace.
+    let trailingCount = hisCountTrailingWhitespace(input)
+
+    // Probe 6: normalizationDrift.
+    let nfc = toNfc(input)
+    let nonNfcPos: Int? = input == nfc ? nil : hisFirstArrayDivergence(input, nfc)
+
+    let classification = hisClassify(
+        encodingHit,
+        webhookHit,
+        auditHit,
+        rfcHit,
+        trailingCount,
+        input.count,
+        nonNfcPos
+    )
+
+    return HashInputStabilityVerdict(
+        input: input,
+        classify: classification,
+        stableForm: stable,
+        stableSize: stable.count
+    )
+}
+
+/// Convenience wrapper over `hashInputStabilityDetectWithContext` with the empty
+/// context — equivalent to running only the two bare-input probes
+/// (`trailingWhitespace`, `normalizationDrift`). Mirrors
+/// `Unicode.Security.Crypto.HashInputStability.detect`.
+public func hashInputStabilityDetect(_ input: [Int]) -> HashInputStabilityVerdict {
+    hashInputStabilityDetectWithContext(.default, input)
+}
+
+/// Stable reason code for a hash-input-stability sub-threat tag, routed through
+/// the shared reason-code builder: `unicode.security.K.hash-input-stability.<tag>`.
+public func hashInputStabilityReasonCode(_ subThreat: String) -> String {
+    reasonCode(family: Family.hashInputStability, subThreat: subThreat)
 }

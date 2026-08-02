@@ -19,6 +19,7 @@ struct SecurityContractRunner {
         try testCompatibilityNormalization()
         try testCasing()
         try testBip39Canonical()
+        try testHashInputStability()
         try testOpaqueBlob()
         print("clean: Swift contract tests pass")
     }
@@ -60,6 +61,161 @@ struct SecurityContractRunner {
         try expectEqual(verdict.subThreat, nil, "bip39 12word sub")
         try expectEqual(verdict.language, "english", "bip39 12word lang")
         try expectEqual(verdict.wordCount, 12, "bip39 12word count")
+    }
+
+    // Pins hashInputStabilityDetect against the ground-truth theorems in
+    // Unicode/Security/Crypto/HashInputStability.lean: the shared context-free
+    // fixture runs through detect; the Context-bearing vectors (which the shared
+    // detector-fixture schema cannot express) are transcribed from the verbatim
+    // comment block in the Rust reference's test module.
+    private static func testHashInputStability() throws {
+        // Shared context-free fixture through detect. required_findings carries
+        // full reason codes (unicode.security.K.hash-input-stability.<SubThreat>);
+        // an empty list means clear.
+        let fixture = try loadFixture("detectors/hash_input_stability.json")
+        try expectEqual(fixture["schema"] as? Int, 1, "hash-input-stability schema")
+        try expectEqual(try string(fixture, "family"), "hash-input-stability", "hash-input-stability family")
+        for entry in try array(fixture, "cases") {
+            let name = try string(entry, "name")
+            let input = try intArray(entry, "input")
+            let required = try stringArray(entry, "required_findings")
+            if let tag = hashInputStabilityDetect(input).classify.tag {
+                let code = hashInputStabilityReasonCode(tag)
+                try expect(required.contains(code), "hash-input-stability \(name): expected \(code) in \(required)")
+            } else {
+                try expect(required.isEmpty, "hash-input-stability \(name): expected clear, got \(required)")
+            }
+        }
+
+        // ── Context-bearing probe vectors, transcribed from the Rust reference.
+        // encodingMismatch.
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(declaredEncoding: "utf-16"), [0x61, 0x62, 0x63]).classify.tag,
+            "EncodingMismatch", "his encoding utf-16 label")
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(declaredEncoding: "utf-16"), [0x61, 0x62, 0x63]).classify.positions,
+            [0], "his encoding utf-16 label pos")
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(declaredEncoding: "utf-8"), [0x61, 0xD800, 0x62]).classify.tag,
+            "EncodingMismatch", "his encoding invalid surrogate")
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(declaredEncoding: "utf-8"), [0x61, 0xD800, 0x62]).classify.positions,
+            [1], "his encoding invalid surrogate pos")
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(declaredEncoding: "utf-8"), [0x61, 0x110000, 0x62]).classify.tag,
+            "EncodingMismatch", "his encoding out of range")
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(declaredEncoding: "utf-8"), [0x61, 0x110000, 0x62]).classify.positions,
+            [1], "his encoding out of range pos")
+        for label in ["UTF-8", "utf-8", "UTF8", "utf8"] {
+            try expectEqual(
+                hashInputStabilityDetectWithContext(HashInputStabilityContext(declaredEncoding: label), [0x61, 0x62, 0x63]).classify.tag,
+                nil, "his encoding utf-8 label \(label) clear")
+        }
+
+        // signedMessageRule.
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(rfcRule: .pgp4880TrailingWhitespace), [0x61, 0x20]).classify.tag,
+            "SignedMessageRule", "his rfc pgp4880")
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(rfcRule: .pgp4880TrailingWhitespace), [0x61, 0x20]).classify.positions,
+            [1], "his rfc pgp4880 pos")
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(rfcRule: .pgp9580LineEnding), [0x61, 0x0A, 0x62]).classify.tag,
+            "SignedMessageRule", "his rfc pgp9580 bare lf")
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(rfcRule: .pgp9580LineEnding), [0x61, 0x0A, 0x62]).classify.positions,
+            [1], "his rfc pgp9580 bare lf pos")
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(rfcRule: .pgp9580LineEnding), [0x61, 0x62, 0x63, 0x0D, 0x0A, 0x64, 0x65, 0x66]).classify.tag,
+            nil, "his rfc pgp9580 crlf clear")
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(rfcRule: .rfc8785NfcRequirement), [0x0065, 0x0301]).classify.tag,
+            "SignedMessageRule", "his rfc rfc8785 decomposed")
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(rfcRule: .rfc8785NfcRequirement), [0x0065, 0x0301]).classify.positions,
+            [0], "his rfc rfc8785 decomposed pos")
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(rfcRule: .rfc8259ControlChar), [0x61, 0x01, 0x62]).classify.tag,
+            "SignedMessageRule", "his rfc rfc8259 control")
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(rfcRule: .rfc8259ControlChar), [0x61, 0x01, 0x62]).classify.positions,
+            [1], "his rfc rfc8259 control pos")
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(rfcRule: .rfc7515JwsBase64Url), [0x41, 0x2B, 0x42]).classify.tag,
+            "SignedMessageRule", "his rfc rfc7515 plus")
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(rfcRule: .rfc7515JwsBase64Url), [0x41, 0x2B, 0x42]).classify.positions,
+            [1], "his rfc rfc7515 plus pos")
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(rfcRule: .rfc7515JwsBase64Url), [0x41, 0x61, 0x30, 0x2D, 0x5F, 0x7A, 0x5A, 0x39]).classify.tag,
+            nil, "his rfc rfc7515 clean clear")
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(rfcRule: .rfc6376DkimRelaxed), [0x61, 0x20, 0x20, 0x62]).classify.tag,
+            "SignedMessageRule", "his rfc rfc6376 double space")
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(rfcRule: .rfc6376DkimRelaxed), [0x61, 0x20, 0x20, 0x62]).classify.positions,
+            [2], "his rfc rfc6376 double space pos")
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(rfcRule: .rfc6376DkimRelaxed), [0x61, 0x20, 0x62]).classify.tag,
+            nil, "his rfc rfc6376 single space clear")
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(rfcRule: .rfc5751SmimeLineEnding), [0x61, 0x0A, 0x62]).classify.tag,
+            "SignedMessageRule", "his rfc rfc5751 bare lf")
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(rfcRule: .rfc5751SmimeLineEnding), [0x61, 0x0A, 0x62]).classify.positions,
+            [1], "his rfc rfc5751 bare lf pos")
+
+        // auditLogReinterpretation.
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(asWritten: [0x61, 0x62, 0x63]), [0x61, 0x62, 0x64]).classify.tag,
+            "AuditLogReinterpretation", "his audit divergence")
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(asWritten: [0x61, 0x62, 0x63]), [0x61, 0x62, 0x64]).classify.positions,
+            [2], "his audit divergence pos")
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(asWritten: [0x61, 0x62, 0x63]), [0x61, 0x62, 0x63]).classify.tag,
+            nil, "his audit identical clear")
+
+        // webhookSignatureDrift.
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(serverBytes: [0x61, 0x62, 0x64]), [0x61, 0x62, 0x63]).classify.tag,
+            "WebhookSignatureDrift", "his webhook drift")
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(serverBytes: [0x61, 0x62, 0x64]), [0x61, 0x62, 0x63]).classify.positions,
+            [2], "his webhook drift pos")
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(serverBytes: [0x61, 0x62, 0x63]), [0x61, 0x62, 0x63]).classify.tag,
+            nil, "his webhook match clear")
+
+        // Priority ordering.
+        try expectEqual(
+            hashInputStabilityDetectWithContext(
+                HashInputStabilityContext(declaredEncoding: "utf-16", rfcRule: .pgp9580LineEnding),
+                [0x0065, 0x0301, 0x0A]).classify.tag,
+            "EncodingMismatch", "his priority encoding over rfc")
+        try expectEqual(
+            hashInputStabilityDetectWithContext(
+                HashInputStabilityContext(asWritten: [0x61, 0x62, 0x66], serverBytes: [0x61, 0x62, 0x65]),
+                [0x61, 0x62, 0x63]).classify.tag,
+            "WebhookSignatureDrift", "his priority webhook over audit")
+        try expectEqual(
+            hashInputStabilityDetectWithContext(HashInputStabilityContext(rfcRule: .pgp4880TrailingWhitespace), [0x61, 0x20]).classify.tag,
+            "SignedMessageRule", "his priority rfc over trailing")
+
+        // default context equals bare detect.
+        try expectEqual(
+            hashInputStabilityDetectWithContext(.default, [0x61, 0x62, 0x63]).classify,
+            hashInputStabilityDetect([0x61, 0x62, 0x63]).classify, "his default matches detect")
+
+        // RfcRule tag round-trip.
+        for rule: RfcRule in [
+            .pgp4880TrailingWhitespace, .pgp9580LineEnding, .rfc8785NfcRequirement,
+            .rfc8259ControlChar, .rfc7515JwsBase64Url, .rfc6376DkimRelaxed, .rfc5751SmimeLineEnding,
+        ] {
+            try expectEqual(RfcRule.fromTag(rule.tag), rule, "his rfc rule roundtrip \(rule.tag)")
+        }
+        try expectEqual(RfcRule.fromTag("nope"), nil, "his rfc rule unknown")
     }
 
     // Pins the covert-display-compound detector against the detect_* spot-check
