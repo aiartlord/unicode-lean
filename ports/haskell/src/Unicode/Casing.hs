@@ -1,6 +1,6 @@
 {-|
 Module      : Unicode.Casing
-Description : UAX #21 case mapping (toLower).
+Description : UAX #21 case mapping (toLower / per-codepoint upper).
 
 Haskell port of @Unicode.Casing@ from unicode-lean.
 
@@ -12,14 +12,23 @@ conditions — Final_Sigma, After_Soft_Dotted, More_Above, Not_Before_Dot
 via the shared 'Unicode.Normalization.Lookup' accessor, together with the
 @Cased@ and @Soft_Dotted@ properties from @DerivedCoreProperties.txt@.
 
+The uppercase side, 'upperCodepoint', mirrors 'lowerCodepoint' exactly: it
+reuses the same SpecialCasing row selection and context predicates but
+returns the row's uppercase column (@SpecialCasing.txt@ field 3), falling
+back to the simple uppercase mapping (UnicodeData.txt column 12). Only the
+mapped column differs; the context machinery is shared.
+
 This is a shared primitive: the bip39-canonical detector lowercases
-through @toLower Default@. The tables load once, at first use, through the
-same NOINLINE runtime-table idiom the security layer already uses.
+through @toLower Default@, and the case-expansion-mismatch detector reads
+per-codepoint lengths through 'lowerCodepoint' and 'upperCodepoint'. The
+tables load once, at first use, through the same NOINLINE runtime-table
+idiom the security layer already uses.
 -}
 module Unicode.Casing
   ( Locale (Default, Turkish, Azeri, Lithuanian)
   , toLower
   , lowerCodepoint
+  , upperCodepoint
   ) where
 
 import Data.Char (isSpace)
@@ -61,10 +70,12 @@ data Condition
   deriving stock (Eq, Show)
 
 -- | A parsed SpecialCasing.txt row: the source codepoint, its full
--- lowercase mapping, and the (possibly empty) condition list.
+-- lowercase mapping, its full uppercase mapping, and the (possibly empty)
+-- condition list.
 data SpecialRow = SpecialRow
   { rowCode       :: !Int
   , rowLower      :: ![Int]
+  , rowUpper      :: ![Int]
   , rowConditions :: ![Condition]
   }
 
@@ -90,6 +101,12 @@ simpleLowercaseMap = unsafePerformIO $ do
   parseSimpleLowercase <$> readFile path
 {-# NOINLINE simpleLowercaseMap #-}
 
+simpleUppercaseMap :: Map Int Int
+simpleUppercaseMap = unsafePerformIO $ do
+  path <- getDataFileName "data/UnicodeData.txt"
+  parseSimpleUppercase <$> readFile path
+{-# NOINLINE simpleUppercaseMap #-}
+
 casedRanges :: [Range]
 casedRanges = unsafePerformIO $ do
   path <- getDataFileName "data/DerivedCoreProperties.txt"
@@ -106,6 +123,11 @@ softDottedRanges = unsafePerformIO $ do
 -- the map lowercases to itself.
 simpleLowercase :: Int -> Int
 simpleLowercase cp = Map.findWithDefault cp cp simpleLowercaseMap
+
+-- | Simple uppercase (UnicodeData.txt column 12); a codepoint absent from
+-- the map uppercases to itself.
+simpleUppercase :: Int -> Int
+simpleUppercase cp = Map.findWithDefault cp cp simpleUppercaseMap
 
 inRanges :: [Range] -> Int -> Bool
 inRanges ranges cp = any (\r -> rangeLo r <= cp && cp <= rangeHi r) ranges
@@ -269,6 +291,16 @@ lowerCodepoint loc revPrefix suffix cp =
     Just row -> rowLower row
     Nothing  -> [simpleLowercase cp]
 
+-- | Uppercase a single codepoint in context, falling back to the simple
+-- uppercase mapping when no SpecialCasing row applies. Mirrors
+-- 'lowerCodepoint' exactly, sharing 'findSpecialRow' and the context
+-- predicates; only the mapped column differs (uppercase vs lowercase).
+upperCodepoint :: Locale -> [Int] -> [Int] -> Int -> [Int]
+upperCodepoint loc revPrefix suffix cp =
+  case findSpecialRow loc revPrefix suffix cp of
+    Just row -> rowUpper row
+    Nothing  -> [simpleUppercase cp]
+
 -- | Lowercase a codepoint sequence under @loc@, carrying processed
 -- codepoints as a nearest-first prefix so each position reads its context.
 toLowerGo :: Locale -> [Int] -> [Int] -> [Int]
@@ -303,7 +335,8 @@ parseCondition token =
 
 -- | Parse one SpecialCasing.txt row into a @SpecialRow@. Only rows with a
 -- lowercase mapping and at least the code and lower fields contribute; the
--- condition field (column 4) is optional.
+-- uppercase field (column 3) and condition field (column 4) are captured
+-- when present, mirroring the row shape @code; lower; title; upper; conditions@.
 parseSpecialCasingLine :: String -> Maybe SpecialRow
 parseSpecialCasingLine raw = do
   let fields = splitFields ';' (stripComment raw)
@@ -311,8 +344,9 @@ parseSpecialCasingLine raw = do
   lowerField <- nthField 1 fields
   code       <- parseHexInt codeField
   let lower      = mapMaybe parseHexInt (words lowerField)
+      upper      = mapMaybe parseHexInt (maybe [] words (nthField 3 fields))
       conditions = map parseCondition (maybe [] words (nthField 4 fields))
-  if null lower then Nothing else Just (SpecialRow code lower conditions)
+  if null lower then Nothing else Just (SpecialRow code lower upper conditions)
 
 -- | Parse the simple lowercase mapping (column 13) from UnicodeData.txt.
 parseSimpleLowercase :: String -> Map Int Int
@@ -327,6 +361,20 @@ parseSimpleLowercaseLine raw = do
   code       <- parseHexInt codeField
   lower      <- parseHexInt lowerField
   Just (code, lower)
+
+-- | Parse the simple uppercase mapping (column 12) from UnicodeData.txt.
+parseSimpleUppercase :: String -> Map Int Int
+parseSimpleUppercase =
+  Map.fromList . mapMaybe parseSimpleUppercaseLine . lines
+
+parseSimpleUppercaseLine :: String -> Maybe (Int, Int)
+parseSimpleUppercaseLine raw = do
+  let fields = splitFields ';' raw
+  codeField  <- nthField 0 fields
+  upperField <- nthField 12 fields
+  code       <- parseHexInt codeField
+  upper      <- parseHexInt upperField
+  Just (code, upper)
 
 -- | Parse the inclusive ranges of a single DerivedCoreProperties property.
 parseDerivedProperty :: String -> String -> [Range]

@@ -16,6 +16,7 @@ run() ->
     renderer_divergence_tests(),
     filename_disguise_tests(),
     identifier_form_drift_tests(),
+    case_expansion_mismatch_tests(),
     skin_tone_variation_forgery_tests(),
     opaque_blob_tests(),
     grapheme_tests(),
@@ -594,6 +595,70 @@ filename_disguise_tests() ->
     assert_eq(<<"RloFlip">>, fd_tag([16#202E, 16#66, 16#2E, 16#FF25]), fd_bidi_beats_fullwidth),
 
     io:format("  filename-disguise: fixture + 10 spot-checks + 1 structural pass~n").
+
+%% Reason code the case-expansion-mismatch detect verdict would emit for a given
+%% input, or `none' when clear.
+cem_code(Input) ->
+    C = maps:get(classify, usec_case_expansion_mismatch:detect(Input)),
+    case usec_case_expansion_mismatch:classify_tag(C) of
+        none -> none;
+        Tag -> usec_policy:reason_code(case_expansion_mismatch, Tag)
+    end.
+
+%% The case-expansion-mismatch classification tag for an input, or `none'.
+cem_tag(Input) ->
+    usec_case_expansion_mismatch:classify_tag(maps:get(classify, usec_case_expansion_mismatch:detect(Input))).
+
+case_expansion_mismatch_tests() ->
+    %% ── Shared context-free fixture, run through detect. ────────────────
+    F = fixture(filename:join("detectors", "case_expansion_mismatch.json")),
+    assert_eq(<<"case-expansion-mismatch">>, maps:get(<<"family">>, F), cem_fixture_family),
+    lists:foreach(fun(Case) ->
+                          Input = maps:get(<<"input">>, Case),
+                          Label = {cem_fixture, maps:get(<<"name">>, Case)},
+                          Required = maps:get(<<"required_findings">>, Case),
+                          Codes = case cem_code(Input) of
+                                      none -> [];
+                                      Code -> [Code]
+                                  end,
+                          lists:foreach(fun(Req) -> assert(lists:member(Req, Codes), Label) end, Required),
+                          case Required of
+                              [] -> assert(Codes =:= [], Label);
+                              _ -> ok
+                          end
+                  end, maps:get(<<"cases">>, F)),
+
+    %% ── §4 detect spot checks (the rust #[test] cases). ─────────────────
+    %% detect_empty_clear
+    assert(usec_case_expansion_mismatch:is_clear(maps:get(classify, usec_case_expansion_mismatch:detect([]))), cem_empty_clear),
+    assert_eq(none, cem_tag([]), cem_empty_tag),
+    assert_eq(0, maps:get(max_expansion_len, usec_case_expansion_mismatch:detect([])), cem_empty_max_len),
+    %% detect_ascii_clear — "Hello"; every ASCII cp case-maps to a single cp.
+    HelloV = usec_case_expansion_mismatch:detect([16#48, 16#65, 16#6C, 16#6C, 16#6F]),
+    assert(usec_case_expansion_mismatch:is_clear(maps:get(classify, HelloV)), cem_ascii_clear),
+    assert_eq(1, maps:get(max_expansion_len, HelloV), cem_ascii_max_len),
+    %% detect_sharp_s_upper — ß (U+00DF) toUpper → "SS".
+    SharpV = usec_case_expansion_mismatch:detect([16#00DF]),
+    assert_eq(<<"UpperExpansion">>, usec_case_expansion_mismatch:classify_tag(maps:get(classify, SharpV)), cem_sharp_s_tag),
+    assert_eq([0], usec_case_expansion_mismatch:classify_positions(maps:get(classify, SharpV)), cem_sharp_s_positions),
+    assert_eq(1, maps:get(upper_expansion_count, SharpV), cem_sharp_s_upper_count),
+    assert_eq(2, maps:get(max_expansion_len, SharpV), cem_sharp_s_max_len),
+    %% detect_fi_ligature_upper — ﬁ (U+FB01) toUpper → "FI".
+    assert_eq(<<"UpperExpansion">>, cem_tag([16#FB01]), cem_fi_ligature_upper),
+    %% detect_dotted_I_lower — İ (U+0130) toLower under default → "i + 0307";
+    %% no upper expansion, so the detector falls through to the lower scan.
+    DottedV = usec_case_expansion_mismatch:detect([16#0130]),
+    assert_eq(<<"LowerExpansion">>, usec_case_expansion_mismatch:classify_tag(maps:get(classify, DottedV)), cem_dotted_I_tag),
+    assert_eq(1, maps:get(lower_expansion_count, DottedV), cem_dotted_I_lower_count),
+    %% detect_ffi_ligature_len3 — ﬃ (U+FB03) toUpper → "FFI" (length 3).
+    FfiV = usec_case_expansion_mismatch:detect([16#FB03]),
+    assert_eq(<<"UpperExpansion">>, usec_case_expansion_mismatch:classify_tag(maps:get(classify, FfiV)), cem_ffi_tag),
+    assert_eq(3, maps:get(max_expansion_len, FfiV), cem_ffi_max_len),
+    %% detect_reports_first_expansion_position — leading ASCII then ß at index 1.
+    MidV = usec_case_expansion_mismatch:detect([16#61, 16#00DF]),
+    assert_eq([1], usec_case_expansion_mismatch:classify_positions(maps:get(classify, MidV)), cem_mid_position),
+
+    io:format("  case-expansion-mismatch: fixture + 8 spot-checks pass~n").
 
 %% Reason code the detect verdict would emit for a given input, or `none' when
 %% clear. Mirrors how the finding wiring lifts a classification tag into a code.

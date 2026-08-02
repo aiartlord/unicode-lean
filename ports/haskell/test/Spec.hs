@@ -19,6 +19,7 @@ import qualified AiWatermarkDetectabilitySpec
 import qualified Bip39CanonicalSpec
 import qualified HashInputStabilitySpec
 import qualified BomSpec
+import qualified CaseExpansionMismatchSpec
 import qualified CasingSpec
 import qualified GraphemeSpec
 import qualified HangulSpec
@@ -51,6 +52,7 @@ main = defaultMain $
     , Bip39CanonicalSpec.tests
     , HashInputStabilitySpec.tests
     , BomSpec.tests
+    , CaseExpansionMismatchSpec.tests
     , CasingSpec.tests
     , GraphemeSpec.tests
     , HangulSpec.tests

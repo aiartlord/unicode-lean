@@ -1,6 +1,6 @@
 -module(usec_casing).
 
--export([lower_codepoint/4, to_lower/2]).
+-export([lower_codepoint/4, upper_codepoint/4, to_lower/2]).
 
 strip(Line) ->
     string:trim(hd(binary:split(Line, <<"#">>))).
@@ -37,11 +37,15 @@ parse_special_casing() ->
                           true ->
                               Cp = parse_hex(lists:nth(1, Fields)),
                               Lower = hex_tokens(lists:nth(2, Fields)),
+                              %% Field 3 (0-based) — the SpecialCasing full uppercase
+                              %% column — is nth(4) 1-based, sitting between the
+                              %% title (nth 3) and conditions (nth 5).
+                              Upper = hex_tokens(lists:nth(4, Fields)),
                               Conds = case length(Fields) >= 5 of
                                           true -> [C || C <- binary:split(lists:nth(5, Fields), <<" ">>, [global]), C =/= <<>>];
                                           false -> []
                                       end,
-                              Row = {Lower, Conds},
+                              Row = {Lower, Upper, Conds},
                               maps:update_with(Cp, fun(Old) -> Old ++ [Row] end, [Row], Acc)
                       end
               end
@@ -66,6 +70,33 @@ parse_simple_lower() ->
                               case Lower of
                                   <<>> -> Acc;
                                   _ -> maps:put(Cp, parse_hex(Lower), Acc)
+                              end
+                      end
+              end
+      end, #{}, lines(usec_data:read_file("UnicodeData.txt"))).
+
+simple_upper() ->
+    usec_data:cached(simple_upper, fun parse_simple_upper/0).
+
+parse_simple_upper() ->
+    lists:foldl(
+      fun(Line, Acc) ->
+              case Line of
+                  <<>> -> Acc;
+                  <<"#", _/binary>> -> Acc;
+                  _ ->
+                      Fields = binary:split(Line, <<";">>, [global]),
+                      case length(Fields) >= 13 of
+                          false -> Acc;
+                          true ->
+                              Cp = parse_hex(lists:nth(1, Fields)),
+                              %% Field 12 (0-based) — the UnicodeData simple
+                              %% uppercase mapping — is nth(13) 1-based, one column
+                              %% before the simple lowercase mapping (nth 14).
+                              Upper = string:trim(lists:nth(13, Fields)),
+                              case Upper of
+                                  <<>> -> Acc;
+                                  _ -> maps:put(Cp, parse_hex(Upper), Acc)
                               end
                       end
               end
@@ -202,12 +233,12 @@ find_special_row(Loc, RevPrefix, Suffix, Cp) ->
     case maps:get(Cp, special_rows(), none) of
         none -> none;
         Rows ->
-            case lists:dropwhile(fun({_Lower, Conds}) ->
+            case lists:dropwhile(fun({_Lower, _Upper, Conds}) ->
                                          Conds =:= [] orelse not conditions_hold(Loc, RevPrefix, Suffix, Conds)
                                  end, Rows) of
                 [Row | _] -> Row;
                 [] ->
-                    case lists:dropwhile(fun({_Lower, Conds}) -> Conds =/= [] end, Rows) of
+                    case lists:dropwhile(fun({_Lower, _Upper, Conds}) -> Conds =/= [] end, Rows) of
                         [Row | _] -> Row;
                         [] -> none
                     end
@@ -216,8 +247,14 @@ find_special_row(Loc, RevPrefix, Suffix, Cp) ->
 
 lower_codepoint(Loc, RevPrefix, Suffix, Cp) ->
     case find_special_row(Loc, RevPrefix, Suffix, Cp) of
-        {Lower, _Conds} -> Lower;
+        {Lower, _Upper, _Conds} -> Lower;
         none -> [maps:get(Cp, simple_lower(), Cp)]
+    end.
+
+upper_codepoint(Loc, RevPrefix, Suffix, Cp) ->
+    case find_special_row(Loc, RevPrefix, Suffix, Cp) of
+        {_Lower, Upper, _Conds} -> Upper;
+        none -> [maps:get(Cp, simple_upper(), Cp)]
     end.
 
 to_lower(Loc, Cps) ->

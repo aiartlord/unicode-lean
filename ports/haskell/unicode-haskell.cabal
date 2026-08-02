@@ -106,6 +106,7 @@ library
       Unicode.Security.Crypto.HashInputStability
       Unicode.Security.Display.RendererDivergence
       Unicode.Security.Display.FilenameDisguise
+      Unicode.Security.Form.CaseExpansionMismatch
       Unicode.Security.Form.LocaleCaseInversion
       Unicode.Security.Form.NfcIdempotenceWitness
       Unicode.Security.Form.NormalizationBomb
@@ -130,6 +131,7 @@ test-suite unicode-haskell-test
       Bip39CanonicalSpec
       HashInputStabilitySpec
       BomSpec
+      CaseExpansionMismatchSpec
       CasingSpec
       HangulSpec
       GraphemeSpec
