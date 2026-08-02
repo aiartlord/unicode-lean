@@ -393,6 +393,72 @@ def emit_canonical_decomp(path, table):
     path.write_text("\n".join(lines) + "\n", encoding="ascii")
 
 
+def parse_unicode_data_compat():
+    """cp -> (ccc, decomp | None) following the full decomposition mapping,
+    including compatibility mappings (the leading <tag> token is dropped).
+    Canonical entries carry no tag; compatibility entries carry one. NFKD
+    expands both, so both feed the recursive full-decomposition walk."""
+    table = {}
+    for line in (DATA / "UnicodeData.txt").read_text(encoding="utf-8").splitlines():
+        if not line or line.startswith("#"):
+            continue
+        fields = line.split(";")
+        if len(fields) < 6:
+            continue
+        cp = int(fields[0], 16)
+        ccc = int(fields[3])
+        decomp_field = fields[5].strip()
+        decomp = None
+        if decomp_field:
+            parts = decomp_field.split()
+            if parts and parts[0].startswith("<"):
+                parts = parts[1:]
+            decomp = [int(part, 16) for part in parts]
+        table[cp] = (ccc, decomp)
+    return table
+
+
+def full_nfkd_decompose(cp, table, out):
+    """Recursively expand cp under the compatibility (NFKD) mapping, mirroring
+    full_decompose but following the compatibility table so every ligature,
+    width, and numeral form fully unfolds to its base sequence."""
+    hangul = hangul_decompose(cp)
+    if hangul is not None:
+        for child in hangul:
+            full_nfkd_decompose(child, table, out)
+        return
+    entry = table.get(cp)
+    if entry is not None and entry[1] is not None:
+        for child in entry[1]:
+            full_nfkd_decompose(child, table, out)
+        return
+    out.append(cp)
+
+
+def emit_nfkd_decomp(path, table):
+    """Fully-expanded NFKD decomposition table, one WHEN per codepoint whose
+    compatibility decomposition differs from itself. Mirrors
+    emit_canonical_decomp; the COBOL side reorders the emitted run and takes the
+    head to obtain the NFKD head codepoint."""
+    lines = ["EVALUATE LOOKUP-CP"]
+    for cp in sorted(table):
+        _ccc, decomp = table[cp]
+        if decomp is None:
+            continue
+        full = []
+        full_nfkd_decompose(cp, table, full)
+        # A codepoint whose full NFKD decomposition is itself carries no mapping.
+        if full == [cp]:
+            continue
+        lines.append(f"    WHEN {cp}")
+        lines.append(f"        MOVE {len(full)} TO DEC-LEN")
+        for slot, child in enumerate(full, start=1):
+            lines.append(f"        MOVE {child} TO DEC-CP ({slot})")
+        lines.append("        MOVE 1 TO DEC-FOUND")
+    lines.append("END-EVALUATE.")
+    path.write_text("\n".join(lines) + "\n", encoding="ascii")
+
+
 def emit_composition(path, table, exclusions):
     ccc_of = {cp: ccc for cp, (ccc, _d) in table.items()}
     pairs = []
@@ -447,6 +513,12 @@ def main():
     emit_ccc_class(OUT / "ccc_class.cpy", ucd)
     emit_canonical_decomp(OUT / "canonical_decomp.cpy", ucd)
     emit_composition(OUT / "canonical_compose.cpy", ucd, exclusions)
+    emit_nfkd_decomp(OUT / "nfkd_decomp.cpy", parse_unicode_data_compat())
+    emit_range_eval(
+        OUT / "id_allowed.cpy",
+        parse_property_ranges(DATA / "IdentifierStatus.txt", {"Allowed"}),
+        "MOVE 1 TO TABLE-FLAG",
+    )
     print("generated COBOL Unicode lookup copybooks")
 
 

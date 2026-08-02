@@ -504,6 +504,62 @@ def check_filename_disguise():
     return len(fixture["cases"]), len(spot), 1
 
 
+IFD_BASE = "unicode.security.X.identifier-form-drift."
+
+
+def run_ifd(values):
+    return run("identifier-form-drift", "gateway-header", "observe", values)
+
+
+def check_identifier_form_drift():
+    # 1. The 8 shared context-free fixture vectors.
+    fixture = load("detectors/identifier_form_drift.json")
+    for case in fixture["cases"]:
+        got = run_ifd(case["input"])
+        for code in case["required_findings"]:
+            require(code in got["codes"],
+                    f"ifd/{case['name']} missing {code}; got {got['codes']}")
+        if not case["required_findings"]:
+            require(all(".identifier-form-drift." not in code for code in got["codes"]),
+                    f"ifd/{case['name']} unexpected finding; got {got['codes']}")
+
+    # 2. Spot-checks transcribed from the verified Rust reference's `#[test]`
+    #    module: empty / "Hello" ASCII / Greek alpha clear (identity NFKD,
+    #    every codepoint Allowed); math-italic-a U+1D44E, fullwidth-A U+FF21,
+    #    circled-A U+24B6, fi-ligature U+FB01, roman-IV U+2163 all shift
+    #    (Restricted codepoint, Allowed NFKD head). tag = "IdentifierStatusShift"
+    #    or None for Clear; pos = expected positions or None to skip.
+    spot = [
+        ("empty", [], None, None),
+        ("hello", [0x48, 0x65, 0x6C, 0x6C, 0x6F], None, None),
+        ("greek-alpha", [0x03B1], None, None),
+        ("math-italic-a", [0x1D44E], "IdentifierStatusShift", [0]),
+        ("fullwidth-A", [0xFF21], "IdentifierStatusShift", None),
+        ("circled-A", [0x24B6], "IdentifierStatusShift", None),
+        ("fi-ligature", [0xFB01], "IdentifierStatusShift", None),
+        ("roman-iv", [0x2163], "IdentifierStatusShift", None),
+    ]
+    for name, values, tag, expected_pos in spot:
+        got = run_ifd(values)
+        ifd_codes = [c for c in got["codes"] if ".identifier-form-drift." in c]
+        if tag is None:
+            require(not ifd_codes, f"ifd-spot/{name} expected clear; got {ifd_codes}")
+        else:
+            code = IFD_BASE + tag
+            require(code in got["codes"], f"ifd-spot/{name} missing {code}; got {got['codes']}")
+            if expected_pos is not None:
+                require(got["positions"].get(code) == expected_pos,
+                        f"ifd-spot/{name} positions {got['positions'].get(code)} != {expected_pos}")
+
+    # 3. A shift embedded mid-string reports the first shifting position, not 0:
+    #    "ab" + U+1D44E — positions 0,1 are Allowed/identity, position 2 shifts.
+    mid = run_ifd([0x61, 0x62, 0x1D44E])
+    require(mid["positions"].get(IFD_BASE + "IdentifierStatusShift") == [2],
+            f"ifd-struct/mid-string positions {mid['positions']} != [2]")
+
+    return len(fixture["cases"]), len(spot), 1
+
+
 def check_forms_and_bip39():
     cases = [
         ("forms", [], []),
@@ -714,6 +770,7 @@ def main():
     ezwj_fixture_count, ezwj_spot_count, ezwj_struct_count = check_emoji_zwj_integrity()
     rd_fixture_count, rd_spot_count, rd_struct_count = check_renderer_divergence()
     fd_fixture_count, fd_spot_count, fd_struct_count = check_filename_disguise()
+    ifd_fixture_count, ifd_spot_count, ifd_struct_count = check_identifier_form_drift()
     check_forms_and_bip39()
     ss_count = check_stream_safe_violation()
     check_generated_tables()
@@ -737,6 +794,9 @@ def main():
     print(f"filename-disguise shared-fixture vectors: {fd_fixture_count}")
     print(f"filename-disguise spot-checks: {fd_spot_count}")
     print(f"filename-disguise structural checks: {fd_struct_count}")
+    print(f"identifier-form-drift shared-fixture vectors: {ifd_fixture_count}")
+    print(f"identifier-form-drift spot-checks: {ifd_spot_count}")
+    print(f"identifier-form-drift structural checks: {ifd_struct_count}")
     print("ok: cobol unicode security fixture tests pass")
 
 

@@ -123,7 +123,7 @@ WORKING-STORAGE SECTION.
 01 DEC-FOUND PIC 9 VALUE 0.
 01 DEC-LEN PIC 9(2) COMP-5 VALUE 0.
 01 DEC-TABLE.
-   05 DEC-CP OCCURS 8 TIMES PIC 9(9) COMP-5.
+   05 DEC-CP OCCURS 20 TIMES PIC 9(9) COMP-5.
 01 COMP-A PIC 9(9) COMP-5.
 01 COMP-B PIC 9(9) COMP-5.
 01 COMP-RESULT PIC 9(9) COMP-5.
@@ -263,6 +263,21 @@ WORKING-STORAGE SECTION.
 01 FD-LAST-DOT PIC 9(9) COMP-5 VALUE 0.
 01 FD-EXT-START PIC 9(9) COMP-5 VALUE 0.
 01 FD-POS PIC 9(9) COMP-5 VALUE 0.
+*> ── identifier-form-drift (X) status-shift scan state ─────────────────
+*> The sole sub-threat is IdentifierStatusShift (IFD-CLASS 1). IFD-IDX is a
+*> dedicated outer index so the per-codepoint NFKD-head reorder — which reuses
+*> the shared REORDER-NFD scratch (IDX/JDX/KDX/...) — never clobbers the scan
+*> loop. IFD-CP-ALLOWED / IFD-HEAD-ALLOWED are the Identifier_Status of the
+*> input codepoint and of its NFKD head; a shift is any position where they
+*> differ. IFD-POS is the first such position, 0-indexed.
+01 IFD-CLASS PIC 9 VALUE 0.
+01 IFD-DONE PIC 9 VALUE 0.
+01 IFD-POS PIC 9(9) COMP-5 VALUE 0.
+01 IFD-SHIFT-COUNT PIC 9(5) COMP-5 VALUE 0.
+01 IFD-IDX PIC 9(5) COMP-5 VALUE 0.
+01 IFD-CUR-CP PIC 9(9) COMP-5 VALUE 0.
+01 IFD-CP-ALLOWED PIC 9 VALUE 0.
+01 IFD-HEAD-ALLOWED PIC 9 VALUE 0.
 01 VOCAB-RAW.
    05 FILLER PIC X(26) VALUE "05delve                   ".
    05 FILLER PIC X(26) VALUE "07delving                 ".
@@ -390,7 +405,11 @@ MAIN.
                                             IF OP-NAME = "filename-disguise"
                                                 PERFORM SCAN-FILENAME-DISGUISE
                                             ELSE
-                                                PERFORM SCAN-CORE
+                                                IF OP-NAME = "identifier-form-drift"
+                                                    PERFORM SCAN-IDENTIFIER-FORM-DRIFT
+                                                ELSE
+                                                    PERFORM SCAN-CORE
+                                                END-IF
                                             END-IF
                                         END-IF
                                     END-IF
@@ -2408,6 +2427,110 @@ FD-EMIT-DOTS.
     END-PERFORM
     MOVE POS-TEXT TO FINDING-POS(FINDING-COUNT).
 
+SCAN-IDENTIFIER-FORM-DRIFT.
+*> Cross-layer identifier x form-drift detector. Byte-faithful transliteration
+*> of the verified Rust reference security/boundary/identifier_form_drift.rs.
+*> A two-stage validator that checks UTS #39 Identifier_Status before versus
+*> after NFKD can be bypassed when a codepoint's status differs from its NFKD
+*> head's: U+1D44E (Restricted) folds to 'a' (Allowed), fullwidth/circled/
+*> ligature/roman-numeral forms likewise. The sole sub-threat fires on the
+*> first input position whose Identifier_Status differs from that of its NFKD
+*> head, and the scan tallies the total shift count. It reuses the port's own
+*> UTS #39 Allowed predicate (IS-ID-ALLOWED over the bundled IdentifierStatus
+*> table) and its own compatibility-decomposition plus canonical reorder to
+*> obtain the NFKD head; never a host normalization or identifier library.
+    MOVE 0 TO IFD-CLASS IFD-DONE IFD-POS IFD-SHIFT-COUNT
+    PERFORM VARYING IFD-IDX FROM 1 BY 1 UNTIL IFD-IDX > CP-COUNT
+        MOVE CP(IFD-IDX) TO LOOKUP-CP
+        PERFORM IS-ID-ALLOWED
+        MOVE TABLE-FLAG TO IFD-CP-ALLOWED
+        MOVE CP(IFD-IDX) TO IFD-CUR-CP
+        PERFORM IFD-NFKD-HEAD-ALLOWED
+        IF IFD-CP-ALLOWED NOT = IFD-HEAD-ALLOWED
+            ADD 1 TO IFD-SHIFT-COUNT
+            IF IFD-DONE = 0
+                MOVE 1 TO IFD-CLASS
+                COMPUTE IFD-POS = IFD-IDX - 1
+                MOVE 1 TO IFD-DONE
+            END-IF
+        END-IF
+    END-PERFORM
+    PERFORM IFD-EMIT.
+
+IFD-NFKD-HEAD-ALLOWED.
+*> Identifier_Status = Allowed of the first codepoint of IFD-CUR-CP's NFKD
+*> form, or of IFD-CUR-CP itself when the decomposition is empty (defensive —
+*> the compatibility decompose is total and yields at least the codepoint).
+*> Builds the full NFKD run into the shared NFD scratch, canonically reorders
+*> it, then reads the head. Uses the shared IDX/JDX/KDX scratch, which is why
+*> the caller iterates over IFD-IDX rather than IDX.
+    MOVE 0 TO NFD-COUNT
+    MOVE IFD-CUR-CP TO CUR-CP
+    PERFORM COMPAT-DECOMPOSE-ONE
+    PERFORM REORDER-NFD
+    IF NFD-COUNT = 0
+        MOVE IFD-CUR-CP TO LOOKUP-CP
+    ELSE
+        MOVE NFD-CP(1) TO LOOKUP-CP
+    END-IF
+    PERFORM IS-ID-ALLOWED
+    MOVE TABLE-FLAG TO IFD-HEAD-ALLOWED.
+
+COMPAT-DECOMPOSE-ONE.
+*> Append CUR-CP's full NFKD (compatibility) decomposition to the NFD scratch:
+*> Hangul syllables by the algorithmic L/V/T formula (their compatibility and
+*> canonical forms coincide), every other codepoint by the fully-expanded
+*> nfkd_decomp table, and codepoints with no mapping as themselves.
+    IF CUR-CP >= 44032 AND CUR-CP < 55204
+        COMPUTE HS-INDEX = CUR-CP - 44032
+        COMPUTE HL-VAL = 4352 + (HS-INDEX / 588)
+        COMPUTE HV-VAL = 4449 + (FUNCTION MOD(HS-INDEX, 588) / 28)
+        COMPUTE HT-INDEX = FUNCTION MOD(HS-INDEX, 28)
+        ADD 1 TO NFD-COUNT
+        MOVE HL-VAL TO NFD-CP(NFD-COUNT)
+        ADD 1 TO NFD-COUNT
+        MOVE HV-VAL TO NFD-CP(NFD-COUNT)
+        IF HT-INDEX NOT = 0
+            ADD 1 TO NFD-COUNT
+            COMPUTE NFD-CP(NFD-COUNT) = 4519 + HT-INDEX
+        END-IF
+    ELSE
+        MOVE CUR-CP TO LOOKUP-CP
+        PERFORM LOOKUP-NFKD-DECOMP
+        IF DEC-FOUND = 1
+            PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > DEC-LEN
+                ADD 1 TO NFD-COUNT
+                MOVE DEC-CP(KDX) TO NFD-CP(NFD-COUNT)
+            END-PERFORM
+        ELSE
+            ADD 1 TO NFD-COUNT
+            MOVE CUR-CP TO NFD-CP(NFD-COUNT)
+        END-IF
+    END-IF.
+
+IFD-EMIT.
+*> Emit the reason code for the classification. IFD-CLASS 0 is clear and 1 is
+*> the sole sub-threat IdentifierStatusShift; WHEN OTHER is unreachable and
+*> signals a defect rather than silently falling through.
+    EVALUATE IFD-CLASS
+        WHEN 0
+            CONTINUE
+        WHEN 1
+            MOVE "unicode.security.X.identifier-form-drift.IdentifierStatusShift" TO TEMP-CODE
+            PERFORM IFD-EMIT-ONE
+        WHEN OTHER
+            DISPLAY "ERROR identifier-form-drift unreachable classification "
+                FUNCTION TRIM(IFD-CLASS)
+            MOVE 1 TO RETURN-CODE
+    END-EVALUATE.
+
+IFD-EMIT-ONE.
+*> Single-position finding at the first status-shifting codepoint.
+    MOVE IFD-POS TO POS-NUM
+    ADD 1 TO FINDING-COUNT
+    MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
+    MOVE FUNCTION TRIM(POS-NUM) TO FINDING-POS(FINDING-COUNT).
+
 IS-BIDI-FORMAT-CONTROL.
 *> The port's own bidi format-control set — LRE/RLE/PDF/LRO/RLO and the four
 *> isolate controls LRI/RLI/FSI/PDI — the same nine codepoints the
@@ -2491,6 +2614,19 @@ LOOKUP-CCC.
 LOOKUP-CANON-DECOMP.
     MOVE 0 TO DEC-FOUND
     COPY "src/generated/canonical_decomp.cpy".
+
+LOOKUP-NFKD-DECOMP.
+*> Fully-expanded compatibility (NFKD) decomposition of LOOKUP-CP, generated
+*> from the bundled UnicodeData decomposition mappings.
+    MOVE 0 TO DEC-FOUND
+    COPY "src/generated/nfkd_decomp.cpy".
+
+IS-ID-ALLOWED.
+*> UTS #39 Identifier_Status = Allowed membership from the bundled
+*> IdentifierStatus table; every codepoint outside the Allowed ranges is
+*> Restricted. Shared with the mixed-script and confusable identity checks.
+    MOVE 0 TO TABLE-FLAG
+    COPY "src/generated/id_allowed.cpy".
 
 LOOKUP-COMPOSE.
     MOVE 0 TO TABLE-FLAG

@@ -153,6 +153,7 @@ haskell_files=(
   CompositionExclusions.txt
   DerivedNormalizationProps.txt
   DerivedCoreProperties.txt
+  IdentifierStatus.txt
   SpecialCasing.txt
   confusables.txt
   KnownAttackTargets.txt

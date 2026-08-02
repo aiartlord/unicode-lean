@@ -1,0 +1,56 @@
+{
+  "schema": 1,
+  "family": "identifier-form-drift",
+  "cases": [
+    {
+      "name": "empty-clear",
+      "input": [],
+      "required_findings": []
+    },
+    {
+      "name": "ascii-hello-clear",
+      "input": [72, 101, 108, 108, 111],
+      "required_findings": []
+    },
+    {
+      "name": "greek-alpha-clear",
+      "input": [945],
+      "required_findings": []
+    },
+    {
+      "name": "math-italic-a-shift",
+      "input": [119886],
+      "required_findings": [
+        "unicode.security.X.identifier-form-drift.IdentifierStatusShift"
+      ]
+    },
+    {
+      "name": "fullwidth-A-shift",
+      "input": [65313],
+      "required_findings": [
+        "unicode.security.X.identifier-form-drift.IdentifierStatusShift"
+      ]
+    },
+    {
+      "name": "circled-A-shift",
+      "input": [9398],
+      "required_findings": [
+        "unicode.security.X.identifier-form-drift.IdentifierStatusShift"
+      ]
+    },
+    {
+      "name": "fi-ligature-shift",
+      "input": [64257],
+      "required_findings": [
+        "unicode.security.X.identifier-form-drift.IdentifierStatusShift"
+      ]
+    },
+    {
+      "name": "roman-iv-shift",
+      "input": [8547],
+      "required_findings": [
+        "unicode.security.X.identifier-form-drift.IdentifierStatusShift"
+      ]
+    }
+  ]
+}

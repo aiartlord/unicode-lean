@@ -15,6 +15,7 @@ run() ->
     emoji_zwj_integrity_tests(),
     renderer_divergence_tests(),
     filename_disguise_tests(),
+    identifier_form_drift_tests(),
     opaque_blob_tests(),
     grapheme_tests(),
     io:format("ok: erlang unicode security tests pass~n").
@@ -592,6 +593,71 @@ filename_disguise_tests() ->
     assert_eq(<<"RloFlip">>, fd_tag([16#202E, 16#66, 16#2E, 16#FF25]), fd_bidi_beats_fullwidth),
 
     io:format("  filename-disguise: fixture + 10 spot-checks + 1 structural pass~n").
+
+%% Reason code the detect verdict would emit for a given input, or `none' when
+%% clear. Mirrors how the finding wiring lifts a classification tag into a code.
+ifd_code(Input) ->
+    C = maps:get(classify, usec_identifier_form_drift:detect(Input)),
+    case usec_identifier_form_drift:classify_tag(C) of
+        none -> none;
+        Tag -> usec_policy:reason_code(identifier_form_drift, Tag)
+    end.
+
+%% The classification tag for an input, or `none' when clear.
+ifd_tag(Input) ->
+    usec_identifier_form_drift:classify_tag(maps:get(classify, usec_identifier_form_drift:detect(Input))).
+
+identifier_form_drift_tests() ->
+    %% ── Shared context-free fixture, run through detect. ────────────────
+    F = fixture(filename:join("detectors", "identifier_form_drift.json")),
+    assert_eq(<<"identifier-form-drift">>, maps:get(<<"family">>, F), ifd_fixture_family),
+    lists:foreach(fun(Case) ->
+                          Input = maps:get(<<"input">>, Case),
+                          Label = {ifd_fixture, maps:get(<<"name">>, Case)},
+                          Required = maps:get(<<"required_findings">>, Case),
+                          Codes = case ifd_code(Input) of
+                                      none -> [];
+                                      Code -> [Code]
+                                  end,
+                          lists:foreach(fun(Req) -> assert(lists:member(Req, Codes), Label) end, Required),
+                          case Required of
+                              [] -> assert(Codes =:= [], Label);
+                              _ -> ok
+                          end
+                  end, maps:get(<<"cases">>, F)),
+
+    %% ── §4 detect spot checks (the rust #[test] cases). ─────────────────
+    %% detect_empty_clear
+    assert(usec_identifier_form_drift:is_clear(maps:get(classify, usec_identifier_form_drift:detect([]))), ifd_empty_clear),
+    assert_eq(none, ifd_tag([]), ifd_empty_tag),
+    %% detect_ascii_clear — "Hello"; every ASCII letter is Allowed, identity NFKD.
+    HelloV = usec_identifier_form_drift:detect([16#48, 16#65, 16#6C, 16#6C, 16#6F]),
+    assert(usec_identifier_form_drift:is_clear(maps:get(classify, HelloV)), ifd_ascii_clear),
+    assert_eq(0, maps:get(shift_count, HelloV), ifd_ascii_shift_count),
+    %% detect_greek_alpha_clear — α is Allowed with identity NFKD.
+    assert(usec_identifier_form_drift:is_clear(maps:get(classify, usec_identifier_form_drift:detect([16#03B1]))), ifd_greek_alpha_clear),
+    %% detect_math_italic_a_shift — U+1D44E Restricted, NFKD head U+0061 Allowed.
+    MathV = usec_identifier_form_drift:detect([16#1D44E]),
+    assert_eq(<<"IdentifierStatusShift">>, usec_identifier_form_drift:classify_tag(maps:get(classify, MathV)), ifd_math_italic_tag),
+    assert_eq([0], usec_identifier_form_drift:classify_positions(maps:get(classify, MathV)), ifd_math_italic_positions),
+    assert_eq(1, maps:get(shift_count, MathV), ifd_math_italic_shift_count),
+    %% detect_fullwidth_A_shift — U+FF21 Restricted, NFKD head U+0041 Allowed.
+    assert_eq(<<"IdentifierStatusShift">>, ifd_tag([16#FF21]), ifd_fullwidth_A_shift),
+    %% detect_circled_A_shift — U+24B6 Restricted → Allowed (A).
+    assert_eq(<<"IdentifierStatusShift">>, ifd_tag([16#24B6]), ifd_circled_A_shift),
+    %% detect_fi_ligature_shift — U+FB01 'ﬁ' Restricted → Allowed (f).
+    assert_eq(<<"IdentifierStatusShift">>, ifd_tag([16#FB01]), ifd_fi_ligature_shift),
+    %% detect_roman_iv_shift — U+2163 ROMAN NUMERAL FOUR Restricted → Allowed (I).
+    assert_eq(<<"IdentifierStatusShift">>, ifd_tag([16#2163]), ifd_roman_iv_shift),
+    %% detect_reports_first_shift_position — "ab" + U+1D44E: position 2 shifts.
+    MidV = usec_identifier_form_drift:detect([16#61, 16#62, 16#1D44E]),
+    assert_eq([2], usec_identifier_form_drift:classify_positions(maps:get(classify, MidV)), ifd_first_shift_positions),
+    assert_eq(1, maps:get(shift_count, MidV), ifd_first_shift_count),
+    %% reason_code_is_stable — the composed reason code for the sole sub-threat.
+    assert_eq(<<"unicode.security.X.identifier-form-drift.IdentifierStatusShift">>,
+              usec_policy:reason_code(identifier_form_drift, <<"IdentifierStatusShift">>), ifd_reason_code),
+
+    io:format("  identifier-form-drift: fixture + 8 spot-checks + 1 reason-code pass~n").
 
 fixture(Rel) ->
     {ok, Bin} = file:read_file(filename:join(["test", "fixtures", "security", Rel])),
