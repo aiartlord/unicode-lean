@@ -1,0 +1,1 @@
+../Unicode/Ucd/emoji-zwj-sequences.txt

@@ -36,6 +36,7 @@ root_manifest_files=(
   DerivedCoreProperties.txt
   emoji-variation-sequences.txt
   emoji-data.txt
+  emoji-zwj-sequences.txt
   IdentifierStatus.txt
   KnownAttackTargets.txt
   PropertyValueAliases.txt
@@ -73,6 +74,7 @@ python_files=(
   confusables.txt
   emoji-variation-sequences.txt
   emoji-data.txt
+  emoji-zwj-sequences.txt
   bip39/chinese_simplified.txt
   bip39/chinese_traditional.txt
   bip39/czech.txt
@@ -102,6 +104,7 @@ rust_files=(
   confusables.txt
   emoji-variation-sequences.txt
   emoji-data.txt
+  emoji-zwj-sequences.txt
   bip39/chinese_simplified.txt
   bip39/chinese_traditional.txt
   bip39/czech.txt
@@ -130,6 +133,7 @@ cpp_files=(
   UnicodeData.txt
   confusables.txt
   emoji-data.txt
+  emoji-zwj-sequences.txt
   bip39/chinese_simplified.txt
   bip39/chinese_traditional.txt
   bip39/czech.txt
@@ -155,6 +159,7 @@ haskell_files=(
   StandardizedVariants.txt
   emoji-variation-sequences.txt
   emoji-data.txt
+  emoji-zwj-sequences.txt
   bip39/chinese_simplified.txt
   bip39/chinese_traditional.txt
   bip39/czech.txt
@@ -191,6 +196,7 @@ homoglyph_files=(
   StandardizedVariants.txt
   emoji-variation-sequences.txt
   emoji-data.txt
+  emoji-zwj-sequences.txt
 )
 
 go_files=(
@@ -327,6 +333,7 @@ ruby_files=(
   confusables.txt
   emoji-variation-sequences.txt
   emoji-data.txt
+  emoji-zwj-sequences.txt
   bip39/chinese_simplified.txt
   bip39/chinese_traditional.txt
   bip39/czech.txt
@@ -546,6 +553,8 @@ sync_haskell() {
   copy_file data/KnownAttackTargets.txt "$haskell_dir/data/KnownAttackTargets.txt"
   copy_file data/StandardizedVariants.txt "$haskell_dir/data/StandardizedVariants.txt"
   copy_file data/emoji-variation-sequences.txt "$haskell_dir/data/emoji-variation-sequences.txt"
+  copy_file data/emoji-data.txt "$haskell_dir/data/emoji-data.txt"
+  copy_file data/emoji-zwj-sequences.txt "$haskell_dir/data/emoji-zwj-sequences.txt"
   local file
   for file in "${haskell_data_dir_files[@]}"; do
     copy_file "data/$file" "$haskell_dir/data/$file"
@@ -570,6 +579,8 @@ check_haskell() {
   check_same_file data/KnownAttackTargets.txt "$haskell_dir/data/KnownAttackTargets.txt"
   check_same_file data/StandardizedVariants.txt "$haskell_dir/data/StandardizedVariants.txt"
   check_same_file data/emoji-variation-sequences.txt "$haskell_dir/data/emoji-variation-sequences.txt"
+  check_same_file data/emoji-data.txt "$haskell_dir/data/emoji-data.txt"
+  check_same_file data/emoji-zwj-sequences.txt "$haskell_dir/data/emoji-zwj-sequences.txt"
   local file
   for file in "${haskell_data_dir_files[@]}"; do
     check_same_file "data/$file" "$haskell_dir/data/$file"

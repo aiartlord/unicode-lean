@@ -6,5 +6,6 @@
 //! Latin variants, NFC-form drift, cross-script mixing, and
 //! UTS #39 restriction-level breaches.
 
+pub mod emoji_zwj_integrity;
 pub mod homoglyph_confusable;
 pub mod ucd;
