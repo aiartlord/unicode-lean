@@ -56,8 +56,12 @@
           pkgs.beamPackages.erlang
           pkgs.beamPackages.elixir
           pkgs.dotnet-sdk_8
-          pkgs.swift
-          pkgs.swiftpm
+          # The pinned rev whose swift is cached/substitutable — top-level
+          # pkgs.swift cannot build from source at glibc HEAD (gnu2 TLS vs the
+          # bundled clang-16), so the runtime shell must track the same swift
+          # the unicode-swift derivation uses, not the doomed top-level one.
+          pkgsSwift.swift
+          pkgsSwift.swiftpm
           pkgs.zig
         ];
 

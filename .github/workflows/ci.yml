@@ -159,7 +159,16 @@ jobs:
           # Targeted rebuild of the load-bearing top-level modules. If
           # any of these names is renamed without updating CI, the
           # smoke check catches it before merge.
-          lake build Unicode.Normalization.QuickCheckSoundnessTheorem
-          lake build Unicode.Precis.Preparation
-          lake build Unicode.Bidi.Algorithm
-          lake build Unicode.Confusables
+          #
+          # Serial build (-j1) is deliberate: each headline module's
+          # decide+kernel closure is memory-safe on its own, but the
+          # default job count fans out several in parallel and their
+          # combined peak exceeds the hosted runner's RAM (the OOM shows
+          # up as a runner "shutdown signal" / exit 143). Serializing caps
+          # peak memory at the single heaviest module; the 180-minute
+          # timeout absorbs the wall-clock cost.
+          lake build -j1 \
+            Unicode.Normalization.QuickCheckSoundnessTheorem \
+            Unicode.Precis.Preparation \
+            Unicode.Bidi.Algorithm \
+            Unicode.Confusables
