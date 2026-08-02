@@ -50,6 +50,7 @@ export const Family = Object.freeze({
   RendererDivergence: "renderer-divergence",
   FilenameDisguise: "filename-disguise",
   IdentifierFormDrift: "identifier-form-drift",
+  SkinToneVariationForgery: "skin-tone-variation-forgery",
 });
 
 let confusablesMapCache;
@@ -68,6 +69,8 @@ let softDottedRangesCache;
 let graphemeExtendRangesCache;
 let emojiRangesCache;
 let identifierAllowedRangesCache;
+let emojiModifierBaseRangesCache;
+let emojiPresentationRangesCache;
 let dataReader = null;
 
 export function configureSecurityDataReader(reader) {
@@ -91,6 +94,8 @@ export function configureSecurityDataReader(reader) {
   graphemeExtendRangesCache = undefined;
   emojiRangesCache = undefined;
   identifierAllowedRangesCache = undefined;
+  emojiModifierBaseRangesCache = undefined;
+  emojiPresentationRangesCache = undefined;
   bip39WordlistCache = undefined;
   zwjSequencesCache = undefined;
   zwjRegisteredSetCache = undefined;
@@ -393,7 +398,11 @@ function reasonCode(family, subThreat) {
 }
 
 function layer(family) {
-  if (family === Family.HomoglyphConfusable || family === Family.MixedScriptAdmissibility) {
+  if (
+    family === Family.HomoglyphConfusable ||
+    family === Family.MixedScriptAdmissibility ||
+    family === Family.SkinToneVariationForgery
+  ) {
     return "I";
   }
   if (
@@ -3495,6 +3504,257 @@ export function identifierFormDriftDetect(input) {
     input: cps,
     classify,
     shiftCount: identifierFormDriftStatusShiftCount(cps),
+  };
+}
+
+// ── skin-tone-variation-forgery (identity-layer detector I) ──────────────────
+//
+// Mirrors Unicode.Security.Identity.SkinToneVariationForgery (and the verified
+// Rust reference). Tier A₁. An adversary places a skin-tone modifier on a
+// codepoint that does NOT bear Emoji_Modifier_Base, stacks multiple skin-tones
+// on one base, or forces a text-style render on an emoji-default codepoint via
+// U+FE0E (VS15) — sometimes to hide a payload-bearing glyph in plain sight.
+//
+// Distinct from variation-selector-payload (pair-aligned VS runs that decode to
+// bytes): this catches the orthogonal case of semantic VS / skin-tone misuse on
+// a single base. It reuses this port's own emoji property tables (the bundled
+// emoji-data.txt) — the skin-tone predicate is the port's own isEmojiModifier
+// (U+1F3FB..U+1F3FF), and the Emoji_Modifier_Base / Emoji_Presentation rows are
+// parsed from that same already-bundled file — never a host emoji library.
+//
+// Sub-threats (priority order):
+//   1. StackedSkinTones      a base immediately followed by >= 2 skin-tone modifiers.
+//   2. InvalidSkinToneTarget a skin-tone modifier on a non-Emoji_Modifier_Base.
+//   3. ForcedTextStyle       U+FE0E on an Emoji_Presentation codepoint.
+
+// Parse the closed intervals for a single emoji property from emoji-data.txt,
+// mirroring this port's parseEmojiRanges. Each non-comment row is
+// `<range> ; <property> # <comment>`; keep only rows whose property field is
+// exactly `property`.
+function parseEmojiPropertyRanges(text, property) {
+  const out = [];
+  for (const rawLine of text.split("\n")) {
+    const hashIdx = rawLine.indexOf("#");
+    const body = hashIdx < 0 ? rawLine : rawLine.slice(0, hashIdx);
+    const stripped = body.trim();
+    if (stripped === "") {
+      continue;
+    }
+    const fields = stripped.split(";");
+    if (fields.length < 2) {
+      continue;
+    }
+    if (fields[1].trim() !== property) {
+      continue;
+    }
+    const range = fields[0].trim();
+    const dots = range.indexOf("..");
+    if (dots < 0) {
+      const single = parseInt(range, 16);
+      if (Number.isNaN(single)) {
+        continue;
+      }
+      out.push([single, single]);
+    } else {
+      const lo = parseInt(range.slice(0, dots), 16);
+      const hi = parseInt(range.slice(dots + 2), 16);
+      if (Number.isNaN(lo) || Number.isNaN(hi)) {
+        continue;
+      }
+      out.push([lo, hi]);
+    }
+  }
+  return out;
+}
+
+function emojiModifierBaseRanges() {
+  if (emojiModifierBaseRangesCache === undefined) {
+    emojiModifierBaseRangesCache = parseEmojiPropertyRanges(
+      readDataFile("emoji-data.txt"),
+      "Emoji_Modifier_Base",
+    );
+  }
+  return emojiModifierBaseRangesCache;
+}
+
+function emojiPresentationRanges() {
+  if (emojiPresentationRangesCache === undefined) {
+    emojiPresentationRangesCache = parseEmojiPropertyRanges(
+      readDataFile("emoji-data.txt"),
+      "Emoji_Presentation",
+    );
+  }
+  return emojiPresentationRangesCache;
+}
+
+// True iff cp is an emoji skin-tone modifier (reuses the port's own predicate).
+function isSkinTone(cp) {
+  return isEmojiModifier(cp);
+}
+
+// True iff cp has Emoji_Modifier_Base per emoji-data.txt.
+export function isSkinToneBase(cp) {
+  return inRanges(emojiModifierBaseRanges(), cp);
+}
+
+// True iff cp has Emoji_Presentation per emoji-data.txt.
+export function isEmojiPresentation(cp) {
+  return inRanges(emojiPresentationRanges(), cp);
+}
+
+// True iff cp is U+FE0E (VS15, text-style variation selector).
+function isSkinToneVs15(cp) {
+  return cp === 0xfe0e;
+}
+
+// True iff cp is U+FE0F (VS16, emoji-style variation selector).
+function isSkinToneVs16(cp) {
+  return cp === 0xfe0f;
+}
+
+// First position p whose next two codepoints are both skin-tone modifiers, as
+// { basePos, modifiers: [mod1, mod2] }, or null.
+function firstStackedSkinTones(input) {
+  for (let i = 0; i < input.length; i += 1) {
+    const m1 = i + 1 < input.length ? input[i + 1] : undefined;
+    const m2 = i + 2 < input.length ? input[i + 2] : undefined;
+    if (m1 !== undefined && m2 !== undefined && isSkinTone(m1) && isSkinTone(m2)) {
+      return { basePos: i, modifiers: [m1, m2] };
+    }
+  }
+  return null;
+}
+
+// First skin-tone modifier whose preceding codepoint is NOT Emoji_Modifier_Base,
+// as { basePos, baseCp, modifierCp }, or null.
+function firstInvalidSkinToneTarget(input) {
+  for (let i = 0; i < input.length; i += 1) {
+    const next = i + 1 < input.length ? input[i + 1] : undefined;
+    if (next !== undefined && isSkinTone(next) && !isSkinToneBase(input[i])) {
+      return { basePos: i, baseCp: input[i], modifierCp: next };
+    }
+  }
+  return null;
+}
+
+// First U+FE0E whose preceding codepoint has Emoji_Presentation, as
+// { basePos, baseCp }, or null.
+function firstForcedTextStyle(input) {
+  for (let i = 0; i < input.length; i += 1) {
+    const next = i + 1 < input.length ? input[i + 1] : undefined;
+    if (next !== undefined && isSkinToneVs15(next) && isEmojiPresentation(input[i])) {
+      return { basePos: i, baseCp: input[i] };
+    }
+  }
+  return null;
+}
+
+function skinToneModifierCount(input) {
+  let count = 0;
+  for (const cp of input) {
+    if (isSkinTone(cp)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function skinToneVs15Count(input) {
+  let count = 0;
+  for (const cp of input) {
+    if (isSkinToneVs15(cp)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function skinToneVs16Count(input) {
+  let count = 0;
+  for (const cp of input) {
+    if (isSkinToneVs16(cp)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+// Fixture-row tag string for a skin-tone-variation-forgery sub-threat.
+export function skinToneVariationForgerySubThreatTag(sub) {
+  switch (sub.kind) {
+    case "StackedSkinTones":
+      return "StackedSkinTones";
+    case "InvalidSkinToneTarget":
+      return "InvalidSkinToneTarget";
+    case "ForcedTextStyle":
+      return "ForcedTextStyle";
+    default:
+      throw new Error(`unreachable skin-tone-variation-forgery sub-threat kind: ${sub.kind}`);
+  }
+}
+
+// Stable reason code for a skin-tone-variation-forgery sub-threat (layer I).
+export function skinToneVariationForgeryReasonCode(subThreatTag) {
+  return reasonCode(Family.SkinToneVariationForgery, subThreatTag);
+}
+
+function skinToneVariationForgeryClearClassify() {
+  return { isClear: true, tag: null, sub: null, positions: [] };
+}
+
+function skinToneVariationForgeryHazardClassify(sub, positions) {
+  return {
+    isClear: false,
+    tag: skinToneVariationForgerySubThreatTag(sub),
+    sub,
+    positions,
+  };
+}
+
+// The SkinToneVariationForgery detection function (mirrors the Lean/Rust detect).
+export function skinToneVariationForgeryDetect(input) {
+  const cps = Array.from(input);
+  const stacked = firstStackedSkinTones(cps);
+  let classify;
+  if (stacked !== null) {
+    // Priority 1: a base followed by two stacked skin tones.
+    const positions = stacked.modifiers.map((_modifier, i) => stacked.basePos + 1 + i);
+    classify = skinToneVariationForgeryHazardClassify(
+      { kind: "StackedSkinTones", basePos: stacked.basePos, modifiers: stacked.modifiers },
+      positions,
+    );
+  } else {
+    const invalid = firstInvalidSkinToneTarget(cps);
+    if (invalid !== null) {
+      // Priority 2: a skin tone on a non-modifier-base.
+      classify = skinToneVariationForgeryHazardClassify(
+        {
+          kind: "InvalidSkinToneTarget",
+          basePos: invalid.basePos,
+          baseCp: invalid.baseCp,
+          modifierCp: invalid.modifierCp,
+        },
+        [invalid.basePos + 1],
+      );
+    } else {
+      const forced = firstForcedTextStyle(cps);
+      if (forced !== null) {
+        // Priority 3: VS15 forcing text style on an emoji-presentation cp.
+        classify = skinToneVariationForgeryHazardClassify(
+          { kind: "ForcedTextStyle", basePos: forced.basePos, baseCp: forced.baseCp },
+          [forced.basePos + 1],
+        );
+      } else {
+        classify = skinToneVariationForgeryClearClassify();
+      }
+    }
+  }
+  return {
+    input: cps,
+    classify,
+    skinToneCount: skinToneModifierCount(cps),
+    variationSelector15Count: skinToneVs15Count(cps),
+    variationSelector16Count: skinToneVs16Count(cps),
   };
 }
 

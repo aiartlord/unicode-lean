@@ -301,6 +301,38 @@ export declare function identifierFormDriftSubThreatTag(
 ): string;
 export declare function identifierFormDriftDetect(input: number[]): IdentifierFormDriftVerdict;
 
+// ── skin-tone-variation-forgery (layer I) ────────────────────────────────────
+
+export type SkinToneVariationForgerySubThreat =
+  | { kind: "StackedSkinTones"; basePos: number; modifiers: number[] }
+  | { kind: "InvalidSkinToneTarget"; basePos: number; baseCp: number; modifierCp: number }
+  | { kind: "ForcedTextStyle"; basePos: number; baseCp: number };
+
+export interface SkinToneVariationForgeryClassification {
+  isClear: boolean;
+  tag: string | null;
+  sub: SkinToneVariationForgerySubThreat | null;
+  positions: number[];
+}
+
+export interface SkinToneVariationForgeryVerdict {
+  input: number[];
+  classify: SkinToneVariationForgeryClassification;
+  skinToneCount: number;
+  variationSelector15Count: number;
+  variationSelector16Count: number;
+}
+
+export declare function isSkinToneBase(cp: number): boolean;
+export declare function isEmojiPresentation(cp: number): boolean;
+export declare function skinToneVariationForgeryReasonCode(subThreatTag: string): string;
+export declare function skinToneVariationForgerySubThreatTag(
+  sub: SkinToneVariationForgerySubThreat,
+): string;
+export declare function skinToneVariationForgeryDetect(
+  input: number[],
+): SkinToneVariationForgeryVerdict;
+
 // ── stream-safe-violation (layer F) ─────────────────────────────────────────
 
 export declare const STREAM_SAFE_LIMIT: 30;

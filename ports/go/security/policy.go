@@ -45,27 +45,28 @@ const (
 type Family string
 
 const (
-	FamilyMalformedUTF8          Family = "malformed-utf8"
-	FamilyMalformedUTF16         Family = "malformed-utf16"
-	FamilyMalformedUTF32         Family = "malformed-utf32"
-	FamilyTagBlockPayload        Family = "tag-block-payload"
-	FamilyVariationSelector      Family = "variation-selector-payload"
-	FamilyZeroWidthPayload       Family = "zero-width-payload"
-	FamilySurrogateReassembly    Family = "surrogate-reassembly"
-	FamilyBidiControlBalance     Family = "bidi-control-balance"
-	FamilyNoncharacterControl    Family = "noncharacter-control"
-	FamilyHomoglyphConfusable    Family = "homoglyph-confusable"
-	FamilyMixedScript            Family = "mixed-script-admissibility"
-	FamilyRtlInjection           Family = "rtl-injection"
-	FamilyConfusableBidiCompound Family = "confusable-bidi-compound"
-	FamilyCovertDisplayCompound  Family = "covert-display-compound"
-	FamilyHashInputStability     Family = "hash-input-stability"
-	FamilyAiWatermarkDetect      Family = "ai-watermark-detectability"
-	FamilyStreamSafeViolation    Family = "stream-safe-violation"
-	FamilyEmojiZwjIntegrity      Family = "emoji-zwj-integrity"
-	FamilyRendererDivergence     Family = "renderer-divergence"
-	FamilyFilenameDisguise       Family = "filename-disguise"
-	FamilyIdentifierFormDrift    Family = "identifier-form-drift"
+	FamilyMalformedUTF8            Family = "malformed-utf8"
+	FamilyMalformedUTF16           Family = "malformed-utf16"
+	FamilyMalformedUTF32           Family = "malformed-utf32"
+	FamilyTagBlockPayload          Family = "tag-block-payload"
+	FamilyVariationSelector        Family = "variation-selector-payload"
+	FamilyZeroWidthPayload         Family = "zero-width-payload"
+	FamilySurrogateReassembly      Family = "surrogate-reassembly"
+	FamilyBidiControlBalance       Family = "bidi-control-balance"
+	FamilyNoncharacterControl      Family = "noncharacter-control"
+	FamilyHomoglyphConfusable      Family = "homoglyph-confusable"
+	FamilyMixedScript              Family = "mixed-script-admissibility"
+	FamilyRtlInjection             Family = "rtl-injection"
+	FamilyConfusableBidiCompound   Family = "confusable-bidi-compound"
+	FamilyCovertDisplayCompound    Family = "covert-display-compound"
+	FamilyHashInputStability       Family = "hash-input-stability"
+	FamilyAiWatermarkDetect        Family = "ai-watermark-detectability"
+	FamilyStreamSafeViolation      Family = "stream-safe-violation"
+	FamilyEmojiZwjIntegrity        Family = "emoji-zwj-integrity"
+	FamilyRendererDivergence       Family = "renderer-divergence"
+	FamilyFilenameDisguise         Family = "filename-disguise"
+	FamilyIdentifierFormDrift      Family = "identifier-form-drift"
+	FamilySkinToneVariationForgery Family = "skin-tone-variation-forgery"
 )
 
 type ProfilePolicy struct {
@@ -498,7 +499,7 @@ func layer(family Family) string {
 	switch family {
 	case FamilyMalformedUTF8, FamilyMalformedUTF16, FamilyMalformedUTF32, FamilyTagBlockPayload, FamilyVariationSelector, FamilyZeroWidthPayload, FamilySurrogateReassembly, FamilyBidiControlBalance, FamilyNoncharacterControl:
 		return "C"
-	case FamilyHomoglyphConfusable, FamilyMixedScript, FamilyEmojiZwjIntegrity:
+	case FamilyHomoglyphConfusable, FamilyMixedScript, FamilyEmojiZwjIntegrity, FamilySkinToneVariationForgery:
 		return "I"
 	case FamilyRtlInjection, FamilyRendererDivergence, FamilyFilenameDisguise:
 		return "D"

@@ -1,0 +1,54 @@
+{
+  "schema": 1,
+  "family": "skin-tone-variation-forgery",
+  "cases": [
+    {
+      "name": "empty-clear",
+      "input": [],
+      "required_findings": []
+    },
+    {
+      "name": "ascii-clear",
+      "input": [72, 101],
+      "required_findings": []
+    },
+    {
+      "name": "plain-emoji-clear",
+      "input": [128512],
+      "required_findings": []
+    },
+    {
+      "name": "wave-single-skin-tone-clear",
+      "input": [128075, 127995],
+      "required_findings": []
+    },
+    {
+      "name": "stacked-skin-tones",
+      "input": [128075, 127995, 127996],
+      "required_findings": [
+        "unicode.security.I.skin-tone-variation-forgery.StackedSkinTones"
+      ]
+    },
+    {
+      "name": "invalid-target-ascii",
+      "input": [65, 127995],
+      "required_findings": [
+        "unicode.security.I.skin-tone-variation-forgery.InvalidSkinToneTarget"
+      ]
+    },
+    {
+      "name": "invalid-target-smiley",
+      "input": [128512, 127995],
+      "required_findings": [
+        "unicode.security.I.skin-tone-variation-forgery.InvalidSkinToneTarget"
+      ]
+    },
+    {
+      "name": "forced-text-style",
+      "input": [128512, 65038],
+      "required_findings": [
+        "unicode.security.I.skin-tone-variation-forgery.ForcedTextStyle"
+      ]
+    }
+  ]
+}

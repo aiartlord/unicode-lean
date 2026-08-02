@@ -26,6 +26,7 @@ use UnicodePhp\Security\Form\NormalizationBomb;
 use UnicodePhp\Security\Form\StreamSafeViolation;
 use UnicodePhp\Security\Identity\EmojiZwjIntegrity;
 use UnicodePhp\Security\Identity\HomoglyphConfusable;
+use UnicodePhp\Security\Identity\SkinToneVariationForgery;
 
 enum Action: string
 {
@@ -582,6 +583,17 @@ final class Policy
         $findings = [];
         if (!$e->classify->isClear()) {
             self::pushFinding($findings, Family::EmojiZwjIntegrity, ClassificationKind::Hazard, $e->classify->tag(), $e->classify->positions());
+        }
+        return new Verdict($input, $profile, $mode, self::selectAction($profile, $mode, $findings), $findings, null);
+    }
+
+    /** @param list<int> $input */
+    public static function scanSkinToneVariationForgery(Profile $profile, Mode $mode, array $input): Verdict
+    {
+        $s = SkinToneVariationForgery::detect($input);
+        $findings = [];
+        if (!$s->classify->isClear()) {
+            self::pushFinding($findings, Family::SkinToneVariationForgery, ClassificationKind::Hazard, $s->classify->tag(), $s->classify->positions());
         }
         return new Verdict($input, $profile, $mode, self::selectAction($profile, $mode, $findings), $findings, null);
     }
