@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "family": "case-expansion-mismatch",
+  "cases": [
+    {
+      "name": "empty-clear",
+      "input": [],
+      "required_findings": []
+    },
+    {
+      "name": "ascii-hello-clear",
+      "input": [72, 101, 108, 108, 111],
+      "required_findings": []
+    },
+    {
+      "name": "sharp-s-upper",
+      "input": [223],
+      "required_findings": [
+        "unicode.security.F.case-expansion-mismatch.UpperExpansion"
+      ]
+    },
+    {
+      "name": "fi-ligature-upper",
+      "input": [64257],
+      "required_findings": [
+        "unicode.security.F.case-expansion-mismatch.UpperExpansion"
+      ]
+    },
+    {
+      "name": "ffi-ligature-upper",
+      "input": [64259],
+      "required_findings": [
+        "unicode.security.F.case-expansion-mismatch.UpperExpansion"
+      ]
+    },
+    {
+      "name": "dotted-I-lower",
+      "input": [304],
+      "required_findings": [
+        "unicode.security.F.case-expansion-mismatch.LowerExpansion"
+      ]
+    }
+  ]
+}

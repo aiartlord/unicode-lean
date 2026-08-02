@@ -32,6 +32,7 @@ const (
 
 type casingRow struct {
 	lower      []uint32
+	upper      []uint32
 	conditions []string
 }
 
@@ -40,6 +41,8 @@ var (
 	specialCasingTable map[uint32][]casingRow
 	simpleLowerOnce    sync.Once
 	simpleLowerTable   map[uint32]uint32
+	simpleUpperOnce    sync.Once
+	simpleUpperTable   map[uint32]uint32
 	casedOnce          sync.Once
 	casedRanges        [][2]uint32
 	softDottedOnce     sync.Once
@@ -91,6 +94,7 @@ func parseSpecialCasing() map[uint32][]casingRow {
 		}
 		table[code] = append(table[code], casingRow{
 			lower:      parseCodepointList(fields[1]),
+			upper:      parseCodepointList(fields[3]),
 			conditions: conditions,
 		})
 	}
@@ -129,6 +133,37 @@ func simpleLowercase(cp uint32) uint32 {
 	simpleLowerOnce.Do(func() { simpleLowerTable = parseSimpleLowercase() })
 	if l, ok := simpleLowerTable[cp]; ok {
 		return l
+	}
+	return cp
+}
+
+func parseSimpleUppercase() map[uint32]uint32 {
+	upper := map[uint32]uint32{}
+	for _, line := range strings.Split(unicodeDataRaw, "\n") {
+		if line == "" {
+			continue
+		}
+		fields := strings.Split(line, ";")
+		if len(fields) < 15 {
+			continue
+		}
+		cp, ok := parseHexUint32(fields[0])
+		if !ok {
+			continue
+		}
+		if fields[12] != "" {
+			if u, ok := parseHexUint32(fields[12]); ok {
+				upper[cp] = u
+			}
+		}
+	}
+	return upper
+}
+
+func simpleUppercase(cp uint32) uint32 {
+	simpleUpperOnce.Do(func() { simpleUpperTable = parseSimpleUppercase() })
+	if u, ok := simpleUpperTable[cp]; ok {
+		return u
 	}
 	return cp
 }

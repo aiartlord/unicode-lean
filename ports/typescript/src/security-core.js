@@ -51,6 +51,7 @@ export const Family = Object.freeze({
   FilenameDisguise: "filename-disguise",
   IdentifierFormDrift: "identifier-form-drift",
   SkinToneVariationForgery: "skin-tone-variation-forgery",
+  CaseExpansionMismatch: "case-expansion-mismatch",
 });
 
 let confusablesMapCache;
@@ -418,6 +419,9 @@ function layer(family) {
     family === Family.IdentifierFormDrift
   ) {
     return "X";
+  }
+  if (family === Family.CaseExpansionMismatch) {
+    return "F";
   }
   return "C";
 }
@@ -1429,6 +1433,16 @@ function lowerCodepoint(locale, revPrefix, suffix, cp) {
   return row !== null ? row.lower : [simpleLowercase(cp)];
 }
 
+// The default-context uppercase mapping of one codepoint, mirroring
+// `lowerCodepoint` exactly but returning the row's uppercase column (parsed from
+// the SpecialCasing field-3 mapping) or the simple-uppercase fallback (parsed
+// from the UnicodeData field-12 mapping). Shares the same find-special-row +
+// conditions-hold context machinery as the lowercase path.
+function upperCodepoint(locale, revPrefix, suffix, cp) {
+  const row = findSpecialRow(locale, revPrefix, suffix, cp);
+  return row !== null ? row.upper : [simpleUppercase(cp)];
+}
+
 function codepointsEqual(a, b) {
   return a.length === b.length && a.every((value, index) => value === b[index]);
 }
@@ -1461,6 +1475,166 @@ export function localeCaseInversionDetect(input) {
     return { sub: "LithuanianCaseDivergence", positions: [lithuanian] };
   }
   return { sub: null, positions: [] };
+}
+
+// ── case-expansion-mismatch: default-locale case mapping that changes the ─────
+// codepoint count (form-layer detector F). Mirrors
+// Unicode.Security.Form.CaseExpansionMismatch (and the verified Rust form
+// reference). Tier A₁..A₂. An attacker submits text whose case-mapped form has a
+// different codepoint count than the input: a receiver that fixes a column width
+// and stores toUpper(name) overflows on "ßßßß…" (each ß → "SS"); a receiver that
+// checks len(stored) == len(input) rejects valid case-insensitive logins whose
+// names expand under folding. Examples: U+00DF ß → "SS", U+FB01 ﬁ → "FI",
+// U+0130 İ → toLower "i̇" (i + U+0307).
+//
+// Distinct from locale-case-inversion (mapping that changes ACROSS locales):
+// this fires on shapes whose mapping is locale-stable but length-changing under
+// the default locale itself. It reuses the port's own UAX #21 case mapping
+// (upperCodepoint / lowerCodepoint, which evaluate the SpecialCasing context
+// predicates), never a host casing library.
+//
+// Sub-threats (priority order):
+//   1. UpperExpansion — first position whose default upperCodepoint yields > 1 cp.
+//   2. LowerExpansion — first position whose default lowerCodepoint yields > 1 cp
+//      (reached only when no upper expansion fires first).
+
+// Default-locale uppercase expansion length at position `i`, evaluating the
+// SpecialCasing context (preceding codepoints nearest-first, following ones).
+function caseExpansionUpperLenAt(input, i) {
+  const revPrefix = input.slice(0, i).reverse();
+  const suffix = input.slice(i + 1);
+  return upperCodepoint("default", revPrefix, suffix, input[i]).length;
+}
+
+// Default-locale lowercase expansion length at position `i`.
+function caseExpansionLowerLenAt(input, i) {
+  const revPrefix = input.slice(0, i).reverse();
+  const suffix = input.slice(i + 1);
+  return lowerCodepoint("default", revPrefix, suffix, input[i]).length;
+}
+
+// First position whose default uppercase mapping expands to > 1 codepoint.
+function caseExpansionFirstUpper(input) {
+  for (let i = 0; i < input.length; i += 1) {
+    const len = caseExpansionUpperLenAt(input, i);
+    if (len > 1) {
+      return { pos: i, cp: input[i], len };
+    }
+  }
+  return null;
+}
+
+// First position whose default lowercase mapping expands to > 1 codepoint.
+function caseExpansionFirstLower(input) {
+  for (let i = 0; i < input.length; i += 1) {
+    const len = caseExpansionLowerLenAt(input, i);
+    if (len > 1) {
+      return { pos: i, cp: input[i], len };
+    }
+  }
+  return null;
+}
+
+function caseExpansionUpperCount(input) {
+  let count = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    if (caseExpansionUpperLenAt(input, i) > 1) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function caseExpansionLowerCount(input) {
+  let count = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    if (caseExpansionLowerLenAt(input, i) > 1) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+// Maximum case-mapped expansion length across all positions (upper or lower);
+// 0 for empty input.
+function caseExpansionMaxLen(input) {
+  let max = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    const upper = caseExpansionUpperLenAt(input, i);
+    const lower = caseExpansionLowerLenAt(input, i);
+    const here = upper > lower ? upper : lower;
+    if (here > max) {
+      max = here;
+    }
+  }
+  return max;
+}
+
+// Fixture-row tag string for a case-expansion-mismatch sub-threat (mirrors
+// SubThreat.tag). Every arm is explicit; the final arm throws on an
+// unrecognised kind rather than defaulting.
+export function caseExpansionMismatchSubThreatTag(sub) {
+  switch (sub.kind) {
+    case "UpperExpansion":
+      return "UpperExpansion";
+    case "LowerExpansion":
+      return "LowerExpansion";
+    default:
+      throw new Error(`unreachable case-expansion-mismatch sub-threat kind: ${sub.kind}`);
+  }
+}
+
+// Stable reason code for a case-expansion-mismatch sub-threat (layer F).
+export function caseExpansionMismatchReasonCode(subThreatTag) {
+  return reasonCode(Family.CaseExpansionMismatch, subThreatTag);
+}
+
+function caseExpansionClearClassify() {
+  return { isClear: true, tag: null, sub: null, positions: [] };
+}
+
+function caseExpansionHazardClassify(sub, positions) {
+  return { isClear: false, tag: caseExpansionMismatchSubThreatTag(sub), sub, positions };
+}
+
+// The CaseExpansionMismatch detection function (mirrors the Lean/Rust detect).
+// Priority 1: an uppercase expansion; priority 2 (only when no upper fires): a
+// lowercase expansion; else Clear.
+export function caseExpansionMismatchDetect(input) {
+  const cps = Array.from(input);
+
+  let classify;
+  const upper = caseExpansionFirstUpper(cps);
+  if (upper !== null) {
+    const sub = {
+      kind: "UpperExpansion",
+      basePos: upper.pos,
+      cp: upper.cp,
+      expansionLen: upper.len,
+    };
+    classify = caseExpansionHazardClassify(sub, [upper.pos]);
+  } else {
+    const lower = caseExpansionFirstLower(cps);
+    if (lower !== null) {
+      const sub = {
+        kind: "LowerExpansion",
+        basePos: lower.pos,
+        cp: lower.cp,
+        expansionLen: lower.len,
+      };
+      classify = caseExpansionHazardClassify(sub, [lower.pos]);
+    } else {
+      classify = caseExpansionClearClassify();
+    }
+  }
+
+  return {
+    input: cps,
+    classify,
+    upperExpansionCount: caseExpansionUpperCount(cps),
+    lowerExpansionCount: caseExpansionLowerCount(cps),
+    maxExpansionLen: caseExpansionMaxLen(cps),
+  };
 }
 
 // ── normalization-bomb: NFD/NFKD expansion DoS detection ─────────────────────

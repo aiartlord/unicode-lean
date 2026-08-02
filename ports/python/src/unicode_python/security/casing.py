@@ -291,9 +291,16 @@ def lower_codepoint(
     return [simple_lowercase(cp)]
 
 
-def _upper_codepoint(
+def upper_codepoint(
     loc: Locale, rev_prefix: list[int], suffix: list[int], cp: int
 ) -> list[int]:
+    """UAX #21 full uppercase mapping of a single codepoint in context —
+    the mirror of :func:`lower_codepoint`. A SpecialCasing row whose
+    conditions hold under ``loc`` (evaluated over ``rev_prefix`` nearest-first
+    and the following ``suffix``) supplies the full uppercase expansion from
+    its ``upper`` column (SpecialCasing.txt field 3); otherwise the simple
+    uppercase mapping (UnicodeData.txt field 12) is returned as a
+    single-codepoint list."""
     row = _find_special_row(loc, rev_prefix, suffix, cp)
     if row is not None:
         return list(row.upper)
@@ -317,6 +324,6 @@ def to_upper(loc: Locale, cps: list[int]) -> list[int]:
     rev_prefix: list[int] = []
     for index, cp in enumerate(cps):
         suffix = cps[index + 1 :]
-        out.extend(_upper_codepoint(loc, rev_prefix, suffix, cp))
+        out.extend(upper_codepoint(loc, rev_prefix, suffix, cp))
         rev_prefix.insert(0, cp)
     return out

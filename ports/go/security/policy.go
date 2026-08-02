@@ -67,6 +67,7 @@ const (
 	FamilyFilenameDisguise         Family = "filename-disguise"
 	FamilyIdentifierFormDrift      Family = "identifier-form-drift"
 	FamilySkinToneVariationForgery Family = "skin-tone-variation-forgery"
+	FamilyCaseExpansionMismatch    Family = "case-expansion-mismatch"
 )
 
 type ProfilePolicy struct {
@@ -505,7 +506,7 @@ func layer(family Family) string {
 		return "D"
 	case FamilyConfusableBidiCompound, FamilyCovertDisplayCompound, FamilyIdentifierFormDrift:
 		return "X"
-	case FamilyStreamSafeViolation:
+	case FamilyStreamSafeViolation, FamilyCaseExpansionMismatch:
 		return "F"
 	case FamilyHashInputStability, FamilyAiWatermarkDetect:
 		return "K"

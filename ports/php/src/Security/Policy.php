@@ -20,6 +20,7 @@ use UnicodePhp\Security\Crypto\HashInputStability;
 use UnicodePhp\Security\Display\FilenameDisguise;
 use UnicodePhp\Security\Display\RendererDivergence;
 use UnicodePhp\Security\Display\RtlInjection;
+use UnicodePhp\Security\Form\CaseExpansionMismatch;
 use UnicodePhp\Security\Form\LocaleCaseInversion;
 use UnicodePhp\Security\Form\NfcIdempotenceWitness;
 use UnicodePhp\Security\Form\NormalizationBomb;
@@ -627,6 +628,17 @@ final class Policy
         $findings = [];
         if (!$d->classify->isClear()) {
             self::pushFinding($findings, Family::IdentifierFormDrift, ClassificationKind::Hazard, $d->classify->tag(), $d->classify->positions());
+        }
+        return new Verdict($input, $profile, $mode, self::selectAction($profile, $mode, $findings), $findings, null);
+    }
+
+    /** @param list<int> $input */
+    public static function scanCaseExpansionMismatch(Profile $profile, Mode $mode, array $input): Verdict
+    {
+        $c = CaseExpansionMismatch::detect($input);
+        $findings = [];
+        if (!$c->classify->isClear()) {
+            self::pushFinding($findings, Family::CaseExpansionMismatch, ClassificationKind::Hazard, $c->classify->tag(), $c->classify->positions());
         }
         return new Verdict($input, $profile, $mode, self::selectAction($profile, $mode, $findings), $findings, null);
     }

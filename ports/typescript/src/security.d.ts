@@ -301,6 +301,35 @@ export declare function identifierFormDriftSubThreatTag(
 ): string;
 export declare function identifierFormDriftDetect(input: number[]): IdentifierFormDriftVerdict;
 
+// ── case-expansion-mismatch (layer F) ────────────────────────────────────────
+
+export type CaseExpansionMismatchSubThreat =
+  | { kind: "UpperExpansion"; basePos: number; cp: number; expansionLen: number }
+  | { kind: "LowerExpansion"; basePos: number; cp: number; expansionLen: number };
+
+export interface CaseExpansionMismatchClassification {
+  isClear: boolean;
+  tag: string | null;
+  sub: CaseExpansionMismatchSubThreat | null;
+  positions: number[];
+}
+
+export interface CaseExpansionMismatchVerdict {
+  input: number[];
+  classify: CaseExpansionMismatchClassification;
+  upperExpansionCount: number;
+  lowerExpansionCount: number;
+  maxExpansionLen: number;
+}
+
+export declare function caseExpansionMismatchReasonCode(subThreatTag: string): string;
+export declare function caseExpansionMismatchSubThreatTag(
+  sub: CaseExpansionMismatchSubThreat,
+): string;
+export declare function caseExpansionMismatchDetect(
+  input: number[],
+): CaseExpansionMismatchVerdict;
+
 // ── skin-tone-variation-forgery (layer I) ────────────────────────────────────
 
 export type SkinToneVariationForgerySubThreat =

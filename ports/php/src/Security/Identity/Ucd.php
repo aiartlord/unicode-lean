@@ -80,10 +80,12 @@ final class Ucd
     private static ?array $identifierAllowed = null;
     /** @var list<array{0:int,1:int}>|null */
     private static ?array $defaultIgnorable = null;
-    /** @var array<int,list<array{lower:list<int>,conditions:list<string>}>>|null */
+    /** @var array<int,list<array{lower:list<int>,upper:list<int>,conditions:list<string>}>>|null */
     private static ?array $specialCasing = null;
     /** @var array<int,int>|null */
     private static ?array $simpleLowercase = null;
+    /** @var array<int,int>|null */
+    private static ?array $simpleUppercase = null;
     /** @var list<array{0:int,1:int}>|null */
     private static ?array $casedRanges = null;
     /** @var list<array{0:int,1:int}>|null */
@@ -1042,7 +1044,7 @@ final class Ucd
 
     // ── UAX #21 case mapping (toLower) ──────────────────────────────────
 
-    /** @return array<int,list<array{lower:list<int>,conditions:list<string>}>> */
+    /** @return array<int,list<array{lower:list<int>,upper:list<int>,conditions:list<string>}>> */
     private static function specialCasingRows(): array
     {
         if (self::$specialCasing !== null) {
@@ -1067,8 +1069,11 @@ final class Ucd
                 $conditions = preg_split('/\s+/', $fields[4], -1, PREG_SPLIT_NO_EMPTY) ?: [];
                 $conditions = array_values($conditions);
             }
+            // SpecialCasing.txt: `code; lower; title; upper; conditions`.
+            // Field 1 is the full lowercase mapping, field 3 the full uppercase.
             $rows[$code][] = [
                 'lower' => self::parseCodepoints($fields[1]),
+                'upper' => self::parseCodepoints($fields[3]),
                 'conditions' => $conditions,
             ];
         }
@@ -1104,6 +1109,37 @@ final class Ucd
     private static function simpleLowercase(int $cp): int
     {
         return self::simpleLowercaseTable()[$cp] ?? $cp;
+    }
+
+    /** @return array<int,int> */
+    private static function simpleUppercaseTable(): array
+    {
+        if (self::$simpleUppercase !== null) {
+            return self::$simpleUppercase;
+        }
+        $upper = [];
+        foreach (Data::lines('UnicodeData.txt') as $line) {
+            $fields = explode(';', $line);
+            if (count($fields) < 15) {
+                continue;
+            }
+            // Field 12 (0-based) is the simple uppercase mapping.
+            $cp = self::parseHex($fields[0]);
+            if ($cp === null || $fields[12] === '') {
+                continue;
+            }
+            $u = self::parseHex($fields[12]);
+            if ($u !== null) {
+                $upper[$cp] = $u;
+            }
+        }
+        self::$simpleUppercase = $upper;
+        return $upper;
+    }
+
+    private static function simpleUppercase(int $cp): int
+    {
+        return self::simpleUppercaseTable()[$cp] ?? $cp;
     }
 
     /**
@@ -1333,7 +1369,7 @@ final class Ucd
     /**
      * @param list<int> $revPrefix
      * @param list<int> $suffix
-     * @return array{lower:list<int>,conditions:list<string>}|null
+     * @return array{lower:list<int>,upper:list<int>,conditions:list<string>}|null
      */
     private static function findSpecialRow(Locale $locale, array $revPrefix, array $suffix, int $cp): ?array
     {
@@ -1366,6 +1402,24 @@ final class Ucd
             return $row['lower'];
         }
         return [self::simpleLowercase($cp)];
+    }
+
+    /// Uppercase a single codepoint in its full input context (UAX #21): the
+    /// SpecialCasing row whose conditions hold (its uppercase column), else the
+    /// simple uppercase mapping. Mirrors `lowerCodepoint` exactly, reusing the
+    /// same context machinery; exposed so context-sensitive detectors can
+    /// measure the case-mapped length per position.
+    ///
+    /// @param list<int> $revPrefix preceding codepoints, nearest-first
+    /// @param list<int> $suffix strictly-following codepoints
+    /// @return list<int>
+    public static function upperCodepoint(Locale $locale, array $revPrefix, array $suffix, int $cp): array
+    {
+        $row = self::findSpecialRow($locale, $revPrefix, $suffix, $cp);
+        if ($row !== null) {
+            return $row['upper'];
+        }
+        return [self::simpleUppercase($cp)];
     }
 
     /// Lowercase a codepoint sequence under `locale` (UAX #21 full case mapping).

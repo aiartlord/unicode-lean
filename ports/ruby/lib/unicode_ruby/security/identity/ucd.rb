@@ -778,7 +778,10 @@ module UnicodeRuby
 
       # ── UAX #21 case mapping (to_lower) from SpecialCasing.txt + UnicodeData ─
 
-      # Each SpecialCasing row: { lower: Array, conditions: Array<String> }.
+      # Each SpecialCasing row: { lower: Array, upper: Array,
+      # conditions: Array<String> }.  A row is `code; lower; title; upper;
+      # conditions`; the lowercase mapping is field 1 (0-based) and the
+      # uppercase mapping is field 3.
       def special_casing_rows
         @special_casing_rows ||= parse_special_casing
       end
@@ -804,6 +807,7 @@ module UnicodeRuby
 
           (rows[code] ||= []) << {
             lower: fields[1].split(/\s+/).map { |t| parse_hex(t) }.compact,
+            upper: fields[3].split(/\s+/).map { |t| parse_hex(t) }.compact,
             conditions: conditions
           }
         end
@@ -832,6 +836,33 @@ module UnicodeRuby
 
       def simple_lowercase(cp)
         simple_lowercase_table.fetch(cp, cp)
+      end
+
+      def simple_uppercase_table
+        @simple_uppercase_table ||= parse_simple_uppercase
+      end
+
+      # Simple uppercase mapping from UnicodeData.txt field 12 (0-based; the
+      # simple uppercase mapping), mirroring the simple-lowercase parse of
+      # field 13.
+      def parse_simple_uppercase
+        upper = {}
+        UnicodeRuby.read_data("UnicodeData.txt").each_line do |raw|
+          fields = raw.chomp.split(";", -1)
+          next if fields.length < 15
+
+          cp = parse_hex(fields[0])
+          next if cp.nil?
+          next if fields[12].empty?
+
+          u = parse_hex(fields[12])
+          upper[cp] = u unless u.nil?
+        end
+        upper
+      end
+
+      def simple_uppercase(cp)
+        simple_uppercase_table.fetch(cp, cp)
       end
 
       def casing_property_ranges(name)
@@ -984,6 +1015,19 @@ module UnicodeRuby
           row[:lower].dup
         else
           [simple_lowercase(cp)]
+        end
+      end
+
+      # Uppercase a single codepoint in its full input context (UAX #21): the
+      # SpecialCasing row whose conditions hold (its uppercase column), else the
+      # simple uppercase mapping.  Mirrors `lower_codepoint` exactly, reusing the
+      # same context machinery (`find_special_row` / `conditions_hold`).
+      def upper_codepoint(locale, rev_prefix, suffix, cp)
+        row = find_special_row(locale, rev_prefix, suffix, cp)
+        if row
+          row[:upper].dup
+        else
+          [simple_uppercase(cp)]
         end
       end
 
