@@ -1,6 +1,7 @@
 using System.Text.Json;
 using UnicodeSecurity;
 using UnicodeSecurity.Segmentation;
+using His = UnicodeSecurity.Security.HashInputStability;
 
 TestCovertDisplayCompoundVectors();
 TestConfusableBidiCompoundVectors();
@@ -17,6 +18,8 @@ TestBip39();
 TestLocaleCaseInversion();
 TestNormalizationBomb();
 TestNfcIdempotenceWitness();
+TestHashInputStabilityFixture();
+TestHashInputStabilityContextVectors();
 TestUtf8Blob();
 TestValidatedUtf8();
 TestGraphemeVectors();
@@ -415,6 +418,149 @@ static void TestNfcIdempotenceWitness()
     AssertSequence(new[] { 0 }, Security.NfcIdempotenceWitnessDetect(new List<int> { 0x0065, 0x0301 }).Positions, "nfc-witness decomposed-e-acute pos");
     AssertEqual("NonNfkcCompatForm", Sub(new List<int> { 0xFB01 }), "nfc-witness fi-ligature");
     Console.WriteLine("clean: .NET nfc-idempotence-witness detect spot-check passes");
+}
+
+// Ground truth: the shared context-free detector fixture
+// fixtures/security/detectors/hash_input_stability.json, run through
+// Security.HashInputStability.Detect (the empty-context wrapper). Each case's
+// required_findings is the fully-qualified reason code
+// (unicode.security.K.hash-input-stability.<tag>); an empty list means the
+// input must classify Clear. Mirrors the Rust port's §8 detect spot checks.
+static void TestHashInputStabilityFixture()
+{
+    using var detector = LoadFixture("detectors/hash_input_stability.json");
+    AssertEqual(1, detector.RootElement.GetProperty("schema").GetInt32(), "hash-input-stability schema");
+    AssertEqual("hash-input-stability", String(detector.RootElement, "family"), "hash-input-stability family");
+    var cases = 0;
+    foreach (var entry in detector.RootElement.GetProperty("cases").EnumerateArray())
+    {
+        var name = String(entry, "name");
+        var input = Ints(entry.GetProperty("input"));
+        var verdict = Security.HashInputStability.Detect(input);
+        var required = Strings(entry.GetProperty("required_findings")).ToList();
+        if (required.Count == 0)
+        {
+            AssertTrue(verdict.Classify.IsClear, $"hash-input-stability {name}: expected clear, got {verdict.Classify.Tag}");
+        }
+        else
+        {
+            foreach (var code in required)
+            {
+                AssertEqual<string?>(code, verdict.Classify.ReasonCode, $"hash-input-stability {name}: reason code");
+            }
+        }
+        cases++;
+    }
+    Console.WriteLine($"clean: .NET hash-input-stability {cases}-case shared-fixture detect passes");
+}
+
+// Ground truth: the verbatim Context-vector comment block in the Rust port's
+// hash_input_stability.rs test module (the shared detector-fixture schema
+// cannot express a Context, so these live only in-source). Every vector is
+// transcribed here: the four context-bearing probes, their clear cases, and the
+// three cross-probe priority vectors, plus the RfcRule tag round-trip and the
+// hash_stable / default-context identity spot checks.
+static void TestHashInputStabilityContextVectors()
+{
+    string? CtxTag(His.Context ctx, int[] input) =>
+        Security.HashInputStability.DetectWithContext(ctx, input).Classify.Tag;
+    IReadOnlyList<int> CtxPos(His.Context ctx, int[] input) =>
+        Security.HashInputStability.DetectWithContext(ctx, input).Classify.Positions;
+
+    // encodingMismatch: non-UTF-8 label, invalid surrogate, out-of-range scalar.
+    var encUtf16 = new His.Context(DeclaredEncoding: "utf-16");
+    AssertEqual<string?>("EncodingMismatch", CtxTag(encUtf16, new[] { 0x61, 0x62, 0x63 }), "his utf-16 label tag");
+    AssertSequence(new[] { 0 }, CtxPos(encUtf16, new[] { 0x61, 0x62, 0x63 }), "his utf-16 label pos");
+    var encUtf8 = new His.Context(DeclaredEncoding: "utf-8");
+    AssertEqual<string?>("EncodingMismatch", CtxTag(encUtf8, new[] { 0x61, 0xD800, 0x62 }), "his invalid surrogate tag");
+    AssertSequence(new[] { 1 }, CtxPos(encUtf8, new[] { 0x61, 0xD800, 0x62 }), "his invalid surrogate pos");
+    AssertEqual<string?>("EncodingMismatch", CtxTag(encUtf8, new[] { 0x61, 0x110000, 0x62 }), "his out-of-range tag");
+    AssertSequence(new[] { 1 }, CtxPos(encUtf8, new[] { 0x61, 0x110000, 0x62 }), "his out-of-range pos");
+    foreach (var label in new[] { "UTF-8", "utf-8", "UTF8", "utf8" })
+    {
+        AssertEqual<string?>(null, CtxTag(new His.Context(DeclaredEncoding: label), new[] { 0x61, 0x62, 0x63 }),
+            $"his utf-8 label {label} clear");
+    }
+
+    // signedMessageRule: one firing and (where present) one clear vector per RFC rule.
+    var pgp4880 = new His.Context(RfcRule: His.RfcRule.Pgp4880TrailingWhitespace);
+    AssertEqual<string?>("SignedMessageRule", CtxTag(pgp4880, new[] { 0x61, 0x20 }), "his pgp4880 tag");
+    AssertSequence(new[] { 1 }, CtxPos(pgp4880, new[] { 0x61, 0x20 }), "his pgp4880 pos");
+    var pgp9580 = new His.Context(RfcRule: His.RfcRule.Pgp9580LineEnding);
+    AssertEqual<string?>("SignedMessageRule", CtxTag(pgp9580, new[] { 0x61, 0x0A, 0x62 }), "his pgp9580 bare-lf tag");
+    AssertSequence(new[] { 1 }, CtxPos(pgp9580, new[] { 0x61, 0x0A, 0x62 }), "his pgp9580 bare-lf pos");
+    AssertEqual<string?>(null, CtxTag(pgp9580, new[] { 0x61, 0x62, 0x63, 0x0D, 0x0A, 0x64, 0x65, 0x66 }),
+        "his pgp9580 crlf clear");
+    var rfc8785 = new His.Context(RfcRule: His.RfcRule.Rfc8785NfcRequirement);
+    AssertEqual<string?>("SignedMessageRule", CtxTag(rfc8785, new[] { 0x0065, 0x0301 }), "his rfc8785 tag");
+    AssertSequence(new[] { 0 }, CtxPos(rfc8785, new[] { 0x0065, 0x0301 }), "his rfc8785 pos");
+    var rfc8259 = new His.Context(RfcRule: His.RfcRule.Rfc8259ControlChar);
+    AssertEqual<string?>("SignedMessageRule", CtxTag(rfc8259, new[] { 0x61, 0x01, 0x62 }), "his rfc8259 tag");
+    AssertSequence(new[] { 1 }, CtxPos(rfc8259, new[] { 0x61, 0x01, 0x62 }), "his rfc8259 pos");
+    var rfc7515 = new His.Context(RfcRule: His.RfcRule.Rfc7515JwsBase64Url);
+    AssertEqual<string?>("SignedMessageRule", CtxTag(rfc7515, new[] { 0x41, 0x2B, 0x42 }), "his rfc7515 plus tag");
+    AssertSequence(new[] { 1 }, CtxPos(rfc7515, new[] { 0x41, 0x2B, 0x42 }), "his rfc7515 plus pos");
+    AssertEqual<string?>(null, CtxTag(rfc7515, new[] { 0x41, 0x61, 0x30, 0x2D, 0x5F, 0x7A, 0x5A, 0x39 }),
+        "his rfc7515 clean clear");
+    var rfc6376 = new His.Context(RfcRule: His.RfcRule.Rfc6376DkimRelaxed);
+    AssertEqual<string?>("SignedMessageRule", CtxTag(rfc6376, new[] { 0x61, 0x20, 0x20, 0x62 }), "his rfc6376 double-space tag");
+    AssertSequence(new[] { 2 }, CtxPos(rfc6376, new[] { 0x61, 0x20, 0x20, 0x62 }), "his rfc6376 double-space pos");
+    AssertEqual<string?>(null, CtxTag(rfc6376, new[] { 0x61, 0x20, 0x62 }), "his rfc6376 single-space clear");
+    var rfc5751 = new His.Context(RfcRule: His.RfcRule.Rfc5751SmimeLineEnding);
+    AssertEqual<string?>("SignedMessageRule", CtxTag(rfc5751, new[] { 0x61, 0x0A, 0x62 }), "his rfc5751 bare-lf tag");
+    AssertSequence(new[] { 1 }, CtxPos(rfc5751, new[] { 0x61, 0x0A, 0x62 }), "his rfc5751 bare-lf pos");
+
+    // auditLogReinterpretation.
+    var audit = new His.Context(AsWritten: new[] { 0x61, 0x62, 0x63 });
+    AssertEqual<string?>("AuditLogReinterpretation", CtxTag(audit, new[] { 0x61, 0x62, 0x64 }), "his audit tag");
+    AssertSequence(new[] { 2 }, CtxPos(audit, new[] { 0x61, 0x62, 0x64 }), "his audit pos");
+    AssertEqual<string?>(null, CtxTag(audit, new[] { 0x61, 0x62, 0x63 }), "his audit identical clear");
+
+    // webhookSignatureDrift.
+    var webhook = new His.Context(ServerBytes: new[] { 0x61, 0x62, 0x64 });
+    AssertEqual<string?>("WebhookSignatureDrift", CtxTag(webhook, new[] { 0x61, 0x62, 0x63 }), "his webhook tag");
+    AssertSequence(new[] { 2 }, CtxPos(webhook, new[] { 0x61, 0x62, 0x63 }), "his webhook pos");
+    AssertEqual<string?>(null, CtxTag(new His.Context(ServerBytes: new[] { 0x61, 0x62, 0x63 }), new[] { 0x61, 0x62, 0x63 }),
+        "his webhook match clear");
+
+    // Cross-probe priority vectors.
+    var encOverRfc = new His.Context(DeclaredEncoding: "utf-16", RfcRule: His.RfcRule.Pgp9580LineEnding);
+    AssertEqual<string?>("EncodingMismatch", CtxTag(encOverRfc, new[] { 0x0065, 0x0301, 0x0A }), "his encoding-over-rfc priority");
+    var webhookOverAudit = new His.Context(AsWritten: new[] { 0x61, 0x62, 0x66 }, ServerBytes: new[] { 0x61, 0x62, 0x65 });
+    AssertEqual<string?>("WebhookSignatureDrift", CtxTag(webhookOverAudit, new[] { 0x61, 0x62, 0x63 }), "his webhook-over-audit priority");
+    AssertEqual<string?>("SignedMessageRule", CtxTag(pgp4880, new[] { 0x61, 0x20 }), "his rfc-over-trailing priority");
+
+    // Empty context is the identity of Detect.
+    var bare = Security.HashInputStability.Detect(new[] { 0x61, 0x62, 0x63 });
+    var withDefault = Security.HashInputStability.DetectWithContext(His.Context.Default, new[] { 0x61, 0x62, 0x63 });
+    AssertEqual(bare.Classify.Tag, withDefault.Classify.Tag, "his default-context tag matches detect");
+    AssertEqual(bare.StableSize, withDefault.StableSize, "his default-context stable-size matches detect");
+
+    // §4 hash_stable spot checks.
+    AssertSequence(System.Array.Empty<int>(), Security.HashInputStability.HashStable(System.Array.Empty<int>()), "his stable empty");
+    AssertSequence(new[] { 0x61, 0x62, 0x63 }, Security.HashInputStability.HashStable(new[] { 0x61, 0x62, 0x63 }), "his stable ascii");
+    AssertSequence(new[] { 0x61 }, Security.HashInputStability.HashStable(new[] { 0x61, 0x20 }), "his stable strip space");
+    AssertSequence(new[] { 0x61 }, Security.HashInputStability.HashStable(new[] { 0x61, 0x0D, 0x0A }), "his stable strip crlf");
+    AssertSequence(new[] { 0x00E9 }, Security.HashInputStability.HashStable(new[] { 0x0065, 0x0301 }), "his stable compose nfc");
+    AssertSequence(new[] { 0x61, 0x00A0 }, Security.HashInputStability.HashStable(new[] { 0x61, 0x00A0 }), "his stable keep nbsp");
+
+    // RfcRule tag round-trip.
+    foreach (var rule in new[]
+    {
+        His.RfcRule.Pgp4880TrailingWhitespace,
+        His.RfcRule.Pgp9580LineEnding,
+        His.RfcRule.Rfc8785NfcRequirement,
+        His.RfcRule.Rfc8259ControlChar,
+        His.RfcRule.Rfc7515JwsBase64Url,
+        His.RfcRule.Rfc6376DkimRelaxed,
+        His.RfcRule.Rfc5751SmimeLineEnding,
+    })
+    {
+        AssertEqual<His.RfcRule?>(rule, Security.HashInputStability.FromTag(Security.HashInputStability.Tag(rule)), $"his rfc-rule roundtrip {rule}");
+    }
+    AssertEqual<His.RfcRule?>(null, Security.HashInputStability.FromTag("nope"), "his rfc-rule unknown tag");
+
+    Console.WriteLine("clean: .NET hash-input-stability 21-vector context spot-check passes");
 }
 
 // Opaque-blob refinement: structurally valid strict UTF-8 under a size bound,

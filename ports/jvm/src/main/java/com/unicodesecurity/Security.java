@@ -58,6 +58,7 @@ public final class Security {
     public static final String RTL_INJECTION = "rtl-injection";
     public static final String CONFUSABLE_BIDI_COMPOUND = "confusable-bidi-compound";
     public static final String COVERT_DISPLAY_COMPOUND = "covert-display-compound";
+    public static final String HASH_INPUT_STABILITY = "hash-input-stability";
     private Family() {}
   }
 
@@ -260,6 +261,9 @@ public final class Security {
     if (family.equals(Family.CONFUSABLE_BIDI_COMPOUND)
         || family.equals(Family.COVERT_DISPLAY_COMPOUND)) {
       return "X";
+    }
+    if (family.equals(Family.HASH_INPUT_STABILITY)) {
+      return "K";
     }
     return "C";
   }

@@ -1868,6 +1868,485 @@ pub fn bip39CanonicalDetect(input: []const u32) Bip39CanonicalResult {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Hash-input-stability detector (crypto layer), mirroring
+// Unicode.Security.Crypto.HashInputStability and its Rust port.
+//
+// A signer and a verifier that pick different canonical forms (NFC vs NFD,
+// trim policy, line-ending convention) produce diverging hashes over the same
+// apparent content. The hash-stable form is trimTrailing(toNFC(input)), where
+// trimTrailing strips only ASCII whitespace {U+0020, U+0009, U+000A, U+000D};
+// Unicode whitespace is content and is kept. NFC is the port's toNFC, never a
+// host normalizer.
+//
+// Six probes run in strict priority order (first hit wins): encodingMismatch,
+// webhookSignatureDrift, auditLogReinterpretation, signedMessageRule,
+// trailingWhitespace, normalizationDrift, then clear. The four context-bearing
+// probes carry more precise threat information and so precede the two generic
+// ones; detect is detectWithContext with the empty context, which leaves the
+// context-bearing probes silent.
+// ─────────────────────────────────────────────────────────────────────
+
+pub const hash_input_stability = struct {
+    /// RFC canonicalisation profiles that the signedMessageRule probe checks
+    /// against. Each variant names a specific canonicalisation rule from a
+    /// published RFC; callers pass one as Context.rfc_rule to opt the probe in.
+    pub const RfcRule = enum {
+        /// RFC 4880 §5.2.4 — detached signatures normalise trailing whitespace.
+        pgp4880_trailing_whitespace,
+        /// RFC 9580 — line-endings normalise to CRLF before signing.
+        pgp9580_line_ending,
+        /// RFC 8785 §3.2.5 — JCS requires strings in NFC before serialisation.
+        rfc8785_nfc_requirement,
+        /// RFC 8259 §7 — JSON strings must escape control characters.
+        rfc8259_control_char,
+        /// RFC 7515 §2 — JWS Base64URL; any char outside [A-Za-z0-9_-] violates.
+        rfc7515_jws_base64_url,
+        /// RFC 6376 §3.4.4 — DKIM relaxed body collapses internal whitespace runs.
+        rfc6376_dkim_relaxed,
+        /// RFC 5751 §3.1.1 — S/MIME canonical text; a bare LF or bare CR violates.
+        rfc5751_smime_line_ending,
+
+        /// Fixture-string identifier for an RfcRule.
+        pub fn tag(self: RfcRule) []const u8 {
+            return switch (self) {
+                .pgp4880_trailing_whitespace => "pgp4880TrailingWhitespace",
+                .pgp9580_line_ending => "pgp9580LineEnding",
+                .rfc8785_nfc_requirement => "rfc8785NfcRequirement",
+                .rfc8259_control_char => "rfc8259ControlChar",
+                .rfc7515_jws_base64_url => "rfc7515JwsBase64Url",
+                .rfc6376_dkim_relaxed => "rfc6376DkimRelaxed",
+                .rfc5751_smime_line_ending => "rfc5751SmimeLineEnding",
+            };
+        }
+
+        /// Inverse of tag. Returns null for unrecognised strings.
+        pub fn fromTag(wire_tag: []const u8) ?RfcRule {
+            if (std.mem.eql(u8, wire_tag, "pgp4880TrailingWhitespace")) return .pgp4880_trailing_whitespace;
+            if (std.mem.eql(u8, wire_tag, "pgp9580LineEnding")) return .pgp9580_line_ending;
+            if (std.mem.eql(u8, wire_tag, "rfc8785NfcRequirement")) return .rfc8785_nfc_requirement;
+            if (std.mem.eql(u8, wire_tag, "rfc8259ControlChar")) return .rfc8259_control_char;
+            if (std.mem.eql(u8, wire_tag, "rfc7515JwsBase64Url")) return .rfc7515_jws_base64_url;
+            if (std.mem.eql(u8, wire_tag, "rfc6376DkimRelaxed")) return .rfc6376_dkim_relaxed;
+            if (std.mem.eql(u8, wire_tag, "rfc5751SmimeLineEnding")) return .rfc5751_smime_line_ending;
+            return null;
+        }
+    };
+
+    /// Sub-threats this detector can fire. Two probes fire from the raw input
+    /// alone (normalization_drift, trailing_whitespace); the other four require
+    /// the corresponding Context field to be set.
+    pub const SubThreat = union(enum) {
+        /// Input diverges from its NFC form at first_divergent_pos.
+        normalization_drift: struct { first_divergent_pos: usize },
+        /// Input has count trailing ASCII-whitespace codepoints.
+        trailing_whitespace: struct { count: usize },
+        /// Declared encoding disagrees with the codepoint array (or an invalid scalar).
+        encoding_mismatch: struct { declared_enc: []const u8, detected_enc: []const u8 },
+        /// Input violates the named RFC's canonicalisation rule at first_pos.
+        signed_message_rule: struct { rfc_rule: []const u8, first_pos: usize },
+        /// The re-read input differs from Context.as_written at first_divergent_pos.
+        audit_log_reinterpretation: struct { first_divergent_pos: usize },
+        /// The client input differs from Context.server_bytes at first_pos.
+        webhook_signature_drift: struct { first_pos: usize },
+
+        /// Human-facing classification tag for this sub-threat.
+        pub fn tag(self: SubThreat) []const u8 {
+            return switch (self) {
+                .normalization_drift => "NormalizationDrift",
+                .trailing_whitespace => "TrailingWhitespace",
+                .encoding_mismatch => "EncodingMismatch",
+                .signed_message_rule => "SignedMessageRule",
+                .audit_log_reinterpretation => "AuditLogReinterpretation",
+                .webhook_signature_drift => "WebhookSignatureDrift",
+            };
+        }
+    };
+
+    /// Context passed to detectWithContext to enable the four context-bearing
+    /// probes. Each field is null by default — the empty context is the
+    /// identity case: detectWithContext(Context{}, input) equals detect(input).
+    pub const Context = struct {
+        /// The encoding label the caller claims their input is in.
+        declared_encoding: ?[]const u8 = null,
+        /// The RFC canonicalisation rule the caller is operating under.
+        rfc_rule: ?RfcRule = null,
+        /// The original "as-written" form of an audit-log entry whose re-read is input.
+        as_written: ?[]const u32 = null,
+        /// The server-side recomputed bytes for a webhook signature.
+        server_bytes: ?[]const u32 = null,
+    };
+
+    /// Top-level classification.
+    pub const Classification = union(enum) {
+        /// The input is already hash-stable under every enabled probe.
+        clear,
+        /// A hazard was found: the sub-threat and its implicated positions. Every
+        /// probe implicates exactly one position, so the buffer is single-slot.
+        hazard: struct { sub: SubThreat, positions: [1]usize },
+
+        /// True iff the input is clear.
+        pub fn isClear(self: Classification) bool {
+            return switch (self) {
+                .clear => true,
+                .hazard => false,
+            };
+        }
+
+        /// Human-facing tag for a hazard, or null when clear.
+        pub fn tag(self: Classification) ?[]const u8 {
+            return switch (self) {
+                .clear => null,
+                .hazard => |h| h.sub.tag(),
+            };
+        }
+
+        /// Implicated positions (empty when clear).
+        pub fn positions(self: *const Classification) []const usize {
+            switch (self.*) {
+                .clear => return &[_]usize{},
+                .hazard => return self.hazard.positions[0..],
+            }
+        }
+    };
+
+    /// Verdict — the structured output of detect. stable_size is the codepoint
+    /// count of the hash-stable canonical form; downstream callers compare it
+    /// against input.len to size the byte-drift their hash sees.
+    pub const Verdict = struct {
+        /// The scanned input codepoints.
+        input: []const u32,
+        /// The classification verdict.
+        classify: Classification,
+        /// The hash-stable canonical form of the input.
+        stable_form: CpBuffer,
+        /// Codepoint count of stable_form.
+        stable_size: usize,
+    };
+
+    const EncodingHit = struct { declared: []const u8, detected: []const u8, pos: usize };
+    const RfcHit = struct { rule: RfcRule, pos: usize };
+
+    // ── Canonicalisation pipeline ───────────────────────────────────────
+
+    /// True iff cp is an ASCII whitespace codepoint that line-oriented
+    /// hash-input protocols treat as framing rather than content: U+0020 SPACE,
+    /// U+0009 TAB, U+000A LF, U+000D CR.
+    fn isAsciiWhitespace(cp: u32) bool {
+        return cp == 0x0020 or cp == 0x0009 or cp == 0x000A or cp == 0x000D;
+    }
+
+    /// Count of trailing ASCII whitespace codepoints in input.
+    fn countTrailingWhitespace(input: []const u32) usize {
+        var count: usize = 0;
+        var k = input.len;
+        while (k > 0) {
+            k -= 1;
+            if (isAsciiWhitespace(input[k])) count += 1 else break;
+        }
+        return count;
+    }
+
+    /// Strip trailing ASCII whitespace into a bounded buffer.
+    fn trimTrailing(input: []const u32) CpBuffer {
+        const keep = input.len - countTrailingWhitespace(input);
+        var out = CpBuffer{};
+        var i: usize = 0;
+        while (i < keep) : (i += 1) {
+            _ = out.append(input[i]);
+        }
+        return out;
+    }
+
+    /// The hash-stable form of an input: NFC then trim, in spec order. NFC that
+    /// overflows the 128-codepoint buffer (impossible for inputs within the
+    /// bound) falls back to the raw input, itself bounded by the buffer.
+    pub fn hashStable(input: []const u32) CpBuffer {
+        var nfc = CpBuffer{};
+        if (toNFC(input)) |composed| {
+            nfc = composed;
+        } else {
+            _ = nfc.appendSlice(input);
+        }
+        return trimTrailing(nfc.slice());
+    }
+
+    // ── Priority position-finder ────────────────────────────────────────
+
+    /// First position at which a and b diverge, or the length of the shared
+    /// prefix when one strictly extends the other. null when identical.
+    fn firstArrayDivergence(a: []const u32, b: []const u32) ?usize {
+        const common = @min(a.len, b.len);
+        var i: usize = 0;
+        while (i < common) : (i += 1) {
+            if (a[i] != b[i]) return i;
+        }
+        if (a.len != b.len) return common;
+        return null;
+    }
+
+    // ── Context-bearing probes ──────────────────────────────────────────
+
+    /// Lower-case an ASCII letter (U+0041..U+005A → U+0061..U+007A).
+    fn asciiLower(cp: u32) u32 {
+        if (cp >= 0x41 and cp <= 0x5A) return cp + 0x20;
+        return cp;
+    }
+
+    /// True iff the label, folded to ASCII lower-case per Unicode scalar,
+    /// equals target (an ASCII spelling). Non-ASCII scalars pass through and
+    /// cannot match. Invalid UTF-8 never matches an ASCII target.
+    fn labelFoldsTo(label: []const u8, target: []const u8) bool {
+        const view = std.unicode.Utf8View.init(label) catch return false;
+        var it = view.iterator();
+        var ti: usize = 0;
+        while (it.nextCodepoint()) |cp| {
+            if (ti >= target.len) return false;
+            if (asciiLower(cp) != target[ti]) return false;
+            ti += 1;
+        }
+        return ti == target.len;
+    }
+
+    /// True iff label (after ASCII case-fold) names UTF-8: accepts "utf-8",
+    /// "UTF-8", "UTF8", "utf8".
+    fn isUtf8Label(label: []const u8) bool {
+        return labelFoldsTo(label, "utf-8") or labelFoldsTo(label, "utf8");
+    }
+
+    /// True iff cp is a valid Unicode scalar value: in [0, 0x10FFFF] and not a
+    /// surrogate [0xD800, 0xDFFF].
+    fn isValidScalar(cp: u32) bool {
+        return cp <= 0x10FFFF and !(cp >= 0xD800 and cp <= 0xDFFF);
+    }
+
+    /// First position holding a codepoint that is not a valid Unicode scalar,
+    /// or null if every codepoint is valid.
+    fn firstInvalidScalar(input: []const u32) ?usize {
+        for (input, 0..) |cp, i| {
+            if (!isValidScalar(cp)) return i;
+        }
+        return null;
+    }
+
+    /// Probe: encodingMismatch. An invalid scalar fires with detected = "invalid"
+    /// regardless of the declared label; otherwise a non-UTF-8 label fires with
+    /// detected = "utf-8" at position 0.
+    fn encodingMismatchProbe(declared: []const u8, input: []const u32) ?EncodingHit {
+        if (firstInvalidScalar(input)) |pos| {
+            return EncodingHit{ .declared = declared, .detected = "invalid", .pos = pos };
+        }
+        if (isUtf8Label(declared)) return null;
+        return EncodingHit{ .declared = declared, .detected = "utf-8", .pos = 0 };
+    }
+
+    /// Probe: pgp4880TrailingWhitespace. Same condition as trailingWhitespace;
+    /// returns the first position of the trailing run.
+    fn pgp4880Violation(input: []const u32) ?usize {
+        const trailing = countTrailingWhitespace(input);
+        if (trailing > 0) return input.len - trailing;
+        return null;
+    }
+
+    /// Probe: pgp9580LineEnding. First bare LF (U+000A not preceded by CR) or
+    /// bare CR (U+000D not followed by LF).
+    fn pgp9580Violation(input: []const u32) ?usize {
+        for (input, 0..) |cp, i| {
+            if (cp == 0x000A) {
+                const preceded_by_cr = i > 0 and input[i - 1] == 0x000D;
+                if (!preceded_by_cr) return i;
+            } else if (cp == 0x000D) {
+                const followed_by_lf = i + 1 < input.len and input[i + 1] == 0x000A;
+                if (!followed_by_lf) return i;
+            }
+        }
+        return null;
+    }
+
+    /// Probe: rfc8785NfcRequirement. Same condition as normalizationDrift;
+    /// returns the first NFC divergence position.
+    fn rfc8785Violation(input: []const u32) ?usize {
+        const nfc = toNFC(input) orelse return null;
+        if (cpSlicesEqual(input, nfc.slice())) return null;
+        return firstArrayDivergence(input, nfc.slice());
+    }
+
+    /// Probe: rfc8259ControlChar. First C0 control (U+0000..U+001F).
+    fn rfc8259Violation(input: []const u32) ?usize {
+        for (input, 0..) |cp, i| {
+            if (cp <= 0x1F) return i;
+        }
+        return null;
+    }
+
+    /// True iff cp is in the JWS Base64URL alphabet [A-Za-z0-9_-].
+    fn isBase64Url(cp: u32) bool {
+        return (cp >= 0x41 and cp <= 0x5A) or
+            (cp >= 0x61 and cp <= 0x7A) or
+            (cp >= 0x30 and cp <= 0x39) or
+            cp == 0x2D or
+            cp == 0x5F;
+    }
+
+    /// Probe: rfc7515JwsBase64Url. First codepoint outside [A-Za-z0-9_-].
+    fn rfc7515Violation(input: []const u32) ?usize {
+        for (input, 0..) |cp, i| {
+            if (!isBase64Url(cp)) return i;
+        }
+        return null;
+    }
+
+    /// True iff cp is DKIM whitespace: U+0020 SPACE or U+0009 HTAB.
+    fn isDkimWhitespace(cp: u32) bool {
+        return cp == 0x20 or cp == 0x09;
+    }
+
+    /// Probe: rfc6376DkimRelaxed. Position of the second whitespace codepoint in
+    /// the first internal whitespace run longer than one.
+    fn rfc6376Violation(input: []const u32) ?usize {
+        for (input, 0..) |cp, i| {
+            if (isDkimWhitespace(cp) and i > 0 and isDkimWhitespace(input[i - 1])) return i;
+        }
+        return null;
+    }
+
+    /// Probe: rfc5751SmimeLineEnding. Reuses the PGP 9580 bare-line-ending rule.
+    fn rfc5751Violation(input: []const u32) ?usize {
+        return pgp9580Violation(input);
+    }
+
+    /// Dispatch the RFC-rule probe. First violation position, or null if clean.
+    fn rfcRuleViolation(rule: RfcRule, input: []const u32) ?usize {
+        return switch (rule) {
+            .pgp4880_trailing_whitespace => pgp4880Violation(input),
+            .pgp9580_line_ending => pgp9580Violation(input),
+            .rfc8785_nfc_requirement => rfc8785Violation(input),
+            .rfc8259_control_char => rfc8259Violation(input),
+            .rfc7515_jws_base64_url => rfc7515Violation(input),
+            .rfc6376_dkim_relaxed => rfc6376Violation(input),
+            .rfc5751_smime_line_ending => rfc5751Violation(input),
+        };
+    }
+
+    // ── Top-level detection ─────────────────────────────────────────────
+
+    /// The priority resolver: first hit wins, in the spec's fixed order.
+    fn classify(
+        encoding_hit: ?EncodingHit,
+        webhook_hit: ?usize,
+        audit_hit: ?usize,
+        rfc_hit: ?RfcHit,
+        trailing_count: usize,
+        input_len: usize,
+        non_nfc_pos: ?usize,
+    ) Classification {
+        if (encoding_hit) |h| {
+            return .{ .hazard = .{
+                .sub = .{ .encoding_mismatch = .{ .declared_enc = h.declared, .detected_enc = h.detected } },
+                .positions = .{h.pos},
+            } };
+        }
+        if (webhook_hit) |pos| {
+            return .{ .hazard = .{
+                .sub = .{ .webhook_signature_drift = .{ .first_pos = pos } },
+                .positions = .{pos},
+            } };
+        }
+        if (audit_hit) |pos| {
+            return .{ .hazard = .{
+                .sub = .{ .audit_log_reinterpretation = .{ .first_divergent_pos = pos } },
+                .positions = .{pos},
+            } };
+        }
+        if (rfc_hit) |h| {
+            return .{ .hazard = .{
+                .sub = .{ .signed_message_rule = .{ .rfc_rule = h.rule.tag(), .first_pos = h.pos } },
+                .positions = .{h.pos},
+            } };
+        }
+        if (trailing_count > 0) {
+            const p = input_len - trailing_count;
+            return .{ .hazard = .{
+                .sub = .{ .trailing_whitespace = .{ .count = trailing_count } },
+                .positions = .{p},
+            } };
+        }
+        if (non_nfc_pos) |p| {
+            return .{ .hazard = .{
+                .sub = .{ .normalization_drift = .{ .first_divergent_pos = p } },
+                .positions = .{p},
+            } };
+        }
+        return .{ .clear = {} };
+    }
+
+    /// The full detection function. Runs all six probes in priority order, with
+    /// the context-bearing probes ahead of the generic ones.
+    pub fn detectWithContext(ctx: Context, input: []const u32) @This().Verdict {
+        const stable = hashStable(input);
+
+        // Probe 1: encodingMismatch.
+        const encoding_hit: ?EncodingHit = if (ctx.declared_encoding) |label|
+            encodingMismatchProbe(label, input)
+        else
+            null;
+
+        // Probe 2: webhookSignatureDrift.
+        const webhook_hit: ?usize = if (ctx.server_bytes) |server|
+            firstArrayDivergence(input, server)
+        else
+            null;
+
+        // Probe 3: auditLogReinterpretation.
+        const audit_hit: ?usize = if (ctx.as_written) |written|
+            firstArrayDivergence(written, input)
+        else
+            null;
+
+        // Probe 4: signedMessageRule.
+        const rfc_hit: ?RfcHit = if (ctx.rfc_rule) |rule| blk: {
+            if (rfcRuleViolation(rule, input)) |pos| {
+                break :blk RfcHit{ .rule = rule, .pos = pos };
+            }
+            break :blk null;
+        } else null;
+
+        // Probe 5: trailingWhitespace.
+        const trailing_count = countTrailingWhitespace(input);
+
+        // Probe 6: normalizationDrift.
+        const non_nfc_pos: ?usize = blk: {
+            const nfc = toNFC(input) orelse break :blk null;
+            if (cpSlicesEqual(input, nfc.slice())) break :blk null;
+            break :blk firstArrayDivergence(input, nfc.slice());
+        };
+
+        const classification = classify(
+            encoding_hit,
+            webhook_hit,
+            audit_hit,
+            rfc_hit,
+            trailing_count,
+            input.len,
+            non_nfc_pos,
+        );
+
+        return @This().Verdict{
+            .input = input,
+            .classify = classification,
+            .stable_form = stable,
+            .stable_size = stable.len,
+        };
+    }
+
+    /// Convenience wrapper over detectWithContext with the empty context —
+    /// equivalent to running only the two bare-input probes (trailingWhitespace,
+    /// normalizationDrift).
+    pub fn detect(input: []const u32) @This().Verdict {
+        return detectWithContext(Context{}, input);
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────
 // Locale-case-inversion detector (Tier A2), mirroring
 // Unicode.Security.Form.LocaleCaseInversion.
 //
@@ -2728,4 +3207,152 @@ test "nfc-idempotence-witness detect spot-checks" {
     try expectNfcIdempotenceWitnessSub(&[_]u32{ 0x0065, 0x0301 }, "NonNfcForm"); // e + combining acute
     try std.testing.expect(nfcIdempotenceWitnessDetect(&[_]u32{ 0x0065, 0x0301 }).positions[0] == 0);
     try expectNfcIdempotenceWitnessSub(&[_]u32{0xFB01}, "NonNfkcCompatForm"); // fi ligature
+}
+
+// ── hash-input-stability (crypto layer) ─────────────────────────────────
+
+const His = hash_input_stability;
+
+fn expectHashStable(input: []const u32, expected: []const u32) !void {
+    const stable = His.hashStable(input);
+    try std.testing.expect(cpSlicesEqual(stable.slice(), expected));
+}
+
+test "hash-input-stability hash_stable spot checks" {
+    // Mirrors the §4 hash_stable spot checks in
+    // Unicode/Security/Crypto/HashInputStability.lean and its Rust port.
+    try expectHashStable(&[_]u32{}, &[_]u32{});
+    try expectHashStable(&[_]u32{ 0x61, 0x62, 0x63 }, &[_]u32{ 0x61, 0x62, 0x63 });
+    // Idempotence: hash_stable(hash_stable(x)) == hash_stable(x).
+    const once = His.hashStable(&[_]u32{ 0x61, 0x62, 0x63 });
+    const twice = His.hashStable(once.slice());
+    try std.testing.expect(cpSlicesEqual(once.slice(), twice.slice()));
+    try expectHashStable(&[_]u32{ 0x61, 0x20 }, &[_]u32{0x61}); // trailing space
+    try expectHashStable(&[_]u32{ 0x61, 0x09 }, &[_]u32{0x61}); // trailing tab
+    try expectHashStable(&[_]u32{ 0x61, 0x0A }, &[_]u32{0x61}); // trailing LF
+    try expectHashStable(&[_]u32{ 0x61, 0x0D, 0x0A }, &[_]u32{0x61}); // trailing CRLF
+    try expectHashStable(&[_]u32{ 0x61, 0x20, 0x62 }, &[_]u32{ 0x61, 0x20, 0x62 }); // internal space kept
+    try expectHashStable(&[_]u32{ 0x0065, 0x0301 }, &[_]u32{0x00E9}); // NFC composes
+    try expectHashStable(&[_]u32{ 0x61, 0x00A0 }, &[_]u32{ 0x61, 0x00A0 }); // trailing NBSP kept
+}
+
+fn hisTag(input: []const u32) ?[]const u8 {
+    return His.detect(input).classify.tag();
+}
+
+fn hisCtxTag(ctx: His.Context, input: []const u32) ?[]const u8 {
+    return His.detectWithContext(ctx, input).classify.tag();
+}
+
+fn expectCtxHazard(ctx: His.Context, input: []const u32, want_tag: []const u8, want_pos: []const usize) !void {
+    const v = His.detectWithContext(ctx, input);
+    try std.testing.expect(v.classify.tag() != null);
+    try std.testing.expectEqualStrings(want_tag, v.classify.tag().?);
+    try std.testing.expectEqualSlices(usize, want_pos, v.classify.positions());
+}
+
+test "hash-input-stability detect spot checks" {
+    // Mirrors the §8 detect spot checks (shared context-free fixture vectors in
+    // fixtures/security/detectors/hash_input_stability.json).
+    try std.testing.expect(His.detect(&[_]u32{}).classify.isClear()); // empty-clear
+    try std.testing.expect(His.detect(&[_]u32{ 0x61, 0x62, 0x63 }).classify.isClear()); // ascii-idempotent-clear
+
+    const trailing_space = His.detect(&[_]u32{ 0x61, 0x20 }); // trailing-space
+    try std.testing.expectEqualStrings("TrailingWhitespace", trailing_space.classify.tag().?);
+    try std.testing.expect(trailing_space.stable_size == 1);
+    try std.testing.expectEqualSlices(usize, &[_]usize{1}, trailing_space.classify.positions());
+
+    const trailing_crlf = His.detect(&[_]u32{ 0x61, 0x0D, 0x0A }); // trailing-crlf
+    try std.testing.expectEqualStrings("TrailingWhitespace", trailing_crlf.classify.tag().?);
+    try std.testing.expect(trailing_crlf.stable_size == 1);
+
+    const drift = His.detect(&[_]u32{ 0x0065, 0x0301 }); // decomposed-e-acute-normalization-drift
+    try std.testing.expectEqualStrings("NormalizationDrift", drift.classify.tag().?);
+    try std.testing.expectEqualSlices(usize, &[_]usize{0}, drift.classify.positions());
+
+    try std.testing.expect(His.detect(&[_]u32{0x00E9}).classify.isClear()); // precomposed-e-acute-clear
+    // priority-trailing-over-nfc: decomposed "é " — TrailingWhitespace wins.
+    try std.testing.expectEqualStrings("TrailingWhitespace", hisTag(&[_]u32{ 0x0065, 0x0301, 0x20 }).?);
+    try std.testing.expect(His.detect(&[_]u32{ 0x61, 0x20, 0x62 }).classify.isClear()); // internal-space-clear
+}
+
+test "hash-input-stability context probe vectors" {
+    // Every Context-bearing vector transcribed verbatim from the Rust
+    // #[test] module's Context comment block plus its #[test] functions
+    // (the shared JSON fixture schema cannot express a Context).
+
+    // detect_with_context(default) == detect.
+    {
+        const d = His.detect(&[_]u32{ 0x61, 0x62, 0x63 });
+        const c = His.detectWithContext(His.Context{}, &[_]u32{ 0x61, 0x62, 0x63 });
+        try std.testing.expectEqual(d.classify.isClear(), c.classify.isClear());
+        try std.testing.expect(d.stable_size == c.stable_size);
+    }
+
+    // declared_encoding = Some("utf-16"), [0x61,0x62,0x63] → EncodingMismatch, [0].
+    try expectCtxHazard(.{ .declared_encoding = "utf-16" }, &[_]u32{ 0x61, 0x62, 0x63 }, "EncodingMismatch", &[_]usize{0});
+    // declared_encoding = Some("utf-8"), [0x61,0xD800,0x62] → EncodingMismatch, [1] (invalid surrogate).
+    try expectCtxHazard(.{ .declared_encoding = "utf-8" }, &[_]u32{ 0x61, 0xD800, 0x62 }, "EncodingMismatch", &[_]usize{1});
+    // declared_encoding = Some("utf-8"), [0x61,0x110000,0x62] → EncodingMismatch, [1] (out of range).
+    try expectCtxHazard(.{ .declared_encoding = "utf-8" }, &[_]u32{ 0x61, 0x110000, 0x62 }, "EncodingMismatch", &[_]usize{1});
+    // declared_encoding = Some("UTF-8"|"utf-8"|"UTF8"|"utf8"), [0x61,0x62,0x63] → clear.
+    for ([_][]const u8{ "UTF-8", "utf-8", "UTF8", "utf8" }) |label| {
+        try std.testing.expect(hisCtxTag(.{ .declared_encoding = label }, &[_]u32{ 0x61, 0x62, 0x63 }) == null);
+    }
+
+    // rfc_rule = Pgp4880TrailingWhitespace, [0x61,0x20] → SignedMessageRule, [1].
+    try expectCtxHazard(.{ .rfc_rule = .pgp4880_trailing_whitespace }, &[_]u32{ 0x61, 0x20 }, "SignedMessageRule", &[_]usize{1});
+    // rfc_rule = Pgp9580LineEnding, [0x61,0x0A,0x62] → SignedMessageRule, [1] (bare LF).
+    try expectCtxHazard(.{ .rfc_rule = .pgp9580_line_ending }, &[_]u32{ 0x61, 0x0A, 0x62 }, "SignedMessageRule", &[_]usize{1});
+    // rfc_rule = Pgp9580LineEnding, [0x61,0x62,0x63,0x0D,0x0A,0x64,0x65,0x66] → clear (CRLF).
+    try std.testing.expect(hisCtxTag(.{ .rfc_rule = .pgp9580_line_ending }, &[_]u32{ 0x61, 0x62, 0x63, 0x0D, 0x0A, 0x64, 0x65, 0x66 }) == null);
+    // rfc_rule = Rfc8785NfcRequirement, [0x0065,0x0301] → SignedMessageRule, [0].
+    try expectCtxHazard(.{ .rfc_rule = .rfc8785_nfc_requirement }, &[_]u32{ 0x0065, 0x0301 }, "SignedMessageRule", &[_]usize{0});
+    // rfc_rule = Rfc8259ControlChar, [0x61,0x01,0x62] → SignedMessageRule, [1].
+    try expectCtxHazard(.{ .rfc_rule = .rfc8259_control_char }, &[_]u32{ 0x61, 0x01, 0x62 }, "SignedMessageRule", &[_]usize{1});
+    // rfc_rule = Rfc7515JwsBase64Url, [0x41,0x2B,0x42] → SignedMessageRule, [1] ('+').
+    try expectCtxHazard(.{ .rfc_rule = .rfc7515_jws_base64_url }, &[_]u32{ 0x41, 0x2B, 0x42 }, "SignedMessageRule", &[_]usize{1});
+    // rfc_rule = Rfc7515JwsBase64Url, [0x41,0x61,0x30,0x2D,0x5F,0x7A,0x5A,0x39] → clear.
+    try std.testing.expect(hisCtxTag(.{ .rfc_rule = .rfc7515_jws_base64_url }, &[_]u32{ 0x41, 0x61, 0x30, 0x2D, 0x5F, 0x7A, 0x5A, 0x39 }) == null);
+    // rfc_rule = Rfc6376DkimRelaxed, [0x61,0x20,0x20,0x62] → SignedMessageRule, [2].
+    try expectCtxHazard(.{ .rfc_rule = .rfc6376_dkim_relaxed }, &[_]u32{ 0x61, 0x20, 0x20, 0x62 }, "SignedMessageRule", &[_]usize{2});
+    // rfc_rule = Rfc6376DkimRelaxed, [0x61,0x20,0x62] → clear (single space).
+    try std.testing.expect(hisCtxTag(.{ .rfc_rule = .rfc6376_dkim_relaxed }, &[_]u32{ 0x61, 0x20, 0x62 }) == null);
+    // rfc_rule = Rfc5751SmimeLineEnding, [0x61,0x0A,0x62] → SignedMessageRule, [1] (bare LF).
+    try expectCtxHazard(.{ .rfc_rule = .rfc5751_smime_line_ending }, &[_]u32{ 0x61, 0x0A, 0x62 }, "SignedMessageRule", &[_]usize{1});
+
+    // as_written = Some([0x61,0x62,0x63]), input [0x61,0x62,0x64] → AuditLogReinterpretation, [2].
+    try expectCtxHazard(.{ .as_written = &[_]u32{ 0x61, 0x62, 0x63 } }, &[_]u32{ 0x61, 0x62, 0x64 }, "AuditLogReinterpretation", &[_]usize{2});
+    // as_written = Some([0x61,0x62,0x63]), input [0x61,0x62,0x63] → clear.
+    try std.testing.expect(hisCtxTag(.{ .as_written = &[_]u32{ 0x61, 0x62, 0x63 } }, &[_]u32{ 0x61, 0x62, 0x63 }) == null);
+    // server_bytes = Some([0x61,0x62,0x64]), input [0x61,0x62,0x63] → WebhookSignatureDrift, [2].
+    try expectCtxHazard(.{ .server_bytes = &[_]u32{ 0x61, 0x62, 0x64 } }, &[_]u32{ 0x61, 0x62, 0x63 }, "WebhookSignatureDrift", &[_]usize{2});
+    // server_bytes = Some([0x61,0x62,0x63]), input [0x61,0x62,0x63] → clear.
+    try std.testing.expect(hisCtxTag(.{ .server_bytes = &[_]u32{ 0x61, 0x62, 0x63 } }, &[_]u32{ 0x61, 0x62, 0x63 }) == null);
+
+    // declared_encoding = Some("utf-16") + rfc_rule = Pgp9580LineEnding,
+    // [0x0065,0x0301,0x0A] → EncodingMismatch (priority over rfc).
+    try std.testing.expectEqualStrings("EncodingMismatch", hisCtxTag(.{ .declared_encoding = "utf-16", .rfc_rule = .pgp9580_line_ending }, &[_]u32{ 0x0065, 0x0301, 0x0A }).?);
+    // server_bytes = Some([0x61,0x62,0x65]) + as_written = Some([0x61,0x62,0x66]),
+    // input [0x61,0x62,0x63] → WebhookSignatureDrift (priority over audit).
+    try std.testing.expectEqualStrings("WebhookSignatureDrift", hisCtxTag(.{ .server_bytes = &[_]u32{ 0x61, 0x62, 0x65 }, .as_written = &[_]u32{ 0x61, 0x62, 0x66 } }, &[_]u32{ 0x61, 0x62, 0x63 }).?);
+    // rfc_rule = Pgp4880TrailingWhitespace, [0x61,0x20] → SignedMessageRule (priority over trailing).
+    try std.testing.expectEqualStrings("SignedMessageRule", hisCtxTag(.{ .rfc_rule = .pgp4880_trailing_whitespace }, &[_]u32{ 0x61, 0x20 }).?);
+}
+
+test "hash-input-stability RfcRule tag round-trip" {
+    // Mirrors rfc_rule_tag_roundtrip: from_tag(tag()) == rule for every rule.
+    const rules = [_]His.RfcRule{
+        .pgp4880_trailing_whitespace,
+        .pgp9580_line_ending,
+        .rfc8785_nfc_requirement,
+        .rfc8259_control_char,
+        .rfc7515_jws_base64_url,
+        .rfc6376_dkim_relaxed,
+        .rfc5751_smime_line_ending,
+    };
+    for (rules) |rule| {
+        try std.testing.expectEqual(@as(?His.RfcRule, rule), His.RfcRule.fromTag(rule.tag()));
+    }
+    try std.testing.expectEqual(@as(?His.RfcRule, null), His.RfcRule.fromTag("nope"));
 }

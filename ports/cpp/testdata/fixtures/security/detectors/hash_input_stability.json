@@ -1,0 +1,54 @@
+{
+  "schema": 1,
+  "family": "hash-input-stability",
+  "cases": [
+    {
+      "name": "empty-clear",
+      "input": [],
+      "required_findings": []
+    },
+    {
+      "name": "ascii-idempotent-clear",
+      "input": [97, 98, 99],
+      "required_findings": []
+    },
+    {
+      "name": "trailing-space",
+      "input": [97, 32],
+      "required_findings": [
+        "unicode.security.K.hash-input-stability.TrailingWhitespace"
+      ]
+    },
+    {
+      "name": "trailing-crlf",
+      "input": [97, 13, 10],
+      "required_findings": [
+        "unicode.security.K.hash-input-stability.TrailingWhitespace"
+      ]
+    },
+    {
+      "name": "decomposed-e-acute-normalization-drift",
+      "input": [101, 769],
+      "required_findings": [
+        "unicode.security.K.hash-input-stability.NormalizationDrift"
+      ]
+    },
+    {
+      "name": "precomposed-e-acute-clear",
+      "input": [233],
+      "required_findings": []
+    },
+    {
+      "name": "priority-trailing-over-nfc",
+      "input": [101, 769, 32],
+      "required_findings": [
+        "unicode.security.K.hash-input-stability.TrailingWhitespace"
+      ]
+    },
+    {
+      "name": "internal-space-clear",
+      "input": [97, 32, 98],
+      "required_findings": []
+    }
+  ]
+}

@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 
 namespace UnicodeSecurity;
 
-public static class Security
+public static partial class Security
 {
     public static class Action
     {
@@ -55,6 +55,7 @@ public static class Security
         public const string RtlInjection = "rtl-injection";
         public const string ConfusableBidiCompound = "confusable-bidi-compound";
         public const string CovertDisplayCompound = "covert-display-compound";
+        public const string HashInputStability = "hash-input-stability";
     }
 
     public sealed record Finding(
@@ -235,6 +236,7 @@ public static class Security
             Family.HomoglyphConfusable or Family.MixedScriptAdmissibility => "I",
             Family.RtlInjection => "D",
             Family.ConfusableBidiCompound or Family.CovertDisplayCompound => "X",
+            Family.HashInputStability => "K",
             _ => "C",
         };
 

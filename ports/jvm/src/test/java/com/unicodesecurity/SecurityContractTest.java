@@ -19,6 +19,7 @@ public final class SecurityContractTest {
     testLocaleCaseInversion();
     testNormalizationBomb();
     testNfcIdempotenceWitness();
+    testHashInputStability();
     testConfusableBidiCompound();
     testSurrogateReassembly();
     testRtlInjection();
@@ -289,6 +290,153 @@ public final class SecurityContractTest {
     List<Integer> out = new ArrayList<>();
     for (int cp : codepoints) out.add(cp);
     return out;
+  }
+
+  // Pins the hash-input-stability detector against the verified Rust reference
+  // ports/rust/src/security/crypto/hash_input_stability.rs. Two independent
+  // sources of truth are exercised: (a) the shared context-free fixture
+  // detectors/hash_input_stability.json, run through HashInputStability.detect
+  // and checked against the fixture reason codes; (b) every Context-bearing
+  // vector transcribed verbatim from the Rust test module's comment block, which
+  // the shared detector-fixture schema cannot express. The detector reuses the
+  // port's own NFC (Security.toNfc) via HashInputStability.hashStable.
+  private static void testHashInputStability() throws IOException {
+    // (a) Shared context-free fixture through detect.
+    Map<String, Object> detector = fixture("detectors/hash_input_stability.json");
+    assertEquals(1, intValue(detector.get("schema")), "hash-input-stability schema");
+    assertEquals("hash-input-stability", string(detector, "family"), "hash-input-stability family");
+    int fixtureCases = 0;
+    for (Map<String, Object> entry : objects(detector.get("cases"))) {
+      HashInputStability.Verdict verdict = HashInputStability.detect(ints(entry.get("input")));
+      String code = HashInputStability.reasonCode(verdict.classify());
+      List<String> required = strings(entry.get("required_findings"));
+      if (required.isEmpty()) {
+        assertEquals(null, code, "hash-input-stability " + string(entry, "name") + " should be clear");
+      } else {
+        assertEquals(1, required.size(), "hash-input-stability " + string(entry, "name") + " single finding");
+        assertEquals(required.get(0), code, "hash-input-stability " + string(entry, "name"));
+      }
+      fixtureCases++;
+    }
+
+    // (b) Context-bearing vectors transcribed from the Rust test comment block.
+    int contextVectors = 0;
+
+    // declared_encoding = Some("utf-16"), [abc] → EncodingMismatch, [0]
+    assertHisCtx(HashInputStability.Context.empty().withDeclaredEncoding("utf-16"),
+        new int[] {0x61, 0x62, 0x63}, "EncodingMismatch", List.of(0), "ctx utf-16 label");
+    contextVectors++;
+    // declared_encoding = Some("utf-8"), [a,D800,b] → EncodingMismatch, [1] (invalid surrogate)
+    assertHisCtx(HashInputStability.Context.empty().withDeclaredEncoding("utf-8"),
+        new int[] {0x61, 0xD800, 0x62}, "EncodingMismatch", List.of(1), "ctx invalid surrogate");
+    contextVectors++;
+    // declared_encoding = Some("utf-8"), [a,110000,b] → EncodingMismatch, [1] (out of range)
+    assertHisCtx(HashInputStability.Context.empty().withDeclaredEncoding("utf-8"),
+        new int[] {0x61, 0x110000, 0x62}, "EncodingMismatch", List.of(1), "ctx out of range");
+    contextVectors++;
+    // declared_encoding = Some("UTF-8"|"utf-8"|"UTF8"|"utf8"), [abc] → clear
+    for (String label : new String[] {"UTF-8", "utf-8", "UTF8", "utf8"}) {
+      assertHisCtx(HashInputStability.Context.empty().withDeclaredEncoding(label),
+          new int[] {0x61, 0x62, 0x63}, null, List.of(), "ctx utf-8 label " + label);
+    }
+    contextVectors++;
+    // rfc_rule = Pgp4880TrailingWhitespace, [a,SP] → SignedMessageRule, [1]
+    assertHisCtx(HashInputStability.Context.empty().withRfcRule(HashInputStability.RfcRule.PGP4880_TRAILING_WHITESPACE),
+        new int[] {0x61, 0x20}, "SignedMessageRule", List.of(1), "ctx pgp4880");
+    contextVectors++;
+    // rfc_rule = Pgp9580LineEnding, [a,LF,b] → SignedMessageRule, [1] (bare LF)
+    assertHisCtx(HashInputStability.Context.empty().withRfcRule(HashInputStability.RfcRule.PGP9580_LINE_ENDING),
+        new int[] {0x61, 0x0A, 0x62}, "SignedMessageRule", List.of(1), "ctx pgp9580 bare lf");
+    contextVectors++;
+    // rfc_rule = Pgp9580LineEnding, [abc CRLF def] → clear
+    assertHisCtx(HashInputStability.Context.empty().withRfcRule(HashInputStability.RfcRule.PGP9580_LINE_ENDING),
+        new int[] {0x61, 0x62, 0x63, 0x0D, 0x0A, 0x64, 0x65, 0x66}, null, List.of(), "ctx pgp9580 crlf clear");
+    contextVectors++;
+    // rfc_rule = Rfc8785NfcRequirement, [0065,0301] → SignedMessageRule, [0]
+    assertHisCtx(HashInputStability.Context.empty().withRfcRule(HashInputStability.RfcRule.RFC8785_NFC_REQUIREMENT),
+        new int[] {0x0065, 0x0301}, "SignedMessageRule", List.of(0), "ctx rfc8785 decomposed");
+    contextVectors++;
+    // rfc_rule = Rfc8259ControlChar, [a,01,b] → SignedMessageRule, [1]
+    assertHisCtx(HashInputStability.Context.empty().withRfcRule(HashInputStability.RfcRule.RFC8259_CONTROL_CHAR),
+        new int[] {0x61, 0x01, 0x62}, "SignedMessageRule", List.of(1), "ctx rfc8259 control");
+    contextVectors++;
+    // rfc_rule = Rfc7515JwsBase64Url, [A,+,B] → SignedMessageRule, [1] ('+')
+    assertHisCtx(HashInputStability.Context.empty().withRfcRule(HashInputStability.RfcRule.RFC7515_JWS_BASE64URL),
+        new int[] {0x41, 0x2B, 0x42}, "SignedMessageRule", List.of(1), "ctx rfc7515 plus");
+    contextVectors++;
+    // rfc_rule = Rfc7515JwsBase64Url, [A,a,0,-,_,z,Z,9] → clear
+    assertHisCtx(HashInputStability.Context.empty().withRfcRule(HashInputStability.RfcRule.RFC7515_JWS_BASE64URL),
+        new int[] {0x41, 0x61, 0x30, 0x2D, 0x5F, 0x7A, 0x5A, 0x39}, null, List.of(), "ctx rfc7515 clean");
+    contextVectors++;
+    // rfc_rule = Rfc6376DkimRelaxed, [a,SP,SP,b] → SignedMessageRule, [2]
+    assertHisCtx(HashInputStability.Context.empty().withRfcRule(HashInputStability.RfcRule.RFC6376_DKIM_RELAXED),
+        new int[] {0x61, 0x20, 0x20, 0x62}, "SignedMessageRule", List.of(2), "ctx rfc6376 double space");
+    contextVectors++;
+    // rfc_rule = Rfc6376DkimRelaxed, [a,SP,b] → clear (single space)
+    assertHisCtx(HashInputStability.Context.empty().withRfcRule(HashInputStability.RfcRule.RFC6376_DKIM_RELAXED),
+        new int[] {0x61, 0x20, 0x62}, null, List.of(), "ctx rfc6376 single space clear");
+    contextVectors++;
+    // rfc_rule = Rfc5751SmimeLineEnding, [a,LF,b] → SignedMessageRule, [1] (bare LF)
+    assertHisCtx(HashInputStability.Context.empty().withRfcRule(HashInputStability.RfcRule.RFC5751_SMIME_LINE_ENDING),
+        new int[] {0x61, 0x0A, 0x62}, "SignedMessageRule", List.of(1), "ctx rfc5751 bare lf");
+    contextVectors++;
+    // as_written = Some([abc]), input [abd] → AuditLogReinterpretation, [2]
+    assertHisCtx(HashInputStability.Context.empty().withAsWritten(intList(new int[] {0x61, 0x62, 0x63})),
+        new int[] {0x61, 0x62, 0x64}, "AuditLogReinterpretation", List.of(2), "ctx audit divergence");
+    contextVectors++;
+    // as_written = Some([abc]), input [abc] → clear
+    assertHisCtx(HashInputStability.Context.empty().withAsWritten(intList(new int[] {0x61, 0x62, 0x63})),
+        new int[] {0x61, 0x62, 0x63}, null, List.of(), "ctx audit identical clear");
+    contextVectors++;
+    // server_bytes = Some([abd]), input [abc] → WebhookSignatureDrift, [2]
+    assertHisCtx(HashInputStability.Context.empty().withServerBytes(intList(new int[] {0x61, 0x62, 0x64})),
+        new int[] {0x61, 0x62, 0x63}, "WebhookSignatureDrift", List.of(2), "ctx webhook drift");
+    contextVectors++;
+    // server_bytes = Some([abc]), input [abc] → clear
+    assertHisCtx(HashInputStability.Context.empty().withServerBytes(intList(new int[] {0x61, 0x62, 0x63})),
+        new int[] {0x61, 0x62, 0x63}, null, List.of(), "ctx webhook match clear");
+    contextVectors++;
+    // declared_encoding = Some("utf-16") + rfc_rule = Pgp9580LineEnding,
+    //   [0065,0301,LF] → EncodingMismatch (priority over rfc)
+    assertHisCtx(HashInputStability.Context.empty()
+            .withDeclaredEncoding("utf-16")
+            .withRfcRule(HashInputStability.RfcRule.PGP9580_LINE_ENDING),
+        new int[] {0x0065, 0x0301, 0x0A}, "EncodingMismatch", List.of(0), "ctx priority encoding over rfc");
+    contextVectors++;
+    // server_bytes = Some([abe]) + as_written = Some([abf]), input [abc]
+    //   → WebhookSignatureDrift (priority over audit)
+    assertHisCtx(HashInputStability.Context.empty()
+            .withServerBytes(intList(new int[] {0x61, 0x62, 0x65}))
+            .withAsWritten(intList(new int[] {0x61, 0x62, 0x66})),
+        new int[] {0x61, 0x62, 0x63}, "WebhookSignatureDrift", List.of(2), "ctx priority webhook over audit");
+    contextVectors++;
+    // rfc_rule = Pgp4880TrailingWhitespace, [a,SP] → SignedMessageRule (priority over trailing)
+    assertHisCtx(HashInputStability.Context.empty().withRfcRule(HashInputStability.RfcRule.PGP4880_TRAILING_WHITESPACE),
+        new int[] {0x61, 0x20}, "SignedMessageRule", List.of(1), "ctx priority rfc over trailing");
+    contextVectors++;
+
+    // detect_with_context(empty) matches detect.
+    HashInputStability.Verdict bare = HashInputStability.detect(intList(new int[] {0x61, 0x62, 0x63}));
+    HashInputStability.Verdict ctxDefault =
+        HashInputStability.detectWithContext(HashInputStability.Context.empty(), intList(new int[] {0x61, 0x62, 0x63}));
+    assertEquals(bare.classify().tag(), ctxDefault.classify().tag(), "empty context matches detect tag");
+    assertEquals(bare.stableSize(), ctxDefault.stableSize(), "empty context matches detect stableSize");
+
+    // RfcRule fixture-tag round-trip.
+    for (HashInputStability.RfcRule rule : HashInputStability.RfcRule.values()) {
+      assertEquals(Optional.of(rule), HashInputStability.RfcRule.fromTag(rule.tag()), "rfc rule roundtrip " + rule);
+    }
+    assertEquals(Optional.empty(), HashInputStability.RfcRule.fromTag("nope"), "rfc rule unrecognised");
+
+    System.out.println("clean: JVM hash-input-stability passes (" + fixtureCases
+        + " fixture cases + " + contextVectors + " context vectors)");
+  }
+
+  private static void assertHisCtx(HashInputStability.Context ctx, int[] input,
+                                   String wantTag, List<Integer> wantPositions, String message) {
+    HashInputStability.Verdict verdict = HashInputStability.detectWithContext(ctx, intList(input));
+    assertEquals(wantTag, verdict.classify().tag(), message + " tag");
+    assertEquals(wantPositions, verdict.classify().positions(), message + " positions");
   }
 
   // Pins the confusable-bidi-compound detector against the detect_* spot-check
