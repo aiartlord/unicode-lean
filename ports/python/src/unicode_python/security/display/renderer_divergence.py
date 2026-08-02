@@ -3,8 +3,8 @@ render differently across font + terminal + browser stacks (the
 display-layer detector).
 
 Byte-faithful transliteration of the verified Rust reference
-``ports/rust/src/security/display/renderer_divergence.rs`` (itself a
-transliteration of ``Unicode.Security.Display.RendererDivergence``).
+implementation (itself a transliteration of
+``Unicode.Security.Display.RendererDivergence``).
 
 Threat model. An adversary crafts content that renders one way in the
 auditor's renderer (a benign glyph or an empty span) and a different way

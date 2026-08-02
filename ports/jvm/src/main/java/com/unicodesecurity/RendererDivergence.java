@@ -8,8 +8,8 @@ import java.util.List;
  * differently across font + terminal + browser stacks (display-layer detector).
  *
  * <p>Byte-faithful transliteration of the verified Rust reference
- * {@code ports/rust/src/security/display/renderer_divergence.rs}, itself a
- * transliteration of {@code Unicode/Security/Display/RendererDivergence.lean}.
+ * implementation, itself a transliteration of
+ * {@code Unicode/Security/Display/RendererDivergence.lean}.
  *
  * <p>Threat model. An adversary crafts content that renders one way in the
  * auditor's renderer (a benign glyph or an empty span) and a different way in

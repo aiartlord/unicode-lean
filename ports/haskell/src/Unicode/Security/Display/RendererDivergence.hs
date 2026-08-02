@@ -4,8 +4,7 @@ Description : Detection of codepoint shapes that render differently across stack
 
 Haskell port of @Unicode.Security.Display.RendererDivergence@ from unicode-lean,
 transliterated byte-faithfully from the verified Rust reference
-@ports/rust/src/security/display/renderer_divergence.rs@ (the display-layer
-detector, reason-code letter @D@).
+implementation (the display-layer detector, reason-code letter @D@).
 
 Threat model. An adversary crafts content that renders one way in the auditor's
 renderer (a benign glyph or an empty span) and a different way in the consumer's

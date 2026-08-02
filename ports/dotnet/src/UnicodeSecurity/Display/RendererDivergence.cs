@@ -4,9 +4,8 @@ namespace UnicodeSecurity;
 // to render differently across font + terminal + browser stacks (display-layer
 // detector).
 //
-// Direct port of the verified Rust reference implementation
-// ports/rust/src/security/display/renderer_divergence.rs, itself a byte-faithful
-// transliteration of Unicode/Security/Display/RendererDivergence.lean.
+// Direct port of the verified Rust reference implementation, itself a
+// byte-faithful transliteration of Unicode/Security/Display/RendererDivergence.lean.
 //
 // Threat model. An adversary crafts content that renders one way in the
 // auditor's renderer (a benign glyph or an empty span) and a different way in

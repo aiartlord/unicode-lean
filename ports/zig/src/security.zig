@@ -5447,7 +5447,7 @@ test "renderer-divergence GCB Extend predicate reuse" {
 
 test "renderer-divergence shared fixture vectors" {
     // The 9 rows of the shared context-free fixture
-    // (fixtures/security/detectors/renderer_divergence.json), inputs given as
+    // (the shared renderer_divergence.json detector fixture), inputs given as
     // codepoints. Clear rows assert isClear; hazard rows assert the fully
     // qualified reason code from required_findings.
 
