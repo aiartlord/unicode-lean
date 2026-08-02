@@ -301,6 +301,36 @@ export declare function identifierFormDriftSubThreatTag(
 ): string;
 export declare function identifierFormDriftDetect(input: number[]): IdentifierFormDriftVerdict;
 
+// ── admissibility-form-drift (layer X) ───────────────────────────────────────
+
+export type AdmissibilityFormDriftSubThreat = {
+  kind: "AdmissibilityFormDrift";
+  inputAdmissible: boolean;
+  nfkcAdmissible: boolean;
+};
+
+export interface AdmissibilityFormDriftClassification {
+  isClear: boolean;
+  tag: string | null;
+  sub: AdmissibilityFormDriftSubThreat | null;
+  positions: number[];
+}
+
+export interface AdmissibilityFormDriftVerdict {
+  input: number[];
+  classify: AdmissibilityFormDriftClassification;
+  inputAdmissible: boolean;
+  nfkcAdmissible: boolean;
+}
+
+export declare function admissibilityFormDriftReasonCode(subThreatTag: string): string;
+export declare function admissibilityFormDriftSubThreatTag(
+  sub: AdmissibilityFormDriftSubThreat,
+): string;
+export declare function admissibilityFormDriftDetect(
+  input: number[],
+): AdmissibilityFormDriftVerdict;
+
 // ── case-expansion-mismatch (layer F) ────────────────────────────────────────
 
 export type CaseExpansionMismatchSubThreat =

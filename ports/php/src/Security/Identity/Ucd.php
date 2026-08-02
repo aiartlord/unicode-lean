@@ -90,6 +90,10 @@ final class Ucd
     private static ?array $casedRanges = null;
     /** @var list<array{0:int,1:int}>|null */
     private static ?array $softDottedRanges = null;
+    /** @var list<array{0:int,1:int}>|null */
+    private static ?array $xidStartRanges = null;
+    /** @var list<array{0:int,1:int}>|null */
+    private static ?array $xidContinueRanges = null;
 
     // ── Shared parse helpers ────────────────────────────────────────────
 
@@ -844,6 +848,96 @@ final class Ucd
         $table = self::identifierAllowedRanges();
         $idx = self::lastStartLe($table, $cp);
         return $idx >= 0 && $cp <= $table[$idx][1];
+    }
+
+    // ── DerivedCoreProperties.txt — XID_Start / XID_Continue (UAX #31) ──
+
+    /** @return list<array{0:int,1:int}> */
+    private static function xidStartRanges(): array
+    {
+        if (self::$xidStartRanges === null) {
+            self::$xidStartRanges = self::parseCasingProperty('XID_Start', true);
+        }
+        return self::$xidStartRanges;
+    }
+
+    /** @return list<array{0:int,1:int}> */
+    private static function xidContinueRanges(): array
+    {
+        if (self::$xidContinueRanges === null) {
+            self::$xidContinueRanges = self::parseCasingProperty('XID_Continue', true);
+        }
+        return self::$xidContinueRanges;
+    }
+
+    /// True iff `cp` carries the `XID_Start` derived property.
+    public static function isXidStart(int $cp): bool
+    {
+        $table = self::xidStartRanges();
+        $idx = self::lastStartLe($table, $cp);
+        return $idx >= 0 && $cp <= $table[$idx][1];
+    }
+
+    /// True iff `cp` carries the `XID_Continue` derived property.
+    public static function isXidContinue(int $cp): bool
+    {
+        $table = self::xidContinueRanges();
+        $idx = self::lastStartLe($table, $cp);
+        return $idx >= 0 && $cp <= $table[$idx][1];
+    }
+
+    /// UAX #31 default identifier start: `XID_Start` or LOW LINE (U+005F).
+    public static function isDefaultIdStart(int $cp): bool
+    {
+        return self::isXidStart($cp) || $cp === 0x005F;
+    }
+
+    /// UAX #31 default identifier continue: `XID_Continue`.
+    public static function isDefaultIdContinue(int $cp): bool
+    {
+        return self::isXidContinue($cp);
+    }
+
+    /**
+     * UAX #31 default-identifier syntax over a whole codepoint sequence: a
+     * non-empty run whose head is a default id-start and whose tail is all
+     * default id-continue. The empty sequence is not a valid identifier.
+     * @param list<int> $cps
+     */
+    public static function isDefaultIdentifier(array $cps): bool
+    {
+        $cps = array_values($cps);
+        if ($cps === []) {
+            return false;
+        }
+        if (!self::isDefaultIdStart($cps[0])) {
+            return false;
+        }
+        $count = count($cps);
+        for ($i = 1; $i < $count; $i++) {
+            if (!self::isDefaultIdContinue($cps[$i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * UTS #39 whole-string admissibility: a UAX #31 default identifier every
+     * codepoint of which additionally has `Identifier_Status = Allowed`.
+     * @param list<int> $cps
+     */
+    public static function isAllowedIdentifier(array $cps): bool
+    {
+        if (!self::isDefaultIdentifier($cps)) {
+            return false;
+        }
+        foreach ($cps as $cp) {
+            if (!self::isIdAllowed($cp)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     // ── DerivedCoreProperties.txt — Default_Ignorable_Code_Point ────────

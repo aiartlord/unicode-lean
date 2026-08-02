@@ -900,6 +900,56 @@ module UnicodeRuby
         in_ranges?(soft_dotted_ranges, cp)
       end
 
+      # ── UAX #31 default identifier + UTS #39 whole-string admissibility ─────
+      #
+      # XID_Start / XID_Continue are read from DerivedCoreProperties.txt via the
+      # same `casing_property_ranges` parser that yields Cased / Soft_Dotted, so
+      # this is the real derived-core-property predicate, not a heuristic.
+      # `id_allowed?` (above) supplies the per-codepoint UTS #39
+      # Identifier_Status = Allowed test.
+
+      def xid_start_ranges
+        @xid_start_ranges ||= casing_property_ranges("XID_Start")
+      end
+
+      def xid_continue_ranges
+        @xid_continue_ranges ||= casing_property_ranges("XID_Continue")
+      end
+
+      def xid_start?(cp)
+        in_ranges?(xid_start_ranges, cp)
+      end
+
+      def xid_continue?(cp)
+        in_ranges?(xid_continue_ranges, cp)
+      end
+
+      # UAX #31 default identifier start: XID_Start or U+005F LOW LINE.
+      def default_id_start?(cp)
+        xid_start?(cp) || cp == 0x005F
+      end
+
+      # UAX #31 default identifier continue: XID_Continue.
+      def default_id_continue?(cp)
+        xid_continue?(cp)
+      end
+
+      # True iff `cps` is a well-formed UAX #31 default identifier: a non-empty
+      # sequence whose first codepoint is a default-id start and whose remaining
+      # codepoints are default-id continues.
+      def default_identifier?(cps)
+        return false if cps.empty?
+
+        default_id_start?(cps[0]) && cps[1..].all? { |cp| default_id_continue?(cp) }
+      end
+
+      # True iff `cps` is a well-formed default identifier AND every codepoint
+      # has Identifier_Status = Allowed per UTS #39 — the whole-string
+      # admissibility predicate `isAllowedIdentifier`.
+      def allowed_identifier?(cps)
+        default_identifier?(cps) && cps.all? { |cp| id_allowed?(cp) }
+      end
+
       # Context predicates (UAX #21).  `rev_prefix` is the preceding codepoints
       # nearest-first; `suffix` the strictly-following ones.
 

@@ -949,3 +949,99 @@ def restriction_level(cps: list[int]) -> RestrictionLevel:
     if is_minimally_restrictive(cps):
         return RestrictionLevel.MINIMALLY_RESTRICTIVE
     return RestrictionLevel.UNRESTRICTED
+
+
+# ─────────────────────────────────────────────────────────────────────
+# UAX #31 default identifier + UTS #39 whole-string admissibility
+#
+# XID_Start / XID_Continue come from DerivedCoreProperties.txt (parsed
+# the same way `Default_Ignorable_Code_Point` is above); `is_id_allowed`
+# (the per-codepoint UTS #39 Identifier_Status test) is defined earlier.
+# ─────────────────────────────────────────────────────────────────────
+
+
+def _parse_derived_core_property(name: str) -> list[tuple[int, int]]:
+    """Ranges of DerivedCoreProperties.txt rows whose property equals ``name``,
+    sorted by lower bound.  Mirrors ``_parse_default_ignorable`` but parameterised
+    by the property value."""
+    text = _read_data_file("DerivedCoreProperties.txt")
+    out: list[tuple[int, int]] = []
+    for line in text.splitlines():
+        stripped = _strip_comment_and_trim(line)
+        if not stripped:
+            continue
+        parts = stripped.split(";", 1)
+        if len(parts) < 2:
+            continue
+        if parts[1].strip() != name:
+            continue
+        out.append(_parse_range_field(parts[0]))
+    out.sort(key=lambda r: r[0])
+    return out
+
+
+_XID_START: list[tuple[int, int]] | None = None
+_XID_CONTINUE: list[tuple[int, int]] | None = None
+
+
+def _xid_start_ranges() -> list[tuple[int, int]]:
+    global _XID_START
+    if _XID_START is None:
+        _XID_START = _parse_derived_core_property("XID_Start")
+    return _XID_START
+
+
+def _xid_continue_ranges() -> list[tuple[int, int]]:
+    global _XID_CONTINUE
+    if _XID_CONTINUE is None:
+        _XID_CONTINUE = _parse_derived_core_property("XID_Continue")
+    return _XID_CONTINUE
+
+
+def _in_sorted_ranges(ranges: list[tuple[int, int]], cp: int) -> bool:
+    idx = _partition_point(ranges, lambda r: r[0], cp)
+    if idx > 0:
+        entry = ranges[idx - 1]
+        if cp <= entry[1]:
+            return True
+    return False
+
+
+def is_xid_start(cp: int) -> bool:
+    """UAX #31 ``XID_Start`` derived core property."""
+    return _in_sorted_ranges(_xid_start_ranges(), cp)
+
+
+def is_xid_continue(cp: int) -> bool:
+    """UAX #31 ``XID_Continue`` derived core property."""
+    return _in_sorted_ranges(_xid_continue_ranges(), cp)
+
+
+def is_default_id_start(cp: int) -> bool:
+    """UAX #31 default identifier start: ``XID_Start`` or U+005F LOW LINE."""
+    return is_xid_start(cp) or cp == 0x005F
+
+
+def is_default_id_continue(cp: int) -> bool:
+    """UAX #31 default identifier continue: ``XID_Continue``."""
+    return is_xid_continue(cp)
+
+
+def is_default_identifier(cps: list[int]) -> bool:
+    """True iff ``cps`` is a well-formed UAX #31 default identifier: a non-empty
+    sequence whose first codepoint is a default-id start and whose remaining
+    codepoints are default-id continues."""
+    if not cps:
+        return False
+    first = cps[0]
+    rest = cps[1:]
+    return is_default_id_start(first) and all(
+        is_default_id_continue(cp) for cp in rest
+    )
+
+
+def is_allowed_identifier(cps: list[int]) -> bool:
+    """True iff ``cps`` is a well-formed default identifier AND every codepoint
+    has ``Identifier_Status = Allowed`` per UTS #39 — the whole-string
+    admissibility predicate ``isAllowedIdentifier``."""
+    return is_default_identifier(cps) and all(is_id_allowed(cp) for cp in cps)

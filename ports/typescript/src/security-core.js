@@ -50,6 +50,7 @@ export const Family = Object.freeze({
   RendererDivergence: "renderer-divergence",
   FilenameDisguise: "filename-disguise",
   IdentifierFormDrift: "identifier-form-drift",
+  AdmissibilityFormDrift: "admissibility-form-drift",
   SkinToneVariationForgery: "skin-tone-variation-forgery",
   CaseExpansionMismatch: "case-expansion-mismatch",
 });
@@ -67,6 +68,8 @@ let simpleLowerCache;
 let simpleUpperCache;
 let casedRangesCache;
 let softDottedRangesCache;
+let xidStartRangesCache;
+let xidContinueRangesCache;
 let graphemeExtendRangesCache;
 let emojiRangesCache;
 let identifierAllowedRangesCache;
@@ -92,6 +95,8 @@ export function configureSecurityDataReader(reader) {
   simpleUpperCache = undefined;
   casedRangesCache = undefined;
   softDottedRangesCache = undefined;
+  xidStartRangesCache = undefined;
+  xidContinueRangesCache = undefined;
   graphemeExtendRangesCache = undefined;
   emojiRangesCache = undefined;
   identifierAllowedRangesCache = undefined;
@@ -416,7 +421,8 @@ function layer(family) {
   if (
     family === Family.ConfusableBidiCompound ||
     family === Family.CovertDisplayCompound ||
-    family === Family.IdentifierFormDrift
+    family === Family.IdentifierFormDrift ||
+    family === Family.AdmissibilityFormDrift
   ) {
     return "X";
   }
@@ -3678,6 +3684,118 @@ export function identifierFormDriftDetect(input) {
     input: cps,
     classify,
     shiftCount: identifierFormDriftStatusShiftCount(cps),
+  };
+}
+
+// ── admissibility-form-drift (boundary-layer detector X) ─────────────────────
+//
+// Mirrors Unicode.Security.Boundary.AdmissibilityFormDrift (and the verified
+// Rust reference). Fires on inputs whose UTS #39 whole-string
+// isAllowedIdentifier verdict differs between the input and its NFKC form. This
+// is the string-level complement of identifier-form-drift (which scans
+// Identifier_Status against the per-codepoint NFKD head): here the whole-string
+// admissibility predicate is evaluated twice — once on the input, once on
+// toNfkc(input). The two are not redundant. A sequence of decomposed Hangul
+// jamos passes the per-codepoint scan cleanly (each jamo has identity NFKD and
+// Restricted status on both sides) but fires here: the jamo sequence is rejected
+// by isAllowedIdentifier, while its NFKC composition into a precomposed Hangul
+// syllable is accepted.
+//
+// It reuses this port's own UTS #39 admissibility predicate
+// (isAllowedIdentifier = UAX #31 default identifier ∧ every codepoint Allowed)
+// and NFKC pipeline (toNfkcCodepoints), never a host normalization or identifier
+// library. Sole sub-threat: AdmissibilityFormDrift — the pair of booleans is
+// carried so the verdict records which direction the drift goes; no position is
+// reported because the predicate is whole-string.
+
+// UAX #31 XID_Start / XID_Continue ranges, parsed from DerivedCoreProperties.txt
+// (the same property parser that backs Cased / Soft_Dotted / Grapheme_Extend).
+function isXidStart(cp) {
+  if (xidStartRangesCache === undefined) {
+    xidStartRangesCache = parseDerivedProperty("XID_Start");
+  }
+  return inRanges(xidStartRangesCache, cp);
+}
+
+function isXidContinue(cp) {
+  if (xidContinueRangesCache === undefined) {
+    xidContinueRangesCache = parseDerivedProperty("XID_Continue");
+  }
+  return inRanges(xidContinueRangesCache, cp);
+}
+
+// UAX #31 default identifier start: XID_Start or U+005F LOW LINE.
+function isDefaultIdStart(cp) {
+  return isXidStart(cp) || cp === 0x005f;
+}
+
+// UAX #31 default identifier continue: XID_Continue.
+function isDefaultIdContinue(cp) {
+  return isXidContinue(cp);
+}
+
+// True iff cps is a well-formed UAX #31 default identifier: a non-empty sequence
+// whose first codepoint is a default-id start and whose remaining codepoints are
+// default-id continues.
+function isDefaultIdentifier(cps) {
+  if (cps.length === 0) {
+    return false;
+  }
+  const [first, ...rest] = cps;
+  return isDefaultIdStart(first) && rest.every((cp) => isDefaultIdContinue(cp));
+}
+
+// True iff cps is a well-formed default identifier AND every codepoint has
+// Identifier_Status = Allowed per UTS #39 (the whole-string admissibility
+// predicate isAllowedIdentifier). Reuses this port's own isIdAllowed.
+function isAllowedIdentifier(cps) {
+  return isDefaultIdentifier(cps) && cps.every((cp) => isIdAllowed(cp));
+}
+
+export function admissibilityFormDriftSubThreatTag(sub) {
+  switch (sub.kind) {
+    case "AdmissibilityFormDrift":
+      return "AdmissibilityFormDrift";
+    default:
+      throw new Error(`unreachable admissibility-form-drift sub-threat kind: ${sub.kind}`);
+  }
+}
+
+// Stable reason code for an admissibility-form-drift sub-threat (layer X).
+export function admissibilityFormDriftReasonCode(subThreatTag) {
+  return reasonCode(Family.AdmissibilityFormDrift, subThreatTag);
+}
+
+function admissibilityFormDriftClearClassify() {
+  return { isClear: true, tag: null, sub: null, positions: [] };
+}
+
+function admissibilityFormDriftHazardClassify(sub) {
+  // The predicate is whole-string, so no position is implicated.
+  return { isClear: false, tag: admissibilityFormDriftSubThreatTag(sub), sub, positions: [] };
+}
+
+// The AdmissibilityFormDrift detection function (mirrors the Lean/Rust detect).
+export function admissibilityFormDriftDetect(input) {
+  const cps = Array.from(input);
+  const nfkc = toNfkcCodepoints(cps);
+  const inOk = isAllowedIdentifier(cps);
+  const nfkcOk = isAllowedIdentifier(nfkc);
+
+  const classify =
+    inOk === nfkcOk
+      ? admissibilityFormDriftClearClassify()
+      : admissibilityFormDriftHazardClassify({
+          kind: "AdmissibilityFormDrift",
+          inputAdmissible: inOk,
+          nfkcAdmissible: nfkcOk,
+        });
+
+  return {
+    input: cps,
+    classify,
+    inputAdmissible: inOk,
+    nfkcAdmissible: nfkcOk,
   };
 }
 

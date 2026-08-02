@@ -10,16 +10,20 @@ variation selector or a tag-block character) is the second.  The
 identifier-form-drift detector is a boundary-layer member of a different
 shape: it fires on a single codepoint whose UTS #39 ``Identifier_Status``
 disagrees with the status of its NFKD head, the two-stage validate-then-
-normalise bypass.
+normalise bypass.  The admissibility-form-drift detector is its whole-string
+complement: it fires when the UTS #39 ``is_allowed_identifier`` verdict differs
+between the input and its NFKC form.
 """
 
 from . import (
+    admissibility_form_drift,
     confusable_bidi_compound,
     covert_display_compound,
     identifier_form_drift,
 )
 
 __all__ = [
+    "admissibility_form_drift",
     "confusable_bidi_compound",
     "covert_display_compound",
     "identifier_form_drift",
