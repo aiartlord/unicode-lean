@@ -8,7 +8,7 @@
          mixed_script_subthreat/1, rtl_injection_detect/1,
          confusable_bidi_detect/1, covert_display_detect/1,
          locale_case_detect/1, nfc_witness_detect/1, normalization_bomb_detect/1,
-         bip39_detect/1, bip39_canonical/1, sub_tag/1]).
+         bip39_detect/1, bip39_canonical/1, sub_tag/1, is_vs/1]).
 
 %% Covert: tag block
 tag_block_detect(Input) ->

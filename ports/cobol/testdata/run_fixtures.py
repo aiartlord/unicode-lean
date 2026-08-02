@@ -377,6 +377,69 @@ def check_emoji_zwj_integrity():
     return len(fixture["cases"]), len(spot), 3
 
 
+RD_BASE = "unicode.security.D.renderer-divergence."
+
+
+def run_rd(values):
+    return run("renderer-divergence", "gateway-header", "observe", values)
+
+
+def check_renderer_divergence():
+    # 1. The 9 shared context-free fixture vectors.
+    fixture = load("detectors/renderer_divergence.json")
+    for case in fixture["cases"]:
+        got = run_rd(case["input"])
+        for code in case["required_findings"]:
+            require(code in got["codes"],
+                    f"rd/{case['name']} missing {code}; got {got['codes']}")
+        if not case["required_findings"]:
+            require(all(".renderer-divergence." not in code for code in got["codes"]),
+                    f"rd/{case['name']} unexpected finding; got {got['codes']}")
+
+    # 2. The 9 spot-checks transcribed verbatim from the Rust reference's
+    #    `#[test]` module (empty / ascii / han clear, vs-variance,
+    #    rgi-family-clear, unregistered-zwj, zalgo-combining-stack, fullwidth,
+    #    mixed-direction). tag = suffix or None for Clear; pos = expected
+    #    positions or None to skip.
+    spot = [
+        ("empty", [], None, None),
+        ("ascii", [0x48, 0x65, 0x6C, 0x6C, 0x6F], None, None),
+        ("han", [0x4E2D, 0x6587], None, None),
+        ("vs-variance", [0x1F600, 0xFE0F], "VariationSelectorVariance", [1]),
+        ("rgi-family-clear", [0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466],
+         None, None),
+        ("unregistered-zwj", [0x1F468, 0x200D, 0x1F469], "UnregisteredZwjVariance", [1]),
+        ("zalgo-combining-stack", [0x0061, 0x0301, 0x0302, 0x0303, 0x0304],
+         "CombiningStackOverflow", [0]),
+        ("fullwidth", [0xFF21], "FullwidthVariance", [0]),
+        ("mixed-direction", [0x41, 0x42, 0x05D0, 0x05D1], "MixedDirectionVariance", []),
+    ]
+    for name, values, tag, expected_pos in spot:
+        got = run_rd(values)
+        rd_codes = [c for c in got["codes"] if ".renderer-divergence." in c]
+        if tag is None:
+            require(not rd_codes, f"rd-spot/{name} expected clear; got {rd_codes}")
+        else:
+            code = RD_BASE + tag
+            require(code in got["codes"], f"rd-spot/{name} missing {code}; got {got['codes']}")
+            if expected_pos is not None:
+                require(got["positions"].get(code) == expected_pos,
+                        f"rd-spot/{name} positions {got['positions'].get(code)} != {expected_pos}")
+
+    # 3. Two structural checks on the priority order: a combining stack outranks
+    #    a variation selector present later, and exactly three combining marks
+    #    is below the stack threshold (no overflow).
+    beats = run_rd([0x0061, 0x0301, 0x0302, 0x0303, 0x0304, 0xFE0F])
+    require(RD_BASE + "CombiningStackOverflow" in beats["codes"],
+            f"rd-struct/combining-stack-beats-vs missing CombiningStackOverflow; got {beats['codes']}")
+
+    three = run_rd([0x0061, 0x0301, 0x0302, 0x0303])
+    require(RD_BASE + "CombiningStackOverflow" not in three["codes"],
+            f"rd-struct/three-marks-below-threshold fired CombiningStackOverflow; got {three['codes']}")
+
+    return len(fixture["cases"]), len(spot), 2
+
+
 def check_forms_and_bip39():
     cases = [
         ("forms", [], []),
@@ -585,6 +648,7 @@ def main():
     his_fixture_count, his_context_count = check_hash_input_stability()
     awd_fixture_count, awd_context_count = check_ai_watermark_detectability()
     ezwj_fixture_count, ezwj_spot_count, ezwj_struct_count = check_emoji_zwj_integrity()
+    rd_fixture_count, rd_spot_count, rd_struct_count = check_renderer_divergence()
     check_forms_and_bip39()
     ss_count = check_stream_safe_violation()
     check_generated_tables()
@@ -602,6 +666,9 @@ def main():
     print(f"emoji-zwj-integrity shared-fixture vectors: {ezwj_fixture_count}")
     print(f"emoji-zwj-integrity spot-checks: {ezwj_spot_count}")
     print(f"emoji-zwj-integrity structural checks: {ezwj_struct_count}")
+    print(f"renderer-divergence shared-fixture vectors: {rd_fixture_count}")
+    print(f"renderer-divergence spot-checks: {rd_spot_count}")
+    print(f"renderer-divergence structural checks: {rd_struct_count}")
     print("ok: cobol unicode security fixture tests pass")
 
 

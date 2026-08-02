@@ -241,6 +241,16 @@ WORKING-STORAGE SECTION.
 01 EZ-POS-TABLE.
    05 EZ-POS OCCURS 4096 TIMES PIC 9(9) COMP-5.
 01 SEQ-KEY PIC X(256).
+*> ── renderer-divergence (D) display-variance ladder state ─────────────
+*> MIN-COMBINING-STACK and ZWJ mirror the Rust reference constants.
+01 RD-MIN-STACK PIC 9(2) COMP-5 VALUE 4.
+01 RD-ZWJ PIC 9(9) COMP-5 VALUE 8205.
+01 RD-DONE PIC 9 VALUE 0.
+01 RD-HAS-ZWJ PIC 9 VALUE 0.
+01 RD-LTR-COUNT PIC 9(5) COMP-5 VALUE 0.
+01 RD-RTL-COUNT PIC 9(5) COMP-5 VALUE 0.
+01 RD-ALL-EXT PIC 9 VALUE 0.
+01 RD-POS PIC 9(9) COMP-5 VALUE 0.
 01 VOCAB-RAW.
    05 FILLER PIC X(26) VALUE "05delve                   ".
    05 FILLER PIC X(26) VALUE "07delving                 ".
@@ -362,7 +372,11 @@ MAIN.
                                     IF OP-NAME = "emoji-zwj-integrity"
                                         PERFORM SCAN-EMOJI-ZWJ
                                     ELSE
-                                        PERFORM SCAN-CORE
+                                        IF OP-NAME = "renderer-divergence"
+                                            PERFORM SCAN-RENDERER-DIVERGENCE
+                                        ELSE
+                                            PERFORM SCAN-CORE
+                                        END-IF
                                     END-IF
                                 END-IF
                             END-IF
@@ -2089,6 +2103,158 @@ IS-ZWJ-REGISTERED.
 IS-ZWJ-TARGET.
     MOVE 0 TO TABLE-FLAG
     COPY "src/generated/zwj_alphabet.cpy".
+
+SCAN-RENDERER-DIVERGENCE.
+*> Display-layer variance detector. Byte-faithful transliteration of the
+*> Rust reference security/display/renderer_divergence.rs: five variance
+*> triggers tested in priority order over one input. The first trigger that
+*> holds classifies the input; when none hold the input is clear (it renders
+*> the same across the renderer cohort the Standard documents as stable). It
+*> reuses the port's own tables only — the variation-selector ranges, the
+*> GCB=Extend class from gcb_class.cpy, the registered RGI ZWJ set from
+*> zwj_registered.cpy, the fullwidth/halfwidth block, and the strong-LTR /
+*> strong-RTL bidi classes.
+    MOVE 0 TO RD-DONE
+    PERFORM RD-COUNTS
+*> Priority 1: a Zalgo-style combining-mark stack of >= 4 marks on a base.
+    PERFORM RD-CHECK-COMBINING-STACK
+*> Priority 2: any variation selector present.
+    IF RD-DONE = 0
+        PERFORM RD-CHECK-VS
+    END-IF
+*> Priority 3: a ZWJ-containing input not in the registered RGI ZWJ set.
+    IF RD-DONE = 0
+        PERFORM RD-CHECK-ZWJ
+    END-IF
+*> Priority 4: a fullwidth/halfwidth codepoint present.
+    IF RD-DONE = 0
+        PERFORM RD-CHECK-FULLWIDTH
+    END-IF
+*> Priority 5: both strong-LTR and strong-RTL codepoints in one input.
+    IF RD-DONE = 0
+        PERFORM RD-CHECK-MIXED
+    END-IF.
+
+RD-COUNTS.
+*> ZWJ presence plus the strong-LTR / strong-RTL tallies the mixed-direction
+*> rung consults; the strong-bidi predicates are the port's own bidi tables.
+    MOVE 0 TO RD-HAS-ZWJ RD-LTR-COUNT RD-RTL-COUNT
+    PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
+        IF CP(IDX) = RD-ZWJ
+            MOVE 1 TO RD-HAS-ZWJ
+        END-IF
+        MOVE CP(IDX) TO LOOKUP-CP
+        PERFORM IS-STRONG-LTR
+        IF TABLE-FLAG = 1
+            ADD 1 TO RD-LTR-COUNT
+        END-IF
+        MOVE CP(IDX) TO LOOKUP-CP
+        PERFORM IS-STRONG-RTL
+        IF TABLE-FLAG = 1
+            ADD 1 TO RD-RTL-COUNT
+        END-IF
+    END-PERFORM.
+
+RD-CHECK-COMBINING-STACK.
+*> First base codepoint (not GCB=Extend) immediately followed by exactly
+*> RD-MIN-STACK consecutive GCB=Extend marks; reports the base position.
+    MOVE 1 TO IDX
+    PERFORM UNTIL IDX > CP-COUNT OR RD-DONE = 1
+        MOVE CP(IDX) TO LOOKUP-CP
+        PERFORM LOOKUP-GCB
+        IF GCB-CLASS NOT = 5 AND (IDX + RD-MIN-STACK) <= CP-COUNT
+            MOVE 1 TO RD-ALL-EXT
+            PERFORM VARYING JDX FROM 1 BY 1 UNTIL JDX > RD-MIN-STACK
+                MOVE CP(IDX + JDX) TO LOOKUP-CP
+                PERFORM LOOKUP-GCB
+                IF GCB-CLASS NOT = 5
+                    MOVE 0 TO RD-ALL-EXT
+                END-IF
+            END-PERFORM
+            IF RD-ALL-EXT = 1
+                MOVE "unicode.security.D.renderer-divergence.CombiningStackOverflow" TO TEMP-CODE
+                COMPUTE RD-POS = IDX - 1
+                PERFORM RD-EMIT-ONE
+                MOVE 1 TO RD-DONE
+            END-IF
+        END-IF
+        ADD 1 TO IDX
+    END-PERFORM.
+
+RD-CHECK-VS.
+*> First variation selector (FE00-FE0F, E0100-E01EF, or 180B-180D).
+    MOVE 1 TO IDX
+    PERFORM UNTIL IDX > CP-COUNT OR RD-DONE = 1
+        MOVE CP(IDX) TO LOOKUP-CP
+        PERFORM IS-VARIATION-SELECTOR
+        IF TABLE-FLAG = 1
+            MOVE "unicode.security.D.renderer-divergence.VariationSelectorVariance" TO TEMP-CODE
+            COMPUTE RD-POS = IDX - 1
+            PERFORM RD-EMIT-ONE
+            MOVE 1 TO RD-DONE
+        END-IF
+        ADD 1 TO IDX
+    END-PERFORM.
+
+RD-CHECK-ZWJ.
+*> A ZWJ-bearing input that is not an exactly-registered RGI ZWJ sequence;
+*> reports the first ZWJ. Registered sequences fall through to later rungs.
+    IF RD-HAS-ZWJ = 1
+        PERFORM BUILD-SEQ-KEY
+        PERFORM IS-ZWJ-REGISTERED
+        IF TABLE-FLAG = 0
+            MOVE 1 TO IDX
+            PERFORM UNTIL IDX > CP-COUNT OR RD-DONE = 1
+                IF CP(IDX) = RD-ZWJ
+                    MOVE "unicode.security.D.renderer-divergence.UnregisteredZwjVariance" TO TEMP-CODE
+                    COMPUTE RD-POS = IDX - 1
+                    PERFORM RD-EMIT-ONE
+                    MOVE 1 TO RD-DONE
+                END-IF
+                ADD 1 TO IDX
+            END-PERFORM
+        END-IF
+    END-IF.
+
+RD-CHECK-FULLWIDTH.
+*> First codepoint in the Halfwidth and Fullwidth Forms block FF01..FFEF.
+    MOVE 1 TO IDX
+    PERFORM UNTIL IDX > CP-COUNT OR RD-DONE = 1
+        IF CP(IDX) >= 65281 AND CP(IDX) <= 65519
+            MOVE "unicode.security.D.renderer-divergence.FullwidthVariance" TO TEMP-CODE
+            COMPUTE RD-POS = IDX - 1
+            PERFORM RD-EMIT-ONE
+            MOVE 1 TO RD-DONE
+        END-IF
+        ADD 1 TO IDX
+    END-PERFORM.
+
+RD-CHECK-MIXED.
+*> Both strong-LTR and strong-RTL present; positions are intentionally empty.
+    IF RD-LTR-COUNT > 0 AND RD-RTL-COUNT > 0
+        MOVE "unicode.security.D.renderer-divergence.MixedDirectionVariance" TO TEMP-CODE
+        ADD 1 TO FINDING-COUNT
+        MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
+        MOVE SPACES TO FINDING-POS(FINDING-COUNT)
+        MOVE 1 TO RD-DONE
+    END-IF.
+
+RD-EMIT-ONE.
+    MOVE RD-POS TO POS-NUM
+    ADD 1 TO FINDING-COUNT
+    MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
+    MOVE FUNCTION TRIM(POS-NUM) TO FINDING-POS(FINDING-COUNT).
+
+IS-VARIATION-SELECTOR.
+*> The port's own variation-selector ranges, shared with DETECT-VARIATION.
+    MOVE 0 TO TABLE-FLAG
+    IF (LOOKUP-CP >= 65024 AND LOOKUP-CP <= 65039) OR (LOOKUP-CP >= 917760 AND LOOKUP-CP <= 917999) OR (LOOKUP-CP >= 6155 AND LOOKUP-CP <= 6157)
+        MOVE 1 TO TABLE-FLAG
+    END-IF.
+
+IS-STRONG-LTR.
+    MOVE 0 TO TABLE-FLAG
+    COPY "src/generated/strong_ltr.cpy".
 
 SELECT-ACTION.
     MOVE 0 TO BLOCKING-FLAG

@@ -21,6 +21,9 @@ module Unicode.Security.Policy
   , familyTag
   , isConfusableSource
   , isDefaultIgnorableCodepoint
+  , isVariationSelector
+  , isStrongLtr
+  , isStrongRtl
   , policyOfProfile
   , scan
   , scanUtf8

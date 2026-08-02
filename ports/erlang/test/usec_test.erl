@@ -13,6 +13,7 @@ run() ->
     stream_safe_tests(),
     ai_watermark_tests(),
     emoji_zwj_integrity_tests(),
+    renderer_divergence_tests(),
     opaque_blob_tests(),
     grapheme_tests(),
     io:format("ok: erlang unicode security tests pass~n").
@@ -448,6 +449,77 @@ emoji_zwj_integrity_tests() ->
     assert_eq(<<"DoubleZWJ">>, ezwj_tag([16#1F468, 16#200D, 16#200D, 16#1F466]), ezwj_double_beats_unregistered),
 
     io:format("  emoji-zwj-integrity: fixture + 11 spot-checks + 3 structural pass~n").
+
+%% Reason code the detect verdict would emit for a given input, or `none' when
+%% clear. Mirrors usec_policy:scan_renderer_divergence's finding wiring.
+rd_code(Input) ->
+    C = maps:get(classify, usec_renderer_divergence:detect(Input)),
+    case usec_renderer_divergence:classify_tag(C) of
+        none -> none;
+        Tag -> usec_policy:reason_code(renderer_divergence, Tag)
+    end.
+
+%% The classification tag for an input, or `none' when clear.
+rd_tag(Input) ->
+    usec_renderer_divergence:classify_tag(maps:get(classify, usec_renderer_divergence:detect(Input))).
+
+renderer_divergence_tests() ->
+    %% ── Shared context-free fixture, run through detect. ────────────────
+    F = fixture(filename:join("detectors", "renderer_divergence.json")),
+    assert_eq(<<"renderer-divergence">>, maps:get(<<"family">>, F), rd_fixture_family),
+    lists:foreach(fun(Case) ->
+                          Input = maps:get(<<"input">>, Case),
+                          Label = {rd_fixture, maps:get(<<"name">>, Case)},
+                          Required = maps:get(<<"required_findings">>, Case),
+                          Codes = case rd_code(Input) of
+                                      none -> [];
+                                      Code -> [Code]
+                                  end,
+                          lists:foreach(fun(Req) -> assert(lists:member(Req, Codes), Label) end, Required),
+                          case Required of
+                              [] -> assert(Codes =:= [], Label);
+                              _ -> ok
+                          end
+                  end, maps:get(<<"cases">>, F)),
+
+    %% ── §5 detect spot checks (the 9 rust #[test] cases). ───────────────
+    %% detect_empty_clear
+    assert(usec_renderer_divergence:is_clear(maps:get(classify, usec_renderer_divergence:detect([]))), rd_empty_clear),
+    assert_eq(none, rd_tag([]), rd_empty_tag),
+    %% detect_ascii_clear
+    assert_eq(none, rd_tag([16#48, 16#65, 16#6C, 16#6C, 16#6F]), rd_ascii_clear),
+    %% detect_han_clear
+    assert_eq(none, rd_tag([16#4E2D, 16#6587]), rd_han_clear),
+    %% detect_vs_variance — a single VS (FE0F) after an emoji.
+    assert_eq(<<"VariationSelectorVariance">>, rd_tag([16#1F600, 16#FE0F]), rd_vs_variance),
+    %% detect_rgi_family_clear — a registered RGI family ZWJ sequence.
+    FamilyV = usec_renderer_divergence:detect([16#1F468, 16#200D, 16#1F469, 16#200D, 16#1F467, 16#200D, 16#1F466]),
+    assert(usec_renderer_divergence:is_clear(maps:get(classify, FamilyV)), rd_rgi_family_clear),
+    assert_eq(true, maps:get(has_zwj, FamilyV), rd_rgi_family_has_zwj),
+    %% detect_unregistered_zwj_variance — man + ZWJ + woman, not in RGI.
+    assert_eq(<<"UnregisteredZwjVariance">>, rd_tag([16#1F468, 16#200D, 16#1F469]), rd_unregistered_zwj),
+    %% detect_zalgo_variance — a 4-deep combining stack.
+    ZalgoV = usec_renderer_divergence:detect([16#0061, 16#0301, 16#0302, 16#0303, 16#0304]),
+    ZalgoC = maps:get(classify, ZalgoV),
+    assert_eq(<<"CombiningStackOverflow">>, usec_renderer_divergence:classify_tag(ZalgoC), rd_zalgo_tag),
+    assert_eq([0], usec_renderer_divergence:classify_positions(ZalgoC), rd_zalgo_positions),
+    assert_eq(4, maps:get(combining_count, ZalgoV), rd_zalgo_combining_count),
+    %% detect_fullwidth_variance — fullwidth 'A'.
+    assert_eq(<<"FullwidthVariance">>, rd_tag([16#FF21]), rd_fullwidth_variance),
+    %% detect_mixed_direction — Latin + Hebrew in one input.
+    MixedV = usec_renderer_divergence:detect([16#41, 16#42, 16#05D0, 16#05D1]),
+    assert_eq(<<"MixedDirectionVariance">>, usec_renderer_divergence:classify_tag(maps:get(classify, MixedV)), rd_mixed_direction),
+    assert(maps:get(strong_ltr_count, MixedV) > 0 andalso maps:get(strong_rtl_count, MixedV) > 0, rd_mixed_direction_counts),
+
+    %% ── Priority structural checks (the 2 rust structural #[test] cases). ─
+    %% A combining stack outranks a variation selector present later.
+    assert_eq(<<"CombiningStackOverflow">>,
+              rd_tag([16#0061, 16#0301, 16#0302, 16#0303, 16#0304, 16#FE0F]), rd_combining_beats_vs),
+    %% Exactly three combining marks is below the stack threshold — no overflow.
+    ThreeV = usec_renderer_divergence:detect([16#0061, 16#0301, 16#0302, 16#0303]),
+    assert(usec_renderer_divergence:classify_tag(maps:get(classify, ThreeV)) =/= <<"CombiningStackOverflow">>, rd_three_below_threshold),
+
+    io:format("  renderer-divergence: fixture + 9 spot-checks + 2 structural pass~n").
 
 fixture(Rel) ->
     {ok, Bin} = file:read_file(filename:join(["test", "fixtures", "security", Rel])),

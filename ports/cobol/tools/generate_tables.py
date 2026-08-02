@@ -57,6 +57,22 @@ def parse_bidi_ranges(path):
     return coalesce(ranges)
 
 
+def parse_bidi_ltr_ranges(path):
+    # Strong-LTR = Bidi_Class L, the mirror of the strong-RTL (R, AL) table.
+    # RendererDivergence's mixed-direction probe needs both sides of the
+    # strong-bidi split, so this emits the explicit L ranges the same way
+    # parse_bidi_ranges emits the explicit R/AL ranges.
+    ranges = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        body = strip_comment(line)
+        if not body or ";" not in body:
+            continue
+        left, klass, *_ = [part.strip() for part in body.split(";")]
+        if klass == "L":
+            ranges.append(parse_range_token(left))
+    return coalesce(ranges)
+
+
 def parse_script_ranges(path):
     wanted = {"Latin": "LATN", "Greek": "GREK", "Cyrillic": "CYRL"}
     ranges = {value: [] for value in wanted.values()}
@@ -404,6 +420,7 @@ def main():
     emit_value_eval(OUT / "confusable_source.cpy", parse_confusable_sources(), "MOVE 1 TO TABLE-FLAG")
     emit_script_flags(OUT / "script_flags.cpy", parse_script_ranges(DATA / "Scripts.txt"))
     emit_range_eval(OUT / "strong_rtl.cpy", parse_bidi_ranges(DATA / "DerivedBidiClass.txt"), "MOVE 1 TO TABLE-FLAG")
+    emit_range_eval(OUT / "strong_ltr.cpy", parse_bidi_ltr_ranges(DATA / "DerivedBidiClass.txt"), "MOVE 1 TO TABLE-FLAG")
     emit_range_eval(
         OUT / "default_ignorable.cpy",
         parse_property_ranges(DATA / "DerivedCoreProperties.txt", {"Default_Ignorable_Code_Point"}),
