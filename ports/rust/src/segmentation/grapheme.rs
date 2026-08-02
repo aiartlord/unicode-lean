@@ -22,6 +22,13 @@ pub fn lookup_gcb(cp: u32) -> Gcb {
         .unwrap_or(Gcb::Other)
 }
 
+/// True iff `cp` has `Grapheme_Cluster_Break = Extend` — a combining mark that
+/// stacks onto the preceding base. The RendererDivergence detector uses this to
+/// measure Zalgo-style combining-mark stacks.
+pub fn is_grapheme_extend(cp: u32) -> bool {
+    lookup_gcb(cp) == Gcb::Extend
+}
+
 /// Indic_Conjunct_Break class of `cp`, `Incb::None` when uncovered.
 pub fn lookup_incb(cp: u32) -> Incb {
     INCB_RANGES

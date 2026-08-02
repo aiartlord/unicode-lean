@@ -5,5 +5,6 @@
 //! right-to-left injection into a left-to-right-declared field being
 //! the first member.
 
+pub mod renderer_divergence;
 pub mod rtl_injection;
 pub mod source_display_divergence;
