@@ -154,20 +154,27 @@ jobs:
           # Build via lake; toolchain auto-detected from `lean-toolchain`.
           build-args: ""
 
+      - name: add swap headroom
+        run: |
+          # The headline modules' decide+kernel closures are each memory-safe
+          # cold, but lake fans several across all runner cores at once and
+          # their combined peak exceeds the hosted runner's ~16 GB RAM — the
+          # runner is then reclaimed mid-proof (exit 143 / "shutdown signal").
+          # Lake 5.0 has no --jobs flag to cap concurrency, so give the build
+          # virtual-memory headroom on the large /mnt volume instead; the
+          # 180-minute timeout absorbs any swap slowdown.
+          sudo fallocate -l 24G /mnt/ci-swapfile
+          sudo chmod 600 /mnt/ci-swapfile
+          sudo mkswap /mnt/ci-swapfile
+          sudo swapon /mnt/ci-swapfile
+          free -h
+
       - name: smoke-check headline theorems
         run: |
           # Targeted rebuild of the load-bearing top-level modules. If
           # any of these names is renamed without updating CI, the
           # smoke check catches it before merge.
-          #
-          # Serial build (-j1) is deliberate: each headline module's
-          # decide+kernel closure is memory-safe on its own, but the
-          # default job count fans out several in parallel and their
-          # combined peak exceeds the hosted runner's RAM (the OOM shows
-          # up as a runner "shutdown signal" / exit 143). Serializing caps
-          # peak memory at the single heaviest module; the 180-minute
-          # timeout absorbs the wall-clock cost.
-          lake build -j1 \
+          lake build \
             Unicode.Normalization.QuickCheckSoundnessTheorem \
             Unicode.Precis.Preparation \
             Unicode.Bidi.Algorithm \

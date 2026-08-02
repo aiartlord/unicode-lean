@@ -94,11 +94,15 @@ cp -R ports/dotnet/README.md ports/dotnet/Data ports/dotnet/src \
   ports/dotnet/test ports/dotnet/testdata "$dist_abs/dotnet/"
 find "$dist_abs/dotnet" -type d \( -name bin -o -name obj \) -prune -exec rm -rf {} +
 
-echo "== swift package check =="
-(
-  cd ports/swift
-  scripts/test.sh
-)
+echo "== swift package (build+test validated hermetically by .#unicode-swift) =="
+# The swift port's build and contract tests run in the pinned-toolchain,
+# sandboxed `.#unicode-swift` derivation (checkPhase runs scripts/test.sh under
+# swift 5.10.1 from the nixpkgs-swift pin) — that hermetic, reproducible,
+# signature-cacheable build is the auditable trust anchor for this port. This
+# bare-runtime-shell has only an unwired swift (no Foundation/resource-dir
+# search path) and cannot run swiftpm, so packaging here is deterministic file
+# assembly only; the derivation, built in the same preflight's nix-packages
+# step, is the validation.
 rm -rf "$dist_abs/swift"
 mkdir -p "$dist_abs/swift"
 cp -R ports/swift/README.md ports/swift/Package.swift ports/swift/scripts \
