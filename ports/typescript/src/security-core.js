@@ -85,6 +85,9 @@ export function configureSecurityDataReader(reader) {
   softDottedRangesCache = undefined;
   emojiRangesCache = undefined;
   bip39WordlistCache = undefined;
+  zwjSequencesCache = undefined;
+  zwjRegisteredSetCache = undefined;
+  zwjAlphabetCache = undefined;
 }
 
 export function configureSecurityData(data) {
@@ -99,6 +102,7 @@ export function configureSecurityData(data) {
   const derivedCoreProperties = requiredSecurityData(data, "derivedCoreProperties");
   const specialCasing = requiredSecurityData(data, "specialCasing");
   const emojiData = String(data?.emojiData ?? "");
+  const emojiZwjSequences = String(data?.emojiZwjSequences ?? "");
   configureSecurityDataReader((name) => {
     if (name === "confusables.txt") {
       return confusables;
@@ -132,6 +136,9 @@ export function configureSecurityData(data) {
     }
     if (name === "emoji-data.txt") {
       return emojiData;
+    }
+    if (name === "emoji-zwj-sequences.txt") {
+      return emojiZwjSequences;
     }
     throw new Error(`unknown security data file: ${name}`);
   });
@@ -2619,6 +2626,301 @@ export function aiWatermarkDetectabilityDetectWithContext(ctx, input) {
 // adversarialTolerance = 0).
 export function aiWatermarkDetectabilityDetect(input) {
   return aiWatermarkDetectabilityDetectWithContext({}, input);
+}
+
+// ── emoji-zwj-integrity (identity-layer detector I3) ─────────────────────────
+//
+// Mirrors Unicode.Security.Identity.EmojiZwjIntegrity (and the verified Rust
+// port src/security/identity/emoji_zwj_integrity.rs) byte-faithfully. An
+// adversary crafts an emoji-shaped codepoint sequence containing one or more
+// U+200D ZERO WIDTH JOINERs while violating the sanctioned RGI ZWJ-sequence
+// shape — by exceeding the RGI length cap, by joining a non-emoji codepoint, by
+// emitting adjacent ZWJ pairs, or by overflowing the skin-tone count. Any
+// non-RGI ZWJ-containing sequence is renderer-dependent, and that renderer
+// divergence is the attack surface.
+//
+// The sanctioning RGI set + ZWJ alphabet are PARSED FROM the port's own bundled
+// data/emoji-zwj-sequences.txt (UTS #51 17.0, byte-identical to the UCD source),
+// read via the same verified data reader emoji-data.txt uses — never a host
+// emoji/ICU library, never String normalization. The registered set gives both
+// the exact-match membership test (isRegisteredZwjSequence) and the ZWJ alphabet
+// — every distinct codepoint occurring at any position of any registered
+// sequence, excluding the joiner — which is the canonical "what may flank a
+// ZWJ?" predicate.
+//
+// Algorithm (one pass over input):
+//   Phase 1 — collect ZWJ positions and the skin-tone count.
+//   Phase 2 — short-circuit Clear if there are no ZWJs and skin-tone count <= 1.
+//   Phase 3 — a registered RGI sequence is always Clear.
+//   Phase 4 — check sub-threats by priority:
+//               1. DoubleZWJ            ZWJ-ZWJ adjacency
+//               2. NonEmojiInjection    ZWJ adjacent to a non-emoji codepoint
+//               3. OverLength           sequence longer than the RGI cap
+//               4. SkinToneOverflow     skin-tone count >= 5
+//               5. UnregisteredSequence catch-all when ZWJs are present but the
+//                                       sequence is not registered.
+
+// Conservative cap on the length of a sanctioned RGI ZWJ sequence (maxRgiLength
+// in the Lean spec). The longest current entry (a four-person family with skin
+// tones) reaches ~13-14 codepoints; 16 is a safe upper bound.
+export const MAX_RGI_LENGTH = 16;
+
+// The ZERO WIDTH JOINER codepoint.
+export const EMOJI_ZWJ = 0x200d;
+
+let zwjSequencesCache;
+let zwjRegisteredSetCache;
+let zwjAlphabetCache;
+
+// Stable reason code for an emoji-zwj-integrity sub-threat (layer I).
+export function emojiZwjIntegrityReasonCode(subThreatTag) {
+  return `unicode.security.I.emoji-zwj-integrity.${subThreatTag}`;
+}
+
+// Fixture-row tag string for a sub-threat (mirrors SubThreat.tag). Every arm is
+// explicit; the final arm throws on an unrecognised kind rather than defaulting.
+export function emojiZwjSubThreatTag(sub) {
+  switch (sub.kind) {
+    case "DoubleZwj":
+      return "DoubleZWJ";
+    case "NonEmojiInjection":
+      return "NonEmojiInjection";
+    case "OverLength":
+      return "OverLength";
+    case "SkinToneOverflow":
+      return "SkinToneOverflow";
+    case "UnregisteredSequence":
+      return "UnregisteredSequence";
+    default:
+      throw new Error(`unreachable emoji-zwj sub-threat kind: ${sub.kind}`);
+  }
+}
+
+// Parse the registered RGI ZWJ sequences from emoji-zwj-sequences.txt. Each
+// non-comment row is `<cp> <cp> ... ; RGI_Emoji_ZWJ_Sequence ; <desc> # <cmt>`;
+// the codepoint list is the field before the first `;`.
+function parseZwjSequences(text) {
+  const out = [];
+  for (const rawLine of text.split("\n")) {
+    const hashIdx = rawLine.indexOf("#");
+    const body = hashIdx < 0 ? rawLine : rawLine.slice(0, hashIdx);
+    const stripped = body.trim();
+    if (stripped === "") {
+      continue;
+    }
+    const seqField = stripped.split(";")[0];
+    const seq = [];
+    let parsedOk = true;
+    for (const token of seqField.split(/\s+/)) {
+      if (token === "") {
+        continue;
+      }
+      const cp = parseInt(token, 16);
+      if (Number.isNaN(cp)) {
+        parsedOk = false;
+        break;
+      }
+      seq.push(cp);
+    }
+    if (parsedOk && seq.length > 0) {
+      out.push(seq);
+    }
+  }
+  return out;
+}
+
+function zwjSequences() {
+  if (zwjSequencesCache === undefined) {
+    zwjSequencesCache = parseZwjSequences(readDataFile("emoji-zwj-sequences.txt"));
+  }
+  return zwjSequencesCache;
+}
+
+// A registered sequence set keyed on the comma-joined codepoint list, giving an
+// O(1) exact-match membership test.
+function zwjRegisteredSet() {
+  if (zwjRegisteredSetCache === undefined) {
+    const set = new Set();
+    for (const seq of zwjSequences()) {
+      set.add(seq.join(","));
+    }
+    zwjRegisteredSetCache = set;
+  }
+  return zwjRegisteredSetCache;
+}
+
+// The ZWJ alphabet: every distinct codepoint occurring at any position of any
+// registered RGI ZWJ sequence, excluding the joiner U+200D itself.
+function zwjAlphabet() {
+  if (zwjAlphabetCache === undefined) {
+    const set = new Set();
+    for (const seq of zwjSequences()) {
+      for (const cp of seq) {
+        if (cp !== EMOJI_ZWJ) {
+          set.add(cp);
+        }
+      }
+    }
+    zwjAlphabetCache = set;
+  }
+  return zwjAlphabetCache;
+}
+
+// True iff cps is exactly a registered RGI ZWJ sequence.
+export function isRegisteredZwjSequence(cps) {
+  return zwjRegisteredSet().has(Array.from(cps).join(","));
+}
+
+// True iff cp appears at some position of a registered RGI ZWJ sequence (the
+// canonical "what may flank a ZWJ?" predicate).
+export function isEmojiTarget(cp) {
+  return zwjAlphabet().has(cp);
+}
+
+// True iff cp is the ZWJ codepoint.
+function isEmojiZwj(cp) {
+  return cp === EMOJI_ZWJ;
+}
+
+// True iff cp is an emoji skin-tone modifier (U+1F3FB..U+1F3FF).
+export function isEmojiModifier(cp) {
+  return cp >= 0x1f3fb && cp <= 0x1f3ff;
+}
+
+// Positions of every ZWJ in input.
+function emojiZwjPositions(input) {
+  const out = [];
+  for (let idx = 0; idx < input.length; idx += 1) {
+    if (isEmojiZwj(input[idx])) {
+      out.push(idx);
+    }
+  }
+  return out;
+}
+
+// Count of skin-tone modifier codepoints.
+function skinToneCount(input) {
+  let count = 0;
+  for (const cp of input) {
+    if (isEmojiModifier(cp)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+// Positions of the first ZWJ in each ZWJ-ZWJ adjacent pair.
+function doubleZwjPositions(input) {
+  const out = [];
+  for (let idx = 0; idx < input.length; idx += 1) {
+    if (idx + 1 < input.length && isEmojiZwj(input[idx]) && isEmojiZwj(input[idx + 1])) {
+      out.push(idx);
+    }
+  }
+  return out;
+}
+
+// The first ZWJ position where either neighbour is a non-emoji codepoint, as
+// { zwjPos, offendingCp }. A ZWJ at an input edge (no preceding or no following
+// codepoint) is itself an injection-class hazard, reported with offending
+// codepoint 0. Returns null when no injection is found.
+function firstNonEmojiInjection(input) {
+  for (let idx = 0; idx < input.length; idx += 1) {
+    if (!isEmojiZwj(input[idx])) {
+      continue;
+    }
+    const hasPrev = idx > 0;
+    const hasNext = idx + 1 < input.length;
+    if (hasPrev && hasNext) {
+      const prevCp = input[idx - 1];
+      const nextCp = input[idx + 1];
+      if (!isEmojiTarget(prevCp)) {
+        return { zwjPos: idx, offendingCp: prevCp };
+      }
+      if (!isEmojiTarget(nextCp)) {
+        return { zwjPos: idx, offendingCp: nextCp };
+      }
+    } else {
+      // No preceding OR no following codepoint — an edge ZWJ.
+      return { zwjPos: idx, offendingCp: 0 };
+    }
+  }
+  return null;
+}
+
+// The EmojiZwjIntegrity detection function (mirrors the Lean/Rust `detect`).
+export function emojiZwjIntegrityDetect(input) {
+  const cps = Array.from(input);
+  const zwjs = emojiZwjPositions(cps);
+  const stCount = skinToneCount(cps);
+  const isRgi = isRegisteredZwjSequence(cps);
+  const chainLen = zwjs.length === 0 ? 0 : cps.length;
+
+  const clearVerdict = (registered) => ({
+    input: cps,
+    classify: { isClear: true, tag: null, sub: null, positions: [] },
+    zwjPositions: [],
+    chainLength: 0,
+    isRegisteredRgi: registered,
+    skinToneCount: stCount,
+  });
+
+  // Phase 2: short-circuit Clear when no ZWJs and at most one skin tone.
+  if (zwjs.length === 0 && stCount <= 1) {
+    return clearVerdict(isRgi);
+  }
+
+  let classify;
+  if (isRgi) {
+    // Phase 3: a registered RGI sequence is always clear.
+    classify = { isClear: true, tag: null, sub: null, positions: [] };
+  } else {
+    const dzwj = doubleZwjPositions(cps);
+    if (dzwj.length > 0) {
+      // Phase 4.1: ZWJ-ZWJ adjacency.
+      const sub = { kind: "DoubleZwj", positions: dzwj };
+      classify = { isClear: false, tag: emojiZwjSubThreatTag(sub), sub, positions: dzwj };
+    } else {
+      const injection = firstNonEmojiInjection(cps);
+      if (injection !== null) {
+        // Phase 4.2: ZWJ adjacent to a non-emoji codepoint.
+        const sub = {
+          kind: "NonEmojiInjection",
+          zwjPos: injection.zwjPos,
+          nonEmojiCp: injection.offendingCp,
+        };
+        classify = {
+          isClear: false,
+          tag: emojiZwjSubThreatTag(sub),
+          sub,
+          positions: [injection.zwjPos],
+        };
+      } else if (cps.length > MAX_RGI_LENGTH) {
+        // Phase 4.3: length cap.
+        const sub = { kind: "OverLength", length: cps.length, maxLength: MAX_RGI_LENGTH };
+        classify = { isClear: false, tag: emojiZwjSubThreatTag(sub), sub, positions: [] };
+      } else if (stCount >= 5) {
+        // Phase 4.4: skin-tone overflow.
+        const sub = { kind: "SkinToneOverflow", count: stCount };
+        classify = { isClear: false, tag: emojiZwjSubThreatTag(sub), sub, positions: [] };
+      } else if (zwjs.length > 0) {
+        // Phase 4.5: catch-all for unregistered ZWJ sequences.
+        const sub = { kind: "UnregisteredSequence", chainLen: cps.length };
+        classify = { isClear: false, tag: emojiZwjSubThreatTag(sub), sub, positions: zwjs };
+      } else {
+        classify = { isClear: true, tag: null, sub: null, positions: [] };
+      }
+    }
+  }
+
+  return {
+    input: cps,
+    classify,
+    zwjPositions: zwjs,
+    chainLength: chainLen,
+    isRegisteredRgi: isRgi,
+    skinToneCount: stCount,
+  };
 }
 
 function stringFromCodepoints(input) {

@@ -62,6 +62,7 @@ const (
 	FamilyHashInputStability     Family = "hash-input-stability"
 	FamilyAiWatermarkDetect      Family = "ai-watermark-detectability"
 	FamilyStreamSafeViolation    Family = "stream-safe-violation"
+	FamilyEmojiZwjIntegrity      Family = "emoji-zwj-integrity"
 )
 
 type ProfilePolicy struct {
@@ -494,7 +495,7 @@ func layer(family Family) string {
 	switch family {
 	case FamilyMalformedUTF8, FamilyMalformedUTF16, FamilyMalformedUTF32, FamilyTagBlockPayload, FamilyVariationSelector, FamilyZeroWidthPayload, FamilySurrogateReassembly, FamilyBidiControlBalance, FamilyNoncharacterControl:
 		return "C"
-	case FamilyHomoglyphConfusable, FamilyMixedScript:
+	case FamilyHomoglyphConfusable, FamilyMixedScript, FamilyEmojiZwjIntegrity:
 		return "I"
 	case FamilyRtlInjection:
 		return "D"

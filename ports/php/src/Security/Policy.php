@@ -21,6 +21,7 @@ use UnicodePhp\Security\Form\LocaleCaseInversion;
 use UnicodePhp\Security\Form\NfcIdempotenceWitness;
 use UnicodePhp\Security\Form\NormalizationBomb;
 use UnicodePhp\Security\Form\StreamSafeViolation;
+use UnicodePhp\Security\Identity\EmojiZwjIntegrity;
 use UnicodePhp\Security\Identity\HomoglyphConfusable;
 
 enum Action: string
@@ -567,6 +568,17 @@ final class Policy
         $findings = [];
         if (!$a->classify->isClear()) {
             self::pushFinding($findings, Family::AiWatermarkDetectability, ClassificationKind::Hazard, $a->classify->tag(), $a->classify->positions());
+        }
+        return new Verdict($input, $profile, $mode, self::selectAction($profile, $mode, $findings), $findings, null);
+    }
+
+    /** @param list<int> $input */
+    public static function scanEmojiZwjIntegrity(Profile $profile, Mode $mode, array $input): Verdict
+    {
+        $e = EmojiZwjIntegrity::detect($input);
+        $findings = [];
+        if (!$e->classify->isClear()) {
+            self::pushFinding($findings, Family::EmojiZwjIntegrity, ClassificationKind::Hazard, $e->classify->tag(), $e->classify->positions());
         }
         return new Verdict($input, $profile, $mode, self::selectAction($profile, $mode, $findings), $findings, null);
     }

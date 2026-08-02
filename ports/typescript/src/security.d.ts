@@ -42,6 +42,7 @@ export declare function configureSecurityData(data: {
   standardizedVariants?: string;
   emojiVariationSequences?: string;
   emojiData?: string;
+  emojiZwjSequences?: string;
 }): void;
 export declare function configureSecurityDataReader(reader: (name: string) => string): void;
 export declare function scan(profile: Profile | string, mode: Mode | string, input: Iterable<number>): Verdict;
@@ -175,6 +176,41 @@ export declare function aiWatermarkDetectabilityDetectWithContext(
   ctx: AiWatermarkContext,
   input: number[],
 ): AiWatermarkVerdict;
+
+// ── emoji-zwj-integrity (identity-layer detector I3) ─────────────────────────
+
+export declare const MAX_RGI_LENGTH: 16;
+export declare const EMOJI_ZWJ: 0x200d;
+
+export type EmojiZwjSubThreat =
+  | { kind: "DoubleZwj"; positions: number[] }
+  | { kind: "NonEmojiInjection"; zwjPos: number; nonEmojiCp: number }
+  | { kind: "OverLength"; length: number; maxLength: number }
+  | { kind: "SkinToneOverflow"; count: number }
+  | { kind: "UnregisteredSequence"; chainLen: number };
+
+export interface EmojiZwjClassification {
+  isClear: boolean;
+  tag: string | null;
+  sub: EmojiZwjSubThreat | null;
+  positions: number[];
+}
+
+export interface EmojiZwjVerdict {
+  input: number[];
+  classify: EmojiZwjClassification;
+  zwjPositions: number[];
+  chainLength: number;
+  isRegisteredRgi: boolean;
+  skinToneCount: number;
+}
+
+export declare function emojiZwjIntegrityReasonCode(subThreatTag: string): string;
+export declare function emojiZwjSubThreatTag(sub: EmojiZwjSubThreat): string;
+export declare function isRegisteredZwjSequence(cps: Iterable<number>): boolean;
+export declare function isEmojiTarget(cp: number): boolean;
+export declare function isEmojiModifier(cp: number): boolean;
+export declare function emojiZwjIntegrityDetect(input: number[]): EmojiZwjVerdict;
 
 // ── stream-safe-violation (layer F) ─────────────────────────────────────────
 

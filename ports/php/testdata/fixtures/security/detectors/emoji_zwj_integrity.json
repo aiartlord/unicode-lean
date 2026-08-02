@@ -1,0 +1,78 @@
+{
+  "schema": 1,
+  "family": "emoji-zwj-integrity",
+  "cases": [
+    {
+      "name": "empty-clear",
+      "input": [],
+      "required_findings": []
+    },
+    {
+      "name": "ascii-hello-clear",
+      "input": [72, 101, 108, 108, 111],
+      "required_findings": []
+    },
+    {
+      "name": "plain-emoji-clear",
+      "input": [128512],
+      "required_findings": []
+    },
+    {
+      "name": "one-skintone-clear",
+      "input": [128075, 127995],
+      "required_findings": []
+    },
+    {
+      "name": "family-of-four-rgi-clear",
+      "input": [128104, 8205, 128105, 8205, 128103, 8205, 128102],
+      "required_findings": []
+    },
+    {
+      "name": "man-technologist-rgi-clear",
+      "input": [128104, 8205, 128187],
+      "required_findings": []
+    },
+    {
+      "name": "double-zwj-hazard",
+      "input": [128512, 8205, 8205, 128512],
+      "required_findings": [
+        "unicode.security.I.emoji-zwj-integrity.DoubleZWJ"
+      ]
+    },
+    {
+      "name": "non-emoji-injection-ascii-hazard",
+      "input": [128512, 8205, 97],
+      "required_findings": [
+        "unicode.security.I.emoji-zwj-integrity.NonEmojiInjection"
+      ]
+    },
+    {
+      "name": "grinning-laptop-non-emoji-injection-hazard",
+      "input": [128512, 8205, 128187],
+      "required_findings": [
+        "unicode.security.I.emoji-zwj-integrity.NonEmojiInjection"
+      ]
+    },
+    {
+      "name": "skin-tone-overflow-hazard",
+      "input": [128075, 127995, 127996, 127997, 127998, 127999],
+      "required_findings": [
+        "unicode.security.I.emoji-zwj-integrity.SkinToneOverflow"
+      ]
+    },
+    {
+      "name": "unregistered-man-woman-hazard",
+      "input": [128104, 8205, 128105],
+      "required_findings": [
+        "unicode.security.I.emoji-zwj-integrity.UnregisteredSequence"
+      ]
+    },
+    {
+      "name": "over-length-chain-hazard",
+      "input": [128104, 8205, 128104, 8205, 128104, 8205, 128104, 8205, 128104, 8205, 128104, 8205, 128104, 8205, 128104, 8205, 128104],
+      "required_findings": [
+        "unicode.security.I.emoji-zwj-integrity.OverLength"
+      ]
+    }
+  ]
+}
