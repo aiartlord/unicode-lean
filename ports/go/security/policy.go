@@ -59,6 +59,7 @@ const (
 	FamilyRtlInjection           Family = "rtl-injection"
 	FamilyConfusableBidiCompound Family = "confusable-bidi-compound"
 	FamilyCovertDisplayCompound  Family = "covert-display-compound"
+	FamilyHashInputStability     Family = "hash-input-stability"
 )
 
 type ProfilePolicy struct {
@@ -497,6 +498,8 @@ func layer(family Family) string {
 		return "D"
 	case FamilyConfusableBidiCompound, FamilyCovertDisplayCompound:
 		return "X"
+	case FamilyHashInputStability:
+		return "K"
 	default:
 		return "C"
 	}

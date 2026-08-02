@@ -12,7 +12,7 @@ defmodule UnicodeSecurity.Policy do
     ZeroWidthPayload
   }
 
-  alias UnicodeSecurity.Crypto.Bip39Canonical
+  alias UnicodeSecurity.Crypto.{Bip39Canonical, HashInputStability}
   alias UnicodeSecurity.Display.RtlInjection
   alias UnicodeSecurity.Form.{LocaleCaseInversion, NfcIdempotenceWitness, NormalizationBomb}
   alias UnicodeSecurity.Identity.HomoglyphConfusable
@@ -367,6 +367,17 @@ defmodule UnicodeSecurity.Policy do
       if b.sub, do: push_finding([], :bip39_canonical, :hazard, b.sub, b.positions), else: []
 
     verdict(profile, mode, input, findings, b.canonical)
+  end
+
+  def scan_hash_input(profile, mode, input) do
+    v = HashInputStability.detect(input)
+    tag = HashInputStability.classification_tag(v.classify)
+    positions = HashInputStability.classification_positions(v.classify)
+
+    findings =
+      if tag, do: push_finding([], :hash_input_stability, :hazard, tag, positions), else: []
+
+    verdict(profile, mode, input, findings, v.stable_form)
   end
 
   def finding_to_wire(finding) do
