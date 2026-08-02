@@ -3,6 +3,7 @@
 -export([reason_code/1, reason_code/2, scan/3, scan_utf8/3,
          scan_utf16be/3, scan_utf16le/3, scan_utf32be/3, scan_utf32le/3,
          scan_default/2, scan_forms/3, scan_bip39/3, scan_hash_input_stability/3,
+         scan_ai_watermark_detectability/3,
          verdict_to_wire/1, verdict_to_json/1, finding_to_wire/1]).
 
 policy_of_profile(<<"gateway-header">>) -> #{level => restrictive, crypto => non_crypto, quarantine => false};
@@ -165,6 +166,15 @@ scan_hash_input_stability(Profile, Mode, Input) ->
     F = case usec_hash_input_stability:classify_tag(C) of
             none -> [];
             Sub -> push_finding([], hash_input_stability, hazard, Sub, usec_hash_input_stability:classify_positions(C))
+        end,
+    verdict(Profile, Mode, Input, F, null).
+
+scan_ai_watermark_detectability(Profile, Mode, Input) ->
+    V = usec_ai_watermark_detectability:detect(Input),
+    C = maps:get(classify, V),
+    F = case usec_ai_watermark_detectability:classify_tag(C) of
+            none -> [];
+            Sub -> push_finding([], ai_watermark_detectability, hazard, Sub, usec_ai_watermark_detectability:classify_positions(C))
         end,
     verdict(Profile, Mode, Input, F, null).
 

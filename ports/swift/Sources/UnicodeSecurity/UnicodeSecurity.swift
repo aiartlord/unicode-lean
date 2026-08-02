@@ -44,6 +44,7 @@ public enum Family {
     public static let confusableBidiCompound = "confusable-bidi-compound"
     public static let covertDisplayCompound = "covert-display-compound"
     public static let hashInputStability = "hash-input-stability"
+    public static let aiWatermarkDetectability = "ai-watermark-detectability"
 }
 
 public struct Finding: Equatable {
@@ -85,6 +86,7 @@ private var simpleLowerCache: [Int: Int]?
 private var casedRangesCache: [(Int, Int)]?
 private var softDottedRangesCache: [(Int, Int)]?
 private var bip39WordlistCache: [String: Set<[Int]>]?
+private var emojiRangesCache: [(Int, Int)]?
 
 public func scan(profile: String, mode: String, input: [Int]) -> Verdict {
     let codepoints = input.map(ensureCodepoint)
@@ -275,7 +277,7 @@ private func layer(_ family: String) -> String {
     if family == Family.confusableBidiCompound || family == Family.covertDisplayCompound {
         return "X"
     }
-    if family == Family.hashInputStability {
+    if family == Family.hashInputStability || family == Family.aiWatermarkDetectability {
         return "K"
     }
     return "C"
@@ -1618,6 +1620,7 @@ private let pinnedTableDigests: [String: String] = [
     "CompositionExclusions.txt": "2f239196ef3b5b61db5cc476e9bd80f534d15aa1b74e1be1dea5d042a344c85f",
     "DerivedCoreProperties.txt": "24c7fed1195c482faaefd5c1e7eb821c5ee1fb6de07ecdbaa64b56a99da22c08",
     "SpecialCasing.txt": "efc25faf19de21b92c1194c111c932e03d2a5eaf18194e33f1156e96de4c9588",
+    "emoji-data.txt": "2cb2bb9455cda83e8481541ecf5b6dfda66a3bb89efa3fa7c5297eccf607b72b",
     "bip39/chinese_simplified.txt": "5c5942792bd8340cb8b27cd592f1015edf56a8c5b26276ee18a482428e7c5726",
     "bip39/chinese_traditional.txt": "417b26b3d8500a4ae3d59717d7011952db6fc2fb84b807f3f94ac734e89c1b5f",
     "bip39/czech.txt": "7e80e161c3e93d9554c2efb78d4e3cebf8fc727e9c52e03b83b94406bdcc95fc",
@@ -2732,4 +2735,474 @@ public func hashInputStabilityDetect(_ input: [Int]) -> HashInputStabilityVerdic
 /// the shared reason-code builder: `unicode.security.K.hash-input-stability.<tag>`.
 public func hashInputStabilityReasonCode(_ subThreat: String) -> String {
     reasonCode(family: Family.hashInputStability, subThreat: subThreat)
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// ai-watermark-detectability — character-level detector for inputs carrying
+// codepoint patterns consistent with a known AI watermark scheme. Answers the
+// question: does this input contain markers attributable to a watermarking
+// protocol?
+//
+// Direct port of `Unicode/Security/Crypto/AiWatermarkDetectability.lean`,
+// mirroring the verified Rust reference. Threat model: a provenance-attribution
+// attacker. An input either carries an AI provider's watermark codepoints (a
+// legitimate provenance marker) or carries injected markers that impersonate a
+// provider's scheme to discredit the content as AI-generated. Character-level
+// detection alone cannot distinguish the two; the detector reports the matched
+// scheme and leaves provider-specific authentication to downstream code.
+//
+// Probe inventory (priority order, first match wins):
+//   1. adversarial              — NNBSP count >= 3 at arithmetic-progression positions.
+//   2. gpt5ZwspModulo           — ZWSP count >= 3 at arithmetic-progression positions.
+//   3. unknown                  — invisible markers from >= 2 distinct categories.
+//   4. nnbspBoundary            — single-category NNBSP.
+//   5. variationSelectorCarrier — VS NOT adjacent to an emoji codepoint.
+//   6. zwjNonEmoji              — ZWJ NOT adjacent to an emoji codepoint.
+//   7. smartQuoteAlternation    — paired curly quotes, no ASCII straight quotes.
+//   8. emDashPattern            — em-dashes, no ASCII hyphen-minus.
+//   9. statisticalTokenChoice   — input contains an AI-favored lexical pattern.
+//  10. defaultIgnorableCarrier  — single-category residual Default_Ignorable.
+//
+// The Emoji property table is bundled in the port's own Resources/Data/emoji-data.txt
+// (byte-identical to the UCD source the Lean spec cites); the adjacency probe
+// parses the `Emoji` rows from it, never a host emoji library. The residual
+// default-ignorable probe reuses the port's own `isDefaultIgnorableCodepoint`.
+// ─────────────────────────────────────────────────────────────────────
+
+// §1 Types.
+
+/// The conceptual watermark cue class a sub-threat probes for. A codepoint-frequency
+/// bias toward a pinned "green list" of tokens is `greenListBias`; a fixed-period or
+/// carrier-byte channel surfacing a pseudorandom function is `pseudorandomSeq`; a
+/// stylistic-distribution drift away from natural human writing is `semanticDrift`.
+public enum AiWatermarkDetectabilityCueClass: Equatable {
+    /// A codepoint-frequency bias toward a pinned "green list" of tokens.
+    case greenListBias
+    /// A fixed-period or carrier-byte channel surfacing a pseudorandom function.
+    case pseudorandomSeq
+    /// A stylistic-distribution drift away from natural human writing.
+    case semanticDrift
+}
+
+/// Sub-threats this detector can fire. Each case has a corresponding probe in
+/// `aiWatermarkDetectabilityDetectWithContext`; the payload carries the position
+/// information the conformance harness's attribution column reads back.
+public enum AiWatermarkDetectabilitySubThreat: Equatable {
+    /// Single-category NNBSP (U+202F) markers; `markerCount` is how many.
+    case nnbspBoundary(markerCount: Int)
+    /// Variation selector(s) not adjacent to an emoji; `markerCount` is how many.
+    case variationSelectorCarrier(markerCount: Int)
+    /// ZWJ(s) not adjacent to an emoji; `markerCount` is how many.
+    case zwjNonEmoji(markerCount: Int)
+    /// Residual Default_Ignorable markers; `markerCount` is how many.
+    case defaultIgnorableCarrier(markerCount: Int)
+    /// ZWSP (U+200B) markers at arithmetic-progression positions; `firstPos`
+    /// is the first ZWSP position.
+    case gpt5ZwspModulo(firstPos: Int)
+    /// Em-dash (U+2014) stylistic signature; `firstPos` is the first em-dash.
+    case emDashPattern(firstPos: Int)
+    /// Paired curly-quote stylistic signature; `firstPos` is the first quote.
+    case smartQuoteAlternation(firstPos: Int)
+    /// AI-favored lexical pattern hit; `firstPos` is the match start.
+    case statisticalTokenChoice(firstPos: Int)
+    /// Over-regular marker placement impersonating a scheme; `impersonatedScheme`
+    /// names the surfaced scheme, `firstPos` the first marker position.
+    case adversarial(impersonatedScheme: String, firstPos: Int)
+    /// Multi-category invisible-marker mixing; `anomalyMarker` is the total
+    /// invisible-marker count (attribution to a single scheme fails).
+    case unknown(anomalyMarker: Int)
+
+    /// Human-facing classification tag for this sub-threat.
+    public var tag: String {
+        switch self {
+        case .nnbspBoundary: return "NnbspBoundary"
+        case .variationSelectorCarrier: return "VariationSelectorCarrier"
+        case .zwjNonEmoji: return "ZwjNonEmoji"
+        case .defaultIgnorableCarrier: return "DefaultIgnorableCarrier"
+        case .gpt5ZwspModulo: return "Gpt5ZwspModulo"
+        case .emDashPattern: return "EmDashPattern"
+        case .smartQuoteAlternation: return "SmartQuoteAlternation"
+        case .statisticalTokenChoice: return "StatisticalTokenChoice"
+        case .adversarial: return "Adversarial"
+        case .unknown: return "Unknown"
+        }
+    }
+
+    /// The conceptual watermark cue class this sub-threat probes for. Marker-encoded
+    /// sub-threats route to `pseudorandomSeq`; vocabulary-bias to `greenListBias`;
+    /// stylistic-distribution to `semanticDrift`; `unknown` (multi-category mixing)
+    /// implicates no single scheme.
+    public var cueClass: AiWatermarkDetectabilityCueClass? {
+        switch self {
+        case .nnbspBoundary, .variationSelectorCarrier, .zwjNonEmoji, .defaultIgnorableCarrier:
+            return .pseudorandomSeq
+        case .gpt5ZwspModulo: return .pseudorandomSeq
+        case .emDashPattern: return .semanticDrift
+        case .smartQuoteAlternation: return .semanticDrift
+        case .statisticalTokenChoice: return .greenListBias
+        case .adversarial: return .pseudorandomSeq
+        case .unknown: return nil
+        }
+    }
+}
+
+/// Top-level AiWatermarkDetectability classification.
+public enum AiWatermarkDetectabilityClassification: Equatable {
+    /// No watermark marker detected (semantically `noWatermark`).
+    case clear
+    /// A hazard: the fired sub-threat plus the implicated marker positions.
+    case hazard(sub: AiWatermarkDetectabilitySubThreat, positions: [Int])
+
+    /// True iff no watermark marker was detected.
+    public var isClear: Bool {
+        switch self {
+        case .clear: return true
+        case .hazard: return false
+        }
+    }
+
+    /// Human-facing tag for a hazard, or `nil` when clear.
+    public var tag: String? {
+        switch self {
+        case .clear: return nil
+        case .hazard(let sub, _): return sub.tag
+        }
+    }
+
+    /// Implicated positions (empty when clear).
+    public var positions: [Int] {
+        switch self {
+        case .clear: return []
+        case .hazard(_, let positions): return positions
+        }
+    }
+}
+
+/// AiWatermarkDetectability verdict — the structured output of the detector.
+/// `markerCount` is the count of codepoints matching the fired scheme's probe
+/// (0 when clear).
+public struct AiWatermarkDetectabilityVerdict: Equatable {
+    /// The scanned input codepoints.
+    public let input: [Int]
+    /// The classification verdict.
+    public let classify: AiWatermarkDetectabilityClassification
+    /// Count of codepoints matching the fired scheme (0 when clear).
+    public let markerCount: Int
+}
+
+/// Optional context for the modulo-probe tolerances. Each field controls how
+/// strictly the corresponding probe checks its arithmetic-progression condition;
+/// the defaults of `0` require exact equality of consecutive gaps.
+public struct AiWatermarkDetectabilityContext: Equatable {
+    /// ZWSP-modulo tolerance. `0` requires the ZWSP-position arithmetic
+    /// progression to be exact. `k > 0` accepts position gaps within +/- k of the
+    /// first gap, catching modulo schedules with light jitter.
+    public var zwspModuloTolerance: Int
+    /// NNBSP-arithmetic tolerance (the `adversarial` probe). Same semantic as
+    /// `zwspModuloTolerance` but for the NNBSP positions.
+    public var adversarialTolerance: Int
+
+    public init(zwspModuloTolerance: Int = 0, adversarialTolerance: Int = 0) {
+        self.zwspModuloTolerance = zwspModuloTolerance
+        self.adversarialTolerance = adversarialTolerance
+    }
+
+    /// The empty context: exact-arithmetic settings (both tolerances `0`).
+    public static let `default` = AiWatermarkDetectabilityContext()
+}
+
+// §2 Emoji property table (bundled Resources/Data/emoji-data.txt, Emoji rows).
+
+/// The `Emoji` (`Emoji=Yes`) closed intervals from emoji-data.txt, parsed via the
+/// port's shared `<range> ; <property>` reader and cached. Only rows whose property
+/// is exactly `Emoji` are kept.
+private func aiwmEmojiRanges() -> [(Int, Int)] {
+    if let cached = emojiRangesCache { return cached }
+    let parsed = parseDerivedProperty(readDataFile("emoji-data.txt"), "Emoji")
+    emojiRangesCache = parsed
+    return parsed
+}
+
+/// True iff `cp` has the `Emoji = Yes` property per emoji-data.txt.
+private func aiwmIsEmoji(_ cp: Int) -> Bool {
+    aiwmEmojiRanges().contains { $0.0 <= cp && cp <= $0.1 }
+}
+
+// §3 Codepoint probes.
+
+/// True iff `cp` is U+202F NARROW NO-BREAK SPACE.
+private func aiwmIsNnbsp(_ cp: Int) -> Bool {
+    cp == 0x202F
+}
+
+/// True iff `cp` is U+200D ZERO WIDTH JOINER.
+private func aiwmIsZwj(_ cp: Int) -> Bool {
+    cp == 0x200D
+}
+
+/// True iff `cp` is a Variation Selector — the basic block U+FE00..U+FE0F
+/// (VS1..VS16) or the Plane-14 IVS block U+E0100..U+E01EF (VS17..VS256).
+private func aiwmIsVariationSelector(_ cp: Int) -> Bool {
+    (cp >= 0xFE00 && cp <= 0xFE0F) || (cp >= 0xE0100 && cp <= 0xE01EF)
+}
+
+/// True iff `cp` is U+200B ZERO WIDTH SPACE.
+private func aiwmIsZwsp(_ cp: Int) -> Bool {
+    cp == 0x200B
+}
+
+/// True iff `cp` is U+2014 EM DASH.
+private func aiwmIsEmDash(_ cp: Int) -> Bool {
+    cp == 0x2014
+}
+
+/// True iff `cp` is U+002D HYPHEN-MINUS (ASCII).
+private func aiwmIsHyphenMinus(_ cp: Int) -> Bool {
+    cp == 0x002D
+}
+
+/// True iff `cp` is one of the four "curly" quotation marks: U+2018 / U+2019
+/// (single open/close) and U+201C / U+201D (double open/close).
+private func aiwmIsCurlyQuote(_ cp: Int) -> Bool {
+    cp == 0x2018 || cp == 0x2019 || cp == 0x201C || cp == 0x201D
+}
+
+/// True iff `cp` is an ASCII straight quote — U+0022 (double) or U+0027 (single).
+private func aiwmIsStraightQuote(_ cp: Int) -> Bool {
+    cp == 0x0022 || cp == 0x0027
+}
+
+/// True iff `input[i]` is adjacent (immediate predecessor OR immediate successor)
+/// to an emoji codepoint. Two-sided check. Used by the VS and ZWJ probes to
+/// exclude legitimate emoji-context occurrences.
+private func aiwmIsAdjacentToEmoji(_ input: [Int], _ i: Int) -> Bool {
+    let prevIsEmoji = (i > 0 && i - 1 < input.count) ? aiwmIsEmoji(input[i - 1]) : false
+    let nextIsEmoji = (i + 1 < input.count) ? aiwmIsEmoji(input[i + 1]) : false
+    return prevIsEmoji || nextIsEmoji
+}
+
+/// All positions in `input` matching predicate `p`.
+private func aiwmAllPositions(_ p: (Int) -> Bool, _ input: [Int]) -> [Int] {
+    input.indices.filter { p(input[$0]) }
+}
+
+/// True iff `positions` forms an arithmetic progression with all consecutive gaps
+/// within `tolerance` of the first gap. Empty and singleton lists are vacuously
+/// arithmetic. `positions` is assumed ascending (produced by `aiwmAllPositions`),
+/// so gaps are non-negative.
+private func aiwmPositionsAreArithmeticWithin(_ positions: [Int], _ tolerance: Int) -> Bool {
+    if positions.count < 2 { return true }
+    let firstGap = positions[1] - positions[0]
+    for i in 0..<(positions.count - 1) {
+        let gap = positions[i + 1] - positions[i]
+        if !(gap <= firstGap + tolerance && firstGap <= gap + tolerance) { return false }
+    }
+    return true
+}
+
+/// First start-position at which `pattern` appears as a contiguous sub-slice of
+/// `input`, or `nil` if absent.
+private func aiwmContainsSublist(_ pattern: [Int], _ input: [Int]) -> Int? {
+    if pattern.isEmpty || pattern.count > input.count { return nil }
+    let maxStart = input.count - pattern.count
+    for start in 0...maxStart where Array(input[start..<start + pattern.count]) == pattern {
+        return start
+    }
+    return nil
+}
+
+/// The "AI-favored" lexical-pattern catalog (each word as its codepoint sequence),
+/// transcribed verbatim from the pinned `aiFavoredVocabulary` literal in the Lean
+/// spec (parsed from `Ucd/Security/AiFavoredVocabulary.txt` and drift-gated there
+/// against a fresh parse).
+private func aiwmAiFavoredVocabulary() -> [[Int]] {
+    [
+        [100, 101, 108, 118, 101],
+        [100, 101, 108, 118, 105, 110, 103],
+        [116, 97, 112, 101, 115, 116, 114, 121],
+        [105, 110, 116, 114, 105, 99, 97, 116, 101],
+        [110, 117, 97, 110, 99, 101, 100],
+        [109, 111, 114, 101, 111, 118, 101, 114],
+        [102, 117, 114, 116, 104, 101, 114, 109, 111, 114, 101],
+        [114, 101, 97, 108, 109],
+        [101, 108, 117, 99, 105, 100, 97, 116, 101],
+        [115, 104, 111, 119, 99, 97, 115, 105, 110, 103],
+        [117, 110, 100, 101, 114, 115, 99, 111, 114, 101, 115],
+        [117, 110, 100, 101, 114, 115, 99, 111, 114, 101, 100],
+        [112, 105, 118, 111, 116, 97, 108],
+        [98, 111, 108, 115, 116, 101, 114],
+        [109, 117, 108, 116, 105, 102, 97, 99, 101, 116, 101, 100],
+        [116, 101, 115, 116, 97, 109, 101, 110, 116],
+        [102, 111, 115, 116, 101, 114],
+        [104, 111, 108, 105, 115, 116, 105, 99],
+        [112, 97, 114, 97, 100, 105, 103, 109],
+        [116, 114, 97, 110, 115, 102, 111, 114, 109, 97, 116, 105, 118, 101],
+        [115, 112, 101, 97, 114, 104, 101, 97, 100],
+        [109, 101, 116, 105, 99, 117, 108, 111, 117, 115],
+        [109, 101, 116, 105, 99, 117, 108, 111, 117, 115, 108, 121],
+        [101, 109, 112, 111, 119, 101, 114],
+        [101, 109, 112, 111, 119, 101, 114, 105, 110, 103],
+        [112, 114, 111, 102, 111, 117, 110, 100],
+        [112, 114, 111, 102, 111, 117, 110, 100, 108, 121],
+        [99, 111, 109, 112, 101, 108, 108, 105, 110, 103],
+        [99, 111, 109, 112, 114, 101, 104, 101, 110, 115, 105, 118, 101],
+        [99, 114, 117, 99, 105, 97, 108],
+        [100, 97, 117, 110, 116, 105, 110, 103],
+        [114, 111, 98, 117, 115, 116],
+        [115, 116, 114, 101, 97, 109, 108, 105, 110, 101],
+        [101, 110, 114, 105, 99, 104],
+        [101, 120, 101, 109, 112, 108, 105, 102, 121],
+        [99, 97, 112, 116, 105, 118, 97, 116, 105, 110, 103],
+        [100, 105, 115, 99, 101, 114, 110, 105, 110, 103],
+        [109, 101, 115, 109, 101, 114, 105, 122, 101],
+        [105, 110, 116, 114, 105, 99, 97, 116, 101, 108, 121],
+        [105, 109, 98, 117, 101],
+        [112, 108, 97, 121, 115, 32, 97, 32, 99, 114, 117, 99, 105, 97, 108, 32, 114, 111, 108, 101],
+        [112, 108, 97, 121, 115, 32, 97, 32, 112, 105, 118, 111, 116, 97, 108, 32, 114, 111, 108, 101],
+        [105, 116, 32, 105, 115, 32, 105, 109, 112, 111, 114, 116, 97, 110, 116, 32, 116, 111, 32, 110, 111, 116, 101],
+        [105, 116, 32, 105, 115, 32, 119, 111, 114, 116, 104, 32, 110, 111, 116, 105, 110, 103],
+        [105, 110, 32, 99, 111, 110, 99, 108, 117, 115, 105, 111, 110],
+        [105, 110, 32, 101, 115, 115, 101, 110, 99, 101],
+        [100, 101, 108, 118, 101, 32, 105, 110, 116, 111],
+        [100, 101, 108, 118, 105, 110, 103, 32, 105, 110, 116, 111],
+        [116, 97, 112, 101, 115, 116, 114, 121, 32, 111, 102],
+        [114, 101, 97, 108, 109, 32, 111, 102],
+    ]
+}
+
+// §4 Top-level detection.
+
+/// The detection function. Runs every probe in the fixed priority order
+/// (most-specific first); the first hit wins. See the module header for the probe
+/// inventory and the ordering rationale. Mirrors
+/// `Unicode.Security.Crypto.AiWatermarkDetectability.detectWithContext`.
+public func aiWatermarkDetectabilityDetectWithContext(
+    _ ctx: AiWatermarkDetectabilityContext,
+    _ input: [Int]
+) -> AiWatermarkDetectabilityVerdict {
+    let nnbspPositions = aiwmAllPositions(aiwmIsNnbsp, input)
+    let nnbspCount = nnbspPositions.count
+
+    // Probe 1: adversarial — NNBSP too-regular.
+    let adversarialFires = nnbspCount >= 3
+        && aiwmPositionsAreArithmeticWithin(nnbspPositions, ctx.adversarialTolerance)
+
+    // Probe 2: gpt5ZwspModulo — ZWSP arithmetic progression.
+    let zwspPositions = aiwmAllPositions(aiwmIsZwsp, input)
+    let zwspCount = zwspPositions.count
+    let zwspModuloFires = zwspCount >= 3
+        && aiwmPositionsAreArithmeticWithin(zwspPositions, ctx.zwspModuloTolerance)
+
+    let vsAllPos = aiwmAllPositions(aiwmIsVariationSelector, input)
+    let vsNonEmojiPos = vsAllPos.filter { !aiwmIsAdjacentToEmoji(input, $0) }
+    let vsNonEmojiCount = vsNonEmojiPos.count
+
+    let zwjAllPos = aiwmAllPositions(aiwmIsZwj, input)
+    let zwjNonEmojiPos = zwjAllPos.filter { !aiwmIsAdjacentToEmoji(input, $0) }
+    let zwjNonEmojiCount = zwjNonEmojiPos.count
+
+    // Probe 7: smartQuoteAlternation — curly quotes only.
+    let curlyPositions = aiwmAllPositions(aiwmIsCurlyQuote, input)
+    let curlyCount = curlyPositions.count
+    let hasStraightQuote = input.contains { aiwmIsStraightQuote($0) }
+    let smartQuoteFires = curlyCount >= 2 && !hasStraightQuote
+
+    // Probe 8: emDashPattern — em-dashes without hyphen-minus.
+    let emDashPositions = aiwmAllPositions(aiwmIsEmDash, input)
+    let emDashCount = emDashPositions.count
+    let hasHyphenMinus = input.contains { aiwmIsHyphenMinus($0) }
+    let emDashFires = emDashCount >= 2 && !hasHyphenMinus
+
+    // Probe 9: statisticalTokenChoice — scan the pinned vocabulary. Each word is
+    // compared as a contiguous sub-slice of the input.
+    let vocabHit = aiwmAiFavoredVocabulary().lazy
+        .compactMap { aiwmContainsSublist($0, input) }
+        .first
+
+    // Residual default-ignorables (excluding VS and ZWJ, handled above).
+    let isResidualDi: (Int) -> Bool = { cp in
+        isDefaultIgnorableCodepoint(cp) && !aiwmIsVariationSelector(cp) && !aiwmIsZwj(cp)
+    }
+    let diPositions = aiwmAllPositions(isResidualDi, input)
+    let diCount = diPositions.count
+
+    // Probe 3: unknown — invisible markers from >= 2 distinct categories.
+    let categoryCount = (nnbspCount > 0 ? 1 : 0)
+        + (vsNonEmojiCount > 0 ? 1 : 0)
+        + (zwjNonEmojiCount > 0 ? 1 : 0)
+        + (diCount > 0 ? 1 : 0)
+    let unknownFires = categoryCount >= 2
+    let totalInvisibleCount = nnbspCount + vsNonEmojiCount + zwjNonEmojiCount + diCount
+
+    let classification: AiWatermarkDetectabilityClassification
+    let firedCount: Int
+    if adversarialFires {
+        let firstPos = nnbspPositions.first ?? 0
+        classification = .hazard(
+            sub: .adversarial(impersonatedScheme: "nnbspBoundary", firstPos: firstPos),
+            positions: nnbspPositions)
+        firedCount = nnbspCount
+    } else if zwspModuloFires {
+        let firstPos = zwspPositions.first ?? 0
+        classification = .hazard(sub: .gpt5ZwspModulo(firstPos: firstPos), positions: zwspPositions)
+        firedCount = zwspCount
+    } else if unknownFires {
+        let allInvisiblePos = input.indices.filter { idx in
+            let cp = input[idx]
+            return aiwmIsNnbsp(cp) || aiwmIsVariationSelector(cp) || aiwmIsZwj(cp)
+                || isDefaultIgnorableCodepoint(cp)
+        }
+        classification = .hazard(
+            sub: .unknown(anomalyMarker: totalInvisibleCount),
+            positions: Array(allInvisiblePos))
+        firedCount = totalInvisibleCount
+    } else if nnbspCount > 0 {
+        classification = .hazard(
+            sub: .nnbspBoundary(markerCount: nnbspCount), positions: nnbspPositions)
+        firedCount = nnbspCount
+    } else if vsNonEmojiCount > 0 {
+        classification = .hazard(
+            sub: .variationSelectorCarrier(markerCount: vsNonEmojiCount), positions: vsNonEmojiPos)
+        firedCount = vsNonEmojiCount
+    } else if zwjNonEmojiCount > 0 {
+        classification = .hazard(
+            sub: .zwjNonEmoji(markerCount: zwjNonEmojiCount), positions: zwjNonEmojiPos)
+        firedCount = zwjNonEmojiCount
+    } else if smartQuoteFires {
+        let firstPos = curlyPositions.first ?? 0
+        classification = .hazard(
+            sub: .smartQuoteAlternation(firstPos: firstPos), positions: curlyPositions)
+        firedCount = curlyCount
+    } else if emDashFires {
+        let firstPos = emDashPositions.first ?? 0
+        classification = .hazard(sub: .emDashPattern(firstPos: firstPos), positions: emDashPositions)
+        firedCount = emDashCount
+    } else if let pos = vocabHit {
+        classification = .hazard(sub: .statisticalTokenChoice(firstPos: pos), positions: [pos])
+        firedCount = 1
+    } else if diCount > 0 {
+        classification = .hazard(
+            sub: .defaultIgnorableCarrier(markerCount: diCount), positions: diPositions)
+        firedCount = diCount
+    } else {
+        classification = .clear
+        firedCount = 0
+    }
+
+    return AiWatermarkDetectabilityVerdict(
+        input: input, classify: classification, markerCount: firedCount)
+}
+
+/// Convenience wrapper over `aiWatermarkDetectabilityDetectWithContext` with the
+/// empty context — exact-arithmetic settings (both tolerances `0`). Mirrors
+/// `Unicode.Security.Crypto.AiWatermarkDetectability.detect`.
+public func aiWatermarkDetectabilityDetect(_ input: [Int]) -> AiWatermarkDetectabilityVerdict {
+    aiWatermarkDetectabilityDetectWithContext(.default, input)
+}
+
+/// Stable reason code for an ai-watermark-detectability sub-threat tag, routed
+/// through the shared reason-code builder:
+/// `unicode.security.K.ai-watermark-detectability.<tag>`.
+public func aiWatermarkDetectabilityReasonCode(_ subThreat: String) -> String {
+    reasonCode(family: Family.aiWatermarkDetectability, subThreat: subThreat)
 }

@@ -41,6 +41,7 @@ export declare function configureSecurityData(data: {
   knownAttackTargets: string;
   standardizedVariants?: string;
   emojiVariationSequences?: string;
+  emojiData?: string;
 }): void;
 export declare function configureSecurityDataReader(reader: (name: string) => string): void;
 export declare function scan(profile: Profile | string, mode: Mode | string, input: Iterable<number>): Verdict;
@@ -129,3 +130,48 @@ export declare function hashInputStabilityDetectWithContext(
   ctx: HashInputContext,
   input: number[],
 ): HashInputVerdict;
+
+// ── ai-watermark-detectability (layer K) ────────────────────────────────────
+
+export type CueClass = "GreenListBias" | "PseudorandomSeq" | "SemanticDrift";
+
+export declare const CueClass: Readonly<Record<string, CueClass>>;
+
+export type AiWatermarkSubThreat =
+  | { kind: "NnbspBoundary"; markerCount: number }
+  | { kind: "VariationSelectorCarrier"; markerCount: number }
+  | { kind: "ZwjNonEmoji"; markerCount: number }
+  | { kind: "DefaultIgnorableCarrier"; markerCount: number }
+  | { kind: "Gpt5ZwspModulo"; firstPos: number }
+  | { kind: "EmDashPattern"; firstPos: number }
+  | { kind: "SmartQuoteAlternation"; firstPos: number }
+  | { kind: "StatisticalTokenChoice"; firstPos: number }
+  | { kind: "Adversarial"; impersonatedScheme: string; firstPos: number }
+  | { kind: "Unknown"; anomalyMarker: number };
+
+export interface AiWatermarkClassification {
+  isClear: boolean;
+  tag: string | null;
+  sub: AiWatermarkSubThreat | null;
+  positions: number[];
+}
+
+export interface AiWatermarkContext {
+  zwspModuloTolerance?: number;
+  adversarialTolerance?: number;
+}
+
+export interface AiWatermarkVerdict {
+  input: number[];
+  classify: AiWatermarkClassification;
+  markerCount: number;
+}
+
+export declare function aiWatermarkDetectabilityReasonCode(subThreatTag: string): string;
+export declare function aiWatermarkSubThreatTag(sub: AiWatermarkSubThreat): string;
+export declare function aiWatermarkCueClass(sub: AiWatermarkSubThreat): CueClass | null;
+export declare function aiWatermarkDetectabilityDetect(input: number[]): AiWatermarkVerdict;
+export declare function aiWatermarkDetectabilityDetectWithContext(
+  ctx: AiWatermarkContext,
+  input: number[],
+): AiWatermarkVerdict;

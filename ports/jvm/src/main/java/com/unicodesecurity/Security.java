@@ -59,6 +59,7 @@ public final class Security {
     public static final String CONFUSABLE_BIDI_COMPOUND = "confusable-bidi-compound";
     public static final String COVERT_DISPLAY_COMPOUND = "covert-display-compound";
     public static final String HASH_INPUT_STABILITY = "hash-input-stability";
+    public static final String AI_WATERMARK_DETECTABILITY = "ai-watermark-detectability";
     private Family() {}
   }
 
@@ -262,7 +263,8 @@ public final class Security {
         || family.equals(Family.COVERT_DISPLAY_COMPOUND)) {
       return "X";
     }
-    if (family.equals(Family.HASH_INPUT_STABILITY)) {
+    if (family.equals(Family.HASH_INPUT_STABILITY)
+        || family.equals(Family.AI_WATERMARK_DETECTABILITY)) {
       return "K";
     }
     return "C";
@@ -1642,6 +1644,7 @@ public final class Security {
       Map.entry("KnownAttackTargets.txt", "47acf87f48e23c2e3ddfb5aed877965fbe29142e61f6f85c4ee7db90c0684947"),
       Map.entry("StandardizedVariants.txt", "f55100b2fb11d3d75a37b8c1ab752192dbd1c4b12328c5ec6b38e3807c0ca597"),
       Map.entry("emoji-variation-sequences.txt", "bb3d09ef03f206012c7532dd52dc0a21c9efddba0135ea4cf0d9201b8b9bba7e"),
+      Map.entry("emoji-data.txt", "2cb2bb9455cda83e8481541ecf5b6dfda66a3bb89efa3fa7c5297eccf607b72b"),
       Map.entry("DerivedBidiClass.txt", "4867b4b7f0731ed1bfcd34cc6251211ff1542541fce0734b6fbda139ee80b3a4"),
       Map.entry("UnicodeData.txt", "2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c"),
       Map.entry("CompositionExclusions.txt", "2f239196ef3b5b61db5cc476e9bd80f534d15aa1b74e1be1dea5d042a344c85f"),
@@ -1669,7 +1672,7 @@ public final class Security {
     }
   }
 
-  private static String readResource(String name) {
+  static String readResource(String name) {
     String expected = PINNED_TABLE_DIGESTS.get(name);
     if (expected == null) {
       throw new IllegalStateException("refusing to load unpinned data table: " + name + " (fail closed)");
@@ -1777,7 +1780,7 @@ public final class Security {
     return null;
   }
 
-  private static boolean isDefaultIgnorableCodepoint(int cp) {
+  static boolean isDefaultIgnorableCodepoint(int cp) {
     return cp == 0x00AD || cp == 0x034F || cp == 0x061C ||
         (cp >= 0x115F && cp <= 0x1160) || (cp >= 0x17B4 && cp <= 0x17B5) ||
         (cp >= 0x180B && cp <= 0x180F) || (cp >= 0x200B && cp <= 0x200F) ||

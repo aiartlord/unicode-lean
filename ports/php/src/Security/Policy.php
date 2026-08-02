@@ -13,6 +13,7 @@ use UnicodePhp\Security\Covert\SurrogateReassembly;
 use UnicodePhp\Security\Covert\TagBlockPayload;
 use UnicodePhp\Security\Covert\VariationSelectorPayload;
 use UnicodePhp\Security\Covert\ZeroWidthPayload;
+use UnicodePhp\Security\Crypto\AiWatermarkDetectability;
 use UnicodePhp\Security\Crypto\Bip39Canonical;
 use UnicodePhp\Security\Crypto\HashInputStability;
 use UnicodePhp\Security\Display\RtlInjection;
@@ -556,6 +557,17 @@ final class Policy
             self::pushFinding($findings, Family::HashInputStability, ClassificationKind::Hazard, $h->classify->tag(), $h->classify->positions());
         }
         return new Verdict($input, $profile, $mode, self::selectAction($profile, $mode, $findings), $findings, $h->stableForm);
+    }
+
+    /** @param list<int> $input */
+    public static function scanAiWatermark(Profile $profile, Mode $mode, array $input): Verdict
+    {
+        $a = AiWatermarkDetectability::detect($input);
+        $findings = [];
+        if (!$a->classify->isClear()) {
+            self::pushFinding($findings, Family::AiWatermarkDetectability, ClassificationKind::Hazard, $a->classify->tag(), $a->classify->positions());
+        }
+        return new Verdict($input, $profile, $mode, self::selectAction($profile, $mode, $findings), $findings, null);
     }
 
     /** @param list<int> $input */

@@ -9,6 +9,7 @@ const bip39_data = @import("bip39_data.zig");
 const known_attack_targets_raw = @embedFile("data/KnownAttackTargets.txt");
 const standardized_variants_raw = @embedFile("data/StandardizedVariants.txt");
 const emoji_variation_sequences_raw = @embedFile("data/emoji-variation-sequences.txt");
+const emoji_data_raw = @embedFile("data/emoji-data.txt");
 const MaxSkeletonLen = 128;
 
 pub const Action = enum {
@@ -2347,6 +2348,565 @@ pub const hash_input_stability = struct {
 };
 
 // ─────────────────────────────────────────────────────────────────────
+// ai-watermark-detectability (crypto layer), mirroring
+// Unicode.Security.Crypto.AiWatermarkDetectability and the verified Rust
+// port ports/rust/src/security/crypto/ai_watermark_detectability.rs.
+//
+// Character-level detector for inputs carrying codepoint patterns consistent
+// with a known AI watermark scheme. Ten probes run in a fixed priority order
+// (first hit wins): adversarial (NNBSP arithmetic progression), gpt5ZwspModulo
+// (ZWSP arithmetic progression), unknown (invisible markers from >= 2
+// categories), nnbspBoundary, variationSelectorCarrier (VS not emoji-adjacent),
+// zwjNonEmoji (ZWJ not emoji-adjacent), smartQuoteAlternation, emDashPattern,
+// statisticalTokenChoice (AI-favored vocabulary), defaultIgnorableCarrier,
+// then clear.
+//
+// The Emoji property table is bundled in the port's own data/emoji-data.txt
+// (UTS #51 17.0, byte-identical to the UCD source); the VS/ZWJ adjacency probes
+// parse its Emoji rows, never a host emoji library. Default_Ignorable reuses the
+// port's own predicate.
+// ─────────────────────────────────────────────────────────────────────
+
+pub const ai_watermark_detectability = struct {
+    /// Number of marker positions a hazard can carry before the bounded buffer
+    /// saturates. Positions are a subset of input indices; the cap mirrors the
+    /// port's other bounded buffers.
+    const MaxPositions = 512;
+
+    /// Bounded position buffer — a hazard's implicated codepoint indices.
+    const PosBuffer = struct {
+        items: [MaxPositions]usize = undefined,
+        len: usize = 0,
+
+        fn append(self: *PosBuffer, p: usize) void {
+            if (self.len >= self.items.len) return;
+            self.items[self.len] = p;
+            self.len += 1;
+        }
+
+        fn slice(self: *const PosBuffer) []const usize {
+            return self.items[0..self.len];
+        }
+    };
+
+    /// The conceptual watermark cue class a sub-threat probes for, drawn from
+    /// the fixed vocabulary in Unicode.Generated.WatermarkSchemes.CueClass.
+    pub const CueClass = enum {
+        /// A codepoint-frequency bias toward a pinned "green list" of tokens.
+        green_list_bias,
+        /// A fixed-period or carrier-byte channel surfacing a pseudorandom function.
+        pseudorandom_seq,
+        /// A stylistic-distribution drift away from natural human writing.
+        semantic_drift,
+    };
+
+    /// Sub-threats this detector can fire. Each variant has a corresponding
+    /// probe in detect; the payload carries the position information the
+    /// conformance harness's attribution column reads back.
+    pub const SubThreat = union(enum) {
+        /// Single-category NNBSP (U+202F) markers; marker_count is how many.
+        nnbsp_boundary: struct { marker_count: usize },
+        /// Variation selector(s) not adjacent to an emoji; marker_count is how many.
+        variation_selector_carrier: struct { marker_count: usize },
+        /// ZWJ(s) not adjacent to an emoji; marker_count is how many.
+        zwj_non_emoji: struct { marker_count: usize },
+        /// Residual Default_Ignorable markers; marker_count is how many.
+        default_ignorable_carrier: struct { marker_count: usize },
+        /// ZWSP (U+200B) markers at arithmetic-progression positions; first_pos
+        /// is the first ZWSP position.
+        gpt5_zwsp_modulo: struct { first_pos: usize },
+        /// Em-dash (U+2014) stylistic signature; first_pos is the first em-dash.
+        em_dash_pattern: struct { first_pos: usize },
+        /// Paired curly-quote stylistic signature; first_pos is the first quote.
+        smart_quote_alternation: struct { first_pos: usize },
+        /// AI-favored lexical pattern hit; first_pos is the match start.
+        statistical_token_choice: struct { first_pos: usize },
+        /// Over-regular marker placement impersonating a scheme; impersonated_scheme
+        /// names the surfaced scheme, first_pos the first marker position.
+        adversarial: struct { impersonated_scheme: []const u8, first_pos: usize },
+        /// Multi-category invisible-marker mixing; anomaly_marker is the total
+        /// invisible-marker count (attribution to a single scheme fails).
+        unknown: struct { anomaly_marker: usize },
+
+        /// Human-facing classification tag for this sub-threat.
+        pub fn tag(self: SubThreat) []const u8 {
+            return switch (self) {
+                .nnbsp_boundary => "NnbspBoundary",
+                .variation_selector_carrier => "VariationSelectorCarrier",
+                .zwj_non_emoji => "ZwjNonEmoji",
+                .default_ignorable_carrier => "DefaultIgnorableCarrier",
+                .gpt5_zwsp_modulo => "Gpt5ZwspModulo",
+                .em_dash_pattern => "EmDashPattern",
+                .smart_quote_alternation => "SmartQuoteAlternation",
+                .statistical_token_choice => "StatisticalTokenChoice",
+                .adversarial => "Adversarial",
+                .unknown => "Unknown",
+            };
+        }
+
+        /// Map this sub-threat to the conceptual watermark cue class it probes
+        /// for. Marker-encoded sub-threats route to pseudorandom_seq;
+        /// vocabulary-bias to green_list_bias; stylistic-distribution to
+        /// semantic_drift; unknown (multi-category mixing) implicates no single
+        /// scheme.
+        pub fn cueClass(self: SubThreat) ?CueClass {
+            return switch (self) {
+                .nnbsp_boundary,
+                .variation_selector_carrier,
+                .zwj_non_emoji,
+                .default_ignorable_carrier,
+                .gpt5_zwsp_modulo,
+                .adversarial,
+                => .pseudorandom_seq,
+                .em_dash_pattern, .smart_quote_alternation => .semantic_drift,
+                .statistical_token_choice => .green_list_bias,
+                .unknown => null,
+            };
+        }
+    };
+
+    /// Top-level classification.
+    pub const Classification = union(enum) {
+        /// No watermark marker detected (semantically noWatermark).
+        clear,
+        /// A hazard: the fired sub-threat plus the implicated marker positions.
+        hazard: struct { sub: SubThreat, positions: PosBuffer },
+
+        /// True iff no watermark marker was detected.
+        pub fn isClear(self: Classification) bool {
+            return switch (self) {
+                .clear => true,
+                .hazard => false,
+            };
+        }
+
+        /// Human-facing tag for a hazard, or null when clear.
+        pub fn tag(self: Classification) ?[]const u8 {
+            return switch (self) {
+                .clear => null,
+                .hazard => |h| h.sub.tag(),
+            };
+        }
+
+        /// Implicated positions (empty when clear).
+        pub fn positions(self: *const Classification) []const usize {
+            switch (self.*) {
+                .clear => return &[_]usize{},
+                .hazard => return self.hazard.positions.slice(),
+            }
+        }
+    };
+
+    /// Verdict — the structured output of detect. marker_count is the count of
+    /// codepoints matching the fired scheme's probe (0 when clear).
+    pub const Verdict = struct {
+        /// The scanned input codepoints.
+        input: []const u32,
+        /// The classification verdict.
+        classify: Classification,
+        /// Count of codepoints matching the fired scheme (0 when clear).
+        marker_count: usize,
+    };
+
+    /// Optional context for the modulo-probe tolerances. Each field controls how
+    /// strictly the corresponding probe checks its arithmetic-progression
+    /// condition; the defaults of 0 require exact equality of consecutive gaps.
+    pub const Context = struct {
+        /// ZWSP-modulo tolerance. 0 requires the ZWSP-position arithmetic
+        /// progression to be exact. k > 0 accepts position gaps within +/- k of
+        /// the first gap, catching modulo schedules with light jitter.
+        zwsp_modulo_tolerance: usize = 0,
+        /// NNBSP-arithmetic tolerance (the adversarial probe). Same semantic as
+        /// zwsp_modulo_tolerance but for the NNBSP positions.
+        adversarial_tolerance: usize = 0,
+    };
+
+    // ── Emoji property table (bundled data/emoji-data.txt, Emoji rows) ───
+
+    /// True iff cp has the Emoji = Yes property per the bundled
+    /// data/emoji-data.txt. Scans the embedded table's Emoji rows on each call,
+    /// mirroring the port's runtime data-parse idiom (see homoglyphTargetMatch);
+    /// never consults a host emoji library. Each non-comment row is
+    /// `<range> ; <property> # <comment>`; only rows whose property is exactly
+    /// Emoji are kept.
+    fn isEmoji(cp: u32) bool {
+        var offset: usize = 0;
+        while (nextLine(emoji_data_raw, &offset)) |raw_line| {
+            const body = if (std.mem.indexOfScalar(u8, raw_line, '#')) |idx| raw_line[0..idx] else raw_line;
+            const stripped = trimAscii(body);
+            if (stripped.len == 0) continue;
+            var fields = std.mem.splitScalar(u8, stripped, ';');
+            const range_field = fields.next() orelse continue;
+            const prop_field = fields.next() orelse continue;
+            if (!std.mem.eql(u8, trimAscii(prop_field), "Emoji")) continue;
+            const range = trimAscii(range_field);
+            if (std.mem.indexOf(u8, range, "..")) |dot_idx| {
+                const lo = parseHexU32(trimAscii(range[0..dot_idx])) orelse continue;
+                const hi = parseHexU32(trimAscii(range[dot_idx + 2 ..])) orelse continue;
+                if (lo <= cp and cp <= hi) return true;
+            } else {
+                const single = parseHexU32(range) orelse continue;
+                if (single == cp) return true;
+            }
+        }
+        return false;
+    }
+
+    // ── Codepoint probes ────────────────────────────────────────────────
+
+    /// True iff cp is U+202F NARROW NO-BREAK SPACE.
+    fn isNnbsp(cp: u32) bool {
+        return cp == 0x202F;
+    }
+
+    /// True iff cp is U+200D ZERO WIDTH JOINER.
+    fn isZwj(cp: u32) bool {
+        return cp == 0x200D;
+    }
+
+    /// True iff cp is a Variation Selector — the basic block U+FE00..U+FE0F
+    /// (VS1..VS16) or the Plane-14 IVS block U+E0100..U+E01EF (VS17..VS256).
+    fn isVariationSelector(cp: u32) bool {
+        return (cp >= 0xFE00 and cp <= 0xFE0F) or (cp >= 0xE0100 and cp <= 0xE01EF);
+    }
+
+    /// True iff cp is Default_Ignorable_Code_Point. Reuses the port's own UCD
+    /// predicate, never a host normalizer.
+    fn isDefaultIgnorable(cp: u32) bool {
+        return isDefaultIgnorableCodepoint(cp);
+    }
+
+    /// True iff cp is U+200B ZERO WIDTH SPACE.
+    fn isZwsp(cp: u32) bool {
+        return cp == 0x200B;
+    }
+
+    /// True iff cp is U+2014 EM DASH.
+    fn isEmDash(cp: u32) bool {
+        return cp == 0x2014;
+    }
+
+    /// True iff cp is U+002D HYPHEN-MINUS (ASCII).
+    fn isHyphenMinus(cp: u32) bool {
+        return cp == 0x002D;
+    }
+
+    /// True iff cp is one of the four "curly" quotation marks: U+2018 / U+2019
+    /// (single open/close) and U+201C / U+201D (double open/close).
+    fn isCurlyQuote(cp: u32) bool {
+        return cp == 0x2018 or cp == 0x2019 or cp == 0x201C or cp == 0x201D;
+    }
+
+    /// True iff cp is an ASCII straight quote — U+0022 (double) or U+0027
+    /// (single / apostrophe).
+    fn isStraightQuote(cp: u32) bool {
+        return cp == 0x0022 or cp == 0x0027;
+    }
+
+    /// True iff cp is a residual Default_Ignorable — default-ignorable but neither
+    /// a variation selector nor ZWJ (both handled by earlier probes).
+    fn isResidualDi(cp: u32) bool {
+        return isDefaultIgnorable(cp) and !@This().isVariationSelector(cp) and !isZwj(cp);
+    }
+
+    /// True iff input[i] is adjacent (immediate predecessor OR immediate
+    /// successor) to an emoji codepoint. Two-sided check. Used by the VS and ZWJ
+    /// probes to exclude legitimate emoji-context occurrences.
+    fn isAdjacentToEmoji(input: []const u32, i: usize) bool {
+        const prev_is_emoji = if (i == 0) false else isEmoji(input[i - 1]);
+        const next_is_emoji = if (i + 1 < input.len) isEmoji(input[i + 1]) else false;
+        return prev_is_emoji or next_is_emoji;
+    }
+
+    /// All positions in input matching predicate p.
+    fn allPositions(comptime p: fn (u32) bool, input: []const u32) PosBuffer {
+        var out = PosBuffer{};
+        for (input, 0..) |cp, idx| {
+            if (p(cp)) out.append(idx);
+        }
+        return out;
+    }
+
+    /// True iff positions forms an arithmetic progression with all consecutive
+    /// gaps within tolerance of the first gap. Empty + singleton lists are
+    /// vacuously arithmetic. positions is assumed ascending, so gaps are
+    /// non-negative.
+    fn positionsAreArithmeticWithin(positions: []const usize, tolerance: usize) bool {
+        if (positions.len < 2) return true;
+        const first_gap = positions[1] - positions[0];
+        var i: usize = 0;
+        while (i < positions.len - 1) : (i += 1) {
+            const gap = positions[i + 1] - positions[i];
+            if (!(gap <= first_gap + tolerance and first_gap <= gap + tolerance)) return false;
+        }
+        return true;
+    }
+
+    /// First start-position at which pattern appears as a contiguous sub-slice of
+    /// input, or null if absent.
+    fn containsSublist(pattern: []const u32, input: []const u32) ?usize {
+        if (pattern.len == 0 or pattern.len > input.len) return null;
+        const max_start = input.len - pattern.len;
+        var start: usize = 0;
+        while (start <= max_start) : (start += 1) {
+            if (cpSlicesEqual(input[start .. start + pattern.len], pattern)) return start;
+        }
+        return null;
+    }
+
+    /// True iff any codepoint in input satisfies p.
+    fn anyMatches(comptime p: fn (u32) bool, input: []const u32) bool {
+        for (input) |cp| {
+            if (p(cp)) return true;
+        }
+        return false;
+    }
+
+    /// The "AI-favored" lexical-pattern catalog (each word as its codepoint
+    /// sequence), transcribed verbatim from the pinned aiFavoredVocabulary literal
+    /// in the Lean spec (parsed from Ucd/Security/AiFavoredVocabulary.txt and
+    /// drift-gated there against a fresh parse).
+    const ai_favored_vocabulary = [_][]const u32{
+        &[_]u32{ 100, 101, 108, 118, 101 },
+        &[_]u32{ 100, 101, 108, 118, 105, 110, 103 },
+        &[_]u32{ 116, 97, 112, 101, 115, 116, 114, 121 },
+        &[_]u32{ 105, 110, 116, 114, 105, 99, 97, 116, 101 },
+        &[_]u32{ 110, 117, 97, 110, 99, 101, 100 },
+        &[_]u32{ 109, 111, 114, 101, 111, 118, 101, 114 },
+        &[_]u32{ 102, 117, 114, 116, 104, 101, 114, 109, 111, 114, 101 },
+        &[_]u32{ 114, 101, 97, 108, 109 },
+        &[_]u32{ 101, 108, 117, 99, 105, 100, 97, 116, 101 },
+        &[_]u32{ 115, 104, 111, 119, 99, 97, 115, 105, 110, 103 },
+        &[_]u32{ 117, 110, 100, 101, 114, 115, 99, 111, 114, 101, 115 },
+        &[_]u32{ 117, 110, 100, 101, 114, 115, 99, 111, 114, 101, 100 },
+        &[_]u32{ 112, 105, 118, 111, 116, 97, 108 },
+        &[_]u32{ 98, 111, 108, 115, 116, 101, 114 },
+        &[_]u32{ 109, 117, 108, 116, 105, 102, 97, 99, 101, 116, 101, 100 },
+        &[_]u32{ 116, 101, 115, 116, 97, 109, 101, 110, 116 },
+        &[_]u32{ 102, 111, 115, 116, 101, 114 },
+        &[_]u32{ 104, 111, 108, 105, 115, 116, 105, 99 },
+        &[_]u32{ 112, 97, 114, 97, 100, 105, 103, 109 },
+        &[_]u32{ 116, 114, 97, 110, 115, 102, 111, 114, 109, 97, 116, 105, 118, 101 },
+        &[_]u32{ 115, 112, 101, 97, 114, 104, 101, 97, 100 },
+        &[_]u32{ 109, 101, 116, 105, 99, 117, 108, 111, 117, 115 },
+        &[_]u32{ 109, 101, 116, 105, 99, 117, 108, 111, 117, 115, 108, 121 },
+        &[_]u32{ 101, 109, 112, 111, 119, 101, 114 },
+        &[_]u32{ 101, 109, 112, 111, 119, 101, 114, 105, 110, 103 },
+        &[_]u32{ 112, 114, 111, 102, 111, 117, 110, 100 },
+        &[_]u32{ 112, 114, 111, 102, 111, 117, 110, 100, 108, 121 },
+        &[_]u32{ 99, 111, 109, 112, 101, 108, 108, 105, 110, 103 },
+        &[_]u32{ 99, 111, 109, 112, 114, 101, 104, 101, 110, 115, 105, 118, 101 },
+        &[_]u32{ 99, 114, 117, 99, 105, 97, 108 },
+        &[_]u32{ 100, 97, 117, 110, 116, 105, 110, 103 },
+        &[_]u32{ 114, 111, 98, 117, 115, 116 },
+        &[_]u32{ 115, 116, 114, 101, 97, 109, 108, 105, 110, 101 },
+        &[_]u32{ 101, 110, 114, 105, 99, 104 },
+        &[_]u32{ 101, 120, 101, 109, 112, 108, 105, 102, 121 },
+        &[_]u32{ 99, 97, 112, 116, 105, 118, 97, 116, 105, 110, 103 },
+        &[_]u32{ 100, 105, 115, 99, 101, 114, 110, 105, 110, 103 },
+        &[_]u32{ 109, 101, 115, 109, 101, 114, 105, 122, 101 },
+        &[_]u32{ 105, 110, 116, 114, 105, 99, 97, 116, 101, 108, 121 },
+        &[_]u32{ 105, 109, 98, 117, 101 },
+        &[_]u32{ 112, 108, 97, 121, 115, 32, 97, 32, 99, 114, 117, 99, 105, 97, 108, 32, 114, 111, 108, 101 },
+        &[_]u32{ 112, 108, 97, 121, 115, 32, 97, 32, 112, 105, 118, 111, 116, 97, 108, 32, 114, 111, 108, 101 },
+        &[_]u32{ 105, 116, 32, 105, 115, 32, 105, 109, 112, 111, 114, 116, 97, 110, 116, 32, 116, 111, 32, 110, 111, 116, 101 },
+        &[_]u32{ 105, 116, 32, 105, 115, 32, 119, 111, 114, 116, 104, 32, 110, 111, 116, 105, 110, 103 },
+        &[_]u32{ 105, 110, 32, 99, 111, 110, 99, 108, 117, 115, 105, 111, 110 },
+        &[_]u32{ 105, 110, 32, 101, 115, 115, 101, 110, 99, 101 },
+        &[_]u32{ 100, 101, 108, 118, 101, 32, 105, 110, 116, 111 },
+        &[_]u32{ 100, 101, 108, 118, 105, 110, 103, 32, 105, 110, 116, 111 },
+        &[_]u32{ 116, 97, 112, 101, 115, 116, 114, 121, 32, 111, 102 },
+        &[_]u32{ 114, 101, 97, 108, 109, 32, 111, 102 },
+    };
+
+    // ── Top-level detection ─────────────────────────────────────────────
+
+    /// The detection function. Runs every probe in the fixed priority order
+    /// (most-specific first); the first hit wins. See the section header for the
+    /// probe inventory and the ordering rationale.
+    pub fn detectWithContext(ctx: Context, input: []const u32) @This().Verdict {
+        const nnbsp_positions = allPositions(isNnbsp, input);
+        const nnbsp_count = nnbsp_positions.len;
+
+        // Probe 1: adversarial — NNBSP too-regular.
+        const adversarial_fires = nnbsp_count >= 3 and
+            positionsAreArithmeticWithin(nnbsp_positions.slice(), ctx.adversarial_tolerance);
+
+        // Probe 2: gpt5ZwspModulo — ZWSP arithmetic progression.
+        const zwsp_positions = allPositions(isZwsp, input);
+        const zwsp_count = zwsp_positions.len;
+        const zwsp_modulo_fires = zwsp_count >= 3 and
+            positionsAreArithmeticWithin(zwsp_positions.slice(), ctx.zwsp_modulo_tolerance);
+
+        // Variation selectors not adjacent to an emoji.
+        var vs_non_emoji = PosBuffer{};
+        const vs_all_pos = allPositions(@This().isVariationSelector, input);
+        for (vs_all_pos.slice()) |i| {
+            if (!isAdjacentToEmoji(input, i)) vs_non_emoji.append(i);
+        }
+        const vs_non_emoji_count = vs_non_emoji.len;
+
+        // ZWJ not adjacent to an emoji.
+        var zwj_non_emoji = PosBuffer{};
+        const zwj_all_pos = allPositions(isZwj, input);
+        for (zwj_all_pos.slice()) |i| {
+            if (!isAdjacentToEmoji(input, i)) zwj_non_emoji.append(i);
+        }
+        const zwj_non_emoji_count = zwj_non_emoji.len;
+
+        // Probe 7: smartQuoteAlternation — curly quotes only.
+        const curly_positions = allPositions(isCurlyQuote, input);
+        const curly_count = curly_positions.len;
+        const has_straight_quote = anyMatches(isStraightQuote, input);
+        const smart_quote_fires = curly_count >= 2 and !has_straight_quote;
+
+        // Probe 8: emDashPattern — em-dashes without hyphen-minus.
+        const em_dash_positions = allPositions(isEmDash, input);
+        const em_dash_count = em_dash_positions.len;
+        const has_hyphen_minus = anyMatches(isHyphenMinus, input);
+        const em_dash_fires = em_dash_count >= 2 and !has_hyphen_minus;
+
+        // Probe 9: statisticalTokenChoice — scan the pinned vocabulary. Each word
+        // is compared as a contiguous sub-slice of the input.
+        const vocab_hit: ?usize = blk: {
+            for (ai_favored_vocabulary) |pattern| {
+                if (containsSublist(pattern, input)) |pos| break :blk pos;
+            }
+            break :blk null;
+        };
+
+        // Residual default-ignorables (excluding VS and ZWJ, handled above).
+        const di_positions = allPositions(isResidualDi, input);
+        const di_count = di_positions.len;
+
+        // Probe 3: unknown — invisible markers from >= 2 distinct categories.
+        const category_count = @as(usize, @intFromBool(nnbsp_count > 0)) +
+            @as(usize, @intFromBool(vs_non_emoji_count > 0)) +
+            @as(usize, @intFromBool(zwj_non_emoji_count > 0)) +
+            @as(usize, @intFromBool(di_count > 0));
+        const unknown_fires = category_count >= 2;
+        const total_invisible_count = nnbsp_count + vs_non_emoji_count + zwj_non_emoji_count + di_count;
+
+        if (adversarial_fires) {
+            const first_pos = if (nnbsp_count > 0) nnbsp_positions.items[0] else 0;
+            return @This().Verdict{
+                .input = input,
+                .classify = .{ .hazard = .{
+                    .sub = .{ .adversarial = .{ .impersonated_scheme = "nnbspBoundary", .first_pos = first_pos } },
+                    .positions = nnbsp_positions,
+                } },
+                .marker_count = nnbsp_count,
+            };
+        } else if (zwsp_modulo_fires) {
+            const first_pos = if (zwsp_count > 0) zwsp_positions.items[0] else 0;
+            return @This().Verdict{
+                .input = input,
+                .classify = .{ .hazard = .{
+                    .sub = .{ .gpt5_zwsp_modulo = .{ .first_pos = first_pos } },
+                    .positions = zwsp_positions,
+                } },
+                .marker_count = zwsp_count,
+            };
+        } else if (unknown_fires) {
+            var all_invisible = PosBuffer{};
+            for (input, 0..) |cp, idx| {
+                if (isNnbsp(cp) or @This().isVariationSelector(cp) or isZwj(cp) or isDefaultIgnorable(cp)) {
+                    all_invisible.append(idx);
+                }
+            }
+            return @This().Verdict{
+                .input = input,
+                .classify = .{ .hazard = .{
+                    .sub = .{ .unknown = .{ .anomaly_marker = total_invisible_count } },
+                    .positions = all_invisible,
+                } },
+                .marker_count = total_invisible_count,
+            };
+        } else if (nnbsp_count > 0) {
+            return @This().Verdict{
+                .input = input,
+                .classify = .{ .hazard = .{
+                    .sub = .{ .nnbsp_boundary = .{ .marker_count = nnbsp_count } },
+                    .positions = nnbsp_positions,
+                } },
+                .marker_count = nnbsp_count,
+            };
+        } else if (vs_non_emoji_count > 0) {
+            return @This().Verdict{
+                .input = input,
+                .classify = .{ .hazard = .{
+                    .sub = .{ .variation_selector_carrier = .{ .marker_count = vs_non_emoji_count } },
+                    .positions = vs_non_emoji,
+                } },
+                .marker_count = vs_non_emoji_count,
+            };
+        } else if (zwj_non_emoji_count > 0) {
+            return @This().Verdict{
+                .input = input,
+                .classify = .{ .hazard = .{
+                    .sub = .{ .zwj_non_emoji = .{ .marker_count = zwj_non_emoji_count } },
+                    .positions = zwj_non_emoji,
+                } },
+                .marker_count = zwj_non_emoji_count,
+            };
+        } else if (smart_quote_fires) {
+            const first_pos = if (curly_count > 0) curly_positions.items[0] else 0;
+            return @This().Verdict{
+                .input = input,
+                .classify = .{ .hazard = .{
+                    .sub = .{ .smart_quote_alternation = .{ .first_pos = first_pos } },
+                    .positions = curly_positions,
+                } },
+                .marker_count = curly_count,
+            };
+        } else if (em_dash_fires) {
+            const first_pos = if (em_dash_count > 0) em_dash_positions.items[0] else 0;
+            return @This().Verdict{
+                .input = input,
+                .classify = .{ .hazard = .{
+                    .sub = .{ .em_dash_pattern = .{ .first_pos = first_pos } },
+                    .positions = em_dash_positions,
+                } },
+                .marker_count = em_dash_count,
+            };
+        } else if (vocab_hit) |pos| {
+            var single = PosBuffer{};
+            single.append(pos);
+            return @This().Verdict{
+                .input = input,
+                .classify = .{ .hazard = .{
+                    .sub = .{ .statistical_token_choice = .{ .first_pos = pos } },
+                    .positions = single,
+                } },
+                .marker_count = 1,
+            };
+        } else if (di_count > 0) {
+            return @This().Verdict{
+                .input = input,
+                .classify = .{ .hazard = .{
+                    .sub = .{ .default_ignorable_carrier = .{ .marker_count = di_count } },
+                    .positions = di_positions,
+                } },
+                .marker_count = di_count,
+            };
+        } else {
+            return @This().Verdict{
+                .input = input,
+                .classify = .{ .clear = {} },
+                .marker_count = 0,
+            };
+        }
+    }
+
+    /// Convenience wrapper over detectWithContext with the empty context —
+    /// exact-arithmetic settings (zwsp_modulo_tolerance = 0,
+    /// adversarial_tolerance = 0).
+    pub fn detect(input: []const u32) @This().Verdict {
+        return detectWithContext(Context{}, input);
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────
 // Locale-case-inversion detector (Tier A2), mirroring
 // Unicode.Security.Form.LocaleCaseInversion.
 //
@@ -3355,4 +3915,196 @@ test "hash-input-stability RfcRule tag round-trip" {
         try std.testing.expectEqual(@as(?His.RfcRule, rule), His.RfcRule.fromTag(rule.tag()));
     }
     try std.testing.expectEqual(@as(?His.RfcRule, null), His.RfcRule.fromTag("nope"));
+}
+
+// ── ai-watermark-detectability (crypto layer) ───────────────────────────
+
+const Aw = ai_watermark_detectability;
+
+fn awTag(input: []const u32) ?[]const u8 {
+    return Aw.detect(input).classify.tag();
+}
+
+fn expectAwTag(input: []const u32, want: []const u8) !void {
+    const t = awTag(input);
+    try std.testing.expect(t != null);
+    try std.testing.expectEqualStrings(want, t.?);
+}
+
+test "ai-watermark-detectability probe spot checks" {
+    // Mirrors the §4 probe spot-check theorems in
+    // Unicode/Security/Crypto/AiWatermarkDetectability.lean and its Rust port.
+    try std.testing.expect(Aw.isNnbsp(0x202F));
+    try std.testing.expect(!Aw.isNnbsp(0x20));
+    try std.testing.expect(!Aw.isNnbsp(0x3000));
+
+    try std.testing.expect(Aw.isZwj(0x200D));
+    try std.testing.expect(!Aw.isZwj(0x200B));
+    try std.testing.expect(!Aw.isZwj(0x200C));
+
+    try std.testing.expect(Aw.isVariationSelector(0xFE00));
+    try std.testing.expect(Aw.isVariationSelector(0xFE0F));
+    try std.testing.expect(Aw.isVariationSelector(0xE0100));
+    try std.testing.expect(!Aw.isVariationSelector(0x61));
+    try std.testing.expect(!Aw.isVariationSelector(0x200D));
+
+    try std.testing.expect(Aw.isDefaultIgnorable(0x200B));
+    try std.testing.expect(Aw.isDefaultIgnorable(0x200D));
+    try std.testing.expect(Aw.isDefaultIgnorable(0x00AD));
+    try std.testing.expect(!Aw.isDefaultIgnorable(0x202F));
+    try std.testing.expect(!Aw.isDefaultIgnorable(0x61));
+
+    try std.testing.expect(Aw.isEmoji(0x1F600));
+    try std.testing.expect(!Aw.isEmoji(0x200D));
+    try std.testing.expect(!Aw.isEmoji(0x61));
+
+    try std.testing.expect(!Aw.isAdjacentToEmoji(&[_]u32{ 0x61, 0xFE0F, 0x62 }, 1));
+    try std.testing.expect(Aw.isAdjacentToEmoji(&[_]u32{ 0x1F600, 0xFE0F }, 1));
+    try std.testing.expect(Aw.isAdjacentToEmoji(&[_]u32{ 0xFE0F, 0x1F600 }, 0));
+}
+
+test "ai-watermark-detectability detect spot checks" {
+    // Mirrors the §6 detect spot checks (shared context-free fixture vectors in
+    // fixtures/security/detectors/ai_watermark_detectability.json).
+    try std.testing.expect(Aw.detect(&[_]u32{}).classify.isClear()); // empty-clear
+    try std.testing.expect(Aw.detect(&[_]u32{ 0x61, 0x62, 0x63 }).classify.isClear()); // ascii-clear
+    try std.testing.expect(Aw.detect(&[_]u32{ 0x4E2D, 0x6587 }).classify.isClear()); // han-clear
+
+    {
+        const v = Aw.detect(&[_]u32{ 0x61, 0x202F, 0x62 }); // nnbsp-boundary
+        try std.testing.expectEqualStrings("NnbspBoundary", v.classify.tag().?);
+        try std.testing.expectEqualSlices(usize, &[_]usize{1}, v.classify.positions());
+        try std.testing.expect(v.marker_count == 1);
+    }
+    {
+        const v = Aw.detect(&[_]u32{ 0x61, 0xFE0F, 0x62 }); // vs-in-plain-text
+        try std.testing.expectEqualStrings("VariationSelectorCarrier", v.classify.tag().?);
+        try std.testing.expect(v.marker_count == 1);
+    }
+    try std.testing.expect(Aw.detect(&[_]u32{ 0x1F600, 0xFE0F }).classify.isClear()); // vs-after-emoji-clear
+    {
+        const v = Aw.detect(&[_]u32{ 0x61, 0x200D, 0x62 }); // zwj-in-plain-text
+        try std.testing.expectEqualStrings("ZwjNonEmoji", v.classify.tag().?);
+        try std.testing.expect(v.marker_count == 1);
+    }
+    try std.testing.expect(Aw.detect(&[_]u32{ 0x1F469, 0x200D, 0x1F52C }).classify.isClear()); // zwj-emoji-sequence-clear
+    {
+        const v = Aw.detect(&[_]u32{ 0x61, 0x00AD, 0x62 }); // soft-hyphen-default-ignorable
+        try std.testing.expectEqualStrings("DefaultIgnorableCarrier", v.classify.tag().?);
+        try std.testing.expect(v.marker_count == 1);
+    }
+    {
+        const v = Aw.detect(&[_]u32{ 0x61, 0x200B, 0x62 }); // zwsp-default-ignorable
+        try std.testing.expectEqualStrings("DefaultIgnorableCarrier", v.classify.tag().?);
+        try std.testing.expect(v.marker_count == 1);
+    }
+    try expectAwTag(&[_]u32{ 0x61, 0x202F, 0x00AD, 0x62 }, "Unknown"); // priority unknown over nnbsp+di
+    try expectAwTag(&[_]u32{ 0x61, 0xFE0F, 0x200D, 0x62 }, "Unknown"); // priority unknown over vs+zwj
+    {
+        const v = Aw.detect(&[_]u32{ 0x61, 0x202F, 0x62, 0x202F, 0x63 }); // multiple-nnbsp-aggregates
+        try std.testing.expectEqualStrings("NnbspBoundary", v.classify.tag().?);
+        try std.testing.expect(v.marker_count == 2);
+        try std.testing.expectEqualSlices(usize, &[_]usize{ 1, 3 }, v.classify.positions());
+    }
+}
+
+test "ai-watermark-detectability refinement probes" {
+    // Mirrors the §7 refinement-probe and priority theorems.
+    {
+        const v = Aw.detect(&[_]u32{ 0x61, 0x202F, 0x62, 0x202F, 0x63, 0x202F, 0x64 }); // adversarial-arithmetic-nnbsp
+        try std.testing.expectEqualStrings("Adversarial", v.classify.tag().?);
+        try std.testing.expect(v.marker_count == 3);
+    }
+    try expectAwTag(&[_]u32{ 0x61, 0x202F, 0x62, 0x202F, 0x63 }, "NnbspBoundary"); // two below adversarial threshold
+    {
+        const v = Aw.detect(&[_]u32{ 0x61, 0x200B, 0x62, 0x200B, 0x63, 0x200B, 0x64 }); // gpt5-zwsp-modulo
+        try std.testing.expectEqualStrings("Gpt5ZwspModulo", v.classify.tag().?);
+        try std.testing.expect(v.marker_count == 3);
+    }
+    try expectAwTag(&[_]u32{ 0x61, 0x200B, 0x62, 0x200B, 0x63 }, "DefaultIgnorableCarrier"); // two below modulo threshold
+    {
+        const v = Aw.detect(&[_]u32{ 0x201C, 0x61, 0x62, 0x63, 0x201D }); // smart-quote-alternation
+        try std.testing.expectEqualStrings("SmartQuoteAlternation", v.classify.tag().?);
+        try std.testing.expect(v.marker_count == 2);
+    }
+    try std.testing.expect(Aw.detect(&[_]u32{ 0x201C, 0x61, 0x22, 0x201D }).classify.isClear()); // smart-quote-with-straight-clear
+    {
+        const v = Aw.detect(&[_]u32{ 0x61, 0x62, 0x20, 0x2014, 0x20, 0x63, 0x64, 0x20, 0x2014, 0x20, 0x65, 0x66 }); // em-dash-pattern
+        try std.testing.expectEqualStrings("EmDashPattern", v.classify.tag().?);
+        try std.testing.expect(v.marker_count == 2);
+    }
+    try std.testing.expect(Aw.detect(&[_]u32{ 0x61, 0x62, 0x2D, 0x63, 0x64, 0x20, 0x2014, 0x20, 0x65, 0x66 }).classify.isClear()); // em-dash-with-hyphen-clear
+    {
+        const v = Aw.detect(&[_]u32{ 0x64, 0x65, 0x6C, 0x76, 0x65 }); // statistical-token-delve
+        try std.testing.expectEqualStrings("StatisticalTokenChoice", v.classify.tag().?);
+        try std.testing.expect(v.marker_count == 1);
+    }
+    {
+        const v = Aw.detect(&[_]u32{ 0x3B, 0x20, 0x6D, 0x6F, 0x72, 0x65, 0x6F, 0x76, 0x65, 0x72, 0x2C, 0x20 }); // statistical-token-moreover-embedded
+        try std.testing.expectEqualStrings("StatisticalTokenChoice", v.classify.tag().?);
+        try std.testing.expectEqualSlices(usize, &[_]usize{2}, v.classify.positions());
+    }
+    {
+        const v = Aw.detect(&[_]u32{ 0x61, 0x202F, 0x00AD, 0x62 }); // unknown-nnbsp-plus-di
+        try std.testing.expectEqualStrings("Unknown", v.classify.tag().?);
+        try std.testing.expect(v.marker_count == 2);
+    }
+    {
+        const v = Aw.detect(&[_]u32{ 0x61, 0xFE0F, 0x200D, 0x62 }); // unknown-vs-plus-zwj
+        try std.testing.expectEqualStrings("Unknown", v.classify.tag().?);
+        try std.testing.expect(v.marker_count == 2);
+    }
+    {
+        const v = Aw.detect(&[_]u32{ 0x61, 0x202F, 0x200D, 0x62 }); // unknown-nnbsp-plus-zwj
+        try std.testing.expectEqualStrings("Unknown", v.classify.tag().?);
+        try std.testing.expect(v.marker_count == 2);
+    }
+    try expectAwTag(&[_]u32{ 0x61, 0x202F, 0x62 }, "NnbspBoundary"); // single-category skips unknown
+    try expectAwTag(&[_]u32{ 0x61, 0x202F, 0x62, 0x202F, 0x63, 0x202F, 0x64 }, "Adversarial"); // priority adversarial over nnbsp
+    try expectAwTag(&[_]u32{ 0x61, 0x200B, 0x62, 0x200B, 0x63, 0x200B, 0x64 }, "Gpt5ZwspModulo"); // priority zwsp modulo over di
+}
+
+test "ai-watermark-detectability tolerance vectors" {
+    // The two Context-tolerance vectors from the Rust #[test] module
+    // (detect_zwsp_jittered_*), plus the default-context identity.
+    // ZWSPs at 1, 3, 6 (gaps 2, 3). Bare detect (tolerance 0) falls through to
+    // defaultIgnorableCarrier.
+    const jittered = [_]u32{ 0x61, 0x200B, 0x62, 0x200B, 0x63, 0x64, 0x200B, 0x65 };
+    try expectAwTag(&jittered, "DefaultIgnorableCarrier");
+
+    // With zwsp_modulo_tolerance = 1 the same input fires gpt5ZwspModulo.
+    const tolerant = Aw.detectWithContext(.{ .zwsp_modulo_tolerance = 1 }, &jittered);
+    try std.testing.expectEqualStrings("Gpt5ZwspModulo", tolerant.classify.tag().?);
+
+    // detect_with_context(default) == detect.
+    const d = Aw.detect(&[_]u32{ 0x61, 0x202F, 0x62 });
+    const c = Aw.detectWithContext(.{}, &[_]u32{ 0x61, 0x202F, 0x62 });
+    try std.testing.expectEqual(d.classify.isClear(), c.classify.isClear());
+    try std.testing.expectEqualStrings(d.classify.tag().?, c.classify.tag().?);
+}
+
+test "ai-watermark-detectability cue-class coverage" {
+    // Mirrors every_cue_class_is_probed and unknown_has_no_cue_class.
+    const classes = [_]Aw.CueClass{ .green_list_bias, .pseudorandom_seq, .semantic_drift };
+    const sub_threats = [_]Aw.SubThreat{
+        .{ .nnbsp_boundary = .{ .marker_count = 0 } },
+        .{ .variation_selector_carrier = .{ .marker_count = 0 } },
+        .{ .zwj_non_emoji = .{ .marker_count = 0 } },
+        .{ .default_ignorable_carrier = .{ .marker_count = 0 } },
+        .{ .gpt5_zwsp_modulo = .{ .first_pos = 0 } },
+        .{ .em_dash_pattern = .{ .first_pos = 0 } },
+        .{ .smart_quote_alternation = .{ .first_pos = 0 } },
+        .{ .statistical_token_choice = .{ .first_pos = 0 } },
+        .{ .adversarial = .{ .impersonated_scheme = "", .first_pos = 0 } },
+    };
+    for (classes) |cls| {
+        var probed = false;
+        for (sub_threats) |st| {
+            if (st.cueClass()) |c| {
+                if (c == cls) probed = true;
+            }
+        }
+        try std.testing.expect(probed);
+    }
+    try std.testing.expectEqual(@as(?Aw.CueClass, null), (Aw.SubThreat{ .unknown = .{ .anomaly_marker = 0 } }).cueClass());
 }

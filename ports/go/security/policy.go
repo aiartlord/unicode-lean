@@ -60,6 +60,7 @@ const (
 	FamilyConfusableBidiCompound Family = "confusable-bidi-compound"
 	FamilyCovertDisplayCompound  Family = "covert-display-compound"
 	FamilyHashInputStability     Family = "hash-input-stability"
+	FamilyAiWatermarkDetect      Family = "ai-watermark-detectability"
 )
 
 type ProfilePolicy struct {
@@ -498,7 +499,7 @@ func layer(family Family) string {
 		return "D"
 	case FamilyConfusableBidiCompound, FamilyCovertDisplayCompound:
 		return "X"
-	case FamilyHashInputStability:
+	case FamilyHashInputStability, FamilyAiWatermarkDetect:
 		return "K"
 	default:
 		return "C"

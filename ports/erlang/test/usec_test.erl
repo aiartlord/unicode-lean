@@ -10,6 +10,7 @@ run() ->
     multiencoding_contract(),
     form_and_bip39(),
     hash_input_stability_tests(),
+    ai_watermark_tests(),
     opaque_blob_tests(),
     grapheme_tests(),
     io:format("ok: erlang unicode security tests pass~n").
@@ -232,6 +233,62 @@ hash_input_stability_tests() ->
 
 classify_tag_of(Verdict) ->
     usec_hash_input_stability:classify_tag(maps:get(classify, Verdict)).
+
+%% Reason code the detect verdict would emit for a given input, or `none' when
+%% clear. Mirrors usec_policy:scan_ai_watermark_detectability's finding wiring.
+aw_code(Input) ->
+    C = maps:get(classify, usec_ai_watermark_detectability:detect(Input)),
+    case usec_ai_watermark_detectability:classify_tag(C) of
+        none -> none;
+        Tag -> usec_policy:reason_code(ai_watermark_detectability, Tag)
+    end.
+
+%% Context-bearing detect: the classification tag under a given Context map.
+aw_ctx_tag(Ctx, Input) ->
+    C = maps:get(classify, usec_ai_watermark_detectability:detect_with_context(Ctx, Input)),
+    usec_ai_watermark_detectability:classify_tag(C).
+
+ai_watermark_tests() ->
+    %% ── Shared context-free fixture, run through detect. ────────────────
+    F = fixture(filename:join("detectors", "ai_watermark_detectability.json")),
+    assert_eq(<<"ai-watermark-detectability">>, maps:get(<<"family">>, F), aw_fixture_family),
+    lists:foreach(fun(Case) ->
+                          Input = maps:get(<<"input">>, Case),
+                          Label = {aw_fixture, maps:get(<<"name">>, Case)},
+                          Required = maps:get(<<"required_findings">>, Case),
+                          Codes = case aw_code(Input) of
+                                      none -> [];
+                                      Code -> [Code]
+                                  end,
+                          lists:foreach(fun(Req) -> assert(lists:member(Req, Codes), Label) end, Required),
+                          case Required of
+                              [] -> assert(Codes =:= [], Label);
+                              _ -> ok
+                          end
+                  end, maps:get(<<"cases">>, F)),
+
+    %% ── The two Context-tolerance vectors transcribed from the rust #[test]
+    %%    module (detect_zwsp_jittered_*). ZWSPs at positions 1, 3, 6
+    %%    (gaps 2, 3). Bare detect (tolerance 0) falls through to
+    %%    defaultIgnorableCarrier; tolerance 1 fires gpt5ZwspModulo. ──
+    Jittered = [16#61, 16#200B, 16#62, 16#200B, 16#63, 16#64, 16#200B, 16#65],
+    assert_eq(<<"DefaultIgnorableCarrier">>, aw_ctx_tag(#{}, Jittered), aw_zwsp_jittered_strict),
+    assert_eq(<<"Gpt5ZwspModulo">>, aw_ctx_tag(#{zwsp_modulo_tolerance => 1}, Jittered), aw_zwsp_jittered_tolerant),
+
+    %% ── Cue-class coverage (rust every_cue_class_is_probed /
+    %%    unknown_has_no_cue_class). ─────────────────────────────────────
+    Classes = [green_list_bias, pseudorandom_seq, semantic_drift],
+    SubThreats = [{nnbsp_boundary, 0}, {variation_selector_carrier, 0}, {zwj_non_emoji, 0},
+                  {default_ignorable_carrier, 0}, {gpt5_zwsp_modulo, 0}, {em_dash_pattern, 0},
+                  {smart_quote_alternation, 0}, {statistical_token_choice, 0},
+                  {adversarial, <<>>, 0}],
+    lists:foreach(fun(Cls) ->
+                          assert(lists:any(fun(St) -> usec_ai_watermark_detectability:cue_class(St) =:= Cls end, SubThreats),
+                                 {aw_cue_class, Cls})
+                  end, Classes),
+    assert_eq(none, usec_ai_watermark_detectability:cue_class({unknown, 0}), aw_unknown_no_cue_class),
+
+    io:format("  ai-watermark-detectability: fixture + 2 tolerance vectors pass~n").
 
 fixture(Rel) ->
     {ok, Bin} = file:read_file(filename:join(["test", "fixtures", "security", Rel])),

@@ -62,6 +62,7 @@ let simpleLowerCache;
 let simpleUpperCache;
 let casedRangesCache;
 let softDottedRangesCache;
+let emojiRangesCache;
 let dataReader = null;
 
 export function configureSecurityDataReader(reader) {
@@ -82,6 +83,7 @@ export function configureSecurityDataReader(reader) {
   simpleUpperCache = undefined;
   casedRangesCache = undefined;
   softDottedRangesCache = undefined;
+  emojiRangesCache = undefined;
   bip39WordlistCache = undefined;
 }
 
@@ -96,6 +98,7 @@ export function configureSecurityData(data) {
   const compositionExclusions = requiredSecurityData(data, "compositionExclusions");
   const derivedCoreProperties = requiredSecurityData(data, "derivedCoreProperties");
   const specialCasing = requiredSecurityData(data, "specialCasing");
+  const emojiData = String(data?.emojiData ?? "");
   configureSecurityDataReader((name) => {
     if (name === "confusables.txt") {
       return confusables;
@@ -126,6 +129,9 @@ export function configureSecurityData(data) {
     }
     if (name === "SpecialCasing.txt") {
       return specialCasing;
+    }
+    if (name === "emoji-data.txt") {
+      return emojiData;
     }
     throw new Error(`unknown security data file: ${name}`);
   });
@@ -2051,6 +2057,444 @@ export function hashInputStabilityDetectWithContext(ctx, input) {
 // (trailingWhitespace, normalizationDrift).
 export function hashInputStabilityDetect(input) {
   return hashInputStabilityDetectWithContext({}, input);
+}
+
+// Mirrors Unicode.Security.Crypto.AiWatermarkDetectability (and the verified
+// Rust port src/security/crypto/ai_watermark_detectability.rs). A character-
+// level detector for inputs carrying codepoint patterns consistent with a known
+// AI watermark scheme: does this input contain markers attributable to a
+// watermarking protocol? Character-level detection alone cannot distinguish a
+// legitimate provider watermark from injected markers impersonating one; the
+// detector reports the matched scheme and leaves authentication downstream.
+//
+// Probe inventory (priority order, first match wins):
+//   1. adversarial              — NNBSP count >= 3 at arithmetic-progression positions.
+//   2. gpt5ZwspModulo           — ZWSP count >= 3 at arithmetic-progression positions.
+//   3. unknown                  — invisible markers from >= 2 distinct categories.
+//   4. nnbspBoundary            — single-category NNBSP.
+//   5. variationSelectorCarrier — VS NOT adjacent to an emoji codepoint.
+//   6. zwjNonEmoji              — ZWJ NOT adjacent to an emoji codepoint.
+//   7. smartQuoteAlternation    — paired curly quotes, no ASCII straight quotes.
+//   8. emDashPattern            — em-dashes, no ASCII hyphen-minus.
+//   9. statisticalTokenChoice   — input contains an AI-favored lexical pattern.
+//  10. defaultIgnorableCarrier  — single-category residual Default_Ignorable.
+//
+// The Emoji property table is bundled in the port's own data/emoji-data.txt
+// (UTS #51 17.0, byte-identical to the UCD source the Lean spec cites); the
+// adjacency probe parses the Emoji rows from it, never a host emoji library.
+// Default_Ignorable membership reuses the port's own predicate, never a host
+// normalizer.
+
+// The conceptual watermark cue class a sub-threat probes for, drawn from the
+// fixed vocabulary in Unicode.Generated.WatermarkSchemes.CueClass.
+export const CueClass = Object.freeze({
+  GreenListBias: "GreenListBias",
+  PseudorandomSeq: "PseudorandomSeq",
+  SemanticDrift: "SemanticDrift",
+});
+
+// Stable reason code for an ai-watermark-detectability sub-threat (layer K).
+export function aiWatermarkDetectabilityReasonCode(subThreatTag) {
+  return `unicode.security.K.ai-watermark-detectability.${subThreatTag}`;
+}
+
+// Human-facing classification tag for a sub-threat (its variant name / kind).
+export function aiWatermarkSubThreatTag(sub) {
+  return sub.kind;
+}
+
+// Map a sub-threat to the conceptual watermark cue class it probes for. Marker-
+// encoded sub-threats route to PseudorandomSeq; vocabulary-bias to
+// GreenListBias; stylistic-distribution to SemanticDrift; Unknown (multi-
+// category mixing) implicates no single scheme.
+export function aiWatermarkCueClass(sub) {
+  switch (sub.kind) {
+    case "NnbspBoundary":
+    case "VariationSelectorCarrier":
+    case "ZwjNonEmoji":
+    case "DefaultIgnorableCarrier":
+    case "Gpt5ZwspModulo":
+    case "Adversarial":
+      return CueClass.PseudorandomSeq;
+    case "EmDashPattern":
+    case "SmartQuoteAlternation":
+      return CueClass.SemanticDrift;
+    case "StatisticalTokenChoice":
+      return CueClass.GreenListBias;
+    case "Unknown":
+    default:
+      return null;
+  }
+}
+
+// Parse the Emoji (Emoji=Yes) closed intervals from emoji-data.txt. Each non-
+// comment row is `<range> ; <property> # <comment>`; keep only rows whose
+// property is exactly Emoji.
+function parseEmojiRanges(text) {
+  const out = [];
+  for (const rawLine of text.split("\n")) {
+    const hashIdx = rawLine.indexOf("#");
+    const body = hashIdx < 0 ? rawLine : rawLine.slice(0, hashIdx);
+    const stripped = body.trim();
+    if (stripped === "") {
+      continue;
+    }
+    const fields = stripped.split(";");
+    if (fields.length < 2) {
+      continue;
+    }
+    if (fields[1].trim() !== "Emoji") {
+      continue;
+    }
+    const range = fields[0].trim();
+    const dots = range.indexOf("..");
+    if (dots < 0) {
+      const single = parseInt(range, 16);
+      if (Number.isNaN(single)) {
+        continue;
+      }
+      out.push([single, single]);
+    } else {
+      const lo = parseInt(range.slice(0, dots), 16);
+      const hi = parseInt(range.slice(dots + 2), 16);
+      if (Number.isNaN(lo) || Number.isNaN(hi)) {
+        continue;
+      }
+      out.push([lo, hi]);
+    }
+  }
+  return out;
+}
+
+function emojiRanges() {
+  if (emojiRangesCache === undefined) {
+    emojiRangesCache = parseEmojiRanges(readDataFile("emoji-data.txt"));
+  }
+  return emojiRangesCache;
+}
+
+// True iff cp has the Emoji = Yes property per emoji-data.txt.
+function isEmojiCodepoint(cp) {
+  for (const [lo, hi] of emojiRanges()) {
+    if (lo <= cp && cp <= hi) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// True iff cp is U+202F NARROW NO-BREAK SPACE.
+function isNnbsp(cp) {
+  return cp === 0x202f;
+}
+
+// True iff cp is U+200D ZERO WIDTH JOINER.
+function isZwjCodepoint(cp) {
+  return cp === 0x200d;
+}
+
+// True iff cp is a Variation Selector — the basic block U+FE00..U+FE0F
+// (VS1..VS16) or the Plane-14 IVS block U+E0100..U+E01EF (VS17..VS256). This is
+// the detector-specific predicate matching the Lean/Rust spec exactly, distinct
+// from the port's broader isVariationSelector which also spans U+180B..U+180D.
+function isAiWatermarkVariationSelector(cp) {
+  return (cp >= 0xfe00 && cp <= 0xfe0f) || (cp >= 0xe0100 && cp <= 0xe01ef);
+}
+
+// True iff cp is U+200B ZERO WIDTH SPACE.
+function isZwsp(cp) {
+  return cp === 0x200b;
+}
+
+// True iff cp is U+2014 EM DASH.
+function isEmDash(cp) {
+  return cp === 0x2014;
+}
+
+// True iff cp is U+002D HYPHEN-MINUS (ASCII).
+function isHyphenMinus(cp) {
+  return cp === 0x002d;
+}
+
+// True iff cp is one of the four curly quotation marks: U+2018 / U+2019 (single
+// open/close) and U+201C / U+201D (double open/close).
+function isCurlyQuote(cp) {
+  return cp === 0x2018 || cp === 0x2019 || cp === 0x201c || cp === 0x201d;
+}
+
+// True iff cp is an ASCII straight quote — U+0022 (double) or U+0027 (single).
+function isStraightQuote(cp) {
+  return cp === 0x0022 || cp === 0x0027;
+}
+
+// True iff input[i] is adjacent (immediate predecessor OR immediate successor)
+// to an emoji codepoint. Two-sided check. Used by the VS and ZWJ probes to
+// exclude legitimate emoji-context occurrences.
+function isAdjacentToEmoji(input, i) {
+  const prevIsEmoji = i > 0 && i - 1 < input.length && isEmojiCodepoint(input[i - 1]);
+  const nextIsEmoji = i + 1 < input.length && isEmojiCodepoint(input[i + 1]);
+  return prevIsEmoji || nextIsEmoji;
+}
+
+// All positions in input matching predicate p.
+function allPositions(p, input) {
+  const out = [];
+  for (let i = 0; i < input.length; i += 1) {
+    if (p(input[i])) {
+      out.push(i);
+    }
+  }
+  return out;
+}
+
+// True iff positions forms an arithmetic progression with all consecutive gaps
+// within tolerance of the first gap. Empty + singleton lists are vacuously
+// arithmetic. positions is assumed ascending, so gaps are non-negative.
+function positionsAreArithmeticWithin(positions, tolerance) {
+  if (positions.length < 2) {
+    return true;
+  }
+  const firstGap = positions[1] - positions[0];
+  for (let i = 0; i < positions.length - 1; i += 1) {
+    const gap = positions[i + 1] - positions[i];
+    if (!(gap <= firstGap + tolerance && firstGap <= gap + tolerance)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// First start-position at which pattern appears as a contiguous sub-slice of
+// input, or null if absent.
+function containsSublist(pattern, input) {
+  if (pattern.length === 0 || pattern.length > input.length) {
+    return null;
+  }
+  const maxStart = input.length - pattern.length;
+  for (let start = 0; start <= maxStart; start += 1) {
+    let matched = true;
+    for (let j = 0; j < pattern.length; j += 1) {
+      if (input[start + j] !== pattern[j]) {
+        matched = false;
+        break;
+      }
+    }
+    if (matched) {
+      return start;
+    }
+  }
+  return null;
+}
+
+// The AI-favored lexical-pattern catalog (each word as its codepoint sequence),
+// transcribed verbatim from the pinned aiFavoredVocabulary literal in the Lean
+// spec (parsed from Ucd/Security/AiFavoredVocabulary.txt and drift-gated there).
+const AI_FAVORED_VOCABULARY = Object.freeze([
+  [100, 101, 108, 118, 101],
+  [100, 101, 108, 118, 105, 110, 103],
+  [116, 97, 112, 101, 115, 116, 114, 121],
+  [105, 110, 116, 114, 105, 99, 97, 116, 101],
+  [110, 117, 97, 110, 99, 101, 100],
+  [109, 111, 114, 101, 111, 118, 101, 114],
+  [102, 117, 114, 116, 104, 101, 114, 109, 111, 114, 101],
+  [114, 101, 97, 108, 109],
+  [101, 108, 117, 99, 105, 100, 97, 116, 101],
+  [115, 104, 111, 119, 99, 97, 115, 105, 110, 103],
+  [117, 110, 100, 101, 114, 115, 99, 111, 114, 101, 115],
+  [117, 110, 100, 101, 114, 115, 99, 111, 114, 101, 100],
+  [112, 105, 118, 111, 116, 97, 108],
+  [98, 111, 108, 115, 116, 101, 114],
+  [109, 117, 108, 116, 105, 102, 97, 99, 101, 116, 101, 100],
+  [116, 101, 115, 116, 97, 109, 101, 110, 116],
+  [102, 111, 115, 116, 101, 114],
+  [104, 111, 108, 105, 115, 116, 105, 99],
+  [112, 97, 114, 97, 100, 105, 103, 109],
+  [116, 114, 97, 110, 115, 102, 111, 114, 109, 97, 116, 105, 118, 101],
+  [115, 112, 101, 97, 114, 104, 101, 97, 100],
+  [109, 101, 116, 105, 99, 117, 108, 111, 117, 115],
+  [109, 101, 116, 105, 99, 117, 108, 111, 117, 115, 108, 121],
+  [101, 109, 112, 111, 119, 101, 114],
+  [101, 109, 112, 111, 119, 101, 114, 105, 110, 103],
+  [112, 114, 111, 102, 111, 117, 110, 100],
+  [112, 114, 111, 102, 111, 117, 110, 100, 108, 121],
+  [99, 111, 109, 112, 101, 108, 108, 105, 110, 103],
+  [99, 111, 109, 112, 114, 101, 104, 101, 110, 115, 105, 118, 101],
+  [99, 114, 117, 99, 105, 97, 108],
+  [100, 97, 117, 110, 116, 105, 110, 103],
+  [114, 111, 98, 117, 115, 116],
+  [115, 116, 114, 101, 97, 109, 108, 105, 110, 101],
+  [101, 110, 114, 105, 99, 104],
+  [101, 120, 101, 109, 112, 108, 105, 102, 121],
+  [99, 97, 112, 116, 105, 118, 97, 116, 105, 110, 103],
+  [100, 105, 115, 99, 101, 114, 110, 105, 110, 103],
+  [109, 101, 115, 109, 101, 114, 105, 122, 101],
+  [105, 110, 116, 114, 105, 99, 97, 116, 101, 108, 121],
+  [105, 109, 98, 117, 101],
+  [
+    112, 108, 97, 121, 115, 32, 97, 32, 99, 114, 117, 99, 105, 97, 108, 32, 114, 111, 108, 101,
+  ],
+  [
+    112, 108, 97, 121, 115, 32, 97, 32, 112, 105, 118, 111, 116, 97, 108, 32, 114, 111, 108, 101,
+  ],
+  [
+    105, 116, 32, 105, 115, 32, 105, 109, 112, 111, 114, 116, 97, 110, 116, 32, 116, 111, 32, 110,
+    111, 116, 101,
+  ],
+  [105, 116, 32, 105, 115, 32, 119, 111, 114, 116, 104, 32, 110, 111, 116, 105, 110, 103],
+  [105, 110, 32, 99, 111, 110, 99, 108, 117, 115, 105, 111, 110],
+  [105, 110, 32, 101, 115, 115, 101, 110, 99, 101],
+  [100, 101, 108, 118, 101, 32, 105, 110, 116, 111],
+  [100, 101, 108, 118, 105, 110, 103, 32, 105, 110, 116, 111],
+  [116, 97, 112, 101, 115, 116, 114, 121, 32, 111, 102],
+  [114, 101, 97, 108, 109, 32, 111, 102],
+]);
+
+// The detection function. Runs every probe in the fixed priority order (most-
+// specific first); the first hit wins. See the module header for the probe
+// inventory and the ordering rationale. ctx fields (zwspModuloTolerance,
+// adversarialTolerance) default to 0 (exact arithmetic).
+export function aiWatermarkDetectabilityDetectWithContext(ctx, input) {
+  const context = ctx ?? {};
+  const zwspModuloTolerance = context.zwspModuloTolerance ?? 0;
+  const adversarialTolerance = context.adversarialTolerance ?? 0;
+
+  const nnbspPositions = allPositions(isNnbsp, input);
+  const nnbspCount = nnbspPositions.length;
+
+  // Probe 1: adversarial — NNBSP too-regular.
+  const adversarialFires =
+    nnbspCount >= 3 && positionsAreArithmeticWithin(nnbspPositions, adversarialTolerance);
+
+  // Probe 2: gpt5ZwspModulo — ZWSP arithmetic progression.
+  const zwspPositions = allPositions(isZwsp, input);
+  const zwspCount = zwspPositions.length;
+  const zwspModuloFires =
+    zwspCount >= 3 && positionsAreArithmeticWithin(zwspPositions, zwspModuloTolerance);
+
+  const vsAllPos = allPositions(isAiWatermarkVariationSelector, input);
+  const vsNonEmojiPos = vsAllPos.filter((i) => !isAdjacentToEmoji(input, i));
+  const vsNonEmojiCount = vsNonEmojiPos.length;
+
+  const zwjAllPos = allPositions(isZwjCodepoint, input);
+  const zwjNonEmojiPos = zwjAllPos.filter((i) => !isAdjacentToEmoji(input, i));
+  const zwjNonEmojiCount = zwjNonEmojiPos.length;
+
+  // Probe 7: smartQuoteAlternation — curly quotes only.
+  const curlyPositions = allPositions(isCurlyQuote, input);
+  const curlyCount = curlyPositions.length;
+  const hasStraightQuote = input.some((cp) => isStraightQuote(cp));
+  const smartQuoteFires = curlyCount >= 2 && !hasStraightQuote;
+
+  // Probe 8: emDashPattern — em-dashes without hyphen-minus.
+  const emDashPositions = allPositions(isEmDash, input);
+  const emDashCount = emDashPositions.length;
+  const hasHyphenMinus = input.some((cp) => isHyphenMinus(cp));
+  const emDashFires = emDashCount >= 2 && !hasHyphenMinus;
+
+  // Probe 9: statisticalTokenChoice — scan the pinned vocabulary. Each word is
+  // compared as a contiguous sub-slice of the input.
+  let vocabHit = null;
+  for (const pattern of AI_FAVORED_VOCABULARY) {
+    const pos = containsSublist(pattern, input);
+    if (pos !== null) {
+      vocabHit = pos;
+      break;
+    }
+  }
+
+  // Residual default-ignorables (excluding VS and ZWJ, handled above).
+  const isResidualDi = (cp) =>
+    isDefaultIgnorableCodepoint(cp) && !isAiWatermarkVariationSelector(cp) && !isZwjCodepoint(cp);
+  const diPositions = allPositions(isResidualDi, input);
+  const diCount = diPositions.length;
+
+  // Probe 3: unknown — invisible markers from >= 2 distinct categories.
+  const categoryCount =
+    (nnbspCount > 0 ? 1 : 0) +
+    (vsNonEmojiCount > 0 ? 1 : 0) +
+    (zwjNonEmojiCount > 0 ? 1 : 0) +
+    (diCount > 0 ? 1 : 0);
+  const unknownFires = categoryCount >= 2;
+  const totalInvisibleCount = nnbspCount + vsNonEmojiCount + zwjNonEmojiCount + diCount;
+
+  let sub;
+  let positions;
+  let firedCount;
+  if (adversarialFires) {
+    const firstPos = nnbspPositions.length > 0 ? nnbspPositions[0] : 0;
+    sub = { kind: "Adversarial", impersonatedScheme: "nnbspBoundary", firstPos };
+    positions = nnbspPositions;
+    firedCount = nnbspCount;
+  } else if (zwspModuloFires) {
+    const firstPos = zwspPositions.length > 0 ? zwspPositions[0] : 0;
+    sub = { kind: "Gpt5ZwspModulo", firstPos };
+    positions = zwspPositions;
+    firedCount = zwspCount;
+  } else if (unknownFires) {
+    const allInvisiblePos = [];
+    for (let i = 0; i < input.length; i += 1) {
+      const cp = input[i];
+      if (
+        isNnbsp(cp) ||
+        isAiWatermarkVariationSelector(cp) ||
+        isZwjCodepoint(cp) ||
+        isDefaultIgnorableCodepoint(cp)
+      ) {
+        allInvisiblePos.push(i);
+      }
+    }
+    sub = { kind: "Unknown", anomalyMarker: totalInvisibleCount };
+    positions = allInvisiblePos;
+    firedCount = totalInvisibleCount;
+  } else if (nnbspCount > 0) {
+    sub = { kind: "NnbspBoundary", markerCount: nnbspCount };
+    positions = nnbspPositions;
+    firedCount = nnbspCount;
+  } else if (vsNonEmojiCount > 0) {
+    sub = { kind: "VariationSelectorCarrier", markerCount: vsNonEmojiCount };
+    positions = vsNonEmojiPos;
+    firedCount = vsNonEmojiCount;
+  } else if (zwjNonEmojiCount > 0) {
+    sub = { kind: "ZwjNonEmoji", markerCount: zwjNonEmojiCount };
+    positions = zwjNonEmojiPos;
+    firedCount = zwjNonEmojiCount;
+  } else if (smartQuoteFires) {
+    const firstPos = curlyPositions.length > 0 ? curlyPositions[0] : 0;
+    sub = { kind: "SmartQuoteAlternation", firstPos };
+    positions = curlyPositions;
+    firedCount = curlyCount;
+  } else if (emDashFires) {
+    const firstPos = emDashPositions.length > 0 ? emDashPositions[0] : 0;
+    sub = { kind: "EmDashPattern", firstPos };
+    positions = emDashPositions;
+    firedCount = emDashCount;
+  } else if (vocabHit !== null) {
+    sub = { kind: "StatisticalTokenChoice", firstPos: vocabHit };
+    positions = [vocabHit];
+    firedCount = 1;
+  } else if (diCount > 0) {
+    sub = { kind: "DefaultIgnorableCarrier", markerCount: diCount };
+    positions = diPositions;
+    firedCount = diCount;
+  } else {
+    sub = null;
+    positions = [];
+    firedCount = 0;
+  }
+
+  const classify =
+    sub === null
+      ? { isClear: true, tag: null, sub: null, positions: [] }
+      : { isClear: false, tag: sub.kind, sub, positions };
+
+  return { input: Array.from(input), classify, markerCount: firedCount };
+}
+
+// Convenience wrapper over aiWatermarkDetectabilityDetectWithContext with the
+// empty context — exact-arithmetic settings (zwspModuloTolerance = 0,
+// adversarialTolerance = 0).
+export function aiWatermarkDetectabilityDetect(input) {
+  return aiWatermarkDetectabilityDetectWithContext({}, input);
 }
 
 function stringFromCodepoints(input) {

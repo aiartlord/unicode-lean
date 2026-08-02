@@ -20,6 +20,7 @@ struct SecurityContractRunner {
         try testCasing()
         try testBip39Canonical()
         try testHashInputStability()
+        try testAiWatermarkDetectability()
         try testOpaqueBlob()
         print("clean: Swift contract tests pass")
     }
@@ -216,6 +217,51 @@ struct SecurityContractRunner {
             try expectEqual(RfcRule.fromTag(rule.tag), rule, "his rfc rule roundtrip \(rule.tag)")
         }
         try expectEqual(RfcRule.fromTag("nope"), nil, "his rfc rule unknown")
+    }
+
+    // Pins aiWatermarkDetectabilityDetect against the ground-truth theorems in
+    // Unicode/Security/Crypto/AiWatermarkDetectability.lean: the shared context-free
+    // fixture runs through detect; the two Context-tolerance vectors (which the
+    // shared detector-fixture schema cannot express) are transcribed from the
+    // Rust reference's test module (detect_zwsp_jittered_*).
+    private static func testAiWatermarkDetectability() throws {
+        // Shared context-free fixture through detect. required_findings carries
+        // full reason codes (unicode.security.K.ai-watermark-detectability.<Tag>);
+        // an empty list means clear.
+        let fixture = try loadFixture("detectors/ai_watermark_detectability.json")
+        try expectEqual(fixture["schema"] as? Int, 1, "ai-watermark-detectability schema")
+        try expectEqual(try string(fixture, "family"), "ai-watermark-detectability", "ai-watermark-detectability family")
+        for entry in try array(fixture, "cases") {
+            let name = try string(entry, "name")
+            let input = try intArray(entry, "input")
+            let required = try stringArray(entry, "required_findings")
+            if let tag = aiWatermarkDetectabilityDetect(input).classify.tag {
+                let code = aiWatermarkDetectabilityReasonCode(tag)
+                try expect(required.contains(code), "ai-watermark-detectability \(name): expected \(code) in \(required)")
+            } else {
+                try expect(required.isEmpty, "ai-watermark-detectability \(name): expected clear, got \(required)")
+            }
+        }
+
+        // ── Context-tolerance vectors, transcribed from the Rust reference.
+        // ZWSPs at 1, 3, 6 (gaps 2, 3). Bare detect (tolerance 0) does not fire
+        // gpt5ZwspModulo; it falls through to defaultIgnorableCarrier.
+        let jittered = [0x61, 0x200B, 0x62, 0x200B, 0x63, 0x64, 0x200B, 0x65]
+        try expectEqual(
+            aiWatermarkDetectabilityDetect(jittered).classify.tag,
+            "DefaultIgnorableCarrier", "aiwm zwsp jittered strict")
+        // With zwspModuloTolerance 1, the light jitter is within tolerance and
+        // gpt5ZwspModulo fires.
+        try expectEqual(
+            aiWatermarkDetectabilityDetectWithContext(
+                AiWatermarkDetectabilityContext(zwspModuloTolerance: 1), jittered).classify.tag,
+            "Gpt5ZwspModulo", "aiwm zwsp jittered tolerant")
+
+        // Default context equals bare detect.
+        try expectEqual(
+            aiWatermarkDetectabilityDetectWithContext(.default, [0x61, 0x202F, 0x62]).classify,
+            aiWatermarkDetectabilityDetect([0x61, 0x202F, 0x62]).classify,
+            "aiwm default matches detect")
     }
 
     // Pins the covert-display-compound detector against the detect_* spot-check

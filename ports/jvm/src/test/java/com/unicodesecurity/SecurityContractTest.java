@@ -20,6 +20,7 @@ public final class SecurityContractTest {
     testNormalizationBomb();
     testNfcIdempotenceWitness();
     testHashInputStability();
+    testAiWatermarkDetectability();
     testConfusableBidiCompound();
     testSurrogateReassembly();
     testRtlInjection();
@@ -429,6 +430,64 @@ public final class SecurityContractTest {
     assertEquals(Optional.empty(), HashInputStability.RfcRule.fromTag("nope"), "rfc rule unrecognised");
 
     System.out.println("clean: JVM hash-input-stability passes (" + fixtureCases
+        + " fixture cases + " + contextVectors + " context vectors)");
+  }
+
+  // Pins the ai-watermark-detectability detector against the verified Rust
+  // reference ports/rust/src/security/crypto/ai_watermark_detectability.rs. Two
+  // independent sources of truth are exercised: (a) the shared context-free
+  // fixture detectors/ai_watermark_detectability.json, run through
+  // AiWatermarkDetectability.detect and checked against the fixture reason codes;
+  // (b) the two Context-tolerance vectors (detect_zwsp_jittered_*) transcribed
+  // from the Rust test module, which the shared detector-fixture schema cannot
+  // express. The emoji-adjacency probe parses the port's own SHA-pinned
+  // data/emoji-data.txt (never a host emoji library); the residual
+  // Default_Ignorable probe reuses Security.isDefaultIgnorableCodepoint.
+  private static void testAiWatermarkDetectability() throws IOException {
+    // (a) Shared context-free fixture through detect.
+    Map<String, Object> detector = fixture("detectors/ai_watermark_detectability.json");
+    assertEquals(1, intValue(detector.get("schema")), "ai-watermark-detectability schema");
+    assertEquals("ai-watermark-detectability", string(detector, "family"),
+        "ai-watermark-detectability family");
+    int fixtureCases = 0;
+    for (Map<String, Object> entry : objects(detector.get("cases"))) {
+      AiWatermarkDetectability.Verdict verdict = AiWatermarkDetectability.detect(ints(entry.get("input")));
+      String code = AiWatermarkDetectability.reasonCode(verdict.classify());
+      List<String> required = strings(entry.get("required_findings"));
+      if (required.isEmpty()) {
+        assertEquals(null, code,
+            "ai-watermark-detectability " + string(entry, "name") + " should be clear");
+      } else {
+        assertEquals(1, required.size(),
+            "ai-watermark-detectability " + string(entry, "name") + " single finding");
+        assertEquals(required.get(0), code, "ai-watermark-detectability " + string(entry, "name"));
+      }
+      fixtureCases++;
+    }
+
+    // (b) The two Context-tolerance vectors (detect_zwsp_jittered_*). ZWSPs at
+    // positions 1, 3, 6 (gaps 2, 3). Bare/strict (tolerance 0) does not fire
+    // gpt5ZwspModulo and falls through to defaultIgnorableCarrier; tolerance 1
+    // accepts the +/-1 jitter and fires gpt5ZwspModulo.
+    int[] jittered = {0x61, 0x200B, 0x62, 0x200B, 0x63, 0x64, 0x200B, 0x65};
+    AiWatermarkDetectability.Verdict strict = AiWatermarkDetectability.detect(intList(jittered));
+    assertEquals("DefaultIgnorableCarrier", strict.classify().tag(),
+        "aw zwsp jittered strict falls through");
+    AiWatermarkDetectability.Verdict tolerant = AiWatermarkDetectability.detectWithContext(
+        AiWatermarkDetectability.Context.empty().withZwspModuloTolerance(1), intList(jittered));
+    assertEquals("Gpt5ZwspModulo", tolerant.classify().tag(),
+        "aw zwsp jittered tolerant fires modulo");
+    int contextVectors = 2;
+
+    // detect_with_context(empty) matches detect.
+    AiWatermarkDetectability.Verdict bare =
+        AiWatermarkDetectability.detect(intList(new int[] {0x61, 0x202F, 0x62}));
+    AiWatermarkDetectability.Verdict ctxDefault = AiWatermarkDetectability.detectWithContext(
+        AiWatermarkDetectability.Context.empty(), intList(new int[] {0x61, 0x202F, 0x62}));
+    assertEquals(bare.classify().tag(), ctxDefault.classify().tag(),
+        "aw empty context matches detect");
+
+    System.out.println("clean: JVM ai-watermark-detectability passes (" + fixtureCases
         + " fixture cases + " + contextVectors + " context vectors)");
   }
 

@@ -1,0 +1,160 @@
+{
+  "schema": 1,
+  "family": "ai-watermark-detectability",
+  "cases": [
+    {
+      "name": "empty-clear",
+      "input": [],
+      "required_findings": []
+    },
+    {
+      "name": "ascii-clear",
+      "input": [97, 98, 99],
+      "required_findings": []
+    },
+    {
+      "name": "han-clear",
+      "input": [20013, 25991],
+      "required_findings": []
+    },
+    {
+      "name": "nnbsp-boundary",
+      "input": [97, 8239, 98],
+      "required_findings": [
+        "unicode.security.K.ai-watermark-detectability.NnbspBoundary"
+      ]
+    },
+    {
+      "name": "multiple-nnbsp-aggregates",
+      "input": [97, 8239, 98, 8239, 99],
+      "required_findings": [
+        "unicode.security.K.ai-watermark-detectability.NnbspBoundary"
+      ]
+    },
+    {
+      "name": "vs-in-plain-text",
+      "input": [97, 65039, 98],
+      "required_findings": [
+        "unicode.security.K.ai-watermark-detectability.VariationSelectorCarrier"
+      ]
+    },
+    {
+      "name": "vs-after-emoji-clear",
+      "input": [128512, 65039],
+      "required_findings": []
+    },
+    {
+      "name": "zwj-in-plain-text",
+      "input": [97, 8205, 98],
+      "required_findings": [
+        "unicode.security.K.ai-watermark-detectability.ZwjNonEmoji"
+      ]
+    },
+    {
+      "name": "zwj-emoji-sequence-clear",
+      "input": [128105, 8205, 128300],
+      "required_findings": []
+    },
+    {
+      "name": "soft-hyphen-default-ignorable",
+      "input": [97, 173, 98],
+      "required_findings": [
+        "unicode.security.K.ai-watermark-detectability.DefaultIgnorableCarrier"
+      ]
+    },
+    {
+      "name": "zwsp-default-ignorable",
+      "input": [97, 8203, 98],
+      "required_findings": [
+        "unicode.security.K.ai-watermark-detectability.DefaultIgnorableCarrier"
+      ]
+    },
+    {
+      "name": "unknown-nnbsp-plus-di",
+      "input": [97, 8239, 173, 98],
+      "required_findings": [
+        "unicode.security.K.ai-watermark-detectability.Unknown"
+      ]
+    },
+    {
+      "name": "unknown-vs-plus-zwj",
+      "input": [97, 65039, 8205, 98],
+      "required_findings": [
+        "unicode.security.K.ai-watermark-detectability.Unknown"
+      ]
+    },
+    {
+      "name": "unknown-nnbsp-plus-zwj",
+      "input": [97, 8239, 8205, 98],
+      "required_findings": [
+        "unicode.security.K.ai-watermark-detectability.Unknown"
+      ]
+    },
+    {
+      "name": "adversarial-arithmetic-nnbsp",
+      "input": [97, 8239, 98, 8239, 99, 8239, 100],
+      "required_findings": [
+        "unicode.security.K.ai-watermark-detectability.Adversarial"
+      ]
+    },
+    {
+      "name": "gpt5-zwsp-modulo",
+      "input": [97, 8203, 98, 8203, 99, 8203, 100],
+      "required_findings": [
+        "unicode.security.K.ai-watermark-detectability.Gpt5ZwspModulo"
+      ]
+    },
+    {
+      "name": "zwsp-two-below-modulo-threshold",
+      "input": [97, 8203, 98, 8203, 99],
+      "required_findings": [
+        "unicode.security.K.ai-watermark-detectability.DefaultIgnorableCarrier"
+      ]
+    },
+    {
+      "name": "zwsp-jittered-strict-default-ignorable",
+      "input": [97, 8203, 98, 8203, 99, 100, 8203, 101],
+      "required_findings": [
+        "unicode.security.K.ai-watermark-detectability.DefaultIgnorableCarrier"
+      ]
+    },
+    {
+      "name": "smart-quote-alternation",
+      "input": [8220, 97, 98, 99, 8221],
+      "required_findings": [
+        "unicode.security.K.ai-watermark-detectability.SmartQuoteAlternation"
+      ]
+    },
+    {
+      "name": "smart-quote-with-straight-clear",
+      "input": [8220, 97, 34, 8221],
+      "required_findings": []
+    },
+    {
+      "name": "em-dash-pattern",
+      "input": [97, 98, 32, 8212, 32, 99, 100, 32, 8212, 32, 101, 102],
+      "required_findings": [
+        "unicode.security.K.ai-watermark-detectability.EmDashPattern"
+      ]
+    },
+    {
+      "name": "em-dash-with-hyphen-clear",
+      "input": [97, 98, 45, 99, 100, 32, 8212, 32, 101, 102],
+      "required_findings": []
+    },
+    {
+      "name": "statistical-token-delve",
+      "input": [100, 101, 108, 118, 101],
+      "required_findings": [
+        "unicode.security.K.ai-watermark-detectability.StatisticalTokenChoice"
+      ]
+    },
+    {
+      "name": "statistical-token-moreover-embedded",
+      "input": [59, 32, 109, 111, 114, 101, 111, 118, 101, 114, 44, 32],
+      "required_findings": [
+        "unicode.security.K.ai-watermark-detectability.StatisticalTokenChoice"
+      ]
+    }
+  ]
+}

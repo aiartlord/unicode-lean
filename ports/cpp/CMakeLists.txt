@@ -41,6 +41,7 @@ foreach(UNICODE_CPP_DATA_FILE IN ITEMS
     CompositionExclusions.txt
     DerivedBidiClass.txt
     DerivedCoreProperties.txt
+    emoji-data.txt
     IdentifierStatus.txt
     KnownAttackTargets.txt
     PropertyValueAliases.txt

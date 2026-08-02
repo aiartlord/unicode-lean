@@ -25,6 +25,7 @@ add_executable(unicode_cpp_tests
     casing_test.cpp
     bip39_test.cpp
     hash_input_stability_test.cpp
+    ai_watermark_detectability_test.cpp
     locale_case_inversion_test.cpp
     normalization_bomb_test.cpp
     nfc_idempotence_witness_test.cpp

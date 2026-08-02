@@ -2,6 +2,7 @@ using System.Text.Json;
 using UnicodeSecurity;
 using UnicodeSecurity.Segmentation;
 using His = UnicodeSecurity.Security.HashInputStability;
+using Awd = UnicodeSecurity.Security.AiWatermarkDetectability;
 
 TestCovertDisplayCompoundVectors();
 TestConfusableBidiCompoundVectors();
@@ -20,6 +21,8 @@ TestNormalizationBomb();
 TestNfcIdempotenceWitness();
 TestHashInputStabilityFixture();
 TestHashInputStabilityContextVectors();
+TestAiWatermarkDetectabilityFixture();
+TestAiWatermarkDetectabilityContextVectors();
 TestUtf8Blob();
 TestValidatedUtf8();
 TestGraphemeVectors();
@@ -561,6 +564,151 @@ static void TestHashInputStabilityContextVectors()
     AssertEqual<His.RfcRule?>(null, Security.HashInputStability.FromTag("nope"), "his rfc-rule unknown tag");
 
     Console.WriteLine("clean: .NET hash-input-stability 21-vector context spot-check passes");
+}
+
+// Ground truth: the shared context-free detector fixture
+// fixtures/security/detectors/ai_watermark_detectability.json, run through
+// Security.AiWatermarkDetectability.Detect (the empty-context wrapper). Each
+// case's required_findings is the fully-qualified reason code
+// (unicode.security.K.ai-watermark-detectability.<tag>); an empty list means
+// the input must classify Clear. Mirrors the Rust port's §6/§7 detect spot
+// checks.
+static void TestAiWatermarkDetectabilityFixture()
+{
+    using var detector = LoadFixture("detectors/ai_watermark_detectability.json");
+    AssertEqual(1, detector.RootElement.GetProperty("schema").GetInt32(), "ai-watermark-detectability schema");
+    AssertEqual("ai-watermark-detectability", String(detector.RootElement, "family"), "ai-watermark-detectability family");
+    var cases = 0;
+    foreach (var entry in detector.RootElement.GetProperty("cases").EnumerateArray())
+    {
+        var name = String(entry, "name");
+        var input = Ints(entry.GetProperty("input"));
+        var verdict = Awd.Detect(input);
+        var required = Strings(entry.GetProperty("required_findings")).ToList();
+        if (required.Count == 0)
+        {
+            AssertTrue(verdict.Classify.IsClear, $"ai-watermark-detectability {name}: expected clear, got {verdict.Classify.Tag}");
+        }
+        else
+        {
+            foreach (var code in required)
+            {
+                AssertEqual<string?>(code, verdict.Classify.ReasonCode, $"ai-watermark-detectability {name}: reason code");
+            }
+        }
+        cases++;
+    }
+    Console.WriteLine($"clean: .NET ai-watermark-detectability {cases}-case shared-fixture detect passes");
+}
+
+// Ground truth: the Context-tolerance vectors and every probe/priority/cue-class
+// spot-check theorem in the Rust port's ai_watermark_detectability.rs test
+// module (the shared detector-fixture schema cannot express a Context, so the
+// tolerance vectors live only in-source). Detect(input).Classify.Tag maps each
+// theorem's classification to one assertion.
+static void TestAiWatermarkDetectabilityContextVectors()
+{
+    string? Tag(int[] input) => Awd.Detect(input).Classify.Tag;
+
+    // §4 detect spot checks.
+    AssertEqual<string?>(null, Tag(System.Array.Empty<int>()), "awd empty clear");
+    AssertEqual<string?>(null, Tag(new[] { 0x61, 0x62, 0x63 }), "awd ascii clear");
+    AssertEqual<string?>(null, Tag(new[] { 0x4E2D, 0x6587 }), "awd han clear");
+
+    var nnbsp = Awd.Detect(new[] { 0x61, 0x202F, 0x62 });
+    AssertEqual<string?>("NnbspBoundary", nnbsp.Classify.Tag, "awd nnbsp tag");
+    AssertSequence(new[] { 1 }, nnbsp.Classify.Positions, "awd nnbsp pos");
+    AssertEqual(1, nnbsp.MarkerCount, "awd nnbsp count");
+
+    var vsPlain = Awd.Detect(new[] { 0x61, 0xFE0F, 0x62 });
+    AssertEqual<string?>("VariationSelectorCarrier", vsPlain.Classify.Tag, "awd vs-plain tag");
+    AssertEqual(1, vsPlain.MarkerCount, "awd vs-plain count");
+    AssertEqual<string?>(null, Tag(new[] { 0x1F600, 0xFE0F }), "awd vs-after-emoji clear");
+
+    var zwjPlain = Awd.Detect(new[] { 0x61, 0x200D, 0x62 });
+    AssertEqual<string?>("ZwjNonEmoji", zwjPlain.Classify.Tag, "awd zwj-plain tag");
+    AssertEqual(1, zwjPlain.MarkerCount, "awd zwj-plain count");
+    AssertEqual<string?>(null, Tag(new[] { 0x1F469, 0x200D, 0x1F52C }), "awd zwj-emoji-seq clear");
+
+    AssertEqual<string?>("DefaultIgnorableCarrier", Tag(new[] { 0x61, 0x00AD, 0x62 }), "awd soft-hyphen tag");
+    AssertEqual<string?>("DefaultIgnorableCarrier", Tag(new[] { 0x61, 0x200B, 0x62 }), "awd zwsp tag");
+
+    var multiNnbsp = Awd.Detect(new[] { 0x61, 0x202F, 0x62, 0x202F, 0x63 });
+    AssertEqual<string?>("NnbspBoundary", multiNnbsp.Classify.Tag, "awd multi-nnbsp tag");
+    AssertEqual(2, multiNnbsp.MarkerCount, "awd multi-nnbsp count");
+    AssertSequence(new[] { 1, 3 }, multiNnbsp.Classify.Positions, "awd multi-nnbsp pos");
+
+    // §7 refinement-probe spot checks.
+    var adv = Awd.Detect(new[] { 0x61, 0x202F, 0x62, 0x202F, 0x63, 0x202F, 0x64 });
+    AssertEqual<string?>("Adversarial", adv.Classify.Tag, "awd adversarial tag");
+    AssertEqual(3, adv.MarkerCount, "awd adversarial count");
+    AssertEqual<string?>("NnbspBoundary", Tag(new[] { 0x61, 0x202F, 0x62, 0x202F, 0x63 }), "awd nnbsp-below-adversarial");
+
+    var gpt5 = Awd.Detect(new[] { 0x61, 0x200B, 0x62, 0x200B, 0x63, 0x200B, 0x64 });
+    AssertEqual<string?>("Gpt5ZwspModulo", gpt5.Classify.Tag, "awd gpt5-zwsp-modulo tag");
+    AssertEqual(3, gpt5.MarkerCount, "awd gpt5-zwsp-modulo count");
+    AssertEqual<string?>("DefaultIgnorableCarrier", Tag(new[] { 0x61, 0x200B, 0x62, 0x200B, 0x63 }), "awd zwsp-below-modulo");
+
+    var smart = Awd.Detect(new[] { 0x201C, 0x61, 0x62, 0x63, 0x201D });
+    AssertEqual<string?>("SmartQuoteAlternation", smart.Classify.Tag, "awd smart-quote tag");
+    AssertEqual(2, smart.MarkerCount, "awd smart-quote count");
+    AssertEqual<string?>(null, Tag(new[] { 0x201C, 0x61, 0x22, 0x201D }), "awd smart-quote-with-straight clear");
+
+    var emDash = Awd.Detect(new[] { 0x61, 0x62, 0x20, 0x2014, 0x20, 0x63, 0x64, 0x20, 0x2014, 0x20, 0x65, 0x66 });
+    AssertEqual<string?>("EmDashPattern", emDash.Classify.Tag, "awd em-dash tag");
+    AssertEqual(2, emDash.MarkerCount, "awd em-dash count");
+    AssertEqual<string?>(null, Tag(new[] { 0x61, 0x62, 0x2D, 0x63, 0x64, 0x20, 0x2014, 0x20, 0x65, 0x66 }), "awd em-dash-with-hyphen clear");
+
+    var delve = Awd.Detect(new[] { 0x64, 0x65, 0x6C, 0x76, 0x65 });
+    AssertEqual<string?>("StatisticalTokenChoice", delve.Classify.Tag, "awd statistical-delve tag");
+    AssertEqual(1, delve.MarkerCount, "awd statistical-delve count");
+    var moreover = Awd.Detect(new[] { 0x3B, 0x20, 0x6D, 0x6F, 0x72, 0x65, 0x6F, 0x76, 0x65, 0x72, 0x2C, 0x20 });
+    AssertEqual<string?>("StatisticalTokenChoice", moreover.Classify.Tag, "awd statistical-moreover tag");
+    AssertSequence(new[] { 2 }, moreover.Classify.Positions, "awd statistical-moreover pos");
+
+    // Unknown priority (>= 2 distinct invisible categories).
+    var unkNnbspDi = Awd.Detect(new[] { 0x61, 0x202F, 0x00AD, 0x62 });
+    AssertEqual<string?>("Unknown", unkNnbspDi.Classify.Tag, "awd unknown-nnbsp-di tag");
+    AssertEqual(2, unkNnbspDi.MarkerCount, "awd unknown-nnbsp-di count");
+    var unkVsZwj = Awd.Detect(new[] { 0x61, 0xFE0F, 0x200D, 0x62 });
+    AssertEqual<string?>("Unknown", unkVsZwj.Classify.Tag, "awd unknown-vs-zwj tag");
+    AssertEqual(2, unkVsZwj.MarkerCount, "awd unknown-vs-zwj count");
+    var unkNnbspZwj = Awd.Detect(new[] { 0x61, 0x202F, 0x200D, 0x62 });
+    AssertEqual<string?>("Unknown", unkNnbspZwj.Classify.Tag, "awd unknown-nnbsp-zwj tag");
+    AssertEqual(2, unkNnbspZwj.MarkerCount, "awd unknown-nnbsp-zwj count");
+    AssertEqual<string?>("NnbspBoundary", Tag(new[] { 0x61, 0x202F, 0x62 }), "awd single-category-skips-unknown");
+
+    // §8 tolerance-parameterised probes (the two Context vectors).
+    var jitter = new[] { 0x61, 0x200B, 0x62, 0x200B, 0x63, 0x64, 0x200B, 0x65 };
+    AssertEqual<string?>("DefaultIgnorableCarrier", Tag(jitter), "awd zwsp-jittered-strict clear");
+    var tolerant = new Awd.Context(ZwspModuloTolerance: 1);
+    AssertEqual<string?>("Gpt5ZwspModulo", Awd.DetectWithContext(tolerant, jitter).Classify.Tag, "awd zwsp-jittered-tolerant fires");
+
+    var bare = Awd.Detect(new[] { 0x61, 0x202F, 0x62 });
+    var withDefault = Awd.DetectWithContext(Awd.Context.Default, new[] { 0x61, 0x202F, 0x62 });
+    AssertEqual(bare.Classify.Tag, withDefault.Classify.Tag, "awd default-context matches detect");
+
+    // §7 cue-class coverage: every CueClass is probed by some sub-threat.
+    var cueClasses = new[] { Awd.CueClass.GreenListBias, Awd.CueClass.PseudorandomSeq, Awd.CueClass.SemanticDrift };
+    var probed = new Awd.SubThreat[]
+    {
+        new Awd.NnbspBoundary(0),
+        new Awd.VariationSelectorCarrier(0),
+        new Awd.ZwjNonEmoji(0),
+        new Awd.DefaultIgnorableCarrier(0),
+        new Awd.Gpt5ZwspModulo(0),
+        new Awd.EmDashPattern(0),
+        new Awd.SmartQuoteAlternation(0),
+        new Awd.StatisticalTokenChoice(0),
+        new Awd.Adversarial("", 0),
+    };
+    foreach (var cls in cueClasses)
+    {
+        AssertTrue(probed.Any(st => st.Cue == cls), $"awd cue class {cls} is probed");
+    }
+    AssertEqual<Awd.CueClass?>(null, new Awd.Unknown(0).Cue, "awd unknown has no cue class");
+
+    Console.WriteLine("clean: .NET ai-watermark-detectability 34-vector context spot-check passes");
 }
 
 // Opaque-blob refinement: structurally valid strict UTF-8 under a size bound,
