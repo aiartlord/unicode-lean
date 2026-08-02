@@ -220,6 +220,143 @@ def emit_bip39_words(path, keys):
     path.write_text("\n".join(lines) + "\n", encoding="ascii")
 
 
+# ─────────────────────────────────────────────────────────────────────
+# NFC support tables: canonical combining class, full canonical
+# decomposition, and the canonical composition map.  These mirror the
+# verified Rust reference `security/identity/ucd.rs` byte for byte:
+# `ccc`, `canonical_decompose` (fully expanded here so the COBOL side
+# needs only a single-level lookup), and `build_composition_table`.
+# ─────────────────────────────────────────────────────────────────────
+
+HANGUL_S_BASE = 0xAC00
+HANGUL_L_BASE = 0x1100
+HANGUL_V_BASE = 0x1161
+HANGUL_T_BASE = 0x11A7
+HANGUL_L_COUNT = 19
+HANGUL_V_COUNT = 21
+HANGUL_T_COUNT = 28
+HANGUL_N_COUNT = HANGUL_V_COUNT * HANGUL_T_COUNT
+HANGUL_S_COUNT = HANGUL_L_COUNT * HANGUL_N_COUNT
+
+
+def parse_unicode_data():
+    """cp -> (ccc, canonical_decomp | None), canonical only (no <tag>)."""
+    table = {}
+    for line in (DATA / "UnicodeData.txt").read_text(encoding="utf-8").splitlines():
+        if not line or line.startswith("#"):
+            continue
+        fields = line.split(";")
+        if len(fields) < 6:
+            continue
+        cp = int(fields[0], 16)
+        ccc = int(fields[3])
+        decomp_field = fields[5].strip()
+        canonical = None
+        if decomp_field and not decomp_field.startswith("<"):
+            canonical = [int(part, 16) for part in decomp_field.split() if part]
+        table[cp] = (ccc, canonical)
+    return table
+
+
+def hangul_decompose(cp):
+    if cp < HANGUL_S_BASE or cp >= HANGUL_S_BASE + HANGUL_S_COUNT:
+        return None
+    s_index = cp - HANGUL_S_BASE
+    out = [
+        HANGUL_L_BASE + s_index // HANGUL_N_COUNT,
+        HANGUL_V_BASE + (s_index % HANGUL_N_COUNT) // HANGUL_T_COUNT,
+    ]
+    t_index = s_index % HANGUL_T_COUNT
+    if t_index != 0:
+        out.append(HANGUL_T_BASE + t_index)
+    return out
+
+
+def full_decompose(cp, table, out):
+    hangul = hangul_decompose(cp)
+    if hangul is not None:
+        for child in hangul:
+            full_decompose(child, table, out)
+        return
+    entry = table.get(cp)
+    if entry is not None and entry[1] is not None:
+        for child in entry[1]:
+            full_decompose(child, table, out)
+        return
+    out.append(cp)
+
+
+def parse_composition_exclusions():
+    out = set()
+    for line in (DATA / "CompositionExclusions.txt").read_text(encoding="utf-8").splitlines():
+        stripped = strip_comment(line)
+        if stripped:
+            out.add(int(stripped, 16))
+    return out
+
+
+def emit_ccc_class(path, table):
+    by_class = {}
+    for cp, (ccc, _decomp) in table.items():
+        if ccc != 0:
+            by_class.setdefault(ccc, []).append((cp, cp))
+    entries = []
+    for ccc, ranges in sorted(by_class.items()):
+        for lo, hi in coalesce(ranges):
+            entries.append((lo, hi, ccc))
+    entries.sort()
+    lines = ["EVALUATE TRUE"]
+    for lo, hi, ccc in entries:
+        if lo == hi:
+            lines.append(f"    WHEN LOOKUP-CP = {lo}")
+        else:
+            lines.append(f"    WHEN LOOKUP-CP >= {lo} AND LOOKUP-CP <= {hi}")
+        lines.append(f"        MOVE {ccc} TO CCC-VAL")
+    lines.append("END-EVALUATE.")
+    path.write_text("\n".join(lines) + "\n", encoding="ascii")
+
+
+def emit_canonical_decomp(path, table):
+    lines = ["EVALUATE LOOKUP-CP"]
+    for cp in sorted(table):
+        _ccc, canonical = table[cp]
+        if canonical is None:
+            continue
+        full = []
+        full_decompose(cp, table, full)
+        # A codepoint whose full decomposition is itself carries no mapping.
+        if full == [cp]:
+            continue
+        lines.append(f"    WHEN {cp}")
+        lines.append(f"        MOVE {len(full)} TO DEC-LEN")
+        for slot, child in enumerate(full, start=1):
+            lines.append(f"        MOVE {child} TO DEC-CP ({slot})")
+        lines.append("        MOVE 1 TO DEC-FOUND")
+    lines.append("END-EVALUATE.")
+    path.write_text("\n".join(lines) + "\n", encoding="ascii")
+
+
+def emit_composition(path, table, exclusions):
+    ccc_of = {cp: ccc for cp, (ccc, _d) in table.items()}
+    pairs = []
+    for cp in sorted(table):
+        _ccc, canonical = table[cp]
+        if canonical is None or len(canonical) != 2:
+            continue
+        if cp in exclusions:
+            continue
+        if ccc_of.get(canonical[0], 0) != 0:
+            continue
+        pairs.append((canonical[0], canonical[1], cp))
+    lines = ["EVALUATE TRUE"]
+    for first, second, cp in pairs:
+        lines.append(f"    WHEN COMP-A = {first} AND COMP-B = {second}")
+        lines.append(f"        MOVE {cp} TO COMP-RESULT")
+        lines.append("        MOVE 1 TO TABLE-FLAG")
+    lines.append("END-EVALUATE.")
+    path.write_text("\n".join(lines) + "\n", encoding="ascii")
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     emit_variation_pairs(OUT / "legal_variation.cpy", parse_variation_pairs())
@@ -239,6 +376,11 @@ def main():
         parse_property_ranges(DATA / "emoji-data.txt", {"Extended_Pictographic"}),
         "MOVE 1 TO IS-EP-FLAG",
     )
+    ucd = parse_unicode_data()
+    exclusions = parse_composition_exclusions()
+    emit_ccc_class(OUT / "ccc_class.cpy", ucd)
+    emit_canonical_decomp(OUT / "canonical_decomp.cpy", ucd)
+    emit_composition(OUT / "canonical_compose.cpy", ucd, exclusions)
     print("generated COBOL Unicode lookup copybooks")
 
 

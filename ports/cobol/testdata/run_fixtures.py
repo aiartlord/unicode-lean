@@ -142,6 +142,93 @@ def check_detectors():
                         f"{name}/{case['name']} unexpected family {family}; got {got['codes']}")
 
 
+HIS_BASE = "unicode.security.K.hash-input-stability."
+
+
+def run_his(values, enc="-", rfc="-", audit="-", webhook="-"):
+    def fmt(side):
+        if isinstance(side, list):
+            return ",".join(str(v) for v in side)
+        return side
+
+    arg = ",".join(str(v) for v in values)
+    proc = subprocess.run(
+        [str(BIN), "hash-input-stability", "gateway-header", "observe",
+         arg, enc, rfc, fmt(audit), fmt(webhook)],
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    )
+    codes = []
+    positions = {}
+    for line in proc.stdout.splitlines():
+        parts = line.split(" ", 2)
+        if parts and parts[0] == "FINDING":
+            code = parts[1]
+            codes.append(code)
+            positions[code] = [int(x) for x in parts[2].split(",") if x] if len(parts) > 2 else []
+    return {"codes": codes, "positions": positions}
+
+
+def check_hash_input_stability():
+    # 1. Shared context-free fixture (the empty-Context vectors).
+    fixture = load("detectors/hash_input_stability.json")
+    for case in fixture["cases"]:
+        got = run_his(case["input"])
+        for code in case["required_findings"]:
+            require(code in got["codes"],
+                    f"his/{case['name']} missing {code}; got {got['codes']}")
+        if not case["required_findings"]:
+            require(all(".hash-input-stability." not in code for code in got["codes"]),
+                    f"his/{case['name']} unexpected finding; got {got['codes']}")
+
+    # 2. Context vectors transcribed verbatim from the Rust reference's
+    #    `#[test]` module comment block. tag = HIS_BASE + suffix; None = clear.
+    context_vectors = [
+        # (name, values, kwargs, expected_tag, expected_positions)
+        ("enc-utf16", [0x61, 0x62, 0x63], {"enc": "utf-16"}, "EncodingMismatch", [0]),
+        ("enc-surrogate", [0x61, 0xD800, 0x62], {"enc": "utf-8"}, "EncodingMismatch", [1]),
+        ("enc-out-of-range", [0x61, 0x110000, 0x62], {"enc": "utf-8"}, "EncodingMismatch", [1]),
+        ("enc-utf8-upper", [0x61, 0x62, 0x63], {"enc": "UTF-8"}, None, None),
+        ("enc-utf8-lower", [0x61, 0x62, 0x63], {"enc": "utf-8"}, None, None),
+        ("enc-utf8-nodash-upper", [0x61, 0x62, 0x63], {"enc": "UTF8"}, None, None),
+        ("enc-utf8-nodash-lower", [0x61, 0x62, 0x63], {"enc": "utf8"}, None, None),
+        ("rfc-pgp4880", [0x61, 0x20], {"rfc": "pgp4880TrailingWhitespace"}, "SignedMessageRule", [1]),
+        ("rfc-pgp9580-bare-lf", [0x61, 0x0A, 0x62], {"rfc": "pgp9580LineEnding"}, "SignedMessageRule", [1]),
+        ("rfc-pgp9580-crlf-clear", [0x61, 0x62, 0x63, 0x0D, 0x0A, 0x64, 0x65, 0x66],
+         {"rfc": "pgp9580LineEnding"}, None, None),
+        ("rfc-8785-decomposed", [0x0065, 0x0301], {"rfc": "rfc8785NfcRequirement"}, "SignedMessageRule", [0]),
+        ("rfc-8259-control", [0x61, 0x01, 0x62], {"rfc": "rfc8259ControlChar"}, "SignedMessageRule", [1]),
+        ("rfc-7515-plus", [0x41, 0x2B, 0x42], {"rfc": "rfc7515JwsBase64Url"}, "SignedMessageRule", [1]),
+        ("rfc-7515-clean-clear", [0x41, 0x61, 0x30, 0x2D, 0x5F, 0x7A, 0x5A, 0x39],
+         {"rfc": "rfc7515JwsBase64Url"}, None, None),
+        ("rfc-6376-double-space", [0x61, 0x20, 0x20, 0x62], {"rfc": "rfc6376DkimRelaxed"}, "SignedMessageRule", [2]),
+        ("rfc-6376-single-space-clear", [0x61, 0x20, 0x62], {"rfc": "rfc6376DkimRelaxed"}, None, None),
+        ("rfc-5751-bare-lf", [0x61, 0x0A, 0x62], {"rfc": "rfc5751SmimeLineEnding"}, "SignedMessageRule", [1]),
+        ("audit-divergence", [0x61, 0x62, 0x64], {"audit": [0x61, 0x62, 0x63]}, "AuditLogReinterpretation", [2]),
+        ("audit-identical-clear", [0x61, 0x62, 0x63], {"audit": [0x61, 0x62, 0x63]}, None, None),
+        ("webhook-drift", [0x61, 0x62, 0x63], {"webhook": [0x61, 0x62, 0x64]}, "WebhookSignatureDrift", [2]),
+        ("webhook-match-clear", [0x61, 0x62, 0x63], {"webhook": [0x61, 0x62, 0x63]}, None, None),
+        ("priority-encoding-over-rfc", [0x0065, 0x0301, 0x0A],
+         {"enc": "utf-16", "rfc": "pgp9580LineEnding"}, "EncodingMismatch", [0]),
+        ("priority-webhook-over-audit", [0x61, 0x62, 0x63],
+         {"webhook": [0x61, 0x62, 0x65], "audit": [0x61, 0x62, 0x66]}, "WebhookSignatureDrift", [2]),
+        ("priority-rfc-over-trailing", [0x61, 0x20],
+         {"rfc": "pgp4880TrailingWhitespace"}, "SignedMessageRule", [1]),
+    ]
+    for name, values, kwargs, tag, expected_pos in context_vectors:
+        got = run_his(values, **kwargs)
+        his_codes = [c for c in got["codes"] if ".hash-input-stability." in c]
+        if tag is None:
+            require(not his_codes, f"his-ctx/{name} expected clear; got {his_codes}")
+        else:
+            code = HIS_BASE + tag
+            require(code in got["codes"], f"his-ctx/{name} missing {code}; got {got['codes']}")
+            require(got["positions"].get(code) == expected_pos,
+                    f"his-ctx/{name} positions {got['positions'].get(code)} != {expected_pos}")
+    return len(fixture["cases"]), len(context_vectors)
+
+
 def check_forms_and_bip39():
     cases = [
         ("forms", [], []),
@@ -304,6 +391,7 @@ def main():
     check_multiencoding_decode()
     check_verdict()
     check_detectors()
+    his_fixture_count, his_context_count = check_hash_input_stability()
     check_forms_and_bip39()
     check_generated_tables()
     blob_count = check_opaque_blob()
@@ -312,6 +400,8 @@ def main():
     print(f"opaque-blob checks: {blob_count}")
     print(f"validated-utf8 checks: {validated_count}")
     print(f"grapheme (GraphemeBreakTest.txt) checks: {grapheme_count}")
+    print(f"hash-input-stability shared-fixture vectors: {his_fixture_count}")
+    print(f"hash-input-stability context vectors: {his_context_count}")
     print("ok: cobol unicode security fixture tests pass")
 
 
