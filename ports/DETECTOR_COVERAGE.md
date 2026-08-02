@@ -18,42 +18,41 @@ ground-truth vectors run, not merely compiled).
 
 Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 
-| Family (Lean module) | rust | python | cpp | go | jvm | ts | dotnet | swift | zig | haskell | ruby | lua | php | elixir | erlang |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| TagBlockPayload | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| VariationSelectorPayload | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| ZeroWidthPayload | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| SurrogateReassembly | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| BidiControlBalance | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| NoncharacterControl | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| HomoglyphConfusable | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| MixedScriptAdmissibility | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| RtlInjection | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| ConfusableBidiCompound | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| CovertDisplayCompound | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| WidthClassConfusion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Bip39Canonical | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| SourceDisplayDivergence | ✓ | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
-| LocaleCaseInversion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| CaseExpansionMismatch | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
-| NfcIdempotenceWitness | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| NormalizationBomb | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| StreamSafeViolation | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
-| IdentifierFormDrift | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
-| AdmissibilityFormDrift | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
-| EmojiZwjIntegrity | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
-| SkinToneVariationForgery | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
-| FilenameDisguise | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
-| RendererDivergence | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
-| HashInputStability | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| AiWatermarkDetectability | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| Family (Lean module) | rust | python | cpp | go | jvm | ts | dotnet | swift | zig | haskell | ruby | lua | php | elixir | erlang | cobol |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| TagBlockPayload | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| VariationSelectorPayload | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| ZeroWidthPayload | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| SurrogateReassembly | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| BidiControlBalance | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| NoncharacterControl | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| HomoglyphConfusable | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| MixedScriptAdmissibility | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| RtlInjection | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| ConfusableBidiCompound | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| CovertDisplayCompound | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| WidthClassConfusion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Bip39Canonical | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| SourceDisplayDivergence | ✓ | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| LocaleCaseInversion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| CaseExpansionMismatch | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| NfcIdempotenceWitness | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| NormalizationBomb | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| StreamSafeViolation | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| IdentifierFormDrift | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| AdmissibilityFormDrift | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| EmojiZwjIntegrity | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| SkinToneVariationForgery | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| FilenameDisguise | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| RendererDivergence | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| HashInputStability | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| AiWatermarkDetectability | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
 
-**Totals:** rust 18/27 · all other vouched ports 17/27 · overall 256/405
+**Totals:** rust 18/27 · all other vouched ports 17/27 · overall 273/432
 cells. The 13 core families plus LocaleCaseInversion, NormalizationBomb,
 NfcIdempotenceWitness, and HashInputStability are complete and vouched across
 every listed port; everything below the line is spec-proven in Lean but not
-yet ported. The COBOL port, not tracked as a column here, carries the same
-complete set.
+yet ported.
 
 ## Interrupted new-port inventory
 
@@ -79,7 +78,7 @@ vouched.
 
 **Reference-only (1):** SourceDisplayDivergence
 (`display/source_display_divergence.rs`) — rust reference exists and is vouched;
-needs fan-out to the other 14 listed ports.
+needs fan-out to the other 15 listed ports.
 
 **Not started in any port (9):** CaseExpansionMismatch, StreamSafeViolation,
 IdentifierFormDrift, AdmissibilityFormDrift, EmojiZwjIntegrity,
