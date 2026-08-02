@@ -212,6 +212,39 @@ export declare function isEmojiTarget(cp: number): boolean;
 export declare function isEmojiModifier(cp: number): boolean;
 export declare function emojiZwjIntegrityDetect(input: number[]): EmojiZwjVerdict;
 
+// ── renderer-divergence (layer D) ────────────────────────────────────────────
+
+export declare const MIN_COMBINING_STACK: 4;
+
+export type RendererDivergenceSubThreat =
+  | { kind: "CombiningStackOverflow"; basePos: number; stackLen: number }
+  | { kind: "VariationSelectorVariance"; firstVsPos: number; firstVsCp: number }
+  | { kind: "UnregisteredZwjVariance"; firstZwjPos: number }
+  | { kind: "FullwidthVariance"; firstFwPos: number; firstFwCp: number }
+  | { kind: "MixedDirectionVariance"; ltrCount: number; rtlCount: number };
+
+export interface RendererDivergenceClassification {
+  isClear: boolean;
+  tag: string | null;
+  sub: RendererDivergenceSubThreat | null;
+  positions: number[];
+}
+
+export interface RendererDivergenceVerdict {
+  input: number[];
+  classify: RendererDivergenceClassification;
+  vsCount: number;
+  combiningCount: number;
+  fullwidthCount: number;
+  hasZwj: boolean;
+  strongLtrCount: number;
+  strongRtlCount: number;
+}
+
+export declare function rendererDivergenceReasonCode(subThreatTag: string): string;
+export declare function rendererDivergenceSubThreatTag(sub: RendererDivergenceSubThreat): string;
+export declare function rendererDivergenceDetect(input: number[]): RendererDivergenceVerdict;
+
 // ── stream-safe-violation (layer F) ─────────────────────────────────────────
 
 export declare const STREAM_SAFE_LIMIT: 30;

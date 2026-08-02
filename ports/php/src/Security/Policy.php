@@ -16,6 +16,7 @@ use UnicodePhp\Security\Covert\ZeroWidthPayload;
 use UnicodePhp\Security\Crypto\AiWatermarkDetectability;
 use UnicodePhp\Security\Crypto\Bip39Canonical;
 use UnicodePhp\Security\Crypto\HashInputStability;
+use UnicodePhp\Security\Display\RendererDivergence;
 use UnicodePhp\Security\Display\RtlInjection;
 use UnicodePhp\Security\Form\LocaleCaseInversion;
 use UnicodePhp\Security\Form\NfcIdempotenceWitness;
@@ -579,6 +580,17 @@ final class Policy
         $findings = [];
         if (!$e->classify->isClear()) {
             self::pushFinding($findings, Family::EmojiZwjIntegrity, ClassificationKind::Hazard, $e->classify->tag(), $e->classify->positions());
+        }
+        return new Verdict($input, $profile, $mode, self::selectAction($profile, $mode, $findings), $findings, null);
+    }
+
+    /** @param list<int> $input */
+    public static function scanRendererDivergence(Profile $profile, Mode $mode, array $input): Verdict
+    {
+        $r = RendererDivergence::detect($input);
+        $findings = [];
+        if (!$r->classify->isClear()) {
+            self::pushFinding($findings, Family::RendererDivergence, ClassificationKind::Hazard, $r->classify->tag(), $r->classify->positions());
         }
         return new Verdict($input, $profile, $mode, self::selectAction($profile, $mode, $findings), $findings, null);
     }

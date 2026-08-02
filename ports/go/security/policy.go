@@ -63,6 +63,7 @@ const (
 	FamilyAiWatermarkDetect      Family = "ai-watermark-detectability"
 	FamilyStreamSafeViolation    Family = "stream-safe-violation"
 	FamilyEmojiZwjIntegrity      Family = "emoji-zwj-integrity"
+	FamilyRendererDivergence     Family = "renderer-divergence"
 )
 
 type ProfilePolicy struct {
@@ -497,7 +498,7 @@ func layer(family Family) string {
 		return "C"
 	case FamilyHomoglyphConfusable, FamilyMixedScript, FamilyEmojiZwjIntegrity:
 		return "I"
-	case FamilyRtlInjection:
+	case FamilyRtlInjection, FamilyRendererDivergence:
 		return "D"
 	case FamilyConfusableBidiCompound, FamilyCovertDisplayCompound:
 		return "X"

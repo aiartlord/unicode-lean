@@ -31,6 +31,17 @@ def lookup_gcb(cp: int) -> str:
     return "Other"
 
 
+def is_grapheme_extend(cp: int) -> bool:
+    """Whether ``cp`` has ``Grapheme_Cluster_Break = Extend``.
+
+    Thin predicate over :func:`lookup_gcb`, mirroring the Rust reference
+    ``grapheme::is_grapheme_extend``. Consumers (for example the
+    RendererDivergence display detector) use it to recognise the combining
+    marks that stack on a base.
+    """
+    return lookup_gcb(cp) == "Extend"
+
+
 def lookup_incb(cp: int) -> str:
     """Indic_Conjunct_Break class of ``cp``, ``"None"`` when uncovered."""
     for lo, hi, cls in INCB_RANGES:

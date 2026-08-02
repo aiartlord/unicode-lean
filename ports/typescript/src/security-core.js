@@ -47,6 +47,7 @@ export const Family = Object.freeze({
   RtlInjection: "rtl-injection",
   ConfusableBidiCompound: "confusable-bidi-compound",
   CovertDisplayCompound: "covert-display-compound",
+  RendererDivergence: "renderer-divergence",
 });
 
 let confusablesMapCache;
@@ -62,6 +63,7 @@ let simpleLowerCache;
 let simpleUpperCache;
 let casedRangesCache;
 let softDottedRangesCache;
+let graphemeExtendRangesCache;
 let emojiRangesCache;
 let dataReader = null;
 
@@ -83,6 +85,7 @@ export function configureSecurityDataReader(reader) {
   simpleUpperCache = undefined;
   casedRangesCache = undefined;
   softDottedRangesCache = undefined;
+  graphemeExtendRangesCache = undefined;
   emojiRangesCache = undefined;
   bip39WordlistCache = undefined;
   zwjSequencesCache = undefined;
@@ -385,7 +388,7 @@ function layer(family) {
   if (family === Family.HomoglyphConfusable || family === Family.MixedScriptAdmissibility) {
     return "I";
   }
-  if (family === Family.RtlInjection) {
+  if (family === Family.RtlInjection || family === Family.RendererDivergence) {
     return "D";
   }
   if (family === Family.ConfusableBidiCompound || family === Family.CovertDisplayCompound) {
@@ -2920,6 +2923,250 @@ export function emojiZwjIntegrityDetect(input) {
     chainLength: chainLen,
     isRegisteredRgi: isRgi,
     skinToneCount: stCount,
+  };
+}
+
+// ── renderer-divergence (display-layer detector D) ───────────────────────────
+//
+// Mirrors Unicode.Security.Display.RendererDivergence (and the verified Rust
+// `security::display::renderer_divergence`). An adversary crafts content that
+// renders one way in the auditor's renderer and a different way in the
+// consumer's; this detector draws a three-value split, surfaced through the
+// clear/hazard carrier, using only tables the port already bundles (the
+// variation-selector set, the grapheme Extend class, the RGI ZWJ registry, and
+// strong-bidi classes) — never a host rendering or shaping library.
+//
+// Sub-threats, in priority order:
+//   1. CombiningStackOverflow    Zalgo-like combining-mark stack >= 4 on a base.
+//   2. VariationSelectorVariance any variation selector present.
+//   3. UnregisteredZwjVariance   ZWJ-containing input not in the RGI ZWJ set.
+//   4. FullwidthVariance         a fullwidth/halfwidth codepoint present.
+//   5. MixedDirectionVariance    both strong-LTR and strong-RTL codepoints.
+
+// The combining-mark stack depth (on a single base) at or beyond which the
+// input is treated as a Zalgo-style rendering-variance hazard.
+export const MIN_COMBINING_STACK = 4;
+
+// Grapheme_Extend ranges from DerivedCoreProperties.txt, memoised.
+function graphemeExtendRanges() {
+  if (graphemeExtendRangesCache === undefined) {
+    graphemeExtendRangesCache = parseDerivedProperty("Grapheme_Extend");
+  }
+  return graphemeExtendRangesCache;
+}
+
+// True iff cp has Grapheme_Cluster_Break = Extend. UAX #29 derives the Extend
+// class as Grapheme_Extend = Yes OR Emoji_Modifier = Yes; both tables are
+// already bundled by the port (DerivedCoreProperties.txt and emoji-data.txt via
+// isEmojiModifier), so this reconstructs the GCB Extend class without a new data
+// file. Used to measure Zalgo-style combining-mark stacks.
+function isGraphemeExtend(cp) {
+  return inRanges(graphemeExtendRanges(), cp) || isEmojiModifier(cp);
+}
+
+// True iff cp is the ZWJ codepoint (reuses the port's EMOJI_ZWJ constant).
+function isRendererZwj(cp) {
+  return cp === EMOJI_ZWJ;
+}
+
+// §4 sub-detectors — counters over the reused predicates.
+function rendererCountVs(input) {
+  let count = 0;
+  for (const cp of input) {
+    if (isVariationSelector(cp)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function rendererCountCombining(input) {
+  let count = 0;
+  for (const cp of input) {
+    if (isGraphemeExtend(cp)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function rendererCountFullwidth(input) {
+  let count = 0;
+  for (const cp of input) {
+    if (isFullwidthHalfwidth(cp)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function rendererInputHasZwj(input) {
+  for (const cp of input) {
+    if (isRendererZwj(cp)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function rendererCountStrongLtr(input) {
+  let count = 0;
+  for (const cp of input) {
+    if (isStrongLtr(cp)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function rendererCountStrongRtl(input) {
+  let count = 0;
+  for (const cp of input) {
+    if (isStrongRtl(cp)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+// Position and codepoint of the first variation selector, or null.
+function rendererFirstVsPos(input) {
+  for (let idx = 0; idx < input.length; idx += 1) {
+    if (isVariationSelector(input[idx])) {
+      return { pos: idx, cp: input[idx] };
+    }
+  }
+  return null;
+}
+
+// Position of the first ZWJ, or null.
+function rendererFirstZwjPos(input) {
+  for (let idx = 0; idx < input.length; idx += 1) {
+    if (isRendererZwj(input[idx])) {
+      return idx;
+    }
+  }
+  return null;
+}
+
+// Position and codepoint of the first fullwidth/halfwidth codepoint, or null.
+function rendererFirstFullwidthPos(input) {
+  for (let idx = 0; idx < input.length; idx += 1) {
+    if (isFullwidthHalfwidth(input[idx])) {
+      return { pos: idx, cp: input[idx] };
+    }
+  }
+  return null;
+}
+
+// The first base position (a non-Extend codepoint) immediately followed by
+// exactly minStack consecutive Extend codepoints, as { basePos, stackLen }, or
+// null. Mirrors the Rust `first_combining_stack`.
+function rendererFirstCombiningStack(input, minStack) {
+  for (let idx = 0; idx < input.length; idx += 1) {
+    if (!isGraphemeExtend(input[idx])) {
+      const following = input.slice(idx + 1, idx + 1 + minStack);
+      if (following.length === minStack && following.every((c) => isGraphemeExtend(c))) {
+        return { basePos: idx, stackLen: minStack };
+      }
+    }
+  }
+  return null;
+}
+
+// Fixture-row tag string for a renderer-divergence sub-threat (mirrors
+// SubThreat.tag). Every arm is explicit; the final arm throws on an
+// unrecognised kind rather than defaulting.
+export function rendererDivergenceSubThreatTag(sub) {
+  switch (sub.kind) {
+    case "CombiningStackOverflow":
+      return "CombiningStackOverflow";
+    case "VariationSelectorVariance":
+      return "VariationSelectorVariance";
+    case "UnregisteredZwjVariance":
+      return "UnregisteredZwjVariance";
+    case "FullwidthVariance":
+      return "FullwidthVariance";
+    case "MixedDirectionVariance":
+      return "MixedDirectionVariance";
+    default:
+      throw new Error(`unreachable renderer-divergence sub-threat kind: ${sub.kind}`);
+  }
+}
+
+// Stable reason code for a renderer-divergence sub-threat (layer D).
+export function rendererDivergenceReasonCode(subThreatTag) {
+  return reasonCode(Family.RendererDivergence, subThreatTag);
+}
+
+function rendererClearClassify() {
+  return { isClear: true, tag: null, sub: null, positions: [] };
+}
+
+function rendererHazardClassify(sub, positions) {
+  return { isClear: false, tag: rendererDivergenceSubThreatTag(sub), sub, positions };
+}
+
+// The RendererDivergence detection function (mirrors the Lean/Rust `detect`).
+export function rendererDivergenceDetect(input) {
+  const cps = Array.from(input);
+  const vsCount = rendererCountVs(cps);
+  const combiningCount = rendererCountCombining(cps);
+  const fullwidthCount = rendererCountFullwidth(cps);
+  const hasZwj = rendererInputHasZwj(cps);
+  const ltrCount = rendererCountStrongLtr(cps);
+  const rtlCount = rendererCountStrongRtl(cps);
+
+  let classify;
+  const stack = rendererFirstCombiningStack(cps, MIN_COMBINING_STACK);
+  if (stack !== null) {
+    // Priority 1: combining-mark stack overflow (Zalgo).
+    const sub = {
+      kind: "CombiningStackOverflow",
+      basePos: stack.basePos,
+      stackLen: stack.stackLen,
+    };
+    classify = rendererHazardClassify(sub, [stack.basePos]);
+  } else {
+    const vs = rendererFirstVsPos(cps);
+    if (vs !== null) {
+      // Priority 2: any variation selector triggers presentation variance.
+      const sub = { kind: "VariationSelectorVariance", firstVsPos: vs.pos, firstVsCp: vs.cp };
+      classify = rendererHazardClassify(sub, [vs.pos]);
+    } else if (hasZwj && !isRegisteredZwjSequence(cps)) {
+      // Priority 3: ZWJ-containing input not in the registered RGI set.
+      const zwjPos = rendererFirstZwjPos(cps);
+      if (zwjPos !== null) {
+        const sub = { kind: "UnregisteredZwjVariance", firstZwjPos: zwjPos };
+        classify = rendererHazardClassify(sub, [zwjPos]);
+      } else {
+        classify = rendererClearClassify();
+      }
+    } else {
+      const fw = rendererFirstFullwidthPos(cps);
+      if (fw !== null) {
+        // Priority 4: fullwidth/halfwidth.
+        const sub = { kind: "FullwidthVariance", firstFwPos: fw.pos, firstFwCp: fw.cp };
+        classify = rendererHazardClassify(sub, [fw.pos]);
+      } else if (ltrCount > 0 && rtlCount > 0) {
+        // Priority 5: mixed direction.
+        const sub = { kind: "MixedDirectionVariance", ltrCount, rtlCount };
+        classify = rendererHazardClassify(sub, []);
+      } else {
+        classify = rendererClearClassify();
+      }
+    }
+  }
+
+  return {
+    input: cps,
+    classify,
+    vsCount,
+    combiningCount,
+    fullwidthCount,
+    hasZwj,
+    strongLtrCount: ltrCount,
+    strongRtlCount: rtlCount,
   };
 }
 

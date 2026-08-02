@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "family": "renderer-divergence",
+  "cases": [
+    {
+      "name": "empty-clear",
+      "input": [],
+      "required_findings": []
+    },
+    {
+      "name": "ascii-hello-clear",
+      "input": [72, 101, 108, 108, 111],
+      "required_findings": []
+    },
+    {
+      "name": "han-clear",
+      "input": [20013, 25991],
+      "required_findings": []
+    },
+    {
+      "name": "family-of-four-rgi-clear",
+      "input": [128104, 8205, 128105, 8205, 128103, 8205, 128102],
+      "required_findings": []
+    },
+    {
+      "name": "variation-selector-variance",
+      "input": [128512, 65039],
+      "required_findings": [
+        "unicode.security.D.renderer-divergence.VariationSelectorVariance"
+      ]
+    },
+    {
+      "name": "unregistered-zwj-variance",
+      "input": [128104, 8205, 128105],
+      "required_findings": [
+        "unicode.security.D.renderer-divergence.UnregisteredZwjVariance"
+      ]
+    },
+    {
+      "name": "combining-stack-overflow-zalgo",
+      "input": [97, 769, 770, 771, 772],
+      "required_findings": [
+        "unicode.security.D.renderer-divergence.CombiningStackOverflow"
+      ]
+    },
+    {
+      "name": "fullwidth-variance",
+      "input": [65313],
+      "required_findings": [
+        "unicode.security.D.renderer-divergence.FullwidthVariance"
+      ]
+    },
+    {
+      "name": "mixed-direction-variance",
+      "input": [65, 66, 1488, 1489],
+      "required_findings": [
+        "unicode.security.D.renderer-divergence.MixedDirectionVariance"
+      ]
+    }
+  ]
+}
