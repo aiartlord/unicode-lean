@@ -316,10 +316,28 @@ for case in multiencoding_decode_payload["cases"]:
 if not detector_fixtures:
     raise SystemExit("no detector fixtures found")
 
+# Detectors that the canonical default gateway `scan` does not invoke: they are
+# either crypto-context-gated (only run under a `CryptoContext`) or standalone
+# per `policy::scan`, which sweeps only the eleven context-free detectors whose
+# fixtures are cross-port-copied above. Their `required_findings` describe the
+# detector's OWN verdict, verified through each port's dedicated detector tests
+# and the shared fixture driven through that detector — not a default-scan
+# finding. Their fixtures are still schema-checked here; asserting their
+# findings against the aggregate scan would contradict the canonical scan
+# membership, so that assertion is scoped to the default-scan detectors.
+non_default_scan_detectors = {
+    "ai_watermark_detectability",
+    "hash_input_stability",
+    "stream_safe_violation",
+    "emoji_zwj_integrity",
+}
+
 for detector_fixture in detector_fixtures:
     detector_payload = json.loads(detector_fixture.read_text(encoding="utf-8"))
     if detector_payload.get("schema") != 1:
         raise SystemExit(f"{detector_fixture}: detector schema mismatch")
+    if detector_fixture.stem in non_default_scan_detectors:
+        continue
     for case in detector_payload["cases"]:
         verdict = scan(Profile.GATEWAY_HEADER, Mode.OBSERVE, case["input"])
         actual = {finding.code for finding in verdict.findings}

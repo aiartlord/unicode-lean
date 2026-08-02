@@ -44,5 +44,6 @@ import Unicode.Security.Boundary.CovertDisplayCompound
 import Unicode.Security.Boundary.ConfusableBidiCompound
 import Unicode.Security.Boundary.AdmissibilityFormDrift
 import Unicode.Security.Crypto.Bip39Canonical
+import Unicode.Security.Crypto.WordlistOrder
 import Unicode.Security.Crypto.HashInputStability
 import Unicode.Security.Crypto.AiWatermarkDetectability
