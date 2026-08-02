@@ -331,6 +331,7 @@ non_default_scan_detectors = {
     "stream_safe_violation",
     "emoji_zwj_integrity",
     "renderer_divergence",
+    "filename_disguise",
 }
 
 for detector_fixture in detector_fixtures:
