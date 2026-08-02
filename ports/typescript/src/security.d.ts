@@ -245,6 +245,35 @@ export declare function rendererDivergenceReasonCode(subThreatTag: string): stri
 export declare function rendererDivergenceSubThreatTag(sub: RendererDivergenceSubThreat): string;
 export declare function rendererDivergenceDetect(input: number[]): RendererDivergenceVerdict;
 
+// ── filename-disguise (layer D) ──────────────────────────────────────────────
+
+export type FilenameDisguiseSubThreat =
+  | { kind: "RloFlip"; position: number; controlCp: number }
+  | { kind: "WidthClassExt"; position: number; cp: number }
+  | { kind: "CombiningInExt"; position: number; cp: number }
+  | { kind: "MultipleExtensions"; dotCount: number };
+
+export interface FilenameDisguiseClassification {
+  isClear: boolean;
+  tag: string | null;
+  sub: FilenameDisguiseSubThreat | null;
+  positions: number[];
+}
+
+export interface FilenameDisguiseVerdict {
+  input: number[];
+  classify: FilenameDisguiseClassification;
+  dotPositions: number[];
+  lastDotPos: number | null;
+  bidiControlCount: number;
+  fullwidthInExt: number;
+  combiningInExt: number;
+}
+
+export declare function filenameDisguiseReasonCode(subThreatTag: string): string;
+export declare function filenameDisguiseSubThreatTag(sub: FilenameDisguiseSubThreat): string;
+export declare function filenameDisguiseDetect(input: number[]): FilenameDisguiseVerdict;
+
 // ── stream-safe-violation (layer F) ─────────────────────────────────────────
 
 export declare const STREAM_SAFE_LIMIT: 30;

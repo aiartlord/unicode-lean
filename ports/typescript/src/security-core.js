@@ -48,6 +48,7 @@ export const Family = Object.freeze({
   ConfusableBidiCompound: "confusable-bidi-compound",
   CovertDisplayCompound: "covert-display-compound",
   RendererDivergence: "renderer-divergence",
+  FilenameDisguise: "filename-disguise",
 });
 
 let confusablesMapCache;
@@ -388,7 +389,11 @@ function layer(family) {
   if (family === Family.HomoglyphConfusable || family === Family.MixedScriptAdmissibility) {
     return "I";
   }
-  if (family === Family.RtlInjection || family === Family.RendererDivergence) {
+  if (
+    family === Family.RtlInjection ||
+    family === Family.RendererDivergence ||
+    family === Family.FilenameDisguise
+  ) {
     return "D";
   }
   if (family === Family.ConfusableBidiCompound || family === Family.CovertDisplayCompound) {
@@ -3167,6 +3172,188 @@ export function rendererDivergenceDetect(input) {
     hasZwj,
     strongLtrCount: ltrCount,
     strongRtlCount: rtlCount,
+  };
+}
+
+// ── filename-disguise (display-layer detector D) ─────────────────────────────
+//
+// Mirrors Unicode.Security.Display.FilenameDisguise (and the verified Rust
+// display filename-disguise reference). An adversary delivers a file whose
+// rendered name looks like a benign type (document.txt) but whose actual byte
+// extension is executable; the canonical attack inserts U+202E RIGHT-TO-LEFT
+// OVERRIDE so document<RLO>txt.exe renders as "document exe.txt". Detection is
+// presentation- and language-agnostic: it surfaces every codepoint that could
+// cause display-vs-byte divergence in the filename — any bidi format-control
+// anywhere, and any fullwidth/halfwidth or combining (grapheme Extend)
+// codepoint in the extension region (after the last dot). Native-RTL names with
+// no bidi controls clear. It reuses the port's own predicates
+// (isBidiFormatControl, isGraphemeExtend, isFullwidthHalfwidth), never a host
+// filesystem or rendering library.
+//
+// Sub-threats, in priority order:
+//   1. RloFlip            any bidi format-control anywhere in the input.
+//   2. WidthClassExt      a fullwidth/halfwidth codepoint in the extension.
+//   3. CombiningInExt     a combining (Extend) codepoint in the extension.
+//   4. MultipleExtensions >= 3 dots (advisory; e.g. legitimate .tar.gz.sig).
+
+// True iff cp is U+002E FULL STOP (the extension separator).
+function isAsciiDot(cp) {
+  return cp === 0x002e;
+}
+
+// Positions of every dot in input.
+function filenameDotPositions(input) {
+  const positions = [];
+  for (let idx = 0; idx < input.length; idx += 1) {
+    if (isAsciiDot(input[idx])) {
+      positions.push(idx);
+    }
+  }
+  return positions;
+}
+
+// Position and codepoint of the first bidi format-control, or null.
+function filenameFirstBidiControl(input) {
+  for (let idx = 0; idx < input.length; idx += 1) {
+    if (isBidiFormatControl(input[idx])) {
+      return { pos: idx, cp: input[idx] };
+    }
+  }
+  return null;
+}
+
+// Position and codepoint of the first fullwidth/halfwidth codepoint at or after
+// start, or null.
+function filenameFirstFullwidthFrom(input, start) {
+  for (let idx = start; idx < input.length; idx += 1) {
+    if (isFullwidthHalfwidth(input[idx])) {
+      return { pos: idx, cp: input[idx] };
+    }
+  }
+  return null;
+}
+
+// Position and codepoint of the first Extend codepoint at or after start, or
+// null.
+function filenameFirstExtendFrom(input, start) {
+  for (let idx = start; idx < input.length; idx += 1) {
+    if (isGraphemeExtend(input[idx])) {
+      return { pos: idx, cp: input[idx] };
+    }
+  }
+  return null;
+}
+
+// Count of fullwidth/halfwidth codepoints at or after start.
+function filenameCountFullwidthFrom(input, start) {
+  let count = 0;
+  for (let idx = start; idx < input.length; idx += 1) {
+    if (isFullwidthHalfwidth(input[idx])) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+// Count of Extend codepoints at or after start.
+function filenameCountExtendFrom(input, start) {
+  let count = 0;
+  for (let idx = start; idx < input.length; idx += 1) {
+    if (isGraphemeExtend(input[idx])) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+// Count of bidi format-controls anywhere in input.
+function filenameCountBidiControl(input) {
+  let count = 0;
+  for (const cp of input) {
+    if (isBidiFormatControl(cp)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+// Fixture-row tag string for a filename-disguise sub-threat (mirrors
+// SubThreat.tag). Every arm is explicit; the final arm throws on an
+// unrecognised kind rather than defaulting.
+export function filenameDisguiseSubThreatTag(sub) {
+  switch (sub.kind) {
+    case "RloFlip":
+      return "RloFlip";
+    case "WidthClassExt":
+      return "WidthClassExt";
+    case "CombiningInExt":
+      return "CombiningInExt";
+    case "MultipleExtensions":
+      return "MultipleExtensions";
+    default:
+      throw new Error(`unreachable filename-disguise sub-threat kind: ${sub.kind}`);
+  }
+}
+
+// Stable reason code for a filename-disguise sub-threat (layer D).
+export function filenameDisguiseReasonCode(subThreatTag) {
+  return reasonCode(Family.FilenameDisguise, subThreatTag);
+}
+
+function filenameClearClassify() {
+  return { isClear: true, tag: null, sub: null, positions: [] };
+}
+
+function filenameHazardClassify(sub, positions) {
+  return { isClear: false, tag: filenameDisguiseSubThreatTag(sub), sub, positions };
+}
+
+// The FilenameDisguise detection function (mirrors the Lean/Rust detect).
+export function filenameDisguiseDetect(input) {
+  const cps = Array.from(input);
+  const dots = filenameDotPositions(cps);
+  const lastDot = dots.length === 0 ? null : dots[dots.length - 1];
+  const extStart = lastDot === null ? cps.length : lastDot + 1;
+  const bidiCount = filenameCountBidiControl(cps);
+  const fwInExt = filenameCountFullwidthFrom(cps, extStart);
+  const extInExt = filenameCountExtendFrom(cps, extStart);
+
+  let classify;
+  const bidi = filenameFirstBidiControl(cps);
+  if (bidi !== null) {
+    // Priority 1: any bidi format-control.
+    const sub = { kind: "RloFlip", position: bidi.pos, controlCp: bidi.cp };
+    classify = filenameHazardClassify(sub, [bidi.pos]);
+  } else {
+    const fw = filenameFirstFullwidthFrom(cps, extStart);
+    if (fw !== null) {
+      // Priority 2: fullwidth/halfwidth in the extension.
+      const sub = { kind: "WidthClassExt", position: fw.pos, cp: fw.cp };
+      classify = filenameHazardClassify(sub, [fw.pos]);
+    } else {
+      const ext = filenameFirstExtendFrom(cps, extStart);
+      if (ext !== null) {
+        // Priority 3: combining mark in the extension.
+        const sub = { kind: "CombiningInExt", position: ext.pos, cp: ext.cp };
+        classify = filenameHazardClassify(sub, [ext.pos]);
+      } else if (dots.length >= 3) {
+        // Priority 4: three or more extensions (advisory).
+        const sub = { kind: "MultipleExtensions", dotCount: dots.length };
+        classify = filenameHazardClassify(sub, dots.slice());
+      } else {
+        classify = filenameClearClassify();
+      }
+    }
+  }
+
+  return {
+    input: cps,
+    classify,
+    dotPositions: dots,
+    lastDotPos: lastDot,
+    bidiControlCount: bidiCount,
+    fullwidthInExt: fwInExt,
+    combiningInExt: extInExt,
   };
 }
 

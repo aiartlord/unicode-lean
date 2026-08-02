@@ -16,6 +16,7 @@ use UnicodePhp\Security\Covert\ZeroWidthPayload;
 use UnicodePhp\Security\Crypto\AiWatermarkDetectability;
 use UnicodePhp\Security\Crypto\Bip39Canonical;
 use UnicodePhp\Security\Crypto\HashInputStability;
+use UnicodePhp\Security\Display\FilenameDisguise;
 use UnicodePhp\Security\Display\RendererDivergence;
 use UnicodePhp\Security\Display\RtlInjection;
 use UnicodePhp\Security\Form\LocaleCaseInversion;
@@ -591,6 +592,17 @@ final class Policy
         $findings = [];
         if (!$r->classify->isClear()) {
             self::pushFinding($findings, Family::RendererDivergence, ClassificationKind::Hazard, $r->classify->tag(), $r->classify->positions());
+        }
+        return new Verdict($input, $profile, $mode, self::selectAction($profile, $mode, $findings), $findings, null);
+    }
+
+    /** @param list<int> $input */
+    public static function scanFilenameDisguise(Profile $profile, Mode $mode, array $input): Verdict
+    {
+        $f = FilenameDisguise::detect($input);
+        $findings = [];
+        if (!$f->classify->isClear()) {
+            self::pushFinding($findings, Family::FilenameDisguise, ClassificationKind::Hazard, $f->classify->tag(), $f->classify->positions());
         }
         return new Verdict($input, $profile, $mode, self::selectAction($profile, $mode, $findings), $findings, null);
     }
