@@ -3669,6 +3669,92 @@ fn isIdAllowed(cp: u32) bool {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// UAX #31 default-identifier admissibility predicate.
+//
+// The port carries no precompiled XID_Start / XID_Continue table, so the two
+// derived core properties are read at runtime from the already-bundled
+// data/DerivedCoreProperties.txt, scanned on each call exactly as
+// hasGraphemeExtendProperty scans that same table for Grapheme_Extend. From
+// them the reference chain is reproduced verbatim:
+//   is_default_id_start(cp)    = XID_Start(cp) ∨ cp == 0x005F LOW LINE
+//   is_default_id_continue(cp) = XID_Continue(cp)
+//   is_default_identifier(cps) = cps nonempty ∧ start(cps[0]) ∧ every
+//                                cps[1..] a continue
+//   is_allowed_identifier(cps) = is_default_identifier(cps) ∧ every cp Allowed
+// The final Allowed check reuses the port's own isIdAllowed. No host identifier
+// library is consulted and no new data file is introduced.
+// ─────────────────────────────────────────────────────────────────────
+
+/// True iff cp is listed under the given DerivedCoreProperties.txt property
+/// (exact value-field match). Scans the embedded table on each call, mirroring
+/// hasGraphemeExtendProperty: split each row on ';', keep only rows whose value
+/// field equals property, and test cp against the row's single value or `lo..hi`
+/// range.
+fn hasDerivedCoreProperty(cp: u32, property: []const u8) bool {
+    var offset: usize = 0;
+    while (nextLine(derived_core_properties_raw, &offset)) |raw_line| {
+        const body = if (std.mem.indexOfScalar(u8, raw_line, '#')) |idx| raw_line[0..idx] else raw_line;
+        const stripped = trimAscii(body);
+        if (stripped.len == 0) continue;
+        var fields = std.mem.splitScalar(u8, stripped, ';');
+        const range_field = fields.next() orelse continue;
+        const prop_field = fields.next() orelse continue;
+        if (!std.mem.eql(u8, trimAscii(prop_field), property)) continue;
+        const range = trimAscii(range_field);
+        if (std.mem.indexOf(u8, range, "..")) |dot_idx| {
+            const lo = parseHexU32(trimAscii(range[0..dot_idx])) orelse continue;
+            const hi = parseHexU32(trimAscii(range[dot_idx + 2 ..])) orelse continue;
+            if (lo <= cp and cp <= hi) return true;
+        } else {
+            const single = parseHexU32(range) orelse continue;
+            if (single == cp) return true;
+        }
+    }
+    return false;
+}
+
+/// True iff cp has XID_Start = Yes per the bundled data/DerivedCoreProperties.txt.
+fn isXidStart(cp: u32) bool {
+    return hasDerivedCoreProperty(cp, "XID_Start");
+}
+
+/// True iff cp has XID_Continue = Yes per the bundled data/DerivedCoreProperties.txt.
+fn isXidContinue(cp: u32) bool {
+    return hasDerivedCoreProperty(cp, "XID_Continue");
+}
+
+/// UAX #31 default identifier start: XID_Start or U+005F LOW LINE.
+fn isDefaultIdStart(cp: u32) bool {
+    return isXidStart(cp) or cp == 0x005F;
+}
+
+/// UAX #31 default identifier continue: XID_Continue.
+fn isDefaultIdContinue(cp: u32) bool {
+    return isXidContinue(cp);
+}
+
+/// UAX #31 default identifier: nonempty, the first codepoint is a default-id
+/// start and every remaining codepoint is a default-id continue.
+fn isDefaultIdentifier(cps: []const u32) bool {
+    if (cps.len == 0) return false;
+    if (!isDefaultIdStart(cps[0])) return false;
+    for (cps[1..]) |cp| {
+        if (!isDefaultIdContinue(cp)) return false;
+    }
+    return true;
+}
+
+/// Whole-string UTS #39 / UAX #31 admissibility: a default identifier whose
+/// every codepoint additionally has Identifier_Status = Allowed (isIdAllowed).
+fn isAllowedIdentifier(cps: []const u32) bool {
+    if (!isDefaultIdentifier(cps)) return false;
+    for (cps) |cp| {
+        if (!isIdAllowed(cp)) return false;
+    }
+    return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // RendererDivergence detector (display layer D), mirroring
 // Unicode.Security.Display.RendererDivergence and its byte-faithful Rust port
 // ports/rust/src/security/display/renderer_divergence.rs.
@@ -4497,6 +4583,152 @@ pub const identifier_form_drift = struct {
             .input = input,
             .classify = classification,
             .shift_count = statusShiftCount(input),
+        };
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────
+// AdmissibilityFormDrift detector (boundary layer X), mirroring
+// Unicode.Security.Boundary.AdmissibilityFormDrift and its byte-faithful Rust
+// reference implementation.
+//
+// Fires on inputs whose UTS #39 whole-string isAllowedIdentifier verdict differs
+// between the input and its NFKC form. This is the string-level complement of
+// IdentifierFormDrift (which scans Identifier_Status against the per-codepoint
+// NFKD head): here the whole-string admissibility predicate is evaluated twice —
+// once on the input, once on toNFKC(input). The two are not redundant. A
+// sequence of decomposed Hangul jamos passes the per-codepoint scan cleanly
+// (each jamo has identity NFKD and Restricted status on both sides) but fires
+// here: the jamo sequence is rejected by isAllowedIdentifier, while its NFKC
+// composition into a precomposed Hangul syllable is accepted.
+//
+// It reuses the port's own whole-string admissibility predicate (file-scope
+// isAllowedIdentifier = UAX #31 default identifier ∧ every codepoint Allowed) and
+// NFKC pipeline (file-scope toNFKC), never a host normalisation or identifier
+// library.
+//
+// Sub-threat (direction-agnostic):
+//   AdmissibilityFormDrift — isAllowedIdentifier(input) !=
+//   isAllowedIdentifier(toNFKC(input)). The pair of booleans is carried so the
+//   verdict records which direction the drift goes; no position is reported
+//   because the predicate is whole-string.
+// ─────────────────────────────────────────────────────────────────────
+
+pub const admissibility_form_drift = struct {
+    /// The port's file-scope whole-string admissibility predicate, aliased here
+    /// so the reuse is explicit.
+    const allowedIdentifierPredicate = isAllowedIdentifier;
+
+    /// The port's file-scope UAX #15 NFKC normaliser (NFKD + canonical
+    /// recompose), aliased for the same reason. Returns null only on unbounded
+    /// expansion (its buffer saturates), which detect treats defensively.
+    const nfkcNormalize = toNFKC;
+
+    // ── §1 Types ─────────────────────────────────────────────────────────
+
+    /// Sub-threat enumeration. Exactly one variant.
+    pub const SubThreat = union(enum) {
+        /// The whole-string admissibility verdict differs between the input and
+        /// its NFKC form. Both booleans are carried so the drift direction is
+        /// recorded.
+        admissibility_form_drift: struct { input_admissible: bool, nfkc_admissible: bool },
+
+        /// Human-facing classification tag for this sub-threat.
+        pub fn tag(self: SubThreat) []const u8 {
+            return switch (self) {
+                .admissibility_form_drift => "AdmissibilityFormDrift",
+            };
+        }
+
+        /// Fully-qualified reason code for this sub-threat.
+        pub fn reasonCode(self: SubThreat) []const u8 {
+            return switch (self) {
+                .admissibility_form_drift => "unicode.security.X.admissibility-form-drift.AdmissibilityFormDrift",
+            };
+        }
+    };
+
+    /// Top-level classification (clear = the admissibility verdict agrees across
+    /// forms).
+    pub const Classification = union(enum) {
+        /// The admissibility verdict agrees across forms.
+        clear,
+        /// The admissibility verdict drifts across forms: the sub-threat, the
+        /// implicated positions (always empty — the predicate is whole-string),
+        /// and the (always-empty here) decoded-byte projection kept for shape
+        /// parity with the Lean Classification.hazard.
+        hazard: struct { sub: SubThreat, positions: []const usize = &[_]usize{}, decoded: []const u8 = &[_]u8{} },
+
+        /// True iff the classification is clear.
+        pub fn isClear(self: Classification) bool {
+            return switch (self) {
+                .clear => true,
+                .hazard => false,
+            };
+        }
+
+        /// Human-facing tag for a hazard, or null when clear.
+        pub fn tag(self: Classification) ?[]const u8 {
+            return switch (self) {
+                .clear => null,
+                .hazard => |h| h.sub.tag(),
+            };
+        }
+
+        /// Fully-qualified reason code for a hazard, or null when clear.
+        pub fn reasonCode(self: Classification) ?[]const u8 {
+            return switch (self) {
+                .clear => null,
+                .hazard => |h| h.sub.reasonCode(),
+            };
+        }
+
+        /// Implicated positions (always empty — the predicate is whole-string).
+        pub fn positions(self: Classification) []const usize {
+            return switch (self) {
+                .clear => &[_]usize{},
+                .hazard => |h| h.positions,
+            };
+        }
+    };
+
+    /// Verdict — the structured output of detect (mirrors the Lean Verdict).
+    pub const Verdict = struct {
+        /// The scanned input codepoints.
+        input: []const u32,
+        /// The classification verdict.
+        classify: Classification,
+        /// isAllowedIdentifier(input).
+        input_admissible: bool,
+        /// isAllowedIdentifier(toNFKC(input)).
+        nfkc_admissible: bool,
+    };
+
+    // ── §2 Top-level detection ───────────────────────────────────────────
+
+    /// The AdmissibilityFormDrift detection function.
+    pub fn detect(input: []const u32) @This().Verdict {
+        const in_ok = allowedIdentifierPredicate(input);
+        // toNFKC is total on well-formed input and returns at least the input;
+        // it yields null only on buffer saturation (unbounded compatibility
+        // expansion). Such a pathological input is never a real vector; treat
+        // the NFKC verdict defensively as agreement (== in_ok) so it reports
+        // clear rather than crashing.
+        const nfkc_ok = if (nfkcNormalize(input)) |nfkc| allowedIdentifierPredicate(nfkc.slice()) else in_ok;
+
+        const classification: Classification = if (in_ok == nfkc_ok)
+            .{ .clear = {} }
+        else
+            .{ .hazard = .{ .sub = .{ .admissibility_form_drift = .{
+                .input_admissible = in_ok,
+                .nfkc_admissible = nfkc_ok,
+            } } } };
+
+        return @This().Verdict{
+            .input = input,
+            .classify = classification,
+            .input_admissible = in_ok,
+            .nfkc_admissible = nfkc_ok,
         };
     }
 };
@@ -6972,6 +7204,95 @@ test "identifier-form-drift reports first shift position" {
     const v = Ifd.detect(&[_]u32{ 0x61, 0x62, 0x1D44E });
     try std.testing.expectEqualSlices(usize, &[_]usize{2}, v.classify.positions());
     try std.testing.expectEqual(@as(usize, 1), v.shift_count);
+}
+
+// ── admissibility-form-drift (boundary layer X) ───────────────────────────
+
+const Afd = admissibility_form_drift;
+
+fn afdTag(input: []const u32) ?[]const u8 {
+    return Afd.detect(input).classify.tag();
+}
+
+fn afdReason(input: []const u32) ?[]const u8 {
+    return Afd.detect(input).classify.reasonCode();
+}
+
+fn expectAfdReason(input: []const u32, want: []const u8) !void {
+    const r = afdReason(input);
+    try std.testing.expect(r != null);
+    try std.testing.expectEqualStrings(want, r.?);
+}
+
+test "admissibility-form-drift predicate reuse" {
+    // The detector reuses the port's own whole-string admissibility predicate,
+    // built here over XID_Start / XID_Continue parsed from the bundled
+    // data/DerivedCoreProperties.txt plus the file-scope isIdAllowed, and the
+    // port's own NFKC pipeline. Spot-check the XID and admissibility layers.
+    try std.testing.expect(isXidStart(0x0041)); // 'A' — XID_Start
+    try std.testing.expect(isXidStart(0x03B1)); // Greek α — XID_Start
+    try std.testing.expect(!isXidStart(0x0030)); // '0' — XID_Continue but not Start
+    try std.testing.expect(isXidContinue(0x0030)); // '0' — XID_Continue
+    try std.testing.expect(!isXidStart(0x005F)); // '_' — not XID_Start …
+    try std.testing.expect(isDefaultIdStart(0x005F)); // … but a default-id start
+    // "admin" is a whole-string allowed identifier; a lone digit is not (no
+    // default-id start); the ﬁ ligature is a default identifier but Restricted.
+    try std.testing.expect(isAllowedIdentifier(&[_]u32{ 0x61, 0x64, 0x6D, 0x69, 0x6E }));
+    try std.testing.expect(!isAllowedIdentifier(&[_]u32{0x0030}));
+    try std.testing.expect(!isAllowedIdentifier(&[_]u32{0xFB01}));
+    // NFKC of the ﬁ ligature is "fi", an allowed identifier.
+    const nfkc = toNFKC(&[_]u32{0xFB01}).?;
+    try std.testing.expect(isAllowedIdentifier(nfkc.slice()));
+}
+
+test "admissibility-form-drift shared fixture vectors" {
+    // The 4 rows of the shared context-free fixture, inputs given as decimal
+    // codepoints. Clear rows assert isClear; hazard rows assert the fully
+    // qualified reason code from required_findings.
+
+    // empty-clear (both admissibility calls false → agree).
+    {
+        const v = Afd.detect(&[_]u32{});
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expectEqual(@as(?[]const u8, null), v.classify.tag());
+        try std.testing.expectEqualSlices(usize, &[_]usize{}, v.classify.positions());
+    }
+    // ascii-admin-clear (97,100,109,105,110) — admissible on both sides.
+    {
+        const v = Afd.detect(&[_]u32{ 97, 100, 109, 105, 110 });
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expect(v.input_admissible);
+        try std.testing.expect(v.nfkc_admissible);
+    }
+    // fi-ligature-drift (64257 = U+FB01) — Restricted input, admissible NFKC.
+    try expectAfdReason(&[_]u32{64257}, "unicode.security.X.admissibility-form-drift.AdmissibilityFormDrift");
+    // jamo-sequence-drift (4370,4449,4523 = U+1112,U+1161,U+11AB).
+    try expectAfdReason(&[_]u32{ 4370, 4449, 4523 }, "unicode.security.X.admissibility-form-drift.AdmissibilityFormDrift");
+}
+
+test "admissibility-form-drift detect spot checks" {
+    // The Rust §2 detect spot checks (one per Lean theorem).
+
+    // detect_empty_clear — both admissibility calls return false, so they agree.
+    try std.testing.expect(Afd.detect(&[_]u32{}).classify.isClear());
+    // detect_ascii_clear — "admin"; admissible on both sides (NFKC is identity).
+    {
+        const v = Afd.detect(&[_]u32{ 0x61, 0x64, 0x6D, 0x69, 0x6E });
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expect(v.input_admissible);
+        try std.testing.expect(v.nfkc_admissible);
+    }
+    // detect_fi_ligature_drift — U+FB01 is Restricted (inadmissible), but NFKC
+    // decomposes it to "fi" (admissible). Drift fires.
+    {
+        const v = Afd.detect(&[_]u32{0xFB01});
+        try std.testing.expectEqualStrings("AdmissibilityFormDrift", v.classify.tag().?);
+        try std.testing.expect(!v.input_admissible);
+        try std.testing.expect(v.nfkc_admissible);
+    }
+    // detect_jamo_sequence_drift — decomposed Hangul jamos are inadmissible, but
+    // NFKC composes them to U+D55C 한 (admissible).
+    try std.testing.expectEqualStrings("AdmissibilityFormDrift", afdTag(&[_]u32{ 0x1112, 0x1161, 0x11AB }).?);
 }
 
 // ── skin-tone-variation-forgery (identity layer I) ────────────────────────

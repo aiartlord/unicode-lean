@@ -783,6 +783,8 @@ public final class Security {
   private static List<int[]> softDottedRanges;
   private static List<int[]> graphemeExtendRanges;
   private static List<int[]> identifierAllowedRanges;
+  private static List<int[]> xidStartRanges;
+  private static List<int[]> xidContinueRanges;
 
   private static Map<Integer, List<CasingRow>> parseSpecialCasing(String raw) {
     Map<Integer, List<CasingRow>> out = new HashMap<>();
@@ -916,6 +918,63 @@ public final class Security {
     }
     for (int[] r : identifierAllowedRanges) if (r[0] <= cp && cp <= r[1]) return true;
     return false;
+  }
+
+  // UAX #31 XID_Start, parsed from the bundled DerivedCoreProperties.txt using
+  // the same range-set parse idiom as the Cased / Soft_Dotted / Grapheme_Extend
+  // properties. The file enumerates the XID_Start set explicitly.
+  private static synchronized boolean isXidStart(int cp) {
+    if (xidStartRanges == null) {
+      xidStartRanges = parseCasingProperty(readResource("DerivedCoreProperties.txt"), "XID_Start");
+    }
+    for (int[] r : xidStartRanges) if (r[0] <= cp && cp <= r[1]) return true;
+    return false;
+  }
+
+  // UAX #31 XID_Continue, parsed from the bundled DerivedCoreProperties.txt.
+  private static synchronized boolean isXidContinue(int cp) {
+    if (xidContinueRanges == null) {
+      xidContinueRanges = parseCasingProperty(readResource("DerivedCoreProperties.txt"), "XID_Continue");
+    }
+    for (int[] r : xidContinueRanges) if (r[0] <= cp && cp <= r[1]) return true;
+    return false;
+  }
+
+  /** UAX #31 default identifier start: {@code XID_Start} or {@code U+005F LOW LINE}. */
+  private static boolean isDefaultIdStart(int cp) {
+    return isXidStart(cp) || cp == 0x005F;
+  }
+
+  /** UAX #31 default identifier continue: {@code XID_Continue}. */
+  private static boolean isDefaultIdContinue(int cp) {
+    return isXidContinue(cp);
+  }
+
+  // True iff {@code cps} is a well-formed UAX #31 default identifier: a non-empty
+  // sequence whose first codepoint is a default-id start and whose remaining
+  // codepoints are default-id continues. Mirrors Unicode.Identifier.
+  private static boolean isDefaultIdentifier(List<Integer> cps) {
+    if (cps.isEmpty()) return false;
+    if (!isDefaultIdStart(cps.get(0))) return false;
+    for (int i = 1; i < cps.size(); i++) {
+      if (!isDefaultIdContinue(cps.get(i))) return false;
+    }
+    return true;
+  }
+
+  // True iff {@code cps} is a well-formed default identifier AND every codepoint
+  // has {@code Identifier_Status = Allowed} per UTS #39 (the whole-string
+  // admissibility predicate isAllowedIdentifier). Package-private so the
+  // boundary-layer detector AdmissibilityFormDrift reuses the port's own
+  // SHA-pinned XID_Start / XID_Continue (DerivedCoreProperties.txt) and
+  // Identifier_Status = Allowed (IdentifierStatus.txt) tables, never a host
+  // identifier or normalization library.
+  static boolean isAllowedIdentifier(List<Integer> cps) {
+    if (!isDefaultIdentifier(cps)) return false;
+    for (int cp : cps) {
+      if (!isIdAllowed(cp)) return false;
+    }
+    return true;
   }
 
   private static boolean moreAboveAfter(List<Integer> suffix) {

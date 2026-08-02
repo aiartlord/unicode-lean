@@ -26,6 +26,7 @@ public final class SecurityContractTest {
     testRendererDivergence();
     testFilenameDisguise();
     testIdentifierFormDrift();
+    testAdmissibilityFormDrift();
     testStreamSafeViolation();
     testCaseExpansionMismatch();
     testConfusableBidiCompound();
@@ -1137,6 +1138,90 @@ public final class SecurityContractTest {
     specVectors++;
 
     System.out.println("clean: JVM identifier-form-drift passes (" + fixtureCases
+        + " fixture cases + " + specVectors + " spec vectors)");
+  }
+
+  // Pins the boundary-layer AdmissibilityFormDrift detector against the verified
+  // Rust reference implementation. Two independent sources of truth are
+  // exercised: (a) the shared context-free fixture
+  // detectors/admissibility_form_drift.json, run through
+  // AdmissibilityFormDrift.detect and checked against the fixture reason codes;
+  // (b) the detect spot-checks transcribed one-for-one from the Rust test module.
+  // Both predicates the detector consumes are the port's own SHA-pinned pipeline,
+  // never a host normalization or identifier library: the UAX #31 default
+  // identifier ∧ UTS #39 Identifier_Status = Allowed whole-string admissibility
+  // (Security.isAllowedIdentifier over the bundled DerivedCoreProperties.txt
+  // XID_Start / XID_Continue and IdentifierStatus.txt Allowed set) and the UAX
+  // #15 NFKC pipeline (Security.toNfkc). ﬁ (U+FB01) is Restricted (inadmissible)
+  // but NFKC decomposes it to "fi" (admissible); decomposed Hangul jamos
+  // [U+1112,U+1161,U+11AB] are inadmissible but NFKC composes them to 한 (U+D55C,
+  // admissible) — both drift. ASCII "admin" is admissible on both sides, identity
+  // NFKC, so it clears.
+  private static void testAdmissibilityFormDrift() throws IOException {
+    // (a) Shared context-free fixture through detect.
+    Map<String, Object> detector = fixture("detectors/admissibility_form_drift.json");
+    assertEquals(1, intValue(detector.get("schema")), "admissibility-form-drift schema");
+    assertEquals("admissibility-form-drift", string(detector, "family"),
+        "admissibility-form-drift family");
+    int fixtureCases = 0;
+    for (Map<String, Object> entry : objects(detector.get("cases"))) {
+      AdmissibilityFormDrift.Verdict verdict =
+          AdmissibilityFormDrift.detect(ints(entry.get("input")));
+      String code = AdmissibilityFormDrift.reasonCode(verdict.classify());
+      List<String> required = strings(entry.get("required_findings"));
+      if (required.isEmpty()) {
+        assertEquals(null, code,
+            "admissibility-form-drift " + string(entry, "name") + " should be clear");
+      } else {
+        assertEquals(1, required.size(),
+            "admissibility-form-drift " + string(entry, "name") + " single finding");
+        assertEquals(required.get(0), code,
+            "admissibility-form-drift " + string(entry, "name"));
+      }
+      fixtureCases++;
+    }
+
+    // (b) detect spot-checks transcribed one-for-one from the Rust test module.
+    int specVectors = 0;
+
+    // detect_empty_clear — both admissibility calls return false, so they agree.
+    assertTrue(AdmissibilityFormDrift.detect(intList(new int[] {})).classify().isClear(),
+        "afd empty clear");
+    specVectors++;
+
+    // detect_ascii_clear — "admin"; admissible on both sides (NFKC is identity).
+    AdmissibilityFormDrift.Verdict ascii =
+        AdmissibilityFormDrift.detect(intList(new int[] {0x61, 0x64, 0x6D, 0x69, 0x6E}));
+    assertTrue(ascii.classify().isClear(), "afd ascii clear");
+    assertTrue(ascii.inputAdmissible(), "afd ascii input admissible");
+    assertTrue(ascii.nfkcAdmissible(), "afd ascii nfkc admissible");
+    specVectors++;
+
+    // detect_fi_ligature_drift — ﬁ (U+FB01) is Restricted (inadmissible), but
+    // NFKC decomposes it to "fi" (admissible). Drift fires.
+    AdmissibilityFormDrift.Verdict fi =
+        AdmissibilityFormDrift.detect(intList(new int[] {0xFB01}));
+    assertEquals("AdmissibilityFormDrift", fi.classify().tag(), "afd fi ligature tag");
+    assertTrue(!fi.inputAdmissible(), "afd fi input inadmissible");
+    assertTrue(fi.nfkcAdmissible(), "afd fi nfkc admissible");
+    assertEquals(List.of(), fi.classify().positions(), "afd fi positions empty");
+    specVectors++;
+
+    // detect_jamo_sequence_drift — decomposed Hangul jamos [U+1112,U+1161,U+11AB]
+    // are inadmissible, but NFKC composes them to U+D55C 한 (admissible).
+    assertEquals("AdmissibilityFormDrift",
+        AdmissibilityFormDrift.detect(intList(new int[] {0x1112, 0x1161, 0x11AB})).classify().tag(),
+        "afd jamo sequence tag");
+    specVectors++;
+
+    // reason_code_is_stable — the composed reason code for the sole sub-threat.
+    assertEquals("unicode.security.X.admissibility-form-drift.AdmissibilityFormDrift",
+        AdmissibilityFormDrift.reasonCode(
+            AdmissibilityFormDrift.detect(intList(new int[] {0xFB01})).classify()),
+        "afd reason code stable");
+    specVectors++;
+
+    System.out.println("clean: JVM admissibility-form-drift passes (" + fixtureCases
         + " fixture cases + " + specVectors + " spec vectors)");
   }
 

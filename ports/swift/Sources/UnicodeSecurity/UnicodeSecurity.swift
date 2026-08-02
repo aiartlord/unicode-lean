@@ -52,6 +52,7 @@ public enum Family {
     public static let identifierFormDrift = "identifier-form-drift"
     public static let skinToneVariationForgery = "skin-tone-variation-forgery"
     public static let caseExpansionMismatch = "case-expansion-mismatch"
+    public static let admissibilityFormDrift = "admissibility-form-drift"
 }
 
 public struct Finding: Equatable {
@@ -94,6 +95,8 @@ private var simpleUpperCache: [Int: Int]?
 private var casedRangesCache: [(Int, Int)]?
 private var softDottedRangesCache: [(Int, Int)]?
 private var identifierAllowedRangesCache: [(Int, Int)]?
+private var xidStartRangesCache: [(Int, Int)]?
+private var xidContinueRangesCache: [(Int, Int)]?
 private var bip39WordlistCache: [String: Set<[Int]>]?
 private var emojiRangesCache: [(Int, Int)]?
 private var emojiZwjSequencesCache: [[Int]]?
@@ -293,7 +296,7 @@ private func layer(_ family: String) -> String {
         return "D"
     }
     if family == Family.confusableBidiCompound || family == Family.covertDisplayCompound
-        || family == Family.identifierFormDrift
+        || family == Family.identifierFormDrift || family == Family.admissibilityFormDrift
     {
         return "X"
     }
@@ -1045,6 +1048,50 @@ private func isIdAllowed(_ cp: Int) -> Bool {
 
 private func isCased(_ cp: Int) -> Bool { inCasingRanges(casedRanges(), cp) }
 private func isSoftDotted(_ cp: Int) -> Bool { inCasingRanges(softDottedRanges(), cp) }
+
+// UAX #31 default identifier + UTS #39 whole-string admissibility, mirroring
+// Unicode.Identifier. XID_Start / XID_Continue are parsed from the bundled
+// DerivedCoreProperties.txt through the same `parseDerivedProperty` reader that
+// yields the Cased / Soft_Dotted ranges above; `isIdAllowed` is the per-codepoint
+// UTS #39 Identifier_Status = Allowed test. No new data file: the XID properties
+// live in the already-bundled, digest-pinned DerivedCoreProperties.txt.
+private func xidStartRanges() -> [(Int, Int)] {
+    if let cached = xidStartRangesCache { return cached }
+    let parsed = parseDerivedProperty(readDataFile("DerivedCoreProperties.txt"), "XID_Start")
+    xidStartRangesCache = parsed
+    return parsed
+}
+
+private func xidContinueRanges() -> [(Int, Int)] {
+    if let cached = xidContinueRangesCache { return cached }
+    let parsed = parseDerivedProperty(readDataFile("DerivedCoreProperties.txt"), "XID_Continue")
+    xidContinueRangesCache = parsed
+    return parsed
+}
+
+private func isXidStart(_ cp: Int) -> Bool { inCasingRanges(xidStartRanges(), cp) }
+private func isXidContinue(_ cp: Int) -> Bool { inCasingRanges(xidContinueRanges(), cp) }
+
+/// UAX #31 default identifier start: `XID_Start` or `U+005F LOW LINE`.
+private func isDefaultIdStart(_ cp: Int) -> Bool { isXidStart(cp) || cp == 0x005F }
+
+/// UAX #31 default identifier continue: `XID_Continue`.
+private func isDefaultIdContinue(_ cp: Int) -> Bool { isXidContinue(cp) }
+
+/// True iff `cps` is a well-formed UAX #31 default identifier: a non-empty
+/// sequence whose first codepoint is a default-id start and whose remaining
+/// codepoints are default-id continues.
+private func isDefaultIdentifier(_ cps: [Int]) -> Bool {
+    guard let first = cps.first else { return false }
+    return isDefaultIdStart(first) && cps.dropFirst().allSatisfy(isDefaultIdContinue)
+}
+
+/// True iff `cps` is a well-formed default identifier AND every codepoint has
+/// `Identifier_Status = Allowed` per UTS #39 (the whole-string admissibility
+/// predicate `isAllowedIdentifier`). Reuses the port's own `isIdAllowed`.
+private func isAllowedIdentifier(_ cps: [Int]) -> Bool {
+    isDefaultIdentifier(cps) && cps.allSatisfy(isIdAllowed)
+}
 
 // Context predicates (UAX #21). `revPrefix` is the preceding codepoints
 // nearest-first; `suffix` the strictly-following ones.
@@ -4593,6 +4640,128 @@ public func identifierFormDriftDetect(_ input: [Int]) -> IdentifierFormDriftVerd
 /// `unicode.security.X.identifier-form-drift.<tag>`.
 public func identifierFormDriftReasonCode(_ subThreat: String) -> String {
     reasonCode(family: Family.identifierFormDrift, subThreat: subThreat)
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// AdmissibilityFormDrift — cross-layer identifier-admissibility × form drift
+// (boundary-layer detector, layer X).
+//
+// Byte-faithful transliteration of the verified reference implementation.
+//
+// Fires on inputs whose UTS #39 whole-string `isAllowedIdentifier` verdict
+// differs between the input and its NFKC form. This is the string-level
+// complement of IdentifierFormDrift (which scans Identifier_Status against the
+// per-codepoint NFKD head): here the whole-string admissibility predicate is
+// evaluated twice — once on the input, once on its NFKC form. The two are not
+// redundant. A sequence of decomposed Hangul jamos passes the per-codepoint scan
+// cleanly (each jamo has identity NFKD and Restricted status on both sides) but
+// fires here: the jamo sequence is rejected by `isAllowedIdentifier`, while its
+// NFKC composition into a precomposed Hangul syllable is accepted.
+//
+// It reuses the port's own UTS #39 admissibility predicate (`isAllowedIdentifier`
+// = UAX #31 default identifier ∧ every codepoint Allowed) and NFKC pipeline
+// (`toNfkc`), never a host normalization or identifier library.
+//
+// Sub-threat (direction-agnostic):
+//   AdmissibilityFormDrift — isAllowedIdentifier(input) !=
+//   isAllowedIdentifier(toNfkc(input)). The pair of booleans is carried so the
+//   verdict records which direction the drift goes; no position is reported
+//   because the predicate is whole-string.
+// ─────────────────────────────────────────────────────────────────────
+
+/// Sub-threat enumeration for AdmissibilityFormDrift.
+public enum AdmissibilityFormDriftSubThreat: Equatable {
+    /// The whole-string admissibility verdict differs between the input and its
+    /// NFKC form; the pair records `isAllowedIdentifier(input)` and
+    /// `isAllowedIdentifier(toNfkc(input))`.
+    case admissibilityFormDrift(inputAdmissible: Bool, nfkcAdmissible: Bool)
+
+    /// Fixture-row tag string for this sub-threat (matches `SubThreat.tag`).
+    public var tag: String {
+        switch self {
+        case .admissibilityFormDrift: return "AdmissibilityFormDrift"
+        }
+    }
+}
+
+/// Top-level classification for AdmissibilityFormDrift.
+public enum AdmissibilityFormDriftClassification: Equatable {
+    /// The admissibility verdict agrees across forms.
+    case clear
+    /// The admissibility verdict drifts across forms: the sub-threat, the
+    /// implicated positions (always empty; the predicate is whole-string), and the
+    /// (always-empty here) decoded-byte projection, kept for shape parity with the
+    /// Lean `Classification.hazard`.
+    case hazard(sub: AdmissibilityFormDriftSubThreat, positions: [Int], decoded: [UInt8])
+
+    /// True iff the classification is `clear`.
+    public var isClear: Bool {
+        switch self {
+        case .clear: return true
+        case .hazard: return false
+        }
+    }
+
+    /// Human-facing tag for a hazard, or `nil` when clear.
+    public var tag: String? {
+        switch self {
+        case .clear: return nil
+        case .hazard(let sub, _, _): return sub.tag
+        }
+    }
+
+    /// Implicated positions (always empty — the predicate is whole-string).
+    public var positions: [Int] {
+        switch self {
+        case .clear: return []
+        case .hazard(_, let positions, _): return positions
+        }
+    }
+}
+
+/// The structured output of `admissibilityFormDriftDetect` (mirrors the Lean `Verdict`).
+public struct AdmissibilityFormDriftVerdict: Equatable {
+    /// The scanned input codepoints.
+    public let input: [Int]
+    /// The classification verdict.
+    public let classify: AdmissibilityFormDriftClassification
+    /// `isAllowedIdentifier(input)`.
+    public let inputAdmissible: Bool
+    /// `isAllowedIdentifier(toNfkc(input))`.
+    public let nfkcAdmissible: Bool
+}
+
+/// The AdmissibilityFormDrift detection function. Mirrors the Lean/Rust `detect`:
+/// evaluates whole-string admissibility on the input and on its NFKC form; a
+/// disagreement fires `AdmissibilityFormDrift`, otherwise `clear`. The verdict
+/// always carries both admissibility booleans.
+public func admissibilityFormDriftDetect(_ input: [Int]) -> AdmissibilityFormDriftVerdict {
+    let nfkc = toNfkc(input)
+    let inOk = isAllowedIdentifier(input)
+    let nfkcOk = isAllowedIdentifier(nfkc)
+
+    let classification: AdmissibilityFormDriftClassification
+    if inOk == nfkcOk {
+        classification = .clear
+    } else {
+        classification = .hazard(
+            sub: .admissibilityFormDrift(inputAdmissible: inOk, nfkcAdmissible: nfkcOk),
+            positions: [],
+            decoded: [])
+    }
+
+    return AdmissibilityFormDriftVerdict(
+        input: input,
+        classify: classification,
+        inputAdmissible: inOk,
+        nfkcAdmissible: nfkcOk)
+}
+
+/// Stable reason code for an admissibility-form-drift sub-threat tag, routed
+/// through the shared reason-code builder:
+/// `unicode.security.X.admissibility-form-drift.<tag>`.
+public func admissibilityFormDriftReasonCode(_ subThreat: String) -> String {
+    reasonCode(family: Family.admissibilityFormDrift, subThreat: subThreat)
 }
 
 // ─────────────────────────────────────────────────────────────────────

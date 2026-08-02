@@ -27,6 +27,7 @@ struct SecurityContractRunner {
         try testRendererDivergence()
         try testFilenameDisguise()
         try testIdentifierFormDrift()
+        try testAdmissibilityFormDrift()
         try testSkinToneVariationForgery()
         try testOpaqueBlob()
         print("clean: Swift contract tests pass")
@@ -754,6 +755,57 @@ struct SecurityContractRunner {
             identifierFormDriftReasonCode("IdentifierStatusShift"),
             "unicode.security.X.identifier-form-drift.IdentifierStatusShift",
             "identifier-form-drift reason code")
+    }
+
+    // Pins admissibilityFormDriftDetect against the ground-truth theorems in
+    // Unicode/Security/Boundary/AdmissibilityFormDrift.lean and the verified Rust
+    // reference: the shared context-free fixture runs through detect, plus the
+    // per-theorem spot checks (empty clear, "admin" clear, ﬁ-ligature drift, and the
+    // decomposed-Hangul-jamo drift) with their admissibility booleans.
+    private static func testAdmissibilityFormDrift() throws {
+        // Shared context-free fixture through detect. required_findings carries
+        // full reason codes (unicode.security.X.admissibility-form-drift.<Tag>);
+        // an empty list means clear.
+        let fixture = try loadFixture("detectors/admissibility_form_drift.json")
+        try expectEqual(fixture["schema"] as? Int, 1, "admissibility-form-drift schema")
+        try expectEqual(try string(fixture, "family"), "admissibility-form-drift", "admissibility-form-drift family")
+        for entry in try array(fixture, "cases") {
+            let name = try string(entry, "name")
+            let input = try intArray(entry, "input")
+            let required = try stringArray(entry, "required_findings")
+            if let tag = admissibilityFormDriftDetect(input).classify.tag {
+                let code = admissibilityFormDriftReasonCode(tag)
+                try expect(required.contains(code), "admissibility-form-drift \(name): expected \(code) in \(required)")
+            } else {
+                try expect(required.isEmpty, "admissibility-form-drift \(name): expected clear, got \(required)")
+            }
+        }
+
+        // ── §5 detect spot checks (one per Rust/Lean theorem). ──────────────
+        // detect_empty_clear — both admissibility calls return false, so they agree.
+        try expect(admissibilityFormDriftDetect([]).classify.isClear, "admissibility-form-drift empty clear")
+        // detect_ascii_clear — "admin"; admissible on both sides (NFKC is identity).
+        let admin = admissibilityFormDriftDetect([0x61, 0x64, 0x6D, 0x69, 0x6E])
+        try expect(admin.classify.isClear, "admissibility-form-drift ascii clear")
+        try expect(admin.inputAdmissible, "admissibility-form-drift ascii input admissible")
+        try expect(admin.nfkcAdmissible, "admissibility-form-drift ascii nfkc admissible")
+        // detect_fi_ligature_drift — ﬁ (U+FB01) is Restricted (inadmissible), but
+        // NFKC decomposes it to "fi" (admissible). Drift fires.
+        let fi = admissibilityFormDriftDetect([0xFB01])
+        try expectEqual(fi.classify.tag, "AdmissibilityFormDrift", "admissibility-form-drift fi ligature tag")
+        try expect(!fi.inputAdmissible, "admissibility-form-drift fi input inadmissible")
+        try expect(fi.nfkcAdmissible, "admissibility-form-drift fi nfkc admissible")
+        // detect_jamo_sequence_drift — decomposed Hangul jamos [U+1112, U+1161,
+        // U+11AB] are inadmissible, but NFKC composes them to U+D55C 한 (admissible).
+        try expectEqual(
+            admissibilityFormDriftDetect([0x1112, 0x1161, 0x11AB]).classify.tag,
+            "AdmissibilityFormDrift", "admissibility-form-drift jamo sequence tag")
+
+        // Reason-code shape.
+        try expectEqual(
+            admissibilityFormDriftReasonCode("AdmissibilityFormDrift"),
+            "unicode.security.X.admissibility-form-drift.AdmissibilityFormDrift",
+            "admissibility-form-drift reason code")
     }
 
     // Pins the skin-tone-variation-forgery detector against the detect_* spot-check

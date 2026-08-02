@@ -126,6 +126,12 @@ struct Tables {
     std::vector<RangeEntry<std::string>> scripts;
     std::vector<RangeEntry<std::vector<std::string>>> script_extensions;
     std::vector<std::pair<std::uint32_t, std::uint32_t>> id_allowed_ranges;
+    // UAX #31 XID_Start / XID_Continue ranges from DerivedCoreProperties.txt,
+    // in file order (membership is a linear range scan, mirroring the Cased /
+    // Soft_Dotted parse in casing.hpp). Backing for the whole-string UAX #31
+    // default-identifier predicate used by the AdmissibilityFormDrift detector.
+    std::vector<std::pair<std::uint32_t, std::uint32_t>> xid_start_ranges;
+    std::vector<std::pair<std::uint32_t, std::uint32_t>> xid_continue_ranges;
     std::unordered_map<std::string, std::string> script_long_to_short;
     std::unordered_map<std::uint32_t, std::vector<std::uint32_t>>
         case_folding;
@@ -476,6 +482,31 @@ inline void parse_default_ignorable(
         [](const auto& a, const auto& b) { return a.first < b.first; });
 }
 
+// Parse the UAX #31 XID_Start and XID_Continue derived properties from
+// DerivedCoreProperties.txt in a single pass, mirroring the Cased /
+// Soft_Dotted parse in casing.hpp: each `LO..HI ; XID_Start` (or
+// `CP ; XID_Continue`) DATA line contributes one [lo, hi] range to the
+// matching bucket, kept in file order.
+inline void parse_xid_ranges(
+    std::string_view text,
+    std::vector<std::pair<std::uint32_t, std::uint32_t>>& xid_start,
+    std::vector<std::pair<std::uint32_t, std::uint32_t>>& xid_continue) {
+    for_each_line(text, [&](std::string_view line) {
+        auto stripped = strip_comment_and_trim(line);
+        if (stripped.empty()) return;
+        std::size_t semi = stripped.find(';');
+        if (semi == std::string_view::npos) return;
+        auto name = trim(stripped.substr(semi + 1));
+        if (name != "XID_Start" && name != "XID_Continue") return;
+        auto rng = parse_range_field(stripped.substr(0, semi));
+        if (name == "XID_Start") {
+            xid_start.push_back(rng);
+        } else {
+            xid_continue.push_back(rng);
+        }
+    });
+}
+
 inline void parse_case_folding(
     std::string_view text,
     std::unordered_map<std::uint32_t, std::vector<std::uint32_t>>& out) {
@@ -606,6 +637,9 @@ inline Tables Tables::parse(
     detail::parse_case_folding(case_folding_text, t.case_folding);
     detail::parse_default_ignorable(
         derived_core_properties_text, t.default_ignorable_ranges);
+    detail::parse_xid_ranges(
+        derived_core_properties_text, t.xid_start_ranges,
+        t.xid_continue_ranges);
     detail::parse_derived_bidi(
         derived_bidi_class_text, t.bidi_explicit, t.bidi_default);
     return t;
@@ -1012,6 +1046,69 @@ inline bool is_id_allowed(const Tables& t, std::uint32_t cp) {
         if (cp <= prev.second) return true;
     }
     return false;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// UAX #31 default identifier + UTS #39 whole-string admissibility,
+// mirroring Unicode.Identifier / the Rust ucd reference. XID_Start /
+// XID_Continue come from DerivedCoreProperties.txt (parsed above);
+// is_id_allowed is the per-codepoint UTS #39 Identifier_Status test.
+// ─────────────────────────────────────────────────────────────────────
+
+namespace detail {
+
+inline bool in_ranges(
+    const std::vector<std::pair<std::uint32_t, std::uint32_t>>& ranges,
+    std::uint32_t cp) {
+    for (const auto& r : ranges) {
+        if (r.first <= cp && cp <= r.second) return true;
+    }
+    return false;
+}
+
+}  // namespace detail
+
+inline bool is_xid_start(const Tables& t, std::uint32_t cp) {
+    return detail::in_ranges(t.xid_start_ranges, cp);
+}
+
+inline bool is_xid_continue(const Tables& t, std::uint32_t cp) {
+    return detail::in_ranges(t.xid_continue_ranges, cp);
+}
+
+// UAX #31 default identifier start: XID_Start or U+005F LOW LINE.
+inline bool is_default_id_start(const Tables& t, std::uint32_t cp) {
+    return is_xid_start(t, cp) || cp == 0x005F;
+}
+
+// UAX #31 default identifier continue: XID_Continue.
+inline bool is_default_id_continue(const Tables& t, std::uint32_t cp) {
+    return is_xid_continue(t, cp);
+}
+
+// True iff cps is a well-formed UAX #31 default identifier: a non-empty
+// sequence whose first codepoint is a default-id start and whose remaining
+// codepoints are default-id continues.
+inline bool is_default_identifier(
+    const Tables& t, std::span<const std::uint32_t> cps) {
+    if (cps.empty()) return false;
+    if (!is_default_id_start(t, cps.front())) return false;
+    for (std::size_t i = 1; i < cps.size(); ++i) {
+        if (!is_default_id_continue(t, cps[i])) return false;
+    }
+    return true;
+}
+
+// True iff cps is a well-formed default identifier AND every codepoint has
+// Identifier_Status = Allowed per UTS #39 (the whole-string admissibility
+// predicate isAllowedIdentifier).
+inline bool is_allowed_identifier(
+    const Tables& t, std::span<const std::uint32_t> cps) {
+    if (!is_default_identifier(t, cps)) return false;
+    for (std::uint32_t cp : cps) {
+        if (!is_id_allowed(t, cp)) return false;
+    }
+    return true;
 }
 
 inline bool is_ascii_only(std::span<const std::uint32_t> cps) {

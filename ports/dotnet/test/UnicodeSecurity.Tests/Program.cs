@@ -8,6 +8,7 @@ using Stvf = UnicodeSecurity.Security.SkinToneVariationForgery;
 using Rd = UnicodeSecurity.Security.RendererDivergence;
 using Fd = UnicodeSecurity.Security.FilenameDisguise;
 using Ifd = UnicodeSecurity.Security.IdentifierFormDrift;
+using Afd = UnicodeSecurity.Security.AdmissibilityFormDrift;
 
 TestCovertDisplayCompoundVectors();
 TestConfusableBidiCompoundVectors();
@@ -38,6 +39,8 @@ TestFilenameDisguiseFixture();
 TestFilenameDisguiseSpotChecks();
 TestIdentifierFormDriftFixture();
 TestIdentifierFormDriftSpotChecks();
+TestAdmissibilityFormDriftFixture();
+TestAdmissibilityFormDriftSpotChecks();
 TestStreamSafeViolationFixture();
 TestStreamSafeViolationBoundary();
 TestCaseExpansionMismatchFixture();
@@ -1299,6 +1302,68 @@ static void TestIdentifierFormDriftSpotChecks()
         "ifd reason code");
 
     Console.WriteLine("clean: .NET identifier-form-drift detect spot-check passes");
+}
+static void TestAdmissibilityFormDriftFixture()
+{
+    using var detector = LoadFixture("detectors/admissibility_form_drift.json");
+    AssertEqual(1, detector.RootElement.GetProperty("schema").GetInt32(), "admissibility-form-drift schema");
+    AssertEqual("admissibility-form-drift", String(detector.RootElement, "family"), "admissibility-form-drift family");
+    var cases = 0;
+    foreach (var entry in detector.RootElement.GetProperty("cases").EnumerateArray())
+    {
+        var name = String(entry, "name");
+        var input = Ints(entry.GetProperty("input"));
+        var verdict = Afd.Detect(input);
+        var required = Strings(entry.GetProperty("required_findings")).ToList();
+        if (required.Count == 0)
+        {
+            AssertTrue(verdict.Classify.IsClear, $"admissibility-form-drift {name}: expected clear, got {verdict.Classify.Tag}");
+        }
+        else
+        {
+            foreach (var code in required)
+            {
+                AssertEqual<string?>(code, verdict.Classify.ReasonCode, $"admissibility-form-drift {name}: reason code");
+            }
+        }
+        cases++;
+    }
+    Console.WriteLine($"clean: .NET admissibility-form-drift {cases}-case shared-fixture detect passes");
+}
+static void TestAdmissibilityFormDriftSpotChecks()
+{
+    string? Tag(int[] input) => Afd.Detect(input).Classify.Tag;
+
+    // ── data-layer sanity (reused UAX #31 default-identifier + UTS #39) ───
+    AssertTrue(Afd.IsAllowedIdentifier(new[] { 0x61, 0x64, 0x6D, 0x69, 0x6E }), "afd admissible admin");
+    AssertTrue(!Afd.IsAllowedIdentifier(System.Array.Empty<int>()), "afd empty inadmissible");
+    AssertTrue(!Afd.IsAllowedIdentifier(new[] { 0xFB01 }), "afd fi-ligature inadmissible");
+    AssertTrue(Afd.IsAllowedIdentifier(new[] { 0xD55C }), "afd precomposed-hangul admissible");
+    AssertTrue(!Afd.IsAllowedIdentifier(new[] { 0x1112, 0x1161, 0x11AB }), "afd jamo-sequence inadmissible");
+
+    // ── §3 detect spot checks (one per Lean/Rust theorem) ─────────────────
+    // detect_empty_clear — both admissibility calls return false, so they agree.
+    AssertTrue(Afd.Detect(System.Array.Empty<int>()).Classify.IsClear, "afd empty clear");
+    // detect_ascii_clear — "admin"; admissible on both sides (NFKC is identity).
+    var admin = Afd.Detect(new[] { 0x61, 0x64, 0x6D, 0x69, 0x6E });
+    AssertTrue(admin.Classify.IsClear, "afd ascii-admin clear");
+    AssertTrue(admin.InputAdmissible, "afd ascii-admin input admissible");
+    AssertTrue(admin.NfkcAdmissible, "afd ascii-admin nfkc admissible");
+    // detect_fi_ligature_drift — U+FB01 Restricted (inadmissible), NFKC → "fi".
+    var fi = Afd.Detect(new[] { 0xFB01 });
+    AssertEqual<string?>("AdmissibilityFormDrift", fi.Classify.Tag, "afd fi-ligature tag");
+    AssertTrue(!fi.InputAdmissible, "afd fi-ligature input inadmissible");
+    AssertTrue(fi.NfkcAdmissible, "afd fi-ligature nfkc admissible");
+    AssertSequence(System.Array.Empty<int>(), fi.Classify.Positions, "afd fi-ligature positions empty");
+    // detect_jamo_sequence_drift — [U+1112,U+1161,U+11AB] inadmissible, NFKC → 한.
+    AssertEqual<string?>("AdmissibilityFormDrift", Tag(new[] { 0x1112, 0x1161, 0x11AB }), "afd jamo-sequence tag");
+    // reason_code_is_stable — the composed reason code for the sole sub-threat.
+    AssertEqual<string?>(
+        "unicode.security.X.admissibility-form-drift.AdmissibilityFormDrift",
+        fi.Classify.ReasonCode,
+        "afd reason code");
+
+    Console.WriteLine("clean: .NET admissibility-form-drift detect spot-check passes");
 }
 static void TestFilenameDisguiseSpotChecks()
 {
