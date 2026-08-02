@@ -10,6 +10,7 @@ run() ->
     multiencoding_contract(),
     form_and_bip39(),
     hash_input_stability_tests(),
+    stream_safe_tests(),
     ai_watermark_tests(),
     opaque_blob_tests(),
     grapheme_tests(),
@@ -233,6 +234,62 @@ hash_input_stability_tests() ->
 
 classify_tag_of(Verdict) ->
     usec_hash_input_stability:classify_tag(maps:get(classify, Verdict)).
+
+%% Reason code the detect verdict would emit for a given input, or `none' when
+%% the input is clear. Mirrors how usec_policy:scan_stream_safe_violation wires
+%% the classification tag into a finding code.
+ss_code(Input) ->
+    C = maps:get(classify, usec_stream_safe_violation:detect(Input)),
+    case usec_stream_safe_violation:classify_tag(C) of
+        none -> none;
+        Tag -> usec_policy:reason_code(stream_safe_violation, Tag)
+    end.
+
+%% "a" followed by N combining acute accents (U+0301, CCC 230 — a non-starter).
+a_plus_marks(N) ->
+    [16#61 | lists:duplicate(N, 16#0301)].
+
+stream_safe_tests() ->
+    %% ── Shared context-free fixture, run through detect. ────────────────
+    F = fixture(filename:join("detectors", "stream_safe_violation.json")),
+    assert_eq(<<"stream-safe-violation">>, maps:get(<<"family">>, F), ss_fixture_family),
+    lists:foreach(fun(Case) ->
+                          Input = maps:get(<<"input">>, Case),
+                          Label = {ss_fixture, maps:get(<<"name">>, Case)},
+                          Required = maps:get(<<"required_findings">>, Case),
+                          Codes = case ss_code(Input) of
+                                      none -> [];
+                                      Code -> [Code]
+                                  end,
+                          lists:foreach(fun(Req) -> assert(lists:member(Req, Codes), Label) end, Required),
+                          case Required of
+                              [] -> assert(Codes =:= [], Label);
+                              _ -> ok
+                          end
+                  end, maps:get(<<"cases">>, F)),
+
+    %% ── 30-mark boundary: clear under strict `>'. ───────────────────────
+    Marks30 = a_plus_marks(30),
+    V30 = usec_stream_safe_violation:detect(Marks30),
+    assert(usec_stream_safe_violation:is_clear(maps:get(classify, V30)), ss_thirty_clear),
+    assert_eq(none, ss_code(Marks30), ss_thirty_code),
+    assert_eq(30, maps:get(max_run_len, V30), ss_thirty_max),
+    assert_eq(0, maps:get(overrun_count, V30), ss_thirty_overrun),
+    assert_eq(30, maps:get(total_non_starters, V30), ss_thirty_total),
+
+    %% ── 31-mark: fires StreamSafeOverrun at base_pos 1, run_len 31. ──────
+    Marks31 = a_plus_marks(31),
+    V31 = usec_stream_safe_violation:detect(Marks31),
+    C31 = maps:get(classify, V31),
+    assert(not usec_stream_safe_violation:is_clear(C31), ss_thirtyone_hazard),
+    assert_eq(<<"StreamSafeOverrun">>, usec_stream_safe_violation:classify_tag(C31), ss_thirtyone_tag),
+    assert_eq([1], usec_stream_safe_violation:classify_positions(C31), ss_thirtyone_pos),
+    assert_eq(<<"unicode.security.F.stream-safe-violation.StreamSafeOverrun">>, ss_code(Marks31), ss_thirtyone_code),
+    assert_eq(31, maps:get(max_run_len, V31), ss_thirtyone_max),
+    assert_eq(1, maps:get(overrun_count, V31), ss_thirtyone_overrun),
+    assert_eq(31, maps:get(total_non_starters, V31), ss_thirtyone_total),
+
+    io:format("  stream-safe-violation: fixture + 30/31 boundary pass~n").
 
 %% Reason code the detect verdict would emit for a given input, or `none' when
 %% clear. Mirrors usec_policy:scan_ai_watermark_detectability's finding wiring.

@@ -2907,6 +2907,213 @@ pub const ai_watermark_detectability = struct {
 };
 
 // ─────────────────────────────────────────────────────────────────────
+// stream-safe-violation (form layer), mirroring
+// Unicode.Security.Form.StreamSafeViolation and the verified Rust port
+// ports/rust/src/security/form/stream_safe_violation.rs.
+//
+// Detects inputs whose consecutive non-starter run exceeds the UAX #15 §13
+// streamSafeLimit of 30 — the canonical "Zalgo" shape (a single base
+// codepoint followed by a long combining-mark run) that forces unbounded
+// combining-mark buffers in receiver-side streaming normalization and is a
+// known DoS vector. A codepoint is a non-starter iff its
+// Canonical_Combining_Class is non-zero (UAX #15 D49); CCC is read from the
+// port's own bundled UCD table via canonicalCombiningClass, never a host
+// normalizer. Context-free: the single sub-threat streamSafeOverrun fires on
+// the first non-starter run whose length exceeds the limit.
+// ─────────────────────────────────────────────────────────────────────
+
+pub const stream_safe_violation = struct {
+    /// UAX #15 §13 Stream-Safe limit: the maximum number of consecutive
+    /// non-starters permitted before a COMBINING GRAPHEME JOINER must be
+    /// inserted.
+    pub const STREAM_SAFE_LIMIT: usize = 30;
+
+    /// True iff cp is a non-starter — a codepoint with non-zero
+    /// Canonical_Combining_Class (UAX #15 D49). Starters have CCC = 0. Reads
+    /// the port's own bundled UCD table, never a host normalizer.
+    fn isNonStarter(cp: u32) bool {
+        return canonicalCombiningClass(cp) != 0;
+    }
+
+    // ── §1 Run inventory ─────────────────────────────────────────────────
+
+    /// First non-starter run whose length exceeds STREAM_SAFE_LIMIT, as
+    /// (base_pos, run_len). Mirrors non_starter_runs then find: a run opens on
+    /// the first non-starter, its start is fixed to that codepoint's absolute
+    /// index, and it closes on the next starter or at end of input. Runs close
+    /// in order, so the first run to close overrunning is the first overrun.
+    fn firstOverrun(input: []const u32) ?struct { base_pos: usize, run_len: usize } {
+        var cur_start: ?usize = null;
+        var cur_len: usize = 0;
+        for (input, 0..) |cp, i| {
+            if (isNonStarter(cp)) {
+                if (cur_start == null) cur_start = i;
+                cur_len += 1;
+            } else {
+                if (cur_start) |s| {
+                    if (cur_len > STREAM_SAFE_LIMIT) return .{ .base_pos = s, .run_len = cur_len };
+                }
+                cur_start = null;
+                cur_len = 0;
+            }
+        }
+        if (cur_start) |s| {
+            if (cur_len > STREAM_SAFE_LIMIT) return .{ .base_pos = s, .run_len = cur_len };
+        }
+        return null;
+    }
+
+    /// Longest non-starter run length in input.
+    fn maxRunLen(input: []const u32) usize {
+        var acc: usize = 0;
+        var cur_len: usize = 0;
+        for (input) |cp| {
+            if (isNonStarter(cp)) {
+                cur_len += 1;
+                if (cur_len > acc) acc = cur_len;
+            } else {
+                cur_len = 0;
+            }
+        }
+        return acc;
+    }
+
+    /// Number of distinct non-starter runs that exceed STREAM_SAFE_LIMIT.
+    fn overrunCount(input: []const u32) usize {
+        var acc: usize = 0;
+        var in_run = false;
+        var cur_len: usize = 0;
+        for (input) |cp| {
+            if (isNonStarter(cp)) {
+                in_run = true;
+                cur_len += 1;
+            } else {
+                if (in_run and cur_len > STREAM_SAFE_LIMIT) acc += 1;
+                in_run = false;
+                cur_len = 0;
+            }
+        }
+        if (in_run and cur_len > STREAM_SAFE_LIMIT) acc += 1;
+        return acc;
+    }
+
+    /// Total non-starter codepoints in input (sum of all run lengths).
+    fn totalNonStarters(input: []const u32) usize {
+        var acc: usize = 0;
+        for (input) |cp| {
+            if (isNonStarter(cp)) acc += 1;
+        }
+        return acc;
+    }
+
+    // ── §2 Types ─────────────────────────────────────────────────────────
+
+    /// Sub-threats this detector can fire.
+    pub const SubThreat = union(enum) {
+        /// The first non-starter run whose length exceeds STREAM_SAFE_LIMIT.
+        /// base_pos is the index of the run's first non-starter codepoint;
+        /// run_len is the run's length.
+        stream_safe_overrun: struct { base_pos: usize, run_len: usize },
+
+        /// Human-facing classification tag for this sub-threat.
+        pub fn tag(self: SubThreat) []const u8 {
+            return switch (self) {
+                .stream_safe_overrun => "StreamSafeOverrun",
+            };
+        }
+
+        /// Fully-qualified reason code for this sub-threat, matching the shared
+        /// fixture's required_findings entry.
+        pub fn reasonCode(self: SubThreat) []const u8 {
+            return switch (self) {
+                .stream_safe_overrun => "unicode.security.F.stream-safe-violation.StreamSafeOverrun",
+            };
+        }
+    };
+
+    /// Top-level classification.
+    pub const Classification = union(enum) {
+        /// No non-starter run exceeds the Stream-Safe limit.
+        clear,
+        /// A hazard was found: the sub-threat, its implicated positions, and any
+        /// decoded bytes (always empty for this detector — the field mirrors the
+        /// spec's Classification.hazard shape). The single sub-threat implicates
+        /// exactly one position, so the buffer is single-slot.
+        hazard: struct { sub: SubThreat, positions: [1]usize, decoded: []const u8 = &[_]u8{} },
+
+        /// True iff the input is clear.
+        pub fn isClear(self: Classification) bool {
+            return switch (self) {
+                .clear => true,
+                .hazard => false,
+            };
+        }
+
+        /// Human-facing tag for a hazard, or null when clear.
+        pub fn tag(self: Classification) ?[]const u8 {
+            return switch (self) {
+                .clear => null,
+                .hazard => |h| h.sub.tag(),
+            };
+        }
+
+        /// Fully-qualified reason code for a hazard, or null when clear.
+        pub fn reasonCode(self: Classification) ?[]const u8 {
+            return switch (self) {
+                .clear => null,
+                .hazard => |h| h.sub.reasonCode(),
+            };
+        }
+
+        /// Implicated positions (empty when clear).
+        pub fn positions(self: *const Classification) []const usize {
+            switch (self.*) {
+                .clear => return &[_]usize{},
+                .hazard => return self.hazard.positions[0..],
+            }
+        }
+    };
+
+    /// Verdict — the structured output of detect. The run-inventory summaries
+    /// (max_run_len, overrun_count, total_non_starters) are exposed so
+    /// downstream callers can size the buffer pressure a streaming normalizer
+    /// would see.
+    pub const Verdict = struct {
+        /// The scanned input codepoints.
+        input: []const u32,
+        /// The classification verdict.
+        classify: Classification,
+        /// Longest non-starter run length in input.
+        max_run_len: usize,
+        /// Number of distinct non-starter runs exceeding the Stream-Safe limit.
+        overrun_count: usize,
+        /// Total non-starter codepoints in input.
+        total_non_starters: usize,
+    };
+
+    // ── §3 Top-level detection ───────────────────────────────────────────
+
+    /// The detection function. Fires streamSafeOverrun on the first
+    /// non-starter run whose length exceeds STREAM_SAFE_LIMIT.
+    pub fn detect(input: []const u32) @This().Verdict {
+        const classification: Classification = if (firstOverrun(input)) |hit|
+            .{ .hazard = .{
+                .sub = .{ .stream_safe_overrun = .{ .base_pos = hit.base_pos, .run_len = hit.run_len } },
+                .positions = .{hit.base_pos},
+            } }
+        else
+            .{ .clear = {} };
+        return @This().Verdict{
+            .input = input,
+            .classify = classification,
+            .max_run_len = maxRunLen(input),
+            .overrun_count = overrunCount(input),
+            .total_non_starters = totalNonStarters(input),
+        };
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────
 // Locale-case-inversion detector (Tier A2), mirroring
 // Unicode.Security.Form.LocaleCaseInversion.
 //
@@ -4107,4 +4314,141 @@ test "ai-watermark-detectability cue-class coverage" {
         try std.testing.expect(probed);
     }
     try std.testing.expectEqual(@as(?Aw.CueClass, null), (Aw.SubThreat{ .unknown = .{ .anomaly_marker = 0 } }).cueClass());
+}
+
+// ── stream-safe-violation (form layer) ──────────────────────────────────
+
+const Ssv = stream_safe_violation;
+
+const ACUTE: u32 = 0x0301;
+
+/// Build "a" (U+0061) followed by n combining acute accents (U+0301).
+fn aPlusMarks(comptime n: usize) [1 + n]u32 {
+    var v: [1 + n]u32 = undefined;
+    v[0] = 0x61;
+    var i: usize = 0;
+    while (i < n) : (i += 1) v[1 + i] = ACUTE;
+    return v;
+}
+
+test "stream-safe-violation shared fixture vectors" {
+    // Mirrors the detect_* theorems in
+    // Unicode/Security/Form/StreamSafeViolation.lean and its Rust port. Every
+    // vector below is a row of the shared context-free fixture
+    // (fixtures/security/detectors/stream_safe_violation.json).
+
+    // empty-clear.
+    {
+        const v = Ssv.detect(&[_]u32{});
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expectEqual(@as(?[]const u8, null), v.classify.tag());
+        try std.testing.expect(v.max_run_len == 0);
+        try std.testing.expect(v.overrun_count == 0);
+        try std.testing.expect(v.total_non_starters == 0);
+    }
+
+    // ascii-hello-clear: "Hello" — every codepoint is a starter.
+    {
+        const v = Ssv.detect(&[_]u32{ 0x48, 0x65, 0x6C, 0x6C, 0x6F });
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expect(v.max_run_len == 0);
+        try std.testing.expect(v.total_non_starters == 0);
+    }
+
+    // one-combine-clear: a starter plus a single combining mark.
+    {
+        const v = Ssv.detect(&[_]u32{ 0x61, ACUTE });
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expect(v.max_run_len == 1);
+        try std.testing.expect(v.overrun_count == 0);
+        try std.testing.expect(v.total_non_starters == 1);
+    }
+}
+
+test "stream-safe-violation 30/31 boundary" {
+    // thirty-marks-boundary-clear: exactly 30 marks after a starter stays clear
+    // under strict `>`.
+    {
+        const input = aPlusMarks(30);
+        const v = Ssv.detect(&input);
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expectEqual(@as(?[]const u8, null), v.classify.tag());
+        try std.testing.expect(v.max_run_len == 30);
+        try std.testing.expect(v.overrun_count == 0);
+        try std.testing.expect(v.total_non_starters == 30);
+    }
+
+    // thirtyone-marks-overrun: 31 marks after a starter fires StreamSafeOverrun
+    // with firstOverrun = (1, 31) and positions [1].
+    {
+        const input = aPlusMarks(31);
+        const v = Ssv.detect(&input);
+        try std.testing.expect(!v.classify.isClear());
+        try std.testing.expectEqualStrings("StreamSafeOverrun", v.classify.tag().?);
+        try std.testing.expectEqualStrings(
+            "unicode.security.F.stream-safe-violation.StreamSafeOverrun",
+            v.classify.reasonCode().?,
+        );
+        try std.testing.expectEqualSlices(usize, &[_]usize{1}, v.classify.positions());
+        try std.testing.expectEqual(
+            @as(usize, 1),
+            v.classify.hazard.sub.stream_safe_overrun.base_pos,
+        );
+        try std.testing.expectEqual(
+            @as(usize, 31),
+            v.classify.hazard.sub.stream_safe_overrun.run_len,
+        );
+        try std.testing.expect(v.max_run_len == 31);
+        try std.testing.expect(v.overrun_count == 1);
+        try std.testing.expect(v.total_non_starters == 31);
+    }
+}
+
+test "stream-safe-violation run-inventory structure" {
+    // A bare non-starter run that opens at index 0 records its start as 0.
+    {
+        var input: [31]u32 = undefined;
+        for (&input) |*c| c.* = ACUTE;
+        const v = Ssv.detect(&input);
+        try std.testing.expectEqualStrings("StreamSafeOverrun", v.classify.tag().?);
+        try std.testing.expectEqualSlices(usize, &[_]usize{0}, v.classify.positions());
+        try std.testing.expect(v.max_run_len == 31);
+        try std.testing.expect(v.total_non_starters == 31);
+    }
+
+    // Two separate runs, each under the limit, stay clear but both count in the
+    // totals: "a" + 30 marks + "b" + 30 marks (len 62).
+    {
+        var input: [62]u32 = undefined;
+        input[0] = 0x61;
+        var i: usize = 1;
+        while (i <= 30) : (i += 1) input[i] = ACUTE;
+        input[31] = 0x62;
+        i = 32;
+        while (i < 62) : (i += 1) input[i] = ACUTE;
+        const v = Ssv.detect(&input);
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expect(v.max_run_len == 30);
+        try std.testing.expect(v.overrun_count == 0);
+        try std.testing.expect(v.total_non_starters == 60);
+    }
+
+    // The first overrun wins: a short run before a long run does not shadow it,
+    // and the reported base_pos is the long run's start: "a" + 5 marks + "b" +
+    // 31 marks — the run starting at index 7 fires.
+    {
+        var input: [38]u32 = undefined;
+        input[0] = 0x61;
+        var i: usize = 1;
+        while (i <= 5) : (i += 1) input[i] = ACUTE;
+        input[6] = 0x62;
+        i = 7;
+        while (i < 38) : (i += 1) input[i] = ACUTE;
+        const v = Ssv.detect(&input);
+        try std.testing.expectEqualStrings("StreamSafeOverrun", v.classify.tag().?);
+        try std.testing.expectEqualSlices(usize, &[_]usize{7}, v.classify.positions());
+        try std.testing.expect(v.max_run_len == 31);
+        try std.testing.expect(v.overrun_count == 1);
+        try std.testing.expect(v.total_non_starters == 36);
+    }
 }

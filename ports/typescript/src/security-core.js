@@ -1516,6 +1516,130 @@ export function nfcIdempotenceWitnessDetect(input) {
   return { sub: null, positions: [] };
 }
 
+// ── stream-safe-violation: UAX #15 §13 Stream-Safe-limit overruns ────────────
+// Mirrors Unicode.Security.Form.StreamSafeViolation (and the verified Rust port
+// src/security/form/stream_safe_violation.rs). An input whose consecutive
+// non-starter run exceeds the streamSafeLimit of 30 — the canonical "Zalgo"
+// shape, a single base codepoint followed by a long combining-mark run — forces
+// unbounded combining-mark buffers in receiver-side streaming normalization and
+// is a known DoS vector. A codepoint is a non-starter iff its
+// Canonical_Combining_Class is non-zero (UAX #15 D49); CCC is read from the
+// port's own canonicalCombiningClass (UnicodeData.txt field 3), never a host
+// normalizer.
+
+// UAX #15 §13 Stream-Safe limit: the maximum number of consecutive non-starters
+// permitted before a COMBINING GRAPHEME JOINER must be inserted.
+export const STREAM_SAFE_LIMIT = 30;
+
+// Stable reason code for a stream-safe-violation sub-threat (layer F).
+export function streamSafeViolationReasonCode(subThreatTag) {
+  return `unicode.security.F.stream-safe-violation.${subThreatTag}`;
+}
+
+// True iff cp is a non-starter — a codepoint with non-zero
+// Canonical_Combining_Class (UAX #15 D49). Starters have CCC = 0.
+function isNonStarter(cp) {
+  return canonicalCombiningClass(cp) !== 0;
+}
+
+// Inventory of [startIndex, length] for every maximal non-starter run in input.
+// A run opens on the first non-starter, its start index is fixed to that
+// codepoint's absolute index, and it closes (emitting its [start, length] pair)
+// on the next starter or at end of input.
+function nonStarterRuns(input) {
+  const runs = [];
+  let curStart = null;
+  let curLen = 0;
+  for (let i = 0; i < input.length; i += 1) {
+    if (isNonStarter(input[i])) {
+      if (curStart === null) {
+        curStart = i;
+      }
+      curLen += 1;
+    } else {
+      if (curStart !== null) {
+        runs.push([curStart, curLen]);
+      }
+      curStart = null;
+      curLen = 0;
+    }
+  }
+  if (curStart !== null) {
+    runs.push([curStart, curLen]);
+  }
+  return runs;
+}
+
+// First non-starter run whose length exceeds STREAM_SAFE_LIMIT, as
+// [startIndex, length], or null when none.
+function firstOverrun(input) {
+  for (const [start, len] of nonStarterRuns(input)) {
+    if (len > STREAM_SAFE_LIMIT) {
+      return [start, len];
+    }
+  }
+  return null;
+}
+
+// Longest non-starter run length in input.
+function maxNonStarterRunLen(input) {
+  let acc = 0;
+  for (const [, len] of nonStarterRuns(input)) {
+    if (len > acc) {
+      acc = len;
+    }
+  }
+  return acc;
+}
+
+// Number of distinct non-starter runs that exceed STREAM_SAFE_LIMIT.
+function nonStarterOverrunCount(input) {
+  let acc = 0;
+  for (const [, len] of nonStarterRuns(input)) {
+    if (len > STREAM_SAFE_LIMIT) {
+      acc += 1;
+    }
+  }
+  return acc;
+}
+
+// Total non-starter codepoints in input (sum of all run lengths).
+function totalNonStarters(input) {
+  let acc = 0;
+  for (const [, len] of nonStarterRuns(input)) {
+    acc += len;
+  }
+  return acc;
+}
+
+// The F2 detection function. Fires StreamSafeOverrun on the first non-starter
+// run whose length exceeds STREAM_SAFE_LIMIT, reporting its base position (the
+// index of the run's first non-starter codepoint) and length. The run-inventory
+// summaries (maxRunLen, overrunCount, totalNonStarters) are exposed so callers
+// can size the buffer pressure a streaming normalizer would see.
+export function streamSafeViolationDetect(input) {
+  const overrun = firstOverrun(input);
+  let classify;
+  if (overrun !== null) {
+    const [basePos, runLen] = overrun;
+    classify = {
+      isClear: false,
+      tag: "StreamSafeOverrun",
+      sub: { kind: "StreamSafeOverrun", basePos, runLen },
+      positions: [basePos],
+    };
+  } else {
+    classify = { isClear: true, tag: null, sub: null, positions: [] };
+  }
+  return {
+    input: Array.from(input),
+    classify,
+    maxRunLen: maxNonStarterRunLen(input),
+    overrunCount: nonStarterOverrunCount(input),
+    totalNonStarters: totalNonStarters(input),
+  };
+}
+
 // ── bip39-canonical: BIP-39 mnemonic canonicalisation + wordlist checks ──────
 // Mirrors Unicode.Security.Crypto.Bip39Canonical. Canonical form is
 // NFKD -> toLower(default) -> collapse BIP-39 whitespace -> trim; detect runs

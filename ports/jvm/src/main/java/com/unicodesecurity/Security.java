@@ -60,6 +60,7 @@ public final class Security {
     public static final String COVERT_DISPLAY_COMPOUND = "covert-display-compound";
     public static final String HASH_INPUT_STABILITY = "hash-input-stability";
     public static final String AI_WATERMARK_DETECTABILITY = "ai-watermark-detectability";
+    public static final String STREAM_SAFE_VIOLATION = "stream-safe-violation";
     private Family() {}
   }
 
@@ -266,6 +267,9 @@ public final class Security {
     if (family.equals(Family.HASH_INPUT_STABILITY)
         || family.equals(Family.AI_WATERMARK_DETECTABILITY)) {
       return "K";
+    }
+    if (family.equals(Family.STREAM_SAFE_VIOLATION)) {
+      return "F";
     }
     return "C";
   }
@@ -737,6 +741,14 @@ public final class Security {
   private static int canonicalCombiningClass(int cp) {
     NormEntry e = unicodeDataMap().get(cp);
     return e == null ? 0 : e.ccc();
+  }
+
+  // Canonical_Combining_Class of {@code cp} from the port's pinned UCD table
+  // (UnicodeData.txt field 3), exposed package-private for sibling form
+  // detectors — StreamSafeViolation reads non-starter status from here, never
+  // from a host normalizer such as java.text.Normalizer.
+  static int combiningClass(int cp) {
+    return canonicalCombiningClass(cp);
   }
 
   // ── UAX #21 case mapping (toLower) from the pinned UCD tables ──────────────

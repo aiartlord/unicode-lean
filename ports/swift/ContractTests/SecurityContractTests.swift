@@ -21,6 +21,7 @@ struct SecurityContractRunner {
         try testBip39Canonical()
         try testHashInputStability()
         try testAiWatermarkDetectability()
+        try testStreamSafeViolation()
         try testOpaqueBlob()
         print("clean: Swift contract tests pass")
     }
@@ -262,6 +263,69 @@ struct SecurityContractRunner {
             aiWatermarkDetectabilityDetectWithContext(.default, [0x61, 0x202F, 0x62]).classify,
             aiWatermarkDetectabilityDetect([0x61, 0x202F, 0x62]).classify,
             "aiwm default matches detect")
+    }
+
+    // Pins streamSafeViolationDetect against the detect_* ground-truth theorems
+    // in Unicode/Security/Form/StreamSafeViolation.lean: the shared context-free
+    // fixture runs through detect, plus the 30/31 boundary case is asserted
+    // directly (max run of 30 stays clear under strict `>`; 31 fires
+    // StreamSafeOverrun at basePos 1).
+    private static func testStreamSafeViolation() throws {
+        // Shared context-free fixture through detect. required_findings carries
+        // full reason codes (unicode.security.F.stream-safe-violation.<Tag>);
+        // an empty list means clear.
+        let fixture = try loadFixture("detectors/stream_safe_violation.json")
+        try expectEqual(fixture["schema"] as? Int, 1, "stream-safe-violation schema")
+        try expectEqual(try string(fixture, "family"), "stream-safe-violation", "stream-safe-violation family")
+        for entry in try array(fixture, "cases") {
+            let name = try string(entry, "name")
+            let input = try intArray(entry, "input")
+            let required = try stringArray(entry, "required_findings")
+            if let tag = streamSafeViolationDetect(input).classify.tag {
+                let code = streamSafeViolationReasonCode(tag)
+                try expect(required.contains(code), "stream-safe-violation \(name): expected \(code) in \(required)")
+            } else {
+                try expect(required.isEmpty, "stream-safe-violation \(name): expected clear, got \(required)")
+            }
+        }
+
+        // ── 30/31 boundary, asserted directly. U+0301 COMBINING ACUTE ACCENT
+        // has CCC = 230 (a non-starter); the leading "a" (U+0061) is a starter.
+        let acute = 0x0301
+        func aPlusMarks(_ n: Int) -> [Int] { [0x61] + Array(repeating: acute, count: n) }
+
+        // Exactly 30 marks: the maximal run is 30, which does not exceed the
+        // limit under strict `>`, so the input stays clear.
+        let thirty = streamSafeViolationDetect(aPlusMarks(30))
+        try expect(thirty.classify.isClear, "stream-safe-violation 30 marks clear")
+        try expectEqual(thirty.classify.tag, nil, "stream-safe-violation 30 marks tag")
+        try expectEqual(thirty.maxRunLen, 30, "stream-safe-violation 30 marks maxRunLen")
+        try expectEqual(thirty.overrunCount, 0, "stream-safe-violation 30 marks overrunCount")
+        try expectEqual(thirty.totalNonStarters, 30, "stream-safe-violation 30 marks totalNonStarters")
+
+        // 31 marks: the run overruns; StreamSafeOverrun fires at basePos 1.
+        let thirtyOne = streamSafeViolationDetect(aPlusMarks(31))
+        try expect(!thirtyOne.classify.isClear, "stream-safe-violation 31 marks hazard")
+        try expectEqual(thirtyOne.classify.tag, "StreamSafeOverrun", "stream-safe-violation 31 marks tag")
+        try expectEqual(thirtyOne.classify.positions, [1], "stream-safe-violation 31 marks positions")
+        try expectEqual(
+            thirtyOne.classify,
+            .hazard(sub: .streamSafeOverrun(basePos: 1, runLen: 31), positions: [1], decoded: []),
+            "stream-safe-violation 31 marks classification")
+        try expectEqual(thirtyOne.maxRunLen, 31, "stream-safe-violation 31 marks maxRunLen")
+        try expectEqual(thirtyOne.overrunCount, 1, "stream-safe-violation 31 marks overrunCount")
+        try expectEqual(thirtyOne.totalNonStarters, 31, "stream-safe-violation 31 marks totalNonStarters")
+
+        // A bare 31-mark run (no leading starter) opens its run at index 0.
+        let bare = streamSafeViolationDetect(Array(repeating: acute, count: 31))
+        try expectEqual(bare.classify.tag, "StreamSafeOverrun", "stream-safe-violation bare run tag")
+        try expectEqual(bare.classify.positions, [0], "stream-safe-violation bare run positions")
+
+        // Default reason code shape.
+        try expectEqual(
+            streamSafeViolationReasonCode("StreamSafeOverrun"),
+            "unicode.security.F.stream-safe-violation.StreamSafeOverrun",
+            "stream-safe-violation reason code")
     }
 
     // Pins the covert-display-compound detector against the detect_* spot-check

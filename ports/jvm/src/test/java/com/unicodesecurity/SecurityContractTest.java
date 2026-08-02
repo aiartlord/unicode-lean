@@ -21,6 +21,7 @@ public final class SecurityContractTest {
     testNfcIdempotenceWitness();
     testHashInputStability();
     testAiWatermarkDetectability();
+    testStreamSafeViolation();
     testConfusableBidiCompound();
     testSurrogateReassembly();
     testRtlInjection();
@@ -489,6 +490,129 @@ public final class SecurityContractTest {
 
     System.out.println("clean: JVM ai-watermark-detectability passes (" + fixtureCases
         + " fixture cases + " + contextVectors + " context vectors)");
+  }
+
+  // Pins the stream-safe-violation detector against the verified Rust reference
+  // ports/rust/src/security/form/stream_safe_violation.rs. Two independent
+  // sources of truth are exercised: (a) the shared context-free fixture
+  // detectors/stream_safe_violation.json, run through StreamSafeViolation.detect
+  // and checked against the fixture reason codes; (b) the boundary and
+  // run-inventory structure checks transcribed from the Rust test module — the
+  // 30/31 strict-'>' boundary, a bare mark run starting at index 0, two short
+  // runs summed in the totals, and first-overrun-wins base_pos reporting. The
+  // detector reads non-starter status from the port's own CCC
+  // (Security.combiningClass), never java.text. U+0301 COMBINING ACUTE ACCENT
+  // has CCC = 230 (a non-starter); the ASCII letters are starters (CCC = 0).
+  private static void testStreamSafeViolation() throws IOException {
+    final int acute = 0x0301;
+
+    // (a) Shared context-free fixture through detect.
+    Map<String, Object> detector = fixture("detectors/stream_safe_violation.json");
+    assertEquals(1, intValue(detector.get("schema")), "stream-safe-violation schema");
+    assertEquals("stream-safe-violation", string(detector, "family"), "stream-safe-violation family");
+    int fixtureCases = 0;
+    for (Map<String, Object> entry : objects(detector.get("cases"))) {
+      StreamSafeViolation.Verdict verdict = StreamSafeViolation.detect(ints(entry.get("input")));
+      String code = StreamSafeViolation.reasonCode(verdict.classify());
+      List<String> required = strings(entry.get("required_findings"));
+      if (required.isEmpty()) {
+        assertEquals(null, code, "stream-safe-violation " + string(entry, "name") + " should be clear");
+      } else {
+        assertEquals(1, required.size(), "stream-safe-violation " + string(entry, "name") + " single finding");
+        assertEquals(required.get(0), code, "stream-safe-violation " + string(entry, "name"));
+      }
+      fixtureCases++;
+    }
+
+    // (b) Boundary and run-inventory structure checks from the Rust test module.
+    int structureVectors = 0;
+
+    // detect_empty_clear: empty input is clear; all summaries zero.
+    StreamSafeViolation.Verdict empty = StreamSafeViolation.detect(intList(new int[] {}));
+    assertTrue(empty.classify().isClear(), "ssv empty clear");
+    assertEquals(null, empty.classify().tag(), "ssv empty tag");
+    assertEquals(0, empty.maxRunLen(), "ssv empty maxRunLen");
+    assertEquals(0, empty.overrunCount(), "ssv empty overrunCount");
+    assertEquals(0, empty.totalNonStarters(), "ssv empty totalNonStarters");
+    structureVectors++;
+
+    // detect_one_combine_clear: "a" + one mark is clear, one non-starter.
+    StreamSafeViolation.Verdict one = StreamSafeViolation.detect(intList(new int[] {0x61, acute}));
+    assertTrue(one.classify().isClear(), "ssv one-combine clear");
+    assertEquals(1, one.maxRunLen(), "ssv one-combine maxRunLen");
+    assertEquals(0, one.overrunCount(), "ssv one-combine overrunCount");
+    assertEquals(1, one.totalNonStarters(), "ssv one-combine totalNonStarters");
+    structureVectors++;
+
+    // detect_thirty_marks_clear: exactly 30 marks is the boundary — clear under strict '>'.
+    StreamSafeViolation.Verdict thirty = StreamSafeViolation.detect(aPlusMarks(30, acute));
+    assertTrue(thirty.classify().isClear(), "ssv 30 marks clear");
+    assertEquals(null, thirty.classify().tag(), "ssv 30 marks tag");
+    assertEquals(30, thirty.maxRunLen(), "ssv 30 marks maxRunLen");
+    assertEquals(0, thirty.overrunCount(), "ssv 30 marks overrunCount");
+    assertEquals(30, thirty.totalNonStarters(), "ssv 30 marks totalNonStarters");
+    structureVectors++;
+
+    // detect_thirtyone_marks_hazard: 31 marks fires StreamSafeOverrun(1, 31), positions [1].
+    StreamSafeViolation.Verdict thirtyOne = StreamSafeViolation.detect(aPlusMarks(31, acute));
+    assertTrue(!thirtyOne.classify().isClear(), "ssv 31 marks hazard");
+    assertEquals("StreamSafeOverrun", thirtyOne.classify().tag(), "ssv 31 marks tag");
+    assertEquals(List.of(1), thirtyOne.classify().positions(), "ssv 31 marks positions");
+    StreamSafeViolation.Hazard hz = (StreamSafeViolation.Hazard) thirtyOne.classify();
+    StreamSafeViolation.StreamSafeOverrun sub = (StreamSafeViolation.StreamSafeOverrun) hz.sub();
+    assertEquals(1, sub.basePos(), "ssv 31 marks basePos");
+    assertEquals(31, sub.runLen(), "ssv 31 marks runLen");
+    assertEquals(List.of(), hz.decoded(), "ssv 31 marks decoded empty");
+    assertEquals(31, thirtyOne.maxRunLen(), "ssv 31 marks maxRunLen");
+    assertEquals(1, thirtyOne.overrunCount(), "ssv 31 marks overrunCount");
+    assertEquals(31, thirtyOne.totalNonStarters(), "ssv 31 marks totalNonStarters");
+    structureVectors++;
+
+    // bare_mark_run_starts_at_zero: a bare 31-mark run (no leading starter) records start 0.
+    List<Integer> bare = new ArrayList<>();
+    for (int i = 0; i < 31; i++) bare.add(acute);
+    StreamSafeViolation.Verdict bareVerdict = StreamSafeViolation.detect(bare);
+    assertEquals("StreamSafeOverrun", bareVerdict.classify().tag(), "ssv bare run tag");
+    assertEquals(List.of(0), bareVerdict.classify().positions(), "ssv bare run positions");
+    assertEquals(31, bareVerdict.maxRunLen(), "ssv bare run maxRunLen");
+    assertEquals(31, bareVerdict.totalNonStarters(), "ssv bare run totalNonStarters");
+    structureVectors++;
+
+    // two_short_runs_clear_totals_summed: "a" + 30 marks + "b" + 30 marks stays clear,
+    // both runs summed in the totals.
+    List<Integer> twoRuns = aPlusMarks(30, acute);
+    twoRuns.add(0x62);
+    for (int i = 0; i < 30; i++) twoRuns.add(acute);
+    StreamSafeViolation.Verdict twoVerdict = StreamSafeViolation.detect(twoRuns);
+    assertTrue(twoVerdict.classify().isClear(), "ssv two short runs clear");
+    assertEquals(30, twoVerdict.maxRunLen(), "ssv two short runs maxRunLen");
+    assertEquals(0, twoVerdict.overrunCount(), "ssv two short runs overrunCount");
+    assertEquals(60, twoVerdict.totalNonStarters(), "ssv two short runs totalNonStarters");
+    structureVectors++;
+
+    // first_overrun_reports_long_run_start: "a" + 5 marks + "b" + 31 marks — the run
+    // starting at index 7 fires; a short run before it does not shadow it.
+    List<Integer> firstOverrun = aPlusMarks(5, acute);
+    firstOverrun.add(0x62);
+    for (int i = 0; i < 31; i++) firstOverrun.add(acute);
+    StreamSafeViolation.Verdict foVerdict = StreamSafeViolation.detect(firstOverrun);
+    assertEquals("StreamSafeOverrun", foVerdict.classify().tag(), "ssv first-overrun tag");
+    assertEquals(List.of(7), foVerdict.classify().positions(), "ssv first-overrun positions");
+    assertEquals(31, foVerdict.maxRunLen(), "ssv first-overrun maxRunLen");
+    assertEquals(1, foVerdict.overrunCount(), "ssv first-overrun overrunCount");
+    assertEquals(36, foVerdict.totalNonStarters(), "ssv first-overrun totalNonStarters");
+    structureVectors++;
+
+    System.out.println("clean: JVM stream-safe-violation passes (" + fixtureCases
+        + " fixture cases + " + structureVectors + " structure vectors)");
+  }
+
+  // "a" (U+0061) followed by n combining marks. Mutable so callers can extend it.
+  private static List<Integer> aPlusMarks(int n, int mark) {
+    List<Integer> out = new ArrayList<>();
+    out.add(0x61);
+    for (int i = 0; i < n; i++) out.add(mark);
+    return out;
   }
 
   private static void assertHisCtx(HashInputStability.Context ctx, int[] input,

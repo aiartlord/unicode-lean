@@ -1,0 +1,107 @@
+{
+  "schema": 1,
+  "family": "stream-safe-violation",
+  "cases": [
+    {
+      "name": "empty-clear",
+      "input": [],
+      "required_findings": []
+    },
+    {
+      "name": "ascii-hello-clear",
+      "input": [
+        72,
+        101,
+        108,
+        108,
+        111
+      ],
+      "required_findings": []
+    },
+    {
+      "name": "one-combine-clear",
+      "input": [
+        97,
+        769
+      ],
+      "required_findings": []
+    },
+    {
+      "name": "thirty-marks-boundary-clear",
+      "input": [
+        97,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769
+      ],
+      "required_findings": []
+    },
+    {
+      "name": "thirtyone-marks-overrun",
+      "input": [
+        97,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769,
+        769
+      ],
+      "required_findings": [
+        "unicode.security.F.stream-safe-violation.StreamSafeOverrun"
+      ]
+    }
+  ]
+}

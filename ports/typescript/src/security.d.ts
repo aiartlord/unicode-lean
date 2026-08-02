@@ -175,3 +175,27 @@ export declare function aiWatermarkDetectabilityDetectWithContext(
   ctx: AiWatermarkContext,
   input: number[],
 ): AiWatermarkVerdict;
+
+// ── stream-safe-violation (layer F) ─────────────────────────────────────────
+
+export declare const STREAM_SAFE_LIMIT: 30;
+export declare function streamSafeViolationReasonCode(subThreatTag: string): string;
+
+export type StreamSafeSubThreat = { kind: "StreamSafeOverrun"; basePos: number; runLen: number };
+
+export interface StreamSafeClassification {
+  isClear: boolean;
+  tag: string | null;
+  sub: StreamSafeSubThreat | null;
+  positions: number[];
+}
+
+export interface StreamSafeVerdict {
+  input: number[];
+  classify: StreamSafeClassification;
+  maxRunLen: number;
+  overrunCount: number;
+  totalNonStarters: number;
+}
+
+export declare function streamSafeViolationDetect(input: number[]): StreamSafeVerdict;

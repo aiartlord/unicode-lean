@@ -45,6 +45,7 @@ public enum Family {
     public static let covertDisplayCompound = "covert-display-compound"
     public static let hashInputStability = "hash-input-stability"
     public static let aiWatermarkDetectability = "ai-watermark-detectability"
+    public static let streamSafeViolation = "stream-safe-violation"
 }
 
 public struct Finding: Equatable {
@@ -279,6 +280,9 @@ private func layer(_ family: String) -> String {
     }
     if family == Family.hashInputStability || family == Family.aiWatermarkDetectability {
         return "K"
+    }
+    if family == Family.streamSafeViolation {
+        return "F"
     }
     return "C"
 }
@@ -3205,4 +3209,171 @@ public func aiWatermarkDetectabilityDetect(_ input: [Int]) -> AiWatermarkDetecta
 /// `unicode.security.K.ai-watermark-detectability.<tag>`.
 public func aiWatermarkDetectabilityReasonCode(_ subThreat: String) -> String {
     reasonCode(family: Family.aiWatermarkDetectability, subThreat: subThreat)
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// stream-safe-violation — Stream-Safe-Text-Format-violation detection.
+// Inputs whose consecutive non-starter run exceeds the UAX #15 §13
+// streamSafeLimit of 30. Such an input (the canonical "Zalgo" shape, a
+// single base codepoint followed by a long combining-mark run) forces
+// unbounded combining-mark buffers in receiver-side streaming
+// normalization (toNfc / toNfd / toNfkc / toNfkd) and is a known DoS
+// vector.
+//
+// Direct port of Unicode/Security/Form/StreamSafeViolation.lean, mirroring
+// the verified Rust reference. UAX #15 §13 defines Stream-Safe Text Format
+// as the remediation: insert U+034F COMBINING GRAPHEME JOINER (a starter)
+// after every 30 consecutive non-starters, which bounds the normalization
+// buffer.
+//
+// A codepoint is a non-starter iff its Canonical_Combining_Class is
+// non-zero (UAX #15 D49). This reads CCC from the port's own bundled UCD
+// table via `canonicalCombiningClass`, never a host normaliser.
+// ─────────────────────────────────────────────────────────────────────
+
+/// UAX #15 §13 Stream-Safe limit: the maximum number of consecutive
+/// non-starters permitted before a COMBINING GRAPHEME JOINER must be inserted.
+public let streamSafeLimit = 30
+
+/// True iff `cp` is a non-starter — a codepoint with non-zero
+/// Canonical_Combining_Class (UAX #15 D49). Starters have CCC = 0. Reuses the
+/// port's own `canonicalCombiningClass`, never a host normaliser.
+private func streamSafeIsNonStarter(_ cp: Int) -> Bool {
+    canonicalCombiningClass(cp) != 0
+}
+
+/// Inventory of `(startIndex, length)` for every maximal non-starter run in
+/// `input`. Mirrors `collectRunsGo`: a run opens on the first non-starter, its
+/// start index is fixed to that codepoint's absolute index, and it closes
+/// (emitting its `(start, length)` pair) on the next starter or at end of input.
+private func streamSafeNonStarterRuns(_ input: [Int]) -> [(Int, Int)] {
+    var runs: [(Int, Int)] = []
+    var curStart: Int? = nil
+    var curLen = 0
+    for i in input.indices {
+        if streamSafeIsNonStarter(input[i]) {
+            if curStart == nil { curStart = i }
+            curLen += 1
+        } else {
+            if let s = curStart { runs.append((s, curLen)) }
+            curStart = nil
+            curLen = 0
+        }
+    }
+    if let s = curStart { runs.append((s, curLen)) }
+    return runs
+}
+
+/// First non-starter run whose length exceeds `streamSafeLimit`, as
+/// `(startIndex, length)`.
+private func streamSafeFirstOverrun(_ input: [Int]) -> (Int, Int)? {
+    streamSafeNonStarterRuns(input).first { $0.1 > streamSafeLimit }
+}
+
+/// Longest non-starter run length in `input`.
+private func streamSafeMaxRunLen(_ input: [Int]) -> Int {
+    streamSafeNonStarterRuns(input).reduce(0) { acc, run in run.1 > acc ? run.1 : acc }
+}
+
+/// Number of distinct non-starter runs that exceed `streamSafeLimit`.
+private func streamSafeOverrunCount(_ input: [Int]) -> Int {
+    streamSafeNonStarterRuns(input).reduce(0) { acc, run in run.1 > streamSafeLimit ? acc + 1 : acc }
+}
+
+/// Total non-starter codepoints in `input` (sum of all run lengths).
+private func streamSafeTotalNonStarters(_ input: [Int]) -> Int {
+    streamSafeNonStarterRuns(input).reduce(0) { acc, run in acc + run.1 }
+}
+
+/// Sub-threats this detector can fire.
+public enum StreamSafeViolationSubThreat: Equatable {
+    /// The first non-starter run whose length exceeds `streamSafeLimit`.
+    /// `basePos` is the index of the run's first non-starter codepoint;
+    /// `runLen` is the run's length.
+    case streamSafeOverrun(basePos: Int, runLen: Int)
+
+    /// Human-facing classification tag for this sub-threat.
+    public var tag: String {
+        switch self {
+        case .streamSafeOverrun: return "StreamSafeOverrun"
+        }
+    }
+}
+
+/// Top-level stream-safe-violation classification.
+public enum StreamSafeViolationClassification: Equatable {
+    /// No non-starter run exceeds the Stream-Safe limit.
+    case clear
+    /// A hazard was found: the sub-threat, its implicated positions, and any
+    /// decoded bytes (always empty for this detector — the field mirrors the
+    /// spec's `Classification.hazard` shape).
+    case hazard(sub: StreamSafeViolationSubThreat, positions: [Int], decoded: [UInt8])
+
+    /// True iff the input is clear.
+    public var isClear: Bool {
+        switch self {
+        case .clear: return true
+        case .hazard: return false
+        }
+    }
+
+    /// Human-facing tag for a hazard, or `nil` when clear.
+    public var tag: String? {
+        switch self {
+        case .clear: return nil
+        case .hazard(let sub, _, _): return sub.tag
+        }
+    }
+
+    /// Implicated positions (empty when clear).
+    public var positions: [Int] {
+        switch self {
+        case .clear: return []
+        case .hazard(_, let positions, _): return positions
+        }
+    }
+}
+
+/// Verdict — the structured output of `streamSafeViolationDetect`. The
+/// run-inventory summaries (`maxRunLen`, `overrunCount`, `totalNonStarters`) are
+/// exposed so downstream callers can size the buffer pressure a streaming
+/// normaliser would see.
+public struct StreamSafeViolationVerdict: Equatable {
+    /// The scanned input codepoints.
+    public let input: [Int]
+    /// The classification verdict.
+    public let classify: StreamSafeViolationClassification
+    /// Longest non-starter run length in `input`.
+    public let maxRunLen: Int
+    /// Number of distinct non-starter runs exceeding the Stream-Safe limit.
+    public let overrunCount: Int
+    /// Total non-starter codepoints in `input`.
+    public let totalNonStarters: Int
+}
+
+/// The stream-safe-violation detection function. Fires `StreamSafeOverrun` on
+/// the first non-starter run whose length exceeds `streamSafeLimit`.
+public func streamSafeViolationDetect(_ input: [Int]) -> StreamSafeViolationVerdict {
+    let classification: StreamSafeViolationClassification
+    if let (basePos, runLen) = streamSafeFirstOverrun(input) {
+        classification = .hazard(
+            sub: .streamSafeOverrun(basePos: basePos, runLen: runLen),
+            positions: [basePos],
+            decoded: [])
+    } else {
+        classification = .clear
+    }
+    return StreamSafeViolationVerdict(
+        input: input,
+        classify: classification,
+        maxRunLen: streamSafeMaxRunLen(input),
+        overrunCount: streamSafeOverrunCount(input),
+        totalNonStarters: streamSafeTotalNonStarters(input))
+}
+
+/// Stable reason code for a stream-safe-violation sub-threat tag, routed
+/// through the shared reason-code builder:
+/// `unicode.security.F.stream-safe-violation.<tag>`.
+public func streamSafeViolationReasonCode(_ subThreat: String) -> String {
+    reasonCode(family: Family.streamSafeViolation, subThreat: subThreat)
 }

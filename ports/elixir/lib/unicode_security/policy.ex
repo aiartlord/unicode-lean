@@ -14,7 +14,12 @@ defmodule UnicodeSecurity.Policy do
 
   alias UnicodeSecurity.Crypto.{Bip39Canonical, HashInputStability}
   alias UnicodeSecurity.Display.RtlInjection
-  alias UnicodeSecurity.Form.{LocaleCaseInversion, NfcIdempotenceWitness, NormalizationBomb}
+  alias UnicodeSecurity.Form.{
+    LocaleCaseInversion,
+    NfcIdempotenceWitness,
+    NormalizationBomb,
+    StreamSafeViolation
+  }
   alias UnicodeSecurity.Identity.HomoglyphConfusable
 
   @profiles [
@@ -351,7 +356,8 @@ defmodule UnicodeSecurity.Policy do
       [
         {:locale_case_inversion, LocaleCaseInversion.detect(input)},
         {:nfc_idempotence_witness, NfcIdempotenceWitness.detect(input)},
-        {:normalization_bomb, NormalizationBomb.detect(input)}
+        {:normalization_bomb, NormalizationBomb.detect(input)},
+        {:stream_safe_violation, StreamSafeViolation.detect(input)}
       ]
       |> Enum.reduce([], fn {family, v}, acc ->
         if v.sub, do: push_finding(acc, family, :hazard, v.sub, v.positions), else: acc

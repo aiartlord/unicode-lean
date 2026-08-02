@@ -29,6 +29,7 @@ add_executable(unicode_cpp_tests
     locale_case_inversion_test.cpp
     normalization_bomb_test.cpp
     nfc_idempotence_witness_test.cpp
+    stream_safe_violation_test.cpp
     surrogate_reassembly_test.cpp)
 target_link_libraries(unicode_cpp_tests
     PRIVATE unicode_cpp::unicode_cpp doctest::doctest)

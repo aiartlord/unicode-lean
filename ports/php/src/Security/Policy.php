@@ -20,6 +20,7 @@ use UnicodePhp\Security\Display\RtlInjection;
 use UnicodePhp\Security\Form\LocaleCaseInversion;
 use UnicodePhp\Security\Form\NfcIdempotenceWitness;
 use UnicodePhp\Security\Form\NormalizationBomb;
+use UnicodePhp\Security\Form\StreamSafeViolation;
 use UnicodePhp\Security\Identity\HomoglyphConfusable;
 
 enum Action: string
@@ -582,6 +583,10 @@ final class Policy
             if ($v->sub !== null) {
                 self::pushFinding($findings, $family, ClassificationKind::Hazard, $v->sub, $v->positions);
             }
+        }
+        $stream = StreamSafeViolation::detect($input);
+        if (!$stream->classify->isClear()) {
+            self::pushFinding($findings, Family::StreamSafeViolation, ClassificationKind::Hazard, $stream->classify->tag(), $stream->classify->positions());
         }
         return new Verdict($input, $profile, $mode, self::selectAction($profile, $mode, $findings), $findings, null);
     }
