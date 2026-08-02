@@ -330,6 +330,7 @@ non_default_scan_detectors = {
     "hash_input_stability",
     "stream_safe_violation",
     "emoji_zwj_integrity",
+    "renderer_divergence",
 }
 
 for detector_fixture in detector_fixtures:
