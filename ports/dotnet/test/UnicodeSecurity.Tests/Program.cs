@@ -4,6 +4,7 @@ using UnicodeSecurity.Segmentation;
 using His = UnicodeSecurity.Security.HashInputStability;
 using Awd = UnicodeSecurity.Security.AiWatermarkDetectability;
 using Ezwj = UnicodeSecurity.Security.EmojiZwjIntegrity;
+using Stvf = UnicodeSecurity.Security.SkinToneVariationForgery;
 using Rd = UnicodeSecurity.Security.RendererDivergence;
 using Fd = UnicodeSecurity.Security.FilenameDisguise;
 using Ifd = UnicodeSecurity.Security.IdentifierFormDrift;
@@ -29,6 +30,8 @@ TestAiWatermarkDetectabilityFixture();
 TestAiWatermarkDetectabilityContextVectors();
 TestEmojiZwjIntegrityFixture();
 TestEmojiZwjIntegritySpotChecks();
+TestSkinToneVariationForgeryFixture();
+TestSkinToneVariationForgerySpotChecks();
 TestRendererDivergenceFixture();
 TestRendererDivergenceSpotChecks();
 TestFilenameDisguiseFixture();
@@ -912,6 +915,111 @@ static void TestEmojiZwjIntegritySpotChecks()
     AssertEqual<string?>("DoubleZWJ", Tag(new[] { 0x1F468, 0x200D, 0x200D, 0x1F466 }), "ezwj double-beats-unregistered tag");
 
     Console.WriteLine("clean: .NET emoji-zwj-integrity data + detect + structural spot-check passes");
+}
+
+// Ground truth: the shared context-free detector fixture
+// fixtures/security/detectors/skin_tone_variation_forgery.json, run through
+// Security.SkinToneVariationForgery.Detect. Each case's required_findings is the
+// fully-qualified reason code
+// (unicode.security.I.skin-tone-variation-forgery.<tag>); an empty list means
+// the input must classify Clear. Mirrors the Rust port's §4 detect spot checks.
+static void TestSkinToneVariationForgeryFixture()
+{
+    using var detector = LoadFixture("detectors/skin_tone_variation_forgery.json");
+    AssertEqual(1, detector.RootElement.GetProperty("schema").GetInt32(), "skin-tone-variation-forgery schema");
+    AssertEqual("skin-tone-variation-forgery", String(detector.RootElement, "family"), "skin-tone-variation-forgery family");
+    var cases = 0;
+    foreach (var entry in detector.RootElement.GetProperty("cases").EnumerateArray())
+    {
+        var name = String(entry, "name");
+        var input = Ints(entry.GetProperty("input"));
+        var verdict = Stvf.Detect(input);
+        var required = Strings(entry.GetProperty("required_findings")).ToList();
+        if (required.Count == 0)
+        {
+            AssertTrue(verdict.Classify.IsClear, $"skin-tone-variation-forgery {name}: expected clear, got {verdict.Classify.Tag}");
+        }
+        else
+        {
+            foreach (var code in required)
+            {
+                AssertEqual<string?>(code, verdict.Classify.ReasonCode, $"skin-tone-variation-forgery {name}: reason code");
+            }
+        }
+        cases++;
+    }
+    Console.WriteLine($"clean: .NET skin-tone-variation-forgery {cases}-case shared-fixture detect passes");
+}
+
+// Ground truth: the data-layer sanity and detect spot-check theorems in the Rust
+// port's skin_tone_variation_forgery.rs test module. The Emoji_Modifier_Base and
+// Emoji_Presentation intervals are parsed from the bundled Data/emoji-data.txt;
+// the skin-tone modifier predicate reuses the port's own
+// EmojiZwjIntegrity.IsEmojiModifier (U+1F3FB..U+1F3FF), never a host emoji /
+// normalization library.
+static void TestSkinToneVariationForgerySpotChecks()
+{
+    string? Tag(int[] input) => Stvf.Detect(input).Classify.Tag;
+
+    // ── data-layer sanity ────────────────────────────────────────────────
+    AssertTrue(Stvf.IsSkinTone(0x1F3FB), "stvf skin-tone lo");
+    AssertTrue(Stvf.IsSkinTone(0x1F3FF), "stvf skin-tone hi");
+    AssertTrue(!Stvf.IsSkinTone(0x1F600), "stvf skin-tone grinning");
+    AssertTrue(Stvf.IsSkinToneBase(0x1F44B), "stvf modifier-base waving-hand");
+    AssertTrue(!Stvf.IsSkinToneBase(0x0041), "stvf modifier-base ascii-A");
+    AssertTrue(!Stvf.IsSkinToneBase(0x1F600), "stvf modifier-base grinning");
+    AssertTrue(Stvf.IsEmojiPresentation(0x1F600), "stvf emoji-presentation grinning");
+    AssertTrue(!Stvf.IsEmojiPresentation(0x0041), "stvf emoji-presentation ascii-A");
+    AssertTrue(Stvf.IsVs15(0xFE0E), "stvf vs15");
+    AssertTrue(Stvf.IsVs16(0xFE0F), "stvf vs16");
+
+    // ── detect spot checks (one per Lean theorem) ────────────────────────
+    var empty = Stvf.Detect(System.Array.Empty<int>());
+    AssertTrue(empty.Classify.IsClear, "stvf empty clear");
+    AssertEqual(0, empty.SkinToneCount, "stvf empty skin-tone-count");
+    AssertEqual(0, empty.VariationSelector15Count, "stvf empty vs15-count");
+    AssertEqual(0, empty.VariationSelector16Count, "stvf empty vs16-count");
+
+    AssertTrue(Stvf.Detect(new[] { 0x48, 0x65 }).Classify.IsClear, "stvf ascii clear");
+    AssertTrue(Stvf.Detect(new[] { 0x1F600 }).Classify.IsClear, "stvf plain-emoji clear");
+
+    var wave = Stvf.Detect(new[] { 0x1F44B, 0x1F3FB });
+    AssertTrue(wave.Classify.IsClear, "stvf wave-skin-tone clear");
+    AssertEqual(1, wave.SkinToneCount, "stvf wave-skin-tone count");
+
+    var stacked = Stvf.Detect(new[] { 0x1F44B, 0x1F3FB, 0x1F3FC });
+    AssertEqual<string?>("StackedSkinTones", stacked.Classify.Tag, "stvf stacked tag");
+    AssertSequence(new[] { 1, 2 }, stacked.Classify.Positions, "stvf stacked pos");
+    var stackedSub = (stacked.Classify as Stvf.Hazard)?.Sub as Stvf.StackedSkinTones;
+    AssertTrue(stackedSub is not null, "stvf stacked sub shape");
+    AssertEqual(0, stackedSub!.BasePos, "stvf stacked base-pos");
+    AssertSequence(new[] { 0x1F3FB, 0x1F3FC }, stackedSub.Modifiers, "stvf stacked modifiers");
+
+    var invalidAscii = Stvf.Detect(new[] { 0x0041, 0x1F3FB });
+    AssertEqual<string?>("InvalidSkinToneTarget", invalidAscii.Classify.Tag, "stvf invalid-ascii tag");
+    AssertSequence(new[] { 1 }, invalidAscii.Classify.Positions, "stvf invalid-ascii pos");
+    var invalidSub = (invalidAscii.Classify as Stvf.Hazard)?.Sub as Stvf.InvalidSkinToneTarget;
+    AssertTrue(invalidSub is not null, "stvf invalid-ascii sub shape");
+    AssertEqual(0, invalidSub!.BasePos, "stvf invalid-ascii base-pos");
+    AssertEqual(0x0041, invalidSub.BaseCp, "stvf invalid-ascii base-cp");
+    AssertEqual(0x1F3FB, invalidSub.ModifierCp, "stvf invalid-ascii modifier-cp");
+
+    AssertEqual<string?>("InvalidSkinToneTarget", Tag(new[] { 0x1F600, 0x1F3FB }), "stvf invalid-smiley tag");
+
+    var forced = Stvf.Detect(new[] { 0x1F600, 0xFE0E });
+    AssertEqual<string?>("ForcedTextStyle", forced.Classify.Tag, "stvf forced-text-style tag");
+    AssertSequence(new[] { 1 }, forced.Classify.Positions, "stvf forced-text-style pos");
+    AssertEqual(1, forced.VariationSelector15Count, "stvf forced-text-style vs15-count");
+
+    // ── reason-code composition (both stable) ────────────────────────────
+    AssertEqual<string?>(
+        "unicode.security.I.skin-tone-variation-forgery.StackedSkinTones",
+        stacked.Classify.ReasonCode, "stvf stacked reason-code");
+    AssertEqual<string?>(
+        "unicode.security.I.skin-tone-variation-forgery.ForcedTextStyle",
+        forced.Classify.ReasonCode, "stvf forced-text-style reason-code");
+
+    Console.WriteLine("clean: .NET skin-tone-variation-forgery data + detect spot-check passes");
 }
 
 // Ground truth: the shared context-free detector fixture

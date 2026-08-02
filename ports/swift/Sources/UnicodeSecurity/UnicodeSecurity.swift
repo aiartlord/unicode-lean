@@ -50,6 +50,7 @@ public enum Family {
     public static let rendererDivergence = "renderer-divergence"
     public static let filenameDisguise = "filename-disguise"
     public static let identifierFormDrift = "identifier-form-drift"
+    public static let skinToneVariationForgery = "skin-tone-variation-forgery"
 }
 
 public struct Finding: Equatable {
@@ -96,6 +97,8 @@ private var emojiRangesCache: [(Int, Int)]?
 private var emojiZwjSequencesCache: [[Int]]?
 private var emojiZwjAlphabetCache: Set<Int>?
 private var graphemeExtendRangesCache: [(Int, Int)]?
+private var skinToneVariationForgeryModifierBaseCache: [(Int, Int)]?
+private var skinToneVariationForgeryPresentationCache: [(Int, Int)]?
 
 public func scan(profile: String, mode: String, input: [Int]) -> Verdict {
     let codepoints = input.map(ensureCodepoint)
@@ -278,7 +281,7 @@ private func reasonCode(family: String, subThreat: String) -> String {
 
 private func layer(_ family: String) -> String {
     if family == Family.homoglyphConfusable || family == Family.mixedScriptAdmissibility
-        || family == Family.emojiZwjIntegrity
+        || family == Family.emojiZwjIntegrity || family == Family.skinToneVariationForgery
     {
         return "I"
     }
@@ -4351,4 +4354,241 @@ public func identifierFormDriftDetect(_ input: [Int]) -> IdentifierFormDriftVerd
 /// `unicode.security.X.identifier-form-drift.<tag>`.
 public func identifierFormDriftReasonCode(_ subThreat: String) -> String {
     reasonCode(family: Family.identifierFormDrift, subThreat: subThreat)
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// SkinToneVariationForgery — skin-tone modifier and variation-selector abuse
+// on emoji bases per UTS #51 (identity-layer detector, layer I).
+//
+// Byte-faithful transliteration of the verified Rust reference implementation.
+//
+// Threat model. Tier A₁. An adversary places a skin-tone modifier on a codepoint
+// that does NOT bear Emoji_Modifier_Base, stacks multiple skin tones on one base,
+// or forces a text-style render on an emoji-default codepoint via U+FE0E (VS15) —
+// sometimes to hide a payload-bearing glyph in plain sight.
+//
+// Distinct from VariationSelectorPayload (pair-aligned VS runs that decode to
+// bytes): this catches the orthogonal case of semantic VS / skin-tone misuse on a
+// single base. Both can fire on the same input; SourceDisplayDivergence aggregates.
+//
+// It reuses the port's own emoji property tables (the bundled emoji-data.txt read
+// through the shared `readDataFile`/`parseDerivedProperty` reader and the emoji
+// skin-tone predicate `emojiZwjIsEmojiModifier`), never a host emoji library.
+//
+// Sub-threats (priority order):
+//   1. StackedSkinTones      a base immediately followed by >= 2 skin-tone modifiers.
+//   2. InvalidSkinToneTarget a skin-tone modifier on a non-Emoji_Modifier_Base.
+//   3. ForcedTextStyle       U+FE0E on an Emoji_Presentation codepoint.
+// ─────────────────────────────────────────────────────────────────────
+
+/// Sub-threat enumeration for SkinToneVariationForgery, in priority order.
+public enum SkinToneVariationForgerySubThreat: Equatable {
+    /// A base at `basePos` followed by >= 2 skin-tone modifiers (the first two are
+    /// carried in `modifiers`).
+    case stackedSkinTones(basePos: Int, modifiers: [Int])
+    /// A skin-tone `modifierCp` at `basePos + 1` on a non-modifier-base `baseCp`.
+    case invalidSkinToneTarget(basePos: Int, baseCp: Int, modifierCp: Int)
+    /// A U+FE0E at `basePos + 1` forcing text style on an Emoji_Presentation `baseCp`.
+    case forcedTextStyle(basePos: Int, baseCp: Int)
+
+    /// Fixture-row tag string for this sub-threat (matches `SubThreat.tag`).
+    public var tag: String {
+        switch self {
+        case .stackedSkinTones: return "StackedSkinTones"
+        case .invalidSkinToneTarget: return "InvalidSkinToneTarget"
+        case .forcedTextStyle: return "ForcedTextStyle"
+        }
+    }
+}
+
+/// Top-level classification for SkinToneVariationForgery.
+public enum SkinToneVariationForgeryClassification: Equatable {
+    /// No skin-tone / variation-selector abuse present.
+    case clear
+    /// An abuse pattern fired: the sub-threat, the implicated positions, and the
+    /// (always-empty for this detector) decoded-byte projection, kept for shape
+    /// parity with the Lean `Classification.hazard`.
+    case hazard(sub: SkinToneVariationForgerySubThreat, positions: [Int], decoded: [UInt8])
+
+    /// True iff the classification is `clear`.
+    public var isClear: Bool {
+        switch self {
+        case .clear: return true
+        case .hazard: return false
+        }
+    }
+
+    /// Human-facing tag for a hazard, or `nil` when clear.
+    public var tag: String? {
+        switch self {
+        case .clear: return nil
+        case .hazard(let sub, _, _): return sub.tag
+        }
+    }
+
+    /// Implicated positions (empty when clear).
+    public var positions: [Int] {
+        switch self {
+        case .clear: return []
+        case .hazard(_, let positions, _): return positions
+        }
+    }
+}
+
+/// The structured output of `skinToneVariationForgeryDetect` (mirrors the Lean
+/// `Verdict`).
+public struct SkinToneVariationForgeryVerdict: Equatable {
+    /// The scanned input codepoints.
+    public let input: [Int]
+    /// The classification verdict.
+    public let classify: SkinToneVariationForgeryClassification
+    /// Count of skin-tone modifier codepoints.
+    public let skinToneCount: Int
+    /// Count of U+FE0E (VS15) codepoints.
+    public let variationSelector15Count: Int
+    /// Count of U+FE0F (VS16) codepoints.
+    public let variationSelector16Count: Int
+}
+
+// §1 Emoji property tables (bundled emoji-data.txt, parsed via the shared reader).
+
+/// The `Emoji_Modifier_Base` closed intervals from emoji-data.txt, parsed via the
+/// port's shared `<range> ; <property>` reader and cached.
+private func skinToneVariationForgeryEmojiModifierBaseRanges() -> [(Int, Int)] {
+    if let cached = skinToneVariationForgeryModifierBaseCache { return cached }
+    let parsed = parseDerivedProperty(readDataFile("emoji-data.txt"), "Emoji_Modifier_Base")
+    skinToneVariationForgeryModifierBaseCache = parsed
+    return parsed
+}
+
+/// The `Emoji_Presentation` closed intervals from emoji-data.txt, parsed via the
+/// port's shared `<range> ; <property>` reader and cached.
+private func skinToneVariationForgeryEmojiPresentationRanges() -> [(Int, Int)] {
+    if let cached = skinToneVariationForgeryPresentationCache { return cached }
+    let parsed = parseDerivedProperty(readDataFile("emoji-data.txt"), "Emoji_Presentation")
+    skinToneVariationForgeryPresentationCache = parsed
+    return parsed
+}
+
+/// True iff `cp` is an emoji skin-tone modifier (reuses the port's own
+/// `emojiZwjIsEmojiModifier`, the U+1F3FB..U+1F3FF set).
+public func skinToneVariationForgeryIsSkinTone(_ cp: Int) -> Bool {
+    emojiZwjIsEmojiModifier(cp)
+}
+
+/// True iff `cp` has `Emoji_Modifier_Base` per emoji-data.txt.
+public func skinToneVariationForgeryIsSkinToneBase(_ cp: Int) -> Bool {
+    skinToneVariationForgeryEmojiModifierBaseRanges().contains { $0.0 <= cp && cp <= $0.1 }
+}
+
+/// True iff `cp` has `Emoji_Presentation` per emoji-data.txt.
+public func skinToneVariationForgeryIsEmojiPresentation(_ cp: Int) -> Bool {
+    skinToneVariationForgeryEmojiPresentationRanges().contains { $0.0 <= cp && cp <= $0.1 }
+}
+
+/// True iff `cp` is U+FE0E (VS15, text-style variation selector).
+public func skinToneVariationForgeryIsVs15(_ cp: Int) -> Bool {
+    cp == 0xFE0E
+}
+
+/// True iff `cp` is U+FE0F (VS16, emoji-style variation selector).
+public func skinToneVariationForgeryIsVs16(_ cp: Int) -> Bool {
+    cp == 0xFE0F
+}
+
+// §2 Sub-detectors.
+
+/// First position `p` whose next two codepoints are both skin-tone modifiers, as
+/// `(basePos, [mod1, mod2])`.
+private func skinToneVariationForgeryFirstStacked(_ input: [Int]) -> (Int, [Int])? {
+    for i in input.indices {
+        let next1 = i + 1 < input.count ? input[i + 1] : nil
+        let next2 = i + 2 < input.count ? input[i + 2] : nil
+        if let m1 = next1, let m2 = next2,
+            skinToneVariationForgeryIsSkinTone(m1), skinToneVariationForgeryIsSkinTone(m2) {
+            return (i, [m1, m2])
+        }
+    }
+    return nil
+}
+
+/// First skin-tone modifier whose preceding codepoint is NOT `Emoji_Modifier_Base`,
+/// as `(basePos, baseCp, modifierCp)`.
+private func skinToneVariationForgeryFirstInvalidTarget(_ input: [Int]) -> (Int, Int, Int)? {
+    for i in input.indices where i + 1 < input.count {
+        let cp = input[i + 1]
+        if skinToneVariationForgeryIsSkinTone(cp) && !skinToneVariationForgeryIsSkinToneBase(input[i]) {
+            return (i, input[i], cp)
+        }
+    }
+    return nil
+}
+
+/// First U+FE0E whose preceding codepoint has `Emoji_Presentation`, as
+/// `(basePos, baseCp)`.
+private func skinToneVariationForgeryFirstForcedTextStyle(_ input: [Int]) -> (Int, Int)? {
+    for i in input.indices where i + 1 < input.count {
+        let cp = input[i + 1]
+        if skinToneVariationForgeryIsVs15(cp) && skinToneVariationForgeryIsEmojiPresentation(input[i]) {
+            return (i, input[i])
+        }
+    }
+    return nil
+}
+
+private func skinToneVariationForgerySkinToneCount(_ input: [Int]) -> Int {
+    input.filter { skinToneVariationForgeryIsSkinTone($0) }.count
+}
+
+private func skinToneVariationForgeryVs15Count(_ input: [Int]) -> Int {
+    input.filter { skinToneVariationForgeryIsVs15($0) }.count
+}
+
+private func skinToneVariationForgeryVs16Count(_ input: [Int]) -> Int {
+    input.filter { skinToneVariationForgeryIsVs16($0) }.count
+}
+
+// §3 Top-level detection.
+
+/// The SkinToneVariationForgery detection function. Mirrors the Lean/Rust `detect`:
+/// tries the priority ladder StackedSkinTones -> InvalidSkinToneTarget ->
+/// ForcedTextStyle, else `clear`; the verdict always carries the three counts.
+public func skinToneVariationForgeryDetect(_ input: [Int]) -> SkinToneVariationForgeryVerdict {
+    let classification: SkinToneVariationForgeryClassification
+    if let (basePos, modifiers) = skinToneVariationForgeryFirstStacked(input) {
+        // Priority 1: a base followed by two stacked skin tones.
+        let positions = modifiers.indices.map { basePos + 1 + $0 }
+        classification = .hazard(
+            sub: .stackedSkinTones(basePos: basePos, modifiers: modifiers),
+            positions: positions,
+            decoded: [])
+    } else if let (basePos, baseCp, modifierCp) = skinToneVariationForgeryFirstInvalidTarget(input) {
+        // Priority 2: a skin tone on a non-modifier-base.
+        classification = .hazard(
+            sub: .invalidSkinToneTarget(basePos: basePos, baseCp: baseCp, modifierCp: modifierCp),
+            positions: [basePos + 1],
+            decoded: [])
+    } else if let (basePos, baseCp) = skinToneVariationForgeryFirstForcedTextStyle(input) {
+        // Priority 3: VS15 forcing text style on an emoji-presentation cp.
+        classification = .hazard(
+            sub: .forcedTextStyle(basePos: basePos, baseCp: baseCp),
+            positions: [basePos + 1],
+            decoded: [])
+    } else {
+        classification = .clear
+    }
+
+    return SkinToneVariationForgeryVerdict(
+        input: input,
+        classify: classification,
+        skinToneCount: skinToneVariationForgerySkinToneCount(input),
+        variationSelector15Count: skinToneVariationForgeryVs15Count(input),
+        variationSelector16Count: skinToneVariationForgeryVs16Count(input))
+}
+
+/// Stable reason code for a skin-tone-variation-forgery sub-threat tag, routed
+/// through the shared reason-code builder:
+/// `unicode.security.I.skin-tone-variation-forgery.<tag>`.
+public func skinToneVariationForgeryReasonCode(_ subThreat: String) -> String {
+    reasonCode(family: Family.skinToneVariationForgery, subThreat: subThreat)
 }

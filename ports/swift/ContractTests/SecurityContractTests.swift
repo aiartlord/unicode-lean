@@ -26,6 +26,7 @@ struct SecurityContractRunner {
         try testRendererDivergence()
         try testFilenameDisguise()
         try testIdentifierFormDrift()
+        try testSkinToneVariationForgery()
         try testOpaqueBlob()
         print("clean: Swift contract tests pass")
     }
@@ -676,6 +677,68 @@ struct SecurityContractRunner {
             identifierFormDriftReasonCode("IdentifierStatusShift"),
             "unicode.security.X.identifier-form-drift.IdentifierStatusShift",
             "identifier-form-drift reason code")
+    }
+
+    // Pins the skin-tone-variation-forgery detector against the detect_* spot-check
+    // theorems in the verified reference: the shared context-free fixture runs
+    // through detect, plus the per-theorem spot checks (stacked skin tones, invalid
+    // targets, forced text style) with their implicated positions.
+    private static func testSkinToneVariationForgery() throws {
+        // Shared context-free fixture through detect. required_findings carries
+        // full reason codes (unicode.security.I.skin-tone-variation-forgery.<Tag>);
+        // an empty list means clear.
+        let fixture = try loadFixture("detectors/skin_tone_variation_forgery.json")
+        try expectEqual(fixture["schema"] as? Int, 1, "skin-tone-variation-forgery schema")
+        try expectEqual(try string(fixture, "family"), "skin-tone-variation-forgery", "skin-tone-variation-forgery family")
+        for entry in try array(fixture, "cases") {
+            let name = try string(entry, "name")
+            let input = try intArray(entry, "input")
+            let required = try stringArray(entry, "required_findings")
+            if let tag = skinToneVariationForgeryDetect(input).classify.tag {
+                let code = skinToneVariationForgeryReasonCode(tag)
+                try expect(required.contains(code), "skin-tone-variation-forgery \(name): expected \(code) in \(required)")
+            } else {
+                try expect(required.isEmpty, "skin-tone-variation-forgery \(name): expected clear, got \(required)")
+            }
+        }
+
+        // ── detect spot checks (one per Rust/Lean theorem). ──────────────────
+        // detect_empty_clear
+        try expect(skinToneVariationForgeryDetect([]).classify.isClear, "skin-tone-variation-forgery empty clear")
+        // detect_ascii_clear — "He"
+        try expect(skinToneVariationForgeryDetect([0x48, 0x65]).classify.isClear, "skin-tone-variation-forgery ascii clear")
+        // detect_plain_emoji_clear — grinning face
+        try expect(skinToneVariationForgeryDetect([0x1F600]).classify.isClear, "skin-tone-variation-forgery plain emoji clear")
+        // detect_wave_skin_tone_clear — waving hand (a modifier base) + one skin tone.
+        let wave = skinToneVariationForgeryDetect([0x1F44B, 0x1F3FB])
+        try expect(wave.classify.isClear, "skin-tone-variation-forgery wave single tone clear")
+        try expectEqual(wave.skinToneCount, 1, "skin-tone-variation-forgery wave skin-tone count")
+        // detect_stacked_skin_tones — waving hand + two skin tones.
+        let stacked = skinToneVariationForgeryDetect([0x1F44B, 0x1F3FB, 0x1F3FC])
+        try expectEqual(stacked.classify.tag, "StackedSkinTones", "skin-tone-variation-forgery stacked tag")
+        try expectEqual(stacked.classify.positions, [1, 2], "skin-tone-variation-forgery stacked positions")
+        // detect_invalid_target_ascii — skin tone on ASCII 'A'.
+        let invalidAscii = skinToneVariationForgeryDetect([0x0041, 0x1F3FB])
+        try expectEqual(invalidAscii.classify.tag, "InvalidSkinToneTarget", "skin-tone-variation-forgery invalid ascii tag")
+        try expectEqual(invalidAscii.classify.positions, [1], "skin-tone-variation-forgery invalid ascii positions")
+        // detect_invalid_target_smiley — skin tone on grinning face (not a modifier base).
+        try expectEqual(
+            skinToneVariationForgeryDetect([0x1F600, 0x1F3FB]).classify.tag,
+            "InvalidSkinToneTarget", "skin-tone-variation-forgery invalid smiley tag")
+        // detect_forced_text_style — VS15 on grinning face (Emoji_Presentation).
+        let forced = skinToneVariationForgeryDetect([0x1F600, 0xFE0E])
+        try expectEqual(forced.classify.tag, "ForcedTextStyle", "skin-tone-variation-forgery forced text style tag")
+        try expectEqual(forced.variationSelector15Count, 1, "skin-tone-variation-forgery forced text style vs15 count")
+
+        // Reason-code shape for each sub-threat.
+        try expectEqual(
+            skinToneVariationForgeryReasonCode("StackedSkinTones"),
+            "unicode.security.I.skin-tone-variation-forgery.StackedSkinTones",
+            "skin-tone-variation-forgery stacked reason code")
+        try expectEqual(
+            skinToneVariationForgeryReasonCode("ForcedTextStyle"),
+            "unicode.security.I.skin-tone-variation-forgery.ForcedTextStyle",
+            "skin-tone-variation-forgery forced text style reason code")
     }
 
     // Pins the covert-display-compound detector against the detect_* spot-check

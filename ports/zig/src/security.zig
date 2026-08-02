@@ -4410,6 +4410,330 @@ pub const identifier_form_drift = struct {
 };
 
 // ─────────────────────────────────────────────────────────────────────
+// SkinToneVariationForgery detector (identity layer I), mirroring
+// Unicode.Security.Identity.SkinToneVariationForgery and its byte-faithful Rust
+// reference implementation.
+//
+// Threat model. Tier A₁. An adversary places a skin-tone modifier on a codepoint
+// that does NOT bear Emoji_Modifier_Base, stacks multiple skin-tones on one
+// base, or forces a text-style render on an emoji-default codepoint via U+FE0E
+// (VS15) — sometimes to hide a payload-bearing glyph in plain sight. Distinct
+// from VariationSelectorPayload (pair-aligned VS runs that decode to bytes): this
+// catches the orthogonal case of semantic VS / skin-tone misuse on a single base.
+//
+// It reuses the port's own emoji property tables — the skin-tone modifier set is
+// the emoji-zwj-integrity detector's own isEmojiModifier predicate (U+1F3FB..
+// U+1F3FF); Emoji_Modifier_Base and Emoji_Presentation are parsed from the port's
+// already-bundled data/emoji-data.txt, using the same property-row scan the
+// ai-watermark-detectability detector uses for its Emoji rows — never a host
+// emoji library, and no new data file.
+//
+// Sub-threats (priority order):
+//   1. StackedSkinTones      a base immediately followed by >= 2 skin-tone modifiers.
+//   2. InvalidSkinToneTarget a skin-tone modifier on a non-Emoji_Modifier_Base.
+//   3. ForcedTextStyle       U+FE0E on an Emoji_Presentation codepoint.
+// ─────────────────────────────────────────────────────────────────────
+
+pub const skin_tone_variation_forgery = struct {
+    /// Upper bound on the number of implicated positions a hazard can carry
+    /// before the bounded buffer saturates. This detector reports at most two
+    /// positions per hazard (a stacked skin-tone pair); the cap mirrors the
+    /// port's other bounded position buffers. Inputs that would exceed it
+    /// saturate silently, which cannot change a classification tag.
+    const MAX_POSITIONS: usize = 512;
+
+    /// Bounded position buffer — a hazard's implicated codepoint indices.
+    const PosBuffer = struct {
+        items: [MAX_POSITIONS]usize = undefined,
+        len: usize = 0,
+
+        fn append(self: *PosBuffer, p: usize) void {
+            if (self.len >= self.items.len) return;
+            self.items[self.len] = p;
+            self.len += 1;
+        }
+
+        fn slice(self: *const PosBuffer) []const usize {
+            return self.items[0..self.len];
+        }
+    };
+
+    // ── §1 Types ─────────────────────────────────────────────────────────
+
+    /// Sub-threat enumeration, in priority order.
+    pub const SubThreat = union(enum) {
+        /// A base at base_pos followed by >= 2 skin-tone modifiers; modifiers
+        /// carries the first two stacked skin-tone codepoints.
+        stacked_skin_tones: struct { base_pos: usize, modifiers: [2]u32 },
+        /// A skin-tone modifier_cp at base_pos + 1 on a non-modifier-base base_cp.
+        invalid_skin_tone_target: struct { base_pos: usize, base_cp: u32, modifier_cp: u32 },
+        /// A U+FE0E at base_pos + 1 forcing text style on an Emoji_Presentation
+        /// base_cp.
+        forced_text_style: struct { base_pos: usize, base_cp: u32 },
+
+        /// Human-facing classification tag for this sub-threat.
+        pub fn tag(self: SubThreat) []const u8 {
+            return switch (self) {
+                .stacked_skin_tones => "StackedSkinTones",
+                .invalid_skin_tone_target => "InvalidSkinToneTarget",
+                .forced_text_style => "ForcedTextStyle",
+            };
+        }
+
+        /// Fully-qualified reason code for this sub-threat, matching the shared
+        /// fixture's required_findings entry.
+        pub fn reasonCode(self: SubThreat) []const u8 {
+            return switch (self) {
+                .stacked_skin_tones => "unicode.security.I.skin-tone-variation-forgery.StackedSkinTones",
+                .invalid_skin_tone_target => "unicode.security.I.skin-tone-variation-forgery.InvalidSkinToneTarget",
+                .forced_text_style => "unicode.security.I.skin-tone-variation-forgery.ForcedTextStyle",
+            };
+        }
+    };
+
+    /// Top-level classification (clear = no skin-tone / variation-selector abuse).
+    pub const Classification = union(enum) {
+        /// No abuse pattern present.
+        clear,
+        /// An abuse pattern fired: the sub-threat, the implicated positions, and
+        /// the (always-empty for this detector) decoded-byte projection, kept for
+        /// shape parity with the Lean Classification.hazard.
+        hazard: struct { sub: SubThreat, positions: PosBuffer, decoded: []const u8 = &[_]u8{} },
+
+        /// True iff the classification is clear.
+        pub fn isClear(self: Classification) bool {
+            return switch (self) {
+                .clear => true,
+                .hazard => false,
+            };
+        }
+
+        /// Human-facing tag for a hazard, or null when clear.
+        pub fn tag(self: Classification) ?[]const u8 {
+            return switch (self) {
+                .clear => null,
+                .hazard => |h| h.sub.tag(),
+            };
+        }
+
+        /// Fully-qualified reason code for a hazard, or null when clear.
+        pub fn reasonCode(self: Classification) ?[]const u8 {
+            return switch (self) {
+                .clear => null,
+                .hazard => |h| h.sub.reasonCode(),
+            };
+        }
+
+        /// Implicated positions (empty when clear).
+        pub fn positions(self: *const Classification) []const usize {
+            switch (self.*) {
+                .clear => return &[_]usize{},
+                .hazard => return self.hazard.positions.slice(),
+            }
+        }
+    };
+
+    /// Verdict — the structured output of detect (mirrors the Lean Verdict).
+    pub const Verdict = struct {
+        /// The scanned input codepoints.
+        input: []const u32,
+        /// The classification verdict.
+        classify: Classification,
+        /// Count of skin-tone modifier codepoints.
+        skin_tone_count: usize,
+        /// Count of U+FE0E (VS15) codepoints.
+        variation_selector15_count: usize,
+        /// Count of U+FE0F (VS16) codepoints.
+        variation_selector16_count: usize,
+    };
+
+    // ── §2 Core predicates (reuse the port's own emoji tables) ───────────
+
+    /// The emoji-zwj-integrity detector's own skin-tone modifier predicate
+    /// (U+1F3FB..U+1F3FF), aliased here so the reuse is explicit.
+    const skinToneModifierPredicate = emoji_zwj_integrity.isEmojiModifier;
+
+    /// True iff cp lies in a closed interval of the bundled data/emoji-data.txt
+    /// carrying exactly the named property. Scans the embedded table on each
+    /// call, mirroring the ai-watermark-detectability detector's isEmoji scan;
+    /// never consults a host emoji library. Each non-comment row is
+    /// `<range> ; <property> # <comment>`; only rows whose property field equals
+    /// property exactly are considered.
+    fn hasEmojiProperty(property: []const u8, cp: u32) bool {
+        var offset: usize = 0;
+        while (nextLine(emoji_data_raw, &offset)) |raw_line| {
+            const body = if (std.mem.indexOfScalar(u8, raw_line, '#')) |idx| raw_line[0..idx] else raw_line;
+            const stripped = trimAscii(body);
+            if (stripped.len == 0) continue;
+            var fields = std.mem.splitScalar(u8, stripped, ';');
+            const range_field = fields.next() orelse continue;
+            const prop_field = fields.next() orelse continue;
+            if (!std.mem.eql(u8, trimAscii(prop_field), property)) continue;
+            const range = trimAscii(range_field);
+            if (std.mem.indexOf(u8, range, "..")) |dot_idx| {
+                const lo = parseHexU32(trimAscii(range[0..dot_idx])) orelse continue;
+                const hi = parseHexU32(trimAscii(range[dot_idx + 2 ..])) orelse continue;
+                if (lo <= cp and cp <= hi) return true;
+            } else {
+                const single = parseHexU32(range) orelse continue;
+                if (single == cp) return true;
+            }
+        }
+        return false;
+    }
+
+    /// True iff cp is an emoji skin-tone modifier (reuses the port's predicate).
+    pub fn isSkinTone(cp: u32) bool {
+        return skinToneModifierPredicate(cp);
+    }
+
+    /// True iff cp has Emoji_Modifier_Base per the bundled data/emoji-data.txt.
+    pub fn isSkinToneBase(cp: u32) bool {
+        return hasEmojiProperty("Emoji_Modifier_Base", cp);
+    }
+
+    /// True iff cp has Emoji_Presentation per the bundled data/emoji-data.txt.
+    pub fn isEmojiPresentation(cp: u32) bool {
+        return hasEmojiProperty("Emoji_Presentation", cp);
+    }
+
+    /// True iff cp is U+FE0E (VS15, text-style variation selector).
+    pub fn isVs15(cp: u32) bool {
+        return cp == 0xFE0E;
+    }
+
+    /// True iff cp is U+FE0F (VS16, emoji-style variation selector).
+    pub fn isVs16(cp: u32) bool {
+        return cp == 0xFE0F;
+    }
+
+    // ── §3 Sub-detectors ─────────────────────────────────────────────────
+
+    /// First position whose next two codepoints are both skin-tone modifiers,
+    /// as (base_pos, [mod1, mod2]).
+    const StackHit = struct { base_pos: usize, modifiers: [2]u32 };
+    fn firstStackedSkinTones(input: []const u32) ?StackHit {
+        for (input, 0..) |_, i| {
+            if (i + 2 < input.len) {
+                const m1 = input[i + 1];
+                const m2 = input[i + 2];
+                if (isSkinTone(m1) and isSkinTone(m2)) {
+                    return StackHit{ .base_pos = i, .modifiers = [2]u32{ m1, m2 } };
+                }
+            }
+        }
+        return null;
+    }
+
+    /// First skin-tone modifier whose preceding codepoint is NOT
+    /// Emoji_Modifier_Base, as (base_pos, base_cp, modifier_cp).
+    const InvalidHit = struct { base_pos: usize, base_cp: u32, modifier_cp: u32 };
+    fn firstInvalidSkinToneTarget(input: []const u32) ?InvalidHit {
+        for (input, 0..) |base_cp, i| {
+            if (i + 1 < input.len) {
+                const cp = input[i + 1];
+                if (isSkinTone(cp) and !isSkinToneBase(base_cp)) {
+                    return InvalidHit{ .base_pos = i, .base_cp = base_cp, .modifier_cp = cp };
+                }
+            }
+        }
+        return null;
+    }
+
+    /// First U+FE0E whose preceding codepoint has Emoji_Presentation, as
+    /// (base_pos, base_cp).
+    const ForcedHit = struct { base_pos: usize, base_cp: u32 };
+    fn firstForcedTextStyle(input: []const u32) ?ForcedHit {
+        for (input, 0..) |base_cp, i| {
+            if (i + 1 < input.len) {
+                const cp = input[i + 1];
+                if (isVs15(cp) and isEmojiPresentation(base_cp)) {
+                    return ForcedHit{ .base_pos = i, .base_cp = base_cp };
+                }
+            }
+        }
+        return null;
+    }
+
+    fn skinToneCount(input: []const u32) usize {
+        var count: usize = 0;
+        for (input) |cp| {
+            if (isSkinTone(cp)) count += 1;
+        }
+        return count;
+    }
+
+    fn vs15Count(input: []const u32) usize {
+        var count: usize = 0;
+        for (input) |cp| {
+            if (isVs15(cp)) count += 1;
+        }
+        return count;
+    }
+
+    fn vs16Count(input: []const u32) usize {
+        var count: usize = 0;
+        for (input) |cp| {
+            if (isVs16(cp)) count += 1;
+        }
+        return count;
+    }
+
+    // ── §4 Top-level detection ───────────────────────────────────────────
+
+    /// The SkinToneVariationForgery detection function.
+    pub fn detect(input: []const u32) @This().Verdict {
+        const stc = skinToneCount(input);
+        const v15 = vs15Count(input);
+        const v16 = vs16Count(input);
+
+        const classification: Classification = blk: {
+            // Priority 1: a base followed by two stacked skin tones.
+            if (firstStackedSkinTones(input)) |hit| {
+                var pos = PosBuffer{};
+                pos.append(hit.base_pos + 1);
+                pos.append(hit.base_pos + 2);
+                break :blk .{ .hazard = .{
+                    .sub = .{ .stacked_skin_tones = .{ .base_pos = hit.base_pos, .modifiers = hit.modifiers } },
+                    .positions = pos,
+                } };
+            }
+            // Priority 2: a skin tone on a non-modifier-base.
+            if (firstInvalidSkinToneTarget(input)) |hit| {
+                var pos = PosBuffer{};
+                pos.append(hit.base_pos + 1);
+                break :blk .{ .hazard = .{
+                    .sub = .{ .invalid_skin_tone_target = .{
+                        .base_pos = hit.base_pos,
+                        .base_cp = hit.base_cp,
+                        .modifier_cp = hit.modifier_cp,
+                    } },
+                    .positions = pos,
+                } };
+            }
+            // Priority 3: VS15 forcing text style on an emoji-presentation cp.
+            if (firstForcedTextStyle(input)) |hit| {
+                var pos = PosBuffer{};
+                pos.append(hit.base_pos + 1);
+                break :blk .{ .hazard = .{
+                    .sub = .{ .forced_text_style = .{ .base_pos = hit.base_pos, .base_cp = hit.base_cp } },
+                    .positions = pos,
+                } };
+            }
+            break :blk .{ .clear = {} };
+        };
+
+        return @This().Verdict{
+            .input = input,
+            .classify = classification,
+            .skin_tone_count = stc,
+            .variation_selector15_count = v15,
+            .variation_selector16_count = v16,
+        };
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────
 // Locale-case-inversion detector (Tier A2), mirroring
 // Unicode.Security.Form.LocaleCaseInversion.
 //
@@ -6268,4 +6592,128 @@ test "identifier-form-drift reports first shift position" {
     const v = Ifd.detect(&[_]u32{ 0x61, 0x62, 0x1D44E });
     try std.testing.expectEqualSlices(usize, &[_]usize{2}, v.classify.positions());
     try std.testing.expectEqual(@as(usize, 1), v.shift_count);
+}
+
+// ── skin-tone-variation-forgery (identity layer I) ────────────────────────
+
+const Stvf = skin_tone_variation_forgery;
+
+fn stvfTag(input: []const u32) ?[]const u8 {
+    return Stvf.detect(input).classify.tag();
+}
+
+fn stvfReason(input: []const u32) ?[]const u8 {
+    return Stvf.detect(input).classify.reasonCode();
+}
+
+fn expectStvfReason(input: []const u32, want: []const u8) !void {
+    const r = stvfReason(input);
+    try std.testing.expect(r != null);
+    try std.testing.expectEqualStrings(want, r.?);
+}
+
+test "skin-tone-variation-forgery predicate reuse" {
+    // The skin-tone modifier set is the emoji-zwj-integrity detector's own
+    // isEmojiModifier predicate (U+1F3FB..U+1F3FF); Emoji_Modifier_Base and
+    // Emoji_Presentation parse the port's already-bundled data/emoji-data.txt.
+    try std.testing.expect(Stvf.isSkinTone(0x1F3FB));
+    try std.testing.expect(Stvf.isSkinTone(0x1F3FF));
+    try std.testing.expect(!Stvf.isSkinTone(0x1F3FA));
+    try std.testing.expect(!Stvf.isSkinTone(0x1F600));
+    // Waving hand U+1F44B is Emoji_Modifier_Base; grinning face U+1F600 is not.
+    try std.testing.expect(Stvf.isSkinToneBase(0x1F44B));
+    try std.testing.expect(!Stvf.isSkinToneBase(0x1F600));
+    try std.testing.expect(!Stvf.isSkinToneBase(0x0041));
+    // Grinning face U+1F600 has Emoji_Presentation; ASCII 'A' does not.
+    try std.testing.expect(Stvf.isEmojiPresentation(0x1F600));
+    try std.testing.expect(!Stvf.isEmojiPresentation(0x0041));
+    // The variation selectors.
+    try std.testing.expect(Stvf.isVs15(0xFE0E));
+    try std.testing.expect(!Stvf.isVs15(0xFE0F));
+    try std.testing.expect(Stvf.isVs16(0xFE0F));
+    try std.testing.expect(!Stvf.isVs16(0xFE0E));
+}
+
+test "skin-tone-variation-forgery shared fixture vectors" {
+    // The 8 rows of the shared context-free fixture, inputs given as decimal
+    // codepoints. Clear rows assert isClear; hazard rows assert the fully
+    // qualified reason code from required_findings.
+
+    // empty-clear.
+    {
+        const v = Stvf.detect(&[_]u32{});
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expectEqual(@as(?[]const u8, null), v.classify.tag());
+        try std.testing.expectEqualSlices(usize, &[_]usize{}, v.classify.positions());
+    }
+    // ascii-clear (72,101 = "He").
+    try std.testing.expect(Stvf.detect(&[_]u32{ 72, 101 }).classify.isClear());
+    // plain-emoji-clear (128512 = U+1F600).
+    try std.testing.expect(Stvf.detect(&[_]u32{128512}).classify.isClear());
+    // wave-single-skin-tone-clear (128075,127995) — modifier base + one skin tone.
+    try std.testing.expect(Stvf.detect(&[_]u32{ 128075, 127995 }).classify.isClear());
+    // stacked-skin-tones (128075,127995,127996).
+    try expectStvfReason(&[_]u32{ 128075, 127995, 127996 }, "unicode.security.I.skin-tone-variation-forgery.StackedSkinTones");
+    // invalid-target-ascii (65,127995).
+    try expectStvfReason(&[_]u32{ 65, 127995 }, "unicode.security.I.skin-tone-variation-forgery.InvalidSkinToneTarget");
+    // invalid-target-smiley (128512,127995).
+    try expectStvfReason(&[_]u32{ 128512, 127995 }, "unicode.security.I.skin-tone-variation-forgery.InvalidSkinToneTarget");
+    // forced-text-style (128512,65038 = U+1F600,U+FE0E).
+    try expectStvfReason(&[_]u32{ 128512, 65038 }, "unicode.security.I.skin-tone-variation-forgery.ForcedTextStyle");
+}
+
+test "skin-tone-variation-forgery detect spot checks" {
+    // The Rust §5 detect spot checks (one per Lean theorem).
+
+    // detect_empty_clear.
+    try std.testing.expect(Stvf.detect(&[_]u32{}).classify.isClear());
+    // detect_ascii_clear — "He".
+    try std.testing.expect(Stvf.detect(&[_]u32{ 0x48, 0x65 }).classify.isClear());
+    // detect_plain_emoji_clear — grinning face.
+    try std.testing.expect(Stvf.detect(&[_]u32{0x1F600}).classify.isClear());
+    // detect_wave_skin_tone_clear — waving hand (a modifier base) + one skin tone.
+    {
+        const v = Stvf.detect(&[_]u32{ 0x1F44B, 0x1F3FB });
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expectEqual(@as(usize, 1), v.skin_tone_count);
+    }
+    // detect_stacked_skin_tones — waving hand + two skin tones.
+    {
+        const v = Stvf.detect(&[_]u32{ 0x1F44B, 0x1F3FB, 0x1F3FC });
+        try std.testing.expectEqualStrings("StackedSkinTones", v.classify.tag().?);
+        try std.testing.expectEqualSlices(usize, &[_]usize{ 1, 2 }, v.classify.positions());
+    }
+    // detect_invalid_target_ascii — skin tone on ASCII 'A'.
+    {
+        const v = Stvf.detect(&[_]u32{ 0x0041, 0x1F3FB });
+        try std.testing.expectEqualStrings("InvalidSkinToneTarget", v.classify.tag().?);
+        try std.testing.expectEqualSlices(usize, &[_]usize{1}, v.classify.positions());
+    }
+    // detect_invalid_target_smiley — skin tone on grinning face (not a modifier base).
+    try std.testing.expectEqualStrings("InvalidSkinToneTarget", stvfTag(&[_]u32{ 0x1F600, 0x1F3FB }).?);
+    // detect_forced_text_style — VS15 on grinning face (Emoji_Presentation).
+    {
+        const v = Stvf.detect(&[_]u32{ 0x1F600, 0xFE0E });
+        try std.testing.expectEqualStrings("ForcedTextStyle", v.classify.tag().?);
+        try std.testing.expectEqual(@as(usize, 1), v.variation_selector15_count);
+    }
+}
+
+test "skin-tone-variation-forgery priority and counts" {
+    // Stacked skin tones outrank the invalid-target and forced-text checks:
+    // U+1F600 (not a modifier base) + two skin tones fires StackedSkinTones,
+    // not InvalidSkinToneTarget, and reports positions [1,2].
+    {
+        const v = Stvf.detect(&[_]u32{ 0x1F600, 0x1F3FB, 0x1F3FC });
+        try std.testing.expectEqualStrings("StackedSkinTones", v.classify.tag().?);
+        try std.testing.expectEqualSlices(usize, &[_]usize{ 1, 2 }, v.classify.positions());
+        try std.testing.expectEqual(@as(usize, 2), v.skin_tone_count);
+    }
+    // VS16 (U+FE0F) is counted but never fires a hazard on its own.
+    {
+        const v = Stvf.detect(&[_]u32{ 0x1F600, 0xFE0F });
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expectEqual(@as(usize, 1), v.variation_selector16_count);
+        try std.testing.expectEqual(@as(usize, 0), v.variation_selector15_count);
+    }
 }

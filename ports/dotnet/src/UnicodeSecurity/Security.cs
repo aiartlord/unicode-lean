@@ -62,6 +62,7 @@ public static partial class Security
         public const string RendererDivergence = "renderer-divergence";
         public const string FilenameDisguise = "filename-disguise";
         public const string IdentifierFormDrift = "identifier-form-drift";
+        public const string SkinToneVariationForgery = "skin-tone-variation-forgery";
     }
 
     public sealed record Finding(
@@ -239,7 +240,8 @@ public static partial class Security
     private static string Layer(string family) =>
         family switch
         {
-            Family.HomoglyphConfusable or Family.MixedScriptAdmissibility or Family.EmojiZwjIntegrity => "I",
+            Family.HomoglyphConfusable or Family.MixedScriptAdmissibility or Family.EmojiZwjIntegrity
+                or Family.SkinToneVariationForgery => "I",
             Family.RtlInjection or Family.RendererDivergence or Family.FilenameDisguise => "D",
             Family.ConfusableBidiCompound or Family.CovertDisplayCompound or Family.IdentifierFormDrift => "X",
             Family.HashInputStability or Family.AiWatermarkDetectability => "K",

@@ -22,6 +22,7 @@ public final class SecurityContractTest {
     testHashInputStability();
     testAiWatermarkDetectability();
     testEmojiZwjIntegrity();
+    testSkinToneVariationForgery();
     testRendererDivergence();
     testFilenameDisguise();
     testIdentifierFormDrift();
@@ -649,6 +650,155 @@ public final class SecurityContractTest {
     specVectors++;
 
     System.out.println("clean: JVM emoji-zwj-integrity passes (" + fixtureCases
+        + " fixture cases + " + specVectors + " spec vectors)");
+  }
+
+  // Pins the identity-layer SkinToneVariationForgery detector against the verified
+  // Rust reference ports/rust/src/security/identity/skin_tone_variation_forgery.rs.
+  // Two sources of truth are exercised: (a) the shared context-free fixture
+  // detectors/skin_tone_variation_forgery.json, run through
+  // SkinToneVariationForgery.detect and checked against the fixture reason codes;
+  // (b) the detect spot-checks and priority-ladder structure checks transcribed
+  // one-for-one from the Rust test module. The skin-tone-modifier predicate reuses
+  // the port's own EmojiZwjIntegrity.isEmojiModifier (U+1F3FB..U+1F3FF); the
+  // Emoji_Modifier_Base and Emoji_Presentation property predicates parse the port's
+  // own SHA-pinned data/emoji-data.txt (the same file AiWatermarkDetectability
+  // reads its Emoji rows from), never a host emoji library.
+  private static void testSkinToneVariationForgery() throws IOException {
+    // (a) Shared context-free fixture through detect.
+    Map<String, Object> detector = fixture("detectors/skin_tone_variation_forgery.json");
+    assertEquals(1, intValue(detector.get("schema")), "skin-tone-variation-forgery schema");
+    assertEquals("skin-tone-variation-forgery", string(detector, "family"),
+        "skin-tone-variation-forgery family");
+    int fixtureCases = 0;
+    for (Map<String, Object> entry : objects(detector.get("cases"))) {
+      SkinToneVariationForgery.Verdict verdict =
+          SkinToneVariationForgery.detect(ints(entry.get("input")));
+      String code = SkinToneVariationForgery.reasonCode(verdict.classify());
+      List<String> required = strings(entry.get("required_findings"));
+      if (required.isEmpty()) {
+        assertEquals(null, code,
+            "skin-tone-variation-forgery " + string(entry, "name") + " should be clear");
+      } else {
+        assertEquals(1, required.size(),
+            "skin-tone-variation-forgery " + string(entry, "name") + " single finding");
+        assertEquals(required.get(0), code,
+            "skin-tone-variation-forgery " + string(entry, "name"));
+      }
+      fixtureCases++;
+    }
+
+    // (b) Predicate sanity, detect spot-checks, and priority-ladder structure
+    // checks transcribed one-for-one from the Rust test module.
+    int specVectors = 0;
+
+    // Predicate reuse: skin-tone modifier is the port's own EmojiZwjIntegrity set.
+    assertTrue(SkinToneVariationForgery.isSkinTone(0x1F3FB), "stvf skin-tone 1F3FB");
+    assertTrue(SkinToneVariationForgery.isSkinTone(0x1F3FF), "stvf skin-tone 1F3FF");
+    assertTrue(!SkinToneVariationForgery.isSkinTone(0x1F3FA), "stvf non-skin-tone 1F3FA");
+    // Emoji_Modifier_Base / Emoji_Presentation from bundled emoji-data.txt.
+    assertTrue(SkinToneVariationForgery.isSkinToneBase(0x1F44B), "stvf wave is modifier base");
+    assertTrue(!SkinToneVariationForgery.isSkinToneBase(0x0041), "stvf ascii not modifier base");
+    assertTrue(!SkinToneVariationForgery.isSkinToneBase(0x1F600), "stvf grinning not modifier base");
+    assertTrue(SkinToneVariationForgery.isEmojiPresentation(0x1F600), "stvf grinning emoji-presentation");
+    assertTrue(!SkinToneVariationForgery.isEmojiPresentation(0x0041), "stvf ascii not emoji-presentation");
+    assertTrue(SkinToneVariationForgery.isVs15(0xFE0E), "stvf vs15");
+    assertTrue(SkinToneVariationForgery.isVs16(0xFE0F), "stvf vs16");
+    specVectors++;
+
+    // detect_empty_clear
+    assertTrue(SkinToneVariationForgery.detect(intList(new int[] {})).classify().isClear(),
+        "stvf empty clear");
+    specVectors++;
+
+    // detect_ascii_clear — "He"
+    assertTrue(SkinToneVariationForgery.detect(intList(new int[] {0x48, 0x65})).classify().isClear(),
+        "stvf ascii clear");
+    specVectors++;
+
+    // detect_plain_emoji_clear — grinning face
+    assertTrue(SkinToneVariationForgery.detect(intList(new int[] {0x1F600})).classify().isClear(),
+        "stvf plain emoji clear");
+    specVectors++;
+
+    // detect_wave_skin_tone_clear — waving hand (a modifier base) + one skin tone.
+    SkinToneVariationForgery.Verdict wave =
+        SkinToneVariationForgery.detect(intList(new int[] {0x1F44B, 0x1F3FB}));
+    assertTrue(wave.classify().isClear(), "stvf wave one skin tone clear");
+    assertEquals(1, wave.skinToneCount(), "stvf wave skin-tone count");
+    specVectors++;
+
+    // detect_stacked_skin_tones — waving hand + two skin tones.
+    SkinToneVariationForgery.Verdict stacked =
+        SkinToneVariationForgery.detect(intList(new int[] {0x1F44B, 0x1F3FB, 0x1F3FC}));
+    assertEquals("StackedSkinTones", stacked.classify().tag(), "stvf stacked tag");
+    assertEquals(List.of(1, 2), stacked.classify().positions(), "stvf stacked positions");
+    SkinToneVariationForgery.Hazard stackedHz =
+        (SkinToneVariationForgery.Hazard) stacked.classify();
+    SkinToneVariationForgery.StackedSkinTones stackedSub =
+        (SkinToneVariationForgery.StackedSkinTones) stackedHz.sub();
+    assertEquals(0, stackedSub.basePos(), "stvf stacked basePos");
+    assertEquals(List.of(0x1F3FB, 0x1F3FC), stackedSub.modifiers(), "stvf stacked modifiers");
+    assertEquals(List.of(), stackedHz.decoded(), "stvf stacked decoded empty");
+    specVectors++;
+
+    // detect_invalid_target_ascii — skin tone on ASCII 'A'.
+    SkinToneVariationForgery.Verdict invalidAscii =
+        SkinToneVariationForgery.detect(intList(new int[] {0x0041, 0x1F3FB}));
+    assertEquals("InvalidSkinToneTarget", invalidAscii.classify().tag(), "stvf invalid ascii tag");
+    assertEquals(List.of(1), invalidAscii.classify().positions(), "stvf invalid ascii positions");
+    SkinToneVariationForgery.InvalidSkinToneTarget invalidSub =
+        (SkinToneVariationForgery.InvalidSkinToneTarget)
+            ((SkinToneVariationForgery.Hazard) invalidAscii.classify()).sub();
+    assertEquals(0, invalidSub.basePos(), "stvf invalid ascii basePos");
+    assertEquals(0x0041, invalidSub.baseCp(), "stvf invalid ascii baseCp");
+    assertEquals(0x1F3FB, invalidSub.modifierCp(), "stvf invalid ascii modifierCp");
+    specVectors++;
+
+    // detect_invalid_target_smiley — skin tone on grinning face (not a modifier base).
+    assertEquals("InvalidSkinToneTarget",
+        SkinToneVariationForgery.detect(intList(new int[] {0x1F600, 0x1F3FB})).classify().tag(),
+        "stvf invalid smiley tag");
+    specVectors++;
+
+    // detect_forced_text_style — VS15 on grinning face (Emoji_Presentation).
+    SkinToneVariationForgery.Verdict forced =
+        SkinToneVariationForgery.detect(intList(new int[] {0x1F600, 0xFE0E}));
+    assertEquals("ForcedTextStyle", forced.classify().tag(), "stvf forced text style tag");
+    assertEquals(List.of(1), forced.classify().positions(), "stvf forced text style positions");
+    assertEquals(1, forced.variationSelector15Count(), "stvf forced vs15 count");
+    SkinToneVariationForgery.ForcedTextStyle forcedSub =
+        (SkinToneVariationForgery.ForcedTextStyle)
+            ((SkinToneVariationForgery.Hazard) forced.classify()).sub();
+    assertEquals(0, forcedSub.basePos(), "stvf forced basePos");
+    assertEquals(0x1F600, forcedSub.baseCp(), "stvf forced baseCp");
+    specVectors++;
+
+    // Priority: stacked skin tones beats the invalid-target that the second skin
+    // tone would otherwise raise on a valid modifier base.
+    assertEquals("StackedSkinTones",
+        SkinToneVariationForgery.detect(intList(new int[] {0x1F44B, 0x1F3FB, 0x1F3FC})).classify().tag(),
+        "stvf stacked beats invalid");
+    specVectors++;
+
+    // The composed reason codes for each sub-threat.
+    assertEquals("unicode.security.I.skin-tone-variation-forgery.StackedSkinTones",
+        SkinToneVariationForgery.reasonCode(
+            new SkinToneVariationForgery.Hazard(
+                new SkinToneVariationForgery.StackedSkinTones(0, List.of(0x1F3FB, 0x1F3FC)),
+                List.of(1, 2), List.of())),
+        "stvf reason code stacked");
+    assertEquals("unicode.security.I.skin-tone-variation-forgery.ForcedTextStyle",
+        SkinToneVariationForgery.reasonCode(
+            new SkinToneVariationForgery.Hazard(
+                new SkinToneVariationForgery.ForcedTextStyle(0, 0x1F600),
+                List.of(1), List.of())),
+        "stvf reason code forced");
+    assertEquals(null, SkinToneVariationForgery.reasonCode(new SkinToneVariationForgery.Clear()),
+        "stvf reason code clear");
+    specVectors++;
+
+    System.out.println("clean: JVM skin-tone-variation-forgery passes (" + fixtureCases
         + " fixture cases + " + specVectors + " spec vectors)");
   }
 
