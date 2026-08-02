@@ -332,6 +332,7 @@ non_default_scan_detectors = {
     "emoji_zwj_integrity",
     "renderer_divergence",
     "filename_disguise",
+    "identifier_form_drift",
 }
 
 for detector_fixture in detector_fixtures:

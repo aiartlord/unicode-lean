@@ -8,3 +8,4 @@
 
 pub mod confusable_bidi_compound;
 pub mod covert_display_compound;
+pub mod identifier_form_drift;
