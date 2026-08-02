@@ -98,6 +98,7 @@ library
       Unicode.Segmentation.Grapheme
       Unicode.Segmentation.GraphemeTables
       Unicode.Security.Crypto.Bip39Canonical
+      Unicode.Security.Crypto.HashInputStability
       Unicode.Security.Form.LocaleCaseInversion
       Unicode.Security.Form.NfcIdempotenceWitness
       Unicode.Security.Form.NormalizationBomb
@@ -116,6 +117,7 @@ test-suite unicode-haskell-test
   main-is:          Spec.hs
   other-modules:
       Bip39CanonicalSpec
+      HashInputStabilitySpec
       BomSpec
       CasingSpec
       HangulSpec
