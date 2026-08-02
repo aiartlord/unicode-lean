@@ -2,7 +2,7 @@
 
 -export([reason_code/1, reason_code/2, scan/3, scan_utf8/3,
          scan_utf16be/3, scan_utf16le/3, scan_utf32be/3, scan_utf32le/3,
-         scan_default/2, scan_forms/3, scan_bip39/3,
+         scan_default/2, scan_forms/3, scan_bip39/3, scan_hash_input_stability/3,
          verdict_to_wire/1, verdict_to_json/1, finding_to_wire/1]).
 
 policy_of_profile(<<"gateway-header">>) -> #{level => restrictive, crypto => non_crypto, quarantine => false};
@@ -158,6 +158,15 @@ scan_bip39(Profile, Mode, Input) ->
             Sub -> push_finding([], bip39_canonical, hazard, Sub, maps:get(positions, B))
         end,
     verdict(Profile, Mode, Input, F, maps:get(canonical, B)).
+
+scan_hash_input_stability(Profile, Mode, Input) ->
+    V = usec_hash_input_stability:detect(Input),
+    C = maps:get(classify, V),
+    F = case usec_hash_input_stability:classify_tag(C) of
+            none -> [];
+            Sub -> push_finding([], hash_input_stability, hazard, Sub, usec_hash_input_stability:classify_positions(C))
+        end,
+    verdict(Profile, Mode, Input, F, null).
 
 push_detector(Findings, Family, D) ->
     push_finding(Findings, Family, maps:get(kind, D), maps:get(sub, D), maps:get(positions, D)).

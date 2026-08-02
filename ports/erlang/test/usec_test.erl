@@ -9,6 +9,7 @@ run() ->
     decode_contract(),
     multiencoding_contract(),
     form_and_bip39(),
+    hash_input_stability_tests(),
     opaque_blob_tests(),
     grapheme_tests(),
     io:format("ok: erlang unicode security tests pass~n").
@@ -90,6 +91,147 @@ opaque_blob_tests() ->
               validated_unwrap),
     assert_eq(none, usec_validated_utf8:validate([16#ED, 16#A0, 16#80]), validated_malformed),
     ok.
+
+%% Reason code the detect verdict would emit for a given input, or `none' when
+%% the input is clear. Mirrors how usec_policy:scan_hash_input_stability wires
+%% the classification tag into a finding code.
+his_code(Input) ->
+    C = maps:get(classify, usec_hash_input_stability:detect(Input)),
+    case usec_hash_input_stability:classify_tag(C) of
+        none -> none;
+        Tag -> usec_policy:reason_code(hash_input_stability, Tag)
+    end.
+
+%% Context-bearing detect: the classification tag under a given Context map.
+his_ctx_tag(Ctx, Input) ->
+    C = maps:get(classify, usec_hash_input_stability:detect_with_context(Ctx, Input)),
+    usec_hash_input_stability:classify_tag(C).
+
+%% Context-bearing detect: the implicated positions under a given Context map.
+his_ctx_positions(Ctx, Input) ->
+    C = maps:get(classify, usec_hash_input_stability:detect_with_context(Ctx, Input)),
+    usec_hash_input_stability:classify_positions(C).
+
+hash_input_stability_tests() ->
+    %% ── Shared context-free fixture, run through detect. ────────────────
+    F = fixture(filename:join("detectors", "hash_input_stability.json")),
+    assert_eq(<<"hash-input-stability">>, maps:get(<<"family">>, F), his_fixture_family),
+    lists:foreach(fun(Case) ->
+                          Input = maps:get(<<"input">>, Case),
+                          Label = {his_fixture, maps:get(<<"name">>, Case)},
+                          Required = maps:get(<<"required_findings">>, Case),
+                          Codes = case his_code(Input) of
+                                      none -> [];
+                                      Code -> [Code]
+                                  end,
+                          lists:foreach(fun(Req) -> assert(lists:member(Req, Codes), Label) end, Required),
+                          case Required of
+                              [] -> assert(Codes =:= [], Label);
+                              _ -> ok
+                          end
+                  end, maps:get(<<"cases">>, F)),
+
+    %% ── Context vectors transcribed verbatim from the rust #[test] comment
+    %%    block (ports/rust/src/security/crypto/hash_input_stability.rs). ──
+
+    %% declared_encoding = Some("utf-16"), [0x61,0x62,0x63] → EncodingMismatch, [0]
+    assert_eq(<<"EncodingMismatch">>, his_ctx_tag(#{declared_encoding => <<"utf-16">>}, [16#61, 16#62, 16#63]), his_enc_utf16),
+    assert_eq([0], his_ctx_positions(#{declared_encoding => <<"utf-16">>}, [16#61, 16#62, 16#63]), his_enc_utf16_pos),
+
+    %% declared_encoding = Some("utf-8"), [0x61,0xD800,0x62] → EncodingMismatch, [1] (invalid surrogate)
+    assert_eq(<<"EncodingMismatch">>, his_ctx_tag(#{declared_encoding => <<"utf-8">>}, [16#61, 16#D800, 16#62]), his_enc_surrogate),
+    assert_eq([1], his_ctx_positions(#{declared_encoding => <<"utf-8">>}, [16#61, 16#D800, 16#62]), his_enc_surrogate_pos),
+
+    %% declared_encoding = Some("utf-8"), [0x61,0x110000,0x62] → EncodingMismatch, [1] (out of range)
+    assert_eq(<<"EncodingMismatch">>, his_ctx_tag(#{declared_encoding => <<"utf-8">>}, [16#61, 16#110000, 16#62]), his_enc_oor),
+    assert_eq([1], his_ctx_positions(#{declared_encoding => <<"utf-8">>}, [16#61, 16#110000, 16#62]), his_enc_oor_pos),
+
+    %% declared_encoding = Some("UTF-8"|"utf-8"|"UTF8"|"utf8"), [0x61,0x62,0x63] → clear
+    lists:foreach(fun(Lbl) ->
+                          assert_eq(none, his_ctx_tag(#{declared_encoding => Lbl}, [16#61, 16#62, 16#63]), {his_enc_utf8_clear, Lbl})
+                  end, [<<"UTF-8">>, <<"utf-8">>, <<"UTF8">>, <<"utf8">>]),
+
+    %% rfc_rule = Pgp4880TrailingWhitespace, [0x61,0x20] → SignedMessageRule, [1]
+    assert_eq(<<"SignedMessageRule">>, his_ctx_tag(#{rfc_rule => pgp4880_trailing_whitespace}, [16#61, 16#20]), his_pgp4880),
+    assert_eq([1], his_ctx_positions(#{rfc_rule => pgp4880_trailing_whitespace}, [16#61, 16#20]), his_pgp4880_pos),
+
+    %% rfc_rule = Pgp9580LineEnding, [0x61,0x0A,0x62] → SignedMessageRule, [1] (bare LF)
+    assert_eq(<<"SignedMessageRule">>, his_ctx_tag(#{rfc_rule => pgp9580_line_ending}, [16#61, 16#0A, 16#62]), his_pgp9580_lf),
+    assert_eq([1], his_ctx_positions(#{rfc_rule => pgp9580_line_ending}, [16#61, 16#0A, 16#62]), his_pgp9580_lf_pos),
+
+    %% rfc_rule = Pgp9580LineEnding, [0x61,0x62,0x63,0x0D,0x0A,0x64,0x65,0x66] → clear (CRLF)
+    assert_eq(none, his_ctx_tag(#{rfc_rule => pgp9580_line_ending}, [16#61, 16#62, 16#63, 16#0D, 16#0A, 16#64, 16#65, 16#66]), his_pgp9580_crlf),
+
+    %% rfc_rule = Rfc8785NfcRequirement, [0x0065,0x0301] → SignedMessageRule, [0]
+    assert_eq(<<"SignedMessageRule">>, his_ctx_tag(#{rfc_rule => rfc8785_nfc_requirement}, [16#0065, 16#0301]), his_rfc8785),
+    assert_eq([0], his_ctx_positions(#{rfc_rule => rfc8785_nfc_requirement}, [16#0065, 16#0301]), his_rfc8785_pos),
+
+    %% rfc_rule = Rfc8259ControlChar, [0x61,0x01,0x62] → SignedMessageRule, [1]
+    assert_eq(<<"SignedMessageRule">>, his_ctx_tag(#{rfc_rule => rfc8259_control_char}, [16#61, 16#01, 16#62]), his_rfc8259),
+    assert_eq([1], his_ctx_positions(#{rfc_rule => rfc8259_control_char}, [16#61, 16#01, 16#62]), his_rfc8259_pos),
+
+    %% rfc_rule = Rfc7515JwsBase64Url, [0x41,0x2B,0x42] → SignedMessageRule, [1] ('+')
+    assert_eq(<<"SignedMessageRule">>, his_ctx_tag(#{rfc_rule => rfc7515_jws_base64_url}, [16#41, 16#2B, 16#42]), his_rfc7515),
+    assert_eq([1], his_ctx_positions(#{rfc_rule => rfc7515_jws_base64_url}, [16#41, 16#2B, 16#42]), his_rfc7515_pos),
+
+    %% rfc_rule = Rfc7515JwsBase64Url, [0x41,0x61,0x30,0x2D,0x5F,0x7A,0x5A,0x39] → clear
+    assert_eq(none, his_ctx_tag(#{rfc_rule => rfc7515_jws_base64_url}, [16#41, 16#61, 16#30, 16#2D, 16#5F, 16#7A, 16#5A, 16#39]), his_rfc7515_clear),
+
+    %% rfc_rule = Rfc6376DkimRelaxed, [0x61,0x20,0x20,0x62] → SignedMessageRule, [2]
+    assert_eq(<<"SignedMessageRule">>, his_ctx_tag(#{rfc_rule => rfc6376_dkim_relaxed}, [16#61, 16#20, 16#20, 16#62]), his_rfc6376),
+    assert_eq([2], his_ctx_positions(#{rfc_rule => rfc6376_dkim_relaxed}, [16#61, 16#20, 16#20, 16#62]), his_rfc6376_pos),
+
+    %% rfc_rule = Rfc6376DkimRelaxed, [0x61,0x20,0x62] → clear (single space)
+    assert_eq(none, his_ctx_tag(#{rfc_rule => rfc6376_dkim_relaxed}, [16#61, 16#20, 16#62]), his_rfc6376_clear),
+
+    %% rfc_rule = Rfc5751SmimeLineEnding, [0x61,0x0A,0x62] → SignedMessageRule, [1] (bare LF)
+    assert_eq(<<"SignedMessageRule">>, his_ctx_tag(#{rfc_rule => rfc5751_smime_line_ending}, [16#61, 16#0A, 16#62]), his_rfc5751),
+    assert_eq([1], his_ctx_positions(#{rfc_rule => rfc5751_smime_line_ending}, [16#61, 16#0A, 16#62]), his_rfc5751_pos),
+
+    %% as_written = Some([0x61,0x62,0x63]), input [0x61,0x62,0x64] → AuditLogReinterpretation, [2]
+    assert_eq(<<"AuditLogReinterpretation">>, his_ctx_tag(#{as_written => [16#61, 16#62, 16#63]}, [16#61, 16#62, 16#64]), his_audit),
+    assert_eq([2], his_ctx_positions(#{as_written => [16#61, 16#62, 16#63]}, [16#61, 16#62, 16#64]), his_audit_pos),
+
+    %% as_written = Some([0x61,0x62,0x63]), input [0x61,0x62,0x63] → clear
+    assert_eq(none, his_ctx_tag(#{as_written => [16#61, 16#62, 16#63]}, [16#61, 16#62, 16#63]), his_audit_clear),
+
+    %% server_bytes = Some([0x61,0x62,0x64]), input [0x61,0x62,0x63] → WebhookSignatureDrift, [2]
+    assert_eq(<<"WebhookSignatureDrift">>, his_ctx_tag(#{server_bytes => [16#61, 16#62, 16#64]}, [16#61, 16#62, 16#63]), his_webhook),
+    assert_eq([2], his_ctx_positions(#{server_bytes => [16#61, 16#62, 16#64]}, [16#61, 16#62, 16#63]), his_webhook_pos),
+
+    %% server_bytes = Some([0x61,0x62,0x63]), input [0x61,0x62,0x63] → clear
+    assert_eq(none, his_ctx_tag(#{server_bytes => [16#61, 16#62, 16#63]}, [16#61, 16#62, 16#63]), his_webhook_clear),
+
+    %% declared_encoding = Some("utf-16") + rfc_rule = Pgp9580LineEnding,
+    %%   [0x0065,0x0301,0x0A] → EncodingMismatch (priority over rfc)
+    assert_eq(<<"EncodingMismatch">>,
+              his_ctx_tag(#{declared_encoding => <<"utf-16">>, rfc_rule => pgp9580_line_ending}, [16#0065, 16#0301, 16#0A]),
+              his_priority_enc_over_rfc),
+
+    %% server_bytes = Some([0x61,0x62,0x65]) + as_written = Some([0x61,0x62,0x66]),
+    %%   input [0x61,0x62,0x63] → WebhookSignatureDrift (priority over audit)
+    assert_eq(<<"WebhookSignatureDrift">>,
+              his_ctx_tag(#{server_bytes => [16#61, 16#62, 16#65], as_written => [16#61, 16#62, 16#66]}, [16#61, 16#62, 16#63]),
+              his_priority_webhook_over_audit),
+
+    %% rfc_rule = Pgp4880TrailingWhitespace, [0x61,0x20] → SignedMessageRule (priority over trailing)
+    assert_eq(<<"SignedMessageRule">>, his_ctx_tag(#{rfc_rule => pgp4880_trailing_whitespace}, [16#61, 16#20]), his_priority_rfc_over_trailing),
+
+    %% ── Empty context equals bare detect. ───────────────────────────────
+    assert_eq(his_ctx_tag(#{}, [16#61, 16#62, 16#63]), classify_tag_of(usec_hash_input_stability:detect([16#61, 16#62, 16#63])), his_default_matches_detect),
+
+    %% ── RfcRule tag round-trip. ─────────────────────────────────────────
+    lists:foreach(fun(Rule) ->
+                          assert_eq(Rule, usec_hash_input_stability:from_tag(usec_hash_input_stability:tag(Rule)), {his_tag_roundtrip, Rule})
+                  end, [pgp4880_trailing_whitespace, pgp9580_line_ending, rfc8785_nfc_requirement,
+                        rfc8259_control_char, rfc7515_jws_base64_url, rfc6376_dkim_relaxed,
+                        rfc5751_smime_line_ending]),
+    assert_eq(none, usec_hash_input_stability:from_tag(<<"nope">>), his_tag_roundtrip_none),
+
+    io:format("  hash-input-stability: fixture + 21 context vectors pass~n").
+
+classify_tag_of(Verdict) ->
+    usec_hash_input_stability:classify_tag(maps:get(classify, Verdict)).
 
 fixture(Rel) ->
     {ok, Bin} = file:read_file(filename:join(["test", "fixtures", "security", Rel])),
