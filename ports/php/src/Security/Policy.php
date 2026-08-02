@@ -14,6 +14,7 @@ use UnicodePhp\Security\Covert\TagBlockPayload;
 use UnicodePhp\Security\Covert\VariationSelectorPayload;
 use UnicodePhp\Security\Covert\ZeroWidthPayload;
 use UnicodePhp\Security\Crypto\Bip39Canonical;
+use UnicodePhp\Security\Crypto\HashInputStability;
 use UnicodePhp\Security\Display\RtlInjection;
 use UnicodePhp\Security\Form\LocaleCaseInversion;
 use UnicodePhp\Security\Form\NfcIdempotenceWitness;
@@ -544,6 +545,17 @@ final class Policy
             self::pushFinding($findings, Family::Bip39Canonical, ClassificationKind::Hazard, $b->sub, $b->positions);
         }
         return new Verdict($input, $profile, $mode, self::selectAction($profile, $mode, $findings), $findings, $b->canonical);
+    }
+
+    /** @param list<int> $input */
+    public static function scanHashInput(Profile $profile, Mode $mode, array $input): Verdict
+    {
+        $h = HashInputStability::detect($input);
+        $findings = [];
+        if (!$h->classify->isClear()) {
+            self::pushFinding($findings, Family::HashInputStability, ClassificationKind::Hazard, $h->classify->tag(), $h->classify->positions());
+        }
+        return new Verdict($input, $profile, $mode, self::selectAction($profile, $mode, $findings), $findings, $h->stableForm);
     }
 
     /** @param list<int> $input */

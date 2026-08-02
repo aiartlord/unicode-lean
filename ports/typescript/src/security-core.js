@@ -1701,6 +1701,358 @@ export function bip39Detect(cps) {
   return { input: cps, classify, canonicalForm: canonical, wordCount: words.length };
 }
 
+// ── hash-input-stability: canonical hash-input form drift detection ──────────
+// Mirrors Unicode.Security.Crypto.HashInputStability (and the verified Rust
+// port src/security/crypto/hash_input_stability.rs). Per UTS #39 §6.1 +
+// RFC 4880/9580 + RFC 8785, an input hashed by a signer must be byte-identical
+// to the input hashed by the verifier; if the two ends pick different canonical
+// forms (NFC vs NFD, trim policy, line-ending convention) the resulting hashes
+// diverge silently while both sides believe they signed the same content.
+//
+// The canonical (hash-stable) form is trimTrailing(toNfc(input)), where
+// trimTrailing strips only ASCII whitespace {U+0020, U+0009, U+000A, U+000D};
+// Unicode whitespace (U+00A0, U+2000..U+200A, U+3000) is content and is not
+// stripped. NFC is the port's toNfcCodepoints, never a host normalizer.
+//
+// Six probes run in strict priority order (first hit wins):
+//   1. encodingMismatch         (context: declaredEncoding)
+//   2. webhookSignatureDrift     (context: serverBytes)
+//   3. auditLogReinterpretation  (context: asWritten)
+//   4. signedMessageRule         (context: rfcRule)
+//   5. trailingWhitespace        (bare input)
+//   6. normalizationDrift        (bare input)
+//   7. clear
+// Context-specific probes fire first because they carry more precise threat
+// information than the generic probes.
+
+// RFC canonicalisation profiles that the signedMessageRule probe checks
+// against. Each value is the fixture-string tag of the rule (RfcRule::tag in
+// the Rust port), so a rule and its tag are the same string.
+export const RfcRule = Object.freeze({
+  Pgp4880TrailingWhitespace: "pgp4880TrailingWhitespace",
+  Pgp9580LineEnding: "pgp9580LineEnding",
+  Rfc8785NfcRequirement: "rfc8785NfcRequirement",
+  Rfc8259ControlChar: "rfc8259ControlChar",
+  Rfc7515JwsBase64Url: "rfc7515JwsBase64Url",
+  Rfc6376DkimRelaxed: "rfc6376DkimRelaxed",
+  Rfc5751SmimeLineEnding: "rfc5751SmimeLineEnding",
+});
+
+const RFC_RULE_TAGS = Object.freeze(Object.values(RfcRule));
+
+// Fixture-string identifier for an RfcRule. Identity here, since each RfcRule
+// value already is its tag; kept for parity with the Rust RfcRule::tag API.
+export function rfcRuleTag(rule) {
+  return rule;
+}
+
+// Inverse of rfcRuleTag. Returns null for unrecognised strings.
+export function rfcRuleFromTag(tag) {
+  return RFC_RULE_TAGS.includes(tag) ? tag : null;
+}
+
+// Stable reason code for a hash-input-stability sub-threat (layer K).
+export function hashInputStabilityReasonCode(subThreatTag) {
+  return `unicode.security.K.hash-input-stability.${subThreatTag}`;
+}
+
+// True iff cp is an ASCII whitespace codepoint that line-oriented hash-input
+// protocols treat as framing rather than content: SPACE, TAB, LF, CR.
+function isHashAsciiWhitespace(cp) {
+  return cp === 0x0020 || cp === 0x0009 || cp === 0x000a || cp === 0x000d;
+}
+
+// Count of trailing ASCII-whitespace codepoints in input.
+function countTrailingAsciiWhitespace(input) {
+  let count = 0;
+  for (let i = input.length - 1; i >= 0; i -= 1) {
+    if (isHashAsciiWhitespace(input[i])) count += 1;
+    else break;
+  }
+  return count;
+}
+
+// Strip trailing ASCII whitespace.
+function trimTrailingAsciiWhitespace(input) {
+  return input.slice(0, input.length - countTrailingAsciiWhitespace(input));
+}
+
+// The hash-stable form of an input: NFC then trim, in spec order.
+export function hashStable(input) {
+  return trimTrailingAsciiWhitespace(toNfcCodepoints(input));
+}
+
+// Lower-case an ASCII letter (U+0041..U+005A -> U+0061..U+007A).
+function hashAsciiLower(cp) {
+  return cp >= 0x41 && cp <= 0x5a ? cp + 0x20 : cp;
+}
+
+// True iff label (after ASCII case-fold) names UTF-8: "utf-8", "UTF-8", "UTF8",
+// "utf8". Non-ASCII characters pass through unchanged.
+function isUtf8Label(label) {
+  let normalised = "";
+  for (const ch of label) {
+    normalised += String.fromCodePoint(hashAsciiLower(ch.codePointAt(0)));
+  }
+  return normalised === "utf-8" || normalised === "utf8";
+}
+
+// True iff cp is a valid Unicode scalar value: in [0, 0x10FFFF] and not a
+// surrogate [0xD800, 0xDFFF].
+function isValidScalar(cp) {
+  return cp <= 0x10ffff && !(cp >= 0xd800 && cp <= 0xdfff);
+}
+
+// First position in input holding a codepoint that is not a valid Unicode
+// scalar, or null if every codepoint is valid.
+function firstInvalidScalar(input) {
+  for (let i = 0; i < input.length; i += 1) {
+    if (!isValidScalar(input[i])) return i;
+  }
+  return null;
+}
+
+// Probe: encodingMismatch. Validity is dispatched first — an invalid scalar
+// fires with detectedEnc = "invalid" regardless of the declared label;
+// otherwise a non-UTF-8 label fires with detectedEnc = "utf-8" at position 0.
+function encodingMismatchProbe(declared, input) {
+  const invalid = firstInvalidScalar(input);
+  if (invalid !== null) {
+    return { declared, detected: "invalid", pos: invalid };
+  }
+  if (isUtf8Label(declared)) {
+    return null;
+  }
+  return { declared, detected: "utf-8", pos: 0 };
+}
+
+// Probe: signedMessageRule for pgp4880TrailingWhitespace. Same condition as
+// trailingWhitespace; returns the first position of the trailing run.
+function pgp4880Violation(input) {
+  const trailing = countTrailingAsciiWhitespace(input);
+  return trailing > 0 ? input.length - trailing : null;
+}
+
+// Probe: signedMessageRule for pgp9580LineEnding. First bare LF (U+000A not
+// preceded by CR) or bare CR (U+000D not followed by LF).
+function pgp9580Violation(input) {
+  for (let i = 0; i < input.length; i += 1) {
+    const cp = input[i];
+    if (cp === 0x000a) {
+      const precededByCr = i > 0 && input[i - 1] === 0x000d;
+      if (!precededByCr) return i;
+    } else if (cp === 0x000d) {
+      const followedByLf = i + 1 < input.length && input[i + 1] === 0x000a;
+      if (!followedByLf) return i;
+    }
+  }
+  return null;
+}
+
+// Probe: signedMessageRule for rfc8785NfcRequirement. Same condition as
+// normalizationDrift; returns the first NFC divergence position.
+function rfc8785Violation(input) {
+  const nfc = toNfcCodepoints(input);
+  return arraysEqual(input, nfc) ? null : firstArrayDivergence(input, nfc);
+}
+
+// Probe: signedMessageRule for rfc8259ControlChar. First C0 control
+// (U+0000..U+001F).
+function rfc8259Violation(input) {
+  for (let i = 0; i < input.length; i += 1) {
+    if (input[i] <= 0x1f) return i;
+  }
+  return null;
+}
+
+// True iff cp is in the JWS Base64URL alphabet [A-Za-z0-9_-].
+function isBase64Url(cp) {
+  return (
+    (cp >= 0x41 && cp <= 0x5a) ||
+    (cp >= 0x61 && cp <= 0x7a) ||
+    (cp >= 0x30 && cp <= 0x39) ||
+    cp === 0x2d ||
+    cp === 0x5f
+  );
+}
+
+// Probe: signedMessageRule for rfc7515JwsBase64Url. First codepoint outside
+// [A-Za-z0-9_-].
+function rfc7515Violation(input) {
+  for (let i = 0; i < input.length; i += 1) {
+    if (!isBase64Url(input[i])) return i;
+  }
+  return null;
+}
+
+// True iff cp is DKIM whitespace: U+0020 SPACE or U+0009 HTAB.
+function isDkimWhitespace(cp) {
+  return cp === 0x20 || cp === 0x09;
+}
+
+// Probe: signedMessageRule for rfc6376DkimRelaxed. Position of the second
+// whitespace codepoint in the first internal whitespace run longer than one.
+function rfc6376Violation(input) {
+  for (let i = 0; i < input.length; i += 1) {
+    if (isDkimWhitespace(input[i]) && i > 0 && isDkimWhitespace(input[i - 1])) {
+      return i;
+    }
+  }
+  return null;
+}
+
+// Probe: signedMessageRule for rfc5751SmimeLineEnding. Reuses the PGP 9580
+// bare-line-ending rule.
+function rfc5751Violation(input) {
+  return pgp9580Violation(input);
+}
+
+// Dispatch the RFC-rule probe. First violation position, or null if clean.
+function rfcRuleViolation(rule, input) {
+  switch (rule) {
+    case RfcRule.Pgp4880TrailingWhitespace:
+      return pgp4880Violation(input);
+    case RfcRule.Pgp9580LineEnding:
+      return pgp9580Violation(input);
+    case RfcRule.Rfc8785NfcRequirement:
+      return rfc8785Violation(input);
+    case RfcRule.Rfc8259ControlChar:
+      return rfc8259Violation(input);
+    case RfcRule.Rfc7515JwsBase64Url:
+      return rfc7515Violation(input);
+    case RfcRule.Rfc6376DkimRelaxed:
+      return rfc6376Violation(input);
+    case RfcRule.Rfc5751SmimeLineEnding:
+      return rfc5751Violation(input);
+    default:
+      return null;
+  }
+}
+
+// The priority resolver: first hit wins, in the spec's fixed order. Each
+// classify carries { isClear, tag, sub, positions }, where sub mirrors the
+// Rust SubThreat variant fields.
+function hashInputStabilityClassify(
+  encodingHit,
+  webhookHit,
+  auditHit,
+  rfcHit,
+  trailingCount,
+  inputLen,
+  nonNfcPos,
+) {
+  if (encodingHit !== null) {
+    return {
+      isClear: false,
+      tag: "EncodingMismatch",
+      sub: {
+        kind: "EncodingMismatch",
+        declaredEnc: encodingHit.declared,
+        detectedEnc: encodingHit.detected,
+      },
+      positions: [encodingHit.pos],
+    };
+  }
+  if (webhookHit !== null) {
+    return {
+      isClear: false,
+      tag: "WebhookSignatureDrift",
+      sub: { kind: "WebhookSignatureDrift", firstPos: webhookHit },
+      positions: [webhookHit],
+    };
+  }
+  if (auditHit !== null) {
+    return {
+      isClear: false,
+      tag: "AuditLogReinterpretation",
+      sub: { kind: "AuditLogReinterpretation", firstDivergentPos: auditHit },
+      positions: [auditHit],
+    };
+  }
+  if (rfcHit !== null) {
+    return {
+      isClear: false,
+      tag: "SignedMessageRule",
+      sub: { kind: "SignedMessageRule", rfcRule: rfcHit.rule, firstPos: rfcHit.pos },
+      positions: [rfcHit.pos],
+    };
+  }
+  if (trailingCount > 0) {
+    const p = inputLen - trailingCount;
+    return {
+      isClear: false,
+      tag: "TrailingWhitespace",
+      sub: { kind: "TrailingWhitespace", count: trailingCount },
+      positions: [p],
+    };
+  }
+  if (nonNfcPos !== null) {
+    return {
+      isClear: false,
+      tag: "NormalizationDrift",
+      sub: { kind: "NormalizationDrift", firstDivergentPos: nonNfcPos },
+      positions: [nonNfcPos],
+    };
+  }
+  return { isClear: true, tag: null, sub: null, positions: [] };
+}
+
+// The full hash-input-stability detection. Runs all six probes in priority
+// order, context-bearing probes ahead of the generic ones. ctx fields
+// (declaredEncoding, rfcRule, asWritten, serverBytes) are optional; the empty
+// context leaves the four context-bearing probes silent.
+export function hashInputStabilityDetectWithContext(ctx, input) {
+  const context = ctx ?? {};
+  const stable = hashStable(input);
+
+  // Probe 1: encodingMismatch.
+  const encodingHit =
+    context.declaredEncoding != null
+      ? encodingMismatchProbe(context.declaredEncoding, input)
+      : null;
+
+  // Probe 2: webhookSignatureDrift.
+  const webhookHit =
+    context.serverBytes != null ? firstArrayDivergence(input, context.serverBytes) : null;
+
+  // Probe 3: auditLogReinterpretation.
+  const auditHit =
+    context.asWritten != null ? firstArrayDivergence(context.asWritten, input) : null;
+
+  // Probe 4: signedMessageRule.
+  let rfcHit = null;
+  if (context.rfcRule != null) {
+    const pos = rfcRuleViolation(context.rfcRule, input);
+    if (pos !== null) rfcHit = { rule: context.rfcRule, pos };
+  }
+
+  // Probe 5: trailingWhitespace.
+  const trailingCount = countTrailingAsciiWhitespace(input);
+
+  // Probe 6: normalizationDrift.
+  const nfc = toNfcCodepoints(input);
+  const nonNfcPos = arraysEqual(input, nfc) ? null : firstArrayDivergence(input, nfc);
+
+  const classify = hashInputStabilityClassify(
+    encodingHit,
+    webhookHit,
+    auditHit,
+    rfcHit,
+    trailingCount,
+    input.length,
+    nonNfcPos,
+  );
+
+  return { input, classify, stableForm: stable, stableSize: stable.length };
+}
+
+// Convenience wrapper over hashInputStabilityDetectWithContext with the empty
+// context — equivalent to running only the two bare-input probes
+// (trailingWhitespace, normalizationDrift).
+export function hashInputStabilityDetect(input) {
+  return hashInputStabilityDetectWithContext({}, input);
+}
+
 function stringFromCodepoints(input) {
   let out = "";
   for (const cp of input) {

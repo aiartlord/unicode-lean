@@ -77,3 +77,55 @@ export declare class ValidatedUtf8 {
   asBytes(): number[];
   unwrap(): number[];
 }
+
+// ── hash-input-stability (layer K) ─────────────────────────────────────────
+
+export type RfcRule =
+  | "pgp4880TrailingWhitespace"
+  | "pgp9580LineEnding"
+  | "rfc8785NfcRequirement"
+  | "rfc8259ControlChar"
+  | "rfc7515JwsBase64Url"
+  | "rfc6376DkimRelaxed"
+  | "rfc5751SmimeLineEnding";
+
+export declare const RfcRule: Readonly<Record<string, RfcRule>>;
+export declare function rfcRuleTag(rule: RfcRule): RfcRule;
+export declare function rfcRuleFromTag(tag: string): RfcRule | null;
+export declare function hashInputStabilityReasonCode(subThreatTag: string): string;
+
+export type HashInputSubThreat =
+  | { kind: "NormalizationDrift"; firstDivergentPos: number }
+  | { kind: "TrailingWhitespace"; count: number }
+  | { kind: "EncodingMismatch"; declaredEnc: string; detectedEnc: string }
+  | { kind: "SignedMessageRule"; rfcRule: RfcRule; firstPos: number }
+  | { kind: "AuditLogReinterpretation"; firstDivergentPos: number }
+  | { kind: "WebhookSignatureDrift"; firstPos: number };
+
+export interface HashInputClassification {
+  isClear: boolean;
+  tag: string | null;
+  sub: HashInputSubThreat | null;
+  positions: number[];
+}
+
+export interface HashInputContext {
+  declaredEncoding?: string | null;
+  rfcRule?: RfcRule | null;
+  asWritten?: number[] | null;
+  serverBytes?: number[] | null;
+}
+
+export interface HashInputVerdict {
+  input: number[];
+  classify: HashInputClassification;
+  stableForm: number[];
+  stableSize: number;
+}
+
+export declare function hashStable(input: number[]): number[];
+export declare function hashInputStabilityDetect(input: number[]): HashInputVerdict;
+export declare function hashInputStabilityDetectWithContext(
+  ctx: HashInputContext,
+  input: number[],
+): HashInputVerdict;
