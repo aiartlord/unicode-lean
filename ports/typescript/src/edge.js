@@ -51,7 +51,7 @@ export async function instantiateSecurity(options = {}) {
     configureSecurityDataReader(options.reader);
   } else {
     const baseUrl = options.baseUrl ?? import.meta.url;
-    const [confusables, caseFolding, knownAttackTargets, standardizedVariants, emojiVariationSequences, derivedBidiClass, unicodeData, compositionExclusions, derivedCoreProperties, specialCasing, emojiData] = await Promise.all([
+    const [confusables, caseFolding, knownAttackTargets, standardizedVariants, emojiVariationSequences, derivedBidiClass, unicodeData, compositionExclusions, derivedCoreProperties, identifierStatus, specialCasing, emojiData] = await Promise.all([
       fetchText(new URL("./data/confusables.txt", baseUrl)),
       fetchText(new URL("./data/CaseFolding.txt", baseUrl)),
       fetchText(new URL("./data/KnownAttackTargets.txt", baseUrl)),
@@ -61,10 +61,11 @@ export async function instantiateSecurity(options = {}) {
       fetchText(new URL("./data/UnicodeData.txt", baseUrl)),
       fetchText(new URL("./data/CompositionExclusions.txt", baseUrl)),
       fetchText(new URL("./data/DerivedCoreProperties.txt", baseUrl)),
+      fetchText(new URL("./data/IdentifierStatus.txt", baseUrl)),
       fetchText(new URL("./data/SpecialCasing.txt", baseUrl)),
       fetchText(new URL("./data/emoji-data.txt", baseUrl)),
     ]);
-    configureSecurityData({ confusables, caseFolding, knownAttackTargets, standardizedVariants, emojiVariationSequences, derivedBidiClass, unicodeData, compositionExclusions, derivedCoreProperties, specialCasing, emojiData });
+    configureSecurityData({ confusables, caseFolding, knownAttackTargets, standardizedVariants, emojiVariationSequences, derivedBidiClass, unicodeData, compositionExclusions, derivedCoreProperties, identifierStatus, specialCasing, emojiData });
   }
 
   return {

@@ -49,6 +49,7 @@ export const Family = Object.freeze({
   CovertDisplayCompound: "covert-display-compound",
   RendererDivergence: "renderer-divergence",
   FilenameDisguise: "filename-disguise",
+  IdentifierFormDrift: "identifier-form-drift",
 });
 
 let confusablesMapCache;
@@ -66,6 +67,7 @@ let casedRangesCache;
 let softDottedRangesCache;
 let graphemeExtendRangesCache;
 let emojiRangesCache;
+let identifierAllowedRangesCache;
 let dataReader = null;
 
 export function configureSecurityDataReader(reader) {
@@ -88,6 +90,7 @@ export function configureSecurityDataReader(reader) {
   softDottedRangesCache = undefined;
   graphemeExtendRangesCache = undefined;
   emojiRangesCache = undefined;
+  identifierAllowedRangesCache = undefined;
   bip39WordlistCache = undefined;
   zwjSequencesCache = undefined;
   zwjRegisteredSetCache = undefined;
@@ -104,6 +107,7 @@ export function configureSecurityData(data) {
   const unicodeData = requiredSecurityData(data, "unicodeData");
   const compositionExclusions = requiredSecurityData(data, "compositionExclusions");
   const derivedCoreProperties = requiredSecurityData(data, "derivedCoreProperties");
+  const identifierStatus = String(data?.identifierStatus ?? "");
   const specialCasing = requiredSecurityData(data, "specialCasing");
   const emojiData = String(data?.emojiData ?? "");
   const emojiZwjSequences = String(data?.emojiZwjSequences ?? "");
@@ -134,6 +138,9 @@ export function configureSecurityData(data) {
     }
     if (name === "DerivedCoreProperties.txt") {
       return derivedCoreProperties;
+    }
+    if (name === "IdentifierStatus.txt") {
+      return identifierStatus;
     }
     if (name === "SpecialCasing.txt") {
       return specialCasing;
@@ -396,7 +403,11 @@ function layer(family) {
   ) {
     return "D";
   }
-  if (family === Family.ConfusableBidiCompound || family === Family.CovertDisplayCompound) {
+  if (
+    family === Family.ConfusableBidiCompound ||
+    family === Family.CovertDisplayCompound ||
+    family === Family.IdentifierFormDrift
+  ) {
     return "X";
   }
   return "C";
@@ -3354,6 +3365,136 @@ export function filenameDisguiseDetect(input) {
     bidiControlCount: bidiCount,
     fullwidthInExt: fwInExt,
     combiningInExt: extInExt,
+  };
+}
+
+// ── identifier-form-drift (boundary-layer detector X) ────────────────────────
+//
+// Mirrors Unicode.Security.Boundary.IdentifierFormDrift (and the verified Rust
+// reference implementation). Tier A₂ two-system bypass: an identity validator
+// and a form normalizer disagree about a codepoint. Stage A runs the UTS #39
+// Identifier_Status check before normalisation and rejects, say, U+1D44E
+// MATHEMATICAL ITALIC SMALL A (Restricted); stage B normalises first and then
+// runs the same check, seeing U+0061 'a' (Allowed) and accepting. The attacker
+// controls which stage processes the input and exploits the disagreement. The
+// same shape covers fullwidth (U+FF21), circled (U+24B6), ligature (U+FB01),
+// and Roman-numeral (U+2163) compatibility forms.
+//
+// The detector fires on the form transition itself — the first input position
+// whose Identifier_Status differs from the Identifier_Status of that codepoint's
+// NFKD head. It reuses this port's own UTS #39 Identifier_Status Allowed-set
+// predicate (isIdAllowed, from the vendored IdentifierStatus.txt) and this
+// port's own NFKD pipeline (toNfkdCodepoints), never a host normalization or
+// identifier library. Sole sub-threat: IdentifierStatusShift.
+//
+// Note on Hangul: precomposed syllables are Allowed while their NFKD-head jamos
+// are Restricted, so pure Korean text fires; callers intending to accept Korean
+// identifiers should apply NFC before evaluating admissibility.
+
+// UTS #39 General-Security-Profile Allowed set, parsed from IdentifierStatus.txt
+// (Field 0: code point / range, Field 1: Identifier_Status). Only the "Allowed"
+// rows are retained; every other codepoint is Restricted.
+function parseIdentifierAllowed() {
+  const out = [];
+  for (const rawLine of readDataFile("IdentifierStatus.txt").split("\n")) {
+    const line = rawLine.split("#", 1)[0].trim();
+    if (line === "") {
+      continue;
+    }
+    const parts = line.split(";");
+    if (parts.length < 2 || parts[1].trim() !== "Allowed") {
+      continue;
+    }
+    const field = parts[0].trim();
+    const dots = field.indexOf("..");
+    if (dots < 0) {
+      const cp = parseInt(field, 16);
+      out.push([cp, cp]);
+    } else {
+      out.push([parseInt(field.slice(0, dots), 16), parseInt(field.slice(dots + 2), 16)]);
+    }
+  }
+  return out;
+}
+
+// The port's own UTS #39 Identifier_Status = Allowed predicate.
+function isIdAllowed(cp) {
+  if (identifierAllowedRangesCache === undefined) {
+    identifierAllowedRangesCache = parseIdentifierAllowed();
+  }
+  return inRanges(identifierAllowedRangesCache, cp);
+}
+
+// Identifier_Status = Allowed of the first codepoint of cp's NFKD form, or cp's
+// own status when NFKD is empty (defensive — toNfkdCodepoints is total and
+// returns at least [cp]).
+function identifierFormDriftNfkdHeadAllowed(cp) {
+  const decomposed = toNfkdCodepoints([cp]);
+  if (decomposed.length === 0) {
+    return isIdAllowed(cp);
+  }
+  return isIdAllowed(decomposed[0]);
+}
+
+// First input position whose isIdAllowed differs from its NFKD-head's.
+function identifierFormDriftFirstStatusShift(cps) {
+  for (let idx = 0; idx < cps.length; idx += 1) {
+    const cp = cps[idx];
+    if (isIdAllowed(cp) !== identifierFormDriftNfkdHeadAllowed(cp)) {
+      return { pos: idx, cp };
+    }
+  }
+  return null;
+}
+
+// Total count of input positions where the per-cp status shifts under NFKD.
+function identifierFormDriftStatusShiftCount(cps) {
+  let count = 0;
+  for (const cp of cps) {
+    if (isIdAllowed(cp) !== identifierFormDriftNfkdHeadAllowed(cp)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+export function identifierFormDriftSubThreatTag(sub) {
+  switch (sub.kind) {
+    case "IdentifierStatusShift":
+      return "IdentifierStatusShift";
+    default:
+      throw new Error(`unreachable identifier-form-drift sub-threat kind: ${sub.kind}`);
+  }
+}
+
+// Stable reason code for an identifier-form-drift sub-threat (layer X).
+export function identifierFormDriftReasonCode(subThreatTag) {
+  return reasonCode(Family.IdentifierFormDrift, subThreatTag);
+}
+
+function identifierFormDriftClearClassify() {
+  return { isClear: true, tag: null, sub: null, positions: [] };
+}
+
+function identifierFormDriftHazardClassify(sub, positions) {
+  return { isClear: false, tag: identifierFormDriftSubThreatTag(sub), sub, positions };
+}
+
+// The IdentifierFormDrift detection function (mirrors the Lean/Rust detect).
+export function identifierFormDriftDetect(input) {
+  const cps = Array.from(input);
+  const shift = identifierFormDriftFirstStatusShift(cps);
+  const classify =
+    shift === null
+      ? identifierFormDriftClearClassify()
+      : identifierFormDriftHazardClassify(
+          { kind: "IdentifierStatusShift", basePos: shift.pos, cp: shift.cp },
+          [shift.pos],
+        );
+  return {
+    input: cps,
+    classify,
+    shiftCount: identifierFormDriftStatusShiftCount(cps),
   };
 }
 

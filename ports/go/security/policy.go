@@ -65,6 +65,7 @@ const (
 	FamilyEmojiZwjIntegrity      Family = "emoji-zwj-integrity"
 	FamilyRendererDivergence     Family = "renderer-divergence"
 	FamilyFilenameDisguise       Family = "filename-disguise"
+	FamilyIdentifierFormDrift    Family = "identifier-form-drift"
 )
 
 type ProfilePolicy struct {
@@ -501,7 +502,7 @@ func layer(family Family) string {
 		return "I"
 	case FamilyRtlInjection, FamilyRendererDivergence, FamilyFilenameDisguise:
 		return "D"
-	case FamilyConfusableBidiCompound, FamilyCovertDisplayCompound:
+	case FamilyConfusableBidiCompound, FamilyCovertDisplayCompound, FamilyIdentifierFormDrift:
 		return "X"
 	case FamilyStreamSafeViolation:
 		return "F"

@@ -8,6 +8,7 @@ use UnicodePhp\Noncharacters;
 use UnicodePhp\Utf8;
 use UnicodePhp\Security\Boundary\ConfusableBidiCompound;
 use UnicodePhp\Security\Boundary\CovertDisplayCompound;
+use UnicodePhp\Security\Boundary\IdentifierFormDrift;
 use UnicodePhp\Security\Covert\BidiControlBalance;
 use UnicodePhp\Security\Covert\SurrogateReassembly;
 use UnicodePhp\Security\Covert\TagBlockPayload;
@@ -603,6 +604,17 @@ final class Policy
         $findings = [];
         if (!$f->classify->isClear()) {
             self::pushFinding($findings, Family::FilenameDisguise, ClassificationKind::Hazard, $f->classify->tag(), $f->classify->positions());
+        }
+        return new Verdict($input, $profile, $mode, self::selectAction($profile, $mode, $findings), $findings, null);
+    }
+
+    /** @param list<int> $input */
+    public static function scanIdentifierFormDrift(Profile $profile, Mode $mode, array $input): Verdict
+    {
+        $d = IdentifierFormDrift::detect($input);
+        $findings = [];
+        if (!$d->classify->isClear()) {
+            self::pushFinding($findings, Family::IdentifierFormDrift, ClassificationKind::Hazard, $d->classify->tag(), $d->classify->positions());
         }
         return new Verdict($input, $profile, $mode, self::selectAction($profile, $mode, $findings), $findings, null);
     }

@@ -274,6 +274,33 @@ export declare function filenameDisguiseReasonCode(subThreatTag: string): string
 export declare function filenameDisguiseSubThreatTag(sub: FilenameDisguiseSubThreat): string;
 export declare function filenameDisguiseDetect(input: number[]): FilenameDisguiseVerdict;
 
+// ── identifier-form-drift (layer X) ──────────────────────────────────────────
+
+export type IdentifierFormDriftSubThreat = {
+  kind: "IdentifierStatusShift";
+  basePos: number;
+  cp: number;
+};
+
+export interface IdentifierFormDriftClassification {
+  isClear: boolean;
+  tag: string | null;
+  sub: IdentifierFormDriftSubThreat | null;
+  positions: number[];
+}
+
+export interface IdentifierFormDriftVerdict {
+  input: number[];
+  classify: IdentifierFormDriftClassification;
+  shiftCount: number;
+}
+
+export declare function identifierFormDriftReasonCode(subThreatTag: string): string;
+export declare function identifierFormDriftSubThreatTag(
+  sub: IdentifierFormDriftSubThreat,
+): string;
+export declare function identifierFormDriftDetect(input: number[]): IdentifierFormDriftVerdict;
+
 // ── stream-safe-violation (layer F) ─────────────────────────────────────────
 
 export declare const STREAM_SAFE_LIMIT: 30;

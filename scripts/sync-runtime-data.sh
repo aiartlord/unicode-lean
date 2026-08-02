@@ -201,6 +201,7 @@ homoglyph_files=(
 
 go_files=(
   "${homoglyph_files[@]}"
+  IdentifierStatus.txt
   UnicodeData.txt
   DerivedBidiClass.txt
   CompositionExclusions.txt
@@ -243,6 +244,7 @@ zig_files=(
 # DerivedBidiClass.txt.
 typescript_files=(
   "${homoglyph_files[@]}"
+  IdentifierStatus.txt
   DerivedBidiClass.txt
   UnicodeData.txt
   CompositionExclusions.txt
