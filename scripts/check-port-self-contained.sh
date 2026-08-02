@@ -47,7 +47,7 @@ require_file ports/python/src/unicode_python/data/StandardizedVariants.txt
 require_file ports/python/src/unicode_python/data/emoji-variation-sequences.txt
 reject_runtime_pattern \
   "python package" \
-  '(fixtures/security|/fixtures|ports/|Unicode/|"\.\./|'\''\.\./)' \
+  '(fixtures/security|/fixtures|ports/|Unicode/Ucd|"\.\./|'\''\.\./)' \
   ports/python/src/unicode_python/*.py \
   ports/python/src/unicode_python/security
 
@@ -118,7 +118,7 @@ require_file ports/jvm/testdata/fixtures/security/detectors/homoglyph_confusable
 require_file ports/jvm/testdata/fixtures/security/detectors/mixed_script_admissibility.json
 reject_runtime_pattern \
   "jvm runtime package" \
-  '(\.\./\.\./|fixtures/security|ports/|Unicode/|FileReader|Files\.read|Paths\.get)' \
+  '(\.\./\.\./|fixtures/security|ports/|Unicode/Ucd|FileReader|Files\.read|Paths\.get)' \
   ports/jvm/src/main/java
 
 echo "== go module =="
@@ -172,7 +172,7 @@ require_file ports/typescript/testdata/fixtures/security/detectors/homoglyph_con
 require_file ports/typescript/testdata/fixtures/security/detectors/mixed_script_admissibility.json
 reject_runtime_pattern \
   "typescript runtime package" \
-  '(\.\./\.\./|fixtures/security|ports/|Unicode/)' \
+  '(\.\./\.\./|fixtures/security|ports/|Unicode/Ucd)' \
   ports/typescript/src/*.js
 reject_runtime_pattern \
   "typescript edge package" \
@@ -198,7 +198,7 @@ grep -Fq '<None Include="../../Data/*.txt"' ports/dotnet/src/UnicodeSecurity/Uni
   || fail ".NET project does not include vendored package data"
 reject_runtime_pattern \
   "dotnet runtime package" \
-  '(\.\./\.\./|fixtures/security|ports/|Unicode/)' \
+  '(\.\./\.\./|fixtures/security|ports/|Unicode/Ucd)' \
   ports/dotnet/src/UnicodeSecurity/Security.cs
 
 echo "== swift package =="
@@ -217,7 +217,7 @@ require_file ports/swift/ContractTests/Resources/fixtures/security/detectors/hom
 require_file ports/swift/ContractTests/Resources/fixtures/security/detectors/mixed_script_admissibility.json
 reject_runtime_pattern \
   "swift runtime package" \
-  '(\.\./\.\./|fixtures/security|ports/|Unicode/|FileManager\.default\.currentDirectoryPath)' \
+  '(\.\./\.\./|fixtures/security|ports/|Unicode/Ucd|FileManager\.default\.currentDirectoryPath)' \
   ports/swift/Sources/UnicodeSecurity/UnicodeSecurity.swift
 
 echo "== zig package =="
@@ -253,5 +253,71 @@ reject_runtime_pattern \
   "zig build/test package" \
   '\.\./\.\./fixtures/security' \
   ports/zig/build.zig
+
+echo "== ruby gem =="
+require_file ports/ruby/lib/unicode_ruby.rb
+require_file ports/ruby/data/confusables.txt
+require_file ports/ruby/data/CaseFolding.txt
+require_file ports/ruby/data/KnownAttackTargets.txt
+require_file ports/ruby/data/SHA256SUMS
+reject_runtime_pattern \
+  "ruby gem" \
+  '(fixtures/security|Unicode/Ucd|Unicode/Generated)' \
+  ports/ruby/lib/unicode_ruby
+
+echo "== php package =="
+require_file ports/php/src/autoload.php
+require_file ports/php/data/confusables.txt
+require_file ports/php/data/CaseFolding.txt
+require_file ports/php/data/KnownAttackTargets.txt
+require_file ports/php/data/SHA256SUMS
+reject_runtime_pattern \
+  "php package" \
+  '(fixtures/security|Unicode/Ucd|Unicode/Generated)' \
+  ports/php/src
+
+echo "== lua rock =="
+require_file ports/lua/src/unicode_lua/datapath.lua
+require_file ports/lua/data/confusables.txt
+require_file ports/lua/data/CaseFolding.txt
+require_file ports/lua/data/KnownAttackTargets.txt
+require_file ports/lua/data/SHA256SUMS
+reject_runtime_pattern \
+  "lua rock" \
+  '(fixtures/security|Unicode/Ucd|Unicode/Generated)' \
+  ports/lua/src/unicode_lua
+
+echo "== elixir package =="
+require_file ports/elixir/mix.exs
+require_file ports/elixir/priv/data/confusables.txt
+require_file ports/elixir/priv/data/CaseFolding.txt
+require_file ports/elixir/priv/data/KnownAttackTargets.txt
+require_file ports/elixir/priv/data/SHA256SUMS
+reject_runtime_pattern \
+  "elixir package" \
+  '(fixtures/security|Unicode/Ucd|Unicode/Generated)' \
+  ports/elixir/lib/unicode_security
+
+echo "== erlang application =="
+require_file ports/erlang/src/usec_utf8.erl
+require_file ports/erlang/priv/data/confusables.txt
+require_file ports/erlang/priv/data/CaseFolding.txt
+require_file ports/erlang/priv/data/KnownAttackTargets.txt
+require_file ports/erlang/priv/data/SHA256SUMS
+reject_runtime_pattern \
+  "erlang application" \
+  '(fixtures/security|Unicode/Ucd|Unicode/Generated)' \
+  ports/erlang/src
+
+echo "== cobol program =="
+require_file ports/cobol/src/usec.cob
+require_file ports/cobol/data/confusables.txt
+require_file ports/cobol/data/CaseFolding.txt
+require_file ports/cobol/data/KnownAttackTargets.txt
+require_file ports/cobol/data/SHA256SUMS
+reject_runtime_pattern \
+  "cobol program" \
+  '(fixtures/security|Unicode/Ucd|Unicode/Generated)' \
+  ports/cobol/src
 
 echo "clean: runtime ports are self-contained"
