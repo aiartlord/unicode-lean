@@ -336,6 +336,7 @@ non_default_scan_detectors = {
     "skin_tone_variation_forgery",
     "case_expansion_mismatch",
     "admissibility_form_drift",
+    "source_display_divergence",
 }
 
 for detector_fixture in detector_fixtures:
