@@ -560,6 +560,64 @@ def check_identifier_form_drift():
     return len(fixture["cases"]), len(spot), 1
 
 
+STV_BASE = "unicode.security.I.skin-tone-variation-forgery."
+
+
+def run_stv(values):
+    return run("skin-tone-variation-forgery", "gateway-header", "observe", values)
+
+
+def check_skin_tone_variation_forgery():
+    # 1. The 8 shared context-free fixture vectors.
+    fixture = load("detectors/skin_tone_variation_forgery.json")
+    for case in fixture["cases"]:
+        got = run_stv(case["input"])
+        for code in case["required_findings"]:
+            require(code in got["codes"],
+                    f"stv/{case['name']} missing {code}; got {got['codes']}")
+        if not case["required_findings"]:
+            require(all(".skin-tone-variation-forgery." not in code for code in got["codes"]),
+                    f"stv/{case['name']} unexpected finding; got {got['codes']}")
+
+    # 2. Spot-checks transcribed verbatim from the Rust reference's `#[test]`
+    #    module: empty / "He" ASCII / plain grinning-face U+1F600 / waving-hand
+    #    (a modifier base) + one skin tone all clear; waving-hand + two skin tones
+    #    -> StackedSkinTones at [1,2]; ASCII 'A' + skin tone and grinning-face +
+    #    skin tone -> InvalidSkinToneTarget (a non-modifier-base target) at [1];
+    #    grinning-face + U+FE0E -> ForcedTextStyle at [1]. tag = suffix or None
+    #    for Clear; pos = expected positions or None to skip.
+    spot = [
+        ("empty", [], None, None),
+        ("he-ascii", [0x48, 0x65], None, None),
+        ("plain-emoji", [0x1F600], None, None),
+        ("wave-single-tone", [0x1F44B, 0x1F3FB], None, None),
+        ("stacked", [0x1F44B, 0x1F3FB, 0x1F3FC], "StackedSkinTones", [1, 2]),
+        ("invalid-target-ascii", [0x0041, 0x1F3FB], "InvalidSkinToneTarget", [1]),
+        ("invalid-target-smiley", [0x1F600, 0x1F3FB], "InvalidSkinToneTarget", None),
+        ("forced-text-style", [0x1F600, 0xFE0E], "ForcedTextStyle", [1]),
+    ]
+    for name, values, tag, expected_pos in spot:
+        got = run_stv(values)
+        stv_codes = [c for c in got["codes"] if ".skin-tone-variation-forgery." in c]
+        if tag is None:
+            require(not stv_codes, f"stv-spot/{name} expected clear; got {stv_codes}")
+        else:
+            code = STV_BASE + tag
+            require(code in got["codes"], f"stv-spot/{name} missing {code}; got {got['codes']}")
+            if expected_pos is not None:
+                require(got["positions"].get(code) == expected_pos,
+                        f"stv-spot/{name} positions {got['positions'].get(code)} != {expected_pos}")
+
+    # 3. One structural check on the priority order: stacked skin tones outrank
+    #    an invalid-target pair present later. Waving-hand (a valid modifier base)
+    #    + two skin tones, then ASCII 'A' + a skin tone; StackedSkinTones wins.
+    beats = run_stv([0x1F44B, 0x1F3FB, 0x1F3FC, 0x0041, 0x1F3FB])
+    require(STV_BASE + "StackedSkinTones" in beats["codes"],
+            f"stv-struct/stacked-beats-invalid missing StackedSkinTones; got {beats['codes']}")
+
+    return len(fixture["cases"]), len(spot), 1
+
+
 def check_forms_and_bip39():
     cases = [
         ("forms", [], []),
@@ -771,6 +829,7 @@ def main():
     rd_fixture_count, rd_spot_count, rd_struct_count = check_renderer_divergence()
     fd_fixture_count, fd_spot_count, fd_struct_count = check_filename_disguise()
     ifd_fixture_count, ifd_spot_count, ifd_struct_count = check_identifier_form_drift()
+    stv_fixture_count, stv_spot_count, stv_struct_count = check_skin_tone_variation_forgery()
     check_forms_and_bip39()
     ss_count = check_stream_safe_violation()
     check_generated_tables()
@@ -797,6 +856,9 @@ def main():
     print(f"identifier-form-drift shared-fixture vectors: {ifd_fixture_count}")
     print(f"identifier-form-drift spot-checks: {ifd_spot_count}")
     print(f"identifier-form-drift structural checks: {ifd_struct_count}")
+    print(f"skin-tone-variation-forgery shared-fixture vectors: {stv_fixture_count}")
+    print(f"skin-tone-variation-forgery spot-checks: {stv_spot_count}")
+    print(f"skin-tone-variation-forgery structural checks: {stv_struct_count}")
     print("ok: cobol unicode security fixture tests pass")
 
 

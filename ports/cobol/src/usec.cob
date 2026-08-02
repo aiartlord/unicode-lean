@@ -175,6 +175,8 @@ WORKING-STORAGE SECTION.
 01 SS-FIRED PIC 9 VALUE 0.
 *> ── ai-watermark-detectability (K) marker tables + context ────────────
 01 IS-EMOJI-FLAG PIC 9 COMP-5 VALUE 0.
+01 IS-SKIN-BASE-FLAG PIC 9 COMP-5 VALUE 0.
+01 IS-EMOJI-PRES-FLAG PIC 9 COMP-5 VALUE 0.
 01 AW-ZWSP-TOL PIC 9(5) COMP-5 VALUE 0.
 01 AW-ADV-TOL PIC 9(5) COMP-5 VALUE 0.
 01 AWD-DONE PIC 9 VALUE 0.
@@ -278,6 +280,18 @@ WORKING-STORAGE SECTION.
 01 IFD-CUR-CP PIC 9(9) COMP-5 VALUE 0.
 01 IFD-CP-ALLOWED PIC 9 VALUE 0.
 01 IFD-HEAD-ALLOWED PIC 9 VALUE 0.
+*> ── skin-tone-variation-forgery (I) modifier/VS-abuse ladder state ────
+*> The priority-ordered classification (0 clear, 1 StackedSkinTones,
+*> 2 InvalidSkinToneTarget, 3 ForcedTextStyle), the base position of the
+*> firing pair (0-indexed), and the single implicated position for the two
+*> single-position sub-threats. STV-MOD1/STV-MOD2 hold the two stacked
+*> skin-tone modifiers so the multi-position emit reports [base+1, base+2].
+01 STV-CLASS PIC 9 VALUE 0.
+01 STV-DONE PIC 9 VALUE 0.
+01 STV-BASE-POS PIC 9(9) COMP-5 VALUE 0.
+01 STV-POS PIC 9(9) COMP-5 VALUE 0.
+01 STV-MOD1 PIC 9(9) COMP-5 VALUE 0.
+01 STV-MOD2 PIC 9(9) COMP-5 VALUE 0.
 01 VOCAB-RAW.
    05 FILLER PIC X(26) VALUE "05delve                   ".
    05 FILLER PIC X(26) VALUE "07delving                 ".
@@ -408,7 +422,11 @@ MAIN.
                                                 IF OP-NAME = "identifier-form-drift"
                                                     PERFORM SCAN-IDENTIFIER-FORM-DRIFT
                                                 ELSE
-                                                    PERFORM SCAN-CORE
+                                                    IF OP-NAME = "skin-tone-variation-forgery"
+                                                        PERFORM SCAN-SKIN-TONE-VARIATION-FORGERY
+                                                    ELSE
+                                                        PERFORM SCAN-CORE
+                                                    END-IF
                                                 END-IF
                                             END-IF
                                         END-IF
@@ -1948,6 +1966,20 @@ IS-EMOJI.
     MOVE 0 TO IS-EMOJI-FLAG
     COPY "src/generated/is_emoji.cpy".
 
+IS-SKIN-TONE-BASE.
+*> Emoji_Modifier_Base of LOOKUP-CP, parsed from the port's own bundled
+*> emoji-data.txt into is_emoji_modifier_base.cpy — the set of codepoints that
+*> legitimately accept a skin-tone modifier.
+    MOVE 0 TO IS-SKIN-BASE-FLAG
+    COPY "src/generated/is_emoji_modifier_base.cpy".
+
+IS-EMOJI-PRESENTATION.
+*> Emoji_Presentation of LOOKUP-CP, parsed from the port's own bundled
+*> emoji-data.txt into is_emoji_presentation.cpy — the codepoints that render
+*> emoji-style by default and can therefore be forced to text style by U+FE0E.
+    MOVE 0 TO IS-EMOJI-PRES-FLAG
+    COPY "src/generated/is_emoji_presentation.cpy".
+
 SCAN-STREAM-SAFE.
 *> UAX #15 §13 Stream-Safe Text Format: a codepoint is a non-starter iff
 *> its Canonical_Combining_Class is non-zero (D49). Fire StreamSafeOverrun
@@ -2530,6 +2562,132 @@ IFD-EMIT-ONE.
     ADD 1 TO FINDING-COUNT
     MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
     MOVE FUNCTION TRIM(POS-NUM) TO FINDING-POS(FINDING-COUNT).
+
+SCAN-SKIN-TONE-VARIATION-FORGERY.
+*> UTS #51 SkinToneVariationForgery (identity-layer detector). Byte-faithful
+*> transliteration of the verified Rust reference `detect`: skin-tone-modifier
+*> and variation-selector abuse on emoji bases. An adversary places a skin-tone
+*> modifier on a codepoint that does not bear Emoji_Modifier_Base, stacks two
+*> skin tones on one base, or forces a text-style render on an emoji-default
+*> codepoint via U+FE0E. The first trigger that holds classifies the input; the
+*> priority ladder is StackedSkinTones -> InvalidSkinToneTarget -> ForcedTextStyle,
+*> else Clear. It reuses the port's own predicates only — the skin-tone modifier
+*> block U+1F3FB..U+1F3FF shared with the emoji-zwj scan, and the Emoji_Modifier_Base
+*> plus Emoji_Presentation sets parsed from the port's own bundled emoji-data.txt;
+*> never a host emoji library.
+    MOVE 0 TO STV-CLASS STV-DONE STV-BASE-POS STV-POS STV-MOD1 STV-MOD2
+*> Priority 1: a base immediately followed by two stacked skin-tone modifiers.
+    PERFORM STV-CHECK-STACKED
+*> Priority 2: a skin-tone modifier on a non-Emoji_Modifier_Base codepoint.
+    IF STV-DONE = 0
+        PERFORM STV-CHECK-INVALID-TARGET
+    END-IF
+*> Priority 3: U+FE0E (VS15) forcing text style on an Emoji_Presentation codepoint.
+    IF STV-DONE = 0
+        PERFORM STV-CHECK-FORCED-TEXT
+    END-IF
+    PERFORM STV-EMIT.
+
+STV-CHECK-STACKED.
+*> First position whose next two codepoints are both skin-tone modifiers
+*> (U+1F3FB..U+1F3FF); reports its 0-indexed base position and the two modifiers.
+    MOVE 1 TO IDX
+    PERFORM UNTIL IDX > CP-COUNT OR STV-DONE = 1
+        IF IDX + 2 <= CP-COUNT
+            IF (CP(IDX + 1) >= 127995 AND CP(IDX + 1) <= 127999)
+                AND (CP(IDX + 2) >= 127995 AND CP(IDX + 2) <= 127999)
+                COMPUTE STV-BASE-POS = IDX - 1
+                MOVE CP(IDX + 1) TO STV-MOD1
+                MOVE CP(IDX + 2) TO STV-MOD2
+                MOVE 1 TO STV-CLASS
+                MOVE 1 TO STV-DONE
+            END-IF
+        END-IF
+        ADD 1 TO IDX
+    END-PERFORM.
+
+STV-CHECK-INVALID-TARGET.
+*> First pair (i, i+1) whose i+1 is a skin-tone modifier and whose base i does
+*> NOT bear Emoji_Modifier_Base; the implicated position is the modifier's (i+1).
+    MOVE 1 TO IDX
+    PERFORM UNTIL IDX > CP-COUNT OR STV-DONE = 1
+        IF IDX + 1 <= CP-COUNT
+            IF CP(IDX + 1) >= 127995 AND CP(IDX + 1) <= 127999
+                MOVE CP(IDX) TO LOOKUP-CP
+                PERFORM IS-SKIN-TONE-BASE
+                IF IS-SKIN-BASE-FLAG = 0
+                    COMPUTE STV-BASE-POS = IDX - 1
+                    MOVE 2 TO STV-CLASS
+                    MOVE IDX TO STV-POS
+                    MOVE 1 TO STV-DONE
+                END-IF
+            END-IF
+        END-IF
+        ADD 1 TO IDX
+    END-PERFORM.
+
+STV-CHECK-FORCED-TEXT.
+*> First pair (i, i+1) whose i+1 is U+FE0E (VS15) and whose base i has
+*> Emoji_Presentation; the implicated position is the selector's (i+1).
+    MOVE 1 TO IDX
+    PERFORM UNTIL IDX > CP-COUNT OR STV-DONE = 1
+        IF IDX + 1 <= CP-COUNT
+            IF CP(IDX + 1) = 65038
+                MOVE CP(IDX) TO LOOKUP-CP
+                PERFORM IS-EMOJI-PRESENTATION
+                IF IS-EMOJI-PRES-FLAG = 1
+                    COMPUTE STV-BASE-POS = IDX - 1
+                    MOVE 3 TO STV-CLASS
+                    MOVE IDX TO STV-POS
+                    MOVE 1 TO STV-DONE
+                END-IF
+            END-IF
+        END-IF
+        ADD 1 TO IDX
+    END-PERFORM.
+
+STV-EMIT.
+*> Emit the reason code for the classification. Every reachable value 0..3 has
+*> an explicit arm; WHEN OTHER is unreachable and signals a defect rather than
+*> silently falling through.
+    EVALUATE STV-CLASS
+        WHEN 0
+            CONTINUE
+        WHEN 1
+            MOVE "unicode.security.I.skin-tone-variation-forgery.StackedSkinTones" TO TEMP-CODE
+            PERFORM STV-EMIT-STACKED
+        WHEN 2
+            MOVE "unicode.security.I.skin-tone-variation-forgery.InvalidSkinToneTarget" TO TEMP-CODE
+            PERFORM STV-EMIT-ONE
+        WHEN 3
+            MOVE "unicode.security.I.skin-tone-variation-forgery.ForcedTextStyle" TO TEMP-CODE
+            PERFORM STV-EMIT-ONE
+        WHEN OTHER
+            DISPLAY "ERROR skin-tone-variation-forgery unreachable classification "
+                FUNCTION TRIM(STV-CLASS)
+            MOVE 1 TO RETURN-CODE
+    END-EVALUATE.
+
+STV-EMIT-ONE.
+*> Single-position finding at STV-POS (the implicated 0-indexed position).
+    MOVE STV-POS TO POS-NUM
+    ADD 1 TO FINDING-COUNT
+    MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
+    MOVE FUNCTION TRIM(POS-NUM) TO FINDING-POS(FINDING-COUNT).
+
+STV-EMIT-STACKED.
+*> Finding whose positions are the two stacked skin-tone modifiers, 0-indexed:
+*> [base+1, base+2].
+    ADD 1 TO FINDING-COUNT
+    MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
+    MOVE SPACES TO POS-TEXT
+    COMPUTE POS-IDX = STV-BASE-POS + 1
+    MOVE POS-IDX TO POS-NUM
+    STRING FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
+    COMPUTE POS-IDX = STV-BASE-POS + 2
+    MOVE POS-IDX TO POS-NUM
+    STRING FUNCTION TRIM(POS-TEXT) DELIMITED BY SIZE "," DELIMITED BY SIZE FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
+    MOVE POS-TEXT TO FINDING-POS(FINDING-COUNT).
 
 IS-BIDI-FORMAT-CONTROL.
 *> The port's own bidi format-control set — LRE/RLE/PDF/LRO/RLO and the four

@@ -505,6 +505,16 @@ def main():
         parse_property_ranges(DATA / "emoji-data.txt", {"Emoji"}),
         "MOVE 1 TO IS-EMOJI-FLAG",
     )
+    emit_range_eval(
+        OUT / "is_emoji_modifier_base.cpy",
+        parse_property_ranges(DATA / "emoji-data.txt", {"Emoji_Modifier_Base"}),
+        "MOVE 1 TO IS-SKIN-BASE-FLAG",
+    )
+    emit_range_eval(
+        OUT / "is_emoji_presentation.cpy",
+        parse_property_ranges(DATA / "emoji-data.txt", {"Emoji_Presentation"}),
+        "MOVE 1 TO IS-EMOJI-PRES-FLAG",
+    )
     zwj_sequences = parse_zwj_sequences()
     emit_zwj_registered(OUT / "zwj_registered.cpy", zwj_sequences)
     emit_value_eval(OUT / "zwj_alphabet.cpy", zwj_alphabet(zwj_sequences), "MOVE 1 TO TABLE-FLAG")
