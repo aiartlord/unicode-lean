@@ -1,13 +1,28 @@
 /-
   Unicode.Conformance.Security.SkinToneVariationForgeryTest
 
-  Conformance for the SkinToneVariationForgery detector: it flags an emoji-forgery
-  hazard on stacked or mistargeted skin-tone modifiers, or forced text-presentation on
-  emoji.
+  Conformance certificate for the SkinToneVariationForgery detector (UTS #51 §2.4
+  Emoji Modifiers; identity layer).
 
-  Each theorem checks the verdict on a documented case: a single skin tone on a wave
-  is clear, while two stacked tones, a tone on a non-base (ASCII), and a forced text-
-  style selector each fire.
+  Threat model.  An emoji modifier (U+1F3FB..U+1F3FF, the Fitzpatrick skin tones)
+  is sanctioned only immediately after an emoji-modifier *base*, exactly once.  An
+  adversary who stacks a second tone, attaches a tone to a codepoint that is not a
+  modifier base, or forces a text-presentation selector onto an emoji produces a
+  sequence whose rendered form is unstable across platforms — one client shows the
+  intended pictograph, another shows a tofu box or the base plus a stray swatch —
+  which can be exploited to make the same bytes read differently to sender and
+  receiver.
+
+  What the detector draws.  A single tone on a legitimate base is clear; every
+  malformed modifier shape is classified by its fault — StackedSkinTones for a
+  doubled tone, InvalidSkinToneTarget for a tone on a non-base, and ForcedTextStyle
+  for a text-presentation selector (VS15) forcing text rendering on an emoji.
+
+  The certificate.  Each `Row` pairs a representative input with the classification
+  `tag` its verdict must draw (`none` for a clear verdict); `verifyRow` recomputes
+  `detect` and compares, and `all_rows_pass` discharges the table in the kernel.
+  A new attack vector is one appended row, so coverage grows with the threat
+  catalogue and cannot silently regress.
 -/
 
 import Unicode.Security.Identity.SkinToneVariationForgery
@@ -18,23 +33,33 @@ open Unicode.Security.Identity.SkinToneVariationForgery
 
 set_option maxRecDepth 1000000
 
-/-- A single skin tone on 👋 is a well-formed modifier sequence — clear. -/
-theorem wave_skin_tone_clear :
-    (detect [0x1F44B, 0x1F3FB]).classify.isClear = true := by decide +kernel
+-- ── §1  The certificate table ───────────────────────────────────────────────
 
-/-- Two skin-tone modifiers on one base — stacked skin tones. -/
-theorem stacked_skin_tones :
-    (detect [0x1F44B, 0x1F3FB, 0x1F3FC]).classify.tag
-      = some "StackedSkinTones" := by decide +kernel
+/-- One conformance row: an `input` sequence and the classification `tag` its
+    verdict must carry (`none` for a clear verdict). -/
+structure Row where
+  input : List Nat
+  tag : Option String
 
-/-- A skin-tone modifier on ASCII 'A' (not an emoji-modifier base) — invalid target. -/
-theorem invalid_target_ascii :
-    (detect [0x0041, 0x1F3FB]).classify.tag
-      = some "InvalidSkinToneTarget" := by decide +kernel
+/-- The representative forgery — and control — vectors this harness certifies. -/
+def rows : List Row :=
+  [ -- A single Fitzpatrick tone on 👋 is the sanctioned base+modifier shape — clear.
+    { input := [0x1F44B, 0x1F3FB], tag := none },
+    -- Two tones on one base: a stacked modifier the Standard never sanctions.
+    { input := [0x1F44B, 0x1F3FB, 0x1F3FC], tag := some "StackedSkinTones" },
+    -- A tone applied to ASCII 'A', which is not an emoji-modifier base — mistargeted.
+    { input := [0x0041, 0x1F3FB], tag := some "InvalidSkinToneTarget" },
+    -- VS15 forcing text presentation onto an emoji base — a cross-platform display fork.
+    { input := [0x1F600, 0xFE0E], tag := some "ForcedTextStyle" } ]
 
-/-- A text-presentation selector (VS15) forcing text style on an emoji base. -/
-theorem forced_text_style :
-    (detect [0x1F600, 0xFE0E]).classify.tag
-      = some "ForcedTextStyle" := by decide +kernel
+/-- A row passes when `detect` reproduces the classification tag the row prescribes. -/
+def verifyRow (r : Row) : Bool :=
+  (detect r.input).classify.tag == r.tag
+
+-- ── §2  The closed certificate ──────────────────────────────────────────────
+
+/-- Every certified vector draws exactly the verdict the emoji-modifier grammar
+    demands. -/
+theorem all_rows_pass : rows.all verifyRow = true := by decide +kernel
 
 end Unicode.Conformance.Security.SkinToneVariationForgeryTest
