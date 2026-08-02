@@ -2,6 +2,7 @@
 //! diverges from a safe canonical form. Direct ports of
 //! `Unicode/Security/Form/*.lean`.
 
+pub mod case_expansion_mismatch;
 pub mod locale_case_inversion;
 pub mod nfc_idempotence_witness;
 pub mod normalization_bomb;

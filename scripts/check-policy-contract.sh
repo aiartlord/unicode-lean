@@ -334,6 +334,7 @@ non_default_scan_detectors = {
     "filename_disguise",
     "identifier_form_drift",
     "skin_tone_variation_forgery",
+    "case_expansion_mismatch",
 }
 
 for detector_fixture in detector_fixtures:

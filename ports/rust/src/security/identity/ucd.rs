@@ -1088,6 +1088,7 @@ pub enum Locale {
 
 struct CasingRow {
     lower: Vec<u32>,
+    upper: Vec<u32>,
     conditions: Vec<String>,
 }
 
@@ -1117,6 +1118,7 @@ fn parse_special_casing() -> HashMap<u32, Vec<CasingRow>> {
         };
         rows.entry(code).or_default().push(CasingRow {
             lower: parse_codepoint_list(fields[1]),
+            upper: parse_codepoint_list(fields[3]),
             conditions,
         });
     }
@@ -1151,6 +1153,31 @@ fn simple_lowercase_table() -> &'static HashMap<u32, u32> {
 
 fn simple_lowercase(cp: u32) -> u32 {
     *simple_lowercase_table().get(&cp).unwrap_or(&cp)
+}
+
+fn parse_simple_uppercase() -> HashMap<u32, u32> {
+    let mut upper = HashMap::new();
+    for line in UNICODE_DATA_RAW.lines() {
+        let fields: Vec<&str> = line.split(';').collect();
+        if fields.len() < 15 {
+            continue;
+        }
+        if let (Some(cp), false) = (parse_hex(fields[0]), fields[12].is_empty()) {
+            if let Some(u) = parse_hex(fields[12]) {
+                upper.insert(cp, u);
+            }
+        }
+    }
+    upper
+}
+
+fn simple_uppercase_table() -> &'static HashMap<u32, u32> {
+    static T: OnceLock<HashMap<u32, u32>> = OnceLock::new();
+    T.get_or_init(parse_simple_uppercase)
+}
+
+fn simple_uppercase(cp: u32) -> u32 {
+    *simple_uppercase_table().get(&cp).unwrap_or(&cp)
 }
 
 fn parse_casing_property(name: &str) -> Vec<(u32, u32)> {
@@ -1344,6 +1371,19 @@ pub fn lower_codepoint(locale: Locale, rev_prefix: &[u32], suffix: &[u32], cp: u
     match find_special_row(locale, rev_prefix, suffix, cp) {
         Some(row) => row.lower.clone(),
         None => vec![simple_lowercase(cp)],
+    }
+}
+
+/// Uppercase a single codepoint in its full input context (UAX #21): the
+/// SpecialCasing row whose conditions hold (its uppercase column), else the
+/// simple uppercase mapping. `rev_prefix` is the preceding codepoints
+/// nearest-first; `suffix` the strictly-following ones. Exposed so
+/// context-sensitive detectors (e.g. case-expansion-mismatch) can measure the
+/// case-mapped length per position.
+pub fn upper_codepoint(locale: Locale, rev_prefix: &[u32], suffix: &[u32], cp: u32) -> Vec<u32> {
+    match find_special_row(locale, rev_prefix, suffix, cp) {
+        Some(row) => row.upper.clone(),
+        None => vec![simple_uppercase(cp)],
     }
 }
 
