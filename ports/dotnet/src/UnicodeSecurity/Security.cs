@@ -60,6 +60,7 @@ public static partial class Security
         public const string StreamSafeViolation = "stream-safe-violation";
         public const string EmojiZwjIntegrity = "emoji-zwj-integrity";
         public const string RendererDivergence = "renderer-divergence";
+        public const string FilenameDisguise = "filename-disguise";
     }
 
     public sealed record Finding(
@@ -238,7 +239,7 @@ public static partial class Security
         family switch
         {
             Family.HomoglyphConfusable or Family.MixedScriptAdmissibility or Family.EmojiZwjIntegrity => "I",
-            Family.RtlInjection or Family.RendererDivergence => "D",
+            Family.RtlInjection or Family.RendererDivergence or Family.FilenameDisguise => "D",
             Family.ConfusableBidiCompound or Family.CovertDisplayCompound => "X",
             Family.HashInputStability or Family.AiWatermarkDetectability => "K",
             Family.StreamSafeViolation => "F",

@@ -3895,6 +3895,310 @@ pub const renderer_divergence = struct {
 };
 
 // ─────────────────────────────────────────────────────────────────────
+// FilenameDisguise detector (display layer D), mirroring
+// Unicode.Security.Display.FilenameDisguise and its byte-faithful Rust
+// reference implementation.
+//
+// An adversary delivers a file whose rendered name looks like a benign type
+// (document.txt) but whose actual byte extension is executable — the canonical
+// attack inserts U+202E RIGHT-TO-LEFT OVERRIDE so document<RLO>txt.exe renders
+// as document exe.txt. Detection is presentation- and language-agnostic: it
+// surfaces every codepoint that could cause display-vs-byte divergence in the
+// filename — any bidi format-control anywhere, and any fullwidth/halfwidth or
+// combining (grapheme Extend) codepoint in the extension region (after the last
+// dot). Native-RTL names with no bidi controls clear.
+//
+// It reuses the port's own tables — the bidi-format-control set (file-scope
+// isBidiFormatControl from the bidi-control-balance / rtl-injection detectors),
+// the grapheme Extend class (file-scope isGraphemeExtend, the same one
+// RendererDivergence uses), and the fullwidth/halfwidth block (file-scope
+// isFullwidthHalfwidth) — never a host filesystem or rendering library.
+//
+// Sub-threats (priority order):
+//   1. RloFlip            any bidi format-control in the input.
+//   2. WidthClassExt      a fullwidth/halfwidth codepoint in the extension.
+//   3. CombiningInExt     a combining (grapheme Extend) codepoint in the extension.
+//   4. MultipleExtensions >= 3 dots (advisory; e.g. legitimate .tar.gz.sig).
+// ─────────────────────────────────────────────────────────────────────
+
+pub const filename_disguise = struct {
+    /// The number of dot separators at or beyond which the input is treated as a
+    /// multiple-extensions advisory hazard.
+    pub const MIN_MULTI_EXT_DOTS: usize = 3;
+
+    /// Upper bound on the number of implicated positions a hazard can carry
+    /// before the bounded buffer saturates. MultipleExtensions reports every dot
+    /// position; the other sub-threats report a single position. Inputs that
+    /// would exceed the cap saturate silently, which cannot change a
+    /// classification tag.
+    const MAX_POSITIONS: usize = 512;
+
+    /// Bounded position buffer — a hazard's implicated codepoint indices.
+    const PosBuffer = struct {
+        items: [MAX_POSITIONS]usize = undefined,
+        len: usize = 0,
+
+        fn append(self: *PosBuffer, p: usize) void {
+            if (self.len >= self.items.len) return;
+            self.items[self.len] = p;
+            self.len += 1;
+        }
+
+        fn slice(self: *const PosBuffer) []const usize {
+            return self.items[0..self.len];
+        }
+    };
+
+    // ── §2 Core predicates (all reuse the port's own tables) ──────────────
+    //
+    // The bidi-format-control set, the GCB Extend class, and the fullwidth /
+    // halfwidth block are the file-scope predicates isBidiFormatControl /
+    // isGraphemeExtend / isFullwidthHalfwidth, bound here under distinct alias
+    // names so the reuse is explicit and the file-scope declarations stay
+    // reachable — a same-named container method would collide with them (Zig
+    // reports an ambiguous reference). isAsciiDot is the detector's own inline
+    // check for U+002E FULL STOP.
+
+    /// The port's file-scope bidi-format-control predicate (override/embedding
+    /// class U+202A..U+202E and isolate class U+2066..U+2069) — the same one the
+    /// bidi-control-balance and rtl-injection detectors use.
+    const bidiControlPredicate = isBidiFormatControl;
+
+    /// The port's file-scope GCB Extend predicate (Grapheme_Extend ∪
+    /// Emoji_Modifier), the same one RendererDivergence uses.
+    const gcbExtendPredicate = isGraphemeExtend;
+
+    /// The port's file-scope Halfwidth/Fullwidth Forms predicate
+    /// (U+FF01..U+FFEF), the same one the homoglyph-confusable detector uses.
+    const fwPredicate = isFullwidthHalfwidth;
+
+    /// True iff cp is U+002E FULL STOP (the extension separator).
+    pub fn isAsciiDot(cp: u32) bool {
+        return cp == 0x002E;
+    }
+
+    // ── §3 Sub-detectors ─────────────────────────────────────────────────
+
+    /// Positions of every dot in input, into a bounded buffer.
+    fn dotPositions(input: []const u32) PosBuffer {
+        var buf = PosBuffer{};
+        for (input, 0..) |cp, idx| {
+            if (isAsciiDot(cp)) buf.append(idx);
+        }
+        return buf;
+    }
+
+    fn countBidiControl(input: []const u32) usize {
+        var count: usize = 0;
+        for (input) |cp| {
+            if (bidiControlPredicate(cp)) count += 1;
+        }
+        return count;
+    }
+
+    /// Position and codepoint of the first bidi format-control.
+    const CtlHit = struct { pos: usize, cp: u32 };
+    fn firstBidiControl(input: []const u32) ?CtlHit {
+        for (input, 0..) |cp, idx| {
+            if (bidiControlPredicate(cp)) return CtlHit{ .pos = idx, .cp = cp };
+        }
+        return null;
+    }
+
+    /// Position and codepoint of the first fullwidth/halfwidth codepoint at or
+    /// after start.
+    const FwHit = struct { pos: usize, cp: u32 };
+    fn firstFullwidthFrom(input: []const u32, start: usize) ?FwHit {
+        for (input, 0..) |cp, idx| {
+            if (idx >= start and fwPredicate(cp)) return FwHit{ .pos = idx, .cp = cp };
+        }
+        return null;
+    }
+
+    /// Position and codepoint of the first Extend codepoint at or after start.
+    const ExtHit = struct { pos: usize, cp: u32 };
+    fn firstExtendFrom(input: []const u32, start: usize) ?ExtHit {
+        for (input, 0..) |cp, idx| {
+            if (idx >= start and gcbExtendPredicate(cp)) return ExtHit{ .pos = idx, .cp = cp };
+        }
+        return null;
+    }
+
+    /// Count of fullwidth/halfwidth codepoints at or after start.
+    fn countFullwidthFrom(input: []const u32, start: usize) usize {
+        var count: usize = 0;
+        for (input, 0..) |cp, idx| {
+            if (idx >= start and fwPredicate(cp)) count += 1;
+        }
+        return count;
+    }
+
+    /// Count of Extend codepoints at or after start.
+    fn countExtendFrom(input: []const u32, start: usize) usize {
+        var count: usize = 0;
+        for (input, 0..) |cp, idx| {
+            if (idx >= start and gcbExtendPredicate(cp)) count += 1;
+        }
+        return count;
+    }
+
+    // ── §1 Types ─────────────────────────────────────────────────────────
+
+    /// Sub-threat enumeration, in priority order.
+    pub const SubThreat = union(enum) {
+        /// A bidi format-control at position (codepoint control_cp).
+        rlo_flip: struct { position: usize, control_cp: u32 },
+        /// A fullwidth/halfwidth codepoint in the extension, at position.
+        width_class_ext: struct { position: usize, cp: u32 },
+        /// A combining (grapheme Extend) codepoint in the extension, at position.
+        combining_in_ext: struct { position: usize, cp: u32 },
+        /// Three or more dot separators (advisory).
+        multiple_extensions: struct { dot_count: usize },
+
+        /// Human-facing classification tag for this sub-threat.
+        pub fn tag(self: SubThreat) []const u8 {
+            return switch (self) {
+                .rlo_flip => "RloFlip",
+                .width_class_ext => "WidthClassExt",
+                .combining_in_ext => "CombiningInExt",
+                .multiple_extensions => "MultipleExtensions",
+            };
+        }
+
+        /// Fully-qualified reason code for this sub-threat, matching the shared
+        /// fixture's required_findings entry.
+        pub fn reasonCode(self: SubThreat) []const u8 {
+            return switch (self) {
+                .rlo_flip => "unicode.security.D.filename-disguise.RloFlip",
+                .width_class_ext => "unicode.security.D.filename-disguise.WidthClassExt",
+                .combining_in_ext => "unicode.security.D.filename-disguise.CombiningInExt",
+                .multiple_extensions => "unicode.security.D.filename-disguise.MultipleExtensions",
+            };
+        }
+    };
+
+    /// Top-level classification (clear = no disguise trigger present).
+    pub const Classification = union(enum) {
+        /// No disguise trigger present.
+        clear,
+        /// A disguise trigger fired: the sub-threat, the implicated positions,
+        /// and the (always-empty for this detector) decoded-byte projection,
+        /// kept for shape parity with the Lean Classification.hazard.
+        hazard: struct { sub: SubThreat, positions: PosBuffer, decoded: []const u8 = &[_]u8{} },
+
+        /// True iff the classification is clear.
+        pub fn isClear(self: Classification) bool {
+            return switch (self) {
+                .clear => true,
+                .hazard => false,
+            };
+        }
+
+        /// Human-facing tag for a hazard, or null when clear.
+        pub fn tag(self: Classification) ?[]const u8 {
+            return switch (self) {
+                .clear => null,
+                .hazard => |h| h.sub.tag(),
+            };
+        }
+
+        /// Fully-qualified reason code for a hazard, or null when clear.
+        pub fn reasonCode(self: Classification) ?[]const u8 {
+            return switch (self) {
+                .clear => null,
+                .hazard => |h| h.sub.reasonCode(),
+            };
+        }
+
+        /// Implicated positions (empty when clear).
+        pub fn positions(self: *const Classification) []const usize {
+            switch (self.*) {
+                .clear => return &[_]usize{},
+                .hazard => return self.hazard.positions.slice(),
+            }
+        }
+    };
+
+    /// Verdict — the structured output of detect (mirrors the Lean Verdict).
+    pub const Verdict = struct {
+        /// The scanned input codepoints.
+        input: []const u32,
+        /// The classification verdict.
+        classify: Classification,
+        /// Positions of every dot separator.
+        dot_positions: PosBuffer,
+        /// Position of the last dot (the extension separator), if any.
+        last_dot_pos: ?usize,
+        /// Count of bidi format-controls anywhere in the input.
+        bidi_control_count: usize,
+        /// Count of fullwidth/halfwidth codepoints in the extension region.
+        fullwidth_in_ext: usize,
+        /// Count of combining (Extend) codepoints in the extension region.
+        combining_in_ext: usize,
+    };
+
+    // ── §4 Top-level detection ───────────────────────────────────────────
+
+    /// The FilenameDisguise detection function.
+    pub fn detect(input: []const u32) @This().Verdict {
+        const dots = dotPositions(input);
+        const last_dot: ?usize = if (dots.len == 0) null else dots.items[dots.len - 1];
+        const ext_start: usize = if (last_dot) |p| p + 1 else input.len;
+        const bidi_count = countBidiControl(input);
+        const fw_in_ext = countFullwidthFrom(input, ext_start);
+        const ext_in_ext = countExtendFrom(input, ext_start);
+
+        const classification: Classification = blk: {
+            // Priority 1: any bidi format-control anywhere.
+            if (firstBidiControl(input)) |hit| {
+                var pos = PosBuffer{};
+                pos.append(hit.pos);
+                break :blk .{ .hazard = .{
+                    .sub = .{ .rlo_flip = .{ .position = hit.pos, .control_cp = hit.cp } },
+                    .positions = pos,
+                } };
+            }
+            // Priority 2: fullwidth/halfwidth in the extension.
+            if (firstFullwidthFrom(input, ext_start)) |hit| {
+                var pos = PosBuffer{};
+                pos.append(hit.pos);
+                break :blk .{ .hazard = .{
+                    .sub = .{ .width_class_ext = .{ .position = hit.pos, .cp = hit.cp } },
+                    .positions = pos,
+                } };
+            }
+            // Priority 3: combining mark in the extension.
+            if (firstExtendFrom(input, ext_start)) |hit| {
+                var pos = PosBuffer{};
+                pos.append(hit.pos);
+                break :blk .{ .hazard = .{
+                    .sub = .{ .combining_in_ext = .{ .position = hit.pos, .cp = hit.cp } },
+                    .positions = pos,
+                } };
+            }
+            // Priority 4: three or more extensions (advisory).
+            if (dots.len >= MIN_MULTI_EXT_DOTS) {
+                break :blk .{ .hazard = .{
+                    .sub = .{ .multiple_extensions = .{ .dot_count = dots.len } },
+                    .positions = dots,
+                } };
+            }
+            break :blk .{ .clear = {} };
+        };
+
+        return @This().Verdict{
+            .input = input,
+            .classify = classification,
+            .dot_positions = dots,
+            .last_dot_pos = last_dot,
+            .bidi_control_count = bidi_count,
+            .fullwidth_in_ext = fw_in_ext,
+            .combining_in_ext = ext_in_ext,
+        };
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────
 // Locale-case-inversion detector (Tier A2), mirroring
 // Unicode.Security.Form.LocaleCaseInversion.
 //
@@ -5532,5 +5836,127 @@ test "renderer-divergence structural checks" {
         const v = Rd.detect(&[_]u32{ 0x0061, 0x0301, 0x0302, 0x0303 });
         const t = v.classify.tag();
         try std.testing.expect(t == null or !std.mem.eql(u8, t.?, "CombiningStackOverflow"));
+    }
+}
+
+// ── filename-disguise (display layer D) ──────────────────────────────────
+
+const Fd = filename_disguise;
+
+fn fdReason(input: []const u32) ?[]const u8 {
+    return Fd.detect(input).classify.reasonCode();
+}
+
+fn fdTag(input: []const u32) ?[]const u8 {
+    return Fd.detect(input).classify.tag();
+}
+
+fn expectFdReason(input: []const u32, want: []const u8) !void {
+    const r = fdReason(input);
+    try std.testing.expect(r != null);
+    try std.testing.expectEqualStrings(want, r.?);
+}
+
+test "filename-disguise predicate reuse" {
+    // The detector reuses the port's own file-scope predicates, aliased inside
+    // the struct: the bidi-format-control set, the GCB Extend class, and the
+    // Halfwidth/Fullwidth Forms block. Spot-check each alias plus the exclusions.
+    try std.testing.expect(Fd.bidiControlPredicate(0x202E)); // RIGHT-TO-LEFT OVERRIDE
+    try std.testing.expect(Fd.bidiControlPredicate(0x2067)); // RIGHT-TO-LEFT ISOLATE
+    try std.testing.expect(Fd.bidiControlPredicate(0x2069)); // POP DIRECTIONAL ISOLATE
+    try std.testing.expect(!Fd.bidiControlPredicate(0x0041)); // LATIN CAPITAL LETTER A
+    try std.testing.expect(Fd.gcbExtendPredicate(0x0301)); // COMBINING ACUTE ACCENT
+    try std.testing.expect(!Fd.gcbExtendPredicate(0x0061)); // LATIN SMALL LETTER A
+    try std.testing.expect(Fd.fwPredicate(0xFF25)); // FULLWIDTH LATIN CAPITAL LETTER E
+    try std.testing.expect(!Fd.fwPredicate(0x0045)); // LATIN CAPITAL LETTER E
+    try std.testing.expect(Fd.isAsciiDot(0x002E)); // FULL STOP
+    try std.testing.expect(!Fd.isAsciiDot(0x0041));
+}
+
+test "filename-disguise shared fixture vectors" {
+    // The 10 rows of the shared context-free fixture, inputs given as decimal
+    // codepoints. Clear rows assert isClear; hazard rows assert the fully
+    // qualified reason code from required_findings.
+
+    // empty-clear.
+    {
+        const v = Fd.detect(&[_]u32{});
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expectEqual(@as(?[]const u8, null), v.classify.tag());
+        try std.testing.expectEqualSlices(usize, &[_]usize{}, v.classify.positions());
+    }
+    // plain-document-txt-clear.
+    try std.testing.expect(Fd.detect(&[_]u32{ 100, 111, 99, 117, 109, 101, 110, 116, 46, 116, 120, 116 }).classify.isClear());
+    // no-extension-clear.
+    try std.testing.expect(Fd.detect(&[_]u32{ 102, 111, 111 }).classify.isClear());
+    // archive-tar-gz-clear.
+    try std.testing.expect(Fd.detect(&[_]u32{ 97, 114, 99, 104, 105, 118, 101, 46, 116, 97, 114, 46, 103, 122 }).classify.isClear());
+    // hebrew-native-rtl-clear.
+    try std.testing.expect(Fd.detect(&[_]u32{ 1488, 1489, 1490, 46, 116, 120, 116 }).classify.isClear());
+    // rlo-flip-hazard.
+    try expectFdReason(&[_]u32{ 100, 111, 99, 117, 109, 101, 110, 116, 8238, 116, 120, 116, 46, 101, 120, 101 }, "unicode.security.D.filename-disguise.RloFlip");
+    // isolate-flip-hazard.
+    try expectFdReason(&[_]u32{ 100, 111, 99, 8295, 116, 120, 116, 46, 101, 120, 101, 8297 }, "unicode.security.D.filename-disguise.RloFlip");
+    // fullwidth-ext-hazard.
+    try expectFdReason(&[_]u32{ 102, 105, 108, 101, 46, 65317, 65336, 65317 }, "unicode.security.D.filename-disguise.WidthClassExt");
+    // combining-in-ext-hazard.
+    try expectFdReason(&[_]u32{ 102, 105, 108, 101, 46, 101, 769, 120, 101 }, "unicode.security.D.filename-disguise.CombiningInExt");
+    // triple-extension-hazard.
+    try expectFdReason(&[_]u32{ 115, 101, 116, 117, 112, 46, 116, 97, 114, 46, 103, 122, 46, 115, 105, 103 }, "unicode.security.D.filename-disguise.MultipleExtensions");
+}
+
+test "filename-disguise detect spot checks" {
+    // The 10 Rust §5 detect spot checks (one per Lean theorem).
+
+    // detect_empty_clear.
+    try std.testing.expect(Fd.detect(&[_]u32{}).classify.isClear());
+    // detect_plain_txt_clear — "document.txt", last dot at index 8.
+    {
+        const v = Fd.detect(&[_]u32{ 0x64, 0x6F, 0x63, 0x75, 0x6D, 0x65, 0x6E, 0x74, 0x2E, 0x74, 0x78, 0x74 });
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expectEqual(@as(?usize, 8), v.last_dot_pos);
+    }
+    // detect_no_extension_clear — "foo", no dot.
+    {
+        const v = Fd.detect(&[_]u32{ 0x66, 0x6F, 0x6F });
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expectEqual(@as(?usize, null), v.last_dot_pos);
+    }
+    // detect_tar_gz_clear — "archive.tar.gz" (2 dots, below the multi-ext bound).
+    try std.testing.expect(Fd.detect(&[_]u32{ 0x61, 0x72, 0x63, 0x68, 0x69, 0x76, 0x65, 0x2E, 0x74, 0x61, 0x72, 0x2E, 0x67, 0x7A }).classify.isClear());
+    // detect_rlo_flip — "document<RLO>txt.exe", control at index 8.
+    {
+        const v = Fd.detect(&[_]u32{ 0x64, 0x6F, 0x63, 0x75, 0x6D, 0x65, 0x6E, 0x74, 0x202E, 0x74, 0x78, 0x74, 0x2E, 0x65, 0x78, 0x65 });
+        try std.testing.expectEqualStrings("RloFlip", v.classify.tag().?);
+        try std.testing.expectEqualSlices(usize, &[_]usize{8}, v.classify.positions());
+    }
+    // detect_fullwidth_exe — "file.ＥＸＥ".
+    try std.testing.expectEqualStrings("WidthClassExt", fdTag(&[_]u32{ 0x66, 0x69, 0x6C, 0x65, 0x2E, 0xFF25, 0xFF38, 0xFF25 }).?);
+    // detect_combining_in_ext — combining acute in the extension.
+    try std.testing.expectEqualStrings("CombiningInExt", fdTag(&[_]u32{ 0x66, 0x69, 0x6C, 0x65, 0x2E, 0x65, 0x0301, 0x78, 0x65 }).?);
+    // detect_triple_extension — "setup.tar.gz.sig".
+    {
+        const v = Fd.detect(&[_]u32{ 0x73, 0x65, 0x74, 0x75, 0x70, 0x2E, 0x74, 0x61, 0x72, 0x2E, 0x67, 0x7A, 0x2E, 0x73, 0x69, 0x67 });
+        try std.testing.expectEqualStrings("MultipleExtensions", v.classify.tag().?);
+        // MultipleExtensions carries every dot position.
+        try std.testing.expectEqualSlices(usize, &[_]usize{ 5, 9, 12 }, v.classify.positions());
+    }
+    // detect_hebrew_clear — native Hebrew name, no bidi controls.
+    try std.testing.expect(Fd.detect(&[_]u32{ 0x05D0, 0x05D1, 0x05D2, 0x2E, 0x74, 0x78, 0x74 }).classify.isClear());
+    // detect_isolate_flip — RLI/PDI isolate variant, also RloFlip.
+    try std.testing.expectEqualStrings("RloFlip", fdTag(&[_]u32{ 0x64, 0x6F, 0x63, 0x2067, 0x74, 0x78, 0x74, 0x2E, 0x65, 0x78, 0x65, 0x2069 }).?);
+}
+
+test "filename-disguise structural checks" {
+    // The 1 Rust priority-ladder structural check.
+
+    // bidi_beats_fullwidth — a bidi control outranks a fullwidth extension.
+    {
+        const v = Fd.detect(&[_]u32{ 0x202E, 0x66, 0x2E, 0xFF25 });
+        try std.testing.expectEqualStrings("RloFlip", v.classify.tag().?);
+        try std.testing.expect(v.classify.hazard.sub.rlo_flip.position == 0);
+        // The fullwidth codepoint is still counted in the extension region.
+        try std.testing.expect(v.fullwidth_in_ext == 1);
+        try std.testing.expect(v.bidi_control_count == 1);
     }
 }

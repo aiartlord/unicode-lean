@@ -23,6 +23,7 @@ public final class SecurityContractTest {
     testAiWatermarkDetectability();
     testEmojiZwjIntegrity();
     testRendererDivergence();
+    testFilenameDisguise();
     testStreamSafeViolation();
     testConfusableBidiCompound();
     testSurrogateReassembly();
@@ -761,6 +762,125 @@ public final class SecurityContractTest {
     specVectors++;
 
     System.out.println("clean: JVM renderer-divergence passes (" + fixtureCases
+        + " fixture cases + " + specVectors + " spec vectors)");
+  }
+
+  // Pins the display-layer FilenameDisguise detector against the verified Rust
+  // reference implementation. Two independent sources of truth are exercised:
+  // (a) the shared context-free fixture detectors/filename_disguise.json, run
+  // through FilenameDisguise.detect and checked against the fixture reason codes;
+  // (b) the detect spot-checks and priority-ladder structure check transcribed
+  // from the Rust test module. Every predicate the detector consumes is the
+  // port's own SHA-pinned table or an inline range, never a host filesystem or
+  // rendering library: the bidi-format-control set (Security.isBidiFormatControl,
+  // the LRE/RLE/LRO/RLO/PDF and LRI/RLI/FSI/PDI codepoints RtlInjection keys on),
+  // the grapheme GCB=Extend class (Security.isGraphemeExtend, Grapheme_Extend ∪
+  // emoji-modifier from DerivedCoreProperties.txt), the inline fullwidth range
+  // U+FF01..U+FFEF, and the ASCII dot U+002E.
+  private static void testFilenameDisguise() throws IOException {
+    // (a) Shared context-free fixture through detect.
+    Map<String, Object> detector = fixture("detectors/filename_disguise.json");
+    assertEquals(1, intValue(detector.get("schema")), "filename-disguise schema");
+    assertEquals("filename-disguise", string(detector, "family"), "filename-disguise family");
+    int fixtureCases = 0;
+    for (Map<String, Object> entry : objects(detector.get("cases"))) {
+      FilenameDisguise.Verdict verdict = FilenameDisguise.detect(ints(entry.get("input")));
+      String code = FilenameDisguise.reasonCode(verdict.classify());
+      List<String> required = strings(entry.get("required_findings"));
+      if (required.isEmpty()) {
+        assertEquals(null, code, "filename-disguise " + string(entry, "name") + " should be clear");
+      } else {
+        assertEquals(1, required.size(),
+            "filename-disguise " + string(entry, "name") + " single finding");
+        assertEquals(required.get(0), code, "filename-disguise " + string(entry, "name"));
+      }
+      fixtureCases++;
+    }
+
+    // (b) detect spot-checks and the priority-ladder structure check transcribed
+    // one-for-one from the Rust test module.
+    int specVectors = 0;
+
+    // detect_empty_clear
+    assertTrue(FilenameDisguise.detect(intList(new int[] {})).classify().isClear(),
+        "fd empty clear");
+    specVectors++;
+
+    // detect_plain_txt_clear — "document.txt"; last dot at index 8.
+    FilenameDisguise.Verdict plain = FilenameDisguise.detect(
+        intList(new int[] {0x64, 0x6F, 0x63, 0x75, 0x6D, 0x65, 0x6E, 0x74, 0x2E, 0x74, 0x78, 0x74}));
+    assertTrue(plain.classify().isClear(), "fd plain txt clear");
+    assertEquals(Integer.valueOf(8), plain.lastDotPos(), "fd plain txt last dot pos");
+    specVectors++;
+
+    // detect_no_extension_clear — "foo"; no dot.
+    FilenameDisguise.Verdict noExt =
+        FilenameDisguise.detect(intList(new int[] {0x66, 0x6F, 0x6F}));
+    assertTrue(noExt.classify().isClear(), "fd no extension clear");
+    assertEquals(null, noExt.lastDotPos(), "fd no extension last dot pos null");
+    specVectors++;
+
+    // detect_tar_gz_clear — "archive.tar.gz" (2 dots, below the multi-ext bound).
+    assertTrue(
+        FilenameDisguise.detect(intList(new int[] {
+            0x61, 0x72, 0x63, 0x68, 0x69, 0x76, 0x65, 0x2E, 0x74, 0x61, 0x72, 0x2E, 0x67, 0x7A}))
+            .classify().isClear(),
+        "fd tar gz clear");
+    specVectors++;
+
+    // detect_hebrew_clear — native Hebrew name, no bidi controls.
+    assertTrue(
+        FilenameDisguise.detect(intList(new int[] {0x05D0, 0x05D1, 0x05D2, 0x2E, 0x74, 0x78, 0x74}))
+            .classify().isClear(),
+        "fd hebrew clear");
+    specVectors++;
+
+    // detect_rlo_flip — "document<RLO>txt.exe"; RloFlip at position 8.
+    FilenameDisguise.Verdict rlo = FilenameDisguise.detect(intList(new int[] {
+        0x64, 0x6F, 0x63, 0x75, 0x6D, 0x65, 0x6E, 0x74, 0x202E, 0x74, 0x78, 0x74, 0x2E, 0x65,
+        0x78, 0x65}));
+    assertEquals("RloFlip", rlo.classify().tag(), "fd rlo flip tag");
+    assertEquals(List.of(8), rlo.classify().positions(), "fd rlo flip positions");
+    specVectors++;
+
+    // detect_isolate_flip — RLI/PDI isolate variant, also RloFlip.
+    assertEquals("RloFlip",
+        FilenameDisguise.detect(intList(new int[] {
+            0x64, 0x6F, 0x63, 0x2067, 0x74, 0x78, 0x74, 0x2E, 0x65, 0x78, 0x65, 0x2069}))
+            .classify().tag(),
+        "fd isolate flip tag");
+    specVectors++;
+
+    // detect_fullwidth_exe — "file.ＥＸＥ".
+    assertEquals("WidthClassExt",
+        FilenameDisguise.detect(intList(new int[] {0x66, 0x69, 0x6C, 0x65, 0x2E, 0xFF25, 0xFF38, 0xFF25}))
+            .classify().tag(),
+        "fd fullwidth ext tag");
+    specVectors++;
+
+    // detect_combining_in_ext — "file.é xe" (combining acute in the extension).
+    assertEquals("CombiningInExt",
+        FilenameDisguise.detect(intList(new int[] {0x66, 0x69, 0x6C, 0x65, 0x2E, 0x65, 0x0301, 0x78, 0x65}))
+            .classify().tag(),
+        "fd combining in ext tag");
+    specVectors++;
+
+    // detect_triple_extension — "setup.tar.gz.sig".
+    assertEquals("MultipleExtensions",
+        FilenameDisguise.detect(intList(new int[] {
+            0x73, 0x65, 0x74, 0x75, 0x70, 0x2E, 0x74, 0x61, 0x72, 0x2E, 0x67, 0x7A, 0x2E, 0x73,
+            0x69, 0x67}))
+            .classify().tag(),
+        "fd triple extension tag");
+    specVectors++;
+
+    // bidi_beats_fullwidth — a bidi control outranks a fullwidth extension.
+    assertEquals("RloFlip",
+        FilenameDisguise.detect(intList(new int[] {0x202E, 0x66, 0x2E, 0xFF25})).classify().tag(),
+        "fd bidi beats fullwidth");
+    specVectors++;
+
+    System.out.println("clean: JVM filename-disguise passes (" + fixtureCases
         + " fixture cases + " + specVectors + " spec vectors)");
   }
 

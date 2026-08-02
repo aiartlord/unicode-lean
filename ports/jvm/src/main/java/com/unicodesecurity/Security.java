@@ -583,7 +583,11 @@ public final class Security {
     return -1;
   }
 
-  private static boolean isBidiFormatControl(int cp) {
+  // The bidi format-control set (LRE/RLE/LRO/RLO/PDF and LRI/RLI/FSI/PDI) that
+  // RtlInjection and CovertDisplayCompound key on. Package-private so the sibling
+  // display-layer detector FilenameDisguise reuses the port's own predicate,
+  // never a host filesystem or bidi-shaping library.
+  static boolean isBidiFormatControl(int cp) {
     return (cp >= 0x202A && cp <= 0x202E) || (cp >= 0x2066 && cp <= 0x2069);
   }
 

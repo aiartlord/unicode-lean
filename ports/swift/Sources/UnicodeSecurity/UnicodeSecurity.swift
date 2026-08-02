@@ -48,6 +48,7 @@ public enum Family {
     public static let streamSafeViolation = "stream-safe-violation"
     public static let emojiZwjIntegrity = "emoji-zwj-integrity"
     public static let rendererDivergence = "renderer-divergence"
+    public static let filenameDisguise = "filename-disguise"
 }
 
 public struct Finding: Equatable {
@@ -279,7 +280,9 @@ private func layer(_ family: String) -> String {
     {
         return "I"
     }
-    if family == Family.rtlInjection || family == Family.rendererDivergence {
+    if family == Family.rtlInjection || family == Family.rendererDivergence
+        || family == Family.filenameDisguise
+    {
         return "D"
     }
     if family == Family.confusableBidiCompound || family == Family.covertDisplayCompound {
@@ -3963,4 +3966,223 @@ public func rendererDivergenceDetect(_ input: [Int]) -> RendererDivergenceVerdic
 /// `unicode.security.D.renderer-divergence.<tag>`.
 public func rendererDivergenceReasonCode(_ subThreat: String) -> String {
     reasonCode(family: Family.rendererDivergence, subThreat: subThreat)
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// FilenameDisguise — detection of filename/extension disguise attacks where the
+// visible extension differs from the byte extension (display-layer detector,
+// layer D).
+//
+// Byte-faithful transliteration of the verified Rust reference implementation.
+// An adversary delivers a file whose rendered name looks like a benign type
+// (`document.txt`) but whose actual byte extension is executable — the canonical
+// attack inserts U+202E RIGHT-TO-LEFT OVERRIDE so `document<RLO>txt.exe` renders
+// as `document exe.txt`.
+//
+// Detection is presentation- and language-agnostic: it surfaces every codepoint
+// that could cause display-vs-byte divergence in the filename — any bidi
+// format-control anywhere, and any fullwidth/halfwidth or combining (grapheme
+// Extend) codepoint in the extension region (after the last `.`). Native-RTL
+// names with no bidi controls clear. It reuses the port's own predicates (the
+// bidi-format-control set `isBidiFormatControl`, the grapheme Extend table
+// `graphemeExtendRanges`, the fullwidth range), never a host filesystem or
+// rendering library.
+//
+// Sub-threats (priority order):
+//   1. RloFlip            any bidi format-control in the input.
+//   2. WidthClassExt      a fullwidth/halfwidth codepoint in the extension.
+//   3. CombiningInExt     a combining (Extend) codepoint in the extension.
+//   4. MultipleExtensions >= 3 dots (advisory; e.g. legitimate `.tar.gz.sig`).
+// ─────────────────────────────────────────────────────────────────────
+
+/// Sub-threat enumeration for FilenameDisguise, in priority order.
+public enum FilenameDisguiseSubThreat: Equatable {
+    /// A bidi format-control at `position` (codepoint `controlCp`).
+    case rloFlip(position: Int, controlCp: Int)
+    /// A fullwidth/halfwidth codepoint in the extension, at `position`.
+    case widthClassExt(position: Int, cp: Int)
+    /// A combining (grapheme Extend) codepoint in the extension, at `position`.
+    case combiningInExt(position: Int, cp: Int)
+    /// Three or more `.` separators (advisory).
+    case multipleExtensions(dotCount: Int)
+
+    /// Fixture-row tag string for this sub-threat (matches `SubThreat.tag`).
+    public var tag: String {
+        switch self {
+        case .rloFlip: return "RloFlip"
+        case .widthClassExt: return "WidthClassExt"
+        case .combiningInExt: return "CombiningInExt"
+        case .multipleExtensions: return "MultipleExtensions"
+        }
+    }
+}
+
+/// Top-level classification for FilenameDisguise.
+public enum FilenameDisguiseClassification: Equatable {
+    /// No disguise trigger present.
+    case clear
+    /// A disguise trigger fired: the sub-threat, the implicated positions, and
+    /// the (always-empty for this detector) decoded-byte projection, kept for
+    /// shape parity with the Lean `Classification.hazard`.
+    case hazard(sub: FilenameDisguiseSubThreat, positions: [Int], decoded: [UInt8])
+
+    /// True iff the classification is `clear`.
+    public var isClear: Bool {
+        switch self {
+        case .clear: return true
+        case .hazard: return false
+        }
+    }
+
+    /// Human-facing tag for a hazard, or `nil` when clear.
+    public var tag: String? {
+        switch self {
+        case .clear: return nil
+        case .hazard(let sub, _, _): return sub.tag
+        }
+    }
+
+    /// Implicated positions (empty when clear).
+    public var positions: [Int] {
+        switch self {
+        case .clear: return []
+        case .hazard(_, let positions, _): return positions
+        }
+    }
+}
+
+/// The structured output of `filenameDisguiseDetect` (mirrors the Lean `Verdict`).
+public struct FilenameDisguiseVerdict: Equatable {
+    /// The scanned input codepoints.
+    public let input: [Int]
+    /// The classification verdict.
+    public let classify: FilenameDisguiseClassification
+    /// Positions of every `.` separator.
+    public let dotPositions: [Int]
+    /// Position of the last `.` (the extension separator), if any.
+    public let lastDotPos: Int?
+    /// Count of bidi format-controls anywhere in the input.
+    public let bidiControlCount: Int
+    /// Count of fullwidth/halfwidth codepoints in the extension region.
+    public let fullwidthInExt: Int
+    /// Count of combining (Extend) codepoints in the extension region.
+    public let combiningInExt: Int
+}
+
+/// True iff `cp` is `U+002E FULL STOP` (the extension separator).
+private func filenameDisguiseIsAsciiDot(_ cp: Int) -> Bool {
+    cp == 0x002E
+}
+
+/// True iff `cp` is in the Halfwidth and Fullwidth Forms block.
+private func filenameDisguiseIsFullwidthHalfwidth(_ cp: Int) -> Bool {
+    cp >= 0xFF01 && cp <= 0xFFEF
+}
+
+/// True iff `cp` has `Grapheme_Cluster_Break = Extend` (reuses the port's own
+/// `graphemeExtendRanges` table — the same one RendererDivergence consults).
+private func filenameDisguiseIsGraphemeExtend(_ cp: Int) -> Bool {
+    graphemeExtendRanges().contains { cp >= $0.0 && cp <= $0.1 }
+}
+
+/// Positions of every `.` in `input`.
+private func filenameDisguiseDotPositions(_ input: [Int]) -> [Int] {
+    input.indices.filter { filenameDisguiseIsAsciiDot(input[$0]) }
+}
+
+/// Position and codepoint of the first bidi format-control (reuses the port's
+/// own `isBidiFormatControl` predicate).
+private func filenameDisguiseFirstBidiControl(_ input: [Int]) -> (Int, Int)? {
+    for (idx, cp) in input.enumerated() where isBidiFormatControl(cp) {
+        return (idx, cp)
+    }
+    return nil
+}
+
+/// Position and codepoint of the first fullwidth/halfwidth codepoint at or after
+/// `start`.
+private func filenameDisguiseFirstFullwidthFrom(_ input: [Int], _ start: Int) -> (Int, Int)? {
+    for (idx, cp) in input.enumerated() where idx >= start && filenameDisguiseIsFullwidthHalfwidth(cp) {
+        return (idx, cp)
+    }
+    return nil
+}
+
+/// Position and codepoint of the first Extend codepoint at or after `start`.
+private func filenameDisguiseFirstExtendFrom(_ input: [Int], _ start: Int) -> (Int, Int)? {
+    for (idx, cp) in input.enumerated() where idx >= start && filenameDisguiseIsGraphemeExtend(cp) {
+        return (idx, cp)
+    }
+    return nil
+}
+
+/// Count of fullwidth/halfwidth codepoints at or after `start`.
+private func filenameDisguiseCountFullwidthFrom(_ input: [Int], _ start: Int) -> Int {
+    input.indices.filter { $0 >= start && filenameDisguiseIsFullwidthHalfwidth(input[$0]) }.count
+}
+
+/// Count of Extend codepoints at or after `start`.
+private func filenameDisguiseCountExtendFrom(_ input: [Int], _ start: Int) -> Int {
+    input.indices.filter { $0 >= start && filenameDisguiseIsGraphemeExtend(input[$0]) }.count
+}
+
+/// The FilenameDisguise detection function. Mirrors the Lean/Rust `detect`:
+/// walks the priority ladder RloFlip -> WidthClassExt -> CombiningInExt ->
+/// MultipleExtensions, returning the first trigger that fires (else `clear`).
+public func filenameDisguiseDetect(_ input: [Int]) -> FilenameDisguiseVerdict {
+    let dots = filenameDisguiseDotPositions(input)
+    let lastDot = dots.last
+    let extStart: Int
+    if let lastDot = lastDot {
+        extStart = lastDot + 1
+    } else {
+        extStart = input.count
+    }
+    let bidiCount = input.filter { isBidiFormatControl($0) }.count
+    let fwInExt = filenameDisguiseCountFullwidthFrom(input, extStart)
+    let extInExt = filenameDisguiseCountExtendFrom(input, extStart)
+
+    let classification: FilenameDisguiseClassification
+    // Priority 1: any bidi format-control.
+    if let (pos, ctlCp) = filenameDisguiseFirstBidiControl(input) {
+        classification = .hazard(
+            sub: .rloFlip(position: pos, controlCp: ctlCp),
+            positions: [pos],
+            decoded: [])
+    } else if let (pos, cp) = filenameDisguiseFirstFullwidthFrom(input, extStart) {
+        // Priority 2: fullwidth/halfwidth in the extension.
+        classification = .hazard(
+            sub: .widthClassExt(position: pos, cp: cp),
+            positions: [pos],
+            decoded: [])
+    } else if let (pos, cp) = filenameDisguiseFirstExtendFrom(input, extStart) {
+        // Priority 3: combining mark in the extension.
+        classification = .hazard(
+            sub: .combiningInExt(position: pos, cp: cp),
+            positions: [pos],
+            decoded: [])
+    } else if dots.count >= 3 {
+        // Priority 4: three or more extensions (advisory).
+        classification = .hazard(
+            sub: .multipleExtensions(dotCount: dots.count),
+            positions: dots,
+            decoded: [])
+    } else {
+        classification = .clear
+    }
+
+    return FilenameDisguiseVerdict(
+        input: input,
+        classify: classification,
+        dotPositions: dots,
+        lastDotPos: lastDot,
+        bidiControlCount: bidiCount,
+        fullwidthInExt: fwInExt,
+        combiningInExt: extInExt)
+}
+
+/// Stable reason code for a filename-disguise sub-threat tag, routed through the
+/// shared reason-code builder: `unicode.security.D.filename-disguise.<tag>`.
+public func filenameDisguiseReasonCode(_ subThreat: String) -> String {
+    reasonCode(family: Family.filenameDisguise, subThreat: subThreat)
 }

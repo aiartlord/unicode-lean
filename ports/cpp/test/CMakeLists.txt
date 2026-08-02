@@ -32,7 +32,8 @@ add_executable(unicode_cpp_tests
     nfc_idempotence_witness_test.cpp
     stream_safe_violation_test.cpp
     surrogate_reassembly_test.cpp
-    renderer_divergence_test.cpp)
+    renderer_divergence_test.cpp
+    filename_disguise_test.cpp)
 target_link_libraries(unicode_cpp_tests
     PRIVATE unicode_cpp::unicode_cpp doctest::doctest)
 

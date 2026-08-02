@@ -5,6 +5,7 @@ using His = UnicodeSecurity.Security.HashInputStability;
 using Awd = UnicodeSecurity.Security.AiWatermarkDetectability;
 using Ezwj = UnicodeSecurity.Security.EmojiZwjIntegrity;
 using Rd = UnicodeSecurity.Security.RendererDivergence;
+using Fd = UnicodeSecurity.Security.FilenameDisguise;
 
 TestCovertDisplayCompoundVectors();
 TestConfusableBidiCompoundVectors();
@@ -29,6 +30,8 @@ TestEmojiZwjIntegrityFixture();
 TestEmojiZwjIntegritySpotChecks();
 TestRendererDivergenceFixture();
 TestRendererDivergenceSpotChecks();
+TestFilenameDisguiseFixture();
+TestFilenameDisguiseSpotChecks();
 TestStreamSafeViolationFixture();
 TestStreamSafeViolationBoundary();
 TestUtf8Blob();
@@ -1001,6 +1004,98 @@ static void TestRendererDivergenceSpotChecks()
         "rd three-marks-below-threshold");
 
     Console.WriteLine("clean: .NET renderer-divergence data + detect + structural spot-check passes");
+}
+static void TestFilenameDisguiseFixture()
+{
+    using var detector = LoadFixture("detectors/filename_disguise.json");
+    AssertEqual(1, detector.RootElement.GetProperty("schema").GetInt32(), "filename-disguise schema");
+    AssertEqual("filename-disguise", String(detector.RootElement, "family"), "filename-disguise family");
+    var cases = 0;
+    foreach (var entry in detector.RootElement.GetProperty("cases").EnumerateArray())
+    {
+        var name = String(entry, "name");
+        var input = Ints(entry.GetProperty("input"));
+        var verdict = Fd.Detect(input);
+        var required = Strings(entry.GetProperty("required_findings")).ToList();
+        if (required.Count == 0)
+        {
+            AssertTrue(verdict.Classify.IsClear, $"filename-disguise {name}: expected clear, got {verdict.Classify.Tag}");
+        }
+        else
+        {
+            foreach (var code in required)
+            {
+                AssertEqual<string?>(code, verdict.Classify.ReasonCode, $"filename-disguise {name}: reason code");
+            }
+        }
+        cases++;
+    }
+    Console.WriteLine($"clean: .NET filename-disguise {cases}-case shared-fixture detect passes");
+}
+static void TestFilenameDisguiseSpotChecks()
+{
+    string? Tag(int[] input) => Fd.Detect(input).Classify.Tag;
+
+    // ── data-layer sanity (reused predicates) ────────────────────────────
+    AssertTrue(Fd.IsAsciiDot(0x2E), "fd ascii dot");
+    AssertTrue(!Fd.IsAsciiDot(0x41), "fd ascii dot non-.");
+    AssertTrue(Fd.IsBidiFormatControl(0x202E), "fd bidi RLO");
+    AssertTrue(Fd.IsBidiFormatControl(0x2067), "fd bidi RLI");
+    AssertTrue(!Fd.IsBidiFormatControl(0x0041), "fd bidi non-A");
+    AssertTrue(Fd.IsFullwidthHalfwidth(0xFF25), "fd fullwidth E");
+    AssertTrue(!Fd.IsFullwidthHalfwidth(0x0045), "fd fullwidth non-E");
+    AssertTrue(Fd.IsGraphemeExtend(0x0301), "fd extend combining-acute");
+    AssertTrue(!Fd.IsGraphemeExtend(0x0065), "fd extend non-e");
+
+    // ── §5 detect spot checks (one per Lean/Rust theorem) ────────────────
+    // detect_empty_clear
+    AssertTrue(Fd.Detect(System.Array.Empty<int>()).Classify.IsClear, "fd empty clear");
+    // detect_plain_txt_clear — "document.txt"
+    var plain = Fd.Detect(new[] { 0x64, 0x6F, 0x63, 0x75, 0x6D, 0x65, 0x6E, 0x74, 0x2E, 0x74, 0x78, 0x74 });
+    AssertTrue(plain.Classify.IsClear, "fd plain-txt clear");
+    AssertEqual<int?>(8, plain.LastDotPos, "fd plain-txt last-dot");
+    // detect_no_extension_clear — "foo"
+    var noExt = Fd.Detect(new[] { 0x66, 0x6F, 0x6F });
+    AssertTrue(noExt.Classify.IsClear, "fd no-extension clear");
+    AssertEqual<int?>(null, noExt.LastDotPos, "fd no-extension last-dot");
+    // detect_tar_gz_clear — "archive.tar.gz" (2 dots, below the multi-ext bound)
+    AssertTrue(
+        Fd.Detect(new[] { 0x61, 0x72, 0x63, 0x68, 0x69, 0x76, 0x65, 0x2E, 0x74, 0x61, 0x72, 0x2E, 0x67, 0x7A }).Classify.IsClear,
+        "fd tar.gz clear");
+    // detect_hebrew_clear — native Hebrew name, no bidi controls.
+    AssertTrue(
+        Fd.Detect(new[] { 0x05D0, 0x05D1, 0x05D2, 0x2E, 0x74, 0x78, 0x74 }).Classify.IsClear,
+        "fd hebrew clear");
+    // detect_rlo_flip — "document<RLO>txt.exe"
+    var rlo = Fd.Detect(new[] { 0x64, 0x6F, 0x63, 0x75, 0x6D, 0x65, 0x6E, 0x74, 0x202E, 0x74, 0x78, 0x74, 0x2E, 0x65, 0x78, 0x65 });
+    AssertEqual<string?>("RloFlip", rlo.Classify.Tag, "fd rlo-flip tag");
+    AssertSequence(new[] { 8 }, rlo.Classify.Positions, "fd rlo-flip positions");
+    // detect_isolate_flip — RLI/PDI isolate variant, also RloFlip.
+    AssertEqual<string?>(
+        "RloFlip",
+        Tag(new[] { 0x64, 0x6F, 0x63, 0x2067, 0x74, 0x78, 0x74, 0x2E, 0x65, 0x78, 0x65, 0x2069 }),
+        "fd isolate-flip tag");
+    // detect_fullwidth_exe — "file.ＥＸＥ"
+    AssertEqual<string?>(
+        "WidthClassExt",
+        Tag(new[] { 0x66, 0x69, 0x6C, 0x65, 0x2E, 0xFF25, 0xFF38, 0xFF25 }),
+        "fd fullwidth-ext tag");
+    // detect_combining_in_ext — "file.é xe" (combining acute in the extension)
+    AssertEqual<string?>(
+        "CombiningInExt",
+        Tag(new[] { 0x66, 0x69, 0x6C, 0x65, 0x2E, 0x65, 0x0301, 0x78, 0x65 }),
+        "fd combining-in-ext tag");
+    // detect_triple_extension — "setup.tar.gz.sig"
+    AssertEqual<string?>(
+        "MultipleExtensions",
+        Tag(new[] { 0x73, 0x65, 0x74, 0x75, 0x70, 0x2E, 0x74, 0x61, 0x72, 0x2E, 0x67, 0x7A, 0x2E, 0x73, 0x69, 0x67 }),
+        "fd triple-extension tag");
+
+    // ── priority-ladder structural check ─────────────────────────────────
+    // A bidi control outranks a fullwidth extension.
+    AssertEqual<string?>("RloFlip", Tag(new[] { 0x202E, 0x66, 0x2E, 0xFF25 }), "fd bidi-beats-fullwidth");
+
+    Console.WriteLine("clean: .NET filename-disguise data + detect + structural spot-check passes");
 }
 
 // Opaque-blob refinement: structurally valid strict UTF-8 under a size bound,

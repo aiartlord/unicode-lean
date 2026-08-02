@@ -24,6 +24,7 @@ struct SecurityContractRunner {
         try testStreamSafeViolation()
         try testEmojiZwjIntegrity()
         try testRendererDivergence()
+        try testFilenameDisguise()
         try testOpaqueBlob()
         print("clean: Swift contract tests pass")
     }
@@ -525,6 +526,88 @@ struct SecurityContractRunner {
             rendererDivergenceReasonCode("MixedDirectionVariance"),
             "unicode.security.D.renderer-divergence.MixedDirectionVariance",
             "renderer-divergence reason code")
+    }
+
+    // Pins filenameDisguiseDetect against the ground-truth theorems in
+    // Unicode/Security/Display/FilenameDisguise.lean and the verified Rust
+    // reference: the shared context-free fixture runs through detect, plus the
+    // 10 Rust spot-checks and 1 structural check are asserted directly.
+    private static func testFilenameDisguise() throws {
+        // Shared context-free fixture through detect. required_findings carries
+        // full reason codes (unicode.security.D.filename-disguise.<Tag>);
+        // an empty list means clear.
+        let fixture = try loadFixture("detectors/filename_disguise.json")
+        try expectEqual(fixture["schema"] as? Int, 1, "filename-disguise schema")
+        try expectEqual(try string(fixture, "family"), "filename-disguise", "filename-disguise family")
+        for entry in try array(fixture, "cases") {
+            let name = try string(entry, "name")
+            let input = try intArray(entry, "input")
+            let required = try stringArray(entry, "required_findings")
+            if let tag = filenameDisguiseDetect(input).classify.tag {
+                let code = filenameDisguiseReasonCode(tag)
+                try expect(required.contains(code), "filename-disguise \(name): expected \(code) in \(required)")
+            } else {
+                try expect(required.isEmpty, "filename-disguise \(name): expected clear, got \(required)")
+            }
+        }
+
+        // ── §5 detect spot checks (one per Rust/Lean theorem). ──────────────
+        // detect_empty_clear
+        try expect(filenameDisguiseDetect([]).classify.isClear, "filename-disguise empty clear")
+        // detect_plain_txt_clear — "document.txt"
+        let plain = filenameDisguiseDetect([0x64, 0x6F, 0x63, 0x75, 0x6D, 0x65, 0x6E, 0x74, 0x2E, 0x74, 0x78, 0x74])
+        try expect(plain.classify.isClear, "filename-disguise plain txt clear")
+        try expectEqual(plain.lastDotPos, 8, "filename-disguise plain txt last dot")
+        // detect_no_extension_clear — "foo"
+        let noExt = filenameDisguiseDetect([0x66, 0x6F, 0x6F])
+        try expect(noExt.classify.isClear, "filename-disguise no extension clear")
+        try expectEqual(noExt.lastDotPos, nil, "filename-disguise no extension last dot")
+        // detect_tar_gz_clear — "archive.tar.gz" (2 dots, below the multi-ext bound)
+        try expect(
+            filenameDisguiseDetect([0x61, 0x72, 0x63, 0x68, 0x69, 0x76, 0x65, 0x2E, 0x74, 0x61, 0x72, 0x2E, 0x67, 0x7A])
+                .classify.isClear,
+            "filename-disguise tar.gz clear")
+        // detect_hebrew_clear — native Hebrew name, no bidi controls.
+        try expect(
+            filenameDisguiseDetect([0x05D0, 0x05D1, 0x05D2, 0x2E, 0x74, 0x78, 0x74]).classify.isClear,
+            "filename-disguise hebrew clear")
+        // detect_rlo_flip — "document<RLO>txt.exe"
+        let rlo = filenameDisguiseDetect([
+            0x64, 0x6F, 0x63, 0x75, 0x6D, 0x65, 0x6E, 0x74, 0x202E, 0x74, 0x78, 0x74, 0x2E, 0x65, 0x78, 0x65,
+        ])
+        try expectEqual(rlo.classify.tag, "RloFlip", "filename-disguise rlo flip tag")
+        try expectEqual(rlo.classify.positions, [8], "filename-disguise rlo flip positions")
+        // detect_isolate_flip — RLI/PDI isolate variant, also RloFlip.
+        try expectEqual(
+            filenameDisguiseDetect([0x64, 0x6F, 0x63, 0x2067, 0x74, 0x78, 0x74, 0x2E, 0x65, 0x78, 0x65, 0x2069])
+                .classify.tag,
+            "RloFlip", "filename-disguise isolate flip tag")
+        // detect_fullwidth_exe — "file.ＥＸＥ"
+        try expectEqual(
+            filenameDisguiseDetect([0x66, 0x69, 0x6C, 0x65, 0x2E, 0xFF25, 0xFF38, 0xFF25]).classify.tag,
+            "WidthClassExt", "filename-disguise fullwidth exe tag")
+        // detect_combining_in_ext — "file.é xe" (combining acute in the extension)
+        try expectEqual(
+            filenameDisguiseDetect([0x66, 0x69, 0x6C, 0x65, 0x2E, 0x65, 0x0301, 0x78, 0x65]).classify.tag,
+            "CombiningInExt", "filename-disguise combining in ext tag")
+        // detect_triple_extension — "setup.tar.gz.sig"
+        try expectEqual(
+            filenameDisguiseDetect([
+                0x73, 0x65, 0x74, 0x75, 0x70, 0x2E, 0x74, 0x61, 0x72, 0x2E, 0x67, 0x7A, 0x2E, 0x73, 0x69, 0x67,
+            ]).classify.tag,
+            "MultipleExtensions", "filename-disguise triple extension tag")
+
+        // ── priority-ladder structural check. ───────────────────────────────
+        // A bidi control outranks a fullwidth extension.
+        try expectEqual(
+            filenameDisguiseDetect([0x202E, 0x66, 0x2E, 0xFF25]).classify.tag,
+            "RloFlip", "filename-disguise bidi beats fullwidth")
+
+        // Reason-code shape.
+        try expectEqual(
+            filenameDisguiseReasonCode("RloFlip"),
+            "unicode.security.D.filename-disguise.RloFlip",
+            "filename-disguise reason code")
     }
 
     // Pins the covert-display-compound detector against the detect_* spot-check
