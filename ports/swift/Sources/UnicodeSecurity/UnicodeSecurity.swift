@@ -47,6 +47,7 @@ public enum Family {
     public static let aiWatermarkDetectability = "ai-watermark-detectability"
     public static let streamSafeViolation = "stream-safe-violation"
     public static let emojiZwjIntegrity = "emoji-zwj-integrity"
+    public static let rendererDivergence = "renderer-divergence"
 }
 
 public struct Finding: Equatable {
@@ -91,6 +92,7 @@ private var bip39WordlistCache: [String: Set<[Int]>]?
 private var emojiRangesCache: [(Int, Int)]?
 private var emojiZwjSequencesCache: [[Int]]?
 private var emojiZwjAlphabetCache: Set<Int>?
+private var graphemeExtendRangesCache: [(Int, Int)]?
 
 public func scan(profile: String, mode: String, input: [Int]) -> Verdict {
     let codepoints = input.map(ensureCodepoint)
@@ -277,7 +279,7 @@ private func layer(_ family: String) -> String {
     {
         return "I"
     }
-    if family == Family.rtlInjection {
+    if family == Family.rtlInjection || family == Family.rendererDivergence {
         return "D"
     }
     if family == Family.confusableBidiCompound || family == Family.covertDisplayCompound {
@@ -3681,4 +3683,284 @@ public func emojiZwjIntegrityDetect(_ input: [Int]) -> EmojiZwjIntegrityVerdict 
 /// `unicode.security.I.emoji-zwj-integrity.<tag>`.
 public func emojiZwjIntegrityReasonCode(_ subThreat: String) -> String {
     reasonCode(family: Family.emojiZwjIntegrity, subThreat: subThreat)
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// RendererDivergence — detection of codepoint/sequence shapes known to render
+// differently across font + terminal + browser stacks (display-layer detector,
+// layer D).
+//
+// Direct port of Unicode/Security/Display/RendererDivergence.lean, mirroring the
+// verified Rust reference. An adversary crafts content that renders one way in
+// the auditor's renderer (a benign glyph or an empty span) and a different way
+// in the consumer's renderer (a misleading glyph, a wider glyph, or a different
+// sequence). This is the "fingerprint stability" family — clear inputs render
+// the same across the renderer cohort the Standard documents as stable.
+//
+// The detector draws a heuristic three-value split: an input is clear when none
+// of the documented variance triggers fire, and otherwise is classified by the
+// first trigger in priority order — combining-mark stack overflow, variation-
+// selector presence, an unregistered ZWJ shape, fullwidth/halfwidth display, or
+// mixed direction. It reuses the port's own tables (the variation-selector set,
+// the grapheme Extend class, the RGI ZWJ registry, and strong-bidi classes),
+// never a host rendering or shaping library.
+//
+// Sub-threats (priority order):
+//   1. CombiningStackOverflow    Zalgo-like combining-mark stack >= 4 on a base.
+//   2. VariationSelectorVariance any variation selector present.
+//   3. UnregisteredZwjVariance   ZWJ-containing input not in the RGI ZWJ set.
+//   4. FullwidthVariance         a fullwidth/halfwidth codepoint present.
+//   5. MixedDirectionVariance    both strong-LTR and strong-RTL codepoints.
+// ─────────────────────────────────────────────────────────────────────
+
+/// The combining-mark stack depth (on a single base) at or beyond which the
+/// input is treated as a Zalgo-style rendering-variance hazard.
+public let rendererDivergenceMinCombiningStack: Int = 4
+
+/// The ZERO WIDTH JOINER codepoint.
+public let rendererDivergenceZwj: Int = 0x200D
+
+/// Sub-threat enumeration for renderer-divergence, in priority order.
+public enum RendererDivergenceSubThreat: Equatable {
+    /// A combining-mark stack of `stackLen` marks on the base at `basePos`.
+    case combiningStackOverflow(basePos: Int, stackLen: Int)
+    /// A variation selector at `firstVsPos` (codepoint `firstVsCp`).
+    case variationSelectorVariance(firstVsPos: Int, firstVsCp: Int)
+    /// A ZWJ-containing input not present in the registered RGI ZWJ set.
+    case unregisteredZwjVariance(firstZwjPos: Int)
+    /// A fullwidth/halfwidth codepoint at `firstFwPos` (codepoint `firstFwCp`).
+    case fullwidthVariance(firstFwPos: Int, firstFwCp: Int)
+    /// Both strong-LTR and strong-RTL codepoints in one input.
+    case mixedDirectionVariance(ltrCount: Int, rtlCount: Int)
+
+    /// Fixture-row tag string for this sub-threat (matches `SubThreat.tag`).
+    public var tag: String {
+        switch self {
+        case .combiningStackOverflow: return "CombiningStackOverflow"
+        case .variationSelectorVariance: return "VariationSelectorVariance"
+        case .unregisteredZwjVariance: return "UnregisteredZwjVariance"
+        case .fullwidthVariance: return "FullwidthVariance"
+        case .mixedDirectionVariance: return "MixedDirectionVariance"
+        }
+    }
+}
+
+/// Top-level classification for renderer-divergence (stable = `clear`).
+public enum RendererDivergenceClassification: Equatable {
+    /// Rendering is consistent across the documented renderer cohort.
+    case clear
+    /// A documented variance mode fired: the sub-threat, the implicated
+    /// positions, and the (always-empty for this detector) decoded-byte
+    /// projection, kept for shape parity with the Lean `Classification.hazard`.
+    case hazard(sub: RendererDivergenceSubThreat, positions: [Int], decoded: [UInt8])
+
+    /// True iff the classification is `clear` (i.e. stable).
+    public var isClear: Bool {
+        switch self {
+        case .clear: return true
+        case .hazard: return false
+        }
+    }
+
+    /// Human-facing tag for a hazard, or `nil` when clear.
+    public var tag: String? {
+        switch self {
+        case .clear: return nil
+        case .hazard(let sub, _, _): return sub.tag
+        }
+    }
+
+    /// Implicated positions (empty when clear).
+    public var positions: [Int] {
+        switch self {
+        case .clear: return []
+        case .hazard(_, let positions, _): return positions
+        }
+    }
+}
+
+/// The structured output of `rendererDivergenceDetect` (mirrors the Lean `Verdict`).
+public struct RendererDivergenceVerdict: Equatable {
+    /// The scanned input codepoints.
+    public let input: [Int]
+    /// The classification verdict.
+    public let classify: RendererDivergenceClassification
+    /// Count of variation selectors.
+    public let vsCount: Int
+    /// Count of combining (Extend) marks.
+    public let combiningCount: Int
+    /// Count of fullwidth/halfwidth codepoints.
+    public let fullwidthCount: Int
+    /// Whether the input contains any ZWJ.
+    public let hasZwj: Bool
+    /// Count of strong-LTR codepoints.
+    public let strongLtrCount: Int
+    /// Count of strong-RTL codepoints.
+    public let strongRtlCount: Int
+}
+
+/// The `Grapheme_Cluster_Break = Extend` ranges, derived from the bundled tables
+/// the port already carries: the `Grapheme_Extend` property of
+/// DerivedCoreProperties.txt (read through the same integrity-checked
+/// `readDataFile` the casing predicates use) unioned with the emoji skin-tone
+/// modifiers (U+1F3FB..U+1F3FF), which UAX #29 assigns `GCB = Extend`. This union
+/// equals the canonical GCB=Extend class — never a host segmentation/ICU library.
+private func graphemeExtendRanges() -> [(Int, Int)] {
+    if let cached = graphemeExtendRangesCache { return cached }
+    var parsed = parseDerivedProperty(readDataFile("DerivedCoreProperties.txt"), "Grapheme_Extend")
+    parsed.append((0x1F3FB, 0x1F3FF))
+    let sorted = parsed.sorted { $0.0 < $1.0 }
+    graphemeExtendRangesCache = sorted
+    return sorted
+}
+
+/// True iff `cp` is a variation selector (reuses the port's own predicate from
+/// the variation-selector-payload detector: FE00-FE0F, E0100-E01EF, 180B-180D).
+private func rendererDivergenceIsVariationSelector(_ cp: Int) -> Bool {
+    isVariationSelector(cp)
+}
+
+/// True iff `cp` is the ZWJ codepoint.
+private func rendererDivergenceIsZwj(_ cp: Int) -> Bool {
+    cp == rendererDivergenceZwj
+}
+
+/// True iff `cp` is in the Halfwidth/Fullwidth Forms block.
+private func rendererDivergenceIsFullwidthHalfwidth(_ cp: Int) -> Bool {
+    cp >= 0xFF01 && cp <= 0xFFEF
+}
+
+/// True iff `cp` has `Grapheme_Cluster_Break = Extend` (reuses the port's tables).
+private func rendererDivergenceIsGraphemeExtend(_ cp: Int) -> Bool {
+    graphemeExtendRanges().contains { cp >= $0.0 && cp <= $0.1 }
+}
+
+private func rendererDivergenceCountVs(_ input: [Int]) -> Int {
+    input.filter { rendererDivergenceIsVariationSelector($0) }.count
+}
+
+private func rendererDivergenceCountCombining(_ input: [Int]) -> Int {
+    input.filter { rendererDivergenceIsGraphemeExtend($0) }.count
+}
+
+private func rendererDivergenceCountFullwidth(_ input: [Int]) -> Int {
+    input.filter { rendererDivergenceIsFullwidthHalfwidth($0) }.count
+}
+
+private func rendererDivergenceInputHasZwj(_ input: [Int]) -> Bool {
+    input.contains { rendererDivergenceIsZwj($0) }
+}
+
+private func rendererDivergenceCountStrongLtr(_ input: [Int]) -> Int {
+    input.filter { isStrongLtr($0) }.count
+}
+
+private func rendererDivergenceCountStrongRtl(_ input: [Int]) -> Int {
+    input.filter { isStrongRtl($0) }.count
+}
+
+/// Position and codepoint of the first variation selector.
+private func rendererDivergenceFirstVsPos(_ input: [Int]) -> (Int, Int)? {
+    for (idx, cp) in input.enumerated() where rendererDivergenceIsVariationSelector(cp) {
+        return (idx, cp)
+    }
+    return nil
+}
+
+/// Position of the first ZWJ.
+private func rendererDivergenceFirstZwjPos(_ input: [Int]) -> Int? {
+    for (idx, cp) in input.enumerated() where rendererDivergenceIsZwj(cp) {
+        return idx
+    }
+    return nil
+}
+
+/// Position and codepoint of the first fullwidth/halfwidth codepoint.
+private func rendererDivergenceFirstFullwidthPos(_ input: [Int]) -> (Int, Int)? {
+    for (idx, cp) in input.enumerated() where rendererDivergenceIsFullwidthHalfwidth(cp) {
+        return (idx, cp)
+    }
+    return nil
+}
+
+/// The first base position (a non-Extend codepoint) immediately followed by
+/// exactly `minStack` consecutive Extend codepoints. Returns `(basePos, minStack)`
+/// on hit.
+private func rendererDivergenceFirstCombiningStack(_ input: [Int], _ minStack: Int) -> (Int, Int)? {
+    for (idx, cp) in input.enumerated() where !rendererDivergenceIsGraphemeExtend(cp) {
+        let following = Array(input.dropFirst(idx + 1).prefix(minStack))
+        if following.count == minStack && following.allSatisfy({ rendererDivergenceIsGraphemeExtend($0) }) {
+            return (idx, minStack)
+        }
+    }
+    return nil
+}
+
+/// The RendererDivergence detection function. Mirrors the Lean/Rust `detect`:
+/// walks the priority ladder CombiningStackOverflow -> VariationSelectorVariance
+/// -> UnregisteredZwjVariance -> FullwidthVariance -> MixedDirectionVariance,
+/// returning the first trigger that fires (else `clear`).
+public func rendererDivergenceDetect(_ input: [Int]) -> RendererDivergenceVerdict {
+    let vsCount = rendererDivergenceCountVs(input)
+    let combiningCount = rendererDivergenceCountCombining(input)
+    let fullwidthCount = rendererDivergenceCountFullwidth(input)
+    let hasZwj = rendererDivergenceInputHasZwj(input)
+    let ltrCount = rendererDivergenceCountStrongLtr(input)
+    let rtlCount = rendererDivergenceCountStrongRtl(input)
+
+    let classification: RendererDivergenceClassification
+    // Priority 1: combining-mark stack overflow (Zalgo).
+    if let (basePos, stackLen) = rendererDivergenceFirstCombiningStack(input, rendererDivergenceMinCombiningStack) {
+        classification = .hazard(
+            sub: .combiningStackOverflow(basePos: basePos, stackLen: stackLen),
+            positions: [basePos],
+            decoded: [])
+    } else if let (pos, cp) = rendererDivergenceFirstVsPos(input) {
+        // Priority 2: any variation selector triggers presentation variance.
+        classification = .hazard(
+            sub: .variationSelectorVariance(firstVsPos: pos, firstVsCp: cp),
+            positions: [pos],
+            decoded: [])
+    } else if hasZwj && !emojiZwjIsRegisteredSequence(input) {
+        // Priority 3: ZWJ-containing input not in the registered RGI set.
+        if let pos = rendererDivergenceFirstZwjPos(input) {
+            classification = .hazard(
+                sub: .unregisteredZwjVariance(firstZwjPos: pos),
+                positions: [pos],
+                decoded: [])
+        } else {
+            classification = .clear
+        }
+    } else if let (pos, cp) = rendererDivergenceFirstFullwidthPos(input) {
+        // Priority 4: fullwidth/halfwidth.
+        classification = .hazard(
+            sub: .fullwidthVariance(firstFwPos: pos, firstFwCp: cp),
+            positions: [pos],
+            decoded: [])
+    } else if ltrCount > 0 && rtlCount > 0 {
+        // Priority 5: mixed direction.
+        classification = .hazard(
+            sub: .mixedDirectionVariance(ltrCount: ltrCount, rtlCount: rtlCount),
+            positions: [],
+            decoded: [])
+    } else {
+        classification = .clear
+    }
+
+    return RendererDivergenceVerdict(
+        input: input,
+        classify: classification,
+        vsCount: vsCount,
+        combiningCount: combiningCount,
+        fullwidthCount: fullwidthCount,
+        hasZwj: hasZwj,
+        strongLtrCount: ltrCount,
+        strongRtlCount: rtlCount)
+}
+
+/// Stable reason code for a renderer-divergence sub-threat tag, routed through
+/// the shared reason-code builder:
+/// `unicode.security.D.renderer-divergence.<tag>`.
+public func rendererDivergenceReasonCode(_ subThreat: String) -> String {
+    reasonCode(family: Family.rendererDivergence, subThreat: subThreat)
 }

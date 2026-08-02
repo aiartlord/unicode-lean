@@ -23,6 +23,7 @@ struct SecurityContractRunner {
         try testAiWatermarkDetectability()
         try testStreamSafeViolation()
         try testEmojiZwjIntegrity()
+        try testRendererDivergence()
         try testOpaqueBlob()
         print("clean: Swift contract tests pass")
     }
@@ -447,6 +448,83 @@ struct SecurityContractRunner {
             emojiZwjIntegrityReasonCode("DoubleZWJ"),
             "unicode.security.I.emoji-zwj-integrity.DoubleZWJ",
             "emoji-zwj reason code")
+    }
+
+    // Pins rendererDivergenceDetect against the ground-truth theorems in
+    // Unicode/Security/Display/RendererDivergence.lean and the verified Rust
+    // reference: the shared context-free fixture runs through detect, plus the
+    // 9 Rust spot-checks and 2 structural checks are asserted directly.
+    private static func testRendererDivergence() throws {
+        // Shared context-free fixture through detect. required_findings carries
+        // full reason codes (unicode.security.D.renderer-divergence.<Tag>);
+        // an empty list means clear.
+        let fixture = try loadFixture("detectors/renderer_divergence.json")
+        try expectEqual(fixture["schema"] as? Int, 1, "renderer-divergence schema")
+        try expectEqual(try string(fixture, "family"), "renderer-divergence", "renderer-divergence family")
+        for entry in try array(fixture, "cases") {
+            let name = try string(entry, "name")
+            let input = try intArray(entry, "input")
+            let required = try stringArray(entry, "required_findings")
+            if let tag = rendererDivergenceDetect(input).classify.tag {
+                let code = rendererDivergenceReasonCode(tag)
+                try expect(required.contains(code), "renderer-divergence \(name): expected \(code) in \(required)")
+            } else {
+                try expect(required.isEmpty, "renderer-divergence \(name): expected clear, got \(required)")
+            }
+        }
+
+        // ── §5 detect spot checks (one per Rust/Lean theorem). ──────────────
+        // detect_empty_clear
+        try expect(rendererDivergenceDetect([]).classify.isClear, "renderer-divergence empty clear")
+        // detect_ascii_clear
+        try expect(
+            rendererDivergenceDetect([0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear,
+            "renderer-divergence ascii clear")
+        // detect_han_clear
+        try expect(rendererDivergenceDetect([0x4E2D, 0x6587]).classify.isClear, "renderer-divergence han clear")
+        // detect_vs_variance — a single VS (FE0F) after an emoji.
+        try expectEqual(
+            rendererDivergenceDetect([0x1F600, 0xFE0F]).classify.tag,
+            "VariationSelectorVariance", "renderer-divergence vs variance")
+        // detect_rgi_family_clear — a registered RGI family ZWJ sequence.
+        let family = rendererDivergenceDetect([0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466])
+        try expect(family.classify.isClear, "renderer-divergence rgi family clear")
+        try expect(family.hasZwj, "renderer-divergence rgi family has zwj")
+        // detect_unregistered_zwj_variance — man + ZWJ + woman, not in RGI.
+        try expectEqual(
+            rendererDivergenceDetect([0x1F468, 0x200D, 0x1F469]).classify.tag,
+            "UnregisteredZwjVariance", "renderer-divergence unregistered zwj variance")
+        // detect_zalgo_variance — a 4-deep combining stack.
+        let zalgo = rendererDivergenceDetect([0x0061, 0x0301, 0x0302, 0x0303, 0x0304])
+        try expectEqual(zalgo.classify.tag, "CombiningStackOverflow", "renderer-divergence zalgo tag")
+        try expectEqual(zalgo.classify.positions, [0], "renderer-divergence zalgo positions")
+        try expectEqual(zalgo.combiningCount, 4, "renderer-divergence zalgo combining count")
+        // detect_fullwidth_variance — fullwidth 'A'.
+        try expectEqual(
+            rendererDivergenceDetect([0xFF21]).classify.tag,
+            "FullwidthVariance", "renderer-divergence fullwidth variance")
+        // detect_mixed_direction — Latin + Hebrew in one input.
+        let mixed = rendererDivergenceDetect([0x41, 0x42, 0x05D0, 0x05D1])
+        try expectEqual(mixed.classify.tag, "MixedDirectionVariance", "renderer-divergence mixed direction tag")
+        try expect(
+            mixed.strongLtrCount > 0 && mixed.strongRtlCount > 0,
+            "renderer-divergence mixed direction counts")
+
+        // ── priority-ladder structural checks. ──────────────────────────────
+        // A combining stack outranks a variation selector present later.
+        try expectEqual(
+            rendererDivergenceDetect([0x0061, 0x0301, 0x0302, 0x0303, 0x0304, 0xFE0F]).classify.tag,
+            "CombiningStackOverflow", "renderer-divergence combining stack beats vs")
+        // Exactly three combining marks is below the stack threshold — no overflow.
+        try expect(
+            rendererDivergenceDetect([0x0061, 0x0301, 0x0302, 0x0303]).classify.tag != "CombiningStackOverflow",
+            "renderer-divergence three marks below threshold")
+
+        // Reason-code shape.
+        try expectEqual(
+            rendererDivergenceReasonCode("MixedDirectionVariance"),
+            "unicode.security.D.renderer-divergence.MixedDirectionVariance",
+            "renderer-divergence reason code")
     }
 
     // Pins the covert-display-compound detector against the detect_* spot-check
