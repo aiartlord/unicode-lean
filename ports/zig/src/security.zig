@@ -5058,6 +5058,192 @@ pub const skin_tone_variation_forgery = struct {
 };
 
 // ─────────────────────────────────────────────────────────────────────
+// SourceDisplayDivergence detector (display layer D) — the aggregate
+// "what a reviewer sees differs from what the machine runs" detector,
+// mirroring Unicode.Security.Display.SourceDisplayDivergence.
+//
+// A single covert or identity trick may look individually benign, but any
+// hit means the rendered source diverges from its logical content; two or
+// more is a strong compound signal. This detector runs the port's own five
+// constituent detectors on the same codepoint stream and aggregates: zero
+// fire → clear, exactly one → pass through that family's tag, two or more →
+// Compound. Every constituent fires region-agnostically — payloads inside
+// string literals or comments count. This is a standalone detector: it is
+// not part of the default policy scan (matching the reference), so it adds
+// no Family enum entry and no policy row.
+//
+// It reuses the port's own constituent detectors — never a new predicate,
+// data table, or host library. Each fire test mirrors exactly the predicate
+// the file-scope policy `detect` uses to emit that family's finding, in the
+// canonical aggregation order:
+//   1. tag-block-payload           → "TagBlock"
+//   2. variation-selector-payload  → "VariationSelector"
+//   3. zero-width-payload          → "ZeroWidth"
+//   4. bidi-control-balance        → "BidiControl"
+//   5. homoglyph-confusable        → "IdentifierHomoglyph"
+// ─────────────────────────────────────────────────────────────────────
+
+pub const source_display_divergence = struct {
+    // ── §1 Constituent fire tests (reuse the port's own five detectors) ──
+    //
+    // A constituent "fires" precisely when its own classification is
+    // non-clear — i.e. when the policy `detect` would emit that family's
+    // finding. Each test reuses the port's own finding-producing logic:
+    // the tag-block / zero-width / bidi-control predicates via positionsWhere,
+    // and the variation-selector / homoglyph finding builders directly.
+
+    /// tag-block-payload fires iff the input carries a tag-block ASCII payload.
+    fn tagBlockFired(input: []const u32) bool {
+        return positionsWhere(input, isTagBlockAsciiPayload) != null;
+    }
+
+    /// variation-selector-payload fires iff its finding is present.
+    fn variationSelectorFired(input: []const u32) bool {
+        return variationSelectorFinding(input) != null;
+    }
+
+    /// zero-width-payload fires iff the input carries a bare zero-width payload.
+    fn zeroWidthFired(input: []const u32) bool {
+        return positionsWhere(input, isZeroWidthPayload) != null;
+    }
+
+    /// bidi-control-balance fires iff the input carries a bidi embedding control.
+    fn bidiControlFired(input: []const u32) bool {
+        return positionsWhere(input, isBidiEmbeddingControl) != null;
+    }
+
+    /// homoglyph-confusable fires iff its finding is present.
+    fn homoglyphFired(input: []const u32) bool {
+        return homoglyphConfusableFinding(input) != null;
+    }
+
+    // ── §2 Types ─────────────────────────────────────────────────────────
+
+    /// Sub-threat tag — one of the five constituent family tags in canonical
+    /// aggregation order, or Compound when two or more constituents fired.
+    pub const SubThreat = enum {
+        tag_block,
+        variation_selector,
+        zero_width,
+        bidi_control,
+        identifier_homoglyph,
+        compound,
+
+        /// Human-facing classification tag.
+        pub fn tag(self: SubThreat) []const u8 {
+            return switch (self) {
+                .tag_block => "TagBlock",
+                .variation_selector => "VariationSelector",
+                .zero_width => "ZeroWidth",
+                .bidi_control => "BidiControl",
+                .identifier_homoglyph => "IdentifierHomoglyph",
+                .compound => "Compound",
+            };
+        }
+
+        /// Fully-qualified reason code for this sub-threat.
+        pub fn reasonCode(self: SubThreat) []const u8 {
+            return switch (self) {
+                .tag_block => "unicode.security.D.source-display-divergence.TagBlock",
+                .variation_selector => "unicode.security.D.source-display-divergence.VariationSelector",
+                .zero_width => "unicode.security.D.source-display-divergence.ZeroWidth",
+                .bidi_control => "unicode.security.D.source-display-divergence.BidiControl",
+                .identifier_homoglyph => "unicode.security.D.source-display-divergence.IdentifierHomoglyph",
+                .compound => "unicode.security.D.source-display-divergence.Compound",
+            };
+        }
+    };
+
+    /// Top-level classification (clear = no constituent fired). Positions are
+    /// empty at this layer by the spec — the per-family verdicts carry them —
+    /// so the aggregate carries only the sub-threat tag.
+    pub const Classification = union(enum) {
+        /// No constituent fired — the rendered source matches its logical content.
+        clear,
+        /// One or more constituents fired: the aggregated sub-threat.
+        hazard: SubThreat,
+
+        /// True iff no constituent fired.
+        pub fn isClear(self: Classification) bool {
+            return switch (self) {
+                .clear => true,
+                .hazard => false,
+            };
+        }
+
+        /// Human-facing tag for a hazard, or null when clear.
+        pub fn tag(self: Classification) ?[]const u8 {
+            return switch (self) {
+                .clear => null,
+                .hazard => |sub| sub.tag(),
+            };
+        }
+
+        /// Fully-qualified reason code for a hazard, or null when clear.
+        pub fn reasonCode(self: Classification) ?[]const u8 {
+            return switch (self) {
+                .clear => null,
+                .hazard => |sub| sub.reasonCode(),
+            };
+        }
+    };
+
+    /// Verdict — the structured output of detect.
+    pub const Verdict = struct {
+        /// The scanned input codepoints.
+        input: []const u32,
+        /// The aggregated classification.
+        classify: Classification,
+        /// Count of constituents that fired (0..5).
+        fired_count: usize,
+    };
+
+    // ── §3 Top-level detection ───────────────────────────────────────────
+
+    /// Aggregate the port's own five constituent detectors into one D-layer
+    /// verdict. Constituents are evaluated in canonical order: tag-block,
+    /// variation-selector, zero-width, bidi-control, homoglyph. Zero fired →
+    /// clear; exactly one → that family's tag; two or more → Compound.
+    pub fn detect(input: []const u32) @This().Verdict {
+        var fires: [5]SubThreat = undefined;
+        var n: usize = 0;
+        if (tagBlockFired(input)) {
+            fires[n] = .tag_block;
+            n += 1;
+        }
+        if (variationSelectorFired(input)) {
+            fires[n] = .variation_selector;
+            n += 1;
+        }
+        if (zeroWidthFired(input)) {
+            fires[n] = .zero_width;
+            n += 1;
+        }
+        if (bidiControlFired(input)) {
+            fires[n] = .bidi_control;
+            n += 1;
+        }
+        if (homoglyphFired(input)) {
+            fires[n] = .identifier_homoglyph;
+            n += 1;
+        }
+
+        const classification: Classification = if (n == 0)
+            .clear
+        else if (n == 1)
+            .{ .hazard = fires[0] }
+        else
+            .{ .hazard = .compound };
+
+        return @This().Verdict{
+            .input = input,
+            .classify = classification,
+            .fired_count = n,
+        };
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────
 // Locale-case-inversion detector (Tier A2), mirroring
 // Unicode.Security.Form.LocaleCaseInversion.
 //
@@ -7417,4 +7603,85 @@ test "skin-tone-variation-forgery priority and counts" {
         try std.testing.expectEqual(@as(usize, 1), v.variation_selector16_count);
         try std.testing.expectEqual(@as(usize, 0), v.variation_selector15_count);
     }
+}
+
+// ── source-display-divergence (display layer D, aggregator) ──────────────
+
+const Sdd = source_display_divergence;
+
+fn sddReason(input: []const u32) ?[]const u8 {
+    return Sdd.detect(input).classify.reasonCode();
+}
+
+fn expectSddReason(input: []const u32, want: []const u8) !void {
+    const r = sddReason(input);
+    try std.testing.expect(r != null);
+    try std.testing.expectEqualStrings(want, r.?);
+}
+
+test "source-display-divergence shared fixture vectors" {
+    // The shared context-free fixture rows, inputs given as decimal codepoints.
+    // Clear rows assert isClear; hazard rows assert the fully qualified reason
+    // code from required_findings.
+
+    // empty-clear.
+    {
+        const v = Sdd.detect(&[_]u32{});
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expectEqual(@as(?[]const u8, null), v.classify.tag());
+        try std.testing.expectEqual(@as(usize, 0), v.fired_count);
+    }
+    // ascii-hello-clear — "Hello world".
+    try std.testing.expect(Sdd.detect(&[_]u32{ 72, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100 }).classify.isClear());
+    // ascii-source-clear — "let x = 1;".
+    try std.testing.expect(Sdd.detect(&[_]u32{ 108, 101, 116, 32, 120, 32, 61, 32, 49, 59 }).classify.isClear());
+    // tag-block-passthrough — tag-encoded "AB".
+    try expectSddReason(&[_]u32{ 917569, 917570 }, "unicode.security.D.source-display-divergence.TagBlock");
+    // variation-selector-passthrough — A + VS16.
+    try expectSddReason(&[_]u32{ 65, 65039 }, "unicode.security.D.source-display-divergence.VariationSelector");
+    // zero-width-passthrough — H + ZWSP + i.
+    try expectSddReason(&[_]u32{ 72, 8203, 105 }, "unicode.security.D.source-display-divergence.ZeroWidth");
+    // bidi-control-passthrough — RLO + A.
+    try expectSddReason(&[_]u32{ 8238, 65 }, "unicode.security.D.source-display-divergence.BidiControl");
+    // homoglyph-passthrough — "Nether<Cyrillic е>um".
+    try expectSddReason(&[_]u32{ 78, 101, 116, 104, 101, 114, 1077, 117, 109 }, "unicode.security.D.source-display-divergence.IdentifierHomoglyph");
+    // compound-vs-zwsp — A + VS16 + ZWSP.
+    try expectSddReason(&[_]u32{ 65, 65039, 8203 }, "unicode.security.D.source-display-divergence.Compound");
+    // compound-tag-zwsp — tag "AB" + ZWSP.
+    try expectSddReason(&[_]u32{ 917569, 917570, 8203 }, "unicode.security.D.source-display-divergence.Compound");
+}
+
+test "source-display-divergence detect spot checks" {
+    // The Rust §5 detect spot checks (one per Lean theorem), inputs as hex.
+
+    // clear: empty, "Hello world", "let x = 1;".
+    {
+        const v = Sdd.detect(&[_]u32{});
+        try std.testing.expect(v.classify.isClear());
+        try std.testing.expectEqual(@as(?[]const u8, null), v.classify.tag());
+    }
+    try std.testing.expect(Sdd.detect(&[_]u32{ 0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64 }).classify.isClear());
+    try std.testing.expect(Sdd.detect(&[_]u32{ 0x6C, 0x65, 0x74, 0x20, 0x78, 0x20, 0x3D, 0x20, 0x31, 0x3B }).classify.isClear());
+
+    // single-fire pass-through — each constituent in isolation reports its tag.
+    {
+        // tag-encoded "AB".
+        const v = Sdd.detect(&[_]u32{ 0xE0041, 0xE0042 });
+        try std.testing.expectEqualStrings("TagBlock", v.classify.tag().?);
+        try std.testing.expectEqual(@as(usize, 1), v.fired_count);
+    }
+    try std.testing.expectEqualStrings("VariationSelector", Sdd.detect(&[_]u32{ 0x0041, 0xFE0F }).classify.tag().?);
+    try std.testing.expectEqualStrings("ZeroWidth", Sdd.detect(&[_]u32{ 0x0048, 0x200B, 0x69 }).classify.tag().?);
+    try std.testing.expectEqualStrings("BidiControl", Sdd.detect(&[_]u32{ 0x202E, 0x41 }).classify.tag().?);
+    try std.testing.expectEqualStrings("IdentifierHomoglyph", Sdd.detect(&[_]u32{ 0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D }).classify.tag().?);
+
+    // two-or-more is Compound.
+    {
+        // A + VS16 + ZWSP — two constituents fire.
+        const v = Sdd.detect(&[_]u32{ 0x0041, 0xFE0F, 0x200B });
+        try std.testing.expectEqualStrings("Compound", v.classify.tag().?);
+        try std.testing.expectEqual(@as(usize, 2), v.fired_count);
+    }
+    // tag "AB" + ZWSP — two constituents fire.
+    try std.testing.expectEqualStrings("Compound", Sdd.detect(&[_]u32{ 0xE0041, 0xE0042, 0x200B }).classify.tag().?);
 }

@@ -7,6 +7,7 @@ using Ezwj = UnicodeSecurity.Security.EmojiZwjIntegrity;
 using Stvf = UnicodeSecurity.Security.SkinToneVariationForgery;
 using Rd = UnicodeSecurity.Security.RendererDivergence;
 using Fd = UnicodeSecurity.Security.FilenameDisguise;
+using Sdd = UnicodeSecurity.Security.SourceDisplayDivergence;
 using Ifd = UnicodeSecurity.Security.IdentifierFormDrift;
 using Afd = UnicodeSecurity.Security.AdmissibilityFormDrift;
 
@@ -37,6 +38,8 @@ TestRendererDivergenceFixture();
 TestRendererDivergenceSpotChecks();
 TestFilenameDisguiseFixture();
 TestFilenameDisguiseSpotChecks();
+TestSourceDisplayDivergenceFixture();
+TestSourceDisplayDivergenceSpotChecks();
 TestIdentifierFormDriftFixture();
 TestIdentifierFormDriftSpotChecks();
 TestAdmissibilityFormDriftFixture();
@@ -1429,6 +1432,97 @@ static void TestFilenameDisguiseSpotChecks()
     AssertEqual<string?>("RloFlip", Tag(new[] { 0x202E, 0x66, 0x2E, 0xFF25 }), "fd bidi-beats-fullwidth");
 
     Console.WriteLine("clean: .NET filename-disguise data + detect + structural spot-check passes");
+}
+
+// Ground truth: the shared context-free detector fixture
+// fixtures/security/detectors/source_display_divergence.json, run through the
+// aggregator's Detect. Each case asserts the aggregated reason code
+// (unicode.security.D.source-display-divergence.<Tag>) or clear.
+static void TestSourceDisplayDivergenceFixture()
+{
+    using var detector = LoadFixture("detectors/source_display_divergence.json");
+    AssertEqual(1, detector.RootElement.GetProperty("schema").GetInt32(), "source-display-divergence schema");
+    AssertEqual("source-display-divergence", String(detector.RootElement, "family"), "source-display-divergence family");
+    var cases = 0;
+    foreach (var entry in detector.RootElement.GetProperty("cases").EnumerateArray())
+    {
+        var name = String(entry, "name");
+        var input = Ints(entry.GetProperty("input"));
+        var verdict = Sdd.Detect(input);
+        var required = Strings(entry.GetProperty("required_findings")).ToList();
+        if (required.Count == 0)
+        {
+            AssertTrue(verdict.Classify.IsClear, $"source-display-divergence {name}: expected clear, got {verdict.Classify.Tag}");
+        }
+        else
+        {
+            foreach (var code in required)
+            {
+                AssertEqual<string?>(code, verdict.Classify.ReasonCode, $"source-display-divergence {name}: reason code");
+            }
+        }
+        cases++;
+    }
+    Console.WriteLine($"clean: .NET source-display-divergence {cases}-case shared-fixture detect passes");
+}
+
+// Ground truth: the detect spot-check theorems in the Rust port's
+// source_display_divergence.rs test module. The aggregator reuses the port's own
+// five constituent detectors (tag-block-payload, variation-selector-payload,
+// zero-width-payload, bidi-control-balance, homoglyph-confusable) from the core
+// scan fold — no new predicate, no new data file, no host library. Zero fired →
+// clear, one → that family's tag, two or more → Compound.
+static void TestSourceDisplayDivergenceSpotChecks()
+{
+    string? Tag(int[] input) => Sdd.Detect(input).Classify.Tag;
+
+    // ── clear cases ──────────────────────────────────────────────────────
+    AssertTrue(Sdd.Detect(System.Array.Empty<int>()).Classify.IsClear, "sdd empty clear");
+    // "Hello world"
+    AssertTrue(
+        Sdd.Detect(new[] { 0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64 }).Classify.IsClear,
+        "sdd hello-world clear");
+    // "let x = 1;"
+    AssertTrue(
+        Sdd.Detect(new[] { 0x6C, 0x65, 0x74, 0x20, 0x78, 0x20, 0x3D, 0x20, 0x31, 0x3B }).Classify.IsClear,
+        "sdd let-x-1 clear");
+
+    // ── single-fire pass-through (one per constituent, canonical order) ───
+    // tag-encoded "AB"
+    AssertEqual<string?>("TagBlock", Tag(new[] { 0xE0041, 0xE0042 }), "sdd tag-block passthrough");
+    // A + VS16
+    AssertEqual<string?>("VariationSelector", Tag(new[] { 0x0041, 0xFE0F }), "sdd variation-selector passthrough");
+    // H + ZWSP + i
+    AssertEqual<string?>("ZeroWidth", Tag(new[] { 0x0048, 0x200B, 0x69 }), "sdd zero-width passthrough");
+    // RLO + A
+    AssertEqual<string?>("BidiControl", Tag(new[] { 0x202E, 0x41 }), "sdd bidi-control passthrough");
+    // "Neth<Cyrillic е>um"
+    AssertEqual<string?>(
+        "IdentifierHomoglyph",
+        Tag(new[] { 0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D }),
+        "sdd identifier-homoglyph passthrough");
+
+    // ── two or more fired → Compound ─────────────────────────────────────
+    // A + VS16 + ZWSP
+    AssertEqual<string?>("Compound", Tag(new[] { 0x0041, 0xFE0F, 0x200B }), "sdd compound vs+zw");
+    // tag "AB" + ZWSP
+    AssertEqual<string?>("Compound", Tag(new[] { 0xE0041, 0xE0042, 0x200B }), "sdd compound tag+zw");
+
+    // ── reason-code + fired-tags observability ───────────────────────────
+    var zw = Sdd.Detect(new[] { 0x0048, 0x200B, 0x69 });
+    AssertEqual<string?>(
+        "unicode.security.D.source-display-divergence.ZeroWidth",
+        zw.Classify.ReasonCode,
+        "sdd zero-width reason code");
+    AssertEqual<string?>("ZeroWidth", string.Join(",", zw.FiredTags), "sdd zero-width fired-tags");
+    var compound = Sdd.Detect(new[] { 0x0041, 0xFE0F, 0x200B });
+    AssertEqual<string?>(
+        "unicode.security.D.source-display-divergence.Compound",
+        compound.Classify.ReasonCode,
+        "sdd compound reason code");
+    AssertEqual<string?>("VariationSelector,ZeroWidth", string.Join(",", compound.FiredTags), "sdd compound fired-tags");
+
+    Console.WriteLine("clean: .NET source-display-divergence clear + passthrough + compound spot-check passes");
 }
 
 // Opaque-blob refinement: structurally valid strict UTF-8 under a size bound,

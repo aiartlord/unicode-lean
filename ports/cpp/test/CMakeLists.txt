@@ -35,6 +35,7 @@ add_executable(unicode_cpp_tests
     surrogate_reassembly_test.cpp
     renderer_divergence_test.cpp
     filename_disguise_test.cpp
+    source_display_divergence_test.cpp
     skin_tone_variation_forgery_test.cpp
     identifier_form_drift_test.cpp
     admissibility_form_drift_test.cpp)

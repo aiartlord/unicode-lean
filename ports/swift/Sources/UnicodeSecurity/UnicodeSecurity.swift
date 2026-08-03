@@ -49,6 +49,7 @@ public enum Family {
     public static let emojiZwjIntegrity = "emoji-zwj-integrity"
     public static let rendererDivergence = "renderer-divergence"
     public static let filenameDisguise = "filename-disguise"
+    public static let sourceDisplayDivergence = "source-display-divergence"
     public static let identifierFormDrift = "identifier-form-drift"
     public static let skinToneVariationForgery = "skin-tone-variation-forgery"
     public static let caseExpansionMismatch = "case-expansion-mismatch"
@@ -291,7 +292,7 @@ private func layer(_ family: String) -> String {
         return "I"
     }
     if family == Family.rtlInjection || family == Family.rendererDivergence
-        || family == Family.filenameDisguise
+        || family == Family.filenameDisguise || family == Family.sourceDisplayDivergence
     {
         return "D"
     }
@@ -4497,6 +4498,132 @@ public func filenameDisguiseDetect(_ input: [Int]) -> FilenameDisguiseVerdict {
 /// shared reason-code builder: `unicode.security.D.filename-disguise.<tag>`.
 public func filenameDisguiseReasonCode(_ subThreat: String) -> String {
     reasonCode(family: Family.filenameDisguise, subThreat: subThreat)
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// SourceDisplayDivergence — the aggregate "what a reviewer sees differs from
+// what the machine runs" detector (display-layer detector, layer D).
+//
+// Byte-faithful transliteration of the verified reference implementation. A
+// single covert or identity trick may look individually benign, but any hit
+// means the rendered source diverges from its logical content, and two or more
+// is a strong compound signal. The detector runs the five constituent detectors
+// on the same codepoint stream and aggregates by how many fired (fired = a
+// constituent's classification is not clear): zero fire → clear, exactly one →
+// pass through that family's tag, two or more → `Compound`.
+//
+// It is pure aggregation over the port's own detectors — it introduces no new
+// data table, predicate, or host library. The five constituents, in canonical
+// aggregation order, are the port's own tag-block, variation-selector,
+// zero-width, bidi-control, and homoglyph detectors. The homoglyph constituent
+// is the port's homoglyph-confusable detector; this port realises the canonical
+// homoglyph-confusable detector as two scan families — `homoglyph-confusable`
+// (target/math/width/decomposition confusables) and `mixed-script-admissibility`
+// (cross-script mixing) — so the constituent fires iff either family fires,
+// reuniting the split back into the single canonical detector the reference
+// aggregates over.
+//
+// This is a standalone detector: like the reference, it is not part of the
+// default policy scan. Positions are empty at this layer by the spec (the
+// per-family verdicts carry them), so the verdict carries only the sub-threat
+// tag.
+// ─────────────────────────────────────────────────────────────────────
+
+/// The structured output of `sourceDisplayDivergenceDetect` (mirrors the Lean
+/// `Detection`). `sub` is `nil` for a clear input; a single constituent hit
+/// passes through its family tag; two or more yield `"Compound"`.
+public struct SourceDisplayDivergenceVerdict: Equatable {
+    /// The scanned input codepoints.
+    public let input: [Int]
+    /// The sub-threat tag: `nil` when clear, a single family tag on one hit, or
+    /// `"Compound"` when two or more constituents fired.
+    public let sub: String?
+
+    /// True iff the aggregate verdict is clear (no constituent fired).
+    public var isClear: Bool { sub == nil }
+
+    /// Human-facing tag for a hazard, or `nil` when clear.
+    public var tag: String? { sub }
+}
+
+/// True iff the port's tag-block-payload detector fires on `input` (any
+/// tag-block ASCII payload codepoint present). Reuses the same predicate the
+/// scan pipeline uses to raise the `tag-block-payload` finding.
+private func sourceDisplayTagBlockFired(_ input: [Int]) -> Bool {
+    !positionsWhere(input, isTagBlockAsciiPayload).isEmpty
+}
+
+/// True iff the port's variation-selector-payload detector fires on `input`.
+/// Reuses `variationSelectorFinding`, the scan pipeline's own detector.
+private func sourceDisplayVariationSelectorFired(_ input: [Int]) -> Bool {
+    variationSelectorFinding(input) != nil
+}
+
+/// True iff the port's zero-width-payload detector fires on `input` (any bare
+/// zero-width payload codepoint present). Reuses the scan pipeline's predicate.
+private func sourceDisplayZeroWidthFired(_ input: [Int]) -> Bool {
+    !positionsWhere(input, isZeroWidthPayload).isEmpty
+}
+
+/// True iff the port's bidi-control-balance detector fires on `input` (any bidi
+/// embedding control present). Reuses the scan pipeline's predicate.
+private func sourceDisplayBidiControlFired(_ input: [Int]) -> Bool {
+    !positionsWhere(input, isBidiEmbeddingControl).isEmpty
+}
+
+/// True iff the port's homoglyph-confusable detector fires on `input`. This port
+/// splits the canonical homoglyph-confusable detector into two scan families, so
+/// the constituent fires iff either the `homoglyph-confusable` family
+/// (`homoglyphConfusableFinding`) or the `mixed-script-admissibility` family
+/// (`mixedScriptAdmissibilityFinding`) fires. Both are the scan pipeline's own
+/// detectors.
+private func sourceDisplayHomoglyphFired(_ input: [Int]) -> Bool {
+    homoglyphConfusableFinding(input) != nil || mixedScriptAdmissibilityFinding(input) != nil
+}
+
+/// The SourceDisplayDivergence detection function. Mirrors the Lean/reference
+/// `detect`: runs the five constituent detectors in canonical order (tag-block,
+/// variation-selector, zero-width, bidi-control, homoglyph), collects the tags
+/// that fired, then classifies by count: none → clear, one → that family's tag,
+/// two or more → `Compound`.
+public func sourceDisplayDivergenceDetect(_ input: [Int]) -> SourceDisplayDivergenceVerdict {
+    var fires: [String] = []
+    if sourceDisplayTagBlockFired(input) {
+        fires.append("TagBlock")
+    }
+    if sourceDisplayVariationSelectorFired(input) {
+        fires.append("VariationSelector")
+    }
+    if sourceDisplayZeroWidthFired(input) {
+        fires.append("ZeroWidth")
+    }
+    if sourceDisplayBidiControlFired(input) {
+        fires.append("BidiControl")
+    }
+    if sourceDisplayHomoglyphFired(input) {
+        fires.append("IdentifierHomoglyph")
+    }
+
+    let sub: String?
+    switch fires.count {
+    case 0:
+        // No constituent fired: the source renders as its logical content.
+        sub = nil
+    case 1:
+        // Exactly one constituent fired: pass its family tag through.
+        sub = fires[0]
+    default:
+        // Two or more constituents fired: a strong compound divergence signal.
+        sub = "Compound"
+    }
+    return SourceDisplayDivergenceVerdict(input: input, sub: sub)
+}
+
+/// Stable reason code for a source-display-divergence sub-threat tag, routed
+/// through the shared reason-code builder:
+/// `unicode.security.D.source-display-divergence.<tag>`.
+public func sourceDisplayDivergenceReasonCode(_ subThreat: String) -> String {
+    reasonCode(family: Family.sourceDisplayDivergence, subThreat: subThreat)
 }
 
 // ─────────────────────────────────────────────────────────────────────

@@ -24,6 +24,7 @@ public final class SecurityContractTest {
     testEmojiZwjIntegrity();
     testSkinToneVariationForgery();
     testRendererDivergence();
+    testSourceDisplayDivergence();
     testFilenameDisguise();
     testIdentifierFormDrift();
     testAdmissibilityFormDrift();
@@ -915,6 +916,100 @@ public final class SecurityContractTest {
     specVectors++;
 
     System.out.println("clean: JVM renderer-divergence passes (" + fixtureCases
+        + " fixture cases + " + specVectors + " spec vectors)");
+  }
+
+  // Pins the display-layer SourceDisplayDivergence aggregator against the
+  // verified Rust reference ports/rust/src/security/display/source_display_divergence.rs.
+  // Two independent sources of truth are exercised: (a) the shared context-free
+  // fixture detectors/source_display_divergence.json, run through
+  // SourceDisplayDivergence.detect and checked against the fixture reason codes;
+  // (b) the detect spot-checks transcribed from the Rust test module. The
+  // aggregator reuses the port's own five constituent core-family detectors —
+  // tag-block-payload, variation-selector-payload, zero-width-payload,
+  // bidi-control-balance, and homoglyph-confusable — via Security's *Fired
+  // accessors (each delegating to the exact detector logic the main scan runs),
+  // never a re-implementation and never a host library.
+  private static void testSourceDisplayDivergence() throws IOException {
+    // (a) Shared context-free fixture through detect.
+    Map<String, Object> detector = fixture("detectors/source_display_divergence.json");
+    assertEquals(1, intValue(detector.get("schema")), "source-display-divergence schema");
+    assertEquals("source-display-divergence", string(detector, "family"),
+        "source-display-divergence family");
+    int fixtureCases = 0;
+    for (Map<String, Object> entry : objects(detector.get("cases"))) {
+      SourceDisplayDivergence.Detection detection =
+          SourceDisplayDivergence.detect(ints(entry.get("input")));
+      String code = SourceDisplayDivergence.reasonCode(detection);
+      List<String> required = strings(entry.get("required_findings"));
+      if (required.isEmpty()) {
+        assertEquals(null, code,
+            "source-display-divergence " + string(entry, "name") + " should be clear");
+      } else {
+        assertEquals(1, required.size(),
+            "source-display-divergence " + string(entry, "name") + " single finding");
+        assertEquals(required.get(0), code,
+            "source-display-divergence " + string(entry, "name"));
+      }
+      fixtureCases++;
+    }
+
+    // (b) detect spot-checks transcribed one-for-one from the Rust test module.
+    int specVectors = 0;
+
+    // clear_cases
+    assertTrue(SourceDisplayDivergence.detect(intList(new int[] {})).isClear(), "sdd empty clear");
+    specVectors++;
+    // "Hello world"
+    assertTrue(
+        SourceDisplayDivergence.detect(
+                intList(new int[] {0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64}))
+            .isClear(),
+        "sdd hello world clear");
+    specVectors++;
+    // "let x = 1;"
+    assertTrue(
+        SourceDisplayDivergence.detect(
+                intList(new int[] {0x6C, 0x65, 0x74, 0x20, 0x78, 0x20, 0x3D, 0x20, 0x31, 0x3B}))
+            .isClear(),
+        "sdd let x = 1; clear");
+    specVectors++;
+
+    // single_fire_passthrough
+    assertEquals("TagBlock",
+        SourceDisplayDivergence.detect(intList(new int[] {0xE0041, 0xE0042})).sub(),
+        "sdd tag-block passthrough");
+    specVectors++;
+    assertEquals("VariationSelector",
+        SourceDisplayDivergence.detect(intList(new int[] {0x0041, 0xFE0F})).sub(),
+        "sdd variation-selector passthrough");
+    specVectors++;
+    assertEquals("ZeroWidth",
+        SourceDisplayDivergence.detect(intList(new int[] {0x0048, 0x200B, 0x69})).sub(),
+        "sdd zero-width passthrough");
+    specVectors++;
+    assertEquals("BidiControl",
+        SourceDisplayDivergence.detect(intList(new int[] {0x202E, 0x41})).sub(),
+        "sdd bidi-control passthrough");
+    specVectors++;
+    assertEquals("IdentifierHomoglyph",
+        SourceDisplayDivergence.detect(
+                intList(new int[] {0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D}))
+            .sub(),
+        "sdd identifier-homoglyph passthrough");
+    specVectors++;
+
+    // two_or_more_is_compound
+    assertEquals("Compound",
+        SourceDisplayDivergence.detect(intList(new int[] {0x0041, 0xFE0F, 0x200B})).sub(),
+        "sdd compound vs + zero-width");
+    specVectors++;
+    assertEquals("Compound",
+        SourceDisplayDivergence.detect(intList(new int[] {0xE0041, 0xE0042, 0x200B})).sub(),
+        "sdd compound tag + zero-width");
+    specVectors++;
+
+    System.out.println("clean: JVM source-display-divergence passes (" + fixtureCases
         + " fixture cases + " + specVectors + " spec vectors)");
   }
 

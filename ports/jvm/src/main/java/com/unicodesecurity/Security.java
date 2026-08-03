@@ -197,6 +197,41 @@ public final class Security {
     return findings;
   }
 
+  // ───────────────────────────────────────────────────────────────────────
+  // Constituent-family "fired" accessors for the source-display-divergence
+  // aggregator. Each delegates to the exact constituent detector logic the
+  // main scan uses in detect() above, exposing only whether that family would
+  // classify the input as non-clear. SourceDisplayDivergence reuses these five
+  // — never a re-implementation and never a host library — to aggregate the
+  // display-layer verdict, mirroring the verified Rust reference which runs the
+  // same five constituent detects.
+  // ───────────────────────────────────────────────────────────────────────
+
+  /** True iff the tag-block-payload constituent fires on {@code input}. */
+  static boolean tagBlockPayloadFired(List<Integer> input) {
+    return !positionsWhere(input, Security::isTagBlockAsciiPayload).isEmpty();
+  }
+
+  /** True iff the variation-selector-payload constituent fires on {@code input}. */
+  static boolean variationSelectorPayloadFired(List<Integer> input) {
+    return variationSelectorFinding(input) != null;
+  }
+
+  /** True iff the zero-width-payload constituent fires on {@code input}. */
+  static boolean zeroWidthPayloadFired(List<Integer> input) {
+    return !positionsWhere(input, Security::isZeroWidthPayload).isEmpty();
+  }
+
+  /** True iff the bidi-control-balance constituent fires on {@code input}. */
+  static boolean bidiControlBalanceFired(List<Integer> input) {
+    return !positionsWhere(input, Security::isBidiEmbeddingControl).isEmpty();
+  }
+
+  /** True iff the homoglyph-confusable constituent fires on {@code input}. */
+  static boolean homoglyphConfusableFired(List<Integer> input) {
+    return homoglyphConfusableFinding(input) != null;
+  }
+
   private static String decide(String profile, String mode, List<Finding> findings) {
     if (findings.isEmpty()) return Action.ALLOW;
     if (Objects.equals(mode, Mode.OBSERVE) || Objects.equals(mode, Mode.WARN)) return Action.OBSERVE;

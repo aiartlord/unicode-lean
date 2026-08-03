@@ -26,6 +26,7 @@ struct SecurityContractRunner {
         try testEmojiZwjIntegrity()
         try testRendererDivergence()
         try testFilenameDisguise()
+        try testSourceDisplayDivergence()
         try testIdentifierFormDrift()
         try testAdmissibilityFormDrift()
         try testSkinToneVariationForgery()
@@ -688,6 +689,88 @@ struct SecurityContractRunner {
             filenameDisguiseReasonCode("RloFlip"),
             "unicode.security.D.filename-disguise.RloFlip",
             "filename-disguise reason code")
+    }
+
+    // Pins sourceDisplayDivergenceDetect against the ground-truth theorems in
+    // Unicode/Security/Display/SourceDisplayDivergence.lean and the verified Rust
+    // reference: the shared context-free fixture runs through detect, plus the
+    // Rust spot checks (clear, single passthrough per family, and compound) are
+    // asserted directly.
+    private static func testSourceDisplayDivergence() throws {
+        // Shared context-free fixture through detect. required_findings carries
+        // full reason codes (unicode.security.D.source-display-divergence.<Tag>);
+        // an empty list means clear.
+        let fixture = try loadFixture("detectors/source_display_divergence.json")
+        try expectEqual(fixture["schema"] as? Int, 1, "source-display-divergence schema")
+        try expectEqual(
+            try string(fixture, "family"), "source-display-divergence",
+            "source-display-divergence family")
+        for entry in try array(fixture, "cases") {
+            let name = try string(entry, "name")
+            let input = try intArray(entry, "input")
+            let required = try stringArray(entry, "required_findings")
+            if let tag = sourceDisplayDivergenceDetect(input).tag {
+                let code = sourceDisplayDivergenceReasonCode(tag)
+                try expect(
+                    required.contains(code),
+                    "source-display-divergence \(name): expected \(code) in \(required)")
+            } else {
+                try expect(
+                    required.isEmpty,
+                    "source-display-divergence \(name): expected clear, got \(required)")
+            }
+        }
+
+        // ── §5 detect spot checks (one per Rust/Lean theorem). ──────────────
+        // Clear cases: empty, "Hello world", "let x = 1;".
+        try expect(sourceDisplayDivergenceDetect([]).isClear, "source-display-divergence empty clear")
+        try expect(
+            sourceDisplayDivergenceDetect(
+                [0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64]).isClear,
+            "source-display-divergence hello world clear")
+        try expect(
+            sourceDisplayDivergenceDetect(
+                [0x6C, 0x65, 0x74, 0x20, 0x78, 0x20, 0x3D, 0x20, 0x31, 0x3B]).isClear,
+            "source-display-divergence let x = 1 clear")
+
+        // Single-fire passthrough: one tag per constituent family.
+        // tag-encoded "AB".
+        try expectEqual(
+            sourceDisplayDivergenceDetect([0xE0041, 0xE0042]).tag, "TagBlock",
+            "source-display-divergence tag block passthrough")
+        // A + VS16.
+        try expectEqual(
+            sourceDisplayDivergenceDetect([0x0041, 0xFE0F]).tag, "VariationSelector",
+            "source-display-divergence variation selector passthrough")
+        // H + ZWSP + i.
+        try expectEqual(
+            sourceDisplayDivergenceDetect([0x0048, 0x200B, 0x69]).tag, "ZeroWidth",
+            "source-display-divergence zero width passthrough")
+        // RLO + A.
+        try expectEqual(
+            sourceDisplayDivergenceDetect([0x202E, 0x41]).tag, "BidiControl",
+            "source-display-divergence bidi control passthrough")
+        // "Nethereum" with a Cyrillic е.
+        try expectEqual(
+            sourceDisplayDivergenceDetect(
+                [0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D]).tag, "IdentifierHomoglyph",
+            "source-display-divergence identifier homoglyph passthrough")
+
+        // Two or more constituents fired → Compound.
+        // A + VS16 + ZWSP.
+        try expectEqual(
+            sourceDisplayDivergenceDetect([0x0041, 0xFE0F, 0x200B]).tag, "Compound",
+            "source-display-divergence vs plus zero width compound")
+        // tag "AB" + ZWSP.
+        try expectEqual(
+            sourceDisplayDivergenceDetect([0xE0041, 0xE0042, 0x200B]).tag, "Compound",
+            "source-display-divergence tag plus zero width compound")
+
+        // Reason-code shape.
+        try expectEqual(
+            sourceDisplayDivergenceReasonCode("Compound"),
+            "unicode.security.D.source-display-divergence.Compound",
+            "source-display-divergence reason code")
     }
 
     // Pins identifierFormDriftDetect against the ground-truth theorems in
