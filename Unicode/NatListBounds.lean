@@ -15,8 +15,7 @@
 
   Substrate copied locally (rather than imported from a sibling
   repository) to keep the unicode repo self-contained and the
-  TCB transparent.  Original substrate: `jpyxal/lemma/proofs/
-  Lemma/Math/NatListBounds.lean`.
+  TCB transparent.
 
   Established by structural induction over `List`, with `omega` for the
   linear-arithmetic step.

@@ -1,7 +1,7 @@
 /-
   Unicode.Generated.Scripts
 
-  Script ranges from `lemma/lean/Unicode/Ucd/Scripts.txt` (UCD 17.0.0),
+  Script ranges from `Unicode/Ucd/Scripts.txt` (UCD 17.0.0),
   embedded as a String constant via `include_str` and parsed once at
   module load. Pattern follows `fgdorais/lean4-unicode-basic`.
 

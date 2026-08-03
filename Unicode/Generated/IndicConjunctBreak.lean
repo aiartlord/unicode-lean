@@ -2,7 +2,7 @@
   Unicode.Generated.IndicConjunctBreak
 
   Indic_Conjunct_Break (InCB) sub-property ranges from
-  `lemma/lean/Unicode/Ucd/DerivedCoreProperties.txt` (UCD 17.0.0),
+  `Unicode/Ucd/DerivedCoreProperties.txt` (UCD 17.0.0),
   embedded as a String constant via `include_str` and parsed once at
   module load. Pattern follows `fgdorais/lean4-unicode-basic`.
 

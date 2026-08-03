@@ -1,7 +1,7 @@
 /-
   Unicode.Generated.EastAsianWidth
 
-  East_Asian_Width ranges from `lemma/lean/Unicode/Ucd/EastAsianWidth.txt`
+  East_Asian_Width ranges from `Unicode/Ucd/EastAsianWidth.txt`
   (UCD 17.0.0). The property values and the pinned `List` range tables
   (`explicitRangesList` / `defaultRangesList`) live in
   `Unicode.Generated.EastAsianWidthData`; per-codepoint `lookup` consults

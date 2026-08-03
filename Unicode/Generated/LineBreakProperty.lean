@@ -1,7 +1,7 @@
 /-
   Unicode.Generated.LineBreakProperty
 
-  Line_Break ranges from `lemma/lean/Unicode/Ucd/LineBreak.txt`
+  Line_Break ranges from `Unicode/Ucd/LineBreak.txt`
   (UCD 17.0.0), embedded as a String constant via `include_str` and
   parsed once at module load. Pattern follows
   `fgdorais/lean4-unicode-basic`.

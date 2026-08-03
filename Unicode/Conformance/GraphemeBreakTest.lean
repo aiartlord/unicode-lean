@@ -2,7 +2,7 @@
   Unicode.Conformance.GraphemeBreakTest
 
   UAX #29 §3 conformance: every test row in
-  `lemma/lean/Unicode/Ucd/GraphemeBreakTest.txt` (UCD 17.0.0) is
+  `Unicode/Ucd/GraphemeBreakTest.txt` (UCD 17.0.0) is
   parsed into a (codepoints, expected breaks) pair, then
   `Unicode.Segmentation.GraphemeBreak.graphemeBreaks` is invoked on
   the codepoints and compared against the expected breaks. The rows

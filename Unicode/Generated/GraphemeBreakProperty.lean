@@ -2,7 +2,7 @@
   Unicode.Generated.GraphemeBreakProperty
 
   Grapheme_Cluster_Break ranges from
-  `lemma/lean/Unicode/Ucd/GraphemeBreakProperty.txt` (UCD 17.0.0). The
+  `Unicode/Ucd/GraphemeBreakProperty.txt` (UCD 17.0.0). The
   property values and the pinned `List` range table (`rangesList`) live
   in `Unicode.Generated.GraphemeBreakPropertyData`; `lookupGCB` consults
   that `List` so it reduces in the kernel. This module keeps the

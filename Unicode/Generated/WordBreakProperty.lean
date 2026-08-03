@@ -1,7 +1,7 @@
 /-
   Unicode.Generated.WordBreakProperty
 
-  Word_Break ranges from `lemma/lean/Unicode/Ucd/WordBreakProperty.txt`
+  Word_Break ranges from `Unicode/Ucd/WordBreakProperty.txt`
   (UCD 17.0.0), embedded as a String constant via `include_str` and
   parsed once at module load. Pattern follows
   `fgdorais/lean4-unicode-basic`.

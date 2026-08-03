@@ -1,7 +1,7 @@
 /-
   Unicode.Generated.EmojiData
 
-  Emoji property ranges from `lemma/lean/Unicode/Ucd/emoji-data.txt`
+  Emoji property ranges from `Unicode/Ucd/emoji-data.txt`
   (UTS #51 17.0.0). The property values and the pinned `List` of parsed
   rows (`parsedRowsList`) live in `Unicode.Generated.EmojiDataRows`; the
   per-property range tables `filterMap` over that `List` and the `is*`

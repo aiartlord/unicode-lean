@@ -2,7 +2,7 @@
   Unicode.Generated.DerivedCoreProperties
 
   Identifier-relevant boolean properties from
-  `lemma/lean/Unicode/Ucd/DerivedCoreProperties.txt` (UCD 17.0.0),
+  `Unicode/Ucd/DerivedCoreProperties.txt` (UCD 17.0.0),
   embedded as a String constant via `include_str` and parsed once at
   module load. Pattern follows `fgdorais/lean4-unicode-basic`.
 

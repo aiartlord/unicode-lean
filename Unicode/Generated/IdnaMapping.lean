@@ -1,7 +1,7 @@
 /-
   Unicode.Generated.IdnaMapping
 
-  IDNA mapping table from `lemma/lean/Unicode/Ucd/IdnaMappingTable.txt`
+  IDNA mapping table from `Unicode/Ucd/IdnaMappingTable.txt`
   (UTS #46 17.0.0 — IDNA Compatibility Processing), embedded as a
   String constant via `include_str` and parsed once at module load.
   Pattern follows `fgdorais/lean4-unicode-basic`.

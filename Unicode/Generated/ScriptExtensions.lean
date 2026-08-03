@@ -1,7 +1,7 @@
 /-
   Unicode.Generated.ScriptExtensions
 
-  Derived from `lemma/lean/Unicode/Ucd/ScriptExtensions.txt` (UCD 17.0.0).
+  Derived from `Unicode/Ucd/ScriptExtensions.txt` (UCD 17.0.0).
 
   Do not hand-edit. Regenerate from the source file to update.
 

@@ -2,7 +2,7 @@
   Unicode.Conformance.SentenceBreakTest
 
   UAX #29 §5 conformance: every test row in
-  `lemma/lean/Unicode/Ucd/SentenceBreakTest.txt` (UCD 17.0.0) is
+  `Unicode/Ucd/SentenceBreakTest.txt` (UCD 17.0.0) is
   parsed into a (codepoints, expected breaks) pair, then
   `Unicode.Segmentation.SentenceBreak.sentenceBreaks` is invoked on
   the codepoints and compared against the expected breaks. The
