@@ -3,8 +3,10 @@ Module      : Unicode.Security.Policy
 Description : Product-facing runtime security policy contract.
 
 This module is the Haskell runtime surface for the shared
-@scan(profile, mode, input) -> verdict@ contract.  The current v0 slice covers
-only the detector families represented in the shared policy fixtures.
+@scan(profile, mode, input) -> verdict@ contract, plus the byte-level
+@scanUtf8@ / @scanUtf16BE|LE@ / @scanUtf32BE|LE@ entry points that decode and
+enforce the wire encoding first.  All twenty-seven detector families are wired
+through this surface and emit the shared reason-code namespace.
 -}
 module Unicode.Security.Policy
   ( Action (..)

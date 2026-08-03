@@ -18,6 +18,15 @@ Pick by the consumer's language and latency budget.
   this when the consumer's language has no native port. See
   [`operate.md`](operate.md).
 
+## Consume the port for your language
+
+The dependency declaration and the exact API differ by language. Each port's
+README gives both — how to add the package and the concrete `scan` signature,
+verdict type, and reason-code accessors for that language — under
+`ports/<language>/README.md`. The reason codes, the verdict shape, and the
+profile and mode vocabulary are identical across every port, so the policy you
+write is portable; only the syntax to call it changes.
+
 ## Scan at the trust boundary, once
 
 Sanitize where untrusted text enters the system and carry the verdict forward.
