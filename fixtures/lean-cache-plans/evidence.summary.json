@@ -17,7 +17,7 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 4567953,
+      "bytes": 4567821,
       "decide_kernel": 520,
       "modules": 117,
       "row_refs": 2174,
@@ -39,7 +39,7 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 614944,
+      "bytes": 614867,
       "decide_kernel": 267,
       "modules": 65,
       "row_refs": 134,
@@ -61,7 +61,7 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 3989123,
+      "bytes": 3989112,
       "decide_kernel": 262,
       "modules": 77,
       "row_refs": 2,
@@ -94,7 +94,7 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 214548,
+      "bytes": 214526,
       "decide_kernel": 46,
       "modules": 37,
       "row_refs": 36,
