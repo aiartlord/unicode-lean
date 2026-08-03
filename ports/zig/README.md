@@ -1,24 +1,20 @@
 # Zig Port
 
-This is the in-repo Zig runtime port scaffold for the Unicode security layer.
-It starts at the shared product contract:
+This is the in-repo Zig runtime port of the Unicode security layer.
+It implements the shared product contract:
 
 ```text
 scan(profile, mode, input) -> verdict
 ```
 
-The current implementation covers only the detector families represented in
-the shared v0 fixtures: tag-block payloads, variation-selector payloads,
-zero-width payloads, bidi-control imbalance, noncharacter/control interchange
-hazards, the `homoglyph-confusable` `TargetMatch` / `MathAlpha` /
-`WidthClass` / `DecompositionSwap` contract slice, and
-`mixed-script-admissibility` `CrossScriptMix`. The port vendors the UTS #39
+It implements all 27 detector families, byte-faithful to the Lean-proven Rust
+reference, emitting the shared reason codes and verdicts; see
+[`../DETECTOR_COVERAGE.md`](../DETECTOR_COVERAGE.md). The port vendors the UTS #39
 data inputs under `src/data/`; `src/confusables_data.zig` is generated from
 `src/data/confusables.txt` for fast allocation-free lookup, and
 `src/case_folding_data.zig` is generated from `src/data/CaseFolding.txt` for
 full default case-folding lookup. `src/normalization_data.zig` is generated from
 `src/data/UnicodeData.txt` for the NFD bracket used by the homoglyph skeleton.
-It is intentionally not a full restriction-level detector port yet.
 
 Tests consume port-local copies of the shared policy, verdict, and detector
 fixtures under `testdata/fixtures/security/`.

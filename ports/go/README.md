@@ -1,19 +1,18 @@
 # Go Port
 
-This is the in-repo Go runtime port scaffold for the Unicode security layer.
-It starts at the shared product contract:
+This is the in-repo Go runtime port of the Unicode security layer.
+It implements the shared product contract:
 
 ```text
 scan(profile, mode, input) -> verdict
 ```
 
-The current implementation covers only the detector families represented in
-the shared v0 fixtures: tag-block payloads, variation-selector payloads,
-zero-width payloads, bidi-control imbalance, noncharacter/control interchange
-hazards, the data-backed `homoglyph-confusable` `TargetMatch` / `MathAlpha` /
-`WidthClass` / `DecompositionSwap` slice, and `mixed-script-admissibility`
-`CrossScriptMix`. It is intentionally not a full restriction-level detector
-port yet.
+It implements all 27 detector families, byte-faithful to the Lean-proven Rust
+reference, emitting the shared reason codes and verdicts. The detector reference
+and coverage matrix are in [`../DETECTOR_COVERAGE.md`](../DETECTOR_COVERAGE.md).
+The entry point is `security.Scan` and the byte-level `security.ScanUTF8`,
+`security.ScanUTF16BE|LE`, `security.ScanUTF32BE|LE`; see
+[`../../docs/how-to/integrate.md`](../../docs/how-to/integrate.md).
 
 Tests consume a vendored copy of the shared policy, verdict, decode, and
 detector fixtures under `security/testdata/fixtures/security/`, so `go test`

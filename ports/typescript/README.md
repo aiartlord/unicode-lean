@@ -16,12 +16,9 @@ scanUtf32LE(profile, mode, bytes)
 verdictJson(verdict)
 ```
 
-The current implementation covers the same v0 detector slice as the other
-runtime ports: tag-block payloads, variation-selector payloads, zero-width
-payloads, bidi-control imbalance, noncharacter/control interchange hazards,
-the data-backed `homoglyph-confusable` `TargetMatch` / `MathAlpha` /
-`WidthClass` / `DecompositionSwap` slice, and `mixed-script-admissibility`
-`CrossScriptMix`.
+It implements all 27 detector families, byte-faithful to the Lean-proven Rust
+reference, emitting the shared reason codes and verdicts. The detector reference
+and coverage matrix are in [`../DETECTOR_COVERAGE.md`](../DETECTOR_COVERAGE.md).
 
 Tests consume package-local copies of the shared contract fixtures under
 `testdata/fixtures/security/`, so `node --test` works from a packaged module
