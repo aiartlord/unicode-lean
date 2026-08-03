@@ -9,33 +9,49 @@ might depend on).
 
 ## Unreleased
 
-Port-side detector build-out. No change to the Lean public theorem surface;
-these entries record the runtime-port implementations, which are verified
-against the same Lean `detect_*` theorems.
+No unreleased changes.
 
-### Added — casing keystone and bip39-canonical across all ten ports
+## v1.0.0 — 2026-08-03
 
-- `toLower` (UAX #21 full case mapping — SpecialCasing conditional/locale rows,
-  simple lowercase, and the Cased/Soft_Dotted context predicates) is implemented
-  and vouched in every port (rust, python, cpp, go, jvm, typescript, dotnet,
-  swift, zig, haskell), verified against the six `toLower` ground-truth theorems.
-- The `Bip39Canonical` crypto-layer detector (NFKD → toLower → collapse → trim,
-  then the six priority-ordered probes over the ten BIP-39 wordlists) is
-  implemented and vouched in every port, verified against the detect vectors.
-- The haskell port gained the NFKD normalization foundation it previously lacked
-  (`Reorder`, `CompatDecompose`, `NFKD`) as the dependency bip39 needs.
+First stable release. The detector suite is complete across every port: all
+twenty-seven Lean-proven security-detector families are implemented and vouched
+in all sixteen language ports — 432/432 family × port cells. Each port
+implementation is a byte-faithful transliteration of the Lean-proven Rust
+reference (the same algorithm, not an output-equivalent substitute), built and
+tested under its own toolchain. This 1.0.0 milestone marks suite completion and
+API stability across the ports, not a change to the Lean public theorem surface;
+the port build-out is verified against the same Lean `detect_*` theorems.
 
-### Added — LocaleCaseInversion rust reference
+### Added — six additional language ports
 
-- First implementation of the `LocaleCaseInversion` family (Tier A2
-  homograph-via-locale) in the rust port, verified against its six `detect_*`
-  theorems; the reference for the fan-out to the other nine ports.
+- Ruby, Lua, PHP, Elixir, Erlang, and COBOL join the existing ten ports (rust,
+  python, cpp, go, jvm, typescript, dotnet, swift, zig, haskell), each carrying
+  the full detector suite, grapheme segmentation, the codec layer, and the
+  crypto-context detectors, and each self-contained with its own vendored,
+  digest-pinned data.
 
-### Added — detector-coverage tracking matrix
+### Added — the detector families that complete the suite, in every port
 
-- `ports/DETECTOR_COVERAGE.md` records the per-family × per-port implementation
-  status (13/27 core families vouched in all ports; 14 families still to port),
-  counted from real detector implementations rather than the taxonomy enum.
+- `LocaleCaseInversion`, `CaseExpansionMismatch` (full context-sensitive UAX #21
+  case mapping — SpecialCasing conditional/locale rows and the
+  Cased/Soft_Dotted context predicates), `NfcIdempotenceWitness`,
+  `IdentifierFormDrift`, `AdmissibilityFormDrift`, `EmojiZwjIntegrity`,
+  `SkinToneVariationForgery`, `FilenameDisguise`, `RendererDivergence`,
+  `HashInputStability`, `AiWatermarkDetectability`, and the aggregator
+  `SourceDisplayDivergence`, together with the covert, identity, form, and
+  boundary families, are implemented and vouched in all sixteen ports against
+  their Lean `detect_*` theorems and the shared cross-port fixtures.
+- Each port builds the real UAX #31 allowed-identifier predicate
+  (`XID_Start`/`XID_Continue` from the bundled `DerivedCoreProperties.txt`) where
+  a family requires it, rather than a heuristic.
+
+### Documentation
+
+- `ports/DETECTOR_COVERAGE.md` rewritten from a status table into the detector
+  reference: the verdict shape, each of the twenty-seven detectors (what it
+  catches and reports), and the per-port build/run/call instructions, with the
+  coverage matrix retained.
+- `README.md` and `docs/PORTS.md` updated to the completed 27 × 16 suite.
 
 ## v0.18.0 — 2026-05-13
 

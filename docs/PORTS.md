@@ -1,28 +1,34 @@
 # Multi-Language Ports
 
 The security layer is not Lean-only. Lean is the specification and assurance
-source of truth; the deployable product needs ports for the runtime environments
-where gateways, routers, agents, and services actually run.
+source of truth; the deployable product runs in the environments where gateways,
+routers, agents, and services actually live. All twenty-seven detectors are
+shipped in sixteen language ports, each checked against the Lean-proven Rust
+reference and green under its own toolchain.
 
-Current and planned language surfaces:
+Language surfaces and their deployment targets:
 
 - Lean: source-of-truth algorithms, proof surface, conformance roots
-- Rust: production systems/runtime crate
+- Rust: production systems / runtime crate, C ABI export
 - C++: header/library surface for embedded, router, and native integration
-- Python: scripting, ops tooling, fixtures, demos, and service integration
-- Haskell: functional peer port/reference implementation under
-  `ports/haskell`
-- Zig: static edge binaries and router/appliance deployment
+- Python: scripting, ops tooling, fixtures, and service integration
 - Go: service mesh, gateway, reverse-proxy, and Kubernetes deployment
-- TypeScript / WebAssembly: browser, edge worker, dashboard, and developer-tool
-  deployment
 - Java / Kotlin: JVM services, Android, and enterprise identity providers
+- TypeScript / WebAssembly: browser, edge worker, dashboard, and developer tools
 - C# / .NET: Windows gateway agents and enterprise server deployment
 - Swift: Apple client and local-device filtering
-- COBOL: mainframe/banking integration
-- Erlang / Elixir: telecom and resilient control-plane integration
+- Zig: static edge binaries and router/appliance deployment
+- Haskell: functional peer port / high-assurance reference implementation
+- Ruby: Rails and Ruby web-service integration
 - Lua / OpenResty: NGINX/OpenResty gateway filtering
-- Ruby / PHP: web-framework integration
+- PHP: PHP web stack and CMS/plugin integration
+- Elixir / Erlang: telecom and resilient control-plane integration
+- COBOL: mainframe / banking integration
+
+This document specifies the contract every port shares — the runtime API, the
+verdict wire shape, the reason-code namespace, the shared fixtures, and the
+packaging surfaces. For the detector reference and the per-port coverage matrix,
+see [`ports/DETECTOR_COVERAGE.md`](../ports/DETECTOR_COVERAGE.md).
 
 ## Repository Paths
 
@@ -254,20 +260,19 @@ Current shared v0 detector fixture families:
 
 `Unicode.Security.Calculus` defines the full detector-family vocabulary
 (27 families across the covert, identity, display, form, boundary, and
-crypto layers). The runtime ports ship a subset of that vocabulary; the v0
-fixture families above are the families every port currently emits and
-agrees on. The remaining families are proven in Lean and reserved in each
-port's reason-code namespace, and are being brought into the ports one
-family at a time.
+crypto layers). All 27 families are implemented and vouched in every one of the
+sixteen ports — 432/432 cells. Each is a byte-faithful transliteration of the
+Lean-proven Rust reference, with its own test suite green under the port's
+toolchain.
 
-The live per-family × per-port status is tracked in
-[`ports/DETECTOR_COVERAGE.md`](../ports/DETECTOR_COVERAGE.md). As of the last
-update, 13 core families are implemented and vouched in all ten ports, plus a
-`toLower` (UAX #21) casing keystone; two further families (SourceDisplayDivergence,
-LocaleCaseInversion) have rust references awaiting fan-out. Note that a port's
-`Family`/`Calculus` enum declares all 27 names as taxonomy regardless of whether
-its detector exists, so coverage must be read from real implementations (the
-matrix), not from the enum.
+The full per-family reference (what each detector catches and how to run it) and
+the per-port coverage matrix are in
+[`ports/DETECTOR_COVERAGE.md`](../ports/DETECTOR_COVERAGE.md). Coverage is read
+from real implementations cross-checked against the shared fixtures, not from the
+`Family`/`Calculus` enum — that enum declares all 27 names as taxonomy regardless
+of whether a detector exists, and support modules without a `detect`
+(GlitchTokenScan, WordlistOrder, EmojiPresentationRegistry) are not detector
+families.
 
 Each family lands as an **atomic** step across all ports: the shared
 `policy_contract.json` and `verdict_contract.json` fixtures encode the
