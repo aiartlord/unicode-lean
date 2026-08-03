@@ -26,6 +26,11 @@ module Unicode.Security.Policy
   , isStrongLtr
   , isStrongRtl
   , policyOfProfile
+  , tagBlockFinding
+  , variationSelectorFinding
+  , zeroWidthFinding
+  , bidiFinding
+  , homoglyphFinding
   , scan
   , scanUtf8
   , scanUtf16BE
