@@ -39,6 +39,7 @@ import qualified CovertDisplayCompoundSpec
 import qualified EmojiZwjIntegritySpec
 import qualified RendererDivergenceSpec
 import qualified FilenameDisguiseSpec
+import qualified SourceDisplayDivergenceSpec
 import qualified AdmissibilityFormDriftSpec
 import qualified IdentifierFormDriftSpec
 import qualified SkinToneVariationForgerySpec
@@ -73,6 +74,7 @@ main = defaultMain $
     , EmojiZwjIntegritySpec.tests
     , RendererDivergenceSpec.tests
     , FilenameDisguiseSpec.tests
+    , SourceDisplayDivergenceSpec.tests
     , AdmissibilityFormDriftSpec.tests
     , IdentifierFormDriftSpec.tests
     , SkinToneVariationForgerySpec.tests

@@ -17,6 +17,7 @@ run() ->
     filename_disguise_tests(),
     identifier_form_drift_tests(),
     admissibility_form_drift_tests(),
+    source_display_divergence_tests(),
     case_expansion_mismatch_tests(),
     skin_tone_variation_forgery_tests(),
     opaque_blob_tests(),
@@ -844,6 +845,67 @@ admissibility_form_drift_tests() ->
               usec_policy:reason_code(admissibility_form_drift, <<"AdmissibilityFormDrift">>), afd_reason_code),
 
     io:format("  admissibility-form-drift: fixture + 4 spot-checks + 1 reason-code pass~n").
+
+%% Reason code the detect verdict would emit for a given input, or `none' when
+%% clear. Mirrors how the finding wiring lifts a classification tag into a code.
+sdd_code(Input) ->
+    C = maps:get(classify, usec_source_display_divergence:detect(Input)),
+    case usec_source_display_divergence:classify_tag(C) of
+        none -> none;
+        Tag -> usec_policy:reason_code(source_display_divergence, Tag)
+    end.
+
+%% The classification tag for an input, or `none' when clear.
+sdd_tag(Input) ->
+    usec_source_display_divergence:classify_tag(maps:get(classify, usec_source_display_divergence:detect(Input))).
+
+source_display_divergence_tests() ->
+    %% ── Shared context-free fixture, run through detect. ────────────────
+    F = fixture(filename:join("detectors", "source_display_divergence.json")),
+    assert_eq(<<"source-display-divergence">>, maps:get(<<"family">>, F), sdd_fixture_family),
+    lists:foreach(fun(Case) ->
+                          Input = maps:get(<<"input">>, Case),
+                          Label = {sdd_fixture, maps:get(<<"name">>, Case)},
+                          Required = maps:get(<<"required_findings">>, Case),
+                          Codes = case sdd_code(Input) of
+                                      none -> [];
+                                      Code -> [Code]
+                                  end,
+                          lists:foreach(fun(Req) -> assert(lists:member(Req, Codes), Label) end, Required),
+                          case Required of
+                              [] -> assert(Codes =:= [], Label);
+                              _ -> ok
+                          end
+                  end, maps:get(<<"cases">>, F)),
+
+    %% ── detect spot checks (the rust #[test] cases). ────────────────────
+    %% clear_cases — empty, "Hello world", "let x = 1;".
+    assert_eq(none, sdd_tag([]), sdd_empty_clear),
+    assert_eq(none, sdd_tag([16#48, 16#65, 16#6C, 16#6C, 16#6F, 16#20, 16#77, 16#6F, 16#72, 16#6C, 16#64]),
+              sdd_hello_world_clear),
+    assert_eq(none, sdd_tag([16#6C, 16#65, 16#74, 16#20, 16#78, 16#20, 16#3D, 16#20, 16#31, 16#3B]),
+              sdd_let_x_clear),
+    %% single_fire_passthrough — one constituent fires, tag passes through.
+    assert_eq(<<"TagBlock">>, sdd_tag([16#E0041, 16#E0042]), sdd_tag_block),
+    assert_eq(<<"VariationSelector">>, sdd_tag([16#0041, 16#FE0F]), sdd_variation_selector),
+    assert_eq(<<"ZeroWidth">>, sdd_tag([16#0048, 16#200B, 16#69]), sdd_zero_width),
+    assert_eq(<<"BidiControl">>, sdd_tag([16#202E, 16#41]), sdd_bidi_control),
+    assert_eq(<<"IdentifierHomoglyph">>, sdd_tag([16#4E, 16#65, 16#74, 16#68, 16#65, 16#72, 16#0435, 16#75, 16#6D]),
+              sdd_identifier_homoglyph),
+    %% two_or_more_is_compound — two constituents fire, aggregate to Compound.
+    assert_eq(<<"Compound">>, sdd_tag([16#0041, 16#FE0F, 16#200B]), sdd_compound_vs_zw),
+    assert_eq(<<"Compound">>, sdd_tag([16#E0041, 16#E0042, 16#200B]), sdd_compound_tag_zw),
+    %% positions are empty at this layer; a clear input is clear.
+    assert(usec_source_display_divergence:is_clear(maps:get(classify, usec_source_display_divergence:detect([]))),
+           sdd_empty_is_clear),
+    assert_eq([], usec_source_display_divergence:classify_positions(
+                    maps:get(classify, usec_source_display_divergence:detect([16#0041, 16#FE0F]))),
+              sdd_positions_empty),
+    %% reason_code_is_stable — the composed reason code for the Compound sub-threat.
+    assert_eq(<<"unicode.security.D.source-display-divergence.Compound">>,
+              usec_policy:reason_code(source_display_divergence, <<"Compound">>), sdd_reason_code),
+
+    io:format("  source-display-divergence: fixture + 10 spot-checks + 1 reason-code pass~n").
 
 fixture(Rel) ->
     {ok, Bin} = file:read_file(filename:join(["test", "fixtures", "security", Rel])),
