@@ -51,7 +51,7 @@ def run(command: list[str]) -> tuple[int, str]:
 
 
 def main() -> int:
-    path = Path("docs/RUNBOOK.md")
+    path = Path("docs/how-to/build.md")
     commands = bash_commands(path.read_text(encoding="utf-8"))
     failed = False
 

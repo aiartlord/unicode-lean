@@ -28,7 +28,7 @@ Language surfaces and their deployment targets:
 This document specifies the contract every port shares — the runtime API, the
 verdict wire shape, the reason-code namespace, the shared fixtures, and the
 packaging surfaces. For the detector reference and the per-port coverage matrix,
-see [`ports/DETECTOR_COVERAGE.md`](../ports/DETECTOR_COVERAGE.md).
+see [`ports/DETECTOR_COVERAGE.md`](../../ports/DETECTOR_COVERAGE.md).
 
 ## Repository Paths
 
@@ -267,7 +267,7 @@ toolchain.
 
 The full per-family reference (what each detector catches and how to run it) and
 the per-port coverage matrix are in
-[`ports/DETECTOR_COVERAGE.md`](../ports/DETECTOR_COVERAGE.md). Coverage is read
+[`ports/DETECTOR_COVERAGE.md`](../../ports/DETECTOR_COVERAGE.md). Coverage is read
 from real implementations cross-checked against the shared fixtures, not from the
 `Family`/`Calculus` enum — that enum declares all 27 names as taxonomy regardless
 of whether a detector exists, and support modules without a `detect`

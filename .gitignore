@@ -16,16 +16,17 @@ build-sanitize/
 target/
 dist/
 
-# Internal planning docs and working artifacts — not for public repo.
-# Keep the public roadmap docs tracked explicitly.
+# Internal planning docs and working artifacts (docs/specs/**, drafts) stay
+# out of the public repo. The public documentation set is the Diátaxis tree
+# below, tracked explicitly; everything else under docs/ is internal.
 docs/*
 !docs/
-!docs/CLI.md
-!docs/BUILD_TIERS.md
-!docs/RUNBOOK.md
-!docs/PORTS.md
-!docs/DEPLOYMENT.md
-!docs/DAEMON.md
+!docs/README.md
+!docs/ROADMAP.md
+!docs/reference/
+!docs/explanation/
+!docs/how-to/
+!docs/tutorial/
 *.draft.md
 *.notes.md
 Probe.lean

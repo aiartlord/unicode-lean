@@ -8,9 +8,9 @@ byte-faithful transliteration of the Lean-proven Rust reference under
 A **detector** answers one question about a codepoint sequence: *does this input
 carry a specific Unicode-level security hazard?* The detectors do not sanitise or
 rewrite text — they classify it, so a caller can decide whether to reject,
-quarantine, or flag. The algorithms are proven correct in Lean
-(`Unicode/Security/` in the repository root is the source of truth); the ports
-carry that behaviour into production languages without re-deriving it.
+quarantine, or flag. The algorithms are proven correct in Lean; `Unicode/Security/` in the repository
+root is the source of truth. The ports carry that behaviour into production
+languages without re-deriving it.
 
 This document is the reference for what each detector is, what a detector result
 contains, and how to build and run the detectors in each port. The coverage
@@ -23,15 +23,15 @@ Every detector exposes a single entry point, `detect`, that takes the input as a
 sequence of Unicode scalar values (`u32` / `Int` / `[]rune` / … depending on the
 port) and returns a **verdict**. A verdict is made of:
 
-- **`classification`** — either `Clear` (no hazard) or `Hazard`. The shared
+- **`classification`** — either `Clear` when nothing fires, or `Hazard`. The shared
   vocabulary lives in each port's `Calculus`/`calculus` module as
   `ClassificationKind` = `Clear` · `Hazard` · `Compound` · `Informational`.
 - **`sub_threat`** — when a hazard fires, which specific variant it is. Each
   detector defines its own closed set of sub-threats (for example
   `CaseExpansionMismatch` distinguishes `UpperExpansion` from `LowerExpansion`).
 - **`positions`** — the indices in the input at which the hazard occurs, where
-  the detector localises a hazard to specific codepoints. Whole-string detectors
-  (those that judge the input as a unit) carry an empty position list.
+  the detector localises a hazard to specific codepoints. Whole-string detectors,
+  which judge the input as a unit, carry an empty position list.
 - Detector-specific metadata — for example the decoded payload a covert channel
   reconstructs, or the two admissibility verdicts a drift detector compares.
 
@@ -45,9 +45,9 @@ where `<layer>` is a single letter grouping the detector by the concern it
 guards, `<slug>` is the detector's kebab-case name, and `<SubThreat>` is the
 exact sub-threat tag. Reason codes are part of the public contract: they are
 identical across all sixteen ports, so a policy expressed in reason codes is
-portable. The layers are `C` (covert channel), `I` (identity), `D` (display),
-`F` (form / normalization), `X` (cross-layer boundary), and `K` (cryptographic
-stability).
+portable. The layer letter reads as `C` for covert channel, `I` for identity,
+`D` for display, `F` for form and normalization, `X` for cross-layer boundary,
+and `K` for cryptographic stability.
 
 Most detectors are **standalone**: a caller invokes `detect` directly. A subset
 is additionally wired into a port's default `scan`, which runs the routine
@@ -97,7 +97,7 @@ Text engineered to be mistaken for a different, trusted identity.
   mix scripts in ways the UTS #39 restriction levels disallow. Reports the
   offending run.
 - **EmojiZwjIntegrity** (`emoji-zwj-integrity`) — Malformed or forged emoji
-  ZWJ sequences (joins that do not correspond to a well-formed sequence).
+  ZWJ sequences whose joins do not correspond to a well-formed sequence.
 - **SkinToneVariationForgery** (`skin-tone-variation-forgery`) — Skin-tone
   modifiers attached where the base does not admit them, or used to forge a
   distinct-looking sequence.
@@ -127,12 +127,12 @@ Hazards that arise from normalization and case behaviour.
 - **NormalizationBomb** (`normalization-bomb`) — Input that expands
   disproportionately under a normalization form, a denial-of-service surface.
 - **StreamSafeViolation** (`stream-safe-violation`) — Violations of the UAX #15
-  Stream-Safe Text Format (over-long non-starter sequences).
+  Stream-Safe Text Format, that is, over-long non-starter sequences.
 - **LocaleCaseInversion** (`locale-case-inversion`) — Locale-sensitive case
   mappings (Turkish/Azeri dotted-*i*, Lithuanian) that change meaning under a
   different locale.
 - **CaseExpansionMismatch** (`case-expansion-mismatch`) — Codepoints whose case
-  mapping changes length (for example *ß* → *SS*, *ﬃ* → *FFI*). Distinguishes
+  mapping changes length, for example *ß* → *SS* and *ﬃ* → *FFI*. Distinguishes
   `UpperExpansion` from `LowerExpansion` and reports the base position and
   expansion length.
 - **WidthClassConfusion** (`width-class-confusion`) — Half-width / full-width
@@ -163,7 +163,7 @@ Unicode representation drift that changes a cryptographic input. These run in an
 explicit crypto context, not the default scan.
 
 - **Bip39Canonical** (`bip39-canonical`) — Non-canonical encodings of a BIP-39
-  mnemonic (NFKD and wordlist canonicalisation) that would recover a different
+  mnemonic under NFKD and wordlist canonicalisation that would recover a different
   wallet than the one displayed.
 - **HashInputStability** (`hash-input-stability`) — Representation differences
   that leave a string visually identical but change its bytes, and therefore any
@@ -250,7 +250,7 @@ merely compiled. Coverage is counted from real detector implementations
 cross-checked against the shared detector fixtures, never from an enum entry or a
 fixture file: the `Family`/`Calculus` enums in every port declare family names as
 taxonomy independent of whether a detector exists, and support modules without a
-`detect` (GlitchTokenScan, WordlistOrder, EmojiPresentationRegistry) are not
+`detect` — GlitchTokenScan, WordlistOrder, EmojiPresentationRegistry — are not
 detector families and are not counted.
 
 Legend: `✓` implemented + vouched.
@@ -302,5 +302,4 @@ against hand-curated fixtures and CVE-derived vectors. The Rust port is the
 reference the other fifteen are checked against; the shared fixtures under
 `fixtures/security/detectors/` are the common ground truth every port drives its
 tests from. See the repository-root `README.md` for the assurance model and the
-Lean proof base, and `docs/specs/security/per-family/` for the per-family
-threat-model write-ups.
+Lean proof base, and `docs/explanation/threat-model.md` for the threat model.

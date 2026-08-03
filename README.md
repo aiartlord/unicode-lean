@@ -68,8 +68,8 @@ flag. Each of the twenty-seven families ships three artefacts:
 
 Grouped by the concern each guards, which is also the reason-code layer. The
 full reference — what each detector catches, what it reports, and how to call it
-— is [`ports/DETECTOR_COVERAGE.md`](ports/DETECTOR_COVERAGE.md); the per-family
-threat models are under [`docs/specs/security/per-family/`](docs/specs/security/per-family/).
+— is [`ports/DETECTOR_COVERAGE.md`](ports/DETECTOR_COVERAGE.md); the threat
+model is in [`docs/explanation/threat-model.md`](docs/explanation/threat-model.md).
 
 - **Covert channels** (`unicode.security.C.*`) — TagBlockPayload,
   VariationSelectorPayload, ZeroWidthPayload, SurrogateReassembly,
@@ -100,7 +100,7 @@ every port:
   of the fixture format.
 
 A consumer that wants every detector's verdict on an input imports
-`Unicode.Security` (or the equivalent port module) and folds over the families
+`Unicode.Security`, or the equivalent port module, and folds over the families
 it cares about; the per-family modules are exposed under stable namespaces so
 individual detectors can be wired into custom pipelines. Callers that want a
 single admission predicate — "is this input acceptable at the declared
@@ -112,7 +112,7 @@ level only answers whether the input meets the context's bar.
 ### Region-agnosticism
 
 The detectors fire on hazardous codepoints unconditionally, regardless of which
-source region (code, string literal, comment) a language tokenizer would assign
+source region — code, string literal, or comment — a language tokenizer would assign
 them to. The threat model treats source bytes as uniformly suspect: real
 incidents — the tj-actions/changed-files supply-chain attack (March 2025),
 CVE-2025-29927 Next.js middleware bypass, prompt injection through docstring
@@ -152,7 +152,7 @@ enforces that no port depends on Lean roots, another port, or repo-relative
 files at runtime. The shared reason-code namespace, the verdict wire shape
 (`fixtures/security/verdict_contract.json`), and the per-detector fixtures
 (`fixtures/security/detectors/*.json`) are the cross-port compatibility contract;
-[`docs/PORTS.md`](docs/PORTS.md) documents that contract in full.
+[`docs/reference/ports.md`](docs/reference/ports.md) documents that contract in full.
 
 
 ## Running it
@@ -171,7 +171,7 @@ nix build .#unicode-php       .#unicode-elixir  .#unicode-erlang .#unicode-cobol
 A green `nix build .#unicode-<lang>` is the authoritative correctness signal for
 a port on its pinned toolchain. For native-toolchain and per-detector commands,
 see [`ports/DETECTOR_COVERAGE.md`](ports/DETECTOR_COVERAGE.md); for the
-runtime-package workflow, see [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
+runtime-package workflow, see [`docs/how-to/build.md`](docs/how-to/build.md).
 
 The default product workflow is runtime-only and does not build Lean:
 
@@ -185,7 +185,7 @@ nix develop .#runtime -c scripts/package-runtime.sh
 
 The Lean proof base is the opt-in evidence workflow. Do not use a broad
 cold-cache Lean build as the default validation path; use the staged cache plan
-in [`docs/RUNBOOK.md`](docs/RUNBOOK.md). `nix run` prints the live file / theorem
+in [`docs/how-to/build.md`](docs/how-to/build.md). `nix run` prints the live file / theorem
 inventory.
 
 
@@ -227,7 +227,7 @@ Every file under `Unicode/Generated/` is self-contained and auditable end to end
 without any external code generator. The pattern is identical across all
 generated tables:
 
-1. The UCD source file (e.g. `Unicode/Ucd/CaseFolding.txt`) is byte-pinned in
+1. The UCD source file, such as `Unicode/Ucd/CaseFolding.txt`, is byte-pinned in
    `Unicode/Ucd/SHA256SUMS` and verified by `scripts/check-ucd-hashes.sh`.
 2. A Lean parser for that file's grammar lives **inline** in the generated
    module — `parseHex`, `parseRange`, `parse<Row>`, etc.
