@@ -55,7 +55,7 @@ rewriting the text, so the caller decides whether to reject, quarantine, or
 flag. Each of the twenty-seven families ships three artefacts:
 
 1. A detector module under `Unicode/Security/<Layer>/<Family>.lean` exporting
-   `detect : Array Nat → Verdict`. The verdict carries the input, a
+   `detect : List Nat → Verdict`. The verdict carries the input, a
    `Classification` (`clear` or one-or-more `hazard` sub-threats), positions,
    and optional per-family metadata.
 2. A hand-curated fixture under `Unicode/Ucd/Security/<Family>Test.txt` in the
@@ -105,7 +105,7 @@ it cares about; the per-family modules are exposed under stable namespaces so
 individual detectors can be wired into custom pipelines. Callers that want a
 single admission predicate — "is this input acceptable at the declared
 strictness?" — use `Unicode.Security.Level`, which defines three totally-ordered
-levels (`restrictive ⊑ moderate ⊑ minimal`) and `admissibleAt : Level → Array
+levels (`restrictive ⊑ moderate ⊑ minimal`) and `admissibleAt : Level → List
 Nat → Bool`. No level suppresses a hazard; every detector still runs, and the
 level only answers whether the input meets the context's bar.
 
