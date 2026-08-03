@@ -15,6 +15,7 @@ Run:
 
 from __future__ import annotations
 
+import importlib
 import json
 import sys
 from pathlib import Path
@@ -23,10 +24,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from unicode_python.security import ClassificationKind  # noqa: E402
-from unicode_python.security.identity import (  # noqa: E402
-    homoglyph_confusable as h,
-)
+# Imported after the sys.path insert above via importlib, so these are function
+# calls rather than late module-level imports.
+ClassificationKind = importlib.import_module(
+    "unicode_python.security"
+).ClassificationKind
+h = importlib.import_module("unicode_python.security.identity.homoglyph_confusable")
 
 CORPUS_PATH = "/tmp/diff_corpus.jsonl"
 

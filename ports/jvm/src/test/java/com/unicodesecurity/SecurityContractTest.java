@@ -1757,19 +1757,24 @@ public final class SecurityContractTest {
     return object(new Json(raw).parse());
   }
 
-  @SuppressWarnings("unchecked")
   private static Map<String, Object> object(Object value) {
-    return (Map<String, Object>) value;
+    Map<String, Object> out = new java.util.LinkedHashMap<>();
+    for (Map.Entry<?, ?> entry : ((Map<?, ?>) value).entrySet()) {
+      out.put((String) entry.getKey(), entry.getValue());
+    }
+    return out;
   }
 
-  @SuppressWarnings("unchecked")
   private static List<Map<String, Object>> objects(Object value) {
-    return (List<Map<String, Object>>) value;
+    List<Map<String, Object>> out = new ArrayList<>();
+    for (Object item : values(value)) out.add(object(item));
+    return out;
   }
 
-  @SuppressWarnings("unchecked")
   private static List<String> strings(Object value) {
-    return (List<String>) value;
+    List<String> out = new ArrayList<>();
+    for (Object item : values(value)) out.add((String) item);
+    return out;
   }
 
   private static List<Integer> ints(Object value) {
@@ -1785,9 +1790,10 @@ public final class SecurityContractTest {
     return out;
   }
 
-  @SuppressWarnings("unchecked")
   private static List<Object> values(Object value) {
-    return (List<Object>) value;
+    List<Object> out = new ArrayList<>();
+    for (Object item : (List<?>) value) out.add(item);
+    return out;
   }
 
   private static String string(Map<String, Object> object, String key) {

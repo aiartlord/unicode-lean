@@ -483,15 +483,15 @@ pub fn detect_with_context(ctx: &Context, input: &[u32]) -> Verdict {
         first_array_divergence(input, &nfc)
     };
 
-    let classification = classify(
+    let classification = classify(ClassifyInputs {
         encoding_hit,
         webhook_hit,
         audit_hit,
         rfc_hit,
         trailing_count,
-        input.len(),
+        input_len: input.len(),
         non_nfc_pos,
-    );
+    });
 
     Verdict {
         stable_size: stable.len(),
@@ -501,9 +501,9 @@ pub fn detect_with_context(ctx: &Context, input: &[u32]) -> Verdict {
     }
 }
 
-/// The priority resolver: first hit wins, in the spec's fixed order.
-#[allow(clippy::too_many_arguments)]
-fn classify(
+/// The per-probe hits feeding the priority resolver, one field per probe in the
+/// spec's fixed order.
+struct ClassifyInputs {
     encoding_hit: Option<(String, String, usize)>,
     webhook_hit: Option<usize>,
     audit_hit: Option<usize>,
@@ -511,7 +511,19 @@ fn classify(
     trailing_count: usize,
     input_len: usize,
     non_nfc_pos: Option<usize>,
-) -> Classification {
+}
+
+/// The priority resolver: first hit wins, in the spec's fixed order.
+fn classify(hits: ClassifyInputs) -> Classification {
+    let ClassifyInputs {
+        encoding_hit,
+        webhook_hit,
+        audit_hit,
+        rfc_hit,
+        trailing_count,
+        input_len,
+        non_nfc_pos,
+    } = hits;
     if let Some((declared, detected, pos)) = encoding_hit {
         return Classification::Hazard {
             sub: SubThreat::EncodingMismatch {
