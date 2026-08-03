@@ -717,6 +717,56 @@ def check_case_expansion_mismatch():
     return len(fixture["cases"]), len(spot), 1
 
 
+SDD_BASE = "unicode.security.D.source-display-divergence."
+
+
+def run_sdd(values):
+    return run("source-display-divergence", "gateway-header", "observe", values)
+
+
+def check_source_display_divergence():
+    # 1. The 10 shared context-free fixture vectors.
+    fixture = load("detectors/source_display_divergence.json")
+    for case in fixture["cases"]:
+        got = run_sdd(case["input"])
+        for code in case["required_findings"]:
+            require(code in got["codes"],
+                    f"sdd/{case['name']} missing {code}; got {got['codes']}")
+        if not case["required_findings"]:
+            require(all(".source-display-divergence." not in code for code in got["codes"]),
+                    f"sdd/{case['name']} unexpected finding; got {got['codes']}")
+
+    # 2. Spot-checks transcribed verbatim from the verified Rust reference's
+    #    `#[test]` module. The aggregator runs the five constituent detectors
+    #    (tag-block, variation-selector, zero-width, bidi-control, homoglyph) and
+    #    aggregates: zero fire -> clear; exactly one -> pass through that family's
+    #    tag; two or more -> Compound. tag = suffix or None for Clear.
+    spot = [
+        ("empty", [], None),
+        ("hello-world", [0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64], None),
+        ("let-x-1", [0x6C, 0x65, 0x74, 0x20, 0x78, 0x20, 0x3D, 0x20, 0x31, 0x3B], None),
+        ("tag-block", [0xE0041, 0xE0042], "TagBlock"),
+        ("variation-selector", [0x0041, 0xFE0F], "VariationSelector"),
+        ("zero-width", [0x0048, 0x200B, 0x69], "ZeroWidth"),
+        ("bidi-control", [0x202E, 0x41], "BidiControl"),
+        ("homoglyph", [0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D], "IdentifierHomoglyph"),
+        ("compound-vs-zw", [0x0041, 0xFE0F, 0x200B], "Compound"),
+        ("compound-tag-zw", [0xE0041, 0xE0042, 0x200B], "Compound"),
+    ]
+    for name, values, tag in spot:
+        got = run_sdd(values)
+        sdd_codes = [c for c in got["codes"] if ".source-display-divergence." in c]
+        if tag is None:
+            require(not sdd_codes, f"sdd-spot/{name} expected clear; got {sdd_codes}")
+        else:
+            code = SDD_BASE + tag
+            require(code in got["codes"], f"sdd-spot/{name} missing {code}; got {got['codes']}")
+            require(len(sdd_codes) == 1,
+                    f"sdd-spot/{name} expected exactly one D-verdict; got {sdd_codes}")
+
+    return len(fixture["cases"]), len(spot)
+
+
 def check_forms_and_bip39():
     cases = [
         ("forms", [], []),
@@ -931,6 +981,7 @@ def main():
     afd_fixture_count, afd_spot_count = check_admissibility_form_drift()
     stv_fixture_count, stv_spot_count, stv_struct_count = check_skin_tone_variation_forgery()
     cem_fixture_count, cem_spot_count, cem_struct_count = check_case_expansion_mismatch()
+    sdd_fixture_count, sdd_spot_count = check_source_display_divergence()
     check_forms_and_bip39()
     ss_count = check_stream_safe_violation()
     check_generated_tables()
@@ -965,6 +1016,8 @@ def main():
     print(f"case-expansion-mismatch shared-fixture vectors: {cem_fixture_count}")
     print(f"case-expansion-mismatch spot-checks: {cem_spot_count}")
     print(f"case-expansion-mismatch structural checks: {cem_struct_count}")
+    print(f"source-display-divergence shared-fixture vectors: {sdd_fixture_count}")
+    print(f"source-display-divergence spot-checks: {sdd_spot_count}")
     print("ok: cobol unicode security fixture tests pass")
 
 

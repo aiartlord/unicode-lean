@@ -33,7 +33,7 @@ Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 | CovertDisplayCompound | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | WidthClassConfusion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Bip39Canonical | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| SourceDisplayDivergence | ✓ | – | – | – | – | – | – | – | – | – | – | – | – | – | – | – |
+| SourceDisplayDivergence | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | LocaleCaseInversion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | CaseExpansionMismatch | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | NfcIdempotenceWitness | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -48,14 +48,11 @@ Legend: `✓` implemented + vouched · `–` not yet ported (Lean spec exists)
 | HashInputStability | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | AiWatermarkDetectability | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-**Totals:** rust 27/27 · all other vouched ports 26/27 · overall 417/432
-cells. The 13 core families plus LocaleCaseInversion, NormalizationBomb,
-NfcIdempotenceWitness, HashInputStability, AiWatermarkDetectability,
-StreamSafeViolation, EmojiZwjIntegrity, RendererDivergence, FilenameDisguise,
-IdentifierFormDrift, SkinToneVariationForgery, CaseExpansionMismatch, and
-AdmissibilityFormDrift are complete and vouched across every listed port. The
-only remaining gap is SourceDisplayDivergence, whose rust reference is vouched
-and awaits its 15-port fan-out.
+**Totals:** rust 27/27 · every other listed port 27/27 · overall 432/432 cells.
+All 27 detector families are complete and vouched across all 16 language ports.
+Each cell is a native detector — same algorithm as the Lean-proven Rust
+reference, not an output-equivalent substitute — with its own test suite green
+under that port's toolchain.
 
 ## Interrupted new-port inventory
 
@@ -75,15 +72,8 @@ fixture presence is not coverage.
 
 ## Remaining work
 
-1 detector family remains to fan out. Its rust reference is verified against the
-Lean `detect_*` theorems; it needs the fan-out to the other 15 listed ports,
-each vouched. No family is unstarted.
-
-**Reference-only (1):**
-- SourceDisplayDivergence (`display/source_display_divergence.rs`) — an
-  aggregator over the five constituent detectors (tag-block, variation-selector,
-  zero-width, bidi-control, homoglyph), all of which are already complete in
-  every port; rust reference vouched; needs the 15-port fan-out.
+No detector family remains to fan out. All 27 are complete and vouched in every
+listed port, at parity with the Lean-proven Rust reference.
 
 **Bip39 scan-wiring (follow-up):** Bip39Canonical ships standalone and
 crypto-context-gated in all listed ports; it is deliberately not part of the default

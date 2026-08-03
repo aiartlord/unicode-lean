@@ -300,6 +300,15 @@ WORKING-STORAGE SECTION.
 01 AFD-START-OK PIC 9 VALUE 0.
 01 AFD-CONTINUE-OK PIC 9 VALUE 0.
 01 AFD-CLASS PIC 9 VALUE 0.
+*> ── source-display-divergence (D) aggregator state ───────────────────
+*> The aggregator runs the five constituent display/identity detectors over
+*> the same codepoint stream and counts how many produced a finding.
+*> SDD-FIRED-COUNT is that count; SDD-TAG holds the resolved sub-threat tag —
+*> SPACES for clear, the single family tag for exactly one fire, or "Compound"
+*> for two or more. No position is reported at this layer (the per-family
+*> verdicts carry them), matching the verified reference.
+01 SDD-FIRED-COUNT PIC 9(4) COMP-5 VALUE 0.
+01 SDD-TAG PIC X(20) VALUE SPACES.
 *> ── skin-tone-variation-forgery (I) modifier/VS-abuse ladder state ────
 *> The priority-ordered classification (0 clear, 1 StackedSkinTones,
 *> 2 InvalidSkinToneTarget, 3 ForcedTextStyle), the base position of the
@@ -507,7 +516,11 @@ MAIN.
                                                             IF OP-NAME = "admissibility-form-drift"
                                                                 PERFORM SCAN-ADMISSIBILITY-FORM-DRIFT
                                                             ELSE
-                                                                PERFORM SCAN-CORE
+                                                                IF OP-NAME = "source-display-divergence"
+                                                                    PERFORM SCAN-SOURCE-DISPLAY-DIVERGENCE
+                                                                ELSE
+                                                                    PERFORM SCAN-CORE
+                                                                END-IF
                                                             END-IF
                                                         END-IF
                                                     END-IF
@@ -2782,6 +2795,104 @@ AFD-EMIT.
 AFD-EMIT-ONE.
 *> Whole-string finding with no implicated positions (the predicate is
 *> whole-string), so FINDING-POS is left empty.
+    ADD 1 TO FINDING-COUNT
+    MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
+    MOVE SPACES TO FINDING-POS(FINDING-COUNT).
+
+SCAN-SOURCE-DISPLAY-DIVERGENCE.
+*> Source-display divergence (Tier D1 aggregator). Byte-faithful transliteration
+*> of the verified Rust reference `detect`: what a reviewer sees differs from what
+*> the machine runs. It runs the port's own five constituent detectors over the
+*> same codepoint stream, in the canonical aggregation order tag-block ->
+*> variation-selector -> zero-width -> bidi-control -> homoglyph, and counts how
+*> many fire (fire = the constituent produced a finding, i.e. its classification
+*> is not Clear). Zero fires -> clear; exactly one -> pass through that family's
+*> tag; two or more -> Compound. Each constituent is run in isolation by zeroing
+*> FINDING-COUNT around it and reading the count it leaves; its per-family
+*> findings are discarded so only the aggregator's single verdict remains. This
+*> reuses DETECT-TAG-BLOCK, DETECT-VARIATION, DETECT-ZERO-WIDTH, DETECT-BIDI and
+*> DETECT-HOMOGLYPH — no new predicate, table or normalization. No position is
+*> reported at this layer.
+    MOVE 0 TO SDD-FIRED-COUNT
+    MOVE SPACES TO SDD-TAG
+    MOVE 0 TO FINDING-COUNT
+    PERFORM DETECT-TAG-BLOCK
+    IF FINDING-COUNT > 0
+        ADD 1 TO SDD-FIRED-COUNT
+        MOVE "TagBlock" TO SDD-TAG
+    END-IF
+    MOVE 0 TO FINDING-COUNT
+    PERFORM DETECT-VARIATION
+    IF FINDING-COUNT > 0
+        ADD 1 TO SDD-FIRED-COUNT
+        MOVE "VariationSelector" TO SDD-TAG
+    END-IF
+    MOVE 0 TO FINDING-COUNT
+    PERFORM DETECT-ZERO-WIDTH
+    IF FINDING-COUNT > 0
+        ADD 1 TO SDD-FIRED-COUNT
+        MOVE "ZeroWidth" TO SDD-TAG
+    END-IF
+    MOVE 0 TO FINDING-COUNT
+    PERFORM DETECT-BIDI
+    IF FINDING-COUNT > 0
+        ADD 1 TO SDD-FIRED-COUNT
+        MOVE "BidiControl" TO SDD-TAG
+    END-IF
+    MOVE 0 TO FINDING-COUNT
+    PERFORM DETECT-HOMOGLYPH
+    IF FINDING-COUNT > 0
+        ADD 1 TO SDD-FIRED-COUNT
+        MOVE "IdentifierHomoglyph" TO SDD-TAG
+    END-IF
+    MOVE 0 TO FINDING-COUNT
+    IF SDD-FIRED-COUNT >= 2
+        MOVE "Compound" TO SDD-TAG
+    END-IF
+    PERFORM SDD-EMIT.
+
+SDD-EMIT.
+*> Resolve the aggregated sub-threat tag to its reason code. SPACES is clear
+*> (no finding); each named tag maps to unicode.security.D.source-display-
+*> divergence.<Tag>. WHEN OTHER is unreachable and signals a defect rather than
+*> silently falling through.
+    EVALUATE SDD-TAG
+        WHEN SPACES
+            CONTINUE
+        WHEN "TagBlock"
+            MOVE "unicode.security.D.source-display-divergence.TagBlock"
+                TO TEMP-CODE
+            PERFORM SDD-EMIT-ONE
+        WHEN "VariationSelector"
+            MOVE "unicode.security.D.source-display-divergence.VariationSelector"
+                TO TEMP-CODE
+            PERFORM SDD-EMIT-ONE
+        WHEN "ZeroWidth"
+            MOVE "unicode.security.D.source-display-divergence.ZeroWidth"
+                TO TEMP-CODE
+            PERFORM SDD-EMIT-ONE
+        WHEN "BidiControl"
+            MOVE "unicode.security.D.source-display-divergence.BidiControl"
+                TO TEMP-CODE
+            PERFORM SDD-EMIT-ONE
+        WHEN "IdentifierHomoglyph"
+            MOVE "unicode.security.D.source-display-divergence.IdentifierHomoglyph"
+                TO TEMP-CODE
+            PERFORM SDD-EMIT-ONE
+        WHEN "Compound"
+            MOVE "unicode.security.D.source-display-divergence.Compound"
+                TO TEMP-CODE
+            PERFORM SDD-EMIT-ONE
+        WHEN OTHER
+            DISPLAY "ERROR source-display-divergence unreachable tag "
+                FUNCTION TRIM(SDD-TAG)
+            MOVE 1 TO RETURN-CODE
+    END-EVALUATE.
+
+SDD-EMIT-ONE.
+*> Whole-string finding with no implicated positions (the aggregate layer reports
+*> only the sub-threat; the per-family verdicts carry positions), so FINDING-POS
+*> is left empty.
     ADD 1 TO FINDING-COUNT
     MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
     MOVE SPACES TO FINDING-POS(FINDING-COUNT).
