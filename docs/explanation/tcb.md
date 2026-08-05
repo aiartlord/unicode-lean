@@ -14,10 +14,16 @@ terminus?"*
    to community audit. Pinned toolchain: `leanprover/lean4:v4.32.0`. Every
    `.olean` this project produces re-checks independently under
    `lean4checker`; the correctness argument needs only that re-check to
-   succeed. `scripts/check-olean-recheck.sh` runs the re-check in CI: it
-   builds the checker from a commit-pinned checkout under the same pinned
-   toolchain and replays every declaration in the audited root's import
-   closure through the kernel.
+   succeed. `scripts/check-olean-recheck.sh` runs the re-check: it builds the
+   checker from a commit-pinned checkout under the same pinned toolchain and
+   replays every declaration in the built import closure through the kernel.
+   This replay is what catches an unsound elaborator or tactic — the primary
+   risk surface — by confirming every `.olean` holds only kernel-accepted
+   proofs. It is not a defense against a compromised C++ compiler: building
+   `lean4checker` under this repository's own pinned toolchain gives
+   reproducibility, not the diverse-compilation independence of Wheeler's
+   method. That axis is the Thompson-attack terminus below; a reviewer who
+   wants it rebuilds `lean4checker` under a second compiler per the terminus.
 
 2. **The pinned Unicode Character Database, version 17.0.0**, byte-for-byte
    identical to the tables published at unicode.org. This is not an assumed
@@ -57,7 +63,13 @@ terminus?"*
   level too: `scripts/check-axiom-footprint.sh` walks every declaration in
   the built modules and fails unless its transitive axiom footprint is
   contained in the three Lean-core axioms `propext`, `Quot.sound`, and
-  `Classical.choice`.
+  `Classical.choice`. The walk covers the runtime root, the twenty-seven
+  detector families, the conformance harnesses, and the assurance theorem
+  layer — the full closure of `Unicode`, `Unicode.SecurityRoot`,
+  `Unicode.FullConformance`, and `Unicode.Assurance`. Because that closure is
+  slow to build, the footprint gate and the kernel re-check run in the nightly
+  assurance workflow and on release tags, not on every push; per-push CI runs
+  the source-level guards and the default-root build.
 
 - **Any test suite.** Tests exercise the code but are not part of the
   correctness argument; the proofs are.

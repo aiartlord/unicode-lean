@@ -3,21 +3,28 @@
 
   `scripts/check-no-axiom.sh` guards the source text: no `axiom`
   declaration, no `unsafe`, no runtime escape hatch may appear under
-  `Unicode/`. This probe guards the elaborated artifacts. It imports the
-  audited root `Unicode` and computes, for every declaration defined in a
-  `Unicode` module, the exact set of axioms its term transitively depends
-  on. The admitted set is the three Lean-core axioms — `propext`,
-  `Quot.sound`, and `Classical.choice` — and nothing else. A declaration
-  whose footprint reaches `sorryAx`, `Lean.ofReduceBool`,
+  `Unicode/`. This probe guards the elaborated artifacts. It imports the full
+  audited closure — `Unicode` (the runtime root), `Unicode.SecurityRoot` (the
+  twenty-seven detector families), `Unicode.FullConformance` (the conformance
+  harnesses), and `Unicode.Assurance` (the theorem layer) — and computes, for
+  every declaration defined in a `Unicode.*` module, the exact set of axioms
+  its term transitively depends on. The admitted set is the three Lean-core
+  axioms — `propext`, `Quot.sound`, and `Classical.choice` — and nothing else.
+  A declaration whose footprint reaches `sorryAx`, `Lean.ofReduceBool`,
   `Lean.trustCompiler`, or a project-local axiom fails the gate, and the
   error names both the declaration and the axiom.
 
   Run through `scripts/check-axiom-footprint.sh` after a completed
-  `lake build`; the probe reads the built `.olean` artifacts.
+  `lake build UnicodeFullConformance UnicodeSecurity`; the probe reads the
+  built `.olean` artifacts. Because that closure is slow to build, the gate
+  runs in the nightly assurance workflow and on release tags, not per push.
 -/
 import Lean.Util.CollectAxioms
 import Lean.Elab.Command
 import Unicode
+import Unicode.SecurityRoot
+import Unicode.FullConformance
+import Unicode.Assurance
 
 open Lean (Name collectAxioms)
 

@@ -1,0 +1,77 @@
+name: assurance
+
+# Tier 2 (slow, nightly). Artifact-level assurance over the full audited
+# closure: the transitive axiom footprint of every declaration, and an
+# independent lean4checker re-check of the built oleans. Both build the heavy
+# security and full-conformance roots, so they run nightly and on release tags
+# (release-evidence.yml) rather than on every push — ci.yml Tier 1 keeps push
+# latency low with source-level guards and the default-root build. Not a merge
+# gate; it is assurance evidence.
+
+on:
+  schedule:
+    # Daily at 03:07 UTC. Offset from the reproducibility workflow (04:17) so
+    # two heavy nightly builds do not contend for the same window.
+    - cron: "7 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  full-closure-assurance:
+    name: axiom footprint + independent re-check (full closure)
+    runs-on: ubuntu-latest
+    # Builds Unicode + the 27 security detectors + the full official
+    # conformance corpus + the assurance theorem layer, then walks every
+    # declaration's axiom footprint and replays every olean through
+    # lean4checker. Very long from a cold runner.
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1
+        with:
+          # Toolchain + lake setup only; the full-closure build is explicit below.
+          build: false
+          test: false
+          lint: false
+
+      - name: add swap headroom
+        run: |
+          # The full closure's decide+kernel proofs fan across all runner cores
+          # and their combined peak exceeds the hosted runner's ~16 GB RAM. Lake
+          # 5.0 has no --jobs flag to cap concurrency, so give the build
+          # virtual-memory headroom on the large /mnt volume instead.
+          sudo fallocate -l 24G /mnt/ci-swapfile
+          sudo chmod 600 /mnt/ci-swapfile
+          sudo mkswap /mnt/ci-swapfile
+          sudo swapon /mnt/ci-swapfile
+          free -h
+
+      - name: build the full audited closure
+        run: |
+          lake build UnicodeFullConformance UnicodeSecurity UnicodeAssurance
+
+      - name: axiom footprint over the full closure
+        run: |
+          # Every declaration across the runtime root, the 27 detector
+          # families, the conformance harnesses, and the assurance layer: its
+          # transitive axiom footprint must stay within propext, Quot.sound,
+          # and Classical.choice. Rejects sorryAx, Lean.ofReduceBool,
+          # Lean.trustCompiler, and project-local axioms at the artifact level.
+          bash scripts/check-axiom-footprint.sh
+
+      - name: independent kernel re-check of the built artifacts
+        run: |
+          # Builds the commit-pinned lean4checker under the repository toolchain
+          # and replays every built olean through the Lean kernel — an
+          # independent binary confirming the artifacts hold only
+          # kernel-accepted proofs.
+          bash scripts/check-olean-recheck.sh

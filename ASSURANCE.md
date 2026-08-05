@@ -24,12 +24,25 @@ Every proof closes in the Lean kernel (`decide` / `decide +kernel`);
 - `scripts/check-sorry.sh` rejects `sorry` and `admit`.
 - `scripts/check-no-axiom.sh` rejects project-local `axiom`, `unsafe`,
   `unsafePerformIO`, `unsafeCast`, `Lean.ofReduceBool`, and `Lean.reduceBool`.
-- `scripts/check-axiom-footprint.sh` walks every declaration in the built
-  `Unicode` modules and rejects any transitive axiom dependency beyond the
-  Lean-core `propext`, `Quot.sound`, and `Classical.choice`.
-- `scripts/check-olean-recheck.sh` builds the independent `lean4checker`
-  proof checker from a commit-pinned checkout and replays every declaration
-  in the audited root's import closure through the Lean kernel.
+- `scripts/check-axiom-footprint.sh` walks every declaration across the full
+  audited closure — the runtime root `Unicode`, the twenty-seven detector
+  families under `Unicode.SecurityRoot`, the conformance harnesses under
+  `Unicode.FullConformance`, and the theorem layer under `Unicode.Assurance` —
+  and rejects any transitive axiom dependency beyond the Lean-core `propext`,
+  `Quot.sound`, and `Classical.choice`. `Classical.choice` is the expected
+  third Lean-core axiom, reached the moment any classical lemma is touched; the
+  gate's teeth are the hard rejection of `sorryAx`, `Lean.ofReduceBool`,
+  `Lean.trustCompiler`, and project-local axioms.
+- `scripts/check-olean-recheck.sh` builds the independent `lean4checker` proof
+  checker from a commit-pinned checkout and replays every built olean through
+  the Lean kernel, confirming the artifacts hold only kernel-accepted proofs.
+  This catches an unsound elaborator or tactic; it is not a diverse-compilation
+  defense against a Thompson attack, which is a separate axis documented in
+  `docs/explanation/tcb.md`.
+- Both of the above build the heavy security and full-conformance roots, so
+  they run in the nightly `assurance` workflow and on release tags, not on
+  every push. Per-push CI (`ci.yml`) runs the source-level guards — including
+  `check-no-axiom.sh` — plus the default-root build and smoke check.
 - `scripts/check-orphan-files.sh` rejects `.lean` files under `Unicode/` that
   are not transitively imported from the audited roots.
 - `scripts/check-ucd-hashes.sh` verifies the UCD/UCA source-data manifest.
@@ -58,6 +71,9 @@ Every proof closes in the Lean kernel (`decide` / `decide +kernel`);
   license, and notice files.
 - The nightly reproducibility workflow performs two clean default
   `lake build` passes and compares `.olean` SHA-256 manifests.
+- The nightly `assurance` workflow builds the full audited closure and runs the
+  artifact-level axiom footprint and the independent `lean4checker` re-check
+  over it; both also run in `release-evidence` on version tags.
 - The `release-evidence` workflow runs on version tags, reruns hardening,
   default build checks, the explicit full-corpus conformance target, publishes
   release assets, and emits GitHub artifact attestations for the source archive,
