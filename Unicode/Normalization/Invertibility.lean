@@ -155,9 +155,8 @@ set_option maxRecDepth 8192 in
     uses `UnicodeData_rows_codepoint_NoDup` to conclude that the row
     produced by `findSome?` in `primaryComposite?` is the same row
     produced by `find?` in `lookupRow`. Uses a per-theorem `maxRecDepth`
-    bump (per the canon's `Continuity.Codec.Varint` precedent) because the
-    `List.findSome?` unfolding triggers Lean's
-    reducer on the 3045-row UCD table. -/
+    bump because the `List.findSome?` unfolding triggers Lean's reducer
+    on the 3045-row UCD table. -/
 theorem primaryComposite_canonicalDecomposition_nonHangul
     (d c p : Nat) (hHangul : Hangul.composePair? d c = none)
     (h : Compose.primaryComposite? d c = some p) :

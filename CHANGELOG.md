@@ -9,7 +9,34 @@ might depend on).
 
 ## Unreleased
 
-No unreleased changes.
+### Added
+
+- `scripts/check-axiom-footprint.sh` — an artifact-level axiom gate. It
+  imports the built `Unicode` modules and verifies that every declaration's
+  transitive axiom footprint is contained in the Lean-core `propext`,
+  `Quot.sound`, and `Classical.choice`, so `sorryAx`, `Lean.ofReduceBool`,
+  `Lean.trustCompiler`, and project-local axioms are rejected at the
+  artifact level even when a source-text scan cannot see them. The gate
+  runs in the `ci / build` job and in the release-evidence workflow, and
+  is part of the local pull-request checklist.
+- `scripts/check-olean-recheck.sh` — the independent kernel re-check the
+  trusted-computing-base document names, now integrated. It builds the
+  `lean4checker` proof checker from a commit-pinned checkout under the
+  repository's own toolchain pin and replays every declaration in the
+  audited root's import closure through the Lean kernel. Runs in the
+  `ci / build` job and in the release-evidence workflow.
+
+### Fixed
+
+- `SECURITY.md`, `ASSURANCE.md`, and `CONTRIBUTING.md` reconciled to the
+  shipped state: Lean 4.32.0, twenty-seven detector families across six
+  layers including the shipped cryptographic-stability layer,
+  kernel-checked conformance harnesses, and `detect : List Nat`
+  signatures.
+- `docs/explanation/tcb.md` records the axiom-footprint gate and the
+  CI-integrated independent `lean4checker` re-check.
+- Module docstrings and the trusted-computing-base document no longer
+  reference external project vocabulary.
 
 ## v1.0.0 — 2026-08-03
 
@@ -1081,10 +1108,8 @@ triple of detector module, hand-curated fixture, and
   `X2 CovertDisplayCompound`, `X3 ConfusableBidiCompound`,
   `X4 AdmissibilityFormDrift`.
 
-Layer 6 (Cryptographic Stability — K1..K3) is reserved.  The
-opaque-axiomatized hash foundation it would build on lives in
-the `Continuity.Crypto` vocabulary upstream; cross-repo
-integration is deferred.
+Layer 6 (Cryptographic Stability — K1..K3) is reserved at this
+release.  Its three families ship in v1.0.0.
 
 Shared vocabulary in `Unicode/Security/Calculus.lean`:
 `ClassificationKind ∈ {clear, hazard, compound, informational}`,

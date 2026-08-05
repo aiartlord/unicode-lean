@@ -6,7 +6,7 @@ This repository is a machine-checked specification of the Unicode standard.
 The artifacts that downstream consumers rely on are:
 
 - The Lean source files under `Unicode/`, which type-check zero `sorry`
-  and zero project-local `axiom`s under Lean 4.28.0.
+  and zero project-local `axiom`s under Lean 4.32.0.
 - The UCD source files under `Unicode/Ucd/`, which are pinned by
   SHA-256 in `Unicode/Ucd/SHA256SUMS` and verified in CI.
 - The Generated tables under `Unicode/Generated/`, which are derived
@@ -14,7 +14,7 @@ The artifacts that downstream consumers rely on are:
 - The Security Conformance Layer fixtures under
   `Unicode/Ucd/Security/`, which are pinned by SHA-256 in
   `Unicode/Ucd/Security/SHA256SUMS` and verified in CI.  Each fixture
-  drives a `native_decide`-closed `all_rows_pass` theorem in
+  drives a kernel-checked `all_rows_pass` theorem in
   `Unicode/Conformance/Security/`, so a byte change to a fixture
   changes the verdict the conformance harness commits to.
 
@@ -35,7 +35,9 @@ subverted without the build failing. Examples:
   `*Test.lean` harness, slipping past
   `scripts/check-security-coverage.sh`.
 - A project-local `axiom` introduced under a name not recognised
-  by `scripts/check-no-axiom.sh`.
+  by `scripts/check-no-axiom.sh`, or an axiom dependency reaching
+  the built artifacts past the source scan without being caught by
+  `scripts/check-axiom-footprint.sh`.
 - An orphan `.lean` file present on disk but not transitively
   imported from `Unicode.lean`, so it skips the headline build.
 - A runtime escape hatch (`unsafe`, `unsafePerformIO`, `unsafeCast`,
@@ -48,34 +50,35 @@ reproducibility workflow.
 
 ## Security Conformance Layer
 
-The 23 detector families under `Unicode/Security/` extend the
+The 27 detector families under `Unicode/Security/` extend the
 machine-checked surface to threats that the Unicode Consortium has
 declined to bring inside the scope of UAX / UTS conformance
 (UTS #39 §5.4, §6).  Each family is a Tier-A₁..A₃ adversary
 verdict — local injector, pipeline injector, or supply-chain
 compromise — over an input codepoint sequence.
 
-The families ship across five layers:
+The families ship across six layers:
 
 | Layer | Concern | Families |
 |---|---|---|
-| 1 — Covert Channels | bytes hidden in plain sight (variation selectors, tag block, zero-width, surrogates, bidi balance) | C1..C5 |
-| 2 — Identity Spoofing | identifier confusables and emoji-sequence forgery | I1..I4 |
-| 3 — Display Integrity | source vs execute divergence, filename disguise, RTL injection, renderer-cohort variance | D1..D4 |
-| 4 — Form Stability | normalization bombs, locale-sensitive case folds, NFC / NFKC idempotence | F1..F6 |
-| 5 — Cross-Layer Boundaries | per-cp identifier × form, covert × display, identity × display, string-level admissibility × form | X1..X4 |
+| Covert Channels | bytes hidden in plain sight — variation selectors, tag block, zero-width runs, surrogates, bidi balance, noncharacters | 6 |
+| Identity Spoofing | identifier confusables and emoji-sequence forgery | 4 |
+| Display Integrity | source vs execute divergence, filename disguise, RTL injection, renderer-cohort variance | 4 |
+| Form Stability | normalization bombs, stream-safe violations, locale-sensitive case folds, case-expansion mismatch, width confusion, NFC idempotence | 6 |
+| Cross-Layer Boundaries | admissibility and form drift, covert × display and identity × display compounds | 4 |
+| Cryptographic Stability | BIP-39 mnemonic canonical form, hash-input stability, watermark detectability | 3 |
 
-Layer 6 (Cryptographic Stability — K1..K3) is reserved.  The
-opaque-axiomatized hash foundation it would build on lives upstream
-in the `Continuity.Crypto` vocabulary; integrating cross-repo is
-deferred.
+The cryptographic-stability detectors run in an explicit crypto
+context rather than the default scan.  `ports/DETECTOR_COVERAGE.md`
+records what each detector is and its per-port coverage — all 27
+families implemented in all sixteen runtime ports.
 
 The shared verdict vocabulary lives in
 `Unicode/Security/Calculus.lean` (`ClassificationKind` ∈ {`clear`,
 `hazard`, `compound`, `informational`}; `ConformanceLevel` ∈
 {`basic`, `strict`, `full`}).  Each family refines the calculus
 into its own `<F>SubThreat`, `<F>Classification`, and `<F>Verdict`
-types and emits a `detect : Array Nat → <F>Verdict` function.
+types and emits a `detect : List Nat → <F>Verdict` function.
 
 ## Reporting a Vulnerability
 

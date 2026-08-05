@@ -1,10 +1,9 @@
 /-
   Unicode.Machine
 
-  A Mealy stream transducer `AbstractMachine I O` and its behavioural theory,
-  ported (core-only, no import) from the Continuity machine arrow. A machine
-  consumes inputs one at a time, threading hidden state and emitting a list of
-  outputs per input; its observable behaviour is the stream function
+  A Mealy stream transducer `AbstractMachine I O` and its behavioural theory.
+  A machine consumes inputs one at a time, threading hidden state and emitting
+  a list of outputs per input; its observable behaviour is the stream function
   `outputs : List I → List O`.
 
   The point for this repo: a scanning detector or normalization pass is a fold

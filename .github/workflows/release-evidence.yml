@@ -67,6 +67,8 @@ jobs:
           bash scripts/check-bip39-hashes.sh
           bash scripts/check-curated-hashes.sh
           bash scripts/check-actions-pinned.sh
+          bash scripts/check-axiom-footprint.sh
+          bash scripts/check-olean-recheck.sh
 
       - name: smoke-check headline theorems
         run: |

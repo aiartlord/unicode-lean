@@ -12,8 +12,12 @@ terminus?"*
    proof-checking binary — a small, fixed type-checker for the Lean 4
    dependent type theory, shared across the entire Lean ecosystem and subject
    to community audit. Pinned toolchain: `leanprover/lean4:v4.32.0`. Every
-   `.olean` this project produces re-checks independently under `lean4checker`;
-   the correctness argument depends only on that re-check succeeding.
+   `.olean` this project produces re-checks independently under
+   `lean4checker`; the correctness argument needs only that re-check to
+   succeed. `scripts/check-olean-recheck.sh` runs the re-check in CI: it
+   builds the checker from a commit-pinned checkout under the same pinned
+   toolchain and replays every declaration in the audited root's import
+   closure through the kernel.
 
 2. **The pinned Unicode Character Database, version 17.0.0**, byte-for-byte
    identical to the tables published at unicode.org. This is not an assumed
@@ -47,9 +51,13 @@ terminus?"*
   enforced, not aspirational.
 
 - **`sorry` and axioms.** Zero `sorry` in any proof and zero `axiom`
-  declarations across the tree. (A text search for "sorry" finds exactly one
+  declarations across the tree. A text search for "sorry" finds exactly one
   hit — the string `"sorry"` as a valid BIP-39 mnemonic word in a bundled
-  wordlist — which is data, not a proof.)
+  wordlist, which is data, not a proof. CI verifies this at the artifact
+  level too: `scripts/check-axiom-footprint.sh` walks every declaration in
+  the built modules and fails unless its transitive axiom footprint is
+  contained in the three Lean-core axioms `propext`, `Quot.sound`, and
+  `Classical.choice`.
 
 - **Any test suite.** Tests exercise the code but are not part of the
   correctness argument; the proofs are.
@@ -68,9 +76,6 @@ terminus of this trust chain. This is named honestly rather than hidden:
   Trust through Diverse Double-Compiling") can build `lean4checker` from source
   under any two compliant C++ compilers of their choice and compare the
   resulting binaries.
-- Straylight's related Continuity work extends this chain further via
-  cryptographic build triangulation; `unicode-lean` itself does not depend on
-  that mechanism, so no additional trust is imported here.
 
 That converts the Thompson-attack question from a gotcha into a stated,
 mitigable assumption — which is the whole point of writing the TCB down.

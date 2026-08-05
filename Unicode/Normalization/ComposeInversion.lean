@@ -233,8 +233,7 @@ set_option maxRecDepth 8192 in
         elements have `ccc y ≤ s.maxCCC ≤ max s.maxCCC (ccc cp)` by
         `Nat.le_max_left`.
 
-    Uses a per-theorem `maxRecDepth` bump (per the canon's
-    `Continuity.Codec.Varint` precedent) because the case-split
+    Uses a per-theorem `maxRecDepth` bump because the case-split
     through `stepCompose`'s 8 branches elaborates deep terms involving
     unfolded `match` + `if` structures. -/
 theorem stepCompose_preserves_valid

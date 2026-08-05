@@ -5,13 +5,15 @@ repository without trusting marketing claims.
 
 ## Scope
 
-`unicode-lean` is a Lean 4.30.0, Lean-core-only specification and conformance
+`unicode-lean` is a Lean 4.32.0, Lean-core-only specification and conformance
 library for Unicode algorithms, data tables, codecs, identifiers, and
 security-oriented Unicode threat detectors.
 
 The primary assurance boundary is source-level verification: the repository is
 designed so the committed Lean source, pinned data files, and CI scripts are
 sufficient to rebuild and audit the claimed theorem and conformance surface.
+Every proof closes in the Lean kernel (`decide` / `decide +kernel`);
+`native_decide` and `bv_decide` have zero occurrences in the tree.
 
 ## Verifiable Evidence
 
@@ -22,6 +24,12 @@ sufficient to rebuild and audit the claimed theorem and conformance surface.
 - `scripts/check-sorry.sh` rejects `sorry` and `admit`.
 - `scripts/check-no-axiom.sh` rejects project-local `axiom`, `unsafe`,
   `unsafePerformIO`, `unsafeCast`, `Lean.ofReduceBool`, and `Lean.reduceBool`.
+- `scripts/check-axiom-footprint.sh` walks every declaration in the built
+  `Unicode` modules and rejects any transitive axiom dependency beyond the
+  Lean-core `propext`, `Quot.sound`, and `Classical.choice`.
+- `scripts/check-olean-recheck.sh` builds the independent `lean4checker`
+  proof checker from a commit-pinned checkout and replays every declaration
+  in the audited root's import closure through the Lean kernel.
 - `scripts/check-orphan-files.sh` rejects `.lean` files under `Unicode/` that
   are not transitively imported from the audited roots.
 - `scripts/check-ucd-hashes.sh` verifies the UCD/UCA source-data manifest.
@@ -82,11 +90,8 @@ Reference links:
 
 ## Current Limits
 
-- `native_decide` is still used for large data-corpus facts. That is the
-  current practical proof-engineering strategy, but an independent `lean4lean`
-  recheck gate is not yet integrated.
 - The full-corpus official conformance root is intentionally explicit because
-  several fixture suites are slow under Lean 4.30.0. Routine CI builds the
+  several fixture suites are slow under Lean 4.32.0. Routine CI builds the
   audited default root; release/audit evidence can demand
   `UnicodeFullConformance`.
 - The Nix package fetches the Lean toolchain through `elan` during the build.
@@ -102,9 +107,8 @@ Reference links:
 
 ## Enterprise Hardening Backlog
 
-1. Add an independent `lean4lean` verification job for `native_decide` facts.
-2. Exercise the `release-evidence` workflow on the next tag and verify the
+1. Exercise the `release-evidence` workflow on the next tag and verify the
    published release assets and artifact attestations.
-3. Decide whether to backfill evidence artifacts for older release tags.
-4. Export branch-protection/ruleset settings as code where GitHub supports it,
+2. Decide whether to backfill evidence artifacts for older release tags.
+3. Export branch-protection/ruleset settings as code where GitHub supports it,
    or archive periodic `gh api` evidence for auditors.

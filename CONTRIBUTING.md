@@ -1,7 +1,7 @@
 # Contributing
 
 This repository ships a machine-checked specification of the Unicode
-standard at UCD 17.0.0 under Lean 4.28.0. Contributions are welcome
+standard at UCD 17.0.0 under Lean 4.32.0. Contributions are welcome
 under the same Apache-2.0 license that covers the existing source.
 
 ## Local Workflow
@@ -21,6 +21,16 @@ bash scripts/check-sorry.sh
 bash scripts/check-no-axiom.sh
 bash scripts/check-orphan-files.sh
 bash scripts/check-ucd-hashes.sh
+
+# Artifact-level axiom audit. Requires the completed `lake build` above;
+# walks every declaration and rejects any axiom dependency beyond the
+# Lean-core propext, Quot.sound, and Classical.choice.
+bash scripts/check-axiom-footprint.sh
+
+# Independent kernel re-check of the built artifacts. First run clones and
+# builds the commit-pinned lean4checker under the repository toolchain,
+# then replays every module's declarations through the Lean kernel.
+bash scripts/check-olean-recheck.sh
 
 # Status report (file count, theorem count, sorry count, per-pillar
 # progress).
@@ -48,10 +58,17 @@ hardening job in CI enforces 1 through 4 mechanically.
    - `lake build Unicode.Precis.Preparation`
    - `lake build Unicode.Bidi.Algorithm`
    - `lake build Unicode.Confusables`
-7. New theorems carry a docstring stating what they prove. New
+7. `bash scripts/check-axiom-footprint.sh` exits clean against the
+   built artifacts. Every declaration's transitive axiom footprint is
+   contained in the Lean-core `propext`, `Quot.sound`, and
+   `Classical.choice`.
+8. `bash scripts/check-olean-recheck.sh` exits clean against the built
+   artifacts. The independent `lean4checker` binary replays every
+   module's declarations through the Lean kernel.
+9. New theorems carry a docstring stating what they prove. New
    definitions carry a docstring naming the standard section they
    correspond to (e.g. "UAX #15 §3.1", "RFC 8264 §5.2.1").
-8. The commit message follows the repository's existing convention:
+10. The commit message follows the repository's existing convention:
    one-line subject in imperative mood, optional body explaining the
    why. No marketing language, no emoji.
 

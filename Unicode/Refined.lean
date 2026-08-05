@@ -6,11 +6,6 @@
   invariant established by that stage. Composition threads the invariants
   automatically: `(reorder cps).val` on input to `compose` carries the
   `IsHSR` witness in its type.
-
-  Canon precedent: `Continuity.Codec.Guards.Bounded` wraps a `Box α` with
-  a `size_ok` proof; `Continuity.Gateway.Request.Temperature` wraps a
-  `Float` with range validity. This module does the analogous wrapping
-  for Unicode normalization.
 -/
 
 import Unicode.Invariants

@@ -141,9 +141,10 @@ jobs:
     needs: hardening
     # Re-derives the whole Lean canon from source via lake — recompiling every
     # olean and re-checking every proof in the kernel (the reproducible-from-
-    # source backstop; deliberately not substituted). Long from a cold runner,
-    # so give it headroom rather than let the runner kill it mid-proof.
-    timeout-minutes: 180
+    # source backstop; deliberately not substituted) — then replays the built
+    # artifacts through the independent lean4checker binary. Long from a cold
+    # runner, so give it headroom rather than let the runner kill it mid-proof.
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -179,3 +180,20 @@ jobs:
             Unicode.Precis.Preparation \
             Unicode.Bidi.Algorithm \
             Unicode.Confusables
+
+      - name: axiom footprint of the audited root
+        run: |
+          # Walks every declaration in the built `Unicode` modules and
+          # verifies its transitive axiom footprint is contained in the
+          # three Lean-core axioms. Catches sorryAx, Lean.ofReduceBool,
+          # Lean.trustCompiler, and project-local axioms at the artifact
+          # level, past anything a source text scan can see.
+          bash scripts/check-axiom-footprint.sh
+
+      - name: independent kernel re-check of the built artifacts
+        run: |
+          # Builds the commit-pinned lean4checker under the repository
+          # toolchain and replays every module's declarations through the
+          # Lean kernel — an independent binary confirming the .olean
+          # artifacts contain only kernel-accepted proofs.
+          bash scripts/check-olean-recheck.sh

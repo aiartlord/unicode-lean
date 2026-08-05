@@ -3,12 +3,10 @@
 
   Refinement-type invariants for Unicode normalization pipeline stages.
 
-  Canon precedent: `Continuity.Gateway.Request` uses `Temperature`, `Port`,
-  `Penalty` as refinement types with structural validity proofs. This module
-  carries that idiom to the Unicode pipeline — each normalization stage
-  consumes and produces `List Nat` tagged with a structural invariant, so
-  composition threads the invariants through the type system rather than
-  through hand-proven preservation lemmas at every step.
+  Each normalization stage consumes and produces `List Nat` tagged with a
+  structural invariant, so composition threads the invariants through the
+  type system rather than through hand-proven preservation lemmas at
+  every step.
 
   ## Structural rather than circular
 
@@ -76,9 +74,9 @@ def IsHSR (cps : List Nat) : Prop := Reorder.HasSortedRuns cps
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- REFINED ARRAY TYPES
 --
--- `{ cps : List Nat // P cps }` gives the pipeline stages typed outputs
--- the same way `Port` / `Temperature` / `Bounded α box n` work in
--- `Continuity.Gateway` and `Continuity.Codec.Guards`.
+-- `{ cps : List Nat // P cps }` gives the pipeline stages typed outputs:
+-- the invariant established by one stage is carried in the type consumed
+-- by the next.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 /-- Width-mapped codepoint sequence: no `<wide>`/`<narrow>` sources. -/
