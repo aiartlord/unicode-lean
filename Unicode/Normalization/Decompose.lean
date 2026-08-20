@@ -480,7 +480,7 @@ theorem decomposeSyllable_output_non_widthCompatSource
     have hVIndexLt : ((cp - 0xAC00) % 588) / 28 < 21 := by
       exact (Nat.div_lt_iff_lt_mul hTPos).2 (by omega)
     have hTIndexLt : (cp - 0xAC00) % 28 < 28 := Nat.mod_lt (cp - 0xAC00) hTPos
-    simp only [Hangul.SBase, Hangul.LBase, Hangul.VBase, Hangul.TBase,
+    dsimp only [Hangul.SBase, Hangul.LBase, Hangul.VBase, Hangul.TBase,
       Hangul.VCount, Hangul.TCount, Hangul.NCount] at h
     split at h
     · next hTZero =>
