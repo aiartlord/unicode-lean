@@ -14,6 +14,7 @@ from ..utf8 import decode_to_codepoints, first_invalid_utf8_offset
 from .calculus import ClassificationKind, Family, Severity
 from .boundary import confusable_bidi_compound, covert_display_compound
 from .display import rtl_injection
+from .form import width_class_confusion
 from .covert import (
     bidi_control_balance,
     surrogate_reassembly,
@@ -592,6 +593,16 @@ def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
             ClassificationKind.HAZARD,
             covert_display.sub,
             list(covert_display.positions),
+        )
+
+    width_class = width_class_confusion.detect(input_cps)
+    if width_class.sub is not None:
+        _append_finding(
+            findings,
+            Family.WIDTH_CLASS_CONFUSION,
+            ClassificationKind.HAZARD,
+            width_class.sub,
+            list(width_class.positions),
         )
 
     return Verdict(

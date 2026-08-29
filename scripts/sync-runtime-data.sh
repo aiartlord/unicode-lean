@@ -35,6 +35,7 @@ root_manifest_files=(
   DerivedBidiClass.txt
   DerivedCoreProperties.txt
   DerivedJoiningType.txt
+  EastAsianWidth.txt
   emoji-variation-sequences.txt
   emoji-data.txt
   emoji-zwj-sequences.txt
@@ -64,6 +65,7 @@ python_files=(
   CompositionExclusions.txt
   DerivedBidiClass.txt
   DerivedCoreProperties.txt
+  EastAsianWidth.txt
   IdentifierStatus.txt
   KnownAttackTargets.txt
   PropertyValueAliases.txt
@@ -95,6 +97,7 @@ rust_files=(
   DerivedBidiClass.txt
   DerivedCoreProperties.txt
   DerivedJoiningType.txt
+  EastAsianWidth.txt
   IdentifierStatus.txt
   KnownAttackTargets.txt
   PropertyValueAliases.txt

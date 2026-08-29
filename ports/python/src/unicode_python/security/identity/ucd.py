@@ -210,6 +210,65 @@ def _parse_derived_bidi() -> _BidiTable:
     return _BidiTable(explicit=tuple(explicit), defaults=tuple(defaults))
 
 
+
+
+class EastAsianWidthClass(Enum):
+    """UAX #11 ``East_Asian_Width`` class."""
+
+    A = "A"
+    F = "F"
+    H = "H"
+    N = "N"
+    NA = "Na"
+    W = "W"
+
+
+def _east_asian_width_of_token(token: str) -> EastAsianWidthClass:
+    try:
+        return EastAsianWidthClass(token)
+    except ValueError:
+        return EastAsianWidthClass.N
+
+
+def _parse_east_asian_width() -> tuple[tuple[int, int, EastAsianWidthClass], ...]:
+    text = _read_data_file("EastAsianWidth.txt")
+    rows: list[tuple[int, int, EastAsianWidthClass]] = []
+    for line in text.splitlines():
+        body = _strip_comment_and_trim(line)
+        if not body:
+            continue
+        semi = body.find(";")
+        if semi < 0:
+            continue
+        lo, hi = _parse_range_field(body[:semi])
+        rows.append((lo, hi, _east_asian_width_of_token(body[semi + 1 :].strip())))
+    rows.sort(key=lambda entry: entry[0])
+    return tuple(rows)
+
+
+_EAST_ASIAN_WIDTH_TABLE: tuple[tuple[int, int, EastAsianWidthClass], ...] | None = None
+
+
+def east_asian_width(cp: int) -> EastAsianWidthClass:
+    """``East_Asian_Width`` for one codepoint. The file's ``@missing`` line
+    declares ``N`` over the whole space, so an unlisted codepoint is Neutral."""
+    global _EAST_ASIAN_WIDTH_TABLE
+    if _EAST_ASIAN_WIDTH_TABLE is None:
+        _EAST_ASIAN_WIDTH_TABLE = _parse_east_asian_width()
+    table = _EAST_ASIAN_WIDTH_TABLE
+    lo = 0
+    hi = len(table)
+    while lo < hi:
+        mid = lo + (hi - lo) // 2
+        rlo, rhi, cls = table[mid]
+        if cp < rlo:
+            hi = mid
+        elif cp > rhi:
+            lo = mid + 1
+        else:
+            return cls
+    return EastAsianWidthClass.N
+
 _BIDI_TABLE: _BidiTable | None = None
 
 
