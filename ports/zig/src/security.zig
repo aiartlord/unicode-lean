@@ -3,6 +3,7 @@ const confusables_data = @import("confusables_data.zig");
 const case_folding_data = @import("case_folding_data.zig");
 const normalization_data = @import("normalization_data.zig");
 const bidi_class_data = @import("bidi_class_data.zig");
+const east_asian_width_data = @import("east_asian_width_data.zig");
 const casing_data = @import("casing_data.zig");
 const bip39_data = @import("bip39_data.zig");
 
@@ -738,6 +739,29 @@ fn bidiStrong(cp: u32) bidi_class_data.Strong {
         if (cp >= range.start and cp <= range.end) result = range.class;
     }
     return result orelse .l;
+}
+
+// ── East_Asian_Width: UAX #11 width class ────────────────────────────────────
+// Mirrors Unicode.Generated.EastAsianWidth.lookup. Unlike bidiStrong there is
+// no default table to scan: the source file's @missing line declares N over the
+// whole codepoint space, so a binary-search miss is .n by declaration.
+
+fn eastAsianWidth(cp: u32) east_asian_width_data.Width {
+    const explicit = east_asian_width_data.explicit;
+    var low: usize = 0;
+    var high: usize = explicit.len;
+    while (low < high) {
+        const mid = low + (high - low) / 2;
+        const range = explicit[mid];
+        if (cp < range.start) {
+            high = mid;
+        } else if (cp > range.end) {
+            low = mid + 1;
+        } else {
+            return range.class;
+        }
+    }
+    return .n;
 }
 
 fn isStrongRtl(cp: u32) bool {
@@ -5623,6 +5647,63 @@ pub fn nfcIdempotenceWitnessDetect(input: []const u32) NfcIdempotenceWitnessResu
     const nfkc = toNFKC(input) orelse return result;
     if (nfcFirstDivergence(input, nfkc.slice())) |pos| {
         result.sub_threat = "NonNfkcCompatForm";
+        result.positions[0] = pos;
+        result.position_count = 1;
+        return result;
+    }
+    return result;
+}
+
+pub const WidthClassConfusionResult = struct {
+    sub_threat: ?[]const u8 = null,
+    positions: [1]usize = undefined,
+    position_count: usize = 0,
+};
+
+// True iff the NFKD head of `cp` carries a different East Asian Width class.
+// A normalization overflow of the bounded buffer is treated as no fold.
+fn hasWidthFold(cp: u32) bool {
+    const folded = toNFKD(&[_]u32{cp}) orelse return false;
+    const head = folded.slice();
+    if (head.len == 0) return false;
+    return eastAsianWidth(head[0]) != eastAsianWidth(cp);
+}
+
+// First position whose codepoint has class `want` and folds away from it.
+fn firstWidthFold(input: []const u32, want: east_asian_width_data.Width) ?usize {
+    for (input, 0..) |cp, index| {
+        if (eastAsianWidth(cp) == want and hasWidthFold(cp)) return index;
+    }
+    return null;
+}
+
+/// Detect UAX #11 East Asian Width class confusion. A Fullwidth (EAW = F) or
+/// Halfwidth (EAW = H) codepoint whose NFKD head carries a different EAW class
+/// is a compatibility-fold homograph:
+///
+///   U+FF21 'Ａ' (F)  ->  U+0041 'A' (Na)
+///   U+FF71 'ｱ' (H)  ->  U+30A2 'ア' (W)
+///
+/// The two-system bypass: a validator that whitelists ASCII rejects Ａ, while a
+/// downstream NFKC step at storage or comparison time folds it to plain A, so
+/// ＡＤＭＩＮ claims the username ADMIN. Distinct from renderer divergence's
+/// FullwidthVariance, which fires on F-class codepoints for renderer-cohort
+/// reasons; this is the NFKC-fold verdict and both can fire independently.
+/// Hangul syllables decompose to jamos that are still W class, so pure Hangul
+/// stays clear. A Fullwidth fold takes priority over a Halfwidth one, matching
+/// the reference's sub-threat order.
+///
+/// Direct port of Unicode/Security/Form/WidthClassConfusion.lean.
+pub fn widthClassConfusionDetect(input: []const u32) WidthClassConfusionResult {
+    var result = WidthClassConfusionResult{};
+    if (firstWidthFold(input, .f)) |pos| {
+        result.sub_threat = "FullwidthFold";
+        result.positions[0] = pos;
+        result.position_count = 1;
+        return result;
+    }
+    if (firstWidthFold(input, .h)) |pos| {
+        result.sub_threat = "HalfwidthFold";
         result.positions[0] = pos;
         result.position_count = 1;
         return result;
