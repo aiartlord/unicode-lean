@@ -20,8 +20,8 @@ const LATENCY_BUCKETS_MS: [u128; 8] = [1, 5, 10, 25, 50, 100, 250, 1000];
 
 const USAGE: &str = "\
 Usage:
-  unicode-security scan [--profile PROFILE] [--mode MODE] [--encoding ENCODING] [--input PATH|-] [--json]
-  unicode-security scan --jsonl [--input PATH|-]
+  unicode-security scan [--profile PROFILE] [--mode MODE] [--encoding ENCODING] [--input PATH|-] [--json|--sarif]
+  unicode-security scan --jsonl [--input PATH|-] [--sarif]
   unicode-security serve [--listen ADDR] [--profile PROFILE] [--mode MODE] [--encoding ENCODING]
 
 Profiles:
@@ -35,6 +35,13 @@ Input:
   --input PATH reads bytes from a file. --input - or an omitted --input reads stdin.
   --jsonl reads newline-delimited JSON records. Each record may set id, text,
   bytes, profile, mode, and encoding.
+
+Output:
+  --json emits one verdict as JSON.
+  --sarif emits a SARIF 2.1.0 log that code-scanning platforms ingest without
+  modification. With --jsonl every record becomes a result in one log, and each
+  record's id is the artifact URI; without it the --input path is the artifact.
+  Rules are emitted only for reason codes that actually produced a result.
 
 Server:
   --listen ADDR defaults to 127.0.0.1:8787.
@@ -66,6 +73,7 @@ struct Config {
     input: Input,
     json: bool,
     jsonl: bool,
+    sarif: bool,
 }
 
 #[derive(Debug)]
@@ -243,10 +251,27 @@ fn run(args: Vec<String>) -> Result<i32, String> {
     let bytes = read_input(&config.input)?;
 
     if config.jsonl {
+        if config.sarif {
+            return run_jsonl_sarif(config.profile, config.mode, config.encoding, &bytes);
+        }
         return run_jsonl(config.profile, config.mode, config.encoding, &bytes);
     }
 
     let scan = scan_bytes(config.profile, config.mode, config.encoding, &bytes);
+
+    if config.sarif {
+        let artifact = match &config.input {
+            Input::File(path) => path.clone(),
+            Input::Stdin => "input".to_string(),
+        };
+        let exit_code = match &scan {
+            CliScan::Verdict { verdict, .. } => exit_code_for_action(verdict.action),
+            CliScan::DecodeError { action, .. } => exit_code_for_action(*action),
+        };
+        println!("{}", sarif_log(&sarif_results_for_scan(&artifact, &scan)));
+        return Ok(exit_code);
+    }
+
     match scan {
         CliScan::Verdict {
             verdict,
@@ -461,6 +486,7 @@ fn parse_args(args: Vec<String>) -> Result<Config, String> {
     let mut input = Input::Stdin;
     let mut json = false;
     let mut jsonl = false;
+    let mut sarif = false;
     let mut i = 1;
 
     while i < args.len() {
@@ -506,6 +532,10 @@ fn parse_args(args: Vec<String>) -> Result<Config, String> {
                 json = true;
                 i += 1;
             }
+            "--sarif" => {
+                sarif = true;
+                i += 1;
+            }
             other => return Err(format!("unknown option: {other}\n\n{USAGE}")),
         }
     }
@@ -517,6 +547,7 @@ fn parse_args(args: Vec<String>) -> Result<Config, String> {
         input,
         json,
         jsonl,
+        sarif,
     })
 }
 
@@ -2126,6 +2157,254 @@ fn exit_code_for_action(action: Action) -> i32 {
     }
 }
 
+// ════════════════════════════════════════════════════════════════════
+// SARIF 2.1.0
+//
+// The finding model already carries what SARIF wants, so the mapping is
+// direct: `code` is the rule id, `severity` grades the level, `detail`
+// is the message, and a `ByteSpan` is a region. Byte offsets are always
+// present; line and column appear when the scanner resolved them.
+// ════════════════════════════════════════════════════════════════════
+
+const SARIF_SCHEMA: &str = "https://json.schemastore.org/sarif-2.1.0.json";
+const SARIF_INFORMATION_URI: &str = "https://github.com/Allodial-Inc/unicode-lean";
+
+#[derive(Debug)]
+struct SarifResult {
+    artifact: String,
+    code: String,
+    family: String,
+    level: &'static str,
+    message: String,
+    sub_threat: Option<String>,
+    positions: Vec<usize>,
+    spans: Vec<ByteSpan>,
+}
+
+/// SARIF grades a result `none`, `note`, `warning`, or `error`. The
+/// scanner's severity scale is finer, so the top two both map to `error`.
+fn sarif_level(severity: u8) -> &'static str {
+    match severity {
+        0 => "none",
+        1 => "note",
+        2 => "warning",
+        _ => "error",
+    }
+}
+
+fn sarif_results_for_scan(artifact: &str, scan: &CliScan) -> Vec<SarifResult> {
+    let mut out = Vec::new();
+    match scan {
+        CliScan::Verdict {
+            verdict,
+            spans,
+            malformed_spans,
+        } => {
+            for finding in &verdict.findings {
+                let regions = if finding.family == Family::MalformedUtf8 {
+                    malformed_spans.to_vec()
+                } else {
+                    position_byte_spans(&finding.positions, spans)
+                };
+                out.push(SarifResult {
+                    artifact: artifact.to_string(),
+                    code: finding.code.clone(),
+                    family: family_slug(finding.family).to_string(),
+                    level: sarif_level(finding.severity as u8),
+                    message: finding.detail.clone(),
+                    sub_threat: finding.sub_threat.clone(),
+                    positions: finding.positions.clone(),
+                    spans: regions,
+                });
+            }
+        }
+        CliScan::DecodeError { finding, .. } => {
+            out.push(SarifResult {
+                artifact: artifact.to_string(),
+                code: finding.code.clone(),
+                family: finding.family.to_string(),
+                level: sarif_level(finding.severity),
+                message: finding.detail.to_string(),
+                sub_threat: Some(finding.sub_threat.to_string()),
+                positions: finding.positions.clone(),
+                spans: finding.byte_spans.clone(),
+            });
+        }
+    }
+    out
+}
+
+fn push_sarif_rule(out: &mut String, code: &str, family: &str) {
+    let leaf = code.rsplit('.').next().unwrap_or(code);
+    out.push('{');
+    push_json_field(out, "id", code);
+    out.push(',');
+    push_json_field(out, "name", leaf);
+    out.push(',');
+    out.push_str("\"shortDescription\":{");
+    push_json_field(out, "text", &format!("{family}: {leaf}"));
+    out.push_str("},");
+    out.push_str("\"fullDescription\":{");
+    push_json_field(
+        out,
+        "text",
+        &format!(
+            "The {family} detector classifies a codepoint sequence as {leaf}. \
+             The detector's algorithm is machine-checked in Lean and carried \
+             into every language port unchanged."
+        ),
+    );
+    out.push_str("},");
+    out.push_str("\"defaultConfiguration\":{");
+    push_json_field(out, "level", "error");
+    out.push_str("},");
+    out.push_str("\"properties\":{");
+    push_json_field(out, "family", family);
+    out.push_str(",\"tags\":[");
+    push_json_string(out, "security");
+    out.push(',');
+    push_json_string(out, "unicode");
+    out.push(',');
+    push_json_string(out, family);
+    out.push_str("]}}");
+}
+
+fn push_sarif_region(out: &mut String, span: &ByteSpan) {
+    out.push('{');
+    let _ = write!(out, "\"byteOffset\":{}", span.start_byte);
+    let _ = write!(
+        out,
+        ",\"byteLength\":{}",
+        span.end_byte.saturating_sub(span.start_byte)
+    );
+    if let Some(line) = span.line {
+        let _ = write!(out, ",\"startLine\":{line}");
+    }
+    if let Some(column) = span.column {
+        let _ = write!(out, ",\"startColumn\":{column}");
+    }
+    if let Some(cp_offset) = span.cp_offset {
+        let _ = write!(out, ",\"properties\":{{\"codepointOffset\":{cp_offset}}}");
+    }
+    out.push('}');
+}
+
+fn push_sarif_result(out: &mut String, result: &SarifResult) {
+    out.push('{');
+    push_json_field(out, "ruleId", &result.code);
+    out.push(',');
+    push_json_field(out, "level", result.level);
+    out.push_str(",\"message\":{");
+    push_json_field(out, "text", &result.message);
+    out.push_str("},\"locations\":[");
+    if result.spans.is_empty() {
+        out.push_str("{\"physicalLocation\":{\"artifactLocation\":{");
+        push_json_field(out, "uri", &result.artifact);
+        out.push_str("}}}");
+    } else {
+        for (index, span) in result.spans.iter().enumerate() {
+            if index > 0 {
+                out.push(',');
+            }
+            out.push_str("{\"physicalLocation\":{\"artifactLocation\":{");
+            push_json_field(out, "uri", &result.artifact);
+            out.push_str("},\"region\":");
+            push_sarif_region(out, span);
+            out.push_str("}}");
+        }
+    }
+    out.push_str("],\"properties\":{");
+    push_json_field(out, "family", &result.family);
+    out.push_str(",\"subThreat\":");
+    match &result.sub_threat {
+        Some(sub_threat) => push_json_string(out, sub_threat),
+        None => out.push_str("null"),
+    }
+    out.push_str(",\"codepointPositions\":");
+    push_usize_array(out, &result.positions);
+    out.push_str("}}");
+}
+
+fn sarif_log(results: &[SarifResult]) -> String {
+    let mut rules: Vec<(String, String)> = Vec::new();
+    for result in results {
+        if !rules.iter().any(|(code, _family)| code == &result.code) {
+            rules.push((result.code.clone(), result.family.clone()));
+        }
+    }
+    rules.sort_by(|left, right| left.0.cmp(&right.0));
+
+    let mut out = String::new();
+    out.push('{');
+    push_json_field(&mut out, "$schema", SARIF_SCHEMA);
+    out.push(',');
+    push_json_field(&mut out, "version", "2.1.0");
+    out.push_str(",\"runs\":[{\"tool\":{\"driver\":{");
+    push_json_field(&mut out, "name", "unicode-security");
+    out.push(',');
+    push_json_field(&mut out, "version", env!("CARGO_PKG_VERSION"));
+    out.push(',');
+    push_json_field(&mut out, "informationUri", SARIF_INFORMATION_URI);
+    out.push_str(",\"rules\":[");
+    for (index, (code, family)) in rules.iter().enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        push_sarif_rule(&mut out, code, family);
+    }
+    out.push_str("]}},\"results\":[");
+    for (index, result) in results.iter().enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        push_sarif_result(&mut out, result);
+    }
+    out.push_str("],");
+    push_json_field(&mut out, "columnKind", "utf16CodeUnits");
+    out.push_str("}]}");
+    out
+}
+
+fn run_jsonl_sarif(
+    default_profile: Profile,
+    default_mode: Mode,
+    default_encoding: InputEncoding,
+    bytes: &[u8],
+) -> Result<i32, String> {
+    let text =
+        std::str::from_utf8(bytes).map_err(|err| format!("jsonl input is not UTF-8: {err}"))?;
+    let mut results = Vec::new();
+    let mut exit_code = 0;
+
+    for (line_index, line) in text.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let record = parse_batch_record(
+            trimmed,
+            default_profile,
+            default_mode,
+            default_encoding,
+            true,
+        )
+        .map_err(|err| format!("jsonl line {}: {err}", line_index + 1))?;
+        let artifact = record
+            .id
+            .clone()
+            .unwrap_or_else(|| format!("record-{}", line_index + 1));
+        let scan = scan_bytes(record.profile, record.mode, record.encoding, &record.bytes);
+        exit_code = exit_code.max(match &scan {
+            CliScan::Verdict { verdict, .. } => exit_code_for_action(verdict.action),
+            CliScan::DecodeError { action, .. } => exit_code_for_action(*action),
+        });
+        results.extend(sarif_results_for_scan(&artifact, &scan));
+    }
+
+    println!("{}", sarif_log(&results));
+    Ok(exit_code)
+}
+
 fn verdict_json(verdict: &Verdict, spans: &[ByteSpan], malformed_spans: &[ByteSpan]) -> String {
     let mut out = String::new();
     out.push('{');
@@ -2327,17 +2606,23 @@ fn push_usize_array(out: &mut String, values: &[usize]) {
     out.push(']');
 }
 
+/// The byte spans a finding's codepoint positions resolve to, skipping
+/// positions the span table does not cover.
+fn position_byte_spans(positions: &[usize], spans: &[ByteSpan]) -> Vec<ByteSpan> {
+    positions
+        .iter()
+        .filter_map(|position| spans.get(*position).copied())
+        .collect()
+}
+
 fn push_position_byte_spans(out: &mut String, positions: &[usize], spans: &[ByteSpan]) {
     out.push('[');
     let mut written = 0usize;
-    for position in positions {
-        let Some(span) = spans.get(*position) else {
-            continue;
-        };
+    for span in position_byte_spans(positions, spans) {
         if written > 0 {
             out.push(',');
         }
-        push_byte_span(out, span);
+        push_byte_span(out, &span);
         written += 1;
     }
     out.push(']');
