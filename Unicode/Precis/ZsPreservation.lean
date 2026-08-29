@@ -117,7 +117,7 @@ theorem decomposeSyllable_output_no_nonAsciiZs
   have hjRange : 0x1100 ≤ j ∧ j ≤ 0x11C2 := by
     unfold Hangul.decomposeSyllable? at h
     rw [if_pos hSyl] at h
-    simp only [Hangul.LBase, Hangul.VBase, Hangul.TBase, Hangul.NCount, Hangul.TCount,
+    dsimp only [Hangul.LBase, Hangul.VBase, Hangul.TBase, Hangul.NCount, Hangul.TCount,
                Hangul.VCount, Hangul.SBase] at h
     split at h
     · rw [Option.some.injEq] at h; subst h
