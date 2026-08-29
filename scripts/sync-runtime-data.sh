@@ -361,6 +361,7 @@ ruby_files=(
 )
 
 lua_files=(
+  EastAsianWidth.txt
   "${ruby_files[@]}"
 )
 

@@ -211,6 +211,60 @@ local function parse_derived_bidi()
   return { explicit = explicit, defaults = defaults }
 end
 
+-- ── EastAsianWidth.txt — UAX #11 East_Asian_Width ─────────────────────────
+
+local EastAsianWidth = { A = "a", F = "f", H = "h", N = "n", NA = "na", W = "w" }
+M.EastAsianWidth = EastAsianWidth
+
+local function eaw_of_token(token)
+  if token == "A" then return EastAsianWidth.A end
+  if token == "F" then return EastAsianWidth.F end
+  if token == "H" then return EastAsianWidth.H end
+  if token == "Na" then return EastAsianWidth.NA end
+  if token == "W" then return EastAsianWidth.W end
+  return EastAsianWidth.N
+end
+
+local _eaw_table = nil
+
+local function parse_east_asian_width()
+  local text = datapath.read("EastAsianWidth.txt")
+  local rows = {}
+  for line in iter_lines(text) do
+    local body = strip_comment_and_trim(line)
+    if body ~= "" then
+      local semi = body:find(";", 1, true)
+      if semi ~= nil then
+        local lo, hi = parse_range_field(body:sub(1, semi - 1))
+        rows[#rows + 1] = { lo, hi, eaw_of_token(trim(body:sub(semi + 1))) }
+      end
+    end
+  end
+  table.sort(rows, function(a, b) return a[1] < b[1] end)
+  return rows
+end
+
+-- East_Asian_Width for one codepoint. The file's @missing line declares N over
+-- the whole space, so an unlisted codepoint is Neutral.
+function M.east_asian_width(cp)
+  if _eaw_table == nil then
+    _eaw_table = parse_east_asian_width()
+  end
+  local lo, hi = 1, #_eaw_table + 1
+  while lo < hi do
+    local mid = math.floor((lo + hi) / 2)
+    local row = _eaw_table[mid]
+    if cp < row[1] then
+      hi = mid
+    elseif cp > row[2] then
+      lo = mid + 1
+    else
+      return row[3]
+    end
+  end
+  return EastAsianWidth.N
+end
+
 local function bidi_table()
   if _bidi_table == nil then
     _bidi_table = parse_derived_bidi()
