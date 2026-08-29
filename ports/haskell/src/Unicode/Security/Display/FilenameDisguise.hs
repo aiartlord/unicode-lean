@@ -16,7 +16,7 @@ surfaces every codepoint that could cause display-vs-byte divergence in the
 filename — any bidi format-control anywhere, and any fullwidth/halfwidth or
 combining (grapheme @Extend@) codepoint in the extension region (after the last
 @.@). Native-RTL names with no bidi controls clear. It reuses the port's own
-predicates (the bidi-format-control set via 'Unicode.Security.Policy.isBidiFormatControl',
+predicates (the bidi-format-control set via 'Unicode.Security.CodepointPredicates.isBidiFormatControl',
 the grapheme @Extend@ class via 'Unicode.Segmentation.Grapheme.lookupGCB', and
 the inlined fullwidth range), never a host filesystem or rendering library.
 
@@ -52,7 +52,7 @@ import Data.Maybe (listToMaybe)
 
 import Unicode.Segmentation.Grapheme (lookupGCB)
 import Unicode.Segmentation.GraphemeTables (GCB (Extend))
-import qualified Unicode.Security.Policy as Policy
+import qualified Unicode.Security.CodepointPredicates as Predicates
 
 -- ─────────────────────────────────────────────────────────────────────
 -- §1 Types
@@ -139,9 +139,9 @@ isFullwidthHalfwidth :: Int -> Bool
 isFullwidthHalfwidth cp = 0xFF01 <= cp && cp <= 0xFFEF
 
 -- | True iff @cp@ is a bidi format-control — reuses the port's own predicate
--- from "Unicode.Security.Policy".
+-- from "Unicode.Security.CodepointPredicates".
 isBidiFormatControl :: Int -> Bool
-isBidiFormatControl = Policy.isBidiFormatControl
+isBidiFormatControl = Predicates.isBidiFormatControl
 
 -- | True iff @cp@ has @Grapheme_Cluster_Break = Extend@ — a combining mark that
 -- stacks onto the preceding base. Reuses the port's grapheme-segmentation table

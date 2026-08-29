@@ -18,11 +18,11 @@ variance triggers fire, and otherwise is classified by the first trigger in
 priority order — a combining-mark stack overflow, a variation selector, an
 unregistered ZWJ shape, a fullwidth/halfwidth codepoint, or mixed direction. It
 reuses the port's own tables (the VariationSelectorPayload detector's
-'Unicode.Security.Policy.isVariationSelector', the grapheme
+'Unicode.Security.CodepointPredicates.isVariationSelector', the grapheme
 'Unicode.Segmentation.Grapheme.lookupGCB' @Extend@ class, the EmojiZwjIntegrity
 'Unicode.Security.Identity.EmojiZwjIntegrity.isRegisteredZwjSequence' RGI
-registry, and the RtlInjection detector's 'Unicode.Security.Policy.isStrongLtr'
-\/ 'Unicode.Security.Policy.isStrongRtl' strong-bidi classes), never a host
+registry, and the RtlInjection detector's 'Unicode.Security.CodepointPredicates.isStrongLtr'
+\/ 'Unicode.Security.CodepointPredicates.isStrongRtl' strong-bidi classes), never a host
 rendering or shaping library.
 
 Sub-threats (priority order).
@@ -63,7 +63,7 @@ import Data.Maybe (listToMaybe)
 import Unicode.Segmentation.Grapheme (lookupGCB)
 import Unicode.Segmentation.GraphemeTables (GCB (Extend))
 import Unicode.Security.Identity.EmojiZwjIntegrity (isRegisteredZwjSequence)
-import qualified Unicode.Security.Policy as Policy
+import qualified Unicode.Security.CodepointPredicates as Predicates
 
 -- ─────────────────────────────────────────────────────────────────────
 -- §1 Constants
@@ -166,7 +166,7 @@ data Verdict = Verdict
 -- | True iff @cp@ is a variation selector — reuses the VariationSelectorPayload
 -- detector's predicate (ranges @FE00@..@FE0F@, @E0100@..@E01EF@, @180B@..@180D@).
 isVariationSelector :: Int -> Bool
-isVariationSelector = Policy.isVariationSelector
+isVariationSelector = Predicates.isVariationSelector
 
 -- | True iff @cp@ is the ZWJ codepoint.
 isZwj :: Int -> Bool
@@ -200,10 +200,10 @@ inputHasZwj :: [Int] -> Bool
 inputHasZwj input = any isZwj input
 
 countStrongLtr :: [Int] -> Int
-countStrongLtr input = length (filter Policy.isStrongLtr input)
+countStrongLtr input = length (filter Predicates.isStrongLtr input)
 
 countStrongRtl :: [Int] -> Int
-countStrongRtl input = length (filter Policy.isStrongRtl input)
+countStrongRtl input = length (filter Predicates.isStrongRtl input)
 
 -- | Position and codepoint of the first variation selector.
 firstVsPos :: [Int] -> Maybe (Int, Int)

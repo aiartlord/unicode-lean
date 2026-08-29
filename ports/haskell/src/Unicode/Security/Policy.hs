@@ -63,7 +63,7 @@ import Data.Bits (shiftL, xor, (.|.))
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.Char (isSpace, ord)
-import Data.List (dropWhileEnd, find, intercalate)
+import Data.List (dropWhileEnd, intercalate)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Maybe (isJust, listToMaybe, mapMaybe)
@@ -85,10 +85,11 @@ import Unicode.Codec.Strict
   )
 import qualified Unicode.Normalization.Lookup as NormalizationLookup
 import qualified Unicode.Generated.UnicodeData as UnicodeData
-import Unicode.Generated.DerivedBidiClass
-  ( BidiStrong (BidiAL, BidiL, BidiOther, BidiR)
-  , defaultRanges
-  , explicitRanges
+import Unicode.Security.CodepointPredicates
+  ( isBidiFormatControl
+  , isStrongLtr
+  , isStrongRtl
+  , isVariationSelector
   )
 import qualified Unicode.Normalization.Hangul as Hangul
 
@@ -607,12 +608,6 @@ isZeroWidthPayload cp =
     || cp == 0x2060
     || cp == 0xFEFF
 
-isVariationSelector :: Int -> Bool
-isVariationSelector cp =
-  (cp >= 0xFE00 && cp <= 0xFE0F)
-    || (cp >= 0xE0100 && cp <= 0xE01EF)
-    || (cp >= 0x180B && cp <= 0x180D)
-
 isRegisteredVariationPosition :: [Int] -> Int -> Bool
 isRegisteredVariationPosition input position =
   position > 0
@@ -1004,34 +999,7 @@ parseHexInt text =
 
 -- | Strong Bidi_Class of a codepoint: explicit range first, then the
 -- last matching @\@missing@ default, then @L@.
-bidiStrong :: Int -> BidiStrong
-bidiStrong cp =
-  case find inRange explicitRanges of
-    Just (_lo, _hi, cls) -> cls
-    Nothing -> foldl pickDefault BidiL defaultRanges
-  where
-    inRange (lo, hi, _cls) = lo <= cp && cp <= hi
-    pickDefault acc (lo, hi, cls) = if lo <= cp && cp <= hi then cls else acc
-
 -- | True iff the codepoint's Bidi_Class is strong RTL (R or AL).
-isStrongRtl :: Int -> Bool
-isStrongRtl cp =
-  case bidiStrong cp of
-    BidiR     -> True
-    BidiAL    -> True
-    BidiL     -> False
-    BidiOther -> False
-
--- | True iff the codepoint's Bidi_Class is strong LTR (L).
-isStrongLtr :: Int -> Bool
-isStrongLtr cp = bidiStrong cp == BidiL
-
--- | The bidi format-controls: the embedding\/override block
--- U+202A..U+202E and the isolate block U+2066..U+2069.
-isBidiFormatControl :: Int -> Bool
-isBidiFormatControl cp =
-  (cp >= 0x202A && cp <= 0x202E) || (cp >= 0x2066 && cp <= 0x2069)
-
 -- | Length of the longest consecutive run of strong-RTL codepoints,
 -- together with that run's starting index; @(0, 0)@ when there are
 -- none.

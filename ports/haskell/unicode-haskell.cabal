@@ -117,6 +117,7 @@ library
       Unicode.Security.Form.WidthClassConfusion
       Unicode.Security.Identity.EmojiZwjIntegrity
       Unicode.Security.Identity.SkinToneVariationForgery
+      Unicode.Security.CodepointPredicates
       Unicode.Security.Policy
   other-modules:
       Paths_unicode_haskell
