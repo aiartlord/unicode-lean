@@ -29,6 +29,17 @@ enum BidiStrong
     case Other;
 }
 
+/// UAX #11 `East_Asian_Width` class.
+enum EastAsianWidth
+{
+    case A;
+    case F;
+    case H;
+    case N;
+    case Na;
+    case W;
+}
+
 /// UTS #39 § 5.1 restriction-level classification.
 enum RestrictionLevel
 {
@@ -284,6 +295,69 @@ final class Ucd
         usort($explicit, static fn (array $a, array $b): int => $a[0] <=> $b[0]);
         self::$bidiTable = ['explicit' => $explicit, 'defaults' => $defaults];
         return self::$bidiTable;
+    }
+
+    /** @var list<array{0:int,1:int,2:EastAsianWidth}>|null */
+    private static ?array $eastAsianWidthTable = null;
+
+    private static function eastAsianWidthOfToken(string $token): EastAsianWidth
+    {
+        return match ($token) {
+            'A' => EastAsianWidth::A,
+            'F' => EastAsianWidth::F,
+            'H' => EastAsianWidth::H,
+            'Na' => EastAsianWidth::Na,
+            'W' => EastAsianWidth::W,
+            default => EastAsianWidth::N,
+        };
+    }
+
+    /** @return list<array{0:int,1:int,2:EastAsianWidth}> */
+    private static function eastAsianWidthTable(): array
+    {
+        if (self::$eastAsianWidthTable !== null) {
+            return self::$eastAsianWidthTable;
+        }
+        $rows = [];
+        foreach (Data::lines('EastAsianWidth.txt') as $line) {
+            $hash = strpos($line, '#');
+            $body = trim($hash === false ? $line : substr($line, 0, $hash));
+            if ($body === '') {
+                continue;
+            }
+            $semi = strpos($body, ';');
+            if ($semi === false) {
+                continue;
+            }
+            $range = self::parseRangeField(substr($body, 0, $semi));
+            if ($range !== null) {
+                $rows[] = [$range[0], $range[1], self::eastAsianWidthOfToken(trim(substr($body, $semi + 1)))];
+            }
+        }
+        usort($rows, static fn (array $a, array $b): int => $a[0] <=> $b[0]);
+        self::$eastAsianWidthTable = $rows;
+        return $rows;
+    }
+
+    /// `East_Asian_Width` for one codepoint. The file's `@missing` line declares
+    /// `N` over the whole space, so an unlisted codepoint is Neutral.
+    public static function eastAsianWidth(int $cp): EastAsianWidth
+    {
+        $table = self::eastAsianWidthTable();
+        $lo = 0;
+        $hi = count($table);
+        while ($lo < $hi) {
+            $mid = $lo + intdiv($hi - $lo, 2);
+            [$rlo, $rhi, $cls] = $table[$mid];
+            if ($cp < $rlo) {
+                $hi = $mid;
+            } elseif ($cp > $rhi) {
+                $lo = $mid + 1;
+            } else {
+                return $cls;
+            }
+        }
+        return EastAsianWidth::N;
     }
 
     /// Full `Bidi_Class` lookup (strong distinction only): explicit range first,

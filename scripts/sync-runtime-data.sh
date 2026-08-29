@@ -366,6 +366,7 @@ lua_files=(
 )
 
 php_files=(
+  EastAsianWidth.txt
   "${ruby_files[@]}"
 )
 
