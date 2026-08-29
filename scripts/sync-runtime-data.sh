@@ -369,6 +369,7 @@ php_files=(
 )
 
 elixir_files=(
+  EastAsianWidth.txt
   "${ruby_files[@]}"
 )
 

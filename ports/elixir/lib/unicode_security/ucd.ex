@@ -221,6 +221,54 @@ defmodule UnicodeSecurity.Ucd do
   defp strong_of_long("Left_To_Right"), do: :l
   defp strong_of_long(_other), do: :other
 
+  # ── EastAsianWidth.txt — UAX #11 East_Asian_Width ──────────────────────
+
+  @doc """
+  `East_Asian_Width` for one codepoint. The file's `@missing` line declares
+  `:n` over the whole space, so an unlisted codepoint is Neutral.
+  """
+  @spec east_asian_width(integer()) :: :a | :f | :h | :n | :na | :w
+  def east_asian_width(cp) do
+    case find_range(east_asian_width_table(), cp) do
+      nil -> :n
+      cls -> cls
+    end
+  end
+
+  defp east_asian_width_table do
+    Data.cached(:east_asian_width_table, &parse_east_asian_width/0)
+  end
+
+  defp parse_east_asian_width do
+    Data.read("EastAsianWidth.txt")
+    |> String.split("\n")
+    |> Enum.reduce([], fn line, acc ->
+      body = strip_comment_and_trim(line)
+
+      if body == "" do
+        acc
+      else
+        case String.split(body, ";", parts: 2) do
+          [range, cls] ->
+            {lo, hi} = parse_range_field(range)
+            [{lo, hi, eaw_of_token(String.trim(cls))} | acc]
+
+          _ ->
+            acc
+        end
+      end
+    end)
+    |> Enum.sort_by(fn {lo, _hi, _v} -> lo end)
+    |> List.to_tuple()
+  end
+
+  defp eaw_of_token("A"), do: :a
+  defp eaw_of_token("F"), do: :f
+  defp eaw_of_token("H"), do: :h
+  defp eaw_of_token("Na"), do: :na
+  defp eaw_of_token("W"), do: :w
+  defp eaw_of_token(_other), do: :n
+
   # ── CompositionExclusions.txt + composition table ──────────────────────
 
   defp composition_exclusions do
