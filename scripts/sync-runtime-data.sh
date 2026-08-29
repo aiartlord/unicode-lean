@@ -152,6 +152,7 @@ cpp_files=(
 )
 
 haskell_files=(
+  EastAsianWidth.txt
   CaseFolding.txt
   UnicodeData.txt
   DerivedBidiClass.txt
