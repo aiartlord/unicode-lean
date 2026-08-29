@@ -18,6 +18,8 @@ CASE_FOLDING_SOURCE = ROOT / "src" / "data" / "CaseFolding.txt"
 CASE_FOLDING_OUTPUT = ROOT / "src" / "case_folding_data.zig"
 BIDI_SOURCE = ROOT / "src" / "data" / "DerivedBidiClass.txt"
 BIDI_OUTPUT = ROOT / "src" / "bidi_class_data.zig"
+EAW_SOURCE = ROOT / "src" / "data" / "EastAsianWidth.txt"
+EAW_OUTPUT = ROOT / "src" / "east_asian_width_data.zig"
 SPECIAL_CASING_SOURCE = ROOT / "src" / "data" / "SpecialCasing.txt"
 DERIVED_CORE_PROPERTIES_SOURCE = ROOT / "src" / "data" / "DerivedCoreProperties.txt"
 CASING_OUTPUT = ROOT / "src" / "casing_data.zig"
@@ -290,6 +292,64 @@ def parse_derived_bidi(
         explicit.append((lo, hi, _map_bidi_short(short)))
     explicit.sort(key=lambda row: row[0])
     return explicit, defaults
+
+
+def _map_eaw(token: str) -> str:
+    """Map an EastAsianWidth abbreviation to its tag. The file's ``@missing``
+    line declares ``N`` over the whole codepoint space, so anything
+    unrecognised — and anything absent from the table — is ``n``."""
+    return {"A": "a", "F": "f", "H": "h", "Na": "na", "W": "w"}.get(token, "n")
+
+
+def parse_east_asian_width(text: str) -> list[tuple[int, int, str]]:
+    """Parse EastAsianWidth.txt into ``(lo, hi, tag)`` rows sorted by ``lo``.
+
+    Unlike DerivedBidiClass there is no default table: the file's
+    ``# @missing: 0000..10FFFF; N`` line covers the whole space, so a lookup
+    miss is Neutral by declaration rather than by fallback."""
+    rows: list[tuple[int, int, str]] = []
+    for raw_line in text.splitlines():
+        stripped = raw_line.split("#", 1)[0].strip()
+        if not stripped:
+            continue
+        fields = stripped.split(";")
+        if len(fields) < 2:
+            continue
+        try:
+            lo, hi = _bidi_range_bounds(fields[0])
+        except ValueError:
+            continue
+        rows.append((lo, hi, _map_eaw(fields[1].strip())))
+    rows.sort(key=lambda row: row[0])
+    return rows
+
+
+def render_east_asian_width(rows: list[tuple[int, int, str]]) -> str:
+    lines = [
+        "// GENERATED FILE - DO NOT EDIT.",
+        "// Source: src/data/EastAsianWidth.txt",
+        "",
+        "pub const Width = enum { a, f, h, n, na, w };",
+        "",
+        "pub const Range = struct {",
+        "    start: u32,",
+        "    end: u32,",
+        "    class: Width,",
+        "};",
+        "",
+        "// Explicit East_Asian_Width ranges from DATA lines, sorted by start.",
+        "// There is no default table: the source file's @missing line declares",
+        "// N over the whole codepoint space, so a binary-search miss is .n by",
+        "// declaration rather than by fallback.",
+        "pub const explicit = [_]Range{",
+    ]
+    for start, end, cls in rows:
+        lines.append(
+            f"    .{{ .start = {zig_hex(start)}, .end = {zig_hex(end)}, "
+            f".class = .{cls} }},"
+        )
+    lines.extend(["};", ""])
+    return "\n".join(lines)
 
 
 def render_bidi_class(
@@ -659,6 +719,8 @@ def main() -> None:
         BIDI_SOURCE.read_text(encoding="utf-8")
     )
     bidi_output = render_bidi_class(bidi_explicit, bidi_defaults)
+    eaw_rows = parse_east_asian_width(EAW_SOURCE.read_text(encoding="utf-8"))
+    eaw_output = render_east_asian_width(eaw_rows)
     unicode_data_text = UNICODE_DATA_SOURCE.read_text(encoding="utf-8")
     simple_lower = parse_simple_lowercase(unicode_data_text)
     simple_upper = parse_simple_uppercase(unicode_data_text)
@@ -679,6 +741,7 @@ def main() -> None:
         actual_normalization = NORMALIZATION_OUTPUT.read_text(encoding="utf-8")
         actual_case_folding = CASE_FOLDING_OUTPUT.read_text(encoding="utf-8")
         actual_bidi = BIDI_OUTPUT.read_text(encoding="utf-8")
+        actual_eaw = EAW_OUTPUT.read_text(encoding="utf-8")
         actual_casing = CASING_OUTPUT.read_text(encoding="utf-8")
         actual_bip39 = BIP39_OUTPUT.read_text(encoding="utf-8")
         if (
@@ -686,6 +749,7 @@ def main() -> None:
             or actual_normalization != normalization_output
             or actual_case_folding != case_folding_output
             or actual_bidi != bidi_output
+            or actual_eaw != eaw_output
             or actual_casing != casing_output
             or actual_bip39 != bip39_output
         ):
@@ -703,6 +767,7 @@ def main() -> None:
             f"{len(case_folding_entries)} case-folding entries, "
             f"{len(bidi_explicit)} bidi explicit ranges, "
             f"{len(bidi_defaults)} bidi default ranges, "
+            f"{len(eaw_rows)} east-asian-width ranges, "
             f"{len(simple_lower)} simple-lowercase mappings, "
             f"{len(special_casing)} special-casing rows, "
             f"{sum(len(w) for w in bip39_wordlists.values())} bip39 words)"
@@ -713,6 +778,7 @@ def main() -> None:
     NORMALIZATION_OUTPUT.write_text(normalization_output, encoding="utf-8")
     CASE_FOLDING_OUTPUT.write_text(case_folding_output, encoding="utf-8")
     BIDI_OUTPUT.write_text(bidi_output, encoding="utf-8")
+    EAW_OUTPUT.write_text(eaw_output, encoding="utf-8")
     CASING_OUTPUT.write_text(casing_output, encoding="utf-8")
     BIP39_OUTPUT.write_text(bip39_output, encoding="utf-8")
     print(f"generated {OUTPUT.relative_to(ROOT)} from {len(entries)} entries")

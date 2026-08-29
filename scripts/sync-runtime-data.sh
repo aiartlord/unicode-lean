@@ -228,6 +228,7 @@ go_files=(
 )
 
 zig_files=(
+  EastAsianWidth.txt
   "${homoglyph_files[@]}"
   IdentifierStatus.txt
   UnicodeData.txt
