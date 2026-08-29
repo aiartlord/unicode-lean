@@ -315,6 +315,7 @@ dotnet_files=(
 )
 
 swift_files=(
+  EastAsianWidth.txt
   "${homoglyph_files[@]}"
   IdentifierStatus.txt
   DerivedBidiClass.txt

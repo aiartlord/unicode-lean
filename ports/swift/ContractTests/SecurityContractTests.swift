@@ -22,6 +22,7 @@ struct SecurityContractRunner {
         try testHashInputStability()
         try testAiWatermarkDetectability()
         try testStreamSafeViolation()
+        try testWidthClassConfusion()
         try testCaseExpansionMismatch()
         try testEmojiZwjIntegrity()
         try testRendererDivergence()
@@ -271,6 +272,39 @@ struct SecurityContractRunner {
             aiWatermarkDetectabilityDetectWithContext(.default, [0x61, 0x202F, 0x62]).classify,
             aiWatermarkDetectabilityDetect([0x61, 0x202F, 0x62]).classify,
             "aiwm default matches detect")
+    }
+
+    // Pins widthClassConfusionDetect against the ground-truth vectors in
+    // Unicode/Security/Form/WidthClassConfusion.lean: a Fullwidth or Halfwidth
+    // codepoint whose NFKD head carries a different East Asian Width class
+    // folds, Fullwidth takes priority, and precomposed Hangul stays clear
+    // because its jamos remain Wide.
+    private static func testWidthClassConfusion() throws {
+        // U+FF21 FULLWIDTH LATIN CAPITAL A (F) folds to U+0041 (Na).
+        let fullwidth = widthClassConfusionDetect([0xFF21])
+        try expectEqual(fullwidth.subThreat, "FullwidthFold", "width-class fullwidth tag")
+        try expectEqual(fullwidth.positions, [0], "width-class fullwidth positions")
+
+        // U+FF71 HALFWIDTH KATAKANA A (H) folds to U+30A2 (W).
+        let halfwidth = widthClassConfusionDetect([0xFF71])
+        try expectEqual(halfwidth.subThreat, "HalfwidthFold", "width-class halfwidth tag")
+
+        // ＡＤＭＩＮ: every position folds; the first is reported.
+        let admin = widthClassConfusionDetect([0xFF21, 0xFF24, 0xFF2D, 0xFF29, 0xFF2E])
+        try expectEqual(admin.subThreat, "FullwidthFold", "width-class ADMIN tag")
+        try expectEqual(admin.positions, [0], "width-class ADMIN positions")
+
+        // Fullwidth takes priority over Halfwidth even when the Halfwidth
+        // codepoint comes first, so the reported position is 1, not 0.
+        let mixed = widthClassConfusionDetect([0xFF71, 0xFF21])
+        try expectEqual(mixed.subThreat, "FullwidthFold", "width-class priority tag")
+        try expectEqual(mixed.positions, [1], "width-class priority positions")
+
+        // ASCII is Na throughout and does not fold.
+        try expectEqual(widthClassConfusionDetect([0x41, 0x42]).subThreat, nil, "width-class ascii clear")
+
+        // Precomposed Hangul decomposes to jamos that are still W class.
+        try expectEqual(widthClassConfusionDetect([0xD55C]).subThreat, nil, "width-class hangul clear")
     }
 
     // Pins streamSafeViolationDetect against the detect_* ground-truth theorems

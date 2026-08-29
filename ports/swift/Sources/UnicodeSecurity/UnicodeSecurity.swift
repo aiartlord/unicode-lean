@@ -87,6 +87,7 @@ private var caseFoldingCache: [Int: [Int]]?
 private var attackTargetsCache: [String]?
 private var legalVariationPairsCache: Set<String>?
 private var bidiTableCache: BidiTable?
+private var eastAsianWidthTableCache: [EawRange]?
 private var unicodeDataCache: [Int: NormEntry]?
 private var compositionExclusionsCache: Set<Int>?
 private var compositionTableCache: [Int: Int]?
@@ -1749,6 +1750,78 @@ private func bidiTable() -> BidiTable {
     return parsed
 }
 
+// ── East_Asian_Width: UAX #11 width class ───────────────────────────────────
+// Mirrors Unicode.Generated.EastAsianWidth.lookup. The UCD file's
+// `# @missing: 0000..10FFFF; N` line declares Neutral over the whole codepoint
+// space, so an unlisted codepoint is N and there is no default range list to
+// scan — unlike DerivedBidiClass, which carries real per-block defaults.
+private enum EastAsianWidth: Equatable {
+    case a
+    case f
+    case h
+    case n
+    case na
+    case w
+}
+
+private struct EawRange {
+    let lo: Int
+    let hi: Int
+    let cls: EastAsianWidth
+}
+
+private func eawOfToken(_ token: String) -> EastAsianWidth {
+    switch token {
+    case "A": return .a
+    case "F": return .f
+    case "H": return .h
+    case "Na": return .na
+    case "W": return .w
+    default: return .n
+    }
+}
+
+private func parseEastAsianWidth(_ raw: String) -> [EawRange] {
+    var rows: [EawRange] = []
+    for line in raw.split(separator: "\n", omittingEmptySubsequences: false) {
+        let body = line.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0]
+            .trimmingCharacters(in: .whitespaces)
+        if body.isEmpty { continue }
+        let fields = body.split(separator: ";", maxSplits: 1, omittingEmptySubsequences: false)
+        if fields.count == 2, let (lo, hi) = parseBidiRangeField(String(fields[0])) {
+            rows.append(EawRange(lo: lo, hi: hi, cls: eawOfToken(fields[1].trimmingCharacters(in: .whitespaces))))
+        }
+    }
+    rows.sort { $0.lo < $1.lo }
+    return rows
+}
+
+private func eastAsianWidthTable() -> [EawRange] {
+    if let cached = eastAsianWidthTableCache { return cached }
+    let parsed = parseEastAsianWidth(readDataFile("EastAsianWidth.txt"))
+    eastAsianWidthTableCache = parsed
+    return parsed
+}
+
+// East_Asian_Width for one codepoint: binary-search the sorted ranges, else N.
+private func eastAsianWidth(_ cp: Int) -> EastAsianWidth {
+    let table = eastAsianWidthTable()
+    var lo = 0
+    var hi = table.count
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2
+        let range = table[mid]
+        if cp < range.lo {
+            hi = mid
+        } else if cp > range.hi {
+            lo = mid + 1
+        } else {
+            return range.cls
+        }
+    }
+    return .n
+}
+
 // Full Bidi_Class lookup (strong distinction only): binary-search the sorted
 // explicit ranges first, then the last matching @missing default, then L.
 private func bidiStrong(_ cp: Int) -> BidiStrong {
@@ -1942,6 +2015,7 @@ private let pinnedTableDigests: [String: String] = [
     "StandardizedVariants.txt": "f55100b2fb11d3d75a37b8c1ab752192dbd1c4b12328c5ec6b38e3807c0ca597",
     "emoji-variation-sequences.txt": "bb3d09ef03f206012c7532dd52dc0a21c9efddba0135ea4cf0d9201b8b9bba7e",
     "DerivedBidiClass.txt": "4867b4b7f0731ed1bfcd34cc6251211ff1542541fce0734b6fbda139ee80b3a4",
+    "EastAsianWidth.txt": "ea7ce50f3444a050333448dffef1cadd9325af55cbb764b4a2280faf52170a33",
     "UnicodeData.txt": "2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c",
     "CompositionExclusions.txt": "2f239196ef3b5b61db5cc476e9bd80f534d15aa1b74e1be1dea5d042a344c85f",
     "DerivedCoreProperties.txt": "24c7fed1195c482faaefd5c1e7eb821c5ee1fb6de07ecdbaa64b56a99da22c08",
@@ -2489,6 +2563,57 @@ public func normalizationBombDetect(_ input: [Int]) -> NormalizationBombResult {
 /// One NFC-idempotence-witness scan result. `subThreat` is `nil` for a clear
 /// input (already in NFC and NFKC), else the divergence tag with its first
 /// position.
+// ── width-class-confusion: UAX #11 East Asian Width fold ────────────────────
+// Mirrors Unicode.Security.Form.WidthClassConfusion (and the verified Rust
+// port src/security/form/width_class_confusion.rs). A Fullwidth (EAW = F) or
+// Halfwidth (EAW = H) codepoint whose NFKD head carries a different EAW class
+// is a compatibility-fold homograph:
+//
+//   U+FF21 'Ａ' (F)  ->  U+0041 'A' (Na)
+//   U+FF71 'ｱ' (H)  ->  U+30A2 'ア' (W)
+//
+// The two-system bypass: a validator that whitelists ASCII rejects Ａ, while a
+// downstream NFKC step at storage or comparison time folds it to plain A, so
+// ＡＤＭＩＮ claims the username ADMIN. Distinct from renderer divergence's
+// FullwidthVariance, which fires on F-class codepoints for renderer-cohort
+// reasons; this is the NFKC-fold verdict and both can fire independently.
+// Hangul syllables decompose to jamos that are still W class, so pure Hangul
+// stays clear.
+
+/// One width-class-confusion scan result. `subThreat` is `nil` for a clear
+/// input, else the fold tag with the single position it was found at.
+public struct WidthClassConfusionResult: Equatable {
+    public let subThreat: String?
+    public let positions: [Int]
+}
+
+/// True iff the NFKD head of `cp` carries a different East Asian Width class.
+private func hasWidthFold(_ cp: Int) -> Bool {
+    let folded = toNfkd([cp])
+    guard let head = folded.first else { return false }
+    return eastAsianWidth(head) != eastAsianWidth(cp)
+}
+
+/// First position whose codepoint has class `want` and folds away from it.
+private func firstWidthFold(_ input: [Int], _ want: EastAsianWidth) -> Int? {
+    for index in input.indices where eastAsianWidth(input[index]) == want && hasWidthFold(input[index]) {
+        return index
+    }
+    return nil
+}
+
+/// Detect a width-class fold. A Fullwidth fold takes priority over a Halfwidth
+/// one, matching the reference's sub-threat order.
+public func widthClassConfusionDetect(_ input: [Int]) -> WidthClassConfusionResult {
+    if let pos = firstWidthFold(input, .f) {
+        return WidthClassConfusionResult(subThreat: "FullwidthFold", positions: [pos])
+    }
+    if let pos = firstWidthFold(input, .h) {
+        return WidthClassConfusionResult(subThreat: "HalfwidthFold", positions: [pos])
+    }
+    return WidthClassConfusionResult(subThreat: nil, positions: [])
+}
+
 public struct NfcIdempotenceWitnessResult: Equatable {
     /// The sub-threat tag, or `nil` when the input is already NFC- and NFKC-stable.
     public let subThreat: String?
