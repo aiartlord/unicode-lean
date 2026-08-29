@@ -253,7 +253,7 @@ taxonomy independent of whether a detector exists, and support modules without a
 `detect` — GlitchTokenScan, WordlistOrder, EmojiPresentationRegistry — are not
 detector families and are not counted.
 
-Legend: `✓` implemented + vouched.
+Legend: `✓` implemented + vouched · `–` not implemented in that port.
 
 | Family (Lean module) | rust | python | cpp | go | jvm | ts | dotnet | swift | zig | haskell | ruby | lua | php | elixir | erlang | cobol |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
@@ -275,7 +275,7 @@ Legend: `✓` implemented + vouched.
 | StreamSafeViolation | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | LocaleCaseInversion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | CaseExpansionMismatch | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| WidthClassConfusion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| WidthClassConfusion | ✓ | ✓ | – | ✓ | ✓ | ✓ | ✓ | ✓ | – | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – |
 | NfcIdempotenceWitness | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | IdentifierFormDrift | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | AdmissibilityFormDrift | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -285,13 +285,32 @@ Legend: `✓` implemented + vouched.
 | HashInputStability | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | AiWatermarkDetectability | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-**Totals:** every port 27/27 · overall 432/432. Each cell is a native detector —
-the same algorithm as the Lean-proven Rust reference, not an output-equivalent
+**Totals:** 429/432. Thirteen ports are 27/27; cpp, zig and cobol are 26/27,
+each missing WidthClassConfusion. Each ✓ is a native detector — the same
+algorithm as the Lean-proven Rust reference, not an output-equivalent
 substitute — with its own test suite green under that port's toolchain.
 
-The one detail below full uniformity: cobol's HomoglyphConfusable uses a bounded
-target-skeleton iteration; deepening that bound is a refinement of an
+A cell counts only where a detector exists, never where the family is merely
+named. Every port declares all twenty-seven families in its Family enum and
+rejection sets regardless of what it implements, so a matrix derived from that
+enum reports cells that do not exist. WidthClassConfusion was exactly that
+case: declared everywhere, implemented nowhere, and reported here as 432/432
+until each port's own sub-threat names — FullwidthFold and HalfwidthFold —
+were searched for in source. It is now implemented in thirteen; the remaining
+three are written and awaiting a toolchain to build against.
+
+One further detail below full uniformity: cobol's HomoglyphConfusable uses a
+bounded target-skeleton iteration; deepening that bound is a refinement of an
 implemented, fixture-passing detector, not a coverage gap.
+
+Separately from implementation, a detector only reaches a caller if the port's
+scan path invokes it. The Lean reference's `runAll` dispatches twenty-four
+families on plain input — the three crypto families are context-specific and
+excluded from both. Not every port's scan reaches all twenty-four, so the
+count above measures what each port implements, not what its `scan` returns.
+Widening a scan path changes the finding list that
+`fixtures/security/verdict_contract.json` pins, and that fixture is synced into
+ten ports' test data, so it can only move for all sixteen at once.
 
 
 ## Provenance
