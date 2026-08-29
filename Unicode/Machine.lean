@@ -237,7 +237,7 @@ theorem outputs_arr (f : I → O) (inputs : List I) :
   generalize (arr f).initial = s
   induction inputs generalizing s with
   | nil => rfl
-  | cons i is ih => simp [ih]
+  | cons i is ih => simp only [feedThrough_cons, ih]; rfl
 
 /-- Outputs of `idMachine` = the inputs unchanged. -/
 theorem outputs_id (inputs : List I) :
@@ -246,7 +246,7 @@ theorem outputs_id (inputs : List I) :
   generalize (idMachine : AbstractMachine I I).initial = s
   induction inputs generalizing s with
   | nil => rfl
-  | cons i is ih => simp [ih]
+  | cons i is ih => simp only [feedThrough_cons, ih]; rfl
 
 /-- Generalized over states: a composite's output is `n` driven over `m`'s output. -/
 private theorem feedThrough_compose_snd (m : AbstractMachine I J) (n : AbstractMachine J O)
@@ -255,7 +255,7 @@ private theorem feedThrough_compose_snd (m : AbstractMachine I J) (n : AbstractM
       = (feedThrough n sn (feedThrough m sm inputs).2).2 := by
   induction inputs generalizing sm sn with
   | nil => rfl
-  | cons i is ih => simp [feedThrough_append, ih]
+  | cons i is ih => simp [feedThrough, feedThrough_append, ih]
 
 /-- The homomorphism: composing machines composes their stream functions. -/
 theorem outputs_compose (m : AbstractMachine I J) (n : AbstractMachine J O) (inputs : List I) :
