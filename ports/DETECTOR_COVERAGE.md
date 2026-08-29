@@ -328,12 +328,39 @@ other sixteen exist as standalone modules, each with its own `detect` and its ow
 tests, that `Policy.hs` never imports.
 
 Closing that is mechanical rather than new detection logic, since the
-implementations already exist. It is also safer than it first appears: the
-thirteen cases in `fixtures/security/verdict_contract.json` expect findings only
-from families every port already dispatches, and the Rust reference passes that
-same contract while dispatching twenty-four, which is direct evidence that the
-additional detectors stay silent on those inputs. Widening a scan path is
-therefore not forced to move for all sixteen ports at once.
+implementations already exist. It cannot be done one port at a time, and the
+reason is the opposite of what the fixture layout suggests.
+
+`fixtures/security/verdict_contract.json` is pinned by fifteen ports. The Rust
+reference is not one of them, and the fixture does not describe what Rust does.
+On its own `math-alpha-gateway-reject` case — U+1D400, gateway-header, enforce —
+the fixture records one finding, `homoglyph-confusable.MathAlpha`; Rust returns
+five, adding identifier-form-drift, admissibility-form-drift,
+nfc-idempotence-witness and source-display-divergence. The `action` agrees at
+`reject`. The finding list does not. The contract therefore encodes a narrower
+scan than the reference performs, and a port passes it partly by dispatching too
+few families to disagree with it.
+
+The consequence: widening a port's scan toward the reference makes it stop
+matching the fixture. Wiring ten of the sixteen orphaned Haskell families
+compiles clean under `-Wall -Werror`, once the enumerated `blocks` table is
+extended for all three policy levels from Rust's rejection sets, and yields four
+of Rust's five findings on that input — source-display-divergence is unreachable
+from `Policy.hs`, since it consumes Policy's own finding functions and importing
+it back forms a module cycle. The result is 447 of 448 tests passing, the single
+failure being that contract case.
+
+The fixture must be regenerated from the reference before any port's scan can
+widen; the fifteen then move together. The blocker is the fixture, not the
+detectors.
+
+One further constraint on the Haskell port specifically: of its sixteen orphaned
+modules, `FilenameDisguise` and `RendererDivergence` import four small
+predicates from `Policy` (`isBidiFormatControl`, `isStrongLtr`, `isStrongRtl`,
+`isVariationSelector`), and `SourceDisplayDivergence` imports Policy's finding
+functions. Reaching those three requires moving the shared predicates into a
+module below both, and treating the compound detector as a stage that runs after
+the per-family pass rather than inside it.
 
 
 ## Provenance
