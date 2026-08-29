@@ -273,6 +273,7 @@ typescript_files=(
 )
 
 jvm_files=(
+  EastAsianWidth.txt
   "${homoglyph_files[@]}"
   IdentifierStatus.txt
   DerivedBidiClass.txt
