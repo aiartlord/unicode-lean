@@ -376,6 +376,7 @@ elixir_files=(
 )
 
 erlang_files=(
+  EastAsianWidth.txt
   "${ruby_files[@]}"
 )
 

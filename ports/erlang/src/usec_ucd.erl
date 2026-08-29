@@ -16,18 +16,20 @@
          to_nfc/1, to_nfd/1, to_nfkc/1, to_nfkd/1,
          case_fold/1,
          bidi_strong/1, is_strong_rtl/1, is_strong_ltr/1,
+         east_asian_width/1,
          script_of/1, resolve_scripts/1, string_script_union/1,
          is_default_ignorable/1, is_white_space/1, is_id_allowed/1,
          is_default_identifier/1, is_allowed_identifier/1,
          is_highly_restrictive/1, restriction_level/1]).
 
--export_type([restriction_level/0, bidi_strong/0]).
+-export_type([restriction_level/0, bidi_strong/0, east_asian_width/0]).
 
 -type restriction_level() ::
         ascii_only | single_script | highly_restrictive
       | moderately_restrictive | minimally_restrictive | unrestricted.
 
 -type bidi_strong() :: r | al | l | other.
+-type east_asian_width() :: a | f | h | n | na | w.
 
 %% ─────────────────────────────────────────────────────────────────────
 %% Line-parsing helpers
@@ -405,6 +407,47 @@ strong_of_long(<<"Right_To_Left">>) -> r;
 strong_of_long(<<"Arabic_Letter">>) -> al;
 strong_of_long(<<"Left_To_Right">>) -> l;
 strong_of_long(_) -> other.
+
+%% ─────────────────────────────────────────────────────────────────────
+%% EastAsianWidth.txt — UAX #11 East_Asian_Width lookup
+%% ─────────────────────────────────────────────────────────────────────
+
+eaw_table() ->
+    usec_data:cached(east_asian_width_table, fun parse_east_asian_width/0).
+
+parse_east_asian_width() ->
+    Ls = lines(usec_data:read_file("EastAsianWidth.txt")),
+    Rows = lists:foldl(fun eaw_line/2, [], Ls),
+    lists:sort(fun({Lo1, _, _}, {Lo2, _, _}) -> Lo1 =< Lo2 end, lists:reverse(Rows)).
+
+eaw_line(Line, Acc) ->
+    case strip_comment_and_trim(Line) of
+        <<>> -> Acc;
+        Body ->
+            case binary:split(Body, <<";">>) of
+                [RangeB, ClassB] ->
+                    {Lo, Hi} = parse_range_field(RangeB),
+                    [{Lo, Hi, eaw_of_token(string:trim(ClassB))} | Acc];
+                _ -> Acc
+            end
+    end.
+
+eaw_of_token(<<"A">>) -> a;
+eaw_of_token(<<"F">>) -> f;
+eaw_of_token(<<"H">>) -> h;
+eaw_of_token(<<"Na">>) -> na;
+eaw_of_token(<<"W">>) -> w;
+eaw_of_token(_) -> n.
+
+%% East_Asian_Width for one codepoint. The file's @missing line declares N over
+%% the whole space, so an unlisted codepoint is Neutral.
+-spec east_asian_width(non_neg_integer()) -> east_asian_width().
+east_asian_width(Cp) ->
+    find_eaw(eaw_table(), Cp).
+
+find_eaw([], _Cp) -> n;
+find_eaw([{Lo, Hi, Class} | _], Cp) when Cp >= Lo, Cp =< Hi -> Class;
+find_eaw([_ | T], Cp) -> find_eaw(T, Cp).
 
 -spec bidi_strong(non_neg_integer()) -> bidi_strong().
 bidi_strong(Cp) ->
