@@ -574,7 +574,27 @@ def git_text(args: list[str]) -> str:
     return output
 
 
-def active_lean_processes() -> list[str]:
+def process_touches_repo(pid: int, args: str, repo: Path) -> bool:
+    """True iff the process is building THIS repository.
+
+    The guard exists to stop two builds writing one `.lake/build`, so it must
+    be scoped to this checkout. A Lean build in a sibling directory shares the
+    machine but not the cache, and blocking on it would couple this repository
+    to unrelated work. Lake runs from the package root, so the working
+    directory identifies the owner; an absolute path in the command line
+    covers a `lean` invoked from elsewhere.
+    """
+    root = str(repo.resolve())
+    try:
+        cwd = os.readlink(f"/proc/{pid}/cwd")
+    except OSError:
+        cwd = ""
+    if cwd == root or cwd.startswith(root + os.sep):
+        return True
+    return root in args
+
+
+def active_lean_processes(repo: Path) -> list[str]:
     status, output = run_text(["ps", "-eo", "pid=,comm=,args="])
     if status != 0:
         return []
@@ -594,7 +614,8 @@ def active_lean_processes() -> list[str]:
         command_name = fields[1]
         args = fields[2] if len(fields) == 3 else ""
         if command_name in {"lean", "lake"} or args.startswith("lean ") or args.startswith("lake "):
-            rows.append(line.strip())
+            if process_touches_repo(pid, args, repo):
+                rows.append(line.strip())
     return rows
 
 
@@ -763,7 +784,7 @@ def write_stage0_snapshot(
 ) -> Path:
     stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     out_dir.mkdir(parents=True, exist_ok=True)
-    active = active_lean_processes()
+    active = active_lean_processes(repo)
     untracked = untracked_planned_modules(rows)
     tracked_status = git_text(["status", "--porcelain", "--untracked-files=no"])
     full_status = git_text(["status", "--porcelain", "--untracked-files=all"])
