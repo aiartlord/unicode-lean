@@ -1,11 +1,23 @@
 export * from "./security.js";
 
+// The tables `configureSecurityData` demands. A missing required table throws
+// at load rather than degrading a detector to a silent pass, so the required
+// ones are not optional here either.
 export interface SecurityData {
   confusables: string;
   caseFolding: string;
   knownAttackTargets: string;
+  derivedBidiClass: string;
+  eastAsianWidth: string;
+  unicodeData: string;
+  compositionExclusions: string;
+  derivedCoreProperties: string;
+  specialCasing: string;
   standardizedVariants?: string;
   emojiVariationSequences?: string;
+  identifierStatus?: string;
+  emojiData?: string;
+  emojiZwjSequences?: string;
 }
 
 export interface InstantiateSecurityOptions {

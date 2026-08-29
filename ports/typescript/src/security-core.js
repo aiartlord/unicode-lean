@@ -61,6 +61,7 @@ let caseFoldingMapCache;
 let attackTargetsCache;
 let legalVariationPairsCache;
 let bidiTableCache;
+let eastAsianWidthTableCache;
 let unicodeDataCache;
 let compositionExclusionsCache;
 let compositionTableCache;
@@ -88,6 +89,7 @@ export function configureSecurityDataReader(reader) {
   attackTargetsCache = undefined;
   legalVariationPairsCache = undefined;
   bidiTableCache = undefined;
+  eastAsianWidthTableCache = undefined;
   unicodeDataCache = undefined;
   compositionExclusionsCache = undefined;
   compositionTableCache = undefined;
@@ -116,6 +118,7 @@ export function configureSecurityData(data) {
   const standardizedVariants = String(data?.standardizedVariants ?? "");
   const emojiVariationSequences = String(data?.emojiVariationSequences ?? "");
   const derivedBidiClass = requiredSecurityData(data, "derivedBidiClass");
+  const eastAsianWidth = requiredSecurityData(data, "eastAsianWidth");
   const unicodeData = requiredSecurityData(data, "unicodeData");
   const compositionExclusions = requiredSecurityData(data, "compositionExclusions");
   const derivedCoreProperties = requiredSecurityData(data, "derivedCoreProperties");
@@ -141,6 +144,9 @@ export function configureSecurityData(data) {
     }
     if (name === "DerivedBidiClass.txt") {
       return derivedBidiClass;
+    }
+    if (name === "EastAsianWidth.txt") {
+      return eastAsianWidth;
     }
     if (name === "UnicodeData.txt") {
       return unicodeData;
@@ -1729,6 +1735,53 @@ export function nfcIdempotenceWitnessDetect(input) {
   const nfkcPos = firstDivergence(input, nfkc);
   if (nfkcPos !== null) {
     return { sub: "NonNfkcCompatForm", positions: [nfkcPos] };
+  }
+  return { sub: null, positions: [] };
+}
+
+// ── width-class-confusion: UAX #11 East Asian Width fold ─────────────────────
+// Mirrors Unicode.Security.Form.WidthClassConfusion (and the verified Rust port
+// src/security/form/width_class_confusion.rs). A Fullwidth (EAW = F) or
+// Halfwidth (EAW = H) codepoint whose NFKD head carries a different EAW class is
+// a compatibility-fold homograph:
+//
+//   U+FF21 'Ａ' (F)  ->  U+0041 'A' (Na)
+//   U+FF71 'ｱ' (H)  ->  U+30A2 'ア' (W)
+//
+// The two-system bypass: a validator that whitelists ASCII rejects Ａ, while a
+// downstream NFKC step at storage or comparison time folds it to plain A, so
+// ＡＤＭＩＮ claims the username ADMIN. Distinct from renderer divergence's
+// FullwidthVariance, which fires on F-class codepoints for renderer-cohort
+// reasons; this is the NFKC-fold verdict and both can fire independently.
+// Hangul syllables decompose to jamos that are still W class, so pure Hangul
+// stays clear.
+function hasWidthFold(cp) {
+  const folded = toNfkdCodepoints([cp]);
+  if (folded.length === 0) {
+    return false;
+  }
+  return eastAsianWidth(folded[0]) !== eastAsianWidth(cp);
+}
+
+function firstWidthFold(input, want) {
+  for (let i = 0; i < input.length; i += 1) {
+    if (eastAsianWidth(input[i]) === want && hasWidthFold(input[i])) {
+      return i;
+    }
+  }
+  return null;
+}
+
+// A Fullwidth fold takes priority over a Halfwidth one, matching the
+// reference's sub-threat order.
+export function widthClassConfusionDetect(input) {
+  const fullwidth = firstWidthFold(input, "F");
+  if (fullwidth !== null) {
+    return { sub: "FullwidthFold", positions: [fullwidth] };
+  }
+  const halfwidth = firstWidthFold(input, "H");
+  if (halfwidth !== null) {
+    return { sub: "HalfwidthFold", positions: [halfwidth] };
   }
   return { sub: null, positions: [] };
 }
@@ -4216,6 +4269,64 @@ function bidiTable() {
 // distinction (R, AL, L) is retained — every other Bidi_Class collapses to
 // "Other". SHORT tokens map R→R, AL→AL, L→L, else→Other; long @missing names
 // map Right_To_Left→R, Arabic_Letter→AL, Left_To_Right→L, else→Other.
+// ── East_Asian_Width: UAX #11 width class ────────────────────────────────────
+// Mirrors Unicode.Generated.EastAsianWidth.lookup. The file's
+// `# @missing: 0000..10FFFF; N` line declares Neutral over the whole space, so
+// an unlisted codepoint is "N" and there is no default range list to scan,
+// unlike DerivedBidiClass which carries real per-block defaults.
+function parseEastAsianWidth(raw) {
+  const rows = [];
+  for (const line of raw.split("\n")) {
+    const hash = line.indexOf("#");
+    const body = (hash === -1 ? line : line.slice(0, hash)).trim();
+    if (body === "") {
+      continue;
+    }
+    const semi = body.indexOf(";");
+    if (semi === -1) {
+      continue;
+    }
+    const range = parseBidiRange(body.slice(0, semi));
+    if (range === null) {
+      continue;
+    }
+    const token = body.slice(semi + 1).trim();
+    const cls =
+      token === "A" || token === "F" || token === "H" || token === "Na" || token === "W"
+        ? token
+        : "N";
+    rows.push([range[0], range[1], cls]);
+  }
+  rows.sort((a, b) => a[0] - b[0]);
+  return rows;
+}
+
+function eastAsianWidthTable() {
+  if (eastAsianWidthTableCache === undefined) {
+    eastAsianWidthTableCache = parseEastAsianWidth(readDataFile("EastAsianWidth.txt"));
+  }
+  return eastAsianWidthTableCache;
+}
+
+// East_Asian_Width for one codepoint: binary-search the sorted ranges, else "N".
+export function eastAsianWidth(cp) {
+  const table = eastAsianWidthTable();
+  let lo = 0;
+  let hi = table.length;
+  while (lo < hi) {
+    const mid = lo + ((hi - lo) >> 1);
+    const [rlo, rhi, cls] = table[mid];
+    if (cp < rlo) {
+      hi = mid;
+    } else if (cp > rhi) {
+      lo = mid + 1;
+    } else {
+      return cls;
+    }
+  }
+  return "N";
+}
+
 function parseDerivedBidi(raw) {
   const missingPrefix = "# @missing:";
   const explicit = [];

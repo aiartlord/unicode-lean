@@ -252,6 +252,7 @@ zig_files=(
 # defaults, then the L fallback), so each bundles the homoglyph set plus
 # DerivedBidiClass.txt.
 typescript_files=(
+  EastAsianWidth.txt
   "${homoglyph_files[@]}"
   IdentifierStatus.txt
   DerivedBidiClass.txt

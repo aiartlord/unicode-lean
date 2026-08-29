@@ -446,3 +446,18 @@ export interface StreamSafeVerdict {
 }
 
 export declare function streamSafeViolationDetect(input: number[]): StreamSafeVerdict;
+
+/** UAX #11 `East_Asian_Width` class. Codepoints absent from the UCD table are
+ *  `"N"`, per its `@missing` declaration over the whole codepoint space. */
+export type EastAsianWidthClass = "A" | "F" | "H" | "N" | "Na" | "W";
+
+export declare function eastAsianWidth(cp: number): EastAsianWidthClass;
+
+/** One width-class-confusion scan result. `sub` is `null` for a clear input,
+ *  else the fold tag with the single position it was found at. */
+export interface WidthClassConfusionDetection {
+  sub: "FullwidthFold" | "HalfwidthFold" | null;
+  positions: number[];
+}
+
+export declare function widthClassConfusionDetect(input: number[]): WidthClassConfusionDetection;

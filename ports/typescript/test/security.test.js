@@ -99,6 +99,7 @@ test("edge entry works with injected data", async () => {
       caseFolding: readFileSync(new URL("../src/data/CaseFolding.txt", import.meta.url), "utf8"),
       knownAttackTargets: readFileSync(new URL("../src/data/KnownAttackTargets.txt", import.meta.url), "utf8"),
       derivedBidiClass: readFileSync(new URL("../src/data/DerivedBidiClass.txt", import.meta.url), "utf8"),
+      eastAsianWidth: readFileSync(new URL("../src/data/EastAsianWidth.txt", import.meta.url), "utf8"),
       unicodeData: readFileSync(new URL("../src/data/UnicodeData.txt", import.meta.url), "utf8"),
       compositionExclusions: readFileSync(new URL("../src/data/CompositionExclusions.txt", import.meta.url), "utf8"),
       derivedCoreProperties: readFileSync(new URL("../src/data/DerivedCoreProperties.txt", import.meta.url), "utf8"),
