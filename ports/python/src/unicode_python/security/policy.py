@@ -12,9 +12,26 @@ from ..noncharacters import is_noncharacter
 from ..strict import Utf8RejectKind
 from ..utf8 import decode_to_codepoints, first_invalid_utf8_offset
 from .calculus import ClassificationKind, Family, Severity
-from .boundary import confusable_bidi_compound, covert_display_compound
-from .display import rtl_injection
-from .form import width_class_confusion
+from .boundary import (
+    admissibility_form_drift,
+    confusable_bidi_compound,
+    covert_display_compound,
+    identifier_form_drift,
+)
+from .display import (
+    filename_disguise,
+    renderer_divergence,
+    rtl_injection,
+    source_display_divergence,
+)
+from .form import (
+    case_expansion_mismatch,
+    locale_case_inversion,
+    nfc_idempotence_witness,
+    normalization_bomb,
+    stream_safe_violation,
+    width_class_confusion,
+)
 from .covert import (
     bidi_control_balance,
     surrogate_reassembly,
@@ -22,7 +39,11 @@ from .covert import (
     variation_selector_payload,
     zero_width_payload,
 )
-from .identity import homoglyph_confusable
+from .identity import (
+    emoji_zwj_integrity,
+    homoglyph_confusable,
+    skin_tone_variation_forgery,
+)
 
 
 class Action(Enum):
@@ -593,6 +614,130 @@ def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
             ClassificationKind.HAZARD,
             covert_display.sub,
             list(covert_display.positions),
+        )
+
+    # The remaining families the Lean reference's runAll dispatches on plain
+    # input. Every detector here reports a bare sub-threat with its positions.
+    emoji_result = emoji_zwj_integrity.detect(input_cps).classify
+    if not emoji_result.is_clear:
+        _append_finding(
+            findings,
+            Family.EMOJI_ZWJ_INTEGRITY,
+            ClassificationKind.HAZARD,
+            emoji_result.tag,
+            list(emoji_result.positions),
+        )
+
+    skin_result = skin_tone_variation_forgery.detect(input_cps).classify
+    if not skin_result.is_clear:
+        _append_finding(
+            findings,
+            Family.SKIN_TONE_VARIATION_FORGERY,
+            ClassificationKind.HAZARD,
+            skin_result.tag,
+            list(skin_result.positions),
+        )
+
+    # SourceDisplayDivergence judges the input as a unit; the Lean spec keeps
+    # positions at the per-family verdicts, so this layer carries none.
+    source_result = source_display_divergence.detect(input_cps)
+    if source_result.sub is not None:
+        _append_finding(
+            findings,
+            Family.SOURCE_DISPLAY_DIVERGENCE,
+            ClassificationKind.HAZARD,
+            source_result.sub,
+            [],
+        )
+
+    filename_result = filename_disguise.detect(input_cps).classify
+    if not filename_result.is_clear:
+        _append_finding(
+            findings,
+            Family.FILENAME_DISGUISE,
+            ClassificationKind.HAZARD,
+            filename_result.tag,
+            list(filename_result.positions),
+        )
+
+    renderer_result = renderer_divergence.detect(input_cps).classify
+    if not renderer_result.is_clear:
+        _append_finding(
+            findings,
+            Family.RENDERER_DIVERGENCE,
+            ClassificationKind.HAZARD,
+            renderer_result.tag,
+            list(renderer_result.positions),
+        )
+
+    normalization_result = normalization_bomb.detect(input_cps)
+    if normalization_result.sub is not None:
+        _append_finding(
+            findings,
+            Family.NORMALIZATION_BOMB,
+            ClassificationKind.HAZARD,
+            normalization_result.sub,
+            list(normalization_result.positions),
+        )
+
+    stream_result = stream_safe_violation.detect(input_cps).classify
+    if not stream_result.is_clear:
+        _append_finding(
+            findings,
+            Family.STREAM_SAFE_VIOLATION,
+            ClassificationKind.HAZARD,
+            stream_result.tag,
+            list(stream_result.positions),
+        )
+
+    locale_result = locale_case_inversion.detect(input_cps)
+    if locale_result.sub is not None:
+        _append_finding(
+            findings,
+            Family.LOCALE_CASE_INVERSION,
+            ClassificationKind.HAZARD,
+            locale_result.sub,
+            list(locale_result.positions),
+        )
+
+    case_result = case_expansion_mismatch.detect(input_cps).classify
+    if not case_result.is_clear:
+        _append_finding(
+            findings,
+            Family.CASE_EXPANSION_MISMATCH,
+            ClassificationKind.HAZARD,
+            case_result.tag,
+            list(case_result.positions),
+        )
+
+    nfc_result = nfc_idempotence_witness.detect(input_cps)
+    if nfc_result.sub is not None:
+        _append_finding(
+            findings,
+            Family.NFC_IDEMPOTENCE_WITNESS,
+            ClassificationKind.HAZARD,
+            nfc_result.sub,
+            list(nfc_result.positions),
+        )
+
+    identifier_result = identifier_form_drift.detect(input_cps).classify
+    if not identifier_result.is_clear:
+        _append_finding(
+            findings,
+            Family.IDENTIFIER_FORM_DRIFT,
+            ClassificationKind.HAZARD,
+            identifier_result.tag,
+            list(identifier_result.positions),
+        )
+
+    admissibility_result = admissibility_form_drift.detect(input_cps).classify
+    if not admissibility_result.is_clear:
+        _append_finding(
+            findings,
+            Family.ADMISSIBILITY_FORM_DRIFT,
+            ClassificationKind.HAZARD,
+            admissibility_result.tag,
+            list(admissibility_result.positions),
         )
 
     width_class = width_class_confusion.detect(input_cps)
