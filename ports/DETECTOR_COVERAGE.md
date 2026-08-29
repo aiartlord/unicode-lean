@@ -313,11 +313,27 @@ implemented, fixture-passing detector, not a coverage gap.
 Separately from implementation, a detector only reaches a caller if the port's
 scan path invokes it. The Lean reference's `runAll` dispatches twenty-four
 families on plain input — the three crypto families are context-specific and
-excluded from both. Not every port's scan reaches all twenty-four, so the
-count above measures what each port implements, not what its `scan` returns.
-Widening a scan path changes the finding list that
-`fixtures/security/verdict_contract.json` pins, and that fixture is synced into
-ten ports' test data, so it can only move for all sixteen at once.
+excluded from both. Not every port's scan reaches all twenty-four, so the count
+above measures what each port implements, not what its `scan` returns.
+
+That gap is wide, and measuring it by hand is the only way to see it, because a
+port names every family in its enums whether or not its scan calls the detector.
+Scanning U+FF21 in the `gateway-header` profile under `observe`, the Rust
+reference returns seven findings — homoglyph-confusable, renderer-divergence,
+identifier-form-drift, admissibility-form-drift, nfc-idempotence-witness,
+width-class-confusion and source-display-divergence — where the COBOL port
+returns one. In the Haskell port the shortfall is visible in the source: `detect`
+in `Unicode/Security/Policy.hs` dispatches eleven families inline, while the
+other sixteen exist as standalone modules, each with its own `detect` and its own
+tests, that `Policy.hs` never imports.
+
+Closing that is mechanical rather than new detection logic, since the
+implementations already exist. It is also safer than it first appears: the
+thirteen cases in `fixtures/security/verdict_contract.json` expect findings only
+from families every port already dispatches, and the Rust reference passes that
+same contract while dispatching twenty-four, which is direct evidence that the
+additional detectors stay silent on those inputs. Widening a scan path is
+therefore not forced to move for all sixteen ports at once.
 
 
 ## Provenance

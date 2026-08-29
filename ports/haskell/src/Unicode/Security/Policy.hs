@@ -5,8 +5,23 @@ Description : Product-facing runtime security policy contract.
 This module is the Haskell runtime surface for the shared
 @scan(profile, mode, input) -> verdict@ contract, plus the byte-level
 @scanUtf8@ / @scanUtf16BE|LE@ / @scanUtf32BE|LE@ entry points that decode and
-enforce the wire encoding first.  All twenty-seven detector families are wired
-through this surface and emit the shared reason-code namespace.
+enforce the wire encoding first.
+
+Eleven detector families are dispatched from 'detect' here and emit the shared
+reason-code namespace: tag-block-payload, variation-selector-payload,
+zero-width-payload, surrogate-reassembly, bidi-control-balance,
+noncharacter-control, homoglyph-confusable, mixed-script-admissibility,
+rtl-injection, confusable-bidi-compound and covert-display-compound.
+
+The remaining sixteen families are implemented as standalone modules under
+@Unicode.Security.@ -- each exporting its own @detect@ and each covered by its
+own tests -- but this module imports none of them, so they do not currently
+reach a caller of 'scan'.  The Rust reference dispatches twenty-four families
+on plain input, excluding only the three context-specific crypto families, so
+this surface is thirteen families short of that reference.  Wiring them is
+mechanical rather than new detection logic, since the implementations already
+exist; it is not done here yet, and this note is the record of that gap rather
+than a claim that it is closed.
 -}
 module Unicode.Security.Policy
   ( Action (..)
