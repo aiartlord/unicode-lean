@@ -504,11 +504,21 @@ theorem noSpPairUpdate_foldl (l : List LBClass) :
     · cases hhd : (effClassesRev m.reverse).head? with
       | none => simp_all [isCMZWJ_AL, isNotSP]
       | some val =>
+        -- `List.find? isNotSP (AL :: _)` reduces definitionally, since
+        -- `isNotSP AL` is decidably true; simp no longer discharges that
+        -- side condition on its own under Lean v4.33.
         by_cases hbl : lb9BlocksAbsorb val = true <;>
-          simp_all [isCMZWJ_AL, isNotSP]
-    · by_cases hsp : c == LBClass.SP <;>
+          simp_all [isCMZWJ_AL] <;> rfl
+    · -- The residual shape is `some c = List.find? isNotSP (c :: _)`. When the
+      -- head is a literal it reduces definitionally; when it is the variable
+      -- `c` the reduction needs `isNotSP c`, which follows from the `c ≠ SP`
+      -- branch hypothesis. Under Lean v4.33 simp discharges neither on its own.
+      by_cases hsp : c == LBClass.SP <;>
         cases hhd : (effClassesRev m.reverse).head? <;>
-        simp_all [isNotSP]
+        simp_all [isNotSP] <;>
+        first
+          | rfl
+          | exact (List.find?_cons_of_pos (by simp_all [isNotSP])).symm
 
 theorem buildSnapshots_noSpPair (cps : List Nat) (lits : List LBClass) (i : Nat)
     (h : i < ((List.range cps.length).zip lits).length) :
