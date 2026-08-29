@@ -62,6 +62,7 @@ jobs:
           bash scripts/check-port-self-contained.sh
           bash scripts/check-orphan-files.sh
           bash scripts/check-ucd-hashes.sh
+          bash scripts/check-ucd-upstream.sh
           bash scripts/check-security-coverage.sh
           bash scripts/check-security-hashes.sh
           bash scripts/check-bip39-hashes.sh

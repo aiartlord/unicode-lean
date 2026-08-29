@@ -32,9 +32,17 @@ terminus?"*
    implementation) and aborts the build on any mismatch; `Unicode/Ucd/
    SHA256SUMS` pins the digests (e.g. `UnicodeData.txt` =
    `2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c`); and
-   `scripts/check-ucd-upstream.sh` (run in CI) verifies those bytes are
-   byte-identical to the official unicode.org 17.0.0 publication, not merely
-   to what was committed. The chain grounds out at the Unicode Consortium.
+   `scripts/check-ucd-upstream.sh` fetches all forty-six published files
+   from unicode.org and verifies the pinned bytes are byte-identical to the
+   official 17.0.0 publication, not merely to what was committed. The two
+   guards answer different questions, and only the second one closes the
+   loop: `check-ucd-hashes.sh` compares the working tree to `SHA256SUMS`, so
+   a file committed wrong from the start passes it, because the bad file and
+   its matching bad digest agree. It runs in the release-evidence workflow
+   rather than on every push, since it is the one guard here that depends on
+   a third party being reachable, and a table that has already been verified
+   byte-for-byte does not change between pushes. The chain grounds out at the
+   Unicode Consortium.
 
 3. **The C++ compiler used by the reviewer to build `lean4checker`.** See the
    Thompson-attack terminus below.
