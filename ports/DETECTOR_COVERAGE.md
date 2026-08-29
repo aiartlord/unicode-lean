@@ -329,38 +329,43 @@ tests, that `Policy.hs` never imports.
 
 Closing that is mechanical rather than new detection logic, since the
 implementations already exist. It cannot be done one port at a time, and the
-reason is the opposite of what the fixture layout suggests.
+reason is not the one the fixture layout suggests.
 
-`fixtures/security/verdict_contract.json` is pinned by fifteen ports. The Rust
-reference is not one of them, and the fixture does not describe what Rust does.
-On its own `math-alpha-gateway-reject` case — U+1D400, gateway-header, enforce —
-the fixture records one finding, `homoglyph-confusable.MathAlpha`; Rust returns
-five, adding identifier-form-drift, admissibility-form-drift,
-nfc-idempotence-witness and source-display-divergence. The `action` agrees at
-`reject`. The finding list does not. The contract therefore encodes a narrower
-scan than the reference performs, and a port passes it partly by dispatching too
-few families to disagree with it.
+The specification settles which side is correct. `Unicode/Security/RunAll.lean`
+dispatches all twenty-seven families and returns one `FamilyResult` per family.
+The Rust port dispatches twenty-four of them on plain input, excluding only the
+three crypto families, which judge a candidate against a wordlist, a hashing rule
+or a watermark cue that a plain scan does not supply. Rust therefore tracks the
+proven specification. The other fifteen ports do not, and neither does the shared
+fixture.
 
-The consequence: widening a port's scan toward the reference makes it stop
-matching the fixture. Wiring ten of the sixteen orphaned Haskell families
-compiles clean under `-Wall -Werror`, once the enumerated `blocks` table is
-extended for all three policy levels from Rust's rejection sets, and yields four
-of Rust's five findings on that input — source-display-divergence is unreachable
-from `Policy.hs`, since it consumes Policy's own finding functions and importing
-it back forms a module cycle. The result is 447 of 448 tests passing, the single
-failure being that contract case.
+`fixtures/security/verdict_contract.json` is pinned by fifteen ports; Rust is not
+one of them, and it is the only port the fixture does not gate. On the fixture's
+`math-alpha-gateway-reject` case — U+1D400, gateway-header, enforce — the fixture
+records one finding, `homoglyph-confusable.MathAlpha`. Python returns exactly
+that one and passes. Rust returns five, adding identifier-form-drift,
+admissibility-form-drift, nfc-idempotence-witness and source-display-divergence.
+The `action` agrees at `reject` in every case; the finding lists do not.
 
-The fixture must be regenerated from the reference before any port's scan can
-widen; the fifteen then move together. The blocker is the fixture, not the
-detectors.
+So the fixture is not a stale copy of the reference — it is an accurate record of
+what fifteen ports do, and what those fifteen ports do is narrower than the
+specification they are transliterations of. A port passes the contract partly by
+dispatching too few families to disagree with it. This is a detection gap in the
+shipped ports, not a bookkeeping discrepancy: on inputs like U+1D400 the ports
+report a hazard, but not every hazard the proven layer identifies.
 
-One further constraint on the Haskell port specifically: of its sixteen orphaned
-modules, `FilenameDisguise` and `RendererDivergence` import four small
-predicates from `Policy` (`isBidiFormatControl`, `isStrongLtr`, `isStrongRtl`,
-`isVariationSelector`), and `SourceDisplayDivergence` imports Policy's finding
-functions. Reaching those three requires moving the shared predicates into a
-module below both, and treating the compound detector as a stage that runs after
-the per-family pass rather than inside it.
+The consequence for sequencing is that widening a port's scan toward the
+specification makes it stop matching the fixture. Wiring ten of the sixteen
+orphaned Haskell families compiles clean under `-Wall -Werror`, once the
+enumerated `blocks` table is extended for all three policy levels from Rust's
+rejection sets, and yields four of Rust's five findings on that input —
+source-display-divergence being unreachable from `Policy.hs` until the compound
+detector runs as a stage after the per-family pass. The result is 447 of 448
+tests passing, the single failure being that contract case.
+
+The fixture therefore has to be regenerated from the specification before any
+port's scan can widen, and the fifteen then move together. The blocker is the
+fixture, not the detectors.
 
 
 ## Provenance
