@@ -35,6 +35,16 @@ module UnicodeRuby
         OTHER = :other
       end
 
+      # UAX #11 East_Asian_Width class.
+      module EastAsianWidth
+        A = :a
+        F = :f
+        H = :h
+        N = :n
+        NA = :na
+        W = :w
+      end
+
       module_function
 
       # ── Parsing helpers ───────────────────────────────────────────────────
@@ -135,6 +145,64 @@ module UnicodeRuby
       def ccc(cp)
         entry = ucd_table[cp]
         entry.nil? ? 0 : entry[:ccc]
+      end
+
+      # ── EastAsianWidth.txt — UAX #11 East_Asian_Width lookup ──────────────
+
+      def east_asian_width_of_token(token)
+        case token
+        when "A" then EastAsianWidth::A
+        when "F" then EastAsianWidth::F
+        when "H" then EastAsianWidth::H
+        when "Na" then EastAsianWidth::NA
+        when "W" then EastAsianWidth::W
+        else EastAsianWidth::N
+        end
+      end
+
+      def parse_east_asian_width
+        rows = []
+        UnicodeRuby.read_data("EastAsianWidth.txt").each_line do |raw|
+          line = raw.chomp
+          hash = line.index("#")
+          line = line[0...hash] if hash
+          body = line.strip
+          next if body.empty?
+
+          semi = body.index(";")
+          next if semi.nil?
+
+          range = parse_range_field(body[0...semi])
+          next if range.nil?
+
+          rows << [range[0], range[1], east_asian_width_of_token(body[(semi + 1)..].strip)]
+        end
+        rows.sort_by! { |row| row[0] }
+        rows
+      end
+
+      def east_asian_width_table
+        @east_asian_width_table ||= parse_east_asian_width
+      end
+
+      # East_Asian_Width for one codepoint. The file's @missing line declares N
+      # over the whole space, so an unlisted codepoint is Neutral.
+      def east_asian_width(cp)
+        table = east_asian_width_table
+        lo = 0
+        hi = table.length
+        while lo < hi
+          mid = lo + ((hi - lo) / 2)
+          rlo, rhi, cls = table[mid]
+          if cp < rlo
+            hi = mid
+          elsif cp > rhi
+            lo = mid + 1
+          else
+            return cls
+          end
+        end
+        EastAsianWidth::N
       end
 
       # ── DerivedBidiClass.txt — strong Bidi_Class lookup ────────────────────

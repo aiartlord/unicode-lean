@@ -335,6 +335,7 @@ ruby_files=(
   CompositionExclusions.txt
   DerivedBidiClass.txt
   DerivedCoreProperties.txt
+  EastAsianWidth.txt
   IdentifierStatus.txt
   KnownAttackTargets.txt
   PropertyValueAliases.txt

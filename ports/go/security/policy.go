@@ -70,6 +70,7 @@ const (
 	FamilyCaseExpansionMismatch    Family = "case-expansion-mismatch"
 	FamilyAdmissibilityFormDrift   Family = "admissibility-form-drift"
 	FamilySourceDisplayDivergence  Family = "source-display-divergence"
+	FamilyWidthClassConfusion      Family = "width-class-confusion"
 )
 
 type ProfilePolicy struct {
@@ -166,6 +167,17 @@ func detect(input []uint32) []Finding {
 			Positions: positions,
 			SubThreat: "UnbalancedEmbedding",
 			Detail:    "bidi-control-balance",
+		})
+	}
+
+	if width := DetectWidthClassConfusion(input); width.SubThreat != "" {
+		findings = append(findings, Finding{
+			Code:      reasonCode(FamilyWidthClassConfusion, width.SubThreat),
+			Family:    FamilyWidthClassConfusion,
+			Severity:  2,
+			Positions: width.Positions,
+			SubThreat: width.SubThreat,
+			Detail:    "width-class-confusion",
 		})
 	}
 
@@ -508,7 +520,7 @@ func layer(family Family) string {
 		return "D"
 	case FamilyConfusableBidiCompound, FamilyCovertDisplayCompound, FamilyIdentifierFormDrift, FamilyAdmissibilityFormDrift:
 		return "X"
-	case FamilyStreamSafeViolation, FamilyCaseExpansionMismatch:
+	case FamilyStreamSafeViolation, FamilyCaseExpansionMismatch, FamilyWidthClassConfusion:
 		return "F"
 	case FamilyHashInputStability, FamilyAiWatermarkDetect:
 		return "K"
