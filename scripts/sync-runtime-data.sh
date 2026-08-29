@@ -122,9 +122,10 @@ rust_files=(
   bip39/spanish.txt
 )
 
-# The C++ header package loads exactly these ten via ucd::Tables::load_from_dir
+# The C++ header package loads exactly these eleven via ucd::Tables::load_from_dir
 # and Database::load_from_dir (the CMake install foreach mirrors this set).
 cpp_files=(
+  EastAsianWidth.txt
   CaseFolding.txt
   CompositionExclusions.txt
   DerivedBidiClass.txt
@@ -387,6 +388,7 @@ erlang_files=(
 )
 
 cobol_files=(
+  EastAsianWidth.txt
   "${root_manifest_files[@]}"
   GraphemeBreakProperty.txt
 )

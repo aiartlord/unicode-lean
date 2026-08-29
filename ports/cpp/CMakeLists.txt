@@ -41,6 +41,7 @@ foreach(UNICODE_CPP_DATA_FILE IN ITEMS
     CompositionExclusions.txt
     DerivedBidiClass.txt
     DerivedCoreProperties.txt
+    EastAsianWidth.txt
     emoji-data.txt
     emoji-zwj-sequences.txt
     IdentifierStatus.txt

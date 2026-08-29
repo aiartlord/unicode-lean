@@ -56,6 +56,9 @@ struct PairHash {
 // Unicode/Security/Display/RtlInjection.lean.
 enum class BidiStrong : std::uint8_t { R, Al, L, Other };
 
+// UAX #11 East_Asian_Width class.
+enum class EastAsianWidth : std::uint8_t { A, F, H, N, Na, W };
+
 struct UcdEntry {
     std::uint8_t ccc;
     std::vector<std::uint32_t> canonical_decomp;  // empty if none
@@ -73,6 +76,12 @@ struct BidiRange {
     std::uint32_t lo;
     std::uint32_t hi;
     BidiStrong cls;
+};
+
+struct EawRange {
+    std::uint32_t lo;
+    std::uint32_t hi;
+    EastAsianWidth cls;
 };
 
 // ─────────────────────────────────────────────────────────────────────
@@ -141,6 +150,10 @@ struct Tables {
     // lo; default (`@missing`) rows in file order.
     std::vector<BidiRange> bidi_explicit;
     std::vector<BidiRange> bidi_default;
+    // EastAsianWidth.txt ranges, sorted by lo.  There is no default vector:
+    // the file's `@missing` line declares N over the whole codepoint space, so
+    // a lookup miss is Neutral by declaration rather than by fallback.
+    std::vector<EawRange> east_asian_width;
 
     static Tables load_from_dir(const std::filesystem::path& dir);
     static Tables parse(
@@ -152,7 +165,8 @@ struct Tables {
         std::string_view property_value_aliases_text,
         std::string_view case_folding_text,
         std::string_view derived_core_properties_text,
-        std::string_view derived_bidi_class_text);
+        std::string_view derived_bidi_class_text,
+        std::string_view east_asian_width_text);
 };
 
 // ─────────────────────────────────────────────────────────────────────
@@ -576,6 +590,36 @@ inline BidiStrong strong_of_long(std::string_view name) {
 // DATA lines `LO..HI ; SHORT` (or `CP ; SHORT`) yield explicit rows,
 // sorted by lo; `# @missing: LO..HI; Long_Name` comment lines yield
 // default rows, kept in file order.
+// EastAsianWidth.txt rows into ranges sorted by lo.  Unlike
+// parse_derived_bidi there is no default vector to fill: the file's
+// `# @missing: 0000..10FFFF; N` line covers the whole codepoint space, so an
+// absent codepoint is N by declaration.
+inline void parse_east_asian_width(
+    std::string_view text, std::vector<EawRange>& rows) {
+    for_each_line(text, [&](std::string_view line) {
+        std::size_t hash = line.find('#');
+        std::string_view body =
+            hash == std::string_view::npos ? line : line.substr(0, hash);
+        body = trim(body);
+        if (body.empty()) return;
+        std::size_t semi = body.find(';');
+        if (semi == std::string_view::npos) return;
+        // parse_range_field throws on a malformed range rather than
+        // returning an optional, matching every other parser here.
+        auto rng = parse_range_field(body.substr(0, semi));
+        std::string_view token = trim(body.substr(semi + 1));
+        EastAsianWidth cls = EastAsianWidth::N;
+        if (token == "A") cls = EastAsianWidth::A;
+        else if (token == "F") cls = EastAsianWidth::F;
+        else if (token == "H") cls = EastAsianWidth::H;
+        else if (token == "Na") cls = EastAsianWidth::Na;
+        else if (token == "W") cls = EastAsianWidth::W;
+        rows.push_back(EawRange{rng.first, rng.second, cls});
+    });
+    std::sort(rows.begin(), rows.end(),
+              [](const EawRange& a, const EawRange& b) { return a.lo < b.lo; });
+}
+
 inline void parse_derived_bidi(
     std::string_view text,
     std::vector<BidiRange>& explicit_ranges,
@@ -620,7 +664,8 @@ inline Tables Tables::parse(
     std::string_view property_value_aliases_text,
     std::string_view case_folding_text,
     std::string_view derived_core_properties_text,
-    std::string_view derived_bidi_class_text) {
+    std::string_view derived_bidi_class_text,
+    std::string_view east_asian_width_text) {
     Tables t;
     detail::parse_unicode_data(unicode_data_text, t.ucd);
     detail::parse_composition_exclusions(
@@ -642,6 +687,7 @@ inline Tables Tables::parse(
         t.xid_continue_ranges);
     detail::parse_derived_bidi(
         derived_bidi_class_text, t.bidi_explicit, t.bidi_default);
+    detail::parse_east_asian_width(east_asian_width_text, t.east_asian_width);
     return t;
 }
 
@@ -655,7 +701,8 @@ inline Tables Tables::load_from_dir(const std::filesystem::path& dir) {
         detail::read_file(dir / "PropertyValueAliases.txt"),
         detail::read_file(dir / "CaseFolding.txt"),
         detail::read_file(dir / "DerivedCoreProperties.txt"),
-        detail::read_file(dir / "DerivedBidiClass.txt"));
+        detail::read_file(dir / "DerivedBidiClass.txt"),
+        detail::read_file(dir / "EastAsianWidth.txt"));
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -670,6 +717,26 @@ inline std::uint8_t ccc(const Tables& t, std::uint32_t cp) {
 // Unicode.Generated.DerivedBidiClass.lookup: (1) binary-search the sorted
 // explicit ranges — a hit wins; (2) otherwise scan the `@missing` default
 // ranges in file order, last match winning; (3) otherwise L.
+// UAX #11 East_Asian_Width lookup: binary-search the sorted ranges.  A miss
+// returns N, which is the file's own `@missing` declaration over the whole
+// codepoint space, not a fallback — hence no default vector to scan.
+inline EastAsianWidth east_asian_width(const Tables& t, std::uint32_t cp) {
+    std::size_t lo = 0;
+    std::size_t hi = t.east_asian_width.size();
+    while (lo < hi) {
+        std::size_t mid = lo + (hi - lo) / 2;
+        const EawRange& r = t.east_asian_width[mid];
+        if (cp < r.lo) {
+            hi = mid;
+        } else if (cp > r.hi) {
+            lo = mid + 1;
+        } else {
+            return r.cls;
+        }
+    }
+    return EastAsianWidth::N;
+}
+
 inline BidiStrong bidi_strong(const Tables& t, std::uint32_t cp) {
     // Binary search the sorted explicit ranges.
     std::size_t lo = 0;
