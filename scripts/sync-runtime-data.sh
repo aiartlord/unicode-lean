@@ -34,6 +34,7 @@ root_manifest_files=(
   confusables.txt
   DerivedBidiClass.txt
   DerivedCoreProperties.txt
+  DerivedJoiningType.txt
   emoji-variation-sequences.txt
   emoji-data.txt
   emoji-zwj-sequences.txt
@@ -93,6 +94,7 @@ rust_files=(
   CompositionExclusions.txt
   DerivedBidiClass.txt
   DerivedCoreProperties.txt
+  DerivedJoiningType.txt
   IdentifierStatus.txt
   KnownAttackTargets.txt
   PropertyValueAliases.txt

@@ -237,6 +237,85 @@ pub fn is_strong_rtl(cp: u32) -> bool {
     matches!(bidi_strong(cp), BidiStrong::R | BidiStrong::Al)
 }
 
+const DERIVED_JOINING_TYPE_RAW: &str = include_str!("../../../data/DerivedJoiningType.txt");
+
+/// `Joining_Type`, the cursive-joining behaviour a character has in scripts
+/// like Arabic. RFC 5892 Appendix A.1 uses it to decide whether a ZERO WIDTH
+/// NON-JOINER sits in a position its script actually requires.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JoiningType {
+    JoinCausing,
+    DualJoining,
+    LeftJoining,
+    RightJoining,
+    Transparent,
+    NonJoining,
+}
+
+fn joining_type_of_token(token: &str) -> JoiningType {
+    match token {
+        "C" => JoiningType::JoinCausing,
+        "D" => JoiningType::DualJoining,
+        "L" => JoiningType::LeftJoining,
+        "R" => JoiningType::RightJoining,
+        "T" => JoiningType::Transparent,
+        _ => JoiningType::NonJoining,
+    }
+}
+
+fn parse_joining_types() -> Vec<(u32, u32, JoiningType)> {
+    let mut out: Vec<(u32, u32, JoiningType)> = Vec::new();
+    for line in DERIVED_JOINING_TYPE_RAW.lines() {
+        let body = match line.split_once('#') {
+            Some((before, _)) => before,
+            None => line,
+        };
+        let body = body.trim();
+        if body.is_empty() {
+            continue;
+        }
+        if let Some((range, class)) = body.split_once(';') {
+            if let Some((lo, hi)) = parse_range_field(range) {
+                out.push((lo, hi, joining_type_of_token(class.trim())));
+            }
+        }
+    }
+    out.sort_by_key(|entry| entry.0);
+    out
+}
+
+fn joining_type_table() -> &'static Vec<(u32, u32, JoiningType)> {
+    static T: OnceLock<Vec<(u32, u32, JoiningType)>> = OnceLock::new();
+    T.get_or_init(parse_joining_types)
+}
+
+/// `Joining_Type` for one codepoint. The file's `@missing` line declares
+/// `Non_Joining` over the whole space, so an unlisted codepoint is
+/// `NonJoining`.
+pub fn joining_type(cp: u32) -> JoiningType {
+    let table = joining_type_table();
+    let mut lo = 0usize;
+    let mut hi = table.len();
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        let (rlo, rhi, class) = table[mid];
+        if cp < rlo {
+            hi = mid;
+        } else if cp > rhi {
+            lo = mid + 1;
+        } else {
+            return class;
+        }
+    }
+    JoiningType::NonJoining
+}
+
+/// True iff `cp` has Canonical_Combining_Class 9, the Virama used to request
+/// an explicit conjunct in scripts like Devanagari.
+pub fn is_virama(cp: u32) -> bool {
+    ccc(cp) == 9
+}
+
 /// True iff the codepoint's `Bidi_Class` is strong LTR (L).
 pub fn is_strong_ltr(cp: u32) -> bool {
     matches!(bidi_strong(cp), BidiStrong::L)

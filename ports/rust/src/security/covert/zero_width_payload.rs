@@ -6,13 +6,89 @@
 //! payload, to splice WORD JOINER / byte-order-mark sequences into
 //! identifiers, or to emit a suspected AI-watermark NNBSP pattern.
 //!
-//! This port treats every zero-width occurrence as reportable.  The
-//! Lean reference additionally exempts ZWJ flanked by emoji
-//! codepoints (RGI-context legitimate emoji-ZWJ sequence) — that
-//! exemption requires the UCD emoji-data table.
+//! Sanctioning model, matching the Lean reference.  A zero-width
+//! occurrence is reportable unless it is one of two characters doing
+//! orthographic or pictographic work a reader depends on:
+//!
+//!   * a ZWJ flanked by two codepoints that both appear in some
+//!     registered RGI emoji ZWJ sequence, per UTS #51;
+//!   * a ZWNJ in an RFC 5892 Appendix A.1 CONTEXTJ position — after a
+//!     Virama, as in a Devanagari conjunct, or between a left- or
+//!     dual-joining character and a right- or dual-joining one, as in
+//!     Persian.
+//!
+//! Both sanctions are derived from bundled UCD data rather than
+//! hand-listed: the ZWJ alphabet from `emoji-zwj-sequences.txt`, the
+//! ZWNJ context from `DerivedJoiningType.txt` and canonical combining
+//! classes.  Every other zero-width occurrence reports.
 
-use crate::security::identity::ucd;
+use crate::security::identity::emoji_zwj_integrity;
+use crate::security::identity::ucd::{self, JoiningType};
 use crate::security::ClassificationKind;
+
+/// True iff the ZWJ at index `i` is flanked by two codepoints that both
+/// participate in some registered RGI emoji ZWJ sequence. The membership
+/// predicate is derived from `emoji-zwj-sequences.txt` itself rather than
+/// hand-listed, and is strictly narrower than "is an emoji": a codepoint
+/// carrying the Emoji property but appearing in no registered sequence does
+/// not sanction a ZWJ beside it. A ZWJ in head or tail position is never
+/// legitimate.
+fn is_legitimate_zwj_context(input: &[u32], i: usize) -> bool {
+    if i == 0 || i + 1 >= input.len() {
+        return false;
+    }
+    emoji_zwj_integrity::is_emoji_target(input[i - 1])
+        && emoji_zwj_integrity::is_emoji_target(input[i + 1])
+}
+
+/// The `Joining_Type` of the first non-Transparent codepoint before `i`.
+fn joining_type_before(input: &[u32], i: usize) -> Option<JoiningType> {
+    let mut j = i;
+    while j > 0 {
+        j -= 1;
+        match ucd::joining_type(input[j]) {
+            JoiningType::Transparent => continue,
+            other => return Some(other),
+        }
+    }
+    None
+}
+
+/// The `Joining_Type` of the first non-Transparent codepoint after `i`.
+fn joining_type_after(input: &[u32], i: usize) -> Option<JoiningType> {
+    let mut j = i + 1;
+    while j < input.len() {
+        match ucd::joining_type(input[j]) {
+            JoiningType::Transparent => j += 1,
+            other => return Some(other),
+        }
+    }
+    None
+}
+
+/// True iff the ZWNJ at index `i` occupies a position where it is
+/// orthographically required, by RFC 5892 Appendix A.1: it follows a Virama,
+/// which is how a Devanagari conjunct is suppressed, or it sits between a
+/// left- or dual-joining character and a right- or dual-joining one, skipping
+/// Transparent characters on both sides, which is how a Persian word boundary
+/// is written inside a cursive run.
+///
+/// A ZWNJ outside such a position carries no orthographic duty and stays
+/// reportable.
+fn is_legitimate_zwnj_context(input: &[u32], i: usize) -> bool {
+    if i > 0 && ucd::is_virama(input[i - 1]) {
+        return true;
+    }
+    let left = joining_type_before(input, i);
+    let right = joining_type_after(input, i);
+    matches!(
+        left,
+        Some(JoiningType::LeftJoining) | Some(JoiningType::DualJoining)
+    ) && matches!(
+        right,
+        Some(JoiningType::RightJoining) | Some(JoiningType::DualJoining)
+    )
+}
 
 /// Sibling-detector codepoint ranges — these ARE Default_Ignorable
 /// per UAX #44 but are dispatched by their own family detector
@@ -136,6 +212,8 @@ pub fn detect(input: &[u32]) -> Verdict {
     let mut nnbsp_count = 0;
     let mut zwj_zwsp_count = 0;
 
+    let mut suspicious: Vec<usize> = Vec::new();
+
     for (i, &cp) in input.iter().enumerate() {
         if !is_zero_width(cp) {
             continue;
@@ -150,9 +228,18 @@ pub fn detect(input: &[u32]) -> Verdict {
         } else if is_zwj_or_zwsp(cp) {
             zwj_zwsp_count += 1;
         }
+        // The sanctioning model: a ZWJ inside a registered emoji sequence and
+        // a ZWNJ in an RFC 5892 CONTEXTJ-valid position both carry meaning a
+        // reader depends on, so they are recorded as present but not treated
+        // as suspicious.
+        let sanctioned = (cp == 0x200D && is_legitimate_zwj_context(input, i))
+            || (cp == 0x200C && is_legitimate_zwnj_context(input, i));
+        if !sanctioned {
+            suspicious.push(i);
+        }
     }
 
-    if v.zero_width_positions.is_empty() {
+    if v.zero_width_positions.is_empty() || suspicious.is_empty() {
         return v;
     }
 
@@ -173,7 +260,7 @@ pub fn detect(input: &[u32]) -> Verdict {
         });
     } else {
         v.sub = Some(SubThreat::BareZeroWidth {
-            cp: input[v.zero_width_positions[0]],
+            cp: input[suspicious[0]],
         });
     }
     v
