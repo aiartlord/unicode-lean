@@ -6,7 +6,7 @@ suite. The algorithms — normalization (UAX #15), the bidirectional algorithm
 collation algorithm (UTS #10), IDNA compatibility processing (UTS #46), the
 default identifier rule (UAX #31), PRECIS identifier preparation (RFC 8264 /
 8265), Punycode (RFC 3492), strict UTF-8 / UTF-16 / UTF-32 codecs, BOM
-detection, and noncharacter detection — are machine-checked in Lean 4.32.0
+detection, and noncharacter detection — are machine-checked in Lean 4.33.1
 against UCD 17.0.0 and UCA 17.0.0. On top of that proof base sits a security
 layer of twenty-seven detectors for the Unicode-level attacks the standard's
 own conformance scope declines to cover.
@@ -195,7 +195,7 @@ inventory.
 unicode-lean/
 ├── flake.nix                    # nix integration + per-port build outputs
 ├── lakefile.lean                # lake config
-├── lean-toolchain               # pinned Lean version (4.32.0)
+├── lean-toolchain               # pinned Lean version (4.33.1)
 ├── Unicode.lean                 # root import
 ├── Unicode/
 │   ├── Bidi/Algorithm.lean      # UAX #9

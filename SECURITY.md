@@ -6,7 +6,7 @@ This repository is a machine-checked specification of the Unicode standard.
 The artifacts that downstream consumers rely on are:
 
 - The Lean source files under `Unicode/`, which type-check zero `sorry`
-  and zero project-local `axiom`s under Lean 4.32.0.
+  and zero project-local `axiom`s under Lean 4.33.1.
 - The UCD source files under `Unicode/Ucd/`, which are pinned by
   SHA-256 in `Unicode/Ucd/SHA256SUMS` and verified in CI.
 - The Generated tables under `Unicode/Generated/`, which are derived

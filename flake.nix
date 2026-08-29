@@ -360,8 +360,8 @@
           installPhase = "true";
         };
 
-        # Lean 4.32.0 toolchain (see ./lean-toolchain) pinned via elan; fetched
-        # at build time because no Lean 4.32.0 derivation exists in nixpkgs yet.
+        # Lean 4.33.1 toolchain (see ./lean-toolchain) pinned via elan; fetched
+        # at build time because no Lean 4.33.1 derivation exists in nixpkgs yet.
         runtimeShell = pkgs.mkShell {
           packages = runtimePackages;
         };

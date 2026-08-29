@@ -29,7 +29,7 @@ might depend on).
 ### Fixed
 
 - `SECURITY.md`, `ASSURANCE.md`, and `CONTRIBUTING.md` reconciled to the
-  shipped state: Lean 4.32.0, twenty-seven detector families across six
+  shipped state: Lean 4.33.1, twenty-seven detector families across six
   layers including the shipped cryptographic-stability layer,
   kernel-checked conformance harnesses, and `detect : List Nat`
   signatures.

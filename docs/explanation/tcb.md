@@ -11,7 +11,7 @@ terminus?"*
 1. **The Lean 4 kernel** as implemented in `lean4checker`, the independent
    proof-checking binary — a small, fixed type-checker for the Lean 4
    dependent type theory, shared across the entire Lean ecosystem and subject
-   to community audit. Pinned toolchain: `leanprover/lean4:v4.32.0`. Every
+   to community audit. Pinned toolchain: `leanprover/lean4:v4.33.1`. Every
    `.olean` this project produces re-checks independently under
    `lean4checker`; the correctness argument needs only that re-check to
    succeed. `scripts/check-olean-recheck.sh` runs the re-check: it builds the

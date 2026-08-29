@@ -28,13 +28,26 @@
     * ZWJ between two emoji codepoints is a sanctioned RGI
       emoji-ZWJ-sequence position (per UTS #51) and is treated
       as `.clear`.
+    * ZWNJ in a position where it is orthographically required is
+      sanctioned by RFC 5892 Appendix A.1, the CONTEXTJ rule: it
+      follows a Virama, as in a Devanagari conjunct, or it sits
+      inside the joining-type context `(L|D) T* ZWNJ T* (R|D)`, as
+      in Persian and other cursive scripts. Such a ZWNJ carries
+      meaning a reader depends on, so reporting it would be a false
+      positive on ordinary text in those scripts.
     * Every other zero-width occurrence is reportable.
+
+  Both sanctions are data-derived rather than hand-listed. The ZWJ
+  alphabet comes from `emoji-zwj-sequences.txt`; the ZWNJ context
+  comes from the canonical combining classes and Joining_Type of the
+  surrounding characters.
 
   Algorithm shape (one pass over `input`).
 
     Phase 1 — collect zero-width positions.
-    Phase 2 — remove positions that are RGI-context legitimate
-              (ZWJ flanked by emoji codepoints).
+    Phase 2 — remove positions that are context-legitimate: a ZWJ
+              flanked by emoji codepoints, or a ZWNJ in a
+              CONTEXTJ-valid position.
     Phase 3 — short-circuit `.clear` if no suspicious positions.
     Phase 4 — classify sub-threat by priority:
                 1. annotationMisuse     — U+FFF9..U+FFFB present
@@ -49,6 +62,7 @@ import Unicode.Security.Calculus
 import Unicode.Emoji
 import Unicode.Generated.EmojiSequences
 import Unicode.Generated.DerivedCoreProperties
+import Unicode.Idna.CheckJoiners
 
 namespace Unicode.Security.Covert.ZeroWidthPayload
 
@@ -164,6 +178,7 @@ def isZeroWidthChar (cp : Nat) : Bool :=
     ∧ ¬ isBidiFormattingRange cp)
 
 @[inline] def isZwsp (cp : Nat) : Bool := cp = 0x200B
+@[inline] def isZwnj (cp : Nat) : Bool := cp = 0x200C
 @[inline] def isZwj  (cp : Nat) : Bool := cp = 0x200D
 @[inline] def isWordJoiner (cp : Nat) : Bool := cp = 0x2060
 @[inline] def isNNBSP (cp : Nat) : Bool := cp = 0x202F
@@ -195,6 +210,22 @@ def isLegitimateZwjContext (prev? next? : Option Nat) : Bool :=
     Unicode.Generated.EmojiSequences.isInZwjAlphabet nextCp
   | none, _next        => false
   | some _prev, none   => false
+
+/-- True iff the ZWNJ at index `i` of `input` occupies a position where
+    the character is orthographically required rather than covert.
+
+    The rule is RFC 5892 Appendix A.1, reused from
+    `Unicode.Idna.CheckJoiners.checkContextJZwnj` rather than restated
+    here: the ZWNJ either follows a Virama, which is how a Devanagari
+    conjunct is suppressed, or it sits between a left-joining or
+    dual-joining character and a right-joining or dual-joining one,
+    skipping Transparent characters on both sides, which is how a
+    Persian word boundary is written inside a cursive run.
+
+    A ZWNJ outside such a position carries no orthographic duty and
+    stays reportable. -/
+def isLegitimateZwnjContext (input : List Nat) (i : Nat) : Bool :=
+  Unicode.Idna.CheckJoiners.checkContextJZwnj input i
 
 /-- One-pass windowed inventory: `(index, prev?, cp, next?)` for every
     codepoint of `input`, pairing each element with its immediate
@@ -285,12 +316,15 @@ def detect (input : List Nat) : Verdict :=
   let zwPositions : List Nat :=
     win.filterMap (fun w =>
       if isZeroWidthChar w.2.2.1 then some w.1 else none)
-  -- Phase 2: drop positions whose codepoint is ZWJ flanked by
-  -- two emoji codepoints (sanctioned RGI emoji-ZWJ-sequence).
+  -- Phase 2: drop positions the sanctioning model exempts — a ZWJ
+  -- flanked by two codepoints of the RGI ZWJ alphabet, and a ZWNJ in
+  -- an RFC 5892 CONTEXTJ-valid position.
   let suspicious : List (Nat × Nat) :=
     win.filterMap (fun w =>
       let cp := w.2.2.1
-      if isZeroWidthChar cp ∧ ¬ (isZwj cp ∧ isLegitimateZwjContext w.2.1 w.2.2.2)
+      if isZeroWidthChar cp
+         ∧ ¬ (isZwj cp ∧ isLegitimateZwjContext w.2.1 w.2.2.2)
+         ∧ ¬ (isZwnj cp ∧ isLegitimateZwnjContext input w.1)
         then some (w.1, cp)
       else none)
   let suspiciousPos : List Nat := suspicious.map (fun s => s.1)
@@ -389,6 +423,35 @@ theorem detect_emoji_zwj_clear :
 theorem detect_emoji_zwj_chain_clear :
     (detect [0x1F468, 0x200D, 0x1F469, 0x200D,
              0x1F466]).classify.isClear = true := by decide
+
+section ZwnjSanction
+
+-- The CONTEXTJ predicate walks the canonical-combining-class and
+-- Joining_Type tables, which recurse past the default depth.
+set_option maxRecDepth 100000
+
+/-- A Devanagari conjunct written with an explicit ZWNJ after the Virama
+    U+094D is ordinary orthography, sanctioned by the Virama branch of
+    RFC 5892 A.1. -/
+theorem detect_devanagari_zwnj_clear :
+    (detect [0x0915, 0x094D, 0x200C, 0x0937]).classify.isClear = true := by
+  decide +kernel
+
+/-- A Persian word written with a ZWNJ between a dual-joining Farsi yeh
+    and a right-joining reh is sanctioned by the joining-type branch of
+    RFC 5892 A.1. -/
+theorem detect_persian_zwnj_clear :
+    (detect [0x0645, 0x06CC, 0x200C, 0x0631, 0x0648, 0x0645]).classify.isClear
+      = true := by
+  decide +kernel
+
+/-- The sanction is contextual, not a blanket exemption: a ZWNJ spliced
+    into Latin text has no orthographic duty and still reports. -/
+theorem detect_zwnj_in_latin_hazard :
+    (detect [0x48, 0x200C, 0x69]).classify.tag = some "BareZeroWidth" := by
+  decide +kernel
+
+end ZwnjSanction
 
 /-- Two ZWSPs in plain text — `.binaryPayload`. -/
 theorem detect_two_zwsp_binary :

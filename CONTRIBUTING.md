@@ -1,7 +1,7 @@
 # Contributing
 
 This repository ships a machine-checked specification of the Unicode
-standard at UCD 17.0.0 under Lean 4.32.0. Contributions are welcome
+standard at UCD 17.0.0 under Lean 4.33.1. Contributions are welcome
 under the same Apache-2.0 license that covers the existing source.
 
 ## Local Workflow

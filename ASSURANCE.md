@@ -5,7 +5,7 @@ repository without trusting marketing claims.
 
 ## Scope
 
-`unicode-lean` is a Lean 4.32.0, Lean-core-only specification and conformance
+`unicode-lean` is a Lean 4.33.1, Lean-core-only specification and conformance
 library for Unicode algorithms, data tables, codecs, identifiers, and
 security-oriented Unicode threat detectors.
 
@@ -107,7 +107,7 @@ Reference links:
 ## Current Limits
 
 - The full-corpus official conformance root is intentionally explicit because
-  several fixture suites are slow under Lean 4.32.0. Routine CI builds the
+  several fixture suites are slow under Lean 4.33.1. Routine CI builds the
   audited default root; release/audit evidence can demand
   `UnicodeFullConformance`.
 - The Nix package fetches the Lean toolchain through `elan` during the build.
