@@ -207,6 +207,7 @@ homoglyph_files=(
 
 go_files=(
   "${homoglyph_files[@]}"
+  EastAsianWidth.txt
   IdentifierStatus.txt
   UnicodeData.txt
   DerivedBidiClass.txt

@@ -316,6 +316,82 @@ pub fn is_virama(cp: u32) -> bool {
     ccc(cp) == 9
 }
 
+const EAST_ASIAN_WIDTH_RAW: &str = include_str!("../../../data/EastAsianWidth.txt");
+
+/// UAX #11 `East_Asian_Width` class.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EastAsianWidthClass {
+    /// Ambiguous.
+    A,
+    /// Fullwidth.
+    F,
+    /// Halfwidth.
+    H,
+    /// Neutral.
+    N,
+    /// Narrow.
+    Na,
+    /// Wide.
+    W,
+}
+
+fn east_asian_width_of_token(token: &str) -> EastAsianWidthClass {
+    match token {
+        "A" => EastAsianWidthClass::A,
+        "F" => EastAsianWidthClass::F,
+        "H" => EastAsianWidthClass::H,
+        "Na" => EastAsianWidthClass::Na,
+        "W" => EastAsianWidthClass::W,
+        _ => EastAsianWidthClass::N,
+    }
+}
+
+fn parse_east_asian_width() -> Vec<(u32, u32, EastAsianWidthClass)> {
+    let mut out: Vec<(u32, u32, EastAsianWidthClass)> = Vec::new();
+    for line in EAST_ASIAN_WIDTH_RAW.lines() {
+        let body = match line.split_once('#') {
+            Some((before, _)) => before,
+            None => line,
+        };
+        let body = body.trim();
+        if body.is_empty() {
+            continue;
+        }
+        if let Some((range, class)) = body.split_once(';') {
+            if let Some((lo, hi)) = parse_range_field(range) {
+                out.push((lo, hi, east_asian_width_of_token(class.trim())));
+            }
+        }
+    }
+    out.sort_by_key(|entry| entry.0);
+    out
+}
+
+fn east_asian_width_table() -> &'static Vec<(u32, u32, EastAsianWidthClass)> {
+    static T: OnceLock<Vec<(u32, u32, EastAsianWidthClass)>> = OnceLock::new();
+    T.get_or_init(parse_east_asian_width)
+}
+
+/// `East_Asian_Width` for one codepoint. The file's `@missing` line declares
+/// `N` over the whole space, so an unlisted codepoint is Neutral.
+pub fn east_asian_width(cp: u32) -> EastAsianWidthClass {
+    let table = east_asian_width_table();
+    let mut lo = 0usize;
+    let mut hi = table.len();
+    while lo < hi {
+        let mid = lo + (hi - lo) / 2;
+        let (rlo, rhi, class) = table[mid];
+        if cp < rlo {
+            hi = mid;
+        } else if cp > rhi {
+            lo = mid + 1;
+        } else {
+            return class;
+        }
+    }
+    EastAsianWidthClass::N
+}
+
 /// True iff the codepoint's `Bidi_Class` is strong LTR (L).
 pub fn is_strong_ltr(cp: u32) -> bool {
     matches!(bidi_strong(cp), BidiStrong::L)

@@ -7,3 +7,4 @@ pub mod locale_case_inversion;
 pub mod nfc_idempotence_witness;
 pub mod normalization_bomb;
 pub mod stream_safe_violation;
+pub mod width_class_confusion;

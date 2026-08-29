@@ -9,9 +9,20 @@ use crate::security::covert::{
     bidi_control_balance, surrogate_reassembly, tag_block_payload, variation_selector_payload,
     zero_width_payload,
 };
-use crate::security::boundary::{confusable_bidi_compound, covert_display_compound};
-use crate::security::display::rtl_injection;
-use crate::security::identity::homoglyph_confusable;
+use crate::security::boundary::{
+    admissibility_form_drift, confusable_bidi_compound, covert_display_compound,
+    identifier_form_drift,
+};
+use crate::security::display::{
+    filename_disguise, renderer_divergence, rtl_injection, source_display_divergence,
+};
+use crate::security::form::{
+    case_expansion_mismatch, locale_case_inversion, nfc_idempotence_witness,
+    normalization_bomb, stream_safe_violation, width_class_confusion,
+};
+use crate::security::identity::{
+    emoji_zwj_integrity, homoglyph_confusable, skin_tone_variation_forgery,
+};
 use crate::strict::Utf8RejectKind;
 use crate::utf8::{decode_to_codepoints, first_invalid_utf8_offset};
 use std::fmt::Write as _;
@@ -672,6 +683,25 @@ fn is_c1_control(cp: u32) -> bool {
 
 /// Scan a decoded codepoint sequence with the currently implemented native
 /// detector families.
+/// Push a finding from any detector whose verdict carries the common
+/// `Classification` surface. Each detector defines its own Classification
+/// type, so this matches on the shared method names rather than a trait, which
+/// would mean an impl in every detector module.
+macro_rules! push_classified {
+    ($findings:expr, $family:expr, $classification:expr) => {{
+        let classification = $classification;
+        if !classification.is_clear() {
+            push_finding(
+                $findings,
+                $family,
+                ClassificationKind::Hazard,
+                classification.tag(),
+                classification.positions().to_vec(),
+            );
+        }
+    }};
+}
+
 pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
     let mut findings = Vec::new();
 
@@ -800,6 +830,77 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
             ClassificationKind::Hazard,
             Some(sub),
             covert_display.positions,
+        );
+    }
+
+    // The remaining families the Lean reference's runAll dispatches on plain
+    // input. Each exposes the same Classification surface, so one shape covers
+    // them: a clear verdict pushes nothing, a hazard carries its sub-threat tag
+    // and the positions the detector localised.
+    push_classified!(&mut findings, Family::EmojiZwjIntegrity, emoji_zwj_integrity::detect(input).classify);
+    push_classified!(&mut findings, Family::SkinToneVariationForgery, skin_tone_variation_forgery::detect(input).classify);
+    push_classified!(&mut findings, Family::FilenameDisguise, filename_disguise::detect(input).classify);
+    push_classified!(&mut findings, Family::RendererDivergence, renderer_divergence::detect(input).classify);
+    push_classified!(&mut findings, Family::StreamSafeViolation, stream_safe_violation::detect(input).classify);
+    push_classified!(&mut findings, Family::CaseExpansionMismatch, case_expansion_mismatch::detect(input).classify);
+    push_classified!(&mut findings, Family::IdentifierFormDrift, identifier_form_drift::detect(input).classify);
+    push_classified!(&mut findings, Family::AdmissibilityFormDrift, admissibility_form_drift::detect(input).classify);
+
+    // Detectors reporting a bare sub-threat rather than a Classification.
+    let normalization = normalization_bomb::detect(input);
+    if let Some(sub) = normalization.sub {
+        push_finding(
+            &mut findings,
+            Family::NormalizationBomb,
+            ClassificationKind::Hazard,
+            Some(sub),
+            normalization.positions,
+        );
+    }
+
+    let locale_case = locale_case_inversion::detect(input);
+    if let Some(sub) = locale_case.sub {
+        push_finding(
+            &mut findings,
+            Family::LocaleCaseInversion,
+            ClassificationKind::Hazard,
+            Some(sub),
+            locale_case.positions,
+        );
+    }
+
+    let nfc_witness = nfc_idempotence_witness::detect(input);
+    if let Some(sub) = nfc_witness.sub {
+        push_finding(
+            &mut findings,
+            Family::NfcIdempotenceWitness,
+            ClassificationKind::Hazard,
+            Some(sub),
+            nfc_witness.positions,
+        );
+    }
+
+    let width_class = width_class_confusion::detect(input);
+    if let Some(sub) = width_class.sub {
+        push_finding(
+            &mut findings,
+            Family::WidthClassConfusion,
+            ClassificationKind::Hazard,
+            Some(sub),
+            width_class.positions,
+        );
+    }
+
+    // SourceDisplayDivergence judges the input as a unit, so it localises
+    // nothing and carries an empty position list.
+    let source_display = source_display_divergence::detect(input);
+    if let Some(sub) = source_display.sub {
+        push_finding(
+            &mut findings,
+            Family::SourceDisplayDivergence,
+            ClassificationKind::Hazard,
+            Some(sub),
+            Vec::new(),
         );
     }
 
