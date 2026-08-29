@@ -97,6 +97,7 @@ public static partial class Security
     private static List<string>? knownTargets;
     private static HashSet<long>? legalVariationPairs;
     private static BidiTable? bidiTable;
+    private static IReadOnlyList<EawRange>? eastAsianWidthTable;
     private static Dictionary<int, NormEntry>? unicodeDataMap;
     private static HashSet<int>? compositionExclusions;
     private static Dictionary<long, int>? compositionTable;
@@ -1183,6 +1184,55 @@ public static partial class Security
         return new NfcIdempotenceWitnessResult(null, new List<int>());
     }
 
+    // ── width-class-confusion: UAX #11 East Asian Width fold ──────────────────
+    // Mirrors Unicode.Security.Form.WidthClassConfusion (and the verified Rust
+    // port src/security/form/width_class_confusion.rs). A Fullwidth (EAW = F) or
+    // Halfwidth (EAW = H) codepoint whose NFKD head carries a different EAW
+    // class is a compatibility-fold homograph:
+    //
+    //   U+FF21 'Ａ' (F)  ->  U+0041 'A' (Na)
+    //   U+FF71 'ｱ' (H)  ->  U+30A2 'ア' (W)
+    //
+    // The two-system bypass: a validator that whitelists ASCII rejects Ａ, while
+    // a downstream NFKC step at storage or comparison time folds it to plain A,
+    // so ＡＤＭＩＮ claims the username ADMIN. Distinct from renderer
+    // divergence's FullwidthVariance, which fires on F-class codepoints for
+    // renderer-cohort reasons; this is the NFKC-fold verdict and both can fire
+    // independently. Hangul syllables decompose to jamos that are still W class,
+    // so pure Hangul stays clear.
+
+    /// <summary>One width-class-confusion scan result; SubThreat is null when clear.</summary>
+    public sealed record WidthClassConfusionResult(string? SubThreat, List<int> Positions);
+
+    private static bool HasWidthFold(int cp)
+    {
+        var folded = ToNfkd(new List<int> { cp });
+        if (folded.Count == 0) return false;
+        return EastAsianWidthOf(folded[0]) != EastAsianWidthOf(cp);
+    }
+
+    private static int? FirstWidthFold(IReadOnlyList<int> input, EastAsianWidth want)
+    {
+        for (var i = 0; i < input.Count; i++)
+        {
+            if (EastAsianWidthOf(input[i]) == want && HasWidthFold(input[i])) return i;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Classify a codepoint sequence. A Fullwidth fold takes priority over a
+    /// Halfwidth one, matching the reference's sub-threat order.
+    /// </summary>
+    public static WidthClassConfusionResult WidthClassConfusionDetect(IReadOnlyList<int> input)
+    {
+        var fullwidth = FirstWidthFold(input, EastAsianWidth.F);
+        if (fullwidth is not null) return new WidthClassConfusionResult("FullwidthFold", new List<int> { fullwidth.Value });
+        var halfwidth = FirstWidthFold(input, EastAsianWidth.H);
+        if (halfwidth is not null) return new WidthClassConfusionResult("HalfwidthFold", new List<int> { halfwidth.Value });
+        return new WidthClassConfusionResult(null, new List<int>());
+    }
+
     // ── bip39-canonical: BIP-39 mnemonic canonicalisation + wordlist checks ────
     // Mirrors Unicode.Security.Crypto.Bip39Canonical.
 
@@ -1559,6 +1609,11 @@ public static partial class Security
     // Unicode.Generated.DerivedBidiClass and the Rust/Python/C++ ports.
     private enum BidiStrong { R, Al, L, Other }
 
+    // UAX #11 East_Asian_Width class.
+    private enum EastAsianWidth { A, F, H, N, Na, W }
+
+    private sealed record EawRange(int Lo, int Hi, EastAsianWidth Class);
+
     private sealed record BidiRange(int Lo, int Hi, BidiStrong Class);
 
     // Explicit ranges (sorted by lower bound) win first; otherwise the last
@@ -1645,6 +1700,62 @@ public static partial class Security
     // Full Bidi_Class lookup (strong distinction only): binary-search the
     // sorted explicit ranges first, then take the last matching @missing
     // default, then fall back to L.
+    private static IReadOnlyList<EawRange> EastAsianWidthTable()
+    {
+        if (eastAsianWidthTable is null)
+        {
+            eastAsianWidthTable = ParseEastAsianWidth(ReadDataFile("EastAsianWidth.txt"));
+        }
+        return eastAsianWidthTable;
+    }
+
+    private static EastAsianWidth EawOfToken(string token) => token switch
+    {
+        "A" => EastAsianWidth.A,
+        "F" => EastAsianWidth.F,
+        "H" => EastAsianWidth.H,
+        "Na" => EastAsianWidth.Na,
+        "W" => EastAsianWidth.W,
+        _ => EastAsianWidth.N,
+    };
+
+    // Mirror of Unicode.Generated.EastAsianWidth. The file's
+    //  line declares Neutral over the whole
+    // codepoint space, so an unlisted codepoint is N and there is no default
+    // range list to scan, unlike DerivedBidiClass.
+    private static IReadOnlyList<EawRange> ParseEastAsianWidth(string raw)
+    {
+        var rows = new List<EawRange>();
+        foreach (var line in raw.Split('\n'))
+        {
+            var hash = line.IndexOf('#');
+            var body = (hash >= 0 ? line.Substring(0, hash) : line).Trim();
+            if (body.Length == 0) continue;
+            var semi = body.IndexOf(';');
+            if (semi < 0) continue;
+            var range = ParseRangeField(body.Substring(0, semi));
+            if (range is null) continue;
+            rows.Add(new EawRange(range.Value.Lo, range.Value.Hi, EawOfToken(body.Substring(semi + 1).Trim())));
+        }
+        rows.Sort((a, b) => a.Lo.CompareTo(b.Lo));
+        return rows;
+    }
+
+    private static EastAsianWidth EastAsianWidthOf(int cp)
+    {
+        var table = EastAsianWidthTable();
+        int lo = 0, hi = table.Count;
+        while (lo < hi)
+        {
+            var mid = lo + (hi - lo) / 2;
+            var row = table[mid];
+            if (cp < row.Lo) hi = mid;
+            else if (cp > row.Hi) lo = mid + 1;
+            else return row.Class;
+        }
+        return EastAsianWidth.N;
+    }
+
     private static BidiStrong BidiStrongOf(int cp)
     {
         var table = BidiClassTable();
@@ -1768,6 +1879,7 @@ public static partial class Security
             ["StandardizedVariants.txt"] = "f55100b2fb11d3d75a37b8c1ab752192dbd1c4b12328c5ec6b38e3807c0ca597",
             ["emoji-variation-sequences.txt"] = "bb3d09ef03f206012c7532dd52dc0a21c9efddba0135ea4cf0d9201b8b9bba7e",
             ["DerivedBidiClass.txt"] = "4867b4b7f0731ed1bfcd34cc6251211ff1542541fce0734b6fbda139ee80b3a4",
+            ["EastAsianWidth.txt"] = "ea7ce50f3444a050333448dffef1cadd9325af55cbb764b4a2280faf52170a33",
             ["UnicodeData.txt"] = "2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c",
             ["CompositionExclusions.txt"] = "2f239196ef3b5b61db5cc476e9bd80f534d15aa1b74e1be1dea5d042a344c85f",
             ["DerivedCoreProperties.txt"] = "24c7fed1195c482faaefd5c1e7eb821c5ee1fb6de07ecdbaa64b56a99da22c08",
