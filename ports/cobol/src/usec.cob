@@ -280,6 +280,23 @@ WORKING-STORAGE SECTION.
 01 IFD-CUR-CP PIC 9(9) COMP-5 VALUE 0.
 01 IFD-CP-ALLOWED PIC 9 VALUE 0.
 01 IFD-HEAD-ALLOWED PIC 9 VALUE 0.
+*> ── width-class-confusion (F) East Asian Width fold state ─────────────
+*> UAX #11: a Fullwidth (EAW = F) or Halfwidth (EAW = H) codepoint whose NFKD
+*> head carries a different width class is a compatibility-fold homograph —
+*> ＡＤＭＩＮ folding to ADMIN past an ASCII whitelist. The detector needs only
+*> membership, not the full class: an F codepoint folds exactly when its head
+*> is not F. WCC-CLASS 1 is FullwidthFold, 2 is HalfwidthFold; Fullwidth takes
+*> priority. WCC-POS is the fold position, 0-indexed.
+01 WCC-CLASS PIC 9 VALUE 0.
+01 WCC-POS PIC 9(9) COMP-5 VALUE 0.
+01 WCC-IDX PIC 9(5) COMP-5 VALUE 0.
+01 WCC-CUR-CP PIC 9(9) COMP-5 VALUE 0.
+01 WCC-CP-WIDE PIC 9 VALUE 0.
+01 WCC-HEAD-WIDE PIC 9 VALUE 0.
+01 WCC-FULL-POS PIC 9(9) COMP-5 VALUE 0.
+01 WCC-FULL-DONE PIC 9 VALUE 0.
+01 WCC-HALF-POS PIC 9(9) COMP-5 VALUE 0.
+01 WCC-HALF-DONE PIC 9 VALUE 0.
 *> ── admissibility-form-drift (X) whole-string admissibility scan state ─
 *> The sole sub-threat is AdmissibilityFormDrift (AFD-CLASS 1): the UAX #31
 *> whole-string default-identifier ∧ UTS #39 Allowed predicate evaluated on
@@ -519,7 +536,11 @@ MAIN.
                                                                 IF OP-NAME = "source-display-divergence"
                                                                     PERFORM SCAN-SOURCE-DISPLAY-DIVERGENCE
                                                                 ELSE
-                                                                    PERFORM SCAN-CORE
+                                                                    IF OP-NAME = "width-class-confusion"
+                                                                        PERFORM SCAN-WIDTH-CLASS-CONFUSION
+                                                                    ELSE
+                                                                        PERFORM SCAN-CORE
+                                                                    END-IF
                                                                 END-IF
                                                             END-IF
                                                         END-IF
@@ -2680,6 +2701,113 @@ IFD-EMIT-ONE.
     MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
     MOVE FUNCTION TRIM(POS-NUM) TO FINDING-POS(FINDING-COUNT).
 
+SCAN-WIDTH-CLASS-CONFUSION.
+*> UAX #11 East Asian Width class confusion. A Fullwidth (EAW = F) or Halfwidth
+*> (EAW = H) codepoint whose NFKD head carries a different width class is a
+*> compatibility-fold homograph: U+FF21 'Ａ' (F) folds to U+0041 'A' (Na), and
+*> U+FF71 'ｱ' (H) folds to U+30A2 'ア' (W). The two-system bypass is a
+*> validator that whitelists ASCII rejecting Ａ while a downstream NFKC step
+*> folds it to plain A, so ＡＤＭＩＮ claims the username ADMIN.
+*>
+*> Only membership is needed, not the full class: an F codepoint folds exactly
+*> when its NFKD head is not F, and likewise for H. Both passes run so that a
+*> Fullwidth fold takes priority over a Halfwidth one wherever each occurs,
+*> matching the reference's sub-threat order. Hangul syllables decompose to
+*> jamos that are still Wide, so pure Hangul stays clear.
+    MOVE 0 TO WCC-CLASS WCC-POS
+    MOVE 0 TO WCC-FULL-DONE WCC-HALF-DONE
+    PERFORM VARYING WCC-IDX FROM 1 BY 1 UNTIL WCC-IDX > CP-COUNT
+        MOVE CP(WCC-IDX) TO WCC-CUR-CP
+        MOVE WCC-CUR-CP TO LOOKUP-CP
+        PERFORM IS-EAW-FULLWIDTH
+        MOVE TABLE-FLAG TO WCC-CP-WIDE
+        IF WCC-CP-WIDE = 1 AND WCC-FULL-DONE = 0
+            PERFORM WCC-NFKD-HEAD-FULLWIDTH
+            IF WCC-HEAD-WIDE = 0
+                COMPUTE WCC-FULL-POS = WCC-IDX - 1
+                MOVE 1 TO WCC-FULL-DONE
+            END-IF
+        END-IF
+        MOVE WCC-CUR-CP TO LOOKUP-CP
+        PERFORM IS-EAW-HALFWIDTH
+        MOVE TABLE-FLAG TO WCC-CP-WIDE
+        IF WCC-CP-WIDE = 1 AND WCC-HALF-DONE = 0
+            PERFORM WCC-NFKD-HEAD-HALFWIDTH
+            IF WCC-HEAD-WIDE = 0
+                COMPUTE WCC-HALF-POS = WCC-IDX - 1
+                MOVE 1 TO WCC-HALF-DONE
+            END-IF
+        END-IF
+    END-PERFORM
+    IF WCC-FULL-DONE = 1
+        MOVE 1 TO WCC-CLASS
+        MOVE WCC-FULL-POS TO WCC-POS
+    ELSE
+        IF WCC-HALF-DONE = 1
+            MOVE 2 TO WCC-CLASS
+            MOVE WCC-HALF-POS TO WCC-POS
+        END-IF
+    END-IF
+    PERFORM WCC-EMIT.
+
+WCC-NFKD-HEAD-FULLWIDTH.
+*> Fullwidth membership of the first codepoint of WCC-CUR-CP's NFKD form, or of
+*> WCC-CUR-CP itself when the decomposition is empty (defensive — the
+*> compatibility decompose is total). Builds the NFKD run into the shared NFD
+*> scratch and canonically reorders it before reading the head, exactly as the
+*> identifier-form-drift head lookup does.
+    MOVE 0 TO NFD-COUNT
+    MOVE WCC-CUR-CP TO CUR-CP
+    PERFORM COMPAT-DECOMPOSE-ONE
+    PERFORM REORDER-NFD
+    IF NFD-COUNT = 0
+        MOVE WCC-CUR-CP TO LOOKUP-CP
+    ELSE
+        MOVE NFD-CP(1) TO LOOKUP-CP
+    END-IF
+    PERFORM IS-EAW-FULLWIDTH
+    MOVE TABLE-FLAG TO WCC-HEAD-WIDE.
+
+WCC-NFKD-HEAD-HALFWIDTH.
+*> Halfwidth membership of the NFKD head, mirroring WCC-NFKD-HEAD-FULLWIDTH.
+    MOVE 0 TO NFD-COUNT
+    MOVE WCC-CUR-CP TO CUR-CP
+    PERFORM COMPAT-DECOMPOSE-ONE
+    PERFORM REORDER-NFD
+    IF NFD-COUNT = 0
+        MOVE WCC-CUR-CP TO LOOKUP-CP
+    ELSE
+        MOVE NFD-CP(1) TO LOOKUP-CP
+    END-IF
+    PERFORM IS-EAW-HALFWIDTH
+    MOVE TABLE-FLAG TO WCC-HEAD-WIDE.
+
+WCC-EMIT.
+*> Emit the reason code. WCC-CLASS 0 is clear, 1 is FullwidthFold, 2 is
+*> HalfwidthFold; WHEN OTHER is unreachable and signals a defect rather than
+*> silently falling through.
+    EVALUATE WCC-CLASS
+        WHEN 0
+            CONTINUE
+        WHEN 1
+            MOVE "unicode.security.F.width-class-confusion.FullwidthFold" TO TEMP-CODE
+            PERFORM WCC-EMIT-ONE
+        WHEN 2
+            MOVE "unicode.security.F.width-class-confusion.HalfwidthFold" TO TEMP-CODE
+            PERFORM WCC-EMIT-ONE
+        WHEN OTHER
+            DISPLAY "ERROR width-class-confusion unreachable classification "
+                FUNCTION TRIM(WCC-CLASS)
+            MOVE 1 TO RETURN-CODE
+    END-EVALUATE.
+
+WCC-EMIT-ONE.
+*> Single-position finding at the fold codepoint.
+    MOVE WCC-POS TO POS-NUM
+    ADD 1 TO FINDING-COUNT
+    MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
+    MOVE FUNCTION TRIM(POS-NUM) TO FINDING-POS(FINDING-COUNT).
+
 SCAN-ADMISSIBILITY-FORM-DRIFT.
 *> Cross-layer identifier-admissibility x form-drift detector. Byte-faithful
 *> transliteration of the verified Rust reference detect. The whole-string
@@ -3384,6 +3512,17 @@ APPLY-SCRIPT-FLAGS.
 IS-STRONG-RTL.
     MOVE 0 TO TABLE-FLAG
     COPY "src/generated/strong_rtl.cpy".
+
+IS-EAW-FULLWIDTH.
+*> East_Asian_Width = F. Absence from the table is the file's own @missing
+*> declaration of N over the whole codepoint space, not a fallback.
+    MOVE 0 TO TABLE-FLAG
+    COPY "src/generated/eaw_fullwidth.cpy".
+
+IS-EAW-HALFWIDTH.
+*> East_Asian_Width = H, the mirror of IS-EAW-FULLWIDTH.
+    MOVE 0 TO TABLE-FLAG
+    COPY "src/generated/eaw_halfwidth.cpy".
 
 IS-DEFAULT-IGNORABLE.
     MOVE 0 TO TABLE-FLAG

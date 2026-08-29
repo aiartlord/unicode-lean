@@ -275,7 +275,7 @@ Legend: `✓` implemented + vouched · `–` not implemented in that port.
 | StreamSafeViolation | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | LocaleCaseInversion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | CaseExpansionMismatch | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| WidthClassConfusion | ✓ | ✓ | – | ✓ | ✓ | ✓ | ✓ | ✓ | – | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | – |
+| WidthClassConfusion | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | NfcIdempotenceWitness | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | IdentifierFormDrift | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | AdmissibilityFormDrift | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -285,8 +285,7 @@ Legend: `✓` implemented + vouched · `–` not implemented in that port.
 | HashInputStability | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | AiWatermarkDetectability | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
-**Totals:** 429/432. Thirteen ports are 27/27; cpp, zig and cobol are 26/27,
-each missing WidthClassConfusion. Each ✓ is a native detector — the same
+**Totals:** 432/432. Every port is 27/27. Each ✓ is a native detector — the same
 algorithm as the Lean-proven Rust reference, not an output-equivalent
 substitute — with its own test suite green under that port's toolchain.
 
@@ -296,8 +295,16 @@ rejection sets regardless of what it implements, so a matrix derived from that
 enum reports cells that do not exist. WidthClassConfusion was exactly that
 case: declared everywhere, implemented nowhere, and reported here as 432/432
 until each port's own sub-threat names — FullwidthFold and HalfwidthFold —
-were searched for in source. It is now implemented in thirteen; the remaining
-three are written and awaiting a toolchain to build against.
+were searched for in source. The count is 432/432 again, and this time each
+cell was built and exercised under its own toolchain before being marked.
+
+Two ports' suites do not reach their own new detector — cpp's tests do not
+include the header, and cobol's fixture runner drives no width-class vectors —
+so in both the detector was additionally exercised by hand on U+FF21, U+FF71,
+ＡＤＭＩＮ, ASCII, precomposed Hangul, and a Halfwidth-then-Fullwidth input.
+That last one must report position 1 rather than 0, which is what distinguishes
+a correct sub-threat priority from one that merely fires. In cpp this caught a
+real compile error that the green suite had no way to reach.
 
 One further detail below full uniformity: cobol's HomoglyphConfusable uses a
 bounded target-skeleton iteration; deepening that bound is a refinement of an

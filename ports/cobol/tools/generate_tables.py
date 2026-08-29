@@ -57,6 +57,26 @@ def parse_bidi_ranges(path):
     return coalesce(ranges)
 
 
+def parse_eaw_ranges(path, wanted):
+    """East_Asian_Width ranges for the classes in `wanted`.
+
+    The width-class-confusion detector only needs membership, not the full
+    class: a Fullwidth codepoint folds exactly when its NFKD head is not
+    Fullwidth, so two membership tables (F and H) answer both questions. The
+    file's `@missing` line declares N over the whole space, so absence from a
+    table is the answer rather than a fallback.
+    """
+    ranges = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        body = strip_comment(line)
+        if not body or ";" not in body:
+            continue
+        left, klass, *_ = [part.strip() for part in body.split(";")]
+        if klass in wanted:
+            ranges.append(parse_range_token(left))
+    return coalesce(ranges)
+
+
 def parse_bidi_ltr_ranges(path):
     # Strong-LTR = Bidi_Class L, the mirror of the strong-RTL (R, AL) table.
     # RendererDivergence's mixed-direction probe needs both sides of the
@@ -625,6 +645,8 @@ def main():
     emit_script_flags(OUT / "script_flags.cpy", parse_script_ranges(DATA / "Scripts.txt"))
     emit_range_eval(OUT / "strong_rtl.cpy", parse_bidi_ranges(DATA / "DerivedBidiClass.txt"), "MOVE 1 TO TABLE-FLAG")
     emit_range_eval(OUT / "strong_ltr.cpy", parse_bidi_ltr_ranges(DATA / "DerivedBidiClass.txt"), "MOVE 1 TO TABLE-FLAG")
+    emit_range_eval(OUT / "eaw_fullwidth.cpy", parse_eaw_ranges(DATA / "EastAsianWidth.txt", {"F"}), "MOVE 1 TO TABLE-FLAG")
+    emit_range_eval(OUT / "eaw_halfwidth.cpy", parse_eaw_ranges(DATA / "EastAsianWidth.txt", {"H"}), "MOVE 1 TO TABLE-FLAG")
     emit_range_eval(
         OUT / "default_ignorable.cpy",
         parse_property_ranges(DATA / "DerivedCoreProperties.txt", {"Default_Ignorable_Code_Point"}),
