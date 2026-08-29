@@ -1,0 +1,628 @@
+{
+  "schema": 1,
+  "corpus": "supply-chain-text-attacks",
+  "cases": [
+    {
+      "name": "trojan-source-commenting-out",
+      "disposition": "hazard",
+      "expected_families": [
+        "source-display-divergence"
+      ],
+      "input": [
+        105,
+        102,
+        32,
+        40,
+        97,
+        99,
+        99,
+        101,
+        115,
+        115,
+        76,
+        101,
+        118,
+        101,
+        108,
+        32,
+        33,
+        61,
+        32,
+        34,
+        117,
+        115,
+        101,
+        114,
+        8238,
+        32,
+        8294,
+        47,
+        47,
+        32,
+        67,
+        104,
+        101,
+        99,
+        107,
+        32,
+        105,
+        102,
+        32,
+        97,
+        100,
+        109,
+        105,
+        110,
+        8297,
+        32,
+        8294,
+        34,
+        41,
+        32,
+        123
+      ],
+      "provenance": "CVE-2021-42574, Boucher and Anderson 2021, commenting-out variant. The bidi stack balances, so the divergence between rendered and lexical order is the signal, not stack imbalance."
+    },
+    {
+      "name": "trojan-source-stretched-string",
+      "disposition": "hazard",
+      "expected_families": [
+        "source-display-divergence"
+      ],
+      "input": [
+        99,
+        111,
+        110,
+        115,
+        116,
+        32,
+        97,
+        99,
+        99,
+        101,
+        115,
+        115,
+        32,
+        61,
+        32,
+        34,
+        8294,
+        32,
+        117,
+        115,
+        101,
+        114,
+        32,
+        8297,
+        32,
+        97,
+        100,
+        109,
+        105,
+        110,
+        34,
+        59
+      ],
+      "provenance": "CVE-2021-42574 stretched-string variant. An isolate pair widens the apparent extent of a string literal."
+    },
+    {
+      "name": "trojan-source-early-return",
+      "disposition": "hazard",
+      "expected_families": [
+        "source-display-divergence"
+      ],
+      "input": [
+        105,
+        102,
+        32,
+        40,
+        105,
+        115,
+        65,
+        100,
+        109,
+        105,
+        110,
+        41,
+        32,
+        123,
+        32,
+        8237,
+        114,
+        101,
+        116,
+        117,
+        114,
+        110,
+        8236,
+        59,
+        32,
+        125
+      ],
+      "provenance": "CVE-2021-42574 early-return variant using LRO U+202D and PDF U+202C."
+    },
+    {
+      "name": "trojan-source-early-return-unbalanced",
+      "disposition": "hazard",
+      "expected_families": [
+        "bidi-control-balance",
+        "source-display-divergence"
+      ],
+      "input": [
+        105,
+        102,
+        32,
+        40,
+        97,
+        99,
+        99,
+        101,
+        115,
+        115,
+        95,
+        108,
+        101,
+        118,
+        101,
+        108,
+        32,
+        33,
+        61,
+        32,
+        34,
+        117,
+        115,
+        101,
+        114,
+        8238,
+        32,
+        97,
+        100,
+        109,
+        105,
+        110,
+        34,
+        41,
+        59
+      ],
+      "provenance": "CVE-2021-42574 early-return C variant. A lone RLO leaves the embedding stack unbalanced, so the balance checker fires as well."
+    },
+    {
+      "name": "homoglyph-identifier-cyrillic-o",
+      "disposition": "hazard",
+      "expected_families": [
+        "homoglyph-confusable",
+        "mixed-script-admissibility"
+      ],
+      "input": [
+        115,
+        99,
+        1086,
+        112,
+        101
+      ],
+      "provenance": "CVE-2021-42694. Cyrillic o U+043E against Latin o in the identifier `scope`."
+    },
+    {
+      "name": "homoglyph-identifier-dotless-i",
+      "disposition": "hazard",
+      "expected_families": [
+        "homoglyph-confusable"
+      ],
+      "input": [
+        97,
+        100,
+        109,
+        305,
+        110
+      ],
+      "provenance": "Dotless i U+0131 against Latin i in the identifier `admin`."
+    },
+    {
+      "name": "zero-width-in-identifier",
+      "disposition": "hazard",
+      "expected_families": [
+        "zero-width-payload"
+      ],
+      "input": [
+        105,
+        115,
+        95,
+        97,
+        100,
+        8203,
+        109,
+        105,
+        110
+      ],
+      "provenance": "Zero-width space U+200B splitting the identifier `is_admin`."
+    },
+    {
+      "name": "package-name-armenian-seh",
+      "disposition": "hazard",
+      "expected_families": [
+        "homoglyph-confusable",
+        "mixed-script-admissibility"
+      ],
+      "input": [
+        114,
+        101,
+        113,
+        1405,
+        101,
+        115,
+        116,
+        115
+      ],
+      "provenance": "Armenian seh U+057D against Latin u in the package name `requests`."
+    },
+    {
+      "name": "nfkc-fold-collision-fi-ligature",
+      "disposition": "hazard",
+      "expected_families": [
+        "identifier-form-drift"
+      ],
+      "input": [
+        64257,
+        108,
+        101
+      ],
+      "provenance": "The fi ligature U+FB01 folds to `fi` under NFKC, so `\ufb01le` and `file` collide after normalization."
+    },
+    {
+      "name": "normalization-expansion-arabic-ligature",
+      "disposition": "hazard",
+      "expected_families": [
+        "normalization-bomb"
+      ],
+      "input": [
+        65018
+      ],
+      "provenance": "U+FDFA expands to eighteen codepoints under NFKC, far past a bounded expansion factor."
+    },
+    {
+      "name": "domain-confusable-cyrillic-a",
+      "disposition": "hazard",
+      "expected_families": [
+        "homoglyph-confusable"
+      ],
+      "input": [
+        1072,
+        112,
+        112,
+        108,
+        101,
+        46,
+        99,
+        111,
+        109
+      ],
+      "provenance": "Cyrillic a U+0430 against Latin a in a registrable domain."
+    },
+    {
+      "name": "filename-direction-spoof",
+      "disposition": "hazard",
+      "expected_families": [
+        "filename-disguise"
+      ],
+      "input": [
+        105,
+        110,
+        118,
+        111,
+        105,
+        99,
+        101,
+        8238,
+        103,
+        110,
+        112,
+        46,
+        101,
+        120,
+        101
+      ],
+      "provenance": "RLO U+202E makes an executable render as `invoiceexe.png`."
+    },
+    {
+      "name": "soft-hyphen-in-import-path",
+      "disposition": "hazard",
+      "expected_families": [
+        "zero-width-payload"
+      ],
+      "input": [
+        105,
+        109,
+        112,
+        111,
+        114,
+        116,
+        32,
+        102,
+        111,
+        111,
+        173,
+        98,
+        97,
+        114
+      ],
+      "provenance": "Soft hyphen U+00AD is Default_Ignorable and invisible in an import path."
+    },
+    {
+      "name": "commit-message-unterminated-rlo",
+      "disposition": "hazard",
+      "expected_families": [
+        "bidi-control-balance"
+      ],
+      "input": [
+        102,
+        105,
+        120,
+        58,
+        32,
+        8238,
+        114,
+        101,
+        115,
+        117,
+        32,
+        111,
+        116,
+        32,
+        115,
+        115,
+        101,
+        99,
+        99,
+        97,
+        32,
+        116,
+        110,
+        97,
+        114,
+        103
+      ],
+      "provenance": "An unterminated RLO reorders the remainder of a log line."
+    },
+    {
+      "name": "tag-block-in-comment",
+      "disposition": "hazard",
+      "expected_families": [
+        "tag-block-payload"
+      ],
+      "input": [
+        47,
+        47,
+        32,
+        110,
+        111,
+        116,
+        101,
+        917505,
+        917569,
+        917570,
+        917631
+      ],
+      "provenance": "Tag characters U+E0001 and U+E0020..U+E007F carry an invisible payload inside a comment."
+    },
+    {
+      "name": "arabic-string-literal-balanced",
+      "disposition": "clear",
+      "expected_families": [],
+      "input": [
+        99,
+        111,
+        110,
+        115,
+        116,
+        32,
+        103,
+        114,
+        101,
+        101,
+        116,
+        105,
+        110,
+        103,
+        32,
+        61,
+        32,
+        34,
+        8235,
+        1605,
+        1585,
+        1581,
+        1576,
+        1575,
+        8236,
+        34,
+        59
+      ],
+      "provenance": "Balanced RLE/PDF around an Arabic literal renders exactly as written. Bidi is not an attack."
+    },
+    {
+      "name": "hebrew-comment",
+      "disposition": "clear",
+      "expected_families": [],
+      "input": [
+        47,
+        47,
+        32,
+        1513,
+        1500,
+        1493,
+        1501,
+        32,
+        1506,
+        1493,
+        1500,
+        1501
+      ],
+      "provenance": "A Hebrew comment in a Hebrew-language codebase."
+    },
+    {
+      "name": "cjk-identifier-single-script",
+      "disposition": "clear",
+      "expected_families": [],
+      "input": [
+        22793,
+        25968,
+        21517,
+        32,
+        61,
+        32,
+        49
+      ],
+      "provenance": "Single-script Japanese identifier. Single-script non-Latin text is not confusable."
+    },
+    {
+      "name": "korean-identifier-single-script",
+      "disposition": "clear",
+      "expected_families": [],
+      "input": [
+        48320,
+        49688,
+        47749,
+        32,
+        61,
+        32,
+        49
+      ],
+      "provenance": "Single-script Korean identifier."
+    },
+    {
+      "name": "legitimate-diacritics-and-casing",
+      "disposition": "clear",
+      "expected_families": [],
+      "input": [
+        115,
+        116,
+        114,
+        97,
+        223,
+        101,
+        32,
+        304,
+        115,
+        116,
+        97,
+        110,
+        98,
+        117,
+        108,
+        32,
+        78,
+        103,
+        117,
+        121,
+        7877,
+        110
+      ],
+      "provenance": "German eszett, Turkish dotted capital I, and Vietnamese stacked diacritics are ordinary text."
+    },
+    {
+      "name": "emoji-zwj-family-sequence",
+      "disposition": "clear",
+      "expected_families": [],
+      "input": [
+        128104,
+        8205,
+        128105,
+        8205,
+        128103
+      ],
+      "provenance": "ZWJ is load-bearing in emoji. A registered family sequence must pass."
+    },
+    {
+      "name": "devanagari-orthographic-zwnj",
+      "disposition": "clear",
+      "expected_families": [],
+      "input": [
+        2325,
+        2381,
+        8204,
+        2359
+      ],
+      "provenance": "ZWNJ U+200C after the Virama U+094D suppresses a Devanagari conjunct. RFC 5892 A.1 sanctions it by the Virama rule; it is required for correct rendering, not a covert channel."
+    },
+    {
+      "name": "persian-orthographic-zwnj",
+      "disposition": "clear",
+      "expected_families": [],
+      "input": [
+        1605,
+        1740,
+        8204,
+        1585,
+        1608,
+        1605
+      ],
+      "provenance": "ZWNJ between a dual-joining Farsi yeh U+06CC and a right-joining reh U+0631 writes a Persian word boundary inside a cursive run. RFC 5892 A.1 sanctions it by the joining-type rule."
+    },
+    {
+      "name": "pure-ascii-source",
+      "disposition": "clear",
+      "expected_families": [],
+      "input": [
+        100,
+        101,
+        102,
+        32,
+        116,
+        111,
+        116,
+        97,
+        108,
+        40,
+        105,
+        116,
+        101,
+        109,
+        115,
+        41,
+        58,
+        10,
+        32,
+        32,
+        32,
+        32,
+        114,
+        101,
+        116,
+        117,
+        114,
+        110,
+        32,
+        115,
+        117,
+        109,
+        40,
+        105,
+        116,
+        101,
+        109,
+        115,
+        41,
+        10
+      ],
+      "provenance": "Pure ASCII source. Zero findings, and it should be fast."
+    },
+    {
+      "name": "mathematical-notation",
+      "disposition": "clear",
+      "expected_families": [],
+      "input": [
+        948,
+        32,
+        61,
+        32,
+        945,
+        32,
+        8722,
+        32,
+        946
+      ],
+      "provenance": "U+2212 MINUS SIGN with Greek variables is legitimate technical text."
+    }
+  ]
+}
