@@ -160,10 +160,16 @@ def rejectionSet : Level → List Family
     --
     --   NormalizationBomb — ratio-based NfdHighExpansion /
     --     NfkdHighExpansion fire on legitimate Greek
-    --     polytonic text.  The precise SingleCpBlowup sub-
-    --     threat (FDFA 1→18) is backstopped by
-    --     IdentifierFormDrift since FDFA is Restricted-Allowed
-    --     in identifier-status terms.
+    --     polytonic text.  Dropping the family also drops its
+    --     precise SingleCpBlowup sub-threat, so a bare
+    --     expansion carrier such as U+FDFA (1→18 under NFKD)
+    --     is admitted at this level.  No other family in the
+    --     set classifies it: measured on U+FDFA alone, the
+    --     only detector that fires is RtlInjection, and only
+    --     because the codepoint is Arabic.  Closing that gap
+    --     needs admission relevance to be decided per
+    --     sub-threat rather than per family, which the
+    --     family-granular rejection set cannot express.
     --   RtlInjection — StrongRTLInLTR / FieldTakeover fire on
     --     legitimate Hebrew / Arabic UI strings (the detector
     --     assumes an LTR-declared field).  Callers handling

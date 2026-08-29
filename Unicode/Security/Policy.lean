@@ -209,7 +209,15 @@ def policyOfProfile : Profile → ProfilePolicy
   | .username      => ⟨.moderate,    .nonCrypto, true⟩
   | .displayName   => ⟨.minimal,     .nonCrypto, true⟩
   | .chatMessage   => ⟨.minimal,     .nonCrypto, true⟩
-  | .sourceCode    => ⟨.restrictive, .nonCrypto, false⟩
+  -- Source files legitimately carry right-to-left string literals, comments
+  -- written in Hebrew or Arabic, and emoji. `restrictive` admits
+  -- `rtlInjection`, whose contract treats its input as a declared-LTR field,
+  -- so under it an ordinary Hebrew comment is rejected. `moderate` retains
+  -- every detector that catches the Trojan Source class —
+  -- `bidiControlBalance`, `sourceDisplayDivergence`, `confusableBidiCompound`,
+  -- `zeroWidthPayload` — while dropping the field-direction assumption a
+  -- source file does not satisfy.
+  | .sourceCode    => ⟨.moderate,    .nonCrypto, false⟩
   | .opaqueSecret  => ⟨.minimal,     .hashInput, false⟩
   | .binaryBlob    => ⟨.minimal,     .nonCrypto, false⟩
 

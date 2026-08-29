@@ -305,8 +305,16 @@ pub fn policy_of_profile(profile: Profile) -> ProfilePolicy {
             crypto_context: CryptoContext::NonCrypto,
             quarantine: true,
         },
+        // Source files legitimately carry right-to-left string literals,
+        // comments written in Hebrew or Arabic, and emoji. Restrictive admits
+        // RtlInjection, whose contract treats its input as a declared-LTR
+        // field, so under it an ordinary Hebrew comment is rejected. Moderate
+        // retains every detector that catches the Trojan Source class —
+        // BidiControlBalance, SourceDisplayDivergence, ConfusableBidiCompound,
+        // ZeroWidthPayload — while dropping the field-direction assumption a
+        // source file does not satisfy.
         Profile::SourceCode => ProfilePolicy {
-            level: PolicyLevel::Restrictive,
+            level: PolicyLevel::Moderate,
             crypto_context: CryptoContext::NonCrypto,
             quarantine: false,
         },
