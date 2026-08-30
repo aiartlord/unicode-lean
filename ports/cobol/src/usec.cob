@@ -325,6 +325,38 @@ WORKING-STORAGE SECTION.
 *> for two or more. No position is reported at this layer (the per-family
 *> verdicts carry them), matching the verified reference.
 01 SDD-FIRED-COUNT PIC 9(4) COMP-5 VALUE 0.
+*> The aggregate runs the constituent detectors and reads FINDING-COUNT to see
+*> which fired. The detectors append at FINDING-COUNT + 1, so the count is saved
+*> on entry and each constituent's findings land past it and are truncated back,
+*> leaving the caller's own findings untouched. Zeroing the count instead would
+*> make the constituents overwrite them in place.
+01 SDD-SAVED-COUNT PIC 9(4) COMP-5 VALUE 0.
+
+*> Scratch for the form-layer detectors. ONE-POS carries the single implicated
+*> index for findings that localise one position, matching the reference, which
+*> reports the first divergence rather than the whole span.
+01 ONE-POS PIC 9(9) COMP-5 VALUE 0.
+*> locale-case-inversion: the locale under test, the 0-based divergence index
+*> (LCI-FOUND = 0 when none), and the default-locale lowercase mapping held for
+*> comparison against the locale-specific one.
+01 LCI-LOCALE PIC 9 VALUE 0.
+01 LCI-FOUND PIC 9 VALUE 0.
+01 LCI-POS PIC 9(9) COMP-5 VALUE 0.
+01 LCI-DEF-LEN PIC 9(4) COMP-5 VALUE 0.
+01 LCI-DEF-TAB.
+   05 LCI-DEF-CP PIC 9(9) COMP-5 OCCURS 3 TIMES.
+01 LCI-CMP-IDX PIC 9(4) COMP-5 VALUE 0.
+01 LCI-DIFF PIC 9 VALUE 0.
+*> nfc-idempotence-witness: the first index at which the input differs from its
+*> normalized form, or 0 when it does not.
+01 NFCW-FOUND PIC 9 VALUE 0.
+01 NFCW-POS PIC 9(9) COMP-5 VALUE 0.
+01 NFCW-COMMON PIC 9(4) COMP-5 VALUE 0.
+*> normalization-bomb: per-codepoint compatibility expansion length and the
+*> whole-sequence expansion ratios, in hundredths.
+01 NB-EXPAND PIC 9(9) COMP-5 VALUE 0.
+01 NB-RATIO PIC 9(9) COMP-5 VALUE 0.
+01 NB-FOUND PIC 9 VALUE 0.
 01 SDD-TAG PIC X(20) VALUE SPACES.
 *> ── skin-tone-variation-forgery (I) modifier/VS-abuse ladder state ────
 *> The priority-ordered classification (0 clear, 1 StackedSkinTones,
@@ -796,7 +828,18 @@ SCAN-CORE.
     PERFORM DETECT-MIXED-SCRIPT
     PERFORM DETECT-RTL
     PERFORM DETECT-CONFUSABLE-BIDI
-    PERFORM DETECT-COVERT-DISPLAY.
+    PERFORM DETECT-COVERT-DISPLAY
+    PERFORM SCAN-EMOJI-ZWJ
+    PERFORM SCAN-SKIN-TONE-VARIATION-FORGERY
+    PERFORM SCAN-FILENAME-DISGUISE
+    PERFORM SCAN-RENDERER-DIVERGENCE
+    PERFORM SCAN-STREAM-SAFE
+    PERFORM SCAN-CASE-EXPANSION-MISMATCH
+    PERFORM SCAN-IDENTIFIER-FORM-DRIFT
+    PERFORM SCAN-ADMISSIBILITY-FORM-DRIFT
+    PERFORM SCAN-FORMS
+    PERFORM SCAN-WIDTH-CLASS-CONFUSION
+    PERFORM SCAN-SOURCE-DISPLAY-DIVERGENCE.
 
 DETECT-TAG-BLOCK.
     MOVE 0 TO TAG-COUNT
@@ -1168,39 +1211,164 @@ DETECT-COVERT-DISPLAY.
     END-IF.
 
 SCAN-FORMS.
+*> The three form-layer detectors the reference dispatches on plain input, in
+*> its order: normalization-bomb, then locale-case-inversion, then
+*> nfc-idempotence-witness. Each walks the whole input rather than testing the
+*> leading codepoint, and each reports the first divergence, which is what the
+*> reference localises.
+    PERFORM SCAN-NORMALIZATION-BOMB
+    PERFORM SCAN-LOCALE-CASE-INVERSION
+    PERFORM SCAN-NFC-IDEMPOTENCE-WITNESS.
+
+SCAN-NORMALIZATION-BOMB.
+*> UAX #15 expansion hazards. A single codepoint whose compatibility
+*> decomposition exceeds MAX-NFKD-PER-CP (8) is reported at its own index;
+*> otherwise the whole-sequence ratios are tested, NFKD above 4x then NFD above
+*> 3x, both strict so pure Hangul at exactly 3x stays clear. The ratio hazards
+*> implicate the input as a unit and carry no position.
+    MOVE 0 TO NB-FOUND
     IF CP-COUNT > 0
-        IF CP(1) = 73 OR CP(1) = 304
-            MOVE "unicode.security.F.locale-case-inversion.TurkishCaseDivergence" TO TEMP-CODE
-            PERFORM ADD-ALL-POS-FINDING
-        ELSE
-            IF CP(1) = 74 AND CP-COUNT > 1 AND CP(2) = 768
-                MOVE "unicode.security.F.locale-case-inversion.LithuanianCaseDivergence" TO TEMP-CODE
-                PERFORM ADD-ALL-POS-FINDING
+        PERFORM VARYING IDX FROM 1 BY 1
+                UNTIL IDX > CP-COUNT OR NB-FOUND = 1
+            MOVE 0 TO NFD-COUNT
+            MOVE CP(IDX) TO CUR-CP
+            PERFORM COMPAT-DECOMPOSE-ONE
+            IF NFD-COUNT > 8
+                MOVE 1 TO NB-FOUND
+                COMPUTE ONE-POS = IDX - 1
+                MOVE "unicode.security.F.normalization-bomb.SingleCpBlowup"
+                    TO TEMP-CODE
+                PERFORM ADD-ONE-POS-FINDING
+            END-IF
+        END-PERFORM
+        IF NB-FOUND = 0
+            PERFORM DECOMPOSE-INPUT-COMPAT
+            COMPUTE NB-RATIO = NFD-COUNT * 100 / CP-COUNT
+            IF NB-RATIO > 400
+                MOVE 1 TO NB-FOUND
+                MOVE "unicode.security.F.normalization-bomb.NfkdHighExpansion"
+                    TO TEMP-CODE
+                PERFORM ADD-NO-POS-FINDING
             END-IF
         END-IF
-        IF CP-COUNT > 1 AND CP(1) = 101 AND CP(2) = 769
-            MOVE "unicode.security.F.nfc-idempotence-witness.NonNfcForm" TO TEMP-CODE
-            PERFORM ADD-ALL-POS-FINDING
-        ELSE
-            IF CP(1) = 64257
-                MOVE "unicode.security.F.nfc-idempotence-witness.NonNfkcCompatForm" TO TEMP-CODE
-                PERFORM ADD-ALL-POS-FINDING
+        IF NB-FOUND = 0
+            PERFORM DECOMPOSE-INPUT
+            COMPUTE NB-RATIO = NFD-COUNT * 100 / CP-COUNT
+            IF NB-RATIO > 300
+                MOVE "unicode.security.F.normalization-bomb.NfdHighExpansion"
+                    TO TEMP-CODE
+                PERFORM ADD-NO-POS-FINDING
             END-IF
         END-IF
-        IF CP(1) = 65018
-            MOVE "unicode.security.F.normalization-bomb.SingleCpBlowup" TO TEMP-CODE
-            PERFORM ADD-ALL-POS-FINDING
+    END-IF.
+
+SCAN-LOCALE-CASE-INVERSION.
+*> An input whose lowercase fold inverts across locales. Turkish is tested
+*> first and Lithuanian only when Turkish finds nothing, matching the
+*> reference's priority. The comparison is the real one: at each position the
+*> context-sensitive default lowercase mapping is computed and held, then the
+*> locale mapping is computed over the same context, and the first position at
+*> which they differ is the divergence.
+    MOVE 1 TO LCI-LOCALE
+    PERFORM LCI-FIND-DIVERGENCE
+    IF LCI-FOUND = 1
+        MOVE LCI-POS TO ONE-POS
+        MOVE "unicode.security.F.locale-case-inversion.TurkishCaseDivergence"
+            TO TEMP-CODE
+        PERFORM ADD-ONE-POS-FINDING
+    ELSE
+        MOVE 3 TO LCI-LOCALE
+        PERFORM LCI-FIND-DIVERGENCE
+        IF LCI-FOUND = 1
+            MOVE LCI-POS TO ONE-POS
+            MOVE
+              "unicode.security.F.locale-case-inversion.LithuanianCaseDivergence"
+                TO TEMP-CODE
+            PERFORM ADD-ONE-POS-FINDING
+        END-IF
+    END-IF.
+
+LCI-FIND-DIVERGENCE.
+*> First 0-based index whose default lowercase differs from the LCI-LOCALE
+*> lowercase, or LCI-FOUND = 0 when none does. COMPUTE-CASE-CONTEXT sets the
+*> UAX #21 context flags for CE-IDX, which both mappings then read, so the two
+*> differ only in the locale discriminant.
+    MOVE 0 TO LCI-FOUND
+    MOVE 0 TO LCI-POS
+    PERFORM VARYING CE-IDX FROM 1 BY 1
+            UNTIL CE-IDX > CP-COUNT OR LCI-FOUND = 1
+        PERFORM COMPUTE-CASE-CONTEXT
+        MOVE 0 TO SC-LOCALE
+        PERFORM LOWER-CODEPOINT
+        MOVE LC-LEN TO LCI-DEF-LEN
+        PERFORM VARYING LCI-CMP-IDX FROM 1 BY 1
+                UNTIL LCI-CMP-IDX > LC-LEN OR LCI-CMP-IDX > 3
+            MOVE LC-CP(LCI-CMP-IDX) TO LCI-DEF-CP(LCI-CMP-IDX)
+        END-PERFORM
+        MOVE LCI-LOCALE TO SC-LOCALE
+        PERFORM LOWER-CODEPOINT
+        MOVE 0 TO LCI-DIFF
+        IF LC-LEN NOT = LCI-DEF-LEN
+            MOVE 1 TO LCI-DIFF
         ELSE
-            IF CP(1) = 65019
-                MOVE "unicode.security.F.normalization-bomb.NfkdHighExpansion" TO TEMP-CODE
-                PERFORM ADD-ALL-POS-FINDING
-            ELSE
-                IF CP(1) = 8066
-                    MOVE "unicode.security.F.normalization-bomb.NfdHighExpansion" TO TEMP-CODE
-                    PERFORM ADD-ALL-POS-FINDING
+            PERFORM VARYING LCI-CMP-IDX FROM 1 BY 1
+                    UNTIL LCI-CMP-IDX > LC-LEN OR LCI-CMP-IDX > 3
+                IF LC-CP(LCI-CMP-IDX) NOT = LCI-DEF-CP(LCI-CMP-IDX)
+                    MOVE 1 TO LCI-DIFF
                 END-IF
-            END-IF
+            END-PERFORM
         END-IF
+        IF LCI-DIFF = 1
+            MOVE 1 TO LCI-FOUND
+            COMPUTE LCI-POS = CE-IDX - 1
+        END-IF
+    END-PERFORM
+    MOVE 0 TO SC-LOCALE.
+
+SCAN-NFC-IDEMPOTENCE-WITNESS.
+*> An input that is not already in canonical form, or not in compatibility
+*> form. NFC divergence takes priority over NFKC. The position reported is the
+*> first index at which the input and its normalization differ, or the length
+*> of the shorter of the two when one is a prefix of the other.
+    MOVE 0 TO NFCW-FOUND
+    PERFORM COMPUTE-NFC
+    PERFORM NFCW-FIRST-DIVERGENCE
+    IF NFCW-FOUND = 1
+        MOVE NFCW-POS TO ONE-POS
+        MOVE "unicode.security.F.nfc-idempotence-witness.NonNfcForm"
+            TO TEMP-CODE
+        PERFORM ADD-ONE-POS-FINDING
+    ELSE
+        PERFORM COMPUTE-NFKC
+        PERFORM NFCW-FIRST-DIVERGENCE
+        IF NFCW-FOUND = 1
+            MOVE NFCW-POS TO ONE-POS
+            MOVE
+              "unicode.security.F.nfc-idempotence-witness.NonNfkcCompatForm"
+                TO TEMP-CODE
+            PERFORM ADD-ONE-POS-FINDING
+        END-IF
+    END-IF.
+
+NFCW-FIRST-DIVERGENCE.
+*> Compare CP(1..CP-COUNT) against the normalized NFC-CP(1..NFC-COUNT) most
+*> recently computed. Sets NFCW-FOUND and the 0-based NFCW-POS.
+    MOVE 0 TO NFCW-FOUND
+    MOVE 0 TO NFCW-POS
+    MOVE CP-COUNT TO NFCW-COMMON
+    IF NFC-COUNT < NFCW-COMMON
+        MOVE NFC-COUNT TO NFCW-COMMON
+    END-IF
+    PERFORM VARYING IDX FROM 1 BY 1
+            UNTIL IDX > NFCW-COMMON OR NFCW-FOUND = 1
+        IF CP(IDX) NOT = NFC-CP(IDX)
+            MOVE 1 TO NFCW-FOUND
+            COMPUTE NFCW-POS = IDX - 1
+        END-IF
+    END-PERFORM
+    IF NFCW-FOUND = 0 AND CP-COUNT NOT = NFC-COUNT
+        MOVE 1 TO NFCW-FOUND
+        MOVE NFCW-COMMON TO NFCW-POS
     END-IF.
 
 SCAN-BIP39.
@@ -2803,10 +2971,24 @@ WCC-EMIT.
 
 WCC-EMIT-ONE.
 *> Single-position finding at the fold codepoint.
-    MOVE WCC-POS TO POS-NUM
+    MOVE WCC-POS TO ONE-POS
+    PERFORM ADD-ONE-POS-FINDING.
+
+ADD-ONE-POS-FINDING.
+*> A finding that localises exactly one position, given in ONE-POS. The form
+*> detectors report the first divergence rather than the whole span, which is
+*> what the reference localises.
+    MOVE ONE-POS TO POS-NUM
     ADD 1 TO FINDING-COUNT
     MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
     MOVE FUNCTION TRIM(POS-NUM) TO FINDING-POS(FINDING-COUNT).
+
+ADD-NO-POS-FINDING.
+*> A finding that localises nothing: the whole-sequence normalization ratios
+*> implicate the input as a unit, not any one codepoint.
+    ADD 1 TO FINDING-COUNT
+    MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
+    MOVE SPACES TO FINDING-POS(FINDING-COUNT).
 
 SCAN-ADMISSIBILITY-FORM-DRIFT.
 *> Cross-layer identifier-admissibility x form-drift detector. Byte-faithful
@@ -2943,37 +3125,43 @@ SCAN-SOURCE-DISPLAY-DIVERGENCE.
 *> reported at this layer.
     MOVE 0 TO SDD-FIRED-COUNT
     MOVE SPACES TO SDD-TAG
-    MOVE 0 TO FINDING-COUNT
+    MOVE FINDING-COUNT TO SDD-SAVED-COUNT
     PERFORM DETECT-TAG-BLOCK
-    IF FINDING-COUNT > 0
+    IF FINDING-COUNT > SDD-SAVED-COUNT
         ADD 1 TO SDD-FIRED-COUNT
         MOVE "TagBlock" TO SDD-TAG
     END-IF
-    MOVE 0 TO FINDING-COUNT
+    MOVE SDD-SAVED-COUNT TO FINDING-COUNT
     PERFORM DETECT-VARIATION
-    IF FINDING-COUNT > 0
+    IF FINDING-COUNT > SDD-SAVED-COUNT
         ADD 1 TO SDD-FIRED-COUNT
         MOVE "VariationSelector" TO SDD-TAG
     END-IF
-    MOVE 0 TO FINDING-COUNT
+    MOVE SDD-SAVED-COUNT TO FINDING-COUNT
     PERFORM DETECT-ZERO-WIDTH
-    IF FINDING-COUNT > 0
+    IF FINDING-COUNT > SDD-SAVED-COUNT
         ADD 1 TO SDD-FIRED-COUNT
         MOVE "ZeroWidth" TO SDD-TAG
     END-IF
-    MOVE 0 TO FINDING-COUNT
+    MOVE SDD-SAVED-COUNT TO FINDING-COUNT
     PERFORM DETECT-BIDI
-    IF FINDING-COUNT > 0
+    IF FINDING-COUNT > SDD-SAVED-COUNT
         ADD 1 TO SDD-FIRED-COUNT
         MOVE "BidiControl" TO SDD-TAG
     END-IF
-    MOVE 0 TO FINDING-COUNT
+    MOVE SDD-SAVED-COUNT TO FINDING-COUNT
     PERFORM DETECT-HOMOGLYPH
-    IF FINDING-COUNT > 0
+*> The reference runs one homoglyph detector whose priority ladder ends in a
+*> CrossScriptMix branch, so a cross-script identifier fires it. This port
+*> splits that ladder and reports the script mix under mixed-script-
+*> admissibility, so the constituent consults both or it misses every input
+*> whose only homoglyph signal is the script mix.
+    PERFORM DETECT-MIXED-SCRIPT
+    IF FINDING-COUNT > SDD-SAVED-COUNT
         ADD 1 TO SDD-FIRED-COUNT
         MOVE "IdentifierHomoglyph" TO SDD-TAG
     END-IF
-    MOVE 0 TO FINDING-COUNT
+    MOVE SDD-SAVED-COUNT TO FINDING-COUNT
     IF SDD-FIRED-COUNT >= 2
         MOVE "Compound" TO SDD-TAG
     END-IF
