@@ -354,6 +354,14 @@ dispatching too few families to disagree with it. This is a detection gap in the
 shipped ports, not a bookkeeping discrepancy: on inputs like U+1D400 the ports
 report a hazard, but not every hazard the proven layer identifies.
 
+`scripts/regenerate-verdict-contract.py --check` measures the gap over the whole
+fixture without writing to it. Eleven of the thirteen cases under-report against
+the reference, by one to four findings each; the two that agree are the ASCII
+case, where nothing fires, and the noncharacter case. No case over-reports. The
+`action` is unchanged in every one, which is why fifteen green test suites have
+never surfaced this: the ports agree with the fixture on the decision and differ
+on the evidence.
+
 The consequence for sequencing is that widening a port's scan toward the
 specification makes it stop matching the fixture. Wiring ten of the sixteen
 orphaned Haskell families compiles clean under `-Wall -Werror`, once the
