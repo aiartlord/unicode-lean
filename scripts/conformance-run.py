@@ -350,9 +350,13 @@ def section_proof() -> dict[str, object]:
         for source in (ROOT / "Unicode").rglob("*.lean"):
             if source.stat().st_mtime > stamp:
                 changed_since.append(str(source.relative_to(ROOT)))
+    log_dir = newest_dir.parent / "logs"
+    log_count = len(list(log_dir.glob("*.log"))) if log_dir.is_dir() else 0
     result["build"] = {
         "observed": True,
         "evidence": str(newest_dir.relative_to(ROOT)),
+        "logs": str(log_dir.relative_to(ROOT)) if log_count else None,
+        "log_count": log_count,
         "recorded_at": recorded_at,
         "planned": status.get("module_steps"),
         "recorded": len(modules),
@@ -446,6 +450,8 @@ def render(report: dict[str, object]) -> str:
     if build["observed"]:
         add(f"  build evidence       {build['evidence']}")
         add(f"  recorded at          {build.get('recorded_at') or 'unknown'}")
+        if build.get("log_count"):
+            add(f"  per-module logs      {build['log_count']} under {build['logs']}")
         add(f"  modules              {build['recorded']} recorded of {build['planned']} planned")
         add(f"  by status            {build['by_status']}")
         add(f"  complete             {build['complete']}")
