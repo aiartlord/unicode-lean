@@ -70,6 +70,9 @@
 
 #include "unicode_cpp/security/calculus.hpp"
 #include "unicode_cpp/security/identity/ucd.hpp"
+#include "unicode_cpp/security/identity/casing.hpp"
+#include "unicode_cpp/security/identity/emoji_zwj_integrity.hpp"
+#include "unicode_cpp/security/identity/skin_tone_variation_forgery.hpp"
 
 namespace unicode_cpp::security::homoglyph_confusable {
 
@@ -146,6 +149,15 @@ struct Database {
   std::unordered_map<std::uint32_t, std::vector<std::uint32_t>> confusables;
   std::vector<std::string> known_attack_targets;
   ucd::Tables tables;
+
+  // Auxiliary tables the scan path's remaining detectors require. They are
+  // loaded from the same directory as everything above and have no other
+  // source, so carrying them here is what lets `scan` reach the families that
+  // need them; `parse` leaves them empty because it is given text, not a
+  // directory, and no caller outside `load_from_dir` uses it.
+  identity::emoji_zwj_integrity::RgiTable rgi;
+  identity::skin_tone_variation_forgery::EmojiPropertyTable emoji_properties;
+  casing::CasingData casing_data;
 
   static Database parse(std::string_view confusables_text,
                         std::string_view targets_text, ucd::Tables tables);
@@ -278,7 +290,12 @@ inline Database Database::parse(std::string_view confusables_text,
 inline Database Database::load_from_dir(const std::filesystem::path &dir) {
   auto conf = detail::read_file(dir / "confusables.txt");
   auto targ = detail::read_file(dir / "KnownAttackTargets.txt");
-  return parse(conf, targ, ucd::Tables::load_from_dir(dir));
+  Database db = parse(conf, targ, ucd::Tables::load_from_dir(dir));
+  db.rgi = identity::emoji_zwj_integrity::RgiTable::load_from_dir(dir);
+  db.emoji_properties =
+      identity::skin_tone_variation_forgery::EmojiPropertyTable::load_from_dir(dir);
+  db.casing_data = casing::CasingData::load_from_dir(dir);
+  return db;
 }
 
 // True iff cp is a confusable source per UTS #39 §4 — it has a row in

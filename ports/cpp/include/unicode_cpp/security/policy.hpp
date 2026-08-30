@@ -27,6 +27,19 @@
 #include "unicode_cpp/security/covert/zero_width_payload.hpp"
 #include "unicode_cpp/security/display/rtl_injection.hpp"
 #include "unicode_cpp/security/identity/homoglyph_confusable.hpp"
+#include "unicode_cpp/security/identity/skin_tone_variation_forgery.hpp"
+#include "unicode_cpp/security/identity/emoji_zwj_integrity.hpp"
+#include "unicode_cpp/security/form/width_class_confusion.hpp"
+#include "unicode_cpp/security/form/stream_safe_violation.hpp"
+#include "unicode_cpp/security/form/normalization_bomb.hpp"
+#include "unicode_cpp/security/form/nfc_idempotence_witness.hpp"
+#include "unicode_cpp/security/form/locale_case_inversion.hpp"
+#include "unicode_cpp/security/form/case_expansion_mismatch.hpp"
+#include "unicode_cpp/security/display/source_display_divergence.hpp"
+#include "unicode_cpp/security/display/renderer_divergence.hpp"
+#include "unicode_cpp/security/display/filename_disguise.hpp"
+#include "unicode_cpp/security/boundary/identifier_form_drift.hpp"
+#include "unicode_cpp/security/boundary/admissibility_form_drift.hpp"
 #include "unicode_cpp/utf8.hpp"
 
 namespace unicode_cpp::security::policy {
@@ -608,6 +621,22 @@ inline void push_finding(std::vector<Finding> &findings, Family family,
   });
 }
 
+// Push the finding for any detector whose verdict carries a classification.
+// Every such classification exposes the same three accessors, and tag() yields
+// a string_view over storage the classification owns, so it is copied before
+// push_finding takes ownership of the finding.
+template <typename Classification>
+inline void push_classified(std::vector<Finding> &findings, Family family,
+                            const Classification &classification) {
+  if (classification.is_clear())
+    return;
+  const auto tag = classification.tag();
+  push_finding(findings, family, ClassificationKind::Hazard,
+               tag ? std::optional<std::string>{std::string{*tag}}
+                   : std::optional<std::string>{},
+               classification.positions);
+}
+
 inline std::vector<std::size_t> full_span_positions(std::size_t size) {
   std::vector<std::size_t> positions;
   positions.reserve(size);
@@ -873,6 +902,78 @@ scan_with_identity_database(Profile profile, Mode mode,
                            ClassificationKind::Hazard,
                            covert_display_result.sub,
                            covert_display_result.positions);
+    }
+
+    namespace ezwj = unicode_cpp::security::identity::emoji_zwj_integrity;
+    namespace stvf = unicode_cpp::security::identity::skin_tone_variation_forgery;
+    const std::vector<std::uint32_t> input_vec(input.begin(), input.end());
+
+    detail::push_classified(findings, Family::EmojiZwjIntegrity,
+                            ezwj::detect(identity_db->rgi, input).classify);
+    detail::push_classified(
+        findings, Family::SkinToneVariationForgery,
+        stvf::detect(identity_db->emoji_properties, input).classify);
+    detail::push_classified(findings, Family::FilenameDisguise,
+                            display::filename_disguise::detect(input).classify);
+    detail::push_classified(
+        findings, Family::RendererDivergence,
+        display::renderer_divergence::detect(identity_db->rgi,
+                                             identity_db->tables, input)
+            .classify);
+    detail::push_classified(
+        findings, Family::StreamSafeViolation,
+        form::stream_safe_violation::detect(identity_db->tables, input)
+            .classify);
+    detail::push_classified(
+        findings, Family::CaseExpansionMismatch,
+        form::case_expansion_mismatch::detect(identity_db->casing_data,
+                                              identity_db->tables, input_vec)
+            .classify);
+    detail::push_classified(
+        findings, Family::IdentifierFormDrift,
+        boundary::identifier_form_drift::detect(identity_db->tables, input)
+            .classify);
+    detail::push_classified(
+        findings, Family::AdmissibilityFormDrift,
+        boundary::admissibility_form_drift::detect(identity_db->tables, input)
+            .classify);
+
+    const auto bomb =
+        form::normalization_bomb::detect(identity_db->tables, input_vec);
+    if (bomb.sub) {
+      detail::push_finding(findings, Family::NormalizationBomb,
+                           ClassificationKind::Hazard, bomb.sub,
+                           bomb.positions);
+    }
+    const auto locale_case = form::locale_case_inversion::detect(
+        identity_db->casing_data, identity_db->tables, input_vec);
+    if (locale_case.sub) {
+      detail::push_finding(findings, Family::LocaleCaseInversion,
+                           ClassificationKind::Hazard, locale_case.sub,
+                           locale_case.positions);
+    }
+    const auto nfc_witness =
+        form::nfc_idempotence_witness::detect(identity_db->tables, input_vec);
+    if (nfc_witness.sub) {
+      detail::push_finding(findings, Family::NfcIdempotenceWitness,
+                           ClassificationKind::Hazard, nfc_witness.sub,
+                           nfc_witness.positions);
+    }
+    const auto width_class =
+        form::width_class_confusion::detect(identity_db->tables, input_vec);
+    if (width_class.sub) {
+      detail::push_finding(findings, Family::WidthClassConfusion,
+                           ClassificationKind::Hazard, width_class.sub,
+                           width_class.positions);
+    }
+
+    // SourceDisplayDivergence judges the input as a unit, so it localises
+    // nothing and carries an empty position list.
+    const auto source_display =
+        display::source_display_divergence::detect(*identity_db, input);
+    if (source_display.sub) {
+      detail::push_finding(findings, Family::SourceDisplayDivergence,
+                           ClassificationKind::Hazard, source_display.sub, {});
     }
   }
 
