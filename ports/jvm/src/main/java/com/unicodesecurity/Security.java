@@ -62,6 +62,17 @@ public final class Security {
     public static final String HASH_INPUT_STABILITY = "hash-input-stability";
     public static final String AI_WATERMARK_DETECTABILITY = "ai-watermark-detectability";
     public static final String STREAM_SAFE_VIOLATION = "stream-safe-violation";
+    public static final String SKIN_TONE_VARIATION_FORGERY = "skin-tone-variation-forgery";
+    public static final String FILENAME_DISGUISE = "filename-disguise";
+    public static final String RENDERER_DIVERGENCE = "renderer-divergence";
+    public static final String SOURCE_DISPLAY_DIVERGENCE = "source-display-divergence";
+    public static final String CASE_EXPANSION_MISMATCH = "case-expansion-mismatch";
+    public static final String IDENTIFIER_FORM_DRIFT = "identifier-form-drift";
+    public static final String ADMISSIBILITY_FORM_DRIFT = "admissibility-form-drift";
+    public static final String NORMALIZATION_BOMB = "normalization-bomb";
+    public static final String LOCALE_CASE_INVERSION = "locale-case-inversion";
+    public static final String NFC_IDEMPOTENCE_WITNESS = "nfc-idempotence-witness";
+    public static final String WIDTH_CLASS_CONFUSION = "width-class-confusion";
     private Family() {}
   }
 
@@ -200,6 +211,36 @@ public final class Security {
     if (confusableBidi != null) findings.add(confusableBidi);
     Finding covertDisplay = covertDisplayCompoundFinding(input);
     if (covertDisplay != null) findings.add(covertDisplay);
+    var emojiZwj = EmojiZwjIntegrity.detect(input).classify();
+    if (!emojiZwj.isClear()) findings.add(makeFinding(Family.EMOJI_ZWJ_INTEGRITY, emojiZwj.tag(), emojiZwj.positions()));
+    var skinTone = SkinToneVariationForgery.detect(input).classify();
+    if (!skinTone.isClear()) findings.add(makeFinding(Family.SKIN_TONE_VARIATION_FORGERY, skinTone.tag(), skinTone.positions()));
+    var filenameDisguise = FilenameDisguise.detect(input).classify();
+    if (!filenameDisguise.isClear()) findings.add(makeFinding(Family.FILENAME_DISGUISE, filenameDisguise.tag(), filenameDisguise.positions()));
+    var rendererDivergence = RendererDivergence.detect(input).classify();
+    if (!rendererDivergence.isClear()) findings.add(makeFinding(Family.RENDERER_DIVERGENCE, rendererDivergence.tag(), rendererDivergence.positions()));
+    var streamSafe = StreamSafeViolation.detect(input).classify();
+    if (!streamSafe.isClear()) findings.add(makeFinding(Family.STREAM_SAFE_VIOLATION, streamSafe.tag(), streamSafe.positions()));
+    var caseExpansion = CaseExpansionMismatch.detect(input).classify();
+    if (!caseExpansion.isClear()) findings.add(makeFinding(Family.CASE_EXPANSION_MISMATCH, caseExpansion.tag(), caseExpansion.positions()));
+    var identifierDrift = IdentifierFormDrift.detect(input).classify();
+    if (!identifierDrift.isClear()) findings.add(makeFinding(Family.IDENTIFIER_FORM_DRIFT, identifierDrift.tag(), identifierDrift.positions()));
+    var admissibilityDrift = AdmissibilityFormDrift.detect(input).classify();
+    if (!admissibilityDrift.isClear()) findings.add(makeFinding(Family.ADMISSIBILITY_FORM_DRIFT, admissibilityDrift.tag(), admissibilityDrift.positions()));
+    var normalizationBomb = normalizationBombDetect(input);
+    if (normalizationBomb.subThreat() != null) findings.add(makeFinding(Family.NORMALIZATION_BOMB, normalizationBomb.subThreat(), normalizationBomb.positions()));
+    var localeCase = localeCaseInversionDetect(input);
+    if (localeCase.subThreat() != null) findings.add(makeFinding(Family.LOCALE_CASE_INVERSION, localeCase.subThreat(), localeCase.positions()));
+    var nfcWitness = nfcIdempotenceWitnessDetect(input);
+    if (nfcWitness.subThreat() != null) findings.add(makeFinding(Family.NFC_IDEMPOTENCE_WITNESS, nfcWitness.subThreat(), nfcWitness.positions()));
+    var widthClass = widthClassConfusionDetect(input);
+    if (widthClass.subThreat() != null) findings.add(makeFinding(Family.WIDTH_CLASS_CONFUSION, widthClass.subThreat(), widthClass.positions()));
+    // SourceDisplayDivergence judges the input as a unit, so it localises
+    // nothing and carries an empty position list.
+    var sourceDisplay = SourceDisplayDivergence.detect(input);
+    if (!sourceDisplay.isClear()) {
+      findings.add(makeFinding(Family.SOURCE_DISPLAY_DIVERGENCE, sourceDisplay.sub(), List.of()));
+    }
     return findings;
   }
 
@@ -235,7 +276,13 @@ public final class Security {
 
   /** True iff the homoglyph-confusable constituent fires on {@code input}. */
   static boolean homoglyphConfusableFired(List<Integer> input) {
-    return homoglyphConfusableFinding(input) != null;
+    // The reference runs one homoglyph detector whose priority ladder ends in a
+    // CrossScriptMix branch, so a cross-script identifier fires it even though
+    // this port reports that case under mixed-script-admissibility. Consulting
+    // only the first builder misses every input whose sole homoglyph signal is
+    // the script mix.
+    return homoglyphConfusableFinding(input) != null
+        || mixedScriptAdmissibilityFinding(input) != null;
   }
 
   private static String decide(String profile, String mode, List<Finding> findings) {
@@ -297,21 +344,32 @@ public final class Security {
   private static String layer(String family) {
     if (family.equals(Family.HOMOGLYPH_CONFUSABLE)
         || family.equals(Family.MIXED_SCRIPT_ADMISSIBILITY)
-        || family.equals(Family.EMOJI_ZWJ_INTEGRITY)) {
+        || family.equals(Family.EMOJI_ZWJ_INTEGRITY)
+        || family.equals(Family.SKIN_TONE_VARIATION_FORGERY)) {
       return "I";
     }
-    if (family.equals(Family.RTL_INJECTION)) {
+    if (family.equals(Family.RTL_INJECTION)
+        || family.equals(Family.RENDERER_DIVERGENCE)
+        || family.equals(Family.FILENAME_DISGUISE)
+        || family.equals(Family.SOURCE_DISPLAY_DIVERGENCE)) {
       return "D";
     }
     if (family.equals(Family.CONFUSABLE_BIDI_COMPOUND)
-        || family.equals(Family.COVERT_DISPLAY_COMPOUND)) {
+        || family.equals(Family.COVERT_DISPLAY_COMPOUND)
+        || family.equals(Family.IDENTIFIER_FORM_DRIFT)
+        || family.equals(Family.ADMISSIBILITY_FORM_DRIFT)) {
       return "X";
     }
     if (family.equals(Family.HASH_INPUT_STABILITY)
         || family.equals(Family.AI_WATERMARK_DETECTABILITY)) {
       return "K";
     }
-    if (family.equals(Family.STREAM_SAFE_VIOLATION)) {
+    if (family.equals(Family.STREAM_SAFE_VIOLATION)
+        || family.equals(Family.CASE_EXPANSION_MISMATCH)
+        || family.equals(Family.NORMALIZATION_BOMB)
+        || family.equals(Family.LOCALE_CASE_INVERSION)
+        || family.equals(Family.NFC_IDEMPOTENCE_WITNESS)
+        || family.equals(Family.WIDTH_CLASS_CONFUSION)) {
       return "F";
     }
     return "C";
