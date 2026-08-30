@@ -54,6 +54,12 @@ export const Family = Object.freeze({
   AdmissibilityFormDrift: "admissibility-form-drift",
   SkinToneVariationForgery: "skin-tone-variation-forgery",
   CaseExpansionMismatch: "case-expansion-mismatch",
+  EmojiZwjIntegrity: "emoji-zwj-integrity",
+  StreamSafeViolation: "stream-safe-violation",
+  NormalizationBomb: "normalization-bomb",
+  LocaleCaseInversion: "locale-case-inversion",
+  NfcIdempotenceWitness: "nfc-idempotence-witness",
+  WidthClassConfusion: "width-class-confusion",
 });
 
 let confusablesMapCache;
@@ -298,6 +304,73 @@ function detect(input) {
     findings.push(covertDisplay);
   }
 
+  const emojiZwjIntegrity = emojiZwjIntegrityDetect(input).classify;
+  if (!emojiZwjIntegrity.isClear) {
+    findings.push(makeFinding(Family.EmojiZwjIntegrity, emojiZwjIntegrity.tag, emojiZwjIntegrity.positions));
+  }
+
+  const skinToneVariationForgery = skinToneVariationForgeryDetect(input).classify;
+  if (!skinToneVariationForgery.isClear) {
+    findings.push(makeFinding(Family.SkinToneVariationForgery, skinToneVariationForgery.tag, skinToneVariationForgery.positions));
+  }
+
+  const filenameDisguise = filenameDisguiseDetect(input).classify;
+  if (!filenameDisguise.isClear) {
+    findings.push(makeFinding(Family.FilenameDisguise, filenameDisguise.tag, filenameDisguise.positions));
+  }
+
+  const rendererDivergence = rendererDivergenceDetect(input).classify;
+  if (!rendererDivergence.isClear) {
+    findings.push(makeFinding(Family.RendererDivergence, rendererDivergence.tag, rendererDivergence.positions));
+  }
+
+  const streamSafeViolation = streamSafeViolationDetect(input).classify;
+  if (!streamSafeViolation.isClear) {
+    findings.push(makeFinding(Family.StreamSafeViolation, streamSafeViolation.tag, streamSafeViolation.positions));
+  }
+
+  const caseExpansionMismatch = caseExpansionMismatchDetect(input).classify;
+  if (!caseExpansionMismatch.isClear) {
+    findings.push(makeFinding(Family.CaseExpansionMismatch, caseExpansionMismatch.tag, caseExpansionMismatch.positions));
+  }
+
+  const identifierFormDrift = identifierFormDriftDetect(input).classify;
+  if (!identifierFormDrift.isClear) {
+    findings.push(makeFinding(Family.IdentifierFormDrift, identifierFormDrift.tag, identifierFormDrift.positions));
+  }
+
+  const admissibilityFormDrift = admissibilityFormDriftDetect(input).classify;
+  if (!admissibilityFormDrift.isClear) {
+    findings.push(makeFinding(Family.AdmissibilityFormDrift, admissibilityFormDrift.tag, admissibilityFormDrift.positions));
+  }
+
+  const normalizationBomb = normalizationBombDetect(input);
+  if (normalizationBomb.sub !== null) {
+    findings.push(makeFinding(Family.NormalizationBomb, normalizationBomb.sub, normalizationBomb.positions));
+  }
+
+  const localeCaseInversion = localeCaseInversionDetect(input);
+  if (localeCaseInversion.sub !== null) {
+    findings.push(makeFinding(Family.LocaleCaseInversion, localeCaseInversion.sub, localeCaseInversion.positions));
+  }
+
+  const nfcIdempotenceWitness = nfcIdempotenceWitnessDetect(input);
+  if (nfcIdempotenceWitness.sub !== null) {
+    findings.push(makeFinding(Family.NfcIdempotenceWitness, nfcIdempotenceWitness.sub, nfcIdempotenceWitness.positions));
+  }
+
+  const widthClassConfusion = widthClassConfusionDetect(input);
+  if (widthClassConfusion.sub !== null) {
+    findings.push(makeFinding(Family.WidthClassConfusion, widthClassConfusion.sub, widthClassConfusion.positions));
+  }
+
+  // SourceDisplayDivergence judges the input as a unit, so it localises nothing
+  // and carries an empty position list.
+  const sourceDisplay = sourceDisplayDivergenceDetect(input).classify;
+  if (!sourceDisplay.isClear) {
+    findings.push(makeFinding(Family.SourceDisplayDivergence, sourceDisplay.tag, []));
+  }
+
   return findings;
 }
 
@@ -351,7 +424,35 @@ function blocks(level, family) {
       family === Family.MalformedUtf32 ||
       family === Family.SurrogateReassembly ||
       family === Family.BidiControlBalance ||
-      family === Family.NoncharacterControl
+      family === Family.NoncharacterControl ||
+      family === Family.StreamSafeViolation
+    );
+  }
+  if (level === PolicyLevel.Moderate) {
+    return (
+      family === Family.MalformedUtf8 ||
+      family === Family.MalformedUtf16 ||
+      family === Family.MalformedUtf32 ||
+      family === Family.TagBlockPayload ||
+      family === Family.VariationSelectorPayload ||
+      family === Family.ZeroWidthPayload ||
+      family === Family.SurrogateReassembly ||
+      family === Family.BidiControlBalance ||
+      family === Family.NoncharacterControl ||
+      family === Family.HomoglyphConfusable ||
+      family === Family.MixedScriptAdmissibility ||
+      family === Family.SkinToneVariationForgery ||
+      family === Family.SourceDisplayDivergence ||
+      family === Family.FilenameDisguise ||
+      family === Family.StreamSafeViolation ||
+      family === Family.LocaleCaseInversion ||
+      family === Family.CaseExpansionMismatch ||
+      family === Family.WidthClassConfusion ||
+      family === Family.NfcIdempotenceWitness ||
+      family === Family.IdentifierFormDrift ||
+      family === Family.CovertDisplayCompound ||
+      family === Family.ConfusableBidiCompound ||
+      family === Family.AdmissibilityFormDrift
     );
   }
   return (
@@ -366,8 +467,22 @@ function blocks(level, family) {
     family === Family.NoncharacterControl ||
     family === Family.HomoglyphConfusable ||
     family === Family.MixedScriptAdmissibility ||
+    family === Family.EmojiZwjIntegrity ||
+    family === Family.SkinToneVariationForgery ||
+    family === Family.SourceDisplayDivergence ||
+    family === Family.FilenameDisguise ||
+    family === Family.RtlInjection ||
+    family === Family.RendererDivergence ||
+    family === Family.NormalizationBomb ||
+    family === Family.StreamSafeViolation ||
+    family === Family.LocaleCaseInversion ||
+    family === Family.CaseExpansionMismatch ||
+    family === Family.WidthClassConfusion ||
+    family === Family.NfcIdempotenceWitness ||
+    family === Family.IdentifierFormDrift ||
+    family === Family.CovertDisplayCompound ||
     family === Family.ConfusableBidiCompound ||
-    family === Family.CovertDisplayCompound
+    family === Family.AdmissibilityFormDrift
   );
 }
 
@@ -414,7 +529,8 @@ function layer(family) {
   if (
     family === Family.HomoglyphConfusable ||
     family === Family.MixedScriptAdmissibility ||
-    family === Family.SkinToneVariationForgery
+    family === Family.SkinToneVariationForgery ||
+    family === Family.EmojiZwjIntegrity
   ) {
     return "I";
   }
@@ -434,7 +550,14 @@ function layer(family) {
   ) {
     return "X";
   }
-  if (family === Family.CaseExpansionMismatch) {
+  if (
+    family === Family.CaseExpansionMismatch ||
+    family === Family.StreamSafeViolation ||
+    family === Family.NormalizationBomb ||
+    family === Family.LocaleCaseInversion ||
+    family === Family.NfcIdempotenceWitness ||
+    family === Family.WidthClassConfusion
+  ) {
     return "F";
   }
   return "C";
@@ -3658,7 +3781,16 @@ function sddBidiControlFired(input) {
 
 // Whether the port's homoglyph-confusable constituent fires on input.
 function sddHomoglyphFired(input) {
-  return homoglyphConfusableFinding(input) !== null;
+  // The reference runs one homoglyph detector whose priority ladder ends in a
+  // CrossScriptMix branch, so a cross-script identifier fires it even though
+  // the policy surface reports that case under mixed-script-admissibility.
+  // This port splits that ladder across two finding builders, so the
+  // constituent has to consult both or it misses every input whose only
+  // homoglyph signal is the script mix.
+  return (
+    homoglyphConfusableFinding(input) !== null ||
+    mixedScriptAdmissibilityFinding(input) !== null
+  );
 }
 
 // Fixture-row tag string for a source-display-divergence sub-threat (mirrors
