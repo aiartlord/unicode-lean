@@ -149,7 +149,7 @@ public final class IdentifierFormDrift {
 
   /** True iff {@code cp}'s own status differs from its NFKD-head's. */
   private static boolean statusShifts(int cp) {
-    return Security.isIdAllowed(cp) != nfkdHeadAllowed(cp);
+    return !Security.isIdAllowed(cp) && nfkdHeadAllowed(cp);
   }
 
   /**

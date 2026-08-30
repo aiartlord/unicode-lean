@@ -331,6 +331,7 @@ WORKING-STORAGE SECTION.
 *> leaving the caller's own findings untouched. Zeroing the count instead would
 *> make the constituents overwrite them in place.
 01 SDD-SAVED-COUNT PIC 9(4) COMP-5 VALUE 0.
+01 SDD-BIDI-PRESENT PIC 9 VALUE 0.
 
 *> Scratch for the form-layer detectors. ONE-POS carries the single implicated
 *> index for findings that localise one position, matching the reference, which
@@ -2784,7 +2785,11 @@ SCAN-IDENTIFIER-FORM-DRIFT.
         MOVE TABLE-FLAG TO IFD-CP-ALLOWED
         MOVE CP(IFD-IDX) TO IFD-CUR-CP
         PERFORM IFD-NFKD-HEAD-ALLOWED
-        IF IFD-CP-ALLOWED NOT = IFD-HEAD-ALLOWED
+*> Restricted before NFKD and Allowed after: the direction an attacker gains
+*> from, and the one every case this detector exists for takes. The opposite
+*> direction reports all 11,172 precomposed Hangul syllables, whose head jamo
+*> are Restricted, for no attacker gain.
+        IF IFD-CP-ALLOWED = 0 AND IFD-HEAD-ALLOWED = 1
             ADD 1 TO IFD-SHIFT-COUNT
             IF IFD-DONE = 0
                 MOVE 1 TO IFD-CLASS
@@ -3144,8 +3149,19 @@ SCAN-SOURCE-DISPLAY-DIVERGENCE.
         MOVE "ZeroWidth" TO SDD-TAG
     END-IF
     MOVE SDD-SAVED-COUNT TO FINDING-COUNT
-    PERFORM DETECT-BIDI
-    IF FINDING-COUNT > SDD-SAVED-COUNT
+*> Presence, not balance. A Trojan Source payload balances its controls, since
+*> an unbalanced run breaks the file it hides in, so the balance verdict
+*> DETECT-BIDI reports is blind to the shape the attack takes. The full format
+*> control set is consulted: embeddings U+202A..U+202E and isolates
+*> U+2066..U+2069.
+    MOVE 0 TO SDD-BIDI-PRESENT
+    PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
+        IF (CP(IDX) >= 8234 AND CP(IDX) <= 8238)
+           OR (CP(IDX) >= 8294 AND CP(IDX) <= 8297)
+            MOVE 1 TO SDD-BIDI-PRESENT
+        END-IF
+    END-PERFORM
+    IF SDD-BIDI-PRESENT = 1
         ADD 1 TO SDD-FIRED-COUNT
         MOVE "BidiControl" TO SDD-TAG
     END-IF

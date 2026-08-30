@@ -44,6 +44,7 @@ module Unicode.Security.Display.SourceDisplayDivergence
   , reasonCode
   ) where
 
+import Unicode.Security.CodepointPredicates (isBidiFormatControl)
 import Unicode.Security.Display.SourceDisplayAggregate
   ( Classification (Clear, Hazard)
   , SubThreat
@@ -81,18 +82,23 @@ data Verdict = Verdict
 -- | The five constituent detectors paired with the tag each contributes, in
 -- canonical aggregation order. Each entry runs the port's own core-family
 -- detector on the same input; a non-empty 'Finding' list is a fire.
-constituents :: [Int] -> [[Policy.Finding]]
+constituents :: [Int] -> [Bool]
 constituents input =
-  [ Policy.tagBlockFinding input
-  , Policy.variationSelectorFinding input
-  , Policy.zeroWidthFinding input
-  , Policy.bidiFinding input
-  , Policy.homoglyphConstituentFinding input
+  [ not (null (Policy.tagBlockFinding input))
+  , not (null (Policy.variationSelectorFinding input))
+  , not (null (Policy.zeroWidthFinding input))
+  -- Presence over the full bidi format-control set, not the balance verdict
+  -- 'Policy.bidiFinding' reports. A Trojan Source payload balances its
+  -- controls, since an unbalanced run breaks the file it hides in, so the
+  -- balance verdict is blind to the shape the attack takes. That family's own
+  -- finding is unchanged; only this constituent reads presence.
+  , any isBidiFormatControl input
+  , not (null (Policy.homoglyphConstituentFinding input))
   ]
 
 -- | The constituent tags that fired on this input, in canonical order.
 firedFamilies :: [Int] -> [SubThreat]
-firedFamilies input = firedFrom (map (not . null) (constituents input))
+firedFamilies input = firedFrom (constituents input)
 
 -- | The SourceDisplayDivergence detection function. Runs the five constituent
 -- detectors in canonical order and aggregates by how many fired, mirroring the

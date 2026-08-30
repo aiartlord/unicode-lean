@@ -53,6 +53,7 @@ import Unicode.Security.Covert.TagBlockPayload
 import Unicode.Security.Covert.VariationSelectorPayload
 import Unicode.Security.Covert.ZeroWidthPayload
 import Unicode.Security.Covert.BidiControlBalance
+import Unicode.TrojanSource
 import Unicode.Security.Identity.HomoglyphConfusable
 
 namespace Unicode.Security.Display.SourceDisplayDivergence
@@ -152,12 +153,16 @@ def detect (input : List Nat) : Verdict :=
   let c1 := Unicode.Security.Covert.TagBlockPayload.detect input
   let c2 := Unicode.Security.Covert.VariationSelectorPayload.detect input
   let c3 := Unicode.Security.Covert.ZeroWidthPayload.detect input
-  let c5 := Unicode.Security.Covert.BidiControlBalance.detect input
+  -- Presence, not balance. A Trojan Source payload balances its controls,
+  -- since an unbalanced run breaks the file it hides in, so the balance verdict
+  -- is blind to the shape the attack takes. The BidiControlBalance family's own
+  -- verdict is unchanged; only this constituent reads presence.
+  let c5Present := input.any Unicode.TrojanSource.isBidiFormatControl
   let i1 := Unicode.Security.Identity.HomoglyphConfusable.detect input
   let c1Tag := c1.classify.tag
   let c2Tag := c2.classify.tag
   let c3Tag := c3.classify.tag
-  let c5Tag := c5.classify.tag
+  let c5Tag := if c5Present then some "BidiControl" else none
   let i1Tag := i1.classify.tag
   let classify := buildClassification c1Tag c2Tag c3Tag c5Tag i1Tag
   let firedFamilies : List String :=
@@ -314,6 +319,27 @@ theorem detect_bidi_only :
   simp only [detect, hi1]
   decide
 
+/-- A *balanced* isolate pair still fires `.bidiControl`.  This is the case the
+    constituent exists to catch: `BidiControlBalance` classifies U+2066 followed
+    by U+2069 as clear, because the run opens and closes, while a Trojan Source
+    payload balances its controls precisely so the file it hides in still
+    parses.  Reading presence rather than the balance verdict is what keeps this
+    input reportable. -/
+theorem detect_balanced_bidi_fires :
+    (detect [0x2066, 0x2069]).classify.tag = some "BidiControl" := by
+  have hds : hasDecompositionSwap [0x2066, 0x2069] = false := by
+    unfold hasDecompositionSwap
+    rw [toNFC_id_of_starters [0x2066, 0x2069]
+        (by intro x hx; simp at hx; rcases hx with h | h <;> subst h <;> exact ⟨by decide, by decide⟩)
+        (by intro x hx; simp at hx; rcases hx with h | h <;> subst h <;> decide)
+        ⟨primaryComposite?_none_of_all_ne 0x2066 0x2069 (by decide) (by decide +kernel), trivial⟩]
+    simp
+  have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
+      [0x2066, 0x2069]).classify.tag = none := by
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+  simp only [detect, hi1]
+  decide
+
 /-- A pure-I1 attack — Nethereum typosquat — fires `.identifierHomoglyph`.
     Here the four codepoint-scan detectors are pinned clear and the skeleton
     reduces in place. -/
@@ -329,13 +355,13 @@ theorem detect_homoglyph_only :
   have hc3 : (Unicode.Security.Covert.ZeroWidthPayload.detect
       [0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D]).classify.tag = none := by
     decide
-  have hc5 : (Unicode.Security.Covert.BidiControlBalance.detect
-      [0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D]).classify.tag = none := by
-    decide
   have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
       [0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D]).classify.tag
       = some "TargetMatch" := by decide +kernel
-  simp only [detect, hc1, hc2, hc3, hc5, hi1]
+  -- The bidi constituent reads presence directly, so `detect` no longer calls
+  -- BidiControlBalance and a hypothesis about that detector's verdict has
+  -- nothing left to rewrite; `decide` closes the presence test.
+  simp only [detect, hc1, hc2, hc3, hi1]
   decide
 
 /-- A compound attack — Latin A + VS16 + ZWSP — fires `.compound`. -/

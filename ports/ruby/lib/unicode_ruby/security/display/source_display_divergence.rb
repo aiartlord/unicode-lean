@@ -83,7 +83,8 @@ module UnicodeRuby
           fires << TAG_BLOCK if fired?(Covert::TagBlockPayload.detect(input).kind)
           fires << VARIATION_SELECTOR if fired?(Covert::VariationSelectorPayload.detect(input).kind)
           fires << ZERO_WIDTH if fired?(Covert::ZeroWidthPayload.detect(input).kind)
-          fires << BIDI_CONTROL if fired?(Covert::BidiControlBalance.detect(input).kind)
+          # Presence, not balance. A Trojan Source payload balances its controls — an unbalanced run breaks the file it is hiding in — so a constituent built on the balance verdict is blind to the shape the attack takes.
+          fires << BIDI_CONTROL if input.any? { |cp| Covert::BidiControlBalance.bidi_format_control?(cp) }
           fires << IDENTIFIER_HOMOGLYPH if fired?(Identity::HomoglyphConfusable.detect(input).kind)
 
           Detection.new(aggregate(fires))

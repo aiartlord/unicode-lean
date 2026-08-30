@@ -4805,10 +4805,12 @@ private func sourceDisplayZeroWidthFired(_ input: [Int]) -> Bool {
     !positionsWhere(input, isZeroWidthPayload).isEmpty
 }
 
-/// True iff the port's bidi-control-balance detector fires on `input` (any bidi
-/// embedding control present). Reuses the scan pipeline's predicate.
+/// True iff `input` carries any bidi format control, embeddings and isolates
+/// alike. Presence, not balance: a Trojan Source payload balances its controls,
+/// since an unbalanced run breaks the file it hides in, and it may use either
+/// form, so a predicate stopping at U+202E cannot see the isolate shape.
 private func sourceDisplayBidiControlFired(_ input: [Int]) -> Bool {
-    !positionsWhere(input, isBidiEmbeddingControl).isEmpty
+    input.contains(where: isBidiFormatControl)
 }
 
 /// True iff the port's homoglyph-confusable detector fires on `input`. This port
@@ -4971,7 +4973,11 @@ private func identifierFormDriftNfkdHeadAllowed(_ cp: Int) -> Bool {
 /// First input position whose `isIdAllowed` differs from its NFKD-head's.
 private func identifierFormDriftFirstStatusShift(_ input: [Int]) -> (Int, Int)? {
     for (idx, cp) in input.enumerated()
-    where isIdAllowed(cp) != identifierFormDriftNfkdHeadAllowed(cp) {
+    // Restricted before NFKD and Allowed after: the direction an attacker gains
+    // from, and the one every case this detector exists for takes. The opposite
+    // direction reports all 11,172 precomposed Hangul syllables, whose head
+    // jamo are Restricted, for no attacker gain.
+    where !isIdAllowed(cp) && identifierFormDriftNfkdHeadAllowed(cp) {
         return (idx, cp)
     }
     return nil

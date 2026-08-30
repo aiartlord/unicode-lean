@@ -97,7 +97,7 @@ first_status_shift(Input) -> first_status_shift(Input, 0).
 
 first_status_shift([], _I) -> none;
 first_status_shift([Cp | Rest], I) ->
-    case usec_ucd:is_id_allowed(Cp) =/= nfkd_head_allowed(Cp) of
+    case (not usec_ucd:is_id_allowed(Cp)) andalso nfkd_head_allowed(Cp) of
         true -> {I, Cp};
         false -> first_status_shift(Rest, I + 1)
     end.

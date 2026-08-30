@@ -4746,7 +4746,7 @@ pub const identifier_form_drift = struct {
     const ShiftHit = struct { pos: usize, cp: u32 };
     fn firstStatusShift(input: []const u32) ?ShiftHit {
         for (input, 0..) |cp, idx| {
-            if (idAllowedPredicate(cp) != nfkdHeadAllowed(cp)) {
+            if (!idAllowedPredicate(cp) and nfkdHeadAllowed(cp)) {
                 return ShiftHit{ .pos = idx, .cp = cp };
             }
         }
@@ -4757,7 +4757,7 @@ pub const identifier_form_drift = struct {
     fn statusShiftCount(input: []const u32) usize {
         var count: usize = 0;
         for (input) |cp| {
-            if (idAllowedPredicate(cp) != nfkdHeadAllowed(cp)) count += 1;
+            if (!idAllowedPredicate(cp) and nfkdHeadAllowed(cp)) count += 1;
         }
         return count;
     }
@@ -5301,7 +5301,11 @@ pub const source_display_divergence = struct {
 
     /// bidi-control-balance fires iff the input carries a bidi embedding control.
     fn bidiControlFired(input: []const u32) bool {
-        return positionsWhere(input, isBidiEmbeddingControl) != null;
+        // Presence over the full bidi format-control set, embeddings and
+        // isolates alike. A Trojan Source payload balances its controls, since
+        // an unbalanced run breaks the file it hides in, and it may use either
+        // form; a predicate stopping at U+202E cannot see the isolate shape.
+        return positionsWhere(input, isBidiFormatControl) != null;
     }
 
     /// homoglyph-confusable fires iff its finding is present. The reference

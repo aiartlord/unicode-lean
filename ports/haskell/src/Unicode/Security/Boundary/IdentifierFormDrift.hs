@@ -143,7 +143,7 @@ nfkdHeadAllowed cp =
 
 -- | True iff @cp@'s own @Identifier_Status@ differs from its NFKD-head's.
 statusShifts :: Int -> Bool
-statusShifts cp = isIdAllowed cp /= nfkdHeadAllowed cp
+statusShifts cp = not (isIdAllowed cp) && nfkdHeadAllowed cp
 
 -- | First input position (and its codepoint) whose 'isIdAllowed' differs from
 -- its NFKD-head's.

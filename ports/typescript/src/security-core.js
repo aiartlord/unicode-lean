@@ -3776,7 +3776,10 @@ function sddZeroWidthFired(input) {
 
 // Whether the port's bidi-control-balance constituent fires on input.
 function sddBidiControlFired(input) {
-  return positionsWhere(input, isBidiEmbeddingControl).length > 0;
+  // Presence, not balance. A Trojan Source payload balances its controls --
+  // an unbalanced run breaks the file it is hiding in -- so a constituent
+  // built on the balance verdict is blind to the shape the attack takes.
+  return input.some((cp) => isBidiFormatControl(cp));
 }
 
 // Whether the port's homoglyph-confusable constituent fires on input.
@@ -3943,7 +3946,7 @@ function identifierFormDriftNfkdHeadAllowed(cp) {
 function identifierFormDriftFirstStatusShift(cps) {
   for (let idx = 0; idx < cps.length; idx += 1) {
     const cp = cps[idx];
-    if (isIdAllowed(cp) !== identifierFormDriftNfkdHeadAllowed(cp)) {
+    if (!isIdAllowed(cp) && identifierFormDriftNfkdHeadAllowed(cp)) {
       return { pos: idx, cp };
     }
   }
@@ -3954,7 +3957,7 @@ function identifierFormDriftFirstStatusShift(cps) {
 function identifierFormDriftStatusShiftCount(cps) {
   let count = 0;
   for (const cp of cps) {
-    if (isIdAllowed(cp) !== identifierFormDriftNfkdHeadAllowed(cp)) {
+    if (!isIdAllowed(cp) && identifierFormDriftNfkdHeadAllowed(cp)) {
       count += 1;
     }
   }

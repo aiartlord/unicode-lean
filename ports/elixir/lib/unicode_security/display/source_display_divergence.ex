@@ -89,7 +89,13 @@ defmodule UnicodeSecurity.Display.SourceDisplayDivergence do
     tag_block = if fired?(TagBlockPayload.detect(input)), do: ["TagBlock"], else: []
     variation = if fired?(VariationSelectorPayload.detect(input)), do: ["VariationSelector"], else: []
     zero_width = if fired?(ZeroWidthPayload.detect(input)), do: ["ZeroWidth"], else: []
-    bidi = if fired?(BidiControlBalance.detect(input)), do: ["BidiControl"], else: []
+    # Presence, not balance. A Trojan Source payload balances its controls --
+    # an unbalanced run breaks the file it is hiding in -- so a constituent
+    # built on the balance verdict is blind to the shape the attack takes.
+    bidi =
+      if Enum.any?(input, &BidiControlBalance.bidi_format_control?/1),
+        do: ["BidiControl"],
+        else: []
     homoglyph = if fired?(HomoglyphConfusable.detect(input)), do: ["IdentifierHomoglyph"], else: []
 
     tag_block ++ variation ++ zero_width ++ bidi ++ homoglyph

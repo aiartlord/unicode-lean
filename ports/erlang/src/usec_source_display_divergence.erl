@@ -90,15 +90,27 @@ fired_tags(Input) ->
         [{<<"TagBlock">>, usec_detectors:tag_block_detect(Input)},
          {<<"VariationSelector">>, usec_detectors:variation_selector_detect(Input)},
          {<<"ZeroWidth">>, usec_detectors:zero_width_detect(Input)},
-         {<<"BidiControl">>, usec_detectors:bidi_control_detect(Input)},
          {<<"IdentifierHomoglyph">>, usec_detectors:homoglyph_detect(Input)}],
-    lists:filtermap(
-      fun({Tag, Verdict}) ->
-              case fired(maps:get(kind, Verdict)) of
-                  true -> {true, Tag};
-                  false -> false
-              end
-      end, Constituents).
+    Fired =
+        lists:filtermap(
+          fun({Tag, Verdict}) ->
+                  case fired(maps:get(kind, Verdict)) of
+                      true -> {true, Tag};
+                      false -> false
+                  end
+          end, Constituents),
+    %% BidiControl reads presence rather than the balance verdict. A Trojan
+    %% Source payload balances its controls, since an unbalanced run breaks the
+    %% file it hides in, so the balance verdict is blind to the shape the attack
+    %% takes. Spliced at position four to keep the canonical order.
+    BidiFired =
+        case lists:any(fun usec_detectors:is_bidi_format_control/1, Input) of
+            true -> [<<"BidiControl">>];
+            false -> []
+        end,
+    {Before, After} = lists:splitwith(
+                        fun(T) -> T =/= <<"IdentifierHomoglyph">> end, Fired),
+    Before ++ BidiFired ++ After.
 
 %% @doc A constituent fires iff its classification kind is not `clear'.
 fired(clear) -> false;

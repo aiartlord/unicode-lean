@@ -65,7 +65,7 @@ end
 local function first_status_shift(input)
   for i = 1, #input do
     local cp = input[i]
-    if ucd.is_id_allowed(cp) ~= M.nfkd_head_allowed(cp) then
+    if (not ucd.is_id_allowed(cp)) and M.nfkd_head_allowed(cp) then
       return i - 1, cp
     end
   end
@@ -77,7 +77,7 @@ local function status_shift_count(input)
   local count = 0
   for i = 1, #input do
     local cp = input[i]
-    if ucd.is_id_allowed(cp) ~= M.nfkd_head_allowed(cp) then
+    if (not ucd.is_id_allowed(cp)) and M.nfkd_head_allowed(cp) then
       count = count + 1
     end
   end

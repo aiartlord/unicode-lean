@@ -45,7 +45,10 @@ pub fn detect(input: &[u32]) -> Detection {
     if fired(zero_width_payload::detect(input).kind) {
         fires.push("ZeroWidth");
     }
-    if fired(bidi_control_balance::detect(input).kind) {
+    // Presence, not balance. A Trojan Source payload balances its controls --
+    // an unbalanced run breaks the file it is hiding in -- so a constituent
+    // built on bidi_control_balance is blind to the shape the attack takes.
+    if input.iter().any(|&cp| bidi_control_balance::is_bidi_format_control(cp)) {
         fires.push("BidiControl");
     }
     if fired(homoglyph_confusable::detect(input).kind) {

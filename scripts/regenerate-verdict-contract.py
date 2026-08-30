@@ -64,8 +64,8 @@ def verdict_for(binary: Path, profile: str, mode: str, codepoints: list[int]) ->
     return verdict
 
 
-def sync_ports() -> int:
-    """Copy the regenerated fixture over every port's vendored copy.
+def sync_fixture(canonical_path: Path) -> int:
+    """Copy one canonical fixture over every port's vendored copy of it.
 
     Each port reads its own copy so that the port stays buildable on its own,
     and `scripts/check-policy-contract.sh` compares those copies byte-for-byte
@@ -75,14 +75,14 @@ def sync_ports() -> int:
     added later is picked up without editing this script.
     """
     listing = subprocess.run(
-        ["git", "ls-files", "*verdict_contract.json"],
+        ["git", "ls-files", f"*{canonical_path.name}"],
         cwd=ROOT, stdout=subprocess.PIPE, text=True, check=True,
     )
-    canonical = FIXTURE.read_bytes()
+    canonical = canonical_path.read_bytes()
     copied = 0
     for line in listing.stdout.split():
         target = ROOT / line
-        if target.resolve() == FIXTURE.resolve():
+        if target.resolve() == canonical_path.resolve():
             continue
         target.write_bytes(canonical)
         copied += 1
@@ -151,6 +151,11 @@ def main() -> int:
         help="copy the fixture over every port's vendored copy after writing it",
     )
     parser.add_argument(
+        "--sync-only",
+        type=Path,
+        help="copy the named canonical fixture over its vendored copies and exit",
+    )
+    parser.add_argument(
         "--gate",
         action="store_true",
         help="enforce the reference's standing relationship to the contract; write nothing",
@@ -161,6 +166,10 @@ def main() -> int:
         print(f"FATAL: reference binary not found: {args.binary}", file=sys.stderr)
         print("build it with: cd ports/rust && cargo build", file=sys.stderr)
         return 1
+
+    if args.sync_only:
+        print(f"synced {sync_fixture(args.sync_only)} vendored copies of {args.sync_only.name}")
+        return 0
 
     document = json.loads(FIXTURE.read_text())
 
@@ -189,7 +198,7 @@ def main() -> int:
     FIXTURE.write_text(json.dumps(document, indent=2) + "\n")
     print(f"regenerated {FIXTURE.relative_to(ROOT)} from {args.binary.name}")
     if args.sync_ports:
-        print(f"synced {sync_ports()} vendored copies")
+        print(f"synced {sync_fixture(FIXTURE)} vendored copies")
     print(f"{len(differing)} of {len(document['cases'])} case verdicts changed")
     for name, pinned, fresh in differing:
         print(f"  {name}: {pinned} -> {fresh} finding(s)")

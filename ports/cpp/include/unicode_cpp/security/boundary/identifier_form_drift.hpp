@@ -140,7 +140,7 @@ inline std::optional<std::pair<std::size_t, std::uint32_t>> first_status_shift(
     const ucd::Tables& t, std::span<const std::uint32_t> input) {
     for (std::size_t idx = 0; idx < input.size(); ++idx) {
         const std::uint32_t cp = input[idx];
-        if (ucd::is_id_allowed(t, cp) != nfkd_head_allowed(t, cp)) {
+        if (!ucd::is_id_allowed(t, cp) && nfkd_head_allowed(t, cp)) {
             return std::pair<std::size_t, std::uint32_t>{idx, cp};
         }
     }
@@ -152,7 +152,7 @@ inline std::size_t status_shift_count(const ucd::Tables& t,
                                       std::span<const std::uint32_t> input) {
     std::size_t n = 0;
     for (const std::uint32_t cp : input) {
-        if (ucd::is_id_allowed(t, cp) != nfkd_head_allowed(t, cp)) {
+        if (!ucd::is_id_allowed(t, cp) && nfkd_head_allowed(t, cp)) {
             ++n;
         }
     }

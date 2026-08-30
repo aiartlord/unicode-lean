@@ -271,7 +271,10 @@ public final class Security {
 
   /** True iff the bidi-control-balance constituent fires on {@code input}. */
   static boolean bidiControlBalanceFired(List<Integer> input) {
-    return !positionsWhere(input, Security::isBidiEmbeddingControl).isEmpty();
+    // The full bidi format-control set, embeddings and isolates alike: a Trojan
+    // Source payload may use either, and the isolate form is invisible to a
+    // predicate that stops at U+202E.
+    return !positionsWhere(input, Security::isBidiFormatControl).isEmpty();
   }
 
   /** True iff the homoglyph-confusable constituent fires on {@code input}. */

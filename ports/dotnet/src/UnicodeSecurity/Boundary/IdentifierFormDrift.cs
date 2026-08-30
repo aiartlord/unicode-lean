@@ -193,7 +193,7 @@ public static partial class Security
             for (var idx = 0; idx < input.Count; idx++)
             {
                 var cp = input[idx];
-                if (IsIdAllowed(cp) != NfkdHeadAllowed(cp)) return (idx, cp);
+                if (!IsIdAllowed(cp) && NfkdHeadAllowed(cp)) return (idx, cp);
             }
             return null;
         }
@@ -205,7 +205,7 @@ public static partial class Security
             var count = 0;
             foreach (var cp in input)
             {
-                if (IsIdAllowed(cp) != NfkdHeadAllowed(cp)) count++;
+                if (!IsIdAllowed(cp) && NfkdHeadAllowed(cp)) count++;
             }
             return count;
         }

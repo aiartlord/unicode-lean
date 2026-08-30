@@ -114,7 +114,10 @@ public static partial class Security
         /// <paramref name="input"/> — reuses the core scan fold's own
         /// embedding-control predicate (U+202A..U+202E).</summary>
         private static bool BidiControlFired(List<int> input) =>
-            Security.PositionsWhere(input, Security.IsBidiEmbeddingControl).Count > 0;
+            // The full bidi format-control set, embeddings and isolates alike: a
+            // Trojan Source payload may use either, and the isolate form is
+            // invisible to a predicate that stops at U+202E.
+            input.Exists(cp => Security.IsBidiEmbeddingControl(cp) || Security.IsBidiIsolateControl(cp));
 
         /// <summary>True iff the homoglyph-confusable constituent fires on
         /// <paramref name="input"/> — reuses the core scan fold's own

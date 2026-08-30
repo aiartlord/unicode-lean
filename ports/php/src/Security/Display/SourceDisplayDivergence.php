@@ -124,7 +124,16 @@ final class SourceDisplayDivergence
         if (self::fired(ZeroWidthPayload::detect($input)->kind)) {
             $fires[] = 'ZeroWidth';
         }
-        if (self::fired(BidiControlBalance::detect($input)->kind)) {
+        // Presence, not balance. A Trojan Source payload balances its
+        // controls -- an unbalanced run breaks the file it is hiding in -- so a
+        // constituent built on the balance verdict is blind to the attack.
+        $bidiPresent = false;
+        foreach ($input as $cp) {
+            if (BidiControlBalance::isBidiFormatControl($cp)) {
+                $bidiPresent = true;
+            }
+        }
+        if ($bidiPresent) {
             $fires[] = 'BidiControl';
         }
         if (self::fired(HomoglyphConfusable::detect($input)->kind)) {

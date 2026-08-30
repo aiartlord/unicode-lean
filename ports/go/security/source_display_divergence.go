@@ -66,10 +66,18 @@ func sddZeroWidthFired(input []uint32) bool {
 	return len(positionsWhere(input, isZeroWidthPayload)) > 0
 }
 
-// sddBidiControlFired reports whether the port's own bidi-control-balance
-// constituent classifies the input as non-clear.
+// sddBidiControlFired reports whether the input carries any bidi format
+// control.
 func sddBidiControlFired(input []uint32) bool {
-	return len(positionsWhere(input, isBidiEmbeddingControl)) > 0
+	// Presence, not balance. A Trojan Source payload balances its controls --
+	// an unbalanced run breaks the file it is hiding in -- so a constituent
+	// built on the balance verdict is blind to the shape the attack takes.
+	for _, cp := range input {
+		if isBidiFormatControl(cp) {
+			return true
+		}
+	}
+	return false
 }
 
 // sddHomoglyphFired reports whether the port's own homoglyph-confusable

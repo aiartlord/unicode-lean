@@ -151,7 +151,7 @@ final class IdentifierFormDrift
     /** True iff `cp`'s own Identifier_Status differs from its NFKD-head's. */
     private static function statusShifts(int $cp): bool
     {
-        return Ucd::isIdAllowed($cp) !== self::nfkdHeadAllowed($cp);
+        return !Ucd::isIdAllowed($cp) && self::nfkdHeadAllowed($cp);
     }
 
     /**

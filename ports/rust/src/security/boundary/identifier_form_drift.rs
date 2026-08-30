@@ -147,7 +147,7 @@ pub fn nfkd_head_allowed(cp: u32) -> bool {
 /// First input position whose `is_id_allowed` differs from its NFKD-head's.
 fn first_status_shift(input: &[u32]) -> Option<(usize, u32)> {
     input.iter().enumerate().find_map(|(idx, &cp)| {
-        if ucd::is_id_allowed(cp) != nfkd_head_allowed(cp) {
+        if status_shift(cp) {
             Some((idx, cp))
         } else {
             None
@@ -155,12 +155,25 @@ fn first_status_shift(input: &[u32]) -> Option<(usize, u32)> {
     })
 }
 
+/// A codepoint drifts when normalizing it turns an identifier character a
+/// validator rejects into one it accepts: Restricted before NFKD, Allowed
+/// after. That is the direction an attacker gains from, and it is the direction
+/// every case this detector exists for takes -- U+FB01 the fi ligature, U+2163
+/// the Roman numeral, U+24B6 the circled capital, each Restricted with an
+/// Allowed head.
+///
+/// The opposite direction is not a drift. A precomposed Hangul syllable is
+/// Allowed while its head jamo is Restricted, so an equality test reports every
+/// one of the 11,172 syllables and therefore all Korean text. Normalizing there
+/// makes the character less acceptable, not more, which gains an attacker
+/// nothing.
+fn status_shift(cp: u32) -> bool {
+    !ucd::is_id_allowed(cp) && nfkd_head_allowed(cp)
+}
+
 /// Total count of input positions where the per-cp status shifts under NFKD.
 fn status_shift_count(input: &[u32]) -> usize {
-    input
-        .iter()
-        .filter(|&&cp| ucd::is_id_allowed(cp) != nfkd_head_allowed(cp))
-        .count()
+    input.iter().filter(|&&cp| status_shift(cp)).count()
 }
 
 // ─────────────────────────────────────────────────────────────────────

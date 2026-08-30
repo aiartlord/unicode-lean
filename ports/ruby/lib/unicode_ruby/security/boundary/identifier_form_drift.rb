@@ -123,7 +123,7 @@ module UnicodeRuby
         def first_status_shift(input)
           input.each_index do |idx|
             cp = input[idx]
-            return [idx, cp] if Ucd.id_allowed?(cp) != nfkd_head_allowed?(cp)
+            return [idx, cp] if !Ucd.id_allowed?(cp) && nfkd_head_allowed?(cp)
           end
           nil
         end
@@ -133,7 +133,7 @@ module UnicodeRuby
         def status_shift_count(input)
           count = 0
           input.each do |cp|
-            count += 1 if Ucd.id_allowed?(cp) != nfkd_head_allowed?(cp)
+            count += 1 if !Ucd.id_allowed?(cp) && nfkd_head_allowed?(cp)
           end
           count
         end

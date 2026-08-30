@@ -87,7 +87,14 @@ function M.detect(input)
   if fired(zero_width.detect(input).kind) then
     fires[#fires + 1] = M.ZERO_WIDTH
   end
-  if fired(bidi.detect(input).kind) then
+  -- Presence, not balance. A Trojan Source payload balances its controls --
+  -- an unbalanced run breaks the file it is hiding in -- so a constituent
+  -- built on the balance verdict is blind to the shape the attack takes.
+  local bidi_present = false
+  for _, cp in ipairs(input) do
+    if bidi.is_bidi_format_control(cp) then bidi_present = true end
+  end
+  if bidi_present then
     fires[#fires + 1] = M.BIDI_CONTROL
   end
   if fired(homoglyph.detect(input).kind) then

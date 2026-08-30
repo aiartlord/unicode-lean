@@ -89,7 +89,12 @@ inline Detection detect(const homoglyph_confusable::Database& db,
     if (fired(zero_width_payload::detect(input).kind)) {
         fires.push_back("ZeroWidth");
     }
-    if (fired(bidi_control_balance::detect(input).kind)) {
+    // Presence, not balance. A Trojan Source payload balances its controls --
+    // an unbalanced run breaks the file it is hiding in -- so a constituent
+    // built on the balance verdict is blind to the shape the attack takes.
+    if (std::any_of(input.begin(), input.end(), [](std::uint32_t cp) {
+            return bidi_control_balance::is_bidi_format_control(cp);
+        })) {
         fires.push_back("BidiControl");
     }
     if (fired(homoglyph_confusable::detect(input, db).kind)) {

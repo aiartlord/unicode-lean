@@ -114,7 +114,7 @@ func nfkdHeadAllowed(cp uint32) bool {
 // position shifts.
 func ifdFirstStatusShift(input []uint32) (int, uint32, bool) {
 	for idx, cp := range input {
-		if isIdAllowed(cp) != nfkdHeadAllowed(cp) {
+		if !isIdAllowed(cp) && nfkdHeadAllowed(cp) {
 			return idx, cp, true
 		}
 	}
@@ -126,7 +126,7 @@ func ifdFirstStatusShift(input []uint32) (int, uint32, bool) {
 func ifdStatusShiftCount(input []uint32) int {
 	n := 0
 	for _, cp := range input {
-		if isIdAllowed(cp) != nfkdHeadAllowed(cp) {
+		if !isIdAllowed(cp) && nfkdHeadAllowed(cp) {
 			n++
 		}
 	}

@@ -82,13 +82,13 @@ defmodule UnicodeSecurity.Boundary.IdentifierFormDrift do
     input
     |> Enum.with_index()
     |> Enum.find_value(fn {cp, idx} ->
-      if Ucd.id_allowed?(cp) != nfkd_head_allowed(cp), do: {idx, cp}, else: nil
+      if !Ucd.id_allowed?(cp) and nfkd_head_allowed(cp), do: {idx, cp}, else: nil
     end)
   end
 
   # Total count of input positions where the per-cp status shifts under NFKD.
   defp status_shift_count(input) do
-    Enum.count(input, fn cp -> Ucd.id_allowed?(cp) != nfkd_head_allowed(cp) end)
+    Enum.count(input, fn cp -> !Ucd.id_allowed?(cp) and nfkd_head_allowed(cp) end)
   end
 
   # ───────────────────────────────────────────────────────────────────

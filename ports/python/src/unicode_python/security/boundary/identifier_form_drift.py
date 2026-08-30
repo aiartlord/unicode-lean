@@ -124,7 +124,7 @@ def nfkd_head_allowed(cp: int) -> bool:
 def _first_status_shift(input_cps: list[int]) -> tuple[int, int] | None:
     """First input position whose ``is_id_allowed`` differs from its NFKD-head's."""
     for index, cp in enumerate(input_cps):
-        if is_id_allowed(cp) != nfkd_head_allowed(cp):
+        if not is_id_allowed(cp) and nfkd_head_allowed(cp):
             return (index, cp)
     return None
 
@@ -132,7 +132,7 @@ def _first_status_shift(input_cps: list[int]) -> tuple[int, int] | None:
 def _status_shift_count(input_cps: list[int]) -> int:
     """Total count of input positions where the per-cp status shifts under NFKD."""
     return sum(
-        1 for cp in input_cps if is_id_allowed(cp) != nfkd_head_allowed(cp)
+        1 for cp in input_cps if not is_id_allowed(cp) and nfkd_head_allowed(cp)
     )
 
 

@@ -27,12 +27,19 @@
     * U+FB01 'ﬁ' ligature             Restricted → Allowed (f)
     * U+2163 Roman Numeral IV         Restricted → Allowed (I)
 
+  The shift is directional: Restricted before NFKD and Allowed
+  after.  That is the direction an attacker gains from, since a
+  character a validator rejects becomes one it accepts, and it is
+  the direction all three cases above take.
+
   Note on Hangul: precomposed syllables (e.g. U+D55C 한) are
   Allowed under UTS #39 IdentifierStatus.txt while their
   NFKD-head jamos (e.g. U+1112 HANGUL CHOSEONG HIEUH) are
-  Restricted.  Pure Korean text therefore fires the detector.
-  Callers intending to accept Korean identifiers should apply
-  NFC before evaluating admissibility.
+  Restricted.  That is the opposite direction, where normalizing
+  makes the character less acceptable rather than more, so it
+  yields the attacker nothing and is not reported.  An equality
+  test would report all 11,172 precomposed syllables and so all
+  Korean text.
 
   Distinct from the identity-spoofing detectors
   (HomoglyphConfusable,
@@ -84,7 +91,7 @@ def nfkdHeadAllowed (cp : Nat) : Bool :=
     NFKD-head's `isAllowedStatus`. -/
 def firstStatusShift (input : List Nat) : Option (Nat × Nat) :=
   input.zipIdx.findSome? (fun cpWithIdx =>
-    if isAllowedStatus cpWithIdx.1 != nfkdHeadAllowed cpWithIdx.1 then
+    if !isAllowedStatus cpWithIdx.1 && nfkdHeadAllowed cpWithIdx.1 then
       some (cpWithIdx.2, cpWithIdx.1)
     else none)
 
@@ -92,7 +99,7 @@ def firstStatusShift (input : List Nat) : Option (Nat × Nat) :=
     under NFKD. -/
 def statusShiftCount (input : List Nat) : Nat :=
   input.foldl (init := 0) (fun acc cp =>
-    if isAllowedStatus cp != nfkdHeadAllowed cp then acc + 1 else acc)
+    if !isAllowedStatus cp && nfkdHeadAllowed cp then acc + 1 else acc)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 Types

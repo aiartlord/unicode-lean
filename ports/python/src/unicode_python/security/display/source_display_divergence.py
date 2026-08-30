@@ -105,7 +105,10 @@ def detect(input_cps: list[int]) -> Detection:
         fires.append("VariationSelector")
     if _fired(zero_width_payload.detect(input_cps).kind):
         fires.append("ZeroWidth")
-    if _fired(bidi_control_balance.detect(input_cps).kind):
+    # Presence, not balance. A Trojan Source payload balances its controls --
+    # an unbalanced run breaks the file it is hiding in -- so a constituent
+    # built on the balance verdict is blind to the shape the attack takes.
+    if any(bidi_control_balance.is_bidi_format_control(cp) for cp in input_cps):
         fires.append("BidiControl")
     if _fired(homoglyph_confusable.detect(input_cps).kind):
         fires.append("IdentifierHomoglyph")
