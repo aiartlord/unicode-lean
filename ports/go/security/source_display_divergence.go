@@ -75,7 +75,16 @@ func sddBidiControlFired(input []uint32) bool {
 // sddHomoglyphFired reports whether the port's own homoglyph-confusable
 // constituent classifies the input as non-clear.
 func sddHomoglyphFired(input []uint32) bool {
-	_, ok := homoglyphConfusableFinding(input)
+	// The reference runs one homoglyph detector whose priority ladder ends in a
+	// CrossScriptMix branch, so a cross-script identifier fires it even though
+	// the policy surface reports that case under mixed-script-admissibility.
+	// This port splits that ladder across two finding builders, so the
+	// constituent has to consult both or it misses every input whose only
+	// homoglyph signal is the script mix.
+	if _, ok := homoglyphConfusableFinding(input); ok {
+		return true
+	}
+	_, ok := mixedScriptAdmissibilityFinding(input)
 	return ok
 }
 

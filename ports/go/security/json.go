@@ -55,7 +55,12 @@ func VerdictJSON(verdict Verdict) string {
 }
 
 func copyInts(values []int) []int {
-	if values == nil {
+	// Guard on length, not on nil: append to a nil slice with nothing to add
+	// returns nil, so an empty-but-allocated slice would marshal as null. A
+	// finding that localises nothing -- source-display-divergence judges the
+	// input as a unit -- carries exactly that slice, and the wire contract
+	// pins an empty array for it.
+	if len(values) == 0 {
 		return []int{}
 	}
 	return append([]int(nil), values...)

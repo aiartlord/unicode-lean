@@ -71,6 +71,9 @@ const (
 	FamilyAdmissibilityFormDrift   Family = "admissibility-form-drift"
 	FamilySourceDisplayDivergence  Family = "source-display-divergence"
 	FamilyWidthClassConfusion      Family = "width-class-confusion"
+	FamilyNormalizationBomb        Family = "normalization-bomb"
+	FamilyLocaleCaseInversion      Family = "locale-case-inversion"
+	FamilyNfcIdempotenceWitness    Family = "nfc-idempotence-witness"
 )
 
 type ProfilePolicy struct {
@@ -126,8 +129,38 @@ func Scan(profile Profile, mode Mode, input []uint32) Verdict {
 	}
 }
 
+// classifiedFinding builds a Finding from a detector classification's tag and
+// positions. Every detector below reports the same shape -- a tag that is
+// absent when the input is clear -- so the record is built here once rather
+// than repeated per family. The severity is 2 because each of these
+// classifications is a hazard, matching the reference's Hazard-to-Moderate
+// mapping.
+func classifiedFinding(family Family, tag string, ok bool, positions []int) (Finding, bool) {
+	if !ok {
+		return Finding{}, false
+	}
+	if positions == nil {
+		positions = []int{}
+	}
+	return Finding{
+		Code:      reasonCode(family, tag),
+		Family:    family,
+		Severity:  2,
+		Positions: positions,
+		SubThreat: tag,
+		Detail:    string(family),
+	}, true
+}
+
+func appendClassified(findings []Finding, family Family, tag string, ok bool, positions []int) []Finding {
+	if finding, fired := classifiedFinding(family, tag, ok, positions); fired {
+		return append(findings, finding)
+	}
+	return findings
+}
+
 func detect(input []uint32) []Finding {
-	findings := make([]Finding, 0, 7)
+	findings := make([]Finding, 0, 8)
 
 	if positions := positionsWhere(input, isTagBlockAsciiPayload); len(positions) > 0 {
 		findings = append(findings, Finding{
@@ -170,17 +203,6 @@ func detect(input []uint32) []Finding {
 		})
 	}
 
-	if width := DetectWidthClassConfusion(input); width.SubThreat != "" {
-		findings = append(findings, Finding{
-			Code:      reasonCode(FamilyWidthClassConfusion, width.SubThreat),
-			Family:    FamilyWidthClassConfusion,
-			Severity:  2,
-			Positions: width.Positions,
-			SubThreat: width.SubThreat,
-			Detail:    "width-class-confusion",
-		})
-	}
-
 	findings = append(findings, noncharacterControlFindings(input)...)
 	if finding, ok := homoglyphConfusableFinding(input); ok {
 		findings = append(findings, finding)
@@ -196,6 +218,60 @@ func detect(input []uint32) []Finding {
 	}
 	if finding, ok := covertDisplayCompoundFinding(input); ok {
 		findings = append(findings, finding)
+	}
+
+	ezwj := ezwjDetect(input)
+	ezwjTag, ezwjFired := ezwj.classify.tag()
+	findings = appendClassified(findings, FamilyEmojiZwjIntegrity, ezwjTag, ezwjFired, ezwj.classify.positions)
+
+	stvf := stvfDetect(input)
+	stvfTag, stvfFired := stvf.classify.tag()
+	findings = appendClassified(findings, FamilySkinToneVariationForgery, stvfTag, stvfFired, stvf.classify.posns())
+
+	fd := filenameDisguiseDetect(input)
+	fdTag, fdFired := fd.classify.tag()
+	findings = appendClassified(findings, FamilyFilenameDisguise, fdTag, fdFired, fd.classify.posns())
+
+	rd := rendererDivergenceDetect(input)
+	rdTag, rdFired := rd.classify.tag()
+	findings = appendClassified(findings, FamilyRendererDivergence, rdTag, rdFired, rd.classify.posns())
+
+	ss := streamSafeViolationDetect(input)
+	ssTag, ssFired := ss.classify.tag()
+	findings = appendClassified(findings, FamilyStreamSafeViolation, ssTag, ssFired, ss.classify.positions)
+
+	cem := caseExpansionMismatchDetect(input)
+	cemTag, cemFired := cem.classify.tag()
+	findings = appendClassified(findings, FamilyCaseExpansionMismatch, cemTag, cemFired, cem.classify.posns())
+
+	ifd := identifierFormDriftDetect(input)
+	ifdTag, ifdFired := ifd.classify.tag()
+	findings = appendClassified(findings, FamilyIdentifierFormDrift, ifdTag, ifdFired, ifd.classify.posns())
+
+	afd := admissibilityFormDriftDetect(input)
+	afdTag, afdFired := afd.classify.tag()
+	findings = appendClassified(findings, FamilyAdmissibilityFormDrift, afdTag, afdFired, afd.classify.posns())
+
+	if sub, positions, fired := normalizationBombDetect(input); fired {
+		findings = appendClassified(findings, FamilyNormalizationBomb, sub, true, positions)
+	}
+
+	if sub, positions, fired := localeCaseInversionDetect(input); fired {
+		findings = appendClassified(findings, FamilyLocaleCaseInversion, sub, true, positions)
+	}
+
+	if sub, positions, fired := nfcIdempotenceWitnessDetect(input); fired {
+		findings = appendClassified(findings, FamilyNfcIdempotenceWitness, sub, true, positions)
+	}
+
+	if width := DetectWidthClassConfusion(input); width.SubThreat != "" {
+		findings = appendClassified(findings, FamilyWidthClassConfusion, width.SubThreat, true, width.Positions)
+	}
+
+	// SourceDisplayDivergence judges the input as a unit, so it localises
+	// nothing and carries an empty position list.
+	if sdd := sourceDisplayDivergenceDetect(input); !sdd.isClear() {
+		findings = appendClassified(findings, FamilySourceDisplayDivergence, sdd.sub, true, []int{})
 	}
 
 	return findings
@@ -238,8 +314,22 @@ func blocks(level PolicyLevel, family Family) bool {
 			family == FamilySurrogateReassembly ||
 			family == FamilyHomoglyphConfusable ||
 			family == FamilyMixedScript ||
+			family == FamilyEmojiZwjIntegrity ||
+			family == FamilySkinToneVariationForgery ||
+			family == FamilySourceDisplayDivergence ||
+			family == FamilyFilenameDisguise ||
+			family == FamilyRtlInjection ||
+			family == FamilyRendererDivergence ||
+			family == FamilyNormalizationBomb ||
+			family == FamilyStreamSafeViolation ||
+			family == FamilyLocaleCaseInversion ||
+			family == FamilyCaseExpansionMismatch ||
+			family == FamilyWidthClassConfusion ||
+			family == FamilyNfcIdempotenceWitness ||
+			family == FamilyIdentifierFormDrift ||
+			family == FamilyCovertDisplayCompound ||
 			family == FamilyConfusableBidiCompound ||
-			family == FamilyCovertDisplayCompound
+			family == FamilyAdmissibilityFormDrift
 	case PolicyModerate:
 		return family == FamilyMalformedUTF8 ||
 			family == FamilyMalformedUTF16 ||
@@ -252,15 +342,26 @@ func blocks(level PolicyLevel, family Family) bool {
 			family == FamilySurrogateReassembly ||
 			family == FamilyHomoglyphConfusable ||
 			family == FamilyMixedScript ||
+			family == FamilySkinToneVariationForgery ||
+			family == FamilySourceDisplayDivergence ||
+			family == FamilyFilenameDisguise ||
+			family == FamilyStreamSafeViolation ||
+			family == FamilyLocaleCaseInversion ||
+			family == FamilyCaseExpansionMismatch ||
+			family == FamilyWidthClassConfusion ||
+			family == FamilyNfcIdempotenceWitness ||
+			family == FamilyIdentifierFormDrift ||
+			family == FamilyCovertDisplayCompound ||
 			family == FamilyConfusableBidiCompound ||
-			family == FamilyCovertDisplayCompound
+			family == FamilyAdmissibilityFormDrift
 	case PolicyMinimal:
 		return family == FamilyMalformedUTF8 ||
 			family == FamilyMalformedUTF16 ||
 			family == FamilyMalformedUTF32 ||
 			family == FamilySurrogateReassembly ||
 			family == FamilyBidiControlBalance ||
-			family == FamilyNoncharacterControl
+			family == FamilyNoncharacterControl ||
+			family == FamilyStreamSafeViolation
 	default:
 		return family == FamilyMalformedUTF8 ||
 			family == FamilyMalformedUTF16 ||
@@ -273,8 +374,22 @@ func blocks(level PolicyLevel, family Family) bool {
 			family == FamilySurrogateReassembly ||
 			family == FamilyHomoglyphConfusable ||
 			family == FamilyMixedScript ||
+			family == FamilyEmojiZwjIntegrity ||
+			family == FamilySkinToneVariationForgery ||
+			family == FamilySourceDisplayDivergence ||
+			family == FamilyFilenameDisguise ||
+			family == FamilyRtlInjection ||
+			family == FamilyRendererDivergence ||
+			family == FamilyNormalizationBomb ||
+			family == FamilyStreamSafeViolation ||
+			family == FamilyLocaleCaseInversion ||
+			family == FamilyCaseExpansionMismatch ||
+			family == FamilyWidthClassConfusion ||
+			family == FamilyNfcIdempotenceWitness ||
+			family == FamilyIdentifierFormDrift ||
+			family == FamilyCovertDisplayCompound ||
 			family == FamilyConfusableBidiCompound ||
-			family == FamilyCovertDisplayCompound
+			family == FamilyAdmissibilityFormDrift
 	}
 }
 
@@ -520,7 +635,8 @@ func layer(family Family) string {
 		return "D"
 	case FamilyConfusableBidiCompound, FamilyCovertDisplayCompound, FamilyIdentifierFormDrift, FamilyAdmissibilityFormDrift:
 		return "X"
-	case FamilyStreamSafeViolation, FamilyCaseExpansionMismatch, FamilyWidthClassConfusion:
+	case FamilyStreamSafeViolation, FamilyCaseExpansionMismatch, FamilyWidthClassConfusion,
+		FamilyNormalizationBomb, FamilyLocaleCaseInversion, FamilyNfcIdempotenceWitness:
 		return "F"
 	case FamilyHashInputStability, FamilyAiWatermarkDetect:
 		return "K"
