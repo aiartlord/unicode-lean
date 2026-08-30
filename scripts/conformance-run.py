@@ -31,6 +31,7 @@ import hashlib
 import json
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -113,6 +114,27 @@ def section_inputs() -> list[dict[str, object]]:
             }
         )
     return rows
+
+
+def write_inputs_manifest(rows: list[dict[str, object]], destination: Path) -> int:
+    """Write the pinned conformance inputs as a sha256sum-checkable manifest.
+
+    The format is the one `sha256sum -c` reads, and the paths are relative to
+    the repository root, so an auditor verifies the manifest with the same
+    command the repository already uses for `Unicode/Ucd/SHA256SUMS` rather
+    than a bespoke checker. A file listed here that is absent from the tree is
+    an error rather than an omitted line: a manifest that silently shrinks to
+    the files that happen to exist cannot be evidence of what was tested.
+    """
+    missing = [row["file"] for row in rows if not row["present"]]
+    if missing:
+        print(f"FATAL: pinned input(s) absent: {', '.join(missing)}", file=sys.stderr)
+        return 1
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    lines = [f"{row['sha256']}  Unicode/Ucd/{row['file']}" for row in rows]
+    destination.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"wrote {destination} ({len(lines)} inputs)")
+    return 0
 
 
 def section_suites() -> list[dict[str, object]]:
@@ -535,6 +557,12 @@ def main() -> int:
         help="Run the named-theorem axiom probe. Requires a completed build.",
     )
     parser.add_argument(
+        "--emit-inputs-manifest",
+        nargs="?",
+        const=str(ROOT / "dist" / "CONFORMANCE-INPUTS.sha256"),
+        help="Write the pinned conformance inputs as a sha256sum-checkable manifest.",
+    )
+    parser.add_argument(
         "--run-corpus",
         action="store_true",
         help="Scan the supply-chain corpus with the reference CLI and report verdicts.",
@@ -547,12 +575,18 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    inputs = section_inputs()
+    if args.emit_inputs_manifest:
+        failed = write_inputs_manifest(inputs, Path(args.emit_inputs_manifest))
+        if failed:
+            return failed
+
     proof = section_proof()
     if args.run_proofs:
         proof["axioms"] = observe_axioms()
 
     report = {
-        "inputs": section_inputs(),
+        "inputs": inputs,
         "suites": section_suites(),
         "proof": proof,
         "detectors": section_detectors(),
