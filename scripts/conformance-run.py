@@ -27,6 +27,7 @@ Run: python3 scripts/conformance-run.py [--json PATH]
 from __future__ import annotations
 
 import argparse
+import datetime
 import hashlib
 import json
 import re
@@ -331,13 +332,26 @@ def section_proof() -> dict[str, object]:
     counts: dict[str, int] = {}
     for entry in modules.values():
         counts[entry.get("status", "unknown")] = counts.get(entry.get("status", "unknown"), 0) + 1
+    # A completed build describes the tree it ran against, not the tree now.
+    # Sources touched afterwards are not covered by it, and a report that says
+    # "complete" without saying "as of when" invites the reader to assume they
+    # are. Compare each source against the moment the build was recorded.
+    recorded_at = status.get("updated_utc")
+    changed_since: list[str] = []
+    if recorded_at:
+        stamp = datetime.datetime.fromisoformat(recorded_at.replace("Z", "+00:00")).timestamp()
+        for source in (ROOT / "Unicode").rglob("*.lean"):
+            if source.stat().st_mtime > stamp:
+                changed_since.append(str(source.relative_to(ROOT)))
     result["build"] = {
         "observed": True,
         "evidence": str(newest_dir.relative_to(ROOT)),
+        "recorded_at": recorded_at,
         "planned": status.get("module_steps"),
         "recorded": len(modules),
         "by_status": counts,
         "complete": len(modules) == status.get("module_steps"),
+        "sources_changed_since": sorted(changed_since),
     }
     result["axioms"] = {
         "observed": False,
@@ -418,9 +432,19 @@ def render(report: dict[str, object]) -> str:
     build = proof["build"]
     if build["observed"]:
         add(f"  build evidence       {build['evidence']}")
+        add(f"  recorded at          {build.get('recorded_at') or 'unknown'}")
         add(f"  modules              {build['recorded']} recorded of {build['planned']} planned")
         add(f"  by status            {build['by_status']}")
         add(f"  complete             {build['complete']}")
+        changed = build.get("sources_changed_since") or []
+        if changed:
+            add(f"  SOURCES CHANGED SINCE THAT BUILD: {len(changed)}")
+            for source in changed[:10]:
+                add(f"    {source}")
+            if len(changed) > 10:
+                add(f"    ... and {len(changed) - 10} more")
+            add("    The build above does not cover these; it describes the tree as")
+            add("    it stood when it ran. Rebuild before citing it as evidence.")
     else:
         add(f"  build                not observed — run: {build['how']}")
     axioms = proof.get("axioms")
