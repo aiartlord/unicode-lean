@@ -27,6 +27,7 @@ use UnicodePhp\Security\Form\LocaleCaseInversion;
 use UnicodePhp\Security\Form\NfcIdempotenceWitness;
 use UnicodePhp\Security\Form\NormalizationBomb;
 use UnicodePhp\Security\Form\StreamSafeViolation;
+use UnicodePhp\Security\Form\WidthClassConfusion;
 use UnicodePhp\Security\Identity\EmojiZwjIntegrity;
 use UnicodePhp\Security\Identity\HomoglyphConfusable;
 use UnicodePhp\Security\Identity\SkinToneVariationForgery;
@@ -376,6 +377,73 @@ final class Policy
         $cd = CovertDisplayCompound::detect($input);
         if ($cd->sub !== null) {
             self::pushFinding($findings, Family::CovertDisplayCompound, ClassificationKind::Hazard, $cd->sub, $cd->positions);
+        }
+
+        $e = EmojiZwjIntegrity::detect($input);
+        if (!$e->classify->isClear()) {
+            self::pushFinding($findings, Family::EmojiZwjIntegrity, ClassificationKind::Hazard, $e->classify->tag(), $e->classify->positions());
+        }
+
+        $stvf = SkinToneVariationForgery::detect($input);
+        if (!$stvf->classify->isClear()) {
+            self::pushFinding($findings, Family::SkinToneVariationForgery, ClassificationKind::Hazard, $stvf->classify->tag(), $stvf->classify->positions());
+        }
+
+        $fd = FilenameDisguise::detect($input);
+        if (!$fd->classify->isClear()) {
+            self::pushFinding($findings, Family::FilenameDisguise, ClassificationKind::Hazard, $fd->classify->tag(), $fd->classify->positions());
+        }
+
+        $rd = RendererDivergence::detect($input);
+        if (!$rd->classify->isClear()) {
+            self::pushFinding($findings, Family::RendererDivergence, ClassificationKind::Hazard, $rd->classify->tag(), $rd->classify->positions());
+        }
+
+        $ssv = StreamSafeViolation::detect($input);
+        if (!$ssv->classify->isClear()) {
+            self::pushFinding($findings, Family::StreamSafeViolation, ClassificationKind::Hazard, $ssv->classify->tag(), $ssv->classify->positions());
+        }
+
+        $cem = CaseExpansionMismatch::detect($input);
+        if (!$cem->classify->isClear()) {
+            self::pushFinding($findings, Family::CaseExpansionMismatch, ClassificationKind::Hazard, $cem->classify->tag(), $cem->classify->positions());
+        }
+
+        $ifd = IdentifierFormDrift::detect($input);
+        if (!$ifd->classify->isClear()) {
+            self::pushFinding($findings, Family::IdentifierFormDrift, ClassificationKind::Hazard, $ifd->classify->tag(), $ifd->classify->positions());
+        }
+
+        $afd = AdmissibilityFormDrift::detect($input);
+        if (!$afd->classify->isClear()) {
+            self::pushFinding($findings, Family::AdmissibilityFormDrift, ClassificationKind::Hazard, $afd->classify->tag(), $afd->classify->positions());
+        }
+
+        $nb = NormalizationBomb::detect($input);
+        if ($nb->sub !== null) {
+            self::pushFinding($findings, Family::NormalizationBomb, ClassificationKind::Hazard, $nb->sub, $nb->positions);
+        }
+
+        $lci = LocaleCaseInversion::detect($input);
+        if ($lci->sub !== null) {
+            self::pushFinding($findings, Family::LocaleCaseInversion, ClassificationKind::Hazard, $lci->sub, $lci->positions);
+        }
+
+        $niw = NfcIdempotenceWitness::detect($input);
+        if ($niw->sub !== null) {
+            self::pushFinding($findings, Family::NfcIdempotenceWitness, ClassificationKind::Hazard, $niw->sub, $niw->positions);
+        }
+
+        $wcc = WidthClassConfusion::detect($input);
+        if ($wcc->sub !== null) {
+            self::pushFinding($findings, Family::WidthClassConfusion, ClassificationKind::Hazard, $wcc->sub, $wcc->positions);
+        }
+
+        // SourceDisplayDivergence judges the input as a unit, so it localises
+        // nothing and carries an empty position list.
+        $sdd = SourceDisplayDivergence::detect($input);
+        if (!$sdd->classify->isClear()) {
+            self::pushFinding($findings, Family::SourceDisplayDivergence, ClassificationKind::Hazard, $sdd->classify->tag(), []);
         }
 
         return new Verdict(array_values($input), $profile, $mode, self::selectAction($profile, $mode, $findings), $findings, null);
