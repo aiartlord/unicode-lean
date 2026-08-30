@@ -350,6 +350,12 @@ defects in nine ports that green suites had never reached:
 * COBOL's source-display aggregate used the finding count as a per-constituent
   scratch flag and zeroed it, which discarded every finding the earlier
   detectors had already recorded once it ran inside the core scan.
+* COBOL's three form-layer detectors tested a hardcoded codepoint at position 1
+  rather than scanning the input, so they matched the fixtures built from those
+  same codepoints and saw nothing elsewhere. They are rebuilt on the
+  normalization and locale-casing machinery the port already carried; the
+  locale-conditional SpecialCasing rows and their locale discriminant were
+  already generated into special_casing.cpy and nothing had consulted them.
 * Go, TypeScript, JVM, .NET, Swift and Zig were missing Family constants for
   families whose detectors already existed, so their findings could not be
   named; in TypeScript one produced the reason code
