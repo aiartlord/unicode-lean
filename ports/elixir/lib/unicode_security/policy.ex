@@ -2,7 +2,12 @@ defmodule UnicodeSecurity.Policy do
   alias UnicodeSecurity.Calculus
   alias UnicodeSecurity.Noncharacters
   alias UnicodeSecurity.Utf8
-  alias UnicodeSecurity.Boundary.{ConfusableBidiCompound, CovertDisplayCompound}
+  alias UnicodeSecurity.Boundary.{
+    AdmissibilityFormDrift,
+    ConfusableBidiCompound,
+    CovertDisplayCompound,
+    IdentifierFormDrift
+  }
 
   alias UnicodeSecurity.Covert.{
     BidiControlBalance,
@@ -13,14 +18,25 @@ defmodule UnicodeSecurity.Policy do
   }
 
   alias UnicodeSecurity.Crypto.{Bip39Canonical, HashInputStability}
-  alias UnicodeSecurity.Display.RtlInjection
+  alias UnicodeSecurity.Display.{
+    FilenameDisguise,
+    RendererDivergence,
+    RtlInjection,
+    SourceDisplayDivergence
+  }
   alias UnicodeSecurity.Form.{
+    CaseExpansionMismatch,
     LocaleCaseInversion,
     NfcIdempotenceWitness,
     NormalizationBomb,
-    StreamSafeViolation
+    StreamSafeViolation,
+    WidthClassConfusion
   }
-  alias UnicodeSecurity.Identity.{EmojiZwjIntegrity, HomoglyphConfusable}
+  alias UnicodeSecurity.Identity.{
+    EmojiZwjIntegrity,
+    HomoglyphConfusable,
+    SkinToneVariationForgery
+  }
 
   @profiles [
     "gateway-header",
@@ -308,23 +324,6 @@ defmodule UnicodeSecurity.Policy do
           ),
         else: findings
 
-    ez = EmojiZwjIntegrity.detect(input)
-
-    findings =
-      case EmojiZwjIntegrity.classification_tag(ez.classify) do
-        nil ->
-          findings
-
-        ez_tag ->
-          push_finding(
-            findings,
-            :emoji_zwj_integrity,
-            :hazard,
-            ez_tag,
-            EmojiZwjIntegrity.classification_positions(ez.classify)
-          )
-      end
-
     rtl = RtlInjection.detect(input)
 
     findings =
@@ -345,6 +344,106 @@ defmodule UnicodeSecurity.Policy do
       if cd.sub,
         do: push_finding(findings, :covert_display_compound, :hazard, cd.sub, cd.positions),
         else: findings
+
+    ez = EmojiZwjIntegrity.detect(input)
+
+    findings =
+      case EmojiZwjIntegrity.classification_tag(ez.classify) do
+        nil ->
+          findings
+
+        ez_tag ->
+          push_finding(
+            findings,
+            :emoji_zwj_integrity,
+            :hazard,
+            ez_tag,
+            EmojiZwjIntegrity.classification_positions(ez.classify)
+          )
+      end
+
+    stvf = SkinToneVariationForgery.detect(input)
+
+    findings =
+      case SkinToneVariationForgery.classification_tag(stvf.classify) do
+        nil -> findings
+        stvf_tag -> push_finding(findings, :skin_tone_variation_forgery, :hazard, stvf_tag, SkinToneVariationForgery.classification_positions(stvf.classify))
+      end
+
+    fd = FilenameDisguise.detect(input)
+
+    findings =
+      case FilenameDisguise.classification_tag(fd.classify) do
+        nil -> findings
+        fd_tag -> push_finding(findings, :filename_disguise, :hazard, fd_tag, FilenameDisguise.classification_positions(fd.classify))
+      end
+
+    rd = RendererDivergence.detect(input)
+
+    findings =
+      case RendererDivergence.classification_tag(rd.classify) do
+        nil -> findings
+        rd_tag -> push_finding(findings, :renderer_divergence, :hazard, rd_tag, RendererDivergence.classification_positions(rd.classify))
+      end
+
+    ssv = StreamSafeViolation.detect(input)
+
+    findings =
+      if ssv.sub, do: push_finding(findings, :stream_safe_violation, :hazard, ssv.sub, ssv.positions), else: findings
+
+    cem = CaseExpansionMismatch.detect(input)
+
+    findings =
+      case CaseExpansionMismatch.classification_tag(cem.classify) do
+        nil -> findings
+        cem_tag -> push_finding(findings, :case_expansion_mismatch, :hazard, cem_tag, CaseExpansionMismatch.classification_positions(cem.classify))
+      end
+
+    ifd = IdentifierFormDrift.detect(input)
+
+    findings =
+      case IdentifierFormDrift.classification_tag(ifd.classify) do
+        nil -> findings
+        ifd_tag -> push_finding(findings, :identifier_form_drift, :hazard, ifd_tag, IdentifierFormDrift.classification_positions(ifd.classify))
+      end
+
+    afd = AdmissibilityFormDrift.detect(input)
+
+    findings =
+      case AdmissibilityFormDrift.classification_tag(afd.classify) do
+        nil -> findings
+        afd_tag -> push_finding(findings, :admissibility_form_drift, :hazard, afd_tag, AdmissibilityFormDrift.classification_positions(afd.classify))
+      end
+
+    nb = NormalizationBomb.detect(input)
+
+    findings =
+      if nb.sub, do: push_finding(findings, :normalization_bomb, :hazard, nb.sub, nb.positions), else: findings
+
+    lci = LocaleCaseInversion.detect(input)
+
+    findings =
+      if lci.sub, do: push_finding(findings, :locale_case_inversion, :hazard, lci.sub, lci.positions), else: findings
+
+    niw = NfcIdempotenceWitness.detect(input)
+
+    findings =
+      if niw.sub, do: push_finding(findings, :nfc_idempotence_witness, :hazard, niw.sub, niw.positions), else: findings
+
+    wcc = WidthClassConfusion.detect(input)
+
+    findings =
+      if wcc.sub, do: push_finding(findings, :width_class_confusion, :hazard, wcc.sub, wcc.positions), else: findings
+
+    # SourceDisplayDivergence judges the input as a unit, so it localises
+    # nothing and carries an empty position list.
+    sdd = SourceDisplayDivergence.detect(input)
+
+    findings =
+      case SourceDisplayDivergence.classification_tag(sdd) do
+        nil -> findings
+        sdd_tag -> push_finding(findings, :source_display_divergence, :hazard, sdd_tag, [])
+      end
 
     verdict(profile, mode, input, findings, nil)
   end
