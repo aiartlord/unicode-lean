@@ -130,6 +130,19 @@ pub const Family = enum {
     rtl_injection,
     confusable_bidi_compound,
     covert_display_compound,
+    emoji_zwj_integrity,
+    skin_tone_variation_forgery,
+    filename_disguise,
+    renderer_divergence,
+    stream_safe_violation,
+    case_expansion_mismatch,
+    identifier_form_drift,
+    admissibility_form_drift,
+    normalization_bomb,
+    locale_case_inversion,
+    nfc_idempotence_witness,
+    width_class_confusion,
+    source_display_divergence,
 
     pub fn tag(self: Family) []const u8 {
         return switch (self) {
@@ -147,6 +160,19 @@ pub const Family = enum {
             .rtl_injection => "rtl-injection",
             .confusable_bidi_compound => "confusable-bidi-compound",
             .covert_display_compound => "covert-display-compound",
+            .emoji_zwj_integrity => "emoji-zwj-integrity",
+            .skin_tone_variation_forgery => "skin-tone-variation-forgery",
+            .filename_disguise => "filename-disguise",
+            .renderer_divergence => "renderer-divergence",
+            .stream_safe_violation => "stream-safe-violation",
+            .case_expansion_mismatch => "case-expansion-mismatch",
+            .identifier_form_drift => "identifier-form-drift",
+            .admissibility_form_drift => "admissibility-form-drift",
+            .normalization_bomb => "normalization-bomb",
+            .locale_case_inversion => "locale-case-inversion",
+            .nfc_idempotence_witness => "nfc-idempotence-witness",
+            .width_class_confusion => "width-class-confusion",
+            .source_display_divergence => "source-display-divergence",
         };
     }
 };
@@ -166,7 +192,7 @@ pub const Finding = struct {
     detail: []const u8,
 };
 
-pub const MaxFindings = 11;
+pub const MaxFindings = 24;
 
 pub const FindingList = struct {
     items: [MaxFindings]Finding = undefined,
@@ -378,6 +404,99 @@ fn scanUtf32(profile: Profile, mode: Mode, bytes: []const u8, decoded_buffer: []
     return scan(profile, mode, decoded_buffer[0..result.len]);
 }
 
+// Build a finding from any detector classification. Every one of them is a
+// tagged union exposing isClear, tag and reasonCode, and carries the implicated
+// positions on its hazard arm, so the copy into the finding's fixed array is
+// written once here.
+fn classifiedFinding(family: Family, classification: anytype) ?Finding {
+    if (classification.isClear()) return null;
+    var positions: [16]usize = undefined;
+    var count: usize = 0;
+    switch (classification) {
+        .clear => {},
+        .hazard => |hazard| {
+            // Hazard payloads differ across these modules: most carry the
+            // implicated positions as a plain array or as a bounded PosBuffer,
+            // while source-display-divergence carries only the sub-threat,
+            // because it judges the input as a unit and localises nothing.
+            const Hazard = @TypeOf(hazard);
+            if (@typeInfo(Hazard) == .@"struct" and @hasField(Hazard, "positions")) {
+                const carried = hazard.positions;
+                const slice = if (@typeInfo(@TypeOf(carried)) == .@"struct")
+                    carried.items[0..carried.len]
+                else
+                    carried[0..];
+                for (slice) |position| {
+                    if (count < positions.len) {
+                        positions[count] = position;
+                        count += 1;
+                    }
+                }
+            }
+        },
+    }
+    return Finding{
+        .code = classification.reasonCode().?,
+        .family = family,
+        .severity = 2,
+        .positions = positions,
+        .position_count = count,
+        .sub_threat = classification.tag().?,
+        .detail = family.tag(),
+    };
+}
+
+// Reason code for the four form detectors that report a sub-threat string
+// rather than a classification carrying its own code. Every sub-threat each of
+// them can produce is enumerated: the codes are static strings, and this port
+// has no allocator to build one at run time.
+fn resultReasonCode(family: Family, sub_threat: []const u8) []const u8 {
+    switch (family) {
+        .normalization_bomb => {
+            if (std.mem.eql(u8, sub_threat, "NfdHighExpansion")) return "unicode.security.F.normalization-bomb.NfdHighExpansion";
+            if (std.mem.eql(u8, sub_threat, "NfkdHighExpansion")) return "unicode.security.F.normalization-bomb.NfkdHighExpansion";
+            if (std.mem.eql(u8, sub_threat, "SingleCpBlowup")) return "unicode.security.F.normalization-bomb.SingleCpBlowup";
+            unreachable;
+        },
+        .locale_case_inversion => {
+            if (std.mem.eql(u8, sub_threat, "LithuanianCaseDivergence")) return "unicode.security.F.locale-case-inversion.LithuanianCaseDivergence";
+            if (std.mem.eql(u8, sub_threat, "TurkishCaseDivergence")) return "unicode.security.F.locale-case-inversion.TurkishCaseDivergence";
+            unreachable;
+        },
+        .nfc_idempotence_witness => {
+            if (std.mem.eql(u8, sub_threat, "NonNfcForm")) return "unicode.security.F.nfc-idempotence-witness.NonNfcForm";
+            if (std.mem.eql(u8, sub_threat, "NonNfkcCompatForm")) return "unicode.security.F.nfc-idempotence-witness.NonNfkcCompatForm";
+            unreachable;
+        },
+        .width_class_confusion => {
+            if (std.mem.eql(u8, sub_threat, "FullwidthFold")) return "unicode.security.F.width-class-confusion.FullwidthFold";
+            if (std.mem.eql(u8, sub_threat, "HalfwidthFold")) return "unicode.security.F.width-class-confusion.HalfwidthFold";
+            unreachable;
+        },
+        else => unreachable,
+    }
+}
+
+// Build a finding from the four form detectors that return a result record
+// rather than a classification union.
+fn resultFinding(family: Family, result: anytype) ?Finding {
+    const sub = result.sub_threat orelse return null;
+    var positions: [16]usize = undefined;
+    var count: usize = 0;
+    while (count < result.position_count and count < positions.len) : (count += 1) {
+        positions[count] = result.positions[count];
+    }
+    return Finding{
+        .code = resultReasonCode(family, sub),
+        .family = family,
+        .severity = 2,
+        .positions = positions,
+        .position_count = count,
+        .sub_threat = sub,
+        .detail = family.tag(),
+    };
+}
+
 fn detect(input: []const u32) FindingList {
     var findings = FindingList{};
 
@@ -442,6 +561,48 @@ fn detect(input: []const u32) FindingList {
         findings.append(finding);
     }
 
+    if (classifiedFinding(.emoji_zwj_integrity, emoji_zwj_integrity.detect(input).classify)) |finding| {
+        findings.append(finding);
+    }
+    if (classifiedFinding(.skin_tone_variation_forgery, skin_tone_variation_forgery.detect(input).classify)) |finding| {
+        findings.append(finding);
+    }
+    if (classifiedFinding(.filename_disguise, filename_disguise.detect(input).classify)) |finding| {
+        findings.append(finding);
+    }
+    if (classifiedFinding(.renderer_divergence, renderer_divergence.detect(input).classify)) |finding| {
+        findings.append(finding);
+    }
+    if (classifiedFinding(.stream_safe_violation, stream_safe_violation.detect(input).classify)) |finding| {
+        findings.append(finding);
+    }
+    if (classifiedFinding(.case_expansion_mismatch, case_expansion_mismatch.detect(input).classify)) |finding| {
+        findings.append(finding);
+    }
+    if (classifiedFinding(.identifier_form_drift, identifier_form_drift.detect(input).classify)) |finding| {
+        findings.append(finding);
+    }
+    if (classifiedFinding(.admissibility_form_drift, admissibility_form_drift.detect(input).classify)) |finding| {
+        findings.append(finding);
+    }
+    if (resultFinding(.normalization_bomb, normalizationBombDetect(input))) |finding| {
+        findings.append(finding);
+    }
+    if (resultFinding(.locale_case_inversion, localeCaseInversionDetect(input))) |finding| {
+        findings.append(finding);
+    }
+    if (resultFinding(.nfc_idempotence_witness, nfcIdempotenceWitnessDetect(input))) |finding| {
+        findings.append(finding);
+    }
+    if (resultFinding(.width_class_confusion, widthClassConfusionDetect(input))) |finding| {
+        findings.append(finding);
+    }
+    // SourceDisplayDivergence judges the input as a unit, so it localises
+    // nothing and carries an empty position list.
+    if (classifiedFinding(.source_display_divergence, source_display_divergence.detect(input).classify)) |finding| {
+        findings.append(finding);
+    }
+
     return findings;
 }
 
@@ -462,10 +623,17 @@ fn decide(profile: Profile, mode: Mode, findings: FindingList) Action {
 
 fn blocks(level: PolicyLevel, family: Family) bool {
     return switch (level) {
-        .restrictive, .moderate => switch (family) {
-            .malformed_utf8, .malformed_utf16, .malformed_utf32, .tag_block_payload, .variation_selector_payload, .zero_width_payload, .surrogate_reassembly, .bidi_control_balance, .noncharacter_control, .homoglyph_confusable, .mixed_script_admissibility, .rtl_injection, .confusable_bidi_compound, .covert_display_compound => true,
+        .restrictive => switch (family) {
+            .malformed_utf8, .malformed_utf16, .malformed_utf32, .tag_block_payload, .variation_selector_payload, .zero_width_payload, .surrogate_reassembly, .bidi_control_balance, .noncharacter_control, .homoglyph_confusable, .mixed_script_admissibility, .emoji_zwj_integrity, .skin_tone_variation_forgery, .source_display_divergence, .filename_disguise, .rtl_injection, .renderer_divergence, .normalization_bomb, .stream_safe_violation, .locale_case_inversion, .case_expansion_mismatch, .width_class_confusion, .nfc_idempotence_witness, .identifier_form_drift, .covert_display_compound, .confusable_bidi_compound, .admissibility_form_drift => true,
         },
-        .minimal => family == .malformed_utf8 or family == .malformed_utf16 or family == .malformed_utf32 or family == .surrogate_reassembly or family == .bidi_control_balance or family == .noncharacter_control,
+        .moderate => switch (family) {
+            .malformed_utf8, .malformed_utf16, .malformed_utf32, .tag_block_payload, .variation_selector_payload, .zero_width_payload, .surrogate_reassembly, .bidi_control_balance, .noncharacter_control, .homoglyph_confusable, .mixed_script_admissibility, .skin_tone_variation_forgery, .source_display_divergence, .filename_disguise, .stream_safe_violation, .locale_case_inversion, .case_expansion_mismatch, .width_class_confusion, .nfc_idempotence_witness, .identifier_form_drift, .covert_display_compound, .confusable_bidi_compound, .admissibility_form_drift => true,
+            .emoji_zwj_integrity, .rtl_injection, .renderer_divergence, .normalization_bomb => false,
+        },
+        .minimal => switch (family) {
+            .malformed_utf8, .malformed_utf16, .malformed_utf32, .surrogate_reassembly, .bidi_control_balance, .noncharacter_control, .stream_safe_violation => true,
+            .tag_block_payload, .variation_selector_payload, .zero_width_payload, .homoglyph_confusable, .mixed_script_admissibility, .emoji_zwj_integrity, .skin_tone_variation_forgery, .source_display_divergence, .filename_disguise, .rtl_injection, .renderer_divergence, .normalization_bomb, .locale_case_inversion, .case_expansion_mismatch, .width_class_confusion, .nfc_idempotence_witness, .identifier_form_drift, .covert_display_compound, .confusable_bidi_compound, .admissibility_form_drift => false,
+        },
     };
 }
 
@@ -5136,9 +5304,15 @@ pub const source_display_divergence = struct {
         return positionsWhere(input, isBidiEmbeddingControl) != null;
     }
 
-    /// homoglyph-confusable fires iff its finding is present.
+    /// homoglyph-confusable fires iff its finding is present. The reference
+    /// runs one homoglyph detector whose priority ladder ends in a
+    /// CrossScriptMix branch, so a cross-script identifier fires it even though
+    /// this port reports that case under mixed-script-admissibility. Both
+    /// builders are consulted, or every input whose only homoglyph signal is
+    /// the script mix is missed.
     fn homoglyphFired(input: []const u32) bool {
-        return homoglyphConfusableFinding(input) != null;
+        if (homoglyphConfusableFinding(input) != null) return true;
+        return mixedScriptAdmissibilityFinding(input) != null;
     }
 
     // ── §2 Types ─────────────────────────────────────────────────────────
