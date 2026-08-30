@@ -422,7 +422,7 @@ public static partial class Security
         // Phase 1: bidi format-control trumps all.
         for (var index = 0; index < input.Count; index++)
         {
-            if (IsBidiFormatControl(input[index])) return ("RloInLTRField", new List<int> { index });
+            if (IsBidiFormatControl(input[index])) return ("BidiControlInLTRField", new List<int> { index });
         }
 
         // Phase 2: leading-RTL field-direction takeover.

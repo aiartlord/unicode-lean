@@ -344,13 +344,13 @@
             "detail": "bidi-control-balance"
           },
           {
-            "code": "unicode.security.D.rtl-injection.RloInLTRField",
+            "code": "unicode.security.D.rtl-injection.BidiControlInLTRField",
             "family": "rtl-injection",
             "severity": 2,
             "positions": [
               3
             ],
-            "sub_threat": "RloInLTRField",
+            "sub_threat": "BidiControlInLTRField",
             "detail": "rtl-injection"
           },
           {

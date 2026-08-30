@@ -68,7 +68,7 @@ function M.detect(input)
   local run_len, run_start = longest_rtl_run(input)
   local pos = first_bidi_control_pos(input)
   if pos ~= nil then
-    return { sub = "RloInLTRField", positions = { pos } }
+    return { sub = "BidiControlInLTRField", positions = { pos } }
   end
   local first_pos, is_rtl = first_strong_char(input)
   if first_pos ~= nil and is_rtl then

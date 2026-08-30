@@ -131,7 +131,7 @@ inline Detection phase3(const ucd::Tables &t,
 
 // Detect right-to-left injection in an LTR-declared field.  Priority
 // mirrors the spec exactly: (1) any bidi format-control anywhere fires
-// RloInLTRField; otherwise (2) a leading strong-RTL codepoint fires
+// BidiControlInLTRField; otherwise (2) a leading strong-RTL codepoint fires
 // FieldTakeover; otherwise (3) mid-stream strong-RTL is classified by
 // run length.
 inline Detection detect(const ucd::Tables &t,
@@ -140,7 +140,7 @@ inline Detection detect(const ucd::Tables &t,
   const auto [run_len, run_start] = detail::longest_rtl_run(t, input);
 
   if (auto pos = detail::first_bidi_control_pos(input)) {
-    return Detection{std::optional<std::string>{"RloInLTRField"}, {*pos}};
+    return Detection{std::optional<std::string>{"BidiControlInLTRField"}, {*pos}};
   }
 
   if (auto strong = detail::first_strong_char(t, input)) {

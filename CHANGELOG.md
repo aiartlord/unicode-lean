@@ -9,6 +9,26 @@ might depend on).
 
 ## Unreleased
 
+### Changed
+
+- **Breaking, reason code.** `RtlInjection`'s first sub-threat is renamed
+  `rloInLTRField` to `bidiControlInLTRField`, and its tag `RloInLTRField` to
+  `BidiControlInLTRField`. The reason code
+  `unicode.security.D.rtl-injection.RloInLTRField` becomes
+  `unicode.security.D.rtl-injection.BidiControlInLTRField`, in the Lean spec,
+  all 16 ports, the shared fixtures, `RtlInjectionTest.txt`, and the SARIF rule
+  ids derived from the reason code. Detection is unchanged: the sub-threat fires
+  on the presence of any bidi format-control in a declared-LTR field, as it
+  always has. Only U+202D LEFT-TO-RIGHT OVERRIDE and U+202E RIGHT-TO-LEFT
+  OVERRIDE are overrides, so the previous name described neither the embeddings
+  (U+202A, U+202B), the pops (U+202C, U+2069), nor the isolate initiators
+  (U+2066, U+2067, U+2068) that also fire it, and a finding on any of those
+  named a control the input did not contain. Consumers matching the old reason
+  code must match the new one. `detect_rle_in_field` and `detect_lri_in_field`
+  pin the two non-override classes, and the shared fixture gains `rle-in-ltr`
+  and `lri-in-ltr` for the same reason: its only vector was U+202E, which fires
+  under either name and so could not detect an unconverted port.
+
 ### Added
 
 - `scripts/check-axiom-footprint.sh` — an artifact-level axiom gate. It

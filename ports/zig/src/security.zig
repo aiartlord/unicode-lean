@@ -974,8 +974,8 @@ fn longestRtlRun(input: []const u32) RtlRun {
 }
 
 fn rtlInjectionReasonCode(sub_threat: []const u8) []const u8 {
-    if (std.mem.eql(u8, sub_threat, "RloInLTRField")) {
-        return "unicode.security.D.rtl-injection.RloInLTRField";
+    if (std.mem.eql(u8, sub_threat, "BidiControlInLTRField")) {
+        return "unicode.security.D.rtl-injection.BidiControlInLTRField";
     }
     if (std.mem.eql(u8, sub_threat, "FieldTakeover")) {
         return "unicode.security.D.rtl-injection.FieldTakeover";
@@ -1007,12 +1007,12 @@ const FirstStrong = struct {
 
 // Detect right-to-left injection in an LTR-declared field. Priority mirrors
 // the spec exactly: (1) any bidi format-control anywhere fires
-// RloInLTRField; otherwise (2) a leading strong-RTL codepoint fires
+// BidiControlInLTRField; otherwise (2) a leading strong-RTL codepoint fires
 // FieldTakeover; otherwise (3) mid-stream strong-RTL is classified by run
 // length (>= 4 is MixedOverflow, shorter is StrongRTLInLTR).
 fn rtlInjectionFinding(input: []const u32) ?Finding {
     for (input, 0..) |cp, index| {
-        if (isBidiFormatControl(cp)) return rtlInjectionAt("RloInLTRField", index);
+        if (isBidiFormatControl(cp)) return rtlInjectionAt("BidiControlInLTRField", index);
     }
 
     var first_strong: ?FirstStrong = null;

@@ -378,7 +378,7 @@ fn rtlSubThreat(input: []const u32) ?[]const u8 {
 test "rtl-injection ground truth vectors" {
     try std.testing.expectEqual(@as(?[]const u8, null), rtlSubThreat(&[_]u32{ 0x30, 0x31, 0x32, 0x33 }));
     try std.testing.expectEqual(@as(?[]const u8, null), rtlSubThreat(&[_]u32{0x043F}));
-    try std.testing.expectEqualStrings("RloInLTRField", rtlSubThreat(&[_]u32{ 0x41, 0x202E, 0x42 }).?);
+    try std.testing.expectEqualStrings("BidiControlInLTRField", rtlSubThreat(&[_]u32{ 0x41, 0x202E, 0x42 }).?);
     try std.testing.expectEqualStrings("FieldTakeover", rtlSubThreat(&[_]u32{ 0x05D0, 0x42, 0x43 }).?);
     try std.testing.expectEqualStrings("FieldTakeover", rtlSubThreat(&[_]u32{ 0x0627, 0x42, 0x43 }).?);
     try std.testing.expectEqualStrings("StrongRTLInLTR", rtlSubThreat(&[_]u32{ 0x41, 0x42, 0x05D0, 0x44 }).?);

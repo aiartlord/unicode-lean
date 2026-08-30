@@ -557,7 +557,7 @@ public final class Security {
     // Phase 1: bidi format-control trumps all.
     for (int index = 0; index < input.size(); index++) {
       if (isBidiFormatControl(input.get(index))) {
-        return new RtlInjectionResult("RloInLTRField", List.of(index));
+        return new RtlInjectionResult("BidiControlInLTRField", List.of(index));
       }
     }
 

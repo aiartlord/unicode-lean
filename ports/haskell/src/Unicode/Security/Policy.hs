@@ -1284,7 +1284,7 @@ longestRtlRun input =
 
 -- | Detect right-to-left injection in an LTR-declared field. Priority
 -- mirrors the spec exactly: (1) any bidi format-control anywhere fires
--- @RloInLTRField@; otherwise (2) a leading strong-RTL codepoint fires
+-- @BidiControlInLTRField@; otherwise (2) a leading strong-RTL codepoint fires
 -- @FieldTakeover@; otherwise (3) mid-stream strong-RTL is classified by
 -- run length — a run of four or more is @MixedOverflow@ at the run
 -- start, a shorter run is @StrongRTLInLTR@ at the first strong-RTL
@@ -1292,7 +1292,7 @@ longestRtlRun input =
 rtlInjectionFinding :: [Int] -> [Finding]
 rtlInjectionFinding input =
   case firstBidiControlPos input of
-    Just pos -> [makeFinding "RloInLTRField" [pos]]
+    Just pos -> [makeFinding "BidiControlInLTRField" [pos]]
     Nothing ->
       case firstStrongChar input of
         Just (pos, True) -> [makeFinding "FieldTakeover" [pos]]

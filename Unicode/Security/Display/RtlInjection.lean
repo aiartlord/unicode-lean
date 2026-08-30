@@ -32,7 +32,7 @@
 
   Sub-threats (priority order):
 
-    1. `rloInLTRField`    any bidi format-control codepoint
+    1. `bidiControlInLTRField`    any bidi format-control codepoint
                           (LRE/RLE/LRO/RLO/PDF/LRI/RLI/FSI/PDI).
     2. `fieldTakeover`    the first non-trivial strong character
                           is RTL (causes the whole field to
@@ -61,7 +61,7 @@ set_option maxRecDepth 1000000
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 inductive SubThreat where
-  | rloInLTRField   (controlPos : Nat) (controlCp : Nat)
+  | bidiControlInLTRField   (controlPos : Nat) (controlCp : Nat)
   | fieldTakeover   (firstRtlPos : Nat) (firstRtlCp : Nat)
   | strongRTLInLTR  (rtlCount : Nat) (firstPos : Nat)
   | mixedOverflow   (runLength : Nat) (runStart : Nat)
@@ -212,7 +212,7 @@ def detect (input : List Nat) : Verdict :=
     -- Phase 1: bidi format-control trumps all.
     match firstBidiControlPos input with
     | some (pos, ctlCp) =>
-      .hazard (.rloInLTRField pos ctlCp) [pos] []
+      .hazard (.bidiControlInLTRField pos ctlCp) [pos] []
     | none =>
       -- Phase 2: leading-RTL field-direction takeover.
       match firstStrongCharPos input with
@@ -236,8 +236,8 @@ def detect (input : List Nat) : Verdict :=
 
 /-- Fixture-row tag string for each `SubThreat` constructor. -/
 def SubThreat.tag : SubThreat → String
-  | .rloInLTRField  controlPos controlCp =>
-      Function.const (Nat × Nat) "RloInLTRField" (controlPos, controlCp)
+  | .bidiControlInLTRField  controlPos controlCp =>
+      Function.const (Nat × Nat) "BidiControlInLTRField" (controlPos, controlCp)
   | .fieldTakeover  firstRtlPos firstRtlCp =>
       Function.const (Nat × Nat) "FieldTakeover" (firstRtlPos, firstRtlCp)
   | .strongRTLInLTR rtlCount firstPos =>
@@ -290,10 +290,23 @@ theorem detect_cyrillic_clear :
 theorem detect_han_clear :
     (detect [0x4E2D]).classify.isClear = true := by decide
 
-/-- RLO (U+202E) in input fires `.rloInLTRField`. -/
+/-- RLO (U+202E) in input fires `.bidiControlInLTRField`. -/
 theorem detect_rlo_in_field :
-    (detect [0x41, 0x202E, 0x42]).classify.tag = some "RloInLTRField" := by
+    (detect [0x41, 0x202E, 0x42]).classify.tag = some "BidiControlInLTRField" := by
   decide
+
+/-- RLE (U+202B) fires the same sub-threat.  The sub-threat is the
+    presence of a bidi format-control in a declared-LTR field, not the
+    presence of an override: U+202B is an embedding, and U+202D / U+202E
+    are the only two overrides among the nine controls. -/
+theorem detect_rle_in_field :
+    (detect [0x41, 0x202B, 0x42, 0x202C]).classify.tag
+      = some "BidiControlInLTRField" := by decide
+
+/-- LRI (U+2066), an isolate initiator, fires it too. -/
+theorem detect_lri_in_field :
+    (detect [0x41, 0x2066, 0x42, 0x2069]).classify.tag
+      = some "BidiControlInLTRField" := by decide
 
 /-- A leading Hebrew letter (strong RTL) fires `.fieldTakeover`. -/
 theorem detect_field_takeover_hebrew :
@@ -326,12 +339,12 @@ theorem detect_overflow_hebrew :
 -- been retracted (see module header).
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- RLO "inside a string literal" still fires `RloInLTRField`.
+/-- RLO "inside a string literal" still fires `BidiControlInLTRField`.
     A code reviewer scanning malicious source sees the RLO
     regardless of which region a tokenizer would assign it to. -/
 theorem detect_rlo_inside_quote_pair_fires :
     (detect [0x22, 0x41, 0x202E, 0x42, 0x22]).classify.tag
-      = some "RloInLTRField" := by decide
+      = some "BidiControlInLTRField" := by decide
 
 /-- RLO "inside a line comment" still fires.  Comments are
     consumed by LLM code assistants, doc generators, IDE
@@ -339,12 +352,12 @@ theorem detect_rlo_inside_quote_pair_fires :
     bytes as "safer" than code bytes. -/
 theorem detect_rlo_inside_line_comment_marker_fires :
     (detect [0x2F, 0x2F, 0x202E]).classify.tag
-      = some "RloInLTRField" := by decide
+      = some "BidiControlInLTRField" := by decide
 
 /-- RLO "inside a block comment" still fires. -/
 theorem detect_rlo_inside_block_comment_fires :
     (detect [0x2F, 0x2A, 0x202E, 0x2A, 0x2F]).classify.tag
-      = some "RloInLTRField" := by decide
+      = some "BidiControlInLTRField" := by decide
 
 /-- A 5-character Hebrew run "inside a string literal" still
     fires `MixedOverflow`.  The bytes are visible to every

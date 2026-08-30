@@ -114,7 +114,7 @@ fn phase3(input: &[u32], strong_rtl: usize, run_len: usize, run_start: usize) ->
 /// Detect right-to-left injection in an LTR-declared field.
 ///
 /// Priority mirrors the spec exactly: (1) any bidi format-control
-/// anywhere fires `RloInLTRField`; otherwise (2) a leading strong-RTL
+/// anywhere fires `BidiControlInLTRField`; otherwise (2) a leading strong-RTL
 /// codepoint fires `FieldTakeover`; otherwise (3) mid-stream strong-RTL
 /// is classified by run length.
 pub fn detect(input: &[u32]) -> Detection {
@@ -123,7 +123,7 @@ pub fn detect(input: &[u32]) -> Detection {
 
     // Phase 1: bidi format-control trumps all.
     if let Some(pos) = first_bidi_control_pos(input) {
-        return Detection::hazard("RloInLTRField", vec![pos]);
+        return Detection::hazard("BidiControlInLTRField", vec![pos]);
     }
 
     // Phase 2: leading-RTL field-direction takeover.
@@ -153,7 +153,7 @@ mod tests {
 
     #[test]
     fn rlo_in_ltr_field() {
-        assert_eq!(detect(&[0x41, 0x202E, 0x42]).sub, Some("RloInLTRField"));
+        assert_eq!(detect(&[0x41, 0x202E, 0x42]).sub, Some("BidiControlInLTRField"));
     }
 
     #[test]

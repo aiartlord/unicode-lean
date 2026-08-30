@@ -338,7 +338,7 @@ rtl_injection_detect(Input) ->
     StrongRtl = count(Input, fun usec_ucd:is_strong_rtl/1),
     {RunLen, RunStart} = longest_rtl_run(Input),
     case first_pos(Input, fun is_bidi_format_control/1) of
-        P when P =/= none -> #{sub => <<"RloInLTRField">>, positions => [P]};
+        P when P =/= none -> #{sub => <<"BidiControlInLTRField">>, positions => [P]};
         none ->
             case first_strong_char(Input) of
                 {P, rtl} -> #{sub => <<"FieldTakeover">>, positions => [P]};

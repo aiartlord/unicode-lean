@@ -15,7 +15,7 @@
 #
 # Classifications produced by the detector:
 #   Clear
-#   Hazard:RloInLTRField         Hazard:FieldTakeover
+#   Hazard:BidiControlInLTRField         Hazard:FieldTakeover
 #   Hazard:StrongRTLInLTR        Hazard:MixedOverflow
 
 # @section Clear
@@ -45,23 +45,23 @@
 # Mixed letters + digits — both LTR.
 0068 0065 006C 006C 006F 0031 0032 0033; Clear; ; strong_rtl=0; strong_ltr=5; bidi_count=0; longest_run=0; # hello123
 
-# @section RloInLTRField
+# @section BidiControlInLTRField
 # @level basic
 
 # Single RLO injection.
-0041 202E 0042; Hazard:RloInLTRField; 1; strong_rtl=0; strong_ltr=2; bidi_count=1; longest_run=0; # A<RLO>B
+0041 202E 0042; Hazard:BidiControlInLTRField; 1; strong_rtl=0; strong_ltr=2; bidi_count=1; longest_run=0; # A<RLO>B
 
 # RLI (isolate) variant.
-0041 2067 0042 2069; Hazard:RloInLTRField; 1; strong_rtl=0; strong_ltr=2; bidi_count=2; longest_run=0; # A<RLI>B<PDI>
+0041 2067 0042 2069; Hazard:BidiControlInLTRField; 1; strong_rtl=0; strong_ltr=2; bidi_count=2; longest_run=0; # A<RLI>B<PDI>
 
 # RLE injection.
-0041 202B 0042 0043 202C; Hazard:RloInLTRField; 1; strong_rtl=0; strong_ltr=3; bidi_count=2; longest_run=0; # A<RLE>BC<PDF>
+0041 202B 0042 0043 202C; Hazard:BidiControlInLTRField; 1; strong_rtl=0; strong_ltr=3; bidi_count=2; longest_run=0; # A<RLE>BC<PDF>
 
 # LRO override in LTR field — flip mechanic still trips the detector.
-0041 202D 0042; Hazard:RloInLTRField; 1; strong_rtl=0; strong_ltr=2; bidi_count=1; longest_run=0; # A<LRO>B
+0041 202D 0042; Hazard:BidiControlInLTRField; 1; strong_rtl=0; strong_ltr=2; bidi_count=1; longest_run=0; # A<LRO>B
 
 # Two RLO injections — A<RLO>B<RLO>C.
-0041 202E 0042 202E 0043; Hazard:RloInLTRField; 1; strong_rtl=0; strong_ltr=3; bidi_count=2; longest_run=0; # A<RLO>B<RLO>C
+0041 202E 0042 202E 0043; Hazard:BidiControlInLTRField; 1; strong_rtl=0; strong_ltr=3; bidi_count=2; longest_run=0; # A<RLO>B<RLO>C
 
 # @section FieldTakeover
 # @level basic

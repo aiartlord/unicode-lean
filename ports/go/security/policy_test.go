@@ -315,7 +315,7 @@ func TestRtlInjection(t *testing.T) {
 	}{
 		{"clear-digits", []uint32{0x30, 0x31, 0x32, 0x33}, ""},
 		{"clear-cyrillic", []uint32{0x043F}, ""},
-		{"rlo-in-ltr", []uint32{0x41, 0x202E, 0x42}, "RloInLTRField"},
+		{"rlo-in-ltr", []uint32{0x41, 0x202E, 0x42}, "BidiControlInLTRField"},
 		{"field-takeover-hebrew", []uint32{0x05D0, 0x42, 0x43}, "FieldTakeover"},
 		{"field-takeover-arabic", []uint32{0x0627, 0x42, 0x43}, "FieldTakeover"},
 		{"mid-stream-hebrew", []uint32{0x41, 0x42, 0x05D0, 0x44}, "StrongRTLInLTR"},

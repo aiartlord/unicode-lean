@@ -113,7 +113,7 @@ func rtlInjectionPhase3(input []uint32, strongRtl, runLen, runStart int) (string
 
 // rtlInjectionDetect detects right-to-left injection in an LTR-declared
 // field. Priority mirrors the spec exactly: (1) any bidi format-control
-// anywhere fires RloInLTRField; otherwise (2) a leading strong-RTL
+// anywhere fires BidiControlInLTRField; otherwise (2) a leading strong-RTL
 // codepoint fires FieldTakeover; otherwise (3) mid-stream strong-RTL is
 // classified by run length. It returns the sub-threat tag, the offending
 // positions, and whether a hazard fired.
@@ -122,7 +122,7 @@ func rtlInjectionDetect(input []uint32) (string, []int, bool) {
 	runLen, runStart := longestRtlRun(input)
 
 	if pos, ok := firstBidiControlPos(input); ok {
-		return "RloInLTRField", []int{pos}, true
+		return "BidiControlInLTRField", []int{pos}, true
 	}
 
 	if pos, isRtl, ok := firstStrongChar(input); ok && isRtl {

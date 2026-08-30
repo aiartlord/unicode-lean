@@ -546,7 +546,7 @@ public func rtlInjectionDetect(_ input: [Int]) -> RtlInjectionResult {
 
     // Phase 1: bidi format-control trumps all.
     for (index, cp) in input.enumerated() where isBidiFormatControl(cp) {
-        return RtlInjectionResult(subThreat: "RloInLTRField", positions: [index])
+        return RtlInjectionResult(subThreat: "BidiControlInLTRField", positions: [index])
     }
 
     // Phase 2: leading-RTL field-direction takeover.

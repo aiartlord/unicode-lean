@@ -16,7 +16,21 @@
       "name": "rlo-in-ltr",
       "input": [65, 8238, 66],
       "required_findings": [
-        "unicode.security.D.rtl-injection.RloInLTRField"
+        "unicode.security.D.rtl-injection.BidiControlInLTRField"
+      ]
+    },
+    {
+      "name": "rle-in-ltr",
+      "input": [65, 8235, 66, 67, 8236],
+      "required_findings": [
+        "unicode.security.D.rtl-injection.BidiControlInLTRField"
+      ]
+    },
+    {
+      "name": "lri-in-ltr",
+      "input": [65, 8294, 66, 8297],
+      "required_findings": [
+        "unicode.security.D.rtl-injection.BidiControlInLTRField"
       ]
     },
     {

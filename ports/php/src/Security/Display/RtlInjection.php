@@ -96,7 +96,7 @@ final class RtlInjection
         [$runLen, $runStart] = self::longestRtlRun($input);
         $pos = self::firstBidiControlPos($input);
         if ($pos !== null) {
-            return new RtlInjectionVerdict('RloInLTRField', [$pos]);
+            return new RtlInjectionVerdict('BidiControlInLTRField', [$pos]);
         }
         [$firstPos, $isRtl] = self::firstStrongChar($input);
         if ($firstPos !== null && $isRtl) {

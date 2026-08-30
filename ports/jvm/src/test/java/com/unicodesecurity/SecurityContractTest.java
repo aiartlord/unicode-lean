@@ -1636,7 +1636,7 @@ public final class SecurityContractTest {
       {0x41, 0x42, 0x05D0, 0x44},
       {0x41, 0x42, 0x05D0, 0x05D1, 0x05D2, 0x05D3, 0x44},
     };
-    String[] wants = {null, null, "RloInLTRField", "FieldTakeover", "FieldTakeover", "StrongRTLInLTR", "MixedOverflow"};
+    String[] wants = {null, null, "BidiControlInLTRField", "FieldTakeover", "FieldTakeover", "StrongRTLInLTR", "MixedOverflow"};
     for (int i = 0; i < inputs.length; i++) {
       java.util.List<Integer> input = new java.util.ArrayList<>();
       for (int cp : inputs[i]) input.add(cp);

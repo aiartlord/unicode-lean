@@ -30,7 +30,7 @@ def test_lone_cyrillic_is_clear() -> None:
 
 
 def test_rlo_override_fires_rlo_in_ltr_field() -> None:
-    assert _rtl_subthreats([0x41, 0x202E, 0x42]) == {"RloInLTRField"}
+    assert _rtl_subthreats([0x41, 0x202E, 0x42]) == {"BidiControlInLTRField"}
 
 
 def test_leading_hebrew_fires_field_takeover() -> None:

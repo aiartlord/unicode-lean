@@ -154,7 +154,7 @@ static void TestRtlInjectionVectors()
     {
         (new[] { 0x30, 0x31, 0x32, 0x33 }, null),
         (new[] { 0x043F }, null),
-        (new[] { 0x41, 0x202E, 0x42 }, "RloInLTRField"),
+        (new[] { 0x41, 0x202E, 0x42 }, "BidiControlInLTRField"),
         (new[] { 0x05D0, 0x42, 0x43 }, "FieldTakeover"),
         (new[] { 0x0627, 0x42, 0x43 }, "FieldTakeover"),
         (new[] { 0x41, 0x42, 0x05D0, 0x44 }, "StrongRTLInLTR"),

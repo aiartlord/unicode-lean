@@ -833,7 +833,7 @@ function rtlInjectionFinding(input) {
   // Phase 1: bidi format-control trumps all.
   for (let index = 0; index < input.length; index += 1) {
     if (isBidiFormatControl(input[index])) {
-      return makeFinding(Family.RtlInjection, "RloInLTRField", [index]);
+      return makeFinding(Family.RtlInjection, "BidiControlInLTRField", [index]);
     }
   }
 

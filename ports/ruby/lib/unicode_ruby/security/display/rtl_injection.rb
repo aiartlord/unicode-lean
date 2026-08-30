@@ -7,7 +7,7 @@ module UnicodeRuby
   module Security
     module Display
       # Right-to-left injection detection for left-to-right-declared fields.
-      # Priority: (1) any bidi format-control fires RloInLTRField; otherwise
+      # Priority: (1) any bidi format-control fires BidiControlInLTRField; otherwise
       # (2) a leading strong-RTL codepoint fires FieldTakeover; otherwise
       # (3) mid-stream strong-RTL is classified by run length.
       module RtlInjection
@@ -84,7 +84,7 @@ module UnicodeRuby
 
           # Phase 1: bidi format-control trumps all.
           pos = first_bidi_control_pos(input)
-          return Detection.new("RloInLTRField", [pos]) unless pos.nil?
+          return Detection.new("BidiControlInLTRField", [pos]) unless pos.nil?
 
           # Phase 2: leading-RTL field-direction takeover.
           strong = first_strong_char(input)

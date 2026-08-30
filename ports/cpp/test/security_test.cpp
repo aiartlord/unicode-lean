@@ -1134,12 +1134,12 @@ TEST_CASE("RtlInjection — single Cyrillic letter is clear (strong LTR)") {
   CHECK_FALSE(v.sub.has_value());
 }
 
-TEST_CASE("RtlInjection — RLO in field fires RloInLTRField") {
+TEST_CASE("RtlInjection — RLO in field fires BidiControlInLTRField") {
   std::vector<std::uint32_t> in = {0x41, 0x202E, 0x42};
   auto v =
       display::rtl_injection::detect(test_database().tables, as_span(in));
   REQUIRE(v.sub.has_value());
-  CHECK(*v.sub == "RloInLTRField");
+  CHECK(*v.sub == "BidiControlInLTRField");
 }
 
 TEST_CASE("RtlInjection — leading Hebrew fires FieldTakeover") {

@@ -109,7 +109,7 @@ def detect(input_cps: list[int]) -> Detection:
     """Detect right-to-left injection in an LTR-declared field.
 
     Priority mirrors the spec exactly: (1) any bidi format-control
-    anywhere fires ``RloInLTRField``; otherwise (2) a leading strong-RTL
+    anywhere fires ``BidiControlInLTRField``; otherwise (2) a leading strong-RTL
     codepoint fires ``FieldTakeover``; otherwise (3) mid-stream strong-RTL
     is classified by run length.
     """
@@ -118,7 +118,7 @@ def detect(input_cps: list[int]) -> Detection:
 
     ctl_pos = _first_bidi_control_pos(input_cps)
     if ctl_pos is not None:
-        return Detection(sub="RloInLTRField", positions=(ctl_pos,))
+        return Detection(sub="BidiControlInLTRField", positions=(ctl_pos,))
 
     strong = _first_strong_char(input_cps)
     if strong is not None:

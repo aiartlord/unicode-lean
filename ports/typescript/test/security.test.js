@@ -233,7 +233,7 @@ test("rtl-injection detector matches Lean spot-checks", () => {
   const cases = [
     ["clear-digits", [0x30, 0x31, 0x32, 0x33], null],
     ["clear-cyrillic", [0x043f], null],
-    ["rlo-in-ltr", [0x41, 0x202e, 0x42], "RloInLTRField"],
+    ["rlo-in-ltr", [0x41, 0x202e, 0x42], "BidiControlInLTRField"],
     ["field-takeover-hebrew", [0x05d0, 0x42, 0x43], "FieldTakeover"],
     ["field-takeover-arabic", [0x0627, 0x42, 0x43], "FieldTakeover"],
     ["mid-stream-hebrew", [0x41, 0x42, 0x05d0, 0x44], "StrongRTLInLTR"],

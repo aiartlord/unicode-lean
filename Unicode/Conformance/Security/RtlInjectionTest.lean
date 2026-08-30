@@ -18,7 +18,8 @@
 
   What the detector draws.  The detector distinguishes a text field whose
   intended base direction is left-to-right from the perturbations that would
-  silently flip it.  An embedded override control raises `RloInLTRField`; a
+  silently flip it.  Any bidi format-control raises
+  `BidiControlInLTRField`; a
   leading strong-RTL letter that reorients the whole field raises
   `FieldTakeover`; a field composed only of neutral or left-to-right characters
   is clear.  Each verdict carries the discriminating counts — how many strong
@@ -47,11 +48,11 @@ set_option maxRecDepth 1000000
     is the discriminating override case: the field's base direction stays
     left-to-right, but the single embedded control silently reverses the display
     run around it — the exact primitive behind extension-spoofing and Trojan-
-    Source attacks — so the detector must raise `RloInLTRField` and account for
+    Source attacks — so the detector must raise `BidiControlInLTRField` and account for
     the one bidi control it saw. -/
 theorem rlo_in_ltr_verdict :
     let v := detect [0x41, 0x202E, 0x42]
-    v.classify.tag = some "RloInLTRField" ∧ v.bidiControlCount = 1 := by decide
+    v.classify.tag = some "BidiControlInLTRField" ∧ v.bidiControlCount = 1 := by decide
 
 /-- A leading U+05D0 HEBREW LETTER ALEF in front of ASCII is the discriminating
     takeover case: no explicit control is present, yet one strong right-to-left
@@ -78,7 +79,7 @@ theorem ascii_clear_verdict :
     silently regress. -/
 theorem all_rows_pass :
     (let v := detect [0x41, 0x202E, 0x42];
-      v.classify.tag = some "RloInLTRField" ∧ v.bidiControlCount = 1) ∧
+      v.classify.tag = some "BidiControlInLTRField" ∧ v.bidiControlCount = 1) ∧
     (let v := detect [0x05D0, 0x42, 0x43];
       v.classify.tag = some "FieldTakeover" ∧ v.strongRTLCount = 1) ∧
     (let v := detect [0x48, 0x65, 0x6C, 0x6C, 0x6F];

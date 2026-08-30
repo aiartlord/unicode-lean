@@ -8,7 +8,7 @@ defmodule UnicodeSecurity.Display.RtlInjection do
 
     cond do
       (pos = first_pos(input, &BidiControlBalance.bidi_format_control?/1)) != nil ->
-        %{sub: "RloInLTRField", positions: [pos]}
+        %{sub: "BidiControlInLTRField", positions: [pos]}
 
       match?({_pos, true}, first_strong_char(input)) ->
         {pos, true} = first_strong_char(input)
