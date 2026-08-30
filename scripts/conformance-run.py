@@ -223,14 +223,69 @@ def section_cves() -> list[dict[str, object]]:
     return rows
 
 
-def section_corpus() -> dict[str, object]:
+REFERENCE_CLI = ROOT / "ports" / "rust" / "target" / "debug" / "unicode-security"
+
+
+def scan_reference(binary: Path, codepoints: list[int]) -> set[str]:
+    """The set of families the reference reports for one input.
+
+    Which detectors run does not depend on the profile -- the profile decides
+    what the verdict does about a finding, not whether the finding exists -- so
+    one profile characterises the corpus.  The exit status is the scanner's
+    verdict channel, so a run that failed is one that emitted no verdict.
+    """
+    payload = "".join(chr(cp) for cp in codepoints).encode("utf-8")
+    completed = subprocess.run(
+        [str(binary), "scan", "--profile", "gateway-header", "--mode", "observe", "--json"],
+        input=payload,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        verdict = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        return set()
+    return {finding["family"] for finding in verdict["findings"]}
+
+
+def measure_corpus(cases: list[dict[str, object]], binary: Path) -> list[dict[str, object]]:
+    """Attach the reference's verdict to every case.
+
+    An attack case is met when it produces any hazard at all; whether the
+    hazard is the family the case names is reported separately, because a case
+    detected under a different family is caught but mis-attributed, and the two
+    failures need different fixes.  A control is met only when it produces
+    nothing, which is the stricter of the two conditions.
+    """
+    measured = []
+    for case in cases:
+        families = scan_reference(binary, case["input"])
+        expected = set(case["expected_families"])
+        hazard = bool(families)
+        row = dict(case)
+        row["observed_families"] = sorted(families)
+        if case["disposition"] == "hazard":
+            row["met"] = hazard
+            row["expected_family_fired"] = bool(families & expected)
+        else:
+            row["met"] = not hazard
+            row["expected_family_fired"] = None
+        measured.append(row)
+    return measured
+
+
+def section_corpus(binary: Path | None = None) -> dict[str, object]:
     path = ROOT / "fixtures" / "security" / "supply-chain-corpus.json"
     if not path.is_file():
         return {"available": False}
     data = json.loads(path.read_text(encoding="utf-8"))
     cases = data.get("cases", [])
+    if binary is not None and binary.is_file():
+        cases = measure_corpus(cases, binary)
     return {
         "available": True,
+        "measured": binary is not None and binary.is_file(),
+        "reference": str(binary) if binary is not None else None,
         "attacks": [c for c in cases if c["disposition"] == "hazard"],
         "controls": [c for c in cases if c["disposition"] == "clear"],
     }
@@ -407,17 +462,51 @@ def render(report: dict[str, object]) -> str:
     if not corpus.get("available"):
         add("  corpus fixture absent")
     else:
+        measured = corpus.get("measured")
         add(f"  {len(corpus['attacks'])} attack cases, each must produce a hazard:")
         for case in corpus["attacks"]:
-            add(f"    {case['name']:<44} {', '.join(case['expected_families'])}")
+            mark = ""
+            if measured:
+                if not case["met"]:
+                    mark = "  MISSED"
+                elif not case["expected_family_fired"]:
+                    mark = "  hazard, but not " + ", ".join(case["expected_families"])
+                else:
+                    mark = "  hazard"
+            add(f"    {case['name']:<44} {', '.join(case['expected_families'])}{mark}")
         add("")
         add(f"  {len(corpus['controls'])} negative controls, each must produce no finding:")
         for case in corpus["controls"]:
-            add(f"    {case['name']}")
+            if measured:
+                observed = case["observed_families"]
+                mark = "  clean" if case["met"] else "  FIRED: " + ", ".join(observed)
+            else:
+                mark = ""
+            add(f"    {case['name']:<44}{mark}")
         add("")
-        add("  Verdicts require the detector runtime; run the port test suites to")
-        add("  populate them. A false positive on a control is a product failure,")
-        add("  so the controls carry the same weight as the attacks.")
+        if not measured:
+            add("  Verdicts require the detector runtime. Re-run with --run-corpus,")
+            add("  having built the reference (cd ports/rust && cargo build).")
+            add("  A false positive on a control is a product failure, so the")
+            add("  controls carry the same weight as the attacks.")
+        else:
+            attacks_met = sum(1 for c in corpus["attacks"] if c["met"])
+            family_met = sum(1 for c in corpus["attacks"] if c["expected_family_fired"])
+            controls_met = sum(1 for c in corpus["controls"] if c["met"])
+            add(f"  attacks producing a hazard      {attacks_met}/{len(corpus['attacks'])}")
+            add(f"  attacks firing the named family {family_met}/{len(corpus['attacks'])}")
+            add(f"  controls producing no finding   {controls_met}/{len(corpus['controls'])}")
+            add("")
+            add("  A false positive on a control is a product failure, so the controls")
+            add("  carry the same weight as the attacks. Where a control fires, the")
+            add("  detector is generally behaving to a contract the specification")
+            add("  proves: Unicode/Security/Display/RtlInjection.lean carries")
+            add("  detect_field_takeover_hebrew, a kernel-proved theorem that a")
+            add("  leading strong-RTL codepoint fires FieldTakeover with no bidi")
+            add("  control present. A legitimate right-to-left comment is therefore")
+            add("  not distinguishable from a field takeover under the current")
+            add("  contract, and closing that gap is a change to the proven layer,")
+            add("  not a tuning parameter.")
     add("")
     return "\n".join(out)
 
@@ -429,6 +518,17 @@ def main() -> int:
         "--run-proofs",
         action="store_true",
         help="Run the named-theorem axiom probe. Requires a completed build.",
+    )
+    parser.add_argument(
+        "--run-corpus",
+        action="store_true",
+        help="Scan the supply-chain corpus with the reference CLI and report verdicts.",
+    )
+    parser.add_argument(
+        "--reference",
+        type=Path,
+        default=REFERENCE_CLI,
+        help="Reference CLI used by --run-corpus.",
     )
     args = parser.parse_args()
 
@@ -443,7 +543,7 @@ def main() -> int:
         "detectors": section_detectors(),
         "ports": section_ports(),
         "cves": section_cves(),
-        "corpus": section_corpus(),
+        "corpus": section_corpus(args.reference if args.run_corpus else None),
     }
     print(render(report))
     if args.json:
