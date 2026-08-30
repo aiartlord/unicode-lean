@@ -10,6 +10,19 @@ local homoglyph = require("unicode_lua.security.identity.homoglyph_confusable")
 local rtl = require("unicode_lua.security.display.rtl_injection")
 local confusable_bidi = require("unicode_lua.security.boundary.confusable_bidi_compound")
 local covert_display = require("unicode_lua.security.boundary.covert_display_compound")
+local emoji_zwj = require("unicode_lua.security.identity.emoji_zwj_integrity")
+local skin_tone = require("unicode_lua.security.identity.skin_tone_variation_forgery")
+local filename_disguise = require("unicode_lua.security.display.filename_disguise")
+local renderer_divergence = require("unicode_lua.security.display.renderer_divergence")
+local source_display = require("unicode_lua.security.display.source_display_divergence")
+local stream_safe = require("unicode_lua.security.form.stream_safe_violation")
+local case_expansion = require("unicode_lua.security.form.case_expansion_mismatch")
+local normalization_bomb = require("unicode_lua.security.form.normalization_bomb")
+local locale_case = require("unicode_lua.security.form.locale_case_inversion")
+local nfc_witness = require("unicode_lua.security.form.nfc_idempotence_witness")
+local width_class = require("unicode_lua.security.form.width_class_confusion")
+local identifier_drift = require("unicode_lua.security.boundary.identifier_form_drift")
+local admissibility_drift = require("unicode_lua.security.boundary.admissibility_form_drift")
 
 local Family = calculus.Family
 local Severity = calculus.Severity
@@ -327,6 +340,73 @@ function M.scan(profile, mode, input)
   local cd = covert_display.detect(input)
   if cd.sub ~= nil then
     push_finding(findings, Family.CovertDisplayCompound, ClassificationKind.Hazard, cd.sub, cd.positions)
+  end
+
+  local emoji_zwj_v = emoji_zwj.detect(input)
+  if not emoji_zwj.is_clear(emoji_zwj_v) then
+    push_finding(findings, Family.EmojiZwjIntegrity, ClassificationKind.Hazard, emoji_zwj.classification_tag(emoji_zwj_v), emoji_zwj_v.classify.positions)
+  end
+
+  local skin_tone_v = skin_tone.detect(input)
+  if not skin_tone.is_clear(skin_tone_v) then
+    push_finding(findings, Family.SkinToneVariationForgery, ClassificationKind.Hazard, skin_tone.classification_tag(skin_tone_v), skin_tone_v.classify.positions)
+  end
+
+  local filename_disguise_v = filename_disguise.detect(input)
+  if not filename_disguise.is_clear(filename_disguise_v) then
+    push_finding(findings, Family.FilenameDisguise, ClassificationKind.Hazard, filename_disguise.classification_tag(filename_disguise_v), filename_disguise.classification_positions(filename_disguise_v))
+  end
+
+  local renderer_divergence_v = renderer_divergence.detect(input)
+  if not renderer_divergence.is_clear(renderer_divergence_v) then
+    push_finding(findings, Family.RendererDivergence, ClassificationKind.Hazard, renderer_divergence.classification_tag(renderer_divergence_v), renderer_divergence.classification_positions(renderer_divergence_v))
+  end
+
+  local stream_safe_v = stream_safe.detect(input)
+  if not stream_safe.classification_is_clear(stream_safe_v.classify) then
+    push_finding(findings, Family.StreamSafeViolation, ClassificationKind.Hazard, stream_safe.classification_tag(stream_safe_v.classify), stream_safe.classification_positions(stream_safe_v.classify))
+  end
+
+  local case_expansion_v = case_expansion.detect(input)
+  if not case_expansion.is_clear(case_expansion_v) then
+    push_finding(findings, Family.CaseExpansionMismatch, ClassificationKind.Hazard, case_expansion.classification_tag(case_expansion_v), case_expansion.positions(case_expansion_v))
+  end
+
+  local identifier_drift_v = identifier_drift.detect(input)
+  if not identifier_drift.is_clear(identifier_drift_v) then
+    push_finding(findings, Family.IdentifierFormDrift, ClassificationKind.Hazard, identifier_drift.classification_tag(identifier_drift_v), identifier_drift.classification_positions(identifier_drift_v))
+  end
+
+  local admissibility_drift_v = admissibility_drift.detect(input)
+  if not admissibility_drift.is_clear(admissibility_drift_v) then
+    push_finding(findings, Family.AdmissibilityFormDrift, ClassificationKind.Hazard, admissibility_drift.classification_tag(admissibility_drift_v), admissibility_drift.classification_positions(admissibility_drift_v))
+  end
+
+  local normalization_bomb_d = normalization_bomb.detect(input)
+  if normalization_bomb_d.sub ~= nil then
+    push_finding(findings, Family.NormalizationBomb, ClassificationKind.Hazard, normalization_bomb_d.sub, normalization_bomb_d.positions)
+  end
+
+  local locale_case_d = locale_case.detect(input)
+  if locale_case_d.sub ~= nil then
+    push_finding(findings, Family.LocaleCaseInversion, ClassificationKind.Hazard, locale_case_d.sub, locale_case_d.positions)
+  end
+
+  local nfc_witness_d = nfc_witness.detect(input)
+  if nfc_witness_d.sub ~= nil then
+    push_finding(findings, Family.NfcIdempotenceWitness, ClassificationKind.Hazard, nfc_witness_d.sub, nfc_witness_d.positions)
+  end
+
+  local width_class_d = width_class.detect(input)
+  if width_class_d.sub ~= nil then
+    push_finding(findings, Family.WidthClassConfusion, ClassificationKind.Hazard, width_class_d.sub, width_class_d.positions)
+  end
+
+  -- SourceDisplayDivergence judges the input as a unit, so it localises nothing
+  -- and carries an empty position list.
+  local source_display_d = source_display.detect(input)
+  if source_display_d.sub ~= nil then
+    push_finding(findings, Family.SourceDisplayDivergence, ClassificationKind.Hazard, source_display_d.sub, {})
   end
 
   return { input = { unpack(input) }, profile = profile, mode = mode, action = select_action(profile, mode, findings), findings = findings, normalized = nil }
