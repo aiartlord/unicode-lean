@@ -44,58 +44,24 @@ module Unicode.Security.Display.SourceDisplayDivergence
   , reasonCode
   ) where
 
+import Unicode.Security.Display.SourceDisplayAggregate
+  ( Classification (Clear, Hazard)
+  , SubThreat
+      ( BidiControl, Compound, IdentifierHomoglyph, TagBlock, VariationSelector
+      , ZeroWidth
+      )
+  , classificationIsClear
+  , classificationTag
+  , classify
+  , firedFrom
+  , reasonCode
+  , subThreatTag
+  )
 import qualified Unicode.Security.Policy as Policy
 
 -- ─────────────────────────────────────────────────────────────────────
 -- §1 Types
 -- ─────────────────────────────────────────────────────────────────────
-
--- | Sub-threat tag for the aggregate D1 verdict. The first five constructors
--- are the constituent family tags, in canonical aggregation order; 'Compound'
--- is emitted when two or more constituents fire on one input.
-data SubThreat
-  = -- | The tag-block-payload family fired (and no other).
-    TagBlock
-  | -- | The variation-selector-payload family fired (and no other).
-    VariationSelector
-  | -- | The zero-width-payload family fired (and no other).
-    ZeroWidth
-  | -- | The bidi-control-balance family fired (and no other).
-    BidiControl
-  | -- | The homoglyph-confusable family fired (and no other).
-    IdentifierHomoglyph
-  | -- | Two or more constituent families fired on the same input.
-    Compound
-  deriving stock (Eq, Show)
-
--- | Fixture-row tag string for this sub-threat (matches @SubThreat.tag@).
-subThreatTag :: SubThreat -> String
-subThreatTag TagBlock            = "TagBlock"
-subThreatTag VariationSelector   = "VariationSelector"
-subThreatTag ZeroWidth           = "ZeroWidth"
-subThreatTag BidiControl         = "BidiControl"
-subThreatTag IdentifierHomoglyph = "IdentifierHomoglyph"
-subThreatTag Compound            = "Compound"
-
--- | Top-level classification (no constituent fired = 'Clear').
-data Classification
-  = -- | No constituent detector fired: the source renders as it runs.
-    Clear
-  | -- | At least one constituent fired; the payload is the aggregate
-    -- sub-threat tag. Positions are carried by the per-family verdicts, not
-    -- here, mirroring the Lean @Classification@.
-    Hazard SubThreat
-  deriving stock (Eq, Show)
-
--- | True iff the classification is 'Clear'.
-classificationIsClear :: Classification -> Bool
-classificationIsClear Clear        = True
-classificationIsClear (Hazard _sub) = False
-
--- | Human-facing tag for a hazard, or 'Nothing' when clear.
-classificationTag :: Classification -> Maybe String
-classificationTag Clear         = Nothing
-classificationTag (Hazard sub)  = Just (subThreatTag sub)
 
 -- | Verdict — the structured output of 'detect' (mirrors the Lean @Verdict@).
 data Verdict = Verdict
@@ -115,26 +81,18 @@ data Verdict = Verdict
 -- | The five constituent detectors paired with the tag each contributes, in
 -- canonical aggregation order. Each entry runs the port's own core-family
 -- detector on the same input; a non-empty 'Finding' list is a fire.
-constituents :: [Int] -> [([Policy.Finding], SubThreat)]
+constituents :: [Int] -> [[Policy.Finding]]
 constituents input =
-  [ (Policy.tagBlockFinding input,          TagBlock)
-  , (Policy.variationSelectorFinding input, VariationSelector)
-  , (Policy.zeroWidthFinding input,         ZeroWidth)
-  , (Policy.bidiFinding input,              BidiControl)
-  , (Policy.homoglyphFinding input,         IdentifierHomoglyph)
+  [ Policy.tagBlockFinding input
+  , Policy.variationSelectorFinding input
+  , Policy.zeroWidthFinding input
+  , Policy.bidiFinding input
+  , Policy.homoglyphConstituentFinding input
   ]
 
 -- | The constituent tags that fired on this input, in canonical order.
 firedFamilies :: [Int] -> [SubThreat]
-firedFamilies input =
-  [ tag | (finding, tag) <- constituents input, not (null finding) ]
-
--- | Aggregate the fired constituents into one classification: none → 'Clear',
--- exactly one → pass-through that family's tag, two or more → 'Compound'.
-classify :: [SubThreat] -> Classification
-classify []                          = Clear
-classify [only]                      = Hazard only
-classify (_first : _second : _rest)  = Hazard Compound
+firedFamilies input = firedFrom (map (not . null) (constituents input))
 
 -- | The SourceDisplayDivergence detection function. Runs the five constituent
 -- detectors in canonical order and aggregates by how many fired, mirroring the
@@ -150,7 +108,3 @@ detect input =
   where
     fires = firedFamilies input
 
--- | Fully-qualified reason code for a fired sub-threat, of the shape
--- @unicode.security.D.source-display-divergence.\<subThreatTag\>@.
-reasonCode :: SubThreat -> String
-reasonCode sub = "unicode.security.D.source-display-divergence." ++ subThreatTag sub

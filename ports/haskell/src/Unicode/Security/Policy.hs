@@ -48,6 +48,7 @@ module Unicode.Security.Policy
   , zeroWidthFinding
   , bidiFinding
   , homoglyphFinding
+  , homoglyphConstituentFinding
   , scan
   , scanUtf8
   , scanUtf16BE
@@ -73,6 +74,19 @@ import Numeric (readHex)
 import System.IO.Unsafe (unsafePerformIO)
 
 import qualified Unicode.Codec.Utf8 as Utf8
+import qualified Unicode.Security.Display.SourceDisplayAggregate as SourceDisplay
+import qualified Unicode.Security.Boundary.AdmissibilityFormDrift as AdmissibilityDrift
+import qualified Unicode.Security.Boundary.IdentifierFormDrift as IdentifierDrift
+import qualified Unicode.Security.Display.FilenameDisguise as FilenameDisguise
+import qualified Unicode.Security.Display.RendererDivergence as RendererDiv
+import qualified Unicode.Security.Form.CaseExpansionMismatch as CaseExpansion
+import qualified Unicode.Security.Form.LocaleCaseInversion as LocaleCase
+import qualified Unicode.Security.Form.NfcIdempotenceWitness as NfcWitness
+import qualified Unicode.Security.Form.NormalizationBomb as NormBomb
+import qualified Unicode.Security.Form.StreamSafeViolation as StreamSafe
+import qualified Unicode.Security.Form.WidthClassConfusion as WidthClass
+import qualified Unicode.Security.Identity.EmojiZwjIntegrity as EmojiZwj
+import qualified Unicode.Security.Identity.SkinToneVariationForgery as SkinTone
 import Unicode.Codec.Strict
   ( Utf8RejectKind
       ( CodepointBeyondMax
@@ -169,6 +183,26 @@ data Family
   | FamilyRtlInjection
   | FamilyConfusableBidiCompound
   | FamilyCovertDisplayCompound
+  | FamilyEmojiZwjIntegrity
+  | FamilySkinToneVariationForgery
+  | FamilyFilenameDisguise
+  | FamilyRendererDivergence
+  | FamilyStreamSafeViolation
+  | FamilyCaseExpansionMismatch
+  | FamilyIdentifierFormDrift
+  | FamilyAdmissibilityFormDrift
+  | FamilyNormalizationBomb
+  | FamilyLocaleCaseInversion
+  | FamilyNfcIdempotenceWitness
+  | FamilyWidthClassConfusion
+  | FamilySourceDisplayDivergence
+  -- The three crypto families judge a candidate against a wordlist, a hashing
+  -- rule or a watermark cue, none of which a plain scan supplies. They are
+  -- named so the reason-code namespace is complete and are deliberately not
+  -- dispatched from 'detect', which is what the reference does on plain input.
+  | FamilyBip39Canonical
+  | FamilyHashInputStability
+  | FamilyAiWatermarkDetectability
   deriving stock (Eq, Show, Ord)
 
 familyTag :: Family -> String
@@ -186,6 +220,22 @@ familyTag FamilyMixedScriptAdmissibility = "mixed-script-admissibility"
 familyTag FamilyRtlInjection = "rtl-injection"
 familyTag FamilyConfusableBidiCompound = "confusable-bidi-compound"
 familyTag FamilyCovertDisplayCompound = "covert-display-compound"
+familyTag FamilyEmojiZwjIntegrity = "emoji-zwj-integrity"
+familyTag FamilySkinToneVariationForgery = "skin-tone-variation-forgery"
+familyTag FamilyFilenameDisguise = "filename-disguise"
+familyTag FamilyRendererDivergence = "renderer-divergence"
+familyTag FamilySourceDisplayDivergence = "source-display-divergence"
+familyTag FamilyStreamSafeViolation = "stream-safe-violation"
+familyTag FamilyCaseExpansionMismatch = "case-expansion-mismatch"
+familyTag FamilyNormalizationBomb = "normalization-bomb"
+familyTag FamilyLocaleCaseInversion = "locale-case-inversion"
+familyTag FamilyNfcIdempotenceWitness = "nfc-idempotence-witness"
+familyTag FamilyWidthClassConfusion = "width-class-confusion"
+familyTag FamilyIdentifierFormDrift = "identifier-form-drift"
+familyTag FamilyAdmissibilityFormDrift = "admissibility-form-drift"
+familyTag FamilyBip39Canonical = "bip39-canonical"
+familyTag FamilyHashInputStability = "hash-input-stability"
+familyTag FamilyAiWatermarkDetectability = "ai-watermark-detectability"
 
 data ProfilePolicy = ProfilePolicy
   { policyLevel      :: PolicyLevel
@@ -396,6 +446,19 @@ detect input =
     ++ rtlInjectionFinding input
     ++ confusableBidiCompoundFinding input
     ++ covertDisplayCompoundFinding input
+    ++ emojiZwjIntegrityFinding input
+    ++ skinToneVariationForgeryFinding input
+    ++ filenameDisguiseFinding input
+    ++ rendererDivergenceFinding input
+    ++ streamSafeViolationFinding input
+    ++ caseExpansionMismatchFinding input
+    ++ identifierFormDriftFinding input
+    ++ admissibilityFormDriftFinding input
+    ++ normalizationBombFinding input
+    ++ localeCaseInversionFinding input
+    ++ nfcIdempotenceWitnessFinding input
+    ++ widthClassConfusionFinding input
+    ++ sourceDisplayDivergenceFinding input
 
 tagBlockFinding :: [Int] -> [Finding]
 tagBlockFinding input =
@@ -564,6 +627,22 @@ blocks PolicyRestrictive FamilyMixedScriptAdmissibility = True
 blocks PolicyRestrictive FamilyRtlInjection = True
 blocks PolicyRestrictive FamilyConfusableBidiCompound = True
 blocks PolicyRestrictive FamilyCovertDisplayCompound = True
+blocks PolicyRestrictive FamilyEmojiZwjIntegrity        = True
+blocks PolicyRestrictive FamilySkinToneVariationForgery = True
+blocks PolicyRestrictive FamilyFilenameDisguise         = True
+blocks PolicyRestrictive FamilyRendererDivergence       = True
+blocks PolicyRestrictive FamilySourceDisplayDivergence  = True
+blocks PolicyRestrictive FamilyStreamSafeViolation      = True
+blocks PolicyRestrictive FamilyCaseExpansionMismatch    = True
+blocks PolicyRestrictive FamilyNormalizationBomb        = True
+blocks PolicyRestrictive FamilyLocaleCaseInversion      = True
+blocks PolicyRestrictive FamilyNfcIdempotenceWitness    = True
+blocks PolicyRestrictive FamilyWidthClassConfusion      = True
+blocks PolicyRestrictive FamilyIdentifierFormDrift      = True
+blocks PolicyRestrictive FamilyAdmissibilityFormDrift   = True
+blocks PolicyRestrictive FamilyBip39Canonical           = False
+blocks PolicyRestrictive FamilyHashInputStability       = False
+blocks PolicyRestrictive FamilyAiWatermarkDetectability = False
 blocks PolicyModerate FamilyTagBlockPayload       = True
 blocks PolicyModerate FamilyMalformedUtf8         = True
 blocks PolicyModerate FamilyMalformedUtf16        = True
@@ -578,6 +657,22 @@ blocks PolicyModerate FamilyMixedScriptAdmissibility = True
 blocks PolicyModerate FamilyRtlInjection = True
 blocks PolicyModerate FamilyConfusableBidiCompound = True
 blocks PolicyModerate FamilyCovertDisplayCompound = True
+blocks PolicyModerate FamilyEmojiZwjIntegrity        = False
+blocks PolicyModerate FamilySkinToneVariationForgery = True
+blocks PolicyModerate FamilyFilenameDisguise         = True
+blocks PolicyModerate FamilyRendererDivergence       = False
+blocks PolicyModerate FamilySourceDisplayDivergence  = True
+blocks PolicyModerate FamilyStreamSafeViolation      = True
+blocks PolicyModerate FamilyCaseExpansionMismatch    = True
+blocks PolicyModerate FamilyNormalizationBomb        = False
+blocks PolicyModerate FamilyLocaleCaseInversion      = True
+blocks PolicyModerate FamilyNfcIdempotenceWitness    = True
+blocks PolicyModerate FamilyWidthClassConfusion      = True
+blocks PolicyModerate FamilyIdentifierFormDrift      = True
+blocks PolicyModerate FamilyAdmissibilityFormDrift   = True
+blocks PolicyModerate FamilyBip39Canonical           = False
+blocks PolicyModerate FamilyHashInputStability       = False
+blocks PolicyModerate FamilyAiWatermarkDetectability = False
 blocks PolicyMinimal FamilyBidiControlBalance     = True
 blocks PolicyMinimal FamilySurrogateReassembly    = True
 blocks PolicyMinimal FamilyMalformedUtf8          = True
@@ -592,6 +687,22 @@ blocks PolicyMinimal FamilyMixedScriptAdmissibility = False
 blocks PolicyMinimal FamilyRtlInjection           = False
 blocks PolicyMinimal FamilyConfusableBidiCompound = False
 blocks PolicyMinimal FamilyCovertDisplayCompound  = False
+blocks PolicyMinimal FamilyEmojiZwjIntegrity        = False
+blocks PolicyMinimal FamilySkinToneVariationForgery = False
+blocks PolicyMinimal FamilyFilenameDisguise         = False
+blocks PolicyMinimal FamilyRendererDivergence       = False
+blocks PolicyMinimal FamilySourceDisplayDivergence  = False
+blocks PolicyMinimal FamilyStreamSafeViolation      = True
+blocks PolicyMinimal FamilyCaseExpansionMismatch    = False
+blocks PolicyMinimal FamilyNormalizationBomb        = False
+blocks PolicyMinimal FamilyLocaleCaseInversion      = False
+blocks PolicyMinimal FamilyNfcIdempotenceWitness    = False
+blocks PolicyMinimal FamilyWidthClassConfusion      = False
+blocks PolicyMinimal FamilyIdentifierFormDrift      = False
+blocks PolicyMinimal FamilyAdmissibilityFormDrift   = False
+blocks PolicyMinimal FamilyBip39Canonical           = False
+blocks PolicyMinimal FamilyHashInputStability       = False
+blocks PolicyMinimal FamilyAiWatermarkDetectability = False
 
 positionsWhere :: (Int -> Bool) -> [Int] -> [Int]
 positionsWhere predicate input =
@@ -682,6 +793,158 @@ isC0Control cp =
 
 isC1Control :: Int -> Bool
 isC1Control cp = cp >= 0x80 && cp <= 0x9F
+
+-- | Build the finding list for a family from a sub-threat tag and its
+-- positions. Every detector below reports the same shape -- 'Nothing' for a
+-- clear input, 'Just' the sub-threat tag otherwise -- so the record is built
+-- here once rather than repeated per family. The severity is 2 because each of
+-- these classifications is a hazard, matching the reference's Hazard-to-Moderate
+-- mapping and the twelve findings already built above.
+findingFromTag :: Family -> Maybe String -> [Int] -> [Finding]
+findingFromTag _ Nothing _ = []
+findingFromTag family (Just subThreat) positions =
+  [ Finding
+      { findingCode = reasonCode family subThreat
+      , findingFamily = family
+      , findingSeverity = 2
+      , findingPositions = positions
+      , findingSubThreat = subThreat
+      , findingDetail = familyTag family
+      }
+  ]
+
+emojiZwjIntegrityFinding :: [Int] -> [Finding]
+emojiZwjIntegrityFinding input =
+  findingFromTag
+    FamilyEmojiZwjIntegrity
+    (EmojiZwj.classificationTag classification)
+    (EmojiZwj.classificationPositions classification)
+  where
+    classification = EmojiZwj.verdictClassify (EmojiZwj.detect input)
+
+skinToneVariationForgeryFinding :: [Int] -> [Finding]
+skinToneVariationForgeryFinding input =
+  findingFromTag
+    FamilySkinToneVariationForgery
+    (SkinTone.classificationTag classification)
+    (SkinTone.classificationPositions classification)
+  where
+    classification = SkinTone.verdictClassify (SkinTone.detect input)
+
+filenameDisguiseFinding :: [Int] -> [Finding]
+filenameDisguiseFinding input =
+  findingFromTag
+    FamilyFilenameDisguise
+    (FilenameDisguise.classificationTag classification)
+    (FilenameDisguise.classificationPositions classification)
+  where
+    classification = FilenameDisguise.verdictClassify (FilenameDisguise.detect input)
+
+rendererDivergenceFinding :: [Int] -> [Finding]
+rendererDivergenceFinding input =
+  findingFromTag
+    FamilyRendererDivergence
+    (RendererDiv.classificationTag classification)
+    (RendererDiv.classificationPositions classification)
+  where
+    classification = RendererDiv.verdictClassify (RendererDiv.detect input)
+
+streamSafeViolationFinding :: [Int] -> [Finding]
+streamSafeViolationFinding input =
+  findingFromTag
+    FamilyStreamSafeViolation
+    (StreamSafe.classificationTag classification)
+    (StreamSafe.classificationPositions classification)
+  where
+    classification = StreamSafe.verdictClassify (StreamSafe.detect input)
+
+caseExpansionMismatchFinding :: [Int] -> [Finding]
+caseExpansionMismatchFinding input =
+  findingFromTag
+    FamilyCaseExpansionMismatch
+    (CaseExpansion.classificationTag classification)
+    (CaseExpansion.classificationPositions classification)
+  where
+    classification = CaseExpansion.verdictClassify (CaseExpansion.detect input)
+
+identifierFormDriftFinding :: [Int] -> [Finding]
+identifierFormDriftFinding input =
+  findingFromTag
+    FamilyIdentifierFormDrift
+    (IdentifierDrift.classificationTag classification)
+    (IdentifierDrift.classificationPositions classification)
+  where
+    classification = IdentifierDrift.verdictClassify (IdentifierDrift.detect input)
+
+admissibilityFormDriftFinding :: [Int] -> [Finding]
+admissibilityFormDriftFinding input =
+  findingFromTag
+    FamilyAdmissibilityFormDrift
+    (AdmissibilityDrift.classificationTag classification)
+    (AdmissibilityDrift.classificationPositions classification)
+  where
+    classification = AdmissibilityDrift.verdictClassify (AdmissibilityDrift.detect input)
+
+normalizationBombFinding :: [Int] -> [Finding]
+normalizationBombFinding input =
+  findingFromTag FamilyNormalizationBomb (NormBomb.detectionSub detection) (NormBomb.detectionPositions detection)
+  where
+    detection = NormBomb.detect input
+
+localeCaseInversionFinding :: [Int] -> [Finding]
+localeCaseInversionFinding input =
+  findingFromTag FamilyLocaleCaseInversion (LocaleCase.detectionSub detection) (LocaleCase.detectionPositions detection)
+  where
+    detection = LocaleCase.detect input
+
+nfcIdempotenceWitnessFinding :: [Int] -> [Finding]
+nfcIdempotenceWitnessFinding input =
+  findingFromTag FamilyNfcIdempotenceWitness (NfcWitness.detectionSub detection) (NfcWitness.detectionPositions detection)
+  where
+    detection = NfcWitness.detect input
+
+widthClassConfusionFinding :: [Int] -> [Finding]
+widthClassConfusionFinding input =
+  findingFromTag FamilyWidthClassConfusion (WidthClass.detectionSub detection) (WidthClass.detectionPositions detection)
+  where
+    detection = WidthClass.detect input
+
+-- | The source-display-divergence aggregate over this scan's own constituent
+-- findings. The detector module runs the same five builders itself, but it
+-- imports this module to reach them, so importing it back would close a cycle.
+-- Both callers share the order and the aggregation rule through
+-- "Unicode.Security.Display.SourceDisplayAggregate"; only the way the fired
+-- constituents are discovered differs. The family judges the input as a unit,
+-- so it localises nothing and carries an empty position list.
+sourceDisplayDivergenceFinding :: [Int] -> [Finding]
+sourceDisplayDivergenceFinding input =
+  findingFromTag
+    FamilySourceDisplayDivergence
+    (SourceDisplay.classificationTag classification)
+    []
+  where
+    classification =
+      SourceDisplay.classify
+        (SourceDisplay.firedFrom
+          (map (not . null)
+            [ tagBlockFinding input
+            , variationSelectorFinding input
+            , zeroWidthFinding input
+            , bidiFinding input
+            , homoglyphConstituentFinding input
+            ]))
+
+-- | The homoglyph constituent as source-display-divergence sees it. The
+-- reference runs one homoglyph detector whose priority ladder ends in a
+-- CrossScriptMix branch, so a cross-script identifier fires it; this port
+-- splits that ladder, reporting the script mix under
+-- mixed-script-admissibility. Consulting only 'homoglyphFinding' misses every
+-- input whose sole homoglyph signal is the script mix, so the constituent is
+-- defined once here and used by both this module's aggregate and the detector
+-- module's own run.
+homoglyphConstituentFinding :: [Int] -> [Finding]
+homoglyphConstituentFinding input =
+  homoglyphFinding input ++ mixedScriptAdmissibilityFinding input
 
 homoglyphFinding :: [Int] -> [Finding]
 homoglyphFinding input
@@ -1215,6 +1478,22 @@ layer FamilyMixedScriptAdmissibility = "I"
 layer FamilyRtlInjection = "D"
 layer FamilyConfusableBidiCompound = "X"
 layer FamilyCovertDisplayCompound = "X"
+layer FamilyEmojiZwjIntegrity = "I"
+layer FamilySkinToneVariationForgery = "I"
+layer FamilyFilenameDisguise = "D"
+layer FamilyRendererDivergence = "D"
+layer FamilySourceDisplayDivergence = "D"
+layer FamilyStreamSafeViolation = "F"
+layer FamilyCaseExpansionMismatch = "F"
+layer FamilyNormalizationBomb = "F"
+layer FamilyLocaleCaseInversion = "F"
+layer FamilyNfcIdempotenceWitness = "F"
+layer FamilyWidthClassConfusion = "F"
+layer FamilyIdentifierFormDrift = "X"
+layer FamilyAdmissibilityFormDrift = "X"
+layer FamilyBip39Canonical = "K"
+layer FamilyHashInputStability = "K"
+layer FamilyAiWatermarkDetectability = "K"
 
 utf8RejectTag :: Utf8RejectKind -> String
 utf8RejectTag InvalidStartByte = "InvalidStartByte"

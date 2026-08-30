@@ -108,6 +108,7 @@ library
       Unicode.Security.Crypto.HashInputStability
       Unicode.Security.Display.RendererDivergence
       Unicode.Security.Display.FilenameDisguise
+      Unicode.Security.Display.SourceDisplayAggregate
       Unicode.Security.Display.SourceDisplayDivergence
       Unicode.Security.Form.CaseExpansionMismatch
       Unicode.Security.Form.LocaleCaseInversion
