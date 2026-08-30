@@ -22,6 +22,13 @@ reported as unavailable, naming the command that would produce them. The
 report never infers a result it did not observe.
 
 Run: python3 scripts/conformance-run.py [--json PATH]
+
+Three flags add evidence the report cannot assemble from files alone, each
+needing a toolchain the bare run does not:
+
+  --run-proofs             run the named-theorem axiom probe (needs a build)
+  --run-corpus             scan the supply-chain corpus with the reference CLI
+  --emit-inputs-manifest   write dist/CONFORMANCE-INPUTS.sha256
 """
 
 from __future__ import annotations
@@ -423,6 +430,12 @@ def render(report: dict[str, object]) -> str:
     add(f"  Corpus-complete, zero skipped: {', '.join(complete) if complete else 'none'}.")
     add("  Every other suite proves representative vectors against the published")
     add("  answer; its corpus rows are counted as skipped above, not as passes.")
+    add("")
+    add("  IdnaTestV2 additionally has an evaluated run over the published file,")
+    add("  separate from the kernel-proved vectors counted here and not a")
+    add("  substitute for them: scripts/idna-conformance.sh [ROWS|all]. It states")
+    add("  how many of the 6391 rows it judged, because the fold is interpreted")
+    add("  and a bounded run is the ordinary way to use it.")
     add("")
 
     add("§3  PROOF EVIDENCE")
