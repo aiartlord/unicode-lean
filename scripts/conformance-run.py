@@ -256,17 +256,20 @@ def section_cves() -> list[dict[str, object]]:
 REFERENCE_CLI = ROOT / "ports" / "rust" / "target" / "debug" / "unicode-security"
 
 
-def scan_reference(binary: Path, codepoints: list[int]) -> set[str]:
-    """The set of families the reference reports for one input.
+def scan_reference(
+    binary: Path, codepoints: list[int], profile: str, mode: str
+) -> tuple[set[str], str | None]:
+    """The families the reference reports for one input, and its action.
 
     Which detectors run does not depend on the profile -- the profile decides
-    what the verdict does about a finding, not whether the finding exists -- so
-    one profile characterises the corpus.  The exit status is the scanner's
-    verdict channel, so a run that failed is one that emitted no verdict.
+    what the verdict does about a finding, not whether the finding exists --
+    so the family set is the same under any profile, and only the action moves.
+    The exit status is the scanner's verdict channel, so a run that failed is
+    one that emitted no verdict.
     """
     payload = "".join(chr(cp) for cp in codepoints).encode("utf-8")
     completed = subprocess.run(
-        [str(binary), "scan", "--profile", "gateway-header", "--mode", "observe", "--json"],
+        [str(binary), "scan", "--profile", profile, "--mode", mode, "--json"],
         input=payload,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -274,31 +277,50 @@ def scan_reference(binary: Path, codepoints: list[int]) -> set[str]:
     try:
         verdict = json.loads(completed.stdout)
     except json.JSONDecodeError:
-        return set()
-    return {finding["family"] for finding in verdict["findings"]}
+        return set(), None
+    return {finding["family"] for finding in verdict["findings"]}, verdict.get("action")
 
 
 def measure_corpus(cases: list[dict[str, object]], binary: Path) -> list[dict[str, object]]:
-    """Attach the reference's verdict to every case.
+    """Attach the reference's verdict to every case, on both of its questions.
 
-    An attack case is met when it produces any hazard at all; whether the
-    hazard is the family the case names is reported separately, because a case
-    detected under a different family is caught but mis-attributed, and the two
-    failures need different fixes.  A control is met only when it produces
-    nothing, which is the stricter of the two conditions.
+    A case is measured twice, because a corpus of this kind answers two
+    questions that do not have the same answer.  The first is what the
+    detectors see: scanned under one profile in `observe`, an attack is met
+    when it produces any finding and a control is met only when it produces
+    none.  That is the strict reading, and it is the one to quote when asking
+    whether a detector exists and reaches the input.
+
+    The second is what the product does: scanned under the profile of the field
+    the case is drawn from, in `enforce`, an attack is met when the action is
+    not `allow` and a control is met when it is.  This is the deployed
+    behaviour, and it can differ from the first because
+    `Unicode/Security/Policy.lean` grades families by profile -- a Hebrew
+    comment is a finding in every profile and a rejection only in those whose
+    level admits `rtlInjection`.
+
+    Neither reading subsumes the other, so both are reported.  Whether the
+    hazard carries the family the case names is tracked separately again: a
+    case caught under another family is caught but mis-attributed, and the two
+    failures need different fixes.
     """
     measured = []
     for case in cases:
-        families = scan_reference(binary, case["input"])
+        families, _ = scan_reference(binary, case["input"], "gateway-header", "observe")
+        _, action = scan_reference(binary, case["input"], case["profile"], "enforce")
         expected = set(case["expected_families"])
         hazard = bool(families)
+        blocked = action is not None and action != "allow"
         row = dict(case)
         row["observed_families"] = sorted(families)
+        row["action"] = action
         if case["disposition"] == "hazard":
             row["met"] = hazard
+            row["deployed_met"] = blocked
             row["expected_family_fired"] = bool(families & expected)
         else:
             row["met"] = not hazard
+            row["deployed_met"] = action is not None and not blocked
             row["expected_family_fired"] = None
         measured.append(row)
     return measured
@@ -565,6 +587,7 @@ def render(report: dict[str, object]) -> str:
             if measured:
                 observed = case["observed_families"]
                 mark = "  clean" if case["met"] else "  FIRED: " + ", ".join(observed)
+                mark += f"  [{case['profile']} -> {case['action']}]"
             else:
                 mark = ""
             add(f"    {case['name']:<44}{mark}")
@@ -591,6 +614,25 @@ def render(report: dict[str, object]) -> str:
             add("  described below.")
             add(f"  controls producing no finding   {controls_met}/{len(corpus['controls'])}")
             add("")
+            attacks_dep = sum(1 for c in corpus["attacks"] if c["deployed_met"])
+            controls_dep = sum(1 for c in corpus["controls"] if c["deployed_met"])
+            add("  The rows above are what the detectors see, scanned under one")
+            add("  profile in observe. What the product does is a second question,")
+            add("  because Unicode/Security/Policy.lean grades families by profile:")
+            add("  every case also carries the profile of the field it is drawn from,")
+            add("  and scanning it there in enforce gives the action a deployment")
+            add("  would take.")
+            add("")
+            add(f"  attacks blocked in their field  {attacks_dep}/{len(corpus['attacks'])}")
+            add(f"  controls allowed in their field {controls_dep}/{len(corpus['controls'])}")
+            add("")
+            add("  Both readings are reported because neither subsumes the other, and")
+            add("  the stricter one is the first. A finding that no profile acts on is")
+            add("  still a finding: it reaches a reviewer, and a team reading its own")
+            add("  language flagged does not care which level admitted it. The gap")
+            add("  between the two rows is the set of cases the policy layer already")
+            add("  answers correctly and the detector layer does not.")
+            add("")
             missed = [c["name"] for c in corpus["attacks"] if not c["met"]]
             if missed:
                 add("  Missed entirely: " + ", ".join(missed) + ".")
@@ -607,23 +649,57 @@ def render(report: dict[str, object]) -> str:
                 add("  larger curated file.")
                 add("")
             add("  A false positive on a control is a product failure, so the controls")
-            add("  carry the same weight as the attacks. The four that fire are")
+            add("  carry the same weight as the attacks. The controls that fire are")
             add("  detectors reading a genuinely ambiguous input the way their")
             add("  contracts say to. Unicode/Security/Display/RtlInjection.lean opens")
             add("  with \"bidi format-control trumps all\", so presence fires it and")
-            add("  balance is never consulted, which is what reports the balanced")
-            add("  Arabic literal and both right-to-left comments; it also carries")
+            add("  balance is never consulted; that reports the balanced Arabic")
+            add("  literal, the Hebrew comment and the Persian ZWNJ. It also carries")
             add("  detect_field_takeover_hebrew, a kernel-proved theorem that a")
             add("  leading strong-RTL codepoint fires FieldTakeover with no bidi")
             add("  control present. The German eszett does expand under uppercasing")
-            add("  and the Turkish dotted capital I does invert. Closing these is a")
-            add("  change to the proven layer, not a tuning parameter.")
+            add("  and the Turkish dotted capital I does invert.")
             add("")
-            add("  The tags on the Arabic case name a control the input does not")
-            add("  carry: rtl-injection reports RloInLTRField and")
-            add("  confusable-bidi-compound reports ConfusableInOverride, though the")
-            add("  codepoint is U+202B RIGHT-TO-LEFT EMBEDDING and no override")
-            add("  appears anywhere in it.")
+            add("  Three of those are answered by the profile rather than the")
+            add("  detector. policyOfProfile puts source-code, display-name and")
+            add("  chat-message at levels that do not admit rtlInjection, precisely")
+            add("  because its contract assumes a declared-LTR field and a source file")
+            add("  or a display string does not satisfy it, so the Hebrew comment, the")
+            add("  Persian ZWNJ and the diacritics case are all allowed where they")
+            add("  actually occur. RtlInjection's header directs such callers to")
+            add("  declare the field's direction; that declaration is the profile, and")
+            add("  nothing else in the API expresses it.")
+            add("")
+            add("  arabic-string-literal-balanced is the control that fails on both")
+            add("  readings. Under source-code it is rejected by")
+            add("  mixed-script-admissibility, filename-disguise,")
+            add("  confusable-bidi-compound and source-display-divergence -- four")
+            add("  families the moderate level admits, so dropping rtlInjection does")
+            add("  not reach it. Each fires on the bidi controls or the script mix.")
+            add("")
+            add("  This case is a disagreement about the threat model, not a tuning")
+            add("  error. Its premise is that the payload sits inside a string literal")
+            add("  and so renders as written, and that premise is the one")
+            add("  SourceDisplayDivergence.lean's scope note retracts by name: a")
+            add("  Language parameter once filtered hits by source region, and it was")
+            add("  withdrawn because a grammar's region partition does not make some")
+            add("  source bytes safer, on the evidence of the tj-actions/changed-files")
+            add("  supply-chain attack, CVE-2025-29927, prompt injection carried in")
+            add("  docstring comments, and npm-metadata-string backdoors. Under that")
+            add("  decision a bidi control in source is reported wherever a tokenizer")
+            add("  would place it, and this control expects the opposite. Admitting it")
+            add("  means reinstating region filtering against that evidence, so the")
+            add("  corpus records the conflict rather than resolving it by loosening a")
+            add("  detector.")
+            add("")
+            add("  The tags on that case name a control the input does not carry:")
+            add("  rtl-injection reports RloInLTRField and confusable-bidi-compound")
+            add("  reports ConfusableInOverride, though the codepoint is U+202B")
+            add("  RIGHT-TO-LEFT EMBEDDING and no override appears anywhere in it.")
+            add("  RloInLTRField fires on all 9 bidi format-controls while only U+202D")
+            add("  and U+202E are overrides, and")
+            add("  Unicode/Ucd/Security/RtlInjectionTest.txt pins that name for RLE and")
+            add("  RLI rows as well.")
     add("")
     return "\n".join(out)
 

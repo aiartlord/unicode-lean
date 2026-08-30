@@ -12,6 +12,11 @@ Cases are written here as Python string literals with explicit escapes and
 lowered to codepoint arrays on emit, so the attack payload is readable in
 the generator and exact in the fixture.
 
+Every case also carries the profile of the field it is drawn from, so the
+corpus can be read two ways: which detectors fire, which is profile-
+independent, and what the product does about them, which is not. See the
+deployment-context block below for how each profile was chosen.
+
 Run: python3 scripts/internal/generate_supply_chain_corpus.py
 Writes: fixtures/security/supply-chain-corpus.json
 """
@@ -255,11 +260,104 @@ CONTROLS = [
 ]
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Deployment context
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# A corpus case is a claim about a deployment, and the profile is how a caller
+# declares which one. It matters because the same bytes are a different
+# question in different fields: a Hebrew comment is ordinary in a source file
+# and worth a second look in an HTTP header, and `Unicode/Security/Policy.lean`
+# already grades the two apart. Scanning every case under one profile asks only
+# whether a detector fires; naming the field each case actually lives in also
+# asks what the product does about it.
+#
+# The profile does not change which detectors run -- that is fixed by
+# `Unicode/Security/RunAll.lean`, and measurement confirms the finding list is
+# identical across profiles. It selects the level in `policyOfProfile`, which
+# decides which families are admission-relevant, and so decides the action.
+#
+# Each choice below is the field the sample is drawn from, not the field that
+# produces a convenient answer.
+
+PROFILES = {
+    # Source files: the trojan-source variants, a zero-width identifier split,
+    # an import path, and a tag block in a comment are all source text.
+    "trojan-source-commenting-out": "source-code",
+    "trojan-source-stretched-string": "source-code",
+    "trojan-source-early-return": "source-code",
+    "trojan-source-early-return-unbalanced": "source-code",
+    "zero-width-in-identifier": "source-code",
+    "soft-hyphen-in-import-path": "source-code",
+    "tag-block-in-comment": "source-code",
+    # Identifiers and package names are submitted names, which is what the
+    # username profile grades.
+    "homoglyph-identifier-cyrillic-o": "username",
+    "homoglyph-identifier-dotless-i": "username",
+    "package-name-armenian-seh": "username",
+    "nfkc-fold-collision-fi-ligature": "username",
+    "normalization-expansion-arabic-ligature": "username",
+    # A registrable domain has its own profile.
+    "domain-confusable-cyrillic-a": "domain-name",
+    # A filename is rendered to a person, which is the display-name question.
+    "filename-direction-spoof": "display-name",
+    # A commit message is free-form human text.
+    "commit-message-unterminated-rlo": "chat-message",
+    # Controls. Source text a multilingual team writes every day.
+    "arabic-string-literal-balanced": "source-code",
+    "hebrew-comment": "source-code",
+    "cjk-identifier-single-script": "source-code",
+    "korean-identifier-single-script": "source-code",
+    "pure-ascii-source": "source-code",
+    "mathematical-notation": "source-code",
+    # Rendered human text: a display string, and orthography that only means
+    # anything once rendered.
+    "legitimate-diacritics-and-casing": "display-name",
+    "devanagari-orthographic-zwnj": "display-name",
+    "persian-orthographic-zwnj": "display-name",
+    "emoji-zwj-family-sequence": "chat-message",
+}
+
+# The profile vocabulary of `Unicode.Security.Policy.Profile`, in its order.
+KNOWN_PROFILES = (
+    "gateway-header",
+    "domain-name",
+    "dns-label",
+    "url",
+    "username",
+    "display-name",
+    "chat-message",
+    "source-code",
+    "opaque-secret",
+    "binary-blob",
+)
+
+
+def attach_profiles(cases: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Attach each case's deployment profile, refusing anything unaccounted for.
+
+    A case with no profile, and a profile naming no case, are both errors: the
+    corpus states every case's field explicitly, and no case takes a default
+    nobody chose for it.
+    """
+    named = {case["name"] for case in cases}
+    missing = sorted(named - set(PROFILES))
+    if missing:
+        raise ValueError(f"cases with no profile: {', '.join(missing)}")
+    unknown_case = sorted(set(PROFILES) - named)
+    if unknown_case:
+        raise ValueError(f"profiles naming no case: {', '.join(unknown_case)}")
+    bad = sorted({p for p in PROFILES.values() if p not in KNOWN_PROFILES})
+    if bad:
+        raise ValueError(f"not profiles of Unicode.Security.Policy: {', '.join(bad)}")
+    return [dict(case, profile=PROFILES[case["name"]]) for case in cases]
+
+
 def main() -> None:
     payload = {
-        "schema": 1,
+        "schema": 2,
         "corpus": "supply-chain-text-attacks",
-        "cases": ATTACKS + CONTROLS,
+        "cases": attach_profiles(ATTACKS + CONTROLS),
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload, indent=2, ensure_ascii=True) + "\n", encoding="utf-8")

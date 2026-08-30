@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "corpus": "supply-chain-text-attacks",
   "cases": [
     {
@@ -61,7 +61,8 @@
         32,
         123
       ],
-      "provenance": "CVE-2021-42574, Boucher and Anderson 2021, commenting-out variant. The bidi stack balances, so the divergence between rendered and lexical order is the signal, not stack imbalance."
+      "provenance": "CVE-2021-42574, Boucher and Anderson 2021, commenting-out variant. The bidi stack balances, so the divergence between rendered and lexical order is the signal, not stack imbalance.",
+      "profile": "source-code"
     },
     {
       "name": "trojan-source-stretched-string",
@@ -103,7 +104,8 @@
         34,
         59
       ],
-      "provenance": "CVE-2021-42574 stretched-string variant. An isolate pair widens the apparent extent of a string literal."
+      "provenance": "CVE-2021-42574 stretched-string variant. An isolate pair widens the apparent extent of a string literal.",
+      "profile": "source-code"
     },
     {
       "name": "trojan-source-early-return",
@@ -139,7 +141,8 @@
         32,
         125
       ],
-      "provenance": "CVE-2021-42574 early-return variant using LRO U+202D and PDF U+202C."
+      "provenance": "CVE-2021-42574 early-return variant using LRO U+202D and PDF U+202C.",
+      "profile": "source-code"
     },
     {
       "name": "trojan-source-early-return-unbalanced",
@@ -185,7 +188,8 @@
         41,
         59
       ],
-      "provenance": "CVE-2021-42574 early-return C variant. A lone RLO leaves the embedding stack unbalanced, so the balance checker fires as well."
+      "provenance": "CVE-2021-42574 early-return C variant. A lone RLO leaves the embedding stack unbalanced, so the balance checker fires as well.",
+      "profile": "source-code"
     },
     {
       "name": "homoglyph-identifier-cyrillic-o",
@@ -201,7 +205,8 @@
         112,
         101
       ],
-      "provenance": "CVE-2021-42694. Cyrillic o U+043E against Latin o in the identifier `scope`."
+      "provenance": "CVE-2021-42694. Cyrillic o U+043E against Latin o in the identifier `scope`.",
+      "profile": "username"
     },
     {
       "name": "homoglyph-identifier-dotless-i",
@@ -216,7 +221,8 @@
         305,
         110
       ],
-      "provenance": "Dotless i U+0131 against Latin i in the identifier `admin`."
+      "provenance": "Dotless i U+0131 against Latin i in the identifier `admin`.",
+      "profile": "username"
     },
     {
       "name": "zero-width-in-identifier",
@@ -235,7 +241,8 @@
         105,
         110
       ],
-      "provenance": "Zero-width space U+200B splitting the identifier `is_admin`."
+      "provenance": "Zero-width space U+200B splitting the identifier `is_admin`.",
+      "profile": "source-code"
     },
     {
       "name": "package-name-armenian-seh",
@@ -254,7 +261,8 @@
         116,
         115
       ],
-      "provenance": "Armenian seh U+057D against Latin u in the package name `requests`."
+      "provenance": "Armenian seh U+057D against Latin u in the package name `requests`.",
+      "profile": "username"
     },
     {
       "name": "nfkc-fold-collision-fi-ligature",
@@ -267,7 +275,8 @@
         108,
         101
       ],
-      "provenance": "The fi ligature U+FB01 folds to `fi` under NFKC, so `\ufb01le` and `file` collide after normalization."
+      "provenance": "The fi ligature U+FB01 folds to `fi` under NFKC, so `\ufb01le` and `file` collide after normalization.",
+      "profile": "username"
     },
     {
       "name": "normalization-expansion-arabic-ligature",
@@ -278,7 +287,8 @@
       "input": [
         65018
       ],
-      "provenance": "U+FDFA expands to eighteen codepoints under NFKC, far past a bounded expansion factor."
+      "provenance": "U+FDFA expands to eighteen codepoints under NFKC, far past a bounded expansion factor.",
+      "profile": "username"
     },
     {
       "name": "domain-confusable-cyrillic-a",
@@ -297,7 +307,8 @@
         111,
         109
       ],
-      "provenance": "Cyrillic a U+0430 against Latin a in a registrable domain."
+      "provenance": "Cyrillic a U+0430 against Latin a in a registrable domain.",
+      "profile": "domain-name"
     },
     {
       "name": "filename-direction-spoof",
@@ -322,7 +333,8 @@
         120,
         101
       ],
-      "provenance": "RLO U+202E makes an executable render as `invoiceexe.png`."
+      "provenance": "RLO U+202E makes an executable render as `invoiceexe.png`.",
+      "profile": "display-name"
     },
     {
       "name": "soft-hyphen-in-import-path",
@@ -346,7 +358,8 @@
         97,
         114
       ],
-      "provenance": "Soft hyphen U+00AD is Default_Ignorable and invisible in an import path."
+      "provenance": "Soft hyphen U+00AD is Default_Ignorable and invisible in an import path.",
+      "profile": "source-code"
     },
     {
       "name": "commit-message-unterminated-rlo",
@@ -382,7 +395,8 @@
         114,
         103
       ],
-      "provenance": "An unterminated RLO reorders the remainder of a log line."
+      "provenance": "An unterminated RLO reorders the remainder of a log line.",
+      "profile": "chat-message"
     },
     {
       "name": "tag-block-in-comment",
@@ -403,7 +417,8 @@
         917570,
         917631
       ],
-      "provenance": "Tag characters U+E0001 and U+E0020..U+E007F carry an invisible payload inside a comment."
+      "provenance": "Tag characters U+E0001 and U+E0020..U+E007F carry an invisible payload inside a comment.",
+      "profile": "source-code"
     },
     {
       "name": "arabic-string-literal-balanced",
@@ -438,7 +453,8 @@
         34,
         59
       ],
-      "provenance": "Balanced RLE/PDF around an Arabic literal renders exactly as written. Bidi is not an attack."
+      "provenance": "Balanced RLE/PDF around an Arabic literal renders exactly as written. Bidi is not an attack.",
+      "profile": "source-code"
     },
     {
       "name": "hebrew-comment",
@@ -458,7 +474,8 @@
         1500,
         1501
       ],
-      "provenance": "A Hebrew comment in a Hebrew-language codebase."
+      "provenance": "A Hebrew comment in a Hebrew-language codebase.",
+      "profile": "source-code"
     },
     {
       "name": "cjk-identifier-single-script",
@@ -473,7 +490,8 @@
         32,
         49
       ],
-      "provenance": "Single-script Japanese identifier. Single-script non-Latin text is not confusable."
+      "provenance": "Single-script Japanese identifier. Single-script non-Latin text is not confusable.",
+      "profile": "source-code"
     },
     {
       "name": "korean-identifier-single-script",
@@ -488,7 +506,8 @@
         32,
         49
       ],
-      "provenance": "Single-script Korean identifier."
+      "provenance": "Single-script Korean identifier.",
+      "profile": "source-code"
     },
     {
       "name": "legitimate-diacritics-and-casing",
@@ -518,7 +537,8 @@
         7877,
         110
       ],
-      "provenance": "German eszett, Turkish dotted capital I, and Vietnamese stacked diacritics are ordinary text."
+      "provenance": "German eszett, Turkish dotted capital I, and Vietnamese stacked diacritics are ordinary text.",
+      "profile": "display-name"
     },
     {
       "name": "emoji-zwj-family-sequence",
@@ -531,7 +551,8 @@
         8205,
         128103
       ],
-      "provenance": "ZWJ is load-bearing in emoji. A registered family sequence must pass."
+      "provenance": "ZWJ is load-bearing in emoji. A registered family sequence must pass.",
+      "profile": "chat-message"
     },
     {
       "name": "devanagari-orthographic-zwnj",
@@ -543,7 +564,8 @@
         8204,
         2359
       ],
-      "provenance": "ZWNJ U+200C after the Virama U+094D suppresses a Devanagari conjunct. RFC 5892 A.1 sanctions it by the Virama rule; it is required for correct rendering, not a covert channel."
+      "provenance": "ZWNJ U+200C after the Virama U+094D suppresses a Devanagari conjunct. RFC 5892 A.1 sanctions it by the Virama rule; it is required for correct rendering, not a covert channel.",
+      "profile": "display-name"
     },
     {
       "name": "persian-orthographic-zwnj",
@@ -557,7 +579,8 @@
         1608,
         1605
       ],
-      "provenance": "ZWNJ between a dual-joining Farsi yeh U+06CC and a right-joining reh U+0631 writes a Persian word boundary inside a cursive run. RFC 5892 A.1 sanctions it by the joining-type rule."
+      "provenance": "ZWNJ between a dual-joining Farsi yeh U+06CC and a right-joining reh U+0631 writes a Persian word boundary inside a cursive run. RFC 5892 A.1 sanctions it by the joining-type rule.",
+      "profile": "display-name"
     },
     {
       "name": "pure-ascii-source",
@@ -605,7 +628,8 @@
         41,
         10
       ],
-      "provenance": "Pure ASCII source. Zero findings, and it should be fast."
+      "provenance": "Pure ASCII source. Zero findings, and it should be fast.",
+      "profile": "source-code"
     },
     {
       "name": "mathematical-notation",
@@ -622,7 +646,8 @@
         32,
         946
       ],
-      "provenance": "U+2212 MINUS SIGN with Greek variables is legitimate technical text."
+      "provenance": "U+2212 MINUS SIGN with Greek variables is legitimate technical text.",
+      "profile": "source-code"
     }
   ]
 }
