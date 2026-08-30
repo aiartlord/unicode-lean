@@ -338,6 +338,14 @@ if [[ "$run_rust" -eq 1 ]]; then
       --test validated_utf8
     cargo test --quiet --manifest-path "$rust_dir/Cargo.toml" --doc
   fi
+
+  # The shared verdict fixture is checked by fifteen ports; Rust is not one of
+  # them, which is how the reference came to detect more than the fixture
+  # records without anything noticing. Gate it here, where the binary exists.
+  echo "== rust against the shared verdict contract =="
+  cargo build --quiet --manifest-path "$rust_dir/Cargo.toml" --bin unicode-security
+  python3 scripts/regenerate-verdict-contract.py --gate \
+    --binary "$rust_dir/target/debug/unicode-security"
 fi
 
 if [[ "$run_python" -eq 1 ]]; then

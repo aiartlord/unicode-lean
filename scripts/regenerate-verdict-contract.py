@@ -64,6 +64,49 @@ def verdict_for(binary: Path, profile: str, mode: str, codepoints: list[int]) ->
     return verdict
 
 
+def gate(document: dict, binary: Path) -> int:
+    """Enforce what must hold between the reference and the shared contract.
+
+    The fixture records what fifteen ports agree on, and the reference detects
+    more than that, so the two are not equal and pinning the reference to the
+    fixture verbatim would fail on cases that are not defects. What must hold is
+    weaker and still meaningful: the reference decides every case the same way,
+    and it never reports fewer findings than the ports have agreed on.
+
+    That makes this a real gate on the reference, which nothing else gates --
+    the fixture is checked by fifteen ports and Rust is not one of them, which is
+    how the reference came to diverge unnoticed. A dropped finding or a changed
+    action now fails here, while the extra findings the reference legitimately
+    produces do not.
+    """
+    action_failures = []
+    subset_failures = []
+    extra_total = 0
+    for case in document["cases"]:
+        fresh = verdict_for(binary, case["profile"], case["mode"], case["input"])
+        pinned_codes = {f["code"] for f in case["verdict"]["findings"]}
+        fresh_codes = {f["code"] for f in fresh["findings"]}
+        if fresh["action"] != case["verdict"]["action"]:
+            action_failures.append((case["name"], case["verdict"]["action"], fresh["action"]))
+        dropped = pinned_codes - fresh_codes
+        if dropped:
+            subset_failures.append((case["name"], sorted(dropped)))
+        extra_total += len(fresh_codes - pinned_codes)
+
+    total = len(document["cases"])
+    if action_failures or subset_failures:
+        for name, pinned, fresh in action_failures:
+            print(f"ACTION CHANGED: {name}: contract {pinned}, reference {fresh}")
+        for name, dropped in subset_failures:
+            print(f"FINDING DROPPED: {name}: {', '.join(dropped)}")
+        print(f"FAIL: {len(action_failures)} action change(s), {len(subset_failures)} dropped finding(s)")
+        return 1
+
+    print(f"clean: reference decides all {total} contract cases identically")
+    print(f"       and reports every finding they pin, plus {extra_total} more")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -77,6 +120,11 @@ def main() -> int:
         action="store_true",
         help="report cases whose pinned verdict differs from the reference, write nothing",
     )
+    parser.add_argument(
+        "--gate",
+        action="store_true",
+        help="enforce the reference's standing relationship to the contract; write nothing",
+    )
     args = parser.parse_args()
 
     if not args.binary.exists():
@@ -85,6 +133,9 @@ def main() -> int:
         return 1
 
     document = json.loads(FIXTURE.read_text())
+
+    if args.gate:
+        return gate(document, args.binary)
 
     differing = []
     for case in document["cases"]:
