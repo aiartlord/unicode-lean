@@ -15,6 +15,19 @@ require_relative "identity/homoglyph_confusable"
 require_relative "boundary/confusable_bidi_compound"
 require_relative "boundary/covert_display_compound"
 require_relative "display/rtl_injection"
+require_relative "identity/emoji_zwj_integrity"
+require_relative "identity/skin_tone_variation_forgery"
+require_relative "display/filename_disguise"
+require_relative "display/renderer_divergence"
+require_relative "display/source_display_divergence"
+require_relative "form/stream_safe_violation"
+require_relative "form/case_expansion_mismatch"
+require_relative "form/normalization_bomb"
+require_relative "form/locale_case_inversion"
+require_relative "form/nfc_idempotence_witness"
+require_relative "form/width_class_confusion"
+require_relative "boundary/identifier_form_drift"
+require_relative "boundary/admissibility_form_drift"
 
 module UnicodeRuby
   module Security
@@ -413,6 +426,86 @@ module UnicodeRuby
         unless covert_display.sub.nil?
           push_finding(findings, Family::COVERT_DISPLAY_COMPOUND, ClassificationKind::HAZARD,
                        covert_display.sub, covert_display.positions)
+        end
+
+        ezwj = Identity::EmojiZwjIntegrity.detect(input).classify
+        unless ezwj.clear?
+          push_finding(findings, Family::EMOJI_ZWJ_INTEGRITY, ClassificationKind::HAZARD,
+                       ezwj.tag, ezwj.positions)
+        end
+
+        skin_tone = Identity::SkinToneVariationForgery.detect(input).classify
+        unless skin_tone.clear?
+          push_finding(findings, Family::SKIN_TONE_VARIATION_FORGERY, ClassificationKind::HAZARD,
+                       skin_tone.tag, skin_tone.positions)
+        end
+
+        filename = Display::FilenameDisguise.detect(input).classify
+        unless filename.clear?
+          push_finding(findings, Family::FILENAME_DISGUISE, ClassificationKind::HAZARD,
+                       filename.tag, filename.positions)
+        end
+
+        renderer = Display::RendererDivergence.detect(input).classify
+        unless renderer.clear?
+          push_finding(findings, Family::RENDERER_DIVERGENCE, ClassificationKind::HAZARD,
+                       renderer.tag, renderer.positions)
+        end
+
+        stream_safe = Form::StreamSafeViolation.detect(input).classify
+        unless stream_safe.clear?
+          push_finding(findings, Family::STREAM_SAFE_VIOLATION, ClassificationKind::HAZARD,
+                       stream_safe.tag, stream_safe.positions)
+        end
+
+        case_expansion = Form::CaseExpansionMismatch.detect(input).classify
+        unless case_expansion.clear?
+          push_finding(findings, Family::CASE_EXPANSION_MISMATCH, ClassificationKind::HAZARD,
+                       case_expansion.tag, case_expansion.positions)
+        end
+
+        identifier_drift = Boundary::IdentifierFormDrift.detect(input).classify
+        unless identifier_drift.clear?
+          push_finding(findings, Family::IDENTIFIER_FORM_DRIFT, ClassificationKind::HAZARD,
+                       identifier_drift.tag, identifier_drift.positions)
+        end
+
+        admissibility_drift = Boundary::AdmissibilityFormDrift.detect(input).classify
+        unless admissibility_drift.clear?
+          push_finding(findings, Family::ADMISSIBILITY_FORM_DRIFT, ClassificationKind::HAZARD,
+                       admissibility_drift.tag, admissibility_drift.positions)
+        end
+
+        normalization_bomb = Form::NormalizationBomb.detect(input)
+        unless normalization_bomb.sub.nil?
+          push_finding(findings, Family::NORMALIZATION_BOMB, ClassificationKind::HAZARD,
+                       normalization_bomb.sub, normalization_bomb.positions)
+        end
+
+        locale_case = Form::LocaleCaseInversion.detect(input)
+        unless locale_case.sub.nil?
+          push_finding(findings, Family::LOCALE_CASE_INVERSION, ClassificationKind::HAZARD,
+                       locale_case.sub, locale_case.positions)
+        end
+
+        nfc_witness = Form::NfcIdempotenceWitness.detect(input)
+        unless nfc_witness.sub.nil?
+          push_finding(findings, Family::NFC_IDEMPOTENCE_WITNESS, ClassificationKind::HAZARD,
+                       nfc_witness.sub, nfc_witness.positions)
+        end
+
+        width_class = Form::WidthClassConfusion.detect(input)
+        unless width_class.sub.nil?
+          push_finding(findings, Family::WIDTH_CLASS_CONFUSION, ClassificationKind::HAZARD,
+                       width_class.sub, width_class.positions)
+        end
+
+        # SourceDisplayDivergence judges the input as a unit, so it localises
+        # nothing and carries an empty position list.
+        source_display = Display::SourceDisplayDivergence.detect(input)
+        unless source_display.sub.nil?
+          push_finding(findings, Family::SOURCE_DISPLAY_DIVERGENCE, ClassificationKind::HAZARD,
+                       source_display.sub, [])
         end
 
         Verdict.new(input.dup, profile, mode, select_action(profile, mode, findings), findings, nil)
