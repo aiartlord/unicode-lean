@@ -54,6 +54,10 @@ public enum Family {
     public static let skinToneVariationForgery = "skin-tone-variation-forgery"
     public static let caseExpansionMismatch = "case-expansion-mismatch"
     public static let admissibilityFormDrift = "admissibility-form-drift"
+    public static let normalizationBomb = "normalization-bomb"
+    public static let localeCaseInversion = "locale-case-inversion"
+    public static let nfcIdempotenceWitness = "nfc-idempotence-witness"
+    public static let widthClassConfusion = "width-class-confusion"
 }
 
 public struct Finding: Equatable {
@@ -210,6 +214,60 @@ private func detect(_ input: [Int]) -> [Finding] {
     if let covert = covertDisplayCompoundFinding(input) {
         findings.append(covert)
     }
+    let emojiZwj = emojiZwjIntegrityDetect(input).classify
+    if !emojiZwj.isClear, let tag = emojiZwj.tag {
+        findings.append(makeFinding(family: Family.emojiZwjIntegrity, subThreat: tag, positions: emojiZwj.positions))
+    }
+    let skinTone = skinToneVariationForgeryDetect(input).classify
+    if !skinTone.isClear, let tag = skinTone.tag {
+        findings.append(makeFinding(family: Family.skinToneVariationForgery, subThreat: tag, positions: skinTone.positions))
+    }
+    let filenameDisguise = filenameDisguiseDetect(input).classify
+    if !filenameDisguise.isClear, let tag = filenameDisguise.tag {
+        findings.append(makeFinding(family: Family.filenameDisguise, subThreat: tag, positions: filenameDisguise.positions))
+    }
+    let rendererDivergence = rendererDivergenceDetect(input).classify
+    if !rendererDivergence.isClear, let tag = rendererDivergence.tag {
+        findings.append(makeFinding(family: Family.rendererDivergence, subThreat: tag, positions: rendererDivergence.positions))
+    }
+    let streamSafe = streamSafeViolationDetect(input).classify
+    if !streamSafe.isClear, let tag = streamSafe.tag {
+        findings.append(makeFinding(family: Family.streamSafeViolation, subThreat: tag, positions: streamSafe.positions))
+    }
+    let caseExpansion = caseExpansionMismatchDetect(input).classify
+    if !caseExpansion.isClear, let tag = caseExpansion.tag {
+        findings.append(makeFinding(family: Family.caseExpansionMismatch, subThreat: tag, positions: caseExpansion.positions))
+    }
+    let identifierDrift = identifierFormDriftDetect(input).classify
+    if !identifierDrift.isClear, let tag = identifierDrift.tag {
+        findings.append(makeFinding(family: Family.identifierFormDrift, subThreat: tag, positions: identifierDrift.positions))
+    }
+    let admissibilityDrift = admissibilityFormDriftDetect(input).classify
+    if !admissibilityDrift.isClear, let tag = admissibilityDrift.tag {
+        findings.append(makeFinding(family: Family.admissibilityFormDrift, subThreat: tag, positions: admissibilityDrift.positions))
+    }
+    let normalizationBomb = normalizationBombDetect(input)
+    if let sub = normalizationBomb.subThreat {
+        findings.append(makeFinding(family: Family.normalizationBomb, subThreat: sub, positions: normalizationBomb.positions))
+    }
+    let localeCase = localeCaseInversionDetect(input)
+    if let sub = localeCase.subThreat {
+        findings.append(makeFinding(family: Family.localeCaseInversion, subThreat: sub, positions: localeCase.positions))
+    }
+    let nfcWitness = nfcIdempotenceWitnessDetect(input)
+    if let sub = nfcWitness.subThreat {
+        findings.append(makeFinding(family: Family.nfcIdempotenceWitness, subThreat: sub, positions: nfcWitness.positions))
+    }
+    let widthClass = widthClassConfusionDetect(input)
+    if let sub = widthClass.subThreat {
+        findings.append(makeFinding(family: Family.widthClassConfusion, subThreat: sub, positions: widthClass.positions))
+    }
+    // SourceDisplayDivergence judges the input as a unit, so it localises
+    // nothing and carries an empty position list.
+    let sourceDisplay = sourceDisplayDivergenceDetect(input)
+    if let sub = sourceDisplay.sub {
+        findings.append(makeFinding(family: Family.sourceDisplayDivergence, subThreat: sub, positions: []))
+    }
     return findings
 }
 
@@ -245,18 +303,72 @@ private func policyOfProfile(_ profile: String) -> ProfilePolicy {
 
 private func blocks(_ level: PolicyLevel, _ family: String) -> Bool {
     if level == .minimal {
-        return family == Family.malformedUtf8 || family == Family.malformedUtf16 ||
-            family == Family.malformedUtf32 || family == Family.surrogateReassembly ||
-            family == Family.bidiControlBalance ||
-            family == Family.noncharacterControl
+    return [
+        Family.malformedUtf8,
+        Family.malformedUtf16,
+        Family.malformedUtf32,
+        Family.surrogateReassembly,
+        Family.bidiControlBalance,
+        Family.noncharacterControl,
+        Family.streamSafeViolation,
+    ].contains(family)
     }
-    return family == Family.malformedUtf8 || family == Family.malformedUtf16 ||
-        family == Family.malformedUtf32 || family == Family.tagBlockPayload ||
-        family == Family.variationSelectorPayload || family == Family.zeroWidthPayload ||
-        family == Family.surrogateReassembly ||
-        family == Family.bidiControlBalance || family == Family.noncharacterControl ||
-        family == Family.homoglyphConfusable || family == Family.mixedScriptAdmissibility ||
-        family == Family.confusableBidiCompound || family == Family.covertDisplayCompound
+    if level == .moderate {
+    return [
+        Family.malformedUtf8,
+        Family.malformedUtf16,
+        Family.malformedUtf32,
+        Family.tagBlockPayload,
+        Family.variationSelectorPayload,
+        Family.zeroWidthPayload,
+        Family.surrogateReassembly,
+        Family.bidiControlBalance,
+        Family.noncharacterControl,
+        Family.homoglyphConfusable,
+        Family.mixedScriptAdmissibility,
+        Family.skinToneVariationForgery,
+        Family.sourceDisplayDivergence,
+        Family.filenameDisguise,
+        Family.streamSafeViolation,
+        Family.localeCaseInversion,
+        Family.caseExpansionMismatch,
+        Family.widthClassConfusion,
+        Family.nfcIdempotenceWitness,
+        Family.identifierFormDrift,
+        Family.covertDisplayCompound,
+        Family.confusableBidiCompound,
+        Family.admissibilityFormDrift,
+    ].contains(family)
+    }
+    return [
+        Family.malformedUtf8,
+        Family.malformedUtf16,
+        Family.malformedUtf32,
+        Family.tagBlockPayload,
+        Family.variationSelectorPayload,
+        Family.zeroWidthPayload,
+        Family.surrogateReassembly,
+        Family.bidiControlBalance,
+        Family.noncharacterControl,
+        Family.homoglyphConfusable,
+        Family.mixedScriptAdmissibility,
+        Family.emojiZwjIntegrity,
+        Family.skinToneVariationForgery,
+        Family.sourceDisplayDivergence,
+        Family.filenameDisguise,
+        Family.rtlInjection,
+        Family.rendererDivergence,
+        Family.normalizationBomb,
+        Family.streamSafeViolation,
+        Family.localeCaseInversion,
+        Family.caseExpansionMismatch,
+        Family.widthClassConfusion,
+        Family.nfcIdempotenceWitness,
+        Family.identifierFormDrift,
+        Family.covertDisplayCompound,
+        Family.confusableBidiCompound,
+        Family.admissibilityFormDrift,
+    ].contains(family)
 }
 
 private func malformedDecodeVerdict(profile: String, mode: String, family: String, subThreat: String, offset: Int) -> Verdict {
@@ -305,7 +417,10 @@ private func layer(_ family: String) -> String {
     if family == Family.hashInputStability || family == Family.aiWatermarkDetectability {
         return "K"
     }
-    if family == Family.streamSafeViolation || family == Family.caseExpansionMismatch {
+    if family == Family.streamSafeViolation || family == Family.caseExpansionMismatch
+        || family == Family.normalizationBomb || family == Family.localeCaseInversion
+        || family == Family.nfcIdempotenceWitness || family == Family.widthClassConfusion
+    {
         return "F"
     }
     return "C"
