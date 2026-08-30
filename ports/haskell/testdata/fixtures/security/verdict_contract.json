@@ -6,12 +6,24 @@
       "name": "ascii-gateway-enforce",
       "profile": "gateway-header",
       "mode": "enforce",
-      "input": [72, 101, 108, 108, 111],
+      "input": [
+        72,
+        101,
+        108,
+        108,
+        111
+      ],
       "verdict": {
         "action": "allow",
         "profile": "gateway-header",
         "mode": "enforce",
-        "input": [72, 101, 108, 108, 111],
+        "input": [
+          72,
+          101,
+          108,
+          108,
+          111
+        ],
         "findings": [],
         "normalized": null
       }
@@ -20,18 +32,24 @@
       "name": "noncharacter-gateway-reject",
       "profile": "gateway-header",
       "mode": "enforce",
-      "input": [64976],
+      "input": [
+        64976
+      ],
       "verdict": {
         "action": "reject",
         "profile": "gateway-header",
         "mode": "enforce",
-        "input": [64976],
+        "input": [
+          64976
+        ],
         "findings": [
           {
             "code": "unicode.security.C.noncharacter-control.Noncharacter",
             "family": "noncharacter-control",
             "severity": 2,
-            "positions": [0],
+            "positions": [
+              0
+            ],
             "sub_threat": "Noncharacter",
             "detail": "noncharacter-control"
           }
@@ -43,20 +61,37 @@
       "name": "tag-block-gateway-reject",
       "profile": "gateway-header",
       "mode": "enforce",
-      "input": [917569, 917570],
+      "input": [
+        917569,
+        917570
+      ],
       "verdict": {
         "action": "reject",
         "profile": "gateway-header",
         "mode": "enforce",
-        "input": [917569, 917570],
+        "input": [
+          917569,
+          917570
+        ],
         "findings": [
           {
             "code": "unicode.security.C.tag-block-payload.DirectAscii",
             "family": "tag-block-payload",
             "severity": 2,
-            "positions": [0, 1],
+            "positions": [
+              0,
+              1
+            ],
             "sub_threat": "DirectAscii",
             "detail": "tag-block-payload"
+          },
+          {
+            "code": "unicode.security.D.source-display-divergence.TagBlock",
+            "family": "source-display-divergence",
+            "severity": 2,
+            "positions": [],
+            "sub_threat": "TagBlock",
+            "detail": "source-display-divergence"
           }
         ],
         "normalized": null
@@ -66,20 +101,37 @@
       "name": "tag-block-gateway-observe",
       "profile": "gateway-header",
       "mode": "observe",
-      "input": [917569, 917570],
+      "input": [
+        917569,
+        917570
+      ],
       "verdict": {
         "action": "observe",
         "profile": "gateway-header",
         "mode": "observe",
-        "input": [917569, 917570],
+        "input": [
+          917569,
+          917570
+        ],
         "findings": [
           {
             "code": "unicode.security.C.tag-block-payload.DirectAscii",
             "family": "tag-block-payload",
             "severity": 2,
-            "positions": [0, 1],
+            "positions": [
+              0,
+              1
+            ],
             "sub_threat": "DirectAscii",
             "detail": "tag-block-payload"
+          },
+          {
+            "code": "unicode.security.D.source-display-divergence.TagBlock",
+            "family": "source-display-divergence",
+            "severity": 2,
+            "positions": [],
+            "sub_threat": "TagBlock",
+            "detail": "source-display-divergence"
           }
         ],
         "normalized": null
@@ -89,20 +141,37 @@
       "name": "tag-block-username-quarantine",
       "profile": "username",
       "mode": "enforce",
-      "input": [917569, 917570],
+      "input": [
+        917569,
+        917570
+      ],
       "verdict": {
         "action": "quarantine",
         "profile": "username",
         "mode": "enforce",
-        "input": [917569, 917570],
+        "input": [
+          917569,
+          917570
+        ],
         "findings": [
           {
             "code": "unicode.security.C.tag-block-payload.DirectAscii",
             "family": "tag-block-payload",
             "severity": 2,
-            "positions": [0, 1],
+            "positions": [
+              0,
+              1
+            ],
             "sub_threat": "DirectAscii",
             "detail": "tag-block-payload"
+          },
+          {
+            "code": "unicode.security.D.source-display-divergence.TagBlock",
+            "family": "source-display-divergence",
+            "severity": 2,
+            "positions": [],
+            "sub_threat": "TagBlock",
+            "detail": "source-display-divergence"
           }
         ],
         "normalized": null
@@ -112,20 +181,38 @@
       "name": "zero-width-display-name-report-only",
       "profile": "display-name",
       "mode": "enforce",
-      "input": [97, 8203, 98],
+      "input": [
+        97,
+        8203,
+        98
+      ],
       "verdict": {
         "action": "allow",
         "profile": "display-name",
         "mode": "enforce",
-        "input": [97, 8203, 98],
+        "input": [
+          97,
+          8203,
+          98
+        ],
         "findings": [
           {
             "code": "unicode.security.C.zero-width-payload.BareZeroWidth",
             "family": "zero-width-payload",
             "severity": 2,
-            "positions": [1],
+            "positions": [
+              1
+            ],
             "sub_threat": "BareZeroWidth",
             "detail": "zero-width-payload"
+          },
+          {
+            "code": "unicode.security.D.source-display-divergence.ZeroWidth",
+            "family": "source-display-divergence",
+            "severity": 2,
+            "positions": [],
+            "sub_threat": "ZeroWidth",
+            "detail": "source-display-divergence"
           }
         ],
         "normalized": null
@@ -135,20 +222,46 @@
       "name": "variation-selector-gateway-reject",
       "profile": "gateway-header",
       "mode": "enforce",
-      "input": [65, 65039],
+      "input": [
+        65,
+        65039
+      ],
       "verdict": {
         "action": "reject",
         "profile": "gateway-header",
         "mode": "enforce",
-        "input": [65, 65039],
+        "input": [
+          65,
+          65039
+        ],
         "findings": [
           {
             "code": "unicode.security.C.variation-selector-payload.IllegalTarget",
             "family": "variation-selector-payload",
             "severity": 2,
-            "positions": [1],
+            "positions": [
+              1
+            ],
             "sub_threat": "IllegalTarget",
             "detail": "variation-selector-payload"
+          },
+          {
+            "code": "unicode.security.D.renderer-divergence.VariationSelectorVariance",
+            "family": "renderer-divergence",
+            "severity": 2,
+            "positions": [
+              1
+            ],
+            "sub_threat": "VariationSelectorVariance",
+            "detail": "renderer-divergence"
+          },
+          {
+            "code": "unicode.security.D.source-display-divergence.VariationSelector",
+            "family": "source-display-divergence",
+            "severity": 2,
+            "positions": [],
+            "sub_threat": "VariationSelector",
+            "detail": "source-display-divergence"
           }
         ],
         "normalized": null
@@ -158,20 +271,38 @@
       "name": "zero-width-source-strict-reject",
       "profile": "source-code",
       "mode": "strict",
-      "input": [97, 8203, 98],
+      "input": [
+        97,
+        8203,
+        98
+      ],
       "verdict": {
         "action": "reject",
         "profile": "source-code",
         "mode": "strict",
-        "input": [97, 8203, 98],
+        "input": [
+          97,
+          8203,
+          98
+        ],
         "findings": [
           {
             "code": "unicode.security.C.zero-width-payload.BareZeroWidth",
             "family": "zero-width-payload",
             "severity": 2,
-            "positions": [1],
+            "positions": [
+              1
+            ],
             "sub_threat": "BareZeroWidth",
             "detail": "zero-width-payload"
+          },
+          {
+            "code": "unicode.security.D.source-display-divergence.ZeroWidth",
+            "family": "source-display-divergence",
+            "severity": 2,
+            "positions": [],
+            "sub_threat": "ZeroWidth",
+            "detail": "source-display-divergence"
           }
         ],
         "normalized": null
@@ -181,18 +312,34 @@
       "name": "bidi-source-reject",
       "profile": "source-code",
       "mode": "enforce",
-      "input": [105, 102, 32, 8238, 41, 123],
+      "input": [
+        105,
+        102,
+        32,
+        8238,
+        41,
+        123
+      ],
       "verdict": {
         "action": "reject",
         "profile": "source-code",
         "mode": "enforce",
-        "input": [105, 102, 32, 8238, 41, 123],
+        "input": [
+          105,
+          102,
+          32,
+          8238,
+          41,
+          123
+        ],
         "findings": [
           {
             "code": "unicode.security.C.bidi-control-balance.UnbalancedEmbedding",
             "family": "bidi-control-balance",
             "severity": 2,
-            "positions": [3],
+            "positions": [
+              3
+            ],
             "sub_threat": "UnbalancedEmbedding",
             "detail": "bidi-control-balance"
           },
@@ -200,9 +347,29 @@
             "code": "unicode.security.D.rtl-injection.RloInLTRField",
             "family": "rtl-injection",
             "severity": 2,
-            "positions": [3],
+            "positions": [
+              3
+            ],
             "sub_threat": "RloInLTRField",
             "detail": "rtl-injection"
+          },
+          {
+            "code": "unicode.security.D.filename-disguise.RloFlip",
+            "family": "filename-disguise",
+            "severity": 2,
+            "positions": [
+              3
+            ],
+            "sub_threat": "RloFlip",
+            "detail": "filename-disguise"
+          },
+          {
+            "code": "unicode.security.D.source-display-divergence.BidiControl",
+            "family": "source-display-divergence",
+            "severity": 2,
+            "positions": [],
+            "sub_threat": "BidiControl",
+            "detail": "source-display-divergence"
           }
         ],
         "normalized": null
@@ -212,20 +379,62 @@
       "name": "math-alpha-gateway-reject",
       "profile": "gateway-header",
       "mode": "enforce",
-      "input": [119808],
+      "input": [
+        119808
+      ],
       "verdict": {
         "action": "reject",
         "profile": "gateway-header",
         "mode": "enforce",
-        "input": [119808],
+        "input": [
+          119808
+        ],
         "findings": [
           {
             "code": "unicode.security.I.homoglyph-confusable.MathAlpha",
             "family": "homoglyph-confusable",
             "severity": 2,
-            "positions": [0],
+            "positions": [
+              0
+            ],
             "sub_threat": "MathAlpha",
             "detail": "homoglyph-confusable"
+          },
+          {
+            "code": "unicode.security.X.identifier-form-drift.IdentifierStatusShift",
+            "family": "identifier-form-drift",
+            "severity": 2,
+            "positions": [
+              0
+            ],
+            "sub_threat": "IdentifierStatusShift",
+            "detail": "identifier-form-drift"
+          },
+          {
+            "code": "unicode.security.X.admissibility-form-drift.AdmissibilityFormDrift",
+            "family": "admissibility-form-drift",
+            "severity": 2,
+            "positions": [],
+            "sub_threat": "AdmissibilityFormDrift",
+            "detail": "admissibility-form-drift"
+          },
+          {
+            "code": "unicode.security.F.nfc-idempotence-witness.NonNfkcCompatForm",
+            "family": "nfc-idempotence-witness",
+            "severity": 2,
+            "positions": [
+              0
+            ],
+            "sub_threat": "NonNfkcCompatForm",
+            "detail": "nfc-idempotence-witness"
+          },
+          {
+            "code": "unicode.security.D.source-display-divergence.IdentifierHomoglyph",
+            "family": "source-display-divergence",
+            "severity": 2,
+            "positions": [],
+            "sub_threat": "IdentifierHomoglyph",
+            "detail": "source-display-divergence"
           }
         ],
         "normalized": null
@@ -235,18 +444,48 @@
       "name": "nethereum-targetmatch-gateway-reject",
       "profile": "gateway-header",
       "mode": "enforce",
-      "input": [78, 101, 116, 104, 101, 114, 1077, 117, 109],
+      "input": [
+        78,
+        101,
+        116,
+        104,
+        101,
+        114,
+        1077,
+        117,
+        109
+      ],
       "verdict": {
         "action": "reject",
         "profile": "gateway-header",
         "mode": "enforce",
-        "input": [78, 101, 116, 104, 101, 114, 1077, 117, 109],
+        "input": [
+          78,
+          101,
+          116,
+          104,
+          101,
+          114,
+          1077,
+          117,
+          109
+        ],
         "findings": [
           {
             "code": "unicode.security.I.homoglyph-confusable.TargetMatch",
             "family": "homoglyph-confusable",
             "severity": 2,
-            "positions": [0, 1, 2, 3, 4, 5, 6, 7, 8],
+            "positions": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
             "sub_threat": "TargetMatch",
             "detail": "homoglyph-confusable"
           },
@@ -254,9 +493,27 @@
             "code": "unicode.security.I.mixed-script-admissibility.LatinCyrillic",
             "family": "mixed-script-admissibility",
             "severity": 2,
-            "positions": [0, 1, 2, 3, 4, 5, 6, 7, 8],
+            "positions": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8
+            ],
             "sub_threat": "LatinCyrillic",
             "detail": "mixed-script-admissibility"
+          },
+          {
+            "code": "unicode.security.D.source-display-divergence.IdentifierHomoglyph",
+            "family": "source-display-divergence",
+            "severity": 2,
+            "positions": [],
+            "sub_threat": "IdentifierHomoglyph",
+            "detail": "source-display-divergence"
           }
         ],
         "normalized": null
@@ -266,20 +523,47 @@
       "name": "decomposition-swap-gateway-reject",
       "profile": "gateway-header",
       "mode": "enforce",
-      "input": [101, 769],
+      "input": [
+        101,
+        769
+      ],
       "verdict": {
         "action": "reject",
         "profile": "gateway-header",
         "mode": "enforce",
-        "input": [101, 769],
+        "input": [
+          101,
+          769
+        ],
         "findings": [
           {
             "code": "unicode.security.I.homoglyph-confusable.DecompositionSwap",
             "family": "homoglyph-confusable",
             "severity": 2,
-            "positions": [0, 1],
+            "positions": [
+              0,
+              1
+            ],
             "sub_threat": "DecompositionSwap",
             "detail": "homoglyph-confusable"
+          },
+          {
+            "code": "unicode.security.F.nfc-idempotence-witness.NonNfcForm",
+            "family": "nfc-idempotence-witness",
+            "severity": 2,
+            "positions": [
+              0
+            ],
+            "sub_threat": "NonNfcForm",
+            "detail": "nfc-idempotence-witness"
+          },
+          {
+            "code": "unicode.security.D.source-display-divergence.IdentifierHomoglyph",
+            "family": "source-display-divergence",
+            "severity": 2,
+            "positions": [],
+            "sub_threat": "IdentifierHomoglyph",
+            "detail": "source-display-divergence"
           }
         ],
         "normalized": null
@@ -289,20 +573,43 @@
       "name": "cross-script-gateway-reject",
       "profile": "gateway-header",
       "mode": "enforce",
-      "input": [97, 98, 945, 946],
+      "input": [
+        97,
+        98,
+        945,
+        946
+      ],
       "verdict": {
         "action": "reject",
         "profile": "gateway-header",
         "mode": "enforce",
-        "input": [97, 98, 945, 946],
+        "input": [
+          97,
+          98,
+          945,
+          946
+        ],
         "findings": [
           {
             "code": "unicode.security.I.mixed-script-admissibility.LatinGreek",
             "family": "mixed-script-admissibility",
             "severity": 2,
-            "positions": [0, 1, 2, 3],
+            "positions": [
+              0,
+              1,
+              2,
+              3
+            ],
             "sub_threat": "LatinGreek",
             "detail": "mixed-script-admissibility"
+          },
+          {
+            "code": "unicode.security.D.source-display-divergence.IdentifierHomoglyph",
+            "family": "source-display-divergence",
+            "severity": 2,
+            "positions": [],
+            "sub_threat": "IdentifierHomoglyph",
+            "detail": "source-display-divergence"
           }
         ],
         "normalized": null

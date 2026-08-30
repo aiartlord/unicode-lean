@@ -12,9 +12,26 @@ from ..noncharacters import is_noncharacter
 from ..strict import Utf8RejectKind
 from ..utf8 import decode_to_codepoints, first_invalid_utf8_offset
 from .calculus import ClassificationKind, Family, Severity
-from .boundary import confusable_bidi_compound, covert_display_compound
-from .display import rtl_injection
-from .form import width_class_confusion
+from .boundary import (
+    admissibility_form_drift,
+    confusable_bidi_compound,
+    covert_display_compound,
+    identifier_form_drift,
+)
+from .display import (
+    filename_disguise,
+    renderer_divergence,
+    rtl_injection,
+    source_display_divergence,
+)
+from .form import (
+    case_expansion_mismatch,
+    locale_case_inversion,
+    nfc_idempotence_witness,
+    normalization_bomb,
+    stream_safe_violation,
+    width_class_confusion,
+)
 from .covert import (
     bidi_control_balance,
     surrogate_reassembly,
@@ -22,7 +39,11 @@ from .covert import (
     variation_selector_payload,
     zero_width_payload,
 )
-from .identity import homoglyph_confusable
+from .identity import (
+    emoji_zwj_integrity,
+    homoglyph_confusable,
+    skin_tone_variation_forgery,
+)
 
 
 class Action(Enum):
@@ -595,6 +616,124 @@ def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
             list(covert_display.positions),
         )
 
+    emoji_zwj_integrity_verdict = emoji_zwj_integrity.detect(input_cps)
+    _append_finding(
+        findings,
+        Family.EMOJI_ZWJ_INTEGRITY,
+        ClassificationKind.CLEAR
+        if emoji_zwj_integrity_verdict.classify.is_clear
+        else ClassificationKind.HAZARD,
+        emoji_zwj_integrity_verdict.classify.tag,
+        list(emoji_zwj_integrity_verdict.classify.positions),
+    )
+
+    skin_tone_variation_forgery_verdict = skin_tone_variation_forgery.detect(input_cps)
+    _append_finding(
+        findings,
+        Family.SKIN_TONE_VARIATION_FORGERY,
+        ClassificationKind.CLEAR
+        if skin_tone_variation_forgery_verdict.classify.is_clear
+        else ClassificationKind.HAZARD,
+        skin_tone_variation_forgery_verdict.classify.tag,
+        list(skin_tone_variation_forgery_verdict.classify.positions),
+    )
+
+    filename_disguise_verdict = filename_disguise.detect(input_cps)
+    _append_finding(
+        findings,
+        Family.FILENAME_DISGUISE,
+        ClassificationKind.CLEAR
+        if filename_disguise_verdict.classify.is_clear
+        else ClassificationKind.HAZARD,
+        filename_disguise_verdict.classify.tag,
+        list(filename_disguise_verdict.classify.positions),
+    )
+
+    renderer_divergence_verdict = renderer_divergence.detect(input_cps)
+    _append_finding(
+        findings,
+        Family.RENDERER_DIVERGENCE,
+        ClassificationKind.CLEAR
+        if renderer_divergence_verdict.classify.is_clear
+        else ClassificationKind.HAZARD,
+        renderer_divergence_verdict.classify.tag,
+        list(renderer_divergence_verdict.classify.positions),
+    )
+
+    stream_safe_violation_verdict = stream_safe_violation.detect(input_cps)
+    _append_finding(
+        findings,
+        Family.STREAM_SAFE_VIOLATION,
+        ClassificationKind.CLEAR
+        if stream_safe_violation_verdict.classify.is_clear()
+        else ClassificationKind.HAZARD,
+        stream_safe_violation_verdict.classify.tag(),
+        list(stream_safe_violation_verdict.classify.positions),
+    )
+
+    case_expansion_mismatch_verdict = case_expansion_mismatch.detect(input_cps)
+    _append_finding(
+        findings,
+        Family.CASE_EXPANSION_MISMATCH,
+        ClassificationKind.CLEAR
+        if case_expansion_mismatch_verdict.classify.is_clear()
+        else ClassificationKind.HAZARD,
+        case_expansion_mismatch_verdict.classify.tag(),
+        list(case_expansion_mismatch_verdict.classify.positions),
+    )
+
+    identifier_form_drift_verdict = identifier_form_drift.detect(input_cps)
+    _append_finding(
+        findings,
+        Family.IDENTIFIER_FORM_DRIFT,
+        ClassificationKind.CLEAR
+        if identifier_form_drift_verdict.classify.is_clear()
+        else ClassificationKind.HAZARD,
+        identifier_form_drift_verdict.classify.tag(),
+        list(identifier_form_drift_verdict.classify.positions),
+    )
+
+    admissibility_form_drift_verdict = admissibility_form_drift.detect(input_cps)
+    _append_finding(
+        findings,
+        Family.ADMISSIBILITY_FORM_DRIFT,
+        ClassificationKind.CLEAR
+        if admissibility_form_drift_verdict.classify.is_clear()
+        else ClassificationKind.HAZARD,
+        admissibility_form_drift_verdict.classify.tag(),
+        list(admissibility_form_drift_verdict.classify.positions),
+    )
+
+    normalization_bomb_detection = normalization_bomb.detect(input_cps)
+    if normalization_bomb_detection.sub is not None:
+        _append_finding(
+            findings,
+            Family.NORMALIZATION_BOMB,
+            ClassificationKind.HAZARD,
+            normalization_bomb_detection.sub,
+            list(normalization_bomb_detection.positions),
+        )
+
+    locale_case_inversion_detection = locale_case_inversion.detect(input_cps)
+    if locale_case_inversion_detection.sub is not None:
+        _append_finding(
+            findings,
+            Family.LOCALE_CASE_INVERSION,
+            ClassificationKind.HAZARD,
+            locale_case_inversion_detection.sub,
+            list(locale_case_inversion_detection.positions),
+        )
+
+    nfc_idempotence_witness_detection = nfc_idempotence_witness.detect(input_cps)
+    if nfc_idempotence_witness_detection.sub is not None:
+        _append_finding(
+            findings,
+            Family.NFC_IDEMPOTENCE_WITNESS,
+            ClassificationKind.HAZARD,
+            nfc_idempotence_witness_detection.sub,
+            list(nfc_idempotence_witness_detection.positions),
+        )
+
     width_class = width_class_confusion.detect(input_cps)
     if width_class.sub is not None:
         _append_finding(
@@ -603,6 +742,16 @@ def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
             ClassificationKind.HAZARD,
             width_class.sub,
             list(width_class.positions),
+        )
+
+    source_display = source_display_divergence.detect(input_cps)
+    if source_display.sub is not None:
+        _append_finding(
+            findings,
+            Family.SOURCE_DISPLAY_DIVERGENCE,
+            ClassificationKind.HAZARD,
+            source_display.sub,
+            [],
         )
 
     return Verdict(
