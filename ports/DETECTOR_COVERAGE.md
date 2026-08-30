@@ -310,70 +310,65 @@ One further detail below full uniformity: cobol's HomoglyphConfusable uses a
 bounded target-skeleton iteration; deepening that bound is a refinement of an
 implemented, fixture-passing detector, not a coverage gap.
 
-Separately from implementation, a detector only reaches a caller if the port's
-scan path invokes it. The Lean reference's `runAll` dispatches twenty-four
-families on plain input — the three crypto families are context-specific and
-excluded from both. Not every port's scan reaches all twenty-four, so the count
-above measures what each port implements, not what its `scan` returns.
+Implementation is one thing and reach is another: a detector only reaches a
+caller if the port's scan path invokes it. `Unicode/Security/RunAll.lean`
+dispatches all twenty-seven families; a plain scan dispatches twenty-four of
+them, excluding the three crypto families, which judge a candidate against a
+wordlist, a hashing rule or a watermark cue that a plain scan does not supply.
 
-That gap is wide, and measuring it by hand is the only way to see it, because a
-port names every family in its enums whether or not its scan calls the detector.
-Scanning U+FF21 in the `gateway-header` profile under `observe`, the Rust
-reference returns seven findings — homoglyph-confusable, renderer-divergence,
-identifier-form-drift, admissibility-form-drift, nfc-idempotence-witness,
-width-class-confusion and source-display-divergence — where the COBOL port
-returns one. In the Haskell port the shortfall is visible in the source: `detect`
-in `Unicode/Security/Policy.hs` dispatches eleven families inline, while the
-other sixteen exist as standalone modules, each with its own `detect` and its own
-tests, that `Policy.hs` never imports.
+Every port now dispatches those twenty-four, in the reference's order, and
+`fixtures/security/verdict_contract.json` is generated from the reference by
+`scripts/regenerate-verdict-contract.py` rather than recording a narrower scan.
+Eleven of its thirteen cases gained between one and four findings when it was
+regenerated; no case lost one and no `action` changed, so the fixture pins
+strictly more evidence for the same decisions.
 
-Closing that is mechanical rather than new detection logic, since the
-implementations already exist. It cannot be done one port at a time, and the
-reason is not the one the fixture layout suggests.
+Reaching that state was not a matter of adding calls. The narrower contract could
+not distinguish a dispatched family from a named one, and widening it exposed
+defects in nine ports that green suites had never reached:
 
-The specification settles which side is correct. `Unicode/Security/RunAll.lean`
-dispatches all twenty-seven families and returns one `FamilyResult` per family.
-The Rust port dispatches twenty-four of them on plain input, excluding only the
-three crypto families, which judge a candidate against a wordlist, a hashing rule
-or a watermark cue that a plain scan does not supply. Rust therefore tracks the
-proven specification. The other fifteen ports do not, and neither does the shared
-fixture.
+* Go, TypeScript, Zig, JVM, .NET, Haskell and COBOL each built the
+  source-display-divergence homoglyph constituent from one finding builder. The
+  reference runs a single homoglyph detector whose priority ladder ends in a
+  CrossScriptMix branch, so a cross-script identifier fires it; these ports split
+  that ladder and report the script mix under mixed-script-admissibility, so the
+  constituent missed every input whose only homoglyph signal was the script mix.
+  C++ and Swift were unaffected, because their aggregators consult the whole
+  identity database rather than one builder.
+* Python exposed `is_clear` and `tag` as methods on four classifications. Read as
+  attributes they are bound methods, which are always truthy, so those families
+  would have been wired and permanently silent.
+* Lua's clear sentinel is spelled `clear` in some modules and `Clear` in others,
+  and Erlang's is `none` everywhere except width-class-confusion, which answers
+  `undefined`. Comparing against one spelling reported clear classifications as
+  hazards in Lua and crashed the scan in Erlang.
+* Go's `copyInts` guarded on nil rather than length, so an empty position list
+  marshalled as `null`; nothing exercised it until source-display-divergence,
+  which localises nothing.
+* Zig capped its finding list at eleven, sized to the families it then
+  dispatched, and its append silently drops past the cap.
+* COBOL's source-display aggregate used the finding count as a per-constituent
+  scratch flag and zeroed it, which discarded every finding the earlier
+  detectors had already recorded once it ran inside the core scan.
+* Go, TypeScript, JVM, .NET, Swift and Zig were missing Family constants for
+  families whose detectors already existed, so their findings could not be
+  named; in TypeScript one produced the reason code
+  `unicode.security.C.undefined.NonNfkcCompatForm`.
 
-`fixtures/security/verdict_contract.json` is pinned by fifteen ports; Rust is not
-one of them, and it is the only port the fixture does not gate. On the fixture's
-`math-alpha-gateway-reject` case — U+1D400, gateway-header, enforce — the fixture
-records one finding, `homoglyph-confusable.MathAlpha`. Python returns exactly
-that one and passes. Rust returns five, adding identifier-form-drift,
-admissibility-form-drift, nfc-idempotence-witness and source-display-divergence.
-The `action` agrees at `reject` in every case; the finding lists do not.
+Two structural changes were needed rather than wiring. C++ detectors take their
+tables explicitly and `scan` receives only the identity database, so the RGI,
+emoji-property and casing tables are now carried on it. Haskell's
+source-display-divergence module imports `Policy` to reach the constituent
+detectors, so `Policy` could not import it back; the tags, the aggregation rule
+and the canonical constituent order moved into
+`Unicode.Security.Display.SourceDisplayAggregate`, which both share.
 
-So the fixture is not a stale copy of the reference — it is an accurate record of
-what fifteen ports do, and what those fifteen ports do is narrower than the
-specification they are transliterations of. A port passes the contract partly by
-dispatching too few families to disagree with it. This is a detection gap in the
-shipped ports, not a bookkeeping discrepancy: on inputs like U+1D400 the ports
-report a hazard, but not every hazard the proven layer identifies.
-
-`scripts/regenerate-verdict-contract.py --check` measures the gap over the whole
-fixture without writing to it. Eleven of the thirteen cases under-report against
-the reference, by one to four findings each; the two that agree are the ASCII
-case, where nothing fires, and the noncharacter case. No case over-reports. The
-`action` is unchanged in every one, which is why fifteen green test suites have
-never surfaced this: the ports agree with the fixture on the decision and differ
-on the evidence.
-
-The consequence for sequencing is that widening a port's scan toward the
-specification makes it stop matching the fixture. Wiring ten of the sixteen
-orphaned Haskell families compiles clean under `-Wall -Werror`, once the
-enumerated `blocks` table is extended for all three policy levels from Rust's
-rejection sets, and yields four of Rust's five findings on that input —
-source-display-divergence being unreachable from `Policy.hs` until the compound
-detector runs as a stage after the per-family pass. The result is 447 of 448
-tests passing, the single failure being that contract case.
-
-The fixture therefore has to be regenerated from the specification before any
-port's scan can widen, and the fifteen then move together. The blocker is the
-fixture, not the detectors.
+The Rust reference is itself gated for the first time.
+`scripts/regenerate-verdict-contract.py --gate`, wired into the Rust tier of
+`scripts/test-runtime-ports.sh`, enforces that the reference decides every
+contract case identically and never reports fewer findings than the fixture
+pins. Nothing checked it before: fifteen ports check the fixture and Rust is not
+one of them, which is how it came to diverge unnoticed.
 
 
 ## Provenance
