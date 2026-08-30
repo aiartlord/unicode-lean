@@ -66,6 +66,10 @@ public static partial class Security
         public const string IdentifierFormDrift = "identifier-form-drift";
         public const string AdmissibilityFormDrift = "admissibility-form-drift";
         public const string SkinToneVariationForgery = "skin-tone-variation-forgery";
+        public const string NormalizationBomb = "normalization-bomb";
+        public const string LocaleCaseInversion = "locale-case-inversion";
+        public const string NfcIdempotenceWitness = "nfc-idempotence-witness";
+        public const string WidthClassConfusion = "width-class-confusion";
     }
 
     public sealed record Finding(
@@ -184,6 +188,37 @@ public static partial class Security
         if (compound is not null) findings.Add(compound);
         var covertDisplay = CovertDisplayCompoundFinding(input);
         if (covertDisplay is not null) findings.Add(covertDisplay);
+        var emojiZwj = EmojiZwjIntegrity.Detect(input).Classify;
+        if (!emojiZwj.IsClear) findings.Add(MakeFinding(Family.EmojiZwjIntegrity, emojiZwj.Tag!, emojiZwj.Positions));
+        var skinTone = SkinToneVariationForgery.Detect(input).Classify;
+        if (!skinTone.IsClear) findings.Add(MakeFinding(Family.SkinToneVariationForgery, skinTone.Tag!, skinTone.Positions));
+        var filenameDisguise = FilenameDisguise.Detect(input).Classify;
+        if (!filenameDisguise.IsClear) findings.Add(MakeFinding(Family.FilenameDisguise, filenameDisguise.Tag!, filenameDisguise.Positions));
+        var rendererDivergence = RendererDivergence.Detect(input).Classify;
+        if (!rendererDivergence.IsClear) findings.Add(MakeFinding(Family.RendererDivergence, rendererDivergence.Tag!, rendererDivergence.Positions));
+        var streamSafe = StreamSafeViolation.Detect(input).Classify;
+        if (!streamSafe.IsClear) findings.Add(MakeFinding(Family.StreamSafeViolation, streamSafe.Tag!, streamSafe.Positions));
+        var caseExpansion = CaseExpansionMismatch.Detect(input).Classify;
+        if (!caseExpansion.IsClear) findings.Add(MakeFinding(Family.CaseExpansionMismatch, caseExpansion.Tag!, caseExpansion.Positions));
+        var identifierDrift = IdentifierFormDrift.Detect(input).Classify;
+        if (!identifierDrift.IsClear) findings.Add(MakeFinding(Family.IdentifierFormDrift, identifierDrift.Tag!, identifierDrift.Positions));
+        var admissibilityDrift = AdmissibilityFormDrift.Detect(input).Classify;
+        if (!admissibilityDrift.IsClear) findings.Add(MakeFinding(Family.AdmissibilityFormDrift, admissibilityDrift.Tag!, admissibilityDrift.Positions));
+        var normalizationBomb = NormalizationBombDetect(input);
+        if (normalizationBomb.SubThreat is not null) findings.Add(MakeFinding(Family.NormalizationBomb, normalizationBomb.SubThreat, normalizationBomb.Positions));
+        var localeCase = LocaleCaseInversionDetect(input);
+        if (localeCase.SubThreat is not null) findings.Add(MakeFinding(Family.LocaleCaseInversion, localeCase.SubThreat, localeCase.Positions));
+        var nfcWitness = NfcIdempotenceWitnessDetect(input);
+        if (nfcWitness.SubThreat is not null) findings.Add(MakeFinding(Family.NfcIdempotenceWitness, nfcWitness.SubThreat, nfcWitness.Positions));
+        var widthClass = WidthClassConfusionDetect(input);
+        if (widthClass.SubThreat is not null) findings.Add(MakeFinding(Family.WidthClassConfusion, widthClass.SubThreat, widthClass.Positions));
+        // SourceDisplayDivergence judges the input as a unit, so it localises
+        // nothing and carries an empty position list.
+        var sourceDisplay = SourceDisplayDivergence.Detect(input).Classify;
+        if (!sourceDisplay.IsClear)
+        {
+            findings.Add(MakeFinding(Family.SourceDisplayDivergence, sourceDisplay.Tag!, new List<int>()));
+        }
         return findings;
     }
 
@@ -217,16 +252,37 @@ public static partial class Security
     {
         if (level == PolicyLevel.Minimal)
         {
-            return family is Family.MalformedUtf8 or Family.MalformedUtf16 or Family.MalformedUtf32
-                or Family.SurrogateReassembly
-                or Family.BidiControlBalance or Family.NoncharacterControl;
+            return
+            family is Family.MalformedUtf8 or Family.MalformedUtf16 or Family.MalformedUtf32
+                or Family.SurrogateReassembly or Family.BidiControlBalance or Family.NoncharacterControl
+                or Family.StreamSafeViolation;
         }
-        return family is Family.MalformedUtf8 or Family.MalformedUtf16 or Family.MalformedUtf32
-            or Family.TagBlockPayload or Family.VariationSelectorPayload or Family.ZeroWidthPayload
-            or Family.SurrogateReassembly
-            or Family.BidiControlBalance or Family.NoncharacterControl or Family.HomoglyphConfusable
-            or Family.MixedScriptAdmissibility or Family.ConfusableBidiCompound
-            or Family.CovertDisplayCompound;
+        if (level == PolicyLevel.Moderate)
+        {
+            return
+            family is Family.MalformedUtf8 or Family.MalformedUtf16 or Family.MalformedUtf32
+                or Family.TagBlockPayload or Family.VariationSelectorPayload or Family.ZeroWidthPayload
+                or Family.SurrogateReassembly or Family.BidiControlBalance or Family.NoncharacterControl
+                or Family.HomoglyphConfusable or Family.MixedScriptAdmissibility
+                or Family.SkinToneVariationForgery or Family.SourceDisplayDivergence
+                or Family.FilenameDisguise or Family.StreamSafeViolation or Family.LocaleCaseInversion
+                or Family.CaseExpansionMismatch or Family.WidthClassConfusion
+                or Family.NfcIdempotenceWitness or Family.IdentifierFormDrift
+                or Family.CovertDisplayCompound or Family.ConfusableBidiCompound
+                or Family.AdmissibilityFormDrift;
+        }
+        return
+            family is Family.MalformedUtf8 or Family.MalformedUtf16 or Family.MalformedUtf32
+                or Family.TagBlockPayload or Family.VariationSelectorPayload or Family.ZeroWidthPayload
+                or Family.SurrogateReassembly or Family.BidiControlBalance or Family.NoncharacterControl
+                or Family.HomoglyphConfusable or Family.MixedScriptAdmissibility or Family.EmojiZwjIntegrity
+                or Family.SkinToneVariationForgery or Family.SourceDisplayDivergence
+                or Family.FilenameDisguise or Family.RtlInjection or Family.RendererDivergence
+                or Family.NormalizationBomb or Family.StreamSafeViolation or Family.LocaleCaseInversion
+                or Family.CaseExpansionMismatch or Family.WidthClassConfusion
+                or Family.NfcIdempotenceWitness or Family.IdentifierFormDrift
+                or Family.CovertDisplayCompound or Family.ConfusableBidiCompound
+                or Family.AdmissibilityFormDrift;
     }
 
     private static Verdict MalformedDecodeVerdict(string profile, string mode, string family, string subThreat, int offset)
@@ -251,7 +307,9 @@ public static partial class Security
             Family.ConfusableBidiCompound or Family.CovertDisplayCompound or Family.IdentifierFormDrift
                 or Family.AdmissibilityFormDrift => "X",
             Family.HashInputStability or Family.AiWatermarkDetectability => "K",
-            Family.StreamSafeViolation or Family.CaseExpansionMismatch => "F",
+            Family.StreamSafeViolation or Family.CaseExpansionMismatch
+                or Family.NormalizationBomb or Family.LocaleCaseInversion
+                or Family.NfcIdempotenceWitness or Family.WidthClassConfusion => "F",
             _ => "C",
         };
 

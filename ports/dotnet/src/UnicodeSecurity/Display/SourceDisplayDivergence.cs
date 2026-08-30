@@ -118,9 +118,15 @@ public static partial class Security
 
         /// <summary>True iff the homoglyph-confusable constituent fires on
         /// <paramref name="input"/> — reuses the core scan fold's own
-        /// HomoglyphConfusableFinding classifier.</summary>
+        /// classifiers. The reference runs one homoglyph detector whose priority
+        /// ladder ends in a CrossScriptMix branch, so a cross-script identifier
+        /// fires it even though this port reports that case under
+        /// mixed-script-admissibility; consulting only the first classifier
+        /// misses every input whose sole homoglyph signal is the script
+        /// mix.</summary>
         private static bool HomoglyphFired(List<int> input) =>
-            Security.HomoglyphConfusableFinding(input) is not null;
+            Security.HomoglyphConfusableFinding(input) is not null
+            || Security.MixedScriptAdmissibilityFinding(input) is not null;
 
         // ─────────────────────────────────────────────────────────────────
         // §3 Top-level detection
