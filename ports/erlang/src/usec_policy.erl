@@ -134,7 +134,20 @@ scan(Profile, Mode, Input) ->
     F11 = push_optional(F10, rtl_injection, usec_detectors:rtl_injection_detect(Input)),
     F12 = push_optional(F11, confusable_bidi_compound, usec_detectors:confusable_bidi_detect(Input)),
     F13 = push_optional(F12, covert_display_compound, usec_detectors:covert_display_detect(Input)),
-    verdict(Profile, Mode, Input, F13, null).
+    F14 = push_classified(F13, emoji_zwj_integrity, usec_emoji_zwj_integrity, Input),
+    F15 = push_classified(F14, skin_tone_variation_forgery, usec_skin_tone_variation_forgery, Input),
+    F16 = push_classified(F15, filename_disguise, usec_filename_disguise, Input),
+    F17 = push_classified(F16, renderer_divergence, usec_renderer_divergence, Input),
+    F18 = push_classified(F17, stream_safe_violation, usec_stream_safe_violation, Input),
+    F19 = push_classified(F18, case_expansion_mismatch, usec_case_expansion_mismatch, Input),
+    F20 = push_classified(F19, identifier_form_drift, usec_identifier_form_drift, Input),
+    F21 = push_classified(F20, admissibility_form_drift, usec_admissibility_form_drift, Input),
+    F22 = push_optional(F21, normalization_bomb, usec_detectors:normalization_bomb_detect(Input)),
+    F23 = push_optional(F22, locale_case_inversion, usec_detectors:locale_case_detect(Input)),
+    F24 = push_optional(F23, nfc_idempotence_witness, usec_detectors:nfc_witness_detect(Input)),
+    F25 = push_classified(F24, width_class_confusion, usec_width_class_confusion, Input),
+    F26 = push_classified(F25, source_display_divergence, usec_source_display_divergence, Input),
+    verdict(Profile, Mode, Input, F26, null).
 
 scan_utf8(Profile, Mode, Bytes) ->
     case usec_utf8:first_invalid_utf8_offset(Bytes) of
@@ -219,6 +232,21 @@ push_optional(Findings, Family, D) ->
 
 push_positional(Findings, _Family, _Sub, []) -> Findings;
 push_positional(Findings, Family, Sub, Positions) -> push_finding(Findings, Family, hazard, Sub, Positions).
+
+%% Build a finding from a detector module that carries a classification. Every
+%% such module exports the same three functions over the verdict's classify map,
+%% so the shape is written once here rather than per family.
+push_classified(Findings, Family, Mod, Input) ->
+    V = Mod:detect(Input),
+    C = maps:get(classify, V),
+    %% Guard on the module's own is_clear rather than on the tag: the clear
+    %% sentinel is not uniform -- width_class_confusion answers undefined where
+    %% the others answer none -- and matching one of them treats the other as a
+    %% sub-threat, which reaches sub_tag with a sentinel it has no clause for.
+    case Mod:is_clear(C) of
+        true -> Findings;
+        false -> push_finding(Findings, Family, hazard, Mod:classify_tag(C), Mod:classify_positions(C))
+    end.
 
 push_finding(Findings, _Family, clear, _Sub, _Positions) -> Findings;
 push_finding(Findings, Family, Kind, Sub0, Positions) ->
