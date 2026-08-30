@@ -38,6 +38,7 @@
 -/
 
 import Unicode.Security.Crypto.AiWatermarkDetectability
+import Unicode.Conformance.Security.VectorFile
 
 namespace Unicode.Conformance.Security.AiWatermarkDetectabilityTest
 
@@ -84,5 +85,69 @@ theorem all_rows_pass :
        ∧ v.markerCount = 1) ∧
     (detect [0x61, 0x62, 0x63]).classify = .clear :=
   ⟨nnbsp_boundary_verdict, vs_carrier_verdict, ascii_clear_verdict⟩
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- The pinned vector file, executed
+--
+-- `Unicode/Ucd/Security/AiWatermarkDetectabilityTest.txt` is hash-pinned by
+-- `scripts/check-security-hashes.sh`, which fixes its bytes.  Running the
+-- detector over those bytes is a separate claim, and this section makes it:
+-- `rowsList` is mirrored against a fresh parse of the file at build time, and
+-- `all_vectors_pass` reduces the detector over every row in the kernel.  A row
+-- added to, removed from, or edited in the file fails the build until the
+-- harness agrees with it again.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+open Unicode.Conformance.Security.VectorFile (VectorRow parseFile)
+
+/-- Raw text of the pinned vector file, embedded at compile time. -/
+def vectorsRaw : String := include_str "../../Ucd/Security/AiWatermarkDetectabilityTest.txt"
+
+/-- Every row of the pinned vector file, freshly parsed. -/
+def parsedRows : List VectorRow := parseFile vectorsRaw
+
+/-- The pinned rows, materialized so the kernel can reduce over them. -/
+def rowsList : List VectorRow := [
+  ⟨[0x0061, 0x0062, 0x0063], "Clear", []⟩,
+  ⟨[0x4E2D, 0x6587], "Clear", []⟩,
+  ⟨[0x1F600], "Clear", []⟩,
+  ⟨[0x1F469, 0x200D, 0x1F52C], "Clear", []⟩,
+  ⟨[0x1F600, 0xFE0F], "Clear", []⟩,
+  ⟨[0x0061, 0x202F, 0x0062], "Hazard:NnbspBoundary", [1]⟩,
+  ⟨[0x0061, 0x202F, 0x0062, 0x202F, 0x0063], "Hazard:NnbspBoundary", [1, 3]⟩,
+  ⟨[0x0061, 0xFE00, 0x0062], "Hazard:VariationSelectorCarrier", [1]⟩,
+  ⟨[0x0061, 0xFE0F, 0x0062], "Hazard:VariationSelectorCarrier", [1]⟩,
+  ⟨[0x0061, 0xE0100, 0x0062], "Hazard:VariationSelectorCarrier", [1]⟩,
+  ⟨[0x0061, 0x200D, 0x0062], "Hazard:ZwjNonEmoji", [1]⟩,
+  ⟨[0x0061, 0x00AD, 0x0062], "Hazard:DefaultIgnorableCarrier", [1]⟩,
+  ⟨[0x0061, 0x200B, 0x0062], "Hazard:DefaultIgnorableCarrier", [1]⟩,
+  ⟨[0x0061, 0x034F, 0x0062], "Hazard:DefaultIgnorableCarrier", [1]⟩,
+  ⟨[0x0061, 0x202F, 0x00AD, 0x0062], "Hazard:Unknown", [1, 2]⟩,
+  ⟨[0x0061, 0xFE0F, 0x200D, 0x0062], "Hazard:Unknown", [1, 2]⟩,
+  ⟨[0x0061, 0x202F, 0x0062, 0xFE0F, 0x0063, 0x00AD, 0x0064], "Hazard:Unknown", [1, 3, 5]⟩,
+  ⟨[0x0061, 0x202F, 0x0062, 0x202F, 0x0063, 0x202F, 0x0064], "Hazard:Adversarial", [1, 3, 5]⟩,
+  ⟨[0x0061, 0x200B, 0x0062, 0x200B, 0x0063, 0x200B, 0x0064], "Hazard:Gpt5ZwspModulo", [1, 3, 5]⟩,
+  ⟨[0x201C, 0x0061, 0x0062, 0x0063, 0x201D], "Hazard:SmartQuoteAlternation", [0, 4]⟩,
+  ⟨[0x2018, 0x0078, 0x0079, 0x2019], "Hazard:SmartQuoteAlternation", [0, 3]⟩,
+  ⟨[0x0061, 0x0062, 0x0020, 0x2014, 0x0020, 0x0063, 0x0064, 0x0020, 0x2014, 0x0020, 0x0065, 0x0066], "Hazard:EmDashPattern", [3, 8]⟩,
+  ⟨[0x0064, 0x0065, 0x006C, 0x0076, 0x0065], "Hazard:StatisticalTokenChoice", [0]⟩,
+  ⟨[0x003B, 0x0020, 0x006D, 0x006F, 0x0072, 0x0065, 0x006F, 0x0076, 0x0065, 0x0072, 0x002C, 0x0020], "Hazard:StatisticalTokenChoice", [2]⟩,
+  ⟨[0x0061, 0x202F, 0x0062, 0x202F, 0x0063, 0x202F, 0x0064], "Hazard:Adversarial", [1, 3, 5]⟩,
+  ⟨[0x0061, 0x200B, 0x0062, 0x200B, 0x0063, 0x200B, 0x0064], "Hazard:Gpt5ZwspModulo", [1, 3, 5]⟩
+]
+
+-- `rowsList` mirrors a fresh parse of the vector file, checked at build time.
+#eval do
+  unless rowsList == parsedRows do
+    throw (IO.userError "AiWatermarkDetectabilityTest drift: rowsList ≠ parsed vector file")
+
+/-- Run the detector over one row and compare with the verdict the file states. -/
+def verifyVectorRow (r : VectorRow) : Bool :=
+  let v := detect r.codepoints
+  if r.expectsClear then v.classify.isClear
+  else v.classify.tag == r.expectedTag
+
+/-- Every vector the pinned file states holds of the detector. -/
+theorem all_vectors_pass : rowsList.all verifyVectorRow = true := by decide +kernel
 
 end Unicode.Conformance.Security.AiWatermarkDetectabilityTest

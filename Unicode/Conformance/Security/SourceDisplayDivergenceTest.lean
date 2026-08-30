@@ -38,6 +38,7 @@
 -/
 
 import Unicode.Security.Display.SourceDisplayDivergence
+import Unicode.Conformance.Security.VectorFile
 
 namespace Unicode.Conformance.Security.SourceDisplayDivergenceTest
 
@@ -117,5 +118,75 @@ theorem all_rows_pass :
     (detect [0x0048, 0x200B, 0x69]).classify.tag = some "ZeroWidth" :=
   ⟨tag_block_family_verdict, variation_selector_family_verdict,
    zero_width_family_verdict⟩
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- The pinned vector file, executed
+--
+-- `Unicode/Ucd/Security/SourceDisplayDivergenceTest.txt` is hash-pinned by
+-- `scripts/check-security-hashes.sh`, which fixes its bytes.  Running the
+-- detector over those bytes is a separate claim, and this section makes it:
+-- `rowsList` is mirrored against a fresh parse of the file at build time, and
+-- `all_vectors_pass` reduces the detector over every row in the kernel.  A row
+-- added to, removed from, or edited in the file fails the build until the
+-- harness agrees with it again.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+open Unicode.Conformance.Security.VectorFile (VectorRow parseFile)
+
+/-- Raw text of the pinned vector file, embedded at compile time. -/
+def vectorsRaw : String := include_str "../../Ucd/Security/SourceDisplayDivergenceTest.txt"
+
+/-- Every row of the pinned vector file, freshly parsed. -/
+def parsedRows : List VectorRow := parseFile vectorsRaw
+
+/-- The pinned rows, materialized so the kernel can reduce over them. -/
+def rowsList : List VectorRow := [
+  ⟨[0x0048, 0x0065, 0x006C, 0x006C, 0x006F, 0x0020, 0x0077, 0x006F, 0x0072, 0x006C, 0x0064], "Clear", []⟩,
+  ⟨[0x006C, 0x0065, 0x0074, 0x0020, 0x0078, 0x0020, 0x003D, 0x0020, 0x0031, 0x003B], "Clear", []⟩,
+  ⟨[0x0069, 0x0066, 0x0020, 0x0028, 0x0078, 0x0029, 0x0020, 0x007B, 0x0020, 0x0079, 0x0028, 0x0029, 0x003B, 0x0020, 0x007D], "Clear", []⟩,
+  ⟨[0x4E2D, 0x6587], "Clear", []⟩,
+  ⟨[0x0066, 0x0075, 0x006E, 0x0063, 0x0074, 0x0069, 0x006F, 0x006E, 0x0020, 0x0066, 0x006F, 0x006F, 0x0028, 0x0029, 0x0020, 0x007B, 0x0020, 0x0072, 0x0065, 0x0074, 0x0075, 0x0072, 0x006E, 0x0020, 0x0034, 0x0032, 0x003B, 0x0020, 0x007D], "Clear", []⟩,
+  ⟨[0x0078, 0x002B, 0x002B], "Clear", []⟩,
+  ⟨[0x043F, 0x0440, 0x0438, 0x0432, 0x0435, 0x0442], "Clear", []⟩,
+  ⟨[0xE0050, 0xE0072, 0xE0069, 0xE006E, 0xE0074, 0xE0020, 0xE0027, 0xE0070, 0xE0077, 0xE006E, 0xE0065, 0xE0064, 0xE0027], "Hazard:TagBlock", []⟩,
+  ⟨[0xE007F], "Hazard:TagBlock", []⟩,
+  ⟨[0x0048, 0x0069, 0xE0070, 0xE0077, 0xE006E, 0xE0064], "Hazard:TagBlock", []⟩,
+  ⟨[0xE0001, 0xE0065, 0xE006E], "Hazard:TagBlock", []⟩,
+  ⟨[0x0041, 0xFE0F], "Hazard:VariationSelector", []⟩,
+  ⟨[0x0061, 0xFE04, 0xFE04, 0xFE04, 0xFE04, 0xFE04, 0xFE04, 0xFE04, 0xFE04], "Hazard:VariationSelector", []⟩,
+  ⟨[0x0061, 0xFE04, 0xFE01, 0xFE04, 0xFE02], "Hazard:VariationSelector", []⟩,
+  ⟨[0x4E2D, 0xFE0F], "Hazard:VariationSelector", []⟩,
+  ⟨[0x0048, 0x200B, 0x0069], "Hazard:ZeroWidth", []⟩,
+  ⟨[0x0048, 0x200B, 0x0069, 0x200B, 0x0069], "Hazard:ZeroWidth", []⟩,
+  ⟨[0x0048, 0x2060, 0x2060, 0x0069], "Hazard:ZeroWidth", []⟩,
+  ⟨[0x0048, 0x202F, 0x0069, 0x202F, 0x0021], "Hazard:ZeroWidth", []⟩,
+  ⟨[0x202E, 0x0041], "Hazard:BidiControl", []⟩,
+  ⟨[0x202C], "Hazard:BidiControl", []⟩,
+  ⟨[0x2066, 0x0041], "Hazard:BidiControl", []⟩,
+  ⟨[0x0069, 0x0066, 0x0020, 0x0028, 0x0061, 0x0064, 0x006D, 0x0069, 0x006E, 0x0020, 0x202E, 0x0029, 0x0020, 0x007B, 0x0020, 0x002F, 0x0073, 0x0061, 0x0066, 0x0065, 0x002F, 0x007D], "Hazard:BidiControl", []⟩,
+  ⟨[0x004E, 0x0065, 0x0074, 0x0068, 0x0065, 0x0072, 0x0435, 0x0075, 0x006D], "Hazard:IdentifierHomoglyph", []⟩,
+  ⟨[0x0430, 0x0070, 0x0070, 0x006C, 0x0065], "Hazard:IdentifierHomoglyph", []⟩,
+  ⟨[0x1D400], "Hazard:IdentifierHomoglyph", []⟩,
+  ⟨[0xFF21], "Hazard:IdentifierHomoglyph", []⟩,
+  ⟨[0x0065, 0x0301], "Hazard:IdentifierHomoglyph", []⟩,
+  ⟨[0x0041, 0xFE0F, 0x200B], "Hazard:Compound", []⟩,
+  ⟨[0xE0041, 0xE0042, 0x200B], "Hazard:Compound", []⟩,
+  ⟨[0x202E, 0x004E, 0x0065, 0x0074, 0x0068, 0x0065, 0x0072, 0x0435, 0x0075, 0x006D], "Hazard:Compound", []⟩,
+  ⟨[0x202E, 0x0061, 0xFE04, 0xFE01], "Hazard:Compound", []⟩
+]
+
+-- `rowsList` mirrors a fresh parse of the vector file, checked at build time.
+#eval do
+  unless rowsList == parsedRows do
+    throw (IO.userError "SourceDisplayDivergenceTest drift: rowsList ≠ parsed vector file")
+
+/-- Run the detector over one row and compare with the verdict the file states. -/
+def verifyVectorRow (r : VectorRow) : Bool :=
+  let v := detect r.codepoints
+  if r.expectsClear then v.classify.isClear
+  else v.classify.tag == r.expectedTag
+
+/-- Every vector the pinned file states holds of the detector. -/
+theorem all_vectors_pass : rowsList.all verifyVectorRow = true := by decide +kernel
 
 end Unicode.Conformance.Security.SourceDisplayDivergenceTest

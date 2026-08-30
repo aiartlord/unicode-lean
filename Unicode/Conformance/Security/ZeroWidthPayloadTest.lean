@@ -40,6 +40,7 @@
 -/
 
 import Unicode.Security.Covert.ZeroWidthPayload
+import Unicode.Conformance.Security.VectorFile
 
 namespace Unicode.Conformance.Security.ZeroWidthPayloadTest
 
@@ -112,5 +113,71 @@ theorem all_rows_pass :
          ∧ v.suspiciousPositions = [] ∧ v.totalZeroWidth = 1) :=
   ⟨binary_payload_verdict, word_joiner_verdict, nnbsp_watermark_verdict,
    annotation_misuse_verdict, emoji_zwj_clear_verdict⟩
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- The pinned vector file, executed
+--
+-- `Unicode/Ucd/Security/ZeroWidthPayloadTest.txt` is hash-pinned by
+-- `scripts/check-security-hashes.sh`, which fixes its bytes.  Running the
+-- detector over those bytes is a separate claim, and this section makes it:
+-- `rowsList` is mirrored against a fresh parse of the file at build time, and
+-- `all_vectors_pass` reduces the detector over every row in the kernel.  A row
+-- added to, removed from, or edited in the file fails the build until the
+-- harness agrees with it again.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+open Unicode.Conformance.Security.VectorFile (VectorRow parseFile)
+
+/-- Raw text of the pinned vector file, embedded at compile time. -/
+def vectorsRaw : String := include_str "../../Ucd/Security/ZeroWidthPayloadTest.txt"
+
+/-- Every row of the pinned vector file, freshly parsed. -/
+def parsedRows : List VectorRow := parseFile vectorsRaw
+
+/-- The pinned rows, materialized so the kernel can reduce over them. -/
+def rowsList : List VectorRow := [
+  ⟨[0x0048, 0x0065, 0x006C, 0x006C, 0x006F], "Clear", []⟩,
+  ⟨[0x4E2D, 0x6587], "Clear", []⟩,
+  ⟨[0x1F600, 0xFE0F], "Clear", []⟩,
+  ⟨[0x1F468, 0x200D, 0x1F4BB], "Clear", []⟩,
+  ⟨[0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F466], "Clear", []⟩,
+  ⟨[0x041F, 0x0440, 0x0438, 0x0432, 0x0435, 0x0442], "Clear", []⟩,
+  ⟨[0x0915, 0x0916, 0x0917], "Clear", []⟩,
+  ⟨[0x03B1, 0x03B2, 0x03B3], "Clear", []⟩,
+  ⟨[0x0048, 0x200B, 0x0069, 0x200B, 0x0069], "Hazard:BinaryPayload", [1, 3]⟩,
+  ⟨[0x0048, 0x200B, 0x200D, 0x0069], "Hazard:BinaryPayload", [1, 2]⟩,
+  ⟨[0x0061, 0x200B, 0x200B, 0x200B, 0x0062], "Hazard:BinaryPayload", [1, 2, 3]⟩,
+  ⟨[0x0061, 0x200B, 0x200B, 0x200D, 0x200D, 0x200B, 0x200B, 0x200D, 0x200D, 0x0062], "Hazard:BinaryPayload", [1, 2, 3, 4, 5, 6, 7, 8]⟩,
+  ⟨[0x0066, 0x006F, 0x006F, 0x200B, 0x200B, 0x200B, 0x200B, 0x200B, 0x200B, 0x200B, 0x200B, 0x0062, 0x0061, 0x0072], "Hazard:BinaryPayload", [3, 4, 5, 6, 7, 8, 9, 10]⟩,
+  ⟨[0x0048, 0x2060, 0x0069], "Hazard:WordJoinerInjection", [1]⟩,
+  ⟨[0x0061, 0x2060, 0x2060, 0x0062], "Hazard:WordJoinerInjection", [1, 2]⟩,
+  ⟨[0x4E2D, 0x2060, 0x6587], "Hazard:WordJoinerInjection", [1]⟩,
+  ⟨[0x0061, 0x2060, 0x0062, 0x2060, 0x0063, 0x2060, 0x0064], "Hazard:WordJoinerInjection", [1, 3, 5]⟩,
+  ⟨[0x0048, 0x202F, 0x0069, 0x202F, 0x0021], "Hazard:AIWatermarkNNBSP", [1, 3]⟩,
+  ⟨[0x0061, 0x202F, 0x0062, 0x202F, 0x0063, 0x202F, 0x0064], "Hazard:AIWatermarkNNBSP", [1, 3, 5]⟩,
+  ⟨[0x0048, 0x200B, 0x0069], "Hazard:BareZeroWidth", [1]⟩,
+  ⟨[0x0048, 0xFEFF, 0x0069], "Hazard:BareZeroWidth", [1]⟩,
+  ⟨[0x0048, 0x200D, 0x0069], "Hazard:BareZeroWidth", [1]⟩,
+  ⟨[0x0048, 0x202F, 0x0069], "Hazard:BareZeroWidth", [1]⟩,
+  ⟨[0x0048, 0xFFF9, 0x0069], "Hazard:AnnotationMisuse", [1]⟩,
+  ⟨[0xFFF9, 0x0041, 0xFFF9, 0x0042], "Hazard:AnnotationMisuse", [0, 2]⟩,
+  ⟨[0xFFF9, 0x0041, 0xFFFA, 0x0042], "Hazard:AnnotationMisuse", [0, 2]⟩,
+  ⟨[0x0041, 0xFFFB, 0x0042], "Hazard:AnnotationMisuse", [1]⟩,
+  ⟨[0x0041, 0xFFFA, 0x0042], "Hazard:AnnotationMisuse", [1]⟩
+]
+
+-- `rowsList` mirrors a fresh parse of the vector file, checked at build time.
+#eval do
+  unless rowsList == parsedRows do
+    throw (IO.userError "ZeroWidthPayloadTest drift: rowsList ≠ parsed vector file")
+
+/-- Run the detector over one row and compare with the verdict the file states. -/
+def verifyVectorRow (r : VectorRow) : Bool :=
+  let v := detect r.codepoints
+  if r.expectsClear then v.classify.isClear
+  else v.classify.tag == r.expectedTag
+
+/-- Every vector the pinned file states holds of the detector. -/
+theorem all_vectors_pass : rowsList.all verifyVectorRow = true := by decide +kernel
 
 end Unicode.Conformance.Security.ZeroWidthPayloadTest

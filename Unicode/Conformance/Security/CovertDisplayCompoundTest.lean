@@ -35,6 +35,7 @@
 -/
 
 import Unicode.Security.Boundary.CovertDisplayCompound
+import Unicode.Conformance.Security.VectorFile
 
 namespace Unicode.Conformance.Security.CovertDisplayCompoundTest
 
@@ -73,5 +74,64 @@ def verifyRow (r : Row) : Bool :=
 /-- Every certified vector draws exactly the verdict the compound detector's
     channel-priority logic demands. -/
 theorem all_rows_pass : rows.all verifyRow = true := by decide +kernel
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- The pinned vector file, executed
+--
+-- `Unicode/Ucd/Security/CovertDisplayCompoundTest.txt` is hash-pinned by
+-- `scripts/check-security-hashes.sh`, which fixes its bytes.  Running the
+-- detector over those bytes is a separate claim, and this section makes it:
+-- `rowsList` is mirrored against a fresh parse of the file at build time, and
+-- `all_vectors_pass` reduces the detector over every row in the kernel.  A row
+-- added to, removed from, or edited in the file fails the build until the
+-- harness agrees with it again.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+open Unicode.Conformance.Security.VectorFile (VectorRow parseFile)
+
+/-- Raw text of the pinned vector file, embedded at compile time. -/
+def vectorsRaw : String := include_str "../../Ucd/Security/CovertDisplayCompoundTest.txt"
+
+/-- Every row of the pinned vector file, freshly parsed. -/
+def parsedRows : List VectorRow := parseFile vectorsRaw
+
+/-- The pinned rows, materialized so the kernel can reduce over them. -/
+def rowsList : List VectorRow := [
+  ⟨[0x0048, 0x0065, 0x006C, 0x006C, 0x006F], "Clear", []⟩,
+  ⟨[0x202E], "Clear", []⟩,
+  ⟨[0x0041, 0xFE00], "Clear", []⟩,
+  ⟨[0x202E, 0x1F600, 0xFE0F], "Clear", []⟩,
+  ⟨[0x202E, 0x0041, 0x0042, 0x202C], "Clear", []⟩,
+  ⟨[0x4E2D, 0x6587], "Clear", []⟩,
+  ⟨[0x0041, 0xE0001], "Clear", []⟩,
+  ⟨[0x202A, 0x0041, 0x202C], "Clear", []⟩,
+  ⟨[0x202E, 0x0041, 0xFE00], "Hazard:BidiPlusUnregisteredVs", [0, 2]⟩,
+  ⟨[0x0061, 0x0064, 0x006D, 0x0069, 0x006E, 0x202E, 0x0058, 0xFE00], "Hazard:BidiPlusUnregisteredVs", [5, 7]⟩,
+  ⟨[0x2067, 0x0042, 0xFE02], "Hazard:BidiPlusUnregisteredVs", [0, 2]⟩,
+  ⟨[0x202A, 0x4E2D, 0xFE05], "Hazard:BidiPlusUnregisteredVs", [0, 2]⟩,
+  ⟨[0x2068, 0x0041, 0xE0100], "Hazard:BidiPlusUnregisteredVs", [0, 2]⟩,
+  ⟨[0x202B, 0x0430, 0xFE06], "Hazard:BidiPlusUnregisteredVs", [0, 2]⟩,
+  ⟨[0x202E, 0x0041, 0xE0001], "Hazard:BidiPlusTagBlock", [0, 2]⟩,
+  ⟨[0x0066, 0x006F, 0x006F, 0x002E, 0x0074, 0x202E, 0xE0041], "Hazard:BidiPlusTagBlock", [5, 6]⟩,
+  ⟨[0x202E, 0x1F600, 0xFE0F, 0xE0042], "Hazard:BidiPlusTagBlock", [0, 3]⟩,
+  ⟨[0x2067, 0x0042, 0xE0001], "Hazard:BidiPlusTagBlock", [0, 2]⟩,
+  ⟨[0x2068, 0xE0003], "Hazard:BidiPlusTagBlock", [0, 1]⟩,
+  ⟨[0x202A, 0x4E2D, 0xE0021], "Hazard:BidiPlusTagBlock", [0, 2]⟩,
+  ⟨[0x202B, 0x4E2D, 0xE0041], "Hazard:BidiPlusTagBlock", [0, 2]⟩
+]
+
+-- `rowsList` mirrors a fresh parse of the vector file, checked at build time.
+#eval do
+  unless rowsList == parsedRows do
+    throw (IO.userError "CovertDisplayCompoundTest drift: rowsList ≠ parsed vector file")
+
+/-- Run the detector over one row and compare with the verdict the file states. -/
+def verifyVectorRow (r : VectorRow) : Bool :=
+  let v := detect r.codepoints
+  if r.expectsClear then v.classify.isClear
+  else v.classify.tag == r.expectedTag
+
+/-- Every vector the pinned file states holds of the detector. -/
+theorem all_vectors_pass : rowsList.all verifyVectorRow = true := by decide +kernel
 
 end Unicode.Conformance.Security.CovertDisplayCompoundTest

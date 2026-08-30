@@ -36,6 +36,7 @@
 -/
 
 import Unicode.Security.Form.NfcIdempotenceWitness
+import Unicode.Conformance.Security.VectorFile
 
 namespace Unicode.Conformance.Security.NfcIdempotenceWitnessTest
 
@@ -83,5 +84,69 @@ theorem all_rows_pass :
     (detect [0x0065, 0x0301]).classify.tag = some "NonNfcForm" ∧
     (detect [0xFB01]).classify.tag = some "NonNfkcCompatForm" :=
   ⟨precomposed_e_clear, decomposed_e_nfc, fi_ligature_nfkc⟩
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- The pinned vector file, executed
+--
+-- `Unicode/Ucd/Security/NfcIdempotenceWitnessTest.txt` is hash-pinned by
+-- `scripts/check-security-hashes.sh`, which fixes its bytes.  Running the
+-- detector over those bytes is a separate claim, and this section makes it:
+-- `rowsList` is mirrored against a fresh parse of the file at build time, and
+-- `all_vectors_pass` reduces the detector over every row in the kernel.  A row
+-- added to, removed from, or edited in the file fails the build until the
+-- harness agrees with it again.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+open Unicode.Conformance.Security.VectorFile (VectorRow parseFile)
+
+/-- Raw text of the pinned vector file, embedded at compile time. -/
+def vectorsRaw : String := include_str "../../Ucd/Security/NfcIdempotenceWitnessTest.txt"
+
+/-- Every row of the pinned vector file, freshly parsed. -/
+def parsedRows : List VectorRow := parseFile vectorsRaw
+
+/-- The pinned rows, materialized so the kernel can reduce over them. -/
+def rowsList : List VectorRow := [
+  ⟨[0x0048, 0x0065, 0x006C, 0x006C, 0x006F], "Clear", []⟩,
+  ⟨[0x00E9], "Clear", []⟩,
+  ⟨[0x4E2D, 0x6587], "Clear", []⟩,
+  ⟨[0xD55C], "Clear", []⟩,
+  ⟨[0x041F, 0x0440, 0x0438, 0x0432, 0x0435, 0x0442], "Clear", []⟩,
+  ⟨[0x03B1, 0x03B2, 0x03B3], "Clear", []⟩,
+  ⟨[0x0627, 0x0628, 0x0629], "Clear", []⟩,
+  ⟨[0x0068, 0x0074, 0x0074, 0x0070, 0x003A, 0x002F, 0x002F], "Clear", []⟩,
+  ⟨[0x0065, 0x0301], "Hazard:NonNfcForm", [0]⟩,
+  ⟨[0x0061, 0x0301, 0x0065, 0x0300], "Hazard:NonNfcForm", [0]⟩,
+  ⟨[0x006F, 0x0308], "Hazard:NonNfcForm", [0]⟩,
+  ⟨[0x1112, 0x1161, 0x11AB], "Hazard:NonNfcForm", [0]⟩,
+  ⟨[0x0075, 0x0308], "Hazard:NonNfcForm", [0]⟩,
+  ⟨[0x006E, 0x0303], "Hazard:NonNfcForm", [0]⟩,
+  ⟨[0x0063, 0x0327], "Hazard:NonNfcForm", [0]⟩,
+  ⟨[0x006E, 0x0069, 0x006E, 0x0303, 0x006F], "Hazard:NonNfcForm", [2]⟩,
+  ⟨[0x006F, 0x0302], "Hazard:NonNfcForm", [0]⟩,
+  ⟨[0xFB01], "Hazard:NonNfkcCompatForm", [0]⟩,
+  ⟨[0xFB03], "Hazard:NonNfkcCompatForm", [0]⟩,
+  ⟨[0x2163], "Hazard:NonNfkcCompatForm", [0]⟩,
+  ⟨[0x2460], "Hazard:NonNfkcCompatForm", [0]⟩,
+  ⟨[0x00B2], "Hazard:NonNfkcCompatForm", [0]⟩,
+  ⟨[0x00BD], "Hazard:NonNfkcCompatForm", [0]⟩,
+  ⟨[0xFDFA], "Hazard:NonNfkcCompatForm", [0]⟩,
+  ⟨[0x33CD], "Hazard:NonNfkcCompatForm", [0]⟩,
+  ⟨[0xFF71], "Hazard:NonNfkcCompatForm", [0]⟩
+]
+
+-- `rowsList` mirrors a fresh parse of the vector file, checked at build time.
+#eval do
+  unless rowsList == parsedRows do
+    throw (IO.userError "NfcIdempotenceWitnessTest drift: rowsList ≠ parsed vector file")
+
+/-- Run the detector over one row and compare with the verdict the file states. -/
+def verifyVectorRow (r : VectorRow) : Bool :=
+  let v := detect r.codepoints
+  if r.expectsClear then v.classify.isClear
+  else v.classify.tag == r.expectedTag
+
+/-- Every vector the pinned file states holds of the detector. -/
+theorem all_vectors_pass : rowsList.all verifyVectorRow = true := by decide +kernel
 
 end Unicode.Conformance.Security.NfcIdempotenceWitnessTest

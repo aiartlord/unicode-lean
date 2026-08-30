@@ -51,11 +51,11 @@
 
 # Note: precomposed Hangul syllables (e.g. U+D55C 한) are
 # Allowed but their NFKD-head jamos (e.g. U+1112) are Restricted
-# in UTS #39, so pure Hangul fires this detector.  This is a
-# real
-# cross-layer finding — Korean text genuinely drifts under
-# pre- vs. post-normalisation identity checks — and is covered
-# in the IdentifierStatusShift section below.
+# in UTS #39.  That shift runs Allowed -> Restricted, which a
+# validator cannot be walked through: it accepts the input in
+# both forms.  The detector reports Restricted -> Allowed only,
+# so pure Hangul is clear; the U+D55C row below carries that
+# verdict beside the shifts it is contrasted with.
 
 # Cyrillic привет — every cp Allowed.
 041F 0440 0438 0432 0435 0442; Clear; ; shift_count=0; # привет (Russian)
@@ -109,10 +109,12 @@ FB01; Hazard:IdentifierStatusShift; 0; shift_count=1; # ﬁ
 
 # Precomposed Korean syllable 한 (U+D55C, Allowed) whose NFKD-head
 # is U+1112 HANGUL CHOSEONG HIEUH (Restricted in UTS #39
-# IdentifierStatus.txt).  Pure Korean text fires this detector
-# at position 0.
-# Remediation: NFKC-normalise (or NFC-normalise) before validating.
-D55C; Hazard:IdentifierStatusShift; 0; shift_count=1; # Korean precomposed → jamo Restricted
+# IdentifierStatus.txt).  The shift runs Allowed -> Restricted,
+# the direction that gains an attacker nothing: a validator that
+# accepts the input before normalisation also accepts it after.
+# The detector reports the opposite direction only, so pure
+# Korean text is clear.
+D55C; Clear; ; shift_count=0; # Korean precomposed → jamo Restricted, harmless direction
 
 # Math Bold Capital A (U+1D400) — Restricted, NFKD-head U+0041.
 1D400; Hazard:IdentifierStatusShift; 0; shift_count=1; # math bold A

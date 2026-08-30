@@ -38,6 +38,7 @@
 -/
 
 import Unicode.Security.Covert.SurrogateReassembly
+import Unicode.Conformance.Security.VectorFile
 
 namespace Unicode.Conformance.Security.SurrogateReassemblyTest
 
@@ -113,5 +114,71 @@ theorem all_rows_pass :
         ∧ v.byteCount = 4 ∧ v.firstInvalidOffset = none) :=
   ⟨overlong_verdict, cesu8_verdict, truncated_verdict,
     invalid_start_verdict, valid_emoji_clear_verdict⟩
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- The pinned vector file, executed
+--
+-- `Unicode/Ucd/Security/SurrogateReassemblyTest.txt` is hash-pinned by
+-- `scripts/check-security-hashes.sh`, which fixes its bytes.  Running the
+-- detector over those bytes is a separate claim, and this section makes it:
+-- `rowsList` is mirrored against a fresh parse of the file at build time, and
+-- `all_vectors_pass` reduces the detector over every row in the kernel.  A row
+-- added to, removed from, or edited in the file fails the build until the
+-- harness agrees with it again.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+open Unicode.Conformance.Security.VectorFile (VectorRow parseFile)
+
+/-- Raw text of the pinned vector file, embedded at compile time. -/
+def vectorsRaw : String := include_str "../../Ucd/Security/SurrogateReassemblyTest.txt"
+
+/-- Every row of the pinned vector file, freshly parsed. -/
+def parsedRows : List VectorRow := parseFile vectorsRaw
+
+/-- The pinned rows, materialized so the kernel can reduce over them. -/
+def rowsList : List VectorRow := [
+  ⟨[0x0048, 0x0065, 0x006C, 0x006C, 0x006F], "Clear", []⟩,
+  ⟨[0x00C3, 0x00A9], "Clear", []⟩,
+  ⟨[0x00E4, 0x00B8, 0x00AD], "Clear", []⟩,
+  ⟨[0x00F0, 0x009F, 0x0098, 0x0080], "Clear", []⟩,
+  ⟨[0x0030], "Clear", []⟩,
+  ⟨[0x00D0, 0x00B0], "Clear", []⟩,
+  ⟨[0x00D7, 0x0090], "Clear", []⟩,
+  ⟨[0x00ED, 0x0095, 0x009C], "Clear", []⟩,
+  ⟨[0x00C0, 0x0080], "Hazard:InvalidStartByte", [0]⟩,
+  ⟨[0x00C0, 0x00AF], "Hazard:InvalidStartByte", [0]⟩,
+  ⟨[0x0080], "Hazard:InvalidStartByte", [0]⟩,
+  ⟨[0x00FE], "Hazard:InvalidStartByte", [0]⟩,
+  ⟨[0x00FF], "Hazard:InvalidStartByte", [0]⟩,
+  ⟨[0x00BF], "Hazard:InvalidStartByte", [0]⟩,
+  ⟨[0x00C1], "Hazard:InvalidStartByte", [0]⟩,
+  ⟨[0x00E0, 0x0080, 0x00AF], "Hazard:Overlong", [0]⟩,
+  ⟨[0x00F0, 0x0080, 0x0080, 0x00AF], "Hazard:Overlong", [0]⟩,
+  ⟨[0x00E0, 0x0080, 0x0080], "Hazard:Overlong", [0]⟩,
+  ⟨[0x00E0, 0x0081, 0x0081], "Hazard:Overlong", [0]⟩,
+  ⟨[0x00ED, 0x00A0, 0x0080], "Hazard:Cesu8", [2]⟩,
+  ⟨[0x00ED, 0x00AF, 0x00BF], "Hazard:Cesu8", [2]⟩,
+  ⟨[0x00ED, 0x00B0, 0x0080], "Hazard:Cesu8", [2]⟩,
+  ⟨[0x00C3], "Hazard:Truncated", [1]⟩,
+  ⟨[0x00E4], "Hazard:Truncated", [1]⟩,
+  ⟨[0x00F0, 0x009F, 0x0098], "Hazard:Truncated", [3]⟩,
+  ⟨[0x0048, 0x00C3], "Hazard:Truncated", [2]⟩,
+  ⟨[0x00E4, 0x00B8], "Hazard:Truncated", [2]⟩,
+  ⟨[0x00F0, 0x009F], "Hazard:Truncated", [2]⟩
+]
+
+-- `rowsList` mirrors a fresh parse of the vector file, checked at build time.
+#eval do
+  unless rowsList == parsedRows do
+    throw (IO.userError "SurrogateReassemblyTest drift: rowsList ≠ parsed vector file")
+
+/-- Run the detector over one row and compare with the verdict the file states. -/
+def verifyVectorRow (r : VectorRow) : Bool :=
+  let v := detect r.codepoints
+  if r.expectsClear then v.classify.isClear
+  else v.classify.tag == r.expectedTag
+
+/-- Every vector the pinned file states holds of the detector. -/
+theorem all_vectors_pass : rowsList.all verifyVectorRow = true := by decide +kernel
 
 end Unicode.Conformance.Security.SurrogateReassemblyTest

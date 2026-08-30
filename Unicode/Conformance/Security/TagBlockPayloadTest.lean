@@ -33,6 +33,7 @@
 -/
 
 import Unicode.Security.Covert.TagBlockPayload
+import Unicode.Conformance.Security.VectorFile
 
 namespace Unicode.Conformance.Security.TagBlockPayloadTest
 
@@ -110,5 +111,67 @@ theorem all_rows_pass :
      v.classify.isClear = true ∧ v.totalTagChars = 0) :=
   ⟨direct_ascii_verdict, goodside_payload_verdict, language_tag_revival_verdict,
    mixed_block_verdict, no_tag_clear_verdict⟩
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- The pinned vector file, executed
+--
+-- `Unicode/Ucd/Security/TagBlockPayloadTest.txt` is hash-pinned by
+-- `scripts/check-security-hashes.sh`, which fixes its bytes.  Running the
+-- detector over those bytes is a separate claim, and this section makes it:
+-- `rowsList` is mirrored against a fresh parse of the file at build time, and
+-- `all_vectors_pass` reduces the detector over every row in the kernel.  A row
+-- added to, removed from, or edited in the file fails the build until the
+-- harness agrees with it again.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+open Unicode.Conformance.Security.VectorFile (VectorRow parseFile)
+
+/-- Raw text of the pinned vector file, embedded at compile time. -/
+def vectorsRaw : String := include_str "../../Ucd/Security/TagBlockPayloadTest.txt"
+
+/-- Every row of the pinned vector file, freshly parsed. -/
+def parsedRows : List VectorRow := parseFile vectorsRaw
+
+/-- The pinned rows, materialized so the kernel can reduce over them. -/
+def rowsList : List VectorRow := [
+  ⟨[0x0048, 0x0065, 0x006C, 0x006C, 0x006F], "Clear", []⟩,
+  ⟨[0x4E2D, 0x6587], "Clear", []⟩,
+  ⟨[0x1F600], "Clear", []⟩,
+  ⟨[0x1F600, 0xFE0F], "Clear", []⟩,
+  ⟨[0x1F1FA, 0x1F1F8], "Clear", []⟩,
+  ⟨[0x041F, 0x0440, 0x0438, 0x0432], "Clear", []⟩,
+  ⟨[0x0627, 0x0628, 0x0629], "Clear", []⟩,
+  ⟨[0x0068, 0x0074, 0x0074, 0x0070, 0x003A, 0x002F, 0x002F], "Clear", []⟩,
+  ⟨[0xE0050, 0xE0072, 0xE0069, 0xE006E, 0xE0074, 0xE0020, 0xE0027, 0xE0070, 0xE0077, 0xE006E, 0xE0065, 0xE0064, 0xE0027], "Hazard:DirectAscii", [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]⟩,
+  ⟨[0xE0041, 0xE0042], "Hazard:DirectAscii", [0, 1]⟩,
+  ⟨[0xE0068, 0xE0069], "Hazard:DirectAscii", [0, 1]⟩,
+  ⟨[0xE0031, 0xE0032, 0xE0033, 0xE0034, 0xE0035], "Hazard:DirectAscii", [0, 1, 2, 3, 4]⟩,
+  ⟨[0xE0044, 0xE0052, 0xE004F, 0xE0050, 0xE0020, 0xE0054, 0xE0041, 0xE0042, 0xE004C, 0xE0045], "Hazard:DirectAscii", [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]⟩,
+  ⟨[0xE003B, 0xE0020, 0xE0072, 0xE006D, 0xE0020, 0xE002D, 0xE0072, 0xE0066, 0xE0020, 0xE002F], "Hazard:DirectAscii", [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]⟩,
+  ⟨[0xE0001, 0xE0065, 0xE006E], "Hazard:LanguageTagRevival", [0, 1, 2]⟩,
+  ⟨[0xE0001, 0xE0066, 0xE0072], "Hazard:LanguageTagRevival", [0, 1, 2]⟩,
+  ⟨[0x0048, 0x0069, 0xE0070, 0xE0077, 0xE006E, 0xE0064], "Hazard:MixedBlock", [2, 3, 4, 5]⟩,
+  ⟨[0x0048, 0x0065, 0x006C, 0x006C, 0x006F, 0x0020, 0xE0077, 0xE006F, 0xE0072, 0xE006C, 0xE0064], "Hazard:MixedBlock", [6, 7, 8, 9, 10]⟩,
+  ⟨[0x0048, 0xE0041, 0x0069], "Hazard:MixedBlock", [1]⟩,
+  ⟨[0x0066, 0x006F, 0x006F, 0xE0070, 0xE0077, 0xE006E, 0xE0064, 0x0062, 0x0061, 0x0072], "Hazard:MixedBlock", [3, 4, 5, 6]⟩,
+  ⟨[0x0048, 0xE0061, 0x0065, 0xE0062, 0x006C, 0x006C, 0x006F], "Hazard:MixedBlock", [1, 3]⟩,
+  ⟨[0xE007F], "Hazard:BareTagPresent", [0]⟩,
+  ⟨[0xE0000], "Hazard:BareTagPresent", [0]⟩,
+  ⟨[0xE0001], "Hazard:BareTagPresent", [0]⟩
+]
+
+-- `rowsList` mirrors a fresh parse of the vector file, checked at build time.
+#eval do
+  unless rowsList == parsedRows do
+    throw (IO.userError "TagBlockPayloadTest drift: rowsList ≠ parsed vector file")
+
+/-- Run the detector over one row and compare with the verdict the file states. -/
+def verifyVectorRow (r : VectorRow) : Bool :=
+  let v := detect r.codepoints
+  if r.expectsClear then v.classify.isClear
+  else v.classify.tag == r.expectedTag
+
+/-- Every vector the pinned file states holds of the detector. -/
+theorem all_vectors_pass : rowsList.all verifyVectorRow = true := by decide +kernel
 
 end Unicode.Conformance.Security.TagBlockPayloadTest

@@ -30,6 +30,7 @@
 -/
 
 import Unicode.Security.Identity.EmojiZwjIntegrity
+import Unicode.Conformance.Security.VectorFile
 
 namespace Unicode.Conformance.Security.EmojiZwjIntegrityTest
 
@@ -76,5 +77,65 @@ def verifyRow (r : Row) : Bool :=
 
 /-- Every certified vector draws exactly the verdict the RGI registry demands. -/
 theorem all_rows_pass : rows.all verifyRow = true := by decide +kernel
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- The pinned vector file, executed
+--
+-- `Unicode/Ucd/Security/EmojiZwjIntegrityTest.txt` is hash-pinned by
+-- `scripts/check-security-hashes.sh`, which fixes its bytes.  Running the
+-- detector over those bytes is a separate claim, and this section makes it:
+-- `rowsList` is mirrored against a fresh parse of the file at build time, and
+-- `all_vectors_pass` reduces the detector over every row in the kernel.  A row
+-- added to, removed from, or edited in the file fails the build until the
+-- harness agrees with it again.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+open Unicode.Conformance.Security.VectorFile (VectorRow parseFile)
+
+/-- Raw text of the pinned vector file, embedded at compile time. -/
+def vectorsRaw : String := include_str "../../Ucd/Security/EmojiZwjIntegrityTest.txt"
+
+/-- Every row of the pinned vector file, freshly parsed. -/
+def parsedRows : List VectorRow := parseFile vectorsRaw
+
+/-- The pinned rows, materialized so the kernel can reduce over them. -/
+def rowsList : List VectorRow := [
+  ⟨[0x0048, 0x0065, 0x006C, 0x006C, 0x006F], "Clear", []⟩,
+  ⟨[0x1F600], "Clear", []⟩,
+  ⟨[0x4E2D, 0x6587], "Clear", []⟩,
+  ⟨[0x1F44B, 0x1F3FB], "Clear", []⟩,
+  ⟨[0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466], "Clear", []⟩,
+  ⟨[0x1F468, 0x200D, 0x2764, 0xFE0F, 0x200D, 0x1F468], "Clear", []⟩,
+  ⟨[0x1F469, 0x200D, 0x2764, 0xFE0F, 0x200D, 0x1F48B, 0x200D, 0x1F469], "Clear", []⟩,
+  ⟨[0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F466], "Clear", []⟩,
+  ⟨[0x1F3FB], "Clear", []⟩,
+  ⟨[0x1F600, 0x200D, 0x200D, 0x1F4BB], "Hazard:DoubleZWJ", [1]⟩,
+  ⟨[0x1F600, 0x200D, 0x200D, 0x200D, 0x1F600], "Hazard:DoubleZWJ", [1, 2]⟩,
+  ⟨[0x1F468, 0x200D, 0x200D, 0x1F469, 0x200D, 0x1F467], "Hazard:DoubleZWJ", [1]⟩,
+  ⟨[0x1F600, 0x200D, 0x0061], "Hazard:NonEmojiInjection", [1]⟩,
+  ⟨[0x0030, 0x200D, 0x1F600], "Hazard:NonEmojiInjection", [1]⟩,
+  ⟨[0x1F600, 0x200D, 0x4E2D], "Hazard:NonEmojiInjection", [1]⟩,
+  ⟨[0x1F600, 0x200D, 0x0430], "Hazard:NonEmojiInjection", [1]⟩,
+  ⟨[0x1F600, 0x200D, 0x0627], "Hazard:NonEmojiInjection", [1]⟩,
+  ⟨[0x1F468, 0x200D, 0x1F468, 0x200D, 0x1F468, 0x200D, 0x1F468, 0x200D, 0x1F468, 0x200D, 0x1F468, 0x200D, 0x1F468, 0x200D, 0x1F468, 0x200D, 0x1F468], "Hazard:OverLength", []⟩,
+  ⟨[0x1F468, 0x200D, 0x1F468, 0x200D, 0x1F468, 0x200D, 0x1F468, 0x200D, 0x1F468, 0x200D, 0x1F468, 0x200D, 0x1F468, 0x200D, 0x1F468, 0x200D, 0x1F468, 0x200D, 0x1F468, 0x200D, 0x1F468], "Hazard:OverLength", []⟩,
+  ⟨[0x1F44B, 0x1F3FB, 0x1F3FC, 0x1F3FD, 0x1F3FE, 0x1F3FF], "Hazard:SkinToneOverflow", []⟩,
+  ⟨[0x1F44B, 0x1F3FB, 0x1F3FC, 0x1F3FD, 0x1F3FE, 0x1F3FF, 0x1F3FB], "Hazard:SkinToneOverflow", []⟩,
+  ⟨[0x1F44B, 0x1F3FB, 0x1F3FC, 0x1F3FD, 0x1F3FE, 0x1F3FF, 0x1F3FB, 0x1F3FC], "Hazard:SkinToneOverflow", []⟩
+]
+
+-- `rowsList` mirrors a fresh parse of the vector file, checked at build time.
+#eval do
+  unless rowsList == parsedRows do
+    throw (IO.userError "EmojiZwjIntegrityTest drift: rowsList ≠ parsed vector file")
+
+/-- Run the detector over one row and compare with the verdict the file states. -/
+def verifyVectorRow (r : VectorRow) : Bool :=
+  let v := detect r.codepoints
+  if r.expectsClear then v.classify.isClear
+  else v.classify.tag == r.expectedTag
+
+/-- Every vector the pinned file states holds of the detector. -/
+theorem all_vectors_pass : rowsList.all verifyVectorRow = true := by decide +kernel
 
 end Unicode.Conformance.Security.EmojiZwjIntegrityTest

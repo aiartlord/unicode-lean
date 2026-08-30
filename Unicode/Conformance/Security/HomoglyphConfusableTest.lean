@@ -37,6 +37,7 @@
 -/
 
 import Unicode.Security.Identity.HomoglyphConfusable
+import Unicode.Conformance.Security.VectorFile
 
 namespace Unicode.Conformance.Security.HomoglyphConfusableTest
 
@@ -76,5 +77,84 @@ def verifyRow (r : Row) : Bool :=
 /-- Every certified vector draws exactly the verdict the UTS #39 confusable
     machinery and the Math-Alphanumeric block predicate demand. -/
 theorem all_rows_pass : rows.all verifyRow = true := by decide +kernel
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- The pinned vector file, executed
+--
+-- `Unicode/Ucd/Security/HomoglyphConfusableTest.txt` is hash-pinned by
+-- `scripts/check-security-hashes.sh`, which fixes its bytes.  Running the
+-- detector over those bytes is a separate claim, and this section makes it:
+-- `rowsList` is mirrored against a fresh parse of the file at build time, and
+-- `all_vectors_pass` reduces the detector over every row in the kernel.  A row
+-- added to, removed from, or edited in the file fails the build until the
+-- harness agrees with it again.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+open Unicode.Conformance.Security.VectorFile (VectorRow parseFile)
+
+/-- Raw text of the pinned vector file, embedded at compile time. -/
+def vectorsRaw : String := include_str "../../Ucd/Security/HomoglyphConfusableTest.txt"
+
+/-- Every row of the pinned vector file, freshly parsed. -/
+def parsedRows : List VectorRow := parseFile vectorsRaw
+
+/-- The pinned rows, materialized so the kernel can reduce over them. -/
+def rowsList : List VectorRow := [
+  ⟨[0x0048, 0x0065, 0x006C, 0x006C, 0x006F], "Clear", []⟩,
+  ⟨[0x004E, 0x0065, 0x0074, 0x0068, 0x0065, 0x0072, 0x0065, 0x0075, 0x006D], "Clear", []⟩,
+  ⟨[0x0061, 0x0070, 0x0070, 0x006C, 0x0065], "Clear", []⟩,
+  ⟨[0x006F, 0x0070, 0x0065, 0x006E, 0x0061, 0x0069], "Clear", []⟩,
+  ⟨[0x4E2D, 0x6587], "Clear", []⟩,
+  ⟨[0x004E, 0x0065, 0x0074, 0x0068, 0x0065, 0x0072, 0x0435, 0x0075, 0x006D], "Hazard:TargetMatch", []⟩,
+  ⟨[0x0430, 0x0070, 0x0070, 0x006C, 0x0065], "Hazard:TargetMatch", []⟩,
+  ⟨[0x0070, 0x0430, 0x0079, 0x0070, 0x0430, 0x006C], "Hazard:TargetMatch", []⟩,
+  ⟨[0x1D400], "Hazard:MathAlpha", [0]⟩,
+  ⟨[0x1D400, 0x1D429, 0x1D429, 0x1D425, 0x1D41E], "Hazard:TargetMatch", []⟩,
+  ⟨[0x1D434], "Hazard:MathAlpha", [0]⟩,
+  ⟨[0x1D49C], "Hazard:MathAlpha", [0]⟩,
+  ⟨[0x1D504], "Hazard:MathAlpha", [0]⟩,
+  ⟨[0xFF21], "Hazard:WidthClass", [0]⟩,
+  ⟨[0xFF30, 0xFF41, 0xFF59, 0xFF50, 0xFF41, 0xFF4C], "Hazard:TargetMatch", []⟩,
+  ⟨[0xFF15], "Hazard:WidthClass", [0]⟩,
+  ⟨[0x0435, 0x0074, 0x0068, 0x0065, 0x0072, 0x0065, 0x0075, 0x006D], "Hazard:TargetMatch", []⟩,
+  ⟨[0x043E, 0x0070, 0x0065, 0x006E, 0x0061, 0x0069], "Hazard:TargetMatch", []⟩,
+  ⟨[0x0067, 0x006F, 0x043E, 0x0067, 0x006C, 0x0065], "Hazard:TargetMatch", []⟩,
+  ⟨[0x0063, 0x006C, 0x0430, 0x0075, 0x0064, 0x0065], "Hazard:TargetMatch", []⟩,
+  ⟨[0x0067, 0x0456, 0x0074, 0x0068, 0x0075, 0x0062], "Hazard:TargetMatch", []⟩,
+  ⟨[0x0072, 0x0435, 0x0061, 0x0063, 0x0074], "Hazard:TargetMatch", []⟩,
+  ⟨[0x1D5A0], "Hazard:MathAlpha", [0]⟩,
+  ⟨[0x1D538], "Hazard:MathAlpha", [0]⟩,
+  ⟨[0x1D670], "Hazard:MathAlpha", [0]⟩,
+  ⟨[0xFF71], "Hazard:WidthClass", [0]⟩,
+  ⟨[0xFF27, 0xFF49, 0xFF54, 0xFF48, 0xFF55, 0xFF42], "Hazard:WidthClass", [0]⟩,
+  ⟨[0x0065, 0x0301], "Hazard:DecompositionSwap", [0]⟩,
+  ⟨[0x006F, 0x0308], "Hazard:DecompositionSwap", [0]⟩,
+  ⟨[0x0061, 0x0300], "Hazard:DecompositionSwap", [0]⟩,
+  ⟨[0x0065, 0x0301, 0x0061, 0x0300], "Hazard:DecompositionSwap", [0]⟩,
+  ⟨[0x006D, 0x043E, 0x0063, 0x0072, 0x006F, 0x0073, 0x006F, 0x0066, 0x0074], "Hazard:CrossScriptMix", []⟩,
+  ⟨[0x0073, 0x006F, 0x043E, 0x0061, 0x006E, 0x0061], "Hazard:CrossScriptMix", []⟩,
+  ⟨[0x006D, 0x0065, 0x0430, 0x0061, 0x006D, 0x0061, 0x0073, 0x006B], "Hazard:CrossScriptMix", []⟩,
+  ⟨[0x0062, 0x0069, 0x0430, 0x006E, 0x0061, 0x006E, 0x0063, 0x0065], "Hazard:CrossScriptMix", []⟩,
+  ⟨[0x0061, 0x0062, 0x03B1, 0x03B2], "Hazard:CrossScriptMix", []⟩,
+  ⟨[0x0078, 0x0079, 0x0444, 0x0444], "Hazard:CrossScriptMix", []⟩,
+  ⟨[0x03B1, 0x03B2, 0x0444, 0x0445], "Hazard:CrossScriptMix", []⟩,
+  ⟨[0x11700], "Hazard:RestrictionLow", []⟩,
+  ⟨[0x12000], "Hazard:RestrictionLow", []⟩,
+  ⟨[0x13000], "Hazard:RestrictionLow", []⟩
+]
+
+-- `rowsList` mirrors a fresh parse of the vector file, checked at build time.
+#eval do
+  unless rowsList == parsedRows do
+    throw (IO.userError "HomoglyphConfusableTest drift: rowsList ≠ parsed vector file")
+
+/-- Run the detector over one row and compare with the verdict the file states. -/
+def verifyVectorRow (r : VectorRow) : Bool :=
+  let v := detect r.codepoints
+  if r.expectsClear then v.classify.isClear
+  else v.classify.tag == r.expectedTag
+
+/-- Every vector the pinned file states holds of the detector. -/
+theorem all_vectors_pass : rowsList.all verifyVectorRow = true := by decide +kernel
 
 end Unicode.Conformance.Security.HomoglyphConfusableTest
