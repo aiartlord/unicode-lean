@@ -28,6 +28,31 @@ typescript_dir="${UNICODE_TYPESCRIPT_DIR:-ports/typescript}"
 dotnet_dir="${UNICODE_DOTNET_DIR:-ports/dotnet}"
 swift_dir="${UNICODE_SWIFT_DIR:-ports/swift}"
 zig_dir="${UNICODE_ZIG_DIR:-ports/zig}"
+run_ruby=1
+run_php=1
+run_lua=1
+run_elixir=1
+run_erlang=1
+run_cobol=1
+ruby_dir="${UNICODE_RUBY_DIR:-ports/ruby}"
+php_dir="${UNICODE_PHP_DIR:-ports/php}"
+lua_dir="${UNICODE_LUA_DIR:-ports/lua}"
+elixir_dir="${UNICODE_ELIXIR_DIR:-ports/elixir}"
+erlang_dir="${UNICODE_ERLANG_DIR:-ports/erlang}"
+cobol_dir="${UNICODE_COBOL_DIR:-ports/cobol}"
+
+# Every tier this runner knows about. `--<tier>-only` clears the set and
+# re-enables one, so a new port is added here and in its own run block rather
+# than by editing every other tier's option.
+all_tiers=(rust python cpp haskell jvm go typescript dotnet swift zig \
+           ruby php lua elixir erlang cobol)
+
+disable_all_tiers() {
+  local tier
+  for tier in "${all_tiers[@]}"; do
+    printf -v "run_$tier" '%s' 0
+  done
+}
 
 usage() {
   cat <<'USAGE'
@@ -45,6 +70,7 @@ Default mode is a bounded runtime-port smoke gate:
   - .NET tests
   - Swift tests
   - Zig tests
+  - Ruby, PHP, Lua, Elixir, Erlang and COBOL tests
 
 Options:
   --smoke        Run the bounded default gate.
@@ -60,6 +86,12 @@ Options:
   --dotnet-only  Run only the .NET tier plus the shared contract.
   --swift-only   Run only the Swift tier plus the shared contract.
   --zig-only     Run only the Zig tier plus the shared contract.
+  --ruby-only    Run only the Ruby tier plus the shared contract.
+  --php-only     Run only the PHP tier plus the shared contract.
+  --lua-only     Run only the Lua tier plus the shared contract.
+  --elixir-only  Run only the Elixir tier plus the shared contract.
+  --erlang-only  Run only the Erlang tier plus the shared contract.
+  --cobol-only   Run only the COBOL tier plus the shared contract.
   --with-haskell Include the Haskell tier. This is already on by default.
   --no-rust      Skip Rust.
   --no-python    Skip Python.
@@ -72,6 +104,12 @@ Options:
   --no-dotnet    Skip .NET.
   --no-swift     Skip Swift.
   --no-zig       Skip Zig.
+  --no-ruby      Skip Ruby.
+  --no-php       Skip PHP.
+  --no-lua       Skip Lua.
+  --no-elixir    Skip Elixir.
+  --no-erlang    Skip Erlang.
+  --no-cobol     Skip COBOL.
   -h, --help     Show this help.
 
 Environment:
@@ -107,124 +145,68 @@ while [[ $# -gt 0 ]]; do
       mode="all"
       ;;
     --rust-only)
+      disable_all_tiers
       run_rust=1
-      run_python=0
-      run_cpp=0
-      run_haskell=0
-      run_jvm=0
-      run_go=0
-      run_typescript=0
-      run_dotnet=0
-      run_swift=0
-      run_zig=0
       ;;
     --python-only)
-      run_rust=0
+      disable_all_tiers
       run_python=1
-      run_cpp=0
-      run_haskell=0
-      run_jvm=0
-      run_go=0
-      run_typescript=0
-      run_dotnet=0
-      run_swift=0
-      run_zig=0
       ;;
     --cpp-only)
-      run_rust=0
-      run_python=0
+      disable_all_tiers
       run_cpp=1
-      run_haskell=0
-      run_jvm=0
-      run_go=0
-      run_typescript=0
-      run_dotnet=0
-      run_swift=0
-      run_zig=0
       ;;
     --haskell-only)
-      run_rust=0
-      run_python=0
-      run_cpp=0
+      disable_all_tiers
       run_haskell=1
-      run_jvm=0
-      run_go=0
-      run_typescript=0
-      run_dotnet=0
-      run_swift=0
-      run_zig=0
       ;;
     --jvm-only)
-      run_rust=0
-      run_python=0
-      run_cpp=0
-      run_haskell=0
+      disable_all_tiers
       run_jvm=1
-      run_go=0
-      run_typescript=0
-      run_dotnet=0
-      run_swift=0
-      run_zig=0
       ;;
     --go-only)
-      run_rust=0
-      run_python=0
-      run_cpp=0
-      run_haskell=0
-      run_jvm=0
+      disable_all_tiers
       run_go=1
-      run_typescript=0
-      run_dotnet=0
-      run_swift=0
-      run_zig=0
       ;;
     --typescript-only)
-      run_rust=0
-      run_python=0
-      run_cpp=0
-      run_haskell=0
-      run_jvm=0
-      run_go=0
+      disable_all_tiers
       run_typescript=1
-      run_dotnet=0
-      run_swift=0
-      run_zig=0
       ;;
     --dotnet-only)
-      run_rust=0
-      run_python=0
-      run_cpp=0
-      run_haskell=0
-      run_jvm=0
-      run_go=0
-      run_typescript=0
+      disable_all_tiers
       run_dotnet=1
-      run_swift=0
-      run_zig=0
       ;;
     --swift-only)
-      run_rust=0
-      run_python=0
-      run_cpp=0
-      run_haskell=0
-      run_jvm=0
-      run_go=0
-      run_typescript=0
-      run_dotnet=0
+      disable_all_tiers
       run_swift=1
-      run_zig=0
       ;;
     --zig-only)
-      run_rust=0
-      run_python=0
-      run_cpp=0
-      run_haskell=0
-      run_jvm=0
-      run_go=0
-      run_typescript=0
-      run_dotnet=0
-      run_swift=0
+      disable_all_tiers
       run_zig=1
+      ;;
+    --ruby-only)
+      disable_all_tiers
+      run_ruby=1
+      ;;
+    --php-only)
+      disable_all_tiers
+      run_php=1
+      ;;
+    --lua-only)
+      disable_all_tiers
+      run_lua=1
+      ;;
+    --elixir-only)
+      disable_all_tiers
+      run_elixir=1
+      ;;
+    --erlang-only)
+      disable_all_tiers
+      run_erlang=1
+      ;;
+    --cobol-only)
+      disable_all_tiers
+      run_cobol=1
       ;;
     --with-haskell)
       run_haskell=1
@@ -258,6 +240,24 @@ while [[ $# -gt 0 ]]; do
       ;;
     --no-zig)
       run_zig=0
+      ;;
+    --no-ruby)
+      run_ruby=0
+      ;;
+    --no-php)
+      run_php=0
+      ;;
+    --no-lua)
+      run_lua=0
+      ;;
+    --no-elixir)
+      run_elixir=0
+      ;;
+    --no-erlang)
+      run_erlang=0
+      ;;
+    --no-cobol)
+      run_cobol=0
       ;;
     -h|--help)
       usage
@@ -464,6 +464,48 @@ if [[ "$run_zig" -eq 1 ]]; then
     mkdir -p "$ZIG_GLOBAL_CACHE_DIR"
     zig build test
   )
+fi
+
+# The remaining six ports each drive their own suite through a script in the
+# port, the same shape the Swift tier uses. They join the runner so one command
+# covers all sixteen, which is what lets CI gate cross-port determinism rather
+# than gating ten ports and trusting the rest.
+run_script_tier() {
+  local label="$1" dir="$2" skip_flag="$3"
+  echo "== $label runtime =="
+  if [[ ! -x "$dir/scripts/test.sh" ]]; then
+    echo "missing $label port test script at $dir/scripts/test.sh" >&2
+    echo "set ${skip_flag}_DIR=/path/to/port or use --no-${label}" >&2
+    exit 1
+  fi
+  (
+    cd "$dir"
+    scripts/test.sh
+  )
+}
+
+if [[ "$run_ruby" -eq 1 ]]; then
+  run_script_tier ruby "$ruby_dir" UNICODE_RUBY
+fi
+
+if [[ "$run_php" -eq 1 ]]; then
+  run_script_tier php "$php_dir" UNICODE_PHP
+fi
+
+if [[ "$run_lua" -eq 1 ]]; then
+  run_script_tier lua "$lua_dir" UNICODE_LUA
+fi
+
+if [[ "$run_elixir" -eq 1 ]]; then
+  run_script_tier elixir "$elixir_dir" UNICODE_ELIXIR
+fi
+
+if [[ "$run_erlang" -eq 1 ]]; then
+  run_script_tier erlang "$erlang_dir" UNICODE_ERLANG
+fi
+
+if [[ "$run_cobol" -eq 1 ]]; then
+  run_script_tier cobol "$cobol_dir" UNICODE_COBOL
 fi
 
 echo "clean: runtime-port gate passes"

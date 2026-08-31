@@ -84,10 +84,23 @@ a router links the engine as an in-process stage rather than crossing a socket.
 Identical bytes must yield an identical verdict across all sixteen ports,
 exhaustively — a port that classifies differently is a routing-dependent bypass.
 
-- **Mechanism:** `tests/diff_runner` over a shared corpus, with measured and
-  enforced coverage across the full port set.
+- **Mechanism:** `fixtures/security/differential_corpus.json`, generated from the
+  reference by `scripts/internal/generate_differential_corpus.py` over a seeded
+  input stream cycling every profile. It carries the wire schema every port
+  already replays for `verdict_contract.json`, so each port checks it through
+  the loop it has rather than through a runner written per language. The
+  reference is held to the same file by `--check`, which regenerates at the
+  committed corpus's own size and compares, so the verdicts fifteen ports trust
+  cannot drift away from the port that produced them.
 - **Done when:** the differential runner covers all sixteen ports and is gated in
-  CI.
+  CI. Both hold: every port replays the corpus, and the `cross-port determinism`
+  job in `ci.yml` runs `scripts/test-runtime-ports.sh`, which drives all sixteen
+  tiers in the runtime devshell.
+
+  What the corpus does not reach is stated in
+  [`../ports/DETECTOR_COVERAGE.md`](../ports/DETECTOR_COVERAGE.md): its stream
+  produces no tag character and no bidi control, so those two families draw zero
+  findings from it and rest on their own detector fixtures instead.
 
 ## 8. Runtime-data product layout
 

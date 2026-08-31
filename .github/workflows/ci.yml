@@ -132,6 +132,52 @@ jobs:
             scripts/check-release-runtime-preflight.sh \
               --dist-dir /tmp/unicode-runtime-package-ci
 
+  cross-port-determinism:
+    # Identical bytes must yield an identical verdict in every port, or the
+    # choice of port becomes a bypass. Each port runs its own suite in its own
+    # toolchain, and every one of them replays
+    # fixtures/security/differential_corpus.json, whose verdicts come from the
+    # reference. Running all sixteen here is what makes that a gate rather than
+    # a local habit.
+    #
+    # Cache access follows the runtime-package job: a read-only consumer whose
+    # identifiers live in repository secrets, never in this file.
+    name: cross-port determinism
+    runs-on: ubuntu-latest
+    needs: hardening
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: configure read-only cache credentials
+        env:
+          CACHE_KEY_ID: ${{ secrets.R2_READONLY_ACCESS_KEY_ID }}
+          CACHE_KEY_SECRET: ${{ secrets.R2_READONLY_SECRET_ACCESS_KEY }}
+        run: |
+          if [ -n "$CACHE_KEY_ID" ]; then
+            sudo mkdir -p /root/.aws
+            printf '[default]\naws_access_key_id = %s\naws_secret_access_key = %s\n' \
+              "$CACHE_KEY_ID" "$CACHE_KEY_SECRET" \
+              | sudo tee /root/.aws/credentials >/dev/null
+          else
+            echo "notice: read-only cache token unset — substituter will be a cache miss"
+          fi
+
+      - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            extra-substituters = ${{ secrets.NIX_EXTRA_SUBSTITUTERS }}
+            extra-trusted-public-keys = ${{ secrets.NIX_TRUSTED_PUBLIC_KEYS }}
+
+      - name: every port replays the differential corpus
+        run: |
+          timeout 6600s nix develop .#runtime -c env \
+            JOBS=1 \
+            scripts/test-runtime-ports.sh
+
   build:
     # Lake build via the canonical Lean action. Toolchain version comes
     # from the `lean-toolchain` file; the action handles install, cache,
