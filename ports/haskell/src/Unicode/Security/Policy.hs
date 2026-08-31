@@ -100,14 +100,13 @@ import Unicode.Codec.Strict
       )
   )
 import qualified Unicode.Normalization.Lookup as NormalizationLookup
-import qualified Unicode.Generated.UnicodeData as UnicodeData
+import qualified Unicode.Normalization.NFC as NFC
 import Unicode.Security.CodepointPredicates
   ( isBidiFormatControl
   , isStrongLtr
   , isStrongRtl
   , isVariationSelector
   )
-import qualified Unicode.Normalization.Hangul as Hangul
 
 import Paths_unicode_haskell (getDataFileName)
 
@@ -510,16 +509,17 @@ zeroWidthFinding input
   | not (hasSuspiciousZeroWidth input positions) = []
   | otherwise =
       [ Finding
-          { findingCode = reasonCode FamilyZeroWidthPayload "BareZeroWidth"
+          { findingCode = reasonCode FamilyZeroWidthPayload subThreat
           , findingFamily = FamilyZeroWidthPayload
           , findingSeverity = 2
           , findingPositions = positions
-          , findingSubThreat = "BareZeroWidth"
+          , findingSubThreat = subThreat
           , findingDetail = familyTag FamilyZeroWidthPayload
           }
       ]
   where
     positions = positionsWhere isZeroWidthPayload input
+    subThreat = zeroWidthSubThreat input positions
 
 -- | Surrogate-reassembly \/ malformed-byte-stream detection (layer C).
 -- Direct port of @Unicode.Security.Covert.SurrogateReassembly@. The
@@ -652,7 +652,7 @@ blocks PolicyRestrictive FamilyVariationSelectorPayload = True
 blocks PolicyRestrictive FamilyZeroWidthPayload   = True
 blocks PolicyRestrictive FamilySurrogateReassembly = True
 blocks PolicyRestrictive FamilyBidiControlBalance = True
-blocks PolicyRestrictive FamilyNoncharacterControl = True
+blocks PolicyRestrictive FamilyNoncharacterControl = False
 blocks PolicyRestrictive FamilyHomoglyphConfusable = True
 blocks PolicyRestrictive FamilyMixedScriptAdmissibility = True
 blocks PolicyRestrictive FamilyRtlInjection = True
@@ -682,7 +682,7 @@ blocks PolicyModerate FamilyVariationSelectorPayload = True
 blocks PolicyModerate FamilyZeroWidthPayload      = True
 blocks PolicyModerate FamilySurrogateReassembly   = True
 blocks PolicyModerate FamilyBidiControlBalance    = True
-blocks PolicyModerate FamilyNoncharacterControl = True
+blocks PolicyModerate FamilyNoncharacterControl = False
 blocks PolicyModerate FamilyHomoglyphConfusable = True
 blocks PolicyModerate FamilyMixedScriptAdmissibility = True
 -- RtlInjection's contract treats its input as a declared-LTR field, which a
@@ -712,7 +712,7 @@ blocks PolicyMinimal FamilySurrogateReassembly    = True
 blocks PolicyMinimal FamilyMalformedUtf8          = True
 blocks PolicyMinimal FamilyMalformedUtf16         = True
 blocks PolicyMinimal FamilyMalformedUtf32         = True
-blocks PolicyMinimal FamilyNoncharacterControl    = True
+blocks PolicyMinimal FamilyNoncharacterControl    = False
 blocks PolicyMinimal FamilyTagBlockPayload        = False
 blocks PolicyMinimal FamilyVariationSelectorPayload = False
 blocks PolicyMinimal FamilyZeroWidthPayload       = False
@@ -745,13 +745,52 @@ positionsWhere predicate input =
 isTagBlockAsciiPayload :: Int -> Bool
 isTagBlockAsciiPayload cp = cp >= 0xE0020 && cp <= 0xE007E
 
+-- | True iff the codepoint renders as nothing, mirroring @isZeroWidth@ in
+-- @Unicode.Security.Covert.ZeroWidthPayload@: the explicit historical set,
+-- which preserves sub-threat dispatch, extended by the UAX #44
+-- Default_Ignorable_Code_Point property, which catches every other invisible
+-- codepoint.
+--
+-- The sibling ranges are excluded because their own family detector dispatches
+-- them with richer payload decoding or bidi-stack tracking, and counting them
+-- here as well would report one hazard twice. LRM and RLM are not excluded:
+-- they are direction markers rather than push-pop controls, and
+-- bidi-control-balance does not track them.
 isZeroWidthPayload :: Int -> Bool
-isZeroWidthPayload cp =
-  cp == 0x200B
-    || cp == 0x200C
-    || cp == 0x200D
-    || cp == 0x2060
-    || cp == 0xFEFF
+isZeroWidthPayload cp
+  | cp >= 0x200B && cp <= 0x200F = True
+  | cp >= 0x2060 && cp <= 0x2064 = True
+  | cp == 0x202F || cp == 0xFEFF = True
+  | cp >= 0xFFF9 && cp <= 0xFFFB = True
+  | otherwise = isDefaultIgnorableCodepoint cp && not (isZeroWidthSiblingHandled cp)
+
+-- | True iff the codepoint is Default_Ignorable but belongs to a sibling
+-- detector's family rather than to zero-width-payload.
+isZeroWidthSiblingHandled :: Int -> Bool
+isZeroWidthSiblingHandled cp =
+  (cp >= 0xFE00 && cp <= 0xFE0F)
+    || (cp >= 0xE0100 && cp <= 0xE01EF)
+    || (cp >= 0xE0000 && cp <= 0xE007F)
+    || (cp >= 0x202A && cp <= 0x202E)
+    || (cp >= 0x2066 && cp <= 0x2069)
+
+-- | Which zero-width hazard the input carries, in the dispatch order of
+-- @Unicode.Security.Covert.ZeroWidthPayload@: an annotation outranks a word
+-- joiner, which outranks a narrow no-break space run, which outranks a binary
+-- payload, and a bare occurrence is the fallback once no richer class fits.
+zeroWidthSubThreat :: [Int] -> [Int] -> String
+zeroWidthSubThreat input positions
+  | annotation > 0 = "AnnotationMisuse"
+  | wordJoiner > 0 = "WordJoinerInjection"
+  | nnbsp >= 2 = "AiWatermarkNNBSP"
+  | zwjZwsp >= 2 = "BinaryPayload"
+  | otherwise = "BareZeroWidth"
+  where
+    codepoints = [input !! index | index <- positions]
+    annotation = length [cp | cp <- codepoints, cp >= 0xFFF9, cp <= 0xFFFB]
+    wordJoiner = length [cp | cp <- codepoints, cp == 0x2060]
+    nnbsp = length [cp | cp <- codepoints, cp == 0x202F]
+    zwjZwsp = length [cp | cp <- codepoints, cp == 0x200B || cp == 0x200D]
 
 isRegisteredVariationPosition :: [Int] -> Int -> Bool
 isRegisteredVariationPosition input position =
@@ -1035,34 +1074,18 @@ isMathAlphanumeric cp = cp >= 0x1D400 && cp <= 0x1D7FF
 isFullwidthHalfwidth :: Int -> Bool
 isFullwidthHalfwidth cp = cp >= 0xFF01 && cp <= 0xFFEF
 
+-- | True iff the input is not already in NFC, which is the rung's definition in
+-- @Unicode.Security.Identity.HomoglyphConfusable@: @toNFC input ≠ input@. An
+-- input that renders as its own composed form carries no swap, whatever its
+-- individual codepoints look like.
+--
+-- The predicate is the comparison itself rather than a structural stand-in for
+-- it. Pairwise tests over the raw codepoints cannot decide it: composition
+-- happens between the last starter and a following combiner, which need not be
+-- adjacent, and a pair present in the composition table is blocked when a
+-- combiner of equal or greater class sits between them.
 hasDecompositionSwap :: [Int] -> Bool
-hasDecompositionSwap input =
-  hasComposableAdjacent input || hasOutOfOrderNonStarters input
-
-hasComposableAdjacent :: [Int] -> Bool
-hasComposableAdjacent (a:b:rest) =
-  isJust (Hangul.composePair a b)
-    || Map.member (a, b) primaryCompositionMap
-    || hasComposableAdjacent (b:rest)
-hasComposableAdjacent _ = False
-
-hasOutOfOrderNonStarters :: [Int] -> Bool
-hasOutOfOrderNonStarters (a:b:rest) =
-  let ca = fromIntegral (NormalizationLookup.canonicalCombiningClass a) :: Int
-      cb = fromIntegral (NormalizationLookup.canonicalCombiningClass b) :: Int
-  in (ca /= 0 && cb /= 0 && ca > cb) || hasOutOfOrderNonStarters (b:rest)
-hasOutOfOrderNonStarters _ = False
-
-primaryCompositionMap :: Map (Int, Int) Int
-primaryCompositionMap =
-  Map.fromList
-    [ ((a, b), UnicodeData.codepoint row)
-    | row <- UnicodeData.rows
-    , let cp = UnicodeData.codepoint row
-    , [a, b] <- [UnicodeData.canonicalDecomposition row]
-    , not (NormalizationLookup.isCompositionExclusion cp)
-    , NormalizationLookup.canonicalCombiningClass a == 0
-    ]
+hasDecompositionSwap input = NFC.toNFC input /= input
 
 -- UTS #39 §5.1 restriction levels, mirroring @Unicode/Restriction.lean@.
 --

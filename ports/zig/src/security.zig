@@ -190,13 +190,21 @@ pub const Finding = struct {
     code: []const u8,
     family: Family,
     severity: u8,
-    positions: [16]usize,
+    positions: [MaxFindingPositions]usize,
     position_count: usize,
     sub_threat: []const u8,
     detail: []const u8,
 };
 
 pub const MaxFindings = 24;
+
+/// Positions one finding can localise. The port scans without an allocator, so
+/// every buffer is bounded; this bound is `MaxSkeletonLen`, the same working
+/// width the normalization and skeleton buffers use. A hazard occupying more
+/// positions than this reports the first `MaxFindingPositions` of them, which
+/// is the one place the port's verdict is narrower than the reference's
+/// unbounded list.
+pub const MaxFindingPositions = MaxSkeletonLen;
 
 pub const FindingList = struct {
     items: [MaxFindings]Finding = undefined,
@@ -355,7 +363,7 @@ pub fn scan(profile: Profile, mode: Mode, input: []const u32) Verdict {
 pub fn scanUtf8(profile: Profile, mode: Mode, bytes: []const u8, decoded_buffer: []u32) Verdict {
     if (firstInvalidUtf8Offset(bytes)) |invalid| {
         var findings = FindingList{};
-        var positions: [16]usize = undefined;
+        var positions: [MaxFindingPositions]usize = undefined;
         positions[0] = invalid.offset;
         findings.append(.{
             .code = malformedUtf8ReasonCode(invalid.kind),
@@ -435,7 +443,7 @@ fn scanUtf32(profile: Profile, mode: Mode, bytes: []const u8, decoded_buffer: []
 // written once here.
 fn classifiedFinding(family: Family, classification: anytype) ?Finding {
     if (classification.isClear()) return null;
-    var positions: [16]usize = undefined;
+    var positions: [MaxFindingPositions]usize = undefined;
     var count: usize = 0;
     switch (classification) {
         .clear => {},
@@ -506,7 +514,7 @@ fn resultReasonCode(family: Family, sub_threat: []const u8) []const u8 {
 // rather than a classification union.
 fn resultFinding(family: Family, result: anytype) ?Finding {
     const sub = result.sub_threat orelse return null;
-    var positions: [16]usize = undefined;
+    var positions: [MaxFindingPositions]usize = undefined;
     var count: usize = 0;
     while (count < result.position_count and count < positions.len) : (count += 1) {
         positions[count] = result.positions[count];
@@ -550,13 +558,14 @@ fn detect(input: []const u32, identifier_field: bool) FindingList {
     // suspicious. An input whose zero-width characters are all sanctioned
     // raises nothing.
     if (if (hasSuspiciousZeroWidth(input)) positionsWhere(input, isZeroWidthPayload) else null) |positions| {
+        const zw_sub = zeroWidthSubThreat(input);
         findings.append(.{
-            .code = "unicode.security.C.zero-width-payload.BareZeroWidth",
+            .code = zeroWidthReasonCode(zw_sub),
             .family = .zero_width_payload,
             .severity = 2,
             .positions = positions.items,
             .position_count = positions.len,
-            .sub_threat = "BareZeroWidth",
+            .sub_threat = zw_sub,
             .detail = "zero-width-payload",
         });
     }
@@ -671,7 +680,7 @@ fn blocks(level: PolicyLevel, family: Family) bool {
 }
 
 const Positions = struct {
-    items: [16]usize,
+    items: [MaxFindingPositions]usize,
     len: usize,
 };
 
@@ -792,8 +801,77 @@ fn variationSelectorReasonCode(sub_threat: []const u8) []const u8 {
     return "unicode.security.C.variation-selector-payload.IllegalTarget";
 }
 
+// True iff cp renders as nothing, mirroring `isZeroWidth` in
+// Unicode.Security.Covert.ZeroWidthPayload: the explicit historical set, which
+// preserves sub-threat dispatch, extended by the UAX #44
+// Default_Ignorable_Code_Point property, which catches every other invisible
+// codepoint.
+//
+// The sibling ranges are excluded because their own family detector dispatches
+// them with richer payload decoding or bidi-stack tracking, and counting them
+// here as well would report one hazard twice. LRM and RLM are not excluded:
+// they are direction markers rather than push-pop controls, and
+// bidi-control-balance does not track them.
 fn isZeroWidthPayload(cp: u32) bool {
-    return cp == 0x200B or cp == 0x200C or cp == 0x200D or cp == 0x2060 or cp == 0xFEFF;
+    if (cp >= 0x200B and cp <= 0x200F) return true;
+    if (cp >= 0x2060 and cp <= 0x2064) return true;
+    if (cp == 0x202F or cp == 0xFEFF) return true;
+    if (cp >= 0xFFF9 and cp <= 0xFFFB) return true;
+    return isDefaultIgnorableCodepoint(cp) and !isZeroWidthSiblingHandled(cp);
+}
+
+// True iff cp is Default_Ignorable but belongs to a sibling detector's family
+// rather than to zero-width-payload.
+fn isZeroWidthSiblingHandled(cp: u32) bool {
+    if (cp >= 0xFE00 and cp <= 0xFE0F) return true;
+    if (cp >= 0xE0100 and cp <= 0xE01EF) return true;
+    if (cp >= 0xE0000 and cp <= 0xE007F) return true;
+    if (cp >= 0x202A and cp <= 0x202E) return true;
+    if (cp >= 0x2066 and cp <= 0x2069) return true;
+    return false;
+}
+
+// Which zero-width hazard the input carries, in the dispatch order of
+// Unicode.Security.Covert.ZeroWidthPayload: an annotation outranks a word
+// joiner, which outranks a narrow no-break space run, which outranks a binary
+// payload, and a bare occurrence is the fallback once no richer class fits.
+fn zeroWidthSubThreat(input: []const u32) []const u8 {
+    var annotation: usize = 0;
+    var word_joiner: usize = 0;
+    var nnbsp: usize = 0;
+    var zwj_zwsp: usize = 0;
+    for (input) |cp| {
+        if (!isZeroWidthPayload(cp)) continue;
+        if (cp >= 0xFFF9 and cp <= 0xFFFB) {
+            annotation += 1;
+        } else if (cp == 0x2060) {
+            word_joiner += 1;
+        } else if (cp == 0x202F) {
+            nnbsp += 1;
+        } else if (cp == 0x200B or cp == 0x200D) {
+            zwj_zwsp += 1;
+        }
+    }
+    if (annotation > 0) return "AnnotationMisuse";
+    if (word_joiner > 0) return "WordJoinerInjection";
+    if (nnbsp >= 2) return "AiWatermarkNNBSP";
+    if (zwj_zwsp >= 2) return "BinaryPayload";
+    return "BareZeroWidth";
+}
+
+// The reason code naming one zero-width sub-threat. The codes are spelled out
+// rather than concatenated so each one is a comptime string, matching how every
+// other family in this port names its codes.
+fn zeroWidthReasonCode(sub_threat: []const u8) []const u8 {
+    if (std.mem.eql(u8, sub_threat, "AnnotationMisuse"))
+        return "unicode.security.C.zero-width-payload.AnnotationMisuse";
+    if (std.mem.eql(u8, sub_threat, "WordJoinerInjection"))
+        return "unicode.security.C.zero-width-payload.WordJoinerInjection";
+    if (std.mem.eql(u8, sub_threat, "AiWatermarkNNBSP"))
+        return "unicode.security.C.zero-width-payload.AiWatermarkNNBSP";
+    if (std.mem.eql(u8, sub_threat, "BinaryPayload"))
+        return "unicode.security.C.zero-width-payload.BinaryPayload";
+    return "unicode.security.C.zero-width-payload.BareZeroWidth";
 }
 
 fn isBidiEmbeddingControl(cp: u32) bool {
@@ -1052,7 +1130,7 @@ fn rtlInjectionReasonCode(sub_threat: []const u8) []const u8 {
 }
 
 fn rtlInjectionAt(sub_threat: []const u8, position: usize) Finding {
-    var positions: [16]usize = undefined;
+    var positions: [MaxFindingPositions]usize = undefined;
     positions[0] = position;
     return .{
         .code = rtlInjectionReasonCode(sub_threat),
@@ -1190,7 +1268,7 @@ fn confusableBidiCompoundReasonCode(sub_threat: []const u8) []const u8 {
 }
 
 fn confusableBidiCompoundAt(sub_threat: []const u8, confusable_pos: usize, bidi_pos: usize) Finding {
-    var positions: [16]usize = undefined;
+    var positions: [MaxFindingPositions]usize = undefined;
     positions[0] = confusable_pos;
     positions[1] = bidi_pos;
     return .{
@@ -1259,7 +1337,7 @@ fn covertDisplayCompoundReasonCode(sub_threat: []const u8) []const u8 {
 }
 
 fn covertDisplayCompoundAt(sub_threat: []const u8, bidi_pos: usize, covert_pos: usize) Finding {
-    var positions: [16]usize = undefined;
+    var positions: [MaxFindingPositions]usize = undefined;
     positions[0] = bidi_pos;
     positions[1] = covert_pos;
     return .{
@@ -6013,14 +6091,27 @@ fn isCombiningMark(cp: u32) bool {
         (cp >= 0xFE20 and cp <= 0xFE2F);
 }
 
+// True iff the input is not already in NFC, which is the rung's definition in
+// Unicode.Security.Identity.HomoglyphConfusable: `toNFC input ≠ input`. An
+// input that renders as its own composed form carries no swap, whatever its
+// individual codepoints look like.
+//
+// The predicate is the comparison itself rather than a structural stand-in for
+// it. Adjacency tests over the raw codepoints cannot decide it: canonical
+// ordering is a stable sort on Canonical_Combining_Class, so two marks of equal
+// class never reorder however their codepoint values compare, and whether a
+// mark composes with the character before it is a question for the composition
+// table.
+//
+// An input whose normalization overflows the fixed skeleton buffer is reported
+// as carrying no swap, the same reading every other buffer-bounded detector in
+// this port takes.
 fn hasDecompositionSwap(input: []const u32) bool {
-    if (input.len < 2) return false;
-    for (1..input.len) |index| {
-        const previous = input[index - 1];
-        const current = input[index];
-        if (isCombiningMark(current) and !isCombiningMark(previous)) return true;
-        if (isCombiningMark(previous) and isCombiningMark(current) and previous > current) return true;
-        if (composeHangulPair(previous, current)) return true;
+    const nfc = toNFC(input) orelse return false;
+    const composed = nfc.slice();
+    if (composed.len != input.len) return true;
+    for (input, composed) |original, normalized| {
+        if (original != normalized) return true;
     }
     return false;
 }
@@ -6488,7 +6579,7 @@ fn malformedDecodeVerdict(
     decoded_buffer: []u32,
 ) Verdict {
     var findings = FindingList{};
-    var positions: [16]usize = undefined;
+    var positions: [MaxFindingPositions]usize = undefined;
     positions[0] = offset;
     findings.append(.{
         .code = code,
@@ -6774,7 +6865,7 @@ fn surrogateReassemblyDetect(input: []const u32) ?Utf8Invalid {
 fn surrogateReassemblyFinding(input: []const u32) ?Finding {
     if (!looksLikeByteStream(input)) return null;
     const invalid = surrogateReassemblyDetect(input) orelse return null;
-    var positions: [16]usize = undefined;
+    var positions: [MaxFindingPositions]usize = undefined;
     positions[0] = invalid.offset;
     return .{
         .code = surrogateReassemblyReasonCode(invalid.kind),

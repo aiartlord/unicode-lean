@@ -17,6 +17,7 @@ TestSurrogateReassemblyVectors();
 TestRtlInjectionVectors();
 TestPolicyContract();
 TestVerdictContract();
+TestDifferentialCorpus();
 TestUtf8DecodeContract();
 TestMultiEncodingDecodeContract();
 TestDetectorFixtures();
@@ -187,7 +188,22 @@ static void TestPolicyContract()
 
 static void TestVerdictContract()
 {
-    using var contract = LoadFixture("verdict_contract.json");
+    CheckVerdictFixture("verdict_contract.json");
+}
+
+// Agreement with the reference over a generated input stream. The corpus shares the
+// verdict contract's schema, so it runs through the same comparison, but its cases come
+// from the Rust reference over a deterministic stream rather than being hand-written:
+// agreement here is evidence that this port decides as the reference does on inputs
+// nobody chose, across every profile.
+static void TestDifferentialCorpus()
+{
+    CheckVerdictFixture("differential_corpus.json");
+}
+
+static void CheckVerdictFixture(string name)
+{
+    using var contract = LoadFixture(name);
     AssertEqual(1, contract.RootElement.GetProperty("schema").GetInt32(), "verdict schema");
     AssertEqual("unicode-security-verdict-v0", contract.RootElement.GetProperty("contract").GetString(), "verdict contract");
     foreach (var entry in contract.RootElement.GetProperty("cases").EnumerateArray())

@@ -307,7 +307,13 @@ function detect(input, identifierField) {
   // whose zero-width characters are all sanctioned raises nothing.
   const zeroWidthPositions = positionsWhere(input, isZeroWidthPayload);
   if (zeroWidthPositions.length > 0 && hasSuspiciousZeroWidth(input, zeroWidthPositions)) {
-    findings.push(makeFinding(Family.ZeroWidthPayload, "BareZeroWidth", zeroWidthPositions));
+    findings.push(
+      makeFinding(
+        Family.ZeroWidthPayload,
+        zeroWidthSubThreat(input, zeroWidthPositions),
+        zeroWidthPositions,
+      ),
+    );
   }
 
   const surrogateReassembly = surrogateReassemblyFinding(input);
@@ -686,8 +692,57 @@ function allSameAt(input, positions) {
   return positions.every((position) => input[position] === first);
 }
 
+// True iff cp renders as nothing, mirroring `isZeroWidth` in
+// Unicode.Security.Covert.ZeroWidthPayload: the explicit historical set, which
+// preserves sub-threat dispatch, extended by the UAX #44
+// Default_Ignorable_Code_Point property, which catches every other invisible
+// codepoint.
+//
+// The sibling ranges are excluded because their own family detector dispatches
+// them with richer payload decoding or bidi-stack tracking, and counting them
+// here as well would report one hazard twice. LRM and RLM are not excluded:
+// they are direction markers rather than push-pop controls, and
+// bidi-control-balance does not track them.
 function isZeroWidthPayload(cp) {
-  return cp === 0x200b || cp === 0x200c || cp === 0x200d || cp === 0x2060 || cp === 0xfeff;
+  if (cp >= 0x200b && cp <= 0x200f) return true;
+  if (cp >= 0x2060 && cp <= 0x2064) return true;
+  if (cp === 0x202f || cp === 0xfeff) return true;
+  if (cp >= 0xfff9 && cp <= 0xfffb) return true;
+  return isDefaultIgnorableCodepoint(cp) && !isZeroWidthSiblingHandled(cp);
+}
+
+// True iff cp is Default_Ignorable but belongs to a sibling detector's family
+// rather than to zero-width-payload.
+function isZeroWidthSiblingHandled(cp) {
+  if (cp >= 0xfe00 && cp <= 0xfe0f) return true;
+  if (cp >= 0xe0100 && cp <= 0xe01ef) return true;
+  if (cp >= 0xe0000 && cp <= 0xe007f) return true;
+  if (cp >= 0x202a && cp <= 0x202e) return true;
+  if (cp >= 0x2066 && cp <= 0x2069) return true;
+  return false;
+}
+
+// Which zero-width hazard the input carries, in the dispatch order of
+// Unicode.Security.Covert.ZeroWidthPayload: an annotation outranks a word
+// joiner, which outranks a narrow no-break space run, which outranks a binary
+// payload, and a bare occurrence is the fallback once no richer class fits.
+function zeroWidthSubThreat(input, positions) {
+  let annotation = 0;
+  let wordJoiner = 0;
+  let nnbsp = 0;
+  let zwjZwsp = 0;
+  for (const index of positions) {
+    const cp = input[index];
+    if (cp >= 0xfff9 && cp <= 0xfffb) annotation += 1;
+    else if (cp === 0x2060) wordJoiner += 1;
+    else if (cp === 0x202f) nnbsp += 1;
+    else if (cp === 0x200b || cp === 0x200d) zwjZwsp += 1;
+  }
+  if (annotation > 0) return "AnnotationMisuse";
+  if (wordJoiner > 0) return "WordJoinerInjection";
+  if (nnbsp >= 2) return "AiWatermarkNNBSP";
+  if (zwjZwsp >= 2) return "BinaryPayload";
+  return "BareZeroWidth";
 }
 
 function isBidiEmbeddingControl(cp) {
@@ -4818,17 +4873,24 @@ function isCombiningMark(cp) {
   );
 }
 
+// True iff the input is not already in NFC, which is the rung's definition in
+// Unicode.Security.Identity.HomoglyphConfusable: `toNFC input ≠ input`. An
+// input that renders as its own composed form carries no swap, whatever its
+// individual codepoints look like.
+//
+// The predicate is the comparison itself rather than a structural stand-in for
+// it. Adjacency tests over the raw codepoints cannot decide it: canonical
+// ordering is a stable sort on Canonical_Combining_Class, so two marks of equal
+// class never reorder however their codepoint values compare, and whether a
+// mark composes with the character before it is a question for the composition
+// table.
 function hasDecompositionSwap(input) {
-  for (let index = 1; index < input.length; index += 1) {
-    const previous = input[index - 1];
-    const current = input[index];
-    if (isCombiningMark(current) && !isCombiningMark(previous)) {
-      return true;
-    }
-    if (isCombiningMark(previous) && isCombiningMark(current) && previous > current) {
-      return true;
-    }
-    if (composeHangulPair(previous, current)) {
+  const nfc = toNfcCodepoints(input);
+  if (nfc.length !== input.length) {
+    return true;
+  }
+  for (let index = 0; index < input.length; index += 1) {
+    if (input[index] !== nfc[index]) {
       return true;
     }
   }

@@ -209,7 +209,10 @@ private func detect(_ input: [Int], _ identifierField: Bool) -> [Finding] {
     // raises nothing.
     let zeroWidth = positionsWhere(input, isZeroWidthPayload)
     if !zeroWidth.isEmpty && hasSuspiciousZeroWidth(input, zeroWidth) {
-        findings.append(makeFinding(family: Family.zeroWidthPayload, subThreat: "BareZeroWidth", positions: zeroWidth))
+        findings.append(makeFinding(
+            family: Family.zeroWidthPayload,
+            subThreat: zeroWidthSubThreat(input, zeroWidth),
+            positions: zeroWidth))
     }
     if let surrogate = surrogateReassemblyFinding(input) {
         findings.append(surrogate)
@@ -335,7 +338,6 @@ private func blocks(_ level: PolicyLevel, _ family: String) -> Bool {
         Family.malformedUtf32,
         Family.surrogateReassembly,
         Family.bidiControlBalance,
-        Family.noncharacterControl,
         Family.streamSafeViolation,
     ].contains(family)
     }
@@ -349,7 +351,6 @@ private func blocks(_ level: PolicyLevel, _ family: String) -> Bool {
         Family.zeroWidthPayload,
         Family.surrogateReassembly,
         Family.bidiControlBalance,
-        Family.noncharacterControl,
         Family.homoglyphConfusable,
         Family.mixedScriptAdmissibility,
         Family.skinToneVariationForgery,
@@ -375,7 +376,6 @@ private func blocks(_ level: PolicyLevel, _ family: String) -> Bool {
         Family.zeroWidthPayload,
         Family.surrogateReassembly,
         Family.bidiControlBalance,
-        Family.noncharacterControl,
         Family.homoglyphConfusable,
         Family.mixedScriptAdmissibility,
         Family.emojiZwjIntegrity,
@@ -510,8 +510,51 @@ private func allSameAt(_ input: [Int], _ positions: [Int]) -> Bool {
     return positions.allSatisfy { input[$0] == first }
 }
 
+/// True iff cp renders as nothing, mirroring `isZeroWidth` in
+/// Unicode.Security.Covert.ZeroWidthPayload: the explicit historical set, which
+/// preserves sub-threat dispatch, extended by the UAX #44 Default_Ignorable_Code_Point
+/// property, which catches every other invisible codepoint.
+///
+/// The sibling ranges are excluded because their own family detector dispatches them
+/// with richer payload decoding or bidi-stack tracking, and counting them here as well
+/// would report one hazard twice. LRM and RLM are not excluded: they are direction
+/// markers rather than push-pop controls, and bidi-control-balance does not track them.
 private func isZeroWidthPayload(_ cp: Int) -> Bool {
-    cp == 0x200b || cp == 0x200c || cp == 0x200d || cp == 0x2060 || cp == 0xfeff
+    if cp >= 0x200b && cp <= 0x200f { return true }
+    if cp >= 0x2060 && cp <= 0x2064 { return true }
+    if cp == 0x202f || cp == 0xfeff { return true }
+    if cp >= 0xfff9 && cp <= 0xfffb { return true }
+    return isDefaultIgnorableCodepoint(cp) && !isZeroWidthSiblingHandled(cp)
+}
+
+/// True iff cp is Default_Ignorable but belongs to a sibling detector's family rather
+/// than to zero-width-payload.
+private func isZeroWidthSiblingHandled(_ cp: Int) -> Bool {
+    if cp >= 0xfe00 && cp <= 0xfe0f { return true }
+    if cp >= 0xe0100 && cp <= 0xe01ef { return true }
+    if cp >= 0xe0000 && cp <= 0xe007f { return true }
+    if cp >= 0x202a && cp <= 0x202e { return true }
+    return cp >= 0x2066 && cp <= 0x2069
+}
+
+/// Which zero-width hazard the input carries, in the dispatch order of
+/// Unicode.Security.Covert.ZeroWidthPayload: an annotation outranks a word joiner,
+/// which outranks a narrow no-break space run, which outranks a binary payload, and a
+/// bare occurrence is the fallback once no richer class fits.
+private func zeroWidthSubThreat(_ input: [Int], _ positions: [Int]) -> String {
+    var annotation = 0, wordJoiner = 0, nnbsp = 0, zwjZwsp = 0
+    for index in positions {
+        let cp = input[index]
+        if cp >= 0xfff9 && cp <= 0xfffb { annotation += 1 }
+        else if cp == 0x2060 { wordJoiner += 1 }
+        else if cp == 0x202f { nnbsp += 1 }
+        else if cp == 0x200b || cp == 0x200d { zwjZwsp += 1 }
+    }
+    if annotation > 0 { return "AnnotationMisuse" }
+    if wordJoiner > 0 { return "WordJoinerInjection" }
+    if nnbsp >= 2 { return "AiWatermarkNNBSP" }
+    if zwjZwsp >= 2 { return "BinaryPayload" }
+    return "BareZeroWidth"
 }
 
 private func isBidiEmbeddingControl(_ cp: Int) -> Bool {
@@ -2299,16 +2342,18 @@ private func isCombiningMark(_ cp: Int) -> Bool {
         (cp >= 0xfe20 && cp <= 0xfe2f)
 }
 
+/// True iff the input is not already in NFC, which is the rung's definition in
+/// Unicode.Security.Identity.HomoglyphConfusable: `toNFC input ≠ input`. An input that
+/// renders as its own composed form carries no swap, whatever its individual codepoints
+/// look like.
+///
+/// The predicate is the comparison itself rather than a structural stand-in for it.
+/// Adjacency tests over the raw codepoints cannot decide it: canonical ordering is a
+/// stable sort on Canonical_Combining_Class, so two marks of equal class never reorder
+/// however their codepoint values compare, and whether a mark composes with the
+/// character before it is a question for the composition table.
 private func hasDecompositionSwap(_ input: [Int]) -> Bool {
-    if input.count < 2 { return false }
-    for index in 1..<input.count {
-        let previous = input[index - 1]
-        let current = input[index]
-        if isCombiningMark(current) && !isCombiningMark(previous) { return true }
-        if isCombiningMark(previous) && isCombiningMark(current) && previous > current { return true }
-        if composeHangulPair(previous, current) { return true }
-    }
-    return false
+    toNfc(input) != input
 }
 
 private func composeHangulPair(_ first: Int, _ second: Int) -> Bool {

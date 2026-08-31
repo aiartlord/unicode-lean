@@ -193,7 +193,8 @@ public static partial class Security
         var zeroWidth = PositionsWhere(input, IsZeroWidthPayload);
         if (zeroWidth.Count > 0 && HasSuspiciousZeroWidth(input, zeroWidth))
         {
-            findings.Add(MakeFinding(Family.ZeroWidthPayload, "BareZeroWidth", zeroWidth));
+            findings.Add(
+                MakeFinding(Family.ZeroWidthPayload, ZeroWidthSubThreat(input, zeroWidth), zeroWidth));
         }
         var surrogate = SurrogateReassemblyFinding(input);
         if (surrogate is not null) findings.Add(surrogate);
@@ -282,7 +283,7 @@ public static partial class Security
         {
             return
             family is Family.MalformedUtf8 or Family.MalformedUtf16 or Family.MalformedUtf32
-                or Family.SurrogateReassembly or Family.BidiControlBalance or Family.NoncharacterControl
+                or Family.SurrogateReassembly or Family.BidiControlBalance
                 or Family.StreamSafeViolation;
         }
         if (level == PolicyLevel.Moderate)
@@ -290,7 +291,7 @@ public static partial class Security
             return
             family is Family.MalformedUtf8 or Family.MalformedUtf16 or Family.MalformedUtf32
                 or Family.TagBlockPayload or Family.VariationSelectorPayload or Family.ZeroWidthPayload
-                or Family.SurrogateReassembly or Family.BidiControlBalance or Family.NoncharacterControl
+                or Family.SurrogateReassembly or Family.BidiControlBalance
                 or Family.HomoglyphConfusable or Family.MixedScriptAdmissibility
                 or Family.SkinToneVariationForgery or Family.SourceDisplayDivergence
                 or Family.FilenameDisguise or Family.StreamSafeViolation or Family.LocaleCaseInversion
@@ -302,7 +303,7 @@ public static partial class Security
         return
             family is Family.MalformedUtf8 or Family.MalformedUtf16 or Family.MalformedUtf32
                 or Family.TagBlockPayload or Family.VariationSelectorPayload or Family.ZeroWidthPayload
-                or Family.SurrogateReassembly or Family.BidiControlBalance or Family.NoncharacterControl
+                or Family.SurrogateReassembly or Family.BidiControlBalance
                 or Family.HomoglyphConfusable or Family.MixedScriptAdmissibility or Family.EmojiZwjIntegrity
                 or Family.SkinToneVariationForgery or Family.SourceDisplayDivergence
                 or Family.FilenameDisguise or Family.RtlInjection or Family.RendererDivergence
@@ -403,7 +404,56 @@ public static partial class Security
     private static bool AllSameAt(List<int> input, List<int> positions) =>
         positions.Count == 0 || positions.All(position => input[position] == input[positions[0]]);
 
-    private static bool IsZeroWidthPayload(int cp) => cp is 0x200B or 0x200C or 0x200D or 0x2060 or 0xFEFF;
+    /// True iff cp renders as nothing, mirroring `isZeroWidth` in
+    /// Unicode.Security.Covert.ZeroWidthPayload: the explicit historical set, which
+    /// preserves sub-threat dispatch, extended by the UAX #44
+    /// Default_Ignorable_Code_Point property, which catches every other invisible
+    /// codepoint.
+    ///
+    /// The sibling ranges are excluded because their own family detector dispatches
+    /// them with richer payload decoding or bidi-stack tracking, and counting them here
+    /// as well would report one hazard twice. LRM and RLM are not excluded: they are
+    /// direction markers rather than push-pop controls, and bidi-control-balance does
+    /// not track them.
+    private static bool IsZeroWidthPayload(int cp)
+    {
+        if (cp is >= 0x200B and <= 0x200F) return true;
+        if (cp is >= 0x2060 and <= 0x2064) return true;
+        if (cp is 0x202F or 0xFEFF) return true;
+        if (cp is >= 0xFFF9 and <= 0xFFFB) return true;
+        return IsDefaultIgnorableCodepoint(cp) && !IsZeroWidthSiblingHandled(cp);
+    }
+
+    /// True iff cp is Default_Ignorable but belongs to a sibling detector's family
+    /// rather than to zero-width-payload.
+    private static bool IsZeroWidthSiblingHandled(int cp) =>
+        cp is (>= 0xFE00 and <= 0xFE0F)
+            or (>= 0xE0100 and <= 0xE01EF)
+            or (>= 0xE0000 and <= 0xE007F)
+            or (>= 0x202A and <= 0x202E)
+            or (>= 0x2066 and <= 0x2069);
+
+    /// Which zero-width hazard the input carries, in the dispatch order of
+    /// Unicode.Security.Covert.ZeroWidthPayload: an annotation outranks a word joiner,
+    /// which outranks a narrow no-break space run, which outranks a binary payload, and
+    /// a bare occurrence is the fallback once no richer class fits.
+    private static string ZeroWidthSubThreat(IReadOnlyList<int> input, List<int> positions)
+    {
+        int annotation = 0, wordJoiner = 0, nnbsp = 0, zwjZwsp = 0;
+        foreach (var index in positions)
+        {
+            var cp = input[index];
+            if (cp is >= 0xFFF9 and <= 0xFFFB) annotation++;
+            else if (cp == 0x2060) wordJoiner++;
+            else if (cp == 0x202F) nnbsp++;
+            else if (cp is 0x200B or 0x200D) zwjZwsp++;
+        }
+        if (annotation > 0) return "AnnotationMisuse";
+        if (wordJoiner > 0) return "WordJoinerInjection";
+        if (nnbsp >= 2) return "AiWatermarkNNBSP";
+        if (zwjZwsp >= 2) return "BinaryPayload";
+        return "BareZeroWidth";
+    }
     private static bool IsBidiEmbeddingControl(int cp) => cp is >= 0x202A and <= 0x202E;
 
     private static List<Finding> NoncharacterControlFindings(List<int> input)
@@ -2081,15 +2131,23 @@ public static partial class Security
         cp is >= 0x1DC0 and <= 0x1DFF || cp is >= 0x20D0 and <= 0x20FF ||
         cp is >= 0xFE20 and <= 0xFE2F;
 
+    /// True iff the input is not already in NFC, which is the rung's definition in
+    /// Unicode.Security.Identity.HomoglyphConfusable: `toNFC input ≠ input`. An input
+    /// that renders as its own composed form carries no swap, whatever its individual
+    /// codepoints look like.
+    ///
+    /// The predicate is the comparison itself rather than a structural stand-in for it.
+    /// Adjacency tests over the raw codepoints cannot decide it: canonical ordering is a
+    /// stable sort on Canonical_Combining_Class, so two marks of equal class never
+    /// reorder however their codepoint values compare, and whether a mark composes with
+    /// the character before it is a question for the composition table.
     private static bool HasDecompositionSwap(List<int> input)
     {
-        for (var index = 1; index < input.Count; index++)
+        var nfc = ToNfc(input);
+        if (nfc.Count != input.Count) return true;
+        for (var index = 0; index < input.Count; index++)
         {
-            var previous = input[index - 1];
-            var current = input[index];
-            if (IsCombiningMark(current) && !IsCombiningMark(previous)) return true;
-            if (IsCombiningMark(previous) && IsCombiningMark(current) && previous > current) return true;
-            if (ComposeHangulPair(previous, current)) return true;
+            if (input[index] != nfc[index]) return true;
         }
         return false;
     }

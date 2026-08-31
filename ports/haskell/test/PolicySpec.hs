@@ -34,6 +34,7 @@ tests = testGroup "Unicode.Security.Policy"
   , testCase "decode contract fixture" decodeContractFixture
   , testCase "multi-encoding decode contract fixture" multiencodingDecodeContractFixture
   , testCase "verdict JSON contract fixture" verdictContractFixture
+  , testCase "differential corpus" differentialCorpus
   , testCase "detector fixtures" detectorFixtures
   , testCase "rtl-injection vectors" rtlInjectionVectors
   , testCase "surrogate-reassembly vectors" surrogateReassemblyVectors
@@ -136,8 +137,20 @@ policyContractFixture = do
   mapM_ checkPolicyCase (fieldArray "cases" value)
 
 verdictContractFixture :: Assertion
-verdictContractFixture = do
-  value <- parseJsonFile (fixturePath "verdict_contract.json")
+verdictContractFixture = checkVerdictFixture "verdict_contract.json"
+
+-- | Agreement with the reference over a generated input stream. The corpus
+-- shares the verdict contract's schema, so it runs through the same
+-- comparison, but its cases come from the Rust reference over a deterministic
+-- stream rather than being hand-written: agreement here is evidence that this
+-- port decides as the reference does on inputs nobody chose, across every
+-- profile.
+differentialCorpus :: Assertion
+differentialCorpus = checkVerdictFixture "differential_corpus.json"
+
+checkVerdictFixture :: FilePath -> Assertion
+checkVerdictFixture name = do
+  value <- parseJsonFile (fixturePath name)
   assertEqual "" "unicode-security-verdict-v0" (fieldString "contract" value)
   mapM_ checkVerdictCase (fieldArray "cases" value)
 

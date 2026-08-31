@@ -165,6 +165,52 @@ test "shared verdict JSON contract fixture" {
     }
 }
 
+// Every case of a verdict-shaped contract, scanned and compared against its
+// pinned verdict.
+fn checkVerdictCases(contract: VerdictContract) !void {
+    try std.testing.expectEqual(@as(u32, 1), contract.schema);
+    try std.testing.expect(std.mem.eql(
+        u8,
+        contract.contract,
+        "unicode-security-verdict-v0",
+    ));
+    for (contract.cases) |case| {
+        const profile = security.Profile.fromTag(case.profile) orelse return error.UnknownProfile;
+        const mode = security.Mode.fromTag(case.mode) orelse return error.UnknownMode;
+        const verdict = security.scan(profile, mode, case.input);
+        expectVerdict(case.name, verdict, case.verdict) catch |err| {
+            std.debug.print("DIFFCASE {s} profile={s}\n", .{ case.name, case.profile });
+            for (verdict.findings.items[0..verdict.findings.len]) |f| {
+                std.debug.print("  actual  {s} pos={any}\n", .{ f.sub_threat, f.positions[0..f.position_count] });
+            }
+            for (case.verdict.findings) |f| {
+                std.debug.print("  expect  {s} pos={any}\n", .{ f.sub_threat, f.positions });
+            }
+            return err;
+        };
+    }
+}
+
+// Agreement with the reference over a generated input stream. The corpus shares
+// the verdict contract's schema, so it is parsed and compared the same way, but
+// its cases come from the Rust reference over a deterministic stream rather than
+// being hand-written: agreement here is evidence that this port decides as the
+// reference does on inputs nobody chose, across every profile.
+test "differential corpus" {
+    const allocator = std.testing.allocator;
+    var parsed = try std.json.parseFromSlice(
+        VerdictContract,
+        allocator,
+        contract_options.differential_corpus_json,
+        .{ .ignore_unknown_fields = true },
+    );
+    // The arena is released before the outcome propagates, so a failing case
+    // reports the mismatch rather than a leak alongside it.
+    const outcome = checkVerdictCases(parsed.value);
+    parsed.deinit();
+    try outcome;
+}
+
 test "shared decode contract fixture" {
     const allocator = std.testing.allocator;
     const parsed = try std.json.parseFromSlice(

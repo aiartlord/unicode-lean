@@ -13,6 +13,7 @@ struct SecurityContractRunner {
         try testNfcIdempotenceWitness()
         try testPolicyContract()
         try testVerdictContract()
+        try testDifferentialCorpus()
         try testUtf8DecodeContract()
         try testMultiEncodingDecodeContract()
         try testDetectorFixtures()
@@ -1118,7 +1119,20 @@ struct SecurityContractRunner {
     }
 
     private static func testVerdictContract() throws {
-        let contract = try loadFixture("verdict_contract.json")
+        try checkVerdictFixture("verdict_contract.json")
+    }
+
+    // Agreement with the reference over a generated input stream. The corpus shares the
+    // verdict contract's schema, so it runs through the same comparison, but its cases
+    // come from the Rust reference over a deterministic stream rather than being
+    // hand-written: agreement here is evidence that this port decides as the reference
+    // does on inputs nobody chose, across every profile.
+    private static func testDifferentialCorpus() throws {
+        try checkVerdictFixture("differential_corpus.json")
+    }
+
+    private static func checkVerdictFixture(_ name: String) throws {
+        let contract = try loadFixture(name)
         try expectEqual(contract["schema"] as? Int, 1, "verdict schema")
         try expectEqual(contract["contract"] as? String, "unicode-security-verdict-v0", "verdict contract")
         for entry in try array(contract, "cases") {

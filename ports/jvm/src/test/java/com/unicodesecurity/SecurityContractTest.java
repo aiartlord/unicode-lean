@@ -35,6 +35,7 @@ public final class SecurityContractTest {
     testRtlInjection();
     testPolicyContract();
     testVerdictContract();
+    testDifferentialCorpus();
     testUtf8DecodeContract();
     testMultiEncodingDecodeContract();
     testByteLayerRefinements();
@@ -1659,7 +1660,22 @@ public final class SecurityContractTest {
   }
 
   private static void testVerdictContract() throws IOException {
-    Map<String, Object> contract = fixture("verdict_contract.json");
+    checkVerdictFixture("verdict_contract.json");
+  }
+
+  /**
+   * Agreement with the reference over a generated input stream. The corpus shares the verdict
+   * contract's schema, so it runs through the same comparison, but its cases come from the Rust
+   * reference over a deterministic stream rather than being hand-written: agreement here is
+   * evidence that this port decides as the reference does on inputs nobody chose, across every
+   * profile.
+   */
+  private static void testDifferentialCorpus() throws IOException {
+    checkVerdictFixture("differential_corpus.json");
+  }
+
+  private static void checkVerdictFixture(String name) throws IOException {
+    Map<String, Object> contract = fixture(name);
     assertEquals(1, intValue(contract.get("schema")), "verdict schema");
     assertEquals("unicode-security-verdict-v0", contract.get("contract"), "verdict contract");
     for (Map<String, Object> entry : objects(contract.get("cases"))) {

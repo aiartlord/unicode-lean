@@ -219,7 +219,9 @@ public final class Security {
     // raises nothing.
     List<Integer> zeroWidth = positionsWhere(input, Security::isZeroWidthPayload);
     if (!zeroWidth.isEmpty() && hasSuspiciousZeroWidth(input, zeroWidth)) {
-      findings.add(makeFinding(Family.ZERO_WIDTH_PAYLOAD, "BareZeroWidth", zeroWidth));
+      findings.add(
+          makeFinding(
+              Family.ZERO_WIDTH_PAYLOAD, zeroWidthSubThreat(input, zeroWidth), zeroWidth));
     }
     Finding surrogate = surrogateReassemblyFinding(input);
     if (surrogate != null) findings.add(surrogate);
@@ -352,22 +354,70 @@ public final class Security {
     };
   }
 
+  /**
+   * The families a malformed-decode verdict blocks on at every level. Decoding failed, so the
+   * input never became text and no detector ran over it.
+   */
+  private static final Set<String> MALFORMED_FAMILIES =
+      Set.of(Family.MALFORMED_UTF8, Family.MALFORMED_UTF16, Family.MALFORMED_UTF32);
+
+  /**
+   * Every targeted-attack detector and UTS #39 compliance signal. Mirrors the {@code restrictive}
+   * arm of {@code rejectionSet} in Unicode/Security/Level.lean.
+   */
+  private static final Set<String> RESTRICTIVE_FAMILIES =
+      Set.of(
+          Family.TAG_BLOCK_PAYLOAD, Family.VARIATION_SELECTOR_PAYLOAD,
+          Family.ZERO_WIDTH_PAYLOAD, Family.SURROGATE_REASSEMBLY,
+          Family.BIDI_CONTROL_BALANCE,
+          Family.HOMOGLYPH_CONFUSABLE, Family.MIXED_SCRIPT_ADMISSIBILITY,
+          Family.EMOJI_ZWJ_INTEGRITY, Family.SKIN_TONE_VARIATION_FORGERY,
+          Family.SOURCE_DISPLAY_DIVERGENCE, Family.FILENAME_DISGUISE,
+          Family.RTL_INJECTION, Family.RENDERER_DIVERGENCE,
+          Family.NORMALIZATION_BOMB, Family.STREAM_SAFE_VIOLATION,
+          Family.LOCALE_CASE_INVERSION, Family.CASE_EXPANSION_MISMATCH,
+          Family.WIDTH_CLASS_CONFUSION, Family.NFC_IDEMPOTENCE_WITNESS,
+          Family.IDENTIFIER_FORM_DRIFT, Family.COVERT_DISPLAY_COMPOUND,
+          Family.CONFUSABLE_BIDI_COMPOUND, Family.ADMISSIBILITY_FORM_DRIFT);
+
+  /**
+   * Restrictive minus the four false-positive-prone families that a default-safe multilingual
+   * pipeline cannot carry: NormalizationBomb, whose ratio sub-threats fire on legitimate Greek
+   * polytonic text; RtlInjection, which assumes a declared-LTR field and so fires on legitimate
+   * Hebrew and Arabic; RendererDivergence, a variance heuristic with high false positives on
+   * emoji-heavy content; and EmojiZwjIntegrity, which fires on novel sequences not yet in RGI.
+   * Mirrors the {@code moderate} arm of the same function.
+   */
+  private static final Set<String> MODERATE_FAMILIES =
+      Set.of(
+          Family.TAG_BLOCK_PAYLOAD, Family.VARIATION_SELECTOR_PAYLOAD,
+          Family.ZERO_WIDTH_PAYLOAD, Family.SURROGATE_REASSEMBLY,
+          Family.BIDI_CONTROL_BALANCE,
+          Family.HOMOGLYPH_CONFUSABLE, Family.MIXED_SCRIPT_ADMISSIBILITY,
+          Family.SKIN_TONE_VARIATION_FORGERY,
+          Family.SOURCE_DISPLAY_DIVERGENCE, Family.FILENAME_DISGUISE,
+          Family.STREAM_SAFE_VIOLATION, Family.LOCALE_CASE_INVERSION,
+          Family.CASE_EXPANSION_MISMATCH, Family.WIDTH_CLASS_CONFUSION,
+          Family.NFC_IDEMPOTENCE_WITNESS,
+          Family.IDENTIFIER_FORM_DRIFT, Family.COVERT_DISPLAY_COMPOUND,
+          Family.CONFUSABLE_BIDI_COMPOUND, Family.ADMISSIBILITY_FORM_DRIFT);
+
+  /**
+   * The structural and RFC-violation families: byte validity, bidi-control imbalance of the Trojan
+   * Source class, and stream-safe overflow. Mirrors the {@code minimal} arm.
+   */
+  private static final Set<String> MINIMAL_FAMILIES =
+      Set.of(
+          Family.SURROGATE_REASSEMBLY, Family.BIDI_CONTROL_BALANCE,
+          Family.STREAM_SAFE_VIOLATION);
+
   private static boolean blocks(PolicyLevel level, String family) {
-    if (level == PolicyLevel.MINIMAL) {
-      return family.equals(Family.MALFORMED_UTF8) || family.equals(Family.MALFORMED_UTF16) ||
-          family.equals(Family.MALFORMED_UTF32) || family.equals(Family.SURROGATE_REASSEMBLY) ||
-          family.equals(Family.BIDI_CONTROL_BALANCE) ||
-          family.equals(Family.NONCHARACTER_CONTROL);
-    }
-    return family.equals(Family.MALFORMED_UTF8) || family.equals(Family.MALFORMED_UTF16) ||
-        family.equals(Family.MALFORMED_UTF32) || family.equals(Family.TAG_BLOCK_PAYLOAD) ||
-        family.equals(Family.VARIATION_SELECTOR_PAYLOAD) || family.equals(Family.ZERO_WIDTH_PAYLOAD) ||
-        family.equals(Family.SURROGATE_REASSEMBLY) ||
-        family.equals(Family.CONFUSABLE_BIDI_COMPOUND) ||
-        family.equals(Family.COVERT_DISPLAY_COMPOUND) ||
-        family.equals(Family.BIDI_CONTROL_BALANCE) || family.equals(Family.NONCHARACTER_CONTROL) ||
-        family.equals(Family.HOMOGLYPH_CONFUSABLE) ||
-        family.equals(Family.MIXED_SCRIPT_ADMISSIBILITY);
+    if (MALFORMED_FAMILIES.contains(family)) return true;
+    return switch (level) {
+      case RESTRICTIVE -> RESTRICTIVE_FAMILIES.contains(family);
+      case MODERATE -> MODERATE_FAMILIES.contains(family);
+      case MINIMAL -> MINIMAL_FAMILIES.contains(family);
+    };
   }
 
   private static Verdict malformedDecodeVerdict(String profile, String mode, String family, String subThreat, int offset) {
@@ -486,8 +536,57 @@ public final class Security {
     return true;
   }
 
+  /**
+   * True iff cp renders as nothing, mirroring {@code isZeroWidth} in
+   * Unicode.Security.Covert.ZeroWidthPayload: the explicit historical set, which preserves
+   * sub-threat dispatch, extended by the UAX #44 Default_Ignorable_Code_Point property, which
+   * catches every other invisible codepoint.
+   *
+   * <p>The sibling ranges are excluded because their own family detector dispatches them with
+   * richer payload decoding or bidi-stack tracking, and counting them here as well would report one
+   * hazard twice. LRM and RLM are not excluded: they are direction markers rather than push-pop
+   * controls, and bidi-control-balance does not track them.
+   */
   private static boolean isZeroWidthPayload(int cp) {
-    return cp == 0x200B || cp == 0x200C || cp == 0x200D || cp == 0x2060 || cp == 0xFEFF;
+    if (cp >= 0x200B && cp <= 0x200F) return true;
+    if (cp >= 0x2060 && cp <= 0x2064) return true;
+    if (cp == 0x202F || cp == 0xFEFF) return true;
+    if (cp >= 0xFFF9 && cp <= 0xFFFB) return true;
+    return isDefaultIgnorableCodepoint(cp) && !isZeroWidthSiblingHandled(cp);
+  }
+
+  /**
+   * True iff cp is Default_Ignorable but belongs to a sibling detector's family rather than to
+   * zero-width-payload.
+   */
+  private static boolean isZeroWidthSiblingHandled(int cp) {
+    if (cp >= 0xFE00 && cp <= 0xFE0F) return true;
+    if (cp >= 0xE0100 && cp <= 0xE01EF) return true;
+    if (cp >= 0xE0000 && cp <= 0xE007F) return true;
+    if (cp >= 0x202A && cp <= 0x202E) return true;
+    return cp >= 0x2066 && cp <= 0x2069;
+  }
+
+  /**
+   * Which zero-width hazard the input carries, in the dispatch order of
+   * Unicode.Security.Covert.ZeroWidthPayload: an annotation outranks a word joiner, which outranks
+   * a narrow no-break space run, which outranks a binary payload, and a bare occurrence is the
+   * fallback once no richer class fits.
+   */
+  private static String zeroWidthSubThreat(List<Integer> input, List<Integer> positions) {
+    int annotation = 0, wordJoiner = 0, nnbsp = 0, zwjZwsp = 0;
+    for (int index : positions) {
+      int cp = input.get(index);
+      if (cp >= 0xFFF9 && cp <= 0xFFFB) annotation++;
+      else if (cp == 0x2060) wordJoiner++;
+      else if (cp == 0x202F) nnbsp++;
+      else if (cp == 0x200B || cp == 0x200D) zwjZwsp++;
+    }
+    if (annotation > 0) return "AnnotationMisuse";
+    if (wordJoiner > 0) return "WordJoinerInjection";
+    if (nnbsp >= 2) return "AiWatermarkNNBSP";
+    if (zwjZwsp >= 2) return "BinaryPayload";
+    return "BareZeroWidth";
   }
 
   private static boolean isBidiEmbeddingControl(int cp) {
@@ -2189,15 +2288,20 @@ public final class Security {
         (cp >= 0xFE20 && cp <= 0xFE2F);
   }
 
+  /**
+   * True iff the input is not already in NFC, which is the rung's definition in
+   * Unicode.Security.Identity.HomoglyphConfusable: {@code toNFC input ≠ input}. An input that
+   * renders as its own composed form carries no swap, whatever its individual codepoints look
+   * like.
+   *
+   * <p>The predicate is the comparison itself rather than a structural stand-in for it. Adjacency
+   * tests over the raw codepoints cannot decide it: canonical ordering is a stable sort on
+   * Canonical_Combining_Class, so two marks of equal class never reorder however their codepoint
+   * values compare, and whether a mark composes with the character before it is a question for the
+   * composition table.
+   */
   private static boolean hasDecompositionSwap(List<Integer> input) {
-    for (int i = 1; i < input.size(); i++) {
-      int previous = input.get(i - 1);
-      int current = input.get(i);
-      if (isCombiningMark(current) && !isCombiningMark(previous)) return true;
-      if (isCombiningMark(previous) && isCombiningMark(current) && previous > current) return true;
-      if (composeHangulPair(previous, current)) return true;
-    }
-    return false;
+    return !toNfc(input).equals(input);
   }
 
   private static boolean composeHangulPair(int first, int second) {
