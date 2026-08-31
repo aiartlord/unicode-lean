@@ -813,7 +813,33 @@ final class Ucd
             return $table[$idx][2];
         }
         $primary = self::scriptOf($cp);
-        return [self::scriptLongToAbbrev($primary)];
+        $abbrev = self::scriptLongToAbbrev($primary);
+        return isset(self::scriptExtensionAbbrevs()[$abbrev]) ? [$abbrev] : [];
+    }
+
+    /**
+     * The abbreviations the resolver can name: those occurring in
+     * ScriptExtensions.txt. Unicode/ResolvedScripts.lean models the same set as
+     * its ScriptAbbrev enum, which is why its scriptToAbbrev is partial over
+     * Script. A codepoint whose primary script falls outside this set resolves
+     * to no abbreviation on both sides; returning a singleton instead would
+     * make every unknown-script codepoint look Single-Script, putting
+     * restrictionLevel one rung too strict and hiding RestrictionLow.
+     *
+     * @return array<string,bool>
+     */
+    private static function scriptExtensionAbbrevs(): array
+    {
+        static $abbrevs = null;
+        if ($abbrevs === null) {
+            $abbrevs = [];
+            foreach (self::scriptExtensionsTable() as $row) {
+                foreach ($row[2] as $abbrev) {
+                    $abbrevs[$abbrev] = true;
+                }
+            }
+        }
+        return $abbrevs;
     }
 
     /** @return array<string,string> */

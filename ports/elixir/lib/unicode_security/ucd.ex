@@ -645,9 +645,27 @@ defmodule UnicodeSecurity.Ucd do
   @spec resolve_scripts(integer()) :: [String.t()]
   def resolve_scripts(cp) do
     case find_range(script_extensions_table(), cp) do
-      nil -> [script_long_to_abbrev(script_of(cp))]
+      nil -> fallback_scripts(script_long_to_abbrev(script_of(cp)))
       scripts -> scripts
     end
+  end
+
+  # The abbreviations the resolver can name are those occurring in
+  # ScriptExtensions.txt. Unicode/ResolvedScripts.lean models the same set as
+  # its ScriptAbbrev enum, which is why its scriptToAbbrev is partial over
+  # Script. A codepoint whose primary script falls outside this set resolves to
+  # no abbreviation on both sides; returning a singleton instead would make
+  # every unknown-script codepoint look Single-Script, putting restriction_level
+  # one rung too strict and hiding RestrictionLow.
+  defp fallback_scripts(abbrev) do
+    if MapSet.member?(script_extension_abbrevs(), abbrev), do: [abbrev], else: []
+  end
+
+  defp script_extension_abbrevs do
+    script_extensions_table()
+    |> Tuple.to_list()
+    |> Enum.flat_map(fn {_start, _stop, scripts} -> scripts end)
+    |> MapSet.new()
   end
 
   @doc "True iff `cp`'s primary script is Common."

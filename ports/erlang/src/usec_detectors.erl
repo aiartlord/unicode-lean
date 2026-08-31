@@ -4,7 +4,7 @@
          surrogate_reassembly_detect/1, looks_like_byte_stream/1,
          bidi_control_detect/1, is_bidi_format_control/1, opens_embedding/1,
          is_pdf/1, opens_isolate/1, is_pdi/1,
-         homoglyph_detect/1, confusable_source/1, mixed_script_admissibility/1,
+         homoglyph_detect/1, confusable_source/1, mixed_script_admissibility/1, mixed_script_verdict/2,
          mixed_script_subthreat/1, rtl_injection_detect/1,
          confusable_bidi_detect/1, covert_display_detect/1,
          locale_case_detect/1, nfc_witness_detect/1, normalization_bomb_detect/1,
@@ -240,7 +240,9 @@ homoglyph_detect(Input) ->
                             case usec_ucd:to_nfc(Input) =/= Input of
                                 true -> Base#{kind := hazard, sub := #{tag => <<"DecompositionSwap">>}};
                                 false ->
-                                    case mixed_script_admissibility(Input) of
+                                    %% Priority 5: CrossScriptMix asks the script question only;
+                                    %% the Restricted-status rung belongs to the mixed-script family.
+                                    case length(usec_ucd:string_script_union(Input)) >= 2 andalso not usec_ucd:is_highly_restrictive(Input) of
                                         true -> Base#{kind := hazard, sub := #{tag => <<"CrossScriptMix">>}};
                                         false ->
                                             case lists:member(Rl, [minimally_restrictive, unrestricted]) of
@@ -320,7 +322,49 @@ math_alnum(Cp) -> Cp >= 16#1D400 andalso Cp =< 16#1D7FF.
 fullwidth_halfwidth(Cp) -> Cp >= 16#FF01 andalso Cp =< 16#FFEF.
 
 mixed_script_admissibility(Input) ->
-    length(usec_ucd:string_script_union(Input)) >= 2 andalso not usec_ucd:is_highly_restrictive(Input).
+    mixed_script_verdict(Input, true) =/= none.
+
+%% The mixed-script sub-threat for Input, or none when admissible.
+%%
+%% The rung order is MixedScriptAdmissibility.lean's: a Restricted-status
+%% codepoint outranks every script question, then the two named Latin pairs,
+%% then a multi-script mix split by whether it stays inside a CJK covered set,
+%% and finally an Unrestricted level with no script mix.
+%%
+%% IdentifierField carries what the caller knows about the field, mirroring
+%% that module's Context. Phase 1 is sound for an identifier, which cannot
+%% contain a space, and unsound for a document, where every space and every
+%% punctuation mark is Restricted.
+mixed_script_verdict(Input, IdentifierField) ->
+    HasRestricted = IdentifierField andalso
+        lists:any(fun(Cp) -> not usec_ucd:is_id_allowed(Cp) end, Input),
+    case HasRestricted of
+        true -> <<"RestrictedStatusCp">>;
+        false ->
+            U = usec_ucd:string_script_union(Input),
+            HasLatn = lists:member(<<"Latn">>, U),
+            case HasLatn andalso lists:member(<<"Cyrl">>, U) of
+                true -> <<"LatinCyrillic">>;
+                false ->
+                    case HasLatn andalso lists:member(<<"Grek">>, U) of
+                        true -> <<"LatinGreek">>;
+                        false ->
+                            case length(U) >= 2 andalso not usec_ucd:is_highly_restrictive(Input) of
+                                true ->
+                                    case usec_ucd:is_covered_cjk(Input) of
+                                        true -> <<"CjkMix">>;
+                                        false -> <<"ScriptMixOther">>
+                                    end;
+                                false ->
+                                    case IdentifierField andalso
+                                         usec_ucd:restriction_level(Input) =:= unrestricted of
+                                        true -> <<"UnrestrictedLevel">>;
+                                        false -> none
+                                    end
+                            end
+                    end
+            end
+    end.
 
 mixed_script_subthreat(Input) ->
     U = usec_ucd:string_script_union(Input),

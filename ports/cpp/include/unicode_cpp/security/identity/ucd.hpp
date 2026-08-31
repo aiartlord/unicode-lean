@@ -134,6 +134,12 @@ struct Tables {
             composition_table;
     std::vector<RangeEntry<std::string>> scripts;
     std::vector<RangeEntry<std::vector<std::string>>> script_extensions;
+    // Every abbreviation occurring in `script_extensions`, which is the set the
+    // resolver can name. `Unicode/ResolvedScripts.lean` models the same set as
+    // its `ScriptAbbrev` enum, so a primary script outside it resolves to no
+    // abbreviation on both sides. Derived once at load: the fallback path runs
+    // per codepoint, so a scan of the range table there would be hot.
+    std::unordered_set<std::string> script_extension_abbrevs;
     std::vector<std::pair<std::uint32_t, std::uint32_t>> id_allowed_ranges;
     // UAX #31 XID_Start / XID_Continue ranges from DerivedCoreProperties.txt,
     // in file order (membership is a linear range scan, mirroring the Cased /
@@ -675,6 +681,11 @@ inline Tables Tables::parse(
     detail::parse_scripts(scripts_text, t.scripts);
     detail::parse_script_extensions(
         script_extensions_text, t.script_extensions);
+    for (const auto& row : t.script_extensions) {
+        for (const auto& abbrev : row.value) {
+            t.script_extension_abbrevs.insert(abbrev);
+        }
+    }
     detail::parse_identifier_status(
         identifier_status_text, t.id_allowed_ranges);
     detail::parse_property_value_aliases(
@@ -1074,7 +1085,14 @@ inline std::vector<std::string> resolve_scripts(
         const auto& prev = *(it - 1);
         if (cp <= prev.end) return prev.value;
     }
-    return {script_long_to_abbrev(t, script_of(t, cp))};
+    // A primary script with no abbreviation in the resolver's vocabulary
+    // resolves to the empty set, mirroring `resolveScripts` in
+    // `Unicode/ResolvedScripts.lean`. Returning a singleton instead would make
+    // every unknown-script codepoint look Single-Script, putting
+    // `restriction_level` one rung too strict and hiding `RestrictionLow`.
+    const std::string abbrev = script_long_to_abbrev(t, script_of(t, cp));
+    if (t.script_extension_abbrevs.count(abbrev) != 0) return {abbrev};
+    return {};
 }
 
 inline bool is_common_script(const Tables& t, std::uint32_t cp) {

@@ -165,12 +165,35 @@ final class Policy
         };
     }
 
+    /**
+     * True iff the profile names a field holding one identifier, not running
+     * text. A username, a registrable domain and a DNS label are single
+     * identifiers, so a codepoint outside the General Security Profile is a
+     * hazard in them. The remaining profiles carry prose, source, URLs or
+     * opaque bytes, where a space and a punctuation mark are ordinary content.
+     * Mirrors profileIsIdentifierField in Unicode/Security/Policy.lean.
+     */
+    public static function profileIsIdentifierField(Profile $profile): bool
+    {
+        return $profile === Profile::DomainName
+            || $profile === Profile::DnsLabel
+            || $profile === Profile::Username;
+    }
+
     public static function policyOfProfile(Profile $profile): ProfilePolicy
     {
         return match ($profile) {
-            Profile::GatewayHeader, Profile::DomainName, Profile::DnsLabel, Profile::SourceCode
+            Profile::GatewayHeader, Profile::DomainName, Profile::DnsLabel
                 => new ProfilePolicy(PolicyLevel::Restrictive, CryptoContext::NonCrypto, false),
-            Profile::Url => new ProfilePolicy(PolicyLevel::Moderate, CryptoContext::NonCrypto, false),
+            // Source files legitimately carry right-to-left string
+            // literals, comments written in Hebrew or Arabic, and emoji.
+            // Restrictive admits RtlInjection, whose contract treats its
+            // input as a declared-LTR field, so under it an ordinary Hebrew
+            // comment is rejected. Moderate retains every detector that
+            // catches the Trojan Source class while dropping the
+            // field-direction assumption a source file does not satisfy.
+            Profile::Url, Profile::SourceCode
+                => new ProfilePolicy(PolicyLevel::Moderate, CryptoContext::NonCrypto, false),
             Profile::Username => new ProfilePolicy(PolicyLevel::Moderate, CryptoContext::NonCrypto, true),
             Profile::DisplayName, Profile::ChatMessage => new ProfilePolicy(PolicyLevel::Minimal, CryptoContext::NonCrypto, true),
             Profile::OpaqueSecret => new ProfilePolicy(PolicyLevel::Minimal, CryptoContext::HashInput, false),
@@ -356,12 +379,15 @@ final class Policy
         self::pushPositionalHazard($findings, Family::NoncharacterControl, 'C1Control', self::positionsWhere($input, [self::class, 'c1Control']));
 
         $h = HomoglyphConfusable::detect($input);
-        if (self::subTag($h->sub) !== 'CrossScriptMix') {
-            $positions = $h->kind === ClassificationKind::Clear ? [] : array_keys($input);
-            self::pushFinding($findings, Family::HomoglyphConfusable, $h->kind, $h->sub, $positions);
-        }
-        if (HomoglyphConfusable::hasMixedScriptAdmissibility($input)) {
-            self::pushFinding($findings, Family::MixedScriptAdmissibility, ClassificationKind::Hazard, HomoglyphConfusable::mixedScriptSubThreat($input), array_keys($input));
+        // Every rung of the homoglyph ladder is reported, CrossScriptMix
+        // included. Unicode/Security/Policy.lean maps every non-clear family
+        // result to a finding without filtering, so suppressing this rung would
+        // report fewer findings than the proven spec for a cross-script input.
+        $positions = $h->kind === ClassificationKind::Clear ? [] : array_keys($input);
+        self::pushFinding($findings, Family::HomoglyphConfusable, $h->kind, $h->sub, $positions);
+        $mixedSub = HomoglyphConfusable::mixedScriptVerdict($input, self::profileIsIdentifierField($profile));
+        if ($mixedSub !== null) {
+            self::pushFinding($findings, Family::MixedScriptAdmissibility, ClassificationKind::Hazard, $mixedSub, array_keys($input));
         }
 
         $rtl = RtlInjection::detect($input);

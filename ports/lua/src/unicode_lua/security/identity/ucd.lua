@@ -722,6 +722,26 @@ end
 
 -- Resolved-script abbreviations for `cp`: ScriptExtensions when present, else
 -- the single primary script mapped to its 4-letter abbrev.
+-- The abbreviations the resolver can name: those occurring in
+-- ScriptExtensions.txt. Unicode/ResolvedScripts.lean models the same set as its
+-- ScriptAbbrev enum, which is why its scriptToAbbrev is partial over Script. A
+-- codepoint whose primary script falls outside this set resolves to no
+-- abbreviation on both sides; returning a singleton instead would make every
+-- unknown-script codepoint look Single-Script, putting restriction_level one
+-- rung too strict and hiding RestrictionLow.
+local script_ext_abbrevs_cache = nil
+local function script_extension_abbrevs()
+  if script_ext_abbrevs_cache == nil then
+    script_ext_abbrevs_cache = {}
+    for _, row in ipairs(script_extensions_table()) do
+      for _, abbrev in ipairs(row.value) do
+        script_ext_abbrevs_cache[abbrev] = true
+      end
+    end
+  end
+  return script_ext_abbrevs_cache
+end
+
 function M.resolve_scripts(cp)
   local ext = script_extensions_table()
   local idx = partition_point(ext, function(r) return r.start end, cp)
@@ -735,7 +755,11 @@ function M.resolve_scripts(cp)
       return copy
     end
   end
-  return { script_long_to_abbrev(M.script_of(cp)) }
+  local abbrev = script_long_to_abbrev(M.script_of(cp))
+  if script_extension_abbrevs()[abbrev] then
+    return { abbrev }
+  end
+  return {}
 end
 
 function M.is_common_script(cp)

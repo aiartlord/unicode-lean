@@ -702,6 +702,27 @@ macro_rules! push_classified {
     }};
 }
 
+/// True iff the profile names a field that holds one identifier rather than
+/// running text.
+///
+/// A username, a registrable domain and a DNS label are single identifiers, so
+/// a codepoint outside the General Security Profile is a hazard in them. The
+/// remaining profiles carry prose, source, URLs or opaque bytes, where a space
+/// and a punctuation mark are ordinary content. Mirrors
+/// `profileIsIdentifierField` in `Unicode/Security/Policy.lean`.
+pub fn profile_is_identifier_field(profile: Profile) -> bool {
+    match profile {
+        Profile::DomainName | Profile::DnsLabel | Profile::Username => true,
+        Profile::GatewayHeader
+        | Profile::Url
+        | Profile::DisplayName
+        | Profile::ChatMessage
+        | Profile::SourceCode
+        | Profile::OpaqueSecret
+        | Profile::BinaryBlob => false,
+    }
+}
+
 pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
     let mut findings = Vec::new();
 
@@ -777,7 +798,15 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
 
     let homoglyph = homoglyph_confusable::detect(input);
     let homoglyph_sub = homoglyph.sub.as_ref().map(|sub| sub.tag());
-    if homoglyph_sub != Some("CrossScriptMix") {
+    // Every rung of the homoglyph ladder is reported, CrossScriptMix included.
+    // `Unicode/Security/Policy.lean` maps every non-clear family result to a
+    // finding without filtering, so suppressing this rung would report fewer
+    // findings than the proven spec for a cross-script input. The script mix
+    // also surfaces under mixed-script-admissibility below; the two are
+    // different questions about the same input -- whether it is confusable
+    // with something else, and whether its script set is admissible -- and a
+    // caller filters by family rather than the scan choosing for it.
+    {
         push_finding(
             &mut findings,
             Family::HomoglyphConfusable,
@@ -790,12 +819,14 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
             },
         );
     }
-    if homoglyph_confusable::has_mixed_script_admissibility(input) {
+    if let Some(sub) =
+        homoglyph_confusable::mixed_script_verdict(input, profile_is_identifier_field(profile))
+    {
         push_finding(
             &mut findings,
             Family::MixedScriptAdmissibility,
             ClassificationKind::Hazard,
-            Some(homoglyph_confusable::mixed_script_subthreat(input)),
+            Some(sub),
             (0..input.len()).collect(),
         );
     }

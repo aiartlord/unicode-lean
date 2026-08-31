@@ -760,7 +760,30 @@ def resolve_scripts(cp: int) -> list[str]:
         entry = ext_table[idx - 1]
         if cp <= entry.end:
             return list(entry.value)
-    return [_script_long_to_abbrev(script_of(cp))]
+    abbrev = _script_long_to_abbrev(script_of(cp))
+    return [abbrev] if abbrev in _script_extension_abbrevs() else []
+
+
+_SCRIPT_EXT_ABBREVS: set[str] | None = None
+
+
+def _script_extension_abbrevs() -> set[str]:
+    """The abbreviations the resolver can name: those occurring in
+    ``ScriptExtensions.txt``.
+
+    ``Unicode/ResolvedScripts.lean`` models the same set as its ``ScriptAbbrev``
+    enum, which is why its ``scriptToAbbrev`` is partial over ``Script``. A
+    codepoint whose primary script falls outside this set resolves to no
+    abbreviation on both sides. Returning a singleton instead would make every
+    unknown-script codepoint look Single-Script, putting ``restriction_level``
+    one rung too strict and hiding ``RestrictionLow``.
+    """
+    global _SCRIPT_EXT_ABBREVS
+    if _SCRIPT_EXT_ABBREVS is None:
+        _SCRIPT_EXT_ABBREVS = {
+            abbrev for row in _script_extensions_table() for abbrev in row.value
+        }
+    return _SCRIPT_EXT_ABBREVS
 
 
 def is_common_script(cp: int) -> bool:

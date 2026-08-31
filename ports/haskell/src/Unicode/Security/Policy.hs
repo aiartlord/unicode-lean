@@ -302,7 +302,13 @@ policyOfProfile :: Profile -> ProfilePolicy
 policyOfProfile ProfileGatewayHeader = ProfilePolicy PolicyRestrictive False
 policyOfProfile ProfileDomainName    = ProfilePolicy PolicyRestrictive False
 policyOfProfile ProfileDnsLabel      = ProfilePolicy PolicyRestrictive False
-policyOfProfile ProfileSourceCode    = ProfilePolicy PolicyRestrictive False
+-- Source files legitimately carry right-to-left string literals, comments
+-- written in Hebrew or Arabic, and emoji. Restrictive admits RtlInjection,
+-- whose contract treats its input as a declared-LTR field, so under it an
+-- ordinary Hebrew comment is rejected. Moderate retains every detector that
+-- catches the Trojan Source class while dropping the field-direction
+-- assumption a source file does not satisfy.
+policyOfProfile ProfileSourceCode    = ProfilePolicy PolicyModerate False
 policyOfProfile ProfileUrl           = ProfilePolicy PolicyModerate False
 policyOfProfile ProfileUsername      = ProfilePolicy PolicyModerate True
 policyOfProfile ProfileDisplayName   = ProfilePolicy PolicyMinimal True
@@ -310,9 +316,23 @@ policyOfProfile ProfileChatMessage   = ProfilePolicy PolicyMinimal True
 policyOfProfile ProfileOpaqueSecret  = ProfilePolicy PolicyMinimal False
 policyOfProfile ProfileBinaryBlob    = ProfilePolicy PolicyMinimal False
 
+-- | True iff the profile names a field that holds one identifier rather than
+-- running text.
+--
+-- A username, a registrable domain and a DNS label are single identifiers, so a
+-- codepoint outside the General Security Profile is a hazard in them. The
+-- remaining profiles carry prose, source, URLs or opaque bytes, where a space
+-- and a punctuation mark are ordinary content. Mirrors @profileIsIdentifierField@
+-- in @Unicode/Security/Policy.lean@.
+profileIsIdentifierField :: Profile -> Bool
+profileIsIdentifierField ProfileDomainName = True
+profileIsIdentifierField ProfileDnsLabel = True
+profileIsIdentifierField ProfileUsername = True
+profileIsIdentifierField _ = False
+
 scan :: Profile -> Mode -> [Int] -> Verdict
 scan profile mode input =
-  let findings = detect input
+  let findings = detect input (profileIsIdentifierField profile)
   in Verdict
        { verdictInput = input
        , verdictProfile = profile
@@ -433,8 +453,11 @@ readWord32 bigEndian bytes offset =
        then (b0 `shiftL` 24) .|. (b1 `shiftL` 16) .|. (b2 `shiftL` 8) .|. b3
        else b0 .|. (b1 `shiftL` 8) .|. (b2 `shiftL` 16) .|. (b3 `shiftL` 24)
 
-detect :: [Int] -> [Finding]
-detect input =
+-- | Run every family over @input@. @identifierField@ carries what the caller
+-- knows about the field, mirroring @Unicode.Security.RunAll@'s @Context@: a
+-- family scoped to identifiers needs to know whether it is holding one.
+detect :: [Int] -> Bool -> [Finding]
+detect input identifierField =
   tagBlockFinding input
     ++ variationSelectorFinding input
     ++ zeroWidthFinding input
@@ -442,7 +465,7 @@ detect input =
     ++ bidiFinding input
     ++ noncharacterControlFindings input
     ++ homoglyphFinding input
-    ++ mixedScriptAdmissibilityFinding input
+    ++ mixedScriptAdmissibilityFinding input identifierField
     ++ rtlInjectionFinding input
     ++ confusableBidiCompoundFinding input
     ++ covertDisplayCompoundFinding input
@@ -654,7 +677,10 @@ blocks PolicyModerate FamilyBidiControlBalance    = True
 blocks PolicyModerate FamilyNoncharacterControl = True
 blocks PolicyModerate FamilyHomoglyphConfusable = True
 blocks PolicyModerate FamilyMixedScriptAdmissibility = True
-blocks PolicyModerate FamilyRtlInjection = True
+-- RtlInjection's contract treats its input as a declared-LTR field, which a
+-- source file or a display string does not satisfy, so Moderate drops it while
+-- keeping every detector that catches the Trojan Source class.
+blocks PolicyModerate FamilyRtlInjection = False
 blocks PolicyModerate FamilyConfusableBidiCompound = True
 blocks PolicyModerate FamilyCovertDisplayCompound = True
 blocks PolicyModerate FamilyEmojiZwjIntegrity        = False
@@ -944,7 +970,9 @@ sourceDisplayDivergenceFinding input =
 -- module's own run.
 homoglyphConstituentFinding :: [Int] -> [Finding]
 homoglyphConstituentFinding input =
-  homoglyphFinding input ++ mixedScriptAdmissibilityFinding input
+  -- The constituent asks the script question about a source file, which is not
+  -- an identifier field, so the Restricted-status rung does not apply.
+  homoglyphFinding input ++ mixedScriptAdmissibilityFinding input False
 
 homoglyphFinding :: [Int] -> [Finding]
 homoglyphFinding input
@@ -956,6 +984,13 @@ homoglyphFinding input
       [ makeHomoglyphFinding "WidthClass" ]
   | hasDecompositionSwap input =
       [ makeHomoglyphFinding "DecompositionSwap" ]
+  -- The last two rungs of the Lean ladder, in its order: a cross-script mix
+  -- that is not Highly Restrictive, then a string failing every restriction
+  -- level. Both need real script resolution.
+  | hasCrossScriptMix input =
+      [ makeHomoglyphFinding "CrossScriptMix" ]
+  | restrictionLevel input `elem` [RestrictionMinimallyRestrictive, RestrictionUnrestricted] =
+      [ makeHomoglyphFinding "RestrictionLow" ]
   | otherwise = []
   where
     makeHomoglyphFinding :: String -> Finding
@@ -969,34 +1004,23 @@ homoglyphFinding input
         , findingDetail = familyTag FamilyHomoglyphConfusable
         }
 
-mixedScriptAdmissibilityFinding :: [Int] -> [Finding]
-mixedScriptAdmissibilityFinding input
-  | hasCrossScriptMix input =
-      let sub = mixedScriptSubThreat input
-       in [ Finding
-              { findingCode = reasonCode FamilyMixedScriptAdmissibility sub
-              , findingFamily = FamilyMixedScriptAdmissibility
-              , findingSeverity = 2
-              , findingPositions = [0 .. length input - 1]
-              , findingSubThreat = sub
-              , findingDetail = familyTag FamilyMixedScriptAdmissibility
-              }
-          ]
+mixedScriptAdmissibilityFinding :: [Int] -> Bool -> [Finding]
+mixedScriptAdmissibilityFinding input identifierField
+  | Just sub <- mixedScriptVerdict input identifierField =
+      [ Finding
+          { findingCode = reasonCode FamilyMixedScriptAdmissibility sub
+          , findingFamily = FamilyMixedScriptAdmissibility
+          , findingSeverity = 2
+          , findingPositions = [0 .. length input - 1]
+          , findingSubThreat = sub
+          , findingDetail = familyTag FamilyMixedScriptAdmissibility
+          }
+      ]
   | otherwise = []
 
 -- The specific script-collision sub-threat, matching the Lean source of truth:
 -- Latin/Cyrillic and Latin/Greek are named explicitly (Cyrillic before Greek);
 -- every other multi-script mix is ScriptMixOther.
-mixedScriptSubThreat :: [Int] -> String
-mixedScriptSubThreat input
-  | has "Latn" && has "Cyrl" = "LatinCyrillic"
-  | has "Latn" && has "Grek" = "LatinGreek"
-  | otherwise = "ScriptMixOther"
-  where
-    scripts = foldl addUnique [] (mapMaybe scriptClass input)
-    addUnique acc s = if s `elem` acc then acc else s : acc
-    has s = s `elem` scripts
-
 isMathAlphanumeric :: Int -> Bool
 isMathAlphanumeric cp = cp >= 0x1D400 && cp <= 0x1D7FF
 
@@ -1032,38 +1056,204 @@ primaryCompositionMap =
     , NormalizationLookup.canonicalCombiningClass a == 0
     ]
 
-hasCrossScriptMix :: [Int] -> Bool
-hasCrossScriptMix =
-  (>= 2) . length . foldl addUnique [] . mapMaybe scriptClass
+-- UTS #39 §5.1 restriction levels, mirroring @Unicode/Restriction.lean@.
+--
+-- Script resolution reads the vendored @Scripts.txt@ and @ScriptExtensions.txt@:
+-- a codepoint's @Script_Extensions@ where the file gives one, otherwise the
+-- abbreviation of its primary @Script@. The abbreviation vocabulary is exactly
+-- the set occurring in @ScriptExtensions.txt@, which is what
+-- @Unicode/ResolvedScripts.lean@ models as its @ScriptAbbrev@ enum, so a
+-- primary script outside it resolves to nothing on both sides. Returning a
+-- singleton there instead would make every unknown-script codepoint look
+-- Single-Script, putting 'restrictionLevel' one rung too strict and hiding
+-- @RestrictionLow@.
+
+data RestrictionLevel
+  = RestrictionAsciiOnly
+  | RestrictionSingleScript
+  | RestrictionHighlyRestrictive
+  | RestrictionModeratelyRestrictive
+  | RestrictionMinimallyRestrictive
+  | RestrictionUnrestricted
+  deriving (Eq, Show)
+
+-- | Parse a @"RANGE ; VALUE"@ table into ranges. The value field splits on
+-- whitespace, so a @Scripts.txt@ row yields one long name and a
+-- @ScriptExtensions.txt@ row yields its abbreviation list.
+parseScriptRanges :: String -> [(Int, Int, [String])]
+parseScriptRanges raw = mapMaybe parseLine (lines raw)
   where
-    addUnique acc script
-      | script `elem` acc = acc
-      | otherwise = script : acc
+    parseLine rawLine =
+      let body = takeWhile (/= '#') rawLine
+          (rangeField, rest) = break (== ';') body
+      in case rest of
+           (_ : valueField) ->
+             let value = words valueField
+                 field = trim rangeField
+             in case (value, parseRangeField field) of
+                  ([], _) -> Nothing
+                  (_, Nothing) -> Nothing
+                  (_, Just (lo, hi)) -> Just (lo, hi, value)
+           [] -> Nothing
 
-scriptClass :: Int -> Maybe String
-scriptClass cp
-  | isLatinScript cp = Just "Latn"
-  | isGreekScript cp = Just "Grek"
-  | isCyrillicScript cp = Just "Cyrl"
+    parseRangeField field = case breakOnDots field of
+      Just (loText, hiText) -> (,) <$> parseHexInt loText <*> parseHexInt hiText
+      Nothing -> (\cp -> (cp, cp)) <$> parseHexInt field
+
+    breakOnDots s = case break (== '.') s of
+      (before, '.' : '.' : after) -> Just (before, after)
+      _ -> Nothing
+
+scriptRanges :: [(Int, Int, [String])]
+scriptRanges = unsafePerformIO $ do
+  path <- getDataFileName "data/Scripts.txt"
+  parseScriptRanges <$> readFile path
+{-# NOINLINE scriptRanges #-}
+
+scriptExtRanges :: [(Int, Int, [String])]
+scriptExtRanges = unsafePerformIO $ do
+  path <- getDataFileName "data/ScriptExtensions.txt"
+  parseScriptRanges <$> readFile path
+{-# NOINLINE scriptExtRanges #-}
+
+-- | Every abbreviation occurring in @ScriptExtensions.txt@, the resolver's
+-- whole vocabulary.
+scriptExtAbbrevs :: Set String
+scriptExtAbbrevs = Set.fromList [abbrev | (_, _, value) <- scriptExtRanges, abbrev <- value]
+{-# NOINLINE scriptExtAbbrevs #-}
+
+-- | Script long name to four-letter abbreviation, from the @sc@ rows of
+-- @PropertyValueAliases.txt@.
+scriptAliasMap :: Map String String
+scriptAliasMap = unsafePerformIO $ do
+  path <- getDataFileName "data/PropertyValueAliases.txt"
+  Map.fromList . mapMaybe parseAlias . lines <$> readFile path
+  where
+    parseAlias rawLine = case splitOnSemis (takeWhile (/= '#') rawLine) of
+      (prop : abbrev : name : _)
+        | trim prop == "sc"
+        , not (null (trim abbrev))
+        , not (null (trim name)) -> Just (trim name, trim abbrev)
+      _ -> Nothing
+    splitOnSemis s = case break (== ';') s of
+      (before, ';' : after) -> before : splitOnSemis after
+      (before, _) -> [before]
+{-# NOINLINE scriptAliasMap #-}
+
+findScriptRange :: [(Int, Int, [String])] -> Int -> Maybe [String]
+findScriptRange ranges cp =
+  case [value | (lo, hi, value) <- ranges, lo <= cp, cp <= hi] of
+    (value : _) -> Just value
+    [] -> Nothing
+
+scriptOf :: Int -> String
+scriptOf cp = case findScriptRange scriptRanges cp of
+  Just (name : _) -> name
+  _ -> "Unknown"
+
+resolveScripts :: Int -> [String]
+resolveScripts cp = case findScriptRange scriptExtRanges cp of
+  Just value -> value
+  Nothing -> case Map.lookup (scriptOf cp) scriptAliasMap of
+    Just abbrev | Set.member abbrev scriptExtAbbrevs -> [abbrev]
+    _ -> []
+
+isIgnoredForIntersection :: Int -> Bool
+isIgnoredForIntersection cp = scriptOf cp == "Common" || scriptOf cp == "Inherited"
+
+stringScriptUnion :: [Int] -> [String]
+stringScriptUnion input =
+  foldl addUnique [] (concatMap resolveScripts (filter (not . isIgnoredForIntersection) input))
+  where
+    addUnique acc s = if s `elem` acc then acc else acc ++ [s]
+
+stringResolvedScripts :: [Int] -> [String]
+stringResolvedScripts input =
+  case filter (not . isIgnoredForIntersection) input of
+    [] -> []
+    (first : rest) -> foldl intersect (resolveScripts first) (map resolveScripts rest)
+  where
+    intersect acc resolved = filter (`elem` resolved) acc
+
+isAsciiOnly :: [Int] -> Bool
+isAsciiOnly = all (< 0x80)
+
+isSingleScript :: [Int] -> Bool
+isSingleScript input = not (isAsciiOnly input) && not (null (stringResolvedScripts input))
+
+allWithinCovered :: [Int] -> [String] -> Bool
+allWithinCovered input covered = all withinCovered (filter (not . isIgnoredForIntersection) input)
+  where
+    withinCovered cp =
+      let resolved = resolveScripts cp
+      in not (null resolved) && any (`elem` covered) resolved
+
+isCoveredCjk :: [Int] -> Bool
+isCoveredCjk input =
+  allWithinCovered input ["Latn", "Hani", "Hira", "Kana"]
+    || allWithinCovered input ["Latn", "Hani", "Bopo"]
+    || allWithinCovered input ["Latn", "Hani", "Hang"]
+
+isHighlyRestrictive :: [Int] -> Bool
+isHighlyRestrictive input = isSingleScript input || isCoveredCjk input
+
+-- | Every codepoint resolves to Latin or to one fixed other Recommended script,
+-- with that other script neither Cyrillic nor Greek.
+isModeratelyRestrictiveShape :: [Int] -> Bool
+isModeratelyRestrictiveShape input = go (filter (not . isIgnoredForIntersection) input) Nothing
+  where
+    go [] other = isJust other
+    go (cp : rest) other =
+      let resolved = resolveScripts cp
+      in case resolved of
+           [] -> False
+           (s : _)
+             | "Latn" `elem` resolved -> go rest other
+             | s == "Cyrl" || s == "Grek" -> False
+             | otherwise -> case other of
+                 Nothing -> go rest (Just s)
+                 Just committed -> s == committed && go rest other
+
+isMinimallyRestrictive :: [Int] -> Bool
+isMinimallyRestrictive = all IdentifierDrift.isIdAllowed
+
+restrictionLevel :: [Int] -> RestrictionLevel
+restrictionLevel input
+  | isAsciiOnly input = RestrictionAsciiOnly
+  | isSingleScript input = RestrictionSingleScript
+  | isHighlyRestrictive input = RestrictionHighlyRestrictive
+  | isModeratelyRestrictiveShape input = RestrictionModeratelyRestrictive
+  | isMinimallyRestrictive input = RestrictionMinimallyRestrictive
+  | otherwise = RestrictionUnrestricted
+
+hasCrossScriptMix :: [Int] -> Bool
+hasCrossScriptMix input =
+  length (stringScriptUnion input) >= 2 && not (isHighlyRestrictive input)
+
+-- | The mixed-script sub-threat for @input@, or 'Nothing' when it is
+-- admissible.
+--
+-- The rung order is @MixedScriptAdmissibility.lean@'s: a Restricted-status
+-- codepoint outranks every script question, then the two named Latin pairs,
+-- then a multi-script mix split by whether it stays inside a CJK covered set,
+-- and finally an Unrestricted level with no script mix.
+--
+-- @identifierField@ carries what the caller knows about the field, mirroring
+-- that module's @Context@. Phase 1 is sound for an identifier, which cannot
+-- contain a space, and unsound for a document, where every space and every
+-- punctuation mark is Restricted.
+mixedScriptVerdict :: [Int] -> Bool -> Maybe String
+mixedScriptVerdict input identifierField
+  | identifierField && any (not . IdentifierDrift.isIdAllowed) input = Just "RestrictedStatusCp"
+  | has "Latn" && has "Cyrl" = Just "LatinCyrillic"
+  | has "Latn" && has "Grek" = Just "LatinGreek"
+  | length union_ >= 2 && not (isHighlyRestrictive input) =
+      Just (if isCoveredCjk input then "CjkMix" else "ScriptMixOther")
+  | identifierField && restrictionLevel input == RestrictionUnrestricted = Just "UnrestrictedLevel"
   | otherwise = Nothing
-
-isLatinScript :: Int -> Bool
-isLatinScript cp =
-  (0x0041 <= cp && cp <= 0x005A)
-    || (0x0061 <= cp && cp <= 0x007A)
-    || (0x00C0 <= cp && cp <= 0x024F)
-    || (0x1E00 <= cp && cp <= 0x1EFF)
-
-isGreekScript :: Int -> Bool
-isGreekScript cp =
-  (0x0370 <= cp && cp <= 0x03FF)
-    || (0x1F00 <= cp && cp <= 0x1FFF)
-
-isCyrillicScript :: Int -> Bool
-isCyrillicScript cp =
-  (0x0400 <= cp && cp <= 0x052F)
-    || (0x2DE0 <= cp && cp <= 0x2DFF)
-    || (0xA640 <= cp && cp <= 0xA69F)
+  where
+    union_ = stringScriptUnion input
+    has s = s `elem` union_
 
 findTargetMatch :: [Int] -> Maybe String
 findTargetMatch input =

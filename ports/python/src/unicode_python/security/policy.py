@@ -245,18 +245,35 @@ def rejection_set(level: PolicyLevel) -> tuple[Family, ...]:
     return _MINIMAL_REJECTION_SET
 
 
+def profile_is_identifier_field(profile: Profile) -> bool:
+    """True iff the profile names a field holding one identifier, not running text.
+
+    A username, a registrable domain and a DNS label are single identifiers, so a
+    codepoint outside the General Security Profile is a hazard in them. The
+    remaining profiles carry prose, source, URLs or opaque bytes, where a space
+    and a punctuation mark are ordinary content. Mirrors
+    ``profileIsIdentifierField`` in ``Unicode/Security/Policy.lean``.
+    """
+    return profile in {Profile.DOMAIN_NAME, Profile.DNS_LABEL, Profile.USERNAME}
+
+
 def policy_of_profile(profile: Profile) -> ProfilePolicy:
     """Default policy for a named profile."""
     if profile in {
         Profile.GATEWAY_HEADER,
         Profile.DOMAIN_NAME,
         Profile.DNS_LABEL,
-        Profile.SOURCE_CODE,
     }:
         return ProfilePolicy(
             PolicyLevel.RESTRICTIVE, CryptoContext.NON_CRYPTO, False
         )
-    if profile is Profile.URL:
+    # Source files legitimately carry right-to-left string literals, comments
+    # written in Hebrew or Arabic, and emoji. ``RESTRICTIVE`` admits
+    # ``RTL_INJECTION``, whose contract treats its input as a declared-LTR
+    # field, so under it an ordinary Hebrew comment is rejected. ``MODERATE``
+    # retains every detector that catches the Trojan Source class while
+    # dropping the field-direction assumption a source file does not satisfy.
+    if profile in {Profile.URL, Profile.SOURCE_CODE}:
         return ProfilePolicy(
             PolicyLevel.MODERATE, CryptoContext.NON_CRYPTO, False
         )
@@ -569,20 +586,26 @@ def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
     homoglyph_sub = (
         homoglyph_confusable.sub_threat_tag(homoglyph.sub) if homoglyph.sub else None
     )
-    if homoglyph_sub != "CrossScriptMix":
-        _append_finding(
-            findings,
-            Family.HOMOGLYPH_CONFUSABLE,
-            homoglyph.kind,
-            homoglyph_sub,
-            [] if homoglyph.kind is ClassificationKind.CLEAR else list(range(len(input_cps))),
-        )
-    if homoglyph_confusable.has_mixed_script_admissibility(input_cps):
+    # Every rung of the homoglyph ladder is reported, CrossScriptMix included.
+    # `Unicode/Security/Policy.lean` maps every non-clear family result to a
+    # finding without filtering, so suppressing this rung would report fewer
+    # findings than the proven spec for a cross-script input.
+    _append_finding(
+        findings,
+        Family.HOMOGLYPH_CONFUSABLE,
+        homoglyph.kind,
+        homoglyph_sub,
+        [] if homoglyph.kind is ClassificationKind.CLEAR else list(range(len(input_cps))),
+    )
+    mixed_sub = homoglyph_confusable.mixed_script_verdict(
+        input_cps, profile_is_identifier_field(profile)
+    )
+    if mixed_sub is not None:
         _append_finding(
             findings,
             Family.MIXED_SCRIPT_ADMISSIBILITY,
             ClassificationKind.HAZARD,
-            homoglyph_confusable.mixed_script_subthreat(input_cps),
+            mixed_sub,
             list(range(len(input_cps))),
         )
 

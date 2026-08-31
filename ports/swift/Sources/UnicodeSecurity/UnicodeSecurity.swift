@@ -111,9 +111,21 @@ private var graphemeExtendRangesCache: [(Int, Int)]?
 private var skinToneVariationForgeryModifierBaseCache: [(Int, Int)]?
 private var skinToneVariationForgeryPresentationCache: [(Int, Int)]?
 
+/// True iff the profile names a field that holds one identifier rather than
+/// running text.
+///
+/// A username, a registrable domain and a DNS label are single identifiers, so a
+/// codepoint outside the General Security Profile is a hazard in them. The
+/// remaining profiles carry prose, source, URLs or opaque bytes, where a space
+/// and a punctuation mark are ordinary content. Mirrors profileIsIdentifierField
+/// in Unicode/Security/Policy.lean.
+func profileIsIdentifierField(_ profile: String) -> Bool {
+    profile == Profile.domainName || profile == Profile.dnsLabel || profile == Profile.username
+}
+
 public func scan(profile: String, mode: String, input: [Int]) -> Verdict {
     let codepoints = input.map(ensureCodepoint)
-    let findings = detect(codepoints)
+    let findings = detect(codepoints, profileIsIdentifierField(profile))
     return Verdict(
         action: decide(profile: profile, mode: mode, findings: findings),
         profile: profile,
@@ -178,7 +190,10 @@ public func verdictJson(_ verdict: Verdict) -> String {
     return out
 }
 
-private func detect(_ input: [Int]) -> [Finding] {
+// detect runs every family over input. identifierField carries what the caller
+// knows about the field, mirroring Unicode.Security.RunAll's Context: a family
+// scoped to identifiers needs to know whether it is holding one.
+private func detect(_ input: [Int], _ identifierField: Bool) -> [Finding] {
     var findings: [Finding] = []
     let tagPositions = positionsWhere(input, isTagBlockAsciiPayload)
     if !tagPositions.isEmpty {
@@ -202,7 +217,7 @@ private func detect(_ input: [Int]) -> [Finding] {
     if let homoglyph = homoglyphConfusableFinding(input) {
         findings.append(homoglyph)
     }
-    if let mixedScript = mixedScriptAdmissibilityFinding(input) {
+    if let mixedScript = mixedScriptAdmissibilityFinding(input, identifierField) {
         findings.append(mixedScript)
     }
     if let rtl = rtlInjectionFinding(input) {
@@ -286,9 +301,15 @@ private func decide(profile: String, mode: String, findings: [Finding]) -> Strin
 
 private func policyOfProfile(_ profile: String) -> ProfilePolicy {
     switch profile {
-    case Profile.gatewayHeader, Profile.domainName, Profile.dnsLabel, Profile.sourceCode:
+    case Profile.gatewayHeader, Profile.domainName, Profile.dnsLabel:
         return ProfilePolicy(level: .restrictive, quarantine: false)
-    case Profile.url:
+    // Source files legitimately carry right-to-left string literals, comments
+    // written in Hebrew or Arabic, and emoji. Restrictive admits RtlInjection,
+    // whose contract treats its input as a declared-LTR field, so under it an
+    // ordinary Hebrew comment is rejected. Moderate retains every detector that
+    // catches the Trojan Source class while dropping the field-direction
+    // assumption a source file does not satisfy.
+    case Profile.url, Profile.sourceCode:
         return ProfilePolicy(level: .moderate, quarantine: false)
     case Profile.username:
         return ProfilePolicy(level: .moderate, quarantine: true)
@@ -519,15 +540,22 @@ private func homoglyphConfusableFinding(_ input: [Int]) -> Finding? {
         subThreat = "WidthClass"
     } else if hasDecompositionSwap(input) {
         subThreat = "DecompositionSwap"
+    // The last two rungs of the Lean ladder, in its order: a cross-script mix
+    // that is not Highly Restrictive, then a string failing every restriction
+    // level. Both need real script resolution.
+    } else if hasCrossScriptMix(input) {
+        subThreat = "CrossScriptMix"
+    } else if restrictionLevel(input) == .minimallyRestrictive || restrictionLevel(input) == .unrestricted {
+        subThreat = "RestrictionLow"
     } else {
         return nil
     }
     return makeFinding(family: Family.homoglyphConfusable, subThreat: subThreat, positions: fullSpanPositions(input))
 }
 
-private func mixedScriptAdmissibilityFinding(_ input: [Int]) -> Finding? {
-    guard hasCrossScriptMix(input) else { return nil }
-    return makeFinding(family: Family.mixedScriptAdmissibility, subThreat: mixedScriptSubThreat(input), positions: fullSpanPositions(input))
+private func mixedScriptAdmissibilityFinding(_ input: [Int], _ identifierField: Bool) -> Finding? {
+    guard let subThreat = mixedScriptVerdict(input, identifierField) else { return nil }
+    return makeFinding(family: Family.mixedScriptAdmissibility, subThreat: subThreat, positions: fullSpanPositions(input))
 }
 
 /// Sub-threat and offending positions of an RTL-injection scan; nil sub-threat means clear.
@@ -2125,6 +2153,9 @@ private enum Sha256 {
 // canonical data/SHA256SUMS.
 private let pinnedTableDigests: [String: String] = [
     "CaseFolding.txt": "ff8d8fefbf123574205085d6714c36149eb946d717a0c585c27f0f4ef58c4183",
+    "Scripts.txt": "9f5e50d3abaee7d6ce09480f325c706f485ae3240912527e651954d2d6b035bf",
+    "ScriptExtensions.txt": "ec2107e58825a1586acee8e0911ce18260394ac8b87e535ca325f1ccbeb06bc6",
+    "PropertyValueAliases.txt": "64e9a5f76f7a1e8b5a47d6a1f9a26522a251208f5276bdfa1559dac7cf2e827a",
     "confusables.txt": "091c7f82fc39ef208faf8f94d29c244de99254675e09de163160c810d13ef22a",
     "KnownAttackTargets.txt": "47acf87f48e23c2e3ddfb5aed877965fbe29142e61f6f85c4ee7db90c0684947",
     "StandardizedVariants.txt": "f55100b2fb11d3d75a37b8c1ab752192dbd1c4b12328c5ec6b38e3807c0ca597",
@@ -2258,35 +2289,228 @@ private func composeHangulPair(_ first: Int, _ second: Int) -> Bool {
     return isLV && isT
 }
 
-private func hasCrossScriptMix(_ input: [Int]) -> Bool {
-    Set(input.compactMap(scriptClass)).count >= 2
+// UTS #39 §5.1 restriction levels, mirroring Unicode/Restriction.lean.
+//
+// Script resolution reads the vendored Scripts.txt and ScriptExtensions.txt:
+// a codepoint's Script_Extensions where the file gives one, otherwise the
+// abbreviation of its primary Script. The abbreviation vocabulary is exactly
+// the set occurring in ScriptExtensions.txt, which is what
+// Unicode/ResolvedScripts.lean models as its ScriptAbbrev enum, so a primary
+// script outside it resolves to nothing on both sides. Returning a singleton
+// there instead would make every unknown-script codepoint look Single-Script,
+// putting restrictionLevel one rung too strict and hiding RestrictionLow.
+
+enum RestrictionLevel {
+    case asciiOnly
+    case singleScript
+    case highlyRestrictive
+    case moderatelyRestrictive
+    case minimallyRestrictive
+    case unrestricted
 }
 
-// The specific script-collision sub-threat, matching the Lean source of truth:
-// Latin/Cyrillic and Latin/Greek are named explicitly (Cyrillic before Greek);
-// every other multi-script mix is ScriptMixOther.
-private func mixedScriptSubThreat(_ input: [Int]) -> String {
-    let seen = Set(input.compactMap(scriptClass))
-    if seen.contains("Latn") && seen.contains("Cyrl") {
-        return "LatinCyrillic"
+private nonisolated(unsafe) var scriptRangesCache: [(Int, Int, [String])]?
+private nonisolated(unsafe) var scriptExtRangesCache: [(Int, Int, [String])]?
+private nonisolated(unsafe) var scriptExtAbbrevsCache: Set<String>?
+private nonisolated(unsafe) var scriptAliasCache: [String: String]?
+
+// Parse a "RANGE ; VALUE" table into ascending ranges. The value field splits on
+// whitespace, so a Scripts.txt row yields one long name and a
+// ScriptExtensions.txt row yields its abbreviation list.
+private func parseScriptRanges(_ raw: String) -> [(Int, Int, [String])] {
+    var result: [(Int, Int, [String])] = []
+    for rawLine in raw.split(separator: "\n", omittingEmptySubsequences: false) {
+        let body = rawLine.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0]
+        let line = body.trimmingCharacters(in: .whitespaces)
+        if line.isEmpty { continue }
+        let parts = line.split(separator: ";", maxSplits: 1, omittingEmptySubsequences: false)
+        if parts.count < 2 { continue }
+        let value = parts[1].split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
+        if value.isEmpty { continue }
+        let field = parts[0].trimmingCharacters(in: .whitespaces)
+        var lo: Int?
+        var hi: Int?
+        if let dots = field.range(of: "..") {
+            lo = Int(field[field.startIndex..<dots.lowerBound], radix: 16)
+            hi = Int(field[dots.upperBound...], radix: 16)
+        } else {
+            lo = Int(field, radix: 16)
+            hi = lo
+        }
+        guard let low = lo, let high = hi else { continue }
+        result.append((low, high, value))
     }
-    if seen.contains("Latn") && seen.contains("Grek") {
-        return "LatinGreek"
-    }
-    return "ScriptMixOther"
+    result.sort { $0.0 < $1.0 }
+    return result
 }
 
-private func scriptClass(_ cp: Int) -> String? {
-    if (cp >= 0x0041 && cp <= 0x005a) || (cp >= 0x0061 && cp <= 0x007a) || (cp >= 0x00c0 && cp <= 0x024f) {
-        return "Latn"
+private func scriptsTable() -> [(Int, Int, [String])] {
+    if let cached = scriptRangesCache { return cached }
+    let parsed = parseScriptRanges(readDataFile("Scripts.txt"))
+    scriptRangesCache = parsed
+    return parsed
+}
+
+private func scriptExtensionsTable() -> [(Int, Int, [String])] {
+    if let cached = scriptExtRangesCache { return cached }
+    let parsed = parseScriptRanges(readDataFile("ScriptExtensions.txt"))
+    scriptExtRangesCache = parsed
+    var abbrevs = Set<String>()
+    for row in parsed { for abbrev in row.2 { abbrevs.insert(abbrev) } }
+    scriptExtAbbrevsCache = abbrevs
+    return parsed
+}
+
+// Script long name to four-letter abbreviation, from the "sc" rows of
+// PropertyValueAliases.txt.
+private func scriptAliasMap() -> [String: String] {
+    if let cached = scriptAliasCache { return cached }
+    var map: [String: String] = [:]
+    for rawLine in readDataFile("PropertyValueAliases.txt").split(separator: "\n", omittingEmptySubsequences: false) {
+        let body = rawLine.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)[0]
+        let fields = body.split(separator: ";", omittingEmptySubsequences: false)
+        if fields.count < 3 { continue }
+        if fields[0].trimmingCharacters(in: .whitespaces) != "sc" { continue }
+        let abbrev = fields[1].trimmingCharacters(in: .whitespaces)
+        let name = fields[2].trimmingCharacters(in: .whitespaces)
+        if !abbrev.isEmpty && !name.isEmpty { map[name] = abbrev }
     }
-    if (cp >= 0x0370 && cp <= 0x03ff) || (cp >= 0x1f00 && cp <= 0x1fff) {
-        return "Grek"
-    }
-    if cp >= 0x0400 && cp <= 0x052f {
-        return "Cyrl"
-    }
+    scriptAliasCache = map
+    return map
+}
+
+private func findScriptRange(_ ranges: [(Int, Int, [String])], _ cp: Int) -> [String]? {
+    for row in ranges where row.0 <= cp && cp <= row.1 { return row.2 }
     return nil
+}
+
+private func scriptOf(_ cp: Int) -> String {
+    findScriptRange(scriptsTable(), cp)?.first ?? "Unknown"
+}
+
+private func resolveScripts(_ cp: Int) -> [String] {
+    if let ext = findScriptRange(scriptExtensionsTable(), cp) { return ext }
+    _ = scriptExtensionsTable()
+    guard let abbrev = scriptAliasMap()[scriptOf(cp)] else { return [] }
+    guard scriptExtAbbrevsCache?.contains(abbrev) == true else { return [] }
+    return [abbrev]
+}
+
+private func isIgnoredForIntersection(_ cp: Int) -> Bool {
+    let script = scriptOf(cp)
+    return script == "Common" || script == "Inherited"
+}
+
+private func stringScriptUnion(_ input: [Int]) -> Set<String> {
+    var union = Set<String>()
+    for cp in input where !isIgnoredForIntersection(cp) {
+        for s in resolveScripts(cp) { union.insert(s) }
+    }
+    return union
+}
+
+private func stringResolvedScripts(_ input: [Int]) -> [String] {
+    var acc: [String]?
+    for cp in input where !isIgnoredForIntersection(cp) {
+        let resolved = resolveScripts(cp)
+        if acc == nil {
+            acc = resolved
+            continue
+        }
+        acc = acc!.filter { resolved.contains($0) }
+    }
+    return acc ?? []
+}
+
+private func isAsciiOnly(_ input: [Int]) -> Bool {
+    !input.contains { $0 >= 0x80 }
+}
+
+private func isSingleScript(_ input: [Int]) -> Bool {
+    !isAsciiOnly(input) && !stringResolvedScripts(input).isEmpty
+}
+
+private func allWithinCovered(_ input: [Int], _ covered: [String]) -> Bool {
+    for cp in input where !isIgnoredForIntersection(cp) {
+        let resolved = resolveScripts(cp)
+        if resolved.isEmpty || !resolved.contains(where: { covered.contains($0) }) { return false }
+    }
+    return true
+}
+
+private func isCoveredCjk(_ input: [Int]) -> Bool {
+    allWithinCovered(input, ["Latn", "Hani", "Hira", "Kana"])
+        || allWithinCovered(input, ["Latn", "Hani", "Bopo"])
+        || allWithinCovered(input, ["Latn", "Hani", "Hang"])
+}
+
+private func isHighlyRestrictive(_ input: [Int]) -> Bool {
+    isSingleScript(input) || isCoveredCjk(input)
+}
+
+// Every codepoint resolves to Latin or to one fixed other Recommended script,
+// with that other script neither Cyrillic nor Greek.
+private func isModeratelyRestrictiveShape(_ input: [Int]) -> Bool {
+    var other: String?
+    for cp in input where !isIgnoredForIntersection(cp) {
+        let resolved = resolveScripts(cp)
+        if resolved.isEmpty { return false }
+        if resolved.contains("Latn") { continue }
+        let s = resolved[0]
+        if s == "Cyrl" || s == "Grek" { return false }
+        if other == nil {
+            other = s
+            continue
+        }
+        if s != other { return false }
+    }
+    return other != nil
+}
+
+private func isMinimallyRestrictive(_ input: [Int]) -> Bool {
+    !input.contains { !isIdAllowed($0) }
+}
+
+func restrictionLevel(_ input: [Int]) -> RestrictionLevel {
+    if isAsciiOnly(input) { return .asciiOnly }
+    if isSingleScript(input) { return .singleScript }
+    if isHighlyRestrictive(input) { return .highlyRestrictive }
+    if isModeratelyRestrictiveShape(input) { return .moderatelyRestrictive }
+    if isMinimallyRestrictive(input) { return .minimallyRestrictive }
+    return .unrestricted
+}
+
+private func hasCrossScriptMix(_ input: [Int]) -> Bool {
+    stringScriptUnion(input).count >= 2 && !isHighlyRestrictive(input)
+}
+
+// The mixed-script sub-threat for input, or nil when it is admissible.
+//
+// The rung order is Unicode/Security/Identity/MixedScriptAdmissibility.lean's:
+// a Restricted-status codepoint outranks every script question, then the two
+// named Latin pairs, then a multi-script mix split by whether it stays inside a
+// CJK covered set, and finally an Unrestricted level with no script mix.
+//
+// identifierField carries what the caller knows about the field, mirroring that
+// module's Context. Phase 1 is sound for an identifier, which cannot contain a
+// space, and unsound for a document, where every space and every punctuation
+// mark is Restricted.
+private func mixedScriptVerdict(_ input: [Int], _ identifierField: Bool) -> String? {
+    if identifierField && input.contains(where: { !isIdAllowed($0) }) {
+        return "RestrictedStatusCp"
+    }
+    let union = stringScriptUnion(input)
+    if union.contains("Latn") && union.contains("Cyrl") { return "LatinCyrillic" }
+    if union.contains("Latn") && union.contains("Grek") { return "LatinGreek" }
+    if union.count >= 2 && !isHighlyRestrictive(input) {
+        return isCoveredCjk(input) ? "CjkMix" : "ScriptMixOther"
+    }
+    if identifierField && restrictionLevel(input) == .unrestricted { return "UnrestrictedLevel" }
+    return nil
+}
+
+private func mixedScriptSubThreat(_ input: [Int]) -> String {
+    mixedScriptVerdict(input, true) ?? "ScriptMixOther"
 }
 
 private func isDefaultIgnorableCodepoint(_ cp: Int) -> Bool {
@@ -4820,7 +5044,9 @@ private func sourceDisplayBidiControlFired(_ input: [Int]) -> Bool {
 /// (`mixedScriptAdmissibilityFinding`) fires. Both are the scan pipeline's own
 /// detectors.
 private func sourceDisplayHomoglyphFired(_ input: [Int]) -> Bool {
-    homoglyphConfusableFinding(input) != nil || mixedScriptAdmissibilityFinding(input) != nil
+    // The constituent asks the script question about a source file, which is not
+    // an identifier field, so the Restricted-status rung does not apply.
+    homoglyphConfusableFinding(input) != nil || mixedScriptAdmissibilityFinding(input, false) != nil
 }
 
 /// The SourceDisplayDivergence detection function. Mirrors the Lean/reference

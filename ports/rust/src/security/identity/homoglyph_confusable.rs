@@ -49,14 +49,57 @@ fn parse_hex(s: &str) -> Option<u32> {
 }
 
 /// True when the input violates the mixed-script admissibility policy.
+/// Whether `input` carries a mixed-script admissibility hazard, read as the
+/// identifier the family's threat model describes.
 pub fn has_mixed_script_admissibility(input: &[u32]) -> bool {
+    mixed_script_verdict(input, true).is_some()
+}
+
+/// The mixed-script sub-threat for `input`, or `None` when it is admissible.
+///
+/// The rung order is
+/// `Unicode/Security/Identity/MixedScriptAdmissibility.lean`'s: a
+/// Restricted-status codepoint outranks every script question, then the two
+/// named Latin pairs, then a multi-script mix split by whether it stays inside
+/// a CJK covered set, and finally an Unrestricted level with no script mix.
+///
+/// `identifier_field` carries what the caller knows about the field, mirroring
+/// that module's `Context`. Phase 1 is sound for an identifier, which cannot
+/// contain a space, and unsound for a document, where every space and every
+/// punctuation mark is Restricted and the phase would report a hazard for
+/// ordinary prose and ordinary source.
+pub fn mixed_script_verdict(input: &[u32], identifier_field: bool) -> Option<&'static str> {
+    if identifier_field && input.iter().any(|&cp| !ucd::is_id_allowed(cp)) {
+        return Some("RestrictedStatusCp");
+    }
     let union = ucd::string_script_union(input);
-    union.len() >= 2 && !ucd::is_highly_restrictive(input)
+    let has = |s: &str| union.iter().any(|x| x == s);
+    if has("Latn") && has("Cyrl") {
+        return Some("LatinCyrillic");
+    }
+    if has("Latn") && has("Grek") {
+        return Some("LatinGreek");
+    }
+    if union.len() >= 2 && !ucd::is_highly_restrictive(input) {
+        return Some(if ucd::is_covered_cjk(input) {
+            "CjkMix"
+        } else {
+            "ScriptMixOther"
+        });
+    }
+    if identifier_field && ucd::restriction_level(input) == ucd::RestrictionLevel::Unrestricted {
+        return Some("UnrestrictedLevel");
+    }
+    None
 }
 
 /// The specific script-collision sub-threat, matching the Lean source of truth:
 /// Latin/Cyrillic and Latin/Greek are named explicitly (Cyrillic before Greek),
 /// every other multi-script mix is `ScriptMixOther`.
+/// The specific script-collision sub-threat, matching the Lean source of truth:
+/// Latin/Cyrillic and Latin/Greek are named explicitly (Cyrillic before Greek),
+/// a mix that stays inside one CJK covered set is `CjkMix`, and every other
+/// multi-script mix is `ScriptMixOther`.
 pub fn mixed_script_subthreat(input: &[u32]) -> &'static str {
     let union = ucd::string_script_union(input);
     let has = |s: &str| union.iter().any(|x| x == s);
@@ -64,6 +107,8 @@ pub fn mixed_script_subthreat(input: &[u32]) -> &'static str {
         "LatinCyrillic"
     } else if has("Latn") && has("Grek") {
         "LatinGreek"
+    } else if ucd::is_covered_cjk(input) {
+        "CjkMix"
     } else {
         "ScriptMixOther"
     }

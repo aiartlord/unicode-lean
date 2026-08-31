@@ -565,30 +565,58 @@ inline Verdict detect(std::span<const std::uint32_t> input,
   return v;
 }
 
-inline bool has_mixed_script_admissibility(std::span<const std::uint32_t> input,
-                                           const Database &db) {
-  const auto script_union = ucd::string_script_union(db.tables, input);
-  return script_union.size() >= 2 &&
-         !ucd::is_highly_restrictive(db.tables, input);
-}
-
-// The specific script-collision sub-threat, matching the Lean source of truth:
-// Latin/Cyrillic and Latin/Greek are named explicitly (Cyrillic before Greek);
-// every other multi-script mix is ScriptMixOther.
-inline std::string mixed_script_subthreat(std::span<const std::uint32_t> input,
-                                          const Database &db) {
+// The mixed-script sub-threat for `input`, or nullopt when it is admissible.
+//
+// The rung order is Unicode/Security/Identity/MixedScriptAdmissibility.lean's:
+// a Restricted-status codepoint outranks every script question, then the two
+// named Latin pairs, then a multi-script mix split by whether it stays inside
+// a CJK covered set, and finally an Unrestricted level with no script mix.
+//
+// `identifier_field` carries what the caller knows about the field, mirroring
+// that module's Context. Phase 1 is sound for an identifier, which cannot
+// contain a space, and unsound for a document, where every space and every
+// punctuation mark is Restricted.
+inline std::optional<std::string>
+mixed_script_verdict(std::span<const std::uint32_t> input, const Database &db,
+                     bool identifier_field) {
+  if (identifier_field) {
+    for (std::uint32_t cp : input) {
+      if (!ucd::is_id_allowed(db.tables, cp)) {
+        return std::optional<std::string>{"RestrictedStatusCp"};
+      }
+    }
+  }
   const auto script_union = ucd::string_script_union(db.tables, input);
   const auto has = [&](const std::string &s) {
     return std::find(script_union.begin(), script_union.end(), s) !=
            script_union.end();
   };
   if (has("Latn") && has("Cyrl")) {
-    return "LatinCyrillic";
+    return std::optional<std::string>{"LatinCyrillic"};
   }
   if (has("Latn") && has("Grek")) {
-    return "LatinGreek";
+    return std::optional<std::string>{"LatinGreek"};
   }
-  return "ScriptMixOther";
+  if (script_union.size() >= 2 &&
+      !ucd::is_highly_restrictive(db.tables, input)) {
+    return std::optional<std::string>{
+        ucd::is_covered_cjk(db.tables, input) ? "CjkMix" : "ScriptMixOther"};
+  }
+  if (identifier_field && ucd::restriction_level(db.tables, input) ==
+                              ucd::RestrictionLevel::Unrestricted) {
+    return std::optional<std::string>{"UnrestrictedLevel"};
+  }
+  return std::nullopt;
+}
+
+inline bool has_mixed_script_admissibility(std::span<const std::uint32_t> input,
+                                           const Database &db) {
+  return mixed_script_verdict(input, db, true).has_value();
+}
+
+inline std::string mixed_script_subthreat(std::span<const std::uint32_t> input,
+                                          const Database &db) {
+  return mixed_script_verdict(input, db, true).value_or("ScriptMixOther");
 }
 
 } // namespace unicode_cpp::security::homoglyph_confusable

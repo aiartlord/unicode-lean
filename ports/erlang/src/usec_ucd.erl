@@ -20,7 +20,7 @@
          script_of/1, resolve_scripts/1, string_script_union/1,
          is_default_ignorable/1, is_white_space/1, is_id_allowed/1,
          is_default_identifier/1, is_allowed_identifier/1,
-         is_highly_restrictive/1, restriction_level/1]).
+         is_highly_restrictive/1, is_covered_cjk/1, restriction_level/1]).
 
 -export_type([restriction_level/0, bidi_strong/0, east_asian_width/0]).
 
@@ -576,9 +576,29 @@ parse_script_extensions() ->
 -spec resolve_scripts(non_neg_integer()) -> [binary()].
 resolve_scripts(Cp) ->
     case find_range_value(script_extensions_table(), Cp, none) of
-        none -> [script_long_to_abbrev(script_of(Cp))];
+        none -> fallback_scripts(script_long_to_abbrev(script_of(Cp)));
         Scripts -> Scripts
     end.
+
+%% The abbreviations the resolver can name are those occurring in
+%% ScriptExtensions.txt. Unicode/ResolvedScripts.lean models the same set as its
+%% ScriptAbbrev enum, which is why its scriptToAbbrev is partial over Script. A
+%% codepoint whose primary script falls outside this set resolves to no
+%% abbreviation on both sides; returning a singleton instead would make every
+%% unknown-script codepoint look Single-Script, putting restriction_level one
+%% rung too strict and hiding RestrictionLow.
+-spec fallback_scripts(binary()) -> [binary()].
+fallback_scripts(Abbrev) ->
+    case lists:member(Abbrev, script_extension_abbrevs()) of
+        true -> [Abbrev];
+        false -> []
+    end.
+
+-spec script_extension_abbrevs() -> [binary()].
+script_extension_abbrevs() ->
+    lists:usort(
+      lists:flatmap(fun({_Lo, _Hi, Scripts}) -> Scripts end,
+                    script_extensions_table())).
 
 is_common_script(Cp) -> script_of(Cp) =:= <<"Common">>.
 is_inherited_script(Cp) -> script_of(Cp) =:= <<"Inherited">>.

@@ -56,6 +56,34 @@ WORKING-STORAGE SECTION.
 01 HAS-LATN PIC 9 VALUE 0.
 01 HAS-GREK PIC 9 VALUE 0.
 01 HAS-CYRL PIC 9 VALUE 0.
+*> UTS #39 script resolution and restriction levels, mirroring
+*> Unicode/Restriction.lean. SCRIPT-SET-TEXT holds one codepoint's resolved
+*> abbreviations as a space-separated text, from the generated script_sets
+*> copybook: its Script_Extensions where ScriptExtensions.txt gives one,
+*> otherwise its primary Script. A script outside that vocabulary resolves to
+*> spaces on both sides, which is what keeps RestrictionLow reachable.
+01 SCRIPT-SET-TEXT PIC X(128) VALUE SPACES.
+01 SCRIPT-UNION-TEXT PIC X(512) VALUE SPACES.
+01 SCRIPT-UNION-COUNT PIC 9(3) COMP-5 VALUE 0.
+01 SCRIPT-ACC-TEXT PIC X(512) VALUE SPACES.
+01 SCRIPT-TOKEN PIC X(4) VALUE SPACES.
+01 SCRIPT-TOK-IDX PIC 9(4) COMP-5 VALUE 0.
+01 SCRIPT-COVERED PIC X(32) VALUE SPACES.
+01 SCRIPT-FLAG PIC 9 VALUE 0.
+01 SINGLE-SCRIPT-FLAG PIC 9 VALUE 0.
+01 COVERED-CJK-FLAG PIC 9 VALUE 0.
+01 HIGHLY-RESTRICTIVE-FLAG PIC 9 VALUE 0.
+01 MOD-SHAPE-FLAG PIC 9 VALUE 0.
+01 MOD-SHAPE-OTHER PIC X(4) VALUE SPACES.
+01 MIN-RESTRICTIVE-FLAG PIC 9 VALUE 0.
+01 ASCII-ONLY-FLAG PIC 9 VALUE 0.
+01 RESTRICTION-LEVEL PIC X(24) VALUE SPACES.
+01 IDENTIFIER-FIELD-FLAG PIC 9 VALUE 0.
+01 HOMO-EMITTED PIC 9 VALUE 0.
+01 POLICY-LEVEL PIC X(16) VALUE SPACES.
+01 LEVEL-PREFIX PIC X(20) VALUE SPACES.
+01 MIXED-SUB PIC X(24) VALUE SPACES.
+01 ACC-IDX PIC 9(4) COMP-5 VALUE 0.
 01 RTL-RUN PIC 9(5) COMP-5.
 01 RTL-BEST PIC 9(5) COMP-5.
 01 RTL-BEST-START PIC 9(5) COMP-5.
@@ -815,6 +843,16 @@ DECODE-UTF32.
     END-IF.
 
 SCAN-CORE.
+*> A username, a registrable domain and a DNS label hold one identifier, so a
+*> codepoint outside the General Security Profile is a hazard in them. The
+*> remaining profiles carry prose, source, URLs or opaque bytes, where a space
+*> and a punctuation mark are ordinary content. Mirrors profileIsIdentifierField
+*> in Unicode/Security/Policy.lean.
+    IF PROFILE-NAME = "domain-name" OR PROFILE-NAME = "dns-label" OR PROFILE-NAME = "username"
+        MOVE 1 TO IDENTIFIER-FIELD-FLAG
+    ELSE
+        MOVE 0 TO IDENTIFIER-FIELD-FLAG
+    END-IF
     MOVE OUT-COUNT TO CP-COUNT
     PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > OUT-COUNT
         MOVE OUT-CP(IDX) TO CP(IDX)
@@ -1078,41 +1116,99 @@ DETECT-HOMOGLYPH.
         MOVE "unicode.security.I.homoglyph-confusable.TargetMatch" TO TEMP-CODE
         PERFORM ADD-ALL-POS-FINDING
     ELSE
+        MOVE 0 TO HOMO-EMITTED
         PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
             IF CP(IDX) >= 119808 AND CP(IDX) <= 120831
                 MOVE "unicode.security.I.homoglyph-confusable.MathAlpha" TO TEMP-CODE
                 PERFORM ADD-ALL-POS-FINDING
+                MOVE 1 TO HOMO-EMITTED
                 MOVE CP-COUNT TO IDX
             ELSE
                 IF CP(IDX) >= 65281 AND CP(IDX) <= 65519
                     MOVE "unicode.security.I.homoglyph-confusable.WidthClass" TO TEMP-CODE
                     PERFORM ADD-ALL-POS-FINDING
+                    MOVE 1 TO HOMO-EMITTED
                     MOVE CP-COUNT TO IDX
                 ELSE
                     IF CP(IDX) = 769
                         MOVE "unicode.security.I.homoglyph-confusable.DecompositionSwap" TO TEMP-CODE
                         PERFORM ADD-ALL-POS-FINDING
+                        MOVE 1 TO HOMO-EMITTED
                         MOVE CP-COUNT TO IDX
                     END-IF
                 END-IF
             END-IF
         END-PERFORM
+*>      The last two rungs of the Lean ladder, in its order: a cross-script mix
+*>      that is not Highly Restrictive, then a string failing every restriction
+*>      level. Both need the resolved script sets.
+        IF HOMO-EMITTED = 0
+            PERFORM COMPUTE-CROSS-SCRIPT-MIX
+            IF TABLE-FLAG = 1
+                MOVE "unicode.security.I.homoglyph-confusable.CrossScriptMix" TO TEMP-CODE
+                PERFORM ADD-ALL-POS-FINDING
+            ELSE
+                PERFORM COMPUTE-RESTRICTION-LEVEL
+                IF RESTRICTION-LEVEL = "MinimallyRestrictive" OR RESTRICTION-LEVEL = "Unrestricted"
+                    MOVE "unicode.security.I.homoglyph-confusable.RestrictionLow" TO TEMP-CODE
+                    PERFORM ADD-ALL-POS-FINDING
+                END-IF
+            END-IF
+        END-IF
     END-IF.
 
 DETECT-MIXED-SCRIPT.
-    MOVE 0 TO HAS-LATN HAS-GREK HAS-CYRL
-    PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
-        MOVE CP(IDX) TO LOOKUP-CP
-        PERFORM APPLY-SCRIPT-FLAGS
-    END-PERFORM
-    IF HAS-LATN = 1 AND HAS-CYRL = 1
-        MOVE "unicode.security.I.mixed-script-admissibility.LatinCyrillic" TO TEMP-CODE
-        PERFORM ADD-ALL-POS-FINDING
-    ELSE
-        IF HAS-LATN = 1 AND HAS-GREK = 1
-            MOVE "unicode.security.I.mixed-script-admissibility.LatinGreek" TO TEMP-CODE
-            PERFORM ADD-ALL-POS-FINDING
+*> The rung order of Unicode/Security/Identity/MixedScriptAdmissibility.lean: a
+*> Restricted-status codepoint outranks every script question, then the two
+*> named Latin pairs, then a multi-script mix split by whether it stays inside a
+*> CJK covered set, and finally an Unrestricted level with no script mix.
+*>
+*> IDENTIFIER-FIELD-FLAG carries what the caller knows about the field,
+*> mirroring that module's Context. Phase 1 is sound for an identifier, which
+*> cannot contain a space, and unsound for a document, where every space and
+*> every punctuation mark is Restricted.
+    MOVE SPACES TO MIXED-SUB
+    IF IDENTIFIER-FIELD-FLAG = 1
+        PERFORM COMPUTE-MIN-RESTRICTIVE
+        IF MIN-RESTRICTIVE-FLAG = 0
+            MOVE "RestrictedStatusCp" TO MIXED-SUB
         END-IF
+    END-IF
+    IF MIXED-SUB = SPACES
+        MOVE 0 TO HAS-LATN HAS-GREK HAS-CYRL
+        PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
+            MOVE CP(IDX) TO LOOKUP-CP
+            PERFORM APPLY-SCRIPT-FLAGS
+        END-PERFORM
+        IF HAS-LATN = 1 AND HAS-CYRL = 1
+            MOVE "LatinCyrillic" TO MIXED-SUB
+        ELSE
+            IF HAS-LATN = 1 AND HAS-GREK = 1
+                MOVE "LatinGreek" TO MIXED-SUB
+            END-IF
+        END-IF
+    END-IF
+    IF MIXED-SUB = SPACES
+        PERFORM COMPUTE-CROSS-SCRIPT-MIX
+        IF TABLE-FLAG = 1
+            IF COVERED-CJK-FLAG = 1
+                MOVE "CjkMix" TO MIXED-SUB
+            ELSE
+                MOVE "ScriptMixOther" TO MIXED-SUB
+            END-IF
+        END-IF
+    END-IF
+    IF MIXED-SUB = SPACES AND IDENTIFIER-FIELD-FLAG = 1
+        PERFORM COMPUTE-RESTRICTION-LEVEL
+        IF RESTRICTION-LEVEL = "Unrestricted"
+            MOVE "UnrestrictedLevel" TO MIXED-SUB
+        END-IF
+    END-IF
+    IF MIXED-SUB NOT = SPACES
+        MOVE SPACES TO TEMP-CODE
+        STRING "unicode.security.I.mixed-script-admissibility."
+            FUNCTION TRIM(MIXED-SUB) DELIMITED BY SIZE INTO TEMP-CODE
+        PERFORM ADD-ALL-POS-FINDING
     END-IF.
 
 DETECT-RTL.
@@ -3680,12 +3776,10 @@ SELECT-ACTION.
             IF MODE-NAME = "strict"
                 MOVE "reject" TO ACTION-NAME
             ELSE
+                PERFORM SELECT-POLICY-LEVEL
                 PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > FINDING-COUNT
-                    IF PROFILE-NAME = "display-name" OR PROFILE-NAME = "chat-message"
-                        IF FINDING-CODE(IDX)(1:36) = "unicode.security.C.malformed-utf8." OR FINDING-CODE(IDX)(1:39) = "unicode.security.C.bidi-control-balance" OR FINDING-CODE(IDX)(1:40) = "unicode.security.C.noncharacter-control"
-                            MOVE 1 TO BLOCKING-FLAG
-                        END-IF
-                    ELSE
+                    PERFORM FAMILY-BLOCKS-AT-LEVEL
+                    IF TABLE-FLAG = 1
                         MOVE 1 TO BLOCKING-FLAG
                     END-IF
                 END-PERFORM
@@ -3712,6 +3806,350 @@ IS-CONFUSABLE-SOURCE.
 
 APPLY-SCRIPT-FLAGS.
     COPY "src/generated/script_flags.cpy".
+
+*> ── UTS #39 §5.1 restriction levels, mirroring Unicode/Restriction.lean ──
+
+RESOLVE-SCRIPTS.
+*> The resolved script abbreviations of LOOKUP-CP, spaces when the codepoint's
+*> script has no abbreviation in the resolver's vocabulary.
+    MOVE SPACES TO SCRIPT-SET-TEXT
+    COPY "src/generated/script_sets.cpy".
+
+IS-IGNORED-FOR-INTERSECTION.
+*> Common and Inherited codepoints are excluded from the resolved-scripts
+*> intersection per UTS #39 §5.1. Both resolve to no abbreviation here, so an
+*> empty resolved set is exactly the ignored case.
+    PERFORM RESOLVE-SCRIPTS
+    IF SCRIPT-SET-TEXT = SPACES
+        MOVE 1 TO SCRIPT-FLAG
+    ELSE
+        MOVE 0 TO SCRIPT-FLAG
+    END-IF.
+
+BUILD-SCRIPT-UNION.
+*> The union of every non-ignored codepoint's resolved scripts, as distinct
+*> four-character tokens appended to SCRIPT-UNION-TEXT.
+    MOVE SPACES TO SCRIPT-UNION-TEXT
+    MOVE 0 TO SCRIPT-UNION-COUNT
+    PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
+        MOVE CP(IDX) TO LOOKUP-CP
+        PERFORM RESOLVE-SCRIPTS
+        IF SCRIPT-SET-TEXT NOT = SPACES
+            MOVE 1 TO SCRIPT-TOK-IDX
+            PERFORM UNTIL SCRIPT-TOK-IDX > 128
+                MOVE SCRIPT-SET-TEXT(SCRIPT-TOK-IDX:4) TO SCRIPT-TOKEN
+                IF SCRIPT-TOKEN = SPACES
+                    MOVE 129 TO SCRIPT-TOK-IDX
+                ELSE
+                    PERFORM ADD-UNION-TOKEN
+                    ADD 5 TO SCRIPT-TOK-IDX
+                END-IF
+            END-PERFORM
+        END-IF
+    END-PERFORM.
+
+ADD-UNION-TOKEN.
+    IF SCRIPT-UNION-TEXT = SPACES OR
+       FUNCTION TRIM(SCRIPT-UNION-TEXT) NOT = FUNCTION TRIM(SCRIPT-UNION-TEXT)
+        CONTINUE
+    END-IF
+    MOVE 0 TO TABLE-FLAG
+    MOVE 1 TO ACC-IDX
+    PERFORM UNTIL ACC-IDX > SCRIPT-UNION-COUNT * 5
+        IF SCRIPT-UNION-TEXT(ACC-IDX:4) = SCRIPT-TOKEN
+            MOVE 1 TO TABLE-FLAG
+        END-IF
+        ADD 5 TO ACC-IDX
+    END-PERFORM
+    IF TABLE-FLAG = 0
+        COMPUTE ACC-IDX = SCRIPT-UNION-COUNT * 5 + 1
+        MOVE SCRIPT-TOKEN TO SCRIPT-UNION-TEXT(ACC-IDX:4)
+        ADD 1 TO SCRIPT-UNION-COUNT
+    END-IF.
+
+COMPUTE-SINGLE-SCRIPT.
+*> Single-Script per UTS #39 §5.1.2: not ASCII-only, and the intersection of
+*> every non-ignored codepoint's resolved scripts is non-empty.
+    MOVE 0 TO SINGLE-SCRIPT-FLAG
+    PERFORM COMPUTE-ASCII-ONLY
+    IF ASCII-ONLY-FLAG = 0
+        MOVE SPACES TO SCRIPT-ACC-TEXT
+        MOVE 0 TO FOUND-FLAG
+        PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
+            MOVE CP(IDX) TO LOOKUP-CP
+            PERFORM RESOLVE-SCRIPTS
+            IF SCRIPT-SET-TEXT NOT = SPACES
+                IF FOUND-FLAG = 0
+                    MOVE SCRIPT-SET-TEXT TO SCRIPT-ACC-TEXT
+                    MOVE 1 TO FOUND-FLAG
+                ELSE
+                    PERFORM INTERSECT-SCRIPT-ACC
+                END-IF
+            END-IF
+        END-PERFORM
+        IF FOUND-FLAG = 1 AND SCRIPT-ACC-TEXT NOT = SPACES
+            MOVE 1 TO SINGLE-SCRIPT-FLAG
+        END-IF
+    END-IF.
+
+INTERSECT-SCRIPT-ACC.
+*> Keep only the tokens of SCRIPT-ACC-TEXT that also occur in SCRIPT-SET-TEXT.
+    MOVE SPACES TO SCRIPT-UNION-TEXT
+    MOVE 0 TO ACC-IDX
+    MOVE 1 TO SCRIPT-TOK-IDX
+    PERFORM UNTIL SCRIPT-TOK-IDX > 512
+        MOVE SCRIPT-ACC-TEXT(SCRIPT-TOK-IDX:4) TO SCRIPT-TOKEN
+        IF SCRIPT-TOKEN = SPACES
+            MOVE 513 TO SCRIPT-TOK-IDX
+        ELSE
+            IF SCRIPT-SET-TEXT(1:128) IS NOT EQUAL TO SPACES AND
+               FUNCTION TRIM(SCRIPT-TOKEN) NOT = SPACES
+                MOVE 0 TO TABLE-FLAG
+                PERFORM CHECK-TOKEN-IN-SET
+                IF TABLE-FLAG = 1
+                    COMPUTE ACC-IDX = ACC-IDX + 1
+                    COMPUTE JDX = (ACC-IDX - 1) * 5 + 1
+                    MOVE SCRIPT-TOKEN TO SCRIPT-UNION-TEXT(JDX:4)
+                END-IF
+            END-IF
+            ADD 5 TO SCRIPT-TOK-IDX
+        END-IF
+    END-PERFORM
+    MOVE SCRIPT-UNION-TEXT TO SCRIPT-ACC-TEXT.
+
+CHECK-TOKEN-IN-SET.
+*> TABLE-FLAG becomes 1 when SCRIPT-TOKEN occurs in SCRIPT-SET-TEXT.
+    MOVE 1 TO POS-IDX
+    PERFORM UNTIL POS-IDX > 128
+        IF SCRIPT-SET-TEXT(POS-IDX:4) = SCRIPT-TOKEN
+            MOVE 1 TO TABLE-FLAG
+            MOVE 129 TO POS-IDX
+        ELSE
+            ADD 5 TO POS-IDX
+        END-IF
+    END-PERFORM.
+
+COMPUTE-ASCII-ONLY.
+    MOVE 1 TO ASCII-ONLY-FLAG
+    PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
+        IF CP(IDX) >= 128
+            MOVE 0 TO ASCII-ONLY-FLAG
+        END-IF
+    END-PERFORM.
+
+COMPUTE-COVERED-CJK.
+*> One of the three CJK covered sets: Japanese, Chinese, or Korean.
+    MOVE 0 TO COVERED-CJK-FLAG
+    MOVE "Latn Hani Hira Kana" TO SCRIPT-COVERED
+    PERFORM CHECK-ALL-WITHIN-COVERED
+    IF TABLE-FLAG = 1
+        MOVE 1 TO COVERED-CJK-FLAG
+    ELSE
+        MOVE "Latn Hani Bopo" TO SCRIPT-COVERED
+        PERFORM CHECK-ALL-WITHIN-COVERED
+        IF TABLE-FLAG = 1
+            MOVE 1 TO COVERED-CJK-FLAG
+        ELSE
+            MOVE "Latn Hani Hang" TO SCRIPT-COVERED
+            PERFORM CHECK-ALL-WITHIN-COVERED
+            IF TABLE-FLAG = 1
+                MOVE 1 TO COVERED-CJK-FLAG
+            END-IF
+        END-IF
+    END-IF.
+
+CHECK-ALL-WITHIN-COVERED.
+*> TABLE-FLAG stays 1 while every non-ignored codepoint resolves into
+*> SCRIPT-COVERED.
+    MOVE 1 TO TABLE-FLAG
+    PERFORM VARYING JDX FROM 1 BY 1 UNTIL JDX > CP-COUNT
+        MOVE CP(JDX) TO LOOKUP-CP
+        PERFORM RESOLVE-SCRIPTS
+        IF SCRIPT-SET-TEXT NOT = SPACES
+            MOVE 0 TO SCRIPT-FLAG
+            PERFORM CHECK-SET-INTERSECTS-COVERED
+            IF SCRIPT-FLAG = 0
+                MOVE 0 TO TABLE-FLAG
+            END-IF
+        END-IF
+    END-PERFORM.
+
+CHECK-SET-INTERSECTS-COVERED.
+    MOVE 1 TO SCRIPT-TOK-IDX
+    PERFORM UNTIL SCRIPT-TOK-IDX > 128
+        MOVE SCRIPT-SET-TEXT(SCRIPT-TOK-IDX:4) TO SCRIPT-TOKEN
+        IF SCRIPT-TOKEN = SPACES
+            MOVE 129 TO SCRIPT-TOK-IDX
+        ELSE
+            MOVE 1 TO POS-IDX
+            PERFORM UNTIL POS-IDX > 32
+                IF SCRIPT-COVERED(POS-IDX:4) = SCRIPT-TOKEN
+                    MOVE 1 TO SCRIPT-FLAG
+                    MOVE 33 TO POS-IDX
+                ELSE
+                    ADD 5 TO POS-IDX
+                END-IF
+            END-PERFORM
+            ADD 5 TO SCRIPT-TOK-IDX
+        END-IF
+    END-PERFORM.
+
+COMPUTE-HIGHLY-RESTRICTIVE.
+    PERFORM COMPUTE-SINGLE-SCRIPT
+    PERFORM COMPUTE-COVERED-CJK
+    IF SINGLE-SCRIPT-FLAG = 1 OR COVERED-CJK-FLAG = 1
+        MOVE 1 TO HIGHLY-RESTRICTIVE-FLAG
+    ELSE
+        MOVE 0 TO HIGHLY-RESTRICTIVE-FLAG
+    END-IF.
+
+COMPUTE-MIN-RESTRICTIVE.
+*> Every codepoint carries Identifier_Status = Allowed.
+    MOVE 1 TO MIN-RESTRICTIVE-FLAG
+    PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
+        MOVE CP(IDX) TO LOOKUP-CP
+        MOVE 0 TO TABLE-FLAG
+        PERFORM IS-ID-ALLOWED
+        IF TABLE-FLAG = 0
+            MOVE 0 TO MIN-RESTRICTIVE-FLAG
+        END-IF
+    END-PERFORM.
+
+COMPUTE-MOD-SHAPE.
+*> Every codepoint resolves to Latin or to one fixed other Recommended script,
+*> with that other script neither Cyrillic nor Greek.
+    MOVE 0 TO MOD-SHAPE-FLAG
+    MOVE SPACES TO MOD-SHAPE-OTHER
+    MOVE 1 TO TABLE-FLAG
+    PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
+        MOVE CP(IDX) TO LOOKUP-CP
+        PERFORM RESOLVE-SCRIPTS
+        IF SCRIPT-SET-TEXT NOT = SPACES
+            MOVE SCRIPT-SET-TEXT(1:4) TO SCRIPT-TOKEN
+            IF SCRIPT-SET-TEXT(1:4) = "Latn"
+                CONTINUE
+            ELSE
+                IF SCRIPT-TOKEN = "Cyrl" OR SCRIPT-TOKEN = "Grek"
+                    MOVE 0 TO TABLE-FLAG
+                ELSE
+                    IF MOD-SHAPE-OTHER = SPACES
+                        MOVE SCRIPT-TOKEN TO MOD-SHAPE-OTHER
+                    ELSE
+                        IF SCRIPT-TOKEN NOT = MOD-SHAPE-OTHER
+                            MOVE 0 TO TABLE-FLAG
+                        END-IF
+                    END-IF
+                END-IF
+            END-IF
+        END-IF
+    END-PERFORM
+    IF TABLE-FLAG = 1 AND MOD-SHAPE-OTHER NOT = SPACES
+        MOVE 1 TO MOD-SHAPE-FLAG
+    END-IF.
+
+COMPUTE-RESTRICTION-LEVEL.
+*> The strictest level the input satisfies, Unrestricted when it satisfies none.
+    PERFORM COMPUTE-ASCII-ONLY
+    IF ASCII-ONLY-FLAG = 1
+        MOVE "ASCIIOnly" TO RESTRICTION-LEVEL
+    ELSE
+        PERFORM COMPUTE-HIGHLY-RESTRICTIVE
+        IF SINGLE-SCRIPT-FLAG = 1
+            MOVE "SingleScript" TO RESTRICTION-LEVEL
+        ELSE
+            IF HIGHLY-RESTRICTIVE-FLAG = 1
+                MOVE "HighlyRestrictive" TO RESTRICTION-LEVEL
+            ELSE
+                PERFORM COMPUTE-MOD-SHAPE
+                IF MOD-SHAPE-FLAG = 1
+                    MOVE "ModeratelyRestrictive" TO RESTRICTION-LEVEL
+                ELSE
+                    PERFORM COMPUTE-MIN-RESTRICTIVE
+                    IF MIN-RESTRICTIVE-FLAG = 1
+                        MOVE "MinimallyRestrictive" TO RESTRICTION-LEVEL
+                    ELSE
+                        MOVE "Unrestricted" TO RESTRICTION-LEVEL
+                    END-IF
+                END-IF
+            END-IF
+        END-IF
+    END-IF.
+
+SELECT-POLICY-LEVEL.
+*> Runtime policy level for the active profile, mirroring policyOfProfile in
+*> Unicode/Security/Policy.lean. Source files legitimately carry right-to-left
+*> string literals, comments written in Hebrew or Arabic, and emoji, so
+*> source-code is moderate: restrictive admits rtl-injection, whose contract
+*> treats its input as a declared-LTR field, and would reject an ordinary Hebrew
+*> comment.
+    EVALUATE PROFILE-NAME
+        WHEN "gateway-header"
+            MOVE "restrictive" TO POLICY-LEVEL
+        WHEN "domain-name"
+            MOVE "restrictive" TO POLICY-LEVEL
+        WHEN "dns-label"
+            MOVE "restrictive" TO POLICY-LEVEL
+        WHEN "url"
+            MOVE "moderate" TO POLICY-LEVEL
+        WHEN "source-code"
+            MOVE "moderate" TO POLICY-LEVEL
+        WHEN "username"
+            MOVE "moderate" TO POLICY-LEVEL
+        WHEN OTHER
+            MOVE "minimal" TO POLICY-LEVEL
+    END-EVALUATE.
+
+FAMILY-BLOCKS-AT-LEVEL.
+*> TABLE-FLAG becomes 1 when the finding at IDX belongs to the active level's
+*> rejection set, mirroring rejectionSet in Unicode/Security/Level.lean. The
+*> three crypto families are outside every set, so they report without blocking.
+    MOVE 0 TO TABLE-FLAG
+    MOVE FINDING-CODE(IDX)(1:20) TO LEVEL-PREFIX
+    EVALUATE POLICY-LEVEL
+        WHEN "minimal"
+            IF FINDING-CODE(IDX)(1:34) = "unicode.security.C.malformed-utf8." OR
+               FINDING-CODE(IDX)(1:35) = "unicode.security.C.malformed-utf16." OR
+               FINDING-CODE(IDX)(1:35) = "unicode.security.C.malformed-utf32." OR
+               FINDING-CODE(IDX)(1:39) = "unicode.security.C.surrogate-reassembly" OR
+               FINDING-CODE(IDX)(1:39) = "unicode.security.C.bidi-control-balance" OR
+               FINDING-CODE(IDX)(1:39) = "unicode.security.C.noncharacter-control" OR
+               FINDING-CODE(IDX)(1:40) = "unicode.security.F.stream-safe-violation"
+                MOVE 1 TO TABLE-FLAG
+            END-IF
+        WHEN "moderate"
+*>          Moderate drops the four families whose contracts a document does not
+*>          satisfy: rtl-injection, renderer-divergence, normalization-bomb and
+*>          emoji-zwj-integrity.
+            IF FINDING-CODE(IDX)(1:32) = "unicode.security.D.rtl-injection" OR
+               FINDING-CODE(IDX)(1:38) = "unicode.security.D.renderer-divergence" OR
+               FINDING-CODE(IDX)(1:37) = "unicode.security.F.normalization-bomb" OR
+               FINDING-CODE(IDX)(1:38) = "unicode.security.I.emoji-zwj-integrity"
+                MOVE 0 TO TABLE-FLAG
+            ELSE
+                IF LEVEL-PREFIX(1:18) = "unicode.security.K"
+                    MOVE 0 TO TABLE-FLAG
+                ELSE
+                    MOVE 1 TO TABLE-FLAG
+                END-IF
+            END-IF
+        WHEN OTHER
+*>          Restrictive admits every non-crypto family.
+            IF LEVEL-PREFIX(1:18) = "unicode.security.K"
+                MOVE 0 TO TABLE-FLAG
+            ELSE
+                MOVE 1 TO TABLE-FLAG
+            END-IF
+    END-EVALUATE.
+
+COMPUTE-CROSS-SCRIPT-MIX.
+*> TABLE-FLAG becomes 1 for a multi-script input that is not Highly Restrictive.
+    PERFORM BUILD-SCRIPT-UNION
+    PERFORM COMPUTE-HIGHLY-RESTRICTIVE
+    IF SCRIPT-UNION-COUNT >= 2 AND HIGHLY-RESTRICTIVE-FLAG = 0
+        MOVE 1 TO TABLE-FLAG
+    ELSE
+        MOVE 0 TO TABLE-FLAG
+    END-IF.
 
 IS-STRONG-RTL.
     MOVE 0 TO TABLE-FLAG

@@ -149,8 +149,25 @@ def unionOfScripts (input : List Nat) : List ScriptAbbrev :=
 -- §3 Top-level detection
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The MixedScriptAdmissibility detection function. -/
-def detect (input : List Nat) : Verdict :=
+/-- What the caller knows about the field the input came from.
+
+    Phase 1 asks whether any codepoint carries `Identifier_Status = Restricted`.
+    That is sound for the identifier this module's threat model scopes it to —
+    an identifier cannot contain a space — and unsound for a document, where
+    every space and every punctuation mark is Restricted and the phase would
+    report a hazard for ordinary prose and ordinary source.
+
+    `identifierField` records which of the two the caller is holding, so a
+    detector scoped to identifiers is not silently applied to running text.
+    It defaults to `true`, the reading this module has always taken, so
+    `detect` is unchanged. -/
+structure Context where
+  identifierField : Bool := true
+  deriving DecidableEq, Repr, Inhabited
+
+/-- The MixedScriptAdmissibility detection function, under an explicit
+    field context. -/
+def detectWithContext (ctx : Context) (input : List Nat) : Verdict :=
   let scriptsIntersect := Unicode.Restriction.stringResolvedScripts input
   let scriptsUnion := unionOfScripts input
   let level := Unicode.Restriction.restrictionLevel input
@@ -161,7 +178,7 @@ def detect (input : List Nat) : Verdict :=
   let hasCyrl := hasScript input .Cyrl
   let hasGrek := hasScript input .Grek
   let classification : Classification :=
-    match restrictedDetail with
+    match (if ctx.identifierField then restrictedDetail else []) with
     | first :: _rest =>
       .hazard (.restrictedStatusCp first.1 first.2)
         restrictedPositions []
@@ -199,6 +216,11 @@ def detect (input : List Nat) : Verdict :=
     hasLatin := hasLatn,
     hasCyrillic := hasCyrl,
     hasGreek := hasGrek }
+
+/-- The MixedScriptAdmissibility detection function, reading its input as the
+    identifier the threat model describes. -/
+def detect (input : List Nat) : Verdict :=
+  detectWithContext {} input
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 Projection helpers

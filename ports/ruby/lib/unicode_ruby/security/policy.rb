@@ -204,11 +204,28 @@ module UnicodeRuby
         end
       end
 
+      # True iff the profile names a field holding one identifier, not running
+      # text. A username, a registrable domain and a DNS label are single
+      # identifiers, so a codepoint outside the General Security Profile is a
+      # hazard in them. The remaining profiles carry prose, source, URLs or
+      # opaque bytes, where a space and a punctuation mark are ordinary
+      # content. Mirrors profileIsIdentifierField in Unicode/Security/Policy.lean.
+      def profile_identifier_field?(profile)
+        [Profile::DOMAIN_NAME, Profile::DNS_LABEL, Profile::USERNAME].include?(profile)
+      end
+
       def policy_of_profile(profile)
         case profile
-        when Profile::GATEWAY_HEADER, Profile::DOMAIN_NAME, Profile::DNS_LABEL, Profile::SOURCE_CODE
+        when Profile::GATEWAY_HEADER, Profile::DOMAIN_NAME, Profile::DNS_LABEL
           ProfilePolicy.new(PolicyLevel::RESTRICTIVE, CryptoContext::NON_CRYPTO, false)
-        when Profile::URL
+        # Source files legitimately carry right-to-left string literals,
+        # comments written in Hebrew or Arabic, and emoji. RESTRICTIVE admits
+        # RTL_INJECTION, whose contract treats its input as a declared-LTR
+        # field, so under it an ordinary Hebrew comment is rejected. MODERATE
+        # retains every detector that catches the Trojan Source class while
+        # dropping the field-direction assumption a source file does not
+        # satisfy.
+        when Profile::URL, Profile::SOURCE_CODE
           ProfilePolicy.new(PolicyLevel::MODERATE, CryptoContext::NON_CRYPTO, false)
         when Profile::USERNAME
           ProfilePolicy.new(PolicyLevel::MODERATE, CryptoContext::NON_CRYPTO, true)
@@ -398,16 +415,20 @@ module UnicodeRuby
 
         homoglyph = Identity::HomoglyphConfusable.detect(input)
         homoglyph_sub = homoglyph.sub
-        if homoglyph_sub != "CrossScriptMix"
-          positions =
-            homoglyph.kind == ClassificationKind::CLEAR ? [] : (0...input.length).to_a
-          push_finding(findings, Family::HOMOGLYPH_CONFUSABLE, homoglyph.kind,
-                       homoglyph_sub, positions)
-        end
-        if Identity::HomoglyphConfusable.has_mixed_script_admissibility(input)
+        # Every rung of the homoglyph ladder is reported, CrossScriptMix
+        # included. Unicode/Security/Policy.lean maps every non-clear family
+        # result to a finding without filtering, so suppressing this rung would
+        # report fewer findings than the proven spec for a cross-script input.
+        positions =
+          homoglyph.kind == ClassificationKind::CLEAR ? [] : (0...input.length).to_a
+        push_finding(findings, Family::HOMOGLYPH_CONFUSABLE, homoglyph.kind,
+                     homoglyph_sub, positions)
+        mixed_sub = Identity::HomoglyphConfusable.mixed_script_verdict(
+          input, profile_identifier_field?(profile)
+        )
+        unless mixed_sub.nil?
           push_finding(findings, Family::MIXED_SCRIPT_ADMISSIBILITY, ClassificationKind::HAZARD,
-                       Identity::HomoglyphConfusable.mixed_script_subthreat(input),
-                       (0...input.length).to_a)
+                       mixed_sub, (0...input.length).to_a)
         end
 
         rtl = Display::RtlInjection.detect(input)

@@ -55,10 +55,32 @@ defmodule UnicodeSecurity.Policy do
   def profiles, do: @profiles
   def modes, do: @modes
 
+  @doc """
+  True iff the profile names a field holding one identifier, not running text.
+
+  A username, a registrable domain and a DNS label are single identifiers, so a
+  codepoint outside the General Security Profile is a hazard in them. The
+  remaining profiles carry prose, source, URLs or opaque bytes, where a space
+  and a punctuation mark are ordinary content. Mirrors profileIsIdentifierField
+  in Unicode/Security/Policy.lean.
+  """
+  def profile_identifier_field?(profile),
+    do: profile in ["domain-name", "dns-label", "username"]
+
   def policy_of_profile(profile) do
     case profile do
-      p when p in ["gateway-header", "domain-name", "dns-label", "source-code"] ->
+      p when p in ["gateway-header", "domain-name", "dns-label"] ->
         %{level: :restrictive, crypto_context: :non_crypto, quarantine: false}
+
+      # Source files legitimately carry right-to-left string literals,
+      # comments written in Hebrew or Arabic, and emoji. Restrictive admits
+      # RtlInjection, whose contract treats its input as a declared-LTR
+      # field, so under it an ordinary Hebrew comment is rejected. Moderate
+      # retains every detector that catches the Trojan Source class while
+      # dropping the field-direction assumption a source file does not
+      # satisfy.
+      "source-code" ->
+        %{level: :moderate, crypto_context: :non_crypto, quarantine: false}
 
       "url" ->
         %{level: :moderate, crypto_context: :non_crypto, quarantine: false}
@@ -300,26 +322,30 @@ defmodule UnicodeSecurity.Policy do
 
     h = HomoglyphConfusable.detect(input)
 
+    # Every rung of the homoglyph ladder is reported, CrossScriptMix included.
+    # Unicode/Security/Policy.lean maps every non-clear family result to a
+    # finding without filtering, so suppressing this rung would report fewer
+    # findings than the proven spec for a cross-script input.
     findings =
-      if sub_tag(h.sub) != "CrossScriptMix",
-        do:
-          push_finding(
-            findings,
-            :homoglyph_confusable,
-            h.kind,
-            h.sub,
-            if(h.kind == :clear, do: [], else: Enum.to_list(0..(length(input) - 1)))
-          ),
-        else: findings
+      push_finding(
+        findings,
+        :homoglyph_confusable,
+        h.kind,
+        h.sub,
+        if(h.kind == :clear, do: [], else: Enum.to_list(0..(length(input) - 1)))
+      )
+
+    mixed_sub =
+      HomoglyphConfusable.mixed_script_verdict(input, profile_identifier_field?(profile))
 
     findings =
-      if HomoglyphConfusable.mixed_script_admissibility?(input),
+      if mixed_sub != nil,
         do:
           push_finding(
             findings,
             :mixed_script_admissibility,
             :hazard,
-            HomoglyphConfusable.mixed_script_subthreat(input),
+            mixed_sub,
             positions_all(input)
           ),
         else: findings

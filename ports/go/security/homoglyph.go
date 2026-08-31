@@ -5,8 +5,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"unicode"
-	"unicode/utf8"
 )
 
 //go:embed data/confusables.txt
@@ -474,32 +472,13 @@ func composeHangulPair(first uint32, second uint32) bool {
 	return isLV && isT
 }
 
+// hasCrossScriptMix reports whether the input resolves to two or more scripts
+// and is not Highly Restrictive, the script question UTS #39 asks. Script
+// resolution reads the vendored Scripts.txt and ScriptExtensions.txt through
+// restriction.go rather than approximating a handful of scripts, so a mix such
+// as Latin with Armenian or Latin with Arabic is seen.
 func hasCrossScriptMix(input []uint32) bool {
-	seen := map[string]bool{}
-	for _, cp := range input {
-		script, ok := scriptClass(cp)
-		if ok {
-			seen[script] = true
-		}
-	}
-	return len(seen) >= 2
-}
-
-func scriptClass(cp uint32) (string, bool) {
-	if cp > utf8.MaxRune {
-		return "", false
-	}
-	r := rune(cp)
-	switch {
-	case unicode.In(r, unicode.Latin):
-		return "Latn", true
-	case unicode.In(r, unicode.Greek):
-		return "Grek", true
-	case unicode.In(r, unicode.Cyrillic):
-		return "Cyrl", true
-	default:
-		return "", false
-	}
+	return len(stringScriptUnion(input)) >= 2 && !isHighlyRestrictive(input)
 }
 
 func isDefaultIgnorableCodepoint(cp uint32) bool {

@@ -52,6 +52,24 @@
             ],
             "sub_threat": "Noncharacter",
             "detail": "noncharacter-control"
+          },
+          {
+            "code": "unicode.security.I.homoglyph-confusable.RestrictionLow",
+            "family": "homoglyph-confusable",
+            "severity": 2,
+            "positions": [
+              0
+            ],
+            "sub_threat": "RestrictionLow",
+            "detail": "homoglyph-confusable"
+          },
+          {
+            "code": "unicode.security.D.source-display-divergence.IdentifierHomoglyph",
+            "family": "source-display-divergence",
+            "severity": 2,
+            "positions": [],
+            "sub_threat": "IdentifierHomoglyph",
+            "detail": "source-display-divergence"
           }
         ],
         "normalized": null
@@ -164,6 +182,17 @@
             ],
             "sub_threat": "DirectAscii",
             "detail": "tag-block-payload"
+          },
+          {
+            "code": "unicode.security.I.mixed-script-admissibility.RestrictedStatusCp",
+            "family": "mixed-script-admissibility",
+            "severity": 2,
+            "positions": [
+              0,
+              1
+            ],
+            "sub_threat": "RestrictedStatusCp",
+            "detail": "mixed-script-admissibility"
           },
           {
             "code": "unicode.security.D.source-display-divergence.TagBlock",
@@ -591,6 +620,19 @@
         ],
         "findings": [
           {
+            "code": "unicode.security.I.homoglyph-confusable.CrossScriptMix",
+            "family": "homoglyph-confusable",
+            "severity": 2,
+            "positions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "sub_threat": "CrossScriptMix",
+            "detail": "homoglyph-confusable"
+          },
+          {
             "code": "unicode.security.I.mixed-script-admissibility.LatinGreek",
             "family": "mixed-script-admissibility",
             "severity": 2,
@@ -610,6 +652,266 @@
             "positions": [],
             "sub_threat": "IdentifierHomoglyph",
             "detail": "source-display-divergence"
+          }
+        ],
+        "normalized": null
+      }
+    },
+    {
+      "name": "script-mix-armenian-username",
+      "profile": "username",
+      "mode": "enforce",
+      "input": [
+        114,
+        101,
+        113,
+        1405,
+        101,
+        115,
+        116,
+        115
+      ],
+      "verdict": {
+        "action": "quarantine",
+        "profile": "username",
+        "mode": "enforce",
+        "input": [
+          114,
+          101,
+          113,
+          1405,
+          101,
+          115,
+          116,
+          115
+        ],
+        "findings": [
+          {
+            "code": "unicode.security.I.homoglyph-confusable.TargetMatch",
+            "family": "homoglyph-confusable",
+            "severity": 2,
+            "positions": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ],
+            "sub_threat": "TargetMatch",
+            "detail": "homoglyph-confusable"
+          },
+          {
+            "code": "unicode.security.I.mixed-script-admissibility.ScriptMixOther",
+            "family": "mixed-script-admissibility",
+            "severity": 2,
+            "positions": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7
+            ],
+            "sub_threat": "ScriptMixOther",
+            "detail": "mixed-script-admissibility"
+          },
+          {
+            "code": "unicode.security.D.source-display-divergence.IdentifierHomoglyph",
+            "family": "source-display-divergence",
+            "severity": 2,
+            "positions": [],
+            "sub_threat": "IdentifierHomoglyph",
+            "detail": "source-display-divergence"
+          }
+        ],
+        "normalized": null
+      }
+    },
+    {
+      "name": "script-mix-arabic-display-name",
+      "profile": "display-name",
+      "mode": "enforce",
+      "input": [
+        65,
+        66,
+        1575,
+        1576
+      ],
+      "verdict": {
+        "action": "allow",
+        "profile": "display-name",
+        "mode": "enforce",
+        "input": [
+          65,
+          66,
+          1575,
+          1576
+        ],
+        "findings": [
+          {
+            "code": "unicode.security.I.homoglyph-confusable.CrossScriptMix",
+            "family": "homoglyph-confusable",
+            "severity": 2,
+            "positions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "sub_threat": "CrossScriptMix",
+            "detail": "homoglyph-confusable"
+          },
+          {
+            "code": "unicode.security.I.mixed-script-admissibility.ScriptMixOther",
+            "family": "mixed-script-admissibility",
+            "severity": 2,
+            "positions": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "sub_threat": "ScriptMixOther",
+            "detail": "mixed-script-admissibility"
+          },
+          {
+            "code": "unicode.security.D.rtl-injection.StrongRTLInLTR",
+            "family": "rtl-injection",
+            "severity": 2,
+            "positions": [
+              2
+            ],
+            "sub_threat": "StrongRTLInLTR",
+            "detail": "rtl-injection"
+          },
+          {
+            "code": "unicode.security.D.renderer-divergence.MixedDirectionVariance",
+            "family": "renderer-divergence",
+            "severity": 2,
+            "positions": [],
+            "sub_threat": "MixedDirectionVariance",
+            "detail": "renderer-divergence"
+          },
+          {
+            "code": "unicode.security.D.source-display-divergence.IdentifierHomoglyph",
+            "family": "source-display-divergence",
+            "severity": 2,
+            "positions": [],
+            "sub_threat": "IdentifierHomoglyph",
+            "detail": "source-display-divergence"
+          }
+        ],
+        "normalized": null
+      }
+    },
+    {
+      "name": "single-script-han-username",
+      "profile": "username",
+      "mode": "enforce",
+      "input": [
+        20013,
+        25991
+      ],
+      "verdict": {
+        "action": "allow",
+        "profile": "username",
+        "mode": "enforce",
+        "input": [
+          20013,
+          25991
+        ],
+        "findings": [],
+        "normalized": null
+      }
+    },
+    {
+      "name": "private-use-restriction-low",
+      "profile": "username",
+      "mode": "enforce",
+      "input": [
+        57344
+      ],
+      "verdict": {
+        "action": "quarantine",
+        "profile": "username",
+        "mode": "enforce",
+        "input": [
+          57344
+        ],
+        "findings": [
+          {
+            "code": "unicode.security.I.homoglyph-confusable.RestrictionLow",
+            "family": "homoglyph-confusable",
+            "severity": 2,
+            "positions": [
+              0
+            ],
+            "sub_threat": "RestrictionLow",
+            "detail": "homoglyph-confusable"
+          },
+          {
+            "code": "unicode.security.I.mixed-script-admissibility.RestrictedStatusCp",
+            "family": "mixed-script-admissibility",
+            "severity": 2,
+            "positions": [
+              0
+            ],
+            "sub_threat": "RestrictedStatusCp",
+            "detail": "mixed-script-admissibility"
+          },
+          {
+            "code": "unicode.security.D.source-display-divergence.IdentifierHomoglyph",
+            "family": "source-display-divergence",
+            "severity": 2,
+            "positions": [],
+            "sub_threat": "IdentifierHomoglyph",
+            "detail": "source-display-divergence"
+          }
+        ],
+        "normalized": null
+      }
+    },
+    {
+      "name": "rtl-comment-source-allow",
+      "profile": "source-code",
+      "mode": "enforce",
+      "input": [
+        47,
+        47,
+        32,
+        1513,
+        1500,
+        1493,
+        1501
+      ],
+      "verdict": {
+        "action": "allow",
+        "profile": "source-code",
+        "mode": "enforce",
+        "input": [
+          47,
+          47,
+          32,
+          1513,
+          1500,
+          1493,
+          1501
+        ],
+        "findings": [
+          {
+            "code": "unicode.security.D.rtl-injection.FieldTakeover",
+            "family": "rtl-injection",
+            "severity": 2,
+            "positions": [
+              3
+            ],
+            "sub_threat": "FieldTakeover",
+            "detail": "rtl-injection"
           }
         ],
         "normalized": null

@@ -297,11 +297,33 @@ def selectAction (profile : Profile) (mode : Mode)
   | .strict =>
       if findings.isEmpty then .allow else .reject
 
+/-- True iff the profile names a field that holds one identifier rather than
+    running text.
+
+    A username, a registrable domain and a DNS label are single identifiers, so
+    a codepoint outside the General Security Profile is a hazard in them. The
+    remaining profiles carry prose, source, URLs or opaque bytes, where a space
+    and a punctuation mark are ordinary content and the identifier-scoped rung
+    would report a hazard for every input. -/
+def profileIsIdentifierField : Profile → Bool
+  | .domainName    => true
+  | .dnsLabel      => true
+  | .username      => true
+  | .gatewayHeader => false
+  | .url           => false
+  | .displayName   => false
+  | .chatMessage   => false
+  | .sourceCode    => false
+  | .opaqueSecret  => false
+  | .binaryBlob    => false
+
 /-- Runtime scan over a codepoint array. Byte decoding and wire-format framing
     belong one layer above this function; this is the profile/policy decision
     over already-decoded codepoints. -/
 def scan (profile : Profile) (mode : Mode) (input : List Nat) : Verdict :=
-  let results := Unicode.Security.RunAll.runAll input
+  let results :=
+    Unicode.Security.RunAll.runAllWithContext
+      { identifierField := profileIsIdentifierField profile } input
   let findings := findingsOfResults results
   {
     input       := input,

@@ -71,9 +71,21 @@ def mkResult (family : Family)
 def looksLikeByteStream (input : List Nat) : Bool :=
   input.all (fun cp => cp < 0x100)
 
-/-- Run every Security Conformance Layer detector on `input` and
-    return a `FamilyResult` per family.  The output array has exactly
-    27 entries, one per family, in declaration order grouped by
+/-- What the caller knows about the field the input came from.
+
+    Most families read a codepoint sequence and need nothing else. A family
+    scoped to identifiers needs to know whether it is holding one, because the
+    same bytes carry a different question in a username and in a source file.
+    `Unicode.Security.Identity.MixedScriptAdmissibility.Context` is the first
+    consumer; the field defaults to the reading each family already took, so
+    `runAll` is unchanged. -/
+structure Context where
+  identifierField : Bool := true
+  deriving DecidableEq, Repr, Inhabited
+
+/-- Run every Security Conformance Layer detector on `input` under the field
+    context `ctx` and return a `FamilyResult` per family.  The output array has
+    exactly 27 entries, one per family, in declaration order grouped by
     layer.
 
     SurrogateReassembly is only invoked when `input` looks
@@ -85,7 +97,7 @@ def looksLikeByteStream (input : List Nat) : Bool :=
     bounded input or invoke
     `Unicode.Security.Covert.SurrogateReassembly.detect` on
     their byte input separately. -/
-def runAll (input : List Nat) : List FamilyResult :=
+def runAllWithContext (ctx : Context) (input : List Nat) : List FamilyResult :=
   let c1 := Unicode.Security.Covert.TagBlockPayload.detect           input
   let c2 := Unicode.Security.Covert.VariationSelectorPayload.detect  input
   let c3 := Unicode.Security.Covert.ZeroWidthPayload.detect          input
@@ -101,7 +113,9 @@ def runAll (input : List Nat) : List FamilyResult :=
   let c5 := Unicode.Security.Covert.BidiControlBalance.detect        input
   let c6 := Unicode.Security.Covert.NoncharacterControl.detect       input
   let i1 := Unicode.Security.Identity.HomoglyphConfusable.detect     input
-  let i2 := Unicode.Security.Identity.MixedScriptAdmissibility.detect input
+  let i2 :=
+    Unicode.Security.Identity.MixedScriptAdmissibility.detectWithContext
+      { identifierField := ctx.identifierField } input
   let i3 := Unicode.Security.Identity.EmojiZwjIntegrity.detect       input
   let i4 := Unicode.Security.Identity.SkinToneVariationForgery.detect input
   let d1 := Unicode.Security.Display.SourceDisplayDivergence.detect  input
@@ -148,6 +162,11 @@ def runAll (input : List Nat) : List FamilyResult :=
      mkResult .bip39Canonical           k1.classify.isClear k1.classify.tag k1.classify.positions,
      mkResult .hashInputStability       k2.classify.isClear k2.classify.tag k2.classify.positions,
      mkResult .aiWatermarkDetectability k3.classify.isClear k3.classify.tag k3.classify.positions ]
+
+/-- Every family's verdict for `input`, read as the identifier-shaped field
+    each family already assumed. -/
+def runAll (input : List Nat) : List FamilyResult :=
+  runAllWithContext {} input
 
 /-- Subset of `runAll` containing only the families whose verdict is
     `.hazard`.  Empty when the input passes every detector. -/

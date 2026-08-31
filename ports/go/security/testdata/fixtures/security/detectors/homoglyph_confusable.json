@@ -77,6 +77,27 @@
       "required_findings": [
         "unicode.security.I.homoglyph-confusable.WidthClass"
       ]
+    },
+    {
+      "name": "latin-armenian-cross-script-mix",
+      "input": [97, 98, 1377, 1378],
+      "required_findings": [
+        "unicode.security.I.homoglyph-confusable.CrossScriptMix"
+      ]
+    },
+    {
+      "name": "private-use-restriction-low",
+      "input": [57344],
+      "required_findings": [
+        "unicode.security.I.homoglyph-confusable.RestrictionLow"
+      ]
+    },
+    {
+      "name": "noncharacter-restriction-low",
+      "input": [64976],
+      "required_findings": [
+        "unicode.security.I.homoglyph-confusable.RestrictionLow"
+      ]
     }
   ]
 }

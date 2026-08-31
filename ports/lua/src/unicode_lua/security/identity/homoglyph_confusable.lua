@@ -179,11 +179,32 @@ local function fullwidth_halfwidth(cp)
 end
 
 function M.has_mixed_script_admissibility(input)
-  local union = ucd.string_script_union(input)
-  return #union >= 2 and not ucd.is_highly_restrictive(input)
+  return M.mixed_script_verdict(input, true) ~= nil
 end
 
 function M.mixed_script_subthreat(input)
+  return M.mixed_script_verdict(input, true) or "ScriptMixOther"
+end
+
+-- The mixed-script sub-threat for input, or nil when admissible.
+--
+-- The rung order is MixedScriptAdmissibility.lean's: a Restricted-status
+-- codepoint outranks every script question, then the two named Latin pairs,
+-- then a multi-script mix split by whether it stays inside a CJK covered set,
+-- and finally an Unrestricted level with no script mix.
+--
+-- identifier_field carries what the caller knows about the field, mirroring
+-- that module's Context. Phase 1 is sound for an identifier, which cannot
+-- contain a space, and unsound for a document, where every space and every
+-- punctuation mark is Restricted.
+function M.mixed_script_verdict(input, identifier_field)
+  if identifier_field then
+    for _, cp in ipairs(input) do
+      if not ucd.is_id_allowed(cp) then
+        return "RestrictedStatusCp"
+      end
+    end
+  end
   local union = ucd.string_script_union(input)
   local seen = {}
   for _, s in ipairs(union) do
@@ -194,7 +215,16 @@ function M.mixed_script_subthreat(input)
   elseif seen.Latn and seen.Grek then
     return "LatinGreek"
   end
-  return "ScriptMixOther"
+  if #union >= 2 and not ucd.is_highly_restrictive(input) then
+    if ucd.is_covered_cjk(input) then
+      return "CjkMix"
+    end
+    return "ScriptMixOther"
+  end
+  if identifier_field and ucd.restriction_level(input) == ucd.RestrictionLevel.UNRESTRICTED then
+    return "UnrestrictedLevel"
+  end
+  return nil
 end
 
 function M.detect(input)
@@ -242,7 +272,10 @@ function M.detect(input)
     return verdict
   end
 
-  if M.has_mixed_script_admissibility(input) then
+  -- Priority 5: CrossScriptMix. This rung asks the script question only; the
+  -- Restricted-status rung belongs to the mixed-script family, not here.
+  local union = ucd.string_script_union(input)
+  if #union >= 2 and not ucd.is_highly_restrictive(input) then
     verdict.kind = ClassificationKind.Hazard
     verdict.sub = { tag = "CrossScriptMix" }
     return verdict

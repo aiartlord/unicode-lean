@@ -129,7 +129,9 @@ public static partial class Security
         /// mix.</summary>
         private static bool HomoglyphFired(List<int> input) =>
             Security.HomoglyphConfusableFinding(input) is not null
-            || Security.MixedScriptAdmissibilityFinding(input) is not null;
+            // The constituent asks the script question about a source file, which
+            // is not an identifier field, so the Restricted-status rung is off.
+            || Security.MixedScriptAdmissibilityFinding(input, false) is not null;
 
         // ─────────────────────────────────────────────────────────────────
         // §3 Top-level detection

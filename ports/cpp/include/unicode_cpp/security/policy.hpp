@@ -263,18 +263,50 @@ inline std::span<const Family> crypto_families(CryptoContext context) {
   return none;
 }
 
+// True iff the profile names a field that holds one identifier rather than
+// running text.
+//
+// A username, a registrable domain and a DNS label are single identifiers, so a
+// codepoint outside the General Security Profile is a hazard in them. The
+// remaining profiles carry prose, source, URLs or opaque bytes, where a space
+// and a punctuation mark are ordinary content. Mirrors
+// profileIsIdentifierField in Unicode/Security/Policy.lean.
+constexpr bool profile_is_identifier_field(Profile profile) {
+  switch (profile) {
+  case Profile::DomainName:
+  case Profile::DnsLabel:
+  case Profile::Username:
+    return true;
+  case Profile::GatewayHeader:
+  case Profile::Url:
+  case Profile::DisplayName:
+  case Profile::ChatMessage:
+  case Profile::SourceCode:
+  case Profile::OpaqueSecret:
+  case Profile::BinaryBlob:
+    return false;
+  }
+  return false;
+}
+
 constexpr ProfilePolicy policy_of_profile(Profile profile) {
   switch (profile) {
   case Profile::GatewayHeader:
   case Profile::DomainName:
   case Profile::DnsLabel:
-  case Profile::SourceCode:
     return {
         PolicyLevel::Restrictive,
         CryptoContext::NonCrypto,
         false,
     };
+  // Source files legitimately carry right-to-left string literals, comments
+  // written in Hebrew or Arabic, and emoji. Restrictive admits RtlInjection,
+  // whose contract treats its input as a declared-LTR field, so under it an
+  // ordinary Hebrew comment is rejected. Moderate retains every detector that
+  // catches the Trojan Source class while dropping the field-direction
+  // assumption a source file does not satisfy.
   case Profile::Url:
+  case Profile::SourceCode:
     return {PolicyLevel::Moderate, CryptoContext::NonCrypto, false};
   case Profile::Username:
     return {PolicyLevel::Moderate, CryptoContext::NonCrypto, true};
@@ -861,22 +893,20 @@ scan_with_identity_database(Profile profile, Mode mode,
             ? std::optional<std::string>{homoglyph_confusable::sub_threat_tag(
                   *identity_result.sub)}
             : std::nullopt;
-    if (identity_sub != std::optional<std::string>{"CrossScriptMix"}) {
-      detail::push_finding(findings, Family::HomoglyphConfusable,
-                           identity_result.kind, identity_sub,
-                           identity_result.kind == ClassificationKind::Clear
-                               ? std::vector<std::size_t>{}
-                               : detail::full_span_positions(input.size()));
-    }
-    if (homoglyph_confusable::has_mixed_script_admissibility(input,
-                                                             *identity_db)) {
-      detail::push_finding(
-          findings, Family::MixedScriptAdmissibility,
-          ClassificationKind::Hazard,
-          std::optional<std::string>{
-              homoglyph_confusable::mixed_script_subthreat(input,
-                                                           *identity_db)},
-          detail::full_span_positions(input.size()));
+    // Every rung of the homoglyph ladder is reported, CrossScriptMix included.
+    // Unicode/Security/Policy.lean maps every non-clear family result to a
+    // finding without filtering, so suppressing this rung would report fewer
+    // findings than the proven spec for a cross-script input.
+    detail::push_finding(findings, Family::HomoglyphConfusable,
+                         identity_result.kind, identity_sub,
+                         identity_result.kind == ClassificationKind::Clear
+                             ? std::vector<std::size_t>{}
+                             : detail::full_span_positions(input.size()));
+    if (const auto mixed_sub = homoglyph_confusable::mixed_script_verdict(
+            input, *identity_db, profile_is_identifier_field(profile))) {
+      detail::push_finding(findings, Family::MixedScriptAdmissibility,
+                           ClassificationKind::Hazard, mixed_sub,
+                           detail::full_span_positions(input.size()));
     }
 
     const auto rtl_result =

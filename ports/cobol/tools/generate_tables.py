@@ -106,6 +106,86 @@ def parse_script_ranges(path):
     return {script: coalesce(items) for script, items in ranges.items()}
 
 
+def parse_script_alias_map():
+    """Script long name to four-letter abbreviation, from the "sc" rows of
+    PropertyValueAliases.txt."""
+    aliases = {}
+    for line in (DATA / "PropertyValueAliases.txt").read_text(encoding="utf-8").splitlines():
+        fields = strip_comment(line).split(";")
+        if len(fields) < 3 or fields[0].strip() != "sc":
+            continue
+        abbrev, name = fields[1].strip(), fields[2].strip()
+        if abbrev and name:
+            aliases[name] = abbrev
+    return aliases
+
+
+def parse_resolved_script_sets():
+    """Resolved script abbreviations per codepoint range, mirroring
+    `resolveScripts` in Unicode/ResolvedScripts.lean.
+
+    A codepoint's Script_Extensions where ScriptExtensions.txt gives one,
+    otherwise the abbreviation of its primary Script. The abbreviation
+    vocabulary is exactly the set occurring in ScriptExtensions.txt, which is
+    what Lean models as its ScriptAbbrev enum, so a primary script outside that
+    set resolves to nothing on both sides -- returning a singleton there would
+    make every unknown-script codepoint look Single-Script and hide
+    RestrictionLow.
+    """
+    aliases = parse_script_alias_map()
+
+    extensions = {}
+    vocabulary = set()
+    for line in (DATA / "ScriptExtensions.txt").read_text(encoding="utf-8").splitlines():
+        body = strip_comment(line)
+        if not body or ";" not in body:
+            continue
+        left, value = [part.strip() for part in body.split(";", 1)]
+        abbrevs = value.split()
+        if not abbrevs:
+            continue
+        vocabulary.update(abbrevs)
+        extensions[parse_range_token(left)] = " ".join(abbrevs)
+
+    primary = {}
+    for line in (DATA / "Scripts.txt").read_text(encoding="utf-8").splitlines():
+        body = strip_comment(line)
+        if not body or ";" not in body:
+            continue
+        left, script, *_ = [part.strip() for part in body.split(";")]
+        abbrev = aliases.get(script)
+        if abbrev is None or abbrev not in vocabulary:
+            continue
+        primary[parse_range_token(left)] = abbrev
+
+    # Extension rows win over the primary Script for the codepoints they cover.
+    entries = []
+    for (lo, hi), abbrevs in extensions.items():
+        entries.append((lo, hi, abbrevs))
+    covered = [(lo, hi) for lo, hi, _ in entries]
+    for (lo, hi), abbrev in primary.items():
+        for clo, chi in covered:
+            if clo <= lo and hi <= chi:
+                break
+        else:
+            entries.append((lo, hi, abbrev))
+    entries.sort()
+    return entries
+
+
+def emit_script_sets(path, entries):
+    """A codepoint's resolved script abbreviations as a space-separated text."""
+    lines = ["EVALUATE TRUE"]
+    for lo, hi, abbrevs in entries:
+        if lo == hi:
+            lines.append(f"    WHEN LOOKUP-CP = {lo}")
+        else:
+            lines.append(f"    WHEN LOOKUP-CP >= {lo} AND LOOKUP-CP <= {hi}")
+        lines.append(f'        MOVE "{abbrevs}" TO SCRIPT-SET-TEXT')
+    lines.append("END-EVALUATE.")
+    path.write_text("\n".join(lines) + "\n", encoding="ascii")
+
+
 def parse_variation_pairs():
     pairs = set()
     for name in ("StandardizedVariants.txt", "emoji-variation-sequences.txt"):
@@ -643,6 +723,7 @@ def main():
     emit_variation_pairs(OUT / "legal_variation.cpy", parse_variation_pairs())
     emit_value_eval(OUT / "confusable_source.cpy", parse_confusable_sources(), "MOVE 1 TO TABLE-FLAG")
     emit_script_flags(OUT / "script_flags.cpy", parse_script_ranges(DATA / "Scripts.txt"))
+    emit_script_sets(OUT / "script_sets.cpy", parse_resolved_script_sets())
     emit_range_eval(OUT / "strong_rtl.cpy", parse_bidi_ranges(DATA / "DerivedBidiClass.txt"), "MOVE 1 TO TABLE-FLAG")
     emit_range_eval(OUT / "strong_ltr.cpy", parse_bidi_ltr_ranges(DATA / "DerivedBidiClass.txt"), "MOVE 1 TO TABLE-FLAG")
     emit_range_eval(OUT / "eaw_fullwidth.cpy", parse_eaw_ranges(DATA / "EastAsianWidth.txt", {"F"}), "MOVE 1 TO TABLE-FLAG")

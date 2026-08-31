@@ -92,7 +92,9 @@ func sddHomoglyphFired(input []uint32) bool {
 	if _, ok := homoglyphConfusableFinding(input); ok {
 		return true
 	}
-	_, ok := mixedScriptAdmissibilityFinding(input)
+	// The constituent asks the script question about a source file, which is
+	// not an identifier field, so the Restricted-status rung does not apply.
+	_, ok := mixedScriptAdmissibilityFinding(input, false)
 	return ok
 }
 

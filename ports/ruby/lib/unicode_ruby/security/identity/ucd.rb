@@ -609,7 +609,23 @@ module UnicodeRuby
           return entry[2].dup if cp <= entry[1]
         end
         primary = script_of(cp)
-        [script_long_to_abbrev(primary)]
+        abbrev = script_long_to_abbrev(primary)
+        script_extension_abbrevs.key?(abbrev) ? [abbrev] : []
+      end
+
+      # The abbreviations the resolver can name: those occurring in
+      # ScriptExtensions.txt. Unicode/ResolvedScripts.lean models the same set
+      # as its ScriptAbbrev enum, which is why its scriptToAbbrev is partial
+      # over Script. A codepoint whose primary script falls outside this set
+      # resolves to no abbreviation on both sides; returning a singleton
+      # instead would make every unknown-script codepoint look Single-Script,
+      # putting restriction_level one rung too strict and hiding
+      # RestrictionLow.
+      def script_extension_abbrevs
+        @script_extension_abbrevs ||=
+          script_extensions_table
+            .flat_map { |row| row[2] }
+            .each_with_object({}) { |abbrev, seen| seen[abbrev] = true }
       end
 
       # ── PropertyValueAliases.txt — script long name → 4-letter abbreviation ─

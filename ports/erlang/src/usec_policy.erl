@@ -9,10 +9,27 @@
          scan_renderer_divergence/3,
          verdict_to_wire/1, verdict_to_json/1, finding_to_wire/1]).
 
+%% True iff the profile names a field holding one identifier, not running text.
+%% A username, a registrable domain and a DNS label are single identifiers, so a
+%% codepoint outside the General Security Profile is a hazard in them. The
+%% remaining profiles carry prose, source, URLs or opaque bytes, where a space
+%% and a punctuation mark are ordinary content. Mirrors profileIsIdentifierField
+%% in Unicode/Security/Policy.lean.
+profile_identifier_field(<<"domain-name">>) -> true;
+profile_identifier_field(<<"dns-label">>) -> true;
+profile_identifier_field(<<"username">>) -> true;
+profile_identifier_field(_OtherProfile) -> false.
+
 policy_of_profile(<<"gateway-header">>) -> #{level => restrictive, crypto => non_crypto, quarantine => false};
 policy_of_profile(<<"domain-name">>) -> #{level => restrictive, crypto => non_crypto, quarantine => false};
 policy_of_profile(<<"dns-label">>) -> #{level => restrictive, crypto => non_crypto, quarantine => false};
-policy_of_profile(<<"source-code">>) -> #{level => restrictive, crypto => non_crypto, quarantine => false};
+%% Source files legitimately carry right-to-left string literals, comments
+%% written in Hebrew or Arabic, and emoji. Restrictive admits RtlInjection,
+%% whose contract treats its input as a declared-LTR field, so under it an
+%% ordinary Hebrew comment is rejected. Moderate retains every detector that
+%% catches the Trojan Source class while dropping the field-direction
+%% assumption a source file does not satisfy.
+policy_of_profile(<<"source-code">>) -> #{level => moderate, crypto => non_crypto, quarantine => false};
 policy_of_profile(<<"url">>) -> #{level => moderate, crypto => non_crypto, quarantine => false};
 policy_of_profile(<<"username">>) -> #{level => moderate, crypto => non_crypto, quarantine => true};
 policy_of_profile(<<"display-name">>) -> #{level => minimal, crypto => non_crypto, quarantine => true};
@@ -123,13 +140,14 @@ scan(Profile, Mode, Input) ->
     F7 = push_positional(F6, noncharacter_control, <<"C0Control">>, positions(Input, fun c0_control/1)),
     F8 = push_positional(F7, noncharacter_control, <<"C1Control">>, positions(Input, fun c1_control/1)),
     H = usec_detectors:homoglyph_detect(Input),
-    F9 = case usec_detectors:sub_tag(maps:get(sub, H)) of
-             <<"CrossScriptMix">> -> F8;
-             _ -> push_finding(F8, homoglyph_confusable, maps:get(kind, H), maps:get(sub, H), case maps:get(kind, H) of clear -> []; _ -> positions_all(Input) end)
-         end,
-    F10 = case usec_detectors:mixed_script_admissibility(Input) of
-              true -> push_finding(F9, mixed_script_admissibility, hazard, usec_detectors:mixed_script_subthreat(Input), positions_all(Input));
-              false -> F9
+    %% Every rung of the homoglyph ladder is reported, CrossScriptMix included.
+    %% Unicode/Security/Policy.lean maps every non-clear family result to a
+    %% finding without filtering, so suppressing this rung would report fewer
+    %% findings than the proven spec for a cross-script input.
+    F9 = push_finding(F8, homoglyph_confusable, maps:get(kind, H), maps:get(sub, H), case maps:get(kind, H) of clear -> []; _ -> positions_all(Input) end),
+    F10 = case usec_detectors:mixed_script_verdict(Input, profile_identifier_field(Profile)) of
+              none -> F9;
+              MixedSub -> push_finding(F9, mixed_script_admissibility, hazard, MixedSub, positions_all(Input))
           end,
     F11 = push_optional(F10, rtl_injection, usec_detectors:rtl_injection_detect(Input)),
     F12 = push_optional(F11, confusable_bidi_compound, usec_detectors:confusable_bidi_detect(Input)),

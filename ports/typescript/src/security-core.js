@@ -129,6 +129,9 @@ export function configureSecurityData(data) {
   const compositionExclusions = requiredSecurityData(data, "compositionExclusions");
   const derivedCoreProperties = requiredSecurityData(data, "derivedCoreProperties");
   const identifierStatus = String(data?.identifierStatus ?? "");
+  const scripts = String(data?.scripts ?? "");
+  const scriptExtensions = String(data?.scriptExtensions ?? "");
+  const propertyValueAliases = String(data?.propertyValueAliases ?? "");
   const specialCasing = requiredSecurityData(data, "specialCasing");
   const emojiData = String(data?.emojiData ?? "");
   const emojiZwjSequences = String(data?.emojiZwjSequences ?? "");
@@ -166,6 +169,15 @@ export function configureSecurityData(data) {
     if (name === "IdentifierStatus.txt") {
       return identifierStatus;
     }
+    if (name === "Scripts.txt") {
+      return scripts;
+    }
+    if (name === "ScriptExtensions.txt") {
+      return scriptExtensions;
+    }
+    if (name === "PropertyValueAliases.txt") {
+      return propertyValueAliases;
+    }
     if (name === "SpecialCasing.txt") {
       return specialCasing;
     }
@@ -186,9 +198,25 @@ function requiredSecurityData(data, name) {
   return String(data[name]);
 }
 
+// True iff the profile names a field that holds one identifier rather than
+// running text.
+//
+// A username, a registrable domain and a DNS label are single identifiers, so a
+// codepoint outside the General Security Profile is a hazard in them. The
+// remaining profiles carry prose, source, URLs or opaque bytes, where a space
+// and a punctuation mark are ordinary content. Mirrors profileIsIdentifierField
+// in Unicode/Security/Policy.lean.
+function profileIsIdentifierField(profile) {
+  return (
+    profile === Profile.DomainName ||
+    profile === Profile.DnsLabel ||
+    profile === Profile.Username
+  );
+}
+
 export function scan(profile, mode, input) {
   const codepoints = Array.from(input, ensureCodepoint);
-  const findings = detect(codepoints);
+  const findings = detect(codepoints, profileIsIdentifierField(profile));
   return {
     action: decide(profile, mode, findings),
     profile,
@@ -253,7 +281,10 @@ export function verdictJson(verdict) {
 
 export const verdictJSON = verdictJson;
 
-function detect(input) {
+// detect runs every family over input. identifierField carries what the caller
+// knows about the field, mirroring Unicode.Security.RunAll's Context: a family
+// scoped to identifiers needs to know whether it is holding one.
+function detect(input, identifierField) {
   const findings = [];
 
   const tagPositions = positionsWhere(input, isTagBlockAsciiPayload);
@@ -287,7 +318,7 @@ function detect(input) {
   if (homoglyph !== null) {
     findings.push(homoglyph);
   }
-  const mixedScript = mixedScriptAdmissibilityFinding(input);
+  const mixedScript = mixedScriptAdmissibilityFinding(input, identifierField);
   if (mixedScript !== null) {
     findings.push(mixedScript);
   }
@@ -399,9 +430,15 @@ function policyOfProfile(profile) {
     case Profile.GatewayHeader:
     case Profile.DomainName:
     case Profile.DnsLabel:
-    case Profile.SourceCode:
       return { level: PolicyLevel.Restrictive, quarantine: false };
+    // Source files legitimately carry right-to-left string literals, comments
+    // written in Hebrew or Arabic, and emoji. Restrictive admits RtlInjection,
+    // whose contract treats its input as a declared-LTR field, so under it an
+    // ordinary Hebrew comment is rejected. Moderate retains every detector that
+    // catches the Trojan Source class while dropping the field-direction
+    // assumption a source file does not satisfy.
     case Profile.Url:
+    case Profile.SourceCode:
       return { level: PolicyLevel.Moderate, quarantine: false };
     case Profile.Username:
       return { level: PolicyLevel.Moderate, quarantine: true };
@@ -737,6 +774,16 @@ function homoglyphConfusableFinding(input) {
     subThreat = "WidthClass";
   } else if (hasDecompositionSwap(input)) {
     subThreat = "DecompositionSwap";
+  } else if (hasCrossScriptMix(input)) {
+    // The last two rungs of the Lean ladder, in its order: a cross-script mix
+    // that is not Highly Restrictive, then a string failing every restriction
+    // level. Both need real script resolution.
+    subThreat = "CrossScriptMix";
+  } else if (
+    restrictionLevel(input) === RestrictionLevel.MinimallyRestrictive ||
+    restrictionLevel(input) === RestrictionLevel.Unrestricted
+  ) {
+    subThreat = "RestrictionLow";
   }
 
   if (subThreat === "") {
@@ -745,11 +792,12 @@ function homoglyphConfusableFinding(input) {
   return makeFinding(Family.HomoglyphConfusable, subThreat, fullSpanPositions(input));
 }
 
-function mixedScriptAdmissibilityFinding(input) {
-  if (!hasCrossScriptMix(input)) {
+function mixedScriptAdmissibilityFinding(input, identifierField) {
+  const subThreat = mixedScriptVerdict(input, identifierField);
+  if (subThreat === null) {
     return null;
   }
-  return makeFinding(Family.MixedScriptAdmissibility, mixedScriptSubThreat(input), fullSpanPositions(input));
+  return makeFinding(Family.MixedScriptAdmissibility, subThreat, fullSpanPositions(input));
 }
 
 // Right-to-left injection detection for LTR-declared fields — a direct
@@ -3792,7 +3840,9 @@ function sddHomoglyphFired(input) {
   // homoglyph signal is the script mix.
   return (
     homoglyphConfusableFinding(input) !== null ||
-    mixedScriptAdmissibilityFinding(input) !== null
+    // The constituent asks the script question about a source file, which is
+    // not an identifier field, so the Restricted-status rung does not apply.
+    mixedScriptAdmissibilityFinding(input, false) !== null
   );
 }
 
@@ -4764,47 +4814,260 @@ function composeHangulPair(first, second) {
 }
 
 function hasCrossScriptMix(input) {
-  const seen = new Set();
-  for (const cp of input) {
-    const script = scriptClass(cp);
-    if (script !== null) {
-      seen.add(script);
-    }
-  }
-  return seen.size >= 2;
+  return stringScriptUnion(input).length >= 2 && !isHighlyRestrictive(input);
 }
 
-// The specific script-collision sub-threat, matching the Lean source of truth:
-// Latin/Cyrillic and Latin/Greek are named explicitly (Cyrillic before Greek);
-// every other multi-script mix is ScriptMixOther.
-function mixedScriptSubThreat(input) {
-  const seen = new Set();
-  for (const cp of input) {
-    const script = scriptClass(cp);
-    if (script !== null) {
-      seen.add(script);
-    }
+// The mixed-script sub-threat for input, or null when it is admissible.
+//
+// The rung order is Unicode/Security/Identity/MixedScriptAdmissibility.lean's:
+// a Restricted-status codepoint outranks every script question, then the two
+// named Latin pairs, then a multi-script mix split by whether it stays inside a
+// CJK covered set, and finally an Unrestricted level with no script mix.
+//
+// identifierField carries what the caller knows about the field, mirroring that
+// module's Context. Phase 1 is sound for an identifier, which cannot contain a
+// space, and unsound for a document, where every space and every punctuation
+// mark is Restricted.
+function mixedScriptVerdict(input, identifierField) {
+  if (identifierField && input.some((cp) => !isIdAllowed(cp))) {
+    return "RestrictedStatusCp";
   }
-  if (seen.has("Latn") && seen.has("Cyrl")) {
-    return "LatinCyrillic";
+  const union = stringScriptUnion(input);
+  const seen = new Set(union);
+  if (seen.has("Latn") && seen.has("Cyrl")) return "LatinCyrillic";
+  if (seen.has("Latn") && seen.has("Grek")) return "LatinGreek";
+  if (union.length >= 2 && !isHighlyRestrictive(input)) {
+    return isCoveredCjk(input) ? "CjkMix" : "ScriptMixOther";
   }
-  if (seen.has("Latn") && seen.has("Grek")) {
-    return "LatinGreek";
-  }
-  return "ScriptMixOther";
-}
-
-function scriptClass(cp) {
-  if ((cp >= 0x0041 && cp <= 0x005a) || (cp >= 0x0061 && cp <= 0x007a) || (cp >= 0x00c0 && cp <= 0x024f)) {
-    return "Latn";
-  }
-  if ((cp >= 0x0370 && cp <= 0x03ff) || (cp >= 0x1f00 && cp <= 0x1fff)) {
-    return "Grek";
-  }
-  if (cp >= 0x0400 && cp <= 0x052f) {
-    return "Cyrl";
+  if (identifierField && restrictionLevel(input) === RestrictionLevel.Unrestricted) {
+    return "UnrestrictedLevel";
   }
   return null;
+}
+
+function mixedScriptSubThreat(input) {
+  return mixedScriptVerdict(input, true) ?? "ScriptMixOther";
+}
+
+// UTS #39 §5.1 restriction levels, mirroring Unicode/Restriction.lean.
+//
+// Script resolution reads the vendored Scripts.txt and ScriptExtensions.txt:
+// a codepoint's Script_Extensions where the file gives one, otherwise the
+// abbreviation of its primary Script. The abbreviation vocabulary is exactly
+// the set occurring in ScriptExtensions.txt, which is what
+// Unicode/ResolvedScripts.lean models as its ScriptAbbrev enum, so a primary
+// script outside it resolves to nothing on both sides. Returning a singleton
+// there instead would make every unknown-script codepoint look Single-Script,
+// putting restrictionLevel one rung too strict and hiding RestrictionLow.
+
+const RestrictionLevel = Object.freeze({
+  ASCIIOnly: "ASCIIOnly",
+  SingleScript: "SingleScript",
+  HighlyRestrictive: "HighlyRestrictive",
+  ModeratelyRestrictive: "ModeratelyRestrictive",
+  MinimallyRestrictive: "MinimallyRestrictive",
+  Unrestricted: "Unrestricted",
+});
+
+let scriptRangesCache = null;
+let scriptExtRangesCache = null;
+let scriptExtAbbrevsCache = null;
+let scriptLongToAbbrevCache = null;
+
+// Parse a "RANGE ; VALUE" table into ascending ranges. The value field splits
+// on whitespace, so a Scripts.txt row yields one long name and a
+// ScriptExtensions.txt row yields its abbreviation list.
+function parseScriptRanges(raw) {
+  const ranges = [];
+  for (const rawLine of raw.split("\n")) {
+    const body = rawLine.split("#")[0].trim();
+    if (body === "") continue;
+    const semi = body.indexOf(";");
+    if (semi < 0) continue;
+    const value = body.slice(semi + 1).trim().split(/\s+/).filter((s) => s !== "");
+    if (value.length === 0) continue;
+    const rangeField = body.slice(0, semi).trim();
+    const dots = rangeField.indexOf("..");
+    let lo;
+    let hi;
+    if (dots >= 0) {
+      lo = Number.parseInt(rangeField.slice(0, dots), 16);
+      hi = Number.parseInt(rangeField.slice(dots + 2), 16);
+    } else {
+      lo = Number.parseInt(rangeField, 16);
+      hi = lo;
+    }
+    if (!Number.isFinite(lo) || !Number.isFinite(hi)) continue;
+    ranges.push({ lo, hi, value });
+  }
+  ranges.sort((a, b) => a.lo - b.lo);
+  return ranges;
+}
+
+function findScriptRange(ranges, cp) {
+  let lo = 0;
+  let hi = ranges.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (ranges[mid].lo > cp) hi = mid;
+    else lo = mid + 1;
+  }
+  if (lo === 0) return null;
+  const entry = ranges[lo - 1];
+  return cp <= entry.hi ? entry : null;
+}
+
+function scriptsTable() {
+  if (scriptRangesCache === null) {
+    scriptRangesCache = parseScriptRanges(readDataFile("Scripts.txt"));
+  }
+  return scriptRangesCache;
+}
+
+function scriptExtensionsTable() {
+  if (scriptExtRangesCache === null) {
+    scriptExtRangesCache = parseScriptRanges(readDataFile("ScriptExtensions.txt"));
+    scriptExtAbbrevsCache = new Set();
+    for (const row of scriptExtRangesCache) {
+      for (const abbrev of row.value) scriptExtAbbrevsCache.add(abbrev);
+    }
+  }
+  return scriptExtRangesCache;
+}
+
+// Script long name to four-letter abbreviation, from the "sc" rows of
+// PropertyValueAliases.txt.
+function scriptLongToAbbrev() {
+  if (scriptLongToAbbrevCache === null) {
+    scriptLongToAbbrevCache = new Map();
+    for (const rawLine of readDataFile("PropertyValueAliases.txt").split("\n")) {
+      const body = rawLine.split("#")[0];
+      const fields = body.split(";");
+      if (fields.length < 3 || fields[0].trim() !== "sc") continue;
+      const abbrev = fields[1].trim();
+      const long = fields[2].trim();
+      if (abbrev !== "" && long !== "") scriptLongToAbbrevCache.set(long, abbrev);
+    }
+  }
+  return scriptLongToAbbrevCache;
+}
+
+function scriptOf(cp) {
+  const entry = findScriptRange(scriptsTable(), cp);
+  return entry === null ? "Unknown" : entry.value[0];
+}
+
+function resolveScripts(cp) {
+  const entry = findScriptRange(scriptExtensionsTable(), cp);
+  if (entry !== null) return entry.value;
+  scriptExtensionsTable();
+  const abbrev = scriptLongToAbbrev().get(scriptOf(cp));
+  if (abbrev === undefined || !scriptExtAbbrevsCache.has(abbrev)) return [];
+  return [abbrev];
+}
+
+function isIgnoredForIntersection(cp) {
+  const script = scriptOf(cp);
+  return script === "Common" || script === "Inherited";
+}
+
+function intersectsScripts(a, b) {
+  return a.some((x) => b.includes(x));
+}
+
+function stringResolvedScripts(cps) {
+  let acc = null;
+  for (const cp of cps) {
+    if (isIgnoredForIntersection(cp)) continue;
+    const resolved = resolveScripts(cp);
+    if (acc === null) {
+      acc = [...resolved];
+      continue;
+    }
+    acc = acc.filter((s) => resolved.includes(s));
+  }
+  return acc === null ? [] : acc;
+}
+
+function stringScriptUnion(cps) {
+  const union = [];
+  const seen = new Set();
+  for (const cp of cps) {
+    if (isIgnoredForIntersection(cp)) continue;
+    for (const s of resolveScripts(cp)) {
+      if (!seen.has(s)) {
+        seen.add(s);
+        union.push(s);
+      }
+    }
+  }
+  return union;
+}
+
+function isASCIIOnly(cps) {
+  return cps.every((cp) => cp < 0x80);
+}
+
+function isSingleScript(cps) {
+  return !isASCIIOnly(cps) && stringResolvedScripts(cps).length > 0;
+}
+
+const COVERED_JAPANESE = ["Latn", "Hani", "Hira", "Kana"];
+const COVERED_CHINESE = ["Latn", "Hani", "Bopo"];
+const COVERED_KOREAN = ["Latn", "Hani", "Hang"];
+
+function allWithinCovered(cps, covered) {
+  for (const cp of cps) {
+    if (isIgnoredForIntersection(cp)) continue;
+    const resolved = resolveScripts(cp);
+    if (resolved.length === 0 || !intersectsScripts(resolved, covered)) return false;
+  }
+  return true;
+}
+
+function isCoveredCjk(cps) {
+  return (
+    allWithinCovered(cps, COVERED_JAPANESE) ||
+    allWithinCovered(cps, COVERED_CHINESE) ||
+    allWithinCovered(cps, COVERED_KOREAN)
+  );
+}
+
+function isHighlyRestrictive(cps) {
+  return isSingleScript(cps) || isCoveredCjk(cps);
+}
+
+// Every codepoint resolves to Latin or to one fixed other Recommended script,
+// with that other script neither Cyrillic nor Greek.
+function isModeratelyRestrictiveShape(cps) {
+  let other = "";
+  for (const cp of cps) {
+    if (isIgnoredForIntersection(cp)) continue;
+    const resolved = resolveScripts(cp);
+    if (resolved.length === 0) return false;
+    if (resolved.includes("Latn")) continue;
+    const s = resolved[0];
+    if (s === "Cyrl" || s === "Grek") return false;
+    if (other === "") {
+      other = s;
+      continue;
+    }
+    if (s !== other) return false;
+  }
+  return other !== "";
+}
+
+function isMinimallyRestrictive(cps) {
+  return cps.every((cp) => isIdAllowed(cp));
+}
+
+function restrictionLevel(cps) {
+  if (isASCIIOnly(cps)) return RestrictionLevel.ASCIIOnly;
+  if (isSingleScript(cps)) return RestrictionLevel.SingleScript;
+  if (isHighlyRestrictive(cps)) return RestrictionLevel.HighlyRestrictive;
+  if (isModeratelyRestrictiveShape(cps)) return RestrictionLevel.ModeratelyRestrictive;
+  if (isMinimallyRestrictive(cps)) return RestrictionLevel.MinimallyRestrictive;
+  return RestrictionLevel.Unrestricted;
 }
 
 function isDefaultIgnorableCodepoint(cp) {

@@ -822,10 +822,32 @@ fn script_extensions_table() -> &'static Vec<RangeEntry<Vec<String>>> {
     T.get_or_init(parse_script_extensions)
 }
 
+/// The script abbreviations the resolver can name: exactly those that occur
+/// in `ScriptExtensions.txt`.  `Unicode/ResolvedScripts.lean` models the same
+/// set as the `ScriptAbbrev` enum, and its `scriptToAbbrev` is partial over
+/// `Script` for that reason, so a script outside this set resolves to no
+/// abbreviation on both sides.
+fn script_extension_abbrevs() -> &'static std::collections::BTreeSet<String> {
+    static T: OnceLock<std::collections::BTreeSet<String>> = OnceLock::new();
+    T.get_or_init(|| {
+        script_extensions_table()
+            .iter()
+            .flat_map(|row| row.value.iter().cloned())
+            .collect()
+    })
+}
+
 /// Resolve scripts for `cp`.  Returns the ScriptExtensions list
 /// (which can be multiple abbreviations like "Adlm Arab Mand") if
 /// the codepoint has one, otherwise the single primary script
 /// from Scripts.txt.
+///
+/// A codepoint whose primary script has no abbreviation in the resolver's
+/// vocabulary resolves to the empty set, mirroring
+/// `Unicode/ResolvedScripts.lean`'s `resolveScripts`, whose fallback yields
+/// `[]` when `scriptToAbbrev` is `none`.  Returning a singleton there instead
+/// would make every unknown-script codepoint look Single-Script, which puts
+/// `restrictionLevel` one rung too strict and hides `RestrictionLow`.
 pub fn resolve_scripts(cp: u32) -> Vec<String> {
     let table = script_extensions_table();
     let idx = table.partition_point(|r| r.start <= cp);
@@ -837,7 +859,12 @@ pub fn resolve_scripts(cp: u32) -> Vec<String> {
     }
     // Map full script name from Scripts.txt to its abbreviation.
     let primary = script_of(cp);
-    vec![script_long_to_abbrev(primary).to_string()]
+    let abbrev = script_long_to_abbrev(primary);
+    if script_extension_abbrevs().contains(abbrev) {
+        vec![abbrev.to_string()]
+    } else {
+        Vec::new()
+    }
 }
 
 /// Authoritative long-name → 4-letter abbreviation table for the

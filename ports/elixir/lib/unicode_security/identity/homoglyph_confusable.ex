@@ -26,7 +26,45 @@ defmodule UnicodeSecurity.Identity.HomoglyphConfusable do
   end
 
   def mixed_script_admissibility?(input) do
-    length(Ucd.string_script_union(input)) >= 2 and not Ucd.highly_restrictive?(input)
+    mixed_script_verdict(input, true) != nil
+  end
+
+  @doc """
+  The mixed-script sub-threat for `input`, or nil when admissible.
+
+  The rung order is MixedScriptAdmissibility.lean's: a Restricted-status
+  codepoint outranks every script question, then the two named Latin pairs,
+  then a multi-script mix split by whether it stays inside a CJK covered set,
+  and finally an Unrestricted level with no script mix.
+
+  `identifier_field` carries what the caller knows about the field, mirroring
+  that module's Context. Phase 1 is sound for an identifier, which cannot
+  contain a space, and unsound for a document, where every space and every
+  punctuation mark is Restricted.
+  """
+  def mixed_script_verdict(input, identifier_field) do
+    set = input |> Ucd.string_script_union() |> MapSet.new()
+    union_size = MapSet.size(set)
+
+    cond do
+      identifier_field and Enum.any?(input, fn cp -> not Ucd.id_allowed?(cp) end) ->
+        "RestrictedStatusCp"
+
+      MapSet.member?(set, "Latn") and MapSet.member?(set, "Cyrl") ->
+        "LatinCyrillic"
+
+      MapSet.member?(set, "Latn") and MapSet.member?(set, "Grek") ->
+        "LatinGreek"
+
+      union_size >= 2 and not Ucd.highly_restrictive?(input) ->
+        if Ucd.covered_cjk?(input), do: "CjkMix", else: "ScriptMixOther"
+
+      identifier_field and Ucd.restriction_level(input) == :unrestricted ->
+        "UnrestrictedLevel"
+
+      true ->
+        nil
+    end
   end
 
   def mixed_script_subthreat(input) do
@@ -64,7 +102,9 @@ defmodule UnicodeSecurity.Identity.HomoglyphConfusable do
       Ucd.to_nfc(input) != input ->
         %{base | kind: :hazard, sub: %{tag: "DecompositionSwap"}}
 
-      mixed_script_admissibility?(input) ->
+      # Priority 5: CrossScriptMix asks the script question only; the
+      # Restricted-status rung belongs to the mixed-script family.
+      length(Ucd.string_script_union(input)) >= 2 and not Ucd.highly_restrictive?(input) ->
         %{base | kind: :hazard, sub: %{tag: "CrossScriptMix"}}
 
       rl in [:minimally_restrictive, :unrestricted] ->

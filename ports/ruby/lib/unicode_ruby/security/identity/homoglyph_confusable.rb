@@ -78,22 +78,44 @@ module UnicodeRuby
 
         # True when the input violates the mixed-script admissibility policy.
         def has_mixed_script_admissibility(input)
-          union = Ucd.string_script_union(input)
-          union.length >= 2 && !Ucd.highly_restrictive?(input)
+          !mixed_script_verdict(input, true).nil?
         end
 
         # The specific script-collision sub-threat.  Latin/Cyrillic and
         # Latin/Greek are named explicitly (Cyrillic before Greek).
         def mixed_script_subthreat(input)
+          mixed_script_verdict(input, true) || "ScriptMixOther"
+        end
+
+        # The mixed-script sub-threat for +input+, or nil when admissible.
+        #
+        # The rung order is MixedScriptAdmissibility.lean's: a Restricted-status
+        # codepoint outranks every script question, then the two named Latin
+        # pairs, then a multi-script mix split by whether it stays inside a CJK
+        # covered set, and finally an Unrestricted level with no script mix.
+        #
+        # +identifier_field+ carries what the caller knows about the field,
+        # mirroring that module's Context. Phase 1 is sound for an identifier,
+        # which cannot contain a space, and unsound for a document, where every
+        # space and every punctuation mark is Restricted.
+        def mixed_script_verdict(input, identifier_field)
+          if identifier_field && input.any? { |cp| !Ucd.id_allowed?(cp) }
+            return "RestrictedStatusCp"
+          end
+
           union = Ucd.string_script_union(input)
           has = ->(s) { union.include?(s) }
-          if has.call("Latn") && has.call("Cyrl")
-            "LatinCyrillic"
-          elsif has.call("Latn") && has.call("Grek")
-            "LatinGreek"
-          else
-            "ScriptMixOther"
+          return "LatinCyrillic" if has.call("Latn") && has.call("Cyrl")
+          return "LatinGreek" if has.call("Latn") && has.call("Grek")
+
+          if union.length >= 2 && !Ucd.highly_restrictive?(input)
+            return Ucd.covered_cjk?(input) ? "CjkMix" : "ScriptMixOther"
           end
+          if identifier_field && Ucd.restriction_level(input) == Ucd::RestrictionLevel::UNRESTRICTED
+            return "UnrestrictedLevel"
+          end
+
+          nil
         end
 
         def substitute(input)

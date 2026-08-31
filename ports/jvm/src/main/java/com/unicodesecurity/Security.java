@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -121,9 +122,23 @@ public final class Security {
 
   private Security() {}
 
+  // True iff the profile names a field that holds one identifier rather than
+  // running text.
+  //
+  // A username, a registrable domain and a DNS label are single identifiers, so
+  // a codepoint outside the General Security Profile is a hazard in them. The
+  // remaining profiles carry prose, source, URLs or opaque bytes, where a space
+  // and a punctuation mark are ordinary content. Mirrors
+  // profileIsIdentifierField in Unicode/Security/Policy.lean.
+  static boolean profileIsIdentifierField(String profile) {
+    return profile.equals(Profile.DOMAIN_NAME)
+        || profile.equals(Profile.DNS_LABEL)
+        || profile.equals(Profile.USERNAME);
+  }
+
   public static Verdict scan(String profile, String mode, List<Integer> input) {
     List<Integer> codepoints = input.stream().map(Security::ensureCodepoint).toList();
-    List<Finding> findings = detect(codepoints);
+    List<Finding> findings = detect(codepoints, profileIsIdentifierField(profile));
     return new Verdict(decide(profile, mode, findings), profile, mode, codepoints, findings, null);
   }
 
@@ -188,7 +203,10 @@ public final class Security {
     return out.toString();
   }
 
-  private static List<Finding> detect(List<Integer> input) {
+  // detect runs every family over input. identifierField carries what the caller
+  // knows about the field, mirroring Unicode.Security.RunAll's Context: a family
+  // scoped to identifiers needs to know whether it is holding one.
+  private static List<Finding> detect(List<Integer> input, boolean identifierField) {
     List<Finding> findings = new ArrayList<>();
     List<Integer> tags = positionsWhere(input, Security::isTagBlockAsciiPayload);
     if (!tags.isEmpty()) findings.add(makeFinding(Family.TAG_BLOCK_PAYLOAD, "DirectAscii", tags));
@@ -203,7 +221,7 @@ public final class Security {
     findings.addAll(noncharacterControlFindings(input));
     Finding homoglyph = homoglyphConfusableFinding(input);
     if (homoglyph != null) findings.add(homoglyph);
-    Finding mixedScript = mixedScriptAdmissibilityFinding(input);
+    Finding mixedScript = mixedScriptAdmissibilityFinding(input, identifierField);
     if (mixedScript != null) findings.add(mixedScript);
     Finding rtl = rtlInjectionFinding(input);
     if (rtl != null) findings.add(rtl);
@@ -285,7 +303,9 @@ public final class Security {
     // only the first builder misses every input whose sole homoglyph signal is
     // the script mix.
     return homoglyphConfusableFinding(input) != null
-        || mixedScriptAdmissibilityFinding(input) != null;
+        // The constituent asks the script question about a source file, which is
+        // not an identifier field, so the Restricted-status rung does not apply.
+        || mixedScriptAdmissibilityFinding(input, false) != null;
   }
 
   private static String decide(String profile, String mode, List<Finding> findings) {
@@ -303,9 +323,15 @@ public final class Security {
 
   private static ProfilePolicy policyOfProfile(String profile) {
     return switch (profile) {
-      case Profile.GATEWAY_HEADER, Profile.DOMAIN_NAME, Profile.DNS_LABEL, Profile.SOURCE_CODE ->
+      case Profile.GATEWAY_HEADER, Profile.DOMAIN_NAME, Profile.DNS_LABEL ->
           new ProfilePolicy(PolicyLevel.RESTRICTIVE, false);
-      case Profile.URL -> new ProfilePolicy(PolicyLevel.MODERATE, false);
+      // Source files legitimately carry right-to-left string literals, comments
+      // written in Hebrew or Arabic, and emoji. Restrictive admits RtlInjection,
+      // whose contract treats its input as a declared-LTR field, so under it an
+      // ordinary Hebrew comment is rejected. Moderate retains every detector that
+      // catches the Trojan Source class while dropping the field-direction
+      // assumption a source file does not satisfy.
+      case Profile.URL, Profile.SOURCE_CODE -> new ProfilePolicy(PolicyLevel.MODERATE, false);
       case Profile.USERNAME -> new ProfilePolicy(PolicyLevel.MODERATE, true);
       case Profile.DISPLAY_NAME, Profile.CHAT_MESSAGE -> new ProfilePolicy(PolicyLevel.MINIMAL, true);
       case Profile.OPAQUE_SECRET, Profile.BINARY_BLOB -> new ProfilePolicy(PolicyLevel.MINIMAL, false);
@@ -530,13 +556,20 @@ public final class Security {
     else if (input.stream().anyMatch(Security::isMathAlphanumeric)) subThreat = "MathAlpha";
     else if (input.stream().anyMatch(Security::isFullwidthHalfwidth)) subThreat = "WidthClass";
     else if (hasDecompositionSwap(input)) subThreat = "DecompositionSwap";
+    // The last two rungs of the Lean ladder, in its order: a cross-script mix
+    // that is not Highly Restrictive, then a string failing every restriction
+    // level. Both need real script resolution.
+    else if (hasCrossScriptMix(input)) subThreat = "CrossScriptMix";
+    else if (restrictionLevel(input) == RestrictionLevel.MINIMALLY_RESTRICTIVE
+        || restrictionLevel(input) == RestrictionLevel.UNRESTRICTED) subThreat = "RestrictionLow";
     if (subThreat.isEmpty()) return null;
     return makeFinding(Family.HOMOGLYPH_CONFUSABLE, subThreat, fullSpanPositions(input));
   }
 
-  private static Finding mixedScriptAdmissibilityFinding(List<Integer> input) {
-    if (!hasCrossScriptMix(input)) return null;
-    return makeFinding(Family.MIXED_SCRIPT_ADMISSIBILITY, mixedScriptSubThreat(input), fullSpanPositions(input));
+  private static Finding mixedScriptAdmissibilityFinding(List<Integer> input, boolean identifierField) {
+    String subThreat = mixedScriptVerdict(input, identifierField);
+    if (subThreat == null) return null;
+    return makeFinding(Family.MIXED_SCRIPT_ADMISSIBILITY, subThreat, fullSpanPositions(input));
   }
 
   /** Sub-threat and offending positions of an RTL-injection scan; null sub-threat means clear. */
@@ -2006,6 +2039,9 @@ public final class Security {
   // and the canonical data/SHA256SUMS.
   private static final Map<String, String> PINNED_TABLE_DIGESTS = Map.ofEntries(
       Map.entry("CaseFolding.txt", "ff8d8fefbf123574205085d6714c36149eb946d717a0c585c27f0f4ef58c4183"),
+      Map.entry("Scripts.txt", "9f5e50d3abaee7d6ce09480f325c706f485ae3240912527e651954d2d6b035bf"),
+      Map.entry("ScriptExtensions.txt", "ec2107e58825a1586acee8e0911ce18260394ac8b87e535ca325f1ccbeb06bc6"),
+      Map.entry("PropertyValueAliases.txt", "64e9a5f76f7a1e8b5a47d6a1f9a26522a251208f5276bdfa1559dac7cf2e827a"),
       Map.entry("confusables.txt", "091c7f82fc39ef208faf8f94d29c244de99254675e09de163160c810d13ef22a"),
       Map.entry("KnownAttackTargets.txt", "47acf87f48e23c2e3ddfb5aed877965fbe29142e61f6f85c4ee7db90c0684947"),
       Map.entry("StandardizedVariants.txt", "f55100b2fb11d3d75a37b8c1ab752192dbd1c4b12328c5ec6b38e3807c0ca597"),
@@ -2119,34 +2155,246 @@ public final class Security {
     return isLV && isT;
   }
 
-  private static boolean hasCrossScriptMix(List<Integer> input) {
-    Set<String> seen = new HashSet<>();
-    for (int cp : input) {
-      String script = scriptClass(cp);
-      if (script != null) seen.add(script);
-    }
-    return seen.size() >= 2;
+  // UTS #39 §5.1 restriction levels, mirroring Unicode/Restriction.lean.
+  //
+  // Script resolution reads the vendored Scripts.txt and ScriptExtensions.txt:
+  // a codepoint's Script_Extensions where the file gives one, otherwise the
+  // abbreviation of its primary Script. The abbreviation vocabulary is exactly
+  // the set occurring in ScriptExtensions.txt, which is what
+  // Unicode/ResolvedScripts.lean models as its ScriptAbbrev enum, so a primary
+  // script outside it resolves to nothing on both sides. Returning a singleton
+  // there instead would make every unknown-script codepoint look Single-Script,
+  // putting restrictionLevel one rung too strict and hiding RestrictionLow.
+
+  enum RestrictionLevel {
+    ASCII_ONLY,
+    SINGLE_SCRIPT,
+    HIGHLY_RESTRICTIVE,
+    MODERATELY_RESTRICTIVE,
+    MINIMALLY_RESTRICTIVE,
+    UNRESTRICTED
   }
 
-  // The specific script-collision sub-threat, matching the Lean source of truth:
-  // Latin/Cyrillic and Latin/Greek are named explicitly (Cyrillic before Greek);
-  // every other multi-script mix is ScriptMixOther.
-  private static String mixedScriptSubThreat(List<Integer> input) {
-    Set<String> seen = new HashSet<>();
-    for (int cp : input) {
-      String script = scriptClass(cp);
-      if (script != null) seen.add(script);
+  private static List<Object[]> scriptRanges;
+  private static List<Object[]> scriptExtRanges;
+  private static Set<String> scriptExtAbbrevs;
+  private static Map<String, String> scriptLongToAbbrev;
+
+  // Parse a "RANGE ; VALUE" table into ascending ranges. The value field splits
+  // on whitespace, so a Scripts.txt row yields one long name and a
+  // ScriptExtensions.txt row yields its abbreviation list.
+  private static List<Object[]> parseScriptRanges(String raw) {
+    List<Object[]> out = new ArrayList<>();
+    for (String rawLine : raw.split("\n", -1)) {
+      int hash = rawLine.indexOf('#');
+      String line = (hash >= 0 ? rawLine.substring(0, hash) : rawLine).trim();
+      if (line.isEmpty()) continue;
+      String[] parts = line.split(";", 2);
+      if (parts.length < 2) continue;
+      String[] value = parts[1].trim().split("\\s+");
+      if (value.length == 0 || value[0].isEmpty()) continue;
+      String field = parts[0].trim();
+      int dots = field.indexOf("..");
+      Integer lo;
+      Integer hi;
+      if (dots < 0) {
+        lo = parseHex(field);
+        hi = lo;
+      } else {
+        lo = parseHex(field.substring(0, dots).trim());
+        hi = parseHex(field.substring(dots + 2).trim());
+      }
+      if (lo == null || hi == null) continue;
+      out.add(new Object[] {lo, hi, value});
     }
-    if (seen.contains("Latn") && seen.contains("Cyrl")) return "LatinCyrillic";
-    if (seen.contains("Latn") && seen.contains("Grek")) return "LatinGreek";
-    return "ScriptMixOther";
+    out.sort((a, b) -> Integer.compare((Integer) a[0], (Integer) b[0]));
+    return out;
   }
 
-  private static String scriptClass(int cp) {
-    if ((cp >= 0x0041 && cp <= 0x005A) || (cp >= 0x0061 && cp <= 0x007A) || (cp >= 0x00C0 && cp <= 0x024F)) return "Latn";
-    if ((cp >= 0x0370 && cp <= 0x03FF) || (cp >= 0x1F00 && cp <= 0x1FFF)) return "Grek";
-    if (cp >= 0x0400 && cp <= 0x052F) return "Cyrl";
+  private static String[] findScriptRange(List<Object[]> ranges, int cp) {
+    for (Object[] row : ranges) {
+      if ((Integer) row[0] <= cp && cp <= (Integer) row[1]) return (String[]) row[2];
+    }
     return null;
+  }
+
+  private static synchronized List<Object[]> scriptsTable() {
+    if (scriptRanges == null) scriptRanges = parseScriptRanges(readResource("Scripts.txt"));
+    return scriptRanges;
+  }
+
+  private static synchronized List<Object[]> scriptExtensionsTable() {
+    if (scriptExtRanges == null) {
+      scriptExtRanges = parseScriptRanges(readResource("ScriptExtensions.txt"));
+      scriptExtAbbrevs = new HashSet<>();
+      for (Object[] row : scriptExtRanges) {
+        for (String abbrev : (String[]) row[2]) scriptExtAbbrevs.add(abbrev);
+      }
+    }
+    return scriptExtRanges;
+  }
+
+  // Script long name to four-letter abbreviation, from the "sc" rows of
+  // PropertyValueAliases.txt.
+  private static synchronized Map<String, String> scriptAliasMap() {
+    if (scriptLongToAbbrev == null) {
+      scriptLongToAbbrev = new HashMap<>();
+      for (String rawLine : readResource("PropertyValueAliases.txt").split("\n", -1)) {
+        int hash = rawLine.indexOf('#');
+        String line = hash >= 0 ? rawLine.substring(0, hash) : rawLine;
+        String[] fields = line.split(";");
+        if (fields.length < 3 || !fields[0].trim().equals("sc")) continue;
+        String abbrev = fields[1].trim();
+        String name = fields[2].trim();
+        if (!abbrev.isEmpty() && !name.isEmpty()) scriptLongToAbbrev.put(name, abbrev);
+      }
+    }
+    return scriptLongToAbbrev;
+  }
+
+  private static String scriptOf(int cp) {
+    String[] value = findScriptRange(scriptsTable(), cp);
+    return value == null ? "Unknown" : value[0];
+  }
+
+  private static List<String> resolveScripts(int cp) {
+    String[] ext = findScriptRange(scriptExtensionsTable(), cp);
+    if (ext != null) return Arrays.asList(ext);
+    scriptExtensionsTable();
+    String abbrev = scriptAliasMap().get(scriptOf(cp));
+    if (abbrev == null || !scriptExtAbbrevs.contains(abbrev)) return List.of();
+    return List.of(abbrev);
+  }
+
+  private static boolean isIgnoredForIntersection(int cp) {
+    String script = scriptOf(cp);
+    return script.equals("Common") || script.equals("Inherited");
+  }
+
+  private static boolean intersectsScripts(List<String> a, List<String> b) {
+    for (String x : a) if (b.contains(x)) return true;
+    return false;
+  }
+
+  private static Set<String> stringScriptUnion(List<Integer> input) {
+    Set<String> union = new HashSet<>();
+    for (int cp : input) {
+      if (isIgnoredForIntersection(cp)) continue;
+      union.addAll(resolveScripts(cp));
+    }
+    return union;
+  }
+
+  private static List<String> stringResolvedScripts(List<Integer> input) {
+    List<String> acc = null;
+    for (int cp : input) {
+      if (isIgnoredForIntersection(cp)) continue;
+      List<String> resolved = resolveScripts(cp);
+      if (acc == null) {
+        acc = new ArrayList<>(resolved);
+        continue;
+      }
+      acc.retainAll(resolved);
+    }
+    return acc == null ? List.of() : acc;
+  }
+
+  private static boolean isAsciiOnly(List<Integer> input) {
+    for (int cp : input) if (cp >= 0x80) return false;
+    return true;
+  }
+
+  private static boolean isSingleScript(List<Integer> input) {
+    return !isAsciiOnly(input) && !stringResolvedScripts(input).isEmpty();
+  }
+
+  private static boolean allWithinCovered(List<Integer> input, List<String> covered) {
+    for (int cp : input) {
+      if (isIgnoredForIntersection(cp)) continue;
+      List<String> resolved = resolveScripts(cp);
+      if (resolved.isEmpty() || !intersectsScripts(resolved, covered)) return false;
+    }
+    return true;
+  }
+
+  private static boolean isCoveredCjk(List<Integer> input) {
+    return allWithinCovered(input, List.of("Latn", "Hani", "Hira", "Kana"))
+        || allWithinCovered(input, List.of("Latn", "Hani", "Bopo"))
+        || allWithinCovered(input, List.of("Latn", "Hani", "Hang"));
+  }
+
+  private static boolean isHighlyRestrictive(List<Integer> input) {
+    return isSingleScript(input) || isCoveredCjk(input);
+  }
+
+  // Every codepoint resolves to Latin or to one fixed other Recommended script,
+  // with that other script neither Cyrillic nor Greek.
+  private static boolean isModeratelyRestrictiveShape(List<Integer> input) {
+    String other = null;
+    for (int cp : input) {
+      if (isIgnoredForIntersection(cp)) continue;
+      List<String> resolved = resolveScripts(cp);
+      if (resolved.isEmpty()) return false;
+      if (resolved.contains("Latn")) continue;
+      String s = resolved.get(0);
+      if (s.equals("Cyrl") || s.equals("Grek")) return false;
+      if (other == null) {
+        other = s;
+        continue;
+      }
+      if (!s.equals(other)) return false;
+    }
+    return other != null;
+  }
+
+  private static boolean isMinimallyRestrictive(List<Integer> input) {
+    for (int cp : input) if (!isIdAllowed(cp)) return false;
+    return true;
+  }
+
+  static RestrictionLevel restrictionLevel(List<Integer> input) {
+    if (isAsciiOnly(input)) return RestrictionLevel.ASCII_ONLY;
+    if (isSingleScript(input)) return RestrictionLevel.SINGLE_SCRIPT;
+    if (isHighlyRestrictive(input)) return RestrictionLevel.HIGHLY_RESTRICTIVE;
+    if (isModeratelyRestrictiveShape(input)) return RestrictionLevel.MODERATELY_RESTRICTIVE;
+    if (isMinimallyRestrictive(input)) return RestrictionLevel.MINIMALLY_RESTRICTIVE;
+    return RestrictionLevel.UNRESTRICTED;
+  }
+
+  private static boolean hasCrossScriptMix(List<Integer> input) {
+    return stringScriptUnion(input).size() >= 2 && !isHighlyRestrictive(input);
+  }
+
+  // The mixed-script sub-threat for input, or null when it is admissible.
+  //
+  // The rung order is Unicode/Security/Identity/MixedScriptAdmissibility.lean's:
+  // a Restricted-status codepoint outranks every script question, then the two
+  // named Latin pairs, then a multi-script mix split by whether it stays inside
+  // a CJK covered set, and finally an Unrestricted level with no script mix.
+  //
+  // identifierField carries what the caller knows about the field, mirroring
+  // that module's Context. Phase 1 is sound for an identifier, which cannot
+  // contain a space, and unsound for a document, where every space and every
+  // punctuation mark is Restricted.
+  private static String mixedScriptVerdict(List<Integer> input, boolean identifierField) {
+    if (identifierField) {
+      for (int cp : input) if (!isIdAllowed(cp)) return "RestrictedStatusCp";
+    }
+    Set<String> union = stringScriptUnion(input);
+    if (union.contains("Latn") && union.contains("Cyrl")) return "LatinCyrillic";
+    if (union.contains("Latn") && union.contains("Grek")) return "LatinGreek";
+    if (union.size() >= 2 && !isHighlyRestrictive(input)) {
+      return isCoveredCjk(input) ? "CjkMix" : "ScriptMixOther";
+    }
+    if (identifierField && restrictionLevel(input) == RestrictionLevel.UNRESTRICTED) {
+      return "UnrestrictedLevel";
+    }
+    return null;
+  }
+
+  private static String mixedScriptSubThreat(List<Integer> input) {
+    String sub = mixedScriptVerdict(input, true);
+    return sub == null ? "ScriptMixOther" : sub;
   }
 
   static boolean isDefaultIgnorableCodepoint(int cp) {

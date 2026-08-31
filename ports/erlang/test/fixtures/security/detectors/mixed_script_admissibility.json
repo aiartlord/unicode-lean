@@ -21,6 +21,30 @@
       "required_findings": [
         "unicode.security.I.mixed-script-admissibility.LatinCyrillic"
       ]
+    },
+    {
+      "name": "latin-armenian-script-mix-other",
+      "input": [97, 98, 1377, 1378],
+      "required_findings": [
+        "unicode.security.I.mixed-script-admissibility.ScriptMixOther"
+      ]
+    },
+    {
+      "name": "latin-thai-script-mix-other",
+      "input": [97, 98, 3585, 3586],
+      "required_findings": [
+        "unicode.security.I.mixed-script-admissibility.ScriptMixOther"
+      ]
+    },
+    {
+      "name": "han-hiragana-covered-cjk-clean",
+      "input": [19968, 12354],
+      "required_findings": []
+    },
+    {
+      "name": "han-latin-covered-cjk-clean",
+      "input": [97, 98, 19968],
+      "required_findings": []
     }
   ]
 }

@@ -155,6 +155,11 @@ cpp_files=(
 haskell_files=(
   EastAsianWidth.txt
   CaseFolding.txt
+  # See the note in homoglyph_files: the UTS #39 restriction ladder needs the
+  # Script property, its Script_Extensions overrides, and the abbreviation map.
+  Scripts.txt
+  ScriptExtensions.txt
+  PropertyValueAliases.txt
   UnicodeData.txt
   DerivedBidiClass.txt
   CompositionExclusions.txt
@@ -185,6 +190,10 @@ haskell_files=(
 haskell_data_dir_files=(
   DerivedCoreProperties.txt
   SpecialCasing.txt
+  # See the note in homoglyph_files: the UTS #39 restriction ladder needs these.
+  Scripts.txt
+  ScriptExtensions.txt
+  PropertyValueAliases.txt
   bip39/chinese_simplified.txt
   bip39/chinese_traditional.txt
   bip39/czech.txt
@@ -205,6 +214,14 @@ homoglyph_files=(
   emoji-variation-sequences.txt
   emoji-data.txt
   emoji-zwj-sequences.txt
+  # UTS #39 restriction levels resolve a string's script set, which needs the
+  # Script property, its Script_Extensions overrides, and the long-name to
+  # abbreviation map. Without these a port can only approximate the script of a
+  # codepoint, and `Unicode/Restriction.lean`'s ladder cannot be computed at
+  # all.
+  Scripts.txt
+  ScriptExtensions.txt
+  PropertyValueAliases.txt
 )
 
 go_files=(

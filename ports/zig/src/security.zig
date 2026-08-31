@@ -14,6 +14,9 @@ const emoji_data_raw = @embedFile("data/emoji-data.txt");
 const emoji_zwj_sequences_raw = @embedFile("data/emoji-zwj-sequences.txt");
 const derived_core_properties_raw = @embedFile("data/DerivedCoreProperties.txt");
 const identifier_status_raw = @embedFile("data/IdentifierStatus.txt");
+const scripts_raw = @embedFile("data/Scripts.txt");
+const script_extensions_raw = @embedFile("data/ScriptExtensions.txt");
+const property_value_aliases_raw = @embedFile("data/PropertyValueAliases.txt");
 const MaxSkeletonLen = 128;
 
 pub const Action = enum {
@@ -304,19 +307,40 @@ fn writeUsizeArray(writer: anytype, values: []const usize) !void {
 
 pub fn policyOfProfile(profile: Profile) ProfilePolicy {
     return switch (profile) {
-        .gateway_header, .domain_name, .dns_label, .source_code => .{
+        .gateway_header, .domain_name, .dns_label => .{
             .level = .restrictive,
             .quarantine = false,
         },
-        .url => .{ .level = .moderate, .quarantine = false },
+        // Source files legitimately carry right-to-left string literals, comments
+        // written in Hebrew or Arabic, and emoji. Restrictive admits RtlInjection,
+        // whose contract treats its input as a declared-LTR field, so under it an
+        // ordinary Hebrew comment is rejected. Moderate retains every detector that
+        // catches the Trojan Source class while dropping the field-direction
+        // assumption a source file does not satisfy.
+        .url, .source_code => .{ .level = .moderate, .quarantine = false },
         .username => .{ .level = .moderate, .quarantine = true },
         .display_name, .chat_message => .{ .level = .minimal, .quarantine = true },
         .opaque_secret, .binary_blob => .{ .level = .minimal, .quarantine = false },
     };
 }
 
+// True iff the profile names a field that holds one identifier rather than
+// running text.
+//
+// A username, a registrable domain and a DNS label are single identifiers, so a
+// codepoint outside the General Security Profile is a hazard in them. The
+// remaining profiles carry prose, source, URLs or opaque bytes, where a space
+// and a punctuation mark are ordinary content. Mirrors profileIsIdentifierField
+// in Unicode/Security/Policy.lean.
+pub fn profileIsIdentifierField(profile: Profile) bool {
+    return switch (profile) {
+        .domain_name, .dns_label, .username => true,
+        .gateway_header, .url, .display_name, .chat_message, .source_code, .opaque_secret, .binary_blob => false,
+    };
+}
+
 pub fn scan(profile: Profile, mode: Mode, input: []const u32) Verdict {
-    const findings = detect(input);
+    const findings = detect(input, profileIsIdentifierField(profile));
     const action = decide(profile, mode, findings);
     return .{
         .input = input,
@@ -497,7 +521,10 @@ fn resultFinding(family: Family, result: anytype) ?Finding {
     };
 }
 
-fn detect(input: []const u32) FindingList {
+// detect runs every family over input. identifier_field carries what the caller
+// knows about the field, mirroring Unicode.Security.RunAll's Context: a family
+// scoped to identifiers needs to know whether it is holding one.
+fn detect(input: []const u32, identifier_field: bool) FindingList {
     var findings = FindingList{};
 
     if (positionsWhere(input, isTagBlockAsciiPayload)) |positions| {
@@ -548,7 +575,7 @@ fn detect(input: []const u32) FindingList {
     if (homoglyphConfusableFinding(input)) |finding| {
         findings.append(finding);
     }
-    if (mixedScriptAdmissibilityFinding(input)) |finding| {
+    if (mixedScriptAdmissibilityFinding(input, identifier_field)) |finding| {
         findings.append(finding);
     }
     if (rtlInjectionFinding(input)) |finding| {
@@ -828,6 +855,18 @@ fn homoglyphConfusableFinding(input: []const u32) ?Finding {
     if (sub_threat == null and hasDecompositionSwap(input)) {
         sub_threat = "DecompositionSwap";
     }
+    // The last two rungs of the Lean ladder, in its order: a cross-script mix
+    // that is not Highly Restrictive, then a string failing every restriction
+    // level. Both need real script resolution.
+    if (sub_threat == null and hasCrossScriptMix(input)) {
+        sub_threat = "CrossScriptMix";
+    }
+    if (sub_threat == null) {
+        const level = restrictionLevel(input);
+        if (level == .minimally_restrictive or level == .unrestricted) {
+            sub_threat = "RestrictionLow";
+        }
+    }
     const threat = sub_threat orelse return null;
     const positions = fullSpanPositions(input);
     return .{
@@ -841,31 +880,51 @@ fn homoglyphConfusableFinding(input: []const u32) ?Finding {
     };
 }
 
-// The specific script-collision sub-threat, matching the Lean source of truth:
-// Latin/Cyrillic and Latin/Greek are named explicitly (Cyrillic before Greek);
-// every other multi-script mix is ScriptMixOther.
-fn mixedScriptSubthreat(input: []const u32) []const u8 {
-    var has_latin = false;
-    var has_greek = false;
-    var has_cyrillic = false;
-    for (input) |cp| {
-        if (isLatinScript(cp)) has_latin = true;
-        if (isGreekScript(cp)) has_greek = true;
-        if (isCyrillicScript(cp)) has_cyrillic = true;
+// The mixed-script sub-threat for input, or null when it is admissible.
+//
+// The rung order is Unicode/Security/Identity/MixedScriptAdmissibility.lean's:
+// a Restricted-status codepoint outranks every script question, then the two
+// named Latin pairs, then a multi-script mix split by whether it stays inside a
+// CJK covered set, and finally an Unrestricted level with no script mix.
+//
+// identifier_field carries what the caller knows about the field, mirroring
+// that module's Context. Phase 1 is sound for an identifier, which cannot
+// contain a space, and unsound for a document, where every space and every
+// punctuation mark is Restricted.
+fn mixedScriptVerdict(input: []const u32, identifier_field: bool) ?[]const u8 {
+    if (identifier_field) {
+        for (input) |cp| {
+            if (!isIdAllowed(cp)) return "RestrictedStatusCp";
+        }
     }
-    if (has_latin and has_cyrillic) return "LatinCyrillic";
-    if (has_latin and has_greek) return "LatinGreek";
-    return "ScriptMixOther";
+    const union_set = stringScriptUnion(input);
+    const has_latin = union_set.contains("Latn");
+    if (has_latin and union_set.contains("Cyrl")) return "LatinCyrillic";
+    if (has_latin and union_set.contains("Grek")) return "LatinGreek";
+    if (union_set.len >= 2 and !isHighlyRestrictive(input)) {
+        return if (isCoveredCjk(input)) "CjkMix" else "ScriptMixOther";
+    }
+    if (identifier_field and restrictionLevel(input) == .unrestricted) return "UnrestrictedLevel";
+    return null;
 }
 
-fn mixedScriptAdmissibilityFinding(input: []const u32) ?Finding {
-    if (!hasCrossScriptMix(input)) return null;
+fn mixedScriptSubthreat(input: []const u32) []const u8 {
+    return mixedScriptVerdict(input, true) orelse "ScriptMixOther";
+}
+
+fn mixedScriptAdmissibilityFinding(input: []const u32, identifier_field: bool) ?Finding {
+    const sub = mixedScriptVerdict(input, identifier_field) orelse return null;
     const positions = fullSpanPositions(input);
-    const sub = mixedScriptSubthreat(input);
     const code = if (std.mem.eql(u8, sub, "LatinCyrillic"))
         "unicode.security.I.mixed-script-admissibility.LatinCyrillic"
     else if (std.mem.eql(u8, sub, "LatinGreek"))
         "unicode.security.I.mixed-script-admissibility.LatinGreek"
+    else if (std.mem.eql(u8, sub, "RestrictedStatusCp"))
+        "unicode.security.I.mixed-script-admissibility.RestrictedStatusCp"
+    else if (std.mem.eql(u8, sub, "CjkMix"))
+        "unicode.security.I.mixed-script-admissibility.CjkMix"
+    else if (std.mem.eql(u8, sub, "UnrestrictedLevel"))
+        "unicode.security.I.mixed-script-admissibility.UnrestrictedLevel"
     else
         "unicode.security.I.mixed-script-admissibility.ScriptMixOther";
     return .{
@@ -1223,6 +1282,12 @@ fn homoglyphConfusableReasonCode(sub_threat: []const u8) []const u8 {
     }
     if (std.mem.eql(u8, sub_threat, "DecompositionSwap")) {
         return "unicode.security.I.homoglyph-confusable.DecompositionSwap";
+    }
+    if (std.mem.eql(u8, sub_threat, "CrossScriptMix")) {
+        return "unicode.security.I.homoglyph-confusable.CrossScriptMix";
+    }
+    if (std.mem.eql(u8, sub_threat, "RestrictionLow")) {
+        return "unicode.security.I.homoglyph-confusable.RestrictionLow";
     }
     return "unicode.security.I.homoglyph-confusable.WidthClass";
 }
@@ -5316,7 +5381,9 @@ pub const source_display_divergence = struct {
     /// the script mix is missed.
     fn homoglyphFired(input: []const u32) bool {
         if (homoglyphConfusableFinding(input) != null) return true;
-        return mixedScriptAdmissibilityFinding(input) != null;
+        // The constituent asks the script question about a source file, which
+        // is not an identifier field, so the Restricted-status rung is off.
+        return mixedScriptAdmissibilityFinding(input, false) != null;
     }
 
     // ── §2 Types ─────────────────────────────────────────────────────────
@@ -5938,37 +6005,256 @@ fn composeHangulPair(first: u32, second: u32) bool {
     return is_lv and is_t;
 }
 
-fn hasCrossScriptMix(input: []const u32) bool {
-    var has_latin = false;
-    var has_greek = false;
-    var has_cyrillic = false;
-    for (input) |cp| {
-        if (isLatinScript(cp)) has_latin = true;
-        if (isGreekScript(cp)) has_greek = true;
-        if (isCyrillicScript(cp)) has_cyrillic = true;
+// ─────────────────────────────────────────────────────────────────────
+// UTS #39 §5.1 restriction levels, mirroring Unicode/Restriction.lean.
+//
+// Script resolution reads the vendored Scripts.txt and ScriptExtensions.txt:
+// a codepoint's Script_Extensions where the file gives one, otherwise the
+// abbreviation of its primary Script. The abbreviation vocabulary is exactly
+// the set occurring in ScriptExtensions.txt, which is what
+// Unicode/ResolvedScripts.lean models as its ScriptAbbrev enum, so a primary
+// script outside it resolves to nothing on both sides. Returning a singleton
+// there instead would make every unknown-script codepoint look Single-Script,
+// putting restrictionLevel one rung too strict and hiding RestrictionLow.
+//
+// The tables are scanned per lookup from the embedded text, matching how
+// isIdAllowed reads IdentifierStatus.txt in this port.
+// ─────────────────────────────────────────────────────────────────────
+
+pub const RestrictionLevel = enum {
+    ascii_only,
+    single_script,
+    highly_restrictive,
+    moderately_restrictive,
+    minimally_restrictive,
+    unrestricted,
+};
+
+// A resolved script set. Abbreviations are exactly four ASCII bytes, and a
+// ScriptExtensions row lists at most a couple of dozen.
+const ScriptSet = struct {
+    items: [32][4]u8 = undefined,
+    len: usize = 0,
+
+    fn add(self: *ScriptSet, tag: []const u8) void {
+        if (tag.len != 4 or self.len >= self.items.len) return;
+        if (self.contains(tag)) return;
+        var slot: [4]u8 = undefined;
+        @memcpy(&slot, tag[0..4]);
+        self.items[self.len] = slot;
+        self.len += 1;
     }
-    const count = @as(u8, @intFromBool(has_latin)) +
-        @as(u8, @intFromBool(has_greek)) +
-        @as(u8, @intFromBool(has_cyrillic));
-    return count >= 2;
+
+    fn contains(self: *const ScriptSet, tag: []const u8) bool {
+        if (tag.len != 4) return false;
+        var i: usize = 0;
+        while (i < self.len) : (i += 1) {
+            if (std.mem.eql(u8, &self.items[i], tag)) return true;
+        }
+        return false;
+    }
+
+    fn intersects(self: *const ScriptSet, other: *const ScriptSet) bool {
+        var i: usize = 0;
+        while (i < self.len) : (i += 1) {
+            if (other.contains(&self.items[i])) return true;
+        }
+        return false;
+    }
+};
+
+fn coveredSet(tags: []const []const u8) ScriptSet {
+    var set = ScriptSet{};
+    for (tags) |tag| set.add(tag);
+    return set;
 }
 
-fn isLatinScript(cp: u32) bool {
-    return (cp >= 0x0041 and cp <= 0x005A) or
-        (cp >= 0x0061 and cp <= 0x007A) or
-        (cp >= 0x00C0 and cp <= 0x024F) or
-        (cp >= 0x1E00 and cp <= 0x1EFF);
+// The value field of the row covering cp in a "RANGE ; VALUE" table.
+fn scriptRowValue(raw: []const u8, cp: u32) ?[]const u8 {
+    var offset: usize = 0;
+    while (nextLine(raw, &offset)) |raw_line| {
+        const body = if (std.mem.indexOfScalar(u8, raw_line, '#')) |idx| raw_line[0..idx] else raw_line;
+        const stripped = trimAscii(body);
+        if (stripped.len == 0) continue;
+        var fields = std.mem.splitScalar(u8, stripped, ';');
+        const range_field = fields.next() orelse continue;
+        const value_field = fields.next() orelse continue;
+        const range = trimAscii(range_field);
+        var lo: u32 = 0;
+        var hi: u32 = 0;
+        if (std.mem.indexOf(u8, range, "..")) |dot_idx| {
+            lo = parseHexU32(trimAscii(range[0..dot_idx])) orelse continue;
+            hi = parseHexU32(trimAscii(range[dot_idx + 2 ..])) orelse continue;
+        } else {
+            lo = parseHexU32(range) orelse continue;
+            hi = lo;
+        }
+        if (lo <= cp and cp <= hi) return trimAscii(value_field);
+    }
+    return null;
 }
 
-fn isGreekScript(cp: u32) bool {
-    return (cp >= 0x0370 and cp <= 0x03FF) or
-        (cp >= 0x1F00 and cp <= 0x1FFF);
+fn scriptOf(cp: u32) []const u8 {
+    return scriptRowValue(scripts_raw, cp) orelse "Unknown";
 }
 
-fn isCyrillicScript(cp: u32) bool {
-    return (cp >= 0x0400 and cp <= 0x052F) or
-        (cp >= 0x2DE0 and cp <= 0x2DFF) or
-        (cp >= 0xA640 and cp <= 0xA69F);
+// The four-letter abbreviation for a Script long name, from the "sc" rows of
+// PropertyValueAliases.txt.
+fn scriptLongToAbbrev(long: []const u8) ?[]const u8 {
+    var offset: usize = 0;
+    while (nextLine(property_value_aliases_raw, &offset)) |raw_line| {
+        const body = if (std.mem.indexOfScalar(u8, raw_line, '#')) |idx| raw_line[0..idx] else raw_line;
+        var fields = std.mem.splitScalar(u8, body, ';');
+        const prop = trimAscii(fields.next() orelse continue);
+        if (!std.mem.eql(u8, prop, "sc")) continue;
+        const abbrev = trimAscii(fields.next() orelse continue);
+        const name = trimAscii(fields.next() orelse continue);
+        if (std.mem.eql(u8, name, long)) return abbrev;
+    }
+    return null;
+}
+
+// True iff the abbreviation occurs anywhere in ScriptExtensions.txt, which is
+// the resolver's whole vocabulary.
+fn isKnownScriptAbbrev(abbrev: []const u8) bool {
+    var offset: usize = 0;
+    while (nextLine(script_extensions_raw, &offset)) |raw_line| {
+        const body = if (std.mem.indexOfScalar(u8, raw_line, '#')) |idx| raw_line[0..idx] else raw_line;
+        const stripped = trimAscii(body);
+        if (stripped.len == 0) continue;
+        var fields = std.mem.splitScalar(u8, stripped, ';');
+        _ = fields.next() orelse continue;
+        const value_field = fields.next() orelse continue;
+        var tags = std.mem.tokenizeAny(u8, trimAscii(value_field), " \t");
+        while (tags.next()) |tag| {
+            if (std.mem.eql(u8, tag, abbrev)) return true;
+        }
+    }
+    return false;
+}
+
+fn resolveScripts(cp: u32) ScriptSet {
+    var set = ScriptSet{};
+    if (scriptRowValue(script_extensions_raw, cp)) |value| {
+        var tags = std.mem.tokenizeAny(u8, value, " \t");
+        while (tags.next()) |tag| set.add(tag);
+        return set;
+    }
+    const abbrev = scriptLongToAbbrev(scriptOf(cp)) orelse return set;
+    if (!isKnownScriptAbbrev(abbrev)) return set;
+    set.add(abbrev);
+    return set;
+}
+
+fn isIgnoredForIntersection(cp: u32) bool {
+    const script = scriptOf(cp);
+    return std.mem.eql(u8, script, "Common") or std.mem.eql(u8, script, "Inherited");
+}
+
+fn stringScriptUnion(input: []const u32) ScriptSet {
+    var union_set = ScriptSet{};
+    for (input) |cp| {
+        if (isIgnoredForIntersection(cp)) continue;
+        const resolved = resolveScripts(cp);
+        var i: usize = 0;
+        while (i < resolved.len) : (i += 1) union_set.add(&resolved.items[i]);
+    }
+    return union_set;
+}
+
+fn stringResolvedScriptsLen(input: []const u32) usize {
+    var acc = ScriptSet{};
+    var started = false;
+    for (input) |cp| {
+        if (isIgnoredForIntersection(cp)) continue;
+        const resolved = resolveScripts(cp);
+        if (!started) {
+            acc = resolved;
+            started = true;
+            continue;
+        }
+        var next = ScriptSet{};
+        var i: usize = 0;
+        while (i < acc.len) : (i += 1) {
+            if (resolved.contains(&acc.items[i])) next.add(&acc.items[i]);
+        }
+        acc = next;
+    }
+    return if (started) acc.len else 0;
+}
+
+fn isAsciiOnly(input: []const u32) bool {
+    for (input) |cp| {
+        if (cp >= 0x80) return false;
+    }
+    return true;
+}
+
+fn isSingleScript(input: []const u32) bool {
+    return !isAsciiOnly(input) and stringResolvedScriptsLen(input) > 0;
+}
+
+fn allWithinCovered(input: []const u32, covered: *const ScriptSet) bool {
+    for (input) |cp| {
+        if (isIgnoredForIntersection(cp)) continue;
+        const resolved = resolveScripts(cp);
+        if (resolved.len == 0 or !resolved.intersects(covered)) return false;
+    }
+    return true;
+}
+
+fn isCoveredCjk(input: []const u32) bool {
+    const japanese = coveredSet(&[_][]const u8{ "Latn", "Hani", "Hira", "Kana" });
+    const chinese = coveredSet(&[_][]const u8{ "Latn", "Hani", "Bopo" });
+    const korean = coveredSet(&[_][]const u8{ "Latn", "Hani", "Hang" });
+    return allWithinCovered(input, &japanese) or
+        allWithinCovered(input, &chinese) or
+        allWithinCovered(input, &korean);
+}
+
+fn isHighlyRestrictive(input: []const u32) bool {
+    return isSingleScript(input) or isCoveredCjk(input);
+}
+
+// Every codepoint resolves to Latin or to one fixed other Recommended script,
+// with that other script neither Cyrillic nor Greek.
+fn isModeratelyRestrictiveShape(input: []const u32) bool {
+    var other: ?[4]u8 = null;
+    const latin = coveredSet(&[_][]const u8{"Latn"});
+    for (input) |cp| {
+        if (isIgnoredForIntersection(cp)) continue;
+        const resolved = resolveScripts(cp);
+        if (resolved.len == 0) return false;
+        if (resolved.intersects(&latin)) continue;
+        const s = resolved.items[0];
+        if (std.mem.eql(u8, &s, "Cyrl") or std.mem.eql(u8, &s, "Grek")) return false;
+        if (other) |committed| {
+            if (!std.mem.eql(u8, &committed, &s)) return false;
+        } else {
+            other = s;
+        }
+    }
+    return other != null;
+}
+
+fn isMinimallyRestrictive(input: []const u32) bool {
+    for (input) |cp| {
+        if (!isIdAllowed(cp)) return false;
+    }
+    return true;
+}
+
+fn restrictionLevel(input: []const u32) RestrictionLevel {
+    if (isAsciiOnly(input)) return .ascii_only;
+    if (isSingleScript(input)) return .single_script;
+    if (isHighlyRestrictive(input)) return .highly_restrictive;
+    if (isModeratelyRestrictiveShape(input)) return .moderately_restrictive;
+    if (isMinimallyRestrictive(input)) return .minimally_restrictive;
+    return .unrestricted;
+}
+
+fn hasCrossScriptMix(input: []const u32) bool {
+    return stringScriptUnion(input).len >= 2 and !isHighlyRestrictive(input);
 }
 
 fn isDefaultIgnorableCodepoint(cp: u32) bool {

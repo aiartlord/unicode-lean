@@ -190,10 +190,28 @@ function M.reason_code(family, sub)
   return "unicode.security." .. M.family_layer_code(family) .. "." .. family .. "." .. (sub or "hazard")
 end
 
+-- True iff the profile names a field holding one identifier, not running text.
+-- A username, a registrable domain and a DNS label are single identifiers, so a
+-- codepoint outside the General Security Profile is a hazard in them. The
+-- remaining profiles carry prose, source, URLs or opaque bytes, where a space
+-- and a punctuation mark are ordinary content. Mirrors profileIsIdentifierField
+-- in Unicode/Security/Policy.lean.
+function M.profile_identifier_field(profile)
+  return profile == M.Profile.DomainName
+    or profile == M.Profile.DnsLabel
+    or profile == M.Profile.Username
+end
+
 local function policy_of_profile(profile)
-  if profile == M.Profile.GatewayHeader or profile == M.Profile.DomainName or profile == M.Profile.DnsLabel or profile == M.Profile.SourceCode then
+  if profile == M.Profile.GatewayHeader or profile == M.Profile.DomainName or profile == M.Profile.DnsLabel then
     return { level = PolicyLevel.Restrictive, crypto_context = CryptoContext.NonCrypto, quarantine = false }
-  elseif profile == M.Profile.Url then
+  -- Source files legitimately carry right-to-left string literals, comments
+  -- written in Hebrew or Arabic, and emoji. Restrictive admits RtlInjection,
+  -- whose contract treats its input as a declared-LTR field, so under it an
+  -- ordinary Hebrew comment is rejected. Moderate retains every detector that
+  -- catches the Trojan Source class while dropping the field-direction
+  -- assumption a source file does not satisfy.
+  elseif profile == M.Profile.Url or profile == M.Profile.SourceCode then
     return { level = PolicyLevel.Moderate, crypto_context = CryptoContext.NonCrypto, quarantine = false }
   elseif profile == M.Profile.Username then
     return { level = PolicyLevel.Moderate, crypto_context = CryptoContext.NonCrypto, quarantine = true }
@@ -309,22 +327,24 @@ function M.scan(profile, mode, input)
   push_positional_hazard(findings, Family.NoncharacterControl, "C1Control", positions_where(input, c1_control))
 
   local h = homoglyph.detect(input)
-  local htag = sub_tag(h.sub)
-  if htag ~= "CrossScriptMix" then
-    local positions = {}
-    if h.kind ~= ClassificationKind.Clear then
-      for i = 1, #input do
-        positions[#positions + 1] = i - 1
-      end
+  -- Every rung of the homoglyph ladder is reported, CrossScriptMix included.
+  -- Unicode/Security/Policy.lean maps every non-clear family result to a
+  -- finding without filtering, so suppressing this rung would report fewer
+  -- findings than the proven spec for a cross-script input.
+  local hpositions = {}
+  if h.kind ~= ClassificationKind.Clear then
+    for i = 1, #input do
+      hpositions[#hpositions + 1] = i - 1
     end
-    push_finding(findings, Family.HomoglyphConfusable, h.kind, h.sub, positions)
   end
-  if homoglyph.has_mixed_script_admissibility(input) then
+  push_finding(findings, Family.HomoglyphConfusable, h.kind, h.sub, hpositions)
+  local mixed_sub = homoglyph.mixed_script_verdict(input, M.profile_identifier_field(profile))
+  if mixed_sub ~= nil then
     local positions = {}
     for i = 1, #input do
       positions[#positions + 1] = i - 1
     end
-    push_finding(findings, Family.MixedScriptAdmissibility, ClassificationKind.Hazard, homoglyph.mixed_script_subthreat(input), positions)
+    push_finding(findings, Family.MixedScriptAdmissibility, ClassificationKind.Hazard, mixed_sub, positions)
   end
 
   local r = rtl.detect(input)

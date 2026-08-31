@@ -470,9 +470,9 @@ def detect(input_cps: list[int]) -> Verdict:
 
 
 def has_mixed_script_admissibility(input_cps: list[int]) -> bool:
-    """Return True when the input violates the mixed-script policy."""
-    union = ucd.string_script_union(input_cps)
-    return len(union) >= 2 and not ucd.is_highly_restrictive(input_cps)
+    """Return True when the input violates the mixed-script policy, read as the
+    identifier the family's threat model describes."""
+    return mixed_script_verdict(input_cps, True) is not None
 
 
 def mixed_script_subthreat(input_cps: list[int]) -> str:
@@ -481,9 +481,31 @@ def mixed_script_subthreat(input_cps: list[int]) -> str:
     Latin/Cyrillic and Latin/Greek are named explicitly (Cyrillic before Greek);
     every other multi-script mix is ``ScriptMixOther``.
     """
+    return mixed_script_verdict(input_cps, True) or "ScriptMixOther"
+
+
+def mixed_script_verdict(input_cps: list[int], identifier_field: bool) -> str | None:
+    """The mixed-script sub-threat for ``input_cps``, or ``None`` when admissible.
+
+    The rung order is ``MixedScriptAdmissibility.lean``'s: a Restricted-status
+    codepoint outranks every script question, then the two named Latin pairs,
+    then a multi-script mix split by whether it stays inside a CJK covered set,
+    and finally an Unrestricted level with no script mix.
+
+    ``identifier_field`` carries what the caller knows about the field,
+    mirroring that module's ``Context``. Phase 1 is sound for an identifier,
+    which cannot contain a space, and unsound for a document, where every space
+    and every punctuation mark is Restricted.
+    """
+    if identifier_field and any(not ucd.is_id_allowed(cp) for cp in input_cps):
+        return "RestrictedStatusCp"
     union = ucd.string_script_union(input_cps)
     if "Latn" in union and "Cyrl" in union:
         return "LatinCyrillic"
     if "Latn" in union and "Grek" in union:
         return "LatinGreek"
-    return "ScriptMixOther"
+    if len(union) >= 2 and not ucd.is_highly_restrictive(input_cps):
+        return "CjkMix" if ucd.is_covered_cjk(input_cps) else "ScriptMixOther"
+    if identifier_field and ucd.restriction_level(input_cps) is RestrictionLevel.UNRESTRICTED:
+        return "UnrestrictedLevel"
+    return None

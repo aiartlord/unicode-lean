@@ -106,10 +106,21 @@ public static partial class Security
     private static HashSet<int>? compositionExclusions;
     private static Dictionary<long, int>? compositionTable;
 
+    /// <summary>True iff the profile names a field that holds one identifier
+    /// rather than running text.
+    ///
+    /// A username, a registrable domain and a DNS label are single identifiers,
+    /// so a codepoint outside the General Security Profile is a hazard in them.
+    /// The remaining profiles carry prose, source, URLs or opaque bytes, where a
+    /// space and a punctuation mark are ordinary content. Mirrors
+    /// profileIsIdentifierField in Unicode/Security/Policy.lean.</summary>
+    internal static bool ProfileIsIdentifierField(string profile) =>
+        profile == Profile.DomainName || profile == Profile.DnsLabel || profile == Profile.Username;
+
     public static Verdict Scan(string profile, string mode, IEnumerable<int> input)
     {
         var codepoints = input.Select(EnsureCodepoint).ToList();
-        var findings = Detect(codepoints);
+        var findings = Detect(codepoints, ProfileIsIdentifierField(profile));
         return new Verdict(Decide(profile, mode, findings), profile, mode, codepoints, findings, null);
     }
 
@@ -164,7 +175,10 @@ public static partial class Security
     private static FindingWire ToWire(Finding finding) =>
         new(finding.Code, finding.Family, finding.Severity, finding.Positions.ToList(), finding.SubThreat, finding.Detail);
 
-    private static List<Finding> Detect(List<int> input)
+    // Detect runs every family over input. identifierField carries what the
+    // caller knows about the field, mirroring Unicode.Security.RunAll's Context:
+    // a family scoped to identifiers needs to know whether it is holding one.
+    private static List<Finding> Detect(List<int> input, bool identifierField)
     {
         var findings = new List<Finding>();
         var tagPositions = PositionsWhere(input, IsTagBlockAsciiPayload);
@@ -180,7 +194,7 @@ public static partial class Security
         findings.AddRange(NoncharacterControlFindings(input));
         var homoglyph = HomoglyphConfusableFinding(input);
         if (homoglyph is not null) findings.Add(homoglyph);
-        var mixedScript = MixedScriptAdmissibilityFinding(input);
+        var mixedScript = MixedScriptAdmissibilityFinding(input, identifierField);
         if (mixedScript is not null) findings.Add(mixedScript);
         var rtl = RtlInjectionFinding(input);
         if (rtl is not null) findings.Add(rtl);
@@ -240,8 +254,14 @@ public static partial class Security
 
     private static ProfilePolicy PolicyOfProfile(string profile) => profile switch
     {
-        Profile.GatewayHeader or Profile.DomainName or Profile.DnsLabel or Profile.SourceCode => new(PolicyLevel.Restrictive, false),
-        Profile.Url => new(PolicyLevel.Moderate, false),
+        Profile.GatewayHeader or Profile.DomainName or Profile.DnsLabel => new(PolicyLevel.Restrictive, false),
+        // Source files legitimately carry right-to-left string literals, comments
+        // written in Hebrew or Arabic, and emoji. Restrictive admits RtlInjection,
+        // whose contract treats its input as a declared-LTR field, so under it an
+        // ordinary Hebrew comment is rejected. Moderate retains every detector that
+        // catches the Trojan Source class while dropping the field-direction
+        // assumption a source file does not satisfy.
+        Profile.Url or Profile.SourceCode => new(PolicyLevel.Moderate, false),
         Profile.Username => new(PolicyLevel.Moderate, true),
         Profile.DisplayName or Profile.ChatMessage => new(PolicyLevel.Minimal, true),
         Profile.OpaqueSecret or Profile.BinaryBlob => new(PolicyLevel.Minimal, false),
@@ -397,13 +417,22 @@ public static partial class Security
         else if (input.Any(IsMathAlphanumeric)) subThreat = "MathAlpha";
         else if (input.Any(IsFullwidthHalfwidth)) subThreat = "WidthClass";
         else if (HasDecompositionSwap(input)) subThreat = "DecompositionSwap";
+        // The last two rungs of the Lean ladder, in its order: a cross-script mix
+        // that is not Highly Restrictive, then a string failing every restriction
+        // level. Both need real script resolution.
+        else if (HasCrossScriptMix(input)) subThreat = "CrossScriptMix";
+        else if (RestrictionLevelOf(input) is RestrictionLevel.MinimallyRestrictive
+            or RestrictionLevel.Unrestricted) subThreat = "RestrictionLow";
         return subThreat == "" ? null : MakeFinding(Family.HomoglyphConfusable, subThreat, FullSpanPositions(input));
     }
 
-    private static Finding? MixedScriptAdmissibilityFinding(List<int> input) =>
-        HasCrossScriptMix(input)
-            ? MakeFinding(Family.MixedScriptAdmissibility, MixedScriptSubThreat(input), FullSpanPositions(input))
-            : null;
+    private static Finding? MixedScriptAdmissibilityFinding(List<int> input, bool identifierField)
+    {
+        var subThreat = MixedScriptVerdict(input, identifierField);
+        return subThreat is null
+            ? null
+            : MakeFinding(Family.MixedScriptAdmissibility, subThreat, FullSpanPositions(input));
+    }
 
     // Right-to-left injection detection for LTR-declared fields — a direct
     // port of Unicode.Security.Display.RtlInjection. Returns the
@@ -1942,6 +1971,9 @@ public static partial class Security
             ["CompositionExclusions.txt"] = "2f239196ef3b5b61db5cc476e9bd80f534d15aa1b74e1be1dea5d042a344c85f",
             ["DerivedCoreProperties.txt"] = "24c7fed1195c482faaefd5c1e7eb821c5ee1fb6de07ecdbaa64b56a99da22c08",
             ["IdentifierStatus.txt"] = "617228a16da13850bf8af28b6cd08f5e9b6595d2eb60404fe6eee2c85b4e4a35",
+            ["Scripts.txt"] = "9f5e50d3abaee7d6ce09480f325c706f485ae3240912527e651954d2d6b035bf",
+            ["ScriptExtensions.txt"] = "ec2107e58825a1586acee8e0911ce18260394ac8b87e535ca325f1ccbeb06bc6",
+            ["PropertyValueAliases.txt"] = "64e9a5f76f7a1e8b5a47d6a1f9a26522a251208f5276bdfa1559dac7cf2e827a",
             ["SpecialCasing.txt"] = "efc25faf19de21b92c1194c111c932e03d2a5eaf18194e33f1156e96de4c9588",
             ["emoji-data.txt"] = "2cb2bb9455cda83e8481541ecf5b6dfda66a3bb89efa3fa7c5297eccf607b72b",
             ["emoji-zwj-sequences.txt"] = "5b25441daed2322b068c5e70cda522946a4f0274df864445a1965a92e5fc5cad",
@@ -2031,40 +2063,287 @@ public static partial class Security
         return isLV && isT;
     }
 
-    private static bool HasCrossScriptMix(List<int> input)
+    // UTS #39 §5.1 restriction levels, mirroring Unicode/Restriction.lean.
+    //
+    // Script resolution reads the vendored Scripts.txt and ScriptExtensions.txt:
+    // a codepoint's Script_Extensions where the file gives one, otherwise the
+    // abbreviation of its primary Script. The abbreviation vocabulary is exactly
+    // the set occurring in ScriptExtensions.txt, which is what
+    // Unicode/ResolvedScripts.lean models as its ScriptAbbrev enum, so a primary
+    // script outside it resolves to nothing on both sides. Returning a singleton
+    // there instead would make every unknown-script codepoint look Single-Script,
+    // putting RestrictionLevelOf one rung too strict and hiding RestrictionLow.
+
+    internal enum RestrictionLevel
     {
-        var seen = new HashSet<string>();
-        foreach (var cp in input)
-        {
-            var script = ScriptClass(cp);
-            if (script is not null) seen.Add(script);
-        }
-        return seen.Count >= 2;
+        AsciiOnly,
+        SingleScript,
+        HighlyRestrictive,
+        ModeratelyRestrictive,
+        MinimallyRestrictive,
+        Unrestricted,
     }
 
-    // The specific script-collision sub-threat, matching the Lean source of truth:
-    // Latin/Cyrillic and Latin/Greek are named explicitly (Cyrillic before Greek);
-    // every other multi-script mix is ScriptMixOther.
-    private static string MixedScriptSubThreat(List<int> input)
+    private static List<(int Lo, int Hi, string[] Value)>? scriptRanges;
+    private static List<(int Lo, int Hi, string[] Value)>? scriptExtRanges;
+    private static HashSet<string>? scriptExtAbbrevs;
+    private static Dictionary<string, string>? scriptLongToAbbrev;
+
+    // Parse a "RANGE ; VALUE" table into ascending ranges. The value field splits
+    // on whitespace, so a Scripts.txt row yields one long name and a
+    // ScriptExtensions.txt row yields its abbreviation list.
+    private static List<(int Lo, int Hi, string[] Value)> ParseScriptRanges(string fileName)
     {
-        var seen = new HashSet<string>();
-        foreach (var cp in input)
+        var result = new List<(int Lo, int Hi, string[] Value)>();
+        foreach (var rawLine in ReadDataFile(fileName).Split('\n'))
         {
-            var script = ScriptClass(cp);
-            if (script is not null) seen.Add(script);
+            var line = rawLine.Split('#', 2)[0].Trim();
+            if (line.Length == 0) continue;
+            var parts = line.Split(';', 2);
+            if (parts.Length < 2) continue;
+            var value = parts[1].Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            if (value.Length == 0) continue;
+            var field = parts[0].Trim();
+            var dots = field.IndexOf("..", StringComparison.Ordinal);
+            int? lo;
+            int? hi;
+            if (dots < 0)
+            {
+                lo = ParseHex(field);
+                hi = lo;
+            }
+            else
+            {
+                lo = ParseHex(field[..dots]);
+                hi = ParseHex(field[(dots + 2)..]);
+            }
+            if (lo is null || hi is null) continue;
+            result.Add((lo.Value, hi.Value, value));
         }
-        if (seen.Contains("Latn") && seen.Contains("Cyrl")) return "LatinCyrillic";
-        if (seen.Contains("Latn") && seen.Contains("Grek")) return "LatinGreek";
-        return "ScriptMixOther";
+        result.Sort((a, b) => a.Lo.CompareTo(b.Lo));
+        return result;
     }
 
-    private static string? ScriptClass(int cp)
+    private static string[]? FindScriptRange(List<(int Lo, int Hi, string[] Value)> ranges, int cp)
     {
-        if (cp is >= 0x0041 and <= 0x005A || cp is >= 0x0061 and <= 0x007A || cp is >= 0x00C0 and <= 0x024F) return "Latn";
-        if (cp is >= 0x0370 and <= 0x03FF || cp is >= 0x1F00 and <= 0x1FFF) return "Grek";
-        if (cp is >= 0x0400 and <= 0x052F) return "Cyrl";
+        foreach (var row in ranges)
+        {
+            if (row.Lo <= cp && cp <= row.Hi) return row.Value;
+        }
         return null;
     }
+
+    private static List<(int Lo, int Hi, string[] Value)> ScriptsTable() =>
+        scriptRanges ??= ParseScriptRanges("Scripts.txt");
+
+    private static List<(int Lo, int Hi, string[] Value)> ScriptExtensionsTable()
+    {
+        if (scriptExtRanges is null)
+        {
+            scriptExtRanges = ParseScriptRanges("ScriptExtensions.txt");
+            scriptExtAbbrevs = new HashSet<string>();
+            foreach (var row in scriptExtRanges)
+            {
+                foreach (var abbrev in row.Value) scriptExtAbbrevs.Add(abbrev);
+            }
+        }
+        return scriptExtRanges;
+    }
+
+    // Script long name to four-letter abbreviation, from the "sc" rows of
+    // PropertyValueAliases.txt.
+    private static Dictionary<string, string> ScriptAliasMap()
+    {
+        if (scriptLongToAbbrev is null)
+        {
+            scriptLongToAbbrev = new Dictionary<string, string>();
+            foreach (var rawLine in ReadDataFile("PropertyValueAliases.txt").Split('\n'))
+            {
+                var line = rawLine.Split('#', 2)[0];
+                var fields = line.Split(';');
+                if (fields.Length < 3 || fields[0].Trim() != "sc") continue;
+                var abbrev = fields[1].Trim();
+                var name = fields[2].Trim();
+                if (abbrev.Length > 0 && name.Length > 0) scriptLongToAbbrev[name] = abbrev;
+            }
+        }
+        return scriptLongToAbbrev;
+    }
+
+    private static string ScriptOf(int cp)
+    {
+        var value = FindScriptRange(ScriptsTable(), cp);
+        return value is null ? "Unknown" : value[0];
+    }
+
+    private static IReadOnlyList<string> ResolveScripts(int cp)
+    {
+        var ext = FindScriptRange(ScriptExtensionsTable(), cp);
+        if (ext is not null) return ext;
+        ScriptExtensionsTable();
+        if (!ScriptAliasMap().TryGetValue(ScriptOf(cp), out var abbrev)) return Array.Empty<string>();
+        if (scriptExtAbbrevs is null || !scriptExtAbbrevs.Contains(abbrev)) return Array.Empty<string>();
+        return new[] { abbrev };
+    }
+
+    private static bool IsIgnoredForIntersection(int cp)
+    {
+        var script = ScriptOf(cp);
+        return script == "Common" || script == "Inherited";
+    }
+
+    private static bool IntersectsScripts(IReadOnlyList<string> a, IReadOnlyList<string> b)
+    {
+        foreach (var x in a)
+        {
+            foreach (var y in b)
+            {
+                if (x == y) return true;
+            }
+        }
+        return false;
+    }
+
+    private static HashSet<string> StringScriptUnion(List<int> input)
+    {
+        var union = new HashSet<string>();
+        foreach (var cp in input)
+        {
+            if (IsIgnoredForIntersection(cp)) continue;
+            foreach (var s in ResolveScripts(cp)) union.Add(s);
+        }
+        return union;
+    }
+
+    private static List<string> StringResolvedScripts(List<int> input)
+    {
+        List<string>? acc = null;
+        foreach (var cp in input)
+        {
+            if (IsIgnoredForIntersection(cp)) continue;
+            var resolved = ResolveScripts(cp);
+            if (acc is null)
+            {
+                acc = new List<string>(resolved);
+                continue;
+            }
+            acc.RemoveAll(s => !resolved.Contains(s));
+        }
+        return acc ?? new List<string>();
+    }
+
+    private static bool IsAsciiOnly(List<int> input)
+    {
+        foreach (var cp in input)
+        {
+            if (cp >= 0x80) return false;
+        }
+        return true;
+    }
+
+    private static bool IsSingleScript(List<int> input) =>
+        !IsAsciiOnly(input) && StringResolvedScripts(input).Count > 0;
+
+    private static bool AllWithinCovered(List<int> input, string[] covered)
+    {
+        foreach (var cp in input)
+        {
+            if (IsIgnoredForIntersection(cp)) continue;
+            var resolved = ResolveScripts(cp);
+            if (resolved.Count == 0 || !IntersectsScripts(resolved, covered)) return false;
+        }
+        return true;
+    }
+
+    private static bool IsCoveredCjk(List<int> input) =>
+        AllWithinCovered(input, new[] { "Latn", "Hani", "Hira", "Kana" })
+        || AllWithinCovered(input, new[] { "Latn", "Hani", "Bopo" })
+        || AllWithinCovered(input, new[] { "Latn", "Hani", "Hang" });
+
+    private static bool IsHighlyRestrictive(List<int> input) =>
+        IsSingleScript(input) || IsCoveredCjk(input);
+
+    // Every codepoint resolves to Latin or to one fixed other Recommended script,
+    // with that other script neither Cyrillic nor Greek.
+    private static bool IsModeratelyRestrictiveShape(List<int> input)
+    {
+        string? other = null;
+        foreach (var cp in input)
+        {
+            if (IsIgnoredForIntersection(cp)) continue;
+            var resolved = ResolveScripts(cp);
+            if (resolved.Count == 0) return false;
+            if (resolved.Contains("Latn")) continue;
+            var s = resolved[0];
+            if (s == "Cyrl" || s == "Grek") return false;
+            if (other is null)
+            {
+                other = s;
+                continue;
+            }
+            if (s != other) return false;
+        }
+        return other is not null;
+    }
+
+    private static bool IsMinimallyRestrictive(List<int> input)
+    {
+        foreach (var cp in input)
+        {
+            if (!IsIdAllowed(cp)) return false;
+        }
+        return true;
+    }
+
+    internal static RestrictionLevel RestrictionLevelOf(List<int> input)
+    {
+        if (IsAsciiOnly(input)) return RestrictionLevel.AsciiOnly;
+        if (IsSingleScript(input)) return RestrictionLevel.SingleScript;
+        if (IsHighlyRestrictive(input)) return RestrictionLevel.HighlyRestrictive;
+        if (IsModeratelyRestrictiveShape(input)) return RestrictionLevel.ModeratelyRestrictive;
+        if (IsMinimallyRestrictive(input)) return RestrictionLevel.MinimallyRestrictive;
+        return RestrictionLevel.Unrestricted;
+    }
+
+    private static bool HasCrossScriptMix(List<int> input) =>
+        StringScriptUnion(input).Count >= 2 && !IsHighlyRestrictive(input);
+
+    // The mixed-script sub-threat for input, or null when it is admissible.
+    //
+    // The rung order is Unicode/Security/Identity/MixedScriptAdmissibility.lean's:
+    // a Restricted-status codepoint outranks every script question, then the two
+    // named Latin pairs, then a multi-script mix split by whether it stays inside
+    // a CJK covered set, and finally an Unrestricted level with no script mix.
+    //
+    // identifierField carries what the caller knows about the field, mirroring
+    // that module's Context. Phase 1 is sound for an identifier, which cannot
+    // contain a space, and unsound for a document, where every space and every
+    // punctuation mark is Restricted.
+    private static string? MixedScriptVerdict(List<int> input, bool identifierField)
+    {
+        if (identifierField)
+        {
+            foreach (var cp in input)
+            {
+                if (!IsIdAllowed(cp)) return "RestrictedStatusCp";
+            }
+        }
+        var union = StringScriptUnion(input);
+        if (union.Contains("Latn") && union.Contains("Cyrl")) return "LatinCyrillic";
+        if (union.Contains("Latn") && union.Contains("Grek")) return "LatinGreek";
+        if (union.Count >= 2 && !IsHighlyRestrictive(input))
+        {
+            return IsCoveredCjk(input) ? "CjkMix" : "ScriptMixOther";
+        }
+        if (identifierField && RestrictionLevelOf(input) == RestrictionLevel.Unrestricted)
+        {
+            return "UnrestrictedLevel";
+        }
+        return null;
+    }
+
+    private static string MixedScriptSubThreat(List<int> input) =>
+        MixedScriptVerdict(input, true) ?? "ScriptMixOther";
 
     private static bool IsDefaultIgnorableCodepoint(int cp) =>
         cp is 0x00AD or 0x034F or 0x061C ||

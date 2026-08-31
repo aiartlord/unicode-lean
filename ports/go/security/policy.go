@@ -99,11 +99,34 @@ type Verdict struct {
 	Normalized []uint32
 }
 
+// profileIsIdentifierField reports whether the profile names a field that holds
+// one identifier rather than running text.
+//
+// A username, a registrable domain and a DNS label are single identifiers, so a
+// codepoint outside the General Security Profile is a hazard in them. The
+// remaining profiles carry prose, source, URLs or opaque bytes, where a space
+// and a punctuation mark are ordinary content. Mirrors profileIsIdentifierField
+// in Unicode/Security/Policy.lean.
+func profileIsIdentifierField(profile Profile) bool {
+	switch profile {
+	case ProfileDomainName, ProfileDnsLabel, ProfileUsername:
+		return true
+	default:
+		return false
+	}
+}
+
 func PolicyOfProfile(profile Profile) ProfilePolicy {
 	switch profile {
-	case ProfileGatewayHeader, ProfileDomainName, ProfileDnsLabel, ProfileSourceCode:
+	case ProfileGatewayHeader, ProfileDomainName, ProfileDnsLabel:
 		return ProfilePolicy{Level: PolicyRestrictive}
-	case ProfileURL:
+	// Source files legitimately carry right-to-left string literals, comments
+	// written in Hebrew or Arabic, and emoji. Restrictive admits RtlInjection,
+	// whose contract treats its input as a declared-LTR field, so under it an
+	// ordinary Hebrew comment is rejected. Moderate retains every detector that
+	// catches the Trojan Source class while dropping the field-direction
+	// assumption a source file does not satisfy.
+	case ProfileURL, ProfileSourceCode:
 		return ProfilePolicy{Level: PolicyModerate}
 	case ProfileUsername:
 		return ProfilePolicy{Level: PolicyModerate, Quarantine: true}
@@ -117,7 +140,7 @@ func PolicyOfProfile(profile Profile) ProfilePolicy {
 }
 
 func Scan(profile Profile, mode Mode, input []uint32) Verdict {
-	findings := detect(input)
+	findings := detect(input, profileIsIdentifierField(profile))
 	action := decide(profile, mode, findings)
 
 	return Verdict{
@@ -159,7 +182,10 @@ func appendClassified(findings []Finding, family Family, tag string, ok bool, po
 	return findings
 }
 
-func detect(input []uint32) []Finding {
+// detect runs every family over input. identifierField carries what the caller
+// knows about the field, mirroring Unicode.Security.RunAll's Context: a family
+// scoped to identifiers needs to know whether it is holding one.
+func detect(input []uint32, identifierField bool) []Finding {
 	findings := make([]Finding, 0, 8)
 
 	if positions := positionsWhere(input, isTagBlockAsciiPayload); len(positions) > 0 {
@@ -207,7 +233,7 @@ func detect(input []uint32) []Finding {
 	if finding, ok := homoglyphConfusableFinding(input); ok {
 		findings = append(findings, finding)
 	}
-	if finding, ok := mixedScriptAdmissibilityFinding(input); ok {
+	if finding, ok := mixedScriptAdmissibilityFinding(input, identifierField); ok {
 		findings = append(findings, finding)
 	}
 	if finding, ok := rtlInjectionFinding(input); ok {
@@ -544,6 +570,18 @@ func homoglyphConfusableFinding(input []uint32) (Finding, bool) {
 	if subThreat == "" && hasDecompositionSwap(input) {
 		subThreat = "DecompositionSwap"
 	}
+	// The last two rungs of the Lean ladder, in its order: a cross-script mix
+	// that is not Highly Restrictive, then a string that fails every restriction
+	// level. Both need real script resolution, which restriction.go provides.
+	if subThreat == "" && hasCrossScriptMix(input) {
+		subThreat = "CrossScriptMix"
+	}
+	if subThreat == "" {
+		level := restrictionLevel(input)
+		if level == RestrictionMinimallyRestrictive || level == RestrictionUnrestricted {
+			subThreat = "RestrictionLow"
+		}
+	}
 	if subThreat == "" {
 		return Finding{}, false
 	}
@@ -557,24 +595,53 @@ func homoglyphConfusableFinding(input []uint32) (Finding, bool) {
 	}, true
 }
 
-func mixedScriptAdmissibilityFinding(input []uint32) (Finding, bool) {
-	seen := map[string]bool{}
-	for _, cp := range input {
-		if script, ok := scriptClass(cp); ok {
-			seen[script] = true
+// mixedScriptVerdict returns the mixed-script sub-threat for input, or false
+// when it is admissible.
+//
+// The rung order is Unicode/Security/Identity/MixedScriptAdmissibility.lean's:
+// a Restricted-status codepoint outranks every script question, then the two
+// named Latin pairs, then a multi-script mix split by whether it stays inside a
+// CJK covered set, and finally an Unrestricted level with no script mix.
+//
+// identifierField carries what the caller knows about the field, mirroring that
+// module's Context. Phase 1 is sound for an identifier, which cannot contain a
+// space, and unsound for a document, where every space and every punctuation
+// mark is Restricted.
+func mixedScriptVerdict(input []uint32, identifierField bool) (string, bool) {
+	if identifierField {
+		for _, cp := range input {
+			if !isIdAllowed(cp) {
+				return "RestrictedStatusCp", true
+			}
 		}
 	}
-	if len(seen) < 2 {
-		return Finding{}, false
+	union := stringScriptUnion(input)
+	seen := map[string]bool{}
+	for _, s := range union {
+		seen[s] = true
 	}
-	// Name the specific script collision to match the Lean source of truth.
-	// Priority follows Lean: Latin/Cyrillic before Latin/Greek.
-	subThreat := "ScriptMixOther"
-	switch {
-	case seen["Latn"] && seen["Cyrl"]:
-		subThreat = "LatinCyrillic"
-	case seen["Latn"] && seen["Grek"]:
-		subThreat = "LatinGreek"
+	if seen["Latn"] && seen["Cyrl"] {
+		return "LatinCyrillic", true
+	}
+	if seen["Latn"] && seen["Grek"] {
+		return "LatinGreek", true
+	}
+	if len(union) >= 2 && !isHighlyRestrictive(input) {
+		if isCoveredCJK(input) {
+			return "CjkMix", true
+		}
+		return "ScriptMixOther", true
+	}
+	if identifierField && restrictionLevel(input) == RestrictionUnrestricted {
+		return "UnrestrictedLevel", true
+	}
+	return "", false
+}
+
+func mixedScriptAdmissibilityFinding(input []uint32, identifierField bool) (Finding, bool) {
+	subThreat, ok := mixedScriptVerdict(input, identifierField)
+	if !ok {
+		return Finding{}, false
 	}
 	return Finding{
 		Code:      reasonCode(FamilyMixedScript, subThreat),

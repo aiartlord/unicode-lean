@@ -168,21 +168,54 @@ final class HomoglyphConfusable
     /** @param list<int> $input */
     public static function hasMixedScriptAdmissibility(array $input): bool
     {
-        $union = Ucd::stringScriptUnion($input);
-        return count($union) >= 2 && !Ucd::isHighlyRestrictive($input);
+        return self::mixedScriptVerdict($input, true) !== null;
     }
 
     /** @param list<int> $input */
     public static function mixedScriptSubThreat(array $input): string
     {
-        $seen = array_fill_keys(Ucd::stringScriptUnion($input), true);
+        return self::mixedScriptVerdict($input, true) ?? 'ScriptMixOther';
+    }
+
+    /**
+     * The mixed-script sub-threat for $input, or null when admissible.
+     *
+     * The rung order is MixedScriptAdmissibility.lean's: a Restricted-status
+     * codepoint outranks every script question, then the two named Latin
+     * pairs, then a multi-script mix split by whether it stays inside a CJK
+     * covered set, and finally an Unrestricted level with no script mix.
+     *
+     * $identifierField carries what the caller knows about the field,
+     * mirroring that module's Context. Phase 1 is sound for an identifier,
+     * which cannot contain a space, and unsound for a document, where every
+     * space and every punctuation mark is Restricted.
+     *
+     * @param list<int> $input
+     */
+    public static function mixedScriptVerdict(array $input, bool $identifierField): ?string
+    {
+        if ($identifierField) {
+            foreach ($input as $cp) {
+                if (!Ucd::isIdAllowed($cp)) {
+                    return 'RestrictedStatusCp';
+                }
+            }
+        }
+        $union = Ucd::stringScriptUnion($input);
+        $seen = array_fill_keys($union, true);
         if (isset($seen['Latn'], $seen['Cyrl'])) {
             return 'LatinCyrillic';
         }
         if (isset($seen['Latn'], $seen['Grek'])) {
             return 'LatinGreek';
         }
-        return 'ScriptMixOther';
+        if (count($union) >= 2 && !Ucd::isHighlyRestrictive($input)) {
+            return Ucd::isCoveredCjk($input) ? 'CjkMix' : 'ScriptMixOther';
+        }
+        if ($identifierField && Ucd::restrictionLevel($input) === RestrictionLevel::Unrestricted) {
+            return 'UnrestrictedLevel';
+        }
+        return null;
     }
 
     /** @param list<int> $input */
@@ -216,7 +249,10 @@ final class HomoglyphConfusable
             $v->sub = (object) ['tag' => 'DecompositionSwap'];
             return $v;
         }
-        if (self::hasMixedScriptAdmissibility($input)) {
+        // Priority 5: CrossScriptMix. This rung asks the script question only;
+        // the Restricted-status rung belongs to the mixed-script family.
+        $union = Ucd::stringScriptUnion($input);
+        if (count($union) >= 2 && !Ucd::isHighlyRestrictive($input)) {
             $v->kind = ClassificationKind::Hazard;
             $v->sub = (object) ['tag' => 'CrossScriptMix'];
             return $v;
