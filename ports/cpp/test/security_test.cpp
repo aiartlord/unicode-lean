@@ -1325,3 +1325,55 @@ TEST_CASE("CovertDisplayCompound — RLO + A + tag char fires BidiPlusTagBlock")
   CHECK(*v.sub == "BidiPlusTagBlock");
   CHECK(v.positions == std::vector<std::size_t>{0, 2});
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// Differential corpus
+// ─────────────────────────────────────────────────────────────────────
+
+// Agreement with the reference over a generated input stream. The corpus shares
+// the verdict contract's schema, so it is parsed with the same fixture reader,
+// but its cases come from the Rust reference over a deterministic stream rather
+// than being hand-written: agreement here is evidence that this port decides as
+// the reference does on inputs nobody chose, across every profile.
+//
+// The corpus was generated from the reference's full data-backed scan, so the
+// comparison runs through `scan_with_identity_database`. The data-free `scan`
+// cannot reach the families that need a loaded table and would not be
+// comparable against it.
+TEST_CASE("Policy — differential corpus") {
+  const auto root =
+      parse_fixture_file("testdata/fixtures/security/differential_corpus.json");
+  REQUIRE(root.field("schema").as_number() == 1);
+  REQUIRE(root.field("contract").as_string() == "unicode-security-verdict-v0");
+
+  for (const auto &test_case : root.field("cases").as_array()) {
+    const auto name = std::string(test_case.field("name").as_string());
+    INFO(name);
+    const auto profile = parse_profile(test_case.field("profile").as_string());
+    const auto mode = parse_mode(test_case.field("mode").as_string());
+    const auto input = u32_array(test_case.field("input"));
+    const auto expected = test_case.field("verdict");
+
+    const auto verdict = policy::scan_with_identity_database(
+        profile, mode, as_span(input), &test_database());
+
+    CHECK(verdict.action == parse_action(expected.field("action").as_string()));
+
+    const auto &expected_findings = expected.field("findings").as_array();
+    REQUIRE(verdict.findings.size() == expected_findings.size());
+    for (std::size_t index = 0; index < expected_findings.size(); ++index) {
+      const auto &actual_finding = verdict.findings[index];
+      const auto &expected_finding = expected_findings[index];
+      CHECK(actual_finding.code == expected_finding.field("code").as_string());
+      CHECK(actual_finding.sub_threat ==
+            expected_finding.field("sub_threat").as_string());
+      std::vector<std::size_t> expected_positions;
+      for (const auto &position :
+           expected_finding.field("positions").as_array()) {
+        expected_positions.push_back(
+            static_cast<std::size_t>(position.as_number()));
+      }
+      CHECK(actual_finding.positions == expected_positions);
+    }
+  }
+}
