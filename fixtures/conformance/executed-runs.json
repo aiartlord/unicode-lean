@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "contract": "unicode-conformance-executed-v0",
+  "note": "Results of folding each published corpus through the implementation, recorded with the SHA-256 of the file that was read. scripts/conformance-run.py uses a row only when that digest still matches the corpus on disk, so a regenerated or upgraded corpus invalidates the record rather than silently keeping a stale pass. Regenerate with scripts/conformance-execute.sh.",
+  "runs": [
+    {
+      "suite": "BidiTest",
+      "input_sha256": "888bdfc8090652272d1f859cdb00ae659e2dc6c26740be61ef1d03998a687620",
+      "rows_judged": 490846,
+      "passed": 490846,
+      "failed": 0,
+      "cases_judged": 770241,
+      "cases_passed": 770241,
+      "columns": ["resolved levels", "visual order"],
+      "note": "A row carries a bitset naming which paragraph directions it asserts, so 490846 rows expand to 770241 cases. Rows are reported in the suite table because that is the unit the other suites count; the case figure is the one the file actually asserts."
+    },
+    {
+      "suite": "BidiCharacterTest",
+      "input_sha256": "a3e6e905ab5afbe318a96df5401d0372a04cd73ef139ab5e3cf0ae241c255488",
+      "rows_judged": 91707,
+      "passed": 91707,
+      "failed": 0,
+      "columns": ["paragraph level", "resolved levels", "visual order"]
+    },
+    {
+      "suite": "NormalizationTest",
+      "input_sha256": "5019ffd530751a741900c849c0e010332f142a3612234639bd200b82138a87db",
+      "rows_judged": 20034,
+      "passed": 20034,
+      "failed": 0,
+      "columns": ["NFC", "NFD", "NFKC", "NFKD"]
+    },
+    {
+      "suite": "WordBreakTest",
+      "input_sha256": "1de23a75f37904abc7d206239ee8d34f8fdf0fb4ab32a7174dfbabbde25419b2",
+      "rows_judged": 1944,
+      "passed": 1944,
+      "failed": 0,
+      "columns": ["breaks"]
+    },
+    {
+      "suite": "LineBreakTest",
+      "input_sha256": "e69884e0dde6a8724873f885d68c52dc14518abf9ae4ca9e2283b8773db3b752",
+      "rows_judged": 19338,
+      "passed": 19338,
+      "failed": 0,
+      "columns": ["breaks"]
+    }
+  ]
+}

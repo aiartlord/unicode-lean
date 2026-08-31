@@ -68,13 +68,21 @@ def sha256_of(path: Path) -> str:
 
 
 def corpus_rows(path: Path) -> int:
-    """Data rows in a Unicode test file: neither blank nor a comment."""
+    """Data rows in a Unicode test file.
+
+    Neither blank, nor a comment, nor a directive. `NormalizationTest.txt`
+    separates its sections with `@Part0` through `@Part5` and `BidiTest.txt`
+    carries `@Levels` and `@Reorder`; those lines state how to read the rows
+    beneath them and are not themselves test rows. Counting them inflates the
+    denominator, which then reports a complete suite as having skipped the
+    difference.
+    """
     if not path.is_file():
         return 0
     count = 0
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         stripped = line.strip()
-        if stripped and not stripped.startswith("#"):
+        if stripped and not stripped.startswith("#") and not stripped.startswith("@"):
             count += 1
     return count
 
@@ -103,6 +111,32 @@ def harness_facts(name: str) -> dict[str, object]:
         "vectors": vectors,
         "drift_gated": gated,
     }
+
+
+EXECUTED_RUNS = ROOT / "fixtures" / "conformance" / "executed-runs.json"
+
+
+def executed_runs() -> dict[str, dict]:
+    """Recorded folds of a corpus through the implementation, keyed by suite.
+
+    A record is used only while the digest it was taken against still matches
+    the corpus on disk. Unicode moves `latest` yearly, so a record that outlives
+    its input has to stop counting rather than keep reporting a pass for a file
+    it never read.
+    """
+    if not EXECUTED_RUNS.is_file():
+        return {}
+    payload = json.loads(EXECUTED_RUNS.read_text(encoding="utf-8"))
+    usable: dict[str, dict] = {}
+    for run in payload.get("runs", []):
+        suite = str(run.get("suite", ""))
+        corpus = UCD / f"{suite}.txt"
+        if not corpus.is_file():
+            continue
+        if sha256_of(corpus) != run.get("input_sha256"):
+            continue
+        usable[suite] = run
+    return usable
 
 
 def section_inputs() -> list[dict[str, object]]:
@@ -147,15 +181,25 @@ def write_inputs_manifest(rows: list[dict[str, object]], destination: Path) -> i
 
 def section_suites() -> list[dict[str, object]]:
     rows = []
+    executed = executed_runs()
     for name, what in SUITES:
         total = corpus_rows(UCD / f"{name}.txt")
         facts = harness_facts(name)
         materialized = int(facts.get("materialized", 0))
-        # A suite counts as run only where the harness closes over a
-        # materialized mirror of the corpus that a drift gate ties back to
-        # the pinned file.
+        run = executed.get(name)
+        # A suite counts as run two ways. Either the harness closes over a
+        # materialized mirror of the corpus that a drift gate ties back to the
+        # pinned file, or the corpus was folded through the implementation and
+        # the result recorded against the digest of the file that was read.
+        # The second is an execution and not a proof, so it is reported under
+        # its own basis rather than merged with the first.
         if materialized and facts.get("drift_gated"):
             passed, failed, skipped = materialized, 0, max(total - materialized, 0)
+        elif run is not None:
+            passed = int(run["passed"])
+            failed = int(run["failed"])
+            judged = int(run["rows_judged"])
+            skipped = max(total - judged, 0)
         else:
             passed, failed, skipped = 0, 0, total
         rows.append(
@@ -168,6 +212,8 @@ def section_suites() -> list[dict[str, object]]:
                 "skipped": skipped,
                 "vectors_proved": int(facts.get("vectors", 0)),
                 "corpus_complete": bool(materialized and facts.get("drift_gated")),
+                "executed": run is not None,
+                "executed_columns": list(run["columns"]) if run is not None else [],
             }
         )
     return rows
@@ -445,6 +491,8 @@ def render(report: dict[str, object]) -> str:
         basis = (
             f"corpus, drift-gated, kernel"
             if row["corpus_complete"]
+            else "corpus, executed"
+            if row["executed"]
             else f"{row['vectors_proved']} representative vectors"
         )
         add(
@@ -452,10 +500,21 @@ def render(report: dict[str, object]) -> str:
             f"{row['failed']:>8}{row['skipped']:>9}  {basis}"
         )
     complete = [r["suite"] for r in report["suites"] if r["corpus_complete"]]
+    executed = [r["suite"] for r in report["suites"] if r["executed"]]
     add("")
-    add(f"  Corpus-complete, zero skipped: {', '.join(complete) if complete else 'none'}.")
-    add("  Every other suite proves representative vectors against the published")
-    add("  answer; its corpus rows are counted as skipped above, not as passes.")
+    add(f"  Corpus-complete, drift-gated in the kernel: {', '.join(complete) if complete else 'none'}.")
+    add(f"  Corpus-complete, executed: {', '.join(executed) if executed else 'none'}.")
+    add("  Any suite in neither list proves representative vectors against the")
+    add("  published answer; its corpus rows are counted as skipped above, not")
+    add("  as passes.")
+    add("")
+    add("  The two bases are different evidence and are not merged. A kernel row")
+    add("  is a proof over a materialized mirror the drift gate ties to the")
+    add("  pinned file. An executed row is the corpus folded through the")
+    add("  implementation, recorded in fixtures/conformance/executed-runs.json")
+    add("  against the SHA-256 of the file that was read, and it stops counting")
+    add("  when that digest no longer matches. Regenerate with")
+    add("  scripts/conformance-execute.sh.")
     add("")
     add("  IdnaTestV2 additionally has an evaluated run over the published file,")
     add("  separate from the kernel-proved vectors counted here and not a")
