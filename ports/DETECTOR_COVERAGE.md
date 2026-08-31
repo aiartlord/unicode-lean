@@ -298,13 +298,26 @@ until each port's own sub-threat names — FullwidthFold and HalfwidthFold —
 were searched for in source. The count is 432/432 again, and this time each
 cell was built and exercised under its own toolchain before being marked.
 
-Two ports' suites do not reach their own new detector — cpp's tests do not
-include the header, and cobol's fixture runner drives no width-class vectors —
-so in both the detector was additionally exercised by hand on U+FF21, U+FF71,
-ＡＤＭＩＮ, ASCII, precomposed Hangul, and a Halfwidth-then-Fullwidth input.
-That last one must report position 1 rather than 0, which is what distinguishes
-a correct sub-threat priority from one that merely fires. In cpp this caught a
-real compile error that the green suite had no way to reach.
+Width-class-confusion was first verified by hand in cpp and cobol, whose suites
+reached neither the header nor any width-class vector: U+FF21, U+FF71, ＡＤＭＩＮ,
+ASCII, precomposed Hangul, and a Halfwidth-then-Fullwidth input, the last of
+which must report position 1 rather than 0, which is what distinguishes a correct
+sub-threat priority from one that merely fires. In cpp this caught a real compile
+error the green suite had no way to reach. Both ports now consume
+`fixtures/security/differential_corpus.json`, which carries twenty
+width-class-confusion findings across its 250 cases, so the detector is reached
+by the suite in every port rather than by hand in two of them.
+
+What the corpus reaches is worth stating precisely, because a green corpus is
+easy to read as broader evidence than it is. Its inputs come from a seeded
+stream, and that stream produces no tag character and no bidi control, so
+tag-block-payload and bidi-control-balance draw zero findings across all 250
+cases. Those two families rest entirely on
+`fixtures/security/detectors/tag_block_payload.json` and
+`bidi_control_balance.json`, which pin every rung of both ladders with
+expectations taken from the reference binary. A sub-threat with no case in those
+files is unverified however many suites are green, because a port that hardcodes
+one sub-threat string passes every test that never asks for another.
 
 One further detail below full uniformity: cobol's HomoglyphConfusable uses a
 bounded target-skeleton iteration; deepening that bound is a refinement of an

@@ -445,6 +445,56 @@ static void check_decode_fixture(std::string_view relative,
   }
 }
 
+// Defined below, next to the identity detector tests that share it.
+static const homoglyph_confusable::Database &test_database();
+
+// Compare a scan against a pinned wire verdict, field by field. The other
+// ports compare the serialised verdict against the fixture's serialised
+// expectation; this walks the structure instead, which asserts the same content
+// without depending on this port's JSON writer agreeing on key order.
+//
+// The scan goes through scan_with_identity_database rather than the plain
+// scan. This port makes the confusables database an explicit argument and
+// `scan` supplies nullptr, which skips homoglyph-confusable,
+// mixed-script-admissibility and rtl-injection entirely. The wire contract is
+// written against a reference that always holds those tables, so the database
+// has to be supplied for the comparison to mean anything.
+static void check_verdict_fixture(std::string_view relative,
+                                  std::string_view expected_contract) {
+  const auto root = parse_fixture_file(relative);
+  REQUIRE(root.field("schema").as_number() == 1);
+  REQUIRE(root.field("contract").as_string() == expected_contract);
+
+  for (const auto &test_case : root.field("cases").as_array()) {
+    const auto name = std::string(test_case.field("name").as_string());
+    INFO(name);
+    const auto profile = parse_profile(test_case.field("profile").as_string());
+    const auto mode = parse_mode(test_case.field("mode").as_string());
+    const auto input = u32_array(test_case.field("input"));
+    const auto verdict = policy::scan_with_identity_database(
+        profile, mode, input, &test_database());
+
+    const auto &expected = test_case.field("verdict");
+    CHECK(verdict.action == parse_action(expected.field("action").as_string()));
+    CHECK(verdict.input == u32_array(expected.field("input")));
+
+    const auto &expected_findings = expected.field("findings").as_array();
+    REQUIRE(verdict.findings.size() == expected_findings.size());
+    for (std::size_t index = 0; index < expected_findings.size(); ++index) {
+      const auto &want = expected_findings[index];
+      const auto &got = verdict.findings[index];
+      CHECK(got.code == want.field("code").as_string());
+      CHECK(policy::family_slug(got.family) == want.field("family").as_string());
+      CHECK(static_cast<int>(got.severity) ==
+            static_cast<int>(want.field("severity").as_number()));
+      REQUIRE(got.sub_threat.has_value());
+      CHECK(*got.sub_threat == want.field("sub_threat").as_string());
+      CHECK(got.detail == want.field("detail").as_string());
+      CHECK(got.positions == size_array(want.field("positions")));
+    }
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Policy contract
 // ─────────────────────────────────────────────────────────────────────
@@ -566,6 +616,21 @@ TEST_CASE("Policy — shared UTF-8 decode contract fixture") {
 TEST_CASE("Policy — shared UTF-16/UTF-32 decode contract fixture") {
   check_decode_fixture("testdata/fixtures/security/decode_multiencoding_contract.json",
                        "unicode-security-multiencoding-decode-v0");
+}
+
+TEST_CASE("Policy — shared verdict contract fixture") {
+  check_verdict_fixture("testdata/fixtures/security/verdict_contract.json",
+                        "unicode-security-verdict-v0");
+}
+
+// Agreement with the reference over a generated input stream. The corpus shares
+// the verdict contract's schema, so it runs through the same comparison, but its
+// cases come from the Rust reference over a deterministic stream rather than
+// being hand-written: agreement here is evidence that this port decides as the
+// reference does on inputs nobody chose, across every profile.
+TEST_CASE("Policy — differential corpus") {
+  check_verdict_fixture("testdata/fixtures/security/differential_corpus.json",
+                        "unicode-security-verdict-v0");
 }
 
 TEST_CASE("Policy — UTF-8 decode contract") {

@@ -417,3 +417,15 @@ if restriction_low_audit_fixture.exists():
 
 print("clean: shared security contract fixtures pass")
 PY
+
+# The committed corpus carries the reference's verdicts, and every other port is
+# checked against those bytes. Regenerating it from the reference and comparing
+# is what keeps that premise true: without this, the reference could drift and
+# fifteen ports would agree with a stale recording of it. Skipped when the
+# reference CLI has not been built, since the corpus is committed and the ports
+# read it either way.
+if [[ -x ports/rust/target/debug/unicode-security ]]; then
+  python3 scripts/internal/generate_differential_corpus.py --check
+else
+  echo "skipped: differential corpus reference check needs ports/rust/target/debug/unicode-security"
+fi

@@ -219,21 +219,31 @@ def main() -> int:
         print("build it with: cd ports/rust && cargo build", file=sys.stderr)
         return 2
 
-    document = build_document(args.binary, args.count)
-    serialized = json.dumps(document, indent=2) + "\n"
-
     if args.check:
         if not FIXTURE.exists():
             print(f"missing {FIXTURE.relative_to(ROOT)}", file=sys.stderr)
             return 1
-        if FIXTURE.read_text() == serialized:
-            print(f"clean: {len(document['cases'])} corpus cases match the reference")
+        committed_text = FIXTURE.read_text()
+        # Regenerate at the committed corpus's own size rather than at --count.
+        # The stream is seeded, so a run of N cases is a prefix of a run of more,
+        # and comparing a longer fresh run against the committed file reports a
+        # difference that is only the length. Taking the count from the file
+        # makes this a true statement about the reference: the committed
+        # verdicts are what the reference produces today.
+        committed_count = len(json.loads(committed_text)["cases"])
+        fresh = json.dumps(build_document(args.binary, committed_count), indent=2) + "\n"
+        if committed_text == fresh:
+            print(f"clean: {committed_count} corpus cases match the reference")
             return 0
         print(
-            f"{FIXTURE.relative_to(ROOT)} differs from a fresh generation",
+            f"{FIXTURE.relative_to(ROOT)} differs from a fresh generation "
+            f"at its own {committed_count} cases",
             file=sys.stderr,
         )
         return 1
+
+    document = build_document(args.binary, args.count)
+    serialized = json.dumps(document, indent=2) + "\n"
 
     FIXTURE.write_text(serialized)
     print(f"wrote {FIXTURE.relative_to(ROOT)} ({len(document['cases'])} cases)")
