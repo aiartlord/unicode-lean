@@ -120,6 +120,7 @@ check_cpp_fixture_copy() {
 for rel in \
   policy_contract.json \
   verdict_contract.json \
+  differential_corpus.json \
   decode_contract.json \
   decode_multiencoding_contract.json \
   detectors/bidi_control_balance.json \
@@ -169,6 +170,13 @@ fixture = Path("fixtures/security/policy_contract.json")
 payload = json.loads(fixture.read_text(encoding="utf-8"))
 verdict_fixture = Path("fixtures/security/verdict_contract.json")
 verdict_payload = json.loads(verdict_fixture.read_text(encoding="utf-8"))
+# The differential corpus shares the verdict contract's schema, so it is
+# validated by the same loop. It is generated from the Rust reference over a
+# deterministic input stream rather than hand-written, which is what makes
+# agreement on it evidence of cross-port determinism rather than of sixteen
+# ports having been taught the same eighteen answers.
+differential_fixture = Path("fixtures/security/differential_corpus.json")
+differential_payload = json.loads(differential_fixture.read_text(encoding="utf-8"))
 decode_fixture = Path("fixtures/security/decode_contract.json")
 decode_payload = json.loads(decode_fixture.read_text(encoding="utf-8"))
 multiencoding_decode_fixture = Path("fixtures/security/decode_multiencoding_contract.json")
@@ -238,6 +246,24 @@ for case in verdict_payload["cases"]:
             f"{case['name']}: verdict JSON mismatch\n"
             f"actual={actual_json}\nexpected={expected_json}"
         )
+
+if differential_payload.get("contract") != "unicode-security-verdict-v0":
+    raise SystemExit("differential corpus contract name mismatch")
+
+for case in differential_payload["cases"]:
+    verdict = scan(profiles[case["profile"]], modes[case["mode"]], case["input"])
+    expected = case["verdict"]
+    actual = verdict_to_wire(verdict)
+    if actual != expected:
+        raise SystemExit(
+            f"{case['name']}: differential corpus mismatch\n"
+            f"input={case['input']!r}\nactual={actual!r}\nexpected={expected!r}"
+        )
+
+print(
+    f"clean: {len(differential_payload['cases'])} differential corpus cases "
+    "agree with the reference"
+)
 
 if decode_payload.get("contract") != "unicode-security-decode-v0":
     raise SystemExit("decode contract name mismatch")

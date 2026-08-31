@@ -209,12 +209,13 @@ func detect(input []uint32, identifierField bool) []Finding {
 	// suspicious. An input whose zero-width characters are all sanctioned
 	// raises nothing.
 	if positions := positionsWhere(input, isZeroWidthPayload); len(positions) > 0 && hasSuspiciousZeroWidth(input, positions) {
+		sub := zeroWidthSubThreat(input, positions)
 		findings = append(findings, Finding{
-			Code:      reasonCode(FamilyZeroWidthPayload, "BareZeroWidth"),
+			Code:      reasonCode(FamilyZeroWidthPayload, sub),
 			Family:    FamilyZeroWidthPayload,
 			Severity:  2,
 			Positions: positions,
-			SubThreat: "BareZeroWidth",
+			SubThreat: sub,
 			Detail:    "zero-width-payload",
 		})
 	}

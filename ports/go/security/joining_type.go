@@ -183,3 +183,39 @@ func hasSuspiciousZeroWidth(input []uint32, positions []int) bool {
 	}
 	return false
 }
+
+// zeroWidthSubThreat names which zero-width hazard the input carries, in the
+// dispatch order of Unicode.Security.Covert.ZeroWidthPayload: an annotation
+// outranks a word joiner, which outranks a narrow no-break space run, which
+// outranks a binary payload, and a bare occurrence is the fallback once no
+// richer class fits.
+//
+// The classes are counted over the codepoints the family already collected, so
+// a caller that has the positions does not walk the input twice.
+func zeroWidthSubThreat(input []uint32, positions []int) string {
+	var annotation, wordJoiner, nnbsp, zwjZwsp int
+	for _, i := range positions {
+		switch cp := input[i]; {
+		case cp >= 0xFFF9 && cp <= 0xFFFB:
+			annotation++
+		case cp == 0x2060:
+			wordJoiner++
+		case cp == 0x202F:
+			nnbsp++
+		case cp == 0x200B || cp == 0x200D:
+			zwjZwsp++
+		}
+	}
+	switch {
+	case annotation > 0:
+		return "AnnotationMisuse"
+	case wordJoiner > 0:
+		return "WordJoinerInjection"
+	case nnbsp >= 2:
+		return "AiWatermarkNNBSP"
+	case zwjZwsp >= 2:
+		return "BinaryPayload"
+	default:
+		return "BareZeroWidth"
+	}
+}

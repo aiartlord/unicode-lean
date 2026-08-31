@@ -32,6 +32,12 @@ VERDICT_FIXTURE_PATH = (
     / "security"
     / "verdict_contract.json"
 )
+DIFFERENTIAL_FIXTURE_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "fixtures"
+    / "security"
+    / "differential_corpus.json"
+)
 DECODE_FIXTURE_PATH = (
     Path(__file__).resolve().parents[3]
     / "fixtures"
@@ -102,6 +108,23 @@ def test_verdict_contract_fixture_cases() -> None:
         assert verdict_to_json(verdict) == json.dumps(
             case["verdict"], separators=(",", ":")
         )
+
+
+def test_differential_corpus_cases() -> None:
+    """Agreement with the reference over a generated input stream.
+
+    The corpus shares the verdict contract's schema and is checked by the same
+    comparison, but its cases are generated from the Rust reference over a
+    deterministic stream rather than hand-written, so agreement here is evidence
+    that this port decides the same way as the reference on inputs nobody chose,
+    across every profile.
+    """
+    payload = json.loads(DIFFERENTIAL_FIXTURE_PATH.read_text(encoding="utf-8"))
+    assert payload["contract"] == "unicode-security-verdict-v0"
+
+    for case in payload["cases"]:
+        verdict = scan(_profile(case["profile"]), _mode(case["mode"]), case["input"])
+        assert verdict_to_wire(verdict) == case["verdict"], case["name"]
 
 
 def test_decode_contract_fixture_cases() -> None:

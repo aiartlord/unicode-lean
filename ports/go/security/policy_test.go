@@ -98,8 +98,13 @@ func TestPolicyContractFixture(t *testing.T) {
 }
 
 func TestVerdictContractFixture(t *testing.T) {
+	runVerdictFixture(t, "verdict_contract.json")
+}
+
+func runVerdictFixture(t *testing.T, name string) {
+	t.Helper()
 	var contract verdictContract
-	loadJSON(t, fixturePath(t, "fixtures", "security", "verdict_contract.json"), &contract)
+	loadJSON(t, fixturePath(t, "fixtures", "security", name), &contract)
 	if contract.Schema != 1 {
 		t.Fatalf("unexpected verdict schema: %d", contract.Schema)
 	}
