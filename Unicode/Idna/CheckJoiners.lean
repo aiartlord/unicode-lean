@@ -153,6 +153,29 @@ def checkJoinersFrom (label : List Nat) (fuel : Nat) (i : Nat) : Bool :=
 def checkJoiners (label : List Nat) : Bool :=
   checkJoinersFrom label label.length 0
 
+/-- Whether `label` violates RFC 5892 A.1, the ZWNJ rule, and whether it
+    violates A.2, the ZWJ rule, scanning from position `i`. Reported as a pair
+    because a label can violate both, and `IdnaTestV2.txt` names them
+    separately as `C1` and `C2`. -/
+def contextJViolationsFrom (label : List Nat) (i : Nat) : Nat → Bool × Bool
+  | 0 => (false, false)
+  | fuel + 1 =>
+    if h : i < label.length then
+      let cp := label[i]
+      let zwnjBad := cp = 0x200C && ! checkContextJZwnj label i
+      let zwjBad  := cp = 0x200D && ! checkContextJZwj label i
+      let rest := contextJViolationsFrom label (i + 1) fuel
+      (zwnjBad || rest.fst, zwjBad || rest.snd)
+    else
+      (false, false)
+
+/-- Which CONTEXTJ appendices `label` violates: `1` for A.1 and `2` for A.2,
+    ascending, each at most once. The appendix numbering stays here and IDNA
+    maps it onto the `C1` and `C2` status codes. -/
+def contextJViolations (label : List Nat) : List Nat :=
+  let violated := contextJViolationsFrom label 0 label.length
+  (if violated.fst then [1] else []) ++ (if violated.snd then [2] else [])
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 SAMPLE CHECKS
 -- ═══════════════════════════════════════════════════════════════════════════════

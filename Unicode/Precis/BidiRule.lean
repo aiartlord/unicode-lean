@@ -286,6 +286,48 @@ def satisfiesBidiRuleStrict (cps : List Nat) : Bool :=
     cps.all (fun cp => allowedInLtrLabel (lookupBidiClass cp)) &&
     ltrEndValid cps
 
+/-- Which of the six RFC 5893 §2 rules `cps` violates, as rule numbers in
+    ascending order, under the strict reading `satisfiesBidiRuleStrict` applies.
+
+    The six rules divide by direction: rule 1 constrains the first character of
+    any Bidi label, rules 2 to 4 apply to a label whose first character is R or
+    AL, and rules 5 and 6 to one whose first character is L. A label therefore
+    reports rule 1 alone when the first character disqualifies it, since the
+    direction that selects the remaining rules is not established.
+
+    The caller names the rules; this returns the numbers. IDNA's `CheckBidi`
+    reports them as the `B1` through `B6` status codes `IdnaTestV2.txt`
+    publishes, and keeping the numbering here means the RFC's vocabulary does
+    not have to travel through a second one to reach it. -/
+def bidiRuleViolationsStrict (cps : List Nat) : List Nat :=
+  if cps.isEmpty then []
+  else if !firstCharValid cps then [1]
+  else if isRtlLabel cps then
+    (if cps.all (fun cp => allowedInRtlLabel (lookupBidiClass cp)) then [] else [2])
+      ++ (if rtlEndValid cps then [] else [3])
+      ++ (if noMixedEnAnInRtl cps then [] else [4])
+  else
+    (if cps.all (fun cp => allowedInLtrLabel (lookupBidiClass cp)) then [] else [5])
+      ++ (if ltrEndValid cps then [] else [6])
+
+/-- `bidiRuleViolationsStrict` is empty exactly when the strict rule holds, so
+    the two readings of the same six predicates cannot drift apart. -/
+theorem bidiRuleViolationsStrict_empty_iff_satisfies (cps : List Nat) :
+    (bidiRuleViolationsStrict cps).isEmpty = satisfiesBidiRuleStrict cps := by
+  unfold bidiRuleViolationsStrict satisfiesBidiRuleStrict
+  split
+  · rfl
+  · split
+    · rfl
+    · split
+      · cases cps.all (fun cp => allowedInRtlLabel (lookupBidiClass cp)) <;>
+        cases rtlEndValid cps <;>
+        cases noMixedEnAnInRtl cps <;>
+        simp
+      · cases cps.all (fun cp => allowedInLtrLabel (lookupBidiClass cp)) <;>
+        cases ltrEndValid cps <;>
+        simp
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- IDEMPOTENCE (trivial)
 --

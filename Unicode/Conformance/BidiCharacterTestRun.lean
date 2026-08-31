@@ -2,16 +2,13 @@
   Unicode.Conformance.BidiCharacterTestRun
 
   An evaluated run of the published `BidiCharacterTest.txt` against
-  `Unicode.Bidi.Algorithm`, in the shape `Unicode.Conformance.IdnaTestV2`
-  already uses: parse every row of the shipped file, judge each one, and tally
-  the judgements into a report that states how many rows it read.
+  `Unicode.Bidi.Algorithm`: parse every row of the shipped file, judge each one,
+  and tally the judgements into a report stating how many rows it read.
 
-  This is the executed counterpart to the kernel-proved vectors in
-  `Unicode.Conformance.BidiCharacterTest`. Those prove a handful of paragraph
-  levels inside the kernel; this folds the whole corpus through the algorithm
-  and reports pass and fail per column. Neither replaces the other: the proofs
-  say the algorithm is right about the cases they name, and the run says it
-  agrees with the Consortium's published answers on every row of the file.
+  `Unicode.Conformance.BidiCharacterTest` proves paragraph levels for named
+  vectors in the kernel. This folds the whole corpus and reports pass and fail
+  per column. The two are different evidence: a proof holds for the cases it
+  names, a run holds for every row the file publishes.
 
   Each row is
 

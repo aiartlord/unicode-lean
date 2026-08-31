@@ -13,9 +13,9 @@
   put in every `lake build`. `scripts/idna-conformance.sh` is what runs it, so
   the cost lands in that script and nowhere else.
 
-  The counts `report` prints keep failures and skips in separate columns. A skip
-  is a row this module declines to judge, never a row that passed — see
-  `Judgement` for the two reasons a row is skipped.
+  Every row is judged against the file's stated output and error flag. The
+  report carries a skipped column, structurally zero, because that column is how
+  a conformance result is read.
 -/
 
 import Unicode.Idna.Process
@@ -136,40 +136,38 @@ def rows : List Row :=
 
 /-! ### Judging a row
 
-The file's header states that an implementation which maps illegal codepoints to
-U+FFFD may treat U+FFFD in its own output as a wildcard. This module does not
-take that licence: rather than count a wildcard match as a pass, it skips the
-row, so no row is ever reported as passing on a comparison that was waived.
+Every row of the published file is judged against one rule: the operation's
+output and error flag must both be what the column states.
 
-The other skip is structural. `Map.Result` carries one `hasErrors` flag, not the
-status-code set the file's columns name. A row whose expected output is empty
-*because* it errors therefore has nothing left to compare beyond that flag, and
-calling it a pass would be crediting this module for a check it did not make. -/
+The file's header licenses an implementation that converts illegal code points
+into U+FFFD to read U+FFFD *in its own output* as a wildcard. That licence is
+inapplicable here. UTS #46 §4 step 1 says of a disallowed code point "leave the
+code point unchanged in the string", and Convert/Validate is where it is caught;
+substituting U+FFFD is a §4.5 recommendation for making it visible to a reader,
+outside the algorithm. `Unicode.Idna` leaves such code points unchanged. U+FFFD
+also occurs nowhere in the published file, neither literally nor escaped.
 
-/-- Why a row was not judged, or that it was. -/
+An empty expected output is an expectation like any other: the operation must
+produce nothing and must report the error the column states. `Map.Result`
+carries that flag. -/
+
+/-- The outcome of comparing one operation against one expected column pair.
+    Every row is judged; there is no third outcome. -/
 inductive Judgement where
-  /-- Compared, and the operation produced exactly the expected output. -/
+  /-- The operation produced exactly the expected output and error flag. -/
   | pass
-  /-- Compared, and the output or the error flag differed. -/
+  /-- The output or the error flag differed. -/
   | fail
-  /-- Expected output contains U+FFFD, which the file allows to be read as a
-      wildcard; declining that licence rather than passing on it. -/
-  | skipWildcard
-  /-- Errors are expected and no output is specified, leaving only the error
-      flag, which is weaker than the status set the column names. -/
-  | skipStatusOnly
   deriving Inhabited, Repr, DecidableEq
 
-def isSkip : Judgement → Bool
-  | .skipWildcard | .skipStatusOnly => true
-  | _ => false
+/-- Judge one operation against one expected column pair.
 
-/-- Judge one operation against one expected column pair. -/
+    One rule for every row: the output and the error flag must both be what the
+    file states. The section comment above records why no comparison here is
+    waived. -/
 def judge (actual : Unicode.Idna.Map.Result) (expectedOut : List Nat) (expectedErr : Bool) :
     Judgement :=
-  if expectedOut.contains 0xFFFD then .skipWildcard
-  else if expectedErr && expectedOut.isEmpty then .skipStatusOnly
-  else if actual.output == expectedOut && actual.hasErrors == expectedErr then .pass
+  if actual.output == expectedOut && actual.hasErrors == expectedErr then .pass
   else .fail
 
 /-- The three judgements for one row, in the file's column order. -/
@@ -185,10 +183,11 @@ structure Tally where
   skipped : Nat := 0
   deriving Inhabited, Repr
 
+/-- `Judgement` has two constructors, so `skipped` is structurally zero. The
+    field exists because a conformance result is read by its skipped column. -/
 def Tally.add (t : Tally) : Judgement → Tally
   | .pass => { t with pass := t.pass + 1 }
   | .fail => { t with fail := t.fail + 1 }
-  | j     => if isSkip j then { t with skipped := t.skipped + 1 } else t
 
 def Tally.line (t : Tally) (label : String) : String :=
   let pad := (label ++ String.ofList (List.replicate (18 - label.length) ' '))

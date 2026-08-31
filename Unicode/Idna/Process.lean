@@ -189,15 +189,17 @@ def checkBidi (labels : List (List Nat)) : Bool :=
   let isBidiDomain := labels.any Unicode.Precis.BidiRule.isBidiLabel
   ! isBidiDomain || labels.all Unicode.Precis.BidiRule.satisfiesBidiRuleStrict
 
-/-- True iff the joined-domain length is in [1, 253] codepoints.
-    UTS #46 §4.4 — total-length check (`X4_2` for toUnicode,
-    `A4_2` for toASCII). -/
+/-- True iff the joined-domain length is in [1, 253] codepoints. This is the
+    domain-length half of UTS #46 §4.2 step 4, which `IdnaTestV2.txt` names
+    `A4_1`. The file's own rows separate the two halves: a row carrying `A4_1`
+    and not `A4_2` holds several labels each within 63 whose join exceeds 253. -/
 def totalLengthOk (output : List Nat) : Bool :=
   Nat.ble 1 output.length && Nat.ble output.length 253
 
-/-- True iff every label has length in [1, 63] codepoints. UTS #46
-    §4.4 — per-label-length check (`A4_1`, applied only to toASCII
-    output). -/
+/-- True iff every label has length in [1, 63] codepoints. This is the
+    label-length half of UTS #46 §4.2 step 4, which `IdnaTestV2.txt` names
+    `A4_2`: a row carrying `A4_2` and not `A4_1` holds one label whose Punycode
+    form exceeds 63. -/
 def labelsLengthOk (labels : List (List Nat)) : Bool :=
   labels.all (fun l => Nat.ble 1 l.length && Nat.ble l.length 63)
 
@@ -223,6 +225,54 @@ def labelsPass (opts : Options) (decoded : List (List Nat)) : Bool :=
     && (! opts.checkJoiners    || decoded.all CheckJoiners.checkJoiners)
     && (! opts.checkBidi       || checkBidi decoded)
     && ! hasNonTrailingEmptyLabel decoded
+
+/-- The status codes one label raises, from the same predicates `isValidLabel`
+    consults. `IdnaTestV2.txt` states a set of codes per row, so a conformance
+    comparison needs which check failed and not only that one did.
+
+    The `Options` flags select the codes, as the file's own header sets out:
+    CheckHyphens governs `V2` and `V3`, UseSTD3ASCIIRules governs `U1`. -/
+def labelStatuses (opts : Options) (label : List Nat) : List Map.Status :=
+  (if violatesLeadingCombiner label then [Map.Status.V6] else [])
+    ++ (if opts.checkHyphens && violatesHyphenRule label then [Map.Status.V2] else [])
+    ++ (if opts.checkHyphens && violatesLeadTrailHyphen label then [Map.Status.V3] else [])
+    ++ (if opts.useSTD3ASCIIRules && violatesSTD3 label then [Map.Status.U1] else [])
+
+/-- The CONTEXTJ codes one label raises. `CheckJoiners.contextJViolations`
+    numbers the RFC 5892 appendices; `1` is A.1, reported as `C1`, and `2` is
+    A.2, reported as `C2`. -/
+def labelJoinerStatuses (label : List Nat) : List Map.Status :=
+  (CheckJoiners.contextJViolations label).filterMap (fun n =>
+    if n == 1 then some Map.Status.C1
+    else if n == 2 then some Map.Status.C2
+    else none)
+
+/-- The Bidi codes a domain raises. `BidiRule.bidiRuleViolationsStrict` numbers
+    the RFC 5893 §2 rules; rule `n` is reported as `Bn`. A non-bidi domain
+    raises none, matching `checkBidi`. -/
+def domainBidiStatuses (labels : List (List Nat)) : List Map.Status :=
+  let isBidiDomain := labels.any Unicode.Precis.BidiRule.isBidiLabel
+  if ! isBidiDomain then []
+  else
+    (labels.flatMap Unicode.Precis.BidiRule.bidiRuleViolationsStrict).filterMap
+      (fun n =>
+        if n == 1 then some Map.Status.B1
+        else if n == 2 then some Map.Status.B2
+        else if n == 3 then some Map.Status.B3
+        else if n == 4 then some Map.Status.B4
+        else if n == 5 then some Map.Status.B5
+        else if n == 6 then some Map.Status.B6
+        else none)
+
+/-- Every status the decoded label array raises under `opts`, in the order the
+    checks appear, with duplicates removed. Mirrors `labelsPass`: the same
+    checks, reporting which failed rather than whether any did. -/
+def labelsStatuses (opts : Options) (decoded : List (List Nat)) : List Map.Status :=
+  let perLabel := decoded.flatMap (labelStatuses opts)
+  let joiners := if opts.checkJoiners then decoded.flatMap labelJoinerStatuses else []
+  let bidi := if opts.checkBidi then domainBidiStatuses decoded else []
+  let empties := if hasNonTrailingEmptyLabel decoded then [Map.Status.V4] else []
+  (perLabel ++ joiners ++ bidi ++ empties).eraseDups
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 TOUNICODE  (UTS #46 §4.2)

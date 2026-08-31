@@ -1,18 +1,15 @@
 /-
   Unicode.Conformance.BreakTestRun
 
-  Evaluated runs of the published `WordBreakTest.txt` and `LineBreakTest.txt`.
+  Evaluated runs of the published `WordBreakTest.txt` and `LineBreakTest.txt`
+  against `Unicode.Segmentation.WordBreak` and `Unicode.Segmentation.LineBreak`.
+  `GraphemeBreakTest` and `SentenceBreakTest` prove their corpora in the kernel;
+  these two are folded here.
 
-  `GraphemeBreakTest` and `SentenceBreakTest` already consume their corpora
-  completely; the other two break suites report every row as skipped, not
-  because the algorithms are missing — `Unicode.Segmentation.WordBreak` and
-  `Unicode.Segmentation.LineBreak` both expose the same `breaks` shape
-  `graphemeBreaks` has — but because nothing read the files.
-
-  The four suites share one row format, so they share one parser: codepoints
-  separated by `×` where no break occurs and `÷` where one does, with a marker
-  at each end, and a `#` comment tail. A row therefore carries `n` codepoints
-  and `n + 1` break flags.
+  The four break suites share one row format, so one parser serves all of them:
+  codepoints separated by `×` where no break occurs and `÷` where one does, a
+  marker at each end, and a `#` comment tail. A row of `n` codepoints therefore
+  carries `n + 1` break flags.
 -/
 
 import Unicode.Segmentation.WordBreak

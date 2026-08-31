@@ -27,16 +27,53 @@ set_option maxRecDepth 1000000
 open Unicode.Generated.IdnaMapping
 open Unicode.Idna.Disposition
 
-/-- The output of an IDNA processing stage: the produced codepoint
-    sequence plus a flag indicating whether any UTS #46 error was
-    recorded along the way. -/
+/-- A UTS #46 / IDNA2008 status code, as `IdnaTestV2.txt` names them in its
+    bracketed status columns. The twenty constructors are exactly the codes that
+    file publishes.
+
+    `A` codes come from the toASCII output stage, `X` from toUnicode's, `B` from
+    the RFC 5893 Bidi rule, `C` from CONTEXTJ, `P` from Punycode, `U` from STD3,
+    and `V` from label validity. -/
+inductive Status where
+  | A3 | A4_1 | A4_2
+  | B1 | B2 | B3 | B4 | B5 | B6
+  | C1 | C2
+  | P4
+  | U1
+  | V1 | V2 | V3 | V4 | V6 | V7
+  | X4_2
+  deriving Repr, Inhabited, DecidableEq, Ord
+
+/-- The tag `IdnaTestV2.txt` writes for a status. -/
+def Status.tag : Status → String
+  | .A3 => "A3"   | .A4_1 => "A4_1" | .A4_2 => "A4_2"
+  | .B1 => "B1"   | .B2 => "B2"     | .B3 => "B3"
+  | .B4 => "B4"   | .B5 => "B5"     | .B6 => "B6"
+  | .C1 => "C1"   | .C2 => "C2"
+  | .P4 => "P4"
+  | .U1 => "U1"
+  | .V1 => "V1"   | .V2 => "V2"     | .V3 => "V3"
+  | .V4 => "V4"   | .V6 => "V6"     | .V7 => "V7"
+  | .X4_2 => "X4_2"
+
+/-- The output of an IDNA processing stage: the produced codepoint sequence, a
+    flag indicating whether any UTS #46 error was recorded, and the status codes
+    that were raised.
+
+    `hasErrors` and `statuses` answer different questions. A conformance
+    comparison against `IdnaTestV2.txt` needs the codes, because the file states
+    which ones a row raises; a caller deciding whether to accept a name needs
+    only the flag. -/
 structure Result where
   output    : List Nat
   hasErrors : Bool
+  statuses  : List Status := []
   deriving Repr, Inhabited, DecidableEq
 
 instance : ToString Result where
-  toString r := s!"\{ output := {r.output}, hasErrors := {r.hasErrors} }"
+  toString r :=
+    s!"\{ output := {r.output}, hasErrors := {r.hasErrors}, " ++
+    s!"statuses := {r.statuses.map Status.tag} }"
 
 /-- Apply the UTS #46 mapping pass to `input` under non-transitional
     processing. Disallowed and out-of-table codepoints are preserved
