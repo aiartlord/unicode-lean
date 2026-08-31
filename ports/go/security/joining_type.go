@@ -219,3 +219,153 @@ func zeroWidthSubThreat(input []uint32, positions []int) string {
 		return "BareZeroWidth"
 	}
 }
+
+// ── tag-block-payload sub-threat ──────────────────────────────────────────
+
+// isTagCharacter reports whether cp is in the tag block, mirroring
+// `isTagCharacter` in Unicode.Security.Covert.TagBlockPayload. The whole block
+// counts, not only the ASCII-bearing span: LANGUAGE TAG at U+E0001 and CANCEL
+// TAG at U+E007F are tag characters that carry no ASCII, and a run made only of
+// those is still a payload.
+func isTagCharacter(cp uint32) bool {
+	return cp >= 0xE0000 && cp <= 0xE007F
+}
+
+// tagToAscii maps a tag character to the ASCII it stands for, and reports
+// whether it stands for any. Only U+E0020..U+E007E carry ASCII.
+func tagToAscii(cp uint32) (byte, bool) {
+	if cp >= 0xE0020 && cp <= 0xE007E {
+		return byte(cp - 0xE0000), true
+	}
+	return 0, false
+}
+
+// decodeTagRun recovers the ASCII a tag run stands for, skipping the tag
+// characters that carry none.
+func decodeTagRun(cps []uint32) string {
+	out := make([]byte, 0, len(cps))
+	for _, cp := range cps {
+		if ascii, ok := tagToAscii(cp); ok {
+			out = append(out, ascii)
+		}
+	}
+	return string(out)
+}
+
+// tagBlockSubThreat names which tag-block hazard the input carries, in the
+// priority order of Unicode.Security.Covert.TagBlockPayload: a LANGUAGE TAG
+// followed by at least one further tag character revives the deprecated
+// language-tag mechanism; otherwise an all-tag input decoding to at least one
+// ASCII character is a direct payload; otherwise a run mixed with ordinary text
+// is a mixed block; otherwise the run is tag characters carrying no ASCII, such
+// as a CANCEL TAG standing alone.
+func tagBlockSubThreat(input []uint32, tagPositions []int) string {
+	tags := make([]uint32, 0, len(tagPositions))
+	for _, index := range tagPositions {
+		tags = append(tags, input[index])
+	}
+	if len(tags) >= 2 && tags[0] == 0xE0001 {
+		return "LanguageTagRevival"
+	}
+	allTags := len(input) == len(tags)
+	if allTags && len(decodeTagRun(tags)) >= 1 {
+		return "DirectAscii"
+	}
+	if len(input) > len(tags) {
+		return "MixedBlock"
+	}
+	return "BareTagPresent"
+}
+
+// ── bidi-control-balance sub-threat ───────────────────────────────────────
+
+// uaxDepthLimit is the embedding depth bound of UAX #9 §3.3.2.
+const uaxDepthLimit = 125
+
+func opensEmbedding(cp uint32) bool {
+	return cp == 0x202A || cp == 0x202B || cp == 0x202D || cp == 0x202E
+}
+
+func opensIsolate(cp uint32) bool {
+	return cp == 0x2066 || cp == 0x2067 || cp == 0x2068
+}
+
+// bidiWalk is the stack-of-stacks accumulator of
+// Unicode.Security.Covert.BidiControlBalance: each opener pushes, each popper
+// pops or records an orphan position, and maxDepth tracks the peak combined
+// height.
+type bidiWalk struct {
+	embStack, isoStack int
+	embOpen, embPop    int
+	isoOpen, isoPop    int
+	maxDepth           int
+	orphans            []int
+	positions          []int
+}
+
+func runBidiWalk(input []uint32) bidiWalk {
+	var st bidiWalk
+	for index, cp := range input {
+		if !isBidiFormatControl(cp) {
+			continue
+		}
+		st.positions = append(st.positions, index)
+		switch {
+		case opensEmbedding(cp):
+			st.embStack++
+			st.embOpen++
+			if d := st.embStack + st.isoStack; d > st.maxDepth {
+				st.maxDepth = d
+			}
+		case cp == 0x202C:
+			st.embPop++
+			if st.embStack > 0 {
+				st.embStack--
+			} else {
+				st.orphans = append(st.orphans, index)
+			}
+		case opensIsolate(cp):
+			st.isoStack++
+			st.isoOpen++
+			if d := st.embStack + st.isoStack; d > st.maxDepth {
+				st.maxDepth = d
+			}
+		case cp == 0x2069:
+			st.isoPop++
+			if st.isoStack > 0 {
+				st.isoStack--
+			} else {
+				st.orphans = append(st.orphans, index)
+			}
+		}
+	}
+	return st
+}
+
+// bidiSubThreat names which bidi hazard the input carries and the positions it
+// localises, or reports that the controls are balanced and within depth. The
+// priority is the spec's: depth exceeded, then an orphan pop, then an
+// unbalanced embedding, then an unbalanced isolate.
+//
+// Orphan pop localises per stray popper. Depth exceeded is a whole-string
+// verdict, so it localises nothing. The unbalanced cases report every bidi
+// position, the diagnostic being that something among these controls is missing
+// its partner.
+func bidiSubThreat(input []uint32) (string, []int, bool) {
+	st := runBidiWalk(input)
+	if len(st.positions) == 0 {
+		return "", nil, false
+	}
+	switch {
+	case st.maxDepth > uaxDepthLimit:
+		return "DepthExceeded", []int{}, true
+	case len(st.orphans) > 0:
+		return "OrphanPop", st.orphans, true
+	case st.embStack > 0:
+		return "UnbalancedEmbedding", st.positions, true
+	case st.isoStack > 0:
+		return "UnbalancedIsolate", st.positions, true
+	default:
+		return "", nil, false
+	}
+}

@@ -16,7 +16,7 @@ package security
 // inside string literals or comments count.
 //
 // Constituents reused (this port's own, in canonical aggregation order):
-//	1. tag-block-payload          isTagBlockAsciiPayload      → "TagBlock"
+//	1. tag-block-payload          isTagCharacter              → "TagBlock"
 //	2. variation-selector-payload variationSelectorFinding    → "VariationSelector"
 //	3. zero-width-payload         isZeroWidthPayload          → "ZeroWidth"
 //	4. bidi-control-balance       isBidiEmbeddingControl      → "BidiControl"
@@ -48,9 +48,11 @@ func (d sddDetection) tag() (string, bool) {
 }
 
 // sddTagBlockFired reports whether the port's own tag-block-payload constituent
-// classifies the input as non-clear.
+// classifies the input as non-clear. The family fires on any tag character, not
+// only the ASCII-bearing span, so a LANGUAGE TAG or a lone CANCEL TAG counts
+// here as it does in the family's own verdict.
 func sddTagBlockFired(input []uint32) bool {
-	return len(positionsWhere(input, isTagBlockAsciiPayload)) > 0
+	return len(positionsWhere(input, isTagCharacter)) > 0
 }
 
 // sddVariationSelectorFired reports whether the port's own

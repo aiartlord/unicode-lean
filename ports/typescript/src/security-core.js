@@ -291,9 +291,17 @@ export const verdictJSON = verdictJson;
 function detect(input, identifierField) {
   const findings = [];
 
-  const tagPositions = positionsWhere(input, isTagBlockAsciiPayload);
+  // The whole tag block counts, not only the ASCII-bearing span, and which
+  // hazard it is depends on what the run contains: see tagBlockSubThreat.
+  const tagPositions = positionsWhere(input, isTagCharacter);
   if (tagPositions.length > 0) {
-    findings.push(makeFinding(Family.TagBlockPayload, "DirectAscii", tagPositions));
+    findings.push(
+      makeFinding(
+        Family.TagBlockPayload,
+        tagBlockSubThreat(input, tagPositions),
+        tagPositions,
+      ),
+    );
   }
 
   const variation = variationSelectorFinding(input);
@@ -321,9 +329,12 @@ function detect(input, identifierField) {
     findings.push(surrogateReassembly);
   }
 
-  const bidiPositions = positionsWhere(input, isBidiEmbeddingControl);
-  if (bidiPositions.length > 0) {
-    findings.push(makeFinding(Family.BidiControlBalance, "UnbalancedEmbedding", bidiPositions));
+  // Bidi controls that balance within the depth bound are legitimate
+  // right-to-left text and raise nothing; bidiSubThreat reports only when the
+  // stack walk finds an orphan, an unclosed opener, or excessive nesting.
+  const bidi = bidiSubThreat(input);
+  if (bidi !== null) {
+    findings.push(makeFinding(Family.BidiControlBalance, bidi.sub, bidi.positions));
   }
 
   findings.push(...noncharacterControlFindings(input));
@@ -624,8 +635,98 @@ function positionsWhere(input, pred) {
   return positions;
 }
 
-function isTagBlockAsciiPayload(cp) {
-  return cp >= 0xe0020 && cp <= 0xe007e;
+// ── tag-block-payload sub-threat ──────────────────────────────────────────
+
+// True iff cp is in the tag block, mirroring `isTagCharacter` in
+// Unicode.Security.Covert.TagBlockPayload. The whole block counts, not only the
+// ASCII-bearing span: LANGUAGE TAG at U+E0001 and CANCEL TAG at U+E007F are tag
+// characters that carry no ASCII, and a run made only of those is still a
+// payload.
+function isTagCharacter(cp) {
+  return cp >= 0xe0000 && cp <= 0xe007f;
+}
+
+// The ASCII a tag run stands for, skipping the tag characters that carry none.
+// Only U+E0020..U+E007E carry ASCII.
+function decodeTagRun(cps) {
+  let out = "";
+  for (const cp of cps) {
+    if (cp >= 0xe0020 && cp <= 0xe007e) {
+      out += String.fromCharCode(cp - 0xe0000);
+    }
+  }
+  return out;
+}
+
+// Which tag-block hazard the input carries, in the priority order of
+// Unicode.Security.Covert.TagBlockPayload: a LANGUAGE TAG followed by at least
+// one further tag character revives the deprecated language-tag mechanism;
+// otherwise an all-tag input decoding to at least one ASCII character is a
+// direct payload; otherwise a run mixed with ordinary text is a mixed block;
+// otherwise the run is tag characters carrying no ASCII, such as a CANCEL TAG
+// standing alone.
+function tagBlockSubThreat(input, tagPositions) {
+  const tags = tagPositions.map((index) => input[index]);
+  if (tags.length >= 2 && tags[0] === 0xe0001) return "LanguageTagRevival";
+  const allTags = input.length === tags.length;
+  if (allTags && decodeTagRun(tags).length >= 1) return "DirectAscii";
+  if (input.length > tags.length) return "MixedBlock";
+  return "BareTagPresent";
+}
+
+// ── bidi-control-balance sub-threat ───────────────────────────────────────
+
+// The embedding depth bound of UAX #9 §3.3.2.
+const UAX_DEPTH_LIMIT = 125;
+
+function opensEmbedding(cp) {
+  return cp === 0x202a || cp === 0x202b || cp === 0x202d || cp === 0x202e;
+}
+
+function opensIsolate(cp) {
+  return cp === 0x2066 || cp === 0x2067 || cp === 0x2068;
+}
+
+// Which bidi hazard the input carries and the positions it localises, or null
+// when the controls are balanced and within depth.
+//
+// The walk is the stack-of-stacks of Unicode.Security.Covert.BidiControlBalance:
+// each opener pushes, each popper pops or records an orphan. Priority is depth
+// exceeded, then an orphan pop, then an unbalanced embedding, then an unbalanced
+// isolate. Orphan pop localises per stray popper; depth exceeded is a
+// whole-string verdict and localises nothing; the unbalanced cases report every
+// bidi position, the diagnostic being that something among these controls is
+// missing its partner.
+function bidiSubThreat(input) {
+  let embStack = 0;
+  let isoStack = 0;
+  let maxDepth = 0;
+  const orphans = [];
+  const positions = [];
+  for (let index = 0; index < input.length; index += 1) {
+    const cp = input[index];
+    if (!isBidiFormatControl(cp)) continue;
+    positions.push(index);
+    if (opensEmbedding(cp)) {
+      embStack += 1;
+      maxDepth = Math.max(maxDepth, embStack + isoStack);
+    } else if (cp === 0x202c) {
+      if (embStack > 0) embStack -= 1;
+      else orphans.push(index);
+    } else if (opensIsolate(cp)) {
+      isoStack += 1;
+      maxDepth = Math.max(maxDepth, embStack + isoStack);
+    } else if (cp === 0x2069) {
+      if (isoStack > 0) isoStack -= 1;
+      else orphans.push(index);
+    }
+  }
+  if (positions.length === 0) return null;
+  if (maxDepth > UAX_DEPTH_LIMIT) return { sub: "DepthExceeded", positions: [] };
+  if (orphans.length > 0) return { sub: "OrphanPop", positions: orphans };
+  if (embStack > 0) return { sub: "UnbalancedEmbedding", positions };
+  if (isoStack > 0) return { sub: "UnbalancedIsolate", positions };
+  return null;
 }
 
 function variationSelectorFinding(input) {
@@ -3890,7 +3991,7 @@ export function filenameDisguiseDetect(input) {
 // The constituents reuse this port's own detection logic — the exact predicates
 // and finding builders the default scan already uses — never a new table or a
 // host library:
-//   1. TagBlock            tag-block payload      (isTagBlockAsciiPayload run).
+//   1. TagBlock            tag-block payload      (isTagCharacter run).
 //   2. VariationSelector   variation-selector     (variationSelectorFinding).
 //   3. ZeroWidth           zero-width payload     (isZeroWidthPayload run).
 //   4. BidiControl         bidi-control balance   (isBidiEmbeddingControl run).
@@ -3902,7 +4003,7 @@ export function filenameDisguiseDetect(input) {
 // Whether the port's tag-block-payload constituent fires on input (its scan
 // test: any codepoint in the tag-ASCII block).
 function sddTagBlockFired(input) {
-  return positionsWhere(input, isTagBlockAsciiPayload).length > 0;
+  return positionsWhere(input, isTagCharacter).length > 0;
 }
 
 // Whether the port's variation-selector-payload constituent fires on input.

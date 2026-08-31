@@ -188,13 +188,16 @@ func appendClassified(findings []Finding, family Family, tag string, ok bool, po
 func detect(input []uint32, identifierField bool) []Finding {
 	findings := make([]Finding, 0, 8)
 
-	if positions := positionsWhere(input, isTagBlockAsciiPayload); len(positions) > 0 {
+	// The whole tag block counts, not only the ASCII-bearing span, and which
+	// hazard it is depends on what the run contains: see tagBlockSubThreat.
+	if positions := positionsWhere(input, isTagCharacter); len(positions) > 0 {
+		sub := tagBlockSubThreat(input, positions)
 		findings = append(findings, Finding{
-			Code:      reasonCode(FamilyTagBlockPayload, "DirectAscii"),
+			Code:      reasonCode(FamilyTagBlockPayload, sub),
 			Family:    FamilyTagBlockPayload,
 			Severity:  2,
 			Positions: positions,
-			SubThreat: "DirectAscii",
+			SubThreat: sub,
 			Detail:    "tag-block-payload",
 		})
 	}
@@ -224,13 +227,16 @@ func detect(input []uint32, identifierField bool) []Finding {
 		findings = append(findings, finding)
 	}
 
-	if positions := positionsWhere(input, isBidiEmbeddingControl); len(positions) > 0 {
+	// Bidi controls that balance within the depth bound are legitimate
+	// right-to-left text and raise nothing; bidiSubThreat reports only when the
+	// stack walk finds an orphan, an unclosed opener, or excessive nesting.
+	if sub, positions, fired := bidiSubThreat(input); fired {
 		findings = append(findings, Finding{
-			Code:      reasonCode(FamilyBidiControlBalance, "UnbalancedEmbedding"),
+			Code:      reasonCode(FamilyBidiControlBalance, sub),
 			Family:    FamilyBidiControlBalance,
 			Severity:  2,
 			Positions: positions,
-			SubThreat: "UnbalancedEmbedding",
+			SubThreat: sub,
 			Detail:    "bidi-control-balance",
 		})
 	}

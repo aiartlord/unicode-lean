@@ -488,20 +488,26 @@ func hasCrossScriptMix(input []uint32) bool {
 	return len(stringScriptUnion(input)) >= 2 && !isHighlyRestrictive(input)
 }
 
+// isDefaultIgnorableCodepoint reports the UAX #44
+// Default_Ignorable_Code_Point property, read from the port's own bundled
+// DerivedCoreProperties.txt rather than from a hand-listed set of ranges. The
+// property covers characters a hand-list does not obviously reach -- the
+// musical-symbol beams at U+1D173..U+1D17A, HANGUL FILLER, the shorthand format
+// controls -- and each of those is an invisible codepoint the covert families
+// must see.
+var defaultIgnorableOnce sync.Once
+var defaultIgnorableRanges [][2]uint32
+
 func isDefaultIgnorableCodepoint(cp uint32) bool {
-	return cp == 0x00AD ||
-		cp == 0x034F ||
-		cp == 0x061C ||
-		(cp >= 0x115F && cp <= 0x1160) ||
-		(cp >= 0x17B4 && cp <= 0x17B5) ||
-		(cp >= 0x180B && cp <= 0x180F) ||
-		(cp >= 0x200B && cp <= 0x200F) ||
-		(cp >= 0x202A && cp <= 0x202E) ||
-		(cp >= 0x2060 && cp <= 0x206F) ||
-		(cp >= 0xFE00 && cp <= 0xFE0F) ||
-		cp == 0xFEFF ||
-		(cp >= 0xFFF0 && cp <= 0xFFF8) ||
-		(cp >= 0xE0000 && cp <= 0xE0FFF)
+	defaultIgnorableOnce.Do(func() {
+		defaultIgnorableRanges = parseCasingProperty("Default_Ignorable_Code_Point")
+	})
+	for _, r := range defaultIgnorableRanges {
+		if cp >= r[0] && cp <= r[1] {
+			return true
+		}
+	}
+	return false
 }
 
 func isWhiteSpaceCodepoint(cp uint32) bool {
