@@ -111,24 +111,66 @@ func rtlInjectionPhase3(input []uint32, strongRtl, runLen, runStart int) (string
 	return "", nil, false
 }
 
-// rtlInjectionDetect detects right-to-left injection in an LTR-declared
-// field. Priority mirrors the spec exactly: (1) any bidi format-control
-// anywhere fires BidiControlInLTRField; otherwise (2) a leading strong-RTL
-// codepoint fires FieldTakeover; otherwise (3) mid-stream strong-RTL is
-// classified by run length. It returns the sub-threat tag, the offending
-// positions, and whether a hazard fired.
-func rtlInjectionDetect(input []uint32) (string, []int, bool) {
+// FieldDirection is the declared display direction of the field holding an
+// input.
+//
+// A caller handling Hebrew, Arabic or Persian UI text declares its field
+// right-to-left. Every other reading treats the input as a declared-LTR
+// string, under which right-to-left content is itself the hazard.
+//
+// Mirrors FieldDirection in Unicode/Security/Display/RtlInjection.lean, that
+// spec's alias for the UAX #9 paragraph-direction vocabulary.
+type FieldDirection uint8
+
+const (
+	// FieldLTR is the reading the module scope note fixes for an undeclared
+	// field.
+	FieldLTR FieldDirection = iota
+	FieldRTL
+)
+
+// rtlInjectionDetectWithContext detects right-to-left injection in a field
+// whose declared display direction is direction.
+//
+// A bidi format control reorders what a reviewer sees whichever way the field
+// runs, so Phase 1 holds unconditionally and trumps all.
+//
+// Phases 2 and 3 ask whether right-to-left text has taken over or been spliced
+// into a left-to-right field. That question has no premise in a right-to-left
+// field, where right-to-left text is the content. The mirror-image hazard,
+// strong-LTR injection into a right-to-left field, belongs to the separate
+// detector the scope note assigns it to.
+//
+// Within a left-to-right field: (1) any bidi format-control anywhere fires
+// BidiControlInLTRField; otherwise (2) a leading strong-RTL codepoint fires
+// FieldTakeover; otherwise (3) mid-stream strong-RTL is classified by run
+// length. It returns the sub-threat tag, the offending positions, and whether
+// a hazard fired.
+func rtlInjectionDetectWithContext(direction FieldDirection, input []uint32) (string, []int, bool) {
 	strongRtl := countStrongRtl(input)
 	runLen, runStart := longestRtlRun(input)
 
+	// Phase 1: bidi format-control trumps all, in either direction.
 	if pos, ok := firstBidiControlPos(input); ok {
 		return "BidiControlInLTRField", []int{pos}, true
+	}
+
+	// A right-to-left field carrying right-to-left text carries its content.
+	if direction == FieldRTL {
+		return "", nil, false
 	}
 
 	if pos, isRtl, ok := firstStrongChar(input); ok && isRtl {
 		return "FieldTakeover", []int{pos}, true
 	}
 	return rtlInjectionPhase3(input, strongRtl, runLen, runStart)
+}
+
+// rtlInjectionDetect detects right-to-left injection in a field declared
+// left-to-right, the reading the module scope note fixes for an undeclared
+// field.
+func rtlInjectionDetect(input []uint32) (string, []int, bool) {
+	return rtlInjectionDetectWithContext(FieldLTR, input)
 }
 
 func rtlInjectionFinding(input []uint32) (Finding, bool) {

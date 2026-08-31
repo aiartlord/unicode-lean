@@ -196,6 +196,13 @@ WORKING-STORAGE SECTION.
    05 TARGET-ROW OCCURS 128 TIMES.
       10 TARGET-LEN PIC 9(3) COMP-5.
       10 TARGET-CP OCCURS 24 TIMES PIC 9(9) COMP-5.
+*> The declared display direction of the field holding the input, 0 for
+*> left-to-right and 1 for right-to-left. A caller handling Hebrew, Arabic or
+*> Persian UI text declares its field right-to-left; every other reading treats
+*> the input as a declared-LTR string, under which right-to-left content is
+*> itself the hazard. Mirrors FieldDirection in
+*> Unicode/Security/Display/RtlInjection.lean.
+01 FIELD-DIRECTION-RTL-FLAG PIC 9 VALUE 0.
 01 FIRST-STRONG-POS PIC 9(6) VALUE 0.
 01 FIRST-STRONG-RTL-FLAG PIC 9 VALUE 0.
 01 CUR-RTL-FLAG PIC 9 VALUE 0.
@@ -905,6 +912,11 @@ SCAN-CORE.
     ELSE
         MOVE 0 TO IDENTIFIER-FIELD-FLAG
     END-IF
+*> No profile determines display direction: a display name carries English or
+*> Hebrew alike. The scan therefore takes the declared-LTR reading, and a
+*> caller holding a right-to-left field sets FIELD-DIRECTION-RTL-FLAG before
+*> performing the detector.
+    MOVE 0 TO FIELD-DIRECTION-RTL-FLAG
     MOVE OUT-COUNT TO CP-COUNT
     PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > OUT-COUNT
         MOVE OUT-CP(IDX) TO CP(IDX)
@@ -1319,6 +1331,12 @@ DETECT-RTL.
             END-IF
         END-IF
     END-PERFORM
+*> A right-to-left field carrying right-to-left text carries its content, so
+*> the phases below have no premise there. A bidi format control is handled
+*> above and fires whichever way the field runs.
+    IF FIELD-DIRECTION-RTL-FLAG = 1
+        MOVE 0 TO FIRST-RTL
+    END-IF
     IF FOUND-FLAG = 0 AND FIRST-RTL > 0
         IF FIRST-STRONG-RTL-FLAG = 1
             MOVE "unicode.security.D.rtl-injection.FieldTakeover" TO TEMP-CODE

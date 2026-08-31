@@ -101,6 +101,11 @@ structure Context where
       "Hello".  Defaults to the reading each family already took, leaving
       `runAll` unchanged. -/
   cryptoField     : Bool := true
+  /-- The declared display direction of the field holding the input.  A field
+      declared right-to-left carries Hebrew, Arabic or Persian as its content,
+      so `RtlInjection`'s left-to-right premise does not hold of it.  A bidi
+      format control remains a hazard in either direction. -/
+  fieldDirection  : Unicode.Security.Display.RtlInjection.FieldDirection := .LTR
   deriving DecidableEq, Repr, Inhabited
 
 /-- Run every Security Conformance Layer detector on `input` under the field
@@ -140,7 +145,9 @@ def runAllWithContext (ctx : Context) (input : List Nat) : List FamilyResult :=
   let i4 := Unicode.Security.Identity.SkinToneVariationForgery.detect input
   let d1 := Unicode.Security.Display.SourceDisplayDivergence.detect  input
   let d2 := Unicode.Security.Display.FilenameDisguise.detect         input
-  let d3 := Unicode.Security.Display.RtlInjection.detect             input
+  let d3 :=
+    Unicode.Security.Display.RtlInjection.detectWithContext
+      ctx.fieldDirection input
   let d4 := Unicode.Security.Display.RendererDivergence.detect       input
   let f1 := Unicode.Security.Form.NormalizationBomb.detect           input
   let f2 := Unicode.Security.Form.StreamSafeViolation.detect         input

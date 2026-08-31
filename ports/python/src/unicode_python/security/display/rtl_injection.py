@@ -18,6 +18,7 @@ module's ``detect`` exactly; the strong-RTL / strong-LTR predicates read
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 
 from ..covert.bidi_control_balance import is_bidi_format_control
 from ..identity import ucd
@@ -105,20 +106,53 @@ def _phase3(
     return _CLEAR
 
 
-def detect(input_cps: list[int]) -> Detection:
-    """Detect right-to-left injection in an LTR-declared field.
+class FieldDirection(Enum):
+    """The declared display direction of the field holding an input.
 
-    Priority mirrors the spec exactly: (1) any bidi format-control
-    anywhere fires ``BidiControlInLTRField``; otherwise (2) a leading strong-RTL
-    codepoint fires ``FieldTakeover``; otherwise (3) mid-stream strong-RTL
-    is classified by run length.
+    A caller handling Hebrew, Arabic or Persian UI text declares its field
+    right-to-left.  Every other reading treats the input as a declared-LTR
+    string, under which right-to-left content is itself the hazard.
+
+    Mirrors ``FieldDirection`` in
+    ``Unicode/Security/Display/RtlInjection.lean``, that spec's alias for the
+    UAX #9 paragraph-direction vocabulary.
+    """
+
+    LTR = "LTR"
+    RTL = "RTL"
+
+
+def detect_with_context(
+    direction: FieldDirection, input_cps: list[int]
+) -> Detection:
+    """Detect right-to-left injection in a field whose declared display
+    direction is ``direction``.
+
+    A bidi format control reorders what a reviewer sees whichever way the field
+    runs, so Phase 1 holds unconditionally and trumps all.
+
+    Phases 2 and 3 ask whether right-to-left text has taken over or been
+    spliced into a left-to-right field.  That question has no premise in a
+    right-to-left field, where right-to-left text is the content.  The
+    mirror-image hazard, strong-LTR injection into a right-to-left field,
+    belongs to the separate detector the scope note assigns it to.
+
+    Within a left-to-right field: (1) any bidi format-control anywhere fires
+    ``BidiControlInLTRField``; otherwise (2) a leading strong-RTL codepoint
+    fires ``FieldTakeover``; otherwise (3) mid-stream strong-RTL is classified
+    by run length.
     """
     strong_rtl = _count_strong_rtl(input_cps)
     run_len, run_start = _longest_rtl_run(input_cps)
 
+    # Phase 1: bidi format-control trumps all, in either direction.
     ctl_pos = _first_bidi_control_pos(input_cps)
     if ctl_pos is not None:
         return Detection(sub="BidiControlInLTRField", positions=(ctl_pos,))
+
+    # A right-to-left field carrying right-to-left text carries its content.
+    if direction is FieldDirection.RTL:
+        return Detection(sub=None, positions=())
 
     strong = _first_strong_char(input_cps)
     if strong is not None:
@@ -126,3 +160,9 @@ def detect(input_cps: list[int]) -> Detection:
         if is_rtl:
             return Detection(sub="FieldTakeover", positions=(pos,))
     return _phase3(input_cps, strong_rtl, run_len, run_start)
+
+
+def detect(input_cps: list[int]) -> Detection:
+    """Detect right-to-left injection in a field declared left-to-right, the
+    reading the module scope note fixes for an undeclared field."""
+    return detect_with_context(FieldDirection.LTR, input_cps)

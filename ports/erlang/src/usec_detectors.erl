@@ -6,6 +6,7 @@
          is_pdf/1, opens_isolate/1, is_pdi/1,
          homoglyph_detect/1, confusable_source/1, mixed_script_admissibility/1, mixed_script_verdict/2,
          mixed_script_subthreat/1, rtl_injection_detect/1,
+         rtl_injection_detect_with_context/2,
          confusable_bidi_detect/1, covert_display_detect/1,
          locale_case_detect/1, nfc_witness_detect/1, normalization_bomb_detect/1,
          bip39_detect/1, bip39_canonical/1, sub_tag/1, is_vs/1]).
@@ -440,11 +441,29 @@ mixed_script_subthreat(Input) ->
     end.
 
 %% Display and boundary
-rtl_injection_detect(Input) ->
+%% The declared display direction of the field holding an input, ltr | rtl.
+%% A caller handling Hebrew, Arabic or Persian UI text declares its field
+%% right-to-left; every other reading treats the input as a declared-LTR string,
+%% under which right-to-left content is itself the hazard. Mirrors
+%% FieldDirection in Unicode/Security/Display/RtlInjection.lean, that spec's
+%% alias for the UAX #9 paragraph-direction vocabulary.
+%%
+%% A bidi format control reorders what a reviewer sees whichever way the field
+%% runs, so Phase 1 holds unconditionally and trumps all. Phases 2 and 3 ask
+%% whether right-to-left text has taken over or been spliced into a
+%% left-to-right field, which has no premise in a right-to-left field where
+%% right-to-left text is the content. The mirror-image hazard, strong-LTR
+%% injection into a right-to-left field, belongs to the separate detector the
+%% scope note assigns it to.
+rtl_injection_detect_with_context(Direction, Input) ->
     StrongRtl = count(Input, fun usec_ucd:is_strong_rtl/1),
     {RunLen, RunStart} = longest_rtl_run(Input),
     case first_pos(Input, fun is_bidi_format_control/1) of
         P when P =/= none -> #{sub => <<"BidiControlInLTRField">>, positions => [P]};
+        none when Direction =:= rtl ->
+            %% A right-to-left field carrying right-to-left text carries its
+            %% content.
+            #{sub => none, positions => []};
         none ->
             case first_strong_char(Input) of
                 {P, rtl} -> #{sub => <<"FieldTakeover">>, positions => [P]};
@@ -460,6 +479,11 @@ rtl_injection_detect(Input) ->
                     end
             end
     end.
+
+%% Detection in a field declared left-to-right, the reading the module scope
+%% note fixes for an undeclared field.
+rtl_injection_detect(Input) ->
+    rtl_injection_detect_with_context(ltr, Input).
 
 first_strong_char(Input) ->
     case [{I, Cp} || {Cp, I} <- with_index(Input),

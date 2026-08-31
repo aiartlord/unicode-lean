@@ -447,7 +447,33 @@ public static partial class Security
     // highest-priority sub-threat and the offending positions, or null for
     // a clear input. Exposed for direct spot-check testing, mirroring the
     // Rust/Python/C++ detectors.
-    public static (string? Sub, IReadOnlyList<int> Positions) RtlInjectionDetect(IReadOnlyList<int> input)
+    /// The declared display direction of the field holding an input.
+    ///
+    /// A caller handling Hebrew, Arabic or Persian UI text declares its field
+    /// right-to-left. Every other reading treats the input as a declared-LTR
+    /// string, under which right-to-left content is itself the hazard.
+    ///
+    /// Mirrors FieldDirection in Unicode/Security/Display/RtlInjection.lean,
+    /// that spec's alias for the UAX #9 paragraph-direction vocabulary.
+    public enum FieldDirection
+    {
+        Ltr,
+        Rtl,
+    }
+
+    /// Right-to-left injection detection in a field whose declared display
+    /// direction is `direction`.
+    ///
+    /// A bidi format control reorders what a reviewer sees whichever way the
+    /// field runs, so Phase 1 holds unconditionally and trumps all.
+    ///
+    /// Phases 2 and 3 ask whether right-to-left text has taken over or been
+    /// spliced into a left-to-right field. That question has no premise in a
+    /// right-to-left field, where right-to-left text is the content. The
+    /// mirror-image hazard, strong-LTR injection into a right-to-left field,
+    /// belongs to the separate detector the scope note assigns it to.
+    public static (string? Sub, IReadOnlyList<int> Positions) RtlInjectionDetectWithContext(
+        FieldDirection direction, IReadOnlyList<int> input)
     {
         var strongRtl = 0;
         foreach (var cp in input)
@@ -456,11 +482,14 @@ public static partial class Security
         }
         var (runLen, runStart) = LongestRtlRun(input);
 
-        // Phase 1: bidi format-control trumps all.
+        // Phase 1: bidi format-control trumps all, in either direction.
         for (var index = 0; index < input.Count; index++)
         {
             if (IsBidiFormatControl(input[index])) return ("BidiControlInLTRField", new List<int> { index });
         }
+
+        // A right-to-left field carrying right-to-left text carries its content.
+        if (direction == FieldDirection.Rtl) return (null, System.Array.Empty<int>());
 
         // Phase 2: leading-RTL field-direction takeover.
         for (var index = 0; index < input.Count; index++)
@@ -478,6 +507,11 @@ public static partial class Security
         }
         return (null, System.Array.Empty<int>());
     }
+
+    /// Right-to-left injection detection in a field declared left-to-right, the
+    /// reading the module scope note fixes for an undeclared field.
+    public static (string? Sub, IReadOnlyList<int> Positions) RtlInjectionDetect(IReadOnlyList<int> input)
+        => RtlInjectionDetectWithContext(FieldDirection.Ltr, input);
 
     private static Finding? RtlInjectionFinding(List<int> input)
     {

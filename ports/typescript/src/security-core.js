@@ -877,7 +877,26 @@ function rtlInjectionPhase3(input, strongRtl, runLen, runStart) {
   return null;
 }
 
-function rtlInjectionFinding(input) {
+// The declared display direction of the field holding an input. A caller
+// handling Hebrew, Arabic or Persian UI text declares its field right-to-left;
+// every other reading treats the input as a declared-LTR string, under which
+// right-to-left content is itself the hazard.
+//
+// Mirrors FieldDirection in Unicode/Security/Display/RtlInjection.lean, that
+// spec's alias for the UAX #9 paragraph-direction vocabulary.
+export const FieldDirection = Object.freeze({ LTR: "LTR", RTL: "RTL" });
+
+// Detection in a field whose declared display direction is `direction`.
+//
+// A bidi format control reorders what a reviewer sees whichever way the field
+// runs, so Phase 1 holds unconditionally and trumps all.
+//
+// Phases 2 and 3 ask whether right-to-left text has taken over or been spliced
+// into a left-to-right field. That question has no premise in a right-to-left
+// field, where right-to-left text is the content. The mirror-image hazard,
+// strong-LTR injection into a right-to-left field, belongs to the separate
+// detector the scope note assigns it to.
+function rtlInjectionFindingWithContext(direction, input) {
   let strongRtl = 0;
   for (const cp of input) {
     if (isStrongRtl(cp)) {
@@ -886,11 +905,16 @@ function rtlInjectionFinding(input) {
   }
   const [runLen, runStart] = longestRtlRun(input);
 
-  // Phase 1: bidi format-control trumps all.
+  // Phase 1: bidi format-control trumps all, in either direction.
   for (let index = 0; index < input.length; index += 1) {
     if (isBidiFormatControl(input[index])) {
       return makeFinding(Family.RtlInjection, "BidiControlInLTRField", [index]);
     }
+  }
+
+  // A right-to-left field carrying right-to-left text carries its content.
+  if (direction === FieldDirection.RTL) {
+    return null;
   }
 
   // Phase 2: leading-RTL field-direction takeover.
@@ -905,6 +929,12 @@ function rtlInjectionFinding(input) {
     return null;
   }
   return makeFinding(Family.RtlInjection, result.sub, result.positions);
+}
+
+// Detection in a field declared left-to-right, the reading the module scope
+// note fixes for an undeclared field.
+function rtlInjectionFinding(input) {
+  return rtlInjectionFindingWithContext(FieldDirection.LTR, input);
 }
 
 // Confusable-in-bidi-context compound detection (CVE-2021-42574 class) — a

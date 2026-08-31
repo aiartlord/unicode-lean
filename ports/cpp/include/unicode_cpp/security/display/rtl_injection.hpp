@@ -129,18 +129,46 @@ inline Detection phase3(const ucd::Tables &t,
 
 } // namespace detail
 
-// Detect right-to-left injection in an LTR-declared field.  Priority
-// mirrors the spec exactly: (1) any bidi format-control anywhere fires
+// The declared display direction of the field holding an input.
+//
+// A caller handling Hebrew, Arabic or Persian UI text declares its field
+// right-to-left.  Every other reading treats the input as a declared-LTR
+// string, under which right-to-left content is itself the hazard.
+//
+// Mirrors FieldDirection in Unicode/Security/Display/RtlInjection.lean, that
+// spec's alias for the UAX #9 paragraph-direction vocabulary.
+enum class FieldDirection { Ltr, Rtl };
+
+// Detect right-to-left injection in a field whose declared display direction
+// is `direction`.
+//
+// A bidi format control reorders what a reviewer sees whichever way the field
+// runs, so Phase 1 holds unconditionally and trumps all.
+//
+// Phases 2 and 3 ask whether right-to-left text has taken over or been spliced
+// into a left-to-right field.  That question has no premise in a right-to-left
+// field, where right-to-left text is the content.  The mirror-image hazard,
+// strong-LTR injection into a right-to-left field, belongs to the separate
+// detector the scope note assigns it to.
+//
+// Within a left-to-right field: (1) any bidi format-control anywhere fires
 // BidiControlInLTRField; otherwise (2) a leading strong-RTL codepoint fires
-// FieldTakeover; otherwise (3) mid-stream strong-RTL is classified by
-// run length.
-inline Detection detect(const ucd::Tables &t,
-                        std::span<const std::uint32_t> input) {
+// FieldTakeover; otherwise (3) mid-stream strong-RTL is classified by run
+// length.
+inline Detection detect_with_context(FieldDirection direction,
+                                     const ucd::Tables &t,
+                                     std::span<const std::uint32_t> input) {
   const std::size_t strong_rtl = detail::count_strong_rtl(t, input);
   const auto [run_len, run_start] = detail::longest_rtl_run(t, input);
 
+  // Phase 1: bidi format-control trumps all, in either direction.
   if (auto pos = detail::first_bidi_control_pos(input)) {
     return Detection{std::optional<std::string>{"BidiControlInLTRField"}, {*pos}};
+  }
+
+  // A right-to-left field carrying right-to-left text carries its content.
+  if (direction == FieldDirection::Rtl) {
+    return Detection{std::nullopt, {}};
   }
 
   if (auto strong = detail::first_strong_char(t, input)) {
@@ -150,6 +178,13 @@ inline Detection detect(const ucd::Tables &t,
     }
   }
   return detail::phase3(t, input, strong_rtl, run_len, run_start);
+}
+
+// Detect right-to-left injection in a field declared left-to-right, the
+// reading the module scope note fixes for an undeclared field.
+inline Detection detect(const ucd::Tables &t,
+                        std::span<const std::uint32_t> input) {
+  return detect_with_context(FieldDirection::Ltr, t, input);
 }
 
 } // namespace unicode_cpp::security::display::rtl_injection

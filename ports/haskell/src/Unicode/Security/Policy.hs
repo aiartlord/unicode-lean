@@ -49,6 +49,8 @@ module Unicode.Security.Policy
   , bidiFinding
   , homoglyphFinding
   , homoglyphConstituentFinding
+  , FieldDirection (FieldLTR, FieldRTL)
+  , rtlInjectionFindingWithContext
   , scan
   , scanUtf8
   , scanUtf16BE
@@ -1561,21 +1563,48 @@ longestRtlRun input =
                else (index + 1, current', newStart, longest, longestStart)
         else (index + 1, 0, currentStart, longest, longestStart)
 
--- | Detect right-to-left injection in an LTR-declared field. Priority
--- mirrors the spec exactly: (1) any bidi format-control anywhere fires
+-- | The declared display direction of the field holding an input.
+--
+-- A caller handling Hebrew, Arabic or Persian UI text declares its field
+-- right-to-left. Every other reading treats the input as a declared-LTR
+-- string, under which right-to-left content is itself the hazard.
+--
+-- Mirrors @FieldDirection@ in @Unicode\/Security\/Display\/RtlInjection.lean@,
+-- that spec's alias for the UAX #9 paragraph-direction vocabulary.
+data FieldDirection = FieldLTR | FieldRTL
+  deriving (Eq, Show)
+
+-- | Detect right-to-left injection in a field whose declared display direction
+-- is the first argument.
+--
+-- A bidi format control reorders what a reviewer sees whichever way the field
+-- runs, so Phase 1 holds unconditionally and trumps all.
+--
+-- Phases 2 and 3 ask whether right-to-left text has taken over or been spliced
+-- into a left-to-right field. That question has no premise in a right-to-left
+-- field, where right-to-left text is the content. The mirror-image hazard,
+-- strong-LTR injection into a right-to-left field, belongs to the separate
+-- detector the scope note assigns it to.
+--
+-- Within a left-to-right field: (1) any bidi format-control anywhere fires
 -- @BidiControlInLTRField@; otherwise (2) a leading strong-RTL codepoint fires
 -- @FieldTakeover@; otherwise (3) mid-stream strong-RTL is classified by
 -- run length — a run of four or more is @MixedOverflow@ at the run
 -- start, a shorter run is @StrongRTLInLTR@ at the first strong-RTL
 -- codepoint.
-rtlInjectionFinding :: [Int] -> [Finding]
-rtlInjectionFinding input =
+rtlInjectionFindingWithContext :: FieldDirection -> [Int] -> [Finding]
+rtlInjectionFindingWithContext direction input =
   case firstBidiControlPos input of
     Just pos -> [makeFinding "BidiControlInLTRField" [pos]]
     Nothing ->
-      case firstStrongChar input of
-        Just (pos, True) -> [makeFinding "FieldTakeover" [pos]]
-        _leadingLtrOrNone -> phase3
+      case direction of
+        -- A right-to-left field carrying right-to-left text carries its
+        -- content.
+        FieldRTL -> []
+        FieldLTR ->
+          case firstStrongChar input of
+            Just (pos, True) -> [makeFinding "FieldTakeover" [pos]]
+            _leadingLtrOrNone -> phase3
   where
     strongRtlCount = length (filter isStrongRtl input)
     (runLen, runStart) = longestRtlRun input
@@ -1598,6 +1627,11 @@ rtlInjectionFinding input =
         , findingSubThreat = subThreat
         , findingDetail = familyTag FamilyRtlInjection
         }
+
+-- | Detect right-to-left injection in a field declared left-to-right, the
+-- reading the module scope note fixes for an undeclared field.
+rtlInjectionFinding :: [Int] -> [Finding]
+rtlInjectionFinding = rtlInjectionFindingWithContext FieldLTR
 
 firstBidiControlPos :: [Int] -> Maybe Int
 firstBidiControlPos input =

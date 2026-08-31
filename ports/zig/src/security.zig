@@ -1070,15 +1070,39 @@ const FirstStrong = struct {
     rtl: bool,
 };
 
-// Detect right-to-left injection in an LTR-declared field. Priority mirrors
-// the spec exactly: (1) any bidi format-control anywhere fires
+// The declared display direction of the field holding an input. A caller
+// handling Hebrew, Arabic or Persian UI text declares its field right-to-left;
+// every other reading treats the input as a declared-LTR string, under which
+// right-to-left content is itself the hazard.
+//
+// Mirrors FieldDirection in Unicode/Security/Display/RtlInjection.lean, that
+// spec's alias for the UAX #9 paragraph-direction vocabulary.
+pub const FieldDirection = enum { ltr, rtl };
+
+// Detect right-to-left injection in a field whose declared display direction is
+// `direction`.
+//
+// A bidi format control reorders what a reviewer sees whichever way the field
+// runs, so Phase 1 holds unconditionally and trumps all.
+//
+// Phases 2 and 3 ask whether right-to-left text has taken over or been spliced
+// into a left-to-right field. That question has no premise in a right-to-left
+// field, where right-to-left text is the content. The mirror-image hazard,
+// strong-LTR injection into a right-to-left field, belongs to the separate
+// detector the scope note assigns it to.
+//
+// Within a left-to-right field: (1) any bidi format-control anywhere fires
 // BidiControlInLTRField; otherwise (2) a leading strong-RTL codepoint fires
 // FieldTakeover; otherwise (3) mid-stream strong-RTL is classified by run
 // length (>= 4 is MixedOverflow, shorter is StrongRTLInLTR).
-fn rtlInjectionFinding(input: []const u32) ?Finding {
+fn rtlInjectionFindingWithContext(direction: FieldDirection, input: []const u32) ?Finding {
+    // Phase 1: bidi format-control trumps all, in either direction.
     for (input, 0..) |cp, index| {
         if (isBidiFormatControl(cp)) return rtlInjectionAt("BidiControlInLTRField", index);
     }
+
+    // A right-to-left field carrying right-to-left text carries its content.
+    if (direction == .rtl) return null;
 
     var first_strong: ?FirstStrong = null;
     for (input, 0..) |cp, index| {
@@ -1105,6 +1129,12 @@ fn rtlInjectionFinding(input: []const u32) ?Finding {
     const run = longestRtlRun(input);
     if (run.len >= 4) return rtlInjectionAt("MixedOverflow", run.start);
     return rtlInjectionAt("StrongRTLInLTR", rtl_index);
+}
+
+// Detect right-to-left injection in a field declared left-to-right, the reading
+// the module scope note fixes for an undeclared field.
+fn rtlInjectionFinding(input: []const u32) ?Finding {
+    return rtlInjectionFindingWithContext(.ltr, input);
 }
 
 // -- confusable-bidi-compound ----------------------------------------------

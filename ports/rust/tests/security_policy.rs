@@ -67,9 +67,18 @@ fn noncharacter_gateway_enforce_rejects() {
         &verdict,
         "unicode.security.C.noncharacter-control.Noncharacter"
     ));
+    // A noncharacter resolves to no script, so it is Unrestricted and the
+    // homoglyph ladder reports RestrictionLow, which in turn makes the
+    // source-display aggregator see a second constituent fire. The three
+    // findings are the reading pinned by the `noncharacter-gateway-reject`
+    // case of `fixtures/security/verdict_contract.json`.
+    assert!(has_code(
+        &verdict,
+        "unicode.security.I.homoglyph-confusable.RestrictionLow"
+    ));
     assert_eq!(
         verdict_to_json(&verdict),
-        "{\"action\":\"reject\",\"profile\":\"gateway-header\",\"mode\":\"enforce\",\"input\":[64976],\"findings\":[{\"code\":\"unicode.security.C.noncharacter-control.Noncharacter\",\"family\":\"noncharacter-control\",\"severity\":2,\"positions\":[0],\"sub_threat\":\"Noncharacter\",\"detail\":\"noncharacter-control\"}],\"normalized\":null}"
+        "{\"action\":\"reject\",\"profile\":\"gateway-header\",\"mode\":\"enforce\",\"input\":[64976],\"findings\":[{\"code\":\"unicode.security.C.noncharacter-control.Noncharacter\",\"family\":\"noncharacter-control\",\"severity\":2,\"positions\":[0],\"sub_threat\":\"Noncharacter\",\"detail\":\"noncharacter-control\"},{\"code\":\"unicode.security.I.homoglyph-confusable.RestrictionLow\",\"family\":\"homoglyph-confusable\",\"severity\":2,\"positions\":[0],\"sub_threat\":\"RestrictionLow\",\"detail\":\"homoglyph-confusable\"},{\"code\":\"unicode.security.D.source-display-divergence.IdentifierHomoglyph\",\"family\":\"source-display-divergence\",\"severity\":2,\"positions\":[],\"sub_threat\":\"IdentifierHomoglyph\",\"detail\":\"source-display-divergence\"}],\"normalized\":null}"
     );
 }
 

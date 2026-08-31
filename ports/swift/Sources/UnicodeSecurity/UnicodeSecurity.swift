@@ -569,18 +569,45 @@ public struct RtlInjectionResult: Equatable {
     public let positions: [Int]
 }
 
-// Right-to-left injection detection for LTR-declared fields — a direct
-// port of Unicode.Security.Display.RtlInjection. Exposed for direct
-// spot-check testing, mirroring the Rust/Python/C++ detectors.
-public func rtlInjectionDetect(_ input: [Int]) -> RtlInjectionResult {
+/// The declared display direction of the field holding an input.
+///
+/// A caller handling Hebrew, Arabic or Persian UI text declares its field
+/// right-to-left. Every other reading treats the input as a declared-LTR
+/// string, under which right-to-left content is itself the hazard.
+///
+/// Mirrors `FieldDirection` in `Unicode/Security/Display/RtlInjection.lean`,
+/// that spec's alias for the UAX #9 paragraph-direction vocabulary.
+public enum FieldDirection {
+    case ltr
+    case rtl
+}
+
+// Right-to-left injection detection in a field whose declared display
+// direction is `direction` — a direct port of
+// Unicode.Security.Display.RtlInjection.
+//
+// A bidi format control reorders what a reviewer sees whichever way the field
+// runs, so Phase 1 holds unconditionally and trumps all.
+//
+// Phases 2 and 3 ask whether right-to-left text has taken over or been spliced
+// into a left-to-right field. That question has no premise in a right-to-left
+// field, where right-to-left text is the content. The mirror-image hazard,
+// strong-LTR injection into a right-to-left field, belongs to the separate
+// detector the scope note assigns it to.
+public func rtlInjectionDetectWithContext(
+    _ direction: FieldDirection, _ input: [Int]
+) -> RtlInjectionResult {
     var strongRtl = 0
     for cp in input where isStrongRtl(cp) { strongRtl += 1 }
     let (runLen, runStart) = longestRtlRun(input)
 
-    // Phase 1: bidi format-control trumps all.
+    // Phase 1: bidi format-control trumps all, in either direction.
     for (index, cp) in input.enumerated() where isBidiFormatControl(cp) {
         return RtlInjectionResult(subThreat: "BidiControlInLTRField", positions: [index])
     }
+
+    // A right-to-left field carrying right-to-left text carries its content.
+    if direction == .rtl { return RtlInjectionResult(subThreat: nil, positions: []) }
 
     // Phase 2: leading-RTL field-direction takeover.
     for (index, cp) in input.enumerated() {
@@ -595,6 +622,13 @@ public func rtlInjectionDetect(_ input: [Int]) -> RtlInjectionResult {
         return RtlInjectionResult(subThreat: "StrongRTLInLTR", positions: [index])
     }
     return RtlInjectionResult(subThreat: nil, positions: [])
+}
+
+// Right-to-left injection detection in a field declared left-to-right, the
+// reading the module scope note fixes for an undeclared field. Exposed for
+// direct spot-check testing, mirroring the Rust/Python/C++ detectors.
+public func rtlInjectionDetect(_ input: [Int]) -> RtlInjectionResult {
+    rtlInjectionDetectWithContext(.ltr, input)
 }
 
 private func rtlInjectionFinding(_ input: [Int]) -> Finding? {

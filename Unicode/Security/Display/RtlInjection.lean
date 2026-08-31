@@ -178,15 +178,33 @@ def longestRtlRun (input : List Nat) : Nat × Nat :=
 -- §4 Top-level detection
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The RtlInjection detection function.  Assumes LTR-declared
-    context.
+/-- The declared display direction of the field holding an input.
 
-    Every finding (bidi format-control, leading-RTL field
-    takeover, mid-stream strong-RTL, mixed-overflow run) fires
-    unconditionally regardless of where in the source the
-    offending codepoint sits.  See module header for the
-    region-agnostic-by-design rationale. -/
-def detect (input : List Nat) : Verdict :=
+    A caller handling Hebrew, Arabic or Persian UI text declares its field
+    right-to-left.  Every other reading treats the input as a declared-LTR
+    string, under which right-to-left content is itself the hazard.
+
+    `Unicode.Bidi.Algorithm.Direction` carries the paragraph-direction
+    vocabulary of UAX #9, which is the vocabulary a field declares. -/
+abbrev FieldDirection := Unicode.Bidi.Algorithm.Direction
+
+/-- The RtlInjection detection function, against a field whose declared display
+    direction is `direction`.
+
+    A bidi format control reorders what a reviewer sees whichever way the field
+    runs, so Phase 1 holds unconditionally and trumps all.
+
+    Phases 2 and 3 ask whether right-to-left text has taken over or been
+    spliced into a left-to-right field.  That question has no premise in a
+    right-to-left field, where right-to-left text is the content.  The
+    mirror-image hazard, strong-LTR injection into a right-to-left field,
+    belongs to the separate detector the scope note assigns it to.
+
+    Within a left-to-right field every finding — bidi format-control, leading-RTL
+    field takeover, mid-stream strong-RTL, mixed-overflow run — fires regardless
+    of where in the source the offending codepoint sits.  See the module header
+    for the region-agnostic rationale. -/
+def detectWithContext (direction : FieldDirection) (input : List Nat) : Verdict :=
   let strongRTL := countStrongRTL input
   let strongLTR := countStrongLTR input
   let bidiCtl := countBidiControl input
@@ -209,26 +227,35 @@ def detect (input : List Nat) : Verdict :=
     else
       .clear
   let classification : Classification :=
-    -- Phase 1: bidi format-control trumps all.
+    -- Phase 1: bidi format-control trumps all, in either direction.
     match firstBidiControlPos input with
     | some (pos, ctlCp) =>
       .hazard (.bidiControlInLTRField pos ctlCp) [pos] []
     | none =>
-      -- Phase 2: leading-RTL field-direction takeover.
-      match firstStrongCharPos input with
-      | some (pos, cp, true) =>
-        .hazard (.fieldTakeover pos cp) [pos] []
-      | some (pos, cp, false) =>
-        Function.const Nat (Function.const Nat phase3 cp) pos
-      | none =>
-        -- Phase 3: mid-stream strong-RTL.
-        phase3
+      match direction with
+      -- A right-to-left field carrying right-to-left text carries its content.
+      | .RTL => .clear
+      | .LTR =>
+        -- Phase 2: leading-RTL field-direction takeover.
+        match firstStrongCharPos input with
+        | some (pos, cp, true) =>
+          .hazard (.fieldTakeover pos cp) [pos] []
+        | some (pos, cp, false) =>
+          Function.const Nat (Function.const Nat phase3 cp) pos
+        | none =>
+          -- Phase 3: mid-stream strong-RTL.
+          phase3
   { input := input,
     classify := classification,
     strongRTLCount := strongRTL,
     strongLTRCount := strongLTR,
     bidiControlCount := bidiCtl,
     longestRtlRunLen := runLen }
+
+/-- Detection against a field declared left-to-right, the reading the module
+    scope note fixes for an undeclared field. -/
+def detect (input : List Nat) : Verdict :=
+  detectWithContext .LTR input
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Projection helpers
@@ -312,6 +339,32 @@ theorem detect_lri_in_field :
 theorem detect_field_takeover_hebrew :
     (detect [0x05D0, 0x42, 0x43]).classify.tag = some "FieldTakeover" := by
   decide
+
+/-- The same Hebrew input is clear when the field is declared right-to-left:
+    there the leading Hebrew letter is the content of the field, and the
+    takeover the LTR reading names cannot occur. -/
+theorem detectWithContext_rtl_hebrew_clear :
+    (detectWithContext .RTL [0x05D0, 0x42, 0x43]).classify.isClear = true := by
+  decide
+
+/-- Persian text carrying an orthographic ZWNJ is clear in a right-to-left
+    field, which is the field a Persian display name is rendered in. -/
+theorem detectWithContext_rtl_persian_clear :
+    (detectWithContext .RTL [0x06CC, 0x200C, 0x0647]).classify.isClear = true := by
+  decide
+
+/-- A bidi format-control remains a hazard in a right-to-left field.  Phase 1
+    holds unconditionally, so declaring a field right-to-left admits its own
+    script without admitting a Trojan Source payload. -/
+theorem detectWithContext_rtl_bidi_control_fires :
+    (detectWithContext .RTL [0x41, 0x202E, 0x42]).classify.tag
+      = some "BidiControlInLTRField" := by
+  decide
+
+/-- The declared-LTR reading is `detectWithContext` at `.LTR`, so a field left
+    undeclared is judged exactly as before. -/
+theorem detect_eq_detectWithContext_ltr (input : List Nat) :
+    detect input = detectWithContext .LTR input := rfl
 
 /-- A leading Arabic letter (strong RTL via AL) fires `.fieldTakeover`. -/
 theorem detect_field_takeover_arabic :

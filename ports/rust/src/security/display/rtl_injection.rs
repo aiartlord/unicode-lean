@@ -111,19 +111,49 @@ fn phase3(input: &[u32], strong_rtl: usize, run_len: usize, run_start: usize) ->
     }
 }
 
-/// Detect right-to-left injection in an LTR-declared field.
+/// The declared display direction of the field holding an input.
 ///
-/// Priority mirrors the spec exactly: (1) any bidi format-control
-/// anywhere fires `BidiControlInLTRField`; otherwise (2) a leading strong-RTL
-/// codepoint fires `FieldTakeover`; otherwise (3) mid-stream strong-RTL
-/// is classified by run length.
-pub fn detect(input: &[u32]) -> Detection {
+/// A caller handling Hebrew, Arabic or Persian UI text declares its field
+/// right-to-left. Every other reading treats the input as a declared-LTR
+/// string, under which right-to-left content is itself the hazard.
+///
+/// Mirrors `FieldDirection` in `Unicode/Security/Display/RtlInjection.lean`,
+/// which is that spec's alias for the UAX #9 paragraph-direction vocabulary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FieldDirection {
+    #[default]
+    Ltr,
+    Rtl,
+}
+
+/// Detect right-to-left injection in a field whose declared display direction
+/// is `direction`.
+///
+/// A bidi format control reorders what a reviewer sees whichever way the field
+/// runs, so Phase 1 holds unconditionally and trumps all.
+///
+/// Phases 2 and 3 ask whether right-to-left text has taken over or been spliced
+/// into a left-to-right field. That question has no premise in a right-to-left
+/// field, where right-to-left text is the content. The mirror-image hazard,
+/// strong-LTR injection into a right-to-left field, belongs to the separate
+/// detector the scope note assigns it to.
+///
+/// Within a left-to-right field: (1) any bidi format-control anywhere fires
+/// `BidiControlInLTRField`; otherwise (2) a leading strong-RTL codepoint fires
+/// `FieldTakeover`; otherwise (3) mid-stream strong-RTL is classified by run
+/// length.
+pub fn detect_with_context(direction: FieldDirection, input: &[u32]) -> Detection {
     let strong_rtl = count_strong_rtl(input);
     let (run_len, run_start) = longest_rtl_run(input);
 
-    // Phase 1: bidi format-control trumps all.
+    // Phase 1: bidi format-control trumps all, in either direction.
     if let Some(pos) = first_bidi_control_pos(input) {
         return Detection::hazard("BidiControlInLTRField", vec![pos]);
+    }
+
+    // A right-to-left field carrying right-to-left text carries its content.
+    if direction == FieldDirection::Rtl {
+        return Detection::clear();
     }
 
     // Phase 2: leading-RTL field-direction takeover.
@@ -131,6 +161,50 @@ pub fn detect(input: &[u32]) -> Detection {
         Some((pos, true)) => Detection::hazard("FieldTakeover", vec![pos]),
         // Leading strong-LTR, or no strong char at all: fall to phase 3.
         Some((_, false)) | None => phase3(input, strong_rtl, run_len, run_start),
+    }
+}
+
+/// Detect right-to-left injection in a field declared left-to-right, the
+/// reading the module scope note fixes for an undeclared field.
+pub fn detect(input: &[u32]) -> Detection {
+    detect_with_context(FieldDirection::Ltr, input)
+}
+
+#[cfg(test)]
+mod rtl_field_tests {
+    use super::{detect, detect_with_context, FieldDirection};
+
+    // Ground truth: the `detectWithContext_rtl_*` theorems in
+    // `Unicode/Security/Display/RtlInjection.lean`, each proven by `decide`.
+
+    #[test]
+    fn rtl_field_hebrew_clear() {
+        let v = detect_with_context(FieldDirection::Rtl, &[0x05D0, 0x42, 0x43]);
+        assert_eq!(v.sub, None);
+    }
+
+    #[test]
+    fn rtl_field_persian_clear() {
+        let v = detect_with_context(FieldDirection::Rtl, &[0x06CC, 0x200C, 0x0647]);
+        assert_eq!(v.sub, None);
+    }
+
+    /// Declaring a field right-to-left admits its own script without admitting
+    /// a Trojan Source payload.
+    #[test]
+    fn rtl_field_bidi_control_still_fires() {
+        let v = detect_with_context(FieldDirection::Rtl, &[0x41, 0x202E, 0x42]);
+        assert_eq!(v.sub, Some("BidiControlInLTRField"));
+    }
+
+    #[test]
+    fn detect_is_ltr_reading() {
+        let input = [0x05D0, 0x42, 0x43];
+        assert_eq!(
+            detect(&input).sub,
+            detect_with_context(FieldDirection::Ltr, &input).sub
+        );
+        assert_eq!(detect(&input).sub, Some("FieldTakeover"));
     }
 }
 
