@@ -96,7 +96,7 @@ public static partial class Security
         /// <paramref name="input"/> — reuses the core scan fold's own tag-block
         /// predicate (printable-ASCII tag range U+E0020..U+E007E).</summary>
         private static bool TagBlockFired(List<int> input) =>
-            Security.PositionsWhere(input, Security.IsTagBlockAsciiPayload).Count > 0;
+            Security.PositionsWhere(input, Security.IsTagBlockChar).Count > 0;
 
         /// <summary>True iff the variation-selector-payload constituent fires on
         /// <paramref name="input"/> — reuses the core scan fold's own

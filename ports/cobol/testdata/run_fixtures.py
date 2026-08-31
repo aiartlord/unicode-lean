@@ -115,6 +115,28 @@ def check_verdict():
                     f"{case['name']} positions for {code} {got['positions'].get(code)} != {finding['positions']}")
 
 
+def check_differential_corpus():
+    """Agreement with the reference over a generated input stream.
+
+    The corpus shares the verdict contract's schema, so it runs through the same
+    comparison, but its cases come from the Rust reference over a deterministic
+    stream rather than being hand-written: agreement here is evidence that this
+    port decides as the reference does on inputs nobody chose, across every
+    profile.
+    """
+    fixture = load("differential_corpus.json")
+    for case in fixture["cases"]:
+        expected = case["verdict"]
+        got = run("scan", case["profile"], case["mode"], case["input"])
+        require(got["action"] == expected["action"], f"{case['name']} action {got['action']} != {expected['action']}")
+        require(got["input"] == expected["input"], f"{case['name']} input {got['input']} != {expected['input']}")
+        for finding in expected["findings"]:
+            code = finding["code"]
+            require(code in got["codes"], f"{case['name']} missing {code}; got {got['codes']}")
+            require(got["positions"].get(code) == finding["positions"],
+                    f"{case['name']} positions for {code} {got['positions'].get(code)} != {finding['positions']}")
+
+
 def check_detectors():
     detector_files = [
         "tag_block_payload.json",
@@ -971,6 +993,7 @@ def main():
     check_decode()
     check_multiencoding_decode()
     check_verdict()
+    check_differential_corpus()
     check_detectors()
     his_fixture_count, his_context_count = check_hash_input_stability()
     awd_fixture_count, awd_context_count = check_ai_watermark_detectability()

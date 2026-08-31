@@ -13,6 +13,27 @@
       "required_findings": [
         "unicode.security.C.tag-block-payload.DirectAscii"
       ]
+    },
+    {
+      "name": "language-tag-revival",
+      "input": [917505, 917569],
+      "required_findings": [
+        "unicode.security.C.tag-block-payload.LanguageTagRevival"
+      ]
+    },
+    {
+      "name": "tag-mixed-block",
+      "input": [72, 917569],
+      "required_findings": [
+        "unicode.security.C.tag-block-payload.MixedBlock"
+      ]
+    },
+    {
+      "name": "bare-tag-present",
+      "input": [917631],
+      "required_findings": [
+        "unicode.security.C.tag-block-payload.BareTagPresent"
+      ]
     }
   ]
 }

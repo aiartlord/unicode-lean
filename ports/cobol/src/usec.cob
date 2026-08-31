@@ -45,9 +45,13 @@ WORKING-STORAGE SECTION.
 01 UNIT-2 PIC 9(9) COMP-5.
 01 EMB-DEPTH PIC 9(5) COMP-5.
 01 ISO-DEPTH PIC 9(5) COMP-5.
-01 ORPHAN-POS PIC 9(5) COMP-5.
+01 ORPHAN-COUNT PIC 9(5) COMP-5.
+01 ORPH-EMB PIC 9(5) COMP-5.
+01 ORPH-ISO PIC 9(5) COMP-5.
 01 MAX-DEPTH PIC 9(5) COMP-5.
 01 TAG-COUNT PIC 9(5) COMP-5.
+01 TAG-ASCII-COUNT PIC 9(5) COMP-5.
+01 TAG-FIRST-CP PIC 9(9) COMP-5.
 01 VS-COUNT PIC 9(5) COMP-5.
 01 ZW-COUNT PIC 9(5) COMP-5.
 01 NNBSP-COUNT PIC 9(5) COMP-5.
@@ -88,6 +92,9 @@ WORKING-STORAGE SECTION.
 01 RESTRICTION-LEVEL PIC X(24) VALUE SPACES.
 01 IDENTIFIER-FIELD-FLAG PIC 9 VALUE 0.
 01 HOMO-EMITTED PIC 9 VALUE 0.
+01 HOMO-MATH PIC 9 VALUE 0.
+01 HOMO-WIDTH PIC 9 VALUE 0.
+01 HOMO-DECOMP PIC 9 VALUE 0.
 01 POLICY-LEVEL PIC X(16) VALUE SPACES.
 01 LEVEL-PREFIX PIC X(20) VALUE SPACES.
 01 MIXED-SUB PIC X(24) VALUE SPACES.
@@ -945,19 +952,41 @@ SCAN-CORE.
     PERFORM SCAN-SOURCE-DISPLAY-DIVERGENCE.
 
 DETECT-TAG-BLOCK.
-    MOVE 0 TO TAG-COUNT
+*> The tag-block ladder in the priority order of
+*> Unicode.Security.Covert.TagBlockPayload: a LANGUAGE TAG followed by at least
+*> one further tag character revives the deprecated language-tag mechanism;
+*> otherwise an all-tag input decoding to at least one ASCII character is a
+*> direct payload; otherwise a run mixed with ordinary text is a mixed block;
+*> otherwise the run is tag characters carrying no ASCII, such as a CANCEL TAG
+*> standing alone. TAG-ASCII-COUNT counts the tag characters that stand for
+*> ASCII, which is the U+E0020..U+E007E span alone.
+    MOVE 0 TO TAG-COUNT TAG-ASCII-COUNT TAG-FIRST-CP
     PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
         IF CP(IDX) >= 917504 AND CP(IDX) <= 917631
+            IF TAG-COUNT = 0
+                MOVE CP(IDX) TO TAG-FIRST-CP
+            END-IF
             ADD 1 TO TAG-COUNT
+            IF CP(IDX) >= 917536 AND CP(IDX) <= 917630
+                ADD 1 TO TAG-ASCII-COUNT
+            END-IF
         END-IF
     END-PERFORM
     IF TAG-COUNT > 0
-        IF TAG-COUNT = CP-COUNT
-            MOVE "unicode.security.C.tag-block-payload.DirectAscii" TO TEMP-CODE
+        IF TAG-COUNT >= 2 AND TAG-FIRST-CP = 917505
+            MOVE "unicode.security.C.tag-block-payload.LanguageTagRevival" TO TEMP-CODE
         ELSE
-            MOVE "unicode.security.C.tag-block-payload.MixedBlock" TO TEMP-CODE
+            IF TAG-COUNT = CP-COUNT AND TAG-ASCII-COUNT >= 1
+                MOVE "unicode.security.C.tag-block-payload.DirectAscii" TO TEMP-CODE
+            ELSE
+                IF CP-COUNT > TAG-COUNT
+                    MOVE "unicode.security.C.tag-block-payload.MixedBlock" TO TEMP-CODE
+                ELSE
+                    MOVE "unicode.security.C.tag-block-payload.BareTagPresent" TO TEMP-CODE
+                END-IF
+            END-IF
         END-IF
-        PERFORM ADD-ALL-POS-FINDING
+        PERFORM ADD-TAG-POS-FINDING
     END-IF.
 
 DETECT-VARIATION.
@@ -1110,7 +1139,7 @@ FIRST-INVALID-BYTESTREAM.
     END-PERFORM.
 
 DETECT-BIDI.
-    MOVE 0 TO EMB-DEPTH ISO-DEPTH ORPHAN-POS MAX-DEPTH
+    MOVE 0 TO EMB-DEPTH ISO-DEPTH ORPHAN-COUNT MAX-DEPTH
     PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
         IF CP(IDX) = 8234 OR CP(IDX) = 8235 OR CP(IDX) = 8237 OR CP(IDX) = 8238
             ADD 1 TO EMB-DEPTH
@@ -1122,7 +1151,7 @@ DETECT-BIDI.
                 IF EMB-DEPTH > 0
                     SUBTRACT 1 FROM EMB-DEPTH
                 ELSE
-                    COMPUTE ORPHAN-POS = IDX - 1
+                    ADD 1 TO ORPHAN-COUNT
                 END-IF
             ELSE
                 IF CP(IDX) = 8294 OR CP(IDX) = 8295 OR CP(IDX) = 8296
@@ -1132,7 +1161,7 @@ DETECT-BIDI.
                         IF ISO-DEPTH > 0
                             SUBTRACT 1 FROM ISO-DEPTH
                         ELSE
-                            COMPUTE ORPHAN-POS = IDX - 1
+                            ADD 1 TO ORPHAN-COUNT
                         END-IF
                     END-IF
                 END-IF
@@ -1143,9 +1172,9 @@ DETECT-BIDI.
         MOVE "unicode.security.C.bidi-control-balance.DepthExceeded" TO TEMP-CODE
         PERFORM ADD-BIDI-POS-FINDING
     ELSE
-        IF ORPHAN-POS > 0
+        IF ORPHAN-COUNT > 0
             MOVE "unicode.security.C.bidi-control-balance.OrphanPop" TO TEMP-CODE
-            PERFORM ADD-BIDI-POS-FINDING
+            PERFORM ADD-ORPHAN-POS-FINDING
         ELSE
             IF EMB-DEPTH > 0
                 MOVE "unicode.security.C.bidi-control-balance.UnbalancedEmbedding" TO TEMP-CODE
@@ -1191,29 +1220,52 @@ DETECT-HOMOGLYPH.
         MOVE "unicode.security.I.homoglyph-confusable.TargetMatch" TO TEMP-CODE
         PERFORM ADD-ALL-POS-FINDING
     ELSE
-        MOVE 0 TO HOMO-EMITTED
+*>      The ladder is ordered by rung, not by position: MathAlpha outranks
+*>      WidthClass, which outranks DecompositionSwap, for the input as a whole.
+*>      Each rung therefore gets its own pass over the input; testing all three
+*>      against one codepoint at a time would report whichever rung the earliest
+*>      codepoint happened to match.
+        MOVE 0 TO HOMO-EMITTED HOMO-MATH HOMO-WIDTH HOMO-DECOMP
         PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
             IF CP(IDX) >= 119808 AND CP(IDX) <= 120831
-                MOVE "unicode.security.I.homoglyph-confusable.MathAlpha" TO TEMP-CODE
-                PERFORM ADD-ALL-POS-FINDING
-                MOVE 1 TO HOMO-EMITTED
-                MOVE CP-COUNT TO IDX
-            ELSE
-                IF CP(IDX) >= 65281 AND CP(IDX) <= 65519
-                    MOVE "unicode.security.I.homoglyph-confusable.WidthClass" TO TEMP-CODE
-                    PERFORM ADD-ALL-POS-FINDING
-                    MOVE 1 TO HOMO-EMITTED
-                    MOVE CP-COUNT TO IDX
-                ELSE
-                    IF CP(IDX) = 769
-                        MOVE "unicode.security.I.homoglyph-confusable.DecompositionSwap" TO TEMP-CODE
-                        PERFORM ADD-ALL-POS-FINDING
-                        MOVE 1 TO HOMO-EMITTED
-                        MOVE CP-COUNT TO IDX
-                    END-IF
-                END-IF
+                MOVE 1 TO HOMO-MATH
+            END-IF
+            IF CP(IDX) >= 65281 AND CP(IDX) <= 65519
+                MOVE 1 TO HOMO-WIDTH
             END-IF
         END-PERFORM
+*>      DecompositionSwap is "the input is not already in NFC", which is the
+*>      comparison itself rather than the presence of any one combining mark:
+*>      U+0300 and U+0301 both carry combining class 230, so canonical ordering
+*>      leaves them where they are and the pair is already in NFC.
+        PERFORM COMPUTE-NFC
+        IF NFC-COUNT NOT = CP-COUNT
+            MOVE 1 TO HOMO-DECOMP
+        ELSE
+            PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
+                IF CP(IDX) NOT = NFC-CP(IDX)
+                    MOVE 1 TO HOMO-DECOMP
+                    MOVE CP-COUNT TO IDX
+                END-IF
+            END-PERFORM
+        END-IF
+        IF HOMO-MATH = 1
+            MOVE "unicode.security.I.homoglyph-confusable.MathAlpha" TO TEMP-CODE
+            PERFORM ADD-ALL-POS-FINDING
+            MOVE 1 TO HOMO-EMITTED
+        ELSE
+            IF HOMO-WIDTH = 1
+                MOVE "unicode.security.I.homoglyph-confusable.WidthClass" TO TEMP-CODE
+                PERFORM ADD-ALL-POS-FINDING
+                MOVE 1 TO HOMO-EMITTED
+            ELSE
+                IF HOMO-DECOMP = 1
+                    MOVE "unicode.security.I.homoglyph-confusable.DecompositionSwap" TO TEMP-CODE
+                    PERFORM ADD-ALL-POS-FINDING
+                    MOVE 1 TO HOMO-EMITTED
+                END-IF
+            END-IF
+        END-IF
 *>      The last two rungs of the Lean ladder, in its order: a cross-script mix
 *>      that is not Highly Restrictive, then a string failing every restriction
 *>      level. Both need the resolved script sets.
@@ -2159,6 +2211,72 @@ ADD-VS-POS-FINDING.
     MOVE SPACES TO POS-TEXT
     PERFORM VARYING JDX FROM 1 BY 1 UNTIL JDX > CP-COUNT
         IF (CP(JDX) >= 65024 AND CP(JDX) <= 65039) OR (CP(JDX) >= 917760 AND CP(JDX) <= 917999) OR (CP(JDX) >= 6155 AND CP(JDX) <= 6157)
+            COMPUTE POS-IDX = JDX - 1
+            MOVE POS-IDX TO POS-NUM
+            IF FUNCTION LENGTH(FUNCTION TRIM(POS-TEXT)) = 0
+                STRING FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
+            ELSE
+                STRING FUNCTION TRIM(POS-TEXT) DELIMITED BY SIZE "," DELIMITED BY SIZE FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
+            END-IF
+        END-IF
+    END-PERFORM
+    MOVE POS-TEXT TO FINDING-POS(FINDING-COUNT).
+
+ADD-TAG-POS-FINDING.
+*> A finding that localises the tag characters alone. The tag-block family names
+*> the tag run, so a run mixed with ordinary text reports the tag positions
+*> rather than the whole input the shared all-positions emitter would report.
+    ADD 1 TO FINDING-COUNT
+    MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
+    MOVE SPACES TO POS-TEXT
+    PERFORM VARYING JDX FROM 1 BY 1 UNTIL JDX > CP-COUNT
+        IF CP(JDX) >= 917504 AND CP(JDX) <= 917631
+            COMPUTE POS-IDX = JDX - 1
+            MOVE POS-IDX TO POS-NUM
+            IF FUNCTION LENGTH(FUNCTION TRIM(POS-TEXT)) = 0
+                STRING FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
+            ELSE
+                STRING FUNCTION TRIM(POS-TEXT) DELIMITED BY SIZE "," DELIMITED BY SIZE FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
+            END-IF
+        END-IF
+    END-PERFORM
+    MOVE POS-TEXT TO FINDING-POS(FINDING-COUNT).
+
+ADD-ORPHAN-POS-FINDING.
+*> A finding that localises the stray poppers alone. An orphan pop names the
+*> individual PDF or PDI that closed nothing, so the walk is repeated here and
+*> only those positions are emitted, rather than the whole bidi span the other
+*> rungs report.
+    ADD 1 TO FINDING-COUNT
+    MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
+    MOVE SPACES TO POS-TEXT
+    MOVE 0 TO ORPH-EMB ORPH-ISO
+    PERFORM VARYING JDX FROM 1 BY 1 UNTIL JDX > CP-COUNT
+        MOVE 0 TO TABLE-FLAG
+        IF CP(JDX) = 8234 OR CP(JDX) = 8235 OR CP(JDX) = 8237 OR CP(JDX) = 8238
+            ADD 1 TO ORPH-EMB
+        ELSE
+            IF CP(JDX) = 8236
+                IF ORPH-EMB > 0
+                    SUBTRACT 1 FROM ORPH-EMB
+                ELSE
+                    MOVE 1 TO TABLE-FLAG
+                END-IF
+            ELSE
+                IF CP(JDX) = 8294 OR CP(JDX) = 8295 OR CP(JDX) = 8296
+                    ADD 1 TO ORPH-ISO
+                ELSE
+                    IF CP(JDX) = 8297
+                        IF ORPH-ISO > 0
+                            SUBTRACT 1 FROM ORPH-ISO
+                        ELSE
+                            MOVE 1 TO TABLE-FLAG
+                        END-IF
+                    END-IF
+                END-IF
+            END-IF
+        END-IF
+        IF TABLE-FLAG = 1
             COMPUTE POS-IDX = JDX - 1
             MOVE POS-IDX TO POS-NUM
             IF FUNCTION LENGTH(FUNCTION TRIM(POS-TEXT)) = 0

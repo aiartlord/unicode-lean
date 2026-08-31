@@ -60,6 +60,23 @@ class SecurityPolicyTest < Minitest::Test
     end
   end
 
+  # Agreement with the reference over a generated input stream. The corpus
+  # shares the verdict contract's schema, so it runs through the same
+  # comparison, but its cases come from the Rust reference over a deterministic
+  # stream rather than being hand-written: agreement here is evidence that this
+  # port decides as the reference does on inputs nobody chose, across every
+  # profile.
+  def test_differential_corpus
+    payload = fixture_json("differential_corpus.json")
+    assert_equal "unicode-security-verdict-v0", payload.fetch("contract")
+
+    payload.fetch("cases").each do |case_data|
+      verdict = Policy.scan(profile(case_data.fetch("profile")), mode(case_data.fetch("mode")), case_data.fetch("input"))
+      assert_equal case_data.fetch("verdict"), Policy.verdict_to_wire(verdict), case_data.fetch("name")
+      assert_equal JSON.generate(case_data.fetch("verdict")), Policy.verdict_to_json(verdict), case_data.fetch("name")
+    end
+  end
+
   def test_decode_contract_fixture_cases
     payload = fixture_json("decode_contract.json")
     assert_equal "unicode-security-decode-v0", payload.fetch("contract")

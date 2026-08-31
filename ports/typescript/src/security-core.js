@@ -5370,22 +5370,18 @@ function restrictionLevel(cps) {
   return RestrictionLevel.Unrestricted;
 }
 
+// The UAX #44 Default_Ignorable_Code_Point property, read from the bundled
+// DerivedCoreProperties.txt rather than transcribed, so the predicate tracks the
+// UCD revision the port ships against. A transcribed set omits the ranges a
+// reader never sees but an attacker can still send, such as the musical-symbol
+// beams at U+1D173..U+1D17A.
+let defaultIgnorableRangesCache;
+
 function isDefaultIgnorableCodepoint(cp) {
-  return (
-    cp === 0x00ad ||
-    cp === 0x034f ||
-    cp === 0x061c ||
-    (cp >= 0x115f && cp <= 0x1160) ||
-    (cp >= 0x17b4 && cp <= 0x17b5) ||
-    (cp >= 0x180b && cp <= 0x180f) ||
-    (cp >= 0x200b && cp <= 0x200f) ||
-    (cp >= 0x202a && cp <= 0x202e) ||
-    (cp >= 0x2060 && cp <= 0x206f) ||
-    (cp >= 0xfe00 && cp <= 0xfe0f) ||
-    cp === 0xfeff ||
-    (cp >= 0xfff0 && cp <= 0xfff8) ||
-    (cp >= 0xe0000 && cp <= 0xe0fff)
-  );
+  if (defaultIgnorableRangesCache === undefined) {
+    defaultIgnorableRangesCache = parseDerivedProperty("Default_Ignorable_Code_Point");
+  }
+  return inRanges(defaultIgnorableRangesCache, cp);
 }
 
 function isWhiteSpaceCodepoint(cp) {

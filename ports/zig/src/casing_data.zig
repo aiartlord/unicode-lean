@@ -3461,3 +3461,36 @@ pub const cased = [_]Range{
 // Soft_Dotted ranges (DerivedCoreProperties.txt), sorted by start.
 pub const soft_dotted = [_]Range{
 };
+
+// Default_Ignorable_Code_Point ranges (DerivedCoreProperties.txt), sorted
+// by start. The covert-channel detectors ask this per codepoint on the scan
+// path, which is too hot for the whole-file rescan the XID predicates do.
+pub const default_ignorable = [_]Range{
+    .{ .start = 0x00AD, .end = 0x00AD },
+    .{ .start = 0x034F, .end = 0x034F },
+    .{ .start = 0x061C, .end = 0x061C },
+    .{ .start = 0x115F, .end = 0x1160 },
+    .{ .start = 0x17B4, .end = 0x17B5 },
+    .{ .start = 0x180B, .end = 0x180D },
+    .{ .start = 0x180E, .end = 0x180E },
+    .{ .start = 0x180F, .end = 0x180F },
+    .{ .start = 0x200B, .end = 0x200F },
+    .{ .start = 0x202A, .end = 0x202E },
+    .{ .start = 0x2060, .end = 0x2064 },
+    .{ .start = 0x2065, .end = 0x2065 },
+    .{ .start = 0x2066, .end = 0x206F },
+    .{ .start = 0x3164, .end = 0x3164 },
+    .{ .start = 0xFE00, .end = 0xFE0F },
+    .{ .start = 0xFEFF, .end = 0xFEFF },
+    .{ .start = 0xFFA0, .end = 0xFFA0 },
+    .{ .start = 0xFFF0, .end = 0xFFF8 },
+    .{ .start = 0x01BCA0, .end = 0x01BCA3 },
+    .{ .start = 0x01D173, .end = 0x01D17A },
+    .{ .start = 0x0E0000, .end = 0x0E0000 },
+    .{ .start = 0x0E0001, .end = 0x0E0001 },
+    .{ .start = 0x0E0002, .end = 0x0E001F },
+    .{ .start = 0x0E0020, .end = 0x0E007F },
+    .{ .start = 0x0E0080, .end = 0x0E00FF },
+    .{ .start = 0x0E0100, .end = 0x0E01EF },
+    .{ .start = 0x0E01F0, .end = 0x0E0FFF },
+};

@@ -51,6 +51,24 @@ defmodule UnicodeSecurity.PolicyTest do
     end)
   end
 
+  # Agreement with the reference over a generated input stream. The corpus shares
+  # the verdict contract's schema, so it runs through the same comparison, but
+  # its cases come from the Rust reference over a deterministic stream rather
+  # than being hand-written: agreement here is evidence that this port decides as
+  # the reference does on inputs nobody chose, across every profile.
+  test "differential corpus" do
+    payload = fixture_json("differential_corpus.json")
+    assert payload["contract"] == "unicode-security-verdict-v0"
+
+    Enum.each(payload["cases"], fn case_data ->
+      verdict = Policy.scan(case_data["profile"], case_data["mode"], case_data["input"])
+      assert Policy.verdict_to_wire(verdict) == case_data["verdict"], case_data["name"]
+
+      assert Policy.verdict_to_json(verdict) == JSON.encode!(case_data["verdict"]),
+             case_data["name"]
+    end)
+  end
+
   test "utf-8 decode contract fixture" do
     payload = fixture_json("decode_contract.json")
     assert payload["contract"] == "unicode-security-decode-v0"

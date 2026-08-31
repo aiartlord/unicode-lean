@@ -181,8 +181,11 @@ public static partial class Security
     private static List<Finding> Detect(List<int> input, bool identifierField)
     {
         var findings = new List<Finding>();
-        var tagPositions = PositionsWhere(input, IsTagBlockAsciiPayload);
-        if (tagPositions.Count > 0) findings.Add(MakeFinding(Family.TagBlockPayload, "DirectAscii", tagPositions));
+        var tagPositions = PositionsWhere(input, IsTagBlockChar);
+        if (tagPositions.Count > 0)
+        {
+            findings.Add(MakeFinding(Family.TagBlockPayload, TagBlockSubThreat(input, tagPositions), tagPositions));
+        }
         var variation = VariationSelectorFinding(input);
         if (variation is not null) findings.Add(variation);
         // The sanctioning model: a ZWJ inside a registered emoji sequence and a
@@ -198,8 +201,8 @@ public static partial class Security
         }
         var surrogate = SurrogateReassemblyFinding(input);
         if (surrogate is not null) findings.Add(surrogate);
-        var bidi = PositionsWhere(input, IsBidiEmbeddingControl);
-        if (bidi.Count > 0) findings.Add(MakeFinding(Family.BidiControlBalance, "UnbalancedEmbedding", bidi));
+        var bidi = BidiFinding(input);
+        if (bidi is not null) findings.Add(bidi);
         findings.AddRange(NoncharacterControlFindings(input));
         var homoglyph = HomoglyphConfusableFinding(input);
         if (homoglyph is not null) findings.Add(homoglyph);
@@ -283,7 +286,7 @@ public static partial class Security
         {
             return
             family is Family.MalformedUtf8 or Family.MalformedUtf16 or Family.MalformedUtf32
-                or Family.SurrogateReassembly or Family.BidiControlBalance
+                or Family.SurrogateReassembly or Family.BidiControlBalance or Family.NoncharacterControl
                 or Family.StreamSafeViolation;
         }
         if (level == PolicyLevel.Moderate)
@@ -291,7 +294,7 @@ public static partial class Security
             return
             family is Family.MalformedUtf8 or Family.MalformedUtf16 or Family.MalformedUtf32
                 or Family.TagBlockPayload or Family.VariationSelectorPayload or Family.ZeroWidthPayload
-                or Family.SurrogateReassembly or Family.BidiControlBalance
+                or Family.SurrogateReassembly or Family.BidiControlBalance or Family.NoncharacterControl
                 or Family.HomoglyphConfusable or Family.MixedScriptAdmissibility
                 or Family.SkinToneVariationForgery or Family.SourceDisplayDivergence
                 or Family.FilenameDisguise or Family.StreamSafeViolation or Family.LocaleCaseInversion
@@ -303,7 +306,7 @@ public static partial class Security
         return
             family is Family.MalformedUtf8 or Family.MalformedUtf16 or Family.MalformedUtf32
                 or Family.TagBlockPayload or Family.VariationSelectorPayload or Family.ZeroWidthPayload
-                or Family.SurrogateReassembly or Family.BidiControlBalance
+                or Family.SurrogateReassembly or Family.BidiControlBalance or Family.NoncharacterControl
                 or Family.HomoglyphConfusable or Family.MixedScriptAdmissibility or Family.EmojiZwjIntegrity
                 or Family.SkinToneVariationForgery or Family.SourceDisplayDivergence
                 or Family.FilenameDisguise or Family.RtlInjection or Family.RendererDivergence
@@ -352,7 +355,37 @@ public static partial class Security
         return positions;
     }
 
-    private static bool IsTagBlockAsciiPayload(int cp) => cp is >= 0xE0020 and <= 0xE007E;
+    // The ASCII a tag character stands for, or -1 where it stands for none.
+    // Only U+E0020..U+E007E carry ASCII.
+    private static int TagToAscii(int cp) => cp is >= 0xE0020 and <= 0xE007E ? cp - 0xE0000 : -1;
+
+    // The count of ASCII characters a tag run recovers, skipping the tag
+    // characters carrying none.
+    private static int DecodedTagLength(IReadOnlyList<int> input)
+    {
+        var decoded = 0;
+        foreach (var cp in input)
+        {
+            if (TagToAscii(cp) >= 0) decoded++;
+        }
+        return decoded;
+    }
+
+    // Which tag-block hazard the input carries, in the priority order of
+    // Unicode.Security.Covert.TagBlockPayload: a LANGUAGE TAG followed by at
+    // least one further tag character revives the deprecated language-tag
+    // mechanism; otherwise an all-tag input decoding to at least one ASCII
+    // character is a direct payload; otherwise a run mixed with ordinary text
+    // is a mixed block; otherwise the run is tag characters carrying no ASCII,
+    // such as a CANCEL TAG standing alone.
+    private static string TagBlockSubThreat(IReadOnlyList<int> input, IReadOnlyList<int> tagPositions)
+    {
+        var tagCount = tagPositions.Count;
+        if (tagCount >= 2 && input[tagPositions[0]] == 0xE0001) return "LanguageTagRevival";
+        if (input.Count == tagCount && DecodedTagLength(input) >= 1) return "DirectAscii";
+        if (input.Count > tagCount) return "MixedBlock";
+        return "BareTagPresent";
+    }
 
     private static Finding? VariationSelectorFinding(List<int> input)
     {
@@ -455,6 +488,90 @@ public static partial class Security
         return "BareZeroWidth";
     }
     private static bool IsBidiEmbeddingControl(int cp) => cp is >= 0x202A and <= 0x202E;
+
+    // The embedding depth bound of UAX #9 §3.3.2.
+    private const int UaxDepthLimit = 125;
+
+    private static bool OpensEmbedding(int cp) =>
+        cp is 0x202A or 0x202B or 0x202D or 0x202E;
+
+    private static bool OpensIsolate(int cp) => cp is 0x2066 or 0x2067 or 0x2068;
+
+    // The stack-of-stacks accumulator of
+    // Unicode.Security.Covert.BidiControlBalance: each opener pushes, each
+    // popper pops or records an orphan position, and MaxDepth tracks the peak
+    // combined height.
+    private sealed class BidiWalk
+    {
+        public int EmbStack;
+        public int IsoStack;
+        public int MaxDepth;
+        public readonly List<int> Orphans = new();
+        public readonly List<int> Positions = new();
+    }
+
+    private static BidiWalk RunBidiWalk(IReadOnlyList<int> input)
+    {
+        var walk = new BidiWalk();
+        for (var index = 0; index < input.Count; index++)
+        {
+            var cp = input[index];
+            if (!IsBidiFormatControl(cp)) continue;
+            walk.Positions.Add(index);
+            if (OpensEmbedding(cp))
+            {
+                walk.EmbStack++;
+                walk.MaxDepth = Math.Max(walk.MaxDepth, walk.EmbStack + walk.IsoStack);
+            }
+            else if (cp == 0x202C)
+            {
+                if (walk.EmbStack > 0) walk.EmbStack--;
+                else walk.Orphans.Add(index);
+            }
+            else if (OpensIsolate(cp))
+            {
+                walk.IsoStack++;
+                walk.MaxDepth = Math.Max(walk.MaxDepth, walk.EmbStack + walk.IsoStack);
+            }
+            else if (cp == 0x2069)
+            {
+                if (walk.IsoStack > 0) walk.IsoStack--;
+                else walk.Orphans.Add(index);
+            }
+        }
+        return walk;
+    }
+
+    // The bidi-control-balance finding, or null when the controls are balanced
+    // and within depth. The priority is the spec's: depth exceeded, then an
+    // orphan pop, then an unbalanced embedding, then an unbalanced isolate.
+    //
+    // Orphan pop localises per stray popper. Depth exceeded is a whole-string
+    // verdict, so it localises nothing. The unbalanced cases report every bidi
+    // position, the diagnostic being that something among these controls is
+    // missing its partner.
+    private static Finding? BidiFinding(IReadOnlyList<int> input)
+    {
+        var walk = RunBidiWalk(input);
+        if (walk.Positions.Count == 0) return null;
+        if (walk.MaxDepth > UaxDepthLimit)
+        {
+            return MakeFinding(Family.BidiControlBalance, "DepthExceeded", new List<int>());
+        }
+        if (walk.Orphans.Count > 0)
+        {
+            return MakeFinding(Family.BidiControlBalance, "OrphanPop", walk.Orphans);
+        }
+        if (walk.EmbStack > 0)
+        {
+            return MakeFinding(Family.BidiControlBalance, "UnbalancedEmbedding", walk.Positions);
+        }
+        if (walk.IsoStack > 0)
+        {
+            return MakeFinding(Family.BidiControlBalance, "UnbalancedIsolate", walk.Positions);
+        }
+        return null;
+    }
 
     private static List<Finding> NoncharacterControlFindings(List<int> input)
     {
@@ -630,9 +747,9 @@ public static partial class Security
         return sub is null ? null : MakeFinding(Family.CovertDisplayCompound, sub, positions);
     }
 
-    // True iff cp is in the tag-block range U+E0000..U+E007F. Distinct from
-    // IsTagBlockAsciiPayload (U+E0020..U+E007E), which the tag-block-payload
-    // detector uses for the printable-ASCII subrange.
+    // True iff cp is a tag character. The tag-block-payload family fires on the
+    // whole block, not only the ASCII-bearing subrange TagToAscii decodes, so a
+    // LANGUAGE TAG or a lone CANCEL TAG is a hazard in its own right.
     private static bool IsTagBlockChar(int cp) => cp is >= 0xE0000 and <= 0xE007F;
 
     // First position holding a suspicious variation selector — a VS that does
@@ -905,6 +1022,7 @@ public static partial class Security
     private static Dictionary<int, int>? simpleUppercaseMap;
     private static List<(int Lo, int Hi)>? casedRanges;
     private static List<(int Lo, int Hi)>? softDottedRanges;
+    private static List<(int Lo, int Hi)>? defaultIgnorableRanges;
 
     private static Dictionary<int, List<CasingRow>> ParseSpecialCasing(string raw)
     {
@@ -2547,13 +2665,21 @@ public static partial class Security
     private static string MixedScriptSubThreat(List<int> input) =>
         MixedScriptVerdict(input, true) ?? "ScriptMixOther";
 
-    private static bool IsDefaultIgnorableCodepoint(int cp) =>
-        cp is 0x00AD or 0x034F or 0x061C ||
-        cp is >= 0x115F and <= 0x1160 || cp is >= 0x17B4 and <= 0x17B5 ||
-        cp is >= 0x180B and <= 0x180F || cp is >= 0x200B and <= 0x200F ||
-        cp is >= 0x202A and <= 0x202E || cp is >= 0x2060 and <= 0x206F ||
-        cp is >= 0xFE00 and <= 0xFE0F || cp == 0xFEFF ||
-        cp is >= 0xFFF0 and <= 0xFFF8 || cp is >= 0xE0000 and <= 0xE0FFF;
+    // The UAX #44 Default_Ignorable_Code_Point property, read from the bundled
+    // DerivedCoreProperties.txt through the same reader the Cased and Soft_Dotted
+    // predicates use, rather than transcribed, so the predicate tracks the UCD
+    // revision the port ships against. A transcribed set omits ranges a reader
+    // never sees but an attacker can still send, such as the musical-symbol beams
+    // at U+1D173..U+1D17A.
+    private static bool IsDefaultIgnorableCodepoint(int cp)
+    {
+        defaultIgnorableRanges ??= ParseCasingProperty("Default_Ignorable_Code_Point");
+        foreach (var (lo, hi) in defaultIgnorableRanges)
+        {
+            if (lo <= cp && cp <= hi) return true;
+        }
+        return false;
+    }
 
     private static bool IsWhiteSpaceCodepoint(int cp) =>
         cp is 0x0009 or 0x000A or 0x000B or 0x000C or 0x000D or 0x0020 or 0x0085 or 0x00A0 or 0x1680 ||

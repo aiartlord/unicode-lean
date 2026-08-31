@@ -6,6 +6,7 @@ run() ->
     detector_fixtures(),
     policy_contract(),
     verdict_contract(),
+    differential_corpus(),
     decode_contract(),
     multiencoding_contract(),
     form_and_bip39(),
@@ -962,6 +963,21 @@ policy_contract() ->
 verdict_contract() ->
     P = fixture("verdict_contract.json"),
     assert_eq(<<"unicode-security-verdict-v0">>, maps:get(<<"contract">>, P), verdict_contract),
+    lists:foreach(fun(Case) ->
+                          V = usec_policy:scan(maps:get(<<"profile">>, Case), maps:get(<<"mode">>, Case), maps:get(<<"input">>, Case)),
+                          Wire = usec_policy:verdict_to_wire(V),
+                          assert_eq(maps:get(<<"verdict">>, Case), Wire, maps:get(<<"name">>, Case)),
+                          assert_eq(maps:get(<<"verdict">>, Case), usec_json:decode(usec_policy:verdict_to_json(V)), {json, maps:get(<<"name">>, Case)})
+                  end, maps:get(<<"cases">>, P)).
+
+%% Agreement with the reference over a generated input stream. The corpus shares
+%% the verdict contract's schema, so it runs through the same comparison, but its
+%% cases come from the Rust reference over a deterministic stream rather than
+%% being hand-written: agreement here is evidence that this port decides as the
+%% reference does on inputs nobody chose, across every profile.
+differential_corpus() ->
+    P = fixture("differential_corpus.json"),
+    assert_eq(<<"unicode-security-verdict-v0">>, maps:get(<<"contract">>, P), differential_corpus),
     lists:foreach(fun(Case) ->
                           V = usec_policy:scan(maps:get(<<"profile">>, Case), maps:get(<<"mode">>, Case), maps:get(<<"input">>, Case)),
                           Wire = usec_policy:verdict_to_wire(V),

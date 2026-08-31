@@ -100,6 +100,7 @@ private var simpleLowerCache: [Int: Int]?
 private var simpleUpperCache: [Int: Int]?
 private var casedRangesCache: [(Int, Int)]?
 private var softDottedRangesCache: [(Int, Int)]?
+private var defaultIgnorableRangesCache: [(Int, Int)]?
 private var identifierAllowedRangesCache: [(Int, Int)]?
 private var xidStartRangesCache: [(Int, Int)]?
 private var xidContinueRangesCache: [(Int, Int)]?
@@ -195,9 +196,12 @@ public func verdictJson(_ verdict: Verdict) -> String {
 // scoped to identifiers needs to know whether it is holding one.
 private func detect(_ input: [Int], _ identifierField: Bool) -> [Finding] {
     var findings: [Finding] = []
-    let tagPositions = positionsWhere(input, isTagBlockAsciiPayload)
+    let tagPositions = positionsWhere(input, isTagCharacter)
     if !tagPositions.isEmpty {
-        findings.append(makeFinding(family: Family.tagBlockPayload, subThreat: "DirectAscii", positions: tagPositions))
+        findings.append(makeFinding(
+            family: Family.tagBlockPayload,
+            subThreat: tagBlockSubThreat(input, tagPositions),
+            positions: tagPositions))
     }
     if let variation = variationSelectorFinding(input) {
         findings.append(variation)
@@ -217,9 +221,11 @@ private func detect(_ input: [Int], _ identifierField: Bool) -> [Finding] {
     if let surrogate = surrogateReassemblyFinding(input) {
         findings.append(surrogate)
     }
-    let bidi = positionsWhere(input, isBidiEmbeddingControl)
-    if !bidi.isEmpty {
-        findings.append(makeFinding(family: Family.bidiControlBalance, subThreat: "UnbalancedEmbedding", positions: bidi))
+    if let bidi = bidiSubThreat(input) {
+        findings.append(makeFinding(
+            family: Family.bidiControlBalance,
+            subThreat: bidi.sub,
+            positions: bidi.positions))
     }
     findings.append(contentsOf: noncharacterControlFindings(input))
     if let homoglyph = homoglyphConfusableFinding(input) {
@@ -338,6 +344,7 @@ private func blocks(_ level: PolicyLevel, _ family: String) -> Bool {
         Family.malformedUtf32,
         Family.surrogateReassembly,
         Family.bidiControlBalance,
+        Family.noncharacterControl,
         Family.streamSafeViolation,
     ].contains(family)
     }
@@ -351,6 +358,7 @@ private func blocks(_ level: PolicyLevel, _ family: String) -> Bool {
         Family.zeroWidthPayload,
         Family.surrogateReassembly,
         Family.bidiControlBalance,
+        Family.noncharacterControl,
         Family.homoglyphConfusable,
         Family.mixedScriptAdmissibility,
         Family.skinToneVariationForgery,
@@ -376,6 +384,7 @@ private func blocks(_ level: PolicyLevel, _ family: String) -> Bool {
         Family.zeroWidthPayload,
         Family.surrogateReassembly,
         Family.bidiControlBalance,
+        Family.noncharacterControl,
         Family.homoglyphConfusable,
         Family.mixedScriptAdmissibility,
         Family.emojiZwjIntegrity,
@@ -456,8 +465,43 @@ private func positionsWhere(_ input: [Int], _ predicate: (Int) -> Bool) -> [Int]
     input.indices.filter { predicate(input[$0]) }
 }
 
-private func isTagBlockAsciiPayload(_ cp: Int) -> Bool {
-    cp >= 0xe0020 && cp <= 0xe007e
+/// True iff the codepoint is a tag character. The family fires on the whole tag
+/// block, not only the ASCII-bearing span, so a LANGUAGE TAG or a lone CANCEL
+/// TAG is a hazard in its own right.
+private func isTagCharacter(_ cp: Int) -> Bool {
+    cp >= 0xe0000 && cp <= 0xe007f
+}
+
+/// The ASCII a tag character stands for, where it stands for any. Only
+/// U+E0020..U+E007E carry ASCII.
+private func tagToAscii(_ cp: Int) -> Int? {
+    cp >= 0xe0020 && cp <= 0xe007e ? cp - 0xe0000 : nil
+}
+
+/// The ASCII a tag run recovers to, skipping the tag characters carrying none.
+private func decodeTagRun(_ input: [Int]) -> [Int] {
+    input.compactMap(tagToAscii)
+}
+
+/// Which tag-block hazard the input carries, in the priority order of
+/// Unicode.Security.Covert.TagBlockPayload: a LANGUAGE TAG followed by at least
+/// one further tag character revives the deprecated language-tag mechanism;
+/// otherwise an all-tag input decoding to at least one ASCII character is a
+/// direct payload; otherwise a run mixed with ordinary text is a mixed block;
+/// otherwise the run is tag characters carrying no ASCII, such as a CANCEL TAG
+/// standing alone.
+private func tagBlockSubThreat(_ input: [Int], _ tagPositions: [Int]) -> String {
+    let tagCount = tagPositions.count
+    if tagCount >= 2, let first = tagPositions.first, input[first] == 0xe0001 {
+        return "LanguageTagRevival"
+    }
+    if input.count == tagCount && !decodeTagRun(input).isEmpty {
+        return "DirectAscii"
+    }
+    if input.count > tagCount {
+        return "MixedBlock"
+    }
+    return "BareTagPresent"
 }
 
 private func variationSelectorFinding(_ input: [Int]) -> Finding? {
@@ -557,8 +601,74 @@ private func zeroWidthSubThreat(_ input: [Int], _ positions: [Int]) -> String {
     return "BareZeroWidth"
 }
 
-private func isBidiEmbeddingControl(_ cp: Int) -> Bool {
-    cp >= 0x202a && cp <= 0x202e
+/// The embedding depth bound of UAX #9 §3.3.2.
+private let uaxDepthLimit = 125
+
+private func opensEmbedding(_ cp: Int) -> Bool {
+    cp == 0x202a || cp == 0x202b || cp == 0x202d || cp == 0x202e
+}
+
+private func opensIsolate(_ cp: Int) -> Bool {
+    cp == 0x2066 || cp == 0x2067 || cp == 0x2068
+}
+
+/// The stack-of-stacks accumulator of
+/// Unicode.Security.Covert.BidiControlBalance: each opener pushes, each popper
+/// pops or records an orphan position, and `maxDepth` tracks the peak combined
+/// height.
+private struct BidiWalk {
+    var embStack = 0
+    var isoStack = 0
+    var maxDepth = 0
+    var orphans: [Int] = []
+    var positions: [Int] = []
+}
+
+private func runBidiWalk(_ input: [Int]) -> BidiWalk {
+    var walk = BidiWalk()
+    for (index, cp) in input.enumerated() {
+        guard isBidiFormatControl(cp) else { continue }
+        walk.positions.append(index)
+        if opensEmbedding(cp) {
+            walk.embStack += 1
+            walk.maxDepth = max(walk.maxDepth, walk.embStack + walk.isoStack)
+        } else if cp == 0x202c {
+            if walk.embStack > 0 {
+                walk.embStack -= 1
+            } else {
+                walk.orphans.append(index)
+            }
+        } else if opensIsolate(cp) {
+            walk.isoStack += 1
+            walk.maxDepth = max(walk.maxDepth, walk.embStack + walk.isoStack)
+        } else if cp == 0x2069 {
+            if walk.isoStack > 0 {
+                walk.isoStack -= 1
+            } else {
+                walk.orphans.append(index)
+            }
+        }
+    }
+    return walk
+}
+
+/// Which bidi hazard the input carries and the positions it localises, or nil
+/// when the controls are balanced and within depth. The priority is the spec's:
+/// depth exceeded, then an orphan pop, then an unbalanced embedding, then an
+/// unbalanced isolate.
+///
+/// Orphan pop localises per stray popper. Depth exceeded is a whole-string
+/// verdict, so it localises nothing. The unbalanced cases report every bidi
+/// position, the diagnostic being that something among these controls is
+/// missing its partner.
+private func bidiSubThreat(_ input: [Int]) -> (sub: String, positions: [Int])? {
+    let walk = runBidiWalk(input)
+    if walk.positions.isEmpty { return nil }
+    if walk.maxDepth > uaxDepthLimit { return ("DepthExceeded", []) }
+    if !walk.orphans.isEmpty { return ("OrphanPop", walk.orphans) }
+    if walk.embStack > 0 { return ("UnbalancedEmbedding", walk.positions) }
+    if walk.isoStack > 0 { return ("UnbalancedIsolate", walk.positions) }
+    return nil
 }
 
 private func noncharacterControlFindings(_ input: [Int]) -> [Finding] {
@@ -2695,18 +2805,21 @@ private func mixedScriptSubThreat(_ input: [Int]) -> String {
     mixedScriptVerdict(input, true) ?? "ScriptMixOther"
 }
 
+private func defaultIgnorableRanges() -> [(Int, Int)] {
+    if let cached = defaultIgnorableRangesCache { return cached }
+    let parsed = parseDerivedProperty(readDataFile("DerivedCoreProperties.txt"), "Default_Ignorable_Code_Point")
+    defaultIgnorableRangesCache = parsed
+    return parsed
+}
+
+/// The UAX #44 Default_Ignorable_Code_Point property, read from the bundled
+/// DerivedCoreProperties.txt through the same reader the Cased and Soft_Dotted
+/// predicates use, rather than transcribed, so the predicate tracks the UCD
+/// revision the port ships against. A transcribed set omits ranges a reader never
+/// sees but an attacker can still send, such as the musical-symbol beams at
+/// U+1D173..U+1D17A.
 private func isDefaultIgnorableCodepoint(_ cp: Int) -> Bool {
-    cp == 0x00ad || cp == 0x034f || cp == 0x061c ||
-        (cp >= 0x115f && cp <= 0x1160) ||
-        (cp >= 0x17b4 && cp <= 0x17b5) ||
-        (cp >= 0x180b && cp <= 0x180f) ||
-        (cp >= 0x200b && cp <= 0x200f) ||
-        (cp >= 0x202a && cp <= 0x202e) ||
-        (cp >= 0x2060 && cp <= 0x206f) ||
-        (cp >= 0xfe00 && cp <= 0xfe0f) ||
-        cp == 0xfeff ||
-        (cp >= 0xfff0 && cp <= 0xfff8) ||
-        (cp >= 0xe0000 && cp <= 0xe0fff)
+    inCasingRanges(defaultIgnorableRanges(), cp)
 }
 
 private func isWhiteSpaceCodepoint(_ cp: Int) -> Bool {
@@ -2813,10 +2926,20 @@ private func readUint32(_ input: [UInt8], _ offset: Int, _ order: ByteOrder) -> 
 // values surface as a malformed stream rather than being dropped. The
 // byte-stream gate lives in the scan orchestrator (looksLikeByteStream),
 // mirroring runAll.
-private func surrogateReassemblyDetect(_ input: [Int]) -> (sub: String, positions: [Int])? {
+public struct SurrogateReassemblyResult: Equatable {
+    public let subThreat: String?
+    public let positions: [Int]
+}
+
+public func surrogateReassemblyDetect(_ input: [Int]) -> SurrogateReassemblyResult {
     let bytes = input.map { UInt8($0 > 0xFF ? 0xFF : $0) }
-    guard let failure = firstInvalidUtf8(bytes) else { return nil }
-    return (surrogateReassemblySubThreat(failure.subThreat), [failure.offset])
+    guard let failure = firstInvalidUtf8(bytes) else {
+        return SurrogateReassemblyResult(subThreat: nil, positions: [])
+    }
+    return SurrogateReassemblyResult(
+        subThreat: surrogateReassemblySubThreat(failure.subThreat),
+        positions: [failure.offset]
+    )
 }
 
 // The looksLikeByteStream gate from Unicode.Security.RunAll: a
@@ -2832,10 +2955,11 @@ private func looksLikeByteStream(_ input: [Int]) -> Bool {
 // family is clear.
 private func surrogateReassemblyFinding(_ input: [Int]) -> Finding? {
     guard looksLikeByteStream(input) else { return nil }
-    guard let detection = surrogateReassemblyDetect(input) else { return nil }
+    let detection = surrogateReassemblyDetect(input)
+    guard let sub = detection.subThreat else { return nil }
     return makeFinding(
         family: Family.surrogateReassembly,
-        subThreat: detection.sub,
+        subThreat: sub,
         positions: detection.positions
     )
 }
@@ -5192,11 +5316,12 @@ public struct SourceDisplayDivergenceVerdict: Equatable {
     public var tag: String? { sub }
 }
 
-/// True iff the port's tag-block-payload detector fires on `input` (any
-/// tag-block ASCII payload codepoint present). Reuses the same predicate the
-/// scan pipeline uses to raise the `tag-block-payload` finding.
+/// True iff the port's tag-block-payload detector fires on `input`. Reuses the
+/// same predicate the scan pipeline uses to raise the `tag-block-payload`
+/// finding, which covers the whole tag block: a LANGUAGE TAG or a lone CANCEL
+/// TAG counts here as it does in the family's own verdict.
 private func sourceDisplayTagBlockFired(_ input: [Int]) -> Bool {
-    !positionsWhere(input, isTagBlockAsciiPayload).isEmpty
+    !positionsWhere(input, isTagCharacter).isEmpty
 }
 
 /// True iff the port's variation-selector-payload detector fires on `input`.

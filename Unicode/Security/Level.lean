@@ -136,14 +136,14 @@ inductive Level where
     ⊆ restrictive.rejectionSet`.  Proven below. -/
 def rejectionSet : Level → List Family
   | .restrictive =>
-    -- All 23 non-K families.  SurrogateReassembly is included
+    -- All 24 non-K families.  SurrogateReassembly is included
     -- because `runAll` gates it on `looksLikeByteStream`
     -- (every codepoint ≤ 0xFF); on codepoint arrays with any
     -- non-ASCII content the detector emits clear and does not
     -- reject.
     [ .tagBlockPayload, .variationSelectorPayload
      , .zeroWidthPayload, .surrogateReassembly
-     , .bidiControlBalance
+     , .bidiControlBalance, .noncharacterControl
      , .homoglyphConfusable, .mixedScriptAdmissibility
      , .emojiZwjIntegrity, .skinToneVariationForgery
      , .sourceDisplayDivergence, .filenameDisguise
@@ -189,7 +189,7 @@ def rejectionSet : Level → List Family
     -- signal is intact.
     [ .tagBlockPayload, .variationSelectorPayload
      , .zeroWidthPayload, .surrogateReassembly
-     , .bidiControlBalance
+     , .bidiControlBalance, .noncharacterControl
      , .homoglyphConfusable, .mixedScriptAdmissibility
      , .skinToneVariationForgery
      , .sourceDisplayDivergence, .filenameDisguise
@@ -201,9 +201,15 @@ def rejectionSet : Level → List Family
   | .minimal =>
     -- Structural / RFC-violation families: UTF-8 byte
     -- validity (RFC 3629, via runAll's byte-stream gate),
-    -- bidi-control imbalance (Trojan Source class), stream-
-    -- safe overflow (UAX #15 §13 DoS class).
-    [ .surrogateReassembly, .bidiControlBalance, .streamSafeViolation ]
+    -- bidi-control imbalance (Trojan Source class),
+    -- noncharacter and C0/C1 control presence, and stream-
+    -- safe overflow (UAX #15 §13 DoS class).  A noncharacter
+    -- is a codepoint the standard permanently reserves against
+    -- interchange, so its presence is a structural violation of
+    -- the encoding rather than a stylistic judgement, and it
+    -- belongs at the level that rejects only such violations.
+    [ .surrogateReassembly, .bidiControlBalance
+     , .noncharacterControl, .streamSafeViolation ]
 
 /-- True iff `family` is in `level`'s rejection set. -/
 @[inline]
@@ -421,22 +427,23 @@ theorem admissibleAt_factors
 -- §2 Rejection-set monotonicity
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The restrictive rejection set covers all 23 non-K families.
+/-- The restrictive rejection set covers all 24 non-K families.
     `runAll`'s byte-stream gate makes C4 contribution
     well-behaved on codepoint inputs. -/
 theorem restrictive_rejection_size :
-    (rejectionSet .restrictive).length = 23 := by decide
+    (rejectionSet .restrictive).length = 24 := by decide
 
 /-- The moderate rejection set drops the 4 heuristic / FP-prone
-    detectors (F1, D3, D4, I3) from restrictive, keeping 19. -/
+    detectors from restrictive, keeping 20. -/
 theorem moderate_rejection_size :
-    (rejectionSet .moderate).length = 19 := by decide
+    (rejectionSet .moderate).length = 20 := by decide
 
-/-- The minimal rejection set covers the 3 structural / RFC-
-    violation families (C4 UTF-8 byte validity, C5 bidi-control
-    balance, F2 stream-safe overflow). -/
+/-- The minimal rejection set covers the 4 structural / RFC-
+    violation families: UTF-8 byte validity, bidi-control
+    balance, noncharacter and C0/C1 control presence, and
+    stream-safe overflow. -/
 theorem minimal_rejection_size :
-    (rejectionSet .minimal).length = 3 := by decide
+    (rejectionSet .minimal).length = 4 := by decide
 
 /-- Every family in `moderate.rejectionSet` is also in
     `restrictive.rejectionSet`. -/
@@ -563,16 +570,27 @@ theorem monotone_modified_utf8_nul :
     ∧ admissibleAt .minimal .nonCrypto input = false := by decide
 
 /-- Monotonicity witness, mixed input with a non-ASCII codepoint
-    `[0xC0, 0x80, 0x4E2D]`.  The Han codepoint 0x4E2D > 0xFF
-    so runAll's byte-stream gate skips C4 entirely.  Without
-    C4 firing, the input is admissible at minimal (no other
-    family fires on this short non-bidi codepoint sequence).
-    This pins the byte-stream gate's intended behaviour:
-    mixing high codepoints into the input flips C4 off,
-    preventing spurious rejection. -/
+    `[0xC0, 0x80, 0x4E2D]`.  The Han codepoint 0x4E2D > 0xFF, so
+    `runAll`'s byte-stream gate skips C4 entirely and the
+    surrogate-reassembly verdict is clear: mixing a high codepoint
+    into a byte-shaped input turns C4 off rather than rejecting
+    spuriously.  The input is inadmissible at minimal all the same,
+    because U+0080 is a C1 control and noncharacter-control is a
+    structural family present in every rejection set.
+
+    Both halves are pinned together.  The gate is the property
+    this witness exists to protect, and stating it directly keeps
+    it observable rather than inferring it from an admission
+    verdict that another family also decides.  The gate is named
+    rather than the detector: `SurrogateReassembly.detect` clamps
+    out-of-range values and reports a hazard on this input when
+    called on its own, and it is `runAll` consulting
+    `looksLikeByteStream` that keeps that verdict out of the
+    admission decision. -/
 theorem monotone_mixed_high_codepoint :
     let input : List Nat := [0xC0, 0x80, 0x4E2D]
-    admissibleAt .minimal .nonCrypto input = true := by decide
+    Unicode.Security.RunAll.looksLikeByteStream input = false
+    ∧ admissibleAt .minimal .nonCrypto input = false := by decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 CryptoContext gating — K1 only fires under .bip39Mnemonic

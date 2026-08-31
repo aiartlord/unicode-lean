@@ -75,6 +75,7 @@ import qualified Data.Set as Set
 import Numeric (readHex)
 import System.IO.Unsafe (unsafePerformIO)
 
+import qualified Unicode.Casing as Casing
 import qualified Unicode.Codec.Utf8 as Utf8
 import qualified Unicode.Security.Display.SourceDisplayAggregate as SourceDisplay
 import qualified Unicode.Security.Boundary.AdmissibilityFormDrift as AdmissibilityDrift
@@ -486,18 +487,20 @@ detect input identifierField =
 
 tagBlockFinding :: [Int] -> [Finding]
 tagBlockFinding input =
-  case positionsWhere isTagBlockAsciiPayload input of
+  case [ (index, cp) | (index, cp) <- zip [0 ..] input, isTagCharacter cp ] of
     [] -> []
-    positions ->
-      [ Finding
-          { findingCode = reasonCode FamilyTagBlockPayload "DirectAscii"
-          , findingFamily = FamilyTagBlockPayload
-          , findingSeverity = 2
-          , findingPositions = positions
-          , findingSubThreat = "DirectAscii"
-          , findingDetail = familyTag FamilyTagBlockPayload
-          }
-      ]
+    tagged ->
+      let positions = map fst tagged
+          sub = tagBlockSubThreat input (map snd tagged)
+       in [ Finding
+              { findingCode = reasonCode FamilyTagBlockPayload sub
+              , findingFamily = FamilyTagBlockPayload
+              , findingSeverity = 2
+              , findingPositions = positions
+              , findingSubThreat = sub
+              , findingDetail = familyTag FamilyTagBlockPayload
+              }
+          ]
 
 zeroWidthFinding :: [Int] -> [Finding]
 -- The sanctioning model: a ZWJ inside a registered emoji sequence and a ZWNJ in
@@ -600,15 +603,15 @@ variationSelectorFinding input =
 
 bidiFinding :: [Int] -> [Finding]
 bidiFinding input =
-  case positionsWhere isBidiEmbeddingControl input of
-    [] -> []
-    positions ->
+  case bidiSubThreat input of
+    Nothing -> []
+    Just (sub, positions) ->
       [ Finding
-          { findingCode = reasonCode FamilyBidiControlBalance "UnbalancedEmbedding"
+          { findingCode = reasonCode FamilyBidiControlBalance sub
           , findingFamily = FamilyBidiControlBalance
           , findingSeverity = 2
           , findingPositions = positions
-          , findingSubThreat = "UnbalancedEmbedding"
+          , findingSubThreat = sub
           , findingDetail = familyTag FamilyBidiControlBalance
           }
       ]
@@ -652,7 +655,7 @@ blocks PolicyRestrictive FamilyVariationSelectorPayload = True
 blocks PolicyRestrictive FamilyZeroWidthPayload   = True
 blocks PolicyRestrictive FamilySurrogateReassembly = True
 blocks PolicyRestrictive FamilyBidiControlBalance = True
-blocks PolicyRestrictive FamilyNoncharacterControl = False
+blocks PolicyRestrictive FamilyNoncharacterControl = True
 blocks PolicyRestrictive FamilyHomoglyphConfusable = True
 blocks PolicyRestrictive FamilyMixedScriptAdmissibility = True
 blocks PolicyRestrictive FamilyRtlInjection = True
@@ -682,7 +685,7 @@ blocks PolicyModerate FamilyVariationSelectorPayload = True
 blocks PolicyModerate FamilyZeroWidthPayload      = True
 blocks PolicyModerate FamilySurrogateReassembly   = True
 blocks PolicyModerate FamilyBidiControlBalance    = True
-blocks PolicyModerate FamilyNoncharacterControl = False
+blocks PolicyModerate FamilyNoncharacterControl = True
 blocks PolicyModerate FamilyHomoglyphConfusable = True
 blocks PolicyModerate FamilyMixedScriptAdmissibility = True
 -- RtlInjection's contract treats its input as a declared-LTR field, which a
@@ -712,7 +715,7 @@ blocks PolicyMinimal FamilySurrogateReassembly    = True
 blocks PolicyMinimal FamilyMalformedUtf8          = True
 blocks PolicyMinimal FamilyMalformedUtf16         = True
 blocks PolicyMinimal FamilyMalformedUtf32         = True
-blocks PolicyMinimal FamilyNoncharacterControl    = False
+blocks PolicyMinimal FamilyNoncharacterControl    = True
 blocks PolicyMinimal FamilyTagBlockPayload        = False
 blocks PolicyMinimal FamilyVariationSelectorPayload = False
 blocks PolicyMinimal FamilyZeroWidthPayload       = False
@@ -742,8 +745,38 @@ positionsWhere :: (Int -> Bool) -> [Int] -> [Int]
 positionsWhere predicate input =
   [ index | (index, cp) <- zip [0..] input, predicate cp ]
 
-isTagBlockAsciiPayload :: Int -> Bool
-isTagBlockAsciiPayload cp = cp >= 0xE0020 && cp <= 0xE007E
+-- | True iff the codepoint is a tag character. The family fires on the whole
+-- tag block, not only the ASCII-bearing span, so a LANGUAGE TAG or a lone
+-- CANCEL TAG is a hazard in its own right.
+isTagCharacter :: Int -> Bool
+isTagCharacter cp = cp >= 0xE0000 && cp <= 0xE007F
+
+-- | The ASCII a tag character stands for, where it stands for any. Only
+-- U+E0020..U+E007E carry ASCII.
+tagToAscii :: Int -> Maybe Int
+tagToAscii cp
+  | cp >= 0xE0020 && cp <= 0xE007E = Just (cp - 0xE0000)
+  | otherwise = Nothing
+
+-- | The ASCII a tag run recovers to, skipping the tag characters carrying none.
+decodeTagRun :: [Int] -> [Int]
+decodeTagRun = mapMaybe tagToAscii
+
+-- | Which tag-block hazard the input carries, in the priority order of
+-- @Unicode.Security.Covert.TagBlockPayload@: a LANGUAGE TAG followed by at
+-- least one further tag character revives the deprecated language-tag
+-- mechanism; otherwise an all-tag input decoding to at least one ASCII
+-- character is a direct payload; otherwise a run mixed with ordinary text is a
+-- mixed block; otherwise the run is tag characters carrying no ASCII, such as a
+-- CANCEL TAG standing alone.
+tagBlockSubThreat :: [Int] -> [Int] -> String
+tagBlockSubThreat input tags
+  | length tags >= 2 && take 1 tags == [0xE0001] = "LanguageTagRevival"
+  | allTags && not (null (decodeTagRun tags)) = "DirectAscii"
+  | length input > length tags = "MixedBlock"
+  | otherwise = "BareTagPresent"
+  where
+    allTags = length input == length tags
 
 -- | True iff the codepoint renders as nothing, mirroring @isZeroWidth@ in
 -- @Unicode.Security.Covert.ZeroWidthPayload@: the explicit historical set,
@@ -847,8 +880,76 @@ allSameAt _input [] = True
 allSameAt input (position:positions) =
   all (\p -> input !! p == input !! position) positions
 
-isBidiEmbeddingControl :: Int -> Bool
-isBidiEmbeddingControl cp = cp >= 0x202A && cp <= 0x202E
+-- | The embedding depth bound of UAX #9 §3.3.2.
+uaxDepthLimit :: Int
+uaxDepthLimit = 125
+
+opensEmbedding :: Int -> Bool
+opensEmbedding cp = cp == 0x202A || cp == 0x202B || cp == 0x202D || cp == 0x202E
+
+opensIsolate :: Int -> Bool
+opensIsolate cp = cp == 0x2066 || cp == 0x2067 || cp == 0x2068
+
+-- | The stack-of-stacks accumulator of
+-- @Unicode.Security.Covert.BidiControlBalance@: each opener pushes, each popper
+-- pops or records an orphan position, and @walkMaxDepth@ tracks the peak
+-- combined height.
+data BidiWalk = BidiWalk
+  { walkEmbStack :: !Int
+  , walkIsoStack :: !Int
+  , walkMaxDepth :: !Int
+  , walkOrphans :: ![Int]
+  , walkPositions :: ![Int]
+  }
+
+runBidiWalk :: [Int] -> BidiWalk
+runBidiWalk input = finish (foldl' step start (zip [0 ..] input))
+  where
+    start = BidiWalk 0 0 0 [] []
+    finish st =
+      st { walkOrphans = reverse (walkOrphans st)
+         , walkPositions = reverse (walkPositions st)
+         }
+    step st (index, cp)
+      | not (isBidiFormatControl cp) = st
+      | opensEmbedding cp = pushed st' (walkEmbStack st + 1) (walkIsoStack st)
+      | cp == 0x202C =
+          if walkEmbStack st > 0
+            then st' { walkEmbStack = walkEmbStack st - 1 }
+            else st' { walkOrphans = index : walkOrphans st }
+      | opensIsolate cp = pushed st' (walkEmbStack st) (walkIsoStack st + 1)
+      | cp == 0x2069 =
+          if walkIsoStack st > 0
+            then st' { walkIsoStack = walkIsoStack st - 1 }
+            else st' { walkOrphans = index : walkOrphans st }
+      | otherwise = st'
+      where
+        st' = st { walkPositions = index : walkPositions st }
+    pushed st emb iso =
+      st { walkEmbStack = emb
+         , walkIsoStack = iso
+         , walkMaxDepth = max (walkMaxDepth st) (emb + iso)
+         }
+
+-- | Which bidi hazard the input carries and the positions it localises, or
+-- @Nothing@ when the controls are balanced and within depth. The priority is
+-- the spec's: depth exceeded, then an orphan pop, then an unbalanced embedding,
+-- then an unbalanced isolate.
+--
+-- Orphan pop localises per stray popper. Depth exceeded is a whole-string
+-- verdict, so it localises nothing. The unbalanced cases report every bidi
+-- position, the diagnostic being that something among these controls is missing
+-- its partner.
+bidiSubThreat :: [Int] -> Maybe (String, [Int])
+bidiSubThreat input
+  | null (walkPositions st) = Nothing
+  | walkMaxDepth st > uaxDepthLimit = Just ("DepthExceeded", [])
+  | not (null (walkOrphans st)) = Just ("OrphanPop", walkOrphans st)
+  | walkEmbStack st > 0 = Just ("UnbalancedEmbedding", walkPositions st)
+  | walkIsoStack st > 0 = Just ("UnbalancedIsolate", walkPositions st)
+  | otherwise = Nothing
+  where
+    st = runBidiWalk input
 
 isNoncharacter :: Int -> Bool
 isNoncharacter cp
@@ -1003,9 +1104,28 @@ sourceDisplayDivergenceFinding input =
             [ tagBlockFinding input
             , variationSelectorFinding input
             , zeroWidthFinding input
-            , bidiFinding input
+            , bidiConstituentFinding input
             , homoglyphConstituentFinding input
             ]))
+
+-- | The bidi constituent as source-display-divergence sees it: presence, not
+-- balance. A Trojan Source payload balances its controls, since an unbalanced
+-- run breaks the file it is hiding in, so a constituent built on the balance
+-- verdict is blind to the shape the attack takes.
+bidiConstituentFinding :: [Int] -> [Finding]
+bidiConstituentFinding input =
+  case positionsWhere isBidiFormatControl input of
+    [] -> []
+    positions ->
+      [ Finding
+          { findingCode = reasonCode FamilyBidiControlBalance "BidiControlPresent"
+          , findingFamily = FamilyBidiControlBalance
+          , findingSeverity = 2
+          , findingPositions = positions
+          , findingSubThreat = "BidiControlPresent"
+          , findingDetail = familyTag FamilyBidiControlBalance
+          }
+      ]
 
 -- | The homoglyph constituent as source-display-divergence sees it. The
 -- reference runs one homoglyph detector whose priority ladder ends in a
@@ -1431,23 +1551,11 @@ ctListEq xs ys =
   length xs == length ys
     && foldl' (\acc (x, y) -> acc .|. (x `xor` y)) 0 (zip xs ys) == 0
 
+-- | The UAX #44 Default_Ignorable_Code_Point property, read from the bundled
+-- @DerivedCoreProperties.txt@ rather than transcribed, so the predicate tracks
+-- the UCD revision the port ships against.
 isDefaultIgnorableCodepoint :: Int -> Bool
-isDefaultIgnorableCodepoint cp =
-  cp == 0x00AD
-    || cp == 0x034F
-    || cp == 0x061C
-    || inRange 0x115F 0x1160
-    || inRange 0x17B4 0x17B5
-    || inRange 0x180B 0x180F
-    || inRange 0x200B 0x200F
-    || inRange 0x202A 0x202E
-    || inRange 0x2060 0x206F
-    || inRange 0xFE00 0xFE0F
-    || cp == 0xFEFF
-    || inRange 0xFFF0 0xFFF8
-    || inRange 0xE0000 0xE0FFF
-  where
-    inRange lo hi = lo <= cp && cp <= hi
+isDefaultIgnorableCodepoint = Casing.isDefaultIgnorable
 
 isWhiteSpaceCodepoint :: Int -> Bool
 isWhiteSpaceCodepoint cp =

@@ -547,6 +547,7 @@ def render_casing(
     special: list[tuple[int, list[int], list[int], list[str]]],
     cased: list[tuple[int, int]],
     soft_dotted: list[tuple[int, int]],
+    default_ignorable: list[tuple[int, int]],
 ) -> str:
     lines = [
         "// GENERATED FILE - DO NOT EDIT.",
@@ -644,6 +645,20 @@ def render_casing(
     lines.append("pub const soft_dotted = [_]Range{")
     for start, end in soft_dotted:
         lines.append(f"    .{{ .start = {zig_hex(start)}, .end = {zig_hex(end)} }},")
+    lines.append("};")
+    lines.append("")
+    lines.append(
+        "// Default_Ignorable_Code_Point ranges (DerivedCoreProperties.txt), sorted"
+    )
+    lines.append(
+        "// by start. The covert-channel detectors ask this per codepoint on the scan"
+    )
+    lines.append(
+        "// path, which is too hot for the whole-file rescan the XID predicates do."
+    )
+    lines.append("pub const default_ignorable = [_]Range{")
+    for start, end in default_ignorable:
+        lines.append(f"    .{{ .start = {zig_hex(start)}, .end = {zig_hex(end)} }},")
     lines.extend(["};", ""])
     return "\n".join(lines)
 
@@ -730,8 +745,11 @@ def main() -> None:
     derived_core = DERIVED_CORE_PROPERTIES_SOURCE.read_text(encoding="utf-8")
     cased = parse_derived_property(derived_core, "Cased")
     soft_dotted = parse_derived_property(derived_core, "Soft_Dotted")
+    default_ignorable = parse_derived_property(
+        derived_core, "Default_Ignorable_Code_Point"
+    )
     casing_output = render_casing(
-        simple_lower, simple_upper, special_casing, cased, soft_dotted
+        simple_lower, simple_upper, special_casing, cased, soft_dotted, default_ignorable
     )
     bip39_wordlists = parse_bip39_wordlists()
     bip39_output = render_bip39(bip39_wordlists)
@@ -770,6 +788,7 @@ def main() -> None:
             f"{len(eaw_rows)} east-asian-width ranges, "
             f"{len(simple_lower)} simple-lowercase mappings, "
             f"{len(special_casing)} special-casing rows, "
+            f"{len(default_ignorable)} default-ignorable ranges, "
             f"{sum(len(w) for w in bip39_wordlists.values())} bip39 words)"
         )
         return
@@ -800,7 +819,8 @@ def main() -> None:
         f"generated {CASING_OUTPUT.relative_to(ROOT)} "
         f"from {len(simple_lower)} simple-lowercase mappings, "
         f"{len(special_casing)} special-casing rows, "
-        f"{len(cased)} Cased ranges, {len(soft_dotted)} Soft_Dotted ranges"
+        f"{len(cased)} Cased ranges, {len(soft_dotted)} Soft_Dotted ranges, "
+        f"{len(default_ignorable)} Default_Ignorable ranges"
     )
     print(
         f"generated {BIP39_OUTPUT.relative_to(ROOT)} "

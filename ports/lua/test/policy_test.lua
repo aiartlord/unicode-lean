@@ -45,6 +45,17 @@ for _, case in ipairs(payload.cases) do
   h.assert_equal(policy.verdict_to_wire(verdict), case.verdict, case.name)
 end
 
+-- Agreement with the reference over a generated input stream. The corpus shares
+-- the verdict contract's schema, so it runs through the same comparison, but its
+-- cases come from the Rust reference over a deterministic stream rather than
+-- being hand-written: agreement here is evidence that this port decides as the
+-- reference does on inputs nobody chose, across every profile.
+payload = h.json_file(ROOT .. "/fixtures/security/differential_corpus.json")
+for _, case in ipairs(payload.cases) do
+  local verdict = scan_case(case)
+  h.assert_equal(policy.verdict_to_wire(verdict), case.verdict, case.name)
+end
+
 payload = h.json_file(ROOT .. "/fixtures/security/decode_contract.json")
 for _, case in ipairs(payload.cases) do
   local verdict = policy.scan_utf8(case.profile, case.mode, case.input_bytes)

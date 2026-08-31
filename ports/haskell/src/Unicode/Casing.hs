@@ -29,6 +29,7 @@ module Unicode.Casing
   , toLower
   , lowerCodepoint
   , upperCodepoint
+  , isDefaultIgnorable
   ) where
 
 import Data.Char (isSpace)
@@ -119,6 +120,12 @@ softDottedRanges = unsafePerformIO $ do
   parseDerivedProperty "Soft_Dotted" <$> readFile path
 {-# NOINLINE softDottedRanges #-}
 
+defaultIgnorableRanges :: [Range]
+defaultIgnorableRanges = unsafePerformIO $ do
+  path <- getDataFileName "data/DerivedCoreProperties.txt"
+  parseDerivedProperty "Default_Ignorable_Code_Point" <$> readFile path
+{-# NOINLINE defaultIgnorableRanges #-}
+
 -- | Simple lowercase (UnicodeData.txt column 13); a codepoint absent from
 -- the map lowercases to itself.
 simpleLowercase :: Int -> Int
@@ -137,6 +144,13 @@ isCased = inRanges casedRanges
 
 isSoftDotted :: Int -> Bool
 isSoftDotted = inRanges softDottedRanges
+
+-- | The UAX #44 Default_Ignorable_Code_Point property, read from
+-- @DerivedCoreProperties.txt@. A codepoint with this property is one a
+-- conforming renderer draws as nothing, which is the property the covert-channel
+-- detectors ask about when they decide whether a codepoint is invisible.
+isDefaultIgnorable :: Int -> Bool
+isDefaultIgnorable = inRanges defaultIgnorableRanges
 
 -- ─────────────────────────────────────────────────────────────────────
 -- Context predicates (UAX #21). @revPrefix@ is the preceding codepoints

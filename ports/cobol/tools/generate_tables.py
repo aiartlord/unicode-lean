@@ -45,16 +45,71 @@ def parse_property_ranges(path, wanted):
     return coalesce(ranges)
 
 
-def parse_bidi_ranges(path):
-    ranges = []
+BIDI_STRONG_RTL_CLASSES = {"R", "AL", "Right_To_Left", "Arabic_Letter"}
+BIDI_STRONG_LTR_CLASSES = {"L", "Left_To_Right"}
+
+
+def parse_bidi_rows(path):
+    """Explicit rows and `@missing` default rows of DerivedBidiClass.txt.
+
+    The file assigns a Bidi_Class two ways. An ordinary row assigns a class to a
+    range outright. A commented `@missing` row declares the class an *unassigned*
+    codepoint in a range inherits, and those rows are the reason an unassigned
+    codepoint in the Hebrew or Arabic blocks is strongly right-to-left rather
+    than left-to-right. Returned separately because they resolve at different
+    priorities.
+    """
+    explicit = []
+    defaults = []
     for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            marker = "@missing:"
+            if marker in stripped:
+                body = stripped.split(marker, 1)[1].strip()
+                if ";" in body:
+                    left, klass, *_ = [part.strip() for part in body.split(";")]
+                    defaults.append((parse_range_token(left), klass))
+            continue
         body = strip_comment(line)
         if not body or ";" not in body:
             continue
         left, klass, *_ = [part.strip() for part in body.split(";")]
-        if klass in {"R", "AL"}:
-            ranges.append(parse_range_token(left))
-    return coalesce(ranges)
+        explicit.append((parse_range_token(left), klass))
+    return explicit, defaults
+
+
+def bidi_strong_ranges(path, wanted):
+    """Codepoints whose resolved Bidi_Class is in `wanted`.
+
+    Mirrors the reference resolution order: an explicit row wins; otherwise the
+    last matching `@missing` default wins; otherwise Left_To_Right. Resolving
+    here rather than in COBOL keeps the emitted copybook a plain membership test
+    while still honouring the defaults, and it keeps an explicitly non-strong
+    codepoint sitting inside a default-RTL block out of the strong-RTL table.
+    """
+    explicit, defaults = parse_bidi_rows(path)
+    explicit_class = {}
+    for (lo, hi), klass in explicit:
+        for cp in range(lo, hi + 1):
+            explicit_class[cp] = klass
+
+    members = []
+    for cp in range(0, 0x110000):
+        klass = explicit_class.get(cp)
+        if klass is None:
+            klass = "L"
+            for (lo, hi), default_klass in defaults:
+                if lo <= cp <= hi:
+                    klass = default_klass
+        if klass in wanted:
+            members.append((cp, cp))
+    return coalesce(members)
+
+
+def parse_bidi_ranges(path):
+    # Strong-RTL = resolved Bidi_Class R or AL.
+    return bidi_strong_ranges(path, BIDI_STRONG_RTL_CLASSES)
 
 
 def parse_eaw_ranges(path, wanted):
@@ -78,19 +133,12 @@ def parse_eaw_ranges(path, wanted):
 
 
 def parse_bidi_ltr_ranges(path):
-    # Strong-LTR = Bidi_Class L, the mirror of the strong-RTL (R, AL) table.
+    # Strong-LTR = resolved Bidi_Class L, the mirror of the strong-RTL table.
     # RendererDivergence's mixed-direction probe needs both sides of the
-    # strong-bidi split, so this emits the explicit L ranges the same way
-    # parse_bidi_ranges emits the explicit R/AL ranges.
-    ranges = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        body = strip_comment(line)
-        if not body or ";" not in body:
-            continue
-        left, klass, *_ = [part.strip() for part in body.split(";")]
-        if klass == "L":
-            ranges.append(parse_range_token(left))
-    return coalesce(ranges)
+    # strong-bidi split, and both sides resolve the `@missing` defaults, so an
+    # unassigned codepoint outside the right-to-left blocks is strongly
+    # left-to-right rather than absent from both tables.
+    return bidi_strong_ranges(path, BIDI_STRONG_LTR_CLASSES)
 
 
 def parse_script_ranges(path):

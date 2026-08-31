@@ -33,6 +33,19 @@ foreach ($verdictFixture['cases'] as $case) {
     assert_same_value(json_encode($case['verdict'], JSON_UNESCAPED_SLASHES), Policy::verdictToJson($verdict), $case['name'] . ' json');
 }
 
+// Agreement with the reference over a generated input stream. The corpus shares
+// the verdict contract's schema, so it runs through the same comparison, but its
+// cases come from the Rust reference over a deterministic stream rather than
+// being hand-written: agreement here is evidence that this port decides as the
+// reference does on inputs nobody chose, across every profile.
+$corpus = fixture_json('differential_corpus.json');
+assert_same_value('unicode-security-verdict-v0', $corpus['contract'], 'differential corpus');
+foreach ($corpus['cases'] as $case) {
+    $verdict = Policy::scan(profile_from_string($case['profile']), mode_from_string($case['mode']), $case['input']);
+    assert_same_value($case['verdict'], Policy::verdictToWire($verdict), $case['name']);
+    assert_same_value(json_encode($case['verdict'], JSON_UNESCAPED_SLASHES), Policy::verdictToJson($verdict), $case['name'] . ' json');
+}
+
 $decode = fixture_json('decode_contract.json');
 assert_same_value('unicode-security-decode-v0', $decode['contract'], 'decode contract');
 foreach ($decode['cases'] as $case) {

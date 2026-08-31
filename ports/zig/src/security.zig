@@ -536,14 +536,15 @@ fn resultFinding(family: Family, result: anytype) ?Finding {
 fn detect(input: []const u32, identifier_field: bool) FindingList {
     var findings = FindingList{};
 
-    if (positionsWhere(input, isTagBlockAsciiPayload)) |positions| {
+    if (positionsWhere(input, isTagCharacter)) |positions| {
+        const tag_sub = tagBlockSubThreat(input, positions.len);
         findings.append(.{
-            .code = "unicode.security.C.tag-block-payload.DirectAscii",
+            .code = tagBlockReasonCode(tag_sub),
             .family = .tag_block_payload,
             .severity = 2,
             .positions = positions.items,
             .position_count = positions.len,
-            .sub_threat = "DirectAscii",
+            .sub_threat = tag_sub,
             .detail = "tag-block-payload",
         });
     }
@@ -574,14 +575,14 @@ fn detect(input: []const u32, identifier_field: bool) FindingList {
         findings.append(finding);
     }
 
-    if (positionsWhere(input, isBidiEmbeddingControl)) |positions| {
+    if (bidiSubThreat(input)) |bidi| {
         findings.append(.{
-            .code = "unicode.security.C.bidi-control-balance.UnbalancedEmbedding",
+            .code = bidiReasonCode(bidi.sub_threat),
             .family = .bidi_control_balance,
             .severity = 2,
-            .positions = positions.items,
-            .position_count = positions.len,
-            .sub_threat = "UnbalancedEmbedding",
+            .positions = bidi.positions.items,
+            .position_count = bidi.positions.len,
+            .sub_threat = bidi.sub_threat,
             .detail = "bidi-control-balance",
         });
     }
@@ -696,8 +697,68 @@ fn positionsWhere(input: []const u32, comptime pred: fn (u32) bool) ?Positions {
     return positions;
 }
 
-fn isTagBlockAsciiPayload(cp: u32) bool {
-    return cp >= 0xE0020 and cp <= 0xE007E;
+/// True iff cp is a tag character. The family fires on the whole tag block,
+/// not only the ASCII-bearing span, so a LANGUAGE TAG or a lone CANCEL TAG is
+/// a hazard in its own right.
+fn isTagCharacter(cp: u32) bool {
+    return cp >= 0xE0000 and cp <= 0xE007F;
+}
+
+/// The ASCII a tag character stands for, where it stands for any. Only
+/// U+E0020..U+E007E carry ASCII.
+fn tagToAscii(cp: u32) ?u8 {
+    if (cp >= 0xE0020 and cp <= 0xE007E) return @intCast(cp - 0xE0000);
+    return null;
+}
+
+/// The ASCII a tag run recovers to, skipping the tag characters carrying none.
+/// The buffer is bounded like every other in this port; a run longer than the
+/// bound recovers its first MaxSkeletonLen characters, which is enough to
+/// decide the emptiness question the sub-threat ladder asks.
+const DecodedTags = struct {
+    items: [MaxSkeletonLen]u8,
+    len: usize,
+};
+
+fn decodeTagRun(input: []const u32) DecodedTags {
+    var decoded = DecodedTags{ .items = undefined, .len = 0 };
+    for (input) |cp| {
+        if (tagToAscii(cp)) |ascii| {
+            if (decoded.len < decoded.items.len) {
+                decoded.items[decoded.len] = ascii;
+                decoded.len += 1;
+            }
+        }
+    }
+    return decoded;
+}
+
+/// Which tag-block hazard the input carries, in the priority order of
+/// Unicode.Security.Covert.TagBlockPayload: a LANGUAGE TAG followed by at
+/// least one further tag character revives the deprecated language-tag
+/// mechanism; otherwise an all-tag input decoding to at least one ASCII
+/// character is a direct payload; otherwise a run mixed with ordinary text is
+/// a mixed block; otherwise the run is tag characters carrying no ASCII, such
+/// as a CANCEL TAG standing alone.
+fn tagBlockSubThreat(input: []const u32, tag_count: usize) []const u8 {
+    var first_tag: ?u32 = null;
+    for (input) |cp| {
+        if (isTagCharacter(cp)) {
+            first_tag = cp;
+            break;
+        }
+    }
+    if (tag_count >= 2 and first_tag == @as(u32, 0xE0001)) return "LanguageTagRevival";
+    if (input.len == tag_count and decodeTagRun(input).len >= 1) return "DirectAscii";
+    if (input.len > tag_count) return "MixedBlock";
+    return "BareTagPresent";
+}
+
+fn tagBlockReasonCode(sub_threat: []const u8) []const u8 {
+    if (std.mem.eql(u8, sub_threat, "LanguageTagRevival")) return "unicode.security.C.tag-block-payload.LanguageTagRevival";
+    if (std.mem.eql(u8, sub_threat, "DirectAscii")) return "unicode.security.C.tag-block-payload.DirectAscii";
+    if (std.mem.eql(u8, sub_threat, "MixedBlock")) return "unicode.security.C.tag-block-payload.MixedBlock";
+    return "unicode.security.C.tag-block-payload.BareTagPresent";
 }
 
 fn variationSelectorFinding(input: []const u32) ?Finding {
@@ -876,6 +937,103 @@ fn zeroWidthReasonCode(sub_threat: []const u8) []const u8 {
 
 fn isBidiEmbeddingControl(cp: u32) bool {
     return cp >= 0x202A and cp <= 0x202E;
+}
+
+/// The embedding depth bound of UAX #9 §3.3.2.
+const UaxDepthLimit = 125;
+
+fn opensEmbedding(cp: u32) bool {
+    return cp == 0x202A or cp == 0x202B or cp == 0x202D or cp == 0x202E;
+}
+
+fn opensIsolate(cp: u32) bool {
+    return cp == 0x2066 or cp == 0x2067 or cp == 0x2068;
+}
+
+/// The stack-of-stacks accumulator of
+/// Unicode.Security.Covert.BidiControlBalance: each opener pushes, each popper
+/// pops or records an orphan position, and max_depth tracks the peak combined
+/// height.
+const BidiWalk = struct {
+    emb_stack: usize,
+    iso_stack: usize,
+    max_depth: usize,
+    orphans: Positions,
+    positions: Positions,
+};
+
+fn runBidiWalk(input: []const u32) BidiWalk {
+    var walk = BidiWalk{
+        .emb_stack = 0,
+        .iso_stack = 0,
+        .max_depth = 0,
+        .orphans = Positions{ .items = undefined, .len = 0 },
+        .positions = Positions{ .items = undefined, .len = 0 },
+    };
+    for (input, 0..) |cp, index| {
+        if (!isBidiFormatControl(cp)) continue;
+        if (walk.positions.len < walk.positions.items.len) {
+            walk.positions.items[walk.positions.len] = index;
+            walk.positions.len += 1;
+        }
+        if (opensEmbedding(cp)) {
+            walk.emb_stack += 1;
+            const depth = walk.emb_stack + walk.iso_stack;
+            if (depth > walk.max_depth) walk.max_depth = depth;
+        } else if (cp == 0x202C) {
+            if (walk.emb_stack > 0) {
+                walk.emb_stack -= 1;
+            } else if (walk.orphans.len < walk.orphans.items.len) {
+                walk.orphans.items[walk.orphans.len] = index;
+                walk.orphans.len += 1;
+            }
+        } else if (opensIsolate(cp)) {
+            walk.iso_stack += 1;
+            const depth = walk.emb_stack + walk.iso_stack;
+            if (depth > walk.max_depth) walk.max_depth = depth;
+        } else if (cp == 0x2069) {
+            if (walk.iso_stack > 0) {
+                walk.iso_stack -= 1;
+            } else if (walk.orphans.len < walk.orphans.items.len) {
+                walk.orphans.items[walk.orphans.len] = index;
+                walk.orphans.len += 1;
+            }
+        }
+    }
+    return walk;
+}
+
+const BidiDetection = struct {
+    sub_threat: []const u8,
+    positions: Positions,
+};
+
+/// Which bidi hazard the input carries and the positions it localises, or null
+/// when the controls are balanced and within depth. The priority is the spec's:
+/// depth exceeded, then an orphan pop, then an unbalanced embedding, then an
+/// unbalanced isolate.
+///
+/// Orphan pop localises per stray popper. Depth exceeded is a whole-string
+/// verdict, so it localises nothing. The unbalanced cases report every bidi
+/// position, the diagnostic being that something among these controls is
+/// missing its partner.
+fn bidiSubThreat(input: []const u32) ?BidiDetection {
+    const walk = runBidiWalk(input);
+    if (walk.positions.len == 0) return null;
+    if (walk.max_depth > UaxDepthLimit) {
+        return .{ .sub_threat = "DepthExceeded", .positions = Positions{ .items = undefined, .len = 0 } };
+    }
+    if (walk.orphans.len > 0) return .{ .sub_threat = "OrphanPop", .positions = walk.orphans };
+    if (walk.emb_stack > 0) return .{ .sub_threat = "UnbalancedEmbedding", .positions = walk.positions };
+    if (walk.iso_stack > 0) return .{ .sub_threat = "UnbalancedIsolate", .positions = walk.positions };
+    return null;
+}
+
+fn bidiReasonCode(sub_threat: []const u8) []const u8 {
+    if (std.mem.eql(u8, sub_threat, "DepthExceeded")) return "unicode.security.C.bidi-control-balance.DepthExceeded";
+    if (std.mem.eql(u8, sub_threat, "OrphanPop")) return "unicode.security.C.bidi-control-balance.OrphanPop";
+    if (std.mem.eql(u8, sub_threat, "UnbalancedIsolate")) return "unicode.security.C.bidi-control-balance.UnbalancedIsolate";
+    return "unicode.security.C.bidi-control-balance.UnbalancedEmbedding";
 }
 
 fn appendNoncharacterControlFindings(findings: *FindingList, input: []const u32) void {
@@ -5463,9 +5621,12 @@ pub const source_display_divergence = struct {
     // the tag-block / zero-width / bidi-control predicates via positionsWhere,
     // and the variation-selector / homoglyph finding builders directly.
 
-    /// tag-block-payload fires iff the input carries a tag-block ASCII payload.
+    /// tag-block-payload fires iff the input carries a tag character. The
+    /// family fires on any tag character, not only the ASCII-bearing span, so
+    /// a LANGUAGE TAG or a lone CANCEL TAG counts here as it does in the
+    /// family's own verdict.
     fn tagBlockFired(input: []const u32) bool {
-        return positionsWhere(input, isTagBlockAsciiPayload) != null;
+        return positionsWhere(input, isTagCharacter) != null;
     }
 
     /// variation-selector-payload fires iff its finding is present.
@@ -6474,20 +6635,15 @@ fn hasCrossScriptMix(input: []const u32) bool {
     return stringScriptUnion(input).len >= 2 and !isHighlyRestrictive(input);
 }
 
+/// The UAX #44 Default_Ignorable_Code_Point property, read from the generated
+/// casing_data table rather than transcribed, so the predicate tracks the UCD
+/// revision the port ships against. A transcribed set omits ranges a reader
+/// never sees but an attacker can still send, such as the musical-symbol beams
+/// at U+1D173..U+1D17A. The generated table is used in preference to the
+/// hasDerivedCoreProperty reader the XID predicates share because the scan path
+/// asks this question once per codepoint, where a whole-file rescan dominates.
 fn isDefaultIgnorableCodepoint(cp: u32) bool {
-    return cp == 0x00AD or
-        cp == 0x034F or
-        cp == 0x061C or
-        (cp >= 0x115F and cp <= 0x1160) or
-        (cp >= 0x17B4 and cp <= 0x17B5) or
-        (cp >= 0x180B and cp <= 0x180F) or
-        (cp >= 0x200B and cp <= 0x200F) or
-        (cp >= 0x202A and cp <= 0x202E) or
-        (cp >= 0x2060 and cp <= 0x206F) or
-        (cp >= 0xFE00 and cp <= 0xFE0F) or
-        cp == 0xFEFF or
-        (cp >= 0xFFF0 and cp <= 0xFFF8) or
-        (cp >= 0xE0000 and cp <= 0xE0FFF);
+    return inCasingRange(casing_data.default_ignorable[0..], cp);
 }
 
 fn isWhiteSpaceCodepoint(cp: u32) bool {

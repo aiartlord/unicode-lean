@@ -208,8 +208,11 @@ public final class Security {
   // scoped to identifiers needs to know whether it is holding one.
   private static List<Finding> detect(List<Integer> input, boolean identifierField) {
     List<Finding> findings = new ArrayList<>();
-    List<Integer> tags = positionsWhere(input, Security::isTagBlockAsciiPayload);
-    if (!tags.isEmpty()) findings.add(makeFinding(Family.TAG_BLOCK_PAYLOAD, "DirectAscii", tags));
+    List<Integer> tags = positionsWhere(input, Security::isTagCharacter);
+    if (!tags.isEmpty()) {
+      findings.add(
+          makeFinding(Family.TAG_BLOCK_PAYLOAD, tagBlockSubThreat(input, tags), tags));
+    }
     Finding variation = variationSelectorFinding(input);
     if (variation != null) findings.add(variation);
     // The sanctioning model: a ZWJ inside a registered emoji sequence and a
@@ -225,8 +228,8 @@ public final class Security {
     }
     Finding surrogate = surrogateReassemblyFinding(input);
     if (surrogate != null) findings.add(surrogate);
-    List<Integer> bidi = positionsWhere(input, Security::isBidiEmbeddingControl);
-    if (!bidi.isEmpty()) findings.add(makeFinding(Family.BIDI_CONTROL_BALANCE, "UnbalancedEmbedding", bidi));
+    Finding bidi = bidiFinding(input);
+    if (bidi != null) findings.add(bidi);
     findings.addAll(noncharacterControlFindings(input));
     Finding homoglyph = homoglyphConfusableFinding(input);
     if (homoglyph != null) findings.add(homoglyph);
@@ -283,7 +286,7 @@ public final class Security {
 
   /** True iff the tag-block-payload constituent fires on {@code input}. */
   static boolean tagBlockPayloadFired(List<Integer> input) {
-    return !positionsWhere(input, Security::isTagBlockAsciiPayload).isEmpty();
+    return !positionsWhere(input, Security::isTagCharacter).isEmpty();
   }
 
   /** True iff the variation-selector-payload constituent fires on {@code input}. */
@@ -369,7 +372,7 @@ public final class Security {
       Set.of(
           Family.TAG_BLOCK_PAYLOAD, Family.VARIATION_SELECTOR_PAYLOAD,
           Family.ZERO_WIDTH_PAYLOAD, Family.SURROGATE_REASSEMBLY,
-          Family.BIDI_CONTROL_BALANCE,
+          Family.BIDI_CONTROL_BALANCE, Family.NONCHARACTER_CONTROL,
           Family.HOMOGLYPH_CONFUSABLE, Family.MIXED_SCRIPT_ADMISSIBILITY,
           Family.EMOJI_ZWJ_INTEGRITY, Family.SKIN_TONE_VARIATION_FORGERY,
           Family.SOURCE_DISPLAY_DIVERGENCE, Family.FILENAME_DISGUISE,
@@ -392,7 +395,7 @@ public final class Security {
       Set.of(
           Family.TAG_BLOCK_PAYLOAD, Family.VARIATION_SELECTOR_PAYLOAD,
           Family.ZERO_WIDTH_PAYLOAD, Family.SURROGATE_REASSEMBLY,
-          Family.BIDI_CONTROL_BALANCE,
+          Family.BIDI_CONTROL_BALANCE, Family.NONCHARACTER_CONTROL,
           Family.HOMOGLYPH_CONFUSABLE, Family.MIXED_SCRIPT_ADMISSIBILITY,
           Family.SKIN_TONE_VARIATION_FORGERY,
           Family.SOURCE_DISPLAY_DIVERGENCE, Family.FILENAME_DISGUISE,
@@ -404,12 +407,15 @@ public final class Security {
 
   /**
    * The structural and RFC-violation families: byte validity, bidi-control imbalance of the Trojan
-   * Source class, and stream-safe overflow. Mirrors the {@code minimal} arm.
+   * Source class, noncharacter presence, and stream-safe overflow. Mirrors the {@code minimal} arm
+   * as the reference port realises it, which admits noncharacter-control alongside the three
+   * families Level.lean names, on the ground that a noncharacter in a payload is a structural
+   * violation of the encoding rather than a stylistic one.
    */
   private static final Set<String> MINIMAL_FAMILIES =
       Set.of(
           Family.SURROGATE_REASSEMBLY, Family.BIDI_CONTROL_BALANCE,
-          Family.STREAM_SAFE_VIOLATION);
+          Family.NONCHARACTER_CONTROL, Family.STREAM_SAFE_VIOLATION);
 
   private static boolean blocks(PolicyLevel level, String family) {
     if (MALFORMED_FAMILIES.contains(family)) return true;
@@ -475,8 +481,53 @@ public final class Security {
     return positions;
   }
 
-  private static boolean isTagBlockAsciiPayload(int cp) {
-    return cp >= 0xE0020 && cp <= 0xE007E;
+  /**
+   * True iff the codepoint is a tag character. The family fires on the whole tag block, not only
+   * the ASCII-bearing span, so a LANGUAGE TAG or a lone CANCEL TAG is a hazard in its own right.
+   */
+  private static boolean isTagCharacter(int cp) {
+    return cp >= 0xE0000 && cp <= 0xE007F;
+  }
+
+  /** The ASCII a tag character stands for, or -1 where it stands for none. */
+  private static int tagToAscii(int cp) {
+    if (cp >= 0xE0020 && cp <= 0xE007E) {
+      return cp - 0xE0000;
+    }
+    return -1;
+  }
+
+  /** The count of ASCII characters a tag run recovers, skipping tag characters carrying none. */
+  private static int decodedTagLength(List<Integer> input) {
+    int decoded = 0;
+    for (int cp : input) {
+      if (tagToAscii(cp) >= 0) {
+        decoded++;
+      }
+    }
+    return decoded;
+  }
+
+  /**
+   * Which tag-block hazard the input carries, in the priority order of
+   * Unicode.Security.Covert.TagBlockPayload: a LANGUAGE TAG followed by at least one further tag
+   * character revives the deprecated language-tag mechanism; otherwise an all-tag input decoding to
+   * at least one ASCII character is a direct payload; otherwise a run mixed with ordinary text is a
+   * mixed block; otherwise the run is tag characters carrying no ASCII, such as a CANCEL TAG
+   * standing alone.
+   */
+  private static String tagBlockSubThreat(List<Integer> input, List<Integer> tagPositions) {
+    int tagCount = tagPositions.size();
+    if (tagCount >= 2 && input.get(tagPositions.get(0)) == 0xE0001) {
+      return "LanguageTagRevival";
+    }
+    if (input.size() == tagCount && decodedTagLength(input) >= 1) {
+      return "DirectAscii";
+    }
+    if (input.size() > tagCount) {
+      return "MixedBlock";
+    }
+    return "BareTagPresent";
   }
 
   private static Finding variationSelectorFinding(List<Integer> input) {
@@ -589,8 +640,88 @@ public final class Security {
     return "BareZeroWidth";
   }
 
-  private static boolean isBidiEmbeddingControl(int cp) {
-    return cp >= 0x202A && cp <= 0x202E;
+  /** The embedding depth bound of UAX #9 §3.3.2. */
+  private static final int UAX_DEPTH_LIMIT = 125;
+
+  private static boolean opensEmbedding(int cp) {
+    return cp == 0x202A || cp == 0x202B || cp == 0x202D || cp == 0x202E;
+  }
+
+  private static boolean opensIsolate(int cp) {
+    return cp == 0x2066 || cp == 0x2067 || cp == 0x2068;
+  }
+
+  /**
+   * The stack-of-stacks accumulator of Unicode.Security.Covert.BidiControlBalance: each opener
+   * pushes, each popper pops or records an orphan position, and maxDepth tracks the peak combined
+   * height.
+   */
+  private static final class BidiWalk {
+    private int embStack;
+    private int isoStack;
+    private int maxDepth;
+    private final List<Integer> orphans = new ArrayList<>();
+    private final List<Integer> positions = new ArrayList<>();
+  }
+
+  private static BidiWalk runBidiWalk(List<Integer> input) {
+    BidiWalk walk = new BidiWalk();
+    for (int index = 0; index < input.size(); index++) {
+      int cp = input.get(index);
+      if (!isBidiFormatControl(cp)) {
+        continue;
+      }
+      walk.positions.add(index);
+      if (opensEmbedding(cp)) {
+        walk.embStack++;
+        walk.maxDepth = Math.max(walk.maxDepth, walk.embStack + walk.isoStack);
+      } else if (cp == 0x202C) {
+        if (walk.embStack > 0) {
+          walk.embStack--;
+        } else {
+          walk.orphans.add(index);
+        }
+      } else if (opensIsolate(cp)) {
+        walk.isoStack++;
+        walk.maxDepth = Math.max(walk.maxDepth, walk.embStack + walk.isoStack);
+      } else if (cp == 0x2069) {
+        if (walk.isoStack > 0) {
+          walk.isoStack--;
+        } else {
+          walk.orphans.add(index);
+        }
+      }
+    }
+    return walk;
+  }
+
+  /**
+   * The bidi-control-balance finding, or null when the controls are balanced and within depth. The
+   * priority is the spec's: depth exceeded, then an orphan pop, then an unbalanced embedding, then
+   * an unbalanced isolate.
+   *
+   * <p>Orphan pop localises per stray popper. Depth exceeded is a whole-string verdict, so it
+   * localises nothing. The unbalanced cases report every bidi position, the diagnostic being that
+   * something among these controls is missing its partner.
+   */
+  private static Finding bidiFinding(List<Integer> input) {
+    BidiWalk walk = runBidiWalk(input);
+    if (walk.positions.isEmpty()) {
+      return null;
+    }
+    if (walk.maxDepth > UAX_DEPTH_LIMIT) {
+      return makeFinding(Family.BIDI_CONTROL_BALANCE, "DepthExceeded", List.of());
+    }
+    if (!walk.orphans.isEmpty()) {
+      return makeFinding(Family.BIDI_CONTROL_BALANCE, "OrphanPop", walk.orphans);
+    }
+    if (walk.embStack > 0) {
+      return makeFinding(Family.BIDI_CONTROL_BALANCE, "UnbalancedEmbedding", walk.positions);
+    }
+    if (walk.isoStack > 0) {
+      return makeFinding(Family.BIDI_CONTROL_BALANCE, "UnbalancedIsolate", walk.positions);
+    }
+    return null;
   }
 
   /** Sub-threat and byte offset of a surrogate-reassembly scan; null sub-threat means clear. */
@@ -1070,6 +1201,7 @@ public final class Security {
   private static Map<Integer, Integer> simpleUppercaseMap;
   private static List<int[]> casedRanges;
   private static List<int[]> softDottedRanges;
+  private static List<int[]> defaultIgnorableRanges;
   private static List<int[]> graphemeExtendRanges;
   private static List<int[]> identifierAllowedRanges;
   private static List<int[]> xidStartRanges;
@@ -2657,13 +2789,20 @@ public final class Security {
     return sub == null ? "ScriptMixOther" : sub;
   }
 
-  static boolean isDefaultIgnorableCodepoint(int cp) {
-    return cp == 0x00AD || cp == 0x034F || cp == 0x061C ||
-        (cp >= 0x115F && cp <= 0x1160) || (cp >= 0x17B4 && cp <= 0x17B5) ||
-        (cp >= 0x180B && cp <= 0x180F) || (cp >= 0x200B && cp <= 0x200F) ||
-        (cp >= 0x202A && cp <= 0x202E) || (cp >= 0x2060 && cp <= 0x206F) ||
-        (cp >= 0xFE00 && cp <= 0xFE0F) || cp == 0xFEFF ||
-        (cp >= 0xFFF0 && cp <= 0xFFF8) || (cp >= 0xE0000 && cp <= 0xE0FFF);
+  /**
+   * The UAX #44 Default_Ignorable_Code_Point property, read from the bundled
+   * DerivedCoreProperties.txt through the same reader the Cased and Soft_Dotted predicates use,
+   * rather than transcribed, so the predicate tracks the UCD revision the port ships against. A
+   * transcribed set omits ranges a reader never sees but an attacker can still send, such as the
+   * musical-symbol beams at U+1D173..U+1D17A.
+   */
+  static synchronized boolean isDefaultIgnorableCodepoint(int cp) {
+    if (defaultIgnorableRanges == null) {
+      defaultIgnorableRanges =
+          parseCasingProperty(readResource("DerivedCoreProperties.txt"), "Default_Ignorable_Code_Point");
+    }
+    for (int[] r : defaultIgnorableRanges) if (r[0] <= cp && cp <= r[1]) return true;
+    return false;
   }
 
   private static boolean isWhiteSpaceCodepoint(int cp) {

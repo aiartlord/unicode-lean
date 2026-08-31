@@ -42,6 +42,23 @@ test("verdict JSON contract fixture", () => {
   }
 });
 
+// Agreement with the reference over a generated input stream. The corpus shares
+// the verdict contract's schema, so it runs through the same comparison, but its
+// cases come from the Rust reference over a deterministic stream rather than
+// being hand-written: agreement here is evidence that this port decides as the
+// reference does on inputs nobody chose, across every profile.
+test("differential corpus", () => {
+  const corpus = loadFixture("differential_corpus.json");
+  assert.equal(corpus.schema, 1);
+  assert.equal(corpus.contract, "unicode-security-verdict-v0");
+
+  for (const entry of corpus.cases) {
+    const verdict = scan(entry.profile, entry.mode, entry.input);
+    assert.deepEqual(verdictToWire(verdict), entry.verdict, entry.name);
+    assert.equal(verdictJson(verdict), JSON.stringify(entry.verdict), entry.name);
+  }
+});
+
 test("UTF-8 decode contract fixture", () => {
   const contract = loadFixture("decode_contract.json");
   assert.equal(contract.schema, 1);
