@@ -189,12 +189,19 @@ def checkBidi (labels : List (List Nat)) : Bool :=
   let isBidiDomain := labels.any Unicode.Precis.BidiRule.isBidiLabel
   ! isBidiDomain || labels.all Unicode.Precis.BidiRule.satisfiesBidiRuleStrict
 
-/-- True iff the joined-domain length is in [1, 253] codepoints. This is the
+/-- True iff the domain length is in [1, 253] codepoints. This is the
     domain-length half of UTS #46 §4.2 step 4, which `IdnaTestV2.txt` names
     `A4_1`. The file's own rows separate the two halves: a row carrying `A4_1`
-    and not `A4_2` holds several labels each within 63 whose join exceeds 253. -/
+    and not `A4_2` holds several labels each within 63 whose join exceeds 253.
+
+    A trailing root dot is not part of the length. RFC 1035 measures the name
+    without its empty root label, so `a.` counts as one character and the bare
+    root `.` counts as none, which is why the file reports `A4_1` for `.` and
+    withholds it from a 254-character name whose last character is the dot. -/
 def totalLengthOk (output : List Nat) : Bool :=
-  Nat.ble 1 output.length && Nat.ble output.length 253
+  let measured :=
+    if output.getLast? == some 0x2E then output.length - 1 else output.length
+  Nat.ble 1 measured && Nat.ble measured 253
 
 /-- True iff every label has length in [1, 63] codepoints. This is the
     label-length half of UTS #46 §4.2 step 4, which `IdnaTestV2.txt` names
@@ -236,6 +243,7 @@ def labelStatuses (opts : Options) (label : List Nat) : List Map.Status :=
   (if violatesLeadingCombiner label then [Map.Status.V6] else [])
     ++ (if opts.checkHyphens && violatesHyphenRule label then [Map.Status.V2] else [])
     ++ (if opts.checkHyphens && violatesLeadTrailHyphen label then [Map.Status.V3] else [])
+    ++ (if hasXnPrefix label then [Map.Status.V4] else [])
     ++ (if opts.useSTD3ASCIIRules && violatesSTD3 label then [Map.Status.U1] else [])
 
 /-- The CONTEXTJ codes one label raises. `CheckJoiners.contextJViolations`
@@ -263,16 +271,6 @@ def domainBidiStatuses (labels : List (List Nat)) : List Map.Status :=
         else if n == 5 then some Map.Status.B5
         else if n == 6 then some Map.Status.B6
         else none)
-
-/-- Every status the decoded label array raises under `opts`, in the order the
-    checks appear, with duplicates removed. Mirrors `labelsPass`: the same
-    checks, reporting which failed rather than whether any did. -/
-def labelsStatuses (opts : Options) (decoded : List (List Nat)) : List Map.Status :=
-  let perLabel := decoded.flatMap (labelStatuses opts)
-  let joiners := if opts.checkJoiners then decoded.flatMap labelJoinerStatuses else []
-  let bidi := if opts.checkBidi then domainBidiStatuses decoded else []
-  let empties := if hasNonTrailingEmptyLabel decoded then [Map.Status.V4] else []
-  (perLabel ++ joiners ++ bidi ++ empties).eraseDups
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 TOUNICODE  (UTS #46 §4.2)
@@ -335,7 +333,8 @@ def decodeLabel (label : List Nat) : Map.Result :=
     let suffixSize := label.length - 4
     let suffix := asciiCpsToString (label.drop 4)
     match Punycode.decode suffix with
-    | none         => { output := label, hasErrors := true }
+    | none         =>
+      { output := label, hasErrors := true, statuses := [Map.Status.P4] }
     | some decoded =>
       if decoded.isEmpty then
         -- `xn--` exactly (empty suffix) decodes to the empty
@@ -343,13 +342,23 @@ def decodeLabel (label : List Nat) : Map.Result :=
         -- nevertheless yields an empty decoded form is malformed,
         -- and the spec preserves the original bytes for downstream
         -- validity checks.
-        if suffixSize = 0 then { output := [], hasErrors := true }
-        else { output := label, hasErrors := true }
+        if suffixSize = 0 then
+          { output := [], hasErrors := true, statuses := [Map.Status.P4] }
+        else
+          { output := label, hasErrors := true, statuses := [Map.Status.P4] }
       else
+        -- A decoded form that is entirely ASCII means the label was
+        -- Punycode-encoded when it had no need to be, which UTS #46 §4.2
+        -- rejects; the file reports it with the decoding failure code.
         let asciiOnly := isAllAsciiCps decoded
         let nfcOk := Unicode.Normalization.NFC.toNFC decoded == decoded
-        let v6Ok  := decodedLabelValidV6 decoded
-        { output := decoded, hasErrors := asciiOnly || ! (nfcOk && v6Ok) }
+        let dispositionOk := decodedLabelValidV6 decoded
+        { output := decoded
+          hasErrors := asciiOnly || ! (nfcOk && dispositionOk)
+          statuses :=
+            (if asciiOnly then [Map.Status.P4] else [])
+              ++ (if nfcOk then [] else [Map.Status.V1])
+              ++ (if dispositionOk then [] else [Map.Status.V7]) }
   else
     { output := label, hasErrors := false }
 
@@ -364,13 +373,35 @@ def decodeLabels (labels : List (List Nat)) :
     errs    := errs || r.hasErrors
   return (decoded, errs)
 
+/-- The status codes decoding `labels` raises, in label order without
+    duplicates. Companion to `decodeLabels`, which joins the flags. -/
+def decodeLabelsStatuses (labels : List (List Nat)) : List Map.Status :=
+  (labels.flatMap (fun label => (decodeLabel label).statuses)).eraseDups
+
+/-- Every status the label array raises: the decoding codes, and for a label
+    that decoded, the validity codes read off its decoded form.
+
+    A label whose Punycode decoding failed is preserved verbatim, so its own
+    `xn--` prefix would otherwise trip the third-and-fourth-hyphen rule and the
+    prefix rule. The decoding failure is what the file reports for such a label,
+    and the validity checks have no decoded form to read, so they are not
+    applied to it. -/
+def labelArrayStatuses (opts : Options) (labels : List (List Nat)) : List Map.Status :=
+  (labels.flatMap (fun label =>
+    let r := decodeLabel label
+    if r.statuses.contains Map.Status.P4 then r.statuses
+    else
+      r.statuses ++ labelStatuses opts r.output
+        ++ (if opts.checkJoiners then labelJoinerStatuses r.output else []))).eraseDups
+
 /-- Apply the UTS #46 ToUnicode algorithm under non-transitional
     processing with the given `opts`. The algorithm runs to
     completion — disallowed codepoints, Punycode failures, and
     failed validity checks each contribute to `hasErrors` while
     the output is produced as if the recovery path was taken.
-    UTS #46 §4.4's `VerifyDnsLength` flag controls only A4_1 and
-    A4_2 on the toAscii side; toUnicode has no length check. -/
+    UTS #46 §4.4's `VerifyDnsLength` flag controls only `A4_1` and
+    `A4_2` on the toAscii side. toUnicode's own length concern is the
+    empty domain, which `IdnaTestV2.txt` reports as `X4_2`. -/
 def toUnicode (input : List Nat) (opts : Options := defaultOptions) :
     Map.Result :=
   let mapped              := Map.mapNonTransitional input
@@ -383,7 +414,15 @@ def toUnicode (input : List Nat) (opts : Options := defaultOptions) :
   -- domain must have at least one non-empty label.
   let emptyErr            := joined.isEmpty
   { output    := joined
-    hasErrors := mapped.hasErrors || decErr || labelErr || emptyErr }
+    hasErrors := mapped.hasErrors || decErr || labelErr || emptyErr
+    statuses  :=
+      -- `X4_2` is toUnicode's label-length code, and a label of length zero
+      -- violates it: the file reports it for a domain that is empty and for one
+      -- carrying an empty label between two others.
+      (mapped.statuses ++ labelArrayStatuses opts labels
+        ++ (if opts.checkBidi then domainBidiStatuses decoded else [])
+        ++ (if emptyErr || hasNonTrailingEmptyLabel decoded then
+              [Map.Status.X4_2] else [])).eraseDups }
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 TOASCII  (UTS #46 §4.3)
@@ -413,10 +452,13 @@ def encodeLabel (label : List Nat) : Map.Result :=
   if allAscii label then
     { output := label, hasErrors := false }
   else if ! label.all isValidScalar then
-    { output := label, hasErrors := true }
+    -- An unpaired surrogate cannot be Punycode-encoded. `IdnaTestV2.txt`
+    -- names a Punycode encoding failure `A3`.
+    { output := label, hasErrors := true, statuses := [Map.Status.A3] }
   else
     match Punycode.encode label with
-    | none     => { output := label, hasErrors := true }
+    | none     =>
+      { output := label, hasErrors := true, statuses := [Map.Status.A3] }
     | some pny =>
       { output := [0x78, 0x6E, 0x2D, 0x2D] ++ stringToCps pny,
         hasErrors := false }
@@ -426,28 +468,39 @@ def encodeLabel (label : List Nat) : Map.Result :=
 def encodeLabels (labels : List (List Nat)) : Map.Result := Id.run do
   let mut encoded : List (List Nat) := []
   let mut errs    : Bool              := false
+  let mut sts     : List Map.Status   := []
   for label in labels do
     let r := encodeLabel label
     encoded := encoded ++ [r.output]
     errs    := errs || r.hasErrors
-  return { output := joinLabels encoded, hasErrors := errs }
+    sts     := sts ++ r.statuses
+  return { output := joinLabels encoded, hasErrors := errs, statuses := sts.eraseDups }
 
-/-- Apply the UTS #46 ToASCII algorithm under non-transitional
-    processing with the given `opts`. Errors from the inner
-    `toUnicode`, from per-label Punycode encoding, and from the
-    post-encoding length checks (`A4_1` for label, `A4_2` for
-    domain — both applied when `verifyDnsLength` is set) are joined
-    into `hasErrors`. -/
+/-- Apply the UTS #46 ToASCII algorithm under non-transitional processing with
+    the given `opts`. Errors from the inner `toUnicode`, from per-label Punycode
+    encoding, and from the post-encoding length checks are joined into
+    `hasErrors`. The two length checks report separately: `A4_1` for the domain
+    and `A4_2` for the label, both applied when `verifyDnsLength` is set.
+
+    `X4_2` is dropped from the inherited statuses because it is toUnicode's
+    reading of an empty domain; toASCII states the same condition as `A4_1` and
+    `A4_2`, which the length check below raises. -/
 def toAscii (input : List Nat) (opts : Options := defaultOptions) :
     Map.Result :=
   let unicode  := toUnicode input opts
   let labels   := splitLabels unicode.output
   let enc      := encodeLabels labels
   let encoded  := splitLabels enc.output
-  let lenErr   := opts.verifyDnsLength
-                    && (! totalLengthOk enc.output || ! labelsLengthOk encoded)
+  let domainOk := totalLengthOk enc.output
+  let labelOk  := labelsLengthOk encoded
+  let lenErr   := opts.verifyDnsLength && (! domainOk || ! labelOk)
   { output := enc.output
-    hasErrors := unicode.hasErrors || enc.hasErrors || lenErr }
+    hasErrors := unicode.hasErrors || enc.hasErrors || lenErr
+    statuses :=
+      ((unicode.statuses.filter (fun s => s != Map.Status.X4_2)) ++ enc.statuses
+        ++ (if opts.verifyDnsLength && ! domainOk then [Map.Status.A4_1] else [])
+        ++ (if opts.verifyDnsLength && ! labelOk then [Map.Status.A4_2] else [])
+        ).eraseDups }
 
 /-- Apply the UTS #46 ToASCII algorithm under transitional processing
     with the given `opts`. Transitional processing maps the four
@@ -462,12 +515,19 @@ def toAsciiTransitional (input : List Nat) (opts : Options := defaultOptions) :
   let labelErr            := ! labelsPass opts decoded
   let enc                 := encodeLabels decoded
   let encoded             := splitLabels enc.output
-  let encLenErr           := opts.verifyDnsLength
-                              && (! totalLengthOk enc.output
-                                  || ! labelsLengthOk encoded)
+  let domainOk            := totalLengthOk enc.output
+  let labelOk             := labelsLengthOk encoded
+  let encLenErr           := opts.verifyDnsLength && (! domainOk || ! labelOk)
   { output    := enc.output
     hasErrors := mapped.hasErrors || decErr || labelErr || enc.hasErrors
-                  || encLenErr }
+                  || encLenErr
+    statuses  :=
+      (mapped.statuses ++ labelArrayStatuses opts labels
+        ++ (if opts.checkBidi then domainBidiStatuses decoded else [])
+        ++ enc.statuses
+        ++ (if opts.verifyDnsLength && ! domainOk then [Map.Status.A4_1] else [])
+        ++ (if opts.verifyDnsLength && ! labelOk then [Map.Status.A4_2] else [])
+        ).eraseDups }
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 SAMPLE DOMAINS

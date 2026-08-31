@@ -23,6 +23,7 @@ import Unicode.Idna.Process
 namespace Unicode.Conformance.IdnaTestV2
 
 open Unicode.Idna.Process
+open Unicode.Idna.Map (Status)
 
 set_option maxRecDepth 1000000
 
@@ -57,10 +58,13 @@ structure Row where
   source        : List Nat
   toUnicodeOut  : List Nat
   toUnicodeErr  : Bool
+  toUnicodeSt   : List Status
   toAsciiNOut   : List Nat
   toAsciiNErr   : Bool
+  toAsciiNSt    : List Status
   toAsciiTOut   : List Nat
   toAsciiTErr   : Bool
+  toAsciiTSt    : List Status
   deriving Inhabited, Repr, DecidableEq
 
 def trimS (s : String) : String := (String.trimAscii s).toString
@@ -100,6 +104,35 @@ def columnCodepoints (field : String) : List Nat :=
 def statusHasErrors (field : String) : Bool :=
   ! (field.isEmpty || field = "[]")
 
+/-- The status a tag names, for the twenty tags `IdnaTestV2.txt` writes. -/
+def statusOfTag (tag : String) : Option Status :=
+  let table : List (String × Status) :=
+    [ ("A3", .A3), ("A4_1", .A4_1), ("A4_2", .A4_2)
+    , ("B1", .B1), ("B2", .B2), ("B3", .B3)
+    , ("B4", .B4), ("B5", .B5), ("B6", .B6)
+    , ("C1", .C1), ("C2", .C2)
+    , ("P4", .P4)
+    , ("U1", .U1)
+    , ("V1", .V1), ("V2", .V2), ("V3", .V3)
+    , ("V4", .V4), ("V6", .V6), ("V7", .V7)
+    , ("X4_2", .X4_2) ]
+  (table.find? (fun pair => pair.1 == tag)).map (fun pair => pair.2)
+
+/-- The status set a column states, parsed from the bracketed list the file
+    writes, such as `[B5, B6]`. An empty column and `[]` both name the empty
+    set. A tag the file carries that this module does not know stays unmapped,
+    which shows up as a mismatch rather than as a silent pass. -/
+def parseStatuses (field : String) : List Status :=
+  let inner :=
+    String.ofList ((trimS field).toList.filter
+      (fun c => c != '[' && c != ']' && c != ' '))
+  if inner.isEmpty then []
+  else (inner.splitOn ",").filterMap statusOfTag
+
+/-- Two status collections name the same set, ignoring order and repetition. -/
+def sameStatuses (a b : List Status) : Bool :=
+  a.all (fun s => b.contains s) && b.all (fun s => a.contains s)
+
 /-- Raw text of `IdnaTestV2.txt`, embedded at compile time. -/
 def idnaTestV2Raw : String :=
   include_str "../Ucd/IdnaTestV2.txt"
@@ -123,10 +156,13 @@ def parseRow (rawLine : String) : Option Row :=
         source       := columnCodepoints c1
         toUnicodeOut := columnCodepoints uOut
         toUnicodeErr := statusHasErrors uErr
+        toUnicodeSt  := parseStatuses uErr
         toAsciiNOut  := columnCodepoints nOut
         toAsciiNErr  := statusHasErrors nErr
+        toAsciiNSt   := parseStatuses nErr
         toAsciiTOut  := columnCodepoints tOut
         toAsciiTErr  := statusHasErrors tErr
+        toAsciiTSt   := parseStatuses tErr
       }
   | _ => none
 
@@ -165,16 +201,18 @@ inductive Judgement where
     One rule for every row: the output and the error flag must both be what the
     file states. The section comment above records why no comparison here is
     waived. -/
-def judge (actual : Unicode.Idna.Map.Result) (expectedOut : List Nat) (expectedErr : Bool) :
-    Judgement :=
-  if actual.output == expectedOut && actual.hasErrors == expectedErr then .pass
+def judge (actual : Unicode.Idna.Map.Result) (expectedOut : List Nat)
+    (expectedErr : Bool) (expectedSt : List Status) : Judgement :=
+  if actual.output == expectedOut
+      && actual.hasErrors == expectedErr
+      && sameStatuses actual.statuses expectedSt then .pass
   else .fail
 
 /-- The three judgements for one row, in the file's column order. -/
 def judgeRow (r : Row) : Judgement × Judgement × Judgement :=
-  ( judge (toUnicode r.source)            r.toUnicodeOut r.toUnicodeErr
-  , judge (toAscii r.source)              r.toAsciiNOut  r.toAsciiNErr
-  , judge (toAsciiTransitional r.source)  r.toAsciiTOut  r.toAsciiTErr )
+  ( judge (toUnicode r.source)           r.toUnicodeOut r.toUnicodeErr r.toUnicodeSt
+  , judge (toAscii r.source)             r.toAsciiNOut  r.toAsciiNErr  r.toAsciiNSt
+  , judge (toAsciiTransitional r.source) r.toAsciiTOut  r.toAsciiTErr  r.toAsciiTSt )
 
 /-- Running tally for one operation. -/
 structure Tally where

@@ -96,7 +96,11 @@ def mapNonTransitional (input : List Nat) : Result := Id.run do
       | .Disallowed =>
         acc  := acc ++ [cp]
         errs := true
-  return { output := acc, hasErrors := errs }
+  -- A disallowed or out-of-table code point fails UTS #46 §4.1 criterion 7,
+  -- the rule that every code point carry a Valid or Deviation status.
+  -- `IdnaTestV2.txt` names it `V7`.
+  return { output := acc, hasErrors := errs
+           statuses := if errs then [Status.V7] else [] }
 
 /-- Apply the UTS #46 mapping pass to `input` under transitional
     processing. Identical to `mapNonTransitional` except Deviation
@@ -134,7 +138,8 @@ def mapTransitional (input : List Nat) : Result := Id.run do
       | .Deviation  => result := result ++ row.mapping
       | .Ignored    => result := result ++ [cp]
       | .Disallowed => result := result ++ [cp]
-  return { output := result, hasErrors := errs }
+  return { output := result, hasErrors := errs
+           statuses := if errs then [Status.V7] else [] }
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 EXAMPLES — the four UTS #46 §2.3 deviations + ASCII case folding
@@ -173,11 +178,13 @@ theorem mapNT_soft_hyphen :
       = { output := [0x0061, 0x0062], hasErrors := false } := by
   decide +kernel
 
-/-- A Disallowed codepoint (C1 control U+0080) is preserved in the
-    output with `hasErrors = true`. -/
+/-- A Disallowed codepoint, here the C1 control U+0080, is preserved in the
+    output with `hasErrors = true` and reported as `V7`: UTS #46 §4.1 criterion
+    7 requires every code point to carry a Valid or Deviation status. -/
 theorem mapNT_flags_C1 :
     mapNonTransitional [0x0061, 0x0080, 0x0062]
-      = { output := [0x0061, 0x0080, 0x0062], hasErrors := true } := by
+      = { output := [0x0061, 0x0080, 0x0062], hasErrors := true
+          statuses := [Status.V7] } := by
   decide +kernel
 
 /-- The empty string maps to the empty string under either mode. -/
