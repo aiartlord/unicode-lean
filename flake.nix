@@ -88,8 +88,19 @@
           pname = "unicode-cpp";
           version = runtimeVersion;
           src = ./ports/cpp;
-          nativeBuildInputs = [ pkgs.cmake ];
-          cmakeFlags = [ "-DUNICODE_CPP_BUILD_TESTS=OFF" ];
+          # The suite is built and run here. It used to be skipped because the
+          # test target fetched doctest from GitHub and a sandboxed build has no
+          # network, which meant a packaged C++ build reported a compile as a
+          # pass. doctest now comes from the package set, so the port is checked
+          # the way every other port is.
+          nativeBuildInputs = [ pkgs.cmake pkgs.doctest pkgs.python3 ];
+          cmakeFlags = [ "-DUNICODE_CPP_BUILD_TESTS=ON" ];
+          doCheck = true;
+          checkPhase = ''
+            runHook preCheck
+            ctest --output-on-failure
+            runHook postCheck
+          '';
         };
 
         unicodeHaskell = hsPkgs.callCabal2nix "unicode-haskell" ./ports/haskell {};

@@ -45,6 +45,18 @@ module UnicodeRuby
         W = :w
       end
 
+      # Joining_Type, the cursive-joining behaviour a character has in scripts
+      # like Arabic. RFC 5892 Appendix A.1 uses it to decide whether a ZERO
+      # WIDTH NON-JOINER sits in a position its script actually requires.
+      module JoiningType
+        JOIN_CAUSING = :c
+        DUAL_JOINING = :d
+        LEFT_JOINING = :l
+        RIGHT_JOINING = :r
+        TRANSPARENT = :t
+        NON_JOINING = :u
+      end
+
       module_function
 
       # ── Parsing helpers ───────────────────────────────────────────────────
@@ -145,6 +157,71 @@ module UnicodeRuby
       def ccc(cp)
         entry = ucd_table[cp]
         entry.nil? ? 0 : entry[:ccc]
+      end
+
+      # ── DerivedJoiningType.txt — RFC 5892 Appendix A.1 support ────────────
+
+      def joining_type_of_token(token)
+        case token
+        when "C" then JoiningType::JOIN_CAUSING
+        when "D" then JoiningType::DUAL_JOINING
+        when "L" then JoiningType::LEFT_JOINING
+        when "R" then JoiningType::RIGHT_JOINING
+        when "T" then JoiningType::TRANSPARENT
+        else JoiningType::NON_JOINING
+        end
+      end
+
+      def parse_joining_types
+        rows = []
+        UnicodeRuby.read_data("DerivedJoiningType.txt").each_line do |raw|
+          line = raw.chomp
+          hash = line.index("#")
+          line = line[0...hash] if hash
+          body = line.strip
+          next if body.empty?
+
+          semi = body.index(";")
+          next if semi.nil?
+
+          range = parse_range_field(body[0...semi])
+          next if range.nil?
+
+          rows << [range[0], range[1], joining_type_of_token(body[(semi + 1)..].strip)]
+        end
+        rows.sort_by! { |row| row[0] }
+        rows
+      end
+
+      def joining_type_table
+        @joining_type_table ||= parse_joining_types
+      end
+
+      # Joining_Type for one codepoint. The file's @missing line declares
+      # Non_Joining over the whole space, so an unlisted codepoint is
+      # Non_Joining.
+      def joining_type(cp)
+        table = joining_type_table
+        lo = 0
+        hi = table.length
+        while lo < hi
+          mid = lo + ((hi - lo) / 2)
+          rlo, rhi, cls = table[mid]
+          if cp < rlo
+            hi = mid
+          elsif cp > rhi
+            lo = mid + 1
+          else
+            return cls
+          end
+        end
+        JoiningType::NON_JOINING
+      end
+
+      # True iff cp has Canonical_Combining_Class 9, the Virama used to request
+      # an explicit conjunct in scripts like Devanagari.
+      def virama?(cp)
+        ccc(cp) == 9
       end
 
       # ── EastAsianWidth.txt — UAX #11 East_Asian_Width lookup ──────────────

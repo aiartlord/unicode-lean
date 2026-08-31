@@ -84,6 +84,18 @@ struct EawRange {
     EastAsianWidth cls;
 };
 
+// Joining_Type, the cursive-joining behaviour a character has in scripts like
+// Arabic. RFC 5892 Appendix A.1 uses it to decide whether a ZERO WIDTH
+// NON-JOINER sits in a position its script actually requires.
+enum class JoiningType { JoinCausing, DualJoining, LeftJoining, RightJoining,
+                         Transparent, NonJoining };
+
+struct JoiningTypeRange {
+    std::uint32_t lo;
+    std::uint32_t hi;
+    JoiningType cls;
+};
+
 // ─────────────────────────────────────────────────────────────────────
 // RangeEntry — one row from Scripts.txt / ScriptExtensions.txt /
 // IdentifierStatus.txt
@@ -160,6 +172,10 @@ struct Tables {
     // the file's `@missing` line declares N over the whole codepoint space, so
     // a lookup miss is Neutral by declaration rather than by fallback.
     std::vector<EawRange> east_asian_width;
+    // DerivedJoiningType.txt ranges, sorted by lo. The file's `@missing` line
+    // declares Non_Joining over the whole codepoint space, so a lookup miss is
+    // Non_Joining by declaration rather than by fallback.
+    std::vector<JoiningTypeRange> joining_type;
 
     static Tables load_from_dir(const std::filesystem::path& dir);
     static Tables parse(
@@ -172,7 +188,8 @@ struct Tables {
         std::string_view case_folding_text,
         std::string_view derived_core_properties_text,
         std::string_view derived_bidi_class_text,
-        std::string_view east_asian_width_text);
+        std::string_view east_asian_width_text,
+        std::string_view derived_joining_type_text);
 };
 
 // ─────────────────────────────────────────────────────────────────────
@@ -626,6 +643,32 @@ inline void parse_east_asian_width(
               [](const EawRange& a, const EawRange& b) { return a.lo < b.lo; });
 }
 
+inline void parse_joining_type(
+    std::string_view text, std::vector<JoiningTypeRange>& rows) {
+    for_each_line(text, [&](std::string_view line) {
+        std::size_t hash = line.find('#');
+        std::string_view body =
+            hash == std::string_view::npos ? line : line.substr(0, hash);
+        body = trim(body);
+        if (body.empty()) return;
+        std::size_t semi = body.find(';');
+        if (semi == std::string_view::npos) return;
+        auto rng = parse_range_field(body.substr(0, semi));
+        std::string_view token = trim(body.substr(semi + 1));
+        JoiningType cls = JoiningType::NonJoining;
+        if (token == "C") cls = JoiningType::JoinCausing;
+        else if (token == "D") cls = JoiningType::DualJoining;
+        else if (token == "L") cls = JoiningType::LeftJoining;
+        else if (token == "R") cls = JoiningType::RightJoining;
+        else if (token == "T") cls = JoiningType::Transparent;
+        rows.push_back(JoiningTypeRange{rng.first, rng.second, cls});
+    });
+    std::sort(rows.begin(), rows.end(),
+              [](const JoiningTypeRange& a, const JoiningTypeRange& b) {
+                  return a.lo < b.lo;
+              });
+}
+
 inline void parse_derived_bidi(
     std::string_view text,
     std::vector<BidiRange>& explicit_ranges,
@@ -671,7 +714,8 @@ inline Tables Tables::parse(
     std::string_view case_folding_text,
     std::string_view derived_core_properties_text,
     std::string_view derived_bidi_class_text,
-    std::string_view east_asian_width_text) {
+    std::string_view east_asian_width_text,
+    std::string_view derived_joining_type_text) {
     Tables t;
     detail::parse_unicode_data(unicode_data_text, t.ucd);
     detail::parse_composition_exclusions(
@@ -699,6 +743,7 @@ inline Tables Tables::parse(
     detail::parse_derived_bidi(
         derived_bidi_class_text, t.bidi_explicit, t.bidi_default);
     detail::parse_east_asian_width(east_asian_width_text, t.east_asian_width);
+    detail::parse_joining_type(derived_joining_type_text, t.joining_type);
     return t;
 }
 
@@ -713,7 +758,8 @@ inline Tables Tables::load_from_dir(const std::filesystem::path& dir) {
         detail::read_file(dir / "CaseFolding.txt"),
         detail::read_file(dir / "DerivedCoreProperties.txt"),
         detail::read_file(dir / "DerivedBidiClass.txt"),
-        detail::read_file(dir / "EastAsianWidth.txt"));
+        detail::read_file(dir / "EastAsianWidth.txt"),
+        detail::read_file(dir / "DerivedJoiningType.txt"));
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -722,6 +768,31 @@ inline Tables Tables::load_from_dir(const std::filesystem::path& dir) {
 
 inline std::uint8_t ccc(const Tables& t, std::uint32_t cp) {
     return detail::ccc_lookup(t.ucd, cp);
+}
+
+// Joining_Type for one codepoint. The file's `@missing` line declares
+// Non_Joining over the whole space, so an unlisted codepoint is Non_Joining.
+inline JoiningType joining_type(const Tables& t, std::uint32_t cp) {
+    std::size_t lo = 0;
+    std::size_t hi = t.joining_type.size();
+    while (lo < hi) {
+        std::size_t mid = lo + (hi - lo) / 2;
+        const auto& row = t.joining_type[mid];
+        if (cp < row.lo) {
+            hi = mid;
+        } else if (cp > row.hi) {
+            lo = mid + 1;
+        } else {
+            return row.cls;
+        }
+    }
+    return JoiningType::NonJoining;
+}
+
+// True iff cp has Canonical_Combining_Class 9, the Virama used to request an
+// explicit conjunct in scripts like Devanagari.
+inline bool is_virama(const Tables& t, std::uint32_t cp) {
+    return ccc(t, cp) == 9;
 }
 
 // Full Bidi_Class lookup (strong distinction only), mirroring

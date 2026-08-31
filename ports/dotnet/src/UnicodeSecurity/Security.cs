@@ -185,8 +185,16 @@ public static partial class Security
         if (tagPositions.Count > 0) findings.Add(MakeFinding(Family.TagBlockPayload, "DirectAscii", tagPositions));
         var variation = VariationSelectorFinding(input);
         if (variation is not null) findings.Add(variation);
+        // The sanctioning model: a ZWJ inside a registered emoji sequence and a
+        // ZWNJ in an RFC 5892 CONTEXTJ-valid position both carry meaning a
+        // reader depends on, so they are recorded as present but not treated as
+        // suspicious. An input whose zero-width characters are all sanctioned
+        // raises nothing.
         var zeroWidth = PositionsWhere(input, IsZeroWidthPayload);
-        if (zeroWidth.Count > 0) findings.Add(MakeFinding(Family.ZeroWidthPayload, "BareZeroWidth", zeroWidth));
+        if (zeroWidth.Count > 0 && HasSuspiciousZeroWidth(input, zeroWidth))
+        {
+            findings.Add(MakeFinding(Family.ZeroWidthPayload, "BareZeroWidth", zeroWidth));
+        }
         var surrogate = SurrogateReassemblyFinding(input);
         if (surrogate is not null) findings.Add(surrogate);
         var bidi = PositionsWhere(input, IsBidiEmbeddingControl);
@@ -1970,6 +1978,7 @@ public static partial class Security
             ["UnicodeData.txt"] = "2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c",
             ["CompositionExclusions.txt"] = "2f239196ef3b5b61db5cc476e9bd80f534d15aa1b74e1be1dea5d042a344c85f",
             ["DerivedCoreProperties.txt"] = "24c7fed1195c482faaefd5c1e7eb821c5ee1fb6de07ecdbaa64b56a99da22c08",
+            ["DerivedJoiningType.txt"] = "f39ebe974825d6736aee15582250307aa532b2cfab3caf3f86bd23fddc9c5c4d",
             ["IdentifierStatus.txt"] = "617228a16da13850bf8af28b6cd08f5e9b6595d2eb60404fe6eee2c85b4e4a35",
             ["Scripts.txt"] = "9f5e50d3abaee7d6ce09480f325c706f485ae3240912527e651954d2d6b035bf",
             ["ScriptExtensions.txt"] = "ec2107e58825a1586acee8e0911ce18260394ac8b87e535ca325f1ccbeb06bc6",
@@ -2135,6 +2144,107 @@ public static partial class Security
 
     private static List<(int Lo, int Hi, string[] Value)> ScriptsTable() =>
         scriptRanges ??= ParseScriptRanges("Scripts.txt");
+
+    private static List<(int Lo, int Hi, string[] Value)>? joiningTypeRanges;
+
+    // DerivedJoiningType.txt shares the "RANGE ; VALUE" shape, so it reuses the
+    // same range parser and lookup the script tables use. RFC 5892 Appendix A.1
+    // reads Joining_Type to decide whether a ZERO WIDTH NON-JOINER sits in a
+    // position its script actually requires.
+    private static List<(int Lo, int Hi, string[] Value)> JoiningTypeTable() =>
+        joiningTypeRanges ??= ParseScriptRanges("DerivedJoiningType.txt");
+
+    // Joining_Type for one codepoint, as its single-letter token. The file's
+    // @missing line declares Non_Joining over the whole space, so an unlisted
+    // codepoint is "U".
+    private static string JoiningTypeOf(int cp)
+    {
+        var value = FindScriptRange(JoiningTypeTable(), cp);
+        if (value is null || value.Length == 0) return "U";
+        return value[0] switch
+        {
+            "C" => "C",
+            "D" => "D",
+            "L" => "L",
+            "R" => "R",
+            "T" => "T",
+            _ => "U",
+        };
+    }
+
+    // True iff cp has Canonical_Combining_Class 9, the Virama used to request an
+    // explicit conjunct in scripts like Devanagari.
+    private static bool IsViramaCodepoint(int cp) => CanonicalCombiningClass(cp) == 9;
+
+    // The Joining_Type of the first non-Transparent codepoint before i, or null.
+    private static string? JoiningTypeBefore(IReadOnlyList<int> input, int i)
+    {
+        for (var j = i - 1; j >= 0; j--)
+        {
+            var jt = JoiningTypeOf(input[j]);
+            if (jt != "T") return jt;
+        }
+        return null;
+    }
+
+    // The Joining_Type of the first non-Transparent codepoint after i, or null.
+    private static string? JoiningTypeAfter(IReadOnlyList<int> input, int i)
+    {
+        for (var j = i + 1; j < input.Count; j++)
+        {
+            var jt = JoiningTypeOf(input[j]);
+            if (jt != "T") return jt;
+        }
+        return null;
+    }
+
+    // True iff the ZWNJ at index i occupies a position where it is
+    // orthographically required, by RFC 5892 Appendix A.1: it follows a Virama,
+    // which is how a Devanagari conjunct is suppressed, or it sits between a
+    // left- or dual-joining character and a right- or dual-joining one, skipping
+    // Transparent characters on both sides, which is how a Persian word boundary
+    // is written inside a cursive run.
+    //
+    // A ZWNJ outside such a position carries no orthographic duty and stays
+    // reportable.
+    private static bool IsLegitimateZwnjContext(IReadOnlyList<int> input, int i)
+    {
+        if (i > 0 && IsViramaCodepoint(input[i - 1])) return true;
+        var left = JoiningTypeBefore(input, i);
+        var right = JoiningTypeAfter(input, i);
+        if (left is null || right is null) return false;
+        var leftJoins = left == "L" || left == "D";
+        var rightJoins = right == "R" || right == "D";
+        return leftJoins && rightJoins;
+    }
+
+    // True iff the ZWJ at index i is flanked by two codepoints that both
+    // participate in some registered RGI emoji ZWJ sequence. Strictly narrower
+    // than "is an emoji": a codepoint carrying the Emoji property but appearing
+    // in no registered sequence does not sanction a ZWJ beside it. A ZWJ in head
+    // or tail position is never legitimate.
+    private static bool IsLegitimateZwjContext(IReadOnlyList<int> input, int i)
+    {
+        if (i == 0 || i + 1 >= input.Count) return false;
+        return EmojiZwjIntegrity.IsEmojiTarget(input[i - 1])
+            && EmojiZwjIntegrity.IsEmojiTarget(input[i + 1]);
+    }
+
+    // True iff at least one of the given zero-width positions is unsanctioned. A
+    // ZWJ inside a registered emoji sequence and a ZWNJ in an RFC 5892
+    // CONTEXTJ-valid position both carry meaning a reader depends on, so they are
+    // recorded as present but do not make the family fire.
+    internal static bool HasSuspiciousZeroWidth(IReadOnlyList<int> input, List<int> positions)
+    {
+        foreach (var i in positions)
+        {
+            var cp = input[i];
+            var sanctioned = (cp == 0x200D && IsLegitimateZwjContext(input, i))
+                || (cp == 0x200C && IsLegitimateZwnjContext(input, i));
+            if (!sanctioned) return true;
+        }
+        return false;
+    }
 
     private static List<(int Lo, int Hi, string[] Value)> ScriptExtensionsTable()
     {

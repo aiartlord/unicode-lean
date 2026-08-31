@@ -269,6 +269,73 @@ def east_asian_width(cp: int) -> EastAsianWidthClass:
             return cls
     return EastAsianWidthClass.N
 
+class JoiningType(Enum):
+    """``Joining_Type``, the cursive-joining behaviour a character has in
+    scripts like Arabic. RFC 5892 Appendix A.1 uses it to decide whether a ZERO
+    WIDTH NON-JOINER sits in a position its script actually requires."""
+
+    JOIN_CAUSING = "C"
+    DUAL_JOINING = "D"
+    LEFT_JOINING = "L"
+    RIGHT_JOINING = "R"
+    TRANSPARENT = "T"
+    NON_JOINING = "U"
+
+
+def _joining_type_of_token(token: str) -> JoiningType:
+    try:
+        return JoiningType(token)
+    except ValueError:
+        return JoiningType.NON_JOINING
+
+
+def _parse_joining_types() -> tuple[tuple[int, int, JoiningType], ...]:
+    text = _read_data_file("DerivedJoiningType.txt")
+    rows: list[tuple[int, int, JoiningType]] = []
+    for line in text.splitlines():
+        body = _strip_comment_and_trim(line)
+        if not body:
+            continue
+        semi = body.find(";")
+        if semi < 0:
+            continue
+        lo, hi = _parse_range_field(body[:semi])
+        rows.append((lo, hi, _joining_type_of_token(body[semi + 1 :].strip())))
+    rows.sort(key=lambda entry: entry[0])
+    return tuple(rows)
+
+
+_JOINING_TYPE_TABLE: tuple[tuple[int, int, JoiningType], ...] | None = None
+
+
+def joining_type(cp: int) -> JoiningType:
+    """``Joining_Type`` for one codepoint. The file's ``@missing`` line declares
+    ``Non_Joining`` over the whole space, so an unlisted codepoint is
+    ``NON_JOINING``."""
+    global _JOINING_TYPE_TABLE
+    if _JOINING_TYPE_TABLE is None:
+        _JOINING_TYPE_TABLE = _parse_joining_types()
+    table = _JOINING_TYPE_TABLE
+    lo = 0
+    hi = len(table)
+    while lo < hi:
+        mid = lo + (hi - lo) // 2
+        rlo, rhi, cls = table[mid]
+        if cp < rlo:
+            hi = mid
+        elif cp > rhi:
+            lo = mid + 1
+        else:
+            return cls
+    return JoiningType.NON_JOINING
+
+
+def is_virama(cp: int) -> bool:
+    """True iff ``cp`` has Canonical_Combining_Class 9, the Virama used to
+    request an explicit conjunct in scripts like Devanagari."""
+    return ccc(cp) == 9
+
+
 _BIDI_TABLE: _BidiTable | None = None
 
 

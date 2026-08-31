@@ -65,6 +65,7 @@ python_files=(
   CompositionExclusions.txt
   DerivedBidiClass.txt
   DerivedCoreProperties.txt
+  DerivedJoiningType.txt
   EastAsianWidth.txt
   IdentifierStatus.txt
   KnownAttackTargets.txt
@@ -130,6 +131,7 @@ cpp_files=(
   CompositionExclusions.txt
   DerivedBidiClass.txt
   DerivedCoreProperties.txt
+  DerivedJoiningType.txt
   IdentifierStatus.txt
   KnownAttackTargets.txt
   PropertyValueAliases.txt
@@ -194,6 +196,8 @@ haskell_data_dir_files=(
   Scripts.txt
   ScriptExtensions.txt
   PropertyValueAliases.txt
+  # See the note in homoglyph_files: RFC 5892 Appendix A.1 needs this.
+  DerivedJoiningType.txt
   bip39/chinese_simplified.txt
   bip39/chinese_traditional.txt
   bip39/czech.txt
@@ -222,6 +226,11 @@ homoglyph_files=(
   Scripts.txt
   ScriptExtensions.txt
   PropertyValueAliases.txt
+  # RFC 5892 Appendix A.1 decides whether a ZERO WIDTH NON-JOINER is
+  # orthographically required from the Joining_Type of its neighbours, skipping
+  # Transparent characters. Without this table a port reports every ZWNJ as a
+  # covert payload and rejects ordinary Devanagari and Persian text.
+  DerivedJoiningType.txt
 )
 
 go_files=(
@@ -359,6 +368,7 @@ ruby_files=(
   CompositionExclusions.txt
   DerivedBidiClass.txt
   DerivedCoreProperties.txt
+  DerivedJoiningType.txt
   EastAsianWidth.txt
   IdentifierStatus.txt
   KnownAttackTargets.txt

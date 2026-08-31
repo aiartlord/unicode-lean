@@ -19,12 +19,11 @@ Zero-width codepoint inventory:
     U+FEFF  ZERO WIDTH NO-BREAK SPACE / BOM
     U+FFF9..U+FFFB  INTERLINEAR ANNOTATION marks
 
-This port treats every zero-width occurrence as reportable.  The
-Lean reference additionally exempts ZWJ flanked by emoji
-codepoints (RGI-context legitimate emoji-ZWJ sequence) — that
-exemption requires the UCD emoji-data table.  Callers needing
-emoji-aware ZWJ exemption can pre-filter the input before calling
-this detector.
+Every zero-width occurrence is recorded, but two of them carry meaning a
+reader depends on and are not treated as suspicious: a ZWJ flanked by two
+codepoints that both participate in some registered RGI emoji sequence, and
+a ZWNJ in an RFC 5892 Appendix A.1 CONTEXTJ-valid position.  An input whose
+zero-width characters are all sanctioned is clear.
 """
 
 from dataclasses import dataclass, field
@@ -32,6 +31,7 @@ from typing import Union
 
 from ..calculus import ClassificationKind
 from ..identity import ucd
+from ..identity.emoji_zwj_integrity import is_emoji_target
 
 
 def _is_sibling_handled(cp: int) -> bool:
@@ -74,6 +74,64 @@ def is_zero_width(cp: int) -> bool:
     # UAX #44 Default_Ignorable_Code_Point — catches everything
     # else invisible, modulo sibling-detector ranges.
     return ucd.is_default_ignorable(cp) and not _is_sibling_handled(cp)
+
+
+def _is_legitimate_zwj_context(input_cps: list[int], i: int) -> bool:
+    """True iff the ZWJ at index ``i`` is flanked by two codepoints that both
+    participate in some registered RGI emoji ZWJ sequence.  The membership
+    predicate is derived from ``emoji-zwj-sequences.txt`` itself rather than
+    hand-listed, and is strictly narrower than "is an emoji": a codepoint
+    carrying the Emoji property but appearing in no registered sequence does
+    not sanction a ZWJ beside it.  A ZWJ in head or tail position is never
+    legitimate."""
+    if i == 0 or i + 1 >= len(input_cps):
+        return False
+    return is_emoji_target(input_cps[i - 1]) and is_emoji_target(input_cps[i + 1])
+
+
+def _joining_type_before(input_cps: list[int], i: int) -> ucd.JoiningType | None:
+    """The ``Joining_Type`` of the first non-Transparent codepoint before ``i``."""
+    j = i
+    while j > 0:
+        j -= 1
+        jt = ucd.joining_type(input_cps[j])
+        if jt is not ucd.JoiningType.TRANSPARENT:
+            return jt
+    return None
+
+
+def _joining_type_after(input_cps: list[int], i: int) -> ucd.JoiningType | None:
+    """The ``Joining_Type`` of the first non-Transparent codepoint after ``i``."""
+    j = i + 1
+    while j < len(input_cps):
+        jt = ucd.joining_type(input_cps[j])
+        if jt is not ucd.JoiningType.TRANSPARENT:
+            return jt
+        j += 1
+    return None
+
+
+def _is_legitimate_zwnj_context(input_cps: list[int], i: int) -> bool:
+    """True iff the ZWNJ at index ``i`` occupies a position where it is
+    orthographically required, by RFC 5892 Appendix A.1: it follows a Virama,
+    which is how a Devanagari conjunct is suppressed, or it sits between a
+    left- or dual-joining character and a right- or dual-joining one, skipping
+    Transparent characters on both sides, which is how a Persian word boundary
+    is written inside a cursive run.
+
+    A ZWNJ outside such a position carries no orthographic duty and stays
+    reportable."""
+    if i > 0 and ucd.is_virama(input_cps[i - 1]):
+        return True
+    left = _joining_type_before(input_cps, i)
+    right = _joining_type_after(input_cps, i)
+    return left in (
+        ucd.JoiningType.LEFT_JOINING,
+        ucd.JoiningType.DUAL_JOINING,
+    ) and right in (
+        ucd.JoiningType.RIGHT_JOINING,
+        ucd.JoiningType.DUAL_JOINING,
+    )
 
 
 def is_nnbsp(cp: int) -> bool:
@@ -151,6 +209,7 @@ def detect(input_cps: list[int]) -> Verdict:
     word_joiner_count = 0
     nnbsp_count = 0
     zwj_zwsp_count = 0
+    suspicious: list[int] = []
 
     for i, cp in enumerate(input_cps):
         if not is_zero_width(cp):
@@ -164,8 +223,17 @@ def detect(input_cps: list[int]) -> Verdict:
             nnbsp_count += 1
         elif is_zwj_or_zwsp(cp):
             zwj_zwsp_count += 1
+        # The sanctioning model: a ZWJ inside a registered emoji sequence and
+        # a ZWNJ in an RFC 5892 CONTEXTJ-valid position both carry meaning a
+        # reader depends on, so they are recorded as present but not treated
+        # as suspicious.
+        sanctioned = (cp == 0x200D and _is_legitimate_zwj_context(input_cps, i)) or (
+            cp == 0x200C and _is_legitimate_zwnj_context(input_cps, i)
+        )
+        if not sanctioned:
+            suspicious.append(i)
 
-    if not v.zero_width_positions:
+    if not v.zero_width_positions or not suspicious:
         return v
 
     v.kind = ClassificationKind.HAZARD
@@ -178,7 +246,7 @@ def detect(input_cps: list[int]) -> Verdict:
     elif zwj_zwsp_count >= 2:
         v.sub = BinaryPayload(pair_count=zwj_zwsp_count // 2)
     else:
-        v.sub = BareZeroWidth(cp=input_cps[v.zero_width_positions[0]])
+        v.sub = BareZeroWidth(cp=input_cps[suspicious[0]])
     return v
 
 

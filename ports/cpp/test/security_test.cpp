@@ -892,47 +892,87 @@ TEST_CASE("BidiControlBalance — Trojan Source shape (unbalanced)") {
 
 TEST_CASE("ZeroWidthPayload — empty input is clear") {
   std::vector<std::uint32_t> empty;
-  auto v = zero_width_payload::detect(as_span(empty));
+  auto v = zero_width_payload::detect_without_context(as_span(empty));
   CHECK(v.kind == ClassificationKind::Clear);
 }
 
 TEST_CASE("ZeroWidthPayload — ASCII is clear") {
   std::vector<std::uint32_t> in = {'H', 'i'};
-  auto v = zero_width_payload::detect(as_span(in));
+  auto v = zero_width_payload::detect_without_context(as_span(in));
   CHECK(v.kind == ClassificationKind::Clear);
 }
 
 TEST_CASE("ZeroWidthPayload — single ZWSP is BareZeroWidth") {
   std::vector<std::uint32_t> in = {'a', 0x200B, 'b'};
-  auto v = zero_width_payload::detect(as_span(in));
+  auto v = zero_width_payload::detect_without_context(as_span(in));
+  REQUIRE(v.sub.has_value());
+  CHECK(zero_width_payload::sub_threat_tag(*v.sub) == "BareZeroWidth");
+}
+
+// RFC 5892 Appendix A.1. The Lean reference proves both of these clear:
+// detect_devanagari_zwnj_clear and detect_persian_zwnj_clear. They must hold on
+// the data-free path too, which reads the compiled-in tables, or ordinary Hindi
+// and Persian are reported as covert payloads.
+TEST_CASE("ZeroWidthPayload — ZWNJ after a Virama is orthography, not payload") {
+  std::vector<std::uint32_t> in = {0x0915, 0x094D, 0x200C, 0x0937};
+  auto v = zero_width_payload::detect_without_context(as_span(in));
+  CHECK(v.kind == ClassificationKind::Clear);
+  CHECK_FALSE(v.sub.has_value());
+}
+
+TEST_CASE("ZeroWidthPayload — ZWNJ between cursive joiners is a word boundary") {
+  std::vector<std::uint32_t> in = {0x06CC, 0x200C, 0x0647};
+  auto v = zero_width_payload::detect_without_context(as_span(in));
+  CHECK(v.kind == ClassificationKind::Clear);
+  CHECK_FALSE(v.sub.has_value());
+}
+
+TEST_CASE("ZeroWidthPayload — ZWJ inside a registered emoji sequence is clear") {
+  std::vector<std::uint32_t> in = {0x1F468, 0x200D, 0x1F469};
+  auto v = zero_width_payload::detect_without_context(as_span(in));
+  CHECK(v.kind == ClassificationKind::Clear);
+}
+
+// The controls: a ZWNJ carrying no orthographic duty stays reportable, so the
+// exemption cannot be mistaken for switching the detector off.
+TEST_CASE("ZeroWidthPayload — bare ZWNJ between Latin letters still fires") {
+  std::vector<std::uint32_t> in = {'a', 0x200C, 'b'};
+  auto v = zero_width_payload::detect_without_context(as_span(in));
+  REQUIRE(v.sub.has_value());
+  CHECK(zero_width_payload::sub_threat_tag(*v.sub) == "BareZeroWidth");
+}
+
+TEST_CASE("ZeroWidthPayload — ZWNJ in head position still fires") {
+  std::vector<std::uint32_t> in = {0x200C, 'a'};
+  auto v = zero_width_payload::detect_without_context(as_span(in));
   REQUIRE(v.sub.has_value());
   CHECK(zero_width_payload::sub_threat_tag(*v.sub) == "BareZeroWidth");
 }
 
 TEST_CASE("ZeroWidthPayload — WORD JOINER is WordJoinerInjection") {
   std::vector<std::uint32_t> in = {'a', 0x2060, 'b'};
-  auto v = zero_width_payload::detect(as_span(in));
+  auto v = zero_width_payload::detect_without_context(as_span(in));
   REQUIRE(v.sub.has_value());
   CHECK(zero_width_payload::sub_threat_tag(*v.sub) == "WordJoinerInjection");
 }
 
 TEST_CASE("ZeroWidthPayload — multiple NNBSP is AiWatermarkNNBSP") {
   std::vector<std::uint32_t> in = {'a', 0x202F, 'b', 0x202F, 'c'};
-  auto v = zero_width_payload::detect(as_span(in));
+  auto v = zero_width_payload::detect_without_context(as_span(in));
   REQUIRE(v.sub.has_value());
   CHECK(zero_width_payload::sub_threat_tag(*v.sub) == "AiWatermarkNNBSP");
 }
 
 TEST_CASE("ZeroWidthPayload — multiple ZWSP is BinaryPayload") {
   std::vector<std::uint32_t> in = {'a', 0x200B, 0x200B, 0x200B, 0x200B};
-  auto v = zero_width_payload::detect(as_span(in));
+  auto v = zero_width_payload::detect_without_context(as_span(in));
   REQUIRE(v.sub.has_value());
   CHECK(zero_width_payload::sub_threat_tag(*v.sub) == "BinaryPayload");
 }
 
 TEST_CASE("ZeroWidthPayload — annotation mark is AnnotationMisuse") {
   std::vector<std::uint32_t> in = {'a', 0xFFF9, 'b'};
-  auto v = zero_width_payload::detect(as_span(in));
+  auto v = zero_width_payload::detect_without_context(as_span(in));
   REQUIRE(v.sub.has_value());
   CHECK(zero_width_payload::sub_threat_tag(*v.sub) == "AnnotationMisuse");
 }

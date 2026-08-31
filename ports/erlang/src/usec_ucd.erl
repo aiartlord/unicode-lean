@@ -17,12 +17,14 @@
          case_fold/1,
          bidi_strong/1, is_strong_rtl/1, is_strong_ltr/1,
          east_asian_width/1,
+         joining_type/1, is_virama/1,
          script_of/1, resolve_scripts/1, string_script_union/1,
          is_default_ignorable/1, is_white_space/1, is_id_allowed/1,
          is_default_identifier/1, is_allowed_identifier/1,
          is_highly_restrictive/1, is_covered_cjk/1, restriction_level/1]).
 
--export_type([restriction_level/0, bidi_strong/0, east_asian_width/0]).
+-export_type([restriction_level/0, bidi_strong/0, east_asian_width/0,
+              joining_type/0]).
 
 -type restriction_level() ::
         ascii_only | single_script | highly_restrictive
@@ -30,6 +32,10 @@
 
 -type bidi_strong() :: r | al | l | other.
 -type east_asian_width() :: a | f | h | n | na | w.
+%% Joining_Type, the cursive-joining behaviour a character has in scripts like
+%% Arabic. RFC 5892 Appendix A.1 uses it to decide whether a ZERO WIDTH
+%% NON-JOINER sits in a position its script actually requires.
+-type joining_type() :: c | d | l | r | t | u.
 
 %% ─────────────────────────────────────────────────────────────────────
 %% Line-parsing helpers
@@ -448,6 +454,52 @@ east_asian_width(Cp) ->
 find_eaw([], _Cp) -> n;
 find_eaw([{Lo, Hi, Class} | _], Cp) when Cp >= Lo, Cp =< Hi -> Class;
 find_eaw([_ | T], Cp) -> find_eaw(T, Cp).
+
+%% ─────────────────────────────────────────────────────────────────────
+%% DerivedJoiningType.txt — RFC 5892 Appendix A.1 support
+%% ─────────────────────────────────────────────────────────────────────
+
+joining_type_table() ->
+    usec_data:cached(joining_type_table, fun parse_joining_types/0).
+
+parse_joining_types() ->
+    Ls = lines(usec_data:read_file("DerivedJoiningType.txt")),
+    Rows = lists:foldl(fun joining_type_line/2, [], Ls),
+    lists:sort(fun({Lo1, _, _}, {Lo2, _, _}) -> Lo1 =< Lo2 end, lists:reverse(Rows)).
+
+joining_type_line(Line, Acc) ->
+    case strip_comment_and_trim(Line) of
+        <<>> -> Acc;
+        Body ->
+            case binary:split(Body, <<";">>) of
+                [RangeB, ClassB] ->
+                    {Lo, Hi} = parse_range_field(RangeB),
+                    [{Lo, Hi, joining_type_of_token(string:trim(ClassB))} | Acc];
+                _ -> Acc
+            end
+    end.
+
+joining_type_of_token(<<"C">>) -> c;
+joining_type_of_token(<<"D">>) -> d;
+joining_type_of_token(<<"L">>) -> l;
+joining_type_of_token(<<"R">>) -> r;
+joining_type_of_token(<<"T">>) -> t;
+joining_type_of_token(_) -> u.
+
+%% Joining_Type for one codepoint. The file's @missing line declares Non_Joining
+%% over the whole space, so an unlisted codepoint is u.
+-spec joining_type(non_neg_integer()) -> joining_type().
+joining_type(Cp) ->
+    find_joining_type(joining_type_table(), Cp).
+
+find_joining_type([], _Cp) -> u;
+find_joining_type([{Lo, Hi, Class} | _], Cp) when Cp >= Lo, Cp =< Hi -> Class;
+find_joining_type([_ | T], Cp) -> find_joining_type(T, Cp).
+
+%% True iff Cp has Canonical_Combining_Class 9, the Virama used to request an
+%% explicit conjunct in scripts like Devanagari.
+-spec is_virama(non_neg_integer()) -> boolean().
+is_virama(Cp) -> ccc(Cp) =:= 9.
 
 -spec bidi_strong(non_neg_integer()) -> bidi_strong().
 bidi_strong(Cp) ->

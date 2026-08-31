@@ -13,6 +13,35 @@
       "required_findings": [
         "unicode.security.C.zero-width-payload.BareZeroWidth"
       ]
+    },
+    {
+      "name": "devanagari-conjunct-zwnj-clear",
+      "input": [2325, 2381, 8204, 2359],
+      "required_findings": []
+    },
+    {
+      "name": "persian-word-boundary-zwnj-clear",
+      "input": [1740, 8204, 1607],
+      "required_findings": []
+    },
+    {
+      "name": "emoji-zwj-sequence-clear",
+      "input": [128104, 8205, 128105],
+      "required_findings": []
+    },
+    {
+      "name": "latin-bare-zwnj",
+      "input": [97, 8204, 98],
+      "required_findings": [
+        "unicode.security.C.zero-width-payload.BareZeroWidth"
+      ]
+    },
+    {
+      "name": "zwnj-head-position",
+      "input": [8204, 97],
+      "required_findings": [
+        "unicode.security.C.zero-width-payload.BareZeroWidth"
+      ]
     }
   ]
 }

@@ -319,11 +319,19 @@ def profileIsIdentifierField : Profile → Bool
 
 /-- Runtime scan over a codepoint array. Byte decoding and wire-format framing
     belong one layer above this function; this is the profile/policy decision
-    over already-decoded codepoints. -/
+    over already-decoded codepoints.
+
+    `cryptoField` is false because none of the ten profiles declares a BIP-39
+    mnemonic, a hash preimage, or watermark-carrier text.  The three
+    cryptographic-stability families ask their question only about such a
+    field, and `Bip39Canonical` reports `mixedCase` for any uppercase ASCII
+    letter, so leaving them enabled made every capitalised header a finding.
+    A caller holding one of those fields runs the family directly. -/
 def scan (profile : Profile) (mode : Mode) (input : List Nat) : Verdict :=
   let results :=
     Unicode.Security.RunAll.runAllWithContext
-      { identifierField := profileIsIdentifierField profile } input
+      { identifierField := profileIsIdentifierField profile,
+        cryptoField     := false } input
   let findings := findingsOfResults results
   {
     input       := input,

@@ -845,7 +845,13 @@ scan_with_identity_database(Profile profile, Mode mode,
           : std::nullopt,
       vs_result.vs_positions);
 
-  const auto zw_result = zero_width_payload::detect(input);
+  // The ZWJ and ZWNJ exemptions hold on both paths: from the identity database
+  // when the caller supplied one, otherwise from the compiled-in tables.
+  const auto zw_result =
+      identity_db != nullptr
+          ? zero_width_payload::detect(input, identity_db->tables,
+                                       identity_db->rgi)
+          : zero_width_payload::detect_without_context(input);
   detail::push_finding(
       findings, Family::ZeroWidthPayload, zw_result.kind,
       zw_result.sub

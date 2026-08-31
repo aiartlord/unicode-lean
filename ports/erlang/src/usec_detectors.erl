@@ -125,10 +125,17 @@ parse_legal_pairs() ->
 %% Covert: zero-width
 zero_width_detect(Input) ->
     Pos = positions(Input, fun zero_width/1),
-    case Pos of
-        [] -> #{kind => clear, sub => none, positions => []};
+    %% The sanctioning model: a ZWJ inside a registered emoji sequence and a
+    %% ZWNJ in an RFC 5892 CONTEXTJ-valid position both carry meaning a reader
+    %% depends on, so they are recorded as present but not treated as
+    %% suspicious.
+    Susp = [P || P <- Pos, not sanctioned_zero_width(Input, P)],
+    case {Pos, Susp} of
+        {[], _} -> #{kind => clear, sub => none, positions => []};
+        {_, []} -> #{kind => clear, sub => none, positions => Pos};
         _ ->
             Cps = [lists:nth(P + 1, Input) || P <- Pos],
+            SuspCps = [lists:nth(P + 1, Input) || P <- Susp],
             Ann = count(Cps, fun(Cp) -> Cp >= 16#FFF9 andalso Cp =< 16#FFFB end),
             Wj = count(Cps, fun(Cp) -> Cp =:= 16#2060 end),
             Nnbsp = count(Cps, fun(Cp) -> Cp =:= 16#202F end),
@@ -138,9 +145,64 @@ zero_width_detect(Input) ->
                       Wj > 0 -> {word_joiner_injection, Wj};
                       Nnbsp >= 2 -> {ai_watermark_nnbsp, Nnbsp};
                       Zw >= 2 -> {binary_payload, Zw div 2};
-                      true -> {bare_zero_width, hd(Cps)}
+                      true -> {bare_zero_width, hd(SuspCps)}
                   end,
             #{kind => hazard, sub => Sub, positions => Pos}
+    end.
+
+%% True iff the zero-width codepoint at index P carries meaning a reader depends
+%% on: a ZWJ inside a registered RGI emoji sequence, or a ZWNJ in an RFC 5892
+%% Appendix A.1 CONTEXTJ-valid position.
+sanctioned_zero_width(Input, P) ->
+    case lists:nth(P + 1, Input) of
+        16#200D -> legitimate_zwj_context(Input, P);
+        16#200C -> legitimate_zwnj_context(Input, P);
+        _ -> false
+    end.
+
+%% A ZWJ is legitimate only when flanked by two codepoints that both participate
+%% in some registered RGI emoji ZWJ sequence. Strictly narrower than "is an
+%% emoji": a codepoint carrying the Emoji property but appearing in no
+%% registered sequence does not sanction a ZWJ beside it. A ZWJ in head or tail
+%% position is never legitimate.
+legitimate_zwj_context(Input, P) ->
+    case P > 0 andalso P + 1 < length(Input) of
+        false -> false;
+        true ->
+            usec_emoji_zwj_integrity:is_emoji_target(lists:nth(P, Input))
+                andalso usec_emoji_zwj_integrity:is_emoji_target(lists:nth(P + 2, Input))
+    end.
+
+%% RFC 5892 Appendix A.1: a ZWNJ is orthographically required when it follows a
+%% Virama, which is how a Devanagari conjunct is suppressed, or when it sits
+%% between a left- or dual-joining character and a right- or dual-joining one,
+%% skipping Transparent characters on both sides, which is how a Persian word
+%% boundary is written inside a cursive run. A ZWNJ outside such a position
+%% carries no orthographic duty and stays reportable.
+legitimate_zwnj_context(Input, P) ->
+    case P > 0 andalso usec_ucd:is_virama(lists:nth(P, Input)) of
+        true -> true;
+        false ->
+            Left = joining_type_before(Input, P),
+            Right = joining_type_after(Input, P),
+            lists:member(Left, [l, d]) andalso lists:member(Right, [r, d])
+    end.
+
+%% The Joining_Type of the first non-Transparent codepoint before index P.
+joining_type_before(Input, P) ->
+    Before = lists:reverse(lists:sublist(Input, P)),
+    first_non_transparent(Before).
+
+%% The Joining_Type of the first non-Transparent codepoint after index P.
+joining_type_after(Input, P) ->
+    After = lists:nthtail(min(P + 1, length(Input)), Input),
+    first_non_transparent(After).
+
+first_non_transparent([]) -> none;
+first_non_transparent([Cp | T]) ->
+    case usec_ucd:joining_type(Cp) of
+        t -> first_non_transparent(T);
+        Other -> Other
     end.
 
 zero_width(Cp) ->

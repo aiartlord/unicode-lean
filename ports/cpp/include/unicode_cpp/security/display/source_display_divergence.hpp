@@ -86,7 +86,10 @@ inline Detection detect(const homoglyph_confusable::Database& db,
     if (fired(variation_selector_payload::detect(input).kind)) {
         fires.push_back("VariationSelector");
     }
-    if (fired(zero_width_payload::detect(input).kind)) {
+    // A ZWJ inside a registered emoji sequence and a ZWNJ in an RFC 5892
+    // CONTEXTJ-valid position are present but carry meaning a reader depends
+    // on, so they do not make the constituent fire.
+    if (fired(zero_width_payload::detect(input, db.tables, db.rgi).kind)) {
         fires.push_back("ZeroWidth");
     }
     // Presence, not balance. A Trojan Source payload balances its controls --

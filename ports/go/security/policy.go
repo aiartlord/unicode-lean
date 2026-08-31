@@ -203,7 +203,12 @@ func detect(input []uint32, identifierField bool) []Finding {
 		findings = append(findings, finding)
 	}
 
-	if positions := positionsWhere(input, isZeroWidthPayload); len(positions) > 0 {
+	// The sanctioning model: a ZWJ inside a registered emoji sequence and a
+	// ZWNJ in an RFC 5892 CONTEXTJ-valid position both carry meaning a reader
+	// depends on, so they are recorded as present but not treated as
+	// suspicious. An input whose zero-width characters are all sanctioned
+	// raises nothing.
+	if positions := positionsWhere(input, isZeroWidthPayload); len(positions) > 0 && hasSuspiciousZeroWidth(input, positions) {
 		findings = append(findings, Finding{
 			Code:      reasonCode(FamilyZeroWidthPayload, "BareZeroWidth"),
 			Family:    FamilyZeroWidthPayload,

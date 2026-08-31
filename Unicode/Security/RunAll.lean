@@ -59,6 +59,17 @@ def mkResult (family : Family)
     subThreat      := tag,
     positions      := positions }
 
+/-- A family's result when the family only answers a question about a declared
+    kind of field.  When `enabled` is false the entry reports clear and the
+    detector's own verdict is never consulted, so a family whose predicate is
+    meaningless for the field cannot contribute a finding. -/
+@[inline]
+def mkGatedResult (family : Family) (enabled : Bool)
+    (isClear : Bool) (tag : Option String) (positions : List Nat) :
+    FamilyResult :=
+  if enabled then mkResult family isClear tag positions
+  else mkResult family true none []
+
 /-- True iff every element of `input` fits in a single octet.
     Used to gate SurrogateReassembly in `runAll`: that detector's
     predicate is byte-stream-oriented, so feeding it a
@@ -81,6 +92,15 @@ def looksLikeByteStream (input : List Nat) : Bool :=
     `runAll` is unchanged. -/
 structure Context where
   identifierField : Bool := true
+  /-- Whether the field is one the cryptographic-stability families ask their
+      question about: a BIP-39 mnemonic, a hash preimage, or text being checked
+      for watermark carriers.  Those three families are meaningful only for such
+      a field.  `Bip39Canonical` reports `mixedCase` for any uppercase ASCII
+      letter, which is right for a mnemonic and wrong for ordinary prose, so
+      running them on an arbitrary field reports a hazard for text as plain as
+      "Hello".  Defaults to the reading each family already took, leaving
+      `runAll` unchanged. -/
+  cryptoField     : Bool := true
   deriving DecidableEq, Repr, Inhabited
 
 /-- Run every Security Conformance Layer detector on `input` under the field
@@ -159,9 +179,12 @@ def runAllWithContext (ctx : Context) (input : List Nat) : List FamilyResult :=
      mkResult .covertDisplayCompound    x2.classify.isClear x2.classify.tag x2.classify.positions,
      mkResult .confusableBidiCompound   x3.classify.isClear x3.classify.tag x3.classify.positions,
      mkResult .admissibilityFormDrift   x4.classify.isClear x4.classify.tag x4.classify.positions,
-     mkResult .bip39Canonical           k1.classify.isClear k1.classify.tag k1.classify.positions,
-     mkResult .hashInputStability       k2.classify.isClear k2.classify.tag k2.classify.positions,
-     mkResult .aiWatermarkDetectability k3.classify.isClear k3.classify.tag k3.classify.positions ]
+     mkGatedResult .bip39Canonical           ctx.cryptoField
+       k1.classify.isClear k1.classify.tag k1.classify.positions,
+     mkGatedResult .hashInputStability       ctx.cryptoField
+       k2.classify.isClear k2.classify.tag k2.classify.positions,
+     mkGatedResult .aiWatermarkDetectability ctx.cryptoField
+       k3.classify.isClear k3.classify.tag k3.classify.positions ]
 
 /-- Every family's verdict for `input`, read as the identifier-shaped field
     each family already assumed. -/

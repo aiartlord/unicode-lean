@@ -1,4 +1,5 @@
 defmodule UnicodeSecurity.Covert.ZeroWidthPayload do
+  alias UnicodeSecurity.Identity.EmojiZwjIntegrity
   alias UnicodeSecurity.Ucd
 
   defstruct kind: :clear, sub: nil, zero_width_positions: []
@@ -28,6 +29,64 @@ defmodule UnicodeSecurity.Covert.ZeroWidthPayload do
   defp nnbsp?(cp), do: cp == 0x202F
   defp zwj_or_zwsp?(cp), do: cp == 0x200B or cp == 0x200D
 
+  # True iff the zero-width codepoint at index `i` carries meaning a reader
+  # depends on: a ZWJ inside a registered RGI emoji sequence, or a ZWNJ in an
+  # RFC 5892 Appendix A.1 CONTEXTJ-valid position.
+  defp sanctioned?(input, i) do
+    case Enum.at(input, i) do
+      0x200D -> legitimate_zwj_context?(input, i)
+      0x200C -> legitimate_zwnj_context?(input, i)
+      _other -> false
+    end
+  end
+
+  # A ZWJ is legitimate only when flanked by two codepoints that both
+  # participate in some registered RGI emoji ZWJ sequence. This is strictly
+  # narrower than "is an emoji": a codepoint carrying the Emoji property but
+  # appearing in no registered sequence does not sanction a ZWJ beside it. A ZWJ
+  # in head or tail position is never legitimate.
+  defp legitimate_zwj_context?(input, i) do
+    if i == 0 or i + 1 >= length(input) do
+      false
+    else
+      EmojiZwjIntegrity.is_emoji_target?(Enum.at(input, i - 1)) and
+        EmojiZwjIntegrity.is_emoji_target?(Enum.at(input, i + 1))
+    end
+  end
+
+  # RFC 5892 Appendix A.1: a ZWNJ is orthographically required when it follows a
+  # Virama, which is how a Devanagari conjunct is suppressed, or when it sits
+  # between a left- or dual-joining character and a right- or dual-joining one,
+  # skipping Transparent characters on both sides, which is how a Persian word
+  # boundary is written inside a cursive run. A ZWNJ outside such a position
+  # carries no orthographic duty and stays reportable.
+  defp legitimate_zwnj_context?(input, i) do
+    if i > 0 and Ucd.virama?(Enum.at(input, i - 1)) do
+      true
+    else
+      left = joining_type_before(input, i)
+      right = joining_type_after(input, i)
+      left in [:l, :d] and right in [:r, :d]
+    end
+  end
+
+  # The Joining_Type of the first non-Transparent codepoint before `i`.
+  defp joining_type_before(input, i) do
+    input
+    |> Enum.take(i)
+    |> Enum.reverse()
+    |> Enum.map(&Ucd.joining_type/1)
+    |> Enum.find(fn jt -> jt != :t end)
+  end
+
+  # The Joining_Type of the first non-Transparent codepoint after `i`.
+  defp joining_type_after(input, i) do
+    input
+    |> Enum.drop(i + 1)
+    |> Enum.map(&Ucd.joining_type/1)
+    |> Enum.find(fn jt -> jt != :t end)
+  end
+
   def detect(input) do
     positions =
       input
@@ -35,8 +94,13 @@ defmodule UnicodeSecurity.Covert.ZeroWidthPayload do
       |> Enum.filter(fn {cp, _i} -> zero_width?(cp) end)
       |> Enum.map(fn {_cp, i} -> i end)
 
-    if positions == [] do
-      %__MODULE__{}
+    # The sanctioning model: a ZWJ inside a registered emoji sequence and a ZWNJ
+    # in an RFC 5892 CONTEXTJ-valid position both carry meaning a reader depends
+    # on, so they are recorded as present but not treated as suspicious.
+    suspicious = Enum.reject(positions, &sanctioned?(input, &1))
+
+    if positions == [] or suspicious == [] do
+      %__MODULE__{zero_width_positions: positions}
     else
       cps = Enum.map(positions, &Enum.at(input, &1))
       ann = Enum.count(cps, &annotation?/1)
@@ -50,7 +114,7 @@ defmodule UnicodeSecurity.Covert.ZeroWidthPayload do
           wj > 0 -> {:word_joiner_injection, wj}
           nnbsp >= 2 -> {:ai_watermark_nnbsp, nnbsp}
           zw >= 2 -> {:binary_payload, div(zw, 2)}
-          true -> {:bare_zero_width, Enum.at(input, hd(positions))}
+          true -> {:bare_zero_width, Enum.at(input, hd(suspicious))}
         end
 
       %__MODULE__{kind: :hazard, sub: sub, zero_width_positions: positions}

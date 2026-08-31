@@ -50,8 +50,65 @@ module UnicodeRuby
           cp == 0x200B || cp == 0x200D
         end
 
+        # True iff the ZWJ at index i is flanked by two codepoints that both
+        # participate in some registered RGI emoji ZWJ sequence. Strictly
+        # narrower than "is an emoji": a codepoint carrying the Emoji property
+        # but appearing in no registered sequence does not sanction a ZWJ beside
+        # it. A ZWJ in head or tail position is never legitimate.
+        def legitimate_zwj_context?(input, i)
+          return false if i.zero? || i + 1 >= input.length
+
+          Identity::EmojiZwjIntegrity.emoji_target?(input[i - 1]) &&
+            Identity::EmojiZwjIntegrity.emoji_target?(input[i + 1])
+        end
+
+        # The Joining_Type of the first non-Transparent codepoint before i.
+        def joining_type_before(input, i)
+          j = i
+          while j > 0
+            j -= 1
+            jt = Ucd.joining_type(input[j])
+            return jt unless jt == Ucd::JoiningType::TRANSPARENT
+          end
+          nil
+        end
+
+        # The Joining_Type of the first non-Transparent codepoint after i.
+        def joining_type_after(input, i)
+          j = i + 1
+          while j < input.length
+            jt = Ucd.joining_type(input[j])
+            return jt unless jt == Ucd::JoiningType::TRANSPARENT
+
+            j += 1
+          end
+          nil
+        end
+
+        # True iff the ZWNJ at index i occupies a position where it is
+        # orthographically required, by RFC 5892 Appendix A.1: it follows a
+        # Virama, which is how a Devanagari conjunct is suppressed, or it sits
+        # between a left- or dual-joining character and a right- or dual-joining
+        # one, skipping Transparent characters on both sides, which is how a
+        # Persian word boundary is written inside a cursive run.
+        #
+        # A ZWNJ outside such a position carries no orthographic duty and stays
+        # reportable.
+        def legitimate_zwnj_context?(input, i)
+          return true if i > 0 && Ucd.virama?(input[i - 1])
+
+          left = joining_type_before(input, i)
+          right = joining_type_after(input, i)
+          left_ok = left == Ucd::JoiningType::LEFT_JOINING ||
+                    left == Ucd::JoiningType::DUAL_JOINING
+          right_ok = right == Ucd::JoiningType::RIGHT_JOINING ||
+                     right == Ucd::JoiningType::DUAL_JOINING
+          left_ok && right_ok
+        end
+
         def detect(input)
           zero_width_positions = []
+          suspicious = []
           annotation_count = 0
           word_joiner_count = 0
           nnbsp_count = 0
@@ -70,10 +127,17 @@ module UnicodeRuby
             elsif zwj_or_zwsp?(cp)
               zwj_zwsp_count += 1
             end
+            # The sanctioning model: a ZWJ inside a registered emoji sequence
+            # and a ZWNJ in an RFC 5892 CONTEXTJ-valid position both carry
+            # meaning a reader depends on, so they are recorded as present but
+            # not treated as suspicious.
+            sanctioned = (cp == 0x200D && legitimate_zwj_context?(input, i)) ||
+                         (cp == 0x200C && legitimate_zwnj_context?(input, i))
+            suspicious << i unless sanctioned
           end
 
-          if zero_width_positions.empty?
-            return Verdict.new(Calculus::ClassificationKind::CLEAR, nil, [])
+          if zero_width_positions.empty? || suspicious.empty?
+            return Verdict.new(Calculus::ClassificationKind::CLEAR, nil, zero_width_positions)
           end
 
           sub =

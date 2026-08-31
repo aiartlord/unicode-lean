@@ -5,6 +5,7 @@
 -- 0-based codepoint offsets.
 
 local ucd = require("unicode_lua.security.identity.ucd")
+local emoji_zwj_integrity = require("unicode_lua.security.identity.emoji_zwj_integrity")
 local calculus = require("unicode_lua.security.calculus")
 local ClassificationKind = calculus.ClassificationKind
 
@@ -47,6 +48,67 @@ function M.is_zwj_or_zwsp(cp)
   return cp == 0x200B or cp == 0x200D
 end
 
+-- True iff the ZWJ at 1-based index i is flanked by two codepoints that both
+-- participate in some registered RGI emoji ZWJ sequence. Strictly narrower than
+-- "is an emoji": a codepoint carrying the Emoji property but appearing in no
+-- registered sequence does not sanction a ZWJ beside it. A ZWJ in head or tail
+-- position is never legitimate.
+local function is_legitimate_zwj_context(input, i)
+  if i == 1 or i + 1 > #input then
+    return false
+  end
+  return emoji_zwj_integrity.is_emoji_target(input[i - 1])
+    and emoji_zwj_integrity.is_emoji_target(input[i + 1])
+end
+
+-- The Joining_Type of the first non-Transparent codepoint before 1-based i.
+local function joining_type_before(input, i)
+  local j = i
+  while j > 1 do
+    j = j - 1
+    local jt = ucd.joining_type(input[j])
+    if jt ~= ucd.JoiningType.TRANSPARENT then
+      return jt
+    end
+  end
+  return nil
+end
+
+-- The Joining_Type of the first non-Transparent codepoint after 1-based i.
+local function joining_type_after(input, i)
+  local j = i + 1
+  while j <= #input do
+    local jt = ucd.joining_type(input[j])
+    if jt ~= ucd.JoiningType.TRANSPARENT then
+      return jt
+    end
+    j = j + 1
+  end
+  return nil
+end
+
+-- True iff the ZWNJ at 1-based index i occupies a position where it is
+-- orthographically required, by RFC 5892 Appendix A.1: it follows a Virama,
+-- which is how a Devanagari conjunct is suppressed, or it sits between a left-
+-- or dual-joining character and a right- or dual-joining one, skipping
+-- Transparent characters on both sides, which is how a Persian word boundary is
+-- written inside a cursive run.
+--
+-- A ZWNJ outside such a position carries no orthographic duty and stays
+-- reportable.
+local function is_legitimate_zwnj_context(input, i)
+  if i > 1 and ucd.is_virama(input[i - 1]) then
+    return true
+  end
+  local left = joining_type_before(input, i)
+  local right = joining_type_after(input, i)
+  local left_ok = left == ucd.JoiningType.LEFT_JOINING
+    or left == ucd.JoiningType.DUAL_JOINING
+  local right_ok = right == ucd.JoiningType.RIGHT_JOINING
+    or right == ucd.JoiningType.DUAL_JOINING
+  return left_ok and right_ok
+end
+
 -- Returns { kind, sub, zero_width_positions (0-based) }.
 function M.detect(input)
   local v = { kind = ClassificationKind.Clear, sub = nil, zero_width_positions = {} }
@@ -54,6 +116,7 @@ function M.detect(input)
   local word_joiner_count = 0
   local nnbsp_count = 0
   local zwj_zwsp_count = 0
+  local suspicious = {}
 
   for i = 1, #input do
     local cp = input[i]
@@ -68,10 +131,19 @@ function M.detect(input)
       elseif M.is_zwj_or_zwsp(cp) then
         zwj_zwsp_count = zwj_zwsp_count + 1
       end
+      -- The sanctioning model: a ZWJ inside a registered emoji sequence and a
+      -- ZWNJ in an RFC 5892 CONTEXTJ-valid position both carry meaning a reader
+      -- depends on, so they are recorded as present but not treated as
+      -- suspicious.
+      local sanctioned = (cp == 0x200D and is_legitimate_zwj_context(input, i))
+        or (cp == 0x200C and is_legitimate_zwnj_context(input, i))
+      if not sanctioned then
+        suspicious[#suspicious + 1] = i - 1
+      end
     end
   end
 
-  if #v.zero_width_positions == 0 then
+  if #v.zero_width_positions == 0 or #suspicious == 0 then
     return v
   end
 
@@ -85,7 +157,7 @@ function M.detect(input)
   elseif zwj_zwsp_count >= 2 then
     v.sub = { tag = "BinaryPayload", pair_count = math.floor(zwj_zwsp_count / 2) }
   else
-    v.sub = { tag = "BareZeroWidth", cp = input[v.zero_width_positions[1] + 1] }
+    v.sub = { tag = "BareZeroWidth", cp = input[suspicious[1] + 1] }
   end
   return v
 end

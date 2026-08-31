@@ -269,6 +269,64 @@ defmodule UnicodeSecurity.Ucd do
   defp eaw_of_token("W"), do: :w
   defp eaw_of_token(_other), do: :n
 
+  # ── DerivedJoiningType.txt — RFC 5892 Appendix A.1 support ─────────────
+
+  @doc """
+  `Joining_Type` for one codepoint, the cursive-joining behaviour a character
+  has in scripts like Arabic. RFC 5892 Appendix A.1 uses it to decide whether a
+  ZERO WIDTH NON-JOINER sits in a position its script actually requires. The
+  file's `@missing` line declares `Non_Joining` over the whole space, so an
+  unlisted codepoint is `:u`.
+  """
+  @spec joining_type(integer()) :: :c | :d | :l | :r | :t | :u
+  def joining_type(cp) do
+    case find_range(joining_type_table(), cp) do
+      nil -> :u
+      cls -> cls
+    end
+  end
+
+  @doc """
+  True iff `cp` has Canonical_Combining_Class 9, the Virama used to request an
+  explicit conjunct in scripts like Devanagari.
+  """
+  @spec virama?(integer()) :: boolean()
+  def virama?(cp), do: ccc(cp) == 9
+
+  defp joining_type_table do
+    Data.cached(:joining_type_table, &parse_joining_types/0)
+  end
+
+  defp parse_joining_types do
+    Data.read("DerivedJoiningType.txt")
+    |> String.split("\n")
+    |> Enum.reduce([], fn line, acc ->
+      body = strip_comment_and_trim(line)
+
+      if body == "" do
+        acc
+      else
+        case String.split(body, ";", parts: 2) do
+          [range, cls] ->
+            {lo, hi} = parse_range_field(range)
+            [{lo, hi, joining_type_of_token(String.trim(cls))} | acc]
+
+          _ ->
+            acc
+        end
+      end
+    end)
+    |> Enum.sort_by(fn {lo, _hi, _v} -> lo end)
+    |> List.to_tuple()
+  end
+
+  defp joining_type_of_token("C"), do: :c
+  defp joining_type_of_token("D"), do: :d
+  defp joining_type_of_token("L"), do: :l
+  defp joining_type_of_token("R"), do: :r
+  defp joining_type_of_token("T"), do: :t
+  defp joining_type_of_token(_other), do: :u
+
   # ── CompositionExclusions.txt + composition table ──────────────────────
 
   defp composition_exclusions do

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace UnicodePhp\Security\Covert;
 
 use UnicodePhp\Security\ClassificationKind;
+use UnicodePhp\Security\Identity\EmojiZwjIntegrity;
+use UnicodePhp\Security\Identity\JoiningType;
 use UnicodePhp\Security\Identity\Ucd;
 
 interface ZeroWidthSubThreat
@@ -140,9 +142,82 @@ final class ZeroWidthPayload
     /**
      * @param list<int> $input
      */
+    /// True iff the ZWJ at index `i` is flanked by two codepoints that both
+    /// participate in some registered RGI emoji ZWJ sequence. Strictly narrower
+    /// than "is an emoji": a codepoint carrying the Emoji property but
+    /// appearing in no registered sequence does not sanction a ZWJ beside it. A
+    /// ZWJ in head or tail position is never legitimate.
+    ///
+    /// @param list<int> $input
+    private static function isLegitimateZwjContext(array $input, int $i): bool
+    {
+        if ($i === 0 || $i + 1 >= count($input)) {
+            return false;
+        }
+        return EmojiZwjIntegrity::isEmojiTarget($input[$i - 1])
+            && EmojiZwjIntegrity::isEmojiTarget($input[$i + 1]);
+    }
+
+    /// The `Joining_Type` of the first non-Transparent codepoint before `i`.
+    ///
+    /// @param list<int> $input
+    private static function joiningTypeBefore(array $input, int $i): ?JoiningType
+    {
+        $j = $i;
+        while ($j > 0) {
+            $j--;
+            $jt = Ucd::joiningType($input[$j]);
+            if ($jt !== JoiningType::Transparent) {
+                return $jt;
+            }
+        }
+        return null;
+    }
+
+    /// The `Joining_Type` of the first non-Transparent codepoint after `i`.
+    ///
+    /// @param list<int> $input
+    private static function joiningTypeAfter(array $input, int $i): ?JoiningType
+    {
+        $j = $i + 1;
+        $n = count($input);
+        while ($j < $n) {
+            $jt = Ucd::joiningType($input[$j]);
+            if ($jt !== JoiningType::Transparent) {
+                return $jt;
+            }
+            $j++;
+        }
+        return null;
+    }
+
+    /// True iff the ZWNJ at index `i` occupies a position where it is
+    /// orthographically required, by RFC 5892 Appendix A.1: it follows a
+    /// Virama, which is how a Devanagari conjunct is suppressed, or it sits
+    /// between a left- or dual-joining character and a right- or dual-joining
+    /// one, skipping Transparent characters on both sides, which is how a
+    /// Persian word boundary is written inside a cursive run.
+    ///
+    /// A ZWNJ outside such a position carries no orthographic duty and stays
+    /// reportable.
+    ///
+    /// @param list<int> $input
+    private static function isLegitimateZwnjContext(array $input, int $i): bool
+    {
+        if ($i > 0 && Ucd::isVirama($input[$i - 1])) {
+            return true;
+        }
+        $left = self::joiningTypeBefore($input, $i);
+        $right = self::joiningTypeAfter($input, $i);
+        $leftOk = $left === JoiningType::LeftJoining || $left === JoiningType::DualJoining;
+        $rightOk = $right === JoiningType::RightJoining || $right === JoiningType::DualJoining;
+        return $leftOk && $rightOk;
+    }
+
     public static function detect(array $input): ZeroWidthVerdict
     {
         $positions = [];
+        $suspicious = [];
         $annotationCount = 0;
         $wordJoinerCount = 0;
         $nnbspCount = 0;
@@ -162,10 +237,19 @@ final class ZeroWidthPayload
             } elseif (self::isZwjOrZwsp($cp)) {
                 $zwjZwspCount++;
             }
+            // The sanctioning model: a ZWJ inside a registered emoji sequence
+            // and a ZWNJ in an RFC 5892 CONTEXTJ-valid position both carry
+            // meaning a reader depends on, so they are recorded as present but
+            // not treated as suspicious.
+            $sanctioned = ($cp === 0x200D && self::isLegitimateZwjContext($input, $i))
+                || ($cp === 0x200C && self::isLegitimateZwnjContext($input, $i));
+            if (!$sanctioned) {
+                $suspicious[] = $i;
+            }
         }
 
-        if ($positions === []) {
-            return new ZeroWidthVerdict(ClassificationKind::Clear, null, []);
+        if ($positions === [] || $suspicious === []) {
+            return new ZeroWidthVerdict(ClassificationKind::Clear, null, $positions);
         }
 
         if ($annotationCount > 0) {
@@ -177,7 +261,7 @@ final class ZeroWidthPayload
         } elseif ($zwjZwspCount >= 2) {
             $sub = new ZwBinaryPayload(intdiv($zwjZwspCount, 2));
         } else {
-            $sub = new ZwBareZeroWidth($input[$positions[0]]);
+            $sub = new ZwBareZeroWidth($input[$suspicious[0]]);
         }
 
         return new ZeroWidthVerdict(ClassificationKind::Hazard, $sub, $positions);

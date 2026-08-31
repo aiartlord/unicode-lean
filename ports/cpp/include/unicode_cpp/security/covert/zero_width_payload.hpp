@@ -19,16 +19,17 @@
 //   U+FEFF  ZERO WIDTH NO-BREAK SPACE / BOM
 //   U+FFF9..U+FFFB  INTERLINEAR ANNOTATION marks
 //
-// Note: this port treats every zero-width occurrence as
-// reportable.  The Lean reference additionally exempts ZWJ
-// flanked by emoji codepoints (RGI-context legitimate emoji-ZWJ
-// sequence) — that exemption requires the UCD emoji-data table.
-// Callers needing emoji-aware ZWJ exemption can pre-filter the
-// input before calling this detector.
+// Every zero-width occurrence is recorded, but two of them carry
+// meaning a reader depends on and are not treated as suspicious:
+// a ZWJ flanked by two codepoints that both participate in some
+// registered RGI emoji sequence, and a ZWNJ in an RFC 5892
+// Appendix A.1 CONTEXTJ-valid position.  An input whose
+// zero-width characters are all sanctioned is clear.
 
 #ifndef UNICODE_CPP_SECURITY_ZERO_WIDTH_PAYLOAD_HPP
 #define UNICODE_CPP_SECURITY_ZERO_WIDTH_PAYLOAD_HPP
 
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -37,6 +38,9 @@
 #include <vector>
 
 #include "unicode_cpp/security/calculus.hpp"
+#include "unicode_cpp/security/generated/context_tables.hpp"
+#include "unicode_cpp/security/identity/emoji_zwj_integrity.hpp"
+#include "unicode_cpp/security/identity/ucd.hpp"
 
 namespace unicode_cpp::security::zero_width_payload {
 
@@ -153,12 +157,130 @@ struct Verdict {
     std::vector<std::size_t> zero_width_positions;
 };
 
-inline Verdict detect(std::span<const std::uint32_t> input) {
+// Joining_Type from the compiled-in rows, used when the caller supplied no UCD
+// directory. The rows are derived from the same DerivedJoiningType.txt the
+// Tables path parses, so both readings agree.
+inline unicode_cpp::security::ucd::JoiningType embedded_joining_type(
+    std::uint32_t cp) {
+    const auto& rows = unicode_cpp::security::generated::kJoiningRows;
+    std::size_t lo = 0;
+    std::size_t hi = rows.size();
+    while (lo < hi) {
+        std::size_t mid = lo + (hi - lo) / 2;
+        if (cp < rows[mid].lo) {
+            hi = mid;
+        } else if (cp > rows[mid].hi) {
+            lo = mid + 1;
+        } else {
+            return rows[mid].cls;
+        }
+    }
+    return unicode_cpp::security::ucd::JoiningType::NonJoining;
+}
+
+// Virama from the compiled-in set: the codepoints with
+// Canonical_Combining_Class 9.
+inline bool embedded_is_virama(std::uint32_t cp) {
+    const auto& set = unicode_cpp::security::generated::kViramaCodepoints;
+    return std::binary_search(set.begin(), set.end(), cp);
+}
+
+// Registered-RGI membership from the compiled-in alphabet.
+inline bool embedded_is_emoji_target(std::uint32_t cp) {
+    const auto& set = unicode_cpp::security::generated::kRgiZwjAlphabet;
+    return std::binary_search(set.begin(), set.end(), cp);
+}
+
+// One Joining_Type reading whether or not a Tables was supplied.
+inline unicode_cpp::security::ucd::JoiningType joining_type_of(
+    const unicode_cpp::security::ucd::Tables* t, std::uint32_t cp) {
+    return t != nullptr ? unicode_cpp::security::ucd::joining_type(*t, cp)
+                        : embedded_joining_type(cp);
+}
+
+// The Joining_Type of the first non-Transparent codepoint before `i`.
+inline std::optional<unicode_cpp::security::ucd::JoiningType> joining_type_before(
+    const unicode_cpp::security::ucd::Tables* t,
+    std::span<const std::uint32_t> input, std::size_t i) {
+    for (std::size_t j = i; j > 0;) {
+        --j;
+        auto jt = joining_type_of(t, input[j]);
+        if (jt != unicode_cpp::security::ucd::JoiningType::Transparent) return jt;
+    }
+    return std::nullopt;
+}
+
+// The Joining_Type of the first non-Transparent codepoint after `i`.
+inline std::optional<unicode_cpp::security::ucd::JoiningType> joining_type_after(
+    const unicode_cpp::security::ucd::Tables* t,
+    std::span<const std::uint32_t> input, std::size_t i) {
+    for (std::size_t j = i + 1; j < input.size(); ++j) {
+        auto jt = joining_type_of(t, input[j]);
+        if (jt != unicode_cpp::security::ucd::JoiningType::Transparent) return jt;
+    }
+    return std::nullopt;
+}
+
+// True iff the ZWNJ at index `i` occupies a position where it is
+// orthographically required, by RFC 5892 Appendix A.1: it follows a Virama,
+// which is how a Devanagari conjunct is suppressed, or it sits between a left-
+// or dual-joining character and a right- or dual-joining one, skipping
+// Transparent characters on both sides, which is how a Persian word boundary is
+// written inside a cursive run.
+//
+// A ZWNJ outside such a position carries no orthographic duty and stays
+// reportable.
+inline bool is_legitimate_zwnj_context(
+    const unicode_cpp::security::ucd::Tables* t,
+    std::span<const std::uint32_t> input, std::size_t i) {
+    namespace u = unicode_cpp::security::ucd;
+    if (i > 0) {
+        bool prev_is_virama = t != nullptr ? u::is_virama(*t, input[i - 1])
+                                           : embedded_is_virama(input[i - 1]);
+        if (prev_is_virama) return true;
+    }
+    auto left = joining_type_before(t, input, i);
+    auto right = joining_type_after(t, input, i);
+    if (!left.has_value() || !right.has_value()) return false;
+    bool left_joins = *left == u::JoiningType::LeftJoining ||
+                      *left == u::JoiningType::DualJoining;
+    bool right_joins = *right == u::JoiningType::RightJoining ||
+                       *right == u::JoiningType::DualJoining;
+    return left_joins && right_joins;
+}
+
+// True iff the ZWJ at index `i` is flanked by two codepoints that both
+// participate in some registered RGI emoji ZWJ sequence. Strictly narrower than
+// "is an emoji": a codepoint carrying the Emoji property but appearing in no
+// registered sequence does not sanction a ZWJ beside it. A ZWJ in head or tail
+// position is never legitimate.
+inline bool is_legitimate_zwj_context(
+    const unicode_cpp::security::identity::emoji_zwj_integrity::RgiTable* rgi,
+    std::span<const std::uint32_t> input, std::size_t i) {
+    if (i == 0 || i + 1 >= input.size()) return false;
+    if (rgi != nullptr) {
+        return rgi->is_emoji_target(input[i - 1]) &&
+               rgi->is_emoji_target(input[i + 1]);
+    }
+    return embedded_is_emoji_target(input[i - 1]) &&
+           embedded_is_emoji_target(input[i + 1]);
+}
+
+// `tables` and `rgi` are optional. When the caller supplies them the exemptions
+// are decided from the loaded UCD; when it does not, they are decided from the
+// compiled-in tables in `generated/context_tables.hpp`, which are derived from
+// the same three files. Both readings therefore agree, and there is no mode in
+// which a legitimate Devanagari or Persian ZWNJ is reported.
+inline Verdict detect_with_optional_context(
+    std::span<const std::uint32_t> input,
+    const unicode_cpp::security::ucd::Tables* tables,
+    const unicode_cpp::security::identity::emoji_zwj_integrity::RgiTable* rgi) {
     Verdict v{};
     std::size_t annotation_count = 0;
     std::size_t word_joiner_count = 0;
     std::size_t nnbsp_count = 0;
     std::size_t zwj_zwsp_count = 0;
+    std::vector<std::size_t> suspicious;
 
     for (std::size_t i = 0; i < input.size(); ++i) {
         std::uint32_t cp = input[i];
@@ -168,9 +290,17 @@ inline Verdict detect(std::span<const std::uint32_t> input) {
         else if (is_word_joiner(cp)) word_joiner_count += 1;
         else if (is_nnbsp(cp)) nnbsp_count += 1;
         else if (is_zwj_or_zwsp(cp)) zwj_zwsp_count += 1;
+        // The sanctioning model: a ZWJ inside a registered emoji sequence and a
+        // ZWNJ in an RFC 5892 CONTEXTJ-valid position both carry meaning a
+        // reader depends on, so they are recorded as present but not treated as
+        // suspicious.
+        bool sanctioned =
+            (cp == 0x200D && is_legitimate_zwj_context(rgi, input, i)) ||
+            (cp == 0x200C && is_legitimate_zwnj_context(tables, input, i));
+        if (!sanctioned) suspicious.push_back(i);
     }
 
-    if (v.zero_width_positions.empty()) {
+    if (v.zero_width_positions.empty() || suspicious.empty()) {
         v.kind = ClassificationKind::Clear;
         return v;
     }
@@ -185,9 +315,24 @@ inline Verdict detect(std::span<const std::uint32_t> input) {
     } else if (zwj_zwsp_count >= 2) {
         v.sub = BinaryPayload{zwj_zwsp_count / 2};
     } else {
-        v.sub = BareZeroWidth{input[v.zero_width_positions[0]]};
+        v.sub = BareZeroWidth{input[suspicious[0]]};
     }
     return v;
+}
+
+// Full-fidelity detection: both exemptions are decided from the UCD data.
+inline Verdict detect(
+    std::span<const std::uint32_t> input,
+    const unicode_cpp::security::ucd::Tables& tables,
+    const unicode_cpp::security::identity::emoji_zwj_integrity::RgiTable& rgi) {
+    return detect_with_optional_context(input, &tables, &rgi);
+}
+
+// Detection for a caller holding no UCD directory. Both exemptions still hold,
+// decided from the compiled-in tables, so this agrees with `detect` on every
+// input.
+inline Verdict detect_without_context(std::span<const std::uint32_t> input) {
+    return detect_with_optional_context(input, nullptr, nullptr);
 }
 
 }  // namespace unicode_cpp::security::zero_width_payload

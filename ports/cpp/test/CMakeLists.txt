@@ -1,14 +1,31 @@
-include(FetchContent)
-
 # doctest v2.4.11 declares an older CMake minimum; CMake 4 requires an
 # explicit policy floor for vendored projects that still build cleanly.
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
-FetchContent_Declare(
-    doctest
-    GIT_REPOSITORY https://github.com/doctest/doctest.git
-    GIT_TAG v2.4.11)
-FetchContent_MakeAvailable(doctest)
+# Prefer a doctest already on the system. A sandboxed build has no network, so
+# fetching it from GitHub is what forced the packaged build to skip its tests
+# and report a compile as a pass. With the package supplied the suite runs
+# where the port is built. The fetch stays as the fallback for a working tree
+# that has no doctest installed.
+find_package(doctest QUIET)
+if(doctest_FOUND)
+    get_target_property(UNICODE_CPP_DOCTEST_INCLUDE
+        doctest::doctest INTERFACE_INCLUDE_DIRECTORIES)
+    find_path(UNICODE_CPP_DOCTEST_CMAKE_DIR doctest.cmake
+        PATHS
+            "${doctest_DIR}"
+            "${UNICODE_CPP_DOCTEST_INCLUDE}/../lib/cmake/doctest"
+            "${UNICODE_CPP_DOCTEST_INCLUDE}/../share/doctest/cmake"
+        NO_DEFAULT_PATH)
+else()
+    include(FetchContent)
+    FetchContent_Declare(
+        doctest
+        GIT_REPOSITORY https://github.com/doctest/doctest.git
+        GIT_TAG v2.4.11)
+    FetchContent_MakeAvailable(doctest)
+    set(UNICODE_CPP_DOCTEST_CMAKE_DIR "${doctest_SOURCE_DIR}/scripts/cmake")
+endif()
 
 add_executable(unicode_cpp_tests
     utf8_test.cpp
@@ -42,5 +59,11 @@ add_executable(unicode_cpp_tests
 target_link_libraries(unicode_cpp_tests
     PRIVATE unicode_cpp::unicode_cpp doctest::doctest)
 
-include(${doctest_SOURCE_DIR}/scripts/cmake/doctest.cmake)
-doctest_discover_tests(unicode_cpp_tests)
+if(UNICODE_CPP_DOCTEST_CMAKE_DIR)
+    include(${UNICODE_CPP_DOCTEST_CMAKE_DIR}/doctest.cmake)
+    doctest_discover_tests(unicode_cpp_tests)
+else()
+    # No discovery script alongside the package: register the binary as one
+    # test so ctest still runs the whole suite.
+    add_test(NAME unicode_cpp_tests COMMAND unicode_cpp_tests)
+endif()

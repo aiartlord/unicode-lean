@@ -265,6 +265,76 @@ function M.east_asian_width(cp)
   return EastAsianWidth.N
 end
 
+-- ── DerivedJoiningType.txt — RFC 5892 Appendix A.1 support ────────────────
+
+-- Joining_Type, the cursive-joining behaviour a character has in scripts like
+-- Arabic. RFC 5892 Appendix A.1 uses it to decide whether a ZERO WIDTH
+-- NON-JOINER sits in a position its script actually requires.
+local JoiningType = {
+  JOIN_CAUSING = "c",
+  DUAL_JOINING = "d",
+  LEFT_JOINING = "l",
+  RIGHT_JOINING = "r",
+  TRANSPARENT = "t",
+  NON_JOINING = "u",
+}
+M.JoiningType = JoiningType
+
+local function joining_type_of_token(token)
+  if token == "C" then return JoiningType.JOIN_CAUSING end
+  if token == "D" then return JoiningType.DUAL_JOINING end
+  if token == "L" then return JoiningType.LEFT_JOINING end
+  if token == "R" then return JoiningType.RIGHT_JOINING end
+  if token == "T" then return JoiningType.TRANSPARENT end
+  return JoiningType.NON_JOINING
+end
+
+local _joining_type_table = nil
+
+local function parse_joining_types()
+  local text = datapath.read("DerivedJoiningType.txt")
+  local rows = {}
+  for line in iter_lines(text) do
+    local body = strip_comment_and_trim(line)
+    if body ~= "" then
+      local semi = body:find(";", 1, true)
+      if semi ~= nil then
+        local lo, hi = parse_range_field(body:sub(1, semi - 1))
+        rows[#rows + 1] = { lo, hi, joining_type_of_token(trim(body:sub(semi + 1))) }
+      end
+    end
+  end
+  table.sort(rows, function(a, b) return a[1] < b[1] end)
+  return rows
+end
+
+-- Joining_Type for one codepoint. The file's @missing line declares Non_Joining
+-- over the whole space, so an unlisted codepoint is Non_Joining.
+function M.joining_type(cp)
+  if _joining_type_table == nil then
+    _joining_type_table = parse_joining_types()
+  end
+  local lo, hi = 1, #_joining_type_table + 1
+  while lo < hi do
+    local mid = math.floor((lo + hi) / 2)
+    local row = _joining_type_table[mid]
+    if cp < row[1] then
+      hi = mid
+    elseif cp > row[2] then
+      lo = mid + 1
+    else
+      return row[3]
+    end
+  end
+  return JoiningType.NON_JOINING
+end
+
+-- True iff cp has Canonical_Combining_Class 9, the Virama used to request an
+-- explicit conjunct in scripts like Devanagari.
+function M.is_virama(cp)
+  return M.ccc(cp) == 9
+end
+
 local function bidi_table()
   if _bidi_table == nil then
     _bidi_table = parse_derived_bidi()

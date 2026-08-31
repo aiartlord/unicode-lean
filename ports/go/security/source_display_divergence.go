@@ -61,9 +61,12 @@ func sddVariationSelectorFired(input []uint32) bool {
 }
 
 // sddZeroWidthFired reports whether the port's own zero-width-payload constituent
-// classifies the input as non-clear.
+// classifies the input as non-clear. A ZWJ inside a registered emoji sequence
+// and a ZWNJ in an RFC 5892 CONTEXTJ-valid position are present but carry
+// meaning a reader depends on, so they do not make the constituent fire.
 func sddZeroWidthFired(input []uint32) bool {
-	return len(positionsWhere(input, isZeroWidthPayload)) > 0
+	positions := positionsWhere(input, isZeroWidthPayload)
+	return len(positions) > 0 && hasSuspiciousZeroWidth(input, positions)
 }
 
 // sddBidiControlFired reports whether the input carries any bidi format

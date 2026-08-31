@@ -17,6 +17,7 @@ const identifier_status_raw = @embedFile("data/IdentifierStatus.txt");
 const scripts_raw = @embedFile("data/Scripts.txt");
 const script_extensions_raw = @embedFile("data/ScriptExtensions.txt");
 const property_value_aliases_raw = @embedFile("data/PropertyValueAliases.txt");
+const derived_joining_type_raw = @embedFile("data/DerivedJoiningType.txt");
 const MaxSkeletonLen = 128;
 
 pub const Action = enum {
@@ -543,7 +544,12 @@ fn detect(input: []const u32, identifier_field: bool) FindingList {
         findings.append(finding);
     }
 
-    if (positionsWhere(input, isZeroWidthPayload)) |positions| {
+    // The sanctioning model: a ZWJ inside a registered emoji sequence and a
+    // ZWNJ in an RFC 5892 CONTEXTJ-valid position both carry meaning a reader
+    // depends on, so they are recorded as present but not treated as
+    // suspicious. An input whose zero-width characters are all sanctioned
+    // raises nothing.
+    if (if (hasSuspiciousZeroWidth(input)) positionsWhere(input, isZeroWidthPayload) else null) |positions| {
         findings.append(.{
             .code = "unicode.security.C.zero-width-payload.BareZeroWidth",
             .family = .zero_width_payload,
@@ -5359,9 +5365,13 @@ pub const source_display_divergence = struct {
         return variationSelectorFinding(input) != null;
     }
 
-    /// zero-width-payload fires iff the input carries a bare zero-width payload.
+    /// zero-width-payload fires iff the input carries an unsanctioned
+    /// zero-width codepoint. A ZWJ inside a registered emoji sequence and a
+    /// ZWNJ in an RFC 5892 CONTEXTJ-valid position are present but carry
+    /// meaning, so they do not make the constituent fire.
     fn zeroWidthFired(input: []const u32) bool {
-        return positionsWhere(input, isZeroWidthPayload) != null;
+        return positionsWhere(input, isZeroWidthPayload) != null and
+            hasSuspiciousZeroWidth(input);
     }
 
     /// bidi-control-balance fires iff the input carries a bidi embedding control.
@@ -6129,6 +6139,92 @@ fn isKnownScriptAbbrev(abbrev: []const u8) bool {
         while (tags.next()) |tag| {
             if (std.mem.eql(u8, tag, abbrev)) return true;
         }
+    }
+    return false;
+}
+
+// ── DerivedJoiningType.txt — RFC 5892 Appendix A.1 support ────────────────
+
+// Joining_Type for one codepoint, as its single-letter token. The file shares
+// the "RANGE ; VALUE" shape the script tables use, so it reuses the same row
+// scan. The @missing line declares Non_Joining over the whole space, so an
+// unlisted codepoint is 'U'.
+fn joiningTypeOf(cp: u32) u8 {
+    const value = scriptRowValue(derived_joining_type_raw, cp) orelse return 'U';
+    const token = trimAscii(value);
+    if (token.len != 1) return 'U';
+    return switch (token[0]) {
+        'C', 'D', 'L', 'R', 'T' => token[0],
+        else => 'U',
+    };
+}
+
+// True iff cp has Canonical_Combining_Class 9, the Virama used to request an
+// explicit conjunct in scripts like Devanagari.
+fn isViramaCodepoint(cp: u32) bool {
+    return canonicalCombiningClass(cp) == 9;
+}
+
+// The Joining_Type of the first non-Transparent codepoint before i.
+fn joiningTypeBefore(input: []const u32, i: usize) ?u8 {
+    var j = i;
+    while (j > 0) {
+        j -= 1;
+        const jt = joiningTypeOf(input[j]);
+        if (jt != 'T') return jt;
+    }
+    return null;
+}
+
+// The Joining_Type of the first non-Transparent codepoint after i.
+fn joiningTypeAfter(input: []const u32, i: usize) ?u8 {
+    var j = i + 1;
+    while (j < input.len) : (j += 1) {
+        const jt = joiningTypeOf(input[j]);
+        if (jt != 'T') return jt;
+    }
+    return null;
+}
+
+// True iff the ZWNJ at index i occupies a position where it is orthographically
+// required, by RFC 5892 Appendix A.1: it follows a Virama, which is how a
+// Devanagari conjunct is suppressed, or it sits between a left- or dual-joining
+// character and a right- or dual-joining one, skipping Transparent characters
+// on both sides, which is how a Persian word boundary is written inside a
+// cursive run.
+//
+// A ZWNJ outside such a position carries no orthographic duty and stays
+// reportable.
+fn isLegitimateZwnjContext(input: []const u32, i: usize) bool {
+    if (i > 0 and isViramaCodepoint(input[i - 1])) return true;
+    const left = joiningTypeBefore(input, i) orelse return false;
+    const right = joiningTypeAfter(input, i) orelse return false;
+    const left_joins = left == 'L' or left == 'D';
+    const right_joins = right == 'R' or right == 'D';
+    return left_joins and right_joins;
+}
+
+// True iff the ZWJ at index i is flanked by two codepoints that both
+// participate in some registered RGI emoji ZWJ sequence. Strictly narrower than
+// "is an emoji": a codepoint carrying the Emoji property but appearing in no
+// registered sequence does not sanction a ZWJ beside it. A ZWJ in head or tail
+// position is never legitimate.
+fn isLegitimateZwjContext(input: []const u32, i: usize) bool {
+    if (i == 0 or i + 1 >= input.len) return false;
+    return emoji_zwj_integrity.isEmojiTarget(input[i - 1]) and
+        emoji_zwj_integrity.isEmojiTarget(input[i + 1]);
+}
+
+// True iff at least one zero-width codepoint of input is unsanctioned. A ZWJ
+// inside a registered emoji sequence and a ZWNJ in an RFC 5892 CONTEXTJ-valid
+// position both carry meaning a reader depends on, so they are recorded as
+// present but do not make the family fire.
+fn hasSuspiciousZeroWidth(input: []const u32) bool {
+    for (input, 0..) |cp, i| {
+        if (!isZeroWidthPayload(cp)) continue;
+        const sanctioned = (cp == 0x200D and isLegitimateZwjContext(input, i)) or
+            (cp == 0x200C and isLegitimateZwnjContext(input, i));
+        if (!sanctioned) return true;
     }
     return false;
 }

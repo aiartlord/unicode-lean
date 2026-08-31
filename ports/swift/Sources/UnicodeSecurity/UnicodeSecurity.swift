@@ -202,8 +202,13 @@ private func detect(_ input: [Int], _ identifierField: Bool) -> [Finding] {
     if let variation = variationSelectorFinding(input) {
         findings.append(variation)
     }
+    // The sanctioning model: a ZWJ inside a registered emoji sequence and a
+    // ZWNJ in an RFC 5892 CONTEXTJ-valid position both carry meaning a reader
+    // depends on, so they are recorded as present but not treated as
+    // suspicious. An input whose zero-width characters are all sanctioned
+    // raises nothing.
     let zeroWidth = positionsWhere(input, isZeroWidthPayload)
-    if !zeroWidth.isEmpty {
+    if !zeroWidth.isEmpty && hasSuspiciousZeroWidth(input, zeroWidth) {
         findings.append(makeFinding(family: Family.zeroWidthPayload, subThreat: "BareZeroWidth", positions: zeroWidth))
     }
     if let surrogate = surrogateReassemblyFinding(input) {
@@ -2165,6 +2170,7 @@ private let pinnedTableDigests: [String: String] = [
     "UnicodeData.txt": "2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c",
     "CompositionExclusions.txt": "2f239196ef3b5b61db5cc476e9bd80f534d15aa1b74e1be1dea5d042a344c85f",
     "DerivedCoreProperties.txt": "24c7fed1195c482faaefd5c1e7eb821c5ee1fb6de07ecdbaa64b56a99da22c08",
+    "DerivedJoiningType.txt": "f39ebe974825d6736aee15582250307aa532b2cfab3caf3f86bd23fddc9c5c4d",
     "IdentifierStatus.txt": "617228a16da13850bf8af28b6cd08f5e9b6595d2eb60404fe6eee2c85b4e4a35",
     "SpecialCasing.txt": "efc25faf19de21b92c1194c111c932e03d2a5eaf18194e33f1156e96de4c9588",
     "emoji-data.txt": "2cb2bb9455cda83e8481541ecf5b6dfda66a3bb89efa3fa7c5297eccf607b72b",
@@ -2349,6 +2355,103 @@ private func scriptsTable() -> [(Int, Int, [String])] {
     let parsed = parseScriptRanges(readDataFile("Scripts.txt"))
     scriptRangesCache = parsed
     return parsed
+}
+
+private nonisolated(unsafe) var joiningTypeRangesCache: [(Int, Int, [String])]?
+
+// DerivedJoiningType.txt shares the "RANGE ; VALUE" shape, so it reuses the
+// same range parser and lookup the script tables use. RFC 5892 Appendix A.1
+// reads Joining_Type to decide whether a ZERO WIDTH NON-JOINER sits in a
+// position its script actually requires.
+private func joiningTypeTable() -> [(Int, Int, [String])] {
+    if let cached = joiningTypeRangesCache { return cached }
+    let parsed = parseScriptRanges(readDataFile("DerivedJoiningType.txt"))
+    joiningTypeRangesCache = parsed
+    return parsed
+}
+
+// Joining_Type for one codepoint, as its single-letter token. The file's
+// @missing line declares Non_Joining over the whole space, so an unlisted
+// codepoint is "U".
+private func joiningTypeOf(_ cp: Int) -> String {
+    guard let value = findScriptRange(joiningTypeTable(), cp), let token = value.first else {
+        return "U"
+    }
+    switch token {
+    case "C", "D", "L", "R", "T": return token
+    default: return "U"
+    }
+}
+
+// True iff cp has Canonical_Combining_Class 9, the Virama used to request an
+// explicit conjunct in scripts like Devanagari.
+private func isViramaCodepoint(_ cp: Int) -> Bool {
+    canonicalCombiningClass(cp) == 9
+}
+
+// The Joining_Type of the first non-Transparent codepoint before i.
+private func joiningTypeBefore(_ input: [Int], _ i: Int) -> String? {
+    var j = i - 1
+    while j >= 0 {
+        let jt = joiningTypeOf(input[j])
+        if jt != "T" { return jt }
+        j -= 1
+    }
+    return nil
+}
+
+// The Joining_Type of the first non-Transparent codepoint after i.
+private func joiningTypeAfter(_ input: [Int], _ i: Int) -> String? {
+    var j = i + 1
+    while j < input.count {
+        let jt = joiningTypeOf(input[j])
+        if jt != "T" { return jt }
+        j += 1
+    }
+    return nil
+}
+
+// True iff the ZWNJ at index i occupies a position where it is orthographically
+// required, by RFC 5892 Appendix A.1: it follows a Virama, which is how a
+// Devanagari conjunct is suppressed, or it sits between a left- or dual-joining
+// character and a right- or dual-joining one, skipping Transparent characters on
+// both sides, which is how a Persian word boundary is written inside a cursive
+// run.
+//
+// A ZWNJ outside such a position carries no orthographic duty and stays
+// reportable.
+private func isLegitimateZwnjContext(_ input: [Int], _ i: Int) -> Bool {
+    if i > 0 && isViramaCodepoint(input[i - 1]) { return true }
+    guard let left = joiningTypeBefore(input, i), let right = joiningTypeAfter(input, i) else {
+        return false
+    }
+    let leftJoins = left == "L" || left == "D"
+    let rightJoins = right == "R" || right == "D"
+    return leftJoins && rightJoins
+}
+
+// True iff the ZWJ at index i is flanked by two codepoints that both participate
+// in some registered RGI emoji ZWJ sequence. Strictly narrower than "is an
+// emoji": a codepoint carrying the Emoji property but appearing in no registered
+// sequence does not sanction a ZWJ beside it. A ZWJ in head or tail position is
+// never legitimate.
+private func isLegitimateZwjContext(_ input: [Int], _ i: Int) -> Bool {
+    if i == 0 || i + 1 >= input.count { return false }
+    return emojiZwjIsEmojiTarget(input[i - 1]) && emojiZwjIsEmojiTarget(input[i + 1])
+}
+
+// True iff at least one of the given zero-width positions is unsanctioned. A ZWJ
+// inside a registered emoji sequence and a ZWNJ in an RFC 5892 CONTEXTJ-valid
+// position both carry meaning a reader depends on, so they are recorded as
+// present but do not make the family fire.
+internal func hasSuspiciousZeroWidth(_ input: [Int], _ positions: [Int]) -> Bool {
+    for i in positions {
+        let cp = input[i]
+        let sanctioned = (cp == 0x200D && isLegitimateZwjContext(input, i))
+            || (cp == 0x200C && isLegitimateZwnjContext(input, i))
+        if !sanctioned { return true }
+    }
+    return false
 }
 
 private func scriptExtensionsTable() -> [(Int, Int, [String])] {
@@ -5023,10 +5126,13 @@ private func sourceDisplayVariationSelectorFired(_ input: [Int]) -> Bool {
     variationSelectorFinding(input) != nil
 }
 
-/// True iff the port's zero-width-payload detector fires on `input` (any bare
-/// zero-width payload codepoint present). Reuses the scan pipeline's predicate.
+/// True iff the port's zero-width-payload detector fires on `input`. Reuses the
+/// scan pipeline's predicate. A ZWJ inside a registered emoji sequence and a
+/// ZWNJ in an RFC 5892 CONTEXTJ-valid position are present but carry meaning a
+/// reader depends on, so they do not make the constituent fire.
 private func sourceDisplayZeroWidthFired(_ input: [Int]) -> Bool {
-    !positionsWhere(input, isZeroWidthPayload).isEmpty
+    let positions = positionsWhere(input, isZeroWidthPayload)
+    return !positions.isEmpty && hasSuspiciousZeroWidth(input, positions)
 }
 
 /// True iff `input` carries any bidi format control, embeddings and isolates

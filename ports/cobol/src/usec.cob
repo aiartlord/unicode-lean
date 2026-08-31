@@ -70,6 +70,14 @@ WORKING-STORAGE SECTION.
 01 SCRIPT-TOK-IDX PIC 9(4) COMP-5 VALUE 0.
 01 SCRIPT-COVERED PIC X(32) VALUE SPACES.
 01 SCRIPT-FLAG PIC 9 VALUE 0.
+01 IGNORED-SCRIPT-FLAG PIC 9 VALUE 0.
+01 JOINING-TYPE-CLASS PIC X VALUE "U".
+01 JOIN-LEFT-CLASS PIC X VALUE SPACE.
+01 JOIN-RIGHT-CLASS PIC X VALUE SPACE.
+01 JOIN-IDX PIC 9(6) VALUE 0.
+01 SANCTIONED-FLAG PIC 9 VALUE 0.
+01 ZW-SANCTIONED-COUNT PIC 9(6) VALUE 0.
+01 ZW-SUSPICIOUS-COUNT PIC 9(6) VALUE 0.
 01 SINGLE-SCRIPT-FLAG PIC 9 VALUE 0.
 01 COVERED-CJK-FLAG PIC 9 VALUE 0.
 01 HIGHLY-RESTRICTIVE-FLAG PIC 9 VALUE 0.
@@ -152,6 +160,50 @@ WORKING-STORAGE SECTION.
 01 DEC-LEN PIC 9(2) COMP-5 VALUE 0.
 01 DEC-TABLE.
    05 DEC-CP OCCURS 20 TIMES PIC 9(9) COMP-5.
+*> Confusable prototype and full case-folding lookups, and the scratch the
+*> UTS #39 skeleton pipeline folds through. The skeleton is
+*> toNFD(caseFold(substitute(caseFold(toNFD(X))))), iterated to a fixed point,
+*> then reduced to its letters, which is what a curated attack target is
+*> compared against.
+01 CONF-LEN PIC 9(2) COMP-5 VALUE 0.
+01 CONF-FOUND PIC 9 VALUE 0.
+01 CONF-TABLE.
+   05 CONF-CP OCCURS 24 TIMES PIC 9(9) COMP-5.
+01 FOLD-LEN PIC 9(2) COMP-5 VALUE 0.
+01 FOLD-FOUND PIC 9 VALUE 0.
+01 FOLD-TABLE.
+   05 FOLD-CP OCCURS 24 TIMES PIC 9(9) COMP-5.
+01 SKEL-COUNT PIC 9(5) COMP-5 VALUE 0.
+01 SKEL-TABLE.
+   05 SKEL-CP OCCURS 4096 TIMES PIC 9(9) COMP-5.
+01 SKEL-PREV-COUNT PIC 9(5) COMP-5 VALUE 0.
+01 SKEL-PREV-TABLE.
+   05 SKEL-PREV-CP OCCURS 4096 TIMES PIC 9(9) COMP-5.
+01 SKEL-WORK-COUNT PIC 9(5) COMP-5 VALUE 0.
+01 SKEL-WORK-TABLE.
+   05 SKEL-WORK-CP OCCURS 4096 TIMES PIC 9(9) COMP-5.
+01 LET-IN-COUNT PIC 9(5) COMP-5 VALUE 0.
+01 LET-IN-TABLE.
+   05 LET-IN-CP OCCURS 4096 TIMES PIC 9(9) COMP-5.
+01 LET-T-COUNT PIC 9(5) COMP-5 VALUE 0.
+01 LET-T-TABLE.
+   05 LET-T-CP OCCURS 4096 TIMES PIC 9(9) COMP-5.
+01 SAVE-CP-COUNT PIC 9(5) COMP-5 VALUE 0.
+01 SAVE-CP-TABLE.
+   05 SAVE-CP OCCURS 4096 TIMES PIC 9(9) COMP-5.
+01 TARGET-COUNT PIC 9(4) COMP-5 VALUE 0.
+01 TARGET-TABLE.
+   05 TARGET-ROW OCCURS 128 TIMES.
+      10 TARGET-LEN PIC 9(3) COMP-5.
+      10 TARGET-CP OCCURS 24 TIMES PIC 9(9) COMP-5.
+01 FIRST-STRONG-POS PIC 9(6) VALUE 0.
+01 FIRST-STRONG-RTL-FLAG PIC 9 VALUE 0.
+01 CUR-RTL-FLAG PIC 9 VALUE 0.
+01 TARGET-MATCH-FLAG PIC 9 VALUE 0.
+01 TARGET-IDX PIC 9(4) COMP-5 VALUE 0.
+01 SKEL-ROUND PIC 9(2) COMP-5 VALUE 0.
+01 SKEL-STABLE PIC 9 VALUE 0.
+01 SELF-MATCH-FLAG PIC 9 VALUE 0.
 01 COMP-A PIC 9(9) COMP-5.
 01 COMP-B PIC 9(9) COMP-5.
 01 COMP-RESULT PIC 9(9) COMP-5.
@@ -922,13 +974,24 @@ DETECT-VARIATION.
     END-IF.
 
 DETECT-ZERO-WIDTH.
+*> ZW-SANCTIONED-COUNT holds the occurrences that carry meaning a reader depends
+*> on, and ZW-SUSPICIOUS-COUNT the rest. An input whose zero-width characters
+*> are all sanctioned raises nothing: a Devanagari conjunct and a Persian word
+*> boundary are ordinary text, and an emoji family carries two joiners that
+*> would otherwise read as a binary payload.
     MOVE 0 TO ZW-COUNT NNBSP-COUNT ANNO-COUNT WJ-COUNT
+    MOVE 0 TO ZW-SANCTIONED-COUNT ZW-SUSPICIOUS-COUNT
     PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
         MOVE CP(IDX) TO LOOKUP-CP
         MOVE 0 TO TABLE-FLAG
         PERFORM IS-DEFAULT-IGNORABLE
         IF CP(IDX) = 8203 OR CP(IDX) = 8205 OR (TABLE-FLAG = 1 AND NOT ((CP(IDX) >= 65024 AND CP(IDX) <= 65039) OR (CP(IDX) >= 917760 AND CP(IDX) <= 917999) OR (CP(IDX) >= 917504 AND CP(IDX) <= 917631) OR (CP(IDX) >= 8234 AND CP(IDX) <= 8238) OR (CP(IDX) >= 8294 AND CP(IDX) <= 8297)))
             ADD 1 TO ZW-COUNT
+            MOVE IDX TO JOIN-IDX
+            PERFORM IS-SANCTIONED-ZERO-WIDTH
+            IF SANCTIONED-FLAG = 1
+                ADD 1 TO ZW-SANCTIONED-COUNT
+            END-IF
         END-IF
         IF CP(IDX) = 8239
             ADD 1 TO NNBSP-COUNT
@@ -940,6 +1003,11 @@ DETECT-ZERO-WIDTH.
             ADD 1 TO ANNO-COUNT
         END-IF
     END-PERFORM
+    COMPUTE ZW-SUSPICIOUS-COUNT =
+        (ZW-COUNT - ZW-SANCTIONED-COUNT) + NNBSP-COUNT + WJ-COUNT + ANNO-COUNT
+    IF ZW-SUSPICIOUS-COUNT = 0
+        CONTINUE
+    ELSE
     IF ANNO-COUNT > 0
         MOVE "unicode.security.C.zero-width-payload.AnnotationMisuse" TO TEMP-CODE
         PERFORM ADD-ZERO-WIDTH-POS-FINDING
@@ -963,6 +1031,7 @@ DETECT-ZERO-WIDTH.
                 END-IF
             END-IF
         END-IF
+    END-IF
     END-IF.
 
 DETECT-SURROGATE-REASSEMBLY.
@@ -1100,18 +1169,12 @@ DETECT-NONCHAR.
     END-PERFORM.
 
 DETECT-HOMOGLYPH.
-    MOVE 0 TO FOUND-FLAG
-    PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
-        IF CP(IDX) = 1077 OR CP(IDX) = 1072 OR CP(IDX) = 233 OR CP(IDX) = 223 OR CP(IDX) = 946
-            MOVE 1 TO FOUND-FLAG
-        END-IF
-        IF CP(IDX) >= 119808 AND CP(IDX) <= 120831 AND CP-COUNT > 1
-            MOVE 1 TO FOUND-FLAG
-        END-IF
-        IF CP(IDX) >= 65281 AND CP(IDX) <= 65519 AND CP-COUNT > 1
-            MOVE 1 TO FOUND-FLAG
-        END-IF
-    END-PERFORM
+*> Priority 1 of the reference ladder is a target match: the input's letter
+*> skeleton spells one of the curated attack targets. It is decided by
+*> FIND-TARGET-MATCH over the real confusable and case-folding tables, not by
+*> testing for a handful of codepoints.
+    PERFORM FIND-TARGET-MATCH
+    MOVE TARGET-MATCH-FLAG TO FOUND-FLAG
     IF FOUND-FLAG = 1
         MOVE "unicode.security.I.homoglyph-confusable.TargetMatch" TO TEMP-CODE
         PERFORM ADD-ALL-POS-FINDING
@@ -1213,6 +1276,7 @@ DETECT-MIXED-SCRIPT.
 
 DETECT-RTL.
     MOVE 0 TO RTL-RUN RTL-BEST RTL-BEST-START FIRST-RTL FOUND-FLAG
+    MOVE 0 TO FIRST-STRONG-POS FIRST-STRONG-RTL-FLAG CUR-RTL-FLAG
     PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
         IF CP(IDX) = 8234 OR CP(IDX) = 8235 OR CP(IDX) = 8237 OR CP(IDX) = 8238 OR CP(IDX) = 8236 OR CP(IDX) = 8294 OR CP(IDX) = 8295 OR CP(IDX) = 8296 OR CP(IDX) = 8297
             MOVE "unicode.security.D.rtl-injection.BidiControlInLTRField" TO TEMP-CODE
@@ -1223,7 +1287,25 @@ DETECT-RTL.
             MOVE CP(IDX) TO LOOKUP-CP
             MOVE 0 TO TABLE-FLAG
             PERFORM IS-STRONG-RTL
-            IF TABLE-FLAG = 1
+            MOVE TABLE-FLAG TO CUR-RTL-FLAG
+*>          The first STRONG character decides field takeover, not the first
+*>          codepoint. A comment opener and a space are neutral, so a Hebrew
+*>          word after "// " still takes the field over.
+            IF FIRST-STRONG-POS = 0
+                IF CUR-RTL-FLAG = 1
+                    MOVE IDX TO FIRST-STRONG-POS
+                    MOVE 1 TO FIRST-STRONG-RTL-FLAG
+                ELSE
+                    MOVE CP(IDX) TO LOOKUP-CP
+                    MOVE 0 TO TABLE-FLAG
+                    PERFORM IS-STRONG-LTR
+                    IF TABLE-FLAG = 1
+                        MOVE IDX TO FIRST-STRONG-POS
+                        MOVE 0 TO FIRST-STRONG-RTL-FLAG
+                    END-IF
+                END-IF
+            END-IF
+            IF CUR-RTL-FLAG = 1
                 IF FIRST-RTL = 0
                     MOVE IDX TO FIRST-RTL
                 END-IF
@@ -1238,7 +1320,7 @@ DETECT-RTL.
         END-IF
     END-PERFORM
     IF FOUND-FLAG = 0 AND FIRST-RTL > 0
-        IF FIRST-RTL = 1
+        IF FIRST-STRONG-RTL-FLAG = 1
             MOVE "unicode.security.D.rtl-injection.FieldTakeover" TO TEMP-CODE
         ELSE
             IF RTL-BEST >= 4
@@ -1247,7 +1329,11 @@ DETECT-RTL.
                 MOVE "unicode.security.D.rtl-injection.StrongRTLInLTR" TO TEMP-CODE
             END-IF
         END-IF
-        PERFORM ADD-ALL-POS-FINDING
+*>      All three sub-threats localise the first strong right-to-left
+*>      codepoint, not the whole string. The span carries no more information
+*>      than its head: the finding says where the direction turns.
+        COMPUTE ONE-POS = FIRST-RTL - 1
+        PERFORM ADD-ONE-POS-FINDING
     END-IF.
 
 DETECT-CONFUSABLE-BIDI.
@@ -2574,6 +2660,288 @@ IS-ZWJ-TARGET.
     MOVE 0 TO TABLE-FLAG
     COPY "src/generated/zwj_alphabet.cpy".
 
+LOOKUP-CONFUSABLE.
+*> The confusable prototype sequence of LOOKUP-CP, CONF-FOUND 0 when the
+*> codepoint has no mapping and stands for itself.
+    MOVE 0 TO CONF-FOUND
+    MOVE 0 TO CONF-LEN
+    COPY "src/generated/confusable_map.cpy".
+
+LOOKUP-CASE-FOLD.
+*> The full case folding of LOOKUP-CP, FOLD-FOUND 0 when the codepoint folds
+*> to itself.
+    MOVE 0 TO FOLD-FOUND
+    MOVE 0 TO FOLD-LEN
+    COPY "src/generated/case_fold.cpy".
+
+IS-SKELETON-WHITE-SPACE.
+*> White_Space as the reference hardcodes it: the range set is small and
+*> stable, so no table is vendored for it. Whitespace inside an identifier is
+*> attacker abuse rather than orthography, so the letter skeleton drops it.
+    MOVE 0 TO TABLE-FLAG
+    IF (LOOKUP-CP >= 9 AND LOOKUP-CP <= 13)
+       OR LOOKUP-CP = 32 OR LOOKUP-CP = 133 OR LOOKUP-CP = 160
+       OR LOOKUP-CP = 5760
+       OR (LOOKUP-CP >= 8192 AND LOOKUP-CP <= 8202)
+       OR (LOOKUP-CP >= 8232 AND LOOKUP-CP <= 8233)
+       OR LOOKUP-CP = 8239 OR LOOKUP-CP = 8287 OR LOOKUP-CP = 12288
+        MOVE 1 TO TABLE-FLAG
+    END-IF.
+
+FOLD-SKEL-BUFFER.
+*> Case-fold every codepoint of SKEL-CP in place.
+    MOVE 0 TO SKEL-WORK-COUNT
+    PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > SKEL-COUNT
+        MOVE SKEL-CP(KDX) TO LOOKUP-CP
+        PERFORM LOOKUP-CASE-FOLD
+        IF FOLD-FOUND = 1
+            PERFORM VARYING MDX FROM 1 BY 1 UNTIL MDX > FOLD-LEN
+                ADD 1 TO SKEL-WORK-COUNT
+                MOVE FOLD-CP(MDX) TO SKEL-WORK-CP(SKEL-WORK-COUNT)
+            END-PERFORM
+        ELSE
+            ADD 1 TO SKEL-WORK-COUNT
+            MOVE SKEL-CP(KDX) TO SKEL-WORK-CP(SKEL-WORK-COUNT)
+        END-IF
+    END-PERFORM
+    MOVE SKEL-WORK-COUNT TO SKEL-COUNT
+    PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > SKEL-WORK-COUNT
+        MOVE SKEL-WORK-CP(KDX) TO SKEL-CP(KDX)
+    END-PERFORM.
+
+SUBSTITUTE-SKEL-BUFFER.
+*> Replace every codepoint of SKEL-CP by its confusable prototype.
+    MOVE 0 TO SKEL-WORK-COUNT
+    PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > SKEL-COUNT
+        MOVE SKEL-CP(KDX) TO LOOKUP-CP
+        PERFORM LOOKUP-CONFUSABLE
+        IF CONF-FOUND = 1
+            PERFORM VARYING MDX FROM 1 BY 1 UNTIL MDX > CONF-LEN
+                ADD 1 TO SKEL-WORK-COUNT
+                MOVE CONF-CP(MDX) TO SKEL-WORK-CP(SKEL-WORK-COUNT)
+            END-PERFORM
+        ELSE
+            ADD 1 TO SKEL-WORK-COUNT
+            MOVE SKEL-CP(KDX) TO SKEL-WORK-CP(SKEL-WORK-COUNT)
+        END-IF
+    END-PERFORM
+    MOVE SKEL-WORK-COUNT TO SKEL-COUNT
+    PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > SKEL-WORK-COUNT
+        MOVE SKEL-WORK-CP(KDX) TO SKEL-CP(KDX)
+    END-PERFORM.
+
+NFD-SKEL-BUFFER.
+*> Canonically decompose and reorder SKEL-CP in place, reusing the port's own
+*> DECOMPOSE-INPUT and REORDER-NFD over the shared CP scratch.
+    MOVE SKEL-COUNT TO CP-COUNT
+    PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > SKEL-COUNT
+        MOVE SKEL-CP(KDX) TO CP(KDX)
+    END-PERFORM
+    PERFORM DECOMPOSE-INPUT
+    PERFORM REORDER-NFD
+    MOVE NFD-COUNT TO SKEL-COUNT
+    PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > NFD-COUNT
+        MOVE NFD-CP(KDX) TO SKEL-CP(KDX)
+    END-PERFORM.
+
+COMPUTE-SKELETON-ONCE.
+*> One skeleton pass over SKEL-CP: toNFD, caseFold, substitute, caseFold,
+*> toNFD, exactly the bracketing UTS #39 §4 and §5.4 specify.
+    PERFORM NFD-SKEL-BUFFER
+    PERFORM FOLD-SKEL-BUFFER
+    PERFORM SUBSTITUTE-SKEL-BUFFER
+    PERFORM FOLD-SKEL-BUFFER
+    PERFORM NFD-SKEL-BUFFER.
+
+COMPUTE-ITERATED-SKELETON.
+*> Apply the skeleton until it stops changing. A single pass leaves cascading
+*> confusables unresolved, where one substitution exposes another. The round
+*> cap bounds the walk; the mappings shrink toward a fixed point well inside
+*> it.
+    MOVE 0 TO SKEL-ROUND
+    MOVE 0 TO SKEL-STABLE
+    PERFORM UNTIL SKEL-STABLE = 1 OR SKEL-ROUND >= 8
+        ADD 1 TO SKEL-ROUND
+        MOVE SKEL-COUNT TO SKEL-PREV-COUNT
+        PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > SKEL-COUNT
+            MOVE SKEL-CP(KDX) TO SKEL-PREV-CP(KDX)
+        END-PERFORM
+        PERFORM COMPUTE-SKELETON-ONCE
+        IF SKEL-COUNT = SKEL-PREV-COUNT
+            MOVE 1 TO SKEL-STABLE
+            PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > SKEL-COUNT
+                IF SKEL-CP(KDX) NOT = SKEL-PREV-CP(KDX)
+                    MOVE 0 TO SKEL-STABLE
+                END-IF
+            END-PERFORM
+        END-IF
+    END-PERFORM.
+
+REDUCE-SKEL-TO-LETTERS.
+*> The letter skeleton: the iterated skeleton with every combining mark, every
+*> Default_Ignorable codepoint and every whitespace codepoint dropped. This is
+*> what catches a base-letter-plus-combining-mark confusable, a cascading
+*> substitution, and an invisible codepoint spliced into a name.
+    PERFORM COMPUTE-ITERATED-SKELETON
+    MOVE 0 TO SKEL-WORK-COUNT
+    PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > SKEL-COUNT
+        MOVE SKEL-CP(KDX) TO LOOKUP-CP
+        PERFORM LOOKUP-CCC
+        IF CCC-VAL = 0
+            MOVE SKEL-CP(KDX) TO LOOKUP-CP
+            MOVE 0 TO TABLE-FLAG
+            PERFORM IS-DEFAULT-IGNORABLE
+            IF TABLE-FLAG = 0
+                MOVE SKEL-CP(KDX) TO LOOKUP-CP
+                PERFORM IS-SKELETON-WHITE-SPACE
+                IF TABLE-FLAG = 0
+                    ADD 1 TO SKEL-WORK-COUNT
+                    MOVE SKEL-CP(KDX) TO SKEL-WORK-CP(SKEL-WORK-COUNT)
+                END-IF
+            END-IF
+        END-IF
+    END-PERFORM
+    MOVE SKEL-WORK-COUNT TO SKEL-COUNT
+    PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > SKEL-WORK-COUNT
+        MOVE SKEL-WORK-CP(KDX) TO SKEL-CP(KDX)
+    END-PERFORM.
+
+FIND-TARGET-MATCH.
+*> TargetMatch per the reference: the input's letter skeleton equals the letter
+*> skeleton of a curated attack target, and the input is not literally that
+*> target. Every target is walked whether or not one has already matched, so
+*> the work the detector does carries no information about which target fired.
+*> The old reading tested five hardcoded codepoints, which reported a plain
+*> Greek beta as an impersonation of a brand.
+    MOVE 0 TO TARGET-MATCH-FLAG
+    MOVE CP-COUNT TO SAVE-CP-COUNT
+    PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > CP-COUNT
+        MOVE CP(KDX) TO SAVE-CP(KDX)
+    END-PERFORM
+    MOVE SAVE-CP-COUNT TO SKEL-COUNT
+    PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > SAVE-CP-COUNT
+        MOVE SAVE-CP(KDX) TO SKEL-CP(KDX)
+    END-PERFORM
+    PERFORM REDUCE-SKEL-TO-LETTERS
+    MOVE SKEL-COUNT TO LET-IN-COUNT
+    PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > SKEL-COUNT
+        MOVE SKEL-CP(KDX) TO LET-IN-CP(KDX)
+    END-PERFORM
+    COPY "src/generated/attack_targets.cpy".
+    PERFORM VARYING TARGET-IDX FROM 1 BY 1 UNTIL TARGET-IDX > TARGET-COUNT
+        MOVE 0 TO SELF-MATCH-FLAG
+        IF TARGET-LEN(TARGET-IDX) = SAVE-CP-COUNT
+            MOVE 1 TO SELF-MATCH-FLAG
+            PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > SAVE-CP-COUNT
+                IF TARGET-CP(TARGET-IDX, KDX) NOT = SAVE-CP(KDX)
+                    MOVE 0 TO SELF-MATCH-FLAG
+                END-IF
+            END-PERFORM
+        END-IF
+        IF SELF-MATCH-FLAG = 0
+            MOVE TARGET-LEN(TARGET-IDX) TO SKEL-COUNT
+            PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > TARGET-LEN(TARGET-IDX)
+                MOVE TARGET-CP(TARGET-IDX, KDX) TO SKEL-CP(KDX)
+            END-PERFORM
+            PERFORM REDUCE-SKEL-TO-LETTERS
+            MOVE SKEL-COUNT TO LET-T-COUNT
+            PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > SKEL-COUNT
+                MOVE SKEL-CP(KDX) TO LET-T-CP(KDX)
+            END-PERFORM
+            IF LET-T-COUNT = LET-IN-COUNT AND LET-IN-COUNT > 0
+                MOVE 1 TO SCRIPT-FLAG
+                PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > LET-IN-COUNT
+                    IF LET-T-CP(KDX) NOT = LET-IN-CP(KDX)
+                        MOVE 0 TO SCRIPT-FLAG
+                    END-IF
+                END-PERFORM
+                IF SCRIPT-FLAG = 1
+                    MOVE 1 TO TARGET-MATCH-FLAG
+                END-IF
+            END-IF
+        END-IF
+    END-PERFORM
+    MOVE SAVE-CP-COUNT TO CP-COUNT
+    PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > SAVE-CP-COUNT
+        MOVE SAVE-CP(KDX) TO CP(KDX)
+    END-PERFORM.
+
+LOOKUP-JOINING-TYPE.
+*> Joining_Type of LOOKUP-CP. The file's @missing line declares Non_Joining
+*> over the whole space, so an unlisted codepoint is "U".
+    MOVE "U" TO JOINING-TYPE-CLASS
+    COPY "src/generated/joining_type.cpy".
+
+JOINING-TYPE-BEFORE.
+*> The Joining_Type of the first non-Transparent codepoint before JOIN-IDX,
+*> SPACE when the run reaches the start of the input without one.
+    MOVE SPACE TO JOIN-LEFT-CLASS
+    MOVE JOIN-IDX TO JDX
+    PERFORM UNTIL JDX <= 1 OR JOIN-LEFT-CLASS NOT = SPACE
+        SUBTRACT 1 FROM JDX
+        MOVE CP(JDX) TO LOOKUP-CP
+        PERFORM LOOKUP-JOINING-TYPE
+        IF JOINING-TYPE-CLASS NOT = "T"
+            MOVE JOINING-TYPE-CLASS TO JOIN-LEFT-CLASS
+        END-IF
+    END-PERFORM.
+
+JOINING-TYPE-AFTER.
+*> The Joining_Type of the first non-Transparent codepoint after JOIN-IDX,
+*> SPACE when the run reaches the end of the input without one.
+    MOVE SPACE TO JOIN-RIGHT-CLASS
+    MOVE JOIN-IDX TO JDX
+    PERFORM UNTIL JDX >= CP-COUNT OR JOIN-RIGHT-CLASS NOT = SPACE
+        ADD 1 TO JDX
+        MOVE CP(JDX) TO LOOKUP-CP
+        PERFORM LOOKUP-JOINING-TYPE
+        IF JOINING-TYPE-CLASS NOT = "T"
+            MOVE JOINING-TYPE-CLASS TO JOIN-RIGHT-CLASS
+        END-IF
+    END-PERFORM.
+
+IS-SANCTIONED-ZERO-WIDTH.
+*> SANCTIONED-FLAG becomes 1 when the codepoint at JOIN-IDX carries meaning a
+*> reader depends on rather than a covert payload: a ZERO WIDTH JOINER inside a
+*> registered RGI emoji sequence, or a ZERO WIDTH NON-JOINER in a position RFC
+*> 5892 Appendix A.1 requires. The ZWNJ rule is the one that keeps ordinary
+*> Devanagari and Persian out of the report: a ZWNJ after a Virama suppresses a
+*> conjunct, and a ZWNJ between two cursive-joining letters is a Persian word
+*> boundary. Every other zero-width occurrence stays reportable.
+    MOVE 0 TO SANCTIONED-FLAG
+    IF CP(JOIN-IDX) = 8205
+        IF JOIN-IDX > 1 AND JOIN-IDX < CP-COUNT
+            MOVE CP(JOIN-IDX - 1) TO LOOKUP-CP
+            MOVE 0 TO TABLE-FLAG
+            PERFORM IS-ZWJ-TARGET
+            IF TABLE-FLAG = 1
+                MOVE CP(JOIN-IDX + 1) TO LOOKUP-CP
+                MOVE 0 TO TABLE-FLAG
+                PERFORM IS-ZWJ-TARGET
+                IF TABLE-FLAG = 1
+                    MOVE 1 TO SANCTIONED-FLAG
+                END-IF
+            END-IF
+        END-IF
+    END-IF
+    IF CP(JOIN-IDX) = 8204
+        IF JOIN-IDX > 1
+            MOVE CP(JOIN-IDX - 1) TO LOOKUP-CP
+            PERFORM LOOKUP-CCC
+            IF CCC-VAL = 9
+                MOVE 1 TO SANCTIONED-FLAG
+            END-IF
+        END-IF
+        IF SANCTIONED-FLAG = 0
+            PERFORM JOINING-TYPE-BEFORE
+            PERFORM JOINING-TYPE-AFTER
+            IF (JOIN-LEFT-CLASS = "L" OR JOIN-LEFT-CLASS = "D")
+               AND (JOIN-RIGHT-CLASS = "R" OR JOIN-RIGHT-CLASS = "D")
+                MOVE 1 TO SANCTIONED-FLAG
+            END-IF
+        END-IF
+    END-IF.
+
 SCAN-RENDERER-DIVERGENCE.
 *> Display-layer variance detector. Byte-faithful transliteration of the
 *> Rust reference security/display/renderer_divergence.rs: five variance
@@ -3262,13 +3630,14 @@ SCAN-SOURCE-DISPLAY-DIVERGENCE.
         MOVE "BidiControl" TO SDD-TAG
     END-IF
     MOVE SDD-SAVED-COUNT TO FINDING-COUNT
+*> DETECT-HOMOGLYPH carries the reference's whole priority ladder, including
+*> the CrossScriptMix and RestrictionLow rungs, so it is the only constituent
+*> consulted here. Consulting DETECT-MIXED-SCRIPT as well would count a second
+*> fire for a signal the reference's homoglyph detector never reports: its
+*> RestrictedStatusCp rung belongs to mixed-script-admissibility alone, and a
+*> tag-block payload in an identifier field would aggregate to Compound where
+*> the reference reports TagBlock.
     PERFORM DETECT-HOMOGLYPH
-*> The reference runs one homoglyph detector whose priority ladder ends in a
-*> CrossScriptMix branch, so a cross-script identifier fires it. This port
-*> splits that ladder and reports the script mix under mixed-script-
-*> admissibility, so the constituent consults both or it misses every input
-*> whose only homoglyph signal is the script mix.
-    PERFORM DETECT-MIXED-SCRIPT
     IF FINDING-COUNT > SDD-SAVED-COUNT
         ADD 1 TO SDD-FIRED-COUNT
         MOVE "IdentifierHomoglyph" TO SDD-TAG
@@ -3817,14 +4186,15 @@ RESOLVE-SCRIPTS.
 
 IS-IGNORED-FOR-INTERSECTION.
 *> Common and Inherited codepoints are excluded from the resolved-scripts
-*> intersection per UTS #39 §5.1. Both resolve to no abbreviation here, so an
-*> empty resolved set is exactly the ignored case.
-    PERFORM RESOLVE-SCRIPTS
-    IF SCRIPT-SET-TEXT = SPACES
-        MOVE 1 TO SCRIPT-FLAG
-    ELSE
-        MOVE 0 TO SCRIPT-FLAG
-    END-IF.
+*> intersection per UTS #39 §5.1. This reads the Script property of LOOKUP-CP
+*> directly, because an empty resolved set cannot stand in for it: Unknown, the
+*> unassigned codepoints, private use and the noncharacters also resolve to no
+*> abbreviation, and those must falsify Single-Script and the CJK covered sets
+*> rather than be skipped over. Treating them as ignored made a lone U+FDD0
+*> satisfy a covered set vacuously and report HighlyRestrictive, which hid
+*> RestrictionLow.
+    MOVE 0 TO IGNORED-SCRIPT-FLAG
+    COPY "src/generated/script_ignorable.cpy".
 
 BUILD-SCRIPT-UNION.
 *> The union of every non-ignored codepoint's resolved scripts, as distinct
@@ -3877,8 +4247,10 @@ COMPUTE-SINGLE-SCRIPT.
         MOVE 0 TO FOUND-FLAG
         PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
             MOVE CP(IDX) TO LOOKUP-CP
-            PERFORM RESOLVE-SCRIPTS
-            IF SCRIPT-SET-TEXT NOT = SPACES
+            PERFORM IS-IGNORED-FOR-INTERSECTION
+            IF IGNORED-SCRIPT-FLAG = 0
+                MOVE CP(IDX) TO LOOKUP-CP
+                PERFORM RESOLVE-SCRIPTS
                 IF FOUND-FLAG = 0
                     MOVE SCRIPT-SET-TEXT TO SCRIPT-ACC-TEXT
                     MOVE 1 TO FOUND-FLAG
@@ -3964,12 +4336,18 @@ CHECK-ALL-WITHIN-COVERED.
     MOVE 1 TO TABLE-FLAG
     PERFORM VARYING JDX FROM 1 BY 1 UNTIL JDX > CP-COUNT
         MOVE CP(JDX) TO LOOKUP-CP
-        PERFORM RESOLVE-SCRIPTS
-        IF SCRIPT-SET-TEXT NOT = SPACES
-            MOVE 0 TO SCRIPT-FLAG
-            PERFORM CHECK-SET-INTERSECTS-COVERED
-            IF SCRIPT-FLAG = 0
+        PERFORM IS-IGNORED-FOR-INTERSECTION
+        IF IGNORED-SCRIPT-FLAG = 0
+            MOVE CP(JDX) TO LOOKUP-CP
+            PERFORM RESOLVE-SCRIPTS
+            IF SCRIPT-SET-TEXT = SPACES
                 MOVE 0 TO TABLE-FLAG
+            ELSE
+                MOVE 0 TO SCRIPT-FLAG
+                PERFORM CHECK-SET-INTERSECTS-COVERED
+                IF SCRIPT-FLAG = 0
+                    MOVE 0 TO TABLE-FLAG
+                END-IF
             END-IF
         END-IF
     END-PERFORM.
@@ -4023,20 +4401,26 @@ COMPUTE-MOD-SHAPE.
     MOVE 1 TO TABLE-FLAG
     PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
         MOVE CP(IDX) TO LOOKUP-CP
-        PERFORM RESOLVE-SCRIPTS
-        IF SCRIPT-SET-TEXT NOT = SPACES
-            MOVE SCRIPT-SET-TEXT(1:4) TO SCRIPT-TOKEN
-            IF SCRIPT-SET-TEXT(1:4) = "Latn"
-                CONTINUE
+        PERFORM IS-IGNORED-FOR-INTERSECTION
+        IF IGNORED-SCRIPT-FLAG = 0
+            MOVE CP(IDX) TO LOOKUP-CP
+            PERFORM RESOLVE-SCRIPTS
+            IF SCRIPT-SET-TEXT = SPACES
+                MOVE 0 TO TABLE-FLAG
             ELSE
-                IF SCRIPT-TOKEN = "Cyrl" OR SCRIPT-TOKEN = "Grek"
-                    MOVE 0 TO TABLE-FLAG
+                MOVE SCRIPT-SET-TEXT(1:4) TO SCRIPT-TOKEN
+                IF SCRIPT-SET-TEXT(1:4) = "Latn"
+                    CONTINUE
                 ELSE
-                    IF MOD-SHAPE-OTHER = SPACES
-                        MOVE SCRIPT-TOKEN TO MOD-SHAPE-OTHER
+                    IF SCRIPT-TOKEN = "Cyrl" OR SCRIPT-TOKEN = "Grek"
+                        MOVE 0 TO TABLE-FLAG
                     ELSE
-                        IF SCRIPT-TOKEN NOT = MOD-SHAPE-OTHER
-                            MOVE 0 TO TABLE-FLAG
+                        IF MOD-SHAPE-OTHER = SPACES
+                            MOVE SCRIPT-TOKEN TO MOD-SHAPE-OTHER
+                        ELSE
+                            IF SCRIPT-TOKEN NOT = MOD-SHAPE-OTHER
+                                MOVE 0 TO TABLE-FLAG
+                            END-IF
                         END-IF
                     END-IF
                 END-IF

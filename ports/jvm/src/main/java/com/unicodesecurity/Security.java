@@ -212,8 +212,15 @@ public final class Security {
     if (!tags.isEmpty()) findings.add(makeFinding(Family.TAG_BLOCK_PAYLOAD, "DirectAscii", tags));
     Finding variation = variationSelectorFinding(input);
     if (variation != null) findings.add(variation);
+    // The sanctioning model: a ZWJ inside a registered emoji sequence and a
+    // ZWNJ in an RFC 5892 CONTEXTJ-valid position both carry meaning a reader
+    // depends on, so they are recorded as present but not treated as
+    // suspicious. An input whose zero-width characters are all sanctioned
+    // raises nothing.
     List<Integer> zeroWidth = positionsWhere(input, Security::isZeroWidthPayload);
-    if (!zeroWidth.isEmpty()) findings.add(makeFinding(Family.ZERO_WIDTH_PAYLOAD, "BareZeroWidth", zeroWidth));
+    if (!zeroWidth.isEmpty() && hasSuspiciousZeroWidth(input, zeroWidth)) {
+      findings.add(makeFinding(Family.ZERO_WIDTH_PAYLOAD, "BareZeroWidth", zeroWidth));
+    }
     Finding surrogate = surrogateReassemblyFinding(input);
     if (surrogate != null) findings.add(surrogate);
     List<Integer> bidi = positionsWhere(input, Security::isBidiEmbeddingControl);
@@ -282,9 +289,15 @@ public final class Security {
     return variationSelectorFinding(input) != null;
   }
 
-  /** True iff the zero-width-payload constituent fires on {@code input}. */
+  /**
+   * True iff the zero-width-payload constituent fires on {@code input}. A ZWJ
+   * inside a registered emoji sequence and a ZWNJ in an RFC 5892 CONTEXTJ-valid
+   * position are present but carry meaning a reader depends on, so they do not
+   * make the constituent fire.
+   */
   static boolean zeroWidthPayloadFired(List<Integer> input) {
-    return !positionsWhere(input, Security::isZeroWidthPayload).isEmpty();
+    List<Integer> positions = positionsWhere(input, Security::isZeroWidthPayload);
+    return !positions.isEmpty() && hasSuspiciousZeroWidth(input, positions);
   }
 
   /** True iff the bidi-control-balance constituent fires on {@code input}. */
@@ -2053,6 +2066,7 @@ public final class Security {
       Map.entry("UnicodeData.txt", "2e1efc1dcb59c575eedf5ccae60f95229f706ee6d031835247d843c11d96470c"),
       Map.entry("CompositionExclusions.txt", "2f239196ef3b5b61db5cc476e9bd80f534d15aa1b74e1be1dea5d042a344c85f"),
       Map.entry("DerivedCoreProperties.txt", "24c7fed1195c482faaefd5c1e7eb821c5ee1fb6de07ecdbaa64b56a99da22c08"),
+      Map.entry("DerivedJoiningType.txt", "f39ebe974825d6736aee15582250307aa532b2cfab3caf3f86bd23fddc9c5c4d"),
       Map.entry("IdentifierStatus.txt", "617228a16da13850bf8af28b6cd08f5e9b6595d2eb60404fe6eee2c85b4e4a35"),
       Map.entry("SpecialCasing.txt", "efc25faf19de21b92c1194c111c932e03d2a5eaf18194e33f1156e96de4c9588"),
       Map.entry("bip39/chinese_simplified.txt", "5c5942792bd8340cb8b27cd592f1015edf56a8c5b26276ee18a482428e7c5726"),
@@ -2179,6 +2193,106 @@ public final class Security {
   private static List<Object[]> scriptExtRanges;
   private static Set<String> scriptExtAbbrevs;
   private static Map<String, String> scriptLongToAbbrev;
+  private static List<Object[]> joiningTypeRanges;
+
+  // DerivedJoiningType.txt shares the "RANGE ; VALUE" shape, so it reuses the
+  // same range parser and lookup the script tables use. RFC 5892 Appendix A.1
+  // reads Joining_Type to decide whether a ZERO WIDTH NON-JOINER sits in a
+  // position its script actually requires.
+  private static List<Object[]> joiningTypeTable() {
+    if (joiningTypeRanges == null) {
+      joiningTypeRanges = parseScriptRanges(readResource("DerivedJoiningType.txt"));
+    }
+    return joiningTypeRanges;
+  }
+
+  // Joining_Type for one codepoint, as its single-letter token. The file's
+  // @missing line declares Non_Joining over the whole space, so an unlisted
+  // codepoint is "U".
+  private static String joiningTypeOf(int cp) {
+    String[] value = findScriptRange(joiningTypeTable(), cp);
+    if (value == null || value.length == 0) return "U";
+    String token = value[0];
+    switch (token) {
+      case "C":
+      case "D":
+      case "L":
+      case "R":
+      case "T":
+        return token;
+      default:
+        return "U";
+    }
+  }
+
+  // True iff cp has Canonical_Combining_Class 9, the Virama used to request an
+  // explicit conjunct in scripts like Devanagari.
+  private static boolean isViramaCodepoint(int cp) {
+    return canonicalCombiningClass(cp) == 9;
+  }
+
+  // The Joining_Type of the first non-Transparent codepoint before i, or null.
+  private static String joiningTypeBefore(List<Integer> input, int i) {
+    for (int j = i - 1; j >= 0; j--) {
+      String jt = joiningTypeOf(input.get(j));
+      if (!jt.equals("T")) return jt;
+    }
+    return null;
+  }
+
+  // The Joining_Type of the first non-Transparent codepoint after i, or null.
+  private static String joiningTypeAfter(List<Integer> input, int i) {
+    for (int j = i + 1; j < input.size(); j++) {
+      String jt = joiningTypeOf(input.get(j));
+      if (!jt.equals("T")) return jt;
+    }
+    return null;
+  }
+
+  // True iff the ZWNJ at index i occupies a position where it is
+  // orthographically required, by RFC 5892 Appendix A.1: it follows a Virama,
+  // which is how a Devanagari conjunct is suppressed, or it sits between a
+  // left- or dual-joining character and a right- or dual-joining one, skipping
+  // Transparent characters on both sides, which is how a Persian word boundary
+  // is written inside a cursive run.
+  //
+  // A ZWNJ outside such a position carries no orthographic duty and stays
+  // reportable.
+  private static boolean isLegitimateZwnjContext(List<Integer> input, int i) {
+    if (i > 0 && isViramaCodepoint(input.get(i - 1))) return true;
+    String left = joiningTypeBefore(input, i);
+    String right = joiningTypeAfter(input, i);
+    if (left == null || right == null) return false;
+    boolean leftJoins = left.equals("L") || left.equals("D");
+    boolean rightJoins = right.equals("R") || right.equals("D");
+    return leftJoins && rightJoins;
+  }
+
+  // True iff the ZWJ at index i is flanked by two codepoints that both
+  // participate in some registered RGI emoji ZWJ sequence. Strictly narrower
+  // than "is an emoji": a codepoint carrying the Emoji property but appearing
+  // in no registered sequence does not sanction a ZWJ beside it. A ZWJ in head
+  // or tail position is never legitimate.
+  private static boolean isLegitimateZwjContext(List<Integer> input, int i) {
+    if (i == 0 || i + 1 >= input.size()) return false;
+    return EmojiZwjIntegrity.isEmojiTarget(input.get(i - 1))
+        && EmojiZwjIntegrity.isEmojiTarget(input.get(i + 1));
+  }
+
+  // True iff at least one of the given zero-width positions is unsanctioned. A
+  // ZWJ inside a registered emoji sequence and a ZWNJ in an RFC 5892
+  // CONTEXTJ-valid position both carry meaning a reader depends on, so they are
+  // recorded as present but do not make the family fire.
+  static boolean hasSuspiciousZeroWidth(List<Integer> input, List<Integer> positions) {
+    for (int i : positions) {
+      int cp = input.get(i);
+      boolean sanctioned =
+          (cp == 0x200D && isLegitimateZwjContext(input, i))
+              || (cp == 0x200C && isLegitimateZwnjContext(input, i));
+      if (!sanctioned) return true;
+    }
+    return false;
+  }
 
   // Parse a "RANGE ; VALUE" table into ascending ranges. The value field splits
   // on whitespace, so a Scripts.txt row yields one long name and a

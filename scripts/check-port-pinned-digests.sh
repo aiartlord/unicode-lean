@@ -20,7 +20,7 @@ manifest="data/SHA256SUMS"
 [ -f "$manifest" ] || { echo "FATAL: $manifest missing" >&2; exit 1; }
 
 # Tables that the runtime-loading ports pin at load.
-tables="CaseFolding.txt confusables.txt KnownAttackTargets.txt StandardizedVariants.txt emoji-variation-sequences.txt DerivedBidiClass.txt Scripts.txt ScriptExtensions.txt PropertyValueAliases.txt"
+tables="CaseFolding.txt confusables.txt KnownAttackTargets.txt StandardizedVariants.txt emoji-variation-sequences.txt DerivedBidiClass.txt Scripts.txt ScriptExtensions.txt PropertyValueAliases.txt DerivedJoiningType.txt"
 
 # port:source-file carrying the embedded digest constants.
 ports="typescript:ports/typescript/src/security.js

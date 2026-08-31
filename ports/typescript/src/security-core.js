@@ -128,6 +128,7 @@ export function configureSecurityData(data) {
   const unicodeData = requiredSecurityData(data, "unicodeData");
   const compositionExclusions = requiredSecurityData(data, "compositionExclusions");
   const derivedCoreProperties = requiredSecurityData(data, "derivedCoreProperties");
+  const derivedJoiningType = String(data?.derivedJoiningType ?? "");
   const identifierStatus = String(data?.identifierStatus ?? "");
   const scripts = String(data?.scripts ?? "");
   const scriptExtensions = String(data?.scriptExtensions ?? "");
@@ -165,6 +166,9 @@ export function configureSecurityData(data) {
     }
     if (name === "DerivedCoreProperties.txt") {
       return derivedCoreProperties;
+    }
+    if (name === "DerivedJoiningType.txt") {
+      return derivedJoiningType;
     }
     if (name === "IdentifierStatus.txt") {
       return identifierStatus;
@@ -297,8 +301,12 @@ function detect(input, identifierField) {
     findings.push(variation);
   }
 
+  // The sanctioning model: a ZWJ inside a registered emoji sequence and a ZWNJ
+  // in an RFC 5892 CONTEXTJ-valid position both carry meaning a reader depends
+  // on, so they are recorded as present but not treated as suspicious. An input
+  // whose zero-width characters are all sanctioned raises nothing.
   const zeroWidthPositions = positionsWhere(input, isZeroWidthPayload);
-  if (zeroWidthPositions.length > 0) {
+  if (zeroWidthPositions.length > 0 && hasSuspiciousZeroWidth(input, zeroWidthPositions)) {
     findings.push(makeFinding(Family.ZeroWidthPayload, "BareZeroWidth", zeroWidthPositions));
   }
 
@@ -3817,9 +3825,13 @@ function sddVariationSelectorFired(input) {
   return variationSelectorFinding(input) !== null;
 }
 
-// Whether the port's zero-width-payload constituent fires on input.
+// Whether the port's zero-width-payload constituent fires on input. A ZWJ
+// inside a registered emoji sequence and a ZWNJ in an RFC 5892 CONTEXTJ-valid
+// position are present but carry meaning a reader depends on, so they do not
+// make the constituent fire.
 function sddZeroWidthFired(input) {
-  return positionsWhere(input, isZeroWidthPayload).length > 0;
+  const positions = positionsWhere(input, isZeroWidthPayload);
+  return positions.length > 0 && hasSuspiciousZeroWidth(input, positions);
 }
 
 // Whether the port's bidi-control-balance constituent fires on input.
@@ -4872,6 +4884,7 @@ const RestrictionLevel = Object.freeze({
 let scriptRangesCache = null;
 let scriptExtRangesCache = null;
 let scriptExtAbbrevsCache = null;
+let joiningTypeRangesCache = null;
 let scriptLongToAbbrevCache = null;
 
 // Parse a "RANGE ; VALUE" table into ascending ranges. The value field splits
@@ -4922,6 +4935,100 @@ function scriptsTable() {
     scriptRangesCache = parseScriptRanges(readDataFile("Scripts.txt"));
   }
   return scriptRangesCache;
+}
+
+// DerivedJoiningType.txt shares the "RANGE ; VALUE" shape, so it reuses the
+// same range parser and binary search the script tables use.
+function joiningTypeTable() {
+  if (joiningTypeRangesCache === null) {
+    joiningTypeRangesCache = parseScriptRanges(readDataFile("DerivedJoiningType.txt"));
+  }
+  return joiningTypeRangesCache;
+}
+
+// Joining_Type for one codepoint. The file's @missing line declares Non_Joining
+// over the whole space, so an unlisted codepoint is "U".
+function joiningTypeOf(cp) {
+  const entry = findScriptRange(joiningTypeTable(), cp);
+  if (entry === null) return "U";
+  const token = entry.value[0];
+  switch (token) {
+    case "C":
+    case "D":
+    case "L":
+    case "R":
+    case "T":
+      return token;
+    default:
+      return "U";
+  }
+}
+
+// True iff cp has Canonical_Combining_Class 9, the Virama used to request an
+// explicit conjunct in scripts like Devanagari.
+function isViramaCodepoint(cp) {
+  return canonicalCombiningClass(cp) === 9;
+}
+
+// The Joining_Type of the first non-Transparent codepoint before i, or null.
+function joiningTypeBefore(input, i) {
+  for (let j = i; j > 0; ) {
+    j -= 1;
+    const jt = joiningTypeOf(input[j]);
+    if (jt !== "T") return jt;
+  }
+  return null;
+}
+
+// The Joining_Type of the first non-Transparent codepoint after i, or null.
+function joiningTypeAfter(input, i) {
+  for (let j = i + 1; j < input.length; j += 1) {
+    const jt = joiningTypeOf(input[j]);
+    if (jt !== "T") return jt;
+  }
+  return null;
+}
+
+// True iff the ZWNJ at index i occupies a position where it is orthographically
+// required, by RFC 5892 Appendix A.1: it follows a Virama, which is how a
+// Devanagari conjunct is suppressed, or it sits between a left- or dual-joining
+// character and a right- or dual-joining one, skipping Transparent characters
+// on both sides, which is how a Persian word boundary is written inside a
+// cursive run.
+//
+// A ZWNJ outside such a position carries no orthographic duty and stays
+// reportable.
+function isLegitimateZwnjContext(input, i) {
+  if (i > 0 && isViramaCodepoint(input[i - 1])) return true;
+  const left = joiningTypeBefore(input, i);
+  const right = joiningTypeAfter(input, i);
+  const leftJoins = left === "L" || left === "D";
+  const rightJoins = right === "R" || right === "D";
+  return leftJoins && rightJoins;
+}
+
+// True iff the ZWJ at index i is flanked by two codepoints that both
+// participate in some registered RGI emoji ZWJ sequence. Strictly narrower than
+// "is an emoji": a codepoint carrying the Emoji property but appearing in no
+// registered sequence does not sanction a ZWJ beside it. A ZWJ in head or tail
+// position is never legitimate.
+function isLegitimateZwjContext(input, i) {
+  if (i === 0 || i + 1 >= input.length) return false;
+  return isEmojiTarget(input[i - 1]) && isEmojiTarget(input[i + 1]);
+}
+
+// True iff at least one of the given zero-width positions is unsanctioned.
+// Every position stays in the reported finding; only whether the family fires
+// depends on this.
+function hasSuspiciousZeroWidth(input, positions) {
+  for (const i of positions) {
+    const cp = input[i];
+    const sanctioned =
+      (cp === 0x200d && isLegitimateZwjContext(input, i)) ||
+      (cp === 0x200c && isLegitimateZwnjContext(input, i));
+    if (!sanctioned) return true;
+  }
+  return false;
 }
 
 function scriptExtensionsTable() {

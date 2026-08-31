@@ -107,8 +107,14 @@ public static partial class Security
         /// <summary>True iff the zero-width-payload constituent fires on
         /// <paramref name="input"/> — reuses the core scan fold's own zero-width
         /// predicate (ZWSP/ZWNJ/ZWJ/WJ/BOM).</summary>
-        private static bool ZeroWidthFired(List<int> input) =>
-            Security.PositionsWhere(input, Security.IsZeroWidthPayload).Count > 0;
+        // A ZWJ inside a registered emoji sequence and a ZWNJ in an RFC 5892
+        // CONTEXTJ-valid position are present but carry meaning a reader
+        // depends on, so they do not make the constituent fire.
+        private static bool ZeroWidthFired(List<int> input)
+        {
+            var positions = Security.PositionsWhere(input, Security.IsZeroWidthPayload);
+            return positions.Count > 0 && Security.HasSuspiciousZeroWidth(input, positions);
+        }
 
         /// <summary>True iff the bidi-control-balance constituent fires on
         /// <paramref name="input"/> — reuses the core scan fold's own

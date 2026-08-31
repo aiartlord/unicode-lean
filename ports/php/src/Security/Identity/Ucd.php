@@ -40,6 +40,19 @@ enum EastAsianWidth
     case W;
 }
 
+/// `Joining_Type`, the cursive-joining behaviour a character has in scripts
+/// like Arabic. RFC 5892 Appendix A.1 uses it to decide whether a ZERO WIDTH
+/// NON-JOINER sits in a position its script actually requires.
+enum JoiningType
+{
+    case JoinCausing;
+    case DualJoining;
+    case LeftJoining;
+    case RightJoining;
+    case Transparent;
+    case NonJoining;
+}
+
 /// UTS #39 § 5.1 restriction-level classification.
 enum RestrictionLevel
 {
@@ -358,6 +371,77 @@ final class Ucd
             }
         }
         return EastAsianWidth::N;
+    }
+
+    /** @var list<array{0:int,1:int,2:JoiningType}>|null */
+    private static ?array $joiningTypeTable = null;
+
+    private static function joiningTypeOfToken(string $token): JoiningType
+    {
+        return match ($token) {
+            'C' => JoiningType::JoinCausing,
+            'D' => JoiningType::DualJoining,
+            'L' => JoiningType::LeftJoining,
+            'R' => JoiningType::RightJoining,
+            'T' => JoiningType::Transparent,
+            default => JoiningType::NonJoining,
+        };
+    }
+
+    /** @return list<array{0:int,1:int,2:JoiningType}> */
+    private static function joiningTypeTable(): array
+    {
+        if (self::$joiningTypeTable !== null) {
+            return self::$joiningTypeTable;
+        }
+        $rows = [];
+        foreach (Data::lines('DerivedJoiningType.txt') as $line) {
+            $hash = strpos($line, '#');
+            $body = trim($hash === false ? $line : substr($line, 0, $hash));
+            if ($body === '') {
+                continue;
+            }
+            $semi = strpos($body, ';');
+            if ($semi === false) {
+                continue;
+            }
+            $range = self::parseRangeField(substr($body, 0, $semi));
+            if ($range !== null) {
+                $rows[] = [$range[0], $range[1], self::joiningTypeOfToken(trim(substr($body, $semi + 1)))];
+            }
+        }
+        usort($rows, static fn (array $a, array $b): int => $a[0] <=> $b[0]);
+        self::$joiningTypeTable = $rows;
+        return $rows;
+    }
+
+    /// `Joining_Type` for one codepoint. The file's `@missing` line declares
+    /// `Non_Joining` over the whole space, so an unlisted codepoint is
+    /// `NonJoining`.
+    public static function joiningType(int $cp): JoiningType
+    {
+        $table = self::joiningTypeTable();
+        $lo = 0;
+        $hi = count($table);
+        while ($lo < $hi) {
+            $mid = $lo + intdiv($hi - $lo, 2);
+            [$rlo, $rhi, $cls] = $table[$mid];
+            if ($cp < $rlo) {
+                $hi = $mid;
+            } elseif ($cp > $rhi) {
+                $lo = $mid + 1;
+            } else {
+                return $cls;
+            }
+        }
+        return JoiningType::NonJoining;
+    }
+
+    /// True iff `cp` has Canonical_Combining_Class 9, the Virama used to
+    /// request an explicit conjunct in scripts like Devanagari.
+    public static function isVirama(int $cp): bool
+    {
+        return self::ccc($cp) === 9;
     }
 
     /// Full `Bidi_Class` lookup (strong distinction only): explicit range first,

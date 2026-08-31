@@ -106,6 +106,52 @@ def parse_script_ranges(path):
     return {script: coalesce(items) for script, items in ranges.items()}
 
 
+def parse_joining_type_ranges():
+    """Codepoint ranges carrying a Joining_Type, as the quoted single-letter
+    token COBOL compares against.
+
+    RFC 5892 Appendix A.1 reads Joining_Type to decide whether a ZERO WIDTH
+    NON-JOINER sits in a position its script actually requires: between a left-
+    or dual-joining character and a right- or dual-joining one, skipping
+    Transparent characters on both sides. The file's @missing line declares
+    Non_Joining over the whole space, so an unlisted codepoint needs no row.
+    """
+    ranges = []
+    for line in (DATA / "DerivedJoiningType.txt").read_text(encoding="utf-8").splitlines():
+        body = strip_comment(line)
+        if not body or ";" not in body:
+            continue
+        left, token, *_rest = [part.strip() for part in body.split(";")]
+        if token not in ("C", "D", "L", "R", "T"):
+            continue
+        lo, hi = parse_range_token(left)
+        ranges.append((lo, hi, f'"{token}"'))
+    ranges.sort()
+    return ranges
+
+
+def parse_ignorable_script_ranges():
+    """Codepoint ranges whose Script is Common or Inherited, which UTS #39 §5.1
+    excludes from the resolved-scripts intersection.
+
+    Whether a codepoint is ignored is a question about its Script property, not
+    about how it resolves. Common and Inherited resolve to no abbreviation, but
+    so do Unknown, the unassigned codepoints, private use and the
+    noncharacters, and those are ordinary codepoints that must falsify
+    Single-Script and the CJK covered sets rather than be skipped over. Reading
+    the property directly keeps the two cases apart.
+    """
+    ranges = []
+    for line in (DATA / "Scripts.txt").read_text(encoding="utf-8").splitlines():
+        body = strip_comment(line)
+        if not body or ";" not in body:
+            continue
+        left, script, *_ = [part.strip() for part in body.split(";")]
+        if script in ("Common", "Inherited"):
+            ranges.append(parse_range_token(left))
+    return coalesce(ranges)
+
+
 def parse_script_alias_map():
     """Script long name to four-letter abbreviation, from the "sc" rows of
     PropertyValueAliases.txt."""
@@ -250,6 +296,94 @@ def parse_confusable_sources():
         if left:
             values.add(int(left, 16))
     return sorted(values)
+
+
+def parse_confusable_map():
+    """Source codepoint to its confusable prototype sequence, the substitution
+    UTS #39 §4 applies when building a skeleton.
+
+    The predicate table `confusable_source.cpy` answers only whether a
+    codepoint has a mapping. Target matching needs the mapping itself: without
+    it a port cannot fold a Cyrillic а onto a Latin a and so cannot tell that a
+    string spells a curated attack target.
+    """
+    mapping = {}
+    for line in (DATA / "confusables.txt").read_text(encoding="utf-8").splitlines():
+        body = strip_comment(line)
+        if not body or ";" not in body:
+            continue
+        fields = [part.strip() for part in body.split(";")]
+        if len(fields) < 2 or not fields[0] or not fields[1]:
+            continue
+        source = int(fields[0], 16)
+        target = [int(token, 16) for token in fields[1].split()]
+        if target:
+            mapping[source] = target
+    return mapping
+
+
+def parse_case_fold():
+    """Full case folding, the C and F statuses of CaseFolding.txt.
+
+    The skeleton brackets case folding inside its NFD passes, so a port
+    without this table cannot collapse case-variant typosquats.
+    """
+    mapping = {}
+    for line in (DATA / "CaseFolding.txt").read_text(encoding="utf-8").splitlines():
+        body = strip_comment(line)
+        if not body or ";" not in body:
+            continue
+        fields = [part.strip() for part in body.split(";")]
+        if len(fields) < 3:
+            continue
+        status = fields[1]
+        if status not in ("C", "F"):
+            continue
+        source = int(fields[0], 16)
+        mapping[source] = [int(token, 16) for token in fields[2].split()]
+    return mapping
+
+
+def parse_attack_targets():
+    """The curated attack-target strings, as ASCII codepoint sequences.
+
+    The targets are emitted raw rather than pre-skeletonised so the port runs
+    its own letter skeleton over them, exactly as the reference does. One
+    algorithm decides both sides of the comparison.
+    """
+    targets = []
+    for line in (DATA / "KnownAttackTargets.txt").read_text(encoding="utf-8").splitlines():
+        body = strip_comment(line).strip()
+        if not body:
+            continue
+        targets.append([ord(ch) for ch in body])
+    return targets
+
+
+def emit_sequence_map(path, mapping, length_field, cp_field, found_field):
+    """A codepoint-to-sequence copybook in the shape `canonical_decomp.cpy`
+    uses: the matched arm writes the sequence length, its codepoints, and a
+    found flag."""
+    lines = ["EVALUATE LOOKUP-CP"]
+    for source in sorted(mapping):
+        sequence = mapping[source]
+        lines.append(f"    WHEN {source}")
+        lines.append(f"        MOVE {len(sequence)} TO {length_field}")
+        for slot, child in enumerate(sequence, start=1):
+            lines.append(f"        MOVE {child} TO {cp_field} ({slot})")
+        lines.append(f"        MOVE 1 TO {found_field}")
+    lines.append("END-EVALUATE.")
+    path.write_text("\n".join(lines) + "\n", encoding="ascii")
+
+
+def emit_attack_targets(path, targets):
+    """The curated target list as a fixed table of ASCII codepoint rows."""
+    lines = [f"MOVE {len(targets)} TO TARGET-COUNT"]
+    for row, cps in enumerate(targets, start=1):
+        lines.append(f"MOVE {len(cps)} TO TARGET-LEN ({row})")
+        for slot, cp in enumerate(cps, start=1):
+            lines.append(f"MOVE {cp} TO TARGET-CP ({row}, {slot})")
+    path.write_text("\n".join(lines) + "\n", encoding="ascii")
 
 
 GCB_CODE = {
@@ -724,6 +858,23 @@ def main():
     emit_value_eval(OUT / "confusable_source.cpy", parse_confusable_sources(), "MOVE 1 TO TABLE-FLAG")
     emit_script_flags(OUT / "script_flags.cpy", parse_script_ranges(DATA / "Scripts.txt"))
     emit_script_sets(OUT / "script_sets.cpy", parse_resolved_script_sets())
+    emit_membership(
+        OUT / "script_ignorable.cpy",
+        parse_ignorable_script_ranges(),
+        "MOVE 1 TO IGNORED-SCRIPT-FLAG",
+    )
+    emit_class_eval(
+        OUT / "joining_type.cpy", parse_joining_type_ranges(), "JOINING-TYPE-CLASS"
+    )
+    emit_sequence_map(
+        OUT / "confusable_map.cpy", parse_confusable_map(),
+        "CONF-LEN", "CONF-CP", "CONF-FOUND",
+    )
+    emit_sequence_map(
+        OUT / "case_fold.cpy", parse_case_fold(),
+        "FOLD-LEN", "FOLD-CP", "FOLD-FOUND",
+    )
+    emit_attack_targets(OUT / "attack_targets.cpy", parse_attack_targets())
     emit_range_eval(OUT / "strong_rtl.cpy", parse_bidi_ranges(DATA / "DerivedBidiClass.txt"), "MOVE 1 TO TABLE-FLAG")
     emit_range_eval(OUT / "strong_ltr.cpy", parse_bidi_ltr_ranges(DATA / "DerivedBidiClass.txt"), "MOVE 1 TO TABLE-FLAG")
     emit_range_eval(OUT / "eaw_fullwidth.cpy", parse_eaw_ranges(DATA / "EastAsianWidth.txt", {"F"}), "MOVE 1 TO TABLE-FLAG")

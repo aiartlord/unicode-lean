@@ -877,6 +877,15 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
     push_classified!(&mut findings, Family::IdentifierFormDrift, identifier_form_drift::detect(input).classify);
     push_classified!(&mut findings, Family::AdmissibilityFormDrift, admissibility_form_drift::detect(input).classify);
 
+    // Bip39Canonical, HashInputStability and AiWatermarkDetectability are
+    // absent on purpose. They ask their question about a declared kind of
+    // field -- a BIP-39 mnemonic, a hash preimage, watermark-carrier text --
+    // and none of the ten profiles is one. Bip39Canonical reports MixedCase
+    // for any uppercase ASCII letter, so dispatching them here would make a
+    // finding out of text as plain as "Hello". runAllWithContext carries the
+    // same decision as its `cryptoField` gate, which scan sets false; a caller
+    // holding one of those fields runs the family directly.
+
     // Detectors reporting a bare sub-threat rather than a Classification.
     let normalization = normalization_bomb::detect(input);
     if let Some(sub) = normalization.sub {

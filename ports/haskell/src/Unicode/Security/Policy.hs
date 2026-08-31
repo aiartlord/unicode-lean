@@ -67,7 +67,7 @@ import Data.Char (isSpace, ord)
 import Data.List (dropWhileEnd, intercalate)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import Data.Maybe (isJust, listToMaybe, mapMaybe)
+import Data.Maybe (fromMaybe, isJust, listToMaybe, mapMaybe)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Numeric (readHex)
@@ -499,10 +499,14 @@ tagBlockFinding input =
       ]
 
 zeroWidthFinding :: [Int] -> [Finding]
-zeroWidthFinding input =
-  case positionsWhere isZeroWidthPayload input of
-    [] -> []
-    positions ->
+-- The sanctioning model: a ZWJ inside a registered emoji sequence and a ZWNJ in
+-- an RFC 5892 CONTEXTJ-valid position both carry meaning a reader depends on,
+-- so they are recorded as present but not treated as suspicious. An input whose
+-- zero-width characters are all sanctioned raises nothing.
+zeroWidthFinding input
+  | null positions = []
+  | not (hasSuspiciousZeroWidth input positions) = []
+  | otherwise =
       [ Finding
           { findingCode = reasonCode FamilyZeroWidthPayload "BareZeroWidth"
           , findingFamily = FamilyZeroWidthPayload
@@ -512,6 +516,8 @@ zeroWidthFinding input =
           , findingDetail = familyTag FamilyZeroWidthPayload
           }
       ]
+  where
+    positions = positionsWhere isZeroWidthPayload input
 
 -- | Surrogate-reassembly \/ malformed-byte-stream detection (layer C).
 -- Direct port of @Unicode.Security.Covert.SurrogateReassembly@. The
@@ -1115,6 +1121,89 @@ scriptExtRanges = unsafePerformIO $ do
   path <- getDataFileName "data/ScriptExtensions.txt"
   parseScriptRanges <$> readFile path
 {-# NOINLINE scriptExtRanges #-}
+
+-- | @DerivedJoiningType.txt@ shares the @"RANGE ; VALUE"@ shape, so it reuses
+-- the same parser. RFC 5892 Appendix A.1 reads @Joining_Type@ to decide whether
+-- a ZERO WIDTH NON-JOINER sits in a position its script actually requires.
+joiningTypeRanges :: [(Int, Int, [String])]
+joiningTypeRanges = unsafePerformIO $ do
+  path <- getDataFileName "data/DerivedJoiningType.txt"
+  parseScriptRanges <$> readFile path
+{-# NOINLINE joiningTypeRanges #-}
+
+-- | @Joining_Type@ for one codepoint, as its single-letter token. The file's
+-- @\@missing@ line declares @Non_Joining@ over the whole space, so an unlisted
+-- codepoint is @\"U\"@.
+joiningTypeOf :: Int -> String
+joiningTypeOf cp = normalizeToken (listToMaybe matchingTokens)
+  where
+    matchingTokens =
+      concat [value | (lo, hi, value) <- joiningTypeRanges, lo <= cp, cp <= hi]
+    normalizeToken Nothing = "U"
+    normalizeToken (Just token)
+      | token `elem` ["C", "D", "L", "R", "T"] = token
+      | otherwise = "U"
+
+-- | True iff the codepoint has Canonical_Combining_Class 9, the Virama used to
+-- request an explicit conjunct in scripts like Devanagari.
+isViramaCp :: Int -> Bool
+isViramaCp cp = NormalizationLookup.canonicalCombiningClass cp == 9
+
+-- | The @Joining_Type@ of the first non-Transparent codepoint before an index.
+joiningTypeBefore :: [Int] -> Int -> Maybe String
+joiningTypeBefore input i =
+  listToMaybe
+    [jt | cp <- reverse (take i input), let jt = joiningTypeOf cp, jt /= "T"]
+
+-- | The @Joining_Type@ of the first non-Transparent codepoint after an index.
+joiningTypeAfter :: [Int] -> Int -> Maybe String
+joiningTypeAfter input i =
+  listToMaybe
+    [jt | cp <- drop (i + 1) input, let jt = joiningTypeOf cp, jt /= "T"]
+
+-- | True iff the ZWNJ at the given index occupies a position where it is
+-- orthographically required, by RFC 5892 Appendix A.1: it follows a Virama,
+-- which is how a Devanagari conjunct is suppressed, or it sits between a left-
+-- or dual-joining character and a right- or dual-joining one, skipping
+-- Transparent characters on both sides, which is how a Persian word boundary is
+-- written inside a cursive run.
+--
+-- A ZWNJ outside such a position carries no orthographic duty and stays
+-- reportable.
+isLegitimateZwnjContext :: [Int] -> Int -> Bool
+isLegitimateZwnjContext input i
+  | i > 0 && isViramaCp (input !! (i - 1)) = True
+  | otherwise = joinsOnBothSides
+  where
+    joinsOnBothSides =
+      fromMaybe False $ do
+        left <- joiningTypeBefore input i
+        right <- joiningTypeAfter input i
+        pure (left `elem` ["L", "D"] && right `elem` ["R", "D"])
+
+-- | True iff the ZWJ at the given index is flanked by two codepoints that both
+-- participate in some registered RGI emoji ZWJ sequence. Strictly narrower than
+-- \"is an emoji\": a codepoint carrying the Emoji property but appearing in no
+-- registered sequence does not sanction a ZWJ beside it. A ZWJ in head or tail
+-- position is never legitimate.
+isLegitimateZwjContext :: [Int] -> Int -> Bool
+isLegitimateZwjContext input i
+  | i == 0 || i + 1 >= length input = False
+  | otherwise =
+      EmojiZwj.isEmojiTarget (input !! (i - 1))
+        && EmojiZwj.isEmojiTarget (input !! (i + 1))
+
+-- | True iff at least one zero-width position of the input is unsanctioned. A
+-- ZWJ inside a registered emoji sequence and a ZWNJ in an RFC 5892
+-- CONTEXTJ-valid position both carry meaning a reader depends on, so they are
+-- recorded as present but do not make the family fire.
+hasSuspiciousZeroWidth :: [Int] -> [Int] -> Bool
+hasSuspiciousZeroWidth input = any (not . sanctioned)
+  where
+    sanctioned i =
+      let cp = input !! i
+      in (cp == 0x200D && isLegitimateZwjContext input i)
+           || (cp == 0x200C && isLegitimateZwnjContext input i)
 
 -- | Every abbreviation occurring in @ScriptExtensions.txt@, the resolver's
 -- whole vocabulary.
