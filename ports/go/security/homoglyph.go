@@ -433,17 +433,24 @@ func isCombiningMark(cp uint32) bool {
 		(cp >= 0xFE20 && cp <= 0xFE2F)
 }
 
+// hasDecompositionSwap reports whether the input is not already in NFC, which
+// is the rung's definition in Unicode.Security.Identity.HomoglyphConfusable:
+// `toNFC input ≠ input`. An input that renders as its own composed form carries
+// no swap, whatever its individual codepoints look like.
+//
+// The predicate is the comparison itself rather than a structural stand-in for
+// it. Adjacency tests over the raw codepoints cannot decide it: canonical
+// ordering is a stable sort on Canonical_Combining_Class, so two marks of equal
+// class never reorder however their codepoint values compare, and whether a
+// mark composes with the character before it is a question for the composition
+// table.
 func hasDecompositionSwap(input []uint32) bool {
-	for index := 1; index < len(input); index++ {
-		previous := input[index-1]
-		current := input[index]
-		if isCombiningMark(current) && !isCombiningMark(previous) {
-			return true
-		}
-		if isCombiningMark(previous) && isCombiningMark(current) && previous > current {
-			return true
-		}
-		if composeHangulPair(previous, current) {
+	nfc := toNFC(input)
+	if len(nfc) != len(input) {
+		return true
+	}
+	for index := range input {
+		if input[index] != nfc[index] {
 			return true
 		}
 	}

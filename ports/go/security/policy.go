@@ -518,9 +518,47 @@ func allSameAt(input []uint32, positions []int) bool {
 	return true
 }
 
+// isZeroWidthPayload reports whether cp renders as nothing, mirroring
+// `isZeroWidth` in Unicode.Security.Covert.ZeroWidthPayload: the explicit
+// historical set, which preserves sub-threat dispatch, extended by the UAX #44
+// Default_Ignorable_Code_Point property, which catches every other invisible
+// codepoint.
+//
+// The sibling ranges are excluded because their own family detector dispatches
+// them with richer payload decoding or bidi-stack tracking, and counting them
+// here as well would report one hazard twice: U+FE00..U+FE0F and
+// U+E0100..U+E01EF for variation-selector-payload, U+E0000..U+E007F for
+// tag-block-payload, and U+202A..U+202E with U+2066..U+2069 for
+// bidi-control-balance. LRM and RLM are not excluded: they are direction
+// markers rather than push-pop controls, and bidi-control-balance does not
+// track them.
 func isZeroWidthPayload(cp uint32) bool {
-	switch cp {
-	case 0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF:
+	switch {
+	case cp >= 0x200B && cp <= 0x200F:
+		return true
+	case cp >= 0x2060 && cp <= 0x2064:
+		return true
+	case cp == 0x202F || cp == 0xFEFF:
+		return true
+	case cp >= 0xFFF9 && cp <= 0xFFFB:
+		return true
+	}
+	return isDefaultIgnorableCodepoint(cp) && !isZeroWidthSiblingHandled(cp)
+}
+
+// isZeroWidthSiblingHandled reports whether cp is Default_Ignorable but belongs
+// to a sibling detector's family rather than to zero-width-payload.
+func isZeroWidthSiblingHandled(cp uint32) bool {
+	switch {
+	case cp >= 0xFE00 && cp <= 0xFE0F:
+		return true
+	case cp >= 0xE0100 && cp <= 0xE01EF:
+		return true
+	case cp >= 0xE0000 && cp <= 0xE007F:
+		return true
+	case cp >= 0x202A && cp <= 0x202E:
+		return true
+	case cp >= 0x2066 && cp <= 0x2069:
 		return true
 	default:
 		return false

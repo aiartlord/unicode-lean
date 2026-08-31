@@ -348,3 +348,13 @@ func hasFamilyFinding(findings []Finding, family Family) bool {
 	}
 	return false
 }
+
+// TestDifferentialCorpus checks the same comparison over a generated input
+// stream. The corpus shares the verdict contract's schema, so it runs through
+// the same loop, but its cases come from the Rust reference over a
+// deterministic stream rather than being hand-written: agreement here is
+// evidence that this port decides as the reference does on inputs nobody chose,
+// across every profile.
+func TestDifferentialCorpus(t *testing.T) {
+	runVerdictFixture(t, "differential_corpus.json")
+}
