@@ -277,4 +277,21 @@ def report : String := reportOn rows
 /-- The summary over the first `n` rows, in file order. -/
 def reportFirst (n : Nat) : String := reportOn (rows.take n)
 
+-- The run is a build gate, not a report: elaborating this module fails unless
+-- all three operations hold on every published row, output, error flag and
+-- status set alike. Each operation's tally must also account for the whole
+-- file, so a row silently dropped during parsing is a failure rather than a
+-- smaller denominator.
+#eval do
+  let (tu, tn, tt) := talliesOf rows
+  unless tu.fail == 0 && tn.fail == 0 && tt.fail == 0 do
+    throw (IO.userError
+      (s!"IdnaTestV2: failed toUnicode {tu.fail}, toAsciiN {tn.fail}, " ++
+       s!"toAsciiT {tt.fail}"))
+  unless tu.pass == rows.length && tn.pass == rows.length
+      && tt.pass == rows.length do
+    throw (IO.userError
+      (s!"IdnaTestV2: {rows.length} rows published but tallies read " ++
+       s!"{tu.pass}/{tn.pass}/{tt.pass}"))
+
 end Unicode.Conformance.IdnaTestV2

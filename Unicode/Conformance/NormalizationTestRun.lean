@@ -154,4 +154,20 @@ def report : String := reportOn rows
 
 def reportFirst (n : Nat) : String := reportOn (rows.take n)
 
+-- The run is a build gate, not a report: elaborating this module fails unless
+-- all four normalisation forms hold on every published row. Each form's tally
+-- must also account for the whole file, so a row silently dropped during
+-- parsing is a failure rather than a smaller denominator.
+#eval do
+  let (tC, tD, tKC, tKD) := talliesOf rows
+  unless tC.failed == 0 && tD.failed == 0 && tKC.failed == 0 && tKD.failed == 0 do
+    throw (IO.userError
+      (s!"NormalizationTest: failed NFC {tC.failed}, NFD {tD.failed}, " ++
+       s!"NFKC {tKC.failed}, NFKD {tKD.failed}"))
+  unless tC.passed == rows.length && tD.passed == rows.length
+      && tKC.passed == rows.length && tKD.passed == rows.length do
+    throw (IO.userError
+      (s!"NormalizationTest: {rows.length} rows published but tallies read " ++
+       s!"{tC.passed}/{tD.passed}/{tKC.passed}/{tKD.passed}"))
+
 end Unicode.Conformance.NormalizationTestRun

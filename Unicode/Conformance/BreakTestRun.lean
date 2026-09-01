@@ -112,4 +112,20 @@ def lineReportFirst (n : Nat) : String :=
 
 def report : String := wordReport ++ "\n" ++ lineReport
 
+-- The run is a build gate, not a report: elaborating this module fails unless
+-- the break positions agree with every published row of both files. Each
+-- tally must also account for its whole file, so a row silently dropped
+-- during parsing is a failure rather than a smaller denominator.
+#eval do
+  let wordT := talliesOf wordBreaks wordRows
+  let lineT := talliesOf lineBreaks lineRows
+  unless wordT.failed == 0 && lineT.failed == 0 do
+    throw (IO.userError
+      (s!"break tests: failed WordBreakTest {wordT.failed}, " ++
+       s!"LineBreakTest {lineT.failed}"))
+  unless wordT.passed == wordRows.length && lineT.passed == lineRows.length do
+    throw (IO.userError
+      (s!"break tests: published {wordRows.length}/{lineRows.length} rows but " ++
+       s!"tallies read {wordT.passed}/{lineT.passed}"))
+
 end Unicode.Conformance.BreakTestRun

@@ -24,9 +24,20 @@ import Unicode.Conformance.GraphemeBreakTest
 import Unicode.Conformance.WordBreakTest
 import Unicode.Conformance.SentenceBreakTest
 
--- UCA conformance — official CollationTest_*_SHORT.txt against
--- sortKey under both NON_IGNORABLE and SHIFTED variable handling.
+-- The same four suites run over every row their files publish rather than over
+-- a materialized selection. Each module's gate fails the build on a single
+-- disagreeing row, and on a tally that does not account for the whole file.
+import Unicode.Conformance.BidiTestRun
+import Unicode.Conformance.BidiCharacterTestRun
+import Unicode.Conformance.NormalizationTestRun
+import Unicode.Conformance.BreakTestRun
+
+-- UCA — `ucaCompare` against representative pairs and the reflexivity of the
+-- collation order over all inputs. The full-corpus order check lives in
+-- `CollationTestRun`, whose run is recorded by `scripts/conformance-execute.sh`
+-- rather than elaborated here; that module states why.
 import Unicode.Conformance.CollationTest
+import Unicode.Conformance.CollationTestRun
 
 -- UTS #46 conformance — official IdnaTestV2.txt against
 -- toUnicode / toAscii / toAsciiTransitional.

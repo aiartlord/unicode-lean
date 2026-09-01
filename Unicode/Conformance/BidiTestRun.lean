@@ -177,4 +177,15 @@ def report : String := reportOn lines
 
 def reportFirst (n : Nat) : String := reportOn (lines.take n)
 
+-- The run is a build gate, not a report: elaborating this module fails unless
+-- every case the file states passes. A case the run declined to judge would
+-- leave `cases` short of the published total, so the count is asserted too.
+#eval do
+  let st := runOn lines
+  unless st.tally.failed == 0 do
+    throw (IO.userError s!"BidiTest: {st.tally.failed} case(s) failed")
+  unless st.cases == st.tally.passed do
+    throw (IO.userError
+      s!"BidiTest: {st.cases} cases judged but {st.tally.passed} accounted for")
+
 end Unicode.Conformance.BidiTestRun

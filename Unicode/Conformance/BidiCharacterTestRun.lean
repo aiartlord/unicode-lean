@@ -183,4 +183,20 @@ def report : String := reportOn rows
 
 def reportFirst (n : Nat) : String := reportOn (rows.take n)
 
+-- The run is a build gate, not a report: elaborating this module fails unless
+-- all three published columns hold on every row. Each column's tally must also
+-- account for the whole file, so a row silently dropped during parsing is a
+-- failure rather than a smaller denominator.
+#eval do
+  let (paraT, lvlT, ordT) := talliesOf rows
+  unless paraT.failed == 0 && lvlT.failed == 0 && ordT.failed == 0 do
+    throw (IO.userError
+      (s!"BidiCharacterTest: failed paragraph {paraT.failed}, " ++
+       s!"levels {lvlT.failed}, order {ordT.failed}"))
+  unless paraT.passed == rows.length && lvlT.passed == rows.length
+      && ordT.passed == rows.length do
+    throw (IO.userError
+      (s!"BidiCharacterTest: {rows.length} rows published but tallies read " ++
+       s!"{paraT.passed}/{lvlT.passed}/{ordT.passed}"))
+
 end Unicode.Conformance.BidiCharacterTestRun
