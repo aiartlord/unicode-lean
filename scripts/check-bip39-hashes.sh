@@ -20,5 +20,19 @@ fi
 # `sha256sum -c` succeeds iff every listed file matches its hash.
 sha256sum -c --strict --quiet SHA256SUMS
 
+# `sha256sum -c` says nothing about a file the manifest omits, so a wordlist
+# added without a hash would sit here unpinned and the check above would still
+# pass. Every `.txt` here must be listed.
+unpinned=""
+for wordlist in *.txt; do
+  if ! grep -qF "  $wordlist" SHA256SUMS; then
+    unpinned="$unpinned $wordlist"
+  fi
+done
+if [ -n "$unpinned" ]; then
+  echo "FATAL: BIP-39 wordlist(s) present but absent from SHA256SUMS:$unpinned"
+  exit 1
+fi
+
 count="$(wc -l < SHA256SUMS | tr -d ' ')"
 echo "clean: $count BIP-39 wordlist(s) match SHA-256 manifest"

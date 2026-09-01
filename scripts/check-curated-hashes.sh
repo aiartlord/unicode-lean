@@ -19,5 +19,19 @@ fi
 
 sha256sum -c --strict --quiet SHA256SUMS
 
+# `sha256sum -c` says nothing about a file the manifest omits, so a data file
+# added without a hash would sit here unpinned and the check above would still
+# pass. Every `.txt` here must be listed.
+unpinned=""
+for curated in *.txt; do
+  if ! grep -qF "  $curated" SHA256SUMS; then
+    unpinned="$unpinned $curated"
+  fi
+done
+if [ -n "$unpinned" ]; then
+  echo "FATAL: curated data file(s) present but absent from SHA256SUMS:$unpinned"
+  exit 1
+fi
+
 count="$(wc -l < SHA256SUMS | tr -d ' ')"
 echo "clean: $count curated data file(s) match SHA-256 manifest"
