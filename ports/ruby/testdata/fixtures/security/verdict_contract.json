@@ -916,6 +916,91 @@
         ],
         "normalized": null
       }
+    },
+    {
+      "name": "fullwidth-gateway-reject",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input": [
+        65313
+      ],
+      "verdict": {
+        "action": "reject",
+        "profile": "gateway-header",
+        "mode": "enforce",
+        "input": [
+          65313
+        ],
+        "findings": [
+          {
+            "code": "unicode.security.I.homoglyph-confusable.WidthClass",
+            "family": "homoglyph-confusable",
+            "severity": 2,
+            "positions": [
+              0
+            ],
+            "sub_threat": "WidthClass",
+            "detail": "homoglyph-confusable"
+          },
+          {
+            "code": "unicode.security.D.renderer-divergence.FullwidthVariance",
+            "family": "renderer-divergence",
+            "severity": 2,
+            "positions": [
+              0
+            ],
+            "sub_threat": "FullwidthVariance",
+            "detail": "renderer-divergence"
+          },
+          {
+            "code": "unicode.security.X.identifier-form-drift.IdentifierStatusShift",
+            "family": "identifier-form-drift",
+            "severity": 2,
+            "positions": [
+              0
+            ],
+            "sub_threat": "IdentifierStatusShift",
+            "detail": "identifier-form-drift"
+          },
+          {
+            "code": "unicode.security.X.admissibility-form-drift.AdmissibilityFormDrift",
+            "family": "admissibility-form-drift",
+            "severity": 2,
+            "positions": [],
+            "sub_threat": "AdmissibilityFormDrift",
+            "detail": "admissibility-form-drift"
+          },
+          {
+            "code": "unicode.security.F.nfc-idempotence-witness.NonNfkcCompatForm",
+            "family": "nfc-idempotence-witness",
+            "severity": 2,
+            "positions": [
+              0
+            ],
+            "sub_threat": "NonNfkcCompatForm",
+            "detail": "nfc-idempotence-witness"
+          },
+          {
+            "code": "unicode.security.F.width-class-confusion.FullwidthFold",
+            "family": "width-class-confusion",
+            "severity": 2,
+            "positions": [
+              0
+            ],
+            "sub_threat": "FullwidthFold",
+            "detail": "width-class-confusion"
+          },
+          {
+            "code": "unicode.security.D.source-display-divergence.IdentifierHomoglyph",
+            "family": "source-display-divergence",
+            "severity": 2,
+            "positions": [],
+            "sub_threat": "IdentifierHomoglyph",
+            "detail": "source-display-divergence"
+          }
+        ],
+        "normalized": null
+      }
     }
   ]
 }
