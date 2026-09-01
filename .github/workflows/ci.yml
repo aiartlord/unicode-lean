@@ -58,6 +58,9 @@ jobs:
       - name: every .lean file is transitively imported from an audited root
         run: bash scripts/check-orphan-files.sh
 
+      - name: every documented Lean citation resolves
+        run: scripts/check-doc-claims.py
+
       - name: UCD source files match pinned SHA-256
         run: bash scripts/check-ucd-hashes.sh
 

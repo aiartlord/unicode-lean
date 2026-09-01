@@ -27,15 +27,15 @@ services do.
 |---|---|---|
 | Normalization | UAX #15 | `Normalization.QuickCheckSoundnessTheorem.quickCheck_sound` — `isNFCQuickCheck cps = true → toNFC cps = cps` |
 | Bidirectional Algorithm | UAX #9 | `Bidi.Algorithm.bidiParagraph` — P / X / W / N / I / L1 / L4 phases; full `BidiTest.txt` + `BidiCharacterTest.txt` conformance |
-| Line / Grapheme / Word / Sentence breaks | UAX #14 / #29 | `Conformance.{LineBreak,GraphemeBreak,WordBreak,SentenceBreak}Test.all_pass` — every published row passes |
-| Collation | UTS #10 (UCA 17.0) | `Conformance.CollationTest.{nonIgnorable,shifted}_conformance` — every adjacent pair in `CollationTest_*_SHORT.txt` orders correctly under both variable-handling policies |
-| IDNA | UTS #46 | `Conformance.IdnaTestV2.{strict,all}_conformance` — 546/546 strict + 6389/6389 lenient against `IdnaTestV2.txt` |
+| Line / Grapheme / Word / Sentence breaks | UAX #14 / #29 | `Conformance.GraphemeBreakTest.all_pass` and `Conformance.SentenceBreakTest.all_pass` close their corpora in the kernel; `Conformance.BreakTestRun` runs every published row of `WordBreakTest.txt` and `LineBreakTest.txt` |
+| Collation | UTS #10 (UCA 17.0) | `Conformance.CollationTestRun` — every adjacent pair of `CollationTest_*_SHORT.txt` is non-descending by sort key, under `nonIgnorable` and `shifted` |
+| IDNA | UTS #46 | `Conformance.IdnaTestV2` — every published row of `IdnaTestV2.txt` under `toUnicode`, `toAsciiN` and `toAsciiT`, comparing output, error flag and status set |
 | Identifiers | UAX #31 + UTS #39 | `Identifier.isDefaultIdentifier` (R1-D1) + `isAllowedIdentifier` (general security profile) |
 | PRECIS | RFC 8264 / 8265 | `Precis.Preparation.precis_idempotent` — preparation pipeline is idempotent on its image |
 | Confusables | UTS #39 §4 | `Confusables.areConfusable_trans` — confusable-skeleton equivalence relation |
 | Punycode | RFC 3492 | `Idna.Punycode.{encode,decode}` — RFC §7.1 sample-string conformance |
 | UTF-8 codec | RFC 3629 | `Codec.Utf8Roundtrip.decode_encode_codepoint` — closed-form per-codepoint roundtrip across every valid scalar codepoint |
-| UTF-16 / UTF-32 codecs | UAX #44 §3 | `Codec.{Utf16,Utf32}.decodeOne{BE,LE}_encodeOne{BE,LE}` — closed-form per-codepoint roundtrip with surrogate-pair handling |
+| UTF-16 / UTF-32 codecs | UAX #44 §3 | `Codec.{Utf16,Utf32}.decodeOneBE_encodeOneBE_valid` and `decodeOneLE_encodeOneLE_valid` — closed-form per-codepoint roundtrip in each byte order, with surrogate-pair handling |
 | BOM detection | UAX #41 | `Codec.Bom.detect` — UTF-8 / UTF-16 BE+LE / UTF-32 BE+LE precedence |
 | Noncharacters | UAX #44 §5.6 | `Codec.Noncharacters.*` — exactly the 66 designated noncharacters, all in the valid scalar range |
 | Security detectors | UTS #39 + UAX #9 / #15 (composed) + BIP-39 + RFC 8785 + UTS #51 | `Conformance.Security.<Family>Test.all_rows_pass` — every fixture row's verdict closes for each of the 27 detector families |

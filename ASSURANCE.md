@@ -19,8 +19,17 @@ Every proof closes in the Lean kernel (`decide` / `decide +kernel`);
 
 - `lake build` elaborates the default audited root import `Unicode`.
 - `lake build UnicodeFullConformance` elaborates the explicit full-corpus
-  conformance root `Unicode.FullConformance`, including the heavyweight
-  official NormalizationTest, BidiTest, CollationTest, and IdnaTestV2 suites.
+  conformance root `Unicode.FullConformance`. Elaborating it folds the whole of
+  BidiTest, BidiCharacterTest, NormalizationTest, WordBreakTest, LineBreakTest,
+  and IdnaTestV2 through the implementation: each carries a gate that throws
+  unless every published row passes and the tally accounts for the whole file,
+  so the build fails on a single disagreeing row. GraphemeBreakTest and
+  SentenceBreakTest are closed in the kernel over a drift-gated mirror of their
+  corpora instead. Collation is the exception — a fold over its 437,928 pairs
+  is hours rather than minutes, so it is run out of band by
+  `scripts/conformance-execute.sh` and recorded against the SHA-256 of the
+  corpus it read. `scripts/conformance-run.py` states the basis and the skipped
+  count for every suite.
 - `scripts/check-sorry.sh` rejects `sorry` and `admit`.
 - `scripts/check-no-axiom.sh` rejects project-local `axiom`, `unsafe`,
   `unsafePerformIO`, `unsafeCast`, `Lean.ofReduceBool`, and `Lean.reduceBool`.
