@@ -1,0 +1,161 @@
+# NoncharacterControlTest.txt
+# UCD version: 16.0.0
+# Security-spec version: 0.1.0
+# Family: NoncharacterControl (UAX #44)
+# License: Apache-2.0
+#
+# Threat model: an attacker embeds a codepoint that is a legal
+# Unicode scalar but is never appropriate in interchanged text.
+# The Standard permanently reserves 66 noncharacters — the
+# U+FDD0..U+FDEF block and the last two codepoints of every
+# plane — for internal use, and they must not cross an
+# interchange boundary.  The C0 and C1 control blocks carry no
+# printable meaning in identifier-, header-, or display-bearing
+# text and are a classic smuggling and terminal-injection
+# surface: a NUL truncates a C-string parser, an ESC opens a
+# terminal escape sequence, and a C1 control passes filters that
+# inspect only printable characters.
+#
+# TAB (U+0009), LF (U+000A), and CR (U+000D) are legitimate
+# interchange structure and stay clear.  DEL (U+007F) is
+# grouped with C0 because it shares the control role while
+# sitting above the block.
+#
+# Detection (priority order, first flagged position wins):
+#   1. Noncharacter (pos, cp) — isNoncharacter holds
+#   2. C0Control    (pos, cp) — U+0000..U+001F less TAB/LF/CR, or U+007F
+#   3. C1Control    (pos, cp) — U+0080..U+009F
+#
+# The position column carries the first flagged position only,
+# which is what the detector localises.  The `hits` attribution
+# carries the total count of flagged positions in the row, so a
+# row with several hazards states both the one that is reported
+# and how many the input holds.
+#
+# Format:
+#   <hex codepoints>; <classification>; <positions>; <attribution>; # <name>
+#
+# Classifications produced by the detector:
+#   Clear (= no noncharacter and no C0/C1 control)
+#   Hazard:Noncharacter
+#   Hazard:C0Control
+#   Hazard:C1Control
+
+# @section Clear
+# @level basic
+
+# ASCII Hello — no reserved or control codepoint.
+0048 0065 006C 006C 006F; Clear; ; hits=0; # Hello
+
+# TAB, LF and CR are sanctioned interchange structure.
+0041 0009 000A 000D 0042; Clear; ; hits=0; # A TAB LF CR B
+
+# U+FDCF sits one below the reserved block and is assigned.
+FDCF; Clear; ; hits=0; # FDCF (just below the block)
+
+# U+FDF0 sits one above the reserved block and is assigned.
+FDF0; Clear; ; hits=0; # FDF0 (just above the block)
+
+# U+00A0 NO-BREAK SPACE is one above the C1 block.
+00A0; Clear; ; hits=0; # NBSP (just above C1)
+
+# U+0020 SPACE is one above the C0 block.
+0020; Clear; ; hits=0; # SPACE (just above C0)
+
+# U+FFFD REPLACEMENT CHARACTER is assigned, not a noncharacter.
+FFFD; Clear; ; hits=0; # U+FFFD
+
+# Han text carries no reserved or control codepoint.
+4E2D 6587; Clear; ; hits=0; # 中文
+
+# @section Noncharacter
+# @level basic
+
+# First codepoint of the U+FDD0..U+FDEF reservation.
+FDD0; Hazard:Noncharacter; 0; hits=1; # FDD0 (block start)
+
+# Last codepoint of the U+FDD0..U+FDEF reservation.
+FDEF; Hazard:Noncharacter; 0; hits=1; # FDEF (block end)
+
+# A codepoint inside the reserved block.
+FDE0; Hazard:Noncharacter; 0; hits=1; # FDE0 (inside the block)
+
+# The BMP plane-end pair — the most widely mishandled noncharacters.
+FFFE; Hazard:Noncharacter; 0; hits=1; # FFFE (BMP plane end)
+FFFF; Hazard:Noncharacter; 0; hits=1; # FFFF (BMP plane end)
+
+# The plane-1 pair — a supplementary plane end.
+1FFFE; Hazard:Noncharacter; 0; hits=1; # 1FFFE (plane 1 end)
+1FFFF; Hazard:Noncharacter; 0; hits=1; # 1FFFF (plane 1 end)
+
+# The last plane's pair — the top of the codespace.
+10FFFE; Hazard:Noncharacter; 0; hits=1; # 10FFFE (plane 16 end)
+10FFFF; Hazard:Noncharacter; 0; hits=1; # 10FFFF (plane 16 end)
+
+# A noncharacter smuggled between ASCII letters is reported at
+# its own position, not at the start of the input.
+0041 FDD0 0042; Hazard:Noncharacter; 1; hits=1; # A + FDD0 + B
+
+# Two noncharacters: the first position is reported, both counted.
+FFFE 0041 FFFF; Hazard:Noncharacter; 0; hits=2; # FFFE + A + FFFF
+
+# @section C0Control
+# @level basic
+
+# NUL mid-text — the classic C-string truncation vector.
+0041 0000 0042; Hazard:C0Control; 1; hits=1; # A + NUL + B
+
+# NUL alone at position 0.
+0000; Hazard:C0Control; 0; hits=1; # NUL
+
+# ESC opens a terminal escape sequence.
+0041 001B 005B 0033 0031 006D; Hazard:C0Control; 1; hits=1; # A + ESC [ 3 1 m
+
+# U+001F is the last codepoint of the C0 block.
+001F; Hazard:C0Control; 0; hits=1; # U+001F (C0 block end)
+
+# DEL shares the control role from above the block.
+0041 007F 0042; Hazard:C0Control; 1; hits=1; # A + DEL + B
+
+# A C0 control after sanctioned whitespace: TAB stays clear and
+# the vertical tab is the reported hazard.
+0009 000B; Hazard:C0Control; 1; hits=1; # TAB + VT
+
+# Two C0 controls: the first position is reported, both counted.
+0000 0041 001B; Hazard:C0Control; 0; hits=2; # NUL + A + ESC
+
+# @section C1Control
+# @level basic
+
+# U+0080 is the first codepoint of the C1 block.
+0041 0080 0042; Hazard:C1Control; 1; hits=1; # A + U+0080 + B
+
+# U+0080 alone at position 0.
+0080; Hazard:C1Control; 0; hits=1; # U+0080 (C1 block start)
+
+# U+009F is the last codepoint of the C1 block.
+009F; Hazard:C1Control; 0; hits=1; # U+009F (C1 block end)
+
+# NEL (U+0085) is a C1 control despite its line-breaking role.
+0041 0085 0042; Hazard:C1Control; 1; hits=1; # A + NEL + B
+
+# @section Priority
+# @level strict
+
+# When an input carries hazards of more than one class, the
+# reported one is whichever sits at the earliest position; the
+# class order in the detection list settles only which tag a
+# single codepoint draws.  A NUL ahead of a noncharacter is
+# therefore reported as the C0 control.
+0000 FDD0; Hazard:C0Control; 0; hits=2; # NUL + FDD0
+
+# The same rule with a C1 control ahead of a noncharacter.
+0080 FFFE; Hazard:C1Control; 0; hits=2; # U+0080 + FFFE
+
+# A noncharacter ahead of a C0 control is reported as the
+# noncharacter, the mirror of the two rows above.
+FDD0 0000; Hazard:Noncharacter; 0; hits=2; # FDD0 + NUL
+
+# A C0 and a C1 control with no noncharacter: the earlier
+# position is reported and both are counted.
+0000 0080; Hazard:C0Control; 0; hits=2; # NUL + U+0080

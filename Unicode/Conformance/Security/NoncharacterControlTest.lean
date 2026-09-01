@@ -28,6 +28,7 @@
 -/
 
 import Unicode.Security.Covert.NoncharacterControl
+import Unicode.Conformance.Security.VectorFile
 
 namespace Unicode.Conformance.Security.NoncharacterControlTest
 
@@ -71,5 +72,80 @@ def verifyRow (r : Row) : Bool :=
 /-- Every certified vector draws exactly the verdict the codec predicate and the
     C0/C1 ranges demand. -/
 theorem all_rows_pass : rows.all verifyRow = true := by decide
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- The pinned vector file, executed
+--
+-- `Unicode/Ucd/Security/NoncharacterControlTest.txt` is hash-pinned by
+-- `scripts/check-security-hashes.sh`, which fixes its bytes.  Running the
+-- detector over those bytes is a separate claim, and this section makes it:
+-- `rowsList` is mirrored against a fresh parse of the file at build time, and
+-- `all_vectors_pass` reduces the detector over every row in the kernel.  A row
+-- added to, removed from, or edited in the file fails the build until the
+-- harness agrees with it again.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+open Unicode.Conformance.Security.VectorFile (VectorRow parseFile)
+
+/-- Raw text of the pinned vector file, embedded at compile time. -/
+def vectorsRaw : String := include_str "../../Ucd/Security/NoncharacterControlTest.txt"
+
+/-- Every row of the pinned vector file, freshly parsed. -/
+def parsedRows : List VectorRow := parseFile vectorsRaw
+
+/-- The pinned rows, materialized so the kernel can reduce over them. -/
+def rowsList : List VectorRow := [
+  ⟨[0x0048, 0x0065, 0x006C, 0x006C, 0x006F], "Clear", []⟩,
+  ⟨[0x0041, 0x0009, 0x000A, 0x000D, 0x0042], "Clear", []⟩,
+  ⟨[0xFDCF], "Clear", []⟩,
+  ⟨[0xFDF0], "Clear", []⟩,
+  ⟨[0x00A0], "Clear", []⟩,
+  ⟨[0x0020], "Clear", []⟩,
+  ⟨[0xFFFD], "Clear", []⟩,
+  ⟨[0x4E2D, 0x6587], "Clear", []⟩,
+  ⟨[0xFDD0], "Hazard:Noncharacter", [0]⟩,
+  ⟨[0xFDEF], "Hazard:Noncharacter", [0]⟩,
+  ⟨[0xFDE0], "Hazard:Noncharacter", [0]⟩,
+  ⟨[0xFFFE], "Hazard:Noncharacter", [0]⟩,
+  ⟨[0xFFFF], "Hazard:Noncharacter", [0]⟩,
+  ⟨[0x1FFFE], "Hazard:Noncharacter", [0]⟩,
+  ⟨[0x1FFFF], "Hazard:Noncharacter", [0]⟩,
+  ⟨[0x10FFFE], "Hazard:Noncharacter", [0]⟩,
+  ⟨[0x10FFFF], "Hazard:Noncharacter", [0]⟩,
+  ⟨[0x0041, 0xFDD0, 0x0042], "Hazard:Noncharacter", [1]⟩,
+  ⟨[0xFFFE, 0x0041, 0xFFFF], "Hazard:Noncharacter", [0]⟩,
+  ⟨[0x0041, 0x0000, 0x0042], "Hazard:C0Control", [1]⟩,
+  ⟨[0x0000], "Hazard:C0Control", [0]⟩,
+  ⟨[0x0041, 0x001B, 0x005B, 0x0033, 0x0031, 0x006D], "Hazard:C0Control", [1]⟩,
+  ⟨[0x001F], "Hazard:C0Control", [0]⟩,
+  ⟨[0x0041, 0x007F, 0x0042], "Hazard:C0Control", [1]⟩,
+  ⟨[0x0009, 0x000B], "Hazard:C0Control", [1]⟩,
+  ⟨[0x0000, 0x0041, 0x001B], "Hazard:C0Control", [0]⟩,
+  ⟨[0x0041, 0x0080, 0x0042], "Hazard:C1Control", [1]⟩,
+  ⟨[0x0080], "Hazard:C1Control", [0]⟩,
+  ⟨[0x009F], "Hazard:C1Control", [0]⟩,
+  ⟨[0x0041, 0x0085, 0x0042], "Hazard:C1Control", [1]⟩,
+  ⟨[0x0000, 0xFDD0], "Hazard:C0Control", [0]⟩,
+  ⟨[0x0080, 0xFFFE], "Hazard:C1Control", [0]⟩,
+  ⟨[0xFDD0, 0x0000], "Hazard:Noncharacter", [0]⟩,
+  ⟨[0x0000, 0x0080], "Hazard:C0Control", [0]⟩
+]
+
+-- `rowsList` mirrors a fresh parse of the vector file, checked at build time.
+#eval do
+  unless rowsList == parsedRows do
+    throw (IO.userError "NoncharacterControlTest drift: rowsList ≠ parsed vector file")
+
+/-- Run the detector over one row and compare with the verdict the file states:
+    the classification the row prescribes, and the positions the row localises
+    the hazard to. -/
+def verifyVectorRow (r : VectorRow) : Bool :=
+  let v := detect r.codepoints
+  (if r.expectsClear then v.classify.isClear
+   else v.classify.tag == r.expectedTag)
+    && v.classify.positions == r.positions
+
+/-- Every vector the pinned file states holds of the detector. -/
+theorem all_vectors_pass : rowsList.all verifyVectorRow = true := by decide +kernel
 
 end Unicode.Conformance.Security.NoncharacterControlTest

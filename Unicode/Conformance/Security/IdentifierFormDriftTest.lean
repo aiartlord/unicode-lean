@@ -128,11 +128,14 @@ def rowsList : List VectorRow := [
   unless rowsList == parsedRows do
     throw (IO.userError "IdentifierFormDriftTest drift: rowsList ≠ parsed vector file")
 
-/-- Run the detector over one row and compare with the verdict the file states. -/
+/-- Run the detector over one row and compare with the verdict the file states:
+    the classification the row prescribes, and the positions the row localises
+    the hazard to. -/
 def verifyVectorRow (r : VectorRow) : Bool :=
   let v := detect r.codepoints
-  if r.expectsClear then v.classify.isClear
-  else v.classify.tag == r.expectedTag
+  (if r.expectsClear then v.classify.isClear
+   else v.classify.tag == r.expectedTag)
+    && v.classify.positions == r.positions
 
 -- The vector rows reach deeper than the curated set, so the obligation needs
 -- the detector module's own recursion budget.

@@ -200,13 +200,15 @@ def contextOf (attrs : List String) : Context :=
     asWritten        := (attrValue "asWritten" attrs).map attrCodepoints,
     serverBytes      := (attrValue "serverBytes" attrs).map attrCodepoints }
 
-/-- Run the detector over one row under the context its attribution states,
-    and compare with the verdict the file states. -/
+/-- Run the detector over one row under the context its attribution states, and
+    compare with the verdict the file states: the classification the row
+    prescribes, and the positions the row localises the hazard to. -/
 def verifyVectorRow (rowAndAttrs : VectorRow × List String) : Bool :=
   let r := rowAndAttrs.1
   let v := detectWithContext (contextOf rowAndAttrs.2) r.codepoints
-  if r.expectsClear then v.classify.isClear
-  else v.classify.tag == r.expectedTag
+  (if r.expectsClear then v.classify.isClear
+   else v.classify.tag == r.expectedTag)
+    && v.classify.positions == r.positions
 
 -- Each row runs the full context-bearing detector, which recurses deeper than
 -- the elaborator's default budget over a list this long.
