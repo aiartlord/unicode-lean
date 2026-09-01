@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# Run the UTS #46 IDNA conformance summary against the current
-# implementation. Compiles a one-line driver that prints a
-# `Unicode.Conformance.IdnaTestV2` summary. Invokes lean directly,
-# bypassing `lake build` so the cost lands in this script's
-# runtime — not in every `lake build` cycle on CI.
+# Print a UTS #46 IDNA conformance summary for a chosen number of rows.
+#
+# Whether the implementation passes the published file is settled by the
+# `#eval` gate in `Unicode.Conformance.IdnaTestV2`, which folds all 6391 rows
+# across `toUnicode`, `toAsciiN` and `toAsciiT` and fails the build on a single
+# disagreeing row. This script answers a different question: what the tallies
+# look like part-way through, and which row index fails first. That is what a
+# bounded run is for while changing the implementation, and it is why the
+# summary carries a `skipped` column the gate has no use for.
 #
 # Usage: idna-conformance.sh [ROWS|all]
 #
@@ -39,7 +43,9 @@ def main : IO Unit :=
   IO.println ($expression)
 LEAN
 
-# Ensure deps are built (cheap; the heavy fold is in `report` only).
+# Build the module the driver imports. This is not cheap: elaborating it runs
+# the module's own full-corpus gate, which is minutes. A cached build costs
+# nothing, so the price is paid once after an edit rather than per invocation.
 lake build Unicode.Conformance.IdnaTestV2 >/dev/null
 
 LEAN_PATH="$(lake env printenv LEAN_PATH 2>/dev/null || true)"

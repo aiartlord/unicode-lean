@@ -1,5 +1,5 @@
 {
-  "module_steps": 471,
+  "module_steps": 477,
   "preset": "evidence",
   "roots": [
     {
@@ -28,7 +28,7 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 376262,
+      "bytes": 376264,
       "decide_kernel": 70,
       "modules": 18,
       "row_refs": 182,
@@ -39,7 +39,7 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 614322,
+      "bytes": 616398,
       "decide_kernel": 267,
       "modules": 65,
       "row_refs": 134,
@@ -61,8 +61,8 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 3989112,
-      "decide_kernel": 262,
+      "bytes": 4007406,
+      "decide_kernel": 267,
       "modules": 77,
       "row_refs": 2,
       "stage": "stage-5-product-domain"
@@ -72,7 +72,7 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 657606,
+      "bytes": 657608,
       "decide_kernel": 342,
       "modules": 154,
       "row_refs": 271,
@@ -94,10 +94,10 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 214526,
-      "decide_kernel": 46,
-      "modules": 37,
-      "row_refs": 36,
+      "bytes": 388915,
+      "decide_kernel": 73,
+      "modules": 43,
+      "row_refs": 117,
       "stage": "stage-8-conformance-module"
     },
     {
@@ -105,7 +105,7 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 2940,
+      "bytes": 3550,
       "decide_kernel": 0,
       "modules": 1,
       "row_refs": 0,

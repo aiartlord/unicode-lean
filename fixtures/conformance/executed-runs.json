@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "contract": "unicode-conformance-executed-v0",
-  "note": "Results of folding each published corpus through the implementation, recorded with the SHA-256 of the file that was read. scripts/conformance-run.py uses a row only when that digest still matches the corpus on disk, so a regenerated or upgraded corpus invalidates the record rather than silently keeping a stale pass. Regenerate with scripts/conformance-execute.sh.",
+  "note": "Results of folding each published corpus through the implementation, recorded with the SHA-256 of the file that was read. scripts/conformance-run.py uses a row only when that digest still matches the corpus on disk, so a regenerated or upgraded corpus invalidates the record rather than silently keeping a stale pass. Every suite but collation also closes a #eval gate over its whole corpus during the UnicodeFullConformance build, so its row here restates a check the build already makes; the collation rows are the evidence itself, because a run over 437,928 pairs is hours rather than minutes. Regenerate the collation rows with scripts/conformance-execute.sh.",
   "runs": [
     {
       "suite": "BidiTest",

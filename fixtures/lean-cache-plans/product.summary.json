@@ -44,7 +44,7 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 277245,
+      "bytes": 277247,
       "decide_kernel": 69,
       "modules": 15,
       "row_refs": 135,
@@ -55,7 +55,7 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 560706,
+      "bytes": 562713,
       "decide_kernel": 132,
       "modules": 43,
       "row_refs": 24,
@@ -77,8 +77,8 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 4138213,
-      "decide_kernel": 282,
+      "bytes": 4162992,
+      "decide_kernel": 287,
       "modules": 83,
       "row_refs": 2,
       "stage": "stage-5-product-domain"

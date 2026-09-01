@@ -56,6 +56,8 @@ SUITES = [
     ("SentenceBreakTest", "UAX #29 sentence boundaries"),
     ("LineBreakTest", "UAX #14 line breaking"),
     ("IdnaTestV2", "UTS #46 IDNA compatibility processing"),
+    ("CollationTest_NON_IGNORABLE_SHORT", "UTS #10 collation order, variable weights kept"),
+    ("CollationTest_SHIFTED_SHORT", "UTS #10 collation order, variable weights shifted"),
 ]
 
 
@@ -111,6 +113,58 @@ def harness_facts(name: str) -> dict[str, object]:
         "vectors": vectors,
         "drift_gated": gated,
     }
+
+
+# The module whose `#eval` gate folds a suite's whole corpus during the
+# `UnicodeFullConformance` build. Several suites are judged by a run module
+# rather than by the harness named after the suite, and two suites share one:
+# `BreakTestRun` gates the word and line corpora together.
+GATE_MODULES = {
+    "BidiTest": "BidiTestRun",
+    "BidiCharacterTest": "BidiCharacterTestRun",
+    "NormalizationTest": "NormalizationTestRun",
+    "WordBreakTest": "BreakTestRun",
+    "LineBreakTest": "BreakTestRun",
+    "IdnaTestV2": "IdnaTestV2",
+}
+
+
+def build_gated(name: str) -> bool:
+    """Whether a suite's whole corpus is folded by a gate during the build.
+
+    Three things have to hold, and reporting a suite's rows as passed on the
+    strength of a gate that fails any of them would be the same unchecked
+    assertion this column exists to retire.
+
+    The gate must fail the build rather than print a summary, so its `#eval`
+    has to throw. It must run over the whole corpus, so the block may not take
+    a prefix of the rows — every run module also exposes a bounded
+    `reportFirst`, and a gate written against one of those would report a clean
+    sweep having judged a hundred rows. And it must assert its own coverage, so
+    the block has to compare a tally against the parsed length; without that a
+    parser dropping half the file reads as a pass over a smaller denominator.
+
+    The gate also has to be reached from a build root, which is what
+    `scripts/check-orphan-files.sh` enforces: a gate in a module nothing
+    imports never runs.
+    """
+    module = GATE_MODULES.get(name)
+    if module is None:
+        return False
+    path = CONFORMANCE / f"{module}.lean"
+    if not path.is_file():
+        return False
+    text = path.read_text(encoding="utf-8")
+    blocks = re.findall(r"^#eval do\n((?:[ \t].*\n|\n)*)", text, re.M)
+    for block in blocks:
+        if "throw (IO.userError" not in block:
+            continue
+        if ".take " in block or "reportFirst" in block:
+            continue
+        if ".length" not in block and ".cases ==" not in block:
+            continue
+        return True
+    return False
 
 
 EXECUTED_RUNS = ROOT / "fixtures" / "conformance" / "executed-runs.json"
@@ -193,8 +247,14 @@ def section_suites() -> list[dict[str, object]]:
         # the result recorded against the digest of the file that was read.
         # The second is an execution and not a proof, so it is reported under
         # its own basis rather than merged with the first.
+        gated = build_gated(name)
         if materialized and facts.get("drift_gated"):
             passed, failed, skipped = materialized, 0, max(total - materialized, 0)
+        elif gated:
+            # The gate throws unless every published row passes and the tally
+            # accounts for the whole file, so the build failing is the only way
+            # this is not a clean sweep.
+            passed, failed, skipped = total, 0, 0
         elif run is not None:
             passed = int(run["passed"])
             failed = int(run["failed"])
@@ -212,6 +272,7 @@ def section_suites() -> list[dict[str, object]]:
                 "skipped": skipped,
                 "vectors_proved": int(facts.get("vectors", 0)),
                 "corpus_complete": bool(materialized and facts.get("drift_gated")),
+                "build_gated": gated,
                 "executed": run is not None,
                 "executed_columns": list(run["columns"]) if run is not None else [],
             }
@@ -491,6 +552,8 @@ def render(report: dict[str, object]) -> str:
         basis = (
             f"corpus, drift-gated, kernel"
             if row["corpus_complete"]
+            else "corpus, build-gated"
+            if row["build_gated"]
             else "corpus, executed"
             if row["executed"]
             else f"{row['vectors_proved']} representative vectors"
@@ -500,27 +563,36 @@ def render(report: dict[str, object]) -> str:
             f"{row['failed']:>8}{row['skipped']:>9}  {basis}"
         )
     complete = [r["suite"] for r in report["suites"] if r["corpus_complete"]]
-    executed = [r["suite"] for r in report["suites"] if r["executed"]]
+    gated = [
+        r["suite"]
+        for r in report["suites"]
+        if r["build_gated"] and not r["corpus_complete"]
+    ]
+    executed = [
+        r["suite"]
+        for r in report["suites"]
+        if r["executed"] and not r["build_gated"] and not r["corpus_complete"]
+    ]
     add("")
     add(f"  Corpus-complete, drift-gated in the kernel: {', '.join(complete) if complete else 'none'}.")
+    add(f"  Corpus-complete, build-gated: {', '.join(gated) if gated else 'none'}.")
     add(f"  Corpus-complete, executed: {', '.join(executed) if executed else 'none'}.")
-    add("  Any suite in neither list proves representative vectors against the")
-    add("  published answer; its corpus rows are counted as skipped above, not")
-    add("  as passes.")
+    add("  Any suite in none of the three lists proves representative vectors")
+    add("  against the published answer; its corpus rows are counted as skipped")
+    add("  above, not as passes.")
     add("")
-    add("  The two bases are different evidence and are not merged. A kernel row")
-    add("  is a proof over a materialized mirror the drift gate ties to the")
-    add("  pinned file. An executed row is the corpus folded through the")
-    add("  implementation, recorded in fixtures/conformance/executed-runs.json")
-    add("  against the SHA-256 of the file that was read, and it stops counting")
-    add("  when that digest no longer matches. Regenerate with")
-    add("  scripts/conformance-execute.sh.")
-    add("")
-    add("  IdnaTestV2 additionally has an evaluated run over the published file,")
-    add("  separate from the kernel-proved vectors counted here and not a")
-    add("  substitute for them: scripts/idna-conformance.sh [ROWS|all]. It states")
-    add("  how many of the 6391 rows it judged, because the fold is interpreted")
-    add("  and a bounded run is the ordinary way to use it.")
+    add("  The three bases are different evidence and are not merged. A kernel")
+    add("  row is a proof over a materialized mirror the drift gate ties to the")
+    add("  pinned file. A build-gated row is the corpus folded during the")
+    add("  UnicodeFullConformance build by a gate that throws unless every")
+    add("  published row passes and the tally accounts for the whole file, so")
+    add("  the build is the check and no record can go stale. An executed row is")
+    add("  the corpus folded out of band and recorded in")
+    add("  fixtures/conformance/executed-runs.json against the SHA-256 of the")
+    add("  file that was read; it stops counting when that digest no longer")
+    add("  matches. Collation is the one suite on that last basis, because a")
+    add("  fold over its 437,928 pairs is hours rather than minutes. Regenerate")
+    add("  with scripts/conformance-execute.sh.")
     add("")
 
     add("§3  PROOF EVIDENCE")
