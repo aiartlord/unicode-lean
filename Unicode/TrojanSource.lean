@@ -217,4 +217,158 @@ theorem safe_apple_cyrillic_passes :
 theorem reject_latin_cyrillic_mix :
     safeForCodeContext [0x0061, 0x0440, 0x0061] = false := by decide +kernel
 
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §5 ALL-INPUT PROPERTIES
+--
+-- The vectors above witness the defense on named attack strings. The
+-- statements below hold of every input, by induction on the codepoint
+-- list, with no codepoint space enumerated.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- A codepoint opening an embedding is a bidi format control. The four
+    embedding opens LRE, RLE, LRO, RLO lie inside `U+202A..U+202E`, which
+    is `isBidiEmbeddingControl`. -/
+theorem opensEmbedding_isBidiFormatControl (cp : Nat)
+    (h : opensEmbedding cp = true) : isBidiFormatControl cp = true := by
+  unfold opensEmbedding at h
+  unfold isBidiFormatControl isBidiEmbeddingControl
+  rcases Nat.decEq cp 0x202A with hne | heq
+  · rcases Nat.decEq cp 0x202B with hne2 | heq2
+    · rcases Nat.decEq cp 0x202D with hne3 | heq3
+      · rcases Nat.decEq cp 0x202E with hne4 | heq4
+        · simp [hne, hne2, hne3, hne4] at h
+        · subst heq4; decide
+      · subst heq3; decide
+    · subst heq2; decide
+  · subst heq; decide
+
+/-- PDF (`U+202C`) is a bidi format control: it lies inside the embedding
+    range `U+202A..U+202E`. -/
+theorem isPDF_isBidiFormatControl (cp : Nat)
+    (h : isPDF cp = true) : isBidiFormatControl cp = true := by
+  unfold isPDF at h
+  have hEq : cp = 0x202C := of_decide_eq_true h
+  subst hEq; decide
+
+/-- A codepoint opening an isolate is a bidi format control. LRI, RLI and
+    FSI lie inside `U+2066..U+2069`, which is `isBidiIsolateControl`. -/
+theorem opensIsolate_isBidiFormatControl (cp : Nat)
+    (h : opensIsolate cp = true) : isBidiFormatControl cp = true := by
+  unfold opensIsolate at h
+  unfold isBidiFormatControl isBidiIsolateControl
+  rcases Nat.decEq cp 0x2066 with hne | heq
+  · rcases Nat.decEq cp 0x2067 with hne2 | heq2
+    · rcases Nat.decEq cp 0x2068 with hne3 | heq3
+      · simp [hne, hne2, hne3] at h
+      · subst heq3; decide
+    · subst heq2; decide
+  · subst heq; decide
+
+/-- PDI (`U+2069`) is a bidi format control: it lies inside the isolate
+    range `U+2066..U+2069`. -/
+theorem isPDI_isBidiFormatControl (cp : Nat)
+    (h : isPDI cp = true) : isBidiFormatControl cp = true := by
+  unfold isPDI at h
+  have hEq : cp = 0x2069 := of_decide_eq_true h
+  subst hEq; decide
+
+/-- **The balance walk is inert on control-free input, at any depth.**
+    Every nesting role is a format control, so on input carrying none the
+    walk takes its final branch at each position and both depths reach the
+    end unchanged. The verdict is then exactly whether the walk began
+    nested.
+
+    Quantified over the starting depths because the walk threads them
+    through the recursion; the depth-zero statement is the specialisation
+    below. -/
+theorem hasUnbalancedBidiGo_of_no_control (cps : List Nat) :
+    ∀ embDepth isoDepth : Nat,
+      cps.any isBidiFormatControl = false →
+      hasUnbalancedBidiGo cps embDepth isoDepth
+        = (decide (embDepth ≠ 0) || decide (isoDepth ≠ 0)) := by
+  induction cps with
+  | nil =>
+      intro embDepth isoDepth hNone
+      unfold hasUnbalancedBidiGo
+      exact congrArg (fun flag => flag) rfl
+  | cons cp rest ih =>
+      intro embDepth isoDepth hNone
+      rw [List.any_cons, Bool.or_eq_false_iff] at hNone
+      obtain ⟨hHead, hTail⟩ := hNone
+      have hEmb : opensEmbedding cp = false := by
+        cases hv : opensEmbedding cp with
+        | false => rfl
+        | true =>
+            rw [opensEmbedding_isBidiFormatControl cp hv] at hHead
+            exact Bool.noConfusion hHead
+      have hPDF : isPDF cp = false := by
+        cases hv : isPDF cp with
+        | false => rfl
+        | true =>
+            rw [isPDF_isBidiFormatControl cp hv] at hHead
+            exact Bool.noConfusion hHead
+      have hIso : opensIsolate cp = false := by
+        cases hv : opensIsolate cp with
+        | false => rfl
+        | true =>
+            rw [opensIsolate_isBidiFormatControl cp hv] at hHead
+            exact Bool.noConfusion hHead
+      have hPDI : isPDI cp = false := by
+        cases hv : isPDI cp with
+        | false => rfl
+        | true =>
+            rw [isPDI_isBidiFormatControl cp hv] at hHead
+            exact Bool.noConfusion hHead
+      unfold hasUnbalancedBidiGo
+      simp only [hEmb, hPDF, hIso, hPDI]
+      exact ih embDepth isoDepth hTail
+
+/-- **Absence of bidi format controls implies balance, for every input.**
+    The strict reject subsumes the lenient one: an input the strict layer
+    admits cannot fail the balance check, so the two layers agree
+    everywhere the strict layer passes.
+
+    Induction on the input; no codepoint space is enumerated. -/
+theorem balanced_of_no_bidi_control (cps : List Nat)
+    (h : containsBidiFormatControl cps = false) :
+    hasUnbalancedBidi cps = false := by
+  unfold hasUnbalancedBidi
+  unfold containsBidiFormatControl at h
+  rw [hasUnbalancedBidiGo_of_no_control cps 0 0 h]
+  decide
+
+/-- **Everything `safeForCodeContext` admits is bidi-balanced.** The
+    integrated decision requires the absence of format controls, so its
+    output is balanced by `balanced_of_no_bidi_control` without the
+    balance check being consulted.
+
+    The agreement between the two defense layers, over all inputs rather
+    than on vectors. -/
+theorem safeForCodeContext_balanced (cps : List Nat)
+    (h : safeForCodeContext cps = true) :
+    hasUnbalancedBidi cps = false := by
+  unfold safeForCodeContext at h
+  have hNo : containsBidiFormatControl cps = false := by
+    cases hv : containsBidiFormatControl cps with
+    | false => rfl
+    | true =>
+        rw [hv] at h
+        simp at h
+  exact balanced_of_no_bidi_control cps hNo
+
+/-- **A control-free verdict is a statement about every position.** No
+    codepoint of an input `containsBidiFormatControl` reports `false` for
+    is a bidi format control. -/
+theorem no_control_mem (cps : List Nat) (cp : Nat)
+    (h : containsBidiFormatControl cps = false) (hMem : cp ∈ cps) :
+    isBidiFormatControl cp = false := by
+  unfold containsBidiFormatControl at h
+  cases hv : isBidiFormatControl cp with
+  | false => rfl
+  | true =>
+      have hAny : cps.any isBidiFormatControl = true :=
+        List.any_eq_true.mpr ⟨cp, hMem, hv⟩
+      rw [h] at hAny
+      exact Bool.noConfusion hAny
+
 end Unicode.TrojanSource
