@@ -1350,4 +1350,80 @@ theorem resolveFSI_identity_no_fsi :
       [0x0048, 0x0069, 0x2066, 0x05D0, 0x2069]
     := by decide
 
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §13 REORDERING REQUIRES AN ODD LEVEL
+--
+-- L2 is the only rule that permutes positions; L1 rewrites levels through a
+-- pointwise map and leaves order alone. The statements below hold of every
+-- record array, by induction, and bound where a display/logical divergence
+-- can come from: an odd embedding level, and nothing else.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- **The minimum-odd-level scan is constant on all-even input, at any
+    accumulator.** The scan only revises its accumulator on a record whose
+    level is odd, so an array carrying none leaves it untouched.
+
+    Quantified over the accumulator because the scan threads it through the
+    fold; `minOddLevel_eq_none_of_all_even` is the `none` specialisation. -/
+theorem minOddLevel_fold_const :
+    ∀ (records : List CharRecord) (acc : Option Level),
+      (∀ r ∈ records, r.level % 2 = 0) →
+      records.foldl
+        (fun acc r =>
+          if r.level % 2 = 1 then
+            match acc with
+            | none   => some r.level
+            | some m => some (Nat.min m r.level)
+          else acc)
+        acc = acc := by
+  intro records
+  induction records with
+  | nil => intro acc hEven; rfl
+  | cons r rest ih =>
+      intro acc hEven
+      have hHead : r.level % 2 = 0 := hEven r List.mem_cons_self
+      have hOdd : ¬ (r.level % 2 = 1) := by simp [hHead]
+      rw [List.foldl_cons, if_neg hOdd]
+      exact ih acc (fun s hs => hEven s (List.mem_cons_of_mem r hs))
+
+/-- **An all-even record array has no minimum odd level.** -/
+theorem minOddLevel_eq_none_of_all_even (records : List CharRecord)
+    (hEven : ∀ r ∈ records, r.level % 2 = 0) :
+    minOddLevel records = none := by
+  unfold minOddLevel
+  exact minOddLevel_fold_const records none hEven
+
+/-- **L2 is the identity when no odd level is present.** The rule reverses
+    maximal runs from the highest level down to the smallest odd one; with
+    no odd level there is no floor to descend to and the records are
+    returned unchanged. -/
+theorem applyL2_id_of_no_odd_level (records : List CharRecord)
+    (hNone : minOddLevel records = none) :
+    applyL2 records = records := by
+  unfold applyL2
+  rw [hNone]
+
+/-- **All-even levels leave the visual order equal to the logical order.**
+    L2 is the only rule that permutes positions, and it is the identity
+    without an odd level, so the sequence is delivered to the display in
+    the order it was read.
+
+    This bounds where a Trojan Source divergence can originate: a string
+    renders out of logical order only if some character resolved to an odd
+    embedding level, which requires a right-to-left character or a bidi
+    format control. -/
+theorem applyL2_id_of_all_even (records : List CharRecord)
+    (hEven : ∀ r ∈ records, r.level % 2 = 0) :
+    applyL2 records = records :=
+  applyL2_id_of_no_odd_level records
+    (minOddLevel_eq_none_of_all_even records hEven)
+
+/-- **L1 inserts and deletes nothing.** The rule ends in a pointwise
+    `mapIdx`, so it returns exactly as many records as it received and
+    rewrites only `level` fields. Position is settled by L2 alone. -/
+theorem applyL1_length (paragraphLvl : Level) (records : List CharRecord) :
+    (applyL1 paragraphLvl records).length = records.length := by
+  unfold applyL1
+  exact List.length_mapIdx
+
 end Unicode.Bidi.Algorithm
