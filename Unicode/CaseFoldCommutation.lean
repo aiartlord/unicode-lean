@@ -66,9 +66,8 @@ set_option maxRecDepth 1000000
 theorem caseFold_commutes_with_NFD_pointwise :
     CaseFolding.foldings.all (fun entry =>
       decide (NFC.toNFD entry.2 =
-              NFC.toNFD (caseFold (NFC.toNFD [entry.1])))) = true := by
-  unfold CaseFolding.foldings
-  simpa [sourcePointwiseP] using sourcePointwise_foldingsList
+              NFC.toNFD (caseFold (NFC.toNFD [entry.1])))) = true :=
+  sourcePointwise_foldingsList
 
 /-- Decomposed-form case-fold targets: for every fold entry, applying
     `toNFD` to the target is its own NFD form (idempotent restriction).
@@ -93,9 +92,8 @@ theorem caseFoldTargets_NFD_idempotent :
 theorem caseFold_commutes_with_NFD_sources :
     CaseFolding.foldings.all (fun entry =>
       decide (NFC.toNFD (caseFold [entry.1]) =
-              NFC.toNFD (caseFold (NFC.toNFD [entry.1])))) = true := by
-  unfold CaseFolding.foldings
-  simpa [sourceCommP] using sourceComm_foldingsList
+              NFC.toNFD (caseFold (NFC.toNFD [entry.1])))) = true :=
+  sourceComm_foldingsList
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- UNIFIED PER-CODEPOINT LIFT
