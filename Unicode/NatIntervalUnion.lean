@@ -191,4 +191,67 @@ theorem memUnion_eq_false_of_lt_head
   memUnion_eq_false_of_outsideAll x (iv0 :: rest)
     (outsideAll_of_lt_head x iv0 rest hWF hAsc hx)
 
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §5  THE GAP CASE — the one a scattered table actually needs
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- Splitting an ascending table at any point leaves both halves ascending,
+    and every interval of the first half ends strictly below every interval
+    of the second. -/
+theorem ascending_append_iff (pre suf : List (Nat × Nat)) :
+    Ascending (pre ++ suf)
+      ↔ Ascending pre ∧ Ascending suf
+          ∧ ∀ a ∈ pre, ∀ b ∈ suf, a.2 < b.1 := by
+  unfold Ascending
+  exact List.pairwise_append
+
+/-- `OutsideAll` distributes over an append: outside both halves is outside
+    the whole. -/
+theorem outsideAll_append
+    (x : Nat) (pre suf : List (Nat × Nat))
+    (hPre : OutsideAll x pre) (hSuf : OutsideAll x suf) :
+    OutsideAll x (pre ++ suf) := by
+  induction pre with
+  | nil => exact hSuf
+  | cons iv rest ih =>
+      exact ⟨hPre.1, ih hPre.2⟩
+
+/-- **A codepoint in a gap is outside the whole table.** For an ascending
+    table split as `pre ++ suf`, a value above every high end of `pre` and
+    below every low end of `suf` lies in the gap between them and so misses
+    every interval.
+
+    This is the case a scattered source column presents: a case-fold target
+    is neither below the first interval nor above the last, it sits between
+    two of them. Ascendingness carries the two boundary comparisons across
+    the halves, so the witness is `x` against one interval on each side
+    rather than against all of them. -/
+theorem outsideAll_of_gap
+    (x : Nat) (pre suf : List (Nat × Nat))
+    (hPre : ∀ iv ∈ pre, iv.2 < x)
+    (hSuf : ∀ iv ∈ suf, x < iv.1) :
+    OutsideAll x (pre ++ suf) :=
+  outsideAll_append x pre suf
+    (outsideAll_of_forall_gt_hi x pre hPre)
+    (outsideAll_of_forall_lt_lo x suf hSuf)
+
+/-- In a gap of an ascending table ⟹ not in the union. The `memUnion … =
+    false` corollary of `outsideAll_of_gap`. -/
+theorem memUnion_eq_false_of_gap
+    (x : Nat) (pre suf : List (Nat × Nat))
+    (hPre : ∀ iv ∈ pre, iv.2 < x)
+    (hSuf : ∀ iv ∈ suf, x < iv.1) :
+    memUnion x (pre ++ suf) = false :=
+  memUnion_eq_false_of_outsideAll x (pre ++ suf)
+    (outsideAll_of_gap x pre suf hPre hSuf)
+
+/-- Above the last high end of an ascending table ⟹ not in the union: the
+    mirror of `memUnion_eq_false_of_lt_head`, for a value past the end of
+    the whole table. -/
+theorem memUnion_eq_false_of_gt_last
+    (x : Nat) (ivs : List (Nat × Nat))
+    (h : ∀ iv ∈ ivs, iv.2 < x) :
+    memUnion x ivs = false :=
+  memUnion_eq_false_of_outsideAll x ivs (outsideAll_of_forall_gt_hi x ivs h)
+
 end Unicode.NatIntervalUnionSorted
