@@ -125,3 +125,125 @@ the consumer-specific wiring lives in each consuming repository, not here.
   sidecar where the language has no native port.
 - **Done when:** each consumer mediates its untrusted-text ingress through the
   engine with a documented profile and mode.
+
+## 10. Analytic table facts (proof-layer memory)
+
+Twenty-four modules peak above 2 GB when elaborated, led by
+`Generated.CaseFoldingTargetFacts` at 8.14 GB. The cost is the shape of the
+generated classifiers, not the size of the data: `Generated.CaseFolding.isSource`
+is a chain of roughly 640 `decide` range tests joined by `||`, and a disjunction
+short-circuits only on `true`, so every proof that a codepoint is **not** a
+source evaluates all 640 branches. Doing that for the table's ~1,700 target
+codepoints in one `decide +kernel` retains about 1.1 million `Decidable`
+instance terms.
+
+`NatIntervalUnion` already states the alternative in its header — a table given
+as `List (Nat × Nat)` discharges `memUnion cp table = false` through
+`OutsideAll`, reflecting non-membership to per-interval order facts closed by
+`omega`, with no decision procedure run over the codepoint space. Only
+`Assurance.lean` consumes it; the generated classifiers were emitted as
+flattened chains instead and cannot reach it.
+
+- **Mechanism:** emit range tables rather than disjunction chains, so
+  `isSource cp = memUnion cp sourceIntervals` with an `Ascending` fact proved
+  once, and close the table facts through `memUnion_eq_false_of_gap` instead of
+  evaluating the classifier per codepoint. Where a fact is already proven
+  elsewhere, restate it as a term rather than re-deriving it — this took
+  `CaseFoldCommutation` from 21.54 GB to about 1 GB with no new lemmas.
+  A genuine data fact with no analytic route keeps `decide +kernel` and keeps
+  its own file, so its peak composes with nothing.
+- **Done when:** no module's recorded `peak_tree_rss_kb` exceeds a pinned
+  budget, and a check enforces that budget from the per-module logs the staged
+  runner already writes.
+
+## 11. The conformance dossier (external review)
+
+An external reviewer has set acceptance criteria for a conformance run against
+release 17.0.0. Eight criteria, A1 to A8.
+
+**They are a floor, not a description.** The criteria name five standards; the
+tree implements fourteen. They name eight corpora; the tree closes ten
+conformance suites and carries a twenty-seven-family security layer that has no
+official Unicode test file at all, replicated across sixteen language runtimes
+under a shared wire contract. Measured: 497 Lean modules, 3,555 theorems, eleven
+module roots — `Bidi`, `Codec`, `Conformance`, `Generated`, `Idna`,
+`Normalization`, `Precis`, `Security`, `Segmentation`, `Uca`, `Ucd`.
+
+Standards carried, by citation count in the sources:
+
+| standard | refs | in the criteria? |
+|---|---|---|
+| UTS #39 security mechanisms | 94 | no |
+| UAX #15 normalization | 56 | A2 |
+| UTS #46 IDNA | 55 | A4 |
+| UAX #9 bidirectional | 54 | A1 |
+| UTS #51 emoji | 41 | no |
+| UAX #29 segmentation | 37 | A3 |
+| UAX #44 character database | 30 | no |
+| RFC 8264 PRECIS framework | 29 | no |
+| RFC 5893 IDNA bidi rule | 29 | no |
+| RFC 8265 PRECIS usernames | 27 | no |
+| UTS #10 collation | 17 | no |
+| RFC 5892 IDNA CONTEXTJ | 16 | no |
+| UAX #14 line breaking | 15 | A3 |
+| RFC 3629 UTF-8 | 12 | no |
+
+Nine of the fourteen are outside the criteria entirely, including the
+most-cited one. The status below is therefore an audit against a partial
+external checklist, not against the repository's own surface; each row names
+what was counted and how it is established.
+
+| | criterion | status |
+|---|---|---|
+| A1 | BidiTest + BidiCharacterTest, 100%, zero skipped | **met** — 490,846 rows expanding to 770,241 cases, and 91,707 rows across three published columns, both folded during the build |
+| A2 | NormalizationTest, 100%, zero skipped, four forms | **met** — 20,034 rows × NFC/NFD/NFKC/NFKD |
+| A3 | four `auxiliary/` break tests, 100%, zero skipped | **met** — Grapheme 766 and Sentence 512 closed in the kernel over a drift-gated mirror; Word 1,944 and Line 19,338 folded during the build |
+| A4 | IdnaTestV2, 100% or a scoped statement | **met** — 6,391 rows × toUnicode/toAsciiN/toAsciiT, comparing output, error flag and the bracketed status set |
+| A5 | `CONFORMANCE-INPUTS.sha256` attached | **partial** — emitted to `dist/`, which is untracked, so it is not attachable from a clean checkout |
+| A6 | skipped stated everywhere, zero on A1–A3 | **met for A1–A3**; the two collation corpora report 437,928 skipped pairs, honestly, and that is the one gap |
+| A7 | `lake build` completes, log attached | **partial** — 448 of 448 modules, but the run carried `--allow-dirty-source`; a clean-tree run is what makes it evidence |
+| A8 | `#print axioms` clean on the load-bearing theorems | **partial** — the footprint gate covers the audited closure, but the specific property A8 names does not exist yet; see below |
+
+### The gap that matters more than the table
+
+The reviewer's own caveat: conformance to UAX #9 is not the property
+*"no string renders differently than it lexes."* The first says the algorithm is
+implemented correctly; the second is the Trojan Source security property, and it
+needs its own theorem.
+
+`Unicode/TrojanSource.lean` implements the defense — `containsBidiFormatControl`,
+`hasUnbalancedBidi`, `safeForCodeContext` — and carries seventeen theorems.
+**Every one is a point vector**: `safe_ascii`, `reject_rlo`, `detect_lre`,
+`balanced_lre_pdf`, `reject_latin_cyrillic_mix`. Not one is universally
+quantified over inputs. The flagship claim rests on examples.
+
+Four detector families have an all-inputs soundness module
+(`BidiControlBalanceSound`, `RtlInjectionSound`, `WidthClassConfusionSound`,
+`SkinToneVariationForgerySound`), carrying seventeen `∀ input` theorems between
+them — bounded counts, depth accounting, stack consistency. That is the right
+shape and it covers four of twenty-seven families.
+
+- **Mechanism:** state and prove the Trojan Source property as a theorem over
+  all inputs — at minimum that `safeForCodeContext cps = true` implies the
+  bidi-control set is empty and the resolved display order agrees with logical
+  order, discharged against `Unicode.Bidi.Algorithm` rather than against
+  examples. Extend the `*Sound.lean` pattern to the remaining twenty-three
+  families.
+- **Done when:** the Trojan Source property is a `∀ cps` theorem whose
+  `#print axioms` shows only `propext`, `Classical.choice`, `Quot.sound`, and
+  A8 can name it.
+
+### Smaller items the dossier surfaced
+
+- **`intentional.txt` is absent.** The reviewer lists it under the UTS #39
+  security data beside `confusables.txt` (6,565 rows), `IdentifierStatus.txt`
+  (1,649) and `IdentifierType.txt` (5,104), all of which are present and pinned.
+- **`CONFORMANCE-INPUTS.sha256` needs a tracked home**, not `dist/`.
+- **Wall time and peak memory are not in the report.** The staged runner records
+  `peak_tree_rss_kb` per module; the conformance report should carry both, since
+  whether the run is CI-viable is itself a product fact.
+- **No ICU comparison row.** The security drills reference ICU behaviour but no
+  suite is run side by side.
+- **Collation is the only non-zero skip.** 437,928 adjacent-pair assertions
+  across the two `CollationTest_*_SHORT.txt` corpora, recorded honestly as
+  skipped. Closing it is a fold, not a proof.
