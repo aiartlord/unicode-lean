@@ -11,6 +11,7 @@
 import Unicode.Normalization.NFC
 import Unicode.Normalization.Lookup
 import Unicode.Normalization.Hangul
+import Unicode.Normalization.QuickCheckSingletonRankCover
 import Unicode.Normalization.QuickCheckSoundnessSingletonRank
 import Unicode.Generated.UnicodeData
 
@@ -39,7 +40,7 @@ theorem qcY_starter_nontrivial_singleton_nfc_id_table :
   intro row hMem
   have hCovered :=
     List.all_eq_true.mp
-      QuickCheckSingletonRankData.relevant_lookup_rows_covered row hMem
+      QuickCheckSingletonRankCover.relevant_lookup_rows_covered row hMem
   by_cases hAny : QuickCheckSingletonRankData.rows.any
       (fun entry => decide (entry.codepoint = row.codepoint)) = true
   · have hSingleton :=

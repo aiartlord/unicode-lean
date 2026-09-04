@@ -687,6 +687,7 @@ theorem lookupRow?_supported_rowsList {cp : Nat} {row : UnicodeDataRow}
       src.canonicalCombiningClass = row.canonicalCombiningClass ∧
       src.canonicalDecomposition = row.canonicalDecomposition := by
   unfold lookupRow? at h
+  rw [rowBucketFast_eq_of_lt (cp % 256) (Nat.mod_lt cp (by decide))] at h
   have hMemBucket : row ∈ rowBucketByLowByte (cp % 256) :=
     List.mem_of_find?_eq_some h
   have hAll := rowBucket_all_supported_rowsList (cp % 256)
@@ -712,6 +713,7 @@ theorem lookupRow?_none_no_rowsList_codepoint {cp : Nat} {row : UnicodeDataRow}
     row.codepoint ≠ cp := by
   intro hCp
   unfold lookupRow? at h
+  rw [rowBucketFast_eq_of_lt (cp % 256) (Nat.mod_lt cp (by decide))] at h
   rw [List.find?_eq_none] at h
   have hAny := rowsList_codepoint_mem_rowBucket hMem hCp
   rw [List.any_eq_true] at hAny

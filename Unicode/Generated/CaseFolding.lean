@@ -736,643 +736,643 @@ def sourceSearchBound : Nat := 0x1E922
     the column in the kernel. -/
 def isSource (cp : Nat) : Bool :=
   decide (cp < sourceSearchBound) && (
-  decide (0x41 ≤ cp ∧ cp ≤ 0x5a) ||
-  decide (cp = 0xb5) ||
-  decide (0xc0 ≤ cp ∧ cp ≤ 0xd6) ||
-  decide (0xd8 ≤ cp ∧ cp ≤ 0xdf) ||
-  decide (cp = 0x100) ||
-  decide (cp = 0x102) ||
-  decide (cp = 0x104) ||
-  decide (cp = 0x106) ||
-  decide (cp = 0x108) ||
-  decide (cp = 0x10a) ||
-  decide (cp = 0x10c) ||
-  decide (cp = 0x10e) ||
-  decide (cp = 0x110) ||
-  decide (cp = 0x112) ||
-  decide (cp = 0x114) ||
-  decide (cp = 0x116) ||
-  decide (cp = 0x118) ||
-  decide (cp = 0x11a) ||
-  decide (cp = 0x11c) ||
-  decide (cp = 0x11e) ||
-  decide (cp = 0x120) ||
-  decide (cp = 0x122) ||
-  decide (cp = 0x124) ||
-  decide (cp = 0x126) ||
-  decide (cp = 0x128) ||
-  decide (cp = 0x12a) ||
-  decide (cp = 0x12c) ||
-  decide (cp = 0x12e) ||
-  decide (cp = 0x130) ||
-  decide (cp = 0x132) ||
-  decide (cp = 0x134) ||
-  decide (cp = 0x136) ||
-  decide (cp = 0x139) ||
-  decide (cp = 0x13b) ||
-  decide (cp = 0x13d) ||
-  decide (cp = 0x13f) ||
-  decide (cp = 0x141) ||
-  decide (cp = 0x143) ||
-  decide (cp = 0x145) ||
-  decide (cp = 0x147) ||
-  decide (0x149 ≤ cp ∧ cp ≤ 0x14a) ||
-  decide (cp = 0x14c) ||
-  decide (cp = 0x14e) ||
-  decide (cp = 0x150) ||
-  decide (cp = 0x152) ||
-  decide (cp = 0x154) ||
-  decide (cp = 0x156) ||
-  decide (cp = 0x158) ||
-  decide (cp = 0x15a) ||
-  decide (cp = 0x15c) ||
-  decide (cp = 0x15e) ||
-  decide (cp = 0x160) ||
-  decide (cp = 0x162) ||
-  decide (cp = 0x164) ||
-  decide (cp = 0x166) ||
-  decide (cp = 0x168) ||
-  decide (cp = 0x16a) ||
-  decide (cp = 0x16c) ||
-  decide (cp = 0x16e) ||
-  decide (cp = 0x170) ||
-  decide (cp = 0x172) ||
-  decide (cp = 0x174) ||
-  decide (cp = 0x176) ||
-  decide (0x178 ≤ cp ∧ cp ≤ 0x179) ||
-  decide (cp = 0x17b) ||
-  decide (cp = 0x17d) ||
-  decide (cp = 0x17f) ||
-  decide (0x181 ≤ cp ∧ cp ≤ 0x182) ||
-  decide (cp = 0x184) ||
-  decide (0x186 ≤ cp ∧ cp ≤ 0x187) ||
-  decide (0x189 ≤ cp ∧ cp ≤ 0x18b) ||
-  decide (0x18e ≤ cp ∧ cp ≤ 0x191) ||
-  decide (0x193 ≤ cp ∧ cp ≤ 0x194) ||
-  decide (0x196 ≤ cp ∧ cp ≤ 0x198) ||
-  decide (0x19c ≤ cp ∧ cp ≤ 0x19d) ||
-  decide (0x19f ≤ cp ∧ cp ≤ 0x1a0) ||
-  decide (cp = 0x1a2) ||
-  decide (cp = 0x1a4) ||
-  decide (0x1a6 ≤ cp ∧ cp ≤ 0x1a7) ||
-  decide (cp = 0x1a9) ||
-  decide (cp = 0x1ac) ||
-  decide (0x1ae ≤ cp ∧ cp ≤ 0x1af) ||
-  decide (0x1b1 ≤ cp ∧ cp ≤ 0x1b3) ||
-  decide (cp = 0x1b5) ||
-  decide (0x1b7 ≤ cp ∧ cp ≤ 0x1b8) ||
-  decide (cp = 0x1bc) ||
-  decide (0x1c4 ≤ cp ∧ cp ≤ 0x1c5) ||
-  decide (0x1c7 ≤ cp ∧ cp ≤ 0x1c8) ||
-  decide (0x1ca ≤ cp ∧ cp ≤ 0x1cb) ||
-  decide (cp = 0x1cd) ||
-  decide (cp = 0x1cf) ||
-  decide (cp = 0x1d1) ||
-  decide (cp = 0x1d3) ||
-  decide (cp = 0x1d5) ||
-  decide (cp = 0x1d7) ||
-  decide (cp = 0x1d9) ||
-  decide (cp = 0x1db) ||
-  decide (cp = 0x1de) ||
-  decide (cp = 0x1e0) ||
-  decide (cp = 0x1e2) ||
-  decide (cp = 0x1e4) ||
-  decide (cp = 0x1e6) ||
-  decide (cp = 0x1e8) ||
-  decide (cp = 0x1ea) ||
-  decide (cp = 0x1ec) ||
-  decide (cp = 0x1ee) ||
-  decide (0x1f0 ≤ cp ∧ cp ≤ 0x1f2) ||
-  decide (cp = 0x1f4) ||
-  decide (0x1f6 ≤ cp ∧ cp ≤ 0x1f8) ||
-  decide (cp = 0x1fa) ||
-  decide (cp = 0x1fc) ||
-  decide (cp = 0x1fe) ||
-  decide (cp = 0x200) ||
-  decide (cp = 0x202) ||
-  decide (cp = 0x204) ||
-  decide (cp = 0x206) ||
-  decide (cp = 0x208) ||
-  decide (cp = 0x20a) ||
-  decide (cp = 0x20c) ||
-  decide (cp = 0x20e) ||
-  decide (cp = 0x210) ||
-  decide (cp = 0x212) ||
-  decide (cp = 0x214) ||
-  decide (cp = 0x216) ||
-  decide (cp = 0x218) ||
-  decide (cp = 0x21a) ||
-  decide (cp = 0x21c) ||
-  decide (cp = 0x21e) ||
-  decide (cp = 0x220) ||
-  decide (cp = 0x222) ||
-  decide (cp = 0x224) ||
-  decide (cp = 0x226) ||
-  decide (cp = 0x228) ||
-  decide (cp = 0x22a) ||
-  decide (cp = 0x22c) ||
-  decide (cp = 0x22e) ||
-  decide (cp = 0x230) ||
-  decide (cp = 0x232) ||
-  decide (0x23a ≤ cp ∧ cp ≤ 0x23b) ||
-  decide (0x23d ≤ cp ∧ cp ≤ 0x23e) ||
-  decide (cp = 0x241) ||
-  decide (0x243 ≤ cp ∧ cp ≤ 0x246) ||
-  decide (cp = 0x248) ||
-  decide (cp = 0x24a) ||
-  decide (cp = 0x24c) ||
-  decide (cp = 0x24e) ||
-  decide (cp = 0x345) ||
-  decide (cp = 0x370) ||
-  decide (cp = 0x372) ||
-  decide (cp = 0x376) ||
-  decide (cp = 0x37f) ||
-  decide (cp = 0x386) ||
-  decide (0x388 ≤ cp ∧ cp ≤ 0x38a) ||
-  decide (cp = 0x38c) ||
-  decide (0x38e ≤ cp ∧ cp ≤ 0x3a1) ||
-  decide (0x3a3 ≤ cp ∧ cp ≤ 0x3ab) ||
-  decide (cp = 0x3b0) ||
-  decide (cp = 0x3c2) ||
-  decide (0x3cf ≤ cp ∧ cp ≤ 0x3d1) ||
-  decide (0x3d5 ≤ cp ∧ cp ≤ 0x3d6) ||
-  decide (cp = 0x3d8) ||
-  decide (cp = 0x3da) ||
-  decide (cp = 0x3dc) ||
-  decide (cp = 0x3de) ||
-  decide (cp = 0x3e0) ||
-  decide (cp = 0x3e2) ||
-  decide (cp = 0x3e4) ||
-  decide (cp = 0x3e6) ||
-  decide (cp = 0x3e8) ||
-  decide (cp = 0x3ea) ||
-  decide (cp = 0x3ec) ||
-  decide (cp = 0x3ee) ||
-  decide (0x3f0 ≤ cp ∧ cp ≤ 0x3f1) ||
-  decide (0x3f4 ≤ cp ∧ cp ≤ 0x3f5) ||
-  decide (cp = 0x3f7) ||
-  decide (0x3f9 ≤ cp ∧ cp ≤ 0x3fa) ||
-  decide (0x3fd ≤ cp ∧ cp ≤ 0x42f) ||
-  decide (cp = 0x460) ||
-  decide (cp = 0x462) ||
-  decide (cp = 0x464) ||
-  decide (cp = 0x466) ||
-  decide (cp = 0x468) ||
-  decide (cp = 0x46a) ||
-  decide (cp = 0x46c) ||
-  decide (cp = 0x46e) ||
-  decide (cp = 0x470) ||
-  decide (cp = 0x472) ||
-  decide (cp = 0x474) ||
-  decide (cp = 0x476) ||
-  decide (cp = 0x478) ||
-  decide (cp = 0x47a) ||
-  decide (cp = 0x47c) ||
-  decide (cp = 0x47e) ||
-  decide (cp = 0x480) ||
-  decide (cp = 0x48a) ||
-  decide (cp = 0x48c) ||
-  decide (cp = 0x48e) ||
-  decide (cp = 0x490) ||
-  decide (cp = 0x492) ||
-  decide (cp = 0x494) ||
-  decide (cp = 0x496) ||
-  decide (cp = 0x498) ||
-  decide (cp = 0x49a) ||
-  decide (cp = 0x49c) ||
-  decide (cp = 0x49e) ||
-  decide (cp = 0x4a0) ||
-  decide (cp = 0x4a2) ||
-  decide (cp = 0x4a4) ||
-  decide (cp = 0x4a6) ||
-  decide (cp = 0x4a8) ||
-  decide (cp = 0x4aa) ||
-  decide (cp = 0x4ac) ||
-  decide (cp = 0x4ae) ||
-  decide (cp = 0x4b0) ||
-  decide (cp = 0x4b2) ||
-  decide (cp = 0x4b4) ||
-  decide (cp = 0x4b6) ||
-  decide (cp = 0x4b8) ||
-  decide (cp = 0x4ba) ||
-  decide (cp = 0x4bc) ||
-  decide (cp = 0x4be) ||
-  decide (0x4c0 ≤ cp ∧ cp ≤ 0x4c1) ||
-  decide (cp = 0x4c3) ||
-  decide (cp = 0x4c5) ||
-  decide (cp = 0x4c7) ||
-  decide (cp = 0x4c9) ||
-  decide (cp = 0x4cb) ||
-  decide (cp = 0x4cd) ||
-  decide (cp = 0x4d0) ||
-  decide (cp = 0x4d2) ||
-  decide (cp = 0x4d4) ||
-  decide (cp = 0x4d6) ||
-  decide (cp = 0x4d8) ||
-  decide (cp = 0x4da) ||
-  decide (cp = 0x4dc) ||
-  decide (cp = 0x4de) ||
-  decide (cp = 0x4e0) ||
-  decide (cp = 0x4e2) ||
-  decide (cp = 0x4e4) ||
-  decide (cp = 0x4e6) ||
-  decide (cp = 0x4e8) ||
-  decide (cp = 0x4ea) ||
-  decide (cp = 0x4ec) ||
-  decide (cp = 0x4ee) ||
-  decide (cp = 0x4f0) ||
-  decide (cp = 0x4f2) ||
-  decide (cp = 0x4f4) ||
-  decide (cp = 0x4f6) ||
-  decide (cp = 0x4f8) ||
-  decide (cp = 0x4fa) ||
-  decide (cp = 0x4fc) ||
-  decide (cp = 0x4fe) ||
-  decide (cp = 0x500) ||
-  decide (cp = 0x502) ||
-  decide (cp = 0x504) ||
-  decide (cp = 0x506) ||
-  decide (cp = 0x508) ||
-  decide (cp = 0x50a) ||
-  decide (cp = 0x50c) ||
-  decide (cp = 0x50e) ||
-  decide (cp = 0x510) ||
-  decide (cp = 0x512) ||
-  decide (cp = 0x514) ||
-  decide (cp = 0x516) ||
-  decide (cp = 0x518) ||
-  decide (cp = 0x51a) ||
-  decide (cp = 0x51c) ||
-  decide (cp = 0x51e) ||
-  decide (cp = 0x520) ||
-  decide (cp = 0x522) ||
-  decide (cp = 0x524) ||
-  decide (cp = 0x526) ||
-  decide (cp = 0x528) ||
-  decide (cp = 0x52a) ||
-  decide (cp = 0x52c) ||
-  decide (cp = 0x52e) ||
-  decide (0x531 ≤ cp ∧ cp ≤ 0x556) ||
-  decide (cp = 0x587) ||
-  decide (0x10a0 ≤ cp ∧ cp ≤ 0x10c5) ||
-  decide (cp = 0x10c7) ||
-  decide (cp = 0x10cd) ||
-  decide (0x13f8 ≤ cp ∧ cp ≤ 0x13fd) ||
-  decide (0x1c80 ≤ cp ∧ cp ≤ 0x1c89) ||
-  decide (0x1c90 ≤ cp ∧ cp ≤ 0x1cba) ||
-  decide (0x1cbd ≤ cp ∧ cp ≤ 0x1cbf) ||
-  decide (cp = 0x1e00) ||
-  decide (cp = 0x1e02) ||
-  decide (cp = 0x1e04) ||
-  decide (cp = 0x1e06) ||
-  decide (cp = 0x1e08) ||
-  decide (cp = 0x1e0a) ||
-  decide (cp = 0x1e0c) ||
-  decide (cp = 0x1e0e) ||
-  decide (cp = 0x1e10) ||
-  decide (cp = 0x1e12) ||
-  decide (cp = 0x1e14) ||
-  decide (cp = 0x1e16) ||
-  decide (cp = 0x1e18) ||
-  decide (cp = 0x1e1a) ||
-  decide (cp = 0x1e1c) ||
-  decide (cp = 0x1e1e) ||
-  decide (cp = 0x1e20) ||
-  decide (cp = 0x1e22) ||
-  decide (cp = 0x1e24) ||
-  decide (cp = 0x1e26) ||
-  decide (cp = 0x1e28) ||
-  decide (cp = 0x1e2a) ||
-  decide (cp = 0x1e2c) ||
-  decide (cp = 0x1e2e) ||
-  decide (cp = 0x1e30) ||
-  decide (cp = 0x1e32) ||
-  decide (cp = 0x1e34) ||
-  decide (cp = 0x1e36) ||
-  decide (cp = 0x1e38) ||
-  decide (cp = 0x1e3a) ||
-  decide (cp = 0x1e3c) ||
-  decide (cp = 0x1e3e) ||
-  decide (cp = 0x1e40) ||
-  decide (cp = 0x1e42) ||
-  decide (cp = 0x1e44) ||
-  decide (cp = 0x1e46) ||
-  decide (cp = 0x1e48) ||
-  decide (cp = 0x1e4a) ||
-  decide (cp = 0x1e4c) ||
-  decide (cp = 0x1e4e) ||
-  decide (cp = 0x1e50) ||
-  decide (cp = 0x1e52) ||
-  decide (cp = 0x1e54) ||
-  decide (cp = 0x1e56) ||
-  decide (cp = 0x1e58) ||
-  decide (cp = 0x1e5a) ||
-  decide (cp = 0x1e5c) ||
-  decide (cp = 0x1e5e) ||
-  decide (cp = 0x1e60) ||
-  decide (cp = 0x1e62) ||
-  decide (cp = 0x1e64) ||
-  decide (cp = 0x1e66) ||
-  decide (cp = 0x1e68) ||
-  decide (cp = 0x1e6a) ||
-  decide (cp = 0x1e6c) ||
-  decide (cp = 0x1e6e) ||
-  decide (cp = 0x1e70) ||
-  decide (cp = 0x1e72) ||
-  decide (cp = 0x1e74) ||
-  decide (cp = 0x1e76) ||
-  decide (cp = 0x1e78) ||
-  decide (cp = 0x1e7a) ||
-  decide (cp = 0x1e7c) ||
-  decide (cp = 0x1e7e) ||
-  decide (cp = 0x1e80) ||
-  decide (cp = 0x1e82) ||
-  decide (cp = 0x1e84) ||
-  decide (cp = 0x1e86) ||
-  decide (cp = 0x1e88) ||
-  decide (cp = 0x1e8a) ||
-  decide (cp = 0x1e8c) ||
-  decide (cp = 0x1e8e) ||
-  decide (cp = 0x1e90) ||
-  decide (cp = 0x1e92) ||
-  decide (cp = 0x1e94) ||
-  decide (0x1e96 ≤ cp ∧ cp ≤ 0x1e9b) ||
-  decide (cp = 0x1e9e) ||
-  decide (cp = 0x1ea0) ||
-  decide (cp = 0x1ea2) ||
-  decide (cp = 0x1ea4) ||
-  decide (cp = 0x1ea6) ||
-  decide (cp = 0x1ea8) ||
-  decide (cp = 0x1eaa) ||
-  decide (cp = 0x1eac) ||
-  decide (cp = 0x1eae) ||
-  decide (cp = 0x1eb0) ||
-  decide (cp = 0x1eb2) ||
-  decide (cp = 0x1eb4) ||
-  decide (cp = 0x1eb6) ||
-  decide (cp = 0x1eb8) ||
-  decide (cp = 0x1eba) ||
-  decide (cp = 0x1ebc) ||
-  decide (cp = 0x1ebe) ||
-  decide (cp = 0x1ec0) ||
-  decide (cp = 0x1ec2) ||
-  decide (cp = 0x1ec4) ||
-  decide (cp = 0x1ec6) ||
-  decide (cp = 0x1ec8) ||
-  decide (cp = 0x1eca) ||
-  decide (cp = 0x1ecc) ||
-  decide (cp = 0x1ece) ||
-  decide (cp = 0x1ed0) ||
-  decide (cp = 0x1ed2) ||
-  decide (cp = 0x1ed4) ||
-  decide (cp = 0x1ed6) ||
-  decide (cp = 0x1ed8) ||
-  decide (cp = 0x1eda) ||
-  decide (cp = 0x1edc) ||
-  decide (cp = 0x1ede) ||
-  decide (cp = 0x1ee0) ||
-  decide (cp = 0x1ee2) ||
-  decide (cp = 0x1ee4) ||
-  decide (cp = 0x1ee6) ||
-  decide (cp = 0x1ee8) ||
-  decide (cp = 0x1eea) ||
-  decide (cp = 0x1eec) ||
-  decide (cp = 0x1eee) ||
-  decide (cp = 0x1ef0) ||
-  decide (cp = 0x1ef2) ||
-  decide (cp = 0x1ef4) ||
-  decide (cp = 0x1ef6) ||
-  decide (cp = 0x1ef8) ||
-  decide (cp = 0x1efa) ||
-  decide (cp = 0x1efc) ||
-  decide (cp = 0x1efe) ||
-  decide (0x1f08 ≤ cp ∧ cp ≤ 0x1f0f) ||
-  decide (0x1f18 ≤ cp ∧ cp ≤ 0x1f1d) ||
-  decide (0x1f28 ≤ cp ∧ cp ≤ 0x1f2f) ||
-  decide (0x1f38 ≤ cp ∧ cp ≤ 0x1f3f) ||
-  decide (0x1f48 ≤ cp ∧ cp ≤ 0x1f4d) ||
-  decide (cp = 0x1f50) ||
-  decide (cp = 0x1f52) ||
-  decide (cp = 0x1f54) ||
-  decide (cp = 0x1f56) ||
-  decide (cp = 0x1f59) ||
-  decide (cp = 0x1f5b) ||
-  decide (cp = 0x1f5d) ||
-  decide (cp = 0x1f5f) ||
-  decide (0x1f68 ≤ cp ∧ cp ≤ 0x1f6f) ||
-  decide (0x1f80 ≤ cp ∧ cp ≤ 0x1faf) ||
-  decide (0x1fb2 ≤ cp ∧ cp ≤ 0x1fb4) ||
-  decide (0x1fb6 ≤ cp ∧ cp ≤ 0x1fbc) ||
-  decide (cp = 0x1fbe) ||
-  decide (0x1fc2 ≤ cp ∧ cp ≤ 0x1fc4) ||
-  decide (0x1fc6 ≤ cp ∧ cp ≤ 0x1fcc) ||
-  decide (0x1fd2 ≤ cp ∧ cp ≤ 0x1fd3) ||
-  decide (0x1fd6 ≤ cp ∧ cp ≤ 0x1fdb) ||
-  decide (0x1fe2 ≤ cp ∧ cp ≤ 0x1fe4) ||
-  decide (0x1fe6 ≤ cp ∧ cp ≤ 0x1fec) ||
-  decide (0x1ff2 ≤ cp ∧ cp ≤ 0x1ff4) ||
-  decide (0x1ff6 ≤ cp ∧ cp ≤ 0x1ffc) ||
-  decide (cp = 0x2126) ||
-  decide (0x212a ≤ cp ∧ cp ≤ 0x212b) ||
-  decide (cp = 0x2132) ||
-  decide (0x2160 ≤ cp ∧ cp ≤ 0x216f) ||
-  decide (cp = 0x2183) ||
-  decide (0x24b6 ≤ cp ∧ cp ≤ 0x24cf) ||
-  decide (0x2c00 ≤ cp ∧ cp ≤ 0x2c2f) ||
-  decide (cp = 0x2c60) ||
-  decide (0x2c62 ≤ cp ∧ cp ≤ 0x2c64) ||
-  decide (cp = 0x2c67) ||
-  decide (cp = 0x2c69) ||
-  decide (cp = 0x2c6b) ||
-  decide (0x2c6d ≤ cp ∧ cp ≤ 0x2c70) ||
-  decide (cp = 0x2c72) ||
-  decide (cp = 0x2c75) ||
-  decide (0x2c7e ≤ cp ∧ cp ≤ 0x2c80) ||
-  decide (cp = 0x2c82) ||
-  decide (cp = 0x2c84) ||
-  decide (cp = 0x2c86) ||
-  decide (cp = 0x2c88) ||
-  decide (cp = 0x2c8a) ||
-  decide (cp = 0x2c8c) ||
-  decide (cp = 0x2c8e) ||
-  decide (cp = 0x2c90) ||
-  decide (cp = 0x2c92) ||
-  decide (cp = 0x2c94) ||
-  decide (cp = 0x2c96) ||
-  decide (cp = 0x2c98) ||
-  decide (cp = 0x2c9a) ||
-  decide (cp = 0x2c9c) ||
-  decide (cp = 0x2c9e) ||
-  decide (cp = 0x2ca0) ||
-  decide (cp = 0x2ca2) ||
-  decide (cp = 0x2ca4) ||
-  decide (cp = 0x2ca6) ||
-  decide (cp = 0x2ca8) ||
-  decide (cp = 0x2caa) ||
-  decide (cp = 0x2cac) ||
-  decide (cp = 0x2cae) ||
-  decide (cp = 0x2cb0) ||
-  decide (cp = 0x2cb2) ||
-  decide (cp = 0x2cb4) ||
-  decide (cp = 0x2cb6) ||
-  decide (cp = 0x2cb8) ||
-  decide (cp = 0x2cba) ||
-  decide (cp = 0x2cbc) ||
-  decide (cp = 0x2cbe) ||
-  decide (cp = 0x2cc0) ||
-  decide (cp = 0x2cc2) ||
-  decide (cp = 0x2cc4) ||
-  decide (cp = 0x2cc6) ||
-  decide (cp = 0x2cc8) ||
-  decide (cp = 0x2cca) ||
-  decide (cp = 0x2ccc) ||
-  decide (cp = 0x2cce) ||
-  decide (cp = 0x2cd0) ||
-  decide (cp = 0x2cd2) ||
-  decide (cp = 0x2cd4) ||
-  decide (cp = 0x2cd6) ||
-  decide (cp = 0x2cd8) ||
-  decide (cp = 0x2cda) ||
-  decide (cp = 0x2cdc) ||
-  decide (cp = 0x2cde) ||
-  decide (cp = 0x2ce0) ||
-  decide (cp = 0x2ce2) ||
-  decide (cp = 0x2ceb) ||
-  decide (cp = 0x2ced) ||
-  decide (cp = 0x2cf2) ||
-  decide (cp = 0xa640) ||
-  decide (cp = 0xa642) ||
-  decide (cp = 0xa644) ||
-  decide (cp = 0xa646) ||
-  decide (cp = 0xa648) ||
-  decide (cp = 0xa64a) ||
-  decide (cp = 0xa64c) ||
-  decide (cp = 0xa64e) ||
-  decide (cp = 0xa650) ||
-  decide (cp = 0xa652) ||
-  decide (cp = 0xa654) ||
-  decide (cp = 0xa656) ||
-  decide (cp = 0xa658) ||
-  decide (cp = 0xa65a) ||
-  decide (cp = 0xa65c) ||
-  decide (cp = 0xa65e) ||
-  decide (cp = 0xa660) ||
-  decide (cp = 0xa662) ||
-  decide (cp = 0xa664) ||
-  decide (cp = 0xa666) ||
-  decide (cp = 0xa668) ||
-  decide (cp = 0xa66a) ||
-  decide (cp = 0xa66c) ||
-  decide (cp = 0xa680) ||
-  decide (cp = 0xa682) ||
-  decide (cp = 0xa684) ||
-  decide (cp = 0xa686) ||
-  decide (cp = 0xa688) ||
-  decide (cp = 0xa68a) ||
-  decide (cp = 0xa68c) ||
-  decide (cp = 0xa68e) ||
-  decide (cp = 0xa690) ||
-  decide (cp = 0xa692) ||
-  decide (cp = 0xa694) ||
-  decide (cp = 0xa696) ||
-  decide (cp = 0xa698) ||
-  decide (cp = 0xa69a) ||
-  decide (cp = 0xa722) ||
-  decide (cp = 0xa724) ||
-  decide (cp = 0xa726) ||
-  decide (cp = 0xa728) ||
-  decide (cp = 0xa72a) ||
-  decide (cp = 0xa72c) ||
-  decide (cp = 0xa72e) ||
-  decide (cp = 0xa732) ||
-  decide (cp = 0xa734) ||
-  decide (cp = 0xa736) ||
-  decide (cp = 0xa738) ||
-  decide (cp = 0xa73a) ||
-  decide (cp = 0xa73c) ||
-  decide (cp = 0xa73e) ||
-  decide (cp = 0xa740) ||
-  decide (cp = 0xa742) ||
-  decide (cp = 0xa744) ||
-  decide (cp = 0xa746) ||
-  decide (cp = 0xa748) ||
-  decide (cp = 0xa74a) ||
-  decide (cp = 0xa74c) ||
-  decide (cp = 0xa74e) ||
-  decide (cp = 0xa750) ||
-  decide (cp = 0xa752) ||
-  decide (cp = 0xa754) ||
-  decide (cp = 0xa756) ||
-  decide (cp = 0xa758) ||
-  decide (cp = 0xa75a) ||
-  decide (cp = 0xa75c) ||
-  decide (cp = 0xa75e) ||
-  decide (cp = 0xa760) ||
-  decide (cp = 0xa762) ||
-  decide (cp = 0xa764) ||
-  decide (cp = 0xa766) ||
-  decide (cp = 0xa768) ||
-  decide (cp = 0xa76a) ||
-  decide (cp = 0xa76c) ||
-  decide (cp = 0xa76e) ||
-  decide (cp = 0xa779) ||
-  decide (cp = 0xa77b) ||
-  decide (0xa77d ≤ cp ∧ cp ≤ 0xa77e) ||
-  decide (cp = 0xa780) ||
-  decide (cp = 0xa782) ||
-  decide (cp = 0xa784) ||
-  decide (cp = 0xa786) ||
-  decide (cp = 0xa78b) ||
-  decide (cp = 0xa78d) ||
-  decide (cp = 0xa790) ||
-  decide (cp = 0xa792) ||
-  decide (cp = 0xa796) ||
-  decide (cp = 0xa798) ||
-  decide (cp = 0xa79a) ||
-  decide (cp = 0xa79c) ||
-  decide (cp = 0xa79e) ||
-  decide (cp = 0xa7a0) ||
-  decide (cp = 0xa7a2) ||
-  decide (cp = 0xa7a4) ||
-  decide (cp = 0xa7a6) ||
-  decide (cp = 0xa7a8) ||
-  decide (0xa7aa ≤ cp ∧ cp ≤ 0xa7ae) ||
-  decide (0xa7b0 ≤ cp ∧ cp ≤ 0xa7b4) ||
-  decide (cp = 0xa7b6) ||
-  decide (cp = 0xa7b8) ||
-  decide (cp = 0xa7ba) ||
-  decide (cp = 0xa7bc) ||
-  decide (cp = 0xa7be) ||
-  decide (cp = 0xa7c0) ||
-  decide (cp = 0xa7c2) ||
-  decide (0xa7c4 ≤ cp ∧ cp ≤ 0xa7c7) ||
-  decide (cp = 0xa7c9) ||
-  decide (0xa7cb ≤ cp ∧ cp ≤ 0xa7cc) ||
-  decide (cp = 0xa7ce) ||
-  decide (cp = 0xa7d0) ||
-  decide (cp = 0xa7d2) ||
-  decide (cp = 0xa7d4) ||
-  decide (cp = 0xa7d6) ||
-  decide (cp = 0xa7d8) ||
-  decide (cp = 0xa7da) ||
-  decide (cp = 0xa7dc) ||
-  decide (cp = 0xa7f5) ||
-  decide (0xab70 ≤ cp ∧ cp ≤ 0xabbf) ||
-  decide (0xfb00 ≤ cp ∧ cp ≤ 0xfb06) ||
-  decide (0xfb13 ≤ cp ∧ cp ≤ 0xfb17) ||
-  decide (0xff21 ≤ cp ∧ cp ≤ 0xff3a) ||
-  decide (0x10400 ≤ cp ∧ cp ≤ 0x10427) ||
-  decide (0x104b0 ≤ cp ∧ cp ≤ 0x104d3) ||
-  decide (0x10570 ≤ cp ∧ cp ≤ 0x1057a) ||
-  decide (0x1057c ≤ cp ∧ cp ≤ 0x1058a) ||
-  decide (0x1058c ≤ cp ∧ cp ≤ 0x10592) ||
-  decide (0x10594 ≤ cp ∧ cp ≤ 0x10595) ||
-  decide (0x10c80 ≤ cp ∧ cp ≤ 0x10cb2) ||
-  decide (0x10d50 ≤ cp ∧ cp ≤ 0x10d65) ||
-  decide (0x118a0 ≤ cp ∧ cp ≤ 0x118bf) ||
-  decide (0x16e40 ≤ cp ∧ cp ≤ 0x16e5f) ||
-  decide (0x16ea0 ≤ cp ∧ cp ≤ 0x16eb8) ||
-  decide (0x1e900 ≤ cp ∧ cp ≤ 0x1e921))
+  (Nat.ble 0x41 cp && Nat.ble cp 0x5a) ||
+  (Nat.beq cp 0xb5) ||
+  (Nat.ble 0xc0 cp && Nat.ble cp 0xd6) ||
+  (Nat.ble 0xd8 cp && Nat.ble cp 0xdf) ||
+  (Nat.beq cp 0x100) ||
+  (Nat.beq cp 0x102) ||
+  (Nat.beq cp 0x104) ||
+  (Nat.beq cp 0x106) ||
+  (Nat.beq cp 0x108) ||
+  (Nat.beq cp 0x10a) ||
+  (Nat.beq cp 0x10c) ||
+  (Nat.beq cp 0x10e) ||
+  (Nat.beq cp 0x110) ||
+  (Nat.beq cp 0x112) ||
+  (Nat.beq cp 0x114) ||
+  (Nat.beq cp 0x116) ||
+  (Nat.beq cp 0x118) ||
+  (Nat.beq cp 0x11a) ||
+  (Nat.beq cp 0x11c) ||
+  (Nat.beq cp 0x11e) ||
+  (Nat.beq cp 0x120) ||
+  (Nat.beq cp 0x122) ||
+  (Nat.beq cp 0x124) ||
+  (Nat.beq cp 0x126) ||
+  (Nat.beq cp 0x128) ||
+  (Nat.beq cp 0x12a) ||
+  (Nat.beq cp 0x12c) ||
+  (Nat.beq cp 0x12e) ||
+  (Nat.beq cp 0x130) ||
+  (Nat.beq cp 0x132) ||
+  (Nat.beq cp 0x134) ||
+  (Nat.beq cp 0x136) ||
+  (Nat.beq cp 0x139) ||
+  (Nat.beq cp 0x13b) ||
+  (Nat.beq cp 0x13d) ||
+  (Nat.beq cp 0x13f) ||
+  (Nat.beq cp 0x141) ||
+  (Nat.beq cp 0x143) ||
+  (Nat.beq cp 0x145) ||
+  (Nat.beq cp 0x147) ||
+  (Nat.ble 0x149 cp && Nat.ble cp 0x14a) ||
+  (Nat.beq cp 0x14c) ||
+  (Nat.beq cp 0x14e) ||
+  (Nat.beq cp 0x150) ||
+  (Nat.beq cp 0x152) ||
+  (Nat.beq cp 0x154) ||
+  (Nat.beq cp 0x156) ||
+  (Nat.beq cp 0x158) ||
+  (Nat.beq cp 0x15a) ||
+  (Nat.beq cp 0x15c) ||
+  (Nat.beq cp 0x15e) ||
+  (Nat.beq cp 0x160) ||
+  (Nat.beq cp 0x162) ||
+  (Nat.beq cp 0x164) ||
+  (Nat.beq cp 0x166) ||
+  (Nat.beq cp 0x168) ||
+  (Nat.beq cp 0x16a) ||
+  (Nat.beq cp 0x16c) ||
+  (Nat.beq cp 0x16e) ||
+  (Nat.beq cp 0x170) ||
+  (Nat.beq cp 0x172) ||
+  (Nat.beq cp 0x174) ||
+  (Nat.beq cp 0x176) ||
+  (Nat.ble 0x178 cp && Nat.ble cp 0x179) ||
+  (Nat.beq cp 0x17b) ||
+  (Nat.beq cp 0x17d) ||
+  (Nat.beq cp 0x17f) ||
+  (Nat.ble 0x181 cp && Nat.ble cp 0x182) ||
+  (Nat.beq cp 0x184) ||
+  (Nat.ble 0x186 cp && Nat.ble cp 0x187) ||
+  (Nat.ble 0x189 cp && Nat.ble cp 0x18b) ||
+  (Nat.ble 0x18e cp && Nat.ble cp 0x191) ||
+  (Nat.ble 0x193 cp && Nat.ble cp 0x194) ||
+  (Nat.ble 0x196 cp && Nat.ble cp 0x198) ||
+  (Nat.ble 0x19c cp && Nat.ble cp 0x19d) ||
+  (Nat.ble 0x19f cp && Nat.ble cp 0x1a0) ||
+  (Nat.beq cp 0x1a2) ||
+  (Nat.beq cp 0x1a4) ||
+  (Nat.ble 0x1a6 cp && Nat.ble cp 0x1a7) ||
+  (Nat.beq cp 0x1a9) ||
+  (Nat.beq cp 0x1ac) ||
+  (Nat.ble 0x1ae cp && Nat.ble cp 0x1af) ||
+  (Nat.ble 0x1b1 cp && Nat.ble cp 0x1b3) ||
+  (Nat.beq cp 0x1b5) ||
+  (Nat.ble 0x1b7 cp && Nat.ble cp 0x1b8) ||
+  (Nat.beq cp 0x1bc) ||
+  (Nat.ble 0x1c4 cp && Nat.ble cp 0x1c5) ||
+  (Nat.ble 0x1c7 cp && Nat.ble cp 0x1c8) ||
+  (Nat.ble 0x1ca cp && Nat.ble cp 0x1cb) ||
+  (Nat.beq cp 0x1cd) ||
+  (Nat.beq cp 0x1cf) ||
+  (Nat.beq cp 0x1d1) ||
+  (Nat.beq cp 0x1d3) ||
+  (Nat.beq cp 0x1d5) ||
+  (Nat.beq cp 0x1d7) ||
+  (Nat.beq cp 0x1d9) ||
+  (Nat.beq cp 0x1db) ||
+  (Nat.beq cp 0x1de) ||
+  (Nat.beq cp 0x1e0) ||
+  (Nat.beq cp 0x1e2) ||
+  (Nat.beq cp 0x1e4) ||
+  (Nat.beq cp 0x1e6) ||
+  (Nat.beq cp 0x1e8) ||
+  (Nat.beq cp 0x1ea) ||
+  (Nat.beq cp 0x1ec) ||
+  (Nat.beq cp 0x1ee) ||
+  (Nat.ble 0x1f0 cp && Nat.ble cp 0x1f2) ||
+  (Nat.beq cp 0x1f4) ||
+  (Nat.ble 0x1f6 cp && Nat.ble cp 0x1f8) ||
+  (Nat.beq cp 0x1fa) ||
+  (Nat.beq cp 0x1fc) ||
+  (Nat.beq cp 0x1fe) ||
+  (Nat.beq cp 0x200) ||
+  (Nat.beq cp 0x202) ||
+  (Nat.beq cp 0x204) ||
+  (Nat.beq cp 0x206) ||
+  (Nat.beq cp 0x208) ||
+  (Nat.beq cp 0x20a) ||
+  (Nat.beq cp 0x20c) ||
+  (Nat.beq cp 0x20e) ||
+  (Nat.beq cp 0x210) ||
+  (Nat.beq cp 0x212) ||
+  (Nat.beq cp 0x214) ||
+  (Nat.beq cp 0x216) ||
+  (Nat.beq cp 0x218) ||
+  (Nat.beq cp 0x21a) ||
+  (Nat.beq cp 0x21c) ||
+  (Nat.beq cp 0x21e) ||
+  (Nat.beq cp 0x220) ||
+  (Nat.beq cp 0x222) ||
+  (Nat.beq cp 0x224) ||
+  (Nat.beq cp 0x226) ||
+  (Nat.beq cp 0x228) ||
+  (Nat.beq cp 0x22a) ||
+  (Nat.beq cp 0x22c) ||
+  (Nat.beq cp 0x22e) ||
+  (Nat.beq cp 0x230) ||
+  (Nat.beq cp 0x232) ||
+  (Nat.ble 0x23a cp && Nat.ble cp 0x23b) ||
+  (Nat.ble 0x23d cp && Nat.ble cp 0x23e) ||
+  (Nat.beq cp 0x241) ||
+  (Nat.ble 0x243 cp && Nat.ble cp 0x246) ||
+  (Nat.beq cp 0x248) ||
+  (Nat.beq cp 0x24a) ||
+  (Nat.beq cp 0x24c) ||
+  (Nat.beq cp 0x24e) ||
+  (Nat.beq cp 0x345) ||
+  (Nat.beq cp 0x370) ||
+  (Nat.beq cp 0x372) ||
+  (Nat.beq cp 0x376) ||
+  (Nat.beq cp 0x37f) ||
+  (Nat.beq cp 0x386) ||
+  (Nat.ble 0x388 cp && Nat.ble cp 0x38a) ||
+  (Nat.beq cp 0x38c) ||
+  (Nat.ble 0x38e cp && Nat.ble cp 0x3a1) ||
+  (Nat.ble 0x3a3 cp && Nat.ble cp 0x3ab) ||
+  (Nat.beq cp 0x3b0) ||
+  (Nat.beq cp 0x3c2) ||
+  (Nat.ble 0x3cf cp && Nat.ble cp 0x3d1) ||
+  (Nat.ble 0x3d5 cp && Nat.ble cp 0x3d6) ||
+  (Nat.beq cp 0x3d8) ||
+  (Nat.beq cp 0x3da) ||
+  (Nat.beq cp 0x3dc) ||
+  (Nat.beq cp 0x3de) ||
+  (Nat.beq cp 0x3e0) ||
+  (Nat.beq cp 0x3e2) ||
+  (Nat.beq cp 0x3e4) ||
+  (Nat.beq cp 0x3e6) ||
+  (Nat.beq cp 0x3e8) ||
+  (Nat.beq cp 0x3ea) ||
+  (Nat.beq cp 0x3ec) ||
+  (Nat.beq cp 0x3ee) ||
+  (Nat.ble 0x3f0 cp && Nat.ble cp 0x3f1) ||
+  (Nat.ble 0x3f4 cp && Nat.ble cp 0x3f5) ||
+  (Nat.beq cp 0x3f7) ||
+  (Nat.ble 0x3f9 cp && Nat.ble cp 0x3fa) ||
+  (Nat.ble 0x3fd cp && Nat.ble cp 0x42f) ||
+  (Nat.beq cp 0x460) ||
+  (Nat.beq cp 0x462) ||
+  (Nat.beq cp 0x464) ||
+  (Nat.beq cp 0x466) ||
+  (Nat.beq cp 0x468) ||
+  (Nat.beq cp 0x46a) ||
+  (Nat.beq cp 0x46c) ||
+  (Nat.beq cp 0x46e) ||
+  (Nat.beq cp 0x470) ||
+  (Nat.beq cp 0x472) ||
+  (Nat.beq cp 0x474) ||
+  (Nat.beq cp 0x476) ||
+  (Nat.beq cp 0x478) ||
+  (Nat.beq cp 0x47a) ||
+  (Nat.beq cp 0x47c) ||
+  (Nat.beq cp 0x47e) ||
+  (Nat.beq cp 0x480) ||
+  (Nat.beq cp 0x48a) ||
+  (Nat.beq cp 0x48c) ||
+  (Nat.beq cp 0x48e) ||
+  (Nat.beq cp 0x490) ||
+  (Nat.beq cp 0x492) ||
+  (Nat.beq cp 0x494) ||
+  (Nat.beq cp 0x496) ||
+  (Nat.beq cp 0x498) ||
+  (Nat.beq cp 0x49a) ||
+  (Nat.beq cp 0x49c) ||
+  (Nat.beq cp 0x49e) ||
+  (Nat.beq cp 0x4a0) ||
+  (Nat.beq cp 0x4a2) ||
+  (Nat.beq cp 0x4a4) ||
+  (Nat.beq cp 0x4a6) ||
+  (Nat.beq cp 0x4a8) ||
+  (Nat.beq cp 0x4aa) ||
+  (Nat.beq cp 0x4ac) ||
+  (Nat.beq cp 0x4ae) ||
+  (Nat.beq cp 0x4b0) ||
+  (Nat.beq cp 0x4b2) ||
+  (Nat.beq cp 0x4b4) ||
+  (Nat.beq cp 0x4b6) ||
+  (Nat.beq cp 0x4b8) ||
+  (Nat.beq cp 0x4ba) ||
+  (Nat.beq cp 0x4bc) ||
+  (Nat.beq cp 0x4be) ||
+  (Nat.ble 0x4c0 cp && Nat.ble cp 0x4c1) ||
+  (Nat.beq cp 0x4c3) ||
+  (Nat.beq cp 0x4c5) ||
+  (Nat.beq cp 0x4c7) ||
+  (Nat.beq cp 0x4c9) ||
+  (Nat.beq cp 0x4cb) ||
+  (Nat.beq cp 0x4cd) ||
+  (Nat.beq cp 0x4d0) ||
+  (Nat.beq cp 0x4d2) ||
+  (Nat.beq cp 0x4d4) ||
+  (Nat.beq cp 0x4d6) ||
+  (Nat.beq cp 0x4d8) ||
+  (Nat.beq cp 0x4da) ||
+  (Nat.beq cp 0x4dc) ||
+  (Nat.beq cp 0x4de) ||
+  (Nat.beq cp 0x4e0) ||
+  (Nat.beq cp 0x4e2) ||
+  (Nat.beq cp 0x4e4) ||
+  (Nat.beq cp 0x4e6) ||
+  (Nat.beq cp 0x4e8) ||
+  (Nat.beq cp 0x4ea) ||
+  (Nat.beq cp 0x4ec) ||
+  (Nat.beq cp 0x4ee) ||
+  (Nat.beq cp 0x4f0) ||
+  (Nat.beq cp 0x4f2) ||
+  (Nat.beq cp 0x4f4) ||
+  (Nat.beq cp 0x4f6) ||
+  (Nat.beq cp 0x4f8) ||
+  (Nat.beq cp 0x4fa) ||
+  (Nat.beq cp 0x4fc) ||
+  (Nat.beq cp 0x4fe) ||
+  (Nat.beq cp 0x500) ||
+  (Nat.beq cp 0x502) ||
+  (Nat.beq cp 0x504) ||
+  (Nat.beq cp 0x506) ||
+  (Nat.beq cp 0x508) ||
+  (Nat.beq cp 0x50a) ||
+  (Nat.beq cp 0x50c) ||
+  (Nat.beq cp 0x50e) ||
+  (Nat.beq cp 0x510) ||
+  (Nat.beq cp 0x512) ||
+  (Nat.beq cp 0x514) ||
+  (Nat.beq cp 0x516) ||
+  (Nat.beq cp 0x518) ||
+  (Nat.beq cp 0x51a) ||
+  (Nat.beq cp 0x51c) ||
+  (Nat.beq cp 0x51e) ||
+  (Nat.beq cp 0x520) ||
+  (Nat.beq cp 0x522) ||
+  (Nat.beq cp 0x524) ||
+  (Nat.beq cp 0x526) ||
+  (Nat.beq cp 0x528) ||
+  (Nat.beq cp 0x52a) ||
+  (Nat.beq cp 0x52c) ||
+  (Nat.beq cp 0x52e) ||
+  (Nat.ble 0x531 cp && Nat.ble cp 0x556) ||
+  (Nat.beq cp 0x587) ||
+  (Nat.ble 0x10a0 cp && Nat.ble cp 0x10c5) ||
+  (Nat.beq cp 0x10c7) ||
+  (Nat.beq cp 0x10cd) ||
+  (Nat.ble 0x13f8 cp && Nat.ble cp 0x13fd) ||
+  (Nat.ble 0x1c80 cp && Nat.ble cp 0x1c89) ||
+  (Nat.ble 0x1c90 cp && Nat.ble cp 0x1cba) ||
+  (Nat.ble 0x1cbd cp && Nat.ble cp 0x1cbf) ||
+  (Nat.beq cp 0x1e00) ||
+  (Nat.beq cp 0x1e02) ||
+  (Nat.beq cp 0x1e04) ||
+  (Nat.beq cp 0x1e06) ||
+  (Nat.beq cp 0x1e08) ||
+  (Nat.beq cp 0x1e0a) ||
+  (Nat.beq cp 0x1e0c) ||
+  (Nat.beq cp 0x1e0e) ||
+  (Nat.beq cp 0x1e10) ||
+  (Nat.beq cp 0x1e12) ||
+  (Nat.beq cp 0x1e14) ||
+  (Nat.beq cp 0x1e16) ||
+  (Nat.beq cp 0x1e18) ||
+  (Nat.beq cp 0x1e1a) ||
+  (Nat.beq cp 0x1e1c) ||
+  (Nat.beq cp 0x1e1e) ||
+  (Nat.beq cp 0x1e20) ||
+  (Nat.beq cp 0x1e22) ||
+  (Nat.beq cp 0x1e24) ||
+  (Nat.beq cp 0x1e26) ||
+  (Nat.beq cp 0x1e28) ||
+  (Nat.beq cp 0x1e2a) ||
+  (Nat.beq cp 0x1e2c) ||
+  (Nat.beq cp 0x1e2e) ||
+  (Nat.beq cp 0x1e30) ||
+  (Nat.beq cp 0x1e32) ||
+  (Nat.beq cp 0x1e34) ||
+  (Nat.beq cp 0x1e36) ||
+  (Nat.beq cp 0x1e38) ||
+  (Nat.beq cp 0x1e3a) ||
+  (Nat.beq cp 0x1e3c) ||
+  (Nat.beq cp 0x1e3e) ||
+  (Nat.beq cp 0x1e40) ||
+  (Nat.beq cp 0x1e42) ||
+  (Nat.beq cp 0x1e44) ||
+  (Nat.beq cp 0x1e46) ||
+  (Nat.beq cp 0x1e48) ||
+  (Nat.beq cp 0x1e4a) ||
+  (Nat.beq cp 0x1e4c) ||
+  (Nat.beq cp 0x1e4e) ||
+  (Nat.beq cp 0x1e50) ||
+  (Nat.beq cp 0x1e52) ||
+  (Nat.beq cp 0x1e54) ||
+  (Nat.beq cp 0x1e56) ||
+  (Nat.beq cp 0x1e58) ||
+  (Nat.beq cp 0x1e5a) ||
+  (Nat.beq cp 0x1e5c) ||
+  (Nat.beq cp 0x1e5e) ||
+  (Nat.beq cp 0x1e60) ||
+  (Nat.beq cp 0x1e62) ||
+  (Nat.beq cp 0x1e64) ||
+  (Nat.beq cp 0x1e66) ||
+  (Nat.beq cp 0x1e68) ||
+  (Nat.beq cp 0x1e6a) ||
+  (Nat.beq cp 0x1e6c) ||
+  (Nat.beq cp 0x1e6e) ||
+  (Nat.beq cp 0x1e70) ||
+  (Nat.beq cp 0x1e72) ||
+  (Nat.beq cp 0x1e74) ||
+  (Nat.beq cp 0x1e76) ||
+  (Nat.beq cp 0x1e78) ||
+  (Nat.beq cp 0x1e7a) ||
+  (Nat.beq cp 0x1e7c) ||
+  (Nat.beq cp 0x1e7e) ||
+  (Nat.beq cp 0x1e80) ||
+  (Nat.beq cp 0x1e82) ||
+  (Nat.beq cp 0x1e84) ||
+  (Nat.beq cp 0x1e86) ||
+  (Nat.beq cp 0x1e88) ||
+  (Nat.beq cp 0x1e8a) ||
+  (Nat.beq cp 0x1e8c) ||
+  (Nat.beq cp 0x1e8e) ||
+  (Nat.beq cp 0x1e90) ||
+  (Nat.beq cp 0x1e92) ||
+  (Nat.beq cp 0x1e94) ||
+  (Nat.ble 0x1e96 cp && Nat.ble cp 0x1e9b) ||
+  (Nat.beq cp 0x1e9e) ||
+  (Nat.beq cp 0x1ea0) ||
+  (Nat.beq cp 0x1ea2) ||
+  (Nat.beq cp 0x1ea4) ||
+  (Nat.beq cp 0x1ea6) ||
+  (Nat.beq cp 0x1ea8) ||
+  (Nat.beq cp 0x1eaa) ||
+  (Nat.beq cp 0x1eac) ||
+  (Nat.beq cp 0x1eae) ||
+  (Nat.beq cp 0x1eb0) ||
+  (Nat.beq cp 0x1eb2) ||
+  (Nat.beq cp 0x1eb4) ||
+  (Nat.beq cp 0x1eb6) ||
+  (Nat.beq cp 0x1eb8) ||
+  (Nat.beq cp 0x1eba) ||
+  (Nat.beq cp 0x1ebc) ||
+  (Nat.beq cp 0x1ebe) ||
+  (Nat.beq cp 0x1ec0) ||
+  (Nat.beq cp 0x1ec2) ||
+  (Nat.beq cp 0x1ec4) ||
+  (Nat.beq cp 0x1ec6) ||
+  (Nat.beq cp 0x1ec8) ||
+  (Nat.beq cp 0x1eca) ||
+  (Nat.beq cp 0x1ecc) ||
+  (Nat.beq cp 0x1ece) ||
+  (Nat.beq cp 0x1ed0) ||
+  (Nat.beq cp 0x1ed2) ||
+  (Nat.beq cp 0x1ed4) ||
+  (Nat.beq cp 0x1ed6) ||
+  (Nat.beq cp 0x1ed8) ||
+  (Nat.beq cp 0x1eda) ||
+  (Nat.beq cp 0x1edc) ||
+  (Nat.beq cp 0x1ede) ||
+  (Nat.beq cp 0x1ee0) ||
+  (Nat.beq cp 0x1ee2) ||
+  (Nat.beq cp 0x1ee4) ||
+  (Nat.beq cp 0x1ee6) ||
+  (Nat.beq cp 0x1ee8) ||
+  (Nat.beq cp 0x1eea) ||
+  (Nat.beq cp 0x1eec) ||
+  (Nat.beq cp 0x1eee) ||
+  (Nat.beq cp 0x1ef0) ||
+  (Nat.beq cp 0x1ef2) ||
+  (Nat.beq cp 0x1ef4) ||
+  (Nat.beq cp 0x1ef6) ||
+  (Nat.beq cp 0x1ef8) ||
+  (Nat.beq cp 0x1efa) ||
+  (Nat.beq cp 0x1efc) ||
+  (Nat.beq cp 0x1efe) ||
+  (Nat.ble 0x1f08 cp && Nat.ble cp 0x1f0f) ||
+  (Nat.ble 0x1f18 cp && Nat.ble cp 0x1f1d) ||
+  (Nat.ble 0x1f28 cp && Nat.ble cp 0x1f2f) ||
+  (Nat.ble 0x1f38 cp && Nat.ble cp 0x1f3f) ||
+  (Nat.ble 0x1f48 cp && Nat.ble cp 0x1f4d) ||
+  (Nat.beq cp 0x1f50) ||
+  (Nat.beq cp 0x1f52) ||
+  (Nat.beq cp 0x1f54) ||
+  (Nat.beq cp 0x1f56) ||
+  (Nat.beq cp 0x1f59) ||
+  (Nat.beq cp 0x1f5b) ||
+  (Nat.beq cp 0x1f5d) ||
+  (Nat.beq cp 0x1f5f) ||
+  (Nat.ble 0x1f68 cp && Nat.ble cp 0x1f6f) ||
+  (Nat.ble 0x1f80 cp && Nat.ble cp 0x1faf) ||
+  (Nat.ble 0x1fb2 cp && Nat.ble cp 0x1fb4) ||
+  (Nat.ble 0x1fb6 cp && Nat.ble cp 0x1fbc) ||
+  (Nat.beq cp 0x1fbe) ||
+  (Nat.ble 0x1fc2 cp && Nat.ble cp 0x1fc4) ||
+  (Nat.ble 0x1fc6 cp && Nat.ble cp 0x1fcc) ||
+  (Nat.ble 0x1fd2 cp && Nat.ble cp 0x1fd3) ||
+  (Nat.ble 0x1fd6 cp && Nat.ble cp 0x1fdb) ||
+  (Nat.ble 0x1fe2 cp && Nat.ble cp 0x1fe4) ||
+  (Nat.ble 0x1fe6 cp && Nat.ble cp 0x1fec) ||
+  (Nat.ble 0x1ff2 cp && Nat.ble cp 0x1ff4) ||
+  (Nat.ble 0x1ff6 cp && Nat.ble cp 0x1ffc) ||
+  (Nat.beq cp 0x2126) ||
+  (Nat.ble 0x212a cp && Nat.ble cp 0x212b) ||
+  (Nat.beq cp 0x2132) ||
+  (Nat.ble 0x2160 cp && Nat.ble cp 0x216f) ||
+  (Nat.beq cp 0x2183) ||
+  (Nat.ble 0x24b6 cp && Nat.ble cp 0x24cf) ||
+  (Nat.ble 0x2c00 cp && Nat.ble cp 0x2c2f) ||
+  (Nat.beq cp 0x2c60) ||
+  (Nat.ble 0x2c62 cp && Nat.ble cp 0x2c64) ||
+  (Nat.beq cp 0x2c67) ||
+  (Nat.beq cp 0x2c69) ||
+  (Nat.beq cp 0x2c6b) ||
+  (Nat.ble 0x2c6d cp && Nat.ble cp 0x2c70) ||
+  (Nat.beq cp 0x2c72) ||
+  (Nat.beq cp 0x2c75) ||
+  (Nat.ble 0x2c7e cp && Nat.ble cp 0x2c80) ||
+  (Nat.beq cp 0x2c82) ||
+  (Nat.beq cp 0x2c84) ||
+  (Nat.beq cp 0x2c86) ||
+  (Nat.beq cp 0x2c88) ||
+  (Nat.beq cp 0x2c8a) ||
+  (Nat.beq cp 0x2c8c) ||
+  (Nat.beq cp 0x2c8e) ||
+  (Nat.beq cp 0x2c90) ||
+  (Nat.beq cp 0x2c92) ||
+  (Nat.beq cp 0x2c94) ||
+  (Nat.beq cp 0x2c96) ||
+  (Nat.beq cp 0x2c98) ||
+  (Nat.beq cp 0x2c9a) ||
+  (Nat.beq cp 0x2c9c) ||
+  (Nat.beq cp 0x2c9e) ||
+  (Nat.beq cp 0x2ca0) ||
+  (Nat.beq cp 0x2ca2) ||
+  (Nat.beq cp 0x2ca4) ||
+  (Nat.beq cp 0x2ca6) ||
+  (Nat.beq cp 0x2ca8) ||
+  (Nat.beq cp 0x2caa) ||
+  (Nat.beq cp 0x2cac) ||
+  (Nat.beq cp 0x2cae) ||
+  (Nat.beq cp 0x2cb0) ||
+  (Nat.beq cp 0x2cb2) ||
+  (Nat.beq cp 0x2cb4) ||
+  (Nat.beq cp 0x2cb6) ||
+  (Nat.beq cp 0x2cb8) ||
+  (Nat.beq cp 0x2cba) ||
+  (Nat.beq cp 0x2cbc) ||
+  (Nat.beq cp 0x2cbe) ||
+  (Nat.beq cp 0x2cc0) ||
+  (Nat.beq cp 0x2cc2) ||
+  (Nat.beq cp 0x2cc4) ||
+  (Nat.beq cp 0x2cc6) ||
+  (Nat.beq cp 0x2cc8) ||
+  (Nat.beq cp 0x2cca) ||
+  (Nat.beq cp 0x2ccc) ||
+  (Nat.beq cp 0x2cce) ||
+  (Nat.beq cp 0x2cd0) ||
+  (Nat.beq cp 0x2cd2) ||
+  (Nat.beq cp 0x2cd4) ||
+  (Nat.beq cp 0x2cd6) ||
+  (Nat.beq cp 0x2cd8) ||
+  (Nat.beq cp 0x2cda) ||
+  (Nat.beq cp 0x2cdc) ||
+  (Nat.beq cp 0x2cde) ||
+  (Nat.beq cp 0x2ce0) ||
+  (Nat.beq cp 0x2ce2) ||
+  (Nat.beq cp 0x2ceb) ||
+  (Nat.beq cp 0x2ced) ||
+  (Nat.beq cp 0x2cf2) ||
+  (Nat.beq cp 0xa640) ||
+  (Nat.beq cp 0xa642) ||
+  (Nat.beq cp 0xa644) ||
+  (Nat.beq cp 0xa646) ||
+  (Nat.beq cp 0xa648) ||
+  (Nat.beq cp 0xa64a) ||
+  (Nat.beq cp 0xa64c) ||
+  (Nat.beq cp 0xa64e) ||
+  (Nat.beq cp 0xa650) ||
+  (Nat.beq cp 0xa652) ||
+  (Nat.beq cp 0xa654) ||
+  (Nat.beq cp 0xa656) ||
+  (Nat.beq cp 0xa658) ||
+  (Nat.beq cp 0xa65a) ||
+  (Nat.beq cp 0xa65c) ||
+  (Nat.beq cp 0xa65e) ||
+  (Nat.beq cp 0xa660) ||
+  (Nat.beq cp 0xa662) ||
+  (Nat.beq cp 0xa664) ||
+  (Nat.beq cp 0xa666) ||
+  (Nat.beq cp 0xa668) ||
+  (Nat.beq cp 0xa66a) ||
+  (Nat.beq cp 0xa66c) ||
+  (Nat.beq cp 0xa680) ||
+  (Nat.beq cp 0xa682) ||
+  (Nat.beq cp 0xa684) ||
+  (Nat.beq cp 0xa686) ||
+  (Nat.beq cp 0xa688) ||
+  (Nat.beq cp 0xa68a) ||
+  (Nat.beq cp 0xa68c) ||
+  (Nat.beq cp 0xa68e) ||
+  (Nat.beq cp 0xa690) ||
+  (Nat.beq cp 0xa692) ||
+  (Nat.beq cp 0xa694) ||
+  (Nat.beq cp 0xa696) ||
+  (Nat.beq cp 0xa698) ||
+  (Nat.beq cp 0xa69a) ||
+  (Nat.beq cp 0xa722) ||
+  (Nat.beq cp 0xa724) ||
+  (Nat.beq cp 0xa726) ||
+  (Nat.beq cp 0xa728) ||
+  (Nat.beq cp 0xa72a) ||
+  (Nat.beq cp 0xa72c) ||
+  (Nat.beq cp 0xa72e) ||
+  (Nat.beq cp 0xa732) ||
+  (Nat.beq cp 0xa734) ||
+  (Nat.beq cp 0xa736) ||
+  (Nat.beq cp 0xa738) ||
+  (Nat.beq cp 0xa73a) ||
+  (Nat.beq cp 0xa73c) ||
+  (Nat.beq cp 0xa73e) ||
+  (Nat.beq cp 0xa740) ||
+  (Nat.beq cp 0xa742) ||
+  (Nat.beq cp 0xa744) ||
+  (Nat.beq cp 0xa746) ||
+  (Nat.beq cp 0xa748) ||
+  (Nat.beq cp 0xa74a) ||
+  (Nat.beq cp 0xa74c) ||
+  (Nat.beq cp 0xa74e) ||
+  (Nat.beq cp 0xa750) ||
+  (Nat.beq cp 0xa752) ||
+  (Nat.beq cp 0xa754) ||
+  (Nat.beq cp 0xa756) ||
+  (Nat.beq cp 0xa758) ||
+  (Nat.beq cp 0xa75a) ||
+  (Nat.beq cp 0xa75c) ||
+  (Nat.beq cp 0xa75e) ||
+  (Nat.beq cp 0xa760) ||
+  (Nat.beq cp 0xa762) ||
+  (Nat.beq cp 0xa764) ||
+  (Nat.beq cp 0xa766) ||
+  (Nat.beq cp 0xa768) ||
+  (Nat.beq cp 0xa76a) ||
+  (Nat.beq cp 0xa76c) ||
+  (Nat.beq cp 0xa76e) ||
+  (Nat.beq cp 0xa779) ||
+  (Nat.beq cp 0xa77b) ||
+  (Nat.ble 0xa77d cp && Nat.ble cp 0xa77e) ||
+  (Nat.beq cp 0xa780) ||
+  (Nat.beq cp 0xa782) ||
+  (Nat.beq cp 0xa784) ||
+  (Nat.beq cp 0xa786) ||
+  (Nat.beq cp 0xa78b) ||
+  (Nat.beq cp 0xa78d) ||
+  (Nat.beq cp 0xa790) ||
+  (Nat.beq cp 0xa792) ||
+  (Nat.beq cp 0xa796) ||
+  (Nat.beq cp 0xa798) ||
+  (Nat.beq cp 0xa79a) ||
+  (Nat.beq cp 0xa79c) ||
+  (Nat.beq cp 0xa79e) ||
+  (Nat.beq cp 0xa7a0) ||
+  (Nat.beq cp 0xa7a2) ||
+  (Nat.beq cp 0xa7a4) ||
+  (Nat.beq cp 0xa7a6) ||
+  (Nat.beq cp 0xa7a8) ||
+  (Nat.ble 0xa7aa cp && Nat.ble cp 0xa7ae) ||
+  (Nat.ble 0xa7b0 cp && Nat.ble cp 0xa7b4) ||
+  (Nat.beq cp 0xa7b6) ||
+  (Nat.beq cp 0xa7b8) ||
+  (Nat.beq cp 0xa7ba) ||
+  (Nat.beq cp 0xa7bc) ||
+  (Nat.beq cp 0xa7be) ||
+  (Nat.beq cp 0xa7c0) ||
+  (Nat.beq cp 0xa7c2) ||
+  (Nat.ble 0xa7c4 cp && Nat.ble cp 0xa7c7) ||
+  (Nat.beq cp 0xa7c9) ||
+  (Nat.ble 0xa7cb cp && Nat.ble cp 0xa7cc) ||
+  (Nat.beq cp 0xa7ce) ||
+  (Nat.beq cp 0xa7d0) ||
+  (Nat.beq cp 0xa7d2) ||
+  (Nat.beq cp 0xa7d4) ||
+  (Nat.beq cp 0xa7d6) ||
+  (Nat.beq cp 0xa7d8) ||
+  (Nat.beq cp 0xa7da) ||
+  (Nat.beq cp 0xa7dc) ||
+  (Nat.beq cp 0xa7f5) ||
+  (Nat.ble 0xab70 cp && Nat.ble cp 0xabbf) ||
+  (Nat.ble 0xfb00 cp && Nat.ble cp 0xfb06) ||
+  (Nat.ble 0xfb13 cp && Nat.ble cp 0xfb17) ||
+  (Nat.ble 0xff21 cp && Nat.ble cp 0xff3a) ||
+  (Nat.ble 0x10400 cp && Nat.ble cp 0x10427) ||
+  (Nat.ble 0x104b0 cp && Nat.ble cp 0x104d3) ||
+  (Nat.ble 0x10570 cp && Nat.ble cp 0x1057a) ||
+  (Nat.ble 0x1057c cp && Nat.ble cp 0x1058a) ||
+  (Nat.ble 0x1058c cp && Nat.ble cp 0x10592) ||
+  (Nat.ble 0x10594 cp && Nat.ble cp 0x10595) ||
+  (Nat.ble 0x10c80 cp && Nat.ble cp 0x10cb2) ||
+  (Nat.ble 0x10d50 cp && Nat.ble cp 0x10d65) ||
+  (Nat.ble 0x118a0 cp && Nat.ble cp 0x118bf) ||
+  (Nat.ble 0x16e40 cp && Nat.ble cp 0x16e5f) ||
+  (Nat.ble 0x16ea0 cp && Nat.ble cp 0x16eb8) ||
+  (Nat.ble 0x1e900 cp && Nat.ble cp 0x1e921))
 
 def foldingsCount : Nat := 1585
 

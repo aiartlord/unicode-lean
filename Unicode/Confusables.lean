@@ -180,7 +180,10 @@ def iteratedSkeleton (cps : List Nat) : List Nat :=
     bypass strict-equality target matching. -/
 def isDefaultIgnorable (cp : Nat) : Bool :=
   Generated.DerivedCoreProperties.defaultIgnorable.any
-    (fun lh => decide (lh.fst ≤ cp ∧ cp ≤ lh.snd))
+    (fun lh => Nat.ble lh.fst cp && Nat.ble cp lh.snd)
+-- `Nat.ble` rather than `decide (lo ≤ cp ∧ cp ≤ hi)`: the kernel evaluates
+-- `Nat.ble` on literals directly, where the `decide` form leaves a `Decidable`
+-- instance term per range live for the whole enclosing evaluation.
 
 /-- Stricter "letter" skeleton — `iteratedSkeleton` followed by
     removal of (a) every codepoint with `canonicalCombiningClass > 0`

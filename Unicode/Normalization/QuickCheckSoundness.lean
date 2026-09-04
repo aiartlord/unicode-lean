@@ -170,7 +170,8 @@ theorem primaryComposite_none_of_qcY_nonstarter
     (hQC : nfcQCValue e = .Y)
     (hCcc : 0 < Lookup.canonicalCombiningClass e) :
     Compose.primaryComposite? st e = none := by
-  unfold Compose.primaryComposite?
+  rw [Compose.primaryComposite?_eq_scan]
+  unfold Compose.primaryCompositeScan?
   rw [hangul_composePair_none_of_nonstarter st e hCcc]
   -- The `match none with ...` reduces to the `none` branch: the findSome?
   -- call. Force that reduction with `show` so the subsequent case split

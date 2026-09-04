@@ -4087,9 +4087,790 @@ def rowBucketByLowByte : Nat → List UnicodeDataRow
   | 0xFF => rowsLowByteFF
   | low + 256 => []
 
-/-- Indexed row lookup. Concrete lookups scan one low-byte collision bucket. -/
+/-- The same bucket dispatch as a balanced comparison tree: eight `Nat.ble`
+    tests on literals per lookup. The numeral `match` above peels up to 255
+    successors and leaves an instance term per step in the kernel, which made
+    every kernel normalization step pay about a quarter megabyte per row lookup.
+    Values `>= 256` land in the last bucket; the lookup only ever passes a
+    low byte. -/
+def rowBucketFast (low : Nat) : List UnicodeDataRow :=
+  (cond (Nat.ble low 127)
+    (cond (Nat.ble low 63)
+      (cond (Nat.ble low 31)
+        (cond (Nat.ble low 15)
+          (cond (Nat.ble low 7)
+            (cond (Nat.ble low 3)
+              (cond (Nat.ble low 1)
+                (cond (Nat.ble low 0)
+                  rowsLowByte00
+                  rowsLowByte01)
+                (cond (Nat.ble low 2)
+                  rowsLowByte02
+                  rowsLowByte03))
+              (cond (Nat.ble low 5)
+                (cond (Nat.ble low 4)
+                  rowsLowByte04
+                  rowsLowByte05)
+                (cond (Nat.ble low 6)
+                  rowsLowByte06
+                  rowsLowByte07)))
+            (cond (Nat.ble low 11)
+              (cond (Nat.ble low 9)
+                (cond (Nat.ble low 8)
+                  rowsLowByte08
+                  rowsLowByte09)
+                (cond (Nat.ble low 10)
+                  rowsLowByte0A
+                  rowsLowByte0B))
+              (cond (Nat.ble low 13)
+                (cond (Nat.ble low 12)
+                  rowsLowByte0C
+                  rowsLowByte0D)
+                (cond (Nat.ble low 14)
+                  rowsLowByte0E
+                  rowsLowByte0F))))
+          (cond (Nat.ble low 23)
+            (cond (Nat.ble low 19)
+              (cond (Nat.ble low 17)
+                (cond (Nat.ble low 16)
+                  rowsLowByte10
+                  rowsLowByte11)
+                (cond (Nat.ble low 18)
+                  rowsLowByte12
+                  rowsLowByte13))
+              (cond (Nat.ble low 21)
+                (cond (Nat.ble low 20)
+                  rowsLowByte14
+                  rowsLowByte15)
+                (cond (Nat.ble low 22)
+                  rowsLowByte16
+                  rowsLowByte17)))
+            (cond (Nat.ble low 27)
+              (cond (Nat.ble low 25)
+                (cond (Nat.ble low 24)
+                  rowsLowByte18
+                  rowsLowByte19)
+                (cond (Nat.ble low 26)
+                  rowsLowByte1A
+                  rowsLowByte1B))
+              (cond (Nat.ble low 29)
+                (cond (Nat.ble low 28)
+                  rowsLowByte1C
+                  rowsLowByte1D)
+                (cond (Nat.ble low 30)
+                  rowsLowByte1E
+                  rowsLowByte1F)))))
+        (cond (Nat.ble low 47)
+          (cond (Nat.ble low 39)
+            (cond (Nat.ble low 35)
+              (cond (Nat.ble low 33)
+                (cond (Nat.ble low 32)
+                  rowsLowByte20
+                  rowsLowByte21)
+                (cond (Nat.ble low 34)
+                  rowsLowByte22
+                  rowsLowByte23))
+              (cond (Nat.ble low 37)
+                (cond (Nat.ble low 36)
+                  rowsLowByte24
+                  rowsLowByte25)
+                (cond (Nat.ble low 38)
+                  rowsLowByte26
+                  rowsLowByte27)))
+            (cond (Nat.ble low 43)
+              (cond (Nat.ble low 41)
+                (cond (Nat.ble low 40)
+                  rowsLowByte28
+                  rowsLowByte29)
+                (cond (Nat.ble low 42)
+                  rowsLowByte2A
+                  rowsLowByte2B))
+              (cond (Nat.ble low 45)
+                (cond (Nat.ble low 44)
+                  rowsLowByte2C
+                  rowsLowByte2D)
+                (cond (Nat.ble low 46)
+                  rowsLowByte2E
+                  rowsLowByte2F))))
+          (cond (Nat.ble low 55)
+            (cond (Nat.ble low 51)
+              (cond (Nat.ble low 49)
+                (cond (Nat.ble low 48)
+                  rowsLowByte30
+                  rowsLowByte31)
+                (cond (Nat.ble low 50)
+                  rowsLowByte32
+                  rowsLowByte33))
+              (cond (Nat.ble low 53)
+                (cond (Nat.ble low 52)
+                  rowsLowByte34
+                  rowsLowByte35)
+                (cond (Nat.ble low 54)
+                  rowsLowByte36
+                  rowsLowByte37)))
+            (cond (Nat.ble low 59)
+              (cond (Nat.ble low 57)
+                (cond (Nat.ble low 56)
+                  rowsLowByte38
+                  rowsLowByte39)
+                (cond (Nat.ble low 58)
+                  rowsLowByte3A
+                  rowsLowByte3B))
+              (cond (Nat.ble low 61)
+                (cond (Nat.ble low 60)
+                  rowsLowByte3C
+                  rowsLowByte3D)
+                (cond (Nat.ble low 62)
+                  rowsLowByte3E
+                  rowsLowByte3F))))))
+      (cond (Nat.ble low 95)
+        (cond (Nat.ble low 79)
+          (cond (Nat.ble low 71)
+            (cond (Nat.ble low 67)
+              (cond (Nat.ble low 65)
+                (cond (Nat.ble low 64)
+                  rowsLowByte40
+                  rowsLowByte41)
+                (cond (Nat.ble low 66)
+                  rowsLowByte42
+                  rowsLowByte43))
+              (cond (Nat.ble low 69)
+                (cond (Nat.ble low 68)
+                  rowsLowByte44
+                  rowsLowByte45)
+                (cond (Nat.ble low 70)
+                  rowsLowByte46
+                  rowsLowByte47)))
+            (cond (Nat.ble low 75)
+              (cond (Nat.ble low 73)
+                (cond (Nat.ble low 72)
+                  rowsLowByte48
+                  rowsLowByte49)
+                (cond (Nat.ble low 74)
+                  rowsLowByte4A
+                  rowsLowByte4B))
+              (cond (Nat.ble low 77)
+                (cond (Nat.ble low 76)
+                  rowsLowByte4C
+                  rowsLowByte4D)
+                (cond (Nat.ble low 78)
+                  rowsLowByte4E
+                  rowsLowByte4F))))
+          (cond (Nat.ble low 87)
+            (cond (Nat.ble low 83)
+              (cond (Nat.ble low 81)
+                (cond (Nat.ble low 80)
+                  rowsLowByte50
+                  rowsLowByte51)
+                (cond (Nat.ble low 82)
+                  rowsLowByte52
+                  rowsLowByte53))
+              (cond (Nat.ble low 85)
+                (cond (Nat.ble low 84)
+                  rowsLowByte54
+                  rowsLowByte55)
+                (cond (Nat.ble low 86)
+                  rowsLowByte56
+                  rowsLowByte57)))
+            (cond (Nat.ble low 91)
+              (cond (Nat.ble low 89)
+                (cond (Nat.ble low 88)
+                  rowsLowByte58
+                  rowsLowByte59)
+                (cond (Nat.ble low 90)
+                  rowsLowByte5A
+                  rowsLowByte5B))
+              (cond (Nat.ble low 93)
+                (cond (Nat.ble low 92)
+                  rowsLowByte5C
+                  rowsLowByte5D)
+                (cond (Nat.ble low 94)
+                  rowsLowByte5E
+                  rowsLowByte5F)))))
+        (cond (Nat.ble low 111)
+          (cond (Nat.ble low 103)
+            (cond (Nat.ble low 99)
+              (cond (Nat.ble low 97)
+                (cond (Nat.ble low 96)
+                  rowsLowByte60
+                  rowsLowByte61)
+                (cond (Nat.ble low 98)
+                  rowsLowByte62
+                  rowsLowByte63))
+              (cond (Nat.ble low 101)
+                (cond (Nat.ble low 100)
+                  rowsLowByte64
+                  rowsLowByte65)
+                (cond (Nat.ble low 102)
+                  rowsLowByte66
+                  rowsLowByte67)))
+            (cond (Nat.ble low 107)
+              (cond (Nat.ble low 105)
+                (cond (Nat.ble low 104)
+                  rowsLowByte68
+                  rowsLowByte69)
+                (cond (Nat.ble low 106)
+                  rowsLowByte6A
+                  rowsLowByte6B))
+              (cond (Nat.ble low 109)
+                (cond (Nat.ble low 108)
+                  rowsLowByte6C
+                  rowsLowByte6D)
+                (cond (Nat.ble low 110)
+                  rowsLowByte6E
+                  rowsLowByte6F))))
+          (cond (Nat.ble low 119)
+            (cond (Nat.ble low 115)
+              (cond (Nat.ble low 113)
+                (cond (Nat.ble low 112)
+                  rowsLowByte70
+                  rowsLowByte71)
+                (cond (Nat.ble low 114)
+                  rowsLowByte72
+                  rowsLowByte73))
+              (cond (Nat.ble low 117)
+                (cond (Nat.ble low 116)
+                  rowsLowByte74
+                  rowsLowByte75)
+                (cond (Nat.ble low 118)
+                  rowsLowByte76
+                  rowsLowByte77)))
+            (cond (Nat.ble low 123)
+              (cond (Nat.ble low 121)
+                (cond (Nat.ble low 120)
+                  rowsLowByte78
+                  rowsLowByte79)
+                (cond (Nat.ble low 122)
+                  rowsLowByte7A
+                  rowsLowByte7B))
+              (cond (Nat.ble low 125)
+                (cond (Nat.ble low 124)
+                  rowsLowByte7C
+                  rowsLowByte7D)
+                (cond (Nat.ble low 126)
+                  rowsLowByte7E
+                  rowsLowByte7F)))))))
+    (cond (Nat.ble low 191)
+      (cond (Nat.ble low 159)
+        (cond (Nat.ble low 143)
+          (cond (Nat.ble low 135)
+            (cond (Nat.ble low 131)
+              (cond (Nat.ble low 129)
+                (cond (Nat.ble low 128)
+                  rowsLowByte80
+                  rowsLowByte81)
+                (cond (Nat.ble low 130)
+                  rowsLowByte82
+                  rowsLowByte83))
+              (cond (Nat.ble low 133)
+                (cond (Nat.ble low 132)
+                  rowsLowByte84
+                  rowsLowByte85)
+                (cond (Nat.ble low 134)
+                  rowsLowByte86
+                  rowsLowByte87)))
+            (cond (Nat.ble low 139)
+              (cond (Nat.ble low 137)
+                (cond (Nat.ble low 136)
+                  rowsLowByte88
+                  rowsLowByte89)
+                (cond (Nat.ble low 138)
+                  rowsLowByte8A
+                  rowsLowByte8B))
+              (cond (Nat.ble low 141)
+                (cond (Nat.ble low 140)
+                  rowsLowByte8C
+                  rowsLowByte8D)
+                (cond (Nat.ble low 142)
+                  rowsLowByte8E
+                  rowsLowByte8F))))
+          (cond (Nat.ble low 151)
+            (cond (Nat.ble low 147)
+              (cond (Nat.ble low 145)
+                (cond (Nat.ble low 144)
+                  rowsLowByte90
+                  rowsLowByte91)
+                (cond (Nat.ble low 146)
+                  rowsLowByte92
+                  rowsLowByte93))
+              (cond (Nat.ble low 149)
+                (cond (Nat.ble low 148)
+                  rowsLowByte94
+                  rowsLowByte95)
+                (cond (Nat.ble low 150)
+                  rowsLowByte96
+                  rowsLowByte97)))
+            (cond (Nat.ble low 155)
+              (cond (Nat.ble low 153)
+                (cond (Nat.ble low 152)
+                  rowsLowByte98
+                  rowsLowByte99)
+                (cond (Nat.ble low 154)
+                  rowsLowByte9A
+                  rowsLowByte9B))
+              (cond (Nat.ble low 157)
+                (cond (Nat.ble low 156)
+                  rowsLowByte9C
+                  rowsLowByte9D)
+                (cond (Nat.ble low 158)
+                  rowsLowByte9E
+                  rowsLowByte9F)))))
+        (cond (Nat.ble low 175)
+          (cond (Nat.ble low 167)
+            (cond (Nat.ble low 163)
+              (cond (Nat.ble low 161)
+                (cond (Nat.ble low 160)
+                  rowsLowByteA0
+                  rowsLowByteA1)
+                (cond (Nat.ble low 162)
+                  rowsLowByteA2
+                  rowsLowByteA3))
+              (cond (Nat.ble low 165)
+                (cond (Nat.ble low 164)
+                  rowsLowByteA4
+                  rowsLowByteA5)
+                (cond (Nat.ble low 166)
+                  rowsLowByteA6
+                  rowsLowByteA7)))
+            (cond (Nat.ble low 171)
+              (cond (Nat.ble low 169)
+                (cond (Nat.ble low 168)
+                  rowsLowByteA8
+                  rowsLowByteA9)
+                (cond (Nat.ble low 170)
+                  rowsLowByteAA
+                  rowsLowByteAB))
+              (cond (Nat.ble low 173)
+                (cond (Nat.ble low 172)
+                  rowsLowByteAC
+                  rowsLowByteAD)
+                (cond (Nat.ble low 174)
+                  rowsLowByteAE
+                  rowsLowByteAF))))
+          (cond (Nat.ble low 183)
+            (cond (Nat.ble low 179)
+              (cond (Nat.ble low 177)
+                (cond (Nat.ble low 176)
+                  rowsLowByteB0
+                  rowsLowByteB1)
+                (cond (Nat.ble low 178)
+                  rowsLowByteB2
+                  rowsLowByteB3))
+              (cond (Nat.ble low 181)
+                (cond (Nat.ble low 180)
+                  rowsLowByteB4
+                  rowsLowByteB5)
+                (cond (Nat.ble low 182)
+                  rowsLowByteB6
+                  rowsLowByteB7)))
+            (cond (Nat.ble low 187)
+              (cond (Nat.ble low 185)
+                (cond (Nat.ble low 184)
+                  rowsLowByteB8
+                  rowsLowByteB9)
+                (cond (Nat.ble low 186)
+                  rowsLowByteBA
+                  rowsLowByteBB))
+              (cond (Nat.ble low 189)
+                (cond (Nat.ble low 188)
+                  rowsLowByteBC
+                  rowsLowByteBD)
+                (cond (Nat.ble low 190)
+                  rowsLowByteBE
+                  rowsLowByteBF))))))
+      (cond (Nat.ble low 223)
+        (cond (Nat.ble low 207)
+          (cond (Nat.ble low 199)
+            (cond (Nat.ble low 195)
+              (cond (Nat.ble low 193)
+                (cond (Nat.ble low 192)
+                  rowsLowByteC0
+                  rowsLowByteC1)
+                (cond (Nat.ble low 194)
+                  rowsLowByteC2
+                  rowsLowByteC3))
+              (cond (Nat.ble low 197)
+                (cond (Nat.ble low 196)
+                  rowsLowByteC4
+                  rowsLowByteC5)
+                (cond (Nat.ble low 198)
+                  rowsLowByteC6
+                  rowsLowByteC7)))
+            (cond (Nat.ble low 203)
+              (cond (Nat.ble low 201)
+                (cond (Nat.ble low 200)
+                  rowsLowByteC8
+                  rowsLowByteC9)
+                (cond (Nat.ble low 202)
+                  rowsLowByteCA
+                  rowsLowByteCB))
+              (cond (Nat.ble low 205)
+                (cond (Nat.ble low 204)
+                  rowsLowByteCC
+                  rowsLowByteCD)
+                (cond (Nat.ble low 206)
+                  rowsLowByteCE
+                  rowsLowByteCF))))
+          (cond (Nat.ble low 215)
+            (cond (Nat.ble low 211)
+              (cond (Nat.ble low 209)
+                (cond (Nat.ble low 208)
+                  rowsLowByteD0
+                  rowsLowByteD1)
+                (cond (Nat.ble low 210)
+                  rowsLowByteD2
+                  rowsLowByteD3))
+              (cond (Nat.ble low 213)
+                (cond (Nat.ble low 212)
+                  rowsLowByteD4
+                  rowsLowByteD5)
+                (cond (Nat.ble low 214)
+                  rowsLowByteD6
+                  rowsLowByteD7)))
+            (cond (Nat.ble low 219)
+              (cond (Nat.ble low 217)
+                (cond (Nat.ble low 216)
+                  rowsLowByteD8
+                  rowsLowByteD9)
+                (cond (Nat.ble low 218)
+                  rowsLowByteDA
+                  rowsLowByteDB))
+              (cond (Nat.ble low 221)
+                (cond (Nat.ble low 220)
+                  rowsLowByteDC
+                  rowsLowByteDD)
+                (cond (Nat.ble low 222)
+                  rowsLowByteDE
+                  rowsLowByteDF)))))
+        (cond (Nat.ble low 239)
+          (cond (Nat.ble low 231)
+            (cond (Nat.ble low 227)
+              (cond (Nat.ble low 225)
+                (cond (Nat.ble low 224)
+                  rowsLowByteE0
+                  rowsLowByteE1)
+                (cond (Nat.ble low 226)
+                  rowsLowByteE2
+                  rowsLowByteE3))
+              (cond (Nat.ble low 229)
+                (cond (Nat.ble low 228)
+                  rowsLowByteE4
+                  rowsLowByteE5)
+                (cond (Nat.ble low 230)
+                  rowsLowByteE6
+                  rowsLowByteE7)))
+            (cond (Nat.ble low 235)
+              (cond (Nat.ble low 233)
+                (cond (Nat.ble low 232)
+                  rowsLowByteE8
+                  rowsLowByteE9)
+                (cond (Nat.ble low 234)
+                  rowsLowByteEA
+                  rowsLowByteEB))
+              (cond (Nat.ble low 237)
+                (cond (Nat.ble low 236)
+                  rowsLowByteEC
+                  rowsLowByteED)
+                (cond (Nat.ble low 238)
+                  rowsLowByteEE
+                  rowsLowByteEF))))
+          (cond (Nat.ble low 247)
+            (cond (Nat.ble low 243)
+              (cond (Nat.ble low 241)
+                (cond (Nat.ble low 240)
+                  rowsLowByteF0
+                  rowsLowByteF1)
+                (cond (Nat.ble low 242)
+                  rowsLowByteF2
+                  rowsLowByteF3))
+              (cond (Nat.ble low 245)
+                (cond (Nat.ble low 244)
+                  rowsLowByteF4
+                  rowsLowByteF5)
+                (cond (Nat.ble low 246)
+                  rowsLowByteF6
+                  rowsLowByteF7)))
+            (cond (Nat.ble low 251)
+              (cond (Nat.ble low 249)
+                (cond (Nat.ble low 248)
+                  rowsLowByteF8
+                  rowsLowByteF9)
+                (cond (Nat.ble low 250)
+                  rowsLowByteFA
+                  rowsLowByteFB))
+              (cond (Nat.ble low 253)
+                (cond (Nat.ble low 252)
+                  rowsLowByteFC
+                  rowsLowByteFD)
+                (cond (Nat.ble low 254)
+                  rowsLowByteFE
+                  rowsLowByteFF))))))))
+
+/-- The tree agrees with the literal match on every low byte. -/
+theorem rowBucketFast_eq_of_lt : ∀ low : Nat, low < 256 →
+    rowBucketFast low = rowBucketByLowByte low
+  | 0x00, _hlt => rfl
+  | 0x01, _hlt => rfl
+  | 0x02, _hlt => rfl
+  | 0x03, _hlt => rfl
+  | 0x04, _hlt => rfl
+  | 0x05, _hlt => rfl
+  | 0x06, _hlt => rfl
+  | 0x07, _hlt => rfl
+  | 0x08, _hlt => rfl
+  | 0x09, _hlt => rfl
+  | 0x0A, _hlt => rfl
+  | 0x0B, _hlt => rfl
+  | 0x0C, _hlt => rfl
+  | 0x0D, _hlt => rfl
+  | 0x0E, _hlt => rfl
+  | 0x0F, _hlt => rfl
+  | 0x10, _hlt => rfl
+  | 0x11, _hlt => rfl
+  | 0x12, _hlt => rfl
+  | 0x13, _hlt => rfl
+  | 0x14, _hlt => rfl
+  | 0x15, _hlt => rfl
+  | 0x16, _hlt => rfl
+  | 0x17, _hlt => rfl
+  | 0x18, _hlt => rfl
+  | 0x19, _hlt => rfl
+  | 0x1A, _hlt => rfl
+  | 0x1B, _hlt => rfl
+  | 0x1C, _hlt => rfl
+  | 0x1D, _hlt => rfl
+  | 0x1E, _hlt => rfl
+  | 0x1F, _hlt => rfl
+  | 0x20, _hlt => rfl
+  | 0x21, _hlt => rfl
+  | 0x22, _hlt => rfl
+  | 0x23, _hlt => rfl
+  | 0x24, _hlt => rfl
+  | 0x25, _hlt => rfl
+  | 0x26, _hlt => rfl
+  | 0x27, _hlt => rfl
+  | 0x28, _hlt => rfl
+  | 0x29, _hlt => rfl
+  | 0x2A, _hlt => rfl
+  | 0x2B, _hlt => rfl
+  | 0x2C, _hlt => rfl
+  | 0x2D, _hlt => rfl
+  | 0x2E, _hlt => rfl
+  | 0x2F, _hlt => rfl
+  | 0x30, _hlt => rfl
+  | 0x31, _hlt => rfl
+  | 0x32, _hlt => rfl
+  | 0x33, _hlt => rfl
+  | 0x34, _hlt => rfl
+  | 0x35, _hlt => rfl
+  | 0x36, _hlt => rfl
+  | 0x37, _hlt => rfl
+  | 0x38, _hlt => rfl
+  | 0x39, _hlt => rfl
+  | 0x3A, _hlt => rfl
+  | 0x3B, _hlt => rfl
+  | 0x3C, _hlt => rfl
+  | 0x3D, _hlt => rfl
+  | 0x3E, _hlt => rfl
+  | 0x3F, _hlt => rfl
+  | 0x40, _hlt => rfl
+  | 0x41, _hlt => rfl
+  | 0x42, _hlt => rfl
+  | 0x43, _hlt => rfl
+  | 0x44, _hlt => rfl
+  | 0x45, _hlt => rfl
+  | 0x46, _hlt => rfl
+  | 0x47, _hlt => rfl
+  | 0x48, _hlt => rfl
+  | 0x49, _hlt => rfl
+  | 0x4A, _hlt => rfl
+  | 0x4B, _hlt => rfl
+  | 0x4C, _hlt => rfl
+  | 0x4D, _hlt => rfl
+  | 0x4E, _hlt => rfl
+  | 0x4F, _hlt => rfl
+  | 0x50, _hlt => rfl
+  | 0x51, _hlt => rfl
+  | 0x52, _hlt => rfl
+  | 0x53, _hlt => rfl
+  | 0x54, _hlt => rfl
+  | 0x55, _hlt => rfl
+  | 0x56, _hlt => rfl
+  | 0x57, _hlt => rfl
+  | 0x58, _hlt => rfl
+  | 0x59, _hlt => rfl
+  | 0x5A, _hlt => rfl
+  | 0x5B, _hlt => rfl
+  | 0x5C, _hlt => rfl
+  | 0x5D, _hlt => rfl
+  | 0x5E, _hlt => rfl
+  | 0x5F, _hlt => rfl
+  | 0x60, _hlt => rfl
+  | 0x61, _hlt => rfl
+  | 0x62, _hlt => rfl
+  | 0x63, _hlt => rfl
+  | 0x64, _hlt => rfl
+  | 0x65, _hlt => rfl
+  | 0x66, _hlt => rfl
+  | 0x67, _hlt => rfl
+  | 0x68, _hlt => rfl
+  | 0x69, _hlt => rfl
+  | 0x6A, _hlt => rfl
+  | 0x6B, _hlt => rfl
+  | 0x6C, _hlt => rfl
+  | 0x6D, _hlt => rfl
+  | 0x6E, _hlt => rfl
+  | 0x6F, _hlt => rfl
+  | 0x70, _hlt => rfl
+  | 0x71, _hlt => rfl
+  | 0x72, _hlt => rfl
+  | 0x73, _hlt => rfl
+  | 0x74, _hlt => rfl
+  | 0x75, _hlt => rfl
+  | 0x76, _hlt => rfl
+  | 0x77, _hlt => rfl
+  | 0x78, _hlt => rfl
+  | 0x79, _hlt => rfl
+  | 0x7A, _hlt => rfl
+  | 0x7B, _hlt => rfl
+  | 0x7C, _hlt => rfl
+  | 0x7D, _hlt => rfl
+  | 0x7E, _hlt => rfl
+  | 0x7F, _hlt => rfl
+  | 0x80, _hlt => rfl
+  | 0x81, _hlt => rfl
+  | 0x82, _hlt => rfl
+  | 0x83, _hlt => rfl
+  | 0x84, _hlt => rfl
+  | 0x85, _hlt => rfl
+  | 0x86, _hlt => rfl
+  | 0x87, _hlt => rfl
+  | 0x88, _hlt => rfl
+  | 0x89, _hlt => rfl
+  | 0x8A, _hlt => rfl
+  | 0x8B, _hlt => rfl
+  | 0x8C, _hlt => rfl
+  | 0x8D, _hlt => rfl
+  | 0x8E, _hlt => rfl
+  | 0x8F, _hlt => rfl
+  | 0x90, _hlt => rfl
+  | 0x91, _hlt => rfl
+  | 0x92, _hlt => rfl
+  | 0x93, _hlt => rfl
+  | 0x94, _hlt => rfl
+  | 0x95, _hlt => rfl
+  | 0x96, _hlt => rfl
+  | 0x97, _hlt => rfl
+  | 0x98, _hlt => rfl
+  | 0x99, _hlt => rfl
+  | 0x9A, _hlt => rfl
+  | 0x9B, _hlt => rfl
+  | 0x9C, _hlt => rfl
+  | 0x9D, _hlt => rfl
+  | 0x9E, _hlt => rfl
+  | 0x9F, _hlt => rfl
+  | 0xA0, _hlt => rfl
+  | 0xA1, _hlt => rfl
+  | 0xA2, _hlt => rfl
+  | 0xA3, _hlt => rfl
+  | 0xA4, _hlt => rfl
+  | 0xA5, _hlt => rfl
+  | 0xA6, _hlt => rfl
+  | 0xA7, _hlt => rfl
+  | 0xA8, _hlt => rfl
+  | 0xA9, _hlt => rfl
+  | 0xAA, _hlt => rfl
+  | 0xAB, _hlt => rfl
+  | 0xAC, _hlt => rfl
+  | 0xAD, _hlt => rfl
+  | 0xAE, _hlt => rfl
+  | 0xAF, _hlt => rfl
+  | 0xB0, _hlt => rfl
+  | 0xB1, _hlt => rfl
+  | 0xB2, _hlt => rfl
+  | 0xB3, _hlt => rfl
+  | 0xB4, _hlt => rfl
+  | 0xB5, _hlt => rfl
+  | 0xB6, _hlt => rfl
+  | 0xB7, _hlt => rfl
+  | 0xB8, _hlt => rfl
+  | 0xB9, _hlt => rfl
+  | 0xBA, _hlt => rfl
+  | 0xBB, _hlt => rfl
+  | 0xBC, _hlt => rfl
+  | 0xBD, _hlt => rfl
+  | 0xBE, _hlt => rfl
+  | 0xBF, _hlt => rfl
+  | 0xC0, _hlt => rfl
+  | 0xC1, _hlt => rfl
+  | 0xC2, _hlt => rfl
+  | 0xC3, _hlt => rfl
+  | 0xC4, _hlt => rfl
+  | 0xC5, _hlt => rfl
+  | 0xC6, _hlt => rfl
+  | 0xC7, _hlt => rfl
+  | 0xC8, _hlt => rfl
+  | 0xC9, _hlt => rfl
+  | 0xCA, _hlt => rfl
+  | 0xCB, _hlt => rfl
+  | 0xCC, _hlt => rfl
+  | 0xCD, _hlt => rfl
+  | 0xCE, _hlt => rfl
+  | 0xCF, _hlt => rfl
+  | 0xD0, _hlt => rfl
+  | 0xD1, _hlt => rfl
+  | 0xD2, _hlt => rfl
+  | 0xD3, _hlt => rfl
+  | 0xD4, _hlt => rfl
+  | 0xD5, _hlt => rfl
+  | 0xD6, _hlt => rfl
+  | 0xD7, _hlt => rfl
+  | 0xD8, _hlt => rfl
+  | 0xD9, _hlt => rfl
+  | 0xDA, _hlt => rfl
+  | 0xDB, _hlt => rfl
+  | 0xDC, _hlt => rfl
+  | 0xDD, _hlt => rfl
+  | 0xDE, _hlt => rfl
+  | 0xDF, _hlt => rfl
+  | 0xE0, _hlt => rfl
+  | 0xE1, _hlt => rfl
+  | 0xE2, _hlt => rfl
+  | 0xE3, _hlt => rfl
+  | 0xE4, _hlt => rfl
+  | 0xE5, _hlt => rfl
+  | 0xE6, _hlt => rfl
+  | 0xE7, _hlt => rfl
+  | 0xE8, _hlt => rfl
+  | 0xE9, _hlt => rfl
+  | 0xEA, _hlt => rfl
+  | 0xEB, _hlt => rfl
+  | 0xEC, _hlt => rfl
+  | 0xED, _hlt => rfl
+  | 0xEE, _hlt => rfl
+  | 0xEF, _hlt => rfl
+  | 0xF0, _hlt => rfl
+  | 0xF1, _hlt => rfl
+  | 0xF2, _hlt => rfl
+  | 0xF3, _hlt => rfl
+  | 0xF4, _hlt => rfl
+  | 0xF5, _hlt => rfl
+  | 0xF6, _hlt => rfl
+  | 0xF7, _hlt => rfl
+  | 0xF8, _hlt => rfl
+  | 0xF9, _hlt => rfl
+  | 0xFA, _hlt => rfl
+  | 0xFB, _hlt => rfl
+  | 0xFC, _hlt => rfl
+  | 0xFD, _hlt => rfl
+  | 0xFE, _hlt => rfl
+  | 0xFF, _hlt => rfl
+  | low + 256, hlt => absurd hlt (by omega)
+
+/-- Indexed row lookup. Concrete lookups scan one low-byte collision bucket,
+    reached through the comparison tree. -/
 def lookupRow? (cp : Nat) : Option UnicodeDataRow :=
-  (rowBucketByLowByte (cp % 256)).find? (fun row => row.codepoint = cp)
+  (rowBucketFast (cp % 256)).find? (fun row => row.codepoint = cp)
 
 /-- Flattened generated index, used only by closed integrity gates. -/
 -- Right-nested on purpose: `++` is left-associative and `List.append`

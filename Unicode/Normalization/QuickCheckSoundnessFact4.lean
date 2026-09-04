@@ -143,7 +143,8 @@ theorem hangul_composePair_none_of_qcY (st cp : Nat) (hQC : nfcQCValue cp = .Y) 
     replacing the nonstarter-specific Hangul fact. -/
 theorem primaryComposite_none_of_qcY (st cp : Nat) (hQC : nfcQCValue cp = .Y) :
     Compose.primaryComposite? st cp = none := by
-  unfold Compose.primaryComposite?
+  rw [Compose.primaryComposite?_eq_scan]
+  unfold Compose.primaryCompositeScan?
   rw [hangul_composePair_none_of_qcY st cp hQC]
   show UnicodeData.rows.findSome? (fun r =>
       if r.canonicalDecomposition = [st, cp]

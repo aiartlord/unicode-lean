@@ -986,11 +986,18 @@ def rowsRank3 : List SingletonRankRow := [
 def rows : List SingletonRankRow :=
   rowsRank1 ++ rowsRank2 ++ rowsRank3
 
+-- The entry's row is found through the generated low-byte index rather than
+-- by scanning `rowsList`: a scan visits 3,045 rows per entry, 949 entries,
+-- and the kernel keeps a cache entry per step for the whole enclosing
+-- evaluation. Codepoints are unique in the table, so the indexed row is the
+-- row a scan would have found.
 def rowFieldsMatch (entry : SingletonRankRow) : Bool :=
-  UnicodeData.rowsList.any (fun row =>
-    decide (row.codepoint = entry.codepoint ∧
-      row.canonicalCombiningClass = 0 ∧
-      row.canonicalDecomposition = [entry.left, entry.right]))
+  match Lookup.lookupRow entry.codepoint with
+  | some row =>
+      Nat.beq row.codepoint entry.codepoint &&
+        Nat.beq row.canonicalCombiningClass 0 &&
+        decide (row.canonicalDecomposition = [entry.left, entry.right])
+  | none => false
 
 def entryCommonValid (entry : SingletonRankRow) : Bool :=
   rowFieldsMatch entry &&
@@ -1054,23 +1061,11 @@ theorem rowsRank3_parentRightOrder_valid :
     rowsRank3.all (parentRightOrderValid rowsRank2) = true := by
   decide +kernel
 
-theorem relevant_rows_covered :
-    UnicodeData.rowsList.all (fun row =>
-      decide (row.canonicalCombiningClass ≠ 0) ||
-      decide (Hangul.isHangulSyllable row.codepoint = true) ||
-      decide (nfcQCValue row.codepoint ≠ .Y) ||
-      decide (row.canonicalDecomposition.length = 0) ||
-      rows.any (fun entry => decide (entry.codepoint = row.codepoint))) = true := by
-  decide +kernel
-
-theorem relevant_lookup_rows_covered :
-    UnicodeData.rowsList.all (fun row =>
-      decide (Lookup.canonicalCombiningClass row.codepoint ≠ 0) ||
-      decide (Hangul.isHangulSyllable row.codepoint = true) ||
-      decide (nfcQCValue row.codepoint ≠ .Y) ||
-      decide (row.canonicalDecomposition.length = 0) ||
-      rows.any (fun entry => decide (entry.codepoint = row.codepoint))) = true := by
-  decide +kernel
+-- The two table-coverage facts (`relevant_rows_covered`,
+-- `relevant_lookup_rows_covered`) live in
+-- `Unicode.Normalization.QuickCheckSingletonRankCover`, proven per
+-- `UnicodeData` chunk with the cheap row tests ordered before the
+-- quick-check range walk, so the kernel's working set is one chunk's rows.
 
 theorem max_rank_three :
     rows.all (fun entry => decide (1 ≤ entry.rank ∧ entry.rank ≤ 3)) = true := by

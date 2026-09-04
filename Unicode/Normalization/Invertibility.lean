@@ -161,7 +161,8 @@ theorem primaryComposite_canonicalDecomposition_nonHangul
     (d c p : Nat) (hHangul : Hangul.composePair? d c = none)
     (h : Compose.primaryComposite? d c = some p) :
     Lookup.canonicalDecomposition p = [d, c] := by
-  unfold Compose.primaryComposite? at h
+  rw [Compose.primaryComposite?_eq_scan] at h
+  unfold Compose.primaryCompositeScan? at h
   rw [hHangul] at h
   simp only at h
   obtain ⟨row, hRowMem, hFEq⟩ := List.exists_of_findSome?_eq_some h

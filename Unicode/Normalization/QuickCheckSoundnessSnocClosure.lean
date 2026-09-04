@@ -38,6 +38,7 @@ import Unicode.Normalization.ComposeKernelSupport
 import Unicode.Normalization.NFC
 import Unicode.Normalization.ReorderAppend
 import Unicode.Normalization.Distribute
+import Unicode.Normalization.QuickCheckSingletonRankCover
 import Unicode.Generated.UnicodeData
 
 namespace Unicode.Normalization.QuickCheckSoundnessSnocClosure
@@ -177,7 +178,7 @@ theorem qcY_starter_toNFD_head
               (And.intro hDsNonEmpty hNfdNonEmpty)))
       · have hCovered :=
           List.all_eq_true.mp
-            QuickCheckSingletonRankData.relevant_lookup_rows_covered src hSrcMem
+            QuickCheckSingletonRankCover.relevant_lookup_rows_covered src hSrcMem
         have hCccDecide :
             decide (Lookup.canonicalCombiningClass src.codepoint ≠ 0) = false := by
           rw [hSrcCpEq]

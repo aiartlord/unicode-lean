@@ -30,12 +30,13 @@ open Unicode.Generated
 
 set_option maxRecDepth 100000
 
-/-- Primary-composite lookup: return `P` when `(d, c)` is the canonical
-    decomposition of exactly one non-excluded codepoint `P`, else
-    `none`. Hangul L+V and LV+T pairs handled algorithmically; all
-    other pairs go through a linear scan of the UnicodeData table,
-    skipping codepoints flagged Full_Composition_Exclusion. -/
-def primaryComposite? (d c : Nat) : Option Nat :=
+/-- Primary-composite lookup as specified: return `P` when `(d, c)` is the
+    canonical decomposition of exactly one non-excluded codepoint `P`, else
+    `none`. Hangul L+V and LV+T pairs handled algorithmically; all other
+    pairs go through a linear scan of the UnicodeData table, skipping
+    codepoints flagged Full_Composition_Exclusion. This is the statement the
+    row-level proofs reason over; `primaryComposite?` below is what runs. -/
+def primaryCompositeScan? (d c : Nat) : Option Nat :=
   match Hangul.composePair? d c with
   | some p => some p
   | none =>
@@ -45,6 +46,21 @@ def primaryComposite? (d c : Nat) : Option Nat :=
         some r.codepoint
       else
         none)
+
+/-- The primary composite of a starter–combiner pair, as `compose` computes
+    it: the Hangul algorithmic branch, then the generated pairs table keyed
+    on `(starter, combiner)` by `Nat.beq`. `primaryCompositeScan?` above is
+    the specification this agrees with (`primaryComposite?_eq_scan`): the
+    row scan it replaces visited 3,045 rows with a `Decidable` test each,
+    per adjacent pair, which is what made every kernel evaluation of
+    `toNFC` cost hundreds of megabytes per row. -/
+def primaryComposite? (d c : Nat) : Option Nat :=
+  match Hangul.composePair? d c with
+  | some p => some p
+  | none =>
+    (CanonicalComposition.compositionPairs.find?
+      (fun t => Nat.beq t.1 d && Nat.beq t.2.1 c)).map
+      (fun t => t.2.2)
 
 -- ─────────────────────────────────────────────────────────────────────────────
 --                                          // compose // pairs-table-agreement
@@ -95,7 +111,7 @@ theorem findSome?_matcher_eq_find?_pairs (d c : Nat)
       else
         none)
     = ((l.filterMap pairOfRow).find?
-        (fun t => decide (t.1 = d) && decide (t.2.1 = c))).map
+        (fun t => Nat.beq t.1 d && Nat.beq t.2.1 c)).map
         (fun t => t.2.2) := by
   induction l with
   | nil => rfl
@@ -166,11 +182,12 @@ theorem findSome?_matcher_eq_find?_pairs (d c : Nat)
                 rw [if_pos]
                 refine ⟨?arrEq, hExcl⟩
                 rw [hDT, hDT2, hDT3, hA, hB]
-              have hCond : (decide ((a, b, r.codepoint).1 = d)
-                  && decide ((a, b, r.codepoint).2.1 = c)) = true := by
-                simp [hA, hB]
+              have hCond : (Nat.beq (a, b, r.codepoint).1 d
+                  && Nat.beq (a, b, r.codepoint).2.1 c) = true := by
+                subst hA; subst hB
+                exact Bool.and_eq_true_iff.mpr ⟨Nat.beq_refl a, Nat.beq_refl b⟩
               have hFind : ((a, b, r.codepoint) :: rest.filterMap pairOfRow).find?
-                    (fun t => decide (t.1 = d) && decide (t.2.1 = c))
+                    (fun t => Nat.beq t.1 d && Nat.beq t.2.1 c)
                   = some (a, b, r.codepoint) :=
                 List.find?_cons_of_pos hCond
               rw [hDT, hDT2, hDT3] at hMatch
@@ -185,13 +202,13 @@ theorem findSome?_matcher_eq_find?_pairs (d c : Nat)
                 simp at hTL
                 exact hKey hTL
               have hFind : ((a, b, r.codepoint) :: rest.filterMap pairOfRow).find?
-                    (fun t => decide (t.1 = d) && decide (t.2.1 = c))
+                    (fun t => Nat.beq t.1 d && Nat.beq t.2.1 c)
                   = (rest.filterMap pairOfRow).find?
-                      (fun t => decide (t.1 = d) && decide (t.2.1 = c)) := by
+                      (fun t => Nat.beq t.1 d && Nat.beq t.2.1 c) := by
                 rw [List.find?_cons_of_neg]
-                simp only [Bool.and_eq_true, decide_eq_true_eq]
                 intro hCon
-                exact hKey hCon
+                have hParts := Bool.and_eq_true_iff.mp hCon
+                exact hKey ⟨Nat.eq_of_beq_eq_true hParts.1, Nat.eq_of_beq_eq_true hParts.2⟩
               rw [hDT, hDT2, hDT3] at hMatch
               simp only [hMatch, hPair, hFind]
               exact ih
@@ -204,19 +221,34 @@ def primaryCompositePairs? (d c : Nat) : Option Nat :=
   | some p => some p
   | none =>
     (CanonicalComposition.compositionPairs.find?
-      (fun t => decide (t.1 = d) && decide (t.2.1 = c))).map
+      (fun t => Nat.beq t.1 d && Nat.beq t.2.1 c)).map
       (fun t => t.2.2)
+-- The key test is `Nat.beq` rather than `decide (t.1 = d)`: the kernel
+-- evaluates `Nat.beq` on literals directly, where the `decide` form leaves a
+-- `Decidable` instance term per pair live for the whole enclosing evaluation
+-- — 961 pairs per lookup, once per two-element row in a table fact.
 
 /-- The two lookups agree everywhere. Composes the data certificate with
     the traversal agreement. -/
 theorem primaryComposite?_eq_pairs (d c : Nat) :
-    primaryComposite? d c = primaryCompositePairs? d c := by
-  unfold primaryComposite? primaryCompositePairs?
+    primaryComposite? d c = primaryCompositePairs? d c := rfl
+
+/-- The row scan agrees with the pairs lookup everywhere. Composes the data
+    certificate with the traversal agreement. -/
+theorem primaryCompositeScan?_eq_pairs (d c : Nat) :
+    primaryCompositeScan? d c = primaryCompositePairs? d c := by
+  unfold primaryCompositeScan? primaryCompositePairs?
   cases hHangul : Hangul.composePair? d c with
   | some p => rfl
   | none =>
     rw [compositionPairs_eq_filterMap]
     exact findSome?_matcher_eq_find?_pairs d c UnicodeData.rowsList
+
+/-- `primaryComposite?` computes what the row-scan specification states. A
+    proof that reasons over the scan rewrites through this first. -/
+theorem primaryComposite?_eq_scan (d c : Nat) :
+    primaryComposite? d c = primaryCompositeScan? d c :=
+  (primaryCompositeScan?_eq_pairs d c).symm
 
 /-- A non-composing pair, without reducing either scan: the Hangul
     branch misses by arithmetic, and a linear `List.all` pass witnesses
@@ -229,13 +261,13 @@ theorem primaryComposite?_none_of_all_ne (d c : Nat)
   rw [primaryComposite?_eq_pairs]
   unfold primaryCompositePairs?
   have hNone : CanonicalComposition.compositionPairs.find?
-      (fun t => decide (t.1 = d) && decide (t.2.1 = c)) = none := by
+      (fun t => Nat.beq t.1 d && Nat.beq t.2.1 c) = none := by
     rw [List.find?_eq_none]
     intro t ht
     have hNe := of_decide_eq_true (List.all_eq_true.mp hAll t ht)
     intro hKey
-    rw [Bool.and_eq_true, decide_eq_true_eq, decide_eq_true_eq] at hKey
-    exact hNe hKey
+    have hParts := Bool.and_eq_true_iff.mp hKey
+    exact hNe ⟨Nat.eq_of_beq_eq_true hParts.1, Nat.eq_of_beq_eq_true hParts.2⟩
   rw [hHangul, hNone]
   rfl
 
@@ -252,20 +284,25 @@ theorem primaryComposite?_some_of_pair (d c p : Nat)
   rw [primaryComposite?_eq_pairs]
   unfold primaryCompositePairs?
   cases hF : CanonicalComposition.compositionPairs.find?
-      (fun t => decide (t.1 = d) && decide (t.2.1 = c)) with
+      (fun t => Nat.beq t.1 d && Nat.beq t.2.1 c) with
   | none =>
     exfalso
     rw [List.find?_eq_none] at hF
     rw [List.any_eq_true] at hAny
     obtain ⟨t, htMem, htKey⟩ := hAny
-    exact (hF t htMem) htKey
+    rw [Bool.and_eq_true, decide_eq_true_eq, decide_eq_true_eq] at htKey
+    apply hF t htMem
+    exact Bool.and_eq_true_iff.mpr
+      ⟨by rw [htKey.1]; exact Nat.beq_refl d, by rw [htKey.2]; exact Nat.beq_refl c⟩
   | some t =>
     have hMem : t ∈ CanonicalComposition.compositionPairs :=
       List.mem_of_find?_eq_some hF
-    have hKey := List.find?_some
+    have hKeyB := List.find?_some
       (p := fun (t : Nat × Nat × Nat) =>
-        decide (t.1 = d) && decide (t.2.1 = c)) hF
-    rw [Bool.and_eq_true, decide_eq_true_eq, decide_eq_true_eq] at hKey
+        Nat.beq t.1 d && Nat.beq t.2.1 c) hF
+    have hParts := Bool.and_eq_true_iff.mp hKeyB
+    have hKey : t.1 = d ∧ t.2.1 = c :=
+      ⟨Nat.eq_of_beq_eq_true hParts.1, Nat.eq_of_beq_eq_true hParts.2⟩
     have hPin : (t.1 = d ∧ t.2.1 = c) → t.2.2 = p :=
       of_decide_eq_true (List.all_eq_true.mp hAll t hMem)
     rw [hHangul]
@@ -480,7 +517,8 @@ theorem composePair_output_non_widthCompatSource
 theorem primaryComposite_non_widthCompatSource
     (d c p : Nat) (h : primaryComposite? d c = some p) :
     isWidthCompatSource p = false := by
-  unfold primaryComposite? at h
+  rw [primaryComposite?_eq_scan] at h
+  unfold primaryCompositeScan? at h
   split at h
   · next q hq =>
     simp only [Option.some.injEq] at h

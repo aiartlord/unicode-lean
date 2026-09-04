@@ -53,9 +53,14 @@ def toNFC (cps : List Nat) : List Nat :=
     cannot change the answer. -/
 def nfcQCValue (cp : Nat) : DerivedNormalizationProps.NFC_QC :=
   match DerivedNormalizationProps.nfcQC.find?
-      (fun t => decide (t.1 ≤ cp ∧ cp ≤ t.2.1)) with
+      (fun t => Nat.ble t.1 cp && Nat.ble cp t.2.1) with
   | some t => t.2.2
   | none => DerivedNormalizationProps.defaultNfcQC
+-- The range test is `Nat.ble` rather than `decide (lo ≤ cp ∧ cp ≤ hi)`:
+-- the kernel evaluates `Nat.ble` on literals directly, while the `decide`
+-- form builds a `Decidable` instance term per range that stays live for the
+-- whole enclosing evaluation — 1,382 of them per lookup, which is what made
+-- every table fact over this predicate cost gigabytes.
 
 /-- Every pinned NFC_QC range begins at or above U+0300. One linear
     kernel pass over the range table. -/
@@ -68,13 +73,13 @@ theorem nfcQCValue_below_first_range (cp : Nat) (h : cp < 0x0300) :
     nfcQCValue cp = DerivedNormalizationProps.defaultNfcQC := by
   unfold nfcQCValue
   have hNone : DerivedNormalizationProps.nfcQC.find?
-      (fun t => decide (t.1 ≤ cp ∧ cp ≤ t.2.1)) = none := by
+      (fun t => Nat.ble t.1 cp && Nat.ble cp t.2.1) = none := by
     rw [List.find?_eq_none]
     intro t ht
     have hGe : 0x0300 ≤ t.1 :=
       of_decide_eq_true (List.all_eq_true.mp nfcQC_ranges_above_0x0300 t ht)
     intro hIn
-    have hIn' := of_decide_eq_true hIn
+    have hLo : t.1 ≤ cp := Nat.le_of_ble_eq_true (Bool.and_eq_true_iff.mp hIn).1
     omega
   rw [hNone]
 
@@ -83,13 +88,14 @@ theorem nfcQCValue_first_range_N (cp : Nat)
     nfcQCValue cp = .N := by
   unfold nfcQCValue
   have hHead : DerivedNormalizationProps.nfcQC.find?
-      (fun t => decide (t.1 ≤ cp ∧ cp ≤ t.2.1))
+      (fun t => Nat.ble t.1 cp && Nat.ble cp t.2.1)
       = some (0x0340, 0x0341, DerivedNormalizationProps.NFC_QC.N) := by
     have hCons : DerivedNormalizationProps.nfcQC
         = (0x0340, 0x0341, DerivedNormalizationProps.NFC_QC.N)
             :: DerivedNormalizationProps.nfcQC.tail := rfl
     rewrite [hCons]
-    exact List.find?_cons_of_pos (decide_eq_true ⟨hLo, hHi⟩)
+    exact List.find?_cons_of_pos
+      (Bool.and_eq_true_iff.mpr ⟨Nat.ble_eq_true_of_le hLo, Nat.ble_eq_true_of_le hHi⟩)
   rw [hHead]
 
 /-- Every pinned row below U+0300 records `CCC = 0` — the sub-U+0300

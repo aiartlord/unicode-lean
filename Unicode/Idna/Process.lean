@@ -533,69 +533,47 @@ def toAsciiTransitional (input : List Nat) (opts : Options := defaultOptions) :
 -- §6 SAMPLE DOMAINS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
--- The sample-domain checks reduce the full IDNA pipeline over concrete label
--- lists; the "xn--" vectors drive the Punycode loop, which climbs to the
--- largest non-basic codepoint. Close them with decide +kernel (kernel Nat, no
--- whnf thunk per step) under a raised recursion depth for the List traversal.
-set_option maxRecDepth 100000
-
-/-- "example.com" round-trips identically — pure ASCII. -/
-theorem toUnicode_example :
-    toUnicode (stringToCps "example.com")
-      = { output := stringToCps "example.com", hasErrors := false } := by
-  decide +kernel
-
-theorem toAscii_example :
-    toAscii (stringToCps "example.com")
-      = { output := stringToCps "example.com", hasErrors := false } := by
-  decide +kernel
-
-/-- "EXAMPLE.COM" → "example.com" via case-folding. -/
-theorem toUnicode_EXAMPLE :
-    toUnicode (stringToCps "EXAMPLE.COM")
-      = { output := stringToCps "example.com", hasErrors := false } := by
-  decide +kernel
-
-theorem toAscii_EXAMPLE :
-    toAscii (stringToCps "EXAMPLE.COM")
-      = { output := stringToCps "example.com", hasErrors := false } := by
-  decide +kernel
-
-/-- "fass.de" round-trips identically. -/
-theorem toAscii_fass :
-    toAscii (stringToCps "fass.de")
-      = { output := stringToCps "fass.de", hasErrors := false } := by
-  decide +kernel
-
-/-- IdnaTestV2 vector: "faß.de" → "xn--fa-hia.de" non-transitionally
-    (sharp s is kept under non-transitional, then Punycode-encoded). -/
-theorem toAscii_faß :
-    toAscii ([0x0066, 0x0061, 0x00DF, 0x002E, 0x0064, 0x0065])
-      = { output := stringToCps "xn--fa-hia.de", hasErrors := false } := by
-  decide +kernel
-
-/-- IdnaTestV2 vector: "Faß.de" → "faß.de" under ToUnicode. -/
-theorem toUnicode_Faß :
-    toUnicode ([0x0046, 0x0061, 0x00DF, 0x002E, 0x0064, 0x0065])
-      = { output := [0x0066, 0x0061, 0x00DF, 0x002E, 0x0064, 0x0065],
-          hasErrors := false } := by
-  decide +kernel
-
-/-- IdnaTestV2 vector: "faß.de" → "fass.de" under transitional ToASCII
-    (sharp s is mapped to "ss"). -/
-theorem toAsciiTransitional_faß :
-    toAsciiTransitional ([0x0066, 0x0061, 0x00DF, 0x002E, 0x0064, 0x0065])
-      = { output := stringToCps "fass.de", hasErrors := false } := by
-  decide +kernel
-
-/-- A pre-encoded "xn--" label round-trips back to the original
-    Unicode codepoints under ToUnicode. -/
-theorem toUnicode_xn_traditional_chinese :
-    toUnicode (stringToCps "xn--ihqwctvzc91f659drss3x8bo0yb.example")
-      = { output := [0x4ED6, 0x5011, 0x7232, 0x4EC0, 0x9EBD,
-                      0x4E0D, 0x8AAA, 0x4E2D, 0x6587, 0x002E]
-                    ++ stringToCps "example",
-          hasErrors := false } := by
-  decide +kernel
+-- The sample-domain vectors run the full IDNA pipeline over concrete label
+-- lists; the "xn--" vectors drive the Punycode loop, which builds `String`s
+-- and walks `Char`s — shapes the kernel cannot reduce within any memory budget
+-- (the nine vectors as `decide +kernel` cost this module over 7 GB), while the
+-- compiled pipeline runs them in milliseconds. They are conformance evidence,
+-- so they are checked by evaluation at build time; a mismatch fails the build.
+-- The full corpus is `Unicode.Conformance.IdnaTestV2`.
+#eval show IO Unit from do
+  let fail (what : String) : IO Unit :=
+    throw (IO.userError s!"Unicode.Idna.Process: sample domain {what}")
+  let expect (what : String) (got : Map.Result) (output : List Nat) : IO Unit := do
+    unless got.output == output && got.hasErrors == false do fail what
+  -- "example.com" round-trips identically — pure ASCII.
+  expect "toUnicode example.com" (toUnicode (stringToCps "example.com"))
+    (stringToCps "example.com")
+  expect "toAscii example.com" (toAscii (stringToCps "example.com"))
+    (stringToCps "example.com")
+  -- "EXAMPLE.COM" → "example.com" via case-folding.
+  expect "toUnicode EXAMPLE.COM" (toUnicode (stringToCps "EXAMPLE.COM"))
+    (stringToCps "example.com")
+  expect "toAscii EXAMPLE.COM" (toAscii (stringToCps "EXAMPLE.COM"))
+    (stringToCps "example.com")
+  -- "fass.de" round-trips identically.
+  expect "toAscii fass.de" (toAscii (stringToCps "fass.de")) (stringToCps "fass.de")
+  -- IdnaTestV2: "faß.de" → "xn--fa-hia.de" non-transitionally (sharp s is
+  -- kept, then Punycode-encoded).
+  expect "toAscii faß.de" (toAscii [0x0066, 0x0061, 0x00DF, 0x002E, 0x0064, 0x0065])
+    (stringToCps "xn--fa-hia.de")
+  -- IdnaTestV2: "Faß.de" → "faß.de" under ToUnicode.
+  expect "toUnicode Faß.de" (toUnicode [0x0046, 0x0061, 0x00DF, 0x002E, 0x0064, 0x0065])
+    [0x0066, 0x0061, 0x00DF, 0x002E, 0x0064, 0x0065]
+  -- IdnaTestV2: "faß.de" → "fass.de" under transitional ToASCII (sharp s
+  -- is mapped to "ss").
+  expect "toAsciiTransitional faß.de"
+    (toAsciiTransitional [0x0066, 0x0061, 0x00DF, 0x002E, 0x0064, 0x0065])
+    (stringToCps "fass.de")
+  -- A pre-encoded "xn--" label round-trips back to the original Unicode
+  -- codepoints under ToUnicode.
+  expect "toUnicode xn--ihqwctvzc91f659drss3x8bo0yb.example"
+    (toUnicode (stringToCps "xn--ihqwctvzc91f659drss3x8bo0yb.example"))
+    ([0x4ED6, 0x5011, 0x7232, 0x4EC0, 0x9EBD, 0x4E0D, 0x8AAA, 0x4E2D, 0x6587, 0x002E]
+      ++ stringToCps "example")
 
 end Unicode.Idna.Process

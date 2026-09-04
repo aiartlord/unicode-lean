@@ -364,68 +364,34 @@ def syntheticFixture : String :=
 4E2D 6587; Clear; ; ; # Han text
 "
 
-/-- The synthetic parses cleanly, with five rows. -/
-theorem synthetic_parses_5_rows :
-    (parseFixture syntheticFixture).length = 5 := by decide +kernel
-
-/-- Row 0 is in the "Clear" section at basic level. -/
-theorem synthetic_row0_section :
-    (parseFixture syntheticFixture)[0]!.sectionName = "Clear" := by decide +kernel
-
-theorem synthetic_row0_level :
-    (parseFixture syntheticFixture)[0]!.conformanceLevel = .basic := by decide +kernel
-
-theorem synthetic_row0_kind :
-    (parseFixture syntheticFixture)[0]!.expectedKind = .clear := by decide +kernel
-
-theorem synthetic_row0_input :
-    (parseFixture syntheticFixture)[0]!.input = [0x48, 0x65, 0x6C, 0x6C, 0x6F] := by
-  decide +kernel
-
-/-- Row 1 is in the "Hazard" section, basic level, DirectPayload sub-threat. -/
-theorem synthetic_row1_section :
-    (parseFixture syntheticFixture)[1]!.sectionName = "Hazard" := by decide +kernel
-
-theorem synthetic_row1_kind :
-    (parseFixture syntheticFixture)[1]!.expectedKind = .hazard := by decide +kernel
-
-theorem synthetic_row1_sub :
-    (parseFixture syntheticFixture)[1]!.expectedSubThreat = some "DirectPayload" := by
-  decide +kernel
-
-theorem synthetic_row1_positions :
-    (parseFixture syntheticFixture)[1]!.expectedPositions = [1, 2] := by decide +kernel
-
-theorem synthetic_row1_decoded :
-    (parseFixture syntheticFixture)[1]!.attribution.get? "decoded" = some "A" := by
-  decide +kernel
-
-/-- Row 2 is the Nethereum compound case (strict level). -/
-theorem synthetic_row2_level :
-    (parseFixture syntheticFixture)[2]!.conformanceLevel = .strict := by decide +kernel
-
-theorem synthetic_row2_matched_target :
-    (parseFixture syntheticFixture)[2]!.attribution.get? "matched_target"
-      = some "Nethereum" := by
-  decide +kernel
-
-/-- Row 3 inherits the "Compound" section but level=full from the
-    interim @level directive. -/
-theorem synthetic_row3_section :
-    (parseFixture syntheticFixture)[3]!.sectionName = "Compound" := by decide +kernel
-
-theorem synthetic_row3_level :
-    (parseFixture syntheticFixture)[3]!.conformanceLevel = .full := by decide +kernel
-
-/-- Row 4 is in the CleanNegatives section, back to basic. -/
-theorem synthetic_row4_section :
-    (parseFixture syntheticFixture)[4]!.sectionName = "CleanNegatives" := by
-  decide +kernel
-
-theorem synthetic_row4_level :
-    (parseFixture syntheticFixture)[4]!.conformanceLevel = .basic := by decide +kernel
-
-theorem synthetic_row4_kind :
-    (parseFixture syntheticFixture)[4]!.expectedKind = .clear := by decide +kernel
+-- The synthetic fixture parses to exactly the five rows its text states —
+-- sections, levels, kinds, inputs, sub-threats, positions and attributions.
+-- Checked by evaluation at build time: the parser walks `String` positions
+-- and `Char` values, which the kernel cannot reduce within any memory budget
+-- (one such spot check alone exceeded 8 GB), while the compiled parser runs
+-- it in milliseconds. A mismatch fails the build.
+#eval show IO Unit from do
+  let fail (what : String) : IO Unit :=
+    throw (IO.userError s!"Unicode.Security.Fixture: synthetic fixture {what}")
+  match parseFixture syntheticFixture with
+  | [r0, r1, r2, r3, r4] =>
+    unless r0.sectionName == "Clear" do fail "row 0 section"
+    unless r0.conformanceLevel = .basic do fail "row 0 level"
+    unless r0.expectedKind = .clear do fail "row 0 kind"
+    unless r0.input == [0x48, 0x65, 0x6C, 0x6C, 0x6F] do fail "row 0 input"
+    unless r1.sectionName == "Hazard" do fail "row 1 section"
+    unless r1.expectedKind = .hazard do fail "row 1 kind"
+    unless r1.expectedSubThreat == some "DirectPayload" do fail "row 1 sub-threat"
+    unless r1.expectedPositions == [1, 2] do fail "row 1 positions"
+    unless r1.attribution.get? "decoded" == some "A" do fail "row 1 decoded"
+    unless r2.conformanceLevel = .strict do fail "row 2 level"
+    unless r2.attribution.get? "matched_target" == some "Nethereum" do
+      fail "row 2 matched_target"
+    unless r3.sectionName == "Compound" do fail "row 3 section"
+    unless r3.conformanceLevel = .full do fail "row 3 level"
+    unless r4.sectionName == "CleanNegatives" do fail "row 4 section"
+    unless r4.conformanceLevel = .basic do fail "row 4 level"
+    unless r4.expectedKind = .clear do fail "row 4 kind"
+  | rows => fail s!"parsed {rows.length} rows, expected 5"
 
 end Unicode.Security.Fixture

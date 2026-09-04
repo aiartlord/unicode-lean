@@ -42,6 +42,7 @@
 
 import Unicode.Normalization.Compose
 import Unicode.Normalization.NFC
+import Unicode.Normalization.QuickCheckFactsRows
 
 namespace Unicode.Normalization.QuickCheckFacts
 
@@ -50,6 +51,27 @@ open Unicode.Generated
 
 set_option maxRecDepth 100000
 
+-- The three row facts are evaluated on the rows that need the expensive
+-- test, and only those. `nfcQCValue` walks 1,382 ranges per call, and the
+-- kernel keeps a cache entry per step of that walk for the whole enclosing
+-- evaluation, so a whole-table pass that calls it on every row costs
+-- gigabytes even with cheap leaves. Each kernel fact below filters by the
+-- cheap row conditions first (combining class, decomposition length) and
+-- orders the disjunction so the range walk is the last thing tried; the
+-- statements the lifts consume are recovered from those facts by a
+-- per-row Bool argument that evaluates nothing.
+
+/-- Kernel fact 1, on the rows it concerns: a non-starter row with a
+    canonical decomposition is not `NFC_QC = Y`. Four rows carry a
+    non-zero CCC together with a decomposition; only those reach the
+    range walk. -/
+theorem qcY_nonstarter_rows_no_decomp_filtered :
+    (UnicodeData.rowsList.filter (fun r =>
+      decide (r.canonicalCombiningClass > 0))).all (fun r =>
+      decide (r.canonicalDecomposition = []) ||
+      ! decide (NFC.nfcQCValue r.codepoint = .Y)) = true := by
+  decide +kernel
+
 /-- Row-level fact 1: every `UnicodeData` row with `NFC_QC = Y` and
     non-zero CCC has an empty canonical decomposition. -/
 theorem qcY_nonstarter_rows_no_decomp :
@@ -57,13 +79,37 @@ theorem qcY_nonstarter_rows_no_decomp :
       (! (decide (NFC.nfcQCValue r.codepoint = .Y) &&
           decide (r.canonicalCombiningClass > 0))) ||
       decide (r.canonicalDecomposition = [])) = true := by
-  simp only [UnicodeData.rows]
-  decide +kernel
+  have hk := qcY_nonstarter_rows_no_decomp_filtered
+  rw [List.all_eq_true] at hk
+  unfold UnicodeData.rows
+  rw [List.all_eq_true]
+  intro r hr
+  cases hCcc : decide (r.canonicalCombiningClass > 0)
+  · simp
+  · have hRow := hk r (List.mem_filter.mpr ⟨hr, hCcc⟩)
+    cases hEmpty : decide (r.canonicalDecomposition = [])
+    · rw [hEmpty] at hRow
+      simp only [Bool.false_or, Bool.not_eq_true'] at hRow
+      simp [hRow]
+    · simp
 
-/-- Fact 2 against the linear pairs lookup: the enumeration the kernel
-    can actually pay for. Each row's check is a `find?` over the
-    961-entry `compositionPairs` list instead of a full row-table
-    re-scan. -/
+/-- Kernel fact 2, on the rows it concerns: a starter row with a
+    two-element decomposition either recomposes through the pairs lookup
+    or is not `NFC_QC = Y`. Filtering by the two cheap conditions leaves
+    the 1,046 two-element rows; the pairs lookup is tried before the
+    range walk, so the walk runs only for the excluded rows. -/
+theorem qcY_starter_2decomp_rows_compose_pairs_filtered :
+    (UnicodeData.rowsList.filter (fun r =>
+      decide (r.canonicalDecomposition.length = 2) &&
+      decide (r.canonicalCombiningClass = 0))).all (fun r =>
+      decide (Compose.primaryCompositePairs?
+                (r.canonicalDecomposition[0]!)
+                (r.canonicalDecomposition[1]!) = some r.codepoint) ||
+      ! decide (NFC.nfcQCValue r.codepoint = .Y)) = true :=
+  QuickCheckFactsRows.rows_fact2
+
+/-- Fact 2 against the linear pairs lookup, in the form the lift below
+    consumes; recovered from the filtered kernel fact row by row. -/
 theorem qcY_starter_2decomp_rows_compose_pairs :
     UnicodeData.rowsList.all (fun r =>
       (! (decide (NFC.nfcQCValue r.codepoint = .Y) &&
@@ -72,7 +118,22 @@ theorem qcY_starter_2decomp_rows_compose_pairs :
       decide (Compose.primaryCompositePairs?
                 (r.canonicalDecomposition[0]!)
                 (r.canonicalDecomposition[1]!) = some r.codepoint)) = true := by
-  decide +kernel
+  have hk := qcY_starter_2decomp_rows_compose_pairs_filtered
+  rw [List.all_eq_true] at hk
+  rw [List.all_eq_true]
+  intro r hr
+  cases hLen : decide (r.canonicalDecomposition.length = 2)
+  · simp
+  · cases hCcc : decide (r.canonicalCombiningClass = 0)
+    · simp
+    · have hRow := hk r (List.mem_filter.mpr ⟨hr, by rw [hLen, hCcc]; rfl⟩)
+      cases hPair : decide (Compose.primaryCompositePairs?
+                (r.canonicalDecomposition[0]!)
+                (r.canonicalDecomposition[1]!) = some r.codepoint)
+      · rw [hPair] at hRow
+        simp only [Bool.false_or, Bool.not_eq_true'] at hRow
+        simp [hRow]
+      · simp
 
 /-- Row-level fact 2: every `UnicodeData` row with `NFC_QC = Y`,
     CCC = 0, and a two-element canonical decomposition recomposes via
@@ -96,13 +157,28 @@ theorem qcY_starter_2decomp_rows_compose :
     (e.g., BENGALI LETTER RRA: `primaryComposite?` returns `none` for
     them) may have QC=Y trailing elements without issue; they do not
     contribute compose paths. -/
+theorem qcY_nonstarter_not_decomp_target_filtered :
+    (UnicodeData.rowsList.filter (fun r =>
+      decide (r.canonicalDecomposition.length = 2))).all (fun r =>
+      decide (Lookup.isFullCompositionExclusion r.codepoint = true) ||
+      (! decide (NFC.nfcQCValue (r.canonicalDecomposition[1]!) = .Y))) = true :=
+  QuickCheckFactsRows.rows_fact3
+
 theorem qcY_nonstarter_not_decomp_target :
     UnicodeData.rows.all (fun r =>
       (! decide (r.canonicalDecomposition.length = 2)) ||
       decide (Lookup.isFullCompositionExclusion r.codepoint = true) ||
       (! decide (NFC.nfcQCValue (r.canonicalDecomposition[1]!) = .Y))) = true := by
-  simp only [UnicodeData.rows]
-  decide +kernel
+  have hk := qcY_nonstarter_not_decomp_target_filtered
+  rw [List.all_eq_true] at hk
+  unfold UnicodeData.rows
+  rw [List.all_eq_true]
+  intro r hr
+  cases hLen : decide (r.canonicalDecomposition.length = 2)
+  · simp
+  · have hRow := hk r (List.mem_filter.mpr ⟨hr, hLen⟩)
+    simp only [Bool.not_true, Bool.false_or]
+    exact hRow
 
 theorem lookupRow_codepoint
     (cp : Nat) (row : UnicodeData.UnicodeDataRow)

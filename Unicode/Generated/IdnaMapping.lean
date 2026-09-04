@@ -139,7 +139,11 @@ def lookupRowBinary (cp : Nat) : Option IdnaRow :=
 /-- Kernel-reducible linear lookup over the pinned `List` (the
     binary search is the runtime path; this is for `decide` proofs). -/
 def lookupRowList? (cp : Nat) : Option IdnaRow :=
-  idnaMappingRangesList.find? (fun r => decide (r.min ≤ cp ∧ cp ≤ r.max))
+  idnaMappingRangesList.find? (fun r => Nat.ble r.min cp && Nat.ble cp r.max)
+-- `Nat.ble` rather than `decide (min ≤ cp ∧ cp ≤ max)`: the kernel evaluates
+-- `Nat.ble` on literals directly, where the `decide` form leaves a `Decidable`
+-- instance term per range live for the whole enclosing evaluation — 9,262 of
+-- them per codepoint of a sample domain.
 
 -- Build-time drift gate.
 #eval do

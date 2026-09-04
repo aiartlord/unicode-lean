@@ -57,7 +57,10 @@ def isCompositionExclusion (cp : Nat) : Bool :=
     decompositions may recompose. -/
 def isFullCompositionExclusion (cp : Nat) : Bool :=
   DerivedNormalizationProps.fullCompositionExclusion.any
-    (fun ⟨min, max⟩ => decide (min ≤ cp ∧ cp ≤ max))
+    (fun ⟨min, max⟩ => Nat.ble min cp && Nat.ble cp max)
+-- `Nat.ble` rather than `decide (min ≤ cp ∧ cp ≤ max)`: the kernel evaluates
+-- `Nat.ble` on literals directly, where the `decide` form leaves a `Decidable`
+-- instance term per range live for the whole enclosing evaluation.
 
 -- ─────────────────────────────────────────────────────────────────────────────
 --                                              // lookup // fact-transport

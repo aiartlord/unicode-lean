@@ -52,7 +52,25 @@ def hex_nat(n: int) -> str:
 def row_literal(row: tuple[int, int, tuple[int, ...]]) -> str:
     cp, ccc, decomp = row
     mapping = ", ".join(hex_nat(x) for x in decomp)
-    return f"⟨{hex_nat(cp)}, {ccc}, #[{mapping}]⟩"
+    return f"⟨{hex_nat(cp)}, {ccc}, [{mapping}]⟩"
+
+
+def bucket_tree_lines(lo: int, hi: int, depth: int) -> list[str]:
+    """`rowBucketFast`'s body: a balanced comparison tree over the low byte.
+
+    Eight `Nat.ble` tests on literals reach a bucket, where a `match` on 256
+    numeral patterns peels up to 255 successors and leaves an instance term
+    per step in the kernel. Non-leaf nodes are parenthesised so each `cond`
+    argument is one term.
+    """
+    indent = "  " * depth
+    if lo == hi:
+        return [f"{indent}rowsLowByte{lo:02X}"]
+    mid = (lo + hi) // 2
+    left = bucket_tree_lines(lo, mid, depth + 1)
+    right = bucket_tree_lines(mid + 1, hi, depth + 1)
+    right[-1] = right[-1] + ")"
+    return [f"{indent}(cond (Nat.ble low {mid})"] + left + right
 
 
 def emit_bucket(name: str, rows: list[tuple[int, int, tuple[int, ...]]]) -> list[str]:
@@ -173,6 +191,7 @@ def emit_fact_aggregator() -> None:
         "      src.canonicalCombiningClass = row.canonicalCombiningClass ∧",
         "      src.canonicalDecomposition = row.canonicalDecomposition := by",
         "  unfold lookupRow? at h",
+        "  rw [rowBucketFast_eq_of_lt (cp % 256) (Nat.mod_lt cp (by decide))] at h",
         "  have hMemBucket : row ∈ rowBucketByLowByte (cp % 256) :=",
         "    List.mem_of_find?_eq_some h",
         "  have hAll := rowBucket_all_supported_rowsList (cp % 256)",
@@ -198,6 +217,7 @@ def emit_fact_aggregator() -> None:
         "    row.codepoint ≠ cp := by",
         "  intro hCp",
         "  unfold lookupRow? at h",
+        "  rw [rowBucketFast_eq_of_lt (cp % 256) (Nat.mod_lt cp (by decide))] at h",
         "  rw [List.find?_eq_none] at h",
         "  have hAny := rowsList_codepoint_mem_rowBucket hMem hCp",
         "  rw [List.any_eq_true] at hAny",
@@ -248,9 +268,26 @@ def main() -> None:
         lines.append(f"  | 0x{low:02X} => {name}")
     lines.append("  | low + 256 => []")
     lines.append("")
-    lines.append("/-- Indexed row lookup. Concrete lookups scan one low-byte collision bucket. -/")
+    lines.append("/-- The same bucket dispatch as a balanced comparison tree: eight `Nat.ble`")
+    lines.append("    tests on literals per lookup. The numeral `match` above peels up to 255")
+    lines.append("    successors and leaves an instance term per step in the kernel, which made")
+    lines.append("    every kernel normalization step pay about a quarter megabyte per row lookup.")
+    lines.append("    Values `>= 256` land in the last bucket; the lookup only ever passes a")
+    lines.append("    low byte. -/")
+    lines.append("def rowBucketFast (low : Nat) : List UnicodeDataRow :=")
+    lines.extend(bucket_tree_lines(0, 255, 1))
+    lines.append("")
+    lines.append("/-- The tree agrees with the literal match on every low byte. -/")
+    lines.append("theorem rowBucketFast_eq_of_lt : ∀ low : Nat, low < 256 →")
+    lines.append("    rowBucketFast low = rowBucketByLowByte low")
+    for low in range(256):
+        lines.append(f"  | 0x{low:02X}, _hlt => rfl")
+    lines.append("  | low + 256, hlt => absurd hlt (by omega)")
+    lines.append("")
+    lines.append("/-- Indexed row lookup. Concrete lookups scan one low-byte collision bucket,")
+    lines.append("    reached through the comparison tree. -/")
     lines.append("def lookupRow? (cp : Nat) : Option UnicodeDataRow :=")
-    lines.append("  (rowBucketByLowByte (cp % 256)).find? (fun row => row.codepoint = cp)")
+    lines.append("  (rowBucketFast (cp % 256)).find? (fun row => row.codepoint = cp)")
     lines.append("")
     lines.append("/-- Flattened generated index, used only by closed integrity gates. -/")
     lines.append("-- Right-nested on purpose: `++` is left-associative and `List.append`")
