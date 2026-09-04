@@ -45,6 +45,15 @@
       "passed": 19338,
       "failed": 0,
       "columns": ["breaks"]
+    },
+    {
+      "suite": "IdnaTestV2",
+      "input_sha256": "beb5d0be20e896189b03209a82fdc34f06351502bbd4b8e2523583fc2954d9cf",
+      "rows_judged": 6391,
+      "passed": 6391,
+      "failed": 0,
+      "columns": ["toUnicode", "toAsciiN", "toAsciiT"],
+      "note": "Full-corpus fold through the UTS #46 processor via scripts/idna-conformance.sh all; every row judged on all three result columns. The IdnaTestV2 module also closes a build-time gate over the same file, so this row restates a check the UnicodeFullConformance build already makes."
     }
   ]
 }

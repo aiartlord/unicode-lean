@@ -20,6 +20,8 @@ import Lean.Util.CollectAxioms
 import Lean.Elab.Command
 import Unicode.SecurityRoot
 import Unicode.FullConformance
+import Unicode.TrojanSource
+import Unicode.Bidi.Algorithm
 
 open Lean (Name collectAxioms)
 
@@ -36,6 +38,10 @@ open Lean (Name collectAxioms)
 def loadBearing : List Name :=
   [ `Unicode.Security.Covert.BidiControlBalance.runWalk_depthAccounted,
     `Unicode.Security.Covert.BidiControlBalance.runWalk_stackConsistent,
+    `Unicode.TrojanSource.balanced_of_no_bidi_control,
+    `Unicode.TrojanSource.safeForCodeContext_balanced,
+    `Unicode.TrojanSource.no_control_mem,
+    `Unicode.Bidi.Algorithm.applyL2_id_of_all_even,
     `Unicode.Security.Display.RtlInjection.countBidiControl_le_size,
     `Unicode.Conformance.NormalizationTest.nfc_stable,
     `Unicode.Conformance.NormalizationTest.nfd_stable,

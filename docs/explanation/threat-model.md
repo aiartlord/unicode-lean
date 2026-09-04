@@ -50,3 +50,27 @@ source bytes as uniformly suspect regardless of which region a language tokenize
 would assign them to, because where a parser places bytes does not change whether
 they are an attack surface. It runs inline at ingress so a single payload is
 classified once, at the boundary, and the verdict travels with it.
+
+## Guarantees per detection class
+
+A buyer reads the boundary before the proofs. Each class below names the
+strongest statement the tree carries for it, and says which tier that is:
+**theorem** (machine-checked over every input, axiom footprint `propext`,
+`Quot.sound`, `Classical.choice` only — see `scripts/print-load-bearing-axioms.lean`),
+**conformance** (the published Unicode test file, every row judged, zero
+skipped — see `dist/CONFORMANCE-RUN.txt`), **coverage** (exact with respect to
+the Unicode data it reads, which has no official pass/fail file), or
+**vectors** (curated attack and control cases, each a build-gated check).
+A class marked coverage or vectors is shippable; a class marked as proven
+when it is not is what would kill the product, so the tiers are stated
+exactly.
+
+| Class | Detector families | Strongest statement | Tier |
+|---|---|---|---|
+| D1 bidi rendering divergence | `bidiControlBalance`, `sourceDisplayDivergence`, `rtlInjection` | Every bidi control imbalance is reported, for every input: `Unicode.Security.Covert.BidiControlBalance.runWalk_depthAccounted`, `runWalk_stackConsistent`, `Unicode.TrojanSource.balanced_of_no_bidi_control`, `Unicode.TrojanSource.safeForCodeContext_balanced`. Display order equals logical order whenever no odd embedding level occurs: `Unicode.Bidi.Algorithm.applyL2_id_of_all_even` — a divergence can only originate at a bidi control. The algorithm itself passes `BidiTest.txt` and `BidiCharacterTest.txt` in full. | theorem + conformance. The full Trojan Source property (rendered order equals lexical order or the scanner reports it) is not one closed theorem yet: the balanced-but-divergent case is carried by the `sourceDisplayDivergence` vectors, and that is stated here rather than implied. |
+| D2 invisible and format characters | `zeroWidthPayload`, `tagBlockPayload`, `variationSelectorPayload` | The codepoint set is the UCD `Default_Ignorable_Code_Point` property (`Unicode.Generated.DerivedCoreProperties`), not a hand list. Orthographic joiners stay clear and a spliced joiner reports, over the stated inputs: `Unicode.Security.Covert.ZeroWidthPayload.detect_devanagari_zwnj_clear`, `detect_persian_zwnj_clear`, `detect_zwnj_in_latin_hazard`. | coverage (property-derived set) + theorem (the joiner sanction) |
+| D3 mixed-script confusables | `homoglyphConfusable`, `mixedScriptAdmissibility` | Sound with respect to `confusables.txt`: the skeleton mapping converges within a bounded chain and expansion, `Unicode.Confusables.confusable_chain_within_bound`, `Unicode.Confusables.mappingsList_expansion_under_bound`. Completeness is bounded by Unicode's own data, which has no pass/fail file. | coverage + theorem (chain and expansion bounds) |
+| D4 normalization instability | `identifierFormDrift`, `nfcIdempotenceWitness`, `admissibilityFormDrift` | `s ≠ normalize(s)` is decided, not sampled: `Unicode.Conformance.NormalizationTest.nfc_stable`, `nfd_stable`, `nfd_of_nfc` hold for every input; all four forms pass `NormalizationTest.txt` in full. | theorem + conformance |
+| D5 normalization expansion | `normalizationBomb` | The detector bounds expansion per input; the tree carries no closed theorem giving a universal expansion factor for NFKC/NFKD. | vectors |
+| D6 IDNA and domain confusables | `homoglyphConfusable` over registrable names, UTS #46 processing | UTS #46 processing judged against `IdnaTestV2.txt` (see the conformance report for the processing options and the judged count); confusable resolution as in D3. | conformance + coverage |
+| D7 filename direction spoofing | `filenameDisguise` | The same bidi-balance theorems as D1 apply to the filename; the disguise verdict itself is vector-gated. | theorem (balance) + vectors |
