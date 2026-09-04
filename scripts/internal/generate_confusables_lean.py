@@ -84,10 +84,18 @@ def render(rows: list[tuple[int, list[int]]], chunk_size: int, source_name: str)
         out.append("]")
         out.append("")
 
-    if chunked:
-        joined = "\n  ++ ".join(f"mappingsChunk{index}" for index in range(len(chunked)))
-    else:
+    # Right-nested on purpose: `++` is left-associative and `List.append`
+    # recurses on its left operand, so a left-nested chain of chunks makes
+    # every kernel walk of the table cost rows × chunks. Nesting to the right
+    # keeps it linear.
+    names = [f"mappingsChunk{index}" for index in range(len(chunked))]
+    if not names:
         joined = "[]"
+    elif len(names) == 1:
+        joined = names[0]
+    else:
+        opened = "".join(f"{name} ++ (\n  " for name in names[:-2])
+        joined = f"{opened}{names[-2]} ++\n  {names[-1]}{')' * (len(names) - 2)}"
     out.extend(
         [
             "def mappingsList : List (Nat × Array Nat) :=",

@@ -253,10 +253,19 @@ def main() -> None:
     lines.append("  (rowBucketByLowByte (cp % 256)).find? (fun row => row.codepoint = cp)")
     lines.append("")
     lines.append("/-- Flattened generated index, used only by closed integrity gates. -/")
+    lines.append("-- Right-nested on purpose: `++` is left-associative and `List.append`")
+    lines.append("-- recurses on its left operand, so a left-nested chain of buckets makes")
+    lines.append("-- every kernel walk of the table cost rows × buckets. Nesting to the right")
+    lines.append("-- keeps it linear.")
     lines.append("def rowsIndexedList : List UnicodeDataRow :=")
-    lines.append("  []")
-    for name in bucket_names:
-        lines.append(f"  ++ {name}")
+    if not bucket_names:
+        lines.append("  []")
+    else:
+        for name in bucket_names[:-2]:
+            lines.append(f"  {name} ++ (")
+        if len(bucket_names) >= 2:
+            lines.append(f"  {bucket_names[-2]} ++")
+        lines.append(f"  {bucket_names[-1]}{')' * max(len(bucket_names) - 2, 0)}")
     lines.append("")
     lines.append("def rowEqBool (a b : UnicodeDataRow) : Bool :=")
     lines.append("  a.codepoint == b.codepoint &&")

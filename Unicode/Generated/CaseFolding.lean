@@ -488,32 +488,36 @@ def foldingsChunk24 : List (Nat × List Nat) := [
     structural, so kernel evaluation of a table fact or a `find?`
     lookup is linear in the entry count. The `foldings` array below
     is the derived runtime view. -/
+-- Right-nested on purpose: `++` is left-associative and `List.append`
+-- recurses on its left operand, so a left-nested chain of chunks makes
+-- every kernel walk of the table cost rows × chunks. Nesting to the right
+-- keeps it linear.
 def foldingsList : List (Nat × List Nat) :=
-  foldingsChunk0
-  ++ foldingsChunk1
-  ++ foldingsChunk2
-  ++ foldingsChunk3
-  ++ foldingsChunk4
-  ++ foldingsChunk5
-  ++ foldingsChunk6
-  ++ foldingsChunk7
-  ++ foldingsChunk8
-  ++ foldingsChunk9
-  ++ foldingsChunk10
-  ++ foldingsChunk11
-  ++ foldingsChunk12
-  ++ foldingsChunk13
-  ++ foldingsChunk14
-  ++ foldingsChunk15
-  ++ foldingsChunk16
-  ++ foldingsChunk17
-  ++ foldingsChunk18
-  ++ foldingsChunk19
-  ++ foldingsChunk20
-  ++ foldingsChunk21
-  ++ foldingsChunk22
-  ++ foldingsChunk23
-  ++ foldingsChunk24
+  foldingsChunk0 ++ (
+  foldingsChunk1 ++ (
+  foldingsChunk2 ++ (
+  foldingsChunk3 ++ (
+  foldingsChunk4 ++ (
+  foldingsChunk5 ++ (
+  foldingsChunk6 ++ (
+  foldingsChunk7 ++ (
+  foldingsChunk8 ++ (
+  foldingsChunk9 ++ (
+  foldingsChunk10 ++ (
+  foldingsChunk11 ++ (
+  foldingsChunk12 ++ (
+  foldingsChunk13 ++ (
+  foldingsChunk14 ++ (
+  foldingsChunk15 ++ (
+  foldingsChunk16 ++ (
+  foldingsChunk17 ++ (
+  foldingsChunk18 ++ (
+  foldingsChunk19 ++ (
+  foldingsChunk20 ++ (
+  foldingsChunk21 ++ (
+  foldingsChunk22 ++ (
+  foldingsChunk23 ++
+  foldingsChunk24)))))))))))))))))))))))
 
 /-- Case-folding mappings for UCD status C and F — the runtime view
     of `foldingsList`, alias-identical to it. -/

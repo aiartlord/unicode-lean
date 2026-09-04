@@ -4092,264 +4092,267 @@ def lookupRow? (cp : Nat) : Option UnicodeDataRow :=
   (rowBucketByLowByte (cp % 256)).find? (fun row => row.codepoint = cp)
 
 /-- Flattened generated index, used only by closed integrity gates. -/
+-- Right-nested on purpose: `++` is left-associative and `List.append`
+-- recurses on its left operand, so a left-nested chain of buckets makes
+-- every kernel walk of the table cost rows × buckets. Nesting to the right
+-- keeps it linear.
 def rowsIndexedList : List UnicodeDataRow :=
-  []
-  ++ rowsLowByte00
-  ++ rowsLowByte01
-  ++ rowsLowByte02
-  ++ rowsLowByte03
-  ++ rowsLowByte04
-  ++ rowsLowByte05
-  ++ rowsLowByte06
-  ++ rowsLowByte07
-  ++ rowsLowByte08
-  ++ rowsLowByte09
-  ++ rowsLowByte0A
-  ++ rowsLowByte0B
-  ++ rowsLowByte0C
-  ++ rowsLowByte0D
-  ++ rowsLowByte0E
-  ++ rowsLowByte0F
-  ++ rowsLowByte10
-  ++ rowsLowByte11
-  ++ rowsLowByte12
-  ++ rowsLowByte13
-  ++ rowsLowByte14
-  ++ rowsLowByte15
-  ++ rowsLowByte16
-  ++ rowsLowByte17
-  ++ rowsLowByte18
-  ++ rowsLowByte19
-  ++ rowsLowByte1A
-  ++ rowsLowByte1B
-  ++ rowsLowByte1C
-  ++ rowsLowByte1D
-  ++ rowsLowByte1E
-  ++ rowsLowByte1F
-  ++ rowsLowByte20
-  ++ rowsLowByte21
-  ++ rowsLowByte22
-  ++ rowsLowByte23
-  ++ rowsLowByte24
-  ++ rowsLowByte25
-  ++ rowsLowByte26
-  ++ rowsLowByte27
-  ++ rowsLowByte28
-  ++ rowsLowByte29
-  ++ rowsLowByte2A
-  ++ rowsLowByte2B
-  ++ rowsLowByte2C
-  ++ rowsLowByte2D
-  ++ rowsLowByte2E
-  ++ rowsLowByte2F
-  ++ rowsLowByte30
-  ++ rowsLowByte31
-  ++ rowsLowByte32
-  ++ rowsLowByte33
-  ++ rowsLowByte34
-  ++ rowsLowByte35
-  ++ rowsLowByte36
-  ++ rowsLowByte37
-  ++ rowsLowByte38
-  ++ rowsLowByte39
-  ++ rowsLowByte3A
-  ++ rowsLowByte3B
-  ++ rowsLowByte3C
-  ++ rowsLowByte3D
-  ++ rowsLowByte3E
-  ++ rowsLowByte3F
-  ++ rowsLowByte40
-  ++ rowsLowByte41
-  ++ rowsLowByte42
-  ++ rowsLowByte43
-  ++ rowsLowByte44
-  ++ rowsLowByte45
-  ++ rowsLowByte46
-  ++ rowsLowByte47
-  ++ rowsLowByte48
-  ++ rowsLowByte49
-  ++ rowsLowByte4A
-  ++ rowsLowByte4B
-  ++ rowsLowByte4C
-  ++ rowsLowByte4D
-  ++ rowsLowByte4E
-  ++ rowsLowByte4F
-  ++ rowsLowByte50
-  ++ rowsLowByte51
-  ++ rowsLowByte52
-  ++ rowsLowByte53
-  ++ rowsLowByte54
-  ++ rowsLowByte55
-  ++ rowsLowByte56
-  ++ rowsLowByte57
-  ++ rowsLowByte58
-  ++ rowsLowByte59
-  ++ rowsLowByte5A
-  ++ rowsLowByte5B
-  ++ rowsLowByte5C
-  ++ rowsLowByte5D
-  ++ rowsLowByte5E
-  ++ rowsLowByte5F
-  ++ rowsLowByte60
-  ++ rowsLowByte61
-  ++ rowsLowByte62
-  ++ rowsLowByte63
-  ++ rowsLowByte64
-  ++ rowsLowByte65
-  ++ rowsLowByte66
-  ++ rowsLowByte67
-  ++ rowsLowByte68
-  ++ rowsLowByte69
-  ++ rowsLowByte6A
-  ++ rowsLowByte6B
-  ++ rowsLowByte6C
-  ++ rowsLowByte6D
-  ++ rowsLowByte6E
-  ++ rowsLowByte6F
-  ++ rowsLowByte70
-  ++ rowsLowByte71
-  ++ rowsLowByte72
-  ++ rowsLowByte73
-  ++ rowsLowByte74
-  ++ rowsLowByte75
-  ++ rowsLowByte76
-  ++ rowsLowByte77
-  ++ rowsLowByte78
-  ++ rowsLowByte79
-  ++ rowsLowByte7A
-  ++ rowsLowByte7B
-  ++ rowsLowByte7C
-  ++ rowsLowByte7D
-  ++ rowsLowByte7E
-  ++ rowsLowByte7F
-  ++ rowsLowByte80
-  ++ rowsLowByte81
-  ++ rowsLowByte82
-  ++ rowsLowByte83
-  ++ rowsLowByte84
-  ++ rowsLowByte85
-  ++ rowsLowByte86
-  ++ rowsLowByte87
-  ++ rowsLowByte88
-  ++ rowsLowByte89
-  ++ rowsLowByte8A
-  ++ rowsLowByte8B
-  ++ rowsLowByte8C
-  ++ rowsLowByte8D
-  ++ rowsLowByte8E
-  ++ rowsLowByte8F
-  ++ rowsLowByte90
-  ++ rowsLowByte91
-  ++ rowsLowByte92
-  ++ rowsLowByte93
-  ++ rowsLowByte94
-  ++ rowsLowByte95
-  ++ rowsLowByte96
-  ++ rowsLowByte97
-  ++ rowsLowByte98
-  ++ rowsLowByte99
-  ++ rowsLowByte9A
-  ++ rowsLowByte9B
-  ++ rowsLowByte9C
-  ++ rowsLowByte9D
-  ++ rowsLowByte9E
-  ++ rowsLowByte9F
-  ++ rowsLowByteA0
-  ++ rowsLowByteA1
-  ++ rowsLowByteA2
-  ++ rowsLowByteA3
-  ++ rowsLowByteA4
-  ++ rowsLowByteA5
-  ++ rowsLowByteA6
-  ++ rowsLowByteA7
-  ++ rowsLowByteA8
-  ++ rowsLowByteA9
-  ++ rowsLowByteAA
-  ++ rowsLowByteAB
-  ++ rowsLowByteAC
-  ++ rowsLowByteAD
-  ++ rowsLowByteAE
-  ++ rowsLowByteAF
-  ++ rowsLowByteB0
-  ++ rowsLowByteB1
-  ++ rowsLowByteB2
-  ++ rowsLowByteB3
-  ++ rowsLowByteB4
-  ++ rowsLowByteB5
-  ++ rowsLowByteB6
-  ++ rowsLowByteB7
-  ++ rowsLowByteB8
-  ++ rowsLowByteB9
-  ++ rowsLowByteBA
-  ++ rowsLowByteBB
-  ++ rowsLowByteBC
-  ++ rowsLowByteBD
-  ++ rowsLowByteBE
-  ++ rowsLowByteBF
-  ++ rowsLowByteC0
-  ++ rowsLowByteC1
-  ++ rowsLowByteC2
-  ++ rowsLowByteC3
-  ++ rowsLowByteC4
-  ++ rowsLowByteC5
-  ++ rowsLowByteC6
-  ++ rowsLowByteC7
-  ++ rowsLowByteC8
-  ++ rowsLowByteC9
-  ++ rowsLowByteCA
-  ++ rowsLowByteCB
-  ++ rowsLowByteCC
-  ++ rowsLowByteCD
-  ++ rowsLowByteCE
-  ++ rowsLowByteCF
-  ++ rowsLowByteD0
-  ++ rowsLowByteD1
-  ++ rowsLowByteD2
-  ++ rowsLowByteD3
-  ++ rowsLowByteD4
-  ++ rowsLowByteD5
-  ++ rowsLowByteD6
-  ++ rowsLowByteD7
-  ++ rowsLowByteD8
-  ++ rowsLowByteD9
-  ++ rowsLowByteDA
-  ++ rowsLowByteDB
-  ++ rowsLowByteDC
-  ++ rowsLowByteDD
-  ++ rowsLowByteDE
-  ++ rowsLowByteDF
-  ++ rowsLowByteE0
-  ++ rowsLowByteE1
-  ++ rowsLowByteE2
-  ++ rowsLowByteE3
-  ++ rowsLowByteE4
-  ++ rowsLowByteE5
-  ++ rowsLowByteE6
-  ++ rowsLowByteE7
-  ++ rowsLowByteE8
-  ++ rowsLowByteE9
-  ++ rowsLowByteEA
-  ++ rowsLowByteEB
-  ++ rowsLowByteEC
-  ++ rowsLowByteED
-  ++ rowsLowByteEE
-  ++ rowsLowByteEF
-  ++ rowsLowByteF0
-  ++ rowsLowByteF1
-  ++ rowsLowByteF2
-  ++ rowsLowByteF3
-  ++ rowsLowByteF4
-  ++ rowsLowByteF5
-  ++ rowsLowByteF6
-  ++ rowsLowByteF7
-  ++ rowsLowByteF8
-  ++ rowsLowByteF9
-  ++ rowsLowByteFA
-  ++ rowsLowByteFB
-  ++ rowsLowByteFC
-  ++ rowsLowByteFD
-  ++ rowsLowByteFE
-  ++ rowsLowByteFF
+  rowsLowByte00 ++ (
+  rowsLowByte01 ++ (
+  rowsLowByte02 ++ (
+  rowsLowByte03 ++ (
+  rowsLowByte04 ++ (
+  rowsLowByte05 ++ (
+  rowsLowByte06 ++ (
+  rowsLowByte07 ++ (
+  rowsLowByte08 ++ (
+  rowsLowByte09 ++ (
+  rowsLowByte0A ++ (
+  rowsLowByte0B ++ (
+  rowsLowByte0C ++ (
+  rowsLowByte0D ++ (
+  rowsLowByte0E ++ (
+  rowsLowByte0F ++ (
+  rowsLowByte10 ++ (
+  rowsLowByte11 ++ (
+  rowsLowByte12 ++ (
+  rowsLowByte13 ++ (
+  rowsLowByte14 ++ (
+  rowsLowByte15 ++ (
+  rowsLowByte16 ++ (
+  rowsLowByte17 ++ (
+  rowsLowByte18 ++ (
+  rowsLowByte19 ++ (
+  rowsLowByte1A ++ (
+  rowsLowByte1B ++ (
+  rowsLowByte1C ++ (
+  rowsLowByte1D ++ (
+  rowsLowByte1E ++ (
+  rowsLowByte1F ++ (
+  rowsLowByte20 ++ (
+  rowsLowByte21 ++ (
+  rowsLowByte22 ++ (
+  rowsLowByte23 ++ (
+  rowsLowByte24 ++ (
+  rowsLowByte25 ++ (
+  rowsLowByte26 ++ (
+  rowsLowByte27 ++ (
+  rowsLowByte28 ++ (
+  rowsLowByte29 ++ (
+  rowsLowByte2A ++ (
+  rowsLowByte2B ++ (
+  rowsLowByte2C ++ (
+  rowsLowByte2D ++ (
+  rowsLowByte2E ++ (
+  rowsLowByte2F ++ (
+  rowsLowByte30 ++ (
+  rowsLowByte31 ++ (
+  rowsLowByte32 ++ (
+  rowsLowByte33 ++ (
+  rowsLowByte34 ++ (
+  rowsLowByte35 ++ (
+  rowsLowByte36 ++ (
+  rowsLowByte37 ++ (
+  rowsLowByte38 ++ (
+  rowsLowByte39 ++ (
+  rowsLowByte3A ++ (
+  rowsLowByte3B ++ (
+  rowsLowByte3C ++ (
+  rowsLowByte3D ++ (
+  rowsLowByte3E ++ (
+  rowsLowByte3F ++ (
+  rowsLowByte40 ++ (
+  rowsLowByte41 ++ (
+  rowsLowByte42 ++ (
+  rowsLowByte43 ++ (
+  rowsLowByte44 ++ (
+  rowsLowByte45 ++ (
+  rowsLowByte46 ++ (
+  rowsLowByte47 ++ (
+  rowsLowByte48 ++ (
+  rowsLowByte49 ++ (
+  rowsLowByte4A ++ (
+  rowsLowByte4B ++ (
+  rowsLowByte4C ++ (
+  rowsLowByte4D ++ (
+  rowsLowByte4E ++ (
+  rowsLowByte4F ++ (
+  rowsLowByte50 ++ (
+  rowsLowByte51 ++ (
+  rowsLowByte52 ++ (
+  rowsLowByte53 ++ (
+  rowsLowByte54 ++ (
+  rowsLowByte55 ++ (
+  rowsLowByte56 ++ (
+  rowsLowByte57 ++ (
+  rowsLowByte58 ++ (
+  rowsLowByte59 ++ (
+  rowsLowByte5A ++ (
+  rowsLowByte5B ++ (
+  rowsLowByte5C ++ (
+  rowsLowByte5D ++ (
+  rowsLowByte5E ++ (
+  rowsLowByte5F ++ (
+  rowsLowByte60 ++ (
+  rowsLowByte61 ++ (
+  rowsLowByte62 ++ (
+  rowsLowByte63 ++ (
+  rowsLowByte64 ++ (
+  rowsLowByte65 ++ (
+  rowsLowByte66 ++ (
+  rowsLowByte67 ++ (
+  rowsLowByte68 ++ (
+  rowsLowByte69 ++ (
+  rowsLowByte6A ++ (
+  rowsLowByte6B ++ (
+  rowsLowByte6C ++ (
+  rowsLowByte6D ++ (
+  rowsLowByte6E ++ (
+  rowsLowByte6F ++ (
+  rowsLowByte70 ++ (
+  rowsLowByte71 ++ (
+  rowsLowByte72 ++ (
+  rowsLowByte73 ++ (
+  rowsLowByte74 ++ (
+  rowsLowByte75 ++ (
+  rowsLowByte76 ++ (
+  rowsLowByte77 ++ (
+  rowsLowByte78 ++ (
+  rowsLowByte79 ++ (
+  rowsLowByte7A ++ (
+  rowsLowByte7B ++ (
+  rowsLowByte7C ++ (
+  rowsLowByte7D ++ (
+  rowsLowByte7E ++ (
+  rowsLowByte7F ++ (
+  rowsLowByte80 ++ (
+  rowsLowByte81 ++ (
+  rowsLowByte82 ++ (
+  rowsLowByte83 ++ (
+  rowsLowByte84 ++ (
+  rowsLowByte85 ++ (
+  rowsLowByte86 ++ (
+  rowsLowByte87 ++ (
+  rowsLowByte88 ++ (
+  rowsLowByte89 ++ (
+  rowsLowByte8A ++ (
+  rowsLowByte8B ++ (
+  rowsLowByte8C ++ (
+  rowsLowByte8D ++ (
+  rowsLowByte8E ++ (
+  rowsLowByte8F ++ (
+  rowsLowByte90 ++ (
+  rowsLowByte91 ++ (
+  rowsLowByte92 ++ (
+  rowsLowByte93 ++ (
+  rowsLowByte94 ++ (
+  rowsLowByte95 ++ (
+  rowsLowByte96 ++ (
+  rowsLowByte97 ++ (
+  rowsLowByte98 ++ (
+  rowsLowByte99 ++ (
+  rowsLowByte9A ++ (
+  rowsLowByte9B ++ (
+  rowsLowByte9C ++ (
+  rowsLowByte9D ++ (
+  rowsLowByte9E ++ (
+  rowsLowByte9F ++ (
+  rowsLowByteA0 ++ (
+  rowsLowByteA1 ++ (
+  rowsLowByteA2 ++ (
+  rowsLowByteA3 ++ (
+  rowsLowByteA4 ++ (
+  rowsLowByteA5 ++ (
+  rowsLowByteA6 ++ (
+  rowsLowByteA7 ++ (
+  rowsLowByteA8 ++ (
+  rowsLowByteA9 ++ (
+  rowsLowByteAA ++ (
+  rowsLowByteAB ++ (
+  rowsLowByteAC ++ (
+  rowsLowByteAD ++ (
+  rowsLowByteAE ++ (
+  rowsLowByteAF ++ (
+  rowsLowByteB0 ++ (
+  rowsLowByteB1 ++ (
+  rowsLowByteB2 ++ (
+  rowsLowByteB3 ++ (
+  rowsLowByteB4 ++ (
+  rowsLowByteB5 ++ (
+  rowsLowByteB6 ++ (
+  rowsLowByteB7 ++ (
+  rowsLowByteB8 ++ (
+  rowsLowByteB9 ++ (
+  rowsLowByteBA ++ (
+  rowsLowByteBB ++ (
+  rowsLowByteBC ++ (
+  rowsLowByteBD ++ (
+  rowsLowByteBE ++ (
+  rowsLowByteBF ++ (
+  rowsLowByteC0 ++ (
+  rowsLowByteC1 ++ (
+  rowsLowByteC2 ++ (
+  rowsLowByteC3 ++ (
+  rowsLowByteC4 ++ (
+  rowsLowByteC5 ++ (
+  rowsLowByteC6 ++ (
+  rowsLowByteC7 ++ (
+  rowsLowByteC8 ++ (
+  rowsLowByteC9 ++ (
+  rowsLowByteCA ++ (
+  rowsLowByteCB ++ (
+  rowsLowByteCC ++ (
+  rowsLowByteCD ++ (
+  rowsLowByteCE ++ (
+  rowsLowByteCF ++ (
+  rowsLowByteD0 ++ (
+  rowsLowByteD1 ++ (
+  rowsLowByteD2 ++ (
+  rowsLowByteD3 ++ (
+  rowsLowByteD4 ++ (
+  rowsLowByteD5 ++ (
+  rowsLowByteD6 ++ (
+  rowsLowByteD7 ++ (
+  rowsLowByteD8 ++ (
+  rowsLowByteD9 ++ (
+  rowsLowByteDA ++ (
+  rowsLowByteDB ++ (
+  rowsLowByteDC ++ (
+  rowsLowByteDD ++ (
+  rowsLowByteDE ++ (
+  rowsLowByteDF ++ (
+  rowsLowByteE0 ++ (
+  rowsLowByteE1 ++ (
+  rowsLowByteE2 ++ (
+  rowsLowByteE3 ++ (
+  rowsLowByteE4 ++ (
+  rowsLowByteE5 ++ (
+  rowsLowByteE6 ++ (
+  rowsLowByteE7 ++ (
+  rowsLowByteE8 ++ (
+  rowsLowByteE9 ++ (
+  rowsLowByteEA ++ (
+  rowsLowByteEB ++ (
+  rowsLowByteEC ++ (
+  rowsLowByteED ++ (
+  rowsLowByteEE ++ (
+  rowsLowByteEF ++ (
+  rowsLowByteF0 ++ (
+  rowsLowByteF1 ++ (
+  rowsLowByteF2 ++ (
+  rowsLowByteF3 ++ (
+  rowsLowByteF4 ++ (
+  rowsLowByteF5 ++ (
+  rowsLowByteF6 ++ (
+  rowsLowByteF7 ++ (
+  rowsLowByteF8 ++ (
+  rowsLowByteF9 ++ (
+  rowsLowByteFA ++ (
+  rowsLowByteFB ++ (
+  rowsLowByteFC ++ (
+  rowsLowByteFD ++ (
+  rowsLowByteFE ++
+  rowsLowByteFF))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 
 def rowEqBool (a b : UnicodeDataRow) : Bool :=
   a.codepoint == b.codepoint &&

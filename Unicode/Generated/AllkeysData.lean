@@ -39928,57 +39928,61 @@ def ducetChunk49 : List DucetEntry := [
   ⟨[65533], [⟨65533, 32, 2, false⟩]⟩
 ]
 
+-- Right-nested on purpose: `++` is left-associative and `List.append`
+-- recurses on its left operand, so a left-nested chain of chunks makes
+-- every kernel walk of the table cost rows × chunks. Nesting to the right
+-- keeps it linear.
 def ducetEntriesList : List DucetEntry :=
-  ducetChunk0
-  ++ ducetChunk1
-  ++ ducetChunk2
-  ++ ducetChunk3
-  ++ ducetChunk4
-  ++ ducetChunk5
-  ++ ducetChunk6
-  ++ ducetChunk7
-  ++ ducetChunk8
-  ++ ducetChunk9
-  ++ ducetChunk10
-  ++ ducetChunk11
-  ++ ducetChunk12
-  ++ ducetChunk13
-  ++ ducetChunk14
-  ++ ducetChunk15
-  ++ ducetChunk16
-  ++ ducetChunk17
-  ++ ducetChunk18
-  ++ ducetChunk19
-  ++ ducetChunk20
-  ++ ducetChunk21
-  ++ ducetChunk22
-  ++ ducetChunk23
-  ++ ducetChunk24
-  ++ ducetChunk25
-  ++ ducetChunk26
-  ++ ducetChunk27
-  ++ ducetChunk28
-  ++ ducetChunk29
-  ++ ducetChunk30
-  ++ ducetChunk31
-  ++ ducetChunk32
-  ++ ducetChunk33
-  ++ ducetChunk34
-  ++ ducetChunk35
-  ++ ducetChunk36
-  ++ ducetChunk37
-  ++ ducetChunk38
-  ++ ducetChunk39
-  ++ ducetChunk40
-  ++ ducetChunk41
-  ++ ducetChunk42
-  ++ ducetChunk43
-  ++ ducetChunk44
-  ++ ducetChunk45
-  ++ ducetChunk46
-  ++ ducetChunk47
-  ++ ducetChunk48
-  ++ ducetChunk49
+  ducetChunk0 ++ (
+  ducetChunk1 ++ (
+  ducetChunk2 ++ (
+  ducetChunk3 ++ (
+  ducetChunk4 ++ (
+  ducetChunk5 ++ (
+  ducetChunk6 ++ (
+  ducetChunk7 ++ (
+  ducetChunk8 ++ (
+  ducetChunk9 ++ (
+  ducetChunk10 ++ (
+  ducetChunk11 ++ (
+  ducetChunk12 ++ (
+  ducetChunk13 ++ (
+  ducetChunk14 ++ (
+  ducetChunk15 ++ (
+  ducetChunk16 ++ (
+  ducetChunk17 ++ (
+  ducetChunk18 ++ (
+  ducetChunk19 ++ (
+  ducetChunk20 ++ (
+  ducetChunk21 ++ (
+  ducetChunk22 ++ (
+  ducetChunk23 ++ (
+  ducetChunk24 ++ (
+  ducetChunk25 ++ (
+  ducetChunk26 ++ (
+  ducetChunk27 ++ (
+  ducetChunk28 ++ (
+  ducetChunk29 ++ (
+  ducetChunk30 ++ (
+  ducetChunk31 ++ (
+  ducetChunk32 ++ (
+  ducetChunk33 ++ (
+  ducetChunk34 ++ (
+  ducetChunk35 ++ (
+  ducetChunk36 ++ (
+  ducetChunk37 ++ (
+  ducetChunk38 ++ (
+  ducetChunk39 ++ (
+  ducetChunk40 ++ (
+  ducetChunk41 ++ (
+  ducetChunk42 ++ (
+  ducetChunk43 ++ (
+  ducetChunk44 ++ (
+  ducetChunk45 ++ (
+  ducetChunk46 ++ (
+  ducetChunk47 ++ (
+  ducetChunk48 ++
+  ducetChunk49))))))))))))))))))))))))))))))))))))))))))))))))
 
 def implicitBlocksList : List ImplicitBlock := [
   ⟨94208, 100351, 64256⟩,

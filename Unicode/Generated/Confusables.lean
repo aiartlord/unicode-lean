@@ -6887,110 +6887,114 @@ def mappingsChunk102 : List (Nat × List Nat) := [
   (0x31E7C, [0x7DC7])
 ]
 
+-- Right-nested on purpose: `++` is left-associative and `List.append`
+-- recurses on its left operand, so a left-nested chain of chunks makes
+-- every kernel walk of the table cost rows × chunks. Nesting to the right
+-- keeps it linear.
 def mappingsList : List (Nat × List Nat) :=
-  mappingsChunk0
-  ++ mappingsChunk1
-  ++ mappingsChunk2
-  ++ mappingsChunk3
-  ++ mappingsChunk4
-  ++ mappingsChunk5
-  ++ mappingsChunk6
-  ++ mappingsChunk7
-  ++ mappingsChunk8
-  ++ mappingsChunk9
-  ++ mappingsChunk10
-  ++ mappingsChunk11
-  ++ mappingsChunk12
-  ++ mappingsChunk13
-  ++ mappingsChunk14
-  ++ mappingsChunk15
-  ++ mappingsChunk16
-  ++ mappingsChunk17
-  ++ mappingsChunk18
-  ++ mappingsChunk19
-  ++ mappingsChunk20
-  ++ mappingsChunk21
-  ++ mappingsChunk22
-  ++ mappingsChunk23
-  ++ mappingsChunk24
-  ++ mappingsChunk25
-  ++ mappingsChunk26
-  ++ mappingsChunk27
-  ++ mappingsChunk28
-  ++ mappingsChunk29
-  ++ mappingsChunk30
-  ++ mappingsChunk31
-  ++ mappingsChunk32
-  ++ mappingsChunk33
-  ++ mappingsChunk34
-  ++ mappingsChunk35
-  ++ mappingsChunk36
-  ++ mappingsChunk37
-  ++ mappingsChunk38
-  ++ mappingsChunk39
-  ++ mappingsChunk40
-  ++ mappingsChunk41
-  ++ mappingsChunk42
-  ++ mappingsChunk43
-  ++ mappingsChunk44
-  ++ mappingsChunk45
-  ++ mappingsChunk46
-  ++ mappingsChunk47
-  ++ mappingsChunk48
-  ++ mappingsChunk49
-  ++ mappingsChunk50
-  ++ mappingsChunk51
-  ++ mappingsChunk52
-  ++ mappingsChunk53
-  ++ mappingsChunk54
-  ++ mappingsChunk55
-  ++ mappingsChunk56
-  ++ mappingsChunk57
-  ++ mappingsChunk58
-  ++ mappingsChunk59
-  ++ mappingsChunk60
-  ++ mappingsChunk61
-  ++ mappingsChunk62
-  ++ mappingsChunk63
-  ++ mappingsChunk64
-  ++ mappingsChunk65
-  ++ mappingsChunk66
-  ++ mappingsChunk67
-  ++ mappingsChunk68
-  ++ mappingsChunk69
-  ++ mappingsChunk70
-  ++ mappingsChunk71
-  ++ mappingsChunk72
-  ++ mappingsChunk73
-  ++ mappingsChunk74
-  ++ mappingsChunk75
-  ++ mappingsChunk76
-  ++ mappingsChunk77
-  ++ mappingsChunk78
-  ++ mappingsChunk79
-  ++ mappingsChunk80
-  ++ mappingsChunk81
-  ++ mappingsChunk82
-  ++ mappingsChunk83
-  ++ mappingsChunk84
-  ++ mappingsChunk85
-  ++ mappingsChunk86
-  ++ mappingsChunk87
-  ++ mappingsChunk88
-  ++ mappingsChunk89
-  ++ mappingsChunk90
-  ++ mappingsChunk91
-  ++ mappingsChunk92
-  ++ mappingsChunk93
-  ++ mappingsChunk94
-  ++ mappingsChunk95
-  ++ mappingsChunk96
-  ++ mappingsChunk97
-  ++ mappingsChunk98
-  ++ mappingsChunk99
-  ++ mappingsChunk100
-  ++ mappingsChunk101
-  ++ mappingsChunk102
+  mappingsChunk0 ++ (
+  mappingsChunk1 ++ (
+  mappingsChunk2 ++ (
+  mappingsChunk3 ++ (
+  mappingsChunk4 ++ (
+  mappingsChunk5 ++ (
+  mappingsChunk6 ++ (
+  mappingsChunk7 ++ (
+  mappingsChunk8 ++ (
+  mappingsChunk9 ++ (
+  mappingsChunk10 ++ (
+  mappingsChunk11 ++ (
+  mappingsChunk12 ++ (
+  mappingsChunk13 ++ (
+  mappingsChunk14 ++ (
+  mappingsChunk15 ++ (
+  mappingsChunk16 ++ (
+  mappingsChunk17 ++ (
+  mappingsChunk18 ++ (
+  mappingsChunk19 ++ (
+  mappingsChunk20 ++ (
+  mappingsChunk21 ++ (
+  mappingsChunk22 ++ (
+  mappingsChunk23 ++ (
+  mappingsChunk24 ++ (
+  mappingsChunk25 ++ (
+  mappingsChunk26 ++ (
+  mappingsChunk27 ++ (
+  mappingsChunk28 ++ (
+  mappingsChunk29 ++ (
+  mappingsChunk30 ++ (
+  mappingsChunk31 ++ (
+  mappingsChunk32 ++ (
+  mappingsChunk33 ++ (
+  mappingsChunk34 ++ (
+  mappingsChunk35 ++ (
+  mappingsChunk36 ++ (
+  mappingsChunk37 ++ (
+  mappingsChunk38 ++ (
+  mappingsChunk39 ++ (
+  mappingsChunk40 ++ (
+  mappingsChunk41 ++ (
+  mappingsChunk42 ++ (
+  mappingsChunk43 ++ (
+  mappingsChunk44 ++ (
+  mappingsChunk45 ++ (
+  mappingsChunk46 ++ (
+  mappingsChunk47 ++ (
+  mappingsChunk48 ++ (
+  mappingsChunk49 ++ (
+  mappingsChunk50 ++ (
+  mappingsChunk51 ++ (
+  mappingsChunk52 ++ (
+  mappingsChunk53 ++ (
+  mappingsChunk54 ++ (
+  mappingsChunk55 ++ (
+  mappingsChunk56 ++ (
+  mappingsChunk57 ++ (
+  mappingsChunk58 ++ (
+  mappingsChunk59 ++ (
+  mappingsChunk60 ++ (
+  mappingsChunk61 ++ (
+  mappingsChunk62 ++ (
+  mappingsChunk63 ++ (
+  mappingsChunk64 ++ (
+  mappingsChunk65 ++ (
+  mappingsChunk66 ++ (
+  mappingsChunk67 ++ (
+  mappingsChunk68 ++ (
+  mappingsChunk69 ++ (
+  mappingsChunk70 ++ (
+  mappingsChunk71 ++ (
+  mappingsChunk72 ++ (
+  mappingsChunk73 ++ (
+  mappingsChunk74 ++ (
+  mappingsChunk75 ++ (
+  mappingsChunk76 ++ (
+  mappingsChunk77 ++ (
+  mappingsChunk78 ++ (
+  mappingsChunk79 ++ (
+  mappingsChunk80 ++ (
+  mappingsChunk81 ++ (
+  mappingsChunk82 ++ (
+  mappingsChunk83 ++ (
+  mappingsChunk84 ++ (
+  mappingsChunk85 ++ (
+  mappingsChunk86 ++ (
+  mappingsChunk87 ++ (
+  mappingsChunk88 ++ (
+  mappingsChunk89 ++ (
+  mappingsChunk90 ++ (
+  mappingsChunk91 ++ (
+  mappingsChunk92 ++ (
+  mappingsChunk93 ++ (
+  mappingsChunk94 ++ (
+  mappingsChunk95 ++ (
+  mappingsChunk96 ++ (
+  mappingsChunk97 ++ (
+  mappingsChunk98 ++ (
+  mappingsChunk99 ++ (
+  mappingsChunk100 ++ (
+  mappingsChunk101 ++
+  mappingsChunk102)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 
 def mappings : List (Nat × List Nat) :=
   mappingsList

@@ -3213,55 +3213,59 @@ def rowsChunk47 : List UnicodeDataRow := [
     where an index-addressed representation re-materializes its
     backing store per access and is quadratic. Proofs consume this
     list; the runtime consumes the derived `rows` list below. -/
+-- Right-nested on purpose: `++` is left-associative and `List.append`
+-- recurses on its left operand, so a left-nested chain of chunks makes
+-- every kernel walk of the table cost rows × chunks. Nesting to the right
+-- keeps it linear.
 def rowsList : List UnicodeDataRow :=
-  rowsChunk0
-  ++ rowsChunk1
-  ++ rowsChunk2
-  ++ rowsChunk3
-  ++ rowsChunk4
-  ++ rowsChunk5
-  ++ rowsChunk6
-  ++ rowsChunk7
-  ++ rowsChunk8
-  ++ rowsChunk9
-  ++ rowsChunk10
-  ++ rowsChunk11
-  ++ rowsChunk12
-  ++ rowsChunk13
-  ++ rowsChunk14
-  ++ rowsChunk15
-  ++ rowsChunk16
-  ++ rowsChunk17
-  ++ rowsChunk18
-  ++ rowsChunk19
-  ++ rowsChunk20
-  ++ rowsChunk21
-  ++ rowsChunk22
-  ++ rowsChunk23
-  ++ rowsChunk24
-  ++ rowsChunk25
-  ++ rowsChunk26
-  ++ rowsChunk27
-  ++ rowsChunk28
-  ++ rowsChunk29
-  ++ rowsChunk30
-  ++ rowsChunk31
-  ++ rowsChunk32
-  ++ rowsChunk33
-  ++ rowsChunk34
-  ++ rowsChunk35
-  ++ rowsChunk36
-  ++ rowsChunk37
-  ++ rowsChunk38
-  ++ rowsChunk39
-  ++ rowsChunk40
-  ++ rowsChunk41
-  ++ rowsChunk42
-  ++ rowsChunk43
-  ++ rowsChunk44
-  ++ rowsChunk45
-  ++ rowsChunk46
-  ++ rowsChunk47
+  rowsChunk0 ++ (
+  rowsChunk1 ++ (
+  rowsChunk2 ++ (
+  rowsChunk3 ++ (
+  rowsChunk4 ++ (
+  rowsChunk5 ++ (
+  rowsChunk6 ++ (
+  rowsChunk7 ++ (
+  rowsChunk8 ++ (
+  rowsChunk9 ++ (
+  rowsChunk10 ++ (
+  rowsChunk11 ++ (
+  rowsChunk12 ++ (
+  rowsChunk13 ++ (
+  rowsChunk14 ++ (
+  rowsChunk15 ++ (
+  rowsChunk16 ++ (
+  rowsChunk17 ++ (
+  rowsChunk18 ++ (
+  rowsChunk19 ++ (
+  rowsChunk20 ++ (
+  rowsChunk21 ++ (
+  rowsChunk22 ++ (
+  rowsChunk23 ++ (
+  rowsChunk24 ++ (
+  rowsChunk25 ++ (
+  rowsChunk26 ++ (
+  rowsChunk27 ++ (
+  rowsChunk28 ++ (
+  rowsChunk29 ++ (
+  rowsChunk30 ++ (
+  rowsChunk31 ++ (
+  rowsChunk32 ++ (
+  rowsChunk33 ++ (
+  rowsChunk34 ++ (
+  rowsChunk35 ++ (
+  rowsChunk36 ++ (
+  rowsChunk37 ++ (
+  rowsChunk38 ++ (
+  rowsChunk39 ++ (
+  rowsChunk40 ++ (
+  rowsChunk41 ++ (
+  rowsChunk42 ++ (
+  rowsChunk43 ++ (
+  rowsChunk44 ++ (
+  rowsChunk45 ++ (
+  rowsChunk46 ++
+  rowsChunk47))))))))))))))))))))))))))))))))))))))))))))))
 
 /-- The row table — alias of `rowsList`. Kept as a distinct name for the
     lookup paths that reference `rows`; proofs about table contents go

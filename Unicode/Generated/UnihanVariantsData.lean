@@ -5351,287 +5351,291 @@ def rowsChunk280 : List Row := [
 ]
 
 /-- All Unihan variant rows, in source order. -/
+-- Right-nested on purpose: `++` is left-associative and `List.append`
+-- recurses on its left operand, so a left-nested chain of chunks makes
+-- every kernel walk of the table cost rows × chunks. Nesting to the right
+-- keeps it linear.
 def rowsList : List Row :=
-  rowsChunk0
-  ++ rowsChunk1
-  ++ rowsChunk2
-  ++ rowsChunk3
-  ++ rowsChunk4
-  ++ rowsChunk5
-  ++ rowsChunk6
-  ++ rowsChunk7
-  ++ rowsChunk8
-  ++ rowsChunk9
-  ++ rowsChunk10
-  ++ rowsChunk11
-  ++ rowsChunk12
-  ++ rowsChunk13
-  ++ rowsChunk14
-  ++ rowsChunk15
-  ++ rowsChunk16
-  ++ rowsChunk17
-  ++ rowsChunk18
-  ++ rowsChunk19
-  ++ rowsChunk20
-  ++ rowsChunk21
-  ++ rowsChunk22
-  ++ rowsChunk23
-  ++ rowsChunk24
-  ++ rowsChunk25
-  ++ rowsChunk26
-  ++ rowsChunk27
-  ++ rowsChunk28
-  ++ rowsChunk29
-  ++ rowsChunk30
-  ++ rowsChunk31
-  ++ rowsChunk32
-  ++ rowsChunk33
-  ++ rowsChunk34
-  ++ rowsChunk35
-  ++ rowsChunk36
-  ++ rowsChunk37
-  ++ rowsChunk38
-  ++ rowsChunk39
-  ++ rowsChunk40
-  ++ rowsChunk41
-  ++ rowsChunk42
-  ++ rowsChunk43
-  ++ rowsChunk44
-  ++ rowsChunk45
-  ++ rowsChunk46
-  ++ rowsChunk47
-  ++ rowsChunk48
-  ++ rowsChunk49
-  ++ rowsChunk50
-  ++ rowsChunk51
-  ++ rowsChunk52
-  ++ rowsChunk53
-  ++ rowsChunk54
-  ++ rowsChunk55
-  ++ rowsChunk56
-  ++ rowsChunk57
-  ++ rowsChunk58
-  ++ rowsChunk59
-  ++ rowsChunk60
-  ++ rowsChunk61
-  ++ rowsChunk62
-  ++ rowsChunk63
-  ++ rowsChunk64
-  ++ rowsChunk65
-  ++ rowsChunk66
-  ++ rowsChunk67
-  ++ rowsChunk68
-  ++ rowsChunk69
-  ++ rowsChunk70
-  ++ rowsChunk71
-  ++ rowsChunk72
-  ++ rowsChunk73
-  ++ rowsChunk74
-  ++ rowsChunk75
-  ++ rowsChunk76
-  ++ rowsChunk77
-  ++ rowsChunk78
-  ++ rowsChunk79
-  ++ rowsChunk80
-  ++ rowsChunk81
-  ++ rowsChunk82
-  ++ rowsChunk83
-  ++ rowsChunk84
-  ++ rowsChunk85
-  ++ rowsChunk86
-  ++ rowsChunk87
-  ++ rowsChunk88
-  ++ rowsChunk89
-  ++ rowsChunk90
-  ++ rowsChunk91
-  ++ rowsChunk92
-  ++ rowsChunk93
-  ++ rowsChunk94
-  ++ rowsChunk95
-  ++ rowsChunk96
-  ++ rowsChunk97
-  ++ rowsChunk98
-  ++ rowsChunk99
-  ++ rowsChunk100
-  ++ rowsChunk101
-  ++ rowsChunk102
-  ++ rowsChunk103
-  ++ rowsChunk104
-  ++ rowsChunk105
-  ++ rowsChunk106
-  ++ rowsChunk107
-  ++ rowsChunk108
-  ++ rowsChunk109
-  ++ rowsChunk110
-  ++ rowsChunk111
-  ++ rowsChunk112
-  ++ rowsChunk113
-  ++ rowsChunk114
-  ++ rowsChunk115
-  ++ rowsChunk116
-  ++ rowsChunk117
-  ++ rowsChunk118
-  ++ rowsChunk119
-  ++ rowsChunk120
-  ++ rowsChunk121
-  ++ rowsChunk122
-  ++ rowsChunk123
-  ++ rowsChunk124
-  ++ rowsChunk125
-  ++ rowsChunk126
-  ++ rowsChunk127
-  ++ rowsChunk128
-  ++ rowsChunk129
-  ++ rowsChunk130
-  ++ rowsChunk131
-  ++ rowsChunk132
-  ++ rowsChunk133
-  ++ rowsChunk134
-  ++ rowsChunk135
-  ++ rowsChunk136
-  ++ rowsChunk137
-  ++ rowsChunk138
-  ++ rowsChunk139
-  ++ rowsChunk140
-  ++ rowsChunk141
-  ++ rowsChunk142
-  ++ rowsChunk143
-  ++ rowsChunk144
-  ++ rowsChunk145
-  ++ rowsChunk146
-  ++ rowsChunk147
-  ++ rowsChunk148
-  ++ rowsChunk149
-  ++ rowsChunk150
-  ++ rowsChunk151
-  ++ rowsChunk152
-  ++ rowsChunk153
-  ++ rowsChunk154
-  ++ rowsChunk155
-  ++ rowsChunk156
-  ++ rowsChunk157
-  ++ rowsChunk158
-  ++ rowsChunk159
-  ++ rowsChunk160
-  ++ rowsChunk161
-  ++ rowsChunk162
-  ++ rowsChunk163
-  ++ rowsChunk164
-  ++ rowsChunk165
-  ++ rowsChunk166
-  ++ rowsChunk167
-  ++ rowsChunk168
-  ++ rowsChunk169
-  ++ rowsChunk170
-  ++ rowsChunk171
-  ++ rowsChunk172
-  ++ rowsChunk173
-  ++ rowsChunk174
-  ++ rowsChunk175
-  ++ rowsChunk176
-  ++ rowsChunk177
-  ++ rowsChunk178
-  ++ rowsChunk179
-  ++ rowsChunk180
-  ++ rowsChunk181
-  ++ rowsChunk182
-  ++ rowsChunk183
-  ++ rowsChunk184
-  ++ rowsChunk185
-  ++ rowsChunk186
-  ++ rowsChunk187
-  ++ rowsChunk188
-  ++ rowsChunk189
-  ++ rowsChunk190
-  ++ rowsChunk191
-  ++ rowsChunk192
-  ++ rowsChunk193
-  ++ rowsChunk194
-  ++ rowsChunk195
-  ++ rowsChunk196
-  ++ rowsChunk197
-  ++ rowsChunk198
-  ++ rowsChunk199
-  ++ rowsChunk200
-  ++ rowsChunk201
-  ++ rowsChunk202
-  ++ rowsChunk203
-  ++ rowsChunk204
-  ++ rowsChunk205
-  ++ rowsChunk206
-  ++ rowsChunk207
-  ++ rowsChunk208
-  ++ rowsChunk209
-  ++ rowsChunk210
-  ++ rowsChunk211
-  ++ rowsChunk212
-  ++ rowsChunk213
-  ++ rowsChunk214
-  ++ rowsChunk215
-  ++ rowsChunk216
-  ++ rowsChunk217
-  ++ rowsChunk218
-  ++ rowsChunk219
-  ++ rowsChunk220
-  ++ rowsChunk221
-  ++ rowsChunk222
-  ++ rowsChunk223
-  ++ rowsChunk224
-  ++ rowsChunk225
-  ++ rowsChunk226
-  ++ rowsChunk227
-  ++ rowsChunk228
-  ++ rowsChunk229
-  ++ rowsChunk230
-  ++ rowsChunk231
-  ++ rowsChunk232
-  ++ rowsChunk233
-  ++ rowsChunk234
-  ++ rowsChunk235
-  ++ rowsChunk236
-  ++ rowsChunk237
-  ++ rowsChunk238
-  ++ rowsChunk239
-  ++ rowsChunk240
-  ++ rowsChunk241
-  ++ rowsChunk242
-  ++ rowsChunk243
-  ++ rowsChunk244
-  ++ rowsChunk245
-  ++ rowsChunk246
-  ++ rowsChunk247
-  ++ rowsChunk248
-  ++ rowsChunk249
-  ++ rowsChunk250
-  ++ rowsChunk251
-  ++ rowsChunk252
-  ++ rowsChunk253
-  ++ rowsChunk254
-  ++ rowsChunk255
-  ++ rowsChunk256
-  ++ rowsChunk257
-  ++ rowsChunk258
-  ++ rowsChunk259
-  ++ rowsChunk260
-  ++ rowsChunk261
-  ++ rowsChunk262
-  ++ rowsChunk263
-  ++ rowsChunk264
-  ++ rowsChunk265
-  ++ rowsChunk266
-  ++ rowsChunk267
-  ++ rowsChunk268
-  ++ rowsChunk269
-  ++ rowsChunk270
-  ++ rowsChunk271
-  ++ rowsChunk272
-  ++ rowsChunk273
-  ++ rowsChunk274
-  ++ rowsChunk275
-  ++ rowsChunk276
-  ++ rowsChunk277
-  ++ rowsChunk278
-  ++ rowsChunk279
-  ++ rowsChunk280
+  rowsChunk0 ++ (
+  rowsChunk1 ++ (
+  rowsChunk2 ++ (
+  rowsChunk3 ++ (
+  rowsChunk4 ++ (
+  rowsChunk5 ++ (
+  rowsChunk6 ++ (
+  rowsChunk7 ++ (
+  rowsChunk8 ++ (
+  rowsChunk9 ++ (
+  rowsChunk10 ++ (
+  rowsChunk11 ++ (
+  rowsChunk12 ++ (
+  rowsChunk13 ++ (
+  rowsChunk14 ++ (
+  rowsChunk15 ++ (
+  rowsChunk16 ++ (
+  rowsChunk17 ++ (
+  rowsChunk18 ++ (
+  rowsChunk19 ++ (
+  rowsChunk20 ++ (
+  rowsChunk21 ++ (
+  rowsChunk22 ++ (
+  rowsChunk23 ++ (
+  rowsChunk24 ++ (
+  rowsChunk25 ++ (
+  rowsChunk26 ++ (
+  rowsChunk27 ++ (
+  rowsChunk28 ++ (
+  rowsChunk29 ++ (
+  rowsChunk30 ++ (
+  rowsChunk31 ++ (
+  rowsChunk32 ++ (
+  rowsChunk33 ++ (
+  rowsChunk34 ++ (
+  rowsChunk35 ++ (
+  rowsChunk36 ++ (
+  rowsChunk37 ++ (
+  rowsChunk38 ++ (
+  rowsChunk39 ++ (
+  rowsChunk40 ++ (
+  rowsChunk41 ++ (
+  rowsChunk42 ++ (
+  rowsChunk43 ++ (
+  rowsChunk44 ++ (
+  rowsChunk45 ++ (
+  rowsChunk46 ++ (
+  rowsChunk47 ++ (
+  rowsChunk48 ++ (
+  rowsChunk49 ++ (
+  rowsChunk50 ++ (
+  rowsChunk51 ++ (
+  rowsChunk52 ++ (
+  rowsChunk53 ++ (
+  rowsChunk54 ++ (
+  rowsChunk55 ++ (
+  rowsChunk56 ++ (
+  rowsChunk57 ++ (
+  rowsChunk58 ++ (
+  rowsChunk59 ++ (
+  rowsChunk60 ++ (
+  rowsChunk61 ++ (
+  rowsChunk62 ++ (
+  rowsChunk63 ++ (
+  rowsChunk64 ++ (
+  rowsChunk65 ++ (
+  rowsChunk66 ++ (
+  rowsChunk67 ++ (
+  rowsChunk68 ++ (
+  rowsChunk69 ++ (
+  rowsChunk70 ++ (
+  rowsChunk71 ++ (
+  rowsChunk72 ++ (
+  rowsChunk73 ++ (
+  rowsChunk74 ++ (
+  rowsChunk75 ++ (
+  rowsChunk76 ++ (
+  rowsChunk77 ++ (
+  rowsChunk78 ++ (
+  rowsChunk79 ++ (
+  rowsChunk80 ++ (
+  rowsChunk81 ++ (
+  rowsChunk82 ++ (
+  rowsChunk83 ++ (
+  rowsChunk84 ++ (
+  rowsChunk85 ++ (
+  rowsChunk86 ++ (
+  rowsChunk87 ++ (
+  rowsChunk88 ++ (
+  rowsChunk89 ++ (
+  rowsChunk90 ++ (
+  rowsChunk91 ++ (
+  rowsChunk92 ++ (
+  rowsChunk93 ++ (
+  rowsChunk94 ++ (
+  rowsChunk95 ++ (
+  rowsChunk96 ++ (
+  rowsChunk97 ++ (
+  rowsChunk98 ++ (
+  rowsChunk99 ++ (
+  rowsChunk100 ++ (
+  rowsChunk101 ++ (
+  rowsChunk102 ++ (
+  rowsChunk103 ++ (
+  rowsChunk104 ++ (
+  rowsChunk105 ++ (
+  rowsChunk106 ++ (
+  rowsChunk107 ++ (
+  rowsChunk108 ++ (
+  rowsChunk109 ++ (
+  rowsChunk110 ++ (
+  rowsChunk111 ++ (
+  rowsChunk112 ++ (
+  rowsChunk113 ++ (
+  rowsChunk114 ++ (
+  rowsChunk115 ++ (
+  rowsChunk116 ++ (
+  rowsChunk117 ++ (
+  rowsChunk118 ++ (
+  rowsChunk119 ++ (
+  rowsChunk120 ++ (
+  rowsChunk121 ++ (
+  rowsChunk122 ++ (
+  rowsChunk123 ++ (
+  rowsChunk124 ++ (
+  rowsChunk125 ++ (
+  rowsChunk126 ++ (
+  rowsChunk127 ++ (
+  rowsChunk128 ++ (
+  rowsChunk129 ++ (
+  rowsChunk130 ++ (
+  rowsChunk131 ++ (
+  rowsChunk132 ++ (
+  rowsChunk133 ++ (
+  rowsChunk134 ++ (
+  rowsChunk135 ++ (
+  rowsChunk136 ++ (
+  rowsChunk137 ++ (
+  rowsChunk138 ++ (
+  rowsChunk139 ++ (
+  rowsChunk140 ++ (
+  rowsChunk141 ++ (
+  rowsChunk142 ++ (
+  rowsChunk143 ++ (
+  rowsChunk144 ++ (
+  rowsChunk145 ++ (
+  rowsChunk146 ++ (
+  rowsChunk147 ++ (
+  rowsChunk148 ++ (
+  rowsChunk149 ++ (
+  rowsChunk150 ++ (
+  rowsChunk151 ++ (
+  rowsChunk152 ++ (
+  rowsChunk153 ++ (
+  rowsChunk154 ++ (
+  rowsChunk155 ++ (
+  rowsChunk156 ++ (
+  rowsChunk157 ++ (
+  rowsChunk158 ++ (
+  rowsChunk159 ++ (
+  rowsChunk160 ++ (
+  rowsChunk161 ++ (
+  rowsChunk162 ++ (
+  rowsChunk163 ++ (
+  rowsChunk164 ++ (
+  rowsChunk165 ++ (
+  rowsChunk166 ++ (
+  rowsChunk167 ++ (
+  rowsChunk168 ++ (
+  rowsChunk169 ++ (
+  rowsChunk170 ++ (
+  rowsChunk171 ++ (
+  rowsChunk172 ++ (
+  rowsChunk173 ++ (
+  rowsChunk174 ++ (
+  rowsChunk175 ++ (
+  rowsChunk176 ++ (
+  rowsChunk177 ++ (
+  rowsChunk178 ++ (
+  rowsChunk179 ++ (
+  rowsChunk180 ++ (
+  rowsChunk181 ++ (
+  rowsChunk182 ++ (
+  rowsChunk183 ++ (
+  rowsChunk184 ++ (
+  rowsChunk185 ++ (
+  rowsChunk186 ++ (
+  rowsChunk187 ++ (
+  rowsChunk188 ++ (
+  rowsChunk189 ++ (
+  rowsChunk190 ++ (
+  rowsChunk191 ++ (
+  rowsChunk192 ++ (
+  rowsChunk193 ++ (
+  rowsChunk194 ++ (
+  rowsChunk195 ++ (
+  rowsChunk196 ++ (
+  rowsChunk197 ++ (
+  rowsChunk198 ++ (
+  rowsChunk199 ++ (
+  rowsChunk200 ++ (
+  rowsChunk201 ++ (
+  rowsChunk202 ++ (
+  rowsChunk203 ++ (
+  rowsChunk204 ++ (
+  rowsChunk205 ++ (
+  rowsChunk206 ++ (
+  rowsChunk207 ++ (
+  rowsChunk208 ++ (
+  rowsChunk209 ++ (
+  rowsChunk210 ++ (
+  rowsChunk211 ++ (
+  rowsChunk212 ++ (
+  rowsChunk213 ++ (
+  rowsChunk214 ++ (
+  rowsChunk215 ++ (
+  rowsChunk216 ++ (
+  rowsChunk217 ++ (
+  rowsChunk218 ++ (
+  rowsChunk219 ++ (
+  rowsChunk220 ++ (
+  rowsChunk221 ++ (
+  rowsChunk222 ++ (
+  rowsChunk223 ++ (
+  rowsChunk224 ++ (
+  rowsChunk225 ++ (
+  rowsChunk226 ++ (
+  rowsChunk227 ++ (
+  rowsChunk228 ++ (
+  rowsChunk229 ++ (
+  rowsChunk230 ++ (
+  rowsChunk231 ++ (
+  rowsChunk232 ++ (
+  rowsChunk233 ++ (
+  rowsChunk234 ++ (
+  rowsChunk235 ++ (
+  rowsChunk236 ++ (
+  rowsChunk237 ++ (
+  rowsChunk238 ++ (
+  rowsChunk239 ++ (
+  rowsChunk240 ++ (
+  rowsChunk241 ++ (
+  rowsChunk242 ++ (
+  rowsChunk243 ++ (
+  rowsChunk244 ++ (
+  rowsChunk245 ++ (
+  rowsChunk246 ++ (
+  rowsChunk247 ++ (
+  rowsChunk248 ++ (
+  rowsChunk249 ++ (
+  rowsChunk250 ++ (
+  rowsChunk251 ++ (
+  rowsChunk252 ++ (
+  rowsChunk253 ++ (
+  rowsChunk254 ++ (
+  rowsChunk255 ++ (
+  rowsChunk256 ++ (
+  rowsChunk257 ++ (
+  rowsChunk258 ++ (
+  rowsChunk259 ++ (
+  rowsChunk260 ++ (
+  rowsChunk261 ++ (
+  rowsChunk262 ++ (
+  rowsChunk263 ++ (
+  rowsChunk264 ++ (
+  rowsChunk265 ++ (
+  rowsChunk266 ++ (
+  rowsChunk267 ++ (
+  rowsChunk268 ++ (
+  rowsChunk269 ++ (
+  rowsChunk270 ++ (
+  rowsChunk271 ++ (
+  rowsChunk272 ++ (
+  rowsChunk273 ++ (
+  rowsChunk274 ++ (
+  rowsChunk275 ++ (
+  rowsChunk276 ++ (
+  rowsChunk277 ++ (
+  rowsChunk278 ++ (
+  rowsChunk279 ++
+  rowsChunk280)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 
 end Unicode.Generated.UnihanVariants
