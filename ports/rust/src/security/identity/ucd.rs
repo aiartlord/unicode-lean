@@ -1623,11 +1623,14 @@ pub fn upper_codepoint(locale: Locale, rev_prefix: &[u32], suffix: &[u32], cp: u
 /// mapping. Computed from the pinned UCD tables, not the runtime.
 pub fn to_lower(locale: Locale, cps: &[u32]) -> Vec<u32> {
     let mut out = Vec::new();
-    let mut rev_prefix: Vec<u32> = Vec::new();
+    // The preceding codepoints nearest-first, for position `index`, are the
+    // slice `rev[len - index..]` of the input reversed once; rebuilding that
+    // prefix per position would make the mapping quadratic.
+    let rev: Vec<u32> = cps.iter().rev().copied().collect();
     for (index, &cp) in cps.iter().enumerate() {
+        let rev_prefix = &rev[cps.len() - index..];
         let suffix = &cps[index + 1..];
-        out.extend_from_slice(&lower_codepoint(locale, &rev_prefix, suffix, cp));
-        rev_prefix.insert(0, cp);
+        out.extend_from_slice(&lower_codepoint(locale, rev_prefix, suffix, cp));
     }
     out
 }

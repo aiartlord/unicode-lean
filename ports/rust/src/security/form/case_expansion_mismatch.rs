@@ -144,25 +144,35 @@ pub struct Verdict {
 // §2 Per-position expansion scan
 // ─────────────────────────────────────────────────────────────────────
 
-/// The default-locale uppercase expansion length at position `i`, evaluating the
-/// SpecialCasing context (preceding codepoints nearest-first, following ones).
-fn upper_len_at(input: &[u32], i: usize) -> usize {
-    let rev_prefix: Vec<u32> = input[..i].iter().rev().copied().collect();
-    let suffix = &input[i + 1..];
-    ucd::upper_codepoint(Locale::Default, &rev_prefix, suffix, input[i]).len()
+/// The input reversed once. The SpecialCasing context predicates read the
+/// preceding codepoints nearest-first, and for position `i` that sequence is
+/// the slice `rev[len - i..]` of this single copy, so a scan over every
+/// position stays linear instead of rebuilding a reversed prefix per step.
+fn reversed(input: &[u32]) -> Vec<u32> {
+    input.iter().rev().copied().collect()
 }
 
-/// The default-locale lowercase expansion length at position `i`.
-fn lower_len_at(input: &[u32], i: usize) -> usize {
-    let rev_prefix: Vec<u32> = input[..i].iter().rev().copied().collect();
+/// The default-locale uppercase expansion length at position `i`, evaluating the
+/// SpecialCasing context (preceding codepoints nearest-first, following ones).
+/// `rev` is `reversed(input)`.
+fn upper_len_at(input: &[u32], rev: &[u32], i: usize) -> usize {
+    let rev_prefix = &rev[input.len() - i..];
     let suffix = &input[i + 1..];
-    ucd::lower_codepoint(Locale::Default, &rev_prefix, suffix, input[i]).len()
+    ucd::upper_codepoint(Locale::Default, rev_prefix, suffix, input[i]).len()
+}
+
+/// The default-locale lowercase expansion length at position `i`. `rev` is
+/// `reversed(input)`.
+fn lower_len_at(input: &[u32], rev: &[u32], i: usize) -> usize {
+    let rev_prefix = &rev[input.len() - i..];
+    let suffix = &input[i + 1..];
+    ucd::lower_codepoint(Locale::Default, rev_prefix, suffix, input[i]).len()
 }
 
 /// First position whose default uppercase mapping expands to > 1 codepoint.
-fn first_upper_expansion(input: &[u32]) -> Option<(usize, u32, usize)> {
+fn first_upper_expansion(input: &[u32], rev: &[u32]) -> Option<(usize, u32, usize)> {
     (0..input.len()).find_map(|i| {
-        let len = upper_len_at(input, i);
+        let len = upper_len_at(input, rev, i);
         if len > 1 {
             Some((i, input[i], len))
         } else {
@@ -172,9 +182,9 @@ fn first_upper_expansion(input: &[u32]) -> Option<(usize, u32, usize)> {
 }
 
 /// First position whose default lowercase mapping expands to > 1 codepoint.
-fn first_lower_expansion(input: &[u32]) -> Option<(usize, u32, usize)> {
+fn first_lower_expansion(input: &[u32], rev: &[u32]) -> Option<(usize, u32, usize)> {
     (0..input.len()).find_map(|i| {
-        let len = lower_len_at(input, i);
+        let len = lower_len_at(input, rev, i);
         if len > 1 {
             Some((i, input[i], len))
         } else {
@@ -183,17 +193,21 @@ fn first_lower_expansion(input: &[u32]) -> Option<(usize, u32, usize)> {
     })
 }
 
-fn upper_expansion_count(input: &[u32]) -> usize {
-    (0..input.len()).filter(|&i| upper_len_at(input, i) > 1).count()
-}
-
-fn lower_expansion_count(input: &[u32]) -> usize {
-    (0..input.len()).filter(|&i| lower_len_at(input, i) > 1).count()
-}
-
-fn max_expansion_len(input: &[u32]) -> usize {
+fn upper_expansion_count(input: &[u32], rev: &[u32]) -> usize {
     (0..input.len())
-        .map(|i| upper_len_at(input, i).max(lower_len_at(input, i)))
+        .filter(|&i| upper_len_at(input, rev, i) > 1)
+        .count()
+}
+
+fn lower_expansion_count(input: &[u32], rev: &[u32]) -> usize {
+    (0..input.len())
+        .filter(|&i| lower_len_at(input, rev, i) > 1)
+        .count()
+}
+
+fn max_expansion_len(input: &[u32], rev: &[u32]) -> usize {
+    (0..input.len())
+        .map(|i| upper_len_at(input, rev, i).max(lower_len_at(input, rev, i)))
         .max()
         .unwrap_or(0)
 }
@@ -204,7 +218,8 @@ fn max_expansion_len(input: &[u32]) -> usize {
 
 /// The CaseExpansionMismatch detection function.
 pub fn detect(input: &[u32]) -> Verdict {
-    let classification = match first_upper_expansion(input) {
+    let rev = reversed(input);
+    let classification = match first_upper_expansion(input, &rev) {
         // Priority 1: an uppercase expansion.
         Some((pos, cp, len)) => Classification::Hazard {
             sub: SubThreat::UpperExpansion {
@@ -215,7 +230,7 @@ pub fn detect(input: &[u32]) -> Verdict {
             positions: vec![pos],
             decoded: Vec::new(),
         },
-        None => match first_lower_expansion(input) {
+        None => match first_lower_expansion(input, &rev) {
             // Priority 2: a lowercase expansion.
             Some((pos, cp, len)) => Classification::Hazard {
                 sub: SubThreat::LowerExpansion {
@@ -233,9 +248,9 @@ pub fn detect(input: &[u32]) -> Verdict {
     Verdict {
         input: input.to_vec(),
         classify: classification,
-        upper_expansion_count: upper_expansion_count(input),
-        lower_expansion_count: lower_expansion_count(input),
-        max_expansion_len: max_expansion_len(input),
+        upper_expansion_count: upper_expansion_count(input, &rev),
+        lower_expansion_count: lower_expansion_count(input, &rev),
+        max_expansion_len: max_expansion_len(input, &rev),
     }
 }
 

@@ -35,15 +35,18 @@ pub struct Detection {
 /// First input position whose `lower_codepoint` under `locale` differs from the
 /// default-locale result, with the codepoint at that position.
 fn first_locale_divergence(locale: Locale, input: &[u32]) -> Option<(usize, u32)> {
-    let mut rev_prefix: Vec<u32> = Vec::new();
+    // The preceding codepoints nearest-first, for position `index`, are the
+    // slice `rev[len - index..]` of the input reversed once; rebuilding that
+    // prefix per position would make the scan quadratic.
+    let rev: Vec<u32> = input.iter().rev().copied().collect();
     for (index, &cp) in input.iter().enumerate() {
+        let rev_prefix = &rev[input.len() - index..];
         let suffix = &input[index + 1..];
-        let default_lower = lower_codepoint(Locale::Default, &rev_prefix, suffix, cp);
-        let locale_lower = lower_codepoint(locale, &rev_prefix, suffix, cp);
+        let default_lower = lower_codepoint(Locale::Default, rev_prefix, suffix, cp);
+        let locale_lower = lower_codepoint(locale, rev_prefix, suffix, cp);
         if default_lower != locale_lower {
             return Some((index, cp));
         }
-        rev_prefix.insert(0, cp);
     }
     None
 }
