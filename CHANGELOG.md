@@ -9,6 +9,29 @@ might depend on).
 
 ## Unreleased
 
+### Fixed
+
+- **Rust port, scan time.** `case_expansion_mismatch`, `locale_case_inversion`
+  and `ucd::to_lower` rebuilt the reversed prefix at every position, which made
+  a whole-input scan quadratic: a 100 KB ASCII file took 4.3 s through the
+  `unicode-security` CLI and 200 KB took 17 s. The casing context is now read
+  as a slice of the input reversed once. Verdicts are unchanged (the library
+  tests and detector fixtures pass as before); the same files take 0.41 s and
+  0.76 s, and scan time is linear in the input.
+
+### Added
+
+- `fixtures/conformance/executed-runs.json` records the UTS #46 `IdnaTestV2`
+  fold: 6391 of 6391 published rows judged on `toUnicode`, `toAsciiN` and
+  `toAsciiT`, none skipped, digest-gated to the corpus file that was read.
+- `scripts/print-load-bearing-axioms.lean` names the Trojan Source balance
+  theorems (`balanced_of_no_bidi_control`, `safeForCodeContext_balanced`,
+  `no_control_mem`) and the L2 identity `applyL2_id_of_all_even` beside the
+  normalization stability theorems, so the bidi claims print their axiom set.
+- `docs/explanation/threat-model.md` closes with a per-class table (D1 to D7)
+  stating, for each detection class, which families implement it and what is a
+  theorem over every input, judged against a published corpus, or vector-gated.
+
 ### Changed
 
 - **Breaking, reason code.** `RtlInjection`'s first sub-threat is renamed
