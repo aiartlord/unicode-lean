@@ -11,7 +11,10 @@
       "failed": 0,
       "cases_judged": 770241,
       "cases_passed": 770241,
-      "columns": ["resolved levels", "visual order"],
+      "columns": [
+        "resolved levels",
+        "visual order"
+      ],
       "note": "A row carries a bitset naming which paragraph directions it asserts, so 490846 rows expand to 770241 cases. Rows are reported in the suite table because that is the unit the other suites count; the case figure is the one the file actually asserts."
     },
     {
@@ -20,7 +23,11 @@
       "rows_judged": 91707,
       "passed": 91707,
       "failed": 0,
-      "columns": ["paragraph level", "resolved levels", "visual order"]
+      "columns": [
+        "paragraph level",
+        "resolved levels",
+        "visual order"
+      ]
     },
     {
       "suite": "NormalizationTest",
@@ -28,7 +35,12 @@
       "rows_judged": 20034,
       "passed": 20034,
       "failed": 0,
-      "columns": ["NFC", "NFD", "NFKC", "NFKD"]
+      "columns": [
+        "NFC",
+        "NFD",
+        "NFKC",
+        "NFKD"
+      ]
     },
     {
       "suite": "WordBreakTest",
@@ -36,7 +48,9 @@
       "rows_judged": 1944,
       "passed": 1944,
       "failed": 0,
-      "columns": ["breaks"]
+      "columns": [
+        "breaks"
+      ]
     },
     {
       "suite": "LineBreakTest",
@@ -44,7 +58,9 @@
       "rows_judged": 19338,
       "passed": 19338,
       "failed": 0,
-      "columns": ["breaks"]
+      "columns": [
+        "breaks"
+      ]
     },
     {
       "suite": "IdnaTestV2",
@@ -52,8 +68,34 @@
       "rows_judged": 6391,
       "passed": 6391,
       "failed": 0,
-      "columns": ["toUnicode", "toAsciiN", "toAsciiT"],
+      "columns": [
+        "toUnicode",
+        "toAsciiN",
+        "toAsciiT"
+      ],
       "note": "Full-corpus fold through the UTS #46 processor via scripts/idna-conformance.sh all; every row judged on all three result columns. The IdnaTestV2 module also closes a build-time gate over the same file, so this row restates a check the UnicodeFullConformance build already makes."
+    },
+    {
+      "suite": "CollationTest_NON_IGNORABLE_SHORT",
+      "input_sha256": "06a8d9d2191574c74623f66af960682feadeb714a9fa12ab4657c425f8683f53",
+      "rows_judged": 208069,
+      "passed": 208069,
+      "failed": 0,
+      "columns": [
+        "collation order"
+      ],
+      "note": "Adjacent pairs, not rows: a corpus of n lines publishes n-1 order assertions, each that the line's sort key does not exceed the next line's."
+    },
+    {
+      "suite": "CollationTest_SHIFTED_SHORT",
+      "input_sha256": "3ede425165f0faf776f8d702a4d65863c347e8948aea18778ef78a7f410897ad",
+      "rows_judged": 229859,
+      "passed": 229859,
+      "failed": 0,
+      "columns": [
+        "collation order"
+      ],
+      "note": "Adjacent pairs, not rows: a corpus of n lines publishes n-1 order assertions, each that the line's sort key does not exceed the next line's."
     }
   ]
 }

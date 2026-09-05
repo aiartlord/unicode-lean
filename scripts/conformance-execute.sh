@@ -64,7 +64,9 @@ import json
 import pathlib
 import sys
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
+# This block arrives on stdin, so `__file__` is not a path into the tree; the
+# script has already changed into the repository root, and that is ROOT.
+ROOT = pathlib.Path.cwd()
 UCD = ROOT / "Unicode" / "Ucd"
 RUNS = ROOT / "fixtures" / "conformance" / "executed-runs.json"
 
