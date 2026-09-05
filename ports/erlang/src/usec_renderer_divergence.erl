@@ -40,7 +40,7 @@
          classify_tag/1, classify_positions/1, is_clear/1,
          is_variation_selector/1, is_zwj/1, is_fullwidth_halfwidth/1,
          is_grapheme_extend/1,
-         detect/1]).
+         detect/1, detect_with_context/2]).
 
 %% ─────────────────────────────────────────────────────────────────────
 %% §1 Constants
@@ -171,15 +171,23 @@ first_combining_stack([Cp | Rest], MinStack, I) ->
 %% §5 Top-level detection
 %% ─────────────────────────────────────────────────────────────────────
 
-%% @doc The RendererDivergence detection function.
-detect(Input) ->
+%% @doc The RendererDivergence detection function at the default context (one
+%% field, not running text). Mirrors the Lean detect.
+detect(Input) -> detect_with_context(false, Input).
+
+%% @doc The RendererDivergence detection function under an explicit field
+%% context. `RunningText' mirrors the Lean `Context.runningText': a source line
+%% or a message carrying both directions is a bilingual line, not a divergence,
+%% so the mixed-direction rung does not run on running text; every other rung
+%% holds of any field.
+detect_with_context(RunningText, Input) ->
     VsCount = length([Cp || Cp <- Input, is_variation_selector(Cp)]),
     CombiningCount = length([Cp || Cp <- Input, is_grapheme_extend(Cp)]),
     FullwidthCount = length([Cp || Cp <- Input, is_fullwidth_halfwidth(Cp)]),
     HasZwj = lists:any(fun is_zwj/1, Input),
     LtrCount = length([Cp || Cp <- Input, usec_ucd:is_strong_ltr(Cp)]),
     RtlCount = length([Cp || Cp <- Input, usec_ucd:is_strong_rtl(Cp)]),
-    Classification = classify(Input, HasZwj, LtrCount, RtlCount),
+    Classification = classify(Input, HasZwj, LtrCount, RtlCount, RunningText),
     #{input => Input,
       classify => Classification,
       vs_count => VsCount,
@@ -192,23 +200,23 @@ detect(Input) ->
 %% @doc Classification by first trigger in priority order:
 %% CombiningStackOverflow, VariationSelectorVariance, UnregisteredZwjVariance,
 %% FullwidthVariance, MixedDirectionVariance; `clear' when none fires.
-classify(Input, HasZwj, LtrCount, RtlCount) ->
+classify(Input, HasZwj, LtrCount, RtlCount, RunningText) ->
     case first_combining_stack(Input, ?MIN_COMBINING_STACK) of
         {BasePos, StackLen} ->
             {hazard, {combining_stack_overflow, BasePos, StackLen}, [BasePos], []};
         none ->
-            classify_vs(Input, HasZwj, LtrCount, RtlCount)
+            classify_vs(Input, HasZwj, LtrCount, RtlCount, RunningText)
     end.
 
-classify_vs(Input, HasZwj, LtrCount, RtlCount) ->
+classify_vs(Input, HasZwj, LtrCount, RtlCount, RunningText) ->
     case first_vs_pos(Input) of
         {Pos, Cp} ->
             {hazard, {variation_selector_variance, Pos, Cp}, [Pos], []};
         none ->
-            classify_zwj(Input, HasZwj, LtrCount, RtlCount)
+            classify_zwj(Input, HasZwj, LtrCount, RtlCount, RunningText)
     end.
 
-classify_zwj(Input, HasZwj, LtrCount, RtlCount) ->
+classify_zwj(Input, HasZwj, LtrCount, RtlCount, RunningText) ->
     case HasZwj andalso not usec_emoji_zwj_integrity:is_registered_zwj_sequence(Input) of
         true ->
             case first_zwj_pos(Input) of
@@ -216,19 +224,20 @@ classify_zwj(Input, HasZwj, LtrCount, RtlCount) ->
                 Pos -> {hazard, {unregistered_zwj_variance, Pos}, [Pos], []}
             end;
         false ->
-            classify_fullwidth(Input, LtrCount, RtlCount)
+            classify_fullwidth(Input, LtrCount, RtlCount, RunningText)
     end.
 
-classify_fullwidth(Input, LtrCount, RtlCount) ->
+classify_fullwidth(Input, LtrCount, RtlCount, RunningText) ->
     case first_fullwidth_pos(Input) of
         {Pos, Cp} ->
             {hazard, {fullwidth_variance, Pos, Cp}, [Pos], []};
         none ->
-            classify_mixed_direction(LtrCount, RtlCount)
+            classify_mixed_direction(LtrCount, RtlCount, RunningText)
     end.
 
-classify_mixed_direction(LtrCount, RtlCount) ->
-    case LtrCount > 0 andalso RtlCount > 0 of
+%% Mixed direction, off for running text.
+classify_mixed_direction(LtrCount, RtlCount, RunningText) ->
+    case not RunningText andalso LtrCount > 0 andalso RtlCount > 0 of
         true -> {hazard, {mixed_direction_variance, LtrCount, RtlCount}, [], []};
         false -> clear
     end.

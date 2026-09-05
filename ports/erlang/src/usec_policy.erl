@@ -20,6 +20,16 @@ profile_identifier_field(<<"dns-label">>) -> true;
 profile_identifier_field(<<"username">>) -> true;
 profile_identifier_field(_OtherProfile) -> false.
 
+%% True iff the profile reads its input as running text -- a source line, a
+%% message, a display name -- rather than one identifier. The identifier
+%% families then judge each identifier-shaped token of the line on its own, and
+%% the field-wide families that read the line as one identifier or one filename
+%% report clear. Mirrors profileIsRunningText in Unicode/Security/Policy.lean.
+profile_running_text(<<"display-name">>) -> true;
+profile_running_text(<<"chat-message">>) -> true;
+profile_running_text(<<"source-code">>) -> true;
+profile_running_text(_OtherProfile) -> false.
+
 policy_of_profile(<<"gateway-header">>) -> #{level => restrictive, crypto => non_crypto, quarantine => false};
 policy_of_profile(<<"domain-name">>) -> #{level => restrictive, crypto => non_crypto, quarantine => false};
 policy_of_profile(<<"dns-label">>) -> #{level => restrictive, crypto => non_crypto, quarantine => false};
@@ -120,7 +130,16 @@ select_action(Profile, Mode, Findings) ->
         <<"strict">> -> case HasFindings of true -> <<"reject">>; false -> <<"allow">> end
     end.
 
+%% Scan a decoded codepoint sequence. Under a running-text profile
+%% (profile_running_text/1) the homoglyph and mixed-script families read the
+%% input per identifier-shaped token, rtl-injection / locale-case-inversion /
+%% case-expansion-mismatch report clear, filename-disguise runs only its
+%% purposeless-control rung, renderer-divergence drops its mixed-direction rung,
+%% and the source-display-divergence aggregate reads the homoglyph verdict this
+%% scan produced. Mirrors Unicode.Security.RunAll under Policy.lean's Context.
 scan(Profile, Mode, Input) ->
+    IdentifierField = profile_identifier_field(Profile),
+    RunningText = profile_running_text(Profile),
     F0 = [],
     F1 = push_detector(F0, tag_block_payload, usec_detectors:tag_block_detect(Input)),
     F2 = push_detector(F1, variation_selector_payload, usec_detectors:variation_selector_detect(Input)),
@@ -139,33 +158,118 @@ scan(Profile, Mode, Input) ->
     F6 = push_positional(F5, noncharacter_control, <<"Noncharacter">>, positions(Input, fun usec_noncharacters/1)),
     F7 = push_positional(F6, noncharacter_control, <<"C0Control">>, positions(Input, fun c0_control/1)),
     F8 = push_positional(F7, noncharacter_control, <<"C1Control">>, positions(Input, fun c1_control/1)),
-    H = usec_detectors:homoglyph_detect(Input),
     %% Every rung of the homoglyph ladder is reported, CrossScriptMix included.
     %% Unicode/Security/Policy.lean maps every non-clear family result to a
     %% finding without filtering, so suppressing this rung would report fewer
-    %% findings than the proven spec for a cross-script input.
-    F9 = push_finding(F8, homoglyph_confusable, maps:get(kind, H), maps:get(sub, H), case maps:get(kind, H) of clear -> []; _ -> positions_all(Input) end),
-    F10 = case usec_detectors:mixed_script_verdict(Input, profile_identifier_field(Profile)) of
-              none -> F9;
-              MixedSub -> push_finding(F9, mixed_script_admissibility, hazard, MixedSub, positions_all(Input))
+    %% findings than the proven spec for a cross-script input. On running text
+    %% the family reads the input per identifier-shaped token.
+    Homoglyph = case RunningText of
+                    true -> homoglyph_over_tokens(Input);
+                    false -> homoglyph_finding(Input, #{running_text => false, identifier_token => false})
+                end,
+    F9 = case Homoglyph of none -> F8; HF -> [HF | F8] end,
+    F10 = case RunningText of
+              true ->
+                  case mixed_script_over_tokens(Input) of
+                      none -> F9;
+                      MF -> [MF | F9]
+                  end;
+              false ->
+                  case usec_detectors:mixed_script_verdict(Input, IdentifierField) of
+                      none -> F9;
+                      MixedSub -> push_finding(F9, mixed_script_admissibility, hazard, MixedSub, positions_all(Input))
+                  end
           end,
-    F11 = push_optional(F10, rtl_injection, usec_detectors:rtl_injection_detect(Input)),
+    %% Families that read the whole field as one identifier report clear on
+    %% running text: rtl-injection, case-expansion-mismatch and
+    %% locale-case-inversion. Mirrors the Lean mkGatedResult.
+    F11 = case RunningText of
+              true -> F10;
+              false -> push_optional(F10, rtl_injection, usec_detectors:rtl_injection_detect(Input))
+          end,
     F12 = push_optional(F11, confusable_bidi_compound, usec_detectors:confusable_bidi_detect(Input)),
     F13 = push_optional(F12, covert_display_compound, usec_detectors:covert_display_detect(Input)),
     F14 = push_classified(F13, emoji_zwj_integrity, usec_emoji_zwj_integrity, Input),
     F15 = push_classified(F14, skin_tone_variation_forgery, usec_skin_tone_variation_forgery, Input),
-    F16 = push_classified(F15, filename_disguise, usec_filename_disguise, Input),
-    F17 = push_classified(F16, renderer_divergence, usec_renderer_divergence, Input),
+    F16 = push_classification(F15, filename_disguise, usec_filename_disguise,
+                              usec_filename_disguise:detect_with_context(RunningText, Input)),
+    F17 = push_classification(F16, renderer_divergence, usec_renderer_divergence,
+                              usec_renderer_divergence:detect_with_context(RunningText, Input)),
     F18 = push_classified(F17, stream_safe_violation, usec_stream_safe_violation, Input),
-    F19 = push_classified(F18, case_expansion_mismatch, usec_case_expansion_mismatch, Input),
+    F19 = case RunningText of
+              true -> F18;
+              false -> push_classified(F18, case_expansion_mismatch, usec_case_expansion_mismatch, Input)
+          end,
     F20 = push_classified(F19, identifier_form_drift, usec_identifier_form_drift, Input),
     F21 = push_classified(F20, admissibility_form_drift, usec_admissibility_form_drift, Input),
     F22 = push_optional(F21, normalization_bomb, usec_detectors:normalization_bomb_detect(Input)),
-    F23 = push_optional(F22, locale_case_inversion, usec_detectors:locale_case_detect(Input)),
+    F23 = case RunningText of
+              true -> F22;
+              false -> push_optional(F22, locale_case_inversion, usec_detectors:locale_case_detect(Input))
+          end,
     F24 = push_optional(F23, nfc_idempotence_witness, usec_detectors:nfc_witness_detect(Input)),
     F25 = push_classified(F24, width_class_confusion, usec_width_class_confusion, Input),
-    F26 = push_classified(F25, source_display_divergence, usec_source_display_divergence, Input),
+    %% The aggregate's homoglyph constituent is the verdict this scan produced,
+    %% so the two agree on running text.
+    F26 = push_classification(F25, source_display_divergence, usec_source_display_divergence,
+                              usec_source_display_divergence:detect_core(Input, Homoglyph =/= none)),
     verdict(Profile, Mode, Input, F26, null).
+
+%% The positions a homoglyph verdict implicates: the non-ASCII positions for the
+%% ascii-confusable rung, the whole input for every other rung, nothing when
+%% clear.
+homoglyph_positions(#{kind := clear}, _Input) -> [];
+homoglyph_positions(#{sub := #{tag := <<"AsciiConfusable">>}}, Input) ->
+    usec_detectors:non_ascii_positions(Input);
+homoglyph_positions(_Verdict, Input) -> positions_all(Input).
+
+%% One homoglyph finding under a field context, or none when clear.
+homoglyph_finding(Input, Ctx) ->
+    V = usec_detectors:homoglyph_detect_with_context(Input, Ctx),
+    case maps:get(kind, V) of
+        clear -> none;
+        Kind ->
+            [F] = push_finding([], homoglyph_confusable, Kind, maps:get(sub, V), homoglyph_positions(V, Input)),
+            F
+    end.
+
+%% The homoglyph family over running text: the first identifier-shaped token (a
+%% maximal XID_Continue run) that fires, read as one identifier, with its
+%% positions shifted back into input coordinates. When no token fires, the whole
+%% input is read once under the running-text context, which keeps the rungs
+%% that hold of any text (target match, math alphanumerics, width class,
+%% decomposition swap). Mirrors the Lean homoglyphOverTokens.
+homoglyph_over_tokens(Input) ->
+    Tokens = usec_identifier_tokens:tokens(Input),
+    case first_token_finding(Tokens, fun(Cps) -> homoglyph_finding(Cps, #{running_text => false, identifier_token => true}) end) of
+        none -> homoglyph_finding(Input, #{running_text => true, identifier_token => false});
+        F -> F
+    end.
+
+%% The mixed-script family over running text: each identifier-shaped token is
+%% judged as one identifier (not an identifier field, so the Restricted-status
+%% rung does not apply); the first token that fires is reported, positions in
+%% input coordinates. A line with no firing token is clear. Mirrors the Lean
+%% mixedScriptOverTokens.
+mixed_script_over_tokens(Input) ->
+    Tokens = usec_identifier_tokens:tokens(Input),
+    first_token_finding(Tokens, fun(Cps) ->
+                                        case usec_detectors:mixed_script_verdict(Cps, false) of
+                                            none -> none;
+                                            Sub ->
+                                                [F] = push_finding([], mixed_script_admissibility, hazard, Sub, positions_all(Cps)),
+                                                F
+                                        end
+                                end).
+
+%% The first token whose finding is not none, with its positions shifted into
+%% input coordinates; none when no token fires.
+first_token_finding([], _Fun) -> none;
+first_token_finding([#{start := Start, cps := Cps} | Rest], Fun) ->
+    case Fun(Cps) of
+        none -> first_token_finding(Rest, Fun);
+        F -> F#{positions := usec_identifier_tokens:shift_positions(Start, maps:get(positions, F))}
+    end.
 
 scan_utf8(Profile, Mode, Bytes) ->
     case usec_utf8:first_invalid_utf8_offset(Bytes) of
@@ -255,7 +359,11 @@ push_positional(Findings, Family, Sub, Positions) -> push_finding(Findings, Fami
 %% such module exports the same three functions over the verdict's classify map,
 %% so the shape is written once here rather than per family.
 push_classified(Findings, Family, Mod, Input) ->
-    V = Mod:detect(Input),
+    push_classification(Findings, Family, Mod, Mod:detect(Input)).
+
+%% The same, over a verdict the caller already produced (a detector run under a
+%% field context).
+push_classification(Findings, Family, Mod, V) ->
     C = maps:get(classify, V),
     %% Guard on the module's own is_clear rather than on the tag: the clear
     %% sentinel is not uniform -- width_class_confusion answers undefined where

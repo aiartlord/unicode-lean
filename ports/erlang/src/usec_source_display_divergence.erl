@@ -20,7 +20,7 @@
 %%   1. `usec_detectors:tag_block_detect/1'          → `TagBlock'
 %%   2. `usec_detectors:variation_selector_detect/1' → `VariationSelector'
 %%   3. `usec_detectors:zero_width_detect/1'         → `ZeroWidth'
-%%   4. `usec_detectors:bidi_control_detect/1'       → `BidiControl'
+%%   4. `usec_bidi_control_purpose:has_purposeless_control/1' → `BidiControl'
 %%   5. `usec_detectors:homoglyph_detect/1'          → `IdentifierHomoglyph'
 %%
 %% Every constituent fires region-agnostically — payloads inside string literals
@@ -31,7 +31,7 @@
 
 -export([sub_threat_tag/1,
          classify_tag/1, classify_positions/1, is_clear/1,
-         detect/1]).
+         detect/1, detect_core/2]).
 
 %% ─────────────────────────────────────────────────────────────────────
 %% §1 Types
@@ -67,10 +67,19 @@ is_clear({hazard, _Sub, _Positions, _Decoded}) -> false.
 %% §2 Top-level detection
 %% ─────────────────────────────────────────────────────────────────────
 
-%% @doc The SourceDisplayDivergence detection function. Runs the five
-%% constituent detectors in canonical order and aggregates by how many fired.
+%% @doc The SourceDisplayDivergence detection function at the default context:
+%% the homoglyph constituent is the whole-input homoglyph verdict. Mirrors the
+%% Lean detect.
 detect(Input) ->
-    Fired = fired_tags(Input),
+    detect_core(Input, fired(maps:get(kind, usec_detectors:homoglyph_detect(Input)))).
+
+%% @doc Aggregate over a homoglyph verdict already in hand. The scan passes the
+%% verdict it produced (per identifier token on running text), so the
+%% constituent and the family finding are one reading of the same input;
+%% mirrors the Lean `detectCore input homoglyphVerdict'. Runs the other
+%% constituent detectors in canonical order and aggregates by how many fired.
+detect_core(Input, HomoglyphFired) ->
+    Fired = fired_tags(Input, HomoglyphFired),
     Classification =
         case Fired of
             [] -> clear;
@@ -85,13 +94,12 @@ detect(Input) ->
 %% @doc The constituent family tags that fired, in canonical aggregation order.
 %% Each constituent's classification `kind' is inspected via explicit dispatch;
 %% `clear' does not fire, `hazard' does.
-fired_tags(Input) ->
+fired_tags(Input, HomoglyphFired) ->
     Constituents =
         [{<<"TagBlock">>, usec_detectors:tag_block_detect(Input)},
          {<<"VariationSelector">>, usec_detectors:variation_selector_detect(Input)},
-         {<<"ZeroWidth">>, usec_detectors:zero_width_detect(Input)},
-         {<<"IdentifierHomoglyph">>, usec_detectors:homoglyph_detect(Input)}],
-    Fired =
+         {<<"ZeroWidth">>, usec_detectors:zero_width_detect(Input)}],
+    Covert =
         lists:filtermap(
           fun({Tag, Verdict}) ->
                   case fired(maps:get(kind, Verdict)) of
@@ -99,18 +107,24 @@ fired_tags(Input) ->
                       false -> false
                   end
           end, Constituents),
-    %% BidiControl reads presence rather than the balance verdict. A Trojan
-    %% Source payload balances its controls, since an unbalanced run breaks the
-    %% file it hides in, so the balance verdict is blind to the shape the attack
-    %% takes. Spliced at position four to keep the canonical order.
+    %% BidiControl reads the purposeless controls (unbalanced, or a balanced
+    %% span enclosing nothing right-to-left in a left-to-right context) rather
+    %% than the balance verdict. A Trojan Source payload balances its controls,
+    %% since an unbalanced run breaks the file it hides in, so the balance
+    %% verdict is blind to the shape the attack takes; a balanced embedding
+    %% around an Arabic string literal manages that literal and is not a
+    %% constituent.
     BidiFired =
-        case lists:any(fun usec_detectors:is_bidi_format_control/1, Input) of
+        case usec_bidi_control_purpose:has_purposeless_control(Input) of
             true -> [<<"BidiControl">>];
             false -> []
         end,
-    {Before, After} = lists:splitwith(
-                        fun(T) -> T =/= <<"IdentifierHomoglyph">> end, Fired),
-    Before ++ BidiFired ++ After.
+    Homoglyph =
+        case HomoglyphFired of
+            true -> [<<"IdentifierHomoglyph">>];
+            false -> []
+        end,
+    Covert ++ BidiFired ++ Homoglyph.
 
 %% @doc A constituent fires iff its classification kind is not `clear'.
 fired(clear) -> false;

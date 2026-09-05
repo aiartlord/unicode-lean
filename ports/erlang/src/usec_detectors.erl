@@ -4,7 +4,9 @@
          surrogate_reassembly_detect/1, looks_like_byte_stream/1,
          bidi_control_detect/1, is_bidi_format_control/1, opens_embedding/1,
          is_pdf/1, opens_isolate/1, is_pdi/1,
-         homoglyph_detect/1, confusable_source/1, mixed_script_admissibility/1, mixed_script_verdict/2,
+         homoglyph_detect/1, homoglyph_detect_with_context/2, non_ascii_positions/1,
+         ascii_skeleton/1, is_ascii_confusable/1, is_latin_only/1,
+         confusable_source/1, mixed_script_admissibility/1, mixed_script_verdict/2,
          mixed_script_subthreat/1, rtl_injection_detect/1,
          rtl_injection_detect_with_context/2,
          confusable_bidi_detect/1, covert_display_detect/1,
@@ -285,7 +287,43 @@ bidi_step(Cp, I, Acc, Emb, Iso, Orph) ->
     end.
 
 %% Identity
+
+%% The case-preserving skeleton: NFD, confusable substitution, NFD, with no case
+%% fold, so admın (dotless i) maps to adrnin while ADMIN stays itself. Mirrors
+%% the Lean asciiSkeleton.
+ascii_skeleton(Input) -> usec_ucd:to_nfd(substitute(usec_ucd:to_nfd(Input))).
+
+%% A non-ASCII input whose case-preserving skeleton is all ASCII. Mirrors the
+%% Lean isAsciiConfusable.
+is_ascii_confusable(Input) ->
+    lists:any(fun(Cp) -> Cp > 16#7F end, Input)
+        andalso lists:all(fun(Cp) -> Cp =< 16#7F end, ascii_skeleton(Input)).
+
+%% 0-based positions of the non-ASCII codepoints. Mirrors the Lean
+%% nonAsciiPositions.
+non_ascii_positions(Input) -> positions(Input, fun(Cp) -> Cp > 16#7F end).
+
+%% Every script-bearing codepoint of the input is Latin. Mirrors the Lean
+%% isLatinOnly.
+is_latin_only(Input) -> usec_ucd:string_script_union(Input) =:= [<<"Latn">>].
+
+%% The detection function at the default context (one identifier field).
+%% Mirrors the Lean detect.
 homoglyph_detect(Input) ->
+    homoglyph_detect_with_context(Input, #{running_text => false, identifier_token => false}).
+
+%% The detection function under a field context (`running_text': a source line,
+%% a message or a display name rather than one identifier; `identifier_token':
+%% one identifier-shaped token cut out of running text). Rungs in the Lean
+%% order: target match, math alphanumerics, width class, decomposition swap,
+%% then the two script rungs (cross-script mix, off on running text; low
+%% restriction level, off on running text and on a token), then the
+%% ascii-confusable rung: a non-ASCII input whose case-preserving skeleton is
+%% all ASCII reads as an ASCII word it is not (admın with a dotless i). That
+%% rung runs on a whole field, and on a token only when the token is
+%% Latin-only, so a Greek or Cyrillic word in prose is not read as its Latin
+%% look-alike.
+homoglyph_detect_with_context(Input, #{running_text := RunningText, identifier_token := IdentifierToken}) ->
     Skel = skeleton(Input),
     ISkel = iterated_skeleton(Input),
     Rl = usec_ucd:restriction_level(Input),
@@ -305,12 +343,24 @@ homoglyph_detect(Input) ->
                                 false ->
                                     %% Priority 5: CrossScriptMix asks the script question only;
                                     %% the Restricted-status rung belongs to the mixed-script family.
-                                    case length(usec_ucd:string_script_union(Input)) >= 2 andalso not usec_ucd:is_highly_restrictive(Input) of
+                                    %% Off on running text.
+                                    case not RunningText andalso length(usec_ucd:string_script_union(Input)) >= 2
+                                         andalso not usec_ucd:is_highly_restrictive(Input) of
                                         true -> Base#{kind := hazard, sub := #{tag => <<"CrossScriptMix">>}};
                                         false ->
-                                            case lists:member(Rl, [minimally_restrictive, unrestricted]) of
+                                            %% Priority 6: RestrictionLow, off on running text and on a token.
+                                            case not RunningText andalso not IdentifierToken
+                                                 andalso lists:member(Rl, [minimally_restrictive, unrestricted]) of
                                                 true -> Base#{kind := hazard, sub := #{tag => <<"RestrictionLow">>}};
-                                                false -> Base
+                                                false ->
+                                                    %% Priority 7: AsciiConfusable, on a whole field, and on a
+                                                    %% token only when the token is Latin-only.
+                                                    case not RunningText
+                                                         andalso (not IdentifierToken orelse is_latin_only(Input))
+                                                         andalso is_ascii_confusable(Input) of
+                                                        true -> Base#{kind := hazard, sub := #{tag => <<"AsciiConfusable">>, skeleton => ascii_skeleton(Input)}};
+                                                        false -> Base
+                                                    end
                                             end
                                     end
                             end
@@ -505,18 +555,34 @@ longest_rtl_run(Input) ->
                     end, {0, 0, 0, 0}, with_index(Input)),
     {Best, BestStart}.
 
+%% A confusable source co-located with a purposeless bidi control
+%% (CVE-2021-42574 class). Only a purposeless control
+%% (usec_bidi_control_purpose: unbalanced, or a balanced span enclosing nothing
+%% right-to-left in a left-to-right context) is the display channel this
+%% compound pairs with a confusable; a balanced embedding around Arabic text
+%% renders that text as written.
 confusable_bidi_detect(Input) ->
     case first_pos(Input, fun confusable_source/1) of
         none -> #{sub => none, positions => []};
         CPos ->
-            case first_pos(Input, fun(Cp) -> opens_embedding(Cp) orelse is_pdf(Cp) end) of
+            case first_purposeless_pos(Input, fun(Cp) -> opens_embedding(Cp) orelse is_pdf(Cp) end) of
                 P when P =/= none -> #{sub => <<"ConfusableInOverride">>, positions => [CPos, P]};
                 none ->
-                    case first_pos(Input, fun(Cp) -> opens_isolate(Cp) orelse is_pdi(Cp) end) of
+                    case first_purposeless_pos(Input, fun(Cp) -> opens_isolate(Cp) orelse is_pdi(Cp) end) of
                         P2 when P2 =/= none -> #{sub => <<"ConfusableInIsolate">>, positions => [CPos, P2]};
                         none -> #{sub => none, positions => []}
                     end
             end
+    end.
+
+%% The first 0-based position of a purposeless bidi control satisfying Pred, or
+%% none. Mirrors the Lean firstOverridePos / firstIsolatePos over the
+%% purposeless positions.
+first_purposeless_pos(Input, Pred) ->
+    case [P || P <- usec_bidi_control_purpose:purposeless_control_positions(Input),
+               Pred(lists:nth(P + 1, Input))] of
+        [P | _Rest] -> P;
+        [] -> none
     end.
 
 covert_display_detect(Input) ->

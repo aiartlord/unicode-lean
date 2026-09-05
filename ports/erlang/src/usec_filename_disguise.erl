@@ -12,13 +12,15 @@
 %% `document<RLO>txt.exe' renders as `document exe.txt'.
 %%
 %% Detection is presentation- and language-agnostic: it surfaces every codepoint
-%% that could cause display-vs-byte divergence in the filename — any bidi
-%% format-control anywhere, and any fullwidth/halfwidth or combining (grapheme
-%% Extend) codepoint in the extension region (at or after the last `.'). A
-%% native-RTL name with no bidi controls clears.
+%% that could cause display-vs-byte divergence in the filename — any purposeless
+%% bidi format-control anywhere (`usec_bidi_control_purpose': unbalanced, or a
+%% balanced span enclosing nothing right-to-left in a left-to-right context),
+%% and any fullwidth/halfwidth or combining (grapheme Extend) codepoint in the
+%% extension region (at or after the last `.'). A native-RTL name with no bidi
+%% controls clears, and so does a balanced embedding around an Arabic segment.
 %%
 %% Sub-threats (priority order):
-%%   1. RloFlip            any bidi format-control anywhere in the input.
+%%   1. RloFlip            a purposeless bidi format-control in the input.
 %%   2. WidthClassExt      a fullwidth/halfwidth (U+FF01..U+FFEF) codepoint at or
 %%                         after the extension start.
 %%   3. CombiningInExt     a combining (grapheme Extend) codepoint at or after the
@@ -41,7 +43,7 @@
          classify_tag/1, classify_positions/1, is_clear/1,
          is_ascii_dot/1, is_fullwidth_halfwidth/1,
          is_bidi_format_control/1, is_grapheme_extend/1,
-         detect/1]).
+         detect/1, detect_with_context/2]).
 
 %% ─────────────────────────────────────────────────────────────────────
 %% §1 Types
@@ -116,15 +118,13 @@ dot_positions([Cp | Rest], I) ->
         false -> dot_positions(Rest, I + 1)
     end.
 
-%% @doc Position and codepoint of the first bidi format-control, or `none'.
-first_bidi_control(Input) -> first_bidi_control(Input, 0).
-
-first_bidi_control([], _I) -> none;
-first_bidi_control([Cp | Rest], I) ->
-    case is_bidi_format_control(Cp) of
-        true -> {I, Cp};
-        false -> first_bidi_control(Rest, I + 1)
-    end.
+%% @doc Position and codepoint of the first purposeless bidi format-control, or
+%% `none': unbalanced, or a balanced span enclosing nothing right-to-left in a
+%% left-to-right context (`usec_bidi_control_purpose:first_purposeless_control/1').
+%% A balanced embedding around an Arabic filename segment manages that segment
+%% and is not a flip. Mirrors the Lean detect, which reads
+%% `firstPurposelessControl'.
+first_bidi_control(Input) -> usec_bidi_control_purpose:first_purposeless_control(Input).
 
 %% @doc Position and codepoint of the first fullwidth/halfwidth codepoint at or
 %% after index `Start', or `none'.
@@ -163,8 +163,17 @@ with_index(Input) -> lists:zip(lists:seq(0, length(Input) - 1), Input).
 %% §4 Top-level detection
 %% ─────────────────────────────────────────────────────────────────────
 
-%% @doc The FilenameDisguise detection function.
-detect(Input) ->
+%% @doc The FilenameDisguise detection function, reading its input as one
+%% filename. Mirrors the Lean detect, which is detectWithContext at the default
+%% context.
+detect(Input) -> detect_with_context(false, Input).
+
+%% @doc The FilenameDisguise detection function under an explicit field context.
+%% `RunningText' mirrors the Lean `Context.runningText': the extension rungs read
+%% the text after the last dot as a file extension, which a source file or a
+%% message does not have, so they do not run on running text; the
+%% purposeless-bidi-control rung holds of any field.
+detect_with_context(RunningText, Input) ->
     Dots = dot_positions(Input),
     LastDot = last_dot(Dots),
     ExtStart = case LastDot of
@@ -174,7 +183,7 @@ detect(Input) ->
     BidiCount = length([Cp || Cp <- Input, is_bidi_format_control(Cp)]),
     FwInExt = count_fullwidth_from(Input, ExtStart),
     ExtInExt = count_extend_from(Input, ExtStart),
-    Classification = classify(Input, Dots, ExtStart),
+    Classification = classify(Input, Dots, ExtStart, RunningText),
     #{input => Input,
       classify => Classification,
       dot_positions => Dots,
@@ -189,10 +198,13 @@ last_dot(Dots) -> lists:last(Dots).
 
 %% @doc Classification by first trigger in priority order: RloFlip,
 %% WidthClassExt, CombiningInExt, MultipleExtensions; `clear' when none fires.
-classify(Input, Dots, ExtStart) ->
+%% The extension rungs do not run on running text, which has no extension.
+classify(Input, Dots, ExtStart, RunningText) ->
     case first_bidi_control(Input) of
         {Pos, CtlCp} ->
             {hazard, {rlo_flip, Pos, CtlCp}, [Pos], []};
+        none when RunningText ->
+            clear;
         none ->
             classify_fullwidth(Input, Dots, ExtStart)
     end.
