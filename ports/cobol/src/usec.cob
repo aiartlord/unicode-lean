@@ -577,6 +577,56 @@ WORKING-STORAGE SECTION.
       10 VOCAB-LEN PIC 9(2).
       10 VOCAB-CHARS PIC X(24).
 
+*> ── running-text context, identifier tokens and the bidi purpose walk ────
+*> RUNNING-TEXT-FLAG mirrors profileIsRunningText in Unicode/Security/Policy.lean.
+*> POS-OFFSET is the input coordinate of a token slice loaded into CP, so a
+*> finding made on the token is reported in input coordinates (0 for the whole
+*> input). HOMO-RUNNING-TEXT / HOMO-IDENT-TOKEN mirror HomoglyphConfusable.Context.
+01 RUNNING-TEXT-FLAG PIC 9 VALUE 0.
+01 POS-OFFSET PIC 9(5) COMP-5 VALUE 0.
+01 HOMO-RUNNING-TEXT PIC 9 VALUE 0.
+01 HOMO-IDENT-TOKEN PIC 9 VALUE 0.
+01 HOMO-SCAN-FIRED PIC 9 VALUE 0.
+01 HOMO-SCAN-SAVED PIC 9(4) COMP-5 VALUE 0.
+01 HOMO-TOKEN-FIRED PIC 9 VALUE 0.
+01 HOMO-SAVED-COUNT PIC 9(4) COMP-5 VALUE 0.
+01 HOMO-ASCII PIC 9 VALUE 0.
+01 HOMO-LATIN-ONLY PIC 9 VALUE 0.
+01 HOMO-ANY-NON-ASCII PIC 9 VALUE 0.
+01 TOK-SAVE-COUNT PIC 9(5) COMP-5 VALUE 0.
+01 TOK-SAVE-TABLE.
+   05 TOK-SAVE-CP OCCURS 4096 TIMES PIC 9(9) COMP-5.
+01 TOK-START PIC 9(5) COMP-5 VALUE 0.
+01 TOK-END PIC 9(5) COMP-5 VALUE 0.
+01 TOK-SCAN-IDX PIC 9(5) COMP-5 VALUE 0.
+01 TOK-SAVED-IDENT PIC 9 VALUE 0.
+*> The bidi purpose walk of Unicode/Security/Display/BidiControlPurpose.lean:
+*> an open-span stack (position, isolate kind, right-to-left kind, and what the
+*> span has seen directly inside it) and a per-position mark of every purposeless
+*> control. BP-DEPTH is bounded by the stack; an opener beyond it is reported as
+*> unbalanced, the same narrowing every bounded buffer in this port carries.
+01 BP-PARA-RTL PIC 9 VALUE 0.
+01 BP-DEPTH PIC 9(4) COMP-5 VALUE 0.
+01 BP-STACK.
+   05 BP-SPAN OCCURS 512 TIMES.
+      10 BP-POS PIC 9(5) COMP-5.
+      10 BP-ISOLATE PIC 9.
+      10 BP-RTL-KIND PIC 9.
+      10 BP-SAW-RTL PIC 9.
+      10 BP-SAW-LTR PIC 9.
+      10 BP-SAW-SYNTAX PIC 9.
+01 BP-MARK-TABLE.
+   05 BP-MARK OCCURS 4096 TIMES PIC 9.
+01 BP-COUNT PIC 9(5) COMP-5 VALUE 0.
+01 BP-K PIC 9(4) COMP-5 VALUE 0.
+01 BP-J PIC 9(4) COMP-5 VALUE 0.
+01 BP-ISO-IDX PIC 9(4) COMP-5 VALUE 0.
+01 BP-PURPOSEFUL PIC 9 VALUE 0.
+01 BP-IN-RTL-CTX PIC 9 VALUE 0.
+01 BP-IDX PIC 9(5) COMP-5 VALUE 0.
+01 BP-FOUND PIC 9 VALUE 0.
+01 SDD-HOMO-FIRED PIC 9 VALUE 0.
+
 PROCEDURE DIVISION.
 MAIN.
     ACCEPT CMD-LINE FROM COMMAND-LINE
@@ -585,6 +635,7 @@ MAIN.
              ENC-ARG RFC-ARG AUDIT-ARG WEBHOOK-ARG
     END-UNSTRING
     PERFORM PARSE-NUMBERS
+    PERFORM COMPUTE-PROFILE-FLAGS
     IF OP-NAME = "is-utf8-blob" OR OP-NAME = "validate-utf8"
         PERFORM DECODE-UTF8
         PERFORM EMIT-BLOB
@@ -908,7 +959,7 @@ DECODE-UTF32.
         END-PERFORM
     END-IF.
 
-SCAN-CORE.
+COMPUTE-PROFILE-FLAGS.
 *> A username, a registrable domain and a DNS label hold one identifier, so a
 *> codepoint outside the General Security Profile is a hazard in them. The
 *> remaining profiles carry prose, source, URLs or opaque bytes, where a space
@@ -919,6 +970,25 @@ SCAN-CORE.
     ELSE
         MOVE 0 TO IDENTIFIER-FIELD-FLAG
     END-IF
+*> A display name, a chat message and a source line are running text rather
+*> than one identifier: the identifier families judge each identifier-shaped
+*> token of the line on its own, and the field-wide families that read the line
+*> as one identifier or one filename report clear. Mirrors profileIsRunningText
+*> in Unicode/Security/Policy.lean.
+    IF PROFILE-NAME = "display-name" OR PROFILE-NAME = "chat-message" OR PROFILE-NAME = "source-code"
+        MOVE 1 TO RUNNING-TEXT-FLAG
+    ELSE
+        MOVE 0 TO RUNNING-TEXT-FLAG
+    END-IF.
+
+SCAN-CORE.
+*> Under a running-text profile the homoglyph and mixed-script families read the
+*> input per identifier-shaped token, rtl-injection / locale-case-inversion /
+*> case-expansion-mismatch report clear, filename-disguise runs only its
+*> purposeless-control rung, renderer-divergence drops its mixed-direction rung,
+*> and the source-display-divergence aggregate reads the homoglyph verdict this
+*> scan produced. Mirrors Unicode.Security.RunAll under Policy.lean's Context.
+    PERFORM COMPUTE-PROFILE-FLAGS
 *> No profile determines display direction: a display name carries English or
 *> Hebrew alike. The scan therefore takes the declared-LTR reading, and a
 *> caller holding a right-to-left field sets FIELD-DIRECTION-RTL-FLAG before
@@ -934,9 +1004,28 @@ SCAN-CORE.
     PERFORM DETECT-SURROGATE-REASSEMBLY
     PERFORM DETECT-BIDI
     PERFORM DETECT-NONCHAR
-    PERFORM DETECT-HOMOGLYPH
-    PERFORM DETECT-MIXED-SCRIPT
-    PERFORM DETECT-RTL
+    MOVE FINDING-COUNT TO HOMO-SCAN-SAVED
+    IF RUNNING-TEXT-FLAG = 1
+        PERFORM HOMOGLYPH-OVER-TOKENS
+    ELSE
+        PERFORM DETECT-HOMOGLYPH
+    END-IF
+    IF FINDING-COUNT > HOMO-SCAN-SAVED
+        MOVE 1 TO HOMO-SCAN-FIRED
+    ELSE
+        MOVE 0 TO HOMO-SCAN-FIRED
+    END-IF
+    IF RUNNING-TEXT-FLAG = 1
+        PERFORM MIXED-SCRIPT-OVER-TOKENS
+    ELSE
+        PERFORM DETECT-MIXED-SCRIPT
+    END-IF
+*> Families that read the whole field as one identifier report clear on running
+*> text: rtl-injection, case-expansion-mismatch and locale-case-inversion.
+*> Mirrors the Lean mkGatedResult.
+    IF RUNNING-TEXT-FLAG = 0
+        PERFORM DETECT-RTL
+    END-IF
     PERFORM DETECT-CONFUSABLE-BIDI
     PERFORM DETECT-COVERT-DISPLAY
     PERFORM SCAN-EMOJI-ZWJ
@@ -944,12 +1033,356 @@ SCAN-CORE.
     PERFORM SCAN-FILENAME-DISGUISE
     PERFORM SCAN-RENDERER-DIVERGENCE
     PERFORM SCAN-STREAM-SAFE
-    PERFORM SCAN-CASE-EXPANSION-MISMATCH
+    IF RUNNING-TEXT-FLAG = 0
+        PERFORM SCAN-CASE-EXPANSION-MISMATCH
+    END-IF
     PERFORM SCAN-IDENTIFIER-FORM-DRIFT
     PERFORM SCAN-ADMISSIBILITY-FORM-DRIFT
-    PERFORM SCAN-FORMS
+    PERFORM SCAN-NORMALIZATION-BOMB
+    IF RUNNING-TEXT-FLAG = 0
+        PERFORM SCAN-LOCALE-CASE-INVERSION
+    END-IF
+    PERFORM SCAN-NFC-IDEMPOTENCE-WITNESS
     PERFORM SCAN-WIDTH-CLASS-CONFUSION
-    PERFORM SCAN-SOURCE-DISPLAY-DIVERGENCE.
+*> The aggregate's homoglyph constituent is the verdict this scan produced, so
+*> the two agree on running text.
+    MOVE HOMO-SCAN-FIRED TO SDD-HOMO-FIRED
+    PERFORM SDD-CORE.
+
+IS-CODE-SYNTAX.
+*> The ASCII codepoints a Trojan Source payload moves: quotes, brackets, comment
+*> markers, statement separators, operators. Prose punctuation, space and digits
+*> are not in the set. Mirrors isCodeSyntax in BidiControlPurpose.lean.
+    MOVE 0 TO TABLE-FLAG
+    IF LOOKUP-CP = 34 OR LOOKUP-CP = 39 OR LOOKUP-CP = 96 OR LOOKUP-CP = 40 OR LOOKUP-CP = 41
+       OR LOOKUP-CP = 91 OR LOOKUP-CP = 93 OR LOOKUP-CP = 123 OR LOOKUP-CP = 125 OR LOOKUP-CP = 47
+       OR LOOKUP-CP = 92 OR LOOKUP-CP = 42 OR LOOKUP-CP = 35 OR LOOKUP-CP = 59 OR LOOKUP-CP = 60
+       OR LOOKUP-CP = 62 OR LOOKUP-CP = 61 OR LOOKUP-CP = 43 OR LOOKUP-CP = 124 OR LOOKUP-CP = 38
+       OR LOOKUP-CP = 37 OR LOOKUP-CP = 36 OR LOOKUP-CP = 64 OR LOOKUP-CP = 94 OR LOOKUP-CP = 126
+        MOVE 1 TO TABLE-FLAG
+    END-IF.
+
+COMPUTE-PURPOSELESS.
+*> The bidi purpose walk of Unicode/Security/Display/BidiControlPurpose.lean over
+*> CP(1..CP-COUNT). An opener (LRE/RLE/LRO/RLO, LRI/RLI/FSI) pushes a span;
+*> every other codepoint is recorded against the innermost open span only
+*> (strong right-to-left, strong left-to-right, ASCII code syntax); PDF closes
+*> the top span when it is an embedding, else it is an orphan; PDI closes down
+*> to the innermost isolate, the embeddings above it being unbalanced, else it
+*> is an orphan. A closed span is purposeful iff its direct content is exactly
+*> its own direction and carries no code syntax, a left-to-right span needing
+*> right-to-left context besides (an enclosing right-to-left span, or a
+*> paragraph whose first strong character is right-to-left). Marked as
+*> purposeless: every orphan, every opener still open at the end, every
+*> embedding a PDI terminated implicitly, and both ends of every closed span
+*> that was not purposeful. BP-MARK(i) = 1 for a purposeless control at the
+*> 1-indexed position i; BP-COUNT is how many.
+    PERFORM VARYING BP-IDX FROM 1 BY 1 UNTIL BP-IDX > CP-COUNT
+        MOVE 0 TO BP-MARK(BP-IDX)
+    END-PERFORM
+    MOVE 0 TO BP-COUNT BP-DEPTH BP-PARA-RTL BP-FOUND
+*>  UAX #9 P2/P3: the paragraph runs right-to-left iff its first strong
+*>  character is right-to-left.
+    PERFORM VARYING BP-IDX FROM 1 BY 1 UNTIL BP-IDX > CP-COUNT OR BP-FOUND = 1
+        MOVE CP(BP-IDX) TO LOOKUP-CP
+        PERFORM IS-STRONG-RTL
+        IF TABLE-FLAG = 1
+            MOVE 1 TO BP-PARA-RTL
+            MOVE 1 TO BP-FOUND
+        ELSE
+            PERFORM IS-STRONG-LTR
+            IF TABLE-FLAG = 1
+                MOVE 1 TO BP-FOUND
+            END-IF
+        END-IF
+    END-PERFORM
+    PERFORM VARYING BP-IDX FROM 1 BY 1 UNTIL BP-IDX > CP-COUNT
+        EVALUATE TRUE
+            WHEN CP(BP-IDX) = 8234 OR CP(BP-IDX) = 8235 OR CP(BP-IDX) = 8237 OR CP(BP-IDX) = 8238
+                 OR CP(BP-IDX) = 8294 OR CP(BP-IDX) = 8295 OR CP(BP-IDX) = 8296
+                IF BP-DEPTH >= 512
+                    MOVE 1 TO BP-MARK(BP-IDX)
+                ELSE
+                    ADD 1 TO BP-DEPTH
+                    MOVE BP-IDX TO BP-POS(BP-DEPTH)
+                    IF CP(BP-IDX) = 8294 OR CP(BP-IDX) = 8295 OR CP(BP-IDX) = 8296
+                        MOVE 1 TO BP-ISOLATE(BP-DEPTH)
+                    ELSE
+                        MOVE 0 TO BP-ISOLATE(BP-DEPTH)
+                    END-IF
+                    IF CP(BP-IDX) = 8235 OR CP(BP-IDX) = 8238 OR CP(BP-IDX) = 8295 OR CP(BP-IDX) = 8296
+                        MOVE 1 TO BP-RTL-KIND(BP-DEPTH)
+                    ELSE
+                        MOVE 0 TO BP-RTL-KIND(BP-DEPTH)
+                    END-IF
+                    MOVE 0 TO BP-SAW-RTL(BP-DEPTH) BP-SAW-LTR(BP-DEPTH) BP-SAW-SYNTAX(BP-DEPTH)
+                END-IF
+            WHEN CP(BP-IDX) = 8236
+*>              PDF closes the top embedding; an isolate on top or an empty
+*>              stack makes it an orphan.
+                IF BP-DEPTH = 0
+                    MOVE 1 TO BP-MARK(BP-IDX)
+                ELSE
+                    IF BP-ISOLATE(BP-DEPTH) = 1
+                        MOVE 1 TO BP-MARK(BP-IDX)
+                    ELSE
+                        MOVE BP-DEPTH TO BP-K
+                        PERFORM BP-CHECK-SPAN
+                        IF BP-PURPOSEFUL = 0
+                            MOVE 1 TO BP-MARK(BP-POS(BP-DEPTH))
+                            MOVE 1 TO BP-MARK(BP-IDX)
+                        END-IF
+                        SUBTRACT 1 FROM BP-DEPTH
+                    END-IF
+                END-IF
+            WHEN CP(BP-IDX) = 8297
+*>              PDI closes down to the innermost isolate; the embeddings above
+*>              it are terminated implicitly and so unbalanced. No isolate
+*>              open: orphan.
+                MOVE 0 TO BP-ISO-IDX
+                PERFORM VARYING BP-J FROM 1 BY 1 UNTIL BP-J > BP-DEPTH
+                    IF BP-ISOLATE(BP-J) = 1
+                        MOVE BP-J TO BP-ISO-IDX
+                    END-IF
+                END-PERFORM
+                IF BP-ISO-IDX = 0
+                    MOVE 1 TO BP-MARK(BP-IDX)
+                ELSE
+                    COMPUTE BP-J = BP-ISO-IDX + 1
+                    PERFORM UNTIL BP-J > BP-DEPTH
+                        MOVE 1 TO BP-MARK(BP-POS(BP-J))
+                        ADD 1 TO BP-J
+                    END-PERFORM
+                    MOVE BP-ISO-IDX TO BP-K
+                    PERFORM BP-CHECK-SPAN
+                    IF BP-PURPOSEFUL = 0
+                        MOVE 1 TO BP-MARK(BP-POS(BP-ISO-IDX))
+                        MOVE 1 TO BP-MARK(BP-IDX)
+                    END-IF
+                    COMPUTE BP-DEPTH = BP-ISO-IDX - 1
+                END-IF
+            WHEN OTHER
+                IF BP-DEPTH > 0
+                    MOVE CP(BP-IDX) TO LOOKUP-CP
+                    PERFORM IS-STRONG-RTL
+                    IF TABLE-FLAG = 1
+                        MOVE 1 TO BP-SAW-RTL(BP-DEPTH)
+                    END-IF
+                    PERFORM IS-STRONG-LTR
+                    IF TABLE-FLAG = 1
+                        MOVE 1 TO BP-SAW-LTR(BP-DEPTH)
+                    END-IF
+                    PERFORM IS-CODE-SYNTAX
+                    IF TABLE-FLAG = 1
+                        MOVE 1 TO BP-SAW-SYNTAX(BP-DEPTH)
+                    END-IF
+                END-IF
+        END-EVALUATE
+    END-PERFORM
+*>  Every opener still open at the end is unbalanced.
+    PERFORM VARYING BP-J FROM 1 BY 1 UNTIL BP-J > BP-DEPTH
+        MOVE 1 TO BP-MARK(BP-POS(BP-J))
+    END-PERFORM
+    PERFORM VARYING BP-IDX FROM 1 BY 1 UNTIL BP-IDX > CP-COUNT
+        IF BP-MARK(BP-IDX) = 1
+            ADD 1 TO BP-COUNT
+        END-IF
+    END-PERFORM.
+
+BP-CHECK-SPAN.
+*> BP-PURPOSEFUL for the span at stack index BP-K, whose enclosing spans are
+*> the stack entries below it: a right-to-left span is purposeful iff it saw
+*> strong right-to-left, no strong left-to-right and no code syntax; a
+*> left-to-right span iff it sits in right-to-left context and saw strong
+*> left-to-right, no strong right-to-left and no code syntax.
+    MOVE 0 TO BP-PURPOSEFUL
+    IF BP-RTL-KIND(BP-K) = 1
+        IF BP-SAW-RTL(BP-K) = 1 AND BP-SAW-LTR(BP-K) = 0 AND BP-SAW-SYNTAX(BP-K) = 0
+            MOVE 1 TO BP-PURPOSEFUL
+        END-IF
+    ELSE
+        MOVE BP-PARA-RTL TO BP-IN-RTL-CTX
+        PERFORM VARYING BP-J FROM 1 BY 1 UNTIL BP-J >= BP-K
+            IF BP-RTL-KIND(BP-J) = 1
+                MOVE 1 TO BP-IN-RTL-CTX
+            END-IF
+        END-PERFORM
+        IF BP-IN-RTL-CTX = 1 AND BP-SAW-LTR(BP-K) = 1 AND BP-SAW-RTL(BP-K) = 0 AND BP-SAW-SYNTAX(BP-K) = 0
+            MOVE 1 TO BP-PURPOSEFUL
+        END-IF
+    END-IF.
+
+FIND-NEXT-TOKEN.
+*> The next identifier-shaped token of TOK-SAVE-CP at or after TOK-SCAN-IDX: a
+*> maximal XID_Continue run (Unicode/Security/Identity/IdentifierTokens.lean),
+*> as 1-indexed TOK-START..TOK-END, or TOK-START 0 when none remains. XID_Continue
+*> is the port's own IS-DEFAULT-ID-CONTINUE over the bundled property table.
+    MOVE 0 TO TOK-START TOK-END
+    PERFORM UNTIL TOK-SCAN-IDX > TOK-SAVE-COUNT OR TOK-START > 0
+        MOVE TOK-SAVE-CP(TOK-SCAN-IDX) TO LOOKUP-CP
+        PERFORM IS-DEFAULT-ID-CONTINUE
+        IF TABLE-FLAG = 1
+            MOVE TOK-SCAN-IDX TO TOK-START
+        ELSE
+            ADD 1 TO TOK-SCAN-IDX
+        END-IF
+    END-PERFORM
+    IF TOK-START > 0
+        MOVE TOK-START TO TOK-END
+        MOVE 1 TO TABLE-FLAG
+        PERFORM UNTIL TOK-SCAN-IDX > TOK-SAVE-COUNT OR TABLE-FLAG = 0
+            MOVE TOK-SAVE-CP(TOK-SCAN-IDX) TO LOOKUP-CP
+            PERFORM IS-DEFAULT-ID-CONTINUE
+            IF TABLE-FLAG = 1
+                MOVE TOK-SCAN-IDX TO TOK-END
+                ADD 1 TO TOK-SCAN-IDX
+            END-IF
+        END-PERFORM
+    END-IF.
+
+TOKEN-SAVE-INPUT.
+*> Keep the whole input aside while token slices are loaded into CP.
+    MOVE CP-COUNT TO TOK-SAVE-COUNT
+    PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > CP-COUNT
+        MOVE CP(KDX) TO TOK-SAVE-CP(KDX)
+    END-PERFORM
+    MOVE 1 TO TOK-SCAN-IDX.
+
+TOKEN-LOAD-SLICE.
+*> Load TOK-START..TOK-END of the saved input into CP, with POS-OFFSET set so a
+*> finding's positions land in input coordinates.
+    COMPUTE CP-COUNT = TOK-END - TOK-START + 1
+    PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > CP-COUNT
+        COMPUTE MDX = TOK-START + KDX - 1
+        MOVE TOK-SAVE-CP(MDX) TO CP(KDX)
+    END-PERFORM
+    COMPUTE POS-OFFSET = TOK-START - 1.
+
+TOKEN-RESTORE-INPUT.
+    MOVE TOK-SAVE-COUNT TO CP-COUNT
+    PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > CP-COUNT
+        MOVE TOK-SAVE-CP(KDX) TO CP(KDX)
+    END-PERFORM
+    MOVE 0 TO POS-OFFSET.
+
+HOMOGLYPH-OVER-TOKENS.
+*> The homoglyph family over running text: the first identifier-shaped token
+*> that fires, read as one identifier (HOMO-IDENT-TOKEN), positions in input
+*> coordinates. When no token fires, the whole input is read once under the
+*> running-text context, which keeps the rungs that hold of any text (target
+*> match, math alphanumerics, width class, decomposition swap). Mirrors the Lean
+*> homoglyphOverTokens.
+    MOVE 0 TO HOMO-TOKEN-FIRED
+    PERFORM TOKEN-SAVE-INPUT
+    PERFORM UNTIL TOK-SCAN-IDX > TOK-SAVE-COUNT OR HOMO-TOKEN-FIRED = 1
+        PERFORM FIND-NEXT-TOKEN
+        IF TOK-START > 0
+            PERFORM TOKEN-LOAD-SLICE
+            MOVE FINDING-COUNT TO HOMO-SAVED-COUNT
+            MOVE 0 TO HOMO-RUNNING-TEXT
+            MOVE 1 TO HOMO-IDENT-TOKEN
+            PERFORM DETECT-HOMOGLYPH-CTX
+            IF FINDING-COUNT > HOMO-SAVED-COUNT
+                MOVE 1 TO HOMO-TOKEN-FIRED
+            END-IF
+        END-IF
+    END-PERFORM
+    PERFORM TOKEN-RESTORE-INPUT
+    IF HOMO-TOKEN-FIRED = 0
+        MOVE 1 TO HOMO-RUNNING-TEXT
+        MOVE 0 TO HOMO-IDENT-TOKEN
+        PERFORM DETECT-HOMOGLYPH-CTX
+    END-IF
+    MOVE 0 TO HOMO-RUNNING-TEXT HOMO-IDENT-TOKEN.
+
+MIXED-SCRIPT-OVER-TOKENS.
+*> The mixed-script family over running text: each identifier-shaped token is
+*> judged as one identifier (not an identifier field, so the Restricted-status
+*> rung does not apply); the first token that fires is reported, positions in
+*> input coordinates. A line with no firing token is clear. Mirrors the Lean
+*> mixedScriptOverTokens.
+    MOVE IDENTIFIER-FIELD-FLAG TO TOK-SAVED-IDENT
+    MOVE 0 TO IDENTIFIER-FIELD-FLAG
+    MOVE 0 TO HOMO-TOKEN-FIRED
+    PERFORM TOKEN-SAVE-INPUT
+    PERFORM UNTIL TOK-SCAN-IDX > TOK-SAVE-COUNT OR HOMO-TOKEN-FIRED = 1
+        PERFORM FIND-NEXT-TOKEN
+        IF TOK-START > 0
+            PERFORM TOKEN-LOAD-SLICE
+            MOVE FINDING-COUNT TO HOMO-SAVED-COUNT
+            PERFORM DETECT-MIXED-SCRIPT
+            IF FINDING-COUNT > HOMO-SAVED-COUNT
+                MOVE 1 TO HOMO-TOKEN-FIRED
+            END-IF
+        END-IF
+    END-PERFORM
+    PERFORM TOKEN-RESTORE-INPUT
+    MOVE TOK-SAVED-IDENT TO IDENTIFIER-FIELD-FLAG.
+
+COMPUTE-LATIN-ONLY.
+*> HOMO-LATIN-ONLY = 1 iff every script-bearing codepoint of CP is Latin.
+*> Mirrors the Lean isLatinOnly.
+    PERFORM BUILD-SCRIPT-UNION
+    IF SCRIPT-UNION-COUNT = 1 AND SCRIPT-UNION-TEXT(1:4) = "Latn"
+        MOVE 1 TO HOMO-LATIN-ONLY
+    ELSE
+        MOVE 0 TO HOMO-LATIN-ONLY
+    END-IF.
+
+COMPUTE-ASCII-CONFUSABLE.
+*> HOMO-ASCII = 1 iff CP carries a non-ASCII codepoint and its case-preserving
+*> skeleton (NFD, confusable substitution, NFD, with no case fold, so admın with
+*> a dotless i maps to adrnin while ADMIN stays itself) is all ASCII. Mirrors the
+*> Lean isAsciiConfusable over asciiSkeleton. NFD-SKEL-BUFFER writes through the
+*> shared CP scratch, so the input is kept in SAVE-CP and restored.
+    MOVE 0 TO HOMO-ASCII HOMO-ANY-NON-ASCII
+    PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > CP-COUNT
+        IF CP(KDX) > 127
+            MOVE 1 TO HOMO-ANY-NON-ASCII
+        END-IF
+    END-PERFORM
+    IF HOMO-ANY-NON-ASCII = 1
+        MOVE CP-COUNT TO SAVE-CP-COUNT
+        PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > CP-COUNT
+            MOVE CP(KDX) TO SAVE-CP(KDX)
+        END-PERFORM
+        MOVE CP-COUNT TO SKEL-COUNT
+        PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > CP-COUNT
+            MOVE CP(KDX) TO SKEL-CP(KDX)
+        END-PERFORM
+        PERFORM NFD-SKEL-BUFFER
+        PERFORM SUBSTITUTE-SKEL-BUFFER
+        PERFORM NFD-SKEL-BUFFER
+        MOVE 1 TO HOMO-ASCII
+        PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > SKEL-COUNT
+            IF SKEL-CP(KDX) > 127
+                MOVE 0 TO HOMO-ASCII
+            END-IF
+        END-PERFORM
+        MOVE SAVE-CP-COUNT TO CP-COUNT
+        PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > SAVE-CP-COUNT
+            MOVE SAVE-CP(KDX) TO CP(KDX)
+        END-PERFORM
+    END-IF.
+
+ADD-NON-ASCII-POS-FINDING.
+*> A finding whose positions are the non-ASCII codepoints of CP, in input
+*> coordinates. Mirrors the Lean nonAsciiPositions.
+    ADD 1 TO FINDING-COUNT
+    MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
+    MOVE SPACES TO POS-TEXT
+    PERFORM VARYING JDX FROM 1 BY 1 UNTIL JDX > CP-COUNT
+        IF CP(JDX) > 127
+            COMPUTE POS-IDX = JDX - 1 + POS-OFFSET
+            MOVE POS-IDX TO POS-NUM
+            IF FUNCTION LENGTH(FUNCTION TRIM(POS-TEXT)) = 0
+                STRING FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
+            ELSE
+                STRING FUNCTION TRIM(POS-TEXT) DELIMITED BY SIZE "," DELIMITED BY SIZE FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
+            END-IF
+        END-IF
+    END-PERFORM
+    MOVE POS-TEXT TO FINDING-POS(FINDING-COUNT).
 
 DETECT-TAG-BLOCK.
 *> The tag-block ladder in the priority order of
@@ -1210,6 +1643,21 @@ DETECT-NONCHAR.
     END-PERFORM.
 
 DETECT-HOMOGLYPH.
+*> The homoglyph ladder at the default context: one identifier field, not
+*> running text and not a token. Mirrors the Lean detect.
+    MOVE 0 TO HOMO-RUNNING-TEXT HOMO-IDENT-TOKEN
+    PERFORM DETECT-HOMOGLYPH-CTX.
+
+DETECT-HOMOGLYPH-CTX.
+*> The homoglyph ladder under the field context HOMO-RUNNING-TEXT /
+*> HOMO-IDENT-TOKEN (Unicode/Security/Identity/HomoglyphConfusable.lean's
+*> Context). Rungs in the Lean order: target match, math alphanumerics, width
+*> class, decomposition swap, then the two script rungs (cross-script mix, off
+*> on running text; low restriction level, off on running text and on a token),
+*> then the ascii-confusable rung, which runs on a whole field and on a token
+*> only when the token is Latin-only, so a Greek or Cyrillic word in prose is
+*> not read as its Latin look-alike.
+*>
 *> Priority 1 of the reference ladder is a target match: the input's letter
 *> skeleton spells one of the curated attack targets. It is decided by
 *> FIND-TARGET-MATCH over the real confusable and case-folding tables, not by
@@ -1266,19 +1714,40 @@ DETECT-HOMOGLYPH.
                 END-IF
             END-IF
         END-IF
-*>      The last two rungs of the Lean ladder, in its order: a cross-script mix
-*>      that is not Highly Restrictive, then a string failing every restriction
-*>      level. Both need the resolved script sets.
-        IF HOMO-EMITTED = 0
+*>      The script rungs of the Lean ladder, in its order: a cross-script mix
+*>      that is not Highly Restrictive (off on running text), then a string
+*>      failing every restriction level (off on running text and on a token).
+*>      Both need the resolved script sets.
+        IF HOMO-EMITTED = 0 AND HOMO-RUNNING-TEXT = 0
             PERFORM COMPUTE-CROSS-SCRIPT-MIX
             IF TABLE-FLAG = 1
                 MOVE "unicode.security.I.homoglyph-confusable.CrossScriptMix" TO TEMP-CODE
                 PERFORM ADD-ALL-POS-FINDING
-            ELSE
-                PERFORM COMPUTE-RESTRICTION-LEVEL
-                IF RESTRICTION-LEVEL = "MinimallyRestrictive" OR RESTRICTION-LEVEL = "Unrestricted"
-                    MOVE "unicode.security.I.homoglyph-confusable.RestrictionLow" TO TEMP-CODE
-                    PERFORM ADD-ALL-POS-FINDING
+                MOVE 1 TO HOMO-EMITTED
+            END-IF
+        END-IF
+        IF HOMO-EMITTED = 0 AND HOMO-RUNNING-TEXT = 0 AND HOMO-IDENT-TOKEN = 0
+            PERFORM COMPUTE-RESTRICTION-LEVEL
+            IF RESTRICTION-LEVEL = "MinimallyRestrictive" OR RESTRICTION-LEVEL = "Unrestricted"
+                MOVE "unicode.security.I.homoglyph-confusable.RestrictionLow" TO TEMP-CODE
+                PERFORM ADD-ALL-POS-FINDING
+                MOVE 1 TO HOMO-EMITTED
+            END-IF
+        END-IF
+*>      The ascii-confusable rung: a non-ASCII input whose case-preserving
+*>      skeleton is all ASCII reads as an ASCII word it is not (admın with a
+*>      dotless i). It reports the non-ASCII positions.
+        IF HOMO-EMITTED = 0 AND HOMO-RUNNING-TEXT = 0
+            MOVE 1 TO HOMO-LATIN-ONLY
+            IF HOMO-IDENT-TOKEN = 1
+                PERFORM COMPUTE-LATIN-ONLY
+            END-IF
+            IF HOMO-LATIN-ONLY = 1
+                PERFORM COMPUTE-ASCII-CONFUSABLE
+                IF HOMO-ASCII = 1
+                    MOVE "unicode.security.I.homoglyph-confusable.AsciiConfusable" TO TEMP-CODE
+                    PERFORM ADD-NON-ASCII-POS-FINDING
+                    MOVE 1 TO HOMO-EMITTED
                 END-IF
             END-IF
         END-IF
@@ -1407,6 +1876,13 @@ DETECT-RTL.
     END-IF.
 
 DETECT-CONFUSABLE-BIDI.
+*> A confusable source co-located with a purposeless bidi control
+*> (CVE-2021-42574 class). Only a purposeless control (COMPUTE-PURPOSELESS:
+*> unbalanced, or a balanced span enclosing nothing right-to-left in a
+*> left-to-right context) is the display channel this compound pairs with a
+*> confusable; a balanced embedding around Arabic text renders that text as
+*> written.
+    PERFORM COMPUTE-PURPOSELESS
     MOVE 0 TO HAS-CONFUSABLE HAS-OVERRIDE HAS-ISOLATE
     PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
         MOVE CP(IDX) TO LOOKUP-CP
@@ -1415,11 +1891,13 @@ DETECT-CONFUSABLE-BIDI.
         IF TABLE-FLAG = 1
             MOVE 1 TO HAS-CONFUSABLE
         END-IF
-        IF CP(IDX) = 8234 OR CP(IDX) = 8235 OR CP(IDX) = 8237 OR CP(IDX) = 8238 OR CP(IDX) = 8236
-            MOVE 1 TO HAS-OVERRIDE
-        END-IF
-        IF CP(IDX) = 8294 OR CP(IDX) = 8295 OR CP(IDX) = 8296 OR CP(IDX) = 8297
-            MOVE 1 TO HAS-ISOLATE
+        IF BP-MARK(IDX) = 1
+            IF CP(IDX) = 8234 OR CP(IDX) = 8235 OR CP(IDX) = 8237 OR CP(IDX) = 8238 OR CP(IDX) = 8236
+                MOVE 1 TO HAS-OVERRIDE
+            END-IF
+            IF CP(IDX) = 8294 OR CP(IDX) = 8295 OR CP(IDX) = 8296 OR CP(IDX) = 8297
+                MOVE 1 TO HAS-ISOLATE
+            END-IF
         END-IF
     END-PERFORM
     IF HAS-CONFUSABLE = 1 AND HAS-OVERRIDE = 1
@@ -2171,11 +2649,13 @@ ADD-HIS-FINDING.
     MOVE POS-TEXT TO FINDING-POS(FINDING-COUNT).
 
 ADD-ALL-POS-FINDING.
+*> Every position of CP, shifted by POS-OFFSET into input coordinates when CP
+*> holds a token slice of the input.
     ADD 1 TO FINDING-COUNT
     MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
     MOVE SPACES TO POS-TEXT
     PERFORM VARYING JDX FROM 1 BY 1 UNTIL JDX > CP-COUNT
-        COMPUTE POS-IDX = JDX - 1
+        COMPUTE POS-IDX = JDX - 1 + POS-OFFSET
         MOVE POS-IDX TO POS-NUM
         IF JDX = 1
             STRING FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
@@ -3205,7 +3685,10 @@ RD-CHECK-FULLWIDTH.
 
 RD-CHECK-MIXED.
 *> Both strong-LTR and strong-RTL present; positions are intentionally empty.
-    IF RD-LTR-COUNT > 0 AND RD-RTL-COUNT > 0
+*> Off for running text (RUNNING-TEXT-FLAG): a source line or a message carrying
+*> both directions is a bilingual line, not a divergence. Mirrors the Lean
+*> Context.runningText gate.
+    IF RD-LTR-COUNT > 0 AND RD-RTL-COUNT > 0 AND RUNNING-TEXT-FLAG = 0
         MOVE "unicode.security.D.renderer-divergence.MixedDirectionVariance" TO TEMP-CODE
         ADD 1 TO FINDING-COUNT
         MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
@@ -3234,8 +3717,13 @@ SCAN-FILENAME-DISGUISE.
 *> rendering library.
     MOVE 0 TO FD-CLASS FD-DONE FD-POS
     PERFORM FD-COMPUTE-DOTS
-*> Priority 1: any bidi format-control anywhere in the filename.
+*> Priority 1: a purposeless bidi format-control anywhere in the filename.
     PERFORM FD-CHECK-BIDI
+*> The remaining rungs read an extension; running text (RUNNING-TEXT-FLAG) has
+*> none, so they do not run on it. Mirrors the Lean Context.runningText gate.
+    IF FD-DONE = 0 AND RUNNING-TEXT-FLAG = 1
+        MOVE 1 TO FD-DONE
+    END-IF
 *> Priority 2: a fullwidth/halfwidth codepoint at or after the extension start.
     IF FD-DONE = 0
         PERFORM FD-CHECK-FULLWIDTH
@@ -3268,12 +3756,15 @@ FD-COMPUTE-DOTS.
     END-IF.
 
 FD-CHECK-BIDI.
-*> First bidi format-control anywhere; reports its 0-indexed position.
+*> First purposeless bidi format-control anywhere (COMPUTE-PURPOSELESS:
+*> unbalanced, or a balanced span enclosing nothing right-to-left in a
+*> left-to-right context); reports its 0-indexed position. A balanced embedding
+*> around an Arabic filename segment manages that segment and is not a flip.
+*> Mirrors the Lean detect, which reads firstPurposelessControl.
+    PERFORM COMPUTE-PURPOSELESS
     MOVE 1 TO IDX
     PERFORM UNTIL IDX > CP-COUNT OR FD-DONE = 1
-        MOVE CP(IDX) TO LOOKUP-CP
-        PERFORM IS-BIDI-FORMAT-CONTROL
-        IF TABLE-FLAG = 1
+        IF BP-MARK(IDX) = 1
             MOVE 1 TO FD-CLASS
             COMPUTE FD-POS = IDX - 1
             MOVE 1 TO FD-DONE
@@ -3725,9 +4216,25 @@ SCAN-SOURCE-DISPLAY-DIVERGENCE.
 *> tag; two or more -> Compound. Each constituent is run in isolation by zeroing
 *> FINDING-COUNT around it and reading the count it leaves; its per-family
 *> findings are discarded so only the aggregator's single verdict remains. This
-*> reuses DETECT-TAG-BLOCK, DETECT-VARIATION, DETECT-ZERO-WIDTH, DETECT-BIDI and
-*> DETECT-HOMOGLYPH — no new predicate, table or normalization. No position is
-*> reported at this layer.
+*> reuses DETECT-TAG-BLOCK, DETECT-VARIATION, DETECT-ZERO-WIDTH, the bidi
+*> purpose walk and DETECT-HOMOGLYPH — no new predicate, table or normalization.
+*> No position is reported at this layer. This is the default-context entry:
+*> the homoglyph constituent is the whole-input homoglyph verdict; the scan
+*> passes its own verdict through SDD-CORE. Mirrors the Lean detect over
+*> detectCore.
+    MOVE FINDING-COUNT TO SDD-SAVED-COUNT
+    PERFORM DETECT-HOMOGLYPH
+    IF FINDING-COUNT > SDD-SAVED-COUNT
+        MOVE 1 TO SDD-HOMO-FIRED
+    ELSE
+        MOVE 0 TO SDD-HOMO-FIRED
+    END-IF
+    MOVE SDD-SAVED-COUNT TO FINDING-COUNT
+    PERFORM SDD-CORE.
+
+SDD-CORE.
+*> The aggregate over a homoglyph verdict already in hand (SDD-HOMO-FIRED).
+*> Mirrors the Lean detectCore input homoglyphVerdict.
     MOVE 0 TO SDD-FIRED-COUNT
     MOVE SPACES TO SDD-TAG
     MOVE FINDING-COUNT TO SDD-SAVED-COUNT
@@ -3749,36 +4256,35 @@ SCAN-SOURCE-DISPLAY-DIVERGENCE.
         MOVE "ZeroWidth" TO SDD-TAG
     END-IF
     MOVE SDD-SAVED-COUNT TO FINDING-COUNT
-*> Presence, not balance. A Trojan Source payload balances its controls, since
-*> an unbalanced run breaks the file it hides in, so the balance verdict
-*> DETECT-BIDI reports is blind to the shape the attack takes. The full format
-*> control set is consulted: embeddings U+202A..U+202E and isolates
-*> U+2066..U+2069.
-    MOVE 0 TO SDD-BIDI-PRESENT
-    PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
-        IF (CP(IDX) >= 8234 AND CP(IDX) <= 8238)
-           OR (CP(IDX) >= 8294 AND CP(IDX) <= 8297)
-            MOVE 1 TO SDD-BIDI-PRESENT
-        END-IF
-    END-PERFORM
+*> A purposeless control (COMPUTE-PURPOSELESS): unbalanced, or a balanced span
+*> enclosing nothing right-to-left in a left-to-right context. A Trojan Source
+*> payload balances its controls, since an unbalanced run breaks the file it
+*> hides in, so the balance verdict DETECT-BIDI reports is blind to the shape
+*> the attack takes; a balanced embedding around an Arabic string literal
+*> manages that literal and is not a constituent.
+    PERFORM COMPUTE-PURPOSELESS
+    IF BP-COUNT > 0
+        MOVE 1 TO SDD-BIDI-PRESENT
+    ELSE
+        MOVE 0 TO SDD-BIDI-PRESENT
+    END-IF
     IF SDD-BIDI-PRESENT = 1
         ADD 1 TO SDD-FIRED-COUNT
         MOVE "BidiControl" TO SDD-TAG
     END-IF
     MOVE SDD-SAVED-COUNT TO FINDING-COUNT
-*> DETECT-HOMOGLYPH carries the reference's whole priority ladder, including
-*> the CrossScriptMix and RestrictionLow rungs, so it is the only constituent
-*> consulted here. Consulting DETECT-MIXED-SCRIPT as well would count a second
-*> fire for a signal the reference's homoglyph detector never reports: its
-*> RestrictedStatusCp rung belongs to mixed-script-admissibility alone, and a
-*> tag-block payload in an identifier field would aggregate to Compound where
-*> the reference reports TagBlock.
-    PERFORM DETECT-HOMOGLYPH
-    IF FINDING-COUNT > SDD-SAVED-COUNT
+*> The homoglyph constituent is the verdict in hand. DETECT-HOMOGLYPH carries
+*> the reference's whole priority ladder, including the CrossScriptMix and
+*> RestrictionLow rungs, so it is the only constituent consulted. Consulting
+*> DETECT-MIXED-SCRIPT as well would count a second fire for a signal the
+*> reference's homoglyph detector never reports: its RestrictedStatusCp rung
+*> belongs to mixed-script-admissibility alone, and a tag-block payload in an
+*> identifier field would aggregate to Compound where the reference reports
+*> TagBlock.
+    IF SDD-HOMO-FIRED = 1
         ADD 1 TO SDD-FIRED-COUNT
         MOVE "IdentifierHomoglyph" TO SDD-TAG
     END-IF
-    MOVE SDD-SAVED-COUNT TO FINDING-COUNT
     IF SDD-FIRED-COUNT >= 2
         MOVE "Compound" TO SDD-TAG
     END-IF
