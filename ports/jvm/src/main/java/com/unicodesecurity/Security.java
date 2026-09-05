@@ -136,9 +136,21 @@ public final class Security {
         || profile.equals(Profile.USERNAME);
   }
 
+  // True iff the profile reads its input as running text -- a source line, a
+  // message, a display name -- rather than one identifier. The identifier
+  // families then judge each identifier-shaped token of the line on its own, and
+  // the field-wide families that read the line as one identifier or one filename
+  // report clear. Mirrors profileIsRunningText in Unicode/Security/Policy.lean.
+  static boolean profileIsRunningText(String profile) {
+    return profile.equals(Profile.DISPLAY_NAME)
+        || profile.equals(Profile.CHAT_MESSAGE)
+        || profile.equals(Profile.SOURCE_CODE);
+  }
+
   public static Verdict scan(String profile, String mode, List<Integer> input) {
     List<Integer> codepoints = input.stream().map(Security::ensureCodepoint).toList();
-    List<Finding> findings = detect(codepoints, profileIsIdentifierField(profile));
+    List<Finding> findings =
+        detect(codepoints, profileIsIdentifierField(profile), profileIsRunningText(profile));
     return new Verdict(decide(profile, mode, findings), profile, mode, codepoints, findings, null);
   }
 
@@ -205,8 +217,15 @@ public final class Security {
 
   // detect runs every family over input. identifierField carries what the caller
   // knows about the field, mirroring Unicode.Security.RunAll's Context: a family
-  // scoped to identifiers needs to know whether it is holding one.
-  private static List<Finding> detect(List<Integer> input, boolean identifierField) {
+  // scoped to identifiers needs to know whether it is holding one. runningText is
+  // the Context's other reading: under it the homoglyph and mixed-script
+  // families read the input per identifier-shaped token, rtl-injection,
+  // locale-case-inversion and case-expansion-mismatch (which read the whole
+  // field as one identifier) report clear, filename-disguise runs only its
+  // purposeless-control rung, renderer-divergence drops its mixed-direction
+  // rung, and the source-display-divergence aggregate reads the homoglyph
+  // verdict this scan produced.
+  private static List<Finding> detect(List<Integer> input, boolean identifierField, boolean runningText) {
     List<Finding> findings = new ArrayList<>();
     List<Integer> tags = positionsWhere(input, Security::isTagCharacter);
     if (!tags.isEmpty()) {
@@ -231,11 +250,19 @@ public final class Security {
     Finding bidi = bidiFinding(input);
     if (bidi != null) findings.add(bidi);
     findings.addAll(noncharacterControlFindings(input));
-    Finding homoglyph = homoglyphConfusableFinding(input);
+    Finding homoglyph =
+        runningText
+            ? homoglyphOverTokens(input)
+            : homoglyphConfusableFindingWithContext(input, new HomoglyphContext(false, false));
     if (homoglyph != null) findings.add(homoglyph);
-    Finding mixedScript = mixedScriptAdmissibilityFinding(input, identifierField);
+    Finding mixedScript =
+        runningText
+            ? mixedScriptOverTokens(input)
+            : mixedScriptAdmissibilityFinding(input, identifierField);
     if (mixedScript != null) findings.add(mixedScript);
-    Finding rtl = rtlInjectionFinding(input);
+    // Families that read the whole field as one identifier report clear on
+    // running text. Mirrors the Lean mkGatedResult.
+    Finding rtl = runningText ? null : rtlInjectionFinding(input);
     if (rtl != null) findings.add(rtl);
     Finding confusableBidi = confusableBidiCompoundFinding(input);
     if (confusableBidi != null) findings.add(confusableBidi);
@@ -245,29 +272,34 @@ public final class Security {
     if (!emojiZwj.isClear()) findings.add(makeFinding(Family.EMOJI_ZWJ_INTEGRITY, emojiZwj.tag(), emojiZwj.positions()));
     var skinTone = SkinToneVariationForgery.detect(input).classify();
     if (!skinTone.isClear()) findings.add(makeFinding(Family.SKIN_TONE_VARIATION_FORGERY, skinTone.tag(), skinTone.positions()));
-    var filenameDisguise = FilenameDisguise.detect(input).classify();
+    var filenameDisguise = FilenameDisguise.detectWithContext(runningText, input).classify();
     if (!filenameDisguise.isClear()) findings.add(makeFinding(Family.FILENAME_DISGUISE, filenameDisguise.tag(), filenameDisguise.positions()));
-    var rendererDivergence = RendererDivergence.detect(input).classify();
+    var rendererDivergence = RendererDivergence.detectWithContext(runningText, input).classify();
     if (!rendererDivergence.isClear()) findings.add(makeFinding(Family.RENDERER_DIVERGENCE, rendererDivergence.tag(), rendererDivergence.positions()));
     var streamSafe = StreamSafeViolation.detect(input).classify();
     if (!streamSafe.isClear()) findings.add(makeFinding(Family.STREAM_SAFE_VIOLATION, streamSafe.tag(), streamSafe.positions()));
-    var caseExpansion = CaseExpansionMismatch.detect(input).classify();
-    if (!caseExpansion.isClear()) findings.add(makeFinding(Family.CASE_EXPANSION_MISMATCH, caseExpansion.tag(), caseExpansion.positions()));
+    if (!runningText) {
+      var caseExpansion = CaseExpansionMismatch.detect(input).classify();
+      if (!caseExpansion.isClear()) findings.add(makeFinding(Family.CASE_EXPANSION_MISMATCH, caseExpansion.tag(), caseExpansion.positions()));
+    }
     var identifierDrift = IdentifierFormDrift.detect(input).classify();
     if (!identifierDrift.isClear()) findings.add(makeFinding(Family.IDENTIFIER_FORM_DRIFT, identifierDrift.tag(), identifierDrift.positions()));
     var admissibilityDrift = AdmissibilityFormDrift.detect(input).classify();
     if (!admissibilityDrift.isClear()) findings.add(makeFinding(Family.ADMISSIBILITY_FORM_DRIFT, admissibilityDrift.tag(), admissibilityDrift.positions()));
     var normalizationBomb = normalizationBombDetect(input);
     if (normalizationBomb.subThreat() != null) findings.add(makeFinding(Family.NORMALIZATION_BOMB, normalizationBomb.subThreat(), normalizationBomb.positions()));
-    var localeCase = localeCaseInversionDetect(input);
-    if (localeCase.subThreat() != null) findings.add(makeFinding(Family.LOCALE_CASE_INVERSION, localeCase.subThreat(), localeCase.positions()));
+    if (!runningText) {
+      var localeCase = localeCaseInversionDetect(input);
+      if (localeCase.subThreat() != null) findings.add(makeFinding(Family.LOCALE_CASE_INVERSION, localeCase.subThreat(), localeCase.positions()));
+    }
     var nfcWitness = nfcIdempotenceWitnessDetect(input);
     if (nfcWitness.subThreat() != null) findings.add(makeFinding(Family.NFC_IDEMPOTENCE_WITNESS, nfcWitness.subThreat(), nfcWitness.positions()));
     var widthClass = widthClassConfusionDetect(input);
     if (widthClass.subThreat() != null) findings.add(makeFinding(Family.WIDTH_CLASS_CONFUSION, widthClass.subThreat(), widthClass.positions()));
     // SourceDisplayDivergence judges the input as a unit, so it localises
-    // nothing and carries an empty position list.
-    var sourceDisplay = SourceDisplayDivergence.detect(input);
+    // nothing and carries an empty position list. Its homoglyph constituent is
+    // the verdict this scan produced, so the two agree on running text.
+    var sourceDisplay = SourceDisplayDivergence.detectCore(input, homoglyph != null);
     if (!sourceDisplay.isClear()) {
       findings.add(makeFinding(Family.SOURCE_DISPLAY_DIVERGENCE, sourceDisplay.sub(), List.of()));
     }
@@ -305,25 +337,28 @@ public final class Security {
     return !positions.isEmpty() && hasSuspiciousZeroWidth(input, positions);
   }
 
-  /** True iff the bidi-control-balance constituent fires on {@code input}. */
+  /**
+   * True iff the bidi constituent fires on {@code input}: a purposeless bidi
+   * format-control ({@link BidiControlPurpose}: unbalanced, or a balanced span
+   * enclosing nothing right-to-left in a left-to-right context). A Trojan Source
+   * payload balances its controls, since an unbalanced run breaks the file it
+   * hides in, so a constituent built on the balance verdict is blind to the
+   * shape the attack takes; a balanced embedding around an Arabic string literal
+   * manages that literal and is not a constituent.
+   */
   static boolean bidiControlBalanceFired(List<Integer> input) {
-    // The full bidi format-control set, embeddings and isolates alike: a Trojan
-    // Source payload may use either, and the isolate form is invisible to a
-    // predicate that stops at U+202E.
-    return !positionsWhere(input, Security::isBidiFormatControl).isEmpty();
+    return BidiControlPurpose.hasPurposelessControl(input);
   }
 
-  /** True iff the homoglyph-confusable constituent fires on {@code input}. */
+  /**
+   * True iff the homoglyph-confusable constituent fires on {@code input} when the
+   * aggregate runs standalone: the whole input under the default context. The
+   * ladder carries the CrossScriptMix rung itself, so the constituent is the
+   * family finding; the scan passes its per-token verdict through {@link
+   * SourceDisplayDivergence#detectCore}.
+   */
   static boolean homoglyphConfusableFired(List<Integer> input) {
-    // The reference runs one homoglyph detector whose priority ladder ends in a
-    // CrossScriptMix branch, so a cross-script identifier fires it even though
-    // this port reports that case under mixed-script-admissibility. Consulting
-    // only the first builder misses every input whose sole homoglyph signal is
-    // the script mix.
-    return homoglyphConfusableFinding(input) != null
-        // The constituent asks the script question about a source file, which is
-        // not an identifier field, so the Restricted-status rung does not apply.
-        || mixedScriptAdmissibilityFinding(input, false) != null;
+    return homoglyphConfusableFinding(input) != null;
   }
 
   private static String decide(String profile, String mode, List<Finding> findings) {
@@ -793,20 +828,126 @@ public final class Security {
     return findings;
   }
 
+  /**
+   * The field context the homoglyph ladder reads. Mirrors the Lean
+   * {@code HomoglyphConfusable.Context}: {@code runningText} is a source line, a
+   * message or a display name rather than one identifier; {@code
+   * identifierToken} is one identifier-shaped token cut out of running text.
+   */
+  record HomoglyphContext(boolean runningText, boolean identifierToken) {}
+
   private static Finding homoglyphConfusableFinding(List<Integer> input) {
+    return homoglyphConfusableFindingWithContext(input, new HomoglyphContext(false, false));
+  }
+
+  // The homoglyph ladder under a field context. Rungs in the Lean order: target
+  // match, math alphanumerics, width class, decomposition swap, then the two
+  // script rungs (cross-script mix, off on running text; low restriction level,
+  // off on running text and on a token), then the ascii-confusable rung: a
+  // non-ASCII input whose case-preserving skeleton is all ASCII reads as an
+  // ASCII word it is not (admın with a dotless i). That rung runs on a whole
+  // field, and on a token only when the token is Latin-only, so a Greek or
+  // Cyrillic word in prose is not read as its Latin look-alike.
+  private static Finding homoglyphConfusableFindingWithContext(List<Integer> input, HomoglyphContext ctx) {
     String subThreat = "";
+    List<Integer> positions = fullSpanPositions(input);
     if (homoglyphTargetMatch(input) != null) subThreat = "TargetMatch";
     else if (input.stream().anyMatch(Security::isMathAlphanumeric)) subThreat = "MathAlpha";
     else if (input.stream().anyMatch(Security::isFullwidthHalfwidth)) subThreat = "WidthClass";
     else if (hasDecompositionSwap(input)) subThreat = "DecompositionSwap";
-    // The last two rungs of the Lean ladder, in its order: a cross-script mix
+    // The script rungs of the Lean ladder, in its order: a cross-script mix
     // that is not Highly Restrictive, then a string failing every restriction
     // level. Both need real script resolution.
-    else if (hasCrossScriptMix(input)) subThreat = "CrossScriptMix";
-    else if (restrictionLevel(input) == RestrictionLevel.MINIMALLY_RESTRICTIVE
-        || restrictionLevel(input) == RestrictionLevel.UNRESTRICTED) subThreat = "RestrictionLow";
+    else if (!ctx.runningText() && hasCrossScriptMix(input)) subThreat = "CrossScriptMix";
+    else if (!ctx.runningText()
+        && !ctx.identifierToken()
+        && (restrictionLevel(input) == RestrictionLevel.MINIMALLY_RESTRICTIVE
+            || restrictionLevel(input) == RestrictionLevel.UNRESTRICTED)) subThreat = "RestrictionLow";
+    else if (!ctx.runningText()
+        && (!ctx.identifierToken() || isLatinOnly(input))
+        && isAsciiConfusable(input)) {
+      subThreat = "AsciiConfusable";
+      positions = nonAsciiPositions(input);
+    }
     if (subThreat.isEmpty()) return null;
-    return makeFinding(Family.HOMOGLYPH_CONFUSABLE, subThreat, fullSpanPositions(input));
+    return makeFinding(Family.HOMOGLYPH_CONFUSABLE, subThreat, positions);
+  }
+
+  // The case-preserving skeleton: NFD, confusable substitution, NFD, with no
+  // case fold, so admın (dotless i) maps to adrnin while ADMIN stays itself.
+  // Mirrors the Lean asciiSkeleton.
+  private static List<Integer> asciiSkeleton(List<Integer> input) {
+    return toNfdCodepoints(substituteConfusables(toNfdCodepoints(input)));
+  }
+
+  // A non-ASCII input whose case-preserving skeleton is all ASCII. Mirrors the
+  // Lean isAsciiConfusable.
+  private static boolean isAsciiConfusable(List<Integer> input) {
+    boolean anyNonAscii = false;
+    for (int cp : input) {
+      if (cp > 0x7F) anyNonAscii = true;
+    }
+    if (!anyNonAscii) return false;
+    for (int cp : asciiSkeleton(input)) {
+      if (cp > 0x7F) return false;
+    }
+    return true;
+  }
+
+  // Positions of the non-ASCII codepoints. Mirrors the Lean nonAsciiPositions.
+  private static List<Integer> nonAsciiPositions(List<Integer> input) {
+    return positionsWhere(input, cp -> cp > 0x7F);
+  }
+
+  // Every script-bearing codepoint of the input is Latin. Mirrors the Lean
+  // isLatinOnly.
+  private static boolean isLatinOnly(List<Integer> input) {
+    Set<String> union = stringScriptUnion(input);
+    return union.size() == 1 && union.contains("Latn");
+  }
+
+  // The homoglyph family over running text: the first identifier-shaped token
+  // (a maximal XID_Continue run) that fires, read as one identifier, with its
+  // positions shifted back into input coordinates. When no token fires, the
+  // whole input is read once under the running-text context, which keeps the
+  // rungs that hold of any text (target match, math alphanumerics, width class,
+  // decomposition swap). Mirrors the Lean homoglyphOverTokens.
+  private static Finding homoglyphOverTokens(List<Integer> input) {
+    for (IdentifierTokens.Token token : IdentifierTokens.tokens(input)) {
+      Finding finding =
+          homoglyphConfusableFindingWithContext(token.cps(), new HomoglyphContext(false, true));
+      if (finding != null) {
+        return new Finding(
+            finding.code(),
+            finding.family(),
+            finding.severity(),
+            IdentifierTokens.shiftPositions(token.start(), finding.positions()),
+            finding.subThreat(),
+            finding.detail());
+      }
+    }
+    return homoglyphConfusableFindingWithContext(input, new HomoglyphContext(true, false));
+  }
+
+  // The mixed-script family over running text: each identifier-shaped token is
+  // judged as one identifier (not an identifier field, so the Restricted-status
+  // rung does not apply); the first token that fires is reported, positions in
+  // input coordinates. A line with no firing token is clear. Mirrors the Lean
+  // mixedScriptOverTokens.
+  private static Finding mixedScriptOverTokens(List<Integer> input) {
+    for (IdentifierTokens.Token token : IdentifierTokens.tokens(input)) {
+      Finding finding = mixedScriptAdmissibilityFinding(token.cps(), false);
+      if (finding != null) {
+        return new Finding(
+            finding.code(),
+            finding.family(),
+            finding.severity(),
+            IdentifierTokens.shiftPositions(token.start(), finding.positions()),
+            finding.subThreat(),
+            finding.detail());
+      }
+    }
+    return null;
   }
 
   private static Finding mixedScriptAdmissibilityFinding(List<Integer> input, boolean identifierField) {
@@ -908,22 +1049,37 @@ public final class Security {
   // (homoglyph) codepoint co-located with a bidi format-control is materially
   // more dangerous than either alone: the homoglyph disguises an identifier
   // while the bidi control reorders how a reviewer reads it. This fires only
-  // when both are present. With a confusable present, an override-class control
-  // (LRE/RLE/LRO/RLO/PDF) fires ConfusableInOverride; otherwise an isolate-class
-  // control (LRI/RLI/FSI/PDI) fires ConfusableInIsolate; otherwise clear.
-  // Exposed for direct spot-check testing, mirroring the Rust/Python/C++ detectors.
+  // when both are present. With a confusable present, a purposeless
+  // override-class control (LRE/RLE/LRO/RLO/PDF) fires ConfusableInOverride;
+  // otherwise a purposeless isolate-class control (LRI/RLI/FSI/PDI) fires
+  // ConfusableInIsolate; otherwise clear. Only a purposeless control
+  // (BidiControlPurpose: unbalanced, or a balanced span enclosing nothing
+  // right-to-left in a left-to-right context) is the display channel this
+  // compound pairs with a confusable; a balanced embedding around Arabic text
+  // renders that text as written. Exposed for direct spot-check testing,
+  // mirroring the Rust/Python/C++ detectors.
   public static ConfusableBidiCompoundResult confusableBidiCompoundDetect(List<Integer> input) {
     int confusablePos = firstPositionWhere(input, Security::isConfusableSource);
     if (confusablePos < 0) return new ConfusableBidiCompoundResult(null, List.of());
-    int overridePos = firstPositionWhere(input, Security::isConfusableBidiOverride);
+    int overridePos = firstPurposelessPositionWhere(input, Security::isConfusableBidiOverride);
     if (overridePos >= 0) {
       return new ConfusableBidiCompoundResult("ConfusableInOverride", List.of(confusablePos, overridePos));
     }
-    int isolatePos = firstPositionWhere(input, Security::isConfusableBidiIsolate);
+    int isolatePos = firstPurposelessPositionWhere(input, Security::isConfusableBidiIsolate);
     if (isolatePos >= 0) {
       return new ConfusableBidiCompoundResult("ConfusableInIsolate", List.of(confusablePos, isolatePos));
     }
     return new ConfusableBidiCompoundResult(null, List.of());
+  }
+
+  // The first position of a purposeless bidi control satisfying predicate, or
+  // -1. Mirrors the Lean firstOverridePos / firstIsolatePos over the purposeless
+  // positions.
+  private static int firstPurposelessPositionWhere(List<Integer> input, IntPredicate predicate) {
+    for (int pos : BidiControlPurpose.purposelessControlPositions(input)) {
+      if (predicate.test(input.get(pos))) return pos;
+    }
+    return -1;
   }
 
   private static Finding confusableBidiCompoundFinding(List<Integer> input) {
@@ -1353,7 +1509,9 @@ public final class Security {
   }
 
   // UAX #31 XID_Continue, parsed from the bundled DerivedCoreProperties.txt.
-  private static synchronized boolean isXidContinue(int cp) {
+  // Package-private so IdentifierTokens cuts running text on the port's own
+  // property table.
+  static synchronized boolean isXidContinue(int cp) {
     if (xidContinueRanges == null) {
       xidContinueRanges = parseCasingProperty(readResource("DerivedCoreProperties.txt"), "XID_Continue");
     }

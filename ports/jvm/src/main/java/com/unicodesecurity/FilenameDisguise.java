@@ -207,13 +207,16 @@ public final class FilenameDisguise {
     return count;
   }
 
-  /** Position and codepoint of the first bidi format-control, or {@code null}. */
+  /**
+   * Position and codepoint of the first purposeless bidi format-control, or
+   * {@code null}: unbalanced, or a balanced span enclosing nothing right-to-left
+   * in a left-to-right context ({@link BidiControlPurpose#firstPurposelessControl}).
+   * A balanced embedding around an Arabic filename segment manages that segment
+   * and is not a flip. Mirrors the Lean detect, which reads
+   * {@code firstPurposelessControl}.
+   */
   private static int[] firstBidiControl(List<Integer> input) {
-    for (int i = 0; i < input.size(); i++) {
-      int cp = input.get(i);
-      if (isBidiFormatControl(cp)) return new int[] {i, cp};
-    }
-    return null;
+    return BidiControlPurpose.firstPurposelessControl(input);
   }
 
   /** Position and codepoint of the first fullwidth/halfwidth codepoint at or after {@code start}, or {@code null}. */
@@ -256,8 +259,22 @@ public final class FilenameDisguise {
   // §5 Top-level detection
   // ───────────────────────────────────────────────────────────────────────
 
-  /** The FilenameDisguise detection function. */
+  /**
+   * The FilenameDisguise detection function, reading its input as one filename.
+   * Mirrors the Lean detect, which is detectWithContext at the default context.
+   */
   public static Verdict detect(List<Integer> input) {
+    return detectWithContext(false, input);
+  }
+
+  /**
+   * The FilenameDisguise detection function under an explicit field context.
+   * {@code runningText} mirrors the Lean {@code Context.runningText}: the
+   * extension rungs read the text after the last dot as a file extension, which
+   * a source file or a message does not have, so they do not run on running
+   * text; the purposeless-bidi-control rung holds of any field.
+   */
+  public static Verdict detectWithContext(boolean runningText, List<Integer> input) {
     List<Integer> cps = List.copyOf(input);
     List<Integer> dots = dotPositions(cps);
     Integer lastDot = dots.isEmpty() ? null : dots.get(dots.size() - 1);
@@ -266,16 +283,22 @@ public final class FilenameDisguise {
     int fwInExt = countFullwidthFrom(cps, extStart);
     int extInExt = countExtendFrom(cps, extStart);
 
-    Classification classification = classify(cps, dots, extStart);
+    Classification classification = classify(cps, dots, extStart, runningText);
 
     return new Verdict(cps, classification, dots, lastDot, bidiCount, fwInExt, extInExt);
   }
 
-  private static Classification classify(List<Integer> input, List<Integer> dots, int extStart) {
-    // Priority 1: any bidi format-control anywhere in the input.
+  private static Classification classify(
+      List<Integer> input, List<Integer> dots, int extStart, boolean runningText) {
+    // Priority 1: a purposeless bidi format-control anywhere in the input.
     int[] bidi = firstBidiControl(input);
     if (bidi != null) {
       return new Hazard(new RloFlip(bidi[0], bidi[1]), positionList(bidi[0]), List.of());
+    }
+
+    // The remaining rungs read an extension; running text has none.
+    if (runningText) {
+      return new Clear();
     }
 
     // Priority 2: a fullwidth/halfwidth codepoint in the extension region.

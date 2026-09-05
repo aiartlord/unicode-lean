@@ -311,8 +311,22 @@ public final class RendererDivergence {
   // §5 Top-level detection
   // ───────────────────────────────────────────────────────────────────────
 
-  /** The RendererDivergence detection function. */
+  /**
+   * The RendererDivergence detection function at the default context (one field,
+   * not running text). Mirrors the Lean detect.
+   */
   public static Verdict detect(List<Integer> input) {
+    return detectWithContext(false, input);
+  }
+
+  /**
+   * The RendererDivergence detection function under an explicit field context.
+   * {@code runningText} mirrors the Lean {@code Context.runningText}: a source
+   * line or a message carrying both directions is a bilingual line, not a
+   * divergence, so the mixed-direction rung does not run on running text; every
+   * other rung holds of any field.
+   */
+  public static Verdict detectWithContext(boolean runningText, List<Integer> input) {
     List<Integer> cps = List.copyOf(input);
     int vsCount = countVs(cps);
     int combiningCount = countCombining(cps);
@@ -321,14 +335,14 @@ public final class RendererDivergence {
     int ltrCount = countStrongLtr(cps);
     int rtlCount = countStrongRtl(cps);
 
-    Classification classification = classify(cps, hasZwj, ltrCount, rtlCount);
+    Classification classification = classify(cps, hasZwj, ltrCount, rtlCount, runningText);
 
     return new Verdict(
         cps, classification, vsCount, combiningCount, fullwidthCount, hasZwj, ltrCount, rtlCount);
   }
 
   private static Classification classify(
-      List<Integer> input, boolean hasZwj, int ltrCount, int rtlCount) {
+      List<Integer> input, boolean hasZwj, int ltrCount, int rtlCount, boolean runningText) {
     // Priority 1: combining-mark stack overflow (Zalgo).
     int[] stack = firstCombiningStack(input, MIN_COMBINING_STACK);
     if (stack != null) {
@@ -358,8 +372,8 @@ public final class RendererDivergence {
       return new Hazard(new FullwidthVariance(fw[0], fw[1]), positionList(fw[0]), List.of());
     }
 
-    // Priority 5: mixed direction.
-    if (ltrCount > 0 && rtlCount > 0) {
+    // Priority 5: mixed direction, off for running text.
+    if (!runningText && ltrCount > 0 && rtlCount > 0) {
       return new Hazard(new MixedDirectionVariance(ltrCount, rtlCount), List.of(), List.of());
     }
 

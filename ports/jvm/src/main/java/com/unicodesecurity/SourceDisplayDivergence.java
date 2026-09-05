@@ -25,7 +25,7 @@ import java.util.List;
  *   <li>tag-block-payload &rarr; {@code TagBlock}</li>
  *   <li>variation-selector-payload &rarr; {@code VariationSelector}</li>
  *   <li>zero-width-payload &rarr; {@code ZeroWidth}</li>
- *   <li>bidi-control-balance &rarr; {@code BidiControl}</li>
+ *   <li>bidi purpose ({@link BidiControlPurpose}, a purposeless control) &rarr; {@code BidiControl}</li>
  *   <li>homoglyph-confusable &rarr; {@code IdentifierHomoglyph}</li>
  * </ol>
  *
@@ -80,18 +80,31 @@ public final class SourceDisplayDivergence {
 
   /**
    * Aggregate the five constituent detectors into a single display-layer
-   * verdict. The constituents are consulted in canonical order; their firing
-   * tags are collected, then zero &rarr; clear, one &rarr; pass-through, two or
-   * more &rarr; {@code Compound}.
+   * verdict at the default context: the homoglyph constituent is the whole-input
+   * homoglyph verdict. Mirrors the Lean detect.
    */
   public static Detection detect(List<Integer> input) {
+    List<Integer> cps = List.copyOf(input);
+    return detectCore(cps, Security.homoglyphConfusableFired(cps));
+  }
+
+  /**
+   * Aggregate over a homoglyph verdict already in hand. The scan passes the
+   * verdict it produced (per identifier token on running text), so the
+   * constituent and the family finding are one reading of the same input;
+   * mirrors the Lean {@code detectCore input homoglyphVerdict}. The
+   * constituents are consulted in canonical order; their firing tags are
+   * collected, then zero &rarr; clear, one &rarr; pass-through, two or more
+   * &rarr; {@code Compound}.
+   */
+  public static Detection detectCore(List<Integer> input, boolean homoglyphFired) {
     List<Integer> cps = List.copyOf(input);
     List<String> fires = new ArrayList<>();
     if (Security.tagBlockPayloadFired(cps)) fires.add("TagBlock");
     if (Security.variationSelectorPayloadFired(cps)) fires.add("VariationSelector");
     if (Security.zeroWidthPayloadFired(cps)) fires.add("ZeroWidth");
     if (Security.bidiControlBalanceFired(cps)) fires.add("BidiControl");
-    if (Security.homoglyphConfusableFired(cps)) fires.add("IdentifierHomoglyph");
+    if (homoglyphFired) fires.add("IdentifierHomoglyph");
 
     return switch (fires.size()) {
       case 0 -> new Detection(null);
