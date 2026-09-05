@@ -348,8 +348,20 @@ pub fn profileIsIdentifierField(profile: Profile) bool {
     };
 }
 
+// True iff the profile reads its input as running text -- a source line, a
+// message, a display name -- rather than one identifier. The identifier
+// families then judge each identifier-shaped token of the line on its own, and
+// the field-wide families that read the line as one identifier or one filename
+// report clear. Mirrors profileIsRunningText in Unicode/Security/Policy.lean.
+pub fn profileIsRunningText(profile: Profile) bool {
+    return switch (profile) {
+        .display_name, .chat_message, .source_code => true,
+        .gateway_header, .domain_name, .dns_label, .url, .username, .opaque_secret, .binary_blob => false,
+    };
+}
+
 pub fn scan(profile: Profile, mode: Mode, input: []const u32) Verdict {
-    const findings = detect(input, profileIsIdentifierField(profile));
+    const findings = detect(input, profileIsIdentifierField(profile), profileIsRunningText(profile));
     const action = decide(profile, mode, findings);
     return .{
         .input = input,
@@ -532,8 +544,15 @@ fn resultFinding(family: Family, result: anytype) ?Finding {
 
 // detect runs every family over input. identifier_field carries what the caller
 // knows about the field, mirroring Unicode.Security.RunAll's Context: a family
-// scoped to identifiers needs to know whether it is holding one.
-fn detect(input: []const u32, identifier_field: bool) FindingList {
+// scoped to identifiers needs to know whether it is holding one. running_text is
+// the Context's other reading: under it the homoglyph and mixed-script families
+// read the input per identifier-shaped token, rtl-injection,
+// locale-case-inversion and case-expansion-mismatch (which read the whole field
+// as one identifier) report clear, filename-disguise runs only its
+// purposeless-control rung, renderer-divergence drops its mixed-direction rung,
+// and the source-display-divergence aggregate reads the homoglyph verdict this
+// scan produced.
+fn detect(input: []const u32, identifier_field: bool, running_text: bool) FindingList {
     var findings = FindingList{};
 
     if (positionsWhere(input, isTagCharacter)) |positions| {
@@ -588,14 +607,29 @@ fn detect(input: []const u32, identifier_field: bool) FindingList {
     }
 
     appendNoncharacterControlFindings(&findings, input);
-    if (homoglyphConfusableFinding(input)) |finding| {
+    // Every rung of the homoglyph ladder is reported. On running text the family
+    // reads the input per identifier-shaped token.
+    const homoglyph = if (running_text)
+        homoglyphOverTokens(input)
+    else
+        homoglyphConfusableFindingWithContext(input, .{ .running_text = false, .identifier_token = false });
+    if (homoglyph) |finding| {
         findings.append(finding);
     }
-    if (mixedScriptAdmissibilityFinding(input, identifier_field)) |finding| {
+    const mixed_script = if (running_text)
+        mixedScriptOverTokens(input)
+    else
+        mixedScriptAdmissibilityFinding(input, identifier_field);
+    if (mixed_script) |finding| {
         findings.append(finding);
     }
-    if (rtlInjectionFinding(input)) |finding| {
-        findings.append(finding);
+    // Families that read the whole field as one identifier report clear on
+    // running text: rtl-injection, case-expansion-mismatch and
+    // locale-case-inversion. Mirrors the Lean mkGatedResult.
+    if (!running_text) {
+        if (rtlInjectionFinding(input)) |finding| {
+            findings.append(finding);
+        }
     }
     if (confusableBidiCompoundFinding(input)) |finding| {
         findings.append(finding);
@@ -610,17 +644,19 @@ fn detect(input: []const u32, identifier_field: bool) FindingList {
     if (classifiedFinding(.skin_tone_variation_forgery, skin_tone_variation_forgery.detect(input).classify)) |finding| {
         findings.append(finding);
     }
-    if (classifiedFinding(.filename_disguise, filename_disguise.detect(input).classify)) |finding| {
+    if (classifiedFinding(.filename_disguise, filename_disguise.detectWithContext(running_text, input).classify)) |finding| {
         findings.append(finding);
     }
-    if (classifiedFinding(.renderer_divergence, renderer_divergence.detect(input).classify)) |finding| {
+    if (classifiedFinding(.renderer_divergence, renderer_divergence.detectWithContext(running_text, input).classify)) |finding| {
         findings.append(finding);
     }
     if (classifiedFinding(.stream_safe_violation, stream_safe_violation.detect(input).classify)) |finding| {
         findings.append(finding);
     }
-    if (classifiedFinding(.case_expansion_mismatch, case_expansion_mismatch.detect(input).classify)) |finding| {
-        findings.append(finding);
+    if (!running_text) {
+        if (classifiedFinding(.case_expansion_mismatch, case_expansion_mismatch.detect(input).classify)) |finding| {
+            findings.append(finding);
+        }
     }
     if (classifiedFinding(.identifier_form_drift, identifier_form_drift.detect(input).classify)) |finding| {
         findings.append(finding);
@@ -631,8 +667,10 @@ fn detect(input: []const u32, identifier_field: bool) FindingList {
     if (resultFinding(.normalization_bomb, normalizationBombDetect(input))) |finding| {
         findings.append(finding);
     }
-    if (resultFinding(.locale_case_inversion, localeCaseInversionDetect(input))) |finding| {
-        findings.append(finding);
+    if (!running_text) {
+        if (resultFinding(.locale_case_inversion, localeCaseInversionDetect(input))) |finding| {
+            findings.append(finding);
+        }
     }
     if (resultFinding(.nfc_idempotence_witness, nfcIdempotenceWitnessDetect(input))) |finding| {
         findings.append(finding);
@@ -641,12 +679,318 @@ fn detect(input: []const u32, identifier_field: bool) FindingList {
         findings.append(finding);
     }
     // SourceDisplayDivergence judges the input as a unit, so it localises
-    // nothing and carries an empty position list.
-    if (classifiedFinding(.source_display_divergence, source_display_divergence.detect(input).classify)) |finding| {
+    // nothing and carries an empty position list. Its homoglyph constituent is
+    // the verdict this scan produced, so the two agree on running text.
+    if (classifiedFinding(.source_display_divergence, source_display_divergence.detectCore(input, homoglyph != null).classify)) |finding| {
         findings.append(finding);
     }
 
     return findings;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// IdentifierTokens — identifier-shaped tokens of a running-text field.
+//
+// Direct port of Unicode/Security/Identity/IdentifierTokens.lean. A source
+// line, a chat message or a display name is not one identifier, but the
+// identifier-shaped words inside it are the surface a homoglyph attack targets
+// (scоpe with a Cyrillic о in `let scоpe = 1;`). A token is a maximal run of
+// XID_Continue codepoints; everything else (space, punctuation, operators,
+// format controls) separates tokens. Each token carries its start position so a
+// finding made on the token can be reported in input coordinates. The port
+// scans without an allocator, so tokens are yielded one at a time as slices of
+// the input. XID_Continue is the port's own isXidContinue over the bundled
+// DerivedCoreProperties.txt.
+// ─────────────────────────────────────────────────────────────────────
+
+/// One identifier-shaped run: its start position in the input and its
+/// codepoints, a slice of the input.
+pub const IdentifierToken = struct {
+    start: usize,
+    cps: []const u32,
+};
+
+/// Yields the maximal XID_Continue runs of the input, in input order.
+pub const IdentifierTokenIterator = struct {
+    input: []const u32,
+    index: usize = 0,
+
+    pub fn next(self: *IdentifierTokenIterator) ?IdentifierToken {
+        while (self.index < self.input.len and !isXidContinue(self.input[self.index])) {
+            self.index += 1;
+        }
+        if (self.index >= self.input.len) return null;
+        const start = self.index;
+        while (self.index < self.input.len and isXidContinue(self.input[self.index])) {
+            self.index += 1;
+        }
+        return IdentifierToken{ .start = start, .cps = self.input[start..self.index] };
+    }
+};
+
+pub fn identifierTokens(input: []const u32) IdentifierTokenIterator {
+    return IdentifierTokenIterator{ .input = input };
+}
+
+/// Move a finding's token-local positions back into input coordinates.
+fn shiftFindingPositions(finding: Finding, start: usize) Finding {
+    var shifted = finding;
+    for (0..finding.position_count) |index| {
+        shifted.positions[index] = finding.positions[index] + start;
+    }
+    return shifted;
+}
+
+// The homoglyph family over running text: the first identifier-shaped token (a
+// maximal XID_Continue run) that fires, read as one identifier, with its
+// positions shifted back into input coordinates. When no token fires, the whole
+// input is read once under the running-text context, which keeps the rungs that
+// hold of any text (target match, math alphanumerics, width class,
+// decomposition swap). Mirrors the Lean homoglyphOverTokens.
+fn homoglyphOverTokens(input: []const u32) ?Finding {
+    var tokens = identifierTokens(input);
+    while (tokens.next()) |token| {
+        if (homoglyphConfusableFindingWithContext(token.cps, .{ .running_text = false, .identifier_token = true })) |finding| {
+            return shiftFindingPositions(finding, token.start);
+        }
+    }
+    return homoglyphConfusableFindingWithContext(input, .{ .running_text = true, .identifier_token = false });
+}
+
+// The mixed-script family over running text: each identifier-shaped token is
+// judged as one identifier (not an identifier field, so the Restricted-status
+// rung does not apply); the first token that fires is reported, positions in
+// input coordinates. A line with no firing token is clear. Mirrors the Lean
+// mixedScriptOverTokens.
+fn mixedScriptOverTokens(input: []const u32) ?Finding {
+    var tokens = identifierTokens(input);
+    while (tokens.next()) |token| {
+        if (mixedScriptAdmissibilityFinding(token.cps, false)) |finding| {
+            return shiftFindingPositions(finding, token.start);
+        }
+    }
+    return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// BidiControlPurpose — which bidi format controls serve a purpose, and which do
+// not.
+//
+// Direct port of Unicode/Security/Display/BidiControlPurpose.lean. The nine
+// UAX #9 format controls exist to manage right-to-left text: a span is doing
+// that job when the text it encloses is right-to-left, or when it forces
+// left-to-right text inside a right-to-left context. A span enclosing no strong
+// right-to-left character in a left-to-right context manages nothing (LRI user
+// PDI around Latin text, LRO return PDF around a keyword), and an unbalanced
+// control never manages anything. Every Trojan Source payload is a control of
+// that kind; a balanced embedding around an Arabic string literal is the
+// opposite case and renders the literal as written.
+//
+// This is not source-region filtering: the question is asked of every control
+// wherever it sits, and it is decided from the codepoints the span encloses,
+// never from where a tokenizer would place it.
+//
+// Rule, as the Lean walk states it:
+//   - An opener pushes a span: its position, whether it is an isolate (closed
+//     by PDI) or an embedding/override (closed by PDF), and whether it is
+//     right-to-left in effect (RLE, RLO, RLI, FSI) or left-to-right (LRE, LRO,
+//     LRI).
+//   - Every other codepoint is recorded against the innermost open span only:
+//     strong right-to-left (R or AL), strong left-to-right (L), or ASCII code
+//     syntax. A nested span manages its own content.
+//   - PDF closes the top span when it is an embedding; against an isolate on
+//     top, or an empty stack, it is an orphan. PDI closes down to the innermost
+//     isolate, implicitly terminating the embeddings above it, which are thereby
+//     unbalanced; with no isolate open it is an orphan.
+//   - A closed span is purposeful iff its direct content is exactly its own
+//     direction and carries no code syntax; a left-to-right span additionally
+//     needs right-to-left context (an enclosing right-to-left span, or a
+//     paragraph whose first strong character is right-to-left).
+//   - Reported: every orphan, every opener still open at the end, every
+//     embedding a PDI terminated implicitly, and both ends of every closed span
+//     that was not purposeful.
+//
+// The strong-direction predicates are the port's own isStrongRtl / isStrongLtr
+// over the pinned bidi table. The port scans without an allocator: the open-span
+// stack holds MaxBidiSpanDepth spans (above the UAX #9 depth limit of 125) and
+// the reported positions are capped at MaxFindingPositions, the same narrowing
+// every bounded buffer in this port carries.
+// ─────────────────────────────────────────────────────────────────────
+
+/// RLE, RLO, RLI, or FSI (whose direction resolves from its content).
+pub fn bidiPurposeOpensRtlKind(cp: u32) bool {
+    return cp == 0x202B or cp == 0x202E or cp == 0x2067 or cp == 0x2068;
+}
+
+/// LRE, LRO, LRI.
+pub fn bidiPurposeOpensLtrKind(cp: u32) bool {
+    return cp == 0x202A or cp == 0x202D or cp == 0x2066;
+}
+
+/// LRI, RLI, FSI.
+pub fn bidiPurposeOpensIsolateKind(cp: u32) bool {
+    return cp == 0x2066 or cp == 0x2067 or cp == 0x2068;
+}
+
+/// The ASCII codepoints a Trojan Source payload moves: quotes, brackets, comment
+/// markers, statement separators, operators. Prose punctuation, space and digits
+/// are not in the set.
+pub fn isCodeSyntax(cp: u32) bool {
+    return switch (cp) {
+        0x22, 0x27, 0x60, 0x28, 0x29, 0x5B, 0x5D, 0x7B, 0x7D, 0x2F, 0x5C, 0x2A, 0x23, 0x3B, 0x3C, 0x3E, 0x3D, 0x2B, 0x7C, 0x26, 0x25, 0x24, 0x40, 0x5E, 0x7E => true,
+        else => false,
+    };
+}
+
+/// UAX #9 P2/P3: the paragraph runs right-to-left iff its first strong character
+/// is right-to-left.
+pub fn paragraphIsRtl(input: []const u32) bool {
+    for (input) |cp| {
+        if (isStrongRtl(cp)) return true;
+        if (isStrongLtr(cp)) return false;
+    }
+    return false;
+}
+
+/// The open-span stack depth the bounded walk tracks.
+pub const MaxBidiSpanDepth: usize = 256;
+
+/// One open span: where it opened, how it closes, its direction in effect, and
+/// what has appeared directly inside it.
+const BidiOpenSpan = struct {
+    pos: usize,
+    isolate: bool,
+    rtl_kind: bool,
+    saw_rtl: bool = false,
+    saw_ltr: bool = false,
+    saw_syntax: bool = false,
+};
+
+// A closed span is purposeful iff its direct content is exactly its own
+// direction and carries no code syntax; a left-to-right span additionally needs
+// right-to-left context.
+fn bidiSpanPurposeful(span: BidiOpenSpan, enclosing: []const BidiOpenSpan, paragraph_rtl: bool) bool {
+    if (span.rtl_kind) {
+        return span.saw_rtl and !span.saw_ltr and !span.saw_syntax;
+    }
+    var in_rtl_context = paragraph_rtl;
+    for (enclosing) |e| {
+        if (e.rtl_kind) in_rtl_context = true;
+    }
+    return in_rtl_context and span.saw_ltr and !span.saw_rtl and !span.saw_syntax;
+}
+
+fn appendPurposelessPosition(positions: *Positions, pos: usize) void {
+    for (positions.items[0..positions.len]) |existing| {
+        if (existing == pos) return;
+    }
+    if (positions.len >= positions.items.len) return;
+    positions.items[positions.len] = pos;
+    positions.len += 1;
+}
+
+/// Positions of the purposeless bidi format controls in the input, in input
+/// order. Empty iff every control is balanced and manages right-to-left text.
+pub fn purposelessControlPositions(input: []const u32) Positions {
+    const paragraph_rtl = paragraphIsRtl(input);
+    // The stack's last element is the innermost open span.
+    var stack: [MaxBidiSpanDepth]BidiOpenSpan = undefined;
+    var depth: usize = 0;
+    var reported = Positions{ .items = undefined, .len = 0 };
+
+    for (input, 0..) |cp, idx| {
+        if (bidiPurposeOpensRtlKind(cp) or bidiPurposeOpensLtrKind(cp)) {
+            if (depth >= stack.len) {
+                // An opener the bounded stack cannot track is reported as
+                // unbalanced.
+                appendPurposelessPosition(&reported, idx);
+            } else {
+                stack[depth] = BidiOpenSpan{
+                    .pos = idx,
+                    .isolate = bidiPurposeOpensIsolateKind(cp),
+                    .rtl_kind = bidiPurposeOpensRtlKind(cp),
+                };
+                depth += 1;
+            }
+        } else if (cp == 0x202C) {
+            // PDF closes the top embedding; an isolate on top or an empty stack
+            // makes it an orphan.
+            if (depth == 0 or stack[depth - 1].isolate) {
+                appendPurposelessPosition(&reported, idx);
+            } else {
+                const top = stack[depth - 1];
+                depth -= 1;
+                if (!bidiSpanPurposeful(top, stack[0..depth], paragraph_rtl)) {
+                    appendPurposelessPosition(&reported, top.pos);
+                    appendPurposelessPosition(&reported, idx);
+                }
+            }
+        } else if (cp == 0x2069) {
+            // PDI closes down to the innermost isolate; the embeddings above it
+            // are terminated implicitly and so unbalanced. No isolate open:
+            // orphan.
+            var iso_index: ?usize = null;
+            var k = depth;
+            while (k > 0) : (k -= 1) {
+                if (stack[k - 1].isolate) {
+                    iso_index = k - 1;
+                    break;
+                }
+            }
+            if (iso_index) |iso| {
+                for (stack[iso + 1 .. depth]) |dropped| {
+                    appendPurposelessPosition(&reported, dropped.pos);
+                }
+                const closed = stack[iso];
+                depth = iso;
+                if (!bidiSpanPurposeful(closed, stack[0..depth], paragraph_rtl)) {
+                    appendPurposelessPosition(&reported, closed.pos);
+                    appendPurposelessPosition(&reported, idx);
+                }
+            } else {
+                appendPurposelessPosition(&reported, idx);
+            }
+        } else if (depth > 0) {
+            const top = &stack[depth - 1];
+            top.saw_rtl = top.saw_rtl or isStrongRtl(cp);
+            top.saw_ltr = top.saw_ltr or isStrongLtr(cp);
+            top.saw_syntax = top.saw_syntax or isCodeSyntax(cp);
+        }
+    }
+
+    // Every opener still open at the end is unbalanced.
+    for (stack[0..depth]) |open| {
+        appendPurposelessPosition(&reported, open.pos);
+    }
+
+    std.mem.sort(usize, reported.items[0..reported.len], {}, std.sort.asc(usize));
+    return reported;
+}
+
+/// True iff the input carries at least one purposeless bidi format control.
+pub fn hasPurposelessControl(input: []const u32) bool {
+    return purposelessControlPositions(input).len > 0;
+}
+
+/// Position and codepoint of the first purposeless control, or null when every
+/// control is purposeful.
+pub const PurposelessHit = struct { pos: usize, cp: u32 };
+pub fn firstPurposelessControl(input: []const u32) ?PurposelessHit {
+    const positions = purposelessControlPositions(input);
+    if (positions.len == 0) return null;
+    const pos = positions.items[0];
+    return PurposelessHit{ .pos = pos, .cp = input[pos] };
+}
+
+/// The first position of a purposeless bidi control satisfying pred, or null.
+/// Mirrors the Lean firstOverridePos / firstIsolatePos over the purposeless
+/// positions.
+fn firstPurposelessPositionWhere(input: []const u32, comptime pred: fn (u32) bool) ?usize {
+    const positions = purposelessControlPositions(input);
+    for (positions.items[0..positions.len]) |pos| {
+        if (pred(input[pos])) return pos;
+    }
+    return null;
 }
 
 fn decide(profile: Profile, mode: Mode, findings: FindingList) Action {
@@ -1074,8 +1418,74 @@ fn appendNoncharacterControlFindings(findings: *FindingList, input: []const u32)
     }
 }
 
+/// The field context the homoglyph ladder reads. Mirrors the Lean
+/// HomoglyphConfusable.Context: running_text is a source line, a message or a
+/// display name rather than one identifier; identifier_token is one
+/// identifier-shaped token cut out of running text.
+pub const HomoglyphContext = struct {
+    running_text: bool = false,
+    identifier_token: bool = false,
+};
+
 fn homoglyphConfusableFinding(input: []const u32) ?Finding {
+    return homoglyphConfusableFindingWithContext(input, .{});
+}
+
+// The case-preserving skeleton: NFD, confusable substitution, NFD, with no case
+// fold, so admın (dotless i) maps to adrnin while ADMIN stays itself. Mirrors
+// the Lean asciiSkeleton.
+fn asciiSkeleton(input: []const u32) ?CpBuffer {
+    const nfd1 = toNFD(input) orelse return null;
+    var substituted = CpBuffer{};
+    for (nfd1.slice()) |cp| {
+        var replacement = CpBuffer{};
+        if (confusableReplacement(cp, &replacement)) {
+            if (!substituted.appendSlice(replacement.slice())) return null;
+        } else {
+            if (!substituted.append(cp)) return null;
+        }
+    }
+    return toNFD(substituted.slice());
+}
+
+// A non-ASCII input whose case-preserving skeleton is all ASCII. Mirrors the
+// Lean isAsciiConfusable. An input beyond the bounded skeleton width is not
+// judged.
+fn isAsciiConfusable(input: []const u32) bool {
+    var any_non_ascii = false;
+    for (input) |cp| {
+        if (cp > 0x7F) any_non_ascii = true;
+    }
+    if (!any_non_ascii) return false;
+    const skel = asciiSkeleton(input) orelse return false;
+    for (skel.slice()) |cp| {
+        if (cp > 0x7F) return false;
+    }
+    return true;
+}
+
+fn isNonAscii(cp: u32) bool {
+    return cp > 0x7F;
+}
+
+// Every script-bearing codepoint of the input is Latin. Mirrors the Lean
+// isLatinOnly.
+fn isLatinOnly(input: []const u32) bool {
+    const union_set = stringScriptUnion(input);
+    return union_set.len == 1 and union_set.contains("Latn");
+}
+
+// The homoglyph ladder under a field context. Rungs in the Lean order: target
+// match, math alphanumerics, width class, decomposition swap, then the two
+// script rungs (cross-script mix, off on running text; low restriction level,
+// off on running text and on a token), then the ascii-confusable rung: a
+// non-ASCII input whose case-preserving skeleton is all ASCII reads as an ASCII
+// word it is not (admın with a dotless i). That rung runs on a whole field, and
+// on a token only when the token is Latin-only, so a Greek or Cyrillic word in
+// prose is not read as its Latin look-alike.
+fn homoglyphConfusableFindingWithContext(input: []const u32, ctx: HomoglyphContext) ?Finding {
     var sub_threat: ?[]const u8 = null;
+    var positions = fullSpanPositions(input);
     if (homoglyphTargetMatch(input) != null) {
         sub_threat = "TargetMatch";
     } else {
@@ -1097,20 +1507,23 @@ fn homoglyphConfusableFinding(input: []const u32) ?Finding {
     if (sub_threat == null and hasDecompositionSwap(input)) {
         sub_threat = "DecompositionSwap";
     }
-    // The last two rungs of the Lean ladder, in its order: a cross-script mix
+    // The script rungs of the Lean ladder, in its order: a cross-script mix
     // that is not Highly Restrictive, then a string failing every restriction
     // level. Both need real script resolution.
-    if (sub_threat == null and hasCrossScriptMix(input)) {
+    if (sub_threat == null and !ctx.running_text and hasCrossScriptMix(input)) {
         sub_threat = "CrossScriptMix";
     }
-    if (sub_threat == null) {
+    if (sub_threat == null and !ctx.running_text and !ctx.identifier_token) {
         const level = restrictionLevel(input);
         if (level == .minimally_restrictive or level == .unrestricted) {
             sub_threat = "RestrictionLow";
         }
     }
+    if (sub_threat == null and !ctx.running_text and (!ctx.identifier_token or isLatinOnly(input)) and isAsciiConfusable(input)) {
+        sub_threat = "AsciiConfusable";
+        positions = positionsWhere(input, isNonAscii) orelse Positions{ .items = undefined, .len = 0 };
+    }
     const threat = sub_threat orelse return null;
-    const positions = fullSpanPositions(input);
     return .{
         .code = homoglyphConfusableReasonCode(threat),
         .family = .homoglyph_confusable,
@@ -1440,16 +1853,20 @@ fn confusableBidiCompoundAt(sub_threat: []const u8, confusable_pos: usize, bidi_
     };
 }
 
-// Detect a confusable codepoint sharing the input with a bidi control. Priority
-// mirrors the spec: with a confusable present, an override-class control fires
-// ConfusableInOverride; otherwise an isolate-class control fires
-// ConfusableInIsolate; otherwise clear.
+// Detect a confusable codepoint sharing the input with a purposeless bidi
+// control. Priority mirrors the spec: with a confusable present, an
+// override-class control fires ConfusableInOverride; otherwise an isolate-class
+// control fires ConfusableInIsolate; otherwise clear. Only a purposeless
+// control (BidiControlPurpose: unbalanced, or a balanced span enclosing nothing
+// right-to-left in a left-to-right context) is the display channel this
+// compound pairs with a confusable; a balanced embedding around Arabic text
+// renders that text as written.
 fn confusableBidiCompoundFinding(input: []const u32) ?Finding {
     const confusable_pos = firstPositionWhere(input, isConfusableSource) orelse return null;
-    if (firstPositionWhere(input, isBidiEmbeddingControl)) |bidi_pos| {
+    if (firstPurposelessPositionWhere(input, isBidiEmbeddingControl)) |bidi_pos| {
         return confusableBidiCompoundAt("ConfusableInOverride", confusable_pos, bidi_pos);
     }
-    if (firstPositionWhere(input, isBidiIsolateControl)) |bidi_pos| {
+    if (firstPurposelessPositionWhere(input, isBidiIsolateControl)) |bidi_pos| {
         return confusableBidiCompoundAt("ConfusableInIsolate", confusable_pos, bidi_pos);
     }
     return null;
@@ -1560,6 +1977,9 @@ fn homoglyphConfusableReasonCode(sub_threat: []const u8) []const u8 {
     }
     if (std.mem.eql(u8, sub_threat, "RestrictionLow")) {
         return "unicode.security.I.homoglyph-confusable.RestrictionLow";
+    }
+    if (std.mem.eql(u8, sub_threat, "AsciiConfusable")) {
+        return "unicode.security.I.homoglyph-confusable.AsciiConfusable";
     }
     return "unicode.security.I.homoglyph-confusable.WidthClass";
 }
@@ -4571,8 +4991,18 @@ pub const renderer_divergence = struct {
 
     // ── §5 Top-level detection ───────────────────────────────────────────
 
-    /// The RendererDivergence detection function.
+    /// The RendererDivergence detection function at the default context (one
+    /// field, not running text). Mirrors the Lean detect.
     pub fn detect(input: []const u32) @This().Verdict {
+        return detectWithContext(false, input);
+    }
+
+    /// The RendererDivergence detection function under an explicit field
+    /// context. running_text mirrors the Lean Context.runningText: a source
+    /// line or a message carrying both directions is a bilingual line, not a
+    /// divergence, so the mixed-direction rung does not run on running text;
+    /// every other rung holds of any field.
+    pub fn detectWithContext(running_text: bool, input: []const u32) @This().Verdict {
         const vs_count = countVs(input);
         const combining_count = countCombining(input);
         const fullwidth_count = countFullwidth(input);
@@ -4621,8 +5051,8 @@ pub const renderer_divergence = struct {
                     .positions = pos,
                 } };
             }
-            // Priority 5: mixed direction.
-            if (ltr_count > 0 and rtl_count > 0) {
+            // Priority 5: mixed direction, off for running text.
+            if (!running_text and ltr_count > 0 and rtl_count > 0) {
                 break :blk .{ .hazard = .{
                     .sub = .{ .mixed_direction_variance = .{ .ltr_count = ltr_count, .rtl_count = rtl_count } },
                     .positions = PosBuffer{},
@@ -4746,13 +5176,15 @@ pub const filename_disguise = struct {
         return count;
     }
 
-    /// Position and codepoint of the first bidi format-control.
+    /// Position and codepoint of the first purposeless bidi format-control:
+    /// unbalanced, or a balanced span enclosing nothing right-to-left in a
+    /// left-to-right context (firstPurposelessControl). A balanced embedding
+    /// around an Arabic filename segment manages that segment and is not a
+    /// flip. Mirrors the Lean detect, which reads firstPurposelessControl.
     const CtlHit = struct { pos: usize, cp: u32 };
     fn firstBidiControl(input: []const u32) ?CtlHit {
-        for (input, 0..) |cp, idx| {
-            if (bidiControlPredicate(cp)) return CtlHit{ .pos = idx, .cp = cp };
-        }
-        return null;
+        const hit = firstPurposelessControl(input) orelse return null;
+        return CtlHit{ .pos = hit.pos, .cp = hit.cp };
     }
 
     /// Position and codepoint of the first fullwidth/halfwidth codepoint at or
@@ -4889,8 +5321,19 @@ pub const filename_disguise = struct {
 
     // ── §4 Top-level detection ───────────────────────────────────────────
 
-    /// The FilenameDisguise detection function.
+    /// The FilenameDisguise detection function, reading its input as one
+    /// filename. Mirrors the Lean detect, which is detectWithContext at the
+    /// default context.
     pub fn detect(input: []const u32) @This().Verdict {
+        return detectWithContext(false, input);
+    }
+
+    /// The FilenameDisguise detection function under an explicit field
+    /// context. running_text mirrors the Lean Context.runningText: the
+    /// extension rungs read the text after the last dot as a file extension,
+    /// which a source file or a message does not have, so they do not run on
+    /// running text; the purposeless-bidi-control rung holds of any field.
+    pub fn detectWithContext(running_text: bool, input: []const u32) @This().Verdict {
         const dots = dotPositions(input);
         const last_dot: ?usize = if (dots.len == 0) null else dots.items[dots.len - 1];
         const ext_start: usize = if (last_dot) |p| p + 1 else input.len;
@@ -4899,7 +5342,7 @@ pub const filename_disguise = struct {
         const ext_in_ext = countExtendFrom(input, ext_start);
 
         const classification: Classification = blk: {
-            // Priority 1: any bidi format-control anywhere.
+            // Priority 1: a purposeless bidi format-control anywhere.
             if (firstBidiControl(input)) |hit| {
                 var pos = PosBuffer{};
                 pos.append(hit.pos);
@@ -4907,6 +5350,10 @@ pub const filename_disguise = struct {
                     .sub = .{ .rlo_flip = .{ .position = hit.pos, .control_cp = hit.cp } },
                     .positions = pos,
                 } };
+            }
+            // The remaining rungs read an extension; running text has none.
+            if (running_text) {
+                break :blk .{ .clear = {} };
             }
             // Priority 2: fullwidth/halfwidth in the extension.
             if (firstFullwidthFrom(input, ext_start)) |hit| {
@@ -5643,26 +6090,24 @@ pub const source_display_divergence = struct {
             hasSuspiciousZeroWidth(input);
     }
 
-    /// bidi-control-balance fires iff the input carries a bidi embedding control.
+    /// The bidi constituent fires iff the input carries a purposeless bidi
+    /// format control (BidiControlPurpose: unbalanced, or a balanced span
+    /// enclosing nothing right-to-left in a left-to-right context). A Trojan
+    /// Source payload balances its controls, since an unbalanced run breaks
+    /// the file it hides in, so a constituent built on the balance verdict is
+    /// blind to the shape the attack takes; a balanced embedding around an
+    /// Arabic string literal manages that literal and is not a constituent.
     fn bidiControlFired(input: []const u32) bool {
-        // Presence over the full bidi format-control set, embeddings and
-        // isolates alike. A Trojan Source payload balances its controls, since
-        // an unbalanced run breaks the file it hides in, and it may use either
-        // form; a predicate stopping at U+202E cannot see the isolate shape.
-        return positionsWhere(input, isBidiFormatControl) != null;
+        return hasPurposelessControl(input);
     }
 
-    /// homoglyph-confusable fires iff its finding is present. The reference
-    /// runs one homoglyph detector whose priority ladder ends in a
-    /// CrossScriptMix branch, so a cross-script identifier fires it even though
-    /// this port reports that case under mixed-script-admissibility. Both
-    /// builders are consulted, or every input whose only homoglyph signal is
-    /// the script mix is missed.
+    /// homoglyph-confusable fires iff its finding is present when the
+    /// aggregate runs standalone: the whole input under the default context.
+    /// The ladder carries the CrossScriptMix rung itself, so the constituent
+    /// is the family finding; the scan passes its per-token verdict through
+    /// detectCore.
     fn homoglyphFired(input: []const u32) bool {
-        if (homoglyphConfusableFinding(input) != null) return true;
-        // The constituent asks the script question about a source file, which
-        // is not an identifier field, so the Restricted-status rung is off.
-        return mixedScriptAdmissibilityFinding(input, false) != null;
+        return homoglyphConfusableFinding(input) != null;
     }
 
     // ── §2 Types ─────────────────────────────────────────────────────────
@@ -5749,10 +6194,20 @@ pub const source_display_divergence = struct {
     // ── §3 Top-level detection ───────────────────────────────────────────
 
     /// Aggregate the port's own five constituent detectors into one D-layer
-    /// verdict. Constituents are evaluated in canonical order: tag-block,
-    /// variation-selector, zero-width, bidi-control, homoglyph. Zero fired →
-    /// clear; exactly one → that family's tag; two or more → Compound.
+    /// verdict at the default context: the homoglyph constituent is the
+    /// whole-input homoglyph verdict. Mirrors the Lean detect.
     pub fn detect(input: []const u32) @This().Verdict {
+        return detectCore(input, homoglyphFired(input));
+    }
+
+    /// Aggregate over a homoglyph verdict already in hand. The scan passes the
+    /// verdict it produced (per identifier token on running text), so the
+    /// constituent and the family finding are one reading of the same input;
+    /// mirrors the Lean detectCore input homoglyphVerdict. Constituents are
+    /// evaluated in canonical order: tag-block, variation-selector,
+    /// zero-width, bidi-control, homoglyph. Zero fired → clear; exactly one →
+    /// that family's tag; two or more → Compound.
+    pub fn detectCore(input: []const u32, homoglyph_fired: bool) @This().Verdict {
         var fires: [5]SubThreat = undefined;
         var n: usize = 0;
         if (tagBlockFired(input)) {
@@ -5771,7 +6226,7 @@ pub const source_display_divergence = struct {
             fires[n] = .bidi_control;
             n += 1;
         }
-        if (homoglyphFired(input)) {
+        if (homoglyph_fired) {
             fires[n] = .identifier_homoglyph;
             n += 1;
         }
