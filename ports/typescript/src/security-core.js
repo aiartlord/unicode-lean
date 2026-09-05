@@ -218,9 +218,23 @@ function profileIsIdentifierField(profile) {
   );
 }
 
+// profileIsRunningText mirrors profileIsRunningText in
+// Unicode/Security/Policy.lean: a display name, a chat message and a source
+// file are running text — prose or source, a whole file or message — rather
+// than a single value. The identifier detectors read such a field per
+// identifier token; the declared-field detector rtlInjection, the casing
+// families and the filename extension rungs do not run on it.
+function profileIsRunningText(profile) {
+  return (
+    profile === Profile.DisplayName ||
+    profile === Profile.ChatMessage ||
+    profile === Profile.SourceCode
+  );
+}
+
 export function scan(profile, mode, input) {
   const codepoints = Array.from(input, ensureCodepoint);
-  const findings = detect(codepoints, profileIsIdentifierField(profile));
+  const findings = detect(codepoints, profileIsIdentifierField(profile), profileIsRunningText(profile));
   return {
     action: decide(profile, mode, findings),
     profile,
@@ -288,7 +302,7 @@ export const verdictJSON = verdictJson;
 // detect runs every family over input. identifierField carries what the caller
 // knows about the field, mirroring Unicode.Security.RunAll's Context: a family
 // scoped to identifiers needs to know whether it is holding one.
-function detect(input, identifierField) {
+function detect(input, identifierField, runningText) {
   const findings = [];
 
   // The whole tag block counts, not only the ASCII-bearing span, and which
@@ -339,15 +353,20 @@ function detect(input, identifierField) {
 
   findings.push(...noncharacterControlFindings(input));
 
-  const homoglyph = homoglyphConfusableFinding(input);
+  // Running text is judged per identifier-shaped token by the identifier
+  // detectors (Lean homoglyphOverTokens / mixedScriptOverTokens): a bilingual
+  // file is not one mixed-script identifier, and a scоpe inside it is.
+  const homoglyph = homoglyphOverTokens(input, runningText);
   if (homoglyph !== null) {
     findings.push(homoglyph);
   }
-  const mixedScript = mixedScriptAdmissibilityFinding(input, identifierField);
+  const mixedScript = mixedScriptOverTokens(input, identifierField, runningText);
   if (mixedScript !== null) {
     findings.push(mixedScript);
   }
-  const rtl = rtlInjectionFinding(input);
+  // RtlInjection judges a field declared left-to-right; running text declares
+  // no direction, so the family reports clear on it (Lean: mkGatedResult).
+  const rtl = runningText ? null : rtlInjectionFinding(input);
   if (rtl !== null) {
     findings.push(rtl);
   }
@@ -370,12 +389,12 @@ function detect(input, identifierField) {
     findings.push(makeFinding(Family.SkinToneVariationForgery, skinToneVariationForgery.tag, skinToneVariationForgery.positions));
   }
 
-  const filenameDisguise = filenameDisguiseDetect(input).classify;
+  const filenameDisguise = filenameDisguiseDetectWithContext(runningText, input).classify;
   if (!filenameDisguise.isClear) {
     findings.push(makeFinding(Family.FilenameDisguise, filenameDisguise.tag, filenameDisguise.positions));
   }
 
-  const rendererDivergence = rendererDivergenceDetect(input).classify;
+  const rendererDivergence = rendererDivergenceDetectWithContext(runningText, input).classify;
   if (!rendererDivergence.isClear) {
     findings.push(makeFinding(Family.RendererDivergence, rendererDivergence.tag, rendererDivergence.positions));
   }
@@ -385,9 +404,13 @@ function detect(input, identifierField) {
     findings.push(makeFinding(Family.StreamSafeViolation, streamSafeViolation.tag, streamSafeViolation.positions));
   }
 
-  const caseExpansionMismatch = caseExpansionMismatchDetect(input).classify;
-  if (!caseExpansionMismatch.isClear) {
-    findings.push(makeFinding(Family.CaseExpansionMismatch, caseExpansionMismatch.tag, caseExpansionMismatch.positions));
+  // Case expansion asks whether a length-checked value grows under case
+  // mapping; in running text ß and ﬁ are content (Lean: mkGatedResult).
+  if (!runningText) {
+    const caseExpansionMismatch = caseExpansionMismatchDetect(input).classify;
+    if (!caseExpansionMismatch.isClear) {
+      findings.push(makeFinding(Family.CaseExpansionMismatch, caseExpansionMismatch.tag, caseExpansionMismatch.positions));
+    }
   }
 
   const identifierFormDrift = identifierFormDriftDetect(input).classify;
@@ -405,9 +428,13 @@ function detect(input, identifierField) {
     findings.push(makeFinding(Family.NormalizationBomb, normalizationBomb.sub, normalizationBomb.positions));
   }
 
-  const localeCaseInversion = localeCaseInversionDetect(input);
-  if (localeCaseInversion.sub !== null) {
-    findings.push(makeFinding(Family.LocaleCaseInversion, localeCaseInversion.sub, localeCaseInversion.positions));
+  // Locale case inversion asks whether a credential folds differently across
+  // locales; in running text a capital I is content (Lean: mkGatedResult).
+  if (!runningText) {
+    const localeCaseInversion = localeCaseInversionDetect(input);
+    if (localeCaseInversion.sub !== null) {
+      findings.push(makeFinding(Family.LocaleCaseInversion, localeCaseInversion.sub, localeCaseInversion.positions));
+    }
   }
 
   const nfcIdempotenceWitness = nfcIdempotenceWitnessDetect(input);
@@ -421,8 +448,10 @@ function detect(input, identifierField) {
   }
 
   // SourceDisplayDivergence judges the input as a unit, so it localises nothing
-  // and carries an empty position list.
-  const sourceDisplay = sourceDisplayDivergenceDetect(input).classify;
+  // and carries an empty position list. Its homoglyph constituent is the same
+  // verdict the homoglyph family reported above, so a source file's token-level
+  // homograph is a display divergence (Lean: detectCore input i1).
+  const sourceDisplay = sourceDisplayDivergenceDetectCore(input, homoglyph !== null).classify;
   if (!sourceDisplay.isClear) {
     findings.push(makeFinding(Family.SourceDisplayDivergence, sourceDisplay.tag, []));
   }
@@ -928,8 +957,214 @@ function noncharacterControlFindings(input) {
   return findings;
 }
 
-function homoglyphConfusableFinding(input) {
+// ── bidi-control-purpose (Unicode/Security/Display/BidiControlPurpose.lean) ──
+//
+// Which bidi format controls in an input serve a purpose, and which do not. A
+// closed span is purposeful iff its direct content is exactly its own direction
+// and carries no ASCII code syntax; a left-to-right span additionally needs
+// right-to-left context. Every unbalanced control, every span with nothing of
+// its own direction inside, every span mixing directions and every span
+// swallowing a quote or bracket is purposeless. Content is credited to the
+// innermost open span only. This is a property of the control span decided
+// from the codepoints it encloses, never from where a tokenizer would place it.
+
+function bcpOpensRtlKind(cp) {
+  return cp === 0x202b || cp === 0x202e || cp === 0x2067 || cp === 0x2068;
+}
+
+function bcpOpensLtrKind(cp) {
+  return cp === 0x202a || cp === 0x202d || cp === 0x2066;
+}
+
+function bcpOpensIsolateKind(cp) {
+  return cp === 0x2066 || cp === 0x2067 || cp === 0x2068;
+}
+
+// The ASCII codepoints a Trojan Source payload moves — quotes, brackets, comment
+// markers, statement separators, operators. Prose punctuation, space and digits
+// are not in the set. Mirrors isCodeSyntax.
+const CODE_SYNTAX = new Set([
+  0x22, 0x27, 0x60, 0x28, 0x29, 0x5b, 0x5d, 0x7b, 0x7d, 0x2f, 0x5c, 0x2a, 0x23,
+  0x3b, 0x3c, 0x3e, 0x3d, 0x2b, 0x7c, 0x26, 0x25, 0x24, 0x40, 0x5e, 0x7e,
+]);
+
+function isCodeSyntax(cp) {
+  return CODE_SYNTAX.has(cp);
+}
+
+function bcpSpanPurposeful(span, enclosing, paragraphRtl) {
+  if (span.rtlKind) {
+    return span.sawRtl && !span.sawLtr && !span.sawSyntax;
+  }
+  const inRtlContext = paragraphRtl || enclosing.some((s) => s.rtlKind);
+  return inRtlContext && span.sawLtr && !span.sawRtl && !span.sawSyntax;
+}
+
+// UAX #9 P2/P3: the paragraph runs right-to-left iff its first strong character
+// is right-to-left. Mirrors paragraphIsRtl.
+function paragraphIsRtl(input) {
+  for (const cp of input) {
+    if (isStrongRtl(cp)) {
+      return true;
+    }
+    if (isStrongLtr(cp)) {
+      return false;
+    }
+  }
+  return false;
+}
+
+// Positions of the purposeless bidi format controls in input, in input order.
+// Mirrors purposelessControlPositions.
+function purposelessControlPositions(input) {
+  const paragraphRtl = paragraphIsRtl(input);
+  const stack = [];
+  const marked = new Set();
+  for (let idx = 0; idx < input.length; idx += 1) {
+    const cp = input[idx];
+    if (bcpOpensRtlKind(cp) || bcpOpensLtrKind(cp)) {
+      stack.push({
+        pos: idx,
+        isolate: bcpOpensIsolateKind(cp),
+        rtlKind: bcpOpensRtlKind(cp),
+        sawRtl: false,
+        sawLtr: false,
+        sawSyntax: false,
+      });
+    } else if (cp === 0x202c) {
+      if (stack.length === 0 || stack[stack.length - 1].isolate) {
+        // PDF against an open isolate closes nothing (UAX #9 X7), and against
+        // an empty stack it is an orphan.
+        marked.add(idx);
+      } else {
+        const top = stack.pop();
+        if (!bcpSpanPurposeful(top, stack, paragraphRtl)) {
+          marked.add(top.pos);
+          marked.add(idx);
+        }
+      }
+    } else if (cp === 0x2069) {
+      let isoIndex = -1;
+      for (let i = stack.length - 1; i >= 0; i -= 1) {
+        if (stack[i].isolate) {
+          isoIndex = i;
+          break;
+        }
+      }
+      if (isoIndex < 0) {
+        marked.add(idx);
+      } else {
+        // Embeddings above the isolate are terminated implicitly.
+        for (const dropped of stack.slice(isoIndex + 1)) {
+          marked.add(dropped.pos);
+        }
+        const iso = stack[isoIndex];
+        stack.length = isoIndex;
+        if (!bcpSpanPurposeful(iso, stack, paragraphRtl)) {
+          marked.add(iso.pos);
+          marked.add(idx);
+        }
+      }
+    } else if (stack.length > 0) {
+      // Content is recorded against the innermost open span only (Lean
+      // markContent).
+      const top = stack[stack.length - 1];
+      top.sawRtl = top.sawRtl || isStrongRtl(cp);
+      top.sawLtr = top.sawLtr || isStrongLtr(cp);
+      top.sawSyntax = top.sawSyntax || isCodeSyntax(cp);
+    }
+  }
+  for (const span of stack) {
+    marked.add(span.pos);
+  }
+  return Array.from(marked).sort((a, b) => a - b);
+}
+
+function hasPurposelessControl(input) {
+  return purposelessControlPositions(input).length > 0;
+}
+
+// Position and codepoint of the first purposeless control, or null. Mirrors
+// firstPurposelessControl.
+function firstPurposelessControl(input) {
+  const positions = purposelessControlPositions(input);
+  if (positions.length === 0) {
+    return null;
+  }
+  return { pos: positions[0], cp: input[positions[0]] };
+}
+
+// ── identifier tokens (Unicode/Security/Identity/IdentifierTokens.lean) ──────
+//
+// The identifier-shaped tokens of running text: maximal runs of XID_Continue
+// codepoints, each with the position it starts at. A source file is not one
+// identifier, and switching the identifier detectors off for it loses scоpe
+// with a Cyrillic о inside it; reading per token is right for both.
+
+function identifierTokens(input) {
+  const out = [];
+  let start = -1;
+  for (let idx = 0; idx < input.length; idx += 1) {
+    if (isXidContinue(input[idx])) {
+      if (start < 0) {
+        start = idx;
+      }
+    } else if (start >= 0) {
+      out.push({ start, cps: input.slice(start, idx) });
+      start = -1;
+    }
+  }
+  if (start >= 0) {
+    out.push({ start, cps: input.slice(start) });
+  }
+  return out;
+}
+
+function shiftPositions(start, positions) {
+  return positions.map((p) => p + start);
+}
+
+// ── homoglyph ladder under a field context ───────────────────────────────────
+
+// The case-preserving UTS #39 §4 skeleton toNFD(substitute(toNFD(x))): the §4
+// bracket without the §5.4 case folding skeleton adds, since full folding would
+// read straße as confusable with strasse. Mirrors the Lean asciiSkeleton.
+function asciiSkeleton(input) {
+  return toNfdCodepoints(substituteConfusables(toNfdCodepoints(input)));
+}
+
+// The input is not ASCII but its case-preserving skeleton is: every non-ASCII
+// codepoint is a confusable of an ASCII one (admın with admin). Mirrors the
+// Lean isAsciiConfusable.
+function isAsciiConfusable(input) {
+  return input.some((cp) => cp >= 0x80) && asciiSkeleton(input).every((cp) => cp < 0x80);
+}
+
+function nonAsciiPositions(input) {
+  const out = [];
+  for (let idx = 0; idx < input.length; idx += 1) {
+    if (input[idx] >= 0x80) {
+      out.push(idx);
+    }
+  }
+  return out;
+}
+
+// Every non-Common, non-Inherited codepoint is Latin. Mirrors isLatinOnly.
+function isLatinOnly(input) {
+  const union = stringScriptUnion(input);
+  return union.length === 1 && union[0] === "Latn";
+}
+
+// The homoglyph ladder under a field context mirroring
+// Unicode.Security.Identity.HomoglyphConfusable.Context: runningText says the
+// input is prose or source rather than one value, so the script-composition
+// rungs and AsciiConfusable do not run; identifierToken says the input is one
+// identifier-shaped token cut out of running text, so the homograph rungs run,
+// RestrictionLow does not, and AsciiConfusable runs for a Latin token only.
+function homoglyphConfusableFindingWithContext(input, ctx) {
   let subThreat = "";
+  let positions = fullSpanPositions(input);
   if (homoglyphTargetMatch(input) !== null) {
     subThreat = "TargetMatch";
   } else if (input.some(isMathAlphanumeric)) {
@@ -938,22 +1173,72 @@ function homoglyphConfusableFinding(input) {
     subThreat = "WidthClass";
   } else if (hasDecompositionSwap(input)) {
     subThreat = "DecompositionSwap";
-  } else if (hasCrossScriptMix(input)) {
-    // The last two rungs of the Lean ladder, in its order: a cross-script mix
+  } else if (!ctx.runningText && hasCrossScriptMix(input)) {
+    // The script rungs of the Lean ladder, in its order: a cross-script mix
     // that is not Highly Restrictive, then a string failing every restriction
-    // level. Both need real script resolution.
+    // level. Both ask about one identifier.
     subThreat = "CrossScriptMix";
   } else if (
-    restrictionLevel(input) === RestrictionLevel.MinimallyRestrictive ||
-    restrictionLevel(input) === RestrictionLevel.Unrestricted
+    !ctx.runningText &&
+    !ctx.identifierToken &&
+    (restrictionLevel(input) === RestrictionLevel.MinimallyRestrictive ||
+      restrictionLevel(input) === RestrictionLevel.Unrestricted)
   ) {
     subThreat = "RestrictionLow";
+  } else if (
+    !ctx.runningText &&
+    (!ctx.identifierToken || isLatinOnly(input)) &&
+    isAsciiConfusable(input)
+  ) {
+    // Last: a non-ASCII input whose skeleton is ASCII poses as an ASCII name.
+    subThreat = "AsciiConfusable";
+    positions = nonAsciiPositions(input);
   }
 
   if (subThreat === "") {
     return null;
   }
-  return makeFinding(Family.HomoglyphConfusable, subThreat, fullSpanPositions(input));
+  return makeFinding(Family.HomoglyphConfusable, subThreat, positions);
+}
+
+function homoglyphConfusableFinding(input) {
+  return homoglyphConfusableFindingWithContext(input, { runningText: false, identifierToken: false });
+}
+
+// Mirrors the Lean homoglyphOverTokens for running text and the whole-input
+// reading otherwise: the first identifier token that fires carries the verdict,
+// with its positions shifted into the input; when none does, the whole input
+// is read under the running-text reading.
+function homoglyphOverTokens(input, runningText) {
+  if (!runningText) {
+    return homoglyphConfusableFinding(input);
+  }
+  for (const token of identifierTokens(input)) {
+    const finding = homoglyphConfusableFindingWithContext(token.cps, {
+      runningText: false,
+      identifierToken: true,
+    });
+    if (finding !== null) {
+      return { ...finding, positions: shiftPositions(token.start, finding.positions) };
+    }
+  }
+  return homoglyphConfusableFindingWithContext(input, { runningText: true, identifierToken: false });
+}
+
+// Mirrors the Lean mixedScriptOverTokens: running text is read per identifier
+// token without the Restricted-status phase a token of running text does not
+// owe; a single value is read whole.
+function mixedScriptOverTokens(input, identifierField, runningText) {
+  if (!runningText) {
+    return mixedScriptAdmissibilityFinding(input, identifierField);
+  }
+  for (const token of identifierTokens(input)) {
+    const finding = mixedScriptAdmissibilityFinding(token.cps, false);
+    if (finding !== null) {
+      return { ...finding, positions: shiftPositions(token.start, finding.positions) };
+    }
+  }
+  return null;
 }
 
 function mixedScriptAdmissibilityFinding(input, identifierField) {
@@ -1128,16 +1413,30 @@ function firstPositionWhere(input, pred) {
   return null;
 }
 
+// First position of a purposeless bidi control satisfying pred. Only purposeless
+// controls (unbalanced, or a balanced span enclosing nothing right-to-left)
+// count as the display channel this compound pairs with a confusable; a
+// balanced embedding around Arabic text renders that text as written. Mirrors
+// the Lean firstOverridePos / firstIsolatePos.
+function firstPurposelessPositionWhere(input, pred) {
+  for (const pos of purposelessControlPositions(input)) {
+    if (pred(input[pos])) {
+      return pos;
+    }
+  }
+  return null;
+}
+
 function confusableBidiCompoundFinding(input) {
   const confusablePos = firstPositionWhere(input, isConfusableSource);
   if (confusablePos === null) {
     return null;
   }
-  const overridePos = firstPositionWhere(input, isOverride);
+  const overridePos = firstPurposelessPositionWhere(input, isOverride);
   if (overridePos !== null) {
     return makeFinding(Family.ConfusableBidiCompound, "ConfusableInOverride", [confusablePos, overridePos]);
   }
-  const isolatePos = firstPositionWhere(input, isIsolate);
+  const isolatePos = firstPurposelessPositionWhere(input, isIsolate);
   if (isolatePos !== null) {
     return makeFinding(Family.ConfusableBidiCompound, "ConfusableInIsolate", [confusablePos, isolatePos]);
   }
@@ -3733,7 +4032,17 @@ function rendererHazardClassify(sub, positions) {
 }
 
 // The RendererDivergence detection function (mirrors the Lean/Rust `detect`).
+// Reads the input as one string a renderer presents. Mirrors the Lean detect,
+// which is detectWithContext at the default context.
 export function rendererDivergenceDetect(input) {
+  return rendererDivergenceDetectWithContext(false, input);
+}
+
+// The RendererDivergence detection function under an explicit field context.
+// runningText mirrors the Lean Context.runningText: a source file or a message
+// carries both directions as content, so the mixed-direction rung does not run
+// on it; the four presentation rungs hold of any field.
+export function rendererDivergenceDetectWithContext(runningText, input) {
   const cps = Array.from(input);
   const vsCount = rendererCountVs(cps);
   const combiningCount = rendererCountCombining(cps);
@@ -3773,8 +4082,9 @@ export function rendererDivergenceDetect(input) {
         // Priority 4: fullwidth/halfwidth.
         const sub = { kind: "FullwidthVariance", firstFwPos: fw.pos, firstFwCp: fw.cp };
         classify = rendererHazardClassify(sub, [fw.pos]);
-      } else if (ltrCount > 0 && rtlCount > 0) {
-        // Priority 5: mixed direction.
+      } else if (!runningText && ltrCount > 0 && rtlCount > 0) {
+        // Priority 5: mixed direction. Running text carries both directions as
+        // content and is not judged by this rung.
         const sub = { kind: "MixedDirectionVariance", ltrCount, rtlCount };
         classify = rendererHazardClassify(sub, []);
       } else {
@@ -3833,13 +4143,13 @@ function filenameDotPositions(input) {
 }
 
 // Position and codepoint of the first bidi format-control, or null.
+// Position and codepoint of the first purposeless bidi format-control:
+// unbalanced, or a balanced span enclosing nothing right-to-left in a
+// left-to-right context. A balanced embedding around an Arabic filename segment
+// manages that segment and is not a flip. Mirrors the Lean detect, which reads
+// firstPurposelessControl.
 function filenameFirstBidiControl(input) {
-  for (let idx = 0; idx < input.length; idx += 1) {
-    if (isBidiFormatControl(input[idx])) {
-      return { pos: idx, cp: input[idx] };
-    }
-  }
-  return null;
+  return firstPurposelessControl(input);
 }
 
 // Position and codepoint of the first fullwidth/halfwidth codepoint at or after
@@ -3929,7 +4239,18 @@ function filenameHazardClassify(sub, positions) {
 }
 
 // The FilenameDisguise detection function (mirrors the Lean/Rust detect).
+// Reads the input as one filename. Mirrors the Lean detect, which is
+// detectWithContext at the default context.
 export function filenameDisguiseDetect(input) {
+  return filenameDisguiseDetectWithContext(false, input);
+}
+
+// The FilenameDisguise detection function under an explicit field context.
+// runningText mirrors the Lean Context.runningText: the extension rungs read the
+// text after the last dot as a file extension, which a source file or a message
+// does not have, so they do not run on running text; the purposeless-bidi
+// rung holds of any field.
+export function filenameDisguiseDetectWithContext(runningText, input) {
   const cps = Array.from(input);
   const dots = filenameDotPositions(cps);
   const lastDot = dots.length === 0 ? null : dots[dots.length - 1];
@@ -3944,6 +4265,9 @@ export function filenameDisguiseDetect(input) {
     // Priority 1: any bidi format-control.
     const sub = { kind: "RloFlip", position: bidi.pos, controlCp: bidi.cp };
     classify = filenameHazardClassify(sub, [bidi.pos]);
+  } else if (runningText) {
+    // The remaining rungs read an extension; running text has none.
+    classify = filenameClearClassify();
   } else {
     const fw = filenameFirstFullwidthFrom(cps, extStart);
     if (fw !== null) {
@@ -4020,28 +4344,14 @@ function sddZeroWidthFired(input) {
   return positions.length > 0 && hasSuspiciousZeroWidth(input, positions);
 }
 
-// Whether the port's bidi-control-balance constituent fires on input.
+// Whether the port's bidi constituent fires on input: purpose, not presence
+// (Lean: BidiControlPurpose.hasPurposelessControl). A Trojan Source payload
+// balances its controls, so the balance verdict is blind to it; what every
+// payload shares is a control span with nothing right-to-left to manage. A
+// balanced embedding around a pure Arabic literal is purposeful and is not a
+// divergence.
 function sddBidiControlFired(input) {
-  // Presence, not balance. A Trojan Source payload balances its controls --
-  // an unbalanced run breaks the file it is hiding in -- so a constituent
-  // built on the balance verdict is blind to the shape the attack takes.
-  return input.some((cp) => isBidiFormatControl(cp));
-}
-
-// Whether the port's homoglyph-confusable constituent fires on input.
-function sddHomoglyphFired(input) {
-  // The reference runs one homoglyph detector whose priority ladder ends in a
-  // CrossScriptMix branch, so a cross-script identifier fires it even though
-  // the policy surface reports that case under mixed-script-admissibility.
-  // This port splits that ladder across two finding builders, so the
-  // constituent has to consult both or it misses every input whose only
-  // homoglyph signal is the script mix.
-  return (
-    homoglyphConfusableFinding(input) !== null ||
-    // The constituent asks the script question about a source file, which is
-    // not an identifier field, so the Restricted-status rung does not apply.
-    mixedScriptAdmissibilityFinding(input, false) !== null
-  );
+  return hasPurposelessControl(input);
 }
 
 // Fixture-row tag string for a source-display-divergence sub-threat (mirrors
@@ -4083,7 +4393,20 @@ function sourceDisplayDivergenceHazardClassify(sub) {
 // `detect`). Runs the five constituents in canonical aggregation order,
 // collects the fired family tags, then 0 → clear, 1 → pass-through, 2+ →
 // Compound.
+// Reads the input as the identifier its constituents assume. Mirrors the Lean
+// detect, which is detectCore with the homoglyph family's identifier-reading
+// verdict.
 export function sourceDisplayDivergenceDetect(input) {
+  const cps = Array.from(input);
+  return sourceDisplayDivergenceDetectCore(cps, homoglyphConfusableFinding(cps) !== null);
+}
+
+// Aggregates with the homoglyph constituent supplied: homoglyphFired is whether
+// the homoglyph family fired on this input under whatever reading the caller
+// took (whole input, or per identifier token of running text). Mirrors the Lean
+// detectCore, which the policy scan calls with the same verdict the homoglyph
+// family reports.
+export function sourceDisplayDivergenceDetectCore(input, homoglyphFired) {
   const cps = Array.from(input);
 
   // Constituent family tags in canonical aggregation order: tag-block,
@@ -4101,7 +4424,7 @@ export function sourceDisplayDivergenceDetect(input) {
   if (sddBidiControlFired(cps)) {
     fires.push("BidiControl");
   }
-  if (sddHomoglyphFired(cps)) {
+  if (homoglyphFired) {
     fires.push("IdentifierHomoglyph");
   }
 
