@@ -200,11 +200,15 @@ end
 -- §4 Top-level detection
 -- ─────────────────────────────────────────────────────────────────────
 
--- The RendererDivergence detection function. Returns a verdict table mirroring
--- the Rust `Verdict`: `input`, `classify` (`{ kind, sub, positions, decoded }`),
--- `vs_count`, `combining_count`, `fullwidth_count`, `has_zwj`,
--- `strong_ltr_count`, `strong_rtl_count`.
-function M.detect(input)
+-- The RendererDivergence detection function under an explicit field context.
+-- Returns a verdict table mirroring the Rust `Verdict`: `input`, `classify`
+-- (`{ kind, sub, positions, decoded }`), `vs_count`, `combining_count`,
+-- `fullwidth_count`, `has_zwj`, `strong_ltr_count`, `strong_rtl_count`.
+-- `running_text` mirrors the Lean `Context.runningText`: a source line or a
+-- message carrying both directions is a bilingual line, not a divergence, so the
+-- mixed-direction rung does not run on running text; every other rung holds of
+-- any field.
+function M.detect_with_context(running_text, input)
   local vs_count = count_vs(input)
   local combining_count = count_combining(input)
   local fullwidth_count = count_fullwidth(input)
@@ -255,8 +259,8 @@ function M.detect(input)
           positions = { fw_pos },
           decoded = {},
         }
-      elseif ltr_count > 0 and rtl_count > 0 then
-        -- Priority 5: mixed direction.
+      elseif not running_text and ltr_count > 0 and rtl_count > 0 then
+        -- Priority 5: mixed direction, off for running text.
         classify = {
           kind = "Hazard",
           sub = { tag = "MixedDirectionVariance", ltr_count = ltr_count, rtl_count = rtl_count },
@@ -284,6 +288,12 @@ function M.detect(input)
     strong_ltr_count = ltr_count,
     strong_rtl_count = rtl_count,
   }
+end
+
+-- The RendererDivergence detection function at the default context (one field,
+-- not running text). Mirrors the Lean detect.
+function M.detect(input)
+  return M.detect_with_context(false, input)
 end
 
 -- True iff the verdict's classification is Clear.

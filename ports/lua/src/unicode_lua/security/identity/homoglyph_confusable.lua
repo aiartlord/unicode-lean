@@ -227,7 +227,70 @@ function M.mixed_script_verdict(input, identifier_field)
   return nil
 end
 
+-- The case-preserving skeleton: NFD, confusable substitution, NFD, with no case
+-- fold, so admın (dotless i) maps to adrnin while ADMIN stays itself. Mirrors
+-- the Lean asciiSkeleton.
+function M.ascii_skeleton(input)
+  return ucd.to_nfd(substitute(ucd.to_nfd(input)))
+end
+
+-- A non-ASCII input whose case-preserving skeleton is all ASCII. Mirrors the
+-- Lean isAsciiConfusable.
+function M.is_ascii_confusable(input)
+  local any_non_ascii = false
+  for _, cp in ipairs(input) do
+    if cp > 0x7F then
+      any_non_ascii = true
+    end
+  end
+  if not any_non_ascii then
+    return false
+  end
+  for _, cp in ipairs(M.ascii_skeleton(input)) do
+    if cp > 0x7F then
+      return false
+    end
+  end
+  return true
+end
+
+-- 0-based positions of the non-ASCII codepoints. Mirrors the Lean
+-- nonAsciiPositions.
+function M.non_ascii_positions(input)
+  local out = {}
+  for i = 1, #input do
+    if input[i] > 0x7F then
+      out[#out + 1] = i - 1
+    end
+  end
+  return out
+end
+
+-- Every script-bearing codepoint of the input is Latin. Mirrors the Lean
+-- isLatinOnly.
+function M.is_latin_only(input)
+  local union = ucd.string_script_union(input)
+  return #union == 1 and union[1] == "Latn"
+end
+
+-- The detection function at the default context (one identifier field).
+-- Mirrors the Lean detect.
 function M.detect(input)
+  return M.detect_with_context(input, { running_text = false, identifier_token = false })
+end
+
+-- The detection function under a field context `ctx` (`running_text`: a source
+-- line, a message or a display name rather than one identifier;
+-- `identifier_token`: one identifier-shaped token cut out of running text).
+-- Rungs in the Lean order: target match, math alphanumerics, width class,
+-- decomposition swap, then the two script rungs (cross-script mix, off on
+-- running text; low restriction level, off on running text and on a token),
+-- then the ascii-confusable rung: a non-ASCII input whose case-preserving
+-- skeleton is all ASCII reads as an ASCII word it is not (admın with a dotless
+-- i). That rung runs on a whole field, and on a token only when the token is
+-- Latin-only, so a Greek or Cyrillic word in prose is not read as its Latin
+-- look-alike.
+function M.detect_with_context(input, ctx)
   local skel = M.skeleton(input)
   local iskel = M.iterated_skeleton(input)
   local rl = ucd.restriction_level(input)
@@ -272,18 +335,31 @@ function M.detect(input)
     return verdict
   end
 
-  -- Priority 5: CrossScriptMix. This rung asks the script question only; the
-  -- Restricted-status rung belongs to the mixed-script family, not here.
+  -- Priority 5: CrossScriptMix, off on running text. This rung asks the script
+  -- question only; the Restricted-status rung belongs to the mixed-script
+  -- family, not here.
   local union = ucd.string_script_union(input)
-  if #union >= 2 and not ucd.is_highly_restrictive(input) then
+  if not ctx.running_text and #union >= 2 and not ucd.is_highly_restrictive(input) then
     verdict.kind = ClassificationKind.Hazard
     verdict.sub = { tag = "CrossScriptMix" }
     return verdict
   end
 
-  if rl == ucd.RestrictionLevel.MINIMALLY_RESTRICTIVE or rl == ucd.RestrictionLevel.UNRESTRICTED then
+  -- Priority 6: RestrictionLow, off on running text and on a token.
+  if not ctx.running_text and not ctx.identifier_token
+    and (rl == ucd.RestrictionLevel.MINIMALLY_RESTRICTIVE or rl == ucd.RestrictionLevel.UNRESTRICTED) then
     verdict.kind = ClassificationKind.Hazard
     verdict.sub = { tag = "RestrictionLow" }
+    return verdict
+  end
+
+  -- Priority 7: AsciiConfusable, on a whole field, and on a token only when the
+  -- token is Latin-only.
+  if not ctx.running_text
+    and (not ctx.identifier_token or M.is_latin_only(input))
+    and M.is_ascii_confusable(input) then
+    verdict.kind = ClassificationKind.Hazard
+    verdict.sub = { tag = "AsciiConfusable", skeleton = M.ascii_skeleton(input) }
   end
   return verdict
 end

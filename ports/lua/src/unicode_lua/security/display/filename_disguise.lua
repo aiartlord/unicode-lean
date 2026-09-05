@@ -12,15 +12,17 @@
 --
 -- What the detector draws. Detection is presentation- and language-agnostic: it
 -- surfaces every codepoint that could cause display-vs-byte divergence in the
--- filename — any bidi format-control anywhere, and any fullwidth/halfwidth or
--- combining (grapheme Extend) codepoint in the extension region (after the last
--- `.`). Native-RTL names with no bidi controls clear. It reuses the port's own
--- tables (the BidiControlBalance format-control set, the grapheme-segmentation
--- Extend class, the inlined fullwidth range), never a host filesystem or
--- rendering library.
+-- filename — any purposeless bidi format-control anywhere (BidiControlPurpose:
+-- unbalanced, or a balanced span enclosing nothing right-to-left in a
+-- left-to-right context), and any fullwidth/halfwidth or combining (grapheme
+-- Extend) codepoint in the extension region (after the last `.`). Native-RTL
+-- names with no bidi controls clear, and so does a balanced embedding around an
+-- Arabic segment. It reuses the port's own tables (the bidi purpose rule, the
+-- grapheme-segmentation Extend class, the inlined fullwidth range), never a host
+-- filesystem or rendering library.
 --
 -- Sub-threats (priority order):
---   1. RloFlip            any bidi format-control in the input.
+--   1. RloFlip            a purposeless bidi format-control in the input.
 --   2. WidthClassExt      a fullwidth/halfwidth codepoint in the extension.
 --   3. CombiningInExt     a combining (Extend) codepoint in the extension.
 --   4. MultipleExtensions >= 3 dots (advisory; e.g. legitimate `.tar.gz.sig`).
@@ -28,6 +30,7 @@
 -- Codepoint positions are 0-based to mirror the reference.
 
 local bidi = require("unicode_lua.security.covert.bidi_control_balance")
+local bidi_purpose = require("unicode_lua.security.display.bidi_control_purpose")
 local grapheme = require("unicode_lua.segmentation.grapheme")
 
 local unpack = table.unpack or unpack
@@ -83,14 +86,13 @@ local function dot_positions(input)
   return dots
 end
 
--- Position (0-based) and codepoint of the first bidi format-control, or nil.
+-- Position (0-based) and codepoint of the first purposeless bidi format-control,
+-- or nil: unbalanced, or a balanced span enclosing nothing right-to-left in a
+-- left-to-right context (`bidi_purpose.first_purposeless_control`). A balanced
+-- embedding around an Arabic filename segment manages that segment and is not a
+-- flip. Mirrors the Lean detect, which reads `firstPurposelessControl`.
 local function first_bidi_control(input)
-  for i = 1, #input do
-    if M.is_bidi_format_control(input[i]) then
-      return i - 1, input[i]
-    end
-  end
-  return nil, nil
+  return bidi_purpose.first_purposeless_control(input)
 end
 
 -- Position (0-based) and codepoint of the first fullwidth/halfwidth codepoint
@@ -154,11 +156,15 @@ end
 -- §4 Top-level detection
 -- ─────────────────────────────────────────────────────────────────────
 
--- The FilenameDisguise detection function. Returns a verdict table mirroring
--- the Rust `Verdict`: `input`, `classify` (`{ kind, sub, positions, decoded }`),
--- `dot_positions`, `last_dot_pos`, `bidi_control_count`, `fullwidth_in_ext`,
--- `combining_in_ext`.
-function M.detect(input)
+-- The FilenameDisguise detection function under an explicit field context.
+-- Returns a verdict table mirroring the Rust `Verdict`: `input`, `classify`
+-- (`{ kind, sub, positions, decoded }`), `dot_positions`, `last_dot_pos`,
+-- `bidi_control_count`, `fullwidth_in_ext`, `combining_in_ext`. `running_text`
+-- mirrors the Lean `Context.runningText`: the extension rungs read the text
+-- after the last dot as a file extension, which a source file or a message does
+-- not have, so they do not run on running text; the purposeless-bidi-control
+-- rung holds of any field.
+function M.detect_with_context(running_text, input)
   local dots = dot_positions(input)
   local last_dot = nil
   if #dots > 0 then
@@ -176,7 +182,7 @@ function M.detect(input)
   local ext_in_ext = count_extend_from(input, ext_start)
 
   local classify
-  -- Priority 1: any bidi format-control.
+  -- Priority 1: a purposeless bidi format-control anywhere in the input.
   local bidi_pos, bidi_cp = first_bidi_control(input)
   if bidi_pos ~= nil then
     classify = {
@@ -185,6 +191,9 @@ function M.detect(input)
       positions = { bidi_pos },
       decoded = {},
     }
+  elseif running_text then
+    -- The remaining rungs read an extension; running text has none.
+    classify = { kind = "Clear", sub = nil, positions = {}, decoded = {} }
   else
     -- Priority 2: fullwidth/halfwidth in the extension.
     local fw_pos, fw_cp = first_fullwidth_from(input, ext_start)
@@ -234,6 +243,12 @@ function M.detect(input)
     fullwidth_in_ext = fw_in_ext,
     combining_in_ext = ext_in_ext,
   }
+end
+
+-- The FilenameDisguise detection function, reading its input as one filename.
+-- Mirrors the Lean detect, which is detectWithContext at the default context.
+function M.detect(input)
+  return M.detect_with_context(false, input)
 end
 
 -- True iff the verdict's classification is Clear.

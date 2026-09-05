@@ -7,6 +7,7 @@ local zero_width = require("unicode_lua.security.covert.zero_width_payload")
 local surrogate = require("unicode_lua.security.covert.surrogate_reassembly")
 local bidi = require("unicode_lua.security.covert.bidi_control_balance")
 local homoglyph = require("unicode_lua.security.identity.homoglyph_confusable")
+local identifier_tokens = require("unicode_lua.security.identity.identifier_tokens")
 local rtl = require("unicode_lua.security.display.rtl_injection")
 local confusable_bidi = require("unicode_lua.security.boundary.confusable_bidi_compound")
 local covert_display = require("unicode_lua.security.boundary.covert_display_compound")
@@ -202,6 +203,17 @@ function M.profile_identifier_field(profile)
     or profile == M.Profile.Username
 end
 
+-- True iff the profile reads its input as running text -- a source line, a
+-- message, a display name -- rather than one identifier. The identifier
+-- families then judge each identifier-shaped token of the line on its own, and
+-- the field-wide families that read the line as one identifier or one filename
+-- report clear. Mirrors profileIsRunningText in Unicode/Security/Policy.lean.
+function M.profile_running_text(profile)
+  return profile == M.Profile.DisplayName
+    or profile == M.Profile.ChatMessage
+    or profile == M.Profile.SourceCode
+end
+
 local function policy_of_profile(profile)
   if profile == M.Profile.GatewayHeader or profile == M.Profile.DomainName or profile == M.Profile.DnsLabel then
     return { level = PolicyLevel.Restrictive, crypto_context = CryptoContext.NonCrypto, quarantine = false }
@@ -300,8 +312,94 @@ local function c1_control(cp)
   return cp >= 0x80 and cp <= 0x9F
 end
 
+local function full_span_positions(input)
+  local positions = {}
+  for i = 1, #input do
+    positions[#positions + 1] = i - 1
+  end
+  return positions
+end
+
+-- The positions a homoglyph verdict implicates: the non-ASCII positions for the
+-- ascii-confusable rung, the whole input for every other rung, nothing when
+-- clear.
+local function homoglyph_positions(verdict, input)
+  if verdict.kind == ClassificationKind.Clear then
+    return {}
+  end
+  if sub_tag(verdict.sub) == "AsciiConfusable" then
+    return homoglyph.non_ascii_positions(input)
+  end
+  return full_span_positions(input)
+end
+
+-- One homoglyph finding under a field context, or nil when clear.
+local function homoglyph_finding_with_context(input, ctx)
+  local verdict = homoglyph.detect_with_context(input, ctx)
+  if verdict.kind == ClassificationKind.Clear then
+    return nil
+  end
+  local tag = sub_tag(verdict.sub)
+  return {
+    code = M.reason_code(Family.HomoglyphConfusable, tag),
+    family = Family.HomoglyphConfusable,
+    severity = Severity.Moderate,
+    positions = homoglyph_positions(verdict, input),
+    sub_threat = tag,
+    detail = Family.HomoglyphConfusable,
+  }
+end
+
+-- The homoglyph family over running text: the first identifier-shaped token (a
+-- maximal XID_Continue run) that fires, read as one identifier, with its
+-- positions shifted back into input coordinates. When no token fires, the whole
+-- input is read once under the running-text context, which keeps the rungs
+-- that hold of any text (target match, math alphanumerics, width class,
+-- decomposition swap). Mirrors the Lean homoglyphOverTokens.
+local function homoglyph_over_tokens(input)
+  for _, token in ipairs(identifier_tokens.tokens(input)) do
+    local finding = homoglyph_finding_with_context(token.cps, { running_text = false, identifier_token = true })
+    if finding ~= nil then
+      finding.positions = identifier_tokens.shift_positions(token.start, finding.positions)
+      return finding
+    end
+  end
+  return homoglyph_finding_with_context(input, { running_text = true, identifier_token = false })
+end
+
+-- The mixed-script family over running text: each identifier-shaped token is
+-- judged as one identifier (not an identifier field, so the Restricted-status
+-- rung does not apply); the first token that fires is reported, positions in
+-- input coordinates. A line with no firing token is clear. Mirrors the Lean
+-- mixedScriptOverTokens.
+local function mixed_script_over_tokens(input)
+  for _, token in ipairs(identifier_tokens.tokens(input)) do
+    local sub = homoglyph.mixed_script_verdict(token.cps, false)
+    if sub ~= nil then
+      return {
+        code = M.reason_code(Family.MixedScriptAdmissibility, sub),
+        family = Family.MixedScriptAdmissibility,
+        severity = Severity.Moderate,
+        positions = identifier_tokens.shift_positions(token.start, full_span_positions(token.cps)),
+        sub_threat = sub,
+        detail = Family.MixedScriptAdmissibility,
+      }
+    end
+  end
+  return nil
+end
+
+-- Scan a decoded codepoint sequence. Under a running-text profile
+-- (profile_running_text) the homoglyph and mixed-script families read the input
+-- per identifier-shaped token, rtl-injection / locale-case-inversion /
+-- case-expansion-mismatch report clear, filename-disguise runs only its
+-- purposeless-control rung, renderer-divergence drops its mixed-direction rung,
+-- and the source-display-divergence aggregate reads the homoglyph verdict this
+-- scan produced. Mirrors Unicode.Security.RunAll under Policy.lean's Context.
 function M.scan(profile, mode, input)
   local findings = {}
+  local identifier_field = M.profile_identifier_field(profile)
+  local running_text = M.profile_running_text(profile)
 
   local tag = tag_block.detect(input)
   push_finding(findings, Family.TagBlockPayload, tag.kind, tag.sub, tag.tag_positions)
@@ -326,30 +424,40 @@ function M.scan(profile, mode, input)
   push_positional_hazard(findings, Family.NoncharacterControl, "C0Control", positions_where(input, c0_control))
   push_positional_hazard(findings, Family.NoncharacterControl, "C1Control", positions_where(input, c1_control))
 
-  local h = homoglyph.detect(input)
   -- Every rung of the homoglyph ladder is reported, CrossScriptMix included.
   -- Unicode/Security/Policy.lean maps every non-clear family result to a
   -- finding without filtering, so suppressing this rung would report fewer
-  -- findings than the proven spec for a cross-script input.
-  local hpositions = {}
-  if h.kind ~= ClassificationKind.Clear then
-    for i = 1, #input do
-      hpositions[#hpositions + 1] = i - 1
-    end
+  -- findings than the proven spec for a cross-script input. On running text
+  -- the family reads the input per identifier-shaped token.
+  local homoglyph_finding
+  if running_text then
+    homoglyph_finding = homoglyph_over_tokens(input)
+  else
+    homoglyph_finding = homoglyph_finding_with_context(input, { running_text = false, identifier_token = false })
   end
-  push_finding(findings, Family.HomoglyphConfusable, h.kind, h.sub, hpositions)
-  local mixed_sub = homoglyph.mixed_script_verdict(input, M.profile_identifier_field(profile))
-  if mixed_sub ~= nil then
-    local positions = {}
-    for i = 1, #input do
-      positions[#positions + 1] = i - 1
+  if homoglyph_finding ~= nil then
+    findings[#findings + 1] = homoglyph_finding
+  end
+  if running_text then
+    local mixed = mixed_script_over_tokens(input)
+    if mixed ~= nil then
+      findings[#findings + 1] = mixed
     end
-    push_finding(findings, Family.MixedScriptAdmissibility, ClassificationKind.Hazard, mixed_sub, positions)
+  else
+    local mixed_sub = homoglyph.mixed_script_verdict(input, identifier_field)
+    if mixed_sub ~= nil then
+      push_finding(findings, Family.MixedScriptAdmissibility, ClassificationKind.Hazard, mixed_sub, full_span_positions(input))
+    end
   end
 
-  local r = rtl.detect(input)
-  if r.sub ~= nil then
-    push_finding(findings, Family.RtlInjection, ClassificationKind.Hazard, r.sub, r.positions)
+  -- Families that read the whole field as one identifier report clear on
+  -- running text: rtl-injection, case-expansion-mismatch and
+  -- locale-case-inversion. Mirrors the Lean mkGatedResult.
+  if not running_text then
+    local r = rtl.detect(input)
+    if r.sub ~= nil then
+      push_finding(findings, Family.RtlInjection, ClassificationKind.Hazard, r.sub, r.positions)
+    end
   end
 
   local cb = confusable_bidi.detect(input)
@@ -372,12 +480,12 @@ function M.scan(profile, mode, input)
     push_finding(findings, Family.SkinToneVariationForgery, ClassificationKind.Hazard, skin_tone.classification_tag(skin_tone_v), skin_tone_v.classify.positions)
   end
 
-  local filename_disguise_v = filename_disguise.detect(input)
+  local filename_disguise_v = filename_disguise.detect_with_context(running_text, input)
   if not filename_disguise.is_clear(filename_disguise_v) then
     push_finding(findings, Family.FilenameDisguise, ClassificationKind.Hazard, filename_disguise.classification_tag(filename_disguise_v), filename_disguise.classification_positions(filename_disguise_v))
   end
 
-  local renderer_divergence_v = renderer_divergence.detect(input)
+  local renderer_divergence_v = renderer_divergence.detect_with_context(running_text, input)
   if not renderer_divergence.is_clear(renderer_divergence_v) then
     push_finding(findings, Family.RendererDivergence, ClassificationKind.Hazard, renderer_divergence.classification_tag(renderer_divergence_v), renderer_divergence.classification_positions(renderer_divergence_v))
   end
@@ -387,9 +495,11 @@ function M.scan(profile, mode, input)
     push_finding(findings, Family.StreamSafeViolation, ClassificationKind.Hazard, stream_safe.classification_tag(stream_safe_v.classify), stream_safe.classification_positions(stream_safe_v.classify))
   end
 
-  local case_expansion_v = case_expansion.detect(input)
-  if not case_expansion.is_clear(case_expansion_v) then
-    push_finding(findings, Family.CaseExpansionMismatch, ClassificationKind.Hazard, case_expansion.classification_tag(case_expansion_v), case_expansion.positions(case_expansion_v))
+  if not running_text then
+    local case_expansion_v = case_expansion.detect(input)
+    if not case_expansion.is_clear(case_expansion_v) then
+      push_finding(findings, Family.CaseExpansionMismatch, ClassificationKind.Hazard, case_expansion.classification_tag(case_expansion_v), case_expansion.positions(case_expansion_v))
+    end
   end
 
   local identifier_drift_v = identifier_drift.detect(input)
@@ -407,9 +517,11 @@ function M.scan(profile, mode, input)
     push_finding(findings, Family.NormalizationBomb, ClassificationKind.Hazard, normalization_bomb_d.sub, normalization_bomb_d.positions)
   end
 
-  local locale_case_d = locale_case.detect(input)
-  if locale_case_d.sub ~= nil then
-    push_finding(findings, Family.LocaleCaseInversion, ClassificationKind.Hazard, locale_case_d.sub, locale_case_d.positions)
+  if not running_text then
+    local locale_case_d = locale_case.detect(input)
+    if locale_case_d.sub ~= nil then
+      push_finding(findings, Family.LocaleCaseInversion, ClassificationKind.Hazard, locale_case_d.sub, locale_case_d.positions)
+    end
   end
 
   local nfc_witness_d = nfc_witness.detect(input)
@@ -423,8 +535,9 @@ function M.scan(profile, mode, input)
   end
 
   -- SourceDisplayDivergence judges the input as a unit, so it localises nothing
-  -- and carries an empty position list.
-  local source_display_d = source_display.detect(input)
+  -- and carries an empty position list. Its homoglyph constituent is the
+  -- verdict this scan produced, so the two agree on running text.
+  local source_display_d = source_display.detect_core(input, homoglyph_finding ~= nil)
   if source_display_d.sub ~= nil then
     push_finding(findings, Family.SourceDisplayDivergence, ClassificationKind.Hazard, source_display_d.sub, {})
   end

@@ -1012,6 +1012,9 @@ end
 local function is_xid_continue(cp)
   return in_ranges(xid_continue_ranges(), cp)
 end
+-- Exported so IdentifierTokens cuts running text on the port's own property
+-- table.
+M.is_xid_continue = is_xid_continue
 
 -- UAX #31 default identifier start: `XID_Start` or `U+005F LOW LINE`.
 local function is_default_id_start(cp)
