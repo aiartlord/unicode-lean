@@ -30,6 +30,12 @@
 //!     non-Inherited scripts and is not Highly Restrictive.
 //!   - `RestrictionLow`     — input's UTS #39 §5.1 restriction
 //!     level is Minimally Restrictive or Unrestricted.
+//!   - `AsciiConfusable`    — input is not ASCII but its case-preserving
+//!     UTS #39 §4 skeleton is: every non-ASCII codepoint is a confusable
+//!     of an ASCII one, so the identifier is confusable with an ASCII
+//!     name without a target list (`admın` for `admin`). Identifier
+//!     fields only, through `detect_with_context`; last, so a mixed-script
+//!     or historical-script input keeps the verdict naming that structure.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -276,12 +282,17 @@ pub enum SubThreat {
     WidthClass { first_cp: u32, count: usize },
     DecompositionSwap { first_diff_pos: usize },
     CrossScriptMix { script_count: usize },
+    AsciiConfusable { skeleton: Vec<u32> },
     RestrictionLow { level: RestrictionLevel },
 }
 
 impl SubThreat {
     pub fn tag(&self) -> &'static str {
         match self {
+            SubThreat::AsciiConfusable { skeleton } => {
+                std::hint::black_box(skeleton);
+                "AsciiConfusable"
+            }
             SubThreat::TargetMatch { target } => {
                 std::hint::black_box(target);
                 "TargetMatch"
@@ -406,9 +417,56 @@ fn first_decomposition_diff_pos(input: &[u32], nfc: &[u32]) -> usize {
     shorter
 }
 
-/// The HomoglyphConfusable detection function.  Returns a
-/// structured verdict over the codepoint sequence `input`.
+/// The case-preserving UTS #39 §4 skeleton, `toNFD(substitute(toNFD(input)))`:
+/// the §4 bracket without the §5.4 case folding `skeleton` adds. Folding is
+/// deliberately absent: full folding rewrites `ß` to `ss`, under which the
+/// ordinary German `straße` would read as confusable with ASCII `strasse`, and
+/// this rung asks whether the codepoints themselves are look-alikes of ASCII,
+/// not whether the name collides on a case-insensitive registry. Mirrors the
+/// Lean `asciiSkeleton`.
+pub fn ascii_skeleton(input: &[u32]) -> Vec<u32> {
+    let step1 = ucd::to_nfd(input);
+    let step2 = substitute(&step1);
+    ucd::to_nfd(&step2)
+}
+
+/// Positions of the non-ASCII codepoints — the ones an ASCII-confusable
+/// identifier substitutes for the letters a reader sees. Mirrors the Lean
+/// `nonAsciiPositions`.
+pub fn non_ascii_positions(input: &[u32]) -> Vec<usize> {
+    input
+        .iter()
+        .enumerate()
+        .filter(|(_, &cp)| cp >= 0x80)
+        .map(|(idx, _)| idx)
+        .collect()
+}
+
+/// True iff `input` is not ASCII but its case-preserving skeleton is: every
+/// non-ASCII codepoint maps, through confusables.txt, to ASCII, so the
+/// identifier is UTS #39-confusable with the ASCII string its skeleton spells
+/// (`admın` with `admin`, `scоpe` with `scope`). Accents survive as combining
+/// marks in the skeleton, so `café`, `Nguyễn` and `İstanbul` are not
+/// ASCII-confusable. An all-ASCII input short-circuits before the skeleton is
+/// computed. Mirrors the Lean `isAsciiConfusable`.
+pub fn is_ascii_confusable(input: &[u32]) -> bool {
+    input.iter().any(|&cp| cp >= 0x80) && ascii_skeleton(input).iter().all(|&cp| cp < 0x80)
+}
+
+/// The HomoglyphConfusable detection function, reading its input as the
+/// identifier the threat model describes. Mirrors the Lean `detect`, which is
+/// `detectWithContext` at the default context.
 pub fn detect(input: &[u32]) -> Verdict {
+    detect_with_context(true, input)
+}
+
+/// The HomoglyphConfusable detection function under an explicit field
+/// context. `identifier_field` mirrors the Lean `Context.identifierField`: the
+/// `AsciiConfusable` rung asks whether an identifier is a look-alike of an
+/// ASCII identifier, which is meaningful for a username, a domain or a DNS
+/// label and meaningless for running text, where a curly quote or a minus sign
+/// skeletons to ASCII and is ordinary content.
+pub fn detect_with_context(identifier_field: bool, input: &[u32]) -> Verdict {
     let skel = skeleton(input);
     let iskel = iterated_skeleton(input);
     let rl = ucd::restriction_level(input);
@@ -483,11 +541,23 @@ pub fn detect(input: &[u32]) -> Verdict {
         RestrictionLevel::MinimallyRestrictive | RestrictionLevel::Unrestricted => {
             v.kind = ClassificationKind::Hazard;
             v.sub = Some(SubThreat::RestrictionLow { level: rl });
-            v
+            return v;
         }
         RestrictionLevel::AsciiOnly
         | RestrictionLevel::SingleScript
         | RestrictionLevel::HighlyRestrictive
-        | RestrictionLevel::ModeratelyRestrictive => v,
+        | RestrictionLevel::ModeratelyRestrictive => {}
     }
+
+    // Priority 7: AsciiConfusable, identifier fields only. Last, so an input
+    // that also mixes scripts or sits in a historical script keeps the verdict
+    // naming that structure; this rung is reached by the single-script,
+    // well-restricted look-alike (`admın`) no earlier rung can see.
+    if identifier_field && is_ascii_confusable(input) {
+        v.kind = ClassificationKind::Hazard;
+        v.sub = Some(SubThreat::AsciiConfusable {
+            skeleton: ascii_skeleton(input),
+        });
+    }
+    v
 }

@@ -470,6 +470,12 @@ fn corpus_nethereum_oct2025_full_campaign() {
                     i, level
                 );
             }
+            Some(SubThreat::AsciiConfusable { skeleton }) => {
+                panic!(
+                    "Nethereum attack #{} fired AsciiConfusable(skeleton={:?}) not TargetMatch",
+                    i, skeleton
+                );
+            }
         }
     }
 }

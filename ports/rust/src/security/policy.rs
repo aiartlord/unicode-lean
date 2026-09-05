@@ -796,7 +796,8 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
         positions_where(input, is_c1_control),
     );
 
-    let homoglyph = homoglyph_confusable::detect(input);
+    let homoglyph =
+        homoglyph_confusable::detect_with_context(profile_is_identifier_field(profile), input);
     let homoglyph_sub = homoglyph.sub.as_ref().map(|sub| sub.tag());
     // Every rung of the homoglyph ladder is reported, CrossScriptMix included.
     // `Unicode/Security/Policy.lean` maps every non-clear family result to a

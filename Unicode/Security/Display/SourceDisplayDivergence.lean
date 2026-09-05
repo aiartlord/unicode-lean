@@ -235,7 +235,9 @@ theorem detect_empty_clear : (detect []).classify.isClear = true := by
   have hds : hasDecompositionSwap [] = false := by
     unfold hasDecompositionSwap; rw [toNFC_id_all_lt [] (by decide)]; simp
   have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect []).classify.tag = none := by
-    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect
+          Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
+    rw [hds]; decide +kernel
   simp only [detect, hi1]
   decide
 
@@ -250,7 +252,9 @@ theorem detect_ascii_clear :
     simp
   have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
       [0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64]).classify.tag = none := by
-    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect
+          Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
+    rw [hds]; decide +kernel
   simp only [detect, hi1]
   decide
 
@@ -266,7 +270,9 @@ theorem detect_tag_only :
     simp
   have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
       [0xE0041, 0xE0042]).classify.tag = none := by
-    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect
+          Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
+    rw [hds]; decide +kernel
   simp only [detect, hi1]
   decide
 
@@ -282,7 +288,9 @@ theorem detect_vs_only :
     simp
   have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
       [0x0041, 0xFE0F]).classify.tag = none := by
-    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect
+          Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
+    rw [hds]; decide +kernel
   simp only [detect, hi1]
   decide
 
@@ -299,7 +307,9 @@ theorem detect_zw_only :
     simp
   have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
       [0x0048, 0x200B, 0x69]).classify.tag = none := by
-    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect
+          Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
+    rw [hds]; decide +kernel
   simp only [detect, hi1]
   decide
 
@@ -315,7 +325,9 @@ theorem detect_bidi_only :
     simp
   have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
       [0x202E, 0x41]).classify.tag = none := by
-    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect
+          Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
+    rw [hds]; decide +kernel
   simp only [detect, hi1]
   decide
 
@@ -336,7 +348,9 @@ theorem detect_balanced_bidi_fires :
     simp
   have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
       [0x2066, 0x2069]).classify.tag = none := by
-    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect
+          Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
+    rw [hds]; decide +kernel
   simp only [detect, hi1]
   decide
 
@@ -377,7 +391,9 @@ theorem detect_compound_vs_plus_zw :
     simp
   have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
       [0x0041, 0xFE0F, 0x200B]).classify.tag = none := by
-    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect
+          Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
+    rw [hds]; decide +kernel
   simp only [detect, hi1]
   decide
 
@@ -394,7 +410,9 @@ theorem detect_compound_tag_plus_zw :
     simp
   have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
       [0xE0041, 0xE0042, 0x200B]).classify.tag = none := by
-    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect
+          Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
+    rw [hds]; decide +kernel
   simp only [detect, hi1]
   decide
 
@@ -409,7 +427,9 @@ theorem detect_clean_code :
     simp
   have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
       [0x6C, 0x65, 0x74, 0x20, 0x78, 0x20, 0x3D, 0x20, 0x31, 0x3B]).classify.tag = none := by
-    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect
+          Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
+    rw [hds]; decide +kernel
   simp only [detect, hi1]
   decide
 
@@ -419,7 +439,9 @@ theorem safeForReview_matches_clear_empty :
   have hds : hasDecompositionSwap [] = false := by
     unfold hasDecompositionSwap; rw [toNFC_id_all_lt [] (by decide)]; simp
   have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect []).classify.tag = none := by
-    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect
+          Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
+    rw [hds]; decide +kernel
   simp only [detect, hi1]
   decide
 
@@ -434,7 +456,9 @@ theorem safeForReview_matches_hazard_VS :
     simp
   have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
       [0x0041, 0xFE0F]).classify.tag = none := by
-    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect
+          Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
+    rw [hds]; decide +kernel
   simp only [detect, hi1]
   decide
 
@@ -467,7 +491,9 @@ theorem detect_vs_inside_quote_pair_fires :
     simp
   have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
       [0x22, 0x41, 0xFE00, 0x22]).classify.tag = none := by
-    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect
+          Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
+    rw [hds]; decide +kernel
   simp only [detect, hi1]
   decide
 
@@ -487,7 +513,9 @@ theorem detect_rlo_inside_line_comment_marker_fires :
     simp
   have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
       [0x2F, 0x2F, 0x202E]).classify.tag = none := by
-    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect
+          Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
+    rw [hds]; decide +kernel
   simp only [detect, hi1]
   decide
 
@@ -507,7 +535,9 @@ theorem detect_rlo_inside_block_comment_fires :
     simp
   have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
       [0x2F, 0x2A, 0x202E, 0x2A, 0x2F]).classify.tag = none := by
-    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect
+          Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
+    rw [hds]; decide +kernel
   simp only [detect, hi1]
   decide
 

@@ -156,6 +156,10 @@ fn verdict_to_jsonl(id: usize, input: &[u32]) -> String {
             std::hint::black_box(level);
             ("\"RestrictionLow\"".to_string(), "null".to_string())
         }
+        Some(SubThreat::AsciiConfusable { skeleton }) => {
+            std::hint::black_box(skeleton);
+            ("\"AsciiConfusable\"".to_string(), "null".to_string())
+        }
     };
     let cps_str: Vec<String> = input.iter().map(|cp| cp.to_string()).collect();
     format!(

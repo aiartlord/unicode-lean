@@ -259,6 +259,40 @@ fn homoglyph_math_alpha_count() {
     }
 }
 
+// `detect_dotless_i_admin` / `detect_dotless_i_admin_position`: `admın`, dotless
+// i U+0131 for i. Single-script Latin in NFC naming no curated target, so only
+// the target-list-free rung carries the verdict. Its skeleton is all ASCII:
+// `adrnin`, since confusables.txt maps ı to i and m to the pair rn.
+#[test]
+fn homoglyph_dotless_i_admin_ascii_confusable() {
+    let input = [0x61, 0x64, 0x6D, 0x0131, 0x6E];
+    let v = homoglyph_confusable::detect(&input);
+    assert_eq!(v.kind, ClassificationKind::Hazard);
+    assert_eq!(v.sub.as_ref().unwrap().tag(), "AsciiConfusable");
+    if let Some(homoglyph_confusable::SubThreat::AsciiConfusable { skeleton }) = v.sub {
+        assert_eq!(skeleton, vec![0x61, 0x64, 0x72, 0x6E, 0x69, 0x6E]);
+    } else {
+        panic!("expected AsciiConfusable sub-threat");
+    }
+    assert_eq!(homoglyph_confusable::non_ascii_positions(&input), vec![3]);
+}
+
+// `detect_sharp_s_clear`: ß has no confusables row, so the case-preserving
+// skeleton keeps it; the rung does not case-fold `straße` to `strasse`.
+#[test]
+fn homoglyph_sharp_s_clear() {
+    let v = homoglyph_confusable::detect(&[0x73, 0x74, 0x72, 0x61, 0xDF, 0x65]);
+    assert_eq!(v.kind, ClassificationKind::Clear);
+}
+
+// `detectWithContext_running_text_dotless_i_clear`: outside an identifier
+// field the rung does not judge the input.
+#[test]
+fn homoglyph_running_text_dotless_i_clear() {
+    let v = homoglyph_confusable::detect_with_context(false, &[0x61, 0x64, 0x6D, 0x0131, 0x6E]);
+    assert_eq!(v.kind, ClassificationKind::Clear);
+}
+
 #[test]
 fn homoglyph_fullwidth_a() {
     // U+FF21 FULLWIDTH LATIN CAPITAL LETTER A.  Note: this also

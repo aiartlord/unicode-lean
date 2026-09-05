@@ -24,7 +24,14 @@
 
   Scope.
 
-    * Six sub-threats covering the identity-spoofing class.
+    * Seven sub-threats covering the identity-spoofing class.  The
+      seventh, `asciiConfusable`, is the target-list-free reading of
+      the same skeleton machinery: an identifier that is not ASCII but
+      whose UTS #39 §4 skeleton is, so it is confusable with an ASCII
+      name the caller never had to enumerate (`admın` for `admin`,
+      dotless i U+0131).  It is scoped to identifier fields through
+      `Context`, because in running text typographic punctuation such
+      as curly quotes also skeletons to ASCII and is ordinary content.
     * Canonical-target list sourced from
       `Unicode.Generated.KnownAttackTargets`, which embeds the
       SHA-pinned curated text file
@@ -75,6 +82,17 @@ set_option maxHeartbeats 8000000
                             scripts (Latin + Cyrillic, etc.).
       6. `restrictionLow`   input's UTS #39 restriction level is
                             below `.highlyRestrictive`.
+      7. `asciiConfusable`  input is not ASCII but its UTS #39 §4
+                            skeleton is: every non-ASCII codepoint is
+                            a confusable of an ASCII one, so the
+                            identifier is confusable with an ASCII
+                            name without a target list.  Identifier
+                            fields only (see `Context`).  Last, so an
+                            input that also mixes scripts or sits in a
+                            historical script keeps the verdict that
+                            names that structure; the rung is reached by
+                            the single-script, well-restricted look-alike
+                            (`admın`) that no earlier rung can see.
 -/
 inductive SubThreat where
   | targetMatch        (target : String)
@@ -82,6 +100,7 @@ inductive SubThreat where
   | widthClass         (firstCp : Nat) (count : Nat)
   | decompositionSwap  (firstDiffPos : Nat)
   | crossScriptMix     (scriptCount : Nat)
+  | asciiConfusable    (skeleton : List Nat)
   | restrictionLow     (level : RestrictionLevel)
   deriving DecidableEq, Repr, Inhabited
 
@@ -298,12 +317,58 @@ def crossScriptCount (input : List Nat) : Nat :=
   let scripts := Unicode.Restriction.stringScriptUnion input
   scripts.length
 
+/-- The case-preserving UTS #39 §4 skeleton: `toNFD(substitute(toNFD(input)))`,
+    the §4 bracket without the §5.4 case folding `Unicode.Confusables.skeleton`
+    adds.  Case folding is deliberately absent here: full folding rewrites
+    `ß` to `ss`, so under the folded skeleton the ordinary German `straße`
+    would read as confusable with ASCII `strasse`, and this rung asks whether
+    the codepoints themselves are look-alikes of ASCII, not whether the name
+    collides on a case-insensitive registry (which is `targetMatch`'s question). -/
+def asciiSkeleton (input : List Nat) : List Nat :=
+  Unicode.Normalization.NFC.toNFD
+    (Unicode.Confusables.substitute (Unicode.Normalization.NFC.toNFD input))
+
+/-- Positions of the non-ASCII codepoints — the ones an ASCII-confusable
+    identifier substitutes for the letters a reader sees. -/
+def nonAsciiPositions (input : List Nat) : List Nat :=
+  input.zipIdx.filterMap (fun cpWithIdx =>
+    if Nat.ble 0x80 cpWithIdx.1 then some cpWithIdx.2 else none)
+
+/-- True iff `input` is not ASCII but its case-preserving skeleton is: every
+    non-ASCII codepoint maps, through confusables.txt, to ASCII.  Such an
+    identifier is UTS #39-confusable with the ASCII string its skeleton spells
+    (`admın` with `admin`, `scоpe` with `scope`, `reqսests` with `requests`),
+    which is the homograph attack against ASCII names stated without a target
+    list.  Accents survive as combining marks in the skeleton, so `café`,
+    `Nguyễn` and `İstanbul` are not ASCII-confusable; a Greek `α` alone is,
+    which is why the rung is confined to identifier fields.
+
+    The ASCII test comes first and short-circuits, so an all-ASCII input never
+    reduces the skeleton. -/
+def isAsciiConfusable (input : List Nat) : Bool :=
+  input.any (fun cp => Nat.ble 0x80 cp)
+    && (asciiSkeleton input).all (fun cp => Nat.blt cp 0x80)
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Top-level detection
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The HomoglyphConfusable detection function. -/
-def detect (input : List Nat) : Verdict :=
+/-- What the caller knows about the field the input came from.
+
+    `asciiConfusable` asks whether an identifier is a look-alike of an ASCII
+    identifier.  That question is meaningful for a username, a domain or a DNS
+    label and meaningless for running text, where a curly quote or a minus sign
+    skeletons to ASCII and is ordinary content.  `identifierField` records which
+    of the two the caller is holding; it defaults to `true`, the reading this
+    module has always taken, so `detect` is unchanged for the identifier case.
+    Mirrors `Unicode.Security.Identity.MixedScriptAdmissibility.Context`. -/
+structure Context where
+  identifierField : Bool := true
+  deriving DecidableEq, Repr, Inhabited
+
+/-- The HomoglyphConfusable detection function, under an explicit field
+    context. -/
+def detectWithContext (ctx : Context) (input : List Nat) : Verdict :=
   let skel := Unicode.Confusables.skeleton input
   let iSkel := Unicode.Confusables.iteratedSkeleton input
   let rl := Unicode.Restriction.restrictionLevel input
@@ -313,7 +378,8 @@ def detect (input : List Nat) : Verdict :=
     | some t => [t.name]
     | none   => []
   -- Priority order: targetMatch → mathAlpha → widthClass →
-  -- decompositionSwap → crossScriptMix → restrictionLow → clear.
+  -- decompositionSwap → crossScriptMix → restrictionLow →
+  -- asciiConfusable → clear.
   let classification : Classification :=
     match matched with
     | some t => .hazard (.targetMatch t.name) [] []
@@ -340,6 +406,8 @@ def detect (input : List Nat) : Verdict :=
             .hazard (.crossScriptMix sc) [] []
           else if rl = .MinimallyRestrictive ∨ rl = .Unrestricted then
             .hazard (.restrictionLow rl) [] []
+          else if ctx.identifierField && isAsciiConfusable input then
+            .hazard (.asciiConfusable (asciiSkeleton input)) (nonAsciiPositions input) []
           else
             .clear
   { input := input,
@@ -348,6 +416,11 @@ def detect (input : List Nat) : Verdict :=
     iteratedSkeleton := iSkel,
     restrictionLevel := rl,
     matchedTargets := matchedNames }
+
+/-- The HomoglyphConfusable detection function, reading its input as the
+    identifier the threat model describes. -/
+def detect (input : List Nat) : Verdict :=
+  detectWithContext {} input
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 Projection helpers (mirrors the covert-channel pattern)
@@ -365,6 +438,8 @@ def SubThreat.tag : SubThreat → String
       Function.const Nat "DecompositionSwap" firstDiffPos
   | .crossScriptMix    scriptCount           =>
       Function.const Nat "CrossScriptMix" scriptCount
+  | .asciiConfusable   skeleton              =>
+      Function.const (List Nat) "AsciiConfusable" skeleton
   | .restrictionLow    level                 =>
       Function.const RestrictionLevel "RestrictionLow" level
 
@@ -416,14 +491,14 @@ theorem hasDecompositionSwap_nethereum :
 /-- Pure ASCII "Hello" is clear (no confusable structure). -/
 theorem detect_ascii_clear :
     (detect [0x48, 0x65, 0x6C, 0x6C, 0x6F]).classify.isClear = true := by
-  unfold detect
+  unfold detect detectWithContext
   rw [hasDecompositionSwap_hello]
   decide +kernel
 
 /-- The legitimate "Nethereum" (pure Latin) is clear. -/
 theorem detect_nethereum_legit_clear :
     (detect [0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x65, 0x75, 0x6D]).classify.isClear = true := by
-  unfold detect
+  unfold detect detectWithContext
   rw [hasDecompositionSwap_nethereum]
   decide +kernel
 
@@ -520,6 +595,40 @@ theorem detect_fullwidth_paypal :
     let cps : List Nat :=
       [0xFF30, 0xFF41, 0xFF59, 0xFF50, 0xFF41, 0xFF4C]
     (detect cps).classify.tag = some "TargetMatch" := by decide +kernel
+
+/-- `admın` — dotless i U+0131 standing in for i in `admin`.  Single-script
+    Latin, in NFC, and no curated target names `admin`, so every earlier rung
+    clears it; confusables.txt maps ı to i (and m to the pair rn), so its
+    skeleton is the all-ASCII `adrnin` — the same skeleton `admin` has, which is
+    what makes the two confusable — and `AsciiConfusable` fires, localised to
+    the substituted position. -/
+theorem detect_dotless_i_admin :
+    (detect [0x61, 0x64, 0x6D, 0x0131, 0x6E]).classify.tag = some "AsciiConfusable" := by
+  decide +kernel
+
+theorem detect_dotless_i_admin_position :
+    (detect [0x61, 0x64, 0x6D, 0x0131, 0x6E]).classify.positions = [3] := by
+  decide +kernel
+
+/-- `straße` is clear: ß has no confusables row, so the case-preserving skeleton
+    keeps it and the identifier is not a look-alike of any ASCII string.  Under
+    the case-folded skeleton it would have read as `strasse`; this pins that the
+    rung does not fold. -/
+theorem detect_sharp_s_clear :
+    (detect [0x73, 0x74, 0x72, 0x61, 0xDF, 0x65]).classify.isClear = true := by
+  decide +kernel
+
+/-- Outside an identifier field the same `admın` is not judged by the rung: a
+    running-text caller holds prose or source, where ASCII-skeleton punctuation
+    is ordinary content. -/
+theorem detectWithContext_running_text_dotless_i_clear :
+    (detectWithContext { identifierField := false } [0x61, 0x64, 0x6D, 0x0131, 0x6E]).classify.isClear
+      = true := by
+  decide +kernel
+
+/-- The identifier reading is `detectWithContext` at the default context. -/
+theorem detect_eq_detectWithContext_default (input : List Nat) :
+    detect input = detectWithContext {} input := rfl
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §8 Predicate sanity checks

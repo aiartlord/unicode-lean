@@ -399,10 +399,14 @@ def measure_corpus(cases: list[dict[str, object]], binary: Path) -> list[dict[st
 
     A case is measured twice, because a corpus of this kind answers two
     questions that do not have the same answer.  The first is what the
-    detectors see: scanned under one profile in `observe`, an attack is met
-    when it produces any finding and a control is met only when it produces
-    none.  That is the strict reading, and it is the one to quote when asking
-    whether a detector exists and reaches the input.
+    detectors see: scanned under the profile of the field the case is drawn
+    from, in `observe`, an attack is met when it produces any finding and a
+    control is met only when it produces none.  That is the strict reading,
+    and it is the one to quote when asking whether a detector exists and
+    reaches the input.  The profile matters even here: the field-scoped rungs
+    (`Unicode/Security/RunAll.lean`'s `Context`) ask their question only of
+    the kind of field they are specified for, so a username is judged as an
+    identifier and a source file is not.
 
     The second is what the product does: scanned under the profile of the field
     the case is drawn from, in `enforce`, an attack is met when the action is
@@ -419,7 +423,7 @@ def measure_corpus(cases: list[dict[str, object]], binary: Path) -> list[dict[st
     """
     measured = []
     for case in cases:
-        families, _ = scan_reference(binary, case["input"], "gateway-header", "observe")
+        families, _ = scan_reference(binary, case["input"], case["profile"], "observe")
         _, action = scan_reference(binary, case["input"], case["profile"], "enforce")
         expected = set(case["expected_families"])
         hazard = bool(families)

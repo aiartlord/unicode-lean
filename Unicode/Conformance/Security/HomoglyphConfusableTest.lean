@@ -65,7 +65,12 @@ def rows : List Row :=
     -- Plain ASCII "Hello": a single-script Latin identifier with no confusable
     -- structure — the clear baseline that proves the detector does not fire on
     -- ordinary text.
-    { input := [0x48, 0x65, 0x6C, 0x6C, 0x6F], tag := none } ]
+    { input := [0x48, 0x65, 0x6C, 0x6C, 0x6F], tag := none },
+    -- `admın`: dotless i U+0131 for i.  Single-script Latin in NFC that names no
+    -- curated target, so only the target-list-free `AsciiConfusable` rung can
+    -- carry the verdict — its skeleton is the all-ASCII `adrnin` (ı → i, m → rn),
+    -- the skeleton `admin` itself has.
+    { input := [0x61, 0x64, 0x6D, 0x0131, 0x6E], tag := some "AsciiConfusable" } ]
 
 /-- A row passes when `detect` reproduces the classification tag the row
     prescribes. -/
@@ -140,7 +145,8 @@ def rowsList : List VectorRow := [
   ⟨[0x03B1, 0x03B2, 0x0444, 0x0445], "Hazard:CrossScriptMix", []⟩,
   ⟨[0x11700], "Hazard:RestrictionLow", []⟩,
   ⟨[0x12000], "Hazard:RestrictionLow", []⟩,
-  ⟨[0x13000], "Hazard:RestrictionLow", []⟩
+  ⟨[0x13000], "Hazard:RestrictionLow", []⟩,
+  ⟨[0x0061, 0x0064, 0x006D, 0x0131, 0x006E], "Hazard:AsciiConfusable", [3]⟩
 ]
 
 -- `rowsList` mirrors a fresh parse of the vector file, checked at build time.

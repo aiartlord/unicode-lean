@@ -219,3 +219,4 @@ FF27 FF49 FF54 FF48 FF55 FF42; Hazard:WidthClass; 0; first_width_cp=0xFF27; # Fu
 
 # Egyptian Hieroglyph A001 (U+13000) — Restricted-status.
 13000; Hazard:RestrictionLow; ; restriction=Unrestricted; # Egyptian Hieroglyph A001
+0061 0064 006D 0131 006E; Hazard:AsciiConfusable; 3; skeleton="adrnin"; # admin / dotless i U+0131 at pos 3 — single-script Latin; skeleton all ASCII (ı → i, m → rn), the skeleton admin has
