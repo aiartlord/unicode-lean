@@ -44,6 +44,18 @@ pub fn detect(input: &[u32]) -> Detection {
 /// not judge a whole file as one identifier. The covert constituents and the
 /// bidi purpose rule hold of any field. Mirrors the Lean `detectWithContext`.
 pub fn detect_with_context(ctx: homoglyph_confusable::Context, input: &[u32]) -> Detection {
+    detect_core(
+        input,
+        fired(homoglyph_confusable::detect_with_context(ctx, input).kind),
+    )
+}
+
+/// Aggregate with the homoglyph constituent supplied: `homoglyph_fired` is
+/// whether the homoglyph family fired on this input under whatever reading
+/// the caller took (whole input, or per identifier token of running text).
+/// Mirrors the Lean `detectCore`, which the policy scan calls with the same
+/// verdict the homoglyph family reports.
+pub fn detect_core(input: &[u32], homoglyph_fired: bool) -> Detection {
     // Constituent family tags in canonical aggregation order: C1 tag-block,
     // C2 variation-selector, C3 zero-width, C5 bidi-control, I1 homoglyph.
     let mut fires: Vec<&'static str> = Vec::new();
@@ -65,7 +77,7 @@ pub fn detect_with_context(ctx: homoglyph_confusable::Context, input: &[u32]) ->
     if bidi_control_purpose::has_purposeless_control(input) {
         fires.push("BidiControl");
     }
-    if fired(homoglyph_confusable::detect_with_context(ctx, input).kind) {
+    if homoglyph_fired {
         fires.push("IdentifierHomoglyph");
     }
 

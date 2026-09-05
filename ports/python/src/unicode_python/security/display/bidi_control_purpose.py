@@ -61,16 +61,35 @@ def opens_isolate_kind(cp: int) -> bool:
     return cp in (0x2066, 0x2067, 0x2068)
 
 
+_CODE_SYNTAX = frozenset(
+    (
+        0x22, 0x27, 0x60, 0x28, 0x29, 0x5B, 0x5D, 0x7B, 0x7D, 0x2F, 0x5C, 0x2A,
+        0x23, 0x3B, 0x3C, 0x3E, 0x3D, 0x2B, 0x7C, 0x26, 0x25, 0x24, 0x40, 0x5E,
+        0x7E,
+    )
+)
+
+
+def is_code_syntax(cp: int) -> bool:
+    """ASCII code syntax: the codepoints a Trojan Source payload moves —
+    quotes, brackets, comment markers, statement separators, operators. Prose
+    punctuation, space and digits are not in the set. Mirrors
+    ``isCodeSyntax``."""
+    return cp in _CODE_SYNTAX
+
+
 @dataclass(slots=True)
 class _OpenSpan:
     """One open span: where it opened, how it closes, its direction in effect,
-    and whether right-to-left text has appeared inside it. Mirrors
-    ``OpenSpan``."""
+    and what has appeared directly inside it — strong right-to-left text,
+    strong left-to-right text, ASCII code syntax. Mirrors ``OpenSpan``."""
 
     pos: int
     isolate: bool
     rtl_kind: bool
     saw_rtl: bool
+    saw_ltr: bool
+    saw_syntax: bool
 
 
 def _in_rtl_context(enclosing: list[_OpenSpan], paragraph_rtl: bool) -> bool:
@@ -80,9 +99,16 @@ def _in_rtl_context(enclosing: list[_OpenSpan], paragraph_rtl: bool) -> bool:
 def _span_purposeful(
     span: _OpenSpan, enclosing: list[_OpenSpan], paragraph_rtl: bool
 ) -> bool:
+    """A closed span is purposeful iff its direct content is exactly its own
+    direction and carries no code syntax. Mirrors ``spanPurposeful``."""
     if span.rtl_kind:
-        return span.saw_rtl
-    return _in_rtl_context(enclosing, paragraph_rtl)
+        return span.saw_rtl and not span.saw_ltr and not span.saw_syntax
+    return (
+        _in_rtl_context(enclosing, paragraph_rtl)
+        and span.saw_ltr
+        and not span.saw_rtl
+        and not span.saw_syntax
+    )
 
 
 def paragraph_is_rtl(input_cps: list[int]) -> bool:
@@ -112,6 +138,8 @@ def purposeless_control_positions(input_cps: list[int]) -> list[int]:
                     isolate=opens_isolate_kind(cp),
                     rtl_kind=opens_rtl_kind(cp),
                     saw_rtl=False,
+                    saw_ltr=False,
+                    saw_syntax=False,
                 )
             )
         elif is_pdf(cp):
@@ -140,9 +168,13 @@ def purposeless_control_positions(input_cps: list[int]) -> list[int]:
                 if not _span_purposeful(iso, stack, paragraph_rtl):
                     acc.add(iso.pos)
                     acc.add(idx)
-        elif ucd.is_strong_rtl(cp):
-            for span in stack:
-                span.saw_rtl = True
+        elif stack:
+            # Content is recorded against the innermost open span only: a
+            # nested span manages its own content (Lean ``markContent``).
+            top = stack[-1]
+            top.saw_rtl = top.saw_rtl or ucd.is_strong_rtl(cp)
+            top.saw_ltr = top.saw_ltr or ucd.is_strong_ltr(cp)
+            top.saw_syntax = top.saw_syntax or is_code_syntax(cp)
     for span in stack:
         acc.add(span.pos)
     return sorted(acc)
@@ -167,6 +199,7 @@ def first_purposeless_control(input_cps: list[int]) -> tuple[int, int] | None:
 __all__ = [
     "first_purposeless_control",
     "has_purposeless_control",
+    "is_code_syntax",
     "opens_isolate_kind",
     "opens_ltr_kind",
     "opens_rtl_kind",

@@ -349,6 +349,15 @@ def isAsciiConfusable (input : List Nat) : Bool :=
   input.any (fun cp => Nat.ble 0x80 cp)
     && (asciiSkeleton input).all (fun cp => Nat.blt cp 0x80)
 
+/-- True iff every non-Common, non-Inherited codepoint of `input` is Latin.
+    For a token cut out of running text this is what separates the homograph
+    from content: a Latin token spelled with a non-ASCII Latin look-alike
+    (`admın`, `ſcope`) is an identifier posing as another, while a Greek
+    variable `α` in a source file is a Greek identifier, even though both
+    skeleton to ASCII. -/
+def isLatinOnly (input : List Nat) : Bool :=
+  Unicode.Restriction.stringScriptUnion input == [.Latn]
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Top-level detection
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -367,6 +376,16 @@ def isAsciiConfusable (input : List Nat) : Bool :=
     `Unicode.Security.Identity.MixedScriptAdmissibility.Context`. -/
 structure Context where
   runningText : Bool := false
+  /-- Whether the input is one identifier-shaped token cut out of running text
+      (`Unicode.Security.Identity.IdentifierTokens`).  Such a token is judged
+      as the identifier it is for the homograph shape — `crossScriptMix` runs,
+      `targetMatch` runs, and `asciiConfusable` runs for a Latin token
+      (`admın` in a source file is an identifier posing as `admin`) — but a
+      Greek variable is not a look-alike of an ASCII name in a source file, and
+      a historic-script word is content in a literal, so `asciiConfusable`
+      does not run for a non-Latin token and `restrictionLow` does not run at
+      all. -/
+  identifierToken : Bool := false
   deriving DecidableEq, Repr, Inhabited
 
 /-- The HomoglyphConfusable detection function, under an explicit field
@@ -407,9 +426,11 @@ def detectWithContext (ctx : Context) (input : List Nat) : Verdict :=
           let sc := crossScriptCount input
           if !ctx.runningText && Nat.ble 2 sc && !Unicode.Restriction.isHighlyRestrictive input then
             .hazard (.crossScriptMix sc) [] []
-          else if !ctx.runningText && decide (rl = .MinimallyRestrictive ∨ rl = .Unrestricted) then
+          else if !ctx.runningText && !ctx.identifierToken
+                  && decide (rl = .MinimallyRestrictive ∨ rl = .Unrestricted) then
             .hazard (.restrictionLow rl) [] []
-          else if !ctx.runningText && isAsciiConfusable input then
+          else if !ctx.runningText && (!ctx.identifierToken || isLatinOnly input)
+                  && isAsciiConfusable input then
             .hazard (.asciiConfusable (asciiSkeleton input)) (nonAsciiPositions input) []
           else
             .clear
@@ -627,6 +648,27 @@ theorem detect_sharp_s_clear :
 theorem detectWithContext_running_text_dotless_i_clear :
     (detectWithContext { runningText := true } [0x61, 0x64, 0x6D, 0x0131, 0x6E]).classify.isClear
       = true := by
+  decide +kernel
+
+/-- As a token of running text, `admın` is still reported: a Latin token spelled
+    with a non-ASCII Latin look-alike is an identifier posing as another. -/
+theorem detectWithContext_token_dotless_i_admin :
+    (detectWithContext { identifierToken := true } [0x61, 0x64, 0x6D, 0x0131, 0x6E]).classify.tag
+      = some "AsciiConfusable" := by
+  decide +kernel
+
+/-- As a token of running text, the Greek variable `α` is content: it skeletons
+    to ASCII `a`, but it is a Greek identifier, not a Latin one posing as
+    another. -/
+theorem detectWithContext_token_greek_alpha_clear :
+    (detectWithContext { identifierToken := true } [0x03B1]).classify.isClear = true := by
+  decide +kernel
+
+/-- As a token of running text, `scоpe` with a Cyrillic о is the homograph
+    shape and fires the cross-script rung. -/
+theorem detectWithContext_token_cyrillic_o_scope :
+    (detectWithContext { identifierToken := true } [0x73, 0x63, 0x043E, 0x70, 0x65]).classify.tag
+      = some "CrossScriptMix" := by
   decide +kernel
 
 /-- The identifier reading is `detectWithContext` at the default context. -/

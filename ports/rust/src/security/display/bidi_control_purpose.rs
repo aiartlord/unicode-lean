@@ -55,14 +55,50 @@ pub fn opens_isolate_kind(cp: u32) -> bool {
     cp == 0x2066 || cp == 0x2067 || cp == 0x2068
 }
 
+/// ASCII code syntax: the codepoints a Trojan Source payload moves — quotes,
+/// brackets, comment markers, statement separators, operators. Prose
+/// punctuation, space and digits are not in the set. Mirrors `isCodeSyntax`.
+pub fn is_code_syntax(cp: u32) -> bool {
+    matches!(
+        cp,
+        0x22 | 0x27
+            | 0x60
+            | 0x28
+            | 0x29
+            | 0x5B
+            | 0x5D
+            | 0x7B
+            | 0x7D
+            | 0x2F
+            | 0x5C
+            | 0x2A
+            | 0x23
+            | 0x3B
+            | 0x3C
+            | 0x3E
+            | 0x3D
+            | 0x2B
+            | 0x7C
+            | 0x26
+            | 0x25
+            | 0x24
+            | 0x40
+            | 0x5E
+            | 0x7E
+    )
+}
+
 /// One open span: where it opened, how it closes, its direction in effect, and
-/// whether right-to-left text has appeared inside it. Mirrors `OpenSpan`.
+/// what has appeared directly inside it — strong right-to-left text, strong
+/// left-to-right text, ASCII code syntax. Mirrors `OpenSpan`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct OpenSpan {
     pos: usize,
     isolate: bool,
     rtl_kind: bool,
     saw_rtl: bool,
+    saw_ltr: bool,
+    saw_syntax: bool,
 }
 
 /// True iff a span closing here sits in right-to-left context. Mirrors
@@ -71,13 +107,13 @@ fn in_rtl_context(enclosing: &[OpenSpan], paragraph_rtl: bool) -> bool {
     paragraph_rtl || enclosing.iter().any(|s| s.rtl_kind)
 }
 
-/// A closed span is purposeful iff it managed right-to-left text. Mirrors
-/// `spanPurposeful`.
+/// A closed span is purposeful iff its direct content is exactly its own
+/// direction and carries no code syntax. Mirrors `spanPurposeful`.
 fn span_purposeful(s: OpenSpan, enclosing: &[OpenSpan], paragraph_rtl: bool) -> bool {
     if s.rtl_kind {
-        s.saw_rtl
+        s.saw_rtl && !s.saw_ltr && !s.saw_syntax
     } else {
-        in_rtl_context(enclosing, paragraph_rtl)
+        in_rtl_context(enclosing, paragraph_rtl) && s.saw_ltr && !s.saw_rtl && !s.saw_syntax
     }
 }
 
@@ -106,6 +142,8 @@ pub fn purposeless_control_positions(input: &[u32]) -> Vec<usize> {
                 isolate: opens_isolate_kind(cp),
                 rtl_kind: opens_rtl_kind(cp),
                 saw_rtl: false,
+                saw_ltr: false,
+                saw_syntax: false,
             });
         } else if is_pdf(cp) {
             match stack.last().copied() {
@@ -138,10 +176,12 @@ pub fn purposeless_control_positions(input: &[u32]) -> Vec<usize> {
                     }
                 }
             }
-        } else if ucd::is_strong_rtl(cp) {
-            for s in stack.iter_mut() {
-                s.saw_rtl = true;
-            }
+        } else if let Some(top) = stack.last_mut() {
+            // Content is recorded against the innermost open span only: a
+            // nested span manages its own content (Lean `markContent`).
+            top.saw_rtl |= ucd::is_strong_rtl(cp);
+            top.saw_ltr |= ucd::is_strong_ltr(cp);
+            top.saw_syntax |= is_code_syntax(cp);
         }
     }
     acc.extend(stack.iter().map(|s| s.pos));
@@ -231,9 +271,37 @@ mod tests {
 
     #[test]
     fn pdi_terminates_embedding_implicitly() {
+        // The Hebrew letter is the embedding's content, not the isolate's, so
+        // the isolate encloses nothing of its own and is purposeless too.
         assert_eq!(
             purposeless_control_positions(&[0x2067, 0x202B, 0x05D0, 0x2069]),
-            vec![1]
+            vec![0, 1, 3]
+        );
+    }
+
+    #[test]
+    fn planted_letter_does_not_legitimise_a_mixed_span() {
+        assert_eq!(
+            purposeless_control_positions(&[0x202B, 0x61, 0x62, 0x0645, 0x202C]),
+            vec![0, 4]
+        );
+    }
+
+    #[test]
+    fn code_syntax_inside_an_rtl_span_is_reported() {
+        assert_eq!(
+            purposeless_control_positions(&[0x202B, 0x0645, 0x22, 0x29, 0x202C]),
+            vec![0, 4]
+        );
+    }
+
+    #[test]
+    fn nested_acronym_is_purposeful() {
+        assert_eq!(
+            purposeless_control_positions(&[
+                0x202B, 0x0645, 0x202A, 0x47, 0x50, 0x55, 0x202C, 0x0631, 0x202C
+            ]),
+            Vec::<usize>::new()
         );
     }
 

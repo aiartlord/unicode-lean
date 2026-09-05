@@ -104,7 +104,19 @@ def detect_with_context(
 ) -> Detection:
     """Aggregate under an explicit field context, which the homoglyph
     constituent reads: in running text the script-composition and
-    ASCII-confusable rungs do not judge a whole file as one identifier.
+    ASCII-confusable rungs do not judge a whole file as one identifier."""
+    return detect_core(
+        input_cps,
+        _fired(homoglyph_confusable.detect_with_context(ctx, input_cps).kind),
+    )
+
+
+def detect_core(input_cps: list[int], homoglyph_fired: bool) -> Detection:
+    """Aggregate with the homoglyph constituent supplied: ``homoglyph_fired`` is
+    whether the homoglyph family fired on this input under whatever reading the
+    caller took (whole input, or per identifier token of running text). Mirrors
+    the Lean ``detectCore``, which the policy scan calls with the same verdict
+    the homoglyph family reports.
 
     Constituent family tags in canonical aggregation order: tag-block,
     variation-selector, zero-width, bidi-control, homoglyph. A family fires
@@ -124,7 +136,7 @@ def detect_with_context(
     # and is not a divergence.
     if bidi_control_purpose.has_purposeless_control(input_cps):
         fires.append("BidiControl")
-    if _fired(homoglyph_confusable.detect_with_context(ctx, input_cps).kind):
+    if homoglyph_fired:
         fires.append("IdentifierHomoglyph")
 
     fire_count = len(fires)

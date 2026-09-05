@@ -21,7 +21,7 @@ use crate::security::form::{
     normalization_bomb, stream_safe_violation, width_class_confusion,
 };
 use crate::security::identity::{
-    emoji_zwj_integrity, homoglyph_confusable, skin_tone_variation_forgery,
+    emoji_zwj_integrity, homoglyph_confusable, identifier_tokens, skin_tone_variation_forgery,
 };
 use crate::strict::Utf8RejectKind;
 use crate::utf8::{decode_to_codepoints, first_invalid_utf8_offset};
@@ -746,7 +746,10 @@ pub fn profile_is_running_text(profile: Profile) -> bool {
 pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
     let mut findings = Vec::new();
     let running_text = profile_is_running_text(profile);
-    let homoglyph_ctx = homoglyph_confusable::Context { running_text };
+    let homoglyph_ctx = homoglyph_confusable::Context {
+        running_text,
+        identifier_token: false,
+    };
 
     let tag = tag_block_payload::detect(input);
     push_finding(
@@ -818,7 +821,36 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
         positions_where(input, is_c1_control),
     );
 
-    let homoglyph = homoglyph_confusable::detect_with_context(homoglyph_ctx, input);
+    // Running text is judged per identifier-shaped token by the identifier
+    // detectors (Lean `homoglyphOverTokens` / `mixedScriptOverTokens`): a
+    // bilingual file is not one mixed-script identifier, and a `scоpe` inside
+    // it is. The first token that fires carries the verdict, its positions
+    // shifted into the input; when none does, the whole input is read under the
+    // running-text reading.
+    let token_ctx = homoglyph_confusable::Context {
+        running_text: false,
+        identifier_token: true,
+    };
+    let mut homoglyph_positions: Vec<usize> = Vec::new();
+    let homoglyph = if running_text {
+        let mut hit: Option<homoglyph_confusable::Verdict> = None;
+        for token in identifier_tokens::tokens(input) {
+            let v = homoglyph_confusable::detect_with_context(token_ctx, &token.cps);
+            if v.kind != ClassificationKind::Clear {
+                homoglyph_positions =
+                    identifier_tokens::shift_positions(token.start, &(0..token.cps.len()).collect::<Vec<_>>());
+                hit = Some(v);
+                break;
+            }
+        }
+        hit.unwrap_or_else(|| homoglyph_confusable::detect_with_context(homoglyph_ctx, input))
+    } else {
+        let v = homoglyph_confusable::detect_with_context(homoglyph_ctx, input);
+        if v.kind != ClassificationKind::Clear {
+            homoglyph_positions = (0..input.len()).collect();
+        }
+        v
+    };
     let homoglyph_sub = homoglyph.sub.as_ref().map(|sub| sub.tag());
     // Every rung of the homoglyph ladder is reported, CrossScriptMix included.
     // `Unicode/Security/Policy.lean` maps every non-clear family result to a
@@ -829,33 +861,48 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
     // with something else, and whether its script set is admissible -- and a
     // caller filters by family rather than the scan choosing for it.
     {
+        let positions = if homoglyph.kind == ClassificationKind::Clear {
+            Vec::new()
+        } else if homoglyph_positions.is_empty() {
+            (0..input.len()).collect()
+        } else {
+            homoglyph_positions.clone()
+        };
         push_finding(
             &mut findings,
             Family::HomoglyphConfusable,
             homoglyph.kind,
             homoglyph_sub,
-            if homoglyph.kind == ClassificationKind::Clear {
-                Vec::new()
-            } else {
-                (0..input.len()).collect()
-            },
+            positions,
         );
     }
     // Mixed-script admissibility asks about the script composition of one
-    // identifier; a source file or a message mixes scripts as content, so the
-    // family reports clear on running text (Lean: `mkGatedResult`).
-    if let Some(sub) = (!running_text)
-        .then(|| {
-            homoglyph_confusable::mixed_script_verdict(input, profile_is_identifier_field(profile))
+    // identifier. Running text is read per identifier-shaped token, without
+    // the Restricted-status phase a token of running text does not owe (Lean:
+    // `mixedScriptOverTokens`); a single value is read whole.
+    let mixed: Option<(&'static str, Vec<usize>)> = if running_text {
+        identifier_tokens::tokens(input).into_iter().find_map(|token| {
+            homoglyph_confusable::mixed_script_verdict(&token.cps, false).map(|sub| {
+                (
+                    sub,
+                    identifier_tokens::shift_positions(
+                        token.start,
+                        &(0..token.cps.len()).collect::<Vec<_>>(),
+                    ),
+                )
+            })
         })
-        .flatten()
-    {
+    } else {
+        homoglyph_confusable::mixed_script_verdict(input, profile_is_identifier_field(profile))
+            .map(|sub| (sub, (0..input.len()).collect()))
+    };
+    if let Some((sub, positions)) = mixed {
         push_finding(
             &mut findings,
             Family::MixedScriptAdmissibility,
             ClassificationKind::Hazard,
             Some(sub),
-            (0..input.len()).collect(),
+            positions,
         );
     }
 
@@ -993,7 +1040,13 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
 
     // SourceDisplayDivergence judges the input as a unit, so it localises
     // nothing and carries an empty position list.
-    let source_display = source_display_divergence::detect_with_context(homoglyph_ctx, input);
+    // The homoglyph constituent of D1 is the same verdict the homoglyph family
+    // reported above, so a source file's token-level homograph is a display
+    // divergence (Lean: `detectCore input i1`).
+    let source_display = source_display_divergence::detect_core(
+        input,
+        homoglyph.kind != ClassificationKind::Clear,
+    );
     if let Some(sub) = source_display.sub {
         push_finding(
             &mut findings,

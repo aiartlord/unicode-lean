@@ -12,6 +12,7 @@ from ..noncharacters import is_noncharacter
 from ..strict import Utf8RejectKind
 from ..utf8 import decode_to_codepoints, first_invalid_utf8_offset
 from .calculus import ClassificationKind, Family, Severity
+from .identity import identifier_tokens
 from .boundary import (
     admissibility_form_drift,
     confusable_bidi_compound,
@@ -598,7 +599,28 @@ def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
         _positions_where(input_cps, _is_c1_control),
     )
 
-    homoglyph = homoglyph_confusable.detect_with_context(homoglyph_ctx, input_cps)
+    # Running text is judged per identifier-shaped token by the identifier
+    # detectors (Lean ``homoglyphOverTokens`` / ``mixedScriptOverTokens``): a
+    # bilingual file is not one mixed-script identifier, and a ``scоpe`` inside
+    # it is. The first token that fires carries the verdict, its positions
+    # shifted into the input; when none does, the whole input is read under the
+    # running-text reading.
+    token_ctx = homoglyph_confusable.Context(running_text=False, identifier_token=True)
+    homoglyph_positions: list[int] = []
+    homoglyph = None
+    if running_text:
+        for token in identifier_tokens.tokens(input_cps):
+            token_verdict = homoglyph_confusable.detect_with_context(token_ctx, list(token.cps))
+            if token_verdict.kind is not ClassificationKind.CLEAR:
+                homoglyph = token_verdict
+                homoglyph_positions = identifier_tokens.shift_positions(
+                    token.start, list(range(len(token.cps)))
+                )
+                break
+    if homoglyph is None:
+        homoglyph = homoglyph_confusable.detect_with_context(homoglyph_ctx, input_cps)
+        if homoglyph.kind is not ClassificationKind.CLEAR:
+            homoglyph_positions = list(range(len(input_cps)))
     homoglyph_sub = (
         homoglyph_confusable.sub_threat_tag(homoglyph.sub) if homoglyph.sub else None
     )
@@ -611,25 +633,35 @@ def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
         Family.HOMOGLYPH_CONFUSABLE,
         homoglyph.kind,
         homoglyph_sub,
-        [] if homoglyph.kind is ClassificationKind.CLEAR else list(range(len(input_cps))),
+        [] if homoglyph.kind is ClassificationKind.CLEAR else homoglyph_positions,
     )
     # Mixed-script admissibility asks about the script composition of one
-    # identifier; a source file or a message mixes scripts as content, so the
-    # family reports clear on running text (Lean: ``mkGatedResult``).
-    mixed_sub = (
-        None
-        if running_text
-        else homoglyph_confusable.mixed_script_verdict(
+    # identifier. Running text is read per identifier-shaped token, without
+    # the Restricted-status phase a token of running text does not owe (Lean:
+    # ``mixedScriptOverTokens``); a single value is read whole.
+    mixed_sub: str | None = None
+    mixed_positions: list[int] = []
+    if running_text:
+        for token in identifier_tokens.tokens(input_cps):
+            token_sub = homoglyph_confusable.mixed_script_verdict(list(token.cps), False)
+            if token_sub is not None:
+                mixed_sub = token_sub
+                mixed_positions = identifier_tokens.shift_positions(
+                    token.start, list(range(len(token.cps)))
+                )
+                break
+    else:
+        mixed_sub = homoglyph_confusable.mixed_script_verdict(
             input_cps, profile_is_identifier_field(profile)
         )
-    )
+        mixed_positions = list(range(len(input_cps)))
     if mixed_sub is not None:
         _append_finding(
             findings,
             Family.MIXED_SCRIPT_ADMISSIBILITY,
             ClassificationKind.HAZARD,
             mixed_sub,
-            list(range(len(input_cps))),
+            mixed_positions,
         )
 
     # RtlInjection judges a field declared left-to-right; running text declares
@@ -805,7 +837,12 @@ def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
             list(width_class.positions),
         )
 
-    source_display = source_display_divergence.detect_with_context(homoglyph_ctx, input_cps)
+    # The homoglyph constituent of D1 is the same verdict the homoglyph family
+    # reported above, so a source file's token-level homograph is a display
+    # divergence (Lean: ``detectCore input i1``).
+    source_display = source_display_divergence.detect_core(
+        input_cps, homoglyph.kind is not ClassificationKind.CLEAR
+    )
     if source_display.sub is not None:
         _append_finding(
             findings,

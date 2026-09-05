@@ -307,9 +307,15 @@ class Context:
     than one value. The script-composition rungs (``CrossScriptMix``,
     ``RestrictionLow``) would judge such a document as if it were one
     identifier, and ``AsciiConfusable`` would report a curly quote, so under
-    this reading those three rungs do not run."""
+    this reading those three rungs do not run. ``identifier_token`` says the
+    input is one identifier-shaped token cut out of running text
+    (:mod:`identifier_tokens`): judged as the identifier it is for the
+    homograph shape, but a Greek variable is not a look-alike of an ASCII name
+    in a source file and a historic-script word is content in a literal, so
+    ``AsciiConfusable`` and ``RestrictionLow`` do not run."""
 
     running_text: bool = False
+    identifier_token: bool = False
 
 
 def ascii_skeleton(input_cps: list[int]) -> list[int]:
@@ -332,6 +338,15 @@ def is_ascii_confusable(input_cps: list[int]) -> bool:
     return any(cp >= 0x80 for cp in input_cps) and all(
         cp < 0x80 for cp in ascii_skeleton(input_cps)
     )
+
+
+def is_latin_only(input_cps: list[int]) -> bool:
+    """True iff every non-Common, non-Inherited codepoint is Latin. For a token
+    cut out of running text this separates the homograph from content: a Latin
+    token spelled with a non-ASCII Latin look-alike (``admın``) poses as another
+    identifier, while a Greek variable ``α`` is a Greek identifier, even though
+    both skeleton to ASCII. Mirrors ``isLatinOnly``."""
+    return list(ucd.string_script_union(input_cps)) == ["Latn"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -505,8 +520,9 @@ def detect_with_context(ctx: Context, input_cps: list[int]) -> Verdict:
                 restriction_level=rl,
             )
 
-        # Priority 6: RestrictionLow.
-        if rl in (
+        # Priority 6: RestrictionLow. A historic-script token cut out of running
+        # text is content, not an identifier registration.
+        if not ctx.identifier_token and rl in (
             RestrictionLevel.MINIMALLY_RESTRICTIVE,
             RestrictionLevel.UNRESTRICTED,
         ):
@@ -521,8 +537,14 @@ def detect_with_context(ctx: Context, input_cps: list[int]) -> Verdict:
     # Priority 7: AsciiConfusable, single-value fields only. Last, so an input
     # that also mixes scripts or sits in a historical script keeps the verdict
     # naming that structure; this rung is reached by the single-script,
-    # well-restricted look-alike (`admın`) no earlier rung can see.
-    if not ctx.running_text and is_ascii_confusable(input_cps):
+    # well-restricted look-alike (`admın`) no earlier rung can see. For a token
+    # of running text only a Latin token is judged: a Greek variable in a
+    # source file is a Greek identifier, not a Latin one posing as another.
+    if (
+        not ctx.running_text
+        and (not ctx.identifier_token or is_latin_only(input_cps))
+        and is_ascii_confusable(input_cps)
+    ):
         return Verdict(
             kind=ClassificationKind.HAZARD,
             sub=AsciiConfusable(skeleton=tuple(ascii_skeleton(input_cps))),

@@ -36,45 +36,61 @@ might depend on).
 
 - **Bidi controls are judged by purpose, not presence.** A new module,
   `Unicode.Security.Display.BidiControlPurpose`, decides which bidi format
-  controls in an input serve a purpose: an unbalanced control, or a balanced
-  span that encloses no strong right-to-left character in a left-to-right
-  context (`LRI user PDI` around Latin text, `LRO return PDF` around a keyword),
-  is purposeless; a balanced embedding around right-to-left text manages that
-  text and is not. `sourceDisplayDivergence`'s bidi constituent,
-  `filenameDisguise`'s bidi rung and the controls `confusableBidiCompound`
-  pairs with a confusable read the purposeless positions instead of raw
-  presence. Every Trojan Source shape still fires — the balanced empty isolate,
-  the lone override in a comment, the isolate around a Latin literal — and a
-  balanced RLE/PDF around an Arabic string literal no longer does. This is a
-  property of the control span decided from the codepoints it encloses, asked
-  of every control wherever it sits; it is not source-region filtering, and
-  the v0.12.0 retraction of region filtering stands. Every pinned vector row
-  that carries a control keeps at least one purposeless control, so no
-  certificate row changed; the `H NNBSP i NNBSP !` row of
-  `SourceDisplayDivergenceTest.txt` becomes `Compound` because the identifier
-  reading now also sees U+202F as a confusable of SPACE. Residual, stated in the
-  threat model: one right-to-left letter planted inside an embedding makes the
-  span purposeful.
-- **Detectors are asked only of the kind of field they are specified for.**
-  `Unicode.Security.RunAll.Context` gains `runningText`, set by
-  `Unicode.Security.Policy.scan` for the display-name, chat-message and
-  source-code profiles (`profileIsRunningText`). Under it the rungs that only
-  make sense of one identifier report clear: `mixedScriptAdmissibility`,
-  `localeCaseInversion`, `caseExpansionMismatch` and `rtlInjection` as whole
-  families (`mkGatedResult`), `homoglyphConfusable`'s `crossScriptMix` and
-  `restrictionLow`, `rendererDivergence`'s `mixedDirectionVariance`, and
-  `filenameDisguise`'s extension rungs. A bilingual source file, an Arabic
+  controls in an input serve a purpose. A closed span is purposeful only when
+  its direct content is exactly its own direction and carries no ASCII code
+  syntax: a right-to-left span enclosing right-to-left text, no left-to-right
+  text and no quote, bracket, comment marker, separator or operator; or a
+  left-to-right span in right-to-left context enclosing left-to-right text and
+  nothing else. Content is credited to the innermost open span, so a Latin
+  acronym isolated inside an Arabic embedding leaves the embedding purposeful.
+  Everything else is purposeless: every unbalanced control, every balanced span
+  with nothing of its own direction inside (`LRI user PDI` around Latin text,
+  `LRO return PDF` around a keyword, the empty isolate), every span mixing
+  directions (one right-to-left letter planted beside Latin code legitimises
+  nothing), and every span swallowing a quote or a parenthesis.
+  `sourceDisplayDivergence`'s bidi constituent, `filenameDisguise`'s bidi rung
+  and the controls `confusableBidiCompound` pairs with a confusable read the
+  purposeless positions instead of raw presence, so a balanced RLE/PDF around
+  a pure Arabic string literal no longer fires and every Trojan Source shape
+  still does. This is a property of the control span decided from the
+  codepoints it encloses, asked of every control wherever it sits; it is not
+  source-region filtering, and the v0.12.0 retraction of region filtering
+  stands. Every pinned vector row that carries a control keeps at least one
+  purposeless control, so no certificate row changed for it; the
+  `H NNBSP i NNBSP !` row of `SourceDisplayDivergenceTest.txt` becomes
+  `Compound` because the identifier reading now also sees U+202F as a
+  confusable of SPACE. What remains outside the rule, and is stated in the
+  threat model, is a pure right-to-left span placed so that its own text lands
+  somewhere misleading: it moves no code and no syntax.
+- **Detectors are asked only of the kind of field they are specified for, and
+  running text is read per identifier token.** `Unicode.Security.RunAll.Context`
+  gains `runningText`, set by `Unicode.Security.Policy.scan` for the
+  display-name, chat-message and source-code profiles (`profileIsRunningText`).
+  The identifier detectors do not go quiet on running text; they read it per
+  identifier-shaped token (`Unicode.Security.Identity.IdentifierTokens`, the
+  maximal `XID_Continue` runs): `homoglyphConfusable` and
+  `mixedScriptAdmissibility` judge each token as the identifier it is —
+  `scоpe` with a Cyrillic о inside a file fires, and so does `admın` as a Latin
+  token — while a Greek variable and a historic-script word are content
+  (`Context.identifierToken`), and the first token that fires carries the
+  verdict with its positions in the input. The rungs that only make sense of
+  one value report clear on running text: `localeCaseInversion`,
+  `caseExpansionMismatch` and `rtlInjection` as whole families
+  (`mkGatedResult`), `rendererDivergence`'s `mixedDirectionVariance`, and
+  `filenameDisguise`'s extension rungs; `asciiConfusable` runs on every
+  single-value field and on Latin tokens. A bilingual source file, an Arabic
   string literal, a Hebrew comment, a Persian word with an orthographic ZWNJ,
-  `straße İstanbul Nguyễn` in a display name, and a capital I in code are
-  content there, not findings. Covert payloads, purposeless bidi controls, form
-  drift and the presentation rungs still run on every field. Three cases of
-  `fixtures/security/verdict_contract.json` change (the display-name Arabic mix
-  and the Hebrew comment report nothing; the source-code RLO loses its
-  `rtl-injection` finding and keeps the other three); the fifteen other ports
-  fail the fixture until they carry the same context, which is the order
-  `scripts/regenerate-verdict-contract.py` documents. The supply-chain corpus
-  now reports 15 of 15 attacks under the family it names and 10 of 10 controls
-  clean, in observe and in enforce, each case scanned under its own profile.
+  `straße İstanbul Nguyễn` in a display name, Greek variables in `δ = α − β`
+  and a capital I in code are content, not findings. Covert payloads,
+  purposeless bidi controls, form drift and the presentation rungs still run
+  on every field. `fixtures/security/verdict_contract.json` and
+  `fixtures/security/differential_corpus.json` are regenerated from the
+  reference and synced to every port's copy; the Rust reference and the Python
+  port carry all of this, and the fourteen other ports fail the fixtures until
+  they follow, which is the order `scripts/regenerate-verdict-contract.py`
+  documents. The supply-chain corpus reports 15 of 15 attacks under the family
+  it names and 10 of 10 controls clean, in observe and in enforce, each case
+  scanned under its own profile.
 - **Breaking, reason code.** `RtlInjection`'s first sub-threat is renamed
   `rloInLTRField` to `bidiControlInLTRField`, and its tag `RloInLTRField` to
   `BidiControlInLTRField`. The reason code

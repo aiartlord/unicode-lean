@@ -453,6 +453,16 @@ pub fn is_ascii_confusable(input: &[u32]) -> bool {
     input.iter().any(|&cp| cp >= 0x80) && ascii_skeleton(input).iter().all(|&cp| cp < 0x80)
 }
 
+/// True iff every non-Common, non-Inherited codepoint of `input` is Latin. For
+/// a token cut out of running text this separates the homograph from content:
+/// a Latin token spelled with a non-ASCII Latin look-alike (`admın`) poses as
+/// another identifier, while a Greek variable `α` is a Greek identifier, even
+/// though both skeleton to ASCII. Mirrors the Lean `isLatinOnly`.
+pub fn is_latin_only(input: &[u32]) -> bool {
+    let union = ucd::string_script_union(input);
+    union.len() == 1 && union.iter().all(|s| s == "Latn")
+}
+
 /// What the caller knows about the field the input came from. Mirrors the Lean
 /// `Context`: `running_text` says the input is prose or source — a whole file
 /// or message — rather than one value. The script-composition rungs
@@ -462,6 +472,13 @@ pub fn is_ascii_confusable(input: &[u32]) -> bool {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct Context {
     pub running_text: bool,
+    /// The input is one identifier-shaped token cut out of running text
+    /// (`identifier_tokens`): judged as the identifier it is for the homograph
+    /// shape (`CrossScriptMix`, `TargetMatch` run), but a Greek variable is not
+    /// a look-alike of an ASCII name in a source file and a historic-script
+    /// word is content in a literal, so `AsciiConfusable` and `RestrictionLow`
+    /// do not run. Mirrors the Lean `Context.identifierToken`.
+    pub identifier_token: bool,
 }
 
 /// The HomoglyphConfusable detection function, reading its input as the
@@ -548,25 +565,33 @@ pub fn detect_with_context(ctx: Context, input: &[u32]) -> Verdict {
             return v;
         }
 
-        // Priority 6: RestrictionLow.
-        match rl {
-            RestrictionLevel::MinimallyRestrictive | RestrictionLevel::Unrestricted => {
-                v.kind = ClassificationKind::Hazard;
-                v.sub = Some(SubThreat::RestrictionLow { level: rl });
-                return v;
+        // Priority 6: RestrictionLow. A historic-script token cut out of running
+        // text is content, not an identifier registration.
+        if !ctx.identifier_token {
+            match rl {
+                RestrictionLevel::MinimallyRestrictive | RestrictionLevel::Unrestricted => {
+                    v.kind = ClassificationKind::Hazard;
+                    v.sub = Some(SubThreat::RestrictionLow { level: rl });
+                    return v;
+                }
+                RestrictionLevel::AsciiOnly
+                | RestrictionLevel::SingleScript
+                | RestrictionLevel::HighlyRestrictive
+                | RestrictionLevel::ModeratelyRestrictive => {}
             }
-            RestrictionLevel::AsciiOnly
-            | RestrictionLevel::SingleScript
-            | RestrictionLevel::HighlyRestrictive
-            | RestrictionLevel::ModeratelyRestrictive => {}
         }
     }
 
     // Priority 7: AsciiConfusable, single-value fields only. Last, so an input
     // that also mixes scripts or sits in a historical script keeps the verdict
     // naming that structure; this rung is reached by the single-script,
-    // well-restricted look-alike (`admın`) no earlier rung can see.
-    if !ctx.running_text && is_ascii_confusable(input) {
+    // well-restricted look-alike (`admın`) no earlier rung can see. A Greek
+    // variable that is one token of a source file is not a look-alike of an
+    // ASCII name there.
+    if !ctx.running_text
+        && (!ctx.identifier_token || is_latin_only(input))
+        && is_ascii_confusable(input)
+    {
         v.kind = ClassificationKind::Hazard;
         v.sub = Some(SubThreat::AsciiConfusable {
             skeleton: ascii_skeleton(input),

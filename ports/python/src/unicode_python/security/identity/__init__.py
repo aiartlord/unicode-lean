@@ -7,7 +7,12 @@ Latin variants, NFC-form drift, cross-script mixing, and
 UTS #39 restriction-level breaches.
 """
 
-from . import emoji_zwj_integrity, homoglyph_confusable, skin_tone_variation_forgery
+from . import (
+    emoji_zwj_integrity,
+    homoglyph_confusable,
+    identifier_tokens,
+    skin_tone_variation_forgery,
+)
 
 __all__ = [
     "emoji_zwj_integrity",

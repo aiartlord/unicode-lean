@@ -28,29 +28,38 @@
       isolate (closed by PDI) or an embedding/override (closed by PDF), and
       whether it is right-to-left in effect (RLE, RLO, RLI, FSI) or
       left-to-right (LRE, LRO, LRI).
-    * A strong right-to-left codepoint (Bidi_Class R or AL) marks every open
-      span as having seen right-to-left text.
+    * Every other codepoint is recorded against the innermost open span only:
+      whether it is strong right-to-left (Bidi_Class R or AL), strong
+      left-to-right (L), or ASCII code syntax (quotes, brackets, comment
+      markers, separators, operators).  A nested span manages its own
+      content, so an acronym isolated inside an Arabic embedding does not
+      make the embedding mixed.
     * PDF closes the top span when it is an embedding; against an isolate on
       top, or an empty stack, it is an orphan.  PDI closes down to the
       innermost isolate, implicitly terminating the embeddings above it, which
       are thereby unbalanced; with no isolate open it is an orphan.
-    * A closed right-to-left span is purposeful iff it saw right-to-left text.
-      A closed left-to-right span is purposeful iff it sits in right-to-left
-      context: inside an open right-to-left span, or in a paragraph whose
-      first strong character is right-to-left (UAX #9 P2/P3).
+    * A closed span is purposeful iff its direct content is exactly its own
+      direction and carries no code syntax: a right-to-left span with
+      right-to-left text, no left-to-right text and no syntax; a left-to-right
+      span in right-to-left context — inside an open right-to-left span, or
+      in a paragraph whose first strong character is right-to-left (UAX #9
+      P2/P3) — with left-to-right text, no right-to-left text and no syntax.
     * The positions reported are those of every orphan, every opener left
       open at the end of input, every embedding a PDI terminated implicitly,
       and both ends of every closed span that was not purposeful.
 
   FSI resolves its direction from its content, so a first-strong isolate
   around left-to-right text is a no-op; it is treated as right-to-left in
-  effect and is purposeful only when its content has right-to-left text.
+  effect and is purposeful only when its content is right-to-left text.
 
-  Residual.  A single right-to-left letter inside an embedding makes the
-  embedding purposeful, so an adversary can legitimise a span by planting
-  one.  The letter is then visible to the reviewer, and the confusable and
-  compound detectors still see it; what this rule removes is the silent
-  case, where a control span carries nothing that could explain it.
+  What the rule admits is therefore exactly a span that renders its own text
+  and nothing else: an Arabic literal, a Hebrew comment, a Latin acronym
+  inside them.  Planting one right-to-left letter beside Latin code does not
+  help an adversary — the span is mixed and is reported — and neither does
+  swallowing a quote or a parenthesis into an otherwise Arabic span.  What
+  remains outside the rule is a pure right-to-left span placed so that its
+  own text lands somewhere misleading; that moves no code and no syntax, and
+  the text is visible to the reviewer.
 
   The consumers are the bidi constituent of `SourceDisplayDivergence`, the
   bidi rung of `FilenameDisguise`, the control positions
@@ -106,30 +115,60 @@ def opensIsolateKind (cp : Nat) : Bool :=
 -- §2 The span stack
 -- ═══════════════════════════════════════════════════════════════════════════════
 
+/-- ASCII code syntax: the codepoints a Trojan Source payload moves — quotes,
+    brackets, comment markers, statement separators, operators.  Inside a
+    right-to-left span they resolve right-to-left and change places on screen,
+    so a span carrying one is not merely rendering right-to-left text.  Prose
+    punctuation (period, comma, question mark, exclamation mark, colon, hyphen,
+    low line), space and digits are not in the set: an Arabic sentence carries
+    them and they move nothing a compiler reads. -/
+def isCodeSyntax (cp : Nat) : Bool :=
+  cp = 0x22 || cp = 0x27 || cp = 0x60 || cp = 0x28 || cp = 0x29 || cp = 0x5B ||
+  cp = 0x5D || cp = 0x7B || cp = 0x7D || cp = 0x2F || cp = 0x5C || cp = 0x2A ||
+  cp = 0x23 || cp = 0x3B || cp = 0x3C || cp = 0x3E || cp = 0x3D || cp = 0x2B ||
+  cp = 0x7C || cp = 0x26 || cp = 0x25 || cp = 0x24 || cp = 0x40 || cp = 0x5E ||
+  cp = 0x7E
+
 /-- One open span: where it opened, how it closes, its direction in effect,
-    and whether right-to-left text has appeared inside it. -/
+    and what has appeared directly inside it — strong right-to-left text,
+    strong left-to-right text, ASCII code syntax. -/
 structure OpenSpan where
-  pos     : Nat
-  isolate : Bool
-  rtlKind : Bool
-  sawRtl  : Bool
+  pos       : Nat
+  isolate   : Bool
+  rtlKind   : Bool
+  sawRtl    : Bool
+  sawLtr    : Bool
+  sawSyntax : Bool
   deriving DecidableEq, Repr, Inhabited
 
-/-- Record that a strong right-to-left codepoint appeared: every open span
-    encloses it. -/
-def markRtl (stack : List OpenSpan) : List OpenSpan :=
-  stack.map (fun s => { s with sawRtl := true })
+/-- Record a codepoint against the innermost open span only.  A nested span
+    manages its own content: a left-to-right acronym isolated inside an Arabic
+    embedding is the inner span's business, and does not make the outer span
+    mixed. -/
+def markContent (stack : List OpenSpan) (cp : Nat) : List OpenSpan :=
+  match stack with
+  | [] => []
+  | s :: below =>
+    { s with
+      sawRtl    := s.sawRtl || isStrongRTL cp,
+      sawLtr    := s.sawLtr || isStrongLTR cp,
+      sawSyntax := s.sawSyntax || isCodeSyntax cp } :: below
 
 /-- True iff a span closing here sits in right-to-left context: an enclosing
     open span is right-to-left in effect, or the paragraph runs right-to-left. -/
 def inRtlContext (enclosing : List OpenSpan) (paragraphRtl : Bool) : Bool :=
   paragraphRtl || enclosing.any (fun s => s.rtlKind)
 
-/-- A closed span is purposeful iff it managed right-to-left text: a
-    right-to-left span that saw some, or a left-to-right span in right-to-left
-    context. -/
+/-- A closed span is purposeful iff it encloses text of exactly its own
+    direction and nothing a compiler reads: a right-to-left span whose direct
+    content has right-to-left text, no left-to-right text and no code syntax;
+    or a left-to-right span in right-to-left context whose direct content has
+    left-to-right text, no right-to-left text and no code syntax.  A single
+    opposite-direction letter or one quote inside the span makes it a reorder
+    of something other than its own text, and it is reported. -/
 def spanPurposeful (s : OpenSpan) (enclosing : List OpenSpan) (paragraphRtl : Bool) : Bool :=
-  if s.rtlKind then s.sawRtl else inRtlContext enclosing paragraphRtl
+  if s.rtlKind then s.sawRtl && !s.sawLtr && !s.sawSyntax
+  else inRtlContext enclosing paragraphRtl && s.sawLtr && !s.sawRtl && !s.sawSyntax
 
 /-- Pop to the innermost isolate.  Returns the embeddings above it (which a
     PDI terminates implicitly), the isolate itself, and the stack below it;
@@ -163,8 +202,8 @@ def walk : List Nat → Nat → List OpenSpan → Bool → List Nat → List Nat
   | cp :: rest, idx, stack, paragraphRtl, acc =>
     if opensRtlKind cp || opensLtrKind cp then
       walk rest (idx + 1)
-        ({ pos := idx, isolate := opensIsolateKind cp,
-           rtlKind := opensRtlKind cp, sawRtl := false } :: stack)
+        ({ pos := idx, isolate := opensIsolateKind cp, rtlKind := opensRtlKind cp,
+           sawRtl := false, sawLtr := false, sawSyntax := false } :: stack)
         paragraphRtl acc
     else if isPDF cp then
       match stack with
@@ -183,10 +222,8 @@ def walk : List Nat → Nat → List OpenSpan → Bool → List Nat → List Nat
         walk rest (idx + 1) below paragraphRtl
           (acc ++ dropped.map (fun s => s.pos)
              ++ (if spanPurposeful iso below paragraphRtl then [] else [iso.pos, idx]))
-    else if isStrongRTL cp then
-      walk rest (idx + 1) (markRtl stack) paragraphRtl acc
     else
-      walk rest (idx + 1) stack paragraphRtl acc
+      walk rest (idx + 1) (markContent stack cp) paragraphRtl acc
 
 /-- Positions of the purposeless bidi format controls in `input`, in input
     order.  Empty iff every control in the input is balanced and manages
@@ -255,10 +292,29 @@ theorem purposeless_lri_around_latin :
 theorem purposeless_orphan_pdf :
     purposelessControlPositions [0x41, 0x202C] = [1] := by decide
 
-/-- A PDI terminates the embedding opened inside its isolate implicitly; the
-    isolate itself saw Hebrew and is purposeful, the embedding is unbalanced. -/
+/-- A PDI terminates the embedding opened inside its isolate implicitly, so the
+    embedding is unbalanced.  The Hebrew letter is the embedding's content, not
+    the isolate's, so the isolate encloses nothing of its own and is purposeless
+    too. -/
 theorem purposeless_pdi_terminates_embedding :
-    purposelessControlPositions [0x2067, 0x202B, 0x05D0, 0x2069] = [1] := by decide
+    purposelessControlPositions [0x2067, 0x202B, 0x05D0, 0x2069] = [0, 1, 3] := by decide
+
+/-- One right-to-left letter planted beside Latin text does not legitimise the
+    span: the content mixes directions, so both ends are reported. -/
+theorem purposeless_rle_planted_letter :
+    purposelessControlPositions [0x202B, 0x61, 0x62, 0x0645, 0x202C] = [0, 4] := by decide
+
+/-- Code syntax inside a right-to-left span — here a quote and a parenthesis
+    beside an Arabic letter — is the commenting-out shape, and is reported. -/
+theorem purposeless_rle_with_syntax :
+    purposelessControlPositions [0x202B, 0x0645, 0x22, 0x29, 0x202C] = [0, 4] := by decide
+
+/-- A left-to-right acronym isolated inside an Arabic embedding: the inner span
+    encloses left-to-right text in right-to-left context, the outer encloses
+    Arabic and the inner span, and both are purposeful. -/
+theorem purposeful_nested_acronym :
+    purposelessControlPositions
+      [0x202B, 0x0645, 0x202A, 0x47, 0x50, 0x55, 0x202C, 0x0631, 0x202C] = [] := by decide
 
 /-- `hasPurposelessControl` and `firstPurposelessControl` read the same list. -/
 theorem first_of_lone_rlo :

@@ -1420,7 +1420,11 @@ fn is_xid_start(cp: u32) -> bool {
     in_ranges(xid_start_ranges(), cp)
 }
 
-fn is_xid_continue(cp: u32) -> bool {
+/// True iff `cp` has the UAX #31 `XID_Continue` derived core property — the
+/// codepoints that may continue an identifier. Mirrors the Lean
+/// `Unicode.Identifier.isXIDContinue`; the identifier tokenizer of running
+/// text (`identifier_tokens`) splits on it.
+pub fn is_xid_continue(cp: u32) -> bool {
     in_ranges(xid_continue_ranges(), cp)
 }
 

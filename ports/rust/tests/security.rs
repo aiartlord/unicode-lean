@@ -289,7 +289,10 @@ fn homoglyph_sharp_s_clear() {
 // does not judge the input.
 #[test]
 fn homoglyph_running_text_dotless_i_clear() {
-    let ctx = homoglyph_confusable::Context { running_text: true };
+    let ctx = homoglyph_confusable::Context {
+        running_text: true,
+        identifier_token: false,
+    };
     let v = homoglyph_confusable::detect_with_context(ctx, &[0x61, 0x64, 0x6D, 0x0131, 0x6E]);
     assert_eq!(v.kind, ClassificationKind::Clear);
 }
@@ -304,7 +307,10 @@ fn homoglyph_running_text_cross_script_clear() {
         homoglyph_confusable::detect(&input).sub.as_ref().map(|s| s.tag()),
         Some("CrossScriptMix")
     );
-    let ctx = homoglyph_confusable::Context { running_text: true };
+    let ctx = homoglyph_confusable::Context {
+        running_text: true,
+        identifier_token: false,
+    };
     let v = homoglyph_confusable::detect_with_context(ctx, &input);
     assert_eq!(v.kind, ClassificationKind::Clear);
 }

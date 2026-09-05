@@ -26,6 +26,7 @@
 -/
 
 import Unicode.Security
+import Unicode.Security.Identity.IdentifierTokens
 import Unicode.Security.Crypto.Bip39Canonical
 import Unicode.Security.Crypto.Bip39CanonicalVectorsDetect
 import Unicode.Security.Crypto.HashInputStability
@@ -118,6 +119,50 @@ structure Context where
   runningText     : Bool := false
   deriving DecidableEq, Repr, Inhabited
 
+/-- The homoglyph verdict of running text, read per identifier-shaped token
+    (`Unicode.Security.Identity.IdentifierTokens`): the first token that fires
+    under the token reading, with its positions shifted into the input.  When
+    no token fires, the whole input's verdict under the running-text reading,
+    which is clear on the script rungs and still carries the target, math
+    alphabet, width and NFC rungs over the document. -/
+def homoglyphOverTokens (input : List Nat) :
+    Unicode.Security.Identity.HomoglyphConfusable.Verdict :=
+  let tokenCtx : Unicode.Security.Identity.HomoglyphConfusable.Context :=
+    { identifierToken := true }
+  let hit := (Unicode.Security.Identity.IdentifierTokens.tokens input).findSome? (fun t =>
+    let v := Unicode.Security.Identity.HomoglyphConfusable.detectWithContext tokenCtx t.cps
+    match v.classify with
+    | .clear => none
+    | .hazard sub positions decoded =>
+      some { v with
+        classify := .hazard sub
+          (Unicode.Security.Identity.IdentifierTokens.shiftPositions t.start positions) decoded })
+  match hit with
+  | some v => v
+  | none =>
+    Unicode.Security.Identity.HomoglyphConfusable.detectWithContext { runningText := true } input
+
+/-- The mixed-script admissibility verdict of running text, read per
+    identifier-shaped token: each token is judged as the identifier it is —
+    the Latin pairs, the multi-script mix and the restriction level — without
+    the Restricted-status phase, which a token of running text does not owe.
+    When no token fires, the clear verdict of the empty identifier. -/
+def mixedScriptOverTokens (input : List Nat) :
+    Unicode.Security.Identity.MixedScriptAdmissibility.Verdict :=
+  let tokenCtx : Unicode.Security.Identity.MixedScriptAdmissibility.Context :=
+    { identifierField := false }
+  let hit := (Unicode.Security.Identity.IdentifierTokens.tokens input).findSome? (fun t =>
+    let v := Unicode.Security.Identity.MixedScriptAdmissibility.detectWithContext tokenCtx t.cps
+    match v.classify with
+    | .clear => none
+    | .hazard sub positions decoded =>
+      some { v with
+        classify := .hazard sub
+          (Unicode.Security.Identity.IdentifierTokens.shiftPositions t.start positions) decoded })
+  match hit with
+  | some v => v
+  | none => Unicode.Security.Identity.MixedScriptAdmissibility.detectWithContext tokenCtx []
+
 /-- Run every Security Conformance Layer detector on `input` under the field
     context `ctx` and return a `FamilyResult` per family.  The output array has
     exactly 27 entries, one per family, in declaration order grouped by
@@ -147,16 +192,22 @@ def runAllWithContext (ctx : Context) (input : List Nat) : List FamilyResult :=
         : Unicode.Security.Covert.SurrogateReassembly.Verdict)
   let c5 := Unicode.Security.Covert.BidiControlBalance.detect        input
   let c6 := Unicode.Security.Covert.NoncharacterControl.detect       input
-  let homoglyphCtx : Unicode.Security.Identity.HomoglyphConfusable.Context :=
-    { runningText := ctx.runningText }
-  let i1 := Unicode.Security.Identity.HomoglyphConfusable.detectWithContext homoglyphCtx input
+  -- Running text is judged per identifier-shaped token by the identifier
+  -- detectors: a bilingual file is not one mixed-script identifier, and a
+  -- `scоpe` inside it is.
+  let i1 :=
+    if ctx.runningText then homoglyphOverTokens input
+    else Unicode.Security.Identity.HomoglyphConfusable.detectWithContext {} input
   let i2 :=
-    Unicode.Security.Identity.MixedScriptAdmissibility.detectWithContext
-      { identifierField := ctx.identifierField } input
+    if ctx.runningText then mixedScriptOverTokens input
+    else
+      Unicode.Security.Identity.MixedScriptAdmissibility.detectWithContext
+        { identifierField := ctx.identifierField } input
   let i3 := Unicode.Security.Identity.EmojiZwjIntegrity.detect       input
   let i4 := Unicode.Security.Identity.SkinToneVariationForgery.detect input
-  let d1 :=
-    Unicode.Security.Display.SourceDisplayDivergence.detectWithContext homoglyphCtx input
+  -- The homoglyph constituent of D1 is the same verdict the homoglyph family
+  -- reports, so a source file's token-level homograph is a display divergence.
+  let d1 := Unicode.Security.Display.SourceDisplayDivergence.detectCore input i1
   let d2 :=
     Unicode.Security.Display.FilenameDisguise.detectWithContext
       { runningText := ctx.runningText } input
@@ -186,11 +237,11 @@ def runAllWithContext (ctx : Context) (input : List Nat) : List FamilyResult :=
      mkResult .bidiControlBalance       c5.classify.isClear c5.classify.tag c5.classify.positions,
      mkResult .noncharacterControl      c6.classify.isClear c6.classify.tag c6.classify.positions,
      mkResult .homoglyphConfusable      i1.classify.isClear i1.classify.tag i1.classify.positions,
-     -- Identifier admissibility, a declared-LTR field, a length-checked value
-     -- and a locale-folded credential are questions about a single value; in
-     -- running text the family reports clear (see `Context.runningText`).
-     mkGatedResult .mixedScriptAdmissibility (!ctx.runningText)
-       i2.classify.isClear i2.classify.tag i2.classify.positions,
+     -- Identifier admissibility is read per token in running text (above); a
+     -- declared-LTR field, a length-checked value and a locale-folded credential
+     -- are questions about a single value, and in running text those three
+     -- families report clear (see `Context.runningText`).
+     mkResult .mixedScriptAdmissibility i2.classify.isClear i2.classify.tag i2.classify.positions,
      mkResult .emojiZwjIntegrity        i3.classify.isClear i3.classify.tag i3.classify.positions,
      mkResult .skinToneVariationForgery i4.classify.isClear i4.classify.tag i4.classify.positions,
      mkResult .sourceDisplayDivergence  d1.classify.isClear d1.classify.tag d1.classify.positions,
