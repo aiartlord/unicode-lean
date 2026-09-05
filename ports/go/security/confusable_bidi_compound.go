@@ -40,20 +40,35 @@ func firstPosWhere(input []uint32, pred func(uint32) bool) (int, bool) {
 	return 0, false
 }
 
+// firstPurposelessPosWhere returns the first position of a purposeless bidi
+// control satisfying pred. Only purposeless controls (bidi_control_purpose.go:
+// unbalanced, or a balanced span enclosing nothing right-to-left) count as the
+// display channel this compound pairs with a confusable; a balanced embedding
+// around Arabic text renders that text as written. Mirrors the Lean
+// firstOverridePos / firstIsolatePos.
+func firstPurposelessPosWhere(input []uint32, pred func(uint32) bool) (int, bool) {
+	for _, pos := range purposelessControlPositions(input) {
+		if pred(input[pos]) {
+			return pos, true
+		}
+	}
+	return 0, false
+}
+
 // confusableBidiCompoundDetect detects a confusable codepoint sharing the input
-// with a bidi control. Priority mirrors the spec: with a confusable present, an
-// override-class control fires ConfusableInOverride; otherwise an isolate-class
-// control fires ConfusableInIsolate; otherwise clear. Reported positions are
-// [confusablePos, bidiPos].
+// with a purposeless bidi control. Priority mirrors the spec: with a confusable
+// present, an override-class control fires ConfusableInOverride; otherwise an
+// isolate-class control fires ConfusableInIsolate; otherwise clear. Reported
+// positions are [confusablePos, bidiPos].
 func confusableBidiCompoundDetect(input []uint32) (string, []int, bool) {
 	confusablePos, ok := firstPosWhere(input, isConfusableSource)
 	if !ok {
 		return "", nil, false
 	}
-	if bidiPos, ok := firstPosWhere(input, isBidiEmbeddingControl); ok {
+	if bidiPos, ok := firstPurposelessPosWhere(input, isBidiEmbeddingControl); ok {
 		return "ConfusableInOverride", []int{confusablePos, bidiPos}, true
 	}
-	if bidiPos, ok := firstPosWhere(input, isConfusableBidiIsolate); ok {
+	if bidiPos, ok := firstPurposelessPosWhere(input, isConfusableBidiIsolate); ok {
 		return "ConfusableInIsolate", []int{confusablePos, bidiPos}, true
 	}
 	return "", nil, false

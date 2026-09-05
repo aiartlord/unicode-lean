@@ -139,8 +139,23 @@ func PolicyOfProfile(profile Profile) ProfilePolicy {
 	}
 }
 
+// profileIsRunningText reports whether the profile names a field of running
+// text — prose or source, a whole file or message — rather than a single value.
+// The identifier-scoped rungs read such a field per identifier token, and the
+// declared-field detector rtlInjection, the casing families and the filename
+// extension rungs do not run on it. Mirrors profileIsRunningText in
+// Unicode/Security/Policy.lean.
+func profileIsRunningText(profile Profile) bool {
+	switch profile {
+	case ProfileDisplayName, ProfileChatMessage, ProfileSourceCode:
+		return true
+	default:
+		return false
+	}
+}
+
 func Scan(profile Profile, mode Mode, input []uint32) Verdict {
-	findings := detect(input, profileIsIdentifierField(profile))
+	findings := detect(input, profileIsIdentifierField(profile), profileIsRunningText(profile))
 	action := decide(profile, mode, findings)
 
 	return Verdict{
@@ -182,10 +197,12 @@ func appendClassified(findings []Finding, family Family, tag string, ok bool, po
 	return findings
 }
 
-// detect runs every family over input. identifierField carries what the caller
-// knows about the field, mirroring Unicode.Security.RunAll's Context: a family
-// scoped to identifiers needs to know whether it is holding one.
-func detect(input []uint32, identifierField bool) []Finding {
+// detect runs every family over input. identifierField and runningText carry
+// what the caller knows about the field, mirroring Unicode.Security.RunAll's
+// Context: a family scoped to identifiers needs to know whether it is holding
+// one, and running text is read per identifier token by the identifier
+// detectors and not at all by the single-value families.
+func detect(input []uint32, identifierField bool, runningText bool) []Finding {
 	findings := make([]Finding, 0, 8)
 
 	// The whole tag block counts, not only the ASCII-bearing span, and which
@@ -242,14 +259,25 @@ func detect(input []uint32, identifierField bool) []Finding {
 	}
 
 	findings = append(findings, noncharacterControlFindings(input)...)
-	if finding, ok := homoglyphConfusableFinding(input); ok {
+	// Running text is judged per identifier-shaped token by the identifier
+	// detectors (Lean homoglyphOverTokens / mixedScriptOverTokens): a bilingual
+	// file is not one mixed-script identifier, and a scоpe inside it is. The
+	// first token that fires carries the verdict, its positions shifted into
+	// the input; when none does, the whole input is read under the running-text
+	// reading.
+	homoglyphFinding, homoglyphFired := homoglyphOverTokens(input, runningText)
+	if homoglyphFired {
+		findings = append(findings, homoglyphFinding)
+	}
+	if finding, ok := mixedScriptOverTokens(input, identifierField, runningText); ok {
 		findings = append(findings, finding)
 	}
-	if finding, ok := mixedScriptAdmissibilityFinding(input, identifierField); ok {
-		findings = append(findings, finding)
-	}
-	if finding, ok := rtlInjectionFinding(input); ok {
-		findings = append(findings, finding)
+	// RtlInjection judges a field declared left-to-right; running text declares
+	// no direction, so the family reports clear on it (Lean: mkGatedResult).
+	if !runningText {
+		if finding, ok := rtlInjectionFinding(input); ok {
+			findings = append(findings, finding)
+		}
 	}
 	if finding, ok := confusableBidiCompoundFinding(input); ok {
 		findings = append(findings, finding)
@@ -266,11 +294,11 @@ func detect(input []uint32, identifierField bool) []Finding {
 	stvfTag, stvfFired := stvf.classify.tag()
 	findings = appendClassified(findings, FamilySkinToneVariationForgery, stvfTag, stvfFired, stvf.classify.posns())
 
-	fd := filenameDisguiseDetect(input)
+	fd := filenameDisguiseDetectCtx(input, runningText)
 	fdTag, fdFired := fd.classify.tag()
 	findings = appendClassified(findings, FamilyFilenameDisguise, fdTag, fdFired, fd.classify.posns())
 
-	rd := rendererDivergenceDetect(input)
+	rd := rendererDivergenceDetectCtx(input, runningText)
 	rdTag, rdFired := rd.classify.tag()
 	findings = appendClassified(findings, FamilyRendererDivergence, rdTag, rdFired, rd.classify.posns())
 
@@ -278,9 +306,13 @@ func detect(input []uint32, identifierField bool) []Finding {
 	ssTag, ssFired := ss.classify.tag()
 	findings = appendClassified(findings, FamilyStreamSafeViolation, ssTag, ssFired, ss.classify.positions)
 
-	cem := caseExpansionMismatchDetect(input)
-	cemTag, cemFired := cem.classify.tag()
-	findings = appendClassified(findings, FamilyCaseExpansionMismatch, cemTag, cemFired, cem.classify.posns())
+	// Case expansion asks whether a length-checked value grows under case
+	// mapping; in running text ß and ﬁ are content (Lean: mkGatedResult).
+	if !runningText {
+		cem := caseExpansionMismatchDetect(input)
+		cemTag, cemFired := cem.classify.tag()
+		findings = appendClassified(findings, FamilyCaseExpansionMismatch, cemTag, cemFired, cem.classify.posns())
+	}
 
 	ifd := identifierFormDriftDetect(input)
 	ifdTag, ifdFired := ifd.classify.tag()
@@ -294,8 +326,12 @@ func detect(input []uint32, identifierField bool) []Finding {
 		findings = appendClassified(findings, FamilyNormalizationBomb, sub, true, positions)
 	}
 
-	if sub, positions, fired := localeCaseInversionDetect(input); fired {
-		findings = appendClassified(findings, FamilyLocaleCaseInversion, sub, true, positions)
+	// Locale case inversion asks whether a credential folds differently across
+	// locales; in running text a capital I is content (Lean: mkGatedResult).
+	if !runningText {
+		if sub, positions, fired := localeCaseInversionDetect(input); fired {
+			findings = appendClassified(findings, FamilyLocaleCaseInversion, sub, true, positions)
+		}
 	}
 
 	if sub, positions, fired := nfcIdempotenceWitnessDetect(input); fired {
@@ -307,8 +343,10 @@ func detect(input []uint32, identifierField bool) []Finding {
 	}
 
 	// SourceDisplayDivergence judges the input as a unit, so it localises
-	// nothing and carries an empty position list.
-	if sdd := sourceDisplayDivergenceDetect(input); !sdd.isClear() {
+	// nothing and carries an empty position list. Its homoglyph constituent is
+	// the same verdict the homoglyph family reported above, so a source file's
+	// token-level homograph is a display divergence (Lean: detectCore input i1).
+	if sdd := sourceDisplayDivergenceDetectCore(input, homoglyphFired); !sdd.isClear() {
 		findings = appendClassified(findings, FamilySourceDisplayDivergence, sdd.sub, true, []int{})
 	}
 
@@ -597,8 +635,78 @@ func noncharacterControlFindings(input []uint32) []Finding {
 	return findings
 }
 
+// homoglyphContext mirrors Unicode.Security.Identity.HomoglyphConfusable.Context.
+// runningText says the input is prose or source rather than one value: the
+// script-composition rungs (CrossScriptMix, RestrictionLow) would judge such a
+// document as one identifier and AsciiConfusable would report a curly quote, so
+// they do not run. identifierToken says the input is one identifier-shaped token
+// cut out of running text: the homograph rungs run, RestrictionLow does not,
+// and AsciiConfusable runs for a Latin token only — admın in a source file is an
+// identifier posing as admin, a Greek variable is content.
+type homoglyphContext struct {
+	runningText     bool
+	identifierToken bool
+}
+
+// asciiSkeleton is the case-preserving UTS #39 §4 skeleton
+// toNFD(substitute(toNFD(x))): the §4 bracket without the §5.4 case folding
+// skeleton adds, since full folding would read straße as confusable with
+// strasse. Mirrors the Lean asciiSkeleton.
+func asciiSkeleton(input []uint32) []uint32 {
+	return toNFD(substituteConfusables(toNFD(input)))
+}
+
+// isAsciiConfusable reports whether the input is not ASCII but its
+// case-preserving skeleton is: every non-ASCII codepoint is a confusable of an
+// ASCII one (admın with admin). Mirrors the Lean isAsciiConfusable.
+func isAsciiConfusable(input []uint32) bool {
+	nonAscii := false
+	for _, cp := range input {
+		if cp >= 0x80 {
+			nonAscii = true
+			break
+		}
+	}
+	if !nonAscii {
+		return false
+	}
+	for _, cp := range asciiSkeleton(input) {
+		if cp >= 0x80 {
+			return false
+		}
+	}
+	return true
+}
+
+// nonAsciiPositions mirrors the Lean nonAsciiPositions.
+func nonAsciiPositions(input []uint32) []int {
+	out := make([]int, 0, 2)
+	for idx, cp := range input {
+		if cp >= 0x80 {
+			out = append(out, idx)
+		}
+	}
+	return out
+}
+
+// isLatinOnly reports whether every non-Common, non-Inherited codepoint is
+// Latin. Mirrors the Lean isLatinOnly.
+func isLatinOnly(input []uint32) bool {
+	union := stringScriptUnion(input)
+	return len(union) == 1 && union[0] == "Latn"
+}
+
 func homoglyphConfusableFinding(input []uint32) (Finding, bool) {
+	return homoglyphConfusableFindingCtx(input, homoglyphContext{})
+}
+
+// homoglyphConfusableFindingCtx runs the homoglyph ladder under an explicit
+// field context. Priority mirrors Unicode/Security/Identity/HomoglyphConfusable
+// .lean: TargetMatch, MathAlpha, WidthClass, DecompositionSwap, CrossScriptMix,
+// RestrictionLow, AsciiConfusable.
+func homoglyphConfusableFindingCtx(input []uint32, ctx homoglyphContext) (Finding, bool) {
 	subThreat := ""
+	positions := fullSpanPositions(input)
 	if _, ok := homoglyphTargetMatch(input); ok {
 		subThreat = "TargetMatch"
 	} else {
@@ -620,17 +728,24 @@ func homoglyphConfusableFinding(input []uint32) (Finding, bool) {
 	if subThreat == "" && hasDecompositionSwap(input) {
 		subThreat = "DecompositionSwap"
 	}
-	// The last two rungs of the Lean ladder, in its order: a cross-script mix
-	// that is not Highly Restrictive, then a string that fails every restriction
-	// level. Both need real script resolution, which restriction.go provides.
-	if subThreat == "" && hasCrossScriptMix(input) {
+	// The script rungs of the Lean ladder, in its order: a cross-script mix that
+	// is not Highly Restrictive, then a string that fails every restriction
+	// level. Both ask about one identifier; running text mixes scripts as
+	// content, and a historic-script token of running text is content too.
+	if subThreat == "" && !ctx.runningText && hasCrossScriptMix(input) {
 		subThreat = "CrossScriptMix"
 	}
-	if subThreat == "" {
+	if subThreat == "" && !ctx.runningText && !ctx.identifierToken {
 		level := restrictionLevel(input)
 		if level == RestrictionMinimallyRestrictive || level == RestrictionUnrestricted {
 			subThreat = "RestrictionLow"
 		}
+	}
+	// Last: a non-ASCII input whose skeleton is ASCII poses as an ASCII name.
+	// Not in running text; for a token of running text only when it is Latin.
+	if subThreat == "" && !ctx.runningText && (!ctx.identifierToken || isLatinOnly(input)) && isAsciiConfusable(input) {
+		subThreat = "AsciiConfusable"
+		positions = nonAsciiPositions(input)
 	}
 	if subThreat == "" {
 		return Finding{}, false
@@ -639,10 +754,45 @@ func homoglyphConfusableFinding(input []uint32) (Finding, bool) {
 		Code:      reasonCode(FamilyHomoglyphConfusable, subThreat),
 		Family:    FamilyHomoglyphConfusable,
 		Severity:  2,
-		Positions: fullSpanPositions(input),
+		Positions: positions,
 		SubThreat: subThreat,
 		Detail:    string(FamilyHomoglyphConfusable),
 	}, true
+}
+
+// homoglyphOverTokens mirrors the Lean homoglyphOverTokens for running text
+// and the whole-input reading otherwise: in running text the first identifier
+// token that fires carries the verdict, with its positions shifted into the
+// input; when none does, the whole input is read under the running-text
+// reading.
+func homoglyphOverTokens(input []uint32, runningText bool) (Finding, bool) {
+	if !runningText {
+		return homoglyphConfusableFindingCtx(input, homoglyphContext{})
+	}
+	for _, token := range identifierTokens(input) {
+		finding, ok := homoglyphConfusableFindingCtx(token.cps, homoglyphContext{identifierToken: true})
+		if ok {
+			finding.Positions = shiftPositions(token.start, finding.Positions)
+			return finding, true
+		}
+	}
+	return homoglyphConfusableFindingCtx(input, homoglyphContext{runningText: true})
+}
+
+// mixedScriptOverTokens mirrors the Lean mixedScriptOverTokens: running text is
+// read per identifier token without the Restricted-status phase a token of
+// running text does not owe; a single value is read whole.
+func mixedScriptOverTokens(input []uint32, identifierField bool, runningText bool) (Finding, bool) {
+	if !runningText {
+		return mixedScriptAdmissibilityFinding(input, identifierField)
+	}
+	for _, token := range identifierTokens(input) {
+		if finding, ok := mixedScriptAdmissibilityFinding(token.cps, false); ok {
+			finding.Positions = shiftPositions(token.start, finding.Positions)
+			return finding, true
+		}
+	}
+	return Finding{}, false
 }
 
 // mixedScriptVerdict returns the mixed-script sub-threat for input, or false

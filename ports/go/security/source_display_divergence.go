@@ -71,43 +71,33 @@ func sddZeroWidthFired(input []uint32) bool {
 	return len(positions) > 0 && hasSuspiciousZeroWidth(input, positions)
 }
 
-// sddBidiControlFired reports whether the input carries any bidi format
-// control.
+// sddBidiControlFired reads purpose, not presence (Lean: the C5 constituent is
+// BidiControlPurpose.hasPurposelessControl). A Trojan Source payload balances
+// its controls, so the balance verdict is blind to it; what every payload
+// shares is a control span with nothing right-to-left to manage. A balanced
+// embedding around a pure Arabic literal is purposeful and is not a divergence.
 func sddBidiControlFired(input []uint32) bool {
-	// Presence, not balance. A Trojan Source payload balances its controls --
-	// an unbalanced run breaks the file it is hiding in -- so a constituent
-	// built on the balance verdict is blind to the shape the attack takes.
-	for _, cp := range input {
-		if isBidiFormatControl(cp) {
-			return true
-		}
-	}
-	return false
+	return hasPurposelessControl(input)
 }
 
-// sddHomoglyphFired reports whether the port's own homoglyph-confusable
-// constituent classifies the input as non-clear.
-func sddHomoglyphFired(input []uint32) bool {
-	// The reference runs one homoglyph detector whose priority ladder ends in a
-	// CrossScriptMix branch, so a cross-script identifier fires it even though
-	// the policy surface reports that case under mixed-script-admissibility.
-	// This port splits that ladder across two finding builders, so the
-	// constituent has to consult both or it misses every input whose only
-	// homoglyph signal is the script mix.
-	if _, ok := homoglyphConfusableFinding(input); ok {
-		return true
-	}
-	// The constituent asks the script question about a source file, which is
-	// not an identifier field, so the Restricted-status rung does not apply.
-	_, ok := mixedScriptAdmissibilityFinding(input, false)
-	return ok
-}
-
-// sourceDisplayDivergenceDetect aggregates the five constituent detectors into a
-// single D1 verdict. Constituents are tested in canonical aggregation order and
-// each firing tag is collected; the verdict is then clear (0), a pass-through of
-// the lone firing tag (1), or Compound (2 or more).
+// sourceDisplayDivergenceDetect reads the input as the identifier its
+// constituents assume. Mirrors the Lean detect, which is detectCore with the
+// homoglyph family's identifier-reading verdict.
 func sourceDisplayDivergenceDetect(input []uint32) sddDetection {
+	_, homoglyphFired := homoglyphConfusableFindingCtx(input, homoglyphContext{})
+	return sourceDisplayDivergenceDetectCore(input, homoglyphFired)
+}
+
+// sourceDisplayDivergenceDetectCore aggregates the five constituent detectors
+// into a single D1 verdict with the homoglyph constituent supplied:
+// homoglyphFired is whether the homoglyph family fired on this input under
+// whatever reading the caller took (whole input, or per identifier token of
+// running text). Mirrors the Lean detectCore, which the policy scan calls with
+// the same verdict the homoglyph family reports. Constituents are tested in
+// canonical aggregation order and each firing tag is collected; the verdict is
+// then clear (0), a pass-through of the lone firing tag (1), or Compound (2 or
+// more).
+func sourceDisplayDivergenceDetectCore(input []uint32, homoglyphFired bool) sddDetection {
 	fires := make([]string, 0, 5)
 	if sddTagBlockFired(input) {
 		fires = append(fires, "TagBlock")
@@ -121,7 +111,7 @@ func sourceDisplayDivergenceDetect(input []uint32) sddDetection {
 	if sddBidiControlFired(input) {
 		fires = append(fires, "BidiControl")
 	}
-	if sddHomoglyphFired(input) {
+	if homoglyphFired {
 		fires = append(fires, "IdentifierHomoglyph")
 	}
 

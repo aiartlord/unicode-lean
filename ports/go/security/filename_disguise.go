@@ -120,15 +120,13 @@ func fdDotPositions(input []uint32) []int {
 	return positions
 }
 
-// fdFirstBidiControl returns the position and codepoint of the first bidi
-// format-control (reuses the port's isBidiFormatControl).
+// fdFirstBidiControl returns the position and codepoint of the first purposeless
+// bidi format-control: unbalanced, or a balanced span enclosing nothing
+// right-to-left in a left-to-right context (bidi_control_purpose.go). A balanced
+// embedding around an Arabic filename segment manages that segment and is not
+// a flip. Mirrors the Lean detect, which reads firstPurposelessControl.
 func fdFirstBidiControl(input []uint32) (int, uint32, bool) {
-	for idx, cp := range input {
-		if isBidiFormatControl(cp) {
-			return idx, cp, true
-		}
-	}
-	return 0, 0, false
+	return firstPurposelessControl(input)
 }
 
 // fdFirstFullwidthFrom returns the position and codepoint of the first
@@ -194,8 +192,19 @@ func fdCountBidiControl(input []uint32) int {
 // flagged as a (advisory) multiple-extensions hazard.
 const fdMinMultipleExtensions = 3
 
-// filenameDisguiseDetect is the FilenameDisguise detection function.
+// filenameDisguiseDetect is the FilenameDisguise detection function, reading
+// its input as one filename. Mirrors the Lean detect, which is detectWithContext
+// at the default context.
 func filenameDisguiseDetect(input []uint32) fdVerdict {
+	return filenameDisguiseDetectCtx(input, false)
+}
+
+// filenameDisguiseDetectCtx is the FilenameDisguise detection function under an
+// explicit field context. runningText mirrors the Lean Context.runningText: the
+// extension rungs read the text after the last dot as a file extension, which a
+// source file or a message does not have, so they do not run on running text;
+// the purposeless-bidi-control rung holds of any field.
+func filenameDisguiseDetectCtx(input []uint32, runningText bool) fdVerdict {
 	dots := fdDotPositions(input)
 	lastDotPos := 0
 	hasLastDot := false
@@ -217,7 +226,7 @@ func filenameDisguiseDetect(input []uint32) fdVerdict {
 	inputCopy := make([]uint32, len(input))
 	copy(inputCopy, input)
 
-	classification := fdClassify(input, dots, extStart)
+	classification := fdClassify(input, dots, extStart, runningText)
 
 	return fdVerdict{
 		input:            inputCopy,
@@ -234,14 +243,19 @@ func filenameDisguiseDetect(input []uint32) fdVerdict {
 // fdClassify walks the four disguise triggers in priority order, mirroring the
 // Rust reference's nested match. Every arm is explicit; the terminal else is the
 // documented Clear verdict, not a catch-all default.
-func fdClassify(input []uint32, dots []int, extStart int) fdClassification {
-	// Priority 1: any bidi format-control anywhere in the input.
+func fdClassify(input []uint32, dots []int, extStart int, runningText bool) fdClassification {
+	// Priority 1: a purposeless bidi format-control anywhere in the input.
 	if pos, ctlCp, ok := fdFirstBidiControl(input); ok {
 		return fdClassification{
 			sub:       fdSubThreat{tag: "RloFlip", position: pos, controlCp: ctlCp},
 			positions: []int{pos},
 			decoded:   []uint8{},
 		}
+	}
+
+	// The remaining rungs read an extension; running text has none.
+	if runningText {
+		return fdClassification{clear: true, positions: []int{}, decoded: []uint8{}}
 	}
 
 	// Priority 2: fullwidth/halfwidth in the extension.

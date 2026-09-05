@@ -285,7 +285,18 @@ func rdFirstCombiningStack(input []uint32, minStack int) (int, int, bool) {
 // ─────────────────────────────────────────────────────────────────────
 
 // rendererDivergenceDetect is the RendererDivergence detection function.
+// rendererDivergenceDetect reads its input as one string a renderer presents.
+// Mirrors the Lean detect, which is detectWithContext at the default context.
 func rendererDivergenceDetect(input []uint32) rdVerdict {
+	return rendererDivergenceDetectCtx(input, false)
+}
+
+// rendererDivergenceDetectCtx is the RendererDivergence detection function under
+// an explicit field context. runningText mirrors the Lean Context.runningText: a
+// source file or a message carries both directions as content, so the
+// mixed-direction rung does not run on it; the four presentation rungs hold of
+// any field.
+func rendererDivergenceDetectCtx(input []uint32, runningText bool) rdVerdict {
 	vsCount := rdCountVs(input)
 	combiningCount := rdCountCombining(input)
 	fullwidthCount := rdCountFullwidth(input)
@@ -296,7 +307,7 @@ func rendererDivergenceDetect(input []uint32) rdVerdict {
 	inputCopy := make([]uint32, len(input))
 	copy(inputCopy, input)
 
-	classification := rdClassify(input, hasZwj, ltrCount, rtlCount)
+	classification := rdClassify(input, hasZwj, ltrCount, rtlCount, runningText)
 
 	return rdVerdict{
 		input:          inputCopy,
@@ -313,7 +324,7 @@ func rendererDivergenceDetect(input []uint32) rdVerdict {
 // rdClassify walks the five variance triggers in priority order, mirroring the
 // Rust reference's nested match. Every arm is explicit; the terminal else is the
 // documented Clear verdict, not a catch-all default.
-func rdClassify(input []uint32, hasZwj bool, ltrCount, rtlCount int) rdClassification {
+func rdClassify(input []uint32, hasZwj bool, ltrCount, rtlCount int, runningText bool) rdClassification {
 	// Priority 1: combining-mark stack overflow (Zalgo).
 	if basePos, stackLen, ok := rdFirstCombiningStack(input, rdMinCombiningStack); ok {
 		return rdClassification{
@@ -353,8 +364,9 @@ func rdClassify(input []uint32, hasZwj bool, ltrCount, rtlCount int) rdClassific
 		}
 	}
 
-	// Priority 5: mixed direction.
-	if ltrCount > 0 && rtlCount > 0 {
+	// Priority 5: mixed direction. Running text carries both directions as
+	// content and is not judged by this rung.
+	if !runningText && ltrCount > 0 && rtlCount > 0 {
 		return rdClassification{
 			sub:       rdSubThreat{tag: "MixedDirectionVariance", ltrCount: ltrCount, rtlCount: rtlCount},
 			positions: []int{},
