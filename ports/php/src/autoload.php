@@ -39,6 +39,8 @@ spl_autoload_register(static function (string $class): void {
         'UnicodePhp\\Security\\Form\\FormVerdict' => __DIR__ . '/Security/Form/LocaleCaseInversion.php',
         'UnicodePhp\\Security\\Form\\WidthClassConfusion' => __DIR__ . '/Security/Form/WidthClassConfusion.php',
         'UnicodePhp\\Security\\Identity\\RestrictionLevel' => __DIR__ . '/Security/Identity/Ucd.php',
+        'UnicodePhp\\Security\\Identity\\HomoglyphVerdict' => __DIR__ . '/Security/Identity/HomoglyphConfusable.php',
+        'UnicodePhp\\Security\\Identity\\HomoglyphContext' => __DIR__ . '/Security/Identity/HomoglyphConfusable.php',
         'UnicodePhp\\Security\\Identity\\EmojiZwjSubThreat' => __DIR__ . '/Security/Identity/EmojiZwjIntegrity.php',
         'UnicodePhp\\Security\\Identity\\EmojiZwjClassification' => __DIR__ . '/Security/Identity/EmojiZwjIntegrity.php',
         'UnicodePhp\\Security\\Identity\\EmojiZwjVerdict' => __DIR__ . '/Security/Identity/EmojiZwjIntegrity.php',

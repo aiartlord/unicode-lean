@@ -339,10 +339,24 @@ final class RendererDivergence
     }
 
     /**
-     * The RendererDivergence detection function.
+     * The RendererDivergence detection function at the default context (one
+     * field, not running text). Mirrors the Lean detect.
      * @param list<int> $input
      */
     public static function detect(array $input): RendererDivergenceVerdict
+    {
+        return self::detectWithContext(false, $input);
+    }
+
+    /**
+     * The RendererDivergence detection function under an explicit field
+     * context. $runningText mirrors the Lean Context.runningText: a source line
+     * or a message carrying both directions is a bilingual line, not a
+     * divergence, so the mixed-direction rung does not run on running text;
+     * every other rung holds of any field.
+     * @param list<int> $input
+     */
+    public static function detectWithContext(bool $runningText, array $input): RendererDivergenceVerdict
     {
         $input = array_values($input);
         $vsCount = self::countVs($input);
@@ -391,8 +405,8 @@ final class RendererDivergence
                         [$fwPos],
                         [],
                     );
-                } elseif ($ltrCount > 0 && $rtlCount > 0) {
-                    // Priority 5: mixed direction.
+                } elseif (!$runningText && $ltrCount > 0 && $rtlCount > 0) {
+                    // Priority 5: mixed direction, off for running text.
                     $classification = RendererDivergenceClassification::hazard(
                         RendererDivergenceSubThreat::mixedDirectionVariance($ltrCount, $rtlCount),
                         [],

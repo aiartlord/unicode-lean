@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace UnicodePhp\Security\Display;
 
 use UnicodePhp\Security\ClassificationKind;
-use UnicodePhp\Security\Covert\BidiControlBalance;
 use UnicodePhp\Security\Covert\TagBlockPayload;
 use UnicodePhp\Security\Covert\VariationSelectorPayload;
 use UnicodePhp\Security\Covert\ZeroWidthPayload;
@@ -27,16 +26,16 @@ use UnicodePhp\Security\Identity\HomoglyphConfusable;
 // string literals or comments count.
 //
 // It reuses the port's OWN five constituent detectors (no new data, no host
-// library): TagBlockPayload, VariationSelectorPayload, ZeroWidthPayload,
-// BidiControlBalance (all covert-channel families) and HomoglyphConfusable (an
-// identity family). A constituent "fires" when its verdict's classification
-// kind is not Clear.
+// library): TagBlockPayload, VariationSelectorPayload, ZeroWidthPayload (the
+// covert-channel families), the bidi purpose rule (BidiControlPurpose) and
+// HomoglyphConfusable (an identity family). A constituent "fires" when its
+// verdict's classification kind is not Clear.
 //
 // Sub-threat tags in canonical aggregation order:
 //   1. TagBlock            tag-block payload present.
 //   2. VariationSelector   variation-selector payload present.
 //   3. ZeroWidth           zero-width payload present.
-//   4. BidiControl         bidi-control imbalance present.
+//   4. BidiControl         a purposeless bidi control present.
 //   5. IdentifierHomoglyph identifier homoglyph / confusable present.
 // Two or more fired → the aggregate tag `Compound`.
 
@@ -106,10 +105,25 @@ final class SourceDisplayDivergence
     }
 
     /**
-     * Aggregate the five constituent detectors into a single D1 verdict.
+     * Aggregate the five constituent detectors into a single D1 verdict at the
+     * default context: the homoglyph constituent is the whole-input homoglyph
+     * verdict. Mirrors the Lean detect.
      * @param list<int> $input
      */
     public static function detect(array $input): SourceDisplayDivergenceVerdict
+    {
+        $input = array_values($input);
+        return self::detectCore($input, self::fired(HomoglyphConfusable::detect($input)->kind));
+    }
+
+    /**
+     * Aggregate over a homoglyph verdict already in hand. The scan passes the
+     * verdict it produced (per identifier token on running text), so the
+     * constituent and the family finding are one reading of the same input;
+     * mirrors the Lean detectCore input homoglyphVerdict.
+     * @param list<int> $input
+     */
+    public static function detectCore(array $input, bool $homoglyphFired): SourceDisplayDivergenceVerdict
     {
         $input = array_values($input);
 
@@ -124,19 +138,16 @@ final class SourceDisplayDivergence
         if (self::fired(ZeroWidthPayload::detect($input)->kind)) {
             $fires[] = 'ZeroWidth';
         }
-        // Presence, not balance. A Trojan Source payload balances its
-        // controls -- an unbalanced run breaks the file it is hiding in -- so a
-        // constituent built on the balance verdict is blind to the attack.
-        $bidiPresent = false;
-        foreach ($input as $cp) {
-            if (BidiControlBalance::isBidiFormatControl($cp)) {
-                $bidiPresent = true;
-            }
-        }
-        if ($bidiPresent) {
+        // A purposeless control: unbalanced, or a balanced span enclosing
+        // nothing right-to-left in a left-to-right context. A Trojan Source
+        // payload balances its controls -- an unbalanced run breaks the file it
+        // is hiding in -- so a constituent built on the balance verdict is blind
+        // to the attack; a balanced embedding around an Arabic string literal
+        // manages that literal and is not a constituent.
+        if (BidiControlPurpose::hasPurposelessControl($input)) {
             $fires[] = 'BidiControl';
         }
-        if (self::fired(HomoglyphConfusable::detect($input)->kind)) {
+        if ($homoglyphFired) {
             $fires[] = 'IdentifierHomoglyph';
         }
 

@@ -30,6 +30,8 @@ use UnicodePhp\Security\Form\StreamSafeViolation;
 use UnicodePhp\Security\Form\WidthClassConfusion;
 use UnicodePhp\Security\Identity\EmojiZwjIntegrity;
 use UnicodePhp\Security\Identity\HomoglyphConfusable;
+use UnicodePhp\Security\Identity\HomoglyphContext;
+use UnicodePhp\Security\Identity\IdentifierTokens;
 use UnicodePhp\Security\Identity\SkinToneVariationForgery;
 
 enum Action: string
@@ -178,6 +180,112 @@ final class Policy
         return $profile === Profile::DomainName
             || $profile === Profile::DnsLabel
             || $profile === Profile::Username;
+    }
+
+    /**
+     * True iff the profile reads its input as running text -- a source line, a
+     * message, a display name -- rather than one identifier. The identifier
+     * families then judge each identifier-shaped token of the line on its own,
+     * and the field-wide families that read the line as one identifier or one
+     * filename report clear. Mirrors profileIsRunningText in
+     * Unicode/Security/Policy.lean.
+     */
+    public static function profileIsRunningText(Profile $profile): bool
+    {
+        return $profile === Profile::DisplayName
+            || $profile === Profile::ChatMessage
+            || $profile === Profile::SourceCode;
+    }
+
+    /**
+     * The positions a homoglyph verdict implicates: the non-ASCII positions for
+     * the ascii-confusable rung, the whole input for every other rung, nothing
+     * when clear.
+     * @param list<int> $input @return list<int>
+     */
+    private static function homoglyphPositions(object $verdict, array $input): array
+    {
+        if ($verdict->kind === ClassificationKind::Clear) {
+            return [];
+        }
+        if (self::subTag($verdict->sub) === 'AsciiConfusable') {
+            return HomoglyphConfusable::nonAsciiPositions($input);
+        }
+        return array_keys($input);
+    }
+
+    /**
+     * One homoglyph finding under a field context, or null when clear.
+     * @param list<int> $input
+     */
+    private static function homoglyphFindingWithContext(array $input, HomoglyphContext $ctx): ?Finding
+    {
+        $verdict = HomoglyphConfusable::detectWithContext($input, $ctx);
+        if ($verdict->kind === ClassificationKind::Clear) {
+            return null;
+        }
+        $tag = self::subTag($verdict->sub);
+        return new Finding(
+            self::reasonCode(Family::HomoglyphConfusable, $tag),
+            Family::HomoglyphConfusable,
+            Severity::Moderate,
+            self::homoglyphPositions($verdict, $input),
+            $tag,
+            self::familySlug(Family::HomoglyphConfusable),
+        );
+    }
+
+    /**
+     * The homoglyph family over running text: the first identifier-shaped token
+     * (a maximal XID_Continue run) that fires, read as one identifier, with its
+     * positions shifted back into input coordinates. When no token fires, the
+     * whole input is read once under the running-text context, which keeps the
+     * rungs that hold of any text (target match, math alphanumerics, width
+     * class, decomposition swap). Mirrors the Lean homoglyphOverTokens.
+     * @param list<int> $input
+     */
+    private static function homoglyphOverTokens(array $input): ?Finding
+    {
+        foreach (IdentifierTokens::tokens($input) as $token) {
+            $finding = self::homoglyphFindingWithContext($token['cps'], new HomoglyphContext(false, true));
+            if ($finding !== null) {
+                return new Finding(
+                    $finding->code,
+                    $finding->family,
+                    $finding->severity,
+                    IdentifierTokens::shiftPositions($token['start'], $finding->positions),
+                    $finding->subThreat,
+                    $finding->detail,
+                );
+            }
+        }
+        return self::homoglyphFindingWithContext($input, new HomoglyphContext(true, false));
+    }
+
+    /**
+     * The mixed-script family over running text: each identifier-shaped token
+     * is judged as one identifier (not an identifier field, so the
+     * Restricted-status rung does not apply); the first token that fires is
+     * reported, positions in input coordinates. A line with no firing token is
+     * clear. Mirrors the Lean mixedScriptOverTokens.
+     * @param list<int> $input
+     */
+    private static function mixedScriptOverTokens(array $input): ?Finding
+    {
+        foreach (IdentifierTokens::tokens($input) as $token) {
+            $sub = HomoglyphConfusable::mixedScriptVerdict($token['cps'], false);
+            if ($sub !== null) {
+                return new Finding(
+                    self::reasonCode(Family::MixedScriptAdmissibility, $sub),
+                    Family::MixedScriptAdmissibility,
+                    Severity::Moderate,
+                    IdentifierTokens::shiftPositions($token['start'], array_keys($token['cps'])),
+                    $sub,
+                    self::familySlug(Family::MixedScriptAdmissibility),
+                );
+            }
+        }
+        return null;
     }
 
     public static function policyOfProfile(Profile $profile): ProfilePolicy
@@ -350,10 +458,23 @@ final class Policy
         return $cp >= 0x80 && $cp <= 0x9F;
     }
 
-    /** @param list<int> $input */
+    /**
+     * Scan a decoded codepoint sequence. Under a running-text profile
+     * (profileIsRunningText) the homoglyph and mixed-script families read the
+     * input per identifier-shaped token, rtl-injection / locale-case-inversion
+     * / case-expansion-mismatch report clear, filename-disguise runs only its
+     * purposeless-control rung, renderer-divergence drops its mixed-direction
+     * rung, and the source-display-divergence aggregate reads the homoglyph
+     * verdict this scan produced. Mirrors Unicode.Security.RunAll under
+     * Policy.lean's Context.
+     * @param list<int> $input
+     */
     public static function scan(Profile $profile, Mode $mode, array $input): Verdict
     {
+        $input = array_values($input);
         $findings = [];
+        $identifierField = self::profileIsIdentifierField($profile);
+        $runningText = self::profileIsRunningText($profile);
 
         $tag = TagBlockPayload::detect($input);
         self::pushFinding($findings, Family::TagBlockPayload, $tag->kind, $tag->sub, $tag->tagPositions);
@@ -378,21 +499,38 @@ final class Policy
         self::pushPositionalHazard($findings, Family::NoncharacterControl, 'C0Control', self::positionsWhere($input, [self::class, 'c0Control']));
         self::pushPositionalHazard($findings, Family::NoncharacterControl, 'C1Control', self::positionsWhere($input, [self::class, 'c1Control']));
 
-        $h = HomoglyphConfusable::detect($input);
         // Every rung of the homoglyph ladder is reported, CrossScriptMix
         // included. Unicode/Security/Policy.lean maps every non-clear family
         // result to a finding without filtering, so suppressing this rung would
         // report fewer findings than the proven spec for a cross-script input.
-        $positions = $h->kind === ClassificationKind::Clear ? [] : array_keys($input);
-        self::pushFinding($findings, Family::HomoglyphConfusable, $h->kind, $h->sub, $positions);
-        $mixedSub = HomoglyphConfusable::mixedScriptVerdict($input, self::profileIsIdentifierField($profile));
-        if ($mixedSub !== null) {
-            self::pushFinding($findings, Family::MixedScriptAdmissibility, ClassificationKind::Hazard, $mixedSub, array_keys($input));
+        // On running text the family reads the input per identifier-shaped
+        // token.
+        $homoglyph = $runningText
+            ? self::homoglyphOverTokens($input)
+            : self::homoglyphFindingWithContext($input, new HomoglyphContext());
+        if ($homoglyph !== null) {
+            $findings[] = $homoglyph;
+        }
+        if ($runningText) {
+            $mixed = self::mixedScriptOverTokens($input);
+            if ($mixed !== null) {
+                $findings[] = $mixed;
+            }
+        } else {
+            $mixedSub = HomoglyphConfusable::mixedScriptVerdict($input, $identifierField);
+            if ($mixedSub !== null) {
+                self::pushFinding($findings, Family::MixedScriptAdmissibility, ClassificationKind::Hazard, $mixedSub, array_keys($input));
+            }
         }
 
-        $rtl = RtlInjection::detect($input);
-        if ($rtl->sub !== null) {
-            self::pushFinding($findings, Family::RtlInjection, ClassificationKind::Hazard, $rtl->sub, $rtl->positions);
+        // Families that read the whole field as one identifier report clear on
+        // running text: rtl-injection, case-expansion-mismatch and
+        // locale-case-inversion. Mirrors the Lean mkGatedResult.
+        if (!$runningText) {
+            $rtl = RtlInjection::detect($input);
+            if ($rtl->sub !== null) {
+                self::pushFinding($findings, Family::RtlInjection, ClassificationKind::Hazard, $rtl->sub, $rtl->positions);
+            }
         }
 
         $cb = ConfusableBidiCompound::detect($input);
@@ -415,12 +553,12 @@ final class Policy
             self::pushFinding($findings, Family::SkinToneVariationForgery, ClassificationKind::Hazard, $stvf->classify->tag(), $stvf->classify->positions());
         }
 
-        $fd = FilenameDisguise::detect($input);
+        $fd = FilenameDisguise::detectWithContext($runningText, $input);
         if (!$fd->classify->isClear()) {
             self::pushFinding($findings, Family::FilenameDisguise, ClassificationKind::Hazard, $fd->classify->tag(), $fd->classify->positions());
         }
 
-        $rd = RendererDivergence::detect($input);
+        $rd = RendererDivergence::detectWithContext($runningText, $input);
         if (!$rd->classify->isClear()) {
             self::pushFinding($findings, Family::RendererDivergence, ClassificationKind::Hazard, $rd->classify->tag(), $rd->classify->positions());
         }
@@ -430,9 +568,11 @@ final class Policy
             self::pushFinding($findings, Family::StreamSafeViolation, ClassificationKind::Hazard, $ssv->classify->tag(), $ssv->classify->positions());
         }
 
-        $cem = CaseExpansionMismatch::detect($input);
-        if (!$cem->classify->isClear()) {
-            self::pushFinding($findings, Family::CaseExpansionMismatch, ClassificationKind::Hazard, $cem->classify->tag(), $cem->classify->positions());
+        if (!$runningText) {
+            $cem = CaseExpansionMismatch::detect($input);
+            if (!$cem->classify->isClear()) {
+                self::pushFinding($findings, Family::CaseExpansionMismatch, ClassificationKind::Hazard, $cem->classify->tag(), $cem->classify->positions());
+            }
         }
 
         $ifd = IdentifierFormDrift::detect($input);
@@ -450,9 +590,11 @@ final class Policy
             self::pushFinding($findings, Family::NormalizationBomb, ClassificationKind::Hazard, $nb->sub, $nb->positions);
         }
 
-        $lci = LocaleCaseInversion::detect($input);
-        if ($lci->sub !== null) {
-            self::pushFinding($findings, Family::LocaleCaseInversion, ClassificationKind::Hazard, $lci->sub, $lci->positions);
+        if (!$runningText) {
+            $lci = LocaleCaseInversion::detect($input);
+            if ($lci->sub !== null) {
+                self::pushFinding($findings, Family::LocaleCaseInversion, ClassificationKind::Hazard, $lci->sub, $lci->positions);
+            }
         }
 
         $niw = NfcIdempotenceWitness::detect($input);
@@ -466,13 +608,14 @@ final class Policy
         }
 
         // SourceDisplayDivergence judges the input as a unit, so it localises
-        // nothing and carries an empty position list.
-        $sdd = SourceDisplayDivergence::detect($input);
+        // nothing and carries an empty position list. Its homoglyph constituent
+        // is the verdict this scan produced, so the two agree on running text.
+        $sdd = SourceDisplayDivergence::detectCore($input, $homoglyph !== null);
         if (!$sdd->classify->isClear()) {
             self::pushFinding($findings, Family::SourceDisplayDivergence, ClassificationKind::Hazard, $sdd->classify->tag(), []);
         }
 
-        return new Verdict(array_values($input), $profile, $mode, self::selectAction($profile, $mode, $findings), $findings, null);
+        return new Verdict($input, $profile, $mode, self::selectAction($profile, $mode, $findings), $findings, null);
     }
 
     private static function malformedDecodeVerdict(Profile $profile, Mode $mode, Family $family, string $sub, int $offset): Verdict

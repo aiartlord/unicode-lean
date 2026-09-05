@@ -22,6 +22,21 @@ final class HomoglyphVerdict
     }
 }
 
+/**
+ * The field context the homoglyph ladder reads. Mirrors the Lean
+ * HomoglyphConfusable.Context: $runningText is a source line, a message or a
+ * display name rather than one identifier; $identifierToken is one
+ * identifier-shaped token cut out of running text.
+ */
+final class HomoglyphContext
+{
+    public function __construct(
+        public readonly bool $runningText = false,
+        public readonly bool $identifierToken = false,
+    ) {
+    }
+}
+
 final class HomoglyphConfusable
 {
     /** @var array<int,list<int>>|null */
@@ -218,9 +233,91 @@ final class HomoglyphConfusable
         return null;
     }
 
-    /** @param list<int> $input */
+    /**
+     * The case-preserving skeleton: NFD, confusable substitution, NFD, with no
+     * case fold, so admın (dotless i) maps to adrnin while ADMIN stays itself.
+     * Mirrors the Lean asciiSkeleton.
+     * @param list<int> $input @return list<int>
+     */
+    public static function asciiSkeleton(array $input): array
+    {
+        return Ucd::toNfd(self::substitute(Ucd::toNfd(array_values($input))));
+    }
+
+    /**
+     * A non-ASCII input whose case-preserving skeleton is all ASCII. Mirrors the
+     * Lean isAsciiConfusable.
+     * @param list<int> $input
+     */
+    public static function isAsciiConfusable(array $input): bool
+    {
+        $anyNonAscii = false;
+        foreach ($input as $cp) {
+            if ($cp > 0x7F) {
+                $anyNonAscii = true;
+            }
+        }
+        if (!$anyNonAscii) {
+            return false;
+        }
+        foreach (self::asciiSkeleton($input) as $cp) {
+            if ($cp > 0x7F) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Positions of the non-ASCII codepoints. Mirrors the Lean nonAsciiPositions.
+     * @param list<int> $input @return list<int>
+     */
+    public static function nonAsciiPositions(array $input): array
+    {
+        $out = [];
+        foreach (array_values($input) as $idx => $cp) {
+            if ($cp > 0x7F) {
+                $out[] = $idx;
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Every script-bearing codepoint of the input is Latin. Mirrors the Lean
+     * isLatinOnly.
+     * @param list<int> $input
+     */
+    public static function isLatinOnly(array $input): bool
+    {
+        return Ucd::stringScriptUnion($input) === ['Latn'];
+    }
+
+    /**
+     * The detection function at the default context (one identifier field).
+     * Mirrors the Lean detect.
+     * @param list<int> $input
+     */
     public static function detect(array $input): HomoglyphVerdict
     {
+        return self::detectWithContext($input, new HomoglyphContext());
+    }
+
+    /**
+     * The detection function under a field context. Rungs in the Lean order:
+     * target match, math alphanumerics, width class, decomposition swap, then
+     * the two script rungs (cross-script mix, off on running text; low
+     * restriction level, off on running text and on a token), then the
+     * ascii-confusable rung: a non-ASCII input whose case-preserving skeleton is
+     * all ASCII reads as an ASCII word it is not (admın with a dotless i). That
+     * rung runs on a whole field, and on a token only when the token is
+     * Latin-only, so a Greek or Cyrillic word in prose is not read as its Latin
+     * look-alike.
+     * @param list<int> $input
+     */
+    public static function detectWithContext(array $input, HomoglyphContext $ctx): HomoglyphVerdict
+    {
+        $input = array_values($input);
         $skel = self::skeleton($input);
         $iskel = self::iteratedSkeleton($input);
         $rl = Ucd::restrictionLevel($input);
@@ -249,17 +346,29 @@ final class HomoglyphConfusable
             $v->sub = (object) ['tag' => 'DecompositionSwap'];
             return $v;
         }
-        // Priority 5: CrossScriptMix. This rung asks the script question only;
-        // the Restricted-status rung belongs to the mixed-script family.
+        // Priority 5: CrossScriptMix, off on running text. This rung asks the
+        // script question only; the Restricted-status rung belongs to the
+        // mixed-script family.
         $union = Ucd::stringScriptUnion($input);
-        if (count($union) >= 2 && !Ucd::isHighlyRestrictive($input)) {
+        if (!$ctx->runningText && count($union) >= 2 && !Ucd::isHighlyRestrictive($input)) {
             $v->kind = ClassificationKind::Hazard;
             $v->sub = (object) ['tag' => 'CrossScriptMix'];
             return $v;
         }
-        if ($rl === RestrictionLevel::MinimallyRestrictive || $rl === RestrictionLevel::Unrestricted) {
+        // Priority 6: RestrictionLow, off on running text and on a token.
+        if (!$ctx->runningText && !$ctx->identifierToken
+            && ($rl === RestrictionLevel::MinimallyRestrictive || $rl === RestrictionLevel::Unrestricted)) {
             $v->kind = ClassificationKind::Hazard;
             $v->sub = (object) ['tag' => 'RestrictionLow'];
+            return $v;
+        }
+        // Priority 7: AsciiConfusable, on a whole field, and on a token only
+        // when the token is Latin-only.
+        if (!$ctx->runningText
+            && (!$ctx->identifierToken || self::isLatinOnly($input))
+            && self::isAsciiConfusable($input)) {
+            $v->kind = ClassificationKind::Hazard;
+            $v->sub = (object) ['tag' => 'AsciiConfusable', 'skeleton' => self::asciiSkeleton($input)];
         }
         return $v;
     }

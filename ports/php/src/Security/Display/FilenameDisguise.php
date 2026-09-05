@@ -20,15 +20,17 @@ use UnicodePhp\Segmentation\Grapheme;
 // "document<RLO>txt.exe" renders as "document exe.txt".
 //
 // Detection is presentation- and language-agnostic: it surfaces every codepoint
-// that could cause display-vs-byte divergence in the filename — any bidi
-// format-control anywhere, and any fullwidth/halfwidth or combining (grapheme
-// Extend) codepoint in the extension region (after the last dot). Native-RTL
-// names with no bidi controls clear. It reuses the port's own predicates (the
-// bidi-format-control set, the grapheme Extend class, the fullwidth range),
-// never a host filesystem or rendering library.
+// that could cause display-vs-byte divergence in the filename — any purposeless
+// bidi format-control anywhere (BidiControlPurpose: unbalanced, or a balanced
+// span enclosing nothing right-to-left in a left-to-right context), and any
+// fullwidth/halfwidth or combining (grapheme Extend) codepoint in the extension
+// region (after the last dot). Native-RTL names with no bidi controls clear, and
+// so does a balanced embedding around an Arabic segment. It reuses the port's
+// own predicates (the bidi purpose rule, the grapheme Extend class, the
+// fullwidth range), never a host filesystem or rendering library.
 //
 // Sub-threats (priority order):
-//   1. RloFlip            any bidi format-control in the input.
+//   1. RloFlip            a purposeless bidi format-control in the input.
 //   2. WidthClassExt      a fullwidth/halfwidth codepoint in the extension.
 //   3. CombiningInExt     a combining (Extend) codepoint in the extension.
 //   4. MultipleExtensions >= 3 dots (advisory; e.g. legitimate .tar.gz.sig).
@@ -199,17 +201,17 @@ final class FilenameDisguise
     }
 
     /**
-     * Position and codepoint of the first bidi format-control.
+     * Position and codepoint of the first purposeless bidi format-control:
+     * unbalanced, or a balanced span enclosing nothing right-to-left in a
+     * left-to-right context (BidiControlPurpose::firstPurposelessControl). A
+     * balanced embedding around an Arabic filename segment manages that segment
+     * and is not a flip. Mirrors the Lean detect, which reads
+     * firstPurposelessControl.
      * @param list<int> $input @return array{0:int,1:int}|null
      */
     private static function firstBidiControl(array $input): ?array
     {
-        foreach ($input as $i => $cp) {
-            if (self::isBidiFormatControl($cp)) {
-                return [$i, $cp];
-            }
-        }
-        return null;
+        return BidiControlPurpose::firstPurposelessControl($input);
     }
 
     /**
@@ -286,10 +288,25 @@ final class FilenameDisguise
     }
 
     /**
-     * The FilenameDisguise detection function.
+     * The FilenameDisguise detection function, reading its input as one
+     * filename. Mirrors the Lean detect, which is detectWithContext at the
+     * default context.
      * @param list<int> $input
      */
     public static function detect(array $input): FilenameDisguiseVerdict
+    {
+        return self::detectWithContext(false, $input);
+    }
+
+    /**
+     * The FilenameDisguise detection function under an explicit field context.
+     * $runningText mirrors the Lean Context.runningText: the extension rungs
+     * read the text after the last dot as a file extension, which a source file
+     * or a message does not have, so they do not run on running text; the
+     * purposeless-bidi-control rung holds of any field.
+     * @param list<int> $input
+     */
+    public static function detectWithContext(bool $runningText, array $input): FilenameDisguiseVerdict
     {
         $input = array_values($input);
         $dots = self::dotPositions($input);
@@ -299,7 +316,7 @@ final class FilenameDisguise
         $fwInExt = self::countFullwidthFrom($input, $extStart);
         $extInExt = self::countExtendFrom($input, $extStart);
 
-        // Priority 1: any bidi format-control.
+        // Priority 1: a purposeless bidi format-control anywhere in the input.
         $bidi = self::firstBidiControl($input);
         if ($bidi !== null) {
             [$pos, $ctlCp] = $bidi;
@@ -308,6 +325,9 @@ final class FilenameDisguise
                 [$pos],
                 [],
             );
+        } elseif ($runningText) {
+            // The remaining rungs read an extension; running text has none.
+            $classification = FilenameDisguiseClassification::clear();
         } else {
             // Priority 2: fullwidth/halfwidth in the extension.
             $fw = self::firstFullwidthFrom($input, $extStart);
