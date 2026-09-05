@@ -241,6 +241,12 @@ def section_suites() -> list[dict[str, object]]:
         facts = harness_facts(name)
         materialized = int(facts.get("materialized", 0))
         run = executed.get(name)
+        # A collation corpus asserts order between ADJACENT lines, so a file of
+        # n rows publishes n - 1 assertions; the executed row counts those
+        # pairs. Dividing pairs by rows would report one assertion as skipped
+        # that the file never made.
+        if run is not None and list(run.get("columns", [])) == ["collation order"]:
+            total = max(total - 1, 0)
         # A suite counts as run two ways. Either the harness closes over a
         # materialized mirror of the corpus that a drift gate ties back to the
         # pinned file, or the corpus was folded through the implementation and
