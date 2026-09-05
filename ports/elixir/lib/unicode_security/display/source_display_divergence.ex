@@ -16,16 +16,17 @@ defmodule UnicodeSecurity.Display.SourceDisplayDivergence do
 
   What the detector draws. It reuses the port's own five constituent detectors
   in canonical aggregation order — the covert `TagBlockPayload`,
-  `VariationSelectorPayload`, `ZeroWidthPayload`, and `BidiControlBalance`, plus
-  the identity `HomoglyphConfusable` — and treats each as fired when its own
-  classification kind is anything other than `Clear`. Never a host library and
-  no new table: this detector is pure aggregation over existing port code.
+  `VariationSelectorPayload`, `ZeroWidthPayload`, the bidi purpose rule
+  `BidiControlPurpose`, plus the identity `HomoglyphConfusable` — and treats
+  each as fired when its own classification kind is anything other than
+  `Clear`. Never a host library and no new table: this detector is pure
+  aggregation over existing port code.
 
   Positions are empty at this layer by the Lean spec (the per-family verdicts
   carry them), so this result carries only the sub-threat tag.
   """
 
-  alias UnicodeSecurity.Covert.BidiControlBalance
+  alias UnicodeSecurity.Display.BidiControlPurpose
   alias UnicodeSecurity.Covert.TagBlockPayload
   alias UnicodeSecurity.Covert.VariationSelectorPayload
   alias UnicodeSecurity.Covert.ZeroWidthPayload
@@ -65,38 +66,46 @@ defmodule UnicodeSecurity.Display.SourceDisplayDivergence do
 
   # A constituent has fired when its own classification kind is anything other
   # than `Clear`, mirroring the rust `fired(kind) = kind != Clear`.
-  defp fired?(%{kind: :clear}), do: false
-  defp fired?(%{kind: :hazard}), do: true
-  defp fired?(%{kind: :compound}), do: true
-  defp fired?(%{kind: :informational}), do: true
+  defp fired?(%{kind: kind}), do: kind != :clear
 
   # ───────────────────────────────────────────────────────────────────
   # §3 Top-level detection
   # ───────────────────────────────────────────────────────────────────
 
   @doc """
-  Aggregate the five constituent detectors into a single display-layer verdict.
-  Returns this module's struct; `sub` is `nil` (clear), a single family tag, or
-  `"Compound"`.
+  Aggregate the five constituent detectors into a single display-layer verdict
+  at the default context: the homoglyph constituent is the whole-input
+  homoglyph verdict. Mirrors the Lean detect. Returns this module's struct;
+  `sub` is `nil` (clear), a single family tag, or `"Compound"`.
   """
   def detect(input) do
-    input |> fires() |> classify()
+    detect_core(input, fired?(HomoglyphConfusable.detect(input)))
+  end
+
+  @doc """
+  Aggregate over a homoglyph verdict already in hand. The scan passes the
+  verdict it produced (per identifier token on running text), so the
+  constituent and the family finding are one reading of the same input;
+  mirrors the Lean `detectCore input homoglyphVerdict`.
+  """
+  def detect_core(input, homoglyph_fired) do
+    input |> fires(homoglyph_fired) |> classify()
   end
 
   # The fired family tags in canonical aggregation order: tag-block,
   # variation-selector, zero-width, bidi-control, homoglyph.
-  defp fires(input) do
+  defp fires(input, homoglyph_fired) do
     tag_block = if fired?(TagBlockPayload.detect(input)), do: ["TagBlock"], else: []
     variation = if fired?(VariationSelectorPayload.detect(input)), do: ["VariationSelector"], else: []
     zero_width = if fired?(ZeroWidthPayload.detect(input)), do: ["ZeroWidth"], else: []
-    # Presence, not balance. A Trojan Source payload balances its controls --
-    # an unbalanced run breaks the file it is hiding in -- so a constituent
-    # built on the balance verdict is blind to the shape the attack takes.
-    bidi =
-      if Enum.any?(input, &BidiControlBalance.bidi_format_control?/1),
-        do: ["BidiControl"],
-        else: []
-    homoglyph = if fired?(HomoglyphConfusable.detect(input)), do: ["IdentifierHomoglyph"], else: []
+    # A purposeless control: unbalanced, or a balanced span enclosing nothing
+    # right-to-left in a left-to-right context. A Trojan Source payload
+    # balances its controls -- an unbalanced run breaks the file it is hiding
+    # in -- so a constituent built on the balance verdict is blind to the shape
+    # the attack takes; a balanced embedding around an Arabic string literal
+    # manages that literal and is not a constituent.
+    bidi = if BidiControlPurpose.purposeless_control?(input), do: ["BidiControl"], else: []
+    homoglyph = if homoglyph_fired, do: ["IdentifierHomoglyph"], else: []
 
     tag_block ++ variation ++ zero_width ++ bidi ++ homoglyph
   end

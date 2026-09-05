@@ -823,7 +823,9 @@ defmodule UnicodeSecurity.Ucd do
   end
 
   defp xid_start?(cp), do: find_range(derived_core_ranges("XID_Start"), cp) == true
-  defp xid_continue?(cp), do: find_range(derived_core_ranges("XID_Continue"), cp) == true
+  # Public so IdentifierTokens cuts running text on the port's own property
+  # table.
+  def xid_continue?(cp), do: find_range(derived_core_ranges("XID_Continue"), cp) == true
 
   # UAX #31 default identifier start: `XID_Start` or `U+005F LOW LINE`.
   defp default_id_start?(cp), do: xid_start?(cp) or cp == 0x005F

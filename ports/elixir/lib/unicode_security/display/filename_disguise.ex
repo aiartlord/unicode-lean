@@ -14,22 +14,26 @@ defmodule UnicodeSecurity.Display.FilenameDisguise do
 
   What the detector draws. Detection is presentation- and language-agnostic: it
   surfaces every codepoint that could cause display-vs-byte divergence in the
-  filename — any bidi format-control anywhere, and any fullwidth/halfwidth or
-  combining (grapheme Extend) codepoint in the extension region (after the last
-  `.`). Native-RTL names with no bidi controls clear.
+  filename — any purposeless bidi format-control anywhere (`BidiControlPurpose`:
+  unbalanced, or a balanced span enclosing nothing right-to-left in a
+  left-to-right context), and any fullwidth/halfwidth or combining (grapheme
+  Extend) codepoint in the extension region (after the last `.`). Native-RTL
+  names with no bidi controls clear, and so does a balanced embedding around an
+  Arabic segment.
 
   Sub-threats (priority order):
-    1. `RloFlip`            any bidi format-control in the input.
+    1. `RloFlip`            a purposeless bidi format-control in the input.
     2. `WidthClassExt`      a fullwidth/halfwidth codepoint in the extension.
     3. `CombiningInExt`     a combining (Extend) codepoint in the extension.
     4. `MultipleExtensions` >= 3 dots (advisory; e.g. legitimate `.tar.gz.sig`).
 
-  It reuses the port's own tables — the BidiControlBalance format-control set,
-  the Grapheme segmentation `Grapheme_Cluster_Break = Extend` class, and the
-  inlined fullwidth range — never a host filesystem or rendering library.
+  It reuses the port's own tables — the bidi purpose rule, the Grapheme
+  segmentation `Grapheme_Cluster_Break = Extend` class, and the inlined
+  fullwidth range — never a host filesystem or rendering library.
   """
 
   alias UnicodeSecurity.Covert.BidiControlBalance
+  alias UnicodeSecurity.Display.BidiControlPurpose
   alias UnicodeSecurity.Segmentation.Grapheme
 
   # ───────────────────────────────────────────────────────────────────
@@ -92,14 +96,13 @@ defmodule UnicodeSecurity.Display.FilenameDisguise do
     |> Enum.flat_map(fn {cp, idx} -> if is_ascii_dot(cp), do: [idx], else: [] end)
   end
 
-  # Position and codepoint of the first bidi format-control, or `nil`.
-  defp first_bidi_control(input) do
-    input
-    |> Enum.with_index()
-    |> Enum.find_value(fn {cp, idx} ->
-      if is_bidi_format_control(cp), do: {idx, cp}, else: nil
-    end)
-  end
+  # Position and codepoint of the first purposeless bidi format-control, or
+  # `nil`: unbalanced, or a balanced span enclosing nothing right-to-left in a
+  # left-to-right context (`BidiControlPurpose.first_purposeless_control/1`). A
+  # balanced embedding around an Arabic filename segment manages that segment
+  # and is not a flip. Mirrors the Lean detect, which reads
+  # `firstPurposelessControl`.
+  defp first_bidi_control(input), do: BidiControlPurpose.first_purposeless_control(input)
 
   # Position and codepoint of the first fullwidth/halfwidth codepoint at or after
   # `start`, or `nil`.
@@ -140,11 +143,21 @@ defmodule UnicodeSecurity.Display.FilenameDisguise do
   # ───────────────────────────────────────────────────────────────────
 
   @doc """
-  The FilenameDisguise detection function. Returns a verdict map mirroring the
-  Lean/rust `Verdict`: `input`, `classify`, `dot_positions`, `last_dot_pos`,
-  `bidi_control_count`, `fullwidth_in_ext`, and `combining_in_ext`.
+  The FilenameDisguise detection function, reading its input as one filename.
+  Mirrors the Lean detect, which is detectWithContext at the default context.
   """
-  def detect(input) do
+  def detect(input), do: detect_with_context(false, input)
+
+  @doc """
+  The FilenameDisguise detection function under an explicit field context.
+  Returns a verdict map mirroring the Lean/rust `Verdict`: `input`, `classify`,
+  `dot_positions`, `last_dot_pos`, `bidi_control_count`, `fullwidth_in_ext`, and
+  `combining_in_ext`. `running_text` mirrors the Lean `Context.runningText`: the
+  extension rungs read the text after the last dot as a file extension, which a
+  source file or a message does not have, so they do not run on running text;
+  the purposeless-bidi-control rung holds of any field.
+  """
+  def detect_with_context(running_text, input) do
     dots = dot_positions(input)
     last_dot = List.last(dots)
     ext_start = if last_dot == nil, do: length(input), else: last_dot + 1
@@ -153,7 +166,7 @@ defmodule UnicodeSecurity.Display.FilenameDisguise do
     fw_in_ext = count_fullwidth_from(input, ext_start)
     ext_in_ext = count_extend_from(input, ext_start)
 
-    classify = classify(input, dots, ext_start)
+    classify = classify(input, dots, ext_start, running_text)
 
     %{
       input: input,
@@ -168,12 +181,16 @@ defmodule UnicodeSecurity.Display.FilenameDisguise do
 
   # The priority ladder. The first trigger in priority order wins; when none
   # fires the input is `Clear`.
-  defp classify(input, dots, ext_start) do
+  defp classify(input, dots, ext_start, running_text) do
     cond do
-      # Priority 1: any bidi format-control.
+      # Priority 1: a purposeless bidi format-control anywhere in the input.
       ctl = first_bidi_control(input) ->
         {pos, cp} = ctl
         hazard(%{kind: :rlo_flip, position: pos, control_cp: cp}, [pos])
+
+      # The remaining rungs read an extension; running text has none.
+      running_text ->
+        %{kind: :clear}
 
       # Priority 2: fullwidth/halfwidth in the extension.
       fw = first_fullwidth_from(input, ext_start) ->

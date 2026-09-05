@@ -35,6 +35,7 @@ defmodule UnicodeSecurity.Policy do
   alias UnicodeSecurity.Identity.{
     EmojiZwjIntegrity,
     HomoglyphConfusable,
+    IdentifierTokens,
     SkinToneVariationForgery
   }
 
@@ -66,6 +67,16 @@ defmodule UnicodeSecurity.Policy do
   """
   def profile_identifier_field?(profile),
     do: profile in ["domain-name", "dns-label", "username"]
+
+  @doc """
+  True iff the profile reads its input as running text -- a source line, a
+  message, a display name -- rather than one identifier. The identifier
+  families then judge each identifier-shaped token of the line on its own, and
+  the field-wide families that read the line as one identifier or one filename
+  report clear. Mirrors profileIsRunningText in Unicode/Security/Policy.lean.
+  """
+  def profile_running_text?(profile),
+    do: profile in ["display-name", "chat-message", "source-code"]
 
   def policy_of_profile(profile) do
     case profile do
@@ -253,8 +264,19 @@ defmodule UnicodeSecurity.Policy do
     end
   end
 
+  @doc """
+  Scan a decoded codepoint sequence. Under a running-text profile
+  (`profile_running_text?/1`) the homoglyph and mixed-script families read the
+  input per identifier-shaped token, rtl-injection / locale-case-inversion /
+  case-expansion-mismatch report clear, filename-disguise runs only its
+  purposeless-control rung, renderer-divergence drops its mixed-direction rung,
+  and the source-display-divergence aggregate reads the homoglyph verdict this
+  scan produced. Mirrors Unicode.Security.RunAll under Policy.lean's Context.
+  """
   def scan(profile, mode, input) do
     findings = []
+    identifier_field = profile_identifier_field?(profile)
+    running_text = profile_running_text?(profile)
 
     findings =
       push_detector(
@@ -320,42 +342,53 @@ defmodule UnicodeSecurity.Policy do
         positions_where(input, &c1_control?/1)
       )
 
-    h = HomoglyphConfusable.detect(input)
-
     # Every rung of the homoglyph ladder is reported, CrossScriptMix included.
     # Unicode/Security/Policy.lean maps every non-clear family result to a
     # finding without filtering, so suppressing this rung would report fewer
-    # findings than the proven spec for a cross-script input.
-    findings =
-      push_finding(
-        findings,
-        :homoglyph_confusable,
-        h.kind,
-        h.sub,
-        if(h.kind == :clear, do: [], else: Enum.to_list(0..(length(input) - 1)))
-      )
+    # findings than the proven spec for a cross-script input. On running text
+    # the family reads the input per identifier-shaped token.
+    homoglyph =
+      if running_text,
+        do: homoglyph_over_tokens(input),
+        else:
+          homoglyph_finding_with_context(input, %{running_text: false, identifier_token: false})
 
-    mixed_sub =
-      HomoglyphConfusable.mixed_script_verdict(input, profile_identifier_field?(profile))
+    findings = if homoglyph == nil, do: findings, else: [homoglyph | findings]
 
     findings =
-      if mixed_sub != nil,
-        do:
-          push_finding(
-            findings,
-            :mixed_script_admissibility,
-            :hazard,
-            mixed_sub,
-            positions_all(input)
-          ),
-        else: findings
+      if running_text do
+        case mixed_script_over_tokens(input) do
+          nil -> findings
+          mixed -> [mixed | findings]
+        end
+      else
+        mixed_sub = HomoglyphConfusable.mixed_script_verdict(input, identifier_field)
 
-    rtl = RtlInjection.detect(input)
+        if mixed_sub != nil,
+          do:
+            push_finding(
+              findings,
+              :mixed_script_admissibility,
+              :hazard,
+              mixed_sub,
+              positions_all(input)
+            ),
+          else: findings
+      end
 
+    # Families that read the whole field as one identifier report clear on
+    # running text: rtl-injection, case-expansion-mismatch and
+    # locale-case-inversion. Mirrors the Lean mkGatedResult.
     findings =
-      if rtl.sub,
-        do: push_finding(findings, :rtl_injection, :hazard, rtl.sub, rtl.positions),
-        else: findings
+      if running_text do
+        findings
+      else
+        rtl = RtlInjection.detect(input)
+
+        if rtl.sub,
+          do: push_finding(findings, :rtl_injection, :hazard, rtl.sub, rtl.positions),
+          else: findings
+      end
 
     cb = ConfusableBidiCompound.detect(input)
 
@@ -396,7 +429,7 @@ defmodule UnicodeSecurity.Policy do
         stvf_tag -> push_finding(findings, :skin_tone_variation_forgery, :hazard, stvf_tag, SkinToneVariationForgery.classification_positions(stvf.classify))
       end
 
-    fd = FilenameDisguise.detect(input)
+    fd = FilenameDisguise.detect_with_context(running_text, input)
 
     findings =
       case FilenameDisguise.classification_tag(fd.classify) do
@@ -404,7 +437,7 @@ defmodule UnicodeSecurity.Policy do
         fd_tag -> push_finding(findings, :filename_disguise, :hazard, fd_tag, FilenameDisguise.classification_positions(fd.classify))
       end
 
-    rd = RendererDivergence.detect(input)
+    rd = RendererDivergence.detect_with_context(running_text, input)
 
     findings =
       case RendererDivergence.classification_tag(rd.classify) do
@@ -417,12 +450,16 @@ defmodule UnicodeSecurity.Policy do
     findings =
       if ssv.sub, do: push_finding(findings, :stream_safe_violation, :hazard, ssv.sub, ssv.positions), else: findings
 
-    cem = CaseExpansionMismatch.detect(input)
-
     findings =
-      case CaseExpansionMismatch.classification_tag(cem.classify) do
-        nil -> findings
-        cem_tag -> push_finding(findings, :case_expansion_mismatch, :hazard, cem_tag, CaseExpansionMismatch.classification_positions(cem.classify))
+      if running_text do
+        findings
+      else
+        cem = CaseExpansionMismatch.detect(input)
+
+        case CaseExpansionMismatch.classification_tag(cem.classify) do
+          nil -> findings
+          cem_tag -> push_finding(findings, :case_expansion_mismatch, :hazard, cem_tag, CaseExpansionMismatch.classification_positions(cem.classify))
+        end
       end
 
     ifd = IdentifierFormDrift.detect(input)
@@ -446,10 +483,14 @@ defmodule UnicodeSecurity.Policy do
     findings =
       if nb.sub, do: push_finding(findings, :normalization_bomb, :hazard, nb.sub, nb.positions), else: findings
 
-    lci = LocaleCaseInversion.detect(input)
-
     findings =
-      if lci.sub, do: push_finding(findings, :locale_case_inversion, :hazard, lci.sub, lci.positions), else: findings
+      if running_text do
+        findings
+      else
+        lci = LocaleCaseInversion.detect(input)
+
+        if lci.sub, do: push_finding(findings, :locale_case_inversion, :hazard, lci.sub, lci.positions), else: findings
+      end
 
     niw = NfcIdempotenceWitness.detect(input)
 
@@ -462,8 +503,9 @@ defmodule UnicodeSecurity.Policy do
       if wcc.sub, do: push_finding(findings, :width_class_confusion, :hazard, wcc.sub, wcc.positions), else: findings
 
     # SourceDisplayDivergence judges the input as a unit, so it localises
-    # nothing and carries an empty position list.
-    sdd = SourceDisplayDivergence.detect(input)
+    # nothing and carries an empty position list. Its homoglyph constituent is
+    # the verdict this scan produced, so the two agree on running text.
+    sdd = SourceDisplayDivergence.detect_core(input, homoglyph != nil)
 
     findings =
       case SourceDisplayDivergence.classification_tag(sdd) do
@@ -700,6 +742,76 @@ defmodule UnicodeSecurity.Policy do
         do: findings,
         else: push_finding(findings, family, :hazard, sub, positions)
       )
+
+  # The positions a homoglyph verdict implicates: the non-ASCII positions for
+  # the ascii-confusable rung, the whole input for every other rung, nothing
+  # when clear.
+  defp homoglyph_positions(%{kind: :clear}, _input), do: []
+
+  defp homoglyph_positions(%{sub: %{tag: "AsciiConfusable"}}, input),
+    do: HomoglyphConfusable.non_ascii_positions(input)
+
+  defp homoglyph_positions(_verdict, input), do: positions_all(input)
+
+  # One homoglyph finding under a field context, or nil when clear.
+  defp homoglyph_finding_with_context(input, ctx) do
+    verdict = HomoglyphConfusable.detect_with_context(input, ctx)
+
+    if verdict.kind == :clear,
+      do: nil,
+      else:
+        finding(
+          :homoglyph_confusable,
+          severity(verdict.kind),
+          homoglyph_positions(verdict, input),
+          verdict.sub
+        )
+  end
+
+  # The homoglyph family over running text: the first identifier-shaped token
+  # (a maximal XID_Continue run) that fires, read as one identifier, with its
+  # positions shifted back into input coordinates. When no token fires, the
+  # whole input is read once under the running-text context, which keeps the
+  # rungs that hold of any text (target match, math alphanumerics, width class,
+  # decomposition swap). Mirrors the Lean homoglyphOverTokens.
+  defp homoglyph_over_tokens(input) do
+    token_finding =
+      Enum.find_value(IdentifierTokens.tokens(input), fn token ->
+        case homoglyph_finding_with_context(token.cps, %{running_text: false, identifier_token: true}) do
+          nil ->
+            nil
+
+          finding ->
+            %{finding | positions: IdentifierTokens.shift_positions(token.start, finding.positions)}
+        end
+      end)
+
+    if token_finding == nil,
+      do: homoglyph_finding_with_context(input, %{running_text: true, identifier_token: false}),
+      else: token_finding
+  end
+
+  # The mixed-script family over running text: each identifier-shaped token is
+  # judged as one identifier (not an identifier field, so the Restricted-status
+  # rung does not apply); the first token that fires is reported, positions in
+  # input coordinates. A line with no firing token is clear. Mirrors the Lean
+  # mixedScriptOverTokens.
+  defp mixed_script_over_tokens(input) do
+    Enum.find_value(IdentifierTokens.tokens(input), fn token ->
+      case HomoglyphConfusable.mixed_script_verdict(token.cps, false) do
+        nil ->
+          nil
+
+        sub ->
+          finding(
+            :mixed_script_admissibility,
+            :moderate,
+            IdentifierTokens.shift_positions(token.start, positions_all(token.cps)),
+            sub
+          )
+      end
+    end)
+  end
 
   defp positions_where(input, pred),
     do:

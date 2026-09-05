@@ -152,11 +152,21 @@ defmodule UnicodeSecurity.Display.RendererDivergence do
   # ───────────────────────────────────────────────────────────────────
 
   @doc """
-  The RendererDivergence detection function. Returns a verdict map mirroring the
-  Lean/rust `Verdict`: `input`, `classify`, `vs_count`, `combining_count`,
-  `fullwidth_count`, `has_zwj`, `strong_ltr_count`, and `strong_rtl_count`.
+  The RendererDivergence detection function at the default context (one field,
+  not running text). Mirrors the Lean detect.
   """
-  def detect(input) do
+  def detect(input), do: detect_with_context(false, input)
+
+  @doc """
+  The RendererDivergence detection function under an explicit field context.
+  Returns a verdict map mirroring the Lean/rust `Verdict`: `input`, `classify`,
+  `vs_count`, `combining_count`, `fullwidth_count`, `has_zwj`,
+  `strong_ltr_count`, and `strong_rtl_count`. `running_text` mirrors the Lean
+  `Context.runningText`: a source line or a message carrying both directions is
+  a bilingual line, not a divergence, so the mixed-direction rung does not run
+  on running text; every other rung holds of any field.
+  """
+  def detect_with_context(running_text, input) do
     vs_count = count_vs(input)
     combining_count = count_combining(input)
     fullwidth_count = count_fullwidth(input)
@@ -164,7 +174,7 @@ defmodule UnicodeSecurity.Display.RendererDivergence do
     ltr_count = count_strong_ltr(input)
     rtl_count = count_strong_rtl(input)
 
-    classify = classify(input, has_zwj, ltr_count, rtl_count)
+    classify = classify(input, has_zwj, ltr_count, rtl_count, running_text)
 
     %{
       input: input,
@@ -180,7 +190,7 @@ defmodule UnicodeSecurity.Display.RendererDivergence do
 
   # The priority ladder. The first trigger in priority order wins; when none
   # fires the input is `Clear`.
-  defp classify(input, has_zwj, ltr_count, rtl_count) do
+  defp classify(input, has_zwj, ltr_count, rtl_count, running_text) do
     cond do
       # Priority 1: combining-mark stack overflow (Zalgo).
       stack = first_combining_stack(input, @min_combining_stack) ->
@@ -208,8 +218,8 @@ defmodule UnicodeSecurity.Display.RendererDivergence do
         {pos, cp} = fw
         hazard(%{kind: :fullwidth_variance, first_fw_pos: pos, first_fw_cp: cp}, [pos])
 
-      # Priority 5: mixed direction.
-      ltr_count > 0 and rtl_count > 0 ->
+      # Priority 5: mixed direction, off for running text.
+      not running_text and ltr_count > 0 and rtl_count > 0 ->
         hazard(%{kind: :mixed_direction_variance, ltr_count: ltr_count, rtl_count: rtl_count}, [])
 
       # Otherwise stable across the documented renderer cohort.

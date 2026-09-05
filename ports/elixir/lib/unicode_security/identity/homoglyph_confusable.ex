@@ -77,7 +77,50 @@ defmodule UnicodeSecurity.Identity.HomoglyphConfusable do
     end
   end
 
-  def detect(input) do
+  @doc """
+  The case-preserving skeleton: NFD, confusable substitution, NFD, with no case
+  fold, so `admın` (dotless i) maps to `adrnin` while `ADMIN` stays itself.
+  Mirrors the Lean asciiSkeleton.
+  """
+  def ascii_skeleton(input), do: input |> Ucd.to_nfd() |> substitute() |> Ucd.to_nfd()
+
+  @doc """
+  A non-ASCII input whose case-preserving skeleton is all ASCII. Mirrors the
+  Lean isAsciiConfusable.
+  """
+  def ascii_confusable?(input) do
+    Enum.any?(input, &(&1 > 0x7F)) and Enum.all?(ascii_skeleton(input), &(&1 <= 0x7F))
+  end
+
+  @doc "0-based positions of the non-ASCII codepoints. Mirrors the Lean nonAsciiPositions."
+  def non_ascii_positions(input) do
+    input
+    |> Enum.with_index()
+    |> Enum.flat_map(fn {cp, idx} -> if cp > 0x7F, do: [idx], else: [] end)
+  end
+
+  @doc "Every script-bearing codepoint of the input is Latin. Mirrors the Lean isLatinOnly."
+  def latin_only?(input), do: Ucd.string_script_union(input) == ["Latn"]
+
+  @doc """
+  The detection function at the default context (one identifier field).
+  Mirrors the Lean detect.
+  """
+  def detect(input), do: detect_with_context(input, %{running_text: false, identifier_token: false})
+
+  @doc """
+  The detection function under a field context (`running_text`: a source line,
+  a message or a display name rather than one identifier; `identifier_token`:
+  one identifier-shaped token cut out of running text). Rungs in the Lean
+  order: target match, math alphanumerics, width class, decomposition swap,
+  then the two script rungs (cross-script mix, off on running text; low
+  restriction level, off on running text and on a token), then the
+  ascii-confusable rung: a non-ASCII input whose case-preserving skeleton is all
+  ASCII reads as an ASCII word it is not (`admın` with a dotless i). That rung
+  runs on a whole field, and on a token only when the token is Latin-only, so a
+  Greek or Cyrillic word in prose is not read as its Latin look-alike.
+  """
+  def detect_with_context(input, ctx) do
     skel = skeleton(input)
     iskel = iterated_skeleton(input)
     rl = Ucd.restriction_level(input)
@@ -103,12 +146,22 @@ defmodule UnicodeSecurity.Identity.HomoglyphConfusable do
         %{base | kind: :hazard, sub: %{tag: "DecompositionSwap"}}
 
       # Priority 5: CrossScriptMix asks the script question only; the
-      # Restricted-status rung belongs to the mixed-script family.
-      length(Ucd.string_script_union(input)) >= 2 and not Ucd.highly_restrictive?(input) ->
+      # Restricted-status rung belongs to the mixed-script family. Off on
+      # running text.
+      not ctx.running_text and length(Ucd.string_script_union(input)) >= 2 and
+          not Ucd.highly_restrictive?(input) ->
         %{base | kind: :hazard, sub: %{tag: "CrossScriptMix"}}
 
-      rl in [:minimally_restrictive, :unrestricted] ->
+      # Priority 6: RestrictionLow, off on running text and on a token.
+      not ctx.running_text and not ctx.identifier_token and
+          rl in [:minimally_restrictive, :unrestricted] ->
         %{base | kind: :hazard, sub: %{tag: "RestrictionLow"}}
+
+      # Priority 7: AsciiConfusable, on a whole field, and on a token only when
+      # the token is Latin-only.
+      not ctx.running_text and (not ctx.identifier_token or latin_only?(input)) and
+          ascii_confusable?(input) ->
+        %{base | kind: :hazard, sub: %{tag: "AsciiConfusable", skeleton: ascii_skeleton(input)}}
 
       true ->
         base
