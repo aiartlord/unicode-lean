@@ -31,6 +31,7 @@ from ..covert.bidi_control_balance import (
     opens_embedding,
     opens_isolate,
 )
+from ..display import bidi_control_purpose
 from ..identity.homoglyph_confusable import is_confusable_source
 
 
@@ -63,8 +64,23 @@ def _first_pos(input_cps: list[int], predicate: Callable[[int], bool]) -> int | 
     return None
 
 
+def _first_purposeless_pos(
+    input_cps: list[int], predicate: Callable[[int], bool]
+) -> int | None:
+    """First position of a purposeless bidi control satisfying ``predicate``.
+    Only purposeless controls (:mod:`bidi_control_purpose`: unbalanced, or a
+    balanced span enclosing nothing right-to-left) count as the display channel
+    this compound pairs with a confusable; a balanced embedding around Arabic
+    text renders that text as written. Mirrors the Lean ``firstOverridePos`` /
+    ``firstIsolatePos``."""
+    for pos in bidi_control_purpose.purposeless_control_positions(input_cps):
+        if predicate(input_cps[pos]):
+            return pos
+    return None
+
+
 def detect(input_cps: list[int]) -> Detection:
-    """Detect a confusable codepoint sharing the input with a bidi
+    """Detect a confusable codepoint sharing the input with a purposeless bidi
     control.  Priority mirrors the spec: with a confusable present, an
     override-class control fires ``ConfusableInOverride``; otherwise an
     isolate-class control fires ``ConfusableInIsolate``; otherwise
@@ -73,14 +89,14 @@ def detect(input_cps: list[int]) -> Detection:
     if confusable_pos is None:
         return Detection(sub=None, positions=[])
 
-    override_pos = _first_pos(input_cps, is_override)
+    override_pos = _first_purposeless_pos(input_cps, is_override)
     if override_pos is not None:
         return Detection(
             sub="ConfusableInOverride",
             positions=[confusable_pos, override_pos],
         )
 
-    isolate_pos = _first_pos(input_cps, is_isolate)
+    isolate_pos = _first_purposeless_pos(input_cps, is_isolate)
     if isolate_pos is not None:
         return Detection(
             sub="ConfusableInIsolate",

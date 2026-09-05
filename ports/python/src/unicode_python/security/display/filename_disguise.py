@@ -34,6 +34,7 @@ from typing import Union
 from ..calculus import ClassificationKind
 from ..covert import bidi_control_balance
 from ...segmentation import grapheme
+from . import bidi_control_purpose
 
 # ─────────────────────────────────────────────────────────────────────
 # §1 Constants
@@ -187,11 +188,12 @@ def _dot_positions(input_cps: list[int]) -> list[int]:
 
 
 def _first_bidi_control(input_cps: list[int]) -> tuple[int, int] | None:
-    """Position and codepoint of the first bidi format-control."""
-    for index, cp in enumerate(input_cps):
-        if is_bidi_format_control(cp):
-            return (index, cp)
-    return None
+    """Position and codepoint of the first purposeless bidi format-control:
+    unbalanced, or a balanced span enclosing nothing right-to-left in a
+    left-to-right context (:mod:`bidi_control_purpose`). A balanced embedding
+    around an Arabic filename segment manages that segment and is not a flip.
+    Mirrors the Lean ``detect``, which reads ``firstPurposelessControl``."""
+    return bidi_control_purpose.first_purposeless_control(input_cps)
 
 
 def _first_fullwidth_from(
@@ -240,7 +242,18 @@ def _count_extend_from(input_cps: list[int], start: int) -> int:
 
 
 def detect(input_cps: list[int]) -> Verdict:
-    """The FilenameDisguise detection function."""
+    """The FilenameDisguise detection function, reading its input as one
+    filename. Mirrors the Lean ``detect``, which is ``detectWithContext`` at
+    the default context."""
+    return detect_with_context(False, input_cps)
+
+
+def detect_with_context(running_text: bool, input_cps: list[int]) -> Verdict:
+    """The FilenameDisguise detection function under an explicit field
+    context. ``running_text`` mirrors the Lean ``Context.runningText``: the
+    extension rungs read the text after the last dot as a file extension,
+    which a source file or a message does not have, so they do not run on
+    running text; the purposeless-bidi-control rung holds of any field."""
     dots = _dot_positions(input_cps)
     last_dot = dots[-1] if dots else None
     ext_start = last_dot + 1 if last_dot is not None else len(input_cps)
@@ -258,6 +271,9 @@ def detect(input_cps: list[int]) -> Verdict:
             sub=RloFlip(position=pos, control_cp=ctl_cp),
             positions=[pos],
         )
+    elif running_text:
+        # The remaining rungs read an extension; running text has none.
+        classification = Classification(is_clear=True)
     else:
         fw_hit = _first_fullwidth_from(input_cps, ext_start)
         if fw_hit is not None:

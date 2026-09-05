@@ -273,7 +273,18 @@ def _first_combining_stack(
 
 
 def detect(input_cps: list[int]) -> Verdict:
-    """The RendererDivergence detection function."""
+    """The RendererDivergence detection function, reading its input as one
+    string a renderer presents. Mirrors the Lean ``detect``, which is
+    ``detectWithContext`` at the default context."""
+    return detect_with_context(False, input_cps)
+
+
+def detect_with_context(running_text: bool, input_cps: list[int]) -> Verdict:
+    """The RendererDivergence detection function under an explicit field
+    context. ``running_text`` mirrors the Lean ``Context.runningText``: a
+    source file or a message carries both directions as content, so the
+    mixed-direction rung is meaningless for it and does not run; the four
+    presentation rungs hold of any field."""
     vs_count = _count_vs(input_cps)
     combining_count = _count_combining(input_cps)
     fullwidth_count = _count_fullwidth(input_cps)
@@ -324,8 +335,9 @@ def detect(input_cps: list[int]) -> Verdict:
                     sub=FullwidthVariance(first_fw_pos=pos, first_fw_cp=cp),
                     positions=[pos],
                 )
-            elif ltr_count > 0 and rtl_count > 0:
-                # Priority 5: mixed direction.
+            elif not running_text and ltr_count > 0 and rtl_count > 0:
+                # Priority 5: mixed direction. Running text carries both
+                # directions as content and is not judged by this rung.
                 classification = Classification(
                     is_clear=False,
                     sub=MixedDirectionVariance(

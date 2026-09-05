@@ -33,9 +33,9 @@
 //!   - `AsciiConfusable`    — input is not ASCII but its case-preserving
 //!     UTS #39 §4 skeleton is: every non-ASCII codepoint is a confusable
 //!     of an ASCII one, so the identifier is confusable with an ASCII
-//!     name without a target list (`admın` for `admin`). Identifier
-//!     fields only, through `detect_with_context`; last, so a mixed-script
-//!     or historical-script input keeps the verdict naming that structure.
+//!     name without a target list (`admın` for `admin`). Not in running
+//!     text (`detect_with_context`); last, so a mixed-script or
+//!     historical-script input keeps the verdict naming that structure.
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -454,25 +454,14 @@ pub fn is_ascii_confusable(input: &[u32]) -> bool {
 }
 
 /// What the caller knows about the field the input came from. Mirrors the Lean
-/// `Context`: `identifier_field` scopes the `AsciiConfusable` rung to a
-/// username, domain or DNS label; `running_text` says the input is prose or
-/// source — a whole file or message — where the script-composition rungs
-/// (`CrossScriptMix`, `RestrictionLow`) would judge a document as if it were
-/// one identifier and report every bilingual file.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// `Context`: `running_text` says the input is prose or source — a whole file
+/// or message — rather than one value. The script-composition rungs
+/// (`CrossScriptMix`, `RestrictionLow`) would judge such a document as if it
+/// were one identifier, and `AsciiConfusable` would report a curly quote, so
+/// under this reading those three rungs do not run.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct Context {
-    pub identifier_field: bool,
     pub running_text: bool,
-}
-
-impl Default for Context {
-    /// The identifier reading the module has always taken.
-    fn default() -> Self {
-        Context {
-            identifier_field: true,
-            running_text: false,
-        }
-    }
 }
 
 /// The HomoglyphConfusable detection function, reading its input as the
@@ -484,8 +473,8 @@ pub fn detect(input: &[u32]) -> Verdict {
 
 /// The HomoglyphConfusable detection function under an explicit field
 /// context (see [`Context`]). The target, math-alphabet, width and NFC rungs
-/// hold of any field; the script-composition rungs hold of an identifier
-/// only, and the ASCII-confusable rung of an identifier field only.
+/// hold of any field; the script-composition and ASCII-confusable rungs hold
+/// of a single value and do not run on running text.
 pub fn detect_with_context(ctx: Context, input: &[u32]) -> Verdict {
     let skel = skeleton(input);
     let iskel = iterated_skeleton(input);
@@ -573,11 +562,11 @@ pub fn detect_with_context(ctx: Context, input: &[u32]) -> Verdict {
         }
     }
 
-    // Priority 7: AsciiConfusable, identifier fields only. Last, so an input
+    // Priority 7: AsciiConfusable, single-value fields only. Last, so an input
     // that also mixes scripts or sits in a historical script keeps the verdict
     // naming that structure; this rung is reached by the single-script,
     // well-restricted look-alike (`admın`) no earlier rung can see.
-    if ctx.identifier_field && is_ascii_confusable(input) {
+    if !ctx.running_text && is_ascii_confusable(input) {
         v.kind = ClassificationKind::Hazard;
         v.sub = Some(SubThreat::AsciiConfusable {
             skeleton: ascii_skeleton(input),

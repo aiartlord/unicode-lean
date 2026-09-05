@@ -39,6 +39,7 @@ from ..covert import (
     zero_width_payload,
 )
 from ..identity import homoglyph_confusable
+from . import bidi_control_purpose
 
 # ─────────────────────────────────────────────────────────────────────
 # §1 The aggregate verdict
@@ -92,12 +93,22 @@ def _fired(kind: ClassificationKind) -> bool:
 
 
 def detect(input_cps: list[int]) -> Detection:
-    """Aggregate the five constituent detectors into a single verdict.
+    """Aggregate the five constituent detectors into a single verdict, reading
+    the input as the identifier its constituents assume. Mirrors the Lean
+    ``detect``, which is ``detectWithContext`` at the default context."""
+    return detect_with_context(homoglyph_confusable.Context(), input_cps)
+
+
+def detect_with_context(
+    ctx: homoglyph_confusable.Context, input_cps: list[int]
+) -> Detection:
+    """Aggregate under an explicit field context, which the homoglyph
+    constituent reads: in running text the script-composition and
+    ASCII-confusable rungs do not judge a whole file as one identifier.
 
     Constituent family tags in canonical aggregation order: tag-block,
-    variation-selector, zero-width, bidi-control, homoglyph. Each is the
-    port's own ``detect``; a family fires when its verdict kind is not
-    ``CLEAR``."""
+    variation-selector, zero-width, bidi-control, homoglyph. A family fires
+    when its verdict kind is not ``CLEAR``."""
     fires: list[str] = []
     if _fired(tag_block_payload.detect(input_cps).kind):
         fires.append("TagBlock")
@@ -105,12 +116,15 @@ def detect(input_cps: list[int]) -> Detection:
         fires.append("VariationSelector")
     if _fired(zero_width_payload.detect(input_cps).kind):
         fires.append("ZeroWidth")
-    # Presence, not balance. A Trojan Source payload balances its controls --
+    # Purpose, not balance. A Trojan Source payload balances its controls --
     # an unbalanced run breaks the file it is hiding in -- so a constituent
-    # built on the balance verdict is blind to the shape the attack takes.
-    if any(bidi_control_balance.is_bidi_format_control(cp) for cp in input_cps):
+    # built on the balance verdict is blind to the shape the attack takes;
+    # what every payload shares is a control span with nothing right-to-left
+    # to manage. A balanced embedding around an Arabic literal is purposeful
+    # and is not a divergence.
+    if bidi_control_purpose.has_purposeless_control(input_cps):
         fires.append("BidiControl")
-    if _fired(homoglyph_confusable.detect(input_cps).kind):
+    if _fired(homoglyph_confusable.detect_with_context(ctx, input_cps).kind):
         fires.append("IdentifierHomoglyph")
 
     fire_count = len(fires)

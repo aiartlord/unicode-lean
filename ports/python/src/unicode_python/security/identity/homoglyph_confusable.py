@@ -263,6 +263,14 @@ class RestrictionLow:
     level: RestrictionLevel
 
 
+@dataclass(frozen=True, slots=True)
+class AsciiConfusable:
+    """The input is not ASCII but its case-preserving skeleton is; ``skeleton``
+    is the ASCII string it is confusable with."""
+
+    skeleton: tuple[int, ...]
+
+
 SubThreat = Union[
     TargetMatch,
     MathAlpha,
@@ -270,6 +278,7 @@ SubThreat = Union[
     DecompositionSwap,
     CrossScriptMix,
     RestrictionLow,
+    AsciiConfusable,
 ]
 
 
@@ -286,7 +295,43 @@ def sub_threat_tag(sub: SubThreat) -> str:
         return "CrossScriptMix"
     if isinstance(sub, RestrictionLow):
         return "RestrictionLow"
+    if isinstance(sub, AsciiConfusable):
+        return "AsciiConfusable"
     raise TypeError(f"sub_threat_tag: unknown SubThreat variant {sub!r}")
+
+
+@dataclass(frozen=True, slots=True)
+class Context:
+    """What the caller knows about the field the input came from. Mirrors the
+    Lean ``Context``: ``running_text`` says the input is prose or source rather
+    than one value. The script-composition rungs (``CrossScriptMix``,
+    ``RestrictionLow``) would judge such a document as if it were one
+    identifier, and ``AsciiConfusable`` would report a curly quote, so under
+    this reading those three rungs do not run."""
+
+    running_text: bool = False
+
+
+def ascii_skeleton(input_cps: list[int]) -> list[int]:
+    """The case-preserving UTS #39 §4 skeleton ``toNFD(substitute(toNFD(x)))``:
+    the §4 bracket without the §5.4 case folding ``skeleton`` adds, since full
+    folding would read ``straße`` as confusable with ``strasse``. Mirrors the
+    Lean ``asciiSkeleton``."""
+    return ucd.to_nfd(_substitute(ucd.to_nfd(input_cps)))
+
+
+def non_ascii_positions(input_cps: list[int]) -> list[int]:
+    """Positions of the non-ASCII codepoints. Mirrors ``nonAsciiPositions``."""
+    return [index for index, cp in enumerate(input_cps) if cp >= 0x80]
+
+
+def is_ascii_confusable(input_cps: list[int]) -> bool:
+    """True iff the input is not ASCII but its case-preserving skeleton is:
+    every non-ASCII codepoint is a confusable of an ASCII one (``admın`` with
+    ``admin``). Mirrors ``isAsciiConfusable``."""
+    return any(cp >= 0x80 for cp in input_cps) and all(
+        cp < 0x80 for cp in ascii_skeleton(input_cps)
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -380,7 +425,17 @@ def _first_decomposition_diff_pos(
 
 
 def detect(input_cps: list[int]) -> Verdict:
-    """Run the HomoglyphConfusable detector over a codepoint sequence."""
+    """Run the HomoglyphConfusable detector over a codepoint sequence, reading
+    it as the identifier the threat model describes. Mirrors the Lean
+    ``detect``, which is ``detectWithContext`` at the default context."""
+    return detect_with_context(Context(), input_cps)
+
+
+def detect_with_context(ctx: Context, input_cps: list[int]) -> Verdict:
+    """Run the HomoglyphConfusable detector under an explicit field context
+    (see :class:`Context`). The target, math-alphabet, width and NFC rungs hold
+    of any field; the script-composition rungs of an identifier only, and the
+    ASCII-confusable rung of an identifier field only."""
     skel = skeleton(input_cps)
     iskel = iterated_skeleton(input_cps)
     rl = ucd.restriction_level(input_cps)
@@ -436,25 +491,41 @@ def detect(input_cps: list[int]) -> Verdict:
             restriction_level=rl,
         )
 
-    # Priority 5: CrossScriptMix.
-    union = ucd.string_script_union(input_cps)
-    if len(union) >= 2 and not ucd.is_highly_restrictive(input_cps):
-        return Verdict(
-            kind=ClassificationKind.HAZARD,
-            sub=CrossScriptMix(script_count=len(union)),
-            skeleton=skel,
-            iterated_skeleton=iskel,
-            restriction_level=rl,
-        )
+    # Priorities 5 and 6 ask about the script composition of one identifier;
+    # running text (a source file, a message) mixes scripts as content.
+    if not ctx.running_text:
+        # Priority 5: CrossScriptMix.
+        union = ucd.string_script_union(input_cps)
+        if len(union) >= 2 and not ucd.is_highly_restrictive(input_cps):
+            return Verdict(
+                kind=ClassificationKind.HAZARD,
+                sub=CrossScriptMix(script_count=len(union)),
+                skeleton=skel,
+                iterated_skeleton=iskel,
+                restriction_level=rl,
+            )
 
-    # Priority 6: RestrictionLow.
-    if rl in (
-        RestrictionLevel.MINIMALLY_RESTRICTIVE,
-        RestrictionLevel.UNRESTRICTED,
-    ):
+        # Priority 6: RestrictionLow.
+        if rl in (
+            RestrictionLevel.MINIMALLY_RESTRICTIVE,
+            RestrictionLevel.UNRESTRICTED,
+        ):
+            return Verdict(
+                kind=ClassificationKind.HAZARD,
+                sub=RestrictionLow(level=rl),
+                skeleton=skel,
+                iterated_skeleton=iskel,
+                restriction_level=rl,
+            )
+
+    # Priority 7: AsciiConfusable, single-value fields only. Last, so an input
+    # that also mixes scripts or sits in a historical script keeps the verdict
+    # naming that structure; this rung is reached by the single-script,
+    # well-restricted look-alike (`admın`) no earlier rung can see.
+    if not ctx.running_text and is_ascii_confusable(input_cps):
         return Verdict(
             kind=ClassificationKind.HAZARD,
-            sub=RestrictionLow(level=rl),
+            sub=AsciiConfusable(skeleton=tuple(ascii_skeleton(input_cps))),
             skeleton=skel,
             iterated_skeleton=iskel,
             restriction_level=rl,

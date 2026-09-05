@@ -87,8 +87,7 @@ def looksLikeByteStream (input : List Nat) : Bool :=
     Most families read a codepoint sequence and need nothing else. A family
     scoped to identifiers needs to know whether it is holding one, because the
     same bytes carry a different question in a username and in a source file.
-    `Unicode.Security.Identity.MixedScriptAdmissibility.Context` and
-    `Unicode.Security.Identity.HomoglyphConfusable.Context` consume it; the
+    `Unicode.Security.Identity.MixedScriptAdmissibility.Context` consumes it; the
     field defaults to the reading each family already took, so `runAll` is
     unchanged. -/
 structure Context where
@@ -149,7 +148,7 @@ def runAllWithContext (ctx : Context) (input : List Nat) : List FamilyResult :=
   let c5 := Unicode.Security.Covert.BidiControlBalance.detect        input
   let c6 := Unicode.Security.Covert.NoncharacterControl.detect       input
   let homoglyphCtx : Unicode.Security.Identity.HomoglyphConfusable.Context :=
-    { identifierField := ctx.identifierField, runningText := ctx.runningText }
+    { runningText := ctx.runningText }
   let i1 := Unicode.Security.Identity.HomoglyphConfusable.detectWithContext homoglyphCtx input
   let i2 :=
     Unicode.Security.Identity.MixedScriptAdmissibility.detectWithContext

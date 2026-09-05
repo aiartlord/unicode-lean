@@ -746,10 +746,7 @@ pub fn profile_is_running_text(profile: Profile) -> bool {
 pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
     let mut findings = Vec::new();
     let running_text = profile_is_running_text(profile);
-    let homoglyph_ctx = homoglyph_confusable::Context {
-        identifier_field: profile_is_identifier_field(profile),
-        running_text,
-    };
+    let homoglyph_ctx = homoglyph_confusable::Context { running_text };
 
     let tag = tag_block_payload::detect(input);
     push_finding(

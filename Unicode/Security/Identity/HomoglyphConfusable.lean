@@ -29,7 +29,7 @@
       the same skeleton machinery: an identifier that is not ASCII but
       whose UTS #39 §4 skeleton is, so it is confusable with an ASCII
       name the caller never had to enumerate (`admın` for `admin`,
-      dotless i U+0131).  It is scoped to identifier fields through
+      dotless i U+0131).  It is scoped to single-value fields through
       `Context`, because in running text typographic punctuation such
       as curly quotes also skeletons to ASCII and is ordinary content.
     * Canonical-target list sourced from
@@ -86,7 +86,7 @@ set_option maxHeartbeats 8000000
                             skeleton is: every non-ASCII codepoint is
                             a confusable of an ASCII one, so the
                             identifier is confusable with an ASCII
-                            name without a target list.  Identifier
+                            name without a target list.  Single-value
                             fields only (see `Context`).  Last, so an
                             input that also mixes scripts or sits in a
                             historical script keeps the verdict that
@@ -341,7 +341,7 @@ def nonAsciiPositions (input : List Nat) : List Nat :=
     which is the homograph attack against ASCII names stated without a target
     list.  Accents survive as combining marks in the skeleton, so `café`,
     `Nguyễn` and `İstanbul` are not ASCII-confusable; a Greek `α` alone is,
-    which is why the rung is confined to identifier fields.
+    and a curly quote is, which is why the rung does not run on running text.
 
     The ASCII test comes first and short-circuits, so an all-ASCII input never
     reduces the skeleton. -/
@@ -355,21 +355,18 @@ def isAsciiConfusable (input : List Nat) : Bool :=
 
 /-- What the caller knows about the field the input came from.
 
-    `asciiConfusable` asks whether an identifier is a look-alike of an ASCII
-    identifier.  That question is meaningful for a username, a domain or a DNS
-    label and meaningless for running text, where a curly quote or a minus sign
-    skeletons to ASCII and is ordinary content.  `identifierField` records which
-    of the two the caller is holding; it defaults to `true`, the reading this
-    module has always taken, so `detect` is unchanged for the identifier case.
-    Mirrors `Unicode.Security.Identity.MixedScriptAdmissibility.Context`. -/
+    `runningText` says the input is prose or source — a whole file or a
+    message — rather than one value.  `crossScriptMix` and `restrictionLow` ask
+    about the script composition of one identifier, and `asciiConfusable` asks
+    whether one value is a look-alike of an ASCII one; a bilingual file mixes
+    scripts as content, and a curly quote or a minus sign in prose skeletons to
+    ASCII and is ordinary content, so under this reading those three rungs do
+    not run.  The target, math alphabet, width and NFC rungs hold of any field.
+    Defaults to `false`, the single-value reading this module has always taken,
+    so `detect` is unchanged.  Mirrors the shape of
+    `Unicode.Security.Identity.MixedScriptAdmissibility.Context`. -/
 structure Context where
-  identifierField : Bool := true
-  /-- Whether the input is running text — prose or source, a whole file or a
-      message.  `crossScriptMix` and `restrictionLow` ask about the script
-      composition of one identifier; a bilingual file mixes scripts as content,
-      so under this reading those two rungs do not run.  The target, math
-      alphabet, width and NFC rungs hold of any field. -/
-  runningText     : Bool := false
+  runningText : Bool := false
   deriving DecidableEq, Repr, Inhabited
 
 /-- The HomoglyphConfusable detection function, under an explicit field
@@ -412,7 +409,7 @@ def detectWithContext (ctx : Context) (input : List Nat) : Verdict :=
             .hazard (.crossScriptMix sc) [] []
           else if !ctx.runningText && decide (rl = .MinimallyRestrictive ∨ rl = .Unrestricted) then
             .hazard (.restrictionLow rl) [] []
-          else if ctx.identifierField && isAsciiConfusable input then
+          else if !ctx.runningText && isAsciiConfusable input then
             .hazard (.asciiConfusable (asciiSkeleton input)) (nonAsciiPositions input) []
           else
             .clear
@@ -624,11 +621,11 @@ theorem detect_sharp_s_clear :
     (detect [0x73, 0x74, 0x72, 0x61, 0xDF, 0x65]).classify.isClear = true := by
   decide +kernel
 
-/-- Outside an identifier field the same `admın` is not judged by the rung: a
-    running-text caller holds prose or source, where ASCII-skeleton punctuation
-    is ordinary content. -/
+/-- In running text the same `admın` is not judged by the rung: such a caller
+    holds prose or source, where ASCII-skeleton punctuation is ordinary
+    content. -/
 theorem detectWithContext_running_text_dotless_i_clear :
-    (detectWithContext { identifierField := false } [0x61, 0x64, 0x6D, 0x0131, 0x6E]).classify.isClear
+    (detectWithContext { runningText := true } [0x61, 0x64, 0x6D, 0x0131, 0x6E]).classify.isClear
       = true := by
   decide +kernel
 

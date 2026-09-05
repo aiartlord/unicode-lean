@@ -257,6 +257,20 @@ def profile_is_identifier_field(profile: Profile) -> bool:
     return profile in {Profile.DOMAIN_NAME, Profile.DNS_LABEL, Profile.USERNAME}
 
 
+def profile_is_running_text(profile: Profile) -> bool:
+    """True iff the profile names a field of running text — prose or source, a
+    whole file or message — rather than a single value.
+
+    The identifier-scoped rungs (script composition, mixed direction, case
+    expansion, locale case inversion, filename extension shape) and the
+    declared-field detector ``rtl_injection`` ask questions with no premise in
+    running text, where a bilingual file, an Arabic literal and a capital I are
+    content; they do not run on it. Mirrors ``profileIsRunningText`` in
+    ``Unicode/Security/Policy.lean``.
+    """
+    return profile in {Profile.DISPLAY_NAME, Profile.CHAT_MESSAGE, Profile.SOURCE_CODE}
+
+
 def policy_of_profile(profile: Profile) -> ProfilePolicy:
     """Default policy for a named profile."""
     if profile in {
@@ -512,6 +526,8 @@ def _is_c1_control(cp: int) -> bool:
 def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
     """Scan decoded codepoints with the implemented native detectors."""
     findings: list[Finding] = []
+    running_text = profile_is_running_text(profile)
+    homoglyph_ctx = homoglyph_confusable.Context(running_text=running_text)
 
     tag = tag_block_payload.detect(input_cps)
     _append_finding(
@@ -582,7 +598,7 @@ def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
         _positions_where(input_cps, _is_c1_control),
     )
 
-    homoglyph = homoglyph_confusable.detect(input_cps)
+    homoglyph = homoglyph_confusable.detect_with_context(homoglyph_ctx, input_cps)
     homoglyph_sub = (
         homoglyph_confusable.sub_threat_tag(homoglyph.sub) if homoglyph.sub else None
     )
@@ -597,8 +613,15 @@ def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
         homoglyph_sub,
         [] if homoglyph.kind is ClassificationKind.CLEAR else list(range(len(input_cps))),
     )
-    mixed_sub = homoglyph_confusable.mixed_script_verdict(
-        input_cps, profile_is_identifier_field(profile)
+    # Mixed-script admissibility asks about the script composition of one
+    # identifier; a source file or a message mixes scripts as content, so the
+    # family reports clear on running text (Lean: ``mkGatedResult``).
+    mixed_sub = (
+        None
+        if running_text
+        else homoglyph_confusable.mixed_script_verdict(
+            input_cps, profile_is_identifier_field(profile)
+        )
     )
     if mixed_sub is not None:
         _append_finding(
@@ -609,7 +632,13 @@ def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
             list(range(len(input_cps))),
         )
 
-    rtl = rtl_injection.detect(input_cps)
+    # RtlInjection judges a field declared left-to-right; running text declares
+    # no direction, so the family reports clear on it (Lean: ``mkGatedResult``).
+    rtl = (
+        rtl_injection.Detection(sub=None, positions=())
+        if running_text
+        else rtl_injection.detect(input_cps)
+    )
     if rtl.sub is not None:
         _append_finding(
             findings,
@@ -661,7 +690,7 @@ def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
         list(skin_tone_variation_forgery_verdict.classify.positions),
     )
 
-    filename_disguise_verdict = filename_disguise.detect(input_cps)
+    filename_disguise_verdict = filename_disguise.detect_with_context(running_text, input_cps)
     _append_finding(
         findings,
         Family.FILENAME_DISGUISE,
@@ -672,7 +701,7 @@ def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
         list(filename_disguise_verdict.classify.positions),
     )
 
-    renderer_divergence_verdict = renderer_divergence.detect(input_cps)
+    renderer_divergence_verdict = renderer_divergence.detect_with_context(running_text, input_cps)
     _append_finding(
         findings,
         Family.RENDERER_DIVERGENCE,
@@ -694,16 +723,19 @@ def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
         list(stream_safe_violation_verdict.classify.positions),
     )
 
-    case_expansion_mismatch_verdict = case_expansion_mismatch.detect(input_cps)
-    _append_finding(
-        findings,
-        Family.CASE_EXPANSION_MISMATCH,
-        ClassificationKind.CLEAR
-        if case_expansion_mismatch_verdict.classify.is_clear()
-        else ClassificationKind.HAZARD,
-        case_expansion_mismatch_verdict.classify.tag(),
-        list(case_expansion_mismatch_verdict.classify.positions),
-    )
+    # Case expansion asks whether a length-checked value grows under case
+    # mapping; in running text ß and ﬁ are content (Lean: ``mkGatedResult``).
+    if not running_text:
+        case_expansion_mismatch_verdict = case_expansion_mismatch.detect(input_cps)
+        _append_finding(
+            findings,
+            Family.CASE_EXPANSION_MISMATCH,
+            ClassificationKind.CLEAR
+            if case_expansion_mismatch_verdict.classify.is_clear()
+            else ClassificationKind.HAZARD,
+            case_expansion_mismatch_verdict.classify.tag(),
+            list(case_expansion_mismatch_verdict.classify.positions),
+        )
 
     identifier_form_drift_verdict = identifier_form_drift.detect(input_cps)
     _append_finding(
@@ -737,7 +769,13 @@ def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
             list(normalization_bomb_detection.positions),
         )
 
-    locale_case_inversion_detection = locale_case_inversion.detect(input_cps)
+    # Locale case inversion asks whether a credential folds differently across
+    # locales; in running text a capital I is content (Lean: ``mkGatedResult``).
+    locale_case_inversion_detection = (
+        locale_case_inversion.Detection(sub=None, positions=())
+        if running_text
+        else locale_case_inversion.detect(input_cps)
+    )
     if locale_case_inversion_detection.sub is not None:
         _append_finding(
             findings,
@@ -767,7 +805,7 @@ def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
             list(width_class.positions),
         )
 
-    source_display = source_display_divergence.detect(input_cps)
+    source_display = source_display_divergence.detect_with_context(homoglyph_ctx, input_cps)
     if source_display.sub is not None:
         _append_finding(
             findings,
