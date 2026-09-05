@@ -17,8 +17,13 @@
   language-agnostic — surfaces every codepoint that could cause
   display-vs-byte divergence in the filename context:
 
-    1. Any bidi format-control codepoint
-       (LRE/RLE/LRO/RLO/PDF/LRI/RLI/FSI/PDI).
+    1. Any purposeless bidi format-control codepoint
+       (LRE/RLE/LRO/RLO/PDF/LRI/RLI/FSI/PDI) — unbalanced, or a
+       balanced span enclosing nothing right-to-left in a
+       left-to-right context, per
+       `Unicode.Security.Display.BidiControlPurpose`.  A balanced
+       embedding around an Arabic filename segment manages that
+       segment and is not a flip.
     2. Any Halfwidth/Fullwidth Forms codepoint in the extension
        region (chars after the last `U+002E .`).
     3. Any Grapheme_Cluster_Break = Extend codepoint
@@ -35,6 +40,7 @@
 
 import Unicode.Security.Calculus
 import Unicode.TrojanSource
+import Unicode.Security.Display.BidiControlPurpose
 import Unicode.Generated.GraphemeBreakProperty
 
 namespace Unicode.Security.Display.FilenameDisguise
@@ -152,8 +158,19 @@ def countExtendFrom (input : List Nat) (start : Nat) : Nat :=
 -- §4 Top-level detection
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The FilenameDisguise detection function. -/
-def detect (input : List Nat) : Verdict :=
+/-- What the caller knows about the field the input came from.  The extension
+    rungs (fullwidth or combining marks in the extension, three or more
+    extensions) read the text after the last dot as a file extension, which a
+    source file or a message does not have; under `runningText` they do not
+    run.  The purposeless-bidi-control rung holds of any field.  Defaults to
+    the single-filename reading this module has always taken, so `detect` is
+    unchanged. -/
+structure Context where
+  runningText : Bool := false
+  deriving DecidableEq, Repr, Inhabited
+
+/-- The FilenameDisguise detection function under an explicit field context. -/
+def detectWithContext (ctx : Context) (input : List Nat) : Verdict :=
   let dots := dotPositions input
   let lastDot := dots.getLast?
   let extStart : Nat :=
@@ -165,13 +182,15 @@ def detect (input : List Nat) : Verdict :=
       if Unicode.TrojanSource.isBidiFormatControl cp then n + 1 else n) 0
   let fwInExt := countFullwidthFrom input extStart
   let extInExt := countExtendFrom input extStart
-  -- Priority: bidi control → fullwidth-in-ext → combining-in-ext
-  --           → multi-ext.
+  -- Priority: purposeless bidi control → fullwidth-in-ext →
+  --           combining-in-ext → multi-ext.
   let classification : Classification :=
-    match firstBidiControl input with
+    match Unicode.Security.Display.BidiControlPurpose.firstPurposelessControl input with
     | some (pos, ctlCp) =>
       .hazard (.rloFlip pos ctlCp) [pos] []
     | none =>
+      -- The remaining rungs read an extension; running text has none.
+      if ctx.runningText then .clear else
       match firstFullwidthFrom input extStart with
       | some (pos, cp) =>
         .hazard (.widthClassExt pos cp) [pos] []
@@ -191,6 +210,11 @@ def detect (input : List Nat) : Verdict :=
     bidiControlCount := bidiCount,
     fullwidthInExt := fwInExt,
     combiningInExt := extInExt }
+
+/-- The FilenameDisguise detection function, reading its input as one
+    filename. -/
+def detect (input : List Nat) : Verdict :=
+  detectWithContext {} input
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Projection helpers
@@ -287,8 +311,9 @@ theorem detect_hebrew_clear :
                 -- אבג.txt
     (detect cps).classify.isClear = true := by decide
 
-/-- RLI/PDI isolate variant of the flip — also `.rloFlip`
-    (any bidi control triggers it). -/
+/-- RLI/PDI isolate variant of the flip — also `.rloFlip`.  The isolate
+    encloses `txt.exe`, nothing right-to-left, so it is purposeless and fires
+    like the override. -/
 theorem detect_isolate_flip :
     let cps := [0x64, 0x6F, 0x63, 0x2067,  -- doc + RLI
                  0x74, 0x78, 0x74, 0x2E, 0x65, 0x78, 0x65, 0x2069]

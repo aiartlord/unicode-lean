@@ -5,6 +5,7 @@
 //! right-to-left injection into a left-to-right-declared field being
 //! the first member.
 
+pub mod bidi_control_purpose;
 pub mod filename_disguise;
 pub mod renderer_divergence;
 pub mod rtl_injection;

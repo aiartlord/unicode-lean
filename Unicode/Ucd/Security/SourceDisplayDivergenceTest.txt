@@ -93,7 +93,7 @@ E0001 E0065 E006E; Hazard:TagBlock; ; inner_tag="LanguageTagRevival"; # language
 0048 2060 2060 0069; Hazard:ZeroWidth; ; inner_tag="WordJoinerInjection"; # WJ injection
 
 # Two NNBSPs — AI watermark heuristic.
-0048 202F 0069 202F 0021; Hazard:ZeroWidth; ; inner_tag="AIWatermarkNNBSP"; # NNBSP AI-watermark
+0048 202F 0069 202F 0021; Hazard:Compound; ; constituents="C3 I1"; # NNBSP AI-watermark — zero-width splice, and NNBSP is a confusable of SPACE so the identifier reading also sees an ASCII-confusable
 
 # @section BidiControl
 # @level basic

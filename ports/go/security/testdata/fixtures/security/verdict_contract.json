@@ -373,16 +373,6 @@
             "detail": "bidi-control-balance"
           },
           {
-            "code": "unicode.security.D.rtl-injection.BidiControlInLTRField",
-            "family": "rtl-injection",
-            "severity": 2,
-            "positions": [
-              3
-            ],
-            "sub_threat": "BidiControlInLTRField",
-            "detail": "rtl-injection"
-          },
-          {
             "code": "unicode.security.D.filename-disguise.RloFlip",
             "family": "filename-disguise",
             "severity": 2,
@@ -752,60 +742,7 @@
           1575,
           1576
         ],
-        "findings": [
-          {
-            "code": "unicode.security.I.homoglyph-confusable.CrossScriptMix",
-            "family": "homoglyph-confusable",
-            "severity": 2,
-            "positions": [
-              0,
-              1,
-              2,
-              3
-            ],
-            "sub_threat": "CrossScriptMix",
-            "detail": "homoglyph-confusable"
-          },
-          {
-            "code": "unicode.security.I.mixed-script-admissibility.ScriptMixOther",
-            "family": "mixed-script-admissibility",
-            "severity": 2,
-            "positions": [
-              0,
-              1,
-              2,
-              3
-            ],
-            "sub_threat": "ScriptMixOther",
-            "detail": "mixed-script-admissibility"
-          },
-          {
-            "code": "unicode.security.D.rtl-injection.StrongRTLInLTR",
-            "family": "rtl-injection",
-            "severity": 2,
-            "positions": [
-              2
-            ],
-            "sub_threat": "StrongRTLInLTR",
-            "detail": "rtl-injection"
-          },
-          {
-            "code": "unicode.security.D.renderer-divergence.MixedDirectionVariance",
-            "family": "renderer-divergence",
-            "severity": 2,
-            "positions": [],
-            "sub_threat": "MixedDirectionVariance",
-            "detail": "renderer-divergence"
-          },
-          {
-            "code": "unicode.security.D.source-display-divergence.IdentifierHomoglyph",
-            "family": "source-display-divergence",
-            "severity": 2,
-            "positions": [],
-            "sub_threat": "IdentifierHomoglyph",
-            "detail": "source-display-divergence"
-          }
-        ],
+        "findings": [],
         "normalized": null
       }
     },
@@ -902,18 +839,7 @@
           1493,
           1501
         ],
-        "findings": [
-          {
-            "code": "unicode.security.D.rtl-injection.FieldTakeover",
-            "family": "rtl-injection",
-            "severity": 2,
-            "positions": [
-              3
-            ],
-            "sub_threat": "FieldTakeover",
-            "detail": "rtl-injection"
-          }
-        ],
+        "findings": [],
         "normalized": null
       }
     },

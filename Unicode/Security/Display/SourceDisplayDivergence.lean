@@ -31,7 +31,20 @@
       chain backdoors).  Source bytes are uniformly suspect
       regardless of which source-region a tokenizer would
       assign them to.  Every sub-detector hit therefore fires
-      unconditionally.
+      wherever in the source it sits.
+
+    * The bidi constituent reads purpose, not presence
+      (`Unicode.Security.Display.BidiControlPurpose`).  A control
+      span that encloses right-to-left text is doing what the
+      controls exist for — a balanced embedding around an Arabic
+      string literal renders the literal as written — and is not
+      a divergence.  A span enclosing nothing right-to-left in a
+      left-to-right context (`LRI user PDI`, `LRO return PDF`) and
+      any unbalanced control are the Trojan Source shapes, and
+      every one of them fires.  This is a property of the control
+      span decided from the codepoints it encloses, asked of every
+      control in code, literal and comment alike; it is not region
+      filtering, and the retraction above stands.
 
     * C4 (byte-level surrogate-reassembly / UTF-8 anomaly) is NOT
       composed here — by the time the byte stream has been
@@ -53,6 +66,7 @@ import Unicode.Security.Covert.TagBlockPayload
 import Unicode.Security.Covert.VariationSelectorPayload
 import Unicode.Security.Covert.ZeroWidthPayload
 import Unicode.Security.Covert.BidiControlBalance
+import Unicode.Security.Display.BidiControlPurpose
 import Unicode.TrojanSource
 import Unicode.Security.Identity.HomoglyphConfusable
 
@@ -144,21 +158,22 @@ def buildClassification
     detectors on the same codepoint stream and aggregates the
     results into a compound verdict.
 
-    Every sub-detector hit fires unconditionally, regardless of
-    where in the source the offending codepoint sits.  Earlier
-    prereleases tried to filter hits by source-region grammar
-    (strings, comments) but that surface has been retracted —
-    see module header for the threat-model rationale. -/
-def detect (input : List Nat) : Verdict :=
+    Every sub-detector hit fires regardless of where in the source
+    the offending codepoint sits.  Earlier prereleases tried to
+    filter hits by source-region grammar (strings, comments) but
+    that surface has been retracted — see module header for the
+    threat-model rationale. -/
+def detectCore (input : List Nat)
+    (i1 : Unicode.Security.Identity.HomoglyphConfusable.Verdict) : Verdict :=
   let c1 := Unicode.Security.Covert.TagBlockPayload.detect input
   let c2 := Unicode.Security.Covert.VariationSelectorPayload.detect input
   let c3 := Unicode.Security.Covert.ZeroWidthPayload.detect input
-  -- Presence, not balance. A Trojan Source payload balances its controls,
+  -- Purpose, not balance. A Trojan Source payload balances its controls,
   -- since an unbalanced run breaks the file it hides in, so the balance verdict
-  -- is blind to the shape the attack takes. The BidiControlBalance family's own
-  -- verdict is unchanged; only this constituent reads presence.
-  let c5Present := input.any Unicode.TrojanSource.isBidiFormatControl
-  let i1 := Unicode.Security.Identity.HomoglyphConfusable.detect input
+  -- is blind to the shape the attack takes; what every payload shares is a
+  -- control span with nothing right-to-left to manage. The BidiControlBalance
+  -- family's own verdict is unchanged; only this constituent reads purpose.
+  let c5Present := Unicode.Security.Display.BidiControlPurpose.hasPurposelessControl input
   let c1Tag := c1.classify.tag
   let c2Tag := c2.classify.tag
   let c3Tag := c3.classify.tag
@@ -177,6 +192,23 @@ def detect (input : List Nat) : Verdict :=
     c5Tag := c5Tag, i1Tag := i1Tag,
     firedFamilies := firedFamilies,
     safeForReview := firedFamilies.isEmpty }
+
+/-- The D1 detection function under an explicit field context, which the
+    homoglyph constituent reads: in running text the script-composition and
+    ASCII-confusable rungs do not judge a whole file as one identifier.  The
+    covert constituents and the bidi purpose rule hold of any field. -/
+def detectWithContext (ctx : Unicode.Security.Identity.HomoglyphConfusable.Context)
+    (input : List Nat) : Verdict :=
+  detectCore input (Unicode.Security.Identity.HomoglyphConfusable.detectWithContext ctx input)
+
+/-- The D1 detection function, reading its input as the identifier its
+    constituents assume. -/
+def detect (input : List Nat) : Verdict :=
+  detectCore input (Unicode.Security.Identity.HomoglyphConfusable.detect input)
+
+/-- The identifier reading is `detectWithContext` at the default context. -/
+theorem detect_eq_detectWithContext_default (input : List Nat) :
+    detect input = detectWithContext {} input := rfl
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §4 Projection helpers
@@ -238,7 +270,7 @@ theorem detect_empty_clear : (detect []).classify.isClear = true := by
     unfold Unicode.Security.Identity.HomoglyphConfusable.detect
           Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
     rw [hds]; decide +kernel
-  simp only [detect, hi1]
+  simp only [detect, detectCore, hi1]
   decide
 
 /-- Pure ASCII "Hello world" is clear. -/
@@ -255,7 +287,7 @@ theorem detect_ascii_clear :
     unfold Unicode.Security.Identity.HomoglyphConfusable.detect
           Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
     rw [hds]; decide +kernel
-  simp only [detect, hi1]
+  simp only [detect, detectCore, hi1]
   decide
 
 /-- A pure-C1 attack — tag-encoded "AB" — fires `.tagBlock`. -/
@@ -273,7 +305,7 @@ theorem detect_tag_only :
     unfold Unicode.Security.Identity.HomoglyphConfusable.detect
           Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
     rw [hds]; decide +kernel
-  simp only [detect, hi1]
+  simp only [detect, detectCore, hi1]
   decide
 
 /-- A pure-C2 attack — Latin A + VS16 — fires `.variationSelector`. -/
@@ -291,7 +323,7 @@ theorem detect_vs_only :
     unfold Unicode.Security.Identity.HomoglyphConfusable.detect
           Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
     rw [hds]; decide +kernel
-  simp only [detect, hi1]
+  simp only [detect, detectCore, hi1]
   decide
 
 /-- A pure-C3 attack — Latin H + ZWSP + i — fires `.zeroWidth`. -/
@@ -310,7 +342,7 @@ theorem detect_zw_only :
     unfold Unicode.Security.Identity.HomoglyphConfusable.detect
           Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
     rw [hds]; decide +kernel
-  simp only [detect, hi1]
+  simp only [detect, detectCore, hi1]
   decide
 
 /-- A pure-C5 attack — lone RLO — fires `.bidiControl`. -/
@@ -328,15 +360,16 @@ theorem detect_bidi_only :
     unfold Unicode.Security.Identity.HomoglyphConfusable.detect
           Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
     rw [hds]; decide +kernel
-  simp only [detect, hi1]
+  simp only [detect, detectCore, hi1]
   decide
 
 /-- A *balanced* isolate pair still fires `.bidiControl`.  This is the case the
     constituent exists to catch: `BidiControlBalance` classifies U+2066 followed
     by U+2069 as clear, because the run opens and closes, while a Trojan Source
     payload balances its controls precisely so the file it hides in still
-    parses.  Reading presence rather than the balance verdict is what keeps this
-    input reportable. -/
+    parses.  The span encloses nothing right-to-left, so it manages nothing;
+    reading purpose rather than the balance verdict is what keeps this input
+    reportable (`BidiControlPurpose.purposeless_balanced_empty_isolate`). -/
 theorem detect_balanced_bidi_fires :
     (detect [0x2066, 0x2069]).classify.tag = some "BidiControl" := by
   have hds : hasDecompositionSwap [0x2066, 0x2069] = false := by
@@ -351,7 +384,7 @@ theorem detect_balanced_bidi_fires :
     unfold Unicode.Security.Identity.HomoglyphConfusable.detect
           Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
     rw [hds]; decide +kernel
-  simp only [detect, hi1]
+  simp only [detect, detectCore, hi1]
   decide
 
 /-- A pure-I1 attack — Nethereum typosquat — fires `.identifierHomoglyph`.
@@ -375,7 +408,7 @@ theorem detect_homoglyph_only :
   -- The bidi constituent reads presence directly, so `detect` no longer calls
   -- BidiControlBalance and a hypothesis about that detector's verdict has
   -- nothing left to rewrite; `decide` closes the presence test.
-  simp only [detect, hc1, hc2, hc3, hi1]
+  simp only [detect, detectCore, hc1, hc2, hc3, hi1]
   decide
 
 /-- A compound attack — Latin A + VS16 + ZWSP — fires `.compound`. -/
@@ -394,7 +427,7 @@ theorem detect_compound_vs_plus_zw :
     unfold Unicode.Security.Identity.HomoglyphConfusable.detect
           Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
     rw [hds]; decide +kernel
-  simp only [detect, hi1]
+  simp only [detect, detectCore, hi1]
   decide
 
 /-- Tag + zero-width — also `.compound`. -/
@@ -413,7 +446,7 @@ theorem detect_compound_tag_plus_zw :
     unfold Unicode.Security.Identity.HomoglyphConfusable.detect
           Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
     rw [hds]; decide +kernel
-  simp only [detect, hi1]
+  simp only [detect, detectCore, hi1]
   decide
 
 /-- A clean code snippet "let x = 1;" is clear. -/
@@ -430,7 +463,7 @@ theorem detect_clean_code :
     unfold Unicode.Security.Identity.HomoglyphConfusable.detect
           Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
     rw [hds]; decide +kernel
-  simp only [detect, hi1]
+  simp only [detect, detectCore, hi1]
   decide
 
 /-- `safeForReview` mirrors `isClear`. -/
@@ -442,7 +475,7 @@ theorem safeForReview_matches_clear_empty :
     unfold Unicode.Security.Identity.HomoglyphConfusable.detect
           Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
     rw [hds]; decide +kernel
-  simp only [detect, hi1]
+  simp only [detect, detectCore, hi1]
   decide
 
 theorem safeForReview_matches_hazard_VS :
@@ -459,7 +492,7 @@ theorem safeForReview_matches_hazard_VS :
     unfold Unicode.Security.Identity.HomoglyphConfusable.detect
           Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
     rw [hds]; decide +kernel
-  simp only [detect, hi1]
+  simp only [detect, detectCore, hi1]
   decide
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -494,7 +527,7 @@ theorem detect_vs_inside_quote_pair_fires :
     unfold Unicode.Security.Identity.HomoglyphConfusable.detect
           Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
     rw [hds]; decide +kernel
-  simp only [detect, hi1]
+  simp only [detect, detectCore, hi1]
   decide
 
 /-- RLO "inside a line comment" — fires for the same reason.  Source-display
@@ -516,7 +549,7 @@ theorem detect_rlo_inside_line_comment_marker_fires :
     unfold Unicode.Security.Identity.HomoglyphConfusable.detect
           Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
     rw [hds]; decide +kernel
-  simp only [detect, hi1]
+  simp only [detect, detectCore, hi1]
   decide
 
 /-- RLO "inside a block comment" — fires. -/
@@ -538,7 +571,7 @@ theorem detect_rlo_inside_block_comment_fires :
     unfold Unicode.Security.Identity.HomoglyphConfusable.detect
           Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
     rw [hds]; decide +kernel
-  simp only [detect, hi1]
+  simp only [detect, detectCore, hi1]
   decide
 
 end Unicode.Security.Display.SourceDisplayDivergence

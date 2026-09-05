@@ -44,6 +44,10 @@ namespace Unicode.Conformance.Security.ConfusableBidiCompoundTest
 
 open Unicode.Security.Boundary.ConfusableBidiCompound
 
+-- The certificate reduces the bidi purpose walk, which looks up `Bidi_Class`
+-- per codepoint through a decision tree deeper than the default budget.
+set_option maxRecDepth 1000000
+
 -- ── §1  The certificate table ───────────────────────────────────────────────
 
 /-- One conformance row: an `input` codepoint sequence and the classification

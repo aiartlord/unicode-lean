@@ -723,8 +723,33 @@ pub fn profile_is_identifier_field(profile: Profile) -> bool {
     }
 }
 
+/// True iff the profile names a field of running text — prose or source, a
+/// whole file or message — rather than a single value. Mirrors the Lean
+/// `profileIsRunningText`. The identifier-scoped rungs (script composition,
+/// mixed direction, case expansion, locale case inversion, filename extension
+/// shape) and the declared-field detector `rtl_injection` ask questions that
+/// have no premise in running text, where a bilingual file, an Arabic literal
+/// and a capital I are content; they do not run on it.
+pub fn profile_is_running_text(profile: Profile) -> bool {
+    match profile {
+        Profile::DisplayName | Profile::ChatMessage | Profile::SourceCode => true,
+        Profile::GatewayHeader
+        | Profile::DomainName
+        | Profile::DnsLabel
+        | Profile::Url
+        | Profile::Username
+        | Profile::OpaqueSecret
+        | Profile::BinaryBlob => false,
+    }
+}
+
 pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
     let mut findings = Vec::new();
+    let running_text = profile_is_running_text(profile);
+    let homoglyph_ctx = homoglyph_confusable::Context {
+        identifier_field: profile_is_identifier_field(profile),
+        running_text,
+    };
 
     let tag = tag_block_payload::detect(input);
     push_finding(
@@ -796,8 +821,7 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
         positions_where(input, is_c1_control),
     );
 
-    let homoglyph =
-        homoglyph_confusable::detect_with_context(profile_is_identifier_field(profile), input);
+    let homoglyph = homoglyph_confusable::detect_with_context(homoglyph_ctx, input);
     let homoglyph_sub = homoglyph.sub.as_ref().map(|sub| sub.tag());
     // Every rung of the homoglyph ladder is reported, CrossScriptMix included.
     // `Unicode/Security/Policy.lean` maps every non-clear family result to a
@@ -820,8 +844,14 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
             },
         );
     }
-    if let Some(sub) =
-        homoglyph_confusable::mixed_script_verdict(input, profile_is_identifier_field(profile))
+    // Mixed-script admissibility asks about the script composition of one
+    // identifier; a source file or a message mixes scripts as content, so the
+    // family reports clear on running text (Lean: `mkGatedResult`).
+    if let Some(sub) = (!running_text)
+        .then(|| {
+            homoglyph_confusable::mixed_script_verdict(input, profile_is_identifier_field(profile))
+        })
+        .flatten()
     {
         push_finding(
             &mut findings,
@@ -832,7 +862,18 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
         );
     }
 
-    let rtl = rtl_injection::detect(input);
+    // RtlInjection judges a field declared left-to-right; running text declares
+    // no direction, so the family reports clear on it (Lean: `mkGatedResult`).
+    // Purposeless bidi controls in running text are reported by
+    // source-display-divergence, bidi-control-balance and filename-disguise.
+    let rtl = if running_text {
+        rtl_injection::Detection {
+            sub: None,
+            positions: Vec::new(),
+        }
+    } else {
+        rtl_injection::detect(input)
+    };
     if let Some(sub) = rtl.sub {
         push_finding(
             &mut findings,
@@ -871,10 +912,22 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
     // and the positions the detector localised.
     push_classified!(&mut findings, Family::EmojiZwjIntegrity, emoji_zwj_integrity::detect(input).classify);
     push_classified!(&mut findings, Family::SkinToneVariationForgery, skin_tone_variation_forgery::detect(input).classify);
-    push_classified!(&mut findings, Family::FilenameDisguise, filename_disguise::detect(input).classify);
-    push_classified!(&mut findings, Family::RendererDivergence, renderer_divergence::detect(input).classify);
+    push_classified!(
+        &mut findings,
+        Family::FilenameDisguise,
+        filename_disguise::detect_with_context(running_text, input).classify
+    );
+    push_classified!(
+        &mut findings,
+        Family::RendererDivergence,
+        renderer_divergence::detect_with_context(running_text, input).classify
+    );
     push_classified!(&mut findings, Family::StreamSafeViolation, stream_safe_violation::detect(input).classify);
-    push_classified!(&mut findings, Family::CaseExpansionMismatch, case_expansion_mismatch::detect(input).classify);
+    // Case expansion asks whether a length-checked value grows under case
+    // mapping; in running text ß and ﬁ are content (Lean: `mkGatedResult`).
+    if !running_text {
+        push_classified!(&mut findings, Family::CaseExpansionMismatch, case_expansion_mismatch::detect(input).classify);
+    }
     push_classified!(&mut findings, Family::IdentifierFormDrift, identifier_form_drift::detect(input).classify);
     push_classified!(&mut findings, Family::AdmissibilityFormDrift, admissibility_form_drift::detect(input).classify);
 
@@ -899,7 +952,16 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
         );
     }
 
-    let locale_case = locale_case_inversion::detect(input);
+    // Locale case inversion asks whether a credential folds differently across
+    // locales; in running text a capital I is content (Lean: `mkGatedResult`).
+    let locale_case = if running_text {
+        locale_case_inversion::Detection {
+            sub: None,
+            positions: Vec::new(),
+        }
+    } else {
+        locale_case_inversion::detect(input)
+    };
     if let Some(sub) = locale_case.sub {
         push_finding(
             &mut findings,
@@ -934,7 +996,7 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
 
     // SourceDisplayDivergence judges the input as a unit, so it localises
     // nothing and carries an empty position list.
-    let source_display = source_display_divergence::detect(input);
+    let source_display = source_display_divergence::detect_with_context(homoglyph_ctx, input);
     if let Some(sub) = source_display.sub {
         push_finding(
             &mut findings,

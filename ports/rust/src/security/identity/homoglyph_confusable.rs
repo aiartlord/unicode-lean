@@ -453,20 +453,40 @@ pub fn is_ascii_confusable(input: &[u32]) -> bool {
     input.iter().any(|&cp| cp >= 0x80) && ascii_skeleton(input).iter().all(|&cp| cp < 0x80)
 }
 
+/// What the caller knows about the field the input came from. Mirrors the Lean
+/// `Context`: `identifier_field` scopes the `AsciiConfusable` rung to a
+/// username, domain or DNS label; `running_text` says the input is prose or
+/// source — a whole file or message — where the script-composition rungs
+/// (`CrossScriptMix`, `RestrictionLow`) would judge a document as if it were
+/// one identifier and report every bilingual file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Context {
+    pub identifier_field: bool,
+    pub running_text: bool,
+}
+
+impl Default for Context {
+    /// The identifier reading the module has always taken.
+    fn default() -> Self {
+        Context {
+            identifier_field: true,
+            running_text: false,
+        }
+    }
+}
+
 /// The HomoglyphConfusable detection function, reading its input as the
 /// identifier the threat model describes. Mirrors the Lean `detect`, which is
 /// `detectWithContext` at the default context.
 pub fn detect(input: &[u32]) -> Verdict {
-    detect_with_context(true, input)
+    detect_with_context(Context::default(), input)
 }
 
 /// The HomoglyphConfusable detection function under an explicit field
-/// context. `identifier_field` mirrors the Lean `Context.identifierField`: the
-/// `AsciiConfusable` rung asks whether an identifier is a look-alike of an
-/// ASCII identifier, which is meaningful for a username, a domain or a DNS
-/// label and meaningless for running text, where a curly quote or a minus sign
-/// skeletons to ASCII and is ordinary content.
-pub fn detect_with_context(identifier_field: bool, input: &[u32]) -> Verdict {
+/// context (see [`Context`]). The target, math-alphabet, width and NFC rungs
+/// hold of any field; the script-composition rungs hold of an identifier
+/// only, and the ASCII-confusable rung of an identifier field only.
+pub fn detect_with_context(ctx: Context, input: &[u32]) -> Verdict {
     let skel = skeleton(input);
     let iskel = iterated_skeleton(input);
     let rl = ucd::restriction_level(input);
@@ -526,34 +546,38 @@ pub fn detect_with_context(identifier_field: bool, input: &[u32]) -> Verdict {
         return v;
     }
 
-    // Priority 5: CrossScriptMix.
-    let union = ucd::string_script_union(input);
-    if union.len() >= 2 && !ucd::is_highly_restrictive(input) {
-        v.kind = ClassificationKind::Hazard;
-        v.sub = Some(SubThreat::CrossScriptMix {
-            script_count: union.len(),
-        });
-        return v;
-    }
-
-    // Priority 6: RestrictionLow.
-    match rl {
-        RestrictionLevel::MinimallyRestrictive | RestrictionLevel::Unrestricted => {
+    // Priorities 5 and 6 ask about the script composition of one identifier;
+    // running text (a source file, a message) mixes scripts as content.
+    if !ctx.running_text {
+        // Priority 5: CrossScriptMix.
+        let union = ucd::string_script_union(input);
+        if union.len() >= 2 && !ucd::is_highly_restrictive(input) {
             v.kind = ClassificationKind::Hazard;
-            v.sub = Some(SubThreat::RestrictionLow { level: rl });
+            v.sub = Some(SubThreat::CrossScriptMix {
+                script_count: union.len(),
+            });
             return v;
         }
-        RestrictionLevel::AsciiOnly
-        | RestrictionLevel::SingleScript
-        | RestrictionLevel::HighlyRestrictive
-        | RestrictionLevel::ModeratelyRestrictive => {}
+
+        // Priority 6: RestrictionLow.
+        match rl {
+            RestrictionLevel::MinimallyRestrictive | RestrictionLevel::Unrestricted => {
+                v.kind = ClassificationKind::Hazard;
+                v.sub = Some(SubThreat::RestrictionLow { level: rl });
+                return v;
+            }
+            RestrictionLevel::AsciiOnly
+            | RestrictionLevel::SingleScript
+            | RestrictionLevel::HighlyRestrictive
+            | RestrictionLevel::ModeratelyRestrictive => {}
+        }
     }
 
     // Priority 7: AsciiConfusable, identifier fields only. Last, so an input
     // that also mixes scripts or sits in a historical script keeps the verdict
     // naming that structure; this rung is reached by the single-script,
     // well-restricted look-alike (`admın`) no earlier rung can see.
-    if identifier_field && is_ascii_confusable(input) {
+    if ctx.identifier_field && is_ascii_confusable(input) {
         v.kind = ClassificationKind::Hazard;
         v.sub = Some(SubThreat::AsciiConfusable {
             skeleton: ascii_skeleton(input),

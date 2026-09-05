@@ -64,8 +64,10 @@ theorem tag_block_family_verdict :
     simp
   have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
       [0xE0041, 0xE0042]).classify.tag = none := by
-    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
-  simp only [detect, hi1]
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect
+          Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
+    rw [hds]; decide +kernel
+  simp only [detect, detectCore, hi1]
   decide
 
 /-- A Latin A followed by VS16 (U+0041 U+FE0F) attaches an invisible
@@ -83,8 +85,10 @@ theorem variation_selector_family_verdict :
     simp
   have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
       [0x0041, 0xFE0F]).classify.tag = none := by
-    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
-  simp only [detect, hi1]
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect
+          Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
+    rw [hds]; decide +kernel
+  simp only [detect, detectCore, hi1]
   decide
 
 /-- A zero-width space spliced between two visible letters (U+0048 U+200B U+0069)
@@ -104,8 +108,10 @@ theorem zero_width_family_verdict :
     simp
   have hi1 : (Unicode.Security.Identity.HomoglyphConfusable.detect
       [0x0048, 0x200B, 0x69]).classify.tag = none := by
-    unfold Unicode.Security.Identity.HomoglyphConfusable.detect; rw [hds]; decide +kernel
-  simp only [detect, hi1]
+    unfold Unicode.Security.Identity.HomoglyphConfusable.detect
+          Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
+    rw [hds]; decide +kernel
+  simp only [detect, detectCore, hi1]
   decide
 
 /-- The complete certificate: every conformance vector above holds
@@ -159,7 +165,7 @@ def rowsList : List VectorRow := [
   ⟨[0x0048, 0x200B, 0x0069], "Hazard:ZeroWidth", []⟩,
   ⟨[0x0048, 0x200B, 0x0069, 0x200B, 0x0069], "Hazard:ZeroWidth", []⟩,
   ⟨[0x0048, 0x2060, 0x2060, 0x0069], "Hazard:ZeroWidth", []⟩,
-  ⟨[0x0048, 0x202F, 0x0069, 0x202F, 0x0021], "Hazard:ZeroWidth", []⟩,
+  ⟨[0x0048, 0x202F, 0x0069, 0x202F, 0x0021], "Hazard:Compound", []⟩,
   ⟨[0x202E, 0x0041], "Hazard:BidiControl", []⟩,
   ⟨[0x202C], "Hazard:BidiControl", []⟩,
   ⟨[0x2066, 0x0041], "Hazard:BidiControl", []⟩,

@@ -27,9 +27,16 @@
 
   Note on the confusables table: confusables.txt v16 maps
   U+006D 'm' to the sequence U+0072 U+006E ('rn').  Plain
-  ASCII inputs containing 'm' combined with any bidi format
-  control therefore fire `confusableInOverride` at the 'm'
+  ASCII inputs containing 'm' combined with any purposeless bidi
+  format control therefore fire `confusableInOverride` at the 'm'
   position.
+
+  Only purposeless controls count as the display channel
+  (`Unicode.Security.Display.BidiControlPurpose`): unbalanced
+  controls and balanced spans enclosing nothing right-to-left.
+  A balanced embedding around Arabic text renders that text as
+  written, so its co-occurrence with a confusable Arabic letter
+  is not the compound.
 
   Sub-threats (priority order, both reachable):
 
@@ -46,12 +53,17 @@
 
 import Unicode.Security.Calculus
 import Unicode.TrojanSource
+import Unicode.Security.Display.BidiControlPurpose
 import Unicode.Confusables
 
 namespace Unicode.Security.Boundary.ConfusableBidiCompound
 
 open Unicode.Security.Calculus
 open Unicode.TrojanSource (isBidiEmbeddingControl isBidiIsolateControl)
+
+-- The spot checks reduce the purpose walk, which looks up `Bidi_Class` per
+-- codepoint through a decision tree deeper than the default recursion budget.
+set_option maxRecDepth 1000000
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §1 Per-position scans
@@ -71,17 +83,21 @@ def firstConfusablePos (input : List Nat) : Option Nat :=
   input.zipIdx.findSome? (fun cpWithIdx =>
     if isConfusableCp cpWithIdx.1 then some cpWithIdx.2 else none)
 
-/-- First input position holding an override-class bidi control
-    (LRE / RLE / LRO / RLO / PDF). -/
+/-- First input position holding a purposeless override-class bidi control
+    (LRE / RLE / LRO / RLO / PDF).  A control span that manages right-to-left
+    text (`Unicode.Security.Display.BidiControlPurpose`) is not the display
+    channel this compound pairs with a confusable: a balanced embedding around
+    an Arabic literal beside a confusable Arabic letter is the literal rendered
+    as written, not a reorder. -/
 def firstOverridePos (input : List Nat) : Option Nat :=
-  input.zipIdx.findSome? (fun cpWithIdx =>
-    if isBidiEmbeddingControl cpWithIdx.1 then some cpWithIdx.2 else none)
+  (Unicode.Security.Display.BidiControlPurpose.purposelessControlPositions input).find?
+    (fun pos => isBidiEmbeddingControl (input.getD pos 0))
 
-/-- First input position holding an isolate-class bidi control
+/-- First input position holding a purposeless isolate-class bidi control
     (LRI / RLI / FSI / PDI). -/
 def firstIsolatePos (input : List Nat) : Option Nat :=
-  input.zipIdx.findSome? (fun cpWithIdx =>
-    if isBidiIsolateControl cpWithIdx.1 then some cpWithIdx.2 else none)
+  (Unicode.Security.Display.BidiControlPurpose.purposelessControlPositions input).find?
+    (fun pos => isBidiIsolateControl (input.getD pos 0))
 
 /-- Total count of confusable cps in `input`. -/
 def confusableCount (input : List Nat) : Nat :=

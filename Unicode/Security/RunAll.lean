@@ -107,6 +107,16 @@ structure Context where
       so `RtlInjection`'s left-to-right premise does not hold of it.  A bidi
       format control remains a hazard in either direction. -/
   fieldDirection  : Unicode.Security.Display.RtlInjection.FieldDirection := .LTR
+  /-- Whether the field is running text — prose or source, a whole file or a
+      message — rather than a single value.  The identifier-scoped rungs
+      (script composition, mixed direction, case expansion, locale case
+      inversion, filename extension shape) and the declared-field detector
+      `RtlInjection` ask questions with no premise in running text, where a
+      bilingual file, an Arabic literal and a capital I are content; under this
+      reading they report clear.  Purposeless bidi controls, covert payloads,
+      form drift and the presentation rungs hold of any field and still run.
+      Defaults to `false`, the single-value reading each family already took. -/
+  runningText     : Bool := false
   deriving DecidableEq, Repr, Inhabited
 
 /-- Run every Security Conformance Layer detector on `input` under the field
@@ -138,20 +148,25 @@ def runAllWithContext (ctx : Context) (input : List Nat) : List FamilyResult :=
         : Unicode.Security.Covert.SurrogateReassembly.Verdict)
   let c5 := Unicode.Security.Covert.BidiControlBalance.detect        input
   let c6 := Unicode.Security.Covert.NoncharacterControl.detect       input
-  let i1 :=
-    Unicode.Security.Identity.HomoglyphConfusable.detectWithContext
-      { identifierField := ctx.identifierField } input
+  let homoglyphCtx : Unicode.Security.Identity.HomoglyphConfusable.Context :=
+    { identifierField := ctx.identifierField, runningText := ctx.runningText }
+  let i1 := Unicode.Security.Identity.HomoglyphConfusable.detectWithContext homoglyphCtx input
   let i2 :=
     Unicode.Security.Identity.MixedScriptAdmissibility.detectWithContext
       { identifierField := ctx.identifierField } input
   let i3 := Unicode.Security.Identity.EmojiZwjIntegrity.detect       input
   let i4 := Unicode.Security.Identity.SkinToneVariationForgery.detect input
-  let d1 := Unicode.Security.Display.SourceDisplayDivergence.detect  input
-  let d2 := Unicode.Security.Display.FilenameDisguise.detect         input
+  let d1 :=
+    Unicode.Security.Display.SourceDisplayDivergence.detectWithContext homoglyphCtx input
+  let d2 :=
+    Unicode.Security.Display.FilenameDisguise.detectWithContext
+      { runningText := ctx.runningText } input
   let d3 :=
     Unicode.Security.Display.RtlInjection.detectWithContext
       ctx.fieldDirection input
-  let d4 := Unicode.Security.Display.RendererDivergence.detect       input
+  let d4 :=
+    Unicode.Security.Display.RendererDivergence.detectWithContext
+      { runningText := ctx.runningText } input
   let f1 := Unicode.Security.Form.NormalizationBomb.detect           input
   let f2 := Unicode.Security.Form.StreamSafeViolation.detect         input
   let f3 := Unicode.Security.Form.LocaleCaseInversion.detect         input
@@ -172,17 +187,24 @@ def runAllWithContext (ctx : Context) (input : List Nat) : List FamilyResult :=
      mkResult .bidiControlBalance       c5.classify.isClear c5.classify.tag c5.classify.positions,
      mkResult .noncharacterControl      c6.classify.isClear c6.classify.tag c6.classify.positions,
      mkResult .homoglyphConfusable      i1.classify.isClear i1.classify.tag i1.classify.positions,
-     mkResult .mixedScriptAdmissibility i2.classify.isClear i2.classify.tag i2.classify.positions,
+     -- Identifier admissibility, a declared-LTR field, a length-checked value
+     -- and a locale-folded credential are questions about a single value; in
+     -- running text the family reports clear (see `Context.runningText`).
+     mkGatedResult .mixedScriptAdmissibility (!ctx.runningText)
+       i2.classify.isClear i2.classify.tag i2.classify.positions,
      mkResult .emojiZwjIntegrity        i3.classify.isClear i3.classify.tag i3.classify.positions,
      mkResult .skinToneVariationForgery i4.classify.isClear i4.classify.tag i4.classify.positions,
      mkResult .sourceDisplayDivergence  d1.classify.isClear d1.classify.tag d1.classify.positions,
      mkResult .filenameDisguise         d2.classify.isClear d2.classify.tag d2.classify.positions,
-     mkResult .rtlInjection             d3.classify.isClear d3.classify.tag d3.classify.positions,
+     mkGatedResult .rtlInjection (!ctx.runningText)
+       d3.classify.isClear d3.classify.tag d3.classify.positions,
      mkResult .rendererDivergence       d4.classify.isClear d4.classify.tag d4.classify.positions,
      mkResult .normalizationBomb        f1.classify.isClear f1.classify.tag f1.classify.positions,
      mkResult .streamSafeViolation      f2.classify.isClear f2.classify.tag f2.classify.positions,
-     mkResult .localeCaseInversion      f3.classify.isClear f3.classify.tag f3.classify.positions,
-     mkResult .caseExpansionMismatch    f4.classify.isClear f4.classify.tag f4.classify.positions,
+     mkGatedResult .localeCaseInversion (!ctx.runningText)
+       f3.classify.isClear f3.classify.tag f3.classify.positions,
+     mkGatedResult .caseExpansionMismatch (!ctx.runningText)
+       f4.classify.isClear f4.classify.tag f4.classify.positions,
      mkResult .widthClassConfusion      f5.classify.isClear f5.classify.tag f5.classify.positions,
      mkResult .nfcIdempotenceWitness    f6.classify.isClear f6.classify.tag f6.classify.positions,
      mkResult .identifierFormDrift      x1.classify.isClear x1.classify.tag x1.classify.positions,

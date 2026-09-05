@@ -186,12 +186,13 @@ fn dot_positions(input: &[u32]) -> Vec<usize> {
         .collect()
 }
 
-/// Position and codepoint of the first bidi format-control.
+/// Position and codepoint of the first purposeless bidi format-control:
+/// unbalanced, or a balanced span enclosing nothing right-to-left in a
+/// left-to-right context (`bidi_control_purpose`). A balanced embedding around
+/// an Arabic filename segment manages that segment and is not a flip. Mirrors
+/// the Lean `detect`, which reads `BidiControlPurpose.firstPurposelessControl`.
 fn first_bidi_control(input: &[u32]) -> Option<(usize, u32)> {
-    input
-        .iter()
-        .enumerate()
-        .find_map(|(idx, &cp)| if is_bidi_format_control(cp) { Some((idx, cp)) } else { None })
+    crate::security::display::bidi_control_purpose::first_purposeless_control(input)
 }
 
 /// Position and codepoint of the first fullwidth/halfwidth codepoint at or after `start`.
@@ -236,8 +237,20 @@ fn count_extend_from(input: &[u32], start: usize) -> usize {
 // §4 Top-level detection
 // ─────────────────────────────────────────────────────────────────────
 
-/// The FilenameDisguise detection function.
+/// The FilenameDisguise detection function, reading its input as one filename.
+/// Mirrors the Lean `detect`, which is `detectWithContext` at the default
+/// context.
 pub fn detect(input: &[u32]) -> Verdict {
+    detect_with_context(false, input)
+}
+
+/// The FilenameDisguise detection function under an explicit field context.
+/// `running_text` mirrors the Lean `Context.runningText`: the extension rungs
+/// (fullwidth or combining marks in the extension, three or more extensions)
+/// read the text after the last dot as a file extension, which a source file
+/// or a message does not have, so they do not run on running text; the
+/// purposeless-bidi-control rung holds of any field.
+pub fn detect_with_context(running_text: bool, input: &[u32]) -> Verdict {
     let dots = dot_positions(input);
     let last_dot = dots.last().copied();
     let ext_start = match last_dot {
@@ -249,7 +262,7 @@ pub fn detect(input: &[u32]) -> Verdict {
     let ext_in_ext = count_extend_from(input, ext_start);
 
     let classification = match first_bidi_control(input) {
-        // Priority 1: any bidi format-control.
+        // Priority 1: a purposeless bidi format-control.
         Some((pos, ctl_cp)) => Classification::Hazard {
             sub: SubThreat::RloFlip {
                 position: pos,
@@ -258,6 +271,7 @@ pub fn detect(input: &[u32]) -> Verdict {
             positions: vec![pos],
             decoded: Vec::new(),
         },
+        None if running_text => Classification::Clear,
         None => match first_fullwidth_from(input, ext_start) {
             // Priority 2: fullwidth/halfwidth in the extension.
             Some((pos, cp)) => Classification::Hazard {

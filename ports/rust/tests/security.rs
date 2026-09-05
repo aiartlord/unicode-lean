@@ -289,7 +289,29 @@ fn homoglyph_sharp_s_clear() {
 // field the rung does not judge the input.
 #[test]
 fn homoglyph_running_text_dotless_i_clear() {
-    let v = homoglyph_confusable::detect_with_context(false, &[0x61, 0x64, 0x6D, 0x0131, 0x6E]);
+    let ctx = homoglyph_confusable::Context {
+        identifier_field: false,
+        running_text: false,
+    };
+    let v = homoglyph_confusable::detect_with_context(ctx, &[0x61, 0x64, 0x6D, 0x0131, 0x6E]);
+    assert_eq!(v.kind, ClassificationKind::Clear);
+}
+
+// Running text: a bilingual file mixes scripts as content, so the
+// script-composition rungs do not judge it; `abαβ` reports clear there while
+// the identifier reading still reports CrossScriptMix.
+#[test]
+fn homoglyph_running_text_cross_script_clear() {
+    let input = [0x61, 0x62, 0x03B1, 0x03B2];
+    assert_eq!(
+        homoglyph_confusable::detect(&input).sub.as_ref().map(|s| s.tag()),
+        Some("CrossScriptMix")
+    );
+    let ctx = homoglyph_confusable::Context {
+        identifier_field: false,
+        running_text: true,
+    };
+    let v = homoglyph_confusable::detect_with_context(ctx, &input);
     assert_eq!(v.kind, ClassificationKind::Clear);
 }
 

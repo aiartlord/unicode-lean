@@ -317,6 +317,27 @@ def profileIsIdentifierField : Profile → Bool
   | .opaqueSecret  => false
   | .binaryBlob    => false
 
+/-- True iff the profile names a field of running text — prose or source, a
+    whole file or message — rather than a single value.
+
+    A display name, a chat message and a source file legitimately mix scripts,
+    carry both directions, contain ß and a capital I, and have no file
+    extension.  The rungs that ask those questions of one identifier
+    (`RunAll.Context.runningText`) report clear on such a field; the covert
+    payloads, purposeless bidi controls, form drift and presentation rungs
+    still run on it.  Every other profile holds one value. -/
+def profileIsRunningText : Profile → Bool
+  | .displayName   => true
+  | .chatMessage   => true
+  | .sourceCode    => true
+  | .gatewayHeader => false
+  | .domainName    => false
+  | .dnsLabel      => false
+  | .url           => false
+  | .username      => false
+  | .opaqueSecret  => false
+  | .binaryBlob    => false
+
 /-- Runtime scan over a codepoint array. Byte decoding and wire-format framing
     belong one layer above this function; this is the profile/policy decision
     over already-decoded codepoints.
@@ -331,7 +352,8 @@ def scan (profile : Profile) (mode : Mode) (input : List Nat) : Verdict :=
   let results :=
     Unicode.Security.RunAll.runAllWithContext
       { identifierField := profileIsIdentifierField profile,
-        cryptoField     := false } input
+        cryptoField     := false,
+        runningText     := profileIsRunningText profile } input
   let findings := findingsOfResults results
   {
     input       := input,

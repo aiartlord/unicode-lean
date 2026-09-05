@@ -39,10 +39,21 @@ fn first_pos(input: &[u32], pred: impl Fn(u32) -> bool) -> Option<usize> {
     input.iter().position(|&cp| pred(cp))
 }
 
-/// Detect a confusable codepoint sharing the input with a bidi control.
-/// Priority mirrors the spec: with a confusable present, an override-class
-/// control fires `ConfusableInOverride`; otherwise an isolate-class control
-/// fires `ConfusableInIsolate`; otherwise clear.
+/// First position of a purposeless bidi control satisfying `pred`. Only
+/// purposeless controls (`bidi_control_purpose`: unbalanced, or a balanced span
+/// enclosing nothing right-to-left) count as the display channel this compound
+/// pairs with a confusable; a balanced embedding around Arabic text renders that
+/// text as written. Mirrors the Lean `firstOverridePos` / `firstIsolatePos`.
+fn first_purposeless_pos(input: &[u32], pred: impl Fn(u32) -> bool) -> Option<usize> {
+    crate::security::display::bidi_control_purpose::purposeless_control_positions(input)
+        .into_iter()
+        .find(|&pos| input.get(pos).is_some_and(|&cp| pred(cp)))
+}
+
+/// Detect a confusable codepoint sharing the input with a purposeless bidi
+/// control. Priority mirrors the spec: with a confusable present, an
+/// override-class control fires `ConfusableInOverride`; otherwise an
+/// isolate-class control fires `ConfusableInIsolate`; otherwise clear.
 pub fn detect(input: &[u32]) -> Detection {
     let confusable_pos = match first_pos(input, is_confusable_source) {
         Some(pos) => pos,
@@ -53,13 +64,13 @@ pub fn detect(input: &[u32]) -> Detection {
             }
         }
     };
-    if let Some(bidi_pos) = first_pos(input, is_override) {
+    if let Some(bidi_pos) = first_purposeless_pos(input, is_override) {
         return Detection {
             sub: Some("ConfusableInOverride"),
             positions: vec![confusable_pos, bidi_pos],
         };
     }
-    if let Some(bidi_pos) = first_pos(input, is_isolate) {
+    if let Some(bidi_pos) = first_purposeless_pos(input, is_isolate) {
         return Detection {
             sub: Some("ConfusableInIsolate"),
             positions: vec![confusable_pos, bidi_pos],

@@ -98,6 +98,13 @@
       "required_findings": [
         "unicode.security.I.homoglyph-confusable.RestrictionLow"
       ]
+    },
+    {
+      "name": "dotless-i-admin-ascii-confusable",
+      "input": [97, 100, 109, 305, 110],
+      "required_findings": [
+        "unicode.security.I.homoglyph-confusable.AsciiConfusable"
+      ]
     }
   ]
 }

@@ -171,8 +171,18 @@ def firstCombiningStack
 -- §4 Top-level detection
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The RendererDivergence detection function. -/
-def detect (input : List Nat) : Verdict :=
+/-- What the caller knows about the field the input came from.  A source file
+    or a message carries both directions as content, so the mixed-direction
+    rung is meaningless for it and does not run under `runningText`; the four
+    presentation rungs hold of any field.  Defaults to the single-string
+    reading this module has always taken, so `detect` is unchanged. -/
+structure Context where
+  runningText : Bool := false
+  deriving DecidableEq, Repr, Inhabited
+
+/-- The RendererDivergence detection function under an explicit field
+    context. -/
+def detectWithContext (ctx : Context) (input : List Nat) : Verdict :=
   let vsCount := countVS input
   let combCount := countCombining input
   let fwCount := countFullwidth input
@@ -204,8 +214,9 @@ def detect (input : List Nat) : Verdict :=
           | some (pos, cp) =>
             .hazard (.fullwidthVariance pos cp) [pos] []
           | none =>
-            -- Priority 5: mixed direction.
-            if ltrCount > 0 ∧ rtlCount > 0 then
+            -- Priority 5: mixed direction.  Running text carries both
+            -- directions as content and is not judged by this rung.
+            if !ctx.runningText && Nat.blt 0 ltrCount && Nat.blt 0 rtlCount then
               .hazard (.mixedDirectionVariance ltrCount rtlCount)
                 [] []
             else
@@ -218,6 +229,11 @@ def detect (input : List Nat) : Verdict :=
     hasZwj := zwjPresent,
     strongLTRCount := ltrCount,
     strongRTLCount := rtlCount }
+
+/-- The RendererDivergence detection function, reading its input as one string
+    a renderer presents. -/
+def detect (input : List Nat) : Verdict :=
+  detectWithContext {} input
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §5 Projection helpers

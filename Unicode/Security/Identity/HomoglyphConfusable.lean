@@ -364,6 +364,12 @@ def isAsciiConfusable (input : List Nat) : Bool :=
     Mirrors `Unicode.Security.Identity.MixedScriptAdmissibility.Context`. -/
 structure Context where
   identifierField : Bool := true
+  /-- Whether the input is running text — prose or source, a whole file or a
+      message.  `crossScriptMix` and `restrictionLow` ask about the script
+      composition of one identifier; a bilingual file mixes scripts as content,
+      so under this reading those two rungs do not run.  The target, math
+      alphabet, width and NFC rungs hold of any field. -/
+  runningText     : Bool := false
   deriving DecidableEq, Repr, Inhabited
 
 /-- The HomoglyphConfusable detection function, under an explicit field
@@ -402,9 +408,9 @@ def detectWithContext (ctx : Context) (input : List Nat) : Verdict :=
           .hazard (.decompositionSwap diffPos) [diffPos] []
         else
           let sc := crossScriptCount input
-          if sc ≥ 2 ∧ ¬ Unicode.Restriction.isHighlyRestrictive input then
+          if !ctx.runningText && Nat.ble 2 sc && !Unicode.Restriction.isHighlyRestrictive input then
             .hazard (.crossScriptMix sc) [] []
-          else if rl = .MinimallyRestrictive ∨ rl = .Unrestricted then
+          else if !ctx.runningText && decide (rl = .MinimallyRestrictive ∨ rl = .Unrestricted) then
             .hazard (.restrictionLow rl) [] []
           else if ctx.identifierField && isAsciiConfusable input then
             .hazard (.asciiConfusable (asciiSkeleton input)) (nonAsciiPositions input) []

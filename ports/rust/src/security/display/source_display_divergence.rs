@@ -13,8 +13,9 @@
 //! region-agnostically — payloads inside string literals or comments count.
 
 use crate::security::calculus::ClassificationKind;
-use crate::security::covert::{bidi_control_balance, tag_block_payload, zero_width_payload};
 use crate::security::covert::variation_selector_payload;
+use crate::security::covert::{tag_block_payload, zero_width_payload};
+use crate::security::display::bidi_control_purpose;
 use crate::security::identity::homoglyph_confusable;
 
 /// One source-display-divergence scan result.  `sub` is `None` for a clear
@@ -31,8 +32,18 @@ fn fired(kind: ClassificationKind) -> bool {
     kind != ClassificationKind::Clear
 }
 
-/// Aggregate the five constituent detectors into a single D1 verdict.
+/// Aggregate the five constituent detectors into a single D1 verdict, reading
+/// the input as the identifier its constituents assume. Mirrors the Lean
+/// `detect`, which is `detectWithContext` at the default context.
 pub fn detect(input: &[u32]) -> Detection {
+    detect_with_context(homoglyph_confusable::Context::default(), input)
+}
+
+/// Aggregate under an explicit field context, which the homoglyph constituent
+/// reads: in running text the script-composition and ASCII-confusable rungs do
+/// not judge a whole file as one identifier. The covert constituents and the
+/// bidi purpose rule hold of any field. Mirrors the Lean `detectWithContext`.
+pub fn detect_with_context(ctx: homoglyph_confusable::Context, input: &[u32]) -> Detection {
     // Constituent family tags in canonical aggregation order: C1 tag-block,
     // C2 variation-selector, C3 zero-width, C5 bidi-control, I1 homoglyph.
     let mut fires: Vec<&'static str> = Vec::new();
@@ -45,13 +56,16 @@ pub fn detect(input: &[u32]) -> Detection {
     if fired(zero_width_payload::detect(input).kind) {
         fires.push("ZeroWidth");
     }
-    // Presence, not balance. A Trojan Source payload balances its controls --
+    // Purpose, not balance. A Trojan Source payload balances its controls --
     // an unbalanced run breaks the file it is hiding in -- so a constituent
-    // built on bidi_control_balance is blind to the shape the attack takes.
-    if input.iter().any(|&cp| bidi_control_balance::is_bidi_format_control(cp)) {
+    // built on bidi_control_balance is blind to the shape the attack takes;
+    // what every payload shares is a control span with nothing right-to-left
+    // to manage. A balanced embedding around an Arabic literal is purposeful
+    // and is not a divergence.
+    if bidi_control_purpose::has_purposeless_control(input) {
         fires.push("BidiControl");
     }
-    if fired(homoglyph_confusable::detect(input).kind) {
+    if fired(homoglyph_confusable::detect_with_context(ctx, input).kind) {
         fires.push("IdentifierHomoglyph");
     }
 

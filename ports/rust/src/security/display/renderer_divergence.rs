@@ -280,7 +280,19 @@ fn first_combining_stack(input: &[u32], min_stack: usize) -> Option<(usize, usiz
 // ─────────────────────────────────────────────────────────────────────
 
 /// The RendererDivergence detection function.
+/// The RendererDivergence detection function, reading its input as one string
+/// a renderer presents. Mirrors the Lean `detect`, which is
+/// `detectWithContext` at the default context.
 pub fn detect(input: &[u32]) -> Verdict {
+    detect_with_context(false, input)
+}
+
+/// The RendererDivergence detection function under an explicit field context.
+/// `running_text` mirrors the Lean `Context.runningText`: a source file or a
+/// message carries both directions as content, so the mixed-direction rung is
+/// meaningless for it and does not run; the four presentation rungs hold of any
+/// field.
+pub fn detect_with_context(running_text: bool, input: &[u32]) -> Verdict {
     let vs_count = count_vs(input);
     let combining_count = count_combining(input);
     let fullwidth_count = count_fullwidth(input);
@@ -330,8 +342,10 @@ pub fn detect(input: &[u32]) -> Verdict {
                                     decoded: Vec::new(),
                                 },
                                 None => {
-                                    // Priority 5: mixed direction.
-                                    if ltr_count > 0 && rtl_count > 0 {
+                                    // Priority 5: mixed direction. Running text
+                                    // carries both directions as content and is
+                                    // not judged by this rung.
+                                    if !running_text && ltr_count > 0 && rtl_count > 0 {
                                         Classification::Hazard {
                                             sub: SubThreat::MixedDirectionVariance {
                                                 ltr_count,

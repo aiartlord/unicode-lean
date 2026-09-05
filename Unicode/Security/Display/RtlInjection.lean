@@ -48,6 +48,7 @@
 import Unicode.Security.Calculus
 import Unicode.TrojanSource
 import Unicode.Bidi.Algorithm
+import Unicode.Security.Display.BidiControlPurpose
 
 namespace Unicode.Security.Display.RtlInjection
 
@@ -85,20 +86,17 @@ structure Verdict where
 -- §2 Core predicates
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- True iff the codepoint's `Bidi_Class` is strong RTL (R or AL). -/
+/-- True iff the codepoint's `Bidi_Class` is strong RTL (R or AL).  The one
+    definition lives in `BidiControlPurpose`, which this module and the purpose
+    rule share. -/
 @[inline]
 def isStrongRTL (cp : Nat) : Bool :=
-  match Unicode.Bidi.Algorithm.lookupBidiClass cp with
-  | .R       => true
-  | .AL      => true
-  | otherBc  => Function.const BidiClass false otherBc
+  Unicode.Security.Display.BidiControlPurpose.isStrongRTL cp
 
 /-- True iff the codepoint's `Bidi_Class` is strong LTR (L). -/
 @[inline]
 def isStrongLTR (cp : Nat) : Bool :=
-  match Unicode.Bidi.Algorithm.lookupBidiClass cp with
-  | .L       => true
-  | otherBc  => Function.const BidiClass false otherBc
+  Unicode.Security.Display.BidiControlPurpose.isStrongLTR cp
 
 /-- True iff `cp` is one of the 9 bidi format-controls. -/
 @[inline]
