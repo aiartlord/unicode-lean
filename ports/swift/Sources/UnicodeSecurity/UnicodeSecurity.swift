@@ -124,9 +124,18 @@ func profileIsIdentifierField(_ profile: String) -> Bool {
     profile == Profile.domainName || profile == Profile.dnsLabel || profile == Profile.username
 }
 
+/// True iff the profile reads its input as running text -- a source line, a
+/// message, a display name -- rather than one identifier. The identifier
+/// families then judge each identifier-shaped token of the line on its own, and
+/// the field-wide families that read the line as one identifier or one filename
+/// report clear. Mirrors profileIsRunningText in Unicode/Security/Policy.lean.
+func profileIsRunningText(_ profile: String) -> Bool {
+    profile == Profile.displayName || profile == Profile.chatMessage || profile == Profile.sourceCode
+}
+
 public func scan(profile: String, mode: String, input: [Int]) -> Verdict {
     let codepoints = input.map(ensureCodepoint)
-    let findings = detect(codepoints, profileIsIdentifierField(profile))
+    let findings = detect(codepoints, profileIsIdentifierField(profile), profileIsRunningText(profile))
     return Verdict(
         action: decide(profile: profile, mode: mode, findings: findings),
         profile: profile,
@@ -193,8 +202,15 @@ public func verdictJson(_ verdict: Verdict) -> String {
 
 // detect runs every family over input. identifierField carries what the caller
 // knows about the field, mirroring Unicode.Security.RunAll's Context: a family
-// scoped to identifiers needs to know whether it is holding one.
-private func detect(_ input: [Int], _ identifierField: Bool) -> [Finding] {
+// scoped to identifiers needs to know whether it is holding one. runningText is
+// the Context's other reading: under it the homoglyph and mixed-script families
+// read the input per identifier-shaped token, rtl-injection,
+// locale-case-inversion and case-expansion-mismatch (which read the whole field
+// as one identifier) report clear, filename-disguise runs only its
+// purposeless-control rung, renderer-divergence drops its mixed-direction rung,
+// and the source-display-divergence aggregate reads the homoglyph verdict this
+// scan produced.
+private func detect(_ input: [Int], _ identifierField: Bool, _ runningText: Bool) -> [Finding] {
     var findings: [Finding] = []
     let tagPositions = positionsWhere(input, isTagCharacter)
     if !tagPositions.isEmpty {
@@ -228,13 +244,21 @@ private func detect(_ input: [Int], _ identifierField: Bool) -> [Finding] {
             positions: bidi.positions))
     }
     findings.append(contentsOf: noncharacterControlFindings(input))
-    if let homoglyph = homoglyphConfusableFinding(input) {
+    let homoglyph = runningText
+        ? homoglyphOverTokens(input)
+        : homoglyphConfusableFindingWithContext(input, HomoglyphContext(runningText: false, identifierToken: false))
+    if let homoglyph = homoglyph {
         findings.append(homoglyph)
     }
-    if let mixedScript = mixedScriptAdmissibilityFinding(input, identifierField) {
+    let mixedScript = runningText
+        ? mixedScriptOverTokens(input)
+        : mixedScriptAdmissibilityFinding(input, identifierField)
+    if let mixedScript = mixedScript {
         findings.append(mixedScript)
     }
-    if let rtl = rtlInjectionFinding(input) {
+    // Families that read the whole field as one identifier report clear on
+    // running text. Mirrors the Lean mkGatedResult.
+    if !runningText, let rtl = rtlInjectionFinding(input) {
         findings.append(rtl)
     }
     if let compound = confusableBidiCompoundFinding(input) {
@@ -251,11 +275,11 @@ private func detect(_ input: [Int], _ identifierField: Bool) -> [Finding] {
     if !skinTone.isClear, let tag = skinTone.tag {
         findings.append(makeFinding(family: Family.skinToneVariationForgery, subThreat: tag, positions: skinTone.positions))
     }
-    let filenameDisguise = filenameDisguiseDetect(input).classify
+    let filenameDisguise = filenameDisguiseDetectWithContext(runningText, input).classify
     if !filenameDisguise.isClear, let tag = filenameDisguise.tag {
         findings.append(makeFinding(family: Family.filenameDisguise, subThreat: tag, positions: filenameDisguise.positions))
     }
-    let rendererDivergence = rendererDivergenceDetect(input).classify
+    let rendererDivergence = rendererDivergenceDetectWithContext(runningText, input).classify
     if !rendererDivergence.isClear, let tag = rendererDivergence.tag {
         findings.append(makeFinding(family: Family.rendererDivergence, subThreat: tag, positions: rendererDivergence.positions))
     }
@@ -263,9 +287,11 @@ private func detect(_ input: [Int], _ identifierField: Bool) -> [Finding] {
     if !streamSafe.isClear, let tag = streamSafe.tag {
         findings.append(makeFinding(family: Family.streamSafeViolation, subThreat: tag, positions: streamSafe.positions))
     }
-    let caseExpansion = caseExpansionMismatchDetect(input).classify
-    if !caseExpansion.isClear, let tag = caseExpansion.tag {
-        findings.append(makeFinding(family: Family.caseExpansionMismatch, subThreat: tag, positions: caseExpansion.positions))
+    if !runningText {
+        let caseExpansion = caseExpansionMismatchDetect(input).classify
+        if !caseExpansion.isClear, let tag = caseExpansion.tag {
+            findings.append(makeFinding(family: Family.caseExpansionMismatch, subThreat: tag, positions: caseExpansion.positions))
+        }
     }
     let identifierDrift = identifierFormDriftDetect(input).classify
     if !identifierDrift.isClear, let tag = identifierDrift.tag {
@@ -279,9 +305,11 @@ private func detect(_ input: [Int], _ identifierField: Bool) -> [Finding] {
     if let sub = normalizationBomb.subThreat {
         findings.append(makeFinding(family: Family.normalizationBomb, subThreat: sub, positions: normalizationBomb.positions))
     }
-    let localeCase = localeCaseInversionDetect(input)
-    if let sub = localeCase.subThreat {
-        findings.append(makeFinding(family: Family.localeCaseInversion, subThreat: sub, positions: localeCase.positions))
+    if !runningText {
+        let localeCase = localeCaseInversionDetect(input)
+        if let sub = localeCase.subThreat {
+            findings.append(makeFinding(family: Family.localeCaseInversion, subThreat: sub, positions: localeCase.positions))
+        }
     }
     let nfcWitness = nfcIdempotenceWitnessDetect(input)
     if let sub = nfcWitness.subThreat {
@@ -292,12 +320,103 @@ private func detect(_ input: [Int], _ identifierField: Bool) -> [Finding] {
         findings.append(makeFinding(family: Family.widthClassConfusion, subThreat: sub, positions: widthClass.positions))
     }
     // SourceDisplayDivergence judges the input as a unit, so it localises
-    // nothing and carries an empty position list.
-    let sourceDisplay = sourceDisplayDivergenceDetect(input)
+    // nothing and carries an empty position list. Its homoglyph constituent is
+    // the verdict this scan produced, so the two agree on running text.
+    let sourceDisplay = sourceDisplayDivergenceDetectCore(input, homoglyph != nil)
     if let sub = sourceDisplay.sub {
         findings.append(makeFinding(family: Family.sourceDisplayDivergence, subThreat: sub, positions: []))
     }
     return findings
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// IdentifierTokens — identifier-shaped tokens of a running-text field.
+//
+// Direct port of Unicode/Security/Identity/IdentifierTokens.lean. A source
+// line, a chat message or a display name is not one identifier, but the
+// identifier-shaped words inside it are the surface a homoglyph attack targets
+// (`scоpe` with a Cyrillic о in `let scоpe = 1;`). A token is a maximal run of
+// XID_Continue codepoints; everything else (space, punctuation, operators,
+// format controls) separates tokens. Each token carries its start position so a
+// finding made on the token can be reported in input coordinates. XID_Continue
+// is the port's own `isXidContinue` over the bundled DerivedCoreProperties.txt.
+// ─────────────────────────────────────────────────────────────────────
+
+/// One identifier-shaped run: its start position in the input and its
+/// codepoints.
+public struct IdentifierToken: Equatable {
+    public let start: Int
+    public let cps: [Int]
+}
+
+/// The maximal XID_Continue runs of the input, in input order.
+public func identifierTokens(_ input: [Int]) -> [IdentifierToken] {
+    var tokens: [IdentifierToken] = []
+    var start = 0
+    var current: [Int]? = nil
+    for (idx, cp) in input.enumerated() {
+        if isXidContinue(cp) {
+            if current == nil {
+                current = []
+                start = idx
+            }
+            current?.append(cp)
+        } else if let run = current {
+            tokens.append(IdentifierToken(start: start, cps: run))
+            current = nil
+        }
+    }
+    if let run = current {
+        tokens.append(IdentifierToken(start: start, cps: run))
+    }
+    return tokens
+}
+
+/// Move token-local positions back into input coordinates.
+public func identifierTokensShiftPositions(_ start: Int, _ positions: [Int]) -> [Int] {
+    positions.map { $0 + start }
+}
+
+/// The homoglyph family over running text: the first identifier-shaped token
+/// (a maximal XID_Continue run) that fires, read as one identifier, with its
+/// positions shifted back into input coordinates. When no token fires, the
+/// whole input is read once under the running-text context, which keeps the
+/// rungs that hold of any text (target match, math alphanumerics, width class,
+/// decomposition swap). Mirrors the Lean homoglyphOverTokens.
+private func homoglyphOverTokens(_ input: [Int]) -> Finding? {
+    for token in identifierTokens(input) {
+        if let finding = homoglyphConfusableFindingWithContext(
+            token.cps, HomoglyphContext(runningText: false, identifierToken: true)) {
+            return Finding(
+                code: finding.code,
+                family: finding.family,
+                severity: finding.severity,
+                positions: identifierTokensShiftPositions(token.start, finding.positions),
+                subThreat: finding.subThreat,
+                detail: finding.detail)
+        }
+    }
+    return homoglyphConfusableFindingWithContext(input, HomoglyphContext(runningText: true, identifierToken: false))
+}
+
+/// The mixed-script family over running text: each identifier-shaped token is
+/// judged as one identifier (not an identifier field, so the Restricted-status
+/// rung does not apply); the first token that fires is reported, positions in
+/// input coordinates. A line with no firing token is clear. Mirrors the Lean
+/// mixedScriptOverTokens.
+private func mixedScriptOverTokens(_ input: [Int]) -> Finding? {
+    for token in identifierTokens(input) {
+        if let finding = mixedScriptAdmissibilityFinding(token.cps, false) {
+            return Finding(
+                code: finding.code,
+                family: finding.family,
+                severity: finding.severity,
+                positions: identifierTokensShiftPositions(token.start, finding.positions),
+                subThreat: finding.subThreat,
+                detail: finding.detail)
+        }
+    }
+    return nil
 }
 
 private func decide(profile: String, mode: String, findings: [Finding]) -> String {
@@ -688,8 +807,30 @@ private func noncharacterControlFindings(_ input: [Int]) -> [Finding] {
     return findings
 }
 
+/// The field context the homoglyph ladder reads. Mirrors the Lean
+/// HomoglyphConfusable.Context: `runningText` is a source line, a message or a
+/// display name rather than one identifier; `identifierToken` is one
+/// identifier-shaped token cut out of running text.
+struct HomoglyphContext: Equatable {
+    let runningText: Bool
+    let identifierToken: Bool
+}
+
 private func homoglyphConfusableFinding(_ input: [Int]) -> Finding? {
+    homoglyphConfusableFindingWithContext(input, HomoglyphContext(runningText: false, identifierToken: false))
+}
+
+// The homoglyph ladder under a field context. Rungs in the Lean order: target
+// match, math alphanumerics, width class, decomposition swap, then the two
+// script rungs (cross-script mix, off on running text; low restriction level,
+// off on running text and on a token), then the ascii-confusable rung: a
+// non-ASCII input whose case-preserving skeleton is all ASCII reads as an ASCII
+// word it is not (admın with a dotless i). That rung runs on a whole field, and
+// on a token only when the token is Latin-only, so a Greek or Cyrillic word in
+// prose is not read as its Latin look-alike.
+private func homoglyphConfusableFindingWithContext(_ input: [Int], _ ctx: HomoglyphContext) -> Finding? {
     let subThreat: String
+    var positions = fullSpanPositions(input)
     if homoglyphTargetMatch(input) != nil {
         subThreat = "TargetMatch"
     } else if input.contains(where: isMathAlphanumeric) {
@@ -698,17 +839,47 @@ private func homoglyphConfusableFinding(_ input: [Int]) -> Finding? {
         subThreat = "WidthClass"
     } else if hasDecompositionSwap(input) {
         subThreat = "DecompositionSwap"
-    // The last two rungs of the Lean ladder, in its order: a cross-script mix
+    // The script rungs of the Lean ladder, in its order: a cross-script mix
     // that is not Highly Restrictive, then a string failing every restriction
     // level. Both need real script resolution.
-    } else if hasCrossScriptMix(input) {
+    } else if !ctx.runningText && hasCrossScriptMix(input) {
         subThreat = "CrossScriptMix"
-    } else if restrictionLevel(input) == .minimallyRestrictive || restrictionLevel(input) == .unrestricted {
+    } else if !ctx.runningText && !ctx.identifierToken
+        && (restrictionLevel(input) == .minimallyRestrictive || restrictionLevel(input) == .unrestricted) {
         subThreat = "RestrictionLow"
+    } else if !ctx.runningText
+        && (!ctx.identifierToken || isLatinOnly(input))
+        && isAsciiConfusable(input) {
+        subThreat = "AsciiConfusable"
+        positions = nonAsciiPositions(input)
     } else {
         return nil
     }
-    return makeFinding(family: Family.homoglyphConfusable, subThreat: subThreat, positions: fullSpanPositions(input))
+    return makeFinding(family: Family.homoglyphConfusable, subThreat: subThreat, positions: positions)
+}
+
+/// The case-preserving skeleton: NFD, confusable substitution, NFD, with no
+/// case fold, so admın (dotless i) maps to adrnin while ADMIN stays itself.
+/// Mirrors the Lean asciiSkeleton.
+private func asciiSkeleton(_ input: [Int]) -> [Int] {
+    toNfdCodepoints(substituteConfusables(toNfdCodepoints(input)))
+}
+
+/// A non-ASCII input whose case-preserving skeleton is all ASCII. Mirrors the
+/// Lean isAsciiConfusable.
+private func isAsciiConfusable(_ input: [Int]) -> Bool {
+    input.contains(where: { $0 > 0x7F }) && asciiSkeleton(input).allSatisfy { $0 <= 0x7F }
+}
+
+/// Positions of the non-ASCII codepoints. Mirrors the Lean nonAsciiPositions.
+private func nonAsciiPositions(_ input: [Int]) -> [Int] {
+    positionsWhere(input) { $0 > 0x7F }
+}
+
+/// Every script-bearing codepoint of the input is Latin. Mirrors the Lean
+/// isLatinOnly.
+private func isLatinOnly(_ input: [Int]) -> Bool {
+    stringScriptUnion(input) == Set(["Latn"])
 }
 
 private func mixedScriptAdmissibilityFinding(_ input: [Int], _ identifierField: Bool) -> Finding? {
@@ -803,18 +974,23 @@ public struct ConfusableBidiCompoundResult: Equatable {
 // materially more dangerous than either alone: the homoglyph disguises an
 // identifier while the bidi control reorders how a reviewer reads it. The
 // detector fires only when both are present. Priority mirrors the spec: with a
-// confusable present, an override-class control (LRE/RLE/LRO/RLO/PDF) fires
-// ConfusableInOverride; otherwise an isolate-class control (LRI/RLI/FSI/PDI)
-// fires ConfusableInIsolate; otherwise clear. Exposed for direct spot-check
+// confusable present, a purposeless override-class control (LRE/RLE/LRO/RLO/PDF)
+// fires ConfusableInOverride; otherwise a purposeless isolate-class control
+// (LRI/RLI/FSI/PDI) fires ConfusableInIsolate; otherwise clear. Only a
+// purposeless control (BidiControlPurpose: unbalanced, or a balanced span
+// enclosing nothing right-to-left in a left-to-right context) is the display
+// channel this compound pairs with a confusable; a balanced embedding around
+// Arabic text renders that text as written. Exposed for direct spot-check
 // testing, mirroring the Rust/Python/C++ detectors.
 public func confusableBidiCompoundDetect(_ input: [Int]) -> ConfusableBidiCompoundResult {
     guard let confusablePos = input.firstIndex(where: isConfusableSource) else {
         return ConfusableBidiCompoundResult(subThreat: nil, positions: [])
     }
-    if let overridePos = input.firstIndex(where: isConfusableBidiOverride) {
+    let purposeless = purposelessControlPositions(input)
+    if let overridePos = purposeless.first(where: { isConfusableBidiOverride(input[$0]) }) {
         return ConfusableBidiCompoundResult(subThreat: "ConfusableInOverride", positions: [confusablePos, overridePos])
     }
-    if let isolatePos = input.firstIndex(where: isConfusableBidiIsolate) {
+    if let isolatePos = purposeless.first(where: { isConfusableBidiIsolate(input[$0]) }) {
         return ConfusableBidiCompoundResult(subThreat: "ConfusableInIsolate", positions: [confusablePos, isolatePos])
     }
     return ConfusableBidiCompoundResult(subThreat: nil, positions: [])
@@ -4982,11 +5158,21 @@ private func rendererDivergenceFirstCombiningStack(_ input: [Int], _ minStack: I
     return nil
 }
 
-/// The RendererDivergence detection function. Mirrors the Lean/Rust `detect`:
-/// walks the priority ladder CombiningStackOverflow -> VariationSelectorVariance
-/// -> UnregisteredZwjVariance -> FullwidthVariance -> MixedDirectionVariance,
-/// returning the first trigger that fires (else `clear`).
+/// The RendererDivergence detection function at the default context (one field,
+/// not running text). Mirrors the Lean detect.
 public func rendererDivergenceDetect(_ input: [Int]) -> RendererDivergenceVerdict {
+    rendererDivergenceDetectWithContext(false, input)
+}
+
+/// The RendererDivergence detection function under an explicit field context.
+/// Mirrors the Lean/Rust `detect`: walks the priority ladder
+/// CombiningStackOverflow -> VariationSelectorVariance -> UnregisteredZwjVariance
+/// -> FullwidthVariance -> MixedDirectionVariance, returning the first trigger
+/// that fires (else `clear`). `runningText` mirrors the Lean
+/// Context.runningText: a source line or a message carrying both directions is
+/// a bilingual line, not a divergence, so the mixed-direction rung does not run
+/// on running text; every other rung holds of any field.
+public func rendererDivergenceDetectWithContext(_ runningText: Bool, _ input: [Int]) -> RendererDivergenceVerdict {
     let vsCount = rendererDivergenceCountVs(input)
     let combiningCount = rendererDivergenceCountCombining(input)
     let fullwidthCount = rendererDivergenceCountFullwidth(input)
@@ -5023,8 +5209,8 @@ public func rendererDivergenceDetect(_ input: [Int]) -> RendererDivergenceVerdic
             sub: .fullwidthVariance(firstFwPos: pos, firstFwCp: cp),
             positions: [pos],
             decoded: [])
-    } else if ltrCount > 0 && rtlCount > 0 {
-        // Priority 5: mixed direction.
+    } else if !runningText && ltrCount > 0 && rtlCount > 0 {
+        // Priority 5: mixed direction, off for running text.
         classification = .hazard(
             sub: .mixedDirectionVariance(ltrCount: ltrCount, rtlCount: rtlCount),
             positions: [],
@@ -5052,6 +5238,182 @@ public func rendererDivergenceReasonCode(_ subThreat: String) -> String {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// BidiControlPurpose — which bidi format controls serve a purpose, and which do
+// not.
+//
+// Direct port of Unicode/Security/Display/BidiControlPurpose.lean. The nine
+// UAX #9 format controls exist to manage right-to-left text: a span is doing
+// that job when the text it encloses is right-to-left, or when it forces
+// left-to-right text inside a right-to-left context. A span enclosing no strong
+// right-to-left character in a left-to-right context manages nothing (LRI user
+// PDI around Latin text, LRO return PDF around a keyword), and an unbalanced
+// control never manages anything. Every Trojan Source payload is a control of
+// that kind; a balanced embedding around an Arabic string literal is the
+// opposite case and renders the literal as written.
+//
+// This is not source-region filtering: the question is asked of every control
+// wherever it sits, and it is decided from the codepoints the span encloses,
+// never from where a tokenizer would place it.
+//
+// Rule, as the Lean walk states it:
+//   - An opener pushes a span: its position, whether it is an isolate (closed
+//     by PDI) or an embedding/override (closed by PDF), and whether it is
+//     right-to-left in effect (RLE, RLO, RLI, FSI) or left-to-right (LRE, LRO,
+//     LRI).
+//   - Every other codepoint is recorded against the innermost open span only:
+//     strong right-to-left (R or AL), strong left-to-right (L), or ASCII code
+//     syntax. A nested span manages its own content.
+//   - PDF closes the top span when it is an embedding; against an isolate on
+//     top, or an empty stack, it is an orphan. PDI closes down to the innermost
+//     isolate, implicitly terminating the embeddings above it, which are thereby
+//     unbalanced; with no isolate open it is an orphan.
+//   - A closed span is purposeful iff its direct content is exactly its own
+//     direction and carries no code syntax; a left-to-right span additionally
+//     needs right-to-left context (an enclosing right-to-left span, or a
+//     paragraph whose first strong character is right-to-left).
+//   - Reported: every orphan, every opener still open at the end, every
+//     embedding a PDI terminated implicitly, and both ends of every closed span
+//     that was not purposeful.
+//
+// The strong-direction predicates are the port's own `isStrongRtl` /
+// `isStrongLtr` over the pinned bidi table.
+// ─────────────────────────────────────────────────────────────────────
+
+/// RLE, RLO, RLI, or FSI (whose direction resolves from its content).
+public func bidiPurposeOpensRtlKind(_ cp: Int) -> Bool {
+    cp == 0x202B || cp == 0x202E || cp == 0x2067 || cp == 0x2068
+}
+
+/// LRE, LRO, LRI.
+public func bidiPurposeOpensLtrKind(_ cp: Int) -> Bool {
+    cp == 0x202A || cp == 0x202D || cp == 0x2066
+}
+
+/// LRI, RLI, FSI.
+public func bidiPurposeOpensIsolateKind(_ cp: Int) -> Bool {
+    cp == 0x2066 || cp == 0x2067 || cp == 0x2068
+}
+
+/// The ASCII codepoints a Trojan Source payload moves: quotes, brackets, comment
+/// markers, statement separators, operators. Prose punctuation, space and digits
+/// are not in the set.
+public func isCodeSyntax(_ cp: Int) -> Bool {
+    switch cp {
+    case 0x22, 0x27, 0x60, 0x28, 0x29, 0x5B, 0x5D, 0x7B, 0x7D, 0x2F, 0x5C, 0x2A,
+         0x23, 0x3B, 0x3C, 0x3E, 0x3D, 0x2B, 0x7C, 0x26, 0x25, 0x24, 0x40, 0x5E,
+         0x7E:
+        return true
+    default:
+        return false
+    }
+}
+
+/// UAX #9 P2/P3: the paragraph runs right-to-left iff its first strong character
+/// is right-to-left.
+public func paragraphIsRtl(_ input: [Int]) -> Bool {
+    for cp in input {
+        if isStrongRtl(cp) { return true }
+        if isStrongLtr(cp) { return false }
+    }
+    return false
+}
+
+/// One open span: where it opened, how it closes, its direction in effect, and
+/// what has appeared directly inside it.
+private struct BidiOpenSpan {
+    let pos: Int
+    let isolate: Bool
+    let rtlKind: Bool
+    var sawRtl: Bool
+    var sawLtr: Bool
+    var sawSyntax: Bool
+}
+
+// A closed span is purposeful iff its direct content is exactly its own
+// direction and carries no code syntax; a left-to-right span additionally needs
+// right-to-left context.
+private func bidiSpanPurposeful(_ span: BidiOpenSpan, _ enclosing: [BidiOpenSpan], _ paragraphRtl: Bool) -> Bool {
+    if span.rtlKind {
+        return span.sawRtl && !span.sawLtr && !span.sawSyntax
+    }
+    let inRtlContext = paragraphRtl || enclosing.contains { $0.rtlKind }
+    return inRtlContext && span.sawLtr && !span.sawRtl && !span.sawSyntax
+}
+
+/// Positions of the purposeless bidi format controls in the input, in input
+/// order. Empty iff every control is balanced and manages right-to-left text.
+public func purposelessControlPositions(_ input: [Int]) -> [Int] {
+    let paragraphRtl = paragraphIsRtl(input)
+    // The stack's last element is the innermost open span.
+    var stack: [BidiOpenSpan] = []
+    var reported: [Int] = []
+
+    for (idx, cp) in input.enumerated() {
+        if bidiPurposeOpensRtlKind(cp) || bidiPurposeOpensLtrKind(cp) {
+            stack.append(BidiOpenSpan(
+                pos: idx,
+                isolate: bidiPurposeOpensIsolateKind(cp),
+                rtlKind: bidiPurposeOpensRtlKind(cp),
+                sawRtl: false,
+                sawLtr: false,
+                sawSyntax: false))
+        } else if cp == 0x202C {
+            // PDF closes the top embedding; an isolate on top or an empty stack
+            // makes it an orphan.
+            if let top = stack.last, !top.isolate {
+                stack.removeLast()
+                if !bidiSpanPurposeful(top, stack, paragraphRtl) {
+                    reported.append(top.pos)
+                    reported.append(idx)
+                }
+            } else {
+                reported.append(idx)
+            }
+        } else if cp == 0x2069 {
+            // PDI closes down to the innermost isolate; the embeddings above it
+            // are terminated implicitly and so unbalanced. No isolate open:
+            // orphan.
+            if let isoIndex = stack.lastIndex(where: { $0.isolate }) {
+                for dropped in stack[(isoIndex + 1)...] {
+                    reported.append(dropped.pos)
+                }
+                let closed = stack[isoIndex]
+                stack.removeSubrange(isoIndex...)
+                if !bidiSpanPurposeful(closed, stack, paragraphRtl) {
+                    reported.append(closed.pos)
+                    reported.append(idx)
+                }
+            } else {
+                reported.append(idx)
+            }
+        } else if !stack.isEmpty {
+            stack[stack.count - 1].sawRtl = stack[stack.count - 1].sawRtl || isStrongRtl(cp)
+            stack[stack.count - 1].sawLtr = stack[stack.count - 1].sawLtr || isStrongLtr(cp)
+            stack[stack.count - 1].sawSyntax = stack[stack.count - 1].sawSyntax || isCodeSyntax(cp)
+        }
+    }
+
+    // Every opener still open at the end is unbalanced.
+    for open in stack {
+        reported.append(open.pos)
+    }
+
+    return Array(Set(reported)).sorted()
+}
+
+/// True iff the input carries at least one purposeless bidi format control.
+public func hasPurposelessControl(_ input: [Int]) -> Bool {
+    !purposelessControlPositions(input).isEmpty
+}
+
+/// Position and codepoint of the first purposeless control, or nil when every
+/// control is purposeful.
+public func firstPurposelessControl(_ input: [Int]) -> (Int, Int)? {
+    guard let pos = purposelessControlPositions(input).first else { return nil }
+    return (pos, input[pos])
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // FilenameDisguise — detection of filename/extension disguise attacks where the
 // visible extension differs from the byte extension (display-layer detector,
 // layer D).
@@ -5063,16 +5425,18 @@ public func rendererDivergenceReasonCode(_ subThreat: String) -> String {
 // as `document exe.txt`.
 //
 // Detection is presentation- and language-agnostic: it surfaces every codepoint
-// that could cause display-vs-byte divergence in the filename — any bidi
-// format-control anywhere, and any fullwidth/halfwidth or combining (grapheme
-// Extend) codepoint in the extension region (after the last `.`). Native-RTL
-// names with no bidi controls clear. It reuses the port's own predicates (the
-// bidi-format-control set `isBidiFormatControl`, the grapheme Extend table
-// `graphemeExtendRanges`, the fullwidth range), never a host filesystem or
-// rendering library.
+// that could cause display-vs-byte divergence in the filename — any purposeless
+// bidi format-control anywhere (BidiControlPurpose: unbalanced, or a balanced
+// span enclosing nothing right-to-left in a left-to-right context), and any
+// fullwidth/halfwidth or combining (grapheme Extend) codepoint in the extension
+// region (after the last `.`). Native-RTL names with no bidi controls clear, and
+// so does a balanced embedding around an Arabic segment. It reuses the port's
+// own predicates (the bidi purpose rule `purposelessControlPositions`, the
+// grapheme Extend table `graphemeExtendRanges`, the fullwidth range), never a
+// host filesystem or rendering library.
 //
 // Sub-threats (priority order):
-//   1. RloFlip            any bidi format-control in the input.
+//   1. RloFlip            a purposeless bidi format-control in the input.
 //   2. WidthClassExt      a fullwidth/halfwidth codepoint in the extension.
 //   3. CombiningInExt     a combining (Extend) codepoint in the extension.
 //   4. MultipleExtensions >= 3 dots (advisory; e.g. legitimate `.tar.gz.sig`).
@@ -5173,13 +5537,13 @@ private func filenameDisguiseDotPositions(_ input: [Int]) -> [Int] {
     input.indices.filter { filenameDisguiseIsAsciiDot(input[$0]) }
 }
 
-/// Position and codepoint of the first bidi format-control (reuses the port's
-/// own `isBidiFormatControl` predicate).
+/// Position and codepoint of the first purposeless bidi format-control:
+/// unbalanced, or a balanced span enclosing nothing right-to-left in a
+/// left-to-right context (`firstPurposelessControl`). A balanced embedding
+/// around an Arabic filename segment manages that segment and is not a flip.
+/// Mirrors the Lean detect, which reads firstPurposelessControl.
 private func filenameDisguiseFirstBidiControl(_ input: [Int]) -> (Int, Int)? {
-    for (idx, cp) in input.enumerated() where isBidiFormatControl(cp) {
-        return (idx, cp)
-    }
-    return nil
+    firstPurposelessControl(input)
 }
 
 /// Position and codepoint of the first fullwidth/halfwidth codepoint at or after
@@ -5209,10 +5573,21 @@ private func filenameDisguiseCountExtendFrom(_ input: [Int], _ start: Int) -> In
     input.indices.filter { $0 >= start && filenameDisguiseIsGraphemeExtend(input[$0]) }.count
 }
 
-/// The FilenameDisguise detection function. Mirrors the Lean/Rust `detect`:
-/// walks the priority ladder RloFlip -> WidthClassExt -> CombiningInExt ->
-/// MultipleExtensions, returning the first trigger that fires (else `clear`).
+/// The FilenameDisguise detection function, reading its input as one filename.
+/// Mirrors the Lean detect, which is detectWithContext at the default context.
 public func filenameDisguiseDetect(_ input: [Int]) -> FilenameDisguiseVerdict {
+    filenameDisguiseDetectWithContext(false, input)
+}
+
+/// The FilenameDisguise detection function under an explicit field context.
+/// Mirrors the Lean/Rust `detect`: walks the priority ladder RloFlip ->
+/// WidthClassExt -> CombiningInExt -> MultipleExtensions, returning the first
+/// trigger that fires (else `clear`). `runningText` mirrors the Lean
+/// Context.runningText: the extension rungs read the text after the last dot as
+/// a file extension, which a source file or a message does not have, so they do
+/// not run on running text; the purposeless-bidi-control rung holds of any
+/// field.
+public func filenameDisguiseDetectWithContext(_ runningText: Bool, _ input: [Int]) -> FilenameDisguiseVerdict {
     let dots = filenameDisguiseDotPositions(input)
     let lastDot = dots.last
     let extStart: Int
@@ -5226,12 +5601,15 @@ public func filenameDisguiseDetect(_ input: [Int]) -> FilenameDisguiseVerdict {
     let extInExt = filenameDisguiseCountExtendFrom(input, extStart)
 
     let classification: FilenameDisguiseClassification
-    // Priority 1: any bidi format-control.
+    // Priority 1: a purposeless bidi format-control anywhere in the input.
     if let (pos, ctlCp) = filenameDisguiseFirstBidiControl(input) {
         classification = .hazard(
             sub: .rloFlip(position: pos, controlCp: ctlCp),
             positions: [pos],
             decoded: [])
+    } else if runningText {
+        // The remaining rungs read an extension; running text has none.
+        classification = .clear
     } else if let (pos, cp) = filenameDisguiseFirstFullwidthFrom(input, extStart) {
         // Priority 2: fullwidth/halfwidth in the extension.
         classification = .hazard(
@@ -5339,32 +5717,42 @@ private func sourceDisplayZeroWidthFired(_ input: [Int]) -> Bool {
     return !positions.isEmpty && hasSuspiciousZeroWidth(input, positions)
 }
 
-/// True iff `input` carries any bidi format control, embeddings and isolates
-/// alike. Presence, not balance: a Trojan Source payload balances its controls,
-/// since an unbalanced run breaks the file it hides in, and it may use either
-/// form, so a predicate stopping at U+202E cannot see the isolate shape.
+/// True iff `input` carries a purposeless bidi format control
+/// (`purposelessControlPositions`: unbalanced, or a balanced span enclosing
+/// nothing right-to-left in a left-to-right context). A Trojan Source payload
+/// balances its controls, since an unbalanced run breaks the file it hides in,
+/// so a constituent built on the balance verdict is blind to the shape the
+/// attack takes; a balanced embedding around an Arabic string literal manages
+/// that literal and is not a constituent.
 private func sourceDisplayBidiControlFired(_ input: [Int]) -> Bool {
-    input.contains(where: isBidiFormatControl)
+    !purposelessControlPositions(input).isEmpty
 }
 
-/// True iff the port's homoglyph-confusable detector fires on `input`. This port
-/// splits the canonical homoglyph-confusable detector into two scan families, so
-/// the constituent fires iff either the `homoglyph-confusable` family
-/// (`homoglyphConfusableFinding`) or the `mixed-script-admissibility` family
-/// (`mixedScriptAdmissibilityFinding`) fires. Both are the scan pipeline's own
-/// detectors.
+/// True iff the port's homoglyph-confusable detector fires on `input` when the
+/// aggregate runs standalone: the whole input under the default context. The
+/// ladder carries the CrossScriptMix rung itself, so the constituent is the
+/// family finding; the scan passes its per-token verdict through
+/// `sourceDisplayDivergenceDetectCore`.
 private func sourceDisplayHomoglyphFired(_ input: [Int]) -> Bool {
-    // The constituent asks the script question about a source file, which is not
-    // an identifier field, so the Restricted-status rung does not apply.
-    homoglyphConfusableFinding(input) != nil || mixedScriptAdmissibilityFinding(input, false) != nil
+    homoglyphConfusableFinding(input) != nil
 }
 
-/// The SourceDisplayDivergence detection function. Mirrors the Lean/reference
-/// `detect`: runs the five constituent detectors in canonical order (tag-block,
-/// variation-selector, zero-width, bidi-control, homoglyph), collects the tags
-/// that fired, then classifies by count: none → clear, one → that family's tag,
-/// two or more → `Compound`.
+/// The SourceDisplayDivergence detection function at the default context: the
+/// homoglyph constituent is the whole-input homoglyph verdict. Mirrors the Lean
+/// detect.
 public func sourceDisplayDivergenceDetect(_ input: [Int]) -> SourceDisplayDivergenceVerdict {
+    sourceDisplayDivergenceDetectCore(input, sourceDisplayHomoglyphFired(input))
+}
+
+/// Aggregate over a homoglyph verdict already in hand. The scan passes the
+/// verdict it produced (per identifier token on running text), so the
+/// constituent and the family finding are one reading of the same input;
+/// mirrors the Lean `detectCore input homoglyphVerdict`. Runs the other
+/// constituent detectors in canonical order (tag-block, variation-selector,
+/// zero-width, bidi-control, homoglyph), collects the tags that fired, then
+/// classifies by count: none → clear, one → that family's tag, two or more →
+/// `Compound`.
+public func sourceDisplayDivergenceDetectCore(_ input: [Int], _ homoglyphFired: Bool) -> SourceDisplayDivergenceVerdict {
     var fires: [String] = []
     if sourceDisplayTagBlockFired(input) {
         fires.append("TagBlock")
@@ -5378,7 +5766,7 @@ public func sourceDisplayDivergenceDetect(_ input: [Int]) -> SourceDisplayDiverg
     if sourceDisplayBidiControlFired(input) {
         fires.append("BidiControl")
     }
-    if sourceDisplayHomoglyphFired(input) {
+    if homoglyphFired {
         fires.append("IdentifierHomoglyph")
     }
 
