@@ -13,15 +13,17 @@
 // renders as "document exe.txt".
 //
 // Detection is presentation- and language-agnostic: it surfaces every codepoint
-// that could cause display-vs-byte divergence in the filename — any bidi
-// format-control anywhere, and any fullwidth/halfwidth or combining (grapheme
-// Extend) codepoint in the extension region (after the last dot). Native-RTL
-// names with no bidi controls clear. It reuses the port's own predicates (the
-// bidi-format-control set, the grapheme Extend class, the fullwidth range),
-// never a host filesystem or rendering library.
+// that could cause display-vs-byte divergence in the filename — any purposeless
+// bidi format-control anywhere (bidi_control_purpose: unbalanced, or a balanced
+// span enclosing nothing right-to-left in a left-to-right context), and any
+// fullwidth/halfwidth or combining (grapheme Extend) codepoint in the extension
+// region (after the last dot). Native-RTL names with no bidi controls clear, and
+// so does a balanced embedding around an Arabic segment. It reuses the port's
+// own predicates (the bidi purpose rule, the grapheme Extend class, the
+// fullwidth range), never a host filesystem or rendering library.
 //
 // Sub-threats (priority order):
-//   1. RloFlip             any bidi format-control in the input.
+//   1. RloFlip             a purposeless bidi format-control in the input.
 //   2. WidthClassExt       a fullwidth/halfwidth codepoint in the extension.
 //   3. CombiningInExt      a combining (Extend) codepoint in the extension.
 //   4. MultipleExtensions  >= 3 dots (advisory; e.g. legitimate .tar.gz.sig).
@@ -36,11 +38,16 @@
 #include <vector>
 
 #include "unicode_cpp/security/covert/bidi_control_balance.hpp"
+#include "unicode_cpp/security/display/bidi_control_purpose.hpp"
+#include "unicode_cpp/security/identity/ucd.hpp"
 #include "unicode_cpp/segmentation/grapheme.hpp"
 
 namespace unicode_cpp::security::display::filename_disguise {
 
 namespace bcb = unicode_cpp::security::bidi_control_balance;
+namespace bidi_control_purpose =
+    unicode_cpp::security::display::bidi_control_purpose;
+namespace ucd = unicode_cpp::security::ucd;
 namespace segmentation = unicode_cpp::segmentation;
 
 // ─────────────────────────────────────────────────────────────────────
@@ -179,15 +186,14 @@ inline std::vector<std::size_t> dot_positions(
     return out;
 }
 
-// Position and codepoint of the first bidi format-control.
+// Position and codepoint of the first purposeless bidi format-control:
+// unbalanced, or a balanced span enclosing nothing right-to-left in a
+// left-to-right context (bidi_control_purpose::first_purposeless_control). A
+// balanced embedding around an Arabic filename segment manages that segment and
+// is not a flip. Mirrors the Lean detect, which reads firstPurposelessControl.
 inline std::optional<std::pair<std::size_t, std::uint32_t>> first_bidi_control(
-    std::span<const std::uint32_t> input) {
-    for (std::size_t idx = 0; idx < input.size(); ++idx) {
-        if (is_bidi_format_control(input[idx])) {
-            return std::pair<std::size_t, std::uint32_t>{idx, input[idx]};
-        }
-    }
-    return std::nullopt;
+    const ucd::Tables& t, std::span<const std::uint32_t> input) {
+    return bidi_control_purpose::first_purposeless_control(t, input);
 }
 
 // Position and codepoint of the first fullwidth/halfwidth codepoint at or after
@@ -254,9 +260,15 @@ inline std::size_t count_bidi_control(std::span<const std::uint32_t> input) {
 // §4 Top-level detection
 // ─────────────────────────────────────────────────────────────────────
 
-// The FilenameDisguise detection function. Returns a structured verdict over
-// the codepoint sequence input.
-inline Verdict detect(std::span<const std::uint32_t> input) {
+// The FilenameDisguise detection function under an explicit field context.
+// Returns a structured verdict over the codepoint sequence input. running_text
+// mirrors the Lean Context.runningText: the extension rungs read the text after
+// the last dot as a file extension, which a source file or a message does not
+// have, so they do not run on running text; the purposeless-bidi-control rung
+// holds of any field. The strong-direction predicates the purpose rule reads
+// come from the bundled ucd::Tables t.
+inline Verdict detect_with_context(const ucd::Tables& t, bool running_text,
+                                   std::span<const std::uint32_t> input) {
     std::vector<std::size_t> dots = detail::dot_positions(input);
     std::optional<std::size_t> last_dot;
     if (!dots.empty()) {
@@ -270,11 +282,14 @@ inline Verdict detect(std::span<const std::uint32_t> input) {
 
     Classification classification;
 
-    if (auto bidi = detail::first_bidi_control(input)) {
-        // Priority 1: any bidi format-control.
+    if (auto bidi = detail::first_bidi_control(t, input)) {
+        // Priority 1: a purposeless bidi format-control anywhere in the input.
         const auto [pos, ctl_cp] = *bidi;
         classification.sub = SubThreat{RloFlip{pos, ctl_cp}};
         classification.positions = {pos};
+    } else if (running_text) {
+        // The remaining rungs read an extension; running text has none.
+        classification = Classification{std::nullopt, {}, {}};
     } else if (auto fw = detail::first_fullwidth_from(input, ext_start)) {
         // Priority 2: fullwidth/halfwidth in the extension.
         const auto [pos, cp] = *fw;
@@ -303,6 +318,12 @@ inline Verdict detect(std::span<const std::uint32_t> input) {
     verdict.fullwidth_in_ext = fw_in_ext;
     verdict.combining_in_ext = ext_in_ext;
     return verdict;
+}
+
+// The FilenameDisguise detection function, reading its input as one filename.
+// Mirrors the Lean detect, which is detectWithContext at the default context.
+inline Verdict detect(const ucd::Tables& t, std::span<const std::uint32_t> input) {
+    return detect_with_context(t, false, input);
 }
 
 }  // namespace unicode_cpp::security::display::filename_disguise

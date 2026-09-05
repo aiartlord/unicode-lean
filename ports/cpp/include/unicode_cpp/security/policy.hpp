@@ -27,6 +27,7 @@
 #include "unicode_cpp/security/covert/zero_width_payload.hpp"
 #include "unicode_cpp/security/display/rtl_injection.hpp"
 #include "unicode_cpp/security/identity/homoglyph_confusable.hpp"
+#include "unicode_cpp/security/identity/identifier_tokens.hpp"
 #include "unicode_cpp/security/identity/skin_tone_variation_forgery.hpp"
 #include "unicode_cpp/security/identity/emoji_zwj_integrity.hpp"
 #include "unicode_cpp/security/form/width_class_confusion.hpp"
@@ -282,6 +283,29 @@ constexpr bool profile_is_identifier_field(Profile profile) {
   case Profile::DisplayName:
   case Profile::ChatMessage:
   case Profile::SourceCode:
+  case Profile::OpaqueSecret:
+  case Profile::BinaryBlob:
+    return false;
+  }
+  return false;
+}
+
+// True iff the profile reads its input as running text -- a source line, a
+// message, a display name -- rather than one identifier. The identifier
+// families then judge each identifier-shaped token of the line on its own, and
+// the field-wide families that read the line as one identifier or one filename
+// report clear. Mirrors profileIsRunningText in Unicode/Security/Policy.lean.
+constexpr bool profile_is_running_text(Profile profile) {
+  switch (profile) {
+  case Profile::DisplayName:
+  case Profile::ChatMessage:
+  case Profile::SourceCode:
+    return true;
+  case Profile::GatewayHeader:
+  case Profile::DomainName:
+  case Profile::DnsLabel:
+  case Profile::Url:
+  case Profile::Username:
   case Profile::OpaqueSecret:
   case Profile::BinaryBlob:
     return false;
@@ -818,6 +842,96 @@ decode_utf32_stream(std::span<const std::uint8_t> bytes, Endian endian,
   return std::nullopt;
 }
 
+// The positions a homoglyph verdict implicates: the non-ASCII positions for
+// the ascii-confusable rung, the whole input for every other rung, nothing
+// when clear.
+inline std::vector<std::size_t>
+homoglyph_positions(const homoglyph_confusable::Verdict &verdict,
+                    std::span<const std::uint32_t> input) {
+  if (verdict.kind == ClassificationKind::Clear || !verdict.sub) {
+    return {};
+  }
+  if (std::holds_alternative<homoglyph_confusable::AsciiConfusable>(
+          *verdict.sub)) {
+    return homoglyph_confusable::non_ascii_positions(input);
+  }
+  return full_span_positions(input.size());
+}
+
+// One homoglyph finding under a field context, or nullopt when clear.
+inline std::optional<Finding>
+homoglyph_finding_with_context(std::span<const std::uint32_t> input,
+                               const homoglyph_confusable::Database &db,
+                               homoglyph_confusable::Context ctx) {
+  const auto verdict = homoglyph_confusable::detect_with_context(input, db, ctx);
+  if (verdict.kind == ClassificationKind::Clear || !verdict.sub) {
+    return std::nullopt;
+  }
+  const std::string sub = homoglyph_confusable::sub_threat_tag(*verdict.sub);
+  return Finding{
+      reason_code(Family::HomoglyphConfusable,
+                  std::optional<std::string_view>{sub}),
+      Family::HomoglyphConfusable,
+      default_policy_severity(verdict.kind),
+      homoglyph_positions(verdict, input),
+      sub,
+      std::string(family_slug(Family::HomoglyphConfusable)),
+  };
+}
+
+// The homoglyph family over running text: the first identifier-shaped token
+// (a maximal XID_Continue run) that fires, read as one identifier, with its
+// positions shifted back into input coordinates. When no token fires, the
+// whole input is read once under the running-text context, which keeps the
+// rungs that hold of any text (target match, math alphanumerics, width class,
+// decomposition swap). Mirrors the Lean homoglyphOverTokens.
+inline std::optional<Finding>
+homoglyph_over_tokens(std::span<const std::uint32_t> input,
+                      const homoglyph_confusable::Database &db) {
+  namespace tokens = unicode_cpp::security::identity::identifier_tokens;
+  for (const auto &token : tokens::tokens(db.tables, input)) {
+    auto finding = homoglyph_finding_with_context(
+        token.cps, db, homoglyph_confusable::Context{false, true});
+    if (finding) {
+      finding->positions = tokens::shift_positions(
+          token.start, std::span<const std::size_t>(finding->positions));
+      return finding;
+    }
+  }
+  return homoglyph_finding_with_context(
+      input, db, homoglyph_confusable::Context{true, false});
+}
+
+// The mixed-script family over running text: each identifier-shaped token is
+// judged as one identifier (not an identifier field, so the Restricted-status
+// rung does not apply); the first token that fires is reported, positions in
+// input coordinates. A line with no firing token is clear. Mirrors the Lean
+// mixedScriptOverTokens.
+inline std::optional<Finding>
+mixed_script_over_tokens(std::span<const std::uint32_t> input,
+                         const homoglyph_confusable::Database &db) {
+  namespace tokens = unicode_cpp::security::identity::identifier_tokens;
+  for (const auto &token : tokens::tokens(db.tables, input)) {
+    const auto sub =
+        homoglyph_confusable::mixed_script_verdict(token.cps, db, false);
+    if (sub) {
+      return Finding{
+          reason_code(Family::MixedScriptAdmissibility,
+                      std::optional<std::string_view>{*sub}),
+          Family::MixedScriptAdmissibility,
+          Severity::Moderate,
+          tokens::shift_positions(
+              token.start,
+              std::span<const std::size_t>(
+                  full_span_positions(token.cps.size()))),
+          *sub,
+          std::string(family_slug(Family::MixedScriptAdmissibility)),
+      };
+    }
+  }
+  return std::nullopt;
+}
+
 } // namespace detail
 
 inline Verdict
@@ -825,6 +939,8 @@ scan_with_identity_database(Profile profile, Mode mode,
                             std::span<const std::uint32_t> input,
                             const homoglyph_confusable::Database *identity_db) {
   std::vector<Finding> findings;
+  const bool identifier_field = profile_is_identifier_field(profile);
+  const bool running_text = profile_is_running_text(profile);
 
   const auto tag_result = tag_block_payload::detect(input);
   detail::push_finding(
@@ -892,35 +1008,42 @@ scan_with_identity_database(Profile profile, Mode mode,
       detail::positions_where(input, detail::is_c1_control));
 
   if (identity_db != nullptr) {
-    const auto identity_result =
-        homoglyph_confusable::detect(input, *identity_db);
-    const auto identity_sub =
-        identity_result.sub
-            ? std::optional<std::string>{homoglyph_confusable::sub_threat_tag(
-                  *identity_result.sub)}
-            : std::nullopt;
     // Every rung of the homoglyph ladder is reported, CrossScriptMix included.
     // Unicode/Security/Policy.lean maps every non-clear family result to a
     // finding without filtering, so suppressing this rung would report fewer
-    // findings than the proven spec for a cross-script input.
-    detail::push_finding(findings, Family::HomoglyphConfusable,
-                         identity_result.kind, identity_sub,
-                         identity_result.kind == ClassificationKind::Clear
-                             ? std::vector<std::size_t>{}
-                             : detail::full_span_positions(input.size()));
-    if (const auto mixed_sub = homoglyph_confusable::mixed_script_verdict(
-            input, *identity_db, profile_is_identifier_field(profile))) {
+    // findings than the proven spec for a cross-script input. On running text
+    // the family reads the input per identifier-shaped token.
+    const auto homoglyph =
+        running_text
+            ? detail::homoglyph_over_tokens(input, *identity_db)
+            : detail::homoglyph_finding_with_context(
+                  input, *identity_db, homoglyph_confusable::Context{});
+    if (homoglyph) {
+      findings.push_back(*homoglyph);
+    }
+    if (running_text) {
+      if (const auto mixed =
+              detail::mixed_script_over_tokens(input, *identity_db)) {
+        findings.push_back(*mixed);
+      }
+    } else if (const auto mixed_sub = homoglyph_confusable::mixed_script_verdict(
+                   input, *identity_db, identifier_field)) {
       detail::push_finding(findings, Family::MixedScriptAdmissibility,
                            ClassificationKind::Hazard, mixed_sub,
                            detail::full_span_positions(input.size()));
     }
 
-    const auto rtl_result =
-        display::rtl_injection::detect(identity_db->tables, input);
-    if (rtl_result.sub) {
-      detail::push_finding(findings, Family::RtlInjection,
-                           ClassificationKind::Hazard, rtl_result.sub,
-                           rtl_result.positions);
+    // Families that read the whole field as one identifier report clear on
+    // running text: rtl-injection, case-expansion-mismatch and
+    // locale-case-inversion. Mirrors the Lean mkGatedResult.
+    if (!running_text) {
+      const auto rtl_result =
+          display::rtl_injection::detect(identity_db->tables, input);
+      if (rtl_result.sub) {
+        detail::push_finding(findings, Family::RtlInjection,
+                             ClassificationKind::Hazard, rtl_result.sub,
+                             rtl_result.positions);
+      }
     }
 
     const auto compound_result =
@@ -949,22 +1072,27 @@ scan_with_identity_database(Profile profile, Mode mode,
     detail::push_classified(
         findings, Family::SkinToneVariationForgery,
         stvf::detect(identity_db->emoji_properties, input).classify);
-    detail::push_classified(findings, Family::FilenameDisguise,
-                            display::filename_disguise::detect(input).classify);
+    detail::push_classified(
+        findings, Family::FilenameDisguise,
+        display::filename_disguise::detect_with_context(
+            identity_db->tables, running_text, input)
+            .classify);
     detail::push_classified(
         findings, Family::RendererDivergence,
-        display::renderer_divergence::detect(identity_db->rgi,
-                                             identity_db->tables, input)
+        display::renderer_divergence::detect_with_context(
+            identity_db->rgi, identity_db->tables, running_text, input)
             .classify);
     detail::push_classified(
         findings, Family::StreamSafeViolation,
         form::stream_safe_violation::detect(identity_db->tables, input)
             .classify);
-    detail::push_classified(
-        findings, Family::CaseExpansionMismatch,
-        form::case_expansion_mismatch::detect(identity_db->casing_data,
-                                              identity_db->tables, input_vec)
-            .classify);
+    if (!running_text) {
+      detail::push_classified(
+          findings, Family::CaseExpansionMismatch,
+          form::case_expansion_mismatch::detect(identity_db->casing_data,
+                                                identity_db->tables, input_vec)
+              .classify);
+    }
     detail::push_classified(
         findings, Family::IdentifierFormDrift,
         boundary::identifier_form_drift::detect(identity_db->tables, input)
@@ -981,12 +1109,14 @@ scan_with_identity_database(Profile profile, Mode mode,
                            ClassificationKind::Hazard, bomb.sub,
                            bomb.positions);
     }
-    const auto locale_case = form::locale_case_inversion::detect(
-        identity_db->casing_data, identity_db->tables, input_vec);
-    if (locale_case.sub) {
-      detail::push_finding(findings, Family::LocaleCaseInversion,
-                           ClassificationKind::Hazard, locale_case.sub,
-                           locale_case.positions);
+    if (!running_text) {
+      const auto locale_case = form::locale_case_inversion::detect(
+          identity_db->casing_data, identity_db->tables, input_vec);
+      if (locale_case.sub) {
+        detail::push_finding(findings, Family::LocaleCaseInversion,
+                             ClassificationKind::Hazard, locale_case.sub,
+                             locale_case.positions);
+      }
     }
     const auto nfc_witness =
         form::nfc_idempotence_witness::detect(identity_db->tables, input_vec);
@@ -1004,9 +1134,11 @@ scan_with_identity_database(Profile profile, Mode mode,
     }
 
     // SourceDisplayDivergence judges the input as a unit, so it localises
-    // nothing and carries an empty position list.
+    // nothing and carries an empty position list. Its homoglyph constituent is
+    // the verdict this scan produced, so the two agree on running text.
     const auto source_display =
-        display::source_display_divergence::detect(*identity_db, input);
+        display::source_display_divergence::detect_core(
+            *identity_db, input, homoglyph.has_value());
     if (source_display.sub) {
       detail::push_finding(findings, Family::SourceDisplayDivergence,
                            ClassificationKind::Hazard, source_display.sub, {});

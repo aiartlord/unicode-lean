@@ -16,20 +16,41 @@
 
 #include "unicode_cpp/security/calculus.hpp"
 #include "unicode_cpp/security/display/filename_disguise.hpp"
+#include "unicode_cpp/security/identity/ucd.hpp"
 #include "unicode_cpp/security/policy.hpp"
 
 namespace {
 
 namespace fd = unicode_cpp::security::display::filename_disguise;
 namespace policy = unicode_cpp::security::policy;
+namespace ucd = unicode_cpp::security::ucd;
 using unicode_cpp::security::Family;
+
+// Tests run from the build directory; the bundled data lives at the port root.
+std::filesystem::path data_dir() {
+    const std::filesystem::path candidates[] = {"data", "../data", "../../data"};
+    for (const auto& p : candidates) {
+        if (std::filesystem::exists(p / "UnicodeData.txt")) {
+            return p;
+        }
+    }
+    throw std::runtime_error(
+        "filename-disguise test: cannot locate bundled data");
+}
+
+// The purpose rule's strong-direction predicates read Bidi_Class from the
+// bundled tables.
+const ucd::Tables& ucd_tables() {
+    static const ucd::Tables t = ucd::Tables::load_from_dir(data_dir());
+    return t;
+}
 
 std::span<const std::uint32_t> as_span(const std::vector<std::uint32_t>& v) {
     return std::span<const std::uint32_t>(v.data(), v.size());
 }
 
 fd::Verdict det(const std::vector<std::uint32_t>& in) {
-    return fd::detect(as_span(in));
+    return fd::detect(ucd_tables(), as_span(in));
 }
 
 std::optional<std::string_view> tag(const std::vector<std::uint32_t>& in) {

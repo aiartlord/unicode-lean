@@ -18,8 +18,9 @@
 //
 // It reuses the port's own five constituent detectors — nothing new is
 // introduced here (no table, no predicate, no host library): tag_block_payload,
-// variation_selector_payload, zero_width_payload, bidi_control_balance, and
-// homoglyph_confusable. A constituent "fired" iff its verdict kind is not Clear.
+// variation_selector_payload, zero_width_payload, the bidi purpose rule
+// (bidi_control_purpose), and homoglyph_confusable. A constituent "fired" iff
+// its verdict kind is not Clear.
 
 #include <cstddef>
 #include <cstdint>
@@ -30,10 +31,10 @@
 #include <vector>
 
 #include "unicode_cpp/security/calculus.hpp"
-#include "unicode_cpp/security/covert/bidi_control_balance.hpp"
 #include "unicode_cpp/security/covert/tag_block_payload.hpp"
 #include "unicode_cpp/security/covert/variation_selector_payload.hpp"
 #include "unicode_cpp/security/covert/zero_width_payload.hpp"
+#include "unicode_cpp/security/display/bidi_control_purpose.hpp"
 #include "unicode_cpp/security/identity/homoglyph_confusable.hpp"
 
 namespace unicode_cpp::security::display::source_display_divergence {
@@ -42,7 +43,8 @@ namespace tag_block_payload = unicode_cpp::security::tag_block_payload;
 namespace variation_selector_payload =
     unicode_cpp::security::variation_selector_payload;
 namespace zero_width_payload = unicode_cpp::security::zero_width_payload;
-namespace bidi_control_balance = unicode_cpp::security::bidi_control_balance;
+namespace bidi_control_purpose =
+    unicode_cpp::security::display::bidi_control_purpose;
 namespace homoglyph_confusable = unicode_cpp::security::homoglyph_confusable;
 
 // One source-display-divergence scan result. sub is nullopt for a clear input;
@@ -69,13 +71,16 @@ constexpr bool fired(ClassificationKind kind) {
     return kind != ClassificationKind::Clear;
 }
 
-// Aggregate the five constituent detectors into a single D1 verdict. The
-// homoglyph constituent reads the caller-owned identity database (reused, not
-// reparsed), matching how the identity- and boundary-family detectors are
-// provisioned in this port; the other four constituents are pure over the
+// Aggregate the five constituent detectors into a single D1 verdict, over a
+// homoglyph verdict already in hand. The scan passes the verdict it produced
+// (per identifier token on running text), so the constituent and the family
+// finding are one reading of the same input; mirrors the Lean
+// detectCore input homoglyphVerdict. The other constituents read the
+// caller-owned identity database (reused, not reparsed) or are pure over the
 // codepoint stream.
-inline Detection detect(const homoglyph_confusable::Database& db,
-                        std::span<const std::uint32_t> input) {
+inline Detection detect_core(const homoglyph_confusable::Database& db,
+                             std::span<const std::uint32_t> input,
+                             bool homoglyph_fired) {
     // Constituent family tags in canonical aggregation order: tag-block,
     // variation-selector, zero-width, bidi-control, homoglyph. Each detect is
     // called explicitly by name — no catch-all iteration over a family enum.
@@ -92,15 +97,16 @@ inline Detection detect(const homoglyph_confusable::Database& db,
     if (fired(zero_width_payload::detect(input, db.tables, db.rgi).kind)) {
         fires.push_back("ZeroWidth");
     }
-    // Presence, not balance. A Trojan Source payload balances its controls --
-    // an unbalanced run breaks the file it is hiding in -- so a constituent
-    // built on the balance verdict is blind to the shape the attack takes.
-    if (std::any_of(input.begin(), input.end(), [](std::uint32_t cp) {
-            return bidi_control_balance::is_bidi_format_control(cp);
-        })) {
+    // A purposeless control: unbalanced, or a balanced span enclosing nothing
+    // right-to-left in a left-to-right context. A Trojan Source payload
+    // balances its controls -- an unbalanced run breaks the file it is hiding
+    // in -- so a constituent built on the balance verdict is blind to the
+    // shape the attack takes; a balanced embedding around an Arabic string
+    // literal manages that literal and is not a constituent.
+    if (bidi_control_purpose::has_purposeless_control(db.tables, input)) {
         fires.push_back("BidiControl");
     }
-    if (fired(homoglyph_confusable::detect(input, db).kind)) {
+    if (homoglyph_fired) {
         fires.push_back("IdentifierHomoglyph");
     }
 
@@ -116,6 +122,14 @@ inline Detection detect(const homoglyph_confusable::Database& db,
         out.sub = std::string{"Compound"};
     }
     return out;
+}
+
+// The aggregate at the default context: the homoglyph constituent is the
+// whole-input homoglyph verdict. Mirrors the Lean detect.
+inline Detection detect(const homoglyph_confusable::Database& db,
+                        std::span<const std::uint32_t> input) {
+    return detect_core(db, input,
+                       fired(homoglyph_confusable::detect(input, db).kind));
 }
 
 }  // namespace unicode_cpp::security::display::source_display_divergence

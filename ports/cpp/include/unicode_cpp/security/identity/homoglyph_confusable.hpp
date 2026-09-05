@@ -42,6 +42,17 @@
 //     non-Inherited scripts and is not Highly Restrictive.
 //   - RestrictionLow     — input's UTS #39 § 5.1 restriction
 //     level is Minimally Restrictive or Unrestricted.
+//   - AsciiConfusable    — a non-ASCII input whose case-preserving
+//     skeleton is all ASCII reads as an ASCII word it is not
+//     (admın with a dotless i).
+//
+// The ladder reads a field Context: on running text (a source line,
+// a message, a display name) the two script rungs and the ascii
+// rung do not run over the whole field, and on one identifier-shaped
+// token cut out of running text the low-restriction rung does not
+// run and the ascii rung runs only for a Latin-only token, so a
+// Greek or Cyrillic word in prose is not read as its Latin
+// look-alike.
 //
 // Data loading.  The detector consumes a Database that the caller
 // constructs once from the bundled data files (confusables.txt,
@@ -110,10 +121,13 @@ struct CrossScriptMix {
 struct RestrictionLow {
   ucd::RestrictionLevel level;
 };
+struct AsciiConfusable {
+  std::vector<std::uint32_t> skeleton;
+};
 
 using SubThreat =
     std::variant<TargetMatch, MathAlpha, WidthClass, DecompositionSwap,
-                 CrossScriptMix, RestrictionLow>;
+                 CrossScriptMix, RestrictionLow, AsciiConfusable>;
 
 inline std::string sub_threat_tag(const SubThreat &sub) {
   if (std::holds_alternative<TargetMatch>(sub))
@@ -128,9 +142,20 @@ inline std::string sub_threat_tag(const SubThreat &sub) {
     return "CrossScriptMix";
   if (std::holds_alternative<RestrictionLow>(sub))
     return "RestrictionLow";
+  if (std::holds_alternative<AsciiConfusable>(sub))
+    return "AsciiConfusable";
   throw std::logic_error(
       "homoglyph_confusable::sub_threat_tag: variant has no index");
 }
+
+// The field context the ladder reads. Mirrors the Lean
+// HomoglyphConfusable.Context: running_text is a source line, a message or a
+// display name rather than one identifier; identifier_token is one
+// identifier-shaped token cut out of running text.
+struct Context {
+  bool running_text = false;
+  bool identifier_token = false;
+};
 
 struct Verdict {
   ClassificationKind kind;
@@ -483,11 +508,55 @@ first_decomposition_diff_pos(std::span<const std::uint32_t> input,
 
 } // namespace detail
 
-// The HomoglyphConfusable detection function.  Returns a
-// structured verdict over the codepoint sequence input,
-// projected through the provided database.
-inline Verdict detect(std::span<const std::uint32_t> input,
-                      const Database &db) {
+// The case-preserving skeleton: NFD, confusable substitution, NFD, with no
+// case fold, so admın (dotless i) maps to adrnin while ADMIN stays itself.
+// Mirrors the Lean asciiSkeleton.
+inline std::vector<std::uint32_t>
+ascii_skeleton(std::span<const std::uint32_t> input, const Database &db) {
+  auto step1 = ucd::to_nfd(db.tables, input);
+  auto step2 = substitute(step1, db);
+  return ucd::to_nfd(db.tables, step2);
+}
+
+// A non-ASCII input whose case-preserving skeleton is all ASCII. Mirrors the
+// Lean isAsciiConfusable.
+inline bool is_ascii_confusable(std::span<const std::uint32_t> input,
+                                const Database &db) {
+  const bool any_non_ascii = std::any_of(
+      input.begin(), input.end(), [](std::uint32_t cp) { return cp > 0x7Fu; });
+  if (!any_non_ascii) {
+    return false;
+  }
+  const auto skel = ascii_skeleton(input, db);
+  return std::all_of(skel.begin(), skel.end(),
+                     [](std::uint32_t cp) { return cp <= 0x7Fu; });
+}
+
+// Positions of the non-ASCII codepoints. Mirrors the Lean nonAsciiPositions.
+inline std::vector<std::size_t>
+non_ascii_positions(std::span<const std::uint32_t> input) {
+  std::vector<std::size_t> out;
+  for (std::size_t idx = 0; idx < input.size(); ++idx) {
+    if (input[idx] > 0x7Fu) {
+      out.push_back(idx);
+    }
+  }
+  return out;
+}
+
+// Every script-bearing codepoint of the input is Latin. Mirrors the Lean
+// isLatinOnly.
+inline bool is_latin_only(std::span<const std::uint32_t> input,
+                          const Database &db) {
+  const auto script_union = ucd::string_script_union(db.tables, input);
+  return script_union.size() == 1 && script_union.front() == "Latn";
+}
+
+// The HomoglyphConfusable detection function under a field context.  Returns
+// a structured verdict over the codepoint sequence input, projected through
+// the provided database.
+inline Verdict detect_with_context(std::span<const std::uint32_t> input,
+                                   const Database &db, Context ctx) {
   auto skel = skeleton(input, db);
   auto iskel = iterated_skeleton(input, db);
   const auto rl = ucd::restriction_level(db.tables, input);
@@ -545,24 +614,42 @@ inline Verdict detect(std::span<const std::uint32_t> input,
     return v;
   }
 
-  // Priority 5: CrossScriptMix.
+  // Priority 5: CrossScriptMix, off on running text.
   const auto script_union = ucd::string_script_union(db.tables, input);
-  if (script_union.size() >= 2 &&
+  if (!ctx.running_text && script_union.size() >= 2 &&
       !ucd::is_highly_restrictive(db.tables, input)) {
     v.kind = ClassificationKind::Hazard;
     v.sub = CrossScriptMix{script_union.size()};
     return v;
   }
 
-  // Priority 6: RestrictionLow.
-  if (rl == ucd::RestrictionLevel::MinimallyRestrictive ||
-      rl == ucd::RestrictionLevel::Unrestricted) {
+  // Priority 6: RestrictionLow, off on running text and on a token.
+  if (!ctx.running_text && !ctx.identifier_token &&
+      (rl == ucd::RestrictionLevel::MinimallyRestrictive ||
+       rl == ucd::RestrictionLevel::Unrestricted)) {
     v.kind = ClassificationKind::Hazard;
     v.sub = RestrictionLow{rl};
     return v;
   }
 
+  // Priority 7: AsciiConfusable, on a whole field, and on a token only when
+  // the token is Latin-only.
+  if (!ctx.running_text &&
+      (!ctx.identifier_token || is_latin_only(input, db)) &&
+      is_ascii_confusable(input, db)) {
+    v.kind = ClassificationKind::Hazard;
+    v.sub = AsciiConfusable{ascii_skeleton(input, db)};
+    return v;
+  }
+
   return v;
+}
+
+// The HomoglyphConfusable detection function at the default context (one
+// identifier field). Mirrors the Lean detect.
+inline Verdict detect(std::span<const std::uint32_t> input,
+                      const Database &db) {
+  return detect_with_context(input, db, Context{});
 }
 
 // The mixed-script sub-threat for `input`, or nullopt when it is admissible.

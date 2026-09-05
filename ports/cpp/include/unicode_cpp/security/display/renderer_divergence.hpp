@@ -328,12 +328,17 @@ inline std::optional<std::pair<std::size_t, std::size_t>> first_combining_stack(
 // §5 Top-level detection
 // ─────────────────────────────────────────────────────────────────────
 
-// The RendererDivergence detection function. The registered RGI set comes from
-// the bundled RgiTable rgi; the strong Bidi_Class distinction reads the bundled
-// ucd::Tables t — matching how the identity- and display-family detectors are
-// provisioned in this port.
-inline Verdict detect(const ezwj::RgiTable& rgi, const ucd::Tables& t,
-                      std::span<const std::uint32_t> input) {
+// The RendererDivergence detection function under an explicit field context.
+// The registered RGI set comes from the bundled RgiTable rgi; the strong
+// Bidi_Class distinction reads the bundled ucd::Tables t — matching how the
+// identity- and display-family detectors are provisioned in this port.
+// running_text mirrors the Lean Context.runningText: a source line or a message
+// carrying both directions is a bilingual line, not a divergence, so the
+// mixed-direction rung does not run on running text; every other rung holds of
+// any field.
+inline Verdict detect_with_context(const ezwj::RgiTable& rgi,
+                                   const ucd::Tables& t, bool running_text,
+                                   std::span<const std::uint32_t> input) {
     const std::size_t vs_count = detail::count_vs(input);
     const std::size_t combining_count = detail::count_combining(input);
     const std::size_t fullwidth_count = detail::count_fullwidth(input);
@@ -367,8 +372,8 @@ inline Verdict detect(const ezwj::RgiTable& rgi, const ucd::Tables& t,
         const auto [pos, cp] = *fw;
         classification.sub = SubThreat{FullwidthVariance{pos, cp}};
         classification.positions = {pos};
-    } else if (ltr_count > 0 && rtl_count > 0) {
-        // Priority 5: mixed direction.
+    } else if (!running_text && ltr_count > 0 && rtl_count > 0) {
+        // Priority 5: mixed direction, off for running text.
         classification.sub =
             SubThreat{MixedDirectionVariance{ltr_count, rtl_count}};
         classification.positions = {};
@@ -386,6 +391,13 @@ inline Verdict detect(const ezwj::RgiTable& rgi, const ucd::Tables& t,
     verdict.strong_ltr_count = ltr_count;
     verdict.strong_rtl_count = rtl_count;
     return verdict;
+}
+
+// The RendererDivergence detection function at the default context (one
+// field, not running text). Mirrors the Lean detect.
+inline Verdict detect(const ezwj::RgiTable& rgi, const ucd::Tables& t,
+                      std::span<const std::uint32_t> input) {
+    return detect_with_context(rgi, t, false, input);
 }
 
 }  // namespace unicode_cpp::security::display::renderer_divergence

@@ -15,7 +15,11 @@
 // homoglyph detector consumes (homoglyph_confusable::is_confusable_source); the
 // bidi predicates split the format-controls into the override class
 // (LRE/RLE/LRO/RLO/PDF, U+202A..U+202E) and the isolate class
-// (LRI/RLI/FSI/PDI, U+2066..U+2069), matching Unicode.TrojanSource.
+// (LRI/RLI/FSI/PDI, U+2066..U+2069), matching Unicode.TrojanSource. Only a
+// purposeless control (bidi_control_purpose: unbalanced, or a balanced span
+// enclosing nothing right-to-left in a left-to-right context) is the display
+// channel this compound pairs with a confusable; a balanced embedding around
+// Arabic text renders that text as written.
 
 #ifndef UNICODE_CPP_SECURITY_BOUNDARY_CONFUSABLE_BIDI_COMPOUND_HPP
 #define UNICODE_CPP_SECURITY_BOUNDARY_CONFUSABLE_BIDI_COMPOUND_HPP
@@ -27,9 +31,13 @@
 #include <string>
 #include <vector>
 
+#include "unicode_cpp/security/display/bidi_control_purpose.hpp"
 #include "unicode_cpp/security/identity/homoglyph_confusable.hpp"
 
 namespace unicode_cpp::security::boundary::confusable_bidi_compound {
+
+namespace bidi_control_purpose =
+    unicode_cpp::security::display::bidi_control_purpose;
 
 // True iff cp is an override-class bidi control (LRE, RLE, LRO, RLO, PDF —
 // the contiguous block U+202A..U+202E).
@@ -64,13 +72,29 @@ inline std::optional<std::size_t> first_pos(std::span<const std::uint32_t> input
   return std::nullopt;
 }
 
+// The first position of a purposeless bidi control satisfying pred. Mirrors
+// the Lean firstOverridePos / firstIsolatePos over the purposeless positions.
+template <typename Predicate>
+inline std::optional<std::size_t>
+first_purposeless_pos(const ucd::Tables &t,
+                      std::span<const std::uint32_t> input, Predicate pred) {
+  for (std::size_t pos :
+       bidi_control_purpose::purposeless_control_positions(t, input)) {
+    if (pred(input[pos])) {
+      return pos;
+    }
+  }
+  return std::nullopt;
+}
+
 } // namespace detail
 
-// Detect a confusable codepoint sharing the input with a bidi control.
-// Priority mirrors the spec: with a confusable present, an override-class
-// control fires ConfusableInOverride; otherwise an isolate-class control
-// fires ConfusableInIsolate; otherwise clear.  The confusable-source table is
-// read from the caller-owned database (reused, not reparsed).
+// Detect a confusable codepoint sharing the input with a purposeless bidi
+// control. Priority mirrors the spec: with a confusable present, an
+// override-class control fires ConfusableInOverride; otherwise an isolate-class
+// control fires ConfusableInIsolate; otherwise clear.  The confusable-source
+// table and the Bidi_Class tables are read from the caller-owned database
+// (reused, not reparsed).
 inline Detection detect(std::span<const std::uint32_t> input,
                         const homoglyph_confusable::Database &db) {
   const auto confusable_pos = detail::first_pos(
@@ -80,11 +104,13 @@ inline Detection detect(std::span<const std::uint32_t> input,
   if (!confusable_pos) {
     return Detection{std::nullopt, {}};
   }
-  if (const auto override_pos = detail::first_pos(input, is_override)) {
+  if (const auto override_pos =
+          detail::first_purposeless_pos(db.tables, input, is_override)) {
     return Detection{std::optional<std::string>{"ConfusableInOverride"},
                      {*confusable_pos, *override_pos}};
   }
-  if (const auto isolate_pos = detail::first_pos(input, is_isolate)) {
+  if (const auto isolate_pos =
+          detail::first_purposeless_pos(db.tables, input, is_isolate)) {
     return Detection{std::optional<std::string>{"ConfusableInIsolate"},
                      {*confusable_pos, *isolate_pos}};
   }
