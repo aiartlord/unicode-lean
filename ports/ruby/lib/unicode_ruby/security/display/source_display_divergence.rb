@@ -4,7 +4,7 @@ require_relative "../calculus"
 require_relative "../covert/tag_block_payload"
 require_relative "../covert/variation_selector_payload"
 require_relative "../covert/zero_width_payload"
-require_relative "../covert/bidi_control_balance"
+require_relative "bidi_control_purpose"
 require_relative "../identity/homoglyph_confusable"
 
 module UnicodeRuby
@@ -28,9 +28,9 @@ module UnicodeRuby
       #
       # It is a pure aggregation over the port's own constituent detectors — the
       # tag-block, variation-selector, and zero-width covert channels, the bidi
-      # control balance, and the homoglyph-confusable identity check — reusing
-      # their `detect` and classification kind; it introduces no new table, no
-      # new predicate, and no host library.
+      # purpose rule (`BidiControlPurpose`), and the homoglyph-confusable
+      # identity check — reusing their `detect` and classification kind; it
+      # introduces no new table, no new predicate, and no host library.
       module SourceDisplayDivergence
         # The constituent family tags, in canonical aggregation order.  A single
         # non-clear constituent passes its tag through unchanged.
@@ -76,16 +76,31 @@ module UnicodeRuby
           end
         end
 
-        # Aggregate the five constituent detectors into a single D-layer verdict.
+        # Aggregate the five constituent detectors into a single D-layer verdict
+        # at the default context: the homoglyph constituent is the whole-input
+        # homoglyph verdict. Mirrors the Lean detect.
         def detect(input)
+          detect_core(input, fired?(Identity::HomoglyphConfusable.detect(input).kind))
+        end
+
+        # Aggregate over a homoglyph verdict already in hand. The scan passes
+        # the verdict it produced (per identifier token on running text), so the
+        # constituent and the family finding are one reading of the same input;
+        # mirrors the Lean `detectCore input homoglyphVerdict`.
+        def detect_core(input, homoglyph_fired)
           fires = []
 
           fires << TAG_BLOCK if fired?(Covert::TagBlockPayload.detect(input).kind)
           fires << VARIATION_SELECTOR if fired?(Covert::VariationSelectorPayload.detect(input).kind)
           fires << ZERO_WIDTH if fired?(Covert::ZeroWidthPayload.detect(input).kind)
-          # Presence, not balance. A Trojan Source payload balances its controls — an unbalanced run breaks the file it is hiding in — so a constituent built on the balance verdict is blind to the shape the attack takes.
-          fires << BIDI_CONTROL if input.any? { |cp| Covert::BidiControlBalance.bidi_format_control?(cp) }
-          fires << IDENTIFIER_HOMOGLYPH if fired?(Identity::HomoglyphConfusable.detect(input).kind)
+          # A purposeless control: unbalanced, or a balanced span enclosing
+          # nothing right-to-left in a left-to-right context. A Trojan Source
+          # payload balances its controls — an unbalanced run breaks the file it
+          # is hiding in — so a constituent built on the balance verdict is
+          # blind to the shape the attack takes; a balanced embedding around an
+          # Arabic string literal manages that literal and is not a constituent.
+          fires << BIDI_CONTROL if BidiControlPurpose.purposeless_control?(input)
+          fires << IDENTIFIER_HOMOGLYPH if homoglyph_fired
 
           Detection.new(aggregate(fires))
         end

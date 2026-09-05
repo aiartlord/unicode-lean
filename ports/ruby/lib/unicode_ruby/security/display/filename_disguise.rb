@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../covert/bidi_control_balance"
+require_relative "bidi_control_purpose"
 require_relative "../../segmentation/grapheme"
 
 module UnicodeRuby
@@ -154,12 +155,14 @@ module UnicodeRuby
           out
         end
 
-        # Position and codepoint of the first bidi format-control, or nil.
+        # Position and codepoint of the first purposeless bidi format-control,
+        # or nil: unbalanced, or a balanced span enclosing nothing right-to-left
+        # in a left-to-right context (`BidiControlPurpose.first_purposeless_control`).
+        # A balanced embedding around an Arabic filename segment manages that
+        # segment and is not a flip. Mirrors the Lean detect, which reads
+        # `firstPurposelessControl`.
         def first_bidi_control(input)
-          input.each_index do |idx|
-            return [idx, input[idx]] if bidi_format_control?(input[idx])
-          end
-          nil
+          BidiControlPurpose.first_purposeless_control(input)
         end
 
         # Position and codepoint of the first fullwidth/halfwidth codepoint at or
@@ -196,8 +199,19 @@ module UnicodeRuby
 
         # ── Top-level detection ────────────────────────────────────────────
 
-        # The FilenameDisguise detection function.
+        # The FilenameDisguise detection function, reading its input as one
+        # filename. Mirrors the Lean detect, which is detectWithContext at the
+        # default context.
         def detect(input)
+          detect_with_context(false, input)
+        end
+
+        # The FilenameDisguise detection function under an explicit field
+        # context. `running_text` mirrors the Lean `Context.runningText`: the
+        # extension rungs read the text after the last dot as a file extension,
+        # which a source file or a message does not have, so they do not run on
+        # running text; the purposeless-bidi-control rung holds of any field.
+        def detect_with_context(running_text, input)
           dots = dot_positions(input)
           last_dot = dots.last
           ext_start = last_dot.nil? ? input.length : last_dot + 1
@@ -206,19 +220,22 @@ module UnicodeRuby
           ext_in_ext = count_extend_from(input, ext_start)
 
           Verdict.new(
-            input.dup, classify(input, dots, ext_start), dots, last_dot,
+            input.dup, classify(input, dots, ext_start, running_text), dots, last_dot,
             bidi_count, fw_in_ext, ext_in_ext
           )
         end
 
-        # The priority ladder, factored out of `detect`.
-        def classify(input, dots, ext_start)
-          # Priority 1: any bidi format-control.
+        # The priority ladder, factored out of `detect_with_context`.
+        def classify(input, dots, ext_start, running_text)
+          # Priority 1: a purposeless bidi format-control anywhere in the input.
           bidi = first_bidi_control(input)
           unless bidi.nil?
             pos, ctl_cp = bidi
             return hazard(rlo_flip(pos, ctl_cp), [pos], [])
           end
+
+          # The remaining rungs read an extension; running text has none.
+          return clear if running_text
 
           # Priority 2: fullwidth/halfwidth in the extension.
           fw = first_fullwidth_from(input, ext_start)

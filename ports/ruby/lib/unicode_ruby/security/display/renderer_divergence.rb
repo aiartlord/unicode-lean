@@ -206,8 +206,18 @@ module UnicodeRuby
 
         # ── Top-level detection ────────────────────────────────────────────
 
-        # The RendererDivergence detection function.
+        # The RendererDivergence detection function at the default context (one
+        # field, not running text). Mirrors the Lean detect.
         def detect(input)
+          detect_with_context(false, input)
+        end
+
+        # The RendererDivergence detection function under an explicit field
+        # context. `running_text` mirrors the Lean `Context.runningText`: a
+        # source line or a message carrying both directions is a bilingual
+        # line, not a divergence, so the mixed-direction rung does not run on
+        # running text; every other rung holds of any field.
+        def detect_with_context(running_text, input)
           vs_count = count_vs(input)
           combining_count = count_combining(input)
           fullwidth_count = count_fullwidth(input)
@@ -216,14 +226,14 @@ module UnicodeRuby
           rtl_count = count_strong_rtl(input)
 
           Verdict.new(
-            input.dup, classify(input, has_zwj, ltr_count, rtl_count),
+            input.dup, classify(input, has_zwj, ltr_count, rtl_count, running_text),
             vs_count, combining_count, fullwidth_count, has_zwj,
             ltr_count, rtl_count
           )
         end
 
-        # The priority ladder, factored out of `detect`.
-        def classify(input, has_zwj, ltr_count, rtl_count)
+        # The priority ladder, factored out of `detect_with_context`.
+        def classify(input, has_zwj, ltr_count, rtl_count, running_text)
           # Priority 1: combining-mark stack overflow (Zalgo).
           stack = first_combining_stack(input, MIN_COMBINING_STACK)
           unless stack.nil?
@@ -253,8 +263,8 @@ module UnicodeRuby
             return hazard(fullwidth_variance(pos, cp), [pos], [])
           end
 
-          # Priority 5: mixed direction.
-          if ltr_count.positive? && rtl_count.positive?
+          # Priority 5: mixed direction, off for running text.
+          if !running_text && ltr_count.positive? && rtl_count.positive?
             return hazard(mixed_direction_variance(ltr_count, rtl_count), [], [])
           end
 

@@ -7,16 +7,27 @@ module UnicodeRuby
     module Identity
       # Detection of homoglyph / confusable identifier substitution attacks
       # (Nethereum Oct 2025, IDN homograph, Math-Alpha posing, fullwidth
-      # disguise, decomposition swap, cross-script mixing).  Projects the input
-      # and a curated attack-target list onto a UTS #39 §4 skeleton and tests
-      # equality, layered with Mathematical Alphanumeric Symbols and
-      # Halfwidth/Fullwidth Forms range detection.  Six sub-threats in fixed
-      # priority order.
+      # disguise, decomposition swap, cross-script mixing, ASCII look-alikes).
+      # Projects the input and a curated attack-target list onto a UTS #39 §4
+      # skeleton and tests equality, layered with Mathematical Alphanumeric
+      # Symbols and Halfwidth/Fullwidth Forms range detection.  Seven
+      # sub-threats in fixed priority order; the ladder reads a field
+      # `Context`: on running text the two script rungs and the ascii rung do
+      # not run over the whole field, and on one identifier-shaped token cut
+      # out of running text the low-restriction rung does not run and the ascii
+      # rung runs only for a Latin-only token.
       module HomoglyphConfusable
         Verdict = Struct.new(
           :kind, :sub, :skeleton, :iterated_skeleton, :restriction_level,
           :matched_targets, :target
         )
+
+        # The field context the ladder reads. Mirrors the Lean
+        # `HomoglyphConfusable.Context`: `running_text` is a source line, a
+        # message or a display name rather than one identifier;
+        # `identifier_token` is one identifier-shaped token cut out of running
+        # text.
+        Context = Struct.new(:running_text, :identifier_token)
 
         module_function
 
@@ -207,7 +218,49 @@ module UnicodeRuby
           shorter
         end
 
+        # The case-preserving skeleton: NFD, confusable substitution, NFD, with
+        # no case fold, so admın (dotless i) maps to adrnin while ADMIN stays
+        # itself. Mirrors the Lean asciiSkeleton.
+        def ascii_skeleton(input)
+          Ucd.to_nfd(substitute(Ucd.to_nfd(input)))
+        end
+
+        # A non-ASCII input whose case-preserving skeleton is all ASCII.
+        # Mirrors the Lean isAsciiConfusable.
+        def ascii_confusable?(input)
+          input.any? { |cp| cp > 0x7F } && ascii_skeleton(input).all? { |cp| cp <= 0x7F }
+        end
+
+        # Positions of the non-ASCII codepoints. Mirrors the Lean
+        # nonAsciiPositions.
+        def non_ascii_positions(input)
+          out = []
+          input.each_with_index { |cp, idx| out << idx if cp > 0x7F }
+          out
+        end
+
+        # Every script-bearing codepoint of the input is Latin. Mirrors the Lean
+        # isLatinOnly.
+        def latin_only?(input)
+          Ucd.string_script_union(input) == ["Latn"]
+        end
+
+        # The detection function at the default context (one identifier field).
+        # Mirrors the Lean detect.
         def detect(input)
+          detect_with_context(input, Context.new(false, false))
+        end
+
+        # The detection function under a field context. Rungs in the Lean
+        # order: target match, math alphanumerics, width class, decomposition
+        # swap, then the two script rungs (cross-script mix, off on running
+        # text; low restriction level, off on running text and on a token),
+        # then the ascii-confusable rung: a non-ASCII input whose
+        # case-preserving skeleton is all ASCII reads as an ASCII word it is not
+        # (admın with a dotless i). That rung runs on a whole field, and on a
+        # token only when the token is Latin-only, so a Greek or Cyrillic word
+        # in prose is not read as its Latin look-alike.
+        def detect_with_context(input, ctx)
           skel = skeleton(input)
           iskel = iterated_skeleton(input)
           rl = Ucd.restriction_level(input)
@@ -245,29 +298,45 @@ module UnicodeRuby
             return v
           end
 
-          # Priority 5: CrossScriptMix.
+          # Priority 5: CrossScriptMix, off on running text.
           union = Ucd.string_script_union(input)
-          if union.length >= 2 && !Ucd.highly_restrictive?(input)
+          if !ctx.running_text && union.length >= 2 && !Ucd.highly_restrictive?(input)
             v.kind = Calculus::ClassificationKind::HAZARD
             v.sub = "CrossScriptMix"
             return v
           end
 
-          # Priority 6: RestrictionLow.
-          case rl
-          when Ucd::RestrictionLevel::MINIMALLY_RESTRICTIVE,
-               Ucd::RestrictionLevel::UNRESTRICTED
+          # Priority 6: RestrictionLow, off on running text and on a token.
+          low =
+            case rl
+            when Ucd::RestrictionLevel::MINIMALLY_RESTRICTIVE,
+                 Ucd::RestrictionLevel::UNRESTRICTED
+              true
+            when Ucd::RestrictionLevel::ASCII_ONLY,
+                 Ucd::RestrictionLevel::SINGLE_SCRIPT,
+                 Ucd::RestrictionLevel::HIGHLY_RESTRICTIVE,
+                 Ucd::RestrictionLevel::MODERATELY_RESTRICTIVE
+              false
+            else
+              raise "homoglyph_confusable: unknown restriction level #{rl.inspect}"
+            end
+          if !ctx.running_text && !ctx.identifier_token && low
             v.kind = Calculus::ClassificationKind::HAZARD
             v.sub = "RestrictionLow"
-            v
-          when Ucd::RestrictionLevel::ASCII_ONLY,
-               Ucd::RestrictionLevel::SINGLE_SCRIPT,
-               Ucd::RestrictionLevel::HIGHLY_RESTRICTIVE,
-               Ucd::RestrictionLevel::MODERATELY_RESTRICTIVE
-            v
-          else
-            raise "homoglyph_confusable: unknown restriction level #{rl.inspect}"
+            return v
           end
+
+          # Priority 7: AsciiConfusable, on a whole field, and on a token only
+          # when the token is Latin-only.
+          if !ctx.running_text &&
+             (!ctx.identifier_token || latin_only?(input)) &&
+             ascii_confusable?(input)
+            v.kind = Calculus::ClassificationKind::HAZARD
+            v.sub = "AsciiConfusable"
+            return v
+          end
+
+          v
         end
       end
     end
