@@ -106,6 +106,7 @@ library
       Unicode.Security.Boundary.AdmissibilityFormDrift
       Unicode.Security.Boundary.IdentifierFormDrift
       Unicode.Security.Crypto.HashInputStability
+      Unicode.Security.Display.BidiControlPurpose
       Unicode.Security.Display.RendererDivergence
       Unicode.Security.Display.FilenameDisguise
       Unicode.Security.Display.SourceDisplayAggregate
@@ -117,6 +118,7 @@ library
       Unicode.Security.Form.StreamSafeViolation
       Unicode.Security.Form.WidthClassConfusion
       Unicode.Security.Identity.EmojiZwjIntegrity
+      Unicode.Security.Identity.IdentifierTokens
       Unicode.Security.Identity.SkinToneVariationForgery
       Unicode.Security.CodepointPredicates
       Unicode.Security.Policy

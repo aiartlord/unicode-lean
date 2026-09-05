@@ -49,6 +49,12 @@ module Unicode.Security.Policy
   , bidiFinding
   , homoglyphFinding
   , homoglyphConstituentFinding
+  , profileIsIdentifierField
+  , profileIsRunningText
+  , detect
+  , filenameDisguiseFinding
+  , rendererDivergenceFinding
+  , sourceDisplayDivergenceFinding
   , FieldDirection (FieldLTR, FieldRTL)
   , rtlInjectionFindingWithContext
   , scan
@@ -80,6 +86,7 @@ import qualified Unicode.Codec.Utf8 as Utf8
 import qualified Unicode.Security.Display.SourceDisplayAggregate as SourceDisplay
 import qualified Unicode.Security.Boundary.AdmissibilityFormDrift as AdmissibilityDrift
 import qualified Unicode.Security.Boundary.IdentifierFormDrift as IdentifierDrift
+import qualified Unicode.Security.Display.BidiControlPurpose as Purpose
 import qualified Unicode.Security.Display.FilenameDisguise as FilenameDisguise
 import qualified Unicode.Security.Display.RendererDivergence as RendererDiv
 import qualified Unicode.Security.Form.CaseExpansionMismatch as CaseExpansion
@@ -89,6 +96,7 @@ import qualified Unicode.Security.Form.NormalizationBomb as NormBomb
 import qualified Unicode.Security.Form.StreamSafeViolation as StreamSafe
 import qualified Unicode.Security.Form.WidthClassConfusion as WidthClass
 import qualified Unicode.Security.Identity.EmojiZwjIntegrity as EmojiZwj
+import qualified Unicode.Security.Identity.IdentifierTokens as IdentifierTokens
 import qualified Unicode.Security.Identity.SkinToneVariationForgery as SkinTone
 import Unicode.Codec.Strict
   ( Utf8RejectKind
@@ -332,9 +340,19 @@ profileIsIdentifierField ProfileDnsLabel = True
 profileIsIdentifierField ProfileUsername = True
 profileIsIdentifierField _ = False
 
+-- | Whether the profile reads its input as running text -- a source line, a
+-- message, a display name -- rather than one identifier. The identifier
+-- families then judge each identifier-shaped token of the line on its own,
+-- and the field-wide families that read the line as one identifier or one
+-- filename report clear. Mirrors @profileIsRunningText@ in
+-- @Unicode/Security/Policy.lean@.
+profileIsRunningText :: Profile -> Bool
+profileIsRunningText profile =
+  profile == ProfileDisplayName || profile == ProfileChatMessage || profile == ProfileSourceCode
+
 scan :: Profile -> Mode -> [Int] -> Verdict
 scan profile mode input =
-  let findings = detect input (profileIsIdentifierField profile)
+  let findings = detect input (profileIsIdentifierField profile) (profileIsRunningText profile)
   in Verdict
        { verdictInput = input
        , verdictProfile = profile
@@ -458,32 +476,103 @@ readWord32 bigEndian bytes offset =
 -- | Run every family over @input@. @identifierField@ carries what the caller
 -- knows about the field, mirroring @Unicode.Security.RunAll@'s @Context@: a
 -- family scoped to identifiers needs to know whether it is holding one.
-detect :: [Int] -> Bool -> [Finding]
-detect input identifierField =
+--
+-- The third argument is @Context.runningText@: under it the homoglyph and
+-- mixed-script families read the input per identifier-shaped token
+-- ('homoglyphOverTokens', 'mixedScriptOverTokens'); rtl-injection,
+-- locale-case-inversion and case-expansion-mismatch, which read the whole
+-- field as one identifier, report clear; filename-disguise runs only its
+-- purposeless-control rung and renderer-divergence drops its mixed-direction
+-- rung. The source-display-divergence aggregate reads the homoglyph verdict
+-- the scan produced, so its constituent agrees with the family finding.
+detect :: [Int] -> Bool -> Bool -> [Finding]
+detect input identifierField runningText =
   tagBlockFinding input
     ++ variationSelectorFinding input
     ++ zeroWidthFinding input
     ++ surrogateReassemblyFinding input
     ++ bidiFinding input
     ++ noncharacterControlFindings input
-    ++ homoglyphFinding input
-    ++ mixedScriptAdmissibilityFinding input identifierField
-    ++ rtlInjectionFinding input
+    ++ homoglyph
+    ++ mixedScript
+    ++ gated (rtlInjectionFinding input)
     ++ confusableBidiCompoundFinding input
     ++ covertDisplayCompoundFinding input
     ++ emojiZwjIntegrityFinding input
     ++ skinToneVariationForgeryFinding input
-    ++ filenameDisguiseFinding input
-    ++ rendererDivergenceFinding input
+    ++ filenameDisguiseFindingWithContext runningText input
+    ++ rendererDivergenceFindingWithContext runningText input
     ++ streamSafeViolationFinding input
-    ++ caseExpansionMismatchFinding input
+    ++ gated (caseExpansionMismatchFinding input)
     ++ identifierFormDriftFinding input
     ++ admissibilityFormDriftFinding input
     ++ normalizationBombFinding input
-    ++ localeCaseInversionFinding input
+    ++ gated (localeCaseInversionFinding input)
     ++ nfcIdempotenceWitnessFinding input
     ++ widthClassConfusionFinding input
-    ++ sourceDisplayDivergenceFinding input
+    ++ sourceDisplayDivergenceFindingFrom homoglyph input
+  where
+    homoglyph
+      | runningText = homoglyphOverTokens input
+      | otherwise = homoglyphFindingWithContext (HomoglyphContext False False) input
+    mixedScript
+      | runningText = mixedScriptOverTokens input
+      | otherwise = mixedScriptAdmissibilityFinding input identifierField
+    -- Families that read the whole field as one identifier report clear on
+    -- running text. Mirrors the Lean @mkGatedResult@.
+    gated :: [Finding] -> [Finding]
+    gated findings
+      | runningText = []
+      | otherwise = findings
+
+-- | The homoglyph family over running text: the first identifier-shaped token
+-- (a maximal @XID_Continue@ run) that fires, under the identifier-token
+-- context, with its positions shifted back into input coordinates. When no
+-- token fires, the whole input is read once under the running-text context,
+-- which keeps the rungs that hold of any text (target match, math alphanumerics,
+-- width class, decomposition swap). Mirrors the Lean @homoglyphOverTokens@.
+homoglyphOverTokens :: [Int] -> [Finding]
+homoglyphOverTokens input =
+  case mapMaybe firing (IdentifierTokens.tokens input) of
+    (found : laterTokens) -> const found laterTokens
+    [] -> homoglyphFindingWithContext (HomoglyphContext True False) input
+  where
+    firing :: IdentifierTokens.Token -> Maybe [Finding]
+    firing token =
+      case homoglyphFindingWithContext (HomoglyphContext False True) (IdentifierTokens.tokenCps token) of
+        [] -> Nothing
+        findings ->
+          Just
+            [ finding
+                { findingPositions =
+                    IdentifierTokens.shiftPositions (IdentifierTokens.tokenStart token) (findingPositions finding)
+                }
+            | finding <- findings
+            ]
+
+-- | The mixed-script family over running text: each identifier-shaped token is
+-- judged as one identifier (not an identifier field, so the Restricted-status
+-- rung does not apply); the first token that fires is reported, positions in
+-- input coordinates. A line with no firing token is clear. Mirrors the Lean
+-- @mixedScriptOverTokens@.
+mixedScriptOverTokens :: [Int] -> [Finding]
+mixedScriptOverTokens input =
+  case mapMaybe firing (IdentifierTokens.tokens input) of
+    (found : laterTokens) -> const found laterTokens
+    [] -> []
+  where
+    firing :: IdentifierTokens.Token -> Maybe [Finding]
+    firing token =
+      case mixedScriptAdmissibilityFinding (IdentifierTokens.tokenCps token) False of
+        [] -> Nothing
+        findings ->
+          Just
+            [ finding
+                { findingPositions =
+                    IdentifierTokens.shiftPositions (IdentifierTokens.tokenStart token) (findingPositions finding)
+                }
+            | finding <- findings
+            ]
 
 tagBlockFinding :: [Int] -> [Finding]
 tagBlockFinding input =
@@ -1006,22 +1095,34 @@ skinToneVariationForgeryFinding input =
     classification = SkinTone.verdictClassify (SkinTone.detect input)
 
 filenameDisguiseFinding :: [Int] -> [Finding]
-filenameDisguiseFinding input =
+filenameDisguiseFinding = filenameDisguiseFindingWithContext False
+
+-- | Filename disguise under the field context; the first argument is
+-- @Context.runningText@ ('FilenameDisguise.detectWithContext').
+filenameDisguiseFindingWithContext :: Bool -> [Int] -> [Finding]
+filenameDisguiseFindingWithContext runningText input =
   findingFromTag
     FamilyFilenameDisguise
     (FilenameDisguise.classificationTag classification)
     (FilenameDisguise.classificationPositions classification)
   where
-    classification = FilenameDisguise.verdictClassify (FilenameDisguise.detect input)
+    classification =
+      FilenameDisguise.verdictClassify (FilenameDisguise.detectWithContext runningText input)
 
 rendererDivergenceFinding :: [Int] -> [Finding]
-rendererDivergenceFinding input =
+rendererDivergenceFinding = rendererDivergenceFindingWithContext False
+
+-- | Renderer divergence under the field context; the first argument is
+-- @Context.runningText@ ('RendererDiv.detectWithContext').
+rendererDivergenceFindingWithContext :: Bool -> [Int] -> [Finding]
+rendererDivergenceFindingWithContext runningText input =
   findingFromTag
     FamilyRendererDivergence
     (RendererDiv.classificationTag classification)
     (RendererDiv.classificationPositions classification)
   where
-    classification = RendererDiv.verdictClassify (RendererDiv.detect input)
+    classification =
+      RendererDiv.verdictClassify (RendererDiv.detectWithContext runningText input)
 
 streamSafeViolationFinding :: [Int] -> [Finding]
 streamSafeViolationFinding input =
@@ -1092,6 +1193,15 @@ widthClassConfusionFinding input =
 -- so it localises nothing and carries an empty position list.
 sourceDisplayDivergenceFinding :: [Int] -> [Finding]
 sourceDisplayDivergenceFinding input =
+  sourceDisplayDivergenceFindingFrom (homoglyphConstituentFinding input) input
+
+-- | The aggregate over a homoglyph verdict already in hand. 'detect' passes the
+-- verdict the scan produced (per token on running text), so the constituent
+-- and the family finding are one reading of the same input; mirrors the Lean
+-- @detectCore input homoglyphVerdict@. The family judges the input as a unit,
+-- so it localises nothing and carries an empty position list.
+sourceDisplayDivergenceFindingFrom :: [Finding] -> [Int] -> [Finding]
+sourceDisplayDivergenceFindingFrom homoglyphFindings input =
   findingFromTag
     FamilySourceDisplayDivergence
     (SourceDisplay.classificationTag classification)
@@ -1105,16 +1215,18 @@ sourceDisplayDivergenceFinding input =
             , variationSelectorFinding input
             , zeroWidthFinding input
             , bidiConstituentFinding input
-            , homoglyphConstituentFinding input
+            , homoglyphFindings
             ]))
 
--- | The bidi constituent as source-display-divergence sees it: presence, not
--- balance. A Trojan Source payload balances its controls, since an unbalanced
--- run breaks the file it is hiding in, so a constituent built on the balance
--- verdict is blind to the shape the attack takes.
+-- | The bidi constituent as source-display-divergence sees it: the purposeless
+-- controls ('Purpose.purposelessControlPositions'), not the balance verdict. A
+-- Trojan Source payload balances its controls, since an unbalanced run breaks
+-- the file it is hiding in, so a constituent built on the balance verdict is
+-- blind to the shape the attack takes; a balanced embedding around an Arabic
+-- string literal manages that literal and is not a constituent.
 bidiConstituentFinding :: [Int] -> [Finding]
 bidiConstituentFinding input =
-  case positionsWhere isBidiFormatControl input of
+  case Purpose.purposelessControlPositions input of
     [] -> []
     positions ->
       [ Finding
@@ -1127,49 +1239,92 @@ bidiConstituentFinding input =
           }
       ]
 
--- | The homoglyph constituent as source-display-divergence sees it. The
--- reference runs one homoglyph detector whose priority ladder ends in a
--- CrossScriptMix branch, so a cross-script identifier fires it; this port
--- splits that ladder, reporting the script mix under
--- mixed-script-admissibility. Consulting only 'homoglyphFinding' misses every
--- input whose sole homoglyph signal is the script mix, so the constituent is
--- defined once here and used by both this module's aggregate and the detector
--- module's own run.
+-- | The homoglyph constituent as source-display-divergence sees it when the
+-- aggregate runs standalone: the whole input under the default context. The
+-- ladder carries the CrossScriptMix rung itself, so the constituent is the
+-- family finding; the scan passes its per-token verdict through
+-- 'sourceDisplayDivergenceFindingFrom'.
 homoglyphConstituentFinding :: [Int] -> [Finding]
-homoglyphConstituentFinding input =
-  -- The constituent asks the script question about a source file, which is not
-  -- an identifier field, so the Restricted-status rung does not apply.
-  homoglyphFinding input ++ mixedScriptAdmissibilityFinding input False
+homoglyphConstituentFinding = homoglyphFinding
+
+-- | The field context the homoglyph ladder reads. Mirrors the Lean
+-- @HomoglyphConfusable.Context@: 'homoglyphRunningText' is a source line, a
+-- message or a display name rather than one identifier; 'homoglyphIdentifierToken'
+-- is one identifier-shaped token cut out of running text.
+data HomoglyphContext = HomoglyphContext
+  { homoglyphRunningText     :: Bool
+  , homoglyphIdentifierToken :: Bool
+  }
+  deriving stock (Eq, Show)
 
 homoglyphFinding :: [Int] -> [Finding]
-homoglyphFinding input
-  | Just _target <- findTargetMatch input =
-      [ makeHomoglyphFinding "TargetMatch" ]
+homoglyphFinding = homoglyphFindingWithContext (HomoglyphContext False False)
+
+-- | The homoglyph ladder under a field context. Rungs in the Lean order: target
+-- match, math alphanumerics, width class, decomposition swap, then the two
+-- script rungs (cross-script mix, off on running text; low restriction level,
+-- off on running text and on a token), then the ascii-confusable rung: a
+-- non-ASCII input whose case-preserving skeleton is all ASCII reads as an ASCII
+-- word it is not (@admın@ with a dotless i). That rung runs on a whole field,
+-- and on a token only when the token is Latin-only, so a Greek or Cyrillic
+-- word in prose is not read as its Latin look-alike.
+homoglyphFindingWithContext :: HomoglyphContext -> [Int] -> [Finding]
+homoglyphFindingWithContext ctx input
+  | Just matchedTarget <- findTargetMatch input =
+      const [ makeHomoglyphFinding "TargetMatch" wholeInput ] matchedTarget
   | any isMathAlphanumeric input =
-      [ makeHomoglyphFinding "MathAlpha" ]
+      [ makeHomoglyphFinding "MathAlpha" wholeInput ]
   | any isFullwidthHalfwidth input =
-      [ makeHomoglyphFinding "WidthClass" ]
+      [ makeHomoglyphFinding "WidthClass" wholeInput ]
   | hasDecompositionSwap input =
-      [ makeHomoglyphFinding "DecompositionSwap" ]
-  -- The last two rungs of the Lean ladder, in its order: a cross-script mix
+      [ makeHomoglyphFinding "DecompositionSwap" wholeInput ]
+  -- The script rungs of the Lean ladder, in its order: a cross-script mix
   -- that is not Highly Restrictive, then a string failing every restriction
   -- level. Both need real script resolution.
-  | hasCrossScriptMix input =
-      [ makeHomoglyphFinding "CrossScriptMix" ]
-  | restrictionLevel input `elem` [RestrictionMinimallyRestrictive, RestrictionUnrestricted] =
-      [ makeHomoglyphFinding "RestrictionLow" ]
+  | not (homoglyphRunningText ctx) && hasCrossScriptMix input =
+      [ makeHomoglyphFinding "CrossScriptMix" wholeInput ]
+  | not (homoglyphRunningText ctx)
+      && not (homoglyphIdentifierToken ctx)
+      && restrictionLevel input `elem` [RestrictionMinimallyRestrictive, RestrictionUnrestricted] =
+      [ makeHomoglyphFinding "RestrictionLow" wholeInput ]
+  | not (homoglyphRunningText ctx)
+      && (not (homoglyphIdentifierToken ctx) || isLatinOnly input)
+      && isAsciiConfusable input =
+      [ makeHomoglyphFinding "AsciiConfusable" (nonAsciiPositions input) ]
   | otherwise = []
   where
-    makeHomoglyphFinding :: String -> Finding
-    makeHomoglyphFinding subThreat =
+    wholeInput = [0 .. length input - 1]
+    makeHomoglyphFinding :: String -> [Int] -> Finding
+    makeHomoglyphFinding subThreat positions =
       Finding
         { findingCode = reasonCode FamilyHomoglyphConfusable subThreat
         , findingFamily = FamilyHomoglyphConfusable
         , findingSeverity = 2
-        , findingPositions = [0 .. length input - 1]
+        , findingPositions = positions
         , findingSubThreat = subThreat
         , findingDetail = familyTag FamilyHomoglyphConfusable
         }
+
+-- | The case-preserving skeleton: NFD, confusable substitution, NFD, with no
+-- case fold, so @admın@ (dotless i) maps to @adrnin@ while @ADMIN@ stays
+-- itself. Mirrors the Lean @asciiSkeleton@.
+asciiSkeleton :: [Int] -> [Int]
+asciiSkeleton = toNfdCodepoints . substituteConfusables . toNfdCodepoints
+
+-- | A non-ASCII input whose case-preserving skeleton is all ASCII. Mirrors the
+-- Lean @isAsciiConfusable@.
+isAsciiConfusable :: [Int] -> Bool
+isAsciiConfusable input =
+  any (> 0x7F) input && all (<= 0x7F) (asciiSkeleton input)
+
+-- | Positions of the non-ASCII codepoints. Mirrors the Lean @nonAsciiPositions@.
+nonAsciiPositions :: [Int] -> [Int]
+nonAsciiPositions = positionsWhere (> 0x7F)
+
+-- | Every script-bearing codepoint of the input is Latin. Mirrors the Lean
+-- @isLatinOnly@.
+isLatinOnly :: [Int] -> Bool
+isLatinOnly input = stringScriptUnion input == ["Latn"]
 
 mixedScriptAdmissibilityFinding :: [Int] -> Bool -> [Finding]
 mixedScriptAdmissibilityFinding input identifierField
@@ -1823,13 +1978,27 @@ confusableBidiCompoundFinding input =
   case firstPos isConfusableSource input of
     Nothing -> []
     Just confusablePos ->
-      case firstPos isOverride input of
+      case firstPurposelessPos isOverride of
         Just bidiPos -> [makeFinding "ConfusableInOverride" [confusablePos, bidiPos]]
         Nothing ->
-          case firstPos isIsolate input of
+          case firstPurposelessPos isIsolate of
             Just bidiPos -> [makeFinding "ConfusableInIsolate" [confusablePos, bidiPos]]
             Nothing -> []
   where
+    -- Only a purposeless control (unbalanced, or a balanced span enclosing
+    -- nothing right-to-left in a left-to-right context) is the display channel
+    -- this compound pairs with a confusable; a balanced embedding around
+    -- Arabic text renders that text as written. Mirrors the Lean
+    -- @firstOverridePos@ / @firstIsolatePos@ over the purposeless positions.
+    firstPurposelessPos :: (Int -> Bool) -> Maybe Int
+    firstPurposelessPos matches =
+      listToMaybe
+        [ pos
+        | (pos, cp) <- zip [0 ..] input
+        , Set.member pos purposeless
+        , matches cp
+        ]
+    purposeless = Set.fromList (Purpose.purposelessControlPositions input)
     makeFinding :: String -> [Int] -> Finding
     makeFinding subThreat positions =
       Finding

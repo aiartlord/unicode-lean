@@ -44,7 +44,7 @@ module Unicode.Security.Display.SourceDisplayDivergence
   , reasonCode
   ) where
 
-import Unicode.Security.CodepointPredicates (isBidiFormatControl)
+import Unicode.Security.Display.BidiControlPurpose (hasPurposelessControl)
 import Unicode.Security.Display.SourceDisplayAggregate
   ( Classification (Clear, Hazard)
   , SubThreat
@@ -87,12 +87,14 @@ constituents input =
   [ not (null (Policy.tagBlockFinding input))
   , not (null (Policy.variationSelectorFinding input))
   , not (null (Policy.zeroWidthFinding input))
-  -- Presence over the full bidi format-control set, not the balance verdict
-  -- 'Policy.bidiFinding' reports. A Trojan Source payload balances its
-  -- controls, since an unbalanced run breaks the file it hides in, so the
-  -- balance verdict is blind to the shape the attack takes. That family's own
-  -- finding is unchanged; only this constituent reads presence.
-  , any isBidiFormatControl input
+  -- A purposeless bidi format-control ('hasPurposelessControl'): unbalanced,
+  -- or a balanced span enclosing nothing right-to-left in a left-to-right
+  -- context. A Trojan Source payload balances its controls, since an
+  -- unbalanced run breaks the file it hides in, so the balance verdict
+  -- 'Policy.bidiFinding' reports is blind to the shape the attack takes; a
+  -- balanced embedding around an Arabic string literal manages that literal
+  -- and is not a divergence. That family's own finding is unchanged.
+  , hasPurposelessControl input
   , not (null (Policy.homoglyphConstituentFinding input))
   ]
 

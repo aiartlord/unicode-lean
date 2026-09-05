@@ -55,6 +55,7 @@ module Unicode.Security.Display.RendererDivergence
   , isFullwidthHalfwidth
   , isGraphemeExtend
   , detect
+  , detectWithContext
   , reasonCode
   ) where
 
@@ -244,7 +245,14 @@ firstCombiningStack input minStack = go 0 input
 -- verified Rust reference exactly; see the module header for the sub-threat
 -- inventory.
 detect :: [Int] -> Verdict
-detect input =
+detect = detectWithContext False
+
+-- | Detection under an explicit field context. The first argument mirrors the
+-- Lean @Context.runningText@: a source line or a message carrying both
+-- directions is a bilingual line, not a divergence, so the mixed-direction rung
+-- does not run on running text; every other rung holds of any field.
+detectWithContext :: Bool -> [Int] -> Verdict
+detectWithContext runningText input =
   Verdict
     { verdictInput          = input
     , verdictClassify       = classification
@@ -285,8 +293,8 @@ detect input =
                     Just (pos, cp) ->
                       Hazard (FullwidthVariance pos cp) [pos] []
                     Nothing ->
-                      -- Priority 5: mixed direction.
-                      if ltrCount > 0 && rtlCount > 0
+                      -- Priority 5: mixed direction, off for running text.
+                      if not runningText && ltrCount > 0 && rtlCount > 0
                         then Hazard (MixedDirectionVariance ltrCount rtlCount) [] []
                         else Clear
 

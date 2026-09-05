@@ -45,6 +45,7 @@ module Unicode.Security.Display.FilenameDisguise
   , isBidiFormatControl
   , isGraphemeExtend
   , detect
+  , detectWithContext
   , reasonCode
   ) where
 
@@ -53,6 +54,7 @@ import Data.Maybe (listToMaybe)
 import Unicode.Segmentation.Grapheme (lookupGCB)
 import Unicode.Segmentation.GraphemeTables (GCB (Extend))
 import qualified Unicode.Security.CodepointPredicates as Predicates
+import qualified Unicode.Security.Display.BidiControlPurpose as Purpose
 
 -- ─────────────────────────────────────────────────────────────────────
 -- §1 Types
@@ -157,10 +159,13 @@ isGraphemeExtend cp = lookupGCB cp == Extend
 dotPositions :: [Int] -> [Int]
 dotPositions input = [ idx | (idx, cp) <- zip [0 ..] input, isAsciiDot cp ]
 
--- | Position and codepoint of the first bidi format-control.
+-- | Position and codepoint of the first purposeless bidi format-control:
+-- unbalanced, or a balanced span enclosing nothing right-to-left in a
+-- left-to-right context ('Purpose.firstPurposelessControl'). A balanced
+-- embedding around an Arabic filename segment manages that segment and is not
+-- a flip. Mirrors the Lean @detect@, which reads @firstPurposelessControl@.
 firstBidiControl :: [Int] -> Maybe (Int, Int)
-firstBidiControl input =
-  listToMaybe [ (idx, cp) | (idx, cp) <- zip [0 ..] input, isBidiFormatControl cp ]
+firstBidiControl = Purpose.firstPurposelessControl
 
 -- | Position and codepoint of the first fullwidth/halfwidth codepoint at or
 -- after @start@.
@@ -193,7 +198,15 @@ countExtendFrom input start =
 -- verified Rust reference exactly; see the module header for the sub-threat
 -- inventory.
 detect :: [Int] -> Verdict
-detect input =
+detect = detectWithContext False
+
+-- | Detection under an explicit field context. The first argument mirrors the
+-- Lean @Context.runningText@: the extension rungs read the text after the last
+-- dot as a file extension, which a source file or a message does not have, so
+-- they do not run on running text; the purposeless-bidi-control rung holds of
+-- any field.
+detectWithContext :: Bool -> [Int] -> Verdict
+detectWithContext runningText input =
   Verdict
     { verdictInput            = input
     , verdictClassify         = classification
@@ -212,22 +225,25 @@ detect input =
     extInExt  = countExtendFrom input extStart
 
     classification =
-      -- Priority 1: any bidi format-control.
+      -- Priority 1: a purposeless bidi format-control anywhere in the input.
       case firstBidiControl input of
         Just (pos, ctlCp) -> Hazard (RloFlip pos ctlCp) [pos] []
-        Nothing ->
-          -- Priority 2: fullwidth/halfwidth in the extension.
-          case firstFullwidthFrom input extStart of
-            Just (pos, cp) -> Hazard (WidthClassExt pos cp) [pos] []
-            Nothing ->
-              -- Priority 3: combining mark in the extension.
-              case firstExtendFrom input extStart of
-                Just (pos, cp) -> Hazard (CombiningInExt pos cp) [pos] []
+        Nothing
+          -- The remaining rungs read an extension; running text has none.
+          | runningText -> Clear
+          | otherwise ->
+              -- Priority 2: fullwidth/halfwidth in the extension.
+              case firstFullwidthFrom input extStart of
+                Just (pos, cp) -> Hazard (WidthClassExt pos cp) [pos] []
                 Nothing ->
-                  -- Priority 4: three or more extensions (advisory).
-                  if length dots >= 3
-                    then Hazard (MultipleExtensions (length dots)) dots []
-                    else Clear
+                  -- Priority 3: combining mark in the extension.
+                  case firstExtendFrom input extStart of
+                    Just (pos, cp) -> Hazard (CombiningInExt pos cp) [pos] []
+                    Nothing ->
+                      -- Priority 4: three or more extensions (advisory).
+                      if length dots >= 3
+                        then Hazard (MultipleExtensions (length dots)) dots []
+                        else Clear
 
 -- | Fully-qualified reason code for a fired sub-threat, of the shape
 -- @unicode.security.D.filename-disguise.\<subThreatTag\>@.
