@@ -297,8 +297,18 @@ public static partial class Security
         // §5 Top-level detection
         // ─────────────────────────────────────────────────────────────────
 
-        /// <summary>The RendererDivergence detection function.</summary>
-        public static Verdict Detect(IReadOnlyList<int> input)
+        /// <summary>The RendererDivergence detection function at the default
+        /// context (one field, not running text). Mirrors the Lean
+        /// detect.</summary>
+        public static Verdict Detect(IReadOnlyList<int> input) => DetectWithContext(false, input);
+
+        /// <summary>The RendererDivergence detection function under an explicit
+        /// field context. <paramref name="runningText"/> mirrors the Lean
+        /// Context.runningText: a source line or a message carrying both
+        /// directions is a bilingual line, not a divergence, so the
+        /// mixed-direction rung does not run on running text; every other rung
+        /// holds of any field.</summary>
+        public static Verdict DetectWithContext(bool runningText, IReadOnlyList<int> input)
         {
             var vsCount = CountVs(input);
             var combiningCount = CountCombining(input);
@@ -347,8 +357,8 @@ public static partial class Security
                     new List<int> { fwPos },
                     new List<int>());
             }
-            // Priority 5: mixed direction.
-            else if (ltrCount > 0 && rtlCount > 0)
+            // Priority 5: mixed direction, off for running text.
+            else if (!runningText && ltrCount > 0 && rtlCount > 0)
             {
                 classification = new Hazard(
                     new MixedDirectionVariance(ltrCount, rtlCount),

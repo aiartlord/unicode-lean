@@ -117,10 +117,19 @@ public static partial class Security
     internal static bool ProfileIsIdentifierField(string profile) =>
         profile == Profile.DomainName || profile == Profile.DnsLabel || profile == Profile.Username;
 
+    /// <summary>True iff the profile reads its input as running text -- a source
+    /// line, a message, a display name -- rather than one identifier. The
+    /// identifier families then judge each identifier-shaped token of the line
+    /// on its own, and the field-wide families that read the line as one
+    /// identifier or one filename report clear. Mirrors profileIsRunningText in
+    /// Unicode/Security/Policy.lean.</summary>
+    internal static bool ProfileIsRunningText(string profile) =>
+        profile == Profile.DisplayName || profile == Profile.ChatMessage || profile == Profile.SourceCode;
+
     public static Verdict Scan(string profile, string mode, IEnumerable<int> input)
     {
         var codepoints = input.Select(EnsureCodepoint).ToList();
-        var findings = Detect(codepoints, ProfileIsIdentifierField(profile));
+        var findings = Detect(codepoints, ProfileIsIdentifierField(profile), ProfileIsRunningText(profile));
         return new Verdict(Decide(profile, mode, findings), profile, mode, codepoints, findings, null);
     }
 
@@ -178,7 +187,14 @@ public static partial class Security
     // Detect runs every family over input. identifierField carries what the
     // caller knows about the field, mirroring Unicode.Security.RunAll's Context:
     // a family scoped to identifiers needs to know whether it is holding one.
-    private static List<Finding> Detect(List<int> input, bool identifierField)
+    // runningText is the Context's other reading: under it the homoglyph and
+    // mixed-script families read the input per identifier-shaped token,
+    // rtl-injection, locale-case-inversion and case-expansion-mismatch (which
+    // read the whole field as one identifier) report clear, filename-disguise
+    // runs only its purposeless-control rung, renderer-divergence drops its
+    // mixed-direction rung, and the source-display-divergence aggregate reads
+    // the homoglyph verdict this scan produced.
+    private static List<Finding> Detect(List<int> input, bool identifierField, bool runningText)
     {
         var findings = new List<Finding>();
         var tagPositions = PositionsWhere(input, IsTagBlockChar);
@@ -204,11 +220,17 @@ public static partial class Security
         var bidi = BidiFinding(input);
         if (bidi is not null) findings.Add(bidi);
         findings.AddRange(NoncharacterControlFindings(input));
-        var homoglyph = HomoglyphConfusableFinding(input);
+        var homoglyph = runningText
+            ? HomoglyphOverTokens(input)
+            : HomoglyphConfusableFindingWithContext(input, new HomoglyphContext(false, false));
         if (homoglyph is not null) findings.Add(homoglyph);
-        var mixedScript = MixedScriptAdmissibilityFinding(input, identifierField);
+        var mixedScript = runningText
+            ? MixedScriptOverTokens(input)
+            : MixedScriptAdmissibilityFinding(input, identifierField);
         if (mixedScript is not null) findings.Add(mixedScript);
-        var rtl = RtlInjectionFinding(input);
+        // Families that read the whole field as one identifier report clear on
+        // running text. Mirrors the Lean mkGatedResult.
+        var rtl = runningText ? null : RtlInjectionFinding(input);
         if (rtl is not null) findings.Add(rtl);
         var compound = ConfusableBidiCompoundFinding(input);
         if (compound is not null) findings.Add(compound);
@@ -218,29 +240,36 @@ public static partial class Security
         if (!emojiZwj.IsClear) findings.Add(MakeFinding(Family.EmojiZwjIntegrity, emojiZwj.Tag!, emojiZwj.Positions));
         var skinTone = SkinToneVariationForgery.Detect(input).Classify;
         if (!skinTone.IsClear) findings.Add(MakeFinding(Family.SkinToneVariationForgery, skinTone.Tag!, skinTone.Positions));
-        var filenameDisguise = FilenameDisguise.Detect(input).Classify;
+        var filenameDisguise = FilenameDisguise.DetectWithContext(runningText, input).Classify;
         if (!filenameDisguise.IsClear) findings.Add(MakeFinding(Family.FilenameDisguise, filenameDisguise.Tag!, filenameDisguise.Positions));
-        var rendererDivergence = RendererDivergence.Detect(input).Classify;
+        var rendererDivergence = RendererDivergence.DetectWithContext(runningText, input).Classify;
         if (!rendererDivergence.IsClear) findings.Add(MakeFinding(Family.RendererDivergence, rendererDivergence.Tag!, rendererDivergence.Positions));
         var streamSafe = StreamSafeViolation.Detect(input).Classify;
         if (!streamSafe.IsClear) findings.Add(MakeFinding(Family.StreamSafeViolation, streamSafe.Tag!, streamSafe.Positions));
-        var caseExpansion = CaseExpansionMismatch.Detect(input).Classify;
-        if (!caseExpansion.IsClear) findings.Add(MakeFinding(Family.CaseExpansionMismatch, caseExpansion.Tag!, caseExpansion.Positions));
+        if (!runningText)
+        {
+            var caseExpansion = CaseExpansionMismatch.Detect(input).Classify;
+            if (!caseExpansion.IsClear) findings.Add(MakeFinding(Family.CaseExpansionMismatch, caseExpansion.Tag!, caseExpansion.Positions));
+        }
         var identifierDrift = IdentifierFormDrift.Detect(input).Classify;
         if (!identifierDrift.IsClear) findings.Add(MakeFinding(Family.IdentifierFormDrift, identifierDrift.Tag!, identifierDrift.Positions));
         var admissibilityDrift = AdmissibilityFormDrift.Detect(input).Classify;
         if (!admissibilityDrift.IsClear) findings.Add(MakeFinding(Family.AdmissibilityFormDrift, admissibilityDrift.Tag!, admissibilityDrift.Positions));
         var normalizationBomb = NormalizationBombDetect(input);
         if (normalizationBomb.SubThreat is not null) findings.Add(MakeFinding(Family.NormalizationBomb, normalizationBomb.SubThreat, normalizationBomb.Positions));
-        var localeCase = LocaleCaseInversionDetect(input);
-        if (localeCase.SubThreat is not null) findings.Add(MakeFinding(Family.LocaleCaseInversion, localeCase.SubThreat, localeCase.Positions));
+        if (!runningText)
+        {
+            var localeCase = LocaleCaseInversionDetect(input);
+            if (localeCase.SubThreat is not null) findings.Add(MakeFinding(Family.LocaleCaseInversion, localeCase.SubThreat, localeCase.Positions));
+        }
         var nfcWitness = NfcIdempotenceWitnessDetect(input);
         if (nfcWitness.SubThreat is not null) findings.Add(MakeFinding(Family.NfcIdempotenceWitness, nfcWitness.SubThreat, nfcWitness.Positions));
         var widthClass = WidthClassConfusionDetect(input);
         if (widthClass.SubThreat is not null) findings.Add(MakeFinding(Family.WidthClassConfusion, widthClass.SubThreat, widthClass.Positions));
         // SourceDisplayDivergence judges the input as a unit, so it localises
-        // nothing and carries an empty position list.
-        var sourceDisplay = SourceDisplayDivergence.Detect(input).Classify;
+        // nothing and carries an empty position list. Its homoglyph constituent
+        // is the verdict this scan produced, so the two agree on running text.
+        var sourceDisplay = SourceDisplayDivergence.DetectCore(input, homoglyph is not null).Classify;
         if (!sourceDisplay.IsClear)
         {
             findings.Add(MakeFinding(Family.SourceDisplayDivergence, sourceDisplay.Tag!, new List<int>()));
@@ -585,20 +614,107 @@ public static partial class Security
         return findings;
     }
 
-    private static Finding? HomoglyphConfusableFinding(List<int> input)
+    /// <summary>The field context the homoglyph ladder reads. Mirrors the Lean
+    /// HomoglyphConfusable.Context: <see cref="RunningText"/> is a source line,
+    /// a message or a display name rather than one identifier;
+    /// <see cref="IdentifierToken"/> is one identifier-shaped token cut out of
+    /// running text.</summary>
+    internal sealed record HomoglyphContext(bool RunningText, bool IdentifierToken);
+
+    private static Finding? HomoglyphConfusableFinding(List<int> input) =>
+        HomoglyphConfusableFindingWithContext(input, new HomoglyphContext(false, false));
+
+    // The homoglyph ladder under a field context. Rungs in the Lean order: target
+    // match, math alphanumerics, width class, decomposition swap, then the two
+    // script rungs (cross-script mix, off on running text; low restriction level,
+    // off on running text and on a token), then the ascii-confusable rung: a
+    // non-ASCII input whose case-preserving skeleton is all ASCII reads as an
+    // ASCII word it is not (admın with a dotless i). That rung runs on a whole
+    // field, and on a token only when the token is Latin-only, so a Greek or
+    // Cyrillic word in prose is not read as its Latin look-alike.
+    private static Finding? HomoglyphConfusableFindingWithContext(List<int> input, HomoglyphContext ctx)
     {
         var subThreat = "";
+        var positions = FullSpanPositions(input);
         if (HomoglyphTargetMatch(input) is not null) subThreat = "TargetMatch";
         else if (input.Any(IsMathAlphanumeric)) subThreat = "MathAlpha";
         else if (input.Any(IsFullwidthHalfwidth)) subThreat = "WidthClass";
         else if (HasDecompositionSwap(input)) subThreat = "DecompositionSwap";
-        // The last two rungs of the Lean ladder, in its order: a cross-script mix
+        // The script rungs of the Lean ladder, in its order: a cross-script mix
         // that is not Highly Restrictive, then a string failing every restriction
         // level. Both need real script resolution.
-        else if (HasCrossScriptMix(input)) subThreat = "CrossScriptMix";
-        else if (RestrictionLevelOf(input) is RestrictionLevel.MinimallyRestrictive
-            or RestrictionLevel.Unrestricted) subThreat = "RestrictionLow";
-        return subThreat == "" ? null : MakeFinding(Family.HomoglyphConfusable, subThreat, FullSpanPositions(input));
+        else if (!ctx.RunningText && HasCrossScriptMix(input)) subThreat = "CrossScriptMix";
+        else if (!ctx.RunningText && !ctx.IdentifierToken
+            && RestrictionLevelOf(input) is RestrictionLevel.MinimallyRestrictive
+                or RestrictionLevel.Unrestricted) subThreat = "RestrictionLow";
+        else if (!ctx.RunningText
+            && (!ctx.IdentifierToken || IsLatinOnly(input))
+            && IsAsciiConfusable(input))
+        {
+            subThreat = "AsciiConfusable";
+            positions = NonAsciiPositions(input);
+        }
+        return subThreat == "" ? null : MakeFinding(Family.HomoglyphConfusable, subThreat, positions);
+    }
+
+    // The case-preserving skeleton: NFD, confusable substitution, NFD, with no
+    // case fold, so admın (dotless i) maps to adrnin while ADMIN stays itself.
+    // Mirrors the Lean asciiSkeleton.
+    private static List<int> AsciiSkeleton(List<int> input) =>
+        ToNfdCodepoints(SubstituteConfusables(ToNfdCodepoints(input)));
+
+    // A non-ASCII input whose case-preserving skeleton is all ASCII. Mirrors the
+    // Lean isAsciiConfusable.
+    private static bool IsAsciiConfusable(List<int> input) =>
+        input.Any(cp => cp > 0x7F) && AsciiSkeleton(input).All(cp => cp <= 0x7F);
+
+    // Positions of the non-ASCII codepoints. Mirrors the Lean nonAsciiPositions.
+    private static List<int> NonAsciiPositions(List<int> input) =>
+        PositionsWhere(input, cp => cp > 0x7F);
+
+    // Every script-bearing codepoint of the input is Latin. Mirrors the Lean
+    // isLatinOnly.
+    private static bool IsLatinOnly(List<int> input)
+    {
+        var union = StringScriptUnion(input);
+        return union.Count == 1 && union.Contains("Latn");
+    }
+
+    // The homoglyph family over running text: the first identifier-shaped token
+    // (a maximal XID_Continue run) that fires, read as one identifier, with its
+    // positions shifted back into input coordinates. When no token fires, the
+    // whole input is read once under the running-text context, which keeps the
+    // rungs that hold of any text (target match, math alphanumerics, width class,
+    // decomposition swap). Mirrors the Lean homoglyphOverTokens.
+    private static Finding? HomoglyphOverTokens(List<int> input)
+    {
+        foreach (var token in IdentifierTokens.Tokens(input))
+        {
+            var finding = HomoglyphConfusableFindingWithContext(token.Cps, new HomoglyphContext(false, true));
+            if (finding is not null)
+            {
+                return finding with { Positions = IdentifierTokens.ShiftPositions(token.Start, finding.Positions) };
+            }
+        }
+        return HomoglyphConfusableFindingWithContext(input, new HomoglyphContext(true, false));
+    }
+
+    // The mixed-script family over running text: each identifier-shaped token is
+    // judged as one identifier (not an identifier field, so the Restricted-status
+    // rung does not apply); the first token that fires is reported, positions in
+    // input coordinates. A line with no firing token is clear. Mirrors the Lean
+    // mixedScriptOverTokens.
+    private static Finding? MixedScriptOverTokens(List<int> input)
+    {
+        foreach (var token in IdentifierTokens.Tokens(input))
+        {
+            var finding = MixedScriptAdmissibilityFinding(token.Cps, false);
+            if (finding is not null)
+            {
+                return finding with { Positions = IdentifierTokens.ShiftPositions(token.Start, finding.Positions) };
+            }
+        }
+        return null;
     }
 
     private static Finding? MixedScriptAdmissibilityFinding(List<int> input, bool identifierField)
@@ -691,22 +807,38 @@ public static partial class Security
     // confusable codepoint co-located with a bidi format-control is materially
     // more dangerous than either alone: the homoglyph disguises an identifier
     // while the bidi control reorders how a reviewer reads it, so the detector
-    // fires only when both are present. With a confusable at some position, an
-    // override-class control (LRE / RLE / LRO / RLO / PDF) fires
-    // ConfusableInOverride; otherwise an isolate-class control (LRI / RLI /
-    // FSI / PDI) fires ConfusableInIsolate; otherwise the input is clear. The
-    // positions are [confusablePos, bidiPos]. The confusable-source predicate
-    // reuses the confusables table the homoglyph detector consults. Exposed for
-    // direct spot-check testing, mirroring the sibling detectors.
+    // fires only when both are present. With a confusable at some position, a
+    // purposeless override-class control (LRE / RLE / LRO / RLO / PDF) fires
+    // ConfusableInOverride; otherwise a purposeless isolate-class control (LRI /
+    // RLI / FSI / PDI) fires ConfusableInIsolate; otherwise the input is clear.
+    // Only a purposeless control (BidiControlPurpose: unbalanced, or a balanced
+    // span enclosing nothing right-to-left in a left-to-right context) is the
+    // display channel this compound pairs with a confusable; a balanced
+    // embedding around Arabic text renders that text as written. The positions
+    // are [confusablePos, bidiPos]. The confusable-source predicate reuses the
+    // confusables table the homoglyph detector consults. Exposed for direct
+    // spot-check testing, mirroring the sibling detectors.
     public static (string? Sub, IReadOnlyList<int> Positions) ConfusableBidiCompoundDetect(IReadOnlyList<int> input)
     {
         var confusablePos = FirstPosition(input, IsConfusableSource);
         if (confusablePos < 0) return (null, System.Array.Empty<int>());
-        var overridePos = FirstPosition(input, IsBidiEmbeddingControl);
+        var overridePos = FirstPurposelessPosition(input, IsBidiEmbeddingControl);
         if (overridePos >= 0) return ("ConfusableInOverride", new List<int> { confusablePos, overridePos });
-        var isolatePos = FirstPosition(input, IsBidiIsolateControl);
+        var isolatePos = FirstPurposelessPosition(input, IsBidiIsolateControl);
         if (isolatePos >= 0) return ("ConfusableInIsolate", new List<int> { confusablePos, isolatePos });
         return (null, System.Array.Empty<int>());
+    }
+
+    // The first position of a purposeless bidi control satisfying predicate, or
+    // -1. Mirrors the Lean firstOverridePos / firstIsolatePos over the
+    // purposeless positions.
+    private static int FirstPurposelessPosition(IReadOnlyList<int> input, Func<int, bool> predicate)
+    {
+        foreach (var pos in BidiControlPurpose.PurposelessControlPositions(input))
+        {
+            if (predicate(input[pos])) return pos;
+        }
+        return -1;
     }
 
     private static Finding? ConfusableBidiCompoundFinding(List<int> input)

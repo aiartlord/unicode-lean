@@ -17,12 +17,12 @@ namespace UnicodeSecurity;
 // literals or comments count.
 //
 // It reuses the port's own five constituent detectors (nothing new): the
-// tag-block-payload, variation-selector-payload, zero-width-payload,
-// bidi-control-balance, and homoglyph-confusable detectors that live in the core
-// scan fold. A constituent "fired" iff its own classification is non-clear (the
-// scan fold produces a Finding for that family). No new data file, no new
-// predicate, no host library — this detector is pure aggregation over existing
-// port code.
+// tag-block-payload, variation-selector-payload, zero-width-payload detectors
+// that live in the core scan fold, the bidi purpose rule (BidiControlPurpose),
+// and the homoglyph-confusable detector. A constituent "fired" iff its own
+// classification is non-clear (the scan fold produces a Finding for that
+// family). No new data file, no new predicate, no host library — this detector
+// is pure aggregation over existing port code.
 //
 // Sub-threats:
 //   0 fired → Clear.
@@ -116,38 +116,48 @@ public static partial class Security
             return positions.Count > 0 && Security.HasSuspiciousZeroWidth(input, positions);
         }
 
-        /// <summary>True iff the bidi-control-balance constituent fires on
-        /// <paramref name="input"/> — reuses the core scan fold's own
-        /// embedding-control predicate (U+202A..U+202E).</summary>
+        /// <summary>True iff the bidi constituent fires on
+        /// <paramref name="input"/>: a purposeless bidi format-control
+        /// (BidiControlPurpose: unbalanced, or a balanced span enclosing nothing
+        /// right-to-left in a left-to-right context). A Trojan Source payload
+        /// balances its controls, since an unbalanced run breaks the file it
+        /// hides in, so a constituent built on the balance verdict is blind to
+        /// the shape the attack takes; a balanced embedding around an Arabic
+        /// string literal manages that literal and is not a
+        /// constituent.</summary>
         private static bool BidiControlFired(List<int> input) =>
-            // The full bidi format-control set, embeddings and isolates alike: a
-            // Trojan Source payload may use either, and the isolate form is
-            // invisible to a predicate that stops at U+202E.
-            input.Exists(cp => Security.IsBidiEmbeddingControl(cp) || Security.IsBidiIsolateControl(cp));
+            BidiControlPurpose.HasPurposelessControl(input);
 
         /// <summary>True iff the homoglyph-confusable constituent fires on
-        /// <paramref name="input"/> — reuses the core scan fold's own
-        /// classifiers. The reference runs one homoglyph detector whose priority
-        /// ladder ends in a CrossScriptMix branch, so a cross-script identifier
-        /// fires it even though this port reports that case under
-        /// mixed-script-admissibility; consulting only the first classifier
-        /// misses every input whose sole homoglyph signal is the script
-        /// mix.</summary>
+        /// <paramref name="input"/> when the aggregate runs standalone: the
+        /// whole input under the default context. The ladder carries the
+        /// CrossScriptMix rung itself, so the constituent is the family finding;
+        /// the scan passes its per-token verdict through
+        /// <see cref="DetectCore"/>.</summary>
         private static bool HomoglyphFired(List<int> input) =>
-            Security.HomoglyphConfusableFinding(input) is not null
-            // The constituent asks the script question about a source file, which
-            // is not an identifier field, so the Restricted-status rung is off.
-            || Security.MixedScriptAdmissibilityFinding(input, false) is not null;
+            Security.HomoglyphConfusableFinding(input) is not null;
 
         // ─────────────────────────────────────────────────────────────────
         // §3 Top-level detection
         // ─────────────────────────────────────────────────────────────────
 
-        /// <summary>The SourceDisplayDivergence aggregation. Runs the five
-        /// constituent detectors in canonical order, collects the fired tags, and
-        /// aggregates: zero fired → clear, one → that tag, two or more →
-        /// "Compound".</summary>
+        /// <summary>The SourceDisplayDivergence aggregation at the default
+        /// context: the homoglyph constituent is the whole-input homoglyph
+        /// verdict. Mirrors the Lean detect.</summary>
         public static Verdict Detect(IReadOnlyList<int> input)
+        {
+            var cps = input.ToList();
+            return DetectCore(cps, HomoglyphFired(cps));
+        }
+
+        /// <summary>Aggregate over a homoglyph verdict already in hand. The scan
+        /// passes the verdict it produced (per identifier token on running
+        /// text), so the constituent and the family finding are one reading of
+        /// the same input; mirrors the Lean detectCore input homoglyphVerdict.
+        /// Runs the other constituent detectors in canonical order, collects
+        /// the fired tags, and aggregates: zero fired → clear, one → that tag,
+        /// two or more → "Compound".</summary>
+        public static Verdict DetectCore(IReadOnlyList<int> input, bool homoglyphFired)
         {
             var cps = input.ToList();
 
@@ -158,7 +168,7 @@ public static partial class Security
             if (VariationSelectorFired(cps)) fires.Add("VariationSelector");
             if (ZeroWidthFired(cps)) fires.Add("ZeroWidth");
             if (BidiControlFired(cps)) fires.Add("BidiControl");
-            if (HomoglyphFired(cps)) fires.Add("IdentifierHomoglyph");
+            if (homoglyphFired) fires.Add("IdentifierHomoglyph");
 
             // At most five constituents can fire; the switch is exhaustive over
             // 0..5 with an impossible-state guard rather than a silent catch-all.
