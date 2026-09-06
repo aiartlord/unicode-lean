@@ -33,7 +33,6 @@ local bidi = require("unicode_lua.security.covert.bidi_control_balance")
 local bidi_purpose = require("unicode_lua.security.display.bidi_control_purpose")
 local grapheme = require("unicode_lua.segmentation.grapheme")
 
-local unpack = table.unpack or unpack
 
 local M = {}
 
@@ -216,7 +215,7 @@ function M.detect_with_context(running_text, input)
         }
       elseif #dots >= M.MIN_MULTI_EXT then
         -- Priority 4: three or more extensions (advisory).
-        local dots_copy = { unpack(dots) }
+        local dots_copy = table.move(dots, 1, #dots, 1, {})
         classify = {
           kind = "Hazard",
           sub = { tag = "MultipleExtensions", dot_count = #dots },
@@ -231,7 +230,7 @@ function M.detect_with_context(running_text, input)
 
   local input_copy = {}
   if #input > 0 then
-    input_copy = { unpack(input) }
+    input_copy = table.move(input, 1, #input, 1, {})
   end
 
   return {

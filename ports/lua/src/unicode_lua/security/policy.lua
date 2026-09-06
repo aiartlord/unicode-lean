@@ -28,7 +28,6 @@ local admissibility_drift = require("unicode_lua.security.boundary.admissibility
 local Family = calculus.Family
 local Severity = calculus.Severity
 local ClassificationKind = calculus.ClassificationKind
-local unpack = table.unpack or unpack
 
 local M = {}
 
@@ -529,7 +528,7 @@ function M.scan(profile, mode, input)
     push_finding(findings, Family.SourceDisplayDivergence, ClassificationKind.Hazard, source_display_d.sub, {})
   end
 
-  return { input = { unpack(input) }, profile = profile, mode = mode, action = select_action(profile, mode, findings), findings = findings, normalized = nil }
+  return { input = table.move(input, 1, #input, 1, {}), profile = profile, mode = mode, action = select_action(profile, mode, findings), findings = findings, normalized = nil }
 end
 
 local function malformed_decode_verdict(profile, mode, family, sub, offset)

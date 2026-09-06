@@ -288,15 +288,22 @@ stable_sort_run(Cps) ->
     [Cp || {_I, Cp} <- Sorted].
 
 canonical_compose(Seq) ->
-    compose(Seq, [], none, -1).
+    compose(Seq, [], none, [], -1).
 
-compose([], Out, _StarterIdx, _LastCcc) ->
-    Out;
-compose([Cp | Rest], Out, none, LastCcc) ->
-    append_step(Cp, ccc(Cp), Rest, Out, none, LastCcc);
-compose([Cp | Rest], Out, StarterIdx, LastCcc) ->
+%% One linear pass. The output is held as three parts: DoneRev, the composed
+%% codepoints before the active starter (newest first); Starter, the active
+%% starter or `none'; and BufRev, the codepoints appended after the starter
+%% (newest first). Composing replaces the starter in place, and a new starter
+%% flushes the previous starter and its buffer onto DoneRev. Indexing the
+%% output list per codepoint made the old pass quadratic.
+compose([], DoneRev, none, BufRev, _LastCcc) ->
+    lists:reverse(BufRev ++ DoneRev);
+compose([], DoneRev, Starter, BufRev, _LastCcc) ->
+    lists:reverse(BufRev ++ [Starter | DoneRev]);
+compose([Cp | Rest], DoneRev, none, BufRev, LastCcc) ->
+    append_step(Cp, ccc(Cp), Rest, DoneRev, none, BufRev, LastCcc);
+compose([Cp | Rest], DoneRev, Starter, BufRev, LastCcc) ->
     CpCcc = ccc(Cp),
-    Starter = lists:nth(StarterIdx + 1, Out),
     Composed = case hangul_compose(Starter, Cp) of
                    none -> comp_lookup(Starter, Cp);
                    H -> H
@@ -304,25 +311,17 @@ compose([Cp | Rest], Out, StarterIdx, LastCcc) ->
     Blocked = LastCcc =/= 0 andalso (CpCcc =:= 0 orelse LastCcc >= CpCcc),
     case (not Blocked) andalso Composed =/= none of
         true ->
-            Out2 = set_nth(StarterIdx + 1, Composed, Out),
-            compose(Rest, Out2, StarterIdx, LastCcc);
+            compose(Rest, DoneRev, Composed, BufRev, LastCcc);
         false ->
-            append_step(Cp, CpCcc, Rest, Out, StarterIdx, LastCcc)
+            append_step(Cp, CpCcc, Rest, DoneRev, Starter, BufRev, LastCcc)
     end.
 
-append_step(Cp, 0, Rest, Out, _StarterIdx, _LastCcc) ->
-    Out2 = Out ++ [Cp],
-    compose(Rest, Out2, length(Out2) - 1, 0);
-append_step(Cp, CpCcc, Rest, Out, StarterIdx, _LastCcc) ->
-    Out2 = Out ++ [Cp],
-    compose(Rest, Out2, StarterIdx, CpCcc).
-
-set_nth(N, Value, List) ->
-    set_nth(N, Value, List, []).
-set_nth(1, Value, [_ | T], Acc) ->
-    lists:reverse(Acc, [Value | T]);
-set_nth(N, Value, [H | T], Acc) when N > 1 ->
-    set_nth(N - 1, Value, T, [H | Acc]).
+append_step(Cp, 0, Rest, DoneRev, none, BufRev, _LastCcc) ->
+    compose(Rest, BufRev ++ DoneRev, Cp, [], 0);
+append_step(Cp, 0, Rest, DoneRev, Starter, BufRev, _LastCcc) ->
+    compose(Rest, BufRev ++ [Starter | DoneRev], Cp, [], 0);
+append_step(Cp, CpCcc, Rest, DoneRev, Starter, BufRev, _LastCcc) ->
+    compose(Rest, DoneRev, Starter, [Cp | BufRev], CpCcc).
 
 -spec to_nfc([non_neg_integer()]) -> [non_neg_integer()].
 to_nfc(Cps) ->

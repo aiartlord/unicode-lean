@@ -74,58 +74,46 @@ is_clear({hazard, _Sub, _Positions, _Decoded}) -> false.
 %% (input[..i] reversed), `suffix' the strictly-following ones (input[i+1..]).
 %% The default-locale mapping is evaluated in that context.
 
-%% @doc Length of the default-locale uppercase mapping at position `I'.
-upper_len_at(Input, I) ->
-    {RevPrefix, Cp, Suffix} = context_at(Input, I),
-    length(usec_casing:upper_codepoint(default, RevPrefix, Suffix, Cp)).
+%% @doc The per-position expansion lengths in one left-to-right pass, as
+%% `{Pos, Cp, UpperLen, LowerLen}' in input order. The reversed prefix grows by
+%% one codepoint per step and the suffix is the rest of the list, so the scan
+%% is linear where a split per position was quadratic.
+expansion_lens(Input) -> expansion_lens(Input, 0, [], []).
 
-%% @doc Length of the default-locale lowercase mapping at position `I'.
-lower_len_at(Input, I) ->
-    {RevPrefix, Cp, Suffix} = context_at(Input, I),
-    length(usec_casing:lower_codepoint(default, RevPrefix, Suffix, Cp)).
-
-%% @doc The (reversed-prefix, codepoint, suffix) context of position `I'.
-context_at(Input, I) ->
-    {Prefix, [Cp | Suffix]} = lists:split(I, Input),
-    {lists:reverse(Prefix), Cp, Suffix}.
+expansion_lens([], _I, _RevPrefix, Acc) ->
+    lists:reverse(Acc);
+expansion_lens([Cp | Suffix], I, RevPrefix, Acc) ->
+    Upper = length(usec_casing:upper_codepoint(default, RevPrefix, Suffix, Cp)),
+    Lower = length(usec_casing:lower_codepoint(default, RevPrefix, Suffix, Cp)),
+    expansion_lens(Suffix, I + 1, [Cp | RevPrefix], [{I, Cp, Upper, Lower} | Acc]).
 
 %% @doc First position whose default uppercase mapping expands to > 1 codepoint,
 %% as {Pos, Cp, Len}, or `none'.
-first_upper_expansion(Input) -> first_expansion(Input, 0, fun upper_len_at/2).
+first_upper_expansion(Lens) ->
+    first_expansion([{I, Cp, Upper} || {I, Cp, Upper, _Lower} <- Lens]).
 
 %% @doc First position whose default lowercase mapping expands to > 1 codepoint,
 %% as {Pos, Cp, Len}, or `none'.
-first_lower_expansion(Input) -> first_expansion(Input, 0, fun lower_len_at/2).
+first_lower_expansion(Lens) ->
+    first_expansion([{I, Cp, Lower} || {I, Cp, _Upper, Lower} <- Lens]).
 
-first_expansion(Input, I, LenFn) ->
-    case I >= length(Input) of
-        true -> none;
-        false ->
-            Len = LenFn(Input, I),
-            case Len > 1 of
-                true -> {I, lists:nth(I + 1, Input), Len};
-                false -> first_expansion(Input, I + 1, LenFn)
-            end
-    end.
+first_expansion([]) -> none;
+first_expansion([{I, Cp, Len} | _Rest]) when Len > 1 -> {I, Cp, Len};
+first_expansion([_ | Rest]) -> first_expansion(Rest).
 
 %% @doc Count of positions whose default uppercase mapping expands.
-upper_expansion_count(Input) -> expansion_count(Input, fun upper_len_at/2).
+upper_expansion_count(Lens) ->
+    length([I || {I, _Cp, Upper, _Lower} <- Lens, Upper > 1]).
 
 %% @doc Count of positions whose default lowercase mapping expands.
-lower_expansion_count(Input) -> expansion_count(Input, fun lower_len_at/2).
-
-expansion_count(Input, LenFn) ->
-    length([I || I <- indices(Input), LenFn(Input, I) > 1]).
+lower_expansion_count(Lens) ->
+    length([I || {I, _Cp, _Upper, Lower} <- Lens, Lower > 1]).
 
 %% @doc Maximum case-mapped expansion length across all positions (upper or
 %% lower); 0 for empty input.
 max_expansion_len([]) -> 0;
-max_expansion_len(Input) ->
-    lists:max([max(upper_len_at(Input, I), lower_len_at(Input, I)) || I <- indices(Input)]).
-
-%% @doc The 0-based indices of `Input'.
-indices([]) -> [];
-indices(Input) -> lists:seq(0, length(Input) - 1).
+max_expansion_len(Lens) ->
+    lists:max([max(Upper, Lower) || {_I, _Cp, Upper, Lower} <- Lens]).
 
 %% ─────────────────────────────────────────────────────────────────────
 %% §3 Top-level detection
@@ -133,21 +121,23 @@ indices(Input) -> lists:seq(0, length(Input) - 1).
 
 %% @doc The CaseExpansionMismatch detection function.
 detect(Input) ->
-    Classification = classify(Input),
+    Lens = expansion_lens(Input),
+    Classification = classify(Lens),
     #{input => Input,
       classify => Classification,
-      upper_expansion_count => upper_expansion_count(Input),
-      lower_expansion_count => lower_expansion_count(Input),
-      max_expansion_len => max_expansion_len(Input)}.
+      upper_expansion_count => upper_expansion_count(Lens),
+      lower_expansion_count => lower_expansion_count(Lens),
+      max_expansion_len => max_expansion_len(Lens)}.
 
 %% @doc Classification by first trigger in priority order: UpperExpansion then
-%% LowerExpansion; `clear' when neither fires.
-classify(Input) ->
-    case first_upper_expansion(Input) of
+%% LowerExpansion; `clear' when neither fires. Reads the one-pass expansion
+%% lengths.
+classify(Lens) ->
+    case first_upper_expansion(Lens) of
         {Pos, Cp, Len} ->
             {hazard, {upper_expansion, Pos, Cp, Len}, [Pos], []};
         none ->
-            case first_lower_expansion(Input) of
+            case first_lower_expansion(Lens) of
                 {Pos, Cp, Len} ->
                     {hazard, {lower_expansion, Pos, Cp, Len}, [Pos], []};
                 none ->

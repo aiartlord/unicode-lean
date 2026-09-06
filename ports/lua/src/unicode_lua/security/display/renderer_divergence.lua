@@ -36,7 +36,6 @@ local emoji_zwj = require("unicode_lua.security.identity.emoji_zwj_integrity")
 local ucd = require("unicode_lua.security.identity.ucd")
 local grapheme = require("unicode_lua.segmentation.grapheme")
 
-local unpack = table.unpack or unpack
 
 local M = {}
 
@@ -275,7 +274,7 @@ function M.detect_with_context(running_text, input)
 
   local input_copy = {}
   if #input > 0 then
-    input_copy = { unpack(input) }
+    input_copy = table.move(input, 1, #input, 1, {})
   end
 
   return {

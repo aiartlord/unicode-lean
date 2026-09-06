@@ -36,7 +36,6 @@
 
 local ucd = require("unicode_lua.security.identity.ucd")
 
-local unpack = table.unpack or unpack
 
 local M = {}
 
@@ -107,7 +106,7 @@ function M.detect(input)
 
   local input_copy = {}
   if #input > 0 then
-    input_copy = { unpack(input) }
+    input_copy = table.move(input, 1, #input, 1, {})
   end
 
   return {

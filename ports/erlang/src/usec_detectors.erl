@@ -15,19 +15,25 @@
          bip39_detect/1, bip39_canonical/1, sub_tag/1, is_vs/1]).
 
 %% Covert: tag block
+%% The codepoint at 0-based position P of the input tuple. Detectors that read
+%% the input by position convert it to a tuple once (list_to_tuple) so every
+%% read is O(1); lists:nth per position made them quadratic on long input.
+at(T, P) -> element(P + 1, T).
+
 tag_block_detect(Input) ->
+    T = list_to_tuple(Input),
     Pos = positions(Input, fun(Cp) -> Cp >= 16#E0000 andalso Cp =< 16#E007F end),
     case Pos of
         [] -> #{kind => clear, sub => none, positions => []};
         _ ->
-            Decoded = tag_decode(Input, Pos),
+            Decoded = tag_decode(T, Pos),
             First = hd(Pos),
-            FirstCp = lists:nth(First + 1, Input),
+            FirstCp = at(T, First),
             Sub =
                 if
                     FirstCp =:= 16#E0001 andalso length(Pos) >= 2 ->
                         Tail = [P || P <- Pos, P =/= First],
-                        {language_tag_revival, First, tag_decode(Input, Tail)};
+                        {language_tag_revival, First, tag_decode(T, Tail)};
                     length(Input) =:= length(Pos), Decoded =/= <<>> ->
                         {direct_ascii, Decoded};
                     length(Input) > length(Pos) ->
@@ -38,9 +44,9 @@ tag_block_detect(Input) ->
             #{kind => hazard, sub => Sub, positions => Pos}
     end.
 
-tag_decode(Input, Pos) ->
+tag_decode(T, Pos) ->
     list_to_binary([Cp - 16#E0000 || P <- Pos,
-                                      Cp <- [lists:nth(P + 1, Input)],
+                                      Cp <- [at(T, P)],
                                       Cp >= 16#E0020, Cp =< 16#E007E]).
 
 %% Covert: variation selectors
@@ -58,13 +64,14 @@ vs_nibble(_) -> none.
 %% are all registered is clear. The hazard is the suspicious run alone. Mirrors
 %% the Lean detect.
 variation_selector_detect(Input) ->
+    T = list_to_tuple(Input),
     Pos = positions(Input, fun is_vs/1),
     Registered = [P || P <- Pos, P > 0,
-                       registered_variation_use(lists:nth(P, Input), lists:nth(P + 1, Input))],
+                       registered_variation_use(at(T, P - 1), at(T, P))],
     Susp = Pos -- Registered,
     case Susp of
         [] -> #{kind => clear, sub => none, positions => Pos};
-        _ -> variation_hazard(Input, Registered, Susp)
+        _ -> variation_hazard(T, Registered, Susp)
     end.
 
 %% Ranked EmbeddedAfterRegistered (a registered use precedes the first
@@ -72,11 +79,11 @@ variation_selector_detect(Input) ->
 %% the same codepoint), DirectPayload (the nibble pairs over the suspicious
 %% selectors recover a byte), else IllegalTarget; the finding localises the
 %% suspicious selectors.
-variation_hazard(Input, Registered, Susp) ->
-    Bytes = decode_vs(Input, Susp),
-    Vals = [lists:nth(P + 1, Input) || P <- Susp],
+variation_hazard(T, Registered, Susp) ->
+    Bytes = decode_vs(T, Susp),
+    Vals = [at(T, P) || P <- Susp],
     P0 = hd(Susp),
-    Base = case P0 of 0 -> 0; _ -> lists:nth(P0, Input) end,
+    Base = case P0 of 0 -> 0; _ -> at(T, P0 - 1) end,
     Sub =
         case Registered =/= [] andalso hd(Registered) < P0 of
             true -> {embedded_after_registered, hd(Registered), P0};
@@ -85,18 +92,18 @@ variation_hazard(Input, Registered, Susp) ->
                     true -> {repeated_base, Base, length(Susp)};
                     false ->
                         case Bytes of
-                            [] -> {illegal_target, Base, lists:nth(P0 + 1, Input)};
+                            [] -> {illegal_target, Base, at(T, P0)};
                             _ -> {direct_payload, lossy_ascii(Bytes)}
                         end
                 end
         end,
     #{kind => hazard, sub => Sub, positions => Susp}.
 
-decode_vs(Input, Pos) ->
+decode_vs(T, Pos) ->
     {BytesRev, _High} =
         lists:foldl(
           fun(P, {Bytes, High}) ->
-                  case vs_nibble(lists:nth(P + 1, Input)) of
+                  case vs_nibble(at(T, P)) of
                       none -> {Bytes, High};
                       N when High =:= none -> {Bytes, N};
                       N -> {[(High bsl 4 bor N) band 16#FF | Bytes], none}
@@ -147,13 +154,14 @@ zero_width_detect(Input) ->
     %% ZWNJ in an RFC 5892 CONTEXTJ-valid position both carry meaning a reader
     %% depends on, so they are recorded as present but not treated as
     %% suspicious.
-    Susp = [P || P <- Pos, not sanctioned_zero_width(Input, P)],
+    T = list_to_tuple(Input),
+    Susp = [P || P <- Pos, not sanctioned_zero_width(T, P)],
     case {Pos, Susp} of
         {[], _} -> #{kind => clear, sub => none, positions => []};
         {_, []} -> #{kind => clear, sub => none, positions => Pos};
         _ ->
-            Cps = [lists:nth(P + 1, Input) || P <- Pos],
-            SuspCps = [lists:nth(P + 1, Input) || P <- Susp],
+            Cps = [at(T, P) || P <- Pos],
+            SuspCps = [at(T, P) || P <- Susp],
             Ann = count(Cps, fun(Cp) -> Cp >= 16#FFF9 andalso Cp =< 16#FFFB end),
             Wj = count(Cps, fun(Cp) -> Cp =:= 16#2060 end),
             Nnbsp = count(Cps, fun(Cp) -> Cp =:= 16#202F end),
@@ -171,10 +179,10 @@ zero_width_detect(Input) ->
 %% True iff the zero-width codepoint at index P carries meaning a reader depends
 %% on: a ZWJ inside a registered RGI emoji sequence, or a ZWNJ in an RFC 5892
 %% Appendix A.1 CONTEXTJ-valid position.
-sanctioned_zero_width(Input, P) ->
-    case lists:nth(P + 1, Input) of
-        16#200D -> legitimate_zwj_context(Input, P);
-        16#200C -> legitimate_zwnj_context(Input, P);
+sanctioned_zero_width(T, P) ->
+    case at(T, P) of
+        16#200D -> legitimate_zwj_context(T, P);
+        16#200C -> legitimate_zwnj_context(T, P);
         _ -> false
     end.
 
@@ -183,12 +191,12 @@ sanctioned_zero_width(Input, P) ->
 %% emoji": a codepoint carrying the Emoji property but appearing in no
 %% registered sequence does not sanction a ZWJ beside it. A ZWJ in head or tail
 %% position is never legitimate.
-legitimate_zwj_context(Input, P) ->
-    case P > 0 andalso P + 1 < length(Input) of
+legitimate_zwj_context(T, P) ->
+    case P > 0 andalso P + 1 < tuple_size(T) of
         false -> false;
         true ->
-            usec_emoji_zwj_integrity:is_emoji_target(lists:nth(P, Input))
-                andalso usec_emoji_zwj_integrity:is_emoji_target(lists:nth(P + 2, Input))
+            usec_emoji_zwj_integrity:is_emoji_target(at(T, P - 1))
+                andalso usec_emoji_zwj_integrity:is_emoji_target(at(T, P + 1))
     end.
 
 %% RFC 5892 Appendix A.1: a ZWNJ is orthographically required when it follows a
@@ -197,29 +205,34 @@ legitimate_zwj_context(Input, P) ->
 %% skipping Transparent characters on both sides, which is how a Persian word
 %% boundary is written inside a cursive run. A ZWNJ outside such a position
 %% carries no orthographic duty and stays reportable.
-legitimate_zwnj_context(Input, P) ->
-    case P > 0 andalso usec_ucd:is_virama(lists:nth(P, Input)) of
+legitimate_zwnj_context(T, P) ->
+    case P > 0 andalso usec_ucd:is_virama(at(T, P - 1)) of
         true -> true;
         false ->
-            Left = joining_type_before(Input, P),
-            Right = joining_type_after(Input, P),
+            Left = joining_type_before(T, P),
+            Right = joining_type_after(T, P),
             lists:member(Left, [l, d]) andalso lists:member(Right, [r, d])
     end.
 
-%% The Joining_Type of the first non-Transparent codepoint before index P.
-joining_type_before(Input, P) ->
-    Before = lists:reverse(lists:sublist(Input, P)),
-    first_non_transparent(Before).
+%% The Joining_Type of the first non-Transparent codepoint before index P,
+%% walking the input tuple backwards from P - 1.
+joining_type_before(T, P) -> first_non_transparent_before(T, P - 1).
 
-%% The Joining_Type of the first non-Transparent codepoint after index P.
-joining_type_after(Input, P) ->
-    After = lists:nthtail(min(P + 1, length(Input)), Input),
-    first_non_transparent(After).
+first_non_transparent_before(_T, I) when I < 0 -> none;
+first_non_transparent_before(T, I) ->
+    case usec_ucd:joining_type(at(T, I)) of
+        t -> first_non_transparent_before(T, I - 1);
+        Other -> Other
+    end.
 
-first_non_transparent([]) -> none;
-first_non_transparent([Cp | T]) ->
-    case usec_ucd:joining_type(Cp) of
-        t -> first_non_transparent(T);
+%% The Joining_Type of the first non-Transparent codepoint after index P,
+%% walking the input tuple forwards from P + 1.
+joining_type_after(T, P) -> first_non_transparent_after(T, P + 1).
+
+first_non_transparent_after(T, I) when I >= tuple_size(T) -> none;
+first_non_transparent_after(T, I) ->
+    case usec_ucd:joining_type(at(T, I)) of
+        t -> first_non_transparent_after(T, I + 1);
         Other -> Other
     end.
 
@@ -265,16 +278,20 @@ is_bidi_format_control(Cp) -> opens_embedding(Cp) orelse is_pdf(Cp) orelse opens
 
 bidi_control_detect(Input) ->
     Init = #{kind => clear, sub => none, positions => [], emb_open => 0, emb_pop => 0, iso_open => 0, iso_pop => 0, max_depth => 0},
-    {V, Emb, Iso, Orphans} =
+    %% Positions and orphans accumulate newest-first and are reversed once at
+    %% the end; appending per control made the walk quadratic in controls.
+    {V0, Emb, Iso, OrphansRev} =
         lists:foldl(fun({Cp, I}, {Acc, Emb0, Iso0, Orph}) ->
                             case is_bidi_format_control(Cp) of
                                 false -> {Acc, Emb0, Iso0, Orph};
                                 true ->
-                                    Acc1 = Acc#{positions := maps:get(positions, Acc) ++ [I]},
+                                    Acc1 = Acc#{positions := [I | maps:get(positions, Acc)]},
                                     bidi_step(Cp, I, Acc1, Emb0, Iso0, Orph)
                             end
                     end, {Init, 0, 0, []}, with_index(Input)),
-    Positions = maps:get(positions, V),
+    Positions = lists:reverse(maps:get(positions, V0)),
+    Orphans = lists:reverse(OrphansRev),
+    V = V0#{positions := Positions},
     MaxDepth = maps:get(max_depth, V),
     case Positions of
         [] -> V;
@@ -292,13 +309,13 @@ bidi_step(Cp, I, Acc, Emb, Iso, Orph) ->
             {Acc#{emb_open := maps:get(emb_open, Acc) + 1, max_depth := max(maps:get(max_depth, Acc), E + Iso)}, E, Iso, Orph};
         _ when Cp =:= 16#202C ->
             Acc1 = Acc#{emb_pop := maps:get(emb_pop, Acc) + 1},
-            case Emb > 0 of true -> {Acc1, Emb - 1, Iso, Orph}; false -> {Acc1, Emb, Iso, Orph ++ [I]} end;
+            case Emb > 0 of true -> {Acc1, Emb - 1, Iso, Orph}; false -> {Acc1, Emb, Iso, [I | Orph]} end;
         _ when Cp =:= 16#2066; Cp =:= 16#2067; Cp =:= 16#2068 ->
             S = Iso + 1,
             {Acc#{iso_open := maps:get(iso_open, Acc) + 1, max_depth := max(maps:get(max_depth, Acc), Emb + S)}, Emb, S, Orph};
         _ when Cp =:= 16#2069 ->
             Acc1 = Acc#{iso_pop := maps:get(iso_pop, Acc) + 1},
-            case Iso > 0 of true -> {Acc1, Emb, Iso - 1, Orph}; false -> {Acc1, Emb, Iso, Orph ++ [I]} end
+            case Iso > 0 of true -> {Acc1, Emb, Iso - 1, Orph}; false -> {Acc1, Emb, Iso, [I | Orph]} end
     end.
 
 %% Identity
@@ -645,8 +662,9 @@ confusable_bidi_detect(Input) ->
 %% none. Mirrors the Lean firstOverridePos / firstIsolatePos over the
 %% purposeless positions.
 first_purposeless_pos(Input, Pred) ->
+    T = list_to_tuple(Input),
     case [P || P <- usec_bidi_control_purpose:purposeless_control_positions(Input),
-               Pred(lists:nth(P + 1, Input))] of
+               Pred(at(T, P))] of
         [P | _Rest] -> P;
         [] -> none
     end.

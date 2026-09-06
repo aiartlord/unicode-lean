@@ -13,7 +13,6 @@ local function line_codepoints(line)
   return utf8mod.decode_to_codepoints(bytes)
 end
 
-local unpack = table.unpack or unpack
 local ClassificationKind = calculus.ClassificationKind
 local M = {}
 
@@ -105,7 +104,7 @@ end
 M.CONFUSABLE_CHAIN_BOUND = 32
 
 function M.iterated_skeleton(input)
-  local current = { unpack(input) }
+  local current = table.move(input, 1, #input, 1, {})
   for _ = 1, M.CONFUSABLE_CHAIN_BOUND do
     local next_value = M.skeleton(current)
     if #next_value == #current then

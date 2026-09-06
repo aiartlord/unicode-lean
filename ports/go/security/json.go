@@ -1,6 +1,9 @@
 package security
 
-import "encoding/json"
+import (
+	"strconv"
+	"strings"
+)
 
 type FindingWire struct {
 	Code      string `json:"code"`
@@ -46,12 +49,108 @@ func VerdictToWire(verdict Verdict) VerdictWire {
 	}
 }
 
+// VerdictJSON writes the compact wire shape the shared verdict contract pins:
+// action, profile, mode, input, findings, normalized, with finding fields
+// ordered code, family, severity, positions, sub_threat, detail. It is written
+// by hand, as the reference's verdict_to_json is, so there is no error path to
+// fall through: a verdict always serialises, never to an empty string.
 func VerdictJSON(verdict Verdict) string {
-	data, err := json.Marshal(VerdictToWire(verdict))
-	if err != nil {
-		return ""
+	var out strings.Builder
+	out.WriteString("{\"action\":")
+	writeJSONString(&out, string(verdict.Action))
+	out.WriteString(",\"profile\":")
+	writeJSONString(&out, string(verdict.Profile))
+	out.WriteString(",\"mode\":")
+	writeJSONString(&out, string(verdict.Mode))
+	out.WriteString(",\"input\":")
+	writeU32Array(&out, verdict.Input)
+	out.WriteString(",\"findings\":[")
+	for index, finding := range verdict.Findings {
+		if index > 0 {
+			out.WriteByte(',')
+		}
+		writeFindingJSON(&out, finding)
 	}
-	return string(data)
+	out.WriteString("],\"normalized\":")
+	if verdict.Normalized == nil {
+		out.WriteString("null")
+	} else {
+		writeU32Array(&out, verdict.Normalized)
+	}
+	out.WriteByte('}')
+	return out.String()
+}
+
+func writeFindingJSON(out *strings.Builder, finding Finding) {
+	out.WriteString("{\"code\":")
+	writeJSONString(out, finding.Code)
+	out.WriteString(",\"family\":")
+	writeJSONString(out, string(finding.Family))
+	out.WriteString(",\"severity\":")
+	out.WriteString(strconv.Itoa(finding.Severity))
+	out.WriteString(",\"positions\":")
+	writeIntArray(out, finding.Positions)
+	out.WriteString(",\"sub_threat\":")
+	writeJSONString(out, finding.SubThreat)
+	out.WriteString(",\"detail\":")
+	writeJSONString(out, finding.Detail)
+	out.WriteByte('}')
+}
+
+// writeJSONString escapes exactly what RFC 8259 requires: the quote, the
+// backslash, and the C0 controls (as \n, \r, \t, \b, \f or \u00XX). Every
+// other byte passes through, which matches the reference's writer.
+func writeJSONString(out *strings.Builder, value string) {
+	out.WriteByte('"')
+	for _, r := range value {
+		switch r {
+		case '"':
+			out.WriteString("\\\"")
+		case '\\':
+			out.WriteString("\\\\")
+		case '\n':
+			out.WriteString("\\n")
+		case '\r':
+			out.WriteString("\\r")
+		case '\t':
+			out.WriteString("\\t")
+		case '\b':
+			out.WriteString("\\b")
+		case '\f':
+			out.WriteString("\\f")
+		default:
+			if r < 0x20 {
+				out.WriteString("\\u00")
+				out.WriteByte("0123456789abcdef"[r>>4])
+				out.WriteByte("0123456789abcdef"[r&0xF])
+			} else {
+				out.WriteRune(r)
+			}
+		}
+	}
+	out.WriteByte('"')
+}
+
+func writeU32Array(out *strings.Builder, values []uint32) {
+	out.WriteByte('[')
+	for index, value := range values {
+		if index > 0 {
+			out.WriteByte(',')
+		}
+		out.WriteString(strconv.FormatUint(uint64(value), 10))
+	}
+	out.WriteByte(']')
+}
+
+func writeIntArray(out *strings.Builder, values []int) {
+	out.WriteByte('[')
+	for index, value := range values {
+		if index > 0 {
+			out.WriteByte(',')
+		}
+		out.WriteString(strconv.Itoa(value))
+	}
+	out.WriteByte(']')
 }
 
 func copyInts(values []int) []int {
