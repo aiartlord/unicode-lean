@@ -16,6 +16,18 @@ data inputs under `src/data/`; `src/confusables_data.zig` is generated from
 full default case-folding lookup. `src/normalization_data.zig` is generated from
 `src/data/UnicodeData.txt` for the NFD bracket used by the homoglyph skeleton.
 
+The port scans without an allocator, so every working buffer is fixed. A scan
+accepts at most `MaxInputLen` (1024) codepoints, and a form it cannot build
+within its buffers — an NFD/NFKD/NFC/NFKC expansion, a case mapping, a
+confusable skeleton, or a decoded text longer than the caller's buffer — is
+neither truncated nor read as clear. `scan` answers a refused verdict: no
+findings, the mode's blocking action (`reject`; `observe` under observe and
+warn), and `refusal = .capacity_exceeded`, which `writeVerdictJson` serialises
+as `"refusal":"capacity-exceeded"`. The detector modules return
+`error.CapacityExceeded` from a direct call in the same cases. This is the
+port's one documented divergence from the unbounded reference; the contract is
+in [`../../docs/reference/ports.md`](../../docs/reference/ports.md).
+
 Tests consume port-local copies of the shared policy, verdict, and detector
 fixtures under `testdata/fixtures/security/`.
 

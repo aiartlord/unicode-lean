@@ -37,6 +37,18 @@ codepoints, read the verdict, and reject or quarantine on a non-`allow` action
 before the text reaches any downstream job. The shared integration contract is in
 [`../../docs/how-to/integrate.md`](../../docs/how-to/integrate.md).
 
+The program works in fixed tables: at most 4096 values per scan (codepoints, or
+bytes for the byte-stream operations), a 4096-wide confusable skeleton, a
+16384-wide normalization scratch, a 1024-wide side list. A scan that does not
+fit — one value past the input table, or a working form such as an NFKD
+expansion that outgrows its scratch — is refused rather than scanned in part:
+the output carries no `FINDING` line, the `ACTION` is the mode's blocking action
+(`reject`; `observe` under observe and warn), and the line after `ACTION` reads
+`REFUSAL capacity-exceeded`. A consumer that reads only the action fails
+closed; one that reads the refusal can split the input or route it to an
+unbounded port. This is the port's one documented divergence from the reference;
+the contract is in [`../../docs/reference/ports.md`](../../docs/reference/ports.md).
+
 ## Build and test
 
 From this directory, with GnuCOBOL available:

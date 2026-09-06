@@ -32,6 +32,12 @@ WORKING-STORAGE SECTION.
    05 FINDING-POS OCCURS 128 TIMES PIC X(24576).
 01 ACTION-NAME PIC X(16) VALUE "allow".
 01 BLOCKING-FLAG PIC 9 VALUE 0.
+*> Set when the input or one of its working forms (NFD/NFKD scratch, skeleton,
+*> side list) does not fit its fixed table. The scan then refuses: no finding
+*> is reported, the action is the mode's blocking action, and EMIT-RESULT names
+*> the refusal. A full table is never truncated and never read as clear.
+01 CAPACITY-EXCEEDED PIC 9 VALUE 0.
+01 PUSH-CP-VAL PIC 9(9) COMP-5 VALUE 0.
 01 POS-NUM PIC Z(8)9.
 01 POS-TEXT PIC X(24576).
 01 TEMP-CODE PIC X(128).
@@ -798,15 +804,45 @@ PARSE-NUMBERS.
             MOVE 1 TO IN-NUM
         ELSE
             IF IN-NUM = 1
-                ADD 1 TO CP-COUNT
-                MOVE CUR-NUM TO CP(CP-COUNT)
+                MOVE CUR-NUM TO PUSH-CP-VAL
+                PERFORM PUSH-INPUT-CP
                 MOVE 0 TO CUR-NUM IN-NUM
             END-IF
         END-IF
     END-PERFORM
     IF IN-NUM = 1
+        MOVE CUR-NUM TO PUSH-CP-VAL
+        PERFORM PUSH-INPUT-CP
+    END-IF.
+
+PUSH-INPUT-CP.
+*> Append PUSH-CP-VAL to the input table, or mark the capacity fault when the
+*> table is full: the port accepts at most 4096 values per scan.
+    IF CP-COUNT >= 4096
+        MOVE 1 TO CAPACITY-EXCEEDED
+    ELSE
         ADD 1 TO CP-COUNT
-        MOVE CUR-NUM TO CP(CP-COUNT)
+        MOVE PUSH-CP-VAL TO CP(CP-COUNT)
+    END-IF.
+
+PUSH-NFD-CP.
+*> Append PUSH-CP-VAL to the NFD/NFKD scratch, or mark the capacity fault when
+*> the scratch is full.
+    IF NFD-COUNT >= 16384
+        MOVE 1 TO CAPACITY-EXCEEDED
+    ELSE
+        ADD 1 TO NFD-COUNT
+        MOVE PUSH-CP-VAL TO NFD-CP(NFD-COUNT)
+    END-IF.
+
+PUSH-SKEL-WORK-CP.
+*> Append PUSH-CP-VAL to the skeleton working table, or mark the capacity
+*> fault when the table is full.
+    IF SKEL-WORK-COUNT >= 4096
+        MOVE 1 TO CAPACITY-EXCEEDED
+    ELSE
+        ADD 1 TO SKEL-WORK-COUNT
+        MOVE PUSH-CP-VAL TO SKEL-WORK-CP(SKEL-WORK-COUNT)
     END-IF.
 
 COPY-INPUT-TO-OUTPUT.
@@ -2447,15 +2483,25 @@ PARSE-SIDE-LIST.
             MOVE 1 TO IN-NUM
         ELSE
             IF IN-NUM = 1
-                ADD 1 TO SIDE-COUNT
-                MOVE CUR-NUM TO SIDE-CP(SIDE-COUNT)
+                MOVE CUR-NUM TO PUSH-CP-VAL
+                PERFORM PUSH-SIDE-CP
                 MOVE 0 TO CUR-NUM IN-NUM
             END-IF
         END-IF
     END-PERFORM
     IF IN-NUM = 1
+        MOVE CUR-NUM TO PUSH-CP-VAL
+        PERFORM PUSH-SIDE-CP
+    END-IF.
+
+PUSH-SIDE-CP.
+*> Append PUSH-CP-VAL to the side list, or mark the capacity fault when the
+*> list is full.
+    IF SIDE-COUNT >= 1024
+        MOVE 1 TO CAPACITY-EXCEEDED
+    ELSE
         ADD 1 TO SIDE-COUNT
-        MOVE CUR-NUM TO SIDE-CP(SIDE-COUNT)
+        MOVE PUSH-CP-VAL TO SIDE-CP(SIDE-COUNT)
     END-IF.
 
 PROBE-ENCODING.
@@ -2726,25 +2772,25 @@ DECOMPOSE-ONE.
         COMPUTE HL-VAL = 4352 + (HS-INDEX / 588)
         COMPUTE HV-VAL = 4449 + (FUNCTION MOD(HS-INDEX, 588) / 28)
         COMPUTE HT-INDEX = FUNCTION MOD(HS-INDEX, 28)
-        ADD 1 TO NFD-COUNT
-        MOVE HL-VAL TO NFD-CP(NFD-COUNT)
-        ADD 1 TO NFD-COUNT
-        MOVE HV-VAL TO NFD-CP(NFD-COUNT)
+        MOVE HL-VAL TO PUSH-CP-VAL
+        PERFORM PUSH-NFD-CP
+        MOVE HV-VAL TO PUSH-CP-VAL
+        PERFORM PUSH-NFD-CP
         IF HT-INDEX NOT = 0
-            ADD 1 TO NFD-COUNT
-            COMPUTE NFD-CP(NFD-COUNT) = 4519 + HT-INDEX
+            COMPUTE PUSH-CP-VAL = 4519 + HT-INDEX
+            PERFORM PUSH-NFD-CP
         END-IF
     ELSE
         MOVE CUR-CP TO LOOKUP-CP
         PERFORM LOOKUP-CANON-DECOMP
         IF DEC-FOUND = 1
             PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > DEC-LEN
-                ADD 1 TO NFD-COUNT
-                MOVE DEC-CP(KDX) TO NFD-CP(NFD-COUNT)
+                MOVE DEC-CP(KDX) TO PUSH-CP-VAL
+                PERFORM PUSH-NFD-CP
             END-PERFORM
         ELSE
-            ADD 1 TO NFD-COUNT
-            MOVE CUR-CP TO NFD-CP(NFD-COUNT)
+            MOVE CUR-CP TO PUSH-CP-VAL
+            PERFORM PUSH-NFD-CP
         END-IF
     END-IF.
 
@@ -3540,12 +3586,12 @@ FOLD-SKEL-BUFFER.
         PERFORM LOOKUP-CASE-FOLD
         IF FOLD-FOUND = 1
             PERFORM VARYING MDX FROM 1 BY 1 UNTIL MDX > FOLD-LEN
-                ADD 1 TO SKEL-WORK-COUNT
-                MOVE FOLD-CP(MDX) TO SKEL-WORK-CP(SKEL-WORK-COUNT)
+                MOVE FOLD-CP(MDX) TO PUSH-CP-VAL
+                PERFORM PUSH-SKEL-WORK-CP
             END-PERFORM
         ELSE
-            ADD 1 TO SKEL-WORK-COUNT
-            MOVE SKEL-CP(KDX) TO SKEL-WORK-CP(SKEL-WORK-COUNT)
+            MOVE SKEL-CP(KDX) TO PUSH-CP-VAL
+            PERFORM PUSH-SKEL-WORK-CP
         END-IF
     END-PERFORM
     MOVE SKEL-WORK-COUNT TO SKEL-COUNT
@@ -3561,12 +3607,12 @@ SUBSTITUTE-SKEL-BUFFER.
         PERFORM LOOKUP-CONFUSABLE
         IF CONF-FOUND = 1
             PERFORM VARYING MDX FROM 1 BY 1 UNTIL MDX > CONF-LEN
-                ADD 1 TO SKEL-WORK-COUNT
-                MOVE CONF-CP(MDX) TO SKEL-WORK-CP(SKEL-WORK-COUNT)
+                MOVE CONF-CP(MDX) TO PUSH-CP-VAL
+                PERFORM PUSH-SKEL-WORK-CP
             END-PERFORM
         ELSE
-            ADD 1 TO SKEL-WORK-COUNT
-            MOVE SKEL-CP(KDX) TO SKEL-WORK-CP(SKEL-WORK-COUNT)
+            MOVE SKEL-CP(KDX) TO PUSH-CP-VAL
+            PERFORM PUSH-SKEL-WORK-CP
         END-IF
     END-PERFORM
     MOVE SKEL-WORK-COUNT TO SKEL-COUNT
@@ -3583,8 +3629,15 @@ NFD-SKEL-BUFFER.
     END-PERFORM
     PERFORM DECOMPOSE-INPUT
     PERFORM REORDER-NFD
-    MOVE NFD-COUNT TO SKEL-COUNT
-    PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > NFD-COUNT
+*>  The NFD scratch is wider than the skeleton table; a decomposition that does
+*>  not fit the skeleton is a capacity fault, never a skeleton of its head.
+    IF NFD-COUNT > 4096
+        MOVE 1 TO CAPACITY-EXCEEDED
+        MOVE 4096 TO SKEL-COUNT
+    ELSE
+        MOVE NFD-COUNT TO SKEL-COUNT
+    END-IF
+    PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > SKEL-COUNT
         MOVE NFD-CP(KDX) TO SKEL-CP(KDX)
     END-PERFORM.
 
@@ -3639,8 +3692,8 @@ REDUCE-SKEL-TO-LETTERS.
                 MOVE SKEL-CP(KDX) TO LOOKUP-CP
                 PERFORM IS-SKELETON-WHITE-SPACE
                 IF TABLE-FLAG = 0
-                    ADD 1 TO SKEL-WORK-COUNT
-                    MOVE SKEL-CP(KDX) TO SKEL-WORK-CP(SKEL-WORK-COUNT)
+                    MOVE SKEL-CP(KDX) TO PUSH-CP-VAL
+                    PERFORM PUSH-SKEL-WORK-CP
                 END-IF
             END-IF
         END-IF
@@ -4148,25 +4201,25 @@ COMPAT-DECOMPOSE-ONE.
         COMPUTE HL-VAL = 4352 + (HS-INDEX / 588)
         COMPUTE HV-VAL = 4449 + (FUNCTION MOD(HS-INDEX, 588) / 28)
         COMPUTE HT-INDEX = FUNCTION MOD(HS-INDEX, 28)
-        ADD 1 TO NFD-COUNT
-        MOVE HL-VAL TO NFD-CP(NFD-COUNT)
-        ADD 1 TO NFD-COUNT
-        MOVE HV-VAL TO NFD-CP(NFD-COUNT)
+        MOVE HL-VAL TO PUSH-CP-VAL
+        PERFORM PUSH-NFD-CP
+        MOVE HV-VAL TO PUSH-CP-VAL
+        PERFORM PUSH-NFD-CP
         IF HT-INDEX NOT = 0
-            ADD 1 TO NFD-COUNT
-            COMPUTE NFD-CP(NFD-COUNT) = 4519 + HT-INDEX
+            COMPUTE PUSH-CP-VAL = 4519 + HT-INDEX
+            PERFORM PUSH-NFD-CP
         END-IF
     ELSE
         MOVE CUR-CP TO LOOKUP-CP
         PERFORM LOOKUP-NFKD-DECOMP
         IF DEC-FOUND = 1
             PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > DEC-LEN
-                ADD 1 TO NFD-COUNT
-                MOVE DEC-CP(KDX) TO NFD-CP(NFD-COUNT)
+                MOVE DEC-CP(KDX) TO PUSH-CP-VAL
+                PERFORM PUSH-NFD-CP
             END-PERFORM
         ELSE
-            ADD 1 TO NFD-COUNT
-            MOVE CUR-CP TO NFD-CP(NFD-COUNT)
+            MOVE CUR-CP TO PUSH-CP-VAL
+            PERFORM PUSH-NFD-CP
         END-IF
     END-IF.
 
@@ -5059,6 +5112,18 @@ IS-STRONG-LTR.
 
 SELECT-ACTION.
     MOVE 0 TO BLOCKING-FLAG
+*>  A scan that hit a capacity fault has no verdict: whatever the detectors
+*>  computed over a full table is discarded, and the action is the mode's
+*>  blocking action (observe and warn never block, so they observe; every
+*>  other mode rejects). The refusal is named on the wire by EMIT-RESULT.
+    IF CAPACITY-EXCEEDED = 1
+        MOVE 0 TO FINDING-COUNT
+        IF MODE-NAME = "observe" OR MODE-NAME = "warn"
+            MOVE "observe" TO ACTION-NAME
+        ELSE
+            MOVE "reject" TO ACTION-NAME
+        END-IF
+    ELSE
     IF FINDING-COUNT = 0
         MOVE "allow" TO ACTION-NAME
     ELSE
@@ -5086,6 +5151,7 @@ SELECT-ACTION.
                 END-IF
             END-IF
         END-IF
+    END-IF
     END-IF.
 
 IS-LEGAL-VARIATION.
@@ -5684,6 +5750,9 @@ EMIT-GRAPHEME.
 
 EMIT-RESULT.
     DISPLAY "ACTION " FUNCTION TRIM(ACTION-NAME)
+    IF CAPACITY-EXCEEDED = 1
+        DISPLAY "REFUSAL capacity-exceeded"
+    END-IF
     DISPLAY "INPUT " WITH NO ADVANCING
     PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > OUT-COUNT
         MOVE OUT-CP(IDX) TO POS-NUM

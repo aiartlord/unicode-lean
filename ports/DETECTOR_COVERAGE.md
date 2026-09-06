@@ -374,6 +374,18 @@ One further detail below full uniformity: cobol's HomoglyphConfusable uses a
 bounded target-skeleton iteration; deepening that bound is a refinement of an
 implemented, fixture-passing detector, not a coverage gap.
 
+Two ports are bounded where the reference is not: Zig scans without an
+allocator over fixed buffers, COBOL works in fixed tables. Both formerly failed
+open at their bounds — a normalization or skeleton that overflowed read as
+clear, a position list past its cap was cut short, a decoded text past the
+caller's buffer lost its tail, and a Zig finding list capped below the family
+count dropped findings. Every such bound is now fail-closed: the port refuses
+the scan (no findings, the mode's blocking action, the refusal named on the
+wire) rather than reporting a verdict over a partial form, and each bound is
+tested at the edge and one past it. The contract is in
+[`../docs/reference/ports.md`](../docs/reference/ports.md) under "Bounded
+ports refuse, never truncate".
+
 Implementation is one thing and reach is another: a detector only reaches a
 caller if the port's scan path invokes it. `Unicode/Security/RunAll.lean`
 dispatches all twenty-seven families; a plain scan dispatches twenty-four of

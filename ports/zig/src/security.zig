@@ -19,14 +19,37 @@ const script_extensions_raw = @embedFile("data/ScriptExtensions.txt");
 const property_value_aliases_raw = @embedFile("data/PropertyValueAliases.txt");
 const derived_joining_type_raw = @embedFile("data/DerivedJoiningType.txt");
 // Working width of every bounded buffer: skeletons, NFD/NFKD/NFC/NFKC
-// expansions, finding positions. A buffer that overflows reads as null, and a
-// null expansion is judged as no hazard, so the width has to hold the largest
-// expansion of any input the port is asked to decide. The widest compatibility
-// decomposition is 18 codepoints (U+FDFA), so 1024 covers every input up to 56
-// codepoints at that worst case and every fixture in the shared corpus (32
-// codepoints, 16 of U+FDFB at 8 each expands to 129, which the former width
-// of 128 could not hold and so reported clear).
+// expansions, case mappings, finding positions. The port scans without an
+// allocator, so a form that does not fit is not truncated and not read as
+// clear: it is a `CapacityError`, propagated to `scan`, which answers with a
+// refused verdict (see `Refusal`). The widest compatibility decomposition is
+// 18 codepoints (U+FDFA), so 1024 holds every input up to 56 codepoints at
+// that worst case and every fixture in the shared corpus.
 const MaxSkeletonLen = 1024;
+
+/// The most codepoints one scan accepts. Positions are input indices, so every
+/// position buffer of this width is total over an accepted input; a longer
+/// input is refused at the entry, never scanned in part.
+pub const MaxInputLen = MaxSkeletonLen;
+
+/// The one failure this bounded port can hit that the unbounded reference
+/// cannot: a working form or a decoded input that does not fit its fixed
+/// buffer.
+pub const CapacityError = error{CapacityExceeded};
+
+/// Why a scan produced no verdict. A refused scan carries no findings and
+/// takes the blocking action of its mode, so a caller that reads only the
+/// action still fails closed; a caller that reads the refusal can size the
+/// input or route it to an unbounded port.
+pub const Refusal = enum {
+    capacity_exceeded,
+
+    pub fn tag(self: Refusal) []const u8 {
+        return switch (self) {
+            .capacity_exceeded => "capacity-exceeded",
+        };
+    }
+};
 
 pub const Action = enum {
     allow,
@@ -204,24 +227,30 @@ pub const Finding = struct {
     detail: []const u8,
 };
 
-pub const MaxFindings = 24;
+/// One scan emits at most one finding per family (27 families) plus the two
+/// further noncharacter classes, 29 in all, so this list is total.
+pub const MaxFindings = 32;
 
-/// Positions one finding can localise. The port scans without an allocator, so
-/// every buffer is bounded; this bound is `MaxSkeletonLen`, the same working
-/// width the normalization and skeleton buffers use. A hazard occupying more
-/// positions than this reports the first `MaxFindingPositions` of them, which
-/// is the one place the port's verdict is narrower than the reference's
-/// unbounded list.
-pub const MaxFindingPositions = MaxSkeletonLen;
+/// Positions one finding can localise: `MaxInputLen`, so a finding over an
+/// accepted input (every position is an input index) always fits. The former
+/// narrower cap reported the first positions of a wider hazard as if they
+/// were the verdict.
+pub const MaxFindingPositions = MaxInputLen;
 
 pub const FindingList = struct {
     items: [MaxFindings]Finding = undefined,
     len: usize = 0,
 
     pub fn append(self: *FindingList, finding: Finding) void {
-        if (self.len >= MaxFindings) return;
         self.items[self.len] = finding;
         self.len += 1;
+    }
+
+    /// A list holding one finding, for the decode-fault verdicts.
+    pub fn single(finding: Finding) FindingList {
+        var list = FindingList{};
+        list.append(finding);
+        return list;
     }
 
     pub fn containsCode(self: FindingList, code: []const u8) bool {
@@ -239,6 +268,9 @@ pub const Verdict = struct {
     action: Action,
     findings: FindingList,
     normalized: ?[]const u32 = null,
+    /// Set when the port could not evaluate the input within its bounds. The
+    /// findings are then empty and the action is the mode's blocking action.
+    refusal: ?Refusal = null,
 };
 
 pub fn writeFindingJson(writer: anytype, finding: Finding) !void {
@@ -276,6 +308,10 @@ pub fn writeVerdictJson(writer: anytype, verdict: Verdict) !void {
         try writeU32Array(writer, normalized);
     } else {
         try writer.writeAll("null");
+    }
+    if (verdict.refusal) |refusal| {
+        try writer.writeAll(",\"refusal\":");
+        try writeJsonString(writer, refusal.tag());
     }
     try writer.writeByte('}');
 }
@@ -369,7 +405,10 @@ pub fn profileIsRunningText(profile: Profile) bool {
 }
 
 pub fn scan(profile: Profile, mode: Mode, input: []const u32) Verdict {
-    const findings = detect(input, profileIsIdentifierField(profile), profileIsRunningText(profile));
+    if (input.len > MaxInputLen) return refusedVerdict(profile, mode, input, .capacity_exceeded);
+    const findings = detect(input, profileIsIdentifierField(profile), profileIsRunningText(profile)) catch |err| switch (err) {
+        error.CapacityExceeded => return refusedVerdict(profile, mode, input, .capacity_exceeded),
+    };
     const action = decide(profile, mode, findings);
     return .{
         .input = input,
@@ -380,12 +419,27 @@ pub fn scan(profile: Profile, mode: Mode, input: []const u32) Verdict {
     };
 }
 
+/// The verdict of a scan the port could not carry out within its bounds: no
+/// findings, the blocking action of the mode (observe and warn never block, so
+/// they observe; enforce and strict reject), and the refusal named. Mirrors
+/// nothing in the Lean, which is unbounded; the divergence is documented in
+/// docs/reference/ports.md.
+fn refusedVerdict(profile: Profile, mode: Mode, input: []const u32, refusal: Refusal) Verdict {
+    return .{
+        .input = input,
+        .profile = profile,
+        .mode = mode,
+        .action = if (mode == .observe or mode == .warn) .observe else .reject,
+        .findings = FindingList{},
+        .refusal = refusal,
+    };
+}
+
 pub fn scanUtf8(profile: Profile, mode: Mode, bytes: []const u8, decoded_buffer: []u32) Verdict {
     if (firstInvalidUtf8Offset(bytes)) |invalid| {
-        var findings = FindingList{};
         var positions: [MaxFindingPositions]usize = undefined;
         positions[0] = invalid.offset;
-        findings.append(.{
+        const findings = FindingList.single(.{
             .code = malformedUtf8ReasonCode(invalid.kind),
             .family = .malformed_utf8,
             .severity = 2,
@@ -403,7 +457,9 @@ pub fn scanUtf8(profile: Profile, mode: Mode, bytes: []const u8, decoded_buffer:
         };
     }
 
-    const decoded_len = decodeUtf8ToCodepoints(bytes, decoded_buffer);
+    const decoded_len = decodeUtf8ToCodepoints(bytes, decoded_buffer) catch |err| switch (err) {
+        error.CapacityExceeded => return refusedVerdict(profile, mode, decoded_buffer[0..0], .capacity_exceeded),
+    };
     return scan(profile, mode, decoded_buffer[0..decoded_len]);
 }
 
@@ -424,7 +480,9 @@ pub fn scanUtf32Le(profile: Profile, mode: Mode, bytes: []const u8, decoded_buff
 }
 
 fn scanUtf16(profile: Profile, mode: Mode, bytes: []const u8, decoded_buffer: []u32, endian: Endian) Verdict {
-    const result = decodeUtf16ToCodepoints(bytes, decoded_buffer, endian);
+    const result = decodeUtf16ToCodepoints(bytes, decoded_buffer, endian) catch |err| switch (err) {
+        error.CapacityExceeded => return refusedVerdict(profile, mode, decoded_buffer[0..0], .capacity_exceeded),
+    };
     if (result.failure) |failure| {
         return malformedDecodeVerdict(
             profile,
@@ -441,7 +499,9 @@ fn scanUtf16(profile: Profile, mode: Mode, bytes: []const u8, decoded_buffer: []
 }
 
 fn scanUtf32(profile: Profile, mode: Mode, bytes: []const u8, decoded_buffer: []u32, endian: Endian) Verdict {
-    const result = decodeUtf32ToCodepoints(bytes, decoded_buffer, endian);
+    const result = decodeUtf32ToCodepoints(bytes, decoded_buffer, endian) catch |err| switch (err) {
+        error.CapacityExceeded => return refusedVerdict(profile, mode, decoded_buffer[0..0], .capacity_exceeded),
+    };
     if (result.failure) |failure| {
         return malformedDecodeVerdict(
             profile,
@@ -560,7 +620,7 @@ fn resultFinding(family: Family, result: anytype) ?Finding {
 // purposeless-control rung, renderer-divergence drops its mixed-direction rung,
 // and the source-display-divergence aggregate reads the homoglyph verdict this
 // scan produced.
-fn detect(input: []const u32, identifier_field: bool, running_text: bool) FindingList {
+fn detect(input: []const u32, identifier_field: bool, running_text: bool) CapacityError!FindingList {
     var findings = FindingList{};
 
     if (positionsWhere(input, isTagCharacter)) |positions| {
@@ -620,9 +680,9 @@ fn detect(input: []const u32, identifier_field: bool, running_text: bool) Findin
     // Every rung of the homoglyph ladder is reported. On running text the family
     // reads the input per identifier-shaped token.
     const homoglyph = if (running_text)
-        homoglyphOverTokens(input)
+        try homoglyphOverTokens(input)
     else
-        homoglyphConfusableFindingWithContext(input, .{ .running_text = false, .identifier_token = false });
+        try homoglyphConfusableFindingWithContext(input, .{ .running_text = false, .identifier_token = false });
     if (homoglyph) |finding| {
         findings.append(finding);
     }
@@ -648,16 +708,16 @@ fn detect(input: []const u32, identifier_field: bool, running_text: bool) Findin
         findings.append(finding);
     }
 
-    if (classifiedFinding(.emoji_zwj_integrity, emoji_zwj_integrity.detect(input).classify)) |finding| {
+    if (classifiedFinding(.emoji_zwj_integrity, (try emoji_zwj_integrity.detect(input)).classify)) |finding| {
         findings.append(finding);
     }
-    if (classifiedFinding(.skin_tone_variation_forgery, skin_tone_variation_forgery.detect(input).classify)) |finding| {
+    if (classifiedFinding(.skin_tone_variation_forgery, (try skin_tone_variation_forgery.detect(input)).classify)) |finding| {
         findings.append(finding);
     }
-    if (classifiedFinding(.filename_disguise, filename_disguise.detectWithContext(running_text, input).classify)) |finding| {
+    if (classifiedFinding(.filename_disguise, (try filename_disguise.detectWithContext(running_text, input)).classify)) |finding| {
         findings.append(finding);
     }
-    if (classifiedFinding(.renderer_divergence, renderer_divergence.detectWithContext(running_text, input).classify)) |finding| {
+    if (classifiedFinding(.renderer_divergence, (try renderer_divergence.detectWithContext(running_text, input)).classify)) |finding| {
         findings.append(finding);
     }
     if (classifiedFinding(.stream_safe_violation, stream_safe_violation.detect(input).classify)) |finding| {
@@ -668,13 +728,13 @@ fn detect(input: []const u32, identifier_field: bool, running_text: bool) Findin
             findings.append(finding);
         }
     }
-    if (classifiedFinding(.identifier_form_drift, identifier_form_drift.detect(input).classify)) |finding| {
+    if (classifiedFinding(.identifier_form_drift, (try identifier_form_drift.detect(input)).classify)) |finding| {
         findings.append(finding);
     }
-    if (classifiedFinding(.admissibility_form_drift, admissibility_form_drift.detect(input).classify)) |finding| {
+    if (classifiedFinding(.admissibility_form_drift, (try admissibility_form_drift.detect(input)).classify)) |finding| {
         findings.append(finding);
     }
-    if (resultFinding(.normalization_bomb, normalizationBombDetect(input))) |finding| {
+    if (resultFinding(.normalization_bomb, try normalizationBombDetect(input))) |finding| {
         findings.append(finding);
     }
     if (!running_text) {
@@ -682,10 +742,10 @@ fn detect(input: []const u32, identifier_field: bool, running_text: bool) Findin
             findings.append(finding);
         }
     }
-    if (resultFinding(.nfc_idempotence_witness, nfcIdempotenceWitnessDetect(input))) |finding| {
+    if (resultFinding(.nfc_idempotence_witness, try nfcIdempotenceWitnessDetect(input))) |finding| {
         findings.append(finding);
     }
-    if (resultFinding(.width_class_confusion, widthClassConfusionDetect(input))) |finding| {
+    if (resultFinding(.width_class_confusion, try widthClassConfusionDetect(input))) |finding| {
         findings.append(finding);
     }
     // SourceDisplayDivergence judges the input as a unit, so it localises
@@ -757,10 +817,10 @@ fn shiftFindingPositions(finding: Finding, start: usize) Finding {
 // input is read once under the running-text context, which keeps the rungs that
 // hold of any text (target match, math alphanumerics, width class,
 // decomposition swap). Mirrors the Lean homoglyphOverTokens.
-fn homoglyphOverTokens(input: []const u32) ?Finding {
+fn homoglyphOverTokens(input: []const u32) CapacityError!?Finding {
     var tokens = identifierTokens(input);
     while (tokens.next()) |token| {
-        if (homoglyphConfusableFindingWithContext(token.cps, .{ .running_text = false, .identifier_token = true })) |finding| {
+        if (try homoglyphConfusableFindingWithContext(token.cps, .{ .running_text = false, .identifier_token = true })) |finding| {
             return shiftFindingPositions(finding, token.start);
         }
     }
@@ -1039,10 +1099,13 @@ const Positions = struct {
     len: usize,
 };
 
+/// The input indices satisfying `pred`, or null when there are none. Total
+/// over an accepted input: the buffer is `MaxFindingPositions` wide and
+/// `scan` admits at most `MaxInputLen` codepoints.
 fn positionsWhere(input: []const u32, comptime pred: fn (u32) bool) ?Positions {
     var positions = Positions{ .items = undefined, .len = 0 };
     for (input, 0..) |cp, index| {
-        if (pred(cp) and positions.len < positions.items.len) {
+        if (pred(cp)) {
             positions.items[positions.len] = index;
             positions.len += 1;
         }
@@ -1126,11 +1189,9 @@ fn variationSelectorFinding(input: []const u32) ?Finding {
     var suspicious = Positions{ .items = undefined, .len = 0 };
     for (selectors.items[0..selectors.len]) |p| {
         if (isRegisteredVariationUse(input, p)) {
-            if (registered.len < registered.items.len) {
-                registered.items[registered.len] = p;
-                registered.len += 1;
-            }
-        } else if (suspicious.len < suspicious.items.len) {
+            registered.items[registered.len] = p;
+            registered.len += 1;
+        } else {
             suspicious.items[suspicious.len] = p;
             suspicious.len += 1;
         }
@@ -1473,37 +1534,37 @@ pub const HomoglyphContext = struct {
     identifier_token: bool = false,
 };
 
-fn homoglyphConfusableFinding(input: []const u32) ?Finding {
+fn homoglyphConfusableFinding(input: []const u32) CapacityError!?Finding {
     return homoglyphConfusableFindingWithContext(input, .{});
 }
 
 // The case-preserving skeleton: NFD, confusable substitution, NFD, with no case
 // fold, so admın (dotless i) maps to adrnin while ADMIN stays itself. Mirrors
 // the Lean asciiSkeleton.
-fn asciiSkeleton(input: []const u32) ?CpBuffer {
-    const nfd1 = toNFD(input) orelse return null;
+fn asciiSkeleton(input: []const u32) CapacityError!CpBuffer {
+    const nfd1 = try toNFD(input);
     var substituted = CpBuffer{};
     for (nfd1.slice()) |cp| {
         var replacement = CpBuffer{};
-        if (confusableReplacement(cp, &replacement)) {
-            if (!substituted.appendSlice(replacement.slice())) return null;
+        if (try confusableReplacement(cp, &replacement)) {
+            try substituted.appendSlice(replacement.slice());
         } else {
-            if (!substituted.append(cp)) return null;
+            try substituted.append(cp);
         }
     }
     return toNFD(substituted.slice());
 }
 
 // A non-ASCII input whose case-preserving skeleton is all ASCII. Mirrors the
-// Lean isAsciiConfusable. An input beyond the bounded skeleton width is not
-// judged.
-fn isAsciiConfusable(input: []const u32) bool {
+// Lean isAsciiConfusable. A skeleton beyond the bounded width is a capacity
+// error, never a clear reading.
+fn isAsciiConfusable(input: []const u32) CapacityError!bool {
     var any_non_ascii = false;
     for (input) |cp| {
         if (cp > 0x7F) any_non_ascii = true;
     }
     if (!any_non_ascii) return false;
-    const skel = asciiSkeleton(input) orelse return false;
+    const skel = try asciiSkeleton(input);
     for (skel.slice()) |cp| {
         if (cp > 0x7F) return false;
     }
@@ -1529,7 +1590,7 @@ fn isLatinOnly(input: []const u32) bool {
 // word it is not (admın with a dotless i). That rung runs on a whole field, and
 // on a token only when the token is Latin-only, so a Greek or Cyrillic word in
 // prose is not read as its Latin look-alike.
-fn homoglyphConfusableFindingWithContext(input: []const u32, ctx: HomoglyphContext) ?Finding {
+fn homoglyphConfusableFindingWithContext(input: []const u32, ctx: HomoglyphContext) CapacityError!?Finding {
     // Each rung localises what the Lean detectWithContext localises: a target
     // match, a cross-script mix and a restriction level judge the string as a
     // unit and carry no positions; math-alpha and width-class the first such
@@ -1537,7 +1598,7 @@ fn homoglyphConfusableFindingWithContext(input: []const u32, ctx: HomoglyphConte
     // ascii-confusable rung the non-ASCII positions.
     var sub_threat: ?[]const u8 = null;
     var positions = Positions{ .items = undefined, .len = 0 };
-    if (homoglyphTargetMatch(input) != null) {
+    if ((try homoglyphTargetMatch(input)) != null) {
         sub_threat = "TargetMatch";
     } else {
         for (input, 0..) |cp, index| {
@@ -1559,9 +1620,9 @@ fn homoglyphConfusableFindingWithContext(input: []const u32, ctx: HomoglyphConte
             }
         }
     }
-    if (sub_threat == null and hasDecompositionSwap(input)) {
+    if (sub_threat == null and (try hasDecompositionSwap(input))) {
         sub_threat = "DecompositionSwap";
-        positions.items[0] = firstDecompositionDiffPos(input);
+        positions.items[0] = try firstDecompositionDiffPos(input);
         positions.len = 1;
     }
     // The script rungs of the Lean ladder, in its order: a cross-script mix
@@ -1576,7 +1637,7 @@ fn homoglyphConfusableFindingWithContext(input: []const u32, ctx: HomoglyphConte
             sub_threat = "RestrictionLow";
         }
     }
-    if (sub_threat == null and !ctx.running_text and (!ctx.identifier_token or isLatinOnly(input)) and isAsciiConfusable(input)) {
+    if (sub_threat == null and !ctx.running_text and (!ctx.identifier_token or isLatinOnly(input)) and (try isAsciiConfusable(input))) {
         sub_threat = "AsciiConfusable";
         positions = positionsWhere(input, isNonAscii) orelse Positions{ .items = undefined, .len = 0 };
     }
@@ -2068,22 +2129,23 @@ fn homoglyphConfusableReasonCode(sub_threat: []const u8) []const u8 {
     return "unicode.security.I.homoglyph-confusable.WidthClass";
 }
 
+/// The one working buffer of this allocator-free port. A form that does not
+/// fit is a `CapacityError`, never a truncated form: every consumer propagates
+/// the error and `scan` turns it into a refused verdict.
 const CpBuffer = struct {
     items: [MaxSkeletonLen]u32 = undefined,
     len: usize = 0,
 
-    fn append(self: *CpBuffer, cp: u32) bool {
-        if (self.len >= self.items.len) return false;
+    fn append(self: *CpBuffer, cp: u32) CapacityError!void {
+        if (self.len >= self.items.len) return error.CapacityExceeded;
         self.items[self.len] = cp;
         self.len += 1;
-        return true;
     }
 
-    fn appendSlice(self: *CpBuffer, values: []const u32) bool {
+    fn appendSlice(self: *CpBuffer, values: []const u32) CapacityError!void {
         for (values) |cp| {
-            if (!self.append(cp)) return false;
+            try self.append(cp);
         }
-        return true;
     }
 
     fn slice(self: *const CpBuffer) []const u32 {
@@ -2091,16 +2153,15 @@ const CpBuffer = struct {
     }
 };
 
-fn homoglyphTargetMatch(input: []const u32) ?[]const u8 {
-    if (input.len > MaxSkeletonLen) return null;
-    const input_letters = letterSkeleton(input) orelse return null;
+fn homoglyphTargetMatch(input: []const u32) CapacityError!?[]const u8 {
+    const input_letters = try letterSkeleton(input);
     var first_match: ?[]const u8 = null;
     var offset: usize = 0;
     while (nextLine(known_attack_targets_raw, &offset)) |raw_line| {
         const target = trimAscii(raw_line);
         if (target.len == 0 or target[0] == '#') continue;
-        const target_cps = asciiCodepoints(target) orelse continue;
-        const target_letters = letterSkeleton(target_cps.slice()) orelse continue;
+        const target_cps = try asciiCodepoints(target);
+        const target_letters = try letterSkeleton(target_cps.slice());
         const matches = !cpSlicesEqual(target_cps.slice(), input) and
             ctCpSlicesEqual(target_letters.slice(), input_letters.slice());
         if (matches and first_match == null) {
@@ -2110,67 +2171,66 @@ fn homoglyphTargetMatch(input: []const u32) ?[]const u8 {
     return first_match;
 }
 
-fn letterSkeleton(input: []const u32) ?CpBuffer {
-    const iterated = iteratedSkeleton(input) orelse return null;
+fn letterSkeleton(input: []const u32) CapacityError!CpBuffer {
+    const iterated = try iteratedSkeleton(input);
     var out = CpBuffer{};
     for (iterated.slice()) |cp| {
         if (!isCombiningMark(cp) and !isDefaultIgnorableCodepoint(cp) and !isWhiteSpaceCodepoint(cp)) {
-            if (!out.append(cp)) return null;
+            try out.append(cp);
         }
     }
     return out;
 }
 
-fn iteratedSkeleton(input: []const u32) ?CpBuffer {
-    if (input.len > MaxSkeletonLen) return null;
+fn iteratedSkeleton(input: []const u32) CapacityError!CpBuffer {
     var current = CpBuffer{};
-    if (!current.appendSlice(input)) return null;
+    try current.appendSlice(input);
     for (0..8) |_| {
-        const next = skeletonStep(current.slice()) orelse return null;
+        const next = try skeletonStep(current.slice());
         if (cpSlicesEqual(next.slice(), current.slice())) return current;
         current = next;
     }
     return current;
 }
 
-fn skeletonStep(input: []const u32) ?CpBuffer {
-    const nfd1 = toNFD(input) orelse return null;
-    const folded = caseFoldCodepoints(nfd1.slice()) orelse return null;
+fn skeletonStep(input: []const u32) CapacityError!CpBuffer {
+    const nfd1 = try toNFD(input);
+    const folded = try caseFoldCodepoints(nfd1.slice());
 
     var substituted = CpBuffer{};
     for (folded.slice()) |cp| {
         var replacement = CpBuffer{};
-        if (confusableReplacement(cp, &replacement)) {
-            if (!substituted.appendSlice(replacement.slice())) return null;
+        if (try confusableReplacement(cp, &replacement)) {
+            try substituted.appendSlice(replacement.slice());
         } else {
-            if (!substituted.append(cp)) return null;
+            try substituted.append(cp);
         }
     }
 
-    const out = caseFoldCodepoints(substituted.slice()) orelse return null;
+    const out = try caseFoldCodepoints(substituted.slice());
     return toNFD(out.slice());
 }
 
-fn toNFD(input: []const u32) ?CpBuffer {
+fn toNFD(input: []const u32) CapacityError!CpBuffer {
     var out = CpBuffer{};
     for (input) |cp| {
-        if (!appendCanonicalDecomposition(&out, cp)) return null;
+        try appendCanonicalDecomposition(&out, cp);
     }
     canonicalOrder(&out);
     return out;
 }
 
-fn appendCanonicalDecomposition(out: *CpBuffer, cp: u32) bool {
+fn appendCanonicalDecomposition(out: *CpBuffer, cp: u32) CapacityError!void {
     if (hangulDecomposition(cp)) |jamo| return out.appendSlice(jamo.slice());
     if (normalizationEntry(cp)) |entry| {
         if (entry.decomp.len > 0) {
             for (entry.decomp) |part| {
-                if (!appendCanonicalDecomposition(out, part)) return false;
+                try appendCanonicalDecomposition(out, part);
             }
-            return true;
+            return;
         }
     }
-    return out.append(cp);
+    try out.append(cp);
 }
 
 fn canonicalOrder(buffer: *CpBuffer) void {
@@ -2255,30 +2315,30 @@ fn hangulDecomposition(cp: u32) ?HangulDecomposition {
 /// Recursively decompose `cp` using its compatibility mapping when present,
 /// otherwise its canonical mapping, otherwise Hangul algorithmic
 /// decomposition — the full decomposition of UAX #15 for NFKD.
-fn appendCompatDecomposition(out: *CpBuffer, cp: u32) bool {
+fn appendCompatDecomposition(out: *CpBuffer, cp: u32) CapacityError!void {
     if (hangulDecomposition(cp)) |jamo| return out.appendSlice(jamo.slice());
     if (normalizationEntry(cp)) |entry| {
         if (entry.compat.len > 0) {
             for (entry.compat) |part| {
-                if (!appendCompatDecomposition(out, part)) return false;
+                try appendCompatDecomposition(out, part);
             }
-            return true;
+            return;
         }
         if (entry.decomp.len > 0) {
             for (entry.decomp) |part| {
-                if (!appendCompatDecomposition(out, part)) return false;
+                try appendCompatDecomposition(out, part);
             }
-            return true;
+            return;
         }
     }
-    return out.append(cp);
+    try out.append(cp);
 }
 
 /// UAX #15 NFKD — full compatibility decompose + canonical reorder.
-fn toNFKD(input: []const u32) ?CpBuffer {
+fn toNFKD(input: []const u32) CapacityError!CpBuffer {
     var out = CpBuffer{};
     for (input) |cp| {
-        if (!appendCompatDecomposition(&out, cp)) return null;
+        try appendCompatDecomposition(&out, cp);
     }
     canonicalOrder(&out);
     return out;
@@ -2332,7 +2392,7 @@ fn compositionEntry(a: u32, b: u32) ?u32 {
 /// UAX #15 canonical composition pass: fold each combiner into the most
 /// recent starter it is not blocked from, preferring Hangul composition
 /// then the composition table.  Operates on an already reordered sequence.
-fn canonicalCompose(seq: []const u32) ?CpBuffer {
+fn canonicalCompose(seq: []const u32) CapacityError!CpBuffer {
     var out = CpBuffer{};
     var starter_idx: ?usize = null;
     var last_ccc: i32 = -1;
@@ -2357,7 +2417,7 @@ fn canonicalCompose(seq: []const u32) ?CpBuffer {
             }
         }
 
-        if (!out.append(cp)) return null;
+        try out.append(cp);
         if (cp_ccc == 0) {
             starter_idx = out.len - 1;
             last_ccc = 0;
@@ -2370,18 +2430,21 @@ fn canonicalCompose(seq: []const u32) ?CpBuffer {
 }
 
 /// UAX #15 NFC — canonical decompose + reorder + canonical recompose.
-fn toNFC(input: []const u32) ?CpBuffer {
-    const nfd = toNFD(input) orelse return null;
+fn toNFC(input: []const u32) CapacityError!CpBuffer {
+    const nfd = try toNFD(input);
     return canonicalCompose(nfd.slice());
 }
 
 /// UAX #15 NFKC — NFKD followed by canonical recomposition.
-fn toNFKC(input: []const u32) ?CpBuffer {
-    const nfkd = toNFKD(input) orelse return null;
+fn toNFKC(input: []const u32) CapacityError!CpBuffer {
+    const nfkd = try toNFKD(input);
     return canonicalCompose(nfkd.slice());
 }
 
-fn confusableReplacement(cp: u32, out: *CpBuffer) bool {
+/// Appends the confusable replacement of `cp` to `out` and reports whether one
+/// exists; a replacement that does not fit is a capacity error, never "no
+/// replacement".
+fn confusableReplacement(cp: u32, out: *CpBuffer) CapacityError!bool {
     var lo: usize = 0;
     var hi: usize = confusables_data.entries.len;
     while (lo < hi) {
@@ -2392,19 +2455,20 @@ fn confusableReplacement(cp: u32, out: *CpBuffer) bool {
         } else if (cp > entry.src) {
             lo = mid + 1;
         } else {
-            return out.appendSlice(entry.replacement);
+            try out.appendSlice(entry.replacement);
+            return true;
         }
     }
     return false;
 }
 
-fn caseFoldCodepoints(input: []const u32) ?CpBuffer {
+fn caseFoldCodepoints(input: []const u32) CapacityError!CpBuffer {
     var out = CpBuffer{};
     for (input) |cp| {
         if (caseFoldingEntry(cp)) |entry| {
-            if (!out.appendSlice(entry.mapping)) return null;
+            try out.appendSlice(entry.mapping);
         } else {
-            if (!out.append(cp)) return null;
+            try out.append(cp);
         }
     }
     return out;
@@ -2427,11 +2491,10 @@ fn caseFoldingEntry(cp: u32) ?case_folding_data.Entry {
     return null;
 }
 
-fn asciiCodepoints(target: []const u8) ?CpBuffer {
-    if (target.len > MaxSkeletonLen) return null;
+fn asciiCodepoints(target: []const u8) CapacityError!CpBuffer {
     var out = CpBuffer{};
     for (target) |byte| {
-        if (!out.append(@as(u32, byte))) return null;
+        try out.append(@as(u32, byte));
     }
     return out;
 }
@@ -2646,17 +2709,17 @@ fn findSpecialLower(
 }
 
 /// Lowercase a codepoint sequence under `locale` (UAX #21 full mapping),
-/// mirroring `Unicode.Casing.toLower`. Returns null if the result overflows
-/// the bounded CpBuffer.
-pub fn toLower(locale: CasingLocale, cps: []const u32) ?CpBuffer {
+/// mirroring `Unicode.Casing.toLower`. A result beyond the bounded CpBuffer
+/// is a capacity error.
+pub fn toLower(locale: CasingLocale, cps: []const u32) CapacityError!CpBuffer {
     var out = CpBuffer{};
     for (cps, 0..) |cp, i| {
         const prefix = cps[0..i];
         const suffix = cps[i + 1 ..];
         if (findSpecialLower(locale, prefix, suffix, cp)) |lower| {
-            if (!out.appendSlice(lower)) return null;
+            try out.appendSlice(lower);
         } else {
-            if (!out.append(simpleLowercase(cp))) return null;
+            try out.append(simpleLowercase(cp));
         }
     }
     return out;
@@ -2779,41 +2842,38 @@ fn isBip39Whitespace(cp: u32) bool {
     return cp == 0x0020 or cp == 0x3000;
 }
 
-fn collapseBip39Whitespace(cps: []const u32) ?CpBuffer {
+fn collapseBip39Whitespace(cps: []const u32) CapacityError!CpBuffer {
     var out = CpBuffer{};
     var in_ws = false;
     for (cps) |cp| {
         if (isBip39Whitespace(cp)) {
             if (!in_ws) {
-                if (!out.append(0x0020)) return null;
+                try out.append(0x0020);
             }
             in_ws = true;
         } else {
-            if (!out.append(cp)) return null;
+            try out.append(cp);
             in_ws = false;
         }
     }
     return out;
 }
 
-fn trimBip39(buffer: *const CpBuffer) CpBuffer {
+fn trimBip39(buffer: *const CpBuffer) CapacityError!CpBuffer {
     const s = buffer.slice();
     var start: usize = 0;
     var end: usize = s.len;
     while (start < end and s[start] == 0x0020) start += 1;
     while (end > start and s[end - 1] == 0x0020) end -= 1;
     var out = CpBuffer{};
-    var i = start;
-    while (i < end) : (i += 1) {
-        _ = out.append(s[i]);
-    }
+    try out.appendSlice(s[start..end]);
     return out;
 }
 
-fn bip39CanonicalForm(input: []const u32) ?CpBuffer {
-    const nfkd = toNFKD(input) orelse return null;
-    const lowered = toLower(.default, nfkd.slice()) orelse return null;
-    const collapsed = collapseBip39Whitespace(lowered.slice()) orelse return null;
+fn bip39CanonicalForm(input: []const u32) CapacityError!CpBuffer {
+    const nfkd = try toNFKD(input);
+    const lowered = try toLower(.default, nfkd.slice());
+    const collapsed = try collapseBip39Whitespace(lowered.slice());
     return trimBip39(&collapsed);
 }
 
@@ -2948,8 +3008,8 @@ fn firstDivergence(a: []const u32, b: []const u32) usize {
 
 /// Detect a non-canonical or wordlist-mismatched BIP-39 mnemonic, mirroring
 /// `Unicode.Security.Crypto.Bip39Canonical.detect`.
-pub fn bip39CanonicalDetect(input: []const u32) Bip39CanonicalResult {
-    const canonical_buf = bip39CanonicalForm(input) orelse CpBuffer{};
+pub fn bip39CanonicalDetect(input: []const u32) CapacityError!Bip39CanonicalResult {
+    const canonical_buf = try bip39CanonicalForm(input);
     var result = Bip39CanonicalResult{
         .canonical = canonical_buf,
         .word_count = countBip39Words(canonical_buf.slice()),
@@ -2974,13 +3034,12 @@ pub fn bip39CanonicalDetect(input: []const u32) Bip39CanonicalResult {
         result.position_count = 1;
         return result;
     }
-    if (toNFKD(input)) |nfkd| {
-        if (!cpSlicesEqual(input, nfkd.slice())) {
-            result.sub_threat = "NonNFKD";
-            result.positions[0] = firstDivergence(input, nfkd.slice());
-            result.position_count = 1;
-            return result;
-        }
+    const nfkd = try toNFKD(input);
+    if (!cpSlicesEqual(input, nfkd.slice())) {
+        result.sub_threat = "NonNFKD";
+        result.positions[0] = firstDivergence(input, nfkd.slice());
+        result.position_count = 1;
+        return result;
     }
     if (firstUnknownWordIndex(canonical_buf.slice())) |idx| {
         result.sub_threat = "WordlistMismatch";
@@ -3176,26 +3235,18 @@ pub const hash_input_stability = struct {
     }
 
     /// Strip trailing ASCII whitespace into a bounded buffer.
-    fn trimTrailing(input: []const u32) CpBuffer {
+    fn trimTrailing(input: []const u32) CapacityError!CpBuffer {
         const keep = input.len - countTrailingWhitespace(input);
         var out = CpBuffer{};
-        var i: usize = 0;
-        while (i < keep) : (i += 1) {
-            _ = out.append(input[i]);
-        }
+        try out.appendSlice(input[0..keep]);
         return out;
     }
 
-    /// The hash-stable form of an input: NFC then trim, in spec order. NFC that
-    /// overflows the 128-codepoint buffer (impossible for inputs within the
-    /// bound) falls back to the raw input, itself bounded by the buffer.
-    pub fn hashStable(input: []const u32) CpBuffer {
-        var nfc = CpBuffer{};
-        if (toNFC(input)) |composed| {
-            nfc = composed;
-        } else {
-            _ = nfc.appendSlice(input);
-        }
+    /// The hash-stable form of an input: NFC then trim, in spec order. An NFC
+    /// form beyond the bounded buffer is a capacity error, never the raw
+    /// input read as its own stable form.
+    pub fn hashStable(input: []const u32) CapacityError!CpBuffer {
+        const nfc = try toNFC(input);
         return trimTrailing(nfc.slice());
     }
 
@@ -3293,8 +3344,8 @@ pub const hash_input_stability = struct {
 
     /// Probe: rfc8785NfcRequirement. Same condition as normalizationDrift;
     /// returns the first NFC divergence position.
-    fn rfc8785Violation(input: []const u32) ?usize {
-        const nfc = toNFC(input) orelse return null;
+    fn rfc8785Violation(input: []const u32) CapacityError!?usize {
+        const nfc = try toNFC(input);
         if (cpSlicesEqual(input, nfc.slice())) return null;
         return firstArrayDivergence(input, nfc.slice());
     }
@@ -3344,11 +3395,11 @@ pub const hash_input_stability = struct {
     }
 
     /// Dispatch the RFC-rule probe. First violation position, or null if clean.
-    fn rfcRuleViolation(rule: RfcRule, input: []const u32) ?usize {
+    fn rfcRuleViolation(rule: RfcRule, input: []const u32) CapacityError!?usize {
         return switch (rule) {
             .pgp4880_trailing_whitespace => pgp4880Violation(input),
             .pgp9580_line_ending => pgp9580Violation(input),
-            .rfc8785_nfc_requirement => rfc8785Violation(input),
+            .rfc8785_nfc_requirement => try rfc8785Violation(input),
             .rfc8259_control_char => rfc8259Violation(input),
             .rfc7515_jws_base64_url => rfc7515Violation(input),
             .rfc6376_dkim_relaxed => rfc6376Violation(input),
@@ -3410,8 +3461,9 @@ pub const hash_input_stability = struct {
 
     /// The full detection function. Runs all six probes in priority order, with
     /// the context-bearing probes ahead of the generic ones.
-    pub fn detectWithContext(ctx: Context, input: []const u32) @This().Verdict {
-        const stable = hashStable(input);
+    pub fn detectWithContext(ctx: Context, input: []const u32) CapacityError!@This().Verdict {
+        if (input.len > MaxInputLen) return error.CapacityExceeded;
+        const stable = try hashStable(input);
 
         // Probe 1: encodingMismatch.
         const encoding_hit: ?EncodingHit = if (ctx.declared_encoding) |label|
@@ -3433,7 +3485,7 @@ pub const hash_input_stability = struct {
 
         // Probe 4: signedMessageRule.
         const rfc_hit: ?RfcHit = if (ctx.rfc_rule) |rule| blk: {
-            if (rfcRuleViolation(rule, input)) |pos| {
+            if (try rfcRuleViolation(rule, input)) |pos| {
                 break :blk RfcHit{ .rule = rule, .pos = pos };
             }
             break :blk null;
@@ -3444,7 +3496,7 @@ pub const hash_input_stability = struct {
 
         // Probe 6: normalizationDrift.
         const non_nfc_pos: ?usize = blk: {
-            const nfc = toNFC(input) orelse break :blk null;
+            const nfc = try toNFC(input);
             if (cpSlicesEqual(input, nfc.slice())) break :blk null;
             break :blk firstArrayDivergence(input, nfc.slice());
         };
@@ -3470,7 +3522,7 @@ pub const hash_input_stability = struct {
     /// Convenience wrapper over detectWithContext with the empty context —
     /// equivalent to running only the two bare-input probes (trailingWhitespace,
     /// normalizationDrift).
-    pub fn detect(input: []const u32) @This().Verdict {
+    pub fn detect(input: []const u32) CapacityError!@This().Verdict {
         return detectWithContext(Context{}, input);
     }
 };
@@ -3499,15 +3551,16 @@ pub const ai_watermark_detectability = struct {
     /// Number of marker positions a hazard can carry before the bounded buffer
     /// saturates. Positions are a subset of input indices; the cap mirrors the
     /// port's other bounded buffers.
-    const MaxPositions = 512;
+    const MaxPositions = MaxInputLen;
 
     /// Bounded position buffer — a hazard's implicated codepoint indices.
     const PosBuffer = struct {
         items: [MaxPositions]usize = undefined,
         len: usize = 0,
 
+        /// Total: the buffer is `MaxInputLen` wide, positions are input
+        /// indices, and every entry point refuses a longer input.
         fn append(self: *PosBuffer, p: usize) void {
-            if (self.len >= self.items.len) return;
             self.items[self.len] = p;
             self.len += 1;
         }
@@ -3852,7 +3905,8 @@ pub const ai_watermark_detectability = struct {
     /// The detection function. Runs every probe in the fixed priority order
     /// (most-specific first); the first hit wins. See the section header for the
     /// probe inventory and the ordering rationale.
-    pub fn detectWithContext(ctx: Context, input: []const u32) @This().Verdict {
+    pub fn detectWithContext(ctx: Context, input: []const u32) CapacityError!@This().Verdict {
+        if (input.len > MaxInputLen) return error.CapacityExceeded;
         const nnbsp_positions = allPositions(isNnbsp, input);
         const nnbsp_count = nnbsp_positions.len;
 
@@ -4029,7 +4083,7 @@ pub const ai_watermark_detectability = struct {
     /// Convenience wrapper over detectWithContext with the empty context —
     /// exact-arithmetic settings (zwsp_modulo_tolerance = 0,
     /// adversarial_tolerance = 0).
-    pub fn detect(input: []const u32) @This().Verdict {
+    pub fn detect(input: []const u32) CapacityError!@This().Verdict {
         return detectWithContext(Context{}, input);
     }
 };
@@ -4286,15 +4340,16 @@ pub const emoji_zwj_integrity = struct {
     /// indices; the cap mirrors the port's other bounded position buffers
     /// (ai_watermark_detectability). Inputs longer than this saturate silently,
     /// which cannot change a classification tag.
-    const MAX_POSITIONS: usize = 512;
+    const MAX_POSITIONS: usize = MaxInputLen;
 
     /// Bounded position buffer — a hazard's implicated codepoint indices.
     const PosBuffer = struct {
         items: [MAX_POSITIONS]usize = undefined,
         len: usize = 0,
 
+        /// Total: the buffer is `MaxInputLen` wide, positions are input
+        /// indices, and every entry point refuses a longer input.
         fn append(self: *PosBuffer, p: usize) void {
-            if (self.len >= self.items.len) return;
             self.items[self.len] = p;
             self.len += 1;
         }
@@ -4536,7 +4591,8 @@ pub const emoji_zwj_integrity = struct {
     // ── §5 Top-level detection ───────────────────────────────────────────
 
     /// The EmojiZwjIntegrity detection function.
-    pub fn detect(input: []const u32) @This().Verdict {
+    pub fn detect(input: []const u32) CapacityError!@This().Verdict {
+        if (input.len > MaxInputLen) return error.CapacityExceeded;
         const zwjs = zwjPositions(input);
         const st_count = skinToneCount(input);
         const is_rgi = isRegisteredZwjSequence(input);
@@ -4828,15 +4884,16 @@ pub const renderer_divergence = struct {
     /// position per hazard; the cap mirrors the port's other bounded position
     /// buffers. Inputs that would exceed it saturate silently, which cannot
     /// change a classification tag.
-    const MAX_POSITIONS: usize = 512;
+    const MAX_POSITIONS: usize = MaxInputLen;
 
     /// Bounded position buffer — a hazard's implicated codepoint indices.
     const PosBuffer = struct {
         items: [MAX_POSITIONS]usize = undefined,
         len: usize = 0,
 
+        /// Total: the buffer is `MaxInputLen` wide, positions are input
+        /// indices, and every entry point refuses a longer input.
         fn append(self: *PosBuffer, p: usize) void {
-            if (self.len >= self.items.len) return;
             self.items[self.len] = p;
             self.len += 1;
         }
@@ -5077,7 +5134,7 @@ pub const renderer_divergence = struct {
 
     /// The RendererDivergence detection function at the default context (one
     /// field, not running text). Mirrors the Lean detect.
-    pub fn detect(input: []const u32) @This().Verdict {
+    pub fn detect(input: []const u32) CapacityError!@This().Verdict {
         return detectWithContext(false, input);
     }
 
@@ -5086,7 +5143,8 @@ pub const renderer_divergence = struct {
     /// line or a message carrying both directions is a bilingual line, not a
     /// divergence, so the mixed-direction rung does not run on running text;
     /// every other rung holds of any field.
-    pub fn detectWithContext(running_text: bool, input: []const u32) @This().Verdict {
+    pub fn detectWithContext(running_text: bool, input: []const u32) CapacityError!@This().Verdict {
+        if (input.len > MaxInputLen) return error.CapacityExceeded;
         const vs_count = countVs(input);
         const combining_count = countCombining(input);
         const fullwidth_count = countFullwidth(input);
@@ -5195,15 +5253,16 @@ pub const filename_disguise = struct {
     /// position; the other sub-threats report a single position. Inputs that
     /// would exceed the cap saturate silently, which cannot change a
     /// classification tag.
-    const MAX_POSITIONS: usize = 512;
+    const MAX_POSITIONS: usize = MaxInputLen;
 
     /// Bounded position buffer — a hazard's implicated codepoint indices.
     const PosBuffer = struct {
         items: [MAX_POSITIONS]usize = undefined,
         len: usize = 0,
 
+        /// Total: the buffer is `MaxInputLen` wide, positions are input
+        /// indices, and every entry point refuses a longer input.
         fn append(self: *PosBuffer, p: usize) void {
-            if (self.len >= self.items.len) return;
             self.items[self.len] = p;
             self.len += 1;
         }
@@ -5408,7 +5467,7 @@ pub const filename_disguise = struct {
     /// The FilenameDisguise detection function, reading its input as one
     /// filename. Mirrors the Lean detect, which is detectWithContext at the
     /// default context.
-    pub fn detect(input: []const u32) @This().Verdict {
+    pub fn detect(input: []const u32) CapacityError!@This().Verdict {
         return detectWithContext(false, input);
     }
 
@@ -5417,7 +5476,8 @@ pub const filename_disguise = struct {
     /// extension rungs read the text after the last dot as a file extension,
     /// which a source file or a message does not have, so they do not run on
     /// running text; the purposeless-bidi-control rung holds of any field.
-    pub fn detectWithContext(running_text: bool, input: []const u32) @This().Verdict {
+    pub fn detectWithContext(running_text: bool, input: []const u32) CapacityError!@This().Verdict {
+        if (input.len > MaxInputLen) return error.CapacityExceeded;
         const dots = dotPositions(input);
         const last_dot: ?usize = if (dots.len == 0) null else dots.items[dots.len - 1];
         const ext_start: usize = if (last_dot) |p| p + 1 else input.len;
@@ -5597,13 +5657,11 @@ pub const identifier_form_drift = struct {
     // ── §2 Core predicates (reuse the port's own tables) ─────────────────
 
     /// Identifier_Status = Allowed of the first codepoint of cp's NFKD form, or
-    /// cp's own status when NFKD is empty (defensive — toNFKD is total and
-    /// returns at least [cp]; it yields null only on buffer saturation, handled
-    /// here as the empty case). Reuses the port's own predicate and NFKD.
-    pub fn nfkdHeadAllowed(cp: u32) bool {
-        if (nfkdNormalize(&[_]u32{cp})) |nfkd| {
-            if (nfkd.len > 0) return idAllowedPredicate(nfkd.items[0]);
-        }
+    /// cp's own status when NFKD is empty (toNFKD returns at least [cp]).
+    /// Reuses the port's own predicate and NFKD.
+    pub fn nfkdHeadAllowed(cp: u32) CapacityError!bool {
+        const nfkd = try nfkdNormalize(&[_]u32{cp});
+        if (nfkd.len > 0) return idAllowedPredicate(nfkd.items[0]);
         return idAllowedPredicate(cp);
     }
 
@@ -5612,9 +5670,9 @@ pub const identifier_form_drift = struct {
     /// Position and codepoint of the first input position whose isIdAllowed
     /// differs from its NFKD-head's.
     const ShiftHit = struct { pos: usize, cp: u32 };
-    fn firstStatusShift(input: []const u32) ?ShiftHit {
+    fn firstStatusShift(input: []const u32) CapacityError!?ShiftHit {
         for (input, 0..) |cp, idx| {
-            if (!idAllowedPredicate(cp) and nfkdHeadAllowed(cp)) {
+            if (!idAllowedPredicate(cp) and (try nfkdHeadAllowed(cp))) {
                 return ShiftHit{ .pos = idx, .cp = cp };
             }
         }
@@ -5622,10 +5680,10 @@ pub const identifier_form_drift = struct {
     }
 
     /// Total count of input positions where the per-cp status shifts under NFKD.
-    fn statusShiftCount(input: []const u32) usize {
+    fn statusShiftCount(input: []const u32) CapacityError!usize {
         var count: usize = 0;
         for (input) |cp| {
-            if (!idAllowedPredicate(cp) and nfkdHeadAllowed(cp)) count += 1;
+            if (!idAllowedPredicate(cp) and (try nfkdHeadAllowed(cp))) count += 1;
         }
         return count;
     }
@@ -5633,8 +5691,8 @@ pub const identifier_form_drift = struct {
     // ── §4 Top-level detection ───────────────────────────────────────────
 
     /// The IdentifierFormDrift detection function.
-    pub fn detect(input: []const u32) @This().Verdict {
-        const classification: Classification = if (firstStatusShift(input)) |hit| .{ .hazard = .{
+    pub fn detect(input: []const u32) CapacityError!@This().Verdict {
+        const classification: Classification = if (try firstStatusShift(input)) |hit| .{ .hazard = .{
             .sub = .{ .identifier_status_shift = .{ .base_pos = hit.pos, .cp = hit.cp } },
             .positions = [1]usize{hit.pos},
         } } else .{ .clear = {} };
@@ -5642,7 +5700,7 @@ pub const identifier_form_drift = struct {
         return @This().Verdict{
             .input = input,
             .classify = classification,
-            .shift_count = statusShiftCount(input),
+            .shift_count = try statusShiftCount(input),
         };
     }
 };
@@ -5766,15 +5824,12 @@ pub const admissibility_form_drift = struct {
 
     // ── §2 Top-level detection ───────────────────────────────────────────
 
-    /// The AdmissibilityFormDrift detection function.
-    pub fn detect(input: []const u32) @This().Verdict {
+    /// The AdmissibilityFormDrift detection function. An NFKC form beyond the
+    /// bounded buffer is a capacity error, never read as agreement.
+    pub fn detect(input: []const u32) CapacityError!@This().Verdict {
         const in_ok = allowedIdentifierPredicate(input);
-        // toNFKC is total on well-formed input and returns at least the input;
-        // it yields null only on buffer saturation (unbounded compatibility
-        // expansion). Such a pathological input is never a real vector; treat
-        // the NFKC verdict defensively as agreement (== in_ok) so it reports
-        // clear rather than crashing.
-        const nfkc_ok = if (nfkcNormalize(input)) |nfkc| allowedIdentifierPredicate(nfkc.slice()) else in_ok;
+        const nfkc = try nfkcNormalize(input);
+        const nfkc_ok = allowedIdentifierPredicate(nfkc.slice());
 
         const classification: Classification = if (in_ok == nfkc_ok)
             .{ .clear = {} }
@@ -5824,15 +5879,16 @@ pub const skin_tone_variation_forgery = struct {
     /// positions per hazard (a stacked skin-tone pair); the cap mirrors the
     /// port's other bounded position buffers. Inputs that would exceed it
     /// saturate silently, which cannot change a classification tag.
-    const MAX_POSITIONS: usize = 512;
+    const MAX_POSITIONS: usize = MaxInputLen;
 
     /// Bounded position buffer — a hazard's implicated codepoint indices.
     const PosBuffer = struct {
         items: [MAX_POSITIONS]usize = undefined,
         len: usize = 0,
 
+        /// Total: the buffer is `MaxInputLen` wide, positions are input
+        /// indices, and every entry point refuses a longer input.
         fn append(self: *PosBuffer, p: usize) void {
-            if (self.len >= self.items.len) return;
             self.items[self.len] = p;
             self.len += 1;
         }
@@ -6066,7 +6122,8 @@ pub const skin_tone_variation_forgery = struct {
     // ── §4 Top-level detection ───────────────────────────────────────────
 
     /// The SkinToneVariationForgery detection function.
-    pub fn detect(input: []const u32) @This().Verdict {
+    pub fn detect(input: []const u32) CapacityError!@This().Verdict {
+        if (input.len > MaxInputLen) return error.CapacityExceeded;
         const stc = skinToneCount(input);
         const v15 = vs15Count(input);
         const v16 = vs16Count(input);
@@ -6190,8 +6247,8 @@ pub const source_display_divergence = struct {
     /// The ladder carries the CrossScriptMix rung itself, so the constituent
     /// is the family finding; the scan passes its per-token verdict through
     /// detectCore.
-    fn homoglyphFired(input: []const u32) bool {
-        return homoglyphConfusableFinding(input) != null;
+    fn homoglyphFired(input: []const u32) CapacityError!bool {
+        return (try homoglyphConfusableFinding(input)) != null;
     }
 
     // ── §2 Types ─────────────────────────────────────────────────────────
@@ -6280,8 +6337,8 @@ pub const source_display_divergence = struct {
     /// Aggregate the port's own five constituent detectors into one D-layer
     /// verdict at the default context: the homoglyph constituent is the
     /// whole-input homoglyph verdict. Mirrors the Lean detect.
-    pub fn detect(input: []const u32) @This().Verdict {
-        return detectCore(input, homoglyphFired(input));
+    pub fn detect(input: []const u32) CapacityError!@This().Verdict {
+        return detectCore(input, try homoglyphFired(input));
     }
 
     /// Aggregate over a homoglyph verdict already in hand. The scan passes the
@@ -6640,35 +6697,34 @@ pub const NormalizationBombResult = struct {
 };
 
 // First position whose single-codepoint NFKD expansion exceeds
-// `MAX_NFKD_PER_CP`. A single codepoint never overflows the bounded buffer, so
-// a null expansion counts as length 0 (which cannot exceed the bound anyway).
-fn firstBlowupCp(input: []const u32) ?usize {
+// `MAX_NFKD_PER_CP`.
+fn firstBlowupCp(input: []const u32) CapacityError!?usize {
     var i: usize = 0;
     while (i < input.len) : (i += 1) {
-        const expand = if (toNFKD(&[_]u32{input[i]})) |buf| buf.slice().len else 0;
-        if (expand > MAX_NFKD_PER_CP) return i;
+        const expanded = try toNFKD(&[_]u32{input[i]});
+        if (expanded.slice().len > MAX_NFKD_PER_CP) return i;
     }
     return null;
 }
 
 /// Detect a normalization-expansion bomb. Priority: per-codepoint blow-up,
-/// then overall NFKD ratio, then overall NFD ratio. An unmeasurable (overflowed)
-/// whole-input expansion is treated as ratio 100% — no hazard.
-pub fn normalizationBombDetect(input: []const u32) NormalizationBombResult {
+/// then overall NFKD ratio, then overall NFD ratio. A whole-input expansion
+/// beyond the bounded buffer is a capacity error, never read as no expansion.
+pub fn normalizationBombDetect(input: []const u32) CapacityError!NormalizationBombResult {
     var result = NormalizationBombResult{};
-    if (firstBlowupCp(input)) |pos| {
+    if (try firstBlowupCp(input)) |pos| {
         result.sub_threat = "SingleCpBlowup";
         result.positions[0] = pos;
         result.position_count = 1;
         return result;
     }
     if (input.len == 0) return result;
-    const nfkd_len = if (toNFKD(input)) |buf| buf.slice().len else input.len;
+    const nfkd_len = (try toNFKD(input)).slice().len;
     if (nfkd_len * 100 / input.len > NFKD_RATIO_PCT) {
         result.sub_threat = "NfkdHighExpansion";
         return result;
     }
-    const nfd_len = if (toNFD(input)) |buf| buf.slice().len else input.len;
+    const nfd_len = (try toNFD(input)).slice().len;
     if (nfd_len * 100 / input.len > NFD_RATIO_PCT) {
         result.sub_threat = "NfdHighExpansion";
         return result;
@@ -6696,18 +6752,17 @@ fn nfcFirstDivergence(a: []const u32, b: []const u32) ?usize {
 
 /// Detect an input that is not in canonical (NFC), or not in compatibility
 /// (NFKC), form. NFC divergence takes priority over NFKC. A normalization
-/// overflow of the bounded buffer (impossible for the small inputs here) is
-/// treated as clear.
-pub fn nfcIdempotenceWitnessDetect(input: []const u32) NfcIdempotenceWitnessResult {
+/// beyond the bounded buffer is a capacity error, never a clear reading.
+pub fn nfcIdempotenceWitnessDetect(input: []const u32) CapacityError!NfcIdempotenceWitnessResult {
     var result = NfcIdempotenceWitnessResult{};
-    const nfc = toNFC(input) orelse return result;
+    const nfc = try toNFC(input);
     if (nfcFirstDivergence(input, nfc.slice())) |pos| {
         result.sub_threat = "NonNfcForm";
         result.positions[0] = pos;
         result.position_count = 1;
         return result;
     }
-    const nfkc = toNFKC(input) orelse return result;
+    const nfkc = try toNFKC(input);
     if (nfcFirstDivergence(input, nfkc.slice())) |pos| {
         result.sub_threat = "NonNfkcCompatForm";
         result.positions[0] = pos;
@@ -6724,18 +6779,17 @@ pub const WidthClassConfusionResult = struct {
 };
 
 // True iff the NFKD head of `cp` carries a different East Asian Width class.
-// A normalization overflow of the bounded buffer is treated as no fold.
-fn hasWidthFold(cp: u32) bool {
-    const folded = toNFKD(&[_]u32{cp}) orelse return false;
+fn hasWidthFold(cp: u32) CapacityError!bool {
+    const folded = try toNFKD(&[_]u32{cp});
     const head = folded.slice();
     if (head.len == 0) return false;
     return eastAsianWidth(head[0]) != eastAsianWidth(cp);
 }
 
 // First position whose codepoint has class `want` and folds away from it.
-fn firstWidthFold(input: []const u32, want: east_asian_width_data.Width) ?usize {
+fn firstWidthFold(input: []const u32, want: east_asian_width_data.Width) CapacityError!?usize {
     for (input, 0..) |cp, index| {
-        if (eastAsianWidth(cp) == want and hasWidthFold(cp)) return index;
+        if (eastAsianWidth(cp) == want and (try hasWidthFold(cp))) return index;
     }
     return null;
 }
@@ -6757,15 +6811,15 @@ fn firstWidthFold(input: []const u32, want: east_asian_width_data.Width) ?usize 
 /// the reference's sub-threat order.
 ///
 /// Direct port of Unicode/Security/Form/WidthClassConfusion.lean.
-pub fn widthClassConfusionDetect(input: []const u32) WidthClassConfusionResult {
+pub fn widthClassConfusionDetect(input: []const u32) CapacityError!WidthClassConfusionResult {
     var result = WidthClassConfusionResult{};
-    if (firstWidthFold(input, .f)) |pos| {
+    if (try firstWidthFold(input, .f)) |pos| {
         result.sub_threat = "FullwidthFold";
         result.positions[0] = pos;
         result.position_count = 1;
         return result;
     }
-    if (firstWidthFold(input, .h)) |pos| {
+    if (try firstWidthFold(input, .h)) |pos| {
         result.sub_threat = "HalfwidthFold";
         result.positions[0] = pos;
         result.position_count = 1;
@@ -6803,11 +6857,9 @@ fn isCombiningMark(cp: u32) bool {
 // mark composes with the character before it is a question for the composition
 // table.
 //
-// An input whose normalization overflows the fixed skeleton buffer is reported
-// as carrying no swap, the same reading every other buffer-bounded detector in
-// this port takes.
-fn hasDecompositionSwap(input: []const u32) bool {
-    const nfc = toNFC(input) orelse return false;
+// An NFC form beyond the bounded buffer is a capacity error, never "no swap".
+fn hasDecompositionSwap(input: []const u32) CapacityError!bool {
+    const nfc = try toNFC(input);
     const composed = nfc.slice();
     if (composed.len != input.len) return true;
     for (input, composed) |original, normalized| {
@@ -6818,10 +6870,9 @@ fn hasDecompositionSwap(input: []const u32) bool {
 
 // The first position at which the input and its NFC form differ, or the
 // shorter length when one is a prefix of the other. Mirrors the Lean
-// firstDecompositionDiffPos. An NFC form that overflows the buffer reads as
-// position 0, the Lean's default when no difference is found.
-fn firstDecompositionDiffPos(input: []const u32) usize {
-    const nfc = toNFC(input) orelse return 0;
+// firstDecompositionDiffPos.
+fn firstDecompositionDiffPos(input: []const u32) CapacityError!usize {
+    const nfc = try toNFC(input);
     const composed = nfc.slice();
     const shorter = @min(input.len, composed.len);
     for (0..shorter) |index| {
@@ -7397,7 +7448,9 @@ pub fn isValidUtf8(bytes: []const u8) bool {
     return firstInvalidUtf8Offset(bytes) == null;
 }
 
-fn decodeUtf8ToCodepoints(bytes: []const u8, out: []u32) usize {
+/// Decodes already-validated UTF-8 into `out`. A decoded text longer than the
+/// caller's buffer is a capacity error, never a text with its tail dropped.
+fn decodeUtf8ToCodepoints(bytes: []const u8, out: []u32) CapacityError!usize {
     var out_len: usize = 0;
     var index: usize = 0;
     while (index < bytes.len) {
@@ -7421,16 +7474,15 @@ fn decodeUtf8ToCodepoints(bytes: []const u8, out: []u32) usize {
                 @as(u32, bytes[index + 3] & 0x3F);
             width = 4;
         }
-        if (out_len < out.len) {
-            out[out_len] = cp;
-            out_len += 1;
-        }
+        if (out_len >= out.len) return error.CapacityExceeded;
+        out[out_len] = cp;
+        out_len += 1;
         index += width;
     }
     return out_len;
 }
 
-fn decodeUtf16ToCodepoints(bytes: []const u8, out: []u32, endian: Endian) DecodeResult {
+fn decodeUtf16ToCodepoints(bytes: []const u8, out: []u32, endian: Endian) CapacityError!DecodeResult {
     var out_len: usize = 0;
     var offset: usize = 0;
     while (offset < bytes.len) {
@@ -7450,24 +7502,22 @@ fn decodeUtf16ToCodepoints(bytes: []const u8, out: []u32, endian: Endian) Decode
             if (low < 0xDC00 or low > 0xDFFF) {
                 return .{ .len = 0, .failure = .{ .offset = offset, .sub_threat = "InvalidSurrogatePair" } };
             }
-            if (out_len < out.len) {
-                out[out_len] = 0x10000 + ((unit - 0xD800) << 10) + (low - 0xDC00);
-                out_len += 1;
-            }
+            if (out_len >= out.len) return error.CapacityExceeded;
+            out[out_len] = 0x10000 + ((unit - 0xD800) << 10) + (low - 0xDC00);
+            out_len += 1;
             offset += 2;
         } else if (unit >= 0xDC00 and unit <= 0xDFFF) {
             return .{ .len = 0, .failure = .{ .offset = unit_offset, .sub_threat = "LoneSurrogate" } };
         } else {
-            if (out_len < out.len) {
-                out[out_len] = unit;
-                out_len += 1;
-            }
+            if (out_len >= out.len) return error.CapacityExceeded;
+            out[out_len] = unit;
+            out_len += 1;
         }
     }
     return .{ .len = out_len };
 }
 
-fn decodeUtf32ToCodepoints(bytes: []const u8, out: []u32, endian: Endian) DecodeResult {
+fn decodeUtf32ToCodepoints(bytes: []const u8, out: []u32, endian: Endian) CapacityError!DecodeResult {
     if (bytes.len % 4 != 0) {
         return .{ .len = 0, .failure = .{ .offset = bytes.len, .sub_threat = "TruncatedCodeUnit" } };
     }
@@ -7482,10 +7532,9 @@ fn decodeUtf32ToCodepoints(bytes: []const u8, out: []u32, endian: Endian) Decode
         if (cp > 0x10FFFF) {
             return .{ .len = 0, .failure = .{ .offset = offset, .sub_threat = "CodepointBeyondMax" } };
         }
-        if (out_len < out.len) {
-            out[out_len] = cp;
-            out_len += 1;
-        }
+        if (out_len >= out.len) return error.CapacityExceeded;
+        out[out_len] = cp;
+        out_len += 1;
     }
     return .{ .len = out_len };
 }
@@ -7629,11 +7678,11 @@ fn malformedUtf32ReasonCode(sub_threat: []const u8) []const u8 {
 // ─────────────────────────────────────────────────────────────────────
 
 fn expectNormalization(
-    comptime func: fn ([]const u32) ?CpBuffer,
+    comptime func: fn ([]const u32) CapacityError!CpBuffer,
     input: []const u32,
     expected: []const u32,
 ) !void {
-    const result = func(input) orelse return error.NormalizationFailed;
+    const result = try func(input);
     try std.testing.expect(cpSlicesEqual(result.slice(), expected));
 }
 
@@ -7684,7 +7733,7 @@ test "toNFC honors UAX #15 D115 blocking" {
 }
 
 fn expectToLower(locale: CasingLocale, input: []const u32, expected: []const u32) !void {
-    const result = toLower(locale, input) orelse return error.ToLowerFailed;
+    const result = try toLower(locale, input);
     try std.testing.expect(cpSlicesEqual(result.slice(), expected));
 }
 
@@ -7699,7 +7748,7 @@ test "toLower ground-truth theorems" {
 }
 
 fn expectBip39Sub(input: []const u32, expected: []const u8) !void {
-    const result = bip39CanonicalDetect(input);
+    const result = try bip39CanonicalDetect(input);
     try std.testing.expect(result.sub_threat != null);
     try std.testing.expect(std.mem.eql(u8, result.sub_threat.?, expected));
 }
@@ -7713,7 +7762,7 @@ test "bip39 canonical detect spot-checks" {
 
     const trailing = abandon ++ sp;
     try expectBip39Sub(&trailing, "TrailingWhitespace");
-    try std.testing.expect(bip39CanonicalDetect(&trailing).positions[0] == 7);
+    try std.testing.expect((try bip39CanonicalDetect(&trailing)).positions[0] == 7);
 
     const mixed = [_]u32{ 0x41, 0x62, 0x61, 0x6E, 0x64, 0x6F, 0x6E };
     try expectBip39Sub(&mixed, "MixedCase");
@@ -7726,13 +7775,13 @@ test "bip39 canonical detect spot-checks" {
     try expectBip39Sub(&[_]u32{ 0x71, 0x7A, 0x71, 0x7A }, "WordlistMismatch");
 
     const empty = [_]u32{};
-    const empty_result = bip39CanonicalDetect(&empty);
+    const empty_result = try bip39CanonicalDetect(&empty);
     try std.testing.expect(empty_result.sub_threat == null);
     try std.testing.expect(std.mem.eql(u8, empty_result.language, "english"));
 
     // Eleven "abandon" words plus "about": a well-formed 12-word English mnemonic.
     const mnemonic = ((abandon ++ sp) ** 11) ++ about;
-    const verdict = bip39CanonicalDetect(&mnemonic);
+    const verdict = try bip39CanonicalDetect(&mnemonic);
     try std.testing.expect(verdict.sub_threat == null);
     try std.testing.expect(std.mem.eql(u8, verdict.language, "english"));
     try std.testing.expect(verdict.word_count == 12);
@@ -7761,7 +7810,7 @@ test "locale-case-inversion detect spot-checks" {
 }
 
 fn expectNormalizationBombSub(input: []const u32, expected: ?[]const u8) !void {
-    const result = normalizationBombDetect(input);
+    const result = try normalizationBombDetect(input);
     if (expected) |want| {
         try std.testing.expect(result.sub_threat != null);
         try std.testing.expect(std.mem.eql(u8, result.sub_threat.?, want));
@@ -7778,13 +7827,13 @@ test "normalization-bomb detect spot-checks" {
     try expectNormalizationBombSub(&[_]u32{0xD55C}, null); // NFD ratio exactly 300, not > 300
     try expectNormalizationBombSub(&[_]u32{0x2460}, null); // circled one, NFKD 1×
     try expectNormalizationBombSub(&[_]u32{0xFDFA}, "SingleCpBlowup");
-    try std.testing.expect(normalizationBombDetect(&[_]u32{0xFDFA}).positions[0] == 0);
+    try std.testing.expect((try normalizationBombDetect(&[_]u32{0xFDFA})).positions[0] == 0);
     try expectNormalizationBombSub(&[_]u32{0xFDFB}, "NfkdHighExpansion");
     try expectNormalizationBombSub(&[_]u32{0x1F82}, "NfdHighExpansion");
 }
 
 fn expectNfcIdempotenceWitnessSub(input: []const u32, expected: ?[]const u8) !void {
-    const result = nfcIdempotenceWitnessDetect(input);
+    const result = try nfcIdempotenceWitnessDetect(input);
     if (expected) |want| {
         try std.testing.expect(result.sub_threat != null);
         try std.testing.expect(std.mem.eql(u8, result.sub_threat.?, want));
@@ -7800,7 +7849,7 @@ test "nfc-idempotence-witness detect spot-checks" {
     try expectNfcIdempotenceWitnessSub(&[_]u32{ 0x48, 0x65, 0x6C, 0x6C, 0x6F }, null);
     try expectNfcIdempotenceWitnessSub(&[_]u32{0x00E9}, null); // precomposed é
     try expectNfcIdempotenceWitnessSub(&[_]u32{ 0x0065, 0x0301 }, "NonNfcForm"); // e + combining acute
-    try std.testing.expect(nfcIdempotenceWitnessDetect(&[_]u32{ 0x0065, 0x0301 }).positions[0] == 0);
+    try std.testing.expect((try nfcIdempotenceWitnessDetect(&[_]u32{ 0x0065, 0x0301 })).positions[0] == 0);
     try expectNfcIdempotenceWitnessSub(&[_]u32{0xFB01}, "NonNfkcCompatForm"); // fi ligature
 }
 
@@ -7809,7 +7858,7 @@ test "nfc-idempotence-witness detect spot-checks" {
 const His = hash_input_stability;
 
 fn expectHashStable(input: []const u32, expected: []const u32) !void {
-    const stable = His.hashStable(input);
+    const stable = try His.hashStable(input);
     try std.testing.expect(cpSlicesEqual(stable.slice(), expected));
 }
 
@@ -7819,8 +7868,8 @@ test "hash-input-stability hash_stable spot checks" {
     try expectHashStable(&[_]u32{}, &[_]u32{});
     try expectHashStable(&[_]u32{ 0x61, 0x62, 0x63 }, &[_]u32{ 0x61, 0x62, 0x63 });
     // Idempotence: hash_stable(hash_stable(x)) == hash_stable(x).
-    const once = His.hashStable(&[_]u32{ 0x61, 0x62, 0x63 });
-    const twice = His.hashStable(once.slice());
+    const once = try His.hashStable(&[_]u32{ 0x61, 0x62, 0x63 });
+    const twice = try His.hashStable(once.slice());
     try std.testing.expect(cpSlicesEqual(once.slice(), twice.slice()));
     try expectHashStable(&[_]u32{ 0x61, 0x20 }, &[_]u32{0x61}); // trailing space
     try expectHashStable(&[_]u32{ 0x61, 0x09 }, &[_]u32{0x61}); // trailing tab
@@ -7831,16 +7880,16 @@ test "hash-input-stability hash_stable spot checks" {
     try expectHashStable(&[_]u32{ 0x61, 0x00A0 }, &[_]u32{ 0x61, 0x00A0 }); // trailing NBSP kept
 }
 
-fn hisTag(input: []const u32) ?[]const u8 {
-    return His.detect(input).classify.tag();
+fn hisTag(input: []const u32) CapacityError!?[]const u8 {
+    return (try His.detect(input)).classify.tag();
 }
 
-fn hisCtxTag(ctx: His.Context, input: []const u32) ?[]const u8 {
-    return His.detectWithContext(ctx, input).classify.tag();
+fn hisCtxTag(ctx: His.Context, input: []const u32) CapacityError!?[]const u8 {
+    return (try His.detectWithContext(ctx, input)).classify.tag();
 }
 
 fn expectCtxHazard(ctx: His.Context, input: []const u32, want_tag: []const u8, want_pos: []const usize) !void {
-    const v = His.detectWithContext(ctx, input);
+    const v = try His.detectWithContext(ctx, input);
     try std.testing.expect(v.classify.tag() != null);
     try std.testing.expectEqualStrings(want_tag, v.classify.tag().?);
     try std.testing.expectEqualSlices(usize, want_pos, v.classify.positions());
@@ -7849,26 +7898,26 @@ fn expectCtxHazard(ctx: His.Context, input: []const u32, want_tag: []const u8, w
 test "hash-input-stability detect spot checks" {
     // Mirrors the §8 detect spot checks (shared context-free fixture vectors in
     // the shared hash_input_stability.json detector fixture).
-    try std.testing.expect(His.detect(&[_]u32{}).classify.isClear()); // empty-clear
-    try std.testing.expect(His.detect(&[_]u32{ 0x61, 0x62, 0x63 }).classify.isClear()); // ascii-idempotent-clear
+    try std.testing.expect((try His.detect(&[_]u32{})).classify.isClear()); // empty-clear
+    try std.testing.expect((try His.detect(&[_]u32{ 0x61, 0x62, 0x63 })).classify.isClear()); // ascii-idempotent-clear
 
-    const trailing_space = His.detect(&[_]u32{ 0x61, 0x20 }); // trailing-space
+    const trailing_space = try His.detect(&[_]u32{ 0x61, 0x20 }); // trailing-space
     try std.testing.expectEqualStrings("TrailingWhitespace", trailing_space.classify.tag().?);
     try std.testing.expect(trailing_space.stable_size == 1);
     try std.testing.expectEqualSlices(usize, &[_]usize{1}, trailing_space.classify.positions());
 
-    const trailing_crlf = His.detect(&[_]u32{ 0x61, 0x0D, 0x0A }); // trailing-crlf
+    const trailing_crlf = try His.detect(&[_]u32{ 0x61, 0x0D, 0x0A }); // trailing-crlf
     try std.testing.expectEqualStrings("TrailingWhitespace", trailing_crlf.classify.tag().?);
     try std.testing.expect(trailing_crlf.stable_size == 1);
 
-    const drift = His.detect(&[_]u32{ 0x0065, 0x0301 }); // decomposed-e-acute-normalization-drift
+    const drift = try His.detect(&[_]u32{ 0x0065, 0x0301 }); // decomposed-e-acute-normalization-drift
     try std.testing.expectEqualStrings("NormalizationDrift", drift.classify.tag().?);
     try std.testing.expectEqualSlices(usize, &[_]usize{0}, drift.classify.positions());
 
-    try std.testing.expect(His.detect(&[_]u32{0x00E9}).classify.isClear()); // precomposed-e-acute-clear
+    try std.testing.expect((try His.detect(&[_]u32{0x00E9})).classify.isClear()); // precomposed-e-acute-clear
     // priority-trailing-over-nfc: decomposed "é " — TrailingWhitespace wins.
-    try std.testing.expectEqualStrings("TrailingWhitespace", hisTag(&[_]u32{ 0x0065, 0x0301, 0x20 }).?);
-    try std.testing.expect(His.detect(&[_]u32{ 0x61, 0x20, 0x62 }).classify.isClear()); // internal-space-clear
+    try std.testing.expectEqualStrings("TrailingWhitespace", (try hisTag(&[_]u32{ 0x0065, 0x0301, 0x20 })).?);
+    try std.testing.expect((try His.detect(&[_]u32{ 0x61, 0x20, 0x62 })).classify.isClear()); // internal-space-clear
 }
 
 test "hash-input-stability context probe vectors" {
@@ -7878,8 +7927,8 @@ test "hash-input-stability context probe vectors" {
 
     // detect_with_context(default) == detect.
     {
-        const d = His.detect(&[_]u32{ 0x61, 0x62, 0x63 });
-        const c = His.detectWithContext(His.Context{}, &[_]u32{ 0x61, 0x62, 0x63 });
+        const d = try His.detect(&[_]u32{ 0x61, 0x62, 0x63 });
+        const c = try His.detectWithContext(His.Context{}, &[_]u32{ 0x61, 0x62, 0x63 });
         try std.testing.expectEqual(d.classify.isClear(), c.classify.isClear());
         try std.testing.expect(d.stable_size == c.stable_size);
     }
@@ -7892,7 +7941,7 @@ test "hash-input-stability context probe vectors" {
     try expectCtxHazard(.{ .declared_encoding = "utf-8" }, &[_]u32{ 0x61, 0x110000, 0x62 }, "EncodingMismatch", &[_]usize{1});
     // declared_encoding = Some("UTF-8"|"utf-8"|"UTF8"|"utf8"), [0x61,0x62,0x63] → clear.
     for ([_][]const u8{ "UTF-8", "utf-8", "UTF8", "utf8" }) |label| {
-        try std.testing.expect(hisCtxTag(.{ .declared_encoding = label }, &[_]u32{ 0x61, 0x62, 0x63 }) == null);
+        try std.testing.expect((try hisCtxTag(.{ .declared_encoding = label }, &[_]u32{ 0x61, 0x62, 0x63 })) == null);
     }
 
     // rfc_rule = Pgp4880TrailingWhitespace, [0x61,0x20] → SignedMessageRule, [1].
@@ -7900,7 +7949,7 @@ test "hash-input-stability context probe vectors" {
     // rfc_rule = Pgp9580LineEnding, [0x61,0x0A,0x62] → SignedMessageRule, [1] (bare LF).
     try expectCtxHazard(.{ .rfc_rule = .pgp9580_line_ending }, &[_]u32{ 0x61, 0x0A, 0x62 }, "SignedMessageRule", &[_]usize{1});
     // rfc_rule = Pgp9580LineEnding, [0x61,0x62,0x63,0x0D,0x0A,0x64,0x65,0x66] → clear (CRLF).
-    try std.testing.expect(hisCtxTag(.{ .rfc_rule = .pgp9580_line_ending }, &[_]u32{ 0x61, 0x62, 0x63, 0x0D, 0x0A, 0x64, 0x65, 0x66 }) == null);
+    try std.testing.expect((try hisCtxTag(.{ .rfc_rule = .pgp9580_line_ending }, &[_]u32{ 0x61, 0x62, 0x63, 0x0D, 0x0A, 0x64, 0x65, 0x66 })) == null);
     // rfc_rule = Rfc8785NfcRequirement, [0x0065,0x0301] → SignedMessageRule, [0].
     try expectCtxHazard(.{ .rfc_rule = .rfc8785_nfc_requirement }, &[_]u32{ 0x0065, 0x0301 }, "SignedMessageRule", &[_]usize{0});
     // rfc_rule = Rfc8259ControlChar, [0x61,0x01,0x62] → SignedMessageRule, [1].
@@ -7908,31 +7957,31 @@ test "hash-input-stability context probe vectors" {
     // rfc_rule = Rfc7515JwsBase64Url, [0x41,0x2B,0x42] → SignedMessageRule, [1] ('+').
     try expectCtxHazard(.{ .rfc_rule = .rfc7515_jws_base64_url }, &[_]u32{ 0x41, 0x2B, 0x42 }, "SignedMessageRule", &[_]usize{1});
     // rfc_rule = Rfc7515JwsBase64Url, [0x41,0x61,0x30,0x2D,0x5F,0x7A,0x5A,0x39] → clear.
-    try std.testing.expect(hisCtxTag(.{ .rfc_rule = .rfc7515_jws_base64_url }, &[_]u32{ 0x41, 0x61, 0x30, 0x2D, 0x5F, 0x7A, 0x5A, 0x39 }) == null);
+    try std.testing.expect((try hisCtxTag(.{ .rfc_rule = .rfc7515_jws_base64_url }, &[_]u32{ 0x41, 0x61, 0x30, 0x2D, 0x5F, 0x7A, 0x5A, 0x39 })) == null);
     // rfc_rule = Rfc6376DkimRelaxed, [0x61,0x20,0x20,0x62] → SignedMessageRule, [2].
     try expectCtxHazard(.{ .rfc_rule = .rfc6376_dkim_relaxed }, &[_]u32{ 0x61, 0x20, 0x20, 0x62 }, "SignedMessageRule", &[_]usize{2});
     // rfc_rule = Rfc6376DkimRelaxed, [0x61,0x20,0x62] → clear (single space).
-    try std.testing.expect(hisCtxTag(.{ .rfc_rule = .rfc6376_dkim_relaxed }, &[_]u32{ 0x61, 0x20, 0x62 }) == null);
+    try std.testing.expect((try hisCtxTag(.{ .rfc_rule = .rfc6376_dkim_relaxed }, &[_]u32{ 0x61, 0x20, 0x62 })) == null);
     // rfc_rule = Rfc5751SmimeLineEnding, [0x61,0x0A,0x62] → SignedMessageRule, [1] (bare LF).
     try expectCtxHazard(.{ .rfc_rule = .rfc5751_smime_line_ending }, &[_]u32{ 0x61, 0x0A, 0x62 }, "SignedMessageRule", &[_]usize{1});
 
     // as_written = Some([0x61,0x62,0x63]), input [0x61,0x62,0x64] → AuditLogReinterpretation, [2].
     try expectCtxHazard(.{ .as_written = &[_]u32{ 0x61, 0x62, 0x63 } }, &[_]u32{ 0x61, 0x62, 0x64 }, "AuditLogReinterpretation", &[_]usize{2});
     // as_written = Some([0x61,0x62,0x63]), input [0x61,0x62,0x63] → clear.
-    try std.testing.expect(hisCtxTag(.{ .as_written = &[_]u32{ 0x61, 0x62, 0x63 } }, &[_]u32{ 0x61, 0x62, 0x63 }) == null);
+    try std.testing.expect((try hisCtxTag(.{ .as_written = &[_]u32{ 0x61, 0x62, 0x63 } }, &[_]u32{ 0x61, 0x62, 0x63 })) == null);
     // server_bytes = Some([0x61,0x62,0x64]), input [0x61,0x62,0x63] → WebhookSignatureDrift, [2].
     try expectCtxHazard(.{ .server_bytes = &[_]u32{ 0x61, 0x62, 0x64 } }, &[_]u32{ 0x61, 0x62, 0x63 }, "WebhookSignatureDrift", &[_]usize{2});
     // server_bytes = Some([0x61,0x62,0x63]), input [0x61,0x62,0x63] → clear.
-    try std.testing.expect(hisCtxTag(.{ .server_bytes = &[_]u32{ 0x61, 0x62, 0x63 } }, &[_]u32{ 0x61, 0x62, 0x63 }) == null);
+    try std.testing.expect((try hisCtxTag(.{ .server_bytes = &[_]u32{ 0x61, 0x62, 0x63 } }, &[_]u32{ 0x61, 0x62, 0x63 })) == null);
 
     // declared_encoding = Some("utf-16") + rfc_rule = Pgp9580LineEnding,
     // [0x0065,0x0301,0x0A] → EncodingMismatch (priority over rfc).
-    try std.testing.expectEqualStrings("EncodingMismatch", hisCtxTag(.{ .declared_encoding = "utf-16", .rfc_rule = .pgp9580_line_ending }, &[_]u32{ 0x0065, 0x0301, 0x0A }).?);
+    try std.testing.expectEqualStrings("EncodingMismatch", (try hisCtxTag(.{ .declared_encoding = "utf-16", .rfc_rule = .pgp9580_line_ending }, &[_]u32{ 0x0065, 0x0301, 0x0A })).?);
     // server_bytes = Some([0x61,0x62,0x65]) + as_written = Some([0x61,0x62,0x66]),
     // input [0x61,0x62,0x63] → WebhookSignatureDrift (priority over audit).
-    try std.testing.expectEqualStrings("WebhookSignatureDrift", hisCtxTag(.{ .server_bytes = &[_]u32{ 0x61, 0x62, 0x65 }, .as_written = &[_]u32{ 0x61, 0x62, 0x66 } }, &[_]u32{ 0x61, 0x62, 0x63 }).?);
+    try std.testing.expectEqualStrings("WebhookSignatureDrift", (try hisCtxTag(.{ .server_bytes = &[_]u32{ 0x61, 0x62, 0x65 }, .as_written = &[_]u32{ 0x61, 0x62, 0x66 } }, &[_]u32{ 0x61, 0x62, 0x63 })).?);
     // rfc_rule = Pgp4880TrailingWhitespace, [0x61,0x20] → SignedMessageRule (priority over trailing).
-    try std.testing.expectEqualStrings("SignedMessageRule", hisCtxTag(.{ .rfc_rule = .pgp4880_trailing_whitespace }, &[_]u32{ 0x61, 0x20 }).?);
+    try std.testing.expectEqualStrings("SignedMessageRule", (try hisCtxTag(.{ .rfc_rule = .pgp4880_trailing_whitespace }, &[_]u32{ 0x61, 0x20 })).?);
 }
 
 test "hash-input-stability RfcRule tag round-trip" {
@@ -7956,12 +8005,12 @@ test "hash-input-stability RfcRule tag round-trip" {
 
 const Aw = ai_watermark_detectability;
 
-fn awTag(input: []const u32) ?[]const u8 {
-    return Aw.detect(input).classify.tag();
+fn awTag(input: []const u32) CapacityError!?[]const u8 {
+    return (try Aw.detect(input)).classify.tag();
 }
 
 fn expectAwTag(input: []const u32, want: []const u8) !void {
-    const t = awTag(input);
+    const t = try awTag(input);
     try std.testing.expect(t != null);
     try std.testing.expectEqualStrings(want, t.?);
 }
@@ -8001,42 +8050,42 @@ test "ai-watermark-detectability probe spot checks" {
 test "ai-watermark-detectability detect spot checks" {
     // Mirrors the §6 detect spot checks (shared context-free fixture vectors in
     // the shared ai_watermark_detectability.json detector fixture).
-    try std.testing.expect(Aw.detect(&[_]u32{}).classify.isClear()); // empty-clear
-    try std.testing.expect(Aw.detect(&[_]u32{ 0x61, 0x62, 0x63 }).classify.isClear()); // ascii-clear
-    try std.testing.expect(Aw.detect(&[_]u32{ 0x4E2D, 0x6587 }).classify.isClear()); // han-clear
+    try std.testing.expect((try Aw.detect(&[_]u32{})).classify.isClear()); // empty-clear
+    try std.testing.expect((try Aw.detect(&[_]u32{ 0x61, 0x62, 0x63 })).classify.isClear()); // ascii-clear
+    try std.testing.expect((try Aw.detect(&[_]u32{ 0x4E2D, 0x6587 })).classify.isClear()); // han-clear
 
     {
-        const v = Aw.detect(&[_]u32{ 0x61, 0x202F, 0x62 }); // nnbsp-boundary
+        const v = try Aw.detect(&[_]u32{ 0x61, 0x202F, 0x62 }); // nnbsp-boundary
         try std.testing.expectEqualStrings("NnbspBoundary", v.classify.tag().?);
         try std.testing.expectEqualSlices(usize, &[_]usize{1}, v.classify.positions());
         try std.testing.expect(v.marker_count == 1);
     }
     {
-        const v = Aw.detect(&[_]u32{ 0x61, 0xFE0F, 0x62 }); // vs-in-plain-text
+        const v = try Aw.detect(&[_]u32{ 0x61, 0xFE0F, 0x62 }); // vs-in-plain-text
         try std.testing.expectEqualStrings("VariationSelectorCarrier", v.classify.tag().?);
         try std.testing.expect(v.marker_count == 1);
     }
-    try std.testing.expect(Aw.detect(&[_]u32{ 0x1F600, 0xFE0F }).classify.isClear()); // vs-after-emoji-clear
+    try std.testing.expect((try Aw.detect(&[_]u32{ 0x1F600, 0xFE0F })).classify.isClear()); // vs-after-emoji-clear
     {
-        const v = Aw.detect(&[_]u32{ 0x61, 0x200D, 0x62 }); // zwj-in-plain-text
+        const v = try Aw.detect(&[_]u32{ 0x61, 0x200D, 0x62 }); // zwj-in-plain-text
         try std.testing.expectEqualStrings("ZwjNonEmoji", v.classify.tag().?);
         try std.testing.expect(v.marker_count == 1);
     }
-    try std.testing.expect(Aw.detect(&[_]u32{ 0x1F469, 0x200D, 0x1F52C }).classify.isClear()); // zwj-emoji-sequence-clear
+    try std.testing.expect((try Aw.detect(&[_]u32{ 0x1F469, 0x200D, 0x1F52C })).classify.isClear()); // zwj-emoji-sequence-clear
     {
-        const v = Aw.detect(&[_]u32{ 0x61, 0x00AD, 0x62 }); // soft-hyphen-default-ignorable
+        const v = try Aw.detect(&[_]u32{ 0x61, 0x00AD, 0x62 }); // soft-hyphen-default-ignorable
         try std.testing.expectEqualStrings("DefaultIgnorableCarrier", v.classify.tag().?);
         try std.testing.expect(v.marker_count == 1);
     }
     {
-        const v = Aw.detect(&[_]u32{ 0x61, 0x200B, 0x62 }); // zwsp-default-ignorable
+        const v = try Aw.detect(&[_]u32{ 0x61, 0x200B, 0x62 }); // zwsp-default-ignorable
         try std.testing.expectEqualStrings("DefaultIgnorableCarrier", v.classify.tag().?);
         try std.testing.expect(v.marker_count == 1);
     }
     try expectAwTag(&[_]u32{ 0x61, 0x202F, 0x00AD, 0x62 }, "Unknown"); // priority unknown over nnbsp+di
     try expectAwTag(&[_]u32{ 0x61, 0xFE0F, 0x200D, 0x62 }, "Unknown"); // priority unknown over vs+zwj
     {
-        const v = Aw.detect(&[_]u32{ 0x61, 0x202F, 0x62, 0x202F, 0x63 }); // multiple-nnbsp-aggregates
+        const v = try Aw.detect(&[_]u32{ 0x61, 0x202F, 0x62, 0x202F, 0x63 }); // multiple-nnbsp-aggregates
         try std.testing.expectEqualStrings("NnbspBoundary", v.classify.tag().?);
         try std.testing.expect(v.marker_count == 2);
         try std.testing.expectEqualSlices(usize, &[_]usize{ 1, 3 }, v.classify.positions());
@@ -8046,51 +8095,51 @@ test "ai-watermark-detectability detect spot checks" {
 test "ai-watermark-detectability refinement probes" {
     // Mirrors the §7 refinement-probe and priority theorems.
     {
-        const v = Aw.detect(&[_]u32{ 0x61, 0x202F, 0x62, 0x202F, 0x63, 0x202F, 0x64 }); // adversarial-arithmetic-nnbsp
+        const v = try Aw.detect(&[_]u32{ 0x61, 0x202F, 0x62, 0x202F, 0x63, 0x202F, 0x64 }); // adversarial-arithmetic-nnbsp
         try std.testing.expectEqualStrings("Adversarial", v.classify.tag().?);
         try std.testing.expect(v.marker_count == 3);
     }
     try expectAwTag(&[_]u32{ 0x61, 0x202F, 0x62, 0x202F, 0x63 }, "NnbspBoundary"); // two below adversarial threshold
     {
-        const v = Aw.detect(&[_]u32{ 0x61, 0x200B, 0x62, 0x200B, 0x63, 0x200B, 0x64 }); // gpt5-zwsp-modulo
+        const v = try Aw.detect(&[_]u32{ 0x61, 0x200B, 0x62, 0x200B, 0x63, 0x200B, 0x64 }); // gpt5-zwsp-modulo
         try std.testing.expectEqualStrings("Gpt5ZwspModulo", v.classify.tag().?);
         try std.testing.expect(v.marker_count == 3);
     }
     try expectAwTag(&[_]u32{ 0x61, 0x200B, 0x62, 0x200B, 0x63 }, "DefaultIgnorableCarrier"); // two below modulo threshold
     {
-        const v = Aw.detect(&[_]u32{ 0x201C, 0x61, 0x62, 0x63, 0x201D }); // smart-quote-alternation
+        const v = try Aw.detect(&[_]u32{ 0x201C, 0x61, 0x62, 0x63, 0x201D }); // smart-quote-alternation
         try std.testing.expectEqualStrings("SmartQuoteAlternation", v.classify.tag().?);
         try std.testing.expect(v.marker_count == 2);
     }
-    try std.testing.expect(Aw.detect(&[_]u32{ 0x201C, 0x61, 0x22, 0x201D }).classify.isClear()); // smart-quote-with-straight-clear
+    try std.testing.expect((try Aw.detect(&[_]u32{ 0x201C, 0x61, 0x22, 0x201D })).classify.isClear()); // smart-quote-with-straight-clear
     {
-        const v = Aw.detect(&[_]u32{ 0x61, 0x62, 0x20, 0x2014, 0x20, 0x63, 0x64, 0x20, 0x2014, 0x20, 0x65, 0x66 }); // em-dash-pattern
+        const v = try Aw.detect(&[_]u32{ 0x61, 0x62, 0x20, 0x2014, 0x20, 0x63, 0x64, 0x20, 0x2014, 0x20, 0x65, 0x66 }); // em-dash-pattern
         try std.testing.expectEqualStrings("EmDashPattern", v.classify.tag().?);
         try std.testing.expect(v.marker_count == 2);
     }
-    try std.testing.expect(Aw.detect(&[_]u32{ 0x61, 0x62, 0x2D, 0x63, 0x64, 0x20, 0x2014, 0x20, 0x65, 0x66 }).classify.isClear()); // em-dash-with-hyphen-clear
+    try std.testing.expect((try Aw.detect(&[_]u32{ 0x61, 0x62, 0x2D, 0x63, 0x64, 0x20, 0x2014, 0x20, 0x65, 0x66 })).classify.isClear()); // em-dash-with-hyphen-clear
     {
-        const v = Aw.detect(&[_]u32{ 0x64, 0x65, 0x6C, 0x76, 0x65 }); // statistical-token-delve
+        const v = try Aw.detect(&[_]u32{ 0x64, 0x65, 0x6C, 0x76, 0x65 }); // statistical-token-delve
         try std.testing.expectEqualStrings("StatisticalTokenChoice", v.classify.tag().?);
         try std.testing.expect(v.marker_count == 1);
     }
     {
-        const v = Aw.detect(&[_]u32{ 0x3B, 0x20, 0x6D, 0x6F, 0x72, 0x65, 0x6F, 0x76, 0x65, 0x72, 0x2C, 0x20 }); // statistical-token-moreover-embedded
+        const v = try Aw.detect(&[_]u32{ 0x3B, 0x20, 0x6D, 0x6F, 0x72, 0x65, 0x6F, 0x76, 0x65, 0x72, 0x2C, 0x20 }); // statistical-token-moreover-embedded
         try std.testing.expectEqualStrings("StatisticalTokenChoice", v.classify.tag().?);
         try std.testing.expectEqualSlices(usize, &[_]usize{2}, v.classify.positions());
     }
     {
-        const v = Aw.detect(&[_]u32{ 0x61, 0x202F, 0x00AD, 0x62 }); // unknown-nnbsp-plus-di
+        const v = try Aw.detect(&[_]u32{ 0x61, 0x202F, 0x00AD, 0x62 }); // unknown-nnbsp-plus-di
         try std.testing.expectEqualStrings("Unknown", v.classify.tag().?);
         try std.testing.expect(v.marker_count == 2);
     }
     {
-        const v = Aw.detect(&[_]u32{ 0x61, 0xFE0F, 0x200D, 0x62 }); // unknown-vs-plus-zwj
+        const v = try Aw.detect(&[_]u32{ 0x61, 0xFE0F, 0x200D, 0x62 }); // unknown-vs-plus-zwj
         try std.testing.expectEqualStrings("Unknown", v.classify.tag().?);
         try std.testing.expect(v.marker_count == 2);
     }
     {
-        const v = Aw.detect(&[_]u32{ 0x61, 0x202F, 0x200D, 0x62 }); // unknown-nnbsp-plus-zwj
+        const v = try Aw.detect(&[_]u32{ 0x61, 0x202F, 0x200D, 0x62 }); // unknown-nnbsp-plus-zwj
         try std.testing.expectEqualStrings("Unknown", v.classify.tag().?);
         try std.testing.expect(v.marker_count == 2);
     }
@@ -8108,12 +8157,12 @@ test "ai-watermark-detectability tolerance vectors" {
     try expectAwTag(&jittered, "DefaultIgnorableCarrier");
 
     // With zwsp_modulo_tolerance = 1 the same input fires gpt5ZwspModulo.
-    const tolerant = Aw.detectWithContext(.{ .zwsp_modulo_tolerance = 1 }, &jittered);
+    const tolerant = try Aw.detectWithContext(.{ .zwsp_modulo_tolerance = 1 }, &jittered);
     try std.testing.expectEqualStrings("Gpt5ZwspModulo", tolerant.classify.tag().?);
 
     // detect_with_context(default) == detect.
-    const d = Aw.detect(&[_]u32{ 0x61, 0x202F, 0x62 });
-    const c = Aw.detectWithContext(.{}, &[_]u32{ 0x61, 0x202F, 0x62 });
+    const d = try Aw.detect(&[_]u32{ 0x61, 0x202F, 0x62 });
+    const c = try Aw.detectWithContext(.{}, &[_]u32{ 0x61, 0x202F, 0x62 });
     try std.testing.expectEqual(d.classify.isClear(), c.classify.isClear());
     try std.testing.expectEqualStrings(d.classify.tag().?, c.classify.tag().?);
 }
@@ -8359,12 +8408,12 @@ test "stream-safe-violation run-inventory structure" {
 
 const Ezwj = emoji_zwj_integrity;
 
-fn ezwjReason(input: []const u32) ?[]const u8 {
-    return Ezwj.detect(input).classify.reasonCode();
+fn ezwjReason(input: []const u32) CapacityError!?[]const u8 {
+    return (try Ezwj.detect(input)).classify.reasonCode();
 }
 
 fn expectEzwjReason(input: []const u32, want: []const u8) !void {
-    const r = ezwjReason(input);
+    const r = try ezwjReason(input);
     try std.testing.expect(r != null);
     try std.testing.expectEqualStrings(want, r.?);
 }
@@ -8399,7 +8448,7 @@ test "emoji-zwj-integrity shared fixture vectors" {
 
     // empty-clear.
     {
-        const v = Ezwj.detect(&[_]u32{});
+        const v = try Ezwj.detect(&[_]u32{});
         try std.testing.expect(v.classify.isClear());
         try std.testing.expectEqual(@as(?[]const u8, null), v.classify.tag());
         try std.testing.expectEqualSlices(usize, &[_]usize{}, v.classify.positions());
@@ -8407,23 +8456,23 @@ test "emoji-zwj-integrity shared fixture vectors" {
         try std.testing.expect(v.skin_tone_count == 0);
     }
     // ascii-hello-clear.
-    try std.testing.expect(Ezwj.detect(&[_]u32{ 72, 101, 108, 108, 111 }).classify.isClear());
+    try std.testing.expect((try Ezwj.detect(&[_]u32{ 72, 101, 108, 108, 111 })).classify.isClear());
     // plain-emoji-clear.
-    try std.testing.expect(Ezwj.detect(&[_]u32{128512}).classify.isClear());
+    try std.testing.expect((try Ezwj.detect(&[_]u32{128512})).classify.isClear());
     // one-skintone-clear.
     {
-        const v = Ezwj.detect(&[_]u32{ 128075, 127995 });
+        const v = try Ezwj.detect(&[_]u32{ 128075, 127995 });
         try std.testing.expect(v.classify.isClear());
         try std.testing.expect(v.skin_tone_count == 1);
     }
     // family-of-four-rgi-clear.
     {
-        const v = Ezwj.detect(&[_]u32{ 128104, 8205, 128105, 8205, 128103, 8205, 128102 });
+        const v = try Ezwj.detect(&[_]u32{ 128104, 8205, 128105, 8205, 128103, 8205, 128102 });
         try std.testing.expect(v.classify.isClear());
         try std.testing.expect(v.is_registered_rgi);
     }
     // man-technologist-rgi-clear.
-    try std.testing.expect(Ezwj.detect(&[_]u32{ 128104, 8205, 128187 }).classify.isClear());
+    try std.testing.expect((try Ezwj.detect(&[_]u32{ 128104, 8205, 128187 })).classify.isClear());
     // double-zwj-hazard.
     try expectEzwjReason(&[_]u32{ 128512, 8205, 8205, 128512 }, "unicode.security.I.emoji-zwj-integrity.DoubleZWJ");
     // non-emoji-injection-ascii-hazard.
@@ -8446,7 +8495,7 @@ test "emoji-zwj-integrity detect spot checks" {
 
     // detect_empty_clear.
     {
-        const v = Ezwj.detect(&[_]u32{});
+        const v = try Ezwj.detect(&[_]u32{});
         try std.testing.expect(v.classify.isClear());
         try std.testing.expectEqual(@as(?[]const u8, null), v.classify.tag());
         try std.testing.expectEqualSlices(usize, &[_]usize{}, v.zwj_positions.slice());
@@ -8454,47 +8503,47 @@ test "emoji-zwj-integrity detect spot checks" {
         try std.testing.expect(v.skin_tone_count == 0);
     }
     // detect_ascii_clear.
-    try std.testing.expect(Ezwj.detect(&[_]u32{ 0x48, 0x65, 0x6C, 0x6C, 0x6F }).classify.isClear());
+    try std.testing.expect((try Ezwj.detect(&[_]u32{ 0x48, 0x65, 0x6C, 0x6C, 0x6F })).classify.isClear());
     // detect_plain_emoji_clear.
-    try std.testing.expect(Ezwj.detect(&[_]u32{0x1F600}).classify.isClear());
+    try std.testing.expect((try Ezwj.detect(&[_]u32{0x1F600})).classify.isClear());
     // detect_one_skintone_clear.
     {
-        const v = Ezwj.detect(&[_]u32{ 0x1F44B, 0x1F3FB });
+        const v = try Ezwj.detect(&[_]u32{ 0x1F44B, 0x1F3FB });
         try std.testing.expect(v.classify.isClear());
         try std.testing.expect(v.skin_tone_count == 1);
     }
     // detect_family_rgi_clear.
     {
-        const v = Ezwj.detect(&[_]u32{ 0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466 });
+        const v = try Ezwj.detect(&[_]u32{ 0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466 });
         try std.testing.expect(v.classify.isClear());
         try std.testing.expect(v.is_registered_rgi);
     }
     // detect_double_zwj.
     {
-        const v = Ezwj.detect(&[_]u32{ 0x1F600, 0x200D, 0x200D, 0x1F600 });
+        const v = try Ezwj.detect(&[_]u32{ 0x1F600, 0x200D, 0x200D, 0x1F600 });
         try std.testing.expectEqualStrings("DoubleZWJ", v.classify.tag().?);
         try std.testing.expectEqualSlices(usize, &[_]usize{1}, v.classify.positions());
     }
     // detect_non_emoji_injection.
     {
-        const v = Ezwj.detect(&[_]u32{ 0x1F600, 0x200D, 0x0061 });
+        const v = try Ezwj.detect(&[_]u32{ 0x1F600, 0x200D, 0x0061 });
         try std.testing.expectEqualStrings("NonEmojiInjection", v.classify.tag().?);
     }
     // detect_skin_tone_overflow.
     {
-        const v = Ezwj.detect(&[_]u32{ 0x1F44B, 0x1F3FB, 0x1F3FC, 0x1F3FD, 0x1F3FE, 0x1F3FF });
+        const v = try Ezwj.detect(&[_]u32{ 0x1F44B, 0x1F3FB, 0x1F3FC, 0x1F3FD, 0x1F3FE, 0x1F3FF });
         try std.testing.expectEqualStrings("SkinToneOverflow", v.classify.tag().?);
         try std.testing.expect(v.skin_tone_count == 5);
     }
     // detect_man_laptop_registered_clear.
-    try std.testing.expect(Ezwj.detect(&[_]u32{ 0x1F468, 0x200D, 0x1F4BB }).classify.isClear());
+    try std.testing.expect((try Ezwj.detect(&[_]u32{ 0x1F468, 0x200D, 0x1F4BB })).classify.isClear());
     // detect_unregistered.
     {
-        const v = Ezwj.detect(&[_]u32{ 0x1F468, 0x200D, 0x1F469 });
+        const v = try Ezwj.detect(&[_]u32{ 0x1F468, 0x200D, 0x1F469 });
         try std.testing.expectEqualStrings("UnregisteredSequence", v.classify.tag().?);
     }
     // detect_grinning_laptop_non_emoji_injection.
-    try std.testing.expectEqualStrings("NonEmojiInjection", Ezwj.detect(&[_]u32{ 0x1F600, 0x200D, 0x1F4BB }).classify.tag().?);
+    try std.testing.expectEqualStrings("NonEmojiInjection", (try Ezwj.detect(&[_]u32{ 0x1F600, 0x200D, 0x1F4BB })).classify.tag().?);
 }
 
 test "emoji-zwj-integrity structural checks" {
@@ -8514,7 +8563,7 @@ test "emoji-zwj-integrity structural checks" {
             w += 1;
         }
         try std.testing.expect(w == 17);
-        const v = Ezwj.detect(&input);
+        const v = try Ezwj.detect(&input);
         try std.testing.expectEqualStrings("OverLength", v.classify.tag().?);
         try std.testing.expect(v.classify.hazard.sub.over_length.length == 17);
         try std.testing.expect(v.classify.hazard.sub.over_length.max_length == Ezwj.MAX_RGI_LENGTH);
@@ -8523,7 +8572,7 @@ test "emoji-zwj-integrity structural checks" {
 
     // trailing_zwj_is_injection — a ZWJ at the trailing edge of input.
     {
-        const v = Ezwj.detect(&[_]u32{ 0x1F468, 0x200D });
+        const v = try Ezwj.detect(&[_]u32{ 0x1F468, 0x200D });
         try std.testing.expectEqualStrings("NonEmojiInjection", v.classify.tag().?);
         try std.testing.expectEqualSlices(usize, &[_]usize{1}, v.classify.positions());
         try std.testing.expect(v.classify.hazard.sub.non_emoji_injection.non_emoji_cp == 0);
@@ -8531,7 +8580,7 @@ test "emoji-zwj-integrity structural checks" {
 
     // double_zwj_beats_unregistered — man ZWJ ZWJ boy: adjacent ZWJs present.
     {
-        const v = Ezwj.detect(&[_]u32{ 0x1F468, 0x200D, 0x200D, 0x1F466 });
+        const v = try Ezwj.detect(&[_]u32{ 0x1F468, 0x200D, 0x200D, 0x1F466 });
         try std.testing.expectEqualStrings("DoubleZWJ", v.classify.tag().?);
     }
 }
@@ -8540,12 +8589,12 @@ test "emoji-zwj-integrity structural checks" {
 
 const Rd = renderer_divergence;
 
-fn rdReason(input: []const u32) ?[]const u8 {
-    return Rd.detect(input).classify.reasonCode();
+fn rdReason(input: []const u32) CapacityError!?[]const u8 {
+    return (try Rd.detect(input)).classify.reasonCode();
 }
 
 fn expectRdReason(input: []const u32, want: []const u8) !void {
-    const r = rdReason(input);
+    const r = try rdReason(input);
     try std.testing.expect(r != null);
     try std.testing.expectEqualStrings(want, r.?);
 }
@@ -8574,18 +8623,18 @@ test "renderer-divergence shared fixture vectors" {
 
     // empty-clear.
     {
-        const v = Rd.detect(&[_]u32{});
+        const v = try Rd.detect(&[_]u32{});
         try std.testing.expect(v.classify.isClear());
         try std.testing.expectEqual(@as(?[]const u8, null), v.classify.tag());
         try std.testing.expectEqualSlices(usize, &[_]usize{}, v.classify.positions());
     }
     // ascii-hello-clear.
-    try std.testing.expect(Rd.detect(&[_]u32{ 72, 101, 108, 108, 111 }).classify.isClear());
+    try std.testing.expect((try Rd.detect(&[_]u32{ 72, 101, 108, 108, 111 })).classify.isClear());
     // han-clear.
-    try std.testing.expect(Rd.detect(&[_]u32{ 20013, 25991 }).classify.isClear());
+    try std.testing.expect((try Rd.detect(&[_]u32{ 20013, 25991 })).classify.isClear());
     // family-of-four-rgi-clear.
     {
-        const v = Rd.detect(&[_]u32{ 128104, 8205, 128105, 8205, 128103, 8205, 128102 });
+        const v = try Rd.detect(&[_]u32{ 128104, 8205, 128105, 8205, 128103, 8205, 128102 });
         try std.testing.expect(v.classify.isClear());
         try std.testing.expect(v.has_zwj);
     }
@@ -8605,33 +8654,33 @@ test "renderer-divergence detect spot checks" {
     // The 9 Rust §5 detect spot checks (one per Lean theorem).
 
     // detect_empty_clear.
-    try std.testing.expect(Rd.detect(&[_]u32{}).classify.isClear());
+    try std.testing.expect((try Rd.detect(&[_]u32{})).classify.isClear());
     // detect_ascii_clear.
-    try std.testing.expect(Rd.detect(&[_]u32{ 0x48, 0x65, 0x6C, 0x6C, 0x6F }).classify.isClear());
+    try std.testing.expect((try Rd.detect(&[_]u32{ 0x48, 0x65, 0x6C, 0x6C, 0x6F })).classify.isClear());
     // detect_han_clear.
-    try std.testing.expect(Rd.detect(&[_]u32{ 0x4E2D, 0x6587 }).classify.isClear());
+    try std.testing.expect((try Rd.detect(&[_]u32{ 0x4E2D, 0x6587 })).classify.isClear());
     // detect_vs_variance — a single VS (FE0F) after an emoji.
-    try std.testing.expectEqualStrings("VariationSelectorVariance", Rd.detect(&[_]u32{ 0x1F600, 0xFE0F }).classify.tag().?);
+    try std.testing.expectEqualStrings("VariationSelectorVariance", (try Rd.detect(&[_]u32{ 0x1F600, 0xFE0F })).classify.tag().?);
     // detect_rgi_family_clear — a registered RGI family ZWJ sequence.
     {
-        const v = Rd.detect(&[_]u32{ 0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466 });
+        const v = try Rd.detect(&[_]u32{ 0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466 });
         try std.testing.expect(v.classify.isClear());
         try std.testing.expect(v.has_zwj);
     }
     // detect_unregistered_zwj_variance — man + ZWJ + woman, not in RGI.
-    try std.testing.expectEqualStrings("UnregisteredZwjVariance", Rd.detect(&[_]u32{ 0x1F468, 0x200D, 0x1F469 }).classify.tag().?);
+    try std.testing.expectEqualStrings("UnregisteredZwjVariance", (try Rd.detect(&[_]u32{ 0x1F468, 0x200D, 0x1F469 })).classify.tag().?);
     // detect_zalgo_variance — a 4-deep combining stack.
     {
-        const v = Rd.detect(&[_]u32{ 0x0061, 0x0301, 0x0302, 0x0303, 0x0304 });
+        const v = try Rd.detect(&[_]u32{ 0x0061, 0x0301, 0x0302, 0x0303, 0x0304 });
         try std.testing.expectEqualStrings("CombiningStackOverflow", v.classify.tag().?);
         try std.testing.expectEqualSlices(usize, &[_]usize{0}, v.classify.positions());
         try std.testing.expect(v.combining_count == 4);
     }
     // detect_fullwidth_variance — fullwidth 'A'.
-    try std.testing.expectEqualStrings("FullwidthVariance", Rd.detect(&[_]u32{0xFF21}).classify.tag().?);
+    try std.testing.expectEqualStrings("FullwidthVariance", (try Rd.detect(&[_]u32{0xFF21})).classify.tag().?);
     // detect_mixed_direction — Latin + Hebrew in one input.
     {
-        const v = Rd.detect(&[_]u32{ 0x41, 0x42, 0x05D0, 0x05D1 });
+        const v = try Rd.detect(&[_]u32{ 0x41, 0x42, 0x05D0, 0x05D1 });
         try std.testing.expectEqualStrings("MixedDirectionVariance", v.classify.tag().?);
         try std.testing.expect(v.strong_ltr_count > 0 and v.strong_rtl_count > 0);
     }
@@ -8642,7 +8691,7 @@ test "renderer-divergence structural checks" {
 
     // combining_stack_beats_vs — a combining stack outranks a later VS.
     {
-        const v = Rd.detect(&[_]u32{ 0x0061, 0x0301, 0x0302, 0x0303, 0x0304, 0xFE0F });
+        const v = try Rd.detect(&[_]u32{ 0x0061, 0x0301, 0x0302, 0x0303, 0x0304, 0xFE0F });
         try std.testing.expectEqualStrings("CombiningStackOverflow", v.classify.tag().?);
         try std.testing.expect(v.classify.hazard.sub.combining_stack_overflow.base_pos == 0);
         try std.testing.expect(v.classify.hazard.sub.combining_stack_overflow.stack_len == Rd.MIN_COMBINING_STACK);
@@ -8650,7 +8699,7 @@ test "renderer-divergence structural checks" {
 
     // three_marks_below_threshold — exactly three marks is below the threshold.
     {
-        const v = Rd.detect(&[_]u32{ 0x0061, 0x0301, 0x0302, 0x0303 });
+        const v = try Rd.detect(&[_]u32{ 0x0061, 0x0301, 0x0302, 0x0303 });
         const t = v.classify.tag();
         try std.testing.expect(t == null or !std.mem.eql(u8, t.?, "CombiningStackOverflow"));
     }
@@ -8660,16 +8709,16 @@ test "renderer-divergence structural checks" {
 
 const Fd = filename_disguise;
 
-fn fdReason(input: []const u32) ?[]const u8 {
-    return Fd.detect(input).classify.reasonCode();
+fn fdReason(input: []const u32) CapacityError!?[]const u8 {
+    return (try Fd.detect(input)).classify.reasonCode();
 }
 
-fn fdTag(input: []const u32) ?[]const u8 {
-    return Fd.detect(input).classify.tag();
+fn fdTag(input: []const u32) CapacityError!?[]const u8 {
+    return (try Fd.detect(input)).classify.tag();
 }
 
 fn expectFdReason(input: []const u32, want: []const u8) !void {
-    const r = fdReason(input);
+    const r = try fdReason(input);
     try std.testing.expect(r != null);
     try std.testing.expectEqualStrings(want, r.?);
 }
@@ -8697,19 +8746,19 @@ test "filename-disguise shared fixture vectors" {
 
     // empty-clear.
     {
-        const v = Fd.detect(&[_]u32{});
+        const v = try Fd.detect(&[_]u32{});
         try std.testing.expect(v.classify.isClear());
         try std.testing.expectEqual(@as(?[]const u8, null), v.classify.tag());
         try std.testing.expectEqualSlices(usize, &[_]usize{}, v.classify.positions());
     }
     // plain-document-txt-clear.
-    try std.testing.expect(Fd.detect(&[_]u32{ 100, 111, 99, 117, 109, 101, 110, 116, 46, 116, 120, 116 }).classify.isClear());
+    try std.testing.expect((try Fd.detect(&[_]u32{ 100, 111, 99, 117, 109, 101, 110, 116, 46, 116, 120, 116 })).classify.isClear());
     // no-extension-clear.
-    try std.testing.expect(Fd.detect(&[_]u32{ 102, 111, 111 }).classify.isClear());
+    try std.testing.expect((try Fd.detect(&[_]u32{ 102, 111, 111 })).classify.isClear());
     // archive-tar-gz-clear.
-    try std.testing.expect(Fd.detect(&[_]u32{ 97, 114, 99, 104, 105, 118, 101, 46, 116, 97, 114, 46, 103, 122 }).classify.isClear());
+    try std.testing.expect((try Fd.detect(&[_]u32{ 97, 114, 99, 104, 105, 118, 101, 46, 116, 97, 114, 46, 103, 122 })).classify.isClear());
     // hebrew-native-rtl-clear.
-    try std.testing.expect(Fd.detect(&[_]u32{ 1488, 1489, 1490, 46, 116, 120, 116 }).classify.isClear());
+    try std.testing.expect((try Fd.detect(&[_]u32{ 1488, 1489, 1490, 46, 116, 120, 116 })).classify.isClear());
     // rlo-flip-hazard.
     try expectFdReason(&[_]u32{ 100, 111, 99, 117, 109, 101, 110, 116, 8238, 116, 120, 116, 46, 101, 120, 101 }, "unicode.security.D.filename-disguise.RloFlip");
     // isolate-flip-hazard.
@@ -8726,42 +8775,42 @@ test "filename-disguise detect spot checks" {
     // The 10 Rust §5 detect spot checks (one per Lean theorem).
 
     // detect_empty_clear.
-    try std.testing.expect(Fd.detect(&[_]u32{}).classify.isClear());
+    try std.testing.expect((try Fd.detect(&[_]u32{})).classify.isClear());
     // detect_plain_txt_clear — "document.txt", last dot at index 8.
     {
-        const v = Fd.detect(&[_]u32{ 0x64, 0x6F, 0x63, 0x75, 0x6D, 0x65, 0x6E, 0x74, 0x2E, 0x74, 0x78, 0x74 });
+        const v = try Fd.detect(&[_]u32{ 0x64, 0x6F, 0x63, 0x75, 0x6D, 0x65, 0x6E, 0x74, 0x2E, 0x74, 0x78, 0x74 });
         try std.testing.expect(v.classify.isClear());
         try std.testing.expectEqual(@as(?usize, 8), v.last_dot_pos);
     }
     // detect_no_extension_clear — "foo", no dot.
     {
-        const v = Fd.detect(&[_]u32{ 0x66, 0x6F, 0x6F });
+        const v = try Fd.detect(&[_]u32{ 0x66, 0x6F, 0x6F });
         try std.testing.expect(v.classify.isClear());
         try std.testing.expectEqual(@as(?usize, null), v.last_dot_pos);
     }
     // detect_tar_gz_clear — "archive.tar.gz" (2 dots, below the multi-ext bound).
-    try std.testing.expect(Fd.detect(&[_]u32{ 0x61, 0x72, 0x63, 0x68, 0x69, 0x76, 0x65, 0x2E, 0x74, 0x61, 0x72, 0x2E, 0x67, 0x7A }).classify.isClear());
+    try std.testing.expect((try Fd.detect(&[_]u32{ 0x61, 0x72, 0x63, 0x68, 0x69, 0x76, 0x65, 0x2E, 0x74, 0x61, 0x72, 0x2E, 0x67, 0x7A })).classify.isClear());
     // detect_rlo_flip — "document<RLO>txt.exe", control at index 8.
     {
-        const v = Fd.detect(&[_]u32{ 0x64, 0x6F, 0x63, 0x75, 0x6D, 0x65, 0x6E, 0x74, 0x202E, 0x74, 0x78, 0x74, 0x2E, 0x65, 0x78, 0x65 });
+        const v = try Fd.detect(&[_]u32{ 0x64, 0x6F, 0x63, 0x75, 0x6D, 0x65, 0x6E, 0x74, 0x202E, 0x74, 0x78, 0x74, 0x2E, 0x65, 0x78, 0x65 });
         try std.testing.expectEqualStrings("RloFlip", v.classify.tag().?);
         try std.testing.expectEqualSlices(usize, &[_]usize{8}, v.classify.positions());
     }
     // detect_fullwidth_exe — "file.ＥＸＥ".
-    try std.testing.expectEqualStrings("WidthClassExt", fdTag(&[_]u32{ 0x66, 0x69, 0x6C, 0x65, 0x2E, 0xFF25, 0xFF38, 0xFF25 }).?);
+    try std.testing.expectEqualStrings("WidthClassExt", (try fdTag(&[_]u32{ 0x66, 0x69, 0x6C, 0x65, 0x2E, 0xFF25, 0xFF38, 0xFF25 })).?);
     // detect_combining_in_ext — combining acute in the extension.
-    try std.testing.expectEqualStrings("CombiningInExt", fdTag(&[_]u32{ 0x66, 0x69, 0x6C, 0x65, 0x2E, 0x65, 0x0301, 0x78, 0x65 }).?);
+    try std.testing.expectEqualStrings("CombiningInExt", (try fdTag(&[_]u32{ 0x66, 0x69, 0x6C, 0x65, 0x2E, 0x65, 0x0301, 0x78, 0x65 })).?);
     // detect_triple_extension — "setup.tar.gz.sig".
     {
-        const v = Fd.detect(&[_]u32{ 0x73, 0x65, 0x74, 0x75, 0x70, 0x2E, 0x74, 0x61, 0x72, 0x2E, 0x67, 0x7A, 0x2E, 0x73, 0x69, 0x67 });
+        const v = try Fd.detect(&[_]u32{ 0x73, 0x65, 0x74, 0x75, 0x70, 0x2E, 0x74, 0x61, 0x72, 0x2E, 0x67, 0x7A, 0x2E, 0x73, 0x69, 0x67 });
         try std.testing.expectEqualStrings("MultipleExtensions", v.classify.tag().?);
         // MultipleExtensions carries every dot position.
         try std.testing.expectEqualSlices(usize, &[_]usize{ 5, 9, 12 }, v.classify.positions());
     }
     // detect_hebrew_clear — native Hebrew name, no bidi controls.
-    try std.testing.expect(Fd.detect(&[_]u32{ 0x05D0, 0x05D1, 0x05D2, 0x2E, 0x74, 0x78, 0x74 }).classify.isClear());
+    try std.testing.expect((try Fd.detect(&[_]u32{ 0x05D0, 0x05D1, 0x05D2, 0x2E, 0x74, 0x78, 0x74 })).classify.isClear());
     // detect_isolate_flip — RLI/PDI isolate variant, also RloFlip.
-    try std.testing.expectEqualStrings("RloFlip", fdTag(&[_]u32{ 0x64, 0x6F, 0x63, 0x2067, 0x74, 0x78, 0x74, 0x2E, 0x65, 0x78, 0x65, 0x2069 }).?);
+    try std.testing.expectEqualStrings("RloFlip", (try fdTag(&[_]u32{ 0x64, 0x6F, 0x63, 0x2067, 0x74, 0x78, 0x74, 0x2E, 0x65, 0x78, 0x65, 0x2069 })).?);
 }
 
 test "filename-disguise structural checks" {
@@ -8769,7 +8818,7 @@ test "filename-disguise structural checks" {
 
     // bidi_beats_fullwidth — a bidi control outranks a fullwidth extension.
     {
-        const v = Fd.detect(&[_]u32{ 0x202E, 0x66, 0x2E, 0xFF25 });
+        const v = try Fd.detect(&[_]u32{ 0x202E, 0x66, 0x2E, 0xFF25 });
         try std.testing.expectEqualStrings("RloFlip", v.classify.tag().?);
         try std.testing.expect(v.classify.hazard.sub.rlo_flip.position == 0);
         // The fullwidth codepoint is still counted in the extension region.
@@ -8780,16 +8829,16 @@ test "filename-disguise structural checks" {
 
 const Ifd = identifier_form_drift;
 
-fn ifdTag(input: []const u32) ?[]const u8 {
-    return Ifd.detect(input).classify.tag();
+fn ifdTag(input: []const u32) CapacityError!?[]const u8 {
+    return (try Ifd.detect(input)).classify.tag();
 }
 
-fn ifdReason(input: []const u32) ?[]const u8 {
-    return Ifd.detect(input).classify.reasonCode();
+fn ifdReason(input: []const u32) CapacityError!?[]const u8 {
+    return (try Ifd.detect(input)).classify.reasonCode();
 }
 
 fn expectIfdReason(input: []const u32, want: []const u8) !void {
-    const r = ifdReason(input);
+    const r = try ifdReason(input);
     try std.testing.expect(r != null);
     try std.testing.expectEqualStrings(want, r.?);
 }
@@ -8803,11 +8852,11 @@ test "identifier-form-drift predicate reuse" {
     try std.testing.expect(!Ifd.idAllowedPredicate(0x1D44E)); // math italic a — Restricted
     try std.testing.expect(!Ifd.idAllowedPredicate(0xFF21)); // fullwidth A — Restricted
     // NFKD head of U+1D44E is U+0061 'a' (Allowed); of U+FF21 is U+0041 'A'.
-    try std.testing.expect(Ifd.nfkdHeadAllowed(0x1D44E));
-    try std.testing.expect(Ifd.nfkdHeadAllowed(0xFF21));
+    try std.testing.expect(try Ifd.nfkdHeadAllowed(0x1D44E));
+    try std.testing.expect(try Ifd.nfkdHeadAllowed(0xFF21));
     // Allowed codepoints with identity NFKD keep their Allowed head.
-    try std.testing.expect(Ifd.nfkdHeadAllowed(0x0061));
-    try std.testing.expect(Ifd.nfkdHeadAllowed(0x03B1));
+    try std.testing.expect(try Ifd.nfkdHeadAllowed(0x0061));
+    try std.testing.expect(try Ifd.nfkdHeadAllowed(0x03B1));
 }
 
 test "identifier-form-drift shared fixture vectors" {
@@ -8817,15 +8866,15 @@ test "identifier-form-drift shared fixture vectors" {
 
     // empty-clear.
     {
-        const v = Ifd.detect(&[_]u32{});
+        const v = try Ifd.detect(&[_]u32{});
         try std.testing.expect(v.classify.isClear());
         try std.testing.expectEqual(@as(?[]const u8, null), v.classify.tag());
         try std.testing.expectEqualSlices(usize, &[_]usize{}, v.classify.positions());
     }
     // ascii-hello-clear (72,101,108,108,111).
-    try std.testing.expect(Ifd.detect(&[_]u32{ 72, 101, 108, 108, 111 }).classify.isClear());
+    try std.testing.expect((try Ifd.detect(&[_]u32{ 72, 101, 108, 108, 111 })).classify.isClear());
     // greek-alpha-clear (945).
-    try std.testing.expect(Ifd.detect(&[_]u32{945}).classify.isClear());
+    try std.testing.expect((try Ifd.detect(&[_]u32{945})).classify.isClear());
     // math-italic-a-shift (119886 = U+1D44E).
     try expectIfdReason(&[_]u32{119886}, "unicode.security.X.identifier-form-drift.IdentifierStatusShift");
     // fullwidth-A-shift (65313 = U+FF21).
@@ -8842,36 +8891,36 @@ test "identifier-form-drift detect spot checks" {
     // The Rust §5 detect spot checks (one per Lean theorem).
 
     // detect_empty_clear.
-    try std.testing.expect(Ifd.detect(&[_]u32{}).classify.isClear());
+    try std.testing.expect((try Ifd.detect(&[_]u32{})).classify.isClear());
     // detect_ascii_clear — "Hello"; every ASCII letter is Allowed, identity NFKD.
     {
-        const v = Ifd.detect(&[_]u32{ 0x48, 0x65, 0x6C, 0x6C, 0x6F });
+        const v = try Ifd.detect(&[_]u32{ 0x48, 0x65, 0x6C, 0x6C, 0x6F });
         try std.testing.expect(v.classify.isClear());
         try std.testing.expectEqual(@as(usize, 0), v.shift_count);
     }
     // detect_greek_alpha_clear — α is Allowed with identity NFKD.
-    try std.testing.expect(Ifd.detect(&[_]u32{0x03B1}).classify.isClear());
+    try std.testing.expect((try Ifd.detect(&[_]u32{0x03B1})).classify.isClear());
     // detect_math_italic_a_shift — U+1D44E Restricted, NFKD head U+0061 Allowed.
     {
-        const v = Ifd.detect(&[_]u32{0x1D44E});
+        const v = try Ifd.detect(&[_]u32{0x1D44E});
         try std.testing.expectEqualStrings("IdentifierStatusShift", v.classify.tag().?);
         try std.testing.expectEqualSlices(usize, &[_]usize{0}, v.classify.positions());
         try std.testing.expectEqual(@as(usize, 1), v.shift_count);
     }
     // detect_fullwidth_A_shift — U+FF21 Restricted, NFKD head U+0041 Allowed.
-    try std.testing.expectEqualStrings("IdentifierStatusShift", ifdTag(&[_]u32{0xFF21}).?);
+    try std.testing.expectEqualStrings("IdentifierStatusShift", (try ifdTag(&[_]u32{0xFF21})).?);
     // detect_circled_A_shift — U+24B6 → Restricted → Allowed (A).
-    try std.testing.expectEqualStrings("IdentifierStatusShift", ifdTag(&[_]u32{0x24B6}).?);
+    try std.testing.expectEqualStrings("IdentifierStatusShift", (try ifdTag(&[_]u32{0x24B6})).?);
     // detect_fi_ligature_shift — U+FB01 'ﬁ' → Restricted → Allowed (f).
-    try std.testing.expectEqualStrings("IdentifierStatusShift", ifdTag(&[_]u32{0xFB01}).?);
+    try std.testing.expectEqualStrings("IdentifierStatusShift", (try ifdTag(&[_]u32{0xFB01})).?);
     // detect_roman_iv_shift — U+2163 ROMAN NUMERAL FOUR → Restricted → Allowed (I).
-    try std.testing.expectEqualStrings("IdentifierStatusShift", ifdTag(&[_]u32{0x2163}).?);
+    try std.testing.expectEqualStrings("IdentifierStatusShift", (try ifdTag(&[_]u32{0x2163})).?);
 }
 
 test "identifier-form-drift reports first shift position" {
     // A shift embedded mid-string reports the first shifting position, not 0.
     // "ab" + U+1D44E: positions 0,1 are Allowed/identity, position 2 shifts.
-    const v = Ifd.detect(&[_]u32{ 0x61, 0x62, 0x1D44E });
+    const v = try Ifd.detect(&[_]u32{ 0x61, 0x62, 0x1D44E });
     try std.testing.expectEqualSlices(usize, &[_]usize{2}, v.classify.positions());
     try std.testing.expectEqual(@as(usize, 1), v.shift_count);
 }
@@ -8880,16 +8929,16 @@ test "identifier-form-drift reports first shift position" {
 
 const Afd = admissibility_form_drift;
 
-fn afdTag(input: []const u32) ?[]const u8 {
-    return Afd.detect(input).classify.tag();
+fn afdTag(input: []const u32) CapacityError!?[]const u8 {
+    return (try Afd.detect(input)).classify.tag();
 }
 
-fn afdReason(input: []const u32) ?[]const u8 {
-    return Afd.detect(input).classify.reasonCode();
+fn afdReason(input: []const u32) CapacityError!?[]const u8 {
+    return (try Afd.detect(input)).classify.reasonCode();
 }
 
 fn expectAfdReason(input: []const u32, want: []const u8) !void {
-    const r = afdReason(input);
+    const r = try afdReason(input);
     try std.testing.expect(r != null);
     try std.testing.expectEqualStrings(want, r.?);
 }
@@ -8911,7 +8960,7 @@ test "admissibility-form-drift predicate reuse" {
     try std.testing.expect(!isAllowedIdentifier(&[_]u32{0x0030}));
     try std.testing.expect(!isAllowedIdentifier(&[_]u32{0xFB01}));
     // NFKC of the ﬁ ligature is "fi", an allowed identifier.
-    const nfkc = toNFKC(&[_]u32{0xFB01}).?;
+    const nfkc = try toNFKC(&[_]u32{0xFB01});
     try std.testing.expect(isAllowedIdentifier(nfkc.slice()));
 }
 
@@ -8922,14 +8971,14 @@ test "admissibility-form-drift shared fixture vectors" {
 
     // empty-clear (both admissibility calls false → agree).
     {
-        const v = Afd.detect(&[_]u32{});
+        const v = try Afd.detect(&[_]u32{});
         try std.testing.expect(v.classify.isClear());
         try std.testing.expectEqual(@as(?[]const u8, null), v.classify.tag());
         try std.testing.expectEqualSlices(usize, &[_]usize{}, v.classify.positions());
     }
     // ascii-admin-clear (97,100,109,105,110) — admissible on both sides.
     {
-        const v = Afd.detect(&[_]u32{ 97, 100, 109, 105, 110 });
+        const v = try Afd.detect(&[_]u32{ 97, 100, 109, 105, 110 });
         try std.testing.expect(v.classify.isClear());
         try std.testing.expect(v.input_admissible);
         try std.testing.expect(v.nfkc_admissible);
@@ -8944,10 +8993,10 @@ test "admissibility-form-drift detect spot checks" {
     // The Rust §2 detect spot checks (one per Lean theorem).
 
     // detect_empty_clear — both admissibility calls return false, so they agree.
-    try std.testing.expect(Afd.detect(&[_]u32{}).classify.isClear());
+    try std.testing.expect((try Afd.detect(&[_]u32{})).classify.isClear());
     // detect_ascii_clear — "admin"; admissible on both sides (NFKC is identity).
     {
-        const v = Afd.detect(&[_]u32{ 0x61, 0x64, 0x6D, 0x69, 0x6E });
+        const v = try Afd.detect(&[_]u32{ 0x61, 0x64, 0x6D, 0x69, 0x6E });
         try std.testing.expect(v.classify.isClear());
         try std.testing.expect(v.input_admissible);
         try std.testing.expect(v.nfkc_admissible);
@@ -8955,30 +9004,30 @@ test "admissibility-form-drift detect spot checks" {
     // detect_fi_ligature_drift — U+FB01 is Restricted (inadmissible), but NFKC
     // decomposes it to "fi" (admissible). Drift fires.
     {
-        const v = Afd.detect(&[_]u32{0xFB01});
+        const v = try Afd.detect(&[_]u32{0xFB01});
         try std.testing.expectEqualStrings("AdmissibilityFormDrift", v.classify.tag().?);
         try std.testing.expect(!v.input_admissible);
         try std.testing.expect(v.nfkc_admissible);
     }
     // detect_jamo_sequence_drift — decomposed Hangul jamos are inadmissible, but
     // NFKC composes them to U+D55C 한 (admissible).
-    try std.testing.expectEqualStrings("AdmissibilityFormDrift", afdTag(&[_]u32{ 0x1112, 0x1161, 0x11AB }).?);
+    try std.testing.expectEqualStrings("AdmissibilityFormDrift", (try afdTag(&[_]u32{ 0x1112, 0x1161, 0x11AB })).?);
 }
 
 // ── skin-tone-variation-forgery (identity layer I) ────────────────────────
 
 const Stvf = skin_tone_variation_forgery;
 
-fn stvfTag(input: []const u32) ?[]const u8 {
-    return Stvf.detect(input).classify.tag();
+fn stvfTag(input: []const u32) CapacityError!?[]const u8 {
+    return (try Stvf.detect(input)).classify.tag();
 }
 
-fn stvfReason(input: []const u32) ?[]const u8 {
-    return Stvf.detect(input).classify.reasonCode();
+fn stvfReason(input: []const u32) CapacityError!?[]const u8 {
+    return (try Stvf.detect(input)).classify.reasonCode();
 }
 
 fn expectStvfReason(input: []const u32, want: []const u8) !void {
-    const r = stvfReason(input);
+    const r = try stvfReason(input);
     try std.testing.expect(r != null);
     try std.testing.expectEqualStrings(want, r.?);
 }
@@ -9012,17 +9061,17 @@ test "skin-tone-variation-forgery shared fixture vectors" {
 
     // empty-clear.
     {
-        const v = Stvf.detect(&[_]u32{});
+        const v = try Stvf.detect(&[_]u32{});
         try std.testing.expect(v.classify.isClear());
         try std.testing.expectEqual(@as(?[]const u8, null), v.classify.tag());
         try std.testing.expectEqualSlices(usize, &[_]usize{}, v.classify.positions());
     }
     // ascii-clear (72,101 = "He").
-    try std.testing.expect(Stvf.detect(&[_]u32{ 72, 101 }).classify.isClear());
+    try std.testing.expect((try Stvf.detect(&[_]u32{ 72, 101 })).classify.isClear());
     // plain-emoji-clear (128512 = U+1F600).
-    try std.testing.expect(Stvf.detect(&[_]u32{128512}).classify.isClear());
+    try std.testing.expect((try Stvf.detect(&[_]u32{128512})).classify.isClear());
     // wave-single-skin-tone-clear (128075,127995) — modifier base + one skin tone.
-    try std.testing.expect(Stvf.detect(&[_]u32{ 128075, 127995 }).classify.isClear());
+    try std.testing.expect((try Stvf.detect(&[_]u32{ 128075, 127995 })).classify.isClear());
     // stacked-skin-tones (128075,127995,127996).
     try expectStvfReason(&[_]u32{ 128075, 127995, 127996 }, "unicode.security.I.skin-tone-variation-forgery.StackedSkinTones");
     // invalid-target-ascii (65,127995).
@@ -9037,34 +9086,34 @@ test "skin-tone-variation-forgery detect spot checks" {
     // The Rust §5 detect spot checks (one per Lean theorem).
 
     // detect_empty_clear.
-    try std.testing.expect(Stvf.detect(&[_]u32{}).classify.isClear());
+    try std.testing.expect((try Stvf.detect(&[_]u32{})).classify.isClear());
     // detect_ascii_clear — "He".
-    try std.testing.expect(Stvf.detect(&[_]u32{ 0x48, 0x65 }).classify.isClear());
+    try std.testing.expect((try Stvf.detect(&[_]u32{ 0x48, 0x65 })).classify.isClear());
     // detect_plain_emoji_clear — grinning face.
-    try std.testing.expect(Stvf.detect(&[_]u32{0x1F600}).classify.isClear());
+    try std.testing.expect((try Stvf.detect(&[_]u32{0x1F600})).classify.isClear());
     // detect_wave_skin_tone_clear — waving hand (a modifier base) + one skin tone.
     {
-        const v = Stvf.detect(&[_]u32{ 0x1F44B, 0x1F3FB });
+        const v = try Stvf.detect(&[_]u32{ 0x1F44B, 0x1F3FB });
         try std.testing.expect(v.classify.isClear());
         try std.testing.expectEqual(@as(usize, 1), v.skin_tone_count);
     }
     // detect_stacked_skin_tones — waving hand + two skin tones.
     {
-        const v = Stvf.detect(&[_]u32{ 0x1F44B, 0x1F3FB, 0x1F3FC });
+        const v = try Stvf.detect(&[_]u32{ 0x1F44B, 0x1F3FB, 0x1F3FC });
         try std.testing.expectEqualStrings("StackedSkinTones", v.classify.tag().?);
         try std.testing.expectEqualSlices(usize, &[_]usize{ 1, 2 }, v.classify.positions());
     }
     // detect_invalid_target_ascii — skin tone on ASCII 'A'.
     {
-        const v = Stvf.detect(&[_]u32{ 0x0041, 0x1F3FB });
+        const v = try Stvf.detect(&[_]u32{ 0x0041, 0x1F3FB });
         try std.testing.expectEqualStrings("InvalidSkinToneTarget", v.classify.tag().?);
         try std.testing.expectEqualSlices(usize, &[_]usize{1}, v.classify.positions());
     }
     // detect_invalid_target_smiley — skin tone on grinning face (not a modifier base).
-    try std.testing.expectEqualStrings("InvalidSkinToneTarget", stvfTag(&[_]u32{ 0x1F600, 0x1F3FB }).?);
+    try std.testing.expectEqualStrings("InvalidSkinToneTarget", (try stvfTag(&[_]u32{ 0x1F600, 0x1F3FB })).?);
     // detect_forced_text_style — VS15 on grinning face (Emoji_Presentation).
     {
-        const v = Stvf.detect(&[_]u32{ 0x1F600, 0xFE0E });
+        const v = try Stvf.detect(&[_]u32{ 0x1F600, 0xFE0E });
         try std.testing.expectEqualStrings("ForcedTextStyle", v.classify.tag().?);
         try std.testing.expectEqual(@as(usize, 1), v.variation_selector15_count);
     }
@@ -9075,14 +9124,14 @@ test "skin-tone-variation-forgery priority and counts" {
     // U+1F600 (not a modifier base) + two skin tones fires StackedSkinTones,
     // not InvalidSkinToneTarget, and reports positions [1,2].
     {
-        const v = Stvf.detect(&[_]u32{ 0x1F600, 0x1F3FB, 0x1F3FC });
+        const v = try Stvf.detect(&[_]u32{ 0x1F600, 0x1F3FB, 0x1F3FC });
         try std.testing.expectEqualStrings("StackedSkinTones", v.classify.tag().?);
         try std.testing.expectEqualSlices(usize, &[_]usize{ 1, 2 }, v.classify.positions());
         try std.testing.expectEqual(@as(usize, 2), v.skin_tone_count);
     }
     // VS16 (U+FE0F) is counted but never fires a hazard on its own.
     {
-        const v = Stvf.detect(&[_]u32{ 0x1F600, 0xFE0F });
+        const v = try Stvf.detect(&[_]u32{ 0x1F600, 0xFE0F });
         try std.testing.expect(v.classify.isClear());
         try std.testing.expectEqual(@as(usize, 1), v.variation_selector16_count);
         try std.testing.expectEqual(@as(usize, 0), v.variation_selector15_count);
@@ -9093,12 +9142,12 @@ test "skin-tone-variation-forgery priority and counts" {
 
 const Sdd = source_display_divergence;
 
-fn sddReason(input: []const u32) ?[]const u8 {
-    return Sdd.detect(input).classify.reasonCode();
+fn sddReason(input: []const u32) CapacityError!?[]const u8 {
+    return (try Sdd.detect(input)).classify.reasonCode();
 }
 
 fn expectSddReason(input: []const u32, want: []const u8) !void {
-    const r = sddReason(input);
+    const r = try sddReason(input);
     try std.testing.expect(r != null);
     try std.testing.expectEqualStrings(want, r.?);
 }
@@ -9110,15 +9159,15 @@ test "source-display-divergence shared fixture vectors" {
 
     // empty-clear.
     {
-        const v = Sdd.detect(&[_]u32{});
+        const v = try Sdd.detect(&[_]u32{});
         try std.testing.expect(v.classify.isClear());
         try std.testing.expectEqual(@as(?[]const u8, null), v.classify.tag());
         try std.testing.expectEqual(@as(usize, 0), v.fired_count);
     }
     // ascii-hello-clear — "Hello world".
-    try std.testing.expect(Sdd.detect(&[_]u32{ 72, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100 }).classify.isClear());
+    try std.testing.expect((try Sdd.detect(&[_]u32{ 72, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100 })).classify.isClear());
     // ascii-source-clear — "let x = 1;".
-    try std.testing.expect(Sdd.detect(&[_]u32{ 108, 101, 116, 32, 120, 32, 61, 32, 49, 59 }).classify.isClear());
+    try std.testing.expect((try Sdd.detect(&[_]u32{ 108, 101, 116, 32, 120, 32, 61, 32, 49, 59 })).classify.isClear());
     // tag-block-passthrough — tag-encoded "AB".
     try expectSddReason(&[_]u32{ 917569, 917570 }, "unicode.security.D.source-display-divergence.TagBlock");
     // variation-selector-passthrough — A + VS16.
@@ -9140,32 +9189,100 @@ test "source-display-divergence detect spot checks" {
 
     // clear: empty, "Hello world", "let x = 1;".
     {
-        const v = Sdd.detect(&[_]u32{});
+        const v = try Sdd.detect(&[_]u32{});
         try std.testing.expect(v.classify.isClear());
         try std.testing.expectEqual(@as(?[]const u8, null), v.classify.tag());
     }
-    try std.testing.expect(Sdd.detect(&[_]u32{ 0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64 }).classify.isClear());
-    try std.testing.expect(Sdd.detect(&[_]u32{ 0x6C, 0x65, 0x74, 0x20, 0x78, 0x20, 0x3D, 0x20, 0x31, 0x3B }).classify.isClear());
+    try std.testing.expect((try Sdd.detect(&[_]u32{ 0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x20, 0x77, 0x6F, 0x72, 0x6C, 0x64 })).classify.isClear());
+    try std.testing.expect((try Sdd.detect(&[_]u32{ 0x6C, 0x65, 0x74, 0x20, 0x78, 0x20, 0x3D, 0x20, 0x31, 0x3B })).classify.isClear());
 
     // single-fire pass-through — each constituent in isolation reports its tag.
     {
         // tag-encoded "AB".
-        const v = Sdd.detect(&[_]u32{ 0xE0041, 0xE0042 });
+        const v = try Sdd.detect(&[_]u32{ 0xE0041, 0xE0042 });
         try std.testing.expectEqualStrings("TagBlock", v.classify.tag().?);
         try std.testing.expectEqual(@as(usize, 1), v.fired_count);
     }
-    try std.testing.expectEqualStrings("VariationSelector", Sdd.detect(&[_]u32{ 0x0041, 0xFE0F }).classify.tag().?);
-    try std.testing.expectEqualStrings("ZeroWidth", Sdd.detect(&[_]u32{ 0x0048, 0x200B, 0x69 }).classify.tag().?);
-    try std.testing.expectEqualStrings("BidiControl", Sdd.detect(&[_]u32{ 0x202E, 0x41 }).classify.tag().?);
-    try std.testing.expectEqualStrings("IdentifierHomoglyph", Sdd.detect(&[_]u32{ 0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D }).classify.tag().?);
+    try std.testing.expectEqualStrings("VariationSelector", (try Sdd.detect(&[_]u32{ 0x0041, 0xFE0F })).classify.tag().?);
+    try std.testing.expectEqualStrings("ZeroWidth", (try Sdd.detect(&[_]u32{ 0x0048, 0x200B, 0x69 })).classify.tag().?);
+    try std.testing.expectEqualStrings("BidiControl", (try Sdd.detect(&[_]u32{ 0x202E, 0x41 })).classify.tag().?);
+    try std.testing.expectEqualStrings("IdentifierHomoglyph", (try Sdd.detect(&[_]u32{ 0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D })).classify.tag().?);
 
     // two-or-more is Compound.
     {
         // A + VS16 + ZWSP — two constituents fire.
-        const v = Sdd.detect(&[_]u32{ 0x0041, 0xFE0F, 0x200B });
+        const v = try Sdd.detect(&[_]u32{ 0x0041, 0xFE0F, 0x200B });
         try std.testing.expectEqualStrings("Compound", v.classify.tag().?);
         try std.testing.expectEqual(@as(usize, 2), v.fired_count);
     }
     // tag "AB" + ZWSP — two constituents fire.
-    try std.testing.expectEqualStrings("Compound", Sdd.detect(&[_]u32{ 0xE0041, 0xE0042, 0x200B }).classify.tag().?);
+    try std.testing.expectEqualStrings("Compound", (try Sdd.detect(&[_]u32{ 0xE0041, 0xE0042, 0x200B })).classify.tag().?);
+}
+
+// ── capacity refusal ───────────────────────────────────────────────────
+//
+// The port scans without an allocator, so an input it cannot evaluate within
+// its fixed buffers is refused: no findings, the mode's blocking action, and
+// the refusal named. Never a verdict over a truncated form.
+
+test "scan refuses an input beyond MaxInputLen instead of scanning it in part" {
+    var long: [MaxInputLen + 1]u32 = undefined;
+    @memset(&long, 0x61);
+    const enforced = scan(.username, .enforce, &long);
+    try std.testing.expectEqual(Action.reject, enforced.action);
+    try std.testing.expectEqual(Refusal.capacity_exceeded, enforced.refusal.?);
+    try std.testing.expectEqual(@as(usize, 0), enforced.findings.len);
+    const observed = scan(.username, .observe, &long);
+    try std.testing.expectEqual(Action.observe, observed.action);
+    try std.testing.expectEqual(Refusal.capacity_exceeded, observed.refusal.?);
+    try std.testing.expectEqual(@as(usize, 0), observed.findings.len);
+}
+
+test "scan at the input bound is still scanned in full" {
+    var edge: [MaxInputLen]u32 = undefined;
+    @memset(&edge, 0x61);
+    const v = scan(.username, .enforce, &edge);
+    try std.testing.expect(v.refusal == null);
+    try std.testing.expectEqual(Action.allow, v.action);
+}
+
+test "scan refuses an input whose working form overflows the bounded buffer" {
+    // 60 x U+FDFA is well within MaxInputLen, but each expands to 18
+    // codepoints under NFKD (1080 > MaxSkeletonLen).
+    var bomb: [60]u32 = undefined;
+    @memset(&bomb, 0xFDFA);
+    const v = scan(.username, .enforce, &bomb);
+    try std.testing.expectEqual(Action.reject, v.action);
+    try std.testing.expectEqual(Refusal.capacity_exceeded, v.refusal.?);
+    try std.testing.expectEqual(@as(usize, 0), v.findings.len);
+}
+
+test "scanUtf8 refuses a text longer than the caller's decode buffer" {
+    var buffer: [4]u32 = undefined;
+    const v = scanUtf8(.username, .enforce, "hello", &buffer);
+    try std.testing.expectEqual(Action.reject, v.action);
+    try std.testing.expectEqual(Refusal.capacity_exceeded, v.refusal.?);
+    try std.testing.expectEqual(@as(usize, 0), v.findings.len);
+}
+
+test "a detector called directly refuses an input beyond MaxInputLen" {
+    var long: [MaxInputLen + 1]u32 = undefined;
+    @memset(&long, 0x61);
+    try std.testing.expectError(error.CapacityExceeded, emoji_zwj_integrity.detect(&long));
+    try std.testing.expectError(error.CapacityExceeded, renderer_divergence.detect(&long));
+    try std.testing.expectError(error.CapacityExceeded, filename_disguise.detect(&long));
+    try std.testing.expectError(error.CapacityExceeded, skin_tone_variation_forgery.detect(&long));
+    try std.testing.expectError(error.CapacityExceeded, ai_watermark_detectability.detect(&long));
+    try std.testing.expectError(error.CapacityExceeded, hash_input_stability.detect(&long));
+}
+
+test "a refused verdict names its refusal on the wire" {
+    var long: [MaxInputLen + 1]u32 = undefined;
+    @memset(&long, 0x61);
+    const v = scan(.username, .enforce, &long);
+    var buffer: [16384]u8 = undefined;
+    var writer: std.Io.Writer = .fixed(&buffer);
+    try writeVerdictJson(&writer, v);
+    try std.testing.expect(std.mem.indexOf(u8, writer.buffered(), "\"refusal\":\"capacity-exceeded\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, writer.buffered(), "\"findings\":[]") != null);
 }

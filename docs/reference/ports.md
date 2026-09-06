@@ -199,6 +199,29 @@ The JSON helper emits the exact compact shape guarded by
 may be idiomatic (`VerdictJSON` in Go, `verdictJson` in Haskell,
 `writeVerdictJson` in Zig), but the serialized wire shape is shared.
 
+### Bounded ports refuse, never truncate
+
+The Lean and the reference are unbounded. Two ports are not: Zig scans without
+an allocator over fixed buffers, and COBOL works in fixed `OCCURS` tables. This
+is their one named divergence, and it is fail-closed. An input such a port
+cannot evaluate within its bounds — a text longer than its input table, or a
+working form (an NFD/NFKD/NFC/NFKC expansion, a case mapping, a confusable
+skeleton, a decoded text longer than the caller's buffer) that does not fit —
+is never scanned in part and never read as clear. The port answers a
+**refused** verdict: no findings, the mode's blocking action (`reject`, or
+`observe` under the non-blocking observe and warn modes), and the refusal
+named beside the action. Zig carries it as `Verdict.refusal =
+.capacity_exceeded` and serialises `"refusal":"capacity-exceeded"` after
+`normalized`; its detector modules return `error.CapacityExceeded` from a
+direct call. COBOL prints `REFUSAL capacity-exceeded` on the line after
+`ACTION`. The bounds are documented in each port's README (Zig: 1024
+codepoints per scan and per working form; COBOL: 4096 values per scan, a
+4096-wide skeleton, a 16384-wide normalization scratch). Both ports test the
+refusal at the bound and one past it, and test that an input at the bound is
+scanned in full. A caller that reads only the action still fails closed; a
+caller that reads the refusal can size the input or route it to an unbounded
+port.
+
 ## Reason Codes
 
 Reason codes are product API, not internal debug text.

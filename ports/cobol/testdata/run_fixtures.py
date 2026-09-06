@@ -22,6 +22,7 @@ def run(op, profile, mode, values):
         stdout=subprocess.PIPE,
     )
     action = None
+    refusal = None
     codes = []
     positions = {}
     input_values = []
@@ -31,13 +32,50 @@ def run(op, profile, mode, values):
             continue
         if parts[0] == "ACTION":
             action = parts[1]
+        elif parts[0] == "REFUSAL":
+            refusal = parts[1]
         elif parts[0] == "INPUT":
             input_values = [int(x) for x in parts[1].split(",") if x]
         elif parts[0] == "FINDING":
             code = parts[1]
             codes.append(code)
             positions[code] = [int(x) for x in parts[2].split(",") if x] if len(parts) > 2 else []
-    return {"action": action, "codes": codes, "positions": positions, "input": input_values}
+    return {
+        "action": action,
+        "refusal": refusal,
+        "codes": codes,
+        "positions": positions,
+        "input": input_values,
+    }
+
+
+def check_capacity_refusal():
+    """A scan the port cannot carry out within its fixed tables is refused:
+    no finding, the mode's blocking action, and the refusal named. A full
+    table is never truncated into a verdict."""
+    def expect_refused(op, mode, values, label):
+        got = run(op, "username", mode, values)
+        require(got["refusal"] == "capacity-exceeded",
+                f"{label}: expected a capacity refusal, got {got['refusal']!r}")
+        require(got["codes"] == [], f"{label}: a refused scan reported findings {got['codes']}")
+        expected_action = "observe" if mode in ("observe", "warn") else "reject"
+        require(got["action"] == expected_action,
+                f"{label}: refused action {got['action']} != {expected_action}")
+
+    # 4097 codepoints: one past the input table.
+    expect_refused("scan", "enforce", [97] * 4097, "input beyond the table (enforce)")
+    expect_refused("scan", "observe", [97] * 4097, "input beyond the table (observe)")
+    # 4097 UTF-8 bytes: the byte list shares the input table.
+    expect_refused("scan-utf8", "enforce", [97] * 4097, "byte list beyond the table")
+    # 1000 x U+FDFA: within the input table, but its NFKD form (18 codepoints
+    # each) does not fit the 16384-wide normalization scratch.
+    expect_refused("scan", "enforce", [0xFDFA] * 1000, "NFKD form beyond the scratch")
+
+    # An input at the table's edge is still scanned in full.
+    got = run("scan", "username", "enforce", [97] * 4096)
+    require(got["refusal"] is None, f"edge input refused: {got['refusal']!r}")
+    require(got["action"] == "allow", f"edge input action {got['action']} != allow")
+    return 5
 
 
 def run_lines(op, values):
@@ -994,6 +1032,8 @@ def main():
     check_multiencoding_decode()
     check_verdict()
     check_differential_corpus()
+    capacity_count = check_capacity_refusal()
+    print(f"capacity refusal checks: {capacity_count}")
     check_detectors()
     his_fixture_count, his_context_count = check_hash_input_stability()
     awd_fixture_count, awd_context_count = check_ai_watermark_detectability()
