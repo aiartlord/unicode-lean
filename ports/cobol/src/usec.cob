@@ -25,11 +25,15 @@ WORKING-STORAGE SECTION.
 01 FINDING-COUNT PIC 9(4) COMP-5 VALUE 0.
 01 FINDING-TABLE.
    05 FINDING-CODE OCCURS 128 TIMES PIC X(128).
-   05 FINDING-POS OCCURS 128 TIMES PIC X(256).
+*> Comma-joined 0-based positions. Sized for every position of a 4096-codepoint
+*> input (four digits and a comma each, with headroom): at the former X(256) a
+*> whole-span finding on a 127-codepoint input lost its tail and the port
+*> reported a truncated list as if it were the verdict.
+   05 FINDING-POS OCCURS 128 TIMES PIC X(24576).
 01 ACTION-NAME PIC X(16) VALUE "allow".
 01 BLOCKING-FLAG PIC 9 VALUE 0.
 01 POS-NUM PIC Z(8)9.
-01 POS-TEXT PIC X(256).
+01 POS-TEXT PIC X(24576).
 01 TEMP-CODE PIC X(128).
 01 TEMP-SUB PIC X(48).
 01 BYTE-1 PIC 9(9) COMP-5.
@@ -110,6 +114,38 @@ WORKING-STORAGE SECTION.
 01 HAS-CONFUSABLE PIC 9 VALUE 0.
 01 HAS-OVERRIDE PIC 9 VALUE 0.
 01 HAS-ISOLATE PIC 9 VALUE 0.
+*> First-position captures for the two compound detectors: the confusable and
+*> the purposeless override or isolate it co-locates with; the bidi control and
+*> the unregistered variation selector or tag character beside it. The
+*> reference localises each compound as exactly that pair, in that order.
+01 CBC-CONF-POS PIC 9(9) COMP-5 VALUE 0.
+01 CBC-OVR-POS PIC 9(9) COMP-5 VALUE 0.
+01 CBC-ISO-POS PIC 9(9) COMP-5 VALUE 0.
+01 CDC-BIDI-POS PIC 9(9) COMP-5 VALUE 0.
+01 CDC-VS-POS PIC 9(9) COMP-5 VALUE 0.
+01 CDC-TAG-POS PIC 9(9) COMP-5 VALUE 0.
+01 POS-A PIC 9(9) COMP-5 VALUE 0.
+01 POS-B PIC 9(9) COMP-5 VALUE 0.
+*> Noncharacter-control class selector and hit flag for ADD-NONCHAR-CLASS-FINDING.
+01 NC-MODE PIC 9 VALUE 0.
+01 NC-HIT PIC 9 VALUE 0.
+*> ZWSP (U+200B) and ZWJ (U+200D) alone form the binary alphabet the
+*> BinaryPayload rung counts; ZW-COUNT is the wider zero-width census.
+01 ZWJ-ZWSP-COUNT PIC 9(5) COMP-5 VALUE 0.
+*> UTF-8 decode state for FIRST-INVALID-BYTESTREAM, mirroring the reference
+*> utf8_decode_step: continuation bytes still expected, the accumulated
+*> scalar, the smallest scalar the sequence length may encode, and the
+*> 1-based index of the sequence's start byte (the Overlong rung localises
+*> the start byte; every other rung localises the byte that failed).
+01 U8-REMAINING PIC 9 VALUE 0.
+01 U8-ACCUM PIC 9(9) COMP-5 VALUE 0.
+01 U8-MIN-CP PIC 9(9) COMP-5 VALUE 0.
+01 U8-SEQ-START PIC 9(9) COMP-5 VALUE 0.
+*> Variation-selector run shape for DETECT-VARIATION: the first selector, whether
+*> every selector equals it, and how many carry a nibble (FE00-FE0F, E0100-E01EF).
+01 VS-FIRST-CP PIC 9(9) COMP-5 VALUE 0.
+01 VS-ALL-SAME PIC 9 VALUE 0.
+01 VS-NIBBLE-COUNT PIC 9(5) COMP-5 VALUE 0.
 01 TRAILING-WS PIC 9 VALUE 0.
 01 UPPER-FLAG PIC 9 VALUE 0.
 01 DOUBLE-WS PIC 9 VALUE 0.
@@ -1423,10 +1459,26 @@ DETECT-TAG-BLOCK.
     END-IF.
 
 DETECT-VARIATION.
-    MOVE 0 TO VS-COUNT FOUND-FLAG
+*> The reference detect: one selector on a registered base is clear; any other
+*> selector run is a hazard, ranked RepeatedBase (at least four selectors, all
+*> the same codepoint), DirectPayload (at least one byte recovers from the
+*> nibble pairs of FE00-FE0F / E0100-E01EF), else IllegalTarget. The finding
+*> localises every selector.
+    MOVE 0 TO VS-COUNT FOUND-FLAG VS-NIBBLE-COUNT VS-FIRST-CP
+    MOVE 1 TO VS-ALL-SAME
     PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
         IF (CP(IDX) >= 65024 AND CP(IDX) <= 65039) OR (CP(IDX) >= 917760 AND CP(IDX) <= 917999) OR (CP(IDX) >= 6155 AND CP(IDX) <= 6157)
             ADD 1 TO VS-COUNT
+            IF VS-COUNT = 1
+                MOVE CP(IDX) TO VS-FIRST-CP
+            ELSE
+                IF CP(IDX) NOT = VS-FIRST-CP
+                    MOVE 0 TO VS-ALL-SAME
+                END-IF
+            END-IF
+            IF (CP(IDX) >= 65024 AND CP(IDX) <= 65039) OR (CP(IDX) >= 917760 AND CP(IDX) <= 917999)
+                ADD 1 TO VS-NIBBLE-COUNT
+            END-IF
             MOVE 0 TO TABLE-FLAG
             IF IDX > 1
                 MOVE CP(IDX - 1) TO PAIR-BASE
@@ -1438,11 +1490,15 @@ DETECT-VARIATION.
             END-IF
         END-IF
     END-PERFORM
-    IF FOUND-FLAG = 1
-        IF VS-COUNT >= 2
-            MOVE "unicode.security.C.variation-selector-payload.DirectPayload" TO TEMP-CODE
+    IF VS-COUNT >= 2 OR (VS-COUNT = 1 AND FOUND-FLAG = 1)
+        IF VS-COUNT >= 4 AND VS-ALL-SAME = 1
+            MOVE "unicode.security.C.variation-selector-payload.RepeatedBase" TO TEMP-CODE
         ELSE
-            MOVE "unicode.security.C.variation-selector-payload.IllegalTarget" TO TEMP-CODE
+            IF VS-NIBBLE-COUNT >= 2
+                MOVE "unicode.security.C.variation-selector-payload.DirectPayload" TO TEMP-CODE
+            ELSE
+                MOVE "unicode.security.C.variation-selector-payload.IllegalTarget" TO TEMP-CODE
+            END-IF
         END-IF
         PERFORM ADD-VS-POS-FINDING
     END-IF.
@@ -1453,12 +1509,15 @@ DETECT-ZERO-WIDTH.
 *> are all sanctioned raises nothing: a Devanagari conjunct and a Persian word
 *> boundary are ordinary text, and an emoji family carries two joiners that
 *> would otherwise read as a binary payload.
-    MOVE 0 TO ZW-COUNT NNBSP-COUNT ANNO-COUNT WJ-COUNT
+    MOVE 0 TO ZW-COUNT NNBSP-COUNT ANNO-COUNT WJ-COUNT ZWJ-ZWSP-COUNT
     MOVE 0 TO ZW-SANCTIONED-COUNT ZW-SUSPICIOUS-COUNT
     PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
         MOVE CP(IDX) TO LOOKUP-CP
         MOVE 0 TO TABLE-FLAG
         PERFORM IS-DEFAULT-IGNORABLE
+        IF CP(IDX) = 8203 OR CP(IDX) = 8205
+            ADD 1 TO ZWJ-ZWSP-COUNT
+        END-IF
         IF CP(IDX) = 8203 OR CP(IDX) = 8205 OR (TABLE-FLAG = 1 AND NOT ((CP(IDX) >= 65024 AND CP(IDX) <= 65039) OR (CP(IDX) >= 917760 AND CP(IDX) <= 917999) OR (CP(IDX) >= 917504 AND CP(IDX) <= 917631) OR (CP(IDX) >= 8234 AND CP(IDX) <= 8238) OR (CP(IDX) >= 8294 AND CP(IDX) <= 8297)))
             ADD 1 TO ZW-COUNT
             MOVE IDX TO JOIN-IDX
@@ -1494,14 +1553,16 @@ DETECT-ZERO-WIDTH.
                 MOVE "unicode.security.C.zero-width-payload.AiWatermarkNNBSP" TO TEMP-CODE
                 PERFORM ADD-ZERO-WIDTH-POS-FINDING
             ELSE
-                IF ZW-COUNT >= 2
+*>              The binary alphabet is ZWSP and ZWJ alone (Lean
+*>              binaryPayload zwspCount zwjCount); a ZWNJ or a BOM beside one
+*>              ZWSP is the bare fallback, which fires for any suspicious
+*>              zero-width the higher rungs did not claim.
+                IF ZWJ-ZWSP-COUNT >= 2
                     MOVE "unicode.security.C.zero-width-payload.BinaryPayload" TO TEMP-CODE
                     PERFORM ADD-ZERO-WIDTH-POS-FINDING
                 ELSE
-                    IF ZW-COUNT = 1 OR NNBSP-COUNT = 1
-                        MOVE "unicode.security.C.zero-width-payload.BareZeroWidth" TO TEMP-CODE
-                        PERFORM ADD-ZERO-WIDTH-POS-FINDING
-                    END-IF
+                    MOVE "unicode.security.C.zero-width-payload.BareZeroWidth" TO TEMP-CODE
+                    PERFORM ADD-ZERO-WIDTH-POS-FINDING
                 END-IF
             END-IF
         END-IF
@@ -1522,54 +1583,82 @@ DETECT-SURROGATE-REASSEMBLY.
     END-IF.
 
 FIRST-INVALID-BYTESTREAM.
+*> The reference utf8_decode_step state machine, byte for byte. A start byte
+*> below C2 or at F5 and above is InvalidStartByte; a continuation outside
+*> 80-BF is InvalidContinuation; a completed sequence below its length's
+*> minimum is Overlong (localised at the start byte), a surrogate is Cesu8, a
+*> scalar above 10FFFF is CodepointBeyondMax; a sequence still open at the
+*> end is Truncated, localised at the byte count. The first fault decides.
+    MOVE 0 TO U8-REMAINING U8-ACCUM U8-MIN-CP U8-SEQ-START FOUND-FLAG
     MOVE 1 TO IDX
-    PERFORM UNTIL IDX > CP-COUNT
+    PERFORM UNTIL IDX > CP-COUNT OR FOUND-FLAG = 1
         MOVE CP(IDX) TO BYTE-1
-        IF BYTE-1 < 128
-            ADD 1 TO IDX
-        ELSE
-            IF BYTE-1 < 194
-                MOVE "unicode.security.C.surrogate-reassembly.InvalidStartByte" TO TEMP-CODE
-                PERFORM ADD-ALL-POS-FINDING
-                COMPUTE IDX = CP-COUNT + 1
-            ELSE
-                IF BYTE-1 < 224
-                    IF IDX + 1 > CP-COUNT
-                        MOVE "unicode.security.C.surrogate-reassembly.Truncated" TO TEMP-CODE
-                        PERFORM ADD-ALL-POS-FINDING
-                        COMPUTE IDX = CP-COUNT + 1
+        IF U8-REMAINING = 0
+            MOVE IDX TO U8-SEQ-START
+            IF BYTE-1 >= 128
+                IF BYTE-1 < 194 OR BYTE-1 >= 245
+                    MOVE "unicode.security.C.surrogate-reassembly.InvalidStartByte" TO TEMP-CODE
+                    COMPUTE ONE-POS = IDX - 1
+                    PERFORM ADD-ONE-POS-FINDING
+                    MOVE 1 TO FOUND-FLAG
+                ELSE
+                    IF BYTE-1 < 224
+                        MOVE 1 TO U8-REMAINING
+                        COMPUTE U8-ACCUM = BYTE-1 - 192
+                        MOVE 128 TO U8-MIN-CP
                     ELSE
-                        MOVE CP(IDX + 1) TO BYTE-2
-                        IF BYTE-2 < 128 OR BYTE-2 > 191
-                            MOVE "unicode.security.C.surrogate-reassembly.InvalidContinuation" TO TEMP-CODE
-                            PERFORM ADD-ALL-POS-FINDING
-                            COMPUTE IDX = CP-COUNT + 1
+                        IF BYTE-1 < 240
+                            MOVE 2 TO U8-REMAINING
+                            COMPUTE U8-ACCUM = BYTE-1 - 224
+                            MOVE 2048 TO U8-MIN-CP
                         ELSE
-                            ADD 2 TO IDX
+                            MOVE 3 TO U8-REMAINING
+                            COMPUTE U8-ACCUM = BYTE-1 - 240
+                            MOVE 65536 TO U8-MIN-CP
                         END-IF
                     END-IF
-                ELSE
-                    IF BYTE-1 = 224 AND IDX + 2 <= CP-COUNT AND CP(IDX + 1) = 128
+                END-IF
+            END-IF
+        ELSE
+            IF BYTE-1 < 128 OR BYTE-1 >= 192
+                MOVE "unicode.security.C.surrogate-reassembly.InvalidContinuation" TO TEMP-CODE
+                COMPUTE ONE-POS = IDX - 1
+                PERFORM ADD-ONE-POS-FINDING
+                MOVE 1 TO FOUND-FLAG
+            ELSE
+                COMPUTE U8-ACCUM = U8-ACCUM * 64 + (BYTE-1 - 128)
+                SUBTRACT 1 FROM U8-REMAINING
+                IF U8-REMAINING = 0
+                    IF U8-ACCUM < U8-MIN-CP
                         MOVE "unicode.security.C.surrogate-reassembly.Overlong" TO TEMP-CODE
-                        PERFORM ADD-ALL-POS-FINDING
-                        COMPUTE IDX = CP-COUNT + 1
+                        COMPUTE ONE-POS = U8-SEQ-START - 1
+                        PERFORM ADD-ONE-POS-FINDING
+                        MOVE 1 TO FOUND-FLAG
                     ELSE
-                        IF BYTE-1 = 237 AND IDX + 2 <= CP-COUNT AND CP(IDX + 1) >= 160
+                        IF U8-ACCUM >= 55296 AND U8-ACCUM <= 57343
                             MOVE "unicode.security.C.surrogate-reassembly.Cesu8" TO TEMP-CODE
-                            PERFORM ADD-ALL-POS-FINDING
-                            COMPUTE IDX = CP-COUNT + 1
+                            COMPUTE ONE-POS = IDX - 1
+                            PERFORM ADD-ONE-POS-FINDING
+                            MOVE 1 TO FOUND-FLAG
                         ELSE
-                            IF BYTE-1 < 240
-                                ADD 3 TO IDX
-                            ELSE
-                                ADD 4 TO IDX
+                            IF U8-ACCUM > 1114111
+                                MOVE "unicode.security.C.surrogate-reassembly.CodepointBeyondMax" TO TEMP-CODE
+                                COMPUTE ONE-POS = IDX - 1
+                                PERFORM ADD-ONE-POS-FINDING
+                                MOVE 1 TO FOUND-FLAG
                             END-IF
                         END-IF
                     END-IF
                 END-IF
             END-IF
         END-IF
-    END-PERFORM.
+        ADD 1 TO IDX
+    END-PERFORM
+    IF FOUND-FLAG = 0 AND U8-REMAINING > 0
+        MOVE "unicode.security.C.surrogate-reassembly.Truncated" TO TEMP-CODE
+        MOVE CP-COUNT TO ONE-POS
+        PERFORM ADD-ONE-POS-FINDING
+    END-IF.
 
 DETECT-BIDI.
     MOVE 0 TO EMB-DEPTH ISO-DEPTH ORPHAN-COUNT MAX-DEPTH
@@ -1602,8 +1691,10 @@ DETECT-BIDI.
         END-IF
     END-PERFORM
     IF MAX-DEPTH > 125
+*>      A whole-string verdict: the stack of stacks is the problem, not any
+*>      one control, so the Lean localises nothing (depthExceeded => []).
         MOVE "unicode.security.C.bidi-control-balance.DepthExceeded" TO TEMP-CODE
-        PERFORM ADD-BIDI-POS-FINDING
+        PERFORM ADD-NO-POS-FINDING
     ELSE
         IF ORPHAN-COUNT > 0
             MOVE "unicode.security.C.bidi-control-balance.OrphanPop" TO TEMP-CODE
@@ -1622,25 +1713,17 @@ DETECT-BIDI.
     END-IF.
 
 DETECT-NONCHAR.
-    PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
-        IF (CP(IDX) >= 64976 AND CP(IDX) <= 65007) OR FUNCTION MOD(CP(IDX), 65536) = 65534 OR FUNCTION MOD(CP(IDX), 65536) = 65535
-            MOVE "unicode.security.C.noncharacter-control.Noncharacter" TO TEMP-CODE
-            PERFORM ADD-ALL-POS-FINDING
-            MOVE CP-COUNT TO IDX
-        ELSE
-            IF (CP(IDX) <= 31 AND CP(IDX) NOT = 9 AND CP(IDX) NOT = 10 AND CP(IDX) NOT = 13) OR CP(IDX) = 127
-                MOVE "unicode.security.C.noncharacter-control.C0Control" TO TEMP-CODE
-                PERFORM ADD-ALL-POS-FINDING
-                MOVE CP-COUNT TO IDX
-            ELSE
-                IF CP(IDX) >= 128 AND CP(IDX) <= 159
-                    MOVE "unicode.security.C.noncharacter-control.C1Control" TO TEMP-CODE
-                    PERFORM ADD-ALL-POS-FINDING
-                    MOVE CP-COUNT TO IDX
-                END-IF
-            END-IF
-        END-IF
-    END-PERFORM.
+*> Three independent classes, each reported over its own positions when
+*> present, in the reference's order.
+    MOVE "unicode.security.C.noncharacter-control.Noncharacter" TO TEMP-CODE
+    MOVE 1 TO NC-MODE
+    PERFORM ADD-NONCHAR-CLASS-FINDING
+    MOVE "unicode.security.C.noncharacter-control.C0Control" TO TEMP-CODE
+    MOVE 2 TO NC-MODE
+    PERFORM ADD-NONCHAR-CLASS-FINDING
+    MOVE "unicode.security.C.noncharacter-control.C1Control" TO TEMP-CODE
+    MOVE 3 TO NC-MODE
+    PERFORM ADD-NONCHAR-CLASS-FINDING.
 
 DETECT-HOMOGLYPH.
 *> The homoglyph ladder at the default context: one identifier field, not
@@ -1813,7 +1896,10 @@ DETECT-RTL.
     PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
         IF CP(IDX) = 8234 OR CP(IDX) = 8235 OR CP(IDX) = 8237 OR CP(IDX) = 8238 OR CP(IDX) = 8236 OR CP(IDX) = 8294 OR CP(IDX) = 8295 OR CP(IDX) = 8296 OR CP(IDX) = 8297
             MOVE "unicode.security.D.rtl-injection.BidiControlInLTRField" TO TEMP-CODE
-            PERFORM ADD-BIDI-POS-FINDING
+*>          The Lean detect localises the first control alone
+*>          (RtlInjection: hazard (.bidiControlInLTRField pos cp) [pos]).
+            COMPUTE ONE-POS = IDX - 1
+            PERFORM ADD-ONE-POS-FINDING
             MOVE 1 TO FOUND-FLAG
             MOVE CP-COUNT TO IDX
         ELSE
@@ -1868,10 +1954,15 @@ DETECT-RTL.
                 MOVE "unicode.security.D.rtl-injection.StrongRTLInLTR" TO TEMP-CODE
             END-IF
         END-IF
-*>      All three sub-threats localise the first strong right-to-left
-*>      codepoint, not the whole string. The span carries no more information
-*>      than its head: the finding says where the direction turns.
-        COMPUTE ONE-POS = FIRST-RTL - 1
+*>      Each sub-threat localises one codepoint, not the whole string:
+*>      FieldTakeover and StrongRTLInLTR the first strong right-to-left
+*>      codepoint, MixedOverflow the start of the longest right-to-left run
+*>      (the reference phase3 reports run_start).
+        IF FIRST-STRONG-RTL-FLAG = 0 AND RTL-BEST >= 4
+            MOVE RTL-BEST-START TO ONE-POS
+        ELSE
+            COMPUTE ONE-POS = FIRST-RTL - 1
+        END-IF
         PERFORM ADD-ONE-POS-FINDING
     END-IF.
 
@@ -1884,40 +1975,53 @@ DETECT-CONFUSABLE-BIDI.
 *> written.
     PERFORM COMPUTE-PURPOSELESS
     MOVE 0 TO HAS-CONFUSABLE HAS-OVERRIDE HAS-ISOLATE
+    MOVE 0 TO CBC-CONF-POS CBC-OVR-POS CBC-ISO-POS
     PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
         MOVE CP(IDX) TO LOOKUP-CP
         MOVE 0 TO TABLE-FLAG
         PERFORM IS-CONFUSABLE-SOURCE
-        IF TABLE-FLAG = 1
+        IF TABLE-FLAG = 1 AND HAS-CONFUSABLE = 0
             MOVE 1 TO HAS-CONFUSABLE
+            COMPUTE CBC-CONF-POS = IDX - 1
         END-IF
         IF BP-MARK(IDX) = 1
-            IF CP(IDX) = 8234 OR CP(IDX) = 8235 OR CP(IDX) = 8237 OR CP(IDX) = 8238 OR CP(IDX) = 8236
+            IF (CP(IDX) = 8234 OR CP(IDX) = 8235 OR CP(IDX) = 8237 OR CP(IDX) = 8238 OR CP(IDX) = 8236) AND HAS-OVERRIDE = 0
                 MOVE 1 TO HAS-OVERRIDE
+                COMPUTE CBC-OVR-POS = IDX - 1
             END-IF
-            IF CP(IDX) = 8294 OR CP(IDX) = 8295 OR CP(IDX) = 8296 OR CP(IDX) = 8297
+            IF (CP(IDX) = 8294 OR CP(IDX) = 8295 OR CP(IDX) = 8296 OR CP(IDX) = 8297) AND HAS-ISOLATE = 0
                 MOVE 1 TO HAS-ISOLATE
+                COMPUTE CBC-ISO-POS = IDX - 1
             END-IF
         END-IF
     END-PERFORM
+*>  The pair the Lean localises: the first confusable and the first purposeless
+*>  control of the class that fired (firstConfusablePos, firstOverridePos /
+*>  firstIsolatePos), not the whole input.
+    MOVE CBC-CONF-POS TO POS-A
     IF HAS-CONFUSABLE = 1 AND HAS-OVERRIDE = 1
         MOVE "unicode.security.X.confusable-bidi-compound.ConfusableInOverride" TO TEMP-CODE
-        PERFORM ADD-ALL-POS-FINDING
+        MOVE CBC-OVR-POS TO POS-B
+        PERFORM ADD-TWO-POS-FINDING
     ELSE
         IF HAS-CONFUSABLE = 1 AND HAS-ISOLATE = 1
             MOVE "unicode.security.X.confusable-bidi-compound.ConfusableInIsolate" TO TEMP-CODE
-            PERFORM ADD-ALL-POS-FINDING
+            MOVE CBC-ISO-POS TO POS-B
+            PERFORM ADD-TWO-POS-FINDING
         END-IF
     END-IF.
 
 DETECT-COVERT-DISPLAY.
     MOVE 0 TO HAS-BIDI HAS-TAG HAS-BAD-VS
+    MOVE 0 TO CDC-BIDI-POS CDC-VS-POS CDC-TAG-POS
     PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
-        IF CP(IDX) = 8234 OR CP(IDX) = 8235 OR CP(IDX) = 8237 OR CP(IDX) = 8238 OR CP(IDX) = 8236 OR CP(IDX) = 8294 OR CP(IDX) = 8295 OR CP(IDX) = 8296 OR CP(IDX) = 8297
+        IF (CP(IDX) = 8234 OR CP(IDX) = 8235 OR CP(IDX) = 8237 OR CP(IDX) = 8238 OR CP(IDX) = 8236 OR CP(IDX) = 8294 OR CP(IDX) = 8295 OR CP(IDX) = 8296 OR CP(IDX) = 8297) AND HAS-BIDI = 0
             MOVE 1 TO HAS-BIDI
+            COMPUTE CDC-BIDI-POS = IDX - 1
         END-IF
-        IF CP(IDX) >= 917504 AND CP(IDX) <= 917631
+        IF CP(IDX) >= 917504 AND CP(IDX) <= 917631 AND HAS-TAG = 0
             MOVE 1 TO HAS-TAG
+            COMPUTE CDC-TAG-POS = IDX - 1
         END-IF
         IF (CP(IDX) >= 65024 AND CP(IDX) <= 65039) OR (CP(IDX) >= 917760 AND CP(IDX) <= 917999) OR (CP(IDX) >= 6155 AND CP(IDX) <= 6157)
             MOVE 0 TO TABLE-FLAG
@@ -1926,18 +2030,24 @@ DETECT-COVERT-DISPLAY.
                 MOVE CP(IDX) TO PAIR-VS
                 PERFORM IS-LEGAL-VARIATION
             END-IF
-            IF TABLE-FLAG = 0
+            IF TABLE-FLAG = 0 AND HAS-BAD-VS = 0
                 MOVE 1 TO HAS-BAD-VS
+                COMPUTE CDC-VS-POS = IDX - 1
             END-IF
         END-IF
     END-PERFORM
+*>  The pair the reference localises: the first bidi control and the first
+*>  suspicious variation selector, else the first tag character.
+    MOVE CDC-BIDI-POS TO POS-A
     IF HAS-BIDI = 1 AND HAS-BAD-VS = 1
         MOVE "unicode.security.X.covert-display-compound.BidiPlusUnregisteredVs" TO TEMP-CODE
-        PERFORM ADD-ALL-POS-FINDING
+        MOVE CDC-VS-POS TO POS-B
+        PERFORM ADD-TWO-POS-FINDING
     ELSE
         IF HAS-BIDI = 1 AND HAS-TAG = 1
             MOVE "unicode.security.X.covert-display-compound.BidiPlusTagBlock" TO TEMP-CODE
-            PERFORM ADD-ALL-POS-FINDING
+            MOVE CDC-TAG-POS TO POS-B
+            PERFORM ADD-TWO-POS-FINDING
         END-IF
     END-IF.
 
@@ -4086,6 +4196,59 @@ ADD-NO-POS-FINDING.
     MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
     MOVE SPACES TO FINDING-POS(FINDING-COUNT).
 
+ADD-TWO-POS-FINDING.
+*> A finding that localises exactly two positions, POS-A then POS-B. The
+*> compound detectors report the pair they judge, in the reference's order:
+*> ConfusableBidiCompound the confusable then the control
+*> (Lean: hazard (.confusableInOverride confusablePos bidiPos)
+*> [confusablePos, bidiPos]); CovertDisplayCompound the control then the
+*> payload character.
+    ADD 1 TO FINDING-COUNT
+    MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
+    MOVE SPACES TO POS-TEXT
+    MOVE POS-A TO POS-NUM
+    STRING FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
+    MOVE POS-B TO POS-NUM
+    STRING FUNCTION TRIM(POS-TEXT) DELIMITED BY SIZE "," DELIMITED BY SIZE FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
+    MOVE POS-TEXT TO FINDING-POS(FINDING-COUNT).
+
+ADD-NONCHAR-CLASS-FINDING.
+*> The positions of one noncharacter-control class, chosen by NC-MODE: 1 the
+*> noncharacters (U+FDD0..U+FDEF and the two trailing codepoints of every
+*> plane), 2 the C0 controls less TAB, LF, CR plus DEL, 3 the C1 controls. The
+*> reference reports each class that is present as its own finding over that
+*> class's positions alone (Lean NoncharacterControl: three positionsWhere
+*> scans), so a class absent from the input adds nothing.
+    MOVE SPACES TO POS-TEXT
+    MOVE 0 TO NC-HIT
+    PERFORM VARYING JDX FROM 1 BY 1 UNTIL JDX > CP-COUNT
+        MOVE 0 TO TABLE-FLAG
+        IF NC-MODE = 1 AND ((CP(JDX) >= 64976 AND CP(JDX) <= 65007) OR FUNCTION MOD(CP(JDX), 65536) = 65534 OR FUNCTION MOD(CP(JDX), 65536) = 65535)
+            MOVE 1 TO TABLE-FLAG
+        END-IF
+        IF NC-MODE = 2 AND ((CP(JDX) <= 31 AND CP(JDX) NOT = 9 AND CP(JDX) NOT = 10 AND CP(JDX) NOT = 13) OR CP(JDX) = 127)
+            MOVE 1 TO TABLE-FLAG
+        END-IF
+        IF NC-MODE = 3 AND CP(JDX) >= 128 AND CP(JDX) <= 159
+            MOVE 1 TO TABLE-FLAG
+        END-IF
+        IF TABLE-FLAG = 1
+            MOVE 1 TO NC-HIT
+            COMPUTE POS-IDX = JDX - 1
+            MOVE POS-IDX TO POS-NUM
+            IF FUNCTION LENGTH(FUNCTION TRIM(POS-TEXT)) = 0
+                STRING FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
+            ELSE
+                STRING FUNCTION TRIM(POS-TEXT) DELIMITED BY SIZE "," DELIMITED BY SIZE FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
+            END-IF
+        END-IF
+    END-PERFORM
+    IF NC-HIT = 1
+        ADD 1 TO FINDING-COUNT
+        MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
+        MOVE POS-TEXT TO FINDING-POS(FINDING-COUNT)
+    END-IF.
+
 SCAN-ADMISSIBILITY-FORM-DRIFT.
 *> Cross-layer identifier-admissibility x form-drift detector. Byte-faithful
 *> transliteration of the verified Rust reference detect. The whole-string
@@ -4845,7 +5008,16 @@ BUILD-SCRIPT-UNION.
     MOVE 0 TO SCRIPT-UNION-COUNT
     PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
         MOVE CP(IDX) TO LOOKUP-CP
-        PERFORM RESOLVE-SCRIPTS
+*>      Common and Inherited codepoints are outside the union as they are
+*>      outside the intersection (the reference string_script_union skips
+*>      them), so a space or a no-break space beside Latin is not a second
+*>      script.
+        PERFORM IS-IGNORED-FOR-INTERSECTION
+        IF IGNORED-SCRIPT-FLAG = 1
+            MOVE SPACES TO SCRIPT-SET-TEXT
+        ELSE
+            PERFORM RESOLVE-SCRIPTS
+        END-IF
         IF SCRIPT-SET-TEXT NOT = SPACES
             MOVE 1 TO SCRIPT-TOK-IDX
             PERFORM UNTIL SCRIPT-TOK-IDX > 128

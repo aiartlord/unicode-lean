@@ -107,4 +107,24 @@ final class BidiControlBalance
         }
         return $v;
     }
+
+    /**
+     * The positions the classification localises, as the Lean
+     * `Classification.positions` reads them: an orphan pop is per stray popper,
+     * depth exceeded is a whole-string verdict and localises nothing, and an
+     * unbalanced embedding or isolate implicates every bidi control because one
+     * of them is missing its partner. `bidiPositions` stays the raw census.
+     *
+     * @return list<int>
+     */
+    public static function classifyPositions(BidiControlVerdict $v): array
+    {
+        if ($v->sub === null || $v->sub->tag === 'DepthExceeded') {
+            return [];
+        }
+        if ($v->sub->tag === 'OrphanPop') {
+            return $v->sub->positions;
+        }
+        return $v->bidiPositions;
+    }
 }

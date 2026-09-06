@@ -160,6 +160,21 @@ inline Verdict detect(std::span<const std::uint32_t> input) {
     return v;
 }
 
+// The positions the classification localises, as the Lean
+// `Classification.positions` reads them: an orphan pop is per stray popper,
+// depth exceeded is a whole-string verdict and localises nothing, and an
+// unbalanced embedding or isolate implicates every bidi control because one of
+// them is missing its partner. `bidi_positions` stays the raw control census.
+inline std::vector<std::size_t> classify_positions(const Verdict& v) {
+    if (!v.sub || std::holds_alternative<DepthExceeded>(*v.sub)) {
+        return {};
+    }
+    if (const auto* orphan = std::get_if<OrphanPop>(&*v.sub)) {
+        return orphan->positions;
+    }
+    return v.bidi_positions;
+}
+
 }  // namespace unicode_cpp::security::bidi_control_balance
 
 #endif  // UNICODE_CPP_SECURITY_BIDI_CONTROL_BALANCE_HPP

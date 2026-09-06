@@ -7,8 +7,14 @@ module UnicodeRuby
       # (CVE-2021-42574 / CVE-2021-42694).  Walks the input with per-type
       # stacks and produces four independent sub-threats.
       module BidiControlBalance
+        # `positions` is what the classification localises, as the Lean
+        # `Classification.positions` reads it: an orphan pop is per stray
+        # popper, depth exceeded is a whole-string verdict and localises
+        # nothing, and an unbalanced embedding or isolate implicates every bidi
+        # control because one of them is missing its partner. `bidi_positions`
+        # stays the raw control census.
         Verdict = Struct.new(
-          :kind, :sub, :bidi_positions,
+          :kind, :sub, :positions, :bidi_positions,
           :emb_open_count, :emb_pop_count, :iso_open_count, :iso_pop_count,
           :max_depth
         )
@@ -41,7 +47,7 @@ module UnicodeRuby
         end
 
         def detect(input)
-          v = Verdict.new(Calculus::ClassificationKind::CLEAR, nil, [], 0, 0, 0, 0, 0)
+          v = Verdict.new(Calculus::ClassificationKind::CLEAR, nil, [], [], 0, 0, 0, 0, 0)
           emb_stack = 0
           iso_stack = 0
           orphans = []
@@ -87,16 +93,19 @@ module UnicodeRuby
           unless orphans.empty?
             v.kind = Calculus::ClassificationKind::HAZARD
             v.sub = "OrphanPop"
+            v.positions = orphans
             return v
           end
           if emb_stack > 0
             v.kind = Calculus::ClassificationKind::HAZARD
             v.sub = "UnbalancedEmbedding"
+            v.positions = v.bidi_positions.dup
             return v
           end
           if iso_stack > 0
             v.kind = Calculus::ClassificationKind::HAZARD
             v.sub = "UnbalancedIsolate"
+            v.positions = v.bidi_positions.dup
             return v
           end
           v

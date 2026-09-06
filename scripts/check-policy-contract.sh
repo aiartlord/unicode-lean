@@ -429,3 +429,12 @@ if [[ -x ports/rust/target/debug/unicode-security ]]; then
 else
   echo "skipped: differential corpus reference check needs ports/rust/target/debug/unicode-security"
 fi
+
+# A green replay is evidence only about the rungs the fixtures reach. The reach
+# gate requires every registered reason code (fixtures/security/reason_codes.json)
+# to be fired by the contract and the corpus several times, under several
+# profiles, with positions of the shape the spec gives that rung -- a strict
+# subset at a non-zero offset where the rung localises -- and fails on a code
+# the fixtures emit but the registry does not list. Runs without the reference
+# binary: it reads only the committed fixtures.
+python3 scripts/check-fixture-coverage.py

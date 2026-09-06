@@ -18,7 +18,15 @@ const scripts_raw = @embedFile("data/Scripts.txt");
 const script_extensions_raw = @embedFile("data/ScriptExtensions.txt");
 const property_value_aliases_raw = @embedFile("data/PropertyValueAliases.txt");
 const derived_joining_type_raw = @embedFile("data/DerivedJoiningType.txt");
-const MaxSkeletonLen = 128;
+// Working width of every bounded buffer: skeletons, NFD/NFKD/NFC/NFKC
+// expansions, finding positions. A buffer that overflows reads as null, and a
+// null expansion is judged as no hazard, so the width has to hold the largest
+// expansion of any input the port is asked to decide. The widest compatibility
+// decomposition is 18 codepoints (U+FDFA), so 1024 covers every input up to 56
+// codepoints at that worst case and every fixture in the shared corpus (32
+// codepoints, 16 of U+FDFB at 8 each expands to 129, which the former width
+// of 128 could not hold and so reported clear).
+const MaxSkeletonLen = 1024;
 
 pub const Action = enum {
     allow,

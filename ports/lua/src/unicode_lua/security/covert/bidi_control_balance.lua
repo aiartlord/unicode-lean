@@ -110,4 +110,19 @@ function M.detect(input)
   return v
 end
 
+-- The positions the classification localises, as the Lean
+-- Classification.positions reads them: an orphan pop is per stray popper, depth
+-- exceeded is a whole-string verdict and localises nothing, and an unbalanced
+-- embedding or isolate implicates every bidi control because one of them is
+-- missing its partner. bidi_positions stays the raw control census.
+function M.classify_positions(v)
+  if v.sub == nil or v.sub.tag == "DepthExceeded" then
+    return {}
+  end
+  if v.sub.tag == "OrphanPop" then
+    return v.sub.positions
+  end
+  return v.bidi_positions
+end
+
 return M

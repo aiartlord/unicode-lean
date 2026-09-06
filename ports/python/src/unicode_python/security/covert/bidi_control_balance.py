@@ -103,6 +103,19 @@ class Verdict:
     max_depth: int = 0
 
 
+def classify_positions(v: Verdict) -> list[int]:
+    """The positions the classification localises, as the Lean
+    ``Classification.positions`` reads them: an orphan pop is per stray popper,
+    depth exceeded is a whole-string verdict and localises nothing, and an
+    unbalanced embedding or isolate implicates every bidi control because one of
+    them is missing its partner. ``bidi_positions`` stays the raw census."""
+    if v.sub is None or isinstance(v.sub, DepthExceeded):
+        return []
+    if isinstance(v.sub, OrphanPop):
+        return list(v.sub.positions)
+    return list(v.bidi_positions)
+
+
 def detect(input_cps: list[int]) -> Verdict:
     v = Verdict(kind=ClassificationKind.CLEAR)
     emb_stack = 0

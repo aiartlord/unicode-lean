@@ -418,7 +418,7 @@ function M.scan(profile, mode, input)
   end
 
   local b = bidi.detect(input)
-  push_finding(findings, Family.BidiControlBalance, b.kind, b.sub, b.bidi_positions)
+  push_finding(findings, Family.BidiControlBalance, b.kind, b.sub, bidi.classify_positions(b))
 
   push_positional_hazard(findings, Family.NoncharacterControl, "Noncharacter", positions_where(input, noncharacters.is_noncharacter))
   push_positional_hazard(findings, Family.NoncharacterControl, "C0Control", positions_where(input, c0_control))

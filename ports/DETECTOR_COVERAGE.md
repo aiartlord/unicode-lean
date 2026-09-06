@@ -304,20 +304,55 @@ ASCII, precomposed Hangul, and a Halfwidth-then-Fullwidth input, the last of
 which must report position 1 rather than 0, which is what distinguishes a correct
 sub-threat priority from one that merely fires. In cpp this caught a real compile
 error the green suite had no way to reach. Both ports now consume
-`fixtures/security/differential_corpus.json`, which carries twenty
-width-class-confusion findings across its 250 cases, so the detector is reached
+`fixtures/security/differential_corpus.json`, which carries 333
+width-class-confusion findings across its 5000 cases, so the detector is reached
 by the suite in every port rather than by hand in two of them.
 
-What the corpus reaches is worth stating precisely, because a green corpus is
-easy to read as broader evidence than it is. Its inputs come from a seeded
-stream, and that stream produces no tag character and no bidi control, so
-tag-block-payload and bidi-control-balance draw zero findings across all 250
-cases. Those two families rest entirely on
-`fixtures/security/detectors/tag_block_payload.json` and
-`bidi_control_balance.json`, which pin every rung of both ladders with
-expectations taken from the reference binary. A sub-threat with no case in those
-files is unverified however many suites are green, because a port that hardcodes
-one sub-threat string passes every test that never asks for another.
+What the corpus reaches is no longer a matter of reading the stream and
+hoping. Its inputs come from a seeded stream of twenty input classes: ten of
+random text shapes, four shaped for the detectors' newer rules (bidi controls
+beside Hebrew, Arabic, Latin and code syntax; Latin identifier tokens carrying
+dotless i, long s or script g; running text whose tokens mix Latin, Cyrillic
+and Greek; a per-position grab-bag), and six that wrap one of 97 seeds -- every
+detector-fixture input that fires a rung, plus thirteen for rungs the fixtures
+leave thin -- in random context at a random offset, one time in four bare.
+Reach is then proven rather than described: `scripts/check-fixture-coverage.py`
+reads `fixtures/security/reason_codes.json`, the registry of every reason code
+the default scan can emit (84 codes over 24 families, one sub-threat per Lean
+`Classification.tag`), and fails the shared contract check unless every code is
+fired by the contract and the corpus at least three times, under at least two
+profiles, with positions of the shape the spec gives that rung: a strict,
+nonempty subset of the input at a non-zero offset where the rung localises,
+empty where it localises nothing, the whole span only where its firing
+condition covers the whole input. A code the fixtures emit that the registry
+does not list fails the gate, so a new rung cannot appear in the reference
+without being registered and reached. The registry also names the rungs the
+reference cannot emit under any input, with the reason, so an unreachable rung
+is a recorded fact and not a silent hole.
+
+Whole-span and leading-only firings are the shapes that let a port report the
+wrong thing and stay green, and four of the divergences found in one day were
+exactly that: the reference and the ports transliterated from it reported the
+whole input for AsciiConfusable over identifier tokens, for an OrphanPop beside
+other controls, for the confusable-plus-control pair of the compound detectors,
+and for the noncharacter classes, while the Lean and the ports written from the
+Lean reported the subset. None of the fixtures before this gate asked for a
+subset, so every suite was green.
+
+Agreement with the reference is still not agreement with the spec. The
+reference is one port, and it can drift from the Lean in a shape the reach gate
+cannot see: it localises RestrictionLow and TargetMatch over the whole input
+where the Lean localises nothing, reports the whole input for the mixed-script
+rungs where the Lean reports the foreign script's positions, and has no branch
+for the Lean's EmbeddedAfterRegistered rung. Sixteen ports agreeing with it on
+5000 cases is sixteen ports agreeing with that drift.
+`Unicode/Conformance/Security/CorpusDifferential.lean` closes that gap: it
+replays the contract and the corpus through `Unicode.Security.Policy.scan` and
+compares the Lean verdict with the recorded one, field by field. Its mismatch
+report is the list of places where the recorded verdicts, and therefore every
+port, differ from the spec; those are decided on the messageboard tracker
+(spec change with proofs re-run, or reference change with fixtures regenerated
+and every port following), never by editing the recorded verdict to match.
 
 One further detail below full uniformity: cobol's HomoglyphConfusable uses a
 bounded target-skeleton iteration; deepening that bound is a refinement of an

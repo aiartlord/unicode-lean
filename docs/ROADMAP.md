@@ -97,10 +97,14 @@ exhaustively — a port that classifies differently is a routing-dependent bypas
   job in `ci.yml` runs `scripts/test-runtime-ports.sh`, which drives all sixteen
   tiers in the runtime devshell.
 
-  What the corpus does not reach is stated in
-  [`../ports/DETECTOR_COVERAGE.md`](../ports/DETECTOR_COVERAGE.md): its stream
-  produces no tag character and no bidi control, so those two families draw zero
-  findings from it and rest on their own detector fixtures instead.
+  Reach is gated, not described: `scripts/check-fixture-coverage.py` fails the
+  shared contract check unless every reason code in
+  `fixtures/security/reason_codes.json` is fired by the fixtures several times,
+  under several profiles, with spec-shaped positions, and
+  `Unicode/Conformance/Security/CorpusDifferential.lean` replays the fixtures
+  through the Lean `scan` so the recorded verdicts are held to the spec and not
+  only to the reference that recorded them. Details and the divergences found
+  are in [`../ports/DETECTOR_COVERAGE.md`](../ports/DETECTOR_COVERAGE.md).
 
 ## 8. Runtime-data product layout
 

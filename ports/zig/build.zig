@@ -34,10 +34,13 @@ pub fn build(b: *std.Build) void {
         "verdict_contract_json",
         readFixture(b, "testdata/fixtures/security/verdict_contract.json"),
     );
+    // The differential corpus is several megabytes; embedding it as a build
+    // option makes the compiler materialise the whole string literal, so the
+    // test reads it from disk at run time instead and only the path is baked in.
     contract_options.addOption(
         []const u8,
-        "differential_corpus_json",
-        readFixture(b, "testdata/fixtures/security/differential_corpus.json"),
+        "differential_corpus_path",
+        b.pathFromRoot("testdata/fixtures/security/differential_corpus.json"),
     );
     contract_options.addOption(
         []const u8,
@@ -134,9 +137,9 @@ fn readFixture(b: *std.Build, path: []const u8) []const u8 {
         b.graph.io,
         lazy_path.getPath(b),
         b.allocator,
-        // The hand-written contracts are tens of kilobytes; the generated
-        // differential corpus is a few hundred, and every fixture here is
-        // embedded in the test binary as a build option.
+        // The hand-written contracts are tens of kilobytes, and every fixture
+        // here is embedded in the test binary as a build option; the generated
+        // differential corpus is read at run time instead.
         .limited(2 * 1024 * 1024),
     ) catch |err| std.debug.panic("failed to read fixture {s}: {s}", .{ path, @errorName(err) });
 }

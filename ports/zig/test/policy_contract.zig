@@ -198,16 +198,25 @@ fn checkVerdictCases(contract: VerdictContract) !void {
 // reference does on inputs nobody chose, across every profile.
 test "differential corpus" {
     const allocator = std.testing.allocator;
+    // Read at run time: the corpus is several megabytes, and baking it into the
+    // test binary as a build option made the compiler materialise it whole.
+    const data = try std.Io.Dir.cwd().readFileAlloc(
+        std.testing.io,
+        contract_options.differential_corpus_path,
+        allocator,
+        .limited(64 * 1024 * 1024),
+    );
     var parsed = try std.json.parseFromSlice(
         VerdictContract,
         allocator,
-        contract_options.differential_corpus_json,
+        data,
         .{ .ignore_unknown_fields = true },
     );
-    // The arena is released before the outcome propagates, so a failing case
-    // reports the mismatch rather than a leak alongside it.
+    // The arena and the file bytes are released before the outcome propagates,
+    // so a failing case reports the mismatch rather than a leak alongside it.
     const outcome = checkVerdictCases(parsed.value);
     parsed.deinit();
+    allocator.free(data);
     try outcome;
 }
 

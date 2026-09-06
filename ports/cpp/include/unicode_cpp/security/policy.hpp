@@ -994,7 +994,7 @@ scan_with_identity_database(Profile profile, Mode mode,
           ? std::optional<std::string>{bidi_control_balance::sub_threat_tag(
                 *bidi_result.sub)}
           : std::nullopt,
-      bidi_result.bidi_positions);
+      bidi_control_balance::classify_positions(bidi_result));
 
   detail::push_positional_hazard(
       findings, Family::NoncharacterControl, "Noncharacter",

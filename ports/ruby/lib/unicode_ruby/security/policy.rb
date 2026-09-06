@@ -487,7 +487,7 @@ module UnicodeRuby
         end
 
         bidi = Covert::BidiControlBalance.detect(input)
-        push_finding(findings, Family::BIDI_CONTROL_BALANCE, bidi.kind, bidi.sub, bidi.bidi_positions)
+        push_finding(findings, Family::BIDI_CONTROL_BALANCE, bidi.kind, bidi.sub, bidi.positions)
 
         push_positional_hazard(findings, Family::NONCHARACTER_CONTROL, "Noncharacter",
                                positions_where(input) { |cp| Noncharacters.noncharacter?(cp) })

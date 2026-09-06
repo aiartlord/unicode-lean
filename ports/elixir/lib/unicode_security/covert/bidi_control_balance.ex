@@ -102,4 +102,14 @@ defmodule UnicodeSecurity.Covert.BidiControlBalance do
         v
     end
   end
+
+  # The positions the classification localises, as the Lean
+  # `Classification.positions` reads them: an orphan pop is per stray popper,
+  # depth exceeded is a whole-string verdict and localises nothing, and an
+  # unbalanced embedding or isolate implicates every bidi control because one
+  # of them is missing its partner. `bidi_positions` stays the raw census.
+  def classify_positions(%{sub: nil}), do: []
+  def classify_positions(%{sub: %{tag: "DepthExceeded"}}), do: []
+  def classify_positions(%{sub: %{tag: "OrphanPop", positions: positions}}), do: positions
+  def classify_positions(%{bidi_positions: positions}), do: positions
 end

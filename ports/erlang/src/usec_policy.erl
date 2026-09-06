@@ -154,7 +154,7 @@ scan(Profile, Mode, Input) ->
              false -> F3
          end,
     Bidi = usec_detectors:bidi_control_detect(Input),
-    F5 = push_finding(F4, bidi_control_balance, maps:get(kind, Bidi), maps:get(sub, Bidi), maps:get(positions, Bidi)),
+    F5 = push_finding(F4, bidi_control_balance, maps:get(kind, Bidi), maps:get(sub, Bidi), bidi_classify_positions(Bidi)),
     F6 = push_positional(F5, noncharacter_control, <<"Noncharacter">>, positions(Input, fun usec_noncharacters/1)),
     F7 = push_positional(F6, noncharacter_control, <<"C0Control">>, positions(Input, fun c0_control/1)),
     F8 = push_positional(F7, noncharacter_control, <<"C1Control">>, positions(Input, fun c1_control/1)),
@@ -373,6 +373,16 @@ push_classification(Findings, Family, Mod, V) ->
         true -> Findings;
         false -> push_finding(Findings, Family, hazard, Mod:classify_tag(C), Mod:classify_positions(C))
     end.
+
+%% The positions the bidi-control-balance classification localises, as the Lean
+%% Classification.positions reads them: an orphan pop is per stray popper, depth
+%% exceeded is a whole-string verdict and localises nothing, and an unbalanced
+%% embedding or isolate implicates every bidi control because one of them is
+%% missing its partner. The verdict's own positions key stays the raw census.
+bidi_classify_positions(#{sub := none}) -> [];
+bidi_classify_positions(#{sub := #{tag := <<"DepthExceeded">>}}) -> [];
+bidi_classify_positions(#{sub := #{tag := <<"OrphanPop">>, positions := Orphans}}) -> Orphans;
+bidi_classify_positions(#{positions := Positions}) -> Positions.
 
 push_finding(Findings, _Family, clear, _Sub, _Positions) -> Findings;
 push_finding(Findings, Family, Kind, Sub0, Positions) ->

@@ -99,6 +99,24 @@ pub struct Verdict {
     pub max_depth: usize,
 }
 
+impl Verdict {
+    /// The positions the classification localises, as the Lean
+    /// `Classification.positions` reads them: an orphan pop is per stray
+    /// popper, depth exceeded is a whole-string verdict and localises nothing,
+    /// and an unbalanced embedding or isolate implicates every bidi control
+    /// because one of them is missing its partner. `bidi_positions` stays the
+    /// raw control census.
+    pub fn classify_positions(&self) -> Vec<usize> {
+        match &self.sub {
+            None => Vec::new(),
+            Some(SubThreat::DepthExceeded { .. }) => Vec::new(),
+            Some(SubThreat::OrphanPop { positions }) => positions.clone(),
+            Some(SubThreat::UnbalancedEmbedding { .. })
+            | Some(SubThreat::UnbalancedIsolate { .. }) => self.bidi_positions.clone(),
+        }
+    }
+}
+
 pub fn detect(input: &[u32]) -> Verdict {
     let mut v = Verdict {
         kind: ClassificationKind::Clear,

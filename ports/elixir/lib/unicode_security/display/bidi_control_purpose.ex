@@ -67,14 +67,15 @@ defmodule UnicodeSecurity.Display.BidiControlPurpose do
   UAX #9 P2/P3: the paragraph runs right-to-left iff its first strong
   character is right-to-left.
   """
+  # The first strong codepoint decides; `Enum.find` stops at it whichever way
+  # it points (an `Enum.find_value` returning `false` for a left-to-right
+  # letter would keep scanning and let a later Hebrew letter flip the
+  # paragraph).
   def paragraph_rtl?(input) do
-    Enum.find_value(input, false, fn cp ->
-      cond do
-        Ucd.strong_rtl?(cp) -> true
-        Ucd.strong_ltr?(cp) -> false
-        true -> nil
-      end
-    end)
+    case Enum.find(input, fn cp -> Ucd.strong_rtl?(cp) or Ucd.strong_ltr?(cp) end) do
+      nil -> false
+      cp -> Ucd.strong_rtl?(cp)
+    end
   end
 
   # A closed span is purposeful iff its direct content is exactly its own

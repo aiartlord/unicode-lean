@@ -794,12 +794,13 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
     }
 
     let bidi = bidi_control_balance::detect(input);
+    let bidi_positions = bidi.classify_positions();
     push_finding(
         &mut findings,
         Family::BidiControlBalance,
         bidi.kind,
         bidi.sub.as_ref().map(|sub| sub.tag()),
-        bidi.bidi_positions,
+        bidi_positions,
     );
 
     push_positional_hazard(
@@ -831,6 +832,19 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
         running_text: false,
         identifier_token: true,
     };
+    // The positions a homoglyph verdict implicates over the codepoints it was
+    // read on: the non-ASCII positions for the ascii-confusable rung (Lean
+    // `nonAsciiPositions`, theorem `detect_dotless_i_admin_position`), the
+    // whole span for every other rung, nothing when clear.
+    let homoglyph_span = |v: &homoglyph_confusable::Verdict, cps: &[u32]| -> Vec<usize> {
+        match (&v.kind, &v.sub) {
+            (ClassificationKind::Clear, _) => Vec::new(),
+            (_, Some(homoglyph_confusable::SubThreat::AsciiConfusable { .. })) => {
+                homoglyph_confusable::non_ascii_positions(cps)
+            }
+            (_, _) => (0..cps.len()).collect(),
+        }
+    };
     let mut homoglyph_positions: Vec<usize> = Vec::new();
     let homoglyph = if running_text {
         let mut hit: Option<homoglyph_confusable::Verdict> = None;
@@ -838,17 +852,19 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
             let v = homoglyph_confusable::detect_with_context(token_ctx, &token.cps);
             if v.kind != ClassificationKind::Clear {
                 homoglyph_positions =
-                    identifier_tokens::shift_positions(token.start, &(0..token.cps.len()).collect::<Vec<_>>());
+                    identifier_tokens::shift_positions(token.start, &homoglyph_span(&v, &token.cps));
                 hit = Some(v);
                 break;
             }
         }
-        hit.unwrap_or_else(|| homoglyph_confusable::detect_with_context(homoglyph_ctx, input))
+        hit.unwrap_or_else(|| {
+            let v = homoglyph_confusable::detect_with_context(homoglyph_ctx, input);
+            homoglyph_positions = homoglyph_span(&v, input);
+            v
+        })
     } else {
         let v = homoglyph_confusable::detect_with_context(homoglyph_ctx, input);
-        if v.kind != ClassificationKind::Clear {
-            homoglyph_positions = (0..input.len()).collect();
-        }
+        homoglyph_positions = homoglyph_span(&v, input);
         v
     };
     let homoglyph_sub = homoglyph.sub.as_ref().map(|sub| sub.tag());
@@ -861,13 +877,7 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
     // with something else, and whether its script set is admissible -- and a
     // caller filters by family rather than the scan choosing for it.
     {
-        let positions = if homoglyph.kind == ClassificationKind::Clear {
-            Vec::new()
-        } else if homoglyph_positions.is_empty() {
-            (0..input.len()).collect()
-        } else {
-            homoglyph_positions.clone()
-        };
+        let positions = homoglyph_positions.clone();
         push_finding(
             &mut findings,
             Family::HomoglyphConfusable,

@@ -316,7 +316,13 @@ defmodule UnicodeSecurity.Policy do
     bidi = BidiControlBalance.detect(input)
 
     findings =
-      push_finding(findings, :bidi_control_balance, bidi.kind, bidi.sub, bidi.bidi_positions)
+      push_finding(
+        findings,
+        :bidi_control_balance,
+        bidi.kind,
+        bidi.sub,
+        BidiControlBalance.classify_positions(bidi)
+      )
 
     findings =
       push_positional_hazard(

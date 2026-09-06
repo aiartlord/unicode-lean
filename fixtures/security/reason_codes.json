@@ -1,0 +1,137 @@
+{
+  "schema": 1,
+  "contract": "unicode-security-reason-codes-v0",
+  "description": "Every reason code the default scan can emit, one entry per detector family the Lean policy dispatches on plain codepoints (Unicode/Security/Policy.lean, familyTag) with the sub-threat tags of that family's Lean Classification.tag. scripts/check-fixture-coverage.py requires the shared verdict fixtures to reach every code here, and rejects a code emitted by any fixture that is not here. positionless lists the sub-threats whose classification localises nothing; whole_span lists the sub-threats whose firing condition covers the entire input (a tag-only input, a whole-field restriction level), so their positions are always the whole span by construction; unreachable lists sub-threats the reference cannot emit under any input, each with the reason, so the gate fails if one ever appears. Every other code must be reached with a strict, nonempty, non-leading subset of the input's positions. The position shapes recorded here are the reference's; Unicode/Conformance/Security/CorpusDifferential.lean holds the reference to the Lean spec, and the spec differences it reports are decided on the messageboard tracker before this file follows.",
+  "families": {
+    "tag-block-payload": {
+      "layer": "C",
+      "sub_threats": ["BareTagPresent", "DirectAscii", "LanguageTagRevival", "MixedBlock"],
+      "positionless": [],
+      "whole_span": ["BareTagPresent", "DirectAscii"]
+    },
+    "variation-selector-payload": {
+      "layer": "C",
+      "sub_threats": ["DirectPayload", "EmbeddedAfterRegistered", "IllegalTarget", "RepeatedBase"],
+      "positionless": [],
+      "unreachable": {
+        "EmbeddedAfterRegistered": "the Lean pickSubThreat fires it first when a registered variation selector precedes a suspicious one; the reference detect has no such branch (ports/rust/src/security/covert/variation_selector_payload.rs) -- spec divergence pending decision"
+      }
+    },
+    "zero-width-payload": {
+      "layer": "C",
+      "sub_threats": ["AiWatermarkNNBSP", "AnnotationMisuse", "BareZeroWidth", "BinaryPayload", "WordJoinerInjection"],
+      "positionless": []
+    },
+    "surrogate-reassembly": {
+      "layer": "C",
+      "sub_threats": ["Cesu8", "CodepointBeyondMax", "InvalidContinuation", "InvalidStartByte", "Overlong", "Truncated"],
+      "positionless": []
+    },
+    "noncharacter-control": {
+      "layer": "C",
+      "sub_threats": ["C0Control", "C1Control", "Noncharacter"],
+      "positionless": []
+    },
+    "bidi-control-balance": {
+      "layer": "C",
+      "sub_threats": ["DepthExceeded", "OrphanPop", "UnbalancedEmbedding", "UnbalancedIsolate"],
+      "positionless": ["DepthExceeded"]
+    },
+    "homoglyph-confusable": {
+      "layer": "I",
+      "sub_threats": ["AsciiConfusable", "CrossScriptMix", "DecompositionSwap", "MathAlpha", "RestrictionLow", "TargetMatch", "WidthClass"],
+      "positionless": [],
+      "whole_span": ["RestrictionLow"]
+    },
+    "mixed-script-admissibility": {
+      "layer": "I",
+      "sub_threats": ["CjkMix", "LatinCyrillic", "LatinGreek", "RestrictedStatusCp", "ScriptMixOther", "UnrestrictedLevel"],
+      "positionless": [],
+      "whole_span": ["RestrictedStatusCp"],
+      "unreachable": {
+        "CjkMix": "fires only when the union has two scripts, the input is not highly restrictive, and the input is within a CJK covered set; highly restrictive is defined as single-script or within a CJK covered set, so the third condition contradicts the second (Unicode/Security/Identity/MixedScriptAdmissibility.lean detectWithContext, ports/rust/src/security/identity/homoglyph_confusable.rs mixed_script_verdict)",
+        "UnrestrictedLevel": "the reference gates it on an identifier field, where every codepoint outside Identifier_Status=Allowed already fires RestrictedStatusCp and a two-script union already fires the mix rungs, so the Unrestricted level cannot be reached; the Lean does not gate it and reaches it on gateway-header input -- spec divergence pending decision"
+      }
+    },
+    "emoji-zwj-integrity": {
+      "layer": "I",
+      "sub_threats": ["DoubleZWJ", "NonEmojiInjection", "OverLength", "SkinToneOverflow", "UnregisteredSequence"],
+      "positionless": ["OverLength", "SkinToneOverflow"]
+    },
+    "skin-tone-variation-forgery": {
+      "layer": "I",
+      "sub_threats": ["ForcedTextStyle", "InvalidSkinToneTarget", "StackedSkinTones"],
+      "positionless": []
+    },
+    "source-display-divergence": {
+      "layer": "D",
+      "sub_threats": ["BidiControl", "Compound", "IdentifierHomoglyph", "TagBlock", "VariationSelector", "ZeroWidth"],
+      "positionless": ["BidiControl", "Compound", "IdentifierHomoglyph", "TagBlock", "VariationSelector", "ZeroWidth"]
+    },
+    "filename-disguise": {
+      "layer": "D",
+      "sub_threats": ["CombiningInExt", "MultipleExtensions", "RloFlip", "WidthClassExt"],
+      "positionless": []
+    },
+    "rtl-injection": {
+      "layer": "D",
+      "sub_threats": ["BidiControlInLTRField", "FieldTakeover", "MixedOverflow", "StrongRTLInLTR"],
+      "positionless": []
+    },
+    "renderer-divergence": {
+      "layer": "D",
+      "sub_threats": ["CombiningStackOverflow", "FullwidthVariance", "MixedDirectionVariance", "UnregisteredZwjVariance", "VariationSelectorVariance"],
+      "positionless": ["MixedDirectionVariance"]
+    },
+    "normalization-bomb": {
+      "layer": "F",
+      "sub_threats": ["NfdHighExpansion", "NfkdHighExpansion", "SingleCpBlowup"],
+      "positionless": ["NfdHighExpansion", "NfkdHighExpansion"]
+    },
+    "stream-safe-violation": {
+      "layer": "F",
+      "sub_threats": ["StreamSafeOverrun"],
+      "positionless": []
+    },
+    "locale-case-inversion": {
+      "layer": "F",
+      "sub_threats": ["LithuanianCaseDivergence", "TurkishCaseDivergence"],
+      "positionless": []
+    },
+    "case-expansion-mismatch": {
+      "layer": "F",
+      "sub_threats": ["LowerExpansion", "UpperExpansion"],
+      "positionless": []
+    },
+    "width-class-confusion": {
+      "layer": "F",
+      "sub_threats": ["FullwidthFold", "HalfwidthFold"],
+      "positionless": []
+    },
+    "nfc-idempotence-witness": {
+      "layer": "F",
+      "sub_threats": ["NonNfcForm", "NonNfkcCompatForm"],
+      "positionless": []
+    },
+    "identifier-form-drift": {
+      "layer": "X",
+      "sub_threats": ["IdentifierStatusShift"],
+      "positionless": []
+    },
+    "covert-display-compound": {
+      "layer": "X",
+      "sub_threats": ["BidiPlusTagBlock", "BidiPlusUnregisteredVs"],
+      "positionless": []
+    },
+    "confusable-bidi-compound": {
+      "layer": "X",
+      "sub_threats": ["ConfusableInIsolate", "ConfusableInOverride"],
+      "positionless": []
+    },
+    "admissibility-form-drift": {
+      "layer": "X",
+      "sub_threats": ["AdmissibilityFormDrift"],
+      "positionless": ["AdmissibilityFormDrift"]
+    }
+  }
+}

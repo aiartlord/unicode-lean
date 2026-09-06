@@ -577,7 +577,7 @@ def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
         Family.BIDI_CONTROL_BALANCE,
         bidi.kind,
         bidi_control_balance.sub_threat_tag(bidi.sub) if bidi.sub else None,
-        bidi.bidi_positions,
+        bidi_control_balance.classify_positions(bidi),
     )
 
     _append_positional_hazard(
@@ -606,21 +606,36 @@ def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
     # shifted into the input; when none does, the whole input is read under the
     # running-text reading.
     token_ctx = homoglyph_confusable.Context(running_text=False, identifier_token=True)
+
+    # The positions a homoglyph verdict implicates over the codepoints it was
+    # read on: the non-ASCII positions for the ascii-confusable rung (Lean
+    # ``nonAsciiPositions``, theorem ``detect_dotless_i_admin_position``), the
+    # whole span for every other rung, nothing when clear.
+    def homoglyph_span(verdict, cps: list[int]) -> list[int]:
+        if verdict.kind is ClassificationKind.CLEAR:
+            return []
+        if (
+            verdict.sub is not None
+            and homoglyph_confusable.sub_threat_tag(verdict.sub) == "AsciiConfusable"
+        ):
+            return homoglyph_confusable.non_ascii_positions(cps)
+        return list(range(len(cps)))
+
     homoglyph_positions: list[int] = []
     homoglyph = None
     if running_text:
         for token in identifier_tokens.tokens(input_cps):
-            token_verdict = homoglyph_confusable.detect_with_context(token_ctx, list(token.cps))
+            token_cps = list(token.cps)
+            token_verdict = homoglyph_confusable.detect_with_context(token_ctx, token_cps)
             if token_verdict.kind is not ClassificationKind.CLEAR:
                 homoglyph = token_verdict
                 homoglyph_positions = identifier_tokens.shift_positions(
-                    token.start, list(range(len(token.cps)))
+                    token.start, homoglyph_span(token_verdict, token_cps)
                 )
                 break
     if homoglyph is None:
         homoglyph = homoglyph_confusable.detect_with_context(homoglyph_ctx, input_cps)
-        if homoglyph.kind is not ClassificationKind.CLEAR:
-            homoglyph_positions = list(range(len(input_cps)))
+        homoglyph_positions = homoglyph_span(homoglyph, input_cps)
     homoglyph_sub = (
         homoglyph_confusable.sub_threat_tag(homoglyph.sub) if homoglyph.sub else None
     )

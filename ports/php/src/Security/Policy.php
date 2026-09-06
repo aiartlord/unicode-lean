@@ -493,7 +493,7 @@ final class Policy
         }
 
         $bidi = BidiControlBalance::detect($input);
-        self::pushFinding($findings, Family::BidiControlBalance, $bidi->kind, $bidi->sub, $bidi->bidiPositions);
+        self::pushFinding($findings, Family::BidiControlBalance, $bidi->kind, $bidi->sub, BidiControlBalance::classifyPositions($bidi));
 
         self::pushPositionalHazard($findings, Family::NoncharacterControl, 'Noncharacter', self::positionsWhere($input, [Noncharacters::class, 'isNoncharacter']));
         self::pushPositionalHazard($findings, Family::NoncharacterControl, 'C0Control', self::positionsWhere($input, [self::class, 'c0Control']));

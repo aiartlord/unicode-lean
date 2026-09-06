@@ -462,7 +462,11 @@ if [[ "$run_zig" -eq 1 ]]; then
     cd "$zig_dir"
     export ZIG_GLOBAL_CACHE_DIR="$PWD/.cache/zig-global"
     mkdir -p "$ZIG_GLOBAL_CACHE_DIR"
-    zig build test
+    # ReleaseSafe keeps every bounds, overflow and unreachable check; Debug adds
+    # only its undefined-memory fill and an order of magnitude of runtime, which
+    # over the 5000-case differential corpus is the difference between minutes
+    # and over an hour.
+    zig build test -Doptimize=ReleaseSafe
   )
 fi
 
