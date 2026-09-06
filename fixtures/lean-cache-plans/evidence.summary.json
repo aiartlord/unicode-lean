@@ -1,5 +1,5 @@
 {
-  "module_steps": 480,
+  "module_steps": 481,
   "preset": "evidence",
   "roots": [
     {
@@ -39,9 +39,9 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 630033,
-      "decide_kernel": 267,
-      "modules": 65,
+      "bytes": 689787,
+      "decide_kernel": 269,
+      "modules": 66,
       "row_refs": 134,
       "stage": "stage-3-runtime-property-tables"
     },

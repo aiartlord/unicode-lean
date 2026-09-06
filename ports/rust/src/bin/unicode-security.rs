@@ -2192,6 +2192,28 @@ fn sarif_level(severity: u8) -> &'static str {
     }
 }
 
+/// Coalesce byte-adjacent spans into one region each.
+///
+/// A finding localises every codepoint it names, so a rung that fires over a
+/// whole field carries one span per codepoint. SARIF consumers index regions
+/// per result and code-scanning platforms cap what they ingest, so a run of
+/// adjacent codepoints is reported as the single region it occupies: the
+/// first span's start, line, column and codepoint offset with the last span's
+/// end. Spans that do not touch stay separate regions.
+fn merge_contiguous_spans(spans: &[ByteSpan]) -> Vec<ByteSpan> {
+    let mut merged: Vec<ByteSpan> = Vec::new();
+    for span in spans {
+        if let Some(last) = merged.last_mut() {
+            if last.end_byte == span.start_byte {
+                last.end_byte = span.end_byte;
+                continue;
+            }
+        }
+        merged.push(*span);
+    }
+    merged
+}
+
 fn sarif_results_for_scan(artifact: &str, scan: &CliScan) -> Vec<SarifResult> {
     let mut out = Vec::new();
     match scan {
@@ -2202,9 +2224,9 @@ fn sarif_results_for_scan(artifact: &str, scan: &CliScan) -> Vec<SarifResult> {
         } => {
             for finding in &verdict.findings {
                 let regions = if finding.family == Family::MalformedUtf8 {
-                    malformed_spans.to_vec()
+                    merge_contiguous_spans(malformed_spans)
                 } else {
-                    position_byte_spans(&finding.positions, spans)
+                    merge_contiguous_spans(&position_byte_spans(&finding.positions, spans))
                 };
                 out.push(SarifResult {
                     artifact: artifact.to_string(),

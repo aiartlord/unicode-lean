@@ -8,6 +8,7 @@ EastAsianWidth.txt              	  201595	ea7ce50f3444a050333448dffef1cadd9325af
 confusables.txt                 	  745683	091c7f82fc39ef208faf8f94d29c244de99254675e09de163160c810d13ef22a
 IdentifierStatus.txt            	  147969	617228a16da13850bf8af28b6cd08f5e9b6595d2eb60404fe6eee2c85b4e4a35
 IdentifierType.txt              	  527366	924ac63faa97ed73420d6ac48d08279d90968c7da0502ab701e08bfbb9683c22
+intentional.txt                 	    6569	33738217c15c1a0df0b7a2cc0a0b50b27ebdca119ca11253440ec0102f05626b
 Scripts.txt                     	  192460	9f5e50d3abaee7d6ce09480f325c706f485ae3240912527e651954d2d6b035bf
 ScriptExtensions.txt            	   20707	ec2107e58825a1586acee8e0911ce18260394ac8b87e535ca325f1ccbeb06bc6
 PropList.txt                    	  145465	130dcddcaadaf071008bdfce1e7743e04fdfbc910886f017d9f9ac931d8c64dd

@@ -41,10 +41,14 @@
 -/
 
 import Unicode.Restriction
+import Unicode.Bidi.DisplayOrder
 
 namespace Unicode.TrojanSource
 
 open Unicode.Restriction (RestrictionLevel restrictionLevel)
+open Unicode.Bidi.Algorithm (lookupBidiClass bidiParagraph reorderedInputIndices
+  originalInputIndices isExplicitFormatting isRtlWeight leftToRightOnly
+  isLtrSafe_of_not formatting_class_range displayOrder_of_leftToRightOnly)
 
 -- The `safeForCodeContext` spot-checks reduce through the restriction and
 -- script tables; kernel reduction of those lookups exceeds the default limit.
@@ -370,5 +374,103 @@ theorem no_control_mem (cps : List Nat) (cp : Nat)
         List.any_eq_true.mpr ⟨cp, hMem, hv⟩
       rw [h] at hAny
       exact Bool.noConfusion hAny
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- §6 THE DISPLAY-ORDER PROPERTY
+--
+-- The Trojan Source property is that a line reaches the reviewer in the order
+-- the compiler reads it. `Unicode.Bidi.DisplayOrder` proves that UAX #9 keeps
+-- the display order of left-to-right text equal to its logical order; the
+-- statements below tie that to the scanner's verdict. Right-to-left text
+-- reorders legitimately, so the property is stated on lines without
+-- right-to-left weight, and a divergence on any line is traced to a bidi
+-- format control or a right-to-left character.
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+/-- True iff `cps` carries a codepoint with right-to-left or Arabic-number
+    Bidi class (R, AL, AN): the text that UAX #9 reorders without any format
+    control. -/
+def hasRightToLeftWeight (cps : List Nat) : Bool :=
+  cps.any (fun cp => isRtlWeight (lookupBidiClass cp))
+
+/-- **The class table agrees with the scanner's control set.** A codepoint
+    whose Bidi class is explicit-formatting is a bidi format control. -/
+theorem isBidiFormatControl_of_class (cp : Nat)
+    (h : isExplicitFormatting (lookupBidiClass cp) = true) :
+    isBidiFormatControl cp = true := by
+  unfold isBidiFormatControl isBidiEmbeddingControl isBidiIsolateControl
+  rcases formatting_class_range cp h with ⟨hlo, hhi⟩ | ⟨hlo, hhi⟩
+  · rw [Nat.ble_eq_true_of_le hlo, Nat.ble_eq_true_of_le hhi]
+    rfl
+  · rw [Nat.ble_eq_true_of_le hlo, Nat.ble_eq_true_of_le hhi]
+    cases Nat.ble 0x202A cp <;> cases Nat.ble cp 0x202E <;> rfl
+
+/-- **Control-free text without right-to-left weight is left-to-right text**
+    in the sense `Unicode.Bidi.DisplayOrder` proves display order for. -/
+theorem leftToRightOnly_of_safe (cps : List Nat)
+    (hNo : containsBidiFormatControl cps = false)
+    (hRtl : hasRightToLeftWeight cps = false) :
+    leftToRightOnly cps = true := by
+  unfold leftToRightOnly
+  rw [List.all_eq_true]
+  intro cp hcp
+  apply isLtrSafe_of_not
+  · cases hf : isExplicitFormatting (lookupBidiClass cp) with
+    | false => rfl
+    | true =>
+        have hControl := isBidiFormatControl_of_class cp hf
+        rw [no_control_mem cps cp hNo hcp] at hControl
+        exact Bool.noConfusion hControl
+  · cases hr : isRtlWeight (lookupBidiClass cp) with
+    | false => rfl
+    | true =>
+        unfold hasRightToLeftWeight at hRtl
+        have hAny : cps.any (fun cp => isRtlWeight (lookupBidiClass cp)) = true :=
+          List.any_eq_true.mpr ⟨cp, hcp, hr⟩
+        rw [hRtl] at hAny
+        exact Bool.noConfusion hAny
+
+/-- **Soundness of the code-context verdict against UAX #9.** A line the
+    scanner admits, carrying no right-to-left weight, displays every retained
+    position in logical order: the visual order `reorderedInputIndices`
+    computes is the identity. Quantified over every input. -/
+theorem safeForCodeContext_displayOrder (cps : List Nat)
+    (hSafe : safeForCodeContext cps = true)
+    (hRtl : hasRightToLeftWeight cps = false) :
+    reorderedInputIndices cps (bidiParagraph cps) = originalInputIndices cps := by
+  have hNo : containsBidiFormatControl cps = false := by
+    unfold safeForCodeContext at hSafe
+    cases hv : containsBidiFormatControl cps with
+    | false => rfl
+    | true =>
+        rw [hv] at hSafe
+        simp at hSafe
+  exact displayOrder_of_leftToRightOnly cps (leftToRightOnly_of_safe cps hNo hRtl)
+
+/-- **Completeness on left-to-right text.** A line without right-to-left
+    weight whose display order differs from its logical order is rejected. -/
+theorem displayDivergence_rejected (cps : List Nat)
+    (hRtl : hasRightToLeftWeight cps = false)
+    (hDiv : reorderedInputIndices cps (bidiParagraph cps) ≠ originalInputIndices cps) :
+    safeForCodeContext cps = false := by
+  cases hv : safeForCodeContext cps with
+  | false => rfl
+  | true => exact absurd (safeForCodeContext_displayOrder cps hv hRtl) hDiv
+
+/-- **Where a divergence comes from, on any line.** If the display order
+    differs from the logical order, the line carries a bidi format control,
+    which `containsBidiFormatControl` reports, or a right-to-left character,
+    which reorders by design. -/
+theorem displayDivergence_source (cps : List Nat)
+    (hDiv : reorderedInputIndices cps (bidiParagraph cps) ≠ originalInputIndices cps) :
+    containsBidiFormatControl cps = true ∨ hasRightToLeftWeight cps = true := by
+  cases hNo : containsBidiFormatControl cps with
+  | true => exact Or.inl rfl
+  | false =>
+      cases hR : hasRightToLeftWeight cps with
+      | true => exact Or.inr rfl
+      | false =>
+          exact absurd
+            (displayOrder_of_leftToRightOnly cps (leftToRightOnly_of_safe cps hNo hR)) hDiv
 
 end Unicode.TrojanSource

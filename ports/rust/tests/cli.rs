@@ -81,6 +81,25 @@ fn run_jsonl_input(input: &[u8]) -> Output {
     child.wait_with_output().expect("wait unicode-security")
 }
 
+fn run_jsonl_sarif_input(input: &[u8]) -> Output {
+    let mut child = Command::new(bin())
+        .args(["scan", "--jsonl", "--sarif"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn unicode-security");
+
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin")
+        .write_all(input)
+        .expect("write stdin");
+
+    child.wait_with_output().expect("wait unicode-security")
+}
+
 fn run_stdio_jsonl_server(input: &[u8], extra_args: &[&str]) -> Output {
     let mut child = Command::new(bin())
         .args(["serve", "--stdio-jsonl"])
@@ -1248,6 +1267,39 @@ fn scan_jsonl_accepts_per_record_encoded_bytes() {
             "\"id\":\"u32\",\"action\":\"allow\",\"profile\":\"gateway-header\",\"mode\":\"enforce\",\"input\":[72],\"findings\":[],\"normalized\":null}"
         ),
         "missing utf-32 allow verdict\nstdout={stdout}"
+    );
+}
+
+#[test]
+fn scan_jsonl_sarif_merges_adjacent_positions_into_one_region() {
+    // Two adjacent zero-width spaces are one finding over positions 2 and 3;
+    // the SARIF result carries one region spanning both, not one per codepoint.
+    let output = run_jsonl_sarif_input(
+        b"{\"id\":\"src/lib.rs\",\"profile\":\"source-code\",\"mode\":\"observe\",\"text\":\"ab\\u200B\\u200Bcd\"}\n",
+    );
+    assert!(output.status.success(), "{output:?}");
+    let stdout = stdout_text(&output);
+    assert!(
+        stdout.contains("\"$schema\":\"https://json.schemastore.org/sarif-2.1.0.json\""),
+        "missing schema\nstdout={stdout}"
+    );
+    assert!(
+        stdout.contains("\"ruleId\":\"unicode.security.C.zero-width-payload.BinaryPayload\""),
+        "missing zero-width result\nstdout={stdout}"
+    );
+    assert!(
+        stdout.contains(
+            "\"region\":{\"byteOffset\":2,\"byteLength\":6,\"startLine\":1,\"startColumn\":3,\"properties\":{\"codepointOffset\":2}}"
+        ),
+        "merged region missing\nstdout={stdout}"
+    );
+    assert!(
+        !stdout.contains("\"byteOffset\":5"),
+        "second zero-width span reported as its own region\nstdout={stdout}"
+    );
+    assert!(
+        stdout.contains("\"codepointPositions\":[2,3]"),
+        "codepoint positions not preserved beside the merged region\nstdout={stdout}"
     );
 }
 

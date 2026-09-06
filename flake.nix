@@ -44,6 +44,9 @@
           pkgs.python3Packages.hatchling
           pkgs.python3Packages.pip
           pkgs.python3Packages.pytest
+          pkgs.python3Packages.jsonschema
+          pkgs.icu
+          pkgs.icu.dev
           hsPortGhc
           pkgs.cabal-install
           pkgs.go

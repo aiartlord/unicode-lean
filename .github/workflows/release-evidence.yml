@@ -94,8 +94,8 @@ jobs:
 
       - name: pinned conformance inputs manifest
         run: |
-          python3 scripts/conformance-run.py --emit-inputs-manifest
-          sha256sum -c --strict --quiet dist/CONFORMANCE-INPUTS.sha256
+          bash scripts/check-conformance-inputs.sh
+          cp fixtures/conformance/CONFORMANCE-INPUTS.sha256 dist/CONFORMANCE-INPUTS.sha256
 
       - name: bundle runtime package evidence
         run: |

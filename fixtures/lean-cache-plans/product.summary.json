@@ -1,5 +1,5 @@
 {
-  "module_steps": 265,
+  "module_steps": 266,
   "preset": "product",
   "roots": [
     {
@@ -55,9 +55,9 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 573331,
-      "decide_kernel": 132,
-      "modules": 43,
+      "bytes": 633085,
+      "decide_kernel": 134,
+      "modules": 44,
       "row_refs": 24,
       "stage": "stage-3-runtime-property-tables"
     },

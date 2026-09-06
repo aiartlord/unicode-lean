@@ -1,5 +1,5 @@
 UCD=17.0.0
-UCA=16.0.0
+UCA=17.0.0
 PINNED=2026-05-16
 
 # The Haskell port pins to the same UCD release as the Lean spec and

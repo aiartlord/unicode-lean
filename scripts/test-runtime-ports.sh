@@ -346,6 +346,12 @@ if [[ "$run_rust" -eq 1 ]]; then
   cargo build --quiet --manifest-path "$rust_dir/Cargo.toml" --bin unicode-security
   python3 scripts/regenerate-verdict-contract.py --gate \
     --binary "$rust_dir/target/debug/unicode-security"
+
+  # The SARIF the reference emits is what a code-scanning platform ingests;
+  # validate it against the vendored 2.1.0 schema and the upload rules.
+  echo "== rust sarif against the 2.1.0 schema and code-scanning ingestion rules =="
+  python3 scripts/check-sarif-output.py \
+    --binary "$rust_dir/target/debug/unicode-security"
 fi
 
 if [[ "$run_python" -eq 1 ]]; then

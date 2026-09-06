@@ -67,6 +67,7 @@ IdnaTestV2.txt idna
 confusables.txt security
 IdentifierStatus.txt security
 IdentifierType.txt security
+intentional.txt security
 allkeys.txt uca
 "
 

@@ -28,7 +28,9 @@ needing a toolchain the bare run does not:
 
   --run-proofs             run the named-theorem axiom probe (needs a build)
   --run-corpus             scan the supply-chain corpus with the reference CLI
-  --emit-inputs-manifest   write dist/CONFORMANCE-INPUTS.sha256
+  --emit-inputs-manifest   write fixtures/conformance/CONFORMANCE-INPUTS.sha256,
+                           the tracked manifest scripts/check-conformance-inputs.sh
+                           holds the pinned files to
 """
 
 from __future__ import annotations
@@ -168,6 +170,72 @@ def build_gated(name: str) -> bool:
 
 
 EXECUTED_RUNS = ROOT / "fixtures" / "conformance" / "executed-runs.json"
+INPUTS_MANIFEST = ROOT / "fixtures" / "conformance" / "CONFORMANCE-INPUTS.sha256"
+VERSION_FILE = ROOT / "data" / "UCD-VERSION"
+
+
+def target_versions() -> dict[str, str]:
+    """The Unicode versions the implementation targets, from `data/UCD-VERSION`.
+
+    Two lines matter: `UCD=` for the character database every suite except
+    collation is drawn from, and `UCA=` for the collation element table and its
+    conformance corpora. The file is the pinned statement of what the tree
+    implements; the corpus headers say what was run, and the report puts the
+    two beside each other so a mismatch is stated rather than hidden.
+    """
+    versions: dict[str, str] = {}
+    if not VERSION_FILE.is_file():
+        return versions
+    for line in VERSION_FILE.read_text(encoding="utf-8").splitlines():
+        if "=" in line:
+            key, value = line.split("=", 1)
+            versions[key.strip()] = value.strip()
+    return versions
+
+
+def corpus_version(path: Path) -> str | None:
+    """The version a published test file declares in its header.
+
+    The Consortium names the version one of three ways: in the filename line
+    (`# BidiTest-17.0.0.txt`), as `# Version: 17.0.0`, or for the collation
+    corpora as `# UCA Version: 17.0.0`. The first header line carrying a
+    dotted version wins; a file with none reports `None`.
+    """
+    if not path.is_file():
+        return None
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
+        for index, line in enumerate(handle):
+            if index >= 20 or not line.startswith("#"):
+                break
+            match = re.search(r"(\d+\.\d+\.\d+)", line)
+            if match:
+                return match.group(1)
+    return None
+
+
+def section_versions(inputs: list[dict[str, object]]) -> dict[str, object]:
+    """Implementation target versus corpus version, per suite."""
+    target = target_versions()
+    rows = []
+    for row in inputs:
+        name = str(row["file"])
+        component = "UCA" if name.startswith("CollationTest") else "UCD"
+        expected = target.get(component)
+        declared = corpus_version(UCD / name) if row.get("present") else None
+        rows.append(
+            {
+                "file": name,
+                "component": component,
+                "target": expected,
+                "declared": declared,
+                "agrees": expected is not None and declared == expected,
+            }
+        )
+    return {
+        "target": target,
+        "corpora": rows,
+        "mismatched": [r["file"] for r in rows if not r["agrees"]],
+    }
 
 
 def executed_runs() -> dict[str, dict]:
@@ -284,6 +352,52 @@ def section_suites() -> list[dict[str, object]]:
             }
         )
     return rows
+
+
+ICU_RUNS = ROOT / "fixtures" / "conformance" / "icu-runs.json"
+
+
+def section_icu() -> dict[str, object]:
+    """ICU4C over the same pinned files, recorded by `scripts/icu-conformance.sh`.
+
+    The record is used only while every input digest it carries still matches
+    the pinned file, the rule the executed runs follow: a comparison row that
+    outlived its inputs would compare two different corpora.
+    """
+    if not ICU_RUNS.is_file():
+        return {"available": False, "how": "nix develop .#runtime -c scripts/icu-conformance.sh --record"}
+    run = json.loads(ICU_RUNS.read_text(encoding="utf-8"))
+    stale = []
+    for name, digest in run.get("inputs_sha256", {}).items():
+        path = UCD / name
+        if not path.is_file() or sha256_of(path) != digest:
+            stale.append(name)
+    rows = []
+    for name, what in SUITES:
+        suite = run.get("suites", {}).get(name)
+        if suite is None or name in stale:
+            rows.append({"suite": name, "recorded": False})
+            continue
+        rows.append(
+            {
+                "suite": name,
+                "recorded": True,
+                "total": int(suite.get("total", 0)),
+                "passed": int(suite.get("passed", 0)),
+                "failed": int(suite.get("failed", 0)),
+                "skipped": int(suite.get("skipped", 0)),
+                "levels_differ_same_order": int(suite.get("levels_differ_same_order", 0)),
+                "skipped_why": suite.get("skipped_why"),
+            }
+        )
+    return {
+        "available": True,
+        "icu_version": run.get("icu_version"),
+        "icu_unicode_version": run.get("icu_unicode_version"),
+        "harness": run.get("harness"),
+        "stale_inputs": stale,
+        "suites": rows,
+    }
 
 
 def section_detectors() -> list[str]:
@@ -463,13 +577,21 @@ def section_corpus(binary: Path | None = None) -> dict[str, object]:
 def section_proof() -> dict[str, object]:
     """Build and axiom evidence, reported only where it was observed."""
     result: dict[str, object] = {"toolchain": (ROOT / "lean-toolchain").read_text().strip()}
-    newest, newest_dir = None, None
+    # The runner leaves one status per invocation. A preset that plans a
+    # subset of the roots is a real run but not the evidence a full build is,
+    # so the widest plan wins and recency only breaks ties: a fresh partial
+    # run must not displace the complete one it sits beside.
+    best_key, newest_dir = None, None
     stages = ROOT / "dist"
     if stages.is_dir():
         for candidate in stages.glob("lean-cache-stages*/status.json"):
-            stamp = candidate.stat().st_mtime
-            if newest is None or stamp > newest:
-                newest, newest_dir = stamp, candidate
+            try:
+                planned = int(json.loads(candidate.read_text(encoding="utf-8")).get("module_steps", 0))
+            except (OSError, ValueError):
+                continue
+            key = (planned, candidate.stat().st_mtime)
+            if best_key is None or key > best_key:
+                best_key, newest_dir = key, candidate
     if newest_dir is None:
         result["build"] = {"observed": False, "how": "python3 scripts/lean-cache-stages.py --preset full --run"}
         return result
@@ -491,7 +613,33 @@ def section_proof() -> dict[str, object]:
                 changed_since.append(str(source.relative_to(ROOT)))
     log_dir = newest_dir.parent / "logs"
     log_count = len(list(log_dir.glob("*.log"))) if log_dir.is_dir() else 0
+    # Wall time and peak memory are product facts: whether the proof build is
+    # CI-viable. The runner records both per module, so the report carries the
+    # serial sum of module times, the span from the first module's start to
+    # the recording of the last, and the largest process-tree peak.
+    elapsed = [float(entry.get("elapsed_sec", 0.0)) for entry in modules.values()]
+    peaks = [int(entry.get("peak_tree_rss_kb", 0)) for entry in modules.values()]
+    starts = [entry.get("started_utc") for entry in modules.values() if entry.get("started_utc")]
+    span_seconds = None
+    if starts and recorded_at:
+        first = min(starts)
+        span_seconds = round(
+            datetime.datetime.fromisoformat(recorded_at.replace("Z", "+00:00")).timestamp()
+            - datetime.datetime.fromisoformat(first.replace("Z", "+00:00")).timestamp(),
+            1,
+        )
+    resources = {
+        "module_wall_seconds_sum": round(sum(elapsed), 1),
+        "run_span_seconds": span_seconds,
+        "peak_rss_kb": max(peaks) if peaks else None,
+        "peak_rss_module": (
+            max(modules.items(), key=lambda item: int(item[1].get("peak_tree_rss_kb", 0)))[0]
+            if modules
+            else None
+        ),
+    }
     result["build"] = {
+        "resources": resources,
         "observed": True,
         "evidence": str(newest_dir.relative_to(ROOT)),
         "logs": str(log_dir.relative_to(ROOT)) if log_count else None,
@@ -550,6 +698,24 @@ def render(report: dict[str, object]) -> str:
             continue
         add(f"  {row['file']:<26} {row['rows']:>7} rows  {row['sha256']}")
     add("")
+    versions = report["versions"]
+    target = versions["target"]
+    add(
+        f"  implementation targets   UCD {target.get('UCD', 'unstated')}"
+        f"   UCA {target.get('UCA', 'unstated')}   (data/UCD-VERSION)"
+    )
+    add(f"  {'corpus':<38}{'declares':>10}{'target':>10}")
+    for row in versions["corpora"]:
+        mark = "" if row["agrees"] else "  MISMATCH"
+        add(
+            f"  {row['file']:<38}{str(row['declared']):>10}{str(row['target']):>10}{mark}"
+        )
+    if versions["mismatched"]:
+        add("  A corpus whose declared version differs from the target was run")
+        add("  against data the implementation does not claim; the row says so.")
+    else:
+        add("  Every corpus declares the version the implementation targets.")
+    add("")
 
     add("§2  CONFORMANCE SUITES")
     add("-" * 78)
@@ -605,6 +771,42 @@ def render(report: dict[str, object]) -> str:
     add("  with scripts/conformance-execute.sh.")
     add("")
 
+    icu = report["icu"]
+    add("  ICU comparison, the same files through ICU4C:")
+    if not icu.get("available"):
+        add(f"    not recorded — run: {icu['how']}")
+    else:
+        add(
+            f"    ICU {icu['icu_version']} carrying Unicode {icu['icu_unicode_version']}"
+            f" ({icu['harness']})"
+        )
+        add(f"    {'suite':<38}{'rows':>9}{'passed':>9}{'failed':>8}  of which levels only")
+        for row in icu["suites"]:
+            if not row["recorded"]:
+                add(f"    {row['suite']:<38} not recorded")
+                continue
+            note = f"  {row['skipped_why']}" if row.get("skipped_why") else ""
+            flattened = row.get("levels_differ_same_order", 0)
+            tail = f"  {flattened}" if flattened else ""
+            add(
+                f"    {row['suite']:<38}{row['total']:>9}{row['passed']:>9}"
+                f"{row['failed']:>8}{tail}{note}"
+            )
+        if icu["stale_inputs"]:
+            add("    inputs changed since the record: " + ", ".join(icu["stale_inputs"]))
+        add("    A row is passed only when every field the file publishes agrees")
+        add("    with ICU, digit for digit. 'levels only' counts bidi rows whose")
+        add("    visual order agrees while a published embedding level does not:")
+        add("    ICU keeps a unidirectional paragraph at the paragraph level, so an")
+        add("    Arabic or European number in left-to-right text reads 0 where the")
+        add("    file says 2, and ICU's own driver compares levels up to parity for")
+        add("    that reason. The remaining failures are ICU differences from the")
+        add("    file: isolate initiators under an override, empty-label status in")
+        add("    toUnicode, and CLDR root collation where it departs from DUCET.")
+        add("    ICU's Unicode version is stated because a file from a newer release")
+        add("    than ICU carries would fail rows ICU has not adopted.")
+    add("")
+
     add("§3  PROOF EVIDENCE")
     add("-" * 78)
     proof = report["proof"]
@@ -618,6 +820,19 @@ def render(report: dict[str, object]) -> str:
         add(f"  modules              {build['recorded']} recorded of {build['planned']} planned")
         add(f"  by status            {build['by_status']}")
         add(f"  complete             {build['complete']}")
+        resources = build.get("resources") or {}
+        if resources:
+            span = resources.get("run_span_seconds")
+            add(
+                f"  wall time            {resources['module_wall_seconds_sum']} s summed over"
+                f" modules; {span if span is not None else 'unknown'} s first start to last record"
+            )
+            peak = resources.get("peak_rss_kb")
+            if peak:
+                add(
+                    f"  peak memory          {peak / 1048576:.2f} GiB process tree,"
+                    f" in {resources.get('peak_rss_module')}"
+                )
         changed = build.get("sources_changed_since") or []
         if changed:
             add(f"  SOURCES CHANGED SINCE THAT BUILD: {len(changed)}")
@@ -818,7 +1033,7 @@ def main() -> int:
     parser.add_argument(
         "--emit-inputs-manifest",
         nargs="?",
-        const=str(ROOT / "dist" / "CONFORMANCE-INPUTS.sha256"),
+        const=str(INPUTS_MANIFEST),
         help="Write the pinned conformance inputs as a sha256sum-checkable manifest.",
     )
     parser.add_argument(
@@ -846,7 +1061,9 @@ def main() -> int:
 
     report = {
         "inputs": inputs,
+        "versions": section_versions(inputs),
         "suites": section_suites(),
+        "icu": section_icu(),
         "proof": proof,
         "detectors": section_detectors(),
         "ports": section_ports(),

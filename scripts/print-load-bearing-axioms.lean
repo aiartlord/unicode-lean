@@ -30,7 +30,11 @@ open Lean (Name collectAxioms)
     The bidi walk invariants hold for EVERY input: they are what makes a
     non-zero final embedding or isolate stack a genuine imbalance rather than
     an artefact of the walk's bookkeeping, so the detector's verdict means
-    something. The normalization identities are the UAX #15 stability
+    something. The display-order theorems are the Trojan Source property
+    itself, discharged against `Unicode.Bidi.Algorithm`: a line the scanner
+    admits, without right-to-left weight, renders in logical order, and a
+    divergence on any line is caused by a bidi format control or a
+    right-to-left character. The normalization identities are the UAX #15 stability
     properties, also over every input, discharged from the algorithm-
     correctness proofs rather than sampled. The zero-width sanction theorems
     are the negative-control evidence: legitimate Devanagari and Persian
@@ -41,6 +45,11 @@ def loadBearing : List Name :=
     `Unicode.TrojanSource.balanced_of_no_bidi_control,
     `Unicode.TrojanSource.safeForCodeContext_balanced,
     `Unicode.TrojanSource.no_control_mem,
+    `Unicode.TrojanSource.safeForCodeContext_displayOrder,
+    `Unicode.TrojanSource.displayDivergence_rejected,
+    `Unicode.TrojanSource.displayDivergence_source,
+    `Unicode.Bidi.Algorithm.reorderedInputIndices_ltr,
+    `Unicode.Bidi.Algorithm.reorderLine_ltr,
     `Unicode.Bidi.Algorithm.applyL2_id_of_all_even,
     `Unicode.Security.Display.RtlInjection.countBidiControl_le_size,
     `Unicode.Conformance.NormalizationTest.nfc_stable,

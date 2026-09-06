@@ -1,0 +1,81 @@
+{
+  "icu_version": "78.3",
+  "icu_unicode_version": "17.0",
+  "suites": {
+    "BidiTest": {
+      "total": 770241,
+      "passed": 664456,
+      "failed": 105785,
+      "skipped": 0,
+      "levels_differ_same_order": 105785
+    },
+    "BidiCharacterTest": {
+      "total": 91707,
+      "passed": 91676,
+      "failed": 31,
+      "skipped": 0,
+      "levels_differ_same_order": 1
+    },
+    "NormalizationTest": {
+      "total": 20034,
+      "passed": 20034,
+      "failed": 0,
+      "skipped": 0
+    },
+    "GraphemeBreakTest": {
+      "total": 766,
+      "passed": 766,
+      "failed": 0,
+      "skipped": 0
+    },
+    "WordBreakTest": {
+      "total": 1944,
+      "passed": 1944,
+      "failed": 0,
+      "skipped": 0
+    },
+    "SentenceBreakTest": {
+      "total": 512,
+      "passed": 512,
+      "failed": 0,
+      "skipped": 0
+    },
+    "LineBreakTest": {
+      "total": 19338,
+      "passed": 19338,
+      "failed": 0,
+      "skipped": 0
+    },
+    "IdnaTestV2": {
+      "total": 6391,
+      "passed": 6292,
+      "failed": 99,
+      "skipped": 0
+    },
+    "CollationTest_NON_IGNORABLE_SHORT": {
+      "total": 208069,
+      "passed": 206125,
+      "failed": 1944,
+      "skipped": 0
+    },
+    "CollationTest_SHIFTED_SHORT": {
+      "total": 229859,
+      "passed": 223059,
+      "failed": 6800,
+      "skipped": 0
+    }
+  },
+  "inputs_sha256": {
+    "BidiTest.txt": "888bdfc8090652272d1f859cdb00ae659e2dc6c26740be61ef1d03998a687620",
+    "BidiCharacterTest.txt": "a3e6e905ab5afbe318a96df5401d0372a04cd73ef139ab5e3cf0ae241c255488",
+    "NormalizationTest.txt": "5019ffd530751a741900c849c0e010332f142a3612234639bd200b82138a87db",
+    "GraphemeBreakTest.txt": "e2d134d2c52919bace503ebb6a551c1855fe1a1faec18478c78fff254a1793ec",
+    "WordBreakTest.txt": "1de23a75f37904abc7d206239ee8d34f8fdf0fb4ab32a7174dfbabbde25419b2",
+    "SentenceBreakTest.txt": "12cb47d028ded0c1cb8a28558f95479cbcd24559c46977015c82f3b50a1cc6e4",
+    "LineBreakTest.txt": "e69884e0dde6a8724873f885d68c52dc14518abf9ae4ca9e2283b8773db3b752",
+    "IdnaTestV2.txt": "beb5d0be20e896189b03209a82fdc34f06351502bbd4b8e2523583fc2954d9cf",
+    "CollationTest_NON_IGNORABLE_SHORT.txt": "06a8d9d2191574c74623f66af960682feadeb714a9fa12ab4657c425f8683f53",
+    "CollationTest_SHIFTED_SHORT.txt": "3ede425165f0faf776f8d702a4d65863c347e8948aea18778ef78a7f410897ad"
+  },
+  "harness": "tools/icu-conformance/icu_conformance.cpp"
+}

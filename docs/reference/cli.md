@@ -270,6 +270,36 @@ commas are rejected. Malformed JSONL control records are usage/data errors:
 the process exits `2`, reports `jsonl line N` on stderr, and stops at the
 offending line. Records emitted before the bad line remain on stdout.
 
+## SARIF
+
+`--sarif` emits one SARIF 2.1.0 log. Alone it covers the single `--input`
+artifact; with `--jsonl` every record is a result and its `id` is the artifact
+URI, so a tree scans into one log a code-scanning platform ingests without
+modification:
+
+```sh
+printf '%s\n' '{"id":"src/lib.rs","profile":"source-code","mode":"observe","text":"ab​​cd"}' |
+  nix develop .#runtime -c cargo run --quiet --bin unicode-security -- scan --jsonl --sarif
+```
+
+Each result carries the reason code as `ruleId`, the severity graded to the
+SARIF levels, the detail as the message, the family and sub-threat under
+`properties`, and the codepoint positions under `properties.codepointPositions`.
+A run of byte-adjacent positions is one region — the first position's byte
+offset, line, column and codepoint offset with the last position's end — so a
+rung that fires over a whole field reports the field once rather than once per
+codepoint; positions that do not touch stay separate regions. Rules are
+declared only for the reason codes that produced a result.
+
+`scripts/check-sarif-output.py` validates a log against the vendored SARIF
+2.1.0 JSON schema (`fixtures/sarif/sarif-schema-2.1.0.json`, SHA-256 pinned in
+the script) and against the ingestion rules GitHub code scanning applies on
+upload: at most 20 runs per file, 25,000 results and 25,000 rules per run,
+1,000 locations per result and 20 tags per rule, every result naming a
+declared rule with a message, a graded level and a relative artifact URI.
+`scripts/test-runtime-ports.sh` runs it over the supply-chain corpus in the
+Rust tier; `--log PATH` validates any existing log.
+
 ## Encodings
 
 Accepted encoding tags:

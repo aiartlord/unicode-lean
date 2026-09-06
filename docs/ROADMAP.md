@@ -204,51 +204,70 @@ what was counted and how it is established.
 | A2 | NormalizationTest, 100%, zero skipped, four forms | **met** — 20,034 rows × NFC/NFD/NFKC/NFKD |
 | A3 | four `auxiliary/` break tests, 100%, zero skipped | **met** — Grapheme 766 and Sentence 512 closed in the kernel over a drift-gated mirror; Word 1,944 and Line 19,338 folded during the build |
 | A4 | IdnaTestV2, 100% or a scoped statement | **met** — 6,391 rows × toUnicode/toAsciiN/toAsciiT, comparing output, error flag and the bracketed status set |
-| A5 | `CONFORMANCE-INPUTS.sha256` attached | **partial** — emitted to `dist/`, which is untracked, so it is not attachable from a clean checkout |
+| A5 | `CONFORMANCE-INPUTS.sha256` attached | **met** — tracked at `fixtures/conformance/CONFORMANCE-INPUTS.sha256`; `scripts/check-conformance-inputs.sh` (CI hardening job) holds the pinned files to it and fails if it is not what the report would emit; the release workflow copies the tracked file into the evidence pack |
 | A6 | skipped stated everywhere, zero on A1–A3 | **met for A1–A3**; the two collation corpora report 437,928 skipped pairs, honestly, and that is the one gap |
 | A7 | `lake build` completes, log attached | **partial** — 448 of 448 modules, but the run carried `--allow-dirty-source`; a clean-tree run is what makes it evidence |
-| A8 | `#print axioms` clean on the load-bearing theorems | **partial** — the footprint gate covers the audited closure, but the specific property A8 names does not exist yet; see below |
+| A8 | `#print axioms` clean on the load-bearing theorems | **met** — the Trojan Source property is closed as `∀ cps` theorems against `Unicode.Bidi.Algorithm` (`Unicode.TrojanSource.safeForCodeContext_displayOrder`, `displayDivergence_rejected`, `displayDivergence_source`, over `Unicode.Bidi.Algorithm.reorderedInputIndices_ltr`); `scripts/print-load-bearing-axioms.lean` names them beside the normalization stability theorems and reports `propext`, `Quot.sound`, `Classical.choice` only |
 
-### The gap that matters more than the table
+### The property behind A8
 
 The reviewer's own caveat: conformance to UAX #9 is not the property
 *"no string renders differently than it lexes."* The first says the algorithm is
 implemented correctly; the second is the Trojan Source security property, and it
-needs its own theorem.
+has its own theorems.
 
-`Unicode/TrojanSource.lean` implements the defense — `containsBidiFormatControl`,
-`hasUnbalancedBidi`, `safeForCodeContext` — and carries seventeen theorems.
-**Every one is a point vector**: `safe_ascii`, `reject_rlo`, `detect_lre`,
-`balanced_lre_pdf`, `reject_latin_cyrillic_mix`. Not one is universally
-quantified over inputs. The flagship claim rests on examples.
+`Unicode/Bidi/DisplayOrder.lean` proves, for every input, that a paragraph whose
+codepoints carry no explicit-formatting class and no right-to-left or
+Arabic-number class resolves every position to an even embedding level under
+the X, W, N, I and L1 rules, so L2 reverses nothing and the visual order
+`reorderedInputIndices` computes is the identity on the retained positions
+(`reorderedInputIndices_ltr`, `reorderLine_ltr`). `Unicode/TrojanSource.lean`
+ties that to the verdict: a line `safeForCodeContext` admits, without
+right-to-left weight, displays in logical order
+(`safeForCodeContext_displayOrder`); such a line with a divergence is rejected
+(`displayDivergence_rejected`); and on any line a divergence comes from a bidi
+format control, which the scanner reports, or a right-to-left character, which
+reorders by design (`displayDivergence_source`). The class table is tied to
+the scanner's control set by `formatting_class_range`, a soundness proof of
+the table's binary search plus two `decide +kernel` facts over the pinned
+rows. The scope is stated rather than implied: right-to-left text reorders
+legitimately, so the property is about left-to-right lines, and
+`docs/explanation/threat-model.md` says so in the D1 row.
 
 Four detector families have an all-inputs soundness module
 (`BidiControlBalanceSound`, `RtlInjectionSound`, `WidthClassConfusionSound`,
 `SkinToneVariationForgerySound`), carrying seventeen `∀ input` theorems between
-them — bounded counts, depth accounting, stack consistency. That is the right
-shape and it covers four of twenty-seven families.
+them — bounded counts, depth accounting, stack consistency. The display-order
+module is the fifth in that shape.
 
-- **Mechanism:** state and prove the Trojan Source property as a theorem over
-  all inputs — at minimum that `safeForCodeContext cps = true` implies the
-  bidi-control set is empty and the resolved display order agrees with logical
-  order, discharged against `Unicode.Bidi.Algorithm` rather than against
-  examples. Extend the `*Sound.lean` pattern to the remaining twenty-three
-  families.
-- **Done when:** the Trojan Source property is a `∀ cps` theorem whose
-  `#print axioms` shows only `propext`, `Classical.choice`, `Quot.sound`, and
-  A8 can name it.
+- **Mechanism:** extend the `*Sound.lean` pattern to the remaining
+  twenty-two families.
+- **Done when:** every family names an all-inputs statement or says why its
+  guarantee is bounded by data.
 
 ### Smaller items the dossier surfaced
 
-- **`intentional.txt` is absent.** The reviewer lists it under the UTS #39
-  security data beside `confusables.txt` (6,565 rows), `IdentifierStatus.txt`
-  (1,649) and `IdentifierType.txt` (5,104), all of which are present and pinned.
-- **`CONFORMANCE-INPUTS.sha256` needs a tracked home**, not `dist/`.
-- **Wall time and peak memory are not in the report.** The staged runner records
-  `peak_tree_rss_kb` per module; the conformance report should carry both, since
-  whether the run is CI-viable is itself a product fact.
-- **No ICU comparison row.** The security drills reference ICU behaviour but no
-  suite is run side by side.
+- **`intentional.txt`** is pinned under `Unicode/Ucd/` beside
+  `confusables.txt`, `IdentifierStatus.txt` and `IdentifierType.txt`, in
+  `SHA256SUMS`, `MANIFEST.txt` and the upstream check.
+- **`CONFORMANCE-INPUTS.sha256`** is tracked (A5 above).
+- **Wall time and peak memory** are in the report: §3 carries the module-summed
+  wall time, the run span and the largest process-tree peak from the staged
+  runner's status, and §1 states the Unicode version the implementation
+  targets beside the version each corpus declares.
+- **ICU comparison row.** `tools/icu-conformance/icu_conformance.cpp` runs
+  ICU4C over the same pinned files (bidi through `ubidi`, normalization
+  through `unorm2`, the four break suites through `ubrk`, UTS #46 through
+  `uidna`, collation through the root `ucol` at identical strength);
+  `scripts/icu-conformance.sh --record` writes the per-suite counts and the
+  input digests to `fixtures/conformance/icu-runs.json`, and the report
+  prints them beside the Lean rows while the digests still match. ICU
+  reproduces normalization and all four break suites in full; its bidi rows
+  differ where ICU flattens a unidirectional paragraph to the paragraph
+  level (the visual order agrees, counted separately) and on isolate
+  initiators under an override; its UTS #46 rows differ on the empty-label
+  status in toUnicode; its collation rows differ where CLDR root departs
+  from DUCET. The report states each of those rather than a headline.
 - **Collation is the only non-zero skip.** 437,928 adjacent-pair assertions
   across the two `CollationTest_*_SHORT.txt` corpora, recorded honestly as
   skipped. Closing it is a fold, not a proof.
