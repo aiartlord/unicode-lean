@@ -82,9 +82,14 @@ func letterSkeleton(input []uint32) []uint32 {
 	return out
 }
 
+// confusableChainBound caps iteratedSkeleton, mirroring the Lean
+// Unicode.Confusables.confusableChainBound: far above the longest chain in the
+// bundled UTS #39 data, so termination is structural, not a data property.
+const confusableChainBound = 32
+
 func iteratedSkeleton(input []uint32) []uint32 {
 	current := append([]uint32(nil), input...)
-	for range 8 {
+	for range confusableChainBound {
 		next := skeleton(current)
 		if equalUint32Slices(next, current) {
 			return current

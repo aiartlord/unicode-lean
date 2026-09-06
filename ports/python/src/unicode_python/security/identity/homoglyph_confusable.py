@@ -173,18 +173,26 @@ def skeleton(input_cps: list[int]) -> list[int]:
     return ucd.to_nfd(step4)
 
 
+CONFUSABLE_CHAIN_BOUND = 32
+"""Iteration cap for ``iterated_skeleton``, mirroring the Lean
+``Unicode.Confusables.confusableChainBound``: far above the longest chain in
+the bundled UTS #39 data, so termination is structural, not a data property."""
+
+
 def iterated_skeleton(input_cps: list[int]) -> list[int]:
-    """Apply ``skeleton`` until a fixed point.
+    """Apply ``skeleton`` until a fixed point, capped at
+    ``CONFUSABLE_CHAIN_BOUND`` steps (the Lean ``iteratedSkeleton``).
 
     In practice 1–3 iterations suffice for every published
     confusable chain.
     """
     current = list(input_cps)
-    while True:
+    for _step in range(CONFUSABLE_CHAIN_BOUND):
         nxt = skeleton(current)
         if nxt == current:
             return current
         current = nxt
+    return current
 
 
 def letter_skeleton(input_cps: list[int]) -> list[int]:

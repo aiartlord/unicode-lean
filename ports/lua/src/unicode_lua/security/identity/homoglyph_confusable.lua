@@ -99,9 +99,14 @@ function M.skeleton(input)
   return ucd.to_nfd(ucd.case_fold(substitute(ucd.case_fold(ucd.to_nfd(input)))))
 end
 
+-- Iteration cap for iterated_skeleton, mirroring the Lean
+-- Unicode.Confusables.confusableChainBound: far above the longest chain in the
+-- bundled UTS #39 data, so termination is structural, not a data property.
+M.CONFUSABLE_CHAIN_BOUND = 32
+
 function M.iterated_skeleton(input)
   local current = { unpack(input) }
-  while true do
+  for _ = 1, M.CONFUSABLE_CHAIN_BOUND do
     local next_value = M.skeleton(current)
     if #next_value == #current then
       local same = true
@@ -117,6 +122,7 @@ function M.iterated_skeleton(input)
     end
     current = next_value
   end
+  return current
 end
 
 local function letter_skeleton_from_iterated(iterated)

@@ -376,13 +376,17 @@ inline std::vector<std::uint32_t> skeleton(std::span<const std::uint32_t> input,
 // suffice for every published confusable chain.
 inline std::vector<std::uint32_t>
 iterated_skeleton(std::span<const std::uint32_t> input, const Database &db) {
+  // Capped at the Lean Unicode.Confusables.confusableChainBound: far above the
+  // longest chain in the bundled UTS #39 data, so termination is structural.
+  constexpr std::size_t confusable_chain_bound = 32;
   std::vector<std::uint32_t> current(input.begin(), input.end());
-  while (true) {
+  for (std::size_t step = 0; step < confusable_chain_bound; ++step) {
     auto next = skeleton(current, db);
     if (next == current)
       return current;
     current = std::move(next);
   }
+  return current;
 }
 
 // Stricter "letter" skeleton — iterated_skeleton followed by removal

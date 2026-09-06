@@ -431,9 +431,17 @@ confusable_source(Cp) -> maps:is_key(Cp, confusables()).
 skeleton(Input) ->
     usec_ucd:to_nfd(usec_ucd:case_fold(substitute(usec_ucd:case_fold(usec_ucd:to_nfd(Input))))).
 
-iterated_skeleton(Input) ->
+%% Iteration cap for iterated_skeleton, mirroring the Lean
+%% Unicode.Confusables.confusableChainBound: far above the longest chain in the
+%% bundled UTS #39 data, so termination is structural, not a data property.
+-define(CONFUSABLE_CHAIN_BOUND, 32).
+
+iterated_skeleton(Input) -> iterated_skeleton(Input, ?CONFUSABLE_CHAIN_BOUND).
+
+iterated_skeleton(Input, 0) -> Input;
+iterated_skeleton(Input, Fuel) ->
     Next = skeleton(Input),
-    case Next =:= Input of true -> Input; false -> iterated_skeleton(Next) end.
+    case Next =:= Input of true -> Input; false -> iterated_skeleton(Next, Fuel - 1) end.
 
 substitute(Input) ->
     M = confusables(),

@@ -1089,10 +1089,15 @@ public static partial class Security
             .Where(cp => !IsCombiningMark(cp) && !IsDefaultIgnorableCodepoint(cp) && !IsWhiteSpaceCodepoint(cp))
             .ToList();
 
+    /// Iteration cap for IteratedSkeleton, mirroring the Lean
+    /// Unicode.Confusables.confusableChainBound: far above the longest chain in
+    /// the bundled UTS #39 data, so termination is structural.
+    private const int ConfusableChainBound = 32;
+
     private static List<int> IteratedSkeleton(List<int> input)
     {
         var current = input.ToList();
-        for (var index = 0; index < 8; index++)
+        for (var index = 0; index < ConfusableChainBound; index++)
         {
             var next = Skeleton(current);
             if (next.SequenceEqual(current)) return current;

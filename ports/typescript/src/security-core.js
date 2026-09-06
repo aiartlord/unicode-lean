@@ -1575,9 +1575,14 @@ function letterSkeleton(input) {
   );
 }
 
+// Iteration cap for iteratedSkeleton, mirroring the Lean
+// Unicode.Confusables.confusableChainBound: far above the longest chain in the
+// bundled UTS #39 data, so termination is structural, not a data property.
+const CONFUSABLE_CHAIN_BOUND = 32;
+
 function iteratedSkeleton(input) {
   let current = Array.from(input);
-  for (let index = 0; index < 8; index += 1) {
+  for (let index = 0; index < CONFUSABLE_CHAIN_BOUND; index += 1) {
     const next = skeleton(current);
     if (sameNumbers(next, current)) {
       return current;

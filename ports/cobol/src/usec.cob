@@ -3653,11 +3653,12 @@ COMPUTE-SKELETON-ONCE.
 COMPUTE-ITERATED-SKELETON.
 *> Apply the skeleton until it stops changing. A single pass leaves cascading
 *> confusables unresolved, where one substitution exposes another. The round
-*> cap bounds the walk; the mappings shrink toward a fixed point well inside
-*> it.
+*> cap is 32, the Lean Unicode.Confusables.confusableChainBound: far above the
+*> longest chain in the bundled UTS #39 data, so termination is structural,
+*> not a data property.
     MOVE 0 TO SKEL-ROUND
     MOVE 0 TO SKEL-STABLE
-    PERFORM UNTIL SKEL-STABLE = 1 OR SKEL-ROUND >= 8
+    PERFORM UNTIL SKEL-STABLE = 1 OR SKEL-ROUND >= 32
         ADD 1 TO SKEL-ROUND
         MOVE SKEL-COUNT TO SKEL-PREV-COUNT
         PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > SKEL-COUNT

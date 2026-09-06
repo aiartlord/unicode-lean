@@ -1166,9 +1166,14 @@ private func letterSkeleton(_ input: [Int]) -> [Int] {
     }
 }
 
+/// Iteration cap for iteratedSkeleton, mirroring the Lean
+/// Unicode.Confusables.confusableChainBound: far above the longest chain in the
+/// bundled UTS #39 data, so termination is structural.
+private let confusableChainBound = 32
+
 private func iteratedSkeleton(_ input: [Int]) -> [Int] {
     var current = input
-    for _ in 0..<8 {
+    for _ in 0..<confusableChainBound {
         let next = skeleton(current)
         if sameNumbers(next, current) { return current }
         current = next

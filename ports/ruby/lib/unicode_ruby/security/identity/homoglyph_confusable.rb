@@ -153,14 +153,20 @@ module UnicodeRuby
         end
 
         # Apply skeleton until a fixed point is reached.
+        # Iteration cap for iterated_skeleton, mirroring the Lean
+        # Unicode.Confusables.confusableChainBound: far above the longest chain
+        # in the bundled UTS #39 data, so termination is structural.
+        CONFUSABLE_CHAIN_BOUND = 32
+
         def iterated_skeleton(input)
           current = input.dup
-          loop do
+          CONFUSABLE_CHAIN_BOUND.times do
             nxt = skeleton(current)
             return current if nxt == current
 
             current = nxt
           end
+          current
         end
 
         def letter_skeleton(input)

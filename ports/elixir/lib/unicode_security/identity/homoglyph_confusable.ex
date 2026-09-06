@@ -20,9 +20,18 @@ defmodule UnicodeSecurity.Identity.HomoglyphConfusable do
     |> Ucd.to_nfd()
   end
 
-  def iterated_skeleton(input) do
+  # Iteration cap for iterated_skeleton, mirroring the Lean
+  # Unicode.Confusables.confusableChainBound: far above the longest chain in the
+  # bundled UTS #39 data, so termination is structural, not a data property.
+  @confusable_chain_bound 32
+
+  def iterated_skeleton(input), do: iterated_skeleton(input, @confusable_chain_bound)
+
+  defp iterated_skeleton(input, 0), do: input
+
+  defp iterated_skeleton(input, fuel) do
     next = skeleton(input)
-    if next == input, do: input, else: iterated_skeleton(next)
+    if next == input, do: input, else: iterated_skeleton(next, fuel - 1)
   end
 
   def mixed_script_admissibility?(input) do

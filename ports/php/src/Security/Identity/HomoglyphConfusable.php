@@ -109,16 +109,22 @@ final class HomoglyphConfusable
     }
 
     /** @param list<int> $input @return list<int> */
+    /** Iteration cap for iteratedSkeleton, mirroring the Lean
+     *  Unicode.Confusables.confusableChainBound: far above the longest chain in
+     *  the bundled UTS #39 data, so termination is structural. */
+    public const CONFUSABLE_CHAIN_BOUND = 32;
+
     public static function iteratedSkeleton(array $input): array
     {
         $current = array_values($input);
-        while (true) {
+        for ($step = 0; $step < self::CONFUSABLE_CHAIN_BOUND; $step++) {
             $next = self::skeleton($current);
             if ($next === $current) {
                 return $current;
             }
             $current = $next;
         }
+        return $current;
     }
 
     /** @param list<int> $iterated @return list<int> */

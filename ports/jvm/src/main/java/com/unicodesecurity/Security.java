@@ -1271,9 +1271,14 @@ public final class Security {
     return out;
   }
 
+  /** Iteration cap for iteratedSkeleton, mirroring the Lean
+   *  Unicode.Confusables.confusableChainBound: far above the longest chain in
+   *  the bundled UTS #39 data, so termination is structural. */
+  private static final int CONFUSABLE_CHAIN_BOUND = 32;
+
   private static List<Integer> iteratedSkeleton(List<Integer> input) {
     List<Integer> current = new ArrayList<>(input);
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < CONFUSABLE_CHAIN_BOUND; i++) {
       List<Integer> next = skeleton(current);
       if (next.equals(current)) return current;
       current = next;

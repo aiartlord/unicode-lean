@@ -2182,10 +2182,15 @@ fn letterSkeleton(input: []const u32) CapacityError!CpBuffer {
     return out;
 }
 
+/// Iteration cap for iteratedSkeleton, mirroring the Lean
+/// Unicode.Confusables.confusableChainBound: far above the longest chain in the
+/// bundled UTS #39 data, so termination is structural, not a data property.
+const ConfusableChainBound = 32;
+
 fn iteratedSkeleton(input: []const u32) CapacityError!CpBuffer {
     var current = CpBuffer{};
     try current.appendSlice(input);
-    for (0..8) |_| {
+    for (0..ConfusableChainBound) |_| {
         const next = try skeletonStep(current.slice());
         if (cpSlicesEqual(next.slice(), current.slice())) return current;
         current = next;

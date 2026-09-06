@@ -1731,8 +1731,14 @@ letterSkeleton =
               && not (isWhiteSpaceCodepoint cp))
     . iteratedSkeleton
 
+-- | Iteration cap for 'iteratedSkeleton', mirroring the Lean
+-- @Unicode.Confusables.confusableChainBound@: far above the longest chain in
+-- the bundled UTS #39 data, so termination is structural, not a data property.
+confusableChainBound :: Int
+confusableChainBound = 32
+
 iteratedSkeleton :: [Int] -> [Int]
-iteratedSkeleton = go (8 :: Int)
+iteratedSkeleton = go confusableChainBound
   where
     go 0 current = current
     go fuel current =

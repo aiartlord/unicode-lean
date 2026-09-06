@@ -248,17 +248,26 @@ pub fn skeleton(input: &[u32]) -> Vec<u32> {
     ucd::to_nfd(&step4)
 }
 
-/// Apply `skeleton` until a fixed point is reached.  In practice
+/// Iteration cap for `iterated_skeleton`, mirroring the Lean
+/// `Unicode.Confusables.confusableChainBound`: the longest substitution chain
+/// in the bundled UTS #39 data is far shorter, so the cap is a safe
+/// over-approximation, and it makes termination structural rather than a
+/// property of the data.
+pub const CONFUSABLE_CHAIN_BOUND: usize = 32;
+
+/// Apply `skeleton` until a fixed point is reached, capped at
+/// `CONFUSABLE_CHAIN_BOUND` steps (the Lean `iteratedSkeleton`).  In practice
 /// 1–3 iterations suffice for every published confusable chain.
 pub fn iterated_skeleton(input: &[u32]) -> Vec<u32> {
     let mut current = input.to_vec();
-    loop {
+    for _ in 0..CONFUSABLE_CHAIN_BOUND {
         let next = skeleton(&current);
         if next == current {
             return current;
         }
         current = next;
     }
+    current
 }
 
 /// Stricter "letter" skeleton — `iterated_skeleton` followed by

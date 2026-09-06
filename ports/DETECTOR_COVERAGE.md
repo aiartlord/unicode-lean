@@ -386,6 +386,16 @@ tested at the edge and one past it. The contract is in
 [`../docs/reference/ports.md`](../docs/reference/ports.md) under "Bounded
 ports refuse, never truncate".
 
+One further bound was three different bounds. The Lean iterates the
+confusable skeleton to a fixed point under a fuel of 32
+(`Unicode.Confusables.confusableChainBound`); eight ports capped the walk at 8
+and the reference and seven ports looped until the fixed point with no cap.
+Every chain in the bundled UTS #39 data converges within 5 steps, so no fixture
+reached the difference, but an input needing 9 to 32 steps would have skeleted
+differently in the capped ports and an input that never converged would have
+hung the uncapped ones. Every port and the reference now carry the Lean's 32,
+so termination is structural everywhere rather than a property of the data.
+
 Implementation is one thing and reach is another: a detector only reaches a
 caller if the port's scan path invokes it. `Unicode/Security/RunAll.lean`
 dispatches all twenty-seven families; a plain scan dispatches twenty-four of
