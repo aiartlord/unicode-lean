@@ -1724,11 +1724,12 @@ findTargetMatch input =
            (Nothing, True) -> Just target
            _               -> firstMatch
 
+-- | The Lean @letterSkeleton@: the iterated skeleton with combining marks and
+-- Default_Ignorable codepoints dropped, whitespace kept.
 letterSkeleton :: [Int] -> [Int]
 letterSkeleton =
   filter (\cp -> NormalizationLookup.canonicalCombiningClass cp == 0
-              && not (isDefaultIgnorableCodepoint cp)
-              && not (isWhiteSpaceCodepoint cp))
+              && not (isDefaultIgnorableCodepoint cp))
     . iteratedSkeleton
 
 -- | Iteration cap for 'iteratedSkeleton', mirroring the Lean
@@ -1782,24 +1783,6 @@ ctListEq xs ys =
 -- the UCD revision the port ships against.
 isDefaultIgnorableCodepoint :: Int -> Bool
 isDefaultIgnorableCodepoint = Casing.isDefaultIgnorable
-
-isWhiteSpaceCodepoint :: Int -> Bool
-isWhiteSpaceCodepoint cp =
-  cp == 0x0009
-    || cp == 0x000A
-    || cp == 0x000B
-    || cp == 0x000C
-    || cp == 0x000D
-    || cp == 0x0020
-    || cp == 0x0085
-    || cp == 0x00A0
-    || cp == 0x1680
-    || (0x2000 <= cp && cp <= 0x200A)
-    || cp == 0x2028
-    || cp == 0x2029
-    || cp == 0x202F
-    || cp == 0x205F
-    || cp == 0x3000
 
 confusablesMap :: Map Int [Int]
 confusablesMap = unsafePerformIO $ do

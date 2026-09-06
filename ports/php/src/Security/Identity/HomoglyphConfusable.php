@@ -132,7 +132,7 @@ final class HomoglyphConfusable
     {
         $out = [];
         foreach ($iterated as $cp) {
-            if (Ucd::ccc($cp) === 0 && !Ucd::isDefaultIgnorable($cp) && !Ucd::isWhiteSpace($cp)) {
+            if (Ucd::ccc($cp) === 0 && !Ucd::isDefaultIgnorable($cp)) {
                 $out[] = $cp;
             }
         }

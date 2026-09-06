@@ -273,7 +273,9 @@ pub fn iterated_skeleton(input: &[u32]) -> Vec<u32> {
 /// Stricter "letter" skeleton — `iterated_skeleton` followed by
 /// removal of (a) every codepoint with `canonicalCombiningClass > 0`
 /// AND (b) every codepoint with the `Default_Ignorable_Code_Point`
-/// derived property.
+/// derived property. Whitespace is NOT stripped: the Lean
+/// `letterSkeleton` keeps it, and stripping it made a plain ASCII
+/// name with a stray space (" apple") a target match.
 ///
 /// Catches three adjacent classes of typosquat attack that the
 /// bare §4+§5.4 skeleton misses by strict-equality test:
@@ -298,9 +300,7 @@ fn letter_skeleton_from_iterated(iterated: &[u32]) -> Vec<u32> {
     iterated
         .iter()
         .copied()
-        .filter(|&cp| {
-            ucd::ccc(cp) == 0 && !ucd::is_default_ignorable(cp) && !ucd::is_white_space(cp)
-        })
+        .filter(|&cp| ucd::ccc(cp) == 0 && !ucd::is_default_ignorable(cp))
         .collect()
 }
 

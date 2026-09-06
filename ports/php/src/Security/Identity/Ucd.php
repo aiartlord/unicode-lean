@@ -1144,21 +1144,6 @@ final class Ucd
         return $idx >= 0 && $cp <= $table[$idx][1];
     }
 
-    /// True iff `cp` is a whitespace codepoint per UCD `White_Space`.
-    public static function isWhiteSpace(int $cp): bool
-    {
-        return ($cp >= 0x0009 && $cp <= 0x000D)
-            || $cp === 0x0020
-            || $cp === 0x0085
-            || $cp === 0x00A0
-            || $cp === 0x1680
-            || ($cp >= 0x2000 && $cp <= 0x200A)
-            || ($cp >= 0x2028 && $cp <= 0x2029)
-            || $cp === 0x202F
-            || $cp === 0x205F
-            || $cp === 0x3000;
-    }
-
     // ── UTS #39 § 5.1 restriction-level classification ──────────────────
 
     /** @param list<int> $cps */

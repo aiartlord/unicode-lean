@@ -1059,20 +1059,6 @@ function M.is_allowed_identifier(cps)
   return true
 end
 
--- UCD PropList.txt White_Space (hardcoded — small, stable range table).
-function M.is_white_space(cp)
-  return (cp >= 0x0009 and cp <= 0x000D)
-    or cp == 0x0020
-    or cp == 0x0085
-    or cp == 0x00A0
-    or cp == 0x1680
-    or (cp >= 0x2000 and cp <= 0x200A)
-    or (cp >= 0x2028 and cp <= 0x2029)
-    or cp == 0x202F
-    or cp == 0x205F
-    or cp == 0x3000
-end
-
 -- ─────────────────────────────────────────────────────────────────────
 -- UTS #39 §5.1 Restriction-level classification
 -- ─────────────────────────────────────────────────────────────────────

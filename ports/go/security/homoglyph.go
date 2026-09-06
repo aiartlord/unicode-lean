@@ -75,7 +75,9 @@ func letterSkeleton(input []uint32) []uint32 {
 	iterated := iteratedSkeleton(input)
 	out := make([]uint32, 0, len(iterated))
 	for _, cp := range iterated {
-		if !isCombiningMark(cp) && !isDefaultIgnorableCodepoint(cp) && !isWhiteSpaceCodepoint(cp) {
+		// The Lean letterSkeleton: canonical combining class zero and not
+		// Default_Ignorable; whitespace is kept.
+		if canonicalCombiningClass(cp) == 0 && !isDefaultIgnorableCodepoint(cp) {
 			out = append(out, cp)
 		}
 	}
@@ -430,14 +432,6 @@ func ctUint32SlicesEqual(a []uint32, b []uint32) bool {
 	return acc == 0
 }
 
-func isCombiningMark(cp uint32) bool {
-	return (cp >= 0x0300 && cp <= 0x036F) ||
-		(cp >= 0x1AB0 && cp <= 0x1AFF) ||
-		(cp >= 0x1DC0 && cp <= 0x1DFF) ||
-		(cp >= 0x20D0 && cp <= 0x20FF) ||
-		(cp >= 0xFE20 && cp <= 0xFE2F)
-}
-
 // hasDecompositionSwap reports whether the input is not already in NFC, which
 // is the rung's definition in Unicode.Security.Identity.HomoglyphConfusable:
 // `toNFC input ≠ input`. An input that renders as its own composed form carries
@@ -532,20 +526,3 @@ func isDefaultIgnorableCodepoint(cp uint32) bool {
 	return false
 }
 
-func isWhiteSpaceCodepoint(cp uint32) bool {
-	return cp == 0x0009 ||
-		cp == 0x000A ||
-		cp == 0x000B ||
-		cp == 0x000C ||
-		cp == 0x000D ||
-		cp == 0x0020 ||
-		cp == 0x0085 ||
-		cp == 0x00A0 ||
-		cp == 0x1680 ||
-		(cp >= 0x2000 && cp <= 0x200A) ||
-		cp == 0x2028 ||
-		cp == 0x2029 ||
-		cp == 0x202F ||
-		cp == 0x205F ||
-		cp == 0x3000
-}

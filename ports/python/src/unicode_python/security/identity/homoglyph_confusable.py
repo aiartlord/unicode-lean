@@ -197,9 +197,11 @@ def iterated_skeleton(input_cps: list[int]) -> list[int]:
 
 def letter_skeleton(input_cps: list[int]) -> list[int]:
     """Stricter "letter" skeleton — ``iterated_skeleton`` followed by
-    removal of (a) every codepoint with ``canonicalCombiningClass > 0``,
-    (b) every codepoint with the ``Default_Ignorable_Code_Point``
-    derived property, AND (c) every whitespace codepoint.
+    removal of (a) every codepoint with ``canonicalCombiningClass > 0``
+    AND (b) every codepoint with the ``Default_Ignorable_Code_Point``
+    derived property. Whitespace is not stripped: the Lean
+    ``letterSkeleton`` keeps it, and stripping it made a plain ASCII name
+    with a stray space (" apple") a target match.
 
     Catches three adjacent classes of typosquat attack:
       (1) base-letter+combining-mark confusables (U+0247 ɇ → e + ◌̸)
@@ -213,9 +215,7 @@ def letter_skeleton(input_cps: list[int]) -> list[int]:
     return [
         cp
         for cp in iterated_skeleton(input_cps)
-        if ucd.ccc(cp) == 0
-        and not ucd.is_default_ignorable(cp)
-        and not ucd.is_white_space(cp)
+        if ucd.ccc(cp) == 0 and not ucd.is_default_ignorable(cp)
     ]
 
 
@@ -411,8 +411,8 @@ def _find_target_match(
     red-team plan).  Walks the entire curated target list every
     call; captures FIRST matching index but continues iterating to
     completion.  letter_skeleton handles combining-mark + cascading-
-    substitute confusables (Hole 4) and Default_Ignorable + White_Space
-    invisible insertion (Hole 5).
+    substitute confusables (Hole 4) and Default_Ignorable invisible
+    insertion (Hole 5).
     """
     input_letters = letter_skeleton(input_cps)
     targets = known_attack_targets()

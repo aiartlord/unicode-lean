@@ -242,7 +242,7 @@ defmodule UnicodeSecurity.Identity.HomoglyphConfusable do
 
   defp letter_skeleton_from_iterated(iterated) do
     Enum.filter(iterated, fn cp ->
-      Ucd.ccc(cp) == 0 and not Ucd.default_ignorable?(cp) and not Ucd.white_space?(cp)
+      Ucd.ccc(cp) == 0 and not Ucd.default_ignorable?(cp)
     end)
   end
 

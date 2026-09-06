@@ -3564,20 +3564,6 @@ LOOKUP-CASE-FOLD.
     MOVE 0 TO FOLD-LEN
     COPY "src/generated/case_fold.cpy".
 
-IS-SKELETON-WHITE-SPACE.
-*> White_Space as the reference hardcodes it: the range set is small and
-*> stable, so no table is vendored for it. Whitespace inside an identifier is
-*> attacker abuse rather than orthography, so the letter skeleton drops it.
-    MOVE 0 TO TABLE-FLAG
-    IF (LOOKUP-CP >= 9 AND LOOKUP-CP <= 13)
-       OR LOOKUP-CP = 32 OR LOOKUP-CP = 133 OR LOOKUP-CP = 160
-       OR LOOKUP-CP = 5760
-       OR (LOOKUP-CP >= 8192 AND LOOKUP-CP <= 8202)
-       OR (LOOKUP-CP >= 8232 AND LOOKUP-CP <= 8233)
-       OR LOOKUP-CP = 8239 OR LOOKUP-CP = 8287 OR LOOKUP-CP = 12288
-        MOVE 1 TO TABLE-FLAG
-    END-IF.
-
 FOLD-SKEL-BUFFER.
 *> Case-fold every codepoint of SKEL-CP in place.
     MOVE 0 TO SKEL-WORK-COUNT
@@ -3676,10 +3662,11 @@ COMPUTE-ITERATED-SKELETON.
     END-PERFORM.
 
 REDUCE-SKEL-TO-LETTERS.
-*> The letter skeleton: the iterated skeleton with every combining mark, every
-*> Default_Ignorable codepoint and every whitespace codepoint dropped. This is
-*> what catches a base-letter-plus-combining-mark confusable, a cascading
-*> substitution, and an invisible codepoint spliced into a name.
+*> The letter skeleton: the iterated skeleton with every combining mark and
+*> every Default_Ignorable codepoint dropped, whitespace kept (the Lean
+*> letterSkeleton). This is what catches a base-letter-plus-combining-mark
+*> confusable, a cascading substitution, and an invisible codepoint spliced
+*> into a name.
     PERFORM COMPUTE-ITERATED-SKELETON
     MOVE 0 TO SKEL-WORK-COUNT
     PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > SKEL-COUNT
@@ -3690,12 +3677,8 @@ REDUCE-SKEL-TO-LETTERS.
             MOVE 0 TO TABLE-FLAG
             PERFORM IS-DEFAULT-IGNORABLE
             IF TABLE-FLAG = 0
-                MOVE SKEL-CP(KDX) TO LOOKUP-CP
-                PERFORM IS-SKELETON-WHITE-SPACE
-                IF TABLE-FLAG = 0
-                    MOVE SKEL-CP(KDX) TO PUSH-CP-VAL
-                    PERFORM PUSH-SKEL-WORK-CP
-                END-IF
+                MOVE SKEL-CP(KDX) TO PUSH-CP-VAL
+                PERFORM PUSH-SKEL-WORK-CP
             END-IF
         END-IF
     END-PERFORM

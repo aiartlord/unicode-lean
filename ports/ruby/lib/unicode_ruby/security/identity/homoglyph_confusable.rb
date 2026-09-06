@@ -175,7 +175,7 @@ module UnicodeRuby
 
         def letter_skeleton_from_iterated(iterated)
           iterated.select do |cp|
-            Ucd.ccc(cp) == 0 && !Ucd.default_ignorable?(cp) && !Ucd.white_space?(cp)
+            Ucd.ccc(cp) == 0 && !Ucd.default_ignorable?(cp)
           end
         end
 

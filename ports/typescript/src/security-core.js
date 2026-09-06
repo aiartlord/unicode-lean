@@ -1571,7 +1571,9 @@ function homoglyphTargetMatch(input) {
 
 function letterSkeleton(input) {
   return iteratedSkeleton(input).filter(
-    (cp) => !isCombiningMark(cp) && !isDefaultIgnorableCodepoint(cp) && !isWhiteSpaceCodepoint(cp),
+    // The Lean letterSkeleton: canonical combining class zero and not
+    // Default_Ignorable; whitespace is kept.
+    (cp) => canonicalCombiningClass(cp) === 0 && !isDefaultIgnorableCodepoint(cp),
   );
 }
 
@@ -5362,15 +5364,6 @@ function isC1Control(cp) {
   return cp >= 0x80 && cp <= 0x9f;
 }
 
-function isCombiningMark(cp) {
-  return (
-    (cp >= 0x0300 && cp <= 0x036f) ||
-    (cp >= 0x1ab0 && cp <= 0x1aff) ||
-    (cp >= 0x1dc0 && cp <= 0x1dff) ||
-    (cp >= 0x20d0 && cp <= 0x20ff) ||
-    (cp >= 0xfe20 && cp <= 0xfe2f)
-  );
-}
 
 // True iff the input is not already in NFC, which is the rung's definition in
 // Unicode.Security.Identity.HomoglyphConfusable: `toNFC input ≠ input`. An
@@ -5796,25 +5789,6 @@ function isDefaultIgnorableCodepoint(cp) {
   return inRanges(defaultIgnorableRangesCache, cp);
 }
 
-function isWhiteSpaceCodepoint(cp) {
-  return (
-    cp === 0x0009 ||
-    cp === 0x000a ||
-    cp === 0x000b ||
-    cp === 0x000c ||
-    cp === 0x000d ||
-    cp === 0x0020 ||
-    cp === 0x0085 ||
-    cp === 0x00a0 ||
-    cp === 0x1680 ||
-    (cp >= 0x2000 && cp <= 0x200a) ||
-    cp === 0x2028 ||
-    cp === 0x2029 ||
-    cp === 0x202f ||
-    cp === 0x205f ||
-    cp === 0x3000
-  );
-}
 
 function scanUtf16(profile, mode, bytes, order) {
   const decoded = decodeUtf16ToCodepoints(bytes, order);

@@ -965,30 +965,6 @@ def is_default_ignorable(cp: int) -> bool:
     return False
 
 
-def is_white_space(cp: int) -> bool:
-    """UCD PropList.txt White_Space — covers ASCII tab/newline/space,
-    NBSP (U+00A0), NNBSP (U+202F — often abused for invisibility),
-    space-separator U+2000..U+200A, line/paragraph separators,
-    medium math space, ideographic space.  Hardcoded since the
-    range table is small and stable.
-
-    Used by `letter_skeleton` to strip whitespace from typosquat
-    comparison — whitespace inside an identifier is universally
-    attacker abuse, never legitimate."""
-    return (
-        (0x0009 <= cp <= 0x000D)
-        or cp == 0x0020
-        or cp == 0x0085
-        or cp == 0x00A0
-        or cp == 0x1680
-        or (0x2000 <= cp <= 0x200A)
-        or (0x2028 <= cp <= 0x2029)
-        or cp == 0x202F
-        or cp == 0x205F
-        or cp == 0x3000
-    )
-
-
 # ─────────────────────────────────────────────────────────────────────
 # UTS #39 § 5.1 Restriction-level classification
 # ─────────────────────────────────────────────────────────────────────

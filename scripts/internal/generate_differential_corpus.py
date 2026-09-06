@@ -483,6 +483,16 @@ def main() -> int:
         help="report whether the committed fixture matches a fresh generation",
     )
     parser.add_argument("--sync-ports", action="store_true")
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help=(
+            "write the corpus here instead of the committed fixture; for a "
+            "larger stress run against the Lean replay (the stream is seeded, "
+            "so the committed corpus is a prefix of any longer run)"
+        ),
+    )
     args = parser.parse_args()
 
     if not args.binary.exists():
@@ -515,6 +525,11 @@ def main() -> int:
 
     document = build_document(args.binary, args.count)
     serialized = serialize_document(document)
+
+    if args.output is not None:
+        args.output.write_text(serialized)
+        print(f"wrote {args.output} ({len(document['cases'])} cases)")
+        return 0
 
     FIXTURE.write_text(serialized)
     print(f"wrote {FIXTURE.relative_to(ROOT)} ({len(document['cases'])} cases)")

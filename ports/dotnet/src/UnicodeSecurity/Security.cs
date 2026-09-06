@@ -1086,7 +1086,9 @@ public static partial class Security
 
     private static List<int> LetterSkeleton(List<int> input) =>
         IteratedSkeleton(input)
-            .Where(cp => !IsCombiningMark(cp) && !IsDefaultIgnorableCodepoint(cp) && !IsWhiteSpaceCodepoint(cp))
+            // The Lean letterSkeleton: canonical combining class zero and not
+            // Default_Ignorable; whitespace is kept.
+            .Where(cp => CanonicalCombiningClass(cp) == 0 && !IsDefaultIgnorableCodepoint(cp))
             .ToList();
 
     /// Iteration cap for IteratedSkeleton, mirroring the Lean
@@ -2456,11 +2458,6 @@ public static partial class Security
     private static bool IsC0Control(int cp) => cp <= 0x1F && cp is not 0x09 and not 0x0A and not 0x0D || cp == 0x7F;
     private static bool IsC1Control(int cp) => cp is >= 0x80 and <= 0x9F;
 
-    private static bool IsCombiningMark(int cp) =>
-        cp is >= 0x0300 and <= 0x036F || cp is >= 0x1AB0 and <= 0x1AFF ||
-        cp is >= 0x1DC0 and <= 0x1DFF || cp is >= 0x20D0 and <= 0x20FF ||
-        cp is >= 0xFE20 and <= 0xFE2F;
-
     /// True iff the input is not already in NFC, which is the rung's definition in
     /// Unicode.Security.Identity.HomoglyphConfusable: `toNFC input ≠ input`. An input
     /// that renders as its own composed form carries no swap, whatever its individual
@@ -2913,10 +2910,6 @@ public static partial class Security
         }
         return false;
     }
-
-    private static bool IsWhiteSpaceCodepoint(int cp) =>
-        cp is 0x0009 or 0x000A or 0x000B or 0x000C or 0x000D or 0x0020 or 0x0085 or 0x00A0 or 0x1680 ||
-        cp is >= 0x2000 and <= 0x200A || cp is 0x2028 or 0x2029 or 0x202F or 0x205F or 0x3000;
 
     private static Verdict ScanUtf16(string profile, string mode, byte[] input, ByteOrder order)
     {

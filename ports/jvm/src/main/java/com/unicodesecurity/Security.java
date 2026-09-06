@@ -1266,7 +1266,9 @@ public final class Security {
   private static List<Integer> letterSkeleton(List<Integer> input) {
     List<Integer> out = new ArrayList<>();
     for (int cp : iteratedSkeleton(input)) {
-      if (!isCombiningMark(cp) && !isDefaultIgnorableCodepoint(cp) && !isWhiteSpaceCodepoint(cp)) out.add(cp);
+      // The Lean letterSkeleton: canonical combining class zero and not
+      // Default_Ignorable; whitespace is kept.
+      if (canonicalCombiningClass(cp) == 0 && !isDefaultIgnorableCodepoint(cp)) out.add(cp);
     }
     return out;
   }
@@ -2641,12 +2643,6 @@ public final class Security {
     return cp >= 0x80 && cp <= 0x9F;
   }
 
-  private static boolean isCombiningMark(int cp) {
-    return (cp >= 0x0300 && cp <= 0x036F) || (cp >= 0x1AB0 && cp <= 0x1AFF) ||
-        (cp >= 0x1DC0 && cp <= 0x1DFF) || (cp >= 0x20D0 && cp <= 0x20FF) ||
-        (cp >= 0xFE20 && cp <= 0xFE2F);
-  }
-
   /**
    * True iff the input is not already in NFC, which is the rung's definition in
    * Unicode.Security.Identity.HomoglyphConfusable: {@code toNFC input ≠ input}. An input that
@@ -3050,13 +3046,6 @@ public final class Security {
     }
     for (int[] r : defaultIgnorableRanges) if (r[0] <= cp && cp <= r[1]) return true;
     return false;
-  }
-
-  private static boolean isWhiteSpaceCodepoint(int cp) {
-    return cp == 0x0009 || cp == 0x000A || cp == 0x000B || cp == 0x000C ||
-        cp == 0x000D || cp == 0x0020 || cp == 0x0085 || cp == 0x00A0 ||
-        cp == 0x1680 || (cp >= 0x2000 && cp <= 0x200A) || cp == 0x2028 ||
-        cp == 0x2029 || cp == 0x202F || cp == 0x205F || cp == 0x3000;
   }
 
   private static Verdict scanUtf16(String profile, String mode, byte[] input, ByteOrder order) {

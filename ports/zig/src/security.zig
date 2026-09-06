@@ -2175,7 +2175,9 @@ fn letterSkeleton(input: []const u32) CapacityError!CpBuffer {
     const iterated = try iteratedSkeleton(input);
     var out = CpBuffer{};
     for (iterated.slice()) |cp| {
-        if (!isCombiningMark(cp) and !isDefaultIgnorableCodepoint(cp) and !isWhiteSpaceCodepoint(cp)) {
+        // The Lean letterSkeleton: canonical combining class zero and not
+        // Default_Ignorable; whitespace is kept.
+        if (canonicalCombiningClass(cp) == 0 and !isDefaultIgnorableCodepoint(cp)) {
             try out.append(cp);
         }
     }
@@ -6842,14 +6844,6 @@ fn ctCpSlicesEqual(a: []const u32, b: []const u32) bool {
     return acc == 0;
 }
 
-fn isCombiningMark(cp: u32) bool {
-    return (cp >= 0x0300 and cp <= 0x036F) or
-        (cp >= 0x1AB0 and cp <= 0x1AFF) or
-        (cp >= 0x1DC0 and cp <= 0x1DFF) or
-        (cp >= 0x20D0 and cp <= 0x20FF) or
-        (cp >= 0xFE20 and cp <= 0xFE2F);
-}
-
 // True iff the input is not already in NFC, which is the rung's definition in
 // Unicode.Security.Identity.HomoglyphConfusable: `toNFC input ≠ input`. An
 // input that renders as its own composed form carries no swap, whatever its
@@ -7266,24 +7260,6 @@ fn hasCrossScriptMix(input: []const u32) bool {
 /// asks this question once per codepoint, where a whole-file rescan dominates.
 fn isDefaultIgnorableCodepoint(cp: u32) bool {
     return inCasingRange(casing_data.default_ignorable[0..], cp);
-}
-
-fn isWhiteSpaceCodepoint(cp: u32) bool {
-    return cp == 0x0009 or
-        cp == 0x000A or
-        cp == 0x000B or
-        cp == 0x000C or
-        cp == 0x000D or
-        cp == 0x0020 or
-        cp == 0x0085 or
-        cp == 0x00A0 or
-        cp == 0x1680 or
-        (cp >= 0x2000 and cp <= 0x200A) or
-        cp == 0x2028 or
-        cp == 0x2029 or
-        cp == 0x202F or
-        cp == 0x205F or
-        cp == 0x3000;
 }
 
 fn nextLine(raw: []const u8, offset: *usize) ?[]const u8 {

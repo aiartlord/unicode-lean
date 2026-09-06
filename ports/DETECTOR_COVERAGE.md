@@ -399,6 +399,25 @@ differently in the capped ports and an input that never converged would have
 hung the uncapped ones. Every port and the reference now carry the Lean's 32,
 so termination is structural everywhere rather than a property of the data.
 
+A ninth divergence class was found only by replaying a larger corpus. The
+committed 5000 cases are a prefix of the generator's seeded stream, so the same
+generator run to 100 000 cases and replayed through the Lean is a strict
+superset of the gate; that run reported one mismatch, a space-prefixed
+Cyrillic-Latin identifier the reference judged a TargetMatch and the Lean a
+CrossScriptMix. The homoglyph letter skeleton is defined in the Lean as the
+iterated skeleton restricted to codepoints with canonical combining class zero
+that are not Default_Ignorable; the reference and every port also stripped
+White_Space, so a leading space vanished before the target comparison and
+" apple" matched "apple", including in pure ASCII, where nothing else would
+fire. Six ports also read "combining mark" as five hardcoded block ranges
+rather than the combining class. All sixteen implementations now apply the
+Lean's two-predicate filter and the whitespace and block-range predicates are
+gone. The fixed reference reproduces the committed corpus unchanged, which is
+consistent with the Lean replay having been clean over it, and is why the
+class stayed invisible at 5000 cases: the input shape needs whitespace, a
+confusable and a target in one short identifier, and the stream first produces
+it past case 89 000.
+
 Implementation is one thing and reach is another: a detector only reaches a
 caller if the port's scan path invokes it. `Unicode/Security/RunAll.lean`
 dispatches all twenty-seven families; a plain scan dispatches twenty-four of

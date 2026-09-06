@@ -127,7 +127,7 @@ end
 local function letter_skeleton_from_iterated(iterated)
   local out = {}
   for _, cp in ipairs(iterated) do
-    if ucd.ccc(cp) == 0 and not ucd.is_default_ignorable(cp) and not ucd.is_white_space(cp) then
+    if ucd.ccc(cp) == 0 and not ucd.is_default_ignorable(cp) then
       out[#out + 1] = cp
     end
   end

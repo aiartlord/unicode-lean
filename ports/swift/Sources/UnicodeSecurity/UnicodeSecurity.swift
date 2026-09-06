@@ -1162,7 +1162,9 @@ private func homoglyphTargetMatch(_ input: [Int]) -> String? {
 
 private func letterSkeleton(_ input: [Int]) -> [Int] {
     iteratedSkeleton(input).filter {
-        !isCombiningMark($0) && !isDefaultIgnorableCodepoint($0) && !isWhiteSpaceCodepoint($0)
+        // The Lean letterSkeleton: canonical combining class zero and not
+        // Default_Ignorable; whitespace is kept.
+        canonicalCombiningClass($0) == 0 && !isDefaultIgnorableCodepoint($0)
     }
 }
 
@@ -2676,14 +2678,6 @@ private func isC1Control(_ cp: Int) -> Bool {
     cp >= 0x80 && cp <= 0x9f
 }
 
-private func isCombiningMark(_ cp: Int) -> Bool {
-    (cp >= 0x0300 && cp <= 0x036f) ||
-        (cp >= 0x1ab0 && cp <= 0x1aff) ||
-        (cp >= 0x1dc0 && cp <= 0x1dff) ||
-        (cp >= 0x20d0 && cp <= 0x20ff) ||
-        (cp >= 0xfe20 && cp <= 0xfe2f)
-}
-
 /// True iff the input is not already in NFC, which is the rung's definition in
 /// Unicode.Security.Identity.HomoglyphConfusable: `toNFC input ≠ input`. An input that
 /// renders as its own composed form carries no swap, whatever its individual codepoints
@@ -3070,14 +3064,6 @@ private func defaultIgnorableRanges() -> [(Int, Int)] {
 /// U+1D173..U+1D17A.
 private func isDefaultIgnorableCodepoint(_ cp: Int) -> Bool {
     inCasingRanges(defaultIgnorableRanges(), cp)
-}
-
-private func isWhiteSpaceCodepoint(_ cp: Int) -> Bool {
-    cp == 0x0009 || cp == 0x000a || cp == 0x000b || cp == 0x000c ||
-        cp == 0x000d || cp == 0x0020 || cp == 0x0085 || cp == 0x00a0 ||
-        cp == 0x1680 || (cp >= 0x2000 && cp <= 0x200a) ||
-        cp == 0x2028 || cp == 0x2029 || cp == 0x202f || cp == 0x205f ||
-        cp == 0x3000
 }
 
 private func scanUtf16(profile: String, mode: String, bytes: [UInt8], order: ByteOrder) -> Verdict {

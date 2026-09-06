@@ -1077,26 +1077,6 @@ inline bool is_default_ignorable(
     return false;
 }
 
-/// UCD PropList.txt White_Space predicate.  Hardcoded match
-/// since the table is small and stable.  Includes ASCII tab /
-/// newline / space, NBSP, NNBSP (U+202F — often abused for
-/// invisibility in fonts), space-separator U+2000..U+200A,
-/// line / paragraph separators, medium math space, ideographic
-/// space.  Used by letter_skeleton to strip whitespace from
-/// typosquat comparison.
-inline constexpr bool is_white_space(std::uint32_t cp) {
-    return (cp >= 0x0009 && cp <= 0x000D)
-        || cp == 0x0020
-        || cp == 0x0085
-        || cp == 0x00A0
-        || cp == 0x1680
-        || (cp >= 0x2000 && cp <= 0x200A)
-        || (cp >= 0x2028 && cp <= 0x2029)
-        || cp == 0x202F
-        || cp == 0x205F
-        || cp == 0x3000;
-}
-
 /// Default full case folding (RFC 8265 § 5.2.4 / UCD CaseFolding.txt
 /// status C ∪ F) of a codepoint sequence.  Codepoints absent from
 /// the table fold to themselves.

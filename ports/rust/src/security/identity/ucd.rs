@@ -1037,32 +1037,6 @@ pub fn is_default_ignorable(cp: u32) -> bool {
     false
 }
 
-/// True iff `cp` is a whitespace codepoint per UCD PropList.txt
-/// `White_Space` property.  Includes ASCII tab/newline/space,
-/// no-break space (U+00A0), narrow no-break space (U+202F —
-/// frequently abused for invisibility-in-fonts), the
-/// space-separator block U+2000..U+200A, line/paragraph
-/// separators, medium math space (U+205F), and ideographic space
-/// (U+3000).  Hardcoded since the table is small and stable.
-///
-/// Used by `letter_skeleton` to strip whitespace from typosquat
-/// comparison — whitespace inside an identifier is universally
-/// attacker abuse, never legitimate.
-pub fn is_white_space(cp: u32) -> bool {
-    matches!(cp,
-        0x0009..=0x000D
-      | 0x0020
-      | 0x0085
-      | 0x00A0
-      | 0x1680
-      | 0x2000..=0x200A
-      | 0x2028..=0x2029
-      | 0x202F
-      | 0x205F
-      | 0x3000
-    )
-}
-
 // ─────────────────────────────────────────────────────────────────────
 // UTS #39 § 5.1 Restriction-level classification
 // ─────────────────────────────────────────────────────────────────────

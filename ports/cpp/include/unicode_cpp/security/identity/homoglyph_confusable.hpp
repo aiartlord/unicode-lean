@@ -411,8 +411,7 @@ letter_skeleton(std::span<const std::uint32_t> input, const Database &db) {
   std::vector<std::uint32_t> out;
   out.reserve(iter.size());
   for (std::uint32_t cp : iter) {
-    if (ucd::ccc(db.tables, cp) == 0 &&
-        !ucd::is_default_ignorable(db.tables, cp) && !ucd::is_white_space(cp)) {
+    if (ucd::ccc(db.tables, cp) == 0 && !ucd::is_default_ignorable(db.tables, cp)) {
       out.push_back(cp);
     }
   }
@@ -464,8 +463,8 @@ find_target_match(std::span<const std::uint32_t> input,
   // ct_u32_slice_eq.  Per-target work is independent of input.
   //
   // letter_skeleton handles combining-mark + cascading-substitute
-  // confusables (Hole 4) and Default_Ignorable + White_Space
-  // invisible insertion (Hole 5).  Mirrors Lean letterSkeleton.
+  // confusables (Hole 4) and Default_Ignorable invisible insertion
+  // (Hole 5).  Mirrors Lean letterSkeleton, which keeps whitespace.
   auto input_letters = letter_skeleton(input, db);
   std::optional<std::size_t> first_match;
   for (std::size_t idx = 0; idx < db.known_attack_targets.size(); ++idx) {

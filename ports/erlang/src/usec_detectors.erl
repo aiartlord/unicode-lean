@@ -499,11 +499,12 @@ parse_targets() ->
               end
       end, lines(usec_data:read_file("KnownAttackTargets.txt"))).
 
+%% The Lean letterSkeleton: combining marks and Default_Ignorable codepoints
+%% dropped, whitespace kept.
 letter_skeleton(Cps) ->
     [Cp || Cp <- Cps,
            usec_ucd:ccc(Cp) =:= 0,
-           not usec_ucd:is_default_ignorable(Cp),
-           not usec_ucd:is_white_space(Cp)].
+           not usec_ucd:is_default_ignorable(Cp)].
 
 find_target_match(Input, ISkel) ->
     Letters = letter_skeleton(ISkel),
