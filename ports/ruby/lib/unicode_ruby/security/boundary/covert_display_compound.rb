@@ -31,7 +31,7 @@ module UnicodeRuby
           input.each_index do |i|
             cp = input[i]
             if Covert::VariationSelectorPayload.variation_selector?(cp) &&
-               !(i > 0 && Covert::VariationSelectorPayload.registered_variation_pair?(input[i - 1], cp))
+               !Covert::VariationSelectorPayload.registered_variation_use?(input, i)
               return i
             end
           end

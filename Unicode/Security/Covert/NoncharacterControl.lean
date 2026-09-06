@@ -56,6 +56,26 @@ def hitCount (input : List Nat) : Nat :=
   input.foldl (init := 0) (fun acc cp =>
     if isNoncharacter cp ∨ isC0Control cp ∨ isC1Control cp then acc + 1 else acc)
 
+/-- Positions of every codepoint satisfying `p`, in input order. -/
+def positionsOf (p : Nat → Bool) (input : List Nat) : List Nat :=
+  input.zipIdx.filterMap (fun cpWithIdx =>
+    if p cpWithIdx.1 then some cpWithIdx.2 else none)
+
+/-- Positions of every noncharacter. The policy layer reports each of the three
+    classes present as its own finding over that class's positions
+    (`Unicode.Security.RunAll`), so a control beside a noncharacter is not
+    hidden behind the noncharacter's priority in `detect`. -/
+def noncharacterPositions (input : List Nat) : List Nat :=
+  positionsOf isNoncharacter input
+
+/-- Positions of every C0 control (less TAB, LF, CR; plus DEL). -/
+def c0Positions (input : List Nat) : List Nat :=
+  positionsOf isC0Control input
+
+/-- Positions of every C1 control. -/
+def c1Positions (input : List Nat) : List Nat :=
+  positionsOf isC1Control input
+
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §2 Types
 -- ═══════════════════════════════════════════════════════════════════════════════

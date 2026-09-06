@@ -30,7 +30,7 @@ func isTagBlockChar(cp uint32) bool {
 // classifyPositions.
 func firstSuspiciousVsPos(input []uint32) (int, bool) {
 	for i, cp := range input {
-		if isVariationSelector(cp) && !isRegisteredVariationPosition(input, i) {
+		if isVariationSelector(cp) && !isRegisteredVariationUse(input, i) {
 			return i, true
 		}
 	}

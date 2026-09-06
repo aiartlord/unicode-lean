@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "contract": "unicode-security-reason-codes-v0",
-  "description": "Every reason code the default scan can emit, one entry per detector family the Lean policy dispatches on plain codepoints (Unicode/Security/Policy.lean, familyTag) with the sub-threat tags of that family's Lean Classification.tag. scripts/check-fixture-coverage.py requires the shared verdict fixtures to reach every code here, and rejects a code emitted by any fixture that is not here. positionless lists the sub-threats whose classification localises nothing; whole_span lists the sub-threats whose firing condition covers the entire input (a tag-only input, a whole-field restriction level), so their positions are always the whole span by construction; unreachable lists sub-threats the reference cannot emit under any input, each with the reason, so the gate fails if one ever appears. Every other code must be reached with a strict, nonempty, non-leading subset of the input's positions. The position shapes recorded here are the reference's; Unicode/Conformance/Security/CorpusDifferential.lean holds the reference to the Lean spec, and the spec differences it reports are decided on the messageboard tracker before this file follows.",
+  "description": "Every reason code the default scan can emit, one entry per detector family the Lean policy dispatches on plain codepoints (Unicode/Security/Policy.lean, familyTag) with the sub-threat tags of that family's Lean Classification.tag. scripts/check-fixture-coverage.py requires the shared verdict fixtures to reach every code here, and rejects a code emitted by any fixture that is not here. positionless lists the sub-threats whose classification localises nothing; whole_span lists the sub-threats whose firing condition covers the entire input (a tag-only input, a whole-field restriction level), so their positions are always the whole span by construction; unreachable lists sub-threats the reference cannot emit under any input, each with the reason, so the gate fails if one ever appears. Every other code must be reached with a strict, nonempty, non-leading subset of the input's positions. The position shapes recorded here are the Lean spec's: Unicode/Conformance/Security/CorpusDifferential.lean replays the fixtures through the Lean scan so the recorded verdicts, and the reference that produced them, are held to that spec, and a difference it reports is decided on the messageboard tracker (spec change with proofs re-run, or reference change with fixtures regenerated and every port following) before this file follows.",
   "families": {
     "tag-block-payload": {
       "layer": "C",
@@ -12,10 +12,7 @@
     "variation-selector-payload": {
       "layer": "C",
       "sub_threats": ["DirectPayload", "EmbeddedAfterRegistered", "IllegalTarget", "RepeatedBase"],
-      "positionless": [],
-      "unreachable": {
-        "EmbeddedAfterRegistered": "the Lean pickSubThreat fires it first when a registered variation selector precedes a suspicious one; the reference detect has no such branch (ports/rust/src/security/covert/variation_selector_payload.rs) -- spec divergence pending decision"
-      }
+      "positionless": []
     },
     "zero-width-payload": {
       "layer": "C",
@@ -40,17 +37,15 @@
     "homoglyph-confusable": {
       "layer": "I",
       "sub_threats": ["AsciiConfusable", "CrossScriptMix", "DecompositionSwap", "MathAlpha", "RestrictionLow", "TargetMatch", "WidthClass"],
-      "positionless": [],
-      "whole_span": ["RestrictionLow"]
+      "positionless": ["CrossScriptMix", "RestrictionLow", "TargetMatch"]
     },
     "mixed-script-admissibility": {
       "layer": "I",
       "sub_threats": ["CjkMix", "LatinCyrillic", "LatinGreek", "RestrictedStatusCp", "ScriptMixOther", "UnrestrictedLevel"],
-      "positionless": [],
-      "whole_span": ["RestrictedStatusCp"],
+      "positionless": ["ScriptMixOther"],
       "unreachable": {
         "CjkMix": "fires only when the union has two scripts, the input is not highly restrictive, and the input is within a CJK covered set; highly restrictive is defined as single-script or within a CJK covered set, so the third condition contradicts the second (Unicode/Security/Identity/MixedScriptAdmissibility.lean detectWithContext, ports/rust/src/security/identity/homoglyph_confusable.rs mixed_script_verdict)",
-        "UnrestrictedLevel": "the reference gates it on an identifier field, where every codepoint outside Identifier_Status=Allowed already fires RestrictedStatusCp and a two-script union already fires the mix rungs, so the Unrestricted level cannot be reached; the Lean does not gate it and reaches it on gateway-header input -- spec divergence pending decision"
+        "UnrestrictedLevel": "gated on an identifier field in both the Lean and the reference, where every codepoint outside Identifier_Status=Allowed already fires RestrictedStatusCp and a two-script union that is not highly restrictive already fires the mix rungs, so the Unrestricted level cannot be reached"
       }
     },
     "emoji-zwj-integrity": {

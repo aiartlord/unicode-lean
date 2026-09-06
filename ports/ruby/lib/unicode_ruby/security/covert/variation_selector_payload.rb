@@ -108,26 +108,41 @@ module UnicodeRuby
           s
         end
 
+        # The Lean classifyVS registered reading of the selector at `position`:
+        # a standardized or emoji variation sequence, or VS15 / VS16 on any
+        # base carrying the Emoji property. A selector with no predecessor is
+        # never registered.
+        def registered_variation_use?(input, position)
+          return false if position.zero?
+
+          base = input[position - 1]
+          vs = input[position]
+          registered_variation_pair?(base, vs) ||
+            ((vs == 0xFE0F || vs == 0xFE0E) && Crypto::AiWatermarkDetectability.emoji?(base))
+        end
+
+        # Mirrors the Lean detect: each selector is judged against its
+        # predecessor, registered uses are sanctioned wherever they stand and
+        # however many, and the hazard is the suspicious run alone, ranked
+        # EmbeddedAfterRegistered (a registered selector before the run),
+        # RepeatedBase, DirectPayload, IllegalTarget. The verdict's positions
+        # are the suspicious selectors.
         def detect(input)
           vs_positions = []
           input.each_with_index { |cp, i| vs_positions << i if variation_selector?(cp) }
+          registered = vs_positions.select { |p| registered_variation_use?(input, p) }
+          suspicious = vs_positions.reject { |p| registered_variation_use?(input, p) }
 
-          if vs_positions.empty?
+          if suspicious.empty?
             return Verdict.new(Calculus::ClassificationKind::CLEAR, nil, [], [])
           end
 
-          recovered_bytes = decode_vs_run(input, vs_positions)
-
-          # Single-VS exemption: a registered (base, VS) pair is legitimate.
-          if vs_positions.length == 1
-            p = vs_positions[0]
-            if p > 0 && registered_variation_pair?(input[p - 1], input[p])
-              return Verdict.new(Calculus::ClassificationKind::CLEAR, nil, vs_positions, recovered_bytes)
-            end
-          end
-
+          recovered_bytes = decode_vs_run(input, suspicious)
+          payload_start = suspicious[0]
           sub =
-            if vs_positions.length >= 4 && all_same_vs(input, vs_positions)
+            if registered.any? { |p| p < payload_start }
+              "EmbeddedAfterRegistered"
+            elsif suspicious.length >= 4 && all_same_vs(input, suspicious)
               "RepeatedBase"
             elsif !recovered_bytes.empty?
               "DirectPayload"
@@ -135,7 +150,7 @@ module UnicodeRuby
               "IllegalTarget"
             end
 
-          Verdict.new(Calculus::ClassificationKind::HAZARD, sub, vs_positions, recovered_bytes)
+          Verdict.new(Calculus::ClassificationKind::HAZARD, sub, suspicious, recovered_bytes)
         end
       end
     end

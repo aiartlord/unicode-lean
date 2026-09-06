@@ -181,6 +181,7 @@ const SEEDS: &[&[u32]] = &[
     &[0x0061, 0x202F, 0x0062, 0x202F], // zero_width_payload/AiWatermarkNNBSP
     &[0x0061, 0xFFF9, 0x0062, 0xFFFB], // zero_width_payload/AnnotationMisuse
     &[0x0061, 0x200B, 0x0062, 0x200B], // zero_width_payload/BinaryPayload
+    &[0x1F600, 0xFE0F, 0x0041, 0xFE00], // variation_selector_payload/EmbeddedAfterRegistered
 ];
 
 fn pick_seed(rng: &mut Xorshift) -> &'static [u32] {

@@ -66,11 +66,11 @@ theorem word_joiner_verdict :
 
 /-- Two U+202F NARROW NO-BREAK SPACEs punctuating text are the signature of a
     machine-generated watermark rather than natural typography; the detector must
-    raise `AIWatermarkNNBSP`, reflect both occurrences in the count, and mark
+    raise `AiWatermarkNNBSP`, reflect both occurrences in the count, and mark
     positions 1 and 3. -/
 theorem nnbsp_watermark_verdict :
     let v := detect [0x48, 0x202F, 0x69, 0x202F, 0x6F]
-    v.classify.tag = some "AIWatermarkNNBSP"
+    v.classify.tag = some "AiWatermarkNNBSP"
       ∧ v.nnbspCount = 2 ∧ v.classify.positions = [1, 3] := by decide
 
 /-- A U+FFF9 INTERLINEAR ANNOTATION ANCHOR with no matching SEPARATOR or
@@ -104,7 +104,7 @@ theorem all_rows_pass :
        v.classify.tag = some "WordJoinerInjection"
          ∧ v.wordJoinerCount = 1 ∧ v.classify.positions = [1])
     ∧ (let v := detect [0x48, 0x202F, 0x69, 0x202F, 0x6F]
-       v.classify.tag = some "AIWatermarkNNBSP"
+       v.classify.tag = some "AiWatermarkNNBSP"
          ∧ v.nnbspCount = 2 ∧ v.classify.positions = [1, 3])
     ∧ (let v := detect [0x48, 0xFFF9, 0x69]
        v.classify.tag = some "AnnotationMisuse" ∧ v.annotationCount = 1)
@@ -153,8 +153,8 @@ def rowsList : List VectorRow := [
   ⟨[0x0061, 0x2060, 0x2060, 0x0062], "Hazard:WordJoinerInjection", [1, 2]⟩,
   ⟨[0x4E2D, 0x2060, 0x6587], "Hazard:WordJoinerInjection", [1]⟩,
   ⟨[0x0061, 0x2060, 0x0062, 0x2060, 0x0063, 0x2060, 0x0064], "Hazard:WordJoinerInjection", [1, 3, 5]⟩,
-  ⟨[0x0048, 0x202F, 0x0069, 0x202F, 0x0021], "Hazard:AIWatermarkNNBSP", [1, 3]⟩,
-  ⟨[0x0061, 0x202F, 0x0062, 0x202F, 0x0063, 0x202F, 0x0064], "Hazard:AIWatermarkNNBSP", [1, 3, 5]⟩,
+  ⟨[0x0048, 0x202F, 0x0069, 0x202F, 0x0021], "Hazard:AiWatermarkNNBSP", [1, 3]⟩,
+  ⟨[0x0061, 0x202F, 0x0062, 0x202F, 0x0063, 0x202F, 0x0064], "Hazard:AiWatermarkNNBSP", [1, 3, 5]⟩,
   ⟨[0x0048, 0x200B, 0x0069], "Hazard:BareZeroWidth", [1]⟩,
   ⟨[0x0048, 0xFEFF, 0x0069], "Hazard:BareZeroWidth", [1]⟩,
   ⟨[0x0048, 0x200D, 0x0069], "Hazard:BareZeroWidth", [1]⟩,

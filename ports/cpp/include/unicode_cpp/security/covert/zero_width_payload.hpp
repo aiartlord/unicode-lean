@@ -154,7 +154,11 @@ inline std::string sub_threat_tag(const SubThreat& sub) {
 struct Verdict {
     ClassificationKind kind;
     std::optional<SubThreat> sub;
+    // Every zero-width position: the census.
     std::vector<std::size_t> zero_width_positions;
+    // The zero-width positions no context sanctions: what the classification
+    // localises (Lean suspiciousPositions). Empty when clear.
+    std::vector<std::size_t> suspicious_positions;
 };
 
 // Joining_Type from the compiled-in rows, used when the caller supplied no UCD
@@ -305,6 +309,7 @@ inline Verdict detect_with_optional_context(
         return v;
     }
 
+    v.suspicious_positions = suspicious;
     v.kind = ClassificationKind::Hazard;
     if (annotation_count > 0) {
         v.sub = AnnotationMisuse{annotation_count};

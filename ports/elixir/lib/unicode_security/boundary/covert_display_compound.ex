@@ -31,7 +31,7 @@ defmodule UnicodeSecurity.Boundary.CovertDisplayCompound do
     |> Enum.find_value(fn {cp, i} ->
       if VariationSelectorPayload.variation_selector?(cp) and
            not (i > 0 and
-                  VariationSelectorPayload.registered_variation_pair?(Enum.at(input, i - 1), cp)),
+                  VariationSelectorPayload.registered_variation_use?(Enum.at(input, i - 1), cp)),
          do: i,
          else: nil
     end)

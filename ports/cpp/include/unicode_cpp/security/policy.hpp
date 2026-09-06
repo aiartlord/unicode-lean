@@ -842,9 +842,11 @@ decode_utf32_stream(std::span<const std::uint8_t> bytes, Endian endian,
   return std::nullopt;
 }
 
-// The positions a homoglyph verdict implicates: the non-ASCII positions for
-// the ascii-confusable rung, the whole input for every other rung, nothing
-// when clear.
+// The positions a homoglyph verdict implicates, as the Lean detectWithContext
+// localises each rung: the ascii-confusable rung the non-ASCII positions,
+// math-alpha and width-class the first such codepoint, decomposition-swap the
+// first differing position, and nothing for a target match, a cross-script mix
+// or a restriction level, which judge the string as a unit. Nothing when clear.
 inline std::vector<std::size_t>
 homoglyph_positions(const homoglyph_confusable::Verdict &verdict,
                     std::span<const std::uint32_t> input) {
@@ -855,7 +857,25 @@ homoglyph_positions(const homoglyph_confusable::Verdict &verdict,
           *verdict.sub)) {
     return homoglyph_confusable::non_ascii_positions(input);
   }
-  return full_span_positions(input.size());
+  if (std::holds_alternative<homoglyph_confusable::MathAlpha>(*verdict.sub)) {
+    for (std::size_t i = 0; i < input.size(); ++i) {
+      if (homoglyph_confusable::is_math_alphanumeric(input[i]))
+        return {i};
+    }
+    return {};
+  }
+  if (std::holds_alternative<homoglyph_confusable::WidthClass>(*verdict.sub)) {
+    for (std::size_t i = 0; i < input.size(); ++i) {
+      if (homoglyph_confusable::is_fullwidth_halfwidth(input[i]))
+        return {i};
+    }
+    return {};
+  }
+  if (const auto *swap =
+          std::get_if<homoglyph_confusable::DecompositionSwap>(&*verdict.sub)) {
+    return {swap->first_diff_pos};
+  }
+  return {};
 }
 
 // One homoglyph finding under a field context, or nullopt when clear.
@@ -923,7 +943,7 @@ mixed_script_over_tokens(std::span<const std::uint32_t> input,
           tokens::shift_positions(
               token.start,
               std::span<const std::size_t>(
-                  full_span_positions(token.cps.size()))),
+                  homoglyph_confusable::mixed_script_positions(*sub, token.cps, db))),
           *sub,
           std::string(family_slug(Family::MixedScriptAdmissibility)),
       };
@@ -959,7 +979,8 @@ scan_with_identity_database(Profile profile, Mode mode,
                 std::string>{variation_selector_payload::sub_threat_tag(
                 *vs_result.sub)}
           : std::nullopt,
-      vs_result.vs_positions);
+      // The Lean localises the suspicious selectors, not the census.
+      vs_result.suspicious_positions);
 
   // The ZWJ and ZWNJ exemptions hold on both paths: from the identity database
   // when the caller supplied one, otherwise from the compiled-in tables.
@@ -974,7 +995,8 @@ scan_with_identity_database(Profile profile, Mode mode,
           ? std::optional<std::string>{zero_width_payload::sub_threat_tag(
                 *zw_result.sub)}
           : std::nullopt,
-      zw_result.zero_width_positions);
+      // The Lean localises the suspicious zero-width positions, not the census.
+      zw_result.suspicious_positions);
 
   // Mirror `runAll`: SurrogateReassembly only applies to byte-stream input
   // (every codepoint <= 0xFF); on codepoint-array input the family is clear.
@@ -1030,7 +1052,8 @@ scan_with_identity_database(Profile profile, Mode mode,
                    input, *identity_db, identifier_field)) {
       detail::push_finding(findings, Family::MixedScriptAdmissibility,
                            ClassificationKind::Hazard, mixed_sub,
-                           detail::full_span_positions(input.size()));
+                           homoglyph_confusable::mixed_script_positions(
+                               *mixed_sub, input, *identity_db));
     }
 
     // Families that read the whole field as one identifier report clear on

@@ -6,6 +6,7 @@ namespace UnicodePhp\Security\Covert;
 
 use UnicodePhp\Data;
 use UnicodePhp\Security\ClassificationKind;
+use UnicodePhp\Security\Crypto\AiWatermarkDetectability;
 
 interface VsSubThreat
 {
@@ -52,16 +53,35 @@ final class VsRepeatedBase implements VsSubThreat
     }
 }
 
+/// A registered selector precedes the suspicious run: payload hiding behind a
+/// legitimate glyph (Lean embeddedAfterReg).
+final class VsEmbeddedAfterRegistered implements VsSubThreat
+{
+    public function __construct(
+        public readonly int $registeredEnd,
+        public readonly int $payloadStart,
+    ) {
+    }
+
+    public function tag(): string
+    {
+        return 'EmbeddedAfterRegistered';
+    }
+}
+
 final class VsVerdict
 {
     /**
-     * @param list<int> $vsPositions
+     * @param list<int> $vsPositions every selector position, the census
+     * @param list<int> $suspiciousPositions the selectors no registered pair or
+     *        presentation rule sanctions: what the classification localises
      * @param list<int> $recoveredBytes
      */
     public function __construct(
         public readonly ClassificationKind $kind,
         public readonly ?VsSubThreat $sub,
         public readonly array $vsPositions,
+        public readonly array $suspiciousPositions,
         public readonly array $recoveredBytes,
     ) {
     }
@@ -211,37 +231,64 @@ final class VariationSelectorPayload
             }
         }
 
-        if ($vsPositions === []) {
-            return new VsVerdict(ClassificationKind::Clear, null, [], []);
-        }
-
-        $recoveredBytes = self::decodeVsRun($input, $vsPositions);
-
-        // Single-VS exemption: a lone registered (base, VS) pair is a legitimate
-        // variation and returns Clear.
-        if (count($vsPositions) === 1) {
-            $p = $vsPositions[0];
-            if ($p > 0) {
-                $base = $input[$p - 1];
-                $vs = $input[$p];
-                if (self::isRegisteredVariationPair($base, $vs)) {
-                    return new VsVerdict(ClassificationKind::Clear, null, $vsPositions, $recoveredBytes);
-                }
+        // Each selector is judged against its predecessor (Lean classifyVS):
+        // registered uses are sanctioned wherever they stand and however many;
+        // the hazard is the suspicious run alone.
+        $registered = [];
+        $suspicious = [];
+        foreach ($vsPositions as $p) {
+            if (self::isRegisteredVariationUse($input, $p)) {
+                $registered[] = $p;
+            } else {
+                $suspicious[] = $p;
             }
         }
+        if ($suspicious === []) {
+            return new VsVerdict(ClassificationKind::Clear, null, $vsPositions, [], []);
+        }
 
-        if (count($vsPositions) >= 4 && self::allSameVs($input, $vsPositions)) {
-            $p0 = $vsPositions[0];
-            $base = $p0 === 0 ? 0 : $input[$p0 - 1];
-            $sub = new VsRepeatedBase($base, count($vsPositions));
+        $recoveredBytes = self::decodeVsRun($input, $suspicious);
+        $payloadStart = $suspicious[0];
+        $registeredBefore = null;
+        foreach ($registered as $p) {
+            if ($p < $payloadStart) {
+                $registeredBefore = $p;
+            }
+        }
+        // Priority (Lean pickSubThreat): a registered selector before the
+        // suspicious run, then a long single-selector run, then a decodable
+        // payload, then the bare illegal target.
+        if ($registeredBefore !== null) {
+            $sub = new VsEmbeddedAfterRegistered($registeredBefore, $payloadStart);
+        } elseif (count($suspicious) >= 4 && self::allSameVs($input, $suspicious)) {
+            $base = $payloadStart === 0 ? 0 : $input[$payloadStart - 1];
+            $sub = new VsRepeatedBase($base, count($suspicious));
         } elseif ($recoveredBytes !== []) {
             $sub = new VsDirectPayload(self::lossyAscii($recoveredBytes));
         } else {
-            $p = $vsPositions[0];
-            $target = $p === 0 ? 0 : $input[$p - 1];
-            $sub = new VsIllegalTarget($target, $input[$p]);
+            $target = $payloadStart === 0 ? 0 : $input[$payloadStart - 1];
+            $sub = new VsIllegalTarget($target, $input[$payloadStart]);
         }
 
-        return new VsVerdict(ClassificationKind::Hazard, $sub, $vsPositions, $recoveredBytes);
+        return new VsVerdict(ClassificationKind::Hazard, $sub, $vsPositions, $suspicious, $recoveredBytes);
+    }
+
+    /**
+     * The Lean classifyVS registered reading of the selector at $p: a
+     * standardized or emoji variation sequence, or VS15 / VS16 on any base
+     * carrying the Emoji property. A selector with no predecessor is never
+     * registered.
+     *
+     * @param list<int> $input
+     */
+    public static function isRegisteredVariationUse(array $input, int $p): bool
+    {
+        if ($p === 0) {
+            return false;
+        }
+        $base = $input[$p - 1];
+        $vs = $input[$p];
+        return self::isRegisteredVariationPair($base, $vs)
+            || (($vs === 0xFE0F || $vs === 0xFE0E) && AiWatermarkDetectability::isEmoji($base));
     }
 }

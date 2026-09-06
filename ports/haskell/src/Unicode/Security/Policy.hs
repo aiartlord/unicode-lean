@@ -86,6 +86,7 @@ import qualified Unicode.Codec.Utf8 as Utf8
 import qualified Unicode.Security.Display.SourceDisplayAggregate as SourceDisplay
 import qualified Unicode.Security.Boundary.AdmissibilityFormDrift as AdmissibilityDrift
 import qualified Unicode.Security.Boundary.IdentifierFormDrift as IdentifierDrift
+import qualified Unicode.Security.Crypto.AiWatermarkDetectability as AiWatermark
 import qualified Unicode.Security.Display.BidiControlPurpose as Purpose
 import qualified Unicode.Security.Display.FilenameDisguise as FilenameDisguise
 import qualified Unicode.Security.Display.RendererDivergence as RendererDiv
@@ -604,7 +605,9 @@ zeroWidthFinding input
           { findingCode = reasonCode FamilyZeroWidthPayload subThreat
           , findingFamily = FamilyZeroWidthPayload
           , findingSeverity = 2
-          , findingPositions = positions
+          -- The Lean localises the suspicious positions, not the census: a
+          -- sanctioned emoji joiner beside a payload is not payload.
+          , findingPositions = suspiciousZeroWidthPositions input positions
           , findingSubThreat = subThreat
           , findingDetail = familyTag FamilyZeroWidthPayload
           }
@@ -672,23 +675,43 @@ surrogateReassemblySubThreat InvalidStartByte        = "InvalidStartByte"
 surrogateReassemblySubThreat InvalidContinuationByte = "InvalidContinuation"
 surrogateReassemblySubThreat CodepointBeyondMax      = "CodepointBeyondMax"
 
+-- | Mirrors the Lean @detect@: each selector is judged against its predecessor
+-- (@classifyVS@), registered uses are sanctioned wherever they stand and
+-- however many, and the hazard is the suspicious run alone, ranked
+-- EmbeddedAfterRegistered (a registered selector before the run), RepeatedBase,
+-- DirectPayload, IllegalTarget. Positions are the suspicious selectors.
 variationSelectorFinding :: [Int] -> [Finding]
 variationSelectorFinding input =
-  case positionsWhere isVariationSelector input of
+  case suspicious of
     [] -> []
-    [position]
-      | isRegisteredVariationPosition input position -> []
-    positions ->
-      let subThreat = variationSelectorSubThreat input positions
+    (payloadStart : laterSuspicious) ->
+      let subThreat
+            | any (< payloadStart) registered = "EmbeddedAfterRegistered"
+            | otherwise = variationSelectorSubThreat input (payloadStart : laterSuspicious)
       in [ Finding
              { findingCode = reasonCode FamilyVariationSelectorPayload subThreat
              , findingFamily = FamilyVariationSelectorPayload
              , findingSeverity = 2
-             , findingPositions = positions
+             , findingPositions = payloadStart : laterSuspicious
              , findingSubThreat = subThreat
              , findingDetail = familyTag FamilyVariationSelectorPayload
              }
          ]
+  where
+    selectors = positionsWhere isVariationSelector input
+    registered = filter (isRegisteredVariationUse input) selectors
+    suspicious = filter (not . isRegisteredVariationUse input) selectors
+
+-- | The Lean @classifyVS@ registered reading of the selector at a position: a
+-- standardized or emoji variation sequence, or VS15 / VS16 on any base
+-- carrying the Emoji property. A selector with no predecessor is never
+-- registered.
+isRegisteredVariationUse :: [Int] -> Int -> Bool
+isRegisteredVariationUse input position =
+  position > 0
+    && (isRegisteredVariationPosition input position
+          || ((input !! position == 0xFE0F || input !! position == 0xFE0E)
+                && AiWatermark.isEmoji (input !! (position - 1))))
 
 bidiFinding :: [Int] -> [Finding]
 bidiFinding input =
@@ -1270,30 +1293,34 @@ homoglyphFinding = homoglyphFindingWithContext (HomoglyphContext False False)
 -- word in prose is not read as its Latin look-alike.
 homoglyphFindingWithContext :: HomoglyphContext -> [Int] -> [Finding]
 homoglyphFindingWithContext ctx input
+  -- Each rung localises what the Lean @detectWithContext@ localises: a target
+  -- match, a cross-script mix and a restriction level judge the string as a
+  -- unit and carry no positions; math-alpha and width-class the first such
+  -- codepoint; decomposition-swap the first differing position; the
+  -- ascii-confusable rung the non-ASCII positions.
   | Just matchedTarget <- findTargetMatch input =
-      const [ makeHomoglyphFinding "TargetMatch" wholeInput ] matchedTarget
+      const [ makeHomoglyphFinding "TargetMatch" [] ] matchedTarget
   | any isMathAlphanumeric input =
-      [ makeHomoglyphFinding "MathAlpha" wholeInput ]
+      [ makeHomoglyphFinding "MathAlpha" (take 1 (positionsWhere isMathAlphanumeric input)) ]
   | any isFullwidthHalfwidth input =
-      [ makeHomoglyphFinding "WidthClass" wholeInput ]
+      [ makeHomoglyphFinding "WidthClass" (take 1 (positionsWhere isFullwidthHalfwidth input)) ]
   | hasDecompositionSwap input =
-      [ makeHomoglyphFinding "DecompositionSwap" wholeInput ]
+      [ makeHomoglyphFinding "DecompositionSwap" [firstDecompositionDiffPos input] ]
   -- The script rungs of the Lean ladder, in its order: a cross-script mix
   -- that is not Highly Restrictive, then a string failing every restriction
   -- level. Both need real script resolution.
   | not (homoglyphRunningText ctx) && hasCrossScriptMix input =
-      [ makeHomoglyphFinding "CrossScriptMix" wholeInput ]
+      [ makeHomoglyphFinding "CrossScriptMix" [] ]
   | not (homoglyphRunningText ctx)
       && not (homoglyphIdentifierToken ctx)
       && restrictionLevel input `elem` [RestrictionMinimallyRestrictive, RestrictionUnrestricted] =
-      [ makeHomoglyphFinding "RestrictionLow" wholeInput ]
+      [ makeHomoglyphFinding "RestrictionLow" [] ]
   | not (homoglyphRunningText ctx)
       && (not (homoglyphIdentifierToken ctx) || isLatinOnly input)
       && isAsciiConfusable input =
       [ makeHomoglyphFinding "AsciiConfusable" (nonAsciiPositions input) ]
   | otherwise = []
   where
-    wholeInput = [0 .. length input - 1]
     makeHomoglyphFinding :: String -> [Int] -> Finding
     makeHomoglyphFinding subThreat positions =
       Finding
@@ -1333,12 +1360,29 @@ mixedScriptAdmissibilityFinding input identifierField
           { findingCode = reasonCode FamilyMixedScriptAdmissibility sub
           , findingFamily = FamilyMixedScriptAdmissibility
           , findingSeverity = 2
-          , findingPositions = [0 .. length input - 1]
+          , findingPositions = mixedScriptPositions sub input
           , findingSubThreat = sub
           , findingDetail = familyTag FamilyMixedScriptAdmissibility
           }
       ]
   | otherwise = []
+
+-- | What the Lean @MixedScriptAdmissibility.detectWithContext@ localises for a
+-- mixed-script sub-threat: every codepoint outside Identifier_Status=Allowed
+-- for RestrictedStatusCp; every non-Common, non-Inherited codepoint whose
+-- resolved scripts name Cyrillic (LatinCyrillic) or Greek (LatinGreek);
+-- nothing for the whole-string verdicts ScriptMixOther, CjkMix and
+-- UnrestrictedLevel.
+mixedScriptPositions :: String -> [Int] -> [Int]
+mixedScriptPositions sub input
+  | sub == "RestrictedStatusCp" = positionsWhere (not . IdentifierDrift.isIdAllowed) input
+  | sub == "LatinCyrillic" = scriptPositions "Cyrl"
+  | sub == "LatinGreek" = scriptPositions "Grek"
+  | otherwise = []
+  where
+    scriptPositions :: String -> [Int]
+    scriptPositions target =
+      positionsWhere (\cp -> not (isIgnoredForIntersection cp) && target `elem` resolveScripts cp) input
 
 -- The specific script-collision sub-threat, matching the Lean source of truth:
 -- Latin/Cyrillic and Latin/Greek are named explicitly (Cyrillic before Greek);
@@ -1361,6 +1405,19 @@ isFullwidthHalfwidth cp = cp >= 0xFF01 && cp <= 0xFFEF
 -- combiner of equal or greater class sits between them.
 hasDecompositionSwap :: [Int] -> Bool
 hasDecompositionSwap input = NFC.toNFC input /= input
+
+-- | The first position at which the input and its NFC form differ, or the
+-- shorter length when one is a prefix of the other. Mirrors the Lean
+-- @firstDecompositionDiffPos@ and the reference @first_decomposition_diff_pos@.
+firstDecompositionDiffPos :: [Int] -> Int
+firstDecompositionDiffPos input = go 0 input (NFC.toNFC input)
+  where
+    go :: Int -> [Int] -> [Int] -> Int
+    go index (a : as) (b : bs)
+      | a == b = go (index + 1) as bs
+      | otherwise = index
+    go index [] remaining = const index remaining
+    go index remaining [] = const index remaining
 
 -- UTS #39 §5.1 restriction levels, mirroring @Unicode/Restriction.lean@.
 --
@@ -1498,12 +1555,20 @@ isLegitimateZwjContext input i
 -- CONTEXTJ-valid position both carry meaning a reader depends on, so they are
 -- recorded as present but do not make the family fire.
 hasSuspiciousZeroWidth :: [Int] -> [Int] -> Bool
-hasSuspiciousZeroWidth input = any (not . sanctioned)
-  where
-    sanctioned i =
-      let cp = input !! i
-      in (cp == 0x200D && isLegitimateZwjContext input i)
-           || (cp == 0x200C && isLegitimateZwnjContext input i)
+hasSuspiciousZeroWidth input = any (not . isSanctionedZeroWidth input)
+
+-- | A zero-width occurrence whose context sanctions it: a ZWJ inside a
+-- registered emoji sequence, a ZWNJ in an RFC 5892 CONTEXTJ-valid position.
+isSanctionedZeroWidth :: [Int] -> Int -> Bool
+isSanctionedZeroWidth input i =
+  let cp = input !! i
+  in (cp == 0x200D && isLegitimateZwjContext input i)
+       || (cp == 0x200C && isLegitimateZwnjContext input i)
+
+-- | The zero-width positions no context sanctions: what the classification
+-- localises (Lean @suspiciousPositions@).
+suspiciousZeroWidthPositions :: [Int] -> [Int] -> [Int]
+suspiciousZeroWidthPositions input = filter (not . isSanctionedZeroWidth input)
 
 -- | Every abbreviation occurring in @ScriptExtensions.txt@, the resolver's
 -- whole vocabulary.
@@ -2033,15 +2098,16 @@ isTagBlockChar :: Int -> Bool
 isTagBlockChar cp = cp >= 0xE0000 && cp <= 0xE007F
 
 -- | First input position holding a suspicious variation selector — a VS
--- that does not form a registered (base, VS) pair with its predecessor.
--- Mirrors the @.suspicious@ case of the Lean @classifyPositions@.
+-- that is not a registered use of its predecessor (a registered pair, or
+-- VS15/VS16 on an Emoji-property base). Mirrors the @.suspicious@ case of
+-- the Lean @classifyPositions@.
 firstSuspiciousVsPos :: [Int] -> Maybe Int
 firstSuspiciousVsPos input =
   listToMaybe
     [ index
     | (index, cp) <- zip [0 ..] input
     , isVariationSelector cp
-    , not (isRegisteredVariationPosition input index)
+    , not (isRegisteredVariationUse input index)
     ]
 
 -- | Detect a bidi control co-located with a covert channel. Priority

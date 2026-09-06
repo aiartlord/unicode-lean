@@ -766,7 +766,8 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
         Family::VariationSelectorPayload,
         vs.kind,
         vs.sub.as_ref().map(|sub| sub.tag()),
-        vs.vs_positions,
+        // The Lean localises the suspicious selectors, not the census.
+        vs.suspicious_positions,
     );
 
     let zw = zero_width_payload::detect(input);
@@ -775,7 +776,9 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
         Family::ZeroWidthPayload,
         zw.kind,
         zw.sub.as_ref().map(|sub| sub.tag()),
-        zw.zero_width_positions,
+        // The Lean localises the suspicious zero-width positions, not the
+        // census: a sanctioned emoji joiner beside a payload is not payload.
+        zw.suspicious_positions,
     );
 
     // Mirror `runAll`: SurrogateReassembly only applies to byte-stream input
@@ -833,16 +836,34 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
         identifier_token: true,
     };
     // The positions a homoglyph verdict implicates over the codepoints it was
-    // read on: the non-ASCII positions for the ascii-confusable rung (Lean
-    // `nonAsciiPositions`, theorem `detect_dotless_i_admin_position`), the
-    // whole span for every other rung, nothing when clear.
+    // read on, as the Lean `detectWithContext` localises each rung: the
+    // ascii-confusable rung the non-ASCII positions (`nonAsciiPositions`),
+    // math-alpha and width-class the first such codepoint, decomposition-swap
+    // the first differing position, and nothing for a target match, a
+    // cross-script mix or a restriction level -- those judge the string as a
+    // unit. Nothing when clear.
     let homoglyph_span = |v: &homoglyph_confusable::Verdict, cps: &[u32]| -> Vec<usize> {
+        use homoglyph_confusable::SubThreat;
         match (&v.kind, &v.sub) {
             (ClassificationKind::Clear, _) => Vec::new(),
-            (_, Some(homoglyph_confusable::SubThreat::AsciiConfusable { .. })) => {
+            (_, Some(SubThreat::AsciiConfusable { .. })) => {
                 homoglyph_confusable::non_ascii_positions(cps)
             }
-            (_, _) => (0..cps.len()).collect(),
+            (_, Some(SubThreat::MathAlpha { .. })) => cps
+                .iter()
+                .position(|&cp| homoglyph_confusable::is_math_alphanumeric(cp))
+                .into_iter()
+                .collect(),
+            (_, Some(SubThreat::WidthClass { .. })) => cps
+                .iter()
+                .position(|&cp| homoglyph_confusable::is_fullwidth_halfwidth(cp))
+                .into_iter()
+                .collect(),
+            (_, Some(SubThreat::DecompositionSwap { first_diff_pos })) => vec![*first_diff_pos],
+            (_, Some(SubThreat::TargetMatch { .. }))
+            | (_, Some(SubThreat::CrossScriptMix { .. }))
+            | (_, Some(SubThreat::RestrictionLow { .. }))
+            | (_, None) => Vec::new(),
         }
     };
     let mut homoglyph_positions: Vec<usize> = Vec::new();
@@ -897,14 +918,14 @@ pub fn scan(profile: Profile, mode: Mode, input: &[u32]) -> Verdict {
                     sub,
                     identifier_tokens::shift_positions(
                         token.start,
-                        &(0..token.cps.len()).collect::<Vec<_>>(),
+                        &homoglyph_confusable::mixed_script_positions(sub, &token.cps),
                     ),
                 )
             })
         })
     } else {
         homoglyph_confusable::mixed_script_verdict(input, profile_is_identifier_field(profile))
-            .map(|sub| (sub, (0..input.len()).collect()))
+            .map(|sub| (sub, homoglyph_confusable::mixed_script_positions(sub, input)))
     };
     if let Some((sub, positions)) = mixed {
         push_finding(

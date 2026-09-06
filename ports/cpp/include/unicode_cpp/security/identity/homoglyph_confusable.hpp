@@ -696,6 +696,38 @@ mixed_script_verdict(std::span<const std::uint32_t> input, const Database &db,
   return std::nullopt;
 }
 
+// The positions the Lean MixedScriptAdmissibility.detectWithContext localises
+// for a mixed-script sub-threat: every codepoint outside
+// Identifier_Status=Allowed for RestrictedStatusCp; every non-Common,
+// non-Inherited codepoint whose resolved scripts name Cyrillic (LatinCyrillic)
+// or Greek (LatinGreek); nothing for the whole-string verdicts ScriptMixOther,
+// CjkMix and UnrestrictedLevel.
+inline std::vector<std::size_t>
+mixed_script_positions(const std::string &sub, std::span<const std::uint32_t> input,
+                       const Database &db) {
+  std::vector<std::size_t> out;
+  const auto script_positions = [&](const std::string &target) {
+    for (std::size_t i = 0; i < input.size(); ++i) {
+      if (ucd::is_ignored_for_intersection(db.tables, input[i]))
+        continue;
+      const auto scripts = ucd::resolve_scripts(db.tables, input[i]);
+      if (std::find(scripts.begin(), scripts.end(), target) != scripts.end())
+        out.push_back(i);
+    }
+  };
+  if (sub == "RestrictedStatusCp") {
+    for (std::size_t i = 0; i < input.size(); ++i) {
+      if (!ucd::is_id_allowed(db.tables, input[i]))
+        out.push_back(i);
+    }
+  } else if (sub == "LatinCyrillic") {
+    script_positions("Cyrl");
+  } else if (sub == "LatinGreek") {
+    script_positions("Grek");
+  }
+  return out;
+}
+
 inline bool has_mixed_script_admissibility(std::span<const std::uint32_t> input,
                                            const Database &db) {
   return mixed_script_verdict(input, db, true).has_value();

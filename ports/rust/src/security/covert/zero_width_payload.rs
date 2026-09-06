@@ -198,7 +198,11 @@ impl SubThreat {
 pub struct Verdict {
     pub kind: ClassificationKind,
     pub sub: Option<SubThreat>,
+    /// Every zero-width position: the census.
     pub zero_width_positions: Vec<usize>,
+    /// The zero-width positions no context sanctions: what the classification
+    /// localises (Lean `suspiciousPositions`). Empty when clear.
+    pub suspicious_positions: Vec<usize>,
 }
 
 pub fn detect(input: &[u32]) -> Verdict {
@@ -206,6 +210,7 @@ pub fn detect(input: &[u32]) -> Verdict {
         kind: ClassificationKind::Clear,
         sub: None,
         zero_width_positions: Vec::new(),
+        suspicious_positions: Vec::new(),
     };
     let mut annotation_count = 0;
     let mut word_joiner_count = 0;
@@ -243,6 +248,7 @@ pub fn detect(input: &[u32]) -> Verdict {
         return v;
     }
 
+    v.suspicious_positions = suspicious.clone();
     v.kind = ClassificationKind::Hazard;
     if annotation_count > 0 {
         v.sub = Some(SubThreat::AnnotationMisuse {

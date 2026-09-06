@@ -20,6 +20,7 @@
          joining_type/1, is_virama/1,
          script_of/1, resolve_scripts/1, string_script_union/1,
          is_default_ignorable/1, is_white_space/1, is_id_allowed/1,
+         is_ignored_for_intersection/1,
          is_default_identifier/1, is_allowed_identifier/1, is_xid_continue/1,
          is_highly_restrictive/1, is_covered_cjk/1, restriction_level/1]).
 

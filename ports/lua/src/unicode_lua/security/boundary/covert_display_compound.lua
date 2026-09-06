@@ -19,7 +19,7 @@ end
 local function first_suspicious_vs_pos(input)
   for i = 1, #input do
     local cp = input[i]
-    if vs.is_variation_selector(cp) and not (i > 1 and vs.is_registered_variation_pair(input[i - 1], cp)) then
+    if vs.is_variation_selector(cp) and not (i > 1 and vs.is_registered_variation_use(input[i - 1], cp)) then
       return i - 1
     end
   end

@@ -5,6 +5,7 @@
          bidi_control_detect/1, is_bidi_format_control/1, opens_embedding/1,
          is_pdf/1, opens_isolate/1, is_pdi/1,
          homoglyph_detect/1, homoglyph_detect_with_context/2, non_ascii_positions/1,
+         homoglyph_positions/2, mixed_script_positions/2,
          ascii_skeleton/1, is_ascii_confusable/1, is_latin_only/1,
          confusable_source/1, mixed_script_admissibility/1, mixed_script_verdict/2,
          mixed_script_subthreat/1, rtl_injection_detect/1,
@@ -52,38 +53,44 @@ vs_nibble(Cp) when Cp >= 16#FE00, Cp =< 16#FE0F -> Cp - 16#FE00;
 vs_nibble(Cp) when Cp >= 16#E0100, Cp =< 16#E01EF -> Cp - 16#E0100 + 16;
 vs_nibble(_) -> none.
 
+%% Each selector is judged against its predecessor: a registered use is
+%% sanctioned wherever it stands and however many, and an input whose selectors
+%% are all registered is clear. The hazard is the suspicious run alone. Mirrors
+%% the Lean detect.
 variation_selector_detect(Input) ->
     Pos = positions(Input, fun is_vs/1),
-    case Pos of
-        [] -> #{kind => clear, sub => none, positions => []};
-        [P] ->
-            case P > 0 andalso registered_variation_pair(lists:nth(P, Input), lists:nth(P + 1, Input)) of
-                true -> #{kind => clear, sub => none, positions => Pos};
-                false -> variation_hazard(Input, Pos)
-            end;
-        _ -> variation_hazard(Input, Pos)
+    Registered = [P || P <- Pos, P > 0,
+                       registered_variation_use(lists:nth(P, Input), lists:nth(P + 1, Input))],
+    Susp = Pos -- Registered,
+    case Susp of
+        [] -> #{kind => clear, sub => none, positions => Pos};
+        _ -> variation_hazard(Input, Registered, Susp)
     end.
 
-variation_hazard(Input, Pos) ->
-    Bytes = decode_vs(Input, Pos),
-    Vals = [lists:nth(P + 1, Input) || P <- Pos],
+%% Ranked EmbeddedAfterRegistered (a registered use precedes the first
+%% suspicious selector), RepeatedBase (at least four suspicious selectors, all
+%% the same codepoint), DirectPayload (the nibble pairs over the suspicious
+%% selectors recover a byte), else IllegalTarget; the finding localises the
+%% suspicious selectors.
+variation_hazard(Input, Registered, Susp) ->
+    Bytes = decode_vs(Input, Susp),
+    Vals = [lists:nth(P + 1, Input) || P <- Susp],
+    P0 = hd(Susp),
+    Base = case P0 of 0 -> 0; _ -> lists:nth(P0, Input) end,
     Sub =
-        case length(Pos) >= 4 andalso length(lists:usort(Vals)) =:= 1 of
-            true ->
-                P0 = hd(Pos),
-                Base = case P0 of 0 -> 0; _ -> lists:nth(P0, Input) end,
-                {repeated_base, Base, length(Pos)};
+        case Registered =/= [] andalso hd(Registered) < P0 of
+            true -> {embedded_after_registered, hd(Registered), P0};
             false ->
-                case Bytes of
-                    [] ->
-                        P = hd(Pos),
-                        Target = case P of 0 -> 0; _ -> lists:nth(P, Input) end,
-                        {illegal_target, Target, lists:nth(P + 1, Input)};
-                    _ ->
-                        {direct_payload, lossy_ascii(Bytes)}
+                case length(Susp) >= 4 andalso length(lists:usort(Vals)) =:= 1 of
+                    true -> {repeated_base, Base, length(Susp)};
+                    false ->
+                        case Bytes of
+                            [] -> {illegal_target, Base, lists:nth(P0 + 1, Input)};
+                            _ -> {direct_payload, lossy_ascii(Bytes)}
+                        end
                 end
         end,
-    #{kind => hazard, sub => Sub, positions => Pos}.
+    #{kind => hazard, sub => Sub, positions => Susp}.
 
 decode_vs(Input, Pos) ->
     {BytesRev, _High} =
@@ -105,6 +112,14 @@ lossy_ascii(Bytes) ->
 
 registered_variation_pair(Base, Vs) ->
     sets:is_element({Base, Vs}, legal_pairs()).
+
+%% A selector on Base is a registered use when the pair is registered
+%% (StandardizedVariants plus the emoji variation sequences) or when it is
+%% VS15 / VS16 on an Emoji-property base. Mirrors the Lean isRegisteredUse.
+registered_variation_use(Base, Vs) ->
+    registered_variation_pair(Base, Vs) orelse
+        ((Vs =:= 16#FE0E orelse Vs =:= 16#FE0F) andalso
+         usec_ai_watermark_detectability:is_emoji(Base)).
 
 legal_pairs() ->
     usec_data:cached(variation_legal_pairs, fun parse_legal_pairs/0).
@@ -150,7 +165,7 @@ zero_width_detect(Input) ->
                       Zw >= 2 -> {binary_payload, Zw div 2};
                       true -> {bare_zero_width, hd(SuspCps)}
                   end,
-            #{kind => hazard, sub => Sub, positions => Pos}
+            #{kind => hazard, sub => Sub, positions => Susp}
     end.
 
 %% True iff the zero-width codepoint at index P carries meaning a reader depends
@@ -302,6 +317,49 @@ is_ascii_confusable(Input) ->
 %% 0-based positions of the non-ASCII codepoints. Mirrors the Lean
 %% nonAsciiPositions.
 non_ascii_positions(Input) -> positions(Input, fun(Cp) -> Cp > 16#7F end).
+
+%% The positions a homoglyph rung implicates: nothing for the whole-input rungs
+%% (TargetMatch, CrossScriptMix, RestrictionLow), the first math-alphanumeric
+%% or fullwidth/halfwidth codepoint, the first NFC divergence, and the
+%% non-ASCII codepoints for the ascii-confusable rung. Mirrors the Lean
+%% homoglyphPositions.
+homoglyph_positions(<<"MathAlpha">>, Input) -> first_position_list(Input, fun math_alnum/1);
+homoglyph_positions(<<"WidthClass">>, Input) -> first_position_list(Input, fun fullwidth_halfwidth/1);
+homoglyph_positions(<<"DecompositionSwap">>, Input) -> [first_decomposition_diff_pos(Input)];
+homoglyph_positions(<<"AsciiConfusable">>, Input) -> non_ascii_positions(Input);
+homoglyph_positions(_Tag, _Input) -> [].
+
+first_position_list(Input, Pred) ->
+    case first_pos(Input, Pred) of
+        none -> [];
+        P -> [P]
+    end.
+
+%% The first position at which the input and its NFC form differ, or the
+%% shorter length when one is a prefix of the other. Mirrors the Lean
+%% firstDecompositionDiffPos.
+first_decomposition_diff_pos(Input) ->
+    case first_divergence(Input, usec_ucd:to_nfc(Input)) of
+        none -> length(Input);
+        P -> P
+    end.
+
+%% The positions a mixed-script verdict implicates: the restricted codepoints
+%% for RestrictedStatusCp, the Cyrillic or Greek codepoints (Common and
+%% Inherited skipped, as UTS #39 §5.1 skips them from the intersection) for the
+%% two Latin-mix verdicts, nothing for the whole-input verdicts. Mirrors the
+%% Lean mixedScriptPositions.
+mixed_script_positions(<<"RestrictedStatusCp">>, Input) ->
+    positions(Input, fun(Cp) -> not usec_ucd:is_id_allowed(Cp) end);
+mixed_script_positions(<<"LatinCyrillic">>, Input) -> positions_for_script(Input, <<"Cyrl">>);
+mixed_script_positions(<<"LatinGreek">>, Input) -> positions_for_script(Input, <<"Grek">>);
+mixed_script_positions(_Sub, _Input) -> [].
+
+positions_for_script(Input, Script) ->
+    positions(Input, fun(Cp) ->
+                             not usec_ucd:is_ignored_for_intersection(Cp) andalso
+                                 lists:member(Script, usec_ucd:resolve_scripts(Cp))
+                     end).
 
 %% Every script-bearing codepoint of the input is Latin. Mirrors the Lean
 %% isLatinOnly.
@@ -601,7 +659,7 @@ covert_display_detect(Input) ->
 
 first_suspicious_vs(Input) ->
     first_pos(with_prev(Input), fun({Cp, Prev}) ->
-                                       is_vs(Cp) andalso not (Prev =/= none andalso registered_variation_pair(Prev, Cp))
+                                       is_vs(Cp) andalso not (Prev =/= none andalso registered_variation_use(Prev, Cp))
                                end).
 
 %% Form and crypto
@@ -738,6 +796,7 @@ sub_tag({bare_tag_present, _}) -> <<"BareTagPresent">>;
 sub_tag({direct_payload, _}) -> <<"DirectPayload">>;
 sub_tag({illegal_target, _, _}) -> <<"IllegalTarget">>;
 sub_tag({repeated_base, _, _}) -> <<"RepeatedBase">>;
+sub_tag({embedded_after_registered, _, _}) -> <<"EmbeddedAfterRegistered">>;
 sub_tag({annotation_misuse, _}) -> <<"AnnotationMisuse">>;
 sub_tag({word_joiner_injection, _}) -> <<"WordJoinerInjection">>;
 sub_tag({ai_watermark_nnbsp, _}) -> <<"AiWatermarkNNBSP">>;

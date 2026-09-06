@@ -375,7 +375,7 @@ def SubThreat.tag : SubThreat → String
   | .wordJoinerInjection count                          =>
       Function.const Nat "WordJoinerInjection" count
   | .aiWatermarkNNBSP    count                          =>
-      Function.const Nat "AIWatermarkNNBSP" count
+      Function.const Nat "AiWatermarkNNBSP" count
   | .binaryPayload       zwspCount zwjCount             =>
       Function.const (Nat × Nat) "BinaryPayload" (zwspCount, zwjCount)
   | .bareZeroWidth       cp                             =>
@@ -471,7 +471,7 @@ theorem detect_word_joiner :
 /-- Two NNBSPs in a row — suspected AI watermark. -/
 theorem detect_nnbsp_watermark :
     (detect [0x48, 0x202F, 0x69, 0x202F, 0x6F]).classify.tag
-      = some "AIWatermarkNNBSP" := by decide
+      = some "AiWatermarkNNBSP" := by decide
 
 /-- Bare BOM (`U+FEFF`) in the middle of text — `.bareZeroWidth`. -/
 theorem detect_bare_bom :

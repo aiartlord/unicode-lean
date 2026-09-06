@@ -106,6 +106,40 @@ pub fn mixed_script_verdict(input: &[u32], identifier_field: bool) -> Option<&'s
 /// Latin/Cyrillic and Latin/Greek are named explicitly (Cyrillic before Greek),
 /// a mix that stays inside one CJK covered set is `CjkMix`, and every other
 /// multi-script mix is `ScriptMixOther`.
+/// The positions the Lean `MixedScriptAdmissibility.detectWithContext`
+/// localises for a mixed-script sub-threat over `input`: every codepoint
+/// outside Identifier_Status=Allowed for `RestrictedStatusCp`; every
+/// non-Common, non-Inherited codepoint whose resolved scripts name Cyrillic
+/// (`LatinCyrillic`) or Greek (`LatinGreek`); nothing for the whole-string
+/// verdicts `ScriptMixOther`, `CjkMix` and `UnrestrictedLevel`.
+pub fn mixed_script_positions(sub: &str, input: &[u32]) -> Vec<usize> {
+    let script_positions = |target: &str| -> Vec<usize> {
+        input
+            .iter()
+            .enumerate()
+            .filter(|entry| {
+                !ucd::is_ignored_for_intersection(*entry.1)
+                    && ucd::resolve_scripts(*entry.1).iter().any(|s| s == target)
+            })
+            .map(|entry| entry.0)
+            .collect()
+    };
+    if sub == "RestrictedStatusCp" {
+        input
+            .iter()
+            .enumerate()
+            .filter(|entry| !ucd::is_id_allowed(*entry.1))
+            .map(|entry| entry.0)
+            .collect()
+    } else if sub == "LatinCyrillic" {
+        script_positions("Cyrl")
+    } else if sub == "LatinGreek" {
+        script_positions("Grek")
+    } else {
+        Vec::new()
+    }
+}
+
 pub fn mixed_script_subthreat(input: &[u32]) -> &'static str {
     let union = ucd::string_script_union(input);
     let has = |s: &str| union.iter().any(|x| x == s);

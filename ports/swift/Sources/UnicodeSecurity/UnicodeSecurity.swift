@@ -229,10 +229,12 @@ private func detect(_ input: [Int], _ identifierField: Bool, _ runningText: Bool
     // raises nothing.
     let zeroWidth = positionsWhere(input, isZeroWidthPayload)
     if !zeroWidth.isEmpty && hasSuspiciousZeroWidth(input, zeroWidth) {
+        // The Lean localises the suspicious positions, not the census: a
+        // sanctioned emoji joiner beside a payload is not payload.
         findings.append(makeFinding(
             family: Family.zeroWidthPayload,
             subThreat: zeroWidthSubThreat(input, zeroWidth),
-            positions: zeroWidth))
+            positions: suspiciousZeroWidthPositions(input, zeroWidth)))
     }
     if let surrogate = surrogateReassemblyFinding(input) {
         findings.append(surrogate)
@@ -623,17 +625,35 @@ private func tagBlockSubThreat(_ input: [Int], _ tagPositions: [Int]) -> String 
     return "BareTagPresent"
 }
 
+/// Mirrors the Lean detect: each selector is judged against its predecessor
+/// (classifyVS), registered uses are sanctioned wherever they stand and however
+/// many, and the hazard is the suspicious run alone, ranked
+/// EmbeddedAfterRegistered (a registered selector before the run), RepeatedBase,
+/// DirectPayload, IllegalTarget. Positions are the suspicious selectors.
 private func variationSelectorFinding(_ input: [Int]) -> Finding? {
-    let positions = positionsWhere(input, isVariationSelector)
-    if positions.isEmpty { return nil }
-    if positions.count == 1 && isRegisteredVariationPosition(input, positions[0]) { return nil }
+    let selectors = positionsWhere(input, isVariationSelector)
+    let registered = selectors.filter { isRegisteredVariationUse(input, $0) }
+    let suspicious = selectors.filter { !isRegisteredVariationUse(input, $0) }
+    guard let payloadStart = suspicious.first else { return nil }
     var subThreat = "IllegalTarget"
-    if positions.count >= 4 && allSameAt(input, positions) {
+    if registered.contains(where: { $0 < payloadStart }) {
+        subThreat = "EmbeddedAfterRegistered"
+    } else if suspicious.count >= 4 && allSameAt(input, suspicious) {
         subThreat = "RepeatedBase"
-    } else if !decodeVariationSelectorRun(input, positions).isEmpty {
+    } else if !decodeVariationSelectorRun(input, suspicious).isEmpty {
         subThreat = "DirectPayload"
     }
-    return makeFinding(family: Family.variationSelectorPayload, subThreat: subThreat, positions: positions)
+    return makeFinding(family: Family.variationSelectorPayload, subThreat: subThreat, positions: suspicious)
+}
+
+/// The Lean classifyVS registered reading of the selector at a position: a
+/// standardized or emoji variation sequence, or VS15 / VS16 on any base carrying
+/// the Emoji property. A selector with no predecessor is never registered.
+private func isRegisteredVariationUse(_ input: [Int], _ position: Int) -> Bool {
+    guard position > 0 else { return false }
+    let vs = input[position]
+    return isRegisteredVariationPosition(input, position)
+        || ((vs == 0xFE0F || vs == 0xFE0E) && aiwmIsEmoji(input[position - 1]))
 }
 
 private func isVariationSelector(_ cp: Int) -> Bool {
@@ -829,16 +849,24 @@ private func homoglyphConfusableFinding(_ input: [Int]) -> Finding? {
 // on a token only when the token is Latin-only, so a Greek or Cyrillic word in
 // prose is not read as its Latin look-alike.
 private func homoglyphConfusableFindingWithContext(_ input: [Int], _ ctx: HomoglyphContext) -> Finding? {
+    // Each rung localises what the Lean detectWithContext localises: a target
+    // match, a cross-script mix and a restriction level judge the string as a
+    // unit and carry no positions; math-alpha and width-class the first such
+    // codepoint; decomposition-swap the first differing position; the
+    // ascii-confusable rung the non-ASCII positions.
     let subThreat: String
-    var positions = fullSpanPositions(input)
+    var positions: [Int] = []
     if homoglyphTargetMatch(input) != nil {
         subThreat = "TargetMatch"
-    } else if input.contains(where: isMathAlphanumeric) {
+    } else if let first = input.firstIndex(where: isMathAlphanumeric) {
         subThreat = "MathAlpha"
-    } else if input.contains(where: isFullwidthHalfwidth) {
+        positions = [first]
+    } else if let first = input.firstIndex(where: isFullwidthHalfwidth) {
         subThreat = "WidthClass"
+        positions = [first]
     } else if hasDecompositionSwap(input) {
         subThreat = "DecompositionSwap"
+        positions = [firstDecompositionDiffPos(input)]
     // The script rungs of the Lean ladder, in its order: a cross-script mix
     // that is not Highly Restrictive, then a string failing every restriction
     // level. Both need real script resolution.
@@ -884,7 +912,30 @@ private func isLatinOnly(_ input: [Int]) -> Bool {
 
 private func mixedScriptAdmissibilityFinding(_ input: [Int], _ identifierField: Bool) -> Finding? {
     guard let subThreat = mixedScriptVerdict(input, identifierField) else { return nil }
-    return makeFinding(family: Family.mixedScriptAdmissibility, subThreat: subThreat, positions: fullSpanPositions(input))
+    return makeFinding(
+        family: Family.mixedScriptAdmissibility,
+        subThreat: subThreat,
+        positions: mixedScriptPositions(subThreat, input))
+}
+
+/// What the Lean MixedScriptAdmissibility.detectWithContext localises for a
+/// mixed-script sub-threat: every codepoint outside Identifier_Status=Allowed for
+/// RestrictedStatusCp; every non-Common, non-Inherited codepoint whose resolved
+/// scripts name Cyrillic (LatinCyrillic) or Greek (LatinGreek); nothing for the
+/// whole-string verdicts ScriptMixOther, CjkMix and UnrestrictedLevel.
+private func mixedScriptPositions(_ subThreat: String, _ input: [Int]) -> [Int] {
+    if subThreat == "RestrictedStatusCp" {
+        return input.indices.filter { !isIdAllowed(input[$0]) }
+    }
+    let target: String
+    switch subThreat {
+    case "LatinCyrillic": target = "Cyrl"
+    case "LatinGreek": target = "Grek"
+    default: return []
+    }
+    return input.indices.filter { i in
+        !isIgnoredForIntersection(input[i]) && resolveScripts(input[i]).contains(target)
+    }
 }
 
 /// Sub-threat and offending positions of an RTL-injection scan; nil sub-threat means clear.
@@ -1070,7 +1121,7 @@ private func isCovertTagBlockChar(_ cp: Int) -> Bool {
 /// `.suspicious` case of the Lean `classifyPositions`.
 private func firstSuspiciousVariationSelector(_ input: [Int]) -> Int? {
     input.indices.first { index in
-        isVariationSelector(input[index]) && !isRegisteredVariationPosition(input, index)
+        isVariationSelector(input[index]) && !isRegisteredVariationUse(input, index)
     }
 }
 
@@ -2642,6 +2693,18 @@ private func hasDecompositionSwap(_ input: [Int]) -> Bool {
     toNfc(input) != input
 }
 
+/// The first position at which the input and its NFC form differ, or the
+/// shorter length when one is a prefix of the other. Mirrors the Lean
+/// firstDecompositionDiffPos.
+private func firstDecompositionDiffPos(_ input: [Int]) -> Int {
+    let nfc = toNfc(input)
+    let shorter = min(input.count, nfc.count)
+    for index in 0..<shorter where input[index] != nfc[index] {
+        return index
+    }
+    return shorter
+}
+
 private func composeHangulPair(_ first: Int, _ second: Int) -> Bool {
     let sBase = 0xac00
     let lBase = 0x1100
@@ -2810,13 +2873,19 @@ private func isLegitimateZwjContext(_ input: [Int], _ i: Int) -> Bool {
 // position both carry meaning a reader depends on, so they are recorded as
 // present but do not make the family fire.
 internal func hasSuspiciousZeroWidth(_ input: [Int], _ positions: [Int]) -> Bool {
-    for i in positions {
+    !suspiciousZeroWidthPositions(input, positions).isEmpty
+}
+
+/// The zero-width positions no context sanctions (Lean suspiciousPositions): a
+/// ZWJ inside a registered emoji sequence and a ZWNJ in an RFC 5892
+/// CONTEXTJ-valid position are excluded.
+internal func suspiciousZeroWidthPositions(_ input: [Int], _ positions: [Int]) -> [Int] {
+    positions.filter { i in
         let cp = input[i]
         let sanctioned = (cp == 0x200D && isLegitimateZwjContext(input, i))
             || (cp == 0x200C && isLegitimateZwnjContext(input, i))
-        if !sanctioned { return true }
+        return !sanctioned
     }
-    return false
 }
 
 private func scriptExtensionsTable() -> [(Int, Int, [String])] {

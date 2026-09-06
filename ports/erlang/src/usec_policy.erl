@@ -177,7 +177,8 @@ scan(Profile, Mode, Input) ->
               false ->
                   case usec_detectors:mixed_script_verdict(Input, IdentifierField) of
                       none -> F9;
-                      MixedSub -> push_finding(F9, mixed_script_admissibility, hazard, MixedSub, positions_all(Input))
+                      MixedSub -> push_finding(F9, mixed_script_admissibility, hazard, MixedSub,
+                                               usec_detectors:mixed_script_positions(MixedSub, Input))
                   end
           end,
     %% Families that read the whole field as one identifier report clear on
@@ -216,12 +217,10 @@ scan(Profile, Mode, Input) ->
     verdict(Profile, Mode, Input, F26, null).
 
 %% The positions a homoglyph verdict implicates: the non-ASCII positions for the
-%% ascii-confusable rung, the whole input for every other rung, nothing when
-%% clear.
+%% rung; nothing when clear.
 homoglyph_positions(#{kind := clear}, _Input) -> [];
-homoglyph_positions(#{sub := #{tag := <<"AsciiConfusable">>}}, Input) ->
-    usec_detectors:non_ascii_positions(Input);
-homoglyph_positions(_Verdict, Input) -> positions_all(Input).
+homoglyph_positions(#{sub := #{tag := Tag}}, Input) ->
+    usec_detectors:homoglyph_positions(Tag, Input).
 
 %% One homoglyph finding under a field context, or none when clear.
 homoglyph_finding(Input, Ctx) ->
@@ -257,7 +256,8 @@ mixed_script_over_tokens(Input) ->
                                         case usec_detectors:mixed_script_verdict(Cps, false) of
                                             none -> none;
                                             Sub ->
-                                                [F] = push_finding([], mixed_script_admissibility, hazard, Sub, positions_all(Cps)),
+                                                [F] = push_finding([], mixed_script_admissibility, hazard, Sub,
+                                                                   usec_detectors:mixed_script_positions(Sub, Cps)),
                                                 F
                                         end
                                 end).
@@ -489,8 +489,6 @@ read_u32(A, B, C, D, little) -> A + B * 16#100 + C * 16#10000 + D * 16#1000000.
 
 positions([], _Pred) -> [];
 positions(Input, Pred) -> [I || {Cp, I} <- lists:zip(Input, lists:seq(0, length(Input) - 1)), Pred(Cp)].
-positions_all([]) -> [];
-positions_all(Input) -> lists:seq(0, length(Input) - 1).
 usec_noncharacters(Cp) ->
     (Cp >= 16#FDD0 andalso Cp =< 16#FDEF)
         orelse (Cp =< 16#10FFFF andalso ((Cp band 16#FFFF) =:= 16#FFFE orelse (Cp band 16#FFFF) =:= 16#FFFF)).

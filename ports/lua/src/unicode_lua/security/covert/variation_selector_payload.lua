@@ -6,6 +6,7 @@
 local bit = require("bit")
 local datapath = require("unicode_lua.datapath")
 local calculus = require("unicode_lua.security.calculus")
+local ai_watermark = require("unicode_lua.security.crypto.ai_watermark_detectability")
 local ClassificationKind = calculus.ClassificationKind
 
 local M = {}
@@ -133,57 +134,71 @@ local function lossy_ascii(bytes)
   return table.concat(out)
 end
 
--- Returns { kind, sub, vs_positions (0-based), recovered_bytes }.
+-- A selector on `base` is a registered use when the pair is registered
+-- (StandardizedVariants plus the emoji variation sequences) or when it is
+-- VS15/VS16 on an Emoji-property base. Mirrors the Lean isRegisteredUse.
+function M.is_registered_variation_use(base, vs)
+  if M.is_registered_variation_pair(base, vs) then
+    return true
+  end
+  return (vs == 0xFE0E or vs == 0xFE0F) and ai_watermark.is_emoji(base)
+end
+
+-- Returns { kind, sub, vs_positions (0-based), suspicious_positions (0-based),
+-- recovered_bytes }. A selector is suspicious unless it is a registered use of
+-- its base; an input whose selectors are all registered is clear. Otherwise
+-- the verdict ranks EmbeddedAfterRegistered (a registered use precedes the
+-- first suspicious selector), RepeatedBase (at least four suspicious
+-- selectors, all the same codepoint), DirectPayload (the nibble pairs over the
+-- suspicious selectors recover at least one byte), else IllegalTarget. The
+-- finding localises the suspicious selectors. Mirrors the Lean detect.
 function M.detect(input)
   local vs_positions = {}
+  local suspicious = {}
+  local first_registered = nil
   for i = 1, #input do
     if M.is_variation_selector(input[i]) then
       vs_positions[#vs_positions + 1] = i - 1
-    end
-  end
-
-  local v = { kind = ClassificationKind.Clear, sub = nil, vs_positions = vs_positions, recovered_bytes = {} }
-
-  if #vs_positions == 0 then
-    return v
-  end
-
-  v.recovered_bytes = decode_vs_run(input, vs_positions)
-
-  -- Single-VS registered-pair exemption.
-  if #vs_positions == 1 then
-    local p = vs_positions[1]
-    if p > 0 then
-      local base = input[p - 1 + 1]
-      local vs = input[p + 1]
-      if M.is_registered_variation_pair(base, vs) then
-        return v
+      if i > 1 and M.is_registered_variation_use(input[i - 1], input[i]) then
+        if first_registered == nil then
+          first_registered = i - 1
+        end
+      else
+        suspicious[#suspicious + 1] = i - 1
       end
     end
   end
 
+  local v = {
+    kind = ClassificationKind.Clear,
+    sub = nil,
+    vs_positions = vs_positions,
+    suspicious_positions = suspicious,
+    recovered_bytes = {},
+  }
+
+  if #suspicious == 0 then
+    return v
+  end
+
+  v.recovered_bytes = decode_vs_run(input, suspicious)
   v.kind = ClassificationKind.Hazard
 
-  if #vs_positions >= 4 and all_same_vs(input, vs_positions) then
-    local p0 = vs_positions[1]
-    local base
-    if p0 == 0 then
-      base = 0
-    else
-      base = input[p0 - 1 + 1]
-    end
-    v.sub = { tag = "RepeatedBase", base_cp = base, vs_count = #vs_positions }
+  local p = suspicious[1]
+  local base
+  if p == 0 then
+    base = 0
+  else
+    base = input[p]
+  end
+  if first_registered ~= nil and first_registered < p then
+    v.sub = { tag = "EmbeddedAfterRegistered", registered_pos = first_registered, suspicious_pos = p }
+  elseif #suspicious >= 4 and all_same_vs(input, suspicious) then
+    v.sub = { tag = "RepeatedBase", base_cp = base, vs_count = #suspicious }
   elseif #v.recovered_bytes > 0 then
     v.sub = { tag = "DirectPayload", decoded = lossy_ascii(v.recovered_bytes) }
   else
-    local p = vs_positions[1]
-    local target
-    if p == 0 then
-      target = 0
-    else
-      target = input[p - 1 + 1]
-    end
-    v.sub = { tag = "IllegalTarget", target_cp = target, vs_cp = input[p + 1] }
+    v.sub = { tag = "IllegalTarget", target_cp = base, vs_cp = input[p + 1] }
   end
   return v
 end

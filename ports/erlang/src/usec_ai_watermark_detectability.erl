@@ -35,7 +35,7 @@
 
 -export([cue_class/1, sub_threat_tag/1,
          classify_tag/1, classify_positions/1, is_clear/1,
-         detect/1, detect_with_context/2]).
+         detect/1, detect_with_context/2, is_emoji/1]).
 
 %% ─────────────────────────────────────────────────────────────────────
 %% §1 Types

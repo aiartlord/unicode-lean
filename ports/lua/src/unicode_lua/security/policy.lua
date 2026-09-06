@@ -312,25 +312,12 @@ local function c1_control(cp)
   return cp >= 0x80 and cp <= 0x9F
 end
 
-local function full_span_positions(input)
-  local positions = {}
-  for i = 1, #input do
-    positions[#positions + 1] = i - 1
-  end
-  return positions
-end
-
--- The positions a homoglyph verdict implicates: the non-ASCII positions for the
--- ascii-confusable rung, the whole input for every other rung, nothing when
--- clear.
+-- The positions a homoglyph verdict implicates, per rung; nothing when clear.
 local function homoglyph_positions(verdict, input)
   if verdict.kind == ClassificationKind.Clear then
     return {}
   end
-  if sub_tag(verdict.sub) == "AsciiConfusable" then
-    return homoglyph.non_ascii_positions(input)
-  end
-  return full_span_positions(input)
+  return homoglyph.homoglyph_positions(sub_tag(verdict.sub), input)
 end
 
 -- One homoglyph finding under a field context, or nil when clear.
@@ -380,7 +367,7 @@ local function mixed_script_over_tokens(input)
         code = M.reason_code(Family.MixedScriptAdmissibility, sub),
         family = Family.MixedScriptAdmissibility,
         severity = Severity.Moderate,
-        positions = identifier_tokens.shift_positions(token.start, full_span_positions(token.cps)),
+        positions = identifier_tokens.shift_positions(token.start, homoglyph.mixed_script_positions(sub, token.cps)),
         sub_threat = sub,
         detail = Family.MixedScriptAdmissibility,
       }
@@ -405,10 +392,10 @@ function M.scan(profile, mode, input)
   push_finding(findings, Family.TagBlockPayload, tag.kind, tag.sub, tag.tag_positions)
 
   local vs = variation_selector.detect(input)
-  push_finding(findings, Family.VariationSelectorPayload, vs.kind, vs.sub, vs.vs_positions)
+  push_finding(findings, Family.VariationSelectorPayload, vs.kind, vs.sub, vs.suspicious_positions)
 
   local zw = zero_width.detect(input)
-  push_finding(findings, Family.ZeroWidthPayload, zw.kind, zw.sub, zw.zero_width_positions)
+  push_finding(findings, Family.ZeroWidthPayload, zw.kind, zw.sub, zw.suspicious_positions)
 
   if surrogate.looks_like_byte_stream(input) then
     local sr = surrogate.detect(input)
@@ -446,7 +433,7 @@ function M.scan(profile, mode, input)
   else
     local mixed_sub = homoglyph.mixed_script_verdict(input, identifier_field)
     if mixed_sub ~= nil then
-      push_finding(findings, Family.MixedScriptAdmissibility, ClassificationKind.Hazard, mixed_sub, full_span_positions(input))
+      push_finding(findings, Family.MixedScriptAdmissibility, ClassificationKind.Hazard, mixed_sub, homoglyph.mixed_script_positions(mixed_sub, input))
     end
   end
 

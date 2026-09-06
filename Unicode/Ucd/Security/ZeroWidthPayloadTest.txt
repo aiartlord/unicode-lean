@@ -15,7 +15,7 @@
 # Classifications produced by the detector:
 #   Clear
 #   Hazard:AnnotationMisuse      Hazard:WordJoinerInjection
-#   Hazard:AIWatermarkNNBSP      Hazard:BinaryPayload
+#   Hazard:AiWatermarkNNBSP      Hazard:BinaryPayload
 #   Hazard:BareZeroWidth
 #
 # Attribution conventions (key="value" pairs joined with ";"):
@@ -86,14 +86,14 @@
 # Three WJ in a row scattered through a word.
 0061 2060 0062 2060 0063 2060 0064; Hazard:WordJoinerInjection; 1,3,5; zwsp_count=0; zwj_count=0; wj_count=3; nnbsp_count=0; # 3x WJ scattered
 
-# @section AIWatermarkNNBSP
+# @section AiWatermarkNNBSP
 # @level strict
 
 # Two NNBSPs between Latin words — suspected GPT-4 watermark pattern.
-0048 202F 0069 202F 0021; Hazard:AIWatermarkNNBSP; 1,3; zwsp_count=0; zwj_count=0; wj_count=0; nnbsp_count=2; # NNBSP burst, GPT-class watermark heuristic
+0048 202F 0069 202F 0021; Hazard:AiWatermarkNNBSP; 1,3; zwsp_count=0; zwj_count=0; wj_count=0; nnbsp_count=2; # NNBSP burst, GPT-class watermark heuristic
 
 # Three NNBSPs at boundary positions.
-0061 202F 0062 202F 0063 202F 0064; Hazard:AIWatermarkNNBSP; 1,3,5; zwsp_count=0; zwj_count=0; wj_count=0; nnbsp_count=3; # 3-NNBSP boundary watermark
+0061 202F 0062 202F 0063 202F 0064; Hazard:AiWatermarkNNBSP; 1,3,5; zwsp_count=0; zwj_count=0; wj_count=0; nnbsp_count=3; # 3-NNBSP boundary watermark
 
 # @section BareZeroWidth
 # @level basic

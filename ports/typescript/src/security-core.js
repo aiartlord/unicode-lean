@@ -329,11 +329,13 @@ function detect(input, identifierField, runningText) {
   // whose zero-width characters are all sanctioned raises nothing.
   const zeroWidthPositions = positionsWhere(input, isZeroWidthPayload);
   if (zeroWidthPositions.length > 0 && hasSuspiciousZeroWidth(input, zeroWidthPositions)) {
+    // The Lean localises the suspicious positions, not the census: a
+    // sanctioned emoji joiner beside a payload is not payload.
     findings.push(
       makeFinding(
         Family.ZeroWidthPayload,
         zeroWidthSubThreat(input, zeroWidthPositions),
-        zeroWidthPositions,
+        suspiciousZeroWidthPositions(input, zeroWidthPositions),
       ),
     );
   }
@@ -758,22 +760,57 @@ function bidiSubThreat(input) {
   return null;
 }
 
+// Mirrors the Lean detect: each selector is judged against its predecessor
+// (classifyVS), registered uses are sanctioned wherever they stand and however
+// many, and the hazard is the suspicious run alone, ranked
+// EmbeddedAfterRegistered (a registered selector before the run), RepeatedBase,
+// DirectPayload, IllegalTarget. Positions are the suspicious selectors.
 function variationSelectorFinding(input) {
-  const positions = positionsWhere(input, isVariationSelector);
-  if (positions.length === 0) {
-    return null;
+  const registered = [];
+  const suspicious = [];
+  for (const p of positionsWhere(input, isVariationSelector)) {
+    if (isRegisteredVariationUse(input, p)) registered.push(p);
+    else suspicious.push(p);
   }
-  if (positions.length === 1 && isRegisteredVariationPosition(input, positions[0])) {
+  if (suspicious.length === 0) {
     return null;
   }
 
+  const payloadStart = suspicious[0];
   let subThreat = "IllegalTarget";
-  if (positions.length >= 4 && allSameAt(input, positions)) {
+  if (registered.some((p) => p < payloadStart)) {
+    subThreat = "EmbeddedAfterRegistered";
+  } else if (suspicious.length >= 4 && allSameAt(input, suspicious)) {
     subThreat = "RepeatedBase";
-  } else if (decodeVariationSelectorRun(input, positions).length > 0) {
+  } else if (decodeVariationSelectorRun(input, suspicious).length > 0) {
     subThreat = "DirectPayload";
   }
-  return makeFinding(Family.VariationSelectorPayload, subThreat, positions);
+  return makeFinding(Family.VariationSelectorPayload, subThreat, suspicious);
+}
+
+// The Lean classifyVS registered reading of the selector at position: a
+// standardized or emoji variation sequence, or VS15 / VS16 on any base carrying
+// the Emoji property. A selector with no predecessor is never registered.
+function isRegisteredVariationUse(input, position) {
+  if (position === 0) return false;
+  const base = input[position - 1];
+  const vs = input[position];
+  return (
+    isRegisteredVariationPosition(input, position) ||
+    ((vs === 0xfe0f || vs === 0xfe0e) && isEmojiCodepoint(base))
+  );
+}
+
+// The subset of the zero-width positions no context sanctions (Lean
+// suspiciousPositions).
+function suspiciousZeroWidthPositions(input, positions) {
+  return positions.filter((i) => {
+    const cp = input[i];
+    const sanctioned =
+      (cp === 0x200d && isLegitimateZwjContext(input, i)) ||
+      (cp === 0x200c && isLegitimateZwnjContext(input, i));
+    return !sanctioned;
+  });
 }
 
 function isVariationSelector(cp) {
@@ -1163,16 +1200,24 @@ function isLatinOnly(input) {
 // identifier-shaped token cut out of running text, so the homograph rungs run,
 // RestrictionLow does not, and AsciiConfusable runs for a Latin token only.
 function homoglyphConfusableFindingWithContext(input, ctx) {
+  // Each rung localises what the Lean detectWithContext localises: a target
+  // match, a cross-script mix and a restriction level judge the string as a
+  // unit and carry no positions; math-alpha and width-class the first such
+  // codepoint; decomposition-swap the first differing position; the
+  // ascii-confusable rung the non-ASCII positions.
   let subThreat = "";
-  let positions = fullSpanPositions(input);
+  let positions = [];
   if (homoglyphTargetMatch(input) !== null) {
     subThreat = "TargetMatch";
   } else if (input.some(isMathAlphanumeric)) {
     subThreat = "MathAlpha";
+    positions = [input.findIndex(isMathAlphanumeric)];
   } else if (input.some(isFullwidthHalfwidth)) {
     subThreat = "WidthClass";
+    positions = [input.findIndex(isFullwidthHalfwidth)];
   } else if (hasDecompositionSwap(input)) {
     subThreat = "DecompositionSwap";
+    positions = [firstDecompositionDiffPos(input)];
   } else if (!ctx.runningText && hasCrossScriptMix(input)) {
     // The script rungs of the Lean ladder, in its order: a cross-script mix
     // that is not Highly Restrictive, then a string failing every restriction
@@ -1246,7 +1291,32 @@ function mixedScriptAdmissibilityFinding(input, identifierField) {
   if (subThreat === null) {
     return null;
   }
-  return makeFinding(Family.MixedScriptAdmissibility, subThreat, fullSpanPositions(input));
+  return makeFinding(Family.MixedScriptAdmissibility, subThreat, mixedScriptPositions(subThreat, input));
+}
+
+// What the Lean MixedScriptAdmissibility.detectWithContext localises for a
+// mixed-script sub-threat: every codepoint outside Identifier_Status=Allowed for
+// RestrictedStatusCp; every non-Common, non-Inherited codepoint whose resolved
+// scripts name Cyrillic (LatinCyrillic) or Greek (LatinGreek); nothing for the
+// whole-string verdicts ScriptMixOther, CjkMix and UnrestrictedLevel.
+function mixedScriptPositions(subThreat, input) {
+  const scriptPositions = (target) => {
+    const positions = [];
+    input.forEach((cp, i) => {
+      if (!isIgnoredForIntersection(cp) && resolveScripts(cp).includes(target)) positions.push(i);
+    });
+    return positions;
+  };
+  if (subThreat === "RestrictedStatusCp") {
+    const positions = [];
+    input.forEach((cp, i) => {
+      if (!isIdAllowed(cp)) positions.push(i);
+    });
+    return positions;
+  }
+  if (subThreat === "LatinCyrillic") return scriptPositions("Cyrl");
+  if (subThreat === "LatinGreek") return scriptPositions("Grek");
+  return [];
 }
 
 // Right-to-left injection detection for LTR-declared fields — a direct
@@ -1464,7 +1534,7 @@ function isTagBlockChar(cp) {
 // -pair check the variation-selector detector reads.
 function firstSuspiciousVsPos(input) {
   for (let index = 0; index < input.length; index += 1) {
-    if (isVariationSelector(input[index]) && !isRegisteredVariationPosition(input, index)) {
+    if (isVariationSelector(input[index]) && !isRegisteredVariationUse(input, index)) {
       return index;
     }
   }
@@ -5319,6 +5389,20 @@ function hasDecompositionSwap(input) {
     }
   }
   return false;
+}
+
+// The first position at which the input and its NFC form differ, or the
+// shorter length when one is a prefix of the other. Mirrors the Lean
+// firstDecompositionDiffPos.
+function firstDecompositionDiffPos(input) {
+  const nfc = toNfcCodepoints(input);
+  const shorter = Math.min(input.length, nfc.length);
+  for (let index = 0; index < shorter; index += 1) {
+    if (input[index] !== nfc[index]) {
+      return index;
+    }
+  }
+  return shorter;
 }
 
 function composeHangulPair(first, second) {

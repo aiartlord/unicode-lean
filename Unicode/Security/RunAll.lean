@@ -164,9 +164,9 @@ def mixedScriptOverTokens (input : List Nat) :
   | none => Unicode.Security.Identity.MixedScriptAdmissibility.detectWithContext tokenCtx []
 
 /-- Run every Security Conformance Layer detector on `input` under the field
-    context `ctx` and return a `FamilyResult` per family.  The output array has
-    exactly 27 entries, one per family, in declaration order grouped by
-    layer.
+    context `ctx` and return a `FamilyResult` per family.  The output list has
+    exactly 29 entries -- one per family, noncharacter-control contributing one
+    per class -- in the wire order the ports emit findings in.
 
     SurrogateReassembly is only invoked when `input` looks
     like a byte stream (every codepoint ≤ 0xFF).  For
@@ -191,7 +191,12 @@ def runAllWithContext (ctx : Context) (input : List Nat) : List FamilyResult :=
          firstInvalidOffset := none }
         : Unicode.Security.Covert.SurrogateReassembly.Verdict)
   let c5 := Unicode.Security.Covert.BidiControlBalance.detect        input
-  let c6 := Unicode.Security.Covert.NoncharacterControl.detect       input
+  -- Noncharacter control reports each class present as its own result over
+  -- that class's positions; `detect`'s single priority verdict would hide a
+  -- C0 control behind a noncharacter.
+  let ncPos := Unicode.Security.Covert.NoncharacterControl.noncharacterPositions input
+  let c0Pos := Unicode.Security.Covert.NoncharacterControl.c0Positions input
+  let c1Pos := Unicode.Security.Covert.NoncharacterControl.c1Positions input
   -- Running text is judged per identifier-shaped token by the identifier
   -- detectors: a bilingual file is not one mixed-script identifier, and a
   -- `scоpe` inside it is.
@@ -230,37 +235,47 @@ def runAllWithContext (ctx : Context) (input : List Nat) : List FamilyResult :=
   let k1 := Unicode.Security.Crypto.Bip39Canonical.detect            input
   let k2 := Unicode.Security.Crypto.HashInputStability.detect        input
   let k3 := Unicode.Security.Crypto.AiWatermarkDetectability.detect  input
+  -- The list is in the wire order every port emits findings in (the reference
+  -- `policy::detect` sequence), so a verdict's finding list is the same list
+  -- here and on the wire: the covert families, the identity families, the
+  -- bidi-adjacent display and compound rungs, presentation, form, the
+  -- remaining boundary rungs, and source-display divergence last.
   [ mkResult .tagBlockPayload          c1.classify.isClear c1.classify.tag c1.classify.positions,
      mkResult .variationSelectorPayload c2.classify.isClear c2.classify.tag c2.classify.positions,
      mkResult .zeroWidthPayload         c3.classify.isClear c3.classify.tag c3.classify.positions,
      mkResult .surrogateReassembly      c4.classify.isClear c4.classify.tag c4.classify.positions,
      mkResult .bidiControlBalance       c5.classify.isClear c5.classify.tag c5.classify.positions,
-     mkResult .noncharacterControl      c6.classify.isClear c6.classify.tag c6.classify.positions,
+     mkResult .noncharacterControl ncPos.isEmpty
+       (if ncPos.isEmpty then none else some "Noncharacter") ncPos,
+     mkResult .noncharacterControl c0Pos.isEmpty
+       (if c0Pos.isEmpty then none else some "C0Control") c0Pos,
+     mkResult .noncharacterControl c1Pos.isEmpty
+       (if c1Pos.isEmpty then none else some "C1Control") c1Pos,
      mkResult .homoglyphConfusable      i1.classify.isClear i1.classify.tag i1.classify.positions,
      -- Identifier admissibility is read per token in running text (above); a
      -- declared-LTR field, a length-checked value and a locale-folded credential
      -- are questions about a single value, and in running text those three
      -- families report clear (see `Context.runningText`).
      mkResult .mixedScriptAdmissibility i2.classify.isClear i2.classify.tag i2.classify.positions,
-     mkResult .emojiZwjIntegrity        i3.classify.isClear i3.classify.tag i3.classify.positions,
-     mkResult .skinToneVariationForgery i4.classify.isClear i4.classify.tag i4.classify.positions,
-     mkResult .sourceDisplayDivergence  d1.classify.isClear d1.classify.tag d1.classify.positions,
-     mkResult .filenameDisguise         d2.classify.isClear d2.classify.tag d2.classify.positions,
      mkGatedResult .rtlInjection (!ctx.runningText)
        d3.classify.isClear d3.classify.tag d3.classify.positions,
+     mkResult .confusableBidiCompound   x3.classify.isClear x3.classify.tag x3.classify.positions,
+     mkResult .covertDisplayCompound    x2.classify.isClear x2.classify.tag x2.classify.positions,
+     mkResult .emojiZwjIntegrity        i3.classify.isClear i3.classify.tag i3.classify.positions,
+     mkResult .skinToneVariationForgery i4.classify.isClear i4.classify.tag i4.classify.positions,
+     mkResult .filenameDisguise         d2.classify.isClear d2.classify.tag d2.classify.positions,
      mkResult .rendererDivergence       d4.classify.isClear d4.classify.tag d4.classify.positions,
-     mkResult .normalizationBomb        f1.classify.isClear f1.classify.tag f1.classify.positions,
      mkResult .streamSafeViolation      f2.classify.isClear f2.classify.tag f2.classify.positions,
-     mkGatedResult .localeCaseInversion (!ctx.runningText)
-       f3.classify.isClear f3.classify.tag f3.classify.positions,
      mkGatedResult .caseExpansionMismatch (!ctx.runningText)
        f4.classify.isClear f4.classify.tag f4.classify.positions,
-     mkResult .widthClassConfusion      f5.classify.isClear f5.classify.tag f5.classify.positions,
-     mkResult .nfcIdempotenceWitness    f6.classify.isClear f6.classify.tag f6.classify.positions,
      mkResult .identifierFormDrift      x1.classify.isClear x1.classify.tag x1.classify.positions,
-     mkResult .covertDisplayCompound    x2.classify.isClear x2.classify.tag x2.classify.positions,
-     mkResult .confusableBidiCompound   x3.classify.isClear x3.classify.tag x3.classify.positions,
      mkResult .admissibilityFormDrift   x4.classify.isClear x4.classify.tag x4.classify.positions,
+     mkResult .normalizationBomb        f1.classify.isClear f1.classify.tag f1.classify.positions,
+     mkGatedResult .localeCaseInversion (!ctx.runningText)
+       f3.classify.isClear f3.classify.tag f3.classify.positions,
+     mkResult .nfcIdempotenceWitness    f6.classify.isClear f6.classify.tag f6.classify.positions,
+     mkResult .widthClassConfusion      f5.classify.isClear f5.classify.tag f5.classify.positions,
+     mkResult .sourceDisplayDivergence  d1.classify.isClear d1.classify.tag d1.classify.positions,
      mkGatedResult .bip39Canonical           ctx.cryptoField
        k1.classify.isClear k1.classify.tag k1.classify.positions,
      mkGatedResult .hashInputStability       ctx.cryptoField
@@ -296,8 +311,9 @@ def anyHazard (input : List Nat) : Bool :=
 -- §1 Shape invariants
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- `runAll` always returns exactly 27 entries, one per family. -/
-theorem runAll_size (input : List Nat) : (runAll input).length = 27 := by
+/-- `runAll` always returns exactly 29 entries: one per family, with
+    noncharacter-control contributing one per class. -/
+theorem runAll_size (input : List Nat) : (runAll input).length = 29 := by
   unfold runAll
   rfl
 

@@ -228,11 +228,22 @@ module UnicodeRuby
       # The positions a homoglyph verdict implicates: the non-ASCII positions
       # for the ascii-confusable rung, the whole input for every other rung,
       # nothing when clear.
+      # Each rung localises what the Lean detectWithContext localises: a
+      # target match, a cross-script mix and a restriction level judge the
+      # string as a unit and carry no positions; math-alpha and width-class
+      # the first such codepoint; decomposition-swap the first differing
+      # position; the ascii-confusable rung the non-ASCII positions.
       def homoglyph_positions(verdict, input)
         return [] if verdict.kind == ClassificationKind::CLEAR
-        return Identity::HomoglyphConfusable.non_ascii_positions(input) if verdict.sub == "AsciiConfusable"
 
-        (0...input.length).to_a
+        case verdict.sub
+        when "AsciiConfusable" then Identity::HomoglyphConfusable.non_ascii_positions(input)
+        when "MathAlpha" then [input.index { |cp| Identity::HomoglyphConfusable.math_alphanumeric?(cp) }]
+        when "WidthClass" then [input.index { |cp| Identity::HomoglyphConfusable.fullwidth_halfwidth?(cp) }]
+        when "DecompositionSwap"
+          [Identity::HomoglyphConfusable.first_decomposition_diff_pos(input, Ucd.to_nfc(input))]
+        else []
+        end
       end
 
       # One homoglyph finding under a field context, or nil when clear.
@@ -280,7 +291,9 @@ module UnicodeRuby
           return Finding.new(
             reason_code(Family::MIXED_SCRIPT_ADMISSIBILITY, sub), Family::MIXED_SCRIPT_ADMISSIBILITY,
             Severity::MODERATE,
-            Identity::IdentifierTokens.shift_positions(token.start, (0...token.cps.length).to_a),
+            Identity::IdentifierTokens.shift_positions(
+              token.start, Identity::HomoglyphConfusable.mixed_script_positions(sub, token.cps)
+            ),
             sub, family_slug(Family::MIXED_SCRIPT_ADMISSIBILITY)
           )
         end
@@ -471,10 +484,12 @@ module UnicodeRuby
         push_finding(findings, Family::TAG_BLOCK_PAYLOAD, tag.kind, tag.sub, tag.tag_positions)
 
         vs = Covert::VariationSelectorPayload.detect(input)
+        # The Lean localises the suspicious selectors and the suspicious
+        # zero-width positions, not the census of either.
         push_finding(findings, Family::VARIATION_SELECTOR_PAYLOAD, vs.kind, vs.sub, vs.vs_positions)
 
         zw = Covert::ZeroWidthPayload.detect(input)
-        push_finding(findings, Family::ZERO_WIDTH_PAYLOAD, zw.kind, zw.sub, zw.zero_width_positions)
+        push_finding(findings, Family::ZERO_WIDTH_PAYLOAD, zw.kind, zw.sub, zw.suspicious_positions)
 
         # SurrogateReassembly only applies to byte-stream input (every
         # codepoint <= 0xFF); on codepoint-array input the family is skipped.
@@ -518,7 +533,7 @@ module UnicodeRuby
           mixed_sub = Identity::HomoglyphConfusable.mixed_script_verdict(input, identifier_field)
           unless mixed_sub.nil?
             push_finding(findings, Family::MIXED_SCRIPT_ADMISSIBILITY, ClassificationKind::HAZARD,
-                         mixed_sub, (0...input.length).to_a)
+                         mixed_sub, Identity::HomoglyphConfusable.mixed_script_positions(mixed_sub, input))
           end
         end
 

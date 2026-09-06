@@ -15,7 +15,7 @@
 
 use crate::security::covert::bidi_control_balance::is_bidi_format_control;
 use crate::security::covert::variation_selector_payload::{
-    is_registered_variation_pair, is_variation_selector,
+    is_registered_use, is_variation_selector,
 };
 
 /// One covert-display-compound scan result.  `sub` is `None` for a clear
@@ -36,14 +36,13 @@ fn first_bidi_pos(input: &[u32]) -> Option<usize> {
     input.iter().position(|&cp| is_bidi_format_control(cp))
 }
 
-/// First position holding a suspicious variation selector — a VS that does
-/// not form a registered (base, VS) pair with its predecessor.  Mirrors the
-/// `.suspicious` case of the Lean `classifyPositions`.
+/// First position holding a suspicious variation selector — a VS that is not
+/// a registered use of its predecessor (a registered pair, or VS15/VS16 on an
+/// Emoji-property base).  Mirrors the `.suspicious` case of the Lean
+/// `classifyPositions`.
 fn first_suspicious_vs_pos(input: &[u32]) -> Option<usize> {
     input.iter().enumerate().find_map(|(i, &cp)| {
-        if is_variation_selector(cp)
-            && !(i > 0 && is_registered_variation_pair(input[i - 1], cp))
-        {
+        if is_variation_selector(cp) && !is_registered_use(input, i) {
             Some(i)
         } else {
             None

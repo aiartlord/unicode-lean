@@ -164,7 +164,8 @@ defmodule UnicodeSecurity.Crypto.AiWatermarkDetectability do
   end
 
   # True iff `cp` has the `Emoji = Yes` property per emoji-data.txt.
-  defp is_emoji(cp), do: Enum.any?(emoji_ranges(), fn {lo, hi} -> lo <= cp and cp <= hi end)
+  @doc "True iff `cp` carries the Emoji property; shared with the variation-selector registered-use test."
+  def is_emoji(cp), do: Enum.any?(emoji_ranges(), fn {lo, hi} -> lo <= cp and cp <= hi end)
 
   # ───────────────────────────────────────────────────────────────────
   # §3 Codepoint probes

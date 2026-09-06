@@ -21,6 +21,7 @@
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
+use crate::security::crypto::ai_watermark_detectability::is_emoji;
 use crate::security::ClassificationKind;
 
 // ──────────────────────────────────────────────────────────────────────
@@ -98,6 +99,9 @@ pub enum SubThreat {
     DirectPayload { decoded: String },
     IllegalTarget { target_cp: u32, vs_cp: u32 },
     RepeatedBase { base_cp: u32, vs_count: usize },
+    /// A registered variation selector precedes the suspicious run: payload
+    /// hiding behind a legitimate glyph (Lean `embeddedAfterReg`).
+    EmbeddedAfterRegistered { registered_end: usize, payload_start: usize },
 }
 
 impl SubThreat {
@@ -106,6 +110,10 @@ impl SubThreat {
             SubThreat::DirectPayload { decoded } => {
                 std::hint::black_box(decoded);
                 "DirectPayload"
+            }
+            SubThreat::EmbeddedAfterRegistered { registered_end, payload_start } => {
+                std::hint::black_box((registered_end, payload_start));
+                "EmbeddedAfterRegistered"
             }
             SubThreat::IllegalTarget { target_cp, vs_cp } => {
                 std::hint::black_box((target_cp, vs_cp));
@@ -123,8 +131,27 @@ impl SubThreat {
 pub struct Verdict {
     pub kind: ClassificationKind,
     pub sub: Option<SubThreat>,
+    /// Every variation-selector position: the census.
     pub vs_positions: Vec<usize>,
+    /// The selectors no registered pair or presentation rule sanctions: what
+    /// the classification localises (Lean `suspiciousPositions`).
+    pub suspicious_positions: Vec<usize>,
     pub recovered_bytes: Vec<u8>,
+}
+
+/// The Lean `classifyVS` registered reading of a selector against its
+/// predecessor: a standardized or emoji variation sequence, or VS15 / VS16 on
+/// any base carrying the Emoji property (a default-emoji base with a
+/// redundant selector is a no-op flip, not a payload). A selector with no
+/// predecessor is never registered.
+pub fn is_registered_use(input: &[u32], p: usize) -> bool {
+    if p == 0 {
+        return false;
+    }
+    let base = input[p - 1];
+    let vs = input[p];
+    is_registered_variation_pair(base, vs)
+        || ((vs == 0xFE0F || vs == 0xFE0E) && is_emoji(base))
 }
 
 fn decode_vs_run(input: &[u32], positions: &[usize]) -> Vec<u8> {
@@ -172,6 +199,7 @@ pub fn detect(input: &[u32]) -> Verdict {
         kind: ClassificationKind::Clear,
         sub: None,
         vs_positions: Vec::new(),
+        suspicious_positions: Vec::new(),
         recovered_bytes: Vec::new(),
     };
     v.vs_positions = input
@@ -186,50 +214,53 @@ pub fn detect(input: &[u32]) -> Verdict {
         })
         .collect();
 
-    if v.vs_positions.is_empty() {
+    // Each selector is judged against its predecessor (Lean `classifyVS`):
+    // registered uses are sanctioned wherever they stand and however many; the
+    // hazard is the suspicious run alone.
+    let mut registered: Vec<usize> = Vec::new();
+    let mut suspicious: Vec<usize> = Vec::new();
+    for &p in &v.vs_positions {
+        if is_registered_use(input, p) {
+            registered.push(p);
+        } else {
+            suspicious.push(p);
+        }
+    }
+    if suspicious.is_empty() {
         return v;
     }
 
-    v.recovered_bytes = decode_vs_run(input, &v.vs_positions);
-
-    // Single-VS exemption: if the entire VS run is exactly ONE
-    // VS codepoint following a base, and that (base, VS) pair is
-    // registered in StandardizedVariants or emoji-variation-
-    // sequences, the input is a legitimate registered variation
-    // (e.g. CJK Compatibility Ideograph + FE00, registered math
-    // variant, or emoji-style/text-style selector).  Return Clear.
-    if v.vs_positions.len() == 1 {
-        let p = v.vs_positions[0];
-        if p > 0 {
-            let base = input[p - 1];
-            let vs = input[p];
-            if is_registered_variation_pair(base, vs) {
-                // Legitimate variant — leave verdict Clear.
-                return v;
-            }
-        }
-    }
-
+    v.recovered_bytes = decode_vs_run(input, &suspicious);
     v.kind = ClassificationKind::Hazard;
 
-    if v.vs_positions.len() >= 4 && all_same_vs(input, &v.vs_positions) {
-        let p0 = v.vs_positions[0];
-        let base = if p0 == 0 { 0 } else { input[p0 - 1] };
+    let payload_start = suspicious[0];
+    // Priority (Lean `pickSubThreat`): a registered selector before the
+    // suspicious run, then a long single-selector run, then a decodable
+    // payload, then the bare illegal target.
+    let registered_before: Option<usize> =
+        registered.iter().copied().filter(|&p| p < payload_start).last();
+    if let Some(registered_end) = registered_before {
+        v.sub = Some(SubThreat::EmbeddedAfterRegistered {
+            registered_end,
+            payload_start,
+        });
+    } else if suspicious.len() >= 4 && all_same_vs(input, &suspicious) {
+        let base = if payload_start == 0 { 0 } else { input[payload_start - 1] };
         v.sub = Some(SubThreat::RepeatedBase {
             base_cp: base,
-            vs_count: v.vs_positions.len(),
+            vs_count: suspicious.len(),
         });
     } else if !v.recovered_bytes.is_empty() {
         v.sub = Some(SubThreat::DirectPayload {
             decoded: lossy_ascii(&v.recovered_bytes),
         });
     } else {
-        let p = v.vs_positions[0];
-        let target = if p == 0 { 0 } else { input[p - 1] };
+        let target = if payload_start == 0 { 0 } else { input[payload_start - 1] };
         v.sub = Some(SubThreat::IllegalTarget {
             target_cp: target,
-            vs_cp: input[p],
+            vs_cp: input[payload_start],
         });
     }
+    v.suspicious_positions = suspicious;
     v
 }

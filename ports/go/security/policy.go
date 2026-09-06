@@ -231,10 +231,12 @@ func detect(input []uint32, identifierField bool, runningText bool) []Finding {
 	if positions := positionsWhere(input, isZeroWidthPayload); len(positions) > 0 && hasSuspiciousZeroWidth(input, positions) {
 		sub := zeroWidthSubThreat(input, positions)
 		findings = append(findings, Finding{
-			Code:      reasonCode(FamilyZeroWidthPayload, sub),
-			Family:    FamilyZeroWidthPayload,
-			Severity:  2,
-			Positions: positions,
+			Code:     reasonCode(FamilyZeroWidthPayload, sub),
+			Family:   FamilyZeroWidthPayload,
+			Severity: 2,
+			// The Lean localises the suspicious positions, not the census: a
+			// sanctioned emoji joiner beside a payload is not payload.
+			Positions: suspiciousZeroWidthPositions(input, positions),
 			SubThreat: sub,
 			Detail:    "zero-width-payload",
 		})
@@ -483,19 +485,39 @@ func isTagBlockAsciiPayload(cp uint32) bool {
 	return cp >= 0xE0020 && cp <= 0xE007E
 }
 
+// variationSelectorFinding mirrors the Lean detect: each selector is judged
+// against its predecessor (classifyVS), registered uses are sanctioned wherever
+// they stand and however many, and the hazard is the suspicious run alone,
+// ranked EmbeddedAfterRegistered (a registered selector before the run),
+// RepeatedBase, DirectPayload, IllegalTarget. Positions are the suspicious
+// selectors.
 func variationSelectorFinding(input []uint32) (Finding, bool) {
-	positions := positionsWhere(input, isVariationSelector)
-	if len(positions) == 0 {
-		return Finding{}, false
+	var registered []int
+	var suspicious []int
+	for _, p := range positionsWhere(input, isVariationSelector) {
+		if isRegisteredVariationUse(input, p) {
+			registered = append(registered, p)
+		} else {
+			suspicious = append(suspicious, p)
+		}
 	}
-	if len(positions) == 1 && isRegisteredVariationPosition(input, positions[0]) {
+	if len(suspicious) == 0 {
 		return Finding{}, false
 	}
 
+	payloadStart := suspicious[0]
+	registeredBefore := false
+	for _, p := range registered {
+		if p < payloadStart {
+			registeredBefore = true
+		}
+	}
 	subThreat := "IllegalTarget"
-	if len(positions) >= 4 && allSameAt(input, positions) {
+	if registeredBefore {
+		subThreat = "EmbeddedAfterRegistered"
+	} else if len(suspicious) >= 4 && allSameAt(input, suspicious) {
 		subThreat = "RepeatedBase"
-	} else if len(decodeVariationSelectorRun(input, positions)) > 0 {
+	} else if len(decodeVariationSelectorRun(input, suspicious)) > 0 {
 		subThreat = "DirectPayload"
 	}
 
@@ -503,10 +525,23 @@ func variationSelectorFinding(input []uint32) (Finding, bool) {
 		Code:      reasonCode(FamilyVariationSelector, subThreat),
 		Family:    FamilyVariationSelector,
 		Severity:  2,
-		Positions: positions,
+		Positions: suspicious,
 		SubThreat: subThreat,
 		Detail:    string(FamilyVariationSelector),
 	}, true
+}
+
+// isRegisteredVariationUse is the Lean classifyVS registered reading of the
+// selector at position: a standardized or emoji variation sequence, or VS15 /
+// VS16 on any base carrying the Emoji property. A selector with no predecessor
+// is never registered.
+func isRegisteredVariationUse(input []uint32, position int) bool {
+	if position == 0 {
+		return false
+	}
+	base := input[position-1]
+	vs := input[position]
+	return isRegisteredVariationPair(base, vs) || ((vs == 0xFE0F || vs == 0xFE0E) && aiwmIsEmoji(base))
 }
 
 func isVariationSelector(cp uint32) bool {
@@ -705,21 +740,28 @@ func homoglyphConfusableFinding(input []uint32) (Finding, bool) {
 // .lean: TargetMatch, MathAlpha, WidthClass, DecompositionSwap, CrossScriptMix,
 // RestrictionLow, AsciiConfusable.
 func homoglyphConfusableFindingCtx(input []uint32, ctx homoglyphContext) (Finding, bool) {
+	// Each rung localises what the Lean detectWithContext localises: a target
+	// match, a cross-script mix and a restriction level judge the string as a
+	// unit and carry no positions; math-alpha and width-class the first such
+	// codepoint; decomposition-swap the first differing position; the
+	// ascii-confusable rung the non-ASCII positions.
 	subThreat := ""
-	positions := fullSpanPositions(input)
+	positions := []int{}
 	if _, ok := homoglyphTargetMatch(input); ok {
 		subThreat = "TargetMatch"
 	} else {
-		for _, cp := range input {
+		for i, cp := range input {
 			if isMathAlphanumeric(cp) {
 				subThreat = "MathAlpha"
+				positions = []int{i}
 				break
 			}
 		}
 		if subThreat == "" {
-			for _, cp := range input {
+			for i, cp := range input {
 				if isFullwidthHalfwidth(cp) {
 					subThreat = "WidthClass"
+					positions = []int{i}
 					break
 				}
 			}
@@ -727,6 +769,7 @@ func homoglyphConfusableFindingCtx(input []uint32, ctx homoglyphContext) (Findin
 	}
 	if subThreat == "" && hasDecompositionSwap(input) {
 		subThreat = "DecompositionSwap"
+		positions = []int{firstDecompositionDiffPos(input)}
 	}
 	// The script rungs of the Lean ladder, in its order: a cross-script mix that
 	// is not Highly Restrictive, then a string that fails every restriction
@@ -847,10 +890,65 @@ func mixedScriptAdmissibilityFinding(input []uint32, identifierField bool) (Find
 		Code:      reasonCode(FamilyMixedScript, subThreat),
 		Family:    FamilyMixedScript,
 		Severity:  2,
-		Positions: fullSpanPositions(input),
+		Positions: mixedScriptPositions(subThreat, input),
 		SubThreat: subThreat,
 		Detail:    string(FamilyMixedScript),
 	}, true
+}
+
+// mixedScriptPositions is what the Lean MixedScriptAdmissibility.detectWithContext
+// localises for a mixed-script sub-threat: every codepoint outside
+// Identifier_Status=Allowed for RestrictedStatusCp; every non-Common,
+// non-Inherited codepoint whose resolved scripts name Cyrillic (LatinCyrillic)
+// or Greek (LatinGreek); nothing for the whole-string verdicts ScriptMixOther,
+// CjkMix and UnrestrictedLevel.
+func mixedScriptPositions(subThreat string, input []uint32) []int {
+	scriptPositions := func(target string) []int {
+		positions := []int{}
+		for i, cp := range input {
+			if isIgnoredForIntersection(cp) {
+				continue
+			}
+			for _, script := range resolveScripts(cp) {
+				if script == target {
+					positions = append(positions, i)
+					break
+				}
+			}
+		}
+		return positions
+	}
+	switch subThreat {
+	case "RestrictedStatusCp":
+		positions := []int{}
+		for i, cp := range input {
+			if !isIdAllowed(cp) {
+				positions = append(positions, i)
+			}
+		}
+		return positions
+	case "LatinCyrillic":
+		return scriptPositions("Cyrl")
+	case "LatinGreek":
+		return scriptPositions("Grek")
+	}
+	return []int{}
+}
+
+// suspiciousZeroWidthPositions is the subset of the zero-width positions no
+// context sanctions (Lean suspiciousPositions): a ZWJ inside a registered
+// emoji sequence and a ZWNJ in a CONTEXTJ-valid position are excluded.
+func suspiciousZeroWidthPositions(input []uint32, positions []int) []int {
+	suspicious := []int{}
+	for _, i := range positions {
+		cp := input[i]
+		sanctioned := (cp == 0x200D && isLegitimateZwjContext(input, i)) ||
+			(cp == 0x200C && isLegitimateZwnjContext(input, i))
+		if !sanctioned {
+			suspicious = append(suspicious, i)
+		}
+	}
+	return suspicious
 }
 
 func fullSpanPositions(input []uint32) []int {

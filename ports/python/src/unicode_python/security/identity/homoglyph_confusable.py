@@ -568,6 +568,31 @@ def has_mixed_script_admissibility(input_cps: list[int]) -> bool:
     return mixed_script_verdict(input_cps, True) is not None
 
 
+def mixed_script_positions(sub: str, input_cps: list[int]) -> list[int]:
+    """The positions the Lean ``MixedScriptAdmissibility.detectWithContext``
+    localises for a mixed-script sub-threat: every codepoint outside
+    Identifier_Status=Allowed for ``RestrictedStatusCp``; every non-Common,
+    non-Inherited codepoint whose resolved scripts name Cyrillic
+    (``LatinCyrillic``) or Greek (``LatinGreek``); nothing for the
+    whole-string verdicts ``ScriptMixOther``, ``CjkMix`` and
+    ``UnrestrictedLevel``."""
+
+    def script_positions(target: str) -> list[int]:
+        return [
+            i
+            for i, cp in enumerate(input_cps)
+            if not ucd.is_ignored_for_intersection(cp) and target in ucd.resolve_scripts(cp)
+        ]
+
+    if sub == "RestrictedStatusCp":
+        return [i for i, cp in enumerate(input_cps) if not ucd.is_id_allowed(cp)]
+    if sub == "LatinCyrillic":
+        return script_positions("Cyrl")
+    if sub == "LatinGreek":
+        return script_positions("Grek")
+    return []
+
+
 def mixed_script_subthreat(input_cps: list[int]) -> str:
     """Specific script-collision sub-threat, matching the Lean source of truth.
 

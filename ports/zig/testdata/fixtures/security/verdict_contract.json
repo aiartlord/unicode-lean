@@ -57,9 +57,7 @@
             "code": "unicode.security.I.homoglyph-confusable.RestrictionLow",
             "family": "homoglyph-confusable",
             "severity": 2,
-            "positions": [
-              0
-            ],
+            "positions": [],
             "sub_threat": "RestrictionLow",
             "detail": "homoglyph-confusable"
           },
@@ -494,17 +492,7 @@
             "code": "unicode.security.I.homoglyph-confusable.TargetMatch",
             "family": "homoglyph-confusable",
             "severity": 2,
-            "positions": [
-              0,
-              1,
-              2,
-              3,
-              4,
-              5,
-              6,
-              7,
-              8
-            ],
+            "positions": [],
             "sub_threat": "TargetMatch",
             "detail": "homoglyph-confusable"
           },
@@ -513,15 +501,7 @@
             "family": "mixed-script-admissibility",
             "severity": 2,
             "positions": [
-              0,
-              1,
-              2,
-              3,
-              4,
-              5,
-              6,
-              7,
-              8
+              6
             ],
             "sub_threat": "LatinCyrillic",
             "detail": "mixed-script-admissibility"
@@ -560,8 +540,7 @@
             "family": "homoglyph-confusable",
             "severity": 2,
             "positions": [
-              0,
-              1
+              0
             ],
             "sub_threat": "DecompositionSwap",
             "detail": "homoglyph-confusable"
@@ -613,12 +592,7 @@
             "code": "unicode.security.I.homoglyph-confusable.CrossScriptMix",
             "family": "homoglyph-confusable",
             "severity": 2,
-            "positions": [
-              0,
-              1,
-              2,
-              3
-            ],
+            "positions": [],
             "sub_threat": "CrossScriptMix",
             "detail": "homoglyph-confusable"
           },
@@ -627,8 +601,6 @@
             "family": "mixed-script-admissibility",
             "severity": 2,
             "positions": [
-              0,
-              1,
               2,
               3
             ],
@@ -680,16 +652,7 @@
             "code": "unicode.security.I.homoglyph-confusable.TargetMatch",
             "family": "homoglyph-confusable",
             "severity": 2,
-            "positions": [
-              0,
-              1,
-              2,
-              3,
-              4,
-              5,
-              6,
-              7
-            ],
+            "positions": [],
             "sub_threat": "TargetMatch",
             "detail": "homoglyph-confusable"
           },
@@ -697,16 +660,7 @@
             "code": "unicode.security.I.mixed-script-admissibility.ScriptMixOther",
             "family": "mixed-script-admissibility",
             "severity": 2,
-            "positions": [
-              0,
-              1,
-              2,
-              3,
-              4,
-              5,
-              6,
-              7
-            ],
+            "positions": [],
             "sub_threat": "ScriptMixOther",
             "detail": "mixed-script-admissibility"
           },
@@ -747,12 +701,7 @@
             "code": "unicode.security.I.homoglyph-confusable.CrossScriptMix",
             "family": "homoglyph-confusable",
             "severity": 2,
-            "positions": [
-              0,
-              1,
-              2,
-              3
-            ],
+            "positions": [],
             "sub_threat": "CrossScriptMix",
             "detail": "homoglyph-confusable"
           },
@@ -760,12 +709,7 @@
             "code": "unicode.security.I.mixed-script-admissibility.ScriptMixOther",
             "family": "mixed-script-admissibility",
             "severity": 2,
-            "positions": [
-              0,
-              1,
-              2,
-              3
-            ],
+            "positions": [],
             "sub_threat": "ScriptMixOther",
             "detail": "mixed-script-admissibility"
           },
@@ -820,9 +764,7 @@
             "code": "unicode.security.I.homoglyph-confusable.RestrictionLow",
             "family": "homoglyph-confusable",
             "severity": 2,
-            "positions": [
-              0
-            ],
+            "positions": [],
             "sub_threat": "RestrictionLow",
             "detail": "homoglyph-confusable"
           },
@@ -1145,13 +1087,7 @@
             "code": "unicode.security.I.homoglyph-confusable.CrossScriptMix",
             "family": "homoglyph-confusable",
             "severity": 2,
-            "positions": [
-              0,
-              1,
-              2,
-              3,
-              4
-            ],
+            "positions": [],
             "sub_threat": "CrossScriptMix",
             "detail": "homoglyph-confusable"
           },
@@ -1159,13 +1095,7 @@
             "code": "unicode.security.I.mixed-script-admissibility.ScriptMixOther",
             "family": "mixed-script-admissibility",
             "severity": 2,
-            "positions": [
-              0,
-              1,
-              2,
-              3,
-              4
-            ],
+            "positions": [],
             "sub_threat": "ScriptMixOther",
             "detail": "mixed-script-admissibility"
           },
@@ -1590,13 +1520,7 @@
             "code": "unicode.security.I.homoglyph-confusable.CrossScriptMix",
             "family": "homoglyph-confusable",
             "severity": 2,
-            "positions": [
-              0,
-              1,
-              2,
-              3,
-              4
-            ],
+            "positions": [],
             "sub_threat": "CrossScriptMix",
             "detail": "homoglyph-confusable"
           },
@@ -1604,13 +1528,7 @@
             "code": "unicode.security.I.mixed-script-admissibility.ScriptMixOther",
             "family": "mixed-script-admissibility",
             "severity": 2,
-            "positions": [
-              0,
-              1,
-              2,
-              3,
-              4
-            ],
+            "positions": [],
             "sub_threat": "ScriptMixOther",
             "detail": "mixed-script-admissibility"
           },
@@ -1736,18 +1654,7 @@
             "code": "unicode.security.I.homoglyph-confusable.CrossScriptMix",
             "family": "homoglyph-confusable",
             "severity": 2,
-            "positions": [
-              0,
-              1,
-              2,
-              3,
-              4,
-              5,
-              6,
-              7,
-              8,
-              9
-            ],
+            "positions": [],
             "sub_threat": "CrossScriptMix",
             "detail": "homoglyph-confusable"
           },
@@ -1755,18 +1662,7 @@
             "code": "unicode.security.I.mixed-script-admissibility.ScriptMixOther",
             "family": "mixed-script-admissibility",
             "severity": 2,
-            "positions": [
-              0,
-              1,
-              2,
-              3,
-              4,
-              5,
-              6,
-              7,
-              8,
-              9
-            ],
+            "positions": [],
             "sub_threat": "ScriptMixOther",
             "detail": "mixed-script-admissibility"
           },
@@ -1860,12 +1756,7 @@
             "code": "unicode.security.I.homoglyph-confusable.CrossScriptMix",
             "family": "homoglyph-confusable",
             "severity": 2,
-            "positions": [
-              0,
-              1,
-              2,
-              3
-            ],
+            "positions": [],
             "sub_threat": "CrossScriptMix",
             "detail": "homoglyph-confusable"
           },
@@ -1873,12 +1764,7 @@
             "code": "unicode.security.I.mixed-script-admissibility.ScriptMixOther",
             "family": "mixed-script-admissibility",
             "severity": 2,
-            "positions": [
-              0,
-              1,
-              2,
-              3
-            ],
+            "positions": [],
             "sub_threat": "ScriptMixOther",
             "detail": "mixed-script-admissibility"
           },
@@ -1957,13 +1843,7 @@
             "code": "unicode.security.I.homoglyph-confusable.CrossScriptMix",
             "family": "homoglyph-confusable",
             "severity": 2,
-            "positions": [
-              4,
-              5,
-              6,
-              7,
-              8
-            ],
+            "positions": [],
             "sub_threat": "CrossScriptMix",
             "detail": "homoglyph-confusable"
           },
@@ -1972,11 +1852,7 @@
             "family": "mixed-script-admissibility",
             "severity": 2,
             "positions": [
-              4,
-              5,
-              6,
-              7,
-              8
+              6
             ],
             "sub_threat": "LatinCyrillic",
             "detail": "mixed-script-admissibility"
@@ -2287,12 +2163,7 @@
             "code": "unicode.security.I.homoglyph-confusable.CrossScriptMix",
             "family": "homoglyph-confusable",
             "severity": 2,
-            "positions": [
-              0,
-              1,
-              2,
-              3
-            ],
+            "positions": [],
             "sub_threat": "CrossScriptMix",
             "detail": "homoglyph-confusable"
           },
@@ -2301,10 +2172,7 @@
             "family": "mixed-script-admissibility",
             "severity": 2,
             "positions": [
-              0,
-              1,
-              2,
-              3
+              2
             ],
             "sub_threat": "LatinCyrillic",
             "detail": "mixed-script-admissibility"
@@ -2491,18 +2359,7 @@
             "code": "unicode.security.I.homoglyph-confusable.CrossScriptMix",
             "family": "homoglyph-confusable",
             "severity": 2,
-            "positions": [
-              0,
-              1,
-              2,
-              3,
-              4,
-              5,
-              6,
-              7,
-              8,
-              9
-            ],
+            "positions": [],
             "sub_threat": "CrossScriptMix",
             "detail": "homoglyph-confusable"
           },
@@ -2510,18 +2367,7 @@
             "code": "unicode.security.I.mixed-script-admissibility.ScriptMixOther",
             "family": "mixed-script-admissibility",
             "severity": 2,
-            "positions": [
-              0,
-              1,
-              2,
-              3,
-              4,
-              5,
-              6,
-              7,
-              8,
-              9
-            ],
+            "positions": [],
             "sub_threat": "ScriptMixOther",
             "detail": "mixed-script-admissibility"
           },
@@ -3170,15 +3016,7 @@
             "code": "unicode.security.I.homoglyph-confusable.RestrictionLow",
             "family": "homoglyph-confusable",
             "severity": 2,
-            "positions": [
-              0,
-              1,
-              2,
-              3,
-              4,
-              5,
-              6
-            ],
+            "positions": [],
             "sub_threat": "RestrictionLow",
             "detail": "homoglyph-confusable"
           },
@@ -3231,13 +3069,7 @@
             "code": "unicode.security.I.homoglyph-confusable.CrossScriptMix",
             "family": "homoglyph-confusable",
             "severity": 2,
-            "positions": [
-              0,
-              1,
-              2,
-              3,
-              4
-            ],
+            "positions": [],
             "sub_threat": "CrossScriptMix",
             "detail": "homoglyph-confusable"
           },
@@ -3246,11 +3078,7 @@
             "family": "mixed-script-admissibility",
             "severity": 2,
             "positions": [
-              0,
-              1,
-              2,
-              3,
-              4
+              2
             ],
             "sub_threat": "RestrictedStatusCp",
             "detail": "mixed-script-admissibility"
@@ -3412,9 +3240,7 @@
             "family": "homoglyph-confusable",
             "severity": 2,
             "positions": [
-              0,
-              1,
-              2
+              1
             ],
             "sub_threat": "MathAlpha",
             "detail": "homoglyph-confusable"
@@ -3884,8 +3710,7 @@
               122,
               123,
               124,
-              125,
-              126
+              125
             ],
             "sub_threat": "RestrictedStatusCp",
             "detail": "mixed-script-admissibility"
@@ -4438,8 +4263,6 @@
             "family": "mixed-script-admissibility",
             "severity": 2,
             "positions": [
-              0,
-              1,
               2,
               3
             ],
@@ -4484,7 +4307,6 @@
             "family": "mixed-script-admissibility",
             "severity": 2,
             "positions": [
-              0,
               1,
               2
             ],
@@ -4627,6 +4449,186 @@
             ],
             "sub_threat": "StackedSkinTones",
             "detail": "skin-tone-variation-forgery"
+          }
+        ],
+        "normalized": null
+      }
+    },
+    {
+      "name": "vs-embedded-after-registered-gateway",
+      "profile": "gateway-header",
+      "mode": "enforce",
+      "input": [
+        128512,
+        65039,
+        65,
+        65024
+      ],
+      "verdict": {
+        "action": "reject",
+        "profile": "gateway-header",
+        "mode": "enforce",
+        "input": [
+          128512,
+          65039,
+          65,
+          65024
+        ],
+        "findings": [
+          {
+            "code": "unicode.security.C.variation-selector-payload.EmbeddedAfterRegistered",
+            "family": "variation-selector-payload",
+            "severity": 2,
+            "positions": [
+              3
+            ],
+            "sub_threat": "EmbeddedAfterRegistered",
+            "detail": "variation-selector-payload"
+          },
+          {
+            "code": "unicode.security.D.renderer-divergence.VariationSelectorVariance",
+            "family": "renderer-divergence",
+            "severity": 2,
+            "positions": [
+              1
+            ],
+            "sub_threat": "VariationSelectorVariance",
+            "detail": "renderer-divergence"
+          },
+          {
+            "code": "unicode.security.D.source-display-divergence.VariationSelector",
+            "family": "source-display-divergence",
+            "severity": 2,
+            "positions": [],
+            "sub_threat": "VariationSelector",
+            "detail": "source-display-divergence"
+          }
+        ],
+        "normalized": null
+      }
+    },
+    {
+      "name": "vs-embedded-after-registered-username",
+      "profile": "username",
+      "mode": "enforce",
+      "input": [
+        97,
+        10084,
+        65039,
+        98,
+        917760
+      ],
+      "verdict": {
+        "action": "quarantine",
+        "profile": "username",
+        "mode": "enforce",
+        "input": [
+          97,
+          10084,
+          65039,
+          98,
+          917760
+        ],
+        "findings": [
+          {
+            "code": "unicode.security.C.variation-selector-payload.EmbeddedAfterRegistered",
+            "family": "variation-selector-payload",
+            "severity": 2,
+            "positions": [
+              4
+            ],
+            "sub_threat": "EmbeddedAfterRegistered",
+            "detail": "variation-selector-payload"
+          },
+          {
+            "code": "unicode.security.I.mixed-script-admissibility.RestrictedStatusCp",
+            "family": "mixed-script-admissibility",
+            "severity": 2,
+            "positions": [
+              1,
+              2,
+              4
+            ],
+            "sub_threat": "RestrictedStatusCp",
+            "detail": "mixed-script-admissibility"
+          },
+          {
+            "code": "unicode.security.D.renderer-divergence.VariationSelectorVariance",
+            "family": "renderer-divergence",
+            "severity": 2,
+            "positions": [
+              2
+            ],
+            "sub_threat": "VariationSelectorVariance",
+            "detail": "renderer-divergence"
+          },
+          {
+            "code": "unicode.security.D.source-display-divergence.VariationSelector",
+            "family": "source-display-divergence",
+            "severity": 2,
+            "positions": [],
+            "sub_threat": "VariationSelector",
+            "detail": "source-display-divergence"
+          }
+        ],
+        "normalized": null
+      }
+    },
+    {
+      "name": "vs-embedded-after-registered-chat",
+      "profile": "chat-message",
+      "mode": "observe",
+      "input": [
+        104,
+        105,
+        128512,
+        65039,
+        33,
+        65025,
+        65026
+      ],
+      "verdict": {
+        "action": "observe",
+        "profile": "chat-message",
+        "mode": "observe",
+        "input": [
+          104,
+          105,
+          128512,
+          65039,
+          33,
+          65025,
+          65026
+        ],
+        "findings": [
+          {
+            "code": "unicode.security.C.variation-selector-payload.EmbeddedAfterRegistered",
+            "family": "variation-selector-payload",
+            "severity": 2,
+            "positions": [
+              5,
+              6
+            ],
+            "sub_threat": "EmbeddedAfterRegistered",
+            "detail": "variation-selector-payload"
+          },
+          {
+            "code": "unicode.security.D.renderer-divergence.VariationSelectorVariance",
+            "family": "renderer-divergence",
+            "severity": 2,
+            "positions": [
+              3
+            ],
+            "sub_threat": "VariationSelectorVariance",
+            "detail": "renderer-divergence"
+          },
+          {
+            "code": "unicode.security.D.source-display-divergence.VariationSelector",
+            "family": "source-display-divergence",
+            "severity": 2,
+            "positions": [],
+            "sub_threat": "VariationSelector",
+            "detail": "source-display-divergence"
           }
         ],
         "normalized": null

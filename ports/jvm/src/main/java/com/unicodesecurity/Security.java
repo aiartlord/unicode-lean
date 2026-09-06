@@ -241,9 +241,13 @@ public final class Security {
     // raises nothing.
     List<Integer> zeroWidth = positionsWhere(input, Security::isZeroWidthPayload);
     if (!zeroWidth.isEmpty() && hasSuspiciousZeroWidth(input, zeroWidth)) {
+      // The Lean localises the suspicious positions, not the census: a
+      // sanctioned emoji joiner beside a payload is not payload.
       findings.add(
           makeFinding(
-              Family.ZERO_WIDTH_PAYLOAD, zeroWidthSubThreat(input, zeroWidth), zeroWidth));
+              Family.ZERO_WIDTH_PAYLOAD,
+              zeroWidthSubThreat(input, zeroWidth),
+              suspiciousZeroWidthPositions(input, zeroWidth)));
     }
     Finding surrogate = surrogateReassemblyFinding(input);
     if (surrogate != null) findings.add(surrogate);
@@ -565,17 +569,41 @@ public final class Security {
     return "BareTagPresent";
   }
 
+  // Mirrors the Lean detect: each selector is judged against its predecessor
+  // (classifyVS), registered uses are sanctioned wherever they stand and however
+  // many, and the hazard is the suspicious run alone, ranked
+  // EmbeddedAfterRegistered (a registered selector before the run), RepeatedBase,
+  // DirectPayload, IllegalTarget. Positions are the suspicious selectors.
   private static Finding variationSelectorFinding(List<Integer> input) {
-    List<Integer> positions = positionsWhere(input, Security::isVariationSelector);
-    if (positions.isEmpty()) return null;
-    if (positions.size() == 1 && isRegisteredVariationPosition(input, positions.get(0))) return null;
+    List<Integer> registered = new ArrayList<>();
+    List<Integer> suspicious = new ArrayList<>();
+    for (int p : positionsWhere(input, Security::isVariationSelector)) {
+      if (isRegisteredVariationUse(input, p)) registered.add(p);
+      else suspicious.add(p);
+    }
+    if (suspicious.isEmpty()) return null;
+    int payloadStart = suspicious.get(0);
+    boolean registeredBefore = registered.stream().anyMatch(p -> p < payloadStart);
     String subThreat = "IllegalTarget";
-    if (positions.size() >= 4 && allSameAt(input, positions)) {
+    if (registeredBefore) {
+      subThreat = "EmbeddedAfterRegistered";
+    } else if (suspicious.size() >= 4 && allSameAt(input, suspicious)) {
       subThreat = "RepeatedBase";
-    } else if (!decodeVariationSelectorRun(input, positions).isEmpty()) {
+    } else if (!decodeVariationSelectorRun(input, suspicious).isEmpty()) {
       subThreat = "DirectPayload";
     }
-    return makeFinding(Family.VARIATION_SELECTOR_PAYLOAD, subThreat, positions);
+    return makeFinding(Family.VARIATION_SELECTOR_PAYLOAD, subThreat, suspicious);
+  }
+
+  // The Lean classifyVS registered reading of the selector at position: a
+  // standardized or emoji variation sequence, or VS15 / VS16 on any base
+  // carrying the Emoji property. A selector with no predecessor is never
+  // registered.
+  private static boolean isRegisteredVariationUse(List<Integer> input, int position) {
+    if (position == 0) return false;
+    int vs = input.get(position);
+    return isRegisteredVariationPosition(input, position)
+        || ((vs == 0xFE0F || vs == 0xFE0E) && AiWatermarkDetectability.isEmoji(input.get(position - 1)));
   }
 
   // Variation-selector membership (FE00..FE0F, E0100..E01EF, 180B..180D).
@@ -849,12 +877,24 @@ public final class Security {
   // field, and on a token only when the token is Latin-only, so a Greek or
   // Cyrillic word in prose is not read as its Latin look-alike.
   private static Finding homoglyphConfusableFindingWithContext(List<Integer> input, HomoglyphContext ctx) {
+    // Each rung localises what the Lean detectWithContext localises: a target
+    // match, a cross-script mix and a restriction level judge the string as a
+    // unit and carry no positions; math-alpha and width-class the first such
+    // codepoint; decomposition-swap the first differing position; the
+    // ascii-confusable rung the non-ASCII positions.
     String subThreat = "";
-    List<Integer> positions = fullSpanPositions(input);
+    List<Integer> positions = new ArrayList<>();
     if (homoglyphTargetMatch(input) != null) subThreat = "TargetMatch";
-    else if (input.stream().anyMatch(Security::isMathAlphanumeric)) subThreat = "MathAlpha";
-    else if (input.stream().anyMatch(Security::isFullwidthHalfwidth)) subThreat = "WidthClass";
-    else if (hasDecompositionSwap(input)) subThreat = "DecompositionSwap";
+    else if (input.stream().anyMatch(Security::isMathAlphanumeric)) {
+      subThreat = "MathAlpha";
+      positions = List.of(positionsWhere(input, Security::isMathAlphanumeric).get(0));
+    } else if (input.stream().anyMatch(Security::isFullwidthHalfwidth)) {
+      subThreat = "WidthClass";
+      positions = List.of(positionsWhere(input, Security::isFullwidthHalfwidth).get(0));
+    } else if (hasDecompositionSwap(input)) {
+      subThreat = "DecompositionSwap";
+      positions = List.of(firstDecompositionDiffPos(input));
+    }
     // The script rungs of the Lean ladder, in its order: a cross-script mix
     // that is not Highly Restrictive, then a string failing every restriction
     // level. Both need real script resolution.
@@ -953,7 +993,31 @@ public final class Security {
   private static Finding mixedScriptAdmissibilityFinding(List<Integer> input, boolean identifierField) {
     String subThreat = mixedScriptVerdict(input, identifierField);
     if (subThreat == null) return null;
-    return makeFinding(Family.MIXED_SCRIPT_ADMISSIBILITY, subThreat, fullSpanPositions(input));
+    return makeFinding(Family.MIXED_SCRIPT_ADMISSIBILITY, subThreat, mixedScriptPositions(subThreat, input));
+  }
+
+  // What the Lean MixedScriptAdmissibility.detectWithContext localises for a
+  // mixed-script sub-threat: every codepoint outside Identifier_Status=Allowed
+  // for RestrictedStatusCp; every non-Common, non-Inherited codepoint whose
+  // resolved scripts name Cyrillic (LatinCyrillic) or Greek (LatinGreek);
+  // nothing for the whole-string verdicts ScriptMixOther, CjkMix and
+  // UnrestrictedLevel.
+  private static List<Integer> mixedScriptPositions(String subThreat, List<Integer> input) {
+    List<Integer> positions = new ArrayList<>();
+    if (subThreat.equals("RestrictedStatusCp")) {
+      for (int i = 0; i < input.size(); i++) {
+        if (!isIdAllowed(input.get(i))) positions.add(i);
+      }
+      return positions;
+    }
+    String target = subThreat.equals("LatinCyrillic") ? "Cyrl" : subThreat.equals("LatinGreek") ? "Grek" : "";
+    if (target.isEmpty()) return positions;
+    for (int i = 0; i < input.size(); i++) {
+      int cp = input.get(i);
+      if (isIgnoredForIntersection(cp)) continue;
+      if (resolveScripts(cp).contains(target)) positions.add(i);
+    }
+    return positions;
   }
 
   /** Sub-threat and offending positions of an RTL-injection scan; null sub-threat means clear. */
@@ -1147,7 +1211,7 @@ public final class Security {
   // .suspicious case of the Lean classifyPositions; -1 when there is none.
   private static int firstSuspiciousVsPos(List<Integer> input) {
     for (int i = 0; i < input.size(); i++) {
-      if (isVariationSelector(input.get(i)) && !isRegisteredVariationPosition(input, i)) return i;
+      if (isVariationSelector(input.get(i)) && !isRegisteredVariationUse(input, i)) return i;
     }
     return -1;
   }
@@ -2594,6 +2658,18 @@ public final class Security {
     return !toNfc(input).equals(input);
   }
 
+  // The first position at which the input and its NFC form differ, or the
+  // shorter length when one is a prefix of the other. Mirrors the Lean
+  // firstDecompositionDiffPos.
+  private static int firstDecompositionDiffPos(List<Integer> input) {
+    List<Integer> nfc = toNfc(input);
+    int shorter = Math.min(input.size(), nfc.size());
+    for (int index = 0; index < shorter; index++) {
+      if (!input.get(index).equals(nfc.get(index))) return index;
+    }
+    return shorter;
+  }
+
   private static boolean composeHangulPair(int first, int second) {
     int sBase = 0xAC00, lBase = 0x1100, vBase = 0x1161, tBase = 0x11A7;
     int lCount = 19, vCount = 21, tCount = 28, nCount = vCount * tCount, sCount = lCount * nCount;
@@ -2720,14 +2796,22 @@ public final class Security {
   // CONTEXTJ-valid position both carry meaning a reader depends on, so they are
   // recorded as present but do not make the family fire.
   static boolean hasSuspiciousZeroWidth(List<Integer> input, List<Integer> positions) {
+    return !suspiciousZeroWidthPositions(input, positions).isEmpty();
+  }
+
+  // The zero-width positions no context sanctions (Lean suspiciousPositions): a
+  // ZWJ inside a registered emoji sequence and a ZWNJ in an RFC 5892
+  // CONTEXTJ-valid position are excluded.
+  static List<Integer> suspiciousZeroWidthPositions(List<Integer> input, List<Integer> positions) {
+    List<Integer> suspicious = new ArrayList<>();
     for (int i : positions) {
       int cp = input.get(i);
       boolean sanctioned =
           (cp == 0x200D && isLegitimateZwjContext(input, i))
               || (cp == 0x200C && isLegitimateZwnjContext(input, i));
-      if (!sanctioned) return true;
+      if (!sanctioned) suspicious.add(i);
     }
-    return false;
+    return suspicious;
   }
 
   // Parse a "RANGE ; VALUE" table into ascending ranges. The value field splits

@@ -263,7 +263,9 @@ public static partial class Security
 
         /// <summary>True iff <paramref name="cp"/> has the Emoji = Yes property
         /// per emoji-data.txt.</summary>
-        private static bool IsEmoji(int cp)
+        // Internal: the variation-selector detector's registered-presentation
+        // rule (Lean classifyVS) admits VS15 and VS16 on any Emoji-property base.
+        internal static bool IsEmoji(int cp)
         {
             foreach (var (lo, hi) in EmojiRanges())
             {

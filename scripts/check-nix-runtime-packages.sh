@@ -107,6 +107,7 @@ require_tracked ports/cpp/CMakeLists.txt
 require_tracked ports/cpp/include/unicode_cpp/utf8.hpp
 require_tracked ports/cpp/include/unicode_cpp/security/policy.hpp
 require_tracked ports/cpp/include/unicode_cpp/security/covert/variation_selector_pairs.hpp
+require_tracked ports/cpp/include/unicode_cpp/security/covert/emoji_property_ranges.hpp
 require_tracked ports/haskell/unicode-haskell.cabal
 require_tracked ports/haskell/testdata/fixtures/security/policy_contract.json
 require_tracked ports/haskell/testdata/fixtures/security/detectors/homoglyph_confusable.json

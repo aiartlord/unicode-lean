@@ -90,6 +90,7 @@ required_paths=(
   ports/cpp/include/unicode_cpp/utf8.hpp
   ports/cpp/include/unicode_cpp/security/policy.hpp
   ports/cpp/include/unicode_cpp/security/covert/variation_selector_pairs.hpp
+  ports/cpp/include/unicode_cpp/security/covert/emoji_property_ranges.hpp
   ports/haskell/unicode-haskell.cabal
   ports/haskell/data/CaseFolding.txt
   ports/haskell/data/confusables.txt

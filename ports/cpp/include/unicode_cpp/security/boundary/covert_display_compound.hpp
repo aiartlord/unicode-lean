@@ -74,8 +74,7 @@ first_suspicious_vs_pos(std::span<const std::uint32_t> input) {
   for (std::size_t i = 0; i < input.size(); ++i) {
     const std::uint32_t cp = input[i];
     if (variation_selector_payload::is_variation_selector(cp) &&
-        !(i > 0 && variation_selector_payload::detail::is_registered_variation_pair(
-                       input[i - 1], cp))) {
+        !variation_selector_payload::is_registered_use(input, i)) {
       return i;
     }
   }

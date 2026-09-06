@@ -146,6 +146,19 @@ WORKING-STORAGE SECTION.
 01 VS-FIRST-CP PIC 9(9) COMP-5 VALUE 0.
 01 VS-ALL-SAME PIC 9 VALUE 0.
 01 VS-NIBBLE-COUNT PIC 9(5) COMP-5 VALUE 0.
+01 VS-SUSP-COUNT PIC 9(5) COMP-5 VALUE 0.
+01 VS-FIRST-SUSP PIC 9(6) COMP-5 VALUE 0.
+01 VS-FIRST-REG PIC 9(6) COMP-5 VALUE 0.
+01 VS-SUSP-FIRST-CP PIC 9(9) COMP-5 VALUE 0.
+01 VS-CHECK-IDX PIC 9(6) COMP-5 VALUE 0.
+01 VS-REGISTERED-FLAG PIC 9 VALUE 0.
+01 HOMO-MATH-POS PIC 9(9) COMP-5 VALUE 0.
+01 HOMO-WIDTH-POS PIC 9(9) COMP-5 VALUE 0.
+01 HOMO-DECOMP-POS PIC 9(9) COMP-5 VALUE 0.
+01 HOMO-SHORTER PIC 9(5) COMP-5 VALUE 0.
+01 MIXED-POS-FLAG PIC 9 VALUE 0.
+01 MIXED-SCRIPT-TALLY PIC 9(4) COMP-5 VALUE 0.
+01 ZW-POS-IDX PIC 9(5) COMP-5 VALUE 0.
 01 TRAILING-WS PIC 9 VALUE 0.
 01 UPPER-FLAG PIC 9 VALUE 0.
 01 DOUBLE-WS PIC 9 VALUE 0.
@@ -1459,48 +1472,70 @@ DETECT-TAG-BLOCK.
     END-IF.
 
 DETECT-VARIATION.
-*> The reference detect: one selector on a registered base is clear; any other
-*> selector run is a hazard, ranked RepeatedBase (at least four selectors, all
-*> the same codepoint), DirectPayload (at least one byte recovers from the
-*> nibble pairs of FE00-FE0F / E0100-E01EF), else IllegalTarget. The finding
-*> localises every selector.
-    MOVE 0 TO VS-COUNT FOUND-FLAG VS-NIBBLE-COUNT VS-FIRST-CP
+*> The reference detect: a selector is a registered use when it forms a
+*> registered pair with its base or is VS15 / VS16 on an Emoji-property base,
+*> and an input whose selectors are all registered is clear. Otherwise the
+*> hazard is ranked EmbeddedAfterRegistered (a registered use precedes the
+*> first suspicious selector), RepeatedBase (at least four suspicious
+*> selectors, all the same codepoint), DirectPayload (at least one byte
+*> recovers from the nibble pairs of the suspicious FE00-FE0F / E0100-E01EF
+*> selectors), else IllegalTarget. The finding localises the suspicious
+*> selectors alone.
+    MOVE 0 TO VS-COUNT VS-SUSP-COUNT VS-NIBBLE-COUNT VS-SUSP-FIRST-CP
+    MOVE 0 TO VS-FIRST-SUSP VS-FIRST-REG
     MOVE 1 TO VS-ALL-SAME
     PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
         IF (CP(IDX) >= 65024 AND CP(IDX) <= 65039) OR (CP(IDX) >= 917760 AND CP(IDX) <= 917999) OR (CP(IDX) >= 6155 AND CP(IDX) <= 6157)
             ADD 1 TO VS-COUNT
-            IF VS-COUNT = 1
-                MOVE CP(IDX) TO VS-FIRST-CP
-            ELSE
-                IF CP(IDX) NOT = VS-FIRST-CP
-                    MOVE 0 TO VS-ALL-SAME
+            MOVE IDX TO VS-CHECK-IDX
+            PERFORM IS-VS-REGISTERED-AT
+            IF VS-REGISTERED-FLAG = 1
+                IF VS-FIRST-REG = 0
+                    MOVE IDX TO VS-FIRST-REG
                 END-IF
-            END-IF
-            IF (CP(IDX) >= 65024 AND CP(IDX) <= 65039) OR (CP(IDX) >= 917760 AND CP(IDX) <= 917999)
-                ADD 1 TO VS-NIBBLE-COUNT
-            END-IF
-            MOVE 0 TO TABLE-FLAG
-            IF IDX > 1
-                MOVE CP(IDX - 1) TO PAIR-BASE
-                MOVE CP(IDX) TO PAIR-VS
-                PERFORM IS-LEGAL-VARIATION
-            END-IF
-            IF TABLE-FLAG = 0
-                MOVE 1 TO FOUND-FLAG
+            ELSE
+                ADD 1 TO VS-SUSP-COUNT
+                IF VS-SUSP-COUNT = 1
+                    MOVE IDX TO VS-FIRST-SUSP
+                    MOVE CP(IDX) TO VS-SUSP-FIRST-CP
+                ELSE
+                    IF CP(IDX) NOT = VS-SUSP-FIRST-CP
+                        MOVE 0 TO VS-ALL-SAME
+                    END-IF
+                END-IF
+                IF (CP(IDX) >= 65024 AND CP(IDX) <= 65039) OR (CP(IDX) >= 917760 AND CP(IDX) <= 917999)
+                    ADD 1 TO VS-NIBBLE-COUNT
+                END-IF
             END-IF
         END-IF
     END-PERFORM
-    IF VS-COUNT >= 2 OR (VS-COUNT = 1 AND FOUND-FLAG = 1)
-        IF VS-COUNT >= 4 AND VS-ALL-SAME = 1
-            MOVE "unicode.security.C.variation-selector-payload.RepeatedBase" TO TEMP-CODE
+    IF VS-SUSP-COUNT > 0
+        IF VS-FIRST-REG > 0 AND VS-FIRST-REG < VS-FIRST-SUSP
+            MOVE "unicode.security.C.variation-selector-payload.EmbeddedAfterRegistered" TO TEMP-CODE
         ELSE
-            IF VS-NIBBLE-COUNT >= 2
-                MOVE "unicode.security.C.variation-selector-payload.DirectPayload" TO TEMP-CODE
+            IF VS-SUSP-COUNT >= 4 AND VS-ALL-SAME = 1
+                MOVE "unicode.security.C.variation-selector-payload.RepeatedBase" TO TEMP-CODE
             ELSE
-                MOVE "unicode.security.C.variation-selector-payload.IllegalTarget" TO TEMP-CODE
+                IF VS-NIBBLE-COUNT >= 2
+                    MOVE "unicode.security.C.variation-selector-payload.DirectPayload" TO TEMP-CODE
+                ELSE
+                    MOVE "unicode.security.C.variation-selector-payload.IllegalTarget" TO TEMP-CODE
+                END-IF
             END-IF
         END-IF
         PERFORM ADD-VS-POS-FINDING
+    END-IF.
+
+IS-VS-REGISTERED-AT.
+*> VS-REGISTERED-FLAG becomes 1 when the selector at VS-CHECK-IDX is a
+*> registered use of the codepoint before it; a selector with no predecessor
+*> is never registered.
+    MOVE 0 TO VS-REGISTERED-FLAG
+    IF VS-CHECK-IDX > 1
+        MOVE CP(VS-CHECK-IDX - 1) TO PAIR-BASE
+        MOVE CP(VS-CHECK-IDX) TO PAIR-VS
+        PERFORM IS-REGISTERED-VARIATION-USE
+        MOVE TABLE-FLAG TO VS-REGISTERED-FLAG
     END-IF.
 
 DETECT-ZERO-WIDTH.
@@ -1749,7 +1784,7 @@ DETECT-HOMOGLYPH-CTX.
     MOVE TARGET-MATCH-FLAG TO FOUND-FLAG
     IF FOUND-FLAG = 1
         MOVE "unicode.security.I.homoglyph-confusable.TargetMatch" TO TEMP-CODE
-        PERFORM ADD-ALL-POS-FINDING
+        PERFORM ADD-NO-POS-FINDING
     ELSE
 *>      The ladder is ordered by rung, not by position: MathAlpha outranks
 *>      WidthClass, which outranks DecompositionSwap, for the input as a whole.
@@ -1757,11 +1792,18 @@ DETECT-HOMOGLYPH-CTX.
 *>      against one codepoint at a time would report whichever rung the earliest
 *>      codepoint happened to match.
         MOVE 0 TO HOMO-EMITTED HOMO-MATH HOMO-WIDTH HOMO-DECOMP
+*>      Each rung localises its first codepoint, in input coordinates.
         PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
             IF CP(IDX) >= 119808 AND CP(IDX) <= 120831
+                IF HOMO-MATH = 0
+                    COMPUTE HOMO-MATH-POS = IDX - 1 + POS-OFFSET
+                END-IF
                 MOVE 1 TO HOMO-MATH
             END-IF
             IF CP(IDX) >= 65281 AND CP(IDX) <= 65519
+                IF HOMO-WIDTH = 0
+                    COMPUTE HOMO-WIDTH-POS = IDX - 1 + POS-OFFSET
+                END-IF
                 MOVE 1 TO HOMO-WIDTH
             END-IF
         END-PERFORM
@@ -1769,30 +1811,42 @@ DETECT-HOMOGLYPH-CTX.
 *>      comparison itself rather than the presence of any one combining mark:
 *>      U+0300 and U+0301 both carry combining class 230, so canonical ordering
 *>      leaves them where they are and the pair is already in NFC.
+*>      The rung localises the first position at which the input and its NFC
+*>      form differ, or the shorter length when one is a prefix of the other
+*>      (the Lean firstDecompositionDiffPos).
         PERFORM COMPUTE-NFC
+        IF NFC-COUNT < CP-COUNT
+            MOVE NFC-COUNT TO HOMO-SHORTER
+        ELSE
+            MOVE CP-COUNT TO HOMO-SHORTER
+        END-IF
+        COMPUTE HOMO-DECOMP-POS = HOMO-SHORTER + POS-OFFSET
         IF NFC-COUNT NOT = CP-COUNT
             MOVE 1 TO HOMO-DECOMP
-        ELSE
-            PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > CP-COUNT
-                IF CP(IDX) NOT = NFC-CP(IDX)
-                    MOVE 1 TO HOMO-DECOMP
-                    MOVE CP-COUNT TO IDX
-                END-IF
-            END-PERFORM
         END-IF
+        PERFORM VARYING IDX FROM 1 BY 1 UNTIL IDX > HOMO-SHORTER
+            IF CP(IDX) NOT = NFC-CP(IDX)
+                MOVE 1 TO HOMO-DECOMP
+                COMPUTE HOMO-DECOMP-POS = IDX - 1 + POS-OFFSET
+                MOVE HOMO-SHORTER TO IDX
+            END-IF
+        END-PERFORM
         IF HOMO-MATH = 1
             MOVE "unicode.security.I.homoglyph-confusable.MathAlpha" TO TEMP-CODE
-            PERFORM ADD-ALL-POS-FINDING
+            MOVE HOMO-MATH-POS TO ONE-POS
+            PERFORM ADD-ONE-POS-FINDING
             MOVE 1 TO HOMO-EMITTED
         ELSE
             IF HOMO-WIDTH = 1
                 MOVE "unicode.security.I.homoglyph-confusable.WidthClass" TO TEMP-CODE
-                PERFORM ADD-ALL-POS-FINDING
+                MOVE HOMO-WIDTH-POS TO ONE-POS
+                PERFORM ADD-ONE-POS-FINDING
                 MOVE 1 TO HOMO-EMITTED
             ELSE
                 IF HOMO-DECOMP = 1
                     MOVE "unicode.security.I.homoglyph-confusable.DecompositionSwap" TO TEMP-CODE
-                    PERFORM ADD-ALL-POS-FINDING
+                    MOVE HOMO-DECOMP-POS TO ONE-POS
+                    PERFORM ADD-ONE-POS-FINDING
                     MOVE 1 TO HOMO-EMITTED
                 END-IF
             END-IF
@@ -1805,7 +1859,7 @@ DETECT-HOMOGLYPH-CTX.
             PERFORM COMPUTE-CROSS-SCRIPT-MIX
             IF TABLE-FLAG = 1
                 MOVE "unicode.security.I.homoglyph-confusable.CrossScriptMix" TO TEMP-CODE
-                PERFORM ADD-ALL-POS-FINDING
+                PERFORM ADD-NO-POS-FINDING
                 MOVE 1 TO HOMO-EMITTED
             END-IF
         END-IF
@@ -1813,7 +1867,7 @@ DETECT-HOMOGLYPH-CTX.
             PERFORM COMPUTE-RESTRICTION-LEVEL
             IF RESTRICTION-LEVEL = "MinimallyRestrictive" OR RESTRICTION-LEVEL = "Unrestricted"
                 MOVE "unicode.security.I.homoglyph-confusable.RestrictionLow" TO TEMP-CODE
-                PERFORM ADD-ALL-POS-FINDING
+                PERFORM ADD-NO-POS-FINDING
                 MOVE 1 TO HOMO-EMITTED
             END-IF
         END-IF
@@ -1887,8 +1941,54 @@ DETECT-MIXED-SCRIPT.
         MOVE SPACES TO TEMP-CODE
         STRING "unicode.security.I.mixed-script-admissibility."
             FUNCTION TRIM(MIXED-SUB) DELIMITED BY SIZE INTO TEMP-CODE
-        PERFORM ADD-ALL-POS-FINDING
+        PERFORM ADD-MIXED-POS-FINDING
     END-IF.
+
+ADD-MIXED-POS-FINDING.
+*> The positions a mixed-script verdict implicates, in input coordinates: the
+*> restricted codepoints for RestrictedStatusCp, the Cyrillic or Greek
+*> codepoints (Common and Inherited skipped, as UTS #39 §5.1 skips them from
+*> the intersection) for the two Latin-mix verdicts, nothing for the
+*> whole-input verdicts. Mirrors the Lean mixedScriptPositions.
+    ADD 1 TO FINDING-COUNT
+    MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
+    MOVE SPACES TO POS-TEXT
+    IF MIXED-SUB = "RestrictedStatusCp" OR MIXED-SUB = "LatinCyrillic" OR MIXED-SUB = "LatinGreek"
+        PERFORM VARYING JDX FROM 1 BY 1 UNTIL JDX > CP-COUNT
+            MOVE CP(JDX) TO LOOKUP-CP
+            MOVE 0 TO MIXED-POS-FLAG
+            IF MIXED-SUB = "RestrictedStatusCp"
+                PERFORM IS-ID-ALLOWED
+                IF TABLE-FLAG = 0
+                    MOVE 1 TO MIXED-POS-FLAG
+                END-IF
+            ELSE
+                PERFORM IS-IGNORED-FOR-INTERSECTION
+                IF IGNORED-SCRIPT-FLAG = 0
+                    PERFORM RESOLVE-SCRIPTS
+                    MOVE 0 TO MIXED-SCRIPT-TALLY
+                    IF MIXED-SUB = "LatinCyrillic"
+                        INSPECT SCRIPT-SET-TEXT TALLYING MIXED-SCRIPT-TALLY FOR ALL "Cyrl"
+                    ELSE
+                        INSPECT SCRIPT-SET-TEXT TALLYING MIXED-SCRIPT-TALLY FOR ALL "Grek"
+                    END-IF
+                    IF MIXED-SCRIPT-TALLY > 0
+                        MOVE 1 TO MIXED-POS-FLAG
+                    END-IF
+                END-IF
+            END-IF
+            IF MIXED-POS-FLAG = 1
+                COMPUTE POS-IDX = JDX - 1 + POS-OFFSET
+                MOVE POS-IDX TO POS-NUM
+                IF FUNCTION LENGTH(FUNCTION TRIM(POS-TEXT)) = 0
+                    STRING FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
+                ELSE
+                    STRING FUNCTION TRIM(POS-TEXT) DELIMITED BY SIZE "," DELIMITED BY SIZE FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
+                END-IF
+            END-IF
+        END-PERFORM
+    END-IF
+    MOVE POS-TEXT TO FINDING-POS(FINDING-COUNT).
 
 DETECT-RTL.
     MOVE 0 TO RTL-RUN RTL-BEST RTL-BEST-START FIRST-RTL FOUND-FLAG
@@ -2028,7 +2128,7 @@ DETECT-COVERT-DISPLAY.
             IF IDX > 1
                 MOVE CP(IDX - 1) TO PAIR-BASE
                 MOVE CP(IDX) TO PAIR-VS
-                PERFORM IS-LEGAL-VARIATION
+                PERFORM IS-REGISTERED-VARIATION-USE
             END-IF
             IF TABLE-FLAG = 0 AND HAS-BAD-VS = 0
                 MOVE 1 TO HAS-BAD-VS
@@ -2776,37 +2876,55 @@ ADD-ALL-POS-FINDING.
     MOVE POS-TEXT TO FINDING-POS(FINDING-COUNT).
 
 ADD-ZERO-WIDTH-POS-FINDING.
+*> The suspicious zero-width codepoints alone: a ZERO WIDTH JOINER inside a
+*> registered emoji sequence and a ZERO WIDTH NON-JOINER in a CONTEXTJ-valid
+*> position are present but not localised. Mirrors the Lean suspiciousPositions.
     ADD 1 TO FINDING-COUNT
     MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
     MOVE SPACES TO POS-TEXT
-    PERFORM VARYING JDX FROM 1 BY 1 UNTIL JDX > CP-COUNT
-        MOVE CP(JDX) TO LOOKUP-CP
+*>  The loop runs on its own index: the joining-type scans behind
+*>  IS-SANCTIONED-ZERO-WIDTH walk the input on JDX.
+    PERFORM VARYING ZW-POS-IDX FROM 1 BY 1 UNTIL ZW-POS-IDX > CP-COUNT
+        MOVE CP(ZW-POS-IDX) TO LOOKUP-CP
         MOVE 0 TO TABLE-FLAG
         PERFORM IS-DEFAULT-IGNORABLE
-        IF CP(JDX) = 8203 OR CP(JDX) = 8205 OR CP(JDX) = 8239 OR CP(JDX) = 8288 OR (CP(JDX) >= 65529 AND CP(JDX) <= 65531) OR (TABLE-FLAG = 1 AND NOT ((CP(JDX) >= 65024 AND CP(JDX) <= 65039) OR (CP(JDX) >= 917760 AND CP(JDX) <= 917999) OR (CP(JDX) >= 917504 AND CP(JDX) <= 917631) OR (CP(JDX) >= 8234 AND CP(JDX) <= 8238) OR (CP(JDX) >= 8294 AND CP(JDX) <= 8297)))
-            COMPUTE POS-IDX = JDX - 1
-            MOVE POS-IDX TO POS-NUM
-            IF FUNCTION LENGTH(FUNCTION TRIM(POS-TEXT)) = 0
-                STRING FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
-            ELSE
-                STRING FUNCTION TRIM(POS-TEXT) DELIMITED BY SIZE "," DELIMITED BY SIZE FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
+        IF CP(ZW-POS-IDX) = 8203 OR CP(ZW-POS-IDX) = 8205 OR CP(ZW-POS-IDX) = 8239 OR CP(ZW-POS-IDX) = 8288 OR (CP(ZW-POS-IDX) >= 65529 AND CP(ZW-POS-IDX) <= 65531) OR (TABLE-FLAG = 1 AND NOT ((CP(ZW-POS-IDX) >= 65024 AND CP(ZW-POS-IDX) <= 65039) OR (CP(ZW-POS-IDX) >= 917760 AND CP(ZW-POS-IDX) <= 917999) OR (CP(ZW-POS-IDX) >= 917504 AND CP(ZW-POS-IDX) <= 917631) OR (CP(ZW-POS-IDX) >= 8234 AND CP(ZW-POS-IDX) <= 8238) OR (CP(ZW-POS-IDX) >= 8294 AND CP(ZW-POS-IDX) <= 8297)))
+            MOVE 0 TO SANCTIONED-FLAG
+            IF CP(ZW-POS-IDX) = 8205 OR CP(ZW-POS-IDX) = 8204
+                MOVE ZW-POS-IDX TO JOIN-IDX
+                PERFORM IS-SANCTIONED-ZERO-WIDTH
+            END-IF
+            IF SANCTIONED-FLAG = 0
+                COMPUTE POS-IDX = ZW-POS-IDX - 1
+                MOVE POS-IDX TO POS-NUM
+                IF FUNCTION LENGTH(FUNCTION TRIM(POS-TEXT)) = 0
+                    STRING FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
+                ELSE
+                    STRING FUNCTION TRIM(POS-TEXT) DELIMITED BY SIZE "," DELIMITED BY SIZE FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
+                END-IF
             END-IF
         END-IF
     END-PERFORM
     MOVE POS-TEXT TO FINDING-POS(FINDING-COUNT).
 
 ADD-VS-POS-FINDING.
+*> The suspicious selectors alone: a registered use is not localised. Mirrors
+*> the positions of the Lean detect.
     ADD 1 TO FINDING-COUNT
     MOVE TEMP-CODE TO FINDING-CODE(FINDING-COUNT)
     MOVE SPACES TO POS-TEXT
     PERFORM VARYING JDX FROM 1 BY 1 UNTIL JDX > CP-COUNT
         IF (CP(JDX) >= 65024 AND CP(JDX) <= 65039) OR (CP(JDX) >= 917760 AND CP(JDX) <= 917999) OR (CP(JDX) >= 6155 AND CP(JDX) <= 6157)
-            COMPUTE POS-IDX = JDX - 1
-            MOVE POS-IDX TO POS-NUM
-            IF FUNCTION LENGTH(FUNCTION TRIM(POS-TEXT)) = 0
-                STRING FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
-            ELSE
-                STRING FUNCTION TRIM(POS-TEXT) DELIMITED BY SIZE "," DELIMITED BY SIZE FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
+            MOVE JDX TO VS-CHECK-IDX
+            PERFORM IS-VS-REGISTERED-AT
+            IF VS-REGISTERED-FLAG = 0
+                COMPUTE POS-IDX = JDX - 1
+                MOVE POS-IDX TO POS-NUM
+                IF FUNCTION LENGTH(FUNCTION TRIM(POS-TEXT)) = 0
+                    STRING FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
+                ELSE
+                    STRING FUNCTION TRIM(POS-TEXT) DELIMITED BY SIZE "," DELIMITED BY SIZE FUNCTION TRIM(POS-NUM) DELIMITED BY SIZE INTO POS-TEXT
+                END-IF
             END-IF
         END-IF
     END-PERFORM
@@ -4973,6 +5091,20 @@ SELECT-ACTION.
 IS-LEGAL-VARIATION.
     MOVE 0 TO TABLE-FLAG
     COPY "src/generated/legal_variation.cpy".
+
+IS-REGISTERED-VARIATION-USE.
+*> TABLE-FLAG becomes 1 when PAIR-VS on PAIR-BASE is a registered use: a
+*> registered (base, selector) pair from StandardizedVariants and the emoji
+*> variation sequences, or VS15 / VS16 on any base carrying the Emoji property.
+*> Mirrors the Lean isRegisteredUse.
+    PERFORM IS-LEGAL-VARIATION
+    IF TABLE-FLAG = 0 AND (PAIR-VS = 65038 OR PAIR-VS = 65039)
+        MOVE PAIR-BASE TO LOOKUP-CP
+        PERFORM IS-EMOJI
+        IF IS-EMOJI-FLAG = 1
+            MOVE 1 TO TABLE-FLAG
+        END-IF
+    END-IF.
 
 IS-CONFUSABLE-SOURCE.
     MOVE 0 TO TABLE-FLAG

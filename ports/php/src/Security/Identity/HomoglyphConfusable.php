@@ -269,6 +269,84 @@ final class HomoglyphConfusable
     }
 
     /**
+     * The positions a homoglyph rung localises, as the Lean detectWithContext
+     * does: the ascii-confusable rung the non-ASCII positions, math-alpha and
+     * width-class the first such codepoint, decomposition-swap the first
+     * differing position, nothing for a target match, a cross-script mix or a
+     * restriction level.
+     *
+     * @param list<int> $input
+     * @return list<int>
+     */
+    public static function rungPositions(?string $tag, array $input): array
+    {
+        if ($tag === 'AsciiConfusable') {
+            return self::nonAsciiPositions($input);
+        }
+        if ($tag === 'MathAlpha') {
+            foreach ($input as $i => $cp) {
+                if (self::mathAlphanumeric($cp)) {
+                    return [$i];
+                }
+            }
+            return [];
+        }
+        if ($tag === 'WidthClass') {
+            foreach ($input as $i => $cp) {
+                if (self::fullwidthHalfwidth($cp)) {
+                    return [$i];
+                }
+            }
+            return [];
+        }
+        if ($tag === 'DecompositionSwap') {
+            $nfc = Ucd::toNfc($input);
+            $shorter = min(count($input), count($nfc));
+            for ($i = 0; $i < $shorter; $i++) {
+                if ($input[$i] !== $nfc[$i]) {
+                    return [$i];
+                }
+            }
+            return [$shorter];
+        }
+        return [];
+    }
+
+    /**
+     * What the Lean MixedScriptAdmissibility.detectWithContext localises for a
+     * mixed-script sub-threat: every codepoint outside Identifier_Status=Allowed
+     * for RestrictedStatusCp; every non-Common, non-Inherited codepoint whose
+     * resolved scripts name Cyrillic (LatinCyrillic) or Greek (LatinGreek);
+     * nothing for the whole-string verdicts ScriptMixOther, CjkMix and
+     * UnrestrictedLevel.
+     *
+     * @param list<int> $input
+     * @return list<int>
+     */
+    public static function mixedScriptPositions(string $sub, array $input): array
+    {
+        $positions = [];
+        if ($sub === 'RestrictedStatusCp') {
+            foreach ($input as $i => $cp) {
+                if (!Ucd::isIdAllowed($cp)) {
+                    $positions[] = $i;
+                }
+            }
+            return $positions;
+        }
+        $target = $sub === 'LatinCyrillic' ? 'Cyrl' : ($sub === 'LatinGreek' ? 'Grek' : null);
+        if ($target === null) {
+            return $positions;
+        }
+        foreach ($input as $i => $cp) {
+            if (!Ucd::isIgnoredForIntersection($cp) && in_array($target, Ucd::resolveScripts($cp), true)) {
+                $positions[] = $i;
+            }
+        }
+        return $positions;
+    }
+
+    /**
      * Positions of the non-ASCII codepoints. Mirrors the Lean nonAsciiPositions.
      * @param list<int> $input @return list<int>
      */

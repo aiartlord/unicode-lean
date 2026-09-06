@@ -146,6 +146,9 @@ local function is_emoji(cp)
   return false
 end
 
+-- Shared with the variation-selector detector's registered-use test.
+M.is_emoji = is_emoji
+
 -- ─────────────────────────────────────────────────────────────────────
 -- §3 Codepoint probes
 -- ─────────────────────────────────────────────────────────────────────

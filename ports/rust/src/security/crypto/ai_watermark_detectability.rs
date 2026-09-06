@@ -274,8 +274,10 @@ fn emoji_ranges() -> &'static Vec<(u32, u32)> {
     T.get_or_init(parse_emoji_ranges)
 }
 
-/// True iff `cp` has the `Emoji = Yes` property per emoji-data.txt.
-fn is_emoji(cp: u32) -> bool {
+/// True iff `cp` has the `Emoji = Yes` property per emoji-data.txt. Shared
+/// with the variation-selector detector, whose registered-presentation rule
+/// (Lean `classifyVS`) admits VS15 and VS16 on any Emoji-property base.
+pub fn is_emoji(cp: u32) -> bool {
     emoji_ranges().iter().any(|&(lo, hi)| lo <= cp && cp <= hi)
 }
 

@@ -585,7 +585,9 @@ fn detect(input: []const u32, identifier_field: bool, running_text: bool) Findin
     // depends on, so they are recorded as present but not treated as
     // suspicious. An input whose zero-width characters are all sanctioned
     // raises nothing.
-    if (if (hasSuspiciousZeroWidth(input)) positionsWhere(input, isZeroWidthPayload) else null) |positions| {
+    // The Lean localises the suspicious positions, not the census: a sanctioned
+    // emoji joiner beside a payload is not payload.
+    if (suspiciousZeroWidthPositions(input)) |positions| {
         const zw_sub = zeroWidthSubThreat(input);
         findings.append(.{
             .code = zeroWidthReasonCode(zw_sub),
@@ -1113,19 +1115,52 @@ fn tagBlockReasonCode(sub_threat: []const u8) []const u8 {
     return "unicode.security.C.tag-block-payload.BareTagPresent";
 }
 
+// Mirrors the Lean detect: each selector is judged against its predecessor
+// (classifyVS), registered uses are sanctioned wherever they stand and however
+// many, and the hazard is the suspicious run alone, ranked
+// EmbeddedAfterRegistered (a registered selector before the run), RepeatedBase,
+// DirectPayload, IllegalTarget. Positions are the suspicious selectors.
 fn variationSelectorFinding(input: []const u32) ?Finding {
-    const positions = positionsWhere(input, isVariationSelector) orelse return null;
-    if (positions.len == 1 and isRegisteredVariationPosition(input, positions.items[0])) return null;
-    const sub_threat = variationSelectorSubThreat(input, positions);
+    const selectors = positionsWhere(input, isVariationSelector) orelse return null;
+    var registered = Positions{ .items = undefined, .len = 0 };
+    var suspicious = Positions{ .items = undefined, .len = 0 };
+    for (selectors.items[0..selectors.len]) |p| {
+        if (isRegisteredVariationUse(input, p)) {
+            if (registered.len < registered.items.len) {
+                registered.items[registered.len] = p;
+                registered.len += 1;
+            }
+        } else if (suspicious.len < suspicious.items.len) {
+            suspicious.items[suspicious.len] = p;
+            suspicious.len += 1;
+        }
+    }
+    if (suspicious.len == 0) return null;
+    const payload_start = suspicious.items[0];
+    var registered_before = false;
+    for (registered.items[0..registered.len]) |p| {
+        if (p < payload_start) registered_before = true;
+    }
+    const sub_threat = if (registered_before) "EmbeddedAfterRegistered" else variationSelectorSubThreat(input, suspicious);
     return .{
         .code = variationSelectorReasonCode(sub_threat),
         .family = .variation_selector_payload,
         .severity = 2,
-        .positions = positions.items,
-        .position_count = positions.len,
+        .positions = suspicious.items,
+        .position_count = suspicious.len,
         .sub_threat = sub_threat,
         .detail = "variation-selector-payload",
     };
+}
+
+// The Lean classifyVS registered reading of the selector at position: a
+// standardized or emoji variation sequence, or VS15 / VS16 on any base carrying
+// the Emoji property. A selector with no predecessor is never registered.
+fn isRegisteredVariationUse(input: []const u32, position: usize) bool {
+    if (position == 0) return false;
+    const vs = input[position];
+    return isRegisteredVariationPosition(input, position) or
+        ((vs == 0xFE0F or vs == 0xFE0E) and ai_watermark_detectability.isEmoji(input[position - 1]));
 }
 
 fn variationSelectorSubThreat(input: []const u32, positions: Positions) []const u8 {
@@ -1210,6 +1245,9 @@ fn variationSelectorReasonCode(sub_threat: []const u8) []const u8 {
     }
     if (std.mem.eql(u8, sub_threat, "RepeatedBase")) {
         return "unicode.security.C.variation-selector-payload.RepeatedBase";
+    }
+    if (std.mem.eql(u8, sub_threat, "EmbeddedAfterRegistered")) {
+        return "unicode.security.C.variation-selector-payload.EmbeddedAfterRegistered";
     }
     return "unicode.security.C.variation-selector-payload.IllegalTarget";
 }
@@ -1492,21 +1530,30 @@ fn isLatinOnly(input: []const u32) bool {
 // on a token only when the token is Latin-only, so a Greek or Cyrillic word in
 // prose is not read as its Latin look-alike.
 fn homoglyphConfusableFindingWithContext(input: []const u32, ctx: HomoglyphContext) ?Finding {
+    // Each rung localises what the Lean detectWithContext localises: a target
+    // match, a cross-script mix and a restriction level judge the string as a
+    // unit and carry no positions; math-alpha and width-class the first such
+    // codepoint; decomposition-swap the first differing position; the
+    // ascii-confusable rung the non-ASCII positions.
     var sub_threat: ?[]const u8 = null;
-    var positions = fullSpanPositions(input);
+    var positions = Positions{ .items = undefined, .len = 0 };
     if (homoglyphTargetMatch(input) != null) {
         sub_threat = "TargetMatch";
     } else {
-        for (input) |cp| {
+        for (input, 0..) |cp, index| {
             if (isMathAlphanumeric(cp)) {
                 sub_threat = "MathAlpha";
+                positions.items[0] = index;
+                positions.len = 1;
                 break;
             }
         }
         if (sub_threat == null) {
-            for (input) |cp| {
+            for (input, 0..) |cp, index| {
                 if (isFullwidthHalfwidth(cp)) {
                     sub_threat = "WidthClass";
+                    positions.items[0] = index;
+                    positions.len = 1;
                     break;
                 }
             }
@@ -1514,6 +1561,8 @@ fn homoglyphConfusableFindingWithContext(input: []const u32, ctx: HomoglyphConte
     }
     if (sub_threat == null and hasDecompositionSwap(input)) {
         sub_threat = "DecompositionSwap";
+        positions.items[0] = firstDecompositionDiffPos(input);
+        positions.len = 1;
     }
     // The script rungs of the Lean ladder, in its order: a cross-script mix
     // that is not Highly Restrictive, then a string failing every restriction
@@ -1575,9 +1624,37 @@ fn mixedScriptSubthreat(input: []const u32) []const u8 {
     return mixedScriptVerdict(input, true) orelse "ScriptMixOther";
 }
 
+// What the Lean MixedScriptAdmissibility.detectWithContext localises for a
+// mixed-script sub-threat: every codepoint outside Identifier_Status=Allowed for
+// RestrictedStatusCp; every non-Common, non-Inherited codepoint whose resolved
+// scripts name Cyrillic (LatinCyrillic) or Greek (LatinGreek); nothing for the
+// whole-string verdicts ScriptMixOther, CjkMix and UnrestrictedLevel.
+fn mixedScriptPositions(sub: []const u8, input: []const u32) Positions {
+    var positions = Positions{ .items = undefined, .len = 0 };
+    const restricted = std.mem.eql(u8, sub, "RestrictedStatusCp");
+    const target: ?[]const u8 = if (std.mem.eql(u8, sub, "LatinCyrillic"))
+        "Cyrl"
+    else if (std.mem.eql(u8, sub, "LatinGreek"))
+        "Grek"
+    else
+        null;
+    if (!restricted and target == null) return positions;
+    for (input, 0..) |cp, index| {
+        const implicated = if (restricted)
+            !isIdAllowed(cp)
+        else
+            !isIgnoredForIntersection(cp) and resolveScripts(cp).contains(target.?);
+        if (implicated and positions.len < positions.items.len) {
+            positions.items[positions.len] = index;
+            positions.len += 1;
+        }
+    }
+    return positions;
+}
+
 fn mixedScriptAdmissibilityFinding(input: []const u32, identifier_field: bool) ?Finding {
     const sub = mixedScriptVerdict(input, identifier_field) orelse return null;
-    const positions = fullSpanPositions(input);
+    const positions = mixedScriptPositions(sub, input);
     const code = if (std.mem.eql(u8, sub, "LatinCyrillic"))
         "unicode.security.I.mixed-script-admissibility.LatinCyrillic"
     else if (std.mem.eql(u8, sub, "LatinGreek"))
@@ -1898,14 +1975,13 @@ fn isTagBlockChar(cp: u32) bool {
     return cp >= 0xE0000 and cp <= 0xE007F;
 }
 
-// First position holding a suspicious variation selector — a VS that does not
-// form a registered (base, VS) pair with its predecessor. Mirrors the
-// `.suspicious` case of the Lean classifyPositions.
+// First position holding a suspicious variation selector — a VS that is not a
+// registered use of its predecessor (a registered pair, or VS15/VS16 on an
+// Emoji-property base). Mirrors the `.suspicious` case of the Lean
+// classifyPositions.
 fn firstSuspiciousVsPos(input: []const u32) ?usize {
     for (input, 0..) |cp, index| {
-        if (isVariationSelector(cp) and
-            !(index > 0 and isRegisteredVariationPair(input[index - 1], cp)))
-        {
+        if (isVariationSelector(cp) and !isRegisteredVariationUse(input, index)) {
             return index;
         }
     }
@@ -6740,6 +6816,20 @@ fn hasDecompositionSwap(input: []const u32) bool {
     return false;
 }
 
+// The first position at which the input and its NFC form differ, or the
+// shorter length when one is a prefix of the other. Mirrors the Lean
+// firstDecompositionDiffPos. An NFC form that overflows the buffer reads as
+// position 0, the Lean's default when no difference is found.
+fn firstDecompositionDiffPos(input: []const u32) usize {
+    const nfc = toNFC(input) orelse return 0;
+    const composed = nfc.slice();
+    const shorter = @min(input.len, composed.len);
+    for (0..shorter) |index| {
+        if (input[index] != composed[index]) return index;
+    }
+    return shorter;
+}
+
 fn composeHangulPair(first: u32, second: u32) bool {
     const s_base = 0xAC00;
     const l_base = 0x1100;
@@ -6965,13 +7055,26 @@ fn isLegitimateZwjContext(input: []const u32, i: usize) bool {
 // position both carry meaning a reader depends on, so they are recorded as
 // present but do not make the family fire.
 fn hasSuspiciousZeroWidth(input: []const u32) bool {
+    return suspiciousZeroWidthPositions(input) != null;
+}
+
+// The zero-width positions no context sanctions (Lean suspiciousPositions): a
+// ZWJ inside a registered emoji sequence and a ZWNJ in an RFC 5892
+// CONTEXTJ-valid position are excluded. Null when none is suspicious.
+fn suspiciousZeroWidthPositions(input: []const u32) ?Positions {
+    var positions = Positions{ .items = undefined, .len = 0 };
     for (input, 0..) |cp, i| {
         if (!isZeroWidthPayload(cp)) continue;
         const sanctioned = (cp == 0x200D and isLegitimateZwjContext(input, i)) or
             (cp == 0x200C and isLegitimateZwnjContext(input, i));
-        if (!sanctioned) return true;
+        if (sanctioned) continue;
+        if (positions.len < positions.items.len) {
+            positions.items[positions.len] = i;
+            positions.len += 1;
+        }
     }
-    return false;
+    if (positions.len == 0) return null;
+    return positions;
 }
 
 fn resolveScripts(cp: u32) ScriptSet {

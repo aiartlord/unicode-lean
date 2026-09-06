@@ -545,7 +545,8 @@ def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
         Family.VARIATION_SELECTOR_PAYLOAD,
         vs.kind,
         variation_selector_payload.sub_threat_tag(vs.sub) if vs.sub else None,
-        vs.vs_positions,
+        # The Lean localises the suspicious selectors, not the census.
+        vs.suspicious_positions,
     )
 
     zw = zero_width_payload.detect(input_cps)
@@ -554,7 +555,9 @@ def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
         Family.ZERO_WIDTH_PAYLOAD,
         zw.kind,
         zero_width_payload.sub_threat_tag(zw.sub) if zw.sub else None,
-        zw.zero_width_positions,
+        # The Lean localises the suspicious zero-width positions, not the
+        # census: a sanctioned emoji joiner beside a payload is not payload.
+        zw.suspicious_positions,
     )
 
     # Mirror `runAll`: SurrogateReassembly only applies to byte-stream input
@@ -608,18 +611,26 @@ def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
     token_ctx = homoglyph_confusable.Context(running_text=False, identifier_token=True)
 
     # The positions a homoglyph verdict implicates over the codepoints it was
-    # read on: the non-ASCII positions for the ascii-confusable rung (Lean
-    # ``nonAsciiPositions``, theorem ``detect_dotless_i_admin_position``), the
-    # whole span for every other rung, nothing when clear.
+    # read on, as the Lean ``detectWithContext`` localises each rung: the
+    # ascii-confusable rung the non-ASCII positions (``nonAsciiPositions``),
+    # math-alpha and width-class the first such codepoint, decomposition-swap
+    # the first differing position, and nothing for a target match, a
+    # cross-script mix or a restriction level. Nothing when clear.
     def homoglyph_span(verdict, cps: list[int]) -> list[int]:
-        if verdict.kind is ClassificationKind.CLEAR:
+        if verdict.kind is ClassificationKind.CLEAR or verdict.sub is None:
             return []
-        if (
-            verdict.sub is not None
-            and homoglyph_confusable.sub_threat_tag(verdict.sub) == "AsciiConfusable"
-        ):
+        tag = homoglyph_confusable.sub_threat_tag(verdict.sub)
+        if tag == "AsciiConfusable":
             return homoglyph_confusable.non_ascii_positions(cps)
-        return list(range(len(cps)))
+        if tag == "MathAlpha":
+            return [i for i, cp in enumerate(cps) if homoglyph_confusable.is_math_alphanumeric(cp)][:1]
+        if tag == "WidthClass":
+            return [
+                i for i, cp in enumerate(cps) if homoglyph_confusable.is_fullwidth_halfwidth(cp)
+            ][:1]
+        if tag == "DecompositionSwap":
+            return [verdict.sub.first_diff_pos]
+        return []
 
     homoglyph_positions: list[int] = []
     homoglyph = None
@@ -658,18 +669,21 @@ def scan(profile: Profile, mode: Mode, input_cps: list[int]) -> Verdict:
     mixed_positions: list[int] = []
     if running_text:
         for token in identifier_tokens.tokens(input_cps):
-            token_sub = homoglyph_confusable.mixed_script_verdict(list(token.cps), False)
+            token_cps = list(token.cps)
+            token_sub = homoglyph_confusable.mixed_script_verdict(token_cps, False)
             if token_sub is not None:
                 mixed_sub = token_sub
                 mixed_positions = identifier_tokens.shift_positions(
-                    token.start, list(range(len(token.cps)))
+                    token.start,
+                    homoglyph_confusable.mixed_script_positions(token_sub, token_cps),
                 )
                 break
     else:
         mixed_sub = homoglyph_confusable.mixed_script_verdict(
             input_cps, profile_is_identifier_field(profile)
         )
-        mixed_positions = list(range(len(input_cps)))
+        if mixed_sub is not None:
+            mixed_positions = homoglyph_confusable.mixed_script_positions(mixed_sub, input_cps)
     if mixed_sub is not None:
         _append_finding(
             findings,

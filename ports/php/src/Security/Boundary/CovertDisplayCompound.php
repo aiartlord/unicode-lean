@@ -24,7 +24,7 @@ final class CovertDisplayCompound
     private static function firstSuspiciousVsPos(array $input): ?int
     {
         foreach ($input as $i => $cp) {
-            if (VariationSelectorPayload::isVariationSelector($cp) && !($i > 0 && VariationSelectorPayload::isRegisteredVariationPair($input[$i - 1], $cp))) {
+            if (VariationSelectorPayload::isVariationSelector($cp) && !VariationSelectorPayload::isRegisteredVariationUse($input, $i)) {
                 return $i;
             }
         }

@@ -58,6 +58,7 @@ require_file ports/cpp/data/CaseFolding.txt
 require_file ports/cpp/data/KnownAttackTargets.txt
 require_file ports/cpp/data/SHA256SUMS
 require_file ports/cpp/include/unicode_cpp/security/covert/variation_selector_pairs.hpp
+require_file ports/cpp/include/unicode_cpp/security/covert/emoji_property_ranges.hpp
 require_file ports/cpp/testdata/fixtures/security/policy_contract.json
 require_file ports/cpp/testdata/fixtures/security/detectors/homoglyph_confusable.json
 require_file ports/cpp/testdata/fixtures/security/detectors/mixed_script_admissibility.json

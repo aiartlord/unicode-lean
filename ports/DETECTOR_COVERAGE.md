@@ -341,18 +341,34 @@ subset, so every suite was green.
 
 Agreement with the reference is still not agreement with the spec. The
 reference is one port, and it can drift from the Lean in a shape the reach gate
-cannot see: it localises RestrictionLow and TargetMatch over the whole input
-where the Lean localises nothing, reports the whole input for the mixed-script
-rungs where the Lean reports the foreign script's positions, and has no branch
-for the Lean's EmbeddedAfterRegistered rung. Sixteen ports agreeing with it on
-5000 cases is sixteen ports agreeing with that drift.
-`Unicode/Conformance/Security/CorpusDifferential.lean` closes that gap: it
-replays the contract and the corpus through `Unicode.Security.Policy.scan` and
-compares the Lean verdict with the recorded one, field by field. Its mismatch
-report is the list of places where the recorded verdicts, and therefore every
-port, differ from the spec; those are decided on the messageboard tracker
-(spec change with proofs re-run, or reference change with fixtures regenerated
-and every port following), never by editing the recorded verdict to match.
+cannot see. `Unicode/Conformance/Security/CorpusDifferential.lean` closes that
+gap: it replays the contract and the corpus through
+`Unicode.Security.Policy.scan` and compares the Lean verdict with the recorded
+one, field by field. Its mismatch report is the list of places where the
+recorded verdicts, and therefore every port, differ from the spec; those are
+decided on the messageboard tracker (spec change with proofs re-run, or
+reference change with fixtures regenerated and every port following), never by
+editing the recorded verdict to match.
+
+Its first run found eight divergence classes, each resolved one way or the
+other. The reference and every port now follow the Lean on positions: the
+homoglyph rungs localise nothing for TargetMatch, CrossScriptMix and
+RestrictionLow, the first math-alphanumeric or fullwidth codepoint for MathAlpha
+and WidthClass, the first NFC divergence for DecompositionSwap; the mixed-script
+rungs localise the restricted codepoints for RestrictedStatusCp and the
+Cyrillic or Greek codepoints for the two Latin-mix rungs, nothing for the rest;
+the zero-width family localises the suspicious codepoints, never a sanctioned
+joiner. The variation-selector family gained the Lean's registered-use reading
+(a registered pair, or VS15/VS16 on an Emoji-property base) and its
+EmbeddedAfterRegistered rung, and the covert-display compound reads
+"unregistered" through the same predicate. The Lean followed the reference
+where the reference was the better reading: UnrestrictedLevel is gated on an
+identifier field (UTS #39 restriction levels are an identifier concept),
+`Restriction.hasScript` skips Common and Inherited codepoints so a combining
+mark's Script_Extensions cannot manufacture a Latin-Cyrillic mix, the
+noncharacter family reports its three classes as three findings, and `RunAll`
+emits in the wire order. With the fixtures regenerated the replay reports zero
+mismatches over the 68 contract cases and the 5000 corpus cases.
 
 One further detail below full uniformity: cobol's HomoglyphConfusable uses a
 bounded target-skeleton iteration; deepening that bound is a refinement of an

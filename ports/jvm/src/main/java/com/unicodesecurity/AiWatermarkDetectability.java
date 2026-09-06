@@ -404,7 +404,9 @@ public final class AiWatermarkDetectability {
   }
 
   /** True iff {@code cp} has the {@code Emoji = Yes} property per emoji-data.txt. */
-  private static boolean isEmoji(int cp) {
+  // Package-private: the variation-selector detector's registered-presentation
+  // rule (Lean classifyVS) admits VS15 and VS16 on any Emoji-property base.
+  static boolean isEmoji(int cp) {
     for (int[] range : emojiRanges()) {
       if (range[0] <= cp && cp <= range[1]) {
         return true;

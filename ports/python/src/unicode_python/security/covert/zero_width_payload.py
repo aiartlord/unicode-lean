@@ -201,6 +201,9 @@ class Verdict:
     kind: ClassificationKind
     sub: SubThreat | None = None
     zero_width_positions: list[int] = field(default_factory=list)
+    # The zero-width positions no context sanctions: what the classification
+    # localises (Lean ``suspiciousPositions``). Empty when clear.
+    suspicious_positions: list[int] = field(default_factory=list)
 
 
 def detect(input_cps: list[int]) -> Verdict:
@@ -236,6 +239,7 @@ def detect(input_cps: list[int]) -> Verdict:
     if not v.zero_width_positions or not suspicious:
         return v
 
+    v.suspicious_positions = list(suspicious)
     v.kind = ClassificationKind.HAZARD
     if annotation_count > 0:
         v.sub = AnnotationMisuse(count=annotation_count)

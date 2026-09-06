@@ -122,11 +122,14 @@ def restrictedStatusDetail (input : List Nat) : List (Nat × Nat) :=
     if isRestrictedStatus cpWithIdx.1 then some (cpWithIdx.2, cpWithIdx.1) else none)
 
 /-- Collect positions of every codepoint whose resolved script
-    set contains `target`. -/
+    set contains `target`. Common and Inherited codepoints are skipped, as
+    `Unicode.Restriction.hasScript` skips them: a combining acute accent's
+    Script_Extensions name Cyrillic, but the accent is not Cyrillic text. -/
 def positionsForScript
     (input : List Nat) (target : ScriptAbbrev) : List Nat :=
   input.zipIdx.filterMap (fun cpWithIdx =>
-    if (Unicode.ResolvedScripts.resolveScripts cpWithIdx.1).contains target then
+    if ! Unicode.Restriction.isIgnoredForIntersection cpWithIdx.1
+        && (Unicode.ResolvedScripts.resolveScripts cpWithIdx.1).contains target then
       some cpWithIdx.2
     else none)
 
@@ -204,7 +207,10 @@ def detectWithContext (ctx : Context) (input : List Nat) : Verdict :=
           .hazard (.cjkMix scriptsUnion.length) [] []
         else
           .hazard (.scriptMixOther scriptsUnion.length) [] []
-      else if level = .Unrestricted then
+      else if ctx.identifierField ∧ level = .Unrestricted then
+        -- UTS #39 §5.2 restriction levels are a property of an identifier; a
+        -- header or a message that fails every level is not a mixed-script
+        -- identifier, so the rung asks only of an identifier field.
         .hazard .unrestrictedLevel [] []
       else
         .clear

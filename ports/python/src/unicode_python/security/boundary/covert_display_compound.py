@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 
 from ..covert.bidi_control_balance import is_bidi_format_control
 from ..covert.variation_selector_payload import (
-    is_registered_variation_pair,
+    is_registered_use,
     is_variation_selector,
 )
 
@@ -53,13 +53,12 @@ def _first_bidi_pos(input_cps: list[int]) -> int | None:
 
 
 def _first_suspicious_vs_pos(input_cps: list[int]) -> int | None:
-    """First position holding a suspicious variation selector — a VS that
-    does not form a registered (base, VS) pair with its predecessor.
-    Mirrors the ``.suspicious`` case of the Lean ``classifyPositions``."""
+    """First position holding a suspicious variation selector — a VS that is
+    not a registered use of its predecessor (a registered pair, or VS15/VS16
+    on an Emoji-property base). Mirrors the ``.suspicious`` case of the Lean
+    ``classifyPositions``."""
     for index, cp in enumerate(input_cps):
-        if is_variation_selector(cp) and not (
-            index > 0 and is_registered_variation_pair(input_cps[index - 1], cp)
-        ):
+        if is_variation_selector(cp) and not is_registered_use(input_cps, index):
             return index
     return None
 

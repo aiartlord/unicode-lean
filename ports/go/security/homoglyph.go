@@ -457,6 +457,23 @@ func hasDecompositionSwap(input []uint32) bool {
 	return false
 }
 
+// firstDecompositionDiffPos is the first position at which the input and its
+// NFC form differ, or the shorter length when one is a prefix of the other.
+// Mirrors the Lean firstDecompositionDiffPos.
+func firstDecompositionDiffPos(input []uint32) int {
+	nfc := toNFC(input)
+	shorter := len(input)
+	if len(nfc) < shorter {
+		shorter = len(nfc)
+	}
+	for index := 0; index < shorter; index++ {
+		if input[index] != nfc[index] {
+			return index
+		}
+	}
+	return shorter
+}
+
 func composeHangulPair(first uint32, second uint32) bool {
 	const (
 		sBase  = 0xAC00

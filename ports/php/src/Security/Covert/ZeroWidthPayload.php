@@ -77,12 +77,15 @@ final class ZwBareZeroWidth implements ZeroWidthSubThreat
 final class ZeroWidthVerdict
 {
     /**
-     * @param list<int> $zeroWidthPositions
+     * @param list<int> $zeroWidthPositions every zero-width position, the census
+     * @param list<int> $suspiciousPositions the positions no context sanctions:
+     *        what the classification localises (Lean suspiciousPositions)
      */
     public function __construct(
         public readonly ClassificationKind $kind,
         public readonly ?ZeroWidthSubThreat $sub,
         public readonly array $zeroWidthPositions,
+        public readonly array $suspiciousPositions,
     ) {
     }
 }
@@ -249,7 +252,7 @@ final class ZeroWidthPayload
         }
 
         if ($positions === [] || $suspicious === []) {
-            return new ZeroWidthVerdict(ClassificationKind::Clear, null, $positions);
+            return new ZeroWidthVerdict(ClassificationKind::Clear, null, $positions, []);
         }
 
         if ($annotationCount > 0) {
@@ -264,6 +267,6 @@ final class ZeroWidthPayload
             $sub = new ZwBareZeroWidth($input[$suspicious[0]]);
         }
 
-        return new ZeroWidthVerdict(ClassificationKind::Hazard, $sub, $positions);
+        return new ZeroWidthVerdict(ClassificationKind::Hazard, $sub, $positions, $suspicious);
     }
 }

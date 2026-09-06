@@ -8,7 +8,10 @@ module UnicodeRuby
       # the UAX #44 Default_Ignorable_Code_Point predicate is the extension that
       # catches every other invisible codepoint, modulo sibling-detector ranges.
       module ZeroWidthPayload
-        Verdict = Struct.new(:kind, :sub, :zero_width_positions)
+        # `zero_width_positions` is the census; `suspicious_positions` the
+        # occurrences no context sanctions, which is what the classification
+        # localises (Lean suspiciousPositions).
+        Verdict = Struct.new(:kind, :sub, :zero_width_positions, :suspicious_positions)
 
         module_function
 
@@ -137,7 +140,7 @@ module UnicodeRuby
           end
 
           if zero_width_positions.empty? || suspicious.empty?
-            return Verdict.new(Calculus::ClassificationKind::CLEAR, nil, zero_width_positions)
+            return Verdict.new(Calculus::ClassificationKind::CLEAR, nil, zero_width_positions, [])
           end
 
           sub =
@@ -153,7 +156,7 @@ module UnicodeRuby
               "BareZeroWidth"
             end
 
-          Verdict.new(Calculus::ClassificationKind::HAZARD, sub, zero_width_positions)
+          Verdict.new(Calculus::ClassificationKind::HAZARD, sub, zero_width_positions, suspicious)
         end
       end
     end

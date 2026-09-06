@@ -2,7 +2,7 @@ defmodule UnicodeSecurity.Covert.ZeroWidthPayload do
   alias UnicodeSecurity.Identity.EmojiZwjIntegrity
   alias UnicodeSecurity.Ucd
 
-  defstruct kind: :clear, sub: nil, zero_width_positions: []
+  defstruct kind: :clear, sub: nil, zero_width_positions: [], suspicious_positions: []
 
   def sub_threat_tag({:annotation_misuse, _count}), do: "AnnotationMisuse"
   def sub_threat_tag({:word_joiner_injection, _count}), do: "WordJoinerInjection"
@@ -100,7 +100,7 @@ defmodule UnicodeSecurity.Covert.ZeroWidthPayload do
     suspicious = Enum.reject(positions, &sanctioned?(input, &1))
 
     if positions == [] or suspicious == [] do
-      %__MODULE__{zero_width_positions: positions}
+      %__MODULE__{zero_width_positions: positions, suspicious_positions: suspicious}
     else
       cps = Enum.map(positions, &Enum.at(input, &1))
       ann = Enum.count(cps, &annotation?/1)
@@ -117,7 +117,12 @@ defmodule UnicodeSecurity.Covert.ZeroWidthPayload do
           true -> {:bare_zero_width, Enum.at(input, hd(suspicious))}
         end
 
-      %__MODULE__{kind: :hazard, sub: sub, zero_width_positions: positions}
+      %__MODULE__{
+        kind: :hazard,
+        sub: sub,
+        zero_width_positions: positions,
+        suspicious_positions: suspicious
+      }
     end
   end
 end

@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Union
 
 from ..calculus import ClassificationKind
+from ..crypto.ai_watermark_detectability import is_emoji
 
 # ──────────────────────────────────────────────────────────────────────
 # Authoritative legal (base, VS) pair set — UCD StandardizedVariants
@@ -112,7 +113,16 @@ class RepeatedBase:
     vs_count: int
 
 
-SubThreat = Union[DirectPayload, IllegalTarget, RepeatedBase]
+@dataclass(frozen=True, slots=True)
+class EmbeddedAfterRegistered:
+    """A registered selector precedes the suspicious run: payload hiding behind
+    a legitimate glyph (Lean ``embeddedAfterReg``)."""
+
+    registered_end: int
+    payload_start: int
+
+
+SubThreat = Union[DirectPayload, IllegalTarget, RepeatedBase, EmbeddedAfterRegistered]
 
 
 def sub_threat_tag(sub: SubThreat) -> str:
@@ -120,6 +130,8 @@ def sub_threat_tag(sub: SubThreat) -> str:
         return "DirectPayload"
     if isinstance(sub, IllegalTarget):
         return "IllegalTarget"
+    if isinstance(sub, EmbeddedAfterRegistered):
+        return "EmbeddedAfterRegistered"
     return "RepeatedBase"
 
 
@@ -127,8 +139,25 @@ def sub_threat_tag(sub: SubThreat) -> str:
 class Verdict:
     kind: ClassificationKind
     sub: SubThreat | None = None
+    # Every variation-selector position: the census.
     vs_positions: list[int] = field(default_factory=list)
+    # The selectors no registered pair or presentation rule sanctions: what the
+    # classification localises (Lean ``suspiciousPositions``).
+    suspicious_positions: list[int] = field(default_factory=list)
     recovered_bytes: bytes = b""
+
+
+def is_registered_use(input_cps: list[int], p: int) -> bool:
+    """The Lean ``classifyVS`` registered reading of the selector at ``p``: a
+    standardized or emoji variation sequence, or VS15 / VS16 on any base with
+    the Emoji property. A selector with no predecessor is never registered."""
+    if p == 0:
+        return False
+    base = input_cps[p - 1]
+    vs = input_cps[p]
+    return is_registered_variation_pair(base, vs) or (
+        vs in (0xFE0F, 0xFE0E) and is_emoji(base)
+    )
 
 
 def _decode_vs_run(input_cps: list[int], positions: list[int]) -> bytes:
@@ -166,39 +195,42 @@ def _lossy_ascii(payload: bytes) -> str:
 def detect(input_cps: list[int]) -> Verdict:
     v = Verdict(kind=ClassificationKind.CLEAR)
     v.vs_positions = [i for i, cp in enumerate(input_cps) if is_variation_selector(cp)]
-    if not v.vs_positions:
+
+    # Each selector is judged against its predecessor (Lean ``classifyVS``):
+    # registered uses are sanctioned wherever they stand and however many; the
+    # hazard is the suspicious run alone.
+    registered = [p for p in v.vs_positions if is_registered_use(input_cps, p)]
+    suspicious = [p for p in v.vs_positions if not is_registered_use(input_cps, p)]
+    if not suspicious:
         return v
 
-    v.recovered_bytes = _decode_vs_run(input_cps, v.vs_positions)
-
-    # Single-VS exemption: if exactly one VS follows a base AND the
-    # (base, VS) pair is registered in StandardizedVariants or
-    # emoji-variation-sequences, return Clear (legitimate variant).
-    if len(v.vs_positions) == 1:
-        p = v.vs_positions[0]
-        if p > 0:
-            base = input_cps[p - 1]
-            vs = input_cps[p]
-            if is_registered_variation_pair(base, vs):
-                return v  # Clear — registered variant
-
+    v.recovered_bytes = _decode_vs_run(input_cps, suspicious)
     v.kind = ClassificationKind.HAZARD
 
-    if len(v.vs_positions) >= 4 and _all_same_vs(input_cps, v.vs_positions):
-        p0 = v.vs_positions[0]
-        base = 0 if p0 == 0 else input_cps[p0 - 1]
-        v.sub = RepeatedBase(base_cp=base, vs_count=len(v.vs_positions))
+    payload_start = suspicious[0]
+    # Priority (Lean ``pickSubThreat``): a registered selector before the
+    # suspicious run, then a long single-selector run, then a decodable
+    # payload, then the bare illegal target.
+    registered_before = [p for p in registered if p < payload_start]
+    if registered_before:
+        v.sub = EmbeddedAfterRegistered(
+            registered_end=registered_before[-1], payload_start=payload_start
+        )
+    elif len(suspicious) >= 4 and _all_same_vs(input_cps, suspicious):
+        base = 0 if payload_start == 0 else input_cps[payload_start - 1]
+        v.sub = RepeatedBase(base_cp=base, vs_count=len(suspicious))
     elif v.recovered_bytes:
         v.sub = DirectPayload(decoded=_lossy_ascii(v.recovered_bytes))
     else:
-        p = v.vs_positions[0]
-        target = 0 if p == 0 else input_cps[p - 1]
-        v.sub = IllegalTarget(target_cp=target, vs_cp=input_cps[p])
+        target = 0 if payload_start == 0 else input_cps[payload_start - 1]
+        v.sub = IllegalTarget(target_cp=target, vs_cp=input_cps[payload_start])
+    v.suspicious_positions = suspicious
     return v
 
 
 __all__ = [
     "DirectPayload",
+    "EmbeddedAfterRegistered",
     "IllegalTarget",
     "RepeatedBase",
     "SubThreat",

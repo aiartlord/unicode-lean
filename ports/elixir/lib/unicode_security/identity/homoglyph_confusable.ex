@@ -245,6 +245,64 @@ defmodule UnicodeSecurity.Identity.HomoglyphConfusable do
     end)
   end
 
-  defp math_alphanumeric?(cp), do: cp >= 0x1D400 and cp <= 0x1D7FF
-  defp fullwidth_halfwidth?(cp), do: cp >= 0xFF01 and cp <= 0xFFEF
+  def math_alphanumeric?(cp), do: cp >= 0x1D400 and cp <= 0x1D7FF
+  def fullwidth_halfwidth?(cp), do: cp >= 0xFF01 and cp <= 0xFFEF
+
+  @doc """
+  The first position at which the input and its NFC form differ, or the
+  shorter length when one is a prefix of the other. Mirrors the Lean
+  firstDecompositionDiffPos.
+  """
+  def first_decomposition_diff_pos(input) do
+    nfc = Ucd.to_nfc(input)
+    shorter = min(length(input), length(nfc))
+
+    Enum.find(0..(shorter - 1)//1, shorter, fn i -> Enum.at(input, i) != Enum.at(nfc, i) end)
+  end
+
+  @doc """
+  The positions a homoglyph rung implicates: nothing for the whole-input rungs
+  (TargetMatch, CrossScriptMix, RestrictionLow), the first math-alphanumeric or
+  fullwidth/halfwidth codepoint, the first NFC divergence, and the non-ASCII
+  codepoints for the ascii-confusable rung. Mirrors the Lean homoglyphPositions.
+  """
+  def homoglyph_positions("MathAlpha", input), do: first_position(input, &math_alphanumeric?/1)
+  def homoglyph_positions("WidthClass", input), do: first_position(input, &fullwidth_halfwidth?/1)
+  def homoglyph_positions("DecompositionSwap", input), do: [first_decomposition_diff_pos(input)]
+  def homoglyph_positions("AsciiConfusable", input), do: non_ascii_positions(input)
+  def homoglyph_positions(_tag, _input), do: []
+
+  defp first_position(input, pred) do
+    case Enum.find_index(input, pred) do
+      nil -> []
+      i -> [i]
+    end
+  end
+
+  @doc """
+  The positions a mixed-script verdict implicates: the restricted codepoints
+  for RestrictedStatusCp, the Cyrillic or Greek codepoints (Common and
+  Inherited skipped, as UTS #39 §5.1 skips them from the intersection) for the
+  two Latin-mix verdicts, nothing for the whole-input verdicts. Mirrors the
+  Lean mixedScriptPositions.
+  """
+  def mixed_script_positions("RestrictedStatusCp", input) do
+    input
+    |> Enum.with_index()
+    |> Enum.reject(fn {cp, _i} -> Ucd.id_allowed?(cp) end)
+    |> Enum.map(fn {_cp, i} -> i end)
+  end
+
+  def mixed_script_positions("LatinCyrillic", input), do: positions_for_script(input, "Cyrl")
+  def mixed_script_positions("LatinGreek", input), do: positions_for_script(input, "Grek")
+  def mixed_script_positions(_sub, _input), do: []
+
+  defp positions_for_script(input, script) do
+    input
+    |> Enum.with_index()
+    |> Enum.filter(fn {cp, _i} ->
+      not Ucd.ignored_for_intersection?(cp) and script in Ucd.resolve_scripts(cp)
+    end)
+    |> Enum.map(fn {_cp, i} -> i end)
+  end
 end

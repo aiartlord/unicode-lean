@@ -209,6 +209,26 @@ module UnicodeRuby
           first_match.nil? ? nil : known_attack_targets[first_match][0]
         end
 
+        # What the Lean MixedScriptAdmissibility.detectWithContext localises for
+        # a mixed-script sub-threat: every codepoint outside
+        # Identifier_Status=Allowed for RestrictedStatusCp; every non-Common,
+        # non-Inherited codepoint whose resolved scripts name Cyrillic
+        # (LatinCyrillic) or Greek (LatinGreek); nothing for the whole-string
+        # verdicts ScriptMixOther, CjkMix and UnrestrictedLevel.
+        def mixed_script_positions(sub, input)
+          case sub
+          when "RestrictedStatusCp"
+            input.each_index.select { |i| !Ucd.id_allowed?(input[i]) }
+          when "LatinCyrillic", "LatinGreek"
+            target = sub == "LatinCyrillic" ? "Cyrl" : "Grek"
+            input.each_index.select do |i|
+              !Ucd.ignored_for_intersection?(input[i]) && Ucd.resolve_scripts(input[i]).include?(target)
+            end
+          else
+            []
+          end
+        end
+
         # First codepoint position at which `input` and its NFC form disagree.
         def first_decomposition_diff_pos(input, nfc)
           shorter = [input.length, nfc.length].min

@@ -291,7 +291,7 @@ defmodule UnicodeSecurity.Policy do
         findings,
         :variation_selector_payload,
         VariationSelectorPayload.detect(input),
-        & &1.vs_positions
+        & &1.suspicious_positions
       )
 
     findings =
@@ -299,7 +299,7 @@ defmodule UnicodeSecurity.Policy do
         findings,
         :zero_width_payload,
         ZeroWidthPayload.detect(input),
-        & &1.zero_width_positions
+        & &1.suspicious_positions
       )
 
     findings =
@@ -377,7 +377,7 @@ defmodule UnicodeSecurity.Policy do
               :mixed_script_admissibility,
               :hazard,
               mixed_sub,
-              positions_all(input)
+              HomoglyphConfusable.mixed_script_positions(mixed_sub, input)
             ),
           else: findings
       end
@@ -736,6 +736,7 @@ defmodule UnicodeSecurity.Policy do
   defp sub_tag({:direct_payload, _}), do: "DirectPayload"
   defp sub_tag({:illegal_target, _, _}), do: "IllegalTarget"
   defp sub_tag({:repeated_base, _, _}), do: "RepeatedBase"
+  defp sub_tag({:embedded_after_registered, _, _}), do: "EmbeddedAfterRegistered"
   defp sub_tag({:annotation_misuse, _}), do: "AnnotationMisuse"
   defp sub_tag({:word_joiner_injection, _}), do: "WordJoinerInjection"
   defp sub_tag({:ai_watermark_nnbsp, _}), do: "AiWatermarkNNBSP"
@@ -750,14 +751,11 @@ defmodule UnicodeSecurity.Policy do
       )
 
   # The positions a homoglyph verdict implicates: the non-ASCII positions for
-  # the ascii-confusable rung, the whole input for every other rung, nothing
-  # when clear.
+  # rung; nothing when clear.
   defp homoglyph_positions(%{kind: :clear}, _input), do: []
 
-  defp homoglyph_positions(%{sub: %{tag: "AsciiConfusable"}}, input),
-    do: HomoglyphConfusable.non_ascii_positions(input)
-
-  defp homoglyph_positions(_verdict, input), do: positions_all(input)
+  defp homoglyph_positions(verdict, input),
+    do: HomoglyphConfusable.homoglyph_positions(sub_tag(verdict.sub), input)
 
   # One homoglyph finding under a field context, or nil when clear.
   defp homoglyph_finding_with_context(input, ctx) do
@@ -812,7 +810,10 @@ defmodule UnicodeSecurity.Policy do
           finding(
             :mixed_script_admissibility,
             :moderate,
-            IdentifierTokens.shift_positions(token.start, positions_all(token.cps)),
+            IdentifierTokens.shift_positions(
+              token.start,
+              HomoglyphConfusable.mixed_script_positions(sub, token.cps)
+            ),
             sub
           )
       end
@@ -825,9 +826,6 @@ defmodule UnicodeSecurity.Policy do
       |> Enum.with_index()
       |> Enum.filter(fn {cp, _i} -> pred.(cp) end)
       |> Enum.map(fn {_cp, i} -> i end)
-
-  defp positions_all([]), do: []
-  defp positions_all(input), do: Enum.to_list(0..(length(input) - 1))
 
   defp c0_control?(cp),
     do: (cp >= 0 and cp <= 0x1F and cp not in [0x09, 0x0A, 0x0D]) or cp == 0x7F

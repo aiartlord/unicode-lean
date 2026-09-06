@@ -1,7 +1,8 @@
 defmodule UnicodeSecurity.Covert.VariationSelectorPayload do
+  alias UnicodeSecurity.Crypto.AiWatermarkDetectability
   alias UnicodeSecurity.Data
 
-  defstruct kind: :clear, sub: nil, vs_positions: [], recovered_bytes: []
+  defstruct kind: :clear, sub: nil, vs_positions: [], suspicious_positions: [], recovered_bytes: []
 
   def variation_selector?(cp),
     do:
@@ -15,8 +16,19 @@ defmodule UnicodeSecurity.Covert.VariationSelectorPayload do
   def sub_threat_tag({:direct_payload, _decoded}), do: "DirectPayload"
   def sub_threat_tag({:illegal_target, _target, _vs}), do: "IllegalTarget"
   def sub_threat_tag({:repeated_base, _base, _count}), do: "RepeatedBase"
+  def sub_threat_tag({:embedded_after_registered, _registered, _suspicious}), do: "EmbeddedAfterRegistered"
 
   def registered_variation_pair?(base, vs), do: MapSet.member?(legal_pairs(), {base, vs})
+
+  @doc """
+  A selector on `base` is a registered use when the pair is registered
+  (StandardizedVariants plus the emoji variation sequences) or when it is
+  VS15/VS16 on an Emoji-property base. Mirrors the Lean isRegisteredUse.
+  """
+  def registered_variation_use?(base, vs) do
+    registered_variation_pair?(base, vs) or
+      ((vs == 0xFE0E or vs == 0xFE0F) and AiWatermarkDetectability.is_emoji(base))
+  end
 
   defp legal_pairs do
     Data.cached(:variation_legal_pairs, fn ->
@@ -76,41 +88,56 @@ defmodule UnicodeSecurity.Covert.VariationSelectorPayload do
       |> Enum.filter(fn {cp, _i} -> variation_selector?(cp) end)
       |> Enum.map(fn {_cp, i} -> i end)
 
-    if positions == [] do
-      %__MODULE__{}
+    # Each selector is judged against its predecessor: a registered use is
+    # sanctioned wherever it stands and however many, and an input whose
+    # selectors are all registered is clear. The hazard is the suspicious run
+    # alone. Mirrors the Lean detect.
+    registered = Enum.filter(positions, &registered_variation_use_at?(input, &1))
+    suspicious = positions -- registered
+
+    if suspicious == [] do
+      %__MODULE__{vs_positions: positions}
     else
-      recovered = decode_vs_run(input, positions)
-
-      if length(positions) == 1 do
-        p = hd(positions)
-
-        if p > 0 and registered_variation_pair?(Enum.at(input, p - 1), Enum.at(input, p)) do
-          %__MODULE__{kind: :clear, vs_positions: positions, recovered_bytes: recovered}
-        else
-          hazard(input, positions, recovered)
-        end
-      else
-        hazard(input, positions, recovered)
-      end
+      hazard(input, positions, registered, suspicious)
     end
   end
 
-  defp hazard(input, positions, recovered) do
+  defp registered_variation_use_at?(_input, 0), do: false
+
+  defp registered_variation_use_at?(input, p),
+    do: registered_variation_use?(Enum.at(input, p - 1), Enum.at(input, p))
+
+  # Ranked EmbeddedAfterRegistered (a registered use precedes the first
+  # suspicious selector), RepeatedBase (at least four suspicious selectors, all
+  # the same codepoint), DirectPayload (the nibble pairs over the suspicious
+  # selectors recover a byte), else IllegalTarget.
+  defp hazard(input, positions, registered, suspicious) do
+    recovered = decode_vs_run(input, suspicious)
+    p0 = hd(suspicious)
+    base = if p0 == 0, do: 0, else: Enum.at(input, p0 - 1)
+
     sub =
       cond do
-        length(positions) >= 4 and
-            Enum.uniq(Enum.map(positions, &Enum.at(input, &1))) |> length() == 1 ->
-          p0 = hd(positions)
-          {:repeated_base, if(p0 == 0, do: 0, else: Enum.at(input, p0 - 1)), length(positions)}
+        registered != [] and hd(registered) < p0 ->
+          {:embedded_after_registered, hd(registered), p0}
+
+        length(suspicious) >= 4 and
+            Enum.uniq(Enum.map(suspicious, &Enum.at(input, &1))) |> length() == 1 ->
+          {:repeated_base, base, length(suspicious)}
 
         recovered != [] ->
           {:direct_payload, lossy_ascii(recovered)}
 
         true ->
-          p = hd(positions)
-          {:illegal_target, if(p == 0, do: 0, else: Enum.at(input, p - 1)), Enum.at(input, p)}
+          {:illegal_target, base, Enum.at(input, p0)}
       end
 
-    %__MODULE__{kind: :hazard, sub: sub, vs_positions: positions, recovered_bytes: recovered}
+    %__MODULE__{
+      kind: :hazard,
+      sub: sub,
+      vs_positions: positions,
+      suspicious_positions: suspicious,
+      recovered_bytes: recovered
+    }
   end
 end

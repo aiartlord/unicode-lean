@@ -208,10 +208,12 @@ final class Policy
         if ($verdict->kind === ClassificationKind::Clear) {
             return [];
         }
-        if (self::subTag($verdict->sub) === 'AsciiConfusable') {
-            return HomoglyphConfusable::nonAsciiPositions($input);
-        }
-        return array_keys($input);
+        // Each rung localises what the Lean detectWithContext localises: a
+        // target match, a cross-script mix and a restriction level judge the
+        // string as a unit and carry no positions; math-alpha and width-class
+        // the first such codepoint; decomposition-swap the first differing
+        // position; the ascii-confusable rung the non-ASCII positions.
+        return HomoglyphConfusable::rungPositions(self::subTag($verdict->sub), $input);
     }
 
     /**
@@ -279,7 +281,10 @@ final class Policy
                     self::reasonCode(Family::MixedScriptAdmissibility, $sub),
                     Family::MixedScriptAdmissibility,
                     Severity::Moderate,
-                    IdentifierTokens::shiftPositions($token['start'], array_keys($token['cps'])),
+                    IdentifierTokens::shiftPositions(
+                        $token['start'],
+                        HomoglyphConfusable::mixedScriptPositions($sub, $token['cps']),
+                    ),
                     $sub,
                     self::familySlug(Family::MixedScriptAdmissibility),
                 );
@@ -480,10 +485,12 @@ final class Policy
         self::pushFinding($findings, Family::TagBlockPayload, $tag->kind, $tag->sub, $tag->tagPositions);
 
         $vs = VariationSelectorPayload::detect($input);
-        self::pushFinding($findings, Family::VariationSelectorPayload, $vs->kind, $vs->sub, $vs->vsPositions);
+        // The Lean localises the suspicious selectors and the suspicious
+        // zero-width positions, not the census of either.
+        self::pushFinding($findings, Family::VariationSelectorPayload, $vs->kind, $vs->sub, $vs->suspiciousPositions);
 
         $zw = ZeroWidthPayload::detect($input);
-        self::pushFinding($findings, Family::ZeroWidthPayload, $zw->kind, $zw->sub, $zw->zeroWidthPositions);
+        self::pushFinding($findings, Family::ZeroWidthPayload, $zw->kind, $zw->sub, $zw->suspiciousPositions);
 
         if (SurrogateReassembly::looksLikeByteStream($input)) {
             $sr = SurrogateReassembly::detect($input);
@@ -519,7 +526,13 @@ final class Policy
         } else {
             $mixedSub = HomoglyphConfusable::mixedScriptVerdict($input, $identifierField);
             if ($mixedSub !== null) {
-                self::pushFinding($findings, Family::MixedScriptAdmissibility, ClassificationKind::Hazard, $mixedSub, array_keys($input));
+                self::pushFinding(
+                    $findings,
+                    Family::MixedScriptAdmissibility,
+                    ClassificationKind::Hazard,
+                    $mixedSub,
+                    HomoglyphConfusable::mixedScriptPositions($mixedSub, $input),
+                );
             }
         }
 

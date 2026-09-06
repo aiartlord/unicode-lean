@@ -34,8 +34,9 @@ The Emoji property table is bundled in the port's own @data/emoji-data.txt@
 adjacency probe parses the @Emoji@ rows from it through the same NOINLINE
 runtime-table idiom the rest of the security layer uses, never a host emoji
 library. The Default_Ignorable predicate is the port's own
-'Unicode.Security.Policy.isDefaultIgnorableCodepoint', never a host
-normalizer.
+'Unicode.Casing.isDefaultIgnorable' (the predicate 'Unicode.Security.Policy'
+re-exports), never a host normalizer; importing it from its owner keeps this
+module below the policy layer, which reads 'isEmoji' from here.
 -}
 module Unicode.Security.Crypto.AiWatermarkDetectability
   ( CueClass (GreenListBias, PseudorandomSeq, SemanticDrift)
@@ -55,6 +56,7 @@ module Unicode.Security.Crypto.AiWatermarkDetectability
   , defaultContext
   , detectWithContext
   , detect
+  , isEmoji
   ) where
 
 import Data.Char (isSpace)
@@ -64,7 +66,7 @@ import Numeric (readHex)
 import System.IO.Unsafe (unsafePerformIO)
 
 import Paths_unicode_haskell (getDataFileName)
-import Unicode.Security.Policy (isDefaultIgnorableCodepoint)
+import qualified Unicode.Casing as Casing
 
 -- ─────────────────────────────────────────────────────────────────────
 -- §1 Types
@@ -287,9 +289,9 @@ isVariationSelector cp =
   (0xFE00 <= cp && cp <= 0xFE0F) || (0xE0100 <= cp && cp <= 0xE01EF)
 
 -- | True iff @cp@ is Default_Ignorable_Code_Point. Reuses the port's own UCD
--- predicate 'isDefaultIgnorableCodepoint', never a host normalizer.
+-- predicate 'Casing.isDefaultIgnorable', never a host normalizer.
 isDefaultIgnorable :: Int -> Bool
-isDefaultIgnorable = isDefaultIgnorableCodepoint
+isDefaultIgnorable = Casing.isDefaultIgnorable
 
 -- | True iff @cp@ is U+200B ZERO WIDTH SPACE.
 isZwsp :: Int -> Bool

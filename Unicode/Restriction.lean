@@ -141,7 +141,8 @@ def stringScriptUnion (cps : List Nat) : List ScriptAbbrev :=
     resolved script set contains `target`.  Union-side question,
     distinct from `stringResolvedScripts`. -/
 def hasScript (input : List Nat) (target : ScriptAbbrev) : Bool :=
-  input.any (fun cp => (resolveScripts cp).contains target)
+  input.any (fun cp =>
+    ! isIgnoredForIntersection cp && (resolveScripts cp).contains target)
 
 /-- True iff `cps` is Single-Script per UTS #39 § 5.1.2: not
     ASCII-Only and `stringResolvedScripts` is non-empty. -/

@@ -275,6 +275,87 @@ end
 
 -- The detection function at the default context (one identifier field).
 -- Mirrors the Lean detect.
+local function first_position(input, pred)
+  for i = 1, #input do
+    if pred(input[i]) then
+      return { i - 1 }
+    end
+  end
+  return {}
+end
+
+-- The first position at which the input and its NFC form differ, or the
+-- shorter length when one is a prefix of the other. Mirrors the Lean
+-- firstDecompositionDiffPos.
+function M.first_decomposition_diff_pos(input)
+  local nfc = ucd.to_nfc(input)
+  local shorter = math.min(#input, #nfc)
+  for i = 1, shorter do
+    if input[i] ~= nfc[i] then
+      return i - 1
+    end
+  end
+  return shorter
+end
+
+-- The positions a homoglyph rung implicates: nothing for the whole-input
+-- rungs (TargetMatch, CrossScriptMix, RestrictionLow), the first
+-- math-alphanumeric or fullwidth/halfwidth codepoint, the first NFC
+-- divergence, and the non-ASCII codepoints for the ascii-confusable rung.
+-- Mirrors the Lean homoglyphPositions.
+function M.homoglyph_positions(tag, input)
+  if tag == "MathAlpha" then
+    return first_position(input, math_alphanumeric)
+  elseif tag == "WidthClass" then
+    return first_position(input, fullwidth_halfwidth)
+  elseif tag == "DecompositionSwap" then
+    return { M.first_decomposition_diff_pos(input) }
+  elseif tag == "AsciiConfusable" then
+    return M.non_ascii_positions(input)
+  end
+  return {}
+end
+
+-- The positions whose resolved scripts contain `script`, with Common and
+-- Inherited codepoints skipped as UTS #39 §5.1 skips them from the
+-- intersection. Mirrors the Lean positionsForScript.
+local function positions_for_script(input, script)
+  local positions = {}
+  for i = 1, #input do
+    local cp = input[i]
+    if not ucd.is_ignored_for_intersection(cp) then
+      for _, s in ipairs(ucd.resolve_scripts(cp)) do
+        if s == script then
+          positions[#positions + 1] = i - 1
+          break
+        end
+      end
+    end
+  end
+  return positions
+end
+
+-- The positions a mixed-script verdict implicates: the restricted codepoints
+-- for RestrictedStatusCp, the Cyrillic or Greek codepoints for the two
+-- Latin-mix verdicts, nothing for the whole-input verdicts. Mirrors the Lean
+-- mixedScriptPositions.
+function M.mixed_script_positions(sub, input)
+  if sub == "RestrictedStatusCp" then
+    local positions = {}
+    for i = 1, #input do
+      if not ucd.is_id_allowed(input[i]) then
+        positions[#positions + 1] = i - 1
+      end
+    end
+    return positions
+  elseif sub == "LatinCyrillic" then
+    return positions_for_script(input, "Cyrl")
+  elseif sub == "LatinGreek" then
+    return positions_for_script(input, "Grek")
+  end
+  return {}
+end
+
 function M.detect(input)
   return M.detect_with_context(input, { running_text = false, identifier_token = false })
 end

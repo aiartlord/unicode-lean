@@ -111,7 +111,7 @@ end
 
 -- Returns { kind, sub, zero_width_positions (0-based) }.
 function M.detect(input)
-  local v = { kind = ClassificationKind.Clear, sub = nil, zero_width_positions = {} }
+  local v = { kind = ClassificationKind.Clear, sub = nil, zero_width_positions = {}, suspicious_positions = {} }
   local annotation_count = 0
   local word_joiner_count = 0
   local nnbsp_count = 0
@@ -142,6 +142,8 @@ function M.detect(input)
       end
     end
   end
+
+  v.suspicious_positions = suspicious
 
   if #v.zero_width_positions == 0 or #suspicious == 0 then
     return v

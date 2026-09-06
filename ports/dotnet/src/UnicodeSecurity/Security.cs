@@ -212,8 +212,13 @@ public static partial class Security
         var zeroWidth = PositionsWhere(input, IsZeroWidthPayload);
         if (zeroWidth.Count > 0 && HasSuspiciousZeroWidth(input, zeroWidth))
         {
+            // The Lean localises the suspicious positions, not the census: a
+            // sanctioned emoji joiner beside a payload is not payload.
             findings.Add(
-                MakeFinding(Family.ZeroWidthPayload, ZeroWidthSubThreat(input, zeroWidth), zeroWidth));
+                MakeFinding(
+                    Family.ZeroWidthPayload,
+                    ZeroWidthSubThreat(input, zeroWidth),
+                    SuspiciousZeroWidthPositions(input, zeroWidth)));
         }
         var surrogate = SurrogateReassemblyFinding(input);
         if (surrogate is not null) findings.Add(surrogate);
@@ -416,15 +421,40 @@ public static partial class Security
         return "BareTagPresent";
     }
 
+    // Mirrors the Lean detect: each selector is judged against its predecessor
+    // (classifyVS), registered uses are sanctioned wherever they stand and
+    // however many, and the hazard is the suspicious run alone, ranked
+    // EmbeddedAfterRegistered (a registered selector before the run),
+    // RepeatedBase, DirectPayload, IllegalTarget. Positions are the suspicious
+    // selectors.
     private static Finding? VariationSelectorFinding(List<int> input)
     {
-        var positions = PositionsWhere(input, IsVariationSelector);
-        if (positions.Count == 0) return null;
-        if (positions.Count == 1 && IsRegisteredVariationPosition(input, positions[0])) return null;
+        var registered = new List<int>();
+        var suspicious = new List<int>();
+        foreach (var p in PositionsWhere(input, IsVariationSelector))
+        {
+            if (IsRegisteredVariationUse(input, p)) registered.Add(p);
+            else suspicious.Add(p);
+        }
+        if (suspicious.Count == 0) return null;
+        var payloadStart = suspicious[0];
         var subThreat = "IllegalTarget";
-        if (positions.Count >= 4 && AllSameAt(input, positions)) subThreat = "RepeatedBase";
-        else if (DecodeVariationSelectorRun(input, positions).Count > 0) subThreat = "DirectPayload";
-        return MakeFinding(Family.VariationSelectorPayload, subThreat, positions);
+        if (registered.Any(p => p < payloadStart)) subThreat = "EmbeddedAfterRegistered";
+        else if (suspicious.Count >= 4 && AllSameAt(input, suspicious)) subThreat = "RepeatedBase";
+        else if (DecodeVariationSelectorRun(input, suspicious).Count > 0) subThreat = "DirectPayload";
+        return MakeFinding(Family.VariationSelectorPayload, subThreat, suspicious);
+    }
+
+    // The Lean classifyVS registered reading of the selector at position: a
+    // standardized or emoji variation sequence, or VS15 / VS16 on any base
+    // carrying the Emoji property. A selector with no predecessor is never
+    // registered.
+    private static bool IsRegisteredVariationUse(IReadOnlyList<int> input, int position)
+    {
+        if (position == 0) return false;
+        var vs = input[position];
+        return IsRegisteredVariationPosition(input, position)
+            || ((vs == 0xFE0F || vs == 0xFE0E) && AiWatermarkDetectability.IsEmoji(input[position - 1]));
     }
 
     private static bool IsVariationSelector(int cp) =>
@@ -634,12 +664,29 @@ public static partial class Security
     // Cyrillic word in prose is not read as its Latin look-alike.
     private static Finding? HomoglyphConfusableFindingWithContext(List<int> input, HomoglyphContext ctx)
     {
+        // Each rung localises what the Lean detectWithContext localises: a
+        // target match, a cross-script mix and a restriction level judge the
+        // string as a unit and carry no positions; math-alpha and width-class
+        // the first such codepoint; decomposition-swap the first differing
+        // position; the ascii-confusable rung the non-ASCII positions.
         var subThreat = "";
-        var positions = FullSpanPositions(input);
+        var positions = new List<int>();
         if (HomoglyphTargetMatch(input) is not null) subThreat = "TargetMatch";
-        else if (input.Any(IsMathAlphanumeric)) subThreat = "MathAlpha";
-        else if (input.Any(IsFullwidthHalfwidth)) subThreat = "WidthClass";
-        else if (HasDecompositionSwap(input)) subThreat = "DecompositionSwap";
+        else if (input.Any(IsMathAlphanumeric))
+        {
+            subThreat = "MathAlpha";
+            positions = new List<int> { input.FindIndex(IsMathAlphanumeric) };
+        }
+        else if (input.Any(IsFullwidthHalfwidth))
+        {
+            subThreat = "WidthClass";
+            positions = new List<int> { input.FindIndex(IsFullwidthHalfwidth) };
+        }
+        else if (HasDecompositionSwap(input))
+        {
+            subThreat = "DecompositionSwap";
+            positions = new List<int> { FirstDecompositionDiffPos(input) };
+        }
         // The script rungs of the Lean ladder, in its order: a cross-script mix
         // that is not Highly Restrictive, then a string failing every restriction
         // level. Both need real script resolution.
@@ -722,7 +769,35 @@ public static partial class Security
         var subThreat = MixedScriptVerdict(input, identifierField);
         return subThreat is null
             ? null
-            : MakeFinding(Family.MixedScriptAdmissibility, subThreat, FullSpanPositions(input));
+            : MakeFinding(Family.MixedScriptAdmissibility, subThreat, MixedScriptPositions(subThreat, input));
+    }
+
+    // What the Lean MixedScriptAdmissibility.detectWithContext localises for a
+    // mixed-script sub-threat: every codepoint outside Identifier_Status=Allowed
+    // for RestrictedStatusCp; every non-Common, non-Inherited codepoint whose
+    // resolved scripts name Cyrillic (LatinCyrillic) or Greek (LatinGreek);
+    // nothing for the whole-string verdicts ScriptMixOther, CjkMix and
+    // UnrestrictedLevel.
+    private static List<int> MixedScriptPositions(string subThreat, List<int> input)
+    {
+        var positions = new List<int>();
+        if (subThreat == "RestrictedStatusCp")
+        {
+            for (var i = 0; i < input.Count; i++)
+            {
+                if (!IsIdAllowed(input[i])) positions.Add(i);
+            }
+            return positions;
+        }
+        var target = subThreat == "LatinCyrillic" ? "Cyrl" : subThreat == "LatinGreek" ? "Grek" : "";
+        if (target == "") return positions;
+        for (var i = 0; i < input.Count; i++)
+        {
+            var cp = input[i];
+            if (IsIgnoredForIntersection(cp)) continue;
+            if (ResolveScripts(cp).Contains(target)) positions.Add(i);
+        }
+        return positions;
     }
 
     // Right-to-left injection detection for LTR-declared fields — a direct
@@ -892,7 +967,7 @@ public static partial class Security
     {
         for (var index = 0; index < input.Count; index++)
         {
-            if (IsVariationSelector(input[index]) && !IsRegisteredVariationPosition(input, index)) return index;
+            if (IsVariationSelector(input[index]) && !IsRegisteredVariationUse(input, index)) return index;
         }
         return -1;
     }
@@ -2402,6 +2477,20 @@ public static partial class Security
         return false;
     }
 
+    // The first position at which the input and its NFC form differ, or the
+    // shorter length when one is a prefix of the other. Mirrors the Lean
+    // firstDecompositionDiffPos.
+    private static int FirstDecompositionDiffPos(List<int> input)
+    {
+        var nfc = ToNfc(input);
+        var shorter = Math.Min(input.Count, nfc.Count);
+        for (var index = 0; index < shorter; index++)
+        {
+            if (input[index] != nfc[index]) return index;
+        }
+        return shorter;
+    }
+
     private static bool ComposeHangulPair(int first, int second)
     {
         const int sBase = 0xAC00, lBase = 0x1100, vBase = 0x1161, tBase = 0x11A7;
@@ -2576,16 +2665,23 @@ public static partial class Security
     // ZWJ inside a registered emoji sequence and a ZWNJ in an RFC 5892
     // CONTEXTJ-valid position both carry meaning a reader depends on, so they are
     // recorded as present but do not make the family fire.
-    internal static bool HasSuspiciousZeroWidth(IReadOnlyList<int> input, List<int> positions)
+    internal static bool HasSuspiciousZeroWidth(IReadOnlyList<int> input, List<int> positions) =>
+        SuspiciousZeroWidthPositions(input, positions).Count > 0;
+
+    // The zero-width positions no context sanctions (Lean suspiciousPositions):
+    // a ZWJ inside a registered emoji sequence and a ZWNJ in an RFC 5892
+    // CONTEXTJ-valid position are excluded.
+    internal static List<int> SuspiciousZeroWidthPositions(IReadOnlyList<int> input, List<int> positions)
     {
+        var suspicious = new List<int>();
         foreach (var i in positions)
         {
             var cp = input[i];
             var sanctioned = (cp == 0x200D && IsLegitimateZwjContext(input, i))
                 || (cp == 0x200C && IsLegitimateZwnjContext(input, i));
-            if (!sanctioned) return true;
+            if (!sanctioned) suspicious.Add(i);
         }
-        return false;
+        return suspicious;
     }
 
     private static List<(int Lo, int Hi, string[] Value)> ScriptExtensionsTable()

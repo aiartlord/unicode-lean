@@ -327,7 +327,9 @@ final class AiWatermarkDetectability
     }
 
     /** True iff $cp has the `Emoji = Yes` property per emoji-data.txt. */
-    private static function isEmoji(int $cp): bool
+    /** True iff $cp carries the Emoji property (emoji-data.txt). Shared with the
+     *  variation-selector detector's registered-presentation rule. */
+    public static function isEmoji(int $cp): bool
     {
         foreach (self::emojiRanges() as [$lo, $hi]) {
             if ($lo <= $cp && $cp <= $hi) {

@@ -29,6 +29,7 @@
 #include <vector>
 
 #include "unicode_cpp/security/calculus.hpp"
+#include "unicode_cpp/security/covert/emoji_property_ranges.hpp"
 #include "unicode_cpp/security/covert/variation_selector_pairs.hpp"
 
 namespace unicode_cpp::security::variation_selector_payload {
@@ -67,8 +68,15 @@ struct RepeatedBase {
   std::uint32_t base_cp;
   std::size_t vs_count;
 };
+// A registered selector precedes the suspicious run: payload hiding behind a
+// legitimate glyph (Lean `embeddedAfterReg`).
+struct EmbeddedAfterRegistered {
+  std::size_t registered_end;
+  std::size_t payload_start;
+};
 
-using SubThreat = std::variant<DirectPayload, IllegalTarget, RepeatedBase>;
+using SubThreat =
+    std::variant<DirectPayload, IllegalTarget, RepeatedBase, EmbeddedAfterRegistered>;
 
 inline std::string sub_threat_tag(const SubThreat &sub) {
   if (std::holds_alternative<DirectPayload>(sub))
@@ -77,15 +85,30 @@ inline std::string sub_threat_tag(const SubThreat &sub) {
     return "IllegalTarget";
   if (std::holds_alternative<RepeatedBase>(sub))
     return "RepeatedBase";
+  if (std::holds_alternative<EmbeddedAfterRegistered>(sub))
+    return "EmbeddedAfterRegistered";
   return "<unreachable>";
 }
 
 struct Verdict {
   ClassificationKind kind;
   std::optional<SubThreat> sub;
+  // Every variation-selector position: the census.
   std::vector<std::size_t> vs_positions;
+  // The selectors no registered pair or presentation rule sanctions: what the
+  // classification localises (Lean `suspiciousPositions`).
+  std::vector<std::size_t> suspicious_positions;
   std::vector<std::uint8_t> recovered_bytes;
 };
+
+// True iff `cp` carries the Emoji property (emoji-data.txt).
+inline bool is_emoji(std::uint32_t cp) {
+  for (const auto &range : generated::emoji_property_ranges) {
+    if (range.first <= cp && cp <= range.second)
+      return true;
+  }
+  return false;
+}
 
 namespace detail {
 
@@ -140,46 +163,66 @@ inline bool is_registered_variation_pair(std::uint32_t base, std::uint32_t vs) {
 
 } // namespace detail
 
+// The Lean `classifyVS` registered reading of the selector at `p`: a
+// standardized or emoji variation sequence, or VS15 / VS16 on any base with
+// the Emoji property. A selector with no predecessor is never registered.
+inline bool is_registered_use(std::span<const std::uint32_t> input, std::size_t p) {
+  if (p == 0)
+    return false;
+  const std::uint32_t base = input[p - 1];
+  const std::uint32_t vs = input[p];
+  return detail::is_registered_variation_pair(base, vs) ||
+         ((vs == 0xFE0Fu || vs == 0xFE0Eu) && is_emoji(base));
+}
+
 inline Verdict detect(std::span<const std::uint32_t> input) {
   Verdict v{};
+  v.kind = ClassificationKind::Clear;
   for (std::size_t i = 0; i < input.size(); ++i) {
     if (is_variation_selector(input[i])) {
       v.vs_positions.push_back(i);
     }
   }
-  if (v.vs_positions.empty()) {
-    v.kind = ClassificationKind::Clear;
+
+  // Each selector is judged against its predecessor (Lean classifyVS):
+  // registered uses are sanctioned wherever they stand and however many; the
+  // hazard is the suspicious run alone.
+  std::vector<std::size_t> registered;
+  std::vector<std::size_t> suspicious;
+  for (std::size_t p : v.vs_positions) {
+    if (is_registered_use(input, p))
+      registered.push_back(p);
+    else
+      suspicious.push_back(p);
+  }
+  if (suspicious.empty()) {
     return v;
   }
 
-  v.recovered_bytes = detail::decode_vs_run(input, v.vs_positions);
-
-  // Single-VS exemption: if exactly one VS follows a base AND the
-  // (base, VS) pair is registered in StandardizedVariants or
-  // emoji-variation-sequences, return Clear (legitimate variant).
-  if (v.vs_positions.size() == 1) {
-    std::size_t p = v.vs_positions[0];
-    if (p > 0 && detail::is_registered_variation_pair(input[p - 1], input[p])) {
-      v.kind = ClassificationKind::Clear;
-      return v;
-    }
-  }
-
+  v.recovered_bytes = detail::decode_vs_run(input, suspicious);
   v.kind = ClassificationKind::Hazard;
 
-  // Priority: repeated-VS run > direct payload > illegal target.
-  if (v.vs_positions.size() >= 4 &&
-      detail::all_same_vs(input, v.vs_positions)) {
-    std::size_t p0 = v.vs_positions[0];
-    std::uint32_t base = (p0 == 0) ? 0u : input[p0 - 1];
-    v.sub = RepeatedBase{base, v.vs_positions.size()};
+  const std::size_t payload_start = suspicious[0];
+  // Priority (Lean pickSubThreat): a registered selector before the
+  // suspicious run, then a long single-selector run, then a decodable payload,
+  // then the bare illegal target.
+  std::optional<std::size_t> registered_end;
+  for (std::size_t p : registered) {
+    if (p < payload_start)
+      registered_end = p;
+  }
+  if (registered_end) {
+    v.sub = EmbeddedAfterRegistered{*registered_end, payload_start};
+  } else if (suspicious.size() >= 4 && detail::all_same_vs(input, suspicious)) {
+    std::uint32_t base = (payload_start == 0) ? 0u : input[payload_start - 1];
+    v.sub = RepeatedBase{base, suspicious.size()};
   } else if (!v.recovered_bytes.empty()) {
     v.sub = DirectPayload{detail::lossy_ascii(v.recovered_bytes)};
   } else {
-    std::size_t p = v.vs_positions[0];
-    std::uint32_t target = (p == 0) ? 0u : input[p - 1];
-    v.sub = IllegalTarget{target, input[p]};
+    std::uint32_t target = (payload_start == 0) ? 0u : input[payload_start - 1];
+    v.sub = IllegalTarget{target, input[payload_start]};
   }
+  v.suspicious_positions = std::move(suspicious);
   return v;
 }
 
