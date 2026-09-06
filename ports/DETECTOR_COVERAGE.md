@@ -348,7 +348,10 @@ one, field by field. Its mismatch report is the list of places where the
 recorded verdicts, and therefore every port, differ from the spec; those are
 decided on the messageboard tracker (spec change with proofs re-run, or
 reference change with fixtures regenerated and every port following), never by
-editing the recorded verdict to match.
+editing the recorded verdict to match. It is built as the native
+`corpus_differential` executable (`lakefile.lean`) and run by
+`scripts/check-lean-replay.sh` in the CI build job and on release tags, so a
+fixture the Lean does not reproduce fails the push that recorded it.
 
 Its first run found eight divergence classes, each resolved one way or the
 other. The reference and every port now follow the Lean on positions: the

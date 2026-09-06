@@ -27,9 +27,10 @@ find Unicode.lean Unicode/ -name '*.lean' -type f \
   | LC_ALL=C sort -u > "$all_modules"
 
 # BFS over imports starting from the audited roots. This set must stay in sync
-# with the `lean_lib` roots declared in `lakefile.lean`: a module reachable from
-# any declared library target is covered by that target's build, so seeding only
-# a subset produces false-positive orphans for the optional roots' subtrees.
+# with the `lean_lib` roots and the `lean_exe` root declared in `lakefile.lean`:
+# a module reachable from any declared target is covered by that target's
+# build, so seeding only a subset produces false-positive orphans for the
+# optional roots' subtrees.
 : > "$seen"
 {
   echo "Unicode"
@@ -40,6 +41,7 @@ find Unicode.lean Unicode/ -name '*.lean' -type f \
   echo "Unicode.Uca"
   echo "Unicode.UnihanRoot"
   echo "Unicode.SegmentationSpecs"
+  echo "Unicode.Conformance.Security.CorpusDifferential"
 } > "$queue"
 while [ -s "$queue" ]; do
   current="$(head -n 1 "$queue")"

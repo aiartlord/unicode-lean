@@ -78,6 +78,9 @@ jobs:
           lake build Unicode.Bidi.Algorithm
           lake build Unicode.Confusables
 
+      - name: recorded security verdicts are the Lean verdicts
+        run: bash scripts/check-lean-replay.sh
+
       - name: full official conformance evidence
         run: lake build UnicodeFullConformance
 

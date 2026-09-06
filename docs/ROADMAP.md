@@ -101,9 +101,10 @@ exhaustively — a port that classifies differently is a routing-dependent bypas
   shared contract check unless every reason code in
   `fixtures/security/reason_codes.json` is fired by the fixtures several times,
   under several profiles, with spec-shaped positions, and
-  `Unicode/Conformance/Security/CorpusDifferential.lean` replays the fixtures
-  through the Lean `scan` so the recorded verdicts are held to the spec and not
-  only to the reference that recorded them. Details and the divergences found
+  `Unicode/Conformance/Security/CorpusDifferential.lean` (the native
+  `corpus_differential` executable, run by `scripts/check-lean-replay.sh` in
+  CI) replays the fixtures through the Lean `scan` so the recorded verdicts
+  are held to the spec and not only to the reference that recorded them. Details and the divergences found
   are in [`../ports/DETECTOR_COVERAGE.md`](../ports/DETECTOR_COVERAGE.md).
 
 ## 8. Runtime-data product layout

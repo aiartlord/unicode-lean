@@ -38,3 +38,12 @@ lean_lib UnicodeUnihan where
 lean_lib UnicodeSegmentationSpecs where
   srcDir := "."
   roots := #[`Unicode.SegmentationSpecs]
+
+/-- The security fixture replay: every recorded verdict in the shared fixtures
+    re-derived through the Lean `scan` and compared field by field, so the
+    fixtures (and every port held to them) are held to the spec. A native
+    executable because the interpreted `lean --run` form costs ~0.3 s per case;
+    `scripts/check-lean-replay.sh` runs it in CI. -/
+lean_exe corpus_differential where
+  srcDir := "."
+  root := `Unicode.Conformance.Security.CorpusDifferential

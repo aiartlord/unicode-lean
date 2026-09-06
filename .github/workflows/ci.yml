@@ -232,6 +232,12 @@ jobs:
             Unicode.Bidi.Algorithm \
             Unicode.Confusables
 
+      - name: recorded security verdicts are the Lean verdicts
+        # Every case of the shared contract and the 5000-case differential
+        # corpus re-derived through the Lean scan; the ports are held to these
+        # fixtures, so this holds the ports to the spec.
+        run: bash scripts/check-lean-replay.sh
+
       # The artifact-level axiom footprint (full closure) and the independent
       # lean4checker re-check are slow and moved off the per-push path. They
       # run in `.github/workflows/assurance.yml` (nightly + manual dispatch)

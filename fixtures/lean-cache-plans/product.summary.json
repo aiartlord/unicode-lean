@@ -1,5 +1,5 @@
 {
-  "module_steps": 263,
+  "module_steps": 265,
   "preset": "product",
   "roots": [
     {
@@ -33,7 +33,7 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 5429094,
+      "bytes": 5456379,
       "decide_kernel": 523,
       "modules": 121,
       "row_refs": 2739,
@@ -44,7 +44,7 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 277247,
+      "bytes": 280106,
       "decide_kernel": 69,
       "modules": 15,
       "row_refs": 135,
@@ -55,7 +55,7 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 562713,
+      "bytes": 573331,
       "decide_kernel": 132,
       "modules": 43,
       "row_refs": 24,
@@ -77,9 +77,9 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 4162992,
-      "decide_kernel": 287,
-      "modules": 83,
+      "bytes": 4207752,
+      "decide_kernel": 276,
+      "modules": 85,
       "row_refs": 2,
       "stage": "stage-5-product-domain"
     }

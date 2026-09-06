@@ -1,5 +1,5 @@
 {
-  "module_steps": 477,
+  "module_steps": 480,
   "preset": "evidence",
   "roots": [
     {
@@ -17,7 +17,7 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 4567821,
+      "bytes": 4594030,
       "decide_kernel": 520,
       "modules": 117,
       "row_refs": 2174,
@@ -28,10 +28,10 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 376264,
-      "decide_kernel": 70,
-      "modules": 18,
-      "row_refs": 182,
+      "bytes": 392014,
+      "decide_kernel": 166,
+      "modules": 19,
+      "row_refs": 382,
       "stage": "stage-2-normalization-runtime"
     },
     {
@@ -39,7 +39,7 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 616398,
+      "bytes": 630033,
       "decide_kernel": 267,
       "modules": 65,
       "row_refs": 134,
@@ -61,9 +61,9 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 4007406,
-      "decide_kernel": 267,
-      "modules": 77,
+      "bytes": 4042148,
+      "decide_kernel": 268,
+      "modules": 78,
       "row_refs": 2,
       "stage": "stage-5-product-domain"
     },
@@ -72,10 +72,10 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 657608,
-      "decide_kernel": 342,
-      "modules": 154,
-      "row_refs": 271,
+      "bytes": 677060,
+      "decide_kernel": 434,
+      "modules": 155,
+      "row_refs": 483,
       "stage": "stage-6-assurance-proof-chunk"
     },
     {
@@ -94,7 +94,7 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 388915,
+      "bytes": 389819,
       "decide_kernel": 73,
       "modules": 43,
       "row_refs": 117,
