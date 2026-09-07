@@ -77,8 +77,8 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 4207752,
-      "decide_kernel": 276,
+      "bytes": 4213500,
+      "decide_kernel": 280,
       "modules": 85,
       "row_refs": 2,
       "stage": "stage-5-product-domain"
