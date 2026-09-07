@@ -619,15 +619,19 @@ def section_proof() -> dict[str, object]:
     # the recording of the last, and the largest process-tree peak.
     elapsed = [float(entry.get("elapsed_sec", 0.0)) for entry in modules.values()]
     peaks = [int(entry.get("peak_tree_rss_kb", 0)) for entry in modules.values()]
-    starts = [entry.get("started_utc") for entry in modules.values() if entry.get("started_utc")]
-    span_seconds = None
-    if starts and recorded_at:
-        first = min(starts)
-        span_seconds = round(
-            datetime.datetime.fromisoformat(recorded_at.replace("Z", "+00:00")).timestamp()
-            - datetime.datetime.fromisoformat(first.replace("Z", "+00:00")).timestamp(),
-            1,
-        )
+    # The span runs from the first module's start to the last module's end,
+    # each end being its start plus its elapsed time; the status file's own
+    # timestamp is the plan's, not the run's.
+    starts: list[float] = []
+    ends: list[float] = []
+    for entry in modules.values():
+        started = entry.get("started_utc")
+        if not started:
+            continue
+        begin = datetime.datetime.fromisoformat(started.replace("Z", "+00:00")).timestamp()
+        starts.append(begin)
+        ends.append(begin + float(entry.get("elapsed_sec", 0.0)))
+    span_seconds = round(max(ends) - min(starts), 1) if starts else None
     resources = {
         "module_wall_seconds_sum": round(sum(elapsed), 1),
         "run_span_seconds": span_seconds,
