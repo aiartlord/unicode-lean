@@ -165,11 +165,21 @@ final class HomoglyphConfusable
     }
 
     /** @param list<int> $input @param list<int> $iterated */
+    /**
+     * The Lean findTargetMatch: the first curated target whose letter skeleton
+     * equals the input's, unless the input is that target in another letter
+     * case. A case variant carries no look-alike substitution and is the same
+     * name, so it is not a match; the guard is the simple lowercase mapping per
+     * codepoint, not case folding, so "expreß" (which folds to "express") still
+     * matches.
+     */
     private static function findTargetMatch(array $input, array $iterated): ?string
     {
         $letters = self::letterSkeletonFromIterated($iterated);
+        $inputLower = array_map(static fn (int $cp): int => Ucd::simpleLowercase($cp), $input);
         foreach (self::targets() as $target) {
-            if ($target['cps'] !== $input && $target['letters'] === $letters) {
+            $targetLower = array_map(static fn (int $cp): int => Ucd::simpleLowercase($cp), $target['cps']);
+            if ($targetLower !== $inputLower && $target['letters'] === $letters) {
                 return $target['name'];
             }
         }

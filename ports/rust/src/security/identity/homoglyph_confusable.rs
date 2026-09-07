@@ -198,8 +198,20 @@ pub fn is_confusable_source(cp: u32) -> bool {
     confusables_map().contains_key(&cp)
 }
 
-fn known_attack_targets() -> &'static Vec<String> {
-    static TARGETS: OnceLock<Vec<String>> = OnceLock::new();
+/// One curated attack target with the two forms `find_target_match` compares
+/// against, computed once: its letter skeleton (the Lean's pinned
+/// `canonicalTargetSkeletons`) and its simple lowercase (the Lean's pinned
+/// `canonicalTargetLowercase`). Recomputing either per detection re-descends
+/// the confusable table once per target on every identifier, which was the
+/// dominant cost of the whole detector on real source.
+struct CuratedTarget {
+    name: String,
+    letters: Vec<u32>,
+    lower: Vec<u32>,
+}
+
+fn known_attack_targets() -> &'static Vec<CuratedTarget> {
+    static TARGETS: OnceLock<Vec<CuratedTarget>> = OnceLock::new();
     TARGETS.get_or_init(|| {
         let mut out = Vec::new();
         for raw_line in KNOWN_ATTACK_TARGETS_RAW.lines() {
@@ -207,7 +219,12 @@ fn known_attack_targets() -> &'static Vec<String> {
             if trimmed.is_empty() || trimmed.starts_with('#') {
                 continue;
             }
-            out.push(trimmed.to_string());
+            let cps = ascii_codepoints(trimmed);
+            out.push(CuratedTarget {
+                name: trimmed.to_string(),
+                letters: letter_skeleton(&cps),
+                lower: cps.iter().map(|&cp| ucd::simple_lowercase(cp)).collect(),
+            });
         }
         out
     })
@@ -422,19 +439,21 @@ fn find_target_match(input: &[u32], iterated: &[u32]) -> Option<String> {
     // early break on first match.  Equality via ct_u32_slice_eq.
     // The first-match index is captured but the loop continues to
     // completion, so the per-target work is independent of input.
+    //
+    // A case variant of the target is the same name, not a look-alike: an
+    // input equal to the target after the simple lowercase mapping of each
+    // codepoint (`EXPRESS` for `express`, `Next` for `next`) carries no
+    // substitution and is not a match. Letter case only, not case folding, so
+    // `expreß` (which folds to `express`) still matches. Mirrors the Lean
+    // `findTargetMatch` guard against `canonicalTargetLowercase`.
     let input_letters = letter_skeleton_from_iterated(iterated);
+    let input_lower: Vec<u32> = input.iter().map(|&cp| ucd::simple_lowercase(cp)).collect();
     let targets = known_attack_targets();
     let mut first_match: Option<usize> = None;
     for (idx, target) in targets.iter().enumerate() {
-        let t_cps = ascii_codepoints(target);
-        if t_cps == input {
-            // Self-match guard — input is literally the target.
-            // Permitted branch because legitimate registration of
-            // a curated name is a recognised public case.
-            continue;
-        }
-        let t_letters = letter_skeleton(&t_cps);
-        let is_match = ct_u32_slice_eq(&t_letters, &input_letters) == 1;
+        let same_name = ct_u32_slice_eq(&target.lower, &input_lower) == 1;
+        let letters_match = ct_u32_slice_eq(&target.letters, &input_letters) == 1;
+        let is_match = letters_match && !same_name;
         // Capture FIRST match index but DO NOT break — the rest
         // of the loop must run regardless of input to keep total
         // work independent of which target (if any) fires.
@@ -442,7 +461,7 @@ fn find_target_match(input: &[u32], iterated: &[u32]) -> Option<String> {
             first_match = Some(idx);
         }
     }
-    first_match.map(|i| targets[i].clone())
+    first_match.map(|i| targets[i].name.clone())
 }
 
 /// First codepoint position at which `input` and its NFC form
@@ -465,7 +484,7 @@ fn first_decomposition_diff_pos(input: &[u32], nfc: &[u32]) -> usize {
 /// deliberately absent: full folding rewrites `ß` to `ss`, under which the
 /// ordinary German `straße` would read as confusable with ASCII `strasse`, and
 /// this rung asks whether the codepoints themselves are look-alikes of ASCII,
-/// not whether the name collides on a case-insensitive registry. Mirrors the
+/// not whether the name is a look-alike of a curated target. Mirrors the
 /// Lean `asciiSkeleton`.
 pub fn ascii_skeleton(input: &[u32]) -> Vec<u32> {
     let step1 = ucd::to_nfd(input);

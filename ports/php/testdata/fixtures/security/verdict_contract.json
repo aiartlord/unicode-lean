@@ -4633,6 +4633,125 @@
         ],
         "normalized": null
       }
+    },
+    {
+      "name": "target-case-variant-express-clear",
+      "profile": "username",
+      "mode": "observe",
+      "input": [
+        69,
+        88,
+        80,
+        82,
+        69,
+        83,
+        83
+      ],
+      "verdict": {
+        "action": "allow",
+        "profile": "username",
+        "mode": "observe",
+        "input": [
+          69,
+          88,
+          80,
+          82,
+          69,
+          83,
+          83
+        ],
+        "findings": [],
+        "normalized": null
+      }
+    },
+    {
+      "name": "target-case-variant-next-clear",
+      "profile": "username",
+      "mode": "observe",
+      "input": [
+        78,
+        101,
+        120,
+        116
+      ],
+      "verdict": {
+        "action": "allow",
+        "profile": "username",
+        "mode": "observe",
+        "input": [
+          78,
+          101,
+          120,
+          116
+        ],
+        "findings": [],
+        "normalized": null
+      }
+    },
+    {
+      "name": "target-homoglyph-express-hazard",
+      "profile": "username",
+      "mode": "observe",
+      "input": [
+        101,
+        120,
+        112,
+        114,
+        101,
+        223
+      ],
+      "verdict": {
+        "action": "observe",
+        "profile": "username",
+        "mode": "observe",
+        "input": [
+          101,
+          120,
+          112,
+          114,
+          101,
+          223
+        ],
+        "findings": [
+          {
+            "code": "unicode.security.C.surrogate-reassembly.Truncated",
+            "family": "surrogate-reassembly",
+            "severity": 2,
+            "positions": [
+              6
+            ],
+            "sub_threat": "Truncated",
+            "detail": "surrogate-reassembly"
+          },
+          {
+            "code": "unicode.security.I.homoglyph-confusable.TargetMatch",
+            "family": "homoglyph-confusable",
+            "severity": 2,
+            "positions": [],
+            "sub_threat": "TargetMatch",
+            "detail": "homoglyph-confusable"
+          },
+          {
+            "code": "unicode.security.F.case-expansion-mismatch.UpperExpansion",
+            "family": "case-expansion-mismatch",
+            "severity": 2,
+            "positions": [
+              5
+            ],
+            "sub_threat": "UpperExpansion",
+            "detail": "case-expansion-mismatch"
+          },
+          {
+            "code": "unicode.security.D.source-display-divergence.IdentifierHomoglyph",
+            "family": "source-display-divergence",
+            "severity": 2,
+            "positions": [],
+            "sub_threat": "IdentifierHomoglyph",
+            "detail": "source-display-divergence"
+          }
+        ],
+        "normalized": null
+      }
     }
   ]
 }

@@ -250,6 +250,8 @@ WORKING-STORAGE SECTION.
 01 LET-T-COUNT PIC 9(5) COMP-5 VALUE 0.
 01 LET-T-TABLE.
    05 LET-T-CP OCCURS 4096 TIMES PIC 9(9) COMP-5.
+01 LOW-IN-TABLE.
+   05 LOW-IN-CP OCCURS 4096 TIMES PIC 9(9) COMP-5.
 01 SAVE-CP-COUNT PIC 9(5) COMP-5 VALUE 0.
 01 SAVE-CP-TABLE.
    05 SAVE-CP OCCURS 4096 TIMES PIC 9(9) COMP-5.
@@ -3688,12 +3690,14 @@ REDUCE-SKEL-TO-LETTERS.
     END-PERFORM.
 
 FIND-TARGET-MATCH.
-*> TargetMatch per the reference: the input's letter skeleton equals the letter
-*> skeleton of a curated attack target, and the input is not literally that
-*> target. Every target is walked whether or not one has already matched, so
-*> the work the detector does carries no information about which target fired.
-*> The old reading tested five hardcoded codepoints, which reported a plain
-*> Greek beta as an impersonation of a brand.
+*> TargetMatch per the Lean findTargetMatch: the input's letter skeleton equals
+*> the letter skeleton of a curated attack target, and the input is not that
+*> target in another letter case. A case variant carries no look-alike
+*> substitution and is the same name, so it is not a match; the guard is the
+*> simple lowercase mapping per codepoint (LOOKUP-SIMPLE-LOWER), not case
+*> folding, so a sharp s that folds to "ss" still matches. Every target is
+*> walked whether or not one has already matched, so the work the detector does
+*> carries no information about which target fired.
     MOVE 0 TO TARGET-MATCH-FLAG
     MOVE CP-COUNT TO SAVE-CP-COUNT
     PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > CP-COUNT
@@ -3708,13 +3712,20 @@ FIND-TARGET-MATCH.
     PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > SKEL-COUNT
         MOVE SKEL-CP(KDX) TO LET-IN-CP(KDX)
     END-PERFORM
+    PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > SAVE-CP-COUNT
+        MOVE SAVE-CP(KDX) TO LOOKUP-CP
+        PERFORM LOOKUP-SIMPLE-LOWER
+        MOVE SC-SIMPLE-LO TO LOW-IN-CP(KDX)
+    END-PERFORM
     COPY "src/generated/attack_targets.cpy".
     PERFORM VARYING TARGET-IDX FROM 1 BY 1 UNTIL TARGET-IDX > TARGET-COUNT
         MOVE 0 TO SELF-MATCH-FLAG
         IF TARGET-LEN(TARGET-IDX) = SAVE-CP-COUNT
             MOVE 1 TO SELF-MATCH-FLAG
             PERFORM VARYING KDX FROM 1 BY 1 UNTIL KDX > SAVE-CP-COUNT
-                IF TARGET-CP(TARGET-IDX, KDX) NOT = SAVE-CP(KDX)
+                MOVE TARGET-CP(TARGET-IDX, KDX) TO LOOKUP-CP
+                PERFORM LOOKUP-SIMPLE-LOWER
+                IF SC-SIMPLE-LO NOT = LOW-IN-CP(KDX)
                     MOVE 0 TO SELF-MATCH-FLAG
                 END-IF
             END-PERFORM

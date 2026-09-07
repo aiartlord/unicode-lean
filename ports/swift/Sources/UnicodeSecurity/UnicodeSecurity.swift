@@ -1148,12 +1148,19 @@ private func longestRtlRun(_ input: [Int]) -> (Int, Int) {
     return (longest, longestStart)
 }
 
+/// The Lean findTargetMatch: the first curated target whose letter skeleton
+/// equals the input's, unless the input is that target in another letter case.
+/// A case variant carries no look-alike substitution and is the same name, so
+/// it is not a match; the guard is the simple lowercase mapping per codepoint,
+/// not case folding, so "expreß" (which folds to "express") still matches.
 private func homoglyphTargetMatch(_ input: [Int]) -> String? {
     let inputLetters = letterSkeleton(input)
+    let inputLower = input.map { simpleLowercase($0) }
     for target in knownAttackTargets() {
         let targetCps = codepointsFromString(target)
+        let targetLower = targetCps.map { simpleLowercase($0) }
         let targetLetters = letterSkeleton(targetCps)
-        if !sameNumbers(targetCps, input) && sameNumbers(targetLetters, inputLetters) {
+        if !sameNumbers(targetLower, inputLower) && sameNumbers(targetLetters, inputLetters) {
             return target
         }
     }

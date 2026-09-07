@@ -203,11 +203,18 @@ module UnicodeRuby
 
         # First target whose letter skeleton matches the input's, walking the
         # entire curated list (no early break) and capturing the first match.
+        # The Lean findTargetMatch: the first curated target whose letter skeleton
+        # equals the input's, unless the input is that target in another letter
+        # case. A case variant carries no look-alike substitution and is the same
+        # name, so it is not a match; the guard is the simple lowercase mapping per
+        # codepoint, not case folding, so "expreß" (which folds to "express")
+        # still matches.
         def find_target_match(input, iterated)
           input_letters = letter_skeleton_from_iterated(iterated)
+          input_lower = input.map { |cp| Ucd.simple_lowercase(cp) }
           first_match = nil
           known_attack_targets.each_with_index do |(_name, t_cps, t_letters), idx|
-            next if t_cps == input
+            next if t_cps.map { |cp| Ucd.simple_lowercase(cp) } == input_lower
 
             is_match = ct_slice_eq(t_letters, input_letters)
             first_match = idx if is_match && first_match.nil?

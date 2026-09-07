@@ -34,6 +34,9 @@
 
 # Legitimate "Nethereum" (pure Latin) — clear.
 004E 0065 0074 0068 0065 0072 0065 0075 006D; Clear; ; restriction=ASCIIOnly; target="Nethereum"; # Legitimate Nethereum
+# A case variant of a curated target is the same name, not a look-alike.
+0045 0058 0050 0052 0045 0053 0053; Clear; ; restriction=ASCIIOnly; target="express"; # EXPRESS: express in capitals
+004E 0065 0078 0074; Clear; ; restriction=ASCIIOnly; target="next"; # Next: next capitalised
 
 # Legitimate "apple" — clear.
 0061 0070 0070 006C 0065; Clear; ; restriction=ASCIIOnly; target="apple"; # Legitimate apple

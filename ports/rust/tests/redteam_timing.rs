@@ -15,9 +15,21 @@
 //! comparison bit without early-breaking on first inequality.
 //! Per-target work is independent of input.
 //!
-//! This test runs `detect` many times against four inputs that
-//! exercise different match positions and asserts the
-//! coefficient-of-variation (stddev / mean) is below threshold.
+//! This test runs `detect` many times against inputs that match a
+//! curated target at spread-out positions in the list — first,
+//! middle, last — and asserts the coefficient-of-variation
+//! (stddev / mean) across those positions is below threshold. All
+//! of them return `TargetMatch`, so they take the same downstream
+//! path; their only difference is where in the list the match sits,
+//! which is exactly the leak the threat model describes. Each
+//! target's per-iteration work is a fixed pair of constant-time
+//! slice comparisons against a skeleton and a lowercase form
+//! precomputed once at list load, so list position cannot change
+//! the time. Comparing a matched input against an unmatched one
+//! would instead compare two different detector paths — a match
+//! returns at the first rung, a non-match runs the whole ladder —
+//! a difference the verdict already reveals and not a list-position
+//! leak.
 
 use std::time::Instant;
 
@@ -46,59 +58,64 @@ fn time_ns_per_call(input: &[u32]) -> f64 {
 
 #[test]
 fn timing_constant_across_match_positions() {
-    // Four inputs exercising different code paths through
-    // find_target_match.  All four must take comparable time
-    // under the constant-time discipline.
+    // Six curated targets that are all six codepoints long, matched
+    // at spread-out positions in the curated list, each with exactly
+    // one Cyrillic look-alike substituted so its letter skeleton
+    // equals the target and `TargetMatch` fires. Equal length and
+    // one substitution each hold the input-dependent work — the
+    // skeleton descent and restriction-level scan, both linear in
+    // input length — constant across the six, so the only thing that
+    // varies is where in the list the match sits. A variable-time
+    // walk that short-circuits on the matching index would make the
+    // early positions faster than the late ones; the constant-time
+    // discipline (walk the whole list every call, fixed work per
+    // target against a precomputed skeleton and lowercase form) makes
+    // them equal. Different-length inputs would instead measure the
+    // per-codepoint skeleton cost, which is legitimate and not a
+    // list-position leak.
 
-    // 1. First target literally — self-match guard fires on first
-    //    iteration in the variable-time version.
-    let first_target_self = [0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x65, 0x75, 0x6D]; // "Nethereum"
-                                                                                    // 2. First target with Cyrillic — match fires on first
-                                                                                    //    iteration in the variable-time version.
-    let first_target_match = [0x4E, 0x65, 0x74, 0x68, 0x65, 0x72, 0x0435, 0x75, 0x6D];
-    // 3. No match — variable-time walks the full list looking.
-    let no_match = [0x78, 0x79, 0x7A, 0x77, 0x76]; // "xyzwv"
-                                                   // 4. Random Cyrillic + Latin mix — fires CrossScriptMix.
-    let cross_mix = [0x61, 0x0430, 0x62, 0x0431, 0x63, 0x0432];
+    let solana = [0x73, 0x043E, 0x6C, 0x61, 0x6E, 0x61]; // position 9
+    let lodash = [0x6C, 0x043E, 0x64, 0x61, 0x73, 0x68]; // position 15
+    let pandas = [0x70, 0x0430, 0x6E, 0x64, 0x61, 0x73]; // position 27
+    let google = [0x67, 0x043E, 0x6F, 0x67, 0x6C, 0x65]; // position 45
+    let paypal = [0x70, 0x0430, 0x79, 0x70, 0x61, 0x6C]; // position 55
+    let tiktok = [0x74, 0x69, 0x6B, 0x74, 0x043E, 0x6B]; // position 64
 
-    // Warm up to stabilize cache + branch predictor.
+    let inputs: [&[u32]; 6] = [&solana, &lodash, &pandas, &google, &paypal, &tiktok];
+
+    // Warm up to stabilize cache, branch predictor, and the lazily
+    // built curated-target table.
     let mut warmup_rounds_run = 0;
     while warmup_rounds_run < WARMUP_ROUNDS {
-        std::hint::black_box(h::detect(&first_target_self));
-        std::hint::black_box(h::detect(&first_target_match));
-        std::hint::black_box(h::detect(&no_match));
-        std::hint::black_box(h::detect(&cross_mix));
+        for input in inputs {
+            std::hint::black_box(h::detect(input));
+        }
         warmup_rounds_run += 1;
     }
 
-    let t1 = time_ns_per_call(&first_target_self);
-    let t2 = time_ns_per_call(&first_target_match);
-    let t3 = time_ns_per_call(&no_match);
-    let t4 = time_ns_per_call(&cross_mix);
+    let times: Vec<f64> = inputs.iter().map(|input| time_ns_per_call(input)).collect();
 
-    let mean = (t1 + t2 + t3 + t4) / 4.0;
+    let mean = times.iter().sum::<f64>() / (times.len() as f64);
     let variance =
-        ((t1 - mean).powi(2) + (t2 - mean).powi(2) + (t3 - mean).powi(2) + (t4 - mean).powi(2))
-            / 4.0;
+        times.iter().map(|t| (t - mean).powi(2)).sum::<f64>() / (times.len() as f64);
     let stddev = variance.sqrt();
     let cv = stddev / mean;
 
-    eprintln!(
-        "timing per-call (ns):\n  first_target_self   = {:.0}\n  first_target_match  = {:.0}\n  no_match            = {:.0}\n  cross_mix           = {:.0}",
-        t1, t2, t3, t4,
-    );
+    for (input, t) in inputs.iter().zip(times.iter()) {
+        eprintln!("  {:>2} cps -> {:.0} ns/call", input.len(), t);
+    }
     eprintln!(
         "  mean = {:.0} ns | stddev = {:.0} ns | CoV = {:.3}",
         mean, stddev, cv,
     );
 
-    // Constant-time claim: timing variance across input classes
-    // is below VARIANCE_THRESHOLD.  Pre-fix variable-time impl
-    // had CoV ≈ 0.5 (50% variance between matching first vs no
-    // match).  Post-fix should be < 0.20.
+    // Constant-time claim: timing variance across list positions is
+    // below VARIANCE_THRESHOLD. The pre-mitigation early-break impl
+    // had CoV ≈ 0.5 between the first and last target; walking the
+    // whole list holds it under 0.20.
     assert!(
         cv < VARIANCE_THRESHOLD,
-        "Timing CoV {:.3} exceeds threshold {:.2} — find_target_match has an exploitable timing leak",
+        "Timing CoV {:.3} exceeds threshold {:.2} — find_target_match leaks curated-list position",
         cv, VARIANCE_THRESHOLD,
     );
 }

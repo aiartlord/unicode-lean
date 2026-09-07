@@ -49,6 +49,7 @@ from pathlib import Path
 from typing import Union
 
 from ..calculus import ClassificationKind
+from ..casing import simple_lowercase
 from . import ucd
 from .ucd import RestrictionLevel
 
@@ -415,15 +416,20 @@ def _find_target_match(
     insertion (Hole 5).
     """
     input_letters = letter_skeleton(input_cps)
+    # A case variant of the target is the same name, not a look-alike: an
+    # input equal to the target after the simple lowercase mapping of each
+    # codepoint carries no substitution and is not a match. Letter case only,
+    # so ``expreß`` (which case-folds to ``express``) still matches. Mirrors
+    # the Lean findTargetMatch guard against canonicalTargetLowercase.
+    input_lower = [simple_lowercase(cp) for cp in input_cps]
     targets = known_attack_targets()
     first_match: int | None = None
     for idx, target in enumerate(targets):
         t_cps = _ascii_codepoints(target)
-        if t_cps == input_cps:
-            # Self-match guard — input is literally the target.
-            continue
+        t_lower = [simple_lowercase(cp) for cp in t_cps]
+        same_name = _ct_slice_eq(t_lower, input_lower) == 1
         t_letters = letter_skeleton(t_cps)
-        is_match = _ct_slice_eq(t_letters, input_letters) == 1
+        is_match = _ct_slice_eq(t_letters, input_letters) == 1 and not same_name
         # Capture first match index but do NOT break — keep loop
         # work independent of which target (if any) fires.
         if is_match and first_match is None:

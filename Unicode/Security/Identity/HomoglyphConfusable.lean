@@ -48,6 +48,7 @@ import Unicode.Restriction
 import Unicode.Normalization.NFC
 import Unicode.Normalization.LowCodepointNfc
 import Unicode.Generated.KnownAttackTargets
+import Unicode.Generated.SimpleCaseMappings
 
 namespace Unicode.Security.Identity.HomoglyphConfusable
 
@@ -249,9 +250,94 @@ def isFullwidthHalfwidth (cp : Nat) : Bool :=
 -- §4 Sub-threat detectors (each takes `input` + precomputed fields)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- Find the first canonical target whose **letter** skeleton
-    matches the input's letter skeleton, modulo the input being
-    literally that target (no self-match).
+/-- The canonical targets under the simple lowercase mapping, materialized,
+    in the order of `canonicalTargets`.
+
+    `findTargetMatch` excludes an input that is a case variant of the target it
+    would otherwise match, and needs the target's lowercase form for that. The
+    values are pinned here and certified against the computed form by
+    `HomoglyphConfusableSkeletonGate.canonicalTargetLowercase_correct`, so the
+    spot-check theorems reduce the input side only. -/
+def canonicalTargetLowercase : List (List Nat) :=
+  [ [110, 101, 116, 104, 101, 114, 101, 117, 109],
+     [101, 116, 104, 101, 114, 101, 117, 109],
+     [101, 116, 104, 101, 114, 115],
+     [119, 101, 98, 51],
+     [98, 105, 116, 99, 111, 105, 110],
+     [117, 110, 105, 115, 119, 97, 112],
+     [109, 101, 116, 97, 109, 97, 115, 107],
+     [98, 105, 110, 97, 110, 99, 101],
+     [99, 111, 105, 110, 98, 97, 115, 101],
+     [115, 111, 108, 97, 110, 97],
+     [114, 101, 97, 99, 116],
+     [114, 101, 97, 99, 116, 45, 100, 111, 109],
+     [110, 101, 120, 116],
+     [118, 117, 101],
+     [97, 110, 103, 117, 108, 97, 114],
+     [108, 111, 100, 97, 115, 104],
+     [101, 120, 112, 114, 101, 115, 115],
+     [101, 108, 101, 99, 116, 114, 111, 110],
+     [116, 121, 112, 101, 115, 99, 114, 105, 112, 116],
+     [119, 101, 98, 112, 97, 99, 107],
+     [110, 111, 100, 101, 45, 102, 101, 116, 99, 104],
+     [100, 105, 115, 99, 111, 114, 100, 46, 106, 115],
+     [99, 114, 121, 112, 116, 111, 45, 106, 115],
+     [100, 106, 97, 110, 103, 111],
+     [114, 101, 113, 117, 101, 115, 116, 115],
+     [102, 108, 97, 115, 107],
+     [110, 117, 109, 112, 121],
+     [112, 97, 110, 100, 97, 115],
+     [116, 101, 110, 115, 111, 114, 102, 108, 111, 119],
+     [112, 121, 116, 111, 114, 99, 104],
+     [109, 97, 116, 112, 108, 111, 116, 108, 105, 98],
+     [115, 99, 105, 112, 121],
+     [98, 101, 97, 117, 116, 105, 102, 117, 108, 115, 111, 117, 112, 52],
+     [112, 121, 121, 97, 109, 108],
+     [99, 114, 121, 112, 116, 111, 103, 114, 97, 112, 104, 121],
+     [115, 101, 114, 100, 101],
+     [116, 111, 107, 105, 111],
+     [99, 108, 97, 112],
+     [114, 101, 113, 119, 101, 115, 116],
+     [114, 97, 110, 100],
+     [97, 110, 121, 104, 111, 119],
+     [114, 97, 105, 108, 115],
+     [114, 115, 112, 101, 99],
+     [100, 101, 118, 105, 115, 101],
+     [110, 111, 107, 111, 103, 105, 114, 105],
+     [103, 111, 111, 103, 108, 101],
+     [97, 109, 97, 122, 111, 110],
+     [109, 105, 99, 114, 111, 115, 111, 102, 116],
+     [97, 112, 112, 108, 101],
+     [103, 105, 116, 104, 117, 98],
+     [103, 105, 116, 108, 97, 98],
+     [98, 105, 116, 98, 117, 99, 107, 101, 116],
+     [99, 108, 111, 117, 100, 102, 108, 97, 114, 101],
+     [115, 116, 114, 105, 112, 101],
+     [116, 119, 105, 108, 105, 111],
+     [112, 97, 121, 112, 97, 108],
+     [111, 112, 101, 110, 97, 105],
+     [97, 110, 116, 104, 114, 111, 112, 105, 99],
+     [99, 108, 97, 117, 100, 101],
+     [99, 104, 97, 116, 103, 112, 116],
+     [116, 101, 115, 108, 97],
+     [116, 119, 105, 116, 116, 101, 114],
+     [102, 97, 99, 101, 98, 111, 111, 107],
+     [105, 110, 115, 116, 97, 103, 114, 97, 109],
+     [116, 105, 107, 116, 111, 107],
+     [116, 101, 108, 101, 103, 114, 97, 109],
+     [100, 105, 115, 99, 111, 114, 100] ]
+
+/-- Find the first canonical target whose **letter** skeleton matches the
+    input's letter skeleton, unless the input is that target in another letter
+    case.
+
+    A homoglyph is a look-alike substitution. An identifier that equals a
+    target after the simple lowercase mapping of each codepoint — `EXPRESS` for
+    `express`, `Next` for `next` — carries no substitution: it is the same name
+    spelled in another case, and every case-insensitive registry already treats
+    it as the same name. Such an input is not a match. The guard is letter case
+    only, not case folding: `expreß` folds to `express` but is not a case
+    variant of it, so it still matches.
 
     Uses `letterSkeleton` (which strips combining marks from the
     §4+§5.4 skeleton) rather than `iteratedSkeleton` so that
@@ -267,9 +353,11 @@ def findTargetMatch
     (input : List Nat) (iSkel : List Nat) : Option CanonicalTarget :=
   Function.const (List Nat)
     (let inputLetters := Unicode.Confusables.letterSkeleton input
-     ((canonicalTargets.zip canonicalTargetSkeletons).find? (fun ts =>
-        decide (ts.fst.cps ≠ input) ∧
-        decide (ts.snd = inputLetters))).map (fun ts => ts.fst))
+     let inputLower := input.map Unicode.Generated.SimpleCaseMappings.simpleLowercase
+     (((canonicalTargets.zip canonicalTargetSkeletons).zip canonicalTargetLowercase).find?
+        (fun tsl =>
+          decide (tsl.snd ≠ inputLower) ∧
+          decide (tsl.fst.snd = inputLetters))).map (fun tsl => tsl.fst.fst))
     iSkel
 
 /-- Position of the first math-alphanumeric codepoint in `input`. -/
@@ -323,7 +411,7 @@ def crossScriptCount (input : List Nat) : Nat :=
     `ß` to `ss`, so under the folded skeleton the ordinary German `straße`
     would read as confusable with ASCII `strasse`, and this rung asks whether
     the codepoints themselves are look-alikes of ASCII, not whether the name
-    collides on a case-insensitive registry (which is `targetMatch`'s question). -/
+    is a look-alike of a curated target (which is `targetMatch`'s question). -/
 def asciiSkeleton (input : List Nat) : List Nat :=
   Unicode.Normalization.NFC.toNFD
     (Unicode.Confusables.substitute (Unicode.Normalization.NFC.toNFD input))
@@ -556,6 +644,27 @@ theorem detect_nethereum_uppercase_attack :
     let cps : List Nat :=
       [0x4E, 0x45, 0x54, 0x48, 0x45, 0x52, 0x0415, 0x55, 0x4D]
     (detect cps).classify.tag = some "TargetMatch" := by decide +kernel
+
+/-- `EXPRESS` is the target `express` in capitals: no codepoint is a
+    look-alike of another, so it is the same name and not a match. Plain ASCII
+    with nothing else to report, the verdict is clear. -/
+theorem detect_express_uppercase_clear :
+    (detect [0x45, 0x58, 0x50, 0x52, 0x45, 0x53, 0x53]).classify.isClear = true := by
+  decide +kernel
+
+/-- `Next` is the target `next` capitalised; clear for the same reason. -/
+theorem detect_next_capitalised_clear :
+    (detect [0x4E, 0x65, 0x78, 0x74]).classify.isClear = true := by
+  decide +kernel
+
+/-- `expreß` is not a case variant of `express` — `ß` has no simple case
+    mapping to `ss` — while its case-folded skeleton is `express`, so the
+    substitution the guard leaves alone is exactly the one `TargetMatch`
+    exists to report. -/
+theorem detect_express_sharp_s_target :
+    (detect [0x65, 0x78, 0x70, 0x72, 0x65, 0x00DF]).classify.tag
+      = some "TargetMatch" := by
+  decide +kernel
 
 /-- Base-letter + combining-mark confusable — `nɇthereum`, where the
     second letter is U+0247 LATIN SMALL LETTER E WITH STROKE whose

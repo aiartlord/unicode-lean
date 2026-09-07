@@ -1709,20 +1709,28 @@ mixedScriptVerdict input identifierField
     union_ = stringScriptUnion input
     has s = s `elem` union_
 
+-- | The Lean @findTargetMatch@: the first curated target whose letter skeleton
+-- equals the input's, unless the input is that target in another letter case.
+-- A case variant carries no look-alike substitution and is the same name, so
+-- it is not a match; the guard is the simple lowercase mapping per codepoint,
+-- not case folding, so @expreß@ (which folds to @express@) still matches.
 findTargetMatch :: [Int] -> Maybe String
 findTargetMatch input =
   foldl' step Nothing knownAttackTargets
   where
     inputLetters = letterSkeleton input
+    inputLower = map Casing.simpleLowercase input
 
     step :: Maybe String -> String -> Maybe String
     step firstMatch target =
       let targetCps = asciiCodepoints target
           targetLetters = letterSkeleton targetCps
-          isMatch = targetCps /= input && ctListEq targetLetters inputLetters
+          sameName = ctListEq (map Casing.simpleLowercase targetCps) inputLower
+          isMatch = not sameName && ctListEq targetLetters inputLetters
       in case (firstMatch, isMatch) of
            (Nothing, True) -> Just target
-           _               -> firstMatch
+           (Just found, True) -> Just found
+           (found, False) -> found
 
 -- | The Lean @letterSkeleton@: the iterated skeleton with combining marks and
 -- Default_Ignorable codepoints dropped, whitespace kept.

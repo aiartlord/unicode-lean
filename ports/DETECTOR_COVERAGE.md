@@ -371,7 +371,7 @@ identifier field (UTS #39 restriction levels are an identifier concept),
 mark's Script_Extensions cannot manufacture a Latin-Cyrillic mix, the
 noncharacter family reports its three classes as three findings, and `RunAll`
 emits in the wire order. With the fixtures regenerated the replay reports zero
-mismatches over the 68 contract cases and the 5000 corpus cases.
+mismatches over the 71 contract cases and the 5000 corpus cases.
 
 One further detail below full uniformity: cobol's HomoglyphConfusable uses a
 bounded target-skeleton iteration; deepening that bound is a refinement of an
@@ -417,6 +417,23 @@ consistent with the Lean replay having been clean over it, and is why the
 class stayed invisible at 5000 cases: the input shape needs whitespace, a
 confusable and a target in one short identifier, and the stream first produces
 it past case 89 000.
+
+A tenth class was found by scanning real code rather than fixtures. The
+`TargetMatch` rung compared an identifier's case-folded letter skeleton with a
+curated target's and excluded only the identifier that was byte for byte the
+target, so `Next` matched the npm package `next` and `EXPRESS` matched
+`express`: over the Linux kernel tree that was 10,132 target-match findings and
+the 10,519 source-display-divergence findings they trigger, on ordinary C
+identifiers with no look-alike character in them. A homoglyph is a look-alike
+substitution; an identifier that equals a target after the simple lowercase
+mapping of each codepoint is the same name in another case, and every
+case-insensitive registry already treats it so. The Lean `findTargetMatch` now
+excludes exactly that case, through a pinned lowercase table beside the pinned
+skeletons (`canonicalTargetLowercase`, certified in
+`HomoglyphConfusableSkeletonGate`); the guard is letter case, not case
+folding, so `expreß`, which folds to `express`, still matches. The reference,
+every port, the vector file (`EXPRESS` and `Next` as clear) and the fixtures
+follow.
 
 Implementation is one thing and reach is another: a detector only reaches a
 caller if the port's scan path invokes it. `Unicode/Security/RunAll.lean`

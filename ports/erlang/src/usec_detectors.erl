@@ -506,10 +506,17 @@ letter_skeleton(Cps) ->
            usec_ucd:ccc(Cp) =:= 0,
            not usec_ucd:is_default_ignorable(Cp)].
 
+%% The Lean findTargetMatch: the first curated target whose letter skeleton
+%% equals the input's, unless the input is that target in another letter case.
+%% A case variant carries no look-alike substitution and is the same name, so
+%% it is not a match; the guard is the simple lowercase mapping per codepoint,
+%% not case folding, so "expreß" (which folds to "express") still matches.
 find_target_match(Input, ISkel) ->
     Letters = letter_skeleton(ISkel),
+    Lower = usec_casing:simple_lower(),
+    InputLower = [maps:get(Cp, Lower, Cp) || Cp <- Input],
     case [maps:get(name, T) || T <- known_targets(),
-                            maps:get(cps, T) =/= Input,
+                            [maps:get(Cp, Lower, Cp) || Cp <- maps:get(cps, T)] =/= InputLower,
                             maps:get(letters, T) =:= Letters] of
         [Name | _] -> Name;
         [] -> none

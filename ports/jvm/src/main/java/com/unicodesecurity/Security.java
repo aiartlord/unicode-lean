@@ -1254,11 +1254,21 @@ public final class Security {
     return new int[] {longest, longestStart};
   }
 
+  /** The Lean findTargetMatch: the first curated target whose letter skeleton
+   *  equals the input's, unless the input is that target in another letter
+   *  case. A case variant carries no look-alike substitution and is the same
+   *  name, so it is not a match; the guard is the simple lowercase mapping per
+   *  codepoint, not case folding, so "expreß" (which folds to "express") still
+   *  matches. */
   private static String homoglyphTargetMatch(List<Integer> input) {
     List<Integer> inputLetters = letterSkeleton(input);
+    List<Integer> inputLower = new ArrayList<>();
+    for (int cp : input) inputLower.add(simpleLowercase(cp));
     for (String target : knownTargets()) {
       List<Integer> targetCps = codepointsFromString(target);
-      if (!targetCps.equals(input) && letterSkeleton(targetCps).equals(inputLetters)) return target;
+      List<Integer> targetLower = new ArrayList<>();
+      for (int cp : targetCps) targetLower.add(simpleLowercase(cp));
+      if (!targetLower.equals(inputLower) && letterSkeleton(targetCps).equals(inputLetters)) return target;
     }
     return null;
   }

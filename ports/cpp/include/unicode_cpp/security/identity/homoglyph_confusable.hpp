@@ -465,23 +465,32 @@ find_target_match(std::span<const std::uint32_t> input,
   // letter_skeleton handles combining-mark + cascading-substitute
   // confusables (Hole 4) and Default_Ignorable invisible insertion
   // (Hole 5).  Mirrors Lean letterSkeleton, which keeps whitespace.
+  //
+  // A case variant of the target is the same name, not a look-alike: an
+  // input equal to the target after the simple lowercase mapping of each
+  // codepoint carries no substitution and is not a match. Letter case only,
+  // so `expreß` (which case-folds to `express`) still matches. Mirrors the
+  // Lean findTargetMatch guard against canonicalTargetLowercase.
   auto input_letters = letter_skeleton(input, db);
+  std::vector<std::uint32_t> input_lower;
+  input_lower.reserve(input.size());
+  for (std::uint32_t cp : input)
+    input_lower.push_back(casing::simple_lowercase(db.casing_data, cp));
   std::optional<std::size_t> first_match;
   for (std::size_t idx = 0; idx < db.known_attack_targets.size(); ++idx) {
     const auto &target = db.known_attack_targets[idx];
     auto t_cps = ascii_codepoints(target);
-    // Self-match guard — input is literally the target.
-    // Permitted branch (legitimate registration case).
-    if (t_cps.size() == input.size() &&
-        std::equal(t_cps.begin(), t_cps.end(), input.begin())) {
-      continue;
-    }
+    std::vector<std::uint32_t> t_lower;
+    t_lower.reserve(t_cps.size());
+    for (std::uint32_t cp : t_cps)
+      t_lower.push_back(casing::simple_lowercase(db.casing_data, cp));
+    std::uint32_t same_name = ct_u32_slice_eq(t_lower, input_lower);
     auto t_letters = letter_skeleton(t_cps, db);
     std::uint32_t letters_eq = ct_u32_slice_eq(
         t_letters, std::span<const std::uint32_t>(input_letters));
     // Capture FIRST matching index but do NOT break — keep
     // loop work independent of which target (if any) fires.
-    if (letters_eq == 1u && !first_match.has_value()) {
+    if (letters_eq == 1u && same_name == 0u && !first_match.has_value()) {
       first_match = idx;
     }
   }

@@ -21,7 +21,7 @@ import Unicode.Security.Identity.HomoglyphConfusable
 namespace Unicode.Security.Identity.HomoglyphConfusableSkeletonGate
 
 open Unicode.Security.Identity.HomoglyphConfusable
-  (canonicalTargets canonicalTargetSkeletons)
+  (canonicalTargets canonicalTargetSkeletons canonicalTargetLowercase)
 
 set_option maxRecDepth 100000
 set_option maxHeartbeats 4000000
@@ -39,5 +39,21 @@ theorem canonicalTargetSkeletons_correct :
 theorem canonicalTargetSkeletons_size :
     canonicalTargetSkeletons.length = canonicalTargets.length := by
   simpa using congrArg List.length canonicalTargetSkeletons_correct
+
+/-- The pinned lowercase table is exactly the simple lowercase mapping applied
+    to every codepoint of every curated target, position by position. The
+    mapping is a table walk per codepoint, so the reduction is held here beside
+    the skeleton certificate rather than in the spot-check modules. -/
+theorem canonicalTargetLowercase_correct :
+    canonicalTargetLowercase
+      = canonicalTargets.map
+          (fun t => t.cps.map Unicode.Generated.SimpleCaseMappings.simpleLowercase) := by
+  decide +kernel
+
+/-- The lowercase table and the target list agree in length, so the second zip
+    in `findTargetMatch` drops no target either. -/
+theorem canonicalTargetLowercase_size :
+    canonicalTargetLowercase.length = canonicalTargets.length := by
+  simpa using congrArg List.length canonicalTargetLowercase_correct
 
 end Unicode.Security.Identity.HomoglyphConfusableSkeletonGate

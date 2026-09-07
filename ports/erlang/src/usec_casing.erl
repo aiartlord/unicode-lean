@@ -1,6 +1,6 @@
 -module(usec_casing).
 
--export([lower_codepoint/4, upper_codepoint/4, to_lower/2]).
+-export([lower_codepoint/4, upper_codepoint/4, to_lower/2, simple_lower/0]).
 
 strip(Line) ->
     string:trim(hd(binary:split(Line, <<"#">>))).

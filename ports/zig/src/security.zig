@@ -2153,16 +2153,25 @@ const CpBuffer = struct {
     }
 };
 
+/// The Lean findTargetMatch: the first curated target whose letter skeleton
+/// equals the input's, unless the input is that target in another letter case.
+/// A case variant carries no look-alike substitution and is the same name, so
+/// it is not a match; the guard is the simple lowercase mapping per codepoint,
+/// not case folding, so "expreß" (which folds to "express") still matches.
 fn homoglyphTargetMatch(input: []const u32) CapacityError!?[]const u8 {
     const input_letters = try letterSkeleton(input);
+    var input_lower = CpBuffer{};
+    for (input) |cp| try input_lower.append(simpleLowercase(cp));
     var first_match: ?[]const u8 = null;
     var offset: usize = 0;
     while (nextLine(known_attack_targets_raw, &offset)) |raw_line| {
         const target = trimAscii(raw_line);
         if (target.len == 0 or target[0] == '#') continue;
         const target_cps = try asciiCodepoints(target);
+        var target_lower = CpBuffer{};
+        for (target_cps.slice()) |cp| try target_lower.append(simpleLowercase(cp));
         const target_letters = try letterSkeleton(target_cps.slice());
-        const matches = !cpSlicesEqual(target_cps.slice(), input) and
+        const matches = !ctCpSlicesEqual(target_lower.slice(), input_lower.slice()) and
             ctCpSlicesEqual(target_letters.slice(), input_letters.slice());
         if (matches and first_match == null) {
             first_match = target;

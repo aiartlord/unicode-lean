@@ -53,14 +53,28 @@ type normalizationData struct {
 	compat map[uint32][]uint32
 }
 
+// homoglyphTargetMatch is the Lean findTargetMatch: the first curated target
+// whose letter skeleton equals the input's, unless the input is that target in
+// another letter case. A case variant carries no look-alike substitution and is
+// the same name, so it is not a match; the guard is the simple lowercase
+// mapping per codepoint, not case folding, so "expreß" (which folds to
+// "express") still matches.
 func homoglyphTargetMatch(input []uint32) (string, bool) {
 	inputLetters := letterSkeleton(input)
+	inputLower := make([]uint32, len(input))
+	for i, cp := range input {
+		inputLower[i] = simpleLowercase(cp)
+	}
 	matchIndex := -1
 	targets := knownAttackTargets()
 	for index, target := range targets {
 		targetCps := asciiCodepoints(target)
+		targetLower := make([]uint32, len(targetCps))
+		for i, cp := range targetCps {
+			targetLower[i] = simpleLowercase(cp)
+		}
 		targetLetters := letterSkeleton(targetCps)
-		matches := !equalUint32Slices(targetCps, input) && ctUint32SlicesEqual(targetLetters, inputLetters)
+		matches := !ctUint32SlicesEqual(targetLower, inputLower) && ctUint32SlicesEqual(targetLetters, inputLetters)
 		if matches && matchIndex < 0 {
 			matchIndex = index
 		}

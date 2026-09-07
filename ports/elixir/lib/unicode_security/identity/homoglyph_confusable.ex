@@ -1,5 +1,5 @@
 defmodule UnicodeSecurity.Identity.HomoglyphConfusable do
-  alias UnicodeSecurity.{Data, Ucd, Utf8}
+  alias UnicodeSecurity.{Casing, Data, Ucd, Utf8}
 
   defstruct kind: :clear,
             sub: nil,
@@ -246,11 +246,18 @@ defmodule UnicodeSecurity.Identity.HomoglyphConfusable do
     end)
   end
 
+  # The Lean findTargetMatch: the first curated target whose letter skeleton
+  # equals the input's, unless the input is that target in another letter case.
+  # A case variant carries no look-alike substitution and is the same name, so
+  # it is not a match; the guard is the simple lowercase mapping per codepoint,
+  # not case folding, so "expreß" (which folds to "express") still matches.
   defp find_target_match(input, iterated) do
     letters = letter_skeleton_from_iterated(iterated)
+    input_lower = Enum.map(input, &Casing.simple_lowercase/1)
 
     Enum.find_value(targets(), fn target ->
-      if target.cps != input and target.letters == letters, do: target.name, else: nil
+      same_name = Enum.map(target.cps, &Casing.simple_lowercase/1) == input_lower
+      if not same_name and target.letters == letters, do: target.name, else: nil
     end)
   end
 

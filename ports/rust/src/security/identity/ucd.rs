@@ -1307,7 +1307,9 @@ fn simple_lowercase_table() -> &'static HashMap<u32, u32> {
     T.get_or_init(parse_simple_lowercase)
 }
 
-fn simple_lowercase(cp: u32) -> u32 {
+/// The UCD simple lowercase mapping of one codepoint; the codepoint itself
+/// when it carries none. Letter case only: no full folding, so `ß` stays `ß`.
+pub fn simple_lowercase(cp: u32) -> u32 {
     *simple_lowercase_table().get(&cp).unwrap_or(&cp)
 }
 

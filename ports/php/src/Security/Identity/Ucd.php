@@ -1369,7 +1369,9 @@ final class Ucd
         return $lower;
     }
 
-    private static function simpleLowercase(int $cp): int
+    /// The UCD simple lowercase mapping of one codepoint; the codepoint itself
+    /// when it carries none. Letter case only, no full folding.
+    public static function simpleLowercase(int $cp): int
     {
         return self::simpleLowercaseTable()[$cp] ?? $cp;
     }

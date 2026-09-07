@@ -1073,13 +1073,21 @@ public static partial class Security
         return (longest, longestStart);
     }
 
+    /// The Lean findTargetMatch: the first curated target whose letter skeleton
+    /// equals the input's, unless the input is that target in another letter
+    /// case. A case variant carries no look-alike substitution and is the same
+    /// name, so it is not a match; the guard is the simple lowercase mapping per
+    /// codepoint, not case folding, so "expreß" (which folds to "express") still
+    /// matches.
     private static string? HomoglyphTargetMatch(List<int> input)
     {
         var inputLetters = LetterSkeleton(input);
+        var inputLower = input.Select(SimpleLowercase).ToList();
         foreach (var target in KnownTargets())
         {
             var targetCps = CodepointsFromString(target);
-            if (!targetCps.SequenceEqual(input) && LetterSkeleton(targetCps).SequenceEqual(inputLetters)) return target;
+            var targetLower = targetCps.Select(SimpleLowercase).ToList();
+            if (!targetLower.SequenceEqual(inputLower) && LetterSkeleton(targetCps).SequenceEqual(inputLetters)) return target;
         }
         return null;
     }

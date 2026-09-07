@@ -1,6 +1,7 @@
 local datapath = require("unicode_lua.datapath")
 local calculus = require("unicode_lua.security.calculus")
 local ucd = require("unicode_lua.security.identity.ucd")
+local casing = require("unicode_lua.security.casing")
 local utf8mod = require("unicode_lua.utf8")
 
 -- LuaJIT is Lua 5.1: the 5.3 `utf8` stdlib is absent, so decode data-file
@@ -165,10 +166,25 @@ local function targets()
   return _targets
 end
 
+local function simple_lowercase_all(cps)
+  local out = {}
+  for i = 1, #cps do
+    out[i] = casing.simple_lowercase(cps[i])
+  end
+  return out
+end
+
+-- The Lean findTargetMatch: the first curated target whose letter skeleton
+-- equals the input's, unless the input is that target in another letter case.
+-- A case variant carries no look-alike substitution and is the same name, so it
+-- is not a match; the guard is the simple lowercase mapping per codepoint, not
+-- case folding, so "expreß" (which folds to "express") still matches.
 local function find_target_match(input, iterated)
   local input_letters = letter_skeleton_from_iterated(iterated)
+  local input_lower = simple_lowercase_all(input)
   for _, target in ipairs(targets()) do
-    if not arrays_equal(target.cps, input) and arrays_equal(target.letters, input_letters) then
+    if not arrays_equal(simple_lowercase_all(target.cps), input_lower)
+        and arrays_equal(target.letters, input_letters) then
       return target.name
     end
   end

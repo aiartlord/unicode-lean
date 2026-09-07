@@ -1557,12 +1557,19 @@ function covertDisplayCompoundFinding(input) {
   return null;
 }
 
+// The Lean findTargetMatch: the first curated target whose letter skeleton
+// equals the input's, unless the input is that target in another letter case.
+// A case variant carries no look-alike substitution and is the same name, so it
+// is not a match; the guard is the simple lowercase mapping per codepoint, not
+// case folding, so "expreß" (which folds to "express") still matches.
 function homoglyphTargetMatch(input) {
   const inputLetters = letterSkeleton(input);
+  const inputLower = Array.from(input, (cp) => simpleLowercase(cp));
   for (const target of knownAttackTargets()) {
     const targetCps = codepointsFromString(target);
+    const targetLower = targetCps.map((cp) => simpleLowercase(cp));
     const targetLetters = letterSkeleton(targetCps);
-    if (!sameNumbers(targetCps, input) && sameNumbers(targetLetters, inputLetters)) {
+    if (!sameNumbers(targetLower, inputLower) && sameNumbers(targetLetters, inputLetters)) {
       return target;
     }
   }
