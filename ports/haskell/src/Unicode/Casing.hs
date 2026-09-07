@@ -30,6 +30,7 @@ module Unicode.Casing
   , lowerCodepoint
   , upperCodepoint
   , isDefaultIgnorable
+  , simpleLowercase
   ) where
 
 import Data.Char (isSpace)

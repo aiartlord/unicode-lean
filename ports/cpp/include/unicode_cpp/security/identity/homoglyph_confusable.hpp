@@ -475,7 +475,7 @@ find_target_match(std::span<const std::uint32_t> input,
   std::vector<std::uint32_t> input_lower;
   input_lower.reserve(input.size());
   for (std::uint32_t cp : input)
-    input_lower.push_back(casing::simple_lowercase(db.casing_data, cp));
+    input_lower.push_back(casing::detail::simple_lowercase(db.casing_data, cp));
   std::optional<std::size_t> first_match;
   for (std::size_t idx = 0; idx < db.known_attack_targets.size(); ++idx) {
     const auto &target = db.known_attack_targets[idx];
@@ -483,7 +483,7 @@ find_target_match(std::span<const std::uint32_t> input,
     std::vector<std::uint32_t> t_lower;
     t_lower.reserve(t_cps.size());
     for (std::uint32_t cp : t_cps)
-      t_lower.push_back(casing::simple_lowercase(db.casing_data, cp));
+      t_lower.push_back(casing::detail::simple_lowercase(db.casing_data, cp));
     std::uint32_t same_name = ct_u32_slice_eq(t_lower, input_lower);
     auto t_letters = letter_skeleton(t_cps, db);
     std::uint32_t letters_eq = ct_u32_slice_eq(
