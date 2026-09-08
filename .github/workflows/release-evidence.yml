@@ -42,8 +42,10 @@ jobs:
 
       - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1
         with:
-          # Build via lake; toolchain auto-detected from `lean-toolchain`.
-          build-args: ""
+          # Toolchain + lake setup only; the full-closure build is explicit below.
+          build: false
+          test: false
+          lint: false
 
       - uses: cachix/install-nix-action@ba0dd844c9180cbf77aa72a116d6fbc515d0e87b # v27
         with:
@@ -68,6 +70,29 @@ jobs:
           bash scripts/check-bip39-hashes.sh
           bash scripts/check-curated-hashes.sh
           bash scripts/check-actions-pinned.sh
+
+      - name: add swap headroom
+        run: |
+          # The full closure's decide+kernel proofs fan across all runner cores
+          # and their combined peak exceeds the hosted runner's ~16 GB RAM. Lake
+          # 5.0 has no --jobs flag to cap concurrency, so give the build
+          # virtual-memory headroom on the large /mnt volume instead.
+          sudo fallocate -l 24G /mnt/ci-swapfile
+          sudo chmod 600 /mnt/ci-swapfile
+          sudo mkswap /mnt/ci-swapfile
+          sudo swapon /mnt/ci-swapfile
+          free -h
+
+      - name: build the full audited closure
+        run: lake build UnicodeFullConformance UnicodeSecurity UnicodeAssurance
+
+      - name: artifact-level assurance over the full closure
+        run: |
+          # Both gates import the runtime root, the 27 detector families, the
+          # conformance harnesses and the assurance layer, so they run only after
+          # the closure above is built. The axiom footprint of every declaration
+          # must stay within propext, Quot.sound and Classical.choice; the
+          # independent leanchecker replays every built olean through the kernel.
           bash scripts/check-axiom-footprint.sh
           bash scripts/check-olean-recheck.sh
 

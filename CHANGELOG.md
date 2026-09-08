@@ -19,6 +19,15 @@ might depend on).
   selftest's one trivial module and failed the `ci` hardening job. The gate is
   now skipped in test-command mode, so the hardening job passes on any hosted
   runner size; a real build is gated exactly as before.
+- The `release-evidence` workflow built only the default Lean root before its
+  `hardening checks` step ran `check-axiom-footprint.sh` and
+  `check-olean-recheck.sh`, which import the full audited closure
+  (`Unicode.SecurityRoot`, `Unicode.FullConformance`, `Unicode.Assurance`); the
+  release-tag build failed with `object file '.../Unicode/SecurityRoot.olean' …
+  does not exist`. The workflow now mirrors `assurance.yml`: lean-action is
+  setup-only, swap headroom is added, the closure is built explicitly with
+  `lake build UnicodeFullConformance UnicodeSecurity UnicodeAssurance`, and the
+  two artifact-level gates then run against the built oleans.
 
 ## v1.1.0 — 2026-09-08
 
