@@ -30,6 +30,9 @@ import Unicode.Conformance.Security.VectorFile
 
 namespace Unicode.Conformance.Security.StreamSafeViolationTest
 
+set_option maxRecDepth 1000000
+set_option maxHeartbeats 8000000
+
 open Unicode.Security.Form.StreamSafeViolation
 
 -- ── §1  Cap-boundary vectors ────────────────────────────────────────────────
@@ -109,6 +112,7 @@ def verifyVectorRow (r : VectorRow) : Bool :=
     && v.classify.positions == r.positions
 
 /-- Every vector the pinned file states holds of the detector. -/
-theorem all_vectors_pass : rowsList.all verifyVectorRow = true := by decide +kernel
+theorem all_vectors_pass : rowsList.all verifyVectorRow = true := by
+  decide_all_rows rowsList
 
 end Unicode.Conformance.Security.StreamSafeViolationTest

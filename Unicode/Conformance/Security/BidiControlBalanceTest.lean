@@ -44,6 +44,7 @@ open Unicode.Security.Covert.BidiControlBalance
 -- The depth-exceeded vector walks 252 codepoints; the fold recurses past the
 -- default reducer budget (the detector module sets the same for its own check).
 set_option maxRecDepth 1000000
+set_option maxHeartbeats 8000000
 
 /-- The canonical Trojan-Source RLO comment attack (CVE-2021-42574): a lone
     U+202E RIGHT-TO-LEFT OVERRIDE reorders the following glyphs so the closing
@@ -181,6 +182,7 @@ def verifyVectorRow (r : VectorRow) : Bool :=
     && v.classify.positions == r.positions
 
 /-- Every vector the pinned file states holds of the detector. -/
-theorem all_vectors_pass : rowsList.all verifyVectorRow = true := by decide +kernel
+theorem all_vectors_pass : rowsList.all verifyVectorRow = true := by
+  decide_all_rows rowsList
 
 end Unicode.Conformance.Security.BidiControlBalanceTest

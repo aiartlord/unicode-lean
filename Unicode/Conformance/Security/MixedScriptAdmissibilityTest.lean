@@ -43,6 +43,7 @@ namespace Unicode.Conformance.Security.MixedScriptAdmissibilityTest
 open Unicode.Security.Identity.MixedScriptAdmissibility
 
 set_option maxRecDepth 1000000
+set_option maxHeartbeats 8000000
 
 /-- Latin 'a' (U+0061) flanking Cyrillic 'а' (U+0440) is the archetypal
     homoglyph attack: the two letters are visually identical, so the label reads
@@ -158,6 +159,7 @@ def verifyVectorRow (r : VectorRow) : Bool :=
     && v.classify.positions == r.positions
 
 /-- Every vector the pinned file states holds of the detector. -/
-theorem all_vectors_pass : rowsList.all verifyVectorRow = true := by decide +kernel
+theorem all_vectors_pass : rowsList.all verifyVectorRow = true := by
+  decide_all_rows rowsList
 
 end Unicode.Conformance.Security.MixedScriptAdmissibilityTest

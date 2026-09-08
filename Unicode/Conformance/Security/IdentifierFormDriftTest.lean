@@ -139,8 +139,10 @@ def verifyVectorRow (r : VectorRow) : Bool :=
 
 -- The vector rows reach deeper than the curated set, so the obligation needs
 -- the detector module's own recursion budget.
+set_option maxHeartbeats 8000000 in
 set_option maxRecDepth 1000000 in
 /-- Every vector the pinned file states holds of the detector. -/
-theorem all_vectors_pass : rowsList.all verifyVectorRow = true := by decide +kernel
+theorem all_vectors_pass : rowsList.all verifyVectorRow = true := by
+  decide_all_rows rowsList
 
 end Unicode.Conformance.Security.IdentifierFormDriftTest

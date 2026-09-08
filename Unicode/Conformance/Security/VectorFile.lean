@@ -167,3 +167,19 @@ def VectorRow.expectsClear (r : VectorRow) : Bool :=
   r.classification = "Clear"
 
 end Unicode.Conformance.Security.VectorFile
+
+/-- Discharge a `<list>.all <verify> = true` conformance obligation one row at a
+    time, kernel-checked. `List.all_cons` is definitional, so `simp only` unfolds
+    the named list literal's `.all` into a conjunction of per-row `verify` calls;
+    `and_intros` splits it, and each row is decided by its own `decide +kernel`.
+
+    Reducing every row inside one `.all` decide holds all the detector
+    reductions in a single kernel term, which expands to tens of gigabytes on a
+    table of any size. Per row, the kernel reduces one detector at a time and
+    frees between, so the peak is bounded by the widest single vector rather than
+    the whole table — the same evidence, at a fraction of the memory. Pass the
+    materialized list definition(s) to unfold (`decide_all_rows rowsList`). -/
+macro "decide_all_rows " l:ident : tactic =>
+  `(tactic|
+    (simp only [$l:ident, List.all_cons, List.all_nil, Bool.and_eq_true, Bool.and_true];
+     and_intros <;> decide +kernel))

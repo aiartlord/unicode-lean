@@ -43,6 +43,7 @@ namespace Unicode.Conformance.Security.RendererDivergenceTest
 open Unicode.Security.Display.RendererDivergence
 
 set_option maxRecDepth 1000000
+set_option maxHeartbeats 8000000
 
 /-- Fullwidth Latin 'A' (U+FF21) is the discriminating case for East Asian Width
     display equivalence: it is glyph-indistinguishable from ASCII 'A' after a
@@ -142,6 +143,7 @@ def verifyVectorRow (r : VectorRow) : Bool :=
     && v.classify.positions == r.positions
 
 /-- Every vector the pinned file states holds of the detector. -/
-theorem all_vectors_pass : rowsList.all verifyVectorRow = true := by decide +kernel
+theorem all_vectors_pass : rowsList.all verifyVectorRow = true := by
+  decide_all_rows rowsList
 
 end Unicode.Conformance.Security.RendererDivergenceTest

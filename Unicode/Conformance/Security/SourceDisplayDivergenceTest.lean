@@ -48,6 +48,7 @@ open Unicode.Normalization.LowCodepointNfc (toNFC_id_of_starters)
 open Unicode.Normalization.Compose (primaryComposite?_none_of_all_ne)
 
 set_option maxRecDepth 100000
+set_option maxHeartbeats 8000000
 
 /-- Two Unicode tag characters (U+E0041 U+E0042) render as nothing yet carry an
     ASCII-shadow payload; the stream must be routed to the `TagBlock` family
@@ -196,6 +197,7 @@ def verifyVectorRow (r : VectorRow) : Bool :=
     && v.classify.positions == r.positions
 
 /-- Every vector the pinned file states holds of the detector. -/
-theorem all_vectors_pass : rowsList.all verifyVectorRow = true := by decide +kernel
+theorem all_vectors_pass : rowsList.all verifyVectorRow = true := by
+  decide_all_rows rowsList
 
 end Unicode.Conformance.Security.SourceDisplayDivergenceTest

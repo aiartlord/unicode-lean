@@ -45,6 +45,7 @@ namespace Unicode.Conformance.Security.AiWatermarkDetectabilityTest
 open Unicode.Security.Crypto.AiWatermarkDetectability
 
 set_option maxRecDepth 1000000
+set_option maxHeartbeats 8000000
 
 /-- A single U+202F NARROW NO-BREAK SPACE spliced between two Latin letters is the
     minimal NNBSP boundary token: it renders as an ordinary thin gap yet marks a
@@ -151,6 +152,7 @@ def verifyVectorRow (r : VectorRow) : Bool :=
     && v.classify.positions == r.positions
 
 /-- Every vector the pinned file states holds of the detector. -/
-theorem all_vectors_pass : rowsList.all verifyVectorRow = true := by decide +kernel
+theorem all_vectors_pass : rowsList.all verifyVectorRow = true := by
+  decide_all_rows rowsList
 
 end Unicode.Conformance.Security.AiWatermarkDetectabilityTest

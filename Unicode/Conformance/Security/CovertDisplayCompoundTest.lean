@@ -42,6 +42,7 @@ namespace Unicode.Conformance.Security.CovertDisplayCompoundTest
 open Unicode.Security.Boundary.CovertDisplayCompound
 
 set_option maxRecDepth 1000000
+set_option maxHeartbeats 8000000
 
 -- ── §1  The certificate table ───────────────────────────────────────────────
 
@@ -73,7 +74,7 @@ def verifyRow (r : Row) : Bool :=
 
 /-- Every certified vector draws exactly the verdict the compound detector's
     channel-priority logic demands. -/
-theorem all_rows_pass : rows.all verifyRow = true := by decide +kernel
+theorem all_rows_pass : rows.all verifyRow = true := by decide_all_rows rows
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- The pinned vector file, executed
@@ -135,6 +136,7 @@ def verifyVectorRow (r : VectorRow) : Bool :=
     && v.classify.positions == r.positions
 
 /-- Every vector the pinned file states holds of the detector. -/
-theorem all_vectors_pass : rowsList.all verifyVectorRow = true := by decide +kernel
+theorem all_vectors_pass : rowsList.all verifyVectorRow = true := by
+  decide_all_rows rowsList
 
 end Unicode.Conformance.Security.CovertDisplayCompoundTest
