@@ -9,6 +9,17 @@ might depend on).
 
 ## Unreleased
 
+### Fixed
+
+- The `scripts/lean-cache-stages.py` memory gate no longer blocks the
+  bookkeeping runner selftest. `run_module` applied the build-memory
+  precondition (`MemAvailable` ≥ 8 GB by default) before every module,
+  including a `--test-command-template` run, which invokes no Lean and uses no
+  build memory; on a hosted runner with ~6 GB available it blocked the
+  selftest's one trivial module and failed the `ci` hardening job. The gate is
+  now skipped in test-command mode, so the hardening job passes on any hosted
+  runner size; a real build is gated exactly as before.
+
 ## v1.1.0 — 2026-09-08
 
 ### Fixed

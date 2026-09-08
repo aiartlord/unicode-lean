@@ -1123,7 +1123,11 @@ def run_module(row: PlanRow, args: argparse.Namespace, log_dir: Path) -> RunResu
     log_path = log_dir / f"{row.index:04d}-{safe_module}.log"
 
     mem_now = available_gb()
-    if mem_now < args.min_available_gb:
+    # The memory gate guards a real Lean build's peak. In test-command mode the
+    # runner drives the bookkeeping selftest, which invokes no Lean and uses no
+    # build memory, so the build-memory precondition does not apply and must not
+    # block it on a small runner.
+    if not args.test_command_template and mem_now < args.min_available_gb:
         raise RuntimeError(
             f"MemAvailable {mem_now}G is below required {args.min_available_gb}G"
         )
