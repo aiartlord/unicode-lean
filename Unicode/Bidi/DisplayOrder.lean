@@ -420,7 +420,7 @@ theorem applyW4_ltr (records : List CharRecord) (hAll : ∀ r ∈ records, LtrRe
       rw [hj] at hj'
       exact absurd hj' (by decide)
     simp only [hNoAN, false_and, if_false]
-    cases hc : x.resolvedClass <;> simp only [hc] <;> (try split) <;>
+    cases hc : x.resolvedClass <;> simp only <;> (try split) <;>
       first
       | exact ⟨hlvl, rfl⟩
       | exact ⟨hlvl, hsafe⟩
@@ -444,7 +444,7 @@ theorem applyW6_ltr (records : List CharRecord) (hAll : ∀ r ∈ records, LtrRe
   rcases List.mem_map.mp hy with ⟨r, hr, hEq⟩
   rw [← hEq]
   obtain ⟨hlvl, hsafe⟩ := hAll r hr
-  cases hc : r.resolvedClass <;> simp only [hc] <;>
+  cases hc : r.resolvedClass <;> simp only <;>
     first
     | exact ⟨hlvl, rfl⟩
     | exact ⟨hlvl, hsafe⟩
@@ -643,7 +643,7 @@ theorem resolveBracketPair_ltr (records : List CharRecord) (openIdx closeIdx : N
   -- answers left, and every branch then sets brackets to L or keeps the
   -- records.
   rw [foldl_dir_LTR]
-  · simp only [embeddingDirection_zero, eq_self_iff_true, if_true]
+  · simp only [embeddingDirection_zero, if_true]
     try dsimp only
     repeat' split
     all_goals first
