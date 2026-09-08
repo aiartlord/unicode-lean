@@ -1,5 +1,5 @@
 {
-  "module_steps": 266,
+  "module_steps": 268,
   "preset": "product",
   "roots": [
     {
@@ -33,9 +33,9 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 5456379,
+      "bytes": 5466998,
       "decide_kernel": 523,
-      "modules": 121,
+      "modules": 122,
       "row_refs": 2739,
       "stage": "stage-1-generated-base"
     },
@@ -55,7 +55,7 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 633085,
+      "bytes": 633321,
       "decide_kernel": 134,
       "modules": 44,
       "row_refs": 24,
@@ -77,9 +77,9 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 4213500,
-      "decide_kernel": 280,
-      "modules": 85,
+      "bytes": 4208241,
+      "decide_kernel": 259,
+      "modules": 86,
       "row_refs": 2,
       "stage": "stage-5-product-domain"
     }

@@ -1,5 +1,5 @@
 {
-  "module_steps": 481,
+  "module_steps": 483,
   "preset": "evidence",
   "roots": [
     {
@@ -17,9 +17,9 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 4594030,
+      "bytes": 4604649,
       "decide_kernel": 520,
-      "modules": 117,
+      "modules": 118,
       "row_refs": 2174,
       "stage": "stage-1-generated-base"
     },
@@ -39,7 +39,7 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 689787,
+      "bytes": 690023,
       "decide_kernel": 269,
       "modules": 66,
       "row_refs": 134,
@@ -61,9 +61,9 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 4047050,
+      "bytes": 4050396,
       "decide_kernel": 271,
-      "modules": 78,
+      "modules": 79,
       "row_refs": 2,
       "stage": "stage-5-product-domain"
     },
@@ -83,7 +83,7 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 3192,
+      "bytes": 3249,
       "decide_kernel": 0,
       "modules": 1,
       "row_refs": 0,
@@ -94,10 +94,10 @@
         "max_rss_gb": 40,
         "wall_time_sec": 0
       },
-      "bytes": 389953,
-      "decide_kernel": 73,
+      "bytes": 392309,
+      "decide_kernel": 41,
       "modules": 43,
-      "row_refs": 117,
+      "row_refs": 143,
       "stage": "stage-8-conformance-module"
     },
     {
