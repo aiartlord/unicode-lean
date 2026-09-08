@@ -459,9 +459,15 @@
 
         checks.runtime-boundary = pkgs.runCommand "unicode-runtime-boundary" {
           src = ./.;
-          buildInputs = [ pkgs.bash pkgs.gnugrep pkgs.gawk pkgs.coreutils ];
+          nativeBuildInputs = [ pkgs.python3 ];
+          buildInputs = [ pkgs.bash pkgs.gnugrep pkgs.gawk pkgs.coreutils pkgs.python3 ];
         } ''
           cp -r $src/* .
+          chmod -R +w .
+          # The audit script's `#!/usr/bin/env python3` shebang does not resolve
+          # in the build sandbox, which has no /usr/bin/env; rewrite it to the
+          # store python3 so the boundary check runs.
+          patchShebangs scripts
           ${pkgs.bash}/bin/bash scripts/check-runtime-import-boundary.sh
           mkdir -p $out
           touch $out/result

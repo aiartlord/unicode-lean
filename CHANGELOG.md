@@ -28,6 +28,18 @@ might depend on).
   setup-only, swap headroom is added, the closure is built explicitly with
   `lake build UnicodeFullConformance UnicodeSecurity UnicodeAssurance`, and the
   two artifact-level gates then run against the built oleans.
+- **Haskell port sdist was missing four runtime data files.** `Policy.hs` reads
+  `Scripts.txt`, `ScriptExtensions.txt`, `PropertyValueAliases.txt` and
+  `DerivedJoiningType.txt` via `getDataFileName`, but the `unicode-haskell.cabal`
+  `data-files` stanza did not list them, so a build from the packaged sdist
+  failed at runtime with `data/Scripts.txt: openFile: does not exist`. All four
+  are now shipped; the in-tree build was unaffected because the files are
+  physically present there.
+- The `nix flake check` `runtime-boundary` derivation could not run
+  `scripts/audit-lean-root-boundaries.py`: its `#!/usr/bin/env python3` shebang
+  does not resolve in the build sandbox, which has no `/usr/bin/env`, and the
+  derivation carried no `python3`. It now depends on `python3` and runs
+  `patchShebangs` so the boundary check executes.
 
 ## v1.1.0 — 2026-09-08
 

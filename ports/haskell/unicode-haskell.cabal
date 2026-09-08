@@ -39,6 +39,10 @@ data-files:
   data/SpecialCasing.txt
   data/DerivedCoreProperties.txt
   data/IdentifierStatus.txt
+  data/DerivedJoiningType.txt
+  data/PropertyValueAliases.txt
+  data/ScriptExtensions.txt
+  data/Scripts.txt
   data/bip39/chinese_simplified.txt
   data/bip39/chinese_traditional.txt
   data/bip39/czech.txt
