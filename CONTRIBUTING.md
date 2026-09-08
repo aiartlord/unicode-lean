@@ -27,9 +27,9 @@ bash scripts/check-ucd-hashes.sh
 # Lean-core propext, Quot.sound, and Classical.choice.
 bash scripts/check-axiom-footprint.sh
 
-# Independent kernel re-check of the built artifacts. First run clones and
-# builds the commit-pinned lean4checker under the repository toolchain,
-# then replays every module's declarations through the Lean kernel.
+# Independent kernel re-check of the built artifacts. Invokes the
+# `leanchecker` bundled with the toolchain and replays every module's
+# declarations through the Lean kernel.
 bash scripts/check-olean-recheck.sh
 
 # Status report (file count, theorem count, sorry count, per-pillar

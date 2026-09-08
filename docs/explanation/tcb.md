@@ -14,16 +14,16 @@ terminus?"*
    to community audit. Pinned toolchain: `leanprover/lean4:v4.33.1`. Every
    `.olean` this project produces re-checks independently under
    `lean4checker`; the correctness argument needs only that re-check to
-   succeed. `scripts/check-olean-recheck.sh` runs the re-check: it builds the
-   checker from a commit-pinned checkout under the same pinned toolchain and
-   replays every declaration in the built import closure through the kernel.
+   succeed. `scripts/check-olean-recheck.sh` runs the re-check: it invokes the
+   `leanchecker` bundled with the pinned toolchain and replays every
+   declaration in the built import closure through the kernel.
    This replay is what catches an unsound elaborator or tactic — the primary
    risk surface — by confirming every `.olean` holds only kernel-accepted
-   proofs. It is not a defense against a compromised C++ compiler: building
-   `lean4checker` under this repository's own pinned toolchain gives
-   reproducibility, not the diverse-compilation independence of Wheeler's
-   method. That axis is the Thompson-attack terminus below; a reviewer who
-   wants it rebuilds `lean4checker` under a second compiler per the terminus.
+   proofs. It is not a defense against a compromised C++ compiler: the
+   `leanchecker` bundled with the pinned toolchain gives reproducibility, not
+   the diverse-compilation independence of Wheeler's method. That axis is the
+   Thompson-attack terminus below; a reviewer who wants it rebuilds
+   `lean4checker` under a second compiler per the terminus.
 
 2. **The pinned Unicode Character Database, version 17.0.0**, byte-for-byte
    identical to the tables published at unicode.org. This is not an assumed

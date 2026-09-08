@@ -42,8 +42,8 @@ Every proof closes in the Lean kernel (`decide` / `decide +kernel`);
   third Lean-core axiom, reached the moment any classical lemma is touched; the
   gate's teeth are the hard rejection of `sorryAx`, `Lean.ofReduceBool`,
   `Lean.trustCompiler`, and project-local axioms.
-- `scripts/check-olean-recheck.sh` builds the independent `lean4checker` proof
-  checker from a commit-pinned checkout and replays every built olean through
+- `scripts/check-olean-recheck.sh` invokes the independent `leanchecker`
+  bundled with the pinned toolchain and replays every built olean through
   the Lean kernel, confirming the artifacts hold only kernel-accepted proofs.
   This catches an unsound elaborator or tactic; it is not a diverse-compilation
   defense against a Thompson attack, which is a separate axis documented in

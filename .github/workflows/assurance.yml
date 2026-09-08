@@ -70,8 +70,7 @@ jobs:
 
       - name: independent kernel re-check of the built artifacts
         run: |
-          # Builds the commit-pinned lean4checker under the repository toolchain
-          # and replays every built olean through the Lean kernel — an
-          # independent binary confirming the artifacts hold only
-          # kernel-accepted proofs.
+          # Invokes the leanchecker bundled with the toolchain and replays
+          # every built olean through the Lean kernel — an independent binary
+          # confirming the artifacts hold only kernel-accepted proofs.
           bash scripts/check-olean-recheck.sh
