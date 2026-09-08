@@ -1,6 +1,6 @@
 cabal-version:      3.0
 name:               unicode-haskell
-version:            0.2.0
+version:            1.1.0
 synopsis:           Haskell port of the Unicode security runtime — UCD 17.0.0 codecs and validators
 description:
   Strict UTF-8 / UTF-16 / UTF-32 codecs, BOM detection, noncharacter

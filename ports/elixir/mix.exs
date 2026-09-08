@@ -9,7 +9,7 @@ defmodule UnicodeSecurity.MixProject do
   def project do
     [
       app: :unicode_security,
-      version: "17.0.0",
+      version: "1.1.0",
       elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: false,

@@ -7,11 +7,11 @@ shared product contract:
 scan(profile, mode, input) -> verdict
 ```
 
-The package `unicode_python` mirrors the Lean-specified detector families —
+The package `unicode_python` mirrors the Lean-specified surfaces —
 UTF-8/16/32 validation, BOM and noncharacter handling, identifier admissibility,
-segmentation, and the security detector suite (tag-block, variation-selector, and
-zero-width payloads; bidi-control balance; homoglyph-confusable; mixed-script
-admissibility). Lean is the specification and assurance source of truth; this port
+segmentation, and all 27 security detector families, byte-faithful to the
+Lean-proven reference and emitting the same reason codes and verdicts as every
+other port. Lean is the specification and assurance source of truth; this port
 is a runtime surface that must inhabit the same contract.
 
 Runtime UCD tables are vendored under `src/unicode_python/data/` and kept identical

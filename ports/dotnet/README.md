@@ -1,7 +1,10 @@
 # C# / .NET Port
 
 This is the dependency-free .NET package surface for the shared Unicode
-security runtime contract.
+security runtime contract. It implements all 27 detector families,
+byte-faithful to the Lean-proven Rust reference and emitting the same reason
+codes and verdicts as every other port; the detector reference and coverage
+matrix are in [`../DETECTOR_COVERAGE.md`](../DETECTOR_COVERAGE.md).
 
 The package exports the shared product APIs through `UnicodeSecurity.Security`:
 

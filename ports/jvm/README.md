@@ -2,7 +2,10 @@
 
 This is the dependency-free JVM package surface for the shared Unicode
 security runtime contract. It is written in Java and is directly consumable
-from Kotlin.
+from Kotlin. It implements all 27 detector families, byte-faithful to the
+Lean-proven Rust reference and emitting the same reason codes and verdicts as
+every other port; the detector reference and coverage matrix are in
+[`../DETECTOR_COVERAGE.md`](../DETECTOR_COVERAGE.md).
 
 The package exports the shared product APIs through `com.unicodesecurity.Security`:
 

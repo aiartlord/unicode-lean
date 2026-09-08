@@ -186,7 +186,11 @@ nix develop .#runtime -c scripts/package-runtime.sh
 The Lean proof base is the opt-in evidence workflow. Do not use a broad
 cold-cache Lean build as the default validation path; use the staged cache plan
 in [`docs/how-to/build.md`](docs/how-to/build.md). `nix run` prints the live file / theorem
-inventory.
+inventory. Beyond the build's own kernel checking, the assurance workflow
+re-derives every declaration in the audited closure with the toolchain's
+independent `leanchecker` (`scripts/check-olean-recheck.sh`) and verifies that
+the transitive axiom footprint stays within `propext`, `Quot.sound`, and
+`Classical.choice` (`scripts/check-axiom-footprint.sh`).
 
 
 ## Repository layout
@@ -249,7 +253,7 @@ Pin to a tagged release in your `lakefile.lean`:
 
 ```lean
 require unicode from git
-  "https://github.com/aiartlord/unicode-lean" @ "v1.0.0"
+  "https://github.com/aiartlord/unicode-lean" @ "v1.1.0"
 ```
 
 Then `lake update` and import the namespaces you need:

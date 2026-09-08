@@ -2,7 +2,11 @@
 
 This is the Swift Package Manager surface for the shared Unicode security
 runtime contract. It is dependency-free and vendors the security data needed by
-the `homoglyph-confusable` detector under package resources.
+the `homoglyph-confusable` detector under package resources. It implements all
+27 detector families, byte-faithful to the Lean-proven Rust reference and
+emitting the same reason codes and verdicts as every other port; the detector
+reference and coverage matrix are in
+[`../DETECTOR_COVERAGE.md`](../DETECTOR_COVERAGE.md).
 
 Run the contract tests:
 

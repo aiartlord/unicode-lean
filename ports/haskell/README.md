@@ -27,7 +27,7 @@ In a consumer's `cabal.project`, add it as a source-repository-package:
 source-repository-package
   type: git
   location: https://github.com/aiartlord/unicode-lean
-  tag: v1.0.0
+  tag: v1.1.0
   subdir: ports/haskell
 ```
 
