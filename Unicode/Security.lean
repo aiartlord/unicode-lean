@@ -26,6 +26,7 @@ import Unicode.Security.Covert.SurrogateReassembly
 import Unicode.Security.Covert.NoncharacterControl
 import Unicode.Security.Identity.HomoglyphConfusable
 import Unicode.Security.Identity.HomoglyphConfusableSkeletonGate
+import Unicode.Security.Identity.IntentionalConfusableCoverage
 import Unicode.Security.Identity.MixedScriptAdmissibility
 import Unicode.Security.Identity.EmojiZwjIntegrity
 import Unicode.Security.Identity.SkinToneVariationForgery

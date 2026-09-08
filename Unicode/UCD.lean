@@ -85,9 +85,14 @@ def digestIdnaMappingTableTxt : String :=
 theorem digestIdnaMappingTableTxtLength : digestIdnaMappingTableTxt.length = 64 := by decide
 
 def digestMANIFESTTxt : String :=
-  "43749980e2cff7bd16cb8cc2f0c1f9f272372586c91442e37184f241f2ef6098"
+  "e1db484ecd84941d6c3527a3dd99a0fd9bfe110bb2152287c89eb15659716cd9"
 
 theorem digestMANIFESTTxtLength : digestMANIFESTTxt.length = 64 := by decide
+
+def digestIntentionalTxt : String :=
+  "33738217c15c1a0df0b7a2cc0a0b50b27ebdca119ca11253440ec0102f05626b"
+
+theorem digestIntentionalTxtLength : digestIntentionalTxt.length = 64 := by decide
 
 def digestNormalizationTestTxt : String :=
   "5019ffd530751a741900c849c0e010332f142a3612234639bd200b82138a87db"
@@ -258,6 +263,7 @@ def ucdFileDigests : List (String × String) := [
   ("CaseFolding.txt", digestCaseFoldingTxt),
   ("CompositionExclusions.txt", digestCompositionExclusionsTxt),
   ("confusables.txt", digestConfusablesTxt),
+  ("intentional.txt", digestIntentionalTxt),
   ("DerivedBidiClass.txt", digestDerivedBidiClassTxt),
   ("DerivedCoreProperties.txt", digestDerivedCorePropertiesTxt),
   ("DerivedNormalizationProps.txt", digestDerivedNormalizationPropsTxt),
@@ -308,13 +314,13 @@ def expectedUcdFiles : List String :=
 -- §1 SHAPE CHECKS
 -- ═══════════════════════════════════════════════════════════════════════════════
 
-/-- The trusted base pins 47 UCD source files. -/
-theorem ucdFileDigests_count : ucdFileDigests.length = 47 := by decide
+/-- The trusted base pins 48 UCD source files. -/
+theorem ucdFileDigests_count : ucdFileDigests.length = 48 := by decide
 
 /-- Every digest entry has the expected 64-hex-character SHA-256 payload. -/
 theorem ucdFileDigests_all_64 :
     ucdFileDigests.all (fun fh => fh.snd.length = 64) = true := by
-  simp [ucdFileDigests, digestBidiBracketsTxtLength, digestBidiCharacterTestTxtLength, digestBidiMirroringTxtLength, digestBidiTestTxtLength, digestCaseFoldingTxtLength, digestCompositionExclusionsTxtLength, digestConfusablesTxtLength, digestDerivedBidiClassTxtLength, digestDerivedCorePropertiesTxtLength, digestDerivedNormalizationPropsTxtLength, digestEastAsianWidthTxtLength, digestIdentifierStatusTxtLength, digestIdentifierTypeTxtLength, digestIdnaMappingTableTxtLength, digestMANIFESTTxtLength, digestNormalizationTestTxtLength, digestPropListTxtLength, digestScriptExtensionsTxtLength, digestScriptsTxtLength, digestUnicodeDataTxtLength, digestLineBreakTxtLength, digestLineBreakTestTxtLength, digestGraphemeBreakPropertyTxtLength, digestGraphemeBreakTestTxtLength, digestWordBreakPropertyTxtLength, digestWordBreakTestTxtLength, digestSentenceBreakPropertyTxtLength, digestSentenceBreakTestTxtLength, digestEmojiDataTxtLength, digestAllkeysTxtLength, digestCollationTestNONIGNORABLESHORTTxtLength, digestCollationTestNONIGNORABLETxtLength, digestCollationTestSHIFTEDSHORTTxtLength, digestCollationTestSHIFTEDTxtLength, digestIdnaTestV2TxtLength, digestDerivedJoiningTypeTxtLength, digestEmojiSequencesTxtLength, digestEmojiZwjSequencesTxtLength, digestEmojiTestTxtLength, digestVerticalOrientationTxtLength, digestUnihanVariantsTxtLength, digestUnihanNumericValuesTxtLength, digestPropertyAliasesTxtLength, digestPropertyValueAliasesTxtLength, digestSpecialCasingTxtLength, digestStandardizedVariantsTxtLength, digestEmojiVariationSequencesTxtLength]
+  simp [ucdFileDigests, digestBidiBracketsTxtLength, digestBidiCharacterTestTxtLength, digestBidiMirroringTxtLength, digestBidiTestTxtLength, digestCaseFoldingTxtLength, digestCompositionExclusionsTxtLength, digestConfusablesTxtLength, digestIntentionalTxtLength, digestDerivedBidiClassTxtLength, digestDerivedCorePropertiesTxtLength, digestDerivedNormalizationPropsTxtLength, digestEastAsianWidthTxtLength, digestIdentifierStatusTxtLength, digestIdentifierTypeTxtLength, digestIdnaMappingTableTxtLength, digestMANIFESTTxtLength, digestNormalizationTestTxtLength, digestPropListTxtLength, digestScriptExtensionsTxtLength, digestScriptsTxtLength, digestUnicodeDataTxtLength, digestLineBreakTxtLength, digestLineBreakTestTxtLength, digestGraphemeBreakPropertyTxtLength, digestGraphemeBreakTestTxtLength, digestWordBreakPropertyTxtLength, digestWordBreakTestTxtLength, digestSentenceBreakPropertyTxtLength, digestSentenceBreakTestTxtLength, digestEmojiDataTxtLength, digestAllkeysTxtLength, digestCollationTestNONIGNORABLESHORTTxtLength, digestCollationTestNONIGNORABLETxtLength, digestCollationTestSHIFTEDSHORTTxtLength, digestCollationTestSHIFTEDTxtLength, digestIdnaTestV2TxtLength, digestDerivedJoiningTypeTxtLength, digestEmojiSequencesTxtLength, digestEmojiZwjSequencesTxtLength, digestEmojiTestTxtLength, digestVerticalOrientationTxtLength, digestUnihanVariantsTxtLength, digestUnihanNumericValuesTxtLength, digestPropertyAliasesTxtLength, digestPropertyValueAliasesTxtLength, digestSpecialCasingTxtLength, digestStandardizedVariantsTxtLength, digestEmojiVariationSequencesTxtLength]
 
 /-- Sanity check on the canonical `UnicodeData.txt` digest. -/
 theorem ucdFileDigests_unicode_data :
