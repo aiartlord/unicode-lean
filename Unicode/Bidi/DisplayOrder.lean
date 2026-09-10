@@ -216,7 +216,7 @@ theorem paragraphLevel_ltr (cps : List Nat)
 theorem resolveFSIAt_id (cps : List Nat) (i cp : Nat)
     (h : lookupBidiClass cp ≠ .FSI) : resolveFSIAt cps i cp = cp := by
   unfold resolveFSIAt
-  rw [if_neg h]
+  rw [ite_eq_right h]
 
 /-- **X5c is the identity on left-to-right text**: there is no FSI to rewrite. -/
 theorem resolveFSI_ltr (cps : List Nat)
@@ -403,7 +403,7 @@ theorem applyW3_ltr (records : List CharRecord) (hAll : ∀ r ∈ records, LtrRe
     intro hAL
     rw [hAL] at hsafe
     exact absurd hsafe (by decide)
-  rw [if_neg hNotAL]
+  rw [ite_eq_right hNotAL]
   exact ⟨hlvl, hsafe⟩
 
 theorem applyW4_ltr (records : List CharRecord) (hAll : ∀ r ∈ records, LtrRecord r) :
@@ -419,7 +419,7 @@ theorem applyW4_ltr (records : List CharRecord) (hAll : ∀ r ∈ records, LtrRe
       have hj' := (getElem!_prop LtrRecord records j hAll default_LtrRecord).2
       rw [hj] at hj'
       exact absurd hj' (by decide)
-    simp only [hNoAN, false_and, if_false]
+    simp only [hNoAN, false_and, ite_false]
     cases hc : x.resolvedClass <;> simp only <;> (try split) <;>
       first
       | exact ⟨hlvl, rfl⟩
@@ -589,7 +589,7 @@ theorem applyN1N2_ltr (records : List CharRecord)
   split
   · have hl := getD_LTR (leftStrongDir .LTR records) i (leftStrongDir_ltr records hAll)
     have hr := getD_LTR (rightStrongDir .LTR records) i (rightStrongDir_ltr records hAll)
-    simp only [hl, hr, embeddingDirection_zero, if_true]
+    simp only [hl, hr, embeddingDirection_zero, ite_true]
     exact ⟨hlvl, rfl⟩
   · exact ⟨hlvl, hres⟩
 
@@ -643,7 +643,7 @@ theorem resolveBracketPair_ltr (records : List CharRecord) (openIdx closeIdx : N
   -- answers left, and every branch then sets brackets to L or keeps the
   -- records.
   rw [foldl_dir_LTR]
-  · simp only [embeddingDirection_zero, if_true]
+  · simp only [embeddingDirection_zero, ite_true]
     try dsimp only
     repeat' split
     all_goals first
@@ -738,8 +738,8 @@ theorem applyWAndNToIRS_ltr (records : List CharRecord) (irs : List Nat)
     ∀ r ∈ applyWAndNToIRS 0 records irs, LtrRecord r := by
   unfold applyWAndNToIRS
   by_cases hE : irs.isEmpty = true
-  · rw [if_pos hE]; exact hAll
-  · rw [if_neg hE]
+  · rw [ite_eq_left hE]; exact hAll
+  · rw [ite_eq_right hE]
     have hB := computeIRSBoundaries_zero records irs (fun r hr => (hAll r hr).1)
     have hz : ∀ i : Nat, (records[i]! : CharRecord).level = 0 :=
       level_getElem!_zero records (fun r hr => (hAll r hr).1)
@@ -849,23 +849,23 @@ theorem mergeFold_length (irs : List Nat) (neutral records : List CharRecord) :
     rcases st with ⟨out, j⟩
     try dsimp only
     by_cases hj : j < neutral.length
-    · rw [dif_pos hj]
+    · rw [dite_eq_left hj]
       by_cases hr : recIdx < out.length
-      · rw [if_pos hr]
+      · rw [ite_eq_left hr]
         try dsimp only
         rw [List.length_set]
         exact hst
-      · rw [if_neg hr]
+      · rw [ite_eq_right hr]
         exact hst
-    · rw [dif_neg hj]
+    · rw [dite_eq_right hj]
       exact hst
 
 theorem applyWAndNToIRS_length (records : List CharRecord) (irs : List Nat) :
     (applyWAndNToIRS 0 records irs).length = records.length := by
   unfold applyWAndNToIRS
   by_cases hE : irs.isEmpty = true
-  · rw [if_pos hE]
-  · rw [if_neg hE]
+  · rw [ite_eq_left hE]
+  · rw [ite_eq_right hE]
     rcases hB : computeIRSBoundaries records 0 irs with ⟨sos, eos⟩
     try dsimp only
     apply mergeFold_length
@@ -914,9 +914,9 @@ theorem retainedIndexFold_length :
       rw [List.foldl_cons, retainedIndexStep_eq]
       split
       · rename_i hrem
-        rw [ih, List.filterMap_cons_none (by rw [plainRecord_eq, if_pos hrem])]
+        rw [ih, List.filterMap_cons_none (by rw [plainRecord_eq, ite_eq_left hrem])]
       · rename_i hkeep
-        rw [ih, List.filterMap_cons_some (by rw [plainRecord_eq, if_neg hkeep])]
+        rw [ih, List.filterMap_cons_some (by rw [plainRecord_eq, ite_eq_right hkeep])]
         rw [List.length_append, List.length_singleton, List.length_cons]
         omega
 

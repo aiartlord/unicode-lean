@@ -272,8 +272,8 @@ theorem snapUpdate_spSinceNoSp_inv (cps : List Nat) (s : EffSnapshot) (ic : Nat 
     (snapUpdate cps s ic).spSinceNoSp = ((snapUpdate cps s ic).effPrev == some .SP) := by
   rw [snapUpdate_spSinceNoSp, snapUpdate_effPrev, effPrevUpdate_cRealOf]
   by_cases habs : isCMZWJ (cRealOf s.effPrev ic.2) = true
-  · simp only [habs, if_true]; exact hs
-  · simp [if_neg habs]
+  · simp only [habs, ite_true]; exact hs
+  · simp [ite_eq_right habs]
 
 /-- **spSinceNoSp is redundant with effPrev.** The field is exactly whether the
     effective-previous class is `SP`; it carries no state the resolved-class

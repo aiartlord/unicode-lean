@@ -601,14 +601,14 @@ theorem stepReorder_starter (S : ReorderState) (cp : Nat)
     stepReorder S cp
       = { emitted := S.emitted ++ flushRun S ++ [cp], currentRun := [] } := by
   unfold stepReorder
-  rw [if_pos hccc]
+  rw [ite_eq_left hccc]
 
 /-- Evaluation lemma for `stepReorder` on a non-starter codepoint. -/
 theorem stepReorder_nonstarter (S : ReorderState) (cp : Nat)
     (hccc : Lookup.canonicalCombiningClass cp ≠ 0) :
     stepReorder S cp = { S with currentRun := cp :: S.currentRun } := by
   unfold stepReorder
-  rw [if_neg hccc]
+  rw [ite_eq_right hccc]
 
 /-- Aggregate invariant carried by the reorder fold, kept as a single
     `Prop` so the `list_snoc_induction` motive is flat (no `let`). -/

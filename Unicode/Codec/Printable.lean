@@ -96,7 +96,7 @@ theorem firstForbiddenControlFrom_none (bs : List UInt8) (i : Nat)
   unfold firstForbiddenControlFrom
   split
   · next hi =>
-    rw [if_neg (by rw [h i hi]; simp)]
+    rw [ite_eq_right (by rw [h i hi]; simp)]
     exact firstForbiddenControlFrom_none bs (i + 1) h
   · rfl
 termination_by bs.length - i

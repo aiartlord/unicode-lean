@@ -83,8 +83,8 @@ theorem len_takeWhile_eq_iff (p : Nat → Bool) (l : List Nat) :
   | cons x xs ih =>
     rw [List.takeWhile_cons, List.all_cons]
     by_cases hpx : p x
-    · simp only [hpx, if_pos, List.length_cons, Bool.true_and, Nat.add_right_cancel_iff, ih]
-    · simp only [hpx, if_neg, not_false_iff, List.length_nil, Bool.false_and,
+    · simp only [hpx, ite_eq_left, List.length_cons, Bool.true_and, Nat.add_right_cancel_iff, ih]
+    · simp only [hpx, ite_eq_right, not_false_iff, List.length_nil, Bool.false_and,
                  Bool.false_eq_true, iff_false, List.length_cons]
       omega
 
@@ -102,25 +102,25 @@ theorem riRunSpec_eq_trailingRI_carry (l : List Nat) (k : Nat) :
       intro h; simp [h]
     by_cases hx : lookupGCB x = GCBClass.Regional_Indicator
     · have hxb : isRI x = true := by simp [isRI, hx]
-      simp only [hx, if_pos, ih (k + 1), List.all_cons, hxb, Bool.true_and, List.length_cons]
+      simp only [hx, ite_eq_left, ih (k + 1), List.all_cons, hxb, Bool.true_and, List.length_cons]
       by_cases hall : xs.all isRI = true
-      · simp only [hall, if_pos]; omega
-      · simp only [hall, Bool.false_eq_true, if_neg, not_false_iff]
+      · simp only [hall, ite_eq_left]; omega
+      · simp only [hall, Bool.false_eq_true, ite_eq_right, not_false_iff]
         rw [htRI, List.takeWhile_append]
         have hne : ¬ (xs.reverse.takeWhile isRI).length = xs.reverse.length := by
           rw [len_takeWhile_eq_iff, List.all_reverse]; exact hall
-        simp only [hne, if_neg, not_false_iff, trailingRI]
+        simp only [hne, ite_eq_right, not_false_iff, trailingRI]
     · have hxb : isRI x = false := by simp [isRI, hx]
-      simp only [hx, if_neg, not_false_iff, ih 0, List.all_cons, hxb, Bool.false_and,
-                 Bool.false_eq_true, if_neg]
+      simp only [hx, ite_eq_right, not_false_iff, ih 0, List.all_cons, hxb, Bool.false_and,
+                 Bool.false_eq_true, ite_eq_right]
       rw [htRI, List.takeWhile_append, hxEmpty hxb]
       by_cases hall : xs.all isRI = true
       · have heq : (xs.reverse.takeWhile isRI).length = xs.reverse.length := by
           rw [len_takeWhile_eq_iff, List.all_reverse]; exact hall
-        simp only [hall, if_pos, heq, List.append_nil, List.length_reverse, Nat.zero_add]
+        simp only [hall, ite_eq_left, heq, List.append_nil, List.length_reverse, Nat.zero_add]
       · have hne : ¬ (xs.reverse.takeWhile isRI).length = xs.reverse.length := by
           rw [len_takeWhile_eq_iff, List.all_reverse]; exact hall
-        simp only [hall, hne, Bool.false_eq_true, if_neg, not_false_iff, trailingRI]
+        simp only [hall, hne, Bool.false_eq_true, ite_eq_right, not_false_iff, trailingRI]
 
 /-- **GB12/GB13 context bridge.** `State.riRun` after scanning `l` from the
     initial state equals `trailingRI l` — the Regional_Indicator run length the
@@ -132,11 +132,11 @@ theorem riRun_eq_trailingRI (l : List Nat) :
   show riRunSpec 0 l = trailingRI l
   rw [riRunSpec_eq_trailingRI_carry]
   by_cases hall : l.all isRI = true
-  · simp only [hall, if_pos, Nat.zero_add, trailingRI]
+  · simp only [hall, ite_eq_left, Nat.zero_add, trailingRI]
     have hfull : (l.reverse.takeWhile isRI).length = l.reverse.length := by
       rw [len_takeWhile_eq_iff, List.all_reverse]; exact hall
     rw [hfull, List.length_reverse]
-  · simp only [hall, Bool.false_eq_true, if_neg, not_false_iff]
+  · simp only [hall, Bool.false_eq_true, ite_eq_right, not_false_iff]
 
 /-- **GB3–GB9b context bridge.** After scanning a prefix ending in `x`, the
     operational `prevClass` is exactly `some (lookupGCB x)` — the class of the
@@ -242,8 +242,8 @@ theorem endsInEP_snoc (init : List Nat) (x : Nat) :
   rw [List.reverse_append, List.reverse_cons, List.reverse_nil, List.nil_append,
       List.singleton_append, List.dropWhile_cons]
   by_cases hx : isExtendCont x
-  · simp only [hx, if_pos]
-  · simp only [hx, Bool.false_eq_true, if_neg, not_false_iff, List.head?_cons]
+  · simp only [hx, ite_eq_left]
+  · simp only [hx, Bool.false_eq_true, ite_eq_right, not_false_iff, List.head?_cons]
 
 /-- `endsInEPZWJ` peels its last element: a run-continuing ZWJ, with the
     preceding prefix ending in `Extended_Pictographic (Extend∧¬EP)*`. -/
@@ -367,8 +367,8 @@ theorem endsInINCBConsonant_snoc (init : List Nat) (x : Nat) :
   rw [List.reverse_append, List.reverse_cons, List.reverse_nil, List.nil_append,
       List.singleton_append, List.dropWhile_cons]
   by_cases hx : isInCBExtend x
-  · simp only [hx, if_pos]
-  · simp only [hx, Bool.false_eq_true, if_neg, not_false_iff, List.head?_cons]
+  · simp only [hx, ite_eq_left]
+  · simp only [hx, Bool.false_eq_true, ite_eq_right, not_false_iff, List.head?_cons]
 
 /-- The trailing Extend/Linker run of `l` contains at least one Linker. -/
 def inCBRunHasLinker (l : List Nat) : Bool :=
@@ -391,8 +391,8 @@ theorem inCBRunHasLinker_snoc (init : List Nat) (x : Nat) :
   rw [List.reverse_append, List.reverse_cons, List.reverse_nil, List.nil_append,
       List.singleton_append, List.takeWhile_cons]
   by_cases hx : isExtendOrLinker x
-  · simp only [hx, if_pos, List.any_cons]
-  · simp only [hx, Bool.false_eq_true, if_neg, not_false_iff, List.any_nil]
+  · simp only [hx, ite_eq_left, List.any_cons]
+  · simp only [hx, Bool.false_eq_true, ite_eq_right, not_false_iff, List.any_nil]
 
 theorem inCBChainAnchored_snoc (init : List Nat) (x : Nat) :
     inCBChainAnchored (init ++ [x])
@@ -401,8 +401,8 @@ theorem inCBChainAnchored_snoc (init : List Nat) (x : Nat) :
   rw [List.reverse_append, List.reverse_cons, List.reverse_nil, List.nil_append,
       List.singleton_append, List.dropWhile_cons]
   by_cases hx : isExtendOrLinker x
-  · simp only [hx, if_pos]
-  · simp only [hx, Bool.false_eq_true, if_neg, not_false_iff, List.head?_cons]
+  · simp only [hx, ite_eq_left]
+  · simp only [hx, Bool.false_eq_true, ite_eq_right, not_false_iff, List.head?_cons]
 
 /-- **GB9c context bridge.** After scanning `l` from the initial state, the
     operational `inCBState` characterizes the declarative Indic-conjunct

@@ -349,7 +349,7 @@ theorem stepReorder_fold_preserves_mem
     apply ih
     unfold Reorder.stepReorder
     by_cases hCcc : Lookup.canonicalCombiningClass hd' = 0
-    · rw [if_pos hCcc]
+    · rw [ite_eq_left hCcc]
       simp only [List.mem_cons] at h
       rcases h with he | hr | hEq | hRest
       · left
@@ -363,7 +363,7 @@ theorem stepReorder_fold_preserves_mem
         rw [List.mem_append]; right
         simp; exact hEq
       · right; right; exact hRest
-    · rw [if_neg hCcc]
+    · rw [ite_eq_right hCcc]
       simp only [List.mem_cons] at h
       rcases h with he | hr | hEq | hRest
       · left; exact he

@@ -106,7 +106,7 @@ theorem riCarry_effSeq (l : List WBClass) (k : Nat) :
     riCarry k l = riCarry k (effSeq l) := by
   rw [riCarry_eq_foldl, riCarry_eq_foldl, effSeq]
   exact PrefixScan.foldl_filter riUpdate (fun c => ! isAbsorbable c)
-    (fun c x hx => by rw [riUpdate, if_pos (by simpa using hx)]) l k
+    (fun c x hx => by rw [riUpdate, ite_eq_left (by simpa using hx)]) l k
 
 /-- A class of the effective sequence is a Regional_Indicator. -/
 def isRI (c : WBClass) : Bool := c == WBClass.Regional_Indicator
@@ -207,7 +207,7 @@ theorem effPrevCarry_effSeq (l : List WBClass) (acc : Option WBClass × Option W
     effPrevCarry acc l = effPrevCarry acc (effSeq l) := by
   rw [effPrevCarry_eq_foldl, effPrevCarry_eq_foldl, effSeq]
   exact PrefixScan.foldl_filter effPrevUpdate (fun c => ! isAbsorbable c)
-    (fun c x hx => by rw [effPrevUpdate, if_pos (by simpa using hx)]) l acc
+    (fun c x hx => by rw [effPrevUpdate, ite_eq_left (by simpa using hx)]) l acc
 
 /-- `effPrevCarry` peels its last element as one `effPrevUpdate`. -/
 theorem effPrevCarry_snoc (acc : Option WBClass × Option WBClass)
@@ -229,7 +229,7 @@ theorem effPrevCarry_of_nonAbs (m : List WBClass)
     rw [List.all_append, List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true] at hm
     obtain ⟨hinit, hc⟩ := hm
     have hcAbs : isAbsorbable c = false := by simpa using hc
-    rw [effPrevCarry_snoc, ih hinit, effPrevUpdate, if_neg (by simp [hcAbs]),
+    rw [effPrevCarry_snoc, ih hinit, effPrevUpdate, ite_eq_right (by simp [hcAbs]),
         List.getLast?_concat, List.dropLast_concat]
 
 /-- **WB5-WB13 context.** The effective-prev/prev-prev pair after scanning `l`
@@ -268,7 +268,7 @@ theorem nextCarry_effSeq (l : List WBClass) (acc : Option WBClass) :
     nextCarry acc l = nextCarry acc (effSeq l) := by
   rw [nextCarry_eq_foldl, nextCarry_eq_foldl, effSeq]
   exact PrefixScan.foldl_filter nextUpdate (fun c => ! isAbsorbable c)
-    (fun c x hx => by rw [nextUpdate, if_pos (by simpa using hx)]) l acc
+    (fun c x hx => by rw [nextUpdate, ite_eq_left (by simpa using hx)]) l acc
 
 /-- `nextCarry` peels its last element as one `nextUpdate`. -/
 theorem nextCarry_snoc (acc : Option WBClass) (m : List WBClass) (c : WBClass) :
@@ -287,7 +287,7 @@ theorem nextCarry_of_nonAbs (m : List WBClass)
     rw [List.all_append, List.all_cons, List.all_nil, Bool.and_true, Bool.and_eq_true] at hm
     obtain ⟨hinit, hc⟩ := hm
     have hcAbs : isAbsorbable c = false := by simpa using hc
-    rw [nextCarry_snoc, ih hinit, nextUpdate, if_neg (by simp [hcAbs]), List.getLast?_concat]
+    rw [nextCarry_snoc, ih hinit, nextUpdate, ite_eq_right (by simp [hcAbs]), List.getLast?_concat]
 
 /-- **WB6/WB7b/WB12 effective class.** The reversed scan's carry from the initial
     state is the last class of the WB4-effective subsequence. Applied to the
@@ -445,7 +445,7 @@ theorem buildEffNext_getElem! (lits : List WBClass) (i : Nat) (h : i < lits.leng
     rw [buildEffNext_toList, List.getElem?_reverse hi_rev]
     have hqi := PrefixScan.carries_getElem? nextUpdate none lits.reverse
       ((PrefixScan.carries nextUpdate none lits.reverse).length - 1 - i)
-    simp only [hidx, if_pos] at hqi
+    simp only [hidx, ite_eq_left] at hqi
     rw [hqi, ← nextCarry_eq_foldl, nextCarry_zero, List.take_reverse, harith, effSeq_reverse,
         List.getLast?_reverse]
   rw [getElem!_pos (buildEffNext lits) i hsize]
@@ -540,7 +540,7 @@ theorem shouldBreakBefore_decision (cps : List Nat) (lits : List WBClass) (eps :
     shouldBreakBefore cps lits eps effP effN riR i =
       wbRuleDecision lits[i-1]! lits[i]! eps[i]! effP[i]! effN[i]! riR[i]! := by
   unfold shouldBreakBefore wbRuleDecision
-  rw [if_neg h0, if_neg hn]
+  rw [ite_eq_right h0, ite_eq_right hn]
   rfl
 
 /-- The declarative UAX #29 word-boundary decision at position `i`: WB1 (start),
@@ -578,7 +578,7 @@ theorem shouldBreakBefore_eq_spec (cps : List Nat) (i : Nat) :
           buildEffNext_getElem! (cps.map lookupWB) i hmap,
           buildEffRiRun_getElem! (cps.map lookupWB) i hmap, riCarry_zero_eq_effTrailingRI]
       unfold wbBreakSpecAt
-      rw [if_neg h0, if_neg hn]
+      rw [ite_eq_right h0, ite_eq_right hn]
 
 /-- **Word break equals its declarative UAX #29 specification.** `wordBreaks cps`
     is, position by position, the declarative WB1-WB999 decision over the raw

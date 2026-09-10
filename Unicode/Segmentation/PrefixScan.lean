@@ -82,10 +82,10 @@ theorem foldl_filter (upd : β → α → β) (p : α → Bool)
   | cons x xs ih =>
     rw [List.filter_cons]
     by_cases hpx : p x
-    · simp only [hpx, if_pos, List.foldl_cons]
+    · simp only [hpx, ite_eq_left, List.foldl_cons]
       exact ih (upd c x)
     · have hpf : p x = false := by simpa using hpx
-      rw [if_neg (by simp [hpf]), List.foldl_cons, hfix c x hpf]
+      rw [ite_eq_right (by simp [hpf]), List.foldl_cons, hfix c x hpf]
       exact ih c
 
 /-- Entry `i` of the carries list is the carry after folding `upd` over the first
@@ -121,7 +121,7 @@ theorem build_getElem! [Inhabited β]
   have hq : build[i]? = some ((arr.take i).foldl upd c0) := by
     rw [hbl]
     have hqi := carries_getElem? upd c0 arr i
-    simp only [h, if_pos] at hqi
+    simp only [h, ite_eq_left] at hqi
     exact hqi
   rw [getElem!_pos build i hsize]
   have hsome : build[i]? = some build[i] := List.getElem?_eq_getElem hsize

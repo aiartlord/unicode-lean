@@ -117,7 +117,7 @@ theorem UnicodeData_rows_adjacent_StrictMono :
       ((UnicodeData.rowsList.zip UnicodeData.rowsList.tail)[i]'hiZip)
       (List.getElem_mem hiZip))
   rw [List.getElem_zip, List.getElem_tail] at hPair
-  rw [dif_pos hi1]
+  rw [dite_eq_left hi1]
   simp only [UnicodeData.rows]
   exact decide_eq_true hPair
 

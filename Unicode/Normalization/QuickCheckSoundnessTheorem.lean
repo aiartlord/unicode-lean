@@ -112,8 +112,8 @@ theorem toNFCQuick_eq_toNFC (cps : List Nat) :
     toNFCQuick cps = toNFC cps := by
   unfold toNFCQuick
   by_cases hQC : isNFCQuickCheck cps = true
-  · rw [if_pos hQC]
+  · rw [ite_eq_left hQC]
     exact (quickCheck_sound cps hQC).symm
-  · rw [if_neg hQC]
+  · rw [ite_eq_right hQC]
 
 end Unicode.Normalization.QuickCheckSoundnessTheorem

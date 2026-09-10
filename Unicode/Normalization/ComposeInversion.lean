@@ -201,17 +201,17 @@ theorem stepCompose_starter_some_isSome
   unfold Compose.stepCompose
   simp only []
   by_cases hCCC : Lookup.canonicalCombiningClass cp = 0
-  · rw [if_pos hCCC]
+  · rw [ite_eq_left hCCC]
     by_cases hBE : buf.isEmpty = true
-    · rw [if_pos hBE]
+    · rw [ite_eq_left hBE]
       cases Compose.primaryComposite? st cp <;> rfl
-    · rw [if_neg hBE]
+    · rw [ite_eq_right hBE]
       rfl
-  · rw [if_neg hCCC]
+  · rw [ite_eq_right hCCC]
     by_cases hBlock : Lookup.canonicalCombiningClass cp ≤ mx
-    · rw [if_pos hBlock]
+    · rw [ite_eq_left hBlock]
       rfl
-    · rw [if_neg hBlock]
+    · rw [ite_eq_right hBlock]
       cases Compose.primaryComposite? st cp <;> rfl
 
 set_option maxRecDepth 8192 in
@@ -261,19 +261,19 @@ theorem stepCompose_preserves_valid
     | none =>
       have hBuf : s.buffer = [] := hvStarter hS
       by_cases hCCC : Lookup.canonicalCombiningClass cp = 0
-      · simp only [hCCC, if_true]
+      · simp only [hCCC, ite_true]
         intro y hMem
         rw [hBuf] at hMem
         cases hMem
-      · simp only [hCCC, if_false]
+      · simp only [hCCC, ite_false]
         intro y hMem
         rw [hBuf] at hMem
         cases hMem
     | some st =>
       by_cases hCCC : Lookup.canonicalCombiningClass cp = 0
-      · simp only [hCCC, if_true]
+      · simp only [hCCC, ite_true]
         by_cases hBufEm : s.buffer.isEmpty = true
-        · simp only [hBufEm, if_true]
+        · simp only [hBufEm, ite_true]
           have hBufNil : s.buffer = [] := List.isEmpty_iff.mp hBufEm
           cases hPrim : Compose.primaryComposite? st cp with
           | some p =>
@@ -286,10 +286,10 @@ theorem stepCompose_preserves_valid
         · simp only [hBufEm]
           intro y hMem
           cases hMem
-      · simp only [hCCC, if_false]
+      · simp only [hCCC, ite_false]
         by_cases hBlock : Lookup.canonicalCombiningClass cp ≤ s.maxCCC
         · -- Case 6: buffer := cp :: s.buffer, maxCCC := Nat.max s.maxCCC (ccc cp)
-          simp only [hBlock, if_true]
+          simp only [hBlock, ite_true]
           intro y hMem
           rcases List.mem_cons.mp hMem with hHead | hTail
           · rw [hHead]
@@ -298,7 +298,7 @@ theorem stepCompose_preserves_valid
           · obtain ⟨hYpos, hYbound⟩ := hvBuffer y hTail
             exact ⟨hYpos, Nat.le_trans hYbound
                            (Nat.le_max_left s.maxCCC (Lookup.canonicalCombiningClass cp))⟩
-        · simp only [hBlock, if_false]
+        · simp only [hBlock, ite_false]
           cases hPrim : Compose.primaryComposite? st cp with
           | some p =>
             -- Case 7: buffer unchanged, maxCCC unchanged
@@ -419,7 +419,7 @@ theorem stepCompose_case_leading_starter_expand
     expand (Compose.stepCompose s cp) = expand s ++ [cp] := by
   have hBuf : s.buffer = [] := hv.1 hSNone
   rw [stepCompose_starter_none_output s cp hSNone]
-  rw [if_pos hCCC]
+  rw [ite_eq_left hCCC]
   unfold expand
   rw [hSNone, hBuf]
   simp
@@ -435,7 +435,7 @@ theorem stepCompose_case_leading_nonstarter_expand
     expand (Compose.stepCompose s cp) = expand s ++ [cp] := by
   have hBuf : s.buffer = [] := hv.1 hSNone
   rw [stepCompose_starter_none_output s cp hSNone]
-  rw [if_neg hCCC]
+  rw [ite_eq_right hCCC]
   unfold expand
   rw [hSNone, hBuf]
   simp
@@ -766,7 +766,7 @@ theorem fullCanonicalDecompose_of_twoElt_decomp
   unfold combP at hcomb
   rw [Bool.and_eq_true] at hcomb
   have hTCell := hcomb.1
-  rw [if_pos hSize] at hTCell
+  rw [ite_eq_left hSize] at hTCell
   rw [hGet0, hGet1] at hTCell
   rw [hSrcCodepointEq] at hTCell
   exact of_decide_eq_true hTCell

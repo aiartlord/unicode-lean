@@ -66,7 +66,7 @@ theorem stepCompose_primary_fire_form
   set_option linter.unusedSimpArgs false in
   unfold Compose.stepCompose
   simp only [hSt]
-  rw [if_neg hCccNe, if_neg hMax, hPC]
+  rw [ite_eq_right hCccNe, ite_eq_right hMax, hPC]
 
 /-- **Chain-firing preserves `emitted`, `buffer`, and `maxCCC`.** When
     `B` primary-fires from `s`, folding `stepCompose` over `B` updates
@@ -111,10 +111,10 @@ theorem stepCompose_qcY_nonstarter_buffer_form
   set_option linter.unusedSimpArgs false in
   unfold Compose.stepCompose
   simp only [hSt]
-  rw [if_neg hCccNe]
+  rw [ite_eq_right hCccNe]
   by_cases hMax : Lookup.canonicalCombiningClass cp ≤ s.maxCCC
-  · rw [if_pos hMax]
-  · rw [if_neg hMax]
+  · rw [ite_eq_left hMax]
+  · rw [ite_eq_right hMax]
     rw [primaryComposite_none_of_qcY st cp hQC]
 
 -- ═══════════════════════════════════════════════════════════════════════════════

@@ -1383,7 +1383,7 @@ theorem minOddLevel_fold_const :
       intro acc hEven
       have hHead : r.level % 2 = 0 := hEven r List.mem_cons_self
       have hOdd : ¬ (r.level % 2 = 1) := by simp [hHead]
-      rw [List.foldl_cons, if_neg hOdd]
+      rw [List.foldl_cons, ite_eq_right hOdd]
       exact ih acc (fun s hs => hEven s (List.mem_cons_of_mem r hs))
 
 /-- **An all-even record array has no minimum odd level.** -/

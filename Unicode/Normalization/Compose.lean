@@ -121,19 +121,19 @@ theorem findSome?_matcher_eq_find?_pairs (d c : Nat)
     · have hMatch : (if r.canonicalDecomposition = [d, c]
              ∧ ¬ Lookup.isFullCompositionExclusion r.codepoint then
             some r.codepoint else none) = none := by
-        rw [if_neg]
+        rw [ite_eq_right]
         intro hCon
         exact hCon.2 hExcl
       have hPair : pairOfRow r = none := by
         unfold pairOfRow
-        rw [if_pos hExcl]
+        rw [ite_eq_left hExcl]
       simp only [hMatch, hPair]
       exact ih
     · cases hDT : r.canonicalDecomposition with
       | nil =>
         have hPair : pairOfRow r = none := by
           unfold pairOfRow
-          rw [if_neg hExcl, hDT]
+          rw [ite_eq_right hExcl, hDT]
         simp only [hPair]
         exact ih
       | cons a tail1 =>
@@ -142,14 +142,14 @@ theorem findSome?_matcher_eq_find?_pairs (d c : Nat)
           have hMatch : (if r.canonicalDecomposition = [d, c]
                  ∧ ¬ Lookup.isFullCompositionExclusion r.codepoint then
                 some r.codepoint else none) = none := by
-            rw [if_neg]
+            rw [ite_eq_right]
             intro hCon
             have hTL := hCon.1
             rw [hDT, hDT2] at hTL
             simp at hTL
           have hPair : pairOfRow r = none := by
             unfold pairOfRow
-            rw [if_neg hExcl, hDT, hDT2]
+            rw [ite_eq_right hExcl, hDT, hDT2]
           rw [hDT, hDT2] at hMatch
           simp only [hMatch, hPair]
           exact ih
@@ -159,27 +159,27 @@ theorem findSome?_matcher_eq_find?_pairs (d c : Nat)
             have hMatch : (if r.canonicalDecomposition = [d, c]
                    ∧ ¬ Lookup.isFullCompositionExclusion r.codepoint then
                   some r.codepoint else none) = none := by
-              rw [if_neg]
+              rw [ite_eq_right]
               intro hCon
               have hTL := hCon.1
               rw [hDT, hDT2, hDT3] at hTL
               simp at hTL
             have hPair : pairOfRow r = none := by
               unfold pairOfRow
-              rw [if_neg hExcl, hDT, hDT2, hDT3]
+              rw [ite_eq_right hExcl, hDT, hDT2, hDT3]
             rw [hDT, hDT2, hDT3] at hMatch
             simp only [hMatch, hPair]
             exact ih
           | nil =>
             have hPair : pairOfRow r = some (a, b, r.codepoint) := by
               unfold pairOfRow
-              rw [if_neg hExcl, hDT, hDT2, hDT3]
+              rw [ite_eq_right hExcl, hDT, hDT2, hDT3]
             by_cases hKey : a = d ∧ b = c
             · obtain ⟨hA, hB⟩ := hKey
               have hMatch : (if r.canonicalDecomposition = [d, c]
                      ∧ ¬ Lookup.isFullCompositionExclusion r.codepoint then
                     some r.codepoint else none) = some r.codepoint := by
-                rw [if_pos]
+                rw [ite_eq_left]
                 refine ⟨?arrEq, hExcl⟩
                 rw [hDT, hDT2, hDT3, hA, hB]
               have hCond : (Nat.beq (a, b, r.codepoint).1 d
@@ -195,7 +195,7 @@ theorem findSome?_matcher_eq_find?_pairs (d c : Nat)
             · have hMatch : (if r.canonicalDecomposition = [d, c]
                      ∧ ¬ Lookup.isFullCompositionExclusion r.codepoint then
                     some r.codepoint else none) = none := by
-                rw [if_neg]
+                rw [ite_eq_right]
                 intro hCon
                 have hTL := hCon.1
                 rw [hDT, hDT2, hDT3] at hTL
@@ -556,12 +556,12 @@ theorem stepCompose_preserves_non_widthCompatSource
   cases hS : s.starter with
   | none =>
     by_cases hCCC : Lookup.canonicalCombiningClass cp = 0
-    · simp only [hCCC, if_true]
+    · simp only [hCCC, ite_true]
       refine ⟨hE, ?starterInvA, hBuf⟩
       intro x hx
       rw [← Option.some.inj hx]
       exact hCpP
-    · simp only [hCCC, if_false]
+    · simp only [hCCC, ite_false]
       refine ⟨?emitInvB, ?starterInvB, hBuf⟩
       · intro x hx
         rcases List.mem_append.mp hx with h1 | h2
@@ -571,9 +571,9 @@ theorem stepCompose_preserves_non_widthCompatSource
         simp at hx
   | some st =>
     by_cases hCCC : Lookup.canonicalCombiningClass cp = 0
-    · simp only [hCCC, if_true]
+    · simp only [hCCC, ite_true]
       by_cases hBufEm : s.buffer.isEmpty = true
-      · simp only [hBufEm, if_true]
+      · simp only [hBufEm, ite_true]
         cases hPrim : primaryComposite? st cp with
         | some p =>
           refine ⟨hE, ?starterInvC, hBuf⟩
@@ -603,9 +603,9 @@ theorem stepCompose_preserves_non_widthCompatSource
         · intro x hx
           rw [← Option.some.inj hx]; exact hCpP
         · intro x hx; simp at hx
-    · simp only [hCCC, if_false]
+    · simp only [hCCC, ite_false]
       by_cases hBlock : Lookup.canonicalCombiningClass cp ≤ s.maxCCC
-      · simp only [hBlock, if_true]
+      · simp only [hBlock, ite_true]
         refine ⟨hE, ?starterInvF, ?bufInvF⟩
         · intro x hx
           rw [← Option.some.inj hx]
@@ -614,7 +614,7 @@ theorem stepCompose_preserves_non_widthCompatSource
           rcases List.mem_cons.mp hx with h1 | h2
           · rw [h1]; exact hCpP
           · exact hBuf x h2
-      · simp only [hBlock, if_false]
+      · simp only [hBlock, ite_false]
         cases hPrim : primaryComposite? st cp with
         | some p =>
           refine ⟨hE, ?starterInvG, hBuf⟩
@@ -729,7 +729,7 @@ theorem foldl_stepCompose_shift : ∀ (l : List Nat) (em : List Nat) (st : Nat),
     have hpc : primaryComposite? st c = none := hN.1
     have hstep : stepCompose { emitted := em, starter := some st, buffer := [], maxCCC := 0 } c
         = { emitted := em ++ [st], starter := some c, buffer := [], maxCCC := 0 } := by
-      unfold stepCompose; simp only [hcc, hpc, List.isEmpty_nil, if_true]
+      unfold stepCompose; simp only [hcc, hpc, List.isEmpty_nil, ite_true]
     rw [List.foldl_cons, hstep,
         ih (em ++ [st]) c (fun cp h => hS cp (by simp [h])) hN.2]
     simp

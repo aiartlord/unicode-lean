@@ -139,7 +139,7 @@ theorem starterHeadBool_iff (arr : List Nat) :
 theorem decomposeSyllable_isSome (cp : Nat) (h : Hangul.isHangulSyllable cp = true) :
     Hangul.decomposeSyllable? cp ≠ none := by
   unfold Hangul.decomposeSyllable?
-  rw [if_pos h]
+  rw [ite_eq_left h]
   by_cases ht : (cp - Hangul.SBase) % Hangul.TCount = 0 <;> simp [ht]
 
 theorem hangul_fcd_eq (cp : Nat) (h : Hangul.isHangulSyllable cp = true) :
@@ -155,7 +155,7 @@ theorem hangul_head (cp : Nat) (h : Hangul.isHangulSyllable cp = true) :
     (Decompose.fullCanonicalDecompose cp)[0]! = Hangul.LBase + (cp - Hangul.SBase) / Hangul.NCount := by
   rw [hangul_fcd_eq cp h]
   unfold Hangul.decomposeSyllable?
-  rw [if_pos h]
+  rw [ite_eq_left h]
   by_cases ht : (cp - Hangul.SBase) % Hangul.TCount = 0 <;> simp [ht]
 
 theorem rows_omit_lJamo :
@@ -174,7 +174,7 @@ theorem hangul_size_pos (cp : Nat) (h : Hangul.isHangulSyllable cp = true) :
     0 < (Decompose.fullCanonicalDecompose cp).length := by
   rw [hangul_fcd_eq cp h]
   unfold Hangul.decomposeSyllable?
-  rw [if_pos h]
+  rw [ite_eq_left h]
   by_cases ht : (cp - Hangul.SBase) % Hangul.TCount = 0 <;> simp [ht]
 
 theorem hangul_starterHead (i : Nat) (h : i < 11172) :
@@ -186,7 +186,7 @@ theorem hangul_starterHead (i : Nat) (h : i < 11172) :
     exact decide_eq_true (by simp only [Hangul.SBase, hSC]; omega)
   have hsize := hangul_size_pos (0xAC00 + i) hsyl
   unfold starterHeadBool
-  rw [dif_pos hsize, ← getElem!_pos (Decompose.fullCanonicalDecompose (0xAC00 + i)) 0 hsize,
+  rw [dite_eq_left hsize, ← getElem!_pos (Decompose.fullCanonicalDecompose (0xAC00 + i)) 0 hsize,
       hangul_head (0xAC00 + i) hsyl, hNC]
   apply decide_eq_true
   apply ccc_lJamo
@@ -239,8 +239,8 @@ theorem fcdFuelL_eq : ∀ (fuel cp : Nat),
     | none =>
       rw [← canonicalDecomposition_eq]
       by_cases he : (Lookup.canonicalDecomposition cp).isEmpty = true
-      · rw [if_pos he, if_pos he]
-      · rw [if_neg (by simp [he]), if_neg (by simp [he])]
+      · rw [ite_eq_left he, ite_eq_left he]
+      · rw [ite_eq_right (by simp [he]), ite_eq_right (by simp [he])]
         have hstep : (fun (acc : List Nat) cp' => acc ++ Decompose.fullCanonicalDecomposeFuel fuel cp')
             = (fun (acc : List Nat) cp' => acc ++ fcdFuelL fuel cp') := by
           funext acc cp'; rw [ih cp']

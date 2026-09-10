@@ -59,10 +59,10 @@ theorem remapZsToAscii_output_no_nonAsciiZs (cps : List Nat) :
   obtain ⟨a, hMem, ha⟩ := hcp
   clear hMem
   by_cases hAZs : isNonAsciiZs a = true
-  · rw [if_pos hAZs] at ha
+  · rw [ite_eq_left hAZs] at ha
     rw [← ha]
     exact isNonAsciiZs_ascii_space
-  · rw [if_neg hAZs] at ha
+  · rw [ite_eq_right hAZs] at ha
     rw [← ha]
     simpa using hAZs
 
@@ -116,7 +116,7 @@ theorem decomposeSyllable_output_no_nonAsciiZs
   -- ≤ 0x11C2` — all by `omega` on the division/modulo bounds.
   have hjRange : 0x1100 ≤ j ∧ j ≤ 0x11C2 := by
     unfold Hangul.decomposeSyllable? at h
-    rw [if_pos hSyl] at h
+    rw [ite_eq_left hSyl] at h
     dsimp only [Hangul.LBase, Hangul.VBase, Hangul.TBase, Hangul.NCount, Hangul.TCount,
                Hangul.VCount, Hangul.SBase] at h
     split at h

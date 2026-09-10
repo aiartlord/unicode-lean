@@ -62,19 +62,19 @@ theorem stepCompose_starter_isSome_preserves
   unfold Compose.stepCompose
   simp only [hStAct]
   by_cases hCcc : Lookup.canonicalCombiningClass cp = 0
-  · rw [if_pos hCcc]
+  · rw [ite_eq_left hCcc]
     by_cases hBuf : s.buffer.isEmpty = true
-    · rw [if_pos hBuf]
+    · rw [ite_eq_left hBuf]
       cases hPC : Compose.primaryComposite? st cp with
       | none => rfl
       | some p => rfl
-    · rw [if_neg hBuf]
+    · rw [ite_eq_right hBuf]
       rfl
-  · rw [if_neg hCcc]
+  · rw [ite_eq_right hCcc]
     by_cases hMax : Lookup.canonicalCombiningClass cp ≤ s.maxCCC
-    · rw [if_pos hMax]
+    · rw [ite_eq_left hMax]
       rfl
-    · rw [if_neg hMax]
+    · rw [ite_eq_right hMax]
       cases hPC : Compose.primaryComposite? st cp with
       | none => rfl
       | some p => rfl
@@ -108,17 +108,17 @@ theorem stepCompose_starter_input_isSome
   cases hSt : s.starter with
   | none =>
     simp only [hSt]
-    rw [if_pos hCcc]
+    rw [ite_eq_left hCcc]
     rfl
   | some st =>
     simp only [hSt]
-    rw [if_pos hCcc]
+    rw [ite_eq_left hCcc]
     by_cases hBuf : s.buffer.isEmpty = true
-    · rw [if_pos hBuf]
+    · rw [ite_eq_left hBuf]
       cases hPC : Compose.primaryComposite? st cp with
       | none => rfl
       | some p => rfl
-    · rw [if_neg hBuf]
+    · rw [ite_eq_right hBuf]
       rfl
 
 /-- **Starter member registers a starter.** If a list `L` contains
@@ -169,11 +169,11 @@ theorem mem_takeWhile_imp_pred (p : Nat → Bool) (l : List Nat) :
     intros x hx
     rw [List.takeWhile_cons] at hx
     by_cases hp : p a = true
-    · rw [if_pos hp] at hx
+    · rw [ite_eq_left hp] at hx
       rcases List.mem_cons.mp hx with hHead | hTail
       · rw [hHead]; exact hp
       · exact ih x hTail
-    · rw [if_neg hp] at hx
+    · rw [ite_eq_right hp] at hx
       exact absurd hx List.not_mem_nil
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -596,7 +596,7 @@ theorem trailingHigh_nonempty_in_swap_case
           have hCondTrue : decide (Lookup.canonicalCombiningClass cp
                                     < Lookup.canonicalCombiningClass z) = true :=
             decide_eq_true hPz
-          rw [if_pos hCondTrue]
+          rw [ite_eq_left hCondTrue]
           simp
         exact hTakeWhileNonEmpty hHighEmpty
       · rw [← hZeq]

@@ -98,10 +98,10 @@ theorem precis_idempotent_opaque
   have hCps : (if isOpaqueGatePass (precisMapOpaque cps) then some (precisMapOpaque cps)
                else none) = some out := h
   by_cases hAdm : isOpaqueGatePass (precisMapOpaque cps) = true
-  · rw [if_pos hAdm] at hCps
+  · rw [ite_eq_left hAdm] at hCps
     have hOut : out = precisMapOpaque cps := (Option.some.inj hCps).symm
-    rw [hOut, hPMIdem, if_pos hAdm]
-  · rw [if_neg hAdm] at hCps
+    rw [hOut, hPMIdem, ite_eq_left hAdm]
+  · rw [ite_eq_right hAdm] at hCps
     exact absurd hCps (by simp)
 
 -- ═══════════════════════════════════════════════════════════════════════════════
@@ -116,14 +116,14 @@ theorem precis_output_in_NFC_opaque
   · have hOut : out = precisMapOpaque cps := by
       have hRaw : (if isOpaqueGatePass (precisMapOpaque cps)
                     then some (precisMapOpaque cps) else none) = some out := h
-      rw [if_pos hAdm] at hRaw
+      rw [ite_eq_left hAdm] at hRaw
       exact (Option.some.inj hRaw).symm
     rw [hOut]
     unfold precisMapOpaque
     exact ComposeInversion.toNFC_idempotent (remapZsToAscii cps)
   · have hNone : (if isOpaqueGatePass (precisMapOpaque cps)
                    then some (precisMapOpaque cps) else none) = some out := h
-    rw [if_neg hAdm] at hNone
+    rw [ite_eq_right hAdm] at hNone
     exact absurd hNone (by simp)
 
 /-- OpaqueString preparation output contains no non-ASCII Zs (remap +
@@ -135,7 +135,7 @@ theorem precis_output_no_nonAsciiZs_opaque
   · have hOut : out = precisMapOpaque cps := by
       have hRaw : (if isOpaqueGatePass (precisMapOpaque cps)
                     then some (precisMapOpaque cps) else none) = some out := h
-      rw [if_pos hAdm] at hRaw
+      rw [ite_eq_left hAdm] at hRaw
       exact (Option.some.inj hRaw).symm
     rw [hOut]
     unfold precisMapOpaque
@@ -143,7 +143,7 @@ theorem precis_output_no_nonAsciiZs_opaque
       (remapZsToAscii cps) (remapZsToAscii_output_no_nonAsciiZs cps)
   · have hNone : (if isOpaqueGatePass (precisMapOpaque cps)
                    then some (precisMapOpaque cps) else none) = some out := h
-    rw [if_neg hAdm] at hNone
+    rw [ite_eq_right hAdm] at hNone
     exact absurd hNone (by simp)
 
 /-- OpaqueString preparation output is admissible under
@@ -155,7 +155,7 @@ theorem precis_output_admissible_opaque
   · have hOut : out = precisMapOpaque cps := by
       have hRaw : (if isOpaqueGatePass (precisMapOpaque cps)
                     then some (precisMapOpaque cps) else none) = some out := h
-      rw [if_pos hAdm] at hRaw
+      rw [ite_eq_left hAdm] at hRaw
       exact (Option.some.inj hRaw).symm
     rw [hOut]
     intro cp hcp
@@ -168,7 +168,7 @@ theorem precis_output_admissible_opaque
     exact hAllAdm cp hcp
   · have hNone : (if isOpaqueGatePass (precisMapOpaque cps)
                    then some (precisMapOpaque cps) else none) = some out := h
-    rw [if_neg hAdm] at hNone
+    rw [ite_eq_right hAdm] at hNone
     exact absurd hNone (by simp)
 
 /-- OpaqueString preparation output satisfies the Bidi Rule. -/
@@ -179,7 +179,7 @@ theorem precis_output_bidi_rule_opaque
   · have hOut : out = precisMapOpaque cps := by
       have hRaw : (if isOpaqueGatePass (precisMapOpaque cps)
                     then some (precisMapOpaque cps) else none) = some out := h
-      rw [if_pos hAdm] at hRaw
+      rw [ite_eq_left hAdm] at hRaw
       exact (Option.some.inj hRaw).symm
     rw [hOut]
     unfold isOpaqueGatePass at hAdm
@@ -187,7 +187,7 @@ theorem precis_output_bidi_rule_opaque
     exact hAdm.2
   · have hNone : (if isOpaqueGatePass (precisMapOpaque cps)
                    then some (precisMapOpaque cps) else none) = some out := h
-    rw [if_neg hAdm] at hNone
+    rw [ite_eq_right hAdm] at hNone
     exact absurd hNone (by simp)
 
 end Unicode.Precis.OpaqueString

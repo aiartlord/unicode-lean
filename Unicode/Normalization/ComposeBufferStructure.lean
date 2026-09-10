@@ -263,7 +263,7 @@ theorem stepCompose_strictMax_buffer_or_fire
   set_option linter.unusedSimpArgs false in
   unfold Compose.stepCompose
   simp only [hSt]
-  rw [if_neg hCccNe, if_neg hMax]
+  rw [ite_eq_right hCccNe, ite_eq_right hMax]
   cases hPC : Compose.primaryComposite? st m with
   | none =>
     right
@@ -293,7 +293,7 @@ theorem stepCompose_strictMax_no_fire_to_buffer
   set_option linter.unusedSimpArgs false in
   unfold Compose.stepCompose
   simp only [hSt]
-  rw [if_neg hCccNe, if_neg hMax, hNoFire]
+  rw [ite_eq_right hCccNe, ite_eq_right hMax, hNoFire]
 
 -- ═══════════════════════════════════════════════════════════════════════════════
 -- §6 NON-STARTER PROCESSING PRESERVES BUFFER MEMBERSHIP
@@ -324,16 +324,16 @@ theorem foldl_stepCompose_buffer_monotone_nonstarters
       cases hSt : s.starter with
       | none =>
         simp only [hSt]
-        rw [if_neg hHeadNe]
+        rw [ite_eq_right hHeadNe]
         exact hy
       | some st =>
         simp only [hSt]
-        rw [if_neg hHeadNe]
+        rw [ite_eq_right hHeadNe]
         by_cases hMax : Lookup.canonicalCombiningClass head ≤ s.maxCCC
-        · rw [if_pos hMax]
+        · rw [ite_eq_left hMax]
           show y ∈ head :: s.buffer
           right; exact hy
-        · rw [if_neg hMax]
+        · rw [ite_eq_right hMax]
           cases hPC : Compose.primaryComposite? st head with
           | some p =>
             show y ∈ s.buffer
@@ -367,7 +367,7 @@ theorem stepCompose_nonstarter_blocked_form
   set_option linter.unusedSimpArgs false in
   unfold Compose.stepCompose
   simp only [hSt]
-  rw [if_neg hCccNe, if_pos hMax]
+  rw [ite_eq_right hCccNe, ite_eq_left hMax]
 
 /-- A non-starter `m` ends up in the post-step buffer whenever it
     does not primary-fire — i.e., either the strict-max branch with

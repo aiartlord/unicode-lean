@@ -81,14 +81,14 @@ theorem lookupCertifiedDecompositionIn_mem
         dsimp only at hLookup
         rw [hBang] at hLookup
         by_cases hCpLt : cp < rows[mid].codepoint
-        · rw [if_pos hCpLt] at hLookup
+        · rw [ite_eq_left hCpLt] at hLookup
           have hMidLe : mid <= rows.length := by omega
           exact ih left mid hMidLe hLookup
-        · rw [if_neg hCpLt] at hLookup
+        · rw [ite_eq_right hCpLt] at hLookup
           by_cases hRowLt : rows[mid].codepoint < cp
-          · rw [if_pos hRowLt] at hLookup
+          · rw [ite_eq_left hRowLt] at hLookup
             exact ih (mid + 1) right hRight hLookup
-          · rw [if_neg hRowLt] at hLookup
+          · rw [ite_eq_right hRowLt] at hLookup
             cases hLookup
             constructor
             · exact List.mem_of_getElem rfl

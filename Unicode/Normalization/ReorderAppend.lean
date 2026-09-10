@@ -62,7 +62,7 @@ theorem stepReorder_starter_output
     stepReorder s cp
       = { emitted := s.emitted ++ flushRun s ++ [cp], currentRun := [] } := by
   unfold stepReorder
-  rw [if_pos h]
+  rw [ite_eq_left h]
 
 /-- Explicit `reorder` equation without the internal `let` binding. Lets
     downstream rewrites reach inside `reorder` calls. -/
@@ -124,7 +124,7 @@ theorem stepReorder_nonstarter_output
     (h : Lookup.canonicalCombiningClass cp ≠ 0) :
     stepReorder s cp = { emitted := s.emitted, currentRun := cp :: s.currentRun } := by
   unfold stepReorder
-  rw [if_neg h]
+  rw [ite_eq_right h]
 
 /-- `stepReorder` on either starter or non-starter branch produces a state
     whose `emitted` delta is independent of the incoming `emitted`. The
@@ -293,7 +293,7 @@ theorem insertByCCC_append_max
   | nil =>
     show insertByCCC y [cp] = [y] ++ [cp]
     unfold insertByCCC
-    rw [if_pos h]
+    rw [ite_eq_left h]
     rfl
   | cons z L' ih =>
     -- Normalize (z :: L') ++ [cp] = z :: (L' ++ [cp]) on both sides.
@@ -310,9 +310,9 @@ theorem insertByCCC_append_max
     rw [hStep (L' ++ [cp]), hStep L']
     by_cases hYZ : Lookup.canonicalCombiningClass y
                      < Lookup.canonicalCombiningClass z
-    · rw [if_pos hYZ, if_pos hYZ]
+    · rw [ite_eq_left hYZ, ite_eq_left hYZ]
       rfl
-    · rw [if_neg hYZ, if_neg hYZ, ih]
+    · rw [ite_eq_right hYZ, ite_eq_right hYZ, ih]
       rfl
 
 /-- Folding `insertByCCC` over a list whose elements all have CCC
@@ -420,7 +420,7 @@ theorem insertByCCC_cons_ge (x y : Nat) (ys : List Nat)
     (h : ¬ Lookup.canonicalCombiningClass x
             < Lookup.canonicalCombiningClass y) :
     insertByCCC x (y :: ys) = y :: insertByCCC x ys := by
-  rw [insertByCCC_cons, if_neg h]
+  rw [insertByCCC_cons, ite_eq_right h]
 
 /-- Helper: insertByCCC on a cons where the new element has
     strictly-less CCC than the head places it at the front. -/
@@ -428,7 +428,7 @@ theorem insertByCCC_cons_lt (x y : Nat) (ys : List Nat)
     (h : Lookup.canonicalCombiningClass x
            < Lookup.canonicalCombiningClass y) :
     insertByCCC x (y :: ys) = x :: y :: ys := by
-  rw [insertByCCC_cons, if_pos h]
+  rw [insertByCCC_cons, ite_eq_left h]
 
 /-- `insertByCCC` on the empty list is a singleton. -/
 theorem insertByCCC_nil (x : Nat) :
@@ -578,7 +578,7 @@ theorem fold_nonstarters_from_state
     have hStep : stepReorder { emitted := E, currentRun := R } hd
                = { emitted := E, currentRun := hd :: R } := by
       unfold stepReorder
-      rw [if_neg hHdNe]
+      rw [ite_eq_right hHdNe]
     rw [hStep]
     have hTlNS : ∀ x ∈ tl, 0 < Lookup.canonicalCombiningClass x :=
       fun x hx => hNonStarter x (List.mem_cons_of_mem hd hx)
@@ -618,7 +618,7 @@ theorem fold_HSR_endingStarter_from_init
                            ++ [last]
             , currentRun := [] } := by
       unfold stepReorder
-      rw [if_pos hLast]
+      rw [ite_eq_left hLast]
     rw [hStep]
     have hReorderExpand :
         (pre.foldl stepReorder initState).emitted
@@ -779,11 +779,11 @@ theorem reorder_append_absorbing_nonstarter
   have hStepNsLhs :
       stepReorder sA cp = { sA with currentRun := cp :: sA.currentRun } := by
     unfold stepReorder
-    rw [if_neg hCpNe]
+    rw [ite_eq_right hCpNe]
   have hStepNsRhs :
       stepReorder sRA cp = { sRA with currentRun := cp :: sRA.currentRun } := by
     unfold stepReorder
-    rw [if_neg hCpNe]
+    rw [ite_eq_right hCpNe]
   rw [hStepNsLhs, hStepNsRhs]
   -- LHS = sA.emitted ++ flushRun { sA with currentRun := cp :: sA.currentRun }
   --     = sA.emitted ++ sortNonStarterRun (cp :: sA.currentRun).reverse
@@ -1254,7 +1254,7 @@ theorem insertByCCC_split_sorted
     by_cases h : Lookup.canonicalCombiningClass x
                    < Lookup.canonicalCombiningClass hd
     · have hInsHead : insertByCCC x (hd :: tl) = [] ++ x :: (hd :: tl) := by
-        rw [insertByCCC_cons, if_pos h]
+        rw [insertByCCC_cons, ite_eq_left h]
         rfl
       have hGtAll : ∀ y ∈ hd :: tl,
           Lookup.canonicalCombiningClass x
@@ -1272,7 +1272,7 @@ theorem insertByCCC_split_sorted
       have hConsEq : hd :: tl = (hd :: N₁') ++ N₂' := by
         rw [hEq]; rfl
       have hConsIns : insertByCCC x (hd :: tl) = (hd :: N₁') ++ x :: N₂' := by
-        rw [insertByCCC_cons, if_neg h, hIns]; rfl
+        rw [insertByCCC_cons, ite_eq_right h, hIns]; rfl
       exact ⟨hd :: N₁', N₂', hConsEq, hConsIns, hGt⟩
 
 /-- For any sorted list `N` and list `A`, inserting `x` after folding

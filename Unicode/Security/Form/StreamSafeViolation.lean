@@ -101,7 +101,7 @@ theorem collectRunsGo_open_to_end (rest : List Nat) :
   | cons cp tail ih =>
     intro i s curLen runs hAll
     have hns : isNonStarter cp = true := hAll cp List.mem_cons_self
-    simp only [collectRunsGo, hns, if_true, Option.getD_some]
+    simp only [collectRunsGo, hns, ite_true, Option.getD_some]
     rw [ih (i + 1) s (curLen + 1) runs
           (fun c hc => hAll c (List.mem_cons_of_mem cp hc))]
     have harith : curLen + 1 + tail.length = curLen + (cp :: tail).length := by
@@ -122,7 +122,7 @@ theorem collectRunsGo_none_to_end (i : Nat) (runs : List (Nat × Nat))
   | nil => exact absurd hNE (by simp)
   | cons cp tail =>
     have hns : isNonStarter cp = true := hAll cp List.mem_cons_self
-    simp only [collectRunsGo, hns, if_true, Option.getD_none]
+    simp only [collectRunsGo, hns, ite_true, Option.getD_none]
     rw [collectRunsGo_open_to_end tail (i + 1) i (0 + 1) runs
           (fun c hc => hAll c (List.mem_cons_of_mem cp hc))]
     have harith : 0 + 1 + tail.length = (cp :: tail).length := by

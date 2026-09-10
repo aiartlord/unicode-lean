@@ -255,12 +255,12 @@ theorem precis_idempotent_given
   have hCps : (if isGatePass (precisMap cps) then some (precisMap cps) else none)
               = some out := h
   by_cases hAdm : isGatePass (precisMap cps) = true
-  · rw [if_pos hAdm] at hCps
+  · rw [ite_eq_left hAdm] at hCps
     have hOut : out = precisMap cps := (Option.some.inj hCps).symm
     rw [hOut]
     rw [hPMIdem]
-    rw [if_pos hAdm]
-  · rw [if_neg hAdm] at hCps
+    rw [ite_eq_left hAdm]
+  · rw [ite_eq_right hAdm] at hCps
     exact absurd hCps (by simp)
 
 /-- **Unconditional discharge** of the NFC width-compat preservation
@@ -387,12 +387,12 @@ theorem precis_idempotent_preserved
   have hCps : (if isGatePass (precisMapPreserved cps) then some (precisMapPreserved cps)
                else none) = some out := h
   by_cases hAdm : isGatePass (precisMapPreserved cps) = true
-  · rw [if_pos hAdm] at hCps
+  · rw [ite_eq_left hAdm] at hCps
     have hOut : out = precisMapPreserved cps := (Option.some.inj hCps).symm
     rw [hOut]
     rw [hPMIdem]
-    rw [if_pos hAdm]
-  · rw [if_neg hAdm] at hCps
+    rw [ite_eq_left hAdm]
+  · rw [ite_eq_right hAdm] at hCps
     exact absurd hCps (by simp)
 
 -- Concrete UsernameCasePreserved conformance vectors live in
@@ -426,7 +426,7 @@ theorem precis_output_in_NFC_mapped
       show out = toNFC (caseFold (WidthMapping.widthMap cps))
       have hRaw : (if isGatePass (precisMap cps) then some (precisMap cps)
                    else none) = some out := h
-      rw [if_pos hAdm] at hRaw
+      rw [ite_eq_left hAdm] at hRaw
       exact (Option.some.inj hRaw).symm
     rw [hOut]
     unfold precisMap
@@ -434,7 +434,7 @@ theorem precis_output_in_NFC_mapped
       (caseFold (widthMap cps))
   · have hNone : (if isGatePass (precisMap cps) then some (precisMap cps)
                   else none) = some out := h
-    rw [if_neg hAdm] at hNone
+    rw [ite_eq_right hAdm] at hNone
     exact absurd hNone (by simp)
 
 /-- PRECIS UsernameCasePreserved output is in NFC form. -/
@@ -445,7 +445,7 @@ theorem precis_output_in_NFC_preserved
   · have hOut : out = precisMapPreserved cps := by
       have hRaw : (if isGatePass (precisMapPreserved cps) then some (precisMapPreserved cps)
                    else none) = some out := h
-      rw [if_pos hAdm] at hRaw
+      rw [ite_eq_left hAdm] at hRaw
       exact (Option.some.inj hRaw).symm
     rw [hOut]
     unfold precisMapPreserved
@@ -453,7 +453,7 @@ theorem precis_output_in_NFC_preserved
       (WidthMapping.widthMap cps)
   · have hNone : (if isGatePass (precisMapPreserved cps) then some (precisMapPreserved cps)
                   else none) = some out := h
-    rw [if_neg hAdm] at hNone
+    rw [ite_eq_right hAdm] at hNone
     exact absurd hNone (by simp)
 
 /-- PRECIS UsernameCaseMapped output contains no width-compat-source
@@ -469,7 +469,7 @@ theorem precis_output_non_widthCompatSource_mapped
   · have hOut : out = precisMap cps := by
       have hRaw : (if isGatePass (precisMap cps) then some (precisMap cps)
                    else none) = some out := h
-      rw [if_pos hAdm] at hRaw
+      rw [ite_eq_left hAdm] at hRaw
       exact (Option.some.inj hRaw).symm
     rw [hOut]
     intro cp hcp
@@ -485,7 +485,7 @@ theorem precis_output_non_widthCompatSource_mapped
       (caseFold (WidthMapping.widthMap cps)) hCW cp hcp
   · have hNone : (if isGatePass (precisMap cps) then some (precisMap cps)
                   else none) = some out := h
-    rw [if_neg hAdm] at hNone
+    rw [ite_eq_right hAdm] at hNone
     exact absurd hNone (by simp)
 
 /-- PRECIS UsernameCasePreserved output contains no width-compat-source
@@ -497,7 +497,7 @@ theorem precis_output_non_widthCompatSource_preserved
   · have hOut : out = precisMapPreserved cps := by
       have hRaw : (if isGatePass (precisMapPreserved cps) then some (precisMapPreserved cps)
                    else none) = some out := h
-      rw [if_pos hAdm] at hRaw
+      rw [ite_eq_left hAdm] at hRaw
       exact (Option.some.inj hRaw).symm
     rw [hOut]
     intro cp hcp
@@ -509,7 +509,7 @@ theorem precis_output_non_widthCompatSource_preserved
       (WidthMapping.widthMap cps) hW cp hcp
   · have hNone : (if isGatePass (precisMapPreserved cps) then some (precisMapPreserved cps)
                   else none) = some out := h
-    rw [if_neg hAdm] at hNone
+    rw [ite_eq_right hAdm] at hNone
     exact absurd hNone (by simp)
 
 /-- UsernameCaseMapped preparation output is admissible by
@@ -522,7 +522,7 @@ theorem precis_output_admissible_mapped
   · have hOut : out = precisMap cps := by
       have hRaw : (if isGatePass (precisMap cps) then some (precisMap cps)
                    else none) = some out := h
-      rw [if_pos hAdm] at hRaw
+      rw [ite_eq_left hAdm] at hRaw
       exact (Option.some.inj hRaw).symm
     rw [hOut]
     intro cp hcp
@@ -535,7 +535,7 @@ theorem precis_output_admissible_mapped
     exact hAllAdm cp hcp
   · have hNone : (if isGatePass (precisMap cps) then some (precisMap cps)
                   else none) = some out := h
-    rw [if_neg hAdm] at hNone
+    rw [ite_eq_right hAdm] at hNone
     exact absurd hNone (by simp)
 
 /-- UsernameCasePreserved preparation output is admissible. -/
@@ -546,7 +546,7 @@ theorem precis_output_admissible_preserved
   · have hOut : out = precisMapPreserved cps := by
       have hRaw : (if isGatePass (precisMapPreserved cps)
                     then some (precisMapPreserved cps) else none) = some out := h
-      rw [if_pos hAdm] at hRaw
+      rw [ite_eq_left hAdm] at hRaw
       exact (Option.some.inj hRaw).symm
     rw [hOut]
     intro cp hcp
@@ -559,7 +559,7 @@ theorem precis_output_admissible_preserved
     exact hAllAdm cp hcp
   · have hNone : (if isGatePass (precisMapPreserved cps)
                    then some (precisMapPreserved cps) else none) = some out := h
-    rw [if_neg hAdm] at hNone
+    rw [ite_eq_right hAdm] at hNone
     exact absurd hNone (by simp)
 
 /-- UsernameCaseMapped preparation output satisfies the RFC 5893 Bidi
@@ -572,7 +572,7 @@ theorem precis_output_bidi_rule_mapped
   · have hOut : out = precisMap cps := by
       have hRaw : (if isGatePass (precisMap cps) then some (precisMap cps)
                    else none) = some out := h
-      rw [if_pos hAdm] at hRaw
+      rw [ite_eq_left hAdm] at hRaw
       exact (Option.some.inj hRaw).symm
     rw [hOut]
     unfold isGatePass at hAdm
@@ -580,7 +580,7 @@ theorem precis_output_bidi_rule_mapped
     exact hAdm.2
   · have hNone : (if isGatePass (precisMap cps) then some (precisMap cps)
                   else none) = some out := h
-    rw [if_neg hAdm] at hNone
+    rw [ite_eq_right hAdm] at hNone
     exact absurd hNone (by simp)
 
 /-- UsernameCasePreserved preparation output satisfies the Bidi Rule. -/
@@ -591,7 +591,7 @@ theorem precis_output_bidi_rule_preserved
   · have hOut : out = precisMapPreserved cps := by
       have hRaw : (if isGatePass (precisMapPreserved cps)
                     then some (precisMapPreserved cps) else none) = some out := h
-      rw [if_pos hAdm] at hRaw
+      rw [ite_eq_left hAdm] at hRaw
       exact (Option.some.inj hRaw).symm
     rw [hOut]
     unfold isGatePass at hAdm
@@ -599,7 +599,7 @@ theorem precis_output_bidi_rule_preserved
     exact hAdm.2
   · have hNone : (if isGatePass (precisMapPreserved cps)
                    then some (precisMapPreserved cps) else none) = some out := h
-    rw [if_neg hAdm] at hNone
+    rw [ite_eq_right hAdm] at hNone
     exact absurd hNone (by simp)
 
 end Unicode.Precis.Preparation

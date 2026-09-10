@@ -211,13 +211,13 @@ theorem stepCompose_qcY_starter_flush
     simp [hCcc, hBufNil, hMxZero]
   | some st =>
     simp only [hSt]
-    rw [if_pos hCcc]
+    rw [ite_eq_left hCcc]
     by_cases hBuf : s.buffer.isEmpty = true
-    · rw [if_pos hBuf]
+    · rw [ite_eq_left hBuf]
       have hBufNil : s.buffer = [] := List.isEmpty_iff.mp hBuf
       rw [primaryComposite_none_of_qcY st cp hQC]
       simp [hBufNil]
-    · rw [if_neg hBuf]
+    · rw [ite_eq_right hBuf]
 
 /-- `stepCompose initialState cp` on a starter `cp` yields the canonical
     leading state `⟨[], some cp, [], 0⟩`. -/
@@ -344,7 +344,7 @@ theorem step_qcY_linear
         set_option linter.unusedSimpArgs false in
         unfold Compose.stepCompose
         simp only [hSt]
-        rw [if_neg hCcc]
+        rw [ite_eq_right hCcc]
       unfold Compose.flushCompose
       rw [hPostStep]
       simp only [hSt, hBuf]
