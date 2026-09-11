@@ -9,6 +9,16 @@ might depend on).
 
 ## Unreleased
 
+### Changed
+
+- **Lean toolchain 4.33.1 → 4.34.0-rc2.** `lean-toolchain` moves to
+  `leanprover/lean4:v4.34.0-rc2`. Deprecated `ite` lemma names were renamed
+  across 25 modules to match 4.34; no proof content changed. The full audited
+  closure was re-certified from fresh oleans under 4.34 — all 506 modules
+  build, the independent `leanchecker` re-derives every declaration, and the
+  transitive axiom footprint of 20,955 declarations stays within `propext`,
+  `Quot.sound`, and `Classical.choice`.
+
 ### Fixed
 
 - The `scripts/lean-cache-stages.py` memory gate no longer blocks the
