@@ -109,6 +109,15 @@ jobs:
       - name: full official conformance evidence
         run: lake build UnicodeFullConformance
 
+      - name: free disk space
+        run: |
+          # The runtime package smoke cold-copies the nix closure when the
+          # private cache is unavailable; reclaim the runner's preinstalled
+          # toolchains, which the nix shell does not use.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache /usr/local/share/boost || true
+          df -h /
+
       - name: runtime package smoke evidence
         run: |
           timeout 1200s nix develop .#runtime -c env \

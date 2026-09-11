@@ -130,6 +130,15 @@ jobs:
             extra-substituters = ${{ secrets.NIX_EXTRA_SUBSTITUTERS }}
             extra-trusted-public-keys = ${{ secrets.NIX_TRUSTED_PUBLIC_KEYS }}
 
+      - name: free disk space
+        run: |
+          # Cold-copying the nix closure fills the hosted runner disk when the
+          # private cache is unavailable. The nix shell provides its own
+          # toolchains, so the runner's preinstalled ones are safe to reclaim.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache /usr/local/share/boost || true
+          df -h /
+
       - name: runtime release preflight
         run: |
           timeout 4800s nix develop .#runtime -c env \
@@ -177,6 +186,16 @@ jobs:
             experimental-features = nix-command flakes
             extra-substituters = ${{ secrets.NIX_EXTRA_SUBSTITUTERS }}
             extra-trusted-public-keys = ${{ secrets.NIX_TRUSTED_PUBLIC_KEYS }}
+
+      - name: free disk space
+        run: |
+          # This job cold-copies the full nix closure (all sixteen port
+          # toolchains) when the private cache is unavailable, which fills the
+          # hosted runner disk. The nix shell provides its own toolchains, so
+          # the runner's preinstalled ones are safe to reclaim.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /opt/hostedtoolcache /usr/local/share/boost || true
+          df -h /
 
       - name: every port replays the differential corpus
         run: |
