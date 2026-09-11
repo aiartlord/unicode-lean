@@ -51,7 +51,7 @@ export async function instantiateSecurity(options = {}) {
     configureSecurityDataReader(options.reader);
   } else {
     const baseUrl = options.baseUrl ?? import.meta.url;
-    const [confusables, caseFolding, knownAttackTargets, standardizedVariants, emojiVariationSequences, derivedBidiClass, unicodeData, compositionExclusions, derivedCoreProperties, identifierStatus, specialCasing, emojiData, scripts, scriptExtensions, propertyValueAliases] = await Promise.all([
+    const [confusables, caseFolding, knownAttackTargets, standardizedVariants, emojiVariationSequences, derivedBidiClass, unicodeData, compositionExclusions, derivedCoreProperties, identifierStatus, specialCasing, emojiData, scripts, scriptExtensions, propertyValueAliases, eastAsianWidth, derivedJoiningType, emojiZwjSequences] = await Promise.all([
       fetchText(new URL("./data/confusables.txt", baseUrl)),
       fetchText(new URL("./data/CaseFolding.txt", baseUrl)),
       fetchText(new URL("./data/KnownAttackTargets.txt", baseUrl)),
@@ -67,8 +67,11 @@ export async function instantiateSecurity(options = {}) {
       fetchText(new URL("./data/Scripts.txt", baseUrl)),
       fetchText(new URL("./data/ScriptExtensions.txt", baseUrl)),
       fetchText(new URL("./data/PropertyValueAliases.txt", baseUrl)),
+      fetchText(new URL("./data/EastAsianWidth.txt", baseUrl)),
+      fetchText(new URL("./data/DerivedJoiningType.txt", baseUrl)),
+      fetchText(new URL("./data/emoji-zwj-sequences.txt", baseUrl)),
     ]);
-    configureSecurityData({ confusables, caseFolding, knownAttackTargets, standardizedVariants, emojiVariationSequences, derivedBidiClass, unicodeData, compositionExclusions, derivedCoreProperties, identifierStatus, specialCasing, emojiData, scripts, scriptExtensions, propertyValueAliases });
+    configureSecurityData({ confusables, caseFolding, knownAttackTargets, standardizedVariants, emojiVariationSequences, derivedBidiClass, unicodeData, compositionExclusions, derivedCoreProperties, identifierStatus, specialCasing, emojiData, scripts, scriptExtensions, propertyValueAliases, eastAsianWidth, derivedJoiningType, emojiZwjSequences });
   }
 
   return {

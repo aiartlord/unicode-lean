@@ -931,6 +931,12 @@ const security = await instantiateSecurity({
     identifierStatus: readFileSync(`${dataDir}/IdentifierStatus.txt`, "utf8"),
     specialCasing: readFileSync(`${dataDir}/SpecialCasing.txt`, "utf8"),
     emojiData: readFileSync(`${dataDir}/emoji-data.txt`, "utf8"),
+    scripts: readFileSync(`${dataDir}/Scripts.txt`, "utf8"),
+    scriptExtensions: readFileSync(`${dataDir}/ScriptExtensions.txt`, "utf8"),
+    propertyValueAliases: readFileSync(`${dataDir}/PropertyValueAliases.txt`, "utf8"),
+    eastAsianWidth: readFileSync(`${dataDir}/EastAsianWidth.txt`, "utf8"),
+    derivedJoiningType: readFileSync(`${dataDir}/DerivedJoiningType.txt`, "utf8"),
+    emojiZwjSequences: readFileSync(`${dataDir}/emoji-zwj-sequences.txt`, "utf8"),
   },
 });
 
