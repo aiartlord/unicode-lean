@@ -378,6 +378,18 @@
         # at build time because no Lean 4.33.1 derivation exists in nixpkgs yet.
         runtimeShell = pkgs.mkShell {
           packages = runtimePackages;
+          # swiftpm executes the compiled Package.swift manifest with an rpath
+          # that omits libdispatch in this nixpkgs pin, so a bare devshell
+          # `swift build` fails at manifest parse ("Failed to parse target
+          # info (malformed json)"). Put the Dispatch and Foundation runtime
+          # libs on LD_LIBRARY_PATH exactly as the unicode-swift derivation
+          # does, so the manifest compile and the built binaries load.
+          shellHook = ''
+            export LD_LIBRARY_PATH="${pkgsSwift.lib.makeLibraryPath [
+              pkgsSwift.swiftPackages.Dispatch
+              pkgsSwift.swiftPackages.Foundation
+            ]}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          '';
         };
 
         leanShell = pkgs.mkShell {
