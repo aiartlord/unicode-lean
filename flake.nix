@@ -379,17 +379,19 @@
         runtimeShell = pkgs.mkShell {
           packages = runtimePackages;
           # swiftpm executes the compiled Package.swift manifest with an rpath
-          # that omits libdispatch in this nixpkgs pin, so a bare devshell
-          # `swift build` fails at manifest parse ("Failed to parse target
-          # info (malformed json)"). Put the Dispatch and Foundation runtime
-          # libs on LD_LIBRARY_PATH exactly as the unicode-swift derivation
-          # does, so the manifest compile and the built binaries load.
-          shellHook = ''
-            export LD_LIBRARY_PATH="${pkgsSwift.lib.makeLibraryPath [
-              pkgsSwift.swiftPackages.Dispatch
-              pkgsSwift.swiftPackages.Foundation
-            ]}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-          '';
+          # that omits libdispatch in this nixpkgs pin, so a devshell `swift
+          # build` fails at manifest parse ("Failed to parse target info
+          # (malformed json)") unless the Dispatch and Foundation runtime libs
+          # are on LD_LIBRARY_PATH — the same wiring the unicode-swift
+          # derivation carries, and which lets its package build succeed on the
+          # CI runner. Set it as a shell environment attribute, not a shellHook:
+          # the port replay runs the shell as `nix develop .#runtime -c …`,
+          # which exports environment attributes unconditionally, whereas a
+          # shellHook is not guaranteed to run in command mode.
+          LD_LIBRARY_PATH = pkgsSwift.lib.makeLibraryPath [
+            pkgsSwift.swiftPackages.Dispatch
+            pkgsSwift.swiftPackages.Foundation
+          ];
         };
 
         leanShell = pkgs.mkShell {
