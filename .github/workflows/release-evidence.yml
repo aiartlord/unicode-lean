@@ -74,12 +74,19 @@ jobs:
       - name: reclaim disk headroom
         run: |
           # Reclaim the runner's preinstalled toolchains (the nix shell uses none
-          # of them) BEFORE allocating swap and copying the nix closure. Without
-          # this the root disk can exhaust while the closure is fetched, and the
-          # runner crashes with "No space left on device" before the build runs.
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
-            /usr/local/.ghcup /opt/hostedtoolcache /usr/local/share/boost || true
-          sudo docker image prune --all --force >/dev/null 2>&1 || true
+          # of them) BEFORE allocating swap and copying the nix closure. The full
+          # closure — the Lean toolchain, then all sixteen runtime port
+          # toolchains cold-copied from cache.nixos.org — otherwise exhausts the
+          # root disk mid-copy and the runner crashes with "No space left on
+          # device". Remove every large preinstalled tree and prune docker.
+          sudo rm -rf \
+            /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache /usr/local/share/boost /opt/az \
+            /usr/share/swift /usr/local/share/powershell /usr/local/share/chromium \
+            /usr/local/lib/node_modules /usr/local/graalvm /usr/local/share/vcpkg \
+            || true
+          sudo docker system prune --all --force >/dev/null 2>&1 || true
+          sudo apt-get clean || true
           df -h /
 
       - name: add swap headroom
@@ -122,11 +129,13 @@ jobs:
 
       - name: free disk space
         run: |
-          # The runtime package smoke cold-copies the nix closure when the
-          # private cache is unavailable; reclaim the runner's preinstalled
-          # toolchains, which the nix shell does not use.
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
-            /opt/hostedtoolcache /usr/local/share/boost || true
+          # The runtime package smoke enters a fresh `nix develop .#runtime` and
+          # cold-copies all sixteen port toolchains. By this point the Lean build
+          # tree (.lake) and the elan-installed Lean toolchain have served every
+          # preceding gate and are not read again, so remove them to give the
+          # port closure copy headroom on the root disk.
+          rm -rf .lake "$HOME/.elan" || true
+          sudo docker system prune --all --force >/dev/null 2>&1 || true
           df -h /
 
       - name: runtime package smoke evidence
