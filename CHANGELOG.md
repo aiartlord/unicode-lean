@@ -7,7 +7,7 @@ on the public surface (a major-version bump signals that a
 theorem name or statement changed in a way downstream consumers
 might depend on).
 
-## Unreleased
+## v1.1.5 — 2026-09-12
 
 ### Changed
 
@@ -50,6 +50,27 @@ might depend on).
   does not resolve in the build sandbox, which has no `/usr/bin/env`, and the
   derivation carried no `python3`. It now depends on `python3` and runs
   `patchShebangs` so the boundary check executes.
+- The `fixtures/lean-cache-plans/*.summary.json` byte-sum fixtures track each
+  module's source size, so the 4.34 `ite`-lemma renames drifted them and failed
+  the `ci` and `release-evidence` hardening gate. Regenerated via
+  `scripts/check-lean-cache-plan-fixtures.py --write`; only the `bytes` fields
+  change, and module counts, `decide_kernel`, and `row_refs` are unchanged.
+- **Nix derivation versions aligned to the ports' declared `1.1.0`.** nixpkgs'
+  `pythonMetadataCheckPhase` requires the derivation `version` to equal the
+  wheel's `METADATA` version; `flake.nix` `runtimeVersion` was still `0.1.0`
+  (feeds all 15 port derivations) while every port manifest declares `1.1.0`, so
+  the `unicode-python` build failed. `runtimeVersion` and the `packages.default`
+  Lean-library derivation are now `1.1.0`, and `ports/python/uv.lock` carries the
+  same self-version.
+- The `release-evidence` `pinned conformance inputs manifest` step copied the
+  conformance manifest into `dist/` before any step created that directory. It
+  now runs `mkdir -p dist` first, matching the bundle step.
+- **Swift tier of the cross-port differential replay.** The `.#runtime` devshell
+  provided `swift`/`swiftpm` without the `Dispatch`/`Foundation` runtime library
+  path that the `unicode-swift` package derivation sets, so a devshell
+  `swift build` aborted at manifest parse (`Failed to parse target info`). The
+  devshell now exports `LD_LIBRARY_PATH = makeLibraryPath [Dispatch Foundation]`,
+  and the swift port builds and its contract tests pass.
 
 ## v1.1.0 — 2026-09-08
 
