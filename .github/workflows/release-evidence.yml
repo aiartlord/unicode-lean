@@ -129,6 +129,7 @@ jobs:
       - name: pinned conformance inputs manifest
         run: |
           bash scripts/check-conformance-inputs.sh
+          mkdir -p dist
           cp fixtures/conformance/CONFORMANCE-INPUTS.sha256 dist/CONFORMANCE-INPUTS.sha256
 
       - name: bundle runtime package evidence
