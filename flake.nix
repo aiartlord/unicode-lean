@@ -26,7 +26,7 @@
           hpkgs.tasty-hunit
           hpkgs.tasty-quickcheck
         ]);
-        runtimeVersion = "0.1.0";
+        runtimeVersion = "1.1.0";
         runtimePackages = [
           pkgs.git
           pkgs.cacert
@@ -399,7 +399,7 @@
         # on first build; cached thereafter).
         packages.default = pkgs.stdenv.mkDerivation {
           pname = "unicode";
-          version = "0.1.0";
+          version = "1.1.0";
           src = ./.;
 
           nativeBuildInputs = [
