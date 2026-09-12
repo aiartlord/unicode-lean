@@ -197,25 +197,6 @@ jobs:
             /opt/hostedtoolcache /usr/local/share/boost || true
           df -h /
 
-      - name: swift devshell diagnostic
-        run: |
-          nix develop .#runtime -c bash -c '
-            echo "LD_LIBRARY_PATH=[$LD_LIBRARY_PATH]"
-            echo "HOME=[$HOME]"
-            echo "nix-store: $(command -v nix-store || echo NONE)"
-            sw="$(command -v swift || echo NONE)"
-            echo "swift: $sw -> $(readlink -f "$sw" 2>/dev/null)"
-            echo "--- swift --version ---"
-            swift --version 2>&1 || echo "swift --version exit=$?"
-            echo "--- swift -print-target-info ---"
-            swift -print-target-info 2>&1 || echo "print-target-info exit=$?"
-            echo "--- ldd swift-frontend | dispatch/Foundation/not found ---"
-            fe="$(dirname "$(readlink -f "$sw")")/swift-frontend"
-            if [ -e "$fe" ]; then ldd "$fe" 2>&1 | grep -iE "dispatch|foundation|not found" || echo "(no dispatch/foundation/not-found lines)"; else echo "no swift-frontend at $fe"; fi
-            echo "--- swift package dump-package in ports/swift ---"
-            ( cd ports/swift && swift package dump-package 2>&1 | sed -n "1,25p" ) || echo "dump-package exit=$?"
-          ' || true
-
       - name: every port replays the differential corpus
         run: |
           timeout 6600s nix develop .#runtime -c env \
