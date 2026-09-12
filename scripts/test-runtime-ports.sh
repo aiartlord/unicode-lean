@@ -446,15 +446,28 @@ fi
 
 if [[ "$run_swift" -eq 1 ]]; then
   echo "== swift runtime =="
-  if [[ ! -x "$swift_dir/scripts/test.sh" ]]; then
-    echo "missing Swift port test script at $swift_dir/scripts/test.sh" >&2
-    echo "set UNICODE_SWIFT_DIR=/path/to/swift-port or use --no-swift" >&2
-    exit 1
+  # swiftpm loads Package.swift by spawning a compiler subprocess for target
+  # info, and the nixpkgs swift frontend's rpath omits libdispatch, so in a bare
+  # devshell that subprocess cannot resolve libdispatch and manifest loading
+  # fails with "Failed to parse target info (malformed json)". The unicode-swift
+  # flake derivation builds and runs the same UnicodeSecurityContractTests under
+  # the swift package stdenv, which wires the library path so the subprocess
+  # resolves; drive the swift tier through it when nix is present. The in-tree
+  # script remains the path where nix is absent and libdispatch is already on
+  # the loader search path.
+  if command -v nix >/dev/null 2>&1; then
+    nix --extra-experimental-features 'nix-command flakes' build .#unicode-swift -L --no-link
+  else
+    if [[ ! -x "$swift_dir/scripts/test.sh" ]]; then
+      echo "missing Swift port test script at $swift_dir/scripts/test.sh" >&2
+      echo "set UNICODE_SWIFT_DIR=/path/to/swift-port or use --no-swift" >&2
+      exit 1
+    fi
+    (
+      cd "$swift_dir"
+      scripts/test.sh
+    )
   fi
-  (
-    cd "$swift_dir"
-    scripts/test.sh
-  )
 fi
 
 if [[ "$run_zig" -eq 1 ]]; then
