@@ -188,6 +188,13 @@ jobs:
           retention-days: 90
 
       - name: attest release evidence
+        # GitHub build-provenance attestation is free on public repositories and
+        # a paid feature on private ones. The release and its evidence bundle
+        # (source, runtime, SBOM, SHA256SUMS) publish in the preceding steps
+        # regardless; keep the attestation best-effort so a repository without
+        # the feature enabled still completes the release. Where the feature is
+        # available (public repos), the attestation is produced as normal.
+        continue-on-error: true
         uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
         with:
           subject-path: |
