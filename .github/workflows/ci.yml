@@ -228,6 +228,24 @@ jobs:
           # Build via lake; toolchain auto-detected from `lean-toolchain`.
           build-args: ""
 
+      - name: reclaim disk headroom
+        run: |
+          # lake rebuilds the whole canon from source, writing every olean to
+          # the repo checkout on the root disk. Combined with the swap file
+          # below and the elan-installed toolchain, that exhausts the root disk
+          # on a tighter runner and the runner crashes with "No space left on
+          # device" at the swap step. Remove every large preinstalled tree (the
+          # lean/lake build uses none of them) and prune docker up front.
+          sudo rm -rf \
+            /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache /usr/local/share/boost /opt/az \
+            /usr/share/swift /usr/local/share/powershell /usr/local/share/chromium \
+            /usr/local/lib/node_modules /usr/local/graalvm /usr/local/share/vcpkg \
+            || true
+          sudo docker system prune --all --force >/dev/null 2>&1 || true
+          sudo apt-get clean || true
+          df -h /
+
       - name: add swap headroom
         run: |
           # The headline modules' decide+kernel closures are each memory-safe
