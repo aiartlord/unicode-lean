@@ -58,6 +58,8 @@ import Numeric (readHex)
 import System.IO.Unsafe (unsafePerformIO)
 
 import Unicode.Normalization.NFKD (toNFKD)
+import Unicode.RangeIndex (RangeIndex)
+import qualified Unicode.RangeIndex as RangeIndex (fromRanges, member)
 import Paths_unicode_haskell (getDataFileName)
 
 -- ─────────────────────────────────────────────────────────────────────
@@ -124,9 +126,14 @@ data Verdict = Verdict
 -- (UCD 17.0.0); every codepoint outside it is Restricted, per the table's
 -- @\@missing: 0000..10FFFF; Restricted@ default.
 isIdAllowed :: Int -> Bool
-isIdAllowed cp = any inRange allowedRanges
-  where
-    inRange (lo, hi) = lo <= cp && cp <= hi
+isIdAllowed cp = RangeIndex.member cp allowedIndex
+
+-- | The Allowed ranges indexed for logarithmic membership, built once from the
+-- parsed range list. 'statusShifts' asks this twice per input codepoint, so the
+-- scan it replaces was 2 x 556 range comparisons per codepoint.
+allowedIndex :: RangeIndex
+allowedIndex = RangeIndex.fromRanges allowedRanges
+{-# NOINLINE allowedIndex #-}
 
 -- | @Identifier_Status = Allowed@ of the first codepoint of @cp@'s NFKD form,
 -- or @cp@'s own status when NFKD is empty (defensive — 'toNFKD' is total and
@@ -145,15 +152,26 @@ nfkdHeadAllowed cp =
 statusShifts :: Int -> Bool
 statusShifts cp = not (isIdAllowed cp) && nfkdHeadAllowed cp
 
--- | First input position (and its codepoint) whose 'isIdAllowed' differs from
--- its NFKD-head's.
-firstStatusShift :: [Int] -> Maybe (Int, Int)
-firstStatusShift input =
-  listToMaybe [ (idx, cp) | (idx, cp) <- zip [0 ..] input, statusShifts cp ]
-
--- | Total count of input positions where the per-cp status shifts under NFKD.
-statusShiftCount :: [Int] -> Int
-statusShiftCount input = length (filter statusShifts input)
+-- | The first shifting position with its codepoint, and the total shift count,
+-- from a single left-to-right pass.
+--
+-- This supersedes the two separate helpers it replaced — a @firstStatusShift@
+-- returning the head of the shifting positions and a @statusShiftCount@
+-- counting them — which 'detect' was the only caller of and which between them
+-- walked the input twice, evaluating 'statusShifts' once per codepoint each
+-- time. Neither was exported, so no caller outside this module could name
+-- them. The pair this returns is exactly what those two answered.
+scanShifts :: [Int] -> (Maybe (Int, Int), Int)
+scanShifts input = go 0 Nothing 0 input
+  where
+    go _idx firstSeen count [] = (firstSeen, count)
+    go idx firstSeen count (cp : rest)
+      | statusShifts cp =
+          let seen = case firstSeen of
+                Just earlier -> Just earlier
+                Nothing      -> Just (idx, cp)
+          in go (idx + 1) seen (count + 1) rest
+      | otherwise = go (idx + 1) firstSeen count rest
 
 -- ─────────────────────────────────────────────────────────────────────
 -- §4 Top-level detection
@@ -167,11 +185,17 @@ detect input =
   Verdict
     { verdictInput      = input
     , verdictClassify   = classification
-    , verdictShiftCount = statusShiftCount input
+    , verdictShiftCount = shiftCount
     }
   where
+    -- One pass yields both the first shifting position and the total count.
+    -- Separate 'firstStatusShift' and 'statusShiftCount' calls walked the input
+    -- twice, and each visited codepoint costs an NFKD expansion plus two
+    -- Identifier_Status lookups.
+    (firstShift, shiftCount) = scanShifts input
+
     classification =
-      case firstStatusShift input of
+      case firstShift of
         Just (pos, cp) -> Hazard (IdentifierStatusShift pos cp) [pos] []
         Nothing        -> Clear
 

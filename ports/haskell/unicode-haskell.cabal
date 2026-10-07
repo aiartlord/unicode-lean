@@ -103,6 +103,7 @@ library
       Unicode.Normalization.NFKC
       Unicode.Normalization.NFKD
       Unicode.Normalization.Reorder
+      Unicode.RangeIndex
       Unicode.Segmentation.Grapheme
       Unicode.Segmentation.GraphemeTables
       Unicode.Security.Crypto.AiWatermarkDetectability

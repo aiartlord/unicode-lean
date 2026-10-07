@@ -59,6 +59,8 @@ import Numeric (readHex)
 import System.IO.Unsafe (unsafePerformIO)
 
 import Paths_unicode_haskell (getDataFileName)
+import Unicode.RangeIndex (RangeIndex)
+import qualified Unicode.RangeIndex as RangeIndex (fromRanges, member)
 import Unicode.Security.Identity.EmojiZwjIntegrity (isEmojiModifier)
 
 -- ─────────────────────────────────────────────────────────────────────
@@ -221,12 +223,24 @@ isSkinTone = isEmojiModifier
 -- | True iff @cp@ has @Emoji_Modifier_Base@ per the bundled emoji property
 -- table.
 isSkinToneBase :: Int -> Bool
-isSkinToneBase cp = any (\(lo, hi) -> lo <= cp && cp <= hi) emojiModifierBaseRanges
+isSkinToneBase cp = RangeIndex.member cp modifierBaseIndex
+
+-- | The @Emoji_Modifier_Base@ ranges indexed for logarithmic membership, built
+-- once from the parsed range list.
+modifierBaseIndex :: RangeIndex
+modifierBaseIndex = RangeIndex.fromRanges emojiModifierBaseRanges
+{-# NOINLINE modifierBaseIndex #-}
+
+-- | The @Emoji_Presentation@ ranges indexed for logarithmic membership, built
+-- once from the parsed range list.
+presentationIndex :: RangeIndex
+presentationIndex = RangeIndex.fromRanges emojiPresentationRanges
+{-# NOINLINE presentationIndex #-}
 
 -- | True iff @cp@ has @Emoji_Presentation@ per the bundled emoji property
 -- table.
 isEmojiPresentation :: Int -> Bool
-isEmojiPresentation cp = any (\(lo, hi) -> lo <= cp && cp <= hi) emojiPresentationRanges
+isEmojiPresentation cp = RangeIndex.member cp presentationIndex
 
 -- | True iff @cp@ is @U+FE0E@ (VS15, text-style variation selector).
 isVs15 :: Int -> Bool

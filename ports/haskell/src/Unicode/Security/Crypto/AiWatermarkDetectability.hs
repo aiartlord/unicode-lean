@@ -67,6 +67,8 @@ import System.IO.Unsafe (unsafePerformIO)
 
 import Paths_unicode_haskell (getDataFileName)
 import qualified Unicode.Casing as Casing
+import Unicode.RangeIndex (RangeIndex)
+import qualified Unicode.RangeIndex as RangeIndex (fromRanges, member)
 
 -- ─────────────────────────────────────────────────────────────────────
 -- §1 Types
@@ -268,7 +270,14 @@ trim = dropWhileEnd isSpace . dropWhile isSpace
 
 -- | True iff @cp@ has the @Emoji = Yes@ property per emoji-data.txt.
 isEmoji :: Int -> Bool
-isEmoji cp = any (\(lo, hi) -> lo <= cp && cp <= hi) emojiRanges
+isEmoji cp = RangeIndex.member cp emojiIndex
+
+-- | The @Emoji@ ranges indexed for logarithmic membership, built once from the
+-- parsed range list. 'isAdjacentToEmoji' asks this twice per candidate
+-- position, so the scan it replaces was 2 x 418 range comparisons.
+emojiIndex :: RangeIndex
+emojiIndex = RangeIndex.fromRanges emojiRanges
+{-# NOINLINE emojiIndex #-}
 
 -- ─────────────────────────────────────────────────────────────────────
 -- §3 Codepoint probes

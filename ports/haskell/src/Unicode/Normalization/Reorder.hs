@@ -33,12 +33,14 @@ insertByCCC x (y : ys)
 sortNonStarterRun :: [Int] -> [Int]
 sortNonStarterRun = foldl (\sorted cp -> insertByCCC cp sorted) []
 
--- | Fold state for the reorder pass. @currentRun@ accumulates
--- non-starters in REVERSE scan order (O(1) prepend); it is reversed back
--- into scan order before sorting when flushed.
+-- | Fold state for the reorder pass. Both fields accumulate in REVERSE scan
+-- order, so each step prepends in constant time: @currentRun@ holds the
+-- pending non-starters and is reversed back into scan order before sorting
+-- when flushed, and @emittedReversed@ holds everything already settled and is
+-- reversed once at the end.
 data ReorderState = ReorderState
-  { emitted    :: ![Int]
-  , currentRun :: ![Int]
+  { emittedReversed :: ![Int]
+  , currentRun      :: ![Int]
   }
 
 -- | Sort the accumulated non-starter run into scan-then-CCC order.
@@ -50,11 +52,14 @@ flushRun s = sortNonStarterRun (reverse (currentRun s))
 stepReorder :: ReorderState -> Int -> ReorderState
 stepReorder s cp
   | canonicalCombiningClass cp == 0 =
-      ReorderState { emitted = emitted s ++ flushRun s ++ [cp], currentRun = [] }
+      ReorderState
+        { emittedReversed = cp : reverse (flushRun s) ++ emittedReversed s
+        , currentRun      = []
+        }
   | otherwise = s { currentRun = cp : currentRun s }
 
 -- | Canonical reordering of a codepoint sequence per UAX #15 §1.3.
 reorder :: [Int] -> [Int]
 reorder cps =
   let final = foldl stepReorder (ReorderState [] []) cps
-  in emitted final ++ flushRun final
+  in reverse (emittedReversed final) ++ flushRun final

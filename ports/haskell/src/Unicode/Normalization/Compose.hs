@@ -16,7 +16,8 @@ module Unicode.Normalization.Compose
   ( compose
   ) where
 
-import Data.Maybe (listToMaybe)
+import Data.IntMap.Strict (IntMap)
+import qualified Data.IntMap.Strict as IntMap (fromListWith, lookup)
 
 import qualified Unicode.Generated.UnicodeData as UnicodeData
 import Unicode.Normalization.Hangul (composePair)
@@ -30,25 +31,54 @@ primaryComposite :: Int -> Int -> Maybe Int
 primaryComposite d c =
   case composePair d c of
     Just p  -> Just p
-    Nothing ->
-      listToMaybe
-        [ UnicodeData.codepoint r
-        | r <- UnicodeData.rows
-        , UnicodeData.canonicalDecomposition r == [d, c]
-        , not (isFullCompositionExclusion (UnicodeData.codepoint r))
-        ]
+    Nothing -> IntMap.lookup (pairKey d c) compositeIndex
 
--- | Fold state: emitted output, the active starter (if any), the buffered
--- non-starters (nearest-last), and the maximum buffered combining class.
+-- | The primary-composite table: the inverse of every two-codepoint canonical
+-- decomposition, minus the @Full_Composition_Exclusion@ set, keyed by its
+-- decomposition pair and built once.
+--
+-- This is the same relation the list comprehension over 'UnicodeData.rows'
+-- expressed, and it answers the same way: where two rows decompose to the same
+-- pair the earlier one wins, which is the row a left-to-right search would have
+-- taken. Reading it from the table is what makes composition affordable — the
+-- comprehension visited all 3045 rows for every composing pair and asked
+-- 'isFullCompositionExclusion' on each matching one.
+compositeIndex :: IntMap Int
+compositeIndex =
+  IntMap.fromListWith
+    (\_later earlier -> earlier)
+    [ (pairKey d c, composite)
+    | r <- UnicodeData.rows
+    , [d, c] <- [UnicodeData.canonicalDecomposition r]
+    , let composite = UnicodeData.codepoint r
+    , not (isFullCompositionExclusion composite)
+    ]
+{-# NOINLINE compositeIndex #-}
+
+-- | An ordered codepoint pair packed into one key. The stride is the codespace
+-- size, so distinct pairs never collide.
+pairKey :: Int -> Int -> Int
+pairKey d c = d * 0x110000 + c
+
+-- | Fold state: the settled output in REVERSE scan order, the active starter
+-- (if any), the buffered non-starters (nearest-first, also reverse scan
+-- order), and the maximum buffered combining class.
+--
+-- Both lists grow by prepending, so one step costs its own length rather than
+-- the length of the settled output; 'flushCompose' restores scan order once.
 data ComposeState = ComposeState
-  { emitted :: ![Int]
-  , starter :: !(Maybe Int)
-  , buffer  :: ![Int]
-  , maxCCC  :: !Int
+  { emittedReversed :: ![Int]
+  , starter         :: !(Maybe Int)
+  , buffer          :: ![Int]
+  , maxCCC          :: !Int
   }
 
 initialState :: ComposeState
 initialState = ComposeState [] Nothing [] 0
+
+-- | The settled output, back in scan order.
+emitted :: ComposeState -> [Int]
+emitted = reverse . emittedReversed
 
 ccc :: Int -> Int
 ccc = fromIntegral . canonicalCombiningClass
@@ -64,7 +94,7 @@ stepCompose s cp =
        Nothing ->
          if c == 0
            then s { starter = Just cp }
-           else s { emitted = emitted s ++ [cp] }
+           else s { emittedReversed = cp : emittedReversed s }
        Just st ->
          if c == 0
            then composeStarter s st cp
@@ -76,9 +106,12 @@ composeStarter s st cp
   | null (buffer s) =
       case primaryComposite st cp of
         Just p  -> s { starter = Just p }
-        Nothing -> ComposeState (emitted s ++ [st]) (Just cp) [] 0
+        Nothing -> ComposeState (st : emittedReversed s) (Just cp) [] 0
   | otherwise =
-      ComposeState (emitted s ++ [st] ++ reverse (buffer s)) (Just cp) [] 0
+      -- Scan order here is @st@ then the buffer reversed, so the reverse of
+      -- that — what 'emittedReversed' holds — is the buffer as stored, ahead
+      -- of @st@.
+      ComposeState (buffer s ++ (st : emittedReversed s)) (Just cp) [] 0
 
 -- | A non-starter with combining class @c@: blocked (buffered) when
 -- @c <= maxCCC@, else composed with the active starter if a composite exists.

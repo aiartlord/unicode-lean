@@ -61,6 +61,8 @@ import Numeric (readHex)
 import System.IO.Unsafe (unsafePerformIO)
 
 import Unicode.Normalization.NFKC (toNFKC)
+import Unicode.RangeIndex (RangeIndex)
+import qualified Unicode.RangeIndex as RangeIndex (fromRanges, member)
 import Unicode.Security.Boundary.IdentifierFormDrift (isIdAllowed)
 import Paths_unicode_haskell (getDataFileName)
 
@@ -128,15 +130,29 @@ data Verdict = Verdict
 -- §2 UAX #31 default identifier + UTS #39 whole-string admissibility
 -- ─────────────────────────────────────────────────────────────────────
 
--- | True iff @cp@ has the @XID_Start@ derived property. The range list is
--- parsed once from the bundled @DerivedCoreProperties.txt@.
-isXidStart :: Int -> Bool
-isXidStart = inRanges xidStartRanges
+-- | The @XID_Start@ ranges indexed for logarithmic membership, built once from
+-- the parsed range list.
+xidStartIndex :: RangeIndex
+xidStartIndex = RangeIndex.fromRanges xidStartRanges
+{-# NOINLINE xidStartIndex #-}
 
--- | True iff @cp@ has the @XID_Continue@ derived property. The range list is
--- parsed once from the bundled @DerivedCoreProperties.txt@.
+-- | The @XID_Continue@ ranges indexed for logarithmic membership, built once
+-- from the parsed range list.
+xidContinueIndex :: RangeIndex
+xidContinueIndex = RangeIndex.fromRanges xidContinueRanges
+{-# NOINLINE xidContinueIndex #-}
+
+-- | True iff @cp@ has the @XID_Start@ derived property. The range list is
+-- parsed once from the bundled @DerivedCoreProperties.txt@ and indexed once;
+-- the test is then logarithmic in the 779 ranges rather than a scan of them.
+isXidStart :: Int -> Bool
+isXidStart cp = RangeIndex.member cp xidStartIndex
+
+-- | True iff @cp@ has the @XID_Continue@ derived property. Indexed as
+-- 'isXidStart' is; @XID_Continue@ is the larger table at 1,422 ranges, and
+-- 'isDefaultIdentifier' asks it once per codepoint of the input.
 isXidContinue :: Int -> Bool
-isXidContinue = inRanges xidContinueRanges
+isXidContinue cp = RangeIndex.member cp xidContinueIndex
 
 -- | UAX #31 default identifier start: @XID_Start@ or @U+005F LOW LINE@.
 isDefaultIdStart :: Int -> Bool
@@ -209,12 +225,6 @@ xidContinueRanges = unsafePerformIO $ do
   path <- getDataFileName "data/DerivedCoreProperties.txt"
   parseDerivedProperty "XID_Continue" <$> readFile path
 {-# NOINLINE xidContinueRanges #-}
-
--- | True iff @cp@ falls inside any inclusive range of @ranges@.
-inRanges :: [(Int, Int)] -> Int -> Bool
-inRanges ranges cp = any inRange ranges
-  where
-    inRange (lo, hi) = lo <= cp && cp <= hi
 
 -- | Parse every range line of a @DerivedCoreProperties.txt@ body tagged with
 -- @propertyName@. Each data line is @<code>; <Property> # comment@ where

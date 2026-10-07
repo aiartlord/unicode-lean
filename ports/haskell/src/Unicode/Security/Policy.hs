@@ -710,8 +710,12 @@ isRegisteredVariationUse :: [Int] -> Int -> Bool
 isRegisteredVariationUse input position =
   position > 0
     && (isRegisteredVariationPosition input position
-          || ((input !! position == 0xFE0F || input !! position == 0xFE0E)
-                && AiWatermark.isEmoji (input !! (position - 1))))
+          || fromMaybe False emojiPresentationUse)
+  where
+    emojiPresentationUse = do
+      selector <- codepointAt input position
+      base <- codepointAt input (position - 1)
+      pure ((selector == 0xFE0F || selector == 0xFE0E) && AiWatermark.isEmoji base)
 
 bidiFinding :: [Int] -> [Finding]
 bidiFinding input =
@@ -931,7 +935,7 @@ zeroWidthSubThreat input positions
   | zwjZwsp >= 2 = "BinaryPayload"
   | otherwise = "BareZeroWidth"
   where
-    codepoints = [input !! index | index <- positions]
+    codepoints = mapMaybe (codepointAt input) positions
     annotation = length [cp | cp <- codepoints, cp >= 0xFFF9, cp <= 0xFFFB]
     wordJoiner = length [cp | cp <- codepoints, cp == 0x2060]
     nnbsp = length [cp | cp <- codepoints, cp == 0x202F]
@@ -939,10 +943,12 @@ zeroWidthSubThreat input positions
 
 isRegisteredVariationPosition :: [Int] -> Int -> Bool
 isRegisteredVariationPosition input position =
-  position > 0
-    && Set.member
-      (input !! (position - 1), input !! position)
-      legalVariationPairs
+  position > 0 && fromMaybe False registered
+  where
+    registered = do
+      selector <- codepointAt input position
+      base <- codepointAt input (position - 1)
+      pure (Set.member (base, selector) legalVariationPairs)
 
 legalVariationPairs :: Set (Int, Int)
 legalVariationPairs = unsafePerformIO $ do
@@ -979,18 +985,28 @@ variationSelectorNibble cp
   | otherwise = Nothing
 
 decodeVariationSelectorRun :: [Int] -> [Int] -> [Int]
-decodeVariationSelectorRun input positions =
-  go Nothing [ n | position <- positions, Just n <- [variationSelectorNibble (input !! position)] ]
+decodeVariationSelectorRun input positions = go Nothing nibbles
   where
+    nibbles =
+      mapMaybe (\position -> codepointAt input position >>= variationSelectorNibble) positions
+
     go :: Maybe Int -> [Int] -> [Int]
     go _ [] = []
     go Nothing (n:ns) = go (Just n) ns
     go (Just high) (n:ns) = ((high * 16) + n) : go Nothing ns
 
 allSameAt :: [Int] -> [Int] -> Bool
-allSameAt _input [] = True
-allSameAt input (position:positions) =
-  all (\p -> input !! p == input !! position) positions
+allSameAt input positions =
+  case mapMaybe (codepointAt input) positions of
+    [] -> True
+    (first : rest) -> all (== first) rest
+
+-- | Codepoint at index @i@ of @input@, or 'Nothing' when @i@ is out of range.
+-- Total; never uses the partial @!!@.
+codepointAt :: [Int] -> Int -> Maybe Int
+codepointAt input i
+  | i < 0     = Nothing
+  | otherwise = listToMaybe (drop i input)
 
 -- | The embedding depth bound of UAX #9 §3.3.2.
 uaxDepthLimit :: Int
@@ -1529,9 +1545,12 @@ joiningTypeAfter input i =
 -- reportable.
 isLegitimateZwnjContext :: [Int] -> Int -> Bool
 isLegitimateZwnjContext input i
-  | i > 0 && isViramaCp (input !! (i - 1)) = True
+  | followsVirama = True
   | otherwise = joinsOnBothSides
   where
+    followsVirama =
+      i > 0 && fromMaybe False (fmap isViramaCp (codepointAt input (i - 1)))
+
     joinsOnBothSides =
       fromMaybe False $ do
         left <- joiningTypeBefore input i
@@ -1544,11 +1563,12 @@ isLegitimateZwnjContext input i
 -- registered sequence does not sanction a ZWJ beside it. A ZWJ in head or tail
 -- position is never legitimate.
 isLegitimateZwjContext :: [Int] -> Int -> Bool
-isLegitimateZwjContext input i
-  | i == 0 || i + 1 >= length input = False
-  | otherwise =
-      EmojiZwj.isEmojiTarget (input !! (i - 1))
-        && EmojiZwj.isEmojiTarget (input !! (i + 1))
+isLegitimateZwjContext input i = fromMaybe False flanked
+  where
+    flanked = do
+      before <- codepointAt input (i - 1)
+      after <- codepointAt input (i + 1)
+      pure (EmojiZwj.isEmojiTarget before && EmojiZwj.isEmojiTarget after)
 
 -- | True iff at least one zero-width position of the input is unsanctioned. A
 -- ZWJ inside a registered emoji sequence and a ZWNJ in an RFC 5892
@@ -1560,10 +1580,13 @@ hasSuspiciousZeroWidth input = any (not . isSanctionedZeroWidth input)
 -- | A zero-width occurrence whose context sanctions it: a ZWJ inside a
 -- registered emoji sequence, a ZWNJ in an RFC 5892 CONTEXTJ-valid position.
 isSanctionedZeroWidth :: [Int] -> Int -> Bool
-isSanctionedZeroWidth input i =
-  let cp = input !! i
-  in (cp == 0x200D && isLegitimateZwjContext input i)
-       || (cp == 0x200C && isLegitimateZwnjContext input i)
+isSanctionedZeroWidth input i = fromMaybe False sanctioned
+  where
+    sanctioned = do
+      cp <- codepointAt input i
+      pure
+        ((cp == 0x200D && isLegitimateZwjContext input i)
+           || (cp == 0x200C && isLegitimateZwnjContext input i))
 
 -- | The zero-width positions no context sanctions: what the classification
 -- localises (Lean @suspiciousPositions@).
