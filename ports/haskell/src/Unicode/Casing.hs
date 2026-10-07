@@ -44,6 +44,8 @@ import System.IO.Unsafe (unsafePerformIO)
 
 import Paths_unicode_haskell (getDataFileName)
 import Unicode.Normalization.Lookup (canonicalCombiningClass)
+import Unicode.RangeIndex (RangeIndex)
+import qualified Unicode.RangeIndex as RangeIndex (fromRanges, member)
 
 -- | The locales that SpecialCasing.txt distinguishes. 'Default' covers
 -- every locale not tagged Turkish, Azeri, or Lithuanian.
@@ -97,6 +99,17 @@ specialCasingRows = unsafePerformIO $ do
   mapMaybe parseSpecialCasingLine . lines <$> readFile path
 {-# NOINLINE specialCasingRows #-}
 
+-- | The SpecialCasing rows grouped by source codepoint, each group in file
+-- order, built once. 'findSpecialRow' reads one group where it scanned the
+-- whole table twice — once for the conditional rows, once for the
+-- unconditional one.
+specialCasingIndex :: Map Int [SpecialRow]
+specialCasingIndex =
+  Map.fromListWith
+    (\later earlier -> earlier ++ later)
+    [ (rowCode row, [row]) | row <- specialCasingRows ]
+{-# NOINLINE specialCasingIndex #-}
+
 simpleLowercaseMap :: Map Int Int
 simpleLowercaseMap = unsafePerformIO $ do
   path <- getDataFileName "data/UnicodeData.txt"
@@ -137,21 +150,36 @@ simpleLowercase cp = Map.findWithDefault cp cp simpleLowercaseMap
 simpleUppercase :: Int -> Int
 simpleUppercase cp = Map.findWithDefault cp cp simpleUppercaseMap
 
-inRanges :: [Range] -> Int -> Bool
-inRanges ranges cp = any (\r -> rangeLo r <= cp && cp <= rangeHi r) ranges
+-- | Index a parsed property's ranges for logarithmic membership. Each
+-- predicate below asks its property once per codepoint of the input, and
+-- 'lowerCodepoint' asks 'isCased' and 'isSoftDotted' again per context test.
+indexOf :: [Range] -> RangeIndex
+indexOf ranges = RangeIndex.fromRanges [(rangeLo r, rangeHi r) | r <- ranges]
+
+casedIndex :: RangeIndex
+casedIndex = indexOf casedRanges
+{-# NOINLINE casedIndex #-}
+
+softDottedIndex :: RangeIndex
+softDottedIndex = indexOf softDottedRanges
+{-# NOINLINE softDottedIndex #-}
+
+defaultIgnorableIndex :: RangeIndex
+defaultIgnorableIndex = indexOf defaultIgnorableRanges
+{-# NOINLINE defaultIgnorableIndex #-}
 
 isCased :: Int -> Bool
-isCased = inRanges casedRanges
+isCased cp = RangeIndex.member cp casedIndex
 
 isSoftDotted :: Int -> Bool
-isSoftDotted = inRanges softDottedRanges
+isSoftDotted cp = RangeIndex.member cp softDottedIndex
 
 -- | The UAX #44 Default_Ignorable_Code_Point property, read from
 -- @DerivedCoreProperties.txt@. A codepoint with this property is one a
 -- conforming renderer draws as nothing, which is the property the covert-channel
 -- detectors ask about when they decide whether a codepoint is invisible.
 isDefaultIgnorable :: Int -> Bool
-isDefaultIgnorable = inRanges defaultIgnorableRanges
+isDefaultIgnorable cp = RangeIndex.member cp defaultIgnorableIndex
 
 -- ─────────────────────────────────────────────────────────────────────
 -- Context predicates (UAX #21). @revPrefix@ is the preceding codepoints
@@ -284,17 +312,18 @@ findSpecialRow loc revPrefix suffix cp =
     Just row -> Just row
     Nothing  -> listToMaybe unconditionalMatches
   where
+    -- The rows for this codepoint, in file order, read from the index rather
+    -- than found by two scans of the whole table.
+    rowsForCp = Map.findWithDefault [] cp specialCasingIndex
     conditionalMatches =
       [ row
-      | row <- specialCasingRows
-      , rowCode row == cp
+      | row <- rowsForCp
       , not (null (rowConditions row))
       , conditionsHold loc revPrefix suffix (rowConditions row)
       ]
     unconditionalMatches =
       [ row
-      | row <- specialCasingRows
-      , rowCode row == cp
+      | row <- rowsForCp
       , null (rowConditions row)
       ]
 

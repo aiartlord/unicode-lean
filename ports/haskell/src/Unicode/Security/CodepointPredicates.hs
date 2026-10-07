@@ -24,25 +24,34 @@ module Unicode.Security.CodepointPredicates
   , isVariationSelector
   ) where
 
-import Data.List (find)
-
 import Unicode.Generated.DerivedBidiClass
   ( BidiStrong (BidiAL, BidiL, BidiOther, BidiR)
   , defaultRanges
   , explicitRanges
   )
+import Unicode.RangeIndex (RangeMap)
+import qualified Unicode.RangeIndex as RangeIndex (classOf, rangeMapOf)
 
 -- | The strong bidi class of a codepoint.  An explicit range wins; otherwise
 -- the last matching @\@missing@ default range applies, and @BidiL@ stands as
 -- the base case for a codepoint no default range covers.
 bidiStrong :: Int -> BidiStrong
 bidiStrong cp =
-  case find inRange explicitRanges of
-    Just (_lo, _hi, cls) -> cls
+  case RangeIndex.classOf cp explicitIndex of
+    Just cls -> cls
     Nothing -> foldl pickDefault BidiL defaultRanges
   where
-    inRange (lo, hi, _cls) = lo <= cp && cp <= hi
     pickDefault acc (lo, hi, cls) = if lo <= cp && cp <= hi then cls else acc
+
+-- | The 2323 explicit @Bidi_Class@ ranges keyed by range start, built once.
+-- They assign one class per codepoint and so do not overlap, which makes the
+-- range with the greatest start at or below a codepoint the same range a
+-- first-match scan found. The 24 @\@missing@ default ranges stay a fold: they
+-- overlap by design — the first covers the whole codespace — and the fold
+-- takes the last match, which is what carries that design.
+explicitIndex :: RangeMap BidiStrong
+explicitIndex = RangeIndex.rangeMapOf explicitRanges
+{-# NOINLINE explicitIndex #-}
 
 -- | Strong right-to-left: Hebrew and the like (@R@), or Arabic-letter (@AL@).
 isStrongRtl :: Int -> Bool

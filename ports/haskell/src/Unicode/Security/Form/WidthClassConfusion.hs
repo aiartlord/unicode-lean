@@ -34,6 +34,8 @@ import Data.List (find)
 
 import Unicode.Generated.EastAsianWidth (EastAsianWidth (EawF, EawH, EawN), explicitRanges)
 import Unicode.Normalization.NFKD (toNFKD)
+import Unicode.RangeIndex (RangeMap)
+import qualified Unicode.RangeIndex as RangeIndex (classOf, rangeMapOf)
 
 -- | One width-class-confusion scan result: the fold tag (@Nothing@ when the
 -- input is clear) and the single position the fold was found at.
@@ -47,11 +49,18 @@ data Detection = Detection
 -- declares @N@ over the whole space, so an unlisted codepoint is 'EawN'.
 eastAsianWidth :: Int -> EastAsianWidth
 eastAsianWidth cp =
-  case find inRange explicitRanges of
-    Just (_lo, _hi, cls) -> cls
-    Nothing              -> EawN
-  where
-    inRange (lo, hi, _cls) = lo <= cp && cp <= hi
+  case RangeIndex.classOf cp widthIndex of
+    Just cls -> cls
+    Nothing  -> EawN
+
+-- | The 2678 explicit @East_Asian_Width@ ranges keyed by range start, built
+-- once. They assign one class per codepoint and so do not overlap, which makes
+-- the range with the greatest start at or below a codepoint the same range a
+-- first-match scan found. 'hasWidthFold' asks for two classes per codepoint
+-- and 'firstFold' asks for a third.
+widthIndex :: RangeMap EastAsianWidth
+widthIndex = RangeIndex.rangeMapOf explicitRanges
+{-# NOINLINE widthIndex #-}
 
 -- | True iff the NFKD head of the codepoint carries a different EAW class.
 hasWidthFold :: Int -> Bool
