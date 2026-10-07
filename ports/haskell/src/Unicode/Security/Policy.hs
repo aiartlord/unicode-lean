@@ -111,6 +111,8 @@ import Unicode.Codec.Strict
   )
 import qualified Unicode.Normalization.Lookup as NormalizationLookup
 import qualified Unicode.Normalization.NFC as NFC
+import Unicode.RangeIndex (RangeMap)
+import qualified Unicode.RangeIndex as RangeIndex (classOf, rangeMapOf)
 import Unicode.Security.CodepointPredicates
   ( isBidiFormatControl
   , isStrongLtr
@@ -1510,8 +1512,9 @@ joiningTypeRanges = unsafePerformIO $ do
 joiningTypeOf :: Int -> String
 joiningTypeOf cp = normalizeToken (listToMaybe matchingTokens)
   where
-    matchingTokens =
-      concat [value | (lo, hi, value) <- joiningTypeRanges, lo <= cp, cp <= hi]
+    -- The covering range is unique, so its own token list is the whole of what
+    -- a scan concatenated, and @listToMaybe@ reads that range's first token.
+    matchingTokens = fromMaybe [] (findScriptRange joiningTypeIndex cp)
     normalizeToken Nothing = "U"
     normalizeToken (Just token)
       | token `elem` ["C", "D", "L", "R", "T"] = token
@@ -1617,26 +1620,47 @@ scriptAliasMap = unsafePerformIO $ do
       (before, _) -> [before]
 {-# NOINLINE scriptAliasMap #-}
 
-findScriptRange :: [(Int, Int, [String])] -> Int -> Maybe [String]
-findScriptRange ranges cp =
-  case [value | (lo, hi, value) <- ranges, lo <= cp, cp <= hi] of
-    (value : _) -> Just value
-    [] -> Nothing
+-- | The value of the range covering @cp@, from a table keyed by range start.
+-- Each of these UCD tables assigns one property value per codepoint, so no two
+-- of its ranges overlap and the covering range is unique.
+findScriptRange :: RangeMap [String] -> Int -> Maybe [String]
+findScriptRange = flip RangeIndex.classOf
+
+-- | @Scripts.txt@ keyed by range start, built once from the parsed list. Every
+-- script question asks this, and 'isIgnoredForIntersection' asks it for every
+-- codepoint of the input in each of the six restriction-level predicates.
+scriptIndex :: RangeMap [String]
+scriptIndex = RangeIndex.rangeMapOf scriptRanges
+{-# NOINLINE scriptIndex #-}
+
+-- | @ScriptExtensions.txt@ keyed by range start, built once.
+scriptExtIndex :: RangeMap [String]
+scriptExtIndex = RangeIndex.rangeMapOf scriptExtRanges
+{-# NOINLINE scriptExtIndex #-}
+
+-- | @DerivedJoiningType.txt@ keyed by range start, built once.
+joiningTypeIndex :: RangeMap [String]
+joiningTypeIndex = RangeIndex.rangeMapOf joiningTypeRanges
+{-# NOINLINE joiningTypeIndex #-}
 
 scriptOf :: Int -> String
-scriptOf cp = case findScriptRange scriptRanges cp of
+scriptOf cp = case findScriptRange scriptIndex cp of
   Just (name : _) -> name
   _ -> "Unknown"
 
 resolveScripts :: Int -> [String]
-resolveScripts cp = case findScriptRange scriptExtRanges cp of
+resolveScripts cp = case findScriptRange scriptExtIndex cp of
   Just value -> value
   Nothing -> case Map.lookup (scriptOf cp) scriptAliasMap of
     Just abbrev | Set.member abbrev scriptExtAbbrevs -> [abbrev]
     _ -> []
 
+-- | A codepoint whose script is Common or Inherited, which the script
+-- intersection skips. One 'scriptOf' answers both comparisons.
 isIgnoredForIntersection :: Int -> Bool
-isIgnoredForIntersection cp = scriptOf cp == "Common" || scriptOf cp == "Inherited"
+isIgnoredForIntersection cp = script == "Common" || script == "Inherited"
+  where
+    script = scriptOf cp
 
 stringScriptUnion :: [Int] -> [String]
 stringScriptUnion input =

@@ -11,9 +11,12 @@ GB1-GB999 specification. The 'State' fields, rule order, and transition below
 mirror that reference.
 
 The property tables are grouped by property value (as in the UCD source), not
-globally sorted by code point, so lookups scan linearly for the covering range —
-mirroring the verified Lean @find?@. Each class is a partition, so the first
-covering range is the only one.
+globally sorted by code point. Each class is a partition — no two ranges in any
+of the three tables overlap — so the covering range is unique and a lookup
+keyed by range start returns the same range the verified Lean @find?@ returns.
+'gcbIndex', 'incbIndex' and 'extpictIndex' are those tables keyed that way,
+built once; the three lookups run twice per code point (once in
+'shouldBreakBefore', once in 'advance') over 1429, 505 and 451 ranges.
 -}
 module Unicode.Segmentation.Grapheme
   ( graphemeBreaks
@@ -23,6 +26,11 @@ module Unicode.Segmentation.Grapheme
   , isExtPict
   ) where
 
+import Data.Maybe (fromMaybe)
+
+import Unicode.RangeIndex (RangeIndex, RangeMap)
+import qualified Unicode.RangeIndex as RangeIndex
+  ( classOf, fromRanges, member, rangeMapOf )
 import Unicode.Segmentation.GraphemeTables
   ( GCB( Prepend, Cr, Lf, Control, Extend, RegionalIndicator, SpacingMark
        , L, V, T, Lv, Lvt, Zwj, Other )
@@ -34,33 +42,30 @@ import Unicode.Segmentation.GraphemeTables
 
 -- | Grapheme_Cluster_Break class of a code point, 'Other' when uncovered.
 lookupGCB :: Int -> GCB
-lookupGCB cp = go gcbRanges
-  where
-    go :: [(Int, Int, GCB)] -> GCB
-    go [] = Other
-    go ((lo, hi, cls) : rest)
-      | lo <= cp && cp <= hi = cls
-      | otherwise            = go rest
+lookupGCB cp = fromMaybe Other (RangeIndex.classOf cp gcbIndex)
+
+-- | The GCB table keyed by range start, built once.
+gcbIndex :: RangeMap GCB
+gcbIndex = RangeIndex.rangeMapOf gcbRanges
+{-# NOINLINE gcbIndex #-}
 
 -- | Indic_Conjunct_Break class of a code point, 'IncbNone' when uncovered.
 lookupInCB :: Int -> Incb
-lookupInCB cp = go incbRanges
-  where
-    go :: [(Int, Int, Incb)] -> Incb
-    go [] = IncbNone
-    go ((lo, hi, cls) : rest)
-      | lo <= cp && cp <= hi = cls
-      | otherwise            = go rest
+lookupInCB cp = fromMaybe IncbNone (RangeIndex.classOf cp incbIndex)
+
+-- | The InCB table keyed by range start, built once.
+incbIndex :: RangeMap Incb
+incbIndex = RangeIndex.rangeMapOf incbRanges
+{-# NOINLINE incbIndex #-}
 
 -- | Whether a code point has the Extended_Pictographic property.
 isExtPict :: Int -> Bool
-isExtPict cp = go extpictRanges
-  where
-    go :: [(Int, Int)] -> Bool
-    go [] = False
-    go ((lo, hi) : rest)
-      | lo <= cp && cp <= hi = True
-      | otherwise            = go rest
+isExtPict cp = RangeIndex.member cp extpictIndex
+
+-- | The Extended_Pictographic ranges indexed for membership, built once.
+extpictIndex :: RangeIndex
+extpictIndex = RangeIndex.fromRanges extpictRanges
+{-# NOINLINE extpictIndex #-}
 
 -- | GB11 left-context state, mirroring the Lean @EPicState@.
 data EPicState = EpNone | AfterEp | AfterEpZwj
