@@ -1763,21 +1763,34 @@ mixedScriptVerdict input identifierField
 -- not case folding, so @expreß@ (which folds to @express@) still matches.
 findTargetMatch :: [Int] -> Maybe String
 findTargetMatch input =
-  foldl' step Nothing knownAttackTargets
+  foldl' step Nothing targetSkeletons
   where
     inputLetters = letterSkeleton input
     inputLower = map Casing.simpleLowercase input
 
-    step :: Maybe String -> String -> Maybe String
-    step firstMatch target =
-      let targetCps = asciiCodepoints target
-          targetLetters = letterSkeleton targetCps
-          sameName = ctListEq (map Casing.simpleLowercase targetCps) inputLower
+    step :: Maybe String -> (String, [Int], [Int]) -> Maybe String
+    step firstMatch (target, targetLetters, targetLower) =
+      let sameName = ctListEq targetLower inputLower
           isMatch = not sameName && ctListEq targetLetters inputLetters
       in case (firstMatch, isMatch) of
            (Nothing, True) -> Just target
            (Just found, True) -> Just found
            (found, False) -> found
+
+-- | Each curated target with its letter skeleton and its per-codepoint simple
+-- lowercasing, built once.
+--
+-- Both are functions of the target alone, and 'letterSkeleton' is up to
+-- 'confusableChainBound' rounds of 'skeleton' — two NFD passes, two case folds
+-- and a confusable substitution each — so computing them inside the fold spent
+-- that on all 67 targets on every call, whatever the input.
+targetSkeletons :: [(String, [Int], [Int])]
+targetSkeletons =
+  [ (target, letterSkeleton targetCps, map Casing.simpleLowercase targetCps)
+  | target <- knownAttackTargets
+  , let targetCps = asciiCodepoints target
+  ]
+{-# NOINLINE targetSkeletons #-}
 
 -- | The Lean @letterSkeleton@: the iterated skeleton with combining marks and
 -- Default_Ignorable codepoints dropped, whitespace kept.

@@ -205,9 +205,15 @@ zwjAlphabet :: Set Int
 zwjAlphabet =
   Set.fromList [ cp | codepoints <- zwjSequences, cp <- codepoints, cp /= zwj ]
 
+-- | The registered RGI ZWJ sequences as a set, built once. Membership in it is
+-- the question 'isRegisteredZwjSequence' asks, and a scan asked it by comparing
+-- the candidate against every one of the 1614 sequences in turn.
+zwjSequenceSet :: Set [Int]
+zwjSequenceSet = Set.fromList zwjSequences
+
 -- | True iff @cps@ is exactly a registered RGI ZWJ sequence.
 isRegisteredZwjSequence :: [Int] -> Bool
-isRegisteredZwjSequence cps = any (== cps) zwjSequences
+isRegisteredZwjSequence cps = Set.member cps zwjSequenceSet
 
 -- | True iff @cp@ appears at some position of a registered RGI ZWJ sequence
 -- (the canonical "what may flank a ZWJ?" predicate).
