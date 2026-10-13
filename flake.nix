@@ -374,8 +374,9 @@
           installPhase = "true";
         };
 
-        # Lean 4.33.1 toolchain (see ./lean-toolchain) pinned via elan; fetched
-        # at build time because no Lean 4.33.1 derivation exists in nixpkgs yet.
+        # The Lean toolchain is whatever ./lean-toolchain names, installed by
+        # elan at build time: nixpkgs carries an older Lean than this pin, so
+        # the version is read from the file rather than from a nixpkgs attr.
         runtimeShell = pkgs.mkShell {
           packages = runtimePackages;
           # swiftpm executes the compiled Package.swift manifest with an rpath

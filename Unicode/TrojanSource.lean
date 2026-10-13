@@ -232,19 +232,26 @@ theorem reject_latin_cyrillic_mix :
 /-- A codepoint opening an embedding is a bidi format control. The four
     embedding opens LRE, RLE, LRO, RLO lie inside `U+202A..U+202E`, which
     is `isBidiEmbeddingControl`. -/
+-- The case split goes through `by_cases`, which names the hypothesis it
+-- introduces by contract: `h : cp = k` in the first branch and `h : ¬(cp = k)`
+-- in the second, whatever representation `Decidable` happens to carry.
+-- Destructuring a `Decidable` value itself (`rcases Nat.decEq cp k with …`)
+-- binds its fields positionally, and Lean 4.35 states decidability through
+-- `Bool.Reflects`, so those positions hold inaccessible `reflects_decide✝`
+-- hypotheses and the names never enter scope.
 theorem opensEmbedding_isBidiFormatControl (cp : Nat)
     (h : opensEmbedding cp = true) : isBidiFormatControl cp = true := by
   unfold opensEmbedding at h
   unfold isBidiFormatControl isBidiEmbeddingControl
-  rcases Nat.decEq cp 0x202A with hne | heq
-  · rcases Nat.decEq cp 0x202B with hne2 | heq2
-    · rcases Nat.decEq cp 0x202D with hne3 | heq3
-      · rcases Nat.decEq cp 0x202E with hne4 | heq4
-        · simp [hne, hne2, hne3, hne4] at h
-        · subst heq4; decide
-      · subst heq3; decide
-    · subst heq2; decide
-  · subst heq; decide
+  by_cases hLRE : cp = 0x202A
+  · subst hLRE; decide
+  · by_cases hRLE : cp = 0x202B
+    · subst hRLE; decide
+    · by_cases hLRO : cp = 0x202D
+      · subst hLRO; decide
+      · by_cases hRLO : cp = 0x202E
+        · subst hRLO; decide
+        · simp [hLRE, hRLE, hLRO, hRLO] at h
 
 /-- PDF (`U+202C`) is a bidi format control: it lies inside the embedding
     range `U+202A..U+202E`. -/
@@ -260,13 +267,13 @@ theorem opensIsolate_isBidiFormatControl (cp : Nat)
     (h : opensIsolate cp = true) : isBidiFormatControl cp = true := by
   unfold opensIsolate at h
   unfold isBidiFormatControl isBidiIsolateControl
-  rcases Nat.decEq cp 0x2066 with hne | heq
-  · rcases Nat.decEq cp 0x2067 with hne2 | heq2
-    · rcases Nat.decEq cp 0x2068 with hne3 | heq3
-      · simp [hne, hne2, hne3] at h
-      · subst heq3; decide
-    · subst heq2; decide
-  · subst heq; decide
+  by_cases hLRI : cp = 0x2066
+  · subst hLRI; decide
+  · by_cases hRLI : cp = 0x2067
+    · subst hRLI; decide
+    · by_cases hFSI : cp = 0x2068
+      · subst hFSI; decide
+      · simp [hLRI, hRLI, hFSI] at h
 
 /-- PDI (`U+2069`) is a bidi format control: it lies inside the isolate
     range `U+2066..U+2069`. -/
