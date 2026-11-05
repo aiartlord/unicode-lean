@@ -91,11 +91,14 @@ library
       Unicode.Codec.ValidatedUtf8
       Unicode.Generated.CompositionExclusions
       Unicode.Generated.DerivedBidiClass
+      Unicode.Generated.DerivedGeneralCategory
       Unicode.Generated.EastAsianWidth
       Unicode.Generated.DerivedNormalizationProps
+      Unicode.Generated.LineBreakProperty
       Unicode.Generated.UnicodeData
       Unicode.Normalization.CompatDecompose
       Unicode.Normalization.Compose
+      Unicode.Normalization.Decompose
       Unicode.Normalization.Hangul
       Unicode.Normalization.Lookup
       Unicode.Normalization.NFC
@@ -103,9 +106,12 @@ library
       Unicode.Normalization.NFKC
       Unicode.Normalization.NFKD
       Unicode.Normalization.Reorder
+      Unicode.Normalization.Utf8Bridge
+      Unicode.Property
       Unicode.RangeIndex
       Unicode.Segmentation.Grapheme
       Unicode.Segmentation.GraphemeTables
+      Unicode.Segmentation.LineBreak
       Unicode.Security.Crypto.AiWatermarkDetectability
       Unicode.Security.Crypto.Bip39Canonical
       Unicode.Security.Boundary.AdmissibilityFormDrift
@@ -142,6 +148,7 @@ test-suite unicode-haskell-test
   other-modules:
       AiWatermarkDetectabilitySpec
       Bip39CanonicalSpec
+      BreakCorpus
       HashInputStabilitySpec
       BomSpec
       CaseExpansionMismatchSpec
@@ -149,6 +156,8 @@ test-suite unicode-haskell-test
       HangulSpec
       GraphemeSpec
       IdentifierSpec
+      LineBreakSpec
+      LineBreakTestRows
       LocaleCaseInversionSpec
       LookupSpec
       NfcIdempotenceWitnessSpec

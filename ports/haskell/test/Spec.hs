@@ -23,6 +23,7 @@ import qualified CaseExpansionMismatchSpec
 import qualified CasingSpec
 import qualified GraphemeSpec
 import qualified HangulSpec
+import qualified LineBreakSpec
 import qualified LocaleCaseInversionSpec
 import qualified LookupSpec
 import qualified NfcIdempotenceWitnessSpec
@@ -58,6 +59,7 @@ main = defaultMain $
     , CasingSpec.tests
     , GraphemeSpec.tests
     , HangulSpec.tests
+    , LineBreakSpec.tests
     , LocaleCaseInversionSpec.tests
     , LookupSpec.tests
     , NfcIdempotenceWitnessSpec.tests
