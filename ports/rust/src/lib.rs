@@ -11,6 +11,7 @@
 #![warn(missing_docs)]
 
 pub mod bom;
+pub mod east_asian_width;
 pub mod general_category;
 pub mod identifier;
 pub mod noncharacters;

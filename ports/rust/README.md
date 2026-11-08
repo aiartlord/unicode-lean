@@ -20,12 +20,15 @@ kept identical to the canonical `Unicode/Ucd/` bytes by
 `scripts/sync-runtime-data.sh` (`--check`/`--apply`) and pinned by `data/SHA256SUMS`,
 so the crate is a self-contained deployment surface.
 
-The segmentation property tables are the other route: ranges compiled into Rust
-source rather than parsed at load. `src/segmentation/grapheme_tables.rs` carries
-the UAX #29 properties, and `tools/generate_line_break_tables.py` writes
-`src/general_category.rs`, `src/segmentation/line_break_tables.rs` and the
+The property tables the segmentation algorithms read are the other route:
+ranges compiled into Rust source rather than parsed at load.
+`src/segmentation/grapheme_tables.rs` carries the UAX #29 properties, and
+`tools/generate_line_break_tables.py` writes `src/general_category.rs`,
+`src/east_asian_width.rs`, `src/segmentation/line_break_tables.rs` and the
 published corpus under `tests/corpus/` from the canonical `Unicode/Ucd/` files.
-Those three are generated; edit the script and regenerate.
+Those four are generated; edit the script and regenerate. `general_category.rs`
+and `east_asian_width.rs` sit above both the security and segmentation layers so
+each reads one table, which is where the Lean keeps its generated properties.
 
 Segmentation covers UAX #29 extended grapheme clusters and UAX #14 default line
 breaking. Each is judged against the Unicode Consortium's published corpus for

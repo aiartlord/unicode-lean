@@ -29,8 +29,8 @@
 //! no access can leave the sequence. And its `spSinceNoSp` snapshot field is
 //! written by its fold and read by no rule, so this transcription omits it.
 
+use crate::east_asian_width::{east_asian_width, EastAsianWidthClass};
 use crate::general_category::{general_category, Gc};
-use crate::security::identity::ucd::{east_asian_width, EastAsianWidthClass};
 use crate::segmentation::grapheme::is_ext_pict;
 use crate::segmentation::line_break_tables::{Lb, DEFAULT_LB, LB_RANGES};
 
