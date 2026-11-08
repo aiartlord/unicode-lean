@@ -18,6 +18,21 @@ Runtime UCD tables are vendored under `src/unicode_python/data/` and kept identi
 to the canonical `Unicode/Ucd/` bytes by `scripts/sync-runtime-data.sh`
 (`--check`/`--apply`), so the package is a self-contained deployment surface.
 
+The property tables the segmentation algorithms read are the other route:
+ranges compiled into Python source rather than parsed at load.
+`segmentation/grapheme_tables.py` carries the UAX #29 properties, and
+`tools/generate_line_break_tables.py` writes `general_category.py`,
+`east_asian_width.py`, `segmentation/line_break_tables.py` and the published
+corpus under `tests/corpus/` from the canonical UCD files. Those four are
+generated; edit the script and regenerate. `general_category.py` and
+`east_asian_width.py` sit above both the security and segmentation layers so
+each reads one table, which is where the Lean keeps its generated properties.
+
+Segmentation covers UAX #29 extended grapheme clusters and UAX #14 default line
+breaking. Each is judged against the Unicode Consortium's published corpus for
+that algorithm, because a segmentation rule reads context on both sides of a
+boundary and a wrong rule survives any vector a person would pick.
+
 Contract tests consume the shared cross-port fixtures under the repository's
 `fixtures/security/`; run them from the repository root:
 
