@@ -20,6 +20,18 @@ kept identical to the canonical `Unicode/Ucd/` bytes by
 `scripts/sync-runtime-data.sh` (`--check`/`--apply`) and pinned by `data/SHA256SUMS`,
 so the crate is a self-contained deployment surface.
 
+The segmentation property tables are the other route: ranges compiled into Rust
+source rather than parsed at load. `src/segmentation/grapheme_tables.rs` carries
+the UAX #29 properties, and `tools/generate_line_break_tables.py` writes
+`src/general_category.rs`, `src/segmentation/line_break_tables.rs` and the
+published corpus under `tests/corpus/` from the canonical `Unicode/Ucd/` files.
+Those three are generated; edit the script and regenerate.
+
+Segmentation covers UAX #29 extended grapheme clusters and UAX #14 default line
+breaking. Each is judged against the Unicode Consortium's published corpus for
+that algorithm, because a segmentation rule reads context on both sides of a
+boundary and a wrong rule survives any vector a person would pick.
+
 The CLI golden fixtures live under `testdata/fixtures/security/cli/`; the shared
 cross-port contract fixtures are the repository's `fixtures/security/`. Run from the
 repository root:
