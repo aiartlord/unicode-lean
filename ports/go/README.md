@@ -23,6 +23,25 @@ Runtime data is vendored under `security/data/` and pinned by
 `KnownAttackTargets.txt`, `StandardizedVariants.txt`,
 `emoji-variation-sequences.txt`, and `UnicodeData.txt`.
 
+## Segmentation
+
+The `segmentation` package implements UAX #14 default line breaking —
+`segmentation.LineBreaks` returns one boundary flag per position, so a sequence
+of n code points yields n + 1 flags, and `segmentation.LineRuns` splits a
+sequence at every break opportunity. It is judged against the Unicode
+Consortium's published corpus, because a segmentation rule reads context on both
+sides of a boundary and a wrong rule survives any vector a person would pick.
+
+The package takes code points and needs no data directory: its property ranges
+are generated into source by `tools/generate_line_break_tables.py`, which writes
+`segmentation/line_break_tables.go` — the Line_Break, General_Category,
+East_Asian_Width and Extended_Pictographic ranges UAX #14 reads — and vendors
+the corpus to `segmentation/testdata/LineBreakTest.txt`. Both are generated;
+edit the script and regenerate. The security package's own East_Asian_Width
+table is not reachable from here: it and its class type are unexported.
+
+UAX #29 grapheme clustering, which the other ports carry, is not in this port.
+
 Run from the repository root:
 
 ```sh
