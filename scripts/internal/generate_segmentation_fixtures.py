@@ -496,6 +496,114 @@ def cpp_vector_header(documents, texts):
     ])
 
 
+def haskell_cases(prefix, document, text):
+    """One algorithm's cases as Haskell bindings.
+
+    The port declares no JSON dependency, and it already compiles its
+    published corpora in rather than reading them at run time, so the vectors
+    arrive the same way.
+    """
+    lines = [
+        "-- | The algorithm these cases judge.",
+        "%sAlgorithm :: String" % prefix,
+        '%sAlgorithm = "%s"' % (prefix, document["algorithm"]),
+        "",
+        "-- | SHA-256 of the fixture these cases were transcribed from.",
+        "%sFixtureDigest :: String" % prefix,
+        '%sFixtureDigest =' % prefix,
+        '    "%s"' % hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        "",
+        "-- | How many rows the algorithm's published corpus carries, so the",
+        "-- corpus gate and the vector gate cannot drift apart.",
+        "%sPublishedRowCount :: Int" % prefix,
+        "%sPublishedRowCount = %d"
+        % (prefix, document["published_row_count"]),
+        "",
+        "-- | One case per rule, the same bytes every port replays.",
+        "%sCases :: [VectorCase]" % prefix,
+        "%sCases =" % prefix,
+    ]
+    for index, case in enumerate(document["cases"]):
+        opener = "    [ " if index == 0 else "    , "
+        points = ", ".join("0x%04X" % cp for cp in case["input"])
+        classes = ", ".join('"%s"' % value for value in case["classes"])
+        marks = ", ".join(
+            "True" if flag else "False" for flag in case["breaks"])
+        lines.append(opener + "VectorCase")
+        lines.append('        { caseRule = "%s"' % case["rule"])
+        lines.append('        , caseName = "%s"' % case["name"])
+        lines.append("        , caseInput = [%s]" % points)
+        lines.append("        , caseClasses = [%s]" % classes)
+        lines.append("        , caseBreaks = [%s]" % marks)
+        lines.append("        }")
+    lines.append("    ]")
+    return "\n".join(lines)
+
+
+def haskell_vector_module(documents, texts):
+    """The Haskell transcription of both shared vector fixtures."""
+    return "\n".join([
+        "{-# LANGUAGE StrictData #-}",
+        "",
+        "-- SPDX-License-Identifier: LicenseRef-Allodial-Tiered",
+        "",
+        "-- " + "━" * 77,
+        "--%s" % "// test // unicode // segmentation // vector-cases".rjust(77),
+        "-- " + "━" * 77,
+        "",
+        "-- | The shared segmentation vector fixtures, as data.",
+        "--",
+        "-- One case per UAX rule, the same bytes every port replays, so each",
+        "-- port's segmentation specs ask the same questions instead of a",
+        "-- per-port selection of them. The published corpora are the",
+        "-- authority; these name which rule each boundary exercises.",
+        "--",
+        "-- Transcribed from @fixtures/segmentation/line_break_vectors.json@",
+        "-- and @fixtures/segmentation/grapheme_vectors.json@. This port",
+        "-- declares no JSON dependency and already compiles its published",
+        "-- corpora in, so the vectors arrive the same way. Each digest below",
+        "-- is of the fixture its cases came from, and the fixture gate",
+        "-- recomputes it.",
+        "--",
+        "-- GENERATED FILE — DO NOT EDIT. Regenerate with",
+        "-- @scripts/internal/generate_segmentation_fixtures.py@.",
+        "",
+        "module VectorCases",
+        "    ( VectorCase (..)",
+        "    , lineBreakAlgorithm",
+        "    , lineBreakFixtureDigest",
+        "    , lineBreakPublishedRowCount",
+        "    , lineBreakCases",
+        "    , graphemeAlgorithm",
+        "    , graphemeFixtureDigest",
+        "    , graphemePublishedRowCount",
+        "    , graphemeCases",
+        "    ) where",
+        "",
+        "-- | One published case: the rule it pins, what the boundary does, the",
+        "-- codepoints, each codepoint's canonical UCD class, and the expected",
+        "-- boundary mask.",
+        "--",
+        "-- The mask is the contract every port reproduces. The classes are",
+        "-- recorded for reading: this port names a class @Al@ where the UCD",
+        "-- writes @AL@, so comparing them would test a spelling rather than a",
+        "-- property.",
+        "data VectorCase = VectorCase",
+        "    { caseRule :: String",
+        "    , caseName :: String",
+        "    , caseInput :: [Int]",
+        "    , caseClasses :: [String]",
+        "    , caseBreaks :: [Bool]",
+        "    }",
+        "",
+        haskell_cases("lineBreak", documents["line_break"],
+                      texts["line_break"]),
+        "",
+        haskell_cases("grapheme", documents["grapheme"], texts["grapheme"]),
+        "",
+    ])
+
+
 def rust_vector_module(documents, texts):
     """The Rust transcription of both shared vector fixtures."""
     return "\n".join([
@@ -595,6 +703,8 @@ def main():
         (("ports", "rust", "tests", "corpus", "vector_cases.rs"),
          rust_vector_module),
         (("ports", "cpp", "test", "vector_cases.hpp"), cpp_vector_header),
+        (("ports", "haskell", "test", "VectorCases.hs"),
+         haskell_vector_module),
     ):
         path = os.path.join(ROOT, *relative)
         write_file(path, emit(documents, texts))

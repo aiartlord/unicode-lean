@@ -155,9 +155,11 @@ test-suite unicode-haskell-test
       CasingSpec
       HangulSpec
       GraphemeSpec
+      GraphemeTestRows
       IdentifierSpec
       LineBreakSpec
       LineBreakTestRows
+      VectorCases
       LocaleCaseInversionSpec
       LookupSpec
       NfcIdempotenceWitnessSpec

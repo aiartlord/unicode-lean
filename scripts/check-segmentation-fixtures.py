@@ -178,6 +178,13 @@ TRANSCRIPTIONS = {
             "grapheme::kFixtureDigest",
             ("unicode_cpp::test::grapheme", "kCases"))},
     ),
+    "haskell": (
+        "ports/haskell/test/VectorCases.hs",
+        {"line_break_vectors.json": ("lineBreakFixtureDigest",
+                                     "lineBreakCases"),
+         "grapheme_vectors.json": ("graphemeFixtureDigest",
+                                   "graphemeCases")},
+    ),
 }
 
 # How a transcription spells the constant holding a digest, per language. The
@@ -188,6 +195,8 @@ DIGEST_PATTERNS = (
     r'{name}:\s*&str\s*=\s*"([0-9a-f]{{64}})"',
     # C++: `inline constexpr char kFixtureDigest[] =\n    "<64 hex>";`
     r'{name}\[\]\s*=\s*"([0-9a-f]{{64}})"',
+    # Haskell: `lineBreakFixtureDigest =\n    "<64 hex>"`
+    r'{name}\s*=\s*"([0-9a-f]{{64}})"',
 )
 
 

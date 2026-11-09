@@ -3,7 +3,7 @@
 -- SPDX-License-Identifier: LicenseRef-Allodial-Tiered
 
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
---                               // unicode // generated // line-break-test-rows
+--                              // unicode // generated // line-break-test-rows
 -- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 -- | @Unicode.Segmentation.LineBreakTestRows@ — every row the pinned UCD
@@ -11,17 +11,17 @@
 -- sequence and the break flags it asserts.
 --
 -- A row of @n@ codepoints carries @n + 1@ flags: flag @i@ is whether a
--- line break opportunity falls immediately before codepoint @i@, and
--- flag @n@ is the break at end of text. That is the shape
--- @Unicode.Segmentation.LineBreak.lineBreaks@ returns, so a row is
--- judged by comparing the two lists.
+-- UAX #14 break opportunity falls immediately before codepoint @i@,
+-- and flag @n@ is the break at end of text. That is the shape the
+-- implementation returns, so a row is judged by comparing the two
+-- lists.
 --
 -- The corpus is compiled in rather than read at run time: a spec owns
 -- its inputs, and a test that opens a file fails on where it was run
 -- from rather than on what it measures.
 --
 -- GENERATED FILE — DO NOT EDIT. Regenerate with
--- @scripts/gen-unicode-security-tables.py@.
+-- @ports/haskell/tools/generate_break_corpus_rows.py@.
 
 module LineBreakTestRows
     ( publishedRows
@@ -19490,8 +19490,8 @@ publishedRows =
         ++ rowsChunk18
         ++ rowsChunk19
 
--- | How many rows the pinned file publishes. A suite that judges fewer has
--- lost rows between this module and its own fold, so the count is asserted
--- rather than taken from the list it is checking.
+-- | How many rows the pinned file publishes. A suite that judges fewer
+-- has lost rows between this module and its own fold, so the count is
+-- asserted rather than taken from the list it is checking.
 publishedCount :: Int
 publishedCount = 19338
