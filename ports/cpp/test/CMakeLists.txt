@@ -35,6 +35,7 @@ add_executable(unicode_cpp_tests
     noncharacters_test.cpp
     identifier_test.cpp
     segmentation_test.cpp
+    line_break_test.cpp
     opaque_blob_test.cpp
     validated_utf8_test.cpp
     security_test.cpp
