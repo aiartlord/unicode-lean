@@ -54,6 +54,9 @@ TestValidatedUtf8();
 TestGraphemeVectors();
 TestGraphemeSharedVectors();
 TestGraphemeBreakTestFile();
+TestLineBreakVectors();
+TestLineBreakSharedVectors();
+TestLineBreakTestFile();
 Console.WriteLine("clean: .NET contract tests pass");
 
 // Direct spot-check of the covert-display-compound detector, mirroring the
@@ -1703,6 +1706,136 @@ static void TestGraphemeBreakTestFile()
     var fixture = LoadSegmentationFixture("grapheme_vectors.json", "uax29-grapheme-cluster");
     AssertEqual(fixture.GetProperty("published_row_count").GetInt32(), rows, "GraphemeBreakTest row count");
     Console.WriteLine($"clean: .NET GraphemeBreakTest.txt {rows}-row conformance passes");
+}
+
+// UAX #14 targeted vectors: the output shape the Lean lineBreaks_length
+// theorem fixes, the run split the boundary masks do not state, and the four
+// properties the rules read. The published corpus is the authority for the
+// rules themselves.
+static void TestLineBreakVectors()
+{
+    // One flag per boundary, so n code points yield n + 1 flags.
+    for (var length = 0; length < 8; length++)
+    {
+        var cps = new List<int>();
+        for (var i = 0; i < length; i++)
+        {
+            cps.Add(0x61 + i);
+        }
+        AssertEqual(length + 1, LineBreak.LineBreaks(cps).Length, $"line-break flag count at length {length}");
+    }
+
+    // LB18 breaks after a space, so the space stays with the word before it.
+    var runs = LineBreak.LineRuns(new[] { 0x61, 0x20, 0x62 });
+    AssertEqual(2, runs.Count, "a space opens the next run");
+    AssertSequence(new[] { 0x61, 0x20 }, runs[0], "the space closes the first run");
+    AssertSequence(new[] { 0x62 }, runs[1], "the letter after the space opens the second");
+
+    // LB25: "1,000" is one run across its separator.
+    AssertEqual(1, LineBreak.LineRuns(new[] { 0x31, 0x2C, 0x30, 0x30, 0x30 }).Count, "a numeric chain is one run");
+
+    // LB1 folds the tailorable classes into the working alphabet. U+3041
+    // HIRAGANA LETTER SMALL A is CJ, resolving to NS; U+00A7 SECTION SIGN is
+    // AI and a surrogate is SG, both resolving to AL; U+05EB lies in the
+    // Hebrew block's unassigned gap, which no range covers, so it takes the
+    // @missing XX default and reads as AL.
+    AssertEqual(Lb.Cj, LineBreakTables.RawClass(0x3041), "U+3041 raw class");
+    AssertEqual(Lb.Ns, LineBreak.ResolvedClass(0x3041), "U+3041 resolved class");
+    AssertEqual(Lb.Ai, LineBreakTables.RawClass(0x00A7), "U+00A7 raw class");
+    AssertEqual(Lb.Al, LineBreak.ResolvedClass(0x00A7), "U+00A7 resolved class");
+    AssertEqual(Lb.Sg, LineBreakTables.RawClass(0xD800), "U+D800 raw class");
+    AssertEqual(Lb.Al, LineBreak.ResolvedClass(0xD800), "U+D800 resolved class");
+    AssertEqual(Lb.Xx, LineBreakTables.RawClass(0x05EB), "U+05EB raw class");
+    AssertEqual(Lb.Al, LineBreak.ResolvedClass(0x05EB), "U+05EB resolved class");
+
+    // LB1 resolves SA by General_Category. U+0E31 THAI CHARACTER MAI HAN-AKAT
+    // is SA with category Mn, so it reads as CM; U+0E01 THAI CHARACTER KO KAI
+    // is SA with category Lo, so it reads as AL.
+    AssertEqual(Lb.Sa, LineBreakTables.RawClass(0x0E31), "U+0E31 raw class");
+    AssertEqual(Lb.Cm, LineBreak.ResolvedClass(0x0E31), "U+0E31 resolved class");
+    AssertEqual(Lb.Sa, LineBreakTables.RawClass(0x0E01), "U+0E01 raw class");
+    AssertEqual(Lb.Al, LineBreak.ResolvedClass(0x0E01), "U+0E01 resolved class");
+
+    // The East_Asian_Width LB19a, LB25 and LB30 read: U+FF21 FULLWIDTH LATIN
+    // CAPITAL LETTER A is F and U+0041 is Na.
+    AssertEqual(Eaw.F, LineBreakTables.WidthOf(0xFF21), "U+FF21 East_Asian_Width");
+    AssertEqual(Eaw.Na, LineBreakTables.WidthOf(0x0041), "U+0041 East_Asian_Width");
+
+    // The Extended_Pictographic LB30b reads.
+    AssertTrue(LineBreakTables.IsExtendedPictographic(0x1F466), "U+1F466 is Extended_Pictographic");
+    AssertTrue(!LineBreakTables.IsExtendedPictographic(0x0061), "U+0061 is not Extended_Pictographic");
+
+    Console.WriteLine("clean: .NET line-break targeted-vector spot-check passes");
+}
+
+// The shared UAX #14 vectors: one case per rule, the same bytes every port
+// replays, so no port carries a weaker set of rule checks than another. Both
+// gates count the same published file, so they cannot drift apart.
+static void TestLineBreakSharedVectors()
+{
+    var fixture = LoadSegmentationFixture("line_break_vectors.json", "uax14-line-break");
+    ReplaySegmentationVectors(fixture, cps => LineBreak.LineBreaks(cps));
+    AssertEqual(LineBreakTables.PublishedRowCount, fixture.GetProperty("published_row_count").GetInt32(), "line-break published row count");
+    Console.WriteLine($"clean: .NET line-break shared-vector replay passes ({fixture.GetProperty("cases").GetArrayLength()} cases)");
+}
+
+// Full UAX #14 conformance corpus. Every "÷"/"×"-marked row of the pinned
+// LineBreakTest.txt must reproduce under LineBreak.LineBreaks.
+//
+// Hand-written vectors cannot establish a segmentation algorithm: its rules
+// read context on both sides of a boundary and the answer depends on state
+// carried from earlier in the sequence, so a wrong rule survives any vector a
+// person would pick. Agreeing with every row is also the evidence the two
+// departures declared at LineBreak.cs's head needed -- bounded reads in place
+// of the Lean's positional lits[i]!, and dropping its write-only spSinceNoSp
+// snapshot field.
+static void TestLineBreakTestFile()
+{
+    var path = Path.Combine(AppContext.BaseDirectory, "testdata", "LineBreakTest.txt");
+    if (!File.Exists(path)) path = Path.Combine("testdata", "LineBreakTest.txt");
+    var rows = 0;
+    var lineNumber = 0;
+    foreach (var raw in File.ReadAllLines(path))
+    {
+        lineNumber++;
+        var hash = raw.IndexOf('#');
+        var body = (hash >= 0 ? raw.Substring(0, hash) : raw).Trim();
+        if (body.Length == 0)
+        {
+            continue;
+        }
+        var tokens = body.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+        var codepoints = new List<int>();
+        var expected = new List<bool>();
+        foreach (var token in tokens)
+        {
+            if (token == "÷")
+            {
+                expected.Add(true);
+            }
+            else if (token == "×")
+            {
+                expected.Add(false);
+            }
+            else
+            {
+                codepoints.Add(Convert.ToInt32(token, 16));
+            }
+        }
+        // A row alternates markers and code points, so it carries one more
+        // flag than code points. A ragged row is a corpus this fold cannot
+        // judge against.
+        AssertEqual(codepoints.Count + 1, expected.Count, $"LineBreakTest line {lineNumber} carries one flag per boundary");
+        var actual = LineBreak.LineBreaks(codepoints);
+        AssertBoolSequence(expected, actual, $"LineBreakTest line {lineNumber}: [{string.Join(" ", tokens)}]");
+        rows++;
+    }
+    // The whole file must be accounted for, so a row lost between the file and
+    // this fold fails rather than quietly shrinking the denominator. The count
+    // comes from the generated table, which counts the canonical corpus, and
+    // the shared fixture asserts the same number.
+    AssertEqual(LineBreakTables.PublishedRowCount, rows, "LineBreakTest row count");
+    Console.WriteLine($"clean: .NET LineBreakTest.txt {rows}-row conformance passes");
 }
 
 static void AssertBoolSequence(IReadOnlyList<bool> expected, IReadOnlyList<bool> actual, string message)
