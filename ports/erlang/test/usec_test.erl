@@ -23,7 +23,91 @@ run() ->
     skin_tone_variation_forgery_tests(),
     opaque_blob_tests(),
     grapheme_tests(),
+    line_break_tests(),
     io:format("ok: erlang unicode security tests pass~n").
+
+line_break_tests() ->
+    %% Targeted vectors: the output shape the Lean lineBreaks_length theorem
+    %% fixes, the run split the boundary masks do not state, and the four
+    %% properties the rules read.
+    lists:foreach(fun(N) ->
+                          Cps = lists:seq(16#61, 16#61 + N - 1),
+                          assert_eq(N + 1, length(usec_line_break:line_breaks(Cps)),
+                                    {lb_flag_count, N})
+                  end, lists:seq(0, 7)),
+    %% LB18 breaks after a space, so the space stays with the word before it.
+    assert_eq([[16#61, 16#20], [16#62]],
+              usec_line_break:line_runs([16#61, 16#20, 16#62]), lb_space_run),
+    %% LB25: "1,000" is one run across its separator.
+    assert_eq(1, length(usec_line_break:line_runs([16#31, 16#2C, 16#30, 16#30, 16#30])),
+              lb_numeric_chain_run),
+    %% LB1 folds the tailorable classes into the working alphabet. U+3041
+    %% HIRAGANA LETTER SMALL A is CJ, resolving to NS; U+00A7 SECTION SIGN is
+    %% AI and a surrogate is SG, both resolving to AL; U+05EB lies in the
+    %% Hebrew block's unassigned gap, which no range covers, so it takes the
+    %% @missing XX default and reads as AL.
+    lists:foreach(fun({Cp, Raw, Resolved}) ->
+                          assert_eq(Raw, usec_line_break:raw_class(Cp), {lb_raw, Cp}),
+                          assert_eq(Resolved, usec_line_break:resolved_class(Cp),
+                                    {lb_resolved, Cp})
+                  end,
+                  [{16#3041, cj, ns}, {16#00A7, ai, al}, {16#D800, sg, al},
+                   {16#05EB, xx, al},
+                   %% LB1 resolves SA by General_Category: U+0E31 is SA with
+                   %% category Mn, so it reads as CM; U+0E01 is SA with
+                   %% category Lo, so it reads as AL.
+                   {16#0E31, sa, cm}, {16#0E01, sa, al}]),
+    %% The East_Asian_Width LB19a, LB25 and LB30 read, the General_Category the
+    %% quote refinements tell apart, and the Extended_Pictographic LB30b reads.
+    assert_eq(f, usec_line_break:width_of(16#FF21), lb_width_fullwidth),
+    assert_eq(na, usec_line_break:width_of(16#0041), lb_width_narrow),
+    assert_eq(pi, usec_line_break:category_of(16#2018), lb_category_initial_quote),
+    assert_eq(pf, usec_line_break:category_of(16#2019), lb_category_final_quote),
+    assert(usec_line_break:is_ext_pict(16#1F466), lb_extpict_boy),
+    assert(not usec_line_break:is_ext_pict(16#0061), lb_extpict_letter),
+
+    %% One case per UAX #14 rule, the same bytes every port replays, so no port
+    %% carries a weaker set of rule checks than another.
+    Fixture = segmentation_fixture("line_break_vectors.json", <<"uax14-line-break">>),
+    Replayed = replay_segmentation_vectors(
+                 Fixture, fun usec_line_break:line_breaks/1),
+    assert_eq(usec_line_break_tables:published_row_count(),
+              maps:get(<<"published_row_count">>, Fixture),
+              lb_fixture_row_count),
+
+    %% Full LineBreakTest.txt conformance. Hand-written vectors cannot
+    %% establish a segmentation algorithm: its rules read context on both sides
+    %% of a boundary and the answer depends on state carried from earlier in
+    %% the sequence, so a wrong rule survives any vector a person would pick.
+    {ok, Bin} = file:read_file(
+                  filename:join(["test", "fixtures", "LineBreakTest.txt"])),
+    Lines = binary:split(Bin, <<"\n">>, [global]),
+    Count = lists:foldl(fun run_lbt_line/2, 0, Lines),
+    %% The whole file must be accounted for, so a row lost between the file and
+    %% the fold fails rather than quietly shrinking the denominator.
+    assert_eq(usec_line_break_tables:published_row_count(), Count,
+              line_break_test_row_count),
+    io:format("  line-break: validated ~p LineBreakTest.txt rows + ~p shared vectors~n",
+              [Count, Replayed]).
+
+%% Parse one LineBreakTest.txt line and assert line_breaks matches its
+%% div/x markers. Non-data lines (comments, blanks) contribute nothing.
+run_lbt_line(Line, Acc) ->
+    Pattern = case binary:split(Line, <<"#">>) of
+                  [P | _Comment] -> P;
+                  [] -> <<>>
+              end,
+    Tokens = [T || T <- binary:split(Pattern, [<<" ">>, <<"\t">>, <<"\r">>], [global]),
+                   T =/= <<>>],
+    case Tokens of
+        [] ->
+            Acc;
+        _ ->
+            {Cps, Breaks} = parse_gbt_tokens(Tokens, [], []),
+            Got = usec_line_break:line_breaks(Cps),
+            assert_eq(Breaks, Got, {lbt_row, Line}),
+            Acc + 1
+    end.
 
 grapheme_tests() ->
     %% Core UAX #29 vectors mirroring the rust segmentation tests.
