@@ -63,7 +63,10 @@ PORT_FIXTURE_ROOTS = {
     "dotnet": "ports/dotnet/testdata/fixtures",
     "elixir": "ports/elixir/test/fixtures",
     "erlang": "ports/erlang/test/fixtures",
-    "go": "ports/go/security/testdata/fixtures",
+    # Go's segmentation is its own package, so its fixtures go in that
+    # package's testdata rather than the security package's: a Go test reads
+    # testdata relative to its own package directory.
+    "go": "ports/go/segmentation/testdata/fixtures",
     "haskell": "ports/haskell/testdata/fixtures",
     "jvm": "ports/jvm/testdata/fixtures",
     "lua": "ports/lua/testdata/fixtures",

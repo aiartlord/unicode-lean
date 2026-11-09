@@ -11,12 +11,56 @@ package segmentation
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
 )
+
+// The shared segmentation vector fixture: one case per UAX rule, the same bytes
+// in every port, so each port's segmentation tests ask the same questions
+// rather than a per-port selection of them.
+type vectorCase struct {
+	Rule    string   `json:"rule"`
+	Name    string   `json:"name"`
+	Input   []uint32 `json:"input"`
+	Classes []string `json:"classes"`
+	Breaks  []bool   `json:"breaks"`
+}
+
+type vectorFixture struct {
+	Schema            int          `json:"schema"`
+	Algorithm         string       `json:"algorithm"`
+	PublishedRowCount int          `json:"published_row_count"`
+	Cases             []vectorCase `json:"cases"`
+}
+
+const vectorPath = "testdata/fixtures/segmentation/line_break_vectors.json"
+
+func readVectors(t *testing.T) vectorFixture {
+	t.Helper()
+	payload, err := os.ReadFile(vectorPath)
+	if err != nil {
+		t.Fatalf("read %s: %v", vectorPath, err)
+	}
+	var fixture vectorFixture
+	if err := json.Unmarshal(payload, &fixture); err != nil {
+		t.Fatalf("parse %s: %v", vectorPath, err)
+	}
+	if fixture.Schema != 1 {
+		t.Fatalf("%s carries schema %d, expected 1", vectorPath, fixture.Schema)
+	}
+	if fixture.Algorithm != "uax14-line-break" {
+		t.Fatalf("%s is for %s, expected uax14-line-break",
+			vectorPath, fixture.Algorithm)
+	}
+	if len(fixture.Cases) == 0 {
+		t.Fatalf("%s carries no cases", vectorPath)
+	}
+	return fixture
+}
 
 // The markers the published break corpus writes at each boundary.
 const (
@@ -196,68 +240,27 @@ func TestStartOfTextNeverBreaksAndEndAlwaysDoes(t *testing.T) {
 	}
 }
 
-func TestRuleVectors(t *testing.T) {
-	cases := []struct {
-		name string
-		cps  []uint32
-		want []bool
-	}{
-		{
-			// LB28 keeps letters together.
-			name: "a word is one run",
-			cps:  []uint32{0x61, 0x62},
-			want: []bool{false, false, true},
-		},
-		{
-			// LB4: BK divides. U+000C FORM FEED is class BK.
-			name: "a mandatory break character breaks after itself",
-			cps:  []uint32{0x61, 0x000C, 0x62},
-			want: []bool{false, false, true, true},
-		},
-		{
-			// LB5: CR times LF, then a mandatory break after the pair.
-			name: "carriage return line feed is not split",
-			cps:  []uint32{0x0D, 0x0A, 0x61},
-			want: []bool{false, false, true, true},
-		},
-		{
-			// LB9: X CM behaves as X, so no break falls inside the pair.
-			name: "a combining mark takes the class of its base",
-			cps:  []uint32{0x61, 0x0301},
-			want: []bool{false, false, true},
-		},
-		{
-			// LB11: before WJ and after WJ.
-			name: "a word joiner glues both sides",
-			cps:  []uint32{0x61, 0x2060, 0x62},
-			want: []bool{false, false, false, true},
-		},
-		{
-			// LB15c: SP divides IS NU — "a .35" breaks before the period.
-			name: "a space before a number opening period breaks",
-			cps:  []uint32{0x61, 0x20, 0x2E, 0x33, 0x35},
-			want: []bool{false, false, true, false, false, true},
-		},
-		{
-			// LB30a: an even-length RI run takes no break inside a pair, and a
-			// second pair may start a new line.
-			name: "regional indicators pair off",
-			cps:  []uint32{0x1F1EF, 0x1F1F5, 0x1F1FA, 0x1F1F8},
-			want: []bool{false, false, true, false, true},
-		},
-		{
-			// LB30b: EB times EM.
-			name: "an emoji modifier stays on its base",
-			cps:  []uint32{0x1F466, 0x1F3FB},
-			want: []bool{false, false, true},
-		},
-	}
-	for _, testCase := range cases {
-		t.Run(testCase.name, func(t *testing.T) {
-			if got := LineBreaks(testCase.cps); !sameMask(got, testCase.want) {
-				t.Errorf("got %v, want %v", got, testCase.want)
+// One case per UAX #14 rule, the same bytes every port replays, so no port can
+// carry a weaker set of rule checks than another. The published corpus above is
+// the authority; these name which rule each boundary exercises.
+func TestTheSharedVectorsReplay(t *testing.T) {
+	fixture := readVectors(t)
+	for _, testCase := range fixture.Cases {
+		t.Run(testCase.Rule+" "+testCase.Name, func(t *testing.T) {
+			got := LineBreaks(testCase.Input)
+			if !sameMask(got, testCase.Breaks) {
+				t.Errorf("cps=%s\n  fixture:  %v\n  produced: %v",
+					formatCodepoints(testCase.Input), testCase.Breaks, got)
 			}
 		})
+	}
+}
+
+// Both gates count the same published file, so they cannot drift apart.
+func TestTheCorpusAndTheVectorsAgreeOnTheRowCount(t *testing.T) {
+	if got := readVectors(t).PublishedRowCount; got != PublishedRowCount {
+		t.Errorf("the vectors carry %d published rows, the table carries %d",
+			got, PublishedRowCount)
 	}
 }
 

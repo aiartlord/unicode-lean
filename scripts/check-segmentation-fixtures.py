@@ -39,7 +39,9 @@ PORT_FIXTURE_ROOTS = {
     "dotnet": "ports/dotnet/testdata/fixtures",
     "elixir": "ports/elixir/test/fixtures",
     "erlang": "ports/erlang/test/fixtures",
-    "go": "ports/go/security/testdata/fixtures",
+    # Go's segmentation is its own package, so its fixtures sit in that
+    # package's testdata: a Go test reads testdata relative to its own package.
+    "go": "ports/go/segmentation/testdata/fixtures",
     "haskell": "ports/haskell/testdata/fixtures",
     "jvm": "ports/jvm/testdata/fixtures",
     "lua": "ports/lua/testdata/fixtures",
@@ -163,6 +165,20 @@ def main() -> int:
                     "scripts/internal/generate_segmentation_fixtures.py"
                     % (port, fixture))
 
+    # A copy under a port's tree that no port root claims is a stray: a
+    # fixture root that moved, or a hand-made copy. It is not read by anything,
+    # so it drifts silently unless the gate names it.
+    expected_copies = {
+        (ROOT / PORT_FIXTURE_ROOTS[port] / "segmentation" / fixture).resolve()
+        for port in PORT_FIXTURE_ROOTS
+        for fixture in FIXTURES
+    }
+    strays = sorted(
+        path.relative_to(ROOT)
+        for path in (ROOT / "ports").rglob("fixtures/segmentation/*.json")
+        if path.resolve() not in expected_copies
+    )
+
     absent: list[str] = []
     for port in sorted(PORT_TEST_ROOTS):
         for fixture in roots:
@@ -182,7 +198,13 @@ def main() -> int:
         print("PENDING: %s" % item)
     for item in absent:
         print("ABSENT:  %s" % item)
+    for path in strays:
+        print("STRAY:   %s is under no port's fixture root; delete it" % path)
 
+    if strays and not args.list:
+        print("FATAL: %d stray segmentation fixture copy/copies" % len(strays),
+              file=sys.stderr)
+        return 1
     if failures:
         return 1
     if pending and not args.list:
