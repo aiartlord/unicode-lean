@@ -34,6 +34,13 @@ module RubyPortTestHelpers
     JSON.parse(File.read(File.join(PORT_ROOT, "testdata", "fixtures", "security", *parts), encoding: "UTF-8"))
   end
 
+  # A shared segmentation vector fixture: one case per UAX rule, the same bytes
+  # in every port, so each port's segmentation tests ask the same questions
+  # rather than a per-port selection of them.
+  def segmentation_fixture_json(name)
+    JSON.parse(File.read(File.join(PORT_ROOT, "testdata", "fixtures", "segmentation", name), encoding: "UTF-8"))
+  end
+
   def profile(tag)
     PROFILES.fetch(tag)
   end

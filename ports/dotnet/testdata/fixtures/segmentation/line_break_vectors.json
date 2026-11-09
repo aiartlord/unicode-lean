@@ -1,0 +1,788 @@
+{
+  "schema": 1,
+  "algorithm": "uax14-line-break",
+  "corpus": "LineBreakTest.txt",
+  "class_property": "Line_Break, LB1-resolved, as UCD property values",
+  "published_row_count": 19338,
+  "cases": [
+    {
+      "rule": "LB2/LB3",
+      "name": "start of text never breaks and end of text always does",
+      "input": [
+        97,
+        98
+      ],
+      "classes": [
+        "AL",
+        "AL"
+      ],
+      "breaks": [
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB4",
+      "name": "a mandatory break character breaks after itself",
+      "input": [
+        97,
+        12,
+        98
+      ],
+      "classes": [
+        "AL",
+        "BK",
+        "AL"
+      ],
+      "breaks": [
+        false,
+        false,
+        true,
+        true
+      ]
+    },
+    {
+      "rule": "LB5",
+      "name": "carriage return line feed is not split",
+      "input": [
+        13,
+        10,
+        97
+      ],
+      "classes": [
+        "CR",
+        "LF",
+        "AL"
+      ],
+      "breaks": [
+        false,
+        false,
+        true,
+        true
+      ]
+    },
+    {
+      "rule": "LB6",
+      "name": "no break falls before a mandatory break character",
+      "input": [
+        97,
+        10
+      ],
+      "classes": [
+        "AL",
+        "LF"
+      ],
+      "breaks": [
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB7",
+      "name": "no break falls before a space",
+      "input": [
+        97,
+        32
+      ],
+      "classes": [
+        "AL",
+        "SP"
+      ],
+      "breaks": [
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB8",
+      "name": "a zero width space breaks after itself",
+      "input": [
+        97,
+        8203,
+        98
+      ],
+      "classes": [
+        "AL",
+        "ZW",
+        "AL"
+      ],
+      "breaks": [
+        false,
+        false,
+        true,
+        true
+      ]
+    },
+    {
+      "rule": "LB8a",
+      "name": "a zero width joiner glues what follows it",
+      "input": [
+        97,
+        8205,
+        98
+      ],
+      "classes": [
+        "AL",
+        "ZWJ",
+        "AL"
+      ],
+      "breaks": [
+        false,
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB9",
+      "name": "a combining mark takes the class of its base",
+      "input": [
+        97,
+        769
+      ],
+      "classes": [
+        "AL",
+        "CM"
+      ],
+      "breaks": [
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB10",
+      "name": "a combining mark with no base stands alone",
+      "input": [
+        769,
+        97
+      ],
+      "classes": [
+        "CM",
+        "AL"
+      ],
+      "breaks": [
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB11",
+      "name": "a word joiner glues both sides",
+      "input": [
+        97,
+        8288,
+        98
+      ],
+      "classes": [
+        "AL",
+        "WJ",
+        "AL"
+      ],
+      "breaks": [
+        false,
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB12",
+      "name": "a non-breaking space glues what follows it",
+      "input": [
+        97,
+        160,
+        98
+      ],
+      "classes": [
+        "AL",
+        "GL",
+        "AL"
+      ],
+      "breaks": [
+        false,
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB13",
+      "name": "no break falls before a closing parenthesis",
+      "input": [
+        97,
+        41,
+        98
+      ],
+      "classes": [
+        "AL",
+        "CP",
+        "AL"
+      ],
+      "breaks": [
+        false,
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB14",
+      "name": "no break falls after an opening parenthesis",
+      "input": [
+        40,
+        32,
+        97
+      ],
+      "classes": [
+        "OP",
+        "SP",
+        "AL"
+      ],
+      "breaks": [
+        false,
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB15a",
+      "name": "an opening quote outside a word glues what follows",
+      "input": [
+        32,
+        8216,
+        97
+      ],
+      "classes": [
+        "SP",
+        "QU",
+        "AL"
+      ],
+      "breaks": [
+        false,
+        true,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB15b",
+      "name": "a closing quote before a space glues what precedes",
+      "input": [
+        97,
+        8217,
+        32,
+        98
+      ],
+      "classes": [
+        "AL",
+        "QU",
+        "SP",
+        "AL"
+      ],
+      "breaks": [
+        false,
+        false,
+        false,
+        true,
+        true
+      ]
+    },
+    {
+      "rule": "LB15c",
+      "name": "a space before a number opening period breaks",
+      "input": [
+        97,
+        32,
+        46,
+        51,
+        53
+      ],
+      "classes": [
+        "AL",
+        "SP",
+        "IS",
+        "NU",
+        "NU"
+      ],
+      "breaks": [
+        false,
+        false,
+        true,
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB16",
+      "name": "a closing parenthesis and a following small kana hold together",
+      "input": [
+        41,
+        12353
+      ],
+      "classes": [
+        "CP",
+        "NS"
+      ],
+      "breaks": [
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB17",
+      "name": "an em dash pair holds together across a space",
+      "input": [
+        8212,
+        32,
+        8212
+      ],
+      "classes": [
+        "B2",
+        "SP",
+        "B2"
+      ],
+      "breaks": [
+        false,
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB19",
+      "name": "a quotation mark glues both of its sides",
+      "input": [
+        97,
+        34,
+        98
+      ],
+      "classes": [
+        "AL",
+        "QU",
+        "AL"
+      ],
+      "breaks": [
+        false,
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB20",
+      "name": "a contingent break opportunity breaks on both sides",
+      "input": [
+        97,
+        65532,
+        98
+      ],
+      "classes": [
+        "AL",
+        "CB",
+        "AL"
+      ],
+      "breaks": [
+        false,
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "rule": "LB21",
+      "name": "a break-after character glues what precedes it",
+      "input": [
+        97,
+        173,
+        98
+      ],
+      "classes": [
+        "AL",
+        "BA",
+        "AL"
+      ],
+      "breaks": [
+        false,
+        false,
+        true,
+        true
+      ]
+    },
+    {
+      "rule": "LB21a",
+      "name": "a Hebrew letter and a hyphen glue what follows",
+      "input": [
+        1488,
+        45,
+        97
+      ],
+      "classes": [
+        "HL",
+        "HY",
+        "AL"
+      ],
+      "breaks": [
+        false,
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB21b",
+      "name": "a solidus and a following Hebrew letter hold together",
+      "input": [
+        47,
+        1488
+      ],
+      "classes": [
+        "SY",
+        "HL"
+      ],
+      "breaks": [
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB22",
+      "name": "no break falls before an inseparable",
+      "input": [
+        97,
+        8230,
+        98
+      ],
+      "classes": [
+        "AL",
+        "IN",
+        "AL"
+      ],
+      "breaks": [
+        false,
+        false,
+        true,
+        true
+      ]
+    },
+    {
+      "rule": "LB23",
+      "name": "a letter and a digit hold together",
+      "input": [
+        97,
+        49
+      ],
+      "classes": [
+        "AL",
+        "NU"
+      ],
+      "breaks": [
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB23a",
+      "name": "a currency symbol and an ideograph hold together",
+      "input": [
+        36,
+        19968
+      ],
+      "classes": [
+        "PR",
+        "ID"
+      ],
+      "breaks": [
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB24",
+      "name": "a prefix and a letter hold together",
+      "input": [
+        36,
+        97
+      ],
+      "classes": [
+        "PR",
+        "AL"
+      ],
+      "breaks": [
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB25",
+      "name": "a numeric chain holds together across its separator",
+      "input": [
+        49,
+        44,
+        48,
+        48,
+        48
+      ],
+      "classes": [
+        "NU",
+        "IS",
+        "NU",
+        "NU",
+        "NU"
+      ],
+      "breaks": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB26",
+      "name": "Hangul jamo hold together",
+      "input": [
+        4352,
+        4449,
+        4520
+      ],
+      "classes": [
+        "JL",
+        "JV",
+        "JT"
+      ],
+      "breaks": [
+        false,
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB27",
+      "name": "a Hangul syllable and a following inseparable hold together",
+      "input": [
+        44032,
+        8230
+      ],
+      "classes": [
+        "H2",
+        "IN"
+      ],
+      "breaks": [
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB28",
+      "name": "two letters hold together",
+      "input": [
+        97,
+        98
+      ],
+      "classes": [
+        "AL",
+        "AL"
+      ],
+      "breaks": [
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB28a.1",
+      "name": "an aksara pre-base glues the cluster base after it",
+      "input": [
+        69635,
+        6917
+      ],
+      "classes": [
+        "AP",
+        "AK"
+      ],
+      "breaks": [
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB28a.2",
+      "name": "a cluster base glues a following vowel form",
+      "input": [
+        6917,
+        7154
+      ],
+      "classes": [
+        "AK",
+        "VF"
+      ],
+      "breaks": [
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB28a.3",
+      "name": "a virama between cluster bases glues both",
+      "input": [
+        6917,
+        6980,
+        6917
+      ],
+      "classes": [
+        "AK",
+        "VI",
+        "AK"
+      ],
+      "breaks": [
+        false,
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB28a.4",
+      "name": "two cluster bases glue when a vowel form follows",
+      "input": [
+        6917,
+        6917,
+        7154
+      ],
+      "classes": [
+        "AK",
+        "AK",
+        "VF"
+      ],
+      "breaks": [
+        false,
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB29",
+      "name": "a full stop and a following letter hold together",
+      "input": [
+        46,
+        97
+      ],
+      "classes": [
+        "IS",
+        "AL"
+      ],
+      "breaks": [
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB30",
+      "name": "a letter and an opening parenthesis hold together",
+      "input": [
+        97,
+        40,
+        49
+      ],
+      "classes": [
+        "AL",
+        "OP",
+        "NU"
+      ],
+      "breaks": [
+        false,
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB30a",
+      "name": "regional indicators pair off",
+      "input": [
+        127471,
+        127477,
+        127482,
+        127480
+      ],
+      "classes": [
+        "RI",
+        "RI",
+        "RI",
+        "RI"
+      ],
+      "breaks": [
+        false,
+        false,
+        true,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB30b",
+      "name": "an emoji modifier stays on its base",
+      "input": [
+        128102,
+        127995
+      ],
+      "classes": [
+        "EB",
+        "EM"
+      ],
+      "breaks": [
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "LB31",
+      "name": "a space opens the next line",
+      "input": [
+        97,
+        32,
+        98
+      ],
+      "classes": [
+        "AL",
+        "SP",
+        "AL"
+      ],
+      "breaks": [
+        false,
+        false,
+        true,
+        true
+      ]
+    },
+    {
+      "rule": "LB1",
+      "name": "an empty sequence carries one boundary",
+      "input": [],
+      "classes": [],
+      "breaks": [
+        true
+      ]
+    }
+  ]
+}

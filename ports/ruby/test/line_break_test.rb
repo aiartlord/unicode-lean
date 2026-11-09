@@ -11,6 +11,8 @@ require_relative "test_helper"
 # opportunity (÷) and non-break (×) in the official file must be reproduced
 # exactly.
 class LineBreakTest < Minitest::Test
+  include RubyPortTestHelpers
+
   LineBreak = UnicodeRuby::Segmentation::LineBreak
   LineBreakTables = UnicodeRuby::Segmentation::LineBreakTables
 
@@ -87,6 +89,35 @@ class LineBreakTest < Minitest::Test
                  "expected to validate every LineBreakTest row"
   end
 
+  # The shared vector fixture: one case per UAX #14 rule, the same bytes in
+  # every port, so no port can carry a weaker set of rule checks than another.
+  # The published corpus above is the authority; these name which rule each
+  # boundary exercises.
+  def test_shared_line_break_vectors
+    fixture = segmentation_fixture_json("line_break_vectors.json")
+    assert_equal 1, fixture.fetch("schema")
+    assert_equal "uax14-line-break", fixture.fetch("algorithm")
+
+    cases = fixture.fetch("cases")
+    refute_empty cases
+    cases.each do |line_case|
+      cps = line_case.fetch("input")
+      expected = line_case.fetch("breaks")
+      actual = LineBreak.line_breaks(cps)
+      assert_equal expected, actual,
+                   "#{line_case.fetch('rule')}: #{line_case.fetch('name')} " \
+                   "(cps=#{cps.map { |c| format('%04X', c) }.join(' ')})"
+    end
+  end
+
+  # The vendored corpus and the vendored vectors must agree on how many rows
+  # the published file carries, so the two gates cannot drift apart.
+  def test_published_row_count_agrees_with_the_shared_fixture
+    fixture = segmentation_fixture_json("line_break_vectors.json")
+    assert_equal LineBreakTables::PUBLISHED_ROW_COUNT,
+                 fixture.fetch("published_row_count")
+  end
+
   def test_output_carries_one_flag_per_boundary
     # The Lean lineBreaks_length theorem: cps.length + 1 flags.
     (0...8).each do |length|
@@ -95,66 +126,17 @@ class LineBreakTest < Minitest::Test
     end
   end
 
-  def test_start_of_text_never_breaks_and_end_always_does
-    breaks = LineBreak.line_breaks([0x61, 0x62])
-    assert_equal false, breaks.first # LB2
-    assert_equal true, breaks.last   # LB3
-  end
-
-  def test_a_word_is_one_run_and_a_space_opens_the_next
-    # LB28 keeps letters together; LB18 breaks after a space.
-    assert_equal [false, false, true], LineBreak.line_breaks([0x61, 0x62])
-
+  def test_a_space_opens_the_next_run
+    # LB18 breaks after a space, so the space stays with the word before it.
     runs = LineBreak.line_runs([0x61, 0x20, 0x62])
     assert_equal 2, runs.length
     assert_equal [0x61, 0x20], runs[0]
     assert_equal [0x62], runs[1]
   end
 
-  def test_mandatory_break_character_breaks_after_itself
-    # LB4: BK divides.  U+000C FORM FEED is class BK.
-    assert_equal [false, false, true, true],
-                 LineBreak.line_breaks([0x61, 0x000C, 0x62])
-  end
-
-  def test_carriage_return_line_feed_is_not_split
-    # LB5: CR times LF, then a mandatory break after the pair.
-    assert_equal [false, false, true, true],
-                 LineBreak.line_breaks([0x0D, 0x0A, 0x61])
-  end
-
-  def test_combining_mark_takes_the_class_of_its_base
-    # LB9: X CM behaves as X, so no break falls inside the pair.
-    assert_equal [false, false, true], LineBreak.line_breaks([0x61, 0x0301])
-  end
-
-  def test_word_joiner_glues_both_sides
-    # LB11: before WJ and after WJ.
-    assert_equal [false, false, false, true],
-                 LineBreak.line_breaks([0x61, 0x2060, 0x62])
-  end
-
-  def test_space_before_a_number_opening_period_breaks
-    # LB15c: SP divides IS NU — "a .35" breaks before the period.
-    assert_equal [false, false, true, false, false, true],
-                 LineBreak.line_breaks([0x61, 0x20, 0x2E, 0x33, 0x35])
-  end
-
-  def test_numeric_chain_holds_together
-    # LB25: "1,000" is one run across the SY separator.
+  def test_numeric_chain_is_one_run
+    # LB25: "1,000" is one run across its separator.
     assert_equal 1, LineBreak.line_runs([0x31, 0x2C, 0x30, 0x30, 0x30]).length
-  end
-
-  def test_regional_indicators_pair_off
-    # LB30a: an even-length RI run takes no break inside a pair, and a second
-    # pair may start a new line.
-    assert_equal [false, false, true, false, true],
-                 LineBreak.line_breaks([0x1F1EF, 0x1F1F5, 0x1F1FA, 0x1F1F8])
-  end
-
-  def test_emoji_modifier_stays_on_its_base
-    # LB30b: EB times EM.
-    assert_equal [false, false, true], LineBreak.line_breaks([0x1F466, 0x1F3FB])
   end
 
   def test_lb1_resolves_the_tailorable_classes

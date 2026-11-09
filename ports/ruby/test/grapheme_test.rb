@@ -10,6 +10,8 @@ require_relative "test_helper"
 # tests/segmentation.rs.  Every break opportunity (÷) and non-break (×) in the
 # official file must be reproduced exactly.
 class GraphemeTest < Minitest::Test
+  include RubyPortTestHelpers
+
   Grapheme = UnicodeRuby::Segmentation::Grapheme
 
   BREAK = "÷"     # ÷ : break opportunity
@@ -53,11 +55,36 @@ class GraphemeTest < Minitest::Test
       rows += 1
     end
 
-    # Full UCD 17.0.0 GraphemeBreakTest.txt carries 766 data rows.
-    assert_equal 766, rows, "expected to validate every GraphemeBreakTest row"
+    # The whole file must be accounted for, so a row lost between the file and
+    # the fold fails rather than quietly shrinking the denominator. The count
+    # comes from the shared fixture, which the generator counts from the
+    # canonical corpus.
+    fixture = segmentation_fixture_json("grapheme_vectors.json")
+    assert_equal fixture.fetch("published_row_count"), rows,
+                 "expected to validate every GraphemeBreakTest row"
   end
 
-  # Targeted vectors mirrored from ports/rust/tests/segmentation.rs.
+  # The shared vector fixture: one case per UAX #29 rule, the same bytes in
+  # every port, so no port can carry a weaker set of rule checks than another.
+  def test_shared_grapheme_vectors
+    fixture = segmentation_fixture_json("grapheme_vectors.json")
+    assert_equal 1, fixture.fetch("schema")
+    assert_equal "uax29-grapheme-cluster", fixture.fetch("algorithm")
+
+    cases = fixture.fetch("cases")
+    refute_empty cases
+    cases.each do |cluster_case|
+      cps = cluster_case.fetch("input")
+      expected = cluster_case.fetch("breaks")
+      actual = Grapheme.grapheme_breaks(cps)
+      assert_equal expected, actual,
+                   "#{cluster_case.fetch('rule')}: " \
+                   "#{cluster_case.fetch('name')} " \
+                   "(cps=#{cps.map { |c| format('%04X', c) }.join(' ')})"
+    end
+  end
+
+  # Cluster-count vectors, which the boundary masks above do not state.
 
   def test_ascii_each_its_own_cluster
     assert_equal [true, true, true, true],

@@ -1,0 +1,271 @@
+{
+  "schema": 1,
+  "algorithm": "uax29-grapheme-cluster",
+  "corpus": "GraphemeBreakTest.txt",
+  "class_property": "Grapheme_Cluster_Break, as UCD property values",
+  "published_row_count": 766,
+  "cases": [
+    {
+      "rule": "GB1/GB2",
+      "name": "start and end of text are both boundaries",
+      "input": [
+        97
+      ],
+      "classes": [
+        "Other"
+      ],
+      "breaks": [
+        true,
+        true
+      ]
+    },
+    {
+      "rule": "GB3",
+      "name": "carriage return line feed is one cluster",
+      "input": [
+        13,
+        10
+      ],
+      "classes": [
+        "CR",
+        "LF"
+      ],
+      "breaks": [
+        true,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "GB4",
+      "name": "a control character ends its cluster",
+      "input": [
+        13,
+        97
+      ],
+      "classes": [
+        "CR",
+        "Other"
+      ],
+      "breaks": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "rule": "GB5",
+      "name": "a control character starts its own cluster",
+      "input": [
+        97,
+        13
+      ],
+      "classes": [
+        "Other",
+        "CR"
+      ],
+      "breaks": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "rule": "GB6",
+      "name": "a leading jamo and a vowel jamo hold together",
+      "input": [
+        4352,
+        4449
+      ],
+      "classes": [
+        "L",
+        "V"
+      ],
+      "breaks": [
+        true,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "GB7",
+      "name": "a vowel jamo and a trailing jamo hold together",
+      "input": [
+        4449,
+        4520
+      ],
+      "classes": [
+        "V",
+        "T"
+      ],
+      "breaks": [
+        true,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "GB8",
+      "name": "a syllable and a trailing jamo hold together",
+      "input": [
+        44033,
+        4520
+      ],
+      "classes": [
+        "LVT",
+        "T"
+      ],
+      "breaks": [
+        true,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "GB9",
+      "name": "a combining mark joins its base",
+      "input": [
+        101,
+        769
+      ],
+      "classes": [
+        "Other",
+        "Extend"
+      ],
+      "breaks": [
+        true,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "GB9a",
+      "name": "a spacing mark joins its base",
+      "input": [
+        2325,
+        2366
+      ],
+      "classes": [
+        "Other",
+        "SpacingMark"
+      ],
+      "breaks": [
+        true,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "GB9b",
+      "name": "a prepended concatenation mark joins what follows",
+      "input": [
+        1536,
+        1633
+      ],
+      "classes": [
+        "Prepend",
+        "Other"
+      ],
+      "breaks": [
+        true,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "GB9c",
+      "name": "an Indic conjunct holds together across its linker",
+      "input": [
+        2325,
+        2381,
+        2326
+      ],
+      "classes": [
+        "Other",
+        "Extend",
+        "Other"
+      ],
+      "breaks": [
+        true,
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "GB11",
+      "name": "an emoji zero-width-joiner sequence is one cluster",
+      "input": [
+        128104,
+        8205,
+        128105,
+        8205,
+        128103
+      ],
+      "classes": [
+        "Other",
+        "ZWJ",
+        "Other",
+        "ZWJ",
+        "Other"
+      ],
+      "breaks": [
+        true,
+        false,
+        false,
+        false,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "GB12/GB13",
+      "name": "regional indicators pair off",
+      "input": [
+        127471,
+        127477,
+        127482,
+        127480
+      ],
+      "classes": [
+        "Regional_Indicator",
+        "Regional_Indicator",
+        "Regional_Indicator",
+        "Regional_Indicator"
+      ],
+      "breaks": [
+        true,
+        false,
+        true,
+        false,
+        true
+      ]
+    },
+    {
+      "rule": "GB999",
+      "name": "two letters are two clusters",
+      "input": [
+        97,
+        98
+      ],
+      "classes": [
+        "Other",
+        "Other"
+      ],
+      "breaks": [
+        true,
+        true,
+        true
+      ]
+    },
+    {
+      "rule": "GB1",
+      "name": "an empty sequence carries one boundary",
+      "input": [],
+      "classes": [],
+      "breaks": [
+        true
+      ]
+    }
+  ]
+}
