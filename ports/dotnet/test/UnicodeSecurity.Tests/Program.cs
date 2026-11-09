@@ -52,6 +52,7 @@ TestCaseExpansionMismatchSpotChecks();
 TestUtf8Blob();
 TestValidatedUtf8();
 TestGraphemeVectors();
+TestGraphemeSharedVectors();
 TestGraphemeBreakTestFile();
 Console.WriteLine("clean: .NET contract tests pass");
 
@@ -1594,6 +1595,52 @@ static void TestValidatedUtf8()
     Console.WriteLine("clean: .NET validated-utf8 refinement spot-check passes");
 }
 
+// One shared segmentation vector fixture: one case per UAX rule, the same bytes
+// every port replays, so each port's segmentation tests ask the same questions
+// rather than a per-port selection of them.
+static JsonElement LoadSegmentationFixture(string name, string algorithm)
+{
+    var path = Path.Combine(AppContext.BaseDirectory, "testdata", "fixtures", "segmentation", name);
+    if (!File.Exists(path)) path = Path.Combine("testdata", "fixtures", "segmentation", name);
+    var document = JsonDocument.Parse(File.ReadAllText(path)).RootElement;
+    AssertEqual(1, document.GetProperty("schema").GetInt32(), $"{name} schema");
+    AssertEqual(algorithm, document.GetProperty("algorithm").GetString(), $"{name} algorithm");
+    AssertTrue(document.GetProperty("cases").GetArrayLength() > 0, $"{name} carries cases");
+    return document;
+}
+
+// Every case's boundary mask, reproduced. A failure names the rule and what the
+// case is for, so the red reads as a sentence rather than an index.
+static void ReplaySegmentationVectors(JsonElement fixture, Func<IReadOnlyList<int>, IReadOnlyList<bool>> breaksOf)
+{
+    foreach (var entry in fixture.GetProperty("cases").EnumerateArray())
+    {
+        var codepoints = new List<int>();
+        foreach (var cp in entry.GetProperty("input").EnumerateArray())
+        {
+            codepoints.Add(cp.GetInt32());
+        }
+        var expected = new List<bool>();
+        foreach (var flag in entry.GetProperty("breaks").EnumerateArray())
+        {
+            expected.Add(flag.GetBoolean());
+        }
+        var rule = entry.GetProperty("rule").GetString();
+        var name = entry.GetProperty("name").GetString();
+        AssertBoolSequence(expected, breaksOf(codepoints), $"{rule}: {name}");
+    }
+}
+
+// The shared UAX #29 vectors, and the agreement between the two gates: the
+// corpus row count and the fixture's must be the same number, so they cannot
+// drift apart.
+static void TestGraphemeSharedVectors()
+{
+    var fixture = LoadSegmentationFixture("grapheme_vectors.json", "uax29-grapheme-cluster");
+    ReplaySegmentationVectors(fixture, cps => Grapheme.GraphemeBreaks(cps));
+    Console.WriteLine($"clean: .NET grapheme shared-vector replay passes ({fixture.GetProperty("cases").GetArrayLength()} cases)");
+}
+
 // UAX #29 grapheme segmentation targeted vectors, mirroring
 // ports/rust/tests/segmentation.rs and the rust grapheme.rs unit tests.
 static void TestGraphemeVectors()
@@ -1648,7 +1695,13 @@ static void TestGraphemeBreakTestFile()
         AssertBoolSequence(expected, actual, $"GraphemeBreakTest row {rows + 1}: [{string.Join(" ", tokens)}]");
         rows++;
     }
-    AssertEqual(766, rows, "GraphemeBreakTest row count");
+    // The whole file must be accounted for, so a row lost between the file and
+    // this fold fails rather than quietly shrinking the denominator. The count
+    // comes from the shared fixture, which the generator counts from the
+    // canonical corpus, so the corpus gate and the vector gate cannot disagree
+    // about the size of the corpus.
+    var fixture = LoadSegmentationFixture("grapheme_vectors.json", "uax29-grapheme-cluster");
+    AssertEqual(fixture.GetProperty("published_row_count").GetInt32(), rows, "GraphemeBreakTest row count");
     Console.WriteLine($"clean: .NET GraphemeBreakTest.txt {rows}-row conformance passes");
 }
 
