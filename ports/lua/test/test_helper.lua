@@ -141,6 +141,13 @@ function M.json_file(path)
   return new_json(read_file(path)):parse_value()
 end
 
+-- A shared segmentation vector fixture: one case per UAX rule, the same bytes
+-- in every port, so each port's segmentation tests ask the same questions
+-- rather than a per-port selection of them.
+function M.segmentation_fixture(name)
+  return M.json_file("testdata/fixtures/segmentation/" .. name)
+end
+
 function M.deep_equal(a, b)
   if a == b then
     return true

@@ -16,6 +16,29 @@ local tables = require("unicode_lua.segmentation.line_break_tables")
 local DIV = "\195\183"
 local MUL = "\195\151"
 
+-- // shared vector fixture // -------------------------------------------------
+
+-- One case per UAX #14 rule, the same bytes in every port, so no port can carry
+-- a weaker set of rule checks than another. The published corpus below is the
+-- authority; these name which rule each boundary exercises.
+local fixture = h.segmentation_fixture("line_break_vectors.json")
+h.assert_equal(fixture.schema, 1, "line-break fixture schema")
+h.assert_equal(fixture.algorithm, "uax14-line-break",
+  "line-break fixture algorithm")
+if #fixture.cases == 0 then
+  error("line-break vectors: fixture carries no cases")
+end
+for _, case in ipairs(fixture.cases) do
+  local actual = line_break.line_breaks(case.input)
+  h.assert_equal(actual, case.breaks, case.rule .. ": " .. case.name)
+end
+print("line_break: replayed " .. #fixture.cases .. " shared vector cases")
+
+-- The vendored corpus and the vendored vectors must agree on how many rows the
+-- published file carries, so the two gates cannot drift apart.
+h.assert_equal(tables.PUBLISHED_ROW_COUNT, fixture.published_row_count,
+  "table row count agrees with the shared fixture")
+
 -- // targeted vectors // -----------------------------------------------------
 
 -- The Lean `lineBreaks_length` theorem: `#cps + 1` flags.
@@ -28,77 +51,18 @@ for length = 0, 7 do
     "one flag per boundary at length " .. length)
 end
 
--- LB2 forbids a break at the start of text; LB3 requires one at the end.
-local ab = line_break.line_breaks({ 0x61, 0x62 })
-h.assert_equal(ab[1], false, "start of text never breaks")
-h.assert_equal(ab[#ab], true, "end of text always breaks")
-
--- LB28 keeps letters together; LB18 breaks after a space.
-h.assert_equal(
-  line_break.line_breaks({ 0x61, 0x62 }),
-  { false, false, true },
-  "a word is one run"
-)
+-- LB18 breaks after a space, so the space stays with the word before it. The
+-- run split is a shape the boundary masks above do not state.
 local spaced = line_break.line_runs({ 0x61, 0x20, 0x62 })
 h.assert_equal(#spaced, 2, "a space opens the next run")
 h.assert_equal(spaced[1], { 0x61, 0x20 }, "the space stays with the word before it")
 h.assert_equal(spaced[2], { 0x62 }, "the next run starts after the space")
 
--- LB4: BK divides. U+000C FORM FEED is class BK.
-h.assert_equal(
-  line_break.line_breaks({ 0x61, 0x000C, 0x62 }),
-  { false, false, true, true },
-  "a mandatory break character breaks after itself"
-)
-
--- LB5: CR times LF, then a mandatory break after the pair.
-h.assert_equal(
-  line_break.line_breaks({ 0x0D, 0x0A, 0x61 }),
-  { false, false, true, true },
-  "carriage return line feed is not split"
-)
-
--- LB9: X CM behaves as X, so no break falls inside the pair.
-h.assert_equal(
-  line_break.line_breaks({ 0x61, 0x0301 }),
-  { false, false, true },
-  "a combining mark takes the class of its base"
-)
-
--- LB11: before WJ and after WJ.
-h.assert_equal(
-  line_break.line_breaks({ 0x61, 0x2060, 0x62 }),
-  { false, false, false, true },
-  "a word joiner glues both sides"
-)
-
--- LB15c: SP divides IS NU -- "a .35" breaks before the period.
-h.assert_equal(
-  line_break.line_breaks({ 0x61, 0x20, 0x2E, 0x33, 0x35 }),
-  { false, false, true, false, false, true },
-  "a space before a number opening period breaks"
-)
-
--- LB25: "1,000" is one run across the SY separator.
+-- LB25: "1,000" is one run across its separator.
 h.assert_equal(
   #line_break.line_runs({ 0x31, 0x2C, 0x30, 0x30, 0x30 }),
   1,
-  "a numeric chain holds together"
-)
-
--- LB30a: an even-length RI run takes no break inside a pair, and a second pair
--- may start a new line.
-h.assert_equal(
-  line_break.line_breaks({ 0x1F1EF, 0x1F1F5, 0x1F1FA, 0x1F1F8 }),
-  { false, false, true, false, true },
-  "regional indicators pair off"
-)
-
--- LB30b: EB times EM.
-h.assert_equal(
-  line_break.line_breaks({ 0x1F466, 0x1F3FB }),
-  { false, false, true },
-  "an emoji modifier stays on its base"
+  "a numeric chain is one run"
 )
 
 -- LB1 resolves the tailorable classes into the working alphabet.

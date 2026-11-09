@@ -112,8 +112,30 @@ for line in f:lines() do
 end
 f:close()
 
-if rows == 0 then
-  error("grapheme conformance: no data rows parsed from GraphemeBreakTest.txt")
-end
+-- The whole file must be accounted for, so a row lost between the file and the
+-- fold fails rather than quietly shrinking the denominator. A non-zero row
+-- count does not establish that: a corpus truncated to one row passes it. The
+-- expected count comes from the shared fixture, which the generator counts from
+-- the canonical corpus.
+local fixture = h.segmentation_fixture("grapheme_vectors.json")
+h.assert_equal(rows, fixture.published_row_count,
+  "the vendored corpus carries every published row")
 
 print("grapheme: validated " .. rows .. " GraphemeBreakTest rows")
+
+-- // shared vector fixture // -------------------------------------------------
+
+-- One case per UAX #29 rule, the same bytes in every port, so no port can carry
+-- a weaker set of rule checks than another.
+h.assert_equal(fixture.schema, 1, "grapheme fixture schema")
+h.assert_equal(fixture.algorithm, "uax29-grapheme-cluster",
+  "grapheme fixture algorithm")
+if #fixture.cases == 0 then
+  error("grapheme vectors: fixture carries no cases")
+end
+for _, case in ipairs(fixture.cases) do
+  local actual = grapheme.grapheme_breaks(case.input)
+  h.assert_equal(actual, case.breaks, case.rule .. ": " .. case.name)
+end
+
+print("grapheme: replayed " .. #fixture.cases .. " shared vector cases")
