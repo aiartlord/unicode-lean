@@ -19,7 +19,7 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
         pkgsSwift = nixpkgs-swift.legacyPackages.${system};
-        hsPkgs = pkgs.haskell.packages.ghc912;
+        hsPkgs = pkgs.haskell.packages.ghc9141;
         hsPortGhc = hsPkgs.ghcWithPackages (hpkgs: [
           hpkgs.QuickCheck
           hpkgs.tasty

@@ -11,9 +11,9 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
-        # GHC 9.12 across the stack. Pinning explicitly keeps the Haskell
+        # GHC 9.14 across the stack. Pinning explicitly keeps the Haskell
         # port stable even as nixpkgs' default haskellPackages drifts.
-        hsPkgs = pkgs.haskell.packages.ghc912;
+        hsPkgs = pkgs.haskell.packages.ghc9141;
 
         unicode-haskell = hsPkgs.callCabal2nix "unicode-haskell" ./. {};
 
@@ -64,7 +64,7 @@
             echo "  test exes:    $TEST_EXES"
             echo "  UCD:          $UCD_VERSION"
             echo "  UCA:          $UCA_VERSION"
-            echo "  GHC target:   9.12.*"
+            echo "  GHC target:   9.14.*"
             echo ""
 
             echo "── phase status ─────────────────────────────────"
@@ -112,7 +112,7 @@
         };
 
         # ── nix develop ────────────────────────────────────────────
-        # GHC 9.12 + cabal + HLS + ghcid. Matches the toolchain
+        # GHC 9.14 + cabal + HLS + ghcid. Matches the toolchain
         # lemma and the rest of the Haskell side of the stack use.
         devShells.default = hsPkgs.shellFor {
           packages = _: [ unicode-haskell ];

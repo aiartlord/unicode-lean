@@ -211,7 +211,7 @@ The commands below assume the port's directory as the working directory.
 | dotnet | `dotnet run --project test/UnicodeSecurity.Tests` |
 | swift | `nix build .#unicode-swift` (pinned Swift 5.10.1; the bundled toolchain is required) |
 | zig | `zig build test` |
-| haskell | `nix build .#unicode-haskell` (GHC 9.12) |
+| haskell | `nix build .#unicode-haskell` (GHC 9.14) |
 | ruby | `ruby -Ilib -Itest test/<name>_test.rb`, or the port's `scripts/test.sh` |
 | lua | `scripts/test.sh` (Lua 5.4) |
 | php | `php test/<name>_test.php` |

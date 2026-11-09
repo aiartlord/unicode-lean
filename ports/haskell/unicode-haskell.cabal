@@ -53,7 +53,7 @@ data-files:
   data/bip39/korean.txt
   data/bip39/portuguese.txt
   data/bip39/spanish.txt
-tested-with:        GHC == 9.12.*
+tested-with:        GHC == 9.14.*
 
 common warnings
   default-language: GHC2021
