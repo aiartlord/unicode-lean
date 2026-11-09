@@ -58,7 +58,9 @@
           pkgs.gnucobol.bin
           pkgs.beamPackages.erlang
           pkgs.beamPackages.elixir
-          pkgs.dotnet-sdk_8
+          # .NET 10 is the supported LTS; 8 and 9 both reach end of support on
+          # 2026-11-10 and take no further security updates.
+          pkgs.dotnet-sdk_10
           # The pinned rev whose swift is cached/substitutable — top-level
           # pkgs.swift cannot build from source at glibc HEAD (gnu2 TLS vs the
           # bundled clang-16), so the runtime shell must track the same swift
@@ -292,7 +294,7 @@
           pname = "unicode-dotnet";
           version = runtimeVersion;
           src = ./ports/dotnet;
-          nativeBuildInputs = [ pkgs.dotnet-sdk_8 ];
+          nativeBuildInputs = [ pkgs.dotnet-sdk_10 ];
           dontConfigure = true;
           buildPhase = ''
             runHook preBuild
