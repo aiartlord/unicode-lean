@@ -75,6 +75,10 @@ spl_autoload_register(static function (string $class): void {
         'UnicodePhp\\Segmentation\\EpicState' => __DIR__ . '/Segmentation/Grapheme.php',
         'UnicodePhp\\Segmentation\\IncbState' => __DIR__ . '/Segmentation/Grapheme.php',
         'UnicodePhp\\Segmentation\\GraphemeState' => __DIR__ . '/Segmentation/Grapheme.php',
+        'UnicodePhp\\Segmentation\\Lb' => __DIR__ . '/Segmentation/LineBreakTables.php',
+        'UnicodePhp\\Segmentation\\Gc' => __DIR__ . '/Segmentation/LineBreakTables.php',
+        'UnicodePhp\\Segmentation\\Eaw' => __DIR__ . '/Segmentation/LineBreakTables.php',
+        'UnicodePhp\\Segmentation\\LineBreakState' => __DIR__ . '/Segmentation/LineBreak.php',
     ];
     if (isset($shared[$class])) {
         require $shared[$class];
