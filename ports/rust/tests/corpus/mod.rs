@@ -14,7 +14,48 @@
 //! and separately account for the whole file, so a row lost between the corpus
 //! module and this fold is a failure rather than a smaller denominator.
 
+pub mod grapheme_rows;
 pub mod line_break_rows;
+pub mod vector_cases;
+
+/// Every shared vector case whose boundary mask the implementation does not
+/// reproduce, as a ready failure line each.
+///
+/// The published corpus is the authority; these cases name which rule each
+/// boundary exercises, so a failure here says which rule broke rather than
+/// which row index did. The algorithm name is checked too, so a test pointed at
+/// the wrong case list fails rather than passing vacuously.
+pub fn replay_vectors<F>(
+    algorithm: &str,
+    cases: &[vector_cases::VectorCase],
+    breaks_of: F,
+) -> Vec<String>
+where
+    F: Fn(&[u32]) -> Vec<bool>,
+{
+    assert!(!cases.is_empty(), "{} carries no vector cases", algorithm);
+    cases
+        .iter()
+        .filter_map(|case| {
+            let produced = breaks_of(case.input);
+            if produced == case.breaks {
+                return None;
+            }
+            Some(format!(
+                "{}: {}\n  codepoints : {}\n  fixture    : {}\n  produced   : {}",
+                case.rule,
+                case.name,
+                case.input
+                    .iter()
+                    .map(|cp| format!("U+{:04X}", cp))
+                    .collect::<Vec<String>>()
+                    .join(" "),
+                flags(case.breaks),
+                flags(&produced),
+            ))
+        })
+        .collect()
+}
 
 /// A published row whose expected flags differ from what the implementation
 /// produced: the row's index, its code points, the published flags, and the

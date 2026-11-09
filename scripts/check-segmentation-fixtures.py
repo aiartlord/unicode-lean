@@ -22,7 +22,9 @@ failing on a port that does not replay them yet.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -95,14 +97,21 @@ FIXTURE_CORPUS = {
 }
 
 
-def mentions(port: str, needle: str) -> bool:
-    """Whether any of the port's test sources name `needle`."""
+def mentions(port: str, needle: str, skip: frozenset[Path] = frozenset()) -> bool:
+    """Whether any of the port's test sources name `needle`.
+
+    `skip` excludes generated data modules. A transcription names the fixture
+    it came from in its own header, so counting it would report a port as
+    replaying vectors no test has been pointed at yet.
+    """
     for root in PORT_TEST_ROOTS.get(port, []):
         directory = ROOT / root
         if not directory.is_dir():
             continue
         for path in directory.rglob("*"):
             if not path.is_file() or path.suffix == ".json":
+                continue
+            if path.resolve() in skip:
                 continue
             try:
                 text = path.read_text(encoding="utf-8", errors="ignore")
@@ -114,13 +123,63 @@ def mentions(port: str, needle: str) -> bool:
 
 
 def replays(port: str, fixture: str) -> bool:
-    """Whether the port's tests replay the shared fixture."""
-    return mentions(port, fixture.rsplit(".", 1)[0])
+    """Whether the port's tests replay the shared fixture.
+
+    A port consuming a transcription is counted by the case constants its
+    tests name, not by the transcription's own header.
+    """
+    generated = frozenset(
+        (ROOT / relative).resolve()
+        for relative, _constants in TRANSCRIPTIONS.values())
+    if port in TRANSCRIPTIONS:
+        prefix = ("LINE_BREAK" if fixture.startswith("line_break")
+                  else "GRAPHEME")
+        return mentions(port, "%s_CASES" % prefix, skip=generated)
+    return mentions(port, fixture.rsplit(".", 1)[0], skip=generated)
 
 
 def has_suite(port: str, fixture: str) -> bool:
     """Whether the port judges this algorithm against its published corpus."""
     return mentions(port, FIXTURE_CORPUS[fixture])
+
+
+# A port with no JSON reader consumes a generated transcription of the fixture
+# instead of parsing it. The transcription records the digest of the fixture it
+# came from, so a transcription left behind by a regenerated fixture is a
+# failure here rather than a silent divergence.
+TRANSCRIPTIONS = {
+    "rust": (
+        "ports/rust/tests/corpus/vector_cases.rs",
+        {"line_break_vectors.json": "LINE_BREAK_FIXTURE_DIGEST",
+         "grapheme_vectors.json": "GRAPHEME_FIXTURE_DIGEST"},
+    ),
+}
+
+
+def transcription_failures(roots: dict[str, bytes]) -> list[str]:
+    """Every transcription whose recorded digest is not its fixture's."""
+    out: list[str] = []
+    for port, (relative, constants) in sorted(TRANSCRIPTIONS.items()):
+        path = ROOT / relative
+        if not path.is_file():
+            out.append("%s: missing transcription %s" % (port, relative))
+            continue
+        text = path.read_text(encoding="utf-8")
+        for fixture, constant in sorted(constants.items()):
+            match = re.search(
+                r'%s:\s*&str\s*=\s*"([0-9a-f]{64})"' % re.escape(constant),
+                text)
+            if match is None:
+                out.append("%s: %s records no %s"
+                           % (port, relative, constant))
+                continue
+            expected = hashlib.sha256(roots[fixture]).hexdigest()
+            if match.group(1) != expected:
+                out.append(
+                    "%s: %s was transcribed from an older %s; regenerate with "
+                    "scripts/internal/generate_segmentation_fixtures.py"
+                    % (port, relative, fixture))
+    return out
 
 
 def main() -> int:
@@ -178,6 +237,8 @@ def main() -> int:
         for path in (ROOT / "ports").rglob("fixtures/segmentation/*.json")
         if path.resolve() not in expected_copies
     )
+
+    failures.extend(transcription_failures(roots))
 
     absent: list[str] = []
     for port in sorted(PORT_TEST_ROOTS):

@@ -9,10 +9,14 @@
 //! reads in place of positional `lits[i]!`, and dropping the Lean's write-only
 //! `spSinceNoSp` snapshot field.
 
+#[allow(dead_code)]
 mod corpus;
 
 use corpus::line_break_rows::{PUBLISHED_COUNT, PUBLISHED_ROWS};
-use corpus::{assert_corpus_shape, disagreements, report};
+use corpus::vector_cases::{
+    LINE_BREAK_ALGORITHM, LINE_BREAK_CASES, LINE_BREAK_PUBLISHED_ROW_COUNT,
+};
+use corpus::{assert_corpus_shape, disagreements, replay_vectors, report};
 use unicode_rust::segmentation::line_breaks;
 
 #[test]
@@ -24,4 +28,20 @@ fn the_corpus_is_well_formed() {
 fn the_implementation_agrees_with_every_published_row() {
     let failures = disagreements(PUBLISHED_ROWS, |cps| line_breaks(cps));
     assert!(failures.is_empty(), "{}", report(PUBLISHED_COUNT, &failures));
+}
+
+#[test]
+fn the_shared_vectors_replay() {
+    // One case per UAX #14 rule, the same bytes every port replays, so no port
+    // can carry a weaker set of rule checks than another.
+    let failures = replay_vectors(LINE_BREAK_ALGORITHM, LINE_BREAK_CASES, |cps| {
+        line_breaks(cps)
+    });
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn the_corpus_and_the_vectors_agree_on_the_row_count() {
+    // Both gates count the same published file, so they cannot drift apart.
+    assert_eq!(LINE_BREAK_PUBLISHED_ROW_COUNT, PUBLISHED_COUNT);
 }

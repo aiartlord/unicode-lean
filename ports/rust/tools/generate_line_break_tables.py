@@ -11,6 +11,15 @@
 #   src/segmentation/line_break_tables.rs
 #                                    Line_Break ranges, mirroring
 #                                    `Unicode.Generated.LineBreakProperty`
+#   tests/corpus/line_break_rows.rs  Every row of the published line-break
+#                                    corpus.
+#   tests/corpus/grapheme_rows.rs    Every row of the published
+#                                    grapheme-cluster corpus. The `corpus`
+#                                    module's two gates were written for every
+#                                    published break corpus, and the grapheme
+#                                    suite had no rows module to feed them, so
+#                                    its only evidence was a handful of
+#                                    hand-written masks.
 #
 # Both tables carry coalesced inclusive ranges sorted by lower bound, so a
 # lookup binary-searches for the one range covering a code point. The ranges of
@@ -30,6 +39,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
 
 LINE_BREAK_TXT = os.path.join(ROOT, "Unicode", "Ucd", "LineBreak.txt")
 LINE_BREAK_TEST_TXT = os.path.join(ROOT, "Unicode", "Ucd", "LineBreakTest.txt")
+GRAPHEME_BREAK_TEST_TXT = os.path.join(
+    ROOT, "Unicode", "Ucd", "GraphemeBreakTest.txt")
 UNICODE_DATA_TXT = os.path.join(ROOT, "Unicode", "Ucd", "UnicodeData.txt")
 EAST_ASIAN_WIDTH_TXT = os.path.join(
     ROOT, "Unicode", "Ucd", "EastAsianWidth.txt")
@@ -40,8 +51,9 @@ GENERAL_CATEGORY_RS = os.path.join(
     ROOT, "ports", "rust", "src", "general_category.rs")
 LINE_BREAK_TABLES_RS = os.path.join(
     ROOT, "ports", "rust", "src", "segmentation", "line_break_tables.rs")
-LINE_BREAK_ROWS_RS = os.path.join(
-    ROOT, "ports", "rust", "tests", "corpus", "line_break_rows.rs")
+CORPUS_DIR = os.path.join(ROOT, "ports", "rust", "tests", "corpus")
+LINE_BREAK_ROWS_RS = os.path.join(CORPUS_DIR, "line_break_rows.rs")
+GRAPHEME_ROWS_RS = os.path.join(CORPUS_DIR, "grapheme_rows.rs")
 
 # The markers the published break corpora write at each boundary.
 BREAK_MARKER = "÷"
@@ -161,16 +173,18 @@ def read_general_category_rows():
     return rows
 
 
-def read_break_test_rows():
-    """The published rows of LineBreakTest.txt as (codepoints, flags).
+def read_break_test_rows(path):
+    """The published rows of a UAX break corpus as (codepoints, flags).
 
     A row alternates boundary markers and code points, starting and ending with
     a marker, so it carries one more flag than code points. The leading marker
     is the start-of-text boundary and the trailing one the end-of-text
-    boundary.
+    boundary. Every published break corpus writes that one format, so one
+    reader serves them all.
     """
+    name = os.path.basename(path)
     rows = []
-    with open(LINE_BREAK_TEST_TXT, "r", encoding="utf-8") as handle:
+    with open(path, "r", encoding="utf-8") as handle:
         for number, line in enumerate(handle, start=1):
             body = strip_comment(line)
             if not body:
@@ -182,25 +196,25 @@ def read_break_test_rows():
                 if token in (BREAK_MARKER, NO_BREAK_MARKER):
                     if not expecting_marker:
                         raise SystemExit(
-                            "LineBreakTest.txt line %d has two markers in a "
-                            "row" % number)
+                            "%s line %d has two markers in a row"
+                            % (name, number))
                     flags.append(token == BREAK_MARKER)
                     expecting_marker = False
                 else:
                     if expecting_marker:
                         raise SystemExit(
-                            "LineBreakTest.txt line %d has two code points in "
-                            "a row" % number)
+                            "%s line %d has two code points in a row"
+                            % (name, number))
                     codepoints.append(int(token, 16))
                     expecting_marker = True
             if expecting_marker:
                 raise SystemExit(
-                    "LineBreakTest.txt line %d ends at a code point rather "
-                    "than a boundary marker" % number)
+                    "%s line %d ends at a code point rather than a boundary "
+                    "marker" % (name, number))
             if len(flags) != len(codepoints) + 1:
                 raise SystemExit(
-                    "LineBreakTest.txt line %d carries %d flags for %d code "
-                    "points" % (number, len(flags), len(codepoints)))
+                    "%s line %d carries %d flags for %d code points"
+                    % (name, number, len(flags), len(codepoints)))
             rows.append((codepoints, flags))
     return rows
 
@@ -274,23 +288,6 @@ LINE_BREAK_TABLES_HEADER = '''//! Line_Break ranges from UCD `LineBreak.txt`.
 '''
 
 
-LINE_BREAK_ROWS_HEADER = '''//! The published UAX #14 line-break corpus, `LineBreakTest.txt`.
-//!
-//! Hand-written vectors cannot establish a segmentation algorithm: its rules
-//! read context on both sides of a boundary and the answer depends on state
-//! carried from earlier in the sequence, so a wrong rule survives any vector a
-//! person would pick. The Unicode Consortium publishes a corpus per algorithm
-//! for that reason, and this is it, as data.
-//!
-//! Each row is the code points of one test case and the boundary flags the file
-//! writes for it, `true` for a break opportunity. A row carries one more flag
-//! than code points.
-//!
-//! Generated by `tools/generate_line_break_tables.py`. Edit that script and
-//! regenerate rather than editing this file.
-'''
-
-
 def format_rows(rows):
     lines = ["pub static PUBLISHED_ROWS: &[(&[u32], &[bool])] = &["]
     for codepoints, flags in rows:
@@ -299,6 +296,47 @@ def format_rows(rows):
         lines.append("    (&[%s], &[%s])," % (points, marks))
     lines.append("];")
     return "\n".join(lines)
+
+
+def format_rows_module(uax, algorithm, corpus, rows):
+    """A corpus rows module: the published rows of one break corpus, as data.
+
+    The `corpus` module's two gates read `PUBLISHED_ROWS` and
+    `PUBLISHED_COUNT`, so each published corpus gets one of these and the gates
+    serve them all.
+    """
+    return "\n".join([
+        "//! The published UAX #%s %s corpus, `%s`." % (uax, algorithm, corpus),
+        "//!",
+        "//! Hand-written vectors cannot establish a segmentation algorithm: "
+        "its rules",
+        "//! read context on both sides of a boundary and the answer depends "
+        "on state",
+        "//! carried from earlier in the sequence, so a wrong rule survives "
+        "any vector a",
+        "//! person would pick. The Unicode Consortium publishes a corpus per "
+        "algorithm",
+        "//! for that reason, and this is it, as data.",
+        "//!",
+        "//! Each row is the code points of one test case and the boundary "
+        "flags the file",
+        "//! writes for it, `true` for a break opportunity. A row carries one "
+        "more flag",
+        "//! than code points.",
+        "//!",
+        "//! Generated by `tools/generate_line_break_tables.py`. Edit that "
+        "script and",
+        "//! regenerate rather than editing this file.",
+        "",
+        "/// How many rows the pinned `%s` carries, counted at" % corpus,
+        "/// generation. The corpus gate asserts the emitted row count against",
+        "/// this, so a row lost between the file and the table fails rather",
+        "/// than quietly shrinking the denominator.",
+        "pub const PUBLISHED_COUNT: usize = %d;" % len(rows),
+        "",
+        format_rows(rows),
+        "",
+    ])
 
 
 def write_file(path, text):
@@ -416,18 +454,12 @@ def main():
         "",
     ]))
 
-    test_rows = read_break_test_rows()
-    write_file(LINE_BREAK_ROWS_RS, "\n".join([
-        LINE_BREAK_ROWS_HEADER,
-        "/// How many rows the pinned `LineBreakTest.txt` carries, counted at",
-        "/// generation. The corpus gate asserts the emitted row count against",
-        "/// this, so a row lost between the file and the table fails rather",
-        "/// than quietly shrinking the denominator.",
-        "pub const PUBLISHED_COUNT: usize = %d;" % len(test_rows),
-        "",
-        format_rows(test_rows),
-        "",
-    ]))
+    write_file(LINE_BREAK_ROWS_RS, format_rows_module(
+        "14", "line-break", "LineBreakTest.txt",
+        read_break_test_rows(LINE_BREAK_TEST_TXT)))
+    write_file(GRAPHEME_ROWS_RS, format_rows_module(
+        "29", "grapheme-cluster", "GraphemeBreakTest.txt",
+        read_break_test_rows(GRAPHEME_BREAK_TEST_TXT)))
 
 
 if __name__ == "__main__":
