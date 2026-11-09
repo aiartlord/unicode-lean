@@ -9,6 +9,45 @@ defmodule UnicodeSecurity.TestHelpers do
     |> JSON.decode!()
   end
 
+  @doc """
+  One shared segmentation vector fixture: one case per UAX rule, the same bytes
+  every port replays, so each port's segmentation tests ask the same questions
+  rather than a per-port selection of them. The shape its callers rely on is
+  established here before the document is returned.
+  """
+  def segmentation_fixture(name, algorithm) do
+    document =
+      Path.join([__DIR__, "fixtures", "segmentation", name])
+      |> File.read!()
+      |> JSON.decode!()
+
+    ExUnit.Assertions.assert(document["schema"] == 1, "#{name} schema")
+    ExUnit.Assertions.assert(document["algorithm"] == algorithm, "#{name} algorithm")
+    ExUnit.Assertions.assert(document["cases"] != [], "#{name} carries no cases")
+    document
+  end
+
+  @doc """
+  Every case's boundary mask, reproduced, and how many were replayed. A failure
+  names the rule and what the case is for, so the red reads as a sentence
+  rather than an index.
+  """
+  def replay_segmentation_vectors(document, breaks_of) do
+    Enum.each(document["cases"], fn case_data ->
+      actual = breaks_of.(case_data["input"])
+
+      ExUnit.Assertions.assert(
+        actual == case_data["breaks"],
+        "#{case_data["rule"]}: #{case_data["name"]}\n" <>
+          "  cps      #{inspect(case_data["input"], base: :hex)}\n" <>
+          "  expected #{inspect(case_data["breaks"])}\n" <>
+          "  actual   #{inspect(actual)}"
+      )
+    end)
+
+    length(document["cases"])
+  end
+
   def codes(verdict), do: Enum.map(verdict.findings, & &1.code)
 
   def assert_required_findings_and_positions(case_data, verdict) do

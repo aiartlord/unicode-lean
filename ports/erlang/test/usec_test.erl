@@ -42,12 +42,24 @@ grapheme_tests() ->
               gb_four_flags_clusters),
     assert_eq(1, length(usec_grapheme:grapheme_clusters([16#1F468, 16#200D, 16#1F469, 16#200D, 16#1F467])),
               gb_zwj_family_clusters),
+    %% One case per UAX #29 rule, the same bytes every port replays, so no port
+    %% carries a weaker set of rule checks than another.
+    Fixture = segmentation_fixture("grapheme_vectors.json", <<"uax29-grapheme-cluster">>),
+    Replayed = replay_segmentation_vectors(
+                 Fixture, fun usec_grapheme:grapheme_breaks/1),
     %% Full GraphemeBreakTest.txt conformance: every div/x boundary must match.
     {ok, Bin} = file:read_file(filename:join(["test", "fixtures", "GraphemeBreakTest.txt"])),
     Lines = binary:split(Bin, <<"\n">>, [global]),
     Count = lists:foldl(fun run_gbt_line/2, 0, Lines),
-    assert_eq(766, Count, grapheme_break_test_row_count),
-    io:format("  grapheme: validated ~p GraphemeBreakTest.txt rows~n", [Count]).
+    %% The whole file must be accounted for, so a row lost between the file and
+    %% the fold fails rather than quietly shrinking the denominator. The count
+    %% comes from the shared fixture, which the generator counts from the
+    %% canonical corpus, so the corpus gate and the vector gate cannot disagree
+    %% about the size of the corpus.
+    assert_eq(maps:get(<<"published_row_count">>, Fixture), Count,
+              grapheme_break_test_row_count),
+    io:format("  grapheme: validated ~p GraphemeBreakTest.txt rows + ~p shared vectors~n",
+              [Count, Replayed]).
 
 %% Parse one GraphemeBreakTest.txt line and assert grapheme_breaks matches its
 %% div/x markers. Non-data lines (comments, blanks) contribute nothing.
@@ -911,6 +923,32 @@ source_display_divergence_tests() ->
 fixture(Rel) ->
     {ok, Bin} = file:read_file(filename:join(["test", "fixtures", "security", Rel])),
     usec_json:decode(Bin).
+
+%% One shared segmentation vector fixture: one case per UAX rule, the same bytes
+%% every port replays, so each port's segmentation tests ask the same questions
+%% rather than a per-port selection of them. The shape its callers rely on is
+%% established here before the document is returned.
+segmentation_fixture(Name, Algorithm) ->
+    {ok, Bin} = file:read_file(filename:join(["test", "fixtures", "segmentation", Name])),
+    Doc = usec_json:decode(Bin),
+    assert_eq(1, maps:get(<<"schema">>, Doc), {segmentation_schema, Name}),
+    assert_eq(Algorithm, maps:get(<<"algorithm">>, Doc), {segmentation_algorithm, Name}),
+    assert(maps:get(<<"cases">>, Doc) =/= [], {segmentation_cases, Name}),
+    Doc.
+
+%% Every case's boundary mask, reproduced, and how many were replayed. A failure
+%% names the rule and what the case is for, so the error reads as a sentence
+%% rather than an index.
+replay_segmentation_vectors(Doc, BreaksOf) ->
+    lists:foldl(fun(Case, Acc) ->
+                        Expected = maps:get(<<"breaks">>, Case),
+                        Got = BreaksOf(maps:get(<<"input">>, Case)),
+                        Label = {segmentation_vector,
+                                 maps:get(<<"rule">>, Case),
+                                 maps:get(<<"name">>, Case)},
+                        assert_eq(Expected, Got, Label),
+                        Acc + 1
+                end, 0, maps:get(<<"cases">>, Doc)).
 
 assert(true, _Label) -> ok;
 assert(false, Label) -> error({assertion_failed, Label}).

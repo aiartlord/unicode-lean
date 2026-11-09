@@ -2,6 +2,7 @@ defmodule UnicodeSecurity.Segmentation.GraphemeTest do
   use ExUnit.Case, async: true
 
   alias UnicodeSecurity.Segmentation.Grapheme
+  import UnicodeSecurity.TestHelpers
 
   @break_test_path Path.join([__DIR__, "fixtures", "GraphemeBreakTest.txt"])
 
@@ -46,11 +47,24 @@ defmodule UnicodeSecurity.Segmentation.GraphemeTest do
   # Full GraphemeBreakTest.txt conformance: every ÷ / × boundary must reproduce.
   # --------------------------------------------------------------------------
 
+  # One case per UAX #29 rule, the same bytes every port replays, so no port
+  # carries a weaker set of rule checks than another. The published corpus below
+  # is the authority; these name which rule each boundary exercises.
+  test "the shared grapheme vectors replay" do
+    fixture = segmentation_fixture("grapheme_vectors.json", "uax29-grapheme-cluster")
+    assert replay_segmentation_vectors(fixture, &Grapheme.grapheme_breaks/1) > 0
+  end
+
   test "every GraphemeBreakTest.txt row reproduces exactly" do
     rows = parse_break_test(@break_test_path)
 
-    # The bundled Unicode 17.0.0 file carries 766 test rows.
-    assert length(rows) == 766
+    # The whole file must be accounted for, so a row lost between the file and
+    # this fold fails rather than quietly shrinking the denominator. The count
+    # comes from the shared fixture, which the generator counts from the
+    # canonical corpus, so the corpus gate and the vector gate cannot disagree
+    # about the size of the corpus.
+    fixture = segmentation_fixture("grapheme_vectors.json", "uax29-grapheme-cluster")
+    assert length(rows) == fixture["published_row_count"]
 
     failures =
       Enum.reduce(rows, [], fn {line_no, cps, expected}, acc ->
