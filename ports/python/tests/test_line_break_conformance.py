@@ -13,6 +13,7 @@ in place of positional ``lits[i]!``, and dropping the Lean's write-only
 from __future__ import annotations
 
 from corpus import assert_corpus_shape, disagreements, report
+from corpus import vectors
 from corpus.line_break_rows import PUBLISHED_COUNT, PUBLISHED_ROWS
 
 from unicode_python.segmentation import line_breaks, line_runs, resolved_class
@@ -28,6 +29,18 @@ def test_the_implementation_agrees_with_every_published_row() -> None:
     assert not failures, report(PUBLISHED_COUNT, failures)
 
 
+def test_the_shared_vectors_replay() -> None:
+    # One case per UAX #14 rule, the same bytes every port replays.
+    document = vectors.load("line_break_vectors.json", "uax14-line-break")
+    vectors.replay(document, line_breaks, resolved_class)
+
+
+def test_the_corpus_and_the_vectors_agree_on_the_row_count() -> None:
+    # Both gates count the same published file, so they cannot drift apart.
+    document = vectors.load("line_break_vectors.json", "uax14-line-break")
+    assert document["published_row_count"] == PUBLISHED_COUNT
+
+
 def test_output_carries_one_flag_per_boundary() -> None:
     # The Lean ``lineBreaks_length`` theorem: ``len(cps) + 1`` flags.
     for length in range(8):
@@ -35,59 +48,15 @@ def test_output_carries_one_flag_per_boundary() -> None:
         assert len(line_breaks(cps)) == length + 1
 
 
-def test_start_of_text_never_breaks_and_end_always_does() -> None:
-    breaks = line_breaks([0x61, 0x62])
-    assert breaks[0] is False  # LB2
-    assert breaks[-1] is True  # LB3
-
-
-def test_a_word_is_one_run_and_a_space_opens_the_next() -> None:
-    # LB28 keeps letters together; LB18 breaks after a space.
-    assert line_breaks([0x61, 0x62]) == [False, False, True]
+def test_a_space_opens_the_next_run() -> None:
+    # LB18 breaks after a space, so the space stays with the word before it.
+    # The run split is a shape the boundary masks do not state.
     assert line_runs([0x61, 0x20, 0x62]) == [[0x61, 0x20], [0x62]]
 
 
-def test_a_mandatory_break_character_breaks_after_itself() -> None:
-    # LB4: BK divides. U+000C FORM FEED is class BK.
-    assert line_breaks([0x61, 0x000C, 0x62]) == [False, False, True, True]
-
-
-def test_carriage_return_line_feed_is_not_split() -> None:
-    # LB5: CR times LF, then a mandatory break after the pair.
-    assert line_breaks([0x0D, 0x0A, 0x61]) == [False, False, True, True]
-
-
-def test_a_combining_mark_takes_the_class_of_its_base() -> None:
-    # LB9: ``X CM`` behaves as ``X``, so no break falls inside the pair.
-    assert line_breaks([0x61, 0x0301]) == [False, False, True]
-
-
-def test_a_word_joiner_glues_both_sides() -> None:
-    # LB11: before WJ and after WJ.
-    assert line_breaks([0x61, 0x2060, 0x62]) == [False, False, False, True]
-
-
-def test_a_space_before_a_number_opening_period_breaks() -> None:
-    # LB15c: SP divides IS NU -- "a .35" breaks before the period.
-    breaks = line_breaks([0x61, 0x20, 0x2E, 0x33, 0x35])
-    assert breaks == [False, False, True, False, False, True]
-
-
-def test_a_numeric_chain_holds_together() -> None:
-    # LB25: "1,000" is one run across the SY separator.
+def test_a_numeric_chain_is_one_run() -> None:
+    # LB25: "1,000" is one run across its separator.
     assert len(line_runs([0x31, 0x2C, 0x30, 0x30, 0x30])) == 1
-
-
-def test_regional_indicators_pair_off() -> None:
-    # LB30a: an even-length RI run takes no break inside a pair, and a second
-    # pair may start a new line.
-    breaks = line_breaks([0x1F1EF, 0x1F1F5, 0x1F1FA, 0x1F1F8])
-    assert breaks == [False, False, True, False, True]
-
-
-def test_an_emoji_modifier_stays_on_its_base() -> None:
-    # LB30b: EB times EM.
-    assert line_breaks([0x1F466, 0x1F3FB]) == [False, False, True]
 
 
 def test_lb1_resolves_the_tailorable_classes() -> None:

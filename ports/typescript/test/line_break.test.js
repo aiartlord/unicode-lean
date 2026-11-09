@@ -27,6 +27,18 @@ const NO_BREAK = "×"; // × : no break
 
 const CORPUS_URL = new URL("../testdata/LineBreakTest.txt", import.meta.url);
 
+// The shared segmentation vector fixture: one case per UAX rule, the same bytes
+// in every port, so each port's segmentation tests ask the same questions
+// rather than a per-port selection of them.
+function segmentationFixture(name, algorithm) {
+  const url = new URL(`../testdata/fixtures/segmentation/${name}`, import.meta.url);
+  const document = JSON.parse(readFileSync(url, "utf8"));
+  assert.equal(document.schema, 1, `${name} schema`);
+  assert.equal(document.algorithm, algorithm, `${name} algorithm`);
+  assert.ok(document.cases.length > 0, `${name} carries no cases`);
+  return document;
+}
+
 // Parse one data line into its codepoints and expected boundary mask.
 //
 // A line is a sequence of alternating boundary markers and hex codepoints,
@@ -130,6 +142,34 @@ test("the line breaker agrees with every published row", () => {
   );
 });
 
+// One case per UAX #14 rule, the same bytes every port replays, so no port can
+// carry a weaker set of rule checks than another. The published corpus above is
+// the authority; these name which rule each boundary exercises.
+test("the shared line-break vectors replay", () => {
+  const document = segmentationFixture(
+    "line_break_vectors.json",
+    "uax14-line-break",
+  );
+  for (const testCase of document.cases) {
+    const produced = lineBreaks(testCase.input);
+    const label = `${testCase.rule}: ${testCase.name}`;
+    assert.deepEqual(
+      produced,
+      testCase.breaks,
+      `${label}\n  codepoints: ${formatCodepoints(testCase.input)}`,
+    );
+  }
+});
+
+// Both gates count the same published file, so they cannot drift apart.
+test("the corpus and the vectors agree on the row count", () => {
+  const document = segmentationFixture(
+    "line_break_vectors.json",
+    "uax14-line-break",
+  );
+  assert.equal(document.published_row_count, PUBLISHED_ROW_COUNT);
+});
+
 test("the output carries one flag per boundary", () => {
   // The Lean lineBreaks_length theorem: cps.length + 1 flags.
   for (let length = 0; length < 8; length += 1) {
@@ -139,73 +179,18 @@ test("the output carries one flag per boundary", () => {
   }
 });
 
-test("start of text never breaks and end always does", () => {
-  const breaks = lineBreaks([0x61, 0x62]);
-  assert.equal(breaks[0], false); // LB2
-  assert.equal(breaks[breaks.length - 1], true); // LB3
-});
-
-test("a word is one run and a space opens the next", () => {
-  // LB28 keeps letters together; LB18 breaks after a space.
-  assert.deepEqual(lineBreaks([0x61, 0x62]), [false, false, true]);
-
+test("a space opens the next run", () => {
+  // LB18 breaks after a space, so the space stays with the word before it. The
+  // run split is a shape the boundary masks do not state.
   const runs = lineRuns([0x61, 0x20, 0x62]);
   assert.equal(runs.length, 2);
   assert.deepEqual(runs[0], [0x61, 0x20]);
   assert.deepEqual(runs[1], [0x62]);
 });
 
-test("a mandatory break character breaks after itself", () => {
-  // LB4: BK divides. U+000C FORM FEED is class BK.
-  assert.deepEqual(
-    lineBreaks([0x61, 0x000c, 0x62]),
-    [false, false, true, true],
-  );
-});
-
-test("carriage return line feed is not split", () => {
-  // LB5: CR times LF, then a mandatory break after the pair.
-  assert.deepEqual(lineBreaks([0x0d, 0x0a, 0x61]), [false, false, true, true]);
-});
-
-test("a combining mark takes the class of its base", () => {
-  // LB9: X CM behaves as X, so no break falls inside the pair.
-  assert.deepEqual(lineBreaks([0x61, 0x0301]), [false, false, true]);
-});
-
-test("a word joiner glues both sides", () => {
-  // LB11: before WJ and after WJ.
-  assert.deepEqual(
-    lineBreaks([0x61, 0x2060, 0x62]),
-    [false, false, false, true],
-  );
-});
-
-test("a space before a number opening period breaks", () => {
-  // LB15c: SP divides IS NU — "a .35" breaks before the period.
-  assert.deepEqual(
-    lineBreaks([0x61, 0x20, 0x2e, 0x33, 0x35]),
-    [false, false, true, false, false, true],
-  );
-});
-
-test("a numeric chain holds together", () => {
-  // LB25: "1,000" is one run across the SY separator.
+test("a numeric chain is one run", () => {
+  // LB25: "1,000" is one run across its separator.
   assert.equal(lineRuns([0x31, 0x2c, 0x30, 0x30, 0x30]).length, 1);
-});
-
-test("regional indicators pair off", () => {
-  // LB30a: an even-length RI run takes no break inside a pair, and a second
-  // pair may start a new line.
-  assert.deepEqual(
-    lineBreaks([0x1f1ef, 0x1f1f5, 0x1f1fa, 0x1f1f8]),
-    [false, false, true, false, true],
-  );
-});
-
-test("an emoji modifier stays on its base", () => {
-  // LB30b: EB times EM.
-  assert.deepEqual(lineBreaks([0x1f466, 0x1f3fb]), [false, false, true]);
 });
 
 test("LB1 resolves the tailorable classes", () => {

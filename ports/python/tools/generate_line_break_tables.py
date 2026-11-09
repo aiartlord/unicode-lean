@@ -17,6 +17,11 @@
 #       Line_Break ranges, mirroring `Unicode.Generated.LineBreakProperty`.
 #   tests/corpus/line_break_rows.py
 #       Every row of the published line-break corpus.
+#   tests/corpus/grapheme_rows.py
+#       Every row of the published grapheme-cluster corpus. The `corpus`
+#       package's two gates were written for every published break corpus, and
+#       the grapheme suite had no rows module to feed them, so its only
+#       evidence was a handful of hand-written masks.
 #
 # The two property modules sit above `security` and above `segmentation` so
 # both layers can read them, which is where the Lean keeps its generated
@@ -38,6 +43,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
 UCD = os.path.join(ROOT, "Unicode", "Ucd")
 LINE_BREAK_TXT = os.path.join(UCD, "LineBreak.txt")
 LINE_BREAK_TEST_TXT = os.path.join(UCD, "LineBreakTest.txt")
+GRAPHEME_BREAK_TEST_TXT = os.path.join(UCD, "GraphemeBreakTest.txt")
 UNICODE_DATA_TXT = os.path.join(UCD, "UnicodeData.txt")
 EAST_ASIAN_WIDTH_TXT = os.path.join(UCD, "EastAsianWidth.txt")
 
@@ -46,8 +52,9 @@ GENERAL_CATEGORY_PY = os.path.join(PKG, "general_category.py")
 EAST_ASIAN_WIDTH_PY = os.path.join(PKG, "east_asian_width.py")
 LINE_BREAK_TABLES_PY = os.path.join(
     PKG, "segmentation", "line_break_tables.py")
-LINE_BREAK_ROWS_PY = os.path.join(
-    ROOT, "ports", "python", "tests", "corpus", "line_break_rows.py")
+CORPUS_DIR = os.path.join(ROOT, "ports", "python", "tests", "corpus")
+LINE_BREAK_ROWS_PY = os.path.join(CORPUS_DIR, "line_break_rows.py")
+GRAPHEME_ROWS_PY = os.path.join(CORPUS_DIR, "grapheme_rows.py")
 
 # The markers the published break corpora write at each boundary.
 BREAK_MARKER = "÷"
@@ -154,14 +161,17 @@ def read_general_category_rows():
     return rows
 
 
-def read_break_test_rows():
-    """The published rows of LineBreakTest.txt as (codepoints, flags).
+def read_break_test_rows(path):
+    """The published rows of a UAX break corpus as (codepoints, flags).
 
     A row alternates boundary markers and code points, starting and ending
-    with a marker, so it carries one more flag than code points.
+    with a marker, so it carries one more flag than code points. Every
+    published break corpus writes that one format, so one reader serves them
+    all.
     """
+    name = os.path.basename(path)
     rows = []
-    with open(LINE_BREAK_TEST_TXT, "r", encoding="utf-8") as handle:
+    with open(path, "r", encoding="utf-8") as handle:
         for number, line in enumerate(handle, start=1):
             body = strip_comment(line)
             if not body:
@@ -173,25 +183,25 @@ def read_break_test_rows():
                 if token in (BREAK_MARKER, NO_BREAK_MARKER):
                     if not expecting_marker:
                         raise SystemExit(
-                            "LineBreakTest.txt line %d has two markers in a "
-                            "row" % number)
+                            "%s line %d has two markers in a row"
+                            % (name, number))
                     flags.append(token == BREAK_MARKER)
                     expecting_marker = False
                 else:
                     if expecting_marker:
                         raise SystemExit(
-                            "LineBreakTest.txt line %d has two code points in "
-                            "a row" % number)
+                            "%s line %d has two code points in a row"
+                            % (name, number))
                     codepoints.append(int(token, 16))
                     expecting_marker = True
             if expecting_marker:
                 raise SystemExit(
-                    "LineBreakTest.txt line %d ends at a code point rather "
-                    "than a boundary marker" % number)
+                    "%s line %d ends at a code point rather than a boundary "
+                    "marker" % (name, number))
             if len(flags) != len(codepoints) + 1:
                 raise SystemExit(
-                    "LineBreakTest.txt line %d carries %d flags for %d code "
-                    "points" % (number, len(flags), len(codepoints)))
+                    "%s line %d carries %d flags for %d code points"
+                    % (name, number, len(flags), len(codepoints)))
             rows.append((codepoints, flags))
     return rows
 
@@ -252,6 +262,50 @@ def format_lookup(func, doc, table, default):
     ])
 
 
+def format_rows_module(uax, algorithm, corpus, rows):
+    """A corpus rows module: the published rows of one break corpus, as data.
+
+    The `corpus` package's two gates read `PUBLISHED_ROWS` and
+    `PUBLISHED_COUNT`, so each published corpus gets one of these and the
+    gates serve them all.
+    """
+    row_lines = ["PUBLISHED_ROWS: list[tuple[list[int], list[bool]]] = ["]
+    for codepoints, flags in rows:
+        row_lines.append("    ([%s], [%s])," % (
+            ", ".join(str(cp) for cp in codepoints),
+            ", ".join("True" if flag else "False" for flag in flags)))
+    row_lines.append("]")
+
+    return "\n".join([
+        '"""The published UAX #%s %s corpus, ``%s``.' % (uax, algorithm, corpus),
+        "",
+        "Hand-written vectors cannot establish a segmentation algorithm: its",
+        "rules read context on both sides of a boundary and the answer",
+        "depends on state carried from earlier in the sequence, so a wrong",
+        "rule survives any vector a person would pick. The Unicode Consortium",
+        "publishes a corpus per algorithm for that reason, and this is it, as",
+        "data.",
+        "",
+        "Each row is the code points of one test case and the boundary flags",
+        "the file writes for it, ``True`` for a break opportunity. A row",
+        "carries one more flag than code points.",
+        "",
+        "Generated by ``tools/generate_line_break_tables.py``. Edit that",
+        'script and regenerate rather than editing this file."""',
+        "",
+        "from __future__ import annotations",
+        "",
+        "# How many rows the pinned corpus carries, counted at generation.",
+        "# The corpus gate asserts the emitted row count against this, so a",
+        "# row lost between the file and the table fails rather than quietly",
+        "# shrinking the denominator.",
+        "PUBLISHED_COUNT = %d" % len(rows),
+        "",
+        "\n".join(row_lines),
+        "",
+    ])
+
+
 def write_file(path, text):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:
@@ -266,7 +320,8 @@ def main():
         EAST_ASIAN_WIDTH_TXT, EAW_VALUES, "East_Asian_Width"))
     lb_ranges = coalesce(read_two_field_rows(
         LINE_BREAK_TXT, LB_VALUES, "Line_Break"))
-    test_rows = read_break_test_rows()
+    test_rows = read_break_test_rows(LINE_BREAK_TEST_TXT)
+    grapheme_rows = read_break_test_rows(GRAPHEME_BREAK_TEST_TXT)
 
     write_file(GENERAL_CATEGORY_PY, "\n".join([
         '"""General_Category ranges from UCD ``UnicodeData.txt``.',
@@ -358,41 +413,10 @@ def main():
         "",
     ]))
 
-    row_lines = ["PUBLISHED_ROWS: list[tuple[list[int], list[bool]]] = ["]
-    for codepoints, flags in test_rows:
-        row_lines.append("    ([%s], [%s])," % (
-            ", ".join(str(cp) for cp in codepoints),
-            ", ".join("True" if flag else "False" for flag in flags)))
-    row_lines.append("]")
-
-    write_file(LINE_BREAK_ROWS_PY, "\n".join([
-        '"""The published UAX #14 line-break corpus, ``LineBreakTest.txt``.',
-        "",
-        "Hand-written vectors cannot establish a segmentation algorithm: its",
-        "rules read context on both sides of a boundary and the answer",
-        "depends on state carried from earlier in the sequence, so a wrong",
-        "rule survives any vector a person would pick. The Unicode Consortium",
-        "publishes a corpus per algorithm for that reason, and this is it, as",
-        "data.",
-        "",
-        "Each row is the code points of one test case and the boundary flags",
-        "the file writes for it, ``True`` for a break opportunity. A row",
-        "carries one more flag than code points.",
-        "",
-        "Generated by ``tools/generate_line_break_tables.py``. Edit that",
-        'script and regenerate rather than editing this file."""',
-        "",
-        "from __future__ import annotations",
-        "",
-        "# How many rows the pinned corpus carries, counted at generation.",
-        "# The corpus gate asserts the emitted row count against this, so a",
-        "# row lost between the file and the table fails rather than quietly",
-        "# shrinking the denominator.",
-        "PUBLISHED_COUNT = %d" % len(test_rows),
-        "",
-        "\n".join(row_lines),
-        "",
-    ]))
+    write_file(LINE_BREAK_ROWS_PY, format_rows_module(
+        "14", "line-break", "LineBreakTest.txt", test_rows))
+    write_file(GRAPHEME_ROWS_PY, format_rows_module(
+        "29", "grapheme-cluster", "GraphemeBreakTest.txt", grapheme_rows))
 
 
 if __name__ == "__main__":

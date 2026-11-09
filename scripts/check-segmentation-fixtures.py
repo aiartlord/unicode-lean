@@ -83,9 +83,18 @@ def describe(document: dict) -> str:
         len(document["cases"]), document["published_row_count"])
 
 
-def replays(port: str, fixture: str) -> bool:
-    """Whether any of the port's test sources name the fixture."""
-    stem = fixture.rsplit(".", 1)[0]
+# The published corpus each fixture's algorithm is judged against. A port that
+# names neither the corpus nor the fixture has no suite for that algorithm at
+# all, which is a different thing from a suite carrying a weaker set, so the
+# gate reports the two separately instead of calling both pending.
+FIXTURE_CORPUS = {
+    "line_break_vectors.json": "LineBreakTest.txt",
+    "grapheme_vectors.json": "GraphemeBreakTest.txt",
+}
+
+
+def mentions(port: str, needle: str) -> bool:
+    """Whether any of the port's test sources name `needle`."""
     for root in PORT_TEST_ROOTS.get(port, []):
         directory = ROOT / root
         if not directory.is_dir():
@@ -97,9 +106,19 @@ def replays(port: str, fixture: str) -> bool:
                 text = path.read_text(encoding="utf-8", errors="ignore")
             except OSError:
                 continue
-            if stem in text:
+            if needle in text:
                 return True
     return False
+
+
+def replays(port: str, fixture: str) -> bool:
+    """Whether the port's tests replay the shared fixture."""
+    return mentions(port, fixture.rsplit(".", 1)[0])
+
+
+def has_suite(port: str, fixture: str) -> bool:
+    """Whether the port judges this algorithm against its published corpus."""
+    return mentions(port, FIXTURE_CORPUS[fixture])
 
 
 def main() -> int:
@@ -144,25 +163,38 @@ def main() -> int:
                     "scripts/internal/generate_segmentation_fixtures.py"
                     % (port, fixture))
 
+    absent: list[str] = []
     for port in sorted(PORT_TEST_ROOTS):
         for fixture in roots:
-            if not replays(port, fixture):
-                pending.append("%s does not replay %s" % (port, fixture))
+            if replays(port, fixture):
+                continue
+            if has_suite(port, fixture):
+                pending.append(
+                    "%s judges %s against its corpus but does not replay the "
+                    "shared vectors" % (port, FIXTURE_CORPUS[fixture]))
+            else:
+                absent.append(
+                    "%s has no suite for %s" % (port, FIXTURE_CORPUS[fixture]))
 
     for failure in failures:
         print("FATAL: %s" % failure, file=sys.stderr)
     for item in pending:
         print("PENDING: %s" % item)
+    for item in absent:
+        print("ABSENT:  %s" % item)
 
     if failures:
         return 1
     if pending and not args.list:
         print(
-            "FATAL: %d port/fixture pair(s) do not replay the shared vectors"
-            % len(pending), file=sys.stderr)
+            "FATAL: %d port(s) judge a corpus but carry a weaker vector set "
+            "than their siblings" % len(pending), file=sys.stderr)
         return 1
     print("clean: segmentation vector fixtures are in sync"
-          + ("" if pending else " and every port replays them"))
+          + ("" if pending else " and every port with a suite replays them"))
+    if absent:
+        print("note: %d port/algorithm pair(s) have no suite at all; that is "
+              "a missing implementation, not a weaker check" % len(absent))
     return 0
 
 
