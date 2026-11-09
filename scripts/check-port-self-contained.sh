@@ -226,6 +226,7 @@ require_file ports/zig/build.zig
 require_file ports/zig/src/confusables_data.zig
 require_file ports/zig/src/case_folding_data.zig
 require_file ports/zig/src/normalization_data.zig
+require_file ports/zig/src/property_data.zig
 require_file ports/zig/src/data/confusables.txt
 require_file ports/zig/src/data/CaseFolding.txt
 require_file ports/zig/src/data/KnownAttackTargets.txt
@@ -238,14 +239,21 @@ require_file ports/zig/testdata/fixtures/security/detectors/homoglyph_confusable
 require_file ports/zig/testdata/fixtures/security/detectors/mixed_script_admissibility.json
 grep -Fq '@embedFile("data/KnownAttackTargets.txt")' ports/zig/src/security.zig \
   || fail "Zig known-target data is not embedded"
-grep -Fq '@embedFile("data/StandardizedVariants.txt")' ports/zig/src/security.zig \
-  || fail "Zig standardized variation data is not embedded"
-grep -Fq '@embedFile("data/emoji-variation-sequences.txt")' ports/zig/src/security.zig \
-  || fail "Zig emoji variation data is not embedded"
 grep -Fq '@import("normalization_data.zig")' ports/zig/src/security.zig \
   || fail "Zig normalization data is not imported"
 grep -Fq '@import("case_folding_data.zig")' ports/zig/src/security.zig \
   || fail "Zig case folding data is not imported"
+# The properties the monitor reads per code point, and the two variation
+# tables, reach it through the generated range module rather than as embedded
+# text: the module has to exist, be imported, and carry each table.
+grep -Fq '@import("property_data.zig")' ports/zig/src/security.zig \
+  || fail "Zig generated property data is not imported"
+for zig_table in variation_pairs xid_start xid_continue grapheme_extend \
+  identifier_status_allowed script script_extensions joining_type \
+  zwj_alphabet script_aliases known_script_abbrevs; do
+  grep -Fq "pub const ${zig_table} = " ports/zig/src/property_data.zig \
+    || fail "Zig generated property data carries no ${zig_table} table"
+done
 reject_runtime_pattern \
   "zig runtime source" \
   '(\.\./|fixtures/security|std\.fs|readFile)' \

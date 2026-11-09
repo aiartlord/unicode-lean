@@ -6,18 +6,15 @@ const bidi_class_data = @import("bidi_class_data.zig");
 const east_asian_width_data = @import("east_asian_width_data.zig");
 const casing_data = @import("casing_data.zig");
 const bip39_data = @import("bip39_data.zig");
+const property_data = @import("property_data.zig");
 
+// The two bundled tables a scan still reads as text, each walked once per
+// scanned input rather than once per code point. The properties asked per code
+// point come from property_data.zig, generated from these same files under
+// src/data by tools/generate_property_data.py: the ranges are sorted and
+// disjoint there, so a lookup bisects instead of parsing a megabyte of text.
 const known_attack_targets_raw = @embedFile("data/KnownAttackTargets.txt");
-const standardized_variants_raw = @embedFile("data/StandardizedVariants.txt");
-const emoji_variation_sequences_raw = @embedFile("data/emoji-variation-sequences.txt");
-const emoji_data_raw = @embedFile("data/emoji-data.txt");
 const emoji_zwj_sequences_raw = @embedFile("data/emoji-zwj-sequences.txt");
-const derived_core_properties_raw = @embedFile("data/DerivedCoreProperties.txt");
-const identifier_status_raw = @embedFile("data/IdentifierStatus.txt");
-const scripts_raw = @embedFile("data/Scripts.txt");
-const script_extensions_raw = @embedFile("data/ScriptExtensions.txt");
-const property_value_aliases_raw = @embedFile("data/PropertyValueAliases.txt");
-const derived_joining_type_raw = @embedFile("data/DerivedJoiningType.txt");
 // Working width of every bounded buffer: skeletons, NFD/NFKD/NFC/NFKC
 // expansions, case mappings, finding positions. The port scans without an
 // allocator, so a form that does not fit is not truncated and not read as
@@ -1240,28 +1237,25 @@ fn isRegisteredVariationPosition(input: []const u32, position: usize) bool {
     return position > 0 and isRegisteredVariationPair(input[position - 1], input[position]);
 }
 
+/// True iff (base, vs) is a registered variation sequence of either
+/// data/StandardizedVariants.txt or data/emoji-variation-sequences.txt, read
+/// from the generated property_data.variation_pairs table. The generator takes
+/// a row's pair only when the field before its first `;` holds exactly two hex
+/// tokens, which is the condition the text scan applied.
 fn isRegisteredVariationPair(base: u32, vs: u32) bool {
-    return legalVariationSourceContains(standardized_variants_raw, base, vs) or
-        legalVariationSourceContains(emoji_variation_sequences_raw, base, vs);
-}
-
-fn legalVariationSourceContains(raw: []const u8, base: u32, vs: u32) bool {
-    var offset: usize = 0;
-    while (nextLine(raw, &offset)) |raw_line| {
-        const comment_end = std.mem.indexOfScalar(u8, raw_line, '#') orelse raw_line.len;
-        const body = raw_line[0..comment_end];
-        const pair_end = std.mem.indexOfScalar(u8, body, ';') orelse body.len;
-        const pair_part = trimAscii(body[0..pair_end]);
-        if (pair_part.len == 0) continue;
-
-        var fields = std.mem.tokenizeAny(u8, pair_part, " \t\r\n");
-        const base_token = fields.next() orelse continue;
-        const vs_token = fields.next() orelse continue;
-        if (fields.next() != null) continue;
-
-        const parsed_base = parseHexU32(base_token) orelse continue;
-        const parsed_vs = parseHexU32(vs_token) orelse continue;
-        if (parsed_base == base and parsed_vs == vs) return true;
+    const pairs = property_data.variation_pairs[0..];
+    var lo: usize = 0;
+    var hi: usize = pairs.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        const pair = pairs[mid];
+        if (base < pair.base or (base == pair.base and vs < pair.selector)) {
+            hi = mid;
+        } else if (base > pair.base or (base == pair.base and vs > pair.selector)) {
+            lo = mid + 1;
+        } else {
+            return true;
+        }
     }
     return false;
 }
@@ -2557,8 +2551,10 @@ fn simpleLowercase(cp: u32) u32 {
     return cp;
 }
 
-// Membership in a sorted, disjoint range table (Cased / Soft_Dotted).
-fn inCasingRange(ranges: []const casing_data.Range, cp: u32) bool {
+// Membership in a sorted, disjoint range table of `{ start, end }` rows. The
+// generated property modules all carry that shape, so one bisection serves
+// every table rather than one per table.
+fn inRangeTable(comptime Row: type, ranges: []const Row, cp: u32) bool {
     var lo: usize = 0;
     var hi: usize = ranges.len;
     while (lo < hi) {
@@ -2575,12 +2571,38 @@ fn inCasingRange(ranges: []const casing_data.Range, cp: u32) bool {
     return false;
 }
 
+// The value of the one range covering cp in a sorted, disjoint table of
+// `{ start, end, value }` rows, or fallback when none covers it. The tables
+// are built so the covering row is the row the text scan would have found
+// first, which is what makes the order they are sorted in immaterial.
+fn valueInRangeTable(
+    comptime Row: type,
+    ranges: []const Row,
+    cp: u32,
+    fallback: @TypeOf(@as(Row, undefined).value),
+) @TypeOf(fallback) {
+    var lo: usize = 0;
+    var hi: usize = ranges.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        const range = ranges[mid];
+        if (cp < range.start) {
+            hi = mid;
+        } else if (cp > range.end) {
+            lo = mid + 1;
+        } else {
+            return range.value;
+        }
+    }
+    return fallback;
+}
+
 fn isCased(cp: u32) bool {
-    return inCasingRange(casing_data.cased[0..], cp);
+    return inRangeTable(casing_data.Range, casing_data.cased[0..], cp);
 }
 
 fn isSoftDotted(cp: u32) bool {
-    return inCasingRange(casing_data.soft_dotted[0..], cp);
+    return inRangeTable(casing_data.Range, casing_data.soft_dotted[0..], cp);
 }
 
 // Context predicates (UAX #21). `prefix` is the forward-ordered preceding
@@ -3721,32 +3743,10 @@ pub const ai_watermark_detectability = struct {
     // ── Emoji property table (bundled data/emoji-data.txt, Emoji rows) ───
 
     /// True iff cp has the Emoji = Yes property per the bundled
-    /// data/emoji-data.txt. Scans the embedded table's Emoji rows on each call,
-    /// mirroring the port's runtime data-parse idiom (see homoglyphTargetMatch);
-    /// never consults a host emoji library. Each non-comment row is
-    /// `<range> ; <property> # <comment>`; only rows whose property is exactly
-    /// Emoji are kept.
+    /// data/emoji-data.txt, read from the generated property_data.emoji table;
+    /// never consults a host emoji library.
     fn isEmoji(cp: u32) bool {
-        var offset: usize = 0;
-        while (nextLine(emoji_data_raw, &offset)) |raw_line| {
-            const body = if (std.mem.indexOfScalar(u8, raw_line, '#')) |idx| raw_line[0..idx] else raw_line;
-            const stripped = trimAscii(body);
-            if (stripped.len == 0) continue;
-            var fields = std.mem.splitScalar(u8, stripped, ';');
-            const range_field = fields.next() orelse continue;
-            const prop_field = fields.next() orelse continue;
-            if (!std.mem.eql(u8, trimAscii(prop_field), "Emoji")) continue;
-            const range = trimAscii(range_field);
-            if (std.mem.indexOf(u8, range, "..")) |dot_idx| {
-                const lo = parseHexU32(trimAscii(range[0..dot_idx])) orelse continue;
-                const hi = parseHexU32(trimAscii(range[dot_idx + 2 ..])) orelse continue;
-                if (lo <= cp and cp <= hi) return true;
-            } else {
-                const single = parseHexU32(range) orelse continue;
-                if (single == cp) return true;
-            }
-        }
-        return false;
+        return inRangeTable(property_data.Range, property_data.emoji[0..], cp);
     }
 
     // ── Codepoint probes ────────────────────────────────────────────────
@@ -4414,15 +4414,22 @@ pub const emoji_zwj_integrity = struct {
 
     /// True iff cp appears at some position of a registered RGI ZWJ sequence,
     /// excluding the joiner U+200D itself — the ZWJ alphabet, the canonical
-    /// "what may flank a ZWJ?" predicate. Scans the bundled table on each call.
+    /// "what may flank a ZWJ?" predicate. Read from the generated
+    /// property_data.zwj_alphabet table, which the generator collects from
+    /// every position of every row the parser below accepts.
     pub fn isEmojiTarget(cp: u32) bool {
         if (cp == ZWJ) return false;
-        var buf: [MAX_ROW_LEN]u32 = undefined;
-        var offset: usize = 0;
-        while (nextLine(emoji_zwj_sequences_raw, &offset)) |raw_line| {
-            const count = parseRow(raw_line, &buf) orelse continue;
-            for (buf[0..count]) |row_cp| {
-                if (row_cp != ZWJ and row_cp == cp) return true;
+        const alphabet = property_data.zwj_alphabet[0..];
+        var lo: usize = 0;
+        var hi: usize = alphabet.len;
+        while (lo < hi) {
+            const mid = lo + (hi - lo) / 2;
+            if (cp < alphabet[mid]) {
+                hi = mid;
+            } else if (cp > alphabet[mid]) {
+                lo = mid + 1;
+            } else {
+                return true;
             }
         }
         return false;
@@ -4697,32 +4704,12 @@ pub const emoji_zwj_integrity = struct {
 // ─────────────────────────────────────────────────────────────────────
 
 /// True iff cp has Grapheme_Extend = Yes per the bundled
-/// data/DerivedCoreProperties.txt. Scans the embedded table's Grapheme_Extend
-/// rows on each call, mirroring the port's runtime property-parse idiom (see
-/// emoji_zwj_integrity.isEmoji). Each non-comment row is
-/// `<range> ; <property> # <comment>`; only rows whose property is exactly
-/// Grapheme_Extend are kept.
+/// data/DerivedCoreProperties.txt, read from the generated
+/// property_data.grapheme_extend table. The generator keeps exactly the rows
+/// whose property field is Grapheme_Extend and checks the table against a
+/// direct parse of that file over the whole code space.
 fn hasGraphemeExtendProperty(cp: u32) bool {
-    var offset: usize = 0;
-    while (nextLine(derived_core_properties_raw, &offset)) |raw_line| {
-        const body = if (std.mem.indexOfScalar(u8, raw_line, '#')) |idx| raw_line[0..idx] else raw_line;
-        const stripped = trimAscii(body);
-        if (stripped.len == 0) continue;
-        var fields = std.mem.splitScalar(u8, stripped, ';');
-        const range_field = fields.next() orelse continue;
-        const prop_field = fields.next() orelse continue;
-        if (!std.mem.eql(u8, trimAscii(prop_field), "Grapheme_Extend")) continue;
-        const range = trimAscii(range_field);
-        if (std.mem.indexOf(u8, range, "..")) |dot_idx| {
-            const lo = parseHexU32(trimAscii(range[0..dot_idx])) orelse continue;
-            const hi = parseHexU32(trimAscii(range[dot_idx + 2 ..])) orelse continue;
-            if (lo <= cp and cp <= hi) return true;
-        } else {
-            const single = parseHexU32(range) orelse continue;
-            if (single == cp) return true;
-        }
-    }
-    return false;
+    return inRangeTable(property_data.Range, property_data.grapheme_extend[0..], cp);
 }
 
 /// True iff cp has Grapheme_Cluster_Break = Extend — the combining-mark class
@@ -4746,31 +4733,12 @@ fn isGraphemeExtend(cp: u32) bool {
 // ─────────────────────────────────────────────────────────────────────
 
 /// True iff cp has Identifier_Status = Allowed per the bundled
-/// data/IdentifierStatus.txt. Mirrors the port's runtime property-parse idiom
-/// (see hasGraphemeExtendProperty): split each row on ';', keep only rows whose
-/// value field is exactly Allowed, and test the code point against the row's
-/// single value or `lo..hi` range.
+/// data/IdentifierStatus.txt, read from the generated
+/// property_data.identifier_status_allowed table. Only the value Allowed is
+/// listed in that file, and by its `@missing: 0000..10FFFF; Restricted`
+/// default every code point outside the table is Restricted.
 fn isIdAllowed(cp: u32) bool {
-    var offset: usize = 0;
-    while (nextLine(identifier_status_raw, &offset)) |raw_line| {
-        const body = if (std.mem.indexOfScalar(u8, raw_line, '#')) |idx| raw_line[0..idx] else raw_line;
-        const stripped = trimAscii(body);
-        if (stripped.len == 0) continue;
-        var fields = std.mem.splitScalar(u8, stripped, ';');
-        const range_field = fields.next() orelse continue;
-        const status_field = fields.next() orelse continue;
-        if (!std.mem.eql(u8, trimAscii(status_field), "Allowed")) continue;
-        const range = trimAscii(range_field);
-        if (std.mem.indexOf(u8, range, "..")) |dot_idx| {
-            const lo = parseHexU32(trimAscii(range[0..dot_idx])) orelse continue;
-            const hi = parseHexU32(trimAscii(range[dot_idx + 2 ..])) orelse continue;
-            if (lo <= cp and cp <= hi) return true;
-        } else {
-            const single = parseHexU32(range) orelse continue;
-            if (single == cp) return true;
-        }
-    }
-    return false;
+    return inRangeTable(property_data.Range, property_data.identifier_status_allowed[0..], cp);
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -4790,42 +4758,20 @@ fn isIdAllowed(cp: u32) bool {
 // library is consulted and no new data file is introduced.
 // ─────────────────────────────────────────────────────────────────────
 
-/// True iff cp is listed under the given DerivedCoreProperties.txt property
-/// (exact value-field match). Scans the embedded table on each call, mirroring
-/// hasGraphemeExtendProperty: split each row on ';', keep only rows whose value
-/// field equals property, and test cp against the row's single value or `lo..hi`
-/// range.
-fn hasDerivedCoreProperty(cp: u32, property: []const u8) bool {
-    var offset: usize = 0;
-    while (nextLine(derived_core_properties_raw, &offset)) |raw_line| {
-        const body = if (std.mem.indexOfScalar(u8, raw_line, '#')) |idx| raw_line[0..idx] else raw_line;
-        const stripped = trimAscii(body);
-        if (stripped.len == 0) continue;
-        var fields = std.mem.splitScalar(u8, stripped, ';');
-        const range_field = fields.next() orelse continue;
-        const prop_field = fields.next() orelse continue;
-        if (!std.mem.eql(u8, trimAscii(prop_field), property)) continue;
-        const range = trimAscii(range_field);
-        if (std.mem.indexOf(u8, range, "..")) |dot_idx| {
-            const lo = parseHexU32(trimAscii(range[0..dot_idx])) orelse continue;
-            const hi = parseHexU32(trimAscii(range[dot_idx + 2 ..])) orelse continue;
-            if (lo <= cp and cp <= hi) return true;
-        } else {
-            const single = parseHexU32(range) orelse continue;
-            if (single == cp) return true;
-        }
-    }
-    return false;
-}
-
-/// True iff cp has XID_Start = Yes per the bundled data/DerivedCoreProperties.txt.
+/// True iff cp has XID_Start = Yes per the bundled
+/// data/DerivedCoreProperties.txt, read from the generated
+/// property_data.xid_start table.
 fn isXidStart(cp: u32) bool {
-    return hasDerivedCoreProperty(cp, "XID_Start");
+    return inRangeTable(property_data.Range, property_data.xid_start[0..], cp);
 }
 
-/// True iff cp has XID_Continue = Yes per the bundled data/DerivedCoreProperties.txt.
+/// True iff cp has XID_Continue = Yes per the bundled
+/// data/DerivedCoreProperties.txt, read from the generated
+/// property_data.xid_continue table. The token walk asks this of every code
+/// point of an input and then of every code point of each token it finds, so
+/// it is the most-asked property in the monitor.
 fn isXidContinue(cp: u32) bool {
-    return hasDerivedCoreProperty(cp, "XID_Continue");
+    return inRangeTable(property_data.Range, property_data.xid_continue[0..], cp);
 }
 
 /// UAX #31 default identifier start: XID_Start or U+005F LOW LINE.
@@ -6009,48 +5955,22 @@ pub const skin_tone_variation_forgery = struct {
     /// (U+1F3FB..U+1F3FF), aliased here so the reuse is explicit.
     const skinToneModifierPredicate = emoji_zwj_integrity.isEmojiModifier;
 
-    /// True iff cp lies in a closed interval of the bundled data/emoji-data.txt
-    /// carrying exactly the named property. Scans the embedded table on each
-    /// call, mirroring the ai-watermark-detectability detector's isEmoji scan;
-    /// never consults a host emoji library. Each non-comment row is
-    /// `<range> ; <property> # <comment>`; only rows whose property field equals
-    /// property exactly are considered.
-    fn hasEmojiProperty(property: []const u8, cp: u32) bool {
-        var offset: usize = 0;
-        while (nextLine(emoji_data_raw, &offset)) |raw_line| {
-            const body = if (std.mem.indexOfScalar(u8, raw_line, '#')) |idx| raw_line[0..idx] else raw_line;
-            const stripped = trimAscii(body);
-            if (stripped.len == 0) continue;
-            var fields = std.mem.splitScalar(u8, stripped, ';');
-            const range_field = fields.next() orelse continue;
-            const prop_field = fields.next() orelse continue;
-            if (!std.mem.eql(u8, trimAscii(prop_field), property)) continue;
-            const range = trimAscii(range_field);
-            if (std.mem.indexOf(u8, range, "..")) |dot_idx| {
-                const lo = parseHexU32(trimAscii(range[0..dot_idx])) orelse continue;
-                const hi = parseHexU32(trimAscii(range[dot_idx + 2 ..])) orelse continue;
-                if (lo <= cp and cp <= hi) return true;
-            } else {
-                const single = parseHexU32(range) orelse continue;
-                if (single == cp) return true;
-            }
-        }
-        return false;
-    }
-
     /// True iff cp is an emoji skin-tone modifier (reuses the port's predicate).
     pub fn isSkinTone(cp: u32) bool {
         return skinToneModifierPredicate(cp);
     }
 
-    /// True iff cp has Emoji_Modifier_Base per the bundled data/emoji-data.txt.
+    /// True iff cp has Emoji_Modifier_Base per the bundled data/emoji-data.txt,
+    /// read from the generated property_data.emoji_modifier_base table; never
+    /// consults a host emoji library.
     pub fn isSkinToneBase(cp: u32) bool {
-        return hasEmojiProperty("Emoji_Modifier_Base", cp);
+        return inRangeTable(property_data.Range, property_data.emoji_modifier_base[0..], cp);
     }
 
-    /// True iff cp has Emoji_Presentation per the bundled data/emoji-data.txt.
+    /// True iff cp has Emoji_Presentation per the bundled data/emoji-data.txt,
+    /// read from the generated property_data.emoji_presentation table.
     pub fn isEmojiPresentation(cp: u32) bool {
-        return hasEmojiProperty("Emoji_Presentation", cp);
+        return inRangeTable(property_data.Range, property_data.emoji_presentation[0..], cp);
     }
 
     /// True iff cp is U+FE0E (VS15, text-style variation selector).
@@ -6973,65 +6893,48 @@ fn coveredSet(tags: []const []const u8) ScriptSet {
     return set;
 }
 
-// The value field of the row covering cp in a "RANGE ; VALUE" table.
-fn scriptRowValue(raw: []const u8, cp: u32) ?[]const u8 {
-    var offset: usize = 0;
-    while (nextLine(raw, &offset)) |raw_line| {
-        const body = if (std.mem.indexOfScalar(u8, raw_line, '#')) |idx| raw_line[0..idx] else raw_line;
-        const stripped = trimAscii(body);
-        if (stripped.len == 0) continue;
-        var fields = std.mem.splitScalar(u8, stripped, ';');
-        const range_field = fields.next() orelse continue;
-        const value_field = fields.next() orelse continue;
-        const range = trimAscii(range_field);
-        var lo: u32 = 0;
-        var hi: u32 = 0;
-        if (std.mem.indexOf(u8, range, "..")) |dot_idx| {
-            lo = parseHexU32(trimAscii(range[0..dot_idx])) orelse continue;
-            hi = parseHexU32(trimAscii(range[dot_idx + 2 ..])) orelse continue;
-        } else {
-            lo = parseHexU32(range) orelse continue;
-            hi = lo;
-        }
-        if (lo <= cp and cp <= hi) return trimAscii(value_field);
-    }
-    return null;
-}
-
+/// The Script of cp, from the generated property_data.script table. Unknown
+/// when no range covers it, which is the default Scripts.txt declares.
 fn scriptOf(cp: u32) []const u8 {
-    return scriptRowValue(scripts_raw, cp) orelse "Unknown";
+    return valueInRangeTable(
+        property_data.StringRange,
+        property_data.script[0..],
+        cp,
+        @as([]const u8, "Unknown"),
+    );
 }
 
 // The four-letter abbreviation for a Script long name, from the "sc" rows of
-// PropertyValueAliases.txt.
+// PropertyValueAliases.txt, read from the generated property_data table. The
+// table is sorted by long name, so the lookup bisects.
 fn scriptLongToAbbrev(long: []const u8) ?[]const u8 {
-    var offset: usize = 0;
-    while (nextLine(property_value_aliases_raw, &offset)) |raw_line| {
-        const body = if (std.mem.indexOfScalar(u8, raw_line, '#')) |idx| raw_line[0..idx] else raw_line;
-        var fields = std.mem.splitScalar(u8, body, ';');
-        const prop = trimAscii(fields.next() orelse continue);
-        if (!std.mem.eql(u8, prop, "sc")) continue;
-        const abbrev = trimAscii(fields.next() orelse continue);
-        const name = trimAscii(fields.next() orelse continue);
-        if (std.mem.eql(u8, name, long)) return abbrev;
+    const aliases = property_data.script_aliases[0..];
+    var lo: usize = 0;
+    var hi: usize = aliases.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        switch (std.mem.order(u8, long, aliases[mid].long)) {
+            .lt => hi = mid,
+            .gt => lo = mid + 1,
+            .eq => return aliases[mid].abbrev,
+        }
     }
     return null;
 }
 
 // True iff the abbreviation occurs anywhere in ScriptExtensions.txt, which is
-// the resolver's whole vocabulary.
+// the resolver's whole vocabulary. The generated table holds that vocabulary
+// sorted, so the lookup bisects.
 fn isKnownScriptAbbrev(abbrev: []const u8) bool {
-    var offset: usize = 0;
-    while (nextLine(script_extensions_raw, &offset)) |raw_line| {
-        const body = if (std.mem.indexOfScalar(u8, raw_line, '#')) |idx| raw_line[0..idx] else raw_line;
-        const stripped = trimAscii(body);
-        if (stripped.len == 0) continue;
-        var fields = std.mem.splitScalar(u8, stripped, ';');
-        _ = fields.next() orelse continue;
-        const value_field = fields.next() orelse continue;
-        var tags = std.mem.tokenizeAny(u8, trimAscii(value_field), " \t");
-        while (tags.next()) |tag| {
-            if (std.mem.eql(u8, tag, abbrev)) return true;
+    const known = property_data.known_script_abbrevs[0..];
+    var lo: usize = 0;
+    var hi: usize = known.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        switch (std.mem.order(u8, abbrev, known[mid])) {
+            .lt => hi = mid,
+            .gt => lo = mid + 1,
+            .eq => return true,
         }
     }
     return false;
@@ -7039,18 +6942,13 @@ fn isKnownScriptAbbrev(abbrev: []const u8) bool {
 
 // ── DerivedJoiningType.txt — RFC 5892 Appendix A.1 support ────────────────
 
-// Joining_Type for one codepoint, as its single-letter token. The file shares
-// the "RANGE ; VALUE" shape the script tables use, so it reuses the same row
-// scan. The @missing line declares Non_Joining over the whole space, so an
-// unlisted codepoint is 'U'.
+// Joining_Type for one codepoint, as its single-letter token, from the
+// generated property_data.joining_type table. The generator reduces each row's
+// value to that letter and writes 'U' for any value outside C D L R T, and the
+// @missing line declares Non_Joining over the whole space, so an unlisted
+// codepoint is 'U' as well.
 fn joiningTypeOf(cp: u32) u8 {
-    const value = scriptRowValue(derived_joining_type_raw, cp) orelse return 'U';
-    const token = trimAscii(value);
-    if (token.len != 1) return 'U';
-    return switch (token[0]) {
-        'C', 'D', 'L', 'R', 'T' => token[0],
-        else => 'U',
-    };
+    return valueInRangeTable(property_data.ByteRange, property_data.joining_type[0..], cp, 'U');
 }
 
 // True iff cp has Canonical_Combining_Class 9, the Virama used to request an
@@ -7138,8 +7036,16 @@ fn suspiciousZeroWidthPositions(input: []const u32) ?Positions {
 
 fn resolveScripts(cp: u32) ScriptSet {
     var set = ScriptSet{};
-    if (scriptRowValue(script_extensions_raw, cp)) |value| {
-        var tags = std.mem.tokenizeAny(u8, value, " \t");
+    // The generated table carries no empty tag list, so the empty string is
+    // how it says no row covers this code point.
+    const extensions = valueInRangeTable(
+        property_data.StringRange,
+        property_data.script_extensions[0..],
+        cp,
+        @as([]const u8, ""),
+    );
+    if (extensions.len != 0) {
+        var tags = std.mem.tokenizeAny(u8, extensions, " \t");
         while (tags.next()) |tag| set.add(tag);
         return set;
     }
@@ -7268,7 +7174,7 @@ fn hasCrossScriptMix(input: []const u32) bool {
 /// hasDerivedCoreProperty reader the XID predicates share because the scan path
 /// asks this question once per codepoint, where a whole-file rescan dominates.
 fn isDefaultIgnorableCodepoint(cp: u32) bool {
-    return inCasingRange(casing_data.default_ignorable[0..], cp);
+    return inRangeTable(casing_data.Range, casing_data.default_ignorable[0..], cp);
 }
 
 fn nextLine(raw: []const u8, offset: *usize) ?[]const u8 {
