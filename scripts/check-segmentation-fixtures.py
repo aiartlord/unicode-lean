@@ -178,6 +178,13 @@ TRANSCRIPTIONS = {
             "grapheme::kFixtureDigest",
             ("unicode_cpp::test::grapheme", "kCases"))},
     ),
+    "jvm": (
+        "ports/jvm/src/main/java/com/unicodesecurity/VectorCases.java",
+        {"line_break_vectors.json": ("LINE_BREAK_FIXTURE_DIGEST",
+                                     "LINE_BREAK_CASES"),
+         "grapheme_vectors.json": ("GRAPHEME_FIXTURE_DIGEST",
+                                   "GRAPHEME_CASES")},
+    ),
     "haskell": (
         "ports/haskell/test/VectorCases.hs",
         {"line_break_vectors.json": ("lineBreakFixtureDigest",

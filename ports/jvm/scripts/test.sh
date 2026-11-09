@@ -20,5 +20,6 @@ cp -R src/main/resources/. "$classes/"
 mapfile -t test_sources < <(find src/test/java -name '*.java' | sort)
 "$javac_bin" -encoding UTF-8 -cp "$classes" -d "$test_classes" "${test_sources[@]}"
 "$java_bin" -ea -cp "$classes:$test_classes" com.unicodesecurity.SecurityContractTest
+"$java_bin" -ea -cp "$classes:$test_classes" com.unicodesecurity.LineBreakContractTest
 
 echo "clean: JVM contract tests pass"

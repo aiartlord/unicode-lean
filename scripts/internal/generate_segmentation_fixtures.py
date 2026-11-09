@@ -604,6 +604,93 @@ def haskell_vector_module(documents, texts):
     ])
 
 
+def java_cases(prefix, document, text):
+    """One algorithm's cases as Java fields.
+
+    The package declares no JSON dependency and the self-contained gate
+    refuses a host file read under its main sources, so the vectors are code.
+    A case's arrays are small enough that an initialiser per case stays far
+    under the 64 KB bytecode limit on one method.
+    """
+    lines = [
+        "  // The algorithm these cases judge.",
+        '  static final String %s_ALGORITHM = "%s";'
+        % (prefix, document["algorithm"]),
+        "",
+        "  // SHA-256 of the fixture these cases were transcribed from.",
+        "  static final String %s_FIXTURE_DIGEST =" % prefix,
+        '      "%s";' % hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        "",
+        "  // How many rows the algorithm's published corpus carries, so the",
+        "  // corpus gate and the vector gate cannot drift apart.",
+        "  static final int %s_PUBLISHED_ROW_COUNT = %d;"
+        % (prefix, document["published_row_count"]),
+        "",
+        "  // One case per rule, the same bytes every port replays.",
+        "  static final VectorCase[] %s_CASES = {" % prefix,
+    ]
+    for case in document["cases"]:
+        points = ", ".join("0x%04X" % cp for cp in case["input"])
+        classes = ", ".join('"%s"' % value for value in case["classes"])
+        marks = ", ".join(
+            "true" if flag else "false" for flag in case["breaks"])
+        lines.append("    new VectorCase(")
+        lines.append('        "%s",' % case["rule"])
+        lines.append('        "%s",' % case["name"])
+        lines.append("        new int[] {%s}," % points)
+        lines.append("        new String[] {%s}," % classes)
+        # Every case carries one more flag than code points, so the mask of
+        # even the empty sequence is non-empty.
+        lines.append("        new boolean[] {%s})," % marks)
+    lines.append("  };")
+    return "\n".join(lines)
+
+
+def java_vector_class(documents, texts):
+    """The Java transcription of both shared vector fixtures."""
+    return "\n".join([
+        "package com.unicodesecurity;",
+        "",
+        "// The shared segmentation vector fixtures, as data.",
+        "//",
+        "// One case per UAX rule, the same bytes every port replays, so each",
+        "// port's segmentation tests ask the same questions instead of a",
+        "// per-port selection of them. The published corpora are the",
+        "// authority; these name which rule each boundary exercises.",
+        "//",
+        "// Transcribed from fixtures/segmentation/line_break_vectors.json and",
+        "// fixtures/segmentation/grapheme_vectors.json. The package declares",
+        "// no JSON dependency and the self-contained gate refuses a host file",
+        "// read under its main sources, so the vectors are code. Each digest",
+        "// below is of the fixture its cases came from, and the fixture gate",
+        "// recomputes it.",
+        "//",
+        "// GENERATED FILE - DO NOT EDIT. Regenerate with",
+        "// scripts/internal/generate_segmentation_fixtures.py.",
+        "final class VectorCases {",
+        "  private VectorCases() {}",
+        "",
+        "  // One published case: the rule it pins, what the boundary does, the",
+        "  // code points, each code point's canonical UCD class, and the",
+        "  // expected boundary mask.",
+        "  //",
+        "  // The mask is the contract every port reproduces. The classes are",
+        "  // recorded for reading: this port names a class by an int code and",
+        "  // the UCD writes AL, so comparing them would test a spelling",
+        "  // rather than a property.",
+        "  record VectorCase(",
+        "      String rule, String name, int[] input, String[] classes,",
+        "      boolean[] breaks) {}",
+        "",
+        java_cases("LINE_BREAK", documents["line_break"],
+                   texts["line_break"]),
+        "",
+        java_cases("GRAPHEME", documents["grapheme"], texts["grapheme"]),
+        "}",
+        "",
+    ])
+
+
 def rust_vector_module(documents, texts):
     """The Rust transcription of both shared vector fixtures."""
     return "\n".join([
@@ -705,6 +792,8 @@ def main():
         (("ports", "cpp", "test", "vector_cases.hpp"), cpp_vector_header),
         (("ports", "haskell", "test", "VectorCases.hs"),
          haskell_vector_module),
+        (("ports", "jvm", "src", "main", "java", "com", "unicodesecurity",
+          "VectorCases.java"), java_vector_class),
     ):
         path = os.path.join(ROOT, *relative)
         write_file(path, emit(documents, texts))
