@@ -3,38 +3,9 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../src/autoload.php';
+require_once __DIR__ . '/segmentation_vectors.php';
 
 use UnicodePhp\Segmentation\Grapheme;
-
-/**
- * Parse one GraphemeBreakTest.txt data row into its code points and its
- * expected boundary mask.
- *
- * A row is a sequence of boundary markers (`÷` break, `×` no break) alternating
- * with hex code points, e.g. `÷ 000D × 000A ÷`. The mask has one entry per
- * marker (length = number of code points + 1); entry `i` is `true` at `÷`.
- *
- * @return array{cps: list<int>, breaks: list<bool>}
- */
-function parse_grapheme_row(string $row): array
-{
-    $cps = [];
-    $breaks = [];
-    foreach (preg_split('/\s+/', trim($row), -1, PREG_SPLIT_NO_EMPTY) as $token) {
-        switch ($token) {
-            case '÷':
-                $breaks[] = true;
-                break;
-            case '×':
-                $breaks[] = false;
-                break;
-            default:
-                $cps[] = intval($token, 16);
-                break;
-        }
-    }
-    return ['cps' => $cps, 'breaks' => $breaks];
-}
 
 function assert_breaks(array $cps, array $expected, string $label): void
 {
@@ -65,7 +36,7 @@ foreach (explode("\n", $contents) as $lineNo => $rawLine) {
     if ($data === '') {
         continue;
     }
-    $parsed = parse_grapheme_row($data);
+    $parsed = parse_break_row($data);
     if (count($parsed['breaks']) !== count($parsed['cps']) + 1) {
         throw new RuntimeException('malformed row ' . ($lineNo + 1) . ': ' . $data);
     }
@@ -73,9 +44,22 @@ foreach (explode("\n", $contents) as $lineNo => $rawLine) {
     $validated++;
 }
 
-if ($validated === 0) {
-    throw new RuntimeException('no GraphemeBreakTest rows were validated');
-}
+// ---- The shared UAX #29 vectors ------------------------------------------- //
+
+// One case per rule, the same bytes every port replays, so no port carries a
+// weaker set of rule checks than another.
+$fixture = segmentation_fixture('grapheme_vectors.json', 'uax29-grapheme-cluster');
+$replayed = replay_segmentation_vectors(
+    $fixture,
+    static fn (array $cps): array => Grapheme::graphemeBreaks($cps),
+);
+
+// The whole corpus must be accounted for, so a row lost between the file and
+// the fold above fails rather than quietly shrinking the denominator. The
+// count comes from the fixture, which the generator counts from the canonical
+// GraphemeBreakTest.txt, so the corpus gate and the vector gate cannot
+// disagree about the size of the corpus.
+assert_published_row_count($fixture['published_row_count'], $validated, 'GraphemeBreakTest.txt');
 
 // ---- Targeted vectors mirrored from the rust port ------------------------- //
 
@@ -110,4 +94,5 @@ if (count(Grapheme::graphemeClusters([0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467]
     throw new RuntimeException('emoji ZWJ sequence should be 1 cluster');
 }
 
-echo 'grapheme_test OK: validated ' . $validated . " GraphemeBreakTest.txt rows + targeted vectors\n";
+echo 'grapheme_test OK: validated ' . $validated . ' GraphemeBreakTest.txt rows + '
+    . $replayed . " shared vectors + targeted vectors\n";
