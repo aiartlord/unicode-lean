@@ -97,13 +97,21 @@ FIXTURE_CORPUS = {
 }
 
 
-def mentions(port: str, needle: str, skip: frozenset[Path] = frozenset()) -> bool:
-    """Whether any of the port's test sources name `needle`.
+def mentions(
+    port: str,
+    needles: str | tuple[str, ...],
+    skip: frozenset[Path] = frozenset(),
+) -> bool:
+    """Whether one of the port's test sources names every needle.
+
+    All needles must land in the SAME file, so a marker can be a pairing — a
+    namespace plus a member — that neither half establishes alone.
 
     `skip` excludes generated data modules. A transcription names the fixture
     it came from in its own header, so counting it would report a port as
     replaying vectors no test has been pointed at yet.
     """
+    wanted = (needles,) if isinstance(needles, str) else needles
     for root in PORT_TEST_ROOTS.get(port, []):
         directory = ROOT / root
         if not directory.is_dir():
@@ -117,7 +125,7 @@ def mentions(port: str, needle: str, skip: frozenset[Path] = frozenset()) -> boo
                 text = path.read_text(encoding="utf-8", errors="ignore")
             except OSError:
                 continue
-            if needle in text:
+            if all(needle in text for needle in wanted):
                 return True
     return False
 
@@ -130,11 +138,11 @@ def replays(port: str, fixture: str) -> bool:
     """
     generated = frozenset(
         (ROOT / relative).resolve()
-        for relative, _constants in TRANSCRIPTIONS.values())
+        for relative, _entries in TRANSCRIPTIONS.values())
     if port in TRANSCRIPTIONS:
-        prefix = ("LINE_BREAK" if fixture.startswith("line_break")
-                  else "GRAPHEME")
-        return mentions(port, "%s_CASES" % prefix, skip=generated)
+        _relative, entries = TRANSCRIPTIONS[port]
+        _digest, marker = entries[fixture]
+        return mentions(port, marker, skip=generated)
     return mentions(port, fixture.rsplit(".", 1)[0], skip=generated)
 
 
@@ -147,28 +155,70 @@ def has_suite(port: str, fixture: str) -> bool:
 # instead of parsing it. The transcription records the digest of the fixture it
 # came from, so a transcription left behind by a regenerated fixture is a
 # failure here rather than a silent divergence.
+# Per fixture: the constant holding that fixture's digest, and the symbol a
+# test names to replay its cases. The two differ by language.
 TRANSCRIPTIONS = {
     "rust": (
         "ports/rust/tests/corpus/vector_cases.rs",
-        {"line_break_vectors.json": "LINE_BREAK_FIXTURE_DIGEST",
-         "grapheme_vectors.json": "GRAPHEME_FIXTURE_DIGEST"},
+        {"line_break_vectors.json": ("LINE_BREAK_FIXTURE_DIGEST",
+                                     "LINE_BREAK_CASES"),
+         "grapheme_vectors.json": ("GRAPHEME_FIXTURE_DIGEST",
+                                   "GRAPHEME_CASES")},
+    ),
+    # A marker is every needle that must appear in ONE test source. The C++
+    # tests reach the cases through a namespace alias, so naming `kCases`
+    # alone would not say which algorithm, and naming the namespace alone
+    # would also match that algorithm's corpus header.
+    "cpp": (
+        "ports/cpp/test/vector_cases.hpp",
+        {"line_break_vectors.json": (
+            "line_break::kFixtureDigest",
+            ("unicode_cpp::test::line_break", "kCases")),
+         "grapheme_vectors.json": (
+            "grapheme::kFixtureDigest",
+            ("unicode_cpp::test::grapheme", "kCases"))},
     ),
 }
+
+# How a transcription spells the constant holding a digest, per language. The
+# gate reads the digest out of the generated source, so it has to know the
+# shape the generator wrote.
+DIGEST_PATTERNS = (
+    # Rust: `pub const NAME: &str = "<64 hex>";`
+    r'{name}:\s*&str\s*=\s*"([0-9a-f]{{64}})"',
+    # C++: `inline constexpr char kFixtureDigest[] =\n    "<64 hex>";`
+    r'{name}\[\]\s*=\s*"([0-9a-f]{{64}})"',
+)
 
 
 def transcription_failures(roots: dict[str, bytes]) -> list[str]:
     """Every transcription whose recorded digest is not its fixture's."""
     out: list[str] = []
-    for port, (relative, constants) in sorted(TRANSCRIPTIONS.items()):
+    for port, (relative, entries) in sorted(TRANSCRIPTIONS.items()):
         path = ROOT / relative
         if not path.is_file():
             out.append("%s: missing transcription %s" % (port, relative))
             continue
+        # A C++ constant is namespace-qualified in the map but written bare in
+        # the source, so the digest is looked for inside that namespace.
         text = path.read_text(encoding="utf-8")
-        for fixture, constant in sorted(constants.items()):
-            match = re.search(
-                r'%s:\s*&str\s*=\s*"([0-9a-f]{64})"' % re.escape(constant),
-                text)
+        for fixture, (constant, _marker) in sorted(entries.items()):
+            namespace, _, bare = constant.rpartition("::")
+            haystack = text
+            if namespace:
+                start = text.find("namespace %s {" % namespace)
+                if start < 0:
+                    out.append("%s: %s has no namespace %s"
+                               % (port, relative, namespace))
+                    continue
+                end = text.find("}  // namespace %s" % namespace, start)
+                haystack = text[start:end if end > start else len(text)]
+            match = None
+            for pattern in DIGEST_PATTERNS:
+                match = re.search(
+                    pattern.format(name=re.escape(bare)), haystack)
+                if match is not None:
+                    break
             if match is None:
                 out.append("%s: %s records no %s"
                            % (port, relative, constant))

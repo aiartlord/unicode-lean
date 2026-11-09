@@ -7,12 +7,17 @@
 #include "unicode_cpp/segmentation/line_break.hpp"
 
 #include "line_break_corpus.hpp"
+#include "vector_cases.hpp"
 
 using unicode_cpp::segmentation::Lb;
 using unicode_cpp::segmentation::line_breaks;
 using unicode_cpp::segmentation::line_runs;
 using unicode_cpp::segmentation::raw_class;
 using unicode_cpp::segmentation::resolved_class;
+
+// Both the corpus header and the vector header put their line-break members in
+// this namespace, and their names do not overlap.
+namespace data = unicode_cpp::test::line_break;
 
 namespace {
 
@@ -34,8 +39,8 @@ bool agrees(const std::vector<bool> &produced, std::span<const bool> published) 
 // What the corpus must be before it can judge anything: every published row
 // reaches the fold, and each row carries one more flag than code points.
 TEST_CASE("the line-break corpus is well formed") {
-  const auto &rows = unicode_cpp::test::kPublishedRows;
-  CHECK(rows.size() == unicode_cpp::test::kPublishedCount);
+  const auto &rows = data::kPublishedRows;
+  CHECK(rows.size() == data::kPublishedCount);
   std::size_t ragged = 0;
   for (const auto &row : rows) {
     if (row.flag_len != row.cp_len + 1) {
@@ -51,13 +56,13 @@ TEST_CASE("the line-break corpus is well formed") {
 // at line_break.hpp's head needed -- span reads in place of positional
 // lits[i]!, and dropping the Lean's write-only spSinceNoSp snapshot field.
 TEST_CASE("the line breaker agrees with every published row") {
-  const auto &rows = unicode_cpp::test::kPublishedRows;
+  const auto &rows = data::kPublishedRows;
   std::size_t disagreements = 0;
   std::size_t first_index = 0;
   for (std::size_t i = 0; i < rows.size(); ++i) {
     const auto produced =
-        line_breaks(unicode_cpp::test::row_codepoints(rows[i]));
-    if (!agrees(produced, unicode_cpp::test::row_flags(rows[i]))) {
+        line_breaks(data::row_codepoints(rows[i]));
+    if (!agrees(produced, data::row_flags(rows[i]))) {
       if (disagreements == 0) {
         first_index = i;
       }
@@ -71,6 +76,26 @@ TEST_CASE("the line breaker agrees with every published row") {
   }
 }
 
+// One case per UAX #14 rule, the same bytes every port replays, so no port can
+// carry a weaker set of rule checks than another. The published corpus above is
+// the authority; these name which rule each boundary exercises.
+TEST_CASE("the shared line-break vectors replay") {
+  REQUIRE(data::kCases.size() > 0);
+  for (const auto &entry : data::kCases) {
+    const auto produced = line_breaks(data::case_codepoints(entry));
+    const bool matched = agrees(produced, data::case_flags(entry));
+    if (!matched) {
+      MESSAGE(entry.rule << ": " << entry.name);
+    }
+    CHECK(matched);
+  }
+}
+
+// Both gates count the same published file, so they cannot drift apart.
+TEST_CASE("the line-break corpus and vectors agree on the row count") {
+  CHECK(data::kPublishedRowCount == data::kPublishedCount);
+}
+
 TEST_CASE("the output carries one flag per boundary") {
   // The Lean lineBreaks_length theorem: cps.size() + 1 flags.
   for (std::size_t length = 0; length < 8; ++length) {
@@ -82,18 +107,9 @@ TEST_CASE("the output carries one flag per boundary") {
   }
 }
 
-TEST_CASE("start of text never breaks and end always does") {
-  const std::vector<std::uint32_t> cps{0x61, 0x62};
-  const auto breaks = line_breaks(cps);
-  CHECK(breaks.front() == false);  // LB2
-  CHECK(breaks.back() == true);    // LB3
-}
-
-TEST_CASE("a word is one run and a space opens the next") {
-  // LB28 keeps letters together; LB18 breaks after a space.
-  const std::vector<std::uint32_t> letters{0x61, 0x62};
-  CHECK(line_breaks(letters) == std::vector<bool>{false, false, true});
-
+TEST_CASE("a space opens the next run") {
+  // LB18 breaks after a space, so the space stays with the word before it. The
+  // run split is a shape the boundary masks do not state.
   const std::vector<std::uint32_t> spaced{0x61, 0x20, 0x62};
   const auto runs = line_runs(spaced);
   REQUIRE(runs.size() == 2);
@@ -101,55 +117,10 @@ TEST_CASE("a word is one run and a space opens the next") {
   CHECK(runs[1] == std::vector<std::uint32_t>{0x62});
 }
 
-TEST_CASE("a mandatory break character breaks after itself") {
-  // LB4: BK divides. U+000C FORM FEED is class BK.
-  const std::vector<std::uint32_t> cps{0x61, 0x000C, 0x62};
-  CHECK(line_breaks(cps) == std::vector<bool>{false, false, true, true});
-}
-
-TEST_CASE("carriage return line feed is not split") {
-  // LB5: CR times LF, then a mandatory break after the pair.
-  const std::vector<std::uint32_t> cps{0x0D, 0x0A, 0x61};
-  CHECK(line_breaks(cps) == std::vector<bool>{false, false, true, true});
-}
-
-TEST_CASE("a combining mark takes the class of its base") {
-  // LB9: X CM behaves as X, so no break falls inside the pair.
-  const std::vector<std::uint32_t> cps{0x61, 0x0301};
-  CHECK(line_breaks(cps) == std::vector<bool>{false, false, true});
-}
-
-TEST_CASE("a word joiner glues both sides") {
-  // LB11: before WJ and after WJ.
-  const std::vector<std::uint32_t> cps{0x61, 0x2060, 0x62};
-  CHECK(line_breaks(cps) == std::vector<bool>{false, false, false, true});
-}
-
-TEST_CASE("a space before a number opening period breaks") {
-  // LB15c: SP divides IS NU -- "a .35" breaks before the period.
-  const std::vector<std::uint32_t> cps{0x61, 0x20, 0x2E, 0x33, 0x35};
-  CHECK(line_breaks(cps) ==
-        std::vector<bool>{false, false, true, false, false, true});
-}
-
-TEST_CASE("a numeric chain holds together") {
-  // LB25: "1,000" is one run across the SY separator.
+TEST_CASE("a numeric chain is one run") {
+  // LB25: "1,000" is one run across its separator.
   const std::vector<std::uint32_t> cps{0x31, 0x2C, 0x30, 0x30, 0x30};
   CHECK(line_runs(cps).size() == 1);
-}
-
-TEST_CASE("regional indicators pair off") {
-  // LB30a: an even-length RI run takes no break inside a pair, and a second
-  // pair may start a new line.
-  const std::vector<std::uint32_t> cps{0x1F1EF, 0x1F1F5, 0x1F1FA, 0x1F1F8};
-  CHECK(line_breaks(cps) ==
-        std::vector<bool>{false, false, true, false, true});
-}
-
-TEST_CASE("an emoji modifier stays on its base") {
-  // LB30b: EB times EM.
-  const std::vector<std::uint32_t> cps{0x1F466, 0x1F3FB};
-  CHECK(line_breaks(cps) == std::vector<bool>{false, false, true});
 }
 
 TEST_CASE("LB1 resolves the tailorable classes") {

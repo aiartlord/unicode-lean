@@ -17,6 +17,12 @@
 #       Line_Break ranges, a port of `Unicode.Generated.LineBreakProperty`.
 #   test/line_break_corpus.hpp
 #       Every row of the published line-break corpus.
+#   test/grapheme_corpus.hpp
+#       Every row of the published grapheme-cluster corpus. The grapheme suite
+#       had no corpus to judge against, so its only evidence was a handful of
+#       hand-written masks. Each corpus gets its own namespace, so the two
+#       headers carry the same member names without colliding when doctest
+#       links them into one binary.
 #
 # The tables are compiled into the headers rather than read at load, which is
 # the route `segmentation/grapheme_tables.hpp` already takes: a segmentation
@@ -43,6 +49,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
 UCD = os.path.join(ROOT, "Unicode", "Ucd")
 LINE_BREAK_TXT = os.path.join(UCD, "LineBreak.txt")
 LINE_BREAK_TEST_TXT = os.path.join(UCD, "LineBreakTest.txt")
+GRAPHEME_BREAK_TEST_TXT = os.path.join(UCD, "GraphemeBreakTest.txt")
 UNICODE_DATA_TXT = os.path.join(UCD, "UnicodeData.txt")
 EAST_ASIAN_WIDTH_TXT = os.path.join(UCD, "EastAsianWidth.txt")
 
@@ -53,6 +60,7 @@ EAST_ASIAN_WIDTH_HPP = os.path.join(INCLUDE, "east_asian_width_tables.hpp")
 LINE_BREAK_TABLES_HPP = os.path.join(
     INCLUDE, "segmentation", "line_break_tables.hpp")
 LINE_BREAK_CORPUS_HPP = os.path.join(PORT, "test", "line_break_corpus.hpp")
+GRAPHEME_CORPUS_HPP = os.path.join(PORT, "test", "grapheme_corpus.hpp")
 
 # The markers the published break corpora write at each boundary.
 BREAK_MARKER = "÷"
@@ -169,14 +177,17 @@ def read_general_category_rows():
     return rows
 
 
-def read_break_test_rows():
-    """The published rows of LineBreakTest.txt as (codepoints, flags).
+def read_break_test_rows(path):
+    """The published rows of a UAX break corpus as (codepoints, flags).
 
     A row alternates boundary markers and code points, starting and ending
-    with a marker, so it carries one more flag than code points.
+    with a marker, so it carries one more flag than code points. Every
+    published break corpus writes that one format, so one reader serves them
+    all.
     """
+    name = os.path.basename(path)
     rows = []
-    with open(LINE_BREAK_TEST_TXT, "r", encoding="utf-8") as handle:
+    with open(path, "r", encoding="utf-8") as handle:
         for number, line in enumerate(handle, start=1):
             body = strip_comment(line)
             if not body:
@@ -188,25 +199,25 @@ def read_break_test_rows():
                 if token in (BREAK_MARKER, NO_BREAK_MARKER):
                     if not expecting_marker:
                         raise SystemExit(
-                            "LineBreakTest.txt line %d has two markers in a "
-                            "row" % number)
+                            "%s line %d has two markers in a row"
+                            % (name, number))
                     flags.append(token == BREAK_MARKER)
                     expecting_marker = False
                 else:
                     if expecting_marker:
                         raise SystemExit(
-                            "LineBreakTest.txt line %d has two code points in "
-                            "a row" % number)
+                            "%s line %d has two code points in a row"
+                            % (name, number))
                     codepoints.append(int(token, 16))
                     expecting_marker = True
             if expecting_marker:
                 raise SystemExit(
-                    "LineBreakTest.txt line %d ends at a code point rather "
-                    "than a boundary marker" % number)
+                    "%s line %d ends at a code point rather than a boundary "
+                    "marker" % (name, number))
             if len(flags) != len(codepoints) + 1:
                 raise SystemExit(
-                    "LineBreakTest.txt line %d carries %d flags for %d code "
-                    "points" % (number, len(flags), len(codepoints)))
+                    "%s line %d carries %d flags for %d code points"
+                    % (name, number, len(flags), len(codepoints)))
             rows.append((codepoints, flags))
     return rows
 
@@ -322,13 +333,122 @@ def write_file(path, text):
         os.path.relpath(path, ROOT), text.count("\n")))
 
 
+def wrapped(values, per_line, render):
+    """One `render`ed value per element, `per_line` to a line, indented."""
+    lines, current = [], []
+    for value in values:
+        current.append(render(value))
+        if len(current) == per_line:
+            lines.append("    " + ", ".join(current) + ",")
+            current = []
+    if current:
+        lines.append("    " + ", ".join(current) + ",")
+    return "\n".join(lines)
+
+
+def format_corpus_header(guard, namespace, uax, algorithm, corpus, rows):
+    """A corpus header: the published rows of one break corpus, as data.
+
+    The rows are three flat `constexpr` arrays and a table of offsets rather
+    than a container per row. A `std::vector` of rows, each holding two
+    brace-initialised vectors, is dynamic initialisation: the compiler emits
+    construction code per row and the translation unit takes minutes rather
+    than seconds at this row count. Flat arrays plus offsets are a constant
+    initialiser the compiler just lays down.
+
+    Each corpus gets its own namespace, so the two headers can carry the same
+    member names without colliding when doctest links them into one binary.
+    """
+    points, flags, offsets = [], [], []
+    for codepoints, row_flags in rows:
+        offsets.append(
+            (len(points), len(codepoints), len(flags), len(row_flags)))
+        points.extend(codepoints)
+        flags.extend(row_flags)
+
+    return "\n".join([
+        "// The published UAX #%s %s corpus, %s." % (uax, algorithm, corpus),
+        "//",
+        "// Hand-written vectors cannot establish a segmentation algorithm: its",
+        "// rules read context on both sides of a boundary and the answer",
+        "// depends on state carried from earlier in the sequence, so a wrong",
+        "// rule survives any vector a person would pick. The Unicode",
+        "// Consortium publishes a corpus per algorithm for that reason, and",
+        "// this is it, as data.",
+        "//",
+        "// The rows are three flat arrays and a table of offsets, not a vector",
+        "// of vectors: per-row containers would be dynamic initialisation and",
+        "// cost minutes of compile time at this row count, where a constant",
+        "// initialiser costs none.",
+        "//",
+        GENERATED_NOTE,
+        "",
+        "#ifndef %s" % guard,
+        "#define %s" % guard,
+        "",
+        "#include <array>",
+        "#include <cstddef>",
+        "#include <cstdint>",
+        "#include <span>",
+        "",
+        "namespace %s {" % namespace,
+        "",
+        "// Where one published case sits in the flat arrays: its code points",
+        "// at [cp_at, cp_at + cp_len) and its boundary flags at",
+        "// [flag_at, flag_at + flag_len).",
+        "struct CorpusRow {",
+        "  std::size_t cp_at;",
+        "  std::size_t cp_len;",
+        "  std::size_t flag_at;",
+        "  std::size_t flag_len;",
+        "};",
+        "",
+        "// How many rows the pinned corpus carries, counted at generation. The",
+        "// corpus gate asserts the emitted row count against this, so a row",
+        "// lost between the file and the table fails rather than quietly",
+        "// shrinking the denominator.",
+        "inline constexpr std::size_t kPublishedCount = %d;" % len(rows),
+        "",
+        "inline constexpr std::array<std::uint32_t, %d> kCorpusCodepoints{{"
+        % len(points),
+        wrapped(points, 12, lambda cp: "0x%04X" % cp),
+        "}};",
+        "",
+        "inline constexpr std::array<bool, %d> kCorpusFlags{{" % len(flags),
+        wrapped(flags, 24, lambda flag: "1" if flag else "0"),
+        "}};",
+        "",
+        "inline constexpr std::array<CorpusRow, %d> kPublishedRows{{"
+        % len(offsets),
+        wrapped(offsets, 4, lambda row: "{%d,%d,%d,%d}" % row),
+        "}};",
+        "",
+        "// The code points of one row.",
+        "inline std::span<const std::uint32_t> row_codepoints(",
+        "    const CorpusRow &row) {",
+        "  return std::span<const std::uint32_t>(",
+        "      kCorpusCodepoints.data() + row.cp_at, row.cp_len);",
+        "}",
+        "",
+        "// The published boundary flags of one row.",
+        "inline std::span<const bool> row_flags(const CorpusRow &row) {",
+        "  return std::span<const bool>(kCorpusFlags.data() + row.flag_at,",
+        "                               row.flag_len);",
+        "}",
+        "",
+        "}  // namespace %s" % namespace,
+        "",
+        "#endif  // %s" % guard,
+        "",
+    ])
+
+
 def main():
     gc_ranges = coalesce(read_general_category_rows())
     eaw_ranges = coalesce(read_two_field_rows(
         EAST_ASIAN_WIDTH_TXT, EAW_VALUES, "East_Asian_Width"))
     lb_ranges = coalesce(read_two_field_rows(
         LINE_BREAK_TXT, LB_VALUES, "Line_Break"))
-    test_rows = read_break_test_rows()
 
     write_file(GENERAL_CATEGORY_HPP, header(
         "UNICODE_CPP_GENERAL_CATEGORY_TABLES_HPP",
@@ -426,107 +546,16 @@ def main():
                 "kLbRanges", "Lb", "kDefaultLb"),
         ])))
 
-    # The corpus is emitted as three flat constexpr arrays rather than a
-    # vector of per-row vectors. A `std::vector<Row>` of 19,338 rows, each
-    # holding two brace-initialised vectors, is dynamic initialisation: the
-    # compiler emits construction code per row and the translation unit takes
-    # minutes rather than seconds. Flat arrays plus offsets are a constant
-    # initialiser the compiler just lays down.
-    points = []
-    flags = []
-    rows = []
-    for codepoints, row_flags in test_rows:
-        rows.append((len(points), len(codepoints), len(flags), len(row_flags)))
-        points.extend(codepoints)
-        flags.extend(row_flags)
-
-    def wrapped(values, per_line, render):
-        lines, current = [], []
-        for value in values:
-            current.append(render(value))
-            if len(current) == per_line:
-                lines.append("    " + ", ".join(current) + ",")
-                current = []
-        if current:
-            lines.append("    " + ", ".join(current) + ",")
-        return "\n".join(lines)
-
-    write_file(LINE_BREAK_CORPUS_HPP, "\n".join([
-        "// The published UAX #14 line-break corpus, LineBreakTest.txt.",
-        "//",
-        "// Hand-written vectors cannot establish a segmentation algorithm: its",
-        "// rules read context on both sides of a boundary and the answer",
-        "// depends on state carried from earlier in the sequence, so a wrong",
-        "// rule survives any vector a person would pick. The Unicode",
-        "// Consortium publishes a corpus per algorithm for that reason, and",
-        "// this is it, as data.",
-        "//",
-        "// The rows are three flat arrays and a table of offsets, not a vector",
-        "// of vectors: per-row containers would be dynamic initialisation and",
-        "// cost minutes of compile time for this many rows, where a constant",
-        "// initialiser costs none.",
-        "//",
-        GENERATED_NOTE,
-        "",
-        "#ifndef UNICODE_CPP_TEST_LINE_BREAK_CORPUS_HPP",
-        "#define UNICODE_CPP_TEST_LINE_BREAK_CORPUS_HPP",
-        "",
-        "#include <array>",
-        "#include <cstddef>",
-        "#include <cstdint>",
-        "#include <span>",
-        "",
-        "namespace unicode_cpp::test {",
-        "",
-        "// Where one published case sits in the flat arrays: its code points",
-        "// at [cp_at, cp_at + cp_len) and its boundary flags at",
-        "// [flag_at, flag_at + flag_len).",
-        "struct CorpusRow {",
-        "  std::size_t cp_at;",
-        "  std::size_t cp_len;",
-        "  std::size_t flag_at;",
-        "  std::size_t flag_len;",
-        "};",
-        "",
-        "// How many rows the pinned corpus carries, counted at generation. The",
-        "// corpus gate asserts the emitted row count against this, so a row",
-        "// lost between the file and the table fails rather than quietly",
-        "// shrinking the denominator.",
-        "inline constexpr std::size_t kPublishedCount = %d;" % len(test_rows),
-        "",
-        "inline constexpr std::array<std::uint32_t, %d> kCorpusCodepoints{{"
-        % len(points),
-        wrapped(points, 12, lambda cp: "0x%04X" % cp),
-        "}};",
-        "",
-        "inline constexpr std::array<bool, %d> kCorpusFlags{{" % len(flags),
-        wrapped(flags, 24, lambda f: "1" if f else "0"),
-        "}};",
-        "",
-        "inline constexpr std::array<CorpusRow, %d> kPublishedRows{{"
-        % len(rows),
-        wrapped(rows, 4,
-                lambda r: "{%d,%d,%d,%d}" % r),
-        "}};",
-        "",
-        "// The code points of one row.",
-        "inline std::span<const std::uint32_t> row_codepoints(",
-        "    const CorpusRow &row) {",
-        "  return std::span<const std::uint32_t>(",
-        "      kCorpusCodepoints.data() + row.cp_at, row.cp_len);",
-        "}",
-        "",
-        "// The published boundary flags of one row.",
-        "inline std::span<const bool> row_flags(const CorpusRow &row) {",
-        "  return std::span<const bool>(kCorpusFlags.data() + row.flag_at,",
-        "                               row.flag_len);",
-        "}",
-        "",
-        "}  // namespace unicode_cpp::test",
-        "",
-        "#endif  // UNICODE_CPP_TEST_LINE_BREAK_CORPUS_HPP",
-        "",
-    ]))
+    write_file(LINE_BREAK_CORPUS_HPP, format_corpus_header(
+        "UNICODE_CPP_TEST_LINE_BREAK_CORPUS_HPP",
+        "unicode_cpp::test::line_break",
+        "14", "line-break", "LineBreakTest.txt",
+        read_break_test_rows(LINE_BREAK_TEST_TXT)))
+    write_file(GRAPHEME_CORPUS_HPP, format_corpus_header(
+        "UNICODE_CPP_TEST_GRAPHEME_CORPUS_HPP",
+        "unicode_cpp::test::grapheme",
+        "29", "grapheme-cluster", "GraphemeBreakTest.txt",
+        read_break_test_rows(GRAPHEME_BREAK_TEST_TXT)))
 
 
 if __name__ == "__main__":
