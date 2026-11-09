@@ -6,11 +6,26 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BIN = ROOT / "bin" / "usec"
 FIXTURES = ROOT / "testdata" / "fixtures" / "security"
+SEGMENTATION_FIXTURES = ROOT / "testdata" / "fixtures" / "segmentation"
 
 
 def load(rel):
     with (FIXTURES / rel).open("r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def load_segmentation(name, algorithm):
+    """One shared segmentation vector fixture: one case per UAX rule, the same
+    bytes every port replays, so each port's segmentation tests ask the same
+    questions rather than a per-port selection of them. The shape its callers
+    rely on is established here before the document is returned."""
+    with (SEGMENTATION_FIXTURES / name).open("r", encoding="utf-8") as f:
+        document = json.load(f)
+    require(document["schema"] == 1, f"{name} carries schema {document['schema']!r}")
+    require(document["algorithm"] == algorithm,
+            f"{name} is for {document['algorithm']!r}, not {algorithm!r}")
+    require(document["cases"], f"{name} carries no cases")
+    return document
 
 
 def run(op, profile, mode, values):
@@ -1009,21 +1024,56 @@ def parse_grapheme_break_test(path):
     return cases
 
 
+def grapheme_boundaries(cps, label):
+    """The boundary indices the compiled port reports for one sequence."""
+    lines = run_lines("grapheme", cps)
+    bound_lines = [ln for ln in lines if ln.startswith("BOUNDARIES")]
+    require(len(bound_lines) == 1, f"{label} missing BOUNDARIES {lines}")
+    rest = bound_lines[0][len("BOUNDARIES"):].strip()
+    return [int(x) for x in rest.split(",") if x]
+
+
 def check_grapheme():
     path = Path(__file__).resolve().parent / "GraphemeBreakTest.txt"
     cases = parse_grapheme_break_test(path)
     require(cases, "GraphemeBreakTest.txt produced no cases")
     count = 0
     for cps, expected in cases:
-        lines = run_lines("grapheme", cps)
-        bound_lines = [ln for ln in lines if ln.startswith("BOUNDARIES")]
-        require(len(bound_lines) == 1, f"grapheme {cps} missing BOUNDARIES {lines}")
-        rest = bound_lines[0][len("BOUNDARIES"):].strip()
-        got = [int(x) for x in rest.split(",") if x]
+        got = grapheme_boundaries(cps, f"grapheme {cps}")
         require(got == expected,
                 f"grapheme {cps} boundaries {got} != expected {expected}")
         count += 1
+    # The whole file must be accounted for, so a row lost between the file and
+    # this fold fails rather than quietly shrinking the denominator. The count
+    # comes from the shared fixture, which the generator counts from the
+    # canonical corpus, so the corpus gate and the vector gate cannot disagree
+    # about the size of the corpus.
+    fixture = load_segmentation("grapheme_vectors.json", "uax29-grapheme-cluster")
+    require(count == fixture["published_row_count"],
+            f"GraphemeBreakTest.txt accounted for {count} rows, "
+            f"expected {fixture['published_row_count']}")
     return count
+
+
+def check_grapheme_shared_vectors():
+    """One case per UAX #29 rule, the same bytes every port replays, so no port
+    carries a weaker set of rule checks than another.
+
+    The fixture records a boundary mask, one flag per position; this port
+    reports the positions that are boundaries. The two say the same thing, so
+    the mask is read as the indices where it holds.
+    """
+    fixture = load_segmentation("grapheme_vectors.json", "uax29-grapheme-cluster")
+    replayed = 0
+    for case in fixture["cases"]:
+        label = f"{case['rule']}: {case['name']}"
+        expected = [index for index, flag in enumerate(case["breaks"]) if flag]
+        got = grapheme_boundaries(case["input"], label)
+        require(got == expected,
+                f"{label}\n  cps      {case['input']}"
+                f"\n  expected {expected}\n  actual   {got}")
+        replayed += 1
+    return replayed
 
 
 def main():
@@ -1051,9 +1101,11 @@ def main():
     blob_count = check_opaque_blob()
     validated_count = check_validated_utf8()
     grapheme_count = check_grapheme()
+    grapheme_vector_count = check_grapheme_shared_vectors()
     print(f"opaque-blob checks: {blob_count}")
     print(f"validated-utf8 checks: {validated_count}")
     print(f"grapheme (GraphemeBreakTest.txt) checks: {grapheme_count}")
+    print(f"grapheme shared-vector replay: {grapheme_vector_count}")
     print(f"hash-input-stability shared-fixture vectors: {his_fixture_count}")
     print(f"hash-input-stability context vectors: {his_context_count}")
     print(f"ai-watermark-detectability shared-fixture vectors: {awd_fixture_count}")
