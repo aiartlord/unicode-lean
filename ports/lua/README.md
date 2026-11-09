@@ -53,6 +53,27 @@ end
 The shared integration contract is in
 [`../../docs/how-to/integrate.md`](../../docs/how-to/integrate.md).
 
+## Segmentation
+
+`unicode_lua.segmentation` covers UAX #29 extended grapheme clusters
+(`grapheme.grapheme_breaks`, `grapheme.grapheme_clusters`) and UAX #14 default
+line breaking (`line_break.line_breaks`, `line_break.line_runs`). Each returns a
+boundary mask of length `#cps + 1`, and each is judged against the Unicode
+Consortium's published corpus for its algorithm — a segmentation rule reads
+context on both sides of a boundary, so a wrong rule survives any vector a
+person would pick.
+
+A segmentation module takes code points and needs no data directory: its
+property ranges are generated into source, while the security layer parses its
+own tables out of `data/`. `segmentation/grapheme_tables.lua` carries the UAX #29
+properties, and `tools/generate_line_break_tables.py` writes
+`segmentation/line_break_tables.lua` — the Line_Break, General_Category and
+East_Asian_Width ranges UAX #14 reads — and vendors the published corpus to
+`testdata/LineBreakTest.txt`. Both are generated; edit the script and
+regenerate. Unlike the grapheme tables, the line-break tables are sorted and
+coalesced so lookups binary-search, which is what makes a corpus of that size
+answerable.
+
 ## Build and test
 
 From this directory:
