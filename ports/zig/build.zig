@@ -129,6 +129,41 @@ pub fn build(b: *std.Build) void {
     });
     const run_opaque_blob_tests = b.addRunArtifact(opaque_blob_tests);
     test_step.dependOn(&run_opaque_blob_tests.step);
+
+    // UAX #14 line breaking is its own module, so a consumer that wants
+    // segmentation and not the security monitor links only what it uses. Its
+    // tests live in their own root file, since the artifacts above discover
+    // only tests in their own graphs.
+    const line_break_module = b.addModule("unicode_line_break", .{
+        .root_source_file = b.path("src/line_break.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const line_break_test_module = b.createModule(.{
+        .root_source_file = b.path("test/line_break.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    line_break_test_module.addImport("line_break", line_break_module);
+
+    const line_break_options = b.addOptions();
+    // The corpus is over a megabyte; baking it in as a build option would make
+    // the compiler materialise the whole string literal, so the test reads it
+    // from disk at run time and only the path is baked in.
+    line_break_options.addOption(
+        []const u8,
+        "corpus_path",
+        b.pathFromRoot("testdata/LineBreakTest.txt"),
+    );
+    line_break_test_module.addOptions("line_break_options", line_break_options);
+
+    const line_break_tests = b.addTest(.{
+        .name = "unicode_line_break_tests",
+        .root_module = line_break_test_module,
+    });
+    const run_line_break_tests = b.addRunArtifact(line_break_tests);
+    test_step.dependOn(&run_line_break_tests.step);
 }
 
 fn readFixture(b: *std.Build, path: []const u8) []const u8 {

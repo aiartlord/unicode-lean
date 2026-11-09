@@ -163,8 +163,13 @@ def replays(port: str, fixture: str) -> bool:
         for relative, _entries in TRANSCRIPTIONS.values())
     if port in TRANSCRIPTIONS:
         _relative, entries = TRANSCRIPTIONS[port]
-        _digest, marker = entries[fixture]
-        return mentions(port, marker, skip=generated)
+        # A transcription covers the algorithms its port implements. Where it
+        # covers one and the port is asked about the other, the port reaches
+        # that fixture by name or not at all.
+        entry = entries.get(fixture)
+        if entry is not None:
+            _digest, marker = entry
+            return mentions(port, marker, skip=generated)
     return mentions(port, fixture.rsplit(".", 1)[0], skip=generated)
 
 
@@ -214,6 +219,13 @@ TRANSCRIPTIONS = {
          "grapheme_vectors.json": ("graphemeFixtureDigest",
                                    "graphemeCases")},
     ),
+    # This port segments lines and not grapheme clusters, so its
+    # transcription carries the UAX #14 cases alone.
+    "zig": (
+        "ports/zig/test/vector_cases.zig",
+        {"line_break_vectors.json": ("line_break_fixture_digest",
+                                     "line_break_cases")},
+    ),
 }
 
 # How a transcription spells the constant holding a digest, per language. The
@@ -224,6 +236,8 @@ DIGEST_PATTERNS = (
     r'{name}:\s*&str\s*=\s*"([0-9a-f]{{64}})"',
     # C++: `inline constexpr char kFixtureDigest[] =\n    "<64 hex>";`
     r'{name}\[\]\s*=\s*"([0-9a-f]{{64}})"',
+    # Zig: `pub const name: []const u8 =\n    "<64 hex>";`
+    r'{name}:\s*\[\]const u8\s*=\s*"([0-9a-f]{{64}})"',
     # Haskell: `lineBreakFixtureDigest =\n    "<64 hex>"`
     r'{name}\s*=\s*"([0-9a-f]{{64}})"',
 )
