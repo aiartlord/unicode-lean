@@ -1971,9 +1971,9 @@ export const EAST_ASIAN_WIDTH_RANGES = Object.freeze({
   ]),
 });
 
-// Extended_Pictographic ranges, which LB30b reads. This port
-// carries no grapheme clustering, so the property has its own
-// table here rather than being borrowed from one.
+// Extended_Pictographic ranges, which LB30b and GB11 both read.
+// The cluster breaker imports isExtendedPictographic rather than
+// carrying a second copy of this table.
 export const EXTENDED_PICTOGRAPHIC_RANGES = Object.freeze({
   start: Uint32Array.from([
   0x00A9, 0x00AE, 0x203C, 0x2049, 0x2122, 0x2139, 0x2194, 0x21A9, 0x231A, 0x2328,

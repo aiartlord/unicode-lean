@@ -161,9 +161,8 @@ def read_general_category_rows():
 def read_extended_pictographic_rows():
     """The Extended_Pictographic ranges of emoji-data.txt as (lo, hi, True).
 
-    LB30b reads the property, and this port has no grapheme clustering to
-    borrow a table from. Only that one property value is taken; the file
-    carries several.
+    LB30b and GB11 both read the property, from this one table. Only that one
+    property value is taken; the file carries several.
     """
     rows = []
     with open(EMOJI_DATA_TXT, "r", encoding="utf-8") as handle:
@@ -393,9 +392,9 @@ def main():
         "",
         format_flag_table(
             "EXTENDED_PICTOGRAPHIC_RANGES",
-            "// Extended_Pictographic ranges, which LB30b reads. This port\n"
-            "// carries no grapheme clustering, so the property has its own\n"
-            "// table here rather than being borrowed from one.",
+            "// Extended_Pictographic ranges, which LB30b and GB11 both read.\n"
+            "// The cluster breaker imports isExtendedPictographic rather than\n"
+            "// carrying a second copy of this table.",
             ext_pict_ranges),
         "",
         "// How many data rows the pinned corpus carries, counted from the",

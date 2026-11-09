@@ -46,30 +46,11 @@ import {
   EXTENDED_PICTOGRAPHIC_RANGES,
   PUBLISHED_ROW_COUNT,
 } from "./line-break-tables.js";
+import { rangeIndex } from "./range-table.js";
 
 export { PUBLISHED_ROW_COUNT };
 
 // ── property lookups ────────────────────────────────────────────────────────
-
-// The index of the one range covering `cp`, or -1.
-//
-// Each table is sorted by range start and its ranges partition the codepoint
-// space, so the covering range is unique and a binary search finds it.
-function rangeIndex(table, cp) {
-  let lo = 0;
-  let hi = table.start.length;
-  while (lo < hi) {
-    const mid = (lo + hi) >>> 1;
-    if (cp < table.start[mid]) {
-      hi = mid;
-    } else if (cp > table.end[mid]) {
-      lo = mid + 1;
-    } else {
-      return mid;
-    }
-  }
-  return -1;
-}
 
 /**
  * The raw Line_Break class of `cp`, before LB1. A codepoint no range covers is

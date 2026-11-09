@@ -21,6 +21,10 @@
     "./segmentation/line-break": {
       "types": "./src/segmentation/line-break.d.ts",
       "default": "./src/segmentation/line-break.js"
+    },
+    "./segmentation/grapheme": {
+      "types": "./src/segmentation/grapheme.d.ts",
+      "default": "./src/segmentation/grapheme.js"
     }
   },
   "files": [
