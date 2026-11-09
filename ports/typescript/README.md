@@ -31,6 +31,34 @@ Runtime data is vendored under `src/data/` and pinned by
 `Bidi_Class` via the explicit-range → `@missing`-default → `L` lookup that
 mirrors Lean).
 
+## Segmentation
+
+The `./segmentation/line-break` export implements UAX #14 default line breaking:
+
+```js
+import { lineBreaks, lineRuns } from "@unicode-security/runtime/segmentation/line-break";
+
+lineBreaks([0x61, 0x20, 0x62]); // one flag per boundary: n codepoints -> n + 1
+lineRuns([0x61, 0x20, 0x62]);   // the runs a renderer may place on separate lines
+```
+
+It is judged against the Unicode Consortium's published corpus, because a
+segmentation rule reads context on both sides of a boundary and a wrong rule
+survives any vector a person would pick.
+
+The module is dependency-free and reads no files. Its four property tables —
+Line_Break, General_Category, East_Asian_Width and Extended_Pictographic — are
+generated into `src/segmentation/line-break-tables.js` by
+`tools/generate_line_break_tables.py`, which also vendors the corpus to
+`testdata/LineBreakTest.txt`. Both are generated; edit the script and
+regenerate. The tables are code rather than entries under `src/data/` because
+the package serves its data tables only through the digest-verifying reader
+`security.js` installs: a segmentation module opening a data file itself would
+be a second data path outside that gate. Being dependency-free is also what
+lets this module run unchanged on the edge build.
+
+UAX #29 grapheme clustering, which some other ports carry, is not in this port.
+
 Run from the repository root:
 
 ```sh
