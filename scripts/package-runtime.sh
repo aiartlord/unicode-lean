@@ -66,7 +66,8 @@ echo "== go module package check =="
 )
 rm -rf "$dist_abs/go"
 mkdir -p "$dist_abs/go"
-cp -R ports/go/README.md ports/go/go.mod ports/go/security "$dist_abs/go/"
+cp -R ports/go/README.md ports/go/go.mod ports/go/security ports/go/segmentation \
+  "$dist_abs/go/"
 
 echo "== typescript package check =="
 (
@@ -165,7 +166,8 @@ go-packages.txt
   Go module package list verified by go test
 
 go/
-  installable Go module tree with vendored security data and contract fixtures
+  installable Go module tree with the security and segmentation packages,
+  vendored security data, published break corpora and contract fixtures
 
 typescript/
   installable TypeScript/JavaScript package tree with vendored security data and contract fixtures

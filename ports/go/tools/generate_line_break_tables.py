@@ -14,9 +14,8 @@
 #       `Unicode.Generated.EastAsianWidth`; and Extended_Pictographic, a port of
 #       `Unicode.Generated.EmojiData` — plus the corpus row count.
 #
-#       The other ports read Extended_Pictographic from their grapheme
-#       clustering, which this port does not carry, so LB30b gets its own
-#       table here.
+#       Extended_Pictographic serves two rules in this package, LB30b and
+#       GB11, from the one table here.
 #   segmentation/testdata/LineBreakTest.txt
 #       The published corpus, where the go tool's own testdata convention puts
 #       a package's fixtures.
@@ -164,9 +163,8 @@ def read_general_category_rows():
 def read_extended_pictographic_rows():
     """The Extended_Pictographic ranges of emoji-data.txt as (lo, hi, True).
 
-    LB30b reads the property, and this port has no grapheme clustering to
-    borrow a table from. Only that one property value is taken; the file
-    carries several.
+    LB30b and GB11 both read the property, from this one table. Only that one
+    property value is taken; the file carries several.
     """
     rows = []
     with open(EMOJI_DATA_TXT, "r", encoding="utf-8") as handle:
@@ -417,7 +415,7 @@ def main():
         "",
         "\n".join([
             "// IsExtendedPictographic reports whether cp has the",
-            "// Extended_Pictographic property, which LB30b reads.",
+            "// Extended_Pictographic property, which LB30b and GB11 read.",
             "//",
             "// The ranges are sorted by lower bound and disjoint, so a binary",
             "// search decides membership.",

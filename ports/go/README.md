@@ -25,22 +25,34 @@ Runtime data is vendored under `security/data/` and pinned by
 
 ## Segmentation
 
-The `segmentation` package implements UAX #14 default line breaking —
-`segmentation.LineBreaks` returns one boundary flag per position, so a sequence
-of n code points yields n + 1 flags, and `segmentation.LineRuns` splits a
-sequence at every break opportunity. It is judged against the Unicode
-Consortium's published corpus, because a segmentation rule reads context on both
-sides of a boundary and a wrong rule survives any vector a person would pick.
+The `segmentation` package implements two algorithms. UAX #14 default line
+breaking — `segmentation.LineBreaks` returns one boundary flag per position, so
+a sequence of n code points yields n + 1 flags, and `segmentation.LineRuns`
+splits a sequence at every break opportunity. UAX #29 default extended grapheme
+clustering — `segmentation.GraphemeBreaks` returns the same one-flag-per-boundary
+shape, and `segmentation.GraphemeClusters` splits a sequence into the clusters a
+renderer treats as single user-perceived characters. Both are judged against the
+Unicode Consortium's published corpora, because a segmentation rule reads context
+on both sides of a boundary and a wrong rule survives any vector a person would
+pick.
 
 The package takes code points and needs no data directory: its property ranges
-are generated into source by `tools/generate_line_break_tables.py`, which writes
-`segmentation/line_break_tables.go` — the Line_Break, General_Category,
-East_Asian_Width and Extended_Pictographic ranges UAX #14 reads — and vendors
-the corpus to `segmentation/testdata/LineBreakTest.txt`. Both are generated;
-edit the script and regenerate. The security package's own East_Asian_Width
-table is not reachable from here: it and its class type are unexported.
+are generated into source by two scripts, and both the tables and the corpora
+they vendor are generated — edit the script and regenerate.
 
-UAX #29 grapheme clustering, which the other ports carry, is not in this port.
+- `tools/generate_line_break_tables.py` writes
+  `segmentation/line_break_tables.go` — the Line_Break, General_Category,
+  East_Asian_Width and Extended_Pictographic ranges UAX #14 reads — and vendors
+  the corpus to `segmentation/testdata/LineBreakTest.txt`.
+- `tools/generate_grapheme_tables.py` writes
+  `segmentation/grapheme_tables.go` — the Grapheme_Cluster_Break and
+  Indic_Conjunct_Break ranges UAX #29 reads — and vendors the corpus to
+  `segmentation/testdata/GraphemeBreakTest.txt`. The third property its rules
+  read, Extended_Pictographic, is the one LB30b reads, so GB11 shares that table
+  rather than carrying a second copy.
+
+The security package's own East_Asian_Width table is not reachable from here: it
+and its class type are unexported.
 
 Run from the repository root:
 
@@ -69,6 +81,7 @@ self-contained module tree emitted under `dist/runtime/go/`, and import:
 
 ```go
 import "unicode.local/ports/go/security"
+import "unicode.local/ports/go/segmentation"
 ```
 
 The tracked Nix output installs the same self-contained tree under:

@@ -39,25 +39,39 @@ type vectorFixture struct {
 
 const vectorPath = "testdata/fixtures/segmentation/line_break_vectors.json"
 
+// parseVectorFixture decodes a shared fixture and checks it is the one the
+// caller asked for. A fixture of the wrong schema or the wrong algorithm would
+// otherwise decode into zero cases and pass every assertion over them.
+func parseVectorFixture(
+	payload []byte, algorithm string,
+) (vectorFixture, error) {
+	var fixture vectorFixture
+	if err := json.Unmarshal(payload, &fixture); err != nil {
+		return fixture, fmt.Errorf("parse: %w", err)
+	}
+	if fixture.Schema != 1 {
+		return fixture, fmt.Errorf("carries schema %d, expected 1",
+			fixture.Schema)
+	}
+	if fixture.Algorithm != algorithm {
+		return fixture, fmt.Errorf("is for %s, expected %s",
+			fixture.Algorithm, algorithm)
+	}
+	if len(fixture.Cases) == 0 {
+		return fixture, fmt.Errorf("carries no cases")
+	}
+	return fixture, nil
+}
+
 func readVectors(t *testing.T) vectorFixture {
 	t.Helper()
 	payload, err := os.ReadFile(vectorPath)
 	if err != nil {
 		t.Fatalf("read %s: %v", vectorPath, err)
 	}
-	var fixture vectorFixture
-	if err := json.Unmarshal(payload, &fixture); err != nil {
-		t.Fatalf("parse %s: %v", vectorPath, err)
-	}
-	if fixture.Schema != 1 {
-		t.Fatalf("%s carries schema %d, expected 1", vectorPath, fixture.Schema)
-	}
-	if fixture.Algorithm != "uax14-line-break" {
-		t.Fatalf("%s is for %s, expected uax14-line-break",
-			vectorPath, fixture.Algorithm)
-	}
-	if len(fixture.Cases) == 0 {
-		t.Fatalf("%s carries no cases", vectorPath)
+	fixture, err := parseVectorFixture(payload, "uax14-line-break")
+	if err != nil {
+		t.Fatalf("%s: %v", vectorPath, err)
 	}
 	return fixture
 }
@@ -105,16 +119,18 @@ type corpusRow struct {
 	expected   []bool
 }
 
-// readCorpus reads every data row of the vendored corpus.
-func readCorpus(t *testing.T) []corpusRow {
+// readCorpusFile reads every data row of a vendored published corpus. Both
+// corpora write the same alternating markers and code points, so both
+// segmentation suites read them through this.
+func readCorpusFile(t *testing.T, path string) []corpusRow {
 	t.Helper()
-	handle, err := os.Open(corpusPath)
+	handle, err := os.Open(path)
 	if err != nil {
-		t.Fatalf("open %s: %v", corpusPath, err)
+		t.Fatalf("open %s: %v", path, err)
 	}
 	defer func() {
 		if err := handle.Close(); err != nil {
-			t.Fatalf("close %s: %v", corpusPath, err)
+			t.Fatalf("close %s: %v", path, err)
 		}
 	}()
 
@@ -134,7 +150,7 @@ func readCorpus(t *testing.T) []corpusRow {
 		}
 		codepoints, expected, err := parseCorpusLine(body)
 		if err != nil {
-			t.Fatalf("%s line %d: %v", corpusPath, line, err)
+			t.Fatalf("%s line %d: %v", path, line, err)
 		}
 		rows = append(rows, corpusRow{
 			line:       line,
@@ -143,7 +159,7 @@ func readCorpus(t *testing.T) []corpusRow {
 		})
 	}
 	if err := scanner.Err(); err != nil {
-		t.Fatalf("read %s: %v", corpusPath, err)
+		t.Fatalf("read %s: %v", path, err)
 	}
 	return rows
 }
@@ -173,7 +189,7 @@ func formatCodepoints(cps []uint32) string {
 // canonical file did. Without the second check a row lost between the two would
 // shrink the denominator instead of failing.
 func TestCorpusIsWellFormed(t *testing.T) {
-	rows := readCorpus(t)
+	rows := readCorpusFile(t, corpusPath)
 	ragged := 0
 	for _, row := range rows {
 		if len(row.expected) != len(row.codepoints)+1 {
@@ -197,7 +213,7 @@ func TestCorpusIsWellFormed(t *testing.T) {
 // place of the Lean's positional lits[i]!, and dropping its write-only
 // spSinceNoSp snapshot field.
 func TestAgreesWithEveryPublishedRow(t *testing.T) {
-	rows := readCorpus(t)
+	rows := readCorpusFile(t, corpusPath)
 	disagreements := 0
 	for _, row := range rows {
 		produced := LineBreaks(row.codepoints)
@@ -319,8 +335,8 @@ func TestLB1ResolvesTheTailorableClasses(t *testing.T) {
 }
 
 func TestExtendedPictographic(t *testing.T) {
-	// LB30b reads the property, and this package carries its own table because
-	// there is no grapheme clustering here to borrow one from.
+	// LB30b reads the property from the one table in this package, which GB11
+	// reads as well.
 	if !IsExtendedPictographic(0x1F466) {
 		t.Error("U+1F466 BOY must be Extended_Pictographic")
 	}

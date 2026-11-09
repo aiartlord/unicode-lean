@@ -7915,7 +7915,7 @@ func WidthOf(cp uint32) EastAsianWidth {
 }
 
 // IsExtendedPictographic reports whether cp has the
-// Extended_Pictographic property, which LB30b reads.
+// Extended_Pictographic property, which LB30b and GB11 read.
 //
 // The ranges are sorted by lower bound and disjoint, so a binary
 // search decides membership.

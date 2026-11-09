@@ -147,7 +147,7 @@
           installPhase = ''
             runHook preInstall
             mkdir -p $out/share/unicode-go
-            cp -R README.md go.mod security $out/share/unicode-go/
+            cp -R README.md go.mod security segmentation $out/share/unicode-go/
             runHook postInstall
           '';
         };
