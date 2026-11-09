@@ -25,6 +25,7 @@ import argparse
 import hashlib
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -76,6 +77,26 @@ PORT_TEST_ROOTS = {
 }
 
 
+def source_files() -> frozenset[Path]:
+    """Every file the repository carries, as paths relative to the root.
+
+    The repository's own view of the tree rather than the disk: tracked files
+    plus new files not yet committed, and never a build output. A port's test
+    directory also holds compiled artifacts, and a compiled artifact carries
+    the fixture's name among its string constants, so a disk walk lets this
+    gate pass a port on its build output instead of its source.
+    """
+    listing = subprocess.run(
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        cwd=ROOT, check=True, capture_output=True)
+    return frozenset(
+        Path(name) for name in listing.stdout.decode("utf-8").split("\0")
+        if name)
+
+
+SOURCES = source_files()
+
+
 def read_fixture(path: Path) -> bytes:
     if not path.is_file():
         return b""
@@ -112,21 +133,22 @@ def mentions(
     replaying vectors no test has been pointed at yet.
     """
     wanted = (needles,) if isinstance(needles, str) else needles
-    for root in PORT_TEST_ROOTS.get(port, []):
-        directory = ROOT / root
-        if not directory.is_dir():
+    roots = tuple(PORT_TEST_ROOTS.get(port, []))
+    for relative in sorted(SOURCES):
+        if not relative.as_posix().startswith(
+                tuple(root + "/" for root in roots)):
             continue
-        for path in directory.rglob("*"):
-            if not path.is_file() or path.suffix == ".json":
-                continue
-            if path.resolve() in skip:
-                continue
-            try:
-                text = path.read_text(encoding="utf-8", errors="ignore")
-            except OSError:
-                continue
-            if all(needle in text for needle in wanted):
-                return True
+        if relative.suffix == ".json":
+            continue
+        path = ROOT / relative
+        if not path.is_file() or path.resolve() in skip:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        if all(needle in text for needle in wanted):
+            return True
     return False
 
 
@@ -299,9 +321,12 @@ def main() -> int:
         for fixture in FIXTURES
     }
     strays = sorted(
-        path.relative_to(ROOT)
-        for path in (ROOT / "ports").rglob("fixtures/segmentation/*.json")
-        if path.resolve() not in expected_copies
+        relative
+        for relative in SOURCES
+        if relative.as_posix().startswith("ports/")
+        and "/fixtures/segmentation/" in relative.as_posix()
+        and relative.suffix == ".json"
+        and (ROOT / relative).resolve() not in expected_copies
     )
 
     failures.extend(transcription_failures(roots))
