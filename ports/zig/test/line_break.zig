@@ -2,6 +2,7 @@ const std = @import("std");
 const line_break_options = @import("line_break_options");
 const line_break = @import("line_break");
 const vector_cases = @import("vector_cases.zig");
+const corpus = @import("segmentation_corpus.zig");
 
 // UAX #14 default line breaking.
 //
@@ -11,104 +12,14 @@ const vector_cases = @import("vector_cases.zig");
 // output shape the Lean lineBreaks_length theorem fixes. Every break
 // opportunity (÷) and non-break (×) in the official file must be reproduced
 // exactly.
+//
+// The corpus reader is shared with the grapheme suite: both published corpora
+// write the same alternating markers and code points.
 
 const Lb = line_break.Lb;
 
-// The markers the published break corpus writes at each boundary, as raw UTF-8
-// bytes so the parse is independent of the source file's own encoding:
-//   DIVIDE (U+00F7 "÷") = 0xC3 0xB7  -> break
-//   MULTIPLY (U+00D7 "×") = 0xC3 0x97 -> no break
-const break_marker = "\xC3\xB7";
-const no_break_marker = "\xC3\x97";
-
-/// One published case: its code points and its expected boundary mask.
-const Row = struct {
-    line: usize,
-    codepoints: []u32,
-    expected: []bool,
-};
-
-fn freeRows(allocator: std.mem.Allocator, rows: []Row) void {
-    for (rows) |row| {
-        allocator.free(row.codepoints);
-        allocator.free(row.expected);
-    }
-    allocator.free(rows);
-}
-
-/// Parse one data line into its code points and expected mask.
-///
-/// A line is a sequence of alternating boundary markers and hex code points,
-/// beginning and ending with a marker: e.g. "× 0061 ÷ 0062 ÷". The markers form
-/// the expected mask (÷ -> true, × -> false) of length codepoints.len + 1; the
-/// hex tokens are the code points.
-fn parseRow(
-    allocator: std.mem.Allocator,
-    body: []const u8,
-) !struct { codepoints: []u32, expected: []bool } {
-    var codepoints: std.ArrayList(u32) = .empty;
-    errdefer codepoints.deinit(allocator);
-    var expected: std.ArrayList(bool) = .empty;
-    errdefer expected.deinit(allocator);
-
-    var tokens = std.mem.tokenizeAny(u8, body, " \t\r");
-    while (tokens.next()) |token| {
-        if (std.mem.eql(u8, token, break_marker)) {
-            try expected.append(allocator, true);
-        } else if (std.mem.eql(u8, token, no_break_marker)) {
-            try expected.append(allocator, false);
-        } else {
-            const cp = try std.fmt.parseInt(u32, token, 16);
-            try codepoints.append(allocator, cp);
-        }
-    }
-
-    return .{
-        .codepoints = try codepoints.toOwnedSlice(allocator),
-        .expected = try expected.toOwnedSlice(allocator),
-    };
-}
-
-/// Every data row of the vendored corpus. Read at run time: the corpus is over
-/// a megabyte, and the port already takes that route for its other large
-/// fixture rather than making the compiler materialise it whole.
-fn readCorpus(allocator: std.mem.Allocator) ![]Row {
-    const bytes = try std.Io.Dir.cwd().readFileAlloc(
-        std.testing.io,
-        line_break_options.corpus_path,
-        allocator,
-        .limited(16 * 1024 * 1024),
-    );
-    defer allocator.free(bytes);
-
-    var rows: std.ArrayList(Row) = .empty;
-    errdefer {
-        for (rows.items) |row| {
-            allocator.free(row.codepoints);
-            allocator.free(row.expected);
-        }
-        rows.deinit(allocator);
-    }
-
-    var lines = std.mem.splitScalar(u8, bytes, '\n');
-    var number: usize = 0;
-    while (lines.next()) |raw| {
-        number += 1;
-        const without_comment = if (std.mem.indexOfScalar(u8, raw, '#')) |idx|
-            raw[0..idx]
-        else
-            raw;
-        const body = std.mem.trim(u8, without_comment, " \t\r");
-        if (body.len == 0) continue;
-
-        const parsed = try parseRow(allocator, body);
-        try rows.append(allocator, .{
-            .line = number,
-            .codepoints = parsed.codepoints,
-            .expected = parsed.expected,
-        });
-    }
-    return rows.toOwnedSlice(allocator);
+fn readCorpus(allocator: std.mem.Allocator) ![]corpus.Row {
+    return corpus.readCorpus(allocator, line_break_options.corpus_path);
 }
 
 // What the corpus must be before it can judge anything: every row carries one
@@ -118,13 +29,9 @@ fn readCorpus(allocator: std.mem.Allocator) ![]Row {
 test "the line-break corpus is well formed" {
     const allocator = std.testing.allocator;
     const rows = try readCorpus(allocator);
-    defer freeRows(allocator, rows);
+    defer corpus.freeRows(allocator, rows);
 
-    var ragged: usize = 0;
-    for (rows) |row| {
-        if (row.expected.len != row.codepoints.len + 1) ragged += 1;
-    }
-    try std.testing.expectEqual(@as(usize, 0), ragged);
+    try std.testing.expectEqual(@as(usize, 0), corpus.raggedRows(rows));
     try std.testing.expectEqual(line_break.published_row_count, rows.len);
 }
 
@@ -138,7 +45,7 @@ test "the line-break corpus is well formed" {
 test "the line breaker agrees with every published row" {
     const allocator = std.testing.allocator;
     const rows = try readCorpus(allocator);
-    defer freeRows(allocator, rows);
+    defer corpus.freeRows(allocator, rows);
 
     var disagreements: usize = 0;
     var first_line: usize = 0;
@@ -336,8 +243,8 @@ test "the East_Asian_Width table is the port's own" {
 }
 
 test "Extended_Pictographic is carried here" {
-    // LB30b reads the property, and this port has no grapheme clustering to
-    // borrow a table from.
+    // The one table for the property lives beside the line breaker, and GB11
+    // reads it through grapheme.isExtendedPictographic.
     try std.testing.expect(line_break.isExtendedPictographic(0x1F466));
     try std.testing.expect(!line_break.isExtendedPictographic(0x0061));
 }

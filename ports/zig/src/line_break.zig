@@ -44,6 +44,7 @@ const std = @import("std");
 
 const data = @import("line_break_data.zig");
 const eaw = @import("east_asian_width_data.zig");
+const range_lookup = @import("range_lookup.zig");
 
 pub const Lb = data.Lb;
 pub const Gc = data.Gc;
@@ -63,26 +64,7 @@ pub const Classified = struct {
 
 // ── property lookups ────────────────────────────────────────────────────────
 
-/// The class of the one range covering `cp`, or null.
-///
-/// Each table is sorted by start and its ranges are disjoint, so the covering
-/// range is unique and a binary search finds it.
-fn lookup(comptime Range: type, comptime Class: type, table: []const Range, cp: u32) ?Class {
-    var lo: usize = 0;
-    var hi: usize = table.len;
-    while (lo < hi) {
-        const mid = lo + (hi - lo) / 2;
-        const range = table[mid];
-        if (cp < range.start) {
-            hi = mid;
-        } else if (cp > range.end) {
-            lo = mid + 1;
-        } else {
-            return range.class;
-        }
-    }
-    return null;
-}
+const lookup = range_lookup.lookup;
 
 /// The raw Line_Break class of `cp`, before LB1. A code point no range covers
 /// is `.xx`, the default LineBreak.txt's own @missing header declares.

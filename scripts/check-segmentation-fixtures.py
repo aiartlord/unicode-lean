@@ -219,12 +219,12 @@ TRANSCRIPTIONS = {
          "grapheme_vectors.json": ("graphemeFixtureDigest",
                                    "graphemeCases")},
     ),
-    # This port segments lines and not grapheme clusters, so its
-    # transcription carries the UAX #14 cases alone.
     "zig": (
         "ports/zig/test/vector_cases.zig",
         {"line_break_vectors.json": ("line_break_fixture_digest",
-                                     "line_break_cases")},
+                                     "line_break_cases"),
+         "grapheme_vectors.json": ("grapheme_fixture_digest",
+                                   "grapheme_cases")},
     ),
 }
 

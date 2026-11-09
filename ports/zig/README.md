@@ -31,6 +31,39 @@ in [`../../docs/reference/ports.md`](../../docs/reference/ports.md).
 Tests consume port-local copies of the shared policy, verdict, and detector
 fixtures under `testdata/fixtures/security/`.
 
+## Segmentation
+
+Two algorithms, each its own module, so a consumer that wants segmentation and
+not the security monitor links only what it uses. `src/line_break.zig`
+implements UAX #14 default line breaking — `lineBreaks` returns one boundary
+flag per position, so a sequence of n code points yields n + 1 flags, and
+`lineRuns` splits a sequence at every break opportunity. `src/grapheme.zig`
+implements UAX #29 default extended grapheme clustering — `graphemeBreaks`
+returns the same one-flag-per-boundary shape, and `graphemeClusters` splits a
+sequence into the clusters a renderer treats as single user-perceived
+characters. Both take an allocator and the caller owns what they return.
+
+Both are judged against the Unicode Consortium's published corpora, because a
+segmentation rule reads context on both sides of a boundary and a wrong rule
+survives any vector a person would pick. The corpora are read from disk at run
+time through a path the build bakes in, since baking a megabyte-plus corpus in
+as a string literal would make the compiler materialise it whole.
+
+Both modules take code points and need no data directory. Their property ranges
+are generated into source, and both the tables and the corpora they vendor are
+generated — edit the script and regenerate.
+
+- `tools/generate_line_break_tables.py` writes `src/line_break_data.zig` — the
+  Line_Break, General_Category and Extended_Pictographic ranges — and vendors
+  `testdata/LineBreakTest.txt`. East_Asian_Width is not emitted:
+  `src/east_asian_width_data.zig` already carries it.
+- `tools/generate_grapheme_tables.py` writes `src/grapheme_data.zig` — the
+  Grapheme_Cluster_Break and Indic_Conjunct_Break ranges — and vendors
+  `testdata/GraphemeBreakTest.txt`. Extended_Pictographic is not emitted
+  either: GB11 reads the table LB30b already has.
+
+Both read their tables through the one lookup in `src/range_lookup.zig`.
+
 Run from the repository root:
 
 ```sh
@@ -64,5 +97,6 @@ Install the Zig library artifact into a local prefix:
 zig build install --prefix ../../dist/runtime/zig
 ```
 
-Downstream Zig consumers should import the `unicode_security` module exposed by
-`build.zig`.
+Downstream Zig consumers import the modules `build.zig` exposes:
+`unicode_security` for the scan contract, `unicode_line_break` for UAX #14, and
+`unicode_grapheme` for UAX #29.

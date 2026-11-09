@@ -164,6 +164,41 @@ pub fn build(b: *std.Build) void {
     });
     const run_line_break_tests = b.addRunArtifact(line_break_tests);
     test_step.dependOn(&run_line_break_tests.step);
+
+    // UAX #29 grapheme clustering is its own module for the same reason, and
+    // its tests live in their own root file. It reads the line breaker's
+    // Extended_Pictographic table, which is a source-level import rather than a
+    // module dependency, so only its own test root needs wiring here.
+    const grapheme_module = b.addModule("unicode_grapheme", .{
+        .root_source_file = b.path("src/grapheme.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const grapheme_test_module = b.createModule(.{
+        .root_source_file = b.path("test/grapheme.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    grapheme_test_module.addImport("grapheme", grapheme_module);
+
+    const grapheme_options = b.addOptions();
+    // The corpus is read from disk at run time for the reason the line-break
+    // corpus is: baking it in as a build option would make the compiler
+    // materialise the whole string literal.
+    grapheme_options.addOption(
+        []const u8,
+        "corpus_path",
+        b.pathFromRoot("testdata/GraphemeBreakTest.txt"),
+    );
+    grapheme_test_module.addOptions("grapheme_options", grapheme_options);
+
+    const grapheme_tests = b.addTest(.{
+        .name = "unicode_grapheme_tests",
+        .root_module = grapheme_test_module,
+    });
+    const run_grapheme_tests = b.addRunArtifact(grapheme_tests);
+    test_step.dependOn(&run_grapheme_tests.step);
 }
 
 fn readFixture(b: *std.Build, path: []const u8) []const u8 {
