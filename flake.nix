@@ -397,15 +397,16 @@
           ];
         };
 
+        # The shell uses the account's elan home, which every Lean project on
+        # the machine shares. ./lean-toolchain selects the toolchain inside the
+        # repository; the shell installs that toolchain into the account's home
+        # and leaves the account's default toolchain unchanged.
         leanShell = pkgs.mkShell {
           packages = runtimePackages ++ [
             pkgs.elan
           ];
           shellHook = ''
-            export ELAN_HOME="$PWD/.elan"
-            export PATH="$ELAN_HOME/bin:$PATH"
             elan toolchain install $(cat lean-toolchain) 2>/dev/null || true
-            elan default $(cat lean-toolchain) 2>/dev/null || true
           '';
         };
       in {
