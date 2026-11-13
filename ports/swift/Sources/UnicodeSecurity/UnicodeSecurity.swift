@@ -2331,7 +2331,12 @@ private func bidiTable() -> BidiTable {
 // `# @missing: 0000..10FFFF; N` line declares Neutral over the whole codepoint
 // space, so an unlisted codepoint is N and there is no default range list to
 // scan — unlike DerivedBidiClass, which carries real per-block defaults.
-private enum EastAsianWidth: Equatable {
+//
+// The class and its lookup are visible to the whole module, not just this file:
+// the width-class-confusion detector here and UAX #14's LB19a, LB25 and LB30 in
+// Segmentation/LineBreak.swift read one East_Asian_Width table, parsed once
+// from the digest-pinned EastAsianWidth.txt.
+enum EastAsianWidth: Equatable {
     case a
     case f
     case h
@@ -2380,7 +2385,7 @@ private func eastAsianWidthTable() -> [EawRange] {
 }
 
 // East_Asian_Width for one codepoint: binary-search the sorted ranges, else N.
-private func eastAsianWidth(_ cp: Int) -> EastAsianWidth {
+func eastAsianWidth(_ cp: Int) -> EastAsianWidth {
     let table = eastAsianWidthTable()
     var lo = 0
     var hi = table.count

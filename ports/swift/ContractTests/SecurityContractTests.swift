@@ -33,6 +33,8 @@ struct SecurityContractRunner {
         try testAdmissibilityFormDrift()
         try testSkinToneVariationForgery()
         try testOpaqueBlob()
+        try LineBreakContractTests.run()
+        try GraphemeContractTests.run()
         print("clean: Swift contract tests pass")
     }
 
@@ -1273,11 +1275,16 @@ struct SecurityContractRunner {
     }
 }
 
-private enum TestError: Error {
+// The fixture reader, the assertion helpers and the error they throw are
+// visible to the whole test target: the segmentation suites in
+// LineBreakContractTests.swift and GraphemeContractTests.swift decode the same
+// fixture shape and assert through the same two functions, and a second copy
+// of either would be a second definition of what a failure is.
+enum TestError: Error {
     case message(String)
 }
 
-private func loadFixture(_ name: String) throws -> [String: Any] {
+func loadFixture(_ name: String) throws -> [String: Any] {
     let resourceName = URL(fileURLWithPath: name).lastPathComponent
     guard let url = Bundle.module.url(forResource: resourceName, withExtension: nil) else {
         throw TestError.message("missing fixture: \(name)")
@@ -1289,7 +1296,7 @@ private func loadFixture(_ name: String) throws -> [String: Any] {
     return object
 }
 
-private func array(_ object: [String: Any], _ key: String) throws -> [[String: Any]] {
+func array(_ object: [String: Any], _ key: String) throws -> [[String: Any]] {
     guard let value = object[key] as? [[String: Any]] else { throw TestError.message("missing array: \(key)") }
     return value
 }
@@ -1299,12 +1306,12 @@ private func dictionary(_ object: [String: Any], _ key: String) throws -> [Strin
     return value
 }
 
-private func string(_ object: [String: Any], _ key: String) throws -> String {
+func string(_ object: [String: Any], _ key: String) throws -> String {
     guard let value = object[key] as? String else { throw TestError.message("missing string: \(key)") }
     return value
 }
 
-private func intArray(_ object: [String: Any], _ key: String) throws -> [Int] {
+func intArray(_ object: [String: Any], _ key: String) throws -> [Int] {
     guard let value = object[key] as? [Int] else { throw TestError.message("missing int array: \(key)") }
     return value
 }
@@ -1346,11 +1353,11 @@ private func canonicalJson(_ object: [String: Any]) throws -> String {
     return out
 }
 
-private func expect(_ condition: Bool, _ message: String) throws {
+func expect(_ condition: Bool, _ message: String) throws {
     if !condition { throw TestError.message(message) }
 }
 
-private func expectEqual<T: Equatable>(_ actual: T, _ expected: T, _ message: String) throws {
+func expectEqual<T: Equatable>(_ actual: T, _ expected: T, _ message: String) throws {
     if actual != expected {
         throw TestError.message("\(message): actual=\(actual) expected=\(expected)")
     }

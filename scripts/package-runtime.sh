@@ -176,7 +176,8 @@ dotnet/
   installable .NET package tree with vendored security data and contract fixtures
 
 swift/
-  installable Swift package tree with vendored security data and contract fixtures
+  installable Swift package tree with the security and segmentation sources,
+  vendored security data, published break corpora and contract fixtures
 
 zig/
   Zig install prefix containing libunicode_security and importable module source
