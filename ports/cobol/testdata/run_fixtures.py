@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import subprocess
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1004,7 +1005,14 @@ def check_validated_utf8():
     return count
 
 
-def parse_grapheme_break_test(path):
+def parse_break_test(path):
+    """Every data row of a published break corpus, as (codepoints, boundaries).
+
+    Both corpora write the same alternating boundary markers and hex code
+    points, so both segmentation suites read them through this. A boundary is
+    recorded as the index it falls at, which is the shape the compiled port
+    reports; a non-break marker advances nothing.
+    """
     cases = []
     with path.open("r", encoding="utf-8") as f:
         for raw in f:
@@ -1035,24 +1043,21 @@ def grapheme_boundaries(cps, label):
 
 def check_grapheme():
     path = Path(__file__).resolve().parent / "GraphemeBreakTest.txt"
-    cases = parse_grapheme_break_test(path)
+    cases = parse_break_test(path)
     require(cases, "GraphemeBreakTest.txt produced no cases")
-    count = 0
-    for cps, expected in cases:
-        got = grapheme_boundaries(cps, f"grapheme {cps}")
-        require(got == expected,
-                f"grapheme {cps} boundaries {got} != expected {expected}")
-        count += 1
+    produced = break_boundaries_batch(
+        "grapheme-batch", cases, "GraphemeBreakTest.txt")
+    compare_corpus(cases, produced, "GraphemeBreakTest.txt")
     # The whole file must be accounted for, so a row lost between the file and
     # this fold fails rather than quietly shrinking the denominator. The count
     # comes from the shared fixture, which the generator counts from the
     # canonical corpus, so the corpus gate and the vector gate cannot disagree
     # about the size of the corpus.
     fixture = load_segmentation("grapheme_vectors.json", "uax29-grapheme-cluster")
-    require(count == fixture["published_row_count"],
-            f"GraphemeBreakTest.txt accounted for {count} rows, "
+    require(len(cases) == fixture["published_row_count"],
+            f"GraphemeBreakTest.txt accounted for {len(cases)} rows, "
             f"expected {fixture['published_row_count']}")
-    return count
+    return len(cases)
 
 
 def check_grapheme_shared_vectors():
@@ -1069,6 +1074,111 @@ def check_grapheme_shared_vectors():
         label = f"{case['rule']}: {case['name']}"
         expected = [index for index, flag in enumerate(case["breaks"]) if flag]
         got = grapheme_boundaries(case["input"], label)
+        require(got == expected,
+                f"{label}\n  cps      {case['input']}"
+                f"\n  expected {expected}\n  actual   {got}")
+        replayed += 1
+    return replayed
+
+
+def break_boundaries_batch(op, cases, label):
+    """The break positions for many sequences, through one invocation.
+
+    The published corpus is the authority for a segmentation algorithm — the
+    shared vectors only name which rule each boundary exercises — so it has to
+    be runnable on every change. Driving it a row at a time is not: this
+    program initialises its fixed tables on every start, measured at about a
+    quarter-second, and the UAX #14 corpus carries 19,338 rows.
+
+    The batch op reads one line of comma-separated decimal code points per row
+    and writes one line of comma-separated boundary positions per row. Both
+    corpora are driven through it, so the port has one corpus-driving shape.
+    """
+    with tempfile.TemporaryDirectory() as scratch:
+        in_path = Path(scratch) / "in.txt"
+        out_path = Path(scratch) / "out.txt"
+        with in_path.open("w", encoding="ascii") as handle:
+            for cps, _expected in cases:
+                handle.write(",".join(str(v) for v in cps) + "\n")
+        subprocess.run(
+            [str(BIN), op, str(in_path), str(out_path)],
+            check=True, text=True, stdout=subprocess.PIPE)
+        with out_path.open("r", encoding="ascii") as handle:
+            produced = [line.rstrip("\n") for line in handle]
+    require(len(produced) == len(cases),
+            f"{label}: the batch op answered {len(produced)} rows for "
+            f"{len(cases)} sent")
+    return [[int(x) for x in row.split(",") if x] for row in produced]
+
+
+def compare_corpus(cases, produced, corpus):
+    """Every produced boundary list against its published one.
+
+    A conformance red is only actionable if it says which row disagreed and
+    how, so the first few disagreements are named in full.
+    """
+    disagreements = []
+    for (cps, expected), got in zip(cases, produced):
+        if got != expected and len(disagreements) < 5:
+            disagreements.append(
+                "  cps=%s\n    published: %s\n    produced:  %s"
+                % (" ".join("%04X" % c for c in cps), expected, got))
+    total = sum(1 for (_c, e), g in zip(cases, produced) if g != e)
+    require(total == 0,
+            "%s: %d of %d published rows disagree\n%s"
+            % (corpus, total, len(cases), "\n".join(disagreements)))
+
+
+def line_break_boundaries(cps, label):
+    """The break positions for one sequence, through the per-row op.
+
+    The shared vectors replay one case per rule, where naming the rule in the
+    failure matters more than the shape of the run.
+    """
+    lines = run_lines("line-break", cps)
+    break_lines = [ln for ln in lines if ln.startswith("BREAKS")]
+    require(len(break_lines) == 1, f"{label} missing BREAKS {lines}")
+    rest = break_lines[0][len("BREAKS"):].strip()
+    return [int(x) for x in rest.split(",") if x]
+
+
+def check_line_break():
+    """Agreement with every row of the published UAX #14 corpus.
+
+    Hand-written vectors cannot establish a segmentation algorithm: its rules
+    read context on both sides of a boundary and the answer depends on state
+    carried from earlier in the sequence, so a wrong rule survives any vector a
+    person would pick.
+    """
+    path = Path(__file__).resolve().parent / "LineBreakTest.txt"
+    cases = parse_break_test(path)
+    require(cases, "LineBreakTest.txt produced no cases")
+    produced = break_boundaries_batch(
+        "line-break-batch", cases, "LineBreakTest.txt")
+    compare_corpus(cases, produced, "LineBreakTest.txt")
+    # The whole file must be accounted for, so a row lost between the file and
+    # this fold fails rather than quietly shrinking the denominator.
+    fixture = load_segmentation("line_break_vectors.json", "uax14-line-break")
+    require(len(cases) == fixture["published_row_count"],
+            f"LineBreakTest.txt accounted for {len(cases)} rows, "
+            f"expected {fixture['published_row_count']}")
+    return len(cases)
+
+
+def check_line_break_shared_vectors():
+    """One case per UAX #14 rule, the same bytes every port replays, so no
+    port carries a weaker set of rule checks than another.
+
+    The fixture records a boundary mask, one flag per position; this port
+    reports the positions that are break opportunities. The two say the same
+    thing, so the mask is read as the indices where it holds.
+    """
+    fixture = load_segmentation("line_break_vectors.json", "uax14-line-break")
+    replayed = 0
+    for case in fixture["cases"]:
+        label = f"{case['rule']}: {case['name']}"
+        expected = [index for index, flag in enumerate(case["breaks"]) if flag]
+        got = line_break_boundaries(case["input"], label)
         require(got == expected,
                 f"{label}\n  cps      {case['input']}"
                 f"\n  expected {expected}\n  actual   {got}")
@@ -1102,10 +1212,14 @@ def main():
     validated_count = check_validated_utf8()
     grapheme_count = check_grapheme()
     grapheme_vector_count = check_grapheme_shared_vectors()
+    line_break_count = check_line_break()
+    line_break_vector_count = check_line_break_shared_vectors()
     print(f"opaque-blob checks: {blob_count}")
     print(f"validated-utf8 checks: {validated_count}")
     print(f"grapheme (GraphemeBreakTest.txt) checks: {grapheme_count}")
     print(f"grapheme shared-vector replay: {grapheme_vector_count}")
+    print(f"line break (LineBreakTest.txt) checks: {line_break_count}")
+    print(f"line break shared-vector replay: {line_break_vector_count}")
     print(f"hash-input-stability shared-fixture vectors: {his_fixture_count}")
     print(f"hash-input-stability context vectors: {his_context_count}")
     print(f"ai-watermark-detectability shared-fixture vectors: {awd_fixture_count}")

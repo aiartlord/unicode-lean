@@ -452,6 +452,121 @@ GCB_CODE = {
 
 INCB_CODE = {"Linker": 1, "Consonant": 2, "Extend": 3}
 
+# The 49 Line_Break property values UAX #14 defines, each as the class code the
+# COBOL side compares against. Codes start at 1 so the EVALUATE's reset value
+# stays distinguishable; LOOKUP-LB resets to the XX code, which is the default
+# LineBreak.txt's own `@missing: 0000..10FFFF; XX` header declares.
+LB_CODE = {
+    value: index
+    for index, value in enumerate(
+        [
+            "AI", "AK", "AL", "AP", "AS", "B2", "BA", "BB", "BK", "CB", "CJ",
+            "CL", "CM", "CP", "CR", "EB", "EM", "EX", "GL", "H2", "H3", "HH",
+            "HL", "HY", "ID", "IN", "IS", "JL", "JT", "JV", "LF", "NL", "NS",
+            "NU", "OP", "PO", "PR", "QU", "RI", "SA", "SG", "SP", "SY", "VF",
+            "VI", "WJ", "XX", "ZW", "ZWJ",
+        ],
+        start=1,
+    )
+}
+
+# The 30 General_Category values of UAX #44 section 5.7.1. UAX #14 reads this
+# for LB1's SA resolution (Mn, Mc), the Pi/Pf quote refinement of LB15a and
+# LB15b, and LB30b (Cn). LOOKUP-GC resets to the Cn code, which is what an
+# unassigned codepoint carries: UnicodeData.txt gives such a codepoint no row
+# at all, so absence from the table is the answer rather than a fallback.
+GC_CODE = {
+    value: index
+    for index, value in enumerate(
+        [
+            "Lu", "Ll", "Lt", "Lm", "Lo",
+            "Mn", "Mc", "Me",
+            "Nd", "Nl", "No",
+            "Pc", "Pd", "Ps", "Pe", "Pi", "Pf", "Po",
+            "Sm", "Sc", "Sk", "So",
+            "Zs", "Zl", "Zp",
+            "Cc", "Cf", "Cs", "Co", "Cn",
+        ],
+        start=1,
+    )
+}
+
+
+def parse_lb_ranges(path):
+    """Explicit (lo, hi, code) Line_Break rows of LineBreak.txt.
+
+    A value the generator does not carry would silently drop the codepoints it
+    covers to the XX default, which LB1 then reads as AL — a wrong class rather
+    than a short table. That aborts instead.
+    """
+    by_class = {}
+    for number, line in enumerate(
+            path.read_text(encoding="utf-8").splitlines(), start=1):
+        body = strip_comment(line)
+        if not body or ";" not in body:
+            continue
+        left, prop, *_ = [part.strip() for part in body.split(";")]
+        if prop not in LB_CODE:
+            raise SystemExit(
+                "LineBreak.txt line %d names a Line_Break value the generator "
+                "does not carry: %r" % (number, prop))
+        by_class.setdefault(LB_CODE[prop], []).append(parse_range_token(left))
+    if not by_class:
+        raise SystemExit("LineBreak.txt names no Line_Break range")
+    out = []
+    for code, ranges in sorted(by_class.items()):
+        for lo, hi in coalesce(ranges):
+            out.append((lo, hi, code))
+    return out
+
+
+def parse_gc_ranges():
+    """Explicit (lo, hi, code) General_Category rows of UnicodeData.txt.
+
+    A codepoint range appears as two rows whose names end `, First>` and
+    `, Last>`; every other row covers one codepoint. A codepoint with no row is
+    unassigned, which is Cn, and the COBOL reset supplies that.
+    """
+    by_class = {}
+    pending_first = None
+    for line in (DATA / "UnicodeData.txt").read_text(
+            encoding="utf-8").splitlines():
+        fields = line.split(";")
+        if len(fields) < 3:
+            continue
+        point = int(fields[0], 16)
+        name = fields[1]
+        value = fields[2].strip()
+        if value not in GC_CODE:
+            raise SystemExit(
+                "UnicodeData.txt names a General_Category the generator does "
+                "not carry: %r" % value)
+        if name.endswith(", First>"):
+            pending_first = (point, value)
+            continue
+        if name.endswith(", Last>"):
+            if pending_first is None:
+                raise SystemExit(
+                    "UnicodeData.txt has a Last row with no First row at "
+                    "U+%04X" % point)
+            first_point, first_value = pending_first
+            if first_value != value:
+                raise SystemExit(
+                    "UnicodeData.txt range U+%04X..U+%04X disagrees on "
+                    "General_Category" % (first_point, point))
+            by_class.setdefault(GC_CODE[value], []).append(
+                (first_point, point))
+            pending_first = None
+            continue
+        by_class.setdefault(GC_CODE[value], []).append((point, point))
+    if pending_first is not None:
+        raise SystemExit("UnicodeData.txt ends inside an unclosed range")
+    out = []
+    for code, ranges in sorted(by_class.items()):
+        for lo, hi in coalesce(ranges):
+            out.append((lo, hi, code))
+    return out
+
 
 def parse_gcb_ranges(path):
     by_class = {}
@@ -548,6 +663,47 @@ def emit_class_eval(path, entries, target):
         lines.append(f"        MOVE {code} TO {target}")
     lines.append("END-EVALUATE.")
     path.write_text("\n".join(lines) + "\n", encoding="ascii")
+
+
+# One emitted range row: the inclusive bounds and the class code, as a
+# fixed-width numeric text a REDEFINES lays a table over. A code point is at
+# most U+10FFFF, so seven digits hold any bound and two hold any class.
+RANGE_ROW_WIDTH = 16
+
+
+def emit_range_rows(path, entries, label):
+    """A property's ranges as static table data rather than as branches.
+
+    A copybook of `WHEN` arms becomes code: GnuCOBOL expands every COPY of a
+    program into one C function, so a few thousand arms make that function
+    enormous and the optimiser's memory use grows with it. The same ranges as
+    `FILLER ... VALUE` rows become initialised data, which costs the compiler
+    nothing to lay down, and the lookup over them becomes a binary search
+    rather than a scan — the shape the other ports' tables already take.
+
+    The rows are emitted in ascending order of lower bound and checked
+    disjoint, because a binary search is only defined over a sorted, disjoint
+    table. The per-class grouping the parsers produce is not that order.
+    """
+    rows = sorted(entries)
+    for before, after in zip(rows, rows[1:]):
+        if after[0] <= before[1]:
+            raise SystemExit(
+                "%s ranges overlap: U+%04X..U+%04X and U+%04X..U+%04X"
+                % (label, before[0], before[1], after[0], after[1]))
+    lines = []
+    for lo, hi, code in rows:
+        lines.append(
+            '05 FILLER PIC X(%d) VALUE "%07d%07d%02d".'
+            % (RANGE_ROW_WIDTH, lo, hi, code))
+    path.write_text("\n".join(lines) + "\n", encoding="ascii")
+    return len(rows)
+
+
+def emit_range_count(path, name, count):
+    """The row count of an emitted range table, as the constant its OCCURS
+    names. Emitted beside the rows so the two cannot disagree."""
+    path.write_text("78 %s VALUE %d.\n" % (name, count), encoding="ascii")
 
 
 def emit_bip39_words(path, keys):
@@ -927,6 +1083,23 @@ def main():
     emit_range_eval(OUT / "strong_ltr.cpy", parse_bidi_ltr_ranges(DATA / "DerivedBidiClass.txt"), "MOVE 1 TO TABLE-FLAG")
     emit_range_eval(OUT / "eaw_fullwidth.cpy", parse_eaw_ranges(DATA / "EastAsianWidth.txt", {"F"}), "MOVE 1 TO TABLE-FLAG")
     emit_range_eval(OUT / "eaw_halfwidth.cpy", parse_eaw_ranges(DATA / "EastAsianWidth.txt", {"H"}), "MOVE 1 TO TABLE-FLAG")
+    # Wide and Ambiguous serve UAX #14 alone. LB25 and LB30 read the Fullwidth,
+    # Wide and Halfwidth set; LB19a's tailoring treats Ambiguous as East Asian
+    # beside those three. The width-class-confusion detector needs neither, so
+    # the port carried only F and H until the line breaker arrived.
+    emit_range_eval(OUT / "eaw_wide.cpy", parse_eaw_ranges(DATA / "EastAsianWidth.txt", {"W"}), "MOVE 1 TO TABLE-FLAG")
+    emit_range_eval(OUT / "eaw_ambiguous.cpy", parse_eaw_ranges(DATA / "EastAsianWidth.txt", {"A"}), "MOVE 1 TO TABLE-FLAG")
+    # The two UAX #14 property tables are the largest this port carries, so
+    # they are emitted as data a binary search reads rather than as branches.
+    emit_range_count(
+        OUT / "lb_range_count.cpy", "LB-RANGE-COUNT",
+        emit_range_rows(
+            OUT / "lb_ranges.cpy", parse_lb_ranges(DATA / "LineBreak.txt"),
+            "Line_Break"))
+    emit_range_count(
+        OUT / "gc_range_count.cpy", "GC-RANGE-COUNT",
+        emit_range_rows(
+            OUT / "gc_ranges.cpy", parse_gc_ranges(), "General_Category"))
     emit_range_eval(
         OUT / "default_ignorable.cpy",
         parse_property_ranges(DATA / "DerivedCoreProperties.txt", {"Default_Ignorable_Code_Point"}),

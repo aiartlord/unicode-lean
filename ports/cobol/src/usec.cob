@@ -2,8 +2,37 @@
 IDENTIFICATION DIVISION.
 PROGRAM-ID. USEC.
 
+ENVIRONMENT DIVISION.
+INPUT-OUTPUT SECTION.
+FILE-CONTROL.
+*> The batch ops drive a whole published break corpus through one invocation.
+*> The corpus is the authority for a segmentation algorithm — the shared
+*> vectors only name which rule each boundary exercises — so it has to be
+*> runnable on every change, and this program initialises its fixed tables on
+*> every start. Both the line-break and the grapheme corpus are driven this
+*> way, so the port has one corpus-driving shape.
+    SELECT BATCH-IN ASSIGN TO BATCH-IN-PATH
+        ORGANIZATION LINE SEQUENTIAL
+        FILE STATUS IS BATCH-STATUS.
+    SELECT BATCH-OUT ASSIGN TO BATCH-OUT-PATH
+        ORGANIZATION LINE SEQUENTIAL
+        FILE STATUS IS BATCH-STATUS.
+
 DATA DIVISION.
+FILE SECTION.
+*> One row of a corpus batch: the input record is a comma-separated list of
+*> decimal code points, the output record the comma-separated boundary
+*> positions the algorithm reports for it.
+FD BATCH-IN.
+01 BATCH-IN-REC PIC X(19000).
+FD BATCH-OUT.
+01 BATCH-OUT-REC PIC X(20000).
+
 WORKING-STORAGE SECTION.
+01 BATCH-IN-PATH PIC X(512).
+01 BATCH-OUT-PATH PIC X(512).
+01 BATCH-STATUS PIC XX.
+01 BATCH-EOF PIC 9 VALUE 0.
 01 CMD-LINE PIC X(20000).
 01 OP-NAME PIC X(32).
 01 PROFILE-NAME PIC X(32).
@@ -684,6 +713,159 @@ WORKING-STORAGE SECTION.
 01 BP-FOUND PIC 9 VALUE 0.
 01 SDD-HOMO-FIRED PIC 9 VALUE 0.
 
+*> ── UAX #14 default line breaking ─────────────────────────────────────
+*> The 49 Line_Break class codes the generated lb_class copybook stores, as
+*> named constants rather than bare numbers: the rule ladder below names a
+*> class forty times over, and a ladder of that size written in integers
+*> cannot be read against UAX #14 R7.
+78 LB-AI VALUE 1.
+78 LB-AK VALUE 2.
+78 LB-AL VALUE 3.
+78 LB-AP VALUE 4.
+78 LB-AS VALUE 5.
+78 LB-B2 VALUE 6.
+78 LB-BA VALUE 7.
+78 LB-BB VALUE 8.
+78 LB-BK VALUE 9.
+78 LB-CB VALUE 10.
+78 LB-CJ VALUE 11.
+78 LB-CL VALUE 12.
+78 LB-CM VALUE 13.
+78 LB-CP VALUE 14.
+78 LB-CR VALUE 15.
+78 LB-EB VALUE 16.
+78 LB-EM VALUE 17.
+78 LB-EX VALUE 18.
+78 LB-GL VALUE 19.
+78 LB-H2 VALUE 20.
+78 LB-H3 VALUE 21.
+78 LB-HH VALUE 22.
+78 LB-HL VALUE 23.
+78 LB-HY VALUE 24.
+78 LB-ID VALUE 25.
+78 LB-IN VALUE 26.
+78 LB-IS VALUE 27.
+78 LB-JL VALUE 28.
+78 LB-JT VALUE 29.
+78 LB-JV VALUE 30.
+78 LB-LF VALUE 31.
+78 LB-NL VALUE 32.
+78 LB-NS VALUE 33.
+78 LB-NU VALUE 34.
+78 LB-OP VALUE 35.
+78 LB-PO VALUE 36.
+78 LB-PR VALUE 37.
+78 LB-QU VALUE 38.
+78 LB-RI VALUE 39.
+78 LB-SA VALUE 40.
+78 LB-SG VALUE 41.
+78 LB-SP VALUE 42.
+78 LB-SY VALUE 43.
+78 LB-VF VALUE 44.
+78 LB-VI VALUE 45.
+78 LB-WJ VALUE 46.
+78 LB-XX VALUE 47.
+78 LB-ZW VALUE 48.
+78 LB-ZWJ VALUE 49.
+*> The four General_Category codes UAX #14 reads, from gc_class: Mn and Mc
+*> for LB1's SA resolution, Pi and Pf for the quote refinement of LB15a and
+*> LB15b, and Cn for LB30b's unassigned-pictograph test.
+78 GC-MN VALUE 6.
+78 GC-MC VALUE 7.
+78 GC-PI VALUE 16.
+78 GC-PF VALUE 17.
+78 GC-CN VALUE 30.
+*> U+2010 HYPHEN, which LB20a and LB21a name explicitly because UCD 17.0
+*> moved it from class HY to class HH, and U+25CC DOTTED CIRCLE, which LB28a
+*> reads as a stand-in cluster base.
+78 LB-HYPHEN-2010 VALUE 8208.
+78 LB-DOTTED-CIRCLE VALUE 9676.
+01 LB-CLASS PIC 9(2) COMP-5 VALUE 0.
+01 GC-CLASS PIC 9(2) COMP-5 VALUE 0.
+01 LB-RESOLVED PIC 9(2) COMP-5 VALUE 0.
+*> The two UAX #14 property tables as static data a binary search reads,
+*> rather than as branches. Every COPY of this program expands into one C
+*> function, so a few thousand `WHEN` arms make that function enormous and the
+*> optimiser's working set grows with it; the same ranges as initialised rows
+*> cost the compiler nothing to lay down. Each row is an inclusive bound pair
+*> and a class code, laid out by a REDEFINES in the same way the AI-favoured
+*> vocabulary table is. The rows are ascending and disjoint, which is what
+*> makes the search well defined.
+COPY "src/generated/lb_range_count.cpy".
+01 LB-RANGE-RAW.
+   COPY "src/generated/lb_ranges.cpy".
+01 LB-RANGE-TABLE REDEFINES LB-RANGE-RAW.
+   05 LB-RANGE OCCURS LB-RANGE-COUNT TIMES.
+      10 LB-RANGE-LO PIC 9(7).
+      10 LB-RANGE-HI PIC 9(7).
+      10 LB-RANGE-CD PIC 9(2).
+COPY "src/generated/gc_range_count.cpy".
+01 GC-RANGE-RAW.
+   COPY "src/generated/gc_ranges.cpy".
+01 GC-RANGE-TABLE REDEFINES GC-RANGE-RAW.
+   05 GC-RANGE OCCURS GC-RANGE-COUNT TIMES.
+      10 GC-RANGE-LO PIC 9(7).
+      10 GC-RANGE-HI PIC 9(7).
+      10 GC-RANGE-CD PIC 9(2).
+01 LB-SRCH-LO PIC 9(5) COMP-5 VALUE 0.
+01 LB-SRCH-HI PIC 9(5) COMP-5 VALUE 0.
+01 LB-SRCH-MID PIC 9(5) COMP-5 VALUE 0.
+01 LB-SRCH-FOUND PIC 9 VALUE 0.
+*> The LB1-resolved class of every input position, so the rules that read
+*> forward (LB15b, LB15c, the LB25 bracket and the fourth LB28a sub-rule) see
+*> resolved classes rather than re-deriving them per look.
+01 LB-LIT-TABLE.
+   05 LB-LIT OCCURS 4096 TIMES PIC 9(2) COMP-5.
+*> The left-hand context a boundary decision reads, mirroring the EffSnapshot
+*> of the reference: the class and codepoint of the most recent character LB9
+*> did not absorb, the most recent that was also not SP, the one before that,
+*> and the running counters LB15a, LB25 and LB30a keep.
+01 EFF-PREV-CLS PIC 9(2) COMP-5 VALUE 0.
+01 EFF-PREV-CP PIC 9(9) COMP-5 VALUE 0.
+01 EFF-PREV-HAS PIC 9 VALUE 0.
+01 EFF-NOSP-CLS PIC 9(2) COMP-5 VALUE 0.
+01 EFF-NOSP-HAS PIC 9 VALUE 0.
+01 EFF-PP-CLS PIC 9(2) COMP-5 VALUE 0.
+01 EFF-PP-CP PIC 9(9) COMP-5 VALUE 0.
+01 EFF-PP-HAS PIC 9 VALUE 0.
+01 PI-WINDOW PIC 9 VALUE 0.
+01 LB-RI-RUN PIC 9(9) COMP-5 VALUE 0.
+01 NU-CHAIN PIC 9 VALUE 0.
+*> Per-decision scratch: the effective class of the character being decided,
+*> the effective class of its left neighbour, the head of the suffix ahead of
+*> it, and the predicates the rules that read forward or far back precompute.
+01 LB-EFF PIC 9(2) COMP-5 VALUE 0.
+01 LB-LEFT PIC 9(2) COMP-5 VALUE 0.
+01 LB-LEFT-HAS PIC 9 VALUE 0.
+01 LB-CUR-CP PIC 9(9) COMP-5 VALUE 0.
+01 LB-PREV-CP PIC 9(9) COMP-5 VALUE 0.
+01 LB-PREV-CLS PIC 9(2) COMP-5 VALUE 0.
+01 LB-AHEAD-CLS PIC 9(2) COMP-5 VALUE 0.
+01 LB-AHEAD-CP PIC 9(9) COMP-5 VALUE 0.
+01 LB-AHEAD-HAS PIC 9 VALUE 0.
+01 LB-NEXT-VF PIC 9 VALUE 0.
+01 LB-QUOTE-CLOSES PIC 9 VALUE 0.
+01 LB-HYPHEN-OPENS PIC 9 VALUE 0.
+01 LB-AKSARA-BASE PIC 9 VALUE 0.
+01 LB-CUR-PI PIC 9 VALUE 0.
+01 LB-CUR-PF PIC 9 VALUE 0.
+01 LB-OPEN-QU-EA PIC 9 VALUE 0.
+01 LB-CLOSE-QU-EA PIC 9 VALUE 0.
+01 LB-HY-CARRIES PIC 9 VALUE 0.
+01 LB-HL-GLUE PIC 9 VALUE 0.
+01 LB-BREAK PIC 9 VALUE 0.
+01 LB-CUR-CLS PIC 9(2) COMP-5 VALUE 0.
+01 LB-CUR-EA PIC 9 VALUE 0.
+01 LB-PREV-EA PIC 9 VALUE 0.
+01 LB-EFFPREV-EA PIC 9 VALUE 0.
+01 LB-EM-PICT PIC 9 VALUE 0.
+01 LB-PP-AKSARA PIC 9 VALUE 0.
+01 LB-IDX PIC 9(5) COMP-5 VALUE 0.
+01 LB-SCAN PIC 9(5) COMP-5 VALUE 0.
+01 LB-SCAN-STOP PIC 9 VALUE 0.
+01 LB-WORK-CLS PIC 9(2) COMP-5 VALUE 0.
+01 LB-WORK-FLAG PIC 9 VALUE 0.
+
 PROCEDURE DIVISION.
 MAIN.
     ACCEPT CMD-LINE FROM COMMAND-LINE
@@ -701,6 +883,15 @@ MAIN.
     IF OP-NAME = "grapheme"
         PERFORM PROCESS-GRAPHEME
         PERFORM EMIT-GRAPHEME
+        STOP RUN
+    END-IF
+    IF OP-NAME = "line-break"
+        PERFORM PROCESS-LINE-BREAK
+        PERFORM EMIT-LINE-BREAK
+        STOP RUN
+    END-IF
+    IF OP-NAME = "line-break-batch" OR OP-NAME = "grapheme-batch"
+        PERFORM PROCESS-BREAK-BATCH
         STOP RUN
     END-IF
     IF OP-NAME = "scan-utf8"
@@ -5742,6 +5933,688 @@ EMIT-GRAPHEME.
     DISPLAY "BOUNDARIES " FUNCTION TRIM(BOUND-TEXT)
     MOVE CLUSTER-COUNT TO COUNT-TEXT
     DISPLAY "CLUSTERS " FUNCTION TRIM(COUNT-TEXT).
+
+LOOKUP-LB.
+*> The Line_Break class of LOOKUP-CP before LB1, by binary search over the
+*> generated ranges. A codepoint no range covers is XX, the default
+*> LineBreak.txt's own `@missing: 0000..10FFFF; XX` header declares, so the
+*> reset is the answer rather than a fallback.
+    MOVE LB-XX TO LB-CLASS
+    MOVE 1 TO LB-SRCH-LO
+    MOVE LB-RANGE-COUNT TO LB-SRCH-HI
+    MOVE 0 TO LB-SRCH-FOUND
+    PERFORM UNTIL LB-SRCH-LO > LB-SRCH-HI OR LB-SRCH-FOUND = 1
+        COMPUTE LB-SRCH-MID = (LB-SRCH-LO + LB-SRCH-HI) / 2
+        EVALUATE TRUE
+            WHEN LOOKUP-CP < LB-RANGE-LO(LB-SRCH-MID)
+                COMPUTE LB-SRCH-HI = LB-SRCH-MID - 1
+            WHEN LOOKUP-CP > LB-RANGE-HI(LB-SRCH-MID)
+                COMPUTE LB-SRCH-LO = LB-SRCH-MID + 1
+            WHEN OTHER
+                MOVE LB-RANGE-CD(LB-SRCH-MID) TO LB-CLASS
+                MOVE 1 TO LB-SRCH-FOUND
+        END-EVALUATE
+    END-PERFORM.
+
+LOOKUP-GC.
+*> The General_Category of LOOKUP-CP, by binary search over the generated
+*> ranges. A codepoint no range covers is Cn: UnicodeData.txt gives an
+*> unassigned codepoint no row at all, so absence from the table is the answer
+*> and the reset carries it.
+    MOVE GC-CN TO GC-CLASS
+    MOVE 1 TO LB-SRCH-LO
+    MOVE GC-RANGE-COUNT TO LB-SRCH-HI
+    MOVE 0 TO LB-SRCH-FOUND
+    PERFORM UNTIL LB-SRCH-LO > LB-SRCH-HI OR LB-SRCH-FOUND = 1
+        COMPUTE LB-SRCH-MID = (LB-SRCH-LO + LB-SRCH-HI) / 2
+        EVALUATE TRUE
+            WHEN LOOKUP-CP < GC-RANGE-LO(LB-SRCH-MID)
+                COMPUTE LB-SRCH-HI = LB-SRCH-MID - 1
+            WHEN LOOKUP-CP > GC-RANGE-HI(LB-SRCH-MID)
+                COMPUTE LB-SRCH-LO = LB-SRCH-MID + 1
+            WHEN OTHER
+                MOVE GC-RANGE-CD(LB-SRCH-MID) TO GC-CLASS
+                MOVE 1 TO LB-SRCH-FOUND
+        END-EVALUATE
+    END-PERFORM.
+
+IS-EAW-WIDE.
+*> East_Asian_Width = W, which LB25 and LB30 read beside F and H.
+    MOVE 0 TO TABLE-FLAG
+    COPY "src/generated/eaw_wide.cpy".
+
+IS-EAW-AMBIGUOUS.
+*> East_Asian_Width = A, which LB19a's tailoring treats as East Asian.
+    MOVE 0 TO TABLE-FLAG
+    COPY "src/generated/eaw_ambiguous.cpy".
+
+LB-IS-EA-FULLWIDE.
+*> East_Asian_Width F, W or H of LOOKUP-CP — the set LB25 and LB30 read.
+*> Result in TABLE-FLAG.
+    MOVE 0 TO LB-WORK-FLAG
+    PERFORM IS-EAW-FULLWIDTH
+    IF TABLE-FLAG = 1
+        MOVE 1 TO LB-WORK-FLAG
+    END-IF
+    PERFORM IS-EAW-HALFWIDTH
+    IF TABLE-FLAG = 1
+        MOVE 1 TO LB-WORK-FLAG
+    END-IF
+    PERFORM IS-EAW-WIDE
+    IF TABLE-FLAG = 1
+        MOVE 1 TO LB-WORK-FLAG
+    END-IF
+    MOVE LB-WORK-FLAG TO TABLE-FLAG.
+
+LB-IS-EA-OR-AMBIG.
+*> What LB19a counts as East Asian: Fullwidth, Wide and Halfwidth, with
+*> Ambiguous beside them. Wider than LB-IS-EA-FULLWIDE. Result in TABLE-FLAG.
+    PERFORM LB-IS-EA-FULLWIDE
+    IF TABLE-FLAG = 0
+        PERFORM IS-EAW-AMBIGUOUS
+    END-IF.
+
+LB-RESOLVE-CLASS.
+*> LB1, applied at lookup: the tailorable classes fold into the algorithm's
+*> working alphabet. AI, SG and XX resolve to AL; CJ to NS; SA to CM when the
+*> codepoint is a non-spacing or spacing combining mark and to AL otherwise.
+*> LOOKUP-CP carries the codepoint; the result is LB-RESOLVED.
+    PERFORM LOOKUP-LB
+    EVALUATE TRUE
+        WHEN LB-CLASS = LB-AI OR LB-CLASS = LB-SG OR LB-CLASS = LB-XX
+            MOVE LB-AL TO LB-RESOLVED
+        WHEN LB-CLASS = LB-CJ
+            MOVE LB-NS TO LB-RESOLVED
+        WHEN LB-CLASS = LB-SA
+*>          LB1 reads only the two combining-mark categories here; an
+*>          enclosing mark is not among them.
+            PERFORM LOOKUP-GC
+            IF GC-CLASS = GC-MN OR GC-CLASS = GC-MC
+                MOVE LB-CM TO LB-RESOLVED
+            ELSE
+                MOVE LB-AL TO LB-RESOLVED
+            END-IF
+        WHEN OTHER
+            MOVE LB-CLASS TO LB-RESOLVED
+    END-EVALUATE.
+
+LB-EFFECTIVE-OF.
+*> LB9 and LB10 over the class in LB-WORK-CLS: a CM or ZWJ takes the class of
+*> what it attaches to, and AL when nothing absorbs it. The snapshot supplies
+*> what it attaches to; the result replaces LB-WORK-CLS.
+    IF LB-WORK-CLS = LB-CM OR LB-WORK-CLS = LB-ZWJ
+        IF EFF-PREV-HAS = 0
+            MOVE LB-AL TO LB-WORK-CLS
+        ELSE
+            IF EFF-PREV-CLS = LB-BK OR EFF-PREV-CLS = LB-CR
+               OR EFF-PREV-CLS = LB-LF OR EFF-PREV-CLS = LB-NL
+               OR EFF-PREV-CLS = LB-SP OR EFF-PREV-CLS = LB-ZW
+                MOVE LB-AL TO LB-WORK-CLS
+            END-IF
+        END-IF
+    END-IF.
+
+LB-COMPUTE-AHEAD.
+*> The head of the suffix ahead of LB-IDX, plus the two predicates the rules
+*> reading forward need: whether the first significant class ahead is VF (the
+*> fourth LB28a sub-rule looks past any CM or ZWJ the cluster absorbs), and
+*> whether what follows a final quote cannot itself open a line (LB15b).
+    MOVE 0 TO LB-AHEAD-HAS LB-NEXT-VF LB-AHEAD-CLS LB-AHEAD-CP
+    IF LB-IDX < CP-COUNT
+        MOVE 1 TO LB-AHEAD-HAS
+        MOVE LB-LIT(LB-IDX + 1) TO LB-AHEAD-CLS
+        MOVE CP(LB-IDX + 1) TO LB-AHEAD-CP
+    END-IF
+    MOVE 0 TO LB-SCAN-STOP
+    COMPUTE LB-SCAN = LB-IDX + 1
+    PERFORM UNTIL LB-SCAN > CP-COUNT OR LB-SCAN-STOP = 1
+        IF LB-LIT(LB-SCAN) = LB-CM OR LB-LIT(LB-SCAN) = LB-ZWJ
+            ADD 1 TO LB-SCAN
+        ELSE
+            IF LB-LIT(LB-SCAN) = LB-VF
+                MOVE 1 TO LB-NEXT-VF
+            END-IF
+            MOVE 1 TO LB-SCAN-STOP
+        END-IF
+    END-PERFORM
+    IF LB-AHEAD-HAS = 0
+        MOVE 1 TO LB-QUOTE-CLOSES
+    ELSE
+        MOVE 0 TO LB-QUOTE-CLOSES
+        IF LB-AHEAD-CLS = LB-SP OR LB-AHEAD-CLS = LB-GL
+           OR LB-AHEAD-CLS = LB-WJ OR LB-AHEAD-CLS = LB-CL
+           OR LB-AHEAD-CLS = LB-QU OR LB-AHEAD-CLS = LB-CP
+           OR LB-AHEAD-CLS = LB-EX OR LB-AHEAD-CLS = LB-IS
+           OR LB-AHEAD-CLS = LB-SY OR LB-AHEAD-CLS = LB-BK
+           OR LB-AHEAD-CLS = LB-CR OR LB-AHEAD-CLS = LB-LF
+           OR LB-AHEAD-CLS = LB-NL OR LB-AHEAD-CLS = LB-ZW
+            MOVE 1 TO LB-QUOTE-CLOSES
+        END-IF
+    END-IF.
+
+LB-PREPARE-DECISION.
+*> Everything the rule ladder reads that is not one comparison: the effective
+*> class of the character being decided, the effective class of its left
+*> neighbour, the suffix head, and the predicates that read forward, far back,
+*> or through a second table.
+    MOVE CP(LB-IDX) TO LB-CUR-CP
+    MOVE LB-LIT(LB-IDX) TO LB-CUR-CLS
+    MOVE LB-CUR-CLS TO LB-WORK-CLS
+    PERFORM LB-EFFECTIVE-OF
+    MOVE LB-WORK-CLS TO LB-EFF
+    COMPUTE LB-SCAN = LB-IDX - 1
+    MOVE CP(LB-SCAN) TO LB-PREV-CP
+    MOVE LB-LIT(LB-SCAN) TO LB-PREV-CLS
+*>  LB9 makes the left neighbour effective rather than literal: a CM or ZWJ
+*>  before this character is not what this character sits beside.
+    IF LB-PREV-CLS = LB-CM OR LB-PREV-CLS = LB-ZWJ
+        MOVE EFF-PREV-CLS TO LB-LEFT
+        MOVE EFF-PREV-HAS TO LB-LEFT-HAS
+    ELSE
+        MOVE LB-PREV-CLS TO LB-LEFT
+        MOVE 1 TO LB-LEFT-HAS
+    END-IF
+    PERFORM LB-COMPUTE-AHEAD
+*>  The Pi/Pf refinement LB15a and LB15b read.
+    MOVE LB-CUR-CP TO LOOKUP-CP
+    PERFORM LOOKUP-GC
+    MOVE 0 TO LB-CUR-PI LB-CUR-PF
+    IF LB-EFF = LB-QU
+        IF GC-CLASS = GC-PI
+            MOVE 1 TO LB-CUR-PI
+        END-IF
+        IF GC-CLASS = GC-PF
+            MOVE 1 TO LB-CUR-PF
+        END-IF
+    END-IF
+*>  LB19a. A quote neither breaks before nor after, except on the OUTER side
+*>  of an initial or final punctuation quote standing in contiguous East Asian
+*>  content, where the default break applies. The inner side stays unbroken,
+*>  being the boundary inside the quote's own scope.
+    MOVE 0 TO LB-OPEN-QU-EA
+    IF LB-CUR-PI = 1 AND LB-AHEAD-HAS = 1
+        MOVE LB-PREV-CP TO LOOKUP-CP
+        PERFORM LB-IS-EA-OR-AMBIG
+        IF TABLE-FLAG = 1
+            MOVE LB-CUR-CP TO LOOKUP-CP
+            PERFORM LB-IS-EA-OR-AMBIG
+            IF TABLE-FLAG = 1
+                MOVE LB-AHEAD-CP TO LOOKUP-CP
+                PERFORM LB-IS-EA-OR-AMBIG
+                IF TABLE-FLAG = 1
+                    MOVE 1 TO LB-OPEN-QU-EA
+                END-IF
+            END-IF
+        END-IF
+    END-IF
+    MOVE 0 TO LB-CLOSE-QU-EA
+    IF EFF-PREV-HAS = 1 AND EFF-PP-HAS = 1
+        MOVE EFF-PREV-CP TO LOOKUP-CP
+        PERFORM LOOKUP-GC
+        IF GC-CLASS = GC-PF
+            MOVE EFF-PP-CP TO LOOKUP-CP
+            PERFORM LB-IS-EA-OR-AMBIG
+            IF TABLE-FLAG = 1
+                MOVE EFF-PREV-CP TO LOOKUP-CP
+                PERFORM LB-IS-EA-OR-AMBIG
+                IF TABLE-FLAG = 1
+                    MOVE LB-CUR-CP TO LOOKUP-CP
+                    PERFORM LB-IS-EA-OR-AMBIG
+                    IF TABLE-FLAG = 1
+                        MOVE 1 TO LB-CLOSE-QU-EA
+                    END-IF
+                END-IF
+            END-IF
+        END-IF
+    END-IF
+*>  LB20.1 and LB20a both require the hyphen's own left context to be outside
+*>  a word, the same start-of-segment set.
+    MOVE 0 TO LB-HYPHEN-OPENS
+    IF EFF-PP-HAS = 0
+        MOVE 1 TO LB-HYPHEN-OPENS
+    ELSE
+        IF EFF-PP-CLS = LB-BK OR EFF-PP-CLS = LB-CR OR EFF-PP-CLS = LB-LF
+           OR EFF-PP-CLS = LB-NL OR EFF-PP-CLS = LB-SP OR EFF-PP-CLS = LB-ZW
+           OR EFF-PP-CLS = LB-CB OR EFF-PP-CLS = LB-GL
+            MOVE 1 TO LB-HYPHEN-OPENS
+        END-IF
+    END-IF
+    MOVE 0 TO LB-HY-CARRIES
+    IF EFF-PREV-HAS = 1
+        IF EFF-PREV-CLS = LB-HY OR EFF-PREV-CLS = LB-HH
+           OR EFF-PREV-CP = LB-HYPHEN-2010
+            MOVE 1 TO LB-HY-CARRIES
+        END-IF
+    END-IF
+*>  LB21a: an HL letter followed by an HY hyphen or U+2010 glues to what comes
+*>  next unless that is itself HL. A BA does not glue here.
+    MOVE 0 TO LB-HL-GLUE
+    IF EFF-PP-HAS = 1 AND EFF-PP-CLS = LB-HL AND EFF-PREV-HAS = 1
+        IF EFF-PREV-CLS = LB-HY OR EFF-PREV-CP = LB-HYPHEN-2010
+            MOVE 1 TO LB-HL-GLUE
+        END-IF
+    END-IF
+*>  LB28a. U+25CC DOTTED CIRCLE carries class AL and stands in for a cluster
+*>  base throughout the aksara rules.
+    MOVE 0 TO LB-AKSARA-BASE
+    IF LB-LEFT-HAS = 1 AND (LB-LEFT = LB-AK OR LB-LEFT = LB-AS)
+        MOVE 1 TO LB-AKSARA-BASE
+    END-IF
+    IF EFF-PREV-HAS = 1 AND EFF-PREV-CP = LB-DOTTED-CIRCLE
+       AND EFF-PREV-CLS = LB-AL
+        MOVE 1 TO LB-AKSARA-BASE
+    END-IF
+    MOVE 0 TO LB-PP-AKSARA
+    IF EFF-PP-HAS = 1
+        IF EFF-PP-CLS = LB-AK OR EFF-PP-CLS = LB-AS
+           OR EFF-PP-CP = LB-DOTTED-CIRCLE
+            MOVE 1 TO LB-PP-AKSARA
+        END-IF
+    END-IF
+*>  The East Asian width membership LB25's bracketed prefix and LB30 read.
+    MOVE LB-CUR-CP TO LOOKUP-CP
+    PERFORM LB-IS-EA-FULLWIDE
+    MOVE TABLE-FLAG TO LB-CUR-EA
+    MOVE LB-PREV-CP TO LOOKUP-CP
+    PERFORM LB-IS-EA-FULLWIDE
+    MOVE TABLE-FLAG TO LB-PREV-EA
+    MOVE 0 TO LB-EFFPREV-EA
+    IF EFF-PREV-HAS = 1
+        MOVE EFF-PREV-CP TO LOOKUP-CP
+        PERFORM LB-IS-EA-FULLWIDE
+        MOVE TABLE-FLAG TO LB-EFFPREV-EA
+    END-IF
+*>  LB30b's second clause: an unassigned codepoint carrying
+*>  Extended_Pictographic glues a following EM.
+    MOVE 0 TO LB-EM-PICT
+    IF EFF-PREV-HAS = 1
+        MOVE EFF-PREV-CP TO LOOKUP-CP
+        PERFORM LOOKUP-EXTPICT
+        IF IS-EP-FLAG = 1
+            MOVE EFF-PREV-CP TO LOOKUP-CP
+            PERFORM LOOKUP-GC
+            IF GC-CLASS = GC-CN
+                MOVE 1 TO LB-EM-PICT
+            END-IF
+        END-IF
+    END-IF.
+
+LB-DECIDE.
+*> Whether a line break opportunity falls immediately before LB-IDX. The arms
+*> are LB4 through LB31 in UAX #14 R7's canonical order and the first that
+*> matches decides, which is what makes the ladder a first-match rule set
+*> rather than a conjunction. The trailing arm is LB31.
+    PERFORM LB-PREPARE-DECISION
+    EVALUATE TRUE
+*>      LB4 and LB5: the mandatory breaks.
+        WHEN LB-PREV-CLS = LB-BK
+            MOVE 1 TO LB-BREAK
+        WHEN LB-PREV-CLS = LB-CR AND LB-CUR-CLS = LB-LF
+            MOVE 0 TO LB-BREAK
+        WHEN LB-PREV-CLS = LB-CR OR LB-PREV-CLS = LB-LF
+             OR LB-PREV-CLS = LB-NL
+            MOVE 1 TO LB-BREAK
+*>      LB6 and LB7: never break before a mandatory break, a space or a ZW.
+        WHEN LB-CUR-CLS = LB-BK OR LB-CUR-CLS = LB-CR
+             OR LB-CUR-CLS = LB-LF OR LB-CUR-CLS = LB-NL
+            MOVE 0 TO LB-BREAK
+        WHEN LB-CUR-CLS = LB-SP OR LB-CUR-CLS = LB-ZW
+            MOVE 0 TO LB-BREAK
+*>      LB8 and LB8a.
+        WHEN EFF-NOSP-HAS = 1 AND EFF-NOSP-CLS = LB-ZW
+            MOVE 1 TO LB-BREAK
+        WHEN LB-PREV-CLS = LB-ZWJ
+            MOVE 0 TO LB-BREAK
+*>      LB9: a CM or ZWJ attaches to what precedes it.
+        WHEN (LB-CUR-CLS = LB-CM OR LB-CUR-CLS = LB-ZWJ)
+             AND EFF-PREV-HAS = 1
+             AND NOT (EFF-PREV-CLS = LB-BK OR EFF-PREV-CLS = LB-CR
+                      OR EFF-PREV-CLS = LB-LF OR EFF-PREV-CLS = LB-NL
+                      OR EFF-PREV-CLS = LB-SP OR EFF-PREV-CLS = LB-ZW)
+            MOVE 0 TO LB-BREAK
+*>      LB11, LB12 and LB12a.
+        WHEN LB-EFF = LB-WJ OR (LB-LEFT-HAS = 1 AND LB-LEFT = LB-WJ)
+            MOVE 0 TO LB-BREAK
+        WHEN LB-LEFT-HAS = 1 AND LB-LEFT = LB-GL
+            MOVE 0 TO LB-BREAK
+        WHEN LB-EFF = LB-GL
+             AND NOT (LB-LEFT-HAS = 1
+                      AND (LB-LEFT = LB-SP OR LB-LEFT = LB-BA
+                           OR LB-LEFT = LB-HY OR LB-LEFT = LB-HH))
+            MOVE 0 TO LB-BREAK
+*>      LB15c, which UCD 17.0 orders above LB13 and LB15d: break before an IS
+*>      that opens a number and follows a space, as in "equals .35".
+        WHEN LB-PREV-CLS = LB-SP AND LB-EFF = LB-IS
+             AND LB-AHEAD-HAS = 1 AND LB-AHEAD-CLS = LB-NU
+            MOVE 1 TO LB-BREAK
+*>      LB13 and LB14.
+        WHEN LB-EFF = LB-CL OR LB-EFF = LB-CP OR LB-EFF = LB-EX
+             OR LB-EFF = LB-IS OR LB-EFF = LB-SY
+            MOVE 0 TO LB-BREAK
+        WHEN EFF-NOSP-HAS = 1 AND EFF-NOSP-CLS = LB-OP
+            MOVE 0 TO LB-BREAK
+*>      LB15a, LB15b and LB15d.
+        WHEN PI-WINDOW = 1
+            MOVE 0 TO LB-BREAK
+        WHEN LB-CUR-PF = 1 AND LB-QUOTE-CLOSES = 1
+            MOVE 0 TO LB-BREAK
+        WHEN LB-EFF = LB-IS
+            MOVE 0 TO LB-BREAK
+*>      LB16 and LB17.
+        WHEN LB-EFF = LB-NS AND EFF-NOSP-HAS = 1
+             AND (EFF-NOSP-CLS = LB-CL OR EFF-NOSP-CLS = LB-CP)
+            MOVE 0 TO LB-BREAK
+        WHEN LB-EFF = LB-B2 AND EFF-NOSP-HAS = 1
+             AND EFF-NOSP-CLS = LB-B2
+            MOVE 0 TO LB-BREAK
+*>      LB18.
+        WHEN LB-PREV-CLS = LB-SP
+            MOVE 1 TO LB-BREAK
+*>      LB19 and LB19a, on each side of the quote.
+        WHEN LB-EFF = LB-QU AND LB-OPEN-QU-EA = 0
+            MOVE 0 TO LB-BREAK
+        WHEN LB-LEFT-HAS = 1 AND LB-LEFT = LB-QU AND LB-CLOSE-QU-EA = 0
+            MOVE 0 TO LB-BREAK
+*>      LB20.
+        WHEN LB-EFF = LB-CB OR (LB-LEFT-HAS = 1 AND LB-LEFT = LB-CB)
+            MOVE 1 TO LB-BREAK
+*>      LB20.1, UCD 17.0: an explicit hyphen joins a following letter only
+*>      where its own left context is outside a word. A mid-word HH falls
+*>      through to LB31.
+        WHEN LB-LEFT-HAS = 1 AND LB-LEFT = LB-HH
+             AND (LB-EFF = LB-AL OR LB-EFF = LB-HL)
+             AND LB-HYPHEN-OPENS = 1
+            MOVE 0 TO LB-BREAK
+*>      LB20a, with UCD 17.0's right side broadened to HL beside AL.
+        WHEN (LB-EFF = LB-AL OR LB-EFF = LB-HL)
+             AND LB-HY-CARRIES = 1 AND LB-HYPHEN-OPENS = 1
+            MOVE 0 TO LB-BREAK
+*>      LB21, LB21a and LB21b.
+        WHEN LB-EFF = LB-BA OR LB-EFF = LB-HY OR LB-EFF = LB-HH
+             OR LB-EFF = LB-NS
+            MOVE 0 TO LB-BREAK
+        WHEN LB-LEFT-HAS = 1 AND LB-LEFT = LB-BB
+            MOVE 0 TO LB-BREAK
+        WHEN LB-HL-GLUE = 1 AND LB-EFF NOT = LB-HL
+            MOVE 0 TO LB-BREAK
+        WHEN LB-EFF = LB-HL AND LB-LEFT-HAS = 1 AND LB-LEFT = LB-SY
+            MOVE 0 TO LB-BREAK
+*>      LB22.
+        WHEN LB-EFF = LB-IN
+            MOVE 0 TO LB-BREAK
+*>      LB23 and LB23a: letters and numbers, then the ideographic pairs.
+        WHEN LB-EFF = LB-NU AND LB-LEFT-HAS = 1
+             AND (LB-LEFT = LB-AL OR LB-LEFT = LB-HL)
+            MOVE 0 TO LB-BREAK
+        WHEN (LB-EFF = LB-AL OR LB-EFF = LB-HL)
+             AND LB-LEFT-HAS = 1 AND LB-LEFT = LB-NU
+            MOVE 0 TO LB-BREAK
+        WHEN (LB-EFF = LB-ID OR LB-EFF = LB-EB OR LB-EFF = LB-EM)
+             AND LB-LEFT-HAS = 1 AND LB-LEFT = LB-PR
+            MOVE 0 TO LB-BREAK
+        WHEN LB-EFF = LB-PO AND LB-LEFT-HAS = 1
+             AND (LB-LEFT = LB-ID OR LB-LEFT = LB-EB OR LB-LEFT = LB-EM)
+            MOVE 0 TO LB-BREAK
+*>      LB24.
+        WHEN (LB-EFF = LB-AL OR LB-EFF = LB-HL) AND LB-LEFT-HAS = 1
+             AND (LB-LEFT = LB-PR OR LB-LEFT = LB-PO)
+            MOVE 0 TO LB-BREAK
+        WHEN (LB-EFF = LB-PR OR LB-EFF = LB-PO) AND LB-LEFT-HAS = 1
+             AND (LB-LEFT = LB-AL OR LB-LEFT = LB-HL)
+            MOVE 0 TO LB-BREAK
+*>      LB25: close an open numeric chain, open one, extend it, and the
+*>      bracketed prefix where a PR joins an OP that itself opens a number.
+        WHEN NU-CHAIN = 1
+             AND (LB-EFF = LB-CL OR LB-EFF = LB-CP OR LB-EFF = LB-PO
+                  OR LB-EFF = LB-PR)
+            MOVE 0 TO LB-BREAK
+        WHEN LB-EFF = LB-NU AND LB-LEFT-HAS = 1
+             AND (LB-LEFT = LB-PR OR LB-LEFT = LB-PO OR LB-LEFT = LB-HY
+                  OR LB-LEFT = LB-OP OR LB-LEFT = LB-IS)
+            MOVE 0 TO LB-BREAK
+        WHEN LB-EFF = LB-NU AND LB-LEFT-HAS = 1 AND LB-LEFT = LB-NU
+            MOVE 0 TO LB-BREAK
+        WHEN LB-EFF = LB-NU AND LB-LEFT-HAS = 1 AND LB-LEFT = LB-SY
+             AND NU-CHAIN = 1
+            MOVE 0 TO LB-BREAK
+        WHEN LB-EFF = LB-OP AND LB-LEFT-HAS = 1 AND LB-LEFT = LB-PR
+             AND LB-CUR-EA = 0 AND EFF-PREV-HAS = 1 AND LB-EFFPREV-EA = 0
+             AND LB-AHEAD-HAS = 1 AND LB-AHEAD-CLS = LB-NU
+            MOVE 0 TO LB-BREAK
+*>      LB26 and LB27: the Hangul syllable classes.
+        WHEN LB-LEFT-HAS = 1 AND LB-LEFT = LB-JL
+             AND (LB-EFF = LB-JL OR LB-EFF = LB-JV OR LB-EFF = LB-H2
+                  OR LB-EFF = LB-H3)
+            MOVE 0 TO LB-BREAK
+        WHEN LB-LEFT-HAS = 1 AND (LB-LEFT = LB-JV OR LB-LEFT = LB-H2)
+             AND (LB-EFF = LB-JV OR LB-EFF = LB-JT)
+            MOVE 0 TO LB-BREAK
+        WHEN LB-LEFT-HAS = 1 AND (LB-LEFT = LB-JT OR LB-LEFT = LB-H3)
+             AND LB-EFF = LB-JT
+            MOVE 0 TO LB-BREAK
+        WHEN LB-LEFT-HAS = 1
+             AND (LB-LEFT = LB-JL OR LB-LEFT = LB-JV OR LB-LEFT = LB-JT
+                  OR LB-LEFT = LB-H2 OR LB-LEFT = LB-H3)
+             AND (LB-EFF = LB-IN OR LB-EFF = LB-PO)
+            MOVE 0 TO LB-BREAK
+        WHEN LB-LEFT-HAS = 1 AND LB-LEFT = LB-PR
+             AND (LB-EFF = LB-JL OR LB-EFF = LB-JV OR LB-EFF = LB-JT
+                  OR LB-EFF = LB-H2 OR LB-EFF = LB-H3)
+            MOVE 0 TO LB-BREAK
+*>      LB28.
+        WHEN (LB-EFF = LB-AL OR LB-EFF = LB-HL) AND LB-LEFT-HAS = 1
+             AND (LB-LEFT = LB-AL OR LB-LEFT = LB-HL)
+            MOVE 0 TO LB-BREAK
+*>      LB28a, the aksara cluster rules.
+        WHEN LB-LEFT-HAS = 1 AND LB-LEFT = LB-AP
+             AND (LB-EFF = LB-AK OR LB-EFF = LB-AS
+                  OR LB-CUR-CP = LB-DOTTED-CIRCLE)
+            MOVE 0 TO LB-BREAK
+        WHEN LB-AKSARA-BASE = 1 AND (LB-EFF = LB-VF OR LB-EFF = LB-VI)
+            MOVE 0 TO LB-BREAK
+        WHEN EFF-PREV-HAS = 1 AND EFF-PREV-CLS = LB-VI
+             AND LB-PP-AKSARA = 1
+             AND (LB-EFF = LB-AK OR LB-CUR-CP = LB-DOTTED-CIRCLE)
+            MOVE 0 TO LB-BREAK
+        WHEN LB-AKSARA-BASE = 1
+             AND (LB-EFF = LB-AK OR LB-EFF = LB-AS
+                  OR LB-CUR-CP = LB-DOTTED-CIRCLE)
+             AND LB-NEXT-VF = 1
+            MOVE 0 TO LB-BREAK
+*>      LB29.
+        WHEN (LB-EFF = LB-AL OR LB-EFF = LB-HL) AND LB-LEFT-HAS = 1
+             AND LB-LEFT = LB-IS
+            MOVE 0 TO LB-BREAK
+*>      LB30, where the bracket must not be East Asian Fullwidth, Wide or
+*>      Halfwidth.
+        WHEN LB-EFF = LB-OP AND LB-LEFT-HAS = 1
+             AND (LB-LEFT = LB-AL OR LB-LEFT = LB-HL OR LB-LEFT = LB-NU)
+             AND LB-CUR-EA = 0
+            MOVE 0 TO LB-BREAK
+        WHEN (LB-EFF = LB-AL OR LB-EFF = LB-HL OR LB-EFF = LB-NU)
+             AND LB-LEFT-HAS = 1 AND LB-LEFT = LB-CP AND LB-PREV-EA = 0
+            MOVE 0 TO LB-BREAK
+*>      LB30a and LB30b.
+        WHEN LB-EFF = LB-RI AND FUNCTION MOD(LB-RI-RUN, 2) = 1
+            MOVE 0 TO LB-BREAK
+        WHEN LB-EFF = LB-EM AND LB-LEFT-HAS = 1 AND LB-LEFT = LB-EB
+            MOVE 0 TO LB-BREAK
+        WHEN LB-EFF = LB-EM AND LB-EM-PICT = 1
+            MOVE 0 TO LB-BREAK
+*>      LB31.
+        WHEN OTHER
+            MOVE 1 TO LB-BREAK
+    END-EVALUATE.
+
+LB-ADVANCE.
+*> Fold the character at LB-IDX into the context. A character LB9 absorbs
+*> leaves the context untouched, which is what makes the neighbours the
+*> snapshot records effective rather than literal.
+    MOVE LB-LIT(LB-IDX) TO LB-WORK-CLS
+    PERFORM LB-EFFECTIVE-OF
+    IF LB-WORK-CLS = LB-CM OR LB-WORK-CLS = LB-ZWJ
+        CONTINUE
+    ELSE
+*>      LB15a opens its window only where an initial-punctuation quote stands
+*>      outside a word; a space carries an open window forward.
+        MOVE 0 TO LB-WORK-FLAG
+        IF EFF-PREV-HAS = 0
+            MOVE 1 TO LB-WORK-FLAG
+        ELSE
+            IF EFF-PREV-CLS = LB-BK OR EFF-PREV-CLS = LB-CR
+               OR EFF-PREV-CLS = LB-LF OR EFF-PREV-CLS = LB-NL
+               OR EFF-PREV-CLS = LB-OP OR EFF-PREV-CLS = LB-QU
+               OR EFF-PREV-CLS = LB-GL OR EFF-PREV-CLS = LB-SP
+               OR EFF-PREV-CLS = LB-ZW
+                MOVE 1 TO LB-WORK-FLAG
+            END-IF
+        END-IF
+        MOVE CP(LB-IDX) TO LOOKUP-CP
+        PERFORM LOOKUP-GC
+        MOVE 0 TO LB-CUR-PI
+        IF LB-WORK-CLS = LB-QU AND GC-CLASS = GC-PI
+            MOVE 1 TO LB-CUR-PI
+        END-IF
+        IF LB-CUR-PI = 1 AND LB-WORK-FLAG = 1
+            MOVE 1 TO PI-WINDOW
+        ELSE
+            IF LB-WORK-CLS NOT = LB-SP
+                MOVE 0 TO PI-WINDOW
+            END-IF
+        END-IF
+*>      LB25's chain is open while a number is still being read.
+        IF LB-WORK-CLS = LB-NU
+            MOVE 1 TO NU-CHAIN
+        ELSE
+            IF NU-CHAIN = 1
+                IF LB-WORK-CLS = LB-SY OR LB-WORK-CLS = LB-IS
+                   OR LB-WORK-CLS = LB-CL OR LB-WORK-CLS = LB-CP
+                   OR LB-WORK-CLS = LB-PR
+                    MOVE 1 TO NU-CHAIN
+                ELSE
+                    MOVE 0 TO NU-CHAIN
+                END-IF
+            END-IF
+        END-IF
+        MOVE EFF-PREV-CLS TO EFF-PP-CLS
+        MOVE EFF-PREV-CP TO EFF-PP-CP
+        MOVE EFF-PREV-HAS TO EFF-PP-HAS
+        MOVE LB-WORK-CLS TO EFF-PREV-CLS
+        MOVE CP(LB-IDX) TO EFF-PREV-CP
+        MOVE 1 TO EFF-PREV-HAS
+        IF LB-WORK-CLS NOT = LB-SP
+            MOVE LB-WORK-CLS TO EFF-NOSP-CLS
+            MOVE 1 TO EFF-NOSP-HAS
+        END-IF
+        IF LB-WORK-CLS = LB-RI
+            ADD 1 TO LB-RI-RUN
+        ELSE
+            MOVE 0 TO LB-RI-RUN
+        END-IF
+    END-IF.
+
+PROCESS-LINE-BREAK.
+*> UAX #14 default line breaking over CP(1..CP-COUNT), reporting the boundary
+*> positions at which a line may break. A sequence of n codepoints has n + 1
+*> boundaries; position 0 never breaks (LB2) and position n always does (LB3),
+*> so the emitted list always ends at n and never starts at 0.
+    MOVE 0 TO EFF-PREV-HAS EFF-NOSP-HAS EFF-PP-HAS
+    MOVE 0 TO EFF-PREV-CLS EFF-PREV-CP EFF-NOSP-CLS
+    MOVE 0 TO EFF-PP-CLS EFF-PP-CP
+    MOVE 0 TO PI-WINDOW LB-RI-RUN NU-CHAIN
+    MOVE 0 TO BOUND-COUNT
+    MOVE SPACES TO BOUND-TEXT
+*>  LB1 is applied at lookup, once per position, so the rules that read
+*>  forward see resolved classes rather than re-deriving them per look.
+    PERFORM VARYING LB-IDX FROM 1 BY 1 UNTIL LB-IDX > CP-COUNT
+        MOVE CP(LB-IDX) TO LOOKUP-CP
+        PERFORM LB-RESOLVE-CLASS
+        MOVE LB-RESOLVED TO LB-LIT(LB-IDX)
+    END-PERFORM
+    PERFORM VARYING LB-IDX FROM 1 BY 1 UNTIL LB-IDX > CP-COUNT
+        IF LB-IDX > 1
+            PERFORM LB-DECIDE
+            IF LB-BREAK = 1
+                COMPUTE OFFSET-VAL = LB-IDX - 1
+                PERFORM EMIT-BOUNDARY
+            END-IF
+        END-IF
+        PERFORM LB-ADVANCE
+    END-PERFORM
+    MOVE CP-COUNT TO OFFSET-VAL
+    PERFORM EMIT-BOUNDARY.
+
+EMIT-LINE-BREAK.
+    DISPLAY "BREAKS " FUNCTION TRIM(BOUND-TEXT).
+
+PROCESS-BREAK-BATCH.
+*> One corpus, one invocation. Each input line is a comma-separated list of
+*> decimal code points and each output line the comma-separated boundary
+*> positions the algorithm reports for it, so the two files line up row for
+*> row and the caller compares them positionally. The op name selects the
+*> algorithm, so one driver serves both corpora.
+*>
+*> The two paths are parsed from the command line at their own width. They
+*> cannot ride in the profile and mode argument positions the way the
+*> ai-watermark tolerances ride in the encoding and RFC positions: those
+*> fields hold a 32-character token, and a path longer than that is silently
+*> cut, which opens nothing.
+    UNSTRING CMD-LINE DELIMITED BY ALL SPACE
+        INTO OP-NAME BATCH-IN-PATH BATCH-OUT-PATH
+    END-UNSTRING
+*> Every file operation's status is tested. Declaring FILE STATUS suppresses
+*> the runtime's own abort, so an unchecked failure is not a crash but a
+*> silence: a failed OPEN leaves READ returning neither a record nor AT END,
+*> and the read loop then spins forever on a corpus it never opened.
+    OPEN INPUT BATCH-IN
+    IF BATCH-STATUS NOT = "00"
+        DISPLAY "ERROR cannot open batch input " FUNCTION TRIM(BATCH-IN-PATH)
+            " status " BATCH-STATUS
+        MOVE 1 TO RETURN-CODE
+        STOP RUN
+    END-IF
+    OPEN OUTPUT BATCH-OUT
+    IF BATCH-STATUS NOT = "00"
+        DISPLAY "ERROR cannot open batch output " FUNCTION TRIM(BATCH-OUT-PATH)
+            " status " BATCH-STATUS
+        MOVE 1 TO RETURN-CODE
+        STOP RUN
+    END-IF
+    MOVE 0 TO BATCH-EOF
+    PERFORM UNTIL BATCH-EOF = 1
+        READ BATCH-IN
+            AT END
+                MOVE 1 TO BATCH-EOF
+            NOT AT END
+                MOVE BATCH-IN-REC TO NUM-LIST
+*>              Each row is scanned on its own terms: a capacity fault on one
+*>              row must not carry into the next.
+                MOVE 0 TO CAPACITY-EXCEEDED
+                PERFORM PARSE-NUMBERS
+                IF OP-NAME = "grapheme-batch"
+                    PERFORM PROCESS-GRAPHEME
+                ELSE
+                    PERFORM PROCESS-LINE-BREAK
+                END-IF
+                MOVE BOUND-TEXT TO BATCH-OUT-REC
+                WRITE BATCH-OUT-REC
+                IF BATCH-STATUS NOT = "00"
+                    DISPLAY "ERROR batch write failed status " BATCH-STATUS
+                    MOVE 1 TO RETURN-CODE
+                    MOVE 1 TO BATCH-EOF
+                END-IF
+        END-READ
+*>      A read that neither delivered a record nor reached the end is a fault,
+*>      not an empty row: ending the loop on it reports the corpus short, so it
+*>      stops the run instead.
+        IF BATCH-EOF = 0 AND BATCH-STATUS NOT = "00"
+            DISPLAY "ERROR batch read failed status " BATCH-STATUS
+            MOVE 1 TO RETURN-CODE
+            MOVE 1 TO BATCH-EOF
+        END-IF
+    END-PERFORM
+    CLOSE BATCH-IN
+    CLOSE BATCH-OUT.
 
 EMIT-RESULT.
     DISPLAY "ACTION " FUNCTION TRIM(ACTION-NAME)
